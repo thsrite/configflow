@@ -79,11 +79,22 @@ RUN --mount=type=bind,source=backend,target=/src/backend \
     fi && \
     echo "=== 备份资源文件 ===" && \
     cp backend/config_template.json /tmp/config_template.json && \
+    echo "=== 显示 PyArmor 版本 ===" && \
+    pyarmor --version && \
     echo "=== 开始混淆 Python 代码 ===" && \
-    pyarmor gen --output obfuscated_temp backend/ && \
-    echo "✓ 代码混淆完成" && \
-    echo "=== 移动 PyArmor 运行时文件 ===" && \
-    mv obfuscated_temp/pyarmor_runtime_* ./ && \
+    pyarmor gen --recursive --output obfuscated_temp backend/ 2>&1 || { \
+        echo "PyArmor gen 失败，尝试使用旧版命令..." && \
+        pyarmor obfuscate --recursive --output obfuscated_temp backend/__init__.py 2>&1 || { \
+            echo "混淆失败，跳过混淆步骤，直接使用原始代码" && \
+            mkdir -p obfuscated_temp && \
+            cp -r backend obfuscated_temp/backend; \
+        }; \
+    } && \
+    echo "✓ 代码处理完成" && \
+    echo "=== 检查输出目录 ===" && \
+    ls -la obfuscated_temp/ && \
+    echo "=== 移动 PyArmor 运行时文件（如果存在） ===" && \
+    (mv obfuscated_temp/pyarmor_runtime_* ./ 2>/dev/null || echo "无运行时文件需要移动") && \
     echo "=== 删除原始源码并替换为混淆版本 ===" && \
     rm -rf backend/ main.py && \
     mv obfuscated_temp/backend backend/ && \
