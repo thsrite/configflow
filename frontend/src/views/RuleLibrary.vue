@@ -32,23 +32,19 @@
         <el-button
           class="action-btn action-secondary"
           @click="handleBatchTest"
-          :disabled="!proEnabled || ruleLibrary.length === 0"
+          :disabled="ruleLibrary.length === 0"
           :loading="testing"
         >
           <el-icon><Connection /></el-icon>
-          {{ testing ? '测试中...' : '批量测试' }}
-          <el-tag v-if="!proEnabled" type="warning" size="small" style="margin-left: 4px;">PRO</el-tag>
-        </el-button>
+          {{ testing ? '测试中...' : '批量测试' }}        </el-button>
         <el-button
           class="action-btn action-secondary"
           @click="handleBatchCache"
-          :disabled="!proEnabled || selectedRules.length === 0"
+          :disabled="selectedRules.length === 0"
           :loading="caching"
         >
           <el-icon><Download /></el-icon>
-          {{ caching ? '缓存中...' : '批量缓存' }}
-          <el-tag v-if="!proEnabled" type="warning" size="small" style="margin-left: 4px;">PRO</el-tag>
-        </el-button>
+          {{ caching ? '缓存中...' : '批量缓存' }}        </el-button>
         <el-button
           class="action-btn action-secondary"
           @click="showBatchImportDialog"
@@ -466,16 +462,12 @@ const selectedRules = ref<string[]>([]) // 选中的规则ID列表
 let sortableInstance: any = null // Sortable实例
 
 // 专业功能开关
-const proEnabled = ref(true)
-
-// 处理需要License的按钮点击
+// 处理按钮点击
 const handleBatchTest = () => {
-  if (!requireLicense()) return
   batchTestConnectivity()
 }
 
 const handleBatchCache = () => {
-  if (!requireLicense()) return
   batchCacheRules()
 }
 
@@ -601,10 +593,6 @@ const handleFormStatusChange = async (enabled: boolean) => {
     return
   }
 
-  if (!proEnabled.value) {
-    return
-  }
-
   if (form.value.source_type === 'url' && form.value.url && isFullUrl(form.value.url)) {
     const loading = ElMessage({
       message: '正在测试规则连通性...',
@@ -643,7 +631,7 @@ const saveRule = async () => {
 
   let isAvailable = true
 
-  if (proEnabled.value && form.value.source_type === 'url' && form.value.url) {
+  if (form.value.source_type === 'url' && form.value.url) {
     const loading = ElMessage({
       message: '正在测试规则连通性...',
       duration: 0,
@@ -816,26 +804,6 @@ const handleToggle = async (rule: RuleLibraryItem) => {
 }
 
 const toggleEnabled = async (row: RuleLibraryItem) => {
-  if (!proEnabled.value) {
-    try {
-      const { data } = await api.put(`/rule-library/${row.id}`, row)
-
-      // 显示同步信息
-      if (data.synced_count > 0) {
-        ElMessage.success({
-          message: `${row.enabled ? '已开启' : '已关闭'}，并同步${row.enabled ? '启用' : '禁用'}了 ${data.synced_count} 个关联的规则配置`,
-          duration: 3000
-        })
-      } else {
-        ElMessage.success(row.enabled ? '已开启' : '已关闭')
-      }
-    } catch (error) {
-      ElMessage.error('更新失败')
-      row.enabled = !row.enabled
-    }
-    return
-  }
-
   if (row.enabled && row.source_type === 'url' && isFullUrl(row.url)) {
     const loading = ElMessage({
       message: '正在测试规则连通性...',

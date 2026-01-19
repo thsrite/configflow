@@ -9,21 +9,17 @@
         <el-button
           class="action-btn action-secondary"
           @click="loadAgents"
-          :disabled="!isLicenseActivated"
         >
           <el-icon><Refresh /></el-icon>
           刷新
-          <el-tag v-if="!isLicenseActivated" type="warning" size="small" style="margin-left: 8px;">PRO</el-tag>
         </el-button>
         <el-button
           type="primary"
           class="action-btn action-primary"
           @click="handleGenerateScript"
-          :disabled="!isLicenseActivated"
         >
           <el-icon><Document /></el-icon>
           生成安装脚本
-          <el-tag v-if="!isLicenseActivated" type="warning" size="small" style="margin-left: 8px;">PRO</el-tag>
         </el-button>
       </div>
     </div>
@@ -67,8 +63,7 @@
 
     <!-- Agent 列表 -->
     <div v-if="agents.length === 0" class="empty-state">
-      <el-empty v-if="!isLicenseActivated" description="此功能需要激活专业版 License" />
-      <el-empty v-else description="暂无 Agent，请生成安装脚本部署" />
+      <el-empty description="暂无 Agent，请生成安装脚本部署" />
     </div>
 
     <div v-else class="agents-grid">
@@ -211,37 +206,31 @@
         </div>
 
         <div class="card-actions">
-          <el-button class="card-btn ghost" size="small" @click="pushConfig(agent)" :disabled="!isLicenseActivated">
+          <el-button class="card-btn ghost" size="small" @click="pushConfig(agent)">
             <el-icon><Upload /></el-icon>
             推送配置
-            <el-tag v-if="!isLicenseActivated" type="warning" size="small" style="margin-left: 4px;">PRO</el-tag>
           </el-button>
-          <el-button class="card-btn warning" size="small" @click="restartAgent(agent)" :disabled="!isLicenseActivated">
+          <el-button class="card-btn warning" size="small" @click="restartAgent(agent)">
             <el-icon><RefreshRight /></el-icon>
             重启
-            <el-tag v-if="!isLicenseActivated" type="warning" size="small" style="margin-left: 4px;">PRO</el-tag>
           </el-button>
-          <el-button class="card-btn success" size="small" @click="viewLogs(agent)" :disabled="!isLicenseActivated">
+          <el-button class="card-btn success" size="small" @click="viewLogs(agent)">
             <el-icon><View /></el-icon>
             日志
-            <el-tag v-if="!isLicenseActivated" type="warning" size="small" style="margin-left: 4px;">PRO</el-tag>
           </el-button>
         </div>
         <div class="card-actions" style="margin-top: 8px;">
-          <el-button v-if="agent.has_update" class="card-btn primary" size="small" @click="updateAgent(agent)" :disabled="!isLicenseActivated">
+          <el-button v-if="agent.has_update" class="card-btn primary" size="small" @click="updateAgent(agent)">
             <el-icon><Download /></el-icon>
             更新
-            <el-tag v-if="!isLicenseActivated" type="warning" size="small" style="margin-left: 4px;">PRO</el-tag>
           </el-button>
-          <el-button class="card-btn danger" size="small" @click="uninstallAgent(agent)" :disabled="!isLicenseActivated">
+          <el-button class="card-btn danger" size="small" @click="uninstallAgent(agent)">
             <el-icon><Delete /></el-icon>
             卸载
-            <el-tag v-if="!isLicenseActivated" type="warning" size="small" style="margin-left: 4px;">PRO</el-tag>
           </el-button>
-          <el-button class="card-btn info" size="small" @click="deleteAgent(agent)" :disabled="!isLicenseActivated">
+          <el-button class="card-btn info" size="small" @click="deleteAgent(agent)">
             <el-icon><Close /></el-icon>
             删除记录
-            <el-tag v-if="!isLicenseActivated" type="warning" size="small" style="margin-left: 4px;">PRO</el-tag>
           </el-button>
         </div>
       </div>
@@ -915,8 +904,6 @@ import VChart from 'vue-echarts'
 // Register ECharts components
 use([LineChart, GridComponent, TooltipComponent, LegendComponent, TitleComponent, CanvasRenderer])
 
-const isLicenseActivated = ref(true)
-
 const agents = ref<Agent[]>([])
 const scriptDialogVisible = ref(false)
 const logsDialogVisible = ref(false)
@@ -1339,12 +1326,6 @@ const trafficChartOption = computed(() => {
 
 // 加载 Agent 列表
 const loadAgents = async () => {
-  // 如果没有激活License，不调用API
-  if (!isLicenseActivated.value) {
-    agents.value = []
-    return
-  }
-
   try {
     const { data } = await agentApi.getAll()
     agents.value = data
@@ -1512,7 +1493,6 @@ const onServiceTypeChange = () => {
 
 // 处理生成脚本按钮点击
 const handleGenerateScript = () => {
-  if (!requireLicense()) return
   showGenerateScriptDialog()
 }
 
@@ -1559,7 +1539,6 @@ const resetForm = () => {
 
 // 生成安装脚本
 const generateScript = async () => {
-  if (!requireLicense()) return
   if (!scriptForm.value.name) {
     ElMessage.warning('请输入 Agent 名称')
     return
@@ -1763,7 +1742,6 @@ const fallbackCopy = (text: string) => {
 
 // 推送配置
 const pushConfig = async (agent: Agent) => {
-  if (!requireLicense()) return
   const loading = ElLoading.service({
     lock: true,
     text: '正在推送配置...',
@@ -1783,7 +1761,6 @@ const pushConfig = async (agent: Agent) => {
 
 // 重启 Agent
 const restartAgent = async (agent: Agent) => {
-  if (!requireLicense()) return
   try {
     await ElMessageBox.confirm(
       '确定要重启此 Agent 的服务吗？服务将会短暂中断。',
@@ -1815,7 +1792,6 @@ const restartAgent = async (agent: Agent) => {
 }
 
 const updateAgent = async (agent: Agent) => {
-  if (!requireLicense()) return
   try {
     await ElMessageBox.confirm(
       `检测到新版本可用，是否立即更新 Agent？更新过程中 Agent 将会重启。`,
@@ -1856,7 +1832,6 @@ const updateAgent = async (agent: Agent) => {
 
 // 卸载 Agent
 const uninstallAgent = async (agent: Agent) => {
-  if (!requireLicense()) return
   try {
     await ElMessageBox.confirm(
       `确定要卸载远程服务器上的 Agent "${agent.name}" 吗？\n\n此操作将：\n• 停止 Agent 服务\n• 删除 Agent 程序文件\n• 删除服务配置（systemd/OpenRC）\n• 从管理列表中移除\n\n⚠️ 此操作不可恢复！`,
@@ -1897,7 +1872,6 @@ const uninstallAgent = async (agent: Agent) => {
 
 // 删除 Agent 记录
 const deleteAgent = async (agent: Agent) => {
-  if (!requireLicense()) return
   try {
     await ElMessageBox.confirm(
       `确定要删除 Agent "${agent.name}" 的管理记录吗？\n\n⚠️ 注意：此操作仅删除管理记录，不会卸载远程服务器上的 Agent 程序。\n如需完全卸载，请使用"卸载"按钮。`,
@@ -1927,7 +1901,6 @@ const isMainAgentLog = computed(() => {
 
 // 查看日志
 const viewLogs = async (agent: Agent) => {
-  if (!requireLicense()) return
   currentAgent.value = agent
   selectedLogPath.value = '/var/log/configflow-agent.log'
   customLogPath.value = ''

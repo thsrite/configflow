@@ -23,12 +23,10 @@
         <el-button
           type="primary"
           class="action-btn action-secondary"
-          :disabled="!proEnabled"
           @click="handleShowRuleIndex"
         >
           <el-icon><Search /></el-icon>
           规则索引
-          <el-tag v-if="!proEnabled" type="warning" size="small" style="margin-left: 4px;">PRO</el-tag>
         </el-button>
       </div>
     </div>
@@ -393,12 +391,8 @@ const ruleSetDialogVisible = ref(false)
 const isEditRule = ref(false)
 const isEditRuleSet = ref(false)
 
-// 专业功能开关
-const proEnabled = ref(true)
-
-// 处理需要License的按钮点击
+// 处理按钮点击
 const handleShowRuleIndex = () => {
-  if (!requireLicense()) return
   showRuleIndexDialog()
 }
 
@@ -824,11 +818,6 @@ const handleRuleSetStatusChange = async (enabled: boolean) => {
     return
   }
 
-  // 轻量版直接允许，不测试
-  if (!proEnabled.value) {
-    return
-  }
-
   // 如果是开启，需要测试连通性（仅测试完整URL）
   if (ruleSetForm.value.url && isFullUrl(ruleSetForm.value.url)) {
     const loading = ElMessage({
@@ -864,24 +853,6 @@ const toggleItemStatus = async (item: any) => {
   // 切换状态
   item.enabled = !item.enabled
   originalItem.enabled = !originalItem.enabled
-
-  // 轻量版直接允许切换，不测试
-  if (!proEnabled.value) {
-    try {
-      if (item.itemType === 'rule') {
-        await ruleApi.update(item.id, originalItem)
-      } else {
-        await ruleSetApi.update(item.id, originalItem)
-      }
-      ElMessage.success('状态已更新')
-    } catch (error) {
-      ElMessage.error('更新状态失败')
-      // 失败后恢复状态
-      item.enabled = oldEnabled
-      originalItem.enabled = oldEnabled
-    }
-    return
-  }
 
   // 如果是规则集且正在开启，需要先测试连通性（只测试完整URL）
   if (item.itemType === 'ruleset' && item.enabled) {

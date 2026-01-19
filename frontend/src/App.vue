@@ -17,9 +17,6 @@
           <div class="header-actions">
             <div class="version-github-group">
               <el-tag class="version-tag" effect="plain">{{ versionInfo }}</el-tag>
-              <el-tag v-if="proEnabled" class="pro-badge" type="success" effect="dark">
-                PRO
-              </el-tag>
               <el-button
                 text
                 class="github-link"
@@ -180,9 +177,6 @@ const activeMenu = ref(route.path)
 const drawerVisible = ref(false)
 const versionInfo = ref('v1.0')
 const subscriptionAggregationEnabled = ref(false)
-
-// 开源版本默认启用所有功能
-const proEnabled = ref(true)
 
 // 认证相关
 const showUserInfo = ref(false)

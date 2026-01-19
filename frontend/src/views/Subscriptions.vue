@@ -9,13 +9,10 @@
         <el-button
           class="action-btn action-secondary"
           @click="handleFetchAll"
-          :disabled="!proEnabled"
-          :loading="isRefreshing"
+                    :loading="isRefreshing"
         >
           <el-icon><RefreshRight /></el-icon>
-          批量更新
-          <el-tag v-if="!proEnabled" type="warning" size="small" style="margin-left: 4px;">PRO</el-tag>
-        </el-button>
+          批量更新        </el-button>
         <el-button
           type="primary"
           class="action-btn action-primary"
@@ -96,12 +93,10 @@
           <el-button
             class="card-btn ghost"
             size="small"
-            :disabled="!proEnabled"
-            @click="handleFetchSubscription(sub)"
+                        @click="handleFetchSubscription(sub)"
           >
             <el-icon><Connection /></el-icon>
             获取节点
-            <el-tag v-if="!proEnabled" type="warning" size="small" style="margin-left: 4px;">PRO</el-tag>
           </el-button>
           <el-button
             class="card-btn primary"
@@ -247,16 +242,12 @@ const dialogVisible = ref(false)
 const isEdit = ref(false)
 const isRefreshing = ref(false)
 // 使用构建时常量控制专业功能
-const proEnabled = ref(true)
-
-// 处理需要License的按钮点击
+// 处理按钮点击
 const handleFetchAll = () => {
-  if (!requireLicense()) return
   fetchAllSubscriptionsInBackground()
 }
 
 const handleFetchSubscription = (sub: Subscription) => {
-  if (!requireLicense()) return
   fetchSubscription(sub)
 }
 

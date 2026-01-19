@@ -21,15 +21,12 @@
               <el-input
                 :model-value="mihomoUrlDisplay"
                 readonly
-                :disabled="!proEnabled"
-                size="small"
+                                size="small"
                 placeholder="配置 URL"
               >
                 <template #append>
-                  <el-button @click="copyUrl(mihomoUrl, 'Mihomo')" size="small" :disabled="!proEnabled">
-                    <el-icon><CopyDocument /></el-icon>
-                    <el-tag v-if="!proEnabled" type="warning" size="small" style="margin-left: 4px;">PRO</el-tag>
-                  </el-button>
+                  <el-button @click="copyUrl(mihomoUrl, 'Mihomo')" size="small">
+                    <el-icon><CopyDocument /></el-icon>                  </el-button>
                 </template>
               </el-input>
               <div class="url-hint">点击复制，可在客户端中直接订阅此 URL</div>
@@ -76,10 +73,7 @@
         <el-col :xs="24" :sm="12" :md="8">
           <el-card shadow="hover">
             <template #header>
-              <h4>
-                Surge
-                <el-tag v-if="!proEnabled" type="warning" size="small">PRO</el-tag>
-              </h4>
+              <h4>Surge</h4>
             </template>
             <p style="margin-bottom: 16px">生成适用于 Surge 的 .conf 配置文件（INI 格式）</p>
 
@@ -88,15 +82,12 @@
               <el-input
                 :model-value="surgeUrlDisplay"
                 readonly
-                :disabled="!proEnabled"
-                size="small"
+                                size="small"
                 placeholder="配置 URL"
               >
                 <template #append>
-                  <el-button @click="copyUrl(surgeUrl, 'Surge')" size="small" :disabled="!proEnabled">
-                    <el-icon><CopyDocument /></el-icon>
-                    <el-tag v-if="!proEnabled" type="warning" size="small" style="margin-left: 4px;">PRO</el-tag>
-                  </el-button>
+                  <el-button @click="copyUrl(surgeUrl, 'Surge')" size="small">
+                    <el-icon><CopyDocument /></el-icon>                  </el-button>
                 </template>
               </el-input>
               <div class="url-hint">点击复制，可在客户端中直接订阅此 URL</div>
@@ -108,8 +99,7 @@
                   @click="handleSurgeCustomConfig"
                   style="width: 100%"
                   size="small"
-                  :disabled="!proEnabled"
-                >
+                                  >
                   <el-icon><Edit /></el-icon>
                   <span>基础</span>
                 </el-button>
@@ -120,8 +110,7 @@
                   :loading="surgePreviewLoading"
                   style="width: 100%"
                   size="small"
-                  :disabled="!proEnabled"
-                >
+                                  >
                   <el-icon><View /></el-icon>
                   <span>预览</span>
                 </el-button>
@@ -154,15 +143,12 @@
               <el-input
                 :model-value="mosdnsUrlDisplay"
                 readonly
-                :disabled="!proEnabled"
-                size="small"
+                                size="small"
                 placeholder="配置 URL"
               >
                 <template #append>
-                  <el-button @click="copyUrl(mosdnsUrl, 'MosDNS')" size="small" :disabled="!proEnabled">
-                    <el-icon><CopyDocument /></el-icon>
-                    <el-tag v-if="!proEnabled" type="warning" size="small" style="margin-left: 4px;">PRO</el-tag>
-                  </el-button>
+                  <el-button @click="copyUrl(mosdnsUrl, 'MosDNS')" size="small">
+                    <el-icon><CopyDocument /></el-icon>                  </el-button>
                 </template>
               </el-input>
               <div class="url-hint">点击复制，可在客户端中直接订阅此 URL</div>
@@ -248,27 +234,23 @@
                     v-model="subscriptionAggregationEnabled"
                     @change="onSubscriptionAggregationChange"
                     size="small"
-                    :disabled="!proEnabled"
                   />
-                  <el-tag v-if="!proEnabled" type="warning" size="small">PRO</el-tag>
                 </div>
                 <div class="server-domain-hint">
                   开启后将在节点管理菜单下显示"订阅聚合"功能，可组合订阅和节点
                 </div>
               </el-form-item>
               <el-form-item label="令牌">
-                <el-tag v-if="!proEnabled" type="warning" size="small" style="margin-bottom: 8px;">PRO</el-tag>
                 <el-input
                   v-model="configToken"
                   placeholder="留空表示不启用令牌保护，可手动输入或点击生成"
                   size="small"
-                  :disabled="!proEnabled"
-                  clearable
+                                    clearable
                   @clear="onClearToken"
                   @blur="onTokenBlur"
                 >
                   <template #append>
-                    <el-button @click="generateToken" size="small" title="生成随机令牌" :disabled="!proEnabled">
+                    <el-button @click="generateToken" size="small" title="生成随机令牌">
                       <el-icon><Refresh /></el-icon>
                     </el-button>
                   </template>
@@ -313,10 +295,9 @@
                 </el-upload>
               </el-col>
               <el-col :xs="24" :sm="12" :md="12" :lg="6">
-                <el-button @click="handleBackup" type="primary" style="width: 100%" size="small" :disabled="!proEnabled">
+                <el-button @click="handleBackup" type="primary" style="width: 100%" size="small">
                   <el-icon><FolderOpened /></el-icon>
                   <span>备份</span>
-                  <el-tag v-if="!proEnabled" type="warning" size="small" style="margin-left: 4px;">PRO</el-tag>
                 </el-button>
               </el-col>
               <el-col :xs="24" :sm="12" :md="12" :lg="6" style="margin-top: 12px">
@@ -1489,22 +1470,16 @@ const configToken = ref('')
 // 订阅聚合开关
 const subscriptionAggregationEnabled = ref(false)
 
-// 专业功能开关
-const proEnabled = ref(true)
-
-// 处理需要License的按钮点击
+// 处理按钮点击
 const handleSurgeCustomConfig = () => {
-  if (!requireLicense()) return
   showCustomConfigDialog('surge')
 }
 
 const handleSurgePreview = () => {
-  if (!requireLicense()) return
   previewConfig('surge')
 }
 
 const handleBackup = () => {
-  if (!requireLicense()) return
   showBackupDialog()
 }
 
@@ -1680,10 +1655,10 @@ const mosdnsUrl = computed(() => {
   return configToken.value ? `${url}?token=${configToken.value}` : url
 })
 
-// PRO功能URL显示（未激活时显示****）
-const mihomoUrlDisplay = computed(() => proEnabled.value ? mihomoUrl.value : '****')
-const surgeUrlDisplay = computed(() => proEnabled.value ? surgeUrl.value : '****')
-const mosdnsUrlDisplay = computed(() => proEnabled.value ? mosdnsUrl.value : '****')
+// URL显示
+const mihomoUrlDisplay = computed(() => mihomoUrl.value)
+const surgeUrlDisplay = computed(() => surgeUrl.value)
+const mosdnsUrlDisplay = computed(() => mosdnsUrl.value)
 
 // 复制 URL 到剪贴板
 const copyUrl = (url: string, configType: string) => {
@@ -2424,19 +2399,17 @@ onMounted(async () => {
   // 加载配置令牌
   await loadConfigToken()
 
-  // 从后端加载订阅聚合开关配置（只有专业版）
-  if (proEnabled.value) {
-    try {
-      const response = await api.get('/settings/subscription-aggregation')
-      const enabled = response.data.enabled || false
-      subscriptionAggregationEnabled.value = enabled
-      localStorage.setItem('subscriptionAggregationEnabled', enabled.toString())
-    } catch (error) {
-      console.error('加载订阅聚合开关失败:', error)
-      // 加载失败，使用 localStorage
-      const localEnabled = localStorage.getItem('subscriptionAggregationEnabled') === 'true'
-      subscriptionAggregationEnabled.value = localEnabled
-    }
+  // 从后端加载订阅聚合开关配置
+  try {
+    const response = await api.get('/settings/subscription-aggregation')
+    const enabled = response.data.enabled || false
+    subscriptionAggregationEnabled.value = enabled
+    localStorage.setItem('subscriptionAggregationEnabled', enabled.toString())
+  } catch (error) {
+    console.error('加载订阅聚合开关失败:', error)
+    // 加载失败，使用 localStorage
+    const localEnabled = localStorage.getItem('subscriptionAggregationEnabled') === 'true'
+    subscriptionAggregationEnabled.value = localEnabled
   }
 
 })

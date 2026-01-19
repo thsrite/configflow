@@ -189,9 +189,8 @@
           <el-checkbox-group v-model="enabledSources">
             <el-checkbox label="subscription" :disabled="enabledSources.includes('follow')" v-if="!enabledSources.includes('follow')">订阅</el-checkbox>
             <el-checkbox label="node" :disabled="enabledSources.includes('follow')" v-if="!enabledSources.includes('follow')">节点</el-checkbox>
-            <el-checkbox label="aggregation" :disabled="enabledSources.includes('follow') || !proEnabled" v-if="!enabledSources.includes('follow')">
+            <el-checkbox label="aggregation" :disabled="enabledSources.includes('follow')" v-if="!enabledSources.includes('follow')">
               聚合
-              <el-tag v-if="!proEnabled" type="warning" size="small" style="margin-left: 4px;">PRO</el-tag>
             </el-checkbox>
             <el-checkbox label="strategy" :disabled="enabledSources.includes('follow')" v-if="!enabledSources.includes('follow')">策略</el-checkbox>
             <el-checkbox label="follow" @change="handleFollowChange">跟随</el-checkbox>
@@ -405,8 +404,6 @@ const savingStatus = ref<Record<string, boolean>>({})
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const enabledSources = ref<string[]>([])
-// 使用构建时常量控制专业功能
-const proEnabled = ref(true)
 
 const groupsContainer = ref<HTMLElement | null>(null)
 const orderedProxiesRef = ref<HTMLElement | null>(null)
@@ -1494,10 +1491,7 @@ onMounted(async () => {
   loadNodes()
   loadSubscriptions()
 
-  // 只有专业版才加载聚合列表
-  if (proEnabled.value) {
-    loadAggregations()
-  }
+  loadAggregations()
 })
 
 onUnmounted(() => {
