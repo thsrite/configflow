@@ -4,8 +4,8 @@ on:
   push:
     paths:
       - 'backend/agents/**'
-      - 'Dockerfile.agent.mosdns'
-      - 'docker-agent-entrypoint-mosdns.sh'
+      - 'docker/Dockerfile.agent.mosdns'
+      - 'docker/docker-agent-entrypoint-mosdns.sh'
       - '.github/workflows/docker-agent-mosdns.yml'
   workflow_dispatch:
 
@@ -29,7 +29,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.agent.mosdns
+          file: ./docker/Dockerfile.agent.mosdns
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ secrets.DOCKER_USERNAME }}/config-flow-agent-mosdns:latest

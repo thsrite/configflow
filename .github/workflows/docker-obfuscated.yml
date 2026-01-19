@@ -4,7 +4,7 @@ on:
   push:
     paths:
       - 'backend/agents/**'
-      - 'Dockerfile.obfuscated'
+      - 'docker/Dockerfile.obfuscated'
       - '.github/workflows/docker-obfuscated.yml'
     tags:
       - 'v*'
@@ -61,7 +61,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.obfuscated
+          file: ./docker/Dockerfile.obfuscated
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}

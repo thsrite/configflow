@@ -3,8 +3,10 @@ version: '3.8'
 services:
   config-flow:
     image: thsrite/config-flow:latest
-    # 如果要使用本地构建，请注释上一行并取消下一行注释
-    # build: .
+    # 如果要使用本地构建，请注释上一行并取消下面的注释
+    # build:
+    #   context: ..
+    #   dockerfile: docker/Dockerfile
     container_name: config-flow
     ports:
       - "5010:80"

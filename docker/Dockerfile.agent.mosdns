@@ -20,17 +20,12 @@ RUN --mount=type=bind,source=backend/agents/go-agent,target=/src \
     echo "✓ 只保留二进制文件"
 
 # ==============================================================================
-# Stage 2: 获取 Mihomo 二进制
-# ==============================================================================
-FROM metacubex/mihomo:latest AS mihomo-builder
-
-# ==============================================================================
-# Stage 3: 获取 MosDNS 二进制
+# Stage 2: 获取 MosDNS 二进制
 # ==============================================================================
 FROM irinesistiana/mosdns:latest AS mosdns-builder
 
 # ==============================================================================
-# Stage 4: 最终镜像
+# Stage 3: 最终镜像
 # ==============================================================================
 FROM alpine:latest
 
@@ -45,31 +40,24 @@ RUN apk add --no-cache ca-certificates su-exec supervisor python3-dev py3-pip ba
 COPY --from=builder /configflow-agent /usr/local/bin/configflow-agent
 RUN chmod +x /usr/local/bin/configflow-agent
 
-# 从 mihomo-builder 阶段复制 mihomo 二进制
-COPY --from=mihomo-builder /mihomo /usr/local/bin/mihomo
-RUN chmod +x /usr/local/bin/mihomo
-
 # 从 mosdns-builder 阶段复制 mosdns 二进制
 COPY --from=mosdns-builder /usr/bin/mosdns /usr/local/bin/mosdns
 RUN chmod +x /usr/local/bin/mosdns
 
 # 创建必要的目录
-RUN mkdir -p /etc/mihomo /etc/mosdns /etc/supervisor /var/log/supervisor /run
+RUN mkdir -p /etc/mosdns /etc/supervisor /var/log/supervisor /run
 
 # 设置目录权限（以 root 运行，不需要创建非 root 用户）
-RUN chmod -R 755 /etc/mihomo && \
-    chmod -R 775 /etc/mosdns && \
+RUN chmod -R 775 /etc/mosdns && \
     chmod -R 777 /var/log/supervisor /run
 
 # 使用 RUN --mount 复制配置文件，避免源码目录结构暴露
 RUN --mount=type=bind,source=backend/agents/go-agent,target=/src/agent \
-    --mount=type=bind,source=docker-agent-entrypoint-aio.sh,target=/src/entrypoint.sh \
+    --mount=type=bind,source=docker/docker-agent-entrypoint-mosdns.sh,target=/src/entrypoint.sh \
     echo "=== 复制配置文件 ===" && \
     mkdir -p /etc/supervisor/conf.d && \
     cp /src/agent/supervisord.conf /etc/supervisor/supervisord.conf && \
-    cp /src/agent/supervisor/mihomo.conf /etc/supervisor/conf.d/ && \
     cp /src/agent/supervisor/mosdns.conf /etc/supervisor/conf.d/ && \
-    cp /src/agent/supervisor/agent-mihomo.conf /etc/supervisor/conf.d/ && \
     cp /src/agent/supervisor/agent-mosdns.conf /etc/supervisor/conf.d/ && \
     cp /src/entrypoint.sh /entrypoint.sh && \
     chmod +x /entrypoint.sh && \
@@ -77,23 +65,23 @@ RUN --mount=type=bind,source=backend/agents/go-agent,target=/src/agent \
 
 # 设置环境变量默认值
 ENV SERVER_URL="" \
+    AGENT_NAME="" \
+    SERVICE_TYPE="mosdns" \
+    AGENT_HOST="0.0.0.0" \
+    AGENT_PORT="8080" \
     AGENT_IP="" \
-    HEARTBEAT_INTERVAL="60" \
-    ENABLE_MIHOMO="true" \
-    AGENT_MIHOMO_NAME="mihomo-agent" \
-    AGENT_MIHOMO_PORT="8080" \
-    ENABLE_MOSDNS="true" \
-    AGENT_MOSDNS_NAME="mosdns-agent" \
-    AGENT_MOSDNS_PORT="8081" \
+    SERVICE_NAME="mosdns" \
+    CONFIG_PATH="/etc/mosdns/config.yaml" \
+    RESTART_COMMAND="" \
+    HEARTBEAT_INTERVAL="30" \
     TZ=Asia/Shanghai
 
-# 暴露端口
-# Agent 端口
-EXPOSE 8080 8081
-# DNS 端口
-EXPOSE 53/tcp 53/udp 1053/tcp 1053/udp
-# Mihomo 代理端口
-EXPOSE 7890 7891 9090
+# 暴露 agent 端口和 mosdns DNS 端口
+EXPOSE 8080
+# mosdns DNS 端口 (TCP/UDP)
+EXPOSE 53/tcp 53/udp
+# mosdns Web UI 端口（如果启用）
+EXPOSE 8080/tcp
 
 # 使用 entrypoint 脚本启动
 ENTRYPOINT ["/entrypoint.sh"]

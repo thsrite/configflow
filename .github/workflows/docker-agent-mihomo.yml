@@ -4,8 +4,8 @@ on:
   push:
     paths:
       - 'backend/agents/**'
-      - 'Dockerfile.agent.mihomo'
-      - 'docker-agent-entrypoint-mihomo.sh'
+      - 'docker/Dockerfile.agent.mihomo'
+      - 'docker/docker-agent-entrypoint-mihomo.sh'
       - '.github/workflows/docker-agent-mihomo.yml'
   workflow_dispatch:
 
@@ -29,7 +29,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.agent.mihomo
+          file: ./docker/Dockerfile.agent.mihomo
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ secrets.DOCKER_USERNAME }}/config-flow-agent-mihomo:latest

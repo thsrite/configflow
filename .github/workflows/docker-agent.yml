@@ -5,9 +5,9 @@ on:
   push:
     paths:
       - 'backend/agents/**'
-      - 'Dockerfile.agent'
-      - 'docker-agent-entrypoint.sh'
-      - 'docker-agent-entrypoint-agent.sh'
+      - 'docker/Dockerfile.agent'
+      - 'docker/docker-agent-entrypoint.sh'
+      - 'docker/docker-agent-entrypoint-agent.sh'
       - '.github/workflows/docker-agent.yml'
 
 env:
@@ -49,7 +49,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.agent
+          file: ./docker/Dockerfile.agent
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}:latest

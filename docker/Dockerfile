@@ -55,7 +55,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     chown -R nginx:nginx /var/cache/nginx /var/log/nginx
 
 # 复制 Nginx 配置
-COPY nginx.conf /etc/nginx/nginx.conf
+COPY docker/nginx.conf /etc/nginx/nginx.conf
 
 # 创建 Supervisor 配置
 RUN echo '[supervisord]\n\

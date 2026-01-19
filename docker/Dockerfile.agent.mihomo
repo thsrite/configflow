@@ -53,7 +53,7 @@ RUN chmod -R 755 /etc/mihomo && \
 
 # 使用 RUN --mount 复制配置文件，避免源码目录结构暴露
 RUN --mount=type=bind,source=backend/agents/go-agent,target=/src/agent \
-    --mount=type=bind,source=docker-agent-entrypoint-mihomo.sh,target=/src/entrypoint.sh \
+    --mount=type=bind,source=docker/docker-agent-entrypoint-mihomo.sh,target=/src/entrypoint.sh \
     echo "=== 复制配置文件 ===" && \
     mkdir -p /etc/supervisor/conf.d && \
     cp /src/agent/supervisord.conf /etc/supervisor/supervisord.conf && \

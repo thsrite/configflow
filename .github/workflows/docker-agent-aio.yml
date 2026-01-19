@@ -5,8 +5,8 @@ on:
   push:
     paths:
       - 'backend/agents/**'
-      - 'Dockerfile.agent.aio'
-      - 'docker-agent-entrypoint-aio.sh'
+      - 'docker/Dockerfile.agent.aio'
+      - 'docker/docker-agent-entrypoint-aio.sh'
       - '.github/workflows/docker-agent-aio.yml'
 
 env:
@@ -45,7 +45,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.agent.aio
+          file: ./docker/Dockerfile.agent.aio
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}:latest

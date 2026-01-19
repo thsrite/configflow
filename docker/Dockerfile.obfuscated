@@ -287,7 +287,7 @@ COPY --from=go-builder /dist/ /opt/configflow/static/agents/
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 
 # 复制 Nginx 配置
-COPY nginx.conf /etc/nginx/nginx.conf
+COPY docker/nginx.conf /etc/nginx/nginx.conf
 
 # 设置权限
 RUN chown -R nginx:nginx /usr/share/nginx/html && \
