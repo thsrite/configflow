@@ -283,6 +283,7 @@ def parse_vless(uri: str) -> Dict[str, Any]:
     if params.get('security') == 'reality':
         node_params['pbk'] = params.get('pbk', '')  # public key
         node_params['sid'] = params.get('sid', '')  # short id
+        node_params['spx'] = params.get('spx', '')  # spider-x
 
     # 传输协议相关参数
     if params.get('type') == 'ws':

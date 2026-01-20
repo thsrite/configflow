@@ -1150,7 +1150,8 @@ def convert_node_to_mihomo(node: Dict[str, Any]) -> Dict[str, Any]:
         if security == 'reality':
             base['reality-opts'] = {
                 'public-key': params.get('pbk', ''),
-                'short-id': params.get('sid', '')
+                'short-id': params.get('sid', ''),
+                'spider-x': params.get('spx', '')
             }
 
         base['encryption'] = params.get('encryption', '')
