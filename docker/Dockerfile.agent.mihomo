@@ -1,87 +1,43 @@
-# ==============================================================================
-# Stage 1: Builder - 构建 ConfigFlow Agent 二进制文件
-# ==============================================================================
+# Stage 1: 构建 Go Agent
 FROM golang:1.21-alpine AS builder
 
 WORKDIR /build
-
 ENV GOPROXY=https://goproxy.cn,direct
 
-# 使用 bind mount 避免 Go 源码保留在镜像层中
 RUN --mount=type=bind,source=backend/agents/go-agent,target=/src \
     --mount=type=cache,target=/go/pkg/mod \
-    echo "=== 复制并构建 ConfigFlow Agent ===" && \
-    cp /src/go.mod /src/go.sum ./ && \
-    go mod download && \
-    cp -r /src/* ./ && \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /configflow-agent . && \
-    echo "=== 清理源码 ===" && \
-    rm -rf /build/* && \
-    echo "✓ 只保留二进制文件"
+    cp /src/go.mod /src/go.sum ./ && go mod download && cp -r /src/* ./ && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /configflow-agent .
 
-# ==============================================================================
 # Stage 2: 获取 Mihomo 二进制
-# ==============================================================================
 FROM metacubex/mihomo:latest AS mihomo-builder
 
-# ==============================================================================
 # Stage 3: 最终镜像
-# ==============================================================================
 FROM alpine:latest
 
-# 更换 Alpine 镜像源
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories
-
-# 安装运行时依赖
-RUN apk add --no-cache ca-certificates su-exec supervisor python3-dev py3-pip bash && \
-    pip3 install --break-system-packages "setuptools<81"
-
-# 从 builder 阶段复制 ConfigFlow Agent
+# 复制二进制文件
 COPY --from=builder /configflow-agent /usr/local/bin/configflow-agent
-RUN chmod +x /usr/local/bin/configflow-agent
-
-# 从 mihomo-builder 阶段复制 mihomo 二进制
 COPY --from=mihomo-builder /mihomo /usr/local/bin/mihomo
-RUN chmod +x /usr/local/bin/mihomo
 
-# 创建必要的目录
-RUN mkdir -p /etc/mihomo /etc/supervisor /var/log/supervisor /run
-
-# 设置目录权限（以 root 运行，不需要创建非 root 用户）
-RUN chmod -R 755 /etc/mihomo && \
-    chmod -R 777 /var/log/supervisor /run
-
-# 使用 RUN --mount 复制配置文件，避免源码目录结构暴露
+# 安装依赖、创建目录、复制配置、设置权限（合并为单个 RUN）
 RUN --mount=type=bind,source=backend/agents/go-agent,target=/src/agent \
     --mount=type=bind,source=docker/docker-agent-entrypoint-mihomo.sh,target=/src/entrypoint.sh \
-    echo "=== 复制配置文件 ===" && \
-    mkdir -p /etc/supervisor/conf.d && \
+    sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories && \
+    apk add --no-cache ca-certificates su-exec supervisor python3-dev py3-pip bash && \
+    pip3 install --break-system-packages "setuptools<81" && \
+    mkdir -p /etc/mihomo /etc/supervisor/conf.d /var/log/supervisor /run && \
     cp /src/agent/supervisord.conf /etc/supervisor/supervisord.conf && \
     cp /src/agent/supervisor/mihomo.conf /etc/supervisor/conf.d/ && \
     cp /src/agent/supervisor/agent-mihomo.conf /etc/supervisor/conf.d/ && \
     cp /src/entrypoint.sh /entrypoint.sh && \
-    chmod +x /entrypoint.sh && \
-    echo "✓ 配置文件已复制，不保留源码目录"
+    chmod +x /usr/local/bin/configflow-agent /usr/local/bin/mihomo /entrypoint.sh && \
+    chmod -R 755 /etc/mihomo && chmod -R 777 /var/log/supervisor /run
 
-# 设置环境变量默认值
-ENV SERVER_URL="" \
-    AGENT_NAME="" \
-    SERVICE_TYPE="mihomo" \
-    AGENT_HOST="0.0.0.0" \
-    AGENT_PORT="8080" \
-    AGENT_IP="" \
-    SERVICE_NAME="" \
-    CONFIG_PATH="" \
-    RESTART_COMMAND="" \
-    HEARTBEAT_INTERVAL="30" \
+ENV SERVER_URL="" AGENT_NAME="" SERVICE_TYPE="mihomo" AGENT_HOST="0.0.0.0" AGENT_PORT="8080" \
+    AGENT_IP="" SERVICE_NAME="" CONFIG_PATH="" RESTART_COMMAND="" HEARTBEAT_INTERVAL="30" \
     TZ=Asia/Shanghai
 
-# 暴露 agent 端口
-EXPOSE 8080
-EXPOSE 53/tcp 53/udp
-EXPOSE 1053/tcp 1053/udp
-EXPOSE 7890 7891 7892 9090
+EXPOSE 8080 53/tcp 53/udp 1053/tcp 1053/udp 7890 7891 7892 9090
 
-# 使用 entrypoint 脚本启动
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]

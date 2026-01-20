@@ -1,67 +1,32 @@
-# ==============================================================================
-# Stage 1: Builder - 构建 Go Agent 二进制文件
-# ==============================================================================
+# Stage 1: 构建 Go Agent
 FROM golang:1.21-alpine AS builder
 
-# 设置工作目录
 WORKDIR /build
-
-# 设置 Go 模块代理
 ENV GOPROXY=https://goproxy.cn,direct
 
-# 使用 bind mount 避免 Go 源码保留在镜像层中
-# CGO_ENABLED=0: 创建静态链接的二进制文件，不依赖系统的 C 库，可移植性极高
-# -ldflags="-s -w": 移除调试信息，减小二进制文件体积
 RUN --mount=type=bind,source=backend/agents/go-agent,target=/src \
     --mount=type=cache,target=/go/pkg/mod \
-    echo "=== 复制并构建 ConfigFlow Agent ===" && \
-    cp /src/go.mod /src/go.sum ./ && \
-    go mod download && \
-    cp -r /src/* ./ && \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /configflow-agent . && \
-    echo "=== 清理源码 ===" && \
-    rm -rf /build/* && \
-    echo "✓ 只保留二进制文件"
+    cp /src/go.mod /src/go.sum ./ && go mod download && cp -r /src/* ./ && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /configflow-agent .
 
-# ==============================================================================
-# Stage 2: The Final Image
-# - Uses a minimal Alpine base image.
-# - The final image will NOT contain any Go source code or build tools.
-# ==============================================================================
+# Stage 2: 最终镜像
 FROM alpine:latest
 
-# Change Alpine repository to a Chinese mirror for acceleration
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories
-
-# 安装 supervisor 和其他运行时依赖
-# ca-certificates: 用于 curl 下载 https 资源
-# su-exec: 一个轻量的 sudo/su 替代品
-
-RUN apk add --no-cache ca-certificates supervisor python3-dev py3-pip && pip3 install --break-system-packages "setuptools<81"
-
-# 从 'builder' 阶段复制编译好的二进制文件到最终镜像中
+# 复制二进制和配置文件
 COPY --from=builder /configflow-agent /usr/local/bin/configflow-agent
-
-# 创建 Supervisor 配置目录
-RUN mkdir -p /etc/supervisor
-
-# 复制主 Supervisor 配置文件
 COPY backend/agents/go-agent/supervisord.conf /etc/supervisor/supervisord.conf
-
-# 复制 supervisor 配置文件
 COPY backend/agents/go-agent/supervisor /etc/supervisor/conf.d/
-
-# 为 Supervisor 创建日志目录
-RUN mkdir -p /var/log/supervisor /var/run/supervisor
-# 设置 Supervisor 日志目录权限
-RUN chmod -R 777 /var/log/supervisor /var/run/supervisor
-
-# 复制入口点脚本并赋予执行权限
 COPY docker/docker-agent-entrypoint-agent.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
+
+# 安装依赖、设置权限（合并为单个 RUN）
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories && \
+    apk add --no-cache ca-certificates supervisor python3-dev py3-pip && \
+    pip3 install --break-system-packages "setuptools<81" && \
+    mkdir -p /var/log/supervisor /var/run/supervisor && \
+    chmod -R 777 /var/log/supervisor /var/run/supervisor && \
+    chmod +x /usr/local/bin/configflow-agent /docker-entrypoint.sh
 
 ENV TZ=Asia/Shanghai
 
-# 设置容器的入口点和默认命令
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
