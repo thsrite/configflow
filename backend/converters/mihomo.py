@@ -10,6 +10,7 @@ logger = get_logger(__name__)
 
 class IndentDumper(yaml.Dumper):
     """自定义 YAML Dumper，增加列表项缩进"""
+
     def increase_indent(self, flow=False, indentless=False):
         return super(IndentDumper, self).increase_indent(flow, False)
 
@@ -168,7 +169,8 @@ def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '') -> s
         follow_group_id = group.get('follow_group')
         if follow_group_id:
             # 查找被跟随的策略组
-            followed_group = next((g for g in config_data.get('proxy_groups', []) if g.get('id') == follow_group_id), None)
+            followed_group = next((g for g in config_data.get('proxy_groups', []) if g.get('id') == follow_group_id),
+                                  None)
             if followed_group:
                 # 使用被跟随策略组的设置
                 manual_nodes = followed_group.get('manual_nodes', [])
@@ -217,7 +219,8 @@ def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '') -> s
                     node_id = item.get('id')
                     if node_id not in ['DIRECT', 'REJECT']:
                         used_node_ids.add(node_id)
-                        logger.debug(f"策略组 '{group.get('name')}' 从 proxies_order 添加节点到 used_node_ids: {node_id}")
+                        logger.debug(
+                            f"策略组 '{group.get('name')}' 从 proxies_order 添加节点到 used_node_ids: {node_id}")
 
     # 收集被策略组直接选择的节点ID（通过 manual_nodes 或 proxies_order）
     directly_selected_node_ids = set()
@@ -228,7 +231,8 @@ def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '') -> s
         # 处理跟随模式
         follow_group_id = group.get('follow_group')
         if follow_group_id:
-            followed_group = next((g for g in config_data.get('proxy_groups', []) if g.get('id') == follow_group_id), None)
+            followed_group = next((g for g in config_data.get('proxy_groups', []) if g.get('id') == follow_group_id),
+                                  None)
             if followed_group:
                 manual_nodes = followed_group.get('manual_nodes', [])
                 proxies_order = followed_group.get('proxies_order', [])
@@ -378,7 +382,8 @@ def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '') -> s
         follow_group_id = group.get('follow_group')
         if follow_group_id:
             # 查找被跟随的策略组
-            followed_group = next((g for g in config_data.get('proxy_groups', []) if g.get('id') == follow_group_id), None)
+            followed_group = next((g for g in config_data.get('proxy_groups', []) if g.get('id') == follow_group_id),
+                                  None)
             if followed_group:
                 # 跟随模式：复制被跟随策略组的所有配置，只保留自己的名称
                 proxy_group['type'] = followed_group['type']  # 类型也跟随
@@ -439,7 +444,8 @@ def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '') -> s
                                     combined_proxies.append(node['name'])
                         elif item.get('type') == 'strategy':
                             group_id = item.get('id')
-                            ref_group = next((g for g in config_data.get('proxy_groups', []) if g.get('id') == group_id), None)
+                            ref_group = next(
+                                (g for g in config_data.get('proxy_groups', []) if g.get('id') == group_id), None)
                             if ref_group:
                                 combined_proxies.append(ref_group['name'])
                         elif item.get('type') == 'aggregation':
@@ -483,7 +489,8 @@ def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '') -> s
 
                     if include_groups:
                         for group_id in include_groups:
-                            ref_group = next((g for g in config_data.get('proxy_groups', []) if g.get('id') == group_id), None)
+                            ref_group = next(
+                                (g for g in config_data.get('proxy_groups', []) if g.get('id') == group_id), None)
                             if ref_group:
                                 strategies_list.append(ref_group['name'])
 
@@ -526,7 +533,8 @@ def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '') -> s
             subscriptions = group.get('subscriptions', [])
 
             # 调试日志
-            logger.debug(f"策略组 {group.get('name')} - aggregations: {aggregation_ids}, manual_nodes: {manual_nodes}, subscriptions: {subscriptions}")
+            logger.debug(
+                f"策略组 {group.get('name')} - aggregations: {aggregation_ids}, manual_nodes: {manual_nodes}, subscriptions: {subscriptions}")
 
             # 兼容旧格式数据
             if not manual_nodes and not aggregation_ids and not include_groups and not subscriptions:
@@ -629,7 +637,8 @@ def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '') -> s
                     elif item.get('type') == 'strategy':
                         group_id = item.get('id')
                         # 根据 ID 查找策略组名称
-                        ref_group = next((g for g in config_data.get('proxy_groups', []) if g.get('id') == group_id), None)
+                        ref_group = next((g for g in config_data.get('proxy_groups', []) if g.get('id') == group_id),
+                                         None)
                         if ref_group:
                             combined_proxies.append(ref_group['name'])
                     elif item.get('type') == 'aggregation':
@@ -682,7 +691,8 @@ def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '') -> s
                 if include_groups:
                     for group_id in include_groups:
                         # 根据 ID 查找策略组名称
-                        ref_group = next((g for g in config_data.get('proxy_groups', []) if g.get('id') == group_id), None)
+                        ref_group = next((g for g in config_data.get('proxy_groups', []) if g.get('id') == group_id),
+                                         None)
                         if ref_group:
                             strategies_list.append(ref_group['name'])
 
@@ -885,7 +895,8 @@ def get_mihomo_provider_downloads(config_data: Dict[str, Any], base_url: str = '
         follow_group_id = group.get('follow_group')
         if follow_group_id:
             # 查找被跟随的策略组
-            followed_group = next((g for g in config_data.get('proxy_groups', []) if g.get('id') == follow_group_id), None)
+            followed_group = next((g for g in config_data.get('proxy_groups', []) if g.get('id') == follow_group_id),
+                                  None)
             if followed_group:
                 # 使用被跟随策略组的设置
                 aggregation_ids = followed_group.get('aggregations', [])
@@ -1120,21 +1131,31 @@ def convert_node_to_mihomo(node: Dict[str, Any]) -> Dict[str, Any]:
 
     elif node_type == 'vless':
         # 基本字段
+        base['udp'] = params.get('udp', True)
         base['uuid'] = params.get('uuid', '')
         base['network'] = params.get('type', 'tcp')
+        base['flow'] = params.get('flow', '')
+        base['packet-encoding'] = params.get('packet-encoding', '')
 
         # 加密方式（VLESS 通常是 none）
         encryption = params.get('encryption', 'none')
-        if encryption and encryption != 'none':
+        if encryption:
             base['encryption'] = encryption
 
         # 处理 security 字段（tls/reality）
         security = params.get('security', 'none')
 
+        base['fingerprint'] = params.get('fingerprint', '')
+        base['client-fingerprint'] = params.get('fp', '')
+        base['skip-cert-verify'] = params.get('skip-cert-verify', False)
+        # smux
+        base['smux'] = {
+            'enabled': params.get('smux', False)
+        }
+
         if security == 'reality':
             # Reality 模式
             base['tls'] = True
-            base['udp'] = True
 
             # servername (从 sni 转换)
             sni = params.get('sni', '')
