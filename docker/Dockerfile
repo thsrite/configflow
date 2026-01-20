@@ -51,11 +51,10 @@ COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 
 # 复制后端代码和配置文件
 COPY backend ./backend
-COPY main.py app.py ./
 COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-ENV FLASK_APP=app.py PYTHONUNBUFFERED=1 DATA_DIR=/data TZ=Asia/Shanghai
+ENV PYTHONUNBUFFERED=1 DATA_DIR=/data TZ=Asia/Shanghai
 
 EXPOSE 80
 

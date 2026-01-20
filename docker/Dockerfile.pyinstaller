@@ -40,13 +40,12 @@ COPY backend/requirements.txt ./
 
 # 安装依赖、复制代码、创建配置文件、打包（合并为单个 RUN）
 RUN --mount=type=bind,source=backend,target=/src/backend \
-    --mount=type=bind,source=main.py,target=/src/main.py \
     --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends binutils && \
     pip install --upgrade pip && pip install pyinstaller && pip install -r requirements.txt && \
-    cp -r /src/backend ./backend && cp /src/main.py ./main.py && \
+    cp -r /src/backend ./backend && \
     cat > main_obfuscated.py << 'ENTRY_EOF'
 #!/usr/bin/env python3
 import sys
