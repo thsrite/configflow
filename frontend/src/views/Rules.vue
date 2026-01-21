@@ -949,6 +949,12 @@ const saveRuleSet = async () => {
   try {
     const ruleSetData = { ...ruleSetForm.value, itemType: 'ruleset' }
     if (isEditRuleSet.value) {
+      // 检查策略是否发生变化，如果变化则清除 group_name
+      const originalItem = allRules.value.find(r => r.id === ruleSetData.id && r.itemType === 'ruleset')
+      if (originalItem && originalItem.policy !== ruleSetData.policy) {
+        // 策略变化，清除组名称
+        ruleSetData.group_name = ''
+      }
       await ruleSetApi.update(ruleSetData.id!, ruleSetData)
       ElMessage.success('更新成功')
     } else {
