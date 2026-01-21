@@ -156,10 +156,14 @@ def test_backup():
     try:
         from webdav3.client import Client
 
+        config_data = get_config()
         data = request.json
         webdav_url = data.get('webdav_url', '').rstrip('/')
         webdav_username = data.get('webdav_username', '')
         webdav_password = data.get('webdav_password', '')
+        # 如果密码是掩码，从配置中读取真实密码
+        if webdav_password == '******':
+            webdav_password = config_data.get('backup', {}).get('webdav_password', '')
         webdav_path = data.get('webdav_path', '/config-flow-backup/')
 
         if not webdav_url or not webdav_username or not webdav_password:
@@ -216,6 +220,9 @@ def backup_now():
         webdav_url = data.get('webdav_url', '').rstrip('/')
         webdav_username = data.get('webdav_username', '')
         webdav_password = data.get('webdav_password', '')
+        # 如果密码是掩码，从配置中读取真实密码
+        if webdav_password == '******':
+            webdav_password = config_data.get('backup', {}).get('webdav_password', '')
         webdav_path = data.get('webdav_path', '/config-flow-backup/')
 
         if not webdav_url or not webdav_username or not webdav_password:
