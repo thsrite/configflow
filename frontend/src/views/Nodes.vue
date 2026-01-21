@@ -58,8 +58,8 @@
             <div class="card-title">
               <span class="node-icon">🌐</span>
               <div class="node-name-group">
-                <span class="node-name">{{ node.name }}</span>
-                <span v-if="node.remark" class="node-remark">{{ node.remark }}</span>
+                <span class="node-name" :title="node.name">{{ node.name }}</span>
+                <span v-if="node.remark" class="node-remark" :title="node.remark">{{ node.remark }}</span>
               </div>
             </div>
           </div>
