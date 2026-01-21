@@ -281,7 +281,7 @@
         </el-form>
         <div class="rename-tip">
           <el-icon><InfoFilled /></el-icon>
-          <span>将应用到组内 {{ groupRenameForm.items.length }} 个规则集</span>
+          <span>留空将显示默认名称</span>
         </div>
       </div>
       <template #footer>
