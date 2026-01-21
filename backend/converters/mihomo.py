@@ -1040,17 +1040,33 @@ def convert_node_to_mihomo(node: Dict[str, Any]) -> Dict[str, Any]:
             # 使用解析后的节点数据
             parsed_node = parsed_nodes[0]
 
-            # 如果是原始对象格式（YAML 对象），使用外层名称
+            # 如果是原始对象格式（YAML 对象），转换为 params 结构以便统一处理
             if parsed_node.get('_raw_object'):
-                # 移除标记字段，使用外层节点名称
-                result = {k: v for k, v in parsed_node.items() if k != '_raw_object'}
-                result['name'] = outer_name  # 使用界面设置的名称
-                return result
-
-            parsed_node['name'] = outer_name  # 使用界面设置的名称
-            node = parsed_node
+                # 将扁平结构转换为 params 结构
+                flat_node = {k: v for k, v in parsed_node.items() if k != '_raw_object'}
+                node = {
+                    'name': outer_name,
+                    'type': flat_node.get('type', ''),
+                    'server': flat_node.get('server', ''),
+                    'port': flat_node.get('port', 0),
+                    'params': {k: v for k, v in flat_node.items() if k not in ['name', 'type', 'server', 'port']}
+                }
+            else:
+                parsed_node['name'] = outer_name  # 使用界面设置的名称
+                node = parsed_node
         except:
             return None
+
+    # 如果是扁平结构（有 _raw_object 标记），转换为 params 结构
+    if node.get('_raw_object'):
+        flat_node = {k: v for k, v in node.items() if k != '_raw_object'}
+        node = {
+            'name': flat_node.get('name', outer_name),
+            'type': flat_node.get('type', ''),
+            'server': flat_node.get('server', ''),
+            'port': flat_node.get('port', 0),
+            'params': {k: v for k, v in flat_node.items() if k not in ['name', 'type', 'server', 'port']}
+        }
 
     node_type = node.get('type', '').lower()
     if not node_type:
