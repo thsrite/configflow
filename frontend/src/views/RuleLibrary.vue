@@ -46,6 +46,14 @@
           <el-icon><Download /></el-icon>
           {{ caching ? '缓存中...' : '批量缓存' }}        </el-button>
         <el-button
+          v-if="selectedRules.length > 0"
+          class="action-btn danger"
+          @click="batchDeleteRules"
+        >
+          <el-icon><Delete /></el-icon>
+          批量删除 ({{ selectedRules.length }})
+        </el-button>
+        <el-button
           class="action-btn action-secondary"
           @click="showBatchImportDialog"
         >
@@ -1180,6 +1188,99 @@ const toggleSelectAll = () => {
   }
 }
 
+// 批量删除规则
+const batchDeleteRules = async () => {
+  if (selectedRules.value.length === 0) return
+
+  try {
+    // 获取所有规则配置，检查关联
+    const { data: allRules } = await api.get('/rules')
+    const relatedRuleSets = allRules.filter(
+      (item: any) => item.itemType === 'ruleset' && selectedRules.value.includes(item.library_rule_id)
+    )
+
+    let confirmMessage = `确定要删除选中的 ${selectedRules.value.length} 条规则吗？`
+    if (relatedRuleSets.length > 0) {
+      confirmMessage = `选中的规则被 ${relatedRuleSets.length} 个规则配置引用，是否一起删除这些规则配置？`
+    }
+
+    await ElMessageBox.confirm(
+      confirmMessage,
+      '批量删除确认',
+      {
+        confirmButtonText: relatedRuleSets.length > 0 ? '一起删除' : '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    // 删除关联的规则配置
+    const deletedRuleSetIds: string[] = []
+    if (relatedRuleSets.length > 0) {
+      for (const ruleSet of relatedRuleSets) {
+        try {
+          await api.delete(`/rule-sets/${ruleSet.id}`)
+          deletedRuleSetIds.push(ruleSet.id)
+        } catch (error) {
+          console.error(`删除规则配置 ${ruleSet.name} 失败:`, error)
+        }
+      }
+
+      // 同步更新 MosDNS 配置
+      if (deletedRuleSetIds.length > 0) {
+        try {
+          const { data: mosdnsConfig } = await api.get('/mosdns/rulesets')
+          const updatedDirectRulesets = mosdnsConfig.direct_rulesets.filter(
+            (id: string) => !deletedRuleSetIds.includes(id)
+          )
+          const updatedProxyRulesets = mosdnsConfig.proxy_rulesets.filter(
+            (id: string) => !deletedRuleSetIds.includes(id)
+          )
+
+          if (updatedDirectRulesets.length !== mosdnsConfig.direct_rulesets.length ||
+              updatedProxyRulesets.length !== mosdnsConfig.proxy_rulesets.length) {
+            await api.post('/mosdns/rulesets', {
+              direct_rulesets: updatedDirectRulesets,
+              proxy_rulesets: updatedProxyRulesets,
+              direct_rules: mosdnsConfig.direct_rules,
+              proxy_rules: mosdnsConfig.proxy_rules
+            })
+          }
+        } catch (error) {
+          console.error('同步更新 MosDNS 配置失败:', error)
+        }
+      }
+    }
+
+    // 批量删除规则仓库
+    let successCount = 0
+    for (const ruleId of selectedRules.value) {
+      try {
+        await api.delete(`/rule-library/${ruleId}`)
+        successCount++
+      } catch (error) {
+        console.error(`删除规则 ${ruleId} 失败:`, error)
+      }
+    }
+
+    // 清空选择
+    selectedRules.value = []
+
+    if (relatedRuleSets.length > 0) {
+      ElMessage.success(`已删除 ${successCount} 条规则及 ${deletedRuleSetIds.length} 个关联的规则配置`)
+    } else {
+      ElMessage.success(`已删除 ${successCount} 条规则`)
+    }
+
+    loadRuleLibrary()
+  } catch (error: any) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error('批量删除失败')
+      console.error('批量删除失败:', error)
+    }
+  }
+}
+
 // 监听视图模式切换，重新初始化拖拽
 watch(viewMode, () => {
   nextTick(() => {
@@ -1269,6 +1370,19 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
   color: #fff;
   box-shadow: 0 12px 30px rgba(87, 104, 255, 0.25);
+}
+
+.action-btn.danger {
+  background: rgba(245, 108, 108, 0.12);
+  border: 1px solid rgba(245, 108, 108, 0.35);
+  color: #f56c6c;
+}
+
+.action-btn.danger:hover {
+  background: rgba(245, 108, 108, 0.18);
+  border-color: rgba(245, 108, 108, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(245, 108, 108, 0.2);
 }
 
 .action-btn:not([disabled]):hover {
