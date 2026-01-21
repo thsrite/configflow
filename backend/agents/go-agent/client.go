@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const AgentVersion = "1.0.4-go"
+const AgentVersion = "1.0.5-go"
 
 // 全局监控数据收集器
 var metricsCollector *MetricsCollector
