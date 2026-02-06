@@ -1027,15 +1027,70 @@ def get_mihomo_ruleset_downloads(config_data: Dict[str, Any], base_url: str = ''
     return downloads
 
 
+def _parse_structured_proxy_string(proxy_string: str) -> Dict[str, Any] | None:
+    """尝试将 proxy_string 解析为结构化的 mihomo proxy dict（JSON/YAML 格式）。
+
+    如果是 JSON/YAML 格式且包含 type 字段，直接返回解析后的 dict；
+    否则返回 None，表示需要通过 Sub-Store 转换。
+    """
+    stripped = proxy_string.strip()
+
+    # URI 链接（ss://, vmess://, vless://, trojan://, hysteria2:// 等）需要 Sub-Store
+    if '://' in stripped.split('\n')[0] and not ':' == stripped.split('://')[0][-1:]:
+        # 检查是否是代理协议 URI（第一行包含 :// 且不是 YAML 的 key: value）
+        first_line = stripped.split('\n')[0].strip()
+        if not first_line.endswith(':') and '://' in first_line:
+            # 进一步确认：如果 :// 前面没有空格，则是 URI
+            scheme_part = first_line.split('://')[0]
+            if ' ' not in scheme_part and ':' not in scheme_part:
+                return None
+
+    # 尝试 JSON 解析（以 { 开头）
+    if stripped.startswith('{'):
+        try:
+            import json
+            data = json.loads(stripped)
+            if isinstance(data, dict) and data.get('type'):
+                return data
+        except Exception:
+            pass
+
+    # 尝试 YAML 解析
+    try:
+        data = yaml.safe_load(stripped)
+        if isinstance(data, dict) and data.get('type'):
+            return data
+    except Exception:
+        pass
+
+    # 无法本地解析，需要 Sub-Store（base64 等）
+    return None
+
+
 def convert_node_to_mihomo(node: Dict[str, Any]) -> Dict[str, Any]:
-    """将通用节点格式转换为 Mihomo 格式（通过 Sub-Store 转换）"""
+    """将通用节点格式转换为 Mihomo 格式。
+
+    JSON/YAML 格式的节点字符串直接本地解析；
+    URI 链接或 base64 格式通过 Sub-Store 转换。
+    """
     from backend.utils.sub_store_client import convert_proxy_string
 
     outer_name = node.get('name', '')
 
-    # 有 proxy_string 的节点：通过 Sub-Store 转换
+    # 有 proxy_string 的节点
     if node.get('proxy_string'):
-        proxy = convert_proxy_string(node['proxy_string'])
+        proxy_string = node['proxy_string']
+
+        # 先尝试本地解析（JSON/YAML 格式）
+        parsed = _parse_structured_proxy_string(proxy_string)
+        if parsed:
+            logger.info(f"节点 '{outer_name}' 为 JSON/YAML 格式，本地解析")
+            parsed['name'] = outer_name
+            return parsed
+
+        # URI 或 base64 格式，通过 Sub-Store 转换
+        logger.info(f"节点 '{outer_name}' 为 URI/base64 格式，调用 Sub-Store 转换")
+        proxy = convert_proxy_string(proxy_string)
         if proxy:
             proxy['name'] = outer_name
             return proxy
