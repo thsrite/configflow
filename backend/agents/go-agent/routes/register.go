@@ -17,6 +17,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *Config) {
 	
 	// 注册日志路由
 	mux.HandleFunc("/api/logs", AuthMiddleware(cfg, GetLogsHandler(cfg)))
+	mux.HandleFunc("/api/logs/clear", AuthMiddleware(cfg, ClearLogHandler(cfg)))
 	
 	// 注册卸载路由
 	mux.HandleFunc("/api/uninstall", AuthMiddleware(cfg, UninstallHandler(cfg)))

@@ -127,6 +127,7 @@ export const agentApi = {
     }
     return api.get(`/agents/${id}/logs?${params.toString()}`)
   },
+  clearLog: (id: string, logPath: string) => api.post(`/agents/${id}/logs/clear`, { log_path: logPath }),
   validateLogPath: (id: string, path: string) => api.post(`/agents/${id}/logs/validate`, { path }),
   getLoggingConfig: (id: string) => api.get(`/agents/${id}/config/logging`),
   setLoggingConfig: (id: string, enabled: boolean) => api.post(`/agents/${id}/config/logging`, { enabled }),

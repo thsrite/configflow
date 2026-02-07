@@ -357,6 +357,24 @@ def get_agent_logs(agent_id):
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+@bp.route('/<agent_id>/logs/clear', methods=['POST'])
+@require_auth
+def clear_agent_log(agent_id):
+    """清空 Agent 指定日志文件"""
+    try:
+        data = request.get_json() or {}
+        log_path = data.get('log_path', '')
+
+        if not log_path:
+            return jsonify({'success': False, 'message': '日志路径不能为空'}), 400
+
+        agent_manager = get_agent_manager()
+        result = agent_manager.clear_agent_log(agent_id, log_path)
+        return jsonify(result), 200 if result.get('success') else 500
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @bp.route('/<agent_id>/logs/validate', methods=['POST'])
 @require_auth
 def validate_log_path(agent_id):

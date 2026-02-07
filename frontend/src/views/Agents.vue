@@ -788,6 +788,10 @@
           </div>
           <div class="logs-footer-right">
             <el-button @click="logsDialogVisible = false">关闭</el-button>
+            <el-button type="danger" plain @click="clearLogs">
+              <el-icon><Delete /></el-icon>
+              清空
+            </el-button>
             <el-button type="primary" @click="refreshLogs">
               <el-icon><Refresh /></el-icon>
               刷新
@@ -1964,6 +1968,47 @@ const refreshLogs = async () => {
   try {
     await loadLogs()
     ElMessage.success('日志刷新成功')
+  } finally {
+    loading.close()
+  }
+}
+
+// 清空日志
+const clearLogs = async () => {
+  if (!currentAgent.value) return
+
+  let logPath = selectedLogPath.value === 'custom' ? customLogPath.value : selectedLogPath.value
+  if (!logPath) {
+    ElMessage.warning('请先选择日志文件')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm('确定要清空该日志文件吗？此操作不可恢复。', '清空日志', {
+      confirmButtonText: '确定清空',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+
+  const loading = ElLoading.service({
+    lock: true,
+    text: '正在清空日志...',
+    background: 'rgba(0, 0, 0, 0.7)'
+  })
+
+  try {
+    const { data } = await agentApi.clearLog(currentAgent.value.id, logPath)
+    if (data.success) {
+      ElMessage.success('日志已清空')
+      await loadLogs()
+    } else {
+      ElMessage.error(data.message || '清空日志失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.message || '清空日志失败')
   } finally {
     loading.close()
   }

@@ -403,6 +403,41 @@ class AgentManager:
         except requests.exceptions.RequestException as e:
             return {'success': False, 'message': f'Connection error: {str(e)}'}
 
+    def clear_agent_log(self, agent_id: str, log_path: str) -> Dict[str, Any]:
+        """
+        清空 Agent 指定日志文件
+
+        Args:
+            agent_id: Agent ID
+            log_path: 日志文件路径
+
+        Returns:
+            Dict: 操作结果
+        """
+        agent = self.get_agent_by_id(agent_id)
+        if not agent:
+            return {'success': False, 'message': 'Agent not found'}
+
+        agent_url = f"http://{agent['host']}:{agent['port']}/api/logs/clear"
+
+        try:
+            response = requests.post(
+                agent_url,
+                json={'log_path': log_path},
+                headers={
+                    'Authorization': f'Bearer {agent["token"]}'
+                },
+                timeout=5
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {'success': False, 'message': f'HTTP {response.status_code}'}
+
+        except requests.exceptions.RequestException as e:
+            return {'success': False, 'message': f'Connection error: {str(e)}'}
+
     def uninstall_agent(self, agent_id: str) -> Dict[str, Any]:
         """
         卸载远程 Agent

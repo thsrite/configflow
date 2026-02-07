@@ -1,10 +1,12 @@
 package routes
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os/exec"
 	"strconv"
+	"log"
 	"net"
 	"regexp"
 	"net/url"
@@ -44,6 +46,55 @@ func GetLogsHandler(cfg *Config) http.HandlerFunc {
 			"logs": logs,
 			"error_logs": errLogs,
 			"service_name": cfg.ServiceName,
+		})
+	}
+}
+
+// ClearLogHandler 清空指定日志文件
+func ClearLogHandler(cfg *Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			JsonResponse(w, http.StatusMethodNotAllowed, map[string]interface{}{
+				"success": false,
+				"message": "Method not allowed",
+			})
+			return
+		}
+
+		var req struct {
+			LogPath string `json:"log_path"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.LogPath == "" {
+			JsonResponse(w, http.StatusBadRequest, map[string]interface{}{
+				"success": false,
+				"message": "log_path is required",
+			})
+			return
+		}
+
+		// 检查文件是否存在
+		if _, err := os.Stat(req.LogPath); os.IsNotExist(err) {
+			JsonResponse(w, http.StatusOK, map[string]interface{}{
+				"success": true,
+				"message": "日志文件不存在，无需清空",
+			})
+			return
+		}
+
+		// 清空文件内容
+		if err := os.WriteFile(req.LogPath, []byte(""), 0644); err != nil {
+			log.Printf("清空日志文件失败: %s, error: %v", req.LogPath, err)
+			JsonResponse(w, http.StatusInternalServerError, map[string]interface{}{
+				"success": false,
+				"message": fmt.Sprintf("清空日志失败: %v", err),
+			})
+			return
+		}
+
+		log.Printf("日志文件已清空: %s", req.LogPath)
+		JsonResponse(w, http.StatusOK, map[string]interface{}{
+			"success": true,
+			"message": "日志已清空",
 		})
 	}
 }
