@@ -730,6 +730,43 @@ def get_docker_run():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+def _prefetch_download_contents(downloads, base_url):
+    """预获取所有下载项的文件内容，写入 item['content']
+
+    Args:
+        downloads: provider_downloads + ruleset_downloads 列表
+        base_url: 服务器基础 URL（server_domain 或前端传递的 base_url）
+    """
+    if not downloads:
+        return
+
+    import requests
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def fetch_one(item):
+        url = item.get('url', '')
+        if not url:
+            return
+        try:
+            # Backend 自身 URL：替换为内部地址避免外部网络绕行
+            fetch_url = url
+            if base_url and url.startswith(base_url):
+                fetch_url = url.replace(base_url, 'http://127.0.0.1:5001', 1)
+
+            resp = requests.get(fetch_url, timeout=30)
+            resp.raise_for_status()
+            item['content'] = resp.text
+            logger.info(f"预获取成功: {item.get('name', url)} ({len(resp.text)} 字符)")
+        except Exception as e:
+            logger.warning(f"预获取失败: {item.get('name', url)}, 错误: {e}, Agent 将 fallback 到 URL 下载")
+            item['content'] = ''
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(fetch_one, item): item for item in downloads}
+        for future in as_completed(futures):
+            future.result()  # 触发异常日志（已在 fetch_one 内处理）
+
+
 @bp.route('/<agent_id>/push-config', methods=['POST'])
 @require_auth
 def push_config_to_agent(agent_id):
@@ -798,6 +835,16 @@ def push_config_to_agent(agent_id):
             logger.error(f"生成配置失败: {gen_error}")
             logger.error(f"错误详情: {error_detail}")
             return jsonify({'success': False, 'message': f'配置生成失败: {str(gen_error)}'}), 500
+
+        # 预获取所有文件内容，随配置一起推送给 Agent（避免 Agent 逐个下载）
+        if provider_downloads or ruleset_downloads:
+            server_domain = config_data.get('system_config', {}).get('server_domain', '').strip()
+            effective_base_url = server_domain or base_url
+            all_downloads = provider_downloads + ruleset_downloads
+            logger.info(f"预获取 {len(all_downloads)} 个文件内容...")
+            _prefetch_download_contents(all_downloads, effective_base_url)
+            prefetched_count = sum(1 for d in all_downloads if d.get('content'))
+            logger.info(f"预获取完成: {prefetched_count}/{len(all_downloads)} 个文件成功")
 
         # 推送到 Agent
         logger.info(f"推送配置到 Agent: {agent.get('host')}:{agent.get('port')}")

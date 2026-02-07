@@ -30,6 +30,7 @@ type ProviderDownloadItem struct {
 	Name      string `json:"name"`
 	URL       string `json:"url"`
 	LocalPath string `json:"local_path"`
+	Content   string `json:"content,omitempty"`
 }
 
 // RulesetDownloadItem 定义规则集下载项的结构
@@ -37,6 +38,7 @@ type RulesetDownloadItem struct {
 	Name      string `json:"name"`
 	URL       string `json:"url"`
 	LocalPath string `json:"local_path"`
+	Content   string `json:"content,omitempty"`
 }
 
 // CustomFileItem 定义自定义文件项的结构
@@ -256,6 +258,17 @@ func downloadRuleset(configDir string, item RulesetDownloadItem) error {
 		localPath = filepath.Join(configDir, localPath)
 	}
 
+	// 如果已提供内容，直接写入文件
+	if item.Content != "" {
+		log.Printf("Writing ruleset content directly: %s -> %s", item.Name, localPath)
+		dir := filepath.Dir(localPath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+		}
+		return os.WriteFile(localPath, []byte(item.Content), 0644)
+	}
+
+	// 否则从 URL 下载（向后兼容）
 	log.Printf("Downloading ruleset: %s from %s to %s (base: %s)", item.Name, item.URL, localPath, configDir)
 	
 	// 创建目标目录
@@ -393,6 +406,17 @@ func downloadProvider(configDir string, item ProviderDownloadItem) error {
 		localPath = filepath.Join(configDir, localPath)
 	}
 
+	// 如果已提供内容，直接写入文件
+	if item.Content != "" {
+		log.Printf("Writing provider content directly: %s -> %s", item.Name, localPath)
+		dir := filepath.Dir(localPath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+		}
+		return os.WriteFile(localPath, []byte(item.Content), 0644)
+	}
+
+	// 否则从 URL 下载（向后兼容）
 	log.Printf("Downloading provider: %s from %s to %s (base: %s)", item.Name, item.URL, localPath, configDir)
 
 	// 创建目标目录

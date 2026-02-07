@@ -1,10 +1,16 @@
 """Agent 版本管理"""
 
 # Agent 最新版本号
-LATEST_AGENT_VERSION = "1.0.6-go"
+LATEST_AGENT_VERSION = "1.0.7-go"
 
 # 版本更新日志（可选）
 VERSION_CHANGELOG = {
+    "1.0.7-go": {
+        "date": "2026-02-07",
+        "features": [
+            "优化配置推送逻辑"
+        ]
+    },
     "1.0.6-go": {
         "date": "2026-01-21",
         "features": [
