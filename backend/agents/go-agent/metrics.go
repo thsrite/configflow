@@ -58,6 +58,10 @@ type MetricsCollector struct {
 
 // NewMetricsCollector 创建新的监控数据收集器
 func NewMetricsCollector() *MetricsCollector {
+	// 初始调用 cpu.Percent(0, false) 来初始化 CPU 采样基准点
+	// 后续非阻塞调用将基于此基准计算 CPU 使用率
+	cpu.Percent(0, false)
+
 	return &MetricsCollector{
 		lastNetStats: make(map[string]net.IOCountersStat),
 		lastNetTime:  time.Time{},
@@ -150,8 +154,9 @@ func (m *MetricsCollector) CollectSystemMetrics() (*SystemMetrics, error) {
 
 // collectCPU 收集 CPU 监控数据
 func (m *MetricsCollector) collectCPU() (CPUMetrics, error) {
-	// 获取 CPU 使用率 (等待 1 秒以获得准确数据)
-	percent, err := cpu.Percent(time.Second, false)
+	// 非阻塞获取 CPU 使用率（基于上次调用到现在的时间段计算）
+	// 避免阻塞 1 秒导致 RouterOS 等嵌入式系统 CPU 占用过高
+	percent, err := cpu.Percent(0, false)
 	if err != nil {
 		return CPUMetrics{}, err
 	}
