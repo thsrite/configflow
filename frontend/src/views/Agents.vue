@@ -228,7 +228,7 @@
             <el-icon><Delete /></el-icon>
             卸载
           </el-button>
-          <el-button class="card-btn info" size="small" @click="deleteAgent(agent)">
+          <el-button class="card-btn info" size="small" :disabled="!isHeartbeatExpired(agent)" @click="deleteAgent(agent)">
             <el-icon><Close /></el-icon>
             删除记录
           </el-button>
@@ -1352,6 +1352,18 @@ const formatTime = (timeStr: string) => {
     return `${Math.floor(diff / 86400)} 天前`
   } catch (e) {
     return 'N/A'
+  }
+}
+
+// 判断心跳是否超过5分钟（允许删除记录）
+const isHeartbeatExpired = (agent: Agent) => {
+  if (!agent.last_heartbeat) return true
+  try {
+    const date = new Date(agent.last_heartbeat)
+    const now = new Date()
+    return (now.getTime() - date.getTime()) > 5 * 60 * 1000
+  } catch {
+    return true
   }
 }
 
