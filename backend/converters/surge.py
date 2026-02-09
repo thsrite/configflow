@@ -92,6 +92,10 @@ def generate_surge_config(config_data: Dict[str, Any], base_url: str = '') -> st
     surge_config_data = config_data.get('surge', {})
     custom_surge_config = surge_config_data.get('custom_config', '')
 
+    # 读取 smart_groups 配置，构建 group_id → policy_priority 的映射
+    smart_groups_config = surge_config_data.get('smart_groups', [])
+    smart_group_map = {sg['group_id']: sg.get('policy_priority', '') for sg in smart_groups_config}
+
     if custom_surge_config and custom_surge_config.strip():
         # 使用自定义配置作为基础
         # 提取 [General] 部分（如果有）
@@ -283,7 +287,7 @@ def generate_surge_config(config_data: Dict[str, Any], base_url: str = '') -> st
         # 跳过禁用的策略组
         if not group.get('enabled', True):
             continue
-        group_line = convert_proxy_group_to_surge(group, config_data, base_url)
+        group_line = convert_proxy_group_to_surge(group, config_data, base_url, smart_group_map)
         if group_line:
             proxy_groups.append(group_line)
 
@@ -756,7 +760,7 @@ def convert_node_to_surge(node: Dict[str, Any]) -> tuple:
     return None, None
 
 
-def convert_proxy_group_to_surge(group: Dict[str, Any], config_data: Dict[str, Any], base_url: str = '') -> str:
+def convert_proxy_group_to_surge(group: Dict[str, Any], config_data: Dict[str, Any], base_url: str = '', smart_group_map: Dict[str, str] = None) -> str:
     """将策略组转换为 Surge 格式"""
     # 获取 effective_base_url
     server_domain = config_data.get('system_config', {}).get('server_domain', '').strip()
@@ -764,6 +768,12 @@ def convert_proxy_group_to_surge(group: Dict[str, Any], config_data: Dict[str, A
 
     name = group['name']
     group_type = group['type']
+
+    # 检查是否需要以 smart 模式输出
+    policy_priority = None
+    if smart_group_map and group.get('id') in smart_group_map:
+        policy_priority = smart_group_map[group['id']]
+        group_type = 'smart'
 
     # 处理跟随模式
     follow_group_id = group.get('follow_group')
@@ -967,6 +977,15 @@ def convert_proxy_group_to_surge(group: Dict[str, Any], config_data: Dict[str, A
         group_line = f"{name} = load-balance"
         if proxy_list:
             group_line += f", {proxy_list}"
+        group_line += f", url = {url}, interval = {interval}"
+    elif group_type == 'smart':
+        url = group.get('url', 'http://www.gstatic.com/generate_204')
+        interval = group.get('interval', 300)
+        group_line = f"{name} = smart"
+        if proxy_list:
+            group_line += f", {proxy_list}"
+        if policy_priority:
+            group_line += f", policy-priority={policy_priority}"
         group_line += f", url = {url}, interval = {interval}"
     else:
         return None

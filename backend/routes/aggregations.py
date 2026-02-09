@@ -409,13 +409,10 @@ def preview_aggregation_nodes(agg_id):
 
         proxies = provider_data.get('proxies', [])
 
-        # 提取节点名称列表
-        node_names = [proxy.get('name', '') for proxy in proxies]
-
         return jsonify({
             'success': True,
-            'count': len(node_names),
-            'nodes': node_names,
+            'count': len(proxies),
+            'nodes': proxies,
             'subscription_node_counts': subscription_node_counts
         })
 

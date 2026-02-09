@@ -94,7 +94,7 @@
             </div>
 
             <el-row :gutter="10">
-              <el-col :xs="24" :sm="12" :md="8">
+              <el-col :xs="24" :sm="12" :md="6">
                 <el-button
                   @click="handleSurgeCustomConfig"
                   style="width: 100%"
@@ -104,7 +104,17 @@
                   <span>基础</span>
                 </el-button>
               </el-col>
-              <el-col :xs="24" :sm="12" :md="8">
+              <el-col :xs="24" :sm="12" :md="6">
+                <el-button
+                  @click="showSurgeSmartDialog"
+                  style="width: 100%"
+                  size="small"
+                >
+                  <el-icon><Setting /></el-icon>
+                  <span>Smart</span>
+                </el-button>
+              </el-col>
+              <el-col :xs="24" :sm="12" :md="6">
                 <el-button
                   @click="handleSurgePreview"
                   :loading="surgePreviewLoading"
@@ -115,7 +125,7 @@
                   <span>预览</span>
                 </el-button>
               </el-col>
-              <el-col :xs="24" :sm="12" :md="8">
+              <el-col :xs="24" :sm="12" :md="6">
                 <el-button
                   type="primary"
                   @click="generateSurge"
@@ -1058,6 +1068,45 @@
       </template>
     </el-dialog>
 
+    <!-- Surge Smart 模式设置对话框 -->
+    <el-dialog
+      v-model="surgeSmartDialogVisible"
+      title="Surge Smart 模式"
+      width="640px"
+      :close-on-click-modal="false"
+    >
+      <el-alert type="info" :closable="false" style="margin-bottom: 16px">
+        <p>选择要在 Surge 中以 Smart 模式输出的策略组，并配置 policy-priority 参数</p>
+        <p style="margin-top: 4px; font-size: 12px; color: #909399">同一策略组在 Mihomo 中仍输出原类型（如 url-test），仅 Surge 配置受影响</p>
+      </el-alert>
+
+      <div v-for="(item, index) in surgeSmartGroups" :key="index" style="display: flex; gap: 8px; margin-bottom: 10px; align-items: center">
+        <el-select v-model="item.group_id" placeholder="选择策略组" style="flex: 1">
+          <el-option
+            v-for="g in proxyGroupOptions"
+            :key="g.id"
+            :label="g.name"
+            :value="g.id"
+          />
+        </el-select>
+        <el-input
+          v-model="item.policy_priority"
+          placeholder="policy-priority，如: 香港:0;美国:1"
+          style="flex: 1.5"
+        />
+        <el-button @click="removeSurgeSmartGroup(index)" type="danger" :icon="Delete" circle size="small" />
+      </div>
+
+      <el-button @click="addSurgeSmartGroup" size="small">
+        + 添加
+      </el-button>
+
+      <template #footer>
+        <el-button @click="surgeSmartDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveSurgeSmartGroups" :loading="savingSurgeSmartGroups">保存</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 备份配置对话框 -->
     <el-dialog
       v-model="backupDialogVisible"
@@ -1147,7 +1196,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DCaret, RefreshLeft } from '@element-plus/icons-vue'
+import { DCaret, RefreshLeft, Delete } from '@element-plus/icons-vue'
 import { generateApi, configApi, customConfigApi, subscriptionApi, nodeApi, ruleApi, ruleSetApi, proxyGroupApi, agentApi, serverDomainApi, configTokenApi, subStoreUrlApi } from '@/api'
 import YamlEditor from '@/components/YamlEditor.vue'
 import api from '@/api'
@@ -1485,6 +1534,53 @@ const subStoreUrl = ref('')
 
 // 订阅聚合开关
 const subscriptionAggregationEnabled = ref(false)
+
+// Surge Smart 模式相关
+const surgeSmartDialogVisible = ref(false)
+const surgeSmartGroups = ref<Array<{group_id: string, policy_priority: string}>>([])
+const proxyGroupOptions = ref<Array<{id: string, name: string}>>([])
+const savingSurgeSmartGroups = ref(false)
+
+const showSurgeSmartDialog = async () => {
+  try {
+    // 并行加载策略组列表和当前 smart_groups 配置
+    const [groupsRes, surgeRes] = await Promise.all([
+      proxyGroupApi.getAll(),
+      customConfigApi.getSurge()
+    ])
+    proxyGroupOptions.value = (groupsRes.data || []).map((g: any) => ({ id: g.id, name: g.name }))
+    surgeSmartGroups.value = (surgeRes.data.smart_groups || []).map((sg: any) => ({
+      group_id: sg.group_id || '',
+      policy_priority: sg.policy_priority || ''
+    }))
+    surgeSmartDialogVisible.value = true
+  } catch (error) {
+    ElMessage.error('加载 Smart 配置失败')
+  }
+}
+
+const addSurgeSmartGroup = () => {
+  surgeSmartGroups.value.push({ group_id: '', policy_priority: '' })
+}
+
+const removeSurgeSmartGroup = (index: number) => {
+  surgeSmartGroups.value.splice(index, 1)
+}
+
+const saveSurgeSmartGroups = async () => {
+  try {
+    savingSurgeSmartGroups.value = true
+    // 过滤掉未选择策略组的空行
+    const validGroups = surgeSmartGroups.value.filter(g => g.group_id)
+    await customConfigApi.saveSurge({ smart_groups: validGroups })
+    ElMessage.success('Smart 配置已保存')
+    surgeSmartDialogVisible.value = false
+  } catch (error) {
+    ElMessage.error('保存失败')
+  } finally {
+    savingSurgeSmartGroups.value = false
+  }
+}
 
 // 处理按钮点击
 const handleSurgeCustomConfig = () => {

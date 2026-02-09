@@ -290,14 +290,20 @@ def handle_custom_surge_config():
 
     if request.method == 'GET':
         # 获取自定义配置（从嵌套结构中读取）
-        surge_config = config_data['surge'].get('custom_config', '')
-        return jsonify({'config': surge_config})
+        surge_config = config_data['surge']
+        return jsonify({
+            'config': surge_config.get('custom_config', ''),
+            'smart_groups': surge_config.get('smart_groups', [])
+        })
 
     elif request.method == 'POST':
-        # 保存自定义配置（保存到嵌套结构中）
+        # 按字段合并更新（而非整体覆盖）
         try:
-            custom_config = request.json.get('config', '')
-            config_data['surge']['custom_config'] = custom_config
+            data = request.json or {}
+            if 'config' in data:
+                config_data['surge']['custom_config'] = data['config']
+            if 'smart_groups' in data:
+                config_data['surge']['smart_groups'] = data['smart_groups']
             save_config()
             return jsonify({'success': True})
         except Exception as e:

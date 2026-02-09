@@ -276,11 +276,26 @@
         <!-- 所有节点列表 -->
         <div v-if="previewNodes.length > 0" class="preview-section">
           <div class="section-title">所有节点</div>
-          <el-scrollbar max-height="300px">
+          <el-scrollbar max-height="400px">
             <div class="node-list">
-              <div v-for="(node, index) in previewNodes" :key="index" class="node-item">
-                <el-icon><Connection /></el-icon>
-                <span>{{ node }}</span>
+              <div
+                v-for="(node, index) in previewNodes"
+                :key="index"
+                class="node-item clickable-node"
+                @click="togglePreviewExpand(index)"
+              >
+                <div class="node-info">
+                  <div class="node-name">
+                    <el-icon><Connection /></el-icon>
+                    <span>{{ node.name }}</span>
+                    <el-icon class="expand-arrow" :class="{ expanded: expandedPreviewNodes.has(index) }"><ArrowDown /></el-icon>
+                  </div>
+                  <div class="node-details">
+                    <el-tag size="small" type="primary">{{ node.type?.toUpperCase() || 'UNKNOWN' }}</el-tag>
+                    <span class="node-server">{{ node.server }}:{{ node.port }}</span>
+                  </div>
+                </div>
+                <pre v-show="expandedPreviewNodes.has(index)" class="code-box" @click.stop>{{ formatNodeToYaml(node) }}</pre>
               </div>
             </div>
           </el-scrollbar>
@@ -330,9 +345,10 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Rank, Edit, Delete, View, Connection, Loading, Postcard, Close, Link, Filter } from '@element-plus/icons-vue'
+import { Plus, Rank, Edit, Delete, View, Connection, Loading, Postcard, Close, Link, Filter, ArrowDown } from '@element-plus/icons-vue'
 import api from '@/api'
 import Sortable from 'sortablejs'
+import * as yaml from 'js-yaml'
 
 interface Subscription {
   id: string
@@ -370,8 +386,9 @@ const cardContainer = ref<HTMLElement | null>(null)
 
 const previewDialogVisible = ref(false)
 const previewLoading = ref(false)
-const previewNodes = ref<string[]>([])
+const previewNodes = ref<any[]>([])
 const previewSubscriptionCounts = ref<Record<string, number>>({})
+const expandedPreviewNodes = ref<Set<number>>(new Set())
 
 const subscriptionNodesDialogVisible = ref(false)
 const subscriptionNodesLoading = ref(false)
@@ -556,10 +573,24 @@ const deleteAggregation = async (aggregation: Aggregation) => {
   }
 }
 
+const togglePreviewExpand = (index: number) => {
+  if (expandedPreviewNodes.value.has(index)) {
+    expandedPreviewNodes.value.delete(index)
+  } else {
+    expandedPreviewNodes.value.add(index)
+  }
+  expandedPreviewNodes.value = new Set(expandedPreviewNodes.value)
+}
+
+const formatNodeToYaml = (node: any) => {
+  return yaml.dump(node, { indent: 2, lineWidth: -1 }).trim()
+}
+
 const handlePreviewNodes = async (aggregation: Aggregation) => {
   if (!aggregation.id) return
   previewDialogVisible.value = true
   previewLoading.value = true
+  expandedPreviewNodes.value = new Set()
 
   try {
     const response = await api.get(`/aggregations/${aggregation.id}/preview`)
@@ -1157,20 +1188,86 @@ onMounted(async () => {
 .node-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
 
 .node-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 0;
+  padding: 12px 16px;
   border-bottom: 1px solid #eef1f8;
   color: #4b5678;
 }
 
+.node-item.clickable-node {
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.node-item.clickable-node:hover {
+  background: #f7f8ff;
+}
+
 .node-item:last-child {
   border-bottom: none;
+}
+
+.node-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.node-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.node-name .el-icon {
+  color: #4e5eff;
+  font-size: 16px;
+}
+
+.expand-arrow {
+  font-size: 14px;
+  color: #7d88af;
+  margin-left: auto;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.expand-arrow.expanded {
+  transform: rotate(180deg);
+}
+
+.node-details {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: #7d88af;
+}
+
+.node-server {
+  font-family: 'SFMono-Regular', 'Consolas', 'Monaco', monospace;
+  color: #7d88af;
+}
+
+.code-box {
+  margin-top: 10px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #f4f6ff;
+  color: #1f2d3d;
+  font-size: 13px;
+  font-family: 'SFMono-Regular', 'Consolas', 'Monaco', monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid rgba(107, 115, 255, 0.1);
+  cursor: text;
 }
 
 @media (max-width: 1024px) {

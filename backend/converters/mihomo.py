@@ -1,6 +1,6 @@
 """Mihomo (Clash Meta) 配置生成器"""
 import yaml
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from backend.utils.logger import get_logger
 
 # 获取当前模块的日志记录器
@@ -1027,7 +1027,7 @@ def get_mihomo_ruleset_downloads(config_data: Dict[str, Any], base_url: str = ''
     return downloads
 
 
-def _parse_structured_proxy_string(proxy_string: str) -> Dict[str, Any] | None:
+def _parse_structured_proxy_string(proxy_string: str) -> Optional[Dict[str, Any]]:
     """尝试将 proxy_string 解析为结构化的 mihomo proxy dict（JSON/YAML 格式）。
 
     如果是 JSON/YAML 格式且包含 type 字段，直接返回解析后的 dict；
