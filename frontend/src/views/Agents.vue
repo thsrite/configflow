@@ -1561,6 +1561,15 @@ const generateScript = async () => {
     return
   }
 
+  // Shell 安装时检查配置文件路径是否为文件而非目录
+  if (scriptForm.value.installType === 'shell') {
+    const configPath = scriptForm.value.config_path.trim()
+    if (configPath && !configPath.match(/\.\w+$/)) {
+      ElMessage.warning('配置文件路径应指向一个文件（如 config.yaml），而不是文件夹')
+      return
+    }
+  }
+
   const loading = ElLoading.service({
     lock: true,
     text: (scriptForm.value.installType === 'docker' || scriptForm.value.installType === 'docker-mihomo' || scriptForm.value.installType === 'docker-mosdns' || scriptForm.value.installType === 'docker-aio') ? '正在生成 Docker 部署命令...' : '正在生成安装命令...',
