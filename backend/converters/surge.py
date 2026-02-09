@@ -404,7 +404,16 @@ def generate_surge_config(config_data: Dict[str, Any], base_url: str = '') -> st
         sections.extend(wireguard_sections)
 
     # 组合所有部分
-    return '\n\n'.join(sections)
+    config_output = '\n\n'.join(sections)
+
+    # 在最上方添加远程托管配置
+    config_token = config_data.get('system_config', {}).get('config_token', '')
+    surge_url = f"{effective_base_url}/api/config/surge"
+    if config_token:
+        surge_url += f"?token={config_token}"
+    managed_line = f"#!MANAGED-CONFIG {surge_url} interval=86400 strict=true"
+
+    return f"{managed_line}\n\n{config_output}"
 
 
 def convert_proxies_to_surge_text(proxies: List[Dict[str, Any]]) -> str:
