@@ -202,20 +202,23 @@
       <div class="nodes-list">
         <el-scrollbar max-height="500px">
           <div
-            v-for="node in previewNodes"
+            v-for="(node, index) in previewNodes"
             :key="node.id"
             class="node-item"
+            @click="togglePreviewExpand(index)"
           >
             <div class="node-info">
               <div class="node-name">
                 <el-icon><Connection /></el-icon>
                 <span>{{ node.name }}</span>
+                <el-icon class="expand-arrow" :class="{ expanded: expandedPreviewNodes.has(index) }"><ArrowDown /></el-icon>
               </div>
               <div class="node-details">
                 <el-tag size="small" type="primary">{{ node.type?.toUpperCase() || 'UNKNOWN' }}</el-tag>
                 <span class="node-server">{{ node.server }}:{{ node.port }}</span>
               </div>
             </div>
+            <pre v-show="expandedPreviewNodes.has(index)" class="code-box" @click.stop>{{ formatNodeToYaml(node) }}</pre>
           </div>
           <el-empty v-if="previewNodes.length === 0" description="暂无节点" />
         </el-scrollbar>
@@ -230,11 +233,12 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElLoading, ElMessageBox } from 'element-plus'
-import { Plus, DCaret, Connection, Loading, CircleCheck, CircleClose, Minus, RefreshRight, View, Hide, Link, Calendar, EditPen, Delete, Close } from '@element-plus/icons-vue'
+import { Plus, DCaret, Connection, Loading, CircleCheck, CircleClose, Minus, RefreshRight, View, Hide, Link, Calendar, EditPen, Delete, Close, ArrowDown } from '@element-plus/icons-vue'
 import { subscriptionApi, subStoreUrlApi } from '@/api'
 import type { Subscription } from '@/types'
 import Sortable from 'sortablejs'
 import api from '@/api'
+import yaml from 'js-yaml'
 
 const subscriptions = ref<Subscription[]>([])
 const subscriptionsContainer = ref<HTMLElement | null>(null)
@@ -262,6 +266,7 @@ const form = ref<Partial<Subscription>>({
 // 节点预览相关
 const nodesPreviewVisible = ref(false)
 const previewNodes = ref<any[]>([])
+const expandedPreviewNodes = ref<Set<number>>(new Set())
 const revealedUrls = ref<Record<string, boolean>>({})
 
 // 订阅状态管理
@@ -308,6 +313,29 @@ const formatInterval = (seconds: number) => {
   } else {
     return `${Math.floor(seconds / 86400)} 天`
   }
+}
+
+// 切换预览节点展开/收起
+const togglePreviewExpand = (index: number) => {
+  if (expandedPreviewNodes.value.has(index)) {
+    expandedPreviewNodes.value.delete(index)
+  } else {
+    expandedPreviewNodes.value.add(index)
+  }
+  expandedPreviewNodes.value = new Set(expandedPreviewNodes.value)
+}
+
+// 将节点数据格式化为 YAML
+const formatNodeToYaml = (node: any) => {
+  const { id, ...rest } = node
+  const proxy: Record<string, any> = {
+    name: rest.name,
+    type: rest.type,
+    server: rest.server,
+    port: rest.port,
+    ...rest.params
+  }
+  return yaml.dump(proxy, { indent: 2, lineWidth: -1 }).trim()
 }
 
 const loadSubscriptions = async () => {
@@ -510,6 +538,7 @@ const fetchSubscription = async (row: Subscription) => {
     if (data.success) {
       // 显示节点预览
       previewNodes.value = data.nodes || []
+      expandedPreviewNodes.value = new Set()
       nodesPreviewVisible.value = true
       const cachedCount = data.cached_count ?? previewNodes.value.length
       const updatedAt = data.cached_updated_at ?? null
@@ -1440,10 +1469,39 @@ onUnmounted(() => {
   padding: 12px 20px;
   border-bottom: 1px solid #eef1f8;
   transition: background 0.2s ease;
+  cursor: pointer;
 }
 
 .nodes-preview-dialog .node-item:hover {
   background: #f7f8ff;
+}
+
+.nodes-preview-dialog .node-item .expand-arrow {
+  font-size: 14px;
+  color: #7d88af;
+  margin-left: auto;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.nodes-preview-dialog .node-item .expand-arrow.expanded {
+  transform: rotate(180deg);
+}
+
+.nodes-preview-dialog .code-box {
+  margin-top: 10px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #f4f6ff;
+  color: #1f2d3d;
+  font-size: 13px;
+  font-family: 'SFMono-Regular', 'Consolas', 'Monaco', monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid rgba(107, 115, 255, 0.1);
+  cursor: text;
 }
 
 .nodes-preview-dialog .node-item:last-child {
