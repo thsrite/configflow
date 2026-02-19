@@ -144,6 +144,14 @@
           <el-button
             class="list-btn"
             size="small"
+            @click="copyRuleUrl(rule)"
+            title="复制下载URL"
+          >
+            <el-icon><CopyDocument /></el-icon>
+          </el-button>
+          <el-button
+            class="list-btn"
+            size="small"
             @click="editRule(rule)"
             title="编辑"
           >
@@ -222,6 +230,14 @@
           >
             <el-icon><Plus /></el-icon>
             添加规则
+          </el-button>
+          <el-button
+            class="card-btn ghost"
+            size="small"
+            @click="copyRuleUrl(rule)"
+          >
+            <el-icon><CopyDocument /></el-icon>
+            复制URL
           </el-button>
           <el-button
             class="card-btn ghost"
@@ -438,7 +454,8 @@ import {
   Link,
   Document,
   List,
-  Grid
+  Grid,
+  CopyDocument
 } from '@element-plus/icons-vue'
 import api from '@/api'
 import Sortable from 'sortablejs'
@@ -1157,6 +1174,38 @@ const handleSaveProxyDomains = async () => {
   } catch (error) {
     ElMessage.error('保存代理域名配置失败')
     console.error('保存代理域名配置失败:', error)
+  }
+}
+
+// 生成规则的可下载 URL
+const getRuleDownloadUrl = (rule: RuleLibraryItem): string => {
+  if (rule.source_type === 'content') {
+    const baseUrl = `${window.location.protocol}//${window.location.host}`
+    return `${baseUrl}/api/rule-library/content/${rule.id}`
+  }
+  return rule.url || ''
+}
+
+// 复制 URL 到剪贴板
+const copyRuleUrl = async (rule: RuleLibraryItem) => {
+  const url = getRuleDownloadUrl(rule)
+  if (!url) {
+    ElMessage.warning('该规则没有可用的URL')
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(url)
+    ElMessage.success('URL已复制到剪贴板')
+  } catch (err) {
+    // 降级方案
+    const input = document.createElement('input')
+    input.value = url
+    document.body.appendChild(input)
+    input.select()
+    document.execCommand('copy')
+    document.body.removeChild(input)
+    ElMessage.success('URL已复制到剪贴板')
   }
 }
 
