@@ -1,11 +1,8 @@
 <template>
   <div class="rules-page">
-    <div class="page-header">
-      <div class="title-block">
-        <h2>规则配置</h2>
-        <p>管理您的规则和规则集</p>
-      </div>
-      <div class="header-actions">
+    <ScopeBanner scope="profile" :profile-name="cfProfileName" />
+    <PageHeader title="策略规则" description="单条规则与规则集绑定，仅属于当前配置空间">
+      <template #actions>
         <el-button-group class="view-toggle">
           <el-button
             :class="['toggle-btn', { active: viewMode === 'list' }]"
@@ -23,14 +20,14 @@
           </el-button>
         </el-button-group>
         <el-button
-          class="action-btn action-primary"
+          type="primary"
           @click="showAddRuleDialog"
         >
           <el-icon><Plus /></el-icon>
           添加规则
         </el-button>
         <el-button
-          class="action-btn action-primary"
+          type="primary"
           @click="showAddRuleSetDialog"
         >
           <el-icon><Plus /></el-icon>
@@ -38,7 +35,7 @@
         </el-button>
         <el-button
           type="primary"
-          class="action-btn action-secondary"
+         
           @click="handleShowRuleIndex"
         >
           <el-icon><Search /></el-icon>
@@ -46,14 +43,14 @@
         </el-button>
         <el-button
           type="primary"
-          class="action-btn action-secondary"
+         
           @click="showDuplicateDialog"
         >
           <el-icon><CopyDocument /></el-icon>
           查找重复
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <div v-if="allRulesAndSets.length === 0" class="empty-state">
       <el-empty description="暂无规则，请添加规则或规则集" />
@@ -656,6 +653,9 @@
 </template>
 
 <script setup lang="ts">
+import PageHeader from '@/components/shell/PageHeader.vue'
+import ScopeBanner from '@/components/shell/ScopeBanner.vue'
+import { useProfileStore } from '@/stores/profile'
 import { ref, onMounted, onUnmounted, onActivated, computed, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { DCaret, Edit, Delete, FolderOpened, ArrowUp, ArrowDown, Search, Plus, View, Hide, InfoFilled, List, Grid, ChatLineSquare, CopyDocument, Loading } from '@element-plus/icons-vue'
@@ -665,6 +665,11 @@ import { activeProfileId } from '@/profileContext'
 import Sortable from 'sortablejs'
 import api from '@/api'
 
+
+const cfProfileStore = useProfileStore()
+const cfProfileName = computed(
+  () => cfProfileStore.activeProfile.value?.name || cfProfileStore.activeProfileId.value
+)
 const allRules = ref<any[]>([])  // 包含规则和规则集的合并数组
 const proxyGroups = ref<ProxyGroup[]>([])
 const ruleLibrary = ref<any[]>([])  // 规则仓库
@@ -1541,9 +1546,6 @@ onActivated(() => {
 
 <style scoped>
 .rules-page {
-  padding: 28px 32px 40px;
-  background: #f5f7ff;
-  min-height: calc(100vh - 64px);
   --rule-radius-xl: 40px;
   --rule-radius-lg: 24px;
   --rule-radius-md: 16px;
@@ -1561,7 +1563,7 @@ onActivated(() => {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: #f5f7ff;
+  background: var(--cf-bg);
   margin: -28px -32px 28px -32px;
   padding: 28px 32px;
 }
@@ -1570,15 +1572,13 @@ onActivated(() => {
   margin: 0;
   font-size: 26px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  color: transparent;
-}
+  color: var(--cf-fg);
+  }
 
 .title-block p {
   margin: 6px 0 0;
   font-size: 14px;
-  color: #7f87af;
+  color: var(--cf-fg-2);
 }
 
 .header-actions {
@@ -1586,36 +1586,6 @@ onActivated(() => {
   flex-wrap: wrap;
   gap: 12px;
   justify-content: flex-end;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 20px;
-  height: 40px;
-  border-radius: var(--rule-radius-md, 16px);
-  font-weight: 600;
-  font-size: 14px;
-  border: none;
-  background: rgba(107, 115, 255, 0.15);
-  color: #4a5bff;
-  transition: all 0.2s ease;
-}
-
-.action-btn.action-secondary {
-  border: 1px solid rgba(107, 115, 255, 0.35);
-}
-
-.action-btn.action-primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  color: #fff;
-  box-shadow: 0 12px 30px rgba(87, 104, 255, 0.25);
-}
-
-.action-btn:not([disabled]):hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(87, 104, 255, 0.25);
 }
 
 :deep(.action-btn .el-icon) {
@@ -1627,7 +1597,7 @@ onActivated(() => {
   align-items: center;
   justify-content: center;
   min-height: 400px;
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--rule-radius-lg, 24px);
   box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
 }
@@ -1643,7 +1613,7 @@ onActivated(() => {
 }
 
 .rule-card {
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--rule-radius-lg, 24px);
   padding: 20px;
   box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
@@ -1667,7 +1637,7 @@ onActivated(() => {
 }
 
 .rule-card.group-card {
-  background: linear-gradient(135deg, rgba(139, 143, 255, 0.08) 0%, rgba(139, 143, 255, 0.02) 100%);
+  background: var(--cf-s2);
   border-color: rgba(139, 143, 255, 0.25);
   cursor: pointer;
 }
@@ -1678,8 +1648,8 @@ onActivated(() => {
 }
 
 .rule-card.expanded-group-item {
-  border-left: 3px solid #8b8fff;
-  background: linear-gradient(90deg, rgba(139, 143, 255, 0.05) 0%, rgba(139, 143, 255, 0.01) 100%);
+  border-left: 3px solid var(--cf-primary-hover);
+  background: var(--cf-s2);
 }
 
 .card-header {
@@ -1704,7 +1674,7 @@ onActivated(() => {
   border-radius: 50%;
   border: none;
   background: rgba(107, 115, 255, 0.08);
-  color: #7c86ae;
+  color: var(--cf-fg-2);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1714,13 +1684,13 @@ onActivated(() => {
 
 .card-drag-handle:hover {
   background: rgba(107, 115, 255, 0.15);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .card-title {
   font-size: 16px;
   font-weight: 700;
-  color: #30354d;
+  color: var(--cf-fg);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1735,20 +1705,20 @@ onActivated(() => {
 
 .card-type-badge.rule {
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   border: 1px solid rgba(107, 115, 255, 0.18);
 }
 
 .card-type-badge.ruleset {
   background: rgba(139, 143, 255, 0.12);
-  color: #8b8fff;
+  color: var(--cf-primary-hover);
   border: 1px solid rgba(139, 143, 255, 0.18);
 }
 
 .collapse-btn {
   font-size: 12px;
   padding: 2px 8px;
-  color: #8b8fff;
+  color: var(--cf-primary-hover);
 }
 
 .card-header-actions {
@@ -1761,7 +1731,7 @@ onActivated(() => {
   border-radius: var(--rule-radius-pill, 999px);
   border: 1px solid rgba(107, 115, 255, 0.24);
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   font-weight: 600;
   padding: 7px 12px;
 }
@@ -1769,7 +1739,7 @@ onActivated(() => {
 .collapse-group-btn:hover {
   border-color: rgba(107, 115, 255, 0.4);
   background: rgba(107, 115, 255, 0.18);
-  color: #3346ff;
+  color: var(--cf-primary);
 }
 
 .collapse-group-btn .el-icon {
@@ -1783,7 +1753,7 @@ onActivated(() => {
   border-radius: 50%;
   border: none;
   background: rgba(107, 115, 255, 0.18);
-  color: #4e5eff;
+  color: var(--cf-primary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1796,8 +1766,8 @@ onActivated(() => {
 }
 
 .status-toggle.active {
-  background: linear-gradient(135deg, #8b8fff 0%, #6b7dff 100%);
-  color: #fff;
+  background: var(--cf-primary);
+  color: var(--cf-primary-fg);
   box-shadow: 0 12px 28px rgba(87, 104, 255, 0.3);
 }
 
@@ -1808,7 +1778,7 @@ onActivated(() => {
   border-radius: 50%;
   border: 1px solid rgba(124, 134, 174, 0.35);
   background: transparent;
-  color: #7c86ae;
+  color: var(--cf-fg-2);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1819,7 +1789,7 @@ onActivated(() => {
 .expand-btn:hover {
   background: rgba(107, 115, 255, 0.12);
   border-color: rgba(107, 115, 255, 0.35);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .card-meta {
@@ -1840,19 +1810,19 @@ onActivated(() => {
 
 .group-pill {
   background: rgba(139, 143, 255, 0.12);
-  color: #8b8fff;
+  color: var(--cf-primary-hover);
   border: 1px solid rgba(139, 143, 255, 0.18);
 }
 
 .policy-pill {
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   border: 1px solid rgba(107, 115, 255, 0.18);
 }
 
 .count-pill {
   background: rgba(103, 194, 58, 0.12);
-  color: #67c23a;
+  color: var(--cf-success);
   border: 1px solid rgba(103, 194, 58, 0.18);
 }
 
@@ -1864,12 +1834,12 @@ onActivated(() => {
   background: rgba(107, 115, 255, 0.06);
   border-radius: 8px;
   font-size: 13px;
-  color: #7f87af;
+  color: var(--cf-fg-2);
   margin-top: 8px;
 }
 
 .rename-tip .el-icon {
-  color: #6b73ff;
+  color: var(--cf-primary);
   font-size: 16px;
 }
 
@@ -1890,13 +1860,13 @@ onActivated(() => {
 
 .rule-type-inline {
   font-weight: 600;
-  color: #4e5eff;
+  color: var(--cf-primary);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .rule-value-inline {
-  color: #30354d;
+  color: var(--cf-fg);
   word-break: break-all;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1910,7 +1880,7 @@ onActivated(() => {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #909399;
+  color: var(--cf-fg-2);
   padding: 4px 8px;
   background: rgba(144, 147, 153, 0.08);
   border-radius: 6px;
@@ -1934,7 +1904,7 @@ onActivated(() => {
 .ruleset-name {
   font-size: 15px;
   font-weight: 700;
-  color: #30354d;
+  color: var(--cf-fg);
   word-break: break-all;
   line-height: 1.4;
   display: -webkit-box;
@@ -1970,7 +1940,7 @@ onActivated(() => {
   font-size: 12px;
   font-weight: 600;
   background: rgba(144, 147, 153, 0.12);
-  color: #606266;
+  color: var(--cf-fg-2);
 }
 
 .footer-actions {
@@ -2002,7 +1972,7 @@ onActivated(() => {
 .card-btn.ghost {
   background: rgba(107, 115, 255, 0.08);
   border: 1px solid rgba(107, 115, 255, 0.25);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .card-btn.ghost:hover {
@@ -2014,7 +1984,7 @@ onActivated(() => {
 .card-btn.danger {
   background: rgba(155, 143, 255, 0.12);
   border: 1px solid rgba(155, 143, 255, 0.28);
-  color: #9b8fff;
+  color: var(--cf-primary-hover);
 }
 
 .card-btn.danger:hover {
@@ -2024,8 +1994,8 @@ onActivated(() => {
 }
 
 .card-btn.primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  color: #fff;
+  background: var(--cf-primary);
+  color: var(--cf-primary-fg);
   box-shadow: 0 8px 16px rgba(87, 104, 255, 0.25);
 }
 
@@ -2047,30 +2017,28 @@ onActivated(() => {
   padding: 24px 32px;
   margin: 0;
   border-bottom: 1px solid rgba(107, 115, 255, 0.1);
-  background: #f7f8ff;
+  background: var(--cf-s2);
 }
 
 :deep(.rule-dialog .el-dialog__title) {
   font-size: 20px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
+  color: var(--cf-fg);
+  }
 
 :deep(.rule-dialog .el-dialog__body) {
   padding: 28px 32px;
-  background: #f7f8ff;
+  background: var(--cf-s2);
 }
 
 :deep(.rule-dialog .el-dialog__footer) {
   padding: 20px 32px;
   border-top: 1px solid rgba(107, 115, 255, 0.1);
-  background: #f7f8ff;
+  background: var(--cf-s2);
 }
 
 .dialog-card {
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--rule-radius-lg, 24px);
   padding: 24px;
   box-shadow: 0 8px 20px rgba(91, 112, 255, 0.08);
@@ -2086,7 +2054,7 @@ onActivated(() => {
 .rule-form :deep(.el-form-item__label) {
   font-weight: 600;
   font-size: 13px;
-  color: #6c74a0;
+  color: var(--cf-fg-2);
 }
 
 .switch-with-tip {
@@ -2097,12 +2065,12 @@ onActivated(() => {
 
 .form-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--cf-fg-2);
 }
 
 .form-hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--cf-fg-2);
   margin-top: 6px;
 }
 
@@ -2122,11 +2090,11 @@ onActivated(() => {
 .footer-btn.ghost {
   background: rgba(107, 115, 255, 0.08);
   border: 1px solid rgba(107, 115, 255, 0.25);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .footer-btn.primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
+  background: var(--cf-s2);
   border: none;
   box-shadow: 0 8px 16px rgba(87, 104, 255, 0.25);
 }
@@ -2142,7 +2110,7 @@ onActivated(() => {
   justify-content: center;
   gap: 8px;
   padding: 40px 0;
-  color: #6c74a0;
+  color: var(--cf-fg-2);
   font-size: 14px;
 }
 
@@ -2152,7 +2120,7 @@ onActivated(() => {
   gap: 8px;
   margin-bottom: 12px;
   font-size: 13px;
-  color: #6c74a0;
+  color: var(--cf-fg-2);
 }
 
 .dup-list {
@@ -2193,12 +2161,12 @@ onActivated(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #303133;
+  color: var(--cf-fg);
   font-family: monospace;
 }
 
 .dup-occ-meta {
-  color: #909399;
+  color: var(--cf-fg-2);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -2217,18 +2185,18 @@ onActivated(() => {
   justify-content: center;
   background: rgba(107, 115, 255, 0.08);
   border: 1px solid rgba(107, 115, 255, 0.2);
-  color: #7c86ae;
+  color: var(--cf-fg-2);
   transition: all 0.2s ease;
 }
 
 .toggle-btn:hover {
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .toggle-btn.active {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  color: #fff;
+  background: var(--cf-primary);
+  color: var(--cf-primary-fg);
   border-color: transparent;
 }
 
@@ -2252,7 +2220,7 @@ onActivated(() => {
   align-items: center;
   gap: 16px;
   padding: 16px 20px;
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--rule-radius-md, 16px);
   border: 1px solid rgba(107, 115, 255, 0.1);
   box-shadow: 0 4px 12px rgba(65, 80, 180, 0.06);
@@ -2271,7 +2239,7 @@ onActivated(() => {
 }
 
 .list-item.group-item {
-  background: linear-gradient(135deg, rgba(139, 143, 255, 0.08) 0%, rgba(139, 143, 255, 0.02) 100%);
+  background: var(--cf-s2);
   border-color: rgba(139, 143, 255, 0.25);
   cursor: pointer;
 }
@@ -2281,8 +2249,8 @@ onActivated(() => {
 }
 
 .list-item.expanded-group-item {
-  border-left: 3px solid #8b8fff;
-  background: linear-gradient(90deg, rgba(139, 143, 255, 0.05) 0%, rgba(139, 143, 255, 0.01) 100%);
+  border-left: 3px solid var(--cf-primary-hover);
+  background: var(--cf-s2);
 }
 
 .list-item-drag {
@@ -2306,13 +2274,13 @@ onActivated(() => {
 
 .type-badge.rule {
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   border: 1px solid rgba(107, 115, 255, 0.18);
 }
 
 .type-badge.ruleset {
   background: rgba(139, 143, 255, 0.12);
-  color: #8b8fff;
+  color: var(--cf-primary-hover);
   border: 1px solid rgba(139, 143, 255, 0.18);
 }
 
@@ -2324,7 +2292,7 @@ onActivated(() => {
 .list-item-name {
   font-size: 15px;
   font-weight: 600;
-  color: #30354d;
+  color: var(--cf-fg);
   margin-bottom: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2347,17 +2315,17 @@ onActivated(() => {
 
 .meta-badge.group {
   background: rgba(139, 143, 255, 0.12);
-  color: #8b8fff;
+  color: var(--cf-primary-hover);
 }
 
 .meta-badge.policy {
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .meta-badge.count {
   background: rgba(103, 194, 58, 0.12);
-  color: #67c23a;
+  color: var(--cf-success);
 }
 
 .list-item-content {
@@ -2371,13 +2339,13 @@ onActivated(() => {
 
 .rule-type-text {
   font-weight: 600;
-  color: #4e5eff;
+  color: var(--cf-primary);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .rule-value-text {
-  color: #30354d;
+  color: var(--cf-fg);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2386,7 +2354,7 @@ onActivated(() => {
 .ruleset-name-text {
   font-size: 14px;
   font-weight: 600;
-  color: #30354d;
+  color: var(--cf-fg);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2397,7 +2365,7 @@ onActivated(() => {
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: #909399;
+  color: var(--cf-fg-2);
   padding: 2px 8px;
   background: rgba(144, 147, 153, 0.1);
   border-radius: var(--rule-radius-pill, 999px);
@@ -2431,7 +2399,7 @@ onActivated(() => {
   border-radius: 50%;
   background: rgba(107, 115, 255, 0.08);
   border: 1px solid rgba(107, 115, 255, 0.2);
-  color: #4e5eff;
+  color: var(--cf-primary);
   transition: all 0.2s ease;
 }
 
@@ -2444,7 +2412,7 @@ onActivated(() => {
 .list-btn.danger {
   background: rgba(155, 143, 255, 0.12);
   border-color: rgba(155, 143, 255, 0.25);
-  color: #9b8fff;
+  color: var(--cf-primary-hover);
 }
 
 .list-btn.danger:hover {

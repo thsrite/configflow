@@ -1,13 +1,9 @@
 <template>
   <div class="agents-page">
-    <div class="page-header">
-      <div class="title-block">
-        <h2>Agent 管理</h2>
-        <p>管理您的远程 Agent 和服务状态</p>
-      </div>
-      <div class="header-actions">
+    <PageHeader title="Agent" description="Agent 注册、配置推送与运行状态">
+      <template #actions>
         <el-button
-          class="action-btn action-secondary"
+         
           @click="loadAgents"
         >
           <el-icon><Refresh /></el-icon>
@@ -15,14 +11,13 @@
         </el-button>
         <el-button
           type="primary"
-          class="action-btn action-primary"
           @click="handleGenerateScript"
         >
           <el-icon><Document /></el-icon>
           生成安装脚本
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- 统计卡片 -->
     <div class="stats-cards">
@@ -881,6 +876,7 @@
 </template>
 
 <script setup lang="ts">
+import PageHeader from '@/components/shell/PageHeader.vue'
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { Document, Refresh, Monitor, SuccessFilled, WarningFilled, DocumentCopy, QuestionFilled, Connection, Clock, InfoFilled, Upload, RefreshRight, View, Delete, Close, Download, TrendCharts, Setting } from '@element-plus/icons-vue'
@@ -2156,9 +2152,6 @@ onUnmounted(() => {
 
 <style scoped>
 .agents-page {
-  padding: 28px 32px 40px;
-  background: #f5f7ff;
-  min-height: calc(100vh - 64px);
   --agent-radius-xl: 40px;
   --agent-radius-lg: 24px;
   --agent-radius-md: 16px;
@@ -2176,7 +2169,7 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: #f5f7ff;
+  background: var(--cf-bg);
   margin: -28px -32px 28px -32px;
   padding: 28px 32px;
 }
@@ -2185,16 +2178,14 @@ onUnmounted(() => {
   margin: 0;
   font-size: 26px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--cf-fg);
   color: transparent;
 }
 
 .title-block p {
   margin: 6px 0 0;
   font-size: 14px;
-  color: #7f87af;
+  color: var(--cf-fg-2);
 }
 
 .header-actions {
@@ -2202,36 +2193,6 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 12px;
   justify-content: flex-end;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 20px;
-  height: 40px;
-  border-radius: var(--agent-radius-md, 16px);
-  font-weight: 600;
-  font-size: 14px;
-  border: none;
-  background: rgba(107, 115, 255, 0.15);
-  color: #4a5bff;
-  transition: all 0.2s ease;
-}
-
-.action-btn.action-secondary {
-  border: 1px solid rgba(107, 115, 255, 0.35);
-}
-
-.action-btn.action-primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  color: #fff;
-  box-shadow: 0 12px 30px rgba(87, 104, 255, 0.25);
-}
-
-.action-btn:not([disabled]):hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(87, 104, 255, 0.25);
 }
 
 :deep(.action-btn .el-icon) {
@@ -2281,13 +2242,13 @@ onUnmounted(() => {
 .stat-value {
   font-size: 24px;
   font-weight: 600;
-  color: #303133;
+  color: var(--cf-fg);
   line-height: 1;
 }
 
 .stat-label {
   font-size: 14px;
-  color: #909399;
+  color: var(--cf-fg-2);
   margin-top: 4px;
 }
 
@@ -2296,7 +2257,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   min-height: 400px;
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--agent-radius-lg, 24px);
   box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
   margin-top: 24px;
@@ -2310,7 +2271,7 @@ onUnmounted(() => {
 }
 
 .agent-card {
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--agent-radius-lg, 24px);
   padding: 24px;
   box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
@@ -2345,7 +2306,7 @@ onUnmounted(() => {
 .card-title {
   font-size: 17px;
   font-weight: 700;
-  color: #30354d;
+  color: var(--cf-fg);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2370,37 +2331,37 @@ onUnmounted(() => {
 
 .type-pill.type-mihomo {
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   border: 1px solid rgba(107, 115, 255, 0.18);
 }
 
 .type-pill.type-mosdns {
   background: rgba(139, 143, 255, 0.12);
-  color: #8b8fff;
+  color: var(--cf-primary-hover);
   border: 1px solid rgba(139, 143, 255, 0.18);
 }
 
 .status-pill.status-online {
   background: rgba(139, 143, 255, 0.12);
-  color: #8b8fff;
+  color: var(--cf-primary-hover);
   border: 1px solid rgba(139, 143, 255, 0.18);
 }
 
 .status-pill.status-offline {
   background: rgba(245, 108, 108, 0.12);
-  color: #f56c6c;
+  color: var(--cf-danger);
   border: 1px solid rgba(245, 108, 108, 0.18);
 }
 
 .deploy-pill.deploy-shell {
   background: rgba(103, 194, 58, 0.12);
-  color: #67c23a;
+  color: var(--cf-success);
   border: 1px solid rgba(103, 194, 58, 0.18);
 }
 
 .deploy-pill.deploy-docker {
   background: rgba(64, 158, 255, 0.12);
-  color: #409eff;
+  color: var(--cf-primary);
   border: 1px solid rgba(64, 158, 255, 0.18);
 }
 
@@ -2421,19 +2382,19 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #7d88af;
+  color: var(--cf-fg-2);
   font-weight: 600;
 }
 
 .section-label .el-icon {
   font-size: 16px;
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .section-value {
   font-size: 14px;
   font-weight: 600;
-  color: #1f2d3d;
+  color: var(--cf-fg);
   font-family: 'Courier New', Consolas, monospace;
 }
 
@@ -2452,7 +2413,7 @@ onUnmounted(() => {
   margin-bottom: 12px;
   font-weight: 600;
   font-size: 13px;
-  color: #2d3748;
+  color: var(--cf-fg);
 }
 
 .metrics-header .el-button {
@@ -2475,19 +2436,19 @@ onUnmounted(() => {
   align-items: center;
   margin-bottom: 6px;
   font-size: 12px;
-  color: #606266;
+  color: var(--cf-fg-2);
 }
 
 .metric-value {
   font-weight: 600;
-  color: #2d3748;
+  color: var(--cf-fg);
   font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
 }
 
 .metric-detail {
   margin-top: 4px;
   font-size: 11px;
-  color: #909399;
+  color: var(--cf-fg-2);
   font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
 }
 
@@ -2514,14 +2475,14 @@ onUnmounted(() => {
 
 .speed-label {
   font-size: 11px;
-  color: #909399;
+  color: var(--cf-fg-2);
   font-weight: 500;
 }
 
 .speed-value {
   font-size: 13px;
   font-weight: 700;
-  color: #2d3748;
+  color: var(--cf-fg);
   font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
 }
 
@@ -2532,7 +2493,7 @@ onUnmounted(() => {
 }
 
 .metric-item.traffic-total .speed-item {
-  background: linear-gradient(135deg, rgba(64, 158, 255, 0.08) 0%, rgba(103, 194, 58, 0.08) 100%);
+  background: var(--cf-s2);
   border: 1px solid rgba(107, 115, 255, 0.15);
 }
 
@@ -2545,11 +2506,8 @@ onUnmounted(() => {
 .metric-item.traffic-total .speed-value {
   font-size: 14px;
   font-weight: 800;
-  background: linear-gradient(135deg, #409EFF 0%, #67C23A 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
+  color: var(--cf-fg);
+  }
 
 .card-actions {
   display: flex;
@@ -2574,7 +2532,7 @@ onUnmounted(() => {
 
 .card-btn.ghost {
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   border: 1px solid rgba(107, 115, 255, 0.25);
 }
 
@@ -2586,7 +2544,7 @@ onUnmounted(() => {
 
 .card-btn.warning {
   background: rgba(255, 176, 103, 0.12);
-  color: #e6a23c;
+  color: var(--cf-warning);
   border: 1px solid rgba(255, 176, 103, 0.25);
 }
 
@@ -2598,7 +2556,7 @@ onUnmounted(() => {
 
 .card-btn.success {
   background: rgba(139, 143, 255, 0.12);
-  color: #8b8fff;
+  color: var(--cf-primary-hover);
   border: 1px solid rgba(139, 143, 255, 0.25);
 }
 
@@ -2610,7 +2568,7 @@ onUnmounted(() => {
 
 .card-btn.primary {
   background: rgba(64, 158, 255, 0.12);
-  color: #409eff;
+  color: var(--cf-primary);
   border: 1px solid rgba(64, 158, 255, 0.25);
 }
 
@@ -2622,7 +2580,7 @@ onUnmounted(() => {
 
 .card-btn.danger {
   background: rgba(155, 143, 255, 0.12);
-  color: #9b8fff;
+  color: var(--cf-primary-hover);
   border: 1px solid rgba(155, 143, 255, 0.28);
 }
 
@@ -2634,7 +2592,7 @@ onUnmounted(() => {
 
 .card-btn.info {
   background: rgba(144, 147, 153, 0.12);
-  color: #909399;
+  color: var(--cf-fg-2);
   border: 1px solid rgba(144, 147, 153, 0.25);
 }
 
@@ -2658,9 +2616,7 @@ onUnmounted(() => {
 :deep(.el-dialog__title) {
   font-size: 20px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--cf-fg);
   color: transparent;
 }
 
@@ -2694,7 +2650,7 @@ onUnmounted(() => {
 :deep(.el-form-item__label) {
   font-size: 14px;
   font-weight: 600;
-  color: #30354d;
+  color: var(--cf-fg);
   padding-bottom: 8px;
 }
 
@@ -2705,7 +2661,7 @@ onUnmounted(() => {
   border: 1px solid rgba(107, 115, 255, 0.15);
   transition: all 0.2s ease;
   padding: 8px 16px;
-  background-color: #fff;
+  background-color: var(--cf-s1);
 }
 
 :deep(.el-form-item:not(.no-custom-style) .el-input:not(.el-select .el-input) .el-input__wrapper:hover) {
@@ -2713,12 +2669,12 @@ onUnmounted(() => {
 }
 
 :deep(.el-form-item:not(.no-custom-style) .el-input:not(.el-select .el-input) .el-input__wrapper.is-focus) {
-  border-color: #000dff;
+  border-color: var(--cf-primary);
   box-shadow: 0 4px 16px rgba(107, 115, 255, 0.15);
 }
 
 :deep(.el-form-item:not(.no-custom-style) .el-input:not(.el-select .el-input) .el-input__inner) {
-  color: #30354d;
+  color: var(--cf-fg);
   font-size: 14px;
 }
 
@@ -2738,71 +2694,71 @@ onUnmounted(() => {
 }
 
 :deep(.el-form-item:not(.no-custom-style) .el-select .el-input__wrapper.is-focus) {
-  border-color: #000dff;
+  border-color: var(--cf-primary);
   box-shadow: 0 4px 16px rgba(107, 115, 255, 0.15);
 }
 
 /* 确保 el-select 内部的文本颜色正确显示 - Element Plus 2.5.x */
 :deep(.el-select) {
   width: 100%;
-  --el-text-color-regular: #30354d;
-  --el-text-color-placeholder: #909399;
-  --el-fill-color-blank: #fff;
+  --el-text-color-regular: var(--cf-fg);
+  --el-text-color-placeholder: var(--cf-fg-2);
+  --el-fill-color-blank: var(--cf-s1);
 }
 
 :deep(.el-select__wrapper) {
-  background-color: #fff !important;
-  color: #30354d !important;
+  background-color: var(--cf-s1) !important;
+  color: var(--cf-fg) !important;
 }
 
 :deep(.el-select .el-input__inner) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
   font-size: 14px !important;
 }
 
 :deep(.el-select input) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
   font-size: 14px !important;
 }
 
 :deep(.el-select .el-select__selected) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
   font-size: 14px !important;
 }
 
 :deep(.el-select .el-select__selected-item) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
   font-size: 14px !important;
 }
 
 /* 强制覆盖 placeholder 类的颜色 - 更高优先级 */
 :deep(.el-select__selection .el-select__selected-item.el-select__placeholder) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
 }
 
 :deep(div.el-select__selected-item.el-select__placeholder) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
 }
 
 :deep(.el-select__selected-item.el-select__placeholder span) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
 }
 
 /* 真正的空 placeholder */
 :deep(.el-select .el-select__placeholder:not(.el-select__selected-item)) {
-  color: #909399 !important;
+  color: var(--cf-fg-2) !important;
 }
 
 :deep(.el-select .el-select__input) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
 }
 
 :deep(.el-select span) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
 }
 
 :deep(.el-select .el-select__suffix) {
-  color: #909399 !important;
+  color: var(--cf-fg-2) !important;
 }
 
 .agent-profile-native-select {
@@ -2816,8 +2772,8 @@ onUnmounted(() => {
   background-repeat: no-repeat;
   background-position: right 12px center;
   background-size: 12px 12px;
-  color: #30354d;
-  -webkit-text-fill-color: #30354d;
+  color: var(--cf-fg);
+  -webkit-text-fill-color: var(--cf-fg);
   color-scheme: light;
   font-size: 13px;
   font-weight: 600;
@@ -2833,7 +2789,7 @@ onUnmounted(() => {
 }
 
 .agent-profile-native-select:focus {
-  border-color: #5b6dff;
+  border-color: var(--cf-primary);
   box-shadow: 0 0 0 3px rgba(107, 115, 255, 0.15);
   outline: none;
 }
@@ -2844,8 +2800,8 @@ onUnmounted(() => {
 }
 
 .agent-profile-native-select option {
-  background: #fff;
-  color: #30354d;
+  background: var(--cf-s1);
+  color: var(--cf-fg);
   font-weight: 500;
 }
 
@@ -2869,7 +2825,7 @@ onUnmounted(() => {
 :deep(.el-input-number__decrease:hover),
 :deep(.el-input-number__increase:hover) {
   background: rgba(107, 115, 255, 0.15);
-  color: #000dff;
+  color: var(--cf-primary);
 }
 
 /* 单选按钮样式 */
@@ -2896,8 +2852,8 @@ onUnmounted(() => {
 }
 
 :deep(.el-radio.is-checked) {
-  background: linear-gradient(135deg, rgba(107, 115, 255, 0.12) 0%, rgba(0, 13, 255, 0.12) 100%);
-  border-color: #000dff;
+  background: var(--cf-s2);
+  border-color: var(--cf-primary);
 }
 
 :deep(.el-radio__input) {
@@ -2905,14 +2861,14 @@ onUnmounted(() => {
 }
 
 :deep(.el-radio__input.is-checked .el-radio__inner) {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  border-color: #000dff;
+  background: var(--cf-s2);
+  border-color: var(--cf-primary);
 }
 
 :deep(.el-radio__label) {
   font-size: 14px;
   font-weight: 600;
-  color: #30354d;
+  color: var(--cf-fg);
 }
 
 /* Alert 样式 */
@@ -2924,23 +2880,23 @@ onUnmounted(() => {
 
 :deep(.el-alert--warning) {
   background: rgba(255, 176, 103, 0.12);
-  border-left: 3px solid #e6a23c;
+  border-left: 3px solid var(--cf-warning);
 }
 
 :deep(.el-alert--success) {
   background: rgba(139, 143, 255, 0.12);
-  border-left: 3px solid #8b8fff;
+  border-left: 3px solid var(--cf-primary-hover);
 }
 
 :deep(.el-alert--info) {
   background: rgba(107, 115, 255, 0.12);
-  border-left: 3px solid #000dff;
+  border-left: 3px solid var(--cf-primary);
 }
 
 :deep(.el-alert__title) {
   font-size: 13px;
   line-height: 1.6;
-  color: #30354d;
+  color: var(--cf-fg);
 }
 
 /* Divider 样式 */
@@ -2951,8 +2907,8 @@ onUnmounted(() => {
 
 :deep(.el-divider__text) {
   font-weight: 600;
-  color: #000dff;
-  background: #fff;
+  color: var(--cf-primary);
+  background: var(--cf-s1);
   padding: 0 16px;
 }
 
@@ -2965,7 +2921,7 @@ onUnmounted(() => {
 
 :deep(.el-collapse-item__header) {
   font-weight: 600;
-  color: #30354d;
+  color: var(--cf-fg);
   background: rgba(107, 115, 255, 0.05);
   padding: 14px 20px;
   border-bottom: 1px solid rgba(107, 115, 255, 0.1);
@@ -2973,7 +2929,7 @@ onUnmounted(() => {
 
 :deep(.el-collapse-item__content) {
   padding: 20px;
-  background: #fff;
+  background: var(--cf-s1);
 }
 
 /* 按钮样式增强 */
@@ -2985,7 +2941,7 @@ onUnmounted(() => {
 }
 
 :deep(.el-button--primary) {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
+  background: var(--cf-s2);
   box-shadow: 0 8px 20px rgba(107, 115, 255, 0.25);
 }
 
@@ -2995,8 +2951,8 @@ onUnmounted(() => {
 }
 
 :deep(.el-button--success) {
-  background: linear-gradient(135deg, #8b8fff 0%, #6b7dff 100%);
-  color: #fff;
+  background: var(--cf-primary);
+  color: var(--cf-primary-fg);
   box-shadow: 0 8px 20px rgba(139, 143, 255, 0.25);
 }
 
@@ -3007,7 +2963,7 @@ onUnmounted(() => {
 
 :deep(.el-button--default) {
   background: rgba(107, 115, 255, 0.08);
-  color: #000dff;
+  color: var(--cf-primary);
   border: 1px solid rgba(107, 115, 255, 0.15);
 }
 
@@ -3046,14 +3002,14 @@ onUnmounted(() => {
 }
 
 :deep(.el-input-group__append .el-icon) {
-  color: #000dff;
+  color: var(--cf-primary);
 }
 
 /* 描述文本样式 */
 :deep(.el-form-item__content > div[style*="color"]) {
   font-size: 13px;
   line-height: 1.6;
-  color: #7d88af !important;
+  color: var(--cf-fg-2) !important;
 }
 
 :deep(.el-form-item__content > div[style*="margin-top"]) {
@@ -3065,7 +3021,7 @@ onUnmounted(() => {
   border-radius: var(--agent-radius-md, 16px);
   border: 1px solid rgba(107, 115, 255, 0.15);
   box-shadow: 0 12px 32px rgba(65, 80, 180, 0.12);
-  background: #fff;
+  background: var(--cf-s1);
   padding: 4px 0;
 }
 
@@ -3078,23 +3034,23 @@ onUnmounted(() => {
   border-radius: var(--agent-radius-sm, 12px);
   margin: 2px 4px;
   transition: all 0.2s ease;
-  color: #30354d;
+  color: var(--cf-fg);
   font-size: 14px;
 }
 
 :deep(.el-select-dropdown__item:hover) {
   background: rgba(107, 115, 255, 0.08);
-  color: #000dff;
+  color: var(--cf-primary);
 }
 
 :deep(.el-select-dropdown__item.selected) {
-  background: linear-gradient(135deg, rgba(107, 115, 255, 0.12) 0%, rgba(0, 13, 255, 0.12) 100%);
-  color: #000dff;
+  background: var(--cf-s2);
+  color: var(--cf-primary);
   font-weight: 600;
 }
 
 :deep(.el-select-dropdown__item.is-disabled) {
-  color: #c0c4cc;
+  color: var(--cf-fg-3);
   cursor: not-allowed;
 }
 
@@ -3114,11 +3070,11 @@ onUnmounted(() => {
   align-items: center;
   font-weight: 600;
   font-size: 15px;
-  color: #30354d;
+  color: var(--cf-fg);
 }
 
 .command-container {
-  background: linear-gradient(135deg, rgba(107, 115, 255, 0.04) 0%, rgba(0, 13, 255, 0.02) 100%);
+  background: var(--cf-s2);
   padding: 20px;
   border-radius: var(--agent-radius-md, 16px);
   border: 1px solid rgba(107, 115, 255, 0.15);
@@ -3127,7 +3083,7 @@ onUnmounted(() => {
 }
 
 .command-container:hover {
-  background: linear-gradient(135deg, rgba(107, 115, 255, 0.08) 0%, rgba(0, 13, 255, 0.04) 100%);
+  background: var(--cf-s2);
   border-color: rgba(107, 115, 255, 0.25);
   box-shadow: 0 6px 18px rgba(65, 80, 180, 0.1);
   transform: translateY(-2px);
@@ -3137,8 +3093,8 @@ onUnmounted(() => {
   font-family: 'Courier New', Consolas, monospace;
   font-size: 14px;
   font-weight: 500;
-  background: #fff;
-  color: #2c3e50;
+  background: var(--cf-s1);
+  color: var(--cf-fg);
   border: 2px solid rgba(107, 115, 255, 0.25);
   border-radius: var(--agent-radius-md, 16px);
   padding: 16px;
@@ -3152,14 +3108,14 @@ onUnmounted(() => {
 }
 
 .command-input :deep(.el-textarea__inner):focus {
-  border-color: #000dff;
+  border-color: var(--cf-primary);
   box-shadow: 0 4px 16px rgba(107, 115, 255, 0.15);
   outline: none;
 }
 
 .command-input.alpine :deep(.el-textarea__inner) {
   border-color: rgba(139, 143, 255, 0.35);
-  background: linear-gradient(135deg, rgba(139, 143, 255, 0.02) 0%, rgba(139, 143, 255, 0.01) 100%);
+  background: var(--cf-s2);
 }
 
 .command-input.alpine :deep(.el-textarea__inner):hover {
@@ -3167,15 +3123,15 @@ onUnmounted(() => {
 }
 
 .command-input.alpine :deep(.el-textarea__inner):focus {
-  border-color: #8b8fff;
+  border-color: var(--cf-primary-hover);
   box-shadow: 0 4px 16px rgba(139, 143, 255, 0.15);
 }
 
 .command-input.docker-run :deep(.el-textarea__inner) {
   font-family: 'Courier New', Consolas, monospace;
   font-size: 13px;
-  background: linear-gradient(135deg, rgba(64, 158, 255, 0.04) 0%, rgba(64, 158, 255, 0.02) 100%);
-  color: #2c3e50;
+  background: var(--cf-s2);
+  color: var(--cf-fg);
   border: 2px solid rgba(64, 158, 255, 0.35);
   border-radius: var(--agent-radius-md, 16px);
   padding: 14px;
@@ -3189,7 +3145,7 @@ onUnmounted(() => {
 }
 
 .command-input.docker-run :deep(.el-textarea__inner):focus {
-  border-color: #409eff;
+  border-color: var(--cf-primary);
   box-shadow: 0 4px 16px rgba(64, 158, 255, 0.18);
 }
 
@@ -3210,7 +3166,7 @@ onUnmounted(() => {
 }
 
 .command-input.docker-compose :deep(.el-textarea__inner):focus {
-  border-color: #8b8fff;
+  border-color: var(--cf-primary-hover);
   box-shadow: 0 6px 20px rgba(139, 143, 255, 0.2);
 }
 
@@ -3227,7 +3183,7 @@ onUnmounted(() => {
 }
 
 .script-textarea :deep(.el-textarea__inner):focus {
-  border-color: #8b8fff;
+  border-color: var(--cf-primary-hover);
   box-shadow: 0 6px 20px rgba(139, 143, 255, 0.2);
 }
 
@@ -3243,7 +3199,7 @@ onUnmounted(() => {
 .logs-config-section {
   margin-bottom: 12px;
   padding: 12px;
-  background: #f5f7fa;
+  background: var(--cf-bg);
   border-radius: 8px;
 }
 
@@ -3265,11 +3221,11 @@ onUnmounted(() => {
 }
 
 .logs-textarea :deep(.el-textarea__inner):hover {
-  border-color: #525252;
+  border-color: var(--cf-fg-3);
 }
 
 .logs-textarea :deep(.el-textarea__inner):focus {
-  border-color: #000dff;
+  border-color: var(--cf-primary);
   box-shadow: 0 6px 20px rgba(107, 115, 255, 0.2);
 }
 
@@ -3686,7 +3642,7 @@ onUnmounted(() => {
   }
 
   .chart-card {
-    background: #f5f7fa;
+    background: var(--cf-bg);
     border-radius: 8px;
     padding: 16px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
@@ -3695,7 +3651,7 @@ onUnmounted(() => {
   .metrics-info {
     text-align: center;
     padding: 12px;
-    background: #f5f7fa;
+    background: var(--cf-bg);
     border-radius: 6px;
   }
 

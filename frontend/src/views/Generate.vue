@@ -1,11 +1,7 @@
 <template>
   <div class="generate">
-    <div class="page-header">
-      <div class="title-block">
-        <h2>生成配置</h2>
-        <p>生成和管理您的配置文件</p>
-      </div>
-    </div>
+    <ScopeBanner scope="profile" :profile-name="cfProfileName" />
+    <PageHeader title="配置生成" description="Mihomo、Surge 与 MosDNS 配置的生成与预览" />
 
     <div class="config-section">
       <el-row :gutter="20">
@@ -1271,6 +1267,9 @@
 </template>
 
 <script setup lang="ts">
+import PageHeader from '@/components/shell/PageHeader.vue'
+import ScopeBanner from '@/components/shell/ScopeBanner.vue'
+import { useProfileStore } from '@/stores/profile'
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DCaret, RefreshLeft, Delete } from '@element-plus/icons-vue'
@@ -1283,6 +1282,11 @@ import * as yaml from 'js-yaml'
 import Sortable from 'sortablejs'
 
 // DNS 条目接口定义
+
+const cfProfileStore = useProfileStore()
+const cfProfileName = computed(
+  () => cfProfileStore.activeProfile.value?.name || cfProfileStore.activeProfileId.value
+)
 interface DnsEntry {
   id: string
   mode: 'simple' | 'yaml'
@@ -2675,7 +2679,7 @@ onUnmounted(() => {
 <style scoped>
 .generate {
   padding: 28px 32px 40px;
-  background: #f5f7ff;
+  background: var(--cf-bg);
   min-height: calc(100vh - 64px);
   --gen-radius-xl: 40px;
   --gen-radius-lg: 24px;
@@ -2689,7 +2693,7 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: #f5f7ff;
+  background: var(--cf-bg);
   margin: -28px -32px 28px -32px;
   padding: 28px 32px;
 }
@@ -2698,15 +2702,13 @@ onUnmounted(() => {
   margin: 0;
   font-size: 26px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  color: transparent;
-}
+  color: var(--cf-fg);
+  }
 
 .title-block p {
   margin: 6px 0 0;
   font-size: 14px;
-  color: #7f87af;
+  color: var(--cf-fg-2);
 }
 
 .config-section {
@@ -2730,9 +2732,7 @@ h4 {
   margin: 0;
   font-size: 18px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--cf-fg);
   color: transparent;
   display: flex;
   align-items: center;
@@ -2752,21 +2752,21 @@ h4 .el-tag {
 .config-url-box {
   margin-bottom: 16px;
   padding: 14px;
-  background: linear-gradient(135deg, rgba(107, 115, 255, 0.08) 0%, rgba(0, 13, 255, 0.08) 100%);
+  background: var(--cf-s2);
   border-radius: var(--gen-radius-md, 16px);
   border: 1px solid rgba(107, 115, 255, 0.2);
   transition: all 0.2s ease;
 }
 
 .config-url-box:hover {
-  background: linear-gradient(135deg, rgba(107, 115, 255, 0.12) 0%, rgba(0, 13, 255, 0.12) 100%);
+  background: var(--cf-s2);
   border-color: rgba(107, 115, 255, 0.3);
 }
 
 .url-hint {
   margin-top: 8px;
   font-size: 12px;
-  color: #909399;
+  color: var(--cf-fg-2);
   line-height: 1.5;
 }
 
@@ -2797,7 +2797,7 @@ h4 .el-tag {
 /* 服务域名提示文字 - 减小行间距 */
 .server-domain-hint {
   margin-top: 8px;
-  color: #909399;
+  color: var(--cf-fg-2);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -2827,24 +2827,24 @@ h4 .el-tag {
 
 /* 统计卡片样式 */
 :deep(.el-descriptions) {
-  --el-descriptions-item-bordered-label-background: linear-gradient(135deg, rgba(107, 115, 255, 0.05) 0%, rgba(0, 13, 255, 0.05) 100%);
+  --el-descriptions-item-bordered-label-background: var(--cf-s2);
 }
 
 :deep(.el-descriptions__label) {
   font-weight: 600;
-  color: #6B73FF;
+  color: var(--cf-primary);
 }
 
 :deep(.el-descriptions__content) {
   font-weight: 600;
-  color: #4a5568;
+  color: var(--cf-fg);
 }
 
 /* 配置提示样式 */
 :deep(.el-alert) {
   border: none;
-  background: linear-gradient(135deg, rgba(107, 115, 255, 0.1) 0%, rgba(0, 13, 255, 0.1) 100%);
-  border-left: 4px solid #6B73FF;
+  background: var(--cf-s2);
+  border-left: 4px solid var(--cf-primary);
 }
 
 /* 上传按钮样式 */
@@ -2874,7 +2874,7 @@ h4 .el-tag {
 }
 
 :deep(.el-button--primary) {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
+  background: var(--cf-s2);
   border: none;
   box-shadow: 0 8px 16px rgba(87, 104, 255, 0.25);
 }
@@ -2894,7 +2894,7 @@ h4 .el-tag {
 }
 
 :deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 1px #000dff inset, 0 0 0 3px rgba(107, 115, 255, 0.1) !important;
+  box-shadow: 0 0 0 1px var(--cf-primary) inset, 0 0 0 3px rgba(107, 115, 255, 0.1) !important;
 }
 
 /* 对话框样式 */
@@ -2911,26 +2911,24 @@ h4 .el-tag {
   padding: 24px 32px;
   margin: 0;
   border-bottom: 1px solid rgba(107, 115, 255, 0.1);
-  background: #f7f8ff;
+  background: var(--cf-s2);
 }
 
 :deep(.el-dialog__title) {
   font-size: 20px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
+  color: var(--cf-fg);
+  }
 
 :deep(.el-dialog__body) {
   padding: 28px 32px;
-  background: #f7f8ff;
+  background: var(--cf-s2);
 }
 
 :deep(.el-dialog__footer) {
   padding: 20px 32px;
   border-top: 1px solid rgba(107, 115, 255, 0.1);
-  background: #f7f8ff;
+  background: var(--cf-s2);
 }
 
 /* 移动端适配 */
@@ -3268,7 +3266,7 @@ h4 .el-tag {
   padding: 18px;
   border: 1px solid rgba(107, 115, 255, 0.15);
   border-radius: var(--gen-radius-lg, 24px);
-  background: #ffffff;
+  background: var(--cf-s1);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: move;
   box-shadow: 0 4px 12px rgba(65, 80, 180, 0.06);
@@ -3283,7 +3281,7 @@ h4 .el-tag {
 /* 拖拽时的样式 */
 .sortable-ghost {
   opacity: 0.4;
-  background: #f5f7fa;
+  background: var(--cf-bg);
 }
 
 .dns-entry-card:last-child {
@@ -3296,7 +3294,7 @@ h4 .el-tag {
   align-items: center;
   margin-bottom: 16px;
   padding-bottom: 12px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--cf-bd-strong);
 }
 
 .dns-entry-left {
@@ -3306,14 +3304,14 @@ h4 .el-tag {
 }
 
 .drag-handle {
-  color: #909399;
+  color: var(--cf-fg-2);
   cursor: grab;
   transition: all 0.3s;
   transform: rotate(90deg);
 }
 
 .drag-handle:hover {
-  color: #6B73FF;
+  color: var(--cf-primary);
 }
 
 .drag-handle:active {
@@ -3323,7 +3321,7 @@ h4 .el-tag {
 .dns-entry-index {
   font-weight: 600;
   font-size: 14px;
-  color: #303133;
+  color: var(--cf-fg);
 }
 
 .dns-entry-actions {
@@ -3337,16 +3335,16 @@ h4 .el-tag {
 
 /* YAML 验证样式 */
 .yaml-error :deep(.el-textarea__inner) {
-  border-color: #f56c6c !important;
+  border-color: var(--cf-danger) !important;
 }
 
 .yaml-error-message {
   margin-top: 8px;
   padding: 8px 12px;
-  background: #fef0f0;
-  border: 1px solid #fde2e2;
+  background: var(--cf-danger-soft);
+  border: 1px solid var(--cf-danger-soft);
   border-radius: 4px;
-  color: #f56c6c;
+  color: var(--cf-danger);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -3354,10 +3352,10 @@ h4 .el-tag {
 .yaml-success-message {
   margin-top: 8px;
   padding: 6px 12px;
-  background: #f0f9ff;
-  border: 1px solid #d1e7ff;
+  background: var(--cf-primary-soft);
+  border: 1px solid var(--cf-primary-soft);
   border-radius: 4px;
-  color: #8b8fff;
+  color: var(--cf-primary-hover);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -3368,7 +3366,7 @@ h4 .el-tag {
   border: 1px solid rgba(107, 115, 255, 0.15);
   border-radius: var(--gen-radius-md, 16px);
   padding: 16px;
-  background: #fff;
+  background: var(--cf-s1);
   box-shadow: 0 4px 12px rgba(65, 80, 180, 0.06);
   transition: all 0.2s ease;
 }
@@ -3388,7 +3386,7 @@ h4 .el-tag {
   align-items: center;
   margin-bottom: 12px;
   padding-bottom: 10px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--cf-bd-strong);
 }
 
 .custom-match-title {
@@ -3396,7 +3394,7 @@ h4 .el-tag {
   align-items: center;
   gap: 12px;
   font-weight: 600;
-  color: #303133;
+  color: var(--cf-fg);
 }
 
 .custom-match-actions {
@@ -3420,12 +3418,12 @@ h4 .el-tag {
 .custom-match-label {
   font-size: 13px;
   font-weight: 600;
-  color: #606266;
+  color: var(--cf-fg-2);
 }
 
 .custom-match-hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--cf-fg-2);
   line-height: 1.4;
 }
 </style>

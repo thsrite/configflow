@@ -1,11 +1,8 @@
 <template>
   <div class="rule-library-page">
-    <div class="page-header">
-      <div class="title-block">
-        <h2>规则仓库</h2>
-        <p>管理您的规则集和配置</p>
-      </div>
-      <div class="header-actions">
+    <ScopeBanner scope="shared" />
+    <PageHeader title="规则库" description="集中维护规则集来源与缓存，所有配置空间共同使用">
+      <template #actions>
         <el-button-group class="view-toggle">
           <el-button
             :class="['toggle-btn', { active: viewMode === 'list' }]"
@@ -23,14 +20,14 @@
           </el-button>
         </el-button-group>
         <el-button
-          class="action-btn action-secondary"
+         
           @click="showProxyConfigDialog"
         >
           <el-icon><Setting /></el-icon>
           GitHub 代理
         </el-button>
         <el-button
-          class="action-btn action-secondary"
+         
           @click="handleBatchTest"
           :disabled="ruleLibrary.length === 0"
           :loading="testing"
@@ -38,7 +35,7 @@
           <el-icon><Connection /></el-icon>
           {{ testing ? '测试中...' : '批量测试' }}        </el-button>
         <el-button
-          class="action-btn action-secondary"
+         
           @click="handleBatchCache"
           :disabled="selectedRules.length === 0"
           :loading="caching"
@@ -47,14 +44,14 @@
           {{ caching ? '缓存中...' : '批量缓存' }}        </el-button>
         <el-button
           v-if="selectedRules.length > 0"
-          class="action-btn danger"
+          type="danger" plain
           @click="batchDeleteRules"
         >
           <el-icon><Delete /></el-icon>
           批量删除 ({{ selectedRules.length }})
         </el-button>
         <el-button
-          class="action-btn action-secondary"
+         
           @click="showBatchImportDialog"
         >
           <el-icon><Upload /></el-icon>
@@ -62,14 +59,13 @@
         </el-button>
         <el-button
           type="primary"
-          class="action-btn action-primary"
           @click="showAddDialog"
         >
           <el-icon><Plus /></el-icon>
           添加规则集
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <div v-if="ruleLibrary.length === 0" class="empty-state">
       <el-empty description="暂无规则，请添加规则集" />
@@ -435,6 +431,8 @@
 </template>
 
 <script setup lang="ts">
+import PageHeader from '@/components/shell/PageHeader.vue'
+import ScopeBanner from '@/components/shell/ScopeBanner.vue'
 import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -1412,9 +1410,6 @@ onUnmounted(() => {
 
 <style scoped>
 .rule-library-page {
-  padding: 28px 32px 40px;
-  background: #f5f7ff;
-  min-height: calc(100vh - 64px);
   --rule-radius-xl: 40px;
   --rule-radius-lg: 24px;
   --rule-radius-md: 16px;
@@ -1433,7 +1428,7 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: #f5f7ff;
+  background: var(--cf-bg);
   margin: -28px -32px 28px -32px;
   padding: 28px 32px;
 }
@@ -1442,15 +1437,13 @@ onUnmounted(() => {
   margin: 0;
   font-size: 26px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  color: transparent;
-}
+  color: var(--cf-fg);
+  }
 
 .title-block p {
   margin: 6px 0 0;
   font-size: 14px;
-  color: #7f87af;
+  color: var(--cf-fg-2);
 }
 
 .header-actions {
@@ -1458,49 +1451,6 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 12px;
   justify-content: flex-end;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 20px;
-  height: 40px;
-  border-radius: var(--rule-radius-md, 16px);
-  font-weight: 600;
-  font-size: 14px;
-  border: none;
-  background: rgba(107, 115, 255, 0.15);
-  color: #4a5bff;
-  transition: all 0.2s ease;
-}
-
-.action-btn.action-secondary {
-  border: 1px solid rgba(107, 115, 255, 0.35);
-}
-
-.action-btn.action-primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  color: #fff;
-  box-shadow: 0 12px 30px rgba(87, 104, 255, 0.25);
-}
-
-.action-btn.danger {
-  background: rgba(245, 108, 108, 0.12);
-  border: 1px solid rgba(245, 108, 108, 0.35);
-  color: #f56c6c;
-}
-
-.action-btn.danger:hover {
-  background: rgba(245, 108, 108, 0.18);
-  border-color: rgba(245, 108, 108, 0.5);
-  transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(245, 108, 108, 0.2);
-}
-
-.action-btn:not([disabled]):hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(87, 104, 255, 0.25);
 }
 
 :deep(.action-btn .el-icon) {
@@ -1520,18 +1470,18 @@ onUnmounted(() => {
   justify-content: center;
   background: rgba(107, 115, 255, 0.08);
   border: 1px solid rgba(107, 115, 255, 0.2);
-  color: #7c86ae;
+  color: var(--cf-fg-2);
   transition: all 0.2s ease;
 }
 
 .toggle-btn:hover {
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .toggle-btn.active {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  color: #fff;
+  background: var(--cf-primary);
+  color: var(--cf-primary-fg);
   border-color: transparent;
 }
 
@@ -1544,7 +1494,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   min-height: 400px;
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--rule-radius-lg, 24px);
   box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
 }
@@ -1556,7 +1506,7 @@ onUnmounted(() => {
   gap: 16px;
   padding: 12px 20px;
   margin-bottom: 16px;
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--rule-radius-md, 16px);
   border: 1px solid rgba(107, 115, 255, 0.15);
   box-shadow: 0 4px 12px rgba(65, 80, 180, 0.06);
@@ -1564,7 +1514,7 @@ onUnmounted(() => {
 
 .selection-count {
   font-size: 13px;
-  color: #4e5eff;
+  color: var(--cf-primary);
   font-weight: 600;
   padding: 4px 12px;
   background: rgba(107, 115, 255, 0.12);
@@ -1589,7 +1539,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 16px;
   padding: 16px 20px;
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--rule-radius-md, 16px);
   border: 1px solid rgba(107, 115, 255, 0.1);
   box-shadow: 0 4px 12px rgba(65, 80, 180, 0.06);
@@ -1619,7 +1569,7 @@ onUnmounted(() => {
 .list-item-name {
   font-size: 15px;
   font-weight: 600;
-  color: #30354d;
+  color: var(--cf-fg);
   margin-bottom: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1639,20 +1589,20 @@ onUnmounted(() => {
   font-size: 11px;
   font-weight: 600;
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   text-transform: capitalize;
 }
 
 .meta-badge.source {
   background: rgba(144, 147, 153, 0.12);
-  color: #606266;
+  color: var(--cf-fg-2);
 }
 
 .list-item-content {
   flex: 1;
   min-width: 0;
   font-size: 13px;
-  color: #4b5678;
+  color: var(--cf-fg);
 }
 
 .content-preview,
@@ -1665,7 +1615,7 @@ onUnmounted(() => {
 .content-preview {
   font-family: 'Courier New', monospace;
   font-size: 12px;
-  color: #606266;
+  color: var(--cf-fg-2);
 }
 
 .list-item-actions {
@@ -1682,7 +1632,7 @@ onUnmounted(() => {
   border-radius: 50%;
   background: rgba(107, 115, 255, 0.08);
   border: 1px solid rgba(107, 115, 255, 0.2);
-  color: #4e5eff;
+  color: var(--cf-primary);
   transition: all 0.2s ease;
 }
 
@@ -1695,7 +1645,7 @@ onUnmounted(() => {
 .list-btn.danger {
   background: rgba(155, 143, 255, 0.12);
   border-color: rgba(155, 143, 255, 0.25);
-  color: #9b8fff;
+  color: var(--cf-primary-hover);
 }
 
 .list-btn.danger:hover {
@@ -1710,7 +1660,7 @@ onUnmounted(() => {
 }
 
 .rule-card {
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--rule-radius-lg, 24px);
   padding: 24px;
   box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
@@ -1754,7 +1704,7 @@ onUnmounted(() => {
   border-radius: 50%;
   border: none;
   background: rgba(107, 115, 255, 0.08);
-  color: #7c86ae;
+  color: var(--cf-fg-2);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1764,13 +1714,13 @@ onUnmounted(() => {
 
 .card-drag-handle:hover {
   background: rgba(107, 115, 255, 0.15);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .card-title {
   font-size: 17px;
   font-weight: 700;
-  color: #30354d;
+  color: var(--cf-fg);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1783,7 +1733,7 @@ onUnmounted(() => {
   border-radius: 50%;
   border: none;
   background: rgba(107, 115, 255, 0.18);
-  color: #4e5eff;
+  color: var(--cf-primary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1796,8 +1746,8 @@ onUnmounted(() => {
 }
 
 .status-toggle.active {
-  background: linear-gradient(135deg, #8b8fff 0%, #6b7dff 100%);
-  color: #fff;
+  background: var(--cf-primary);
+  color: var(--cf-primary-fg);
   box-shadow: 0 12px 28px rgba(87, 104, 255, 0.3);
 }
 
@@ -1816,7 +1766,7 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 600;
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   border: 1px solid rgba(107, 115, 255, 0.18);
 }
 
@@ -1827,7 +1777,7 @@ onUnmounted(() => {
 .source-pill {
   background: rgba(144, 147, 153, 0.12);
   border-color: rgba(144, 147, 153, 0.18);
-  color: #606266;
+  color: var(--cf-fg-2);
 }
 
 .card-section {
@@ -1841,13 +1791,13 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #7d88af;
+  color: var(--cf-fg-2);
   font-weight: 600;
 }
 
 .section-label .el-icon {
   font-size: 16px;
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .url-box,
@@ -1857,7 +1807,7 @@ onUnmounted(() => {
   border-radius: var(--rule-radius-md, 16px);
   padding: 12px 14px;
   font-size: 13px;
-  color: #4b5678;
+  color: var(--cf-fg);
   word-break: break-all;
   transition: all 0.2s ease;
 }
@@ -1900,7 +1850,7 @@ onUnmounted(() => {
 .card-btn.ghost {
   background: rgba(107, 115, 255, 0.08);
   border: 1px solid rgba(107, 115, 255, 0.25);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .card-btn.ghost:hover {
@@ -1912,7 +1862,7 @@ onUnmounted(() => {
 .card-btn.danger {
   background: rgba(155, 143, 255, 0.12);
   border: 1px solid rgba(155, 143, 255, 0.28);
-  color: #9b8fff;
+  color: var(--cf-primary-hover);
 }
 
 .card-btn.danger:hover {
@@ -1934,30 +1884,28 @@ onUnmounted(() => {
   padding: 24px 32px;
   margin: 0;
   border-bottom: 1px solid rgba(107, 115, 255, 0.1);
-  background: #f7f8ff;
+  background: var(--cf-s2);
 }
 
 :deep(.rule-dialog .el-dialog__title) {
   font-size: 20px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
+  color: var(--cf-fg);
+  }
 
 :deep(.rule-dialog .el-dialog__body) {
   padding: 28px 32px;
-  background: #f7f8ff;
+  background: var(--cf-s2);
 }
 
 :deep(.rule-dialog .el-dialog__footer) {
   padding: 20px 32px;
   border-top: 1px solid rgba(107, 115, 255, 0.1);
-  background: #f7f8ff;
+  background: var(--cf-s2);
 }
 
 .dialog-card {
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--rule-radius-lg, 24px);
   padding: 24px;
   box-shadow: 0 8px 20px rgba(91, 112, 255, 0.08);
@@ -1973,12 +1921,12 @@ onUnmounted(() => {
 .rule-form :deep(.el-form-item__label) {
   font-weight: 600;
   font-size: 13px;
-  color: #6c74a0;
+  color: var(--cf-fg-2);
 }
 
 .helper-text {
   margin-top: 8px;
-  color: #909399;
+  color: var(--cf-fg-2);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -1991,7 +1939,7 @@ onUnmounted(() => {
 
 .status-toggle-row span {
   font-size: 14px;
-  color: #606266;
+  color: var(--cf-fg-2);
 }
 
 .dialog-footer {
@@ -2010,11 +1958,11 @@ onUnmounted(() => {
 .footer-btn.ghost {
   background: rgba(107, 115, 255, 0.08);
   border: 1px solid rgba(107, 115, 255, 0.25);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .footer-btn.primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
+  background: var(--cf-s2);
   border: none;
   box-shadow: 0 8px 16px rgba(87, 104, 255, 0.25);
 }

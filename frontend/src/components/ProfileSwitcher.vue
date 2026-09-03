@@ -86,7 +86,7 @@ onMounted(() => {
 }
 
 .profile-icon {
-  color: #6b7dff;
+  color: var(--cf-primary);
   font-size: 16px;
   flex-shrink: 0;
 }
@@ -106,13 +106,13 @@ onMounted(() => {
 
 .profile-select :deep(.el-select__placeholder),
 .profile-select :deep(.el-input__inner) {
-  color: #4a5bff;
+  color: var(--cf-primary);
   font-weight: 600;
   font-size: 13px;
 }
 
 .profile-manager-button {
-  color: #6b7dff;
+  color: var(--cf-primary);
   padding: 4px;
   height: 28px;
   border-radius: 8px;
@@ -120,7 +120,7 @@ onMounted(() => {
 }
 
 .profile-manager-button:hover {
-  color: #4a5bff;
+  color: var(--cf-primary);
   background: rgba(107, 115, 255, 0.14);
 }
 
@@ -167,16 +167,16 @@ onMounted(() => {
 .profile-select-popper .profile-option-name {
   font-size: 13px;
   font-weight: 600;
-  color: #30354d;
+  color: var(--cf-fg);
 }
 
 .profile-select-popper .el-select-dropdown__item.is-selected .profile-option-name {
-  color: #4a5bff;
+  color: var(--cf-primary);
 }
 
 .profile-select-popper .profile-option-id {
   font-size: 11px;
-  color: #9aa1c4;
+  color: var(--cf-fg-2);
   font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
 }
 </style>

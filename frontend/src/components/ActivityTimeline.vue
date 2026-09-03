@@ -53,7 +53,7 @@ defineProps<Props>()
 .timeline-title {
   font-size: 18px;
   font-weight: 600;
-  color: #fff;
+  color: var(--cf-s1);
   margin: 0 0 24px 0;
 }
 
@@ -136,7 +136,7 @@ defineProps<Props>()
 .activity-action {
   font-size: 14px;
   font-weight: 600;
-  color: #fff;
+  color: var(--cf-s1);
 }
 
 .activity-time {

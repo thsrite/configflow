@@ -123,7 +123,7 @@ const handleLogin = async () => {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #8b8fff 0%, #6b73ff 100%);
+  background: var(--cf-s2);
   padding: 20px;
   position: relative;
   overflow: hidden;
@@ -179,7 +179,7 @@ const handleLogin = async () => {
   left: 0;
   right: 0;
   height: 4px;
-  background: linear-gradient(90deg, #8b8fff 0%, #6b73ff 100%);
+  background: var(--cf-s2);
 }
 
 .login-header {
@@ -190,17 +190,14 @@ const handleLogin = async () => {
 .login-header h2 {
   margin: 0 0 12px 0;
   font-size: 32px;
-  background: linear-gradient(135deg, #8b8fff 0%, #6b73ff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--cf-fg);
   font-weight: 700;
   letter-spacing: -0.5px;
 }
 
 .login-header p {
   margin: 0;
-  color: #8b92a8;
+  color: var(--cf-fg-2);
   font-size: 15px;
   font-weight: 500;
 }
@@ -221,7 +218,7 @@ const handleLogin = async () => {
 
 :deep(.el-input__wrapper) {
   padding: 14px 16px;
-  background: #f8f9fc;
+  background: var(--cf-s2);
   border: 2px solid transparent;
   border-radius: 14px;
   box-shadow: none;
@@ -229,40 +226,40 @@ const handleLogin = async () => {
 }
 
 :deep(.el-input__wrapper:hover) {
-  background: #f3f4f8;
+  background: var(--cf-s3);
   border-color: rgba(139, 143, 255, 0.25);
 }
 
 :deep(.el-input__wrapper.is-focus) {
-  background: #ffffff;
-  border-color: #8b8fff;
+  background: var(--cf-s1);
+  border-color: var(--cf-primary-hover);
   box-shadow: 0 0 0 4px rgba(139, 143, 255, 0.15);
 }
 
 :deep(.el-input__inner) {
   font-size: 15px;
   font-weight: 500;
-  color: #2c3e50;
+  color: var(--cf-fg);
 }
 
 :deep(.el-input__inner::placeholder) {
-  color: #a8b4c8;
+  color: var(--cf-fg-3);
   font-weight: 400;
 }
 
 :deep(.el-input__prefix) {
   font-size: 18px;
-  color: #8b92a8;
+  color: var(--cf-fg-2);
 }
 
 :deep(.el-input__wrapper.is-focus .el-input__prefix) {
-  color: #8b8fff;
+  color: var(--cf-primary-hover);
 }
 
 :deep(.el-button--primary) {
   padding: 16px 24px;
   height: auto;
-  background: linear-gradient(135deg, #8b8fff 0%, #6b73ff 100%);
+  background: var(--cf-s2);
   border: none;
   border-radius: 14px;
   font-weight: 600;
@@ -281,7 +278,7 @@ const handleLogin = async () => {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  background: var(--cf-s2);
   transition: left 0.5s;
 }
 

@@ -1,17 +1,14 @@
 <template>
   <div class="proxy-groups-page">
-    <div class="page-header">
-      <div class="title-block">
-        <h2>策略管理</h2>
-        <p>配置策略组的来源与输出节点</p>
-      </div>
-      <div class="header-actions">
-        <el-button class="action-btn action-primary" @click="showAddDialog">
+    <ScopeBanner scope="profile" :profile-name="cfProfileName" />
+    <PageHeader title="策略组" description="分组、筛选与节点引用，仅属于当前配置空间">
+      <template #actions>
+        <el-button type="primary" @click="showAddDialog">
           <el-icon><Plus /></el-icon>
           添加策略组
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <div class="groups-grid" ref="groupsContainer">
       <div
@@ -470,6 +467,9 @@
   </div>
 </template>
 <script setup lang="ts">
+import PageHeader from '@/components/shell/PageHeader.vue'
+import ScopeBanner from '@/components/shell/ScopeBanner.vue'
+import { useProfileStore } from '@/stores/profile'
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, DCaret, View, Edit, Delete, Link, Connection, Filter, Rank, ArrowDown } from '@element-plus/icons-vue'
@@ -478,6 +478,11 @@ import type { ProxyGroup, ProxyNode, Subscription } from '@/types'
 import api from '@/api'
 import Sortable from 'sortablejs'
 
+
+const cfProfileStore = useProfileStore()
+const cfProfileName = computed(
+  () => cfProfileStore.activeProfile.value?.name || cfProfileStore.activeProfileId.value
+)
 const proxyGroups = ref<ProxyGroup[]>([])
 const nodes = ref<ProxyNode[]>([])
 const subscriptions = ref<Subscription[]>([])
@@ -1683,9 +1688,6 @@ onUnmounted(() => {
 
 <style scoped>
 .proxy-groups-page {
-  padding: 28px 32px 40px;
-  background: #f5f7ff;
-  min-height: calc(100vh - 64px);
   --group-radius-xl: 40px;
   --group-radius-lg: 24px;
   --group-radius-md: 16px;
@@ -1703,7 +1705,7 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: #f5f7ff;
+  background: var(--cf-bg);
   margin: -28px -32px 28px -32px;
   padding: 28px 32px;
 }
@@ -1712,15 +1714,13 @@ onUnmounted(() => {
   margin: 0;
   font-size: 26px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
+  color: var(--cf-fg);
+  }
 
 .title-block p {
   margin: 6px 0 0;
   font-size: 14px;
-  color: #7f87af;
+  color: var(--cf-fg-2);
 }
 
 .header-actions {
@@ -1728,36 +1728,6 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 12px;
   justify-content: flex-end;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 20px;
-  height: 40px;
-  border-radius: var(--group-radius-md, 16px);
-  font-weight: 600;
-  font-size: 14px;
-  border: none;
-  background: rgba(107, 115, 255, 0.15);
-  color: #4a5bff;
-  transition: all 0.2s ease;
-}
-
-.action-btn .el-icon {
-  font-size: 16px;
-}
-
-.action-btn.action-primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  color: #fff;
-  box-shadow: 0 12px 30px rgba(87, 104, 255, 0.25);
-}
-
-.action-btn.action-primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 16px 36px rgba(87, 104, 255, 0.28);
 }
 
 .groups-grid {
@@ -1774,7 +1744,7 @@ onUnmounted(() => {
   gap: 14px;
   padding: 18px 20px 18px;
   border-radius: var(--group-radius-lg, 24px);
-  background: #fff;
+  background: var(--cf-s1);
   border: 1px solid rgba(107, 115, 255, 0.12);
   box-shadow: 0 20px 40px rgba(91, 112, 255, 0.16);
   transition: transform 0.25s ease, box-shadow 0.25s ease;
@@ -1811,14 +1781,14 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   background: rgba(107, 115, 255, 0.14);
-  color: #616bff;
+  color: var(--cf-primary);
   cursor: grab;
   transition: background 0.2s ease, color 0.2s ease;
 }
 
 .card-drag-handle:hover {
   background: rgba(107, 115, 255, 0.22);
-  color: #3f4ffa;
+  color: var(--cf-primary);
 }
 
 .card-title {
@@ -1834,7 +1804,7 @@ onUnmounted(() => {
 .group-name {
   font-size: 18px;
   font-weight: 600;
-  color: #1f2d3d;
+  color: var(--cf-fg);
 }
 
 .card-meta {
@@ -1854,32 +1824,32 @@ onUnmounted(() => {
 
 .follow-pill {
   background: rgba(107, 115, 255, 0.16);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .type-pill {
   background: rgba(91, 112, 255, 0.12);
-  color: #3f4ffa !important;
+  color: var(--cf-primary) !important;
 }
 
 .type-pill.type-select {
   background: rgba(91, 112, 255, 0.12) !important;
-  color: #3f4ffa !important;
+  color: var(--cf-primary) !important;
 }
 
 .type-pill.type-url-test {
   background: rgba(139, 143, 255, 0.16) !important;
-  color: #8b8fff;
+  color: var(--cf-primary-hover);
 }
 
 .type-pill.type-fallback {
   background: rgba(107, 115, 255, 0.16) !important;
-  color: #6b73ff !important;
+  color: var(--cf-primary) !important;
 }
 
 .type-pill.type-load-balance {
   background: rgba(78, 94, 255, 0.18) !important;
-  color: #4e5eff !important;
+  color: var(--cf-primary) !important;
 }
 
 .status-toggle-btn {
@@ -1891,7 +1861,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   background: rgba(107, 115, 255, 0.18);
-  color: #4e5eff;
+  color: var(--cf-primary);
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: 0 12px 26px rgba(87, 104, 255, 0.18);
@@ -1912,8 +1882,8 @@ onUnmounted(() => {
 }
 
 .status-toggle-btn.active {
-  background: linear-gradient(135deg, #8b8fff 0%, #6b7dff 100%);
-  color: #fff;
+  background: var(--cf-primary);
+  color: var(--cf-primary-fg);
 }
 
 .status-toggle-btn.loading {
@@ -1970,7 +1940,7 @@ onUnmounted(() => {
   flex: 1;
   font-size: 13px;
   font-weight: 500;
-  color: #48506c;
+  color: var(--cf-fg);
 }
 
 .expand-toggle-btn {
@@ -1980,7 +1950,7 @@ onUnmounted(() => {
   border-radius: 50%;
   border: none;
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2005,7 +1975,7 @@ onUnmounted(() => {
 .section-label {
   font-size: 13px;
   font-weight: 600;
-  color: #7d88af;
+  color: var(--cf-fg-2);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2013,7 +1983,7 @@ onUnmounted(() => {
 
 .section-content {
   font-size: 13px;
-  color: #48506c;
+  color: var(--cf-fg);
   line-height: 1.5;
 }
 
@@ -2026,14 +1996,14 @@ onUnmounted(() => {
 .data-tag {
   background: rgba(107, 115, 255, 0.12);
   border: none;
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .code-box {
   padding: 12px 14px;
   border-radius: var(--group-radius-md, 16px);
-  background: #f4f6ff;
-  color: #1f2d3d;
+  background: var(--cf-s2);
+  color: var(--cf-fg);
   font-family: 'SFMono-Regular', 'Consolas', 'Monaco', monospace;
   border: 1px solid rgba(107, 115, 255, 0.12);
 }
@@ -2045,7 +2015,7 @@ onUnmounted(() => {
 
 .empty-text {
   font-size: 12px;
-  color: #a0a8c2;
+  color: var(--cf-fg-3);
 }
 
 .card-footer {
@@ -2064,13 +2034,13 @@ onUnmounted(() => {
 
 .card-btn.ghost {
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   border: 1px solid rgba(107, 115, 255, 0.25);
 }
 
 .card-btn.danger {
   background: rgba(155, 143, 255, 0.12);
-  color: #9b8fff;
+  color: var(--cf-primary-hover);
   border: 1px solid rgba(155, 143, 255, 0.28);
 }
 
@@ -2081,22 +2051,20 @@ onUnmounted(() => {
   align-items: flex-start;
   gap: 16px;
   padding: 8px 0 18px;
-  color: #30354d;
+  color: var(--cf-fg);
 }
 
 .dialog-title-group h3 {
   margin: 0;
   font-size: 20px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
+  color: var(--cf-fg);
+  }
 
 .dialog-title-group p {
   margin: 8px 0 0;
   font-size: 13px;
-  color: #7c86ae;
+  color: var(--cf-fg-2);
 }
 
 .dialog-close-btn {
@@ -2105,7 +2073,7 @@ onUnmounted(() => {
   border-radius: 50%;
   border: 1px solid rgba(124, 134, 174, 0.35);
   background: transparent;
-  color: #7c86ae;
+  color: var(--cf-fg-2);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2116,11 +2084,11 @@ onUnmounted(() => {
 .dialog-close-btn:hover {
   background: rgba(107, 115, 255, 0.12);
   border-color: rgba(107, 115, 255, 0.35);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .dialog-card {
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--group-radius-lg, 24px);
   padding: 30px 28px 26px;
   box-shadow: 0 18px 30px rgba(91, 112, 255, 0.12);
@@ -2136,7 +2104,7 @@ onUnmounted(() => {
 :deep(.groups-form .el-form-item__label) {
   font-weight: 600;
   font-size: 13px;
-  color: #6c74a0;
+  color: var(--cf-fg-2);
 }
 
 :deep(.groups-form .el-input__wrapper),
@@ -2145,7 +2113,7 @@ onUnmounted(() => {
   border-radius: var(--group-radius-md, 16px);
   border: none;
   box-shadow: 0 0 0 1px rgba(107, 115, 255, 0.14);
-  background-color: #f9faff;
+  background-color: var(--cf-s2);
   transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
@@ -2154,7 +2122,7 @@ onUnmounted(() => {
 :deep(.groups-form .el-textarea__inner:focus) {
   box-shadow: 0 0 0 2px rgba(107, 115, 255, 0.32);
   transform: translateY(-1px);
-  background-color: #fff;
+  background-color: var(--cf-s1);
 }
 
 .status-toggle-row {
@@ -2164,7 +2132,7 @@ onUnmounted(() => {
   padding: 8px 14px;
   border-radius: var(--group-radius-pill);
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   font-weight: 600;
 }
 
@@ -2175,7 +2143,7 @@ onUnmounted(() => {
 .helper-text {
   margin: 6px 0 0;
   font-size: 12px;
-  color: #9099bf;
+  color: var(--cf-fg-3);
 }
 
 .regex-preview-row {
@@ -2197,7 +2165,7 @@ onUnmounted(() => {
   border-radius: var(--group-radius-md, 16px);
   border: 1px solid rgba(107, 115, 255, 0.25);
   background: rgba(107, 115, 255, 0.1);
-  color: #4e5eff;
+  color: var(--cf-primary);
   font-weight: 600;
 }
 
@@ -2222,7 +2190,7 @@ onUnmounted(() => {
 
 .footer-btn.ghost {
   background: transparent;
-  color: #5460d7;
+  color: var(--cf-primary);
   border: 1px solid rgba(107, 115, 255, 0.3);
 }
 
@@ -2231,9 +2199,9 @@ onUnmounted(() => {
 }
 
 .footer-btn.primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
+  background: var(--cf-primary);
   border: none;
-  color: #fff;
+  color: var(--cf-primary-fg);
   box-shadow: 0 12px 24px rgba(87, 104, 255, 0.28);
 }
 
@@ -2248,7 +2216,7 @@ onUnmounted(() => {
 .empty-helper {
   text-align: center;
   padding: 40px 0;
-  color: #909399;
+  color: var(--cf-fg-2);
 }
 
 .subscription-count-list {
@@ -2280,7 +2248,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   font-weight: 600;
-  color: #404a67;
+  color: var(--cf-fg);
 }
 
 .node-list {
@@ -2294,8 +2262,8 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   padding: 10px 0;
-  border-bottom: 1px solid #eef1f8;
-  color: #4b5678;
+  border-bottom: 1px solid var(--cf-s3);
+  color: var(--cf-fg);
 }
 
 .node-item:last-child {
@@ -2317,7 +2285,7 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: #35405f;
+  color: var(--cf-fg);
 }
 
 .preview-node-name {

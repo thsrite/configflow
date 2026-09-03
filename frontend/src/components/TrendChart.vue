@@ -226,16 +226,13 @@ watch(
 .chart-header h3 {
   font-size: 18px;
   font-weight: 600;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--cf-fg);
   margin: 0 0 6px 0;
 }
 
 .chart-subtitle {
   font-size: 13px;
-  color: #7f87af;
+  color: var(--cf-fg-2);
   margin: 0;
 }
 
