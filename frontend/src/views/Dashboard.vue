@@ -1,14 +1,16 @@
 <template>
   <div class="dashboard-page">
+    <PageHeader title="数据统计" :description="scopeSummary" />
+
     <!-- 统计卡片区域 -->
     <div class="stats-grid">
       <StatCard
         v-for="stat in statsData"
         :key="stat.label"
-        :icon="stat.icon"
         :label="stat.label"
         :value="stat.value"
-        :color="stat.color"
+        :scope="stat.scope"
+        :hint="stat.hint"
         :route="stat.route"
       />
     </div>
@@ -21,11 +23,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { statsApi, agentApi } from '@/api'
 import { ElMessage } from 'element-plus'
 import StatCard from '@/components/StatCard.vue'
 import AgentStatus from '@/components/AgentStatus.vue'
+import PageHeader from '@/components/shell/PageHeader.vue'
+import { useProfileStore } from '@/stores/profile'
 
 interface Agent {
   id: string
@@ -58,39 +62,33 @@ const updateTime = () => {
 }
 
 // 统计数据
-const statsData = ref([
-  {
-    icon: '📝',
-    label: '订阅总数',
-    value: 0,
-    color: '#6B73FF',
-    route: '/subscriptions'
-  },
-  {
-    icon: '🌐',
-    label: '节点总数',
-    value: 0,
-    color: '#4ECDC4',
-    route: '/nodes'
-  },
-  {
-    icon: '🔗',
-    label: '策略组',
-    value: 0,
-    color: '#FF6B9D',
-    route: '/proxy-groups'
-  },
-  {
-    icon: '⚡',
-    label: '规则总数',
-    value: 0,
-    color: '#F7B731',
-    route: '/rules'
-  }
+type StatScope = 'shared' | 'profile' | 'system'
+
+interface StatItem {
+  label: string
+  value: number
+  scope: StatScope
+  hint: string
+  route: string
+}
+
+const statsData = ref<StatItem[]>([
+  { label: '订阅来源', value: 0, scope: 'shared', hint: '共享资源', route: '/subscriptions' },
+  { label: '节点库', value: 0, scope: 'shared', hint: '共享资源', route: '/nodes' },
+  { label: '策略组', value: 0, scope: 'profile', hint: '当前配置', route: '/proxy-groups' },
+  { label: '策略规则', value: 0, scope: 'profile', hint: '当前配置', route: '/rules' }
 ])
 
 // Agent 列表
 const agents = ref<Agent[]>([])
+
+const profileStore = useProfileStore()
+
+// 页面说明同时点出两类作用域，让用户立刻分辨共享与私有
+const scopeSummary = computed(() => {
+  const name = profileStore.activeProfile.value?.name || profileStore.activeProfileId.value
+  return `共享资源 · 4 类 · 当前配置「${name}」`
+})
 
 // 加载 Agent 列表
 const loadAgents = async () => {
@@ -159,80 +157,25 @@ onUnmounted(() => {
 
 <style scoped>
 .dashboard-page {
-  padding: 28px 32px 40px;
-  background: #f5f7ff;
-  min-height: calc(100vh - 64px);
-}
-
-/* 页面头部 */
-.page-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-bottom: 28px;
+  flex-direction: column;
 }
 
-.title-block h2 {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  color: transparent;
-}
-
-.title-block p {
-  margin: 6px 0 0;
-  font-size: 14px;
-  color: #7f87af;
-}
-
-/* 统计卡片网格 */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 24px;
-  margin-bottom: 32px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--cf-sp-3);
+  margin-bottom: var(--cf-sp-5);
 }
 
-/* Agent 状态区域 */
 .agent-status-section {
-  margin-bottom: 24px;
+  margin-bottom: var(--cf-sp-4);
 }
 
-/* 响应式 */
-@media (max-width: 768px) {
-  .dashboard-page {
-    padding: 24px 16px;
-  }
-
-  .title-block h2 {
-    font-size: 22px;
-  }
-
-  .title-block p {
-    font-size: 13px;
-  }
-
+@media (max-width: 640px) {
   .stats-grid {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-}
-
-@media (max-width: 480px) {
-  .dashboard-page {
-    padding: 16px;
-  }
-
-  .title-block h2 {
-    font-size: 20px;
-  }
-
-  .stats-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--cf-sp-2);
   }
 }
 </style>

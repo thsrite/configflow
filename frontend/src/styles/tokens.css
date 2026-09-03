@@ -1,0 +1,187 @@
+/* ConfigFlow 设计系统 token —— 全站唯一颜色/间距/圆角来源
+ * 参考 Trivet 的冷色层级与紧凑 rail、MediaVault 的清爽列表与主操作。
+ * 深色为默认主题，浅色为可切换主题。
+ */
+
+:root,
+:root[data-theme='dark'] {
+  /* 表面：冷黑三层，不用纯黑 */
+  --cf-bg: #0d0f13;
+  --cf-s1: #14171d;
+  --cf-s2: #1a1e26;
+  --cf-s3: #222732;
+
+  --cf-bd: rgba(255, 255, 255, 0.07);
+  --cf-bd-strong: rgba(255, 255, 255, 0.12);
+
+  --cf-fg: #eceef2;
+  --cf-fg-2: #a8b0bd;
+  --cf-fg-3: #6b7482;
+
+  --cf-primary: #6d7cff;
+  --cf-primary-hover: #8390ff;
+  --cf-primary-soft: #2a2f52;
+  --cf-primary-fg: #ffffff;
+
+  --cf-success: #3ddc97;
+  --cf-success-soft: #122b22;
+  --cf-warning: #f7bd4a;
+  --cf-warning-soft: #2e2413;
+  --cf-danger: #ff6b6b;
+  --cf-danger-soft: #331919;
+
+  /* 作用域语义：共享资源 = 青蓝，当前配置 = 靛蓝 */
+  --cf-shared: #5ec3ff;
+  --cf-shared-soft: #0f2635;
+  --cf-profile: var(--cf-primary);
+  --cf-profile-soft: var(--cf-primary-soft);
+
+  --cf-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 8px 24px -12px rgba(0, 0, 0, 0.9);
+  --cf-shadow-lg: 0 18px 40px -12px rgba(0, 0, 0, 0.7);
+
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --cf-bg: #f6f7f9;
+  --cf-s1: #ffffff;
+  --cf-s2: #ffffff;
+  --cf-s3: #f0f2f5;
+
+  --cf-bd: rgba(16, 24, 40, 0.09);
+  --cf-bd-strong: rgba(16, 24, 40, 0.16);
+
+  --cf-fg: #111621;
+  --cf-fg-2: #525c6b;
+  --cf-fg-3: #8d97a5;
+
+  --cf-primary: #4f5bd5;
+  --cf-primary-hover: #3f4ac0;
+  --cf-primary-soft: #eceefc;
+  --cf-primary-fg: #ffffff;
+
+  --cf-success: #0f9d6b;
+  --cf-success-soft: #e6f7f0;
+  --cf-warning: #b8730a;
+  --cf-warning-soft: #fdf3e2;
+  --cf-danger: #d64545;
+  --cf-danger-soft: #fdeaea;
+
+  --cf-shared: #0d6ea8;
+  --cf-shared-soft: #e7f2fa;
+
+  --cf-shadow: 0 1px 2px rgba(16, 24, 40, 0.05),
+    0 8px 20px -14px rgba(16, 24, 40, 0.35);
+  --cf-shadow-lg: 0 18px 40px -14px rgba(16, 24, 40, 0.4);
+
+  color-scheme: light;
+}
+
+:root {
+  /* 几何：概念图冻结值 */
+  --cf-topbar-h: 52px;
+  --cf-rail-w: 180px;
+  --cf-tabbar-h: 56px;
+  --cf-content-max: 1280px;
+
+  --cf-r-sm: 8px;
+  --cf-r-md: 10px;
+  --cf-r-lg: 12px;
+  --cf-r-xl: 15px;
+  --cf-r-pill: 999px;
+
+  --cf-ctrl-h: 34px;
+  --cf-ctrl-h-lg: 40px;
+  --cf-touch: 44px;
+
+  --cf-sp-1: 4px;
+  --cf-sp-2: 8px;
+  --cf-sp-3: 12px;
+  --cf-sp-4: 16px;
+  --cf-sp-5: 22px;
+  --cf-sp-6: 32px;
+
+  --cf-font: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue',
+    'Microsoft YaHei', sans-serif;
+  --cf-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  --cf-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --cf-dur: 0.2s;
+}
+
+/* ---------- 全局基线 ---------- */
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--cf-bg);
+  color: var(--cf-fg);
+  font-family: var(--cf-font);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+.cf-mono,
+.cf-num {
+  font-family: var(--cf-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--cf-primary);
+  outline-offset: 2px;
+  border-radius: var(--cf-r-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- Element Plus 主题桥接 ----------
+ * 让既有 Element Plus 组件跟随 ConfigFlow token，
+ * 避免深色下残留浅色底 —— 页面无需各自复制颜色值。
+ */
+:root {
+  --el-color-primary: var(--cf-primary);
+  --el-color-success: var(--cf-success);
+  --el-color-warning: var(--cf-warning);
+  --el-color-danger: var(--cf-danger);
+  --el-color-error: var(--cf-danger);
+
+  --el-bg-color: var(--cf-s1);
+  --el-bg-color-page: var(--cf-bg);
+  --el-bg-color-overlay: var(--cf-s2);
+
+  --el-text-color-primary: var(--cf-fg);
+  --el-text-color-regular: var(--cf-fg);
+  --el-text-color-secondary: var(--cf-fg-2);
+  --el-text-color-placeholder: var(--cf-fg-3);
+  --el-text-color-disabled: var(--cf-fg-3);
+
+  --el-border-color: var(--cf-bd-strong);
+  --el-border-color-light: var(--cf-bd);
+  --el-border-color-lighter: var(--cf-bd);
+  --el-border-color-extra-light: var(--cf-bd);
+  --el-border-radius-base: var(--cf-r-md);
+
+  --el-fill-color: var(--cf-s2);
+  --el-fill-color-light: var(--cf-s2);
+  --el-fill-color-lighter: var(--cf-s1);
+  --el-fill-color-blank: var(--cf-s1);
+  --el-mask-color: rgba(0, 0, 0, 0.6);
+
+  --el-box-shadow-light: var(--cf-shadow);
+}

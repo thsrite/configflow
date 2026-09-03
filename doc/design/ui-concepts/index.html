@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ConfigFlow UI 重构 · 概念图预览</title>
+<style>
+:root{--bg:#0e1013;--s1:#15181d;--s2:#1b1f26;--bd:rgba(255,255,255,.09);--fg:#e8eaed;--mut:#9aa4b2;--pri:#6b7cff;--ok:#4ade9b;--warn:#f6c453}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+header{position:sticky;top:0;z-index:10;background:rgba(14,16,19,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--bd);padding:14px 24px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.2px}
+.sub{color:var(--mut);font-size:12px}
+.filters{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+button{background:var(--s2);color:var(--fg);border:1px solid var(--bd);border-radius:10px;padding:7px 14px;font-size:13px;cursor:pointer;min-height:36px}
+button:hover{border-color:rgba(255,255,255,.22)}
+button[aria-pressed="true"]{background:var(--pri);border-color:var(--pri);color:#fff}
+main{padding:24px;max-width:1440px;margin:0 auto;display:flex;flex-direction:column;gap:24px}
+.card{background:var(--s1);border:1px solid var(--bd);border-radius:14px;overflow:hidden}
+.card[hidden]{display:none}
+.chead{padding:14px 18px;border-bottom:1px solid var(--bd);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.chead h2{font-size:14px;margin:0;font-weight:600}
+.tag{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--bd);color:var(--mut);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.note{color:var(--mut);font-size:12px;width:100%;margin-top:2px}
+.imgwrap{padding:18px;display:flex;justify-content:center;background:var(--s2)}
+.imgwrap.mobile img{max-width:420px}
+img{max-width:100%;height:auto;display:block;border-radius:10px;border:1px solid var(--bd);cursor:zoom-in}
+footer{color:var(--mut);font-size:12px;padding:0 24px 40px;max-width:1440px;margin:0 auto}
+dialog{border:none;background:rgba(0,0,0,.9);max-width:100vw;max-height:100vh;width:100vw;height:100vh;padding:0}
+dialog::backdrop{background:rgba(0,0,0,.85)}
+dialog img{max-width:100vw;max-height:100vh;border:none;border-radius:0;cursor:zoom-out;margin:auto}
+dialog form{display:flex;height:100%;align-items:center;justify-content:center;margin:0}
+@media(max-width:640px){main{padding:14px;gap:14px}header{padding:12px 14px}.filters{width:100%;margin-left:0}}
+</style></head><body>
+<header>
+  <div><h1>ConfigFlow UI 重构 · 概念图</h1><div class="sub">分支 feat/ui-trivet-mediavault · 参考 Trivet + MediaVault · 已确认为实现基准</div></div>
+  <div class="filters">
+    <button data-f="all" aria-pressed="true">全部</button>
+    <button data-f="desktop" aria-pressed="false">桌面</button>
+    <button data-f="mobile" aria-pressed="false">移动</button>
+    <button data-f="light" aria-pressed="false">浅色</button>
+    <button data-f="dark" aria-pressed="false">深色</button>
+  </div>
+</header>
+<main id="grid"></main>
+<footer>点击任意图片全屏查看，Esc 退出。图片仅作视觉基准，最终交互与文案由代码原生实现。</footer>
+<dialog id="lb"><form method="dialog"><img id="lbimg" alt=""></form></dialog>
+<script>
+const DATA = [{"fn": "dashboard-desktop-light.png", "title": "数据统计 · 桌面 · 浅色", "dev": "desktop", "theme": "light", "note": "应用壳基准：52px 顶栏 + 180px 分组导航 + 开放式列表主区 + 右侧辅助列", "src": "dashboard-desktop-light.png"}, {"fn": "dashboard-desktop-dark.png", "title": "数据统计 · 桌面 · 深色", "dev": "desktop", "theme": "dark", "note": "同一几何与信息密度，冷黑三层表面，无纯黑", "src": "dashboard-desktop-dark.png"}, {"fn": "dashboard-mobile-light.png", "title": "数据统计 · 移动 · 浅色", "dev": "mobile", "theme": "light", "note": "重新编排而非缩放：紧凑顶栏 + 纵向任务内容 + 四入口底栏", "src": "dashboard-mobile-light.png"}, {"fn": "dashboard-mobile-dark.png", "title": "数据统计 · 移动 · 深色", "dev": "mobile", "theme": "dark", "note": "移动深色配对，标签与数据完全一致", "src": "dashboard-mobile-dark.png"}, {"fn": "subscriptions-reorder-desktop-light.png", "title": "订阅来源 · 排序态 · 桌面", "dev": "desktop", "theme": "light", "note": "显式排序模式：原尺寸拖动预览、靛蓝落点线、位置播报、键盘提示", "src": "subscriptions-reorder-desktop-light.png"}, {"fn": "subscriptions-reorder-mobile-light.png", "title": "订阅来源 · 排序态 · 移动", "dev": "mobile", "theme": "light", "note": "移动排序模式：44px 手柄 + 上移/下移按钮，不与页面滚动争抢手势", "src": "subscriptions-reorder-mobile-light.png"}];
+const grid = document.getElementById('grid');
+grid.innerHTML = DATA.map((c,i)=>`
+<section class="card" data-dev="${c.dev}" data-theme="${c.theme}">
+  <div class="chead"><h2>${c.title}</h2>
+    <span class="tag">${c.dev}</span><span class="tag">${c.theme}</span><span class="tag">${c.fn}</span>
+    <div class="note">${c.note}</div></div>
+  <div class="imgwrap ${c.dev}"><img src="${c.src}" alt="${c.title}" data-i="${i}"></div>
+</section>`).join('');
+document.querySelectorAll('.filters button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.filters button').forEach(x=>x.setAttribute('aria-pressed', x===b));
+  const f=b.dataset.f;
+  document.querySelectorAll('.card').forEach(c=>{
+    c.hidden = !(f==='all' || c.dataset.dev===f || c.dataset.theme===f);
+  });
+});
+const lb=document.getElementById('lb'), lbimg=document.getElementById('lbimg');
+grid.addEventListener('click',e=>{ if(e.target.tagName==='IMG'){ lbimg.src=e.target.src; lb.showModal(); }});
+</script></body></html>
