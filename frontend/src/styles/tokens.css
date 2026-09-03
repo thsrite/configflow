@@ -211,3 +211,30 @@ body {
   pointer-events: none;
   opacity: 0.55;
 }
+
+/* 排序模式下的卡片头部：手柄占用横向空间后，标题必须能收缩且不换行，
+ * 否则窄容器里会逐字竖排。同时隐藏与排序无关的次要信息，降低误触面积。
+ */
+.cf-reordering [data-reorder-item] .card-title,
+.cf-reordering [data-reorder-item] .card-title-group {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cf-reordering [data-reorder-item] .card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--cf-sp-2);
+}
+
+.cf-reordering [data-reorder-item] .card-stats,
+.cf-reordering [data-reorder-item] .card-section,
+.cf-reordering [data-reorder-item] .card-actions,
+.cf-reordering [data-reorder-item] .card-meta,
+.cf-reordering [data-reorder-item] .stat-pill,
+.cf-reordering [data-reorder-item] .card-preview {
+  display: none;
+}

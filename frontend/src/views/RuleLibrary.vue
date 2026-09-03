@@ -1,8 +1,12 @@
 <template>
-  <div class="rule-library-page">
+  <div class="rule-library-page" :class="{ 'cf-reordering': reorder.active.value }">
     <ScopeBanner scope="shared" />
     <PageHeader title="规则库" description="集中维护规则集来源与缓存，所有配置空间共同使用">
       <template #actions>
+        <el-button v-if="!reorder.active.value" :disabled="ruleLibrary.length < 2" @click="reorder.enter">
+          <el-icon><Sort /></el-icon>
+          调整顺序
+        </el-button>
         <el-button-group class="view-toggle">
           <el-button
             :class="['toggle-btn', { active: viewMode === 'list' }]"
@@ -87,13 +91,22 @@
       </div>
 
       <!-- 列表视图 -->
+      <ReorderBar
+        :active="reorder.active.value"
+        :saving="reorder.saving.value"
+        :announcement="reorder.announcement.value"
+        @cancel="reorder.cancel"
+        @save="handleSaveOrder"
+      />
+
       <div v-if="viewMode === 'list'" class="rules-list" ref="rulesContainer">
       <div
-        v-for="rule in ruleLibrary"
+        v-for="(rule, cfIndex) in ruleLibrary"
         :key="rule.id"
         class="list-item"
         :class="{ disabled: !rule.enabled }"
         :data-id="rule.id"
+        data-reorder-item
       >
         <div class="list-item-checkbox">
           <el-checkbox
@@ -102,9 +115,17 @@
           />
         </div>
         <div class="list-item-drag">
-          <button class="card-drag-handle" type="button" aria-label="拖动排序">
-            <el-icon><DCaret /></el-icon>
-          </button>
+            <DragHandle
+              v-if="reorder.active.value"
+              :label="rule.name || rule.id"
+              :index="cfIndex"
+              :total="ruleLibrary.length"
+              :position="reorder.positionLabel(cfIndex)"
+              :grabbed="reorder.grabbedIndex.value === cfIndex"
+              @up="reorder.moveUp(cfIndex)"
+              @down="reorder.moveDown(cfIndex)"
+              @keydown="reorder.onHandleKeydown($event, cfIndex)"
+            />
         </div>
         <div class="list-item-info">
           <div class="list-item-name">{{ rule.name }}</div>
@@ -168,11 +189,12 @@
       <!-- 卡片视图 -->
       <div v-else class="rules-grid" ref="rulesContainer">
       <div
-        v-for="rule in ruleLibrary"
+        v-for="(rule, cfIndex) in ruleLibrary"
         :key="rule.id"
         class="rule-card"
         :class="{ disabled: !rule.enabled }"
         :data-id="rule.id"
+        data-reorder-item
       >
         <div class="card-header">
           <div class="card-title-group">
@@ -181,9 +203,17 @@
               @change="toggleRuleSelection(rule.id)"
               style="margin-right: 8px"
             />
-            <button class="card-drag-handle" type="button" aria-label="拖动排序">
-              <el-icon><DCaret /></el-icon>
-            </button>
+            <DragHandle
+              v-if="reorder.active.value"
+              :label="rule.name || rule.id"
+              :index="cfIndex"
+              :total="ruleLibrary.length"
+              :position="reorder.positionLabel(cfIndex)"
+              :grabbed="reorder.grabbedIndex.value === cfIndex"
+              @up="reorder.moveUp(cfIndex)"
+              @down="reorder.moveDown(cfIndex)"
+              @keydown="reorder.onHandleKeydown($event, cfIndex)"
+            />
             <div class="card-title">{{ rule.name }}</div>
           </div>
           <button class="status-toggle" :class="{ active: rule.enabled }" @click="handleToggle(rule)">
@@ -431,6 +461,9 @@
 </template>
 
 <script setup lang="ts">
+import ReorderBar from '@/components/shell/ReorderBar.vue'
+import DragHandle from '@/components/shell/DragHandle.vue'
+import { useReorder } from '@/composables/useReorder'
 import PageHeader from '@/components/shell/PageHeader.vue'
 import ScopeBanner from '@/components/shell/ScopeBanner.vue'
 import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
@@ -450,11 +483,9 @@ import {
   Document,
   List,
   Grid,
-  CopyDocument
-} from '@element-plus/icons-vue'
+  CopyDocument, Sort } from '@element-plus/icons-vue'
 import api from '@/api'
 import { activeProfileId } from '@/profileContext'
-import Sortable from 'sortablejs'
 
 interface RuleLibraryItem {
   id: string
@@ -480,7 +511,6 @@ const currentRuleSet = ref<RuleLibraryItem | null>(null)
 const rulesContainer = ref<HTMLElement | null>(null)
 const viewMode = ref<'list' | 'grid'>('list') // 默认列表视图
 const selectedRules = ref<string[]>([]) // 选中的规则ID列表
-let sortableInstance: any = null // Sortable实例
 
 // 专业功能开关
 // 处理按钮点击
@@ -568,7 +598,6 @@ const loadRuleLibrary = async () => {
     const { data } = await api.get('/rule-library')
     ruleLibrary.value = data
     nextTick(() => {
-      initSortable()
     })
   } catch (error) {
     ElMessage.error('加载规则仓库失败')
@@ -1040,46 +1069,7 @@ const parseRuleProviders = (text: string): RuleLibraryItem[] => {
   return rules
 }
 
-const initSortable = () => {
-  nextTick(() => {
-    // 先销毁旧实例
-    if (sortableInstance) {
-      sortableInstance.destroy()
-      sortableInstance = null
-    }
 
-    if (rulesContainer.value) {
-      sortableInstance = Sortable.create(rulesContainer.value, {
-        animation: 150,
-        handle: '.card-drag-handle',
-        ghostClass: 'sortable-ghost',
-        chosenClass: 'sortable-chosen',
-        dragClass: 'sortable-drag',
-        onEnd: async (evt: any) => {
-          const { oldIndex, newIndex } = evt
-          if (oldIndex === newIndex) return
-
-          const movedItem = ruleLibrary.value.splice(oldIndex, 1)[0]
-          ruleLibrary.value.splice(newIndex, 0, movedItem)
-
-          try {
-            await saveRuleLibraryOrder()
-            ElMessage.success('排序已更新')
-          } catch (error) {
-            ElMessage.error('保存排序失败')
-            loadRuleLibrary()
-          }
-        }
-      })
-    }
-  })
-}
-
-const saveRuleLibraryOrder = async () => {
-  await api.post('/rule-library/reorder', {
-    rules: ruleLibrary.value
-  })
-}
 
 const getContentPreview = (content?: string) => {
   if (!content) return '无内容'
@@ -1395,9 +1385,31 @@ const batchDeleteRules = async () => {
 // 监听视图模式切换，重新初始化拖拽
 watch(viewMode, () => {
   nextTick(() => {
-    initSortable()
   })
 })
+
+/* ---------- 统一拖动排序 ---------- */
+const reorder = useReorder<any>({
+  items: ruleLibrary,
+  container: rulesContainer,
+  labelOf: item => item.name || item.id,
+  // 按 id 提交，服务端在存量数据上重排，不回写列表接口的计算字段
+  persist: async items => {
+    await api.post('/rule-library/reorder', {
+      ids: items.map(item => item.id),
+      position: 'top'
+    })
+  }
+})
+
+const handleSaveOrder = async () => {
+  try {
+    await reorder.save()
+    ElMessage.success('顺序已保存，所有配置空间生效')
+  } catch (error) {
+    ElMessage.error('保存顺序失败，顺序已还原')
+  }
+}
 
 onMounted(() => {
   loadRuleLibrary()

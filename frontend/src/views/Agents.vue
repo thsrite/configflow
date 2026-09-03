@@ -2773,8 +2773,10 @@ onUnmounted(() => {
   background-position: right 12px center;
   background-size: 12px 12px;
   color: var(--cf-fg);
+  /* Safari / iOS 会用系统色渲染原生 select 的文字，必须显式覆盖 */
   -webkit-text-fill-color: var(--cf-fg);
-  color-scheme: light;
+  /* 不锁定 color-scheme，让原生下拉跟随当前主题；锁 light 会在深色下弹出浅色面板 */
+  color-scheme: inherit;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;

@@ -1,8 +1,12 @@
 <template>
-  <div class="nodes-page">
+  <div class="nodes-page" :class="{ 'cf-reordering': reorder.active.value }">
     <ScopeBanner scope="shared" />
     <PageHeader title="节点库" description="订阅拉取与手动录入的节点集中在此，供所有配置空间引用">
       <template #actions>
+        <el-button v-if="!reorder.active.value" :disabled="nodes.length < 2" @click="reorder.enter">
+          <el-icon><Sort /></el-icon>
+          调整顺序
+        </el-button>
         <el-button @click="showBatchAddDialog">
           <el-icon><DocumentAdd /></el-icon>
           批量添加
@@ -33,19 +37,36 @@
       已选择 <strong>{{ selectedNodeIds.size }}</strong> 个节点
     </div>
 
+    <ReorderBar
+      :active="reorder.active.value"
+      :saving="reorder.saving.value"
+      :announcement="reorder.announcement.value"
+      @cancel="reorder.cancel"
+      @save="handleSaveOrder"
+    />
+
     <div class="nodes-grid" ref="nodesContainer">
       <div
-        v-for="node in nodes"
+        v-for="(node, cfIndex) in nodes"
         :key="node.id || node.name"
         class="node-card"
         :class="{ 'node-selected': selectedNodeIds.has(node.id), disabled: !node.enabled }"
         :data-name="node.name"
+        data-reorder-item
       >
         <div class="card-header">
           <div class="card-title-group">
-            <div class="card-drag-handle">
-              <el-icon><DCaret /></el-icon>
-            </div>
+            <DragHandle
+              v-if="reorder.active.value"
+              :label="node.name || node.id"
+              :index="cfIndex"
+              :total="nodes.length"
+              :position="reorder.positionLabel(cfIndex)"
+              :grabbed="reorder.grabbedIndex.value === cfIndex"
+              @up="reorder.moveUp(cfIndex)"
+              @down="reorder.moveDown(cfIndex)"
+              @keydown="reorder.onHandleKeydown($event, cfIndex)"
+            />
             <el-checkbox
               :model-value="selectedNodeIds.has(node.id)"
               @change="toggleNodeSelection(node.id)"
@@ -211,14 +232,16 @@
 </template>
 
 <script setup lang="ts">
+import ReorderBar from '@/components/shell/ReorderBar.vue'
+import DragHandle from '@/components/shell/DragHandle.vue'
+import { useReorder } from '@/composables/useReorder'
 import PageHeader from '@/components/shell/PageHeader.vue'
 import ScopeBanner from '@/components/shell/ScopeBanner.vue'
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DCaret, Plus, DocumentAdd, Delete, EditPen, Close, Link, View, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
+import { DCaret, Plus, DocumentAdd, Delete, EditPen, Close, Link, View, ArrowUp, ArrowDown, Sort } from '@element-plus/icons-vue'
 import { nodeApi, subStoreUrlApi } from '@/api'
 import type { ProxyNode } from '@/types'
-import Sortable from 'sortablejs'
 import api from '@/api'
 import * as yaml from 'js-yaml'
 
@@ -958,45 +981,33 @@ const deleteNode = async (row: ProxyNode) => {
   }
 }
 
-const initSortable = () => {
-  nextTick(() => {
-    if (nodesContainer.value) {
-      Sortable.create(nodesContainer.value, {
-        animation: 150,
-        handle: '.card-drag-handle',
-        ghostClass: 'sortable-ghost',
-        chosenClass: 'sortable-chosen',
-        dragClass: 'sortable-drag',
-        onEnd: async (evt: any) => {
-          const { oldIndex, newIndex } = evt
-          if (oldIndex === newIndex) return
 
-          const movedItem = nodes.value.splice(oldIndex, 1)[0]
-          nodes.value.splice(newIndex, 0, movedItem)
 
-          try {
-            await saveNodesOrder()
-            ElMessage.success('排序已更新')
-          } catch (error) {
-            ElMessage.error('保存排序失败')
-            loadNodes()
-          }
-        }
-      })
-    }
-  })
-}
+/* ---------- 统一拖动排序 ---------- */
+const reorder = useReorder<any>({
+  items: nodes,
+  container: nodesContainer,
+  labelOf: item => item.name || item.id,
+  // 按 id 提交，服务端在存量数据上重排，不回写列表接口的计算字段
+  persist: async items => {
+    await api.post('/nodes/reorder', {
+      ids: items.map(item => item.id),
+      position: 'top'
+    })
+  }
+})
 
-const saveNodesOrder = async () => {
-  // 批量更新节点顺序
-  await api.post('/nodes/reorder', {
-    nodes: nodes.value
-  })
+const handleSaveOrder = async () => {
+  try {
+    await reorder.save()
+    ElMessage.success('顺序已保存，所有配置空间生效')
+  } catch (error) {
+    ElMessage.error('保存顺序失败，顺序已还原')
+  }
 }
 
 onMounted(() => {
   loadNodes().then(() => {
-    initSortable()
   })
 })
 </script>

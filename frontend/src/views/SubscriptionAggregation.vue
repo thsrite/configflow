@@ -1,14 +1,26 @@
 <template>
-  <div class="aggregation-page">
+  <div class="aggregation-page" :class="{ 'cf-reordering': reorder.active.value }">
     <ScopeBanner scope="shared" />
     <PageHeader title="订阅聚合" description="把多个订阅与节点合并成一个可引用的集合">
       <template #actions>
+        <el-button v-if="!reorder.active.value" :disabled="aggregations.length < 2" @click="reorder.enter">
+          <el-icon><Sort /></el-icon>
+          调整顺序
+        </el-button>
         <el-button type="primary" @click="showAddDialog">
           <el-icon><Plus /></el-icon>
           添加聚合
         </el-button>
       </template>
     </PageHeader>
+
+    <ReorderBar
+      :active="reorder.active.value"
+      :saving="reorder.saving.value"
+      :announcement="reorder.announcement.value"
+      @cancel="reorder.cancel"
+      @save="handleSaveOrder"
+    />
 
     <div v-if="aggregations.length === 0" class="empty-state">
       <el-empty description="暂无聚合，点击右上角添加">
@@ -21,17 +33,26 @@
 
     <div v-else class="aggregation-grid" ref="cardContainer">
       <div
-        v-for="aggregation in aggregations"
+        v-for="(aggregation, cfIndex) in aggregations"
         :key="aggregation.id"
         class="aggregation-card"
         :data-id="aggregation.id"
         :class="{ disabled: !aggregation.enabled }"
+        data-reorder-item
       >
         <div class="card-header">
           <div class="card-title-group">
-            <div class="card-drag-handle">
-              <el-icon><Rank /></el-icon>
-            </div>
+            <DragHandle
+              v-if="reorder.active.value"
+              :label="aggregation.name || aggregation.id"
+              :index="cfIndex"
+              :total="aggregations.length"
+              :position="reorder.positionLabel(cfIndex)"
+              :grabbed="reorder.grabbedIndex.value === cfIndex"
+              @up="reorder.moveUp(cfIndex)"
+              @down="reorder.moveDown(cfIndex)"
+              @keydown="reorder.onHandleKeydown($event, cfIndex)"
+            />
             <div class="card-title">
               <span class="card-name">{{ aggregation.name }}</span>
             </div>
@@ -62,7 +83,7 @@
           </div>
           <div class="tag-list">
             <el-tag
-              v-for="subId in aggregation.subscriptions"
+              v-for="(subId, cfIndex) in aggregation.subscriptions"
               :key="subId"
               size="small"
               class="data-tag"
@@ -80,7 +101,7 @@
           </div>
           <div class="tag-list">
             <el-tag
-              v-for="nodeId in aggregation.nodes"
+              v-for="(nodeId, cfIndex) in aggregation.nodes"
               :key="nodeId"
               size="small"
               type="success"
@@ -173,7 +194,7 @@
               style="width: 100%"
             >
               <el-option
-                v-for="sub in subscriptions"
+                v-for="(sub, cfIndex) in subscriptions"
                 :key="sub.id"
                 :label="sub.name"
                 :value="sub.id"
@@ -191,7 +212,7 @@
               style="width: 100%"
             >
               <el-option
-                v-for="node in nodes"
+                v-for="(node, cfIndex) in nodes"
                 :key="node.id"
                 :label="node.name"
                 :value="node.id"
@@ -332,7 +353,7 @@
         </div>
         <el-scrollbar max-height="400px">
           <div class="node-list">
-            <div v-for="node in subscriptionNodes" :key="node.id" class="node-item">
+            <div v-for="(node, cfIndex) in subscriptionNodes" :key="node.id" class="node-item">
               <el-icon><Connection /></el-icon>
               <span>{{ node.name }}</span>
               <el-tag size="small" type="info" style="margin-left: auto;">{{ node.type }}</el-tag>
@@ -348,13 +369,15 @@
 </template>
 
 <script setup lang="ts">
+import ReorderBar from '@/components/shell/ReorderBar.vue'
+import DragHandle from '@/components/shell/DragHandle.vue'
+import { useReorder } from '@/composables/useReorder'
 import PageHeader from '@/components/shell/PageHeader.vue'
 import ScopeBanner from '@/components/shell/ScopeBanner.vue'
 import { ref, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Rank, Edit, Delete, View, Connection, Loading, Postcard, Close, Link, Filter, ArrowDown } from '@element-plus/icons-vue'
+import { Plus, Rank, Edit, Delete, View, Connection, Loading, Postcard, Close, Link, Filter, ArrowDown, Sort } from '@element-plus/icons-vue'
 import api from '@/api'
-import Sortable from 'sortablejs'
 import * as yaml from 'js-yaml'
 
 interface Subscription {
@@ -642,38 +665,33 @@ const showSubscriptionNodes = async (subscription: { id: string; name: string })
   }
 }
 
-const initSortable = () => {
-  nextTick(() => {
-    if (cardContainer.value) {
-      Sortable.create(cardContainer.value, {
-        animation: 150,
-        handle: '.card-drag-handle',
-        onEnd: async ({ oldIndex, newIndex }) => {
-          if (oldIndex === newIndex) return
 
-          const moved = aggregations.value.splice(oldIndex, 1)[0]
-          aggregations.value.splice(newIndex, 0, moved)
+/* ---------- 统一拖动排序 ---------- */
+const reorder = useReorder<any>({
+  items: aggregations,
+  container: cardContainer,
+  labelOf: item => item.name || item.id,
+  // 按 id 提交，服务端在存量数据上重排，不回写列表接口的计算字段
+  persist: async items => {
+    await api.post('/aggregations/reorder', {
+      ids: items.map(item => item.id),
+      position: 'top'
+    })
+  }
+})
 
-          try {
-            await api.post('/aggregations/reorder', {
-              aggregations: aggregations.value
-            })
-            ElMessage.success('排序已更新')
-          } catch (error) {
-            console.error('Failed to save order:', error)
-            ElMessage.error('保存排序失败')
-            loadAggregations()
-          }
-        }
-      })
-    }
-  })
+const handleSaveOrder = async () => {
+  try {
+    await reorder.save()
+    ElMessage.success('顺序已保存，所有配置空间生效')
+  } catch (error) {
+    ElMessage.error('保存顺序失败，顺序已还原')
+  }
 }
 
 onMounted(async () => {
   await loadAggregations()
   await Promise.all([loadSubscriptions(), loadNodes()])
-  initSortable()
 })
 </script>
 

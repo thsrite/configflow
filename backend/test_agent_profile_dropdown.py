@@ -18,8 +18,12 @@ def test_agent_profile_binding_uses_visible_native_select():
     assert "<option" in section
     assert "profile.name" in section
     assert ".agent-profile-native-select {" in source
-    assert "-webkit-text-fill-color: #30354d;" in source
-    assert "color-scheme: light;" in source
+    # 原生 select 的文字色必须显式覆盖（Safari / iOS 否则用系统色），
+    # 且取自设计系统 token 而非写死色值，才能同时适配深浅主题
+    assert "-webkit-text-fill-color: var(--cf-fg);" in source
+    # 不得锁定 color-scheme：锁 light 会让原生下拉在深色主题下弹出浅色面板
+    assert "color-scheme: inherit;" in source
+    assert "color-scheme: light;" not in source
 
 
 def test_agent_profile_native_change_forwards_selected_profile_id():
