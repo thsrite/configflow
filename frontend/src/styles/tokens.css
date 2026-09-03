@@ -185,3 +185,29 @@ body {
 
   --el-box-shadow-light: var(--cf-shadow);
 }
+
+/* ---------- 统一拖动排序视觉状态 ----------
+ * sortablejs 把这些类加在真实元素上，必须是全局样式。
+ */
+.cf-reorder-ghost {
+  opacity: 0.35;
+  outline: 2px dashed color-mix(in srgb, var(--cf-primary) 60%, transparent);
+  outline-offset: -2px;
+}
+
+.cf-reorder-chosen {
+  cursor: grabbing;
+}
+
+/* 拖动预览保持原尺寸，只抬起不缩放，避免落点判断失真 */
+.cf-reorder-drag {
+  opacity: 1 !important;
+  box-shadow: var(--cf-shadow-lg), 0 0 0 1px var(--cf-primary);
+  border-radius: var(--cf-r-xl);
+}
+
+/* 排序模式下屏蔽条目自身的点击与开关，防止误触 */
+.cf-reordering [data-reorder-item] .cf-reorder-mute {
+  pointer-events: none;
+  opacity: 0.55;
+}

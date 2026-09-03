@@ -1,120 +1,122 @@
 <template>
-  <div class="subscriptions-page">
-    <div class="page-header">
-      <div class="title-block">
-        <h2>订阅管理</h2>
-        <p>管理您的订阅源和配置</p>
-      </div>
-      <div class="header-actions">
-        <el-button
-          class="action-btn action-secondary"
-          @click="handleFetchAll"
-                    :loading="isRefreshing"
-        >
+  <div class="subscriptions-page" :class="{ 'cf-reordering': reorder.active.value }">
+    <ScopeBanner scope="shared" description="集中维护订阅源，所有配置空间共同使用" />
+
+    <PageHeader title="订阅来源" description="订阅拉取后的节点进入共享节点库">
+      <template #actions>
+        <el-button :loading="isRefreshing" :disabled="reorder.active.value" @click="handleFetchAll">
           <el-icon><RefreshRight /></el-icon>
-          批量更新        </el-button>
-        <el-button
-          type="primary"
-          class="action-btn action-primary"
-          @click="showAddDialog"
-        >
+          批量更新
+        </el-button>
+        <el-button type="primary" :disabled="reorder.active.value" @click="showAddDialog">
           <el-icon><Plus /></el-icon>
           添加订阅
         </el-button>
-      </div>
+      </template>
+    </PageHeader>
+
+    <div class="cf-toolbar">
+      <el-input
+        v-model="keyword"
+        class="cf-toolbar__search"
+        placeholder="搜索订阅名称或地址"
+        clearable
+        :disabled="reorder.active.value"
+      >
+        <template #prefix><el-icon><Search /></el-icon></template>
+      </el-input>
+      <el-button v-if="!reorder.active.value" :disabled="subscriptions.length < 2" @click="reorder.enter">
+        <el-icon><Sort /></el-icon>
+        调整顺序
+      </el-button>
     </div>
+
+    <ReorderBar
+      :active="reorder.active.value"
+      :saving="reorder.saving.value"
+      :announcement="reorder.announcement.value"
+      @cancel="reorder.cancel"
+      @save="handleSaveOrder"
+    />
+
+    <el-empty v-if="visibleSubscriptions.length === 0" :description="emptyText" />
 
     <div class="subscriptions-grid" ref="subscriptionsContainer">
       <div
-        v-for="sub in subscriptions"
+        v-for="(sub, index) in visibleSubscriptions"
         :key="sub.id"
         class="subscription-card"
         :class="{ disabled: !sub.enabled }"
         :data-id="sub.id"
+        data-reorder-item
       >
         <div class="card-header">
-          <div class="card-title-group">
-            <button class="card-drag-handle" type="button" aria-label="拖动排序">
-              <el-icon><DCaret /></el-icon>
-            </button>
-            <div class="card-title">{{ sub.name }}</div>
-          </div>
-          <button class="status-toggle" :class="{ active: sub.enabled }" @click="handleToggle(sub)">
+          <span v-if="reorder.active.value" class="card-order cf-num">{{ index + 1 }}</span>
+          <span class="card-dot" :class="dotClass(sub)" aria-hidden="true"></span>
+          <div class="card-title">{{ sub.name }}</div>
+
+          <DragHandle
+            v-if="reorder.active.value"
+            :label="sub.name"
+            :index="index"
+            :total="subscriptions.length"
+            :position="reorder.positionLabel(index)"
+            :grabbed="reorder.grabbedIndex.value === index"
+            @up="reorder.moveUp(index)"
+            @down="reorder.moveDown(index)"
+            @keydown="reorder.onHandleKeydown($event, index)"
+          />
+          <button
+            v-else
+            class="status-toggle cf-reorder-mute"
+            :class="{ active: sub.enabled }"
+            :aria-label="sub.enabled ? `停用 ${sub.name}` : `启用 ${sub.name}`"
+            @click="handleToggle(sub)"
+          >
             <el-icon v-if="sub.enabled"><View /></el-icon>
             <el-icon v-else><Hide /></el-icon>
           </button>
         </div>
-        <div class="card-meta">
-          <span class="meta-pill type-pill" :class="getTypeClass(sub.type)">
-            {{ getTypeLabel(sub.type) }}
-          </span>
-          <span
-            class="meta-pill nodes-pill"
-            :class="getNodeStatusClass(subscriptionStatus[sub.id])"
-          >
-            <template v-if="subscriptionStatus[sub.id]?.status === 'loading'">
-              <el-icon class="spin"><Loading /></el-icon>
-              获取中...
-            </template>
-            <template v-else-if="subscriptionStatus[sub.id]?.status === 'success'">
-              <el-icon><CircleCheck /></el-icon>
-              {{ subscriptionStatus[sub.id]?.count || 0 }} 个节点
-            </template>
-            <template v-else-if="subscriptionStatus[sub.id]?.status === 'error'">
-              <el-icon><CircleClose /></el-icon>
-              获取失败
-            </template>
-            <template v-else>
-              <el-icon><Minus /></el-icon>
-              未获取
-            </template>
-          </span>
-        </div>
-        <div class="card-section">
-          <div class="section-label-row">
-            <div class="section-label">
-              <el-icon><Link /></el-icon>
-              订阅URL
-            </div>
-            <el-link type="primary" class="url-toggle" @click="toggleUrlReveal(sub.id)">
-              {{ revealedUrls[sub.id] ? '隐藏原文' : '显示原文' }}
+
+        <template v-if="!reorder.active.value">
+          <div class="card-meta">
+            <span class="meta-pill" :class="getTypeClass(sub.type)">{{ getTypeLabel(sub.type) }}</span>
+            <span class="meta-pill" :class="getNodeStatusClass(subscriptionStatus[sub.id])">
+              <template v-if="subscriptionStatus[sub.id]?.status === 'loading'">
+                <el-icon class="spin"><Loading /></el-icon>
+                获取中…
+              </template>
+              <template v-else-if="subscriptionStatus[sub.id]?.status === 'success'">
+                {{ subscriptionStatus[sub.id]?.count || 0 }} 个节点
+              </template>
+              <template v-else-if="subscriptionStatus[sub.id]?.status === 'error'">获取失败</template>
+              <template v-else>未获取</template>
+            </span>
+            <span class="meta-text">更新周期 {{ formatInterval(sub.interval) }}</span>
+          </div>
+
+          <div class="card-url">
+            <span class="card-url__value cf-mono">{{ getDisplayUrl(sub) }}</span>
+            <el-link type="primary" class="card-url__toggle" @click="toggleUrlReveal(sub.id)">
+              {{ revealedUrls[sub.id] ? '隐藏' : '显示原文' }}
             </el-link>
           </div>
-          <div class="url-box">{{ getDisplayUrl(sub) }}</div>
-        </div>
-        <div class="card-section inline">
-          <div class="section-label">
-            <el-icon><Calendar /></el-icon>
-            更新周期
+
+          <div class="card-actions">
+            <el-button size="small" @click="handleFetchSubscription(sub)">
+              <el-icon><Connection /></el-icon>
+              获取节点
+            </el-button>
+            <el-button size="small" @click="editSubscription(sub)">
+              <el-icon><EditPen /></el-icon>
+              编辑
+            </el-button>
+            <el-button size="small" text class="danger-text" @click="deleteSubscription(sub)">
+              <el-icon><Delete /></el-icon>
+              删除
+            </el-button>
           </div>
-          <div class="section-value">{{ formatInterval(sub.interval) }}</div>
-        </div>
-        <div class="card-actions">
-          <el-button
-            class="card-btn ghost"
-            size="small"
-                        @click="handleFetchSubscription(sub)"
-          >
-            <el-icon><Connection /></el-icon>
-            获取节点
-          </el-button>
-          <el-button
-            class="card-btn primary"
-            size="small"
-            @click="editSubscription(sub)"
-          >
-            <el-icon><EditPen /></el-icon>
-            编辑
-          </el-button>
-          <el-button
-            class="card-btn danger"
-            size="small"
-            @click="deleteSubscription(sub)"
-          >
-            <el-icon><Delete /></el-icon>
-            删除
-          </el-button>
-        </div>
+        </template>
       </div>
     </div>
 
@@ -238,14 +240,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { computed, ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElLoading, ElMessageBox } from 'element-plus'
-import { Plus, DCaret, Connection, Loading, CircleCheck, CircleClose, Minus, RefreshRight, View, Hide, Link, Calendar, EditPen, Delete, Close, ArrowDown } from '@element-plus/icons-vue'
+import { Plus, Connection, Loading, RefreshRight, View, Hide, EditPen, Delete, Close, ArrowDown, Search, Sort } from '@element-plus/icons-vue'
 import { subscriptionApi, subStoreUrlApi } from '@/api'
 import type { Subscription } from '@/types'
-import Sortable from 'sortablejs'
 import api from '@/api'
 import yaml from 'js-yaml'
+import PageHeader from '@/components/shell/PageHeader.vue'
+import ScopeBanner from '@/components/shell/ScopeBanner.vue'
+import ReorderBar from '@/components/shell/ReorderBar.vue'
+import DragHandle from '@/components/shell/DragHandle.vue'
+import { useReorder } from '@/composables/useReorder'
 
 const subscriptions = ref<Subscription[]>([])
 const subscriptionsContainer = ref<HTMLElement | null>(null)
@@ -626,47 +632,55 @@ const toggleSubscriptionEnabled = async (sub: Subscription) => {
   }
 }
 
-const initSortable = () => {
-  nextTick(() => {
-    if (subscriptionsContainer.value) {
-      Sortable.create(subscriptionsContainer.value, {
-        animation: 150,
-        handle: '.card-drag-handle',
-        ghostClass: 'sortable-ghost',
-        chosenClass: 'sortable-chosen',
-        dragClass: 'sortable-drag',
-        onEnd: async (evt: any) => {
-          const { oldIndex, newIndex } = evt
-          if (oldIndex === newIndex) return
+/* ---------- 搜索与排序 ---------- */
+const reorder = useReorder<Subscription>({
+  items: subscriptions,
+  container: subscriptionsContainer,
+  labelOf: sub => sub.name,
+  // 按 id 提交：后端 utils/reorder.py 的首选契约，服务端在存量数据上重排，
+  // 避免把列表接口的计算字段（cached_node_count 等）回写进配置
+  persist: async items => {
+    await api.post('/subscriptions/reorder', {
+      ids: items.map(item => item.id),
+      position: 'top'
+    })
+  }
+})
 
-          // 更新本地数据顺序
-          const movedItem = subscriptions.value.splice(oldIndex, 1)[0]
-          subscriptions.value.splice(newIndex, 0, movedItem)
 
-          // 保存新顺序到后端
-          try {
-            await saveSubscriptionsOrder()
-            ElMessage.success('排序已更新')
-          } catch (error) {
-            ElMessage.error('保存排序失败')
-            loadSubscriptions()
-          }
-        }
-      })
-    }
-  })
+const keyword = ref('')
+
+// 排序模式下必须展示完整列表，否则筛选会让保存的顺序丢条目
+const visibleSubscriptions = computed(() => {
+  if (reorder.active.value) return subscriptions.value
+  const q = keyword.value.trim().toLowerCase()
+  if (!q) return subscriptions.value
+  return subscriptions.value.filter(
+    sub =>
+      sub.name?.toLowerCase().includes(q) || sub.url?.toLowerCase().includes(q)
+  )
+})
+
+const emptyText = computed(() =>
+  subscriptions.value.length === 0 ? '还没有订阅来源' : '没有匹配的订阅'
+)
+
+const dotClass = (sub: Subscription): string => {
+  if (!sub.enabled) return 'is-off'
+  return subscriptionStatus.value[sub.id]?.status === 'error' ? 'is-warn' : 'is-ok'
 }
 
-const saveSubscriptionsOrder = async () => {
-  // 批量更新订阅顺序
-  await api.post('/subscriptions/reorder', {
-    subscriptions: subscriptions.value
-  })
+const handleSaveOrder = async () => {
+  try {
+    await reorder.save()
+    ElMessage.success('顺序已保存，所有配置空间生效')
+  } catch (error) {
+    ElMessage.error('保存顺序失败，顺序已还原')
+  }
 }
 
 onMounted(async () => {
   await loadSubscriptions()
-  initSortable()
 })
 
 onUnmounted(() => {
@@ -674,902 +688,325 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 页面只做布局与局部语义，颜色/圆角/间距全部来自全局 token */
 .subscriptions-page {
-  padding: 28px 32px 40px;
-  background: #f5f7ff;
-  min-height: calc(100vh - 64px);
-  --sub-radius-xl: 40px;
-  --sub-radius-lg: 24px;
-  --sub-radius-md: 16px;
-  --sub-radius-sm: 12px;
-  --sub-radius-pill: 999px;
-}
-
-.page-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-  /* 固定顶部 */
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  background: #f5f7ff;
-  margin: -28px -32px 28px -32px;
-  padding: 28px 32px;
+  flex-direction: column;
 }
 
-.title-block h2 {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  color: transparent;
-}
-
-.title-block p {
-  margin: 6px 0 0;
-  font-size: 14px;
-  color: #7f87af;
-}
-
-.header-actions {
+.cf-toolbar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  justify-content: flex-end;
+  gap: var(--cf-sp-2);
+  margin-bottom: var(--cf-sp-3);
 }
 
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 20px;
-  height: 40px;
-  border-radius: var(--sub-radius-md, 16px);
-  font-weight: 600;
-  font-size: 14px;
-  border: none;
-  background: rgba(107, 115, 255, 0.15);
-  color: #4a5bff;
-  transition: all 0.2s ease;
+.cf-toolbar__search {
+  max-width: 320px;
 }
 
-.action-btn.action-secondary {
-  border: 1px solid rgba(107, 115, 255, 0.35);
-}
-
-.action-btn.action-primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  color: #fff;
-  box-shadow: 0 12px 30px rgba(87, 104, 255, 0.25);
-}
-
-.action-btn:not([disabled]):hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(87, 104, 255, 0.25);
-}
-
-.action-btn:focus {
-  outline: none;
-}
-
-:deep(.action-btn .el-icon) {
-  font-size: 16px;
-}
-
+/* ---------- 卡片列表 ---------- */
 .subscriptions-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 24px;
-  margin-top: 28px;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--cf-sp-3);
 }
 
-:deep(.subscription-dialog),
-:deep(.el-overlay-dialog .subscription-dialog) {
-  border-radius: var(--sub-radius-xl, 40px) !important;
+.subscription-card {
+  background: var(--cf-s1);
+  border: 1px solid var(--cf-bd);
+  border-radius: var(--cf-r-xl);
+  box-shadow: var(--cf-shadow);
+  padding: var(--cf-sp-3) var(--cf-sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--cf-sp-2);
+}
+
+.subscription-card.disabled {
+  opacity: 0.65;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--cf-sp-2);
+  min-height: var(--cf-ctrl-h);
+}
+
+.card-order {
+  width: 22px;
+  font-size: 12px;
+  color: var(--cf-fg-3);
+  flex: 0 0 auto;
+}
+
+.card-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--cf-r-pill);
+  flex: 0 0 auto;
+}
+.card-dot.is-ok {
+  background: var(--cf-success);
+  box-shadow: 0 0 0 3px var(--cf-success-soft);
+}
+.card-dot.is-warn {
+  background: var(--cf-warning);
+  box-shadow: 0 0 0 3px var(--cf-warning-soft);
+}
+.card-dot.is-off {
+  background: var(--cf-fg-3);
+}
+
+.card-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--cf-fg);
   overflow: hidden;
-  background: rgba(252, 253, 255, 0.97);
-  box-shadow: 0 36px 80px rgba(65, 80, 180, 0.28);
-  border: 1px solid rgba(107, 115, 255, 0.16);
-  backdrop-filter: blur(20px);
-  --el-dialog-border-radius: var(--sub-radius-xl, 40px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-:deep(.subscription-dialog .el-dialog__header) {
-  padding: 20px 32px 0;
-  margin: 0;
-  border-bottom: none;
+.status-toggle {
+  width: var(--cf-ctrl-h);
+  height: var(--cf-ctrl-h);
+  border-radius: var(--cf-r-md);
+  border: 1px solid var(--cf-bd);
+  background: var(--cf-s2);
+  color: var(--cf-fg-3);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.status-toggle.active {
+  color: var(--cf-success);
+  border-color: color-mix(in srgb, var(--cf-success) 35%, transparent);
 }
 
-:deep(.subscription-dialog .el-dialog__body) {
-  padding: 0 32px 28px;
-  background: #f7f8ff;
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cf-sp-2);
 }
 
-:deep(.subscription-dialog .el-dialog__footer) {
-  padding: 0 32px 28px;
-  border-top: none;
+.meta-pill {
+  font-size: 11px;
+  font-weight: 650;
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: var(--cf-s3);
+  color: var(--cf-fg-2);
+  border: 1px solid var(--cf-bd);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.meta-pill.status-success {
+  background: var(--cf-success-soft);
+  color: var(--cf-success);
+  border-color: transparent;
+}
+.meta-pill.status-error {
+  background: var(--cf-danger-soft);
+  color: var(--cf-danger);
+  border-color: transparent;
+}
+.meta-pill.status-loading {
+  background: var(--cf-primary-soft);
+  color: var(--cf-primary);
+  border-color: transparent;
 }
 
+.meta-text {
+  font-size: 12px;
+  color: var(--cf-fg-2);
+}
+
+.card-url {
+  display: flex;
+  align-items: center;
+  gap: var(--cf-sp-2);
+  min-width: 0;
+}
+
+.card-url__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--cf-fg-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-url__toggle {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.card-actions {
+  display: flex;
+  gap: var(--cf-sp-2);
+  flex-wrap: wrap;
+  margin-top: var(--cf-sp-1);
+}
+
+.danger-text {
+  color: var(--cf-danger);
+}
+
+.spin {
+  animation: cf-spin 1s linear infinite;
+}
+@keyframes cf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- 对话框 ---------- */
 .dialog-header {
   display: flex;
-  justify-content: space-between;
   align-items: flex-start;
-  gap: 16px;
-  padding: 8px 0 18px;
-  color: #30354d;
+  gap: var(--cf-sp-3);
 }
 
 .dialog-title-group h3 {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--cf-fg);
 }
 
 .dialog-title-group p {
-  margin: 8px 0 0;
-  font-size: 13px;
-  color: #7c86ae;
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--cf-fg-2);
 }
 
 .dialog-close-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid rgba(124, 134, 174, 0.35);
-  background: transparent;
-  color: #7c86ae;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  margin-left: auto;
+  width: var(--cf-ctrl-h);
+  height: var(--cf-ctrl-h);
+  border-radius: var(--cf-r-md);
+  border: 1px solid var(--cf-bd);
+  background: var(--cf-s2);
+  color: var(--cf-fg-2);
+  display: grid;
+  place-items: center;
   cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.dialog-close-btn:hover {
-  background: rgba(107, 115, 255, 0.12);
-  border-color: rgba(107, 115, 255, 0.35);
-  color: #4e5eff;
-}
-
-.dialog-card {
-  background: #fff;
-  border-radius: var(--sub-radius-lg, 24px);
-  padding: 30px 28px 26px;
-  box-shadow: 0 18px 30px rgba(91, 112, 255, 0.12);
-  border: 1px solid rgba(107, 115, 255, 0.1);
-}
-
-.subscription-form {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
+  flex: 0 0 auto;
 }
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 18px;
-}
-
-.interval-row {
-  align-items: start;
-}
-
-.form-item {
-  margin: 0;
-}
-
-.subscription-form :deep(.el-form-item__label) {
-  font-weight: 600;
-  font-size: 13px;
-  color: #6c74a0;
-  margin-bottom: 8px;
-}
-
-.subscription-form :deep(.el-input__wrapper),
-.subscription-form :deep(.el-select .el-input__wrapper),
-.subscription-form :deep(.el-textarea__inner),
-.subscription-form :deep(.el-input-number .el-input__wrapper) {
-  border-radius: var(--sub-radius-md, 16px);
-  border: none;
-  box-shadow: 0 0 0 1px rgba(107, 115, 255, 0.14);
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
-  background-color: #f9faff;
-}
-
-.subscription-form :deep(.el-textarea__inner) {
-  padding: 14px 16px;
-}
-
-.subscription-form :deep(.el-input__wrapper.is-focus),
-.subscription-form :deep(.el-select .el-input__wrapper.is-focus),
-.subscription-form :deep(.el-input-number.is-active .el-input__wrapper),
-.subscription-form :deep(.el-input-number:hover .el-input__wrapper),
-.subscription-form :deep(.el-textarea__inner:focus) {
-  box-shadow: 0 0 0 2px rgba(107, 115, 255, 0.32);
-  transform: translateY(-1px);
-  background-color: #fff;
-}
-
-.dialog-card :deep(.el-input-number .el-input__wrapper) {
-  height: 46px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0 var(--cf-sp-4);
 }
 
 .interval-box {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.interval-input {
+  align-items: center;
+  gap: var(--cf-sp-2);
   width: 100%;
 }
 
-.interval-hint {
+.interval-hint,
+.form-tip {
   font-size: 12px;
-  color: #8a93c1;
+  color: var(--cf-fg-3);
+}
+
+.form-tip {
+  margin-top: var(--cf-sp-1);
+  line-height: 1.45;
 }
 
 .status-toggle-row {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
-  font-weight: 600;
-}
-
-.status-toggle-row span {
+  gap: var(--cf-sp-2);
+  color: var(--cf-fg-2);
   font-size: 13px;
 }
 
 .dialog-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
+  gap: var(--cf-sp-2);
 }
 
-.footer-btn {
-  min-width: 118px;
-  height: 42px;
-  border-radius: var(--sub-radius-md, 16px);
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.footer-btn.ghost {
-  background: transparent;
-  color: #5460d7;
-  border: 1px solid rgba(107, 115, 255, 0.3);
-}
-
-.footer-btn.ghost:hover {
-  background: rgba(107, 115, 255, 0.08);
-}
-
-.footer-btn.primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  border: none;
-  color: #fff;
-  box-shadow: 0 12px 24px rgba(87, 104, 255, 0.28);
-}
-
-.footer-btn.primary:hover {
-  transform: translateY(-1px);
-}
-
-.subscription-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 28px 24px 24px;
-  border-radius: var(--sub-radius-lg, 24px);
-  background: #fff;
-  border: 1px solid rgba(107, 115, 255, 0.08);
-  box-shadow: 0 18px 40px rgba(91, 112, 255, 0.16);
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
-}
-
-.subscription-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 22px 48px rgba(91, 112, 255, 0.2);
-}
-
-.subscription-card.disabled {
-  opacity: 0.5;
-  filter: grayscale(0.4);
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-}
-
-.card-title-group {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.card-drag-handle {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: rgba(107, 115, 255, 0.12);
-  color: #5a66ff;
-  cursor: grab;
-  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
-  box-shadow: 0 8px 20px rgba(91, 112, 255, 0.18);
-}
-
-.card-drag-handle:hover {
-  background: rgba(107, 115, 255, 0.22);
-  color: #3f4ffa;
-  transform: translateY(-1px);
-}
-
-.card-drag-handle:focus {
-  outline: none;
-}
-
-.card-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #1f2d3d;
-}
-
-.status-toggle {
-  width: 40px;
-  height: 40px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(107, 115, 255, 0.16);
-  color: #5a66ff;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.status-toggle.active {
-  background: linear-gradient(135deg, #8b8fff 0%, #6b7dff 100%);
-  color: #fff;
-  box-shadow: 0 12px 28px rgba(87, 104, 255, 0.3);
-}
-
-.status-toggle:hover {
-  transform: scale(1.05);
-}
-
-.status-toggle:focus {
-  outline: none;
-}
-
-.card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.meta-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.type-mihomo {
-  background: rgba(107, 115, 255, 0.16);
-  color: #4e5eff;
-}
-
-.type-surge {
-  background: rgba(139, 143, 255, 0.16);
-  color: #8b8fff;
-}
-
-.type-universal {
-  background: rgba(129, 139, 173, 0.16);
-  color: #5e6887;
-}
-
-.type-default {
-  background: rgba(140, 149, 186, 0.18);
-  color: #626c90;
-}
-
-.nodes-pill {
-  background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
-}
-
-.nodes-pill.status-success {
-  background: rgba(139, 143, 255, 0.16);
-  color: #8b8fff;
-}
-
-.nodes-pill.status-error {
-  background: rgba(255, 131, 131, 0.2);
-  color: #eb4d4d;
-}
-
-.nodes-pill.status-loading {
-  background: rgba(107, 115, 255, 0.18);
-  color: #4e5eff;
-}
-
-.nodes-pill.status-idle {
-  background: rgba(136, 148, 185, 0.16);
-  color: #6c7496;
-}
-
-.nodes-pill .spin {
-  animation: rotate 1s linear infinite;
-}
-
-@keyframes rotate {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.card-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.card-section.inline {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.section-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.section-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+/* ---------- 节点预览 ---------- */
+.preview-count {
   font-size: 13px;
-  color: #7d88af;
+  color: var(--cf-fg-2);
 }
 
-.url-toggle {
-  font-size: 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.url-toggle:focus-visible {
-  outline: none;
-}
-
-.url-toggle:focus-visible span {
-  text-decoration: underline;
-}
-
-.section-value {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1f2d3d;
-}
-
-.url-box {
-  padding: 12px 14px;
-  border-radius: var(--sub-radius-md, 16px);
-  background: #f4f6ff;
-  color: #1f2d3d;
-  font-size: 13px;
-  font-family: 'SFMono-Regular', 'Consolas', 'Monaco', monospace;
-  word-break: break-all;
-}
-
-.card-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: auto;
-}
-
-:deep(.card-btn.el-button) {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 40px;
-  border-radius: var(--sub-radius-md, 16px);
-  font-size: 13px;
-  font-weight: 600;
-  padding: 0 16px;
-  border: none;
-}
-
-.card-btn.ghost {
-  background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
-  border: 1px solid rgba(107, 115, 255, 0.25);
-}
-
-.card-btn.primary {
-  background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
-  border: 1px solid rgba(107, 115, 255, 0.32);
-}
-
-.card-btn.danger {
-  background: rgba(155, 143, 255, 0.12);
-  color: #9b8fff;
-  border: 1px solid rgba(155, 143, 255, 0.28);
-}
-
-.card-btn:hover {
-  box-shadow: 0 10px 24px rgba(87, 104, 255, 0.15);
-}
-
-.card-btn.danger:hover {
-  box-shadow: 0 10px 24px rgba(155, 143, 255, 0.25);
-}
-
-.sortable-ghost {
-  opacity: 0.6;
-  transform: scale(0.98);
-}
-
-.sortable-chosen {
-  box-shadow: 0 18px 40px rgba(91, 112, 255, 0.2);
-}
-
-.sortable-drag {
-  cursor: grabbing !important;
-}
-
-@media (max-width: 1024px) {
-  .subscriptions-page {
-    padding: 24px;
-    --sub-radius-xl: 32px;
-    --sub-radius-lg: 22px;
-    --sub-radius-md: 14px;
-  }
-
-  .subscriptions-grid {
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 20px;
-  }
-
-  :deep(.subscription-dialog .el-dialog__header) {
-    padding: 20px 24px 0;
-  }
-
-  :deep(.subscription-dialog .el-dialog__body),
-  :deep(.subscription-dialog .el-dialog__footer) {
-    padding: 0 24px 24px;
-  }
-
-  :deep(.subscription-dialog),
-  :deep(.el-overlay-dialog .subscription-dialog) {
-    border-radius: var(--sub-radius-xl, 32px) !important;
-    --el-dialog-border-radius: var(--sub-radius-xl, 32px);
-  }
-
-  .dialog-card {
-    padding: 28px 24px 24px;
-  }
-}
-
-@media (max-width: 768px) {
-  .page-header {
-    flex-direction: column;
-    align-items: flex-start;
-    margin: -20px -20px 20px -20px;
-    padding: 20px;
-  }
-
-  .header-actions {
-    width: 100%;
-    flex-direction: column;
-    gap: 10px;
-    align-items: stretch;
-  }
-
-  :deep(.action-btn.el-button) {
-    width: 100%;
-    justify-content: center;
-    display: flex;
-    box-sizing: border-box;
-  }
-
-  .action-btn {
-    width: 100%;
-    display: flex;
-    box-sizing: border-box;
-  }
-
-  :deep(.header-actions .el-button + .el-button) {
-    margin-left: 0;
-  }
-
-  .card-actions {
-    width: 100%;
-    flex-direction: column;
-    flex-wrap: nowrap;
-    align-items: stretch;
-    gap: 10px;
-  }
-
-  :deep(.card-actions .el-button + .el-button) {
-    margin-left: 0;
-  }
-
-  .action-btn.action-secondary {
-    border: 1px solid rgba(107, 115, 255, 0.35);
-  }
-
-  .action-btn.action-primary {
-    border: 1px solid transparent;
-  }
-
-  .subscriptions-page {
-    padding: 20px;
-    --sub-radius-xl: 28px;
-    --sub-radius-lg: 20px;
-    --sub-radius-md: 14px;
-  }
-
-  .subscriptions-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .subscription-card {
-    padding: 20px;
-  }
-
-  :deep(.card-btn.el-button) {
-    flex: unset;
-    width: 100%;
-    display: flex;
-    box-sizing: border-box;
-    justify-content: center;
-  }
-
-  .dialog-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
-  .dialog-close-btn {
-    align-self: flex-end;
-  }
-
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .interval-row {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-
-  :deep(.subscription-dialog),
-  :deep(.el-overlay-dialog .subscription-dialog) {
-    border-radius: var(--sub-radius-xl, 28px) !important;
-    --el-dialog-border-radius: var(--sub-radius-xl, 28px);
-  }
-
-}
-
-@media (max-width: 480px) {
-  .subscriptions-page {
-    padding: 16px;
-    --sub-radius-xl: 24px;
-    --sub-radius-lg: 18px;
-    --sub-radius-md: 12px;
-  }
-
-  .card-title {
-    font-size: 16px;
-  }
-
-  :deep(.action-btn.el-button) {
-    width: 100%;
-    justify-content: center;
-    display: flex;
-    box-sizing: border-box;
-  }
-
-  .action-btn {
-    width: 100%;
-    display: flex;
-    box-sizing: border-box;
-  }
-
-  .action-btn.action-secondary {
-    border: 1px solid rgba(107, 115, 255, 0.35);
-  }
-
-  .action-btn.action-primary {
-    border: 1px solid transparent;
-  }
-
-  .card-actions {
-    gap: 8px;
-  }
-
-  :deep(.card-btn.el-button) {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .dialog-footer {
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .footer-btn {
-    width: 100%;
-  }
-
-  :deep(.subscription-dialog),
-  :deep(.el-overlay-dialog .subscription-dialog) {
-    border-radius: var(--sub-radius-xl, 24px) !important;
-    --el-dialog-border-radius: var(--sub-radius-xl, 24px);
-  }
-
-  :deep(.subscription-dialog .el-dialog__body),
-  :deep(.subscription-dialog .el-dialog__footer) {
-    padding: 0 20px 20px;
-  }
-
-  .dialog-card {
-    padding: 24px 18px 20px;
-  }
-}
-
-/* 节点预览对话框 */
-.nodes-preview-dialog .preview-header {
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #ebedf5;
-}
-
-.nodes-preview-dialog .preview-count {
-  font-size: 14px;
-  color: #65708f;
-  font-weight: 500;
-}
-
-.nodes-preview-dialog .nodes-list {
-  margin: 0 -20px;
-}
-
-.nodes-preview-dialog .node-item {
-  padding: 12px 20px;
-  border-bottom: 1px solid #eef1f8;
-  transition: background 0.2s ease;
+.node-item {
+  padding: var(--cf-sp-3) 0;
+  border-bottom: 1px solid var(--cf-bd);
   cursor: pointer;
 }
-
-.nodes-preview-dialog .node-item:hover {
-  background: #f7f8ff;
-}
-
-.nodes-preview-dialog .node-item .expand-arrow {
-  font-size: 14px;
-  color: #7d88af;
-  margin-left: auto;
-  transition: transform 0.2s ease;
-  flex-shrink: 0;
-}
-
-.nodes-preview-dialog .node-item .expand-arrow.expanded {
-  transform: rotate(180deg);
-}
-
-.nodes-preview-dialog .code-box {
-  margin-top: 10px;
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: #f4f6ff;
-  color: #1f2d3d;
-  font-size: 13px;
-  font-family: 'SFMono-Regular', 'Consolas', 'Monaco', monospace;
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 260px;
-  overflow: auto;
-  border: 1px solid rgba(107, 115, 255, 0.1);
-  cursor: text;
-}
-
-.nodes-preview-dialog .node-item:last-child {
+.node-item:last-child {
   border-bottom: none;
 }
 
-.nodes-preview-dialog .node-info {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.nodes-preview-dialog .node-name {
+.node-name {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--cf-sp-2);
   font-size: 14px;
-  font-weight: 600;
-  color: #1f2d3d;
+  font-weight: 550;
+  color: var(--cf-fg);
 }
 
-.nodes-preview-dialog .node-name .el-icon {
-  color: #4e5eff;
-  font-size: 16px;
+.expand-arrow {
+  margin-left: auto;
+  color: var(--cf-fg-3);
+  transition: transform var(--cf-dur) var(--cf-ease);
+}
+.expand-arrow.expanded {
+  transform: rotate(180deg);
 }
 
-.nodes-preview-dialog .node-details {
+.node-details {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 13px;
-  color: #7d88af;
+  gap: var(--cf-sp-2);
+  margin-top: var(--cf-sp-1);
 }
 
-.nodes-preview-dialog .node-server {
-  font-family: 'SFMono-Regular', 'Consolas', 'Monaco', monospace;
-  color: #7d88af;
+.node-server {
+  font-family: var(--cf-mono);
+  font-size: 12px;
+  color: var(--cf-fg-2);
 }
 
-.nodes-preview-dialog :deep(.el-dialog) {
-  border-radius: var(--sub-radius-lg, 24px);
-  overflow: hidden;
+.code-box {
+  margin: var(--cf-sp-2) 0 0;
+  padding: var(--cf-sp-3);
+  background: var(--cf-s3);
+  border: 1px solid var(--cf-bd);
+  border-radius: var(--cf-r-md);
+  font-family: var(--cf-mono);
+  font-size: 12px;
+  color: var(--cf-fg-2);
+  overflow-x: auto;
+  white-space: pre;
 }
 
-@media (max-width: 768px) {
-  .nodes-preview-dialog :deep(.el-dialog) {
-    width: 95vw !important;
-    max-width: 95vw !important;
+@media (max-width: 640px) {
+  .subscriptions-grid {
+    grid-template-columns: 1fr;
   }
-
-  .nodes-preview-dialog .nodes-list {
-    margin: 0 -16px;
-  }
-}
-
-@media (max-width: 480px) {
-  .nodes-preview-dialog :deep(.el-dialog) {
-    width: 100vw !important;
-    max-width: 100vw !important;
-    margin: 0 !important;
+  .cf-toolbar__search {
+    max-width: none;
   }
 }
 </style>
