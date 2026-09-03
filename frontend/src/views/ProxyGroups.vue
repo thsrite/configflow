@@ -1,8 +1,12 @@
 <template>
-  <div class="proxy-groups-page">
+  <div class="proxy-groups-page" :class="{ 'cf-reordering': reorder.active.value }">
     <ScopeBanner scope="profile" :profile-name="cfProfileName" />
     <PageHeader title="策略组" description="分组、筛选与节点引用，仅属于当前配置空间">
       <template #actions>
+        <el-button v-if="!reorder.active.value" :disabled="proxyGroups.length < 2" @click="reorder.enter">
+          <el-icon><Sort /></el-icon>
+          调整顺序
+        </el-button>
         <el-button type="primary" @click="showAddDialog">
           <el-icon><Plus /></el-icon>
           添加策略组
@@ -10,19 +14,36 @@
       </template>
     </PageHeader>
 
+    <ReorderBar
+      :active="reorder.active.value"
+      :saving="reorder.saving.value"
+      :announcement="reorder.announcement.value"
+      @cancel="reorder.cancel"
+      @save="handleSaveOrder"
+    />
+
     <div class="groups-grid" ref="groupsContainer">
       <div
-        v-for="group in proxyGroups"
+        v-for="(group, cfIndex) in proxyGroups"
         :key="group.id || group.name"
         class="group-card"
         :class="{ disabled: !group.enabled }"
         :data-name="group.name"
+        data-reorder-item
       >
         <div class="card-header">
           <div class="card-title-group">
-            <div class="card-drag-handle">
-              <el-icon><DCaret /></el-icon>
-            </div>
+            <DragHandle
+              v-if="reorder.active.value"
+              :label="group.name || group.id"
+              :index="cfIndex"
+              :total="proxyGroups.length"
+              :position="reorder.positionLabel(cfIndex)"
+              :grabbed="reorder.grabbedIndex.value === cfIndex"
+              @up="reorder.moveUp(cfIndex)"
+              @down="reorder.moveDown(cfIndex)"
+              @keydown="reorder.onHandleKeydown($event, cfIndex)"
+            />
             <div class="card-title">
               <span class="group-icon" v-if="getGroupIcon(group.name)">{{ getGroupIcon(group.name) }}</span>
               <span class="group-name">{{ getGroupNameWithoutIcon(group.name) }}</span>
@@ -467,12 +488,15 @@
   </div>
 </template>
 <script setup lang="ts">
+import ReorderBar from '@/components/shell/ReorderBar.vue'
+import DragHandle from '@/components/shell/DragHandle.vue'
+import { useReorder } from '@/composables/useReorder'
 import PageHeader from '@/components/shell/PageHeader.vue'
 import ScopeBanner from '@/components/shell/ScopeBanner.vue'
 import { useProfileStore } from '@/stores/profile'
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, DCaret, View, Edit, Delete, Link, Connection, Filter, Rank, ArrowDown } from '@element-plus/icons-vue'
+import { Plus, DCaret, View, Edit, Delete, Link, Connection, Filter, Rank, ArrowDown, Sort } from '@element-plus/icons-vue'
 import { proxyGroupApi, nodeApi } from '@/api'
 import type { ProxyGroup, ProxyNode, Subscription } from '@/types'
 import api from '@/api'
@@ -1571,42 +1595,7 @@ const deleteGroup = async (row: ProxyGroup) => {
   }
 }
 
-const initSortable = () => {
-  nextTick(() => {
-    if (groupsContainer.value) {
-      Sortable.create(groupsContainer.value, {
-        animation: 150,
-        handle: '.card-drag-handle',
-        ghostClass: 'sortable-ghost',
-        chosenClass: 'sortable-chosen',
-        dragClass: 'sortable-drag',
-        onEnd: async (evt: any) => {
-          const { oldIndex, newIndex } = evt
-          if (oldIndex === newIndex) return
 
-          // 更新本地数据顺序
-          const movedItem = proxyGroups.value.splice(oldIndex, 1)[0]
-          proxyGroups.value.splice(newIndex, 0, movedItem)
-
-          // 保存新顺序到后端
-          try {
-            await saveProxyGroupsOrder()
-            ElMessage.success('排序已更新')
-          } catch (error) {
-            ElMessage.error('保存排序失败')
-            loadProxyGroups()
-          }
-        }
-      })
-    }
-  })
-}
-
-const saveProxyGroupsOrder = async () => {
-  await api.post('/proxy-groups/reorder', {
-    groups: proxyGroups.value
-  })
-}
 
 // 初始化已排序代理列表的拖拽功能
 const initOrderedProxiesSortable = () => {
@@ -1671,9 +1660,31 @@ watch(activeCollapsePanel, (newVal) => {
   }
 })
 
+/* ---------- 统一拖动排序 ---------- */
+const reorder = useReorder<any>({
+  items: proxyGroups,
+  container: groupsContainer,
+  labelOf: group => group.name || group.id,
+  // 按 id 提交，服务端在存量数据上重排
+  persist: async items => {
+    await api.post('/proxy-groups/reorder', {
+      ids: items.map(item => item.id),
+      position: 'top'
+    })
+  }
+})
+
+const handleSaveOrder = async () => {
+  try {
+    await reorder.save()
+    ElMessage.success('顺序已保存')
+  } catch (error) {
+    ElMessage.error('保存顺序失败，顺序已还原')
+  }
+}
+
 onMounted(async () => {
   loadProxyGroups().then(() => {
-    initSortable()
   })
   loadNodes()
   loadSubscriptions()

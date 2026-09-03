@@ -1,8 +1,12 @@
 <template>
-  <div class="rules-page">
+  <div class="rules-page" :class="{ 'cf-reordering': reorder.active.value }">
     <ScopeBanner scope="profile" :profile-name="cfProfileName" />
     <PageHeader title="策略规则" description="单条规则与规则集绑定，仅属于当前配置空间">
       <template #actions>
+        <el-button v-if="!reorder.active.value" :disabled="allRulesAndSets.length < 2" @click="enterReorder">
+          <el-icon><Sort /></el-icon>
+          调整顺序
+        </el-button>
         <el-button-group class="view-toggle">
           <el-button
             :class="['toggle-btn', { active: viewMode === 'list' }]"
@@ -52,15 +56,24 @@
       </template>
     </PageHeader>
 
-    <div v-if="allRulesAndSets.length === 0" class="empty-state">
+    <ReorderBar
+      :active="reorder.active.value"
+      :saving="reorder.saving.value"
+      :announcement="reorder.announcement.value"
+      @cancel="reorder.cancel"
+      @save="handleSaveOrder"
+    />
+
+    <div v-if="displayList.length === 0" class="empty-state">
       <el-empty description="暂无规则，请添加规则或规则集" />
     </div>
 
     <!-- 列表视图 -->
     <div v-else-if="viewMode === 'list'" class="rules-list" id="sortable-rules" ref="rulesContainer">
       <div
-        v-for="item in allRulesAndSets"
+        v-for="(item, cfIndex) in displayList"
         :key="item.uniqueId"
+        data-reorder-item
         class="list-item-wrapper"
         :data-id="item.uniqueId"
       >
@@ -71,9 +84,17 @@
           @click="toggleGroup(item.groupId)"
         >
           <div class="list-item-drag">
-            <button class="card-drag-handle" type="button" @click.stop>
-              <el-icon><DCaret /></el-icon>
-            </button>
+            <DragHandle
+              v-if="reorder.active.value"
+              :label="item.isGroup ? (item.groupName || item.groupDefaultName) : (item.name || item.id)"
+              :index="cfIndex"
+              :total="displayList.length"
+              :position="reorder.positionLabel(cfIndex)"
+              :grabbed="reorder.grabbedIndex.value === cfIndex"
+              @up="reorder.moveUp(cfIndex)"
+              @down="reorder.moveDown(cfIndex)"
+              @keydown="reorder.onHandleKeydown($event, cfIndex)"
+            />
           </div>
           <div class="list-item-info">
             <div class="list-item-name">{{ item.groupName || item.groupDefaultName }}</div>
@@ -104,9 +125,17 @@
           ]"
         >
           <div class="list-item-drag">
-            <button class="card-drag-handle" type="button">
-              <el-icon><DCaret /></el-icon>
-            </button>
+            <DragHandle
+              v-if="reorder.active.value"
+              :label="item.isGroup ? (item.groupName || item.groupDefaultName) : (item.name || item.id)"
+              :index="cfIndex"
+              :total="displayList.length"
+              :position="reorder.positionLabel(cfIndex)"
+              :grabbed="reorder.grabbedIndex.value === cfIndex"
+              @up="reorder.moveUp(cfIndex)"
+              @down="reorder.moveDown(cfIndex)"
+              @keydown="reorder.onHandleKeydown($event, cfIndex)"
+            />
           </div>
           <div class="list-item-type">
             <span class="type-badge" :class="item.itemType">
@@ -166,8 +195,9 @@
     <!-- 卡片视图 -->
     <div v-else class="rules-grid" id="sortable-rules" ref="rulesContainer">
       <div
-        v-for="item in allRulesAndSets"
+        v-for="(item, cfIndex) in displayList"
         :key="item.uniqueId"
+        data-reorder-item
         class="rule-card-wrapper"
         :data-id="item.uniqueId"
       >
@@ -179,9 +209,17 @@
         >
           <div class="card-header">
             <div class="card-title-group">
-              <button class="card-drag-handle" type="button" @click.stop>
-                <el-icon><DCaret /></el-icon>
-              </button>
+            <DragHandle
+              v-if="reorder.active.value"
+              :label="item.isGroup ? (item.groupName || item.groupDefaultName) : (item.name || item.id)"
+              :index="cfIndex"
+              :total="displayList.length"
+              :position="reorder.positionLabel(cfIndex)"
+              :grabbed="reorder.grabbedIndex.value === cfIndex"
+              @up="reorder.moveUp(cfIndex)"
+              @down="reorder.moveDown(cfIndex)"
+              @keydown="reorder.onHandleKeydown($event, cfIndex)"
+            />
               <div class="card-title">{{ item.groupName || item.groupDefaultName }}</div>
             </div>
             <button class="expand-btn" @click.stop="toggleGroup(item.groupId)">
@@ -219,9 +257,17 @@
           <!-- 卡片头部 -->
           <div class="card-header">
             <div class="card-title-group">
-              <button class="card-drag-handle" type="button">
-                <el-icon><DCaret /></el-icon>
-              </button>
+            <DragHandle
+              v-if="reorder.active.value"
+              :label="item.isGroup ? (item.groupName || item.groupDefaultName) : (item.name || item.id)"
+              :index="cfIndex"
+              :total="displayList.length"
+              :position="reorder.positionLabel(cfIndex)"
+              :grabbed="reorder.grabbedIndex.value === cfIndex"
+              @up="reorder.moveUp(cfIndex)"
+              @down="reorder.moveDown(cfIndex)"
+              @keydown="reorder.onHandleKeydown($event, cfIndex)"
+            />
               <span class="card-type-badge" :class="item.itemType">
                 {{ item.itemType === 'rule' ? '规则' : '规则集' }}
               </span>
@@ -653,12 +699,15 @@
 </template>
 
 <script setup lang="ts">
+import ReorderBar from '@/components/shell/ReorderBar.vue'
+import DragHandle from '@/components/shell/DragHandle.vue'
+import { useReorder } from '@/composables/useReorder'
 import PageHeader from '@/components/shell/PageHeader.vue'
 import ScopeBanner from '@/components/shell/ScopeBanner.vue'
 import { useProfileStore } from '@/stores/profile'
 import { ref, onMounted, onUnmounted, onActivated, computed, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { DCaret, Edit, Delete, FolderOpened, ArrowUp, ArrowDown, Search, Plus, View, Hide, InfoFilled, List, Grid, ChatLineSquare, CopyDocument, Loading } from '@element-plus/icons-vue'
+import { DCaret, Edit, Delete, FolderOpened, ArrowUp, ArrowDown, Search, Plus, View, Hide, InfoFilled, List, Grid, ChatLineSquare, CopyDocument, Loading, Sort } from '@element-plus/icons-vue'
 import { ruleApi, ruleSetApi, proxyGroupApi } from '@/api'
 import type { Rule, RuleSet, ProxyGroup } from '@/types'
 import { activeProfileId } from '@/profileContext'
@@ -1339,63 +1388,6 @@ const rebuildRulesOrderFromDisplay = (displayItems: any[], orderedIds: string[])
   return reorderedRules
 }
 
-const initSortable = () => {
-  nextTick(() => {
-    const container = rulesContainer.value || document.querySelector('#sortable-rules')
-    if (sortableInstance) {
-      sortableInstance.destroy()
-      sortableInstance = null
-    }
-
-    if (container) {
-      sortableInstance = Sortable.create(container as HTMLElement, {
-        handle: '.card-drag-handle',
-        animation: 150,
-        ghostClass: 'sortable-ghost',
-        onEnd: async (evt: any) => {
-          const { oldIndex, newIndex, to } = evt
-          if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return
-
-          const displayItemsSnapshot = [...allRulesAndSets.value]
-          const orderedIds = Array.from((to as HTMLElement).children)
-            .map(child => (child as HTMLElement).dataset.id)
-            .filter((id): id is string => !!id)
-
-          const reorderedRules = rebuildRulesOrderFromDisplay(displayItemsSnapshot, orderedIds)
-          if (reorderedRules.length !== allRules.value.length) {
-            console.error('拖拽排序重建失败，规则数量不一致', {
-              orderedIds,
-              expected: allRules.value.length,
-              actual: reorderedRules.length
-            })
-            ElMessage.error('拖拽排序失败，请重试')
-            loadAllRules()
-            return
-          }
-
-          allRules.value = reorderedRules
-
-          // 保存新顺序到后端
-          try {
-            const saved = await saveRulesOrder()
-            // 只有在真正执行了保存才显示成功消息
-            if (saved) {
-              // 重新加载并折叠分组，确保拖拽合并后立即反映为最新分组卡片
-              expandedGroups.value = new Set()
-              await loadAllRules()
-              ElMessage.success('排序已更新')
-            }
-          } catch (error) {
-            console.error('保存排序失败:', error)
-            ElMessage.error('保存排序失败')
-            // 重新加载数据
-            loadAllRules()
-          }
-        }
-      })
-    }
-  })
-}
 
 const saveRulesOrder = async (): Promise<boolean> => {
   // 防止并发请求
@@ -1508,7 +1500,6 @@ const deleteDuplicateRule = async (occ: any) => {
 // 监听视图模式切换，重新初始化拖拽
 watch(viewMode, () => {
   nextTick(() => {
-    initSortable()
   })
 })
 
@@ -1525,9 +1516,54 @@ watch(() => ruleSetForm.value.behavior, (newBehavior) => {
   ruleSetForm.value.no_resolve = newBehavior === 'ipcidr'
 })
 
+/* ---------- 统一拖动排序 ----------
+ * 可见列表是展示项（分组会折叠多条原始规则），排序结果必须展开回
+ * 原始 rule_configs。展示项的键是 itemType-id 复合键，说明原始 id 可能
+ * 跨类型重复，因此这里沿用后端仍兼容的完整数组格式而不是 ids 契约。
+ */
+const reorderDisplayItems = ref<any[]>([])
+
+const displayList = computed(() =>
+  reorder.active.value ? reorderDisplayItems.value : allRulesAndSets.value
+)
+
+const reorder = useReorder<any>({
+  items: reorderDisplayItems,
+  container: rulesContainer,
+  labelOf: item =>
+    item.isGroup ? item.groupName || item.groupDefaultName : item.name || item.id,
+  persist: async items => {
+    const rebuilt = rebuildRulesOrderFromDisplay(items, items.map(item => item.uniqueId))
+    if (rebuilt.length !== allRules.value.length) {
+      // 数量对不上说明展示项与原始数据失配，宁可报错也不提交残缺顺序
+      throw new Error(
+        `排序重建失败：期望 ${allRules.value.length} 条，实际 ${rebuilt.length} 条`
+      )
+    }
+    await api.post('/rules/reorder', { rule_configs: rebuilt })
+    allRules.value = rebuilt
+  }
+})
+
+const enterReorder = () => {
+  reorderDisplayItems.value = [...allRulesAndSets.value]
+  reorder.enter()
+}
+
+const handleSaveOrder = async () => {
+  try {
+    await reorder.save()
+    // 折叠分组，让合并后的分组卡片立即反映最新顺序
+    expandedGroups.value = new Set()
+    await loadAllRules()
+    ElMessage.success('顺序已保存')
+  } catch (error) {
+    ElMessage.error('保存顺序失败，顺序已还原')
+  }
+}
+
 onMounted(() => {
   Promise.all([loadAllRules(), loadProxyGroups(), loadRuleLibrary()]).then(() => {
-    initSortable()
   })
 })
 
