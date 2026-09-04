@@ -138,6 +138,17 @@ onMounted(() => {
     width: 112px;
   }
 }
+/* 移动端触控尺寸：28px 在触屏上过小 */
+@media (max-width: 900px) {
+  .profile-select :deep(.el-select__wrapper) {
+    min-height: 32px;
+  }
+
+  .profile-manager-button {
+    height: 32px;
+    min-width: 32px;
+  }
+}
 </style>
 
 <style>

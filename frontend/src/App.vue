@@ -292,6 +292,14 @@ watch(
   font-weight: 650;
   font-size: 15px;
   letter-spacing: -0.01em;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.cf-brand__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cf-brand__logo {
@@ -305,6 +313,9 @@ watch(
   display: flex;
   align-items: center;
   gap: var(--cf-sp-2);
+  min-width: 0;
+  flex: 1 1 auto;
+  justify-content: flex-end;
 }
 
 .cf-version {
@@ -352,12 +363,34 @@ watch(
   .cf-hide-mobile {
     display: none !important;
   }
+  .cf-topbar {
+    gap: var(--cf-sp-2);
+    padding: 0 var(--cf-sp-3);
+  }
+  /* 窄屏只剩 24px 图标时，链接自身要撑出可触摸区域 */
+  .cf-brand {
+    min-width: 34px;
+    min-height: 34px;
+  }
   .cf-show-mobile {
     display: grid;
   }
   .cf-main__inner {
     padding: var(--cf-sp-4) var(--cf-sp-4)
       calc(env(safe-area-inset-bottom) + var(--cf-tabbar-h) + var(--cf-sp-5));
+  }
+}
+
+/* 380px 以下：版本号与品牌名依次让位，保证顶栏不撑宽文档 */
+@media (max-width: 420px) {
+  .cf-version {
+    display: none;
+  }
+}
+
+@media (max-width: 360px) {
+  .cf-brand__name {
+    display: none;
   }
 }
 

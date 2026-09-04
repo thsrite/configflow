@@ -238,3 +238,48 @@ body {
 .cf-reordering [data-reorder-item] .card-preview {
   display: none;
 }
+
+/* ---------- 移动端触控目标 ----------
+ * 桌面密度下 Element Plus 的 small 控件只有 24px 高，触屏上过小。
+ * 这里只在移动断点放大组件尺寸，不影响桌面端的信息密度。
+ */
+@media (max-width: 900px) {
+  :root {
+    --el-component-size-small: 32px;
+    --el-component-size: 36px;
+  }
+
+  .el-button--small {
+    min-height: 32px;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  /* 页面内自建的图标按钮统一抬到可触摸尺寸 */
+  .expand-toggle-btn,
+  .status-toggle,
+  .dialog-close-btn,
+  .card-url__toggle {
+    min-width: 34px;
+    min-height: 34px;
+  }
+
+  /* 无文字的纯复选框只有 14px 宽，需要自身撑出可触摸区域 */
+  .el-checkbox,
+  .el-switch {
+    min-height: 32px;
+    min-width: 32px;
+  }
+
+  /* 列表行内的文字链接（如订阅地址、显示原文）行高不足以承载触摸 */
+  .el-link {
+    min-height: 32px;
+  }
+
+  /* 品牌链接在窄屏只剩 24px 图标，需要自身撑出可点区域 */
+  .cf-brand {
+    min-height: 34px;
+    min-width: 34px;
+    padding-right: var(--cf-sp-1);
+  }
+}
