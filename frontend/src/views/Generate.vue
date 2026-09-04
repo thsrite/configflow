@@ -314,18 +314,24 @@
                 </el-upload>
               </el-col>
               <el-col :xs="24" :sm="12" :md="12" :lg="6">
-                <el-button @click="handleBackup" type="primary" style="width: 100%" size="small">
+                <el-button @click="handleBackup" style="width: 100%" size="small">
                   <el-icon><FolderOpened /></el-icon>
                   <span>备份</span>
                 </el-button>
               </el-col>
-              <el-col :xs="24" :sm="12" :md="12" :lg="6" style="margin-top: 12px">
-                <el-button @click="resetConfig" type="danger" style="width: 100%" size="small">
-                  <el-icon><RefreshLeft /></el-icon>
-                  <span>重置</span>
-                </el-button>
-              </el-col>
             </el-row>
+
+            <!-- 重置会清空全部数据，与常规操作分区并降低视觉权重，避免误触 -->
+            <div class="cf-danger-zone">
+              <div class="cf-danger-zone__text">
+                <div class="cf-danger-zone__title">重置配置</div>
+                <div class="cf-danger-zone__desc">恢复默认配置并清空所有数据，不可撤销</div>
+              </div>
+              <el-button @click="resetConfig" type="danger" plain size="small">
+                <el-icon><RefreshLeft /></el-icon>
+                <span>重置</span>
+              </el-button>
+            </div>
             <p style="margin-top: 12px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.4">
               导出配置将保存所有订阅、节点、规则和策略组设置。<br/>
               脱敏导出将隐藏敏感信息。<br/>
@@ -2805,6 +2811,34 @@ h4 .el-tag {
 :deep(.el-card) {
   position: relative;
   overflow: hidden;
+  /* 与全站面板一致：细边框 + 统一圆角，去掉 Element Plus 默认的重卡头 */
+  background: var(--cf-s1);
+  border: 1px solid var(--cf-bd);
+  border-radius: var(--cf-r-xl);
+  box-shadow: var(--cf-shadow);
+  /* 同一行内的生成器卡片高度对齐，避免文案长短造成参差 */
+  height: 100%;
+}
+
+:deep(.el-card__header) {
+  padding: var(--cf-sp-4) var(--cf-sp-4) 0;
+  border-bottom: none;
+}
+
+:deep(.el-card__header h4) {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--cf-fg);
+}
+
+:deep(.el-card__body) {
+  padding: var(--cf-sp-3) var(--cf-sp-4) var(--cf-sp-4);
+}
+
+/* 让同一 el-row 内的列等高，卡片才能撑满 */
+:deep(.el-row) {
+  align-items: stretch;
 }
 
 /* 按钮组优化 */
@@ -3423,5 +3457,35 @@ h4 .el-tag {
   font-size: 12px;
   color: var(--cf-fg-2);
   line-height: 1.4;
+}
+
+/* 危险操作分区：与常规操作视觉隔离，降低误触概率 */
+.cf-danger-zone {
+  display: flex;
+  align-items: center;
+  gap: var(--cf-sp-3);
+  margin-top: var(--cf-sp-4);
+  padding: var(--cf-sp-3);
+  border: 1px solid color-mix(in srgb, var(--cf-danger) 30%, transparent);
+  border-radius: var(--cf-r-lg);
+  background: var(--cf-danger-soft);
+  flex-wrap: wrap;
+}
+
+.cf-danger-zone__text {
+  min-width: 0;
+  flex: 1 1 200px;
+}
+
+.cf-danger-zone__title {
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--cf-fg);
+}
+
+.cf-danger-zone__desc {
+  font-size: 12px;
+  color: var(--cf-fg-2);
+  margin-top: 2px;
 }
 </style>

@@ -323,6 +323,18 @@ body {
   --el-button-hover-border-color: var(--cf-danger-fill);
 }
 
+/* plain 危险按钮压在危险软底上时，默认配色对比不足；
+ * 用实底表面 + 语义色文字保证可读。
+ */
+.el-button--danger.is-plain {
+  --el-button-bg-color: var(--cf-s1);
+  --el-button-text-color: var(--cf-danger);
+  --el-button-border-color: color-mix(in srgb, var(--cf-danger) 45%, transparent);
+  --el-button-hover-bg-color: var(--cf-danger-fill);
+  --el-button-hover-text-color: var(--cf-primary-fg);
+  --el-button-hover-border-color: var(--cf-danger-fill);
+}
+
 /* Element Plus 标签默认用主色的浅色变体作底、主色作字，深色主题下对比不足；
  * 统一改为设计系统的语义软色底 + 语义色文字。
  */
