@@ -1,6 +1,6 @@
 <template>
   <div class="aggregation-page" :class="{ 'cf-reordering': reorder.active.value }">
-    <ScopeBanner scope="shared" />
+    <ScopeBanner scope="resource" :profile-name="cfProfileName" description="把多个订阅与节点合并成一个可引用的集合" />
     <PageHeader title="订阅聚合" description="把多个订阅与节点合并成一个可引用的集合">
       <template #actions>
         <el-button v-if="!reorder.active.value" :disabled="aggregations.length < 2" @click="reorder.enter">
@@ -369,17 +369,23 @@
 </template>
 
 <script setup lang="ts">
+import { useProfileStore } from '@/stores/profile'
 import ReorderBar from '@/components/shell/ReorderBar.vue'
 import DragHandle from '@/components/shell/DragHandle.vue'
 import { useReorder } from '@/composables/useReorder'
 import PageHeader from '@/components/shell/PageHeader.vue'
 import ScopeBanner from '@/components/shell/ScopeBanner.vue'
-import { ref, onMounted, nextTick } from 'vue'
+import {computed, ref, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Rank, Edit, Delete, View, Connection, Loading, Postcard, Close, Link, Filter, ArrowDown, Sort } from '@element-plus/icons-vue'
 import api from '@/api'
 import * as yaml from 'js-yaml'
 
+
+const cfProfileStore = useProfileStore()
+const cfProfileName = computed(
+  () => cfProfileStore.activeProfile.value?.name || cfProfileStore.activeProfileId.value
+)
 interface Subscription {
   id: string
   name: string

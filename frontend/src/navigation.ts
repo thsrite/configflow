@@ -1,6 +1,6 @@
 /** 全站导航的唯一来源：按作用域分组，桌面 rail 与移动端底栏共用。 */
 
-export type NavScope = 'overview' | 'shared' | 'profile' | 'system'
+export type NavScope = 'overview' | 'resource' | 'profile' | 'system'
 
 export interface NavItem {
   path: string
@@ -30,11 +30,13 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [{ path: '/dashboard', label: '数据统计', icon: 'DataAnalysis' }]
   },
   {
-    scope: 'shared',
-    tabLabel: '共享资源',
+    scope: 'resource',
+    tabLabel: '资源',
     tabIcon: 'Files',
-    title: '共享资源',
-    hint: '所有配置空间共用',
+    title: '资源',
+    // 注意：这些资源当前仍按配置空间隔离，尚未真正共享。
+    // 在存储层实现共享之前，此处不得宣称「所有配置空间共用」。
+    hint: '订阅、节点与规则集',
     items: [
       { path: '/subscriptions', label: '订阅来源', icon: 'Link' },
       { path: '/nodes', label: '节点库', icon: 'Connection' },

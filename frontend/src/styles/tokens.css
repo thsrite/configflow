@@ -35,7 +35,7 @@
   /* 实心危险按钮的填充色：白字在 #ff6b6b 上对比不足 */
   --cf-danger-fill: #c93a3a;
 
-  /* 作用域语义：共享资源 = 青蓝，当前配置 = 靛蓝 */
+  /* 作用域语义：资源 = 青蓝，当前配置 = 靛蓝 */
   --cf-shared: #5ec3ff;
   --cf-shared-soft: #0f2635;
   --cf-profile: var(--cf-primary);

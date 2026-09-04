@@ -2,11 +2,11 @@
   <div class="dashboard-page">
     <PageHeader title="数据统计" description="概览运行状态与资源健康，快速掌握代理配置体系情况。" />
 
-    <!-- 作用域说明：共享资源与当前配置并置，让用户立刻分辨数据归属 -->
+    <!-- 作用域说明：当前两类数据都按配置空间隔离，仅作功能归类 -->
     <div class="cf-scopes">
-      <span class="cf-scopes__chip is-shared">
+      <span class="cf-scopes__chip is-resource">
         <el-icon><Files /></el-icon>
-        共享资源 · {{ sharedKinds }} 类
+        资源 · {{ sharedKinds }} 类
       </span>
       <span class="cf-scopes__chip is-profile">
         <el-icon><Postcard /></el-icon>
@@ -66,8 +66,8 @@ const profileName = computed(
 /* ---------- KPI：与概念图一致的四项 ---------- */
 const kpis = computed<KpiItem[]>(() => [
   { label: '配置空间', value: profileCount.value, icon: 'Setting', scope: 'system', route: '/profiles' },
-  { label: '订阅来源', value: counts.value.subscriptions, icon: 'Link', scope: 'shared', route: '/subscriptions' },
-  { label: '节点', value: counts.value.nodes, icon: 'Connection', scope: 'shared', route: '/nodes' },
+  { label: '订阅来源', value: counts.value.subscriptions, icon: 'Link', scope: 'profile', route: '/subscriptions' },
+  { label: '节点', value: counts.value.nodes, icon: 'Connection', scope: 'profile', route: '/nodes' },
   { label: 'Agent', value: agents.value.length, icon: 'Monitor', scope: 'system', route: '/agents' }
 ])
 
@@ -237,11 +237,11 @@ onUnmounted(() => {
   color: var(--cf-fg);
 }
 
-.cf-scopes__chip.is-shared {
+.cf-scopes__chip.is-resource {
   background: var(--cf-shared-soft);
   border-color: color-mix(in srgb, var(--cf-shared) 28%, transparent);
 }
-.cf-scopes__chip.is-shared .el-icon {
+.cf-scopes__chip.is-resource .el-icon {
   color: var(--cf-shared);
 }
 

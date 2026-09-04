@@ -27,8 +27,8 @@ interface Props {
   label: string
   value: number
   change?: number
-  /** 作用域色标：共享资源 / 当前配置 / 系统 */
-  scope?: 'shared' | 'profile' | 'system'
+  /** 作用域色标：资源 / 当前配置 / 系统 */
+  scope?: 'resource' | 'profile' | 'system'
   /** 数值下方的一行上下文，例如「7 正常 · 1 异常」 */
   hint?: string
   route?: string
@@ -123,7 +123,7 @@ const changeText = computed(() => {
   inset: 0 auto 0 0;
   width: 3px;
 }
-.cf-stat__edge.is-shared {
+.cf-stat__edge.is-resource {
   background: var(--cf-shared);
 }
 .cf-stat__edge.is-profile {

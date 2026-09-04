@@ -26,7 +26,7 @@ export interface KpiItem {
   label: string
   value: number | string
   icon: string
-  scope: 'shared' | 'profile' | 'system'
+  scope: 'resource' | 'profile' | 'system'
   route?: string
 }
 
@@ -101,7 +101,7 @@ defineProps<{ items: KpiItem[] }>()
 }
 
 /* 作用域用图标底色区分，与分组标题共同表意，不单靠颜色 */
-.cf-kpi__icon.is-shared {
+.cf-kpi__icon.is-resource {
   background: var(--cf-shared-soft);
   color: var(--cf-shared);
 }

@@ -1,6 +1,6 @@
 <template>
   <div class="nodes-page" :class="{ 'cf-reordering': reorder.active.value }">
-    <ScopeBanner scope="shared" />
+    <ScopeBanner scope="resource" :profile-name="cfProfileName" description="订阅拉取与手动录入的节点，按配置空间隔离" />
     <PageHeader title="节点库" description="订阅拉取与手动录入的节点集中在此，供所有配置空间引用">
       <template #actions>
         <el-button v-if="!reorder.active.value" :disabled="nodes.length < 2" @click="reorder.enter">
@@ -232,6 +232,7 @@
 </template>
 
 <script setup lang="ts">
+import { useProfileStore } from '@/stores/profile'
 import ReorderBar from '@/components/shell/ReorderBar.vue'
 import DragHandle from '@/components/shell/DragHandle.vue'
 import { useReorder } from '@/composables/useReorder'
@@ -245,6 +246,11 @@ import type { ProxyNode } from '@/types'
 import api from '@/api'
 import * as yaml from 'js-yaml'
 
+
+const cfProfileStore = useProfileStore()
+const cfProfileName = computed(
+  () => cfProfileStore.activeProfile.value?.name || cfProfileStore.activeProfileId.value
+)
 const nodes = ref<ProxyNode[]>([])
 const savingStatus = ref<Record<string, boolean>>({})
 const nodesContainer = ref<HTMLElement | null>(null)

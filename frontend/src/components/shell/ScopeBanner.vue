@@ -12,17 +12,20 @@
 import { computed } from 'vue'
 
 const props = defineProps<{
-  /** shared = 跨配置共享；profile = 仅当前配置 */
-  scope: 'shared' | 'profile'
+  /**
+   * resource = 订阅/节点/规则集等资源；profile = 策略与生成配置。
+   * 两者目前都按配置空间隔离，仅作功能归类，不表示共享范围。
+   */
+  scope: 'resource' | 'profile'
   profileName?: string
   description?: string
 }>()
 
-const icon = computed(() => (props.scope === 'shared' ? 'Files' : 'Postcard'))
+const icon = computed(() => (props.scope === 'resource' ? 'Files' : 'Postcard'))
 
 const title = computed(() =>
-  props.scope === 'shared'
-    ? '共享资源 · 所有配置空间共用'
+  props.scope === 'resource'
+    ? `资源 · 当前配置「${props.profileName || '未选择'}」`
     : `当前配置 · ${props.profileName || '未选择'}`
 )
 </script>
@@ -40,7 +43,7 @@ const title = computed(() =>
   margin-bottom: var(--cf-sp-4);
 }
 
-.cf-scope.is-shared {
+.cf-scope.is-resource {
   background: var(--cf-shared-soft);
   border-color: color-mix(in srgb, var(--cf-shared) 28%, transparent);
 }
@@ -55,7 +58,7 @@ const title = computed(() =>
   margin-top: 1px;
   flex: 0 0 auto;
 }
-.cf-scope.is-shared .cf-scope__icon {
+.cf-scope.is-resource .cf-scope__icon {
   color: var(--cf-shared);
 }
 .cf-scope.is-profile .cf-scope__icon {

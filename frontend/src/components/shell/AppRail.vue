@@ -73,7 +73,7 @@ const visibleItems = (group: NavGroup): NavItem[] =>
   flex: 0 0 auto;
   background: var(--cf-fg-3);
 }
-.cf-rail__title.is-shared .cf-rail__mark {
+.cf-rail__title.is-resource .cf-rail__mark {
   background: var(--cf-shared);
 }
 .cf-rail__title.is-profile .cf-rail__mark {

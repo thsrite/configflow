@@ -1,6 +1,6 @@
 <template>
   <div class="rule-library-page" :class="{ 'cf-reordering': reorder.active.value }">
-    <ScopeBanner scope="shared" />
+    <ScopeBanner scope="resource" :profile-name="cfProfileName" description="规则集来源与缓存，按配置空间隔离" />
     <PageHeader title="规则库" description="集中维护规则集来源与缓存，所有配置空间共同使用">
       <template #actions>
         <el-button v-if="!reorder.active.value" :disabled="ruleLibrary.length < 2" @click="reorder.enter">
@@ -461,6 +461,7 @@
 </template>
 
 <script setup lang="ts">
+import { useProfileStore } from '@/stores/profile'
 import ReorderBar from '@/components/shell/ReorderBar.vue'
 import DragHandle from '@/components/shell/DragHandle.vue'
 import { useReorder } from '@/composables/useReorder'
@@ -487,6 +488,11 @@ import {
 import api from '@/api'
 import { activeProfileId } from '@/profileContext'
 
+
+const cfProfileStore = useProfileStore()
+const cfProfileName = computed(
+  () => cfProfileStore.activeProfile.value?.name || cfProfileStore.activeProfileId.value
+)
 interface RuleLibraryItem {
   id: string
   name: string

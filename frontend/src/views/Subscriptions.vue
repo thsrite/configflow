@@ -1,6 +1,6 @@
 <template>
   <div class="subscriptions-page" :class="{ 'cf-reordering': reorder.active.value }">
-    <ScopeBanner scope="shared" description="集中维护订阅源，所有配置空间共同使用" />
+    <ScopeBanner scope="resource" :profile-name="cfProfileName" description="订阅源按配置空间隔离，切换配置空间会看到各自的列表" />
 
     <PageHeader title="订阅来源" description="订阅拉取后的节点进入共享节点库">
       <template #actions>
@@ -240,6 +240,7 @@
 </template>
 
 <script setup lang="ts">
+import { useProfileStore } from '@/stores/profile'
 import { computed, ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElLoading, ElMessageBox } from 'element-plus'
 import { Plus, Connection, Loading, RefreshRight, View, Hide, EditPen, Delete, Close, ArrowDown, Search, Sort } from '@element-plus/icons-vue'
@@ -253,6 +254,11 @@ import ReorderBar from '@/components/shell/ReorderBar.vue'
 import DragHandle from '@/components/shell/DragHandle.vue'
 import { useReorder } from '@/composables/useReorder'
 
+
+const cfProfileStore = useProfileStore()
+const cfProfileName = computed(
+  () => cfProfileStore.activeProfile.value?.name || cfProfileStore.activeProfileId.value
+)
 const subscriptions = ref<Subscription[]>([])
 const subscriptionsContainer = ref<HTMLElement | null>(null)
 const dialogVisible = ref(false)
