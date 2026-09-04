@@ -1,58 +1,45 @@
 <template>
-  <div class="rules-page" :class="{ 'cf-reordering': reorder.active.value }">
+  <div :class="reorder.active.value && 'cf-reordering'">
     <ScopeBanner scope="profile" :profile-name="cfProfileName" />
-    <PageHeader title="策略规则" description="单条规则与规则集绑定，仅属于当前配置空间">
+
+    <PageHeader
+      eyebrow="Profile"
+      title="策略规则"
+      description="单条规则与规则集按顺序匹配，命中即生效，仅属于当前配置空间。"
+    >
       <template #actions>
-        <el-button v-if="!reorder.active.value" :disabled="allRulesAndSets.length < 2" @click="enterReorder">
-          <el-icon><Sort /></el-icon>
-          调整顺序
-        </el-button>
-        <el-button-group class="view-toggle">
-          <el-button
-            :class="['toggle-btn', { active: viewMode === 'list' }]"
-            @click="viewMode = 'list'"
-            title="列表视图"
-          >
-            <el-icon><List /></el-icon>
-          </el-button>
-          <el-button
-            :class="['toggle-btn', { active: viewMode === 'grid' }]"
-            @click="viewMode = 'grid'"
-            title="卡片视图"
-          >
-            <el-icon><Grid /></el-icon>
-          </el-button>
-        </el-button-group>
-        <el-button
-          type="primary"
-          @click="showAddRuleDialog"
-        >
-          <el-icon><Plus /></el-icon>
+        <Button class="shadow-glow" @click="showAddRuleDialog">
+          <Plus class="size-4" />
           添加规则
-        </el-button>
-        <el-button
-          type="primary"
-          @click="showAddRuleSetDialog"
-        >
-          <el-icon><Plus /></el-icon>
-          添加规则集
-        </el-button>
-        <el-button
-          type="primary"
-         
-          @click="handleShowRuleIndex"
-        >
-          <el-icon><Search /></el-icon>
-          规则索引
-        </el-button>
-        <el-button
-          type="primary"
-         
-          @click="showDuplicateDialog"
-        >
-          <el-icon><CopyDocument /></el-icon>
-          查找重复
-        </el-button>
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button variant="outline" class="border-border/60 bg-background/40">
+              更多
+              <ChevronDown class="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" class="glass-strong">
+            <DropdownMenuItem @select="showAddRuleSetDialog">
+              <FolderOpen class="size-4" />
+              添加规则集
+            </DropdownMenuItem>
+            <DropdownMenuItem @select="handleShowRuleIndex">
+              <Search class="size-4" />
+              规则索引
+            </DropdownMenuItem>
+            <DropdownMenuItem @select="showDuplicateDialog">
+              <Copy class="size-4" />
+              查找重复
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem :disabled="allRulesAndSets.length < 2" @select="enterReorder">
+              <ArrowUpDown class="size-4" />
+              调整顺序
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <ViewToggle v-model="viewMode" />
       </template>
     </PageHeader>
 
@@ -64,70 +51,38 @@
       @save="handleSaveOrder"
     />
 
-    <div v-if="displayList.length === 0" class="empty-state">
-      <el-empty description="暂无规则，请添加规则或规则集" />
-    </div>
-
-    <!-- 列表视图 -->
-    <div v-else-if="viewMode === 'list'" class="rules-list" id="sortable-rules" ref="rulesContainer">
-      <div
-        v-for="(item, cfIndex) in displayList"
-        :key="item.uniqueId"
-        data-reorder-item
-        class="list-item-wrapper"
-        :data-id="item.uniqueId"
+    <SectionCard v-if="displayList.length === 0" :padded="false">
+      <EmptyState
+        :icon="FileText"
+        title="暂无规则"
+        description="添加单条规则或引用一个规则集，规则会按列表顺序自上而下匹配。"
       >
-        <!-- 分组列表项（收起状态） -->
-        <div
-          v-if="item.isGroup"
-          class="list-item group-item"
-          @click="toggleGroup(item.groupId)"
-        >
-          <div class="list-item-drag">
-            <DragHandle
-              v-if="reorder.active.value"
-              :label="item.isGroup ? (item.groupName || item.groupDefaultName) : (item.name || item.id)"
-              :index="cfIndex"
-              :total="displayList.length"
-              :position="reorder.positionLabel(cfIndex)"
-              :grabbed="reorder.grabbedIndex.value === cfIndex"
-              @up="reorder.moveUp(cfIndex)"
-              @down="reorder.moveDown(cfIndex)"
-              @keydown="reorder.onHandleKeydown($event, cfIndex)"
-            />
-          </div>
-          <div class="list-item-info">
-            <div class="list-item-name">{{ item.groupName || item.groupDefaultName }}</div>
-            <div class="list-item-meta">
-              <span class="meta-badge group">{{ item.groupLabel }}</span>
-              <span v-if="item.groupName" class="meta-badge count">{{ item.count }} 个</span>
-              <span class="meta-badge policy">{{ item.policy }}</span>
-            </div>
-          </div>
-          <div class="list-item-actions">
-            <el-button class="list-btn" size="small" @click.stop="showGroupRenameDialog(item)" title="重命名">
-              <el-icon><Edit /></el-icon>
-            </el-button>
-            <button class="expand-btn" @click.stop="toggleGroup(item.groupId)">
-              <el-icon><ArrowDown /></el-icon>
-            </button>
-          </div>
-        </div>
+        <Button @click="showAddRuleDialog">
+          <Plus class="size-4" />
+          添加规则
+        </Button>
+      </EmptyState>
+    </SectionCard>
 
-        <!-- 普通列表项 -->
+    <!-- ===== 列表视图 ===== -->
+    <SectionCard v-else-if="viewMode === 'list'" :padded="false">
+      <div id="sortable-rules" ref="rulesContainer" class="flex flex-col">
         <div
-          v-else
-          :class="[
-            'list-item',
-            item.itemType === 'rule' ? 'rule-type' : 'ruleset-type',
-            item.isExpandedGroupItem ? 'expanded-group-item' : '',
-            { disabled: !item.enabled }
-          ]"
+          v-for="(item, cfIndex) in displayList"
+          :key="item.uniqueId"
+          data-reorder-item
+          :data-id="item.uniqueId"
         >
-          <div class="list-item-drag">
+          <!-- 分组行（收起状态） -->
+          <button
+            v-if="item.isGroup"
+            type="button"
+            class="flex w-full cursor-pointer items-center gap-2.5 border-0 border-b border-border/40 bg-transparent px-4 py-2.5 text-left transition-colors hover:bg-accent/40"
+            @click="toggleGroup(item.groupId)"
+          >
             <DragHandle
               v-if="reorder.active.value"
-              :label="item.isGroup ? (item.groupName || item.groupDefaultName) : (item.name || item.id)"
+              :label="item.groupName || item.groupDefaultName"
               :index="cfIndex"
               :total="displayList.length"
               :position="reorder.positionLabel(cfIndex)"
@@ -136,82 +91,42 @@
               @down="reorder.moveDown(cfIndex)"
               @keydown="reorder.onHandleKeydown($event, cfIndex)"
             />
-          </div>
-          <div class="list-item-type">
-            <span class="type-badge" :class="item.itemType">
-              {{ item.itemType === 'rule' ? '规则' : '规则集' }}
+            <Layers class="size-4 shrink-0 text-warning-accent" aria-hidden="true" />
+            <span class="min-w-0 truncate text-[13px] font-semibold text-foreground">
+              {{ item.groupName || item.groupDefaultName }}
             </span>
-          </div>
-          <div class="list-item-content">
-            <!-- 规则：规则类型和值 -->
-            <template v-if="item.itemType === 'rule'">
-              <span class="rule-type-text">{{ item.rule_type }}</span>
-              <span class="rule-value-text" :title="item.value">{{ item.value }}</span>
-              <span v-if="item.remark" class="rule-remark-badge" :title="item.remark">
-                <el-icon><ChatLineSquare /></el-icon>
-                {{ item.remark }}
-              </span>
-            </template>
-            <!-- 规则集：规则名 -->
-            <template v-else>
-              <span class="ruleset-name-text" :title="`类型: ${item.behavior}\nURL: ${item.url}`">{{ item.name }}</span>
-              <el-tag v-if="item.library_rule_id" size="small" type="warning" effect="plain" class="library-badge">
-                <el-icon><FolderOpened /></el-icon>
-              </el-tag>
-              <span v-if="item.remark" class="rule-remark-badge" :title="item.remark">
-                <el-icon><ChatLineSquare /></el-icon>
-                {{ item.remark }}
-              </span>
-            </template>
-          </div>
-          <div class="list-item-policy">
-            <span class="policy-tag">{{ item.policy }}</span>
-          </div>
-          <div class="list-item-actions">
-            <el-button
-              v-if="item.isExpandedGroupItem && item.isFirstInGroup"
-              class="collapse-group-btn"
-              size="small"
-              @click.stop="toggleGroup(item.groupId)"
+            <Badge variant="warning" class="shrink-0 text-[10.5px]">{{ item.groupLabel }}</Badge>
+            <Badge v-if="item.groupName" variant="outline" class="num shrink-0 text-[10.5px]">
+              {{ item.count }} 个
+            </Badge>
+            <Badge variant="secondary" class="ml-auto shrink-0 max-w-[160px] truncate text-[10.5px]">
+              {{ item.policy }}
+            </Badge>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              class="cf-reorder-mute shrink-0"
+              title="重命名"
+              aria-label="重命名分组"
+              @click.stop="showGroupRenameDialog(item)"
             >
-              <el-icon><ArrowUp /></el-icon>
-              收起分组
-            </el-button>
-            <button class="status-toggle" :class="{ active: item.enabled }" @click="toggleItemStatus(item)">
-              <el-icon v-if="item.enabled"><View /></el-icon>
-              <el-icon v-else><Hide /></el-icon>
-            </button>
-            <el-button class="list-btn" size="small" @click="editItem(item)" title="编辑">
-              <el-icon><Edit /></el-icon>
-            </el-button>
-            <el-button class="list-btn danger" size="small" @click="deleteItem(item)" title="删除">
-              <el-icon><Delete /></el-icon>
-            </el-button>
-          </div>
-        </div>
-      </div>
-    </div>
+              <Pencil class="size-4" />
+            </Button>
+            <ChevronDown class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          </button>
 
-    <!-- 卡片视图 -->
-    <div v-else class="rules-grid" id="sortable-rules" ref="rulesContainer">
-      <div
-        v-for="(item, cfIndex) in displayList"
-        :key="item.uniqueId"
-        data-reorder-item
-        class="rule-card-wrapper"
-        :data-id="item.uniqueId"
-      >
-        <!-- 分组卡片（收起状态） -->
-        <div
-          v-if="item.isGroup"
-          class="rule-card group-card"
-          @click="toggleGroup(item.groupId)"
-        >
-          <div class="card-header">
-            <div class="card-title-group">
+          <!-- 普通行 -->
+          <div
+            v-else
+            :class="[
+              'flex items-center gap-2.5 border-0 border-b border-border/40 px-4 py-2.5 transition-colors hover:bg-accent/30',
+              item.isExpandedGroupItem && 'bg-background/40 pl-8',
+              !item.enabled && 'opacity-55'
+            ]"
+          >
             <DragHandle
               v-if="reorder.active.value"
-              :label="item.isGroup ? (item.groupName || item.groupDefaultName) : (item.name || item.id)"
+              :label="item.name || item.id"
               :index="cfIndex"
               :total="displayList.length"
               :position="reorder.positionLabel(cfIndex)"
@@ -220,481 +135,630 @@
               @down="reorder.moveDown(cfIndex)"
               @keydown="reorder.onHandleKeydown($event, cfIndex)"
             />
-              <div class="card-title">{{ item.groupName || item.groupDefaultName }}</div>
-            </div>
-            <button class="expand-btn" @click.stop="toggleGroup(item.groupId)">
-              <el-icon><ArrowDown /></el-icon>
-            </button>
-          </div>
+            <Badge
+              :variant="item.itemType === 'rule' ? 'brand' : 'info'"
+              class="w-12 shrink-0 justify-center text-[10.5px]"
+            >
+              {{ item.itemType === 'rule' ? '规则' : '规则集' }}
+            </Badge>
 
-          <div class="card-meta">
-            <span class="meta-pill group-pill">{{ item.groupLabel }}</span>
-            <span v-if="item.groupName" class="meta-pill count-pill">{{ item.count }} 个</span>
-            <span class="meta-pill policy-pill">{{ item.policy }}</span>
-          </div>
-
-          <div class="card-actions">
-            <el-button class="card-btn" size="small" @click.stop="showGroupRenameDialog(item)">
-              <el-icon><Edit /></el-icon>
-              重命名
-            </el-button>
-            <el-button class="card-btn primary" size="small" @click.stop="toggleGroup(item.groupId)">
-              查看全部
-            </el-button>
-          </div>
-        </div>
-
-        <!-- 普通单个卡片 -->
-        <div
-          v-else
-          :class="[
-            'rule-card',
-            item.itemType === 'rule' ? 'rule-type' : 'ruleset-type',
-            item.isExpandedGroupItem ? 'expanded-group-item' : '',
-            { disabled: !item.enabled }
-          ]"
-        >
-          <!-- 卡片头部 -->
-          <div class="card-header">
-            <div class="card-title-group">
-            <DragHandle
-              v-if="reorder.active.value"
-              :label="item.isGroup ? (item.groupName || item.groupDefaultName) : (item.name || item.id)"
-              :index="cfIndex"
-              :total="displayList.length"
-              :position="reorder.positionLabel(cfIndex)"
-              :grabbed="reorder.grabbedIndex.value === cfIndex"
-              @up="reorder.moveUp(cfIndex)"
-              @down="reorder.moveDown(cfIndex)"
-              @keydown="reorder.onHandleKeydown($event, cfIndex)"
-            />
-              <span class="card-type-badge" :class="item.itemType">
-                {{ item.itemType === 'rule' ? '规则' : '规则集' }}
+            <div class="flex min-w-0 flex-1 items-center gap-2">
+              <template v-if="item.itemType === 'rule'">
+                <span class="shrink-0 font-mono text-[11.5px] text-info-accent">{{ item.rule_type }}</span>
+                <span class="min-w-0 truncate font-mono text-[12.5px] text-foreground" :title="item.value">
+                  {{ item.value }}
+                </span>
+              </template>
+              <template v-else>
+                <span
+                  class="min-w-0 truncate text-[13px] font-medium text-foreground"
+                  :title="`类型: ${item.behavior}\nURL: ${item.url}`"
+                >
+                  {{ item.name }}
+                </span>
+                <FolderOpen
+                  v-if="item.library_rule_id"
+                  class="size-3.5 shrink-0 text-warning-accent"
+                  title="来自规则仓库"
+                  aria-label="来自规则仓库"
+                />
+              </template>
+              <span
+                v-if="item.remark"
+                class="hidden min-w-0 shrink truncate text-[11.5px] text-muted-foreground md:inline"
+                :title="item.remark"
+              >
+                {{ item.remark }}
               </span>
             </div>
-            <div class="card-header-actions">
-              <el-button
+
+            <Badge variant="secondary" class="max-w-[160px] shrink-0 truncate text-[10.5px]">
+              {{ item.policy }}
+            </Badge>
+
+            <div class="cf-reorder-mute flex shrink-0 items-center gap-0.5">
+              <Button
                 v-if="item.isExpandedGroupItem && item.isFirstInGroup"
-                class="collapse-group-btn"
-                size="small"
+                variant="ghost"
+                size="sm"
                 @click.stop="toggleGroup(item.groupId)"
               >
-                <el-icon><ArrowUp /></el-icon>
+                <ChevronUp class="size-3.5" />
                 收起分组
-              </el-button>
-              <button class="status-toggle" :class="{ active: item.enabled }" @click="toggleItemStatus(item)">
-                <el-icon v-if="item.enabled"><View /></el-icon>
-                <el-icon v-else><Hide /></el-icon>
-              </button>
-            </div>
-          </div>
-
-          <!-- 卡片主体内容 -->
-          <div class="card-body">
-            <!-- 规则：规则类型和值在一行显示 -->
-            <template v-if="item.itemType === 'rule'">
-              <div class="rule-content">
-                <span class="rule-type-inline">{{ item.rule_type }}</span>
-                <span class="rule-value-inline" :title="item.value">{{ item.value }}</span>
-              </div>
-              <div v-if="item.remark" class="rule-remark" :title="item.remark">
-                <el-icon><ChatLineSquare /></el-icon>
-                {{ item.remark }}
-              </div>
-            </template>
-
-            <!-- 规则集：显示规则名 -->
-            <template v-else>
-              <div class="ruleset-info">
-                <div class="ruleset-name" :title="`类型: ${item.behavior}\nURL: ${item.url}`">
-                  {{ item.name }}
-                </div>
-                <el-tag v-if="item.library_rule_id" size="small" type="warning" effect="plain" class="library-badge">
-                  <el-icon><FolderOpened /></el-icon>
-                </el-tag>
-              </div>
-              <div v-if="item.remark" class="rule-remark" :title="item.remark">
-                <el-icon><ChatLineSquare /></el-icon>
-                {{ item.remark }}
-              </div>
-            </template>
-          </div>
-
-          <!-- 卡片底部 -->
-          <div class="card-footer">
-            <div class="footer-left">
-              <span class="policy-tag">{{ item.policy }}</span>
-            </div>
-            <div class="footer-actions">
-              <el-button class="card-btn ghost" size="small" @click="editItem(item)">
-                <el-icon><Edit /></el-icon>
-              </el-button>
-              <el-button class="card-btn danger" size="small" @click="deleteItem(item)">
-                <el-icon><Delete /></el-icon>
-              </el-button>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                :class="item.enabled ? 'text-success-accent' : 'text-muted-foreground'"
+                :title="item.enabled ? '停用' : '启用'"
+                :aria-label="item.enabled ? '停用该项' : '启用该项'"
+                @click="toggleItemStatus(item)"
+              >
+                <component :is="item.enabled ? Eye : EyeOff" class="size-4" />
+              </Button>
+              <Button variant="ghost" size="icon-sm" title="编辑" aria-label="编辑" @click="editItem(item)">
+                <Pencil class="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="text-destructive-accent hover:bg-destructive-soft"
+                title="删除"
+                aria-label="删除"
+                @click="deleteItem(item)"
+              >
+                <Trash2 class="size-4" />
+              </Button>
             </div>
           </div>
         </div>
       </div>
+
+      <Separator />
+      <p class="m-0 px-4 py-2.5 text-xs text-muted-foreground">共 {{ displayList.length }} 项</p>
+    </SectionCard>
+
+    <!-- ===== 卡片视图 ===== -->
+    <div
+      v-else
+      id="sortable-rules"
+      ref="rulesContainer"
+      class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3 max-md:grid-cols-1"
+    >
+      <Motion
+        v-for="(item, cfIndex) in displayList"
+        :key="item.uniqueId"
+        v-bind="listItem(cfIndex)"
+        data-reorder-item
+        :data-id="item.uniqueId"
+        :class="[
+          'hairline edge-light relative flex flex-col gap-3 overflow-hidden rounded-xl border bg-card/55 p-4 backdrop-blur-xl transition-all duration-300 hover:shadow-glow-soft',
+          item.isGroup ? 'border-warning-accent/35' : 'border-border/35',
+          item.isExpandedGroupItem && 'border-primary-accent/30',
+          !item.isGroup && !item.enabled && 'opacity-60'
+        ]"
+      >
+        <!-- 分组卡片 -->
+        <template v-if="item.isGroup">
+          <header class="flex items-start gap-2.5">
+            <DragHandle
+              v-if="reorder.active.value"
+              :label="item.groupName || item.groupDefaultName"
+              :index="cfIndex"
+              :total="displayList.length"
+              :position="reorder.positionLabel(cfIndex)"
+              :grabbed="reorder.grabbedIndex.value === cfIndex"
+              @up="reorder.moveUp(cfIndex)"
+              @down="reorder.moveDown(cfIndex)"
+              @keydown="reorder.onHandleKeydown($event, cfIndex)"
+            />
+            <Layers class="mt-0.5 size-4 shrink-0 text-warning-accent" aria-hidden="true" />
+            <p class="m-0 min-w-0 flex-1 truncate text-[14px] font-semibold text-foreground">
+              {{ item.groupName || item.groupDefaultName }}
+            </p>
+          </header>
+
+          <div class="flex flex-wrap gap-1.5">
+            <Badge variant="warning" class="text-[10.5px]">{{ item.groupLabel }}</Badge>
+            <Badge v-if="item.groupName" variant="outline" class="num text-[10.5px]">{{ item.count }} 个</Badge>
+            <Badge variant="secondary" class="max-w-[160px] truncate text-[10.5px]">{{ item.policy }}</Badge>
+          </div>
+
+          <footer class="mt-auto flex items-center gap-1 border-0 border-t border-border/50 pt-3">
+            <Button variant="ghost" size="sm" @click.stop="showGroupRenameDialog(item)">
+              <Pencil class="size-3.5" />
+              重命名
+            </Button>
+            <Button variant="ghost" size="sm" class="ml-auto" @click.stop="toggleGroup(item.groupId)">
+              查看全部
+              <ChevronDown class="size-3.5" />
+            </Button>
+          </footer>
+        </template>
+
+        <!-- 普通卡片 -->
+        <template v-else>
+          <header class="flex items-start gap-2.5">
+            <DragHandle
+              v-if="reorder.active.value"
+              :label="item.name || item.id"
+              :index="cfIndex"
+              :total="displayList.length"
+              :position="reorder.positionLabel(cfIndex)"
+              :grabbed="reorder.grabbedIndex.value === cfIndex"
+              @up="reorder.moveUp(cfIndex)"
+              @down="reorder.moveDown(cfIndex)"
+              @keydown="reorder.onHandleKeydown($event, cfIndex)"
+            />
+            <Badge :variant="item.itemType === 'rule' ? 'brand' : 'info'" class="shrink-0 text-[10.5px]">
+              {{ item.itemType === 'rule' ? '规则' : '规则集' }}
+            </Badge>
+            <div class="cf-reorder-mute ml-auto flex shrink-0 items-center gap-0.5">
+              <Button
+                v-if="item.isExpandedGroupItem && item.isFirstInGroup"
+                variant="ghost"
+                size="sm"
+                @click.stop="toggleGroup(item.groupId)"
+              >
+                <ChevronUp class="size-3.5" />
+                收起
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                :class="item.enabled ? 'text-success-accent' : 'text-muted-foreground'"
+                :title="item.enabled ? '停用' : '启用'"
+                :aria-label="item.enabled ? '停用该项' : '启用该项'"
+                @click="toggleItemStatus(item)"
+              >
+                <component :is="item.enabled ? Eye : EyeOff" class="size-4" />
+              </Button>
+            </div>
+          </header>
+
+          <div class="cf-reorder-mute min-w-0">
+            <template v-if="item.itemType === 'rule'">
+              <p class="m-0 font-mono text-[11px] tracking-[0.04em] text-info-accent uppercase">
+                {{ item.rule_type }}
+              </p>
+              <p class="mt-1 mb-0 font-mono text-[13px] break-all text-foreground" :title="item.value">
+                {{ item.value }}
+              </p>
+            </template>
+            <template v-else>
+              <p
+                class="m-0 flex items-center gap-1.5 text-[13px] font-medium break-all text-foreground"
+                :title="`类型: ${item.behavior}\nURL: ${item.url}`"
+              >
+                {{ item.name }}
+                <FolderOpen
+                  v-if="item.library_rule_id"
+                  class="size-3.5 shrink-0 text-warning-accent"
+                  aria-label="来自规则仓库"
+                />
+              </p>
+            </template>
+            <p v-if="item.remark" class="mt-1.5 mb-0 text-[11.5px] text-muted-foreground" :title="item.remark">
+              {{ item.remark }}
+            </p>
+          </div>
+
+          <footer class="cf-reorder-mute mt-auto flex items-center gap-1 border-0 border-t border-border/50 pt-3">
+            <Badge variant="secondary" class="max-w-[150px] truncate text-[10.5px]">{{ item.policy }}</Badge>
+            <Button variant="ghost" size="icon-sm" class="ml-auto" title="编辑" aria-label="编辑" @click="editItem(item)">
+              <Pencil class="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              class="text-destructive-accent hover:bg-destructive-soft"
+              title="删除"
+              aria-label="删除"
+              @click="deleteItem(item)"
+            >
+              <Trash2 class="size-4" />
+            </Button>
+          </footer>
+        </template>
+      </Motion>
     </div>
 
-    <!-- 添加/编辑规则对话框 -->
-    <el-dialog v-model="ruleDialogVisible" :title="isEditRule ? '编辑规则' : '添加规则'" width="500px" class="rule-dialog">
-      <div class="dialog-card">
-        <el-form :model="ruleForm" label-width="80px" class="rule-form">
-          <el-form-item label="规则类型">
-            <el-select v-model="ruleForm.rule_type">
-              <el-option label="DOMAIN" value="DOMAIN" />
-              <el-option label="DOMAIN-SUFFIX" value="DOMAIN-SUFFIX" />
-              <el-option label="DOMAIN-KEYWORD" value="DOMAIN-KEYWORD" />
-              <el-option label="IP-CIDR" value="IP-CIDR" />
-              <el-option label="IP-CIDR6" value="IP-CIDR6" />
-              <el-option label="IP-SUFFIX" value="IP-SUFFIX" />
-              <el-option label="DST-PORT" value="DST-PORT" />
-              <el-option label="SRC-PORT" value="SRC-PORT" />
-              <el-option label="GEOIP" value="GEOIP" />
-              <el-option label="GEOSITE" value="GEOSITE" />
-              <el-option label="RULE-SET" value="RULE-SET" />
-              <el-option label="AND" value="AND" />
-              <el-option label="OR" value="OR" />
-              <el-option label="NOT" value="NOT" />
-              <el-option label="MATCH" value="MATCH" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="值">
-            <el-input v-model="ruleForm.value" placeholder="域名、IP或规则集名称" />
-          </el-form-item>
-          <el-form-item label="策略">
-            <el-select v-model="ruleForm.policy" placeholder="选择策略" style="width: 100%">
-              <el-option
-                v-for="policy in availablePolicies"
-                :key="policy"
-                :label="policy"
-                :value="policy"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="备注">
-            <el-input v-model="ruleForm.remark" placeholder="可选，添加备注说明" />
-          </el-form-item>
-          <el-form-item label="no-resolve" v-if="isIpRuleType">
-            <div class="switch-with-tip">
-              <el-switch v-model="ruleForm.no_resolve" />
-              <span class="form-tip">IP 类规则建议开启；逻辑规则会写入其 IP 子条件</span>
-            </div>
-          </el-form-item>
-          <el-form-item label="状态">
-            <el-switch v-model="ruleForm.enabled" />
-          </el-form-item>
-        </el-form>
-      </div>
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button class="footer-btn ghost" @click="ruleDialogVisible = false">取消</el-button>
-          <el-button class="footer-btn primary" type="primary" @click="saveRule">保存</el-button>
-        </div>
-      </template>
-    </el-dialog>
+    <!-- ===== 添加 / 编辑规则 ===== -->
+    <Dialog v-model:open="ruleDialogVisible">
+      <DialogContent class="glass-strong hairline max-w-[520px] border-border/50">
+        <DialogHeader>
+          <DialogTitle>{{ isEditRule ? '编辑规则' : '添加规则' }}</DialogTitle>
+          <DialogDescription>规则按列表顺序自上而下匹配，命中即停止。</DialogDescription>
+        </DialogHeader>
 
-    <!-- 添加/编辑规则集对话框 -->
-    <el-dialog v-model="ruleSetDialogVisible" :title="isEditRuleSet ? '编辑规则集' : '添加规则集'" width="500px" class="rule-dialog">
-      <div class="dialog-card">
-        <el-form :model="ruleSetForm" label-width="80px" class="rule-form">
-          <el-form-item label="选择规则">
-            <el-select
-              v-model="selectedLibraryRule"
-              placeholder="从规则仓库选择（可选）"
-              style="width: 100%"
-              filterable
-              clearable
-              @change="onLibraryRuleSelect"
-              @clear="onLibraryRuleClear"
-            >
-              <el-option
-                v-for="rule in enabledLibraryRules"
-                :key="rule.id"
-                :label="rule.name"
-                :value="rule.id"
-              >
-                <div style="display: flex; justify-content: space-between;">
-                  <span>{{ rule.name }}</span>
-                  <el-tag size="small" type="info">{{ rule.behavior }}</el-tag>
-                </div>
-              </el-option>
-            </el-select>
-            <div class="form-hint">已添加的规则不会重复显示在列表中</div>
-          </el-form-item>
-          <el-form-item label="名称">
-            <el-input v-model="ruleSetForm.name" placeholder="规则集名称" :disabled="!!selectedLibraryRule" />
-          </el-form-item>
-          <el-form-item label="URL">
-            <el-input v-model="ruleSetForm.url" placeholder="规则集URL地址" :disabled="!!selectedLibraryRule" />
-          </el-form-item>
-          <el-form-item label="类型">
-            <el-select v-model="ruleSetForm.behavior" style="width: 100%" :disabled="!!selectedLibraryRule">
-              <el-option label="Domain" value="domain" />
-              <el-option label="IP CIDR" value="ipcidr" />
-              <el-option label="Classical" value="classical" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="策略">
-            <el-select v-model="ruleSetForm.policy" placeholder="选择策略" style="width: 100%">
-              <el-option
-                v-for="policy in availablePolicies"
-                :key="policy"
-                :label="policy"
-                :value="policy"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="备注">
-            <el-input v-model="ruleSetForm.remark" placeholder="可选，添加备注说明" />
-          </el-form-item>
-          <el-form-item label="no-resolve" v-if="ruleSetForm.behavior === 'ipcidr'">
-            <div class="switch-with-tip">
-              <el-switch v-model="ruleSetForm.no_resolve" />
-              <span class="form-tip">IP CIDR 类规则集建议开启</span>
-            </div>
-          </el-form-item>
-          <el-form-item label="状态">
-            <el-switch v-model="ruleSetForm.enabled" @change="handleRuleSetStatusChange" />
-          </el-form-item>
-        </el-form>
-      </div>
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button class="footer-btn ghost" @click="ruleSetDialogVisible = false">取消</el-button>
-          <el-button class="footer-btn primary" type="primary" @click="saveRuleSet">保存</el-button>
-        </div>
-      </template>
-    </el-dialog>
-
-    <!-- 规则组重命名对话框 -->
-    <el-dialog v-model="groupRenameDialogVisible" :title="groupRenameDialogTitle" width="450px" class="rule-dialog">
-      <div class="dialog-card">
-        <el-form :model="groupRenameForm" label-width="70px" class="rule-form">
-          <el-form-item label="组名称">
-            <el-input
-              v-model="groupRenameForm.groupName"
-              placeholder="输入名称，留空显示数量"
-              clearable
-            />
-          </el-form-item>
-        </el-form>
-        <div class="rename-tip">
-          <el-icon><InfoFilled /></el-icon>
-          <span>留空将显示默认名称</span>
-        </div>
-      </div>
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button class="footer-btn ghost" @click="groupRenameDialogVisible = false">取消</el-button>
-          <el-button class="footer-btn primary" type="primary" @click="saveGroupName">保存</el-button>
-        </div>
-      </template>
-    </el-dialog>
-
-    <!-- 规则索引对话框 -->
-    <el-dialog v-model="ruleIndexDialogVisible" title="规则索引" width="600px" class="rule-dialog">
-      <div class="dialog-card">
-        <el-alert
-          title="规则索引"
-          type="info"
-          :closable="false"
-          style="margin-bottom: 16px"
-        >
-          <div style="font-size: 13px; margin-top: 8px;">
-            输入域名或IP地址，查询会匹配到哪条规则
+        <div class="flex max-h-[60dvh] flex-col gap-4 overflow-y-auto pr-1">
+          <div class="flex flex-col gap-1.5">
+            <Label>规则类型</Label>
+            <Select v-model="ruleForm.rule_type">
+              <SelectTrigger class="w-full bg-background/50 font-mono">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent class="glass-strong">
+                <SelectItem v-for="type in RULE_TYPES" :key="type" :value="type" class="font-mono">
+                  {{ type }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-        </el-alert>
 
-        <el-form label-width="80px">
-          <el-form-item label="查询内容">
-            <el-input
+          <div class="flex flex-col gap-1.5">
+            <Label for="rule-value">值</Label>
+            <Input
+              id="rule-value"
+              v-model="ruleForm.value"
+              class="bg-background/50 font-mono"
+              placeholder="域名、IP 或规则集名称"
+            />
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <Label>策略</Label>
+            <Select v-model="ruleForm.policy">
+              <SelectTrigger class="w-full bg-background/50">
+                <SelectValue placeholder="选择策略" />
+              </SelectTrigger>
+              <SelectContent class="glass-strong">
+                <SelectItem v-for="policy in availablePolicies" :key="policy" :value="policy">
+                  {{ policy }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <Label for="rule-remark">备注</Label>
+            <Input
+              id="rule-remark"
+              v-model="ruleForm.remark"
+              class="bg-background/50"
+              placeholder="可选，添加备注说明"
+            />
+          </div>
+
+          <div v-if="isIpRuleType" class="flex flex-col gap-1.5">
+            <div class="flex items-center gap-2.5">
+              <Switch id="rule-noresolve" v-model="ruleForm.no_resolve" />
+              <Label for="rule-noresolve" class="text-[13px] text-muted-foreground">no-resolve</Label>
+            </div>
+            <p class="m-0 text-[12px] text-muted-foreground">
+              IP 类规则建议开启；逻辑规则会写入其 IP 子条件。
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2.5">
+            <Switch id="rule-enabled" v-model="ruleForm.enabled" />
+            <Label for="rule-enabled" class="text-[13px] text-muted-foreground">
+              {{ ruleForm.enabled ? '规则启用中' : '规则已停用' }}
+            </Label>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" @click="ruleDialogVisible = false">取消</Button>
+          <Button @click="saveRule">保存</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- ===== 添加 / 编辑规则集 ===== -->
+    <Dialog v-model:open="ruleSetDialogVisible">
+      <DialogContent class="glass-strong hairline max-w-[520px] border-border/50">
+        <DialogHeader>
+          <DialogTitle>{{ isEditRuleSet ? '编辑规则集' : '添加规则集' }}</DialogTitle>
+          <DialogDescription>可从规则仓库选取，或手动填写地址与类型。</DialogDescription>
+        </DialogHeader>
+
+        <div class="flex max-h-[60dvh] flex-col gap-4 overflow-y-auto pr-1">
+          <div class="flex flex-col gap-1.5">
+            <Label>选择规则</Label>
+            <Select v-model="selectedLibraryRule" @update:model-value="value => onLibraryRuleSelect(String(value))">
+              <SelectTrigger class="w-full bg-background/50">
+                <SelectValue placeholder="从规则仓库选择（可选）" />
+              </SelectTrigger>
+              <SelectContent class="glass-strong">
+                <SelectItem v-for="rule in enabledLibraryRules" :key="rule.id" :value="rule.id">
+                  <span class="flex w-full items-center gap-2">
+                    <span class="min-w-0 truncate">{{ rule.name }}</span>
+                    <span class="ml-auto font-mono text-[10.5px] text-muted-foreground">
+                      {{ rule.behavior }}
+                    </span>
+                  </span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <div class="flex items-center gap-2">
+              <p class="m-0 flex-1 text-[12px] text-muted-foreground">已添加的规则不会重复显示在列表中。</p>
+              <Button v-if="selectedLibraryRule" variant="ghost" size="sm" @click="onLibraryRuleClear">
+                清除选择
+              </Button>
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <Label for="ruleset-name">名称</Label>
+            <Input
+              id="ruleset-name"
+              v-model="ruleSetForm.name"
+              class="bg-background/50"
+              placeholder="规则集名称"
+              :disabled="!!selectedLibraryRule"
+            />
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <Label for="ruleset-url">URL</Label>
+            <Input
+              id="ruleset-url"
+              v-model="ruleSetForm.url"
+              class="bg-background/50 font-mono"
+              placeholder="规则集 URL 地址"
+              :disabled="!!selectedLibraryRule"
+            />
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <Label>类型</Label>
+            <Select v-model="ruleSetForm.behavior" :disabled="!!selectedLibraryRule">
+              <SelectTrigger class="w-full bg-background/50">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent class="glass-strong">
+                <SelectItem value="domain">Domain</SelectItem>
+                <SelectItem value="ipcidr">IP CIDR</SelectItem>
+                <SelectItem value="classical">Classical</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <Label>策略</Label>
+            <Select v-model="ruleSetForm.policy">
+              <SelectTrigger class="w-full bg-background/50">
+                <SelectValue placeholder="选择策略" />
+              </SelectTrigger>
+              <SelectContent class="glass-strong">
+                <SelectItem v-for="policy in availablePolicies" :key="policy" :value="policy">
+                  {{ policy }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <Label for="ruleset-remark">备注</Label>
+            <Input
+              id="ruleset-remark"
+              v-model="ruleSetForm.remark"
+              class="bg-background/50"
+              placeholder="可选，添加备注说明"
+            />
+          </div>
+
+          <div v-if="ruleSetForm.behavior === 'ipcidr'" class="flex flex-col gap-1.5">
+            <div class="flex items-center gap-2.5">
+              <Switch id="ruleset-noresolve" v-model="ruleSetForm.no_resolve" />
+              <Label for="ruleset-noresolve" class="text-[13px] text-muted-foreground">no-resolve</Label>
+            </div>
+            <p class="m-0 text-[12px] text-muted-foreground">IP CIDR 类规则集建议开启。</p>
+          </div>
+
+          <div class="flex items-center gap-2.5">
+            <Switch
+              id="ruleset-enabled"
+              v-model="ruleSetForm.enabled"
+              @update:model-value="value => handleRuleSetStatusChange(Boolean(value))"
+            />
+            <Label for="ruleset-enabled" class="text-[13px] text-muted-foreground">
+              {{ ruleSetForm.enabled ? '规则集启用中' : '规则集已停用' }}
+            </Label>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" @click="ruleSetDialogVisible = false">取消</Button>
+          <Button @click="saveRuleSet">保存</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- ===== 规则组重命名 ===== -->
+    <Dialog v-model:open="groupRenameDialogVisible">
+      <DialogContent class="glass-strong hairline max-w-[440px] border-border/50">
+        <DialogHeader>
+          <DialogTitle>{{ groupRenameDialogTitle }}</DialogTitle>
+          <DialogDescription>留空将显示默认名称（按数量）。</DialogDescription>
+        </DialogHeader>
+
+        <div class="flex flex-col gap-1.5">
+          <Label for="group-rename">组名称</Label>
+          <Input
+            id="group-rename"
+            v-model="groupRenameForm.groupName"
+            class="bg-background/50"
+            placeholder="输入名称，留空显示数量"
+            @keyup.enter="saveGroupName"
+          />
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" @click="groupRenameDialogVisible = false">取消</Button>
+          <Button @click="saveGroupName">保存</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- ===== 规则索引 ===== -->
+    <Dialog v-model:open="ruleIndexDialogVisible">
+      <DialogContent class="glass-strong hairline max-w-[620px] border-border/50">
+        <DialogHeader>
+          <DialogTitle>规则索引</DialogTitle>
+          <DialogDescription>输入域名或 IP，查询它会命中哪一条规则。</DialogDescription>
+        </DialogHeader>
+
+        <div class="flex flex-col gap-4">
+          <div class="flex items-center gap-2">
+            <Input
               v-model="ruleIndexQuery"
-              placeholder="请输入域名（如：google.com）或IP（如：192.168.1.1）"
+              class="bg-background/50 font-mono"
+              placeholder="例如 google.com 或 192.168.1.1"
               @keyup.enter="performRuleIndexQuery"
-              clearable
             />
-          </el-form-item>
-        </el-form>
-
-        <div v-if="ruleIndexResult" style="margin-top: 20px;">
-          <!-- 匹配成功 -->
-          <el-result
-            v-if="ruleIndexResult.matched"
-            icon="success"
-            title="匹配成功"
-            style="padding: 20px 0;"
-          >
-            <template #sub-title>
-              <div style="font-size: 14px; line-height: 1.8;">
-                <div style="margin-bottom: 12px;">
-                  <strong style="font-size: 16px; color: var(--cf-fg);">{{ ruleIndexResult.rule_name }}</strong>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 8px; text-align: left; max-width: 500px; margin: 0 auto;">
-                  <div>
-                    <span style="color: var(--cf-fg-2);">规则类型：</span>
-                    <el-tag :type="ruleIndexResult.rule_type === 'rule' ? 'primary' : 'success'" size="small">
-                      {{ ruleIndexResult.rule_type === 'rule' ? '直接规则' : '规则集' }}
-                    </el-tag>
-                  </div>
-                  <div>
-                    <span style="color: var(--cf-fg-2);">匹配规则：</span>
-                    <el-tag type="info" size="small" style="font-family: monospace;">
-                      {{ ruleIndexResult.matched_line }}
-                    </el-tag>
-                  </div>
-                  <div>
-                    <span style="color: var(--cf-fg-2);">执行策略：</span>
-                    <el-tag
-                      :type="ruleIndexResult.policy === 'DIRECT' ? 'success' : ruleIndexResult.policy === 'REJECT' ? 'danger' : 'primary'"
-                      size="small"
-                    >
-                      {{ ruleIndexResult.policy }}
-                    </el-tag>
-                  </div>
-                  <div>
-                    <span style="color: var(--cf-fg-2);">规则来源：</span>
-                    <span>{{ ruleIndexResult.source }}</span>
-                  </div>
-                  <div>
-                    <span style="color: var(--cf-fg-2);">优先级：</span>
-                    <span>第 {{ ruleIndexResult.priority }} 条规则</span>
-                  </div>
-                  <div>
-                    <span style="color: var(--cf-fg-2);">Behavior：</span>
-                    <el-tag type="info" size="small">{{ ruleIndexResult.behavior }}</el-tag>
-                  </div>
-                  <div v-if="ruleIndexResult.elapsed_time !== undefined">
-                    <span style="color: var(--cf-fg-2);">索引耗时：</span>
-                    <el-tag type="warning" size="small">{{ ruleIndexResult.elapsed_time }} ms</el-tag>
-                  </div>
-                </div>
-              </div>
-            </template>
-          </el-result>
-
-          <!-- 未匹配 -->
-          <el-result
-            v-else
-            icon="warning"
-            title="未匹配任何规则"
-            style="padding: 20px 0;"
-          >
-            <template #sub-title>
-              <div style="font-size: 14px; line-height: 1.8;">
-                <div style="margin-bottom: 8px;">{{ ruleIndexResult.message }}</div>
-                <div v-if="ruleIndexResult.elapsed_time !== undefined" style="color: var(--cf-fg-2);">
-                  索引耗时：<el-tag type="warning" size="small">{{ ruleIndexResult.elapsed_time }} ms</el-tag>
-                </div>
-              </div>
-            </template>
-          </el-result>
-        </div>
-      </div>
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button class="footer-btn ghost" @click="ruleIndexDialogVisible = false">关闭</el-button>
-          <el-button class="footer-btn primary" type="primary" @click="performRuleIndexQuery" :loading="ruleIndexLoading">
-            查询
-          </el-button>
-        </div>
-      </template>
-    </el-dialog>
-
-    <!-- 查找重复规则对话框 -->
-    <el-dialog v-model="duplicateDialogVisible" title="查找重复规则" width="700px" class="rule-dialog">
-      <div class="dialog-card">
-        <el-alert
-          title="查找重复规则"
-          type="info"
-          :closable="false"
-          style="margin-bottom: 16px"
-        >
-          <div style="font-size: 13px; margin-top: 8px;">
-            检查已启用的直接规则与规则集内容，找出完全相同的规则条目（首次扫描需拉取规则集内容，可能较慢）
+            <Button class="shrink-0" :disabled="ruleIndexLoading" @click="performRuleIndexQuery">
+              <Loader2 v-if="ruleIndexLoading" class="size-4 animate-spin" />
+              <Search v-else class="size-4" />
+              查询
+            </Button>
           </div>
-        </el-alert>
 
-        <div v-if="duplicateLoading" class="dup-loading">
-          <el-icon class="is-loading"><Loading /></el-icon>
-          <span>正在扫描规则……</span>
+          <div
+            v-if="ruleIndexResult"
+            class="rounded-xl border border-border/50 bg-background/40 p-4"
+          >
+            <template v-if="ruleIndexResult.matched">
+              <div class="mb-3 flex items-center gap-2">
+                <CircleCheck class="size-4 text-success-accent" aria-hidden="true" />
+                <span class="text-[14px] font-semibold text-foreground">{{ ruleIndexResult.rule_name }}</span>
+              </div>
+              <dl class="m-0 grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-2 text-[12.5px]">
+                <dt class="text-muted-foreground">规则类型</dt>
+                <dd class="m-0">
+                  <Badge :variant="ruleIndexResult.rule_type === 'rule' ? 'brand' : 'info'">
+                    {{ ruleIndexResult.rule_type === 'rule' ? '直接规则' : '规则集' }}
+                  </Badge>
+                </dd>
+                <dt class="text-muted-foreground">匹配规则</dt>
+                <dd class="m-0 font-mono break-all text-foreground">{{ ruleIndexResult.matched_line }}</dd>
+                <dt class="text-muted-foreground">执行策略</dt>
+                <dd class="m-0"><Badge :variant="policyTone(ruleIndexResult.policy)">{{ ruleIndexResult.policy }}</Badge></dd>
+                <dt class="text-muted-foreground">规则来源</dt>
+                <dd class="m-0 break-all text-foreground">{{ ruleIndexResult.source }}</dd>
+                <dt class="text-muted-foreground">优先级</dt>
+                <dd class="num m-0 text-foreground">第 {{ ruleIndexResult.priority }} 条</dd>
+                <dt class="text-muted-foreground">Behavior</dt>
+                <dd class="m-0 font-mono text-foreground">{{ ruleIndexResult.behavior }}</dd>
+                <template v-if="ruleIndexResult.elapsed_time !== undefined">
+                  <dt class="text-muted-foreground">索引耗时</dt>
+                  <dd class="num m-0 text-foreground">{{ ruleIndexResult.elapsed_time }} ms</dd>
+                </template>
+              </dl>
+            </template>
+
+            <template v-else>
+              <div class="mb-2 flex items-center gap-2">
+                <TriangleAlert class="size-4 text-warning-accent" aria-hidden="true" />
+                <span class="text-[14px] font-semibold text-foreground">未匹配任何规则</span>
+              </div>
+              <p class="m-0 text-[12.5px] text-muted-foreground">{{ ruleIndexResult.message }}</p>
+              <p
+                v-if="ruleIndexResult.elapsed_time !== undefined"
+                class="num mt-1 mb-0 text-[12px] text-muted-foreground"
+              >
+                索引耗时 {{ ruleIndexResult.elapsed_time }} ms
+              </p>
+            </template>
+          </div>
         </div>
 
-        <template v-else-if="duplicateResult">
-          <div class="dup-stats">
-            <span>已检查 {{ duplicateResult.stats.rules_checked }} 条规则、{{ duplicateResult.stats.rulesets_checked }} 个规则集</span>
-            <el-tag v-if="duplicateResult.duplicates.length" type="warning" size="small">
+        <DialogFooter>
+          <Button variant="outline" @click="ruleIndexDialogVisible = false">关闭</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- ===== 查找重复规则 ===== -->
+    <Dialog v-model:open="duplicateDialogVisible">
+      <DialogContent class="glass-strong hairline max-w-[720px] border-border/50">
+        <DialogHeader>
+          <DialogTitle>查找重复规则</DialogTitle>
+          <DialogDescription>
+            检查已启用的直接规则与规则集内容，找出完全相同的规则条目。首次扫描需拉取规则集内容，可能较慢。
+          </DialogDescription>
+        </DialogHeader>
+
+        <LoadingRows v-if="duplicateLoading" :rows="5" />
+
+        <div v-else-if="duplicateResult" class="flex max-h-[58dvh] flex-col gap-3 overflow-y-auto pr-1">
+          <div class="flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
+            <span class="num">
+              已检查 {{ duplicateResult.stats.rules_checked }} 条规则、{{ duplicateResult.stats.rulesets_checked }} 个规则集
+            </span>
+            <Badge v-if="duplicateResult.duplicates.length" variant="warning" class="num">
               {{ duplicateResult.duplicates.length }} 组重复
-            </el-tag>
-            <el-tag v-else type="success" size="small">无重复</el-tag>
-            <el-tag v-if="duplicateResult.elapsed_time !== undefined" type="info" size="small">
+            </Badge>
+            <Badge v-else variant="success">无重复</Badge>
+            <Badge v-if="duplicateResult.elapsed_time !== undefined" variant="outline" class="num">
               {{ duplicateResult.elapsed_time }} ms
-            </el-tag>
+            </Badge>
           </div>
 
-          <el-alert
-            v-if="duplicateResult.stats.failed_rulesets.length"
-            type="warning"
-            :closable="false"
-            style="margin-bottom: 12px"
-            :title="`以下规则集内容获取失败，未参与查重：${duplicateResult.stats.failed_rulesets.join('、')}`"
-          />
+          <Alert v-if="duplicateResult.stats.failed_rulesets.length" variant="default" class="border-warning-accent/35 bg-warning-soft/40">
+            <AlertDescription class="text-[12.5px]">
+              以下规则集内容获取失败，未参与查重：{{ duplicateResult.stats.failed_rulesets.join('、') }}
+            </AlertDescription>
+          </Alert>
 
-          <el-result
+          <EmptyState
             v-if="!duplicateResult.duplicates.length"
-            icon="success"
+            :icon="CircleCheck"
             title="未发现重复规则"
-            style="padding: 20px 0;"
+            description="当前启用的规则与规则集之间没有完全相同的条目。"
           />
 
-          <div v-else class="dup-list">
-            <div v-for="group in duplicateResult.duplicates" :key="`${group.rule_type},${group.value}`" class="dup-group">
-              <div class="dup-group-header">
-                <el-tag type="info" size="small" style="font-family: monospace;">
-                  {{ group.rule_type }},{{ group.value }}
-                </el-tag>
-                <el-tag type="warning" size="small">{{ group.count }} 处</el-tag>
-                <el-tag v-if="group.policy_conflict" type="danger" size="small">策略冲突</el-tag>
-              </div>
-              <div class="dup-occ" v-for="(occ, i) in group.occurrences" :key="i">
-                <el-tag :type="occ.source_type === 'rule' ? 'primary' : 'success'" size="small">
-                  {{ occ.source_type === 'rule' ? '直接规则' : '规则集' }}
-                </el-tag>
-                <span class="dup-occ-source" :title="occ.line">
-                  {{ occ.source_type === 'rule' ? occ.line : `${occ.source} · 第 ${occ.line_no} 行` }}
-                </span>
-                <span class="dup-occ-meta">优先级 #{{ occ.priority }}</span>
-                <el-tag
-                  :type="occ.policy === 'DIRECT' ? 'success' : occ.policy === 'REJECT' ? 'danger' : 'primary'"
-                  size="small"
-                >
-                  {{ occ.policy }}
-                </el-tag>
-                <el-button
-                  v-if="occ.source_type === 'rule'"
-                  class="list-btn danger"
-                  size="small"
-                  title="删除该条直接规则"
-                  @click="deleteDuplicateRule(occ)"
-                >
-                  <el-icon><Delete /></el-icon>
-                </el-button>
-              </div>
+          <div
+            v-for="group in duplicateResult.duplicates"
+            :key="`${group.rule_type},${group.value}`"
+            class="rounded-xl border border-border/50 bg-background/40 p-3"
+          >
+            <div class="mb-2 flex flex-wrap items-center gap-2">
+              <code class="rounded-md border border-border/50 bg-background/60 px-2 py-0.5 font-mono text-[11.5px] break-all">
+                {{ group.rule_type }},{{ group.value }}
+              </code>
+              <Badge variant="warning" class="num text-[10.5px]">{{ group.count }} 处</Badge>
+              <Badge v-if="group.policy_conflict" variant="danger" class="text-[10.5px]">策略冲突</Badge>
+            </div>
+
+            <div
+              v-for="(occ, i) in group.occurrences"
+              :key="i"
+              class="flex items-center gap-2 border-0 border-t border-border/40 py-2 text-[12.5px] first:border-t-0"
+            >
+              <Badge :variant="occ.source_type === 'rule' ? 'brand' : 'info'" class="shrink-0 text-[10.5px]">
+                {{ occ.source_type === 'rule' ? '直接规则' : '规则集' }}
+              </Badge>
+              <span class="min-w-0 flex-1 truncate text-foreground" :title="occ.line">
+                {{ occ.source_type === 'rule' ? occ.line : `${occ.source} · 第 ${occ.line_no} 行` }}
+              </span>
+              <span class="num shrink-0 text-muted-foreground">#{{ occ.priority }}</span>
+              <Badge :variant="policyTone(occ.policy)" class="shrink-0 text-[10.5px]">{{ occ.policy }}</Badge>
+              <Button
+                v-if="occ.source_type === 'rule'"
+                variant="ghost"
+                size="icon-sm"
+                class="shrink-0 text-destructive-accent hover:bg-destructive-soft"
+                title="删除该条直接规则"
+                aria-label="删除该条直接规则"
+                @click="deleteDuplicateRule(occ)"
+              >
+                <Trash2 class="size-4" />
+              </Button>
             </div>
           </div>
-        </template>
-      </div>
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button class="footer-btn ghost" @click="duplicateDialogVisible = false">关闭</el-button>
-          <el-button class="footer-btn primary" type="primary" @click="performDuplicateScan" :loading="duplicateLoading">
-            重新扫描
-          </el-button>
         </div>
-      </template>
-    </el-dialog>
+
+        <DialogFooter>
+          <Button variant="outline" @click="duplicateDialogVisible = false">关闭</Button>
+          <Button :disabled="duplicateLoading" @click="performDuplicateScan">
+            <Loader2 v-if="duplicateLoading" class="size-4 animate-spin" />
+            重新扫描
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
@@ -702,18 +766,92 @@
 import ReorderBar from '@/components/shell/ReorderBar.vue'
 import DragHandle from '@/components/shell/DragHandle.vue'
 import { useReorder } from '@/composables/useReorder'
-import PageHeader from '@/components/shell/PageHeader.vue'
+import PageHeader from '@/components/common/PageHeader.vue'
 import ScopeBanner from '@/components/shell/ScopeBanner.vue'
 import { useProfileStore } from '@/stores/profile'
 import { ref, onMounted, onUnmounted, onActivated, computed, nextTick, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import { DCaret, Edit, Delete, FolderOpened, ArrowUp, ArrowDown, Search, Plus, View, Hide, InfoFilled, List, Grid, ChatLineSquare, CopyDocument, Loading, Sort } from '@element-plus/icons-vue'
+import { Motion } from 'motion-v'
+import {
+  ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
+  CircleCheck,
+  Copy,
+  Eye,
+  EyeOff,
+  FileText,
+  FolderOpen,
+  Layers,
+  Loader2,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  TriangleAlert
+} from '@lucide/vue'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
+import EmptyState from '@/components/common/EmptyState.vue'
+import LoadingRows from '@/components/common/LoadingRows.vue'
+import SectionCard from '@/components/common/SectionCard.vue'
+import ViewToggle from '@/components/common/ViewToggle.vue'
+import { notify } from '@/lib/feedback'
+import { listItem } from '@/lib/motion'
 import { ruleApi, ruleSetApi, proxyGroupApi } from '@/api'
 import type { Rule, RuleSet, ProxyGroup } from '@/types'
 import { activeProfileId } from '@/profileContext'
 import Sortable from 'sortablejs'
 import api from '@/api'
 
+
+const RULE_TYPES = [
+  'DOMAIN',
+  'DOMAIN-SUFFIX',
+  'DOMAIN-KEYWORD',
+  'IP-CIDR',
+  'IP-CIDR6',
+  'IP-SUFFIX',
+  'DST-PORT',
+  'SRC-PORT',
+  'GEOIP',
+  'GEOSITE',
+  'RULE-SET',
+  'AND',
+  'OR',
+  'NOT',
+  'MATCH'
+]
+
+/* DIRECT 绿、REJECT 红，其余走强调色，与生成的配置语义一致 */
+const policyTone = (policy: string) =>
+  policy === 'DIRECT' ? ('success' as const) : policy === 'REJECT' ? ('danger' as const) : ('brand' as const)
 
 const cfProfileStore = useProfileStore()
 const cfProfileName = computed(
@@ -727,7 +865,7 @@ const ruleDialogVisible = ref(false)
 const ruleSetDialogVisible = ref(false)
 const isEditRule = ref(false)
 const isEditRuleSet = ref(false)
-const viewMode = ref<'list' | 'grid'>('grid')  // 默认卡片视图
+const viewMode = ref<'list' | 'card'>('card') // 默认卡片视图
 const rulesContainer = ref<HTMLElement | null>(null)
 let sortableInstance: Sortable | null = null
 
@@ -862,11 +1000,11 @@ const saveGroupName = async () => {
         await ruleSetApi.update(item.id, updatedItem)
       }
     }
-    ElMessage.success('重命名成功')
+    notify.success('重命名成功')
     groupRenameDialogVisible.value = false
     loadAllRules()
   } catch (error) {
-    ElMessage.error('重命名失败')
+    notify.error('重命名失败')
   }
 }
 
@@ -971,7 +1109,7 @@ const loadAllRules = async () => {
     const { data } = await ruleApi.getAll()
     allRules.value = data
   } catch (error) {
-    ElMessage.error('加载规则列表失败')
+    notify.error('加载规则列表失败')
   }
 }
 
@@ -980,7 +1118,7 @@ const loadProxyGroups = async () => {
     const { data } = await proxyGroupApi.getAll()
     proxyGroups.value = data
   } catch (error) {
-    ElMessage.error('加载策略组列表失败')
+    notify.error('加载策略组列表失败')
   }
 }
 
@@ -989,7 +1127,7 @@ const loadRuleLibrary = async () => {
     const { data } = await api.get('/rule-library')
     ruleLibrary.value = data
   } catch (error) {
-    ElMessage.error('加载规则仓库失败')
+    notify.error('加载规则仓库失败')
   }
 }
 
@@ -1027,15 +1165,15 @@ const saveRule = async () => {
         ruleData.group_name = ''
       }
       await ruleApi.update(ruleData.id!, ruleData)
-      ElMessage.success('更新成功')
+      notify.success('更新成功')
     } else {
       await ruleApi.create(ruleData)
-      ElMessage.success('添加成功')
+      notify.success('添加成功')
     }
     ruleDialogVisible.value = false
     loadAllRules()
   } catch (error) {
-    ElMessage.error('保存失败')
+    notify.error('保存失败')
   }
 }
 
@@ -1065,13 +1203,13 @@ const deleteRule = async (row: any) => {
     } catch (error) {
       console.error('同步更新 MosDNS 配置失败:', error)
       // 不阻断删除操作，只记录警告
-      ElMessage.warning('规则已删除，但 MosDNS 配置同步失败，请手动检查')
+      notify.warning('规则已删除，但 MosDNS 配置同步失败，请手动检查')
     }
 
-    ElMessage.success('删除成功')
+    notify.success('删除成功')
     loadAllRules()
   } catch (error) {
-    ElMessage.error('删除失败')
+    notify.error('删除失败')
   }
 }
 
@@ -1154,17 +1292,17 @@ const saveRuleSet = async () => {
         ruleSetData.group_name = ''
       }
       await ruleSetApi.update(ruleSetData.id!, ruleSetData)
-      ElMessage.success('更新成功')
+      notify.success('更新成功')
     } else {
       await ruleSetApi.create(ruleSetData)
-      ElMessage.success('添加成功')
+      notify.success('添加成功')
     }
     ruleSetDialogVisible.value = false
     // 保存后重置所有展开状态，确保分组状态正确
     expandedGroups.value = new Set()
     loadAllRules()
   } catch (error) {
-    ElMessage.error('保存失败')
+    notify.error('保存失败')
   }
 }
 
@@ -1194,13 +1332,13 @@ const deleteRuleSet = async (row: any) => {
     } catch (error) {
       console.error('同步更新 MosDNS 配置失败:', error)
       // 不阻断删除操作，只记录警告
-      ElMessage.warning('规则集已删除，但 MosDNS 配置同步失败，请手动检查')
+      notify.warning('规则集已删除，但 MosDNS 配置同步失败，请手动检查')
     }
 
-    ElMessage.success('删除成功')
+    notify.success('删除成功')
     loadAllRules()
   } catch (error) {
-    ElMessage.error('删除失败')
+    notify.error('删除失败')
   }
 }
 
@@ -1272,17 +1410,12 @@ const handleRuleSetStatusChange = async (enabled: boolean) => {
 
   // 如果是开启，需要测试连通性（仅测试完整URL）
   if (ruleSetForm.value.url && isFullUrl(ruleSetForm.value.url)) {
-    const loading = ElMessage({
-      message: '正在测试规则连通性...',
-      duration: 0,
-      type: 'info'
-    })
-
+    const loadingToast = notify.loading('正在测试规则连通性…')
     const isAvailable = await testUrlConnectivity(ruleSetForm.value.url)
-    loading.close()
+    notify.dismiss(loadingToast)
 
     if (!isAvailable) {
-      ElMessage.error('规则地址无法访问，无法开启')
+      notify.error('规则地址无法访问，无法开启')
       // 自动关闭开关
       ruleSetForm.value.enabled = false
       return
@@ -1295,7 +1428,7 @@ const toggleItemStatus = async (item: any) => {
   // 找到原始数据中的对应项
   const originalItem = allRules.value.find(r => r.id === item.id && r.itemType === item.itemType)
   if (!originalItem) {
-    ElMessage.error('未找到对应的规则项')
+    notify.error('未找到对应的规则项')
     return
   }
 
@@ -1310,17 +1443,12 @@ const toggleItemStatus = async (item: any) => {
   if (item.itemType === 'ruleset' && item.enabled) {
     // 如果有URL且是完整URL，进行测试
     if (item.url && isFullUrl(item.url)) {
-      const loading = ElMessage({
-        message: '正在测试规则连通性...',
-        duration: 0,
-        type: 'info'
-      })
-
+      const loadingToast = notify.loading('正在测试规则连通性…')
       const isAvailable = await testUrlConnectivity(item.url)
-      loading.close()
+      notify.dismiss(loadingToast)
 
       if (!isAvailable) {
-        ElMessage.error('规则地址无法访问，无法开启')
+        notify.error('规则地址无法访问，无法开启')
         // 回滚状态
         item.enabled = oldEnabled
         originalItem.enabled = oldEnabled
@@ -1349,9 +1477,9 @@ const toggleItemStatus = async (item: any) => {
     } else {
       await ruleSetApi.update(item.id, originalItem)
     }
-    ElMessage.success('状态已更新')
+    notify.success('状态已更新')
   } catch (error) {
-    ElMessage.error('更新状态失败')
+    notify.error('更新状态失败')
     // 失败后恢复状态
     item.enabled = oldEnabled
     originalItem.enabled = oldEnabled
@@ -1424,7 +1552,7 @@ const showRuleIndexDialog = () => {
 const performRuleIndexQuery = async () => {
   const query = ruleIndexQuery.value.trim()
   if (!query) {
-    ElMessage.warning('请输入域名或IP地址')
+    notify.warning('请输入域名或IP地址')
     return
   }
 
@@ -1439,16 +1567,16 @@ const performRuleIndexQuery = async () => {
     if (data.success) {
       ruleIndexResult.value = data
     } else {
-      ElMessage.error(data.message || '查询失败')
+      notify.error(data.message || '查询失败')
     }
   } catch (error: any) {
     console.error('Rule index query failed:', error)
     if (error.response?.status === 404) {
-      ElMessage.error('该功能需要专业版')
+      notify.error('该功能需要专业版')
     } else if (error.code === 'ECONNABORTED') {
-      ElMessage.error('查询超时，请检查规则集配置是否正确')
+      notify.error('查询超时，请检查规则集配置是否正确')
     } else {
-      ElMessage.error(error.response?.data?.message || '查询失败，请稍后重试')
+      notify.error(error.response?.data?.message || '查询失败，请稍后重试')
     }
   } finally {
     ruleIndexLoading.value = false
@@ -1471,14 +1599,14 @@ const performDuplicateScan = async () => {
     if (data.success) {
       duplicateResult.value = data
     } else {
-      ElMessage.error(data.message || '查重失败')
+      notify.error(data.message || '查重失败')
     }
   } catch (error: any) {
     console.error('Find duplicates failed:', error)
     if (error.code === 'ECONNABORTED') {
-      ElMessage.error('查重超时，请检查规则集配置是否正确')
+      notify.error('查重超时，请检查规则集配置是否正确')
     } else {
-      ElMessage.error(error.response?.data?.message || '查重失败，请稍后重试')
+      notify.error(error.response?.data?.message || '查重失败，请稍后重试')
     }
   } finally {
     duplicateLoading.value = false
@@ -1489,7 +1617,7 @@ const deleteDuplicateRule = async (occ: any) => {
   // 后端对缺失 itemType 的旧数据按 'rule' 兜底，这里保持同样口径
   const rule = allRules.value.find(r => r.id === occ.rule_id && (r.itemType ?? 'rule') === 'rule')
   if (!rule) {
-    ElMessage.error('未找到对应的规则，可能已被删除')
+    notify.error('未找到对应的规则，可能已被删除')
     return
   }
   await deleteRule(rule)
@@ -1556,9 +1684,9 @@ const handleSaveOrder = async () => {
     // 折叠分组，让合并后的分组卡片立即反映最新顺序
     expandedGroups.value = new Set()
     await loadAllRules()
-    ElMessage.success('顺序已保存')
+    notify.success('顺序已保存')
   } catch (error) {
-    ElMessage.error('保存顺序失败，顺序已还原')
+    notify.error('保存顺序失败，顺序已还原')
   }
 }
 
@@ -1580,947 +1708,3 @@ onActivated(() => {
 })
 </script>
 
-<style scoped>
-.rules-page {
-  --rule-radius-xl: 40px;
-  --rule-radius-lg: 24px;
-  --rule-radius-md: 16px;
-  --rule-radius-sm: 12px;
-  --rule-radius-pill: 999px;
-}
-
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-  /* 固定顶部 */
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  background: var(--cf-bg);
-  margin: -28px -32px 28px -32px;
-  padding: 28px 32px;
-}
-
-.title-block h2 {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 700;
-  color: var(--cf-fg);
-  }
-
-.title-block p {
-  margin: 6px 0 0;
-  font-size: 14px;
-  color: var(--cf-fg-2);
-}
-
-.header-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  justify-content: flex-end;
-}
-
-:deep(.action-btn .el-icon) {
-  font-size: 16px;
-}
-
-.empty-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 400px;
-  background: var(--cf-s1);
-  border-radius: var(--rule-radius-lg, 24px);
-  box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
-}
-
-.rules-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 24px;
-}
-
-.rule-card-wrapper {
-  cursor: move;
-}
-
-.rule-card {
-  background: var(--cf-s1);
-  border-radius: var(--rule-radius-lg, 24px);
-  padding: 20px;
-  box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
-  border: 1px solid rgba(107, 115, 255, 0.1);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-height: 140px;
-}
-
-.rule-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 20px 40px rgba(65, 80, 180, 0.16);
-  border-color: rgba(107, 115, 255, 0.25);
-}
-
-.rule-card.disabled {
-  opacity: 0.5;
-  filter: grayscale(0.4);
-}
-
-.rule-card.group-card {
-  background: var(--cf-s2);
-  border-color: rgba(139, 143, 255, 0.25);
-  cursor: pointer;
-}
-
-.rule-card.group-card:hover {
-  border-color: rgba(139, 143, 255, 0.45);
-  box-shadow: 0 20px 40px rgba(139, 143, 255, 0.2);
-}
-
-.rule-card.expanded-group-item {
-  border-left: 3px solid var(--cf-primary-hover);
-  background: var(--cf-s2);
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.card-title-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-}
-
-.card-drag-handle {
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(107, 115, 255, 0.08);
-  color: var(--cf-fg-2);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: move;
-  transition: all 0.2s ease;
-}
-
-.card-drag-handle:hover {
-  background: rgba(107, 115, 255, 0.15);
-  color: var(--cf-primary);
-}
-
-.card-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--cf-fg);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.card-type-badge {
-  padding: 4px 12px;
-  border-radius: var(--rule-radius-pill, 999px);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.card-type-badge.rule {
-  background: rgba(107, 115, 255, 0.12);
-  color: var(--cf-primary);
-  border: 1px solid rgba(107, 115, 255, 0.18);
-}
-
-.card-type-badge.ruleset {
-  background: rgba(139, 143, 255, 0.12);
-  color: var(--cf-primary-hover);
-  border: 1px solid rgba(139, 143, 255, 0.18);
-}
-
-.collapse-btn {
-  font-size: 12px;
-  padding: 2px 8px;
-  color: var(--cf-primary-hover);
-}
-
-.card-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.collapse-group-btn {
-  border-radius: var(--rule-radius-pill, 999px);
-  border: 1px solid rgba(107, 115, 255, 0.24);
-  background: rgba(107, 115, 255, 0.12);
-  color: var(--cf-primary);
-  font-weight: 600;
-  padding: 7px 12px;
-}
-
-.collapse-group-btn:hover {
-  border-color: rgba(107, 115, 255, 0.4);
-  background: rgba(107, 115, 255, 0.18);
-  color: var(--cf-primary);
-}
-
-.collapse-group-btn .el-icon {
-  margin-right: 4px;
-}
-
-.status-toggle {
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(107, 115, 255, 0.18);
-  color: var(--cf-primary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.status-toggle:hover {
-  transform: scale(1.05);
-}
-
-.status-toggle.active {
-  background: var(--cf-primary-fill);
-  color: var(--cf-primary-fg);
-  box-shadow: 0 12px 28px rgba(87, 104, 255, 0.3);
-}
-
-.expand-btn {
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid rgba(124, 134, 174, 0.35);
-  background: transparent;
-  color: var(--cf-fg-2);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.expand-btn:hover {
-  background: rgba(107, 115, 255, 0.12);
-  border-color: rgba(107, 115, 255, 0.35);
-  color: var(--cf-primary);
-}
-
-.card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.meta-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 12px;
-  border-radius: var(--rule-radius-pill, 999px);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.group-pill {
-  background: rgba(139, 143, 255, 0.12);
-  color: var(--cf-primary-hover);
-  border: 1px solid rgba(139, 143, 255, 0.18);
-}
-
-.policy-pill {
-  background: rgba(107, 115, 255, 0.12);
-  color: var(--cf-primary);
-  border: 1px solid rgba(107, 115, 255, 0.18);
-}
-
-.count-pill {
-  background: rgba(103, 194, 58, 0.12);
-  color: var(--cf-success);
-  border: 1px solid rgba(103, 194, 58, 0.18);
-}
-
-.rename-tip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background: rgba(107, 115, 255, 0.06);
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--cf-fg-2);
-  margin-top: 8px;
-}
-
-.rename-tip .el-icon {
-  color: var(--cf-primary);
-  font-size: 16px;
-}
-
-.card-body {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow: hidden;
-}
-
-.rule-content {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-}
-
-.rule-type-inline {
-  font-weight: 600;
-  color: var(--cf-primary);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.rule-value-inline {
-  color: var(--cf-fg);
-  word-break: break-all;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.rule-remark {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--cf-fg-2);
-  padding: 4px 8px;
-  background: rgba(144, 147, 153, 0.08);
-  border-radius: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
-}
-
-.rule-remark .el-icon {
-  font-size: 14px;
-  flex-shrink: 0;
-}
-
-.ruleset-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.ruleset-name {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--cf-fg);
-  word-break: break-all;
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-}
-
-.library-badge {
-  flex-shrink: 0;
-}
-
-.card-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: 12px;
-  border-top: 1px solid rgba(107, 115, 255, 0.08);
-}
-
-.footer-left {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex: 1;
-}
-
-.policy-tag {
-  padding: 4px 12px;
-  border-radius: var(--rule-radius-pill, 999px);
-  font-size: 12px;
-  font-weight: 600;
-  background: rgba(144, 147, 153, 0.12);
-  color: var(--cf-fg-2);
-}
-
-.footer-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.card-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: auto;
-  padding-top: 8px;
-}
-
-.card-btn {
-  flex: 1;
-  height: 32px;
-  border-radius: var(--rule-radius-md, 16px);
-  font-size: 13px;
-  font-weight: 600;
-  transition: all 0.2s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: none;
-}
-
-.card-btn.ghost {
-  background: rgba(107, 115, 255, 0.08);
-  border: 1px solid rgba(107, 115, 255, 0.25);
-  color: var(--cf-primary);
-}
-
-.card-btn.ghost:hover {
-  background: rgba(107, 115, 255, 0.15);
-  border-color: rgba(107, 115, 255, 0.35);
-  transform: translateY(-1px);
-}
-
-.card-btn.danger {
-  background: rgba(155, 143, 255, 0.12);
-  border: 1px solid rgba(155, 143, 255, 0.28);
-  color: var(--cf-primary-hover);
-}
-
-.card-btn.danger:hover {
-  background: rgba(155, 143, 255, 0.18);
-  border-color: rgba(155, 143, 255, 0.35);
-  transform: translateY(-1px);
-}
-
-.card-btn.primary {
-  background: var(--cf-primary-fill);
-  color: var(--cf-primary-fg);
-  box-shadow: 0 8px 16px rgba(87, 104, 255, 0.25);
-}
-
-.card-btn.primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 20px rgba(87, 104, 255, 0.35);
-}
-
-:deep(.rule-dialog) {
-  border-radius: var(--rule-radius-xl, 40px) !important;
-  overflow: hidden;
-  background: rgba(252, 253, 255, 0.97);
-  box-shadow: 0 36px 80px rgba(65, 80, 180, 0.28);
-  border: 1px solid rgba(107, 115, 255, 0.16);
-  backdrop-filter: blur(20px);
-}
-
-:deep(.rule-dialog .el-dialog__header) {
-  padding: 24px 32px;
-  margin: 0;
-  border-bottom: 1px solid rgba(107, 115, 255, 0.1);
-  background: var(--cf-s2);
-}
-
-:deep(.rule-dialog .el-dialog__title) {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--cf-fg);
-  }
-
-:deep(.rule-dialog .el-dialog__body) {
-  padding: 28px 32px;
-  background: var(--cf-s2);
-}
-
-:deep(.rule-dialog .el-dialog__footer) {
-  padding: 20px 32px;
-  border-top: 1px solid rgba(107, 115, 255, 0.1);
-  background: var(--cf-s2);
-}
-
-.dialog-card {
-  background: var(--cf-s1);
-  border-radius: var(--rule-radius-lg, 24px);
-  padding: 24px;
-  box-shadow: 0 8px 20px rgba(91, 112, 255, 0.08);
-  border: 1px solid rgba(107, 115, 255, 0.1);
-}
-
-.rule-form {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.rule-form :deep(.el-form-item__label) {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--cf-fg-2);
-}
-
-.switch-with-tip {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.form-tip {
-  font-size: 12px;
-  color: var(--cf-fg-2);
-}
-
-.form-hint {
-  font-size: 12px;
-  color: var(--cf-fg-2);
-  margin-top: 6px;
-}
-
-.dialog-footer {
-  display: flex;
-  gap: 12px;
-  justify-content: flex-end;
-}
-
-.footer-btn {
-  min-width: 100px;
-  height: 40px;
-  border-radius: var(--rule-radius-md, 16px);
-  font-weight: 600;
-}
-
-.footer-btn.ghost {
-  background: rgba(107, 115, 255, 0.08);
-  border: 1px solid rgba(107, 115, 255, 0.25);
-  color: var(--cf-primary);
-}
-
-.footer-btn.primary {
-  background: var(--cf-s2);
-  border: none;
-  box-shadow: 0 8px 16px rgba(87, 104, 255, 0.25);
-}
-
-.sortable-ghost {
-  opacity: 0.4;
-}
-
-/* 查找重复规则对话框 */
-.dup-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 40px 0;
-  color: var(--cf-fg-2);
-  font-size: 14px;
-}
-
-.dup-stats {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  font-size: 13px;
-  color: var(--cf-fg-2);
-}
-
-.dup-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-height: 420px;
-  overflow-y: auto;
-}
-
-.dup-group {
-  border: 1px solid rgba(107, 115, 255, 0.14);
-  border-radius: var(--rule-radius-md, 16px);
-  padding: 12px 16px;
-  background: rgba(107, 115, 255, 0.04);
-}
-
-.dup-group-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
-}
-
-.dup-occ {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 0;
-  border-top: 1px dashed rgba(107, 115, 255, 0.12);
-  font-size: 13px;
-}
-
-.dup-occ-source {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--cf-fg);
-  font-family: monospace;
-}
-
-.dup-occ-meta {
-  color: var(--cf-fg-2);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-/* 视图切换按钮样式 */
-.view-toggle {
-  margin-right: 8px;
-}
-
-.toggle-btn {
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(107, 115, 255, 0.08);
-  border: 1px solid rgba(107, 115, 255, 0.2);
-  color: var(--cf-fg-2);
-  transition: all 0.2s ease;
-}
-
-.toggle-btn:hover {
-  background: rgba(107, 115, 255, 0.12);
-  color: var(--cf-primary);
-}
-
-.toggle-btn.active {
-  background: var(--cf-primary-fill);
-  color: var(--cf-primary-fg);
-  border-color: transparent;
-}
-
-.toggle-btn .el-icon {
-  font-size: 18px;
-}
-
-/* 列表视图样式 */
-.rules-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.list-item-wrapper {
-  cursor: move;
-}
-
-.list-item {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 20px;
-  background: var(--cf-s1);
-  border-radius: var(--rule-radius-md, 16px);
-  border: 1px solid rgba(107, 115, 255, 0.1);
-  box-shadow: 0 4px 12px rgba(65, 80, 180, 0.06);
-  transition: all 0.2s ease;
-}
-
-.list-item:hover {
-  transform: translateX(4px);
-  box-shadow: 0 8px 20px rgba(65, 80, 180, 0.12);
-  border-color: rgba(107, 115, 255, 0.25);
-}
-
-.list-item.disabled {
-  opacity: 0.5;
-  filter: grayscale(0.4);
-}
-
-.list-item.group-item {
-  background: var(--cf-s2);
-  border-color: rgba(139, 143, 255, 0.25);
-  cursor: pointer;
-}
-
-.list-item.group-item:hover {
-  border-color: rgba(139, 143, 255, 0.45);
-}
-
-.list-item.expanded-group-item {
-  border-left: 3px solid var(--cf-primary-hover);
-  background: var(--cf-s2);
-}
-
-.list-item-drag {
-  flex-shrink: 0;
-}
-
-.list-item-type {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 80px;
-}
-
-.type-badge {
-  padding: 4px 12px;
-  border-radius: var(--rule-radius-pill, 999px);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.type-badge.rule {
-  background: rgba(107, 115, 255, 0.12);
-  color: var(--cf-primary);
-  border: 1px solid rgba(107, 115, 255, 0.18);
-}
-
-.type-badge.ruleset {
-  background: rgba(139, 143, 255, 0.12);
-  color: var(--cf-primary-hover);
-  border: 1px solid rgba(139, 143, 255, 0.18);
-}
-
-.list-item-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.list-item-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--cf-fg);
-  margin-bottom: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.list-item-meta {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.meta-badge {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: var(--rule-radius-pill, 999px);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.meta-badge.group {
-  background: rgba(139, 143, 255, 0.12);
-  color: var(--cf-primary-hover);
-}
-
-.meta-badge.policy {
-  background: rgba(107, 115, 255, 0.12);
-  color: var(--cf-primary);
-}
-
-.meta-badge.count {
-  background: rgba(103, 194, 58, 0.12);
-  color: var(--cf-success);
-}
-
-.list-item-content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-}
-
-.rule-type-text {
-  font-weight: 600;
-  color: var(--cf-primary);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.rule-value-text {
-  color: var(--cf-fg);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ruleset-name-text {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--cf-fg);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rule-remark-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--cf-fg-2);
-  padding: 2px 8px;
-  background: rgba(144, 147, 153, 0.1);
-  border-radius: var(--rule-radius-pill, 999px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 150px;
-  flex-shrink: 0;
-}
-
-.rule-remark-badge .el-icon {
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
-.list-item-policy {
-  flex-shrink: 0;
-}
-
-.list-item-actions {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.list-btn {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 50%;
-  background: rgba(107, 115, 255, 0.08);
-  border: 1px solid rgba(107, 115, 255, 0.2);
-  color: var(--cf-primary);
-  transition: all 0.2s ease;
-}
-
-.list-btn:hover {
-  background: rgba(107, 115, 255, 0.15);
-  border-color: rgba(107, 115, 255, 0.35);
-  transform: scale(1.08);
-}
-
-.list-btn.danger {
-  background: rgba(155, 143, 255, 0.12);
-  border-color: rgba(155, 143, 255, 0.25);
-  color: var(--cf-primary-hover);
-}
-
-.list-btn.danger:hover {
-  background: rgba(155, 143, 255, 0.18);
-  border-color: rgba(155, 143, 255, 0.35);
-}
-
-@media (max-width: 768px) {
-  .rules-page {
-    padding: 20px 16px 32px;
-  }
-
-  .page-header {
-    flex-direction: column;
-    align-items: flex-start;
-    margin: -20px -16px 20px -16px;
-    padding: 20px 16px;
-  }
-
-  .header-actions {
-    width: 100%;
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-
-  .view-toggle {
-    order: -1;
-    margin-bottom: 8px;
-  }
-
-  :deep(.header-actions .el-button + .el-button) {
-    margin-left: 0;
-  }
-
-  .action-btn {
-    flex: 1;
-    min-width: calc(50% - 6px);
-    justify-content: center;
-    box-sizing: border-box;
-  }
-
-  .rules-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .list-item {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
-  .list-item-type {
-    width: 100%;
-  }
-
-  .list-item-content {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
-  .list-item-policy {
-    width: 100%;
-  }
-
-  .list-item-actions {
-    width: 100%;
-    justify-content: flex-end;
-  }
-
-  :deep(.rule-dialog) {
-    width: 95vw !important;
-    max-width: 95vw !important;
-  }
-}
-</style>
