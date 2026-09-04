@@ -1,334 +1,137 @@
 <template>
-  <div class="login-container">
-    <el-card class="login-card">
-      <template #header>
-        <div class="login-header">
-          <h2>Config Flow</h2>
-          <p>配置管理系统</p>
+  <div class="relative flex min-h-screen min-h-dvh items-center justify-center overflow-hidden bg-background px-5">
+    <div class="tech-backdrop" aria-hidden="true" />
+
+    <Motion
+      v-bind="riseIn"
+      class="hairline edge-light relative z-10 w-full max-w-[400px] overflow-hidden rounded-2xl border border-border/35 bg-card/70 p-8 backdrop-blur-2xl max-[480px]:p-6"
+      style="box-shadow: var(--shadow-overlay)"
+    >
+      <div class="flex flex-col items-center gap-3 pb-7 text-center">
+        <span class="relative flex size-14 items-center justify-center">
+          <span
+            class="absolute inset-0 rounded-2xl bg-linear-to-br from-primary/60 to-accent-2-fill/45 blur-lg"
+            aria-hidden="true"
+          />
+          <img src="/icon.png" alt="" class="relative size-12 rounded-[14px]" />
+        </span>
+        <div>
+          <h1 class="m-0 text-[26px] leading-tight font-semibold tracking-[-0.03em] text-foreground">
+            ConfigFlow
+          </h1>
+          <p class="mt-1.5 mb-0 text-[13px] text-muted-foreground">代理配置管理系统</p>
         </div>
-      </template>
+      </div>
 
-      <el-form
-        ref="loginFormRef"
-        :model="loginForm"
-        :rules="rules"
-        label-width="0"
-        @submit.prevent="handleLogin"
-      >
-        <el-form-item prop="username">
-          <el-input
-            v-model="loginForm.username"
-            placeholder="用户名"
-            size="large"
-            prefix-icon="User"
-            :disabled="loading"
-          />
-        </el-form-item>
+      <form class="flex flex-col gap-4" @submit.prevent="handleLogin">
+        <div class="flex flex-col gap-1.5">
+          <Label for="login-username" class="text-[12.5px] text-muted-foreground">用户名</Label>
+          <div class="relative">
+            <User
+              class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              id="login-username"
+              v-model="loginForm.username"
+              autocomplete="username"
+              placeholder="请输入用户名"
+              class="h-11 bg-background/50 pl-9 text-[14px]"
+              :disabled="loading"
+              :aria-invalid="Boolean(errors.username)"
+            />
+          </div>
+          <p v-if="errors.username" class="m-0 text-[12px] text-destructive-accent">
+            {{ errors.username }}
+          </p>
+        </div>
 
-        <el-form-item prop="password">
-          <el-input
-            v-model="loginForm.password"
-            type="password"
-            placeholder="密码"
-            size="large"
-            prefix-icon="Lock"
-            :disabled="loading"
-            @keyup.enter="handleLogin"
-          />
-        </el-form-item>
+        <div class="flex flex-col gap-1.5">
+          <Label for="login-password" class="text-[12.5px] text-muted-foreground">密码</Label>
+          <div class="relative">
+            <Lock
+              class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              id="login-password"
+              v-model="loginForm.password"
+              type="password"
+              autocomplete="current-password"
+              placeholder="请输入密码"
+              class="h-11 bg-background/50 pl-9 text-[14px]"
+              :disabled="loading"
+              :aria-invalid="Boolean(errors.password)"
+            />
+          </div>
+          <p v-if="errors.password" class="m-0 text-[12px] text-destructive-accent">
+            {{ errors.password }}
+          </p>
+        </div>
 
-        <el-form-item>
-          <el-button
-            type="primary"
-            size="large"
-            style="width: 100%"
-            :loading="loading"
-            @click="handleLogin"
-          >
-            {{ loading ? '登录中...' : '登录' }}
-          </el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
+        <Button type="submit" class="mt-2 h-11 w-full text-[14px] shadow-glow" :disabled="loading">
+          <Loader2 v-if="loading" class="size-4 animate-spin" aria-hidden="true" />
+          {{ loading ? '登录中…' : '登录' }}
+        </Button>
+      </form>
+    </Motion>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import axios from 'axios'
+import { Motion } from 'motion-v'
+import { Loader2, Lock, User } from '@lucide/vue'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { notify } from '@/lib/feedback'
+import { riseIn } from '@/lib/motion'
 
 const router = useRouter()
-const loginFormRef = ref()
 const loading = ref(false)
 
-const loginForm = reactive({
-  username: '',
-  password: ''
-})
+const loginForm = reactive({ username: '', password: '' })
+const errors = reactive({ username: '', password: '' })
 
-const rules = {
-  username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' }
-  ],
-  password: [
-    { required: true, message: '请输入密码', trigger: 'blur' }
-  ]
+/* 表单校验就地实现：只有两个必填项，引入表单库不划算 */
+const validate = (): boolean => {
+  errors.username = loginForm.username.trim() ? '' : '请输入用户名'
+  errors.password = loginForm.password ? '' : '请输入密码'
+  return !errors.username && !errors.password
 }
 
 const handleLogin = async () => {
+  if (!validate()) return
+
+  loading.value = true
   try {
-    // 验证表单
-    await loginFormRef.value?.validate()
-
-    loading.value = true
-
-    // 发送登录请求
     const response = await axios.post('/api/auth/login', {
       username: loginForm.username,
       password: loginForm.password
     })
 
     if (response.data.success) {
-      // 保存 token 到 localStorage
       localStorage.setItem('token', response.data.token)
       localStorage.setItem('username', response.data.username)
-
-      ElMessage.success('登录成功')
-
-      // 跳转到首页
+      notify.success('登录成功')
       router.push('/')
     } else {
-      ElMessage.error(response.data.message || '登录失败')
+      notify.error(response.data.message || '登录失败')
     }
   } catch (error: any) {
     console.error('登录失败:', error)
     if (error.response?.data?.message) {
-      ElMessage.error(error.response.data.message)
+      notify.error(error.response.data.message)
     } else if (error.response?.status === 401) {
-      ElMessage.error('用户名或密码错误')
+      notify.error('用户名或密码错误')
     } else {
-      ElMessage.error('登录失败，请稍后重试')
+      notify.error('登录失败，请稍后重试')
     }
   } finally {
     loading.value = false
   }
 }
 </script>
-
-<style scoped>
-.login-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  background: var(--cf-s2);
-  padding: 20px;
-  position: relative;
-  overflow: hidden;
-}
-
-.login-container::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  right: -50%;
-  width: 100%;
-  height: 100%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
-  animation: float 20s ease-in-out infinite;
-}
-
-.login-container::after {
-  content: '';
-  position: absolute;
-  bottom: -50%;
-  left: -50%;
-  width: 100%;
-  height: 100%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.08) 0%, transparent 70%);
-  animation: float 25s ease-in-out infinite reverse;
-}
-
-@keyframes float {
-  0%, 100% {
-    transform: translate(0, 0);
-  }
-  50% {
-    transform: translate(-20px, 20px);
-  }
-}
-
-.login-card {
-  width: 100%;
-  max-width: 420px;
-  border-radius: 24px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
-  backdrop-filter: blur(20px);
-  background: rgba(255, 255, 255, 0.98);
-  position: relative;
-  z-index: 1;
-  overflow: hidden;
-}
-
-.login-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: var(--cf-s2);
-}
-
-.login-header {
-  text-align: center;
-  padding: 12px 0;
-}
-
-.login-header h2 {
-  margin: 0 0 12px 0;
-  font-size: 32px;
-  color: var(--cf-fg);
-  font-weight: 700;
-  letter-spacing: -0.5px;
-}
-
-.login-header p {
-  margin: 0;
-  color: var(--cf-fg-2);
-  font-size: 15px;
-  font-weight: 500;
-}
-
-:deep(.el-card__header) {
-  padding: 32px 32px 20px;
-  border-bottom: none;
-  background: transparent;
-}
-
-:deep(.el-card__body) {
-  padding: 12px 32px 36px;
-}
-
-:deep(.el-form-item) {
-  margin-bottom: 24px;
-}
-
-:deep(.el-input__wrapper) {
-  padding: 14px 16px;
-  background: var(--cf-s2);
-  border: 2px solid transparent;
-  border-radius: 14px;
-  box-shadow: none;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-:deep(.el-input__wrapper:hover) {
-  background: var(--cf-s3);
-  border-color: rgba(139, 143, 255, 0.25);
-}
-
-:deep(.el-input__wrapper.is-focus) {
-  background: var(--cf-s1);
-  border-color: var(--cf-primary-hover);
-  box-shadow: 0 0 0 4px rgba(139, 143, 255, 0.15);
-}
-
-:deep(.el-input__inner) {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--cf-fg);
-}
-
-:deep(.el-input__inner::placeholder) {
-  color: var(--cf-fg-3);
-  font-weight: 400;
-}
-
-:deep(.el-input__prefix) {
-  font-size: 18px;
-  color: var(--cf-fg-2);
-}
-
-:deep(.el-input__wrapper.is-focus .el-input__prefix) {
-  color: var(--cf-primary-hover);
-}
-
-:deep(.el-button--primary) {
-  padding: 16px 24px;
-  height: auto;
-  border: none;
-  border-radius: 14px;
-  font-weight: 600;
-  font-size: 16px;
-  letter-spacing: 0.3px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 8px 24px rgba(139, 143, 255, 0.4);
-  position: relative;
-  overflow: hidden;
-}
-
-:deep(.el-button--primary::before) {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  transition: left 0.5s;
-}
-
-:deep(.el-button--primary:hover) {
-  transform: translateY(-3px);
-  box-shadow: 0 12px 32px rgba(139, 143, 255, 0.5);
-}
-
-:deep(.el-button--primary:hover::before) {
-  left: 100%;
-}
-
-:deep(.el-button--primary:active) {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(139, 143, 255, 0.45);
-}
-
-:deep(.el-button--primary.is-loading) {
-  opacity: 0.8;
-}
-
-/* 移动端适配 */
-@media (max-width: 480px) {
-  .login-card {
-    max-width: 100%;
-    border-radius: 20px;
-    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.2);
-  }
-
-  :deep(.el-card__header) {
-    padding: 28px 24px 16px;
-  }
-
-  :deep(.el-card__body) {
-    padding: 12px 24px 32px;
-  }
-
-  .login-header h2 {
-    font-size: 28px;
-  }
-
-  .login-header p {
-    font-size: 14px;
-  }
-
-  :deep(.el-input__wrapper) {
-    padding: 12px 14px;
-  }
-
-  :deep(.el-button--primary) {
-    padding: 14px 20px;
-    font-size: 15px;
-  }
-}
-</style>

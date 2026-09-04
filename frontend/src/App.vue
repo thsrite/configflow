@@ -137,6 +137,7 @@
 
   <Toaster position="top-center" rich-colors close-button :duration="3000" />
   <ConfirmHost />
+  <PromptHost />
 </template>
 
 <script setup lang="ts">
@@ -157,6 +158,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { systemApi } from './api'
 import api from './api'
 import ConfirmHost from './components/feedback/ConfirmHost.vue'
+import PromptHost from './components/feedback/PromptHost.vue'
 import ProfileSwitcher from './components/ProfileSwitcher.vue'
 import AppRail from './components/shell/AppRail.vue'
 import CommandPalette from './components/shell/CommandPalette.vue'

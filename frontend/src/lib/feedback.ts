@@ -71,3 +71,75 @@ export const settleConfirm = (ok: boolean): void => {
   confirmState.resolve = null
   resolve?.(ok)
 }
+
+/* ---------- 单输入框询问框 ---------- */
+
+export interface PromptOptions {
+  title?: string
+  description?: string
+  placeholder?: string
+  defaultValue?: string
+  confirmText?: string
+  cancelText?: string
+  /** 校验失败返回错误文案，通过返回空字符串 */
+  validate?: (value: string) => string
+}
+
+interface PromptState {
+  open: boolean
+  title: string
+  description: string
+  placeholder: string
+  value: string
+  error: string
+  confirmText: string
+  cancelText: string
+  validate: ((value: string) => string) | null
+  resolve: ((value: string | null) => void) | null
+}
+
+export const promptState = reactive<PromptState>({
+  open: false,
+  title: '',
+  description: '',
+  placeholder: '',
+  value: '',
+  error: '',
+  confirmText: '确定',
+  cancelText: '取消',
+  validate: null,
+  resolve: null
+})
+
+/** 取消返回 null，确认返回输入值 */
+export const prompt = (options: PromptOptions = {}): Promise<string | null> => {
+  promptState.resolve?.(null)
+
+  promptState.title = options.title ?? '请输入'
+  promptState.description = options.description ?? ''
+  promptState.placeholder = options.placeholder ?? ''
+  promptState.value = options.defaultValue ?? ''
+  promptState.error = ''
+  promptState.confirmText = options.confirmText ?? '确定'
+  promptState.cancelText = options.cancelText ?? '取消'
+  promptState.validate = options.validate ?? null
+  promptState.open = true
+
+  return new Promise<string | null>(resolve => {
+    promptState.resolve = resolve
+  })
+}
+
+export const settlePrompt = (value: string | null): void => {
+  if (value !== null && promptState.validate) {
+    const error = promptState.validate(value)
+    if (error) {
+      promptState.error = error
+      return
+    }
+  }
+  promptState.open = false
+  const resolve = promptState.resolve
+  promptState.resolve = null
+  resolve?.(value)
+}
