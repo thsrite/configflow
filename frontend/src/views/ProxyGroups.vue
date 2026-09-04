@@ -1,16 +1,27 @@
 <template>
-  <div class="proxy-groups-page" :class="{ 'cf-reordering': reorder.active.value }">
+  <div :class="reorder.active.value && 'cf-reordering'">
     <ScopeBanner scope="profile" :profile-name="cfProfileName" />
-    <PageHeader title="策略组" description="分组、筛选与节点引用，仅属于当前配置空间">
+
+    <PageHeader
+      eyebrow="Profile"
+      title="策略组"
+      description="分组、筛选与节点引用，仅属于当前配置空间。"
+    >
       <template #actions>
-        <el-button v-if="!reorder.active.value" :disabled="proxyGroups.length < 2" @click="reorder.enter">
-          <el-icon><Sort /></el-icon>
+        <Button
+          v-if="!reorder.active.value"
+          variant="outline"
+          class="border-border/60 bg-background/40"
+          :disabled="proxyGroups.length < 2"
+          @click="reorder.enter"
+        >
+          <ArrowUpDown class="size-4" />
           调整顺序
-        </el-button>
-        <el-button type="primary" @click="showAddDialog">
-          <el-icon><Plus /></el-icon>
+        </Button>
+        <Button class="shadow-glow" @click="showAddDialog">
+          <Plus class="size-4" />
           添加策略组
-        </el-button>
+        </Button>
       </template>
     </PageHeader>
 
@@ -22,481 +33,617 @@
       @save="handleSaveOrder"
     />
 
-    <div class="groups-grid" ref="groupsContainer">
-      <div
+    <SectionCard v-if="!proxyGroups.length" :padded="false">
+      <EmptyState
+        :icon="LayoutGrid"
+        title="还没有策略组"
+        description="策略组决定流量走哪些节点，是规则生效的落点。"
+      >
+        <Button @click="showAddDialog">
+          <Plus class="size-4" />
+          添加策略组
+        </Button>
+      </EmptyState>
+    </SectionCard>
+
+    <div
+      v-else
+      ref="groupsContainer"
+      class="grid grid-cols-[repeat(auto-fill,minmax(340px,1fr))] gap-3 max-md:grid-cols-1"
+    >
+      <Motion
         v-for="(group, cfIndex) in proxyGroups"
         :key="group.id || group.name"
-        class="group-card"
-        :class="{ disabled: !group.enabled }"
+        v-bind="listItem(cfIndex)"
         :data-name="group.name"
         data-reorder-item
+        :class="[
+          'hairline edge-light relative flex flex-col gap-3 overflow-hidden rounded-xl border border-border/35 bg-card/55 p-4 backdrop-blur-xl transition-all duration-300 hover:shadow-glow-soft',
+          !group.enabled && 'opacity-60'
+        ]"
       >
-        <div class="card-header">
-          <div class="card-title-group">
-            <DragHandle
-              v-if="reorder.active.value"
-              :label="group.name || group.id"
-              :index="cfIndex"
-              :total="proxyGroups.length"
-              :position="reorder.positionLabel(cfIndex)"
-              :grabbed="reorder.grabbedIndex.value === cfIndex"
-              @up="reorder.moveUp(cfIndex)"
-              @down="reorder.moveDown(cfIndex)"
-              @keydown="reorder.onHandleKeydown($event, cfIndex)"
-            />
-            <div class="card-title">
-              <span class="group-icon" v-if="getGroupIcon(group.name)">{{ getGroupIcon(group.name) }}</span>
-              <span class="group-name">{{ getGroupNameWithoutIcon(group.name) }}</span>
-            </div>
-          </div>
-          <div class="card-meta">
-            <span v-if="group.follow_group" class="meta-pill follow-pill">跟随</span>
-            <span v-else class="meta-pill type-pill" :class="`type-${group.type}`">{{ getGroupTypeLabel(group.type) }}</span>
-            <button
-              type="button"
-              class="status-toggle-btn compact"
-              :class="{ active: group.enabled, loading: group.id ? savingStatus[group.id] : false }"
-              @click="handleToggle(group)"
-              :disabled="group.id ? savingStatus[group.id] : false"
-            >
-              <el-icon><View /></el-icon>
-            </button>
-          </div>
-        </div>
+        <header class="flex items-start gap-2.5">
+          <DragHandle
+            v-if="reorder.active.value"
+            :label="group.name || group.id"
+            :index="cfIndex"
+            :total="proxyGroups.length"
+            :position="reorder.positionLabel(cfIndex)"
+            :grabbed="reorder.grabbedIndex.value === cfIndex"
+            @up="reorder.moveUp(cfIndex)"
+            @down="reorder.moveDown(cfIndex)"
+            @keydown="reorder.onHandleKeydown($event, cfIndex)"
+          />
+          <span v-if="getGroupIcon(group.name)" class="shrink-0 text-[18px] leading-none">
+            {{ getGroupIcon(group.name) }}
+          </span>
+          <p class="m-0 min-w-0 flex-1 truncate text-[14px] font-semibold text-foreground">
+            {{ getGroupNameWithoutIcon(group.name) }}
+          </p>
+          <Badge v-if="group.follow_group" variant="warning" class="shrink-0">跟随</Badge>
+          <Badge v-else variant="outline" class="shrink-0 text-[10.5px]">
+            {{ getGroupTypeLabel(group.type) }}
+          </Badge>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            class="cf-reorder-mute shrink-0"
+            :class="group.enabled ? 'text-success-accent' : 'text-muted-foreground'"
+            :title="group.enabled ? '停用' : '启用'"
+            :aria-label="group.enabled ? `停用 ${group.name}` : `启用 ${group.name}`"
+            :disabled="group.id ? savingStatus[group.id] : false"
+            @click="handleToggle(group)"
+          >
+            <component :is="group.enabled ? Eye : EyeOff" class="size-4" />
+          </Button>
+        </header>
 
-        <div class="card-body">
-          <!-- 始终显示：简要来源信息 -->
-          <div class="card-section compact">
-            <div class="section-content summary-text">{{ getSourceSummary(group) }}</div>
-            <button
-              class="expand-toggle-btn"
-              @click.stop="toggleCardExpand(group.id || group.name)"
-              :title="isCardExpanded(group.id || group.name) ? '收起详情' : '展开详情'"
-            >
-              <el-icon :class="{ rotated: isCardExpanded(group.id || group.name) }">
-                <ArrowDown />
-              </el-icon>
-            </button>
+        <Collapsible
+          class="cf-reorder-mute"
+          :open="isCardExpanded(group.id || group.name)"
+          @update:open="toggleCardExpand(group.id || group.name)"
+        >
+          <div class="flex items-center gap-2 rounded-lg border border-border/40 bg-background/40 px-3 py-2">
+            <span class="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">
+              {{ getSourceSummary(group) }}
+            </span>
+            <CollapsibleTrigger as-child>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="size-6 shrink-0"
+                :title="isCardExpanded(group.id || group.name) ? '收起详情' : '展开详情'"
+                :aria-label="isCardExpanded(group.id || group.name) ? '收起详情' : '展开详情'"
+              >
+                <ChevronDown
+                  class="size-3.5 transition-transform duration-200"
+                  :class="isCardExpanded(group.id || group.name) && 'rotate-180'"
+                />
+              </Button>
+            </CollapsibleTrigger>
           </div>
 
-          <!-- 展开时显示：详细信息 -->
-          <template v-if="isCardExpanded(group.id || group.name)">
-            <div v-if="group.follow_group" class="card-section">
-              <div class="section-label">跟随策略</div>
-              <div class="section-content">{{ getFollowGroupName(group.follow_group) || '-' }}</div>
-            </div>
+          <CollapsibleContent class="mt-2.5 flex flex-col gap-2.5">
+            <template v-if="group.follow_group">
+              <GroupField label="跟随策略" :icon="GitBranch">
+                {{ getFollowGroupName(group.follow_group) || '-' }}
+              </GroupField>
+            </template>
 
-            <template v-if="!group.follow_group">
-              <div v-if="hasAggregations(group)" class="card-section">
-                <div class="section-label"><el-icon><Connection /></el-icon>聚合来源</div>
-                <div class="section-content tag-list">
-                  <el-tag
+            <template v-else>
+              <GroupField v-if="hasAggregations(group)" label="聚合来源" :icon="Share2">
+                <div class="flex flex-wrap gap-1">
+                  <Badge
                     v-for="aggName in getAggregationsList(group)"
                     :key="aggName"
-                    size="small"
-                    type="warning"
-                    class="data-tag"
+                    variant="warning"
+                    class="max-w-[180px] truncate text-[10.5px]"
                   >
                     {{ aggName }}
-                  </el-tag>
-                  <span v-if="getAggregationsList(group).length === 0" class="empty-text">无</span>
+                  </Badge>
+                  <span v-if="!getAggregationsList(group).length" class="text-[12px] text-muted-foreground">无</span>
                 </div>
-              </div>
+              </GroupField>
 
-              <div v-if="hasAggregations(group) && getAggregationSubscriptions(group)" class="card-section">
-                <div class="section-label"><el-icon><Link /></el-icon>包含订阅</div>
-                <div class="section-content">{{ getAggregationSubscriptions(group) }}</div>
-              </div>
+              <GroupField
+                v-if="hasAggregations(group) && getAggregationSubscriptions(group)"
+                label="包含订阅"
+                :icon="Link2"
+              >
+                {{ getAggregationSubscriptions(group) }}
+              </GroupField>
 
-              <div v-if="hasAggregations(group) && getAggregationNodes(group)" class="card-section">
-                <div class="section-label"><el-icon><Connection /></el-icon>包含节点</div>
-                <div class="section-content">{{ getAggregationNodes(group) }}</div>
-              </div>
+              <GroupField
+                v-if="hasAggregations(group) && getAggregationNodes(group)"
+                label="包含节点"
+                :icon="Network"
+              >
+                {{ getAggregationNodes(group) }}
+              </GroupField>
 
-              <div v-if="group.aggregation_regex" class="card-section">
-                <div class="section-label"><el-icon><Filter /></el-icon>聚合正则</div>
-                <div class="regex-display-row">
-                  <div class="section-content code-box small">{{ group.aggregation_regex }}</div>
-                  <el-button
-                    class="preview-btn compact-preview"
-                    size="small"
-                    :loading="regexPreviewLoading && regexPreviewSource === 'aggregation'"
+              <GroupField v-if="group.aggregation_regex" label="聚合正则" :icon="Filter">
+                <div class="flex items-center gap-2">
+                  <code
+                    class="min-w-0 flex-1 truncate rounded-md border border-border/50 bg-background/50 px-2 py-1 font-mono text-[11.5px]"
+                  >
+                    {{ group.aggregation_regex }}
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    class="shrink-0 border-border/60 bg-background/40"
+                    :disabled="regexPreviewLoading && regexPreviewSource === 'aggregation'"
                     @click.stop="previewSavedRegexMatches(group, 'aggregation')"
                   >
-                    <el-icon><View /></el-icon>
+                    <Eye class="size-3.5" />
                     预览
-                  </el-button>
+                  </Button>
                 </div>
-              </div>
+              </GroupField>
 
-              <div v-if="hasSubscriptions(group) && !hasAggregations(group)" class="card-section">
-                <div class="section-label"><el-icon><Link /></el-icon>订阅来源</div>
-                <div class="section-content">{{ getSubscriptionDisplay(group) }}</div>
-              </div>
+              <GroupField
+                v-if="hasSubscriptions(group) && !hasAggregations(group)"
+                label="订阅来源"
+                :icon="Link2"
+              >
+                {{ getSubscriptionDisplay(group) }}
+              </GroupField>
 
-              <div v-if="group.regex && hasSubscriptions(group)" class="card-section">
-                <div class="section-label"><el-icon><Filter /></el-icon>订阅正则</div>
-                <div class="regex-display-row">
-                  <div class="section-content code-box small">{{ group.regex }}</div>
-                  <el-button
-                    class="preview-btn compact-preview"
-                    size="small"
-                    :loading="regexPreviewLoading && regexPreviewSource === 'subscription'"
+              <GroupField v-if="group.regex && hasSubscriptions(group)" label="订阅正则" :icon="Filter">
+                <div class="flex items-center gap-2">
+                  <code
+                    class="min-w-0 flex-1 truncate rounded-md border border-border/50 bg-background/50 px-2 py-1 font-mono text-[11.5px]"
+                  >
+                    {{ group.regex }}
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    class="shrink-0 border-border/60 bg-background/40"
+                    :disabled="regexPreviewLoading && regexPreviewSource === 'subscription'"
                     @click.stop="previewSavedRegexMatches(group, 'subscription')"
                   >
-                    <el-icon><View /></el-icon>
+                    <Eye class="size-3.5" />
                     预览
-                  </el-button>
+                  </Button>
                 </div>
-              </div>
+              </GroupField>
 
-              <div v-if="hasManualNodes(group) && !hasAggregations(group)" class="card-section">
-                <div class="section-label"><el-icon><Connection /></el-icon>节点来源</div>
-                <div class="section-content">{{ getManualNodesDisplay(group) }}</div>
-              </div>
+              <GroupField
+                v-if="hasManualNodes(group) && !hasAggregations(group)"
+                label="节点来源"
+                :icon="Network"
+              >
+                {{ getManualNodesDisplay(group) }}
+              </GroupField>
 
-              <div v-if="hasIncludeGroups(group)" class="card-section">
-                <div class="section-label"><el-icon><Connection /></el-icon>策略组来源</div>
-                <div class="section-content tag-list">
-                  <el-tag
+              <GroupField v-if="hasIncludeGroups(group)" label="策略组来源" :icon="LayoutGrid">
+                <div class="flex flex-wrap gap-1">
+                  <Badge
                     v-for="name in getIncludeGroupsList(group)"
                     :key="name"
-                    size="small"
-                    type="info"
-                    class="data-tag"
+                    variant="info"
+                    class="max-w-[180px] truncate text-[10.5px]"
                   >
                     {{ name }}
-                  </el-tag>
+                  </Badge>
                 </div>
-              </div>
+              </GroupField>
 
-              <div v-if="hasManualNodes(group) && hasIncludeGroups(group)" class="card-section">
-                <div class="section-label"><el-icon><Rank /></el-icon>节点顺序</div>
-                <div class="section-content">{{ getProxyOrderLabel(group.proxy_order) }}</div>
-              </div>
+              <GroupField
+                v-if="hasManualNodes(group) && hasIncludeGroups(group)"
+                label="节点顺序"
+                :icon="ArrowUpDown"
+              >
+                {{ getProxyOrderLabel(group.proxy_order) }}
+              </GroupField>
 
-              <div v-if="group.type !== 'select'" class="card-section">
-                <div class="section-label"><el-icon><Link /></el-icon>测试 URL</div>
-                <div class="section-content">{{ group.url || '-' }}</div>
-              </div>
+              <GroupField v-if="group.type !== 'select'" label="测试 URL" :icon="Link2">
+                <span class="font-mono text-[11.5px]">{{ group.url || '-' }}</span>
+              </GroupField>
 
-              <div v-if="group.type !== 'select'" class="card-section">
-                <div class="section-label"><el-icon><Connection /></el-icon>测试间隔</div>
-                <div class="section-content">{{ group.interval || '-' }} 秒</div>
-              </div>
+              <GroupField v-if="group.type !== 'select'" label="测试间隔" :icon="Timer">
+                <span class="num">{{ group.interval || '-' }} 秒</span>
+              </GroupField>
 
-              <div v-if="group.type === 'load-balance' && group.strategy" class="card-section">
-                <div class="section-label"><el-icon><Connection /></el-icon>负载策略</div>
-                <div class="section-content">{{ getStrategyLabel(group.strategy) }}</div>
-              </div>
+              <GroupField
+                v-if="group.type === 'load-balance' && group.strategy"
+                label="负载策略"
+                :icon="Scale"
+              >
+                {{ getStrategyLabel(group.strategy) }}
+              </GroupField>
 
-              <div v-if="group.type === 'load-balance' && group.lazy !== undefined" class="card-section">
-                <div class="section-label"><el-icon><Connection /></el-icon>懒加载</div>
-                <div class="section-content">{{ group.lazy ? '是' : '否' }}</div>
-              </div>
+              <GroupField
+                v-if="group.type === 'load-balance' && group.lazy !== undefined"
+                label="懒加载"
+                :icon="Scale"
+              >
+                {{ group.lazy ? '是' : '否' }}
+              </GroupField>
             </template>
-          </template>
+          </CollapsibleContent>
+        </Collapsible>
 
-        </div>
-
-        <div class="card-footer">
-          <el-button class="card-btn ghost" size="small" @click="editGroup(group)">
-            <el-icon><Edit /></el-icon>
+        <footer class="cf-reorder-mute mt-auto flex items-center gap-1 border-0 border-t border-border/50 pt-3">
+          <Button variant="ghost" size="sm" @click="editGroup(group)">
+            <Pencil class="size-3.5" />
             编辑
-          </el-button>
-          <el-button class="card-btn danger" size="small" @click="deleteGroup(group)">
-            <el-icon><Delete /></el-icon>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            class="ml-auto text-destructive-accent hover:bg-destructive-soft"
+            @click="deleteGroup(group)"
+          >
+            <Trash2 class="size-3.5" />
             删除
-          </el-button>
-        </div>
-      </div>
+          </Button>
+        </footer>
+      </Motion>
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑策略组' : '添加策略组'" width="720px" class="groups-dialog">
-      <el-form :model="form" label-width="100px" class="groups-form">
-        <el-form-item label="名称">
-          <el-input v-model="form.name" placeholder="请输入策略组名称" />
-        </el-form-item>
-        <el-form-item label="类型" v-if="!enabledSources.includes('follow')">
-          <el-select v-model="form.type" placeholder="请选择策略组类型">
-            <el-option label="手动选择 (Select)" value="select" />
-            <el-option label="自动测速 (URL-Test)" value="url-test" />
-            <el-option label="故障转移 (Fallback)" value="fallback" />
-            <el-option label="负载均衡 (Load-Balance)" value="load-balance" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="节点来源">
-          <el-checkbox-group v-model="enabledSources">
-            <el-checkbox label="subscription" :disabled="enabledSources.includes('follow')" v-if="!enabledSources.includes('follow')">订阅</el-checkbox>
-            <el-checkbox label="node" :disabled="enabledSources.includes('follow')" v-if="!enabledSources.includes('follow')">节点</el-checkbox>
-            <el-checkbox label="aggregation" :disabled="enabledSources.includes('follow')" v-if="!enabledSources.includes('follow')">
-              聚合
-            </el-checkbox>
-            <el-checkbox label="strategy" :disabled="enabledSources.includes('follow')" v-if="!enabledSources.includes('follow')">策略</el-checkbox>
-            <el-checkbox label="follow" @change="handleFollowChange">跟随</el-checkbox>
-          </el-checkbox-group>
-        </el-form-item>
+    <!-- ===== 新增 / 编辑策略组 ===== -->
+    <Dialog v-model:open="dialogVisible">
+      <DialogContent class="glass-strong hairline max-w-[720px] border-border/50">
+        <DialogHeader>
+          <DialogTitle>{{ isEdit ? '编辑策略组' : '添加策略组' }}</DialogTitle>
+          <DialogDescription>选择节点来源并设置测试参数，顺序可拖拽调整。</DialogDescription>
+        </DialogHeader>
 
-        <!-- 跟随策略组 -->
-        <el-form-item label="跟随策略" v-if="enabledSources.includes('follow')">
-          <el-select
-            v-model="form.follow_group"
-            clearable
-            placeholder="选择要跟随的策略组"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="group in availableStrategies"
-              :key="group.id"
-              :label="group.name"
-              :value="group.id"
-            />
-          </el-select>
-          <div style="font-size: 12px; color: var(--cf-fg-2); margin-top: 4px;">
-            跟随模式：将完全复制被跟随策略组的所有配置（类型、节点来源、测试参数等），只保留自己的名称
+        <div class="flex max-h-[64dvh] flex-col gap-4 overflow-y-auto pr-1">
+          <div class="flex flex-col gap-1.5">
+            <Label for="group-name">名称</Label>
+            <Input id="group-name" v-model="form.name" class="bg-background/50" placeholder="请输入策略组名称" />
           </div>
-        </el-form-item>
 
-        <!-- 订阅筛选 -->
-        <template v-if="enabledSources.includes('subscription')">
-          <el-form-item label="订阅筛选">
-            <el-select
-              v-model="form.subscriptions"
-              multiple
-              clearable
-              placeholder="选择订阅（自动包含订阅的所有节点）"
-              style="width: 100%"
-            >
-              <el-option
-                v-for="sub in subscriptions"
-                :key="sub.id"
-                :label="sub.name"
-                :value="sub.id"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="正则过滤" v-if="form.subscriptions && form.subscriptions.length > 0">
-            <div class="regex-preview-row">
-              <el-input
-                v-model="form.regex"
-                clearable
-                placeholder="输入正则表达式（可选，过滤订阅节点名称）"
-              />
-              <el-button
-                class="preview-btn"
-                :loading="regexPreviewLoading && regexPreviewSource === 'subscription'"
-                @click="previewRegexMatches('subscription')"
+          <div v-if="!enabledSources.includes('follow')" class="flex flex-col gap-1.5">
+            <Label>类型</Label>
+            <Select v-model="form.type">
+              <SelectTrigger class="w-full bg-background/50">
+                <SelectValue placeholder="请选择策略组类型" />
+              </SelectTrigger>
+              <SelectContent class="glass-strong">
+                <SelectItem value="select">手动选择 (Select)</SelectItem>
+                <SelectItem value="url-test">自动测速 (URL-Test)</SelectItem>
+                <SelectItem value="fallback">故障转移 (Fallback)</SelectItem>
+                <SelectItem value="load-balance">负载均衡 (Load-Balance)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div class="flex flex-col gap-2">
+            <Label>节点来源</Label>
+            <!-- 「跟随」与其它来源互斥，勾选后其余选项隐藏 -->
+            <div class="flex flex-wrap gap-2">
+              <label
+                v-for="source in visibleSourceOptions"
+                :key="source.value"
+                :class="[
+                  'flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-[13px] transition-colors',
+                  enabledSources.includes(source.value)
+                    ? 'border-primary-accent/40 bg-primary-soft/50 text-foreground'
+                    : 'border-border/50 bg-background/40 text-muted-foreground hover:border-border-strong'
+                ]"
               >
-                <el-icon><View /></el-icon>
+                <Checkbox
+                  :model-value="enabledSources.includes(source.value)"
+                  @update:model-value="toggleSource(source.value)"
+                />
+                {{ source.label }}
+              </label>
+            </div>
+          </div>
+
+          <!-- 跟随策略组 -->
+          <div v-if="enabledSources.includes('follow')" class="flex flex-col gap-1.5">
+            <Label>跟随策略</Label>
+            <Select v-model="form.follow_group">
+              <SelectTrigger class="w-full bg-background/50">
+                <SelectValue placeholder="选择要跟随的策略组" />
+              </SelectTrigger>
+              <SelectContent class="glass-strong">
+                <SelectItem v-for="group in availableStrategies" :key="group.id" :value="group.id">
+                  {{ group.name }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <p class="m-0 text-[12px] text-muted-foreground">
+              跟随模式将完全复制被跟随策略组的所有配置（类型、节点来源、测试参数等），只保留自己的名称。
+            </p>
+          </div>
+
+          <!-- 订阅筛选 -->
+          <template v-if="enabledSources.includes('subscription')">
+            <div class="flex flex-col gap-1.5">
+              <Label>订阅筛选</Label>
+              <MultiSelect
+                v-model="form.subscriptions"
+                :options="subscriptionOptions"
+                placeholder="选择订阅（自动包含订阅的所有节点）"
+              />
+            </div>
+            <div v-if="form.subscriptions && form.subscriptions.length" class="flex flex-col gap-1.5">
+              <Label for="group-regex">正则过滤</Label>
+              <div class="flex items-center gap-2">
+                <Input
+                  id="group-regex"
+                  v-model="form.regex"
+                  class="bg-background/50 font-mono"
+                  placeholder="可选，过滤订阅节点名称"
+                />
+                <Button
+                  variant="outline"
+                  class="shrink-0 border-border/60 bg-background/40"
+                  :disabled="regexPreviewLoading && regexPreviewSource === 'subscription'"
+                  @click="previewRegexMatches('subscription')"
+                >
+                  <Eye class="size-4" />
+                  预览
+                </Button>
+              </div>
+            </div>
+          </template>
+
+          <!-- 手动节点 -->
+          <div v-if="enabledSources.includes('node')" class="flex flex-col gap-1.5">
+            <Label>包含节点</Label>
+            <MultiSelect v-model="form.manual_nodes" :options="nodeOptions" placeholder="手动选择节点" />
+          </div>
+
+          <!-- 引用聚合 -->
+          <div v-if="enabledSources.includes('aggregation')" class="flex flex-col gap-1.5">
+            <Label>引用聚合</Label>
+            <MultiSelect
+              v-model="form.aggregations"
+              :options="aggregationOptions"
+              placeholder="选择订阅聚合"
+            />
+            <p class="m-0 text-[12px] text-muted-foreground">聚合中的所有订阅和节点都会被包含。</p>
+          </div>
+
+          <div
+            v-if="enabledSources.includes('aggregation') && form.aggregations && form.aggregations.length"
+            class="flex flex-col gap-1.5"
+          >
+            <Label for="group-agg-regex">正则过滤</Label>
+            <div class="flex items-center gap-2">
+              <Input
+                id="group-agg-regex"
+                v-model="form.aggregation_regex"
+                class="bg-background/50 font-mono"
+                placeholder="可选，过滤聚合节点名称"
+              />
+              <Button
+                variant="outline"
+                class="shrink-0 border-border/60 bg-background/40"
+                :disabled="regexPreviewLoading && regexPreviewSource === 'aggregation'"
+                @click="previewRegexMatches('aggregation')"
+              >
+                <Eye class="size-4" />
                 预览
-              </el-button>
+              </Button>
             </div>
-          </el-form-item>
-        </template>
-
-        <!-- 手动节点 -->
-        <el-form-item label="包含节点" v-if="enabledSources.includes('node')">
-          <el-select
-            v-model="form.manual_nodes"
-            multiple
-            filterable
-            clearable
-            placeholder="手动选择节点"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="node in availableNodes"
-              :key="node.id"
-              :label="node.name"
-              :value="node.id"
-            />
-          </el-select>
-        </el-form-item>
-
-        <!-- 引用聚合 -->
-        <el-form-item label="引用聚合" v-if="enabledSources.includes('aggregation')">
-          <el-select
-            v-model="form.aggregations"
-            multiple
-            filterable
-            clearable
-            placeholder="选择订阅聚合"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="agg in availableAggregations"
-              :key="agg.id"
-              :label="agg.name"
-              :value="agg.id"
-            >
-              <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                <span>{{ agg.name }}</span>
-                <el-tag v-if="agg.regex_filter" type="info" size="small" style="margin-left: 8px;">
-                  {{ agg.regex_filter }}
-                </el-tag>
-              </div>
-            </el-option>
-          </el-select>
-          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-            聚合中的所有订阅和节点都会被包含
+            <p class="m-0 text-[12px] text-muted-foreground">
+              此正则应用于聚合中的节点，不使用聚合自带的正则过滤器。
+            </p>
           </div>
-        </el-form-item>
-        <!-- 聚合正则过滤 -->
-        <el-form-item label="正则过滤" v-if="enabledSources.includes('aggregation') && form.aggregations && form.aggregations.length > 0">
-          <div class="regex-preview-row">
-            <el-input
-              v-model="form.aggregation_regex"
-              clearable
-              placeholder="输入正则表达式（可选，过滤聚合节点名称）"
-            />
-            <el-button
-              class="preview-btn"
-              :loading="regexPreviewLoading && regexPreviewSource === 'aggregation'"
-              @click="previewRegexMatches('aggregation')"
-            >
-              <el-icon><View /></el-icon>
-              预览
-            </el-button>
-          </div>
-          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-            此正则过滤将应用于聚合中的节点，不使用聚合自带的正则过滤器
-          </div>
-        </el-form-item>
 
-        <!-- 引用策略 -->
-        <el-form-item label="引用策略" v-if="enabledSources.includes('strategy')">
-          <el-select
-            v-model="form.include_groups"
-            multiple
-            filterable
-            clearable
-            placeholder="选择已有策略组"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="group in availableStrategies"
-              :key="group.id"
-              :label="group.name"
-              :value="group.id"
+          <!-- 引用策略 -->
+          <div v-if="enabledSources.includes('strategy')" class="flex flex-col gap-1.5">
+            <Label>引用策略</Label>
+            <MultiSelect
+              v-model="form.include_groups"
+              :options="strategyOptions"
+              placeholder="选择已有策略组"
             />
-          </el-select>
-        </el-form-item>
-        <!-- 已选择的节点和策略排序 -->
-        <el-form-item
-          label="顺序调整"
-          v-if="orderedProxiesList.length > 0"
-        >
-          <el-collapse v-model="activeCollapsePanel" style="width: 100%">
-            <el-collapse-item name="sorting">
-              <template #title>
-                <span style="font-size: 13px; color: var(--cf-fg-2);">拖拽调整顺序（点击展开/收起）</span>
-              </template>
-              <div class="ordered-proxies-container">
-                <div ref="orderedProxiesRef" class="ordered-proxies-list">
-                  <div
-                    v-for="(item, index) in orderedProxiesList"
-                    :key="`${item.type}-${item.id}`"
-                    class="ordered-proxy-item"
-                    :data-index="index"
+          </div>
+
+          <!-- 已选择的节点和策略排序 -->
+          <Collapsible v-if="orderedProxiesList.length > 0" v-model:open="orderPanelOpen">
+            <CollapsibleTrigger as-child>
+              <button
+                type="button"
+                class="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-border/50 bg-background/40 px-3 py-2 text-left text-[13px] text-muted-foreground transition-colors hover:border-border-strong"
+              >
+                <GripVertical class="size-3.5" aria-hidden="true" />
+                顺序调整 · {{ orderedProxiesList.length }} 项
+                <ChevronDown
+                  class="ml-auto size-3.5 transition-transform duration-200"
+                  :class="orderPanelOpen && 'rotate-180'"
+                />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div ref="orderedProxiesRef" class="mt-2 flex flex-col gap-1.5">
+                <div
+                  v-for="(item, index) in orderedProxiesList"
+                  :key="`${item.type}-${item.id}`"
+                  class="flex cursor-grab items-center gap-2 rounded-lg border border-border/50 bg-background/40 px-3 py-2 text-[13px]"
+                  :data-index="index"
+                >
+                  <GripVertical class="drag-handle size-3.5 shrink-0 cursor-grab text-muted-foreground" aria-hidden="true" />
+                  <Badge
+                    :variant="item.type === 'node' ? 'success' : item.type === 'aggregation' ? 'warning' : 'info'"
+                    class="shrink-0 text-[10.5px]"
                   >
-                    <el-icon class="drag-handle"><DCaret /></el-icon>
-                    <el-tag
-                      :type="item.type === 'node' ? 'success' : item.type === 'aggregation' ? 'warning' : 'info'"
-                      size="small"
-                    >
-                      {{ item.type === 'node' ? '节点' : item.type === 'aggregation' ? '聚合' : '策略' }}
-                    </el-tag>
-                    <span class="proxy-name">{{ item.name }}</span>
-                  </div>
+                    {{ item.type === 'node' ? '节点' : item.type === 'aggregation' ? '聚合' : '策略' }}
+                  </Badge>
+                  <span class="min-w-0 truncate text-foreground">{{ item.name }}</span>
                 </div>
               </div>
-            </el-collapse-item>
-          </el-collapse>
-        </el-form-item>
-        <el-form-item label="测试URL" v-if="needsUrl && !enabledSources.includes('follow')">
-          <el-input
-            v-model="form.url"
-            placeholder="http://www.gstatic.com/generate_204"
-          />
-        </el-form-item>
-        <el-form-item label="测试间隔(秒)" v-if="needsUrl && !enabledSources.includes('follow')">
-          <el-input-number v-model="form.interval" :min="60" :max="3600" style="width: 100%" />
-        </el-form-item>
-        <!-- 负载均衡特有字段 -->
-        <el-form-item label="负载策略" v-if="form.type === 'load-balance' && !enabledSources.includes('follow')">
-          <el-select v-model="form.strategy" clearable placeholder="请选择负载策略（可选）" style="width: 100%">
-            <el-option label="轮询 (round-robin)" value="round-robin" />
-            <el-option label="一致性哈希 (consistent-hashing)" value="consistent-hashing" />
-            <el-option label="会话保持 (sticky-sessions)" value="sticky-sessions" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="懒加载" v-if="form.type === 'load-balance' && !enabledSources.includes('follow')">
-          <el-select v-model="form.lazy" clearable placeholder="请选择是否启用懒加载（可选）" style="width: 100%">
-            <el-option label="是" :value="true" />
-            <el-option label="否" :value="false" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-switch v-model="form.enabled" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveGroup">保存</el-button>
-      </template>
-    </el-dialog>
+            </CollapsibleContent>
+          </Collapsible>
 
-    <el-dialog
-      v-model="regexPreviewVisible"
-      class="groups-helper-dialog"
-      :title="regexPreviewTitle"
-      width="680px"
-      :close-on-click-modal="false"
-    >
-      <div v-loading="regexPreviewLoading">
-        <el-alert
-          v-if="regexPreviewResult"
-          :title="`匹配 ${regexPreviewNodes.length} 个节点，候选 ${regexPreviewResult.total_candidates} 个`"
-          type="success"
-          :closable="false"
-          class="dialog-alert"
-        />
-        <div v-if="regexPreviewNodes.length > 0" class="preview-section">
-          <el-scrollbar max-height="420px">
-            <div class="node-list">
-              <div v-for="node in regexPreviewNodes" :key="`${node.source_id || ''}-${node.name}`" class="node-item preview-node-item">
-                <div class="preview-node-main">
-                  <el-icon><Connection /></el-icon>
-                  <span class="preview-node-name">{{ node.name }}</span>
-                </div>
-                <div class="preview-node-meta">
-                  <el-tag size="small" type="info">{{ getPreviewSourceLabel(node) }}</el-tag>
-                  <el-tag size="small" type="success">{{ (node.type || 'unknown').toUpperCase() }}</el-tag>
-                </div>
-              </div>
-            </div>
-          </el-scrollbar>
+          <div v-if="needsUrl && !enabledSources.includes('follow')" class="flex flex-col gap-1.5">
+            <Label for="group-url">测试 URL</Label>
+            <Input
+              id="group-url"
+              v-model="form.url"
+              class="bg-background/50 font-mono"
+              placeholder="http://www.gstatic.com/generate_204"
+            />
+          </div>
+
+          <div v-if="needsUrl && !enabledSources.includes('follow')" class="flex flex-col gap-1.5">
+            <Label for="group-interval">测试间隔（秒）</Label>
+            <Input
+              id="group-interval"
+              v-model.number="form.interval"
+              type="number"
+              :min="60"
+              :max="3600"
+              class="w-44 bg-background/50"
+            />
+          </div>
+
+          <div
+            v-if="form.type === 'load-balance' && !enabledSources.includes('follow')"
+            class="flex flex-col gap-1.5"
+          >
+            <Label>负载策略</Label>
+            <Select v-model="form.strategy">
+              <SelectTrigger class="w-full bg-background/50">
+                <SelectValue placeholder="请选择负载策略（可选）" />
+              </SelectTrigger>
+              <SelectContent class="glass-strong">
+                <SelectItem value="round-robin">轮询 (round-robin)</SelectItem>
+                <SelectItem value="consistent-hashing">一致性哈希 (consistent-hashing)</SelectItem>
+                <SelectItem value="sticky-sessions">会话保持 (sticky-sessions)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div
+            v-if="form.type === 'load-balance' && !enabledSources.includes('follow')"
+            class="flex flex-col gap-1.5"
+          >
+            <Label>懒加载</Label>
+            <!-- 保持三态：未设置时不写入该字段，与旧行为一致 -->
+            <Select v-model="lazyChoice">
+              <SelectTrigger class="w-full bg-background/50">
+                <SelectValue placeholder="请选择是否启用懒加载（可选）" />
+              </SelectTrigger>
+              <SelectContent class="glass-strong">
+                <SelectItem value="unset">未设置</SelectItem>
+                <SelectItem value="true">是</SelectItem>
+                <SelectItem value="false">否</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div class="flex items-center gap-2.5">
+            <Switch id="group-enabled" v-model="form.enabled" />
+            <Label for="group-enabled" class="text-[13px] text-muted-foreground">
+              {{ form.enabled ? '策略组启用中' : '策略组已停用' }}
+            </Label>
+          </div>
         </div>
-        <div v-if="regexPreviewNodes.length === 0 && !regexPreviewLoading" class="empty-helper">
-          当前正则没有匹配到节点
+
+        <DialogFooter>
+          <Button variant="outline" @click="dialogVisible = false">取消</Button>
+          <Button @click="saveGroup">保存</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- ===== 正则匹配预览 ===== -->
+    <Dialog v-model:open="regexPreviewVisible">
+      <DialogContent class="glass-strong hairline max-w-[680px] border-border/50">
+        <DialogHeader>
+          <DialogTitle>{{ regexPreviewTitle }}</DialogTitle>
+          <DialogDescription v-if="regexPreviewResult">
+            匹配 {{ regexPreviewNodes.length }} 个节点，候选 {{ regexPreviewResult.total_candidates }} 个
+          </DialogDescription>
+        </DialogHeader>
+
+        <LoadingRows v-if="regexPreviewLoading" :rows="4" />
+
+        <div v-else class="flex max-h-[55dvh] flex-col gap-1.5 overflow-y-auto pr-1">
+          <div
+            v-for="node in regexPreviewNodes"
+            :key="`${node.source_id || ''}-${node.name}`"
+            class="flex items-center gap-2 rounded-lg border border-border/50 bg-background/40 px-3 py-2 text-[13px]"
+          >
+            <Network class="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span class="min-w-0 flex-1 truncate text-foreground">{{ node.name }}</span>
+            <Badge variant="outline" class="shrink-0 text-[10px]">{{ getPreviewSourceLabel(node) }}</Badge>
+            <Badge variant="success" class="shrink-0 font-mono text-[10px]">
+              {{ (node.type || 'unknown').toUpperCase() }}
+            </Badge>
+          </div>
+          <EmptyState
+            v-if="!regexPreviewNodes.length"
+            :icon="Filter"
+            title="当前正则没有匹配到节点"
+            description="放宽表达式，或确认所选订阅/聚合中确实存在候选节点。"
+          />
         </div>
-      </div>
-      <template #footer>
-        <el-button @click="regexPreviewVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
+
+        <DialogFooter>
+          <Button variant="outline" @click="regexPreviewVisible = false">关闭</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
+
 <script setup lang="ts">
 import ReorderBar from '@/components/shell/ReorderBar.vue'
 import DragHandle from '@/components/shell/DragHandle.vue'
 import { useReorder } from '@/composables/useReorder'
-import PageHeader from '@/components/shell/PageHeader.vue'
+import PageHeader from '@/components/common/PageHeader.vue'
 import ScopeBanner from '@/components/shell/ScopeBanner.vue'
 import { useProfileStore } from '@/stores/profile'
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, DCaret, View, Edit, Delete, Link, Connection, Filter, Rank, ArrowDown, Sort } from '@element-plus/icons-vue'
+import {
+  ArrowUpDown,
+  ChevronDown,
+  Eye,
+  EyeOff,
+  Filter,
+  GitBranch,
+  GripVertical,
+  LayoutGrid,
+  Link2,
+  Network,
+  Pencil,
+  Plus,
+  Scale,
+  Share2,
+  Timer,
+  Trash2
+} from '@lucide/vue'
+import { Motion } from 'motion-v'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import EmptyState from '@/components/common/EmptyState.vue'
+import GroupField from '@/components/common/GroupField.vue'
+import LoadingRows from '@/components/common/LoadingRows.vue'
+import MultiSelect from '@/components/common/MultiSelect.vue'
+import SectionCard from '@/components/common/SectionCard.vue'
+import { choose, confirmDanger, notify } from '@/lib/feedback'
+import { listItem } from '@/lib/motion'
 import { proxyGroupApi, nodeApi } from '@/api'
 import type { ProxyGroup, ProxyNode, Subscription } from '@/types'
 import api from '@/api'
@@ -522,9 +669,50 @@ const regexPreviewResult = ref<{ total_candidates: number } | null>(null)
 const regexPreviewNodes = ref<any[]>([])
 const regexPreviewTitle = ref('正则匹配预览')
 
+/* 节点来源选项：勾选「跟随」后与其它来源互斥，其余选项直接隐藏 */
+const SOURCE_OPTIONS = [
+  { value: 'subscription', label: '订阅' },
+  { value: 'node', label: '节点' },
+  { value: 'aggregation', label: '聚合' },
+  { value: 'strategy', label: '策略' },
+  { value: 'follow', label: '跟随' }
+]
+
+const visibleSourceOptions = computed(() =>
+  enabledSources.value.includes('follow')
+    ? SOURCE_OPTIONS.filter(option => option.value === 'follow')
+    : SOURCE_OPTIONS
+)
+
+const toggleSource = (value: string): void => {
+  const checked = !enabledSources.value.includes(value)
+  if (value === 'follow') {
+    handleFollowChange(checked)
+    if (!checked) enabledSources.value = enabledSources.value.filter(item => item !== 'follow')
+    return
+  }
+  enabledSources.value = checked
+    ? [...enabledSources.value, value]
+    : enabledSources.value.filter(item => item !== value)
+}
+
+/* MultiSelect 需要 {value,label} */
+const subscriptionOptions = computed(() =>
+  subscriptions.value.map(sub => ({ value: sub.id, label: sub.name }))
+)
+
+/* 懒加载保持三态：'unset' 表示不写入该字段 */
+const lazyChoice = computed<string>({
+  get: () => (form.value.lazy === undefined ? 'unset' : String(form.value.lazy)),
+  set: value => {
+    form.value.lazy = value === 'unset' ? undefined : value === 'true'
+  }
+})
+
+const orderPanelOpen = ref(false)
+
 const groupsContainer = ref<HTMLElement | null>(null)
 const orderedProxiesRef = ref<HTMLElement | null>(null)
-const activeCollapsePanel = ref<string[]>([]) // 默认收起，空数组表示没有展开的面板
 let orderedProxiesSortable: any = null
 const originalGroupName = ref<string>('') // 保存原始策略组名称，用于检测名称变化
 const expandedCards = ref<Set<string>>(new Set()) // 展开的卡片ID集合
@@ -1059,12 +1247,12 @@ const previewRegexMatches = async (source: 'subscription' | 'aggregation') => {
   const sourceIds = source === 'subscription' ? (form.value.subscriptions || []) : (form.value.aggregations || [])
 
   if (!sourceIds.length) {
-    ElMessage.warning(source === 'subscription' ? '请先选择订阅' : '请先选择聚合')
+    notify.warning(source === 'subscription' ? '请先选择订阅' : '请先选择聚合')
     return
   }
 
   if (!regex || !regex.trim()) {
-    ElMessage.warning('请先输入正则表达式')
+    notify.warning('请先输入正则表达式')
     return
   }
 
@@ -1087,10 +1275,10 @@ const previewRegexMatches = async (source: 'subscription' | 'aggregation') => {
       }
       regexPreviewNodes.value = data.nodes || []
     } else {
-      ElMessage.error(data.message || '预览失败')
+      notify.error(data.message || '预览失败')
     }
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || '预览失败')
+    notify.error(error.response?.data?.message || '预览失败')
   } finally {
     regexPreviewLoading.value = false
   }
@@ -1101,12 +1289,12 @@ const previewSavedRegexMatches = async (group: ProxyGroup, source: 'subscription
   const sourceIds = source === 'subscription' ? (group.subscriptions || []) : (group.aggregations || [])
 
   if (!sourceIds.length) {
-    ElMessage.warning(source === 'subscription' ? '该策略组没有订阅来源' : '该策略组没有聚合来源')
+    notify.warning(source === 'subscription' ? '该策略组没有订阅来源' : '该策略组没有聚合来源')
     return
   }
 
   if (!regex || !regex.trim()) {
-    ElMessage.warning('该策略组没有配置正则表达式')
+    notify.warning('该策略组没有配置正则表达式')
     return
   }
 
@@ -1129,10 +1317,10 @@ const previewSavedRegexMatches = async (group: ProxyGroup, source: 'subscription
       }
       regexPreviewNodes.value = data.nodes || []
     } else {
-      ElMessage.error(data.message || '预览失败')
+      notify.error(data.message || '预览失败')
     }
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || '预览失败')
+    notify.error(error.response?.data?.message || '预览失败')
   } finally {
     regexPreviewLoading.value = false
   }
@@ -1173,7 +1361,7 @@ const loadProxyGroups = async () => {
       }
     }
   } catch (error) {
-    ElMessage.error('加载策略组列表失败')
+    notify.error('加载策略组列表失败')
   }
 }
 
@@ -1182,7 +1370,7 @@ const loadNodes = async () => {
     const { data } = await nodeApi.getAll()
     nodes.value = data
   } catch (error) {
-    ElMessage.error('加载节点列表失败')
+    notify.error('加载节点列表失败')
   }
 }
 
@@ -1191,7 +1379,7 @@ const loadSubscriptions = async () => {
     const { data } = await api.get('/subscriptions')
     subscriptions.value = data
   } catch (error) {
-    ElMessage.error('加载订阅列表失败')
+    notify.error('加载订阅列表失败')
   }
 }
 
@@ -1200,7 +1388,7 @@ const loadAggregations = async () => {
     const { data } = await api.get('/aggregations')
     aggregations.value = data
   } catch (error) {
-    ElMessage.error('加载聚合列表失败')
+    notify.error('加载聚合列表失败')
   }
 }
 
@@ -1235,9 +1423,9 @@ const toggleGroupEnabled = async (group: ProxyGroup) => {
   savingStatus.value[group.id] = true
   try {
     await proxyGroupApi.update(group.id, group)
-    ElMessage.success(group.enabled ? '已启用' : '已禁用')
+    notify.success(group.enabled ? '已启用' : '已禁用')
   } catch (error) {
-    ElMessage.error('更新状态失败')
+    notify.error('更新状态失败')
     group.enabled = previous
     loadProxyGroups()
   } finally {
@@ -1393,7 +1581,7 @@ const editGroup = (row: ProxyGroup) => {
 
 const saveGroup = async () => {
   if (!form.value.name) {
-    ElMessage.warning('请输入策略组名称')
+    notify.warning('请输入策略组名称')
     return
   }
 
@@ -1405,13 +1593,13 @@ const saveGroup = async () => {
   const hasFollowGroup = form.value.follow_group !== undefined && form.value.follow_group !== null && form.value.follow_group !== ''
 
   if (!hasSubscriptions && !hasManualNodes && !hasAggregations && !hasIncludeGroups && !hasFollowGroup) {
-    ElMessage.warning('请至少选择一种节点来源（订阅、节点、聚合、策略或跟随）')
+    notify.warning('请至少选择一种节点来源（订阅、节点、聚合、策略或跟随）')
     return
   }
 
   // 跟随模式验证
   if (hasFollowGroup && !form.value.follow_group) {
-    ElMessage.warning('跟随模式下请选择要跟随的策略组')
+    notify.warning('跟随模式下请选择要跟随的策略组')
     return
   }
 
@@ -1497,27 +1685,27 @@ const saveGroup = async () => {
           }
         } catch (error) {
           console.error('同步更新规则配置失败:', error)
-          ElMessage.warning('策略组名称已更新，但部分规则配置同步失败，请手动检查')
+          notify.warning('策略组名称已更新，但部分规则配置同步失败，请手动检查')
         }
       }
 
       // 使用 id 进行API调用
       await proxyGroupApi.update(saveData.id!, saveData)
-      ElMessage.success('更新成功')
+      notify.success('更新成功')
     } else {
       await proxyGroupApi.create(saveData)
-      ElMessage.success('添加成功')
+      notify.success('添加成功')
     }
     dialogVisible.value = false
     loadProxyGroups()
   } catch (error) {
-    ElMessage.error('保存失败')
+    notify.error('保存失败')
   }
 }
 
 const deleteGroup = async (row: ProxyGroup) => {
   if (!row.id) {
-    ElMessage.error('策略组缺少ID，无法删除')
+    notify.error('策略组缺少ID，无法删除')
     console.error('策略组数据异常，缺少ID字段:', row)
     return
   }
@@ -1530,20 +1718,21 @@ const deleteGroup = async (row: ProxyGroup) => {
     )
 
     if (relatedRules.length > 0) {
-      // 有关联的规则配置，询问用户是否一起删除
-      try {
-        await ElMessageBox.confirm(
-          `该策略组被 ${relatedRules.length} 个规则配置引用，是否一起删除这些规则配置？`,
-          '删除确认',
-          {
-            confirmButtonText: '一起删除',
-            cancelButtonText: '仅删除策略组',
-            distinguishCancelAndClose: true,
-            type: 'warning'
-          }
-        )
+      // 有关联的规则配置：一起删 / 仅删策略组 / 取消，三选一
+      const choice = await choose(
+        `该策略组被 ${relatedRules.length} 个规则配置引用，是否一起删除这些规则配置？`,
+        {
+          title: '删除策略组',
+          confirmText: '一起删除',
+          altText: '仅删除策略组',
+          cancelText: '取消',
+          danger: true
+        }
+      )
+      if (choice === 'cancel') return
 
-        // 用户选择一起删除，先删除关联的规则配置
+      if (choice === 'confirm') {
+        // 先删除关联的规则配置
         for (const rule of relatedRules) {
           try {
             if (rule.itemType === 'rule') {
@@ -1552,46 +1741,27 @@ const deleteGroup = async (row: ProxyGroup) => {
               await api.delete(`/rule-sets/${rule.id}`)
             }
           } catch (error) {
-            console.error(`删除规则配置失败:`, error)
+            console.error('删除规则配置失败:', error)
           }
         }
-
-        // 然后删除策略组
         await proxyGroupApi.delete(row.id)
-        ElMessage.success(`已删除策略组及 ${relatedRules.length} 个关联的规则配置`)
-        loadProxyGroups()
-      } catch (action) {
-        if (action === 'cancel') {
-          // 用户选择仅删除策略组
-          await proxyGroupApi.delete(row.id)
-          ElMessage.success('已删除策略组，关联的规则配置保留')
-          loadProxyGroups()
-        } else {
-          // 用户点击了关闭按钮，取消删除
-          return
-        }
+        notify.success(`已删除策略组及 ${relatedRules.length} 个关联的规则配置`)
+      } else {
+        await proxyGroupApi.delete(row.id)
+        notify.success('已删除策略组，关联的规则配置保留')
       }
+      loadProxyGroups()
     } else {
-      // 没有关联的规则配置，直接删除
-      await ElMessageBox.confirm(
-        '确定要删除该策略组吗？',
-        '删除确认',
-        {
-          confirmButtonText: '确定',
-          cancelButtonText: '取消',
-          type: 'warning'
-        }
-      )
+      const ok = await confirmDanger('确定要删除该策略组吗？', { title: '删除策略组' })
+      if (!ok) return
 
       await proxyGroupApi.delete(row.id)
-      ElMessage.success('删除成功')
+      notify.success('删除成功')
       loadProxyGroups()
     }
-  } catch (error: any) {
-    if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error('删除失败')
-      console.error('删除策略组失败:', error)
-    }
+  } catch (error) {
+    notify.error('删除失败')
+    console.error('删除策略组失败:', error)
   }
 }
 
@@ -1650,13 +1820,11 @@ watch(orderedProxiesList, () => {
   }
 }, { deep: true })
 
-// 监听折叠面板展开状态，展开时初始化Sortable
-watch(activeCollapsePanel, (newVal) => {
-  if (newVal.includes('sorting') && orderedProxiesList.value.length > 0) {
-    // 延迟初始化，等待DOM渲染完成
-    setTimeout(() => {
-      initOrderedProxiesSortable()
-    }, 50)
+// 折叠面板展开时才有 DOM，此时才初始化 Sortable
+watch(orderPanelOpen, open => {
+  if (open && orderedProxiesList.value.length > 0) {
+    // 等待折叠动画渲染出列表节点
+    setTimeout(() => initOrderedProxiesSortable(), 50)
   }
 })
 
@@ -1677,9 +1845,9 @@ const reorder = useReorder<any>({
 const handleSaveOrder = async () => {
   try {
     await reorder.save()
-    ElMessage.success('顺序已保存')
+    notify.success('顺序已保存')
   } catch (error) {
-    ElMessage.error('保存顺序失败，顺序已还原')
+    notify.error('保存顺序失败，顺序已还原')
   }
 }
 
@@ -1697,693 +1865,3 @@ onUnmounted(() => {
 </script>
 
 
-<style scoped>
-.proxy-groups-page {
-  --group-radius-xl: 40px;
-  --group-radius-lg: 24px;
-  --group-radius-md: 16px;
-  --group-radius-sm: 12px;
-  --group-radius-pill: 999px;
-}
-
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-  /* 固定顶部 */
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  background: var(--cf-bg);
-  margin: -28px -32px 28px -32px;
-  padding: 28px 32px;
-}
-
-.title-block h2 {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 700;
-  color: var(--cf-fg);
-  }
-
-.title-block p {
-  margin: 6px 0 0;
-  font-size: 14px;
-  color: var(--cf-fg-2);
-}
-
-.header-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  justify-content: flex-end;
-}
-
-.groups-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 24px;
-  margin-top: 24px;
-}
-
-.group-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 18px 20px 18px;
-  border-radius: var(--group-radius-lg, 24px);
-  background: var(--cf-s1);
-  border: 1px solid rgba(107, 115, 255, 0.12);
-  box-shadow: 0 20px 40px rgba(91, 112, 255, 0.16);
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
-}
-
-.group-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 24px 48px rgba(91, 112, 255, 0.2);
-}
-
-.group-card.disabled {
-  opacity: 0.5;
-  filter: grayscale(0.4);
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.card-title-group {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.card-drag-handle {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(107, 115, 255, 0.14);
-  color: var(--cf-primary);
-  cursor: grab;
-  transition: background 0.2s ease, color 0.2s ease;
-}
-
-.card-drag-handle:hover {
-  background: rgba(107, 115, 255, 0.22);
-  color: var(--cf-primary);
-}
-
-.card-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.group-icon {
-  font-size: 18px;
-}
-
-.group-name {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--cf-fg);
-}
-
-.card-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.meta-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 12px;
-  border-radius: var(--group-radius-pill);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.follow-pill {
-  background: rgba(107, 115, 255, 0.16);
-  color: var(--cf-primary);
-}
-
-.type-pill {
-  background: rgba(91, 112, 255, 0.12);
-  color: var(--cf-primary) !important;
-}
-
-.type-pill.type-select {
-  background: rgba(91, 112, 255, 0.12) !important;
-  color: var(--cf-primary) !important;
-}
-
-.type-pill.type-url-test {
-  background: rgba(139, 143, 255, 0.16) !important;
-  color: var(--cf-primary-hover);
-}
-
-.type-pill.type-fallback {
-  background: rgba(107, 115, 255, 0.16) !important;
-  color: var(--cf-primary) !important;
-}
-
-.type-pill.type-load-balance {
-  background: rgba(78, 94, 255, 0.18) !important;
-  color: var(--cf-primary) !important;
-}
-
-.status-toggle-btn {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(107, 115, 255, 0.18);
-  color: var(--cf-primary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 12px 26px rgba(87, 104, 255, 0.18);
-}
-
-.status-toggle-btn.compact {
-  width: 40px;
-  height: 40px;
-}
-
-.status-toggle-btn .el-icon {
-  font-size: 18px;
-}
-
-.status-toggle-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 16px 30px rgba(87, 104, 255, 0.22);
-}
-
-.status-toggle-btn.active {
-  background: var(--cf-primary-fill);
-  color: var(--cf-primary-fg);
-}
-
-.status-toggle-btn.loading {
-  opacity: 0.6;
-  cursor: progress;
-}
-
-.status-toggle-btn:disabled {
-  cursor: not-allowed;
-}
-
-
-.groups-dialog :deep(.el-dialog),
-:deep(.el-overlay-dialog .groups-dialog) {
-  border-radius: var(--group-radius-xl, 40px) !important;
-  overflow: hidden;
-  background: rgba(252, 253, 255, 0.97);
-  box-shadow: 0 36px 80px rgba(65, 80, 180, 0.28);
-  border: 1px solid rgba(107, 115, 255, 0.16);
-  backdrop-filter: blur(20px);
-  --el-dialog-border-radius: var(--group-radius-xl, 40px);
-}
-.card-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.card-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.card-section.inline {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.card-section.compact {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px;
-  border-radius: var(--group-radius-md, 16px);
-  background: rgba(107, 115, 255, 0.06);
-  border: 1px solid rgba(107, 115, 255, 0.1);
-  margin-bottom: 4px;
-}
-
-.summary-text {
-  flex: 1;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--cf-fg);
-}
-
-.expand-toggle-btn {
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(107, 115, 255, 0.12);
-  color: var(--cf-primary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.25s ease;
-}
-
-.expand-toggle-btn:hover {
-  background: rgba(107, 115, 255, 0.2);
-  transform: scale(1.08);
-}
-
-.expand-toggle-btn .el-icon {
-  font-size: 16px;
-  transition: transform 0.25s ease;
-}
-
-.expand-toggle-btn .el-icon.rotated {
-  transform: rotate(180deg);
-}
-
-.section-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--cf-fg-2);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.section-content {
-  font-size: 13px;
-  color: var(--cf-fg);
-  line-height: 1.5;
-}
-
-.tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.data-tag {
-  background: rgba(107, 115, 255, 0.12);
-  border: none;
-  color: var(--cf-primary);
-}
-
-.code-box {
-  padding: 12px 14px;
-  border-radius: var(--group-radius-md, 16px);
-  background: var(--cf-s2);
-  color: var(--cf-fg);
-  font-family: 'SFMono-Regular', 'Consolas', 'Monaco', monospace;
-  border: 1px solid rgba(107, 115, 255, 0.12);
-}
-
-.code-box.small {
-  max-height: 160px;
-  overflow: auto;
-}
-
-.empty-text {
-  font-size: 12px;
-  color: var(--cf-fg-3);
-}
-
-.card-footer {
-  display: flex;
-  gap: 12px;
-  margin-top: auto;
-}
-
-.card-btn.el-button {
-  flex: 1;
-  border-radius: var(--group-radius-md, 16px);
-  font-size: 13px;
-  font-weight: 600;
-  padding: 0 16px;
-}
-
-.card-btn.ghost {
-  background: rgba(107, 115, 255, 0.12);
-  color: var(--cf-primary);
-  border: 1px solid rgba(107, 115, 255, 0.25);
-}
-
-.card-btn.danger {
-  background: rgba(155, 143, 255, 0.12);
-  color: var(--cf-primary-hover);
-  border: 1px solid rgba(155, 143, 255, 0.28);
-}
-
-
-.dialog-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  padding: 8px 0 18px;
-  color: var(--cf-fg);
-}
-
-.dialog-title-group h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--cf-fg);
-  }
-
-.dialog-title-group p {
-  margin: 8px 0 0;
-  font-size: 13px;
-  color: var(--cf-fg-2);
-}
-
-.dialog-close-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid rgba(124, 134, 174, 0.35);
-  background: transparent;
-  color: var(--cf-fg-2);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.dialog-close-btn:hover {
-  background: rgba(107, 115, 255, 0.12);
-  border-color: rgba(107, 115, 255, 0.35);
-  color: var(--cf-primary);
-}
-
-.dialog-card {
-  background: var(--cf-s1);
-  border-radius: var(--group-radius-lg, 24px);
-  padding: 30px 28px 26px;
-  box-shadow: 0 18px 30px rgba(91, 112, 255, 0.12);
-  border: 1px solid rgba(107, 115, 255, 0.1);
-}
-
-.groups-form {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-:deep(.groups-form .el-form-item__label) {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--cf-fg-2);
-}
-
-:deep(.groups-form .el-input__wrapper),
-:deep(.groups-form .el-select .el-input__wrapper),
-:deep(.groups-form .el-textarea__inner) {
-  border-radius: var(--group-radius-md, 16px);
-  border: none;
-  box-shadow: 0 0 0 1px rgba(107, 115, 255, 0.14);
-  background-color: var(--cf-s2);
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
-}
-
-:deep(.groups-form .el-input__wrapper.is-focus),
-:deep(.groups-form .el-select .el-input__wrapper.is-focus),
-:deep(.groups-form .el-textarea__inner:focus) {
-  box-shadow: 0 0 0 2px rgba(107, 115, 255, 0.32);
-  transform: translateY(-1px);
-  background-color: var(--cf-s1);
-}
-
-.status-toggle-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
-  border-radius: var(--group-radius-pill);
-  background: rgba(107, 115, 255, 0.12);
-  color: var(--cf-primary);
-  font-weight: 600;
-}
-
-.status-toggle-row span {
-  font-size: 13px;
-}
-
-.helper-text {
-  margin: 6px 0 0;
-  font-size: 12px;
-  color: var(--cf-fg-3);
-}
-
-.regex-preview-row {
-  width: 100%;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-}
-
-.regex-display-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: start;
-}
-
-.preview-btn.el-button {
-  border-radius: var(--group-radius-md, 16px);
-  border: 1px solid rgba(107, 115, 255, 0.25);
-  background: rgba(107, 115, 255, 0.1);
-  color: var(--cf-primary);
-  font-weight: 600;
-}
-
-.preview-btn.compact-preview {
-  flex-shrink: 0;
-  min-width: 78px;
-}
-
-.dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-}
-
-.footer-btn {
-  min-width: 118px;
-  height: 42px;
-  border-radius: var(--group-radius-md, 16px);
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.footer-btn.ghost {
-  background: transparent;
-  color: var(--cf-primary);
-  border: 1px solid rgba(107, 115, 255, 0.3);
-}
-
-.footer-btn.ghost:hover {
-  background: rgba(107, 115, 255, 0.08);
-}
-
-.footer-btn.primary {
-  background: var(--cf-primary-fill);
-  border: none;
-  color: var(--cf-primary-fg);
-  box-shadow: 0 12px 24px rgba(87, 104, 255, 0.28);
-}
-
-.groups-helper-dialog :deep(.el-dialog) {
-  border-radius: var(--group-radius-lg, 24px);
-}
-
-.dialog-alert {
-  margin-bottom: 16px;
-}
-
-.empty-helper {
-  text-align: center;
-  padding: 40px 0;
-  color: var(--cf-fg-2);
-}
-
-.subscription-count-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.subscription-count-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-radius: var(--group-radius-md, 16px);
-  background: rgba(107, 115, 255, 0.08);
-  transition: background 0.2s ease;
-}
-
-.subscription-count-item.clickable {
-  cursor: pointer;
-}
-
-.subscription-count-item.clickable:hover {
-  background: rgba(107, 115, 255, 0.14);
-}
-
-.subscription-info {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 600;
-  color: var(--cf-fg);
-}
-
-.node-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.node-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--cf-s3);
-  color: var(--cf-fg);
-}
-
-.node-item:last-child {
-  border-bottom: none;
-}
-
-.preview-section {
-  margin-top: 14px;
-}
-
-.preview-node-item {
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 14px;
-}
-
-.preview-node-main {
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--cf-fg);
-}
-
-.preview-node-name {
-  word-break: break-all;
-}
-
-.preview-node-meta {
-  flex-shrink: 0;
-  display: inline-flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-@media (max-width: 1024px) {
-  .proxy-groups-page {
-    padding: 24px;
-    --group-radius-xl: 32px;
-    --group-radius-lg: 22px;
-    --group-radius-md: 14px;
-  }
-
-  .groups-grid {
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  }
-}
-
-@media (max-width: 768px) {
-  .page-header {
-    flex-direction: column;
-    align-items: flex-start;
-    margin: -20px -20px 20px -20px;
-    padding: 20px;
-  }
-
-  .header-actions {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .proxy-groups-page {
-    padding: 20px;
-    --group-radius-xl: 28px;
-    --group-radius-lg: 20px;
-    --group-radius-md: 14px;
-  }
-
-  .groups-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .card-actions {
-    flex-direction: column;
-  }
-
-  .card-btn.el-button {
-    width: 100%;
-  }
-
-  .regex-preview-row {
-    grid-template-columns: 1fr;
-  }
-
-  .regex-display-row {
-    grid-template-columns: 1fr;
-  }
-
-  .preview-node-item {
-    flex-direction: column;
-  }
-
-  .preview-node-meta {
-    justify-content: flex-start;
-  }
-}
-
-@media (max-width: 480px) {
-  .proxy-groups-page {
-    padding: 16px;
-    --group-radius-xl: 24px;
-    --group-radius-lg: 18px;
-    --group-radius-md: 12px;
-  }
-
-  .action-btn {
-    width: 100%;
-    justify-content: center;
-  }
-}
-</style>

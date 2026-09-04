@@ -1,5 +1,5 @@
 <template>
-  <AlertDialog :open="confirmState.open" @update:open="value => !value && settleConfirm(false)">
+  <AlertDialog :open="confirmState.open" @update:open="value => !value && settleConfirm('cancel')">
     <AlertDialogContent class="glass-strong hairline border-border/60">
       <AlertDialogHeader>
         <AlertDialogTitle>{{ confirmState.title }}</AlertDialogTitle>
@@ -8,12 +8,20 @@
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>
-        <AlertDialogCancel @click="settleConfirm(false)">
+        <AlertDialogCancel @click="settleConfirm('cancel')">
           {{ confirmState.cancelText }}
         </AlertDialogCancel>
+        <!-- 第三个按钮只在调用方给了 altText 时出现 -->
+        <AlertDialogAction
+          v-if="confirmState.altText"
+          class="bg-secondary text-secondary-foreground hover:bg-secondary/80"
+          @click="settleConfirm('alt')"
+        >
+          {{ confirmState.altText }}
+        </AlertDialogAction>
         <AlertDialogAction
           :class="confirmState.danger ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90' : ''"
-          @click="settleConfirm(true)"
+          @click="settleConfirm('confirm')"
         >
           {{ confirmState.confirmText }}
         </AlertDialogAction>

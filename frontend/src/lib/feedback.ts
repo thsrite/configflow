@@ -23,13 +23,18 @@ export interface ConfirmOptions {
   description?: string
   confirmText?: string
   cancelText?: string
+  /** 第三个按钮的文案。给了才渲染，用于「一起删 / 只删这个 / 取消」这类三选一 */
+  altText?: string
   /** 破坏性操作用红色确认按钮 */
   danger?: boolean
 }
 
+/** 三选一的结果；两按钮场景只会出现 confirm / cancel */
+export type ConfirmChoice = 'confirm' | 'alt' | 'cancel'
+
 interface ConfirmState extends Required<ConfirmOptions> {
   open: boolean
-  resolve: ((ok: boolean) => void) | null
+  resolve: ((choice: ConfirmChoice) => void) | null
 }
 
 export const confirmState = reactive<ConfirmState>({
@@ -38,38 +43,44 @@ export const confirmState = reactive<ConfirmState>({
   description: '',
   confirmText: '确定',
   cancelText: '取消',
+  altText: '',
   danger: false,
   resolve: null
 })
 
-export const confirm = (
+/** 三选一确认框。两按钮场景请用 confirm() */
+export const choose = (
   description: string,
   options: ConfirmOptions = {}
-): Promise<boolean> => {
+): Promise<ConfirmChoice> => {
   // 上一个确认框还没关就再次调用时，先把旧的判为取消，避免 promise 悬空
-  confirmState.resolve?.(false)
+  confirmState.resolve?.('cancel')
 
   confirmState.title = options.title ?? '确认操作'
   confirmState.description = options.description ?? description
   confirmState.confirmText = options.confirmText ?? '确定'
   confirmState.cancelText = options.cancelText ?? '取消'
+  confirmState.altText = options.altText ?? ''
   confirmState.danger = options.danger ?? false
   confirmState.open = true
 
-  return new Promise<boolean>(resolve => {
+  return new Promise<ConfirmChoice>(resolve => {
     confirmState.resolve = resolve
   })
 }
+
+export const confirm = (description: string, options: ConfirmOptions = {}): Promise<boolean> =>
+  choose(description, { ...options, altText: undefined }).then(choice => choice === 'confirm')
 
 /** 破坏性确认的快捷写法 */
 export const confirmDanger = (description: string, options: ConfirmOptions = {}) =>
   confirm(description, { danger: true, confirmText: '删除', ...options })
 
-export const settleConfirm = (ok: boolean): void => {
+export const settleConfirm = (choice: ConfirmChoice): void => {
   confirmState.open = false
   const resolve = confirmState.resolve
   confirmState.resolve = null
-  resolve?.(ok)
+  resolve?.(choice)
 }
 
 /* ---------- 单输入框询问框 ---------- */
