@@ -253,6 +253,11 @@ body {
  * 这里只在移动断点放大组件尺寸，不影响桌面端的信息密度。
  */
 @media (max-width: 900px) {
+  /* 布局工具类：需跨组件生效，故定义在全局而非某个组件的 scoped 样式里 */
+  .cf-hide-mobile {
+    display: none !important;
+  }
+
   :root {
     --el-component-size-small: 32px;
     --el-component-size: 36px;

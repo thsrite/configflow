@@ -317,9 +317,6 @@ onUnmounted(() => {
 
 /* ---------- 响应式：桌面 rail / 移动底栏 ---------- */
 @media (max-width: 900px) {
-  .cf-hide-mobile {
-    display: none !important;
-  }
   .cf-topbar {
     gap: var(--cf-sp-2);
     padding: 0 var(--cf-sp-3);

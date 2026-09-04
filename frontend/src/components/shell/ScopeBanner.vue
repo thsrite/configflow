@@ -13,21 +13,24 @@ import { computed } from 'vue'
 
 const props = defineProps<{
   /**
-   * resource = 订阅/节点/规则集等资源；profile = 策略与生成配置。
-   * 两者目前都按配置空间隔离，仅作功能归类，不表示共享范围。
+   * resource = 订阅/节点/规则集等资源（按配置空间隔离）
+   * profile  = 策略与生成配置（按配置空间隔离）
+   * system   = 真正跨配置空间共有的数据，目前只有 Agent 与配置空间本身
    */
-  scope: 'resource' | 'profile'
+  scope: 'resource' | 'profile' | 'system'
   profileName?: string
   description?: string
 }>()
 
-const icon = computed(() => (props.scope === 'resource' ? 'Files' : 'Postcard'))
-
-const title = computed(() =>
-  props.scope === 'resource'
-    ? `资源 · 当前配置「${props.profileName || '未选择'}」`
-    : `当前配置 · ${props.profileName || '未选择'}`
+const icon = computed(() =>
+  props.scope === 'system' ? 'Monitor' : props.scope === 'resource' ? 'Files' : 'Postcard'
 )
+
+const title = computed(() => {
+  if (props.scope === 'system') return '系统级 · 所有配置空间共有'
+  if (props.scope === 'resource') return `资源 · 当前配置「${props.profileName || '未选择'}」`
+  return `当前配置 · ${props.profileName || '未选择'}`
+})
 </script>
 
 <style scoped>
@@ -51,6 +54,14 @@ const title = computed(() =>
 .cf-scope.is-profile {
   background: var(--cf-profile-soft);
   border-color: color-mix(in srgb, var(--cf-profile) 30%, transparent);
+}
+
+.cf-scope.is-system {
+  background: var(--cf-success-soft);
+  border-color: color-mix(in srgb, var(--cf-success) 28%, transparent);
+}
+.cf-scope.is-system .cf-scope__icon {
+  color: var(--cf-success);
 }
 
 .cf-scope__icon {

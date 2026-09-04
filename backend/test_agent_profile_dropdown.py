@@ -7,7 +7,8 @@ def _agents_source() -> str:
 
 def test_agent_profile_binding_uses_visible_native_select():
     source = _agents_source()
-    marker = "配置 Profile"
+    # 文案统一为「配置空间」后，锚点随之更新（原为「配置 Profile」）
+    marker = "绑定配置空间"
     section = source[source.index(marker):source.index(marker) + 900]
 
     assert "<select" in section

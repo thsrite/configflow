@@ -25,23 +25,134 @@
       >
         <template #prefix><el-icon><Search /></el-icon></template>
       </el-input>
+
+      <el-select
+        v-model="statusFilter"
+        class="cf-toolbar__filter"
+        :disabled="reorder.active.value"
+        placeholder="全部状态"
+      >
+        <el-option label="全部状态" value="all" />
+        <el-option label="已启用" value="enabled" />
+        <el-option label="已停用" value="disabled" />
+        <el-option label="获取失败" value="error" />
+      </el-select>
+
       <el-button v-if="!reorder.active.value" :disabled="subscriptions.length < 2" @click="reorder.enter">
         <el-icon><Sort /></el-icon>
         调整顺序
       </el-button>
+
+      <!-- 视图切换：数据密集区默认表格，卡片作为可选 -->
+      <div class="cf-viewtoggle cf-hide-mobile" role="group" aria-label="视图切换">
+        <button
+          type="button"
+          :aria-pressed="viewMode === 'list'"
+          aria-label="列表视图"
+          @click="viewMode = 'list'"
+        >
+          <el-icon><List /></el-icon>
+        </button>
+        <button
+          type="button"
+          :aria-pressed="viewMode === 'card'"
+          aria-label="卡片视图"
+          @click="viewMode = 'card'"
+        >
+          <el-icon><Grid /></el-icon>
+        </button>
+      </div>
     </div>
 
     <ReorderBar
       :active="reorder.active.value"
       :saving="reorder.saving.value"
       :announcement="reorder.announcement.value"
+      :hint="reorderHint"
       @cancel="reorder.cancel"
       @save="handleSaveOrder"
     />
 
     <el-empty v-if="visibleSubscriptions.length === 0" :description="emptyText" />
 
-    <div class="subscriptions-grid" ref="subscriptionsContainer">
+    <!-- ===== 表格视图（桌面默认） ===== -->
+    <div v-else-if="effectiveView === 'list'" class="cf-table-wrap">
+      <table class="cf-table">
+        <thead>
+          <tr>
+            <th v-if="reorder.active.value" class="cf-table__grip" scope="col"><span class="cf-sr">排序</span></th>
+            <th class="cf-table__num" scope="col">#</th>
+            <th scope="col">名称</th>
+            <th scope="col">地址</th>
+            <th class="cf-table__right" scope="col">节点</th>
+            <th scope="col">最近更新</th>
+            <th scope="col">状态</th>
+            <th class="cf-table__right" scope="col">操作</th>
+          </tr>
+        </thead>
+        <tbody ref="subscriptionsContainer">
+          <tr
+            v-for="(sub, index) in visibleSubscriptions"
+            :key="sub.id"
+            :data-id="sub.id"
+            data-reorder-item
+            :class="{ 'is-disabled': !sub.enabled }"
+          >
+            <td v-if="reorder.active.value" class="cf-table__grip">
+              <DragHandle
+                :label="sub.name"
+                :index="index"
+                :total="subscriptions.length"
+                :position="reorder.positionLabel(index)"
+                :grabbed="reorder.grabbedIndex.value === index"
+                @up="reorder.moveUp(index)"
+                @down="reorder.moveDown(index)"
+                @keydown="reorder.onHandleKeydown($event, index)"
+              />
+            </td>
+            <td class="cf-table__num cf-num">{{ index + 1 }}</td>
+            <td class="cf-table__name">
+              <span class="card-dot" :class="dotClass(sub)" aria-hidden="true"></span>
+              <span class="cf-table__nametext">{{ sub.name }}</span>
+              <span class="meta-pill" :class="getTypeClass(sub.type)">{{ getTypeLabel(sub.type) }}</span>
+            </td>
+            <td class="cf-table__url">
+              <span class="cf-mono">{{ getDisplayUrl(sub) }}</span>
+              <button
+                type="button"
+                class="cf-table__copy cf-reorder-mute"
+                :aria-label="`复制 ${sub.name} 的地址`"
+                @click="copyUrl(sub)"
+              >
+                <el-icon><CopyDocument /></el-icon>
+              </button>
+            </td>
+            <td class="cf-table__right cf-num">{{ nodeCount(sub) }}</td>
+            <td class="cf-table__time">{{ lastUpdated(sub) }}</td>
+            <td>
+              <span class="meta-pill" :class="getNodeStatusClass(subscriptionStatus[sub.id])">
+                {{ statusText(sub) }}
+              </span>
+            </td>
+            <td class="cf-table__right cf-reorder-mute">
+              <el-button size="small" text :aria-label="`获取 ${sub.name} 的节点`" @click="handleFetchSubscription(sub)">
+                <el-icon><Connection /></el-icon>
+              </el-button>
+              <el-button size="small" text :aria-label="`编辑 ${sub.name}`" @click="editSubscription(sub)">
+                <el-icon><EditPen /></el-icon>
+              </el-button>
+              <el-button size="small" text class="danger-text" :aria-label="`删除 ${sub.name}`" @click="deleteSubscription(sub)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <footer class="cf-table__foot">共 {{ visibleSubscriptions.length }} 条</footer>
+    </div>
+
+    <!-- ===== 卡片视图（移动端与可选） ===== -->
+    <div v-else class="subscriptions-grid" ref="subscriptionsContainer">
       <div
         v-for="(sub, index) in visibleSubscriptions"
         :key="sub.id"
@@ -82,15 +193,7 @@
           <div class="card-meta">
             <span class="meta-pill" :class="getTypeClass(sub.type)">{{ getTypeLabel(sub.type) }}</span>
             <span class="meta-pill" :class="getNodeStatusClass(subscriptionStatus[sub.id])">
-              <template v-if="subscriptionStatus[sub.id]?.status === 'loading'">
-                <el-icon class="spin"><Loading /></el-icon>
-                获取中…
-              </template>
-              <template v-else-if="subscriptionStatus[sub.id]?.status === 'success'">
-                {{ subscriptionStatus[sub.id]?.count || 0 }} 个节点
-              </template>
-              <template v-else-if="subscriptionStatus[sub.id]?.status === 'error'">获取失败</template>
-              <template v-else>未获取</template>
+              {{ statusText(sub) }}
             </span>
             <span class="meta-text">更新周期 {{ formatInterval(sub.interval) }}</span>
           </div>
@@ -241,9 +344,9 @@
 
 <script setup lang="ts">
 import { useProfileStore } from '@/stores/profile'
-import { computed, ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElLoading, ElMessageBox } from 'element-plus'
-import { Plus, Connection, Loading, RefreshRight, View, Hide, EditPen, Delete, Close, ArrowDown, Search, Sort } from '@element-plus/icons-vue'
+import { Plus, Connection, Loading, RefreshRight, View, Hide, EditPen, Delete, Close, ArrowDown, Search, Sort, List, Grid, CopyDocument } from '@element-plus/icons-vue'
 import { subscriptionApi, subStoreUrlApi } from '@/api'
 import type { Subscription } from '@/types'
 import api from '@/api'
@@ -638,6 +741,88 @@ const toggleSubscriptionEnabled = async (sub: Subscription) => {
   }
 }
 
+/* ---------- 视图模式 ---------- */
+type ViewMode = 'list' | 'card'
+const VIEW_KEY = 'configflow-subscriptions-view'
+
+const readView = (): ViewMode => {
+  try {
+    const v = localStorage.getItem(VIEW_KEY)
+    if (v === 'list' || v === 'card') return v
+  } catch {
+    // 存储不可用时用默认视图
+  }
+  return 'list'
+}
+
+const viewMode = ref<ViewMode>(readView())
+
+watch(viewMode, mode => {
+  try {
+    localStorage.setItem(VIEW_KEY, mode)
+  } catch {
+    // 仅当前会话生效
+  }
+})
+
+// 表格在窄屏无法阅读，移动端一律用卡片，不受用户选择影响
+const isNarrow = ref(false)
+const syncNarrow = () => {
+  isNarrow.value = window.matchMedia('(max-width: 900px)').matches
+}
+
+const effectiveView = computed<ViewMode>(() => (isNarrow.value ? 'card' : viewMode.value))
+
+/* ---------- 状态筛选 ---------- */
+const statusFilter = ref<'all' | 'enabled' | 'disabled' | 'error'>('all')
+
+const matchesStatus = (sub: Subscription): boolean => {
+  if (statusFilter.value === 'all') return true
+  if (statusFilter.value === 'enabled') return !!sub.enabled
+  if (statusFilter.value === 'disabled') return !sub.enabled
+  return subscriptionStatus.value[sub.id]?.status === 'error'
+}
+
+/* ---------- 表格列展示 ---------- */
+const nodeCount = (sub: Subscription): string => {
+  const cached = subscriptionStatus.value[sub.id]?.count
+  if (typeof cached === 'number') return String(cached)
+  const stored = (sub as any).cached_node_count
+  return typeof stored === 'number' ? String(stored) : '—'
+}
+
+const lastUpdated = (sub: Subscription): string => {
+  const raw = (sub as any).cached_updated_at
+  if (!raw) return '—'
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
+}
+
+const statusText = (sub: Subscription): string => {
+  const st = subscriptionStatus.value[sub.id]?.status
+  if (st === 'loading') return '获取中'
+  if (st === 'success') return '正常'
+  if (st === 'error') return '获取失败'
+  return sub.enabled ? '未获取' : '已停用'
+}
+
+const copyUrl = async (sub: Subscription) => {
+  try {
+    await navigator.clipboard.writeText(sub.url || '')
+    ElMessage.success('地址已复制')
+  } catch {
+    ElMessage.error('复制失败，请手动选择地址')
+  }
+}
+
+/* ---------- 排序提示 ---------- */
+const reorderHint = computed(() => {
+  const i = reorder.grabbedIndex.value
+  if (i !== null) return `${reorder.positionLabel(i)}；方向键移动，空格放下`
+  return '拖动手柄调整顺序；手柄聚焦后可用空格抓取、方向键移动'
+})
+
 /* ---------- 搜索与排序 ---------- */
 const reorder = useReorder<Subscription>({
   items: subscriptions,
@@ -660,11 +845,13 @@ const keyword = ref('')
 const visibleSubscriptions = computed(() => {
   if (reorder.active.value) return subscriptions.value
   const q = keyword.value.trim().toLowerCase()
-  if (!q) return subscriptions.value
-  return subscriptions.value.filter(
-    sub =>
+  return subscriptions.value.filter(sub => {
+    if (!matchesStatus(sub)) return false
+    if (!q) return true
+    return (
       sub.name?.toLowerCase().includes(q) || sub.url?.toLowerCase().includes(q)
-  )
+    )
+  })
 })
 
 const emptyText = computed(() =>
@@ -686,10 +873,13 @@ const handleSaveOrder = async () => {
 }
 
 onMounted(async () => {
+  syncNarrow()
+  window.addEventListener('resize', syncNarrow)
   await loadSubscriptions()
 })
 
 onUnmounted(() => {
+  window.removeEventListener('resize', syncNarrow)
 })
 </script>
 
@@ -707,7 +897,171 @@ onUnmounted(() => {
 }
 
 .cf-toolbar__search {
-  max-width: 320px;
+  max-width: 280px;
+}
+
+.cf-toolbar__filter {
+  width: 132px;
+  flex: 0 0 auto;
+}
+
+/* 视图切换：两个图标按钮成组 */
+.cf-viewtoggle {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--cf-r-md);
+  border: 1px solid var(--cf-bd);
+  background: var(--cf-s2);
+  flex: 0 0 auto;
+}
+
+.cf-viewtoggle button {
+  width: 32px;
+  height: 30px;
+  border: none;
+  border-radius: var(--cf-r-sm);
+  background: none;
+  color: var(--cf-fg-3);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.cf-viewtoggle button[aria-pressed='true'] {
+  background: var(--cf-s1);
+  color: var(--cf-fg);
+  box-shadow: var(--cf-shadow);
+}
+
+/* ---------- 表格视图 ---------- */
+.cf-table-wrap {
+  background: var(--cf-s1);
+  border: 1px solid var(--cf-bd);
+  border-radius: var(--cf-r-xl);
+  box-shadow: var(--cf-shadow);
+  /* 宽表在自身容器内滚动，页面不产生横向滚动 */
+  overflow-x: auto;
+}
+
+.cf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.cf-table th {
+  text-align: left;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--cf-fg-3);
+  padding: var(--cf-sp-3) var(--cf-sp-3) var(--cf-sp-2);
+  border-bottom: 1px solid var(--cf-bd);
+  white-space: nowrap;
+}
+
+.cf-table td {
+  padding: 11px var(--cf-sp-3);
+  border-bottom: 1px solid var(--cf-bd);
+  vertical-align: middle;
+}
+
+.cf-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.cf-table tbody tr:hover {
+  background: var(--cf-s2);
+}
+
+.cf-table tbody tr.is-disabled {
+  opacity: 0.6;
+}
+
+.cf-table__num {
+  width: 44px;
+  color: var(--cf-fg-3);
+  font-size: 12px;
+}
+
+.cf-table__grip {
+  width: 92px;
+  padding-right: 0;
+}
+
+.cf-table__right {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.cf-table__name {
+  display: flex;
+  align-items: center;
+  gap: var(--cf-sp-2);
+  min-width: 0;
+}
+
+.cf-table__nametext {
+  font-weight: 600;
+  color: var(--cf-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.cf-table__url {
+  max-width: 300px;
+}
+
+.cf-table__url .cf-mono {
+  display: inline-block;
+  max-width: 250px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  color: var(--cf-fg-2);
+  font-size: 12px;
+}
+
+.cf-table__copy {
+  width: 26px;
+  height: 26px;
+  margin-left: 4px;
+  border: none;
+  background: none;
+  color: var(--cf-fg-3);
+  border-radius: var(--cf-r-sm);
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.cf-table__copy:hover {
+  background: var(--cf-s3);
+  color: var(--cf-fg);
+}
+
+.cf-table__time {
+  color: var(--cf-fg-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.cf-table__foot {
+  padding: var(--cf-sp-3);
+  border-top: 1px solid var(--cf-bd);
+  font-size: 12px;
+  color: var(--cf-fg-3);
+}
+
+.cf-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
 }
 
 /* ---------- 卡片列表 ---------- */

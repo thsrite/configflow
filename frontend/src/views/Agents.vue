@@ -1,5 +1,10 @@
 <template>
   <div class="agents-page">
+    <ScopeBanner
+      scope="system"
+      description="Agent 列表为所有配置空间共有；每个 Agent 各自绑定一个配置空间，推送时使用它绑定的那份配置"
+    />
+
     <PageHeader title="Agent" description="Agent 注册、配置推送与运行状态">
       <template #actions>
         <el-button
@@ -119,7 +124,7 @@
         <div class="card-section profile-binding">
           <div class="section-label">
             <el-icon><Setting /></el-icon>
-            配置 Profile
+            绑定配置空间
           </div>
           <select
             class="agent-profile-native-select"
@@ -876,6 +881,7 @@
 </template>
 
 <script setup lang="ts">
+import ScopeBanner from '@/components/shell/ScopeBanner.vue'
 import PageHeader from '@/components/shell/PageHeader.vue'
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
@@ -1336,10 +1342,10 @@ const bindAgentProfile = async (agent: Agent, profileId: string): Promise<boolea
   try {
     await agentApi.bindProfile(agent.id, profileId)
     agent.profile_id = profileId
-    ElMessage.success('Agent 配置 Profile 已更新')
+    ElMessage.success('Agent 绑定的配置空间已更新')
     return true
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || 'Agent 配置 Profile 更新失败')
+    ElMessage.error(error.response?.data?.message || 'Agent 绑定配置空间失败')
     return false
   } finally {
     bindingAgentId.value = null
@@ -2292,6 +2298,8 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
+  /* 名称长时让标签换行，而不是把名称压成省略号 */
+  flex-wrap: wrap;
 }
 
 .card-title-group {
@@ -2306,9 +2314,9 @@ onUnmounted(() => {
   font-size: 17px;
   font-weight: 700;
   color: var(--cf-fg);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* 允许换行显示完整名称；Agent 名常带主机名，截断会看不出是哪台 */
+  overflow-wrap: anywhere;
+  line-height: 1.3;
 }
 
 .card-meta {
