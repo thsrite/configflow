@@ -211,6 +211,10 @@
     box-sizing: border-box;
   }
 
+  /* shadcn 组件的 <button>（Checkbox / Switch / Trigger…）未必带 flex 类，
+   * 未启用 preflight 时会保留 UA 的灰色 buttonface 底与默认边框，
+   * 因此按 data-slot 一并重置。 */
+  button[data-slot],
   button:where([class*='inline-flex'], [class*='flex']) {
     font-family: inherit;
     font-size: inherit;

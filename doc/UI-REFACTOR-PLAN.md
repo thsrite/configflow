@@ -45,15 +45,18 @@
 
 
 ## 进度快照（每轮更新）
-- 已完成：P0 底座、P1 应用壳、Dashboard、Login、Profiles、Logs、Nodes、SubscriptionAggregation
+- 已完成：P0 底座、P1 应用壳、Dashboard、Login、Profiles、Logs、Nodes、SubscriptionAggregation、
+  Subscriptions、ProxyGroups、Rules、RuleLibrary
 - 新增共享原语：PageHeader / SectionCard / StatTile / Toolbar / EmptyState / StatusDot /
-  AnimatedNumber / LoadingRows / ViewToggle / DataTableShell / MultiSelect
-- 反馈层：notify / confirm / confirmDanger / prompt（ConfirmHost + PromptHost 挂在 App.vue）
-- 待做：Subscriptions（重塑）、RuleLibrary、Rules、ProxyGroups、Generate、Agents，
-  然后 P7 移除 element-plus + 启用 preflight + 全量实机核对 + 开 PR
+  AnimatedNumber / LoadingRows / ViewToggle / DataTableShell / MultiSelect / GroupField
+- 反馈层：notify / confirm / confirmDanger / choose（三选一）/ prompt（ConfirmHost + PromptHost 挂在 App.vue）
+- 待做：Generate、Agents，然后 P7 移除 element-plus + 启用 preflight + 全量实机核对 + 开 PR
 - 改造手法备忘：
   1. 模板整体替换时不能用 `split('</template>')`——插槽 `<template #actions>` 会先命中，
      要按「第一处顶层 `  </div>\n</template>\n`」定位
   2. 未启用 preflight 时，`<button>` 需显式 `border-0 bg-transparent p-0`；
      `border-dashed` 必须先 `border-0` 再单边，否则四边都以 UA 默认宽度显示
   3. Vue 模板会压缩标签间空白，行内分段着色要用 flex gap 而不是空格
+  4. shadcn 的 Checkbox/Switch 等 <button> 不带 flex 类，未启用 preflight 时会保留 UA
+     灰色 buttonface 底 —— 已在 theme.css 基线层按 `button[data-slot]` 统一重置
+  5. 页面自带 viewMode 的，值统一为 'list' | 'card'，与 ViewToggle 对齐
