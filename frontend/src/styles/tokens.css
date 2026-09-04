@@ -69,9 +69,9 @@
   --cf-primary-soft: #eceefc;
   --cf-primary-fg: #ffffff;
 
-  --cf-success: #0f9d6b;
+  --cf-success: #0a7d55;
   --cf-success-soft: #e6f7f0;
-  --cf-warning: #b8730a;
+  --cf-warning: #8f5906;
   --cf-warning-soft: #fdf3e2;
   --cf-danger: #c62f2f;
   --cf-danger-soft: #fdeaea;
@@ -334,6 +334,15 @@ body {
 
 .el-tag.el-tag--info {
   --el-tag-bg-color: var(--cf-s3);
+  --el-tag-text-color: var(--cf-fg-2);
+}
+
+/* plain 变体默认用主色作文字，深色下对比不足；改用正文色。
+ * 注意 Element Plus 的类名是 el-tag--plain，不是 is-plain。
+ */
+.el-tag.el-tag--plain {
+  --el-tag-bg-color: transparent;
+  --el-tag-border-color: var(--cf-bd-strong);
   --el-tag-text-color: var(--cf-fg-2);
 }
 
