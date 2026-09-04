@@ -1,1284 +1,977 @@
 <template>
-  <div class="generate">
+  <div>
     <ScopeBanner scope="profile" :profile-name="cfProfileName" />
-    <PageHeader title="配置生成" description="Mihomo、Surge 与 MosDNS 配置的生成与预览" />
 
-    <div class="config-section">
-      <el-row :gutter="20">
-        <el-col :xs="24" :sm="12" :md="8">
-          <el-card shadow="hover">
-            <template #header>
-              <h4>Mihomo (Clash Meta)</h4>
-            </template>
-            <p style="margin-bottom: 16px">生成适用于 Mihomo/Clash Meta 的 YAML 配置文件</p>
+    <PageHeader
+      eyebrow="Profile"
+      title="配置生成"
+      description="Mihomo、Surge 与 MosDNS 配置的生成与预览，订阅 URL 可直接给客户端使用。"
+    />
 
-            <!-- URL 展示区域 -->
-            <div class="config-url-box">
-              <el-input
-                :model-value="mihomoUrlDisplay"
-                readonly
-                                size="small"
-                placeholder="配置 URL"
-              >
-                <template #append>
-                  <el-button @click="copyUrl(mihomoUrl, 'Mihomo')" size="small">
-                    <el-icon><CopyDocument /></el-icon>                  </el-button>
-                </template>
-              </el-input>
-              <div class="url-hint">点击复制，可在客户端中直接订阅此 URL</div>
-            </div>
-
-            <el-row :gutter="10">
-              <el-col :xs="24" :sm="12" :md="8">
-                <el-button
-                  @click="showCustomConfigDialog('mihomo')"
-                  style="width: 100%"
-                  size="small"
-                >
-                  <el-icon><Edit /></el-icon>
-                  <span>基础</span>
-                </el-button>
-              </el-col>
-              <el-col :xs="24" :sm="12" :md="8">
-                <el-button
-                  @click="previewConfig('mihomo')"
-                  :loading="mihomoPreviewLoading"
-                  style="width: 100%"
-                  size="small"
-                >
-                  <el-icon><View /></el-icon>
-                  <span>预览</span>
-                </el-button>
-              </el-col>
-              <el-col :xs="24" :sm="12" :md="8">
-                <el-button
-                  type="primary"
-                  @click="generateMihomo"
-                  :loading="mihomoLoading"
-                  style="width: 100%"
-                  size="small"
-                >
-                  <el-icon><Download /></el-icon>
-                  <span>下载</span>
-                </el-button>
-              </el-col>
-            </el-row>
-          </el-card>
-        </el-col>
-
-        <el-col :xs="24" :sm="12" :md="8">
-          <el-card shadow="hover">
-            <template #header>
-              <h4>Surge</h4>
-            </template>
-            <p style="margin-bottom: 16px">生成适用于 Surge 的 .conf 配置文件（INI 格式）</p>
-
-            <!-- URL 展示区域 -->
-            <div class="config-url-box">
-              <el-input
-                :model-value="surgeUrlDisplay"
-                readonly
-                                size="small"
-                placeholder="配置 URL"
-              >
-                <template #append>
-                  <el-button @click="copyUrl(surgeUrl, 'Surge')" size="small">
-                    <el-icon><CopyDocument /></el-icon>                  </el-button>
-                </template>
-              </el-input>
-              <div class="url-hint">点击复制，可在客户端中直接订阅此 URL</div>
-            </div>
-
-            <el-row :gutter="10">
-              <el-col :xs="24" :sm="12" :md="6">
-                <el-button
-                  @click="handleSurgeCustomConfig"
-                  style="width: 100%"
-                  size="small"
-                                  >
-                  <el-icon><Edit /></el-icon>
-                  <span>基础</span>
-                </el-button>
-              </el-col>
-              <el-col :xs="24" :sm="12" :md="6">
-                <el-button
-                  @click="showSurgeSmartDialog"
-                  style="width: 100%"
-                  size="small"
-                >
-                  <el-icon><Setting /></el-icon>
-                  <span>Smart</span>
-                </el-button>
-              </el-col>
-              <el-col :xs="24" :sm="12" :md="6">
-                <el-button
-                  @click="handleSurgePreview"
-                  :loading="surgePreviewLoading"
-                  style="width: 100%"
-                  size="small"
-                                  >
-                  <el-icon><View /></el-icon>
-                  <span>预览</span>
-                </el-button>
-              </el-col>
-              <el-col :xs="24" :sm="12" :md="6">
-                <el-button
-                  type="primary"
-                  @click="generateSurge"
-                  :loading="surgeLoading"
-                  style="width: 100%"
-                  size="small"
-                >
-                  <el-icon><Download /></el-icon>
-                  <span>下载</span>
-                </el-button>
-              </el-col>
-            </el-row>
-          </el-card>
-        </el-col>
-
-        <el-col :xs="24" :sm="12" :md="8">
-          <el-card shadow="hover">
-            <template #header>
-              <h4>MosDNS</h4>
-            </template>
-            <p style="margin-bottom: 16px">生成适用于 MosDNS 的 YAML 配置文件</p>
-
-            <!-- URL 展示区域 -->
-            <div class="config-url-box">
-              <el-input
-                :model-value="mosdnsUrlDisplay"
-                readonly
-                                size="small"
-                placeholder="配置 URL"
-              >
-                <template #append>
-                  <el-button @click="copyUrl(mosdnsUrl, 'MosDNS')" size="small">
-                    <el-icon><CopyDocument /></el-icon>                  </el-button>
-                </template>
-              </el-input>
-              <div class="url-hint">点击复制，可在客户端中直接订阅此 URL</div>
-            </div>
-
-            <el-row :gutter="10">
-              <el-col :xs="24" :sm="12" :md="8">
-                <el-button
-                  @click="showMosdnsSettingsDialog"
-                  style="width: 100%"
-                  size="small"
-                  title="基础设置"
-                >
-                  <el-icon><Setting /></el-icon>
-                  <span>设置</span>
-                </el-button>
-              </el-col>
-              <el-col :xs="24" :sm="12" :md="8">
-                <el-button
-                  @click="previewConfig('mosdns')"
-                  :loading="mosdnsPreviewLoading"
-                  style="width: 100%"
-                  size="small"
-                  title="预览配置"
-                >
-                  <el-icon><View /></el-icon>
-                  <span>预览</span>
-                </el-button>
-              </el-col>
-              <el-col :xs="24" :sm="12" :md="8">
-                <el-button
-                  type="primary"
-                  @click="generateMosdns"
-                  :loading="mosdnsLoading"
-                  style="width: 100%"
-                  size="small"
-                  title="下载配置"
-                >
-                  <el-icon><Download /></el-icon>
-                  <span>下载</span>
-                </el-button>
-              </el-col>
-            </el-row>
-          </el-card>
-        </el-col>
-      </el-row>
-    </div>
-
-    <el-divider />
-
-    <div class="config-section">
-      <el-row :gutter="20" class="config-row">
-        <el-col :xs="24" :sm="12" :md="8">
-          <el-card shadow="hover" class="equal-height-card">
-            <template #header>
-              <h4>服务配置</h4>
-            </template>
-            <el-form label-width="100px">
-              <el-form-item label="服务域名">
-                <el-input
-                  v-model="serverDomain"
-                  placeholder="http://example.com:5001"
-                  @blur="onServerDomainBlur"
-                  size="small"
-                >
-                  <template #append>
-                    <el-button @click="resetServerDomain" size="small">
-                      <el-icon><Refresh /></el-icon>
-                    </el-button>
-                  </template>
-                </el-input>
-                <div class="server-domain-hint">
-                  此域名将用于：<br />
-                  • 规则仓库内容 URL<br />
-                  • MosDNS 规则转换接口<br />
-                  • Agent 安装脚本<br />
-                  • 配置订阅 URL
-                </div>
-              </el-form-item>
-              <el-form-item label="Sub-Store">
-                <el-input
-                  v-model="subStoreUrl"
-                  placeholder="http://127.0.0.1:3001"
-                  @blur="onSubStoreUrlBlur"
-                  size="small"
-                  clearable
-                />
-                <div class="server-domain-hint">
-                  Sub-Store 后端 API 地址，用于订阅解析和节点格式转换<br />
-                  Docker 部署时默认为 http://sub-store:3001，留空使用环境变量或默认值
-                </div>
-              </el-form-item>
-              <el-form-item label="订阅聚合">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <el-switch
-                    v-model="subscriptionAggregationEnabled"
-                    @change="onSubscriptionAggregationChange"
-                    size="small"
-                  />
-                </div>
-                <div class="server-domain-hint">
-                  开启后将在节点管理菜单下显示"订阅聚合"功能，可组合订阅和节点
-                </div>
-              </el-form-item>
-              <el-form-item label="令牌">
-                <el-input
-                  v-model="configToken"
-                  placeholder="留空表示不启用令牌保护，可手动输入或点击生成"
-                  size="small"
-                                    clearable
-                  @clear="onClearToken"
-                  @blur="onTokenBlur"
-                >
-                  <template #append>
-                    <el-button @click="generateToken" size="small" title="生成随机令牌">
-                      <el-icon><Refresh /></el-icon>
-                    </el-button>
-                  </template>
-                </el-input>
-                <div class="server-domain-hint">
-                  配置令牌后，外部访问配置 URL 需要添加 ?token=xxx 参数
-                </div>
-              </el-form-item>
-            </el-form>
-          </el-card>
-        </el-col>
-
-        <el-col :xs="24" :sm="12" :md="8">
-          <el-card shadow="hover" class="equal-height-card">
-            <template #header>
-              <h4>配置管理</h4>
-            </template>
-            <el-row :gutter="8">
-              <el-col :xs="24" :sm="12" :md="8" :lg="6">
-                <el-button @click="exportConfig" style="width: 100%" size="small">
-                  <el-icon><Upload /></el-icon>
-                  <span>导出</span>
-                </el-button>
-              </el-col>
-              <el-col :xs="24" :sm="12" :md="8" :lg="6">
-                <el-button @click="exportConfigDesensitized" style="width: 100%" size="small">
-                  <el-icon><Upload /></el-icon>
-                  <span>脱敏</span>
-                </el-button>
-              </el-col>
-              <el-col :xs="24" :sm="12" :md="8" :lg="6">
-                <el-upload
-                  :show-file-list="false"
-                  :before-upload="importConfig"
-                  accept=".json"
-                  style="width: 100%"
-                >
-                  <el-button style="width: 100%" size="small">
-                    <el-icon><Download /></el-icon>
-                    <span>导入</span>
-                  </el-button>
-                </el-upload>
-              </el-col>
-              <el-col :xs="24" :sm="12" :md="12" :lg="6">
-                <el-button @click="handleBackup" style="width: 100%" size="small">
-                  <el-icon><FolderOpened /></el-icon>
-                  <span>备份</span>
-                </el-button>
-              </el-col>
-            </el-row>
-
-            <!-- 重置会清空全部数据，与常规操作分区并降低视觉权重，避免误触 -->
-            <div class="cf-danger-zone">
-              <div class="cf-danger-zone__text">
-                <div class="cf-danger-zone__title">重置配置</div>
-                <div class="cf-danger-zone__desc">恢复默认配置并清空所有数据，不可撤销</div>
-              </div>
-              <el-button @click="resetConfig" type="danger" plain size="small">
-                <el-icon><RefreshLeft /></el-icon>
-                <span>重置</span>
-              </el-button>
-            </div>
-            <p style="margin-top: 12px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.4">
-              导出配置将保存所有订阅、节点、规则和策略组设置。<br/>
-              脱敏导出将隐藏敏感信息。<br/>
-              导入配置将覆盖当前所有设置。<br/>
-              备份将配置自动上传到远程存储（如 WebDAV）。<br/>
-              重置将恢复为默认配置，清空所有数据。
-            </p>
-          </el-card>
-        </el-col>
-      </el-row>
-    </div>
-
-    <!-- 自定义配置对话框 -->
-    <el-dialog
-      v-model="customConfigDialogVisible"
-      :title="getCustomConfigDialogTitle()"
-      width="70%"
-      :close-on-click-modal="false"
-    >
-      <el-alert
-        type="info"
-        :closable="false"
-        style="margin-bottom: 20px"
+    <!-- ===== 三个生成目标 ===== -->
+    <div class="mb-4 grid grid-cols-3 gap-3 max-[1100px]:grid-cols-1">
+      <Motion
+        v-for="(target, index) in targets"
+        :key="target.key"
+        v-bind="listItem(index)"
+        class="hairline edge-light relative flex flex-col gap-3.5 overflow-hidden rounded-xl border border-border/35 bg-card/55 p-5 backdrop-blur-xl transition-all duration-300 hover:shadow-glow-soft max-md:p-4"
       >
-        <p>{{ getCustomConfigDialogDesc() }}</p>
-        <p style="margin-top: 10px">留空则使用默认基础配置。{{ currentConfigType === 'surge' ? '支持 INI 格式语法' : '支持 YAML 语法高亮' }}</p>
-      </el-alert>
-
-      <YamlEditor
-        v-model="customConfigContent"
-        :placeholder="getCustomConfigPlaceholder()"
-      />
-
-      <template #footer>
-        <el-button @click="customConfigDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveCustomConfig" :loading="savingCustomConfig">保存</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 预览配置对话框 -->
-    <el-dialog
-      v-model="previewDialogVisible"
-      :title="getPreviewDialogTitle()"
-      width="80%"
-      :close-on-click-modal="false"
-    >
-      <YamlEditor
-        v-model="previewContent"
-        :readOnly="true"
-      />
-
-      <template #footer>
-        <el-button @click="previewDialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="copyPreviewContent">复制到剪贴板</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- MosDNS 设置对话框 -->
-    <el-dialog
-      v-model="mosdnsSettingsDialogVisible"
-      title="MosDNS 设置"
-      width="700px"
-      :close-on-click-modal="false"
-      class="mosdns-dialog"
-    >
-      <el-tabs v-model="mosdnsActiveTab">
-        <!-- 自定义配置 Tab - 暂时隐藏 -->
-        <!-- <el-tab-pane label="自定义配置" name="custom">
-          <el-alert
-            type="info"
-            :closable="false"
-            style="margin-bottom: 20px"
+        <header class="flex items-center gap-2.5">
+          <span
+            class="relative grid size-9 shrink-0 place-items-center rounded-lg border border-border/50 bg-background/50 text-primary-accent"
           >
-            <p>在此编辑 MosDNS 的基础配置。使用 YAML 格式，主要包含 log、data_providers、plugins、servers 等部分。</p>
-            <p style="margin-top: 10px">留空则使用默认基础配置。注意插件初始化顺序。</p>
-          </el-alert>
+            <span
+              class="absolute inset-0 rounded-lg bg-linear-to-br from-primary/20 to-accent-2/10"
+              aria-hidden="true"
+            />
+            <component :is="target.icon" class="relative size-4.5" :stroke-width="2" aria-hidden="true" />
+          </span>
+          <div class="min-w-0">
+            <p class="m-0 text-[14px] font-semibold text-foreground">{{ target.title }}</p>
+            <p class="mt-0.5 mb-0 text-[12px] text-muted-foreground">{{ target.desc }}</p>
+          </div>
+        </header>
 
-          <YamlEditor
-            v-model="mosdnsCustomConfig"
-            :placeholder="getMosdnsCustomConfigPlaceholder()"
-          />
-        </el-tab-pane> -->
+        <!-- 订阅 URL：只读展示 + 一键复制 -->
+        <div class="flex flex-col gap-1.5">
+          <div class="flex items-center gap-1.5">
+            <Input
+              :model-value="target.urlDisplay"
+              readonly
+              class="h-9 bg-background/50 font-mono text-[11.5px]"
+              placeholder="配置 URL"
+              :aria-label="`${target.title} 配置 URL`"
+            />
+            <Button
+              variant="outline"
+              size="icon"
+              class="size-9 shrink-0 border-border/60 bg-background/40"
+              :title="`复制 ${target.title} 配置 URL`"
+              :aria-label="`复制 ${target.title} 配置 URL`"
+              @click="copyUrl(target.url, target.title)"
+            >
+              <Copy class="size-4" />
+            </Button>
+          </div>
+          <p class="m-0 text-[11.5px] text-muted-foreground">复制后可在客户端中直接订阅此 URL。</p>
+        </div>
 
-        <!-- 规则配置 Tab -->
-        <el-tab-pane label="规则配置" name="rules">
-          <el-alert
-            type="info"
-            :closable="false"
-            style="margin-bottom: 20px"
+        <div class="mt-auto flex flex-wrap items-center gap-1.5">
+          <Button
+            v-for="action in target.actions"
+            :key="action.label"
+            :variant="action.primary ? 'default' : 'outline'"
+            size="sm"
+            :class="action.primary ? 'shadow-glow' : 'border-border/60 bg-background/40'"
+            :disabled="action.loading"
+            @click="action.run"
           >
-            <p>选择哪些规则/规则集使用直连 DNS（国内），哪些使用代理 DNS（国外）</p>
-            <p style="margin-top: 10px">只有选择的规则和规则集会包含在 MosDNS 配置中</p>
-          </el-alert>
+            <Loader2 v-if="action.loading" class="size-3.5 animate-spin" />
+            <component v-else :is="action.icon" class="size-3.5" />
+            {{ action.label }}
+          </Button>
+        </div>
+      </Motion>
+    </div>
 
-          <el-form label-width="120px">
-            <el-divider content-position="left">直连规则配置</el-divider>
-
-            <el-form-item label="直连规则集">
-              <el-select
-                v-model="mosdnsDirectRulesets"
-                multiple
-                filterable
-                placeholder="选择使用国内 DNS 的规则集"
-                style="width: 100%"
+    <!-- ===== 服务配置 / 配置管理 ===== -->
+    <div class="grid grid-cols-2 gap-3 max-[1100px]:grid-cols-1">
+      <SectionCard title="服务配置" :icon="Settings">
+        <div class="flex flex-col gap-4">
+          <FormField
+            label="服务域名"
+            html-for="server-domain"
+            hint="用于规则仓库内容 URL、MosDNS 规则转换接口、Agent 安装脚本与配置订阅 URL。"
+          >
+            <div class="flex items-center gap-1.5">
+              <Input
+                id="server-domain"
+                v-model="serverDomain"
+                class="bg-background/50 font-mono"
+                placeholder="http://example.com:5001"
+                @blur="onServerDomainBlur"
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                class="shrink-0 border-border/60 bg-background/40"
+                title="恢复默认"
+                aria-label="恢复默认服务域名"
+                @click="resetServerDomain"
               >
-                <el-option
-                  v-for="ruleset in availableRuleSets"
-                  :key="ruleset.id"
-                  :label="ruleset.name"
-                  :value="ruleset.id"
-                  :disabled="mosdnsProxyRulesets.includes(ruleset.id)"
-                />
-              </el-select>
-              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-                这些规则集将使用国内 DNS（与代理规则集互斥）
-              </div>
-            </el-form-item>
+                <RefreshCw class="size-4" />
+              </Button>
+            </div>
+          </FormField>
 
-            <el-form-item label="直连规则">
-              <el-select
-                v-model="mosdnsDirectRules"
-                multiple
-                filterable
-                placeholder="选择使用国内 DNS 的规则"
-                style="width: 100%"
+          <FormField
+            label="Sub-Store"
+            html-for="sub-store-url"
+            hint="Sub-Store 后端 API 地址，用于订阅解析和节点格式转换。Docker 部署默认 http://sub-store:3001，留空使用环境变量或默认值。"
+          >
+            <Input
+              id="sub-store-url"
+              v-model="subStoreUrl"
+              class="bg-background/50 font-mono"
+              placeholder="http://127.0.0.1:3001"
+              @blur="onSubStoreUrlBlur"
+            />
+          </FormField>
+
+          <FormField hint="开启后将在资源分组下显示「订阅聚合」，可组合订阅和节点。">
+            <div class="flex items-center gap-2.5">
+              <Switch
+                id="agg-enabled"
+                v-model="subscriptionAggregationEnabled"
+                @update:model-value="value => onSubscriptionAggregationChange(Boolean(value))"
+              />
+              <Label for="agg-enabled" class="text-[13px] text-muted-foreground">订阅聚合</Label>
+            </div>
+          </FormField>
+
+          <FormField
+            label="令牌"
+            html-for="config-token"
+            hint="配置令牌后，外部访问配置 URL 需要添加 ?token=xxx 参数；留空表示不启用令牌保护。"
+          >
+            <div class="flex items-center gap-1.5">
+              <Input
+                id="config-token"
+                v-model="configToken"
+                class="bg-background/50 font-mono"
+                placeholder="可手动输入或点击生成"
+                @blur="onTokenBlur"
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                class="shrink-0 border-border/60 bg-background/40"
+                title="生成随机令牌"
+                aria-label="生成随机令牌"
+                @click="generateToken"
               >
-                <el-option
-                  v-for="rule in availableRules"
-                  :key="rule.id"
-                  :label="`${rule.rule_type}: ${rule.value} → ${rule.policy}`"
-                  :value="rule.id"
-                  :disabled="mosdnsProxyRules.includes(rule.id)"
+                <RefreshCw class="size-4" />
+              </Button>
+            </div>
+          </FormField>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="配置管理" :icon="Archive">
+        <div class="flex flex-col gap-4">
+          <div class="grid grid-cols-2 gap-2 max-[480px]:grid-cols-1">
+            <Button variant="outline" class="border-border/60 bg-background/40" @click="exportConfig">
+              <Upload class="size-4" />
+              导出
+            </Button>
+            <Button
+              variant="outline"
+              class="border-border/60 bg-background/40"
+              @click="exportConfigDesensitized"
+            >
+              <ShieldCheck class="size-4" />
+              脱敏导出
+            </Button>
+            <Button variant="outline" class="border-border/60 bg-background/40" @click="pickImportFile">
+              <Download class="size-4" />
+              导入
+            </Button>
+            <Button variant="outline" class="border-border/60 bg-background/40" @click="handleBackup">
+              <CloudUpload class="size-4" />
+              备份
+            </Button>
+            <input
+              ref="importInput"
+              type="file"
+              accept=".json"
+              hidden
+              @change="onImportFileChange"
+            />
+          </div>
+
+          <p class="m-0 text-[12px] leading-relaxed text-muted-foreground">
+            导出保存所有订阅、节点、规则和策略组设置；脱敏导出会隐藏敏感信息；导入将覆盖当前所有设置；备份会把配置上传到远程存储（如 WebDAV）。
+          </p>
+
+          <!-- 重置会清空全部数据，与常规操作分区并降低视觉权重，避免误触 -->
+          <div
+            class="mt-auto flex flex-wrap items-center gap-3 rounded-lg border border-destructive-accent/25 bg-destructive-soft/30 p-3"
+          >
+            <div class="min-w-0 flex-1">
+              <p class="m-0 text-[13px] font-semibold text-destructive-accent">重置配置</p>
+              <p class="mt-0.5 mb-0 text-[12px] text-muted-foreground">
+                恢复默认配置并清空所有数据，不可撤销。
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              class="shrink-0 border-destructive-accent/40 bg-transparent text-destructive-accent"
+              @click="resetConfig"
+            >
+              <RotateCcw class="size-3.5" />
+              重置
+            </Button>
+          </div>
+        </div>
+      </SectionCard>
+    </div>
+
+    <!-- ===== 自定义基础配置 ===== -->
+    <Dialog v-model:open="customConfigDialogVisible">
+      <DialogContent class="glass-strong hairline max-w-[900px] border-border/50">
+        <DialogHeader>
+          <DialogTitle>{{ getCustomConfigDialogTitle() }}</DialogTitle>
+          <DialogDescription>
+            {{ getCustomConfigDialogDesc() }}
+            留空则使用默认基础配置，{{ currentConfigType === 'surge' ? '支持 INI 格式语法' : '支持 YAML 语法高亮' }}。
+          </DialogDescription>
+        </DialogHeader>
+
+        <YamlEditor v-model="customConfigContent" :placeholder="getCustomConfigPlaceholder()" />
+
+        <DialogFooter>
+          <Button variant="outline" @click="customConfigDialogVisible = false">取消</Button>
+          <Button :disabled="savingCustomConfig" @click="saveCustomConfig">
+            <Loader2 v-if="savingCustomConfig" class="size-4 animate-spin" />
+            保存
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- ===== 配置预览 ===== -->
+    <Dialog v-model:open="previewDialogVisible">
+      <DialogContent class="glass-strong hairline max-w-[1000px] border-border/50">
+        <DialogHeader>
+          <DialogTitle>{{ getPreviewDialogTitle() }}</DialogTitle>
+          <DialogDescription>只读预览，可整段复制到剪贴板。</DialogDescription>
+        </DialogHeader>
+
+        <YamlEditor v-model="previewContent" :read-only="true" />
+
+        <DialogFooter>
+          <Button variant="outline" @click="previewDialogVisible = false">关闭</Button>
+          <Button @click="copyPreviewContent">
+            <Copy class="size-4" />
+            复制到剪贴板
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- ===== MosDNS 设置 ===== -->
+    <Dialog v-model:open="mosdnsSettingsDialogVisible">
+      <DialogContent class="glass-strong hairline max-w-[760px] border-border/50">
+        <DialogHeader>
+          <DialogTitle>MosDNS 设置</DialogTitle>
+          <DialogDescription>规则分流、缓存、DNS 服务器与日志等生成参数。</DialogDescription>
+        </DialogHeader>
+
+        <Tabs v-model="mosdnsActiveTab" class="min-w-0">
+          <TabsList class="w-full justify-start overflow-x-auto bg-background/50">
+            <TabsTrigger value="rules" class="text-xs">规则配置</TabsTrigger>
+            <TabsTrigger value="cache" class="text-xs">缓存</TabsTrigger>
+            <TabsTrigger value="dns" class="text-xs">DNS 服务器</TabsTrigger>
+            <TabsTrigger value="default" class="text-xs">默认转发</TabsTrigger>
+            <TabsTrigger value="hosts" class="text-xs">自定义 Host</TabsTrigger>
+            <TabsTrigger value="log" class="text-xs">日志</TabsTrigger>
+            <TabsTrigger value="api" class="text-xs">API</TabsTrigger>
+          </TabsList>
+
+          <!-- 规则配置 -->
+          <TabsContent value="rules" class="max-h-[56dvh] overflow-y-auto pr-1">
+            <div class="flex flex-col gap-4">
+              <InfoNote>
+                <p>选择哪些规则 / 规则集使用直连 DNS（国内），哪些使用代理 DNS（国外）。</p>
+                <p>只有被选择的规则和规则集会包含在 MosDNS 配置中。</p>
+              </InfoNote>
+
+              <LabeledDivider label="直连规则配置" />
+
+              <FormField label="直连规则集" hint="这些规则集将使用国内 DNS（与代理规则集互斥）。">
+                <MultiSelect
+                  v-model="mosdnsDirectRulesets"
+                  :options="directRulesetOptions"
+                  placeholder="选择使用国内 DNS 的规则集"
                 />
-              </el-select>
-              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-                这些单条规则将使用国内 DNS（与代理规则互斥）
-              </div>
-            </el-form-item>
+              </FormField>
 
-            <el-divider content-position="left">代理规则配置</el-divider>
-
-            <el-form-item label="代理规则集">
-              <el-select
-                v-model="mosdnsProxyRulesets"
-                multiple
-                filterable
-                placeholder="选择使用国外 DNS 的规则集"
-                style="width: 100%"
-              >
-                <el-option
-                  v-for="ruleset in availableRuleSets"
-                  :key="ruleset.id"
-                  :label="ruleset.name"
-                  :value="ruleset.id"
-                  :disabled="mosdnsDirectRulesets.includes(ruleset.id)"
+              <FormField label="直连规则" hint="这些单条规则将使用国内 DNS（与代理规则互斥）。">
+                <MultiSelect
+                  v-model="mosdnsDirectRules"
+                  :options="directRuleOptions"
+                  placeholder="选择使用国内 DNS 的规则"
                 />
-              </el-select>
-              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-                这些规则集将使用国外 DNS（与直连规则集互斥）
-              </div>
-            </el-form-item>
+              </FormField>
 
-            <el-form-item label="代理规则">
-              <el-select
-                v-model="mosdnsProxyRules"
-                multiple
-                filterable
-                placeholder="选择使用国外 DNS 的规则"
-                style="width: 100%"
-              >
-                <el-option
-                  v-for="rule in availableRules"
-                  :key="rule.id"
-                  :label="`${rule.rule_type}: ${rule.value} → ${rule.policy}`"
-                  :value="rule.id"
-                  :disabled="mosdnsDirectRules.includes(rule.id)"
+              <LabeledDivider label="代理规则配置" />
+
+              <FormField label="代理规则集" hint="这些规则集将使用国外 DNS（与直连规则集互斥）。">
+                <MultiSelect
+                  v-model="mosdnsProxyRulesets"
+                  :options="proxyRulesetOptions"
+                  placeholder="选择使用国外 DNS 的规则集"
                 />
-              </el-select>
-              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-                这些单条规则将使用国外 DNS（与直连规则互斥）
-              </div>
-            </el-form-item>
+              </FormField>
 
-            <el-divider content-position="left">自定义 Match</el-divider>
+              <FormField label="代理规则" hint="这些单条规则将使用国外 DNS（与直连规则互斥）。">
+                <MultiSelect
+                  v-model="mosdnsProxyRules"
+                  :options="proxyRuleOptions"
+                  placeholder="选择使用国外 DNS 的规则"
+                />
+              </FormField>
 
-            <el-form-item label="插入位置">
-              <div style="width: 100%">
-                <el-select v-model="mosdnsCustomMatchPosition" style="width: 100%">
-                  <el-option label="优先匹配（在规则匹配之前执行）" value="head" />
-                  <el-option label="尾部匹配（在规则匹配之后执行）" value="tail" />
-                </el-select>
-                <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-                  选择自定义 match 在自动生成的规则匹配之前或之后执行
+              <LabeledDivider label="自定义 Match" />
+
+              <FormField label="插入位置" hint="选择自定义 match 在自动生成的规则匹配之前或之后执行。">
+                <Select v-model="mosdnsCustomMatchPosition">
+                  <SelectTrigger class="w-full bg-background/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent class="glass-strong">
+                    <SelectItem value="head">优先匹配（在规则匹配之前执行）</SelectItem>
+                    <SelectItem value="tail">尾部匹配（在规则匹配之后执行）</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormField>
+
+              <div class="flex flex-col gap-2">
+                <div class="flex items-center gap-2">
+                  <Label class="flex-1">自定义 Match</Label>
+                  <Button variant="outline" size="sm" class="border-border/60 bg-background/40" @click="addMosdnsCustomMatch">
+                    <Plus class="size-3.5" />
+                    添加匹配项
+                  </Button>
                 </div>
-              </div>
-            </el-form-item>
 
-            <el-form-item label="自定义 Match">
-              <div style="width: 100%">
-                <el-button
-                  type="primary"
-                  size="small"
-                  @click="addMosdnsCustomMatch"
-                  style="margin-bottom: 12px"
-                >
-                  添加匹配项
-                </el-button>
-
-                <div
+                <p
                   v-if="mosdnsCustomMatches.length === 0"
-                  style="color: var(--cf-fg-2); font-size: 12px; padding: 12px; background: var(--cf-s2); border-radius: 4px"
+                  class="m-0 rounded-lg border border-border/50 bg-background/40 px-3 py-3 text-[12px] text-muted-foreground"
                 >
-                  暂无自定义 match，可点击上方按钮添加
-                </div>
+                  暂无自定义 match，可点击上方按钮添加。
+                </p>
 
                 <div
                   v-for="(item, index) in mosdnsCustomMatches"
                   :key="item.id"
-                  class="custom-match-card"
+                  class="flex flex-col gap-3 rounded-lg border border-border/50 bg-background/40 p-3"
                 >
-                  <div class="custom-match-header">
-                    <div class="custom-match-title">
-                      <span>匹配项 {{ index + 1 }}</span>
-                      <el-switch v-model="item.enabled" size="small" active-text="启用" inactive-text="禁用" />
-                    </div>
-                    <div class="custom-match-actions">
-                      <el-button-group>
-                        <el-button
-                          size="small"
-                          @click="moveMosdnsCustomMatch(index, 'up')"
-                          :disabled="index === 0"
-                        >
-                          上移
-                        </el-button>
-                        <el-button
-                          size="small"
-                          @click="moveMosdnsCustomMatch(index, 'down')"
-                          :disabled="index === mosdnsCustomMatches.length - 1"
-                        >
-                          下移
-                        </el-button>
-                      </el-button-group>
-                      <el-button
-                        size="small"
-                        type="danger"
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-[12.5px] font-semibold text-foreground">匹配项 {{ index + 1 }}</span>
+                    <Switch v-model="item.enabled" />
+                    <span class="text-[11.5px] text-muted-foreground">
+                      {{ item.enabled ? '启用' : '禁用' }}
+                    </span>
+                    <div class="ml-auto flex items-center gap-0.5">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        title="上移"
+                        aria-label="上移"
+                        :disabled="index === 0"
+                        @click="moveMosdnsCustomMatch(index, 'up')"
+                      >
+                        <ChevronUp class="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        title="下移"
+                        aria-label="下移"
+                        :disabled="index === mosdnsCustomMatches.length - 1"
+                        @click="moveMosdnsCustomMatch(index, 'down')"
+                      >
+                        <ChevronDown class="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        class="text-destructive-accent hover:bg-destructive-soft"
+                        title="删除"
+                        aria-label="删除匹配项"
                         @click="removeMosdnsCustomMatch(item.id)"
                       >
-                        删除
-                      </el-button>
+                        <Trash2 class="size-4" />
+                      </Button>
                     </div>
                   </div>
 
-                  <div class="custom-match-body">
-                    <div class="custom-match-field">
-                      <div class="custom-match-label">匹配条件</div>
-                      <el-input
-                        v-model="item.matchesText"
-                        type="textarea"
-                        :rows="3"
-                        placeholder="每行一个 match 表达式，例如：\nqname $自定义规则集\nresp_ip $国内IP段"
-                      />
-                      <div class="custom-match-hint">
-                        支持 MosDNS `sequence` 的 matches 格式，自动忽略空行
-                      </div>
-                    </div>
-
-                    <div class="custom-match-field">
-                      <div class="custom-match-label">执行动作</div>
-                      <el-input
-                        v-model="item.exec"
-                        placeholder="例如 goto china_dns 或 $proxy_dns"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
-
-        <!-- 缓存设置 Tab -->
-        <el-tab-pane label="缓存" name="cache">
-          <el-alert
-            type="info"
-            :closable="false"
-            style="margin-bottom: 20px"
-          >
-            <p>配置 MosDNS 缓存（lazy cache），用于加速重复解析</p>
-            <p style="margin-top: 10px">关闭后会从生成配置中移除 cache 插件，并且不再在国内 DNS 序列中执行缓存</p>
-          </el-alert>
-
-          <el-form label-width="120px">
-            <el-form-item label="启用缓存">
-              <div>
-                <el-switch v-model="mosdnsCacheEnabled" />
-                <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.5;">
-                  关闭后会完全移除 `tag: lazy_cache` 相关配置
-                </div>
-              </div>
-            </el-form-item>
-
-            <el-form-item label="size" v-if="mosdnsCacheEnabled">
-              <el-input-number
-                v-model="mosdnsCacheSize"
-                :min="1"
-                :max="2000000"
-                :step="256"
-                controls-position="right"
-              />
-              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-                缓存条目数量（建议 10240 起）
-              </div>
-            </el-form-item>
-
-            <el-form-item label="lazy_cache_ttl" v-if="mosdnsCacheEnabled">
-              <el-input-number
-                v-model="mosdnsCacheLazyTtl"
-                :min="0"
-                :max="31536000"
-                :step="60"
-                controls-position="right"
-              />
-              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-                缓存过期后的延迟删除时间（秒）
-              </div>
-            </el-form-item>
-
-            <el-form-item label="持久化缓存" v-if="mosdnsCacheEnabled">
-              <el-switch v-model="mosdnsCacheDumpEnabled" />
-            </el-form-item>
-
-            <el-form-item label="dump_file" v-if="mosdnsCacheEnabled && mosdnsCacheDumpEnabled">
-              <el-input
-                v-model="mosdnsCacheDumpFile"
-                placeholder="./cache.dump"
-              />
-              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-                缓存持久化文件路径（相对于 MosDNS 配置目录）
-              </div>
-            </el-form-item>
-
-            <el-form-item label="dump_interval" v-if="mosdnsCacheEnabled && mosdnsCacheDumpEnabled">
-              <el-input-number
-                v-model="mosdnsCacheDumpInterval"
-                :min="1"
-                :max="86400"
-                :step="10"
-                controls-position="right"
-              />
-              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-                缓存保存间隔（秒）
-              </div>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
-
-        <!-- DNS 服务器配置 Tab -->
-        <el-tab-pane label="DNS 服务器" name="dns">
-          <el-alert
-            type="info"
-            :closable="false"
-            style="margin-bottom: 20px"
-          >
-            <p>配置国内和国外的 DNS 服务器地址</p>
-            <p style="margin-top: 10px">支持 UDP、TCP、DoH、DoT 等多种协议格式，每个条目可使用简单模式或 YAML 模式</p>
-          </el-alert>
-
-          <el-form label-width="120px">
-            <!-- 国内 DNS -->
-            <el-form-item label="国内 DNS">
-              <div style="width: 100%">
-                <el-button
-                  type="primary"
-                  size="small"
-                  @click="addDnsEntry('local')"
-                  style="margin-bottom: 12px"
-                >
-                  添加 DNS 条目
-                </el-button>
-
-                <div v-if="mosdnsLocalDnsEntries.length === 0" style="color: var(--cf-fg-2); font-size: 12px; padding: 12px; background: var(--cf-s2); border-radius: 4px">
-                  暂无 DNS 条目，点击上方按钮添加
-                </div>
-
-                <div ref="localDnsListRef">
-                  <div v-for="(entry, index) in mosdnsLocalDnsEntries" :key="entry.id" class="dns-entry-card">
-                  <div class="dns-entry-header">
-                    <div class="dns-entry-left">
-                      <el-icon class="drag-handle" :size="16" title="拖拽调整顺序">
-                        <DCaret />
-                      </el-icon>
-                      <span class="dns-entry-index">条目 {{ index + 1 }}</span>
-                    </div>
-                    <div class="dns-entry-actions">
-                      <el-button
-                        size="small"
-                        @click="toggleDnsEntryMode('local', entry.id)"
-                      >
-                        {{ entry.mode === 'simple' ? '切换到 YAML' : '切换到简单模式' }}
-                      </el-button>
-                      <el-button
-                        size="small"
-                        type="danger"
-                        @click="removeDnsEntry('local', entry.id)"
-                      >
-                        删除
-                      </el-button>
-                    </div>
-                  </div>
-
-                  <!-- 简单模式 -->
-                  <div v-if="entry.mode === 'simple'" class="dns-entry-content">
-                    <el-form-item label="地址" label-width="80px" style="margin-bottom: 12px">
-                      <el-input
-                        v-model="entry.addr"
-                        placeholder="https://dns.alidns.com/dns-query 或 223.5.5.5"
-                        size="small"
-                      />
-                    </el-form-item>
-                    <el-form-item label="Bootstrap" label-width="80px" style="margin-bottom: 12px">
-                      <el-input
-                        v-model="entry.bootstrap"
-                        placeholder="223.5.5.5（可选）"
-                        size="small"
-                        :disabled="!isDomainAddr(entry.addr)"
-                      />
-                      <div v-if="!isDomainAddr(entry.addr) && entry.addr" style="margin-top: 4px; color: var(--cf-fg-2); font-size: 11px">
-                        仅域名地址或 DoH/DoT 地址需要 Bootstrap
-                      </div>
-                    </el-form-item>
-                    <el-form-item label="Pipeline" label-width="80px" style="margin-bottom: 0">
-                      <el-checkbox v-model="entry.enable_pipeline">启用 Pipeline</el-checkbox>
-                    </el-form-item>
-                  </div>
-
-                  <!-- YAML 模式 -->
-                  <div v-else class="dns-entry-content">
-                    <el-input
-                      v-model="entry.yaml_config"
-                      type="textarea"
-                      :rows="4"
-                      placeholder="- addr: 192.168.1.1:53&#10;  bootstrap: 223.5.5.5&#10;  enable_pipeline: false"
-                      size="small"
-                      @input="validateYaml(entry)"
-                      :class="{ 'yaml-error': entry.yaml_error }"
+                  <FormField label="匹配条件" hint="支持 MosDNS sequence 的 matches 格式，自动忽略空行。">
+                    <Textarea
+                      v-model="item.matchesText"
+                      class="bg-background/50 font-mono text-[12px]"
+                      :rows="3"
+                      placeholder="每行一个 match 表达式，例如 qname $自定义规则集"
                     />
-                    <div v-if="entry.yaml_error" class="yaml-error-message">
-                      {{ entry.yaml_error }}
-                    </div>
-                    <div v-else-if="entry.yaml_config && entry.yaml_config.trim()" class="yaml-success-message">
-                      ✓ YAML 语法正确
-                    </div>
-                  </div>
-                  </div>
-                </div>
+                  </FormField>
 
-                <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-                  直连规则使用的 DNS 服务器
-                </div>
-              </div>
-            </el-form-item>
-
-            <!-- 国外 DNS -->
-            <el-form-item label="国外 DNS">
-              <div style="width: 100%">
-                <el-button
-                  type="primary"
-                  size="small"
-                  @click="addDnsEntry('remote')"
-                  style="margin-bottom: 12px"
-                >
-                  添加 DNS 条目
-                </el-button>
-
-                <div v-if="mosdnsRemoteDnsEntries.length === 0" style="color: var(--cf-fg-2); font-size: 12px; padding: 12px; background: var(--cf-s2); border-radius: 4px">
-                  暂无 DNS 条目，点击上方按钮添加
-                </div>
-
-                <div ref="remoteDnsListRef">
-                  <div v-for="(entry, index) in mosdnsRemoteDnsEntries" :key="entry.id" class="dns-entry-card">
-                  <div class="dns-entry-header">
-                    <div class="dns-entry-left">
-                      <el-icon class="drag-handle" :size="16" title="拖拽调整顺序">
-                        <DCaret />
-                      </el-icon>
-                      <span class="dns-entry-index">条目 {{ index + 1 }}</span>
-                    </div>
-                    <div class="dns-entry-actions">
-                      <el-button
-                        size="small"
-                        @click="toggleDnsEntryMode('remote', entry.id)"
-                      >
-                        {{ entry.mode === 'simple' ? '切换到 YAML' : '切换到简单模式' }}
-                      </el-button>
-                      <el-button
-                        size="small"
-                        type="danger"
-                        @click="removeDnsEntry('remote', entry.id)"
-                      >
-                        删除
-                      </el-button>
-                    </div>
-                  </div>
-
-                  <!-- 简单模式 -->
-                  <div v-if="entry.mode === 'simple'" class="dns-entry-content">
-                    <el-form-item label="地址" label-width="80px" style="margin-bottom: 12px">
-                      <el-input
-                        v-model="entry.addr"
-                        placeholder="https://1.1.1.1/dns-query 或 1.1.1.1"
-                        size="small"
-                      />
-                    </el-form-item>
-                    <el-form-item label="Bootstrap" label-width="80px" style="margin-bottom: 12px">
-                      <el-input
-                        v-model="entry.bootstrap"
-                        placeholder="223.5.5.5（可选）"
-                        size="small"
-                        :disabled="!isDomainAddr(entry.addr)"
-                      />
-                      <div v-if="!isDomainAddr(entry.addr) && entry.addr" style="margin-top: 4px; color: var(--cf-fg-2); font-size: 11px">
-                        仅域名地址或 DoH/DoT 地址需要 Bootstrap
-                      </div>
-                    </el-form-item>
-                    <el-form-item label="Pipeline" label-width="80px" style="margin-bottom: 0">
-                      <el-checkbox v-model="entry.enable_pipeline">启用 Pipeline</el-checkbox>
-                    </el-form-item>
-                  </div>
-
-                  <!-- YAML 模式 -->
-                  <div v-else class="dns-entry-content">
-                    <el-input
-                      v-model="entry.yaml_config"
-                      type="textarea"
-                      :rows="4"
-                      placeholder="- addr: https://1.1.1.1/dns-query&#10;  bootstrap: 223.5.5.5&#10;  enable_pipeline: true"
-                      size="small"
-                      @input="validateYaml(entry)"
-                      :class="{ 'yaml-error': entry.yaml_error }"
+                  <FormField label="执行动作">
+                    <Input
+                      v-model="item.exec"
+                      class="bg-background/50 font-mono"
+                      placeholder="例如 goto china_dns 或 $proxy_dns"
                     />
-                    <div v-if="entry.yaml_error" class="yaml-error-message">
-                      {{ entry.yaml_error }}
-                    </div>
-                    <div v-else-if="entry.yaml_config && entry.yaml_config.trim()" class="yaml-success-message">
-                      ✓ YAML 语法正确
-                    </div>
-                  </div>
-                  </div>
-                </div>
-
-                <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-                  代理规则使用的主 DNS 服务器
+                  </FormField>
                 </div>
               </div>
-            </el-form-item>
+            </div>
+          </TabsContent>
 
-            <!-- Fallback DNS -->
-            <el-form-item label="Fallback DNS">
-              <div style="width: 100%">
-                <el-button
-                  type="primary"
-                  size="small"
-                  @click="addDnsEntry('fallback')"
-                  style="margin-bottom: 12px"
-                >
-                  添加 DNS 条目
-                </el-button>
+          <!-- 缓存 -->
+          <TabsContent value="cache" class="max-h-[56dvh] overflow-y-auto pr-1">
+            <div class="flex flex-col gap-4">
+              <InfoNote>
+                <p>配置 MosDNS 缓存（lazy cache），用于加速重复解析。</p>
+                <p>关闭后会从生成配置中移除 cache 插件，并且不再在国内 DNS 序列中执行缓存。</p>
+              </InfoNote>
 
-                <div v-if="mosdnsFallbackDnsEntries.length === 0" style="color: var(--cf-fg-2); font-size: 12px; padding: 12px; background: var(--cf-s2); border-radius: 4px">
-                  暂无 DNS 条目，点击上方按钮添加（留空则使用国内 DNS）
+              <FormField hint="关闭后会完全移除 tag: lazy_cache 相关配置。">
+                <div class="flex items-center gap-2.5">
+                  <Switch id="cache-enabled" v-model="mosdnsCacheEnabled" />
+                  <Label for="cache-enabled" class="text-[13px] text-muted-foreground">启用缓存</Label>
                 </div>
+              </FormField>
 
-                <div ref="fallbackDnsListRef">
-                  <div v-for="(entry, index) in mosdnsFallbackDnsEntries" :key="entry.id" class="dns-entry-card">
-                  <div class="dns-entry-header">
-                    <div class="dns-entry-left">
-                      <el-icon class="drag-handle" :size="16" title="拖拽调整顺序">
-                        <DCaret />
-                      </el-icon>
-                      <span class="dns-entry-index">条目 {{ index + 1 }}</span>
-                    </div>
-                    <div class="dns-entry-actions">
-                      <el-button
-                        size="small"
-                        @click="toggleDnsEntryMode('fallback', entry.id)"
-                      >
-                        {{ entry.mode === 'simple' ? '切换到 YAML' : '切换到简单模式' }}
-                      </el-button>
-                      <el-button
-                        size="small"
-                        type="danger"
-                        @click="removeDnsEntry('fallback', entry.id)"
-                      >
-                        删除
-                      </el-button>
-                    </div>
+              <template v-if="mosdnsCacheEnabled">
+                <FormField label="size" html-for="cache-size" hint="缓存条目数量（建议 10240 起）。">
+                  <Input
+                    id="cache-size"
+                    v-model.number="mosdnsCacheSize"
+                    type="number"
+                    :min="1"
+                    :max="2000000"
+                    :step="256"
+                    class="w-48 bg-background/50"
+                  />
+                </FormField>
+
+                <FormField label="lazy_cache_ttl" html-for="cache-ttl" hint="缓存过期后的延迟删除时间（秒）。">
+                  <Input
+                    id="cache-ttl"
+                    v-model.number="mosdnsCacheLazyTtl"
+                    type="number"
+                    :min="0"
+                    :max="31536000"
+                    :step="60"
+                    class="w-48 bg-background/50"
+                  />
+                </FormField>
+
+                <FormField>
+                  <div class="flex items-center gap-2.5">
+                    <Switch id="cache-dump" v-model="mosdnsCacheDumpEnabled" />
+                    <Label for="cache-dump" class="text-[13px] text-muted-foreground">持久化缓存</Label>
                   </div>
+                </FormField>
 
-                  <!-- 简单模式 -->
-                  <div v-if="entry.mode === 'simple'" class="dns-entry-content">
-                    <el-form-item label="地址" label-width="80px" style="margin-bottom: 12px">
-                      <el-input
-                        v-model="entry.addr"
-                        placeholder="https://dns.alidns.com/dns-query 或 223.5.5.5"
-                        size="small"
-                      />
-                    </el-form-item>
-                    <el-form-item label="Bootstrap" label-width="80px" style="margin-bottom: 12px">
-                      <el-input
-                        v-model="entry.bootstrap"
-                        placeholder="223.5.5.5（可选）"
-                        size="small"
-                        :disabled="!isDomainAddr(entry.addr)"
-                      />
-                      <div v-if="!isDomainAddr(entry.addr) && entry.addr" style="margin-top: 4px; color: var(--cf-fg-2); font-size: 11px">
-                        仅域名地址或 DoH/DoT 地址需要 Bootstrap
-                      </div>
-                    </el-form-item>
-                    <el-form-item label="Pipeline" label-width="80px" style="margin-bottom: 0">
-                      <el-checkbox v-model="entry.enable_pipeline">启用 Pipeline</el-checkbox>
-                    </el-form-item>
-                  </div>
-
-                  <!-- YAML 模式 -->
-                  <div v-else class="dns-entry-content">
-                    <el-input
-                      v-model="entry.yaml_config"
-                      type="textarea"
-                      :rows="4"
-                      placeholder="- addr: 192.168.1.1:53&#10;  bootstrap: 223.5.5.5&#10;  enable_pipeline: false"
-                      size="small"
-                      @input="validateYaml(entry)"
-                      :class="{ 'yaml-error': entry.yaml_error }"
+                <template v-if="mosdnsCacheDumpEnabled">
+                  <FormField
+                    label="dump_file"
+                    html-for="cache-dump-file"
+                    hint="缓存持久化文件路径（相对于 MosDNS 配置目录）。"
+                  >
+                    <Input
+                      id="cache-dump-file"
+                      v-model="mosdnsCacheDumpFile"
+                      class="bg-background/50 font-mono"
+                      placeholder="./cache.dump"
                     />
-                    <div v-if="entry.yaml_error" class="yaml-error-message">
-                      {{ entry.yaml_error }}
+                  </FormField>
+
+                  <FormField label="dump_interval" html-for="cache-dump-interval" hint="缓存保存间隔（秒）。">
+                    <Input
+                      id="cache-dump-interval"
+                      v-model.number="mosdnsCacheDumpInterval"
+                      type="number"
+                      :min="1"
+                      :max="86400"
+                      :step="10"
+                      class="w-48 bg-background/50"
+                    />
+                  </FormField>
+                </template>
+              </template>
+            </div>
+          </TabsContent>
+
+          <!-- DNS 服务器 -->
+          <TabsContent value="dns" class="max-h-[56dvh] overflow-y-auto pr-1">
+            <div class="flex flex-col gap-5">
+              <InfoNote>
+                <p>配置国内和国外的 DNS 服务器地址。</p>
+                <p>支持 UDP、TCP、DoH、DoT 等协议格式，每个条目可使用简单模式或 YAML 模式。</p>
+              </InfoNote>
+
+              <section v-for="group in dnsGroups" :key="group.kind" class="flex flex-col gap-2">
+                <div class="flex items-center gap-2">
+                  <Label class="flex-1">{{ group.label }}</Label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    class="border-border/60 bg-background/40"
+                    @click="addDnsEntry(group.kind)"
+                  >
+                    <Plus class="size-3.5" />
+                    添加条目
+                  </Button>
+                </div>
+
+                <p
+                  v-if="group.entries.length === 0"
+                  class="m-0 rounded-lg border border-border/50 bg-background/40 px-3 py-3 text-[12px] text-muted-foreground"
+                >
+                  {{ group.emptyText }}
+                </p>
+
+                <div :ref="group.listRef" class="flex flex-col gap-2">
+                  <div
+                    v-for="(entry, index) in group.entries"
+                    :key="entry.id"
+                    class="flex flex-col gap-3 rounded-lg border border-border/50 bg-background/40 p-3"
+                  >
+                    <div class="flex items-center gap-2">
+                      <GripVertical
+                        class="drag-handle size-3.5 shrink-0 cursor-grab text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                      <span class="text-[12.5px] font-semibold text-foreground">条目 {{ index + 1 }}</span>
+                      <div class="ml-auto flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          @click="toggleDnsEntryMode(group.kind, entry.id)"
+                        >
+                          {{ entry.mode === 'simple' ? '切换到 YAML' : '切换到简单模式' }}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          class="text-destructive-accent hover:bg-destructive-soft"
+                          title="删除"
+                          aria-label="删除条目"
+                          @click="removeDnsEntry(group.kind, entry.id)"
+                        >
+                          <Trash2 class="size-4" />
+                        </Button>
+                      </div>
                     </div>
-                    <div v-else-if="entry.yaml_config && entry.yaml_config.trim()" class="yaml-success-message">
-                      ✓ YAML 语法正确
-                    </div>
-                  </div>
+
+                    <template v-if="entry.mode === 'simple'">
+                      <FormField label="地址">
+                        <Input
+                          v-model="entry.addr"
+                          class="bg-background/50 font-mono text-[12px]"
+                          :placeholder="group.addrPlaceholder"
+                        />
+                      </FormField>
+                      <FormField
+                        label="Bootstrap"
+                        :hint="!isDomainAddr(entry.addr) && entry.addr ? '仅域名地址或 DoH/DoT 地址需要 Bootstrap' : ''"
+                      >
+                        <Input
+                          v-model="entry.bootstrap"
+                          class="bg-background/50 font-mono text-[12px]"
+                          placeholder="223.5.5.5（可选）"
+                          :disabled="!isDomainAddr(entry.addr)"
+                        />
+                      </FormField>
+                      <label class="flex cursor-pointer items-center gap-2 text-[13px] text-muted-foreground">
+                        <Checkbox v-model="entry.enable_pipeline" />
+                        启用 Pipeline
+                      </label>
+                    </template>
+
+                    <template v-else>
+                      <Textarea
+                        v-model="entry.yaml_config"
+                        class="bg-background/50 font-mono text-[12px]"
+                        :class="entry.yaml_error && 'border-destructive-accent/60'"
+                        :rows="4"
+                        placeholder="- addr: 192.168.1.1:53&#10;  bootstrap: 223.5.5.5&#10;  enable_pipeline: false"
+                        @input="validateYaml(entry)"
+                      />
+                      <p v-if="entry.yaml_error" class="m-0 text-[12px] text-destructive-accent">
+                        {{ entry.yaml_error }}
+                      </p>
+                      <p
+                        v-else-if="entry.yaml_config && entry.yaml_config.trim()"
+                        class="m-0 text-[12px] text-success-accent"
+                      >
+                        YAML 语法正确
+                      </p>
+                    </template>
                   </div>
                 </div>
 
-                <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-                  当国外 DNS 超时时使用的备用 DNS 服务器，留空则复用国内 DNS 配置
-                </div>
-              </div>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
+                <p class="m-0 text-[12px] text-muted-foreground">{{ group.hint }}</p>
+              </section>
+            </div>
+          </TabsContent>
 
-        <!-- 默认转发配置 Tab -->
-        <el-tab-pane label="默认转发" name="default">
-          <el-alert
-            type="info"
-            :closable="false"
-            style="margin-bottom: 20px"
-          >
-            <p>当所有规则都不匹配时，使用的默认 DNS 服务器</p>
-            <p style="margin-top: 10px">推荐使用"国外 DNS"以避免污染</p>
-          </el-alert>
+          <!-- 默认转发 -->
+          <TabsContent value="default" class="max-h-[56dvh] overflow-y-auto pr-1">
+            <div class="flex flex-col gap-4">
+              <InfoNote>
+                <p>当所有规则都不匹配时，使用的默认 DNS 服务器。</p>
+                <p>推荐使用「国外 DNS」以避免污染。</p>
+              </InfoNote>
 
-          <el-form label-width="120px">
-            <el-form-item label="默认转发">
-              <el-radio-group v-model="mosdnsDefaultForward">
-                <el-radio value="forward_remote">
-                  <span style="font-weight: 500">国外 DNS</span>
-                  <span style="margin-left: 8px; color: var(--cf-fg-2); font-size: 12px">
-                    (推荐) 使用国外 DNS 服务器，避免 DNS 污染
+              <RadioGroup v-model="mosdnsDefaultForward" class="flex flex-col gap-2">
+                <label
+                  v-for="option in DEFAULT_FORWARD_OPTIONS"
+                  :key="option.value"
+                  :class="[
+                    'flex cursor-pointer items-start gap-2.5 rounded-lg border px-3.5 py-3 transition-colors',
+                    mosdnsDefaultForward === option.value
+                      ? 'border-primary-accent/40 bg-primary-soft/50'
+                      : 'border-border/50 bg-background/40 hover:border-border-strong'
+                  ]"
+                >
+                  <RadioGroupItem :value="option.value" class="mt-0.5" />
+                  <span class="min-w-0">
+                    <span class="block text-[13px] font-medium text-foreground">{{ option.label }}</span>
+                    <span class="mt-0.5 block text-[12px] text-muted-foreground">{{ option.desc }}</span>
                   </span>
-                </el-radio>
-                <el-radio value="forward_local" style="margin-top: 12px">
-                  <span style="font-weight: 500">国内 DNS</span>
-                  <span style="margin-left: 8px; color: var(--cf-fg-2); font-size: 12px">
-                    使用国内 DNS 服务器，解析速度更快
-                  </span>
-                </el-radio>
-              </el-radio-group>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
+                </label>
+              </RadioGroup>
+            </div>
+          </TabsContent>
 
-        <!-- 自定义 Host 配置 Tab -->
-        <el-tab-pane label="自定义 Host" name="hosts">
-          <el-alert
-            type="info"
-            :closable="false"
-            style="margin-bottom: 20px"
-          >
-            <p>配置自定义域名解析，优先级最高</p>
-            <p style="margin-top: 10px">格式：每行一个映射，域名在前，IP地址在后，用空格分隔</p>
-          </el-alert>
+          <!-- 自定义 Host -->
+          <TabsContent value="hosts" class="max-h-[56dvh] overflow-y-auto pr-1">
+            <div class="flex flex-col gap-4">
+              <InfoNote>
+                <p>配置自定义域名解析，优先级最高。</p>
+                <p>格式：每行一个映射，域名在前，IP 地址在后，用空格分隔。</p>
+              </InfoNote>
 
-          <el-form label-width="120px">
-            <el-form-item label="Hosts 记录">
-              <el-input
-                v-model="mosdnsCustomHosts"
-                type="textarea"
-                :rows="10"
-                placeholder="每行一个 Host 记录&#10;例如：&#10;localhost 127.0.0.1&#10;myserver.local 192.168.1.100&#10;dns.google 8.8.8.8&#10;cloudflare-dns.com 1.1.1.1"
-              />
-              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-                自定义 Host 记录会在所有规则之前优先匹配
-              </div>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
+              <FormField
+                label="Hosts 记录"
+                html-for="mosdns-hosts"
+                hint="自定义 Host 记录会在所有规则之前优先匹配。"
+              >
+                <Textarea
+                  id="mosdns-hosts"
+                  v-model="mosdnsCustomHosts"
+                  class="min-h-[220px] bg-background/50 font-mono text-[12px]"
+                  :rows="10"
+                  placeholder="localhost 127.0.0.1&#10;myserver.local 192.168.1.100&#10;dns.google 8.8.8.8"
+                />
+              </FormField>
+            </div>
+          </TabsContent>
 
-        <!-- 日志设置 Tab -->
-        <el-tab-pane label="日志设置" name="log">
-          <el-alert
-            type="info"
-            :closable="false"
-            style="margin-bottom: 20px"
-          >
-            <p>配置 MosDNS 日志输出级别和文件路径</p>
-            <p style="margin-top: 10px">可以控制日志详细程度，帮助排查问题</p>
-          </el-alert>
+          <!-- 日志 -->
+          <TabsContent value="log" class="max-h-[56dvh] overflow-y-auto pr-1">
+            <div class="flex flex-col gap-4">
+              <InfoNote>
+                <p>配置 MosDNS 日志输出级别和文件路径。</p>
+                <p>可以控制日志详细程度，帮助排查问题。</p>
+              </InfoNote>
 
-          <el-form label-width="120px">
-            <el-form-item label="启用日志">
-              <div>
-                <el-switch v-model="mosdnsLogEnabled" />
-                <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.5;">
-                  关闭日志可以提高性能，但不利于问题排查
+              <FormField hint="关闭日志可以提高性能，但不利于问题排查。">
+                <div class="flex items-center gap-2.5">
+                  <Switch id="mosdns-log" v-model="mosdnsLogEnabled" />
+                  <Label for="mosdns-log" class="text-[13px] text-muted-foreground">启用日志</Label>
                 </div>
-              </div>
-            </el-form-item>
+              </FormField>
 
-            <el-form-item label="日志级别" v-if="mosdnsLogEnabled">
-              <el-select v-model="mosdnsLogLevel" style="width: 100%">
-                <el-option label="Debug（调试）" value="debug">
-                  <div>
-                    <div style="font-weight: 500">Debug</div>
-                    <div style="font-size: 12px; color: var(--cf-fg-2)">最详细的日志，包含所有调试信息</div>
-                  </div>
-                </el-option>
-                <el-option label="Info（信息）" value="info">
-                  <div>
-                    <div style="font-weight: 500">Info</div>
-                    <div style="font-size: 12px; color: var(--cf-fg-2)">一般信息日志，包含重要操作记录</div>
-                  </div>
-                </el-option>
-                <el-option label="Warn（警告）" value="warn">
-                  <div>
-                    <div style="font-weight: 500">Warn</div>
-                    <div style="font-size: 12px; color: var(--cf-fg-2)">仅记录警告和错误信息</div>
-                  </div>
-                </el-option>
-                <el-option label="Error（错误）" value="error">
-                  <div>
-                    <div style="font-weight: 500">Error</div>
-                    <div style="font-size: 12px; color: var(--cf-fg-2)">仅记录错误信息</div>
-                  </div>
-                </el-option>
-              </el-select>
-              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-                推荐使用 Info 级别，调试时可使用 Debug 级别
-              </div>
-            </el-form-item>
+              <template v-if="mosdnsLogEnabled">
+                <FormField label="日志级别" hint="推荐使用 Info 级别，调试时可使用 Debug 级别。">
+                  <Select v-model="mosdnsLogLevel">
+                    <SelectTrigger class="w-full bg-background/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent class="glass-strong">
+                      <SelectItem v-for="level in LOG_LEVELS" :key="level.value" :value="level.value">
+                        <span class="flex flex-col leading-snug">
+                          <span class="text-[13px] font-medium">{{ level.label }}</span>
+                          <span class="text-[11.5px] text-muted-foreground">{{ level.desc }}</span>
+                        </span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormField>
 
-            <el-form-item label="日志文件路径" v-if="mosdnsLogEnabled">
-              <el-input
-                v-model="mosdnsLogFile"
-                placeholder="./mosdns.log"
-              />
-              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-                日志文件的保存路径，相对于 MosDNS 配置文件目录
-              </div>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
+                <FormField
+                  label="日志文件路径"
+                  html-for="mosdns-log-file"
+                  hint="日志文件的保存路径，相对于 MosDNS 配置文件目录。"
+                >
+                  <Input
+                    id="mosdns-log-file"
+                    v-model="mosdnsLogFile"
+                    class="bg-background/50 font-mono"
+                    placeholder="./mosdns.log"
+                  />
+                </FormField>
+              </template>
+            </div>
+          </TabsContent>
 
-        <!-- API 设置 Tab -->
-        <el-tab-pane label="API 设置" name="api">
-          <el-alert
-            type="info"
-            :closable="false"
-            style="margin-bottom: 20px"
-          >
-            <p>配置 MosDNS API 接口，用于监控和管理 MosDNS 服务</p>
-            <p style="margin-top: 10px">API 接口可以查询 MosDNS 运行状态和统计信息</p>
-          </el-alert>
+          <!-- API -->
+          <TabsContent value="api" class="max-h-[56dvh] overflow-y-auto pr-1">
+            <div class="flex flex-col gap-4">
+              <InfoNote>
+                <p>配置 MosDNS API 接口，用于监控和管理 MosDNS 服务。</p>
+                <p>API 接口可以查询 MosDNS 运行状态和统计信息。</p>
+              </InfoNote>
 
-          <el-form label-width="120px">
-            <el-form-item label="启用 API">
-              <div>
-                <el-switch v-model="mosdnsApiEnabled" />
-                <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.5;">
-                  关闭 API 可以减少资源占用，但无法通过 API 查询状态
+              <FormField hint="关闭 API 可以减少资源占用，但无法通过 API 查询状态。">
+                <div class="flex items-center gap-2.5">
+                  <Switch id="mosdns-api" v-model="mosdnsApiEnabled" />
+                  <Label for="mosdns-api" class="text-[13px] text-muted-foreground">启用 API</Label>
                 </div>
-              </div>
-            </el-form-item>
+              </FormField>
 
-            <el-form-item label="API 监听地址" v-if="mosdnsApiEnabled">
-              <el-input
-                v-model="mosdnsApiAddress"
-                placeholder="0.0.0.0:8338"
-              />
-              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-                格式：IP:端口，例如 0.0.0.0:8338 或 127.0.0.1:8338
-              </div>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
-      </el-tabs>
+              <FormField
+                v-if="mosdnsApiEnabled"
+                label="API 监听地址"
+                html-for="mosdns-api-addr"
+                hint="格式 IP:端口，例如 0.0.0.0:8338 或 127.0.0.1:8338。"
+              >
+                <Input
+                  id="mosdns-api-addr"
+                  v-model="mosdnsApiAddress"
+                  class="bg-background/50 font-mono"
+                  placeholder="0.0.0.0:8338"
+                />
+              </FormField>
+            </div>
+          </TabsContent>
+        </Tabs>
 
-      <template #footer>
-        <el-button @click="mosdnsSettingsDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveMosdnsSettings" :loading="savingMosdnsSettings">保存</el-button>
-      </template>
-    </el-dialog>
+        <DialogFooter>
+          <Button variant="outline" @click="mosdnsSettingsDialogVisible = false">取消</Button>
+          <Button :disabled="savingMosdnsSettings" @click="saveMosdnsSettings">
+            <Loader2 v-if="savingMosdnsSettings" class="size-4 animate-spin" />
+            保存
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
-    <!-- Surge Smart 模式设置对话框 -->
-    <el-dialog
-      v-model="surgeSmartDialogVisible"
-      title="Surge Smart 模式"
-      width="640px"
-      :close-on-click-modal="false"
-    >
-      <el-alert type="info" :closable="false" style="margin-bottom: 16px">
-        <p>选择要在 Surge 中以 Smart 模式输出的策略组，并配置 policy-priority 参数</p>
-        <p style="margin-top: 4px; font-size: 12px; color: var(--cf-fg-2)">同一策略组在 Mihomo 中仍输出原类型（如 url-test），仅 Surge 配置受影响</p>
-      </el-alert>
+    <!-- ===== Surge Smart 模式 ===== -->
+    <Dialog v-model:open="surgeSmartDialogVisible">
+      <DialogContent class="glass-strong hairline max-w-[680px] border-border/50">
+        <DialogHeader>
+          <DialogTitle>Surge Smart 模式</DialogTitle>
+          <DialogDescription>
+            选择要在 Surge 中以 Smart 模式输出的策略组并配置 policy-priority。
+            同一策略组在 Mihomo 中仍输出原类型（如 url-test），仅 Surge 配置受影响。
+          </DialogDescription>
+        </DialogHeader>
 
-      <div v-for="(item, index) in surgeSmartGroups" :key="index" style="display: flex; gap: 8px; margin-bottom: 10px; align-items: center">
-        <el-select v-model="item.group_id" placeholder="选择策略组" style="flex: 1">
-          <el-option
-            v-for="g in proxyGroupOptions"
-            :key="g.id"
-            :label="g.name"
-            :value="g.id"
-            :disabled="g.id !== item.group_id && surgeSmartGroups.some(s => s.group_id === g.id)"
-          />
-        </el-select>
-        <el-input
-          v-model="item.policy_priority"
-          placeholder="policy-priority，如: 香港:0;美国:1"
-          style="flex: 1.5"
-        />
-        <el-button @click="removeSurgeSmartGroup(index)" type="danger" :icon="Delete" circle size="small" />
-      </div>
-
-      <el-button @click="addSurgeSmartGroup" size="small">
-        + 添加
-      </el-button>
-
-      <template #footer>
-        <el-button @click="surgeSmartDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveSurgeSmartGroups" :loading="savingSurgeSmartGroups">保存</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 备份配置对话框 -->
-    <el-dialog
-      v-model="backupDialogVisible"
-      title="配置备份"
-      width="600px"
-      :close-on-click-modal="false"
-    >
-      <el-alert
-        type="info"
-        :closable="false"
-        style="margin-bottom: 20px"
-      >
-        <p>配置 WebDAV 远程备份，自动将配置文件上传到远程存储</p>
-        <p style="margin-top: 10px">支持坚果云、Nextcloud 等 WebDAV 服务</p>
-      </el-alert>
-
-      <el-form :model="backupForm" label-width="120px">
-        <el-form-item label="WebDAV 地址">
-          <el-input
-            v-model="backupForm.webdav_url"
-            placeholder="https://dav.jianguoyun.com/dav/"
-          />
-          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-            WebDAV 服务器地址，例如坚果云：https://dav.jianguoyun.com/dav/
+        <div class="flex max-h-[52dvh] flex-col gap-2 overflow-y-auto pr-1">
+          <div
+            v-for="(item, index) in surgeSmartGroups"
+            :key="index"
+            class="flex items-center gap-2"
+          >
+            <Select v-model="item.group_id">
+              <SelectTrigger class="flex-1 bg-background/50">
+                <SelectValue placeholder="选择策略组" />
+              </SelectTrigger>
+              <SelectContent class="glass-strong">
+                <SelectItem
+                  v-for="g in proxyGroupOptions"
+                  :key="g.id"
+                  :value="g.id"
+                  :disabled="g.id !== item.group_id && surgeSmartGroups.some(sg => sg.group_id === g.id)"
+                >
+                  {{ g.name }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              v-model="item.policy_priority"
+              class="flex-[1.5] bg-background/50 font-mono text-[12px]"
+              placeholder="policy-priority，如 香港:0;美国:1"
+            />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              class="shrink-0 text-destructive-accent hover:bg-destructive-soft"
+              title="移除"
+              aria-label="移除该策略组"
+              @click="removeSurgeSmartGroup(index)"
+            >
+              <Trash2 class="size-4" />
+            </Button>
           </div>
-        </el-form-item>
 
-        <el-form-item label="用户名">
-          <el-input
-            v-model="backupForm.webdav_username"
-            placeholder="WebDAV 用户名/邮箱"
-          />
-        </el-form-item>
-
-        <el-form-item label="密码">
-          <el-input
-            v-model="backupForm.webdav_password"
-            type="password"
-            show-password
-            placeholder="WebDAV 密码/应用密码"
-          />
-          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-            坚果云需要使用应用密码，不是登录密码
-          </div>
-        </el-form-item>
-
-        <el-form-item label="备份路径">
-          <el-input
-            v-model="backupForm.webdav_path"
-            placeholder="/config-flow-backup/"
-          />
-          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-            远程存储路径，默认为 /config-flow-backup/
-          </div>
-        </el-form-item>
-
-        <el-form-item label="自动备份">
-          <el-switch v-model="backupForm.auto_backup" />
-          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-            开启后每次配置变更时自动备份
-          </div>
-        </el-form-item>
-      </el-form>
-
-      <template #footer>
-        <div style="display: flex; justify-content: space-between; width: 100%">
-          <div>
-            <el-button @click="testWebDAVConnection" :loading="testingConnection">
-              测试连接
-            </el-button>
-            <el-button @click="backupNow" type="primary" :loading="backingUp">
-              立即备份
-            </el-button>
-          </div>
-          <div>
-            <el-button @click="backupDialogVisible = false">取消</el-button>
-            <el-button type="primary" @click="saveBackupConfig" :loading="savingBackup">
-              保存配置
-            </el-button>
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            class="self-start border-border/60 bg-background/40"
+            @click="addSurgeSmartGroup"
+          >
+            <Plus class="size-3.5" />
+            添加
+          </Button>
         </div>
-      </template>
-    </el-dialog>
+
+        <DialogFooter>
+          <Button variant="outline" @click="surgeSmartDialogVisible = false">取消</Button>
+          <Button :disabled="savingSurgeSmartGroups" @click="saveSurgeSmartGroups">
+            <Loader2 v-if="savingSurgeSmartGroups" class="size-4 animate-spin" />
+            保存
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- ===== 配置备份 ===== -->
+    <Dialog v-model:open="backupDialogVisible">
+      <DialogContent class="glass-strong hairline max-w-[620px] border-border/50">
+        <DialogHeader>
+          <DialogTitle>配置备份</DialogTitle>
+          <DialogDescription>
+            配置 WebDAV 远程备份，自动将配置文件上传到远程存储。支持坚果云、Nextcloud 等服务。
+          </DialogDescription>
+        </DialogHeader>
+
+        <div class="flex max-h-[56dvh] flex-col gap-4 overflow-y-auto pr-1">
+          <FormField
+            label="WebDAV 地址"
+            html-for="webdav-url"
+            hint="例如坚果云：https://dav.jianguoyun.com/dav/"
+          >
+            <Input
+              id="webdav-url"
+              v-model="backupForm.webdav_url"
+              class="bg-background/50 font-mono"
+              placeholder="https://dav.jianguoyun.com/dav/"
+            />
+          </FormField>
+
+          <FormField label="用户名" html-for="webdav-user">
+            <Input
+              id="webdav-user"
+              v-model="backupForm.webdav_username"
+              autocomplete="username"
+              class="bg-background/50"
+              placeholder="WebDAV 用户名 / 邮箱"
+            />
+          </FormField>
+
+          <FormField label="密码" html-for="webdav-pass" hint="坚果云需要使用应用密码，不是登录密码。">
+            <Input
+              id="webdav-pass"
+              v-model="backupForm.webdav_password"
+              type="password"
+              autocomplete="current-password"
+              class="bg-background/50"
+              placeholder="WebDAV 密码 / 应用密码"
+            />
+          </FormField>
+
+          <FormField label="备份路径" html-for="webdav-path" hint="远程存储路径，默认为 /config-flow-backup/">
+            <Input
+              id="webdav-path"
+              v-model="backupForm.webdav_path"
+              class="bg-background/50 font-mono"
+              placeholder="/config-flow-backup/"
+            />
+          </FormField>
+
+          <FormField hint="开启后每次配置变更时自动备份。">
+            <div class="flex items-center gap-2.5">
+              <Switch id="auto-backup" v-model="backupForm.auto_backup" />
+              <Label for="auto-backup" class="text-[13px] text-muted-foreground">自动备份</Label>
+            </div>
+          </FormField>
+        </div>
+
+        <DialogFooter class="sm:justify-between">
+          <div class="flex items-center gap-2">
+            <Button
+              variant="outline"
+              class="border-border/60 bg-background/40"
+              :disabled="testingConnection"
+              @click="testWebDAVConnection"
+            >
+              <Loader2 v-if="testingConnection" class="size-4 animate-spin" />
+              测试连接
+            </Button>
+            <Button variant="outline" class="border-border/60 bg-background/40" :disabled="backingUp" @click="backupNow">
+              <Loader2 v-if="backingUp" class="size-4 animate-spin" />
+              立即备份
+            </Button>
+          </div>
+          <div class="flex items-center gap-2">
+            <Button variant="outline" @click="backupDialogVisible = false">取消</Button>
+            <Button :disabled="savingBackup" @click="saveBackupConfig">
+              <Loader2 v-if="savingBackup" class="size-4 animate-spin" />
+              保存配置
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import PageHeader from '@/components/shell/PageHeader.vue'
+import PageHeader from '@/components/common/PageHeader.vue'
 import ScopeBanner from '@/components/shell/ScopeBanner.vue'
 import { useProfileStore } from '@/stores/profile'
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { DCaret, RefreshLeft, Delete } from '@element-plus/icons-vue'
+import { Motion } from 'motion-v'
+import {
+  Archive,
+  ChevronDown,
+  ChevronUp,
+  CloudUpload,
+  Copy,
+  Download,
+  Eye,
+  FileCode2,
+  GripVertical,
+  Loader2,
+  Network,
+  Pencil,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Settings,
+  Shield,
+  ShieldCheck,
+  Trash2,
+  Upload
+} from '@lucide/vue'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
+import FormField from '@/components/common/FormField.vue'
+import InfoNote from '@/components/common/InfoNote.vue'
+import LabeledDivider from '@/components/common/LabeledDivider.vue'
+import MultiSelect from '@/components/common/MultiSelect.vue'
+import SectionCard from '@/components/common/SectionCard.vue'
+import { confirm, confirmDanger, notify } from '@/lib/feedback'
+import { listItem } from '@/lib/motion'
 import { generateApi, configApi, customConfigApi, subscriptionApi, nodeApi, ruleApi, ruleSetApi, proxyGroupApi, agentApi, serverDomainApi, configTokenApi, subStoreUrlApi } from '@/api'
 import YamlEditor from '@/components/YamlEditor.vue'
 import api from '@/api'
@@ -1662,7 +1355,7 @@ const showSurgeSmartDialog = async () => {
     }))
     surgeSmartDialogVisible.value = true
   } catch (error) {
-    ElMessage.error('加载 Smart 配置失败')
+    notify.error('加载 Smart 配置失败')
   }
 }
 
@@ -1680,10 +1373,10 @@ const saveSurgeSmartGroups = async () => {
     // 过滤掉未选择策略组的空行
     const validGroups = surgeSmartGroups.value.filter(g => g.group_id)
     await customConfigApi.saveSurge({ smart_groups: validGroups })
-    ElMessage.success('Smart 配置已保存')
+    notify.success('Smart 配置已保存')
     surgeSmartDialogVisible.value = false
   } catch (error) {
-    ElMessage.error('保存失败')
+    notify.error('保存失败')
   } finally {
     savingSurgeSmartGroups.value = false
   }
@@ -1704,17 +1397,10 @@ const handleBackup = () => {
 
 // 重置服务域名为当前浏览器地址
 const resetServerDomain = async () => {
-  try {
-    await ElMessageBox.confirm(
-      '是否将服务域名重置为当前浏览器地址？',
-      '确认重置',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
+  const ok = await confirm('是否将服务域名重置为当前浏览器地址？', { title: '重置服务域名' })
+  if (!ok) return
 
+  try {
     const newDomain = window.location.origin
 
     await serverDomainApi.update({
@@ -1724,12 +1410,10 @@ const resetServerDomain = async () => {
     serverDomain.value = newDomain
     localStorage.setItem('serverDomain', newDomain)
 
-    ElMessage.success('服务域名已重置为当前地址')
-  } catch (error: any) {
-    if (error !== 'cancel') {
-      console.error('重置服务域名失败:', error)
-      ElMessage.error('重置失败')
-    }
+    notify.success('服务域名已重置为当前地址')
+  } catch (error) {
+    console.error('重置服务域名失败:', error)
+    notify.error('重置失败')
   }
 }
 
@@ -1747,10 +1431,10 @@ const onServerDomainBlur = async () => {
       new_domain: serverDomain.value
     })
 
-    ElMessage.success(`服务域名已更新为：${serverDomain.value}`)
+    notify.success(`服务域名已更新为：${serverDomain.value}`)
   } catch (error: any) {
     console.error('更新服务域名失败:', error)
-    ElMessage.error('更新失败')
+    notify.error('更新失败')
   }
 }
 
@@ -1770,7 +1454,7 @@ const onSubscriptionAggregationChange = async (value: boolean) => {
       enabled: value
     })
 
-    ElMessage.success(value ? '订阅聚合已开启' : '订阅聚合已关闭')
+    notify.success(value ? '订阅聚合已开启' : '订阅聚合已关闭')
 
     // 触发自定义事件，通知其他组件更新
     window.dispatchEvent(new CustomEvent('subscription-aggregation-changed', {
@@ -1778,7 +1462,7 @@ const onSubscriptionAggregationChange = async (value: boolean) => {
     }))
   } catch (error: any) {
     console.error('更新订阅聚合开关失败:', error)
-    ElMessage.error('更新失败')
+    notify.error('更新失败')
     // 失败时恢复原值
     subscriptionAggregationEnabled.value = !value
   }
@@ -1798,24 +1482,24 @@ const generateToken = async () => {
   try {
     const response = await configTokenApi.update({ generate: true })
     configToken.value = response.data.config_token
-    ElMessage.success('令牌已生成并保存')
+    notify.success('令牌已生成并保存')
   } catch (error: any) {
     console.error('生成令牌失败:', error)
-    ElMessage.error('生成令牌失败')
+    notify.error('生成令牌失败')
   }
 }
 
 const saveToken = async () => {
   try {
     if (!configToken.value || configToken.value.trim() === '') {
-      ElMessage.warning('令牌不能为空，如需清空请点击清除按钮')
+      notify.warning('令牌不能为空，如需清空请点击清除按钮')
       return
     }
     await configTokenApi.update({ token: configToken.value })
-    ElMessage.success('令牌已保存')
+    notify.success('令牌已保存')
   } catch (error: any) {
     console.error('保存令牌失败:', error)
-    ElMessage.error('保存令牌失败')
+    notify.error('保存令牌失败')
   }
 }
 
@@ -1827,32 +1511,27 @@ const onTokenBlur = async () => {
 
   try {
     await configTokenApi.update({ token: configToken.value })
-    ElMessage.success('令牌已保存')
+    notify.success('令牌已保存')
   } catch (error: any) {
     console.error('保存令牌失败:', error)
-    ElMessage.error('保存令牌失败')
+    notify.error('保存令牌失败')
   }
 }
 
 const onClearToken = async () => {
+  const ok = await confirm('确定要清除配置令牌吗？清除后配置 URL 将不再需要令牌验证。', {
+    title: '清除令牌',
+    confirmText: '清除'
+  })
+  if (!ok) return
+
   try {
-    await ElMessageBox.confirm(
-      '确定要清除配置令牌吗？清除后配置 URL 将不再需要令牌验证。',
-      '确认清除',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
     await configTokenApi.delete()
     configToken.value = ''
-    ElMessage.success('令牌已清除')
-  } catch (error: any) {
-    if (error !== 'cancel') {
-      console.error('清除令牌失败:', error)
-      ElMessage.error('清除令牌失败')
-    }
+    notify.success('令牌已清除')
+  } catch (error) {
+    console.error('清除令牌失败:', error)
+    notify.error('清除令牌失败')
   }
 }
 
@@ -1863,10 +1542,10 @@ const onSubStoreUrlBlur = async () => {
       sub_store_url: subStoreUrl.value
     })
 
-    ElMessage.success('Sub-Store URL 已保存')
+    notify.success('Sub-Store URL 已保存')
   } catch (error: any) {
     console.error('保存 Sub-Store URL 失败:', error)
-    ElMessage.error('保存失败')
+    notify.error('保存失败')
   }
 }
 
@@ -1902,12 +1581,133 @@ const mihomoUrlDisplay = computed(() => mihomoUrl.value)
 const surgeUrlDisplay = computed(() => surgeUrl.value)
 const mosdnsUrlDisplay = computed(() => mosdnsUrl.value)
 
+/* ---------- 新 UI 的派生数据 ---------- */
+
+/** 三个生成目标的展示与操作，避免在模板里重复三段几乎相同的卡片 */
+const targets = computed(() => [
+  {
+    key: 'mihomo',
+    title: 'Mihomo',
+    desc: '生成 Mihomo / Clash Meta 的 YAML 配置',
+    icon: FileCode2,
+    url: mihomoUrl.value,
+    urlDisplay: mihomoUrlDisplay.value,
+    actions: [
+      { label: '基础', icon: Pencil, run: () => showCustomConfigDialog('mihomo') },
+      { label: '预览', icon: Eye, loading: mihomoPreviewLoading.value, run: () => previewConfig('mihomo') },
+      { label: '下载', icon: Download, primary: true, loading: mihomoLoading.value, run: generateMihomo }
+    ]
+  },
+  {
+    key: 'surge',
+    title: 'Surge',
+    desc: '生成 Surge 的 .conf 配置（INI 格式）',
+    icon: Shield,
+    url: surgeUrl.value,
+    urlDisplay: surgeUrlDisplay.value,
+    actions: [
+      { label: '基础', icon: Pencil, run: handleSurgeCustomConfig },
+      { label: 'Smart', icon: Settings, run: showSurgeSmartDialog },
+      { label: '预览', icon: Eye, loading: surgePreviewLoading.value, run: handleSurgePreview },
+      { label: '下载', icon: Download, primary: true, loading: surgeLoading.value, run: generateSurge }
+    ]
+  },
+  {
+    key: 'mosdns',
+    title: 'MosDNS',
+    desc: '生成 MosDNS 的 YAML 配置',
+    icon: Network,
+    url: mosdnsUrl.value,
+    urlDisplay: mosdnsUrlDisplay.value,
+    actions: [
+      { label: '设置', icon: Settings, run: showMosdnsSettingsDialog },
+      { label: '预览', icon: Eye, loading: mosdnsPreviewLoading.value, run: () => previewConfig('mosdns') },
+      { label: '下载', icon: Download, primary: true, loading: mosdnsLoading.value, run: generateMosdns }
+    ]
+  }
+])
+
+/* 直连与代理互斥：把已被对面选走的项从本列表里剔除（已选中的自己保留），
+ * 取代原先「显示为禁用项」的做法，选择面板里不再出现点不动的行。 */
+const rulesetOptionsExcept = (taken: string[], mine: string[]) =>
+  availableRuleSets.value
+    .filter(rs => !taken.includes(rs.id) || mine.includes(rs.id))
+    .map(rs => ({ value: rs.id, label: rs.name }))
+
+const ruleOptionsExcept = (taken: string[], mine: string[]) =>
+  availableRules.value
+    .filter(rule => !taken.includes(rule.id) || mine.includes(rule.id))
+    .map(rule => ({
+      value: rule.id,
+      label: `${rule.rule_type}: ${rule.value} → ${rule.policy}`
+    }))
+
+const directRulesetOptions = computed(() =>
+  rulesetOptionsExcept(mosdnsProxyRulesets.value, mosdnsDirectRulesets.value)
+)
+const proxyRulesetOptions = computed(() =>
+  rulesetOptionsExcept(mosdnsDirectRulesets.value, mosdnsProxyRulesets.value)
+)
+const directRuleOptions = computed(() =>
+  ruleOptionsExcept(mosdnsProxyRules.value, mosdnsDirectRules.value)
+)
+const proxyRuleOptions = computed(() =>
+  ruleOptionsExcept(mosdnsDirectRules.value, mosdnsProxyRules.value)
+)
+
+/** 三组 DNS 条目共用一套渲染，listRef 作为函数 ref 回填各自的容器元素供 Sortable 使用 */
+const dnsGroups = computed(() => [
+  {
+    kind: 'local' as const,
+    label: '国内 DNS',
+    entries: mosdnsLocalDnsEntries.value,
+    listRef: (el: unknown) => (localDnsListRef.value = el as HTMLElement | null),
+    emptyText: '暂无 DNS 条目，点击上方按钮添加',
+    addrPlaceholder: 'https://dns.alidns.com/dns-query 或 223.5.5.5',
+    hint: '直连规则使用的 DNS 服务器'
+  },
+  {
+    kind: 'remote' as const,
+    label: '国外 DNS',
+    entries: mosdnsRemoteDnsEntries.value,
+    listRef: (el: unknown) => (remoteDnsListRef.value = el as HTMLElement | null),
+    emptyText: '暂无 DNS 条目，点击上方按钮添加',
+    addrPlaceholder: 'https://1.1.1.1/dns-query 或 1.1.1.1',
+    hint: '代理规则使用的主 DNS 服务器'
+  },
+  {
+    kind: 'fallback' as const,
+    label: 'Fallback DNS',
+    entries: mosdnsFallbackDnsEntries.value,
+    listRef: (el: unknown) => (fallbackDnsListRef.value = el as HTMLElement | null),
+    emptyText: '暂无 DNS 条目，点击上方按钮添加（留空则使用国内 DNS）',
+    addrPlaceholder: 'https://dns.alidns.com/dns-query 或 223.5.5.5',
+    hint: '当国外 DNS 超时时使用的备用 DNS 服务器，留空则复用国内 DNS 配置'
+  }
+])
+
+const DEFAULT_FORWARD_OPTIONS = [
+  {
+    value: 'forward_remote',
+    label: '国外 DNS（推荐）',
+    desc: '使用国外 DNS 服务器，避免 DNS 污染'
+  },
+  { value: 'forward_local', label: '国内 DNS', desc: '使用国内 DNS 服务器，解析速度更快' }
+]
+
+const LOG_LEVELS = [
+  { value: 'debug', label: 'Debug（调试）', desc: '最详细的日志，包含所有调试信息' },
+  { value: 'info', label: 'Info（信息）', desc: '一般信息日志，包含重要操作记录' },
+  { value: 'warn', label: 'Warn（警告）', desc: '仅记录警告和错误信息' },
+  { value: 'error', label: 'Error（错误）', desc: '仅记录错误信息' }
+]
+
 // 复制 URL 到剪贴板
 const copyUrl = (url: string, configType: string) => {
   // 检查 Clipboard API 是否可用
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(url).then(() => {
-      ElMessage.success(`${configType} 配置 URL 已复制到剪贴板`)
+      notify.success(`${configType} 配置 URL 已复制到剪贴板`)
     }).catch(() => {
       fallbackCopyUrl(url, configType)
     })
@@ -1927,9 +1727,9 @@ const fallbackCopyUrl = (text: string, configType: string) => {
   textarea.select()
   try {
     document.execCommand('copy')
-    ElMessage.success(`${configType} 配置 URL 已复制到剪贴板`)
+    notify.success(`${configType} 配置 URL 已复制到剪贴板`)
   } catch (err) {
-    ElMessage.error('复制失败，请手动复制')
+    notify.error('复制失败，请手动复制')
   }
   document.body.removeChild(textarea)
 }
@@ -1948,9 +1748,9 @@ const generateMihomo = async () => {
     link.click()
     window.URL.revokeObjectURL(url)
 
-    ElMessage.success('Mihomo 配置已生成')
+    notify.success('Mihomo 配置已生成')
   } catch (error) {
-    ElMessage.error('生成失败')
+    notify.error('生成失败')
   } finally {
     mihomoLoading.value = false
   }
@@ -1970,9 +1770,9 @@ const generateSurge = async () => {
     link.click()
     window.URL.revokeObjectURL(url)
 
-    ElMessage.success('Surge 配置已生成')
+    notify.success('Surge 配置已生成')
   } catch (error) {
-    ElMessage.error('生成失败')
+    notify.error('生成失败')
   } finally {
     surgeLoading.value = false
   }
@@ -1992,9 +1792,9 @@ const generateMosdns = async () => {
     link.click()
     window.URL.revokeObjectURL(url)
 
-    ElMessage.success('MosDNS 配置已生成')
+    notify.success('MosDNS 配置已生成')
   } catch (error) {
-    ElMessage.error('生成失败')
+    notify.error('生成失败')
   } finally {
     mosdnsLoading.value = false
   }
@@ -2012,9 +1812,9 @@ const exportConfig = async () => {
     link.click()
     window.URL.revokeObjectURL(url)
 
-    ElMessage.success('配置已导出')
+    notify.success('配置已导出')
   } catch (error) {
-    ElMessage.error('导出失败')
+    notify.error('导出失败')
   }
 }
 
@@ -2030,41 +1830,43 @@ const exportConfigDesensitized = async () => {
     link.click()
     window.URL.revokeObjectURL(url)
 
-    ElMessage.success('脱敏配置已导出')
+    notify.success('脱敏配置已导出')
   } catch (error) {
-    ElMessage.error('导出失败')
+    notify.error('导出失败')
   }
 }
 
-const importConfig = async (file: File) => {
+const importInput = ref<HTMLInputElement | null>(null)
+
+const pickImportFile = () => importInput.value?.click()
+
+const onImportFileChange = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
   try {
-    const text = await file.text()
-    const config = JSON.parse(text)
-
+    const config = JSON.parse(await file.text())
     await configApi.import(config)
-    ElMessage.success('配置导入成功，请刷新页面')
+    notify.success('配置导入成功，请刷新页面')
   } catch (error) {
-    ElMessage.error('导入失败，请检查文件格式')
+    console.error('导入配置失败:', error)
+    notify.error('导入失败，请检查文件格式')
+  } finally {
+    input.value = ''
   }
-
-  return false // 阻止自动上传
 }
 
 const resetConfig = async () => {
-  try {
-    await ElMessageBox.confirm(
-      '重置配置将清空所有订阅、节点、规则和策略组设置，恢复为默认配置。此操作不可撤销！',
-      '确认重置配置',
-      {
-        confirmButtonText: '确认重置',
-        cancelButtonText: '取消',
-        type: 'warning',
-        confirmButtonClass: 'el-button--danger'
-      }
-    )
+  const ok = await confirmDanger(
+    '重置配置将清空所有订阅、节点、规则和策略组设置，恢复为默认配置。此操作不可撤销。',
+    { title: '重置配置', confirmText: '确认重置' }
+  )
+  if (!ok) return
 
+  try {
     await api.post('/config/reset')
-    ElMessage.success('配置已重置为默认值，请刷新页面')
+    notify.success('配置已重置为默认值，请刷新页面')
 
     // 刷新统计
     setTimeout(() => {
@@ -2073,7 +1875,7 @@ const resetConfig = async () => {
     }, 500)
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('重置失败')
+      notify.error('重置失败')
     }
   }
 }
@@ -2126,7 +1928,7 @@ const showCustomConfigDialog = async (type: 'mihomo' | 'surge' | 'mosdns') => {
     customConfigContent.value = response.data.config || ''
     customConfigDialogVisible.value = true
   } catch (error) {
-    ElMessage.error('加载自定义配置失败')
+    notify.error('加载自定义配置失败')
   }
 }
 
@@ -2139,10 +1941,10 @@ const saveCustomConfig = async () => {
       mosdns: customConfigApi.saveMosdns
     }
     await apiMap[currentConfigType.value]({ config: customConfigContent.value })
-    ElMessage.success('自定义配置已保存')
+    notify.success('自定义配置已保存')
     customConfigDialogVisible.value = false
   } catch (error) {
-    ElMessage.error('保存失败')
+    notify.error('保存失败')
   } finally {
     savingCustomConfig.value = false
   }
@@ -2168,7 +1970,7 @@ const previewConfig = async (type: 'mihomo' | 'surge' | 'mosdns') => {
     previewContent.value = response.data.content || response.data
     previewDialogVisible.value = true
   } catch (error) {
-    ElMessage.error('生成预览失败')
+    notify.error('生成预览失败')
   } finally {
     loadingMap[type].value = false
   }
@@ -2178,7 +1980,7 @@ const copyPreviewContent = () => {
   // 检查 Clipboard API 是否可用
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(previewContent.value).then(() => {
-      ElMessage.success('已复制到剪贴板')
+      notify.success('已复制到剪贴板')
     }).catch(() => {
       fallbackCopyPreview()
     })
@@ -2198,9 +2000,9 @@ const fallbackCopyPreview = () => {
   textarea.select()
   try {
     document.execCommand('copy')
-    ElMessage.success('已复制到剪贴板')
+    notify.success('已复制到剪贴板')
   } catch (err) {
-    ElMessage.error('复制失败')
+    notify.error('复制失败')
   }
   document.body.removeChild(textarea)
 }
@@ -2283,7 +2085,7 @@ const toggleDnsEntryMode = (type: 'local' | 'remote' | 'fallback', id: string) =
         entry.enable_pipeline = enable_pipeline
         entry.mode = 'simple'
       } catch (error) {
-        ElMessage.warning('YAML 解析失败，已清空字段')
+        notify.warning('YAML 解析失败，已清空字段')
         entry.addr = ''
         entry.bootstrap = ''
         entry.enable_pipeline = false
@@ -2446,7 +2248,7 @@ const showMosdnsSettingsDialog = async () => {
     initDnsSortable()
   } catch (error) {
     console.error('加载 MosDNS 设置失败', error)
-    ElMessage.error('加载设置失败')
+    notify.error('加载设置失败')
   }
 }
 
@@ -2519,11 +2321,11 @@ const saveMosdnsSettings = async () => {
       cache_dump_interval: mosdnsCacheDumpInterval.value
     })
 
-    ElMessage.success('MosDNS 设置已保存')
+    notify.success('MosDNS 设置已保存')
     mosdnsSettingsDialogVisible.value = false
   } catch (error) {
     console.error('保存 MosDNS 设置失败', error)
-    ElMessage.error('保存失败')
+    notify.error('保存失败')
   } finally {
     savingMosdnsSettings.value = false
   }
@@ -2552,15 +2354,15 @@ const showBackupDialog = async () => {
 
 const testWebDAVConnection = async () => {
   if (!backupForm.value.webdav_url) {
-    ElMessage.warning('请输入 WebDAV 地址')
+    notify.warning('请输入 WebDAV 地址')
     return
   }
   if (!backupForm.value.webdav_username) {
-    ElMessage.warning('请输入用户名')
+    notify.warning('请输入用户名')
     return
   }
   if (!backupForm.value.webdav_password) {
-    ElMessage.warning('请输入密码')
+    notify.warning('请输入密码')
     return
   }
 
@@ -2572,11 +2374,11 @@ const testWebDAVConnection = async () => {
       webdav_password: backupForm.value.webdav_password,
       webdav_path: backupForm.value.webdav_path
     })
-    ElMessage.success('连接测试成功')
+    notify.success('连接测试成功')
   } catch (error: any) {
     console.error('测试连接失败', error)
     const errorMsg = error.response?.data?.message || '连接测试失败，请检查配置'
-    ElMessage.error(errorMsg)
+    notify.error(errorMsg)
   } finally {
     testingConnection.value = false
   }
@@ -2584,15 +2386,15 @@ const testWebDAVConnection = async () => {
 
 const backupNow = async () => {
   if (!backupForm.value.webdav_url) {
-    ElMessage.warning('请输入 WebDAV 地址')
+    notify.warning('请输入 WebDAV 地址')
     return
   }
   if (!backupForm.value.webdav_username) {
-    ElMessage.warning('请输入用户名')
+    notify.warning('请输入用户名')
     return
   }
   if (!backupForm.value.webdav_password) {
-    ElMessage.warning('请输入密码')
+    notify.warning('请输入密码')
     return
   }
 
@@ -2604,11 +2406,11 @@ const backupNow = async () => {
       webdav_password: backupForm.value.webdav_password,
       webdav_path: backupForm.value.webdav_path
     })
-    ElMessage.success('备份成功')
+    notify.success('备份成功')
   } catch (error: any) {
     console.error('备份失败', error)
     const errorMsg = error.response?.data?.message || '备份失败，请检查配置'
-    ElMessage.error(errorMsg)
+    notify.error(errorMsg)
   } finally {
     backingUp.value = false
   }
@@ -2618,11 +2420,11 @@ const saveBackupConfig = async () => {
   try {
     savingBackup.value = true
     await api.post('/backup/config', backupForm.value)
-    ElMessage.success('备份配置已保存')
+    notify.success('备份配置已保存')
     backupDialogVisible.value = false
   } catch (error: any) {
     console.error('保存备份配置失败', error)
-    ElMessage.error('保存失败')
+    notify.error('保存失败')
   } finally {
     savingBackup.value = false
   }
@@ -2682,810 +2484,3 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped>
-.generate {
-  padding: 28px 32px 40px;
-  background: var(--cf-bg);
-  min-height: calc(100vh - 64px);
-  --gen-radius-xl: 40px;
-  --gen-radius-lg: 24px;
-  --gen-radius-md: 16px;
-  --gen-radius-pill: 999px;
-}
-
-.page-header {
-  margin-bottom: 28px;
-  /* 固定顶部 */
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  background: var(--cf-bg);
-  margin: -28px -32px 28px -32px;
-  padding: 28px 32px;
-}
-
-.title-block h2 {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 700;
-  color: var(--cf-fg);
-  }
-
-.title-block p {
-  margin: 6px 0 0;
-  font-size: 14px;
-  color: var(--cf-fg-2);
-}
-
-.config-section {
-  margin-bottom: 24px;
-}
-
-.el-card {
-  border-radius: var(--gen-radius-lg, 24px);
-  border: 1px solid rgba(107, 115, 255, 0.1);
-  box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.el-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 20px 40px rgba(65, 80, 180, 0.16);
-  border-color: rgba(107, 115, 255, 0.25);
-}
-
-h4 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--cf-fg);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-h4 .el-tag {
-  -webkit-text-fill-color: var(--el-color-warning) !important;
-  color: var(--el-color-warning) !important;
-  background: var(--el-color-warning-light-9) !important;
-  background-clip: padding-box !important;
-  -webkit-background-clip: padding-box !important;
-  border-color: var(--el-color-warning-light-5) !important;
-}
-
-/* URL 展示框样式 */
-.config-url-box {
-  margin-bottom: 16px;
-  padding: 14px;
-  background: var(--cf-s2);
-  border-radius: var(--gen-radius-md, 16px);
-  border: 1px solid rgba(107, 115, 255, 0.2);
-  transition: all 0.2s ease;
-}
-
-.config-url-box:hover {
-  background: var(--cf-s2);
-  border-color: rgba(107, 115, 255, 0.3);
-}
-
-.url-hint {
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--cf-fg-2);
-  line-height: 1.5;
-}
-
-/* 等高卡片容器 */
-.config-row {
-  margin: 0 -10px !important;
-}
-
-.config-row :deep(.el-col) {
-  display: flex !important;
-  padding: 0 10px !important;
-}
-
-/* 等高卡片样式 */
-.equal-height-card {
-  height: 100%;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.equal-height-card :deep(.el-card__body) {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 服务域名提示文字 - 减小行间距 */
-.server-domain-hint {
-  margin-top: 8px;
-  color: var(--cf-fg-2);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-/* 生成器卡片特殊样式 */
-:deep(.el-card) {
-  position: relative;
-  overflow: hidden;
-  /* 与全站面板一致：细边框 + 统一圆角，去掉 Element Plus 默认的重卡头 */
-  background: var(--cf-s1);
-  border: 1px solid var(--cf-bd);
-  border-radius: var(--cf-r-xl);
-  box-shadow: var(--cf-shadow);
-  /* 同一行内的生成器卡片高度对齐，避免文案长短造成参差 */
-  height: 100%;
-}
-
-:deep(.el-card__header) {
-  padding: var(--cf-sp-4) var(--cf-sp-4) 0;
-  border-bottom: none;
-}
-
-:deep(.el-card__header h4) {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 650;
-  color: var(--cf-fg);
-}
-
-:deep(.el-card__body) {
-  padding: var(--cf-sp-3) var(--cf-sp-4) var(--cf-sp-4);
-}
-
-/* 让同一 el-row 内的列等高，卡片才能撑满 */
-:deep(.el-row) {
-  align-items: stretch;
-}
-
-/* 按钮组优化 */
-:deep(.el-row) {
-  margin: 0 !important;
-}
-
-:deep(.el-col) {
-  padding: 0 5px;
-}
-
-:deep(.el-col:first-child) {
-  padding-left: 0;
-}
-
-:deep(.el-col:last-child) {
-  padding-right: 0;
-}
-
-/* 统计卡片样式 */
-:deep(.el-descriptions) {
-  --el-descriptions-item-bordered-label-background: var(--cf-s2);
-}
-
-:deep(.el-descriptions__label) {
-  font-weight: 600;
-  color: var(--cf-primary);
-}
-
-:deep(.el-descriptions__content) {
-  font-weight: 600;
-  color: var(--cf-fg);
-}
-
-/* 配置提示样式 */
-:deep(.el-alert) {
-  border: none;
-  background: var(--cf-s2);
-  border-left: 4px solid var(--cf-primary);
-}
-
-/* 上传按钮样式 */
-:deep(.el-upload) {
-  width: 100%;
-}
-
-:deep(.el-upload .el-button) {
-  width: 100%;
-}
-
-/* Divider 样式 */
-:deep(.el-divider) {
-  border-top: 2px dashed rgba(107, 115, 255, 0.15);
-  margin: 32px 0;
-}
-
-/* 按钮样式优化 */
-:deep(.el-button) {
-  border-radius: var(--gen-radius-md, 16px);
-  font-weight: 600;
-  transition: all 0.2s ease;
-}
-
-:deep(.el-button:not(.is-disabled):hover) {
-  transform: translateY(-1px);
-}
-
-:deep(.el-button--primary) {
-  border: none;
-  box-shadow: 0 8px 16px rgba(87, 104, 255, 0.25);
-}
-
-:deep(.el-button--primary:hover) {
-  box-shadow: 0 10px 20px rgba(87, 104, 255, 0.35);
-}
-
-/* 输入框样式 */
-:deep(.el-input__wrapper) {
-  border-radius: var(--gen-radius-md, 16px);
-  transition: all 0.2s ease;
-}
-
-:deep(.el-input__wrapper:hover) {
-  box-shadow: 0 0 0 1px rgba(107, 115, 255, 0.2) inset;
-}
-
-:deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 1px var(--cf-primary) inset, 0 0 0 3px rgba(107, 115, 255, 0.1) !important;
-}
-
-/* 对话框样式 */
-:deep(.el-dialog) {
-  border-radius: var(--gen-radius-xl, 40px);
-  overflow: hidden;
-  box-shadow: 0 36px 80px rgba(65, 80, 180, 0.28);
-  border: 1px solid rgba(107, 115, 255, 0.16);
-  background: rgba(252, 253, 255, 0.97);
-  backdrop-filter: blur(20px);
-}
-
-:deep(.el-dialog__header) {
-  padding: 24px 32px;
-  margin: 0;
-  border-bottom: 1px solid rgba(107, 115, 255, 0.1);
-  background: var(--cf-s2);
-}
-
-:deep(.el-dialog__title) {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--cf-fg);
-  }
-
-:deep(.el-dialog__body) {
-  padding: 28px 32px;
-  background: var(--cf-s2);
-}
-
-:deep(.el-dialog__footer) {
-  padding: 20px 32px;
-  border-top: 1px solid rgba(107, 115, 255, 0.1);
-  background: var(--cf-s2);
-}
-
-/* 移动端适配 */
-@media (max-width: 768px) {
-  .generate {
-    padding: 20px 16px 32px;
-    min-height: calc(100vh - 64px);
-  }
-
-  .page-header {
-    margin: -20px -16px 20px -16px;
-    padding: 20px 16px;
-  }
-
-  .title-block h2 {
-    font-size: 22px;
-  }
-
-  .title-block p {
-    font-size: 13px;
-  }
-
-  /* 卡片网格单列布局 */
-  .config-section :deep(.el-row) {
-    flex-direction: column;
-    margin: 0 !important;
-  }
-
-  .config-section :deep(.el-col) {
-    width: 100% !important;
-    max-width: 100% !important;
-    padding: 0 !important;
-    margin-bottom: 12px;
-  }
-
-  .config-section :deep(.el-col:last-child) {
-    margin-bottom: 0;
-  }
-
-  .config-row {
-    margin: 0 !important;
-  }
-
-  .config-row :deep(.el-col) {
-    padding: 0 !important;
-  }
-
-  /* 卡片内容调整 */
-  :deep(.el-card) {
-    margin-bottom: 0;
-  }
-
-  :deep(.el-card__header) {
-    padding: 12px 14px;
-  }
-
-  :deep(.el-card__body) {
-    padding: 14px;
-  }
-
-  h3, h4 {
-    font-size: 16px;
-  }
-
-  /* 按钮布局调整 */
-  :deep(.el-button) {
-    font-size: 12px;
-    padding: 8px 10px;
-  }
-
-  :deep(.el-button .el-icon) {
-    font-size: 14px;
-  }
-
-  /* 配置管理按钮 */
-  :deep(.el-space) {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-  }
-
-  :deep(.el-space .el-space__item) {
-    width: 100%;
-    margin: 0 0 8px 0 !important;
-  }
-
-  :deep(.el-space .el-button),
-  :deep(.el-upload) {
-    width: 100%;
-  }
-
-  /* MosDNS 设置对话框 */
-  :deep(.mosdns-dialog .el-dialog) {
-    width: 95vw !important;
-    max-width: 95vw !important;
-    margin: 2.5vw auto !important;
-    max-height: 92vh;
-  }
-
-  :deep(.mosdns-dialog .el-dialog__header) {
-    padding: 14px 14px 10px;
-  }
-
-  :deep(.mosdns-dialog .el-dialog__title) {
-    font-size: 16px;
-  }
-
-  :deep(.mosdns-dialog .el-dialog__body) {
-    padding: 10px 12px;
-    max-height: calc(92vh - 130px);
-    overflow-y: auto;
-  }
-
-  :deep(.mosdns-dialog .el-dialog__footer) {
-    padding: 10px 12px;
-  }
-
-  :deep(.mosdns-dialog .el-alert) {
-    padding: 8px 10px;
-  }
-
-  :deep(.mosdns-dialog .el-alert__description) {
-    font-size: 12px;
-    line-height: 1.5;
-    word-break: break-word;
-  }
-
-  :deep(.mosdns-dialog .el-alert__description p) {
-    margin: 0;
-    word-break: break-word;
-  }
-
-  :deep(.mosdns-dialog .el-tabs__header) {
-    margin-bottom: 12px;
-  }
-
-  :deep(.mosdns-dialog .el-tabs__nav-wrap) {
-    overflow: hidden;
-  }
-
-  :deep(.mosdns-dialog .el-tabs__nav-scroll) {
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  :deep(.mosdns-dialog .el-tabs__nav-scroll::-webkit-scrollbar) {
-    display: none;
-  }
-
-  :deep(.mosdns-dialog .el-tabs__nav) {
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 4px;
-    min-width: 100%;
-  }
-
-  :deep(.mosdns-dialog .el-tabs__item) {
-    flex: 0 0 auto;
-    min-width: 70px;
-    text-align: center;
-    border-radius: 999px;
-    padding: 6px 10px;
-    font-size: 13px;
-    white-space: nowrap;
-  }
-
-  :deep(.mosdns-dialog .el-form) {
-    gap: 10px;
-  }
-
-  :deep(.mosdns-dialog .el-form-item) {
-    flex-direction: column;
-    align-items: stretch;
-    margin-bottom: 10px;
-  }
-
-  :deep(.mosdns-dialog .el-form-item__label) {
-    width: 100% !important;
-    text-align: left;
-    line-height: 1.4;
-    padding-bottom: 4px;
-    font-size: 13px;
-  }
-
-  :deep(.mosdns-dialog .el-form-item__content) {
-    width: 100%;
-  }
-
-  :deep(.mosdns-dialog .el-select),
-  :deep(.mosdns-dialog .el-input),
-  :deep(.mosdns-dialog .el-textarea),
-  :deep(.mosdns-dialog .el-input-number) {
-    width: 100%;
-  }
-
-  /* 多选标签样式优化 */
-  :deep(.mosdns-dialog .el-select .el-select__tags) {
-    max-width: 100%;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-
-  :deep(.mosdns-dialog .el-select .el-tag) {
-    max-width: calc(50% - 4px);
-    margin: 2px 0;
-  }
-
-  :deep(.mosdns-dialog .el-select .el-tag .el-tag__content) {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 100%;
-  }
-
-  :deep(.mosdns-dialog .el-select .el-select__tags-text) {
-    max-width: 70px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  :deep(.mosdns-dialog .el-divider) {
-    margin: 14px 0 10px;
-  }
-
-  :deep(.mosdns-dialog .el-divider__text) {
-    font-size: 12px;
-    padding: 0 6px;
-  }
-
-  :deep(.mosdns-dialog .el-button[size='small']) {
-    width: 100%;
-    justify-content: center;
-  }
-
-  :deep(.mosdns-dialog .custom-match-header) {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
-
-  :deep(.mosdns-dialog .custom-match-actions) {
-    width: 100%;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  :deep(.mosdns-dialog .custom-match-actions .el-button),
-  :deep(.mosdns-dialog .custom-match-actions .el-button-group .el-button) {
-    flex: 1 1 calc(50% - 4px);
-    min-width: 48%;
-  }
-
-  .custom-match-card {
-    padding: 14px;
-  }
-
-  .dns-entry-card {
-    padding: 14px;
-  }
-
-  .dns-entry-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
-
-  .dns-entry-actions {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
-  .dns-entry-actions :deep(.el-button) {
-    flex: 1 1 calc(50% - 4px);
-    min-width: 48%;
-  }
-
-  .custom-match-actions :deep(.el-button-group) {
-    width: 100%;
-  }
-
-  /* 统计信息 */
-  :deep(.el-descriptions) {
-    font-size: 12px;
-  }
-
-  :deep(.el-descriptions__label),
-  :deep(.el-descriptions__content) {
-    padding: 8px 10px !important;
-    font-size: 12px;
-  }
-
-  /* Divider 间距 */
-  :deep(.el-divider) {
-    margin: 20px 0;
-  }
-
-  /* 说明文字 */
-  p {
-    font-size: 12px;
-  }
-}
-
-/* 超小屏幕适配 */
-@media (max-width: 480px) {
-  .header h3 {
-    font-size: 16px;
-  }
-
-  h3, h4 {
-    font-size: 14px;
-  }
-
-  :deep(.el-card__header) {
-    padding: 10px 12px;
-  }
-
-  :deep(.el-card__body) {
-    padding: 12px;
-  }
-
-  :deep(.el-descriptions) {
-    font-size: 11px;
-  }
-
-  :deep(.el-descriptions__label),
-  :deep(.el-descriptions__content) {
-    padding: 6px 8px !important;
-    font-size: 11px;
-  }
-}
-
-/* DNS 条目卡片样式 */
-.dns-entry-card {
-  margin-bottom: 16px;
-  padding: 18px;
-  border: 1px solid rgba(107, 115, 255, 0.15);
-  border-radius: var(--gen-radius-lg, 24px);
-  background: var(--cf-s1);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  cursor: move;
-  box-shadow: 0 4px 12px rgba(65, 80, 180, 0.06);
-}
-
-.dns-entry-card:hover {
-  border-color: rgba(107, 115, 255, 0.35);
-  box-shadow: 0 12px 28px rgba(107, 115, 255, 0.2);
-  transform: translateY(-2px);
-}
-
-/* 拖拽时的样式 */
-.sortable-ghost {
-  opacity: 0.4;
-  background: var(--cf-bg);
-}
-
-.dns-entry-card:last-child {
-  margin-bottom: 0;
-}
-
-.dns-entry-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--cf-bd-strong);
-}
-
-.dns-entry-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.drag-handle {
-  color: var(--cf-fg-2);
-  cursor: grab;
-  transition: all 0.3s;
-  transform: rotate(90deg);
-}
-
-.drag-handle:hover {
-  color: var(--cf-primary);
-}
-
-.drag-handle:active {
-  cursor: grabbing;
-}
-
-.dns-entry-index {
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--cf-fg);
-}
-
-.dns-entry-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.dns-entry-content {
-  padding-top: 4px;
-}
-
-/* YAML 验证样式 */
-.yaml-error :deep(.el-textarea__inner) {
-  border-color: var(--cf-danger) !important;
-}
-
-.yaml-error-message {
-  margin-top: 8px;
-  padding: 8px 12px;
-  background: var(--cf-danger-soft);
-  border: 1px solid var(--cf-danger-soft);
-  border-radius: 4px;
-  color: var(--cf-danger);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.yaml-success-message {
-  margin-top: 8px;
-  padding: 6px 12px;
-  background: var(--cf-primary-soft);
-  border: 1px solid var(--cf-primary-soft);
-  border-radius: 4px;
-  color: var(--cf-primary-hover);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-/* 自定义 Match 卡片样式 */
-.custom-match-card {
-  margin-bottom: 14px;
-  border: 1px solid rgba(107, 115, 255, 0.15);
-  border-radius: var(--gen-radius-md, 16px);
-  padding: 16px;
-  background: var(--cf-s1);
-  box-shadow: 0 4px 12px rgba(65, 80, 180, 0.06);
-  transition: all 0.2s ease;
-}
-
-.custom-match-card:hover {
-  border-color: rgba(107, 115, 255, 0.25);
-  box-shadow: 0 8px 20px rgba(65, 80, 180, 0.12);
-}
-
-.custom-match-card:last-child {
-  margin-bottom: 0;
-}
-
-.custom-match-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--cf-bd-strong);
-}
-
-.custom-match-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-weight: 600;
-  color: var(--cf-fg);
-}
-
-.custom-match-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.custom-match-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.custom-match-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.custom-match-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--cf-fg-2);
-}
-
-.custom-match-hint {
-  font-size: 12px;
-  color: var(--cf-fg-2);
-  line-height: 1.4;
-}
-
-/* 危险操作分区：与常规操作视觉隔离，降低误触概率 */
-.cf-danger-zone {
-  display: flex;
-  align-items: center;
-  gap: var(--cf-sp-3);
-  margin-top: var(--cf-sp-4);
-  padding: var(--cf-sp-3);
-  border: 1px solid color-mix(in srgb, var(--cf-danger) 30%, transparent);
-  border-radius: var(--cf-r-lg);
-  background: var(--cf-danger-soft);
-  flex-wrap: wrap;
-}
-
-.cf-danger-zone__text {
-  min-width: 0;
-  flex: 1 1 200px;
-}
-
-.cf-danger-zone__title {
-  font-size: 13.5px;
-  font-weight: 650;
-  color: var(--cf-fg);
-}
-
-.cf-danger-zone__desc {
-  font-size: 12px;
-  color: var(--cf-fg-2);
-  margin-top: 2px;
-}
-</style>
