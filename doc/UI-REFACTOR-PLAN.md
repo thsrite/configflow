@@ -25,12 +25,12 @@
 ## 分阶段交付（每阶段可独立验收：`npx vite build` 通过 + 视觉核对）
 
 - [x] P0-a 依赖与组件：装 motion-v / vue-sonner，补齐 shadcn 组件到 32 个
-- [ ] P0-b 主题层：theme.css 科技感升级（glow / grid / aurora / gradient border token），启用 preflight
-- [ ] P0-c 基础设施：`useToast` / `useConfirm` 替代 ElMessage/ElMessageBox；motion 预设；共享原语 PageShell / Toolbar / DataTable / EmptyState / StatTile / SectionCard
-- [ ] P1 应用壳：App.vue + AppRail + MobileTabBar + PageHeader，动画导航指示器、⌘K 命令面板、路由过渡
-- [ ] P2 Dashboard（bento + count-up + 图表主题）
-- [ ] P3 Login（分栏 hero + aurora）
-- [ ] P4 Profiles / Subscriptions / Nodes / SubscriptionAggregation
+- [x] P0-b 主题层：theme.css 科技感升级（glow / grid / aurora / gradient border token），启用 preflight
+- [x] P0-c 基础设施：`useToast` / `useConfirm` 替代 ElMessage/ElMessageBox；motion 预设；共享原语 PageShell / Toolbar / DataTable / EmptyState / StatTile / SectionCard
+- [x] P1 应用壳：App.vue + AppRail + MobileTabBar + PageHeader，动画导航指示器、⌘K 命令面板、路由过渡
+- [x] P2 Dashboard（bento + count-up + 图表主题）
+- [x] P3 Login（分栏 hero + aurora）
+- [ ] P4 资源与系统页：Profiles ✅ / Logs ✅ / Nodes ✅ / SubscriptionAggregation ✅ / Subscriptions（仅需科技感重塑，已是 shadcn）
 - [ ] P5 RuleLibrary / Rules / ProxyGroups
 - [ ] P6 Generate / Agents / Logs
 - [ ] P7 移除 element-plus 依赖、全量构建、Chrome 实机截图核对、开 PR
@@ -42,3 +42,18 @@
    `el-select` → Select；`el-switch` → Switch；`el-tabs` → Tabs；`el-tooltip` → Tooltip
 3. 列表页统一：PageHeader（标题+说明+主操作）→ Toolbar（搜索/筛选/批量）→ 内容（表格或卡片网格）→ EmptyState
 4. 进场动画：容器 stagger 40ms，卡片 y:8→0 / opacity 0→1，spring
+
+
+## 进度快照（每轮更新）
+- 已完成：P0 底座、P1 应用壳、Dashboard、Login、Profiles、Logs、Nodes、SubscriptionAggregation
+- 新增共享原语：PageHeader / SectionCard / StatTile / Toolbar / EmptyState / StatusDot /
+  AnimatedNumber / LoadingRows / ViewToggle / DataTableShell / MultiSelect
+- 反馈层：notify / confirm / confirmDanger / prompt（ConfirmHost + PromptHost 挂在 App.vue）
+- 待做：Subscriptions（重塑）、RuleLibrary、Rules、ProxyGroups、Generate、Agents，
+  然后 P7 移除 element-plus + 启用 preflight + 全量实机核对 + 开 PR
+- 改造手法备忘：
+  1. 模板整体替换时不能用 `split('</template>')`——插槽 `<template #actions>` 会先命中，
+     要按「第一处顶层 `  </div>\n</template>\n`」定位
+  2. 未启用 preflight 时，`<button>` 需显式 `border-0 bg-transparent p-0`；
+     `border-dashed` 必须先 `border-0` 再单边，否则四边都以 UA 默认宽度显示
+  3. Vue 模板会压缩标签间空白，行内分段着色要用 flex gap 而不是空格
