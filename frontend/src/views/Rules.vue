@@ -530,23 +530,23 @@
             <template #sub-title>
               <div style="font-size: 14px; line-height: 1.8;">
                 <div style="margin-bottom: 12px;">
-                  <strong style="font-size: 16px; color: #303133;">{{ ruleIndexResult.rule_name }}</strong>
+                  <strong style="font-size: 16px; color: var(--cf-fg);">{{ ruleIndexResult.rule_name }}</strong>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 8px; text-align: left; max-width: 500px; margin: 0 auto;">
                   <div>
-                    <span style="color: #909399;">规则类型：</span>
+                    <span style="color: var(--cf-fg-2);">规则类型：</span>
                     <el-tag :type="ruleIndexResult.rule_type === 'rule' ? 'primary' : 'success'" size="small">
                       {{ ruleIndexResult.rule_type === 'rule' ? '直接规则' : '规则集' }}
                     </el-tag>
                   </div>
                   <div>
-                    <span style="color: #909399;">匹配规则：</span>
+                    <span style="color: var(--cf-fg-2);">匹配规则：</span>
                     <el-tag type="info" size="small" style="font-family: monospace;">
                       {{ ruleIndexResult.matched_line }}
                     </el-tag>
                   </div>
                   <div>
-                    <span style="color: #909399;">执行策略：</span>
+                    <span style="color: var(--cf-fg-2);">执行策略：</span>
                     <el-tag
                       :type="ruleIndexResult.policy === 'DIRECT' ? 'success' : ruleIndexResult.policy === 'REJECT' ? 'danger' : 'primary'"
                       size="small"
@@ -555,19 +555,19 @@
                     </el-tag>
                   </div>
                   <div>
-                    <span style="color: #909399;">规则来源：</span>
+                    <span style="color: var(--cf-fg-2);">规则来源：</span>
                     <span>{{ ruleIndexResult.source }}</span>
                   </div>
                   <div>
-                    <span style="color: #909399;">优先级：</span>
+                    <span style="color: var(--cf-fg-2);">优先级：</span>
                     <span>第 {{ ruleIndexResult.priority }} 条规则</span>
                   </div>
                   <div>
-                    <span style="color: #909399;">Behavior：</span>
+                    <span style="color: var(--cf-fg-2);">Behavior：</span>
                     <el-tag type="info" size="small">{{ ruleIndexResult.behavior }}</el-tag>
                   </div>
                   <div v-if="ruleIndexResult.elapsed_time !== undefined">
-                    <span style="color: #909399;">索引耗时：</span>
+                    <span style="color: var(--cf-fg-2);">索引耗时：</span>
                     <el-tag type="warning" size="small">{{ ruleIndexResult.elapsed_time }} ms</el-tag>
                   </div>
                 </div>
@@ -585,7 +585,7 @@
             <template #sub-title>
               <div style="font-size: 14px; line-height: 1.8;">
                 <div style="margin-bottom: 8px;">{{ ruleIndexResult.message }}</div>
-                <div v-if="ruleIndexResult.elapsed_time !== undefined" style="color: #909399;">
+                <div v-if="ruleIndexResult.elapsed_time !== undefined" style="color: var(--cf-fg-2);">
                   索引耗时：<el-tag type="warning" size="small">{{ ruleIndexResult.elapsed_time }} ms</el-tag>
                 </div>
               </div>
@@ -1802,7 +1802,7 @@ onActivated(() => {
 }
 
 .status-toggle.active {
-  background: var(--cf-primary);
+  background: var(--cf-primary-fill);
   color: var(--cf-primary-fg);
   box-shadow: 0 12px 28px rgba(87, 104, 255, 0.3);
 }
@@ -2030,7 +2030,7 @@ onActivated(() => {
 }
 
 .card-btn.primary {
-  background: var(--cf-primary);
+  background: var(--cf-primary-fill);
   color: var(--cf-primary-fg);
   box-shadow: 0 8px 16px rgba(87, 104, 255, 0.25);
 }
@@ -2231,7 +2231,7 @@ onActivated(() => {
 }
 
 .toggle-btn.active {
-  background: var(--cf-primary);
+  background: var(--cf-primary-fill);
   color: var(--cf-primary-fg);
   border-color: transparent;
 }

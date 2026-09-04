@@ -23,7 +23,7 @@
     <div class="stats-cards">
         <el-card class="stat-card">
           <div class="stat-content">
-            <div class="stat-icon" style="background: #e6f4ff; color: #1890ff;">
+            <div class="stat-icon" style="background: var(--cf-primary-soft); color: var(--cf-primary);">
               <el-icon><Monitor /></el-icon>
             </div>
             <div class="stat-info">
@@ -34,7 +34,7 @@
         </el-card>
         <el-card class="stat-card">
           <div class="stat-content">
-            <div class="stat-icon" style="background: rgba(139, 143, 255, 0.12); color: #8b8fff;">
+            <div class="stat-icon" style="background: rgba(139, 143, 255, 0.12); color: var(--cf-primary);">
               <el-icon><SuccessFilled /></el-icon>
             </div>
             <div class="stat-info">
@@ -45,7 +45,7 @@
         </el-card>
         <el-card class="stat-card">
           <div class="stat-content">
-            <div class="stat-icon" style="background: #fff7e6; color: #fa8c16;">
+            <div class="stat-icon" style="background: var(--cf-warning-soft); color: var(--cf-warning);">
               <el-icon><WarningFilled /></el-icon>
             </div>
             <div class="stat-info">
@@ -269,7 +269,7 @@
               <el-radio label="shell">Shell 安装</el-radio>
               <el-radio label="docker">Docker 容器</el-radio>
             </el-radio-group>
-            <div style="margin-top: 8px; color: #909399; font-size: 12px; line-height: 1.5;">
+            <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.5;">
               <template v-if="scriptForm.installType === 'shell'">
                 Shell 安装：将 Agent 直接安装到系统服务
               </template>
@@ -286,7 +286,7 @@
             <el-radio label="mosdns">MosDNS</el-radio>
             <el-radio label="aio">All-in-One (三合一)</el-radio>
           </el-radio-group>
-          <div style="margin-top: 8px; color: #909399; font-size: 12px; line-height: 1.5;">
+          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.5;">
             <template v-if="scriptForm.dockerMode === 'mihomo'">
               内置 Mihomo，一个容器运行 Agent+Mihomo
             </template>
@@ -325,11 +325,11 @@
         <el-form-item label="Agent 端口" v-else>
           <div style="display: flex; flex-direction: column; gap: 8px;">
             <div v-if="scriptForm.dockerMode === 'mihomo' || scriptForm.dockerMode === 'aio'" style="display: flex; align-items: center; gap: 8px;">
-              <span style="color: #909399; font-size: 14px; min-width: 120px;">• Mihomo Agent:</span>
+              <span style="color: var(--cf-fg-2); font-size: 14px; min-width: 120px;">• Mihomo Agent:</span>
               <el-input-number v-model="scriptForm.mihomoAgentPort" :min="1024" :max="65535" size="small" style="width: 140px;" />
             </div>
             <div v-if="scriptForm.dockerMode === 'mosdns' || scriptForm.dockerMode === 'aio'" style="display: flex; align-items: center; gap: 8px;">
-              <span style="color: #909399; font-size: 14px; min-width: 120px;">• MosDNS Agent:</span>
+              <span style="color: var(--cf-fg-2); font-size: 14px; min-width: 120px;">• MosDNS Agent:</span>
               <el-input-number v-model="scriptForm.mosdnsAgentPort" :min="1024" :max="65535" size="small" style="width: 140px;" />
             </div>
           </div>
@@ -363,7 +363,7 @@
               </el-tooltip>
             </template>
           </el-input>
-          <div style="margin-top: 8px; color: #909399; font-size: 12px; line-height: 1.5;">
+          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.5;">
             支持两种方式：<br/>
             • 命令方式：systemctl restart mihomo<br/>
             • URL方式：http://127.0.0.1:9090/restart
@@ -454,7 +454,7 @@
                 {{ option.label }}
               </el-radio>
             </el-radio-group>
-            <div style="margin-top: 8px; color: #909399; font-size: 12px">
+            <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
               host 模式可直接访问主机网络，bridge 模式需要端口映射
             </div>
           </el-form-item>
@@ -476,7 +476,7 @@
           <template #title>
             <div style="line-height: 1.6;">
               在远程服务器上执行以下命令即可自动安装 Agent<br/>
-              <span style="font-size: 12px; color: #67C23A;">
+              <span style="font-size: 12px; color: var(--cf-success);">
                 ✓ 支持 Ubuntu、Debian、CentOS、Alpine Linux 等系统<br/>
                 ✓ 自动检测并配置 systemd 或 OpenRC 服务管理器
               </span>
@@ -494,21 +494,21 @@
             <div style="line-height: 1.6;">
               <template v-if="scriptForm.dockerMode === 'mihomo'">
                 使用 Docker 快速部署 Mihomo Agent<br/>
-                <span style="font-size: 12px; color: #409EFF;">
+                <span style="font-size: 12px; color: var(--cf-primary);">
                   ✓ 内置 Mihomo，一个容器运行 Agent+Mihomo<br/>
                   ✓ 支持自动配置拉取、更新和服务重启
                 </span>
               </template>
               <template v-else-if="scriptForm.dockerMode === 'mosdns'">
                 使用 Docker 快速部署 mosdns Agent<br/>
-                <span style="font-size: 12px; color: #409EFF;">
+                <span style="font-size: 12px; color: var(--cf-primary);">
                   ✓ 内置 mosdns，一个容器运行 Agent+mosdns<br/>
                   ✓ 支持自动配置拉取、更新和服务重启
                 </span>
               </template>
               <template v-else>
                 使用 Docker 快速部署 All-in-One Agent<br/>
-                <span style="font-size: 12px; color: #409EFF;">
+                <span style="font-size: 12px; color: var(--cf-primary);">
                   ✓ 内置 Mihomo 和 mosdns，一个容器同时运行两个服务<br/>
                   ✓ 支持通过环境变量控制启用哪些服务
                 </span>
@@ -522,8 +522,8 @@
           <!-- Ubuntu/Debian/CentOS 命令 -->
           <div class="command-section">
             <div class="command-label">
-              <span style="font-weight: 600; color: #409EFF;">Ubuntu / Debian / CentOS</span>
-              <span style="font-size: 12px; color: #909399; margin-left: 8px;">(使用 systemd)</span>
+              <span style="font-weight: 600; color: var(--cf-primary);">Ubuntu / Debian / CentOS</span>
+              <span style="font-size: 12px; color: var(--cf-fg-2); margin-left: 8px;">(使用 systemd)</span>
             </div>
             <div class="command-container">
               <el-input
@@ -548,8 +548,8 @@
           <!-- Alpine Linux 命令 -->
           <div class="command-section" style="margin-top: 20px;">
             <div class="command-label">
-              <span style="font-weight: 600; color: #67C23A;">Alpine Linux</span>
-              <span style="font-size: 12px; color: #909399; margin-left: 8px;">(使用 OpenRC)</span>
+              <span style="font-weight: 600; color: var(--cf-success);">Alpine Linux</span>
+              <span style="font-size: 12px; color: var(--cf-fg-2); margin-left: 8px;">(使用 OpenRC)</span>
             </div>
             <div class="command-container">
               <el-input
@@ -577,8 +577,8 @@
           <!-- Docker Run 命令 -->
           <div class="command-section">
             <div class="command-label">
-              <span style="font-weight: 600; color: #409EFF;">Docker Run 命令</span>
-              <span style="font-size: 12px; color: #909399; margin-left: 8px;">(推荐)</span>
+              <span style="font-weight: 600; color: var(--cf-primary);">Docker Run 命令</span>
+              <span style="font-size: 12px; color: var(--cf-fg-2); margin-left: 8px;">(推荐)</span>
             </div>
             <div class="command-container">
               <el-input
@@ -603,8 +603,8 @@
           <!-- Docker Compose 文件 -->
           <div class="command-section" style="margin-top: 20px;">
             <div class="command-label">
-              <span style="font-weight: 600; color: #67C23A;">docker-compose.yml</span>
-              <span style="font-size: 12px; color: #909399; margin-left: 8px;">(可选)</span>
+              <span style="font-weight: 600; color: var(--cf-success);">docker-compose.yml</span>
+              <span style="font-size: 12px; color: var(--cf-fg-2); margin-left: 8px;">(可选)</span>
             </div>
             <div class="command-container">
               <el-input
@@ -635,15 +635,15 @@
               <div style="line-height: 1.6; font-size: 13px;">
                 <strong>部署方式：</strong><br/>
                 <br/>
-                <strong style="color: #409EFF;">方式一：使用 Docker Run（推荐）</strong><br/>
+                <strong style="color: var(--cf-primary);">方式一：使用 Docker Run（推荐）</strong><br/>
                 直接在服务器上执行上面的 Docker Run 命令即可<br/>
                 <br/>
-                <strong style="color: #67C23A;">方式二：使用 Docker Compose</strong><br/>
+                <strong style="color: var(--cf-success);">方式二：使用 Docker Compose</strong><br/>
                 1. 保存 docker-compose.yml 文件<br/>
-                2. 在同目录执行: <code style="background: #f5f7fa; padding: 2px 6px; border-radius: 3px;">docker-compose up -d</code><br/>
-                3. 查看日志: <code style="background: #f5f7fa; padding: 2px 6px; border-radius: 3px;">docker-compose logs -f</code><br/>
+                2. 在同目录执行: <code style="background: var(--cf-s2); padding: 2px 6px; border-radius: 3px;">docker-compose up -d</code><br/>
+                3. 查看日志: <code style="background: var(--cf-s2); padding: 2px 6px; border-radius: 3px;">docker-compose logs -f</code><br/>
                 <br/>
-                <strong style="color: #E6A23C;">重要提示：</strong><br/>
+                <strong style="color: var(--cf-warning);">重要提示：</strong><br/>
                 <template v-if="scriptForm.dockerMode === 'mihomo'">
                   • 该镜像内置了 Mihomo，Agent 和 Mihomo 在同一容器中运行<br/>
                   • 会自动创建 ./mihomo 目录存储配置文件<br/>
@@ -805,7 +805,7 @@
                 <span :style="{ color: getProgressColor(currentMetricsAgent.system_metrics.cpu?.usage_percent) }">
                   {{ formatPercent(currentMetricsAgent.system_metrics.cpu?.usage_percent) }}
                 </span>
-                <span style="color: #909399; font-size: 11px; margin-left: 8px;">
+                <span style="color: var(--cf-fg-2); font-size: 11px; margin-left: 8px;">
                   ({{ currentMetricsAgent.system_metrics.cpu?.core_count }} 核)
                 </span>
               </el-descriptions-item>
@@ -813,23 +813,23 @@
                 <span :style="{ color: getProgressColor(currentMetricsAgent.system_metrics.memory?.used_percent) }">
                   {{ formatPercent(currentMetricsAgent.system_metrics.memory?.used_percent) }}
                 </span>
-                <span style="color: #909399; font-size: 11px; margin-left: 8px;">
+                <span style="color: var(--cf-fg-2); font-size: 11px; margin-left: 8px;">
                   {{ formatBytes(currentMetricsAgent.system_metrics.memory?.used) }} / {{ formatBytes(currentMetricsAgent.system_metrics.memory?.total) }}
                 </span>
               </el-descriptions-item>
               <el-descriptions-item label="网络速度">
-                <span style="color: #409EFF;">↑ {{ formatNetworkSpeed(currentMetricsAgent.system_metrics.network?.speed_sent) }}</span>
-                <span style="color: #67C23A; margin-left: 8px;">↓ {{ formatNetworkSpeed(currentMetricsAgent.system_metrics.network?.speed_recv) }}</span>
+                <span style="color: var(--cf-primary);">↑ {{ formatNetworkSpeed(currentMetricsAgent.system_metrics.network?.speed_sent) }}</span>
+                <span style="color: var(--cf-success); margin-left: 8px;">↓ {{ formatNetworkSpeed(currentMetricsAgent.system_metrics.network?.speed_recv) }}</span>
               </el-descriptions-item>
               <el-descriptions-item label="总流量">
-                <span style="color: #409EFF;">↑ {{ formatBytes(currentMetricsAgent.system_metrics.network?.bytes_sent) }}</span>
-                <span style="color: #67C23A; margin-left: 8px;">↓ {{ formatBytes(currentMetricsAgent.system_metrics.network?.bytes_recv) }}</span>
+                <span style="color: var(--cf-primary);">↑ {{ formatBytes(currentMetricsAgent.system_metrics.network?.bytes_sent) }}</span>
+                <span style="color: var(--cf-success); margin-left: 8px;">↓ {{ formatBytes(currentMetricsAgent.system_metrics.network?.bytes_recv) }}</span>
               </el-descriptions-item>
               <el-descriptions-item label="磁盘使用率">
                 <span :style="{ color: getProgressColor(currentMetricsAgent.system_metrics.disk?.used_percent) }">
                   {{ formatPercent(currentMetricsAgent.system_metrics.disk?.used_percent) }}
                 </span>
-                <span style="color: #909399; font-size: 11px; margin-left: 8px;">
+                <span style="color: var(--cf-fg-2); font-size: 11px; margin-left: 8px;">
                   {{ formatBytes(currentMetricsAgent.system_metrics.disk?.used) }} / {{ formatBytes(currentMetricsAgent.system_metrics.disk?.total) }}
                 </span>
               </el-descriptions-item>
@@ -2179,7 +2179,6 @@ onUnmounted(() => {
   font-size: 26px;
   font-weight: 700;
   color: var(--cf-fg);
-  color: transparent;
 }
 
 .title-block p {
@@ -2617,7 +2616,6 @@ onUnmounted(() => {
   font-size: 20px;
   font-weight: 700;
   color: var(--cf-fg);
-  color: transparent;
 }
 
 :deep(.el-dialog__body) {
@@ -2943,7 +2941,6 @@ onUnmounted(() => {
 }
 
 :deep(.el-button--primary) {
-  background: var(--cf-s2);
   box-shadow: 0 8px 20px rgba(107, 115, 255, 0.25);
 }
 
@@ -2953,7 +2950,7 @@ onUnmounted(() => {
 }
 
 :deep(.el-button--success) {
-  background: var(--cf-primary);
+  background: var(--cf-primary-fill);
   color: var(--cf-primary-fg);
   box-shadow: 0 8px 20px rgba(139, 143, 255, 0.25);
 }

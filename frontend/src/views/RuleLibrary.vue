@@ -399,7 +399,7 @@
           <template #default>
             <div style="font-size: 13px; margin-top: 8px;">
               示例格式：<br>
-              <code style="background: #f5f7fa; padding: 2px 6px; border-radius: 3px;">
+              <code style="background: var(--cf-s2); padding: 2px 6px; border-radius: 3px;">
                 private_block: { type: http, behavior: classical, url: "https://...", ... }
               </code>
             </div>
@@ -1492,7 +1492,7 @@ onUnmounted(() => {
 }
 
 .toggle-btn.active {
-  background: var(--cf-primary);
+  background: var(--cf-primary-fill);
   color: var(--cf-primary-fg);
   border-color: transparent;
 }
@@ -1758,7 +1758,7 @@ onUnmounted(() => {
 }
 
 .status-toggle.active {
-  background: var(--cf-primary);
+  background: var(--cf-primary-fill);
   color: var(--cf-primary-fg);
   box-shadow: 0 12px 28px rgba(87, 104, 255, 0.3);
 }

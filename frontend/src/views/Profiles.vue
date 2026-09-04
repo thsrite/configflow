@@ -258,7 +258,6 @@ onMounted(() => {
   font-size: 26px;
   font-weight: 700;
   color: var(--cf-fg);
-  color: transparent;
 }
 
 .title-block p {
@@ -401,7 +400,7 @@ onMounted(() => {
 }
 
 .card-btn.primary {
-  background: var(--cf-primary);
+  background: var(--cf-primary-fill);
   color: var(--cf-primary-fg);
 }
 

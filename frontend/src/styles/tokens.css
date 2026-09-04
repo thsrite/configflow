@@ -16,10 +16,13 @@
 
   --cf-fg: #eceef2;
   --cf-fg-2: #a8b0bd;
-  --cf-fg-3: #6b7482;
+  --cf-fg-3: #848e9e;
 
   --cf-primary: #6d7cff;
   --cf-primary-hover: #8390ff;
+  /* 实心按钮的填充色：白字在 #6d7cff 上只有 3.51:1，加深到 4.84:1 */
+  --cf-primary-fill: #5563e8;
+  --cf-primary-fill-hover: #4a58dd;
   --cf-primary-soft: #2a2f52;
   --cf-primary-fg: #ffffff;
 
@@ -29,6 +32,8 @@
   --cf-warning-soft: #2e2413;
   --cf-danger: #ff6b6b;
   --cf-danger-soft: #331919;
+  /* 实心危险按钮的填充色：白字在 #ff6b6b 上对比不足 */
+  --cf-danger-fill: #c93a3a;
 
   /* 作用域语义：共享资源 = 青蓝，当前配置 = 靛蓝 */
   --cf-shared: #5ec3ff;
@@ -54,10 +59,13 @@
 
   --cf-fg: #111621;
   --cf-fg-2: #525c6b;
-  --cf-fg-3: #8d97a5;
+  --cf-fg-3: #646d79;
 
   --cf-primary: #4f5bd5;
   --cf-primary-hover: #3f4ac0;
+  /* 浅色下白字在 #4f5bd5 上已有 5.54:1，填充色与主色一致 */
+  --cf-primary-fill: #4f5bd5;
+  --cf-primary-fill-hover: #3f4ac0;
   --cf-primary-soft: #eceefc;
   --cf-primary-fg: #ffffff;
 
@@ -65,8 +73,9 @@
   --cf-success-soft: #e6f7f0;
   --cf-warning: #b8730a;
   --cf-warning-soft: #fdf3e2;
-  --cf-danger: #d64545;
+  --cf-danger: #c62f2f;
   --cf-danger-soft: #fdeaea;
+  --cf-danger-fill: #c0392f;
 
   --cf-shared: #0d6ea8;
   --cf-shared-soft: #e7f2fa;
@@ -282,4 +291,57 @@ body {
     min-width: 34px;
     padding-right: var(--cf-sp-1);
   }
+}
+
+/* 实心主按钮使用 --cf-primary-fill，保证白字达到 WCAG AA 4.5:1；
+ * --el-color-primary 保持较亮的强调色，供链接、聚焦环与图标使用。
+ */
+.el-button--danger {
+  --el-button-bg-color: var(--cf-danger-fill);
+  --el-button-border-color: var(--cf-danger-fill);
+  --el-button-hover-bg-color: var(--cf-danger-fill);
+  --el-button-hover-border-color: var(--cf-danger-fill);
+}
+
+/* Element Plus 标签默认用主色的浅色变体作底、主色作字，深色主题下对比不足；
+ * 统一改为设计系统的语义软色底 + 语义色文字。
+ */
+.el-tag {
+  --el-tag-bg-color: var(--cf-s3);
+  --el-tag-border-color: var(--cf-bd);
+  --el-tag-text-color: var(--cf-fg);
+}
+
+.el-tag.el-tag--primary {
+  --el-tag-bg-color: var(--cf-primary-soft);
+  --el-tag-text-color: var(--cf-primary);
+}
+
+.el-tag.el-tag--success {
+  --el-tag-bg-color: var(--cf-success-soft);
+  --el-tag-text-color: var(--cf-success);
+}
+
+.el-tag.el-tag--warning {
+  --el-tag-bg-color: var(--cf-warning-soft);
+  --el-tag-text-color: var(--cf-warning);
+}
+
+.el-tag.el-tag--danger {
+  --el-tag-bg-color: var(--cf-danger-soft);
+  --el-tag-text-color: var(--cf-danger);
+}
+
+.el-tag.el-tag--info {
+  --el-tag-bg-color: var(--cf-s3);
+  --el-tag-text-color: var(--cf-fg-2);
+}
+
+.el-button--primary {
+  --el-button-bg-color: var(--cf-primary-fill);
+  --el-button-border-color: var(--cf-primary-fill);
+  --el-button-hover-bg-color: var(--cf-primary-fill-hover);
+  --el-button-hover-border-color: var(--cf-primary-fill-hover);
+  --el-button-active-bg-color: var(--cf-primary-fill-hover);
+  --el-button-active-border-color: var(--cf-primary-fill-hover);
 }

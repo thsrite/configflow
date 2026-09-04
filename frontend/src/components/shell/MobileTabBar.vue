@@ -30,7 +30,8 @@ const groups = NAV_GROUPS
   right: 0;
   bottom: 0;
   z-index: 900;
-  display: grid;
+  /* 仅移动端出现 */
+  display: none;
   grid-template-columns: repeat(4, 1fr);
   background: color-mix(in srgb, var(--cf-bg) 92%, transparent);
   backdrop-filter: saturate(1.4) blur(16px);
@@ -60,5 +61,11 @@ const groups = NAV_GROUPS
 
 .cf-tabs__icon {
   font-size: 19px;
+}
+
+@media (max-width: 900px) {
+  .cf-tabs {
+    display: grid;
+  }
 }
 </style>

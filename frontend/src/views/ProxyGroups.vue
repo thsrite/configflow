@@ -252,7 +252,7 @@
               :value="group.id"
             />
           </el-select>
-          <div style="font-size: 12px; color: #909399; margin-top: 4px;">
+          <div style="font-size: 12px; color: var(--cf-fg-2); margin-top: 4px;">
             跟随模式：将完全复制被跟随策略组的所有配置（类型、节点来源、测试参数等），只保留自己的名称
           </div>
         </el-form-item>
@@ -337,7 +337,7 @@
               </div>
             </el-option>
           </el-select>
-          <div style="margin-top: 8px; color: #909399; font-size: 12px">
+          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
             聚合中的所有订阅和节点都会被包含
           </div>
         </el-form-item>
@@ -358,7 +358,7 @@
               预览
             </el-button>
           </div>
-          <div style="margin-top: 8px; color: #909399; font-size: 12px">
+          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
             此正则过滤将应用于聚合中的节点，不使用聚合自带的正则过滤器
           </div>
         </el-form-item>
@@ -389,7 +389,7 @@
           <el-collapse v-model="activeCollapsePanel" style="width: 100%">
             <el-collapse-item name="sorting">
               <template #title>
-                <span style="font-size: 13px; color: #606266;">拖拽调整顺序（点击展开/收起）</span>
+                <span style="font-size: 13px; color: var(--cf-fg-2);">拖拽调整顺序（点击展开/收起）</span>
               </template>
               <div class="ordered-proxies-container">
                 <div ref="orderedProxiesRef" class="ordered-proxies-list">
@@ -1893,7 +1893,7 @@ onUnmounted(() => {
 }
 
 .status-toggle-btn.active {
-  background: var(--cf-primary);
+  background: var(--cf-primary-fill);
   color: var(--cf-primary-fg);
 }
 
@@ -2210,7 +2210,7 @@ onUnmounted(() => {
 }
 
 .footer-btn.primary {
-  background: var(--cf-primary);
+  background: var(--cf-primary-fill);
   border: none;
   color: var(--cf-primary-fg);
   box-shadow: 0 12px 24px rgba(87, 104, 255, 0.28);

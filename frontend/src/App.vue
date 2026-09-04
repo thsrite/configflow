@@ -50,46 +50,22 @@
 
       <main class="cf-main">
         <div class="cf-main__inner">
+          <MobileGroupNav
+            :active-path="route.path"
+            :subscription-aggregation-enabled="subscriptionAggregationEnabled"
+          />
           <router-view :key="activeProfileId" />
         </div>
       </main>
     </div>
 
-    <MobileTabBar class="cf-show-mobile" :active-scope="activeScope" @select="openGroup" />
+    <MobileTabBar :active-scope="activeScope" @select="openGroup" />
 
-    <!-- 移动端二级入口：分组内页面选择 -->
-    <el-drawer
-      v-model="groupSheetVisible"
-      direction="btt"
-      size="auto"
-      :with-header="false"
-      class="cf-group-sheet"
-    >
-      <div v-if="openedGroup" class="cf-sheet">
-        <div class="cf-sheet__grip" aria-hidden="true"></div>
-        <div class="cf-sheet__title">
-          {{ openedGroup.scope === 'profile' ? `当前配置 · ${currentProfileName}` : openedGroup.tabLabel }}
-        </div>
-        <div v-if="openedGroup.hint" class="cf-sheet__hint">{{ openedGroup.hint }}</div>
-        <button
-          v-for="item in openedGroupItems"
-          :key="item.path"
-          type="button"
-          class="cf-sheet__row"
-          :class="{ 'is-active': route.path === item.path }"
-          @click="goto(item.path)"
-        >
-          <el-icon class="cf-sheet__icon"><component :is="item.icon" /></el-icon>
-          <span class="cf-sheet__label">{{ item.label }}</span>
-          <el-icon class="cf-sheet__chev"><ArrowRight /></el-icon>
-        </button>
-      </div>
-    </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { systemApi } from './api'
@@ -97,6 +73,7 @@ import api from './api'
 import ProfileSwitcher from './components/ProfileSwitcher.vue'
 import AppRail from './components/shell/AppRail.vue'
 import MobileTabBar from './components/shell/MobileTabBar.vue'
+import MobileGroupNav from './components/shell/MobileGroupNav.vue'
 import { useProfileStore } from './stores/profile'
 import { useThemeStore } from './stores/theme'
 import { scopeOfPath, type NavGroup, type NavItem } from './navigation'
@@ -118,8 +95,6 @@ const currentProfileName = computed(
 )
 
 /* ---------- 移动端分组入口 ---------- */
-const groupSheetVisible = ref(false)
-const openedGroup = ref<NavGroup | null>(null)
 const activeScope = computed(() => scopeOfPath(route.path))
 
 const itemsOf = (group: NavGroup): NavItem[] =>
@@ -127,22 +102,16 @@ const itemsOf = (group: NavGroup): NavItem[] =>
     item => item.flag !== 'subscriptionAggregation' || subscriptionAggregationEnabled.value
   )
 
-const openedGroupItems = computed(() => (openedGroup.value ? itemsOf(openedGroup.value) : []))
-
+/**
+ * 底栏切换分组：直接进入该分组的第一个页面。
+ * 分组内的页面切换交给内容区顶部的分段控件，避免多一次点击和一层模态。
+ */
 const openGroup = (group: NavGroup): void => {
   const items = itemsOf(group)
-  // 单页分组直接跳转，不弹无意义的选择面板
-  if (items.length === 1) {
-    router.push(items[0].path)
-    return
-  }
-  openedGroup.value = group
-  groupSheetVisible.value = true
-}
-
-const goto = (path: string): void => {
-  groupSheetVisible.value = false
-  if (route.path !== path) router.push(path)
+  if (!items.length) return
+  // 已在该分组内时停留在当前页，不打断用户
+  if (scopeOfPath(route.path) === group.scope) return
+  router.push(items[0].path)
 }
 
 /* ---------- 既有业务逻辑 ---------- */
@@ -246,14 +215,6 @@ onUnmounted(() => {
     handleSubscriptionAggregationChange as EventListener
   )
 })
-
-// 路由切换后关闭移动端分组面板，避免返回时残留
-watch(
-  () => route.path,
-  () => {
-    groupSheetVisible.value = false
-  }
-)
 </script>
 
 <style scoped>
@@ -355,10 +316,6 @@ watch(
 }
 
 /* ---------- 响应式：桌面 rail / 移动底栏 ---------- */
-.cf-show-mobile {
-  display: none;
-}
-
 @media (max-width: 900px) {
   .cf-hide-mobile {
     display: none !important;
@@ -371,9 +328,6 @@ watch(
   .cf-brand {
     min-width: 34px;
     min-height: 34px;
-  }
-  .cf-show-mobile {
-    display: grid;
   }
   .cf-main__inner {
     padding: var(--cf-sp-4) var(--cf-sp-4)
@@ -395,80 +349,5 @@ watch(
 }
 
 /* ---------- 移动端分组面板 ---------- */
-.cf-sheet {
-  padding: var(--cf-sp-2) var(--cf-sp-4) calc(env(safe-area-inset-bottom) + var(--cf-sp-4));
-}
-
-.cf-sheet__grip {
-  width: 36px;
-  height: 4px;
-  border-radius: var(--cf-r-pill);
-  background: var(--cf-bd-strong);
-  margin: 0 auto var(--cf-sp-3);
-}
-
-.cf-sheet__title {
-  font-size: 15px;
-  font-weight: 650;
-  color: var(--cf-fg);
-}
-
-.cf-sheet__hint {
-  font-size: 12px;
-  color: var(--cf-fg-2);
-  margin-top: 2px;
-  margin-bottom: var(--cf-sp-2);
-}
-
-.cf-sheet__row {
-  width: 100%;
-  min-height: var(--cf-touch);
-  display: flex;
-  align-items: center;
-  gap: var(--cf-sp-3);
-  padding: var(--cf-sp-3) 0;
-  background: none;
-  border: none;
-  border-top: 1px solid var(--cf-bd);
-  color: var(--cf-fg);
-  font-family: inherit;
-  font-size: 15px;
-  font-weight: 550;
-  text-align: left;
-  cursor: pointer;
-}
-
-.cf-sheet__row.is-active {
-  color: var(--cf-primary);
-}
-
-.cf-sheet__icon {
-  width: 34px;
-  height: 34px;
-  flex: 0 0 auto;
-  border-radius: var(--cf-r-md);
-  background: var(--cf-s3);
-  display: grid;
-  place-items: center;
-  font-size: 15px;
-}
-
-.cf-sheet__label {
-  flex: 1 1 auto;
-}
-
-.cf-sheet__chev {
-  color: var(--cf-fg-3);
-}
 </style>
 
-<style>
-/* 移动端分组面板走全局样式：Element Plus drawer 渲染在 body 下 */
-.cf-group-sheet.el-drawer {
-  border-radius: var(--cf-r-xl) var(--cf-r-xl) 0 0;
-  background: var(--cf-s1);
-}
-.cf-group-sheet .el-drawer__body {
-  padding: 0;
-}
-</style>

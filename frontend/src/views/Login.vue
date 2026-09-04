@@ -259,7 +259,6 @@ const handleLogin = async () => {
 :deep(.el-button--primary) {
   padding: 16px 24px;
   height: auto;
-  background: var(--cf-s2);
   border: none;
   border-radius: 14px;
   font-weight: 600;
@@ -278,7 +277,6 @@ const handleLogin = async () => {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: var(--cf-s2);
   transition: left 0.5s;
 }
 

@@ -863,7 +863,7 @@ onMounted(async () => {
 }
 
 .status-toggle-btn.active {
-  background: var(--cf-primary);
+  background: var(--cf-primary-fill);
   color: var(--cf-primary-fg);
 }
 
@@ -1106,7 +1106,7 @@ onMounted(async () => {
 }
 
 .footer-btn.primary {
-  background: var(--cf-primary);
+  background: var(--cf-primary-fill);
   border: none;
   color: var(--cf-primary-fg);
   box-shadow: 0 12px 24px rgba(87, 104, 255, 0.28);

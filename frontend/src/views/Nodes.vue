@@ -1041,7 +1041,6 @@ onMounted(() => {
   font-size: 26px;
   font-weight: 700;
   color: var(--cf-fg);
-  color: transparent;
 }
 
 .title-block p {
@@ -1267,7 +1266,7 @@ onMounted(() => {
 }
 
 .status-toggle-btn.active {
-  background: var(--cf-primary);
+  background: var(--cf-primary-fill);
   color: var(--cf-primary-fg);
 }
 
@@ -1637,7 +1636,7 @@ onMounted(() => {
 }
 
 .footer-btn.primary {
-  background: var(--cf-primary);
+  background: var(--cf-primary-fill);
   border: none;
   color: var(--cf-primary-fg);
   box-shadow: 0 12px 24px rgba(87, 104, 255, 0.28);

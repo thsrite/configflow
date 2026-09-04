@@ -404,7 +404,6 @@ onUnmounted(() => {
 }
 
 .toolbar-right :deep(.el-button--primary) {
-  background: var(--cf-s2);
   border: none;
   box-shadow: 0 8px 20px rgba(91, 109, 255, 0.25);
 }
@@ -415,7 +414,6 @@ onUnmounted(() => {
 }
 
 .toolbar-right :deep(.el-button--danger) {
-  background: var(--cf-s2);
   border: none;
   box-shadow: 0 8px 20px rgba(255, 87, 87, 0.25);
 }
@@ -533,7 +531,8 @@ onUnmounted(() => {
 .line-number {
   flex-shrink: 0;
   width: 60px;
-  color: var(--cf-fg-3);
+  /* 控制台背景恒为深色，行号与时间戳不跟随主题，否则浅色下会看不见 */
+  color: #8a8f98;
   text-align: right;
   margin-right: 16px;
   user-select: none;
@@ -547,7 +546,8 @@ onUnmounted(() => {
 
 /* 日志时间戳样式 */
 :deep(.log-timestamp) {
-  color: var(--cf-fg-3);
+  /* 同上：控制台内的配色独立于应用主题 */
+  color: #8a8f98;
   font-weight: 500;
 }
 
