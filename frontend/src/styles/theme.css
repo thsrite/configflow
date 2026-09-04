@@ -1,24 +1,15 @@
 /* ConfigFlow × shadcn 主题层 —— 全站唯一色彩来源
  *
- * 这里定义 shadcn 语义 token（oklch，zinc 冷中性基调 + 单一强调色），
- * tokens.css 里既有的 --cf-* 全部反向引用本文件，
- * 因此未改造的页面无需改动结构即可继承新配色。
+ * 这里定义 shadcn 语义 token（oklch，zinc 冷中性基调 + 双强调色），
+ * tokens.css 里既有的 --cf-* 全部反向引用本文件。
  *
- * 刻意不引入 Tailwind preflight：本项目 12 个页面依赖大量原生元素默认样式
- * 与 Element Plus 样式，全局重置会造成不可控回归。shadcn 组件所需的少量
- * 基线重置在 @layer base 中按需补齐，作用范围限定在组件自身的类上。
- */
-
-/* ⚠️ 迁移约束：element-plus/dist/index.css 是「未分层」样式，而 Tailwind 工具类位于
- * @layer utilities。CSS 规定未分层规则永远压过任何 cascade layer，因此在仍带 .el-*
- * 类的元素上叠加 Tailwind 工具类会静默失效（不报错、不生效）。
- * 后续逐页改造时：一个元素要么完全交给 shadcn，要么继续用 Element Plus + scoped 样式，
- * 不要混用。若将来必须混用，需先把 Element Plus 也 @import 进一个 vendor layer，
- * 那会整体改变它与各页 scoped 样式的优先级，属于独立的破坏性改动。
+ * Element Plus 移除后已启用 Tailwind preflight：全站基线统一，
+ * 不再需要按 data-slot 逐个补回 border-color / box-sizing / button 默认值。
  */
 @layer theme, base, components, utilities;
 
 @import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
 @import 'tailwindcss/utilities.css' layer(utilities);
 
 /* shadcn 组件的进出场动画类（animate-in / fade-in-0 / zoom-in-95 …）来自这里 */
@@ -189,60 +180,20 @@
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
 
-/* ---------- 受限基线重置 ----------
- * 只覆盖 shadcn 组件必须依赖的元素默认值，且限定在带 Tailwind 类的元素上，
- * 避免波及未改造页面的原生元素样式。
- */
+/* ---------- preflight 之后的少量补充 ---------- */
 @layer base {
-  /* preflight 未启用带来的两处默认值缺口，统一在 shadcn 组件
-   * （均带 data-slot）范围内补回，不波及未改造页面：
-   *
-   * 1) border/ring 颜色：Tailwind v4 默认取 currentColor
-   * 2) box-sizing：浏览器 UA 对 <input type=text> / <textarea> 默认是
-   *    content-box，导致 w-full 或固定宽度的输入框会把 padding 溢出到
-   *    容器之外、压住相邻元素（<button>/<select> 的 UA 默认是 border-box，
-   *    所以不会暴露这个问题）。
-   */
-  [data-slot],
-  [data-slot] *,
-  [data-slot]::before,
-  [data-slot]::after {
-    border-color: var(--border);
-    box-sizing: border-box;
-  }
-
-  /* shadcn 组件的 <button>（Checkbox / Switch / Trigger…）未必带 flex 类，
-   * 未启用 preflight 时会保留 UA 的灰色 buttonface 底与默认边框，
-   * 因此按 data-slot 一并重置。 */
-  button[data-slot],
-  button:where([class*='inline-flex'], [class*='flex']) {
-    font-family: inherit;
-    font-size: inherit;
-    line-height: inherit;
-    background-color: transparent;
-    background-image: none;
-    border: 0 solid transparent;
-    margin: 0;
-    padding: 0;
-    cursor: pointer;
-  }
-
-  input:where([class*='w-full'], [class*='flex']),
-  textarea:where([class*='w-full'], [class*='flex']) {
-    font-family: inherit;
-    font-size: inherit;
-    line-height: inherit;
-    color: inherit;
-    background-color: transparent;
-    border: 0 solid transparent;
-    margin: 0;
-    padding: 0;
-  }
-
+  /* preflight 会把 placeholder 设成 currentColor 的半透明，
+   * 深色主题下对比不足，统一改用语义色。 */
   input::placeholder,
   textarea::placeholder {
     color: var(--muted-foreground);
     opacity: 1;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
   }
 }
 
