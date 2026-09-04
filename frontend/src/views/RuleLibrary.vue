@@ -1,7 +1,7 @@
 <template>
   <div class="rule-library-page" :class="{ 'cf-reordering': reorder.active.value }">
     <ScopeBanner scope="resource" :profile-name="cfProfileName" description="规则集来源与缓存，按配置空间隔离" />
-    <PageHeader title="规则库" description="集中维护规则集来源与缓存，所有配置空间共同使用">
+    <PageHeader title="规则库" description="集中维护规则集来源与缓存">
       <template #actions>
         <el-button v-if="!reorder.active.value" :disabled="ruleLibrary.length < 2" @click="reorder.enter">
           <el-icon><Sort /></el-icon>
@@ -77,6 +77,23 @@
 
     <template v-else>
       <!-- 选择控制栏 -->
+      <div class="cf-toolbar">
+        <el-input
+          v-model="keyword"
+          class="cf-toolbar__search"
+          placeholder="搜索名称、地址或内容"
+          clearable
+          :disabled="reorder.active.value"
+        >
+          <template #prefix><el-icon><Search /></el-icon></template>
+        </el-input>
+
+        <el-select v-model="behaviorFilter" class="cf-toolbar__filter" :disabled="reorder.active.value">
+          <el-option label="全部类型" value="all" />
+          <el-option v-for="b in behaviorOptions" :key="b" :label="b" :value="b" />
+        </el-select>
+      </div>
+
       <div class="selection-bar">
         <el-checkbox
           :model-value="allSelected"
@@ -99,92 +116,98 @@
         @save="handleSaveOrder"
       />
 
-      <div v-if="viewMode === 'list'" class="rules-list" ref="rulesContainer">
-      <div
-        v-for="(rule, cfIndex) in ruleLibrary"
-        :key="rule.id"
-        class="list-item"
-        :class="{ disabled: !rule.enabled }"
-        :data-id="rule.id"
-        data-reorder-item
-      >
-        <div class="list-item-checkbox">
-          <el-checkbox
-            :model-value="selectedRules.includes(rule.id)"
-            @change="toggleRuleSelection(rule.id)"
-          />
-        </div>
-        <div class="list-item-drag">
-            <DragHandle
-              v-if="reorder.active.value"
-              :label="rule.name || rule.id"
-              :index="cfIndex"
-              :total="ruleLibrary.length"
-              :position="reorder.positionLabel(cfIndex)"
-              :grabbed="reorder.grabbedIndex.value === cfIndex"
-              @up="reorder.moveUp(cfIndex)"
-              @down="reorder.moveDown(cfIndex)"
-              @keydown="reorder.onHandleKeydown($event, cfIndex)"
-            />
-        </div>
-        <div class="list-item-info">
-          <div class="list-item-name">{{ rule.name }}</div>
-          <div class="list-item-meta">
-            <span class="meta-badge">{{ rule.behavior }}</span>
-            <span class="meta-badge source">{{ rule.source_type === 'content' ? '规则内容' : 'URL地址' }}</span>
-          </div>
-        </div>
-        <div class="list-item-content">
-          <div v-if="rule.source_type === 'content'" class="content-preview">
-            {{ getContentPreview(rule.content) }}
-          </div>
-          <div v-else class="url-preview">
-            <el-link :href="rule.url" target="_blank" type="primary" :underline="false">
-              {{ rule.url }}
-            </el-link>
-          </div>
-        </div>
-        <div class="list-item-actions">
-          <button class="status-toggle" :class="{ active: rule.enabled }" @click="handleToggle(rule)">
-            <el-icon v-if="rule.enabled"><View /></el-icon>
-            <el-icon v-else><Hide /></el-icon>
-          </button>
-          <el-button
-            v-if="rule.source_type === 'content'"
-            class="list-btn"
-            size="small"
-            @click="showAddRuleToSetDialog(rule)"
-            title="添加规则"
-          >
-            <el-icon><Plus /></el-icon>
-          </el-button>
-          <el-button
-            class="list-btn"
-            size="small"
-            @click="copyRuleUrl(rule)"
-            title="复制下载URL"
-          >
-            <el-icon><CopyDocument /></el-icon>
-          </el-button>
-          <el-button
-            class="list-btn"
-            size="small"
-            @click="editRule(rule)"
-            title="编辑"
-          >
-            <el-icon><Edit /></el-icon>
-          </el-button>
-          <el-button
-            class="list-btn danger"
-            size="small"
-            @click="deleteRule(rule)"
-            title="删除"
-          >
-            <el-icon><Delete /></el-icon>
-          </el-button>
-        </div>
+      <el-empty v-if="visibleRules.length === 0" :description="rulesEmptyText" />
+
+      <!-- 表格视图 -->
+      <div v-else-if="effectiveView === 'list'" class="cf-table-wrap">
+        <table class="cf-table">
+          <thead>
+            <tr>
+              <th v-if="reorder.active.value" class="cf-table__grip" scope="col"><span class="cf-sr">排序</span></th>
+              <th class="cf-table__check" scope="col"><span class="cf-sr">选择</span></th>
+              <th class="cf-table__num" scope="col">#</th>
+              <th scope="col">名称</th>
+              <th scope="col">类型</th>
+              <th scope="col">来源</th>
+              <th class="cf-table__right" scope="col">操作</th>
+            </tr>
+          </thead>
+          <tbody ref="rulesContainer">
+            <tr
+              v-for="(rule, cfIndex) in visibleRules"
+              :key="rule.id"
+              :data-id="rule.id"
+              data-reorder-item
+              :class="{ 'is-disabled': !rule.enabled }"
+            >
+              <td v-if="reorder.active.value" class="cf-table__grip">
+                <DragHandle
+                  :label="rule.name || rule.id"
+                  :index="cfIndex"
+                  :total="ruleLibrary.length"
+                  :position="reorder.positionLabel(cfIndex)"
+                  :grabbed="reorder.grabbedIndex.value === cfIndex"
+                  @up="reorder.moveUp(cfIndex)"
+                  @down="reorder.moveDown(cfIndex)"
+                  @keydown="reorder.onHandleKeydown($event, cfIndex)"
+                />
+              </td>
+              <td class="cf-table__check cf-reorder-mute">
+                <el-checkbox
+                  :model-value="selectedRules.includes(rule.id)"
+                  :aria-label="`选择 ${rule.name}`"
+                  @change="toggleRuleSelection(rule.id)"
+                />
+              </td>
+              <td class="cf-table__num cf-num">{{ cfIndex + 1 }}</td>
+              <td class="cf-table__name">
+                <span class="card-dot" :class="rule.enabled ? 'is-ok' : 'is-off'" aria-hidden="true"></span>
+                <span class="cf-table__nametext">{{ rule.name }}</span>
+              </td>
+              <td>
+                <span class="meta-pill">{{ rule.behavior }}</span>
+              </td>
+              <td class="cf-table__source">
+                <span v-if="rule.source_type === 'content'" class="cf-mono cf-table__preview">
+                  {{ getContentPreview(rule.content) }}
+                </span>
+                <a v-else class="cf-mono cf-table__preview" :href="rule.url" target="_blank" rel="noreferrer">
+                  {{ rule.url }}
+                </a>
+              </td>
+              <td class="cf-table__right cf-reorder-mute">
+                <el-button
+                  size="small"
+                  text
+                  :aria-label="rule.enabled ? `停用 ${rule.name}` : `启用 ${rule.name}`"
+                  @click="handleToggle(rule)"
+                >
+                  <el-icon><View v-if="rule.enabled" /><Hide v-else /></el-icon>
+                </el-button>
+                <el-button
+                  v-if="rule.source_type === 'content'"
+                  size="small"
+                  text
+                  :aria-label="`向 ${rule.name} 添加规则`"
+                  @click="showAddRuleToSetDialog(rule)"
+                >
+                  <el-icon><Plus /></el-icon>
+                </el-button>
+                <el-button size="small" text :aria-label="`复制 ${rule.name} 的下载地址`" @click="copyRuleUrl(rule)">
+                  <el-icon><CopyDocument /></el-icon>
+                </el-button>
+                <el-button size="small" text :aria-label="`编辑 ${rule.name}`" @click="editRule(rule)">
+                  <el-icon><Edit /></el-icon>
+                </el-button>
+                <el-button size="small" text class="danger-text" :aria-label="`删除 ${rule.name}`" @click="deleteRule(rule)">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <footer class="cf-table__foot">共 {{ visibleRules.length }} 个规则集</footer>
       </div>
-    </div>
 
       <!-- 卡片视图 -->
       <div v-else class="rules-grid" ref="rulesContainer">
@@ -484,7 +507,7 @@ import {
   Document,
   List,
   Grid,
-  CopyDocument, Sort } from '@element-plus/icons-vue'
+  CopyDocument, Sort, Search} from '@element-plus/icons-vue'
 import api from '@/api'
 import { activeProfileId } from '@/profileContext'
 
@@ -1394,6 +1417,40 @@ watch(viewMode, () => {
   })
 })
 
+/* ---------- 窄屏视图回退与筛选 ---------- */
+// 规则集表格列多，窄屏不可读，移动端一律用卡片
+const isNarrow = ref(false)
+const syncNarrow = () => {
+  isNarrow.value = window.matchMedia('(max-width: 900px)').matches
+}
+const effectiveView = computed(() => (isNarrow.value ? 'grid' : viewMode.value))
+
+const keyword = ref('')
+const behaviorFilter = ref('all')
+
+const behaviorOptions = computed(() => {
+  const set = new Set<string>()
+  ruleLibrary.value.forEach(r => {
+    if (r.behavior) set.add(String(r.behavior))
+  })
+  return [...set].sort()
+})
+
+// 排序模式下必须展示完整列表，否则筛选会让保存的顺序丢条目
+const visibleRules = computed(() => {
+  if (reorder.active.value) return ruleLibrary.value
+  const q = keyword.value.trim().toLowerCase()
+  return ruleLibrary.value.filter(r => {
+    if (behaviorFilter.value !== 'all' && r.behavior !== behaviorFilter.value) return false
+    if (!q) return true
+    return [r.name, r.url, r.content].some(v => String(v || '').toLowerCase().includes(q))
+  })
+})
+
+const rulesEmptyText = computed(() =>
+  ruleLibrary.value.length === 0 ? '还没有规则集' : '没有匹配的规则集'
+)
+
 /* ---------- 统一拖动排序 ---------- */
 const reorder = useReorder<any>({
   items: ruleLibrary,
@@ -1418,11 +1475,14 @@ const handleSaveOrder = async () => {
 }
 
 onMounted(() => {
+  syncNarrow()
+  window.addEventListener('resize', syncNarrow)
   loadRuleLibrary()
   loadProxyDomains()
 })
 
 onUnmounted(() => {
+  window.removeEventListener('resize', syncNarrow)
 })
 </script>
 
@@ -2052,6 +2112,89 @@ onUnmounted(() => {
   :deep(.rule-dialog) {
     width: 95vw !important;
     max-width: 95vw !important;
+  }
+}
+
+/* ---------- 表格页面专属列 ---------- */
+.cf-toolbar {
+  display: flex;
+  gap: var(--cf-sp-2);
+  margin-bottom: var(--cf-sp-3);
+  flex-wrap: wrap;
+}
+
+.cf-toolbar__search {
+  max-width: 280px;
+}
+
+.cf-toolbar__filter {
+  width: 148px;
+  flex: 0 0 auto;
+}
+
+.cf-table__check {
+  width: 40px;
+  padding-right: 0;
+}
+
+.cf-table__name {
+  display: flex;
+  align-items: center;
+  gap: var(--cf-sp-2);
+  min-width: 0;
+}
+
+.cf-table__nametext {
+  font-weight: 600;
+  color: var(--cf-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.cf-table__source {
+  max-width: 360px;
+}
+
+.cf-table__preview {
+  display: block;
+  font-size: 12px;
+  color: var(--cf-fg-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.cf-table__preview {
+  color: var(--cf-primary);
+  text-decoration: none;
+}
+a.cf-table__preview:hover {
+  text-decoration: underline;
+}
+
+.card-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--cf-r-pill);
+  flex: 0 0 auto;
+}
+.card-dot.is-ok {
+  background: var(--cf-success);
+}
+.card-dot.is-off {
+  background: var(--cf-fg-3);
+}
+
+.danger-text {
+  color: var(--cf-danger);
+}
+
+@media (max-width: 900px) {
+  .cf-toolbar__search {
+    max-width: none;
+    flex: 1 1 100%;
   }
 }
 </style>

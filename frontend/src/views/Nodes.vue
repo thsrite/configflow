@@ -1,7 +1,7 @@
 <template>
   <div class="nodes-page" :class="{ 'cf-reordering': reorder.active.value }">
     <ScopeBanner scope="resource" :profile-name="cfProfileName" description="订阅拉取与手动录入的节点，按配置空间隔离" />
-    <PageHeader title="节点库" description="订阅拉取与手动录入的节点集中在此，供所有配置空间引用">
+    <PageHeader title="节点库" description="订阅拉取与手动录入的节点集中在此">
       <template #actions>
         <el-button v-if="!reorder.active.value" :disabled="nodes.length < 2" @click="reorder.enter">
           <el-icon><Sort /></el-icon>

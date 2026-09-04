@@ -2,7 +2,7 @@
   <div class="subscriptions-page" :class="{ 'cf-reordering': reorder.active.value }">
     <ScopeBanner scope="resource" :profile-name="cfProfileName" description="订阅源按配置空间隔离，切换配置空间会看到各自的列表" />
 
-    <PageHeader title="订阅来源" description="订阅拉取后的节点进入共享节点库">
+    <PageHeader title="订阅来源" description="订阅拉取后的节点进入本配置空间的节点库">
       <template #actions>
         <el-button :loading="isRefreshing" :disabled="reorder.active.value" @click="handleFetchAll">
           <el-icon><RefreshRight /></el-icon>
