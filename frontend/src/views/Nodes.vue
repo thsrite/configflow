@@ -33,6 +33,32 @@
       </template>
     </PageHeader>
 
+    <div class="cf-toolbar">
+      <el-input
+        v-model="keyword"
+        class="cf-toolbar__search"
+        placeholder="搜索名称、地址或备注"
+        clearable
+        :disabled="reorder.active.value"
+      >
+        <template #prefix><el-icon><Search /></el-icon></template>
+      </el-input>
+
+      <el-select v-model="protocolFilter" class="cf-toolbar__filter" :disabled="reorder.active.value">
+        <el-option label="全部协议" value="all" />
+        <el-option v-for="p in protocolOptions" :key="p" :label="p.toUpperCase()" :value="p" />
+      </el-select>
+
+      <div class="cf-viewtoggle cf-hide-mobile" role="group" aria-label="视图切换">
+        <button type="button" :aria-pressed="viewMode === 'list'" aria-label="列表视图" @click="viewMode = 'list'">
+          <el-icon><List /></el-icon>
+        </button>
+        <button type="button" :aria-pressed="viewMode === 'card'" aria-label="卡片视图" @click="viewMode = 'card'">
+          <el-icon><Grid /></el-icon>
+        </button>
+      </div>
+    </div>
+
     <div v-if="selectedNodeIds.size > 0" class="selection-tip">
       已选择 <strong>{{ selectedNodeIds.size }}</strong> 个节点
     </div>
@@ -45,9 +71,87 @@
       @save="handleSaveOrder"
     />
 
-    <div class="nodes-grid" ref="nodesContainer">
+    <el-empty v-if="visibleNodes.length === 0" :description="nodesEmptyText" />
+
+    <!-- ===== 表格视图（桌面默认） ===== -->
+    <div v-else-if="effectiveView === 'list'" class="cf-table-wrap">
+      <table class="cf-table">
+        <thead>
+          <tr>
+            <th v-if="reorder.active.value" class="cf-table__grip" scope="col"><span class="cf-sr">排序</span></th>
+            <th class="cf-table__check" scope="col"><span class="cf-sr">选择</span></th>
+            <th class="cf-table__num" scope="col">#</th>
+            <th scope="col">名称</th>
+            <th scope="col">协议</th>
+            <th scope="col">地址</th>
+            <th scope="col">来源</th>
+            <th class="cf-table__right" scope="col">操作</th>
+          </tr>
+        </thead>
+        <tbody ref="nodesContainer">
+          <tr
+            v-for="(node, cfIndex) in visibleNodes"
+            :key="node.id || node.name"
+            :data-name="node.name"
+            data-reorder-item
+            :class="{ 'is-disabled': !node.enabled }"
+          >
+            <td v-if="reorder.active.value" class="cf-table__grip">
+              <DragHandle
+                :label="node.name || node.id"
+                :index="cfIndex"
+                :total="nodes.length"
+                :position="reorder.positionLabel(cfIndex)"
+                :grabbed="reorder.grabbedIndex.value === cfIndex"
+                @up="reorder.moveUp(cfIndex)"
+                @down="reorder.moveDown(cfIndex)"
+                @keydown="reorder.onHandleKeydown($event, cfIndex)"
+              />
+            </td>
+            <td class="cf-table__check cf-reorder-mute">
+              <el-checkbox
+                :model-value="selectedNodeIds.has(node.id)"
+                :aria-label="`选择 ${node.name}`"
+                @change="toggleNodeSelection(node.id)"
+              />
+            </td>
+            <td class="cf-table__num cf-num">{{ cfIndex + 1 }}</td>
+            <td class="cf-table__name">
+              <span class="card-dot" :class="node.enabled ? 'is-ok' : 'is-off'" aria-hidden="true"></span>
+              <span class="cf-table__nametext">{{ node.name }}</span>
+              <span v-if="node.remark" class="cf-table__remark">{{ node.remark }}</span>
+            </td>
+            <td>
+              <span class="meta-pill">{{ nodeProtocol(node) }}</span>
+            </td>
+            <td class="cf-table__server cf-mono">{{ nodeAddress(node) }}</td>
+            <td class="cf-table__source">{{ node.subscription_name || '手动添加' }}</td>
+            <td class="cf-table__right cf-reorder-mute">
+              <el-button
+                size="small"
+                text
+                :aria-label="node.enabled ? `停用 ${node.name}` : `启用 ${node.name}`"
+                :disabled="savingStatus[node.id]"
+                @click="handleToggle(node)"
+              >
+                <el-icon><View v-if="node.enabled" /><Hide v-else /></el-icon>
+              </el-button>
+              <el-button size="small" text :aria-label="`编辑 ${node.name}`" @click="editNode(node)">
+                <el-icon><EditPen /></el-icon>
+              </el-button>
+              <el-button size="small" text class="danger-text" :aria-label="`删除 ${node.name}`" @click="deleteNode(node)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <footer class="cf-table__foot">共 {{ visibleNodes.length }} 个节点</footer>
+    </div>
+
+    <div v-else class="nodes-grid" ref="nodesContainer">
       <div
-        v-for="(node, cfIndex) in nodes"
+        v-for="(node, cfIndex) in visibleNodes"
         :key="node.id || node.name"
         class="node-card"
         :class="{ 'node-selected': selectedNodeIds.has(node.id), disabled: !node.enabled }"
@@ -238,9 +342,9 @@ import DragHandle from '@/components/shell/DragHandle.vue'
 import { useReorder } from '@/composables/useReorder'
 import PageHeader from '@/components/shell/PageHeader.vue'
 import ScopeBanner from '@/components/shell/ScopeBanner.vue'
-import { ref, computed, onMounted, nextTick } from 'vue'
+import {onUnmounted,watch, ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DCaret, Plus, DocumentAdd, Delete, EditPen, Close, Link, View, ArrowUp, ArrowDown, Sort } from '@element-plus/icons-vue'
+import { DCaret, Plus, DocumentAdd, Delete, EditPen, Close, Link, View, ArrowUp, ArrowDown, Sort, Search, List, Grid, Hide} from '@element-plus/icons-vue'
 import { nodeApi, subStoreUrlApi } from '@/api'
 import type { ProxyNode } from '@/types'
 import api from '@/api'
@@ -989,6 +1093,77 @@ const deleteNode = async (row: ProxyNode) => {
 
 
 
+/* ---------- 视图模式与筛选 ---------- */
+type ViewMode = 'list' | 'card'
+const VIEW_KEY = 'configflow-nodes-view'
+
+const readView = (): ViewMode => {
+  try {
+    const v = localStorage.getItem(VIEW_KEY)
+    if (v === 'list' || v === 'card') return v
+  } catch {
+    // 存储不可用时用默认视图
+  }
+  return 'list'
+}
+
+const viewMode = ref<ViewMode>(readView())
+watch(viewMode, mode => {
+  try {
+    localStorage.setItem(VIEW_KEY, mode)
+  } catch {
+    // 仅当前会话生效
+  }
+})
+
+// 节点表格列多，窄屏不可读，移动端一律用卡片
+const isNarrow = ref(false)
+const syncNarrow = () => {
+  isNarrow.value = window.matchMedia('(max-width: 900px)').matches
+}
+const effectiveView = computed<ViewMode>(() => (isNarrow.value ? 'card' : viewMode.value))
+
+const keyword = ref('')
+const protocolFilter = ref('all')
+
+const nodeProtocol = (node: any): string => {
+  const raw = node.type || getProtocol(node.proxy_string) || ''
+  return String(raw).toUpperCase() || '—'
+}
+
+const nodeAddress = (node: any): string => {
+  if (!node.server) return '—'
+  return node.port ? `${node.server}:${node.port}` : String(node.server)
+}
+
+const protocolOptions = computed(() => {
+  const set = new Set<string>()
+  nodes.value.forEach(n => {
+    const p = (n.type || getProtocol(n.proxy_string) || '').toString().toLowerCase()
+    if (p) set.add(p)
+  })
+  return [...set].sort()
+})
+
+// 排序模式下必须展示完整列表，否则筛选会让保存的顺序丢条目
+const visibleNodes = computed(() => {
+  if (reorder.active.value) return nodes.value
+  const q = keyword.value.trim().toLowerCase()
+  return nodes.value.filter(n => {
+    if (protocolFilter.value !== 'all') {
+      const p = (n.type || getProtocol(n.proxy_string) || '').toString().toLowerCase()
+      if (p !== protocolFilter.value) return false
+    }
+    if (!q) return true
+    return [n.name, n.server, n.remark, n.subscription_name]
+      .some(v => String(v || '').toLowerCase().includes(q))
+  })
+})
+
+const nodesEmptyText = computed(() =>
+  nodes.value.length === 0 ? '还没有节点' : '没有匹配的节点'
+)
+
 /* ---------- 统一拖动排序 ---------- */
 const reorder = useReorder<any>({
   items: nodes,
@@ -1013,8 +1188,13 @@ const handleSaveOrder = async () => {
 }
 
 onMounted(() => {
-  loadNodes().then(() => {
-  })
+  syncNarrow()
+  window.addEventListener('resize', syncNarrow)
+  loadNodes()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', syncNarrow)
 })
 </script>
 
@@ -1856,6 +2036,95 @@ onMounted(() => {
 
   .dialog-card {
     padding: 24px 18px 20px;
+  }
+}
+
+/* ---------- 表格页面专属列 ---------- */
+.cf-toolbar {
+  display: flex;
+  gap: var(--cf-sp-2);
+  margin-bottom: var(--cf-sp-3);
+  flex-wrap: wrap;
+}
+
+.cf-toolbar__search {
+  max-width: 280px;
+}
+
+.cf-toolbar__filter {
+  width: 132px;
+  flex: 0 0 auto;
+}
+
+.cf-table__check {
+  width: 40px;
+  padding-right: 0;
+}
+
+.cf-table__name {
+  display: flex;
+  align-items: center;
+  gap: var(--cf-sp-2);
+  min-width: 0;
+}
+
+.cf-table__nametext {
+  font-weight: 600;
+  color: var(--cf-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.cf-table__remark {
+  font-size: 11.5px;
+  color: var(--cf-fg-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 110px;
+}
+
+.cf-table__server {
+  color: var(--cf-fg-2);
+  font-size: 12px;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cf-table__source {
+  color: var(--cf-fg-2);
+  font-size: 12px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--cf-r-pill);
+  flex: 0 0 auto;
+}
+.card-dot.is-ok {
+  background: var(--cf-success);
+}
+.card-dot.is-off {
+  background: var(--cf-fg-3);
+}
+
+.danger-text {
+  color: var(--cf-danger);
+}
+
+@media (max-width: 900px) {
+  .cf-toolbar__search {
+    max-width: none;
+    flex: 1 1 100%;
   }
 }
 </style>

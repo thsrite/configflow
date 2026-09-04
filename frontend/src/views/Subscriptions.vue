@@ -905,96 +905,7 @@ onUnmounted(() => {
   flex: 0 0 auto;
 }
 
-/* 视图切换：两个图标按钮成组 */
-.cf-viewtoggle {
-  margin-left: auto;
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: var(--cf-r-md);
-  border: 1px solid var(--cf-bd);
-  background: var(--cf-s2);
-  flex: 0 0 auto;
-}
-
-.cf-viewtoggle button {
-  width: 32px;
-  height: 30px;
-  border: none;
-  border-radius: var(--cf-r-sm);
-  background: none;
-  color: var(--cf-fg-3);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-}
-
-.cf-viewtoggle button[aria-pressed='true'] {
-  background: var(--cf-s1);
-  color: var(--cf-fg);
-  box-shadow: var(--cf-shadow);
-}
-
-/* ---------- 表格视图 ---------- */
-.cf-table-wrap {
-  background: var(--cf-s1);
-  border: 1px solid var(--cf-bd);
-  border-radius: var(--cf-r-xl);
-  box-shadow: var(--cf-shadow);
-  /* 宽表在自身容器内滚动，页面不产生横向滚动 */
-  overflow-x: auto;
-}
-
-.cf-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.cf-table th {
-  text-align: left;
-  font-size: 11.5px;
-  font-weight: 650;
-  color: var(--cf-fg-3);
-  padding: var(--cf-sp-3) var(--cf-sp-3) var(--cf-sp-2);
-  border-bottom: 1px solid var(--cf-bd);
-  white-space: nowrap;
-}
-
-.cf-table td {
-  padding: 11px var(--cf-sp-3);
-  border-bottom: 1px solid var(--cf-bd);
-  vertical-align: middle;
-}
-
-.cf-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.cf-table tbody tr:hover {
-  background: var(--cf-s2);
-}
-
-.cf-table tbody tr.is-disabled {
-  opacity: 0.6;
-}
-
-.cf-table__num {
-  width: 44px;
-  color: var(--cf-fg-3);
-  font-size: 12px;
-}
-
-.cf-table__grip {
-  width: 92px;
-  padding-right: 0;
-}
-
-.cf-table__right {
-  text-align: right;
-  white-space: nowrap;
-}
-
+/* ---------- 表格页面专属列 ---------- */
 .cf-table__name {
   display: flex;
   align-items: center;
@@ -1056,13 +967,6 @@ onUnmounted(() => {
   color: var(--cf-fg-3);
 }
 
-.cf-sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-}
 
 /* ---------- 卡片列表 ---------- */
 .subscriptions-grid {
