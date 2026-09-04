@@ -1,5 +1,5 @@
 <template>
-  <Card class="gap-0 py-0" aria-label="运行状态">
+  <Card class="gap-0 py-0" role="region" aria-label="运行状态">
     <header class="flex flex-wrap items-center gap-3 px-5 pt-4 pb-3">
       <h2 class="m-0 text-sm font-semibold text-foreground">运行状态</h2>
       <Tabs
@@ -37,7 +37,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(row, i) in rows" :key="i" class="transition-colors hover:bg-accent/40">
+          <tr v-for="(row, i) in rows" :key="i" class="transition-colors hover:bg-accent/40 last:[&>td]:border-b-0">
             <td class="border-b border-border px-5 py-2.5 align-top font-medium whitespace-nowrap text-foreground">
               <span class="mr-2 inline-block size-1.5 rounded-full align-middle" :class="dotTone(row.level)" aria-hidden="true" />
               {{ row.task }}

@@ -14,8 +14,10 @@
         v-for="item in visibleItems(group)"
         :key="item.path"
         :to="item.path"
-        class="group relative flex min-h-9 items-center gap-2.5 rounded-md px-2.5 text-[13px] font-medium text-muted-foreground no-underline transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-        :class="activePath === item.path && 'bg-accent font-semibold text-foreground'"
+        :class="cn(
+          'group relative flex min-h-9 items-center gap-2.5 rounded-md px-2.5 text-[13px] font-medium text-muted-foreground no-underline transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
+          activePath === item.path && 'bg-accent font-semibold text-foreground'
+        )"
         :aria-current="activePath === item.path ? 'page' : undefined"
       >
         <!-- 选中态除底色外再加一条左侧指示条，弱视条件下也能分辨 -->
@@ -34,6 +36,7 @@
 <script setup lang="ts">
 import { NAV_GROUPS, type NavGroup, type NavItem, type NavScope } from '@/navigation'
 import { iconOf } from '@/lib/icons'
+import { cn } from '@/lib/utils'
 
 const props = defineProps<{
   activePath: string

@@ -9,10 +9,20 @@
  * 基线重置在 @layer base 中按需补齐，作用范围限定在组件自身的类上。
  */
 
+/* ⚠️ 迁移约束：element-plus/dist/index.css 是「未分层」样式，而 Tailwind 工具类位于
+ * @layer utilities。CSS 规定未分层规则永远压过任何 cascade layer，因此在仍带 .el-*
+ * 类的元素上叠加 Tailwind 工具类会静默失效（不报错、不生效）。
+ * 后续逐页改造时：一个元素要么完全交给 shadcn，要么继续用 Element Plus + scoped 样式，
+ * 不要混用。若将来必须混用，需先把 Element Plus 也 @import 进一个 vendor layer，
+ * 那会整体改变它与各页 scoped 样式的优先级，属于独立的破坏性改动。
+ */
 @layer theme, base, components, utilities;
 
 @import 'tailwindcss/theme.css' layer(theme);
 @import 'tailwindcss/utilities.css' layer(utilities);
+
+/* shadcn 组件的进出场动画类（animate-in / fade-in-0 / zoom-in-95 …）来自这里 */
+@import 'tw-animate-css';
 
 /* 本项目主题写在 <html data-theme>，而非 shadcn 默认的 .dark 类 */
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));

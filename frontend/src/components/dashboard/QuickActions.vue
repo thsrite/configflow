@@ -1,5 +1,5 @@
 <template>
-  <Card class="gap-0 py-0" aria-label="快速操作">
+  <Card class="gap-0 py-0" role="region" aria-label="快速操作">
     <h2 class="m-0 px-5 pt-4 pb-3 text-sm font-semibold text-foreground">快速操作</h2>
     <div class="flex flex-col gap-2 px-5 pb-4">
       <!-- 一个视图只有一个主操作，其余为次要操作 -->

@@ -7,8 +7,10 @@
       v-for="group in groups"
       :key="group.scope"
       type="button"
-      class="flex min-h-(--cf-tabbar-h) cursor-pointer flex-col items-center gap-1 border-0 bg-transparent px-0 pt-2 pb-1.5 text-[10.5px] font-semibold text-muted-foreground transition-colors"
-      :class="group.scope === activeScope && 'text-primary-accent'"
+      :class="cn(
+        'flex min-h-(--cf-tabbar-h) cursor-pointer flex-col items-center gap-1 border-0 bg-transparent px-0 pt-2 pb-1.5 text-[10.5px] font-semibold text-muted-foreground transition-colors',
+        group.scope === activeScope && 'text-primary-accent'
+      )"
       :aria-current="group.scope === activeScope ? 'page' : undefined"
       @click="$emit('select', group)"
     >
@@ -21,6 +23,7 @@
 <script setup lang="ts">
 import { NAV_GROUPS, type NavGroup, type NavScope } from '@/navigation'
 import { iconOf } from '@/lib/icons'
+import { cn } from '@/lib/utils'
 
 defineProps<{ activeScope?: NavScope }>()
 defineEmits<{ (e: 'select', group: NavGroup): void }>()

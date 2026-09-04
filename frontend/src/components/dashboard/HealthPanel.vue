@@ -1,5 +1,5 @@
 <template>
-  <Card class="mb-3 gap-0 py-0" aria-label="配置健康">
+  <Card class="mb-3 gap-0 py-0" role="region" aria-label="配置健康">
     <header class="flex items-center gap-2 px-5 pt-4 pb-3">
       <h2 class="m-0 text-sm font-semibold text-foreground">配置健康</h2>
       <Badge :variant="overall.variant" class="ml-auto">{{ overall.text }}</Badge>

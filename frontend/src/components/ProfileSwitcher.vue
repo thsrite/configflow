@@ -6,7 +6,9 @@
         aria-label="当前配置空间"
       >
         <Boxes class="size-4 shrink-0 text-primary-accent" />
-        <SelectValue placeholder="选择配置空间" class="truncate">{{ currentLabel }}</SelectValue>
+        <SelectValue :class="cn('truncate', !currentLabel && 'text-muted-foreground')">
+          {{ currentLabel || '选择配置空间' }}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent align="end" class="min-w-[220px]">
         <SelectItem v-for="profile in profiles" :key="profile.id" :value="profile.id">
@@ -37,6 +39,7 @@ import { ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { Boxes, Settings } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import {
   Select,
   SelectContent,
