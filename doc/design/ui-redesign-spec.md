@@ -1,7 +1,7 @@
 # ConfigFlow 共享资源与全站 UI 重构规格
 
 > 状态：已确认（2026-09-03）  
-> 分支：`feat/ui-trivet-mediavault`  
+> 分支：`feat/ui-redesign`  
 > 基线：`origin/main` @ `52ad14f`
 
 ## 1. 目标
@@ -12,7 +12,7 @@
 2. 在移动端保持核心操作完整，不采用简单缩放桌面布局；
 3. 让用户能立即判断资源是“跨配置共享”还是“仅当前配置”；
 4. 延续现有 Vue 3 + Element Plus 技术栈，不引入第二套 UI 组件库；
-5. 以同级目录 `../trivet` 与 `../MediaVault` 为视觉参考，不复制其品牌资产。
+5. 参考成熟管理类界面的通用语言，不复制任何第三方品牌资产。
 
 ## 2. 已验证现状
 
@@ -144,31 +144,18 @@ Profile 私有：
 
 ## 5. 视觉设计约束
 
-### 5.1 参考项目证据
+### 5.1 视觉基调
 
-参考对象已经确认是本地同级项目：
+目标基调为「专业网络工具」而非营销页：冷色层级、紧凑导航栏、低透明边框，
+配合清爽的开放式列表与克制的主操作。浅色为真白画布，深色为冷黑三层表面。
 
-- Trivet：Next 15 + React 19，基于 shadcn / Base UI，主要使用 Lucide 图标；
-- MediaVault：Vite + React 19，基于 Radix primitives，主要使用 Tabler 图标；
-- 两者都采用集中式 token、共用应用壳、桌面导航与移动导航分离、页面级共享组件；
-- 两者均没有把“再引入同款 React 组件库”当作视觉复刻的前提。
+沿用以下取舍：
 
-已检查的权威视觉与实现来源：
+- 继续使用 Element Plus 作为唯一组件库，不引入第二套；
+- 集中式 token、共用应用壳、桌面导航与移动导航分离、页面级共享组件；
+- 视觉复刻不以「引入同款组件库」为前提。
 
-- `../trivet/frontend/app/globals.css`
-- `../trivet/frontend/components/shell/page-shell.tsx`
-- `../trivet/frontend/components/shell/rail.tsx`
-- `../trivet/frontend/components/shell/tab-bar.tsx`
-- `../MediaVault/frontend/UI_GUIDE.md`
-- `../MediaVault/frontend/src/index.css`
-- `../MediaVault/frontend/src/components/shell/TopBar.tsx`
-- `../MediaVault/frontend/src/components/shell/MobileTabBar.tsx`
-- `../MediaVault/frontend/src/components/common/design.tsx`
-- `../MediaVault/.playwright-mcp/mediavault-redesign/design-target.png`
-- `../MediaVault/.playwright-mcp/mediavault-redesign/home-desktop-v2.png`
-- `../MediaVault/.playwright-mcp/mediavault-redesign/home-mobile-v2.png`
-
-从参考项目提炼、适合 ConfigFlow 的共同语言：
+适合 ConfigFlow 的界面语言：
 
 - 用细边框、表面明度和留白建立层级，阴影仅用于真正浮起的对象；
 - 页面以开放式列表、表格和工作区为主，不默认套多层卡片；
@@ -180,9 +167,9 @@ Profile 私有：
 
 差异部分的取舍：
 
-- MediaVault 的真白、清爽列表和蓝色主操作更适合 ConfigFlow 默认浅色主题；
-- Trivet 的冷色层级、紧凑 rail、低透明边框和深色主题处理用于补足专业工具感；
-- 不继承 MediaVault 的媒体品牌视觉，也不继承 Trivet 的聊天产品结构；
+- 浅色主题采用真白画布、清爽列表与蓝色主操作；
+- 深色主题采用冷色层级、紧凑导航栏与低透明边框，补足专业工具感；
+- 不继承任何第三方产品的品牌视觉或产品结构；
 - 首版建议同时定义浅色和深色 token，但若交付范围只允许一个主题，优先做浅色。
 
 ### 5.2 ConfigFlow 约束
@@ -214,7 +201,7 @@ Profile 私有：
 
 ### 6.1 待确认的视觉概念
 
-以下图片由内置 ImageGen 生成，以 Trivet 与 MediaVault 本地界面作为风格参考；图片只用于设计基准，最终交互与文字均由代码原生实现：
+以下图片由内置 ImageGen 生成，以 参考界面 本地界面作为风格参考；图片只用于设计基准，最终交互与文字均由代码原生实现：
 
 - `doc/design/ui-concepts/dashboard-desktop-light.png`
 - `doc/design/ui-concepts/dashboard-desktop-dark.png`
@@ -266,7 +253,7 @@ Profile 私有：
 - 不顺手修复现有依赖漏洞、包体告警或无关业务问题；
 - 不重写生成器、Agent 协议或认证流程；
 - 未确认决策 B 前，不移动任何配置字段、不改 API 作用域、不执行数据迁移；
-- 不复制 Trivet / MediaVault 的商标、插画或受保护品牌素材。
+- 不复制 参考界面 的商标、插画或受保护品牌素材。
 
 ## 9. 已记录基线证据
 
