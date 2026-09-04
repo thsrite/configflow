@@ -28,6 +28,8 @@ dist/
 /backend/config.json
 /system.json
 /system.json.lock
+/system.json.bak
+/.profile-repository.initialize.lock
 /profiles/
 /cache/
 /generated/
