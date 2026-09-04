@@ -5,11 +5,14 @@
  * 已改造为 shadcn 的组件通过本表取到对应 lucide 组件，两套图标可并存过渡。
  */
 import {
+  ArrowDown,
   ArrowRight,
+  ArrowUp,
   ChevronRight,
   Download,
   FileText,
   FolderOpen,
+  GripVertical,
   IdCard,
   Layers,
   LayoutDashboard,
@@ -46,7 +49,10 @@ const MAP: Record<string, LucideIcon> = {
   Refresh: RefreshCw,
   Promotion: Send,
   ArrowRight,
+  ArrowUp,
+  ArrowDown,
   ChevronRight,
+  Rank: GripVertical,
   Sunny: Sun,
   Moon,
   User,
