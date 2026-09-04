@@ -260,7 +260,7 @@
 
     <!-- 添加/编辑对话框 -->
     <Dialog v-model:open="dialogVisible">
-      <DialogContent class="sm:max-w-[640px]">
+      <DialogContent class="sm:max-w-[640px]" @pointer-down-outside.prevent>
         <DialogHeader>
           <DialogTitle>{{ isEdit ? '编辑订阅' : '添加订阅' }}</DialogTitle>
           <DialogDescription>配置订阅名称、链接与同步策略以保持节点数据最新</DialogDescription>
@@ -668,7 +668,19 @@ const editSubscription = (row: Subscription) => {
   dialogVisible.value = true
 }
 
+const INTERVAL_MIN = 60
+const INTERVAL_MAX = 604800
+
 const saveSubscription = async () => {
+  // 原生 number 输入不像 el-input-number 那样钳制越界值，也允许留空，
+  // 这里在提交前兜底，避免把越界值或空串写进订阅配置
+  const interval = Number(form.value.interval)
+  if (!Number.isFinite(interval) || interval < INTERVAL_MIN || interval > INTERVAL_MAX) {
+    ElMessage.warning(`更新间隔需在 ${INTERVAL_MIN} ~ ${INTERVAL_MAX} 秒之间`)
+    return
+  }
+  form.value.interval = interval
+
   try {
     if (isEdit.value) {
       await subscriptionApi.update(form.value.id!, form.value)
@@ -853,7 +865,8 @@ watch(viewMode, mode => {
 // 表格在窄屏无法阅读，移动端一律用卡片，不受用户选择影响
 const isNarrow = ref(false)
 const syncNarrow = () => {
-  isNarrow.value = window.matchMedia('(max-width: 900px)').matches
+  // 与 Tailwind 的 max-[900px]（不含 900）对齐，避免正好 900px 时两者判断相反
+  isNarrow.value = window.matchMedia('(max-width: 899.98px)').matches
 }
 
 const effectiveView = computed<ViewMode>(() => (isNarrow.value ? 'card' : viewMode.value))
