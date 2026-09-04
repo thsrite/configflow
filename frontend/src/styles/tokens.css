@@ -248,6 +248,21 @@ body {
   display: none;
 }
 
+/* WCAG 2.5.8 Target Size (Minimum)：指针输入下目标不小于 24×24。
+ * 移动端另有 32px 的更严要求，见下方移动断点。
+ */
+.el-checkbox {
+  min-width: 24px;
+  min-height: 24px;
+}
+
+.cf-table a,
+.cf-table .el-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+
 /* ---------- 移动端触控目标 ----------
  * 桌面密度下 Element Plus 的 small 控件只有 24px 高，触屏上过小。
  * 这里只在移动断点放大组件尺寸，不影响桌面端的信息密度。

@@ -25,8 +25,8 @@
     <el-button
       text
       class="profile-manager-button"
-      title="管理配置 Profile"
-      aria-label="管理配置 Profile"
+      title="管理配置空间"
+      aria-label="管理配置空间"
       @click="router.push('/profiles')"
     >
       <el-icon><Setting /></el-icon>
@@ -114,6 +114,8 @@ onMounted(() => {
 .profile-manager-button {
   color: var(--cf-primary);
   padding: 4px;
+  /* WCAG 2.5.8 Target Size (Minimum) 要求指针目标不小于 24×24 */
+  min-width: 24px;
   height: 28px;
   border-radius: 8px;
   transition: all 0.3s ease;
