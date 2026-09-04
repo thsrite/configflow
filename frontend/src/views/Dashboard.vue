@@ -1,26 +1,27 @@
 <template>
-  <div class="dashboard-page">
+  <div>
     <PageHeader title="数据统计" description="概览运行状态与资源健康，快速掌握代理配置体系情况。" />
 
-    <!-- 作用域说明：当前两类数据都按配置空间隔离，仅作功能归类 -->
-    <div class="cf-scopes">
-      <span class="cf-scopes__chip is-resource">
-        <el-icon><Files /></el-icon>
+    <!-- 作用域说明：两类数据都按配置空间隔离，此处仅作功能归类 -->
+    <div class="mb-4 flex flex-wrap gap-2">
+      <Badge variant="info" class="h-7 gap-1.5 rounded-md px-2.5 text-[12.5px]">
+        <Layers class="size-3.5" />
         资源 · {{ sharedKinds }} 类
-      </span>
-      <span class="cf-scopes__chip is-profile">
-        <el-icon><Postcard /></el-icon>
+      </Badge>
+      <Badge variant="brand" class="h-7 gap-1.5 rounded-md px-2.5 text-[12.5px]">
+        <IdCard class="size-3.5" />
         当前配置 · {{ profileName }}
-      </span>
+      </Badge>
     </div>
 
-    <div class="cf-dash">
-      <div class="cf-dash__main">
+    <!-- 主内容 + 右侧窄辅助列；窄屏下辅助列降为次要区块置于内容之后 -->
+    <div class="grid grid-cols-[minmax(0,1fr)_320px] items-start gap-4 max-[1100px]:grid-cols-[minmax(0,1fr)]">
+      <div class="min-w-0">
         <KpiPanel :items="kpis" />
         <ActivityList v-model:active="activeTab" :rows="visibleActivity" :tabs="activityTabs" />
       </div>
 
-      <aside class="cf-dash__side">
+      <aside class="max-[1100px]:order-2">
         <HealthPanel
           :rows="healthRows"
           :checked-at="checkedAt"
@@ -38,6 +39,8 @@ import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { statsApi, agentApi, profileApi, subscriptionApi } from '@/api'
 import api from '@/api'
+import { Layers, IdCard } from '@lucide/vue'
+import { Badge } from '@/components/ui/badge'
 import PageHeader from '@/components/shell/PageHeader.vue'
 import KpiPanel, { type KpiItem } from '@/components/dashboard/KpiPanel.vue'
 import HealthPanel, { type HealthRow } from '@/components/dashboard/HealthPanel.vue'
@@ -210,68 +213,3 @@ onUnmounted(() => {
   if (timer) clearInterval(timer)
 })
 </script>
-
-<style scoped>
-.dashboard-page {
-  display: flex;
-  flex-direction: column;
-}
-
-.cf-scopes {
-  display: flex;
-  gap: var(--cf-sp-2);
-  flex-wrap: wrap;
-  margin-bottom: var(--cf-sp-4);
-}
-
-.cf-scopes__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: var(--cf-r-md);
-  border: 1px solid var(--cf-bd);
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--cf-fg);
-}
-
-.cf-scopes__chip.is-resource {
-  background: var(--cf-shared-soft);
-  border-color: color-mix(in srgb, var(--cf-shared) 28%, transparent);
-}
-.cf-scopes__chip.is-resource .el-icon {
-  color: var(--cf-shared);
-}
-
-.cf-scopes__chip.is-profile {
-  background: var(--cf-primary-soft);
-  border-color: color-mix(in srgb, var(--cf-primary) 30%, transparent);
-}
-.cf-scopes__chip.is-profile .el-icon {
-  color: var(--cf-primary);
-}
-
-/* 概念图：主内容 + 右侧窄辅助列 */
-.cf-dash {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: var(--cf-sp-4);
-  align-items: start;
-}
-
-.cf-dash__main {
-  min-width: 0;
-}
-
-@media (max-width: 1100px) {
-  .cf-dash {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  /* 窄屏下辅助列降为次要区块置于内容之后，而非消失 */
-  .cf-dash__side {
-    order: 2;
-  }
-}
-</style>

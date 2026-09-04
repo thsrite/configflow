@@ -2,54 +2,75 @@
   <!-- 登录页不套用应用壳 -->
   <router-view v-if="isLoginPage" />
 
-  <div v-else class="cf-shell">
-    <header class="cf-topbar">
-      <router-link to="/dashboard" class="cf-brand">
-        <img src="/icon.png" alt="" class="cf-brand__logo" />
-        <span class="cf-brand__name">ConfigFlow</span>
+  <div v-else class="flex min-h-screen min-h-dvh flex-col bg-background">
+    <header
+      class="sticky top-0 z-800 flex h-(--cf-topbar-h) shrink-0 items-center gap-3 border-b border-border bg-background/85 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-xl backdrop-saturate-150 max-[900px]:gap-2 max-[900px]:px-3"
+      style="box-sizing: content-box"
+    >
+      <router-link
+        to="/dashboard"
+        class="flex min-w-0 shrink items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] text-foreground no-underline max-[900px]:min-h-9 max-[900px]:min-w-9"
+      >
+        <img src="/icon.png" alt="" class="size-6 rounded-[7px]" />
+        <span class="truncate max-[360px]:hidden">ConfigFlow</span>
       </router-link>
 
-      <div class="cf-topbar__actions">
+      <div class="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
         <ProfileSwitcher />
-        <el-tag class="cf-version cf-mono" effect="plain" size="small">{{ versionInfo }}</el-tag>
-        <el-button
-          class="cf-icon-btn"
-          text
+
+        <Badge variant="outline" class="rounded-md font-mono text-[11px] max-[420px]:hidden">
+          {{ versionInfo }}
+        </Badge>
+
+        <Button
+          variant="ghost"
+          size="icon-sm"
           :title="theme === 'dark' ? '切换到浅色' : '切换到深色'"
           :aria-label="theme === 'dark' ? '切换到浅色' : '切换到深色'"
           @click="toggleTheme"
         >
-          <el-icon :size="17"><component :is="theme === 'dark' ? 'Sunny' : 'Moon'" /></el-icon>
-        </el-button>
-        <el-button class="cf-icon-btn cf-hide-mobile" text title="查看文档" aria-label="查看文档" @click="openGithub">
-          <el-icon :size="17"><Document /></el-icon>
-        </el-button>
-        <el-dropdown v-if="showUserInfo" trigger="click" @command="handleCommand">
-          <el-button class="cf-icon-btn" text :title="username" :aria-label="`用户 ${username}`">
-            <el-icon :size="17"><User /></el-icon>
-          </el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="logout">
-                <el-icon><SwitchButton /></el-icon>
-                <span>退出登录</span>
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+          <component :is="theme === 'dark' ? Sun : Moon" class="size-[17px]" />
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          class="max-[900px]:hidden"
+          title="查看文档"
+          aria-label="查看文档"
+          @click="openGithub"
+        >
+          <FileText class="size-[17px]" />
+        </Button>
+
+        <DropdownMenu v-if="showUserInfo">
+          <DropdownMenuTrigger as-child>
+            <Button variant="ghost" size="icon-sm" :title="username" :aria-label="`用户 ${username}`">
+              <User class="size-[17px]" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem @select="handleCommand('logout')">
+              <LogOut class="size-4" />
+              <span>退出登录</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
 
-    <div class="cf-body">
+    <div class="flex min-h-0 flex-1">
       <AppRail
-        class="cf-hide-mobile"
+        class="max-[900px]:hidden"
         :active-path="route.path"
         :profile-name="currentProfileName"
         :subscription-aggregation-enabled="subscriptionAggregationEnabled"
       />
 
-      <main class="cf-main">
-        <div class="cf-main__inner">
+      <main class="min-w-0 flex-1 overflow-x-hidden">
+        <div
+          class="mx-auto max-w-(--cf-content-max) px-8 pt-5 pb-8 max-[900px]:px-4 max-[900px]:pt-4 max-[900px]:pb-[calc(env(safe-area-inset-bottom)+var(--cf-tabbar-h)+var(--cf-sp-5))]"
+        >
           <MobileGroupNav
             :active-path="route.path"
             :subscription-aggregation-enabled="subscriptionAggregationEnabled"
@@ -60,7 +81,6 @@
     </div>
 
     <MobileTabBar :active-scope="activeScope" @select="openGroup" />
-
   </div>
 </template>
 
@@ -68,6 +88,15 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { FileText, LogOut, Moon, Sun, User } from '@lucide/vue'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { systemApi } from './api'
 import api from './api'
 import ProfileSwitcher from './components/ProfileSwitcher.vue'
@@ -216,135 +245,3 @@ onUnmounted(() => {
   )
 })
 </script>
-
-<style scoped>
-.cf-shell {
-  min-height: 100vh;
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  background: var(--cf-bg);
-}
-
-/* ---------- 顶栏：紧凑 52px ---------- */
-.cf-topbar {
-  position: sticky;
-  top: 0;
-  z-index: 800;
-  height: var(--cf-topbar-h);
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: var(--cf-sp-3);
-  padding: 0 var(--cf-sp-4);
-  padding-top: env(safe-area-inset-top);
-  box-sizing: content-box;
-  background: color-mix(in srgb, var(--cf-bg) 88%, transparent);
-  backdrop-filter: saturate(1.4) blur(14px);
-  border-bottom: 1px solid var(--cf-bd);
-}
-
-.cf-brand {
-  display: flex;
-  align-items: center;
-  gap: var(--cf-sp-2);
-  text-decoration: none;
-  color: var(--cf-fg);
-  font-weight: 650;
-  font-size: 15px;
-  letter-spacing: -0.01em;
-  min-width: 0;
-  flex: 0 1 auto;
-}
-
-.cf-brand__name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cf-brand__logo {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
-}
-
-.cf-topbar__actions {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: var(--cf-sp-2);
-  min-width: 0;
-  flex: 1 1 auto;
-  justify-content: flex-end;
-}
-
-.cf-version {
-  font-size: 11px;
-}
-
-.cf-icon-btn {
-  width: var(--cf-ctrl-h);
-  height: var(--cf-ctrl-h);
-  min-height: var(--cf-ctrl-h);
-  padding: 0;
-  border-radius: var(--cf-r-md);
-  color: var(--cf-fg-2);
-}
-.cf-icon-btn:hover {
-  background: var(--cf-s2);
-  color: var(--cf-fg);
-}
-
-/* ---------- 主体 ---------- */
-.cf-body {
-  flex: 1 1 auto;
-  display: flex;
-  min-height: 0;
-}
-
-.cf-main {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-x: hidden;
-}
-
-.cf-main__inner {
-  max-width: var(--cf-content-max);
-  margin: 0 auto;
-  padding: var(--cf-sp-5) var(--cf-sp-6) var(--cf-sp-6);
-}
-
-/* ---------- 响应式：桌面 rail / 移动底栏 ---------- */
-@media (max-width: 900px) {
-  .cf-topbar {
-    gap: var(--cf-sp-2);
-    padding: 0 var(--cf-sp-3);
-  }
-  /* 窄屏只剩 24px 图标时，链接自身要撑出可触摸区域 */
-  .cf-brand {
-    min-width: 34px;
-    min-height: 34px;
-  }
-  .cf-main__inner {
-    padding: var(--cf-sp-4) var(--cf-sp-4)
-      calc(env(safe-area-inset-bottom) + var(--cf-tabbar-h) + var(--cf-sp-5));
-  }
-}
-
-/* 380px 以下：版本号与品牌名依次让位，保证顶栏不撑宽文档 */
-@media (max-width: 420px) {
-  .cf-version {
-    display: none;
-  }
-}
-
-@media (max-width: 360px) {
-  .cf-brand__name {
-    display: none;
-  }
-}
-
-/* ---------- 移动端分组面板 ---------- */
-</style>
-
