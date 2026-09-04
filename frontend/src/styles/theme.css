@@ -194,14 +194,21 @@
  * 避免波及未改造页面的原生元素样式。
  */
 @layer base {
-  /* Tailwind v4 的 border/ring 默认取 currentColor；preflight 未启用，
-   * 因此在 shadcn 组件（统一带 data-slot）范围内补回边框色默认值。
+  /* preflight 未启用带来的两处默认值缺口，统一在 shadcn 组件
+   * （均带 data-slot）范围内补回，不波及未改造页面：
+   *
+   * 1) border/ring 颜色：Tailwind v4 默认取 currentColor
+   * 2) box-sizing：浏览器 UA 对 <input type=text> / <textarea> 默认是
+   *    content-box，导致 w-full 或固定宽度的输入框会把 padding 溢出到
+   *    容器之外、压住相邻元素（<button>/<select> 的 UA 默认是 border-box，
+   *    所以不会暴露这个问题）。
    */
   [data-slot],
   [data-slot] *,
   [data-slot]::before,
   [data-slot]::after {
     border-color: var(--border);
+    box-sizing: border-box;
   }
 
   button:where([class*='inline-flex'], [class*='flex']) {

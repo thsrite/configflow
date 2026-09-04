@@ -1,41 +1,47 @@
 <template>
-  <div class="cf-handle-group">
-    <div class="cf-handle-arrows">
+  <div class="flex shrink-0 items-center gap-1">
+    <div class="flex gap-1">
       <button
         type="button"
-        class="cf-handle-arrow"
+        class="grid h-8.5 w-9 place-items-center rounded-sm border border-border bg-secondary text-muted-foreground transition-colors hover:text-foreground disabled:cursor-default disabled:opacity-30 disabled:hover:text-muted-foreground"
         :disabled="index === 0"
         :aria-label="`${label} 上移`"
         @click.stop="$emit('up')"
       >
-        <el-icon><ArrowUp /></el-icon>
+        <ArrowUp class="size-3.5" :stroke-width="2.5" />
       </button>
       <button
         type="button"
-        class="cf-handle-arrow"
+        class="grid h-8.5 w-9 place-items-center rounded-sm border border-border bg-secondary text-muted-foreground transition-colors hover:text-foreground disabled:cursor-default disabled:opacity-30 disabled:hover:text-muted-foreground"
         :disabled="index === total - 1"
         :aria-label="`${label} 下移`"
         @click.stop="$emit('down')"
       >
-        <el-icon><ArrowDown /></el-icon>
+        <ArrowDown class="size-3.5" :stroke-width="2.5" />
       </button>
     </div>
+    <!-- 手柄自身是 44px 触控热区，满足移动端最小点击目标 -->
     <button
       type="button"
-      class="cf-handle"
-      :class="{ 'is-grabbed': grabbed }"
+      :class="cn(
+        'grid size-(--cf-touch) cursor-grab place-items-center rounded-md border border-transparent bg-transparent text-muted-foreground [touch-action:none] transition-colors hover:bg-secondary hover:text-foreground',
+        grabbed && 'cursor-grabbing border-primary-accent bg-primary-soft text-primary-accent'
+      )"
       data-reorder-handle
       :aria-label="`拖动 ${label}，${position}${grabbed ? '，已抓取' : ''}`"
       :aria-pressed="grabbed"
       @keydown="$emit('keydown', $event)"
       @click.stop
     >
-      <el-icon><Rank /></el-icon>
+      <GripVertical class="size-4" :stroke-width="2" />
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ArrowDown, ArrowUp, GripVertical } from '@lucide/vue'
+import { cn } from '@/lib/utils'
+
 defineProps<{
   label: string
   index: number
@@ -50,62 +56,3 @@ defineEmits<{
   (e: 'keydown', event: KeyboardEvent): void
 }>()
 </script>
-
-<style scoped>
-.cf-handle-group {
-  display: flex;
-  align-items: center;
-  gap: var(--cf-sp-1);
-  flex: 0 0 auto;
-}
-
-.cf-handle-arrows {
-  display: flex;
-  gap: 4px;
-}
-
-.cf-handle-arrow {
-  width: 36px;
-  height: 34px;
-  border-radius: var(--cf-r-sm);
-  border: 1px solid var(--cf-bd);
-  background: var(--cf-s2);
-  color: var(--cf-fg-2);
-  font-size: 11px;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-}
-
-.cf-handle-arrow:disabled {
-  opacity: 0.3;
-  cursor: default;
-}
-
-/* 手柄自身是 44px 触控热区，满足移动端最小点击目标 */
-.cf-handle {
-  width: var(--cf-touch);
-  height: var(--cf-touch);
-  border-radius: var(--cf-r-md);
-  border: 1px solid transparent;
-  background: none;
-  color: var(--cf-fg-3);
-  display: grid;
-  place-items: center;
-  font-size: 15px;
-  cursor: grab;
-  touch-action: none;
-}
-
-.cf-handle:hover {
-  color: var(--cf-fg);
-  background: var(--cf-s2);
-}
-
-.cf-handle.is-grabbed {
-  color: var(--cf-primary);
-  border-color: var(--cf-primary);
-  background: var(--cf-primary-soft);
-  cursor: grabbing;
-}
-</style>

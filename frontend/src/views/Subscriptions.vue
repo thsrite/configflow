@@ -1,65 +1,76 @@
 <template>
-  <div class="subscriptions-page" :class="{ 'cf-reordering': reorder.active.value }">
+  <div :class="reorder.active.value && 'cf-reordering'">
     <ScopeBanner scope="resource" :profile-name="cfProfileName" description="订阅源按配置空间隔离，切换配置空间会看到各自的列表" />
 
     <PageHeader title="订阅来源" description="订阅拉取后的节点进入本配置空间的节点库">
       <template #actions>
-        <el-button :loading="isRefreshing" :disabled="reorder.active.value" @click="handleFetchAll">
-          <el-icon><RefreshRight /></el-icon>
+        <Button variant="outline" :disabled="isRefreshing || reorder.active.value" @click="handleFetchAll">
+          <Loader2 v-if="isRefreshing" class="size-4 animate-spin" />
+          <RefreshCw v-else class="size-4" />
           批量更新
-        </el-button>
-        <el-button type="primary" :disabled="reorder.active.value" @click="showAddDialog">
-          <el-icon><Plus /></el-icon>
+        </Button>
+        <Button :disabled="reorder.active.value" @click="showAddDialog">
+          <Plus class="size-4" />
           添加订阅
-        </el-button>
+        </Button>
       </template>
     </PageHeader>
 
-    <div class="cf-toolbar">
-      <el-input
-        v-model="keyword"
-        class="cf-toolbar__search"
-        placeholder="搜索订阅名称或地址"
-        clearable
-        :disabled="reorder.active.value"
-      >
-        <template #prefix><el-icon><Search /></el-icon></template>
-      </el-input>
+    <!-- 工具栏：搜索 + 筛选 + 排序入口 + 视图切换 -->
+    <div class="mb-4 flex flex-wrap items-center gap-2">
+      <div class="relative min-w-0 flex-[1_1_240px] max-w-md">
+        <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          v-model="keyword"
+          class="h-9 pl-9"
+          placeholder="搜索订阅名称或地址"
+          :disabled="reorder.active.value"
+          aria-label="搜索订阅"
+        />
+      </div>
 
-      <el-select
-        v-model="statusFilter"
-        class="cf-toolbar__filter"
-        :disabled="reorder.active.value"
-        placeholder="全部状态"
-      >
-        <el-option label="全部状态" value="all" />
-        <el-option label="已启用" value="enabled" />
-        <el-option label="已停用" value="disabled" />
-        <el-option label="获取失败" value="error" />
-      </el-select>
+      <Select v-model="statusFilter" :disabled="reorder.active.value">
+        <SelectTrigger class="h-9 w-[132px]" aria-label="按状态筛选">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">全部状态</SelectItem>
+          <SelectItem value="enabled">已启用</SelectItem>
+          <SelectItem value="disabled">已停用</SelectItem>
+          <SelectItem value="error">获取失败</SelectItem>
+        </SelectContent>
+      </Select>
 
-      <el-button v-if="!reorder.active.value" :disabled="subscriptions.length < 2" @click="reorder.enter">
-        <el-icon><Sort /></el-icon>
+      <Button
+        v-if="!reorder.active.value"
+        variant="outline"
+        class="h-9"
+        :disabled="subscriptions.length < 2"
+        @click="reorder.enter"
+      >
+        <ArrowUpDown class="size-4" />
         调整顺序
-      </el-button>
+      </Button>
 
-      <!-- 视图切换：数据密集区默认表格，卡片作为可选 -->
-      <div class="cf-viewtoggle cf-hide-mobile" role="group" aria-label="视图切换">
+      <!-- 数据密集区默认表格，卡片作为可选视图 -->
+      <div
+        class="ml-auto flex shrink-0 gap-0.5 rounded-md border border-border bg-secondary p-0.5 max-[900px]:hidden"
+        role="group"
+        aria-label="视图切换"
+      >
         <button
+          v-for="opt in VIEW_OPTIONS"
+          :key="opt.value"
           type="button"
-          :aria-pressed="viewMode === 'list'"
-          aria-label="列表视图"
-          @click="viewMode = 'list'"
+          :class="cn(
+            'grid size-8 cursor-pointer place-items-center rounded-sm border-0 bg-transparent text-muted-foreground transition-colors',
+            viewMode === opt.value && 'bg-card text-foreground shadow-xs'
+          )"
+          :aria-pressed="viewMode === opt.value"
+          :aria-label="opt.label"
+          @click="viewMode = opt.value"
         >
-          <el-icon><List /></el-icon>
-        </button>
-        <button
-          type="button"
-          :aria-pressed="viewMode === 'card'"
-          aria-label="卡片视图"
-          @click="viewMode = 'card'"
-        >
-          <el-icon><Grid /></el-icon>
+          <component :is="opt.icon" class="size-4" />
         </button>
       </div>
     </div>
@@ -73,98 +84,111 @@
       @save="handleSaveOrder"
     />
 
-    <el-empty v-if="visibleSubscriptions.length === 0" :description="emptyText" />
+    <Card v-if="visibleSubscriptions.length === 0" class="py-0">
+      <p class="m-0 px-5 py-14 text-center text-[13px] text-muted-foreground">{{ emptyText }}</p>
+    </Card>
 
     <!-- ===== 表格视图（桌面默认） ===== -->
-    <div v-else-if="effectiveView === 'list'" class="cf-table-wrap">
-      <table class="cf-table">
-        <thead>
-          <tr>
-            <th v-if="reorder.active.value" class="cf-table__grip" scope="col"><span class="cf-sr">排序</span></th>
-            <th class="cf-table__num" scope="col">#</th>
-            <th scope="col">名称</th>
-            <th scope="col">地址</th>
-            <th class="cf-table__right" scope="col">节点</th>
-            <th scope="col">最近更新</th>
-            <th scope="col">状态</th>
-            <th class="cf-table__right" scope="col">操作</th>
-          </tr>
-        </thead>
-        <tbody ref="subscriptionsContainer">
-          <tr
-            v-for="(sub, index) in visibleSubscriptions"
-            :key="sub.id"
-            :data-id="sub.id"
-            data-reorder-item
-            :class="{ 'is-disabled': !sub.enabled }"
-          >
-            <td v-if="reorder.active.value" class="cf-table__grip">
-              <DragHandle
-                :label="sub.name"
-                :index="index"
-                :total="subscriptions.length"
-                :position="reorder.positionLabel(index)"
-                :grabbed="reorder.grabbedIndex.value === index"
-                @up="reorder.moveUp(index)"
-                @down="reorder.moveDown(index)"
-                @keydown="reorder.onHandleKeydown($event, index)"
-              />
-            </td>
-            <td class="cf-table__num cf-num">{{ index + 1 }}</td>
-            <td class="cf-table__name">
-              <span class="card-dot" :class="dotClass(sub)" aria-hidden="true"></span>
-              <span class="cf-table__nametext">{{ sub.name }}</span>
-              <span class="meta-pill" :class="getTypeClass(sub.type)">{{ getTypeLabel(sub.type) }}</span>
-            </td>
-            <td class="cf-table__url">
-              <span class="cf-mono">{{ getDisplayUrl(sub) }}</span>
-              <button
-                type="button"
-                class="cf-table__copy cf-reorder-mute"
-                :aria-label="`复制 ${sub.name} 的地址`"
-                @click="copyUrl(sub)"
-              >
-                <el-icon><CopyDocument /></el-icon>
-              </button>
-            </td>
-            <td class="cf-table__right cf-num">{{ nodeCount(sub) }}</td>
-            <td class="cf-table__time">{{ lastUpdated(sub) }}</td>
-            <td>
-              <span class="meta-pill" :class="getNodeStatusClass(subscriptionStatus[sub.id])">
-                {{ statusText(sub) }}
-              </span>
-            </td>
-            <td class="cf-table__right cf-reorder-mute">
-              <el-button size="small" text :aria-label="`获取 ${sub.name} 的节点`" @click="handleFetchSubscription(sub)">
-                <el-icon><Connection /></el-icon>
-              </el-button>
-              <el-button size="small" text :aria-label="`编辑 ${sub.name}`" @click="editSubscription(sub)">
-                <el-icon><EditPen /></el-icon>
-              </el-button>
-              <el-button size="small" text class="danger-text" :aria-label="`删除 ${sub.name}`" @click="deleteSubscription(sub)">
-                <el-icon><Delete /></el-icon>
-              </el-button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <footer class="cf-table__foot">共 {{ visibleSubscriptions.length }} 条</footer>
-    </div>
+    <Card v-else-if="effectiveView === 'list'" class="gap-0 overflow-hidden py-0">
+      <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-[13px]">
+          <thead>
+            <tr>
+              <th v-if="reorder.active.value" :class="TH" scope="col"><span class="cf-sr">排序</span></th>
+              <th :class="cn(TH, 'w-11')" scope="col">#</th>
+              <th :class="TH" scope="col">名称</th>
+              <th :class="TH" scope="col">地址</th>
+              <th :class="cn(TH, 'text-right')" scope="col">节点</th>
+              <th :class="TH" scope="col">最近更新</th>
+              <th :class="TH" scope="col">状态</th>
+              <th :class="cn(TH, 'text-right')" scope="col">操作</th>
+            </tr>
+          </thead>
+          <tbody ref="subscriptionsContainer">
+            <tr
+              v-for="(sub, index) in visibleSubscriptions"
+              :key="sub.id"
+              :data-id="sub.id"
+              data-reorder-item
+              :class="cn('transition-colors hover:bg-accent/40 last:[&>td]:border-b-0', !sub.enabled && 'opacity-60')"
+            >
+              <td v-if="reorder.active.value" :class="cn(TD, 'pr-0')">
+                <DragHandle
+                  :label="sub.name"
+                  :index="index"
+                  :total="subscriptions.length"
+                  :position="reorder.positionLabel(index)"
+                  :grabbed="reorder.grabbedIndex.value === index"
+                  @up="reorder.moveUp(index)"
+                  @down="reorder.moveDown(index)"
+                  @keydown="reorder.onHandleKeydown($event, index)"
+                />
+              </td>
+              <td :class="cn(TD, 'w-11 text-xs tabular-nums text-muted-foreground')">{{ index + 1 }}</td>
+              <td :class="TD">
+                <div class="flex items-center gap-2">
+                  <span :class="cn('size-1.5 shrink-0 rounded-full', dotTone(sub))" aria-hidden="true" />
+                  <span class="font-medium whitespace-nowrap text-foreground">{{ sub.name }}</span>
+                  <Badge :variant="typeTone(sub.type)">{{ getTypeLabel(sub.type) }}</Badge>
+                </div>
+              </td>
+              <td :class="cn(TD, 'max-w-[320px]')">
+                <div class="flex items-center gap-1">
+                  <span class="cf-mono min-w-0 truncate text-muted-foreground">{{ getDisplayUrl(sub) }}</span>
+                  <button
+                    type="button"
+                    class="cf-reorder-mute grid size-6 shrink-0 cursor-pointer place-items-center rounded-sm border-0 bg-transparent text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    :aria-label="`复制 ${sub.name} 的地址`"
+                    @click="copyUrl(sub)"
+                  >
+                    <Copy class="size-3.5" />
+                  </button>
+                </div>
+              </td>
+              <td :class="cn(TD, 'text-right tabular-nums')">{{ nodeCount(sub) }}</td>
+              <td :class="cn(TD, 'whitespace-nowrap text-muted-foreground')">{{ lastUpdated(sub) }}</td>
+              <td :class="TD">
+                <Badge :variant="statusTone(subscriptionStatus[sub.id])">{{ statusText(sub) }}</Badge>
+              </td>
+              <td :class="cn(TD, 'cf-reorder-mute text-right whitespace-nowrap')">
+                <Button variant="ghost" size="icon-sm" :aria-label="`获取 ${sub.name} 的节点`" @click="handleFetchSubscription(sub)">
+                  <Network class="size-4" />
+                </Button>
+                <Button variant="ghost" size="icon-sm" :aria-label="`编辑 ${sub.name}`" @click="editSubscription(sub)">
+                  <Pencil class="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  class="text-destructive-accent hover:bg-destructive-soft hover:text-destructive-accent"
+                  :aria-label="`删除 ${sub.name}`"
+                  @click="deleteSubscription(sub)"
+                >
+                  <Trash2 class="size-4" />
+                </Button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <footer class="border-t border-border px-5 py-2.5 text-xs text-muted-foreground">
+        共 {{ visibleSubscriptions.length }} 条
+      </footer>
+    </Card>
 
     <!-- ===== 卡片视图（移动端与可选） ===== -->
-    <div v-else class="subscriptions-grid" ref="subscriptionsContainer">
-      <div
+    <div v-else ref="subscriptionsContainer" class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
+      <Card
         v-for="(sub, index) in visibleSubscriptions"
         :key="sub.id"
-        class="subscription-card"
-        :class="{ disabled: !sub.enabled }"
+        :class="cn('gap-0 py-0', !sub.enabled && 'opacity-60')"
         :data-id="sub.id"
         data-reorder-item
       >
-        <div class="card-header">
-          <span v-if="reorder.active.value" class="card-order cf-num">{{ index + 1 }}</span>
-          <span class="card-dot" :class="dotClass(sub)" aria-hidden="true"></span>
-          <div class="card-title">{{ sub.name }}</div>
+        <div class="card-header flex items-center gap-2 px-4 pt-3.5 pb-2">
+          <span v-if="reorder.active.value" class="text-xs tabular-nums text-muted-foreground">{{ index + 1 }}</span>
+          <span :class="cn('size-1.5 shrink-0 rounded-full', dotTone(sub))" aria-hidden="true" />
+          <div class="card-title min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{{ sub.name }}</div>
 
           <DragHandle
             v-if="reorder.active.value"
@@ -177,168 +201,180 @@
             @down="reorder.moveDown(index)"
             @keydown="reorder.onHandleKeydown($event, index)"
           />
-          <button
+          <Button
             v-else
-            class="status-toggle cf-reorder-mute"
-            :class="{ active: sub.enabled }"
+            variant="ghost"
+            size="icon-sm"
+            class="cf-reorder-mute shrink-0"
+            :class="sub.enabled ? 'text-primary-accent' : 'text-muted-foreground'"
             :aria-label="sub.enabled ? `停用 ${sub.name}` : `启用 ${sub.name}`"
             @click="handleToggle(sub)"
           >
-            <el-icon v-if="sub.enabled"><View /></el-icon>
-            <el-icon v-else><Hide /></el-icon>
-          </button>
+            <Eye v-if="sub.enabled" class="size-4" />
+            <EyeOff v-else class="size-4" />
+          </Button>
         </div>
 
         <template v-if="!reorder.active.value">
-          <div class="card-meta">
-            <span class="meta-pill" :class="getTypeClass(sub.type)">{{ getTypeLabel(sub.type) }}</span>
-            <span class="meta-pill" :class="getNodeStatusClass(subscriptionStatus[sub.id])">
-              {{ statusText(sub) }}
-            </span>
-            <span class="meta-text">更新周期 {{ formatInterval(sub.interval) }}</span>
+          <div class="card-meta flex flex-wrap items-center gap-1.5 px-4 pb-2">
+            <Badge :variant="typeTone(sub.type)">{{ getTypeLabel(sub.type) }}</Badge>
+            <Badge :variant="statusTone(subscriptionStatus[sub.id])">{{ statusText(sub) }}</Badge>
+            <span class="text-xs text-muted-foreground">更新周期 {{ formatInterval(sub.interval) }}</span>
           </div>
 
-          <div class="card-url">
-            <span class="card-url__value cf-mono">{{ getDisplayUrl(sub) }}</span>
-            <el-link type="primary" class="card-url__toggle" @click="toggleUrlReveal(sub.id)">
+          <div class="flex items-center gap-2 px-4 pb-2">
+            <span class="cf-mono min-w-0 flex-1 truncate text-xs text-muted-foreground">{{ getDisplayUrl(sub) }}</span>
+            <button
+              type="button"
+              class="shrink-0 cursor-pointer border-0 bg-transparent text-xs font-medium text-primary-accent hover:underline"
+              @click="toggleUrlReveal(sub.id)"
+            >
               {{ revealedUrls[sub.id] ? '隐藏' : '显示原文' }}
-            </el-link>
+            </button>
           </div>
 
-          <div class="card-actions">
-            <el-button size="small" @click="handleFetchSubscription(sub)">
-              <el-icon><Connection /></el-icon>
+          <Separator />
+
+          <div class="card-actions flex items-center gap-1 px-3 py-2">
+            <Button variant="ghost" size="sm" @click="handleFetchSubscription(sub)">
+              <Network class="size-3.5" />
               获取节点
-            </el-button>
-            <el-button size="small" @click="editSubscription(sub)">
-              <el-icon><EditPen /></el-icon>
+            </Button>
+            <Button variant="ghost" size="sm" @click="editSubscription(sub)">
+              <Pencil class="size-3.5" />
               编辑
-            </el-button>
-            <el-button size="small" text class="danger-text" @click="deleteSubscription(sub)">
-              <el-icon><Delete /></el-icon>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              class="ml-auto text-destructive-accent hover:bg-destructive-soft hover:text-destructive-accent"
+              @click="deleteSubscription(sub)"
+            >
+              <Trash2 class="size-3.5" />
               删除
-            </el-button>
+            </Button>
           </div>
         </template>
-      </div>
+      </Card>
     </div>
 
     <!-- 添加/编辑对话框 -->
-    <el-dialog
-      v-model="dialogVisible"
-      width="640px"
-      class="subscription-dialog"
-      :close-on-click-modal="false"
-      :destroy-on-close="true"
-    >
-      <template #header="{ close }">
-        <div class="dialog-header">
-          <div class="dialog-title-group">
-            <h3>{{ isEdit ? '编辑订阅' : '添加订阅' }}</h3>
-            <p>配置订阅名称、链接与同步策略以保持节点数据最新</p>
+    <Dialog v-model:open="dialogVisible">
+      <DialogContent class="sm:max-w-[640px]" @pointer-down-outside.prevent>
+        <DialogHeader>
+          <DialogTitle>{{ isEdit ? '编辑订阅' : '添加订阅' }}</DialogTitle>
+          <DialogDescription>配置订阅名称、链接与同步策略以保持节点数据最新</DialogDescription>
+        </DialogHeader>
+
+        <div class="grid gap-4">
+          <div class="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
+            <div class="grid gap-2">
+              <Label for="sub-name">订阅名称</Label>
+              <Input id="sub-name" v-model="form.name" placeholder="请输入订阅名称" />
+            </div>
+            <div class="grid gap-2">
+              <Label for="sub-type">订阅类型</Label>
+              <Select v-model="form.type">
+                <SelectTrigger id="sub-type" class="w-full">
+                  <SelectValue placeholder="请选择订阅类型" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="universal">通用</SelectItem>
+                  <SelectItem value="mihomo">Mihomo</SelectItem>
+                  <SelectItem value="surge">Surge</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <button class="dialog-close-btn" type="button" @click="close" aria-label="关闭">
-            <el-icon><Close /></el-icon>
-          </button>
-        </div>
-      </template>
-      <div class="dialog-card">
-        <el-form :model="form" label-position="top" class="subscription-form">
-          <div class="form-grid">
-            <el-form-item label="订阅名称" class="form-item">
-              <el-input v-model="form.name" placeholder="请输入订阅名称" />
-            </el-form-item>
-            <el-form-item label="订阅类型" class="form-item">
-              <el-select v-model="form.type" placeholder="请选择订阅类型" class="type-select">
-                <el-option label="通用" value="universal" />
-                <el-option label="Mihomo" value="mihomo" />
-                <el-option label="Surge" value="surge" />
-              </el-select>
-            </el-form-item>
+
+          <div class="grid gap-2">
+            <Label for="sub-url">订阅链接</Label>
+            <Textarea id="sub-url" v-model="form.url" :rows="3" placeholder="请输入订阅 URL" />
           </div>
-          <el-form-item label="订阅链接" class="form-item">
-            <el-input
-              v-model="form.url"
-              type="textarea"
-              :rows="3"
-              placeholder="请输入订阅URL"
-            />
-          </el-form-item>
-          <div class="form-grid interval-row">
-            <el-form-item label="更新间隔" class="form-item">
-              <div class="interval-box">
-                <el-input-number
-                  v-model="form.interval"
-                  :min="60"
-                  :max="604800"
-                  :step="3600"
-                  class="interval-input"
-                />
-                <span class="interval-hint">秒（建议 86400 = 1 天）</span>
-              </div>
-            </el-form-item>
-            <el-form-item label="健康检查" class="form-item">
-              <el-input
-                v-model="form.health_check_url"
-                placeholder="留空使用默认（http://www.gstatic.com/generate_204）"
+
+          <div class="grid gap-2">
+            <Label for="sub-interval">更新间隔</Label>
+            <div class="flex items-center gap-2">
+              <Input
+                id="sub-interval"
+                v-model.number="form.interval"
+                type="number"
+                :min="60"
+                :max="604800"
+                :step="3600"
+                class="w-40"
               />
-              <div class="form-tip">回家 / 内网订阅从国内出网，境外地址会被误判为失活，建议填 http://www.baidu.com</div>
-            </el-form-item>
-            <el-form-item label="启用状态" class="form-item status-item">
-              <div class="status-toggle-row">
-                <el-switch v-model="form.enabled" />
-                <span>{{ form.enabled ? '订阅启用中' : '订阅已停用' }}</span>
-              </div>
-            </el-form-item>
+              <span class="text-xs text-muted-foreground">秒（建议 86400 = 1 天）</span>
+            </div>
           </div>
-        </el-form>
-      </div>
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button class="footer-btn ghost" @click="dialogVisible = false">取消</el-button>
-          <el-button class="footer-btn primary" type="primary" @click="saveSubscription">保存</el-button>
+
+          <div class="grid gap-2">
+            <Label for="sub-health">健康检查</Label>
+            <Input
+              id="sub-health"
+              v-model="form.health_check_url"
+              placeholder="留空使用默认（http://www.gstatic.com/generate_204）"
+            />
+            <p class="m-0 text-xs text-muted-foreground">
+              回家 / 内网订阅从国内出网，境外地址会被误判为失活，建议填 http://www.baidu.com
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2.5">
+            <Switch id="sub-enabled" v-model="form.enabled" />
+            <Label for="sub-enabled" class="font-normal text-muted-foreground">
+              {{ form.enabled ? '订阅启用中' : '订阅已停用' }}
+            </Label>
+          </div>
         </div>
-      </template>
-    </el-dialog>
+
+        <DialogFooter>
+          <Button variant="outline" @click="dialogVisible = false">取消</Button>
+          <Button @click="saveSubscription">保存</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
     <!-- 节点预览对话框 -->
-    <el-dialog
-      v-model="nodesPreviewVisible"
-      title="节点预览"
-      width="800px"
-      class="nodes-preview-dialog"
-    >
-      <div class="preview-header">
-        <el-text class="preview-count">共 {{ previewNodes.length }} 个节点</el-text>
-      </div>
-      <div class="nodes-list">
-        <el-scrollbar max-height="500px">
+    <Dialog v-model:open="nodesPreviewVisible">
+      <DialogContent class="sm:max-w-[800px]">
+        <DialogHeader>
+          <DialogTitle>节点预览</DialogTitle>
+          <DialogDescription>共 {{ previewNodes.length }} 个节点</DialogDescription>
+        </DialogHeader>
+
+        <div class="max-h-[500px] overflow-y-auto">
+          <p v-if="previewNodes.length === 0" class="m-0 py-10 text-center text-[13px] text-muted-foreground">
+            暂无节点
+          </p>
           <div
             v-for="(node, index) in previewNodes"
             :key="node.id"
-            class="node-item"
+            class="cursor-pointer border-b border-border py-2.5 last:border-b-0"
             @click="togglePreviewExpand(index)"
           >
-            <div class="node-info">
-              <div class="node-name">
-                <el-icon><Connection /></el-icon>
-                <span>{{ node.name }}</span>
-                <el-icon class="expand-arrow" :class="{ expanded: expandedPreviewNodes.has(index) }"><ArrowDown /></el-icon>
-              </div>
-              <div class="node-details">
-                <el-tag size="small" type="primary">{{ node.type?.toUpperCase() || 'UNKNOWN' }}</el-tag>
-                <span class="node-server">{{ node.server }}:{{ node.port }}</span>
-              </div>
+            <div class="flex items-center gap-2 text-[13px]">
+              <Network class="size-4 shrink-0 text-muted-foreground" />
+              <span class="min-w-0 flex-1 truncate font-medium text-foreground">{{ node.name }}</span>
+              <Badge variant="secondary">{{ node.type?.toUpperCase() || 'UNKNOWN' }}</Badge>
+              <span class="cf-mono shrink-0 text-xs text-muted-foreground">{{ node.server }}:{{ node.port }}</span>
+              <ChevronDown
+                :class="cn('size-4 shrink-0 text-muted-foreground transition-transform', expandedPreviewNodes.has(index) && 'rotate-180')"
+              />
             </div>
-            <pre v-show="expandedPreviewNodes.has(index)" class="code-box" @click.stop>{{ formatNodeToYaml(node) }}</pre>
+            <pre
+              v-show="expandedPreviewNodes.has(index)"
+              class="cf-mono mt-2 mb-0 overflow-x-auto rounded-md bg-secondary p-3 text-xs leading-relaxed text-muted-foreground"
+              @click.stop
+            >{{ formatNodeToYaml(node) }}</pre>
           </div>
-          <el-empty v-if="previewNodes.length === 0" description="暂无节点" />
-        </el-scrollbar>
-      </div>
-      <template #footer>
-        <el-button @click="nodesPreviewVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" @click="nodesPreviewVisible = false">关闭</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
@@ -346,7 +382,46 @@
 import { useProfileStore } from '@/stores/profile'
 import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElLoading, ElMessageBox } from 'element-plus'
-import { Plus, Connection, Loading, RefreshRight, View, Hide, EditPen, Delete, Close, ArrowDown, Search, Sort, List, Grid, CopyDocument } from '@element-plus/icons-vue'
+import {
+  ArrowUpDown,
+  ChevronDown,
+  Copy,
+  Eye,
+  EyeOff,
+  LayoutGrid,
+  List,
+  Loader2,
+  Network,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2
+} from '@lucide/vue'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 import { subscriptionApi, subStoreUrlApi } from '@/api'
 import type { Subscription } from '@/types'
 import api from '@/api'
@@ -357,6 +432,16 @@ import ReorderBar from '@/components/shell/ReorderBar.vue'
 import DragHandle from '@/components/shell/DragHandle.vue'
 import { useReorder } from '@/composables/useReorder'
 
+
+/* 表格骨架样式：本页已脱离全局 .cf-table（仍由未改造页面使用） */
+const TH =
+  'border-b border-border px-5 py-2 text-left text-[11px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase'
+const TD = 'border-b border-border px-5 py-2.5 align-middle'
+
+const VIEW_OPTIONS = [
+  { value: 'list' as const, label: '列表视图', icon: List },
+  { value: 'card' as const, label: '卡片视图', icon: LayoutGrid }
+]
 
 const cfProfileStore = useProfileStore()
 const cfProfileName = computed(
@@ -411,20 +496,20 @@ const getTypeLabel = (type: string) => {
   return labels[type] || type
 }
 
-// 卡片类型样式
-const typeClassMap: Record<string, string> = {
-  'mihomo': 'type-mihomo',
-  'surge': 'type-surge',
-  'universal': 'type-universal'
+// 订阅类型标签配色
+const typeToneMap: Record<string, 'info' | 'brand' | 'secondary'> = {
+  mihomo: 'info',
+  surge: 'brand',
+  universal: 'secondary'
 }
-const getTypeClass = (type: string) => typeClassMap[type] || 'type-default'
+const typeTone = (type: string) => typeToneMap[type] || 'secondary'
 
-// 节点状态 pill 样式
-const getNodeStatusClass = (status?: SubscriptionStatusItem) => {
-  if (!status || status.status === 'idle') return 'status-idle'
-  if (status.status === 'loading') return 'status-loading'
-  if (status.status === 'success') return 'status-success'
-  return 'status-error'
+// 节点获取状态标签配色
+const statusTone = (status?: SubscriptionStatusItem) => {
+  if (!status || status.status === 'idle') return 'secondary' as const
+  if (status.status === 'loading') return 'warning' as const
+  if (status.status === 'success') return 'success' as const
+  return 'danger' as const
 }
 
 // 格式化更新间隔
@@ -583,7 +668,19 @@ const editSubscription = (row: Subscription) => {
   dialogVisible.value = true
 }
 
+const INTERVAL_MIN = 60
+const INTERVAL_MAX = 604800
+
 const saveSubscription = async () => {
+  // 原生 number 输入不像 el-input-number 那样钳制越界值，也允许留空，
+  // 这里在提交前兜底，避免把越界值或空串写进订阅配置
+  const interval = Number(form.value.interval)
+  if (!Number.isFinite(interval) || interval < INTERVAL_MIN || interval > INTERVAL_MAX) {
+    ElMessage.warning(`更新间隔需在 ${INTERVAL_MIN} ~ ${INTERVAL_MAX} 秒之间`)
+    return
+  }
+  form.value.interval = interval
+
   try {
     if (isEdit.value) {
       await subscriptionApi.update(form.value.id!, form.value)
@@ -768,7 +865,8 @@ watch(viewMode, mode => {
 // 表格在窄屏无法阅读，移动端一律用卡片，不受用户选择影响
 const isNarrow = ref(false)
 const syncNarrow = () => {
-  isNarrow.value = window.matchMedia('(max-width: 900px)').matches
+  // 与 Tailwind 的 max-[900px]（不含 900）对齐，避免正好 900px 时两者判断相反
+  isNarrow.value = window.matchMedia('(max-width: 899.98px)').matches
 }
 
 const effectiveView = computed<ViewMode>(() => (isNarrow.value ? 'card' : viewMode.value))
@@ -858,9 +956,11 @@ const emptyText = computed(() =>
   subscriptions.value.length === 0 ? '还没有订阅来源' : '没有匹配的订阅'
 )
 
-const dotClass = (sub: Subscription): string => {
-  if (!sub.enabled) return 'is-off'
-  return subscriptionStatus.value[sub.id]?.status === 'error' ? 'is-warn' : 'is-ok'
+const dotTone = (sub: Subscription): string => {
+  if (!sub.enabled) return 'bg-muted-foreground'
+  return subscriptionStatus.value[sub.id]?.status === 'error'
+    ? 'bg-warning-accent'
+    : 'bg-success-accent'
 }
 
 const handleSaveOrder = async () => {
@@ -882,395 +982,3 @@ onUnmounted(() => {
   window.removeEventListener('resize', syncNarrow)
 })
 </script>
-
-<style scoped>
-/* 页面只做布局与局部语义，颜色/圆角/间距全部来自全局 token */
-.subscriptions-page {
-  display: flex;
-  flex-direction: column;
-}
-
-.cf-toolbar {
-  display: flex;
-  gap: var(--cf-sp-2);
-  margin-bottom: var(--cf-sp-3);
-}
-
-.cf-toolbar__search {
-  max-width: 280px;
-}
-
-.cf-toolbar__filter {
-  width: 132px;
-  flex: 0 0 auto;
-}
-
-/* ---------- 表格页面专属列 ---------- */
-.cf-table__name {
-  display: flex;
-  align-items: center;
-  gap: var(--cf-sp-2);
-  min-width: 0;
-}
-
-.cf-table__nametext {
-  font-weight: 600;
-  color: var(--cf-fg);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 200px;
-}
-
-.cf-table__url {
-  max-width: 300px;
-}
-
-.cf-table__url .cf-mono {
-  display: inline-block;
-  max-width: 250px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
-  color: var(--cf-fg-2);
-  font-size: 12px;
-}
-
-.cf-table__copy {
-  width: 26px;
-  height: 26px;
-  margin-left: 4px;
-  border: none;
-  background: none;
-  color: var(--cf-fg-3);
-  border-radius: var(--cf-r-sm);
-  cursor: pointer;
-  vertical-align: middle;
-}
-
-.cf-table__copy:hover {
-  background: var(--cf-s3);
-  color: var(--cf-fg);
-}
-
-.cf-table__time {
-  color: var(--cf-fg-2);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.cf-table__foot {
-  padding: var(--cf-sp-3);
-  border-top: 1px solid var(--cf-bd);
-  font-size: 12px;
-  color: var(--cf-fg-3);
-}
-
-
-/* ---------- 卡片列表 ---------- */
-.subscriptions-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: var(--cf-sp-3);
-}
-
-.subscription-card {
-  background: var(--cf-s1);
-  border: 1px solid var(--cf-bd);
-  border-radius: var(--cf-r-xl);
-  box-shadow: var(--cf-shadow);
-  padding: var(--cf-sp-3) var(--cf-sp-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--cf-sp-2);
-}
-
-.subscription-card.disabled {
-  opacity: 0.65;
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  gap: var(--cf-sp-2);
-  min-height: var(--cf-ctrl-h);
-}
-
-.card-order {
-  width: 22px;
-  font-size: 12px;
-  color: var(--cf-fg-3);
-  flex: 0 0 auto;
-}
-
-.card-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: var(--cf-r-pill);
-  flex: 0 0 auto;
-}
-.card-dot.is-ok {
-  background: var(--cf-success);
-  box-shadow: 0 0 0 3px var(--cf-success-soft);
-}
-.card-dot.is-warn {
-  background: var(--cf-warning);
-  box-shadow: 0 0 0 3px var(--cf-warning-soft);
-}
-.card-dot.is-off {
-  background: var(--cf-fg-3);
-}
-
-.card-title {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--cf-fg);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.status-toggle {
-  width: var(--cf-ctrl-h);
-  height: var(--cf-ctrl-h);
-  border-radius: var(--cf-r-md);
-  border: 1px solid var(--cf-bd);
-  background: var(--cf-s2);
-  color: var(--cf-fg-3);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  flex: 0 0 auto;
-}
-.status-toggle.active {
-  color: var(--cf-success);
-  border-color: color-mix(in srgb, var(--cf-success) 35%, transparent);
-}
-
-.card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--cf-sp-2);
-}
-
-.meta-pill {
-  font-size: 11px;
-  font-weight: 650;
-  padding: 3px 8px;
-  border-radius: 7px;
-  background: var(--cf-s3);
-  color: var(--cf-fg-2);
-  border: 1px solid var(--cf-bd);
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-}
-.meta-pill.status-success {
-  background: var(--cf-success-soft);
-  color: var(--cf-success);
-  border-color: transparent;
-}
-.meta-pill.status-error {
-  background: var(--cf-danger-soft);
-  color: var(--cf-danger);
-  border-color: transparent;
-}
-.meta-pill.status-loading {
-  background: var(--cf-primary-soft);
-  color: var(--cf-primary);
-  border-color: transparent;
-}
-
-.meta-text {
-  font-size: 12px;
-  color: var(--cf-fg-2);
-}
-
-.card-url {
-  display: flex;
-  align-items: center;
-  gap: var(--cf-sp-2);
-  min-width: 0;
-}
-
-.card-url__value {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 11.5px;
-  color: var(--cf-fg-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.card-url__toggle {
-  flex: 0 0 auto;
-  font-size: 12px;
-}
-
-.card-actions {
-  display: flex;
-  gap: var(--cf-sp-2);
-  flex-wrap: wrap;
-  margin-top: var(--cf-sp-1);
-}
-
-.danger-text {
-  color: var(--cf-danger);
-}
-
-.spin {
-  animation: cf-spin 1s linear infinite;
-}
-@keyframes cf-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* ---------- 对话框 ---------- */
-.dialog-header {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--cf-sp-3);
-}
-
-.dialog-title-group h3 {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 650;
-  color: var(--cf-fg);
-}
-
-.dialog-title-group p {
-  margin: 3px 0 0;
-  font-size: 12.5px;
-  color: var(--cf-fg-2);
-}
-
-.dialog-close-btn {
-  margin-left: auto;
-  width: var(--cf-ctrl-h);
-  height: var(--cf-ctrl-h);
-  border-radius: var(--cf-r-md);
-  border: 1px solid var(--cf-bd);
-  background: var(--cf-s2);
-  color: var(--cf-fg-2);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  flex: 0 0 auto;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 0 var(--cf-sp-4);
-}
-
-.interval-box {
-  display: flex;
-  align-items: center;
-  gap: var(--cf-sp-2);
-  width: 100%;
-}
-
-.interval-hint,
-.form-tip {
-  font-size: 12px;
-  color: var(--cf-fg-3);
-}
-
-.form-tip {
-  margin-top: var(--cf-sp-1);
-  line-height: 1.45;
-}
-
-.status-toggle-row {
-  display: flex;
-  align-items: center;
-  gap: var(--cf-sp-2);
-  color: var(--cf-fg-2);
-  font-size: 13px;
-}
-
-.dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--cf-sp-2);
-}
-
-/* ---------- 节点预览 ---------- */
-.preview-count {
-  font-size: 13px;
-  color: var(--cf-fg-2);
-}
-
-.node-item {
-  padding: var(--cf-sp-3) 0;
-  border-bottom: 1px solid var(--cf-bd);
-  cursor: pointer;
-}
-.node-item:last-child {
-  border-bottom: none;
-}
-
-.node-name {
-  display: flex;
-  align-items: center;
-  gap: var(--cf-sp-2);
-  font-size: 14px;
-  font-weight: 550;
-  color: var(--cf-fg);
-}
-
-.expand-arrow {
-  margin-left: auto;
-  color: var(--cf-fg-3);
-  transition: transform var(--cf-dur) var(--cf-ease);
-}
-.expand-arrow.expanded {
-  transform: rotate(180deg);
-}
-
-.node-details {
-  display: flex;
-  align-items: center;
-  gap: var(--cf-sp-2);
-  margin-top: var(--cf-sp-1);
-}
-
-.node-server {
-  font-family: var(--cf-mono);
-  font-size: 12px;
-  color: var(--cf-fg-2);
-}
-
-.code-box {
-  margin: var(--cf-sp-2) 0 0;
-  padding: var(--cf-sp-3);
-  background: var(--cf-s3);
-  border: 1px solid var(--cf-bd);
-  border-radius: var(--cf-r-md);
-  font-family: var(--cf-mono);
-  font-size: 12px;
-  color: var(--cf-fg-2);
-  overflow-x: auto;
-  white-space: pre;
-}
-
-@media (max-width: 640px) {
-  .subscriptions-grid {
-    grid-template-columns: 1fr;
-  }
-  .cf-toolbar__search {
-    max-width: none;
-  }
-}
-</style>
