@@ -25,7 +25,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # ==============================================================================
 # Stage 2: 构建前端
 # ==============================================================================
-FROM node:18-alpine AS frontend-builder
+# vite-plugin-pwa 依赖的 workbox-build 要求 node >= 20；
+# Node 18 已于 2025-04 结束维护，直接升到 20 LTS。
+FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
