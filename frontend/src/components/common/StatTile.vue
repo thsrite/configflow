@@ -1,6 +1,6 @@
 <template>
   <div
-    class="hairline edge-light group relative overflow-hidden rounded-xl border border-border/50 bg-card/55 p-4 backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:shadow-glow-soft"
+    class="hairline edge-light group relative overflow-hidden rounded-xl border border-border/35 bg-card/55 p-4 backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:shadow-glow-soft"
   >
     <!-- 悬停时的定向辉光，强调当前关注的指标 -->
     <span

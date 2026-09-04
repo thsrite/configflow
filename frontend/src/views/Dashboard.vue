@@ -1,6 +1,10 @@
 <template>
   <div>
-    <PageHeader title="数据统计" description="概览运行状态与资源健康，快速掌握代理配置体系情况。" />
+    <PageHeader
+      eyebrow="Overview"
+      title="数据统计"
+      description="概览运行状态与资源健康，快速掌握代理配置体系情况。"
+    />
 
     <!-- 作用域说明：两类数据都按配置空间隔离，此处仅作功能归类 -->
     <div class="mb-4 flex flex-wrap gap-2">
@@ -15,7 +19,7 @@
     </div>
 
     <!-- 主内容 + 右侧窄辅助列；窄屏下辅助列降为次要区块置于内容之后 -->
-    <div class="grid grid-cols-[minmax(0,1fr)_320px] items-start gap-4 max-[1100px]:grid-cols-[minmax(0,1fr)]">
+    <div class="grid grid-cols-[minmax(0,1fr)_340px] items-start gap-4 max-[1100px]:grid-cols-[minmax(0,1fr)]">
       <div class="min-w-0">
         <KpiPanel :items="kpis" />
         <ActivityList v-model:active="activeTab" :rows="visibleActivity" :tabs="activityTabs" />
@@ -41,7 +45,7 @@ import { statsApi, agentApi, profileApi, subscriptionApi } from '@/api'
 import api from '@/api'
 import { Layers, IdCard } from '@lucide/vue'
 import { Badge } from '@/components/ui/badge'
-import PageHeader from '@/components/shell/PageHeader.vue'
+import PageHeader from '@/components/common/PageHeader.vue'
 import KpiPanel, { type KpiItem } from '@/components/dashboard/KpiPanel.vue'
 import HealthPanel, { type HealthRow } from '@/components/dashboard/HealthPanel.vue'
 import QuickActions, { type QuickAction } from '@/components/dashboard/QuickActions.vue'

@@ -1,35 +1,40 @@
 <template>
-  <!-- 四项 KPI 同处一张卡片、以细分隔线区隔，而非四张互相竞争的独立卡片 -->
-  <Card role="region" aria-label="关键指标" class="mb-4 grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-0 overflow-hidden py-0 max-[900px]:grid-cols-2">
-    <component
-      :is="item.route ? 'button' : 'div'"
-      v-for="item in items"
+  <div
+    role="region"
+    aria-label="关键指标"
+    class="mb-4 grid grid-cols-4 gap-3 max-[1100px]:grid-cols-2 max-[560px]:grid-cols-2"
+  >
+    <Motion
+      v-for="(item, index) in items"
       :key="item.label"
-      class="flex min-w-0 items-center gap-3 border-l border-border px-5 py-4 text-left transition-colors first:border-l-0 max-[900px]:px-4 max-[900px]:py-3.5 max-[900px]:odd:border-l-0 max-[900px]:[&:nth-child(n+3)]:border-t"
-      :class="item.route && 'cursor-pointer hover:bg-accent/60 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50 focus-visible:outline-none'"
+      :as="item.route ? 'button' : 'div'"
       :type="item.route ? 'button' : undefined"
+      v-bind="listItem(index)"
+      class="m-0 min-w-0 appearance-none border-0 bg-transparent p-0 text-left"
+      :class="item.route && 'cursor-pointer rounded-xl focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none'"
       @click="item.route && $router.push(item.route)"
     >
-      <span
-        class="grid size-10 shrink-0 place-items-center rounded-lg"
-        :class="iconTone(item.scope)"
-        aria-hidden="true"
+      <StatTile
+        :label="item.label"
+        :value="Number(item.value) || 0"
+        :icon="iconOf(item.icon)"
+        :tone="toneOf(item.scope)"
       >
-        <component :is="iconOf(item.icon)" class="size-[18px]" :stroke-width="2" />
-      </span>
-      <span class="min-w-0 flex-1">
-        <span class="block text-[26px] leading-none font-semibold tracking-[-0.03em] tabular-nums text-foreground max-[900px]:text-[22px]">
-          {{ item.value }}
+        <span v-if="item.route" class="inline-flex items-center gap-1 transition-colors hover:text-foreground">
+          查看详情
+          <ChevronRight class="size-3" aria-hidden="true" />
         </span>
-        <span class="mt-1.5 block truncate text-xs text-muted-foreground">{{ item.label }}</span>
-      </span>
-    </component>
-  </Card>
+      </StatTile>
+    </Motion>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { Card } from '@/components/ui/card'
+import { Motion } from 'motion-v'
+import { ChevronRight } from '@lucide/vue'
+import StatTile from '@/components/common/StatTile.vue'
 import { iconOf } from '@/lib/icons'
+import { listItem } from '@/lib/motion'
 
 export interface KpiItem {
   label: string
@@ -41,11 +46,7 @@ export interface KpiItem {
 
 defineProps<{ items: KpiItem[] }>()
 
-/* 作用域用图标底色区分，与侧栏分组色标一致 */
-const iconTone = (scope: KpiItem['scope']): string =>
-  scope === 'resource'
-    ? 'bg-info-soft text-info-accent'
-    : scope === 'profile'
-      ? 'bg-primary-soft text-primary-accent'
-      : 'bg-success-soft text-success-accent'
+/* 作用域用色调区分，与侧栏分组色标一致 */
+const toneOf = (scope: KpiItem['scope']) =>
+  scope === 'resource' ? ('info' as const) : scope === 'profile' ? ('primary' as const) : ('success' as const)
 </script>

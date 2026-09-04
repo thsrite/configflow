@@ -270,9 +270,9 @@
   /* 渐变发丝边：从主色到副色再淡出 */
   --hairline: linear-gradient(
     130deg,
-    oklch(from var(--primary-accent) l c h / 42%),
-    oklch(from var(--accent-2) l c h / 26%) 38%,
-    oklch(1 0 0 / 8%) 72%
+    oklch(from var(--primary-accent) l c h / 22%),
+    oklch(from var(--accent-2) l c h / 13%) 34%,
+    oklch(1 0 0 / 3%) 68%
   );
 
   /* 背景网格与极光 */
@@ -306,9 +306,9 @@
 
   --hairline: linear-gradient(
     130deg,
-    oklch(from var(--primary) l c h / 26%),
-    oklch(from var(--accent-2) l c h / 16%) 38%,
-    oklch(0.21 0.006 286 / 8%) 72%
+    oklch(from var(--primary) l c h / 16%),
+    oklch(from var(--accent-2) l c h / 10%) 34%,
+    oklch(0.21 0.006 286 / 4%) 68%
   );
 
   --tech-grid-line: oklch(0.21 0.006 286 / 5%);

@@ -1,7 +1,7 @@
 <template>
   <section
     :class="cn(
-      'hairline edge-light relative overflow-hidden rounded-xl border border-border/50 bg-card/55 backdrop-blur-xl transition-shadow duration-300',
+      'hairline edge-light relative overflow-hidden rounded-xl border border-border/35 bg-card/55 backdrop-blur-xl transition-shadow duration-300',
       interactive && 'hover:shadow-glow-soft hover:border-border-strong/70',
       padded && 'p-5 max-md:p-4'
     )"
