@@ -592,7 +592,7 @@ onUnmounted(() => {
   display: flex;
   align-items: stretch;
   gap: 16px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.95) 100%);
+  background: var(--cf-s2);
   backdrop-filter: blur(20px);
   border-radius: 20px;
   padding: 24px 28px;
@@ -611,7 +611,7 @@ onUnmounted(() => {
   top: 0;
   width: 4px;
   height: 100%;
-  background: linear-gradient(180deg, #6b7dff 0%, #5b6dff 100%);
+  background: var(--cf-s2);
   opacity: 0;
   transition: opacity 0.3s;
   border-radius: 20px 0 0 20px;
@@ -651,7 +651,7 @@ onUnmounted(() => {
   margin: 0;
   font-size: 18px;
   font-weight: 700;
-  color: #2d3748;
+  color: var(--cf-fg);
   letter-spacing: -0.3px;
 }
 
@@ -667,12 +667,12 @@ onUnmounted(() => {
 
 .status-online {
   background: rgba(76, 209, 55, 0.1);
-  color: #3db929;
+  color: var(--cf-success);
 }
 
 .status-offline {
   background: rgba(245, 108, 108, 0.1);
-  color: #e74c3c;
+  color: var(--cf-danger);
 }
 
 .status-dot {
@@ -710,22 +710,22 @@ onUnmounted(() => {
 
 .badge-type.type-mihomo {
   background: rgba(107, 115, 255, 0.1);
-  color: #5b6dff;
+  color: var(--cf-primary);
 }
 
 .badge-type.type-mosdns {
   background: rgba(139, 143, 255, 0.1);
-  color: #8b8fff;
+  color: var(--cf-primary-hover);
 }
 
 .badge-deploy.deploy-shell {
   background: rgba(250, 140, 22, 0.1);
-  color: #fa8c16;
+  color: var(--cf-warning);
 }
 
 .badge-deploy.deploy-docker {
   background: rgba(24, 144, 255, 0.1);
-  color: #1890ff;
+  color: var(--cf-primary);
 }
 
 .agent-meta {
@@ -742,13 +742,13 @@ onUnmounted(() => {
 
 .meta-icon {
   font-size: 14px;
-  color: #6b7dff;
+  color: var(--cf-primary);
 }
 
 .meta-value {
   font-size: 12px;
   font-weight: 500;
-  color: #4a5568;
+  color: var(--cf-fg);
   font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
 }
 
@@ -780,7 +780,7 @@ onUnmounted(() => {
   flex: 0 0 auto;
   font-size: 12px;
   font-weight: 700;
-  color: #7d88af;
+  color: var(--cf-fg-2);
   letter-spacing: 0.5px;
   text-transform: uppercase;
 }
@@ -807,25 +807,25 @@ onUnmounted(() => {
 }
 
 .metric-network .upload {
-  color: #409EFF;
+  color: var(--cf-primary);
 }
 
 .metric-network .download {
-  color: #67C23A;
+  color: var(--cf-success);
 }
 
 .metric-good {
-  color: #67C23A;
+  color: var(--cf-success);
   background: rgba(103, 194, 58, 0.12);
 }
 
 .metric-warning {
-  color: #E6A23C;
+  color: var(--cf-warning);
   background: rgba(230, 162, 60, 0.12);
 }
 
 .metric-danger {
-  color: #F56C6C;
+  color: var(--cf-danger);
   background: rgba(245, 108, 108, 0.12);
 }
 
@@ -842,7 +842,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--cf-fg-3);
 }
 
 .agent-metrics-placeholder {
@@ -857,14 +857,14 @@ onUnmounted(() => {
 
 .placeholder-text {
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--cf-fg-3);
   font-weight: 500;
 }
 
 .empty-state {
   text-align: center;
   padding: 48px 20px;
-  color: #9ca3af;
+  color: var(--cf-fg-3);
   font-size: 14px;
   background: rgba(107, 115, 255, 0.03);
   border-radius: 16px;

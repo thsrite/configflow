@@ -1,11 +1,7 @@
 <template>
   <div class="generate">
-    <div class="page-header">
-      <div class="title-block">
-        <h2>生成配置</h2>
-        <p>生成和管理您的配置文件</p>
-      </div>
-    </div>
+    <ScopeBanner scope="profile" :profile-name="cfProfileName" />
+    <PageHeader title="配置生成" description="Mihomo、Surge 与 MosDNS 配置的生成与预览" />
 
     <div class="config-section">
       <el-row :gutter="20">
@@ -318,19 +314,25 @@
                 </el-upload>
               </el-col>
               <el-col :xs="24" :sm="12" :md="12" :lg="6">
-                <el-button @click="handleBackup" type="primary" style="width: 100%" size="small">
+                <el-button @click="handleBackup" style="width: 100%" size="small">
                   <el-icon><FolderOpened /></el-icon>
                   <span>备份</span>
                 </el-button>
               </el-col>
-              <el-col :xs="24" :sm="12" :md="12" :lg="6" style="margin-top: 12px">
-                <el-button @click="resetConfig" type="danger" style="width: 100%" size="small">
-                  <el-icon><RefreshLeft /></el-icon>
-                  <span>重置</span>
-                </el-button>
-              </el-col>
             </el-row>
-            <p style="margin-top: 12px; color: #999; font-size: 12px; line-height: 1.4">
+
+            <!-- 重置会清空全部数据，与常规操作分区并降低视觉权重，避免误触 -->
+            <div class="cf-danger-zone">
+              <div class="cf-danger-zone__text">
+                <div class="cf-danger-zone__title">重置配置</div>
+                <div class="cf-danger-zone__desc">恢复默认配置并清空所有数据，不可撤销</div>
+              </div>
+              <el-button @click="resetConfig" type="danger" plain size="small">
+                <el-icon><RefreshLeft /></el-icon>
+                <span>重置</span>
+              </el-button>
+            </div>
+            <p style="margin-top: 12px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.4">
               导出配置将保存所有订阅、节点、规则和策略组设置。<br/>
               脱敏导出将隐藏敏感信息。<br/>
               导入配置将覆盖当前所有设置。<br/>
@@ -443,7 +445,7 @@
                   :disabled="mosdnsProxyRulesets.includes(ruleset.id)"
                 />
               </el-select>
-              <div style="margin-top: 8px; color: #909399; font-size: 12px">
+              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
                 这些规则集将使用国内 DNS（与代理规则集互斥）
               </div>
             </el-form-item>
@@ -464,7 +466,7 @@
                   :disabled="mosdnsProxyRules.includes(rule.id)"
                 />
               </el-select>
-              <div style="margin-top: 8px; color: #909399; font-size: 12px">
+              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
                 这些单条规则将使用国内 DNS（与代理规则互斥）
               </div>
             </el-form-item>
@@ -487,7 +489,7 @@
                   :disabled="mosdnsDirectRulesets.includes(ruleset.id)"
                 />
               </el-select>
-              <div style="margin-top: 8px; color: #909399; font-size: 12px">
+              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
                 这些规则集将使用国外 DNS（与直连规则集互斥）
               </div>
             </el-form-item>
@@ -508,7 +510,7 @@
                   :disabled="mosdnsDirectRules.includes(rule.id)"
                 />
               </el-select>
-              <div style="margin-top: 8px; color: #909399; font-size: 12px">
+              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
                 这些单条规则将使用国外 DNS（与直连规则互斥）
               </div>
             </el-form-item>
@@ -521,7 +523,7 @@
                   <el-option label="优先匹配（在规则匹配之前执行）" value="head" />
                   <el-option label="尾部匹配（在规则匹配之后执行）" value="tail" />
                 </el-select>
-                <div style="margin-top: 8px; color: #909399; font-size: 12px">
+                <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
                   选择自定义 match 在自动生成的规则匹配之前或之后执行
                 </div>
               </div>
@@ -540,7 +542,7 @@
 
                 <div
                   v-if="mosdnsCustomMatches.length === 0"
-                  style="color: #909399; font-size: 12px; padding: 12px; background: #f5f7fa; border-radius: 4px"
+                  style="color: var(--cf-fg-2); font-size: 12px; padding: 12px; background: var(--cf-s2); border-radius: 4px"
                 >
                   暂无自定义 match，可点击上方按钮添加
                 </div>
@@ -625,7 +627,7 @@
             <el-form-item label="启用缓存">
               <div>
                 <el-switch v-model="mosdnsCacheEnabled" />
-                <div style="margin-top: 8px; color: #909399; font-size: 12px; line-height: 1.5;">
+                <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.5;">
                   关闭后会完全移除 `tag: lazy_cache` 相关配置
                 </div>
               </div>
@@ -639,7 +641,7 @@
                 :step="256"
                 controls-position="right"
               />
-              <div style="margin-top: 8px; color: #909399; font-size: 12px">
+              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
                 缓存条目数量（建议 10240 起）
               </div>
             </el-form-item>
@@ -652,7 +654,7 @@
                 :step="60"
                 controls-position="right"
               />
-              <div style="margin-top: 8px; color: #909399; font-size: 12px">
+              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
                 缓存过期后的延迟删除时间（秒）
               </div>
             </el-form-item>
@@ -666,7 +668,7 @@
                 v-model="mosdnsCacheDumpFile"
                 placeholder="./cache.dump"
               />
-              <div style="margin-top: 8px; color: #909399; font-size: 12px">
+              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
                 缓存持久化文件路径（相对于 MosDNS 配置目录）
               </div>
             </el-form-item>
@@ -679,7 +681,7 @@
                 :step="10"
                 controls-position="right"
               />
-              <div style="margin-top: 8px; color: #909399; font-size: 12px">
+              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
                 缓存保存间隔（秒）
               </div>
             </el-form-item>
@@ -710,7 +712,7 @@
                   添加 DNS 条目
                 </el-button>
 
-                <div v-if="mosdnsLocalDnsEntries.length === 0" style="color: #909399; font-size: 12px; padding: 12px; background: #f5f7fa; border-radius: 4px">
+                <div v-if="mosdnsLocalDnsEntries.length === 0" style="color: var(--cf-fg-2); font-size: 12px; padding: 12px; background: var(--cf-s2); border-radius: 4px">
                   暂无 DNS 条目，点击上方按钮添加
                 </div>
 
@@ -756,7 +758,7 @@
                         size="small"
                         :disabled="!isDomainAddr(entry.addr)"
                       />
-                      <div v-if="!isDomainAddr(entry.addr) && entry.addr" style="margin-top: 4px; color: #909399; font-size: 11px">
+                      <div v-if="!isDomainAddr(entry.addr) && entry.addr" style="margin-top: 4px; color: var(--cf-fg-2); font-size: 11px">
                         仅域名地址或 DoH/DoT 地址需要 Bootstrap
                       </div>
                     </el-form-item>
@@ -786,7 +788,7 @@
                   </div>
                 </div>
 
-                <div style="margin-top: 8px; color: #909399; font-size: 12px">
+                <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
                   直连规则使用的 DNS 服务器
                 </div>
               </div>
@@ -804,7 +806,7 @@
                   添加 DNS 条目
                 </el-button>
 
-                <div v-if="mosdnsRemoteDnsEntries.length === 0" style="color: #909399; font-size: 12px; padding: 12px; background: #f5f7fa; border-radius: 4px">
+                <div v-if="mosdnsRemoteDnsEntries.length === 0" style="color: var(--cf-fg-2); font-size: 12px; padding: 12px; background: var(--cf-s2); border-radius: 4px">
                   暂无 DNS 条目，点击上方按钮添加
                 </div>
 
@@ -850,7 +852,7 @@
                         size="small"
                         :disabled="!isDomainAddr(entry.addr)"
                       />
-                      <div v-if="!isDomainAddr(entry.addr) && entry.addr" style="margin-top: 4px; color: #909399; font-size: 11px">
+                      <div v-if="!isDomainAddr(entry.addr) && entry.addr" style="margin-top: 4px; color: var(--cf-fg-2); font-size: 11px">
                         仅域名地址或 DoH/DoT 地址需要 Bootstrap
                       </div>
                     </el-form-item>
@@ -880,7 +882,7 @@
                   </div>
                 </div>
 
-                <div style="margin-top: 8px; color: #909399; font-size: 12px">
+                <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
                   代理规则使用的主 DNS 服务器
                 </div>
               </div>
@@ -898,7 +900,7 @@
                   添加 DNS 条目
                 </el-button>
 
-                <div v-if="mosdnsFallbackDnsEntries.length === 0" style="color: #909399; font-size: 12px; padding: 12px; background: #f5f7fa; border-radius: 4px">
+                <div v-if="mosdnsFallbackDnsEntries.length === 0" style="color: var(--cf-fg-2); font-size: 12px; padding: 12px; background: var(--cf-s2); border-radius: 4px">
                   暂无 DNS 条目，点击上方按钮添加（留空则使用国内 DNS）
                 </div>
 
@@ -944,7 +946,7 @@
                         size="small"
                         :disabled="!isDomainAddr(entry.addr)"
                       />
-                      <div v-if="!isDomainAddr(entry.addr) && entry.addr" style="margin-top: 4px; color: #909399; font-size: 11px">
+                      <div v-if="!isDomainAddr(entry.addr) && entry.addr" style="margin-top: 4px; color: var(--cf-fg-2); font-size: 11px">
                         仅域名地址或 DoH/DoT 地址需要 Bootstrap
                       </div>
                     </el-form-item>
@@ -974,7 +976,7 @@
                   </div>
                 </div>
 
-                <div style="margin-top: 8px; color: #909399; font-size: 12px">
+                <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
                   当国外 DNS 超时时使用的备用 DNS 服务器，留空则复用国内 DNS 配置
                 </div>
               </div>
@@ -998,13 +1000,13 @@
               <el-radio-group v-model="mosdnsDefaultForward">
                 <el-radio value="forward_remote">
                   <span style="font-weight: 500">国外 DNS</span>
-                  <span style="margin-left: 8px; color: #909399; font-size: 12px">
+                  <span style="margin-left: 8px; color: var(--cf-fg-2); font-size: 12px">
                     (推荐) 使用国外 DNS 服务器，避免 DNS 污染
                   </span>
                 </el-radio>
                 <el-radio value="forward_local" style="margin-top: 12px">
                   <span style="font-weight: 500">国内 DNS</span>
-                  <span style="margin-left: 8px; color: #909399; font-size: 12px">
+                  <span style="margin-left: 8px; color: var(--cf-fg-2); font-size: 12px">
                     使用国内 DNS 服务器，解析速度更快
                   </span>
                 </el-radio>
@@ -1032,7 +1034,7 @@
                 :rows="10"
                 placeholder="每行一个 Host 记录&#10;例如：&#10;localhost 127.0.0.1&#10;myserver.local 192.168.1.100&#10;dns.google 8.8.8.8&#10;cloudflare-dns.com 1.1.1.1"
               />
-              <div style="margin-top: 8px; color: #909399; font-size: 12px">
+              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
                 自定义 Host 记录会在所有规则之前优先匹配
               </div>
             </el-form-item>
@@ -1054,7 +1056,7 @@
             <el-form-item label="启用日志">
               <div>
                 <el-switch v-model="mosdnsLogEnabled" />
-                <div style="margin-top: 8px; color: #909399; font-size: 12px; line-height: 1.5;">
+                <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.5;">
                   关闭日志可以提高性能，但不利于问题排查
                 </div>
               </div>
@@ -1065,29 +1067,29 @@
                 <el-option label="Debug（调试）" value="debug">
                   <div>
                     <div style="font-weight: 500">Debug</div>
-                    <div style="font-size: 12px; color: #909399">最详细的日志，包含所有调试信息</div>
+                    <div style="font-size: 12px; color: var(--cf-fg-2)">最详细的日志，包含所有调试信息</div>
                   </div>
                 </el-option>
                 <el-option label="Info（信息）" value="info">
                   <div>
                     <div style="font-weight: 500">Info</div>
-                    <div style="font-size: 12px; color: #909399">一般信息日志，包含重要操作记录</div>
+                    <div style="font-size: 12px; color: var(--cf-fg-2)">一般信息日志，包含重要操作记录</div>
                   </div>
                 </el-option>
                 <el-option label="Warn（警告）" value="warn">
                   <div>
                     <div style="font-weight: 500">Warn</div>
-                    <div style="font-size: 12px; color: #909399">仅记录警告和错误信息</div>
+                    <div style="font-size: 12px; color: var(--cf-fg-2)">仅记录警告和错误信息</div>
                   </div>
                 </el-option>
                 <el-option label="Error（错误）" value="error">
                   <div>
                     <div style="font-weight: 500">Error</div>
-                    <div style="font-size: 12px; color: #909399">仅记录错误信息</div>
+                    <div style="font-size: 12px; color: var(--cf-fg-2)">仅记录错误信息</div>
                   </div>
                 </el-option>
               </el-select>
-              <div style="margin-top: 8px; color: #909399; font-size: 12px">
+              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
                 推荐使用 Info 级别，调试时可使用 Debug 级别
               </div>
             </el-form-item>
@@ -1097,7 +1099,7 @@
                 v-model="mosdnsLogFile"
                 placeholder="./mosdns.log"
               />
-              <div style="margin-top: 8px; color: #909399; font-size: 12px">
+              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
                 日志文件的保存路径，相对于 MosDNS 配置文件目录
               </div>
             </el-form-item>
@@ -1119,7 +1121,7 @@
             <el-form-item label="启用 API">
               <div>
                 <el-switch v-model="mosdnsApiEnabled" />
-                <div style="margin-top: 8px; color: #909399; font-size: 12px; line-height: 1.5;">
+                <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.5;">
                   关闭 API 可以减少资源占用，但无法通过 API 查询状态
                 </div>
               </div>
@@ -1130,7 +1132,7 @@
                 v-model="mosdnsApiAddress"
                 placeholder="0.0.0.0:8338"
               />
-              <div style="margin-top: 8px; color: #909399; font-size: 12px">
+              <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
                 格式：IP:端口，例如 0.0.0.0:8338 或 127.0.0.1:8338
               </div>
             </el-form-item>
@@ -1153,7 +1155,7 @@
     >
       <el-alert type="info" :closable="false" style="margin-bottom: 16px">
         <p>选择要在 Surge 中以 Smart 模式输出的策略组，并配置 policy-priority 参数</p>
-        <p style="margin-top: 4px; font-size: 12px; color: #909399">同一策略组在 Mihomo 中仍输出原类型（如 url-test），仅 Surge 配置受影响</p>
+        <p style="margin-top: 4px; font-size: 12px; color: var(--cf-fg-2)">同一策略组在 Mihomo 中仍输出原类型（如 url-test），仅 Surge 配置受影响</p>
       </el-alert>
 
       <div v-for="(item, index) in surgeSmartGroups" :key="index" style="display: flex; gap: 8px; margin-bottom: 10px; align-items: center">
@@ -1206,7 +1208,7 @@
             v-model="backupForm.webdav_url"
             placeholder="https://dav.jianguoyun.com/dav/"
           />
-          <div style="margin-top: 8px; color: #909399; font-size: 12px">
+          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
             WebDAV 服务器地址，例如坚果云：https://dav.jianguoyun.com/dav/
           </div>
         </el-form-item>
@@ -1225,7 +1227,7 @@
             show-password
             placeholder="WebDAV 密码/应用密码"
           />
-          <div style="margin-top: 8px; color: #909399; font-size: 12px">
+          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
             坚果云需要使用应用密码，不是登录密码
           </div>
         </el-form-item>
@@ -1235,14 +1237,14 @@
             v-model="backupForm.webdav_path"
             placeholder="/config-flow-backup/"
           />
-          <div style="margin-top: 8px; color: #909399; font-size: 12px">
+          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
             远程存储路径，默认为 /config-flow-backup/
           </div>
         </el-form-item>
 
         <el-form-item label="自动备份">
           <el-switch v-model="backupForm.auto_backup" />
-          <div style="margin-top: 8px; color: #909399; font-size: 12px">
+          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
             开启后每次配置变更时自动备份
           </div>
         </el-form-item>
@@ -1271,6 +1273,9 @@
 </template>
 
 <script setup lang="ts">
+import PageHeader from '@/components/shell/PageHeader.vue'
+import ScopeBanner from '@/components/shell/ScopeBanner.vue'
+import { useProfileStore } from '@/stores/profile'
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DCaret, RefreshLeft, Delete } from '@element-plus/icons-vue'
@@ -1283,6 +1288,11 @@ import * as yaml from 'js-yaml'
 import Sortable from 'sortablejs'
 
 // DNS 条目接口定义
+
+const cfProfileStore = useProfileStore()
+const cfProfileName = computed(
+  () => cfProfileStore.activeProfile.value?.name || cfProfileStore.activeProfileId.value
+)
 interface DnsEntry {
   id: string
   mode: 'simple' | 'yaml'
@@ -2675,7 +2685,7 @@ onUnmounted(() => {
 <style scoped>
 .generate {
   padding: 28px 32px 40px;
-  background: #f5f7ff;
+  background: var(--cf-bg);
   min-height: calc(100vh - 64px);
   --gen-radius-xl: 40px;
   --gen-radius-lg: 24px;
@@ -2689,7 +2699,7 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: #f5f7ff;
+  background: var(--cf-bg);
   margin: -28px -32px 28px -32px;
   padding: 28px 32px;
 }
@@ -2698,15 +2708,13 @@ onUnmounted(() => {
   margin: 0;
   font-size: 26px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  color: transparent;
-}
+  color: var(--cf-fg);
+  }
 
 .title-block p {
   margin: 6px 0 0;
   font-size: 14px;
-  color: #7f87af;
+  color: var(--cf-fg-2);
 }
 
 .config-section {
@@ -2730,10 +2738,7 @@ h4 {
   margin: 0;
   font-size: 18px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
+  color: var(--cf-fg);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2752,21 +2757,21 @@ h4 .el-tag {
 .config-url-box {
   margin-bottom: 16px;
   padding: 14px;
-  background: linear-gradient(135deg, rgba(107, 115, 255, 0.08) 0%, rgba(0, 13, 255, 0.08) 100%);
+  background: var(--cf-s2);
   border-radius: var(--gen-radius-md, 16px);
   border: 1px solid rgba(107, 115, 255, 0.2);
   transition: all 0.2s ease;
 }
 
 .config-url-box:hover {
-  background: linear-gradient(135deg, rgba(107, 115, 255, 0.12) 0%, rgba(0, 13, 255, 0.12) 100%);
+  background: var(--cf-s2);
   border-color: rgba(107, 115, 255, 0.3);
 }
 
 .url-hint {
   margin-top: 8px;
   font-size: 12px;
-  color: #909399;
+  color: var(--cf-fg-2);
   line-height: 1.5;
 }
 
@@ -2797,7 +2802,7 @@ h4 .el-tag {
 /* 服务域名提示文字 - 减小行间距 */
 .server-domain-hint {
   margin-top: 8px;
-  color: #909399;
+  color: var(--cf-fg-2);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -2806,6 +2811,34 @@ h4 .el-tag {
 :deep(.el-card) {
   position: relative;
   overflow: hidden;
+  /* 与全站面板一致：细边框 + 统一圆角，去掉 Element Plus 默认的重卡头 */
+  background: var(--cf-s1);
+  border: 1px solid var(--cf-bd);
+  border-radius: var(--cf-r-xl);
+  box-shadow: var(--cf-shadow);
+  /* 同一行内的生成器卡片高度对齐，避免文案长短造成参差 */
+  height: 100%;
+}
+
+:deep(.el-card__header) {
+  padding: var(--cf-sp-4) var(--cf-sp-4) 0;
+  border-bottom: none;
+}
+
+:deep(.el-card__header h4) {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--cf-fg);
+}
+
+:deep(.el-card__body) {
+  padding: var(--cf-sp-3) var(--cf-sp-4) var(--cf-sp-4);
+}
+
+/* 让同一 el-row 内的列等高，卡片才能撑满 */
+:deep(.el-row) {
+  align-items: stretch;
 }
 
 /* 按钮组优化 */
@@ -2827,24 +2860,24 @@ h4 .el-tag {
 
 /* 统计卡片样式 */
 :deep(.el-descriptions) {
-  --el-descriptions-item-bordered-label-background: linear-gradient(135deg, rgba(107, 115, 255, 0.05) 0%, rgba(0, 13, 255, 0.05) 100%);
+  --el-descriptions-item-bordered-label-background: var(--cf-s2);
 }
 
 :deep(.el-descriptions__label) {
   font-weight: 600;
-  color: #6B73FF;
+  color: var(--cf-primary);
 }
 
 :deep(.el-descriptions__content) {
   font-weight: 600;
-  color: #4a5568;
+  color: var(--cf-fg);
 }
 
 /* 配置提示样式 */
 :deep(.el-alert) {
   border: none;
-  background: linear-gradient(135deg, rgba(107, 115, 255, 0.1) 0%, rgba(0, 13, 255, 0.1) 100%);
-  border-left: 4px solid #6B73FF;
+  background: var(--cf-s2);
+  border-left: 4px solid var(--cf-primary);
 }
 
 /* 上传按钮样式 */
@@ -2874,7 +2907,6 @@ h4 .el-tag {
 }
 
 :deep(.el-button--primary) {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
   border: none;
   box-shadow: 0 8px 16px rgba(87, 104, 255, 0.25);
 }
@@ -2894,7 +2926,7 @@ h4 .el-tag {
 }
 
 :deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 1px #000dff inset, 0 0 0 3px rgba(107, 115, 255, 0.1) !important;
+  box-shadow: 0 0 0 1px var(--cf-primary) inset, 0 0 0 3px rgba(107, 115, 255, 0.1) !important;
 }
 
 /* 对话框样式 */
@@ -2911,26 +2943,24 @@ h4 .el-tag {
   padding: 24px 32px;
   margin: 0;
   border-bottom: 1px solid rgba(107, 115, 255, 0.1);
-  background: #f7f8ff;
+  background: var(--cf-s2);
 }
 
 :deep(.el-dialog__title) {
   font-size: 20px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
+  color: var(--cf-fg);
+  }
 
 :deep(.el-dialog__body) {
   padding: 28px 32px;
-  background: #f7f8ff;
+  background: var(--cf-s2);
 }
 
 :deep(.el-dialog__footer) {
   padding: 20px 32px;
   border-top: 1px solid rgba(107, 115, 255, 0.1);
-  background: #f7f8ff;
+  background: var(--cf-s2);
 }
 
 /* 移动端适配 */
@@ -3268,7 +3298,7 @@ h4 .el-tag {
   padding: 18px;
   border: 1px solid rgba(107, 115, 255, 0.15);
   border-radius: var(--gen-radius-lg, 24px);
-  background: #ffffff;
+  background: var(--cf-s1);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: move;
   box-shadow: 0 4px 12px rgba(65, 80, 180, 0.06);
@@ -3283,7 +3313,7 @@ h4 .el-tag {
 /* 拖拽时的样式 */
 .sortable-ghost {
   opacity: 0.4;
-  background: #f5f7fa;
+  background: var(--cf-bg);
 }
 
 .dns-entry-card:last-child {
@@ -3296,7 +3326,7 @@ h4 .el-tag {
   align-items: center;
   margin-bottom: 16px;
   padding-bottom: 12px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--cf-bd-strong);
 }
 
 .dns-entry-left {
@@ -3306,14 +3336,14 @@ h4 .el-tag {
 }
 
 .drag-handle {
-  color: #909399;
+  color: var(--cf-fg-2);
   cursor: grab;
   transition: all 0.3s;
   transform: rotate(90deg);
 }
 
 .drag-handle:hover {
-  color: #6B73FF;
+  color: var(--cf-primary);
 }
 
 .drag-handle:active {
@@ -3323,7 +3353,7 @@ h4 .el-tag {
 .dns-entry-index {
   font-weight: 600;
   font-size: 14px;
-  color: #303133;
+  color: var(--cf-fg);
 }
 
 .dns-entry-actions {
@@ -3337,16 +3367,16 @@ h4 .el-tag {
 
 /* YAML 验证样式 */
 .yaml-error :deep(.el-textarea__inner) {
-  border-color: #f56c6c !important;
+  border-color: var(--cf-danger) !important;
 }
 
 .yaml-error-message {
   margin-top: 8px;
   padding: 8px 12px;
-  background: #fef0f0;
-  border: 1px solid #fde2e2;
+  background: var(--cf-danger-soft);
+  border: 1px solid var(--cf-danger-soft);
   border-radius: 4px;
-  color: #f56c6c;
+  color: var(--cf-danger);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -3354,10 +3384,10 @@ h4 .el-tag {
 .yaml-success-message {
   margin-top: 8px;
   padding: 6px 12px;
-  background: #f0f9ff;
-  border: 1px solid #d1e7ff;
+  background: var(--cf-primary-soft);
+  border: 1px solid var(--cf-primary-soft);
   border-radius: 4px;
-  color: #8b8fff;
+  color: var(--cf-primary-hover);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -3368,7 +3398,7 @@ h4 .el-tag {
   border: 1px solid rgba(107, 115, 255, 0.15);
   border-radius: var(--gen-radius-md, 16px);
   padding: 16px;
-  background: #fff;
+  background: var(--cf-s1);
   box-shadow: 0 4px 12px rgba(65, 80, 180, 0.06);
   transition: all 0.2s ease;
 }
@@ -3388,7 +3418,7 @@ h4 .el-tag {
   align-items: center;
   margin-bottom: 12px;
   padding-bottom: 10px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--cf-bd-strong);
 }
 
 .custom-match-title {
@@ -3396,7 +3426,7 @@ h4 .el-tag {
   align-items: center;
   gap: 12px;
   font-weight: 600;
-  color: #303133;
+  color: var(--cf-fg);
 }
 
 .custom-match-actions {
@@ -3420,12 +3450,42 @@ h4 .el-tag {
 .custom-match-label {
   font-size: 13px;
   font-weight: 600;
-  color: #606266;
+  color: var(--cf-fg-2);
 }
 
 .custom-match-hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--cf-fg-2);
   line-height: 1.4;
+}
+
+/* 危险操作分区：与常规操作视觉隔离，降低误触概率 */
+.cf-danger-zone {
+  display: flex;
+  align-items: center;
+  gap: var(--cf-sp-3);
+  margin-top: var(--cf-sp-4);
+  padding: var(--cf-sp-3);
+  border: 1px solid color-mix(in srgb, var(--cf-danger) 30%, transparent);
+  border-radius: var(--cf-r-lg);
+  background: var(--cf-danger-soft);
+  flex-wrap: wrap;
+}
+
+.cf-danger-zone__text {
+  min-width: 0;
+  flex: 1 1 200px;
+}
+
+.cf-danger-zone__title {
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--cf-fg);
+}
+
+.cf-danger-zone__desc {
+  font-size: 12px;
+  color: var(--cf-fg-2);
+  margin-top: 2px;
 }
 </style>

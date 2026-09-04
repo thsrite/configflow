@@ -276,9 +276,41 @@ class ProfileRepository:
         with self._lock(self.initialization_lock_file):
             self._initialize_locked()
 
+    def _recover_system_from_backup(self, error: Exception) -> Optional[Dict[str, Any]]:
+        """Fall back to the sidecar backup when system.json cannot be parsed.
+
+        A full disk can leave system.json empty or truncated. Without this
+        fallback the process raises on every start and the supervisor gives up,
+        even though a good backup is sitting next to the broken file.
+        """
+        backup_path = self.system_file.with_name(f"{self.system_file.name}.bak")
+        if not backup_path.exists():
+            return None
+        try:
+            system = self._read_json(backup_path)
+        except ProfileRepositoryError:
+            return None
+
+        # Keep the damaged file for diagnosis instead of silently overwriting it.
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        corrupt_path = self.system_file.with_name(f"{self.system_file.name}.corrupt-{stamp}")
+        try:
+            os.replace(self.system_file, corrupt_path)
+        except OSError:
+            pass
+
+        self._write_system(system)
+        return system
+
     def _initialize_locked(self) -> None:
         if self.system_file.exists():
-            system = self._read_json(self.system_file)
+            try:
+                system = self._read_json(self.system_file)
+            except ProfileRepositoryError as exc:
+                recovered = self._recover_system_from_backup(exc)
+                if recovered is None:
+                    raise
+                system = recovered
             self._normalize_system(system)
             self._ensure_profile_files(system)
             return
@@ -596,28 +628,81 @@ class ProfileRepository:
 
                         fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
+    def _fsync_dir(self, directory: Path) -> None:
+        if os.name == "nt":
+            return
+        dir_fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+
+    def _write_temp(self, path: Path, content: str) -> Path:
+        """Write content to a sibling temp file that is durable on return."""
+        fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+        temp_path = Path(temp_name)
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        # A full disk can leave a short file behind even when write() did not
+        # raise; committing that would destroy the previous good content.
+        written = temp_path.stat().st_size
+        expected = len(content.encode("utf-8"))
+        if written != expected:
+            raise ProfileRepositoryError(
+                f"Incomplete write for {path}: {written} of {expected} bytes"
+            )
+        return temp_path
+
     def _write_atomic(self, path: Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        backup_path = path.with_name(f"{path.name}.bak")
         temp_path: Optional[Path] = None
+        previous: Optional[bytes] = None
+        if path.exists():
+            try:
+                previous = path.read_bytes()
+            except OSError:
+                previous = None
+
         try:
-            fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-            temp_path = Path(temp_name)
-            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-                handle.write(content)
-                handle.flush()
-                os.fsync(handle.fileno())
-            if path.exists():
-                shutil.copy2(path, path.with_name(f"{path.name}.bak"))
+            temp_path = self._write_temp(path, content)
             os.replace(temp_path, path)
-            if os.name != "nt":
-                dir_fd = os.open(path.parent, os.O_RDONLY)
-                try:
-                    os.fsync(dir_fd)
-                finally:
-                    os.close(dir_fd)
+            temp_path = None
+            self._fsync_dir(path.parent)
         finally:
             if temp_path and temp_path.exists():
                 temp_path.unlink()
+
+        # The backup is refreshed only after the new content is committed, and
+        # through its own temp file. Refreshing it first (the previous
+        # behaviour) meant a full disk could truncate the backup while the
+        # main write also failed, losing both copies at once.
+        if previous is None:
+            return
+        backup_temp: Optional[Path] = None
+        try:
+            fd, temp_name = tempfile.mkstemp(
+                prefix=f".{backup_path.name}.", suffix=".tmp", dir=backup_path.parent
+            )
+            backup_temp = Path(temp_name)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(previous)
+                handle.flush()
+                os.fsync(handle.fileno())
+            if backup_temp.stat().st_size != len(previous):
+                raise OSError("incomplete backup write")
+            os.replace(backup_temp, backup_path)
+            backup_temp = None
+            self._fsync_dir(backup_path.parent)
+        except OSError:
+            # The primary write already succeeded; a stale but valid backup is
+            # strictly better than a truncated one, so keep the old backup.
+            pass
+        finally:
+            if backup_temp and backup_temp.exists():
+                backup_temp.unlink()
 
     def _write_json(self, path: Path, data: Dict[str, Any]) -> None:
         self._write_atomic(path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")

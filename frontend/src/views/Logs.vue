@@ -1,12 +1,7 @@
 <template>
   <div class="logs-container">
     <!-- 页面标题 -->
-    <div class="page-header">
-      <div class="title-block">
-        <h2>日志管理</h2>
-        <p>实时查看和管理系统日志，支持关键词搜索、级别过滤和自动刷新</p>
-      </div>
-    </div>
+    <PageHeader title="日志" description="运行记录与错误排查，支持关键词搜索、级别过滤与自动刷新" />
 
     <!-- 顶部工具栏 -->
     <el-card class="toolbar-card" shadow="never">
@@ -116,6 +111,7 @@
 </template>
 
 <script setup lang="ts">
+import PageHeader from '@/components/shell/PageHeader.vue'
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Delete, Bottom } from '@element-plus/icons-vue'
@@ -309,7 +305,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 20px;
   padding: 28px 32px 40px;
-  background: #f5f7ff;
+  background: var(--cf-bg);
   min-height: calc(100vh - 64px);
   box-sizing: border-box;
 }
@@ -326,7 +322,7 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: #f5f7ff;
+  background: var(--cf-bg);
   margin: -28px -32px 4px -32px;
   padding: 28px 32px;
 }
@@ -334,17 +330,14 @@ onUnmounted(() => {
 .title-block h2 {
   font-size: 26px;
   font-weight: 700;
-  background: linear-gradient(135deg, #5b6dff 0%, #8b8fff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--cf-fg);
   margin: 0 0 6px 0;
   letter-spacing: -0.5px;
 }
 
 .title-block p {
   font-size: 14px;
-  color: #7f87af;
+  color: var(--cf-fg-2);
   margin: 0;
   line-height: 1.6;
 }
@@ -352,7 +345,7 @@ onUnmounted(() => {
 /* 工具栏卡片 */
 .toolbar-card {
   border-radius: 24px;
-  background: #fff;
+  background: var(--cf-s1);
   border: 1px solid rgba(107, 115, 255, 0.1);
   box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -393,7 +386,7 @@ onUnmounted(() => {
 
 .toolbar-left :deep(.el-input__wrapper.is-focus) {
   box-shadow: 0 4px 16px rgba(91, 109, 255, 0.18);
-  border-color: #6b7dff;
+  border-color: var(--cf-primary);
 }
 
 .toolbar-left :deep(.el-select .el-input__wrapper) {
@@ -411,7 +404,6 @@ onUnmounted(() => {
 }
 
 .toolbar-right :deep(.el-button--primary) {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
   border: none;
   box-shadow: 0 8px 20px rgba(91, 109, 255, 0.25);
 }
@@ -422,7 +414,6 @@ onUnmounted(() => {
 }
 
 .toolbar-right :deep(.el-button--danger) {
-  background: linear-gradient(135deg, #ff6b6b 0%, #ff5757 100%);
   border: none;
   box-shadow: 0 8px 20px rgba(255, 87, 87, 0.25);
 }
@@ -435,7 +426,7 @@ onUnmounted(() => {
 .toolbar-right :deep(.el-button:not(.el-button--primary):not(.el-button--danger)) {
   background: rgba(107, 115, 255, 0.08);
   border: 1px solid rgba(107, 115, 255, 0.2);
-  color: #4a5bff;
+  color: var(--cf-primary);
 }
 
 .toolbar-right :deep(.el-button:not(.el-button--primary):not(.el-button--danger):hover) {
@@ -463,17 +454,17 @@ onUnmounted(() => {
 
 .log-info :deep(.el-tag--info) {
   background: rgba(139, 143, 255, 0.12);
-  color: #5b6dff;
+  color: var(--cf-primary);
 }
 
 .log-info :deep(.el-tag--success) {
   background: rgba(103, 194, 58, 0.12);
-  color: #67c23a;
+  color: var(--cf-success);
 }
 
 .log-info :deep(.el-tag) {
   background: rgba(107, 115, 255, 0.08);
-  color: #6b7dff;
+  color: var(--cf-primary);
 }
 
 /* 日志内容卡片 */
@@ -483,7 +474,7 @@ onUnmounted(() => {
   border-radius: 24px;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--cf-s1);
   border: 1px solid rgba(107, 115, 255, 0.1);
   box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -540,7 +531,8 @@ onUnmounted(() => {
 .line-number {
   flex-shrink: 0;
   width: 60px;
-  color: #858585;
+  /* 控制台背景恒为深色，行号与时间戳不跟随主题，否则浅色下会看不见 */
+  color: #8a8f98;
   text-align: right;
   margin-right: 16px;
   user-select: none;
@@ -554,7 +546,8 @@ onUnmounted(() => {
 
 /* 日志时间戳样式 */
 :deep(.log-timestamp) {
-  color: #858585;
+  /* 同上：控制台内的配色独立于应用主题 */
+  color: #8a8f98;
   font-weight: 500;
 }
 
@@ -566,7 +559,7 @@ onUnmounted(() => {
 
 /* 日志级别样式 */
 :deep(.log-level-critical) {
-  color: #ff4444;
+  color: var(--cf-danger);
   font-weight: bold;
   background: rgba(255, 68, 68, 0.1);
   padding: 2px 6px;
@@ -598,7 +591,7 @@ onUnmounted(() => {
 }
 
 :deep(.log-level-debug) {
-  color: #858585;
+  color: var(--cf-fg-3);
   font-weight: 400;
 }
 
@@ -627,12 +620,12 @@ onUnmounted(() => {
 }
 
 .log-content::-webkit-scrollbar-thumb {
-  background: #4a4a4a;
+  background: var(--cf-fg-3);
   border-radius: 4px;
 }
 
 .log-content::-webkit-scrollbar-thumb:hover {
-  background: #5a5a5a;
+  background: var(--cf-fg-3);
 }
 
 /* 响应式布局 */

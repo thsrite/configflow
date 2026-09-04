@@ -6,7 +6,7 @@
       size="small"
       class="profile-select"
       :loading="loading"
-      aria-label="当前配置 Profile"
+      aria-label="当前配置空间"
       popper-class="profile-select-popper"
       @change="handleChange"
     >
@@ -25,8 +25,8 @@
     <el-button
       text
       class="profile-manager-button"
-      title="管理配置 Profile"
-      aria-label="管理配置 Profile"
+      title="管理配置空间"
+      aria-label="管理配置空间"
       @click="router.push('/profiles')"
     >
       <el-icon><Setting /></el-icon>
@@ -54,7 +54,7 @@ const handleChange = async (profileId: string) => {
   try {
     await ElMessageBox.confirm(
       '切换后当前页面将重新加载，未保存的编辑内容会丢失。继续吗？',
-      '切换配置 Profile',
+      '切换配置空间',
       { confirmButtonText: '切换', cancelButtonText: '取消', type: 'warning' }
     )
     switchProfile(profileId)
@@ -86,7 +86,7 @@ onMounted(() => {
 }
 
 .profile-icon {
-  color: #6b7dff;
+  color: var(--cf-primary);
   font-size: 16px;
   flex-shrink: 0;
 }
@@ -106,21 +106,23 @@ onMounted(() => {
 
 .profile-select :deep(.el-select__placeholder),
 .profile-select :deep(.el-input__inner) {
-  color: #4a5bff;
+  color: var(--cf-primary);
   font-weight: 600;
   font-size: 13px;
 }
 
 .profile-manager-button {
-  color: #6b7dff;
+  color: var(--cf-primary);
   padding: 4px;
+  /* WCAG 2.5.8 Target Size (Minimum) 要求指针目标不小于 24×24 */
+  min-width: 24px;
   height: 28px;
   border-radius: 8px;
   transition: all 0.3s ease;
 }
 
 .profile-manager-button:hover {
-  color: #4a5bff;
+  color: var(--cf-primary);
   background: rgba(107, 115, 255, 0.14);
 }
 
@@ -136,6 +138,17 @@ onMounted(() => {
 
   .profile-select {
     width: 112px;
+  }
+}
+/* 移动端触控尺寸：28px 在触屏上过小 */
+@media (max-width: 900px) {
+  .profile-select :deep(.el-select__wrapper) {
+    min-height: 32px;
+  }
+
+  .profile-manager-button {
+    height: 32px;
+    min-width: 32px;
   }
 }
 </style>
@@ -167,16 +180,16 @@ onMounted(() => {
 .profile-select-popper .profile-option-name {
   font-size: 13px;
   font-weight: 600;
-  color: #30354d;
+  color: var(--cf-fg);
 }
 
 .profile-select-popper .el-select-dropdown__item.is-selected .profile-option-name {
-  color: #4a5bff;
+  color: var(--cf-primary);
 }
 
 .profile-select-popper .profile-option-id {
   font-size: 11px;
-  color: #9aa1c4;
+  color: var(--cf-fg-2);
   font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
 }
 </style>

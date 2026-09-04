@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="theme-color" content="#0d0f13">
+<title>ConfigFlow 移动端原型 v2</title>
+<style>
+:root[data-theme="dark"]{
+  --bg:#0d0f13; --s1:#14171d; --s2:#1a1e26; --s3:#222732;
+  --bd:rgba(255,255,255,.07); --bd2:rgba(255,255,255,.12);
+  --fg:#eceef2; --fg2:#a8b0bd; --fg3:#6b7482;
+  --pri:#6d7cff; --pri-s:#2a2f52; --pri-fg:#fff;
+  --ok:#3ddc97; --ok-s:#122b22; --warn:#f7bd4a; --warn-s:#2e2413; --err:#ff6b6b;
+  --shared:#5ec3ff; --shared-s:#0f2635;
+  --lift:0 1px 0 rgba(255,255,255,.04) inset, 0 8px 24px -12px rgba(0,0,0,.9);
+}
+:root[data-theme="light"]{
+  --bg:#f6f7f9; --s1:#fff; --s2:#fff; --s3:#f0f2f5;
+  --bd:rgba(16,24,40,.09); --bd2:rgba(16,24,40,.16);
+  --fg:#111621; --fg2:#525c6b; --fg3:#8d97a5;
+  --pri:#4f5bd5; --pri-s:#eceefc; --pri-fg:#fff;
+  --ok:#0f9d6b; --ok-s:#e6f7f0; --warn:#b8730a; --warn-s:#fdf3e2; --err:#d64545;
+  --shared:#0d6ea8; --shared-s:#e7f2fa;
+  --lift:0 1px 2px rgba(16,24,40,.05), 0 8px 20px -14px rgba(16,24,40,.35);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:15px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
+  overscroll-behavior-y:none;-webkit-font-smoothing:antialiased}
+.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;font-variant-numeric:tabular-nums}
+
+/* ---------- shell ---------- */
+.app{max-width:520px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;background:var(--bg)}
+.topbar{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--bg) 88%,transparent);
+  backdrop-filter:saturate(1.4) blur(14px);border-bottom:1px solid var(--bd);
+  padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;display:flex;align-items:center;gap:10px}
+.brand{display:flex;align-items:center;gap:8px;font-weight:650;font-size:15px;letter-spacing:-.01em}
+.logo{width:24px;height:24px;border-radius:7px;background:linear-gradient(140deg,var(--pri),#9aa4ff);
+  display:grid;place-items:center;color:#fff;font-size:12px;font-weight:800}
+.pchip{margin-left:auto;display:flex;align-items:center;gap:6px;height:34px;padding:0 11px;
+  border-radius:999px;background:var(--s2);border:1px solid var(--bd2);font-size:13px;font-weight:550;color:var(--fg)}
+.pchip .dot{width:7px;height:7px;border-radius:99px;background:var(--pri)}
+.iconbtn{width:34px;height:34px;min-width:34px;border-radius:10px;background:var(--s2);border:1px solid var(--bd);
+  color:var(--fg2);display:grid;place-items:center;font-size:15px}
+main{flex:1;padding:16px 16px calc(env(safe-area-inset-bottom) + 96px)}
+.screen{display:none;animation:in .22s ease}
+.screen.on{display:block}
+@keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.screen{animation:none}*{transition:none!important}}
+
+/* ---------- scope banner ---------- */
+.scope{display:flex;align-items:center;gap:9px;padding:11px 13px;border-radius:13px;margin-bottom:14px;
+  font-size:12.5px;line-height:1.35;border:1px solid var(--bd)}
+.scope.shared{background:var(--shared-s);border-color:color-mix(in srgb,var(--shared) 28%,transparent);color:var(--fg)}
+.scope.profile{background:var(--pri-s);border-color:color-mix(in srgb,var(--pri) 30%,transparent);color:var(--fg)}
+.scope b{font-weight:650}
+.scope .ic{font-size:14px;flex:0 0 auto}
+.scope .sub{color:var(--fg2);display:block;margin-top:1px}
+
+h1.page{font-size:23px;font-weight:700;letter-spacing:-.02em;margin:2px 0 3px}
+.pdesc{color:var(--fg2);font-size:13px;margin:0 0 15px}
+.sect{font-size:12px;font-weight:650;color:var(--fg3);letter-spacing:.06em;text-transform:uppercase;
+  margin:22px 0 10px;display:flex;align-items:center;gap:8px}
+.sect .more{margin-left:auto;text-transform:none;letter-spacing:0;color:var(--pri);font-weight:600;font-size:13px}
+
+/* ---------- KPI ---------- */
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.kpi{background:var(--s1);border:1px solid var(--bd);border-radius:15px;padding:13px 14px 12px;box-shadow:var(--lift);
+  position:relative;overflow:hidden}
+.kpi::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:var(--edge,transparent)}
+.kpi .k{font-size:11.5px;color:var(--fg2);font-weight:550;display:flex;align-items:center;gap:5px}
+.kpi .v{font-size:29px;font-weight:700;letter-spacing:-.03em;margin-top:5px;line-height:1.05}
+.kpi .d{font-size:11.5px;color:var(--fg3);margin-top:3px}
+.kpi .d em{font-style:normal;color:var(--ok);font-weight:600}
+
+/* ---------- generic card ---------- */
+.card{background:var(--s1);border:1px solid var(--bd);border-radius:15px;box-shadow:var(--lift);
+  padding:14px;margin-bottom:10px;position:relative;overflow:hidden}
+.card.tap:active{background:var(--s2)}
+.card .row1{display:flex;align-items:center;gap:9px}
+.card .nm{font-weight:600;font-size:15px;letter-spacing:-.01em;flex:1;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card .meta{display:flex;flex-wrap:wrap;gap:7px 12px;margin-top:8px;font-size:12.5px;color:var(--fg2)}
+.card .meta i{font-style:normal;color:var(--fg);font-weight:600}
+.bar{height:4px;border-radius:99px;background:var(--s3);margin-top:11px;overflow:hidden}
+.bar span{display:block;height:100%;border-radius:99px;background:var(--pri)}
+
+.dot{width:8px;height:8px;border-radius:99px;flex:0 0 auto}
+.dot.ok{background:var(--ok);box-shadow:0 0 0 3px var(--ok-s)}
+.dot.warn{background:var(--warn);box-shadow:0 0 0 3px var(--warn-s)}
+.dot.off{background:var(--fg3)}
+.pill{font-size:11px;font-weight:650;padding:3px 8px;border-radius:7px;background:var(--s3);color:var(--fg2);
+  border:1px solid var(--bd);white-space:nowrap}
+.pill.ok{background:var(--ok-s);color:var(--ok);border-color:transparent}
+.pill.warn{background:var(--warn-s);color:var(--warn);border-color:transparent}
+.pill.shared{background:var(--shared-s);color:var(--shared);border-color:transparent}
+
+/* health */
+.health{background:var(--warn-s);border:1px solid color-mix(in srgb,var(--warn) 34%,transparent);
+  border-radius:15px;padding:13px 14px;margin-bottom:10px;display:flex;gap:11px;align-items:flex-start}
+.health .t{font-weight:650;font-size:14px}
+.health .s{font-size:12.5px;color:var(--fg2);margin-top:2px}
+.health .go{margin-left:auto;align-self:center;font-size:13px;font-weight:650;color:var(--warn);
+  min-height:36px;display:flex;align-items:center;padding-left:8px}
+
+/* nav list rows */
+.navcard{background:var(--s1);border:1px solid var(--bd);border-radius:15px;overflow:hidden;box-shadow:var(--lift);margin-bottom:10px}
+.navrow{display:flex;align-items:center;gap:12px;padding:13px 14px;min-height:56px;border-bottom:1px solid var(--bd)}
+.navrow:last-child{border-bottom:none}
+.navrow:active{background:var(--s2)}
+.navrow .ic{width:34px;height:34px;border-radius:10px;background:var(--s3);display:grid;place-items:center;font-size:15px;flex:0 0 auto}
+.navrow .tt{font-weight:600;font-size:14.5px}
+.navrow .ss{font-size:12px;color:var(--fg2);margin-top:1px}
+.navrow .rt{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--fg3);font-size:13px}
+
+/* activity */
+.act{display:flex;gap:11px;padding:12px 0;border-bottom:1px solid var(--bd)}
+.act:last-child{border-bottom:none}
+.act .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:13px;flex:0 0 auto;background:var(--s3)}
+.act .ic.ok{background:var(--ok-s);color:var(--ok)} .act .ic.warn{background:var(--warn-s);color:var(--warn)}
+.act .tt{font-size:14px;font-weight:550}
+.act .ss{font-size:12px;color:var(--fg2);margin-top:2px}
+.act .tm{margin-left:auto;font-size:11.5px;color:var(--fg3);white-space:nowrap}
+
+/* segmented */
+.seg{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -16px 14px;padding:0 16px}
+.seg::-webkit-scrollbar{display:none}
+.seg button{flex:0 0 auto;height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--bd);
+  background:var(--s1);color:var(--fg2);font-size:13.5px;font-weight:600}
+.seg button[aria-selected="true"]{background:var(--pri);border-color:var(--pri);color:var(--pri-fg)}
+
+/* toolbar */
+.tb{display:flex;gap:8px;margin-bottom:12px}
+.tb input{flex:1;height:40px;border-radius:11px;border:1px solid var(--bd);background:var(--s1);
+  color:var(--fg);padding:0 13px;font-size:14px}
+.tb input::placeholder{color:var(--fg3)}
+.tb button{height:40px;min-width:40px;padding:0 13px;border-radius:11px;border:1px solid var(--bd);
+  background:var(--s1);color:var(--fg2);font-size:13.5px;font-weight:600}
+
+/* ---------- reorder ---------- */
+.obar{position:sticky;top:calc(env(safe-area-inset-top) + 54px);z-index:20;display:none;
+  align-items:center;gap:10px;background:var(--pri-s);border:1px solid color-mix(in srgb,var(--pri) 34%,transparent);
+  border-radius:13px;padding:9px 10px 9px 13px;margin-bottom:12px}
+body.reorder .obar{display:flex}
+.obar .t{font-size:13px;font-weight:650}
+.obar .h{font-size:11.5px;color:var(--fg2);margin-top:1px}
+.obar .acts{margin-left:auto;display:flex;gap:7px}
+.obar button{height:34px;padding:0 13px;border-radius:9px;font-size:13px;font-weight:650;border:1px solid var(--bd2);background:transparent;color:var(--fg2)}
+.obar button.pri{background:var(--pri);border-color:var(--pri);color:var(--pri-fg)}
+.handle{display:none;width:44px;height:44px;margin:-6px -8px -6px 0;border-radius:11px;
+  place-items:center;color:var(--fg3);font-size:16px;flex:0 0 auto;touch-action:none;cursor:grab}
+body.reorder .handle{display:grid}
+body.reorder .card .chev{display:none}
+.ordnum{display:none;width:22px;font-size:12px;color:var(--fg3);flex:0 0 auto}
+body.reorder .ordnum{display:block}
+.card.dragging{opacity:.97;box-shadow:0 18px 40px -12px rgba(0,0,0,.7),0 0 0 1px var(--pri);
+  position:relative;z-index:15;transform:scale(1.015)}
+.card.gap{outline:2px dashed color-mix(in srgb,var(--pri) 60%,transparent);outline-offset:-2px;opacity:.35}
+.arrows{display:none;gap:4px;margin-left:2px}
+body.reorder .arrows{display:flex}
+.arrows button{width:36px;height:34px;border-radius:9px;border:1px solid var(--bd);background:var(--s2);color:var(--fg2);font-size:11px;padding:0}
+body.reorder .card{padding:11px 12px}
+body.reorder .card .pill{display:none}
+body.reorder .card .meta:nth-of-type(2){display:none}
+.arrows button:disabled{opacity:.3}
+
+/* ---------- sticky primary ---------- */
+.fabwrap{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 62px);z-index:25;
+  padding:0 16px;max-width:520px;margin:0 auto;pointer-events:none}
+.fab{pointer-events:auto;width:100%;height:50px;border-radius:14px;border:none;background:var(--pri);
+  color:var(--pri-fg);font-size:15.5px;font-weight:680;letter-spacing:.01em;
+  box-shadow:0 10px 28px -10px color-mix(in srgb,var(--pri) 75%,transparent);
+  display:flex;align-items:center;justify-content:center;gap:8px}
+.fab:active{transform:translateY(1px)}
+body.reorder .fabwrap{display:none}
+
+/* ---------- bottom nav ---------- */
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:28;max-width:520px;margin:0 auto;
+  background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:saturate(1.4) blur(16px);
+  border-top:1px solid var(--bd);display:grid;grid-template-columns:repeat(4,1fr);
+  padding-bottom:env(safe-area-inset-bottom)}
+.tabs button{background:none;border:none;padding:7px 0 6px;min-height:56px;color:var(--fg3);
+  display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10.5px;font-weight:600}
+.tabs button .ic{font-size:19px;line-height:1}
+.tabs button[aria-current="page"]{color:var(--pri)}
+.tabs button[aria-current="page"] .ic{transform:translateY(-1px)}
+
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+:focus-visible{outline:2px solid var(--pri);outline-offset:2px;border-radius:8px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 130px);
+  background:var(--s3);border:1px solid var(--bd2);color:var(--fg);padding:10px 16px;border-radius:11px;
+  font-size:13.5px;font-weight:600;z-index:50;opacity:0;transition:opacity .2s;pointer-events:none;box-shadow:var(--lift)}
+.toast.on{opacity:1}
+</style></head>
+<body>
+<div class="app">
+
+<div class="topbar">
+  <div class="brand"><span class="logo">CF</span>ConfigFlow</div>
+  <button class="pchip"><span class="dot"></span>主代理 <span style="color:var(--fg3);font-size:11px">▾</span></button>
+  <button class="iconbtn" id="themeBtn" aria-label="切换主题">◐</button>
+</div>
+
+<main>
+
+<!-- ============ 总览 ============ -->
+<section class="screen on" id="s-overview">
+  <h1 class="page">数据统计</h1>
+  <p class="pdesc">共享资源 4 类 · 当前配置「主代理」</p>
+
+  <div class="kpis">
+    <div class="kpi" style="--edge:var(--shared)"><div class="k">节点库</div><div class="v mono">126</div><div class="d"><em>+12</em> 本周 · 共享</div></div>
+    <div class="kpi" style="--edge:var(--shared)"><div class="k">订阅来源</div><div class="v mono">8</div><div class="d">7 正常 · 1 异常</div></div>
+    <div class="kpi" style="--edge:var(--pri)"><div class="k">配置空间</div><div class="v mono">3</div><div class="d">当前 主代理</div></div>
+    <div class="kpi" style="--edge:var(--ok)"><div class="k">Agent</div><div class="v mono">4</div><div class="d">4 在线</div></div>
+  </div>
+
+  <div class="sect">配置健康</div>
+  <div class="health">
+    <span style="font-size:17px">⚠</span>
+    <div><div class="t">2 个订阅超过 24 小时未更新</div><div class="s">备用线路 · 测试订阅</div></div>
+    <span class="go">处理 ›</span>
+  </div>
+  <div class="card tap">
+    <div class="row1"><span class="dot warn"></span><span class="nm">配置已过期</span><span class="pill warn">需重新生成</span></div>
+    <div class="meta">上次生成 <i>1 小时前</i><span>·</span>之后有 <i>3</i> 项变更</div>
+    <div class="bar"><span style="width:64%"></span></div>
+  </div>
+
+  <div class="sect">最近活动 <a class="more" href="#">全部</a></div>
+  <div class="card" style="padding:2px 14px">
+    <div class="act"><span class="ic ok">↻</span><div><div class="tt">订阅刷新完成</div><div class="ss">机场订阅 A · 新增 12 节点</div></div><span class="tm">2 分钟前</span></div>
+    <div class="act"><span class="ic ok">⬆</span><div><div class="tt">Agent 推送成功</div><div class="ss">home-router · mihomo</div></div><span class="tm">18 分钟前</span></div>
+    <div class="act"><span class="ic ok">⚙</span><div><div class="tt">配置生成完成</div><div class="ss">主代理 · Mihomo + Surge</div></div><span class="tm">1 小时前</span></div>
+    <div class="act"><span class="ic warn">!</span><div><div class="tt">订阅拉取失败</div><div class="ss">备用线路 · 连接超时</div></div><span class="tm">3 小时前</span></div>
+  </div>
+</section>
+
+<!-- ============ 共享资源 ============ -->
+<section class="screen" id="s-shared">
+  <div class="scope shared"><span class="ic">⧉</span><div><b>共享资源 · 所有配置空间共用</b><span class="sub">3 个配置空间正在使用，修改后立即对全部生效</span></div></div>
+  <h1 class="page">订阅来源</h1>
+  <p class="pdesc">集中维护订阅源，所有配置空间共同使用</p>
+
+  <div class="seg" role="tablist">
+    <button role="tab" aria-selected="true">订阅来源 8</button>
+    <button role="tab" aria-selected="false">节点库 126</button>
+    <button role="tab" aria-selected="false">订阅聚合 2</button>
+    <button role="tab" aria-selected="false">规则库 15</button>
+  </div>
+
+  <div class="tb">
+    <input placeholder="搜索订阅…" aria-label="搜索订阅">
+    <button id="reorderBtn">调整顺序</button>
+  </div>
+
+  <div class="obar" role="status">
+    <div><div class="t">正在调整顺序</div><div class="h">长按手柄拖动，或用上下按钮</div></div>
+    <div class="acts"><button id="cancelOrder">取消</button><button class="pri" id="saveOrder">保存</button></div>
+  </div>
+
+  <div id="list">
+    <div class="card tap" data-n="机场订阅 A"><div class="row1"><span class="ordnum mono">1</span><span class="dot ok"></span><span class="nm">机场订阅 A</span><span class="pill">42 节点</span><span class="chev" style="color:var(--fg3)">›</span><div class="arrows"><button aria-label="上移">▲</button><button aria-label="下移">▼</button></div><div class="handle" aria-label="拖动手柄">⠿</div></div>
+      <div class="meta"><span class="mono" style="font-size:11.5px">sub.example.com/a</span></div>
+      <div class="meta">更新 <i>2 分钟前</i><span>·</span>被 <i>3</i> 个配置引用</div></div>
+
+    <div class="card tap" data-n="公司内网订阅"><div class="row1"><span class="ordnum mono">2</span><span class="dot ok"></span><span class="nm">公司内网订阅</span><span class="pill">18 节点</span><span class="chev" style="color:var(--fg3)">›</span><div class="arrows"><button aria-label="上移">▲</button><button aria-label="下移">▼</button></div><div class="handle" aria-label="拖动手柄">⠿</div></div>
+      <div class="meta"><span class="mono" style="font-size:11.5px">intra.example.com/sub</span></div>
+      <div class="meta">更新 <i>1 小时前</i><span>·</span>被 <i>1</i> 个配置引用</div></div>
+
+    <div class="card tap" data-n="备用线路"><div class="row1"><span class="ordnum mono">3</span><span class="dot warn"></span><span class="nm">备用线路</span><span class="pill warn">拉取失败</span><span class="chev" style="color:var(--fg3)">›</span><div class="arrows"><button aria-label="上移">▲</button><button aria-label="下移">▼</button></div><div class="handle" aria-label="拖动手柄">⠿</div></div>
+      <div class="meta"><span class="mono" style="font-size:11.5px">backup.example.com/s</span></div>
+      <div class="meta">更新 <i>3 天前</i><span>·</span>连接超时</div></div>
+
+    <div class="card tap" data-n="香港节点源"><div class="row1"><span class="ordnum mono">4</span><span class="dot ok"></span><span class="nm">香港节点源</span><span class="pill">31 节点</span><span class="chev" style="color:var(--fg3)">›</span><div class="arrows"><button aria-label="上移">▲</button><button aria-label="下移">▼</button></div><div class="handle" aria-label="拖动手柄">⠿</div></div>
+      <div class="meta"><span class="mono" style="font-size:11.5px">hk.example.com/list</span></div>
+      <div class="meta">更新 <i>26 分钟前</i><span>·</span>被 <i>2</i> 个配置引用</div></div>
+
+    <div class="card tap" data-n="家庭 NAS"><div class="row1"><span class="ordnum mono">5</span><span class="dot ok"></span><span class="nm">家庭 NAS</span><span class="pill">6 节点</span><span class="chev" style="color:var(--fg3)">›</span><div class="arrows"><button aria-label="上移">▲</button><button aria-label="下移">▼</button></div><div class="handle" aria-label="拖动手柄">⠿</div></div>
+      <div class="meta"><span class="mono" style="font-size:11.5px">nas.example.com/sub</span></div>
+      <div class="meta">更新 <i>12 分钟前</i><span>·</span>被 <i>1</i> 个配置引用</div></div>
+
+    <div class="card tap" data-n="测试订阅"><div class="row1"><span class="ordnum mono">6</span><span class="dot off"></span><span class="nm">测试订阅</span><span class="pill">已停用</span><span class="chev" style="color:var(--fg3)">›</span><div class="arrows"><button aria-label="上移">▲</button><button aria-label="下移">▼</button></div><div class="handle" aria-label="拖动手柄">⠿</div></div>
+      <div class="meta"><span class="mono" style="font-size:11.5px">test.example.com/x</span></div>
+      <div class="meta">更新 <i>5 天前</i></div></div>
+  </div>
+</section>
+
+<!-- ============ 当前配置 ============ -->
+<section class="screen" id="s-profile">
+  <div class="scope profile"><span class="ic">◈</span><div><b>当前配置 · 主代理</b><span class="sub">以下设置仅属于本配置空间，切换后互不影响</span></div></div>
+  <h1 class="page">主代理</h1>
+  <p class="pdesc">策略与规则的私有配置</p>
+
+  <div class="kpis">
+    <div class="kpi" style="--edge:var(--pri)"><div class="k">策略组</div><div class="v mono">9</div><div class="d">引用 62 节点</div></div>
+    <div class="kpi" style="--edge:var(--pri)"><div class="k">策略规则</div><div class="v mono">184</div><div class="d">15 规则集</div></div>
+  </div>
+
+  <div class="sect">配置项</div>
+  <div class="navcard">
+    <div class="navrow"><span class="ic">◫</span><div><div class="tt">策略组</div><div class="ss">分组、筛选与节点引用</div></div><span class="rt">9 ›</span></div>
+    <div class="navrow"><span class="ic">☰</span><div><div class="tt">策略规则</div><div class="ss">单条规则与规则集绑定</div></div><span class="rt">184 ›</span></div>
+    <div class="navrow"><span class="ic">⚙</span><div><div class="tt">配置生成</div><div class="ss">Mihomo · Surge · MosDNS</div></div><span class="rt"><span class="pill warn">待生成</span>›</span></div>
+  </div>
+
+  <div class="sect">生成产物</div>
+  <div class="card tap">
+    <div class="row1"><span class="dot ok"></span><span class="nm">mihomo.yaml</span><span class="pill ok">最新</span></div>
+    <div class="meta">生成 <i>1 小时前</i><span>·</span><span class="mono">184 KB</span></div>
+  </div>
+  <div class="card tap">
+    <div class="row1"><span class="dot warn"></span><span class="nm">surge.conf</span><span class="pill warn">已过期</span></div>
+    <div class="meta">生成 <i>2 天前</i><span>·</span><span class="mono">96 KB</span></div>
+  </div>
+</section>
+
+<!-- ============ 系统 ============ -->
+<section class="screen" id="s-system">
+  <h1 class="page">系统</h1>
+  <p class="pdesc">配置空间、Agent 与运行日志</p>
+
+  <div class="sect">配置空间 <a class="more" href="#">管理</a></div>
+  <div class="card tap"><div class="row1"><span class="dot ok"></span><span class="nm">主代理</span><span class="pill shared">当前</span></div>
+    <div class="meta">9 策略组<span>·</span>184 规则<span>·</span>更新 1 小时前</div></div>
+  <div class="card tap"><div class="row1"><span class="dot off"></span><span class="nm">备用配置</span></div>
+    <div class="meta">4 策略组<span>·</span>63 规则<span>·</span>更新 6 天前</div></div>
+  <div class="card tap"><div class="row1"><span class="dot off"></span><span class="nm">出差专用</span></div>
+    <div class="meta">3 策略组<span>·</span>41 规则<span>·</span>更新 3 周前</div></div>
+
+  <div class="sect">Agent</div>
+  <div class="navcard">
+    <div class="navrow"><span class="ic">▤</span><div><div class="tt">home-router</div><div class="ss">主代理 · mihomo</div></div><span class="rt"><span class="dot ok"></span>在线 ›</span></div>
+    <div class="navrow"><span class="ic">▤</span><div><div class="tt">office-box</div><div class="ss">主代理 · surge</div></div><span class="rt"><span class="dot ok"></span>在线 ›</span></div>
+    <div class="navrow"><span class="ic">▤</span><div><div class="tt">nas-docker</div><div class="ss">备用配置 · mihomo</div></div><span class="rt"><span class="dot ok"></span>在线 ›</span></div>
+  </div>
+
+  <div class="sect">其他</div>
+  <div class="navcard">
+    <div class="navrow"><span class="ic">📄</span><div><div class="tt">日志</div><div class="ss">运行记录与错误排查</div></div><span class="rt">›</span></div>
+    <div class="navrow"><span class="ic">◐</span><div><div class="tt">外观</div><div class="ss">深色 / 浅色 / 跟随系统</div></div><span class="rt">深色 ›</span></div>
+  </div>
+</section>
+
+</main>
+
+<div class="fabwrap"><button class="fab" id="genBtn">生成配置</button></div>
+
+<nav class="tabs" role="tablist" aria-label="主导航">
+  <button aria-current="page" data-s="s-overview"><span class="ic">◍</span>总览</button>
+  <button data-s="s-shared"><span class="ic">⧉</span>共享资源</button>
+  <button data-s="s-profile"><span class="ic">◈</span>当前配置</button>
+  <button data-s="s-system"><span class="ic">⚒</span>系统</button>
+</nav>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const toast=(m)=>{const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(t._x);t._x=setTimeout(()=>t.classList.remove('on'),1600)};
+
+/* theme */
+$('#themeBtn').onclick=()=>{const r=document.documentElement;
+  r.dataset.theme = r.dataset.theme==='dark'?'light':'dark';
+  toast(r.dataset.theme==='dark'?'深色':'浅色');};
+
+/* tabs */
+const PRIMARY={ 's-overview':'生成配置', 's-shared':'添加订阅', 's-profile':'生成配置', 's-system':'新建配置空间' };
+$$('.tabs button').forEach(b=>b.onclick=()=>{
+  if(document.body.classList.contains('reorder')) return toast('请先完成排序');
+  $$('.tabs button').forEach(x=>x.removeAttribute('aria-current'));
+  b.setAttribute('aria-current','page');
+  $$('.screen').forEach(s=>s.classList.remove('on'));
+  $('#'+b.dataset.s).classList.add('on');
+  $('#genBtn').textContent=PRIMARY[b.dataset.s];
+  window.scrollTo({top:0});
+});
+$('#genBtn').onclick=()=>toast($('#genBtn').textContent+'（原型）');
+$$('.seg button').forEach(b=>b.onclick=()=>{
+  $$('.seg button').forEach(x=>x.setAttribute('aria-selected','false'));
+  b.setAttribute('aria-selected','true'); toast(b.textContent.trim()+'（原型）');
+});
+
+/* ---- reorder mode ---- */
+const list=$('#list'); let snapshot=null;
+const renumber=()=>$$('.card',list).forEach((c,i)=>{
+  $('.ordnum',c).textContent=i+1;
+  const [up,dn]=$$('.arrows button',c);
+  up.disabled=i===0; dn.disabled=i===$$('.card',list).length-1;
+});
+$('#reorderBtn').onclick=()=>{
+  snapshot=$$('.card',list).map(c=>c.dataset.n);
+  document.body.classList.add('reorder'); renumber();
+  toast('已进入排序模式');
+};
+$('#cancelOrder').onclick=()=>{
+  const by={}; $$('.card',list).forEach(c=>by[c.dataset.n]=c);
+  snapshot.forEach(n=>list.appendChild(by[n]));
+  document.body.classList.remove('reorder'); renumber(); toast('已取消，顺序已还原');
+};
+$('#saveOrder').onclick=()=>{
+  document.body.classList.remove('reorder');
+  toast('顺序已保存 · 全部配置空间生效');
+};
+list.addEventListener('click',e=>{
+  const b=e.target.closest('.arrows button'); if(!b) return;
+  const card=b.closest('.card'), up=$$('.arrows button',card)[0]===b;
+  if(up && card.previousElementSibling) list.insertBefore(card,card.previousElementSibling);
+  if(!up && card.nextElementSibling) list.insertBefore(card.nextElementSibling,card);
+  renumber(); card.scrollIntoView({block:'nearest',behavior:'smooth'});
+});
+
+/* pointer drag with long-press */
+let drag=null;
+list.addEventListener('pointerdown',e=>{
+  const h=e.target.closest('.handle'); if(!h||!document.body.classList.contains('reorder')) return;
+  const card=h.closest('.card'); e.preventDefault(); h.setPointerCapture(e.pointerId);
+  const timer=setTimeout(()=>{
+    drag={card,y:e.clientY,dy:0};
+    card.classList.add('dragging');
+    if(navigator.vibrate) navigator.vibrate(12);
+  },220);
+  const move=ev=>{
+    if(!drag){ if(Math.abs(ev.clientY-e.clientY)>10) clearTimeout(timer); return; }
+    drag.dy=ev.clientY-drag.y;
+    drag.card.style.transform=`translateY(${drag.dy}px) scale(1.015)`;
+    const r=drag.card.getBoundingClientRect(), mid=r.top+r.height/2;
+    for(const other of $$('.card',list)){
+      if(other===drag.card) continue;
+      const o=other.getBoundingClientRect();
+      if(mid>o.top && mid<o.bottom){
+        const before = mid < o.top+o.height/2;
+        list.insertBefore(drag.card, before?other:other.nextSibling);
+        drag.y=ev.clientY; drag.dy=0; drag.card.style.transform='scale(1.015)';
+        renumber(); break;
+      }
+    }
+  };
+  const up=()=>{
+    clearTimeout(timer);
+    if(drag){drag.card.classList.remove('dragging');drag.card.style.transform='';drag=null;renumber();}
+    h.removeEventListener('pointermove',move); h.removeEventListener('pointerup',up); h.removeEventListener('pointercancel',up);
+  };
+  h.addEventListener('pointermove',move); h.addEventListener('pointerup',up); h.addEventListener('pointercancel',up);
+});
+renumber();
+</script></body></html>

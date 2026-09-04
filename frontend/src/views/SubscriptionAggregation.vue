@@ -1,21 +1,30 @@
 <template>
-  <div class="aggregation-page">
-    <div class="page-header">
-      <div class="title-block">
-        <h2>订阅聚合</h2>
-        <p>整合多个订阅和节点，构建统一输出</p>
-      </div>
-      <div class="header-actions">
-        <el-button class="action-btn action-primary" @click="showAddDialog">
+  <div class="aggregation-page" :class="{ 'cf-reordering': reorder.active.value }">
+    <ScopeBanner scope="resource" :profile-name="cfProfileName" description="把多个订阅与节点合并成一个可引用的集合" />
+    <PageHeader title="订阅聚合" description="把多个订阅与节点合并成一个可引用的集合">
+      <template #actions>
+        <el-button v-if="!reorder.active.value" :disabled="aggregations.length < 2" @click="reorder.enter">
+          <el-icon><Sort /></el-icon>
+          调整顺序
+        </el-button>
+        <el-button type="primary" @click="showAddDialog">
           <el-icon><Plus /></el-icon>
           添加聚合
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
+
+    <ReorderBar
+      :active="reorder.active.value"
+      :saving="reorder.saving.value"
+      :announcement="reorder.announcement.value"
+      @cancel="reorder.cancel"
+      @save="handleSaveOrder"
+    />
 
     <div v-if="aggregations.length === 0" class="empty-state">
       <el-empty description="暂无聚合，点击右上角添加">
-        <el-button class="action-btn action-primary" type="primary" @click="showAddDialog">
+        <el-button type="primary" @click="showAddDialog">
           <el-icon><Plus /></el-icon>
           添加聚合
         </el-button>
@@ -24,17 +33,26 @@
 
     <div v-else class="aggregation-grid" ref="cardContainer">
       <div
-        v-for="aggregation in aggregations"
+        v-for="(aggregation, cfIndex) in aggregations"
         :key="aggregation.id"
         class="aggregation-card"
         :data-id="aggregation.id"
         :class="{ disabled: !aggregation.enabled }"
+        data-reorder-item
       >
         <div class="card-header">
           <div class="card-title-group">
-            <div class="card-drag-handle">
-              <el-icon><Rank /></el-icon>
-            </div>
+            <DragHandle
+              v-if="reorder.active.value"
+              :label="aggregation.name || aggregation.id"
+              :index="cfIndex"
+              :total="aggregations.length"
+              :position="reorder.positionLabel(cfIndex)"
+              :grabbed="reorder.grabbedIndex.value === cfIndex"
+              @up="reorder.moveUp(cfIndex)"
+              @down="reorder.moveDown(cfIndex)"
+              @keydown="reorder.onHandleKeydown($event, cfIndex)"
+            />
             <div class="card-title">
               <span class="card-name">{{ aggregation.name }}</span>
             </div>
@@ -65,7 +83,7 @@
           </div>
           <div class="tag-list">
             <el-tag
-              v-for="subId in aggregation.subscriptions"
+              v-for="(subId, cfIndex) in aggregation.subscriptions"
               :key="subId"
               size="small"
               class="data-tag"
@@ -83,7 +101,7 @@
           </div>
           <div class="tag-list">
             <el-tag
-              v-for="nodeId in aggregation.nodes"
+              v-for="(nodeId, cfIndex) in aggregation.nodes"
               :key="nodeId"
               size="small"
               type="success"
@@ -176,7 +194,7 @@
               style="width: 100%"
             >
               <el-option
-                v-for="sub in subscriptions"
+                v-for="(sub, cfIndex) in subscriptions"
                 :key="sub.id"
                 :label="sub.name"
                 :value="sub.id"
@@ -194,7 +212,7 @@
               style="width: 100%"
             >
               <el-option
-                v-for="node in nodes"
+                v-for="(node, cfIndex) in nodes"
                 :key="node.id"
                 :label="node.name"
                 :value="node.id"
@@ -335,7 +353,7 @@
         </div>
         <el-scrollbar max-height="400px">
           <div class="node-list">
-            <div v-for="node in subscriptionNodes" :key="node.id" class="node-item">
+            <div v-for="(node, cfIndex) in subscriptionNodes" :key="node.id" class="node-item">
               <el-icon><Connection /></el-icon>
               <span>{{ node.name }}</span>
               <el-tag size="small" type="info" style="margin-left: auto;">{{ node.type }}</el-tag>
@@ -351,13 +369,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { useProfileStore } from '@/stores/profile'
+import ReorderBar from '@/components/shell/ReorderBar.vue'
+import DragHandle from '@/components/shell/DragHandle.vue'
+import { useReorder } from '@/composables/useReorder'
+import PageHeader from '@/components/shell/PageHeader.vue'
+import ScopeBanner from '@/components/shell/ScopeBanner.vue'
+import {computed, ref, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Rank, Edit, Delete, View, Connection, Loading, Postcard, Close, Link, Filter, ArrowDown } from '@element-plus/icons-vue'
+import { Plus, Rank, Edit, Delete, View, Connection, Loading, Postcard, Close, Link, Filter, ArrowDown, Sort } from '@element-plus/icons-vue'
 import api from '@/api'
-import Sortable from 'sortablejs'
 import * as yaml from 'js-yaml'
 
+
+const cfProfileStore = useProfileStore()
+const cfProfileName = computed(
+  () => cfProfileStore.activeProfile.value?.name || cfProfileStore.activeProfileId.value
+)
 interface Subscription {
   id: string
   name: string
@@ -643,46 +671,38 @@ const showSubscriptionNodes = async (subscription: { id: string; name: string })
   }
 }
 
-const initSortable = () => {
-  nextTick(() => {
-    if (cardContainer.value) {
-      Sortable.create(cardContainer.value, {
-        animation: 150,
-        handle: '.card-drag-handle',
-        onEnd: async ({ oldIndex, newIndex }) => {
-          if (oldIndex === newIndex) return
 
-          const moved = aggregations.value.splice(oldIndex, 1)[0]
-          aggregations.value.splice(newIndex, 0, moved)
+/* ---------- 统一拖动排序 ---------- */
+const reorder = useReorder<any>({
+  items: aggregations,
+  container: cardContainer,
+  labelOf: item => item.name || item.id,
+  // 按 id 提交，服务端在存量数据上重排，不回写列表接口的计算字段
+  persist: async items => {
+    await api.post('/aggregations/reorder', {
+      ids: items.map(item => item.id),
+      position: 'top'
+    })
+  }
+})
 
-          try {
-            await api.post('/aggregations/reorder', {
-              aggregations: aggregations.value
-            })
-            ElMessage.success('排序已更新')
-          } catch (error) {
-            console.error('Failed to save order:', error)
-            ElMessage.error('保存排序失败')
-            loadAggregations()
-          }
-        }
-      })
-    }
-  })
+const handleSaveOrder = async () => {
+  try {
+    await reorder.save()
+    ElMessage.success('顺序已保存，所有配置空间生效')
+  } catch (error) {
+    ElMessage.error('保存顺序失败，顺序已还原')
+  }
 }
 
 onMounted(async () => {
   await loadAggregations()
   await Promise.all([loadSubscriptions(), loadNodes()])
-  initSortable()
 })
 </script>
 
 <style scoped>
 .aggregation-page {
-  padding: 28px 32px 40px;
-  background: #f5f7ff;
-  min-height: calc(100vh - 64px);
   --agg-radius-xl: 40px;
   --agg-radius-lg: 24px;
   --agg-radius-md: 16px;
@@ -700,7 +720,7 @@ onMounted(async () => {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: #f5f7ff;
+  background: var(--cf-bg);
   margin: -28px -32px 28px -32px;
   padding: 28px 32px;
 }
@@ -709,15 +729,13 @@ onMounted(async () => {
   margin: 0;
   font-size: 26px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
+  color: var(--cf-fg);
+  }
 
 .title-block p {
   margin: 6px 0 0;
   font-size: 14px;
-  color: #7f87af;
+  color: var(--cf-fg-2);
 }
 
 .header-actions {
@@ -725,36 +743,6 @@ onMounted(async () => {
   flex-wrap: wrap;
   gap: 12px;
   justify-content: flex-end;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 20px;
-  height: 40px;
-  border-radius: var(--agg-radius-md, 16px);
-  font-weight: 600;
-  font-size: 14px;
-  border: none;
-  background: rgba(107, 115, 255, 0.15);
-  color: #4a5bff;
-  transition: all 0.2s ease;
-}
-
-.action-btn .el-icon {
-  font-size: 16px;
-}
-
-.action-btn.action-primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  color: #fff;
-  box-shadow: 0 12px 30px rgba(87, 104, 255, 0.25);
-}
-
-.action-btn.action-primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 16px 36px rgba(87, 104, 255, 0.28);
 }
 
 .empty-state {
@@ -775,7 +763,7 @@ onMounted(async () => {
   gap: 18px;
   padding: 28px 26px 24px;
   border-radius: var(--agg-radius-lg, 24px);
-  background: #fff;
+  background: var(--cf-s1);
   border: 1px solid rgba(107, 115, 255, 0.12);
   box-shadow: 0 20px 40px rgba(91, 112, 255, 0.16);
   transition: transform 0.25s ease, box-shadow 0.25s ease;
@@ -799,14 +787,14 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   background: rgba(107, 115, 255, 0.14);
-  color: #616bff;
+  color: var(--cf-primary);
   cursor: grab;
   transition: background 0.2s ease, color 0.2s ease;
 }
 
 .card-drag-handle:hover {
   background: rgba(107, 115, 255, 0.22);
-  color: #3f4ffa;
+  color: var(--cf-primary);
 }
 
 .card-header {
@@ -831,7 +819,7 @@ onMounted(async () => {
 .card-name {
   font-size: 18px;
   font-weight: 600;
-  color: #1f2d3d;
+  color: var(--cf-fg);
 }
 
 .card-meta {
@@ -846,7 +834,7 @@ onMounted(async () => {
   padding: 4px 12px;
   border-radius: var(--agg-radius-pill);
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   font-size: 12px;
   font-weight: 500;
 }
@@ -860,7 +848,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   background: rgba(107, 115, 255, 0.18);
-  color: #4e5eff;
+  color: var(--cf-primary);
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: 0 12px 26px rgba(87, 104, 255, 0.18);
@@ -881,8 +869,8 @@ onMounted(async () => {
 }
 
 .status-toggle-btn.active {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  color: #fff;
+  background: var(--cf-primary-fill);
+  color: var(--cf-primary-fg);
 }
 
 .status-toggle-btn.loading {
@@ -896,7 +884,7 @@ onMounted(async () => {
 
 .card-description {
   font-size: 13px;
-  color: #6c74a0;
+  color: var(--cf-fg-2);
   background: rgba(107, 115, 255, 0.08);
   padding: 12px 14px;
   border-radius: var(--agg-radius-md, 16px);
@@ -919,13 +907,13 @@ onMounted(async () => {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #7d88af;
+  color: var(--cf-fg-2);
   font-weight: 600;
 }
 
 .section-label .el-icon {
   font-size: 16px;
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .tag-list {
@@ -937,19 +925,19 @@ onMounted(async () => {
 .data-tag {
   background: rgba(107, 115, 255, 0.12);
   border: none;
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .empty-text {
   font-size: 12px;
-  color: #a0a8c2;
+  color: var(--cf-fg-3);
 }
 
 .code-box {
   padding: 12px 14px;
   border-radius: var(--agg-radius-md, 16px);
-  background: #f4f6ff;
-  color: #1f2d3d;
+  background: var(--cf-s2);
+  color: var(--cf-fg);
   font-size: 13px;
   font-family: 'SFMono-Regular', 'Consolas', 'Monaco', monospace;
   border: 1px solid rgba(107, 115, 255, 0.12);
@@ -975,7 +963,7 @@ onMounted(async () => {
 
 .time-text {
   font-size: 12px;
-  color: #9097b5;
+  color: var(--cf-fg-2);
 }
 
 .card-actions {
@@ -992,13 +980,13 @@ onMounted(async () => {
 
 .card-btn.ghost {
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   border: 1px solid rgba(107, 115, 255, 0.25);
 }
 
 .card-btn.danger {
   background: rgba(155, 143, 255, 0.12);
-  color: #9b8fff;
+  color: var(--cf-primary-hover);
   border: 1px solid rgba(155, 143, 255, 0.28);
 }
 
@@ -1019,22 +1007,20 @@ onMounted(async () => {
   align-items: flex-start;
   gap: 16px;
   padding: 8px 0 18px;
-  color: #30354d;
+  color: var(--cf-fg);
 }
 
 .dialog-title-group h3 {
   margin: 0;
   font-size: 20px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
+  color: var(--cf-fg);
+  }
 
 .dialog-title-group p {
   margin: 8px 0 0;
   font-size: 13px;
-  color: #7c86ae;
+  color: var(--cf-fg-2);
 }
 
 .dialog-close-btn {
@@ -1043,7 +1029,7 @@ onMounted(async () => {
   border-radius: 50%;
   border: 1px solid rgba(124, 134, 174, 0.35);
   background: transparent;
-  color: #7c86ae;
+  color: var(--cf-fg-2);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1054,11 +1040,11 @@ onMounted(async () => {
 .dialog-close-btn:hover {
   background: rgba(107, 115, 255, 0.12);
   border-color: rgba(107, 115, 255, 0.35);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .dialog-card {
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--agg-radius-lg, 24px);
   padding: 30px 28px 26px;
   box-shadow: 0 18px 30px rgba(91, 112, 255, 0.12);
@@ -1074,7 +1060,7 @@ onMounted(async () => {
 :deep(.aggregation-form .el-form-item__label) {
   font-weight: 600;
   font-size: 13px;
-  color: #6c74a0;
+  color: var(--cf-fg-2);
 }
 
 :deep(.aggregation-form .el-input__wrapper),
@@ -1083,7 +1069,7 @@ onMounted(async () => {
   border-radius: var(--agg-radius-md, 16px);
   border: none;
   box-shadow: 0 0 0 1px rgba(107, 115, 255, 0.14);
-  background-color: #f9faff;
+  background-color: var(--cf-s2);
   transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
@@ -1092,13 +1078,13 @@ onMounted(async () => {
 :deep(.aggregation-form .el-textarea__inner:focus) {
   box-shadow: 0 0 0 2px rgba(107, 115, 255, 0.32);
   transform: translateY(-1px);
-  background-color: #fff;
+  background-color: var(--cf-s1);
 }
 
 .helper-text {
   margin: 6px 0 0;
   font-size: 12px;
-  color: #9099bf;
+  color: var(--cf-fg-3);
 }
 
 .dialog-footer {
@@ -1117,7 +1103,7 @@ onMounted(async () => {
 
 .footer-btn.ghost {
   background: transparent;
-  color: #5460d7;
+  color: var(--cf-primary);
   border: 1px solid rgba(107, 115, 255, 0.3);
 }
 
@@ -1126,9 +1112,9 @@ onMounted(async () => {
 }
 
 .footer-btn.primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
+  background: var(--cf-primary-fill);
   border: none;
-  color: #fff;
+  color: var(--cf-primary-fg);
   box-shadow: 0 12px 24px rgba(87, 104, 255, 0.28);
 }
 
@@ -1143,7 +1129,7 @@ onMounted(async () => {
 .empty-helper {
   text-align: center;
   padding: 40px 0;
-  color: #909399;
+  color: var(--cf-fg-2);
 }
 
 .preview-section {
@@ -1157,10 +1143,10 @@ onMounted(async () => {
 .section-title {
   font-size: 14px;
   font-weight: 600;
-  color: #404a67;
+  color: var(--cf-fg);
   margin-bottom: 12px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #eef1f8;
+  border-bottom: 1px solid var(--cf-s3);
 }
 
 .subscription-count-list {
@@ -1193,7 +1179,7 @@ onMounted(async () => {
   align-items: center;
   gap: 10px;
   font-weight: 600;
-  color: #404a67;
+  color: var(--cf-fg);
 }
 
 .node-list {
@@ -1203,8 +1189,8 @@ onMounted(async () => {
 
 .node-item {
   padding: 12px 16px;
-  border-bottom: 1px solid #eef1f8;
-  color: #4b5678;
+  border-bottom: 1px solid var(--cf-s3);
+  color: var(--cf-fg);
 }
 
 .node-item.clickable-node {
@@ -1213,7 +1199,7 @@ onMounted(async () => {
 }
 
 .node-item.clickable-node:hover {
-  background: #f7f8ff;
+  background: var(--cf-s2);
 }
 
 .node-item:last-child {
@@ -1232,17 +1218,17 @@ onMounted(async () => {
   gap: 8px;
   font-size: 14px;
   font-weight: 600;
-  color: #1f2d3d;
+  color: var(--cf-fg);
 }
 
 .node-name .el-icon {
-  color: #4e5eff;
+  color: var(--cf-primary);
   font-size: 16px;
 }
 
 .expand-arrow {
   font-size: 14px;
-  color: #7d88af;
+  color: var(--cf-fg-2);
   margin-left: auto;
   transition: transform 0.2s ease;
   flex-shrink: 0;
@@ -1257,20 +1243,20 @@ onMounted(async () => {
   align-items: center;
   gap: 12px;
   font-size: 13px;
-  color: #7d88af;
+  color: var(--cf-fg-2);
 }
 
 .node-server {
   font-family: 'SFMono-Regular', 'Consolas', 'Monaco', monospace;
-  color: #7d88af;
+  color: var(--cf-fg-2);
 }
 
 .code-box {
   margin-top: 10px;
   padding: 14px 16px;
   border-radius: 12px;
-  background: #f4f6ff;
-  color: #1f2d3d;
+  background: var(--cf-s2);
+  color: var(--cf-fg);
   font-size: 13px;
   font-family: 'SFMono-Regular', 'Consolas', 'Monaco', monospace;
   white-space: pre-wrap;

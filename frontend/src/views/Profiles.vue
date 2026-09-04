@@ -1,22 +1,18 @@
 <template>
   <div class="profiles-page">
-    <div class="page-header">
-      <div class="title-block">
-        <h2>配置 Profile</h2>
-        <p>管理隔离的订阅、节点、规则和生成配置</p>
-      </div>
-      <div class="header-actions">
-        <el-button class="action-btn action-secondary" @click="pickImportFile">
+    <PageHeader title="配置空间" description="新建、克隆、导入导出与切换配置空间">
+      <template #actions>
+        <el-button @click="pickImportFile">
           <el-icon><Upload /></el-icon>
-          导入到当前 Profile
+          导入到当前配置空间
         </el-button>
-        <el-button class="action-btn action-primary" @click="openCreate">
+        <el-button type="primary" @click="openCreate">
           <el-icon><Plus /></el-icon>
-          新建 Profile
+          新建配置空间
         </el-button>
         <input ref="importInput" type="file" accept="application/json" hidden @change="importProfile" />
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <div v-loading="loading" class="profiles-grid">
       <div
@@ -77,18 +73,18 @@
 
       <div v-if="!loading && profiles.length === 0" class="empty-state">
         <el-icon><Collection /></el-icon>
-        <p>还没有配置 Profile，点击右上角新建一个吧</p>
+        <p>还没有配置空间，点击右上角新建一个吧</p>
       </div>
     </div>
 
     <el-dialog
       v-model="dialogVisible"
-      :title="editingId ? '编辑 Profile' : '新建 Profile'"
+      :title="editingId ? '编辑配置空间' : '新建配置空间'"
       width="460px"
       class="profile-dialog"
     >
       <el-form label-width="82px" @submit.prevent="submit">
-        <el-form-item label="Profile ID">
+        <el-form-item label="标识 ID">
           <el-input v-model="form.id" :disabled="Boolean(editingId)" maxlength="64" />
         </el-form-item>
         <el-form-item label="名称">
@@ -99,14 +95,15 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button class="action-btn ghost" @click="dialogVisible = false">取消</el-button>
-        <el-button class="action-btn action-primary" :loading="saving" @click="submit">保存</el-button>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import PageHeader from '@/components/shell/PageHeader.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CircleCheck, Collection, CopyDocument, Delete, Download, Edit, Plus, Upload } from '@element-plus/icons-vue'
@@ -139,7 +136,7 @@ const openEdit = (profile: Profile) => {
 
 const submit = async () => {
   if (!form.name.trim() || (!editingId.value && !form.id.trim())) {
-    ElMessage.warning('请填写 Profile ID 和名称')
+    ElMessage.warning('请填写标识 ID 和名称')
     return
   }
   saving.value = true
@@ -151,9 +148,9 @@ const submit = async () => {
     }
     await refreshProfiles()
     dialogVisible.value = false
-    ElMessage.success('Profile 已保存')
+    ElMessage.success('配置空间已保存')
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || 'Profile 保存失败')
+    ElMessage.error(error.response?.data?.message || '配置空间 保存失败')
   } finally {
     saving.value = false
   }
@@ -165,13 +162,13 @@ const activate = async (profileId: string) => {
     switchProfile(profileId)
     window.location.reload()
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || '切换 Profile 失败')
+    ElMessage.error(error.response?.data?.message || '切换 配置空间 失败')
   }
 }
 
 const clone = async (profile: Profile) => {
   try {
-    const { value } = await ElMessageBox.prompt('输入新 Profile ID', `克隆 ${profile.name}`, {
+    const { value } = await ElMessageBox.prompt('输入新 标识 ID', `克隆 ${profile.name}`, {
       confirmButtonText: '克隆',
       cancelButtonText: '取消',
       inputValue: `${profile.id}-copy`,
@@ -179,25 +176,25 @@ const clone = async (profile: Profile) => {
       inputErrorMessage: 'ID 只能包含字母、数字、下划线和短横线',
     })
     await profileApi.clone(profile.id, { id: value, name: `${profile.name} 副本` })
-    await refreshProfiles()
-    ElMessage.success('Profile 已克隆')
+    await refresh配置空间s()
+    ElMessage.success('配置空间已克隆')
   } catch (error: any) {
-    if (error !== 'cancel') ElMessage.error(error.response?.data?.message || 'Profile 克隆失败')
+    if (error !== 'cancel') ElMessage.error(error.response?.data?.message || '配置空间 克隆失败')
   }
 }
 
 const remove = async (profile: Profile) => {
   try {
-    await ElMessageBox.confirm(`确定删除 Profile「${profile.name}」及其缓存和生成文件吗？`, '删除 Profile', {
+    await ElMessageBox.confirm(`确定删除配置空间「${profile.name}」及其缓存和生成文件吗？`, '删除配置空间', {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
       type: 'warning',
     })
     await profileApi.delete(profile.id)
     await refreshProfiles()
-    ElMessage.success('Profile 已删除')
+    ElMessage.success('配置空间 已删除')
   } catch (error: any) {
-    if (error !== 'cancel') ElMessage.error(error.response?.data?.message || 'Profile 删除失败')
+    if (error !== 'cancel') ElMessage.error(error.response?.data?.message || '配置空间 删除失败')
   }
 }
 
@@ -211,7 +208,7 @@ const exportProfile = async (profileId: string) => {
     link.click()
     URL.revokeObjectURL(url)
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || 'Profile 导出失败')
+    ElMessage.error(error.response?.data?.message || '配置空间 导出失败')
   }
 }
 
@@ -225,24 +222,21 @@ const importProfile = async (event: Event) => {
     const data = JSON.parse(await file.text())
     await profileApi.import(activeProfileId.value, data)
     await refreshProfiles()
-    ElMessage.success('配置已导入当前 Profile')
+    ElMessage.success('配置已导入当前 配置空间')
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || 'Profile 导入失败')
+    ElMessage.error(error.response?.data?.message || '配置空间 导入失败')
   } finally {
     input.value = ''
   }
 }
 
 onMounted(() => {
-  refreshProfiles().catch(() => ElMessage.error('加载 Profile 失败'))
+  refreshProfiles().catch(() => ElMessage.error('加载配置空间失败'))
 })
 </script>
 
 <style scoped>
 .profiles-page {
-  padding: 28px 32px 40px;
-  background: #f5f7ff;
-  min-height: calc(100vh - 64px);
 }
 
 .page-header {
@@ -254,7 +248,7 @@ onMounted(() => {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: #f5f7ff;
+  background: var(--cf-bg);
   margin: -28px -32px 28px -32px;
   padding: 28px 32px;
 }
@@ -263,16 +257,13 @@ onMounted(() => {
   margin: 0;
   font-size: 26px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
+  color: var(--cf-fg);
 }
 
 .title-block p {
   margin: 6px 0 0;
   font-size: 14px;
-  color: #7f87af;
+  color: var(--cf-fg-2);
 }
 
 .header-actions {
@@ -280,46 +271,6 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: 12px;
   justify-content: flex-end;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 20px;
-  height: 40px;
-  border-radius: 16px;
-  font-weight: 600;
-  font-size: 14px;
-  border: none;
-  background: rgba(107, 115, 255, 0.15);
-  color: #4a5bff;
-  transition: all 0.2s ease;
-}
-
-.action-btn .el-icon {
-  font-size: 16px;
-}
-
-.action-btn.action-secondary {
-  border: 1px solid rgba(107, 115, 255, 0.35);
-}
-
-.action-btn.action-primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  color: #fff;
-  box-shadow: 0 12px 30px rgba(87, 104, 255, 0.25);
-}
-
-.action-btn.ghost {
-  background: rgba(107, 115, 255, 0.08);
-  color: #4a5bff;
-  border: 1px solid rgba(107, 115, 255, 0.2);
-}
-
-.action-btn:not([disabled]):hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(87, 104, 255, 0.25);
 }
 
 .profiles-grid {
@@ -330,7 +281,7 @@ onMounted(() => {
 }
 
 .profile-card {
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: 24px;
   padding: 24px;
   box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
@@ -375,8 +326,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, rgba(107, 125, 255, 0.16) 0%, rgba(91, 109, 255, 0.12) 100%);
-  color: #5b6dff;
+  background: var(--cf-s2);
+  color: var(--cf-primary);
   font-size: 20px;
 }
 
@@ -387,7 +338,7 @@ onMounted(() => {
 .card-title {
   font-size: 17px;
   font-weight: 700;
-  color: #30354d;
+  color: var(--cf-fg);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -396,7 +347,7 @@ onMounted(() => {
 .card-id {
   margin-top: 2px;
   font-size: 12px;
-  color: #9aa1c4;
+  color: var(--cf-fg-2);
   font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -413,7 +364,7 @@ onMounted(() => {
   font-size: 12px;
   font-weight: 600;
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   border: 1px solid rgba(107, 115, 255, 0.18);
 }
 
@@ -421,7 +372,7 @@ onMounted(() => {
   margin: 0;
   font-size: 13px;
   line-height: 1.6;
-  color: #7f87af;
+  color: var(--cf-fg-2);
   min-height: 42px;
 }
 
@@ -449,19 +400,19 @@ onMounted(() => {
 }
 
 .card-btn.primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  color: #fff;
+  background: var(--cf-primary-fill);
+  color: var(--cf-primary-fg);
 }
 
 .card-btn.primary:hover {
-  color: #fff;
+  color: var(--cf-s1);
   box-shadow: 0 8px 18px rgba(87, 104, 255, 0.28);
 }
 
 .current-hint {
   font-size: 13px;
   font-weight: 600;
-  color: #9aa1c4;
+  color: var(--cf-fg-2);
 }
 
 .icon-actions {
@@ -478,7 +429,7 @@ onMounted(() => {
   border-radius: 12px;
   border: 1px solid rgba(107, 115, 255, 0.18);
   background: rgba(107, 115, 255, 0.06);
-  color: #5b6dff;
+  color: var(--cf-primary);
   font-size: 15px;
   transition: all 0.2s ease;
 }
@@ -486,20 +437,20 @@ onMounted(() => {
 .icon-btn:hover {
   background: rgba(107, 115, 255, 0.14);
   border-color: rgba(107, 115, 255, 0.32);
-  color: #4a5bff;
+  color: var(--cf-primary);
   transform: translateY(-1px);
 }
 
 .icon-btn.danger {
   border-color: rgba(245, 108, 108, 0.22);
   background: rgba(245, 108, 108, 0.08);
-  color: #f56c6c;
+  color: var(--cf-danger);
 }
 
 .icon-btn.danger:hover {
   background: rgba(245, 108, 108, 0.16);
   border-color: rgba(245, 108, 108, 0.35);
-  color: #f56c6c;
+  color: var(--cf-danger);
 }
 
 .empty-state {
@@ -510,9 +461,9 @@ onMounted(() => {
   gap: 12px;
   padding: 60px 20px;
   border-radius: 24px;
-  background: #fff;
+  background: var(--cf-s1);
   border: 1px dashed rgba(107, 115, 255, 0.24);
-  color: #9aa1c4;
+  color: var(--cf-fg-2);
 }
 
 .empty-state .el-icon {

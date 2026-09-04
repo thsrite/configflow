@@ -1,11 +1,12 @@
 <template>
-  <div class="rule-library-page">
-    <div class="page-header">
-      <div class="title-block">
-        <h2>规则仓库</h2>
-        <p>管理您的规则集和配置</p>
-      </div>
-      <div class="header-actions">
+  <div class="rule-library-page" :class="{ 'cf-reordering': reorder.active.value }">
+    <ScopeBanner scope="resource" :profile-name="cfProfileName" description="规则集来源与缓存，按配置空间隔离" />
+    <PageHeader title="规则库" description="集中维护规则集来源与缓存">
+      <template #actions>
+        <el-button v-if="!reorder.active.value" :disabled="ruleLibrary.length < 2" @click="reorder.enter">
+          <el-icon><Sort /></el-icon>
+          调整顺序
+        </el-button>
         <el-button-group class="view-toggle">
           <el-button
             :class="['toggle-btn', { active: viewMode === 'list' }]"
@@ -23,14 +24,14 @@
           </el-button>
         </el-button-group>
         <el-button
-          class="action-btn action-secondary"
+         
           @click="showProxyConfigDialog"
         >
           <el-icon><Setting /></el-icon>
           GitHub 代理
         </el-button>
         <el-button
-          class="action-btn action-secondary"
+         
           @click="handleBatchTest"
           :disabled="ruleLibrary.length === 0"
           :loading="testing"
@@ -38,7 +39,7 @@
           <el-icon><Connection /></el-icon>
           {{ testing ? '测试中...' : '批量测试' }}        </el-button>
         <el-button
-          class="action-btn action-secondary"
+         
           @click="handleBatchCache"
           :disabled="selectedRules.length === 0"
           :loading="caching"
@@ -47,14 +48,14 @@
           {{ caching ? '缓存中...' : '批量缓存' }}        </el-button>
         <el-button
           v-if="selectedRules.length > 0"
-          class="action-btn danger"
+          type="danger" plain
           @click="batchDeleteRules"
         >
           <el-icon><Delete /></el-icon>
           批量删除 ({{ selectedRules.length }})
         </el-button>
         <el-button
-          class="action-btn action-secondary"
+         
           @click="showBatchImportDialog"
         >
           <el-icon><Upload /></el-icon>
@@ -62,14 +63,13 @@
         </el-button>
         <el-button
           type="primary"
-          class="action-btn action-primary"
           @click="showAddDialog"
         >
           <el-icon><Plus /></el-icon>
           添加规则集
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <div v-if="ruleLibrary.length === 0" class="empty-state">
       <el-empty description="暂无规则，请添加规则集" />
@@ -77,6 +77,23 @@
 
     <template v-else>
       <!-- 选择控制栏 -->
+      <div class="cf-toolbar">
+        <el-input
+          v-model="keyword"
+          class="cf-toolbar__search"
+          placeholder="搜索名称、地址或内容"
+          clearable
+          :disabled="reorder.active.value"
+        >
+          <template #prefix><el-icon><Search /></el-icon></template>
+        </el-input>
+
+        <el-select v-model="behaviorFilter" class="cf-toolbar__filter" :disabled="reorder.active.value">
+          <el-option label="全部类型" value="all" />
+          <el-option v-for="b in behaviorOptions" :key="b" :label="b" :value="b" />
+        </el-select>
+      </div>
+
       <div class="selection-bar">
         <el-checkbox
           :model-value="allSelected"
@@ -91,92 +108,116 @@
       </div>
 
       <!-- 列表视图 -->
-      <div v-if="viewMode === 'list'" class="rules-list" ref="rulesContainer">
-      <div
-        v-for="rule in ruleLibrary"
-        :key="rule.id"
-        class="list-item"
-        :class="{ disabled: !rule.enabled }"
-        :data-id="rule.id"
-      >
-        <div class="list-item-checkbox">
-          <el-checkbox
-            :model-value="selectedRules.includes(rule.id)"
-            @change="toggleRuleSelection(rule.id)"
-          />
-        </div>
-        <div class="list-item-drag">
-          <button class="card-drag-handle" type="button" aria-label="拖动排序">
-            <el-icon><DCaret /></el-icon>
-          </button>
-        </div>
-        <div class="list-item-info">
-          <div class="list-item-name">{{ rule.name }}</div>
-          <div class="list-item-meta">
-            <span class="meta-badge">{{ rule.behavior }}</span>
-            <span class="meta-badge source">{{ rule.source_type === 'content' ? '规则内容' : 'URL地址' }}</span>
-          </div>
-        </div>
-        <div class="list-item-content">
-          <div v-if="rule.source_type === 'content'" class="content-preview">
-            {{ getContentPreview(rule.content) }}
-          </div>
-          <div v-else class="url-preview">
-            <el-link :href="rule.url" target="_blank" type="primary" :underline="false">
-              {{ rule.url }}
-            </el-link>
-          </div>
-        </div>
-        <div class="list-item-actions">
-          <button class="status-toggle" :class="{ active: rule.enabled }" @click="handleToggle(rule)">
-            <el-icon v-if="rule.enabled"><View /></el-icon>
-            <el-icon v-else><Hide /></el-icon>
-          </button>
-          <el-button
-            v-if="rule.source_type === 'content'"
-            class="list-btn"
-            size="small"
-            @click="showAddRuleToSetDialog(rule)"
-            title="添加规则"
-          >
-            <el-icon><Plus /></el-icon>
-          </el-button>
-          <el-button
-            class="list-btn"
-            size="small"
-            @click="copyRuleUrl(rule)"
-            title="复制下载URL"
-          >
-            <el-icon><CopyDocument /></el-icon>
-          </el-button>
-          <el-button
-            class="list-btn"
-            size="small"
-            @click="editRule(rule)"
-            title="编辑"
-          >
-            <el-icon><Edit /></el-icon>
-          </el-button>
-          <el-button
-            class="list-btn danger"
-            size="small"
-            @click="deleteRule(rule)"
-            title="删除"
-          >
-            <el-icon><Delete /></el-icon>
-          </el-button>
-        </div>
+      <ReorderBar
+        :active="reorder.active.value"
+        :saving="reorder.saving.value"
+        :announcement="reorder.announcement.value"
+        @cancel="reorder.cancel"
+        @save="handleSaveOrder"
+      />
+
+      <el-empty v-if="visibleRules.length === 0" :description="rulesEmptyText" />
+
+      <!-- 表格视图 -->
+      <div v-else-if="effectiveView === 'list'" class="cf-table-wrap">
+        <table class="cf-table">
+          <thead>
+            <tr>
+              <th v-if="reorder.active.value" class="cf-table__grip" scope="col"><span class="cf-sr">排序</span></th>
+              <th class="cf-table__check" scope="col"><span class="cf-sr">选择</span></th>
+              <th class="cf-table__num" scope="col">#</th>
+              <th scope="col">名称</th>
+              <th scope="col">类型</th>
+              <th scope="col">来源</th>
+              <th class="cf-table__right" scope="col">操作</th>
+            </tr>
+          </thead>
+          <tbody ref="rulesContainer">
+            <tr
+              v-for="(rule, cfIndex) in visibleRules"
+              :key="rule.id"
+              :data-id="rule.id"
+              data-reorder-item
+              :class="{ 'is-disabled': !rule.enabled }"
+            >
+              <td v-if="reorder.active.value" class="cf-table__grip">
+                <DragHandle
+                  :label="rule.name || rule.id"
+                  :index="cfIndex"
+                  :total="ruleLibrary.length"
+                  :position="reorder.positionLabel(cfIndex)"
+                  :grabbed="reorder.grabbedIndex.value === cfIndex"
+                  @up="reorder.moveUp(cfIndex)"
+                  @down="reorder.moveDown(cfIndex)"
+                  @keydown="reorder.onHandleKeydown($event, cfIndex)"
+                />
+              </td>
+              <td class="cf-table__check cf-reorder-mute">
+                <el-checkbox
+                  :model-value="selectedRules.includes(rule.id)"
+                  :aria-label="`选择 ${rule.name}`"
+                  @change="toggleRuleSelection(rule.id)"
+                />
+              </td>
+              <td class="cf-table__num cf-num">{{ cfIndex + 1 }}</td>
+              <td class="cf-table__name">
+                <span class="card-dot" :class="rule.enabled ? 'is-ok' : 'is-off'" aria-hidden="true"></span>
+                <span class="cf-table__nametext">{{ rule.name }}</span>
+              </td>
+              <td>
+                <span class="meta-pill">{{ rule.behavior }}</span>
+              </td>
+              <td class="cf-table__source">
+                <span v-if="rule.source_type === 'content'" class="cf-mono cf-table__preview">
+                  {{ getContentPreview(rule.content) }}
+                </span>
+                <a v-else class="cf-mono cf-table__preview" :href="rule.url" target="_blank" rel="noreferrer">
+                  {{ rule.url }}
+                </a>
+              </td>
+              <td class="cf-table__right cf-reorder-mute">
+                <el-button
+                  size="small"
+                  text
+                  :aria-label="rule.enabled ? `停用 ${rule.name}` : `启用 ${rule.name}`"
+                  @click="handleToggle(rule)"
+                >
+                  <el-icon><View v-if="rule.enabled" /><Hide v-else /></el-icon>
+                </el-button>
+                <el-button
+                  v-if="rule.source_type === 'content'"
+                  size="small"
+                  text
+                  :aria-label="`向 ${rule.name} 添加规则`"
+                  @click="showAddRuleToSetDialog(rule)"
+                >
+                  <el-icon><Plus /></el-icon>
+                </el-button>
+                <el-button size="small" text :aria-label="`复制 ${rule.name} 的下载地址`" @click="copyRuleUrl(rule)">
+                  <el-icon><CopyDocument /></el-icon>
+                </el-button>
+                <el-button size="small" text :aria-label="`编辑 ${rule.name}`" @click="editRule(rule)">
+                  <el-icon><Edit /></el-icon>
+                </el-button>
+                <el-button size="small" text class="danger-text" :aria-label="`删除 ${rule.name}`" @click="deleteRule(rule)">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <footer class="cf-table__foot">共 {{ visibleRules.length }} 个规则集</footer>
       </div>
-    </div>
 
       <!-- 卡片视图 -->
       <div v-else class="rules-grid" ref="rulesContainer">
       <div
-        v-for="rule in ruleLibrary"
+        v-for="(rule, cfIndex) in ruleLibrary"
         :key="rule.id"
         class="rule-card"
         :class="{ disabled: !rule.enabled }"
         :data-id="rule.id"
+        data-reorder-item
       >
         <div class="card-header">
           <div class="card-title-group">
@@ -185,9 +226,17 @@
               @change="toggleRuleSelection(rule.id)"
               style="margin-right: 8px"
             />
-            <button class="card-drag-handle" type="button" aria-label="拖动排序">
-              <el-icon><DCaret /></el-icon>
-            </button>
+            <DragHandle
+              v-if="reorder.active.value"
+              :label="rule.name || rule.id"
+              :index="cfIndex"
+              :total="ruleLibrary.length"
+              :position="reorder.positionLabel(cfIndex)"
+              :grabbed="reorder.grabbedIndex.value === cfIndex"
+              @up="reorder.moveUp(cfIndex)"
+              @down="reorder.moveDown(cfIndex)"
+              @keydown="reorder.onHandleKeydown($event, cfIndex)"
+            />
             <div class="card-title">{{ rule.name }}</div>
           </div>
           <button class="status-toggle" :class="{ active: rule.enabled }" @click="handleToggle(rule)">
@@ -373,7 +422,7 @@
           <template #default>
             <div style="font-size: 13px; margin-top: 8px;">
               示例格式：<br>
-              <code style="background: #f5f7fa; padding: 2px 6px; border-radius: 3px;">
+              <code style="background: var(--cf-s2); padding: 2px 6px; border-radius: 3px;">
                 private_block: { type: http, behavior: classical, url: "https://...", ... }
               </code>
             </div>
@@ -435,6 +484,12 @@
 </template>
 
 <script setup lang="ts">
+import { useProfileStore } from '@/stores/profile'
+import ReorderBar from '@/components/shell/ReorderBar.vue'
+import DragHandle from '@/components/shell/DragHandle.vue'
+import { useReorder } from '@/composables/useReorder'
+import PageHeader from '@/components/shell/PageHeader.vue'
+import ScopeBanner from '@/components/shell/ScopeBanner.vue'
 import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -452,12 +507,15 @@ import {
   Document,
   List,
   Grid,
-  CopyDocument
-} from '@element-plus/icons-vue'
+  CopyDocument, Sort, Search} from '@element-plus/icons-vue'
 import api from '@/api'
 import { activeProfileId } from '@/profileContext'
-import Sortable from 'sortablejs'
 
+
+const cfProfileStore = useProfileStore()
+const cfProfileName = computed(
+  () => cfProfileStore.activeProfile.value?.name || cfProfileStore.activeProfileId.value
+)
 interface RuleLibraryItem {
   id: string
   name: string
@@ -482,7 +540,6 @@ const currentRuleSet = ref<RuleLibraryItem | null>(null)
 const rulesContainer = ref<HTMLElement | null>(null)
 const viewMode = ref<'list' | 'grid'>('list') // 默认列表视图
 const selectedRules = ref<string[]>([]) // 选中的规则ID列表
-let sortableInstance: any = null // Sortable实例
 
 // 专业功能开关
 // 处理按钮点击
@@ -570,7 +627,6 @@ const loadRuleLibrary = async () => {
     const { data } = await api.get('/rule-library')
     ruleLibrary.value = data
     nextTick(() => {
-      initSortable()
     })
   } catch (error) {
     ElMessage.error('加载规则仓库失败')
@@ -1042,46 +1098,7 @@ const parseRuleProviders = (text: string): RuleLibraryItem[] => {
   return rules
 }
 
-const initSortable = () => {
-  nextTick(() => {
-    // 先销毁旧实例
-    if (sortableInstance) {
-      sortableInstance.destroy()
-      sortableInstance = null
-    }
 
-    if (rulesContainer.value) {
-      sortableInstance = Sortable.create(rulesContainer.value, {
-        animation: 150,
-        handle: '.card-drag-handle',
-        ghostClass: 'sortable-ghost',
-        chosenClass: 'sortable-chosen',
-        dragClass: 'sortable-drag',
-        onEnd: async (evt: any) => {
-          const { oldIndex, newIndex } = evt
-          if (oldIndex === newIndex) return
-
-          const movedItem = ruleLibrary.value.splice(oldIndex, 1)[0]
-          ruleLibrary.value.splice(newIndex, 0, movedItem)
-
-          try {
-            await saveRuleLibraryOrder()
-            ElMessage.success('排序已更新')
-          } catch (error) {
-            ElMessage.error('保存排序失败')
-            loadRuleLibrary()
-          }
-        }
-      })
-    }
-  })
-}
-
-const saveRuleLibraryOrder = async () => {
-  await api.post('/rule-library/reorder', {
-    rules: ruleLibrary.value
-  })
-}
 
 const getContentPreview = (content?: string) => {
   if (!content) return '无内容'
@@ -1397,24 +1414,80 @@ const batchDeleteRules = async () => {
 // 监听视图模式切换，重新初始化拖拽
 watch(viewMode, () => {
   nextTick(() => {
-    initSortable()
   })
 })
 
+/* ---------- 窄屏视图回退与筛选 ---------- */
+// 规则集表格列多，窄屏不可读，移动端一律用卡片
+const isNarrow = ref(false)
+const syncNarrow = () => {
+  isNarrow.value = window.matchMedia('(max-width: 900px)').matches
+}
+const effectiveView = computed(() => (isNarrow.value ? 'grid' : viewMode.value))
+
+const keyword = ref('')
+const behaviorFilter = ref('all')
+
+const behaviorOptions = computed(() => {
+  const set = new Set<string>()
+  ruleLibrary.value.forEach(r => {
+    if (r.behavior) set.add(String(r.behavior))
+  })
+  return [...set].sort()
+})
+
+// 排序模式下必须展示完整列表，否则筛选会让保存的顺序丢条目
+const visibleRules = computed(() => {
+  if (reorder.active.value) return ruleLibrary.value
+  const q = keyword.value.trim().toLowerCase()
+  return ruleLibrary.value.filter(r => {
+    if (behaviorFilter.value !== 'all' && r.behavior !== behaviorFilter.value) return false
+    if (!q) return true
+    return [r.name, r.url, r.content].some(v => String(v || '').toLowerCase().includes(q))
+  })
+})
+
+const rulesEmptyText = computed(() =>
+  ruleLibrary.value.length === 0 ? '还没有规则集' : '没有匹配的规则集'
+)
+
+/* ---------- 统一拖动排序 ---------- */
+const reorder = useReorder<any>({
+  items: ruleLibrary,
+  container: rulesContainer,
+  labelOf: item => item.name || item.id,
+  // 按 id 提交，服务端在存量数据上重排，不回写列表接口的计算字段
+  persist: async items => {
+    await api.post('/rule-library/reorder', {
+      ids: items.map(item => item.id),
+      position: 'top'
+    })
+  }
+})
+
+const handleSaveOrder = async () => {
+  try {
+    await reorder.save()
+    ElMessage.success('顺序已保存，所有配置空间生效')
+  } catch (error) {
+    ElMessage.error('保存顺序失败，顺序已还原')
+  }
+}
+
 onMounted(() => {
+  syncNarrow()
+  window.addEventListener('resize', syncNarrow)
   loadRuleLibrary()
   loadProxyDomains()
 })
 
 onUnmounted(() => {
+  window.removeEventListener('resize', syncNarrow)
 })
 </script>
 
 <style scoped>
 .rule-library-page {
-  padding: 28px 32px 40px;
-  background: #f5f7ff;
-  min-height: calc(100vh - 64px);
   --rule-radius-xl: 40px;
   --rule-radius-lg: 24px;
   --rule-radius-md: 16px;
@@ -1433,7 +1506,7 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: #f5f7ff;
+  background: var(--cf-bg);
   margin: -28px -32px 28px -32px;
   padding: 28px 32px;
 }
@@ -1442,15 +1515,13 @@ onUnmounted(() => {
   margin: 0;
   font-size: 26px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  color: transparent;
-}
+  color: var(--cf-fg);
+  }
 
 .title-block p {
   margin: 6px 0 0;
   font-size: 14px;
-  color: #7f87af;
+  color: var(--cf-fg-2);
 }
 
 .header-actions {
@@ -1458,49 +1529,6 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 12px;
   justify-content: flex-end;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 20px;
-  height: 40px;
-  border-radius: var(--rule-radius-md, 16px);
-  font-weight: 600;
-  font-size: 14px;
-  border: none;
-  background: rgba(107, 115, 255, 0.15);
-  color: #4a5bff;
-  transition: all 0.2s ease;
-}
-
-.action-btn.action-secondary {
-  border: 1px solid rgba(107, 115, 255, 0.35);
-}
-
-.action-btn.action-primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  color: #fff;
-  box-shadow: 0 12px 30px rgba(87, 104, 255, 0.25);
-}
-
-.action-btn.danger {
-  background: rgba(245, 108, 108, 0.12);
-  border: 1px solid rgba(245, 108, 108, 0.35);
-  color: #f56c6c;
-}
-
-.action-btn.danger:hover {
-  background: rgba(245, 108, 108, 0.18);
-  border-color: rgba(245, 108, 108, 0.5);
-  transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(245, 108, 108, 0.2);
-}
-
-.action-btn:not([disabled]):hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(87, 104, 255, 0.25);
 }
 
 :deep(.action-btn .el-icon) {
@@ -1520,18 +1548,18 @@ onUnmounted(() => {
   justify-content: center;
   background: rgba(107, 115, 255, 0.08);
   border: 1px solid rgba(107, 115, 255, 0.2);
-  color: #7c86ae;
+  color: var(--cf-fg-2);
   transition: all 0.2s ease;
 }
 
 .toggle-btn:hover {
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .toggle-btn.active {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  color: #fff;
+  background: var(--cf-primary-fill);
+  color: var(--cf-primary-fg);
   border-color: transparent;
 }
 
@@ -1544,7 +1572,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   min-height: 400px;
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--rule-radius-lg, 24px);
   box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
 }
@@ -1556,7 +1584,7 @@ onUnmounted(() => {
   gap: 16px;
   padding: 12px 20px;
   margin-bottom: 16px;
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--rule-radius-md, 16px);
   border: 1px solid rgba(107, 115, 255, 0.15);
   box-shadow: 0 4px 12px rgba(65, 80, 180, 0.06);
@@ -1564,7 +1592,7 @@ onUnmounted(() => {
 
 .selection-count {
   font-size: 13px;
-  color: #4e5eff;
+  color: var(--cf-primary);
   font-weight: 600;
   padding: 4px 12px;
   background: rgba(107, 115, 255, 0.12);
@@ -1589,7 +1617,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 16px;
   padding: 16px 20px;
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--rule-radius-md, 16px);
   border: 1px solid rgba(107, 115, 255, 0.1);
   box-shadow: 0 4px 12px rgba(65, 80, 180, 0.06);
@@ -1619,7 +1647,7 @@ onUnmounted(() => {
 .list-item-name {
   font-size: 15px;
   font-weight: 600;
-  color: #30354d;
+  color: var(--cf-fg);
   margin-bottom: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1639,20 +1667,20 @@ onUnmounted(() => {
   font-size: 11px;
   font-weight: 600;
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   text-transform: capitalize;
 }
 
 .meta-badge.source {
   background: rgba(144, 147, 153, 0.12);
-  color: #606266;
+  color: var(--cf-fg-2);
 }
 
 .list-item-content {
   flex: 1;
   min-width: 0;
   font-size: 13px;
-  color: #4b5678;
+  color: var(--cf-fg);
 }
 
 .content-preview,
@@ -1665,7 +1693,7 @@ onUnmounted(() => {
 .content-preview {
   font-family: 'Courier New', monospace;
   font-size: 12px;
-  color: #606266;
+  color: var(--cf-fg-2);
 }
 
 .list-item-actions {
@@ -1682,7 +1710,7 @@ onUnmounted(() => {
   border-radius: 50%;
   background: rgba(107, 115, 255, 0.08);
   border: 1px solid rgba(107, 115, 255, 0.2);
-  color: #4e5eff;
+  color: var(--cf-primary);
   transition: all 0.2s ease;
 }
 
@@ -1695,7 +1723,7 @@ onUnmounted(() => {
 .list-btn.danger {
   background: rgba(155, 143, 255, 0.12);
   border-color: rgba(155, 143, 255, 0.25);
-  color: #9b8fff;
+  color: var(--cf-primary-hover);
 }
 
 .list-btn.danger:hover {
@@ -1710,7 +1738,7 @@ onUnmounted(() => {
 }
 
 .rule-card {
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--rule-radius-lg, 24px);
   padding: 24px;
   box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
@@ -1754,7 +1782,7 @@ onUnmounted(() => {
   border-radius: 50%;
   border: none;
   background: rgba(107, 115, 255, 0.08);
-  color: #7c86ae;
+  color: var(--cf-fg-2);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1764,13 +1792,13 @@ onUnmounted(() => {
 
 .card-drag-handle:hover {
   background: rgba(107, 115, 255, 0.15);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .card-title {
   font-size: 17px;
   font-weight: 700;
-  color: #30354d;
+  color: var(--cf-fg);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1783,7 +1811,7 @@ onUnmounted(() => {
   border-radius: 50%;
   border: none;
   background: rgba(107, 115, 255, 0.18);
-  color: #4e5eff;
+  color: var(--cf-primary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1796,8 +1824,8 @@ onUnmounted(() => {
 }
 
 .status-toggle.active {
-  background: linear-gradient(135deg, #8b8fff 0%, #6b7dff 100%);
-  color: #fff;
+  background: var(--cf-primary-fill);
+  color: var(--cf-primary-fg);
   box-shadow: 0 12px 28px rgba(87, 104, 255, 0.3);
 }
 
@@ -1816,7 +1844,7 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 600;
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   border: 1px solid rgba(107, 115, 255, 0.18);
 }
 
@@ -1827,7 +1855,7 @@ onUnmounted(() => {
 .source-pill {
   background: rgba(144, 147, 153, 0.12);
   border-color: rgba(144, 147, 153, 0.18);
-  color: #606266;
+  color: var(--cf-fg-2);
 }
 
 .card-section {
@@ -1841,13 +1869,13 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #7d88af;
+  color: var(--cf-fg-2);
   font-weight: 600;
 }
 
 .section-label .el-icon {
   font-size: 16px;
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .url-box,
@@ -1857,7 +1885,7 @@ onUnmounted(() => {
   border-radius: var(--rule-radius-md, 16px);
   padding: 12px 14px;
   font-size: 13px;
-  color: #4b5678;
+  color: var(--cf-fg);
   word-break: break-all;
   transition: all 0.2s ease;
 }
@@ -1900,7 +1928,7 @@ onUnmounted(() => {
 .card-btn.ghost {
   background: rgba(107, 115, 255, 0.08);
   border: 1px solid rgba(107, 115, 255, 0.25);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .card-btn.ghost:hover {
@@ -1912,7 +1940,7 @@ onUnmounted(() => {
 .card-btn.danger {
   background: rgba(155, 143, 255, 0.12);
   border: 1px solid rgba(155, 143, 255, 0.28);
-  color: #9b8fff;
+  color: var(--cf-primary-hover);
 }
 
 .card-btn.danger:hover {
@@ -1934,30 +1962,28 @@ onUnmounted(() => {
   padding: 24px 32px;
   margin: 0;
   border-bottom: 1px solid rgba(107, 115, 255, 0.1);
-  background: #f7f8ff;
+  background: var(--cf-s2);
 }
 
 :deep(.rule-dialog .el-dialog__title) {
   font-size: 20px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
+  color: var(--cf-fg);
+  }
 
 :deep(.rule-dialog .el-dialog__body) {
   padding: 28px 32px;
-  background: #f7f8ff;
+  background: var(--cf-s2);
 }
 
 :deep(.rule-dialog .el-dialog__footer) {
   padding: 20px 32px;
   border-top: 1px solid rgba(107, 115, 255, 0.1);
-  background: #f7f8ff;
+  background: var(--cf-s2);
 }
 
 .dialog-card {
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--rule-radius-lg, 24px);
   padding: 24px;
   box-shadow: 0 8px 20px rgba(91, 112, 255, 0.08);
@@ -1973,12 +1999,12 @@ onUnmounted(() => {
 .rule-form :deep(.el-form-item__label) {
   font-weight: 600;
   font-size: 13px;
-  color: #6c74a0;
+  color: var(--cf-fg-2);
 }
 
 .helper-text {
   margin-top: 8px;
-  color: #909399;
+  color: var(--cf-fg-2);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -1991,7 +2017,7 @@ onUnmounted(() => {
 
 .status-toggle-row span {
   font-size: 14px;
-  color: #606266;
+  color: var(--cf-fg-2);
 }
 
 .dialog-footer {
@@ -2010,11 +2036,11 @@ onUnmounted(() => {
 .footer-btn.ghost {
   background: rgba(107, 115, 255, 0.08);
   border: 1px solid rgba(107, 115, 255, 0.25);
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .footer-btn.primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
+  background: var(--cf-s2);
   border: none;
   box-shadow: 0 8px 16px rgba(87, 104, 255, 0.25);
 }
@@ -2086,6 +2112,89 @@ onUnmounted(() => {
   :deep(.rule-dialog) {
     width: 95vw !important;
     max-width: 95vw !important;
+  }
+}
+
+/* ---------- 表格页面专属列 ---------- */
+.cf-toolbar {
+  display: flex;
+  gap: var(--cf-sp-2);
+  margin-bottom: var(--cf-sp-3);
+  flex-wrap: wrap;
+}
+
+.cf-toolbar__search {
+  max-width: 280px;
+}
+
+.cf-toolbar__filter {
+  width: 148px;
+  flex: 0 0 auto;
+}
+
+.cf-table__check {
+  width: 40px;
+  padding-right: 0;
+}
+
+.cf-table__name {
+  display: flex;
+  align-items: center;
+  gap: var(--cf-sp-2);
+  min-width: 0;
+}
+
+.cf-table__nametext {
+  font-weight: 600;
+  color: var(--cf-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.cf-table__source {
+  max-width: 360px;
+}
+
+.cf-table__preview {
+  display: block;
+  font-size: 12px;
+  color: var(--cf-fg-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.cf-table__preview {
+  color: var(--cf-primary);
+  text-decoration: none;
+}
+a.cf-table__preview:hover {
+  text-decoration: underline;
+}
+
+.card-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--cf-r-pill);
+  flex: 0 0 auto;
+}
+.card-dot.is-ok {
+  background: var(--cf-success);
+}
+.card-dot.is-off {
+  background: var(--cf-fg-3);
+}
+
+.danger-text {
+  color: var(--cf-danger);
+}
+
+@media (max-width: 900px) {
+  .cf-toolbar__search {
+    max-width: none;
+    flex: 1 1 100%;
   }
 }
 </style>

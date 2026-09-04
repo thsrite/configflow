@@ -1,13 +1,14 @@
 <template>
   <div class="agents-page">
-    <div class="page-header">
-      <div class="title-block">
-        <h2>Agent 管理</h2>
-        <p>管理您的远程 Agent 和服务状态</p>
-      </div>
-      <div class="header-actions">
+    <ScopeBanner
+      scope="system"
+      description="Agent 列表为所有配置空间共有；每个 Agent 各自绑定一个配置空间，推送时使用它绑定的那份配置"
+    />
+
+    <PageHeader title="Agent" description="Agent 注册、配置推送与运行状态">
+      <template #actions>
         <el-button
-          class="action-btn action-secondary"
+         
           @click="loadAgents"
         >
           <el-icon><Refresh /></el-icon>
@@ -15,20 +16,19 @@
         </el-button>
         <el-button
           type="primary"
-          class="action-btn action-primary"
           @click="handleGenerateScript"
         >
           <el-icon><Document /></el-icon>
           生成安装脚本
         </el-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- 统计卡片 -->
     <div class="stats-cards">
         <el-card class="stat-card">
           <div class="stat-content">
-            <div class="stat-icon" style="background: #e6f4ff; color: #1890ff;">
+            <div class="stat-icon" style="background: var(--cf-primary-soft); color: var(--cf-primary);">
               <el-icon><Monitor /></el-icon>
             </div>
             <div class="stat-info">
@@ -39,7 +39,7 @@
         </el-card>
         <el-card class="stat-card">
           <div class="stat-content">
-            <div class="stat-icon" style="background: rgba(139, 143, 255, 0.12); color: #8b8fff;">
+            <div class="stat-icon" style="background: rgba(139, 143, 255, 0.12); color: var(--cf-primary);">
               <el-icon><SuccessFilled /></el-icon>
             </div>
             <div class="stat-info">
@@ -50,7 +50,7 @@
         </el-card>
         <el-card class="stat-card">
           <div class="stat-content">
-            <div class="stat-icon" style="background: #fff7e6; color: #fa8c16;">
+            <div class="stat-icon" style="background: var(--cf-warning-soft); color: var(--cf-warning);">
               <el-icon><WarningFilled /></el-icon>
             </div>
             <div class="stat-info">
@@ -124,7 +124,7 @@
         <div class="card-section profile-binding">
           <div class="section-label">
             <el-icon><Setting /></el-icon>
-            配置 Profile
+            绑定配置空间
           </div>
           <select
             class="agent-profile-native-select"
@@ -274,7 +274,7 @@
               <el-radio label="shell">Shell 安装</el-radio>
               <el-radio label="docker">Docker 容器</el-radio>
             </el-radio-group>
-            <div style="margin-top: 8px; color: #909399; font-size: 12px; line-height: 1.5;">
+            <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.5;">
               <template v-if="scriptForm.installType === 'shell'">
                 Shell 安装：将 Agent 直接安装到系统服务
               </template>
@@ -291,7 +291,7 @@
             <el-radio label="mosdns">MosDNS</el-radio>
             <el-radio label="aio">All-in-One (三合一)</el-radio>
           </el-radio-group>
-          <div style="margin-top: 8px; color: #909399; font-size: 12px; line-height: 1.5;">
+          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.5;">
             <template v-if="scriptForm.dockerMode === 'mihomo'">
               内置 Mihomo，一个容器运行 Agent+Mihomo
             </template>
@@ -330,11 +330,11 @@
         <el-form-item label="Agent 端口" v-else>
           <div style="display: flex; flex-direction: column; gap: 8px;">
             <div v-if="scriptForm.dockerMode === 'mihomo' || scriptForm.dockerMode === 'aio'" style="display: flex; align-items: center; gap: 8px;">
-              <span style="color: #909399; font-size: 14px; min-width: 120px;">• Mihomo Agent:</span>
+              <span style="color: var(--cf-fg-2); font-size: 14px; min-width: 120px;">• Mihomo Agent:</span>
               <el-input-number v-model="scriptForm.mihomoAgentPort" :min="1024" :max="65535" size="small" style="width: 140px;" />
             </div>
             <div v-if="scriptForm.dockerMode === 'mosdns' || scriptForm.dockerMode === 'aio'" style="display: flex; align-items: center; gap: 8px;">
-              <span style="color: #909399; font-size: 14px; min-width: 120px;">• MosDNS Agent:</span>
+              <span style="color: var(--cf-fg-2); font-size: 14px; min-width: 120px;">• MosDNS Agent:</span>
               <el-input-number v-model="scriptForm.mosdnsAgentPort" :min="1024" :max="65535" size="small" style="width: 140px;" />
             </div>
           </div>
@@ -368,7 +368,7 @@
               </el-tooltip>
             </template>
           </el-input>
-          <div style="margin-top: 8px; color: #909399; font-size: 12px; line-height: 1.5;">
+          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.5;">
             支持两种方式：<br/>
             • 命令方式：systemctl restart mihomo<br/>
             • URL方式：http://127.0.0.1:9090/restart
@@ -459,7 +459,7 @@
                 {{ option.label }}
               </el-radio>
             </el-radio-group>
-            <div style="margin-top: 8px; color: #909399; font-size: 12px">
+            <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
               host 模式可直接访问主机网络，bridge 模式需要端口映射
             </div>
           </el-form-item>
@@ -481,7 +481,7 @@
           <template #title>
             <div style="line-height: 1.6;">
               在远程服务器上执行以下命令即可自动安装 Agent<br/>
-              <span style="font-size: 12px; color: #67C23A;">
+              <span style="font-size: 12px; color: var(--cf-success);">
                 ✓ 支持 Ubuntu、Debian、CentOS、Alpine Linux 等系统<br/>
                 ✓ 自动检测并配置 systemd 或 OpenRC 服务管理器
               </span>
@@ -499,21 +499,21 @@
             <div style="line-height: 1.6;">
               <template v-if="scriptForm.dockerMode === 'mihomo'">
                 使用 Docker 快速部署 Mihomo Agent<br/>
-                <span style="font-size: 12px; color: #409EFF;">
+                <span style="font-size: 12px; color: var(--cf-primary);">
                   ✓ 内置 Mihomo，一个容器运行 Agent+Mihomo<br/>
                   ✓ 支持自动配置拉取、更新和服务重启
                 </span>
               </template>
               <template v-else-if="scriptForm.dockerMode === 'mosdns'">
                 使用 Docker 快速部署 mosdns Agent<br/>
-                <span style="font-size: 12px; color: #409EFF;">
+                <span style="font-size: 12px; color: var(--cf-primary);">
                   ✓ 内置 mosdns，一个容器运行 Agent+mosdns<br/>
                   ✓ 支持自动配置拉取、更新和服务重启
                 </span>
               </template>
               <template v-else>
                 使用 Docker 快速部署 All-in-One Agent<br/>
-                <span style="font-size: 12px; color: #409EFF;">
+                <span style="font-size: 12px; color: var(--cf-primary);">
                   ✓ 内置 Mihomo 和 mosdns，一个容器同时运行两个服务<br/>
                   ✓ 支持通过环境变量控制启用哪些服务
                 </span>
@@ -527,8 +527,8 @@
           <!-- Ubuntu/Debian/CentOS 命令 -->
           <div class="command-section">
             <div class="command-label">
-              <span style="font-weight: 600; color: #409EFF;">Ubuntu / Debian / CentOS</span>
-              <span style="font-size: 12px; color: #909399; margin-left: 8px;">(使用 systemd)</span>
+              <span style="font-weight: 600; color: var(--cf-primary);">Ubuntu / Debian / CentOS</span>
+              <span style="font-size: 12px; color: var(--cf-fg-2); margin-left: 8px;">(使用 systemd)</span>
             </div>
             <div class="command-container">
               <el-input
@@ -553,8 +553,8 @@
           <!-- Alpine Linux 命令 -->
           <div class="command-section" style="margin-top: 20px;">
             <div class="command-label">
-              <span style="font-weight: 600; color: #67C23A;">Alpine Linux</span>
-              <span style="font-size: 12px; color: #909399; margin-left: 8px;">(使用 OpenRC)</span>
+              <span style="font-weight: 600; color: var(--cf-success);">Alpine Linux</span>
+              <span style="font-size: 12px; color: var(--cf-fg-2); margin-left: 8px;">(使用 OpenRC)</span>
             </div>
             <div class="command-container">
               <el-input
@@ -582,8 +582,8 @@
           <!-- Docker Run 命令 -->
           <div class="command-section">
             <div class="command-label">
-              <span style="font-weight: 600; color: #409EFF;">Docker Run 命令</span>
-              <span style="font-size: 12px; color: #909399; margin-left: 8px;">(推荐)</span>
+              <span style="font-weight: 600; color: var(--cf-primary);">Docker Run 命令</span>
+              <span style="font-size: 12px; color: var(--cf-fg-2); margin-left: 8px;">(推荐)</span>
             </div>
             <div class="command-container">
               <el-input
@@ -608,8 +608,8 @@
           <!-- Docker Compose 文件 -->
           <div class="command-section" style="margin-top: 20px;">
             <div class="command-label">
-              <span style="font-weight: 600; color: #67C23A;">docker-compose.yml</span>
-              <span style="font-size: 12px; color: #909399; margin-left: 8px;">(可选)</span>
+              <span style="font-weight: 600; color: var(--cf-success);">docker-compose.yml</span>
+              <span style="font-size: 12px; color: var(--cf-fg-2); margin-left: 8px;">(可选)</span>
             </div>
             <div class="command-container">
               <el-input
@@ -640,15 +640,15 @@
               <div style="line-height: 1.6; font-size: 13px;">
                 <strong>部署方式：</strong><br/>
                 <br/>
-                <strong style="color: #409EFF;">方式一：使用 Docker Run（推荐）</strong><br/>
+                <strong style="color: var(--cf-primary);">方式一：使用 Docker Run（推荐）</strong><br/>
                 直接在服务器上执行上面的 Docker Run 命令即可<br/>
                 <br/>
-                <strong style="color: #67C23A;">方式二：使用 Docker Compose</strong><br/>
+                <strong style="color: var(--cf-success);">方式二：使用 Docker Compose</strong><br/>
                 1. 保存 docker-compose.yml 文件<br/>
-                2. 在同目录执行: <code style="background: #f5f7fa; padding: 2px 6px; border-radius: 3px;">docker-compose up -d</code><br/>
-                3. 查看日志: <code style="background: #f5f7fa; padding: 2px 6px; border-radius: 3px;">docker-compose logs -f</code><br/>
+                2. 在同目录执行: <code style="background: var(--cf-s2); padding: 2px 6px; border-radius: 3px;">docker-compose up -d</code><br/>
+                3. 查看日志: <code style="background: var(--cf-s2); padding: 2px 6px; border-radius: 3px;">docker-compose logs -f</code><br/>
                 <br/>
-                <strong style="color: #E6A23C;">重要提示：</strong><br/>
+                <strong style="color: var(--cf-warning);">重要提示：</strong><br/>
                 <template v-if="scriptForm.dockerMode === 'mihomo'">
                   • 该镜像内置了 Mihomo，Agent 和 Mihomo 在同一容器中运行<br/>
                   • 会自动创建 ./mihomo 目录存储配置文件<br/>
@@ -810,7 +810,7 @@
                 <span :style="{ color: getProgressColor(currentMetricsAgent.system_metrics.cpu?.usage_percent) }">
                   {{ formatPercent(currentMetricsAgent.system_metrics.cpu?.usage_percent) }}
                 </span>
-                <span style="color: #909399; font-size: 11px; margin-left: 8px;">
+                <span style="color: var(--cf-fg-2); font-size: 11px; margin-left: 8px;">
                   ({{ currentMetricsAgent.system_metrics.cpu?.core_count }} 核)
                 </span>
               </el-descriptions-item>
@@ -818,23 +818,23 @@
                 <span :style="{ color: getProgressColor(currentMetricsAgent.system_metrics.memory?.used_percent) }">
                   {{ formatPercent(currentMetricsAgent.system_metrics.memory?.used_percent) }}
                 </span>
-                <span style="color: #909399; font-size: 11px; margin-left: 8px;">
+                <span style="color: var(--cf-fg-2); font-size: 11px; margin-left: 8px;">
                   {{ formatBytes(currentMetricsAgent.system_metrics.memory?.used) }} / {{ formatBytes(currentMetricsAgent.system_metrics.memory?.total) }}
                 </span>
               </el-descriptions-item>
               <el-descriptions-item label="网络速度">
-                <span style="color: #409EFF;">↑ {{ formatNetworkSpeed(currentMetricsAgent.system_metrics.network?.speed_sent) }}</span>
-                <span style="color: #67C23A; margin-left: 8px;">↓ {{ formatNetworkSpeed(currentMetricsAgent.system_metrics.network?.speed_recv) }}</span>
+                <span style="color: var(--cf-primary);">↑ {{ formatNetworkSpeed(currentMetricsAgent.system_metrics.network?.speed_sent) }}</span>
+                <span style="color: var(--cf-success); margin-left: 8px;">↓ {{ formatNetworkSpeed(currentMetricsAgent.system_metrics.network?.speed_recv) }}</span>
               </el-descriptions-item>
               <el-descriptions-item label="总流量">
-                <span style="color: #409EFF;">↑ {{ formatBytes(currentMetricsAgent.system_metrics.network?.bytes_sent) }}</span>
-                <span style="color: #67C23A; margin-left: 8px;">↓ {{ formatBytes(currentMetricsAgent.system_metrics.network?.bytes_recv) }}</span>
+                <span style="color: var(--cf-primary);">↑ {{ formatBytes(currentMetricsAgent.system_metrics.network?.bytes_sent) }}</span>
+                <span style="color: var(--cf-success); margin-left: 8px;">↓ {{ formatBytes(currentMetricsAgent.system_metrics.network?.bytes_recv) }}</span>
               </el-descriptions-item>
               <el-descriptions-item label="磁盘使用率">
                 <span :style="{ color: getProgressColor(currentMetricsAgent.system_metrics.disk?.used_percent) }">
                   {{ formatPercent(currentMetricsAgent.system_metrics.disk?.used_percent) }}
                 </span>
-                <span style="color: #909399; font-size: 11px; margin-left: 8px;">
+                <span style="color: var(--cf-fg-2); font-size: 11px; margin-left: 8px;">
                   {{ formatBytes(currentMetricsAgent.system_metrics.disk?.used) }} / {{ formatBytes(currentMetricsAgent.system_metrics.disk?.total) }}
                 </span>
               </el-descriptions-item>
@@ -881,6 +881,8 @@
 </template>
 
 <script setup lang="ts">
+import ScopeBanner from '@/components/shell/ScopeBanner.vue'
+import PageHeader from '@/components/shell/PageHeader.vue'
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { Document, Refresh, Monitor, SuccessFilled, WarningFilled, DocumentCopy, QuestionFilled, Connection, Clock, InfoFilled, Upload, RefreshRight, View, Delete, Close, Download, TrendCharts, Setting } from '@element-plus/icons-vue'
@@ -1340,10 +1342,10 @@ const bindAgentProfile = async (agent: Agent, profileId: string): Promise<boolea
   try {
     await agentApi.bindProfile(agent.id, profileId)
     agent.profile_id = profileId
-    ElMessage.success('Agent 配置 Profile 已更新')
+    ElMessage.success('Agent 绑定的配置空间已更新')
     return true
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || 'Agent 配置 Profile 更新失败')
+    ElMessage.error(error.response?.data?.message || 'Agent 绑定配置空间失败')
     return false
   } finally {
     bindingAgentId.value = null
@@ -2156,9 +2158,6 @@ onUnmounted(() => {
 
 <style scoped>
 .agents-page {
-  padding: 28px 32px 40px;
-  background: #f5f7ff;
-  min-height: calc(100vh - 64px);
   --agent-radius-xl: 40px;
   --agent-radius-lg: 24px;
   --agent-radius-md: 16px;
@@ -2176,7 +2175,7 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: #f5f7ff;
+  background: var(--cf-bg);
   margin: -28px -32px 28px -32px;
   padding: 28px 32px;
 }
@@ -2185,16 +2184,13 @@ onUnmounted(() => {
   margin: 0;
   font-size: 26px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
+  color: var(--cf-fg);
 }
 
 .title-block p {
   margin: 6px 0 0;
   font-size: 14px;
-  color: #7f87af;
+  color: var(--cf-fg-2);
 }
 
 .header-actions {
@@ -2202,36 +2198,6 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 12px;
   justify-content: flex-end;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 20px;
-  height: 40px;
-  border-radius: var(--agent-radius-md, 16px);
-  font-weight: 600;
-  font-size: 14px;
-  border: none;
-  background: rgba(107, 115, 255, 0.15);
-  color: #4a5bff;
-  transition: all 0.2s ease;
-}
-
-.action-btn.action-secondary {
-  border: 1px solid rgba(107, 115, 255, 0.35);
-}
-
-.action-btn.action-primary {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  color: #fff;
-  box-shadow: 0 12px 30px rgba(87, 104, 255, 0.25);
-}
-
-.action-btn:not([disabled]):hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(87, 104, 255, 0.25);
 }
 
 :deep(.action-btn .el-icon) {
@@ -2281,13 +2247,13 @@ onUnmounted(() => {
 .stat-value {
   font-size: 24px;
   font-weight: 600;
-  color: #303133;
+  color: var(--cf-fg);
   line-height: 1;
 }
 
 .stat-label {
   font-size: 14px;
-  color: #909399;
+  color: var(--cf-fg-2);
   margin-top: 4px;
 }
 
@@ -2296,7 +2262,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   min-height: 400px;
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--agent-radius-lg, 24px);
   box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
   margin-top: 24px;
@@ -2310,7 +2276,7 @@ onUnmounted(() => {
 }
 
 .agent-card {
-  background: #fff;
+  background: var(--cf-s1);
   border-radius: var(--agent-radius-lg, 24px);
   padding: 24px;
   box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
@@ -2332,6 +2298,8 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
+  /* 名称长时让标签换行，而不是把名称压成省略号 */
+  flex-wrap: wrap;
 }
 
 .card-title-group {
@@ -2345,10 +2313,10 @@ onUnmounted(() => {
 .card-title {
   font-size: 17px;
   font-weight: 700;
-  color: #30354d;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--cf-fg);
+  /* 允许换行显示完整名称；Agent 名常带主机名，截断会看不出是哪台 */
+  overflow-wrap: anywhere;
+  line-height: 1.3;
 }
 
 .card-meta {
@@ -2370,37 +2338,37 @@ onUnmounted(() => {
 
 .type-pill.type-mihomo {
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   border: 1px solid rgba(107, 115, 255, 0.18);
 }
 
 .type-pill.type-mosdns {
   background: rgba(139, 143, 255, 0.12);
-  color: #8b8fff;
+  color: var(--cf-primary-hover);
   border: 1px solid rgba(139, 143, 255, 0.18);
 }
 
 .status-pill.status-online {
   background: rgba(139, 143, 255, 0.12);
-  color: #8b8fff;
+  color: var(--cf-primary-hover);
   border: 1px solid rgba(139, 143, 255, 0.18);
 }
 
 .status-pill.status-offline {
   background: rgba(245, 108, 108, 0.12);
-  color: #f56c6c;
+  color: var(--cf-danger);
   border: 1px solid rgba(245, 108, 108, 0.18);
 }
 
 .deploy-pill.deploy-shell {
   background: rgba(103, 194, 58, 0.12);
-  color: #67c23a;
+  color: var(--cf-success);
   border: 1px solid rgba(103, 194, 58, 0.18);
 }
 
 .deploy-pill.deploy-docker {
   background: rgba(64, 158, 255, 0.12);
-  color: #409eff;
+  color: var(--cf-primary);
   border: 1px solid rgba(64, 158, 255, 0.18);
 }
 
@@ -2421,19 +2389,19 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #7d88af;
+  color: var(--cf-fg-2);
   font-weight: 600;
 }
 
 .section-label .el-icon {
   font-size: 16px;
-  color: #4e5eff;
+  color: var(--cf-primary);
 }
 
 .section-value {
   font-size: 14px;
   font-weight: 600;
-  color: #1f2d3d;
+  color: var(--cf-fg);
   font-family: 'Courier New', Consolas, monospace;
 }
 
@@ -2452,7 +2420,7 @@ onUnmounted(() => {
   margin-bottom: 12px;
   font-weight: 600;
   font-size: 13px;
-  color: #2d3748;
+  color: var(--cf-fg);
 }
 
 .metrics-header .el-button {
@@ -2475,19 +2443,19 @@ onUnmounted(() => {
   align-items: center;
   margin-bottom: 6px;
   font-size: 12px;
-  color: #606266;
+  color: var(--cf-fg-2);
 }
 
 .metric-value {
   font-weight: 600;
-  color: #2d3748;
+  color: var(--cf-fg);
   font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
 }
 
 .metric-detail {
   margin-top: 4px;
   font-size: 11px;
-  color: #909399;
+  color: var(--cf-fg-2);
   font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
 }
 
@@ -2514,14 +2482,14 @@ onUnmounted(() => {
 
 .speed-label {
   font-size: 11px;
-  color: #909399;
+  color: var(--cf-fg-2);
   font-weight: 500;
 }
 
 .speed-value {
   font-size: 13px;
   font-weight: 700;
-  color: #2d3748;
+  color: var(--cf-fg);
   font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
 }
 
@@ -2532,7 +2500,7 @@ onUnmounted(() => {
 }
 
 .metric-item.traffic-total .speed-item {
-  background: linear-gradient(135deg, rgba(64, 158, 255, 0.08) 0%, rgba(103, 194, 58, 0.08) 100%);
+  background: var(--cf-s2);
   border: 1px solid rgba(107, 115, 255, 0.15);
 }
 
@@ -2545,11 +2513,8 @@ onUnmounted(() => {
 .metric-item.traffic-total .speed-value {
   font-size: 14px;
   font-weight: 800;
-  background: linear-gradient(135deg, #409EFF 0%, #67C23A 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
+  color: var(--cf-fg);
+  }
 
 .card-actions {
   display: flex;
@@ -2574,7 +2539,7 @@ onUnmounted(() => {
 
 .card-btn.ghost {
   background: rgba(107, 115, 255, 0.12);
-  color: #4e5eff;
+  color: var(--cf-primary);
   border: 1px solid rgba(107, 115, 255, 0.25);
 }
 
@@ -2586,7 +2551,7 @@ onUnmounted(() => {
 
 .card-btn.warning {
   background: rgba(255, 176, 103, 0.12);
-  color: #e6a23c;
+  color: var(--cf-warning);
   border: 1px solid rgba(255, 176, 103, 0.25);
 }
 
@@ -2598,7 +2563,7 @@ onUnmounted(() => {
 
 .card-btn.success {
   background: rgba(139, 143, 255, 0.12);
-  color: #8b8fff;
+  color: var(--cf-primary-hover);
   border: 1px solid rgba(139, 143, 255, 0.25);
 }
 
@@ -2610,7 +2575,7 @@ onUnmounted(() => {
 
 .card-btn.primary {
   background: rgba(64, 158, 255, 0.12);
-  color: #409eff;
+  color: var(--cf-primary);
   border: 1px solid rgba(64, 158, 255, 0.25);
 }
 
@@ -2622,7 +2587,7 @@ onUnmounted(() => {
 
 .card-btn.danger {
   background: rgba(155, 143, 255, 0.12);
-  color: #9b8fff;
+  color: var(--cf-primary-hover);
   border: 1px solid rgba(155, 143, 255, 0.28);
 }
 
@@ -2634,7 +2599,7 @@ onUnmounted(() => {
 
 .card-btn.info {
   background: rgba(144, 147, 153, 0.12);
-  color: #909399;
+  color: var(--cf-fg-2);
   border: 1px solid rgba(144, 147, 153, 0.25);
 }
 
@@ -2658,10 +2623,7 @@ onUnmounted(() => {
 :deep(.el-dialog__title) {
   font-size: 20px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
+  color: var(--cf-fg);
 }
 
 :deep(.el-dialog__body) {
@@ -2694,7 +2656,7 @@ onUnmounted(() => {
 :deep(.el-form-item__label) {
   font-size: 14px;
   font-weight: 600;
-  color: #30354d;
+  color: var(--cf-fg);
   padding-bottom: 8px;
 }
 
@@ -2705,7 +2667,7 @@ onUnmounted(() => {
   border: 1px solid rgba(107, 115, 255, 0.15);
   transition: all 0.2s ease;
   padding: 8px 16px;
-  background-color: #fff;
+  background-color: var(--cf-s1);
 }
 
 :deep(.el-form-item:not(.no-custom-style) .el-input:not(.el-select .el-input) .el-input__wrapper:hover) {
@@ -2713,12 +2675,12 @@ onUnmounted(() => {
 }
 
 :deep(.el-form-item:not(.no-custom-style) .el-input:not(.el-select .el-input) .el-input__wrapper.is-focus) {
-  border-color: #000dff;
+  border-color: var(--cf-primary);
   box-shadow: 0 4px 16px rgba(107, 115, 255, 0.15);
 }
 
 :deep(.el-form-item:not(.no-custom-style) .el-input:not(.el-select .el-input) .el-input__inner) {
-  color: #30354d;
+  color: var(--cf-fg);
   font-size: 14px;
 }
 
@@ -2738,71 +2700,71 @@ onUnmounted(() => {
 }
 
 :deep(.el-form-item:not(.no-custom-style) .el-select .el-input__wrapper.is-focus) {
-  border-color: #000dff;
+  border-color: var(--cf-primary);
   box-shadow: 0 4px 16px rgba(107, 115, 255, 0.15);
 }
 
 /* 确保 el-select 内部的文本颜色正确显示 - Element Plus 2.5.x */
 :deep(.el-select) {
   width: 100%;
-  --el-text-color-regular: #30354d;
-  --el-text-color-placeholder: #909399;
-  --el-fill-color-blank: #fff;
+  --el-text-color-regular: var(--cf-fg);
+  --el-text-color-placeholder: var(--cf-fg-2);
+  --el-fill-color-blank: var(--cf-s1);
 }
 
 :deep(.el-select__wrapper) {
-  background-color: #fff !important;
-  color: #30354d !important;
+  background-color: var(--cf-s1) !important;
+  color: var(--cf-fg) !important;
 }
 
 :deep(.el-select .el-input__inner) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
   font-size: 14px !important;
 }
 
 :deep(.el-select input) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
   font-size: 14px !important;
 }
 
 :deep(.el-select .el-select__selected) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
   font-size: 14px !important;
 }
 
 :deep(.el-select .el-select__selected-item) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
   font-size: 14px !important;
 }
 
 /* 强制覆盖 placeholder 类的颜色 - 更高优先级 */
 :deep(.el-select__selection .el-select__selected-item.el-select__placeholder) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
 }
 
 :deep(div.el-select__selected-item.el-select__placeholder) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
 }
 
 :deep(.el-select__selected-item.el-select__placeholder span) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
 }
 
 /* 真正的空 placeholder */
 :deep(.el-select .el-select__placeholder:not(.el-select__selected-item)) {
-  color: #909399 !important;
+  color: var(--cf-fg-2) !important;
 }
 
 :deep(.el-select .el-select__input) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
 }
 
 :deep(.el-select span) {
-  color: #30354d !important;
+  color: var(--cf-fg) !important;
 }
 
 :deep(.el-select .el-select__suffix) {
-  color: #909399 !important;
+  color: var(--cf-fg-2) !important;
 }
 
 .agent-profile-native-select {
@@ -2816,9 +2778,11 @@ onUnmounted(() => {
   background-repeat: no-repeat;
   background-position: right 12px center;
   background-size: 12px 12px;
-  color: #30354d;
-  -webkit-text-fill-color: #30354d;
-  color-scheme: light;
+  color: var(--cf-fg);
+  /* Safari / iOS 会用系统色渲染原生 select 的文字，必须显式覆盖 */
+  -webkit-text-fill-color: var(--cf-fg);
+  /* 不锁定 color-scheme，让原生下拉跟随当前主题；锁 light 会在深色下弹出浅色面板 */
+  color-scheme: inherit;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -2833,7 +2797,7 @@ onUnmounted(() => {
 }
 
 .agent-profile-native-select:focus {
-  border-color: #5b6dff;
+  border-color: var(--cf-primary);
   box-shadow: 0 0 0 3px rgba(107, 115, 255, 0.15);
   outline: none;
 }
@@ -2844,8 +2808,8 @@ onUnmounted(() => {
 }
 
 .agent-profile-native-select option {
-  background: #fff;
-  color: #30354d;
+  background: var(--cf-s1);
+  color: var(--cf-fg);
   font-weight: 500;
 }
 
@@ -2869,7 +2833,7 @@ onUnmounted(() => {
 :deep(.el-input-number__decrease:hover),
 :deep(.el-input-number__increase:hover) {
   background: rgba(107, 115, 255, 0.15);
-  color: #000dff;
+  color: var(--cf-primary);
 }
 
 /* 单选按钮样式 */
@@ -2896,8 +2860,8 @@ onUnmounted(() => {
 }
 
 :deep(.el-radio.is-checked) {
-  background: linear-gradient(135deg, rgba(107, 115, 255, 0.12) 0%, rgba(0, 13, 255, 0.12) 100%);
-  border-color: #000dff;
+  background: var(--cf-s2);
+  border-color: var(--cf-primary);
 }
 
 :deep(.el-radio__input) {
@@ -2905,14 +2869,14 @@ onUnmounted(() => {
 }
 
 :deep(.el-radio__input.is-checked .el-radio__inner) {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
-  border-color: #000dff;
+  background: var(--cf-s2);
+  border-color: var(--cf-primary);
 }
 
 :deep(.el-radio__label) {
   font-size: 14px;
   font-weight: 600;
-  color: #30354d;
+  color: var(--cf-fg);
 }
 
 /* Alert 样式 */
@@ -2924,23 +2888,23 @@ onUnmounted(() => {
 
 :deep(.el-alert--warning) {
   background: rgba(255, 176, 103, 0.12);
-  border-left: 3px solid #e6a23c;
+  border-left: 3px solid var(--cf-warning);
 }
 
 :deep(.el-alert--success) {
   background: rgba(139, 143, 255, 0.12);
-  border-left: 3px solid #8b8fff;
+  border-left: 3px solid var(--cf-primary-hover);
 }
 
 :deep(.el-alert--info) {
   background: rgba(107, 115, 255, 0.12);
-  border-left: 3px solid #000dff;
+  border-left: 3px solid var(--cf-primary);
 }
 
 :deep(.el-alert__title) {
   font-size: 13px;
   line-height: 1.6;
-  color: #30354d;
+  color: var(--cf-fg);
 }
 
 /* Divider 样式 */
@@ -2951,8 +2915,8 @@ onUnmounted(() => {
 
 :deep(.el-divider__text) {
   font-weight: 600;
-  color: #000dff;
-  background: #fff;
+  color: var(--cf-primary);
+  background: var(--cf-s1);
   padding: 0 16px;
 }
 
@@ -2965,7 +2929,7 @@ onUnmounted(() => {
 
 :deep(.el-collapse-item__header) {
   font-weight: 600;
-  color: #30354d;
+  color: var(--cf-fg);
   background: rgba(107, 115, 255, 0.05);
   padding: 14px 20px;
   border-bottom: 1px solid rgba(107, 115, 255, 0.1);
@@ -2973,7 +2937,7 @@ onUnmounted(() => {
 
 :deep(.el-collapse-item__content) {
   padding: 20px;
-  background: #fff;
+  background: var(--cf-s1);
 }
 
 /* 按钮样式增强 */
@@ -2985,7 +2949,6 @@ onUnmounted(() => {
 }
 
 :deep(.el-button--primary) {
-  background: linear-gradient(135deg, #6b7dff 0%, #5b6dff 100%);
   box-shadow: 0 8px 20px rgba(107, 115, 255, 0.25);
 }
 
@@ -2995,8 +2958,8 @@ onUnmounted(() => {
 }
 
 :deep(.el-button--success) {
-  background: linear-gradient(135deg, #8b8fff 0%, #6b7dff 100%);
-  color: #fff;
+  background: var(--cf-primary-fill);
+  color: var(--cf-primary-fg);
   box-shadow: 0 8px 20px rgba(139, 143, 255, 0.25);
 }
 
@@ -3007,7 +2970,7 @@ onUnmounted(() => {
 
 :deep(.el-button--default) {
   background: rgba(107, 115, 255, 0.08);
-  color: #000dff;
+  color: var(--cf-primary);
   border: 1px solid rgba(107, 115, 255, 0.15);
 }
 
@@ -3046,14 +3009,14 @@ onUnmounted(() => {
 }
 
 :deep(.el-input-group__append .el-icon) {
-  color: #000dff;
+  color: var(--cf-primary);
 }
 
 /* 描述文本样式 */
 :deep(.el-form-item__content > div[style*="color"]) {
   font-size: 13px;
   line-height: 1.6;
-  color: #7d88af !important;
+  color: var(--cf-fg-2) !important;
 }
 
 :deep(.el-form-item__content > div[style*="margin-top"]) {
@@ -3065,7 +3028,7 @@ onUnmounted(() => {
   border-radius: var(--agent-radius-md, 16px);
   border: 1px solid rgba(107, 115, 255, 0.15);
   box-shadow: 0 12px 32px rgba(65, 80, 180, 0.12);
-  background: #fff;
+  background: var(--cf-s1);
   padding: 4px 0;
 }
 
@@ -3078,23 +3041,23 @@ onUnmounted(() => {
   border-radius: var(--agent-radius-sm, 12px);
   margin: 2px 4px;
   transition: all 0.2s ease;
-  color: #30354d;
+  color: var(--cf-fg);
   font-size: 14px;
 }
 
 :deep(.el-select-dropdown__item:hover) {
   background: rgba(107, 115, 255, 0.08);
-  color: #000dff;
+  color: var(--cf-primary);
 }
 
 :deep(.el-select-dropdown__item.selected) {
-  background: linear-gradient(135deg, rgba(107, 115, 255, 0.12) 0%, rgba(0, 13, 255, 0.12) 100%);
-  color: #000dff;
+  background: var(--cf-s2);
+  color: var(--cf-primary);
   font-weight: 600;
 }
 
 :deep(.el-select-dropdown__item.is-disabled) {
-  color: #c0c4cc;
+  color: var(--cf-fg-3);
   cursor: not-allowed;
 }
 
@@ -3114,11 +3077,11 @@ onUnmounted(() => {
   align-items: center;
   font-weight: 600;
   font-size: 15px;
-  color: #30354d;
+  color: var(--cf-fg);
 }
 
 .command-container {
-  background: linear-gradient(135deg, rgba(107, 115, 255, 0.04) 0%, rgba(0, 13, 255, 0.02) 100%);
+  background: var(--cf-s2);
   padding: 20px;
   border-radius: var(--agent-radius-md, 16px);
   border: 1px solid rgba(107, 115, 255, 0.15);
@@ -3127,7 +3090,7 @@ onUnmounted(() => {
 }
 
 .command-container:hover {
-  background: linear-gradient(135deg, rgba(107, 115, 255, 0.08) 0%, rgba(0, 13, 255, 0.04) 100%);
+  background: var(--cf-s2);
   border-color: rgba(107, 115, 255, 0.25);
   box-shadow: 0 6px 18px rgba(65, 80, 180, 0.1);
   transform: translateY(-2px);
@@ -3137,8 +3100,8 @@ onUnmounted(() => {
   font-family: 'Courier New', Consolas, monospace;
   font-size: 14px;
   font-weight: 500;
-  background: #fff;
-  color: #2c3e50;
+  background: var(--cf-s1);
+  color: var(--cf-fg);
   border: 2px solid rgba(107, 115, 255, 0.25);
   border-radius: var(--agent-radius-md, 16px);
   padding: 16px;
@@ -3152,14 +3115,14 @@ onUnmounted(() => {
 }
 
 .command-input :deep(.el-textarea__inner):focus {
-  border-color: #000dff;
+  border-color: var(--cf-primary);
   box-shadow: 0 4px 16px rgba(107, 115, 255, 0.15);
   outline: none;
 }
 
 .command-input.alpine :deep(.el-textarea__inner) {
   border-color: rgba(139, 143, 255, 0.35);
-  background: linear-gradient(135deg, rgba(139, 143, 255, 0.02) 0%, rgba(139, 143, 255, 0.01) 100%);
+  background: var(--cf-s2);
 }
 
 .command-input.alpine :deep(.el-textarea__inner):hover {
@@ -3167,15 +3130,15 @@ onUnmounted(() => {
 }
 
 .command-input.alpine :deep(.el-textarea__inner):focus {
-  border-color: #8b8fff;
+  border-color: var(--cf-primary-hover);
   box-shadow: 0 4px 16px rgba(139, 143, 255, 0.15);
 }
 
 .command-input.docker-run :deep(.el-textarea__inner) {
   font-family: 'Courier New', Consolas, monospace;
   font-size: 13px;
-  background: linear-gradient(135deg, rgba(64, 158, 255, 0.04) 0%, rgba(64, 158, 255, 0.02) 100%);
-  color: #2c3e50;
+  background: var(--cf-s2);
+  color: var(--cf-fg);
   border: 2px solid rgba(64, 158, 255, 0.35);
   border-radius: var(--agent-radius-md, 16px);
   padding: 14px;
@@ -3189,7 +3152,7 @@ onUnmounted(() => {
 }
 
 .command-input.docker-run :deep(.el-textarea__inner):focus {
-  border-color: #409eff;
+  border-color: var(--cf-primary);
   box-shadow: 0 4px 16px rgba(64, 158, 255, 0.18);
 }
 
@@ -3210,7 +3173,7 @@ onUnmounted(() => {
 }
 
 .command-input.docker-compose :deep(.el-textarea__inner):focus {
-  border-color: #8b8fff;
+  border-color: var(--cf-primary-hover);
   box-shadow: 0 6px 20px rgba(139, 143, 255, 0.2);
 }
 
@@ -3227,7 +3190,7 @@ onUnmounted(() => {
 }
 
 .script-textarea :deep(.el-textarea__inner):focus {
-  border-color: #8b8fff;
+  border-color: var(--cf-primary-hover);
   box-shadow: 0 6px 20px rgba(139, 143, 255, 0.2);
 }
 
@@ -3243,7 +3206,7 @@ onUnmounted(() => {
 .logs-config-section {
   margin-bottom: 12px;
   padding: 12px;
-  background: #f5f7fa;
+  background: var(--cf-bg);
   border-radius: 8px;
 }
 
@@ -3265,11 +3228,11 @@ onUnmounted(() => {
 }
 
 .logs-textarea :deep(.el-textarea__inner):hover {
-  border-color: #525252;
+  border-color: var(--cf-fg-3);
 }
 
 .logs-textarea :deep(.el-textarea__inner):focus {
-  border-color: #000dff;
+  border-color: var(--cf-primary);
   box-shadow: 0 6px 20px rgba(107, 115, 255, 0.2);
 }
 
@@ -3686,7 +3649,7 @@ onUnmounted(() => {
   }
 
   .chart-card {
-    background: #f5f7fa;
+    background: var(--cf-bg);
     border-radius: 8px;
     padding: 16px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
@@ -3695,7 +3658,7 @@ onUnmounted(() => {
   .metrics-info {
     text-align: center;
     padding: 12px;
-    background: #f5f7fa;
+    background: var(--cf-bg);
     border-radius: 6px;
   }
 

@@ -1,0 +1,287 @@
+# ConfigFlow 共享资源与全站 UI 重构规格
+
+> 状态：已确认（2026-09-03）  
+> 分支：`feat/ui-trivet-mediavault`  
+> 基线：`origin/main` @ `52ad14f`
+
+## 1. 目标
+
+在保留 ConfigFlow 现有业务能力的前提下，重构应用壳、信息架构和页面视觉：
+
+1. 形成统一、克制、易扫描的桌面端管理界面；
+2. 在移动端保持核心操作完整，不采用简单缩放桌面布局；
+3. 让用户能立即判断资源是“跨配置共享”还是“仅当前配置”；
+4. 延续现有 Vue 3 + Element Plus 技术栈，不引入第二套 UI 组件库；
+5. 以同级目录 `../trivet` 与 `../MediaVault` 为视觉参考，不复制其品牌资产。
+
+## 2. 已验证现状
+
+### 2.1 页面与代码规模
+
+当前前端包含 12 个路由页面、6 个独立业务组件，共 23,674 行 Vue 单文件组件：
+
+| 区域 | 页面 | 当前职责 |
+|---|---|---|
+| 总览 | 数据统计 | 统计卡片、趋势、活动状态 |
+| 配置空间 | Profile 管理 | 新建、编辑、克隆、导入、导出、切换 Profile |
+| 资源 | 订阅管理 | 订阅 CRUD、拉取、预览、排序 |
+| 资源 | 节点管理 | 节点 CRUD、批量导入、筛选、排序 |
+| 资源 | 订阅聚合 | 聚合订阅与节点 |
+| 资源 | 规则仓库 | 规则集来源、缓存、连通性测试、排序 |
+| 当前配置 | 策略管理 | 策略组、订阅/节点引用、正则筛选 |
+| 当前配置 | 规则配置 | 单条规则、规则集与策略绑定 |
+| 输出 | 生成配置 | Mihomo、Surge、MosDNS 生成与预览 |
+| 系统 | Agent 管理 | Agent 注册、Profile 绑定、推送、状态与日志 |
+| 系统 | 日志管理 | 日志筛选、查看与清理 |
+| 认证 | 登录 | 可选认证入口 |
+
+现有样式主要散落在各页面的 scoped CSS 中，多个页面各自维护近似的颜色、圆角、按钮和卡片规则。部分页面超过 2,000 行，`Agents.vue` 和 `Generate.vue` 超过 3,000 行。重构应先建立 token 与共用壳层，避免继续复制样式。
+
+### 2.2 当前数据归属
+
+当前代码和既有设计文档都把以下字段定义为 **Profile 级隔离数据**：
+
+- `subscriptions`
+- `nodes`
+- `subscription_aggregations`
+- `rule_library`
+- `proxy_groups`
+- `rule_configs`
+- Mihomo / MosDNS / Surge 自定义配置
+
+该决策由 `backend/common/config_repository.py::PROFILE_FIELDS` 实现，并在 `doc/design/multi-config-management.md` 中明确记录。前端 Axios 会给普通 CRUD 请求统一附加 `X-ConfigFlow-Profile`。
+
+因此，本次不仅调整视觉层级，还会把共享资源从 Profile 存储迁移到系统存储。
+
+## 3. 已确认的产品决策
+
+### 3.1 真实共享边界
+
+系统级共享：
+
+- `subscriptions`
+- `nodes`
+- `subscription_aggregations`
+- `rule_library`
+
+Profile 私有：
+
+- `proxy_groups`
+- `rule_configs`
+- Mihomo / MosDNS / Surge 自定义配置与生成结果
+
+全站 12 个页面全部纳入统一设计系统，交付浅色与深色主题，桌面端和移动端均可完成核心工作流。
+
+### 3.2 迁移与引用规则
+
+1. schema 从 2 升级到 3；迁移开始前保存 system 与全部 Profile 的完整快照；
+2. 将全部 Profile 的四类共享资源合并为系统级集合，不只取默认 Profile；
+3. 相同 ID 且内容一致的条目只保留一份；
+4. 相同 ID 但内容不同的条目为后迁移项生成新 ID；
+5. ID 重映射必须同步更新来源 Profile 内的策略组、策略规则和聚合引用；
+6. 迁移写入临时文件并验证引用完整性后才原子切换 schema；
+7. 任一步失败都继续读取 schema 2 数据，不留下半迁移状态；
+8. 成功迁移后保留快照，不自动删除，提供显式 downgrade/恢复路径；
+9. 共享资源删除前检查所有 Profile 引用；仍被引用时返回可读的冲突清单，不静默级联删除；
+10. Profile 克隆只复制私有字段；Profile 导入导出默认不覆盖共享资源，完整系统备份仍包含共享资源。
+
+### 3.3 兼容规则
+
+- 现有 `/api/subscriptions`、`/api/nodes`、`/api/subscription-aggregations`、`/api/rule-library` 路径不变，但忽略 Profile Header 并读取系统级数据；
+- Profile 显式别名路径继续可用，并返回同一份共享数据，避免旧客户端立刻失效；
+- 策略、规则和生成相关 API 继续使用请求级 Profile；
+- MCP 工具维持现有参数兼容，共享工具即使收到 `profile_id` 也操作同一系统级集合；
+- 缓存按共享资源 ID 存放；生成产物仍按 Profile 隔离。
+
+### 3.4 拖动排序
+
+- 订阅来源、节点库、订阅聚合、规则库、策略组和策略规则使用同一套排序交互；
+- 桌面端显示固定拖动手柄，拖动时展示原尺寸预览、清晰落点线与目标位置；
+- 移动端不与页面滚动争抢手势：通过“调整顺序”进入排序模式，长按手柄后拖动，完成后显式保存；
+- 支持键盘排序：手柄获得焦点后可进入抓取状态，用方向键移动，屏幕阅读器播报当前位置；
+- 排序中禁止触发行点击、编辑或开关操作；失败时恢复原顺序并显示错误原因；
+- 共享资源排序写入系统级集合，所有 Profile 立即看到同一顺序；私有策略排序只影响当前 Profile；
+- 现有 reorder API 保持兼容，重复提交同一顺序应幂等；缺失或未知 ID 不得静默丢弃数据。
+
+## 4. 建议信息架构
+
+在决策 B 成立时，桌面侧栏建议按作用域分为四段：
+
+```text
+总览
+  数据统计
+
+共享资源                         系统级标识
+  订阅来源
+  节点库
+  订阅聚合（功能开启时）
+  规则库
+
+当前配置 · {Profile 名称}         Profile 色标
+  策略组
+  策略规则
+  配置生成
+
+系统
+  配置空间
+  Agent
+  日志
+```
+
+核心命名建议：
+
+| 当前名称 | 建议名称 | 原因 |
+|---|---|---|
+| Profile 管理 | 配置空间 | 对非技术用户更直接；页面内保留 Profile ID |
+| 订阅管理 | 订阅来源 | 与节点库的产出关系更清晰 |
+| 节点管理 | 节点库 | 强调可复用资源集合 |
+| 策略管理 | 策略组 | 与 Mihomo 领域术语一致 |
+| 规则仓库 | 规则库 | 精简且与“策略规则”形成区分 |
+| 规则配置 | 策略规则 | 明确它属于当前配置并负责策略绑定 |
+| 生成配置 | 配置生成 | 使用“对象 + 动作”形式 |
+
+移动端不复制完整桌面侧栏，而采用：顶部当前配置选择器 + 底部四入口（总览、资源、当前配置、系统）+ 分组内二级抽屉。所有一级目标触控热区不少于 44×44 CSS px。
+
+## 5. 视觉设计约束
+
+### 5.1 参考项目证据
+
+参考对象已经确认是本地同级项目：
+
+- Trivet：Next 15 + React 19，基于 shadcn / Base UI，主要使用 Lucide 图标；
+- MediaVault：Vite + React 19，基于 Radix primitives，主要使用 Tabler 图标；
+- 两者都采用集中式 token、共用应用壳、桌面导航与移动导航分离、页面级共享组件；
+- 两者均没有把“再引入同款 React 组件库”当作视觉复刻的前提。
+
+已检查的权威视觉与实现来源：
+
+- `../trivet/frontend/app/globals.css`
+- `../trivet/frontend/components/shell/page-shell.tsx`
+- `../trivet/frontend/components/shell/rail.tsx`
+- `../trivet/frontend/components/shell/tab-bar.tsx`
+- `../MediaVault/frontend/UI_GUIDE.md`
+- `../MediaVault/frontend/src/index.css`
+- `../MediaVault/frontend/src/components/shell/TopBar.tsx`
+- `../MediaVault/frontend/src/components/shell/MobileTabBar.tsx`
+- `../MediaVault/frontend/src/components/common/design.tsx`
+- `../MediaVault/.playwright-mcp/mediavault-redesign/design-target.png`
+- `../MediaVault/.playwright-mcp/mediavault-redesign/home-desktop-v2.png`
+- `../MediaVault/.playwright-mcp/mediavault-redesign/home-mobile-v2.png`
+
+从参考项目提炼、适合 ConfigFlow 的共同语言：
+
+- 用细边框、表面明度和留白建立层级，阴影仅用于真正浮起的对象；
+- 页面以开放式列表、表格和工作区为主，不默认套多层卡片；
+- 一个视图只有一个主操作，其余使用次要或图标操作；
+- 数字、ID、地址和配置值使用等宽字形与等宽数字；
+- 页头紧凑，内容宽度按阅读、详情、工作台三类约束；
+- 移动端重新组织导航和动作优先级，不缩放桌面侧栏；
+- 动效短、低幅度、有方向，并尊重 `prefers-reduced-motion`。
+
+差异部分的取舍：
+
+- MediaVault 的真白、清爽列表和蓝色主操作更适合 ConfigFlow 默认浅色主题；
+- Trivet 的冷色层级、紧凑 rail、低透明边框和深色主题处理用于补足专业工具感；
+- 不继承 MediaVault 的媒体品牌视觉，也不继承 Trivet 的聊天产品结构；
+- 首版建议同时定义浅色和深色 token，但若交付范围只允许一个主题，优先做浅色。
+
+### 5.2 ConfigFlow 约束
+
+具体 token 在生成概念图并确认后冻结。已确认同时交付浅色和深色主题：
+
+- 现有 Element Plus 继续作为唯一组件库；
+- 全局 token 统一颜色、字体、间距、圆角、阴影和动效；
+- 避免当前页面普遍存在的超大圆角、渐变标题和重复卡片堆叠；
+- 数据密集区域优先使用列表、表格或开放式面板，不把所有内容改成卡片；
+- 共享资源与当前配置采用语义清晰但克制的作用域标识，不依赖颜色作为唯一信息；
+- 桌面端目标宽度覆盖 1280、1440、1920；移动端覆盖 360、390、430；
+- 支持键盘焦点、文本缩放、`prefers-reduced-motion` 和基础 WCAG AA 对比度。
+
+## 6. 组件边界（概念确认后实施）
+
+建议建立以下共用层，不改写现有业务 API：
+
+- `AppShell`：桌面侧栏、移动导航、顶栏与内容容器；
+- `ScopeNavigation`：共享资源 / 当前配置 / 系统分组；
+- `ProfileContextControl`：当前配置选择与作用域说明；
+- `PageHeader`：标题、说明、主操作与溢出操作；
+- `ResourceToolbar`：搜索、筛选、视图切换、批量操作；
+- `StatusBadge`：作用域、启用状态、同步状态；
+- `ResponsiveList`：桌面表格与移动列表的响应式呈现；
+- `EmptyState`、`ConfirmDialog`、`FormDrawer`：统一空态和编辑流程。
+
+只抽取出现两次及以上且语义相同的组件；页面专属结构保留在功能目录内。
+
+### 6.1 待确认的视觉概念
+
+以下图片由内置 ImageGen 生成，以 Trivet 与 MediaVault 本地界面作为风格参考；图片只用于设计基准，最终交互与文字均由代码原生实现：
+
+- `doc/design/ui-concepts/dashboard-desktop-light.png`
+- `doc/design/ui-concepts/dashboard-desktop-dark.png`
+- `doc/design/ui-concepts/dashboard-mobile-light.png`
+- `doc/design/ui-concepts/dashboard-mobile-dark.png`
+- `doc/design/ui-concepts/subscriptions-reorder-desktop-light.png`
+- `doc/design/ui-concepts/subscriptions-reorder-mobile-light.png`
+
+概念图冻结的关键决策：
+
+- 桌面：180px 左侧分组导航 + 52px 顶栏 + 任务型主内容 + 可选右侧辅助区；
+- 移动：紧凑顶栏 + 纵向任务内容 + 四入口底栏，不显示桌面侧栏；
+- 共享资源与当前配置同时使用图标、分组标题和作用域文案区分；
+- 默认浅色为真白画布，深色为冷黑三层表面，结构和信息密度一致；
+- 页面主体优先开放列表与细分隔线，面板只承载独立上下文；
+- 排序态必须显式进入，提供原尺寸拖动预览、落点线、位置提示和移动按钮；
+- 单个视图只保留一个视觉主操作。
+
+## 7. 验收标准
+
+### 7.1 信息架构
+
+- 用户在任意资源页面都能看到资源作用域；
+- 当前配置页面始终显示 Profile 名称，危险操作确认中再次显示；
+- 共享资源与当前配置在桌面侧栏和移动入口中都有独立分组；
+- 切换 Profile 后，共享区和当前配置区的行为与确认的数据模型一致。
+
+### 7.2 响应式与交互
+
+- 360 px 宽度无横向页面溢出；允许代码编辑器和数据表在自身容器内滚动；
+- 桌面和移动端均能完成核心 CRUD、切换 Profile、生成配置和 Agent 推送；
+- 主要操作、危险操作、批量操作层级一致；
+- 所有仅图标按钮有可访问名称和可见聚焦状态；
+- 动画关闭时不影响信息理解与操作完成。
+- 桌面鼠标拖动、桌面键盘排序和移动端排序模式均完成真实持久化验证；
+- 排序失败可恢复，排序过程中不会误触条目其他动作。
+
+### 7.3 视觉与工程
+
+- 经确认的桌面、移动概念图分别与浏览器截图逐项对照；
+- 全局设计值来自 token，不在页面继续复制新的魔法值；
+- `npm run build` 通过；
+- 核心页面在桌面与移动视口完成截图回归和交互验证；
+- 不新增第二套 UI 库，不改变未确认的后端业务语义。
+
+## 8. 非目标
+
+- 不借 UI 重构升级 Element Plus 或其他依赖；
+- 不顺手修复现有依赖漏洞、包体告警或无关业务问题；
+- 不重写生成器、Agent 协议或认证流程；
+- 未确认决策 B 前，不移动任何配置字段、不改 API 作用域、不执行数据迁移；
+- 不复制 Trivet / MediaVault 的商标、插画或受保护品牌素材。
+
+## 9. 已记录基线证据
+
+- `npm ci && npm run build`：通过，Vite 5.4.20 完成 2,099 个模块转换；
+- 既有告警：18 个 npm 审计漏洞（7 moderate、11 high）；
+- 既有告警：主 bundle 与部分 chunk 超过 500 kB；
+- 上述告警在本任务首个文件变更前已经存在，按范围规则仅记录、不顺手处理。
+
+## 10. 交付范围
+
+- 全部 12 个现有路由页面；
+- 系统级共享资源迁移与引用完整性；
+- 浅色、深色两套主题；
+- 360 / 390 / 430 移动视口与 1280 / 1440 / 1920 桌面视口；
+- 现有 REST 与 MCP 兼容；
+- 迁移、共享 CRUD、引用保护、主题、响应式与核心交互验证；
+- 六类可排序资源的统一拖动排序与无障碍验证；
+- 设计概念、实现截图和逐项 fidelity ledger。

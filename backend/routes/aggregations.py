@@ -33,6 +33,7 @@ from backend.utils.sub_store_client import (
 )
 from backend.utils.logger import get_logger
 from backend.utils.url_utils import safe_exception_details
+from backend.utils.reorder import resolve_new_order
 
 logger = get_logger(__name__)
 
@@ -533,6 +534,26 @@ def get_aggregation_provider(agg_id):
             download_name=f"{aggregation['name']}.yaml"
         )
 
+    except Exception as e:
+        logger.error("聚合操作失败: %s", safe_exception_details(e))
+        return jsonify({'success': False, 'message': '聚合操作失败'}), 500
+
+
+@bp.route('/reorder', methods=['POST'])
+@require_auth
+def reorder_aggregations():
+    """批量更新聚合顺序"""
+    try:
+        config_data = get_config()
+        body = request.json or {}
+        new_order, missing = resolve_new_order(
+            config_data.get('subscription_aggregations', []), body, 'aggregations'
+        )
+        if missing:
+            return jsonify({'success': False, 'message': f'以下聚合 id 不存在: {missing}'}), 404
+        config_data['subscription_aggregations'] = new_order
+        save_config()
+        return jsonify({'success': True, 'order': [a.get('id') for a in new_order]})
     except Exception as e:
         logger.error("聚合操作失败: %s", safe_exception_details(e))
         return jsonify({'success': False, 'message': '聚合操作失败'}), 500
