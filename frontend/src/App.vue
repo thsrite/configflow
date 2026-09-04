@@ -117,12 +117,9 @@
             :active-path="route.path"
             :subscription-aggregation-enabled="subscriptionAggregationEnabled"
           />
-          <router-view v-slot="{ Component }">
-            <!-- 路由切换过渡：out-in 避免两页同时占位导致的跳动 -->
-            <transition name="page" mode="out-in">
-              <component :is="Component" :key="`${activeProfileId}:${route.path}`" />
-            </transition>
-          </router-view>
+          <!-- 不做整页过渡：out-in 会在两页之间留一帧空白，观感是闪一下。
+               进场动效交给页面内的卡片与列表逐项播放。 -->
+          <router-view :key="`${activeProfileId}:${route.path}`" />
         </div>
       </main>
     </div>
@@ -304,34 +301,3 @@ onUnmounted(() => {
 })
 </script>
 
-<style>
-/* 路由过渡：进出场都很短，避免翻页时的等待感 */
-.page-enter-active {
-  transition:
-    opacity 0.22s var(--cf-ease),
-    transform 0.22s var(--cf-ease);
-}
-
-.page-leave-active {
-  transition:
-    opacity 0.12s var(--cf-ease),
-    transform 0.12s var(--cf-ease);
-}
-
-.page-enter-from {
-  opacity: 0;
-  transform: translateY(8px);
-}
-
-.page-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .page-enter-active,
-  .page-leave-active {
-    transition: none;
-  }
-}
-</style>
