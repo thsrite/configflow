@@ -1,0 +1,236 @@
+/* ConfigFlow × shadcn 主题层 —— 全站唯一色彩来源
+ *
+ * 这里定义 shadcn 语义 token（oklch，zinc 冷中性基调 + 单一强调色），
+ * tokens.css 里既有的 --cf-* 全部反向引用本文件，
+ * 因此未改造的页面无需改动结构即可继承新配色。
+ *
+ * 刻意不引入 Tailwind preflight：本项目 12 个页面依赖大量原生元素默认样式
+ * 与 Element Plus 样式，全局重置会造成不可控回归。shadcn 组件所需的少量
+ * 基线重置在 @layer base 中按需补齐，作用范围限定在组件自身的类上。
+ */
+
+/* ⚠️ 迁移约束：element-plus/dist/index.css 是「未分层」样式，而 Tailwind 工具类位于
+ * @layer utilities。CSS 规定未分层规则永远压过任何 cascade layer，因此在仍带 .el-*
+ * 类的元素上叠加 Tailwind 工具类会静默失效（不报错、不生效）。
+ * 后续逐页改造时：一个元素要么完全交给 shadcn，要么继续用 Element Plus + scoped 样式，
+ * 不要混用。若将来必须混用，需先把 Element Plus 也 @import 进一个 vendor layer，
+ * 那会整体改变它与各页 scoped 样式的优先级，属于独立的破坏性改动。
+ */
+@layer theme, base, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/* shadcn 组件的进出场动画类（animate-in / fade-in-0 / zoom-in-95 …）来自这里 */
+@import 'tw-animate-css';
+
+/* 本项目主题写在 <html data-theme>，而非 shadcn 默认的 .dark 类 */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/* ---------- 语义色板 ---------- */
+
+/* 深色为默认主题 */
+:root,
+:root[data-theme='dark'] {
+  --background: oklch(0.1450 0.0060 285.8);
+  --foreground: oklch(0.9700 0.0020 286.3);
+
+  --card: oklch(0.2080 0.0068 285.9);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.2200 0.0068 285.9);
+  --popover-foreground: var(--foreground);
+
+  /* 强调色：靛蓝，白字对比 4.9:1（WCAG AA） */
+  --primary: oklch(0.5450 0.1900 267.0);
+  --primary-foreground: oklch(0.9850 0 0);
+  /* 文字/图标/聚焦环上使用的亮版强调色，深底上对比 6.4:1 */
+  --primary-accent: oklch(0.7150 0.1400 267.0);
+
+  --secondary: oklch(0.2500 0.0070 286.0);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.2500 0.0070 286.0);
+  --muted-foreground: oklch(0.7080 0.0140 286.1);
+  --accent: oklch(0.2850 0.0080 286.0);
+  --accent-foreground: var(--foreground);
+
+  --destructive: oklch(0.5770 0.1960 22.0);
+  --destructive-foreground: oklch(0.9850 0 0);
+  --destructive-accent: oklch(0.7100 0.1650 22.0);
+  --success: oklch(0.5480 0.1300 162.0);
+  --success-accent: oklch(0.7650 0.1500 162.0);
+  --warning: oklch(0.5900 0.1350 70.0);
+  --warning-accent: oklch(0.8200 0.1450 82.0);
+  /* 资源作用域语义色：青蓝，与强调色可区分 */
+  --info: oklch(0.5600 0.1200 232.0);
+  --info-accent: oklch(0.7800 0.1050 232.0);
+
+  --border: oklch(1 0 0 / 11%);
+  --border-strong: oklch(1 0 0 / 15%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: var(--primary-accent);
+
+  /* 语义软底：承载状态标签，深色下保持低饱和 */
+  --primary-soft: oklch(0.2900 0.0700 267.0);
+  --success-soft: oklch(0.2550 0.0480 162.0);
+  --warning-soft: oklch(0.2700 0.0450 70.0);
+  --destructive-soft: oklch(0.2700 0.0620 22.0);
+  --info-soft: oklch(0.2650 0.0470 232.0);
+
+  --shadow-surface: 0 1px 2px oklch(0 0 0 / 40%), 0 8px 24px -12px oklch(0 0 0 / 70%);
+  --shadow-overlay: 0 16px 48px -12px oklch(0 0 0 / 75%);
+
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --background: oklch(0.9800 0.0020 286.0);
+  --foreground: oklch(0.2100 0.0060 285.9);
+
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--foreground);
+
+  --primary: oklch(0.5100 0.1950 267.0);
+  --primary-foreground: oklch(1 0 0);
+  --primary-accent: oklch(0.4800 0.1950 267.0);
+
+  --secondary: oklch(0.9650 0.0030 286.0);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.9650 0.0030 286.0);
+  --muted-foreground: oklch(0.4900 0.0120 286.1);
+  --accent: oklch(0.9400 0.0040 286.0);
+  --accent-foreground: var(--foreground);
+
+  --destructive: oklch(0.5250 0.1900 25.0);
+  --destructive-foreground: oklch(1 0 0);
+  --destructive-accent: oklch(0.5050 0.1900 25.0);
+  --success: oklch(0.4750 0.1050 162.0);
+  --success-accent: oklch(0.4600 0.1050 162.0);
+  --warning: oklch(0.4900 0.1050 70.0);
+  --warning-accent: oklch(0.4750 0.1050 70.0);
+  --info: oklch(0.4800 0.1100 232.0);
+  --info-accent: oklch(0.4650 0.1100 232.0);
+
+  --border: oklch(0.2100 0.0060 285.9 / 10%);
+  --border-strong: oklch(0.2100 0.0060 285.9 / 18%);
+  --input: oklch(0.2100 0.0060 285.9 / 16%);
+  --ring: var(--primary);
+
+  --primary-soft: oklch(0.9450 0.0300 267.0);
+  --success-soft: oklch(0.9500 0.0300 162.0);
+  --warning-soft: oklch(0.9550 0.0330 80.0);
+  --destructive-soft: oklch(0.9550 0.0250 25.0);
+  --info-soft: oklch(0.9500 0.0280 232.0);
+
+  --shadow-surface: 0 1px 2px oklch(0.21 0.006 286 / 6%), 0 8px 20px -14px oklch(0.21 0.006 286 / 30%);
+  --shadow-overlay: 0 16px 48px -14px oklch(0.21 0.006 286 / 35%);
+
+  color-scheme: light;
+}
+
+/* ---------- 几何与字体：4px 网格，圆角单一来源 ---------- */
+:root {
+  --radius: 0.625rem;
+  --radius-xs: calc(var(--radius) * 0.5);
+  --radius-sm: calc(var(--radius) * 0.75);
+  --radius-md: calc(var(--radius) * 0.875);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.5);
+}
+
+/* ---------- 暴露给 Tailwind 工具类 ---------- */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-accent: var(--primary-accent);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-accent: var(--destructive-accent);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-success: var(--success);
+  --color-success-accent: var(--success-accent);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-accent: var(--warning-accent);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-accent: var(--info-accent);
+  --color-info-soft: var(--info-soft);
+  --color-primary-soft: var(--primary-soft);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --shadow-surface: var(--shadow-surface);
+  --shadow-overlay: var(--shadow-overlay);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue',
+    'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* ---------- 受限基线重置 ----------
+ * 只覆盖 shadcn 组件必须依赖的元素默认值，且限定在带 Tailwind 类的元素上，
+ * 避免波及未改造页面的原生元素样式。
+ */
+@layer base {
+  /* Tailwind v4 的 border/ring 默认取 currentColor；preflight 未启用，
+   * 因此在 shadcn 组件（统一带 data-slot）范围内补回边框色默认值。
+   */
+  [data-slot],
+  [data-slot] *,
+  [data-slot]::before,
+  [data-slot]::after {
+    border-color: var(--border);
+  }
+
+  button:where([class*='inline-flex'], [class*='flex']) {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    background-color: transparent;
+    background-image: none;
+    border: 0 solid transparent;
+    margin: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  input:where([class*='w-full'], [class*='flex']),
+  textarea:where([class*='w-full'], [class*='flex']) {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    color: inherit;
+    background-color: transparent;
+    border: 0 solid transparent;
+    margin: 0;
+    padding: 0;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--muted-foreground);
+    opacity: 1;
+  }
+}

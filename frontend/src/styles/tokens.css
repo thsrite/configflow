@@ -1,103 +1,65 @@
-/* ConfigFlow 设计系统 token —— 全站唯一颜色/间距/圆角来源
- * 冷色层级与紧凑导航栏搭配清爽列表，专业工具基调而非营销页。
- * 深色为默认主题，浅色为可切换主题。
+/* ConfigFlow 设计系统 token —— 兼容层
+ *
+ * 颜色、圆角、阴影的真实来源是 theme.css 里的 shadcn 语义 token；
+ * 本文件的 --cf-* 只做语义映射，供尚未改造为 shadcn 组件的页面继续使用。
+ * 结论：改配色只改 theme.css 一处，未改造页面自动跟随，无需逐页改动。
  */
 
-:root,
-:root[data-theme='dark'] {
-  /* 表面：冷黑三层，不用纯黑 */
-  --cf-bg: #0d0f13;
-  --cf-s1: #14171d;
-  --cf-s2: #1a1e26;
-  --cf-s3: #222732;
+:root {
+  /* 表面 */
+  --cf-bg: var(--background);
+  --cf-s1: var(--card);
+  --cf-s2: var(--secondary);
+  --cf-s3: var(--accent);
 
-  --cf-bd: rgba(255, 255, 255, 0.07);
-  --cf-bd-strong: rgba(255, 255, 255, 0.12);
+  --cf-bd: var(--border);
+  --cf-bd-strong: var(--border-strong);
 
-  --cf-fg: #eceef2;
-  --cf-fg-2: #a8b0bd;
-  --cf-fg-3: #848e9e;
+  /* 文字：三级层次，第三级由次级文字向背景混合得到 */
+  --cf-fg: var(--foreground);
+  --cf-fg-2: var(--muted-foreground);
+  --cf-fg-3: color-mix(in oklch, var(--muted-foreground) 80%, var(--background));
 
-  --cf-primary: #6d7cff;
-  --cf-primary-hover: #8390ff;
-  /* 实心按钮的填充色：白字在 #6d7cff 上只有 3.51:1，加深到 4.84:1 */
-  --cf-primary-fill: #5563e8;
-  --cf-primary-fill-hover: #4a58dd;
-  --cf-primary-soft: #2a2f52;
-  --cf-primary-fg: #ffffff;
+  /* 强调色：--cf-primary 为文字/图标用的亮版，
+   * --cf-primary-fill 为实心按钮填充，保证前景文字达到 WCAG AA。
+   */
+  --cf-primary: var(--primary-accent);
+  --cf-primary-hover: color-mix(in oklch, var(--primary-accent) 85%, var(--foreground));
+  --cf-primary-fill: var(--primary);
+  --cf-primary-fill-hover: color-mix(in oklch, var(--primary) 88%, var(--foreground));
+  --cf-primary-soft: var(--primary-soft);
+  --cf-primary-fg: var(--primary-foreground);
 
-  --cf-success: #3ddc97;
-  --cf-success-soft: #122b22;
-  --cf-warning: #f7bd4a;
-  --cf-warning-soft: #2e2413;
-  --cf-danger: #ff6b6b;
-  --cf-danger-soft: #331919;
-  /* 实心危险按钮的填充色：白字在 #ff6b6b 上对比不足 */
-  --cf-danger-fill: #c93a3a;
+  --cf-success: var(--success-accent);
+  --cf-success-soft: var(--success-soft);
+  --cf-warning: var(--warning-accent);
+  --cf-warning-soft: var(--warning-soft);
+  --cf-danger: var(--destructive-accent);
+  --cf-danger-soft: var(--destructive-soft);
+  --cf-danger-fill: var(--destructive);
 
-  /* 作用域语义：资源 = 青蓝，当前配置 = 靛蓝 */
-  --cf-shared: #5ec3ff;
-  --cf-shared-soft: #0f2635;
+  /* 作用域语义：资源 = 青蓝，当前配置 = 强调色 */
+  --cf-shared: var(--info-accent);
+  --cf-shared-soft: var(--info-soft);
   --cf-profile: var(--cf-primary);
   --cf-profile-soft: var(--cf-primary-soft);
 
-  --cf-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset,
-    0 8px 24px -12px rgba(0, 0, 0, 0.9);
-  --cf-shadow-lg: 0 18px 40px -12px rgba(0, 0, 0, 0.7);
-
-  color-scheme: dark;
-}
-
-:root[data-theme='light'] {
-  --cf-bg: #f6f7f9;
-  --cf-s1: #ffffff;
-  --cf-s2: #ffffff;
-  --cf-s3: #f0f2f5;
-
-  --cf-bd: rgba(16, 24, 40, 0.09);
-  --cf-bd-strong: rgba(16, 24, 40, 0.16);
-
-  --cf-fg: #111621;
-  --cf-fg-2: #525c6b;
-  --cf-fg-3: #646d79;
-
-  --cf-primary: #4f5bd5;
-  --cf-primary-hover: #3f4ac0;
-  /* 浅色下白字在 #4f5bd5 上已有 5.54:1，填充色与主色一致 */
-  --cf-primary-fill: #4f5bd5;
-  --cf-primary-fill-hover: #3f4ac0;
-  --cf-primary-soft: #eceefc;
-  --cf-primary-fg: #ffffff;
-
-  --cf-success: #0a7d55;
-  --cf-success-soft: #e6f7f0;
-  --cf-warning: #8f5906;
-  --cf-warning-soft: #fdf3e2;
-  --cf-danger: #c62f2f;
-  --cf-danger-soft: #fdeaea;
-  --cf-danger-fill: #c0392f;
-
-  --cf-shared: #0d6ea8;
-  --cf-shared-soft: #e7f2fa;
-
-  --cf-shadow: 0 1px 2px rgba(16, 24, 40, 0.05),
-    0 8px 20px -14px rgba(16, 24, 40, 0.35);
-  --cf-shadow-lg: 0 18px 40px -14px rgba(16, 24, 40, 0.4);
-
-  color-scheme: light;
+  --cf-shadow: var(--shadow-surface);
+  --cf-shadow-lg: var(--shadow-overlay);
 }
 
 :root {
   /* 几何：概念图冻结值 */
-  --cf-topbar-h: 52px;
-  --cf-rail-w: 180px;
+  --cf-topbar-h: 56px;
+  --cf-rail-w: 224px;
   --cf-tabbar-h: 56px;
   --cf-content-max: 1280px;
 
-  --cf-r-sm: 8px;
-  --cf-r-md: 10px;
-  --cf-r-lg: 12px;
-  --cf-r-xl: 15px;
+  /* 圆角单一来源：theme.css 的 --radius 体系 */
+  --cf-r-sm: var(--radius-sm);
+  --cf-r-md: var(--radius-md);
+  --cf-r-lg: var(--radius-lg);
+  --cf-r-xl: var(--radius-xl);
   --cf-r-pill: 999px;
 
   --cf-ctrl-h: 34px;
@@ -108,7 +70,7 @@
   --cf-sp-2: 8px;
   --cf-sp-3: 12px;
   --cf-sp-4: 16px;
-  --cf-sp-5: 22px;
+  --cf-sp-5: 20px;
   --cf-sp-6: 32px;
 
   --cf-font: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue',
@@ -193,6 +155,46 @@ body {
   --el-mask-color: rgba(0, 0, 0, 0.6);
 
   --el-box-shadow-light: var(--cf-shadow);
+
+  /* Element Plus 的 Message / Alert / Tag 以 *-light-9 作为软底、*-light-8 作为边框，
+   * 这些派生色由 EP 按浅色主题预计算，深色下会渲染成刺眼的浅底。
+   * 统一改指向设计系统的语义软色。
+   */
+  --el-color-primary-light-9: var(--cf-primary-soft);
+  --el-color-primary-light-8: var(--cf-primary-soft);
+  --el-color-primary-light-7: var(--cf-primary-soft);
+  --el-color-primary-light-5: var(--cf-primary);
+  --el-color-primary-light-3: var(--cf-primary);
+
+  --el-color-success-light-9: var(--cf-success-soft);
+  --el-color-success-light-8: var(--cf-success-soft);
+  --el-color-success-light-7: var(--cf-success-soft);
+  --el-color-success-light-5: var(--cf-success);
+  --el-color-success-light-3: var(--cf-success);
+
+  --el-color-warning-light-9: var(--cf-warning-soft);
+  --el-color-warning-light-8: var(--cf-warning-soft);
+  --el-color-warning-light-7: var(--cf-warning-soft);
+  --el-color-warning-light-5: var(--cf-warning);
+  --el-color-warning-light-3: var(--cf-warning);
+
+  --el-color-danger-light-9: var(--cf-danger-soft);
+  --el-color-danger-light-8: var(--cf-danger-soft);
+  --el-color-danger-light-7: var(--cf-danger-soft);
+  --el-color-danger-light-5: var(--cf-danger);
+  --el-color-danger-light-3: var(--cf-danger);
+
+  --el-color-error-light-9: var(--cf-danger-soft);
+  --el-color-error-light-8: var(--cf-danger-soft);
+  --el-color-error-light-7: var(--cf-danger-soft);
+  --el-color-error-light-5: var(--cf-danger);
+  --el-color-error-light-3: var(--cf-danger);
+
+  --el-color-info-light-9: var(--cf-s3);
+  --el-color-info-light-8: var(--cf-s3);
+  --el-color-info-light-7: var(--cf-s3);
+  --el-color-info-light-5: var(--cf-fg-2);
+  --el-color-info-light-3: var(--cf-fg-2);
 }
 
 /* ---------- 统一拖动排序视觉状态 ----------

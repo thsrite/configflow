@@ -1,26 +1,42 @@
 <template>
-  <nav class="cf-rail" aria-label="主导航">
+  <nav class="cf-rail flex w-(--cf-rail-w) shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border bg-background px-3 pt-3 pb-6" aria-label="主导航">
     <template v-for="group in groups" :key="group.scope">
-      <div v-if="group.title" class="cf-rail__title" :class="`is-${group.scope}`">
-        <span class="cf-rail__mark" aria-hidden="true"></span>
-        <span class="cf-rail__title-text">{{ groupTitle(group) }}</span>
+      <div
+        v-if="group.title"
+        class="mt-5 mb-1.5 flex items-center gap-2 px-2 text-[11px] font-semibold tracking-[0.04em] text-muted-foreground first:mt-1"
+      >
+        <!-- 作用域用色标 + 分组标题共同表意，不单靠颜色 -->
+        <span class="size-1.5 shrink-0 rounded-[2px]" :class="markClass(group.scope)" aria-hidden="true" />
+        <span class="truncate">{{ groupTitle(group) }}</span>
       </div>
+
       <router-link
         v-for="item in visibleItems(group)"
         :key="item.path"
         :to="item.path"
-        class="cf-rail__item"
-        :class="{ 'is-active': activePath === item.path }"
+        :class="cn(
+          'group relative flex min-h-9 items-center gap-2.5 rounded-md px-2.5 text-[13px] font-medium text-muted-foreground no-underline transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
+          activePath === item.path && 'bg-accent font-semibold text-foreground'
+        )"
+        :aria-current="activePath === item.path ? 'page' : undefined"
       >
-        <el-icon class="cf-rail__icon"><component :is="item.icon" /></el-icon>
-        <span class="cf-rail__label">{{ item.label }}</span>
+        <!-- 选中态除底色外再加一条左侧指示条，弱视条件下也能分辨 -->
+        <span
+          v-if="activePath === item.path"
+          class="absolute left-0 h-4.5 w-0.5 rounded-r-full bg-primary-accent"
+          aria-hidden="true"
+        />
+        <component :is="iconOf(item.icon)" class="size-4 shrink-0" :stroke-width="2" aria-hidden="true" />
+        <span class="truncate">{{ item.label }}</span>
       </router-link>
     </template>
   </nav>
 </template>
 
 <script setup lang="ts">
-import { NAV_GROUPS, type NavGroup, type NavItem } from '@/navigation'
+import { NAV_GROUPS, type NavGroup, type NavItem, type NavScope } from '@/navigation'
+import { iconOf } from '@/lib/icons'
+import { cn } from '@/lib/utils'
 
 const props = defineProps<{
   activePath: string
@@ -37,88 +53,11 @@ const visibleItems = (group: NavGroup): NavItem[] =>
   group.items.filter(
     item => item.flag !== 'subscriptionAggregation' || props.subscriptionAggregationEnabled
   )
+
+const markClass = (scope: NavScope): string =>
+  scope === 'resource'
+    ? 'bg-info-accent'
+    : scope === 'profile'
+      ? 'bg-primary-accent'
+      : 'bg-muted-foreground'
 </script>
-
-<style scoped>
-.cf-rail {
-  width: var(--cf-rail-w);
-  flex: 0 0 var(--cf-rail-w);
-  border-right: 1px solid var(--cf-bd);
-  background: var(--cf-bg);
-  padding: var(--cf-sp-3) var(--cf-sp-2) var(--cf-sp-5);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.cf-rail__title {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: var(--cf-sp-4) 0 var(--cf-sp-2);
-  padding: 0 var(--cf-sp-2);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  color: var(--cf-fg-3);
-  text-transform: uppercase;
-}
-
-/* 作用域同时用图标色标 + 分组标题区分，不只靠颜色 */
-.cf-rail__mark {
-  width: 6px;
-  height: 6px;
-  border-radius: 2px;
-  flex: 0 0 auto;
-  background: var(--cf-fg-3);
-}
-.cf-rail__title.is-resource .cf-rail__mark {
-  background: var(--cf-shared);
-}
-.cf-rail__title.is-profile .cf-rail__mark {
-  background: var(--cf-profile);
-}
-
-.cf-rail__title-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cf-rail__item {
-  display: flex;
-  align-items: center;
-  gap: var(--cf-sp-2);
-  min-height: var(--cf-ctrl-h);
-  padding: 0 var(--cf-sp-2);
-  border-radius: var(--cf-r-md);
-  color: var(--cf-fg-2);
-  font-size: 13.5px;
-  font-weight: 550;
-  text-decoration: none;
-  transition: background var(--cf-dur) var(--cf-ease), color var(--cf-dur) var(--cf-ease);
-}
-
-.cf-rail__item:hover {
-  background: var(--cf-s2);
-  color: var(--cf-fg);
-}
-
-.cf-rail__item.is-active {
-  background: var(--cf-s3);
-  color: var(--cf-fg);
-  font-weight: 650;
-}
-
-.cf-rail__icon {
-  font-size: 15px;
-  flex: 0 0 auto;
-}
-
-.cf-rail__label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-</style>
