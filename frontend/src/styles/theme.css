@@ -241,3 +241,252 @@
     opacity: 1;
   }
 }
+
+/* ============================================================
+ * 科技感表现层（tech layer）
+ * ------------------------------------------------------------
+ * 只新增「氛围 / 发光 / 网格 / 渐变边」这类表现 token 与工具类，
+ * 不改动上面的语义色板 —— 语义色仍是全站唯一色彩来源。
+ * 深浅色各自给值，保证浅色主题下不出现「深色残留」。
+ * ============================================================ */
+
+:root,
+:root[data-theme='dark'] {
+  /* 副强调色：青。与靛蓝主色组成双色渐变，用于发光、图表、进度 */
+  --accent-2: oklch(0.7800 0.1300 208.0);
+  --accent-2-fill: oklch(0.6200 0.1350 208.0);
+
+  /* 发光：激活态 / 悬停 / 焦点的辉光半径 */
+  --glow-primary: 0 0 0 1px oklch(from var(--primary-accent) l c h / 35%),
+    0 0 20px -4px oklch(from var(--primary-accent) l c h / 45%);
+  --glow-soft: 0 0 24px -8px oklch(from var(--primary-accent) l c h / 55%);
+  --glow-danger: 0 0 20px -6px oklch(from var(--destructive-accent) l c h / 50%);
+  --glow-success: 0 0 20px -6px oklch(from var(--success-accent) l c h / 50%);
+
+  /* 玻璃表面：列表/卡片的半透明底，配合 backdrop-blur */
+  --glass-bg: oklch(from var(--card) l c h / 62%);
+  --glass-bg-strong: oklch(from var(--card) l c h / 86%);
+
+  /* 渐变发丝边：从主色到副色再淡出 */
+  --hairline: linear-gradient(
+    130deg,
+    oklch(from var(--primary-accent) l c h / 42%),
+    oklch(from var(--accent-2) l c h / 26%) 38%,
+    oklch(1 0 0 / 8%) 72%
+  );
+
+  /* 背景网格与极光 */
+  --tech-grid-line: oklch(1 0 0 / 3.5%);
+  --tech-grid-size: 44px;
+  --aurora-1: oklch(from var(--primary) l c h / 26%);
+  --aurora-2: oklch(from var(--accent-2-fill) l c h / 18%);
+
+  /* 顶部装饰条：页面/卡片顶缘的一条渐变光 */
+  --edge-light: linear-gradient(
+    90deg,
+    transparent,
+    oklch(from var(--primary-accent) l c h / 70%) 30%,
+    oklch(from var(--accent-2) l c h / 70%) 62%,
+    transparent
+  );
+}
+
+:root[data-theme='light'] {
+  --accent-2: oklch(0.5000 0.1200 208.0);
+  --accent-2-fill: oklch(0.5600 0.1300 208.0);
+
+  --glow-primary: 0 0 0 1px oklch(from var(--primary) l c h / 22%),
+    0 6px 18px -10px oklch(from var(--primary) l c h / 45%);
+  --glow-soft: 0 8px 24px -14px oklch(from var(--primary) l c h / 55%);
+  --glow-danger: 0 8px 20px -14px oklch(from var(--destructive) l c h / 50%);
+  --glow-success: 0 8px 20px -14px oklch(from var(--success) l c h / 50%);
+
+  --glass-bg: oklch(1 0 0 / 78%);
+  --glass-bg-strong: oklch(1 0 0 / 94%);
+
+  --hairline: linear-gradient(
+    130deg,
+    oklch(from var(--primary) l c h / 26%),
+    oklch(from var(--accent-2) l c h / 16%) 38%,
+    oklch(0.21 0.006 286 / 8%) 72%
+  );
+
+  --tech-grid-line: oklch(0.21 0.006 286 / 5%);
+  --tech-grid-size: 44px;
+  --aurora-1: oklch(from var(--primary) l c h / 12%);
+  --aurora-2: oklch(from var(--accent-2-fill) l c h / 9%);
+
+  --edge-light: linear-gradient(
+    90deg,
+    transparent,
+    oklch(from var(--primary) l c h / 55%) 30%,
+    oklch(from var(--accent-2) l c h / 55%) 62%,
+    transparent
+  );
+}
+
+@theme inline {
+  --color-accent-2: var(--accent-2);
+  --color-accent-2-fill: var(--accent-2-fill);
+  --shadow-glow: var(--glow-primary);
+  --shadow-glow-soft: var(--glow-soft);
+  --ease-tech: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@layer components {
+  /* 页面氛围层：固定在视口的网格 + 两团极光，pointer-events none */
+  .tech-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(to right, var(--tech-grid-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--tech-grid-line) 1px, transparent 1px);
+    background-size: var(--tech-grid-size) var(--tech-grid-size);
+    /* 网格向下淡出，避免底部噪声压过内容 */
+    mask-image: radial-gradient(120% 90% at 50% 0%, #000 25%, transparent 82%);
+  }
+
+  .tech-backdrop::before,
+  .tech-backdrop::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(90px);
+  }
+
+  .tech-backdrop::before {
+    inset: -18% 30% auto -12%;
+    height: 58vh;
+    background: var(--aurora-1);
+    animation: aurora-drift 26s var(--ease-tech) infinite alternate;
+  }
+
+  .tech-backdrop::after {
+    inset: -10% -14% auto 46%;
+    height: 46vh;
+    background: var(--aurora-2);
+    animation: aurora-drift 34s var(--ease-tech) infinite alternate-reverse;
+  }
+
+  /* 渐变发丝边：用 mask 只保留 1px 边框 */
+  .hairline {
+    position: relative;
+  }
+
+  .hairline::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: var(--hairline);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  /* 玻璃表面 */
+  .glass {
+    background-color: var(--glass-bg);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+  }
+
+  .glass-strong {
+    background-color: var(--glass-bg-strong);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+  }
+
+  /* 卡片顶缘光带 */
+  .edge-light {
+    position: relative;
+  }
+
+  .edge-light::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 12%;
+    right: 12%;
+    height: 1px;
+    background: var(--edge-light);
+    opacity: 0.9;
+    pointer-events: none;
+  }
+
+  /* 强调文字渐变 */
+  .text-gradient {
+    background: linear-gradient(100deg, var(--foreground), var(--primary-accent) 55%, var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* 数字统一等宽，避免跳动 */
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  /* 扫描线：数据加载中的顶部进度感 */
+  .scanline {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .scanline::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      100deg,
+      transparent 20%,
+      oklch(from var(--primary-accent) l c h / 10%) 50%,
+      transparent 80%
+    );
+    transform: translateX(-100%);
+    animation: scan 1.8s var(--ease-tech) infinite;
+    pointer-events: none;
+  }
+}
+
+@keyframes aurora-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(6%, 4%, 0) scale(1.18);
+  }
+}
+
+@keyframes scan {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 currentColor;
+  }
+  70% {
+    opacity: 0.85;
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tech-backdrop::before,
+  .tech-backdrop::after,
+  .scanline::after {
+    animation: none;
+  }
+}

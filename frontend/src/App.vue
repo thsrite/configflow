@@ -1,26 +1,64 @@
 <template>
   <!-- 登录页不套用应用壳 -->
-  <router-view v-if="isLoginPage" />
+  <template v-if="isLoginPage">
+    <router-view />
+  </template>
 
-  <div v-else class="flex min-h-screen min-h-dvh flex-col bg-background">
+  <div v-else class="relative flex min-h-screen min-h-dvh flex-col bg-background">
+    <!-- 全局氛围层：网格 + 极光，固定在视口，不参与布局与交互 -->
+    <div class="tech-backdrop" aria-hidden="true" />
+
     <header
-      class="sticky top-0 z-800 flex h-(--cf-topbar-h) shrink-0 items-center gap-3 border-b border-border bg-background/85 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-xl backdrop-saturate-150 max-[900px]:gap-2 max-[900px]:px-3"
+      class="glass-strong sticky top-0 z-800 flex h-(--cf-topbar-h) shrink-0 items-center gap-3 border-b border-border/50 px-4 pt-[env(safe-area-inset-top)] max-[900px]:gap-2 max-[900px]:px-3"
       style="box-sizing: content-box"
     >
       <router-link
         to="/dashboard"
-        class="flex min-w-0 shrink items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] text-foreground no-underline max-[900px]:min-h-9 max-[900px]:min-w-9"
+        class="group flex min-w-0 shrink items-center gap-2.5 text-[15px] font-semibold tracking-[-0.015em] text-foreground no-underline max-[900px]:min-h-9 max-[900px]:min-w-9"
       >
-        <img src="/icon.png" alt="" class="size-6 rounded-[7px]" />
+        <span class="relative flex size-7 items-center justify-center">
+          <span
+            class="absolute inset-0 rounded-[9px] bg-linear-to-br from-primary/50 to-accent-2-fill/40 blur-[7px] transition-opacity duration-300 group-hover:opacity-100 opacity-70"
+            aria-hidden="true"
+          />
+          <img src="/icon.png" alt="" class="relative size-6.5 rounded-[8px]" />
+        </span>
         <span class="truncate max-[360px]:hidden">ConfigFlow</span>
       </router-link>
 
-      <div class="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
+      <!-- 命令面板入口：桌面显示快捷键，移动端退化为图标按钮 -->
+      <button
+        type="button"
+        class="ml-2 hidden h-8 min-w-[190px] cursor-pointer items-center gap-2 rounded-lg border border-border/60 bg-background/40 px-2.5 text-[12.5px] text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground md:flex"
+        @click="palette?.show()"
+      >
+        <Search class="size-3.5" aria-hidden="true" />
+        <span>快速跳转…</span>
+        <kbd class="ml-auto rounded border border-border/70 px-1.5 py-0.5 font-mono text-[10px]">
+          {{ metaKeyLabel }}K
+        </kbd>
+      </button>
+
+      <div class="ml-auto flex min-w-0 items-center gap-1.5">
         <ProfileSwitcher />
 
-        <Badge variant="outline" class="rounded-md font-mono text-[11px] max-[420px]:hidden">
+        <Badge
+          variant="outline"
+          class="rounded-md border-border/60 font-mono text-[11px] text-muted-foreground max-[420px]:hidden"
+        >
           {{ versionInfo }}
         </Badge>
+
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          class="md:hidden"
+          title="快速跳转"
+          aria-label="快速跳转"
+          @click="palette?.show()"
+        >
+          <Search class="size-[17px]" />
+        </Button>
 
         <Button
           variant="ghost"
@@ -49,7 +87,11 @@
               <User class="size-[17px]" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" class="glass-strong">
+            <DropdownMenuLabel class="text-[12px] font-normal text-muted-foreground">
+              已登录 · {{ username }}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
             <DropdownMenuItem @select="handleCommand('logout')">
               <LogOut class="size-4" />
               <span>退出登录</span>
@@ -59,7 +101,7 @@
       </div>
     </header>
 
-    <div class="flex min-h-0 flex-1">
+    <div class="relative flex min-h-0 flex-1">
       <AppRail
         class="max-[900px]:hidden"
         :active-path="route.path"
@@ -67,42 +109,60 @@
         :subscription-aggregation-enabled="subscriptionAggregationEnabled"
       />
 
-      <main class="min-w-0 flex-1 overflow-x-hidden">
+      <main class="relative z-10 min-w-0 flex-1 overflow-x-hidden">
         <div
-          class="mx-auto max-w-(--cf-content-max) px-8 pt-5 pb-8 max-[900px]:px-4 max-[900px]:pt-4 max-[900px]:pb-[calc(env(safe-area-inset-bottom)+var(--cf-tabbar-h)+var(--cf-sp-5))]"
+          class="mx-auto max-w-(--cf-content-max) px-8 pt-6 pb-10 max-[900px]:px-4 max-[900px]:pt-4 max-[900px]:pb-[calc(env(safe-area-inset-bottom)+var(--cf-tabbar-h)+var(--cf-sp-5))]"
         >
           <MobileGroupNav
             :active-path="route.path"
             :subscription-aggregation-enabled="subscriptionAggregationEnabled"
           />
-          <router-view :key="activeProfileId" />
+          <router-view v-slot="{ Component }">
+            <!-- 路由切换过渡：out-in 避免两页同时占位导致的跳动 -->
+            <transition name="page" mode="out-in">
+              <component :is="Component" :key="`${activeProfileId}:${route.path}`" />
+            </transition>
+          </router-view>
         </div>
       </main>
     </div>
 
     <MobileTabBar :active-scope="activeScope" @select="openGroup" />
+
+    <CommandPalette
+      ref="palette"
+      :subscription-aggregation-enabled="subscriptionAggregationEnabled"
+    />
   </div>
+
+  <Toaster position="top-center" rich-colors close-button :duration="3000" />
+  <ConfirmHost />
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { FileText, LogOut, Moon, Sun, User } from '@lucide/vue'
+import { FileText, LogOut, Moon, Search, Sun, User } from '@lucide/vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { Toaster } from '@/components/ui/sonner'
 import { systemApi } from './api'
 import api from './api'
+import ConfirmHost from './components/feedback/ConfirmHost.vue'
 import ProfileSwitcher from './components/ProfileSwitcher.vue'
 import AppRail from './components/shell/AppRail.vue'
+import CommandPalette from './components/shell/CommandPalette.vue'
 import MobileTabBar from './components/shell/MobileTabBar.vue'
 import MobileGroupNav from './components/shell/MobileGroupNav.vue'
+import { confirm, notify } from './lib/feedback'
 import { useProfileStore } from './stores/profile'
 import { useThemeStore } from './stores/theme'
 import { scopeOfPath, type NavGroup, type NavItem } from './navigation'
@@ -117,7 +177,11 @@ const versionInfo = ref('v1.0')
 const subscriptionAggregationEnabled = ref(false)
 const showUserInfo = ref(false)
 const username = ref('')
+const palette = ref<InstanceType<typeof CommandPalette> | null>(null)
 const isLoginPage = computed(() => route.path === '/login')
+
+// 快捷键提示按平台显示，Windows/Linux 上写 ⌘ 会误导
+const metaKeyLabel = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
 
 const currentProfileName = computed(
   () => profileStore.activeProfile.value?.name || activeProfileId.value || '默认'
@@ -209,22 +273,14 @@ const openGithub = () => {
 }
 
 const handleCommand = async (command: string) => {
-  if (command === 'logout') {
-    try {
-      await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      })
+  if (command !== 'logout') return
+  const ok = await confirm('确定要退出登录吗？', { title: '退出登录', confirmText: '退出' })
+  if (!ok) return
 
-      localStorage.removeItem('token')
-      localStorage.removeItem('username')
-      ElMessage.success('已退出登录')
-      router.push('/login')
-    } catch (error) {
-      // 用户取消操作
-    }
-  }
+  localStorage.removeItem('token')
+  localStorage.removeItem('username')
+  notify.success('已退出登录')
+  router.push('/login')
 }
 
 onMounted(async () => {
@@ -245,3 +301,35 @@ onUnmounted(() => {
   )
 })
 </script>
+
+<style>
+/* 路由过渡：进出场都很短，避免翻页时的等待感 */
+.page-enter-active {
+  transition:
+    opacity 0.22s var(--cf-ease),
+    transform 0.22s var(--cf-ease);
+}
+
+.page-leave-active {
+  transition:
+    opacity 0.12s var(--cf-ease),
+    transform 0.12s var(--cf-ease);
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter-active,
+  .page-leave-active {
+    transition: none;
+  }
+}
+</style>

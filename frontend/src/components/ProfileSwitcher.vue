@@ -2,7 +2,7 @@
   <div class="flex min-w-0 items-center gap-1">
     <Select v-model="selectedProfileId" :disabled="loading" @update:model-value="handleChange">
       <SelectTrigger
-        class="h-8 w-[190px] gap-2 border-border bg-secondary/60 text-[13px] font-medium max-md:w-[132px]"
+        class="h-8 w-[190px] gap-2 border-border/60 bg-background/40 text-[13px] font-medium transition-colors hover:border-border-strong max-md:w-[132px]"
         aria-label="当前配置空间"
       >
         <Boxes class="size-4 shrink-0 text-primary-accent" />
@@ -10,7 +10,7 @@
           {{ currentLabel || '选择配置空间' }}
         </SelectValue>
       </SelectTrigger>
-      <SelectContent align="end" class="min-w-[220px]">
+      <SelectContent align="end" class="glass-strong min-w-[220px]">
         <SelectItem v-for="profile in profiles" :key="profile.id" :value="profile.id">
           <span class="flex flex-col leading-snug">
             <span class="text-[13px] font-medium">{{ profile.name }}</span>
@@ -35,7 +35,6 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { Boxes, Settings } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
@@ -47,6 +46,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
+import { confirm } from '@/lib/feedback'
 import { useProfileStore } from '@/stores/profile'
 
 const router = useRouter()
@@ -71,18 +71,17 @@ watch(activeProfileId, value => {
 const handleChange = async (profileId: unknown) => {
   const id = String(profileId)
   if (!id || id === activeProfileId.value) return
-  try {
-    await ElMessageBox.confirm(
-      '切换后当前页面将重新加载，未保存的编辑内容会丢失。继续吗？',
-      '切换配置空间',
-      { confirmButtonText: '切换', cancelButtonText: '取消', type: 'warning' }
-    )
-    switchProfile(id)
-    window.location.reload()
-  } catch {
+  const ok = await confirm('切换后当前页面将重新加载，未保存的编辑内容会丢失。继续吗？', {
+    title: '切换配置空间',
+    confirmText: '切换'
+  })
+  if (!ok) {
     // 取消切换：回退到当前生效的配置空间
     selectedProfileId.value = activeProfileId.value
+    return
   }
+  switchProfile(id)
+  window.location.reload()
 }
 
 onMounted(() => {
