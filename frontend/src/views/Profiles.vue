@@ -4,11 +4,11 @@
       <template #actions>
         <el-button @click="pickImportFile">
           <el-icon><Upload /></el-icon>
-          导入到当前 Profile
+          导入到当前配置空间
         </el-button>
         <el-button type="primary" @click="openCreate">
           <el-icon><Plus /></el-icon>
-          新建 Profile
+          新建配置空间
         </el-button>
         <input ref="importInput" type="file" accept="application/json" hidden @change="importProfile" />
       </template>
@@ -73,18 +73,18 @@
 
       <div v-if="!loading && profiles.length === 0" class="empty-state">
         <el-icon><Collection /></el-icon>
-        <p>还没有配置 Profile，点击右上角新建一个吧</p>
+        <p>还没有配置空间，点击右上角新建一个吧</p>
       </div>
     </div>
 
     <el-dialog
       v-model="dialogVisible"
-      :title="editingId ? '编辑 Profile' : '新建 Profile'"
+      :title="editingId ? '编辑配置空间' : '新建配置空间'"
       width="460px"
       class="profile-dialog"
     >
       <el-form label-width="82px" @submit.prevent="submit">
-        <el-form-item label="Profile ID">
+        <el-form-item label="标识 ID">
           <el-input v-model="form.id" :disabled="Boolean(editingId)" maxlength="64" />
         </el-form-item>
         <el-form-item label="名称">
@@ -136,7 +136,7 @@ const openEdit = (profile: Profile) => {
 
 const submit = async () => {
   if (!form.name.trim() || (!editingId.value && !form.id.trim())) {
-    ElMessage.warning('请填写 Profile ID 和名称')
+    ElMessage.warning('请填写标识 ID 和名称')
     return
   }
   saving.value = true
@@ -148,9 +148,9 @@ const submit = async () => {
     }
     await refreshProfiles()
     dialogVisible.value = false
-    ElMessage.success('Profile 已保存')
+    ElMessage.success('配置空间已保存')
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || 'Profile 保存失败')
+    ElMessage.error(error.response?.data?.message || '配置空间 保存失败')
   } finally {
     saving.value = false
   }
@@ -162,13 +162,13 @@ const activate = async (profileId: string) => {
     switchProfile(profileId)
     window.location.reload()
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || '切换 Profile 失败')
+    ElMessage.error(error.response?.data?.message || '切换 配置空间 失败')
   }
 }
 
 const clone = async (profile: Profile) => {
   try {
-    const { value } = await ElMessageBox.prompt('输入新 Profile ID', `克隆 ${profile.name}`, {
+    const { value } = await ElMessageBox.prompt('输入新 标识 ID', `克隆 ${profile.name}`, {
       confirmButtonText: '克隆',
       cancelButtonText: '取消',
       inputValue: `${profile.id}-copy`,
@@ -176,25 +176,25 @@ const clone = async (profile: Profile) => {
       inputErrorMessage: 'ID 只能包含字母、数字、下划线和短横线',
     })
     await profileApi.clone(profile.id, { id: value, name: `${profile.name} 副本` })
-    await refreshProfiles()
-    ElMessage.success('Profile 已克隆')
+    await refresh配置空间s()
+    ElMessage.success('配置空间已克隆')
   } catch (error: any) {
-    if (error !== 'cancel') ElMessage.error(error.response?.data?.message || 'Profile 克隆失败')
+    if (error !== 'cancel') ElMessage.error(error.response?.data?.message || '配置空间 克隆失败')
   }
 }
 
 const remove = async (profile: Profile) => {
   try {
-    await ElMessageBox.confirm(`确定删除 Profile「${profile.name}」及其缓存和生成文件吗？`, '删除 Profile', {
+    await ElMessageBox.confirm(`确定删除配置空间「${profile.name}」及其缓存和生成文件吗？`, '删除配置空间', {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
       type: 'warning',
     })
     await profileApi.delete(profile.id)
     await refreshProfiles()
-    ElMessage.success('Profile 已删除')
+    ElMessage.success('配置空间 已删除')
   } catch (error: any) {
-    if (error !== 'cancel') ElMessage.error(error.response?.data?.message || 'Profile 删除失败')
+    if (error !== 'cancel') ElMessage.error(error.response?.data?.message || '配置空间 删除失败')
   }
 }
 
@@ -208,7 +208,7 @@ const exportProfile = async (profileId: string) => {
     link.click()
     URL.revokeObjectURL(url)
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || 'Profile 导出失败')
+    ElMessage.error(error.response?.data?.message || '配置空间 导出失败')
   }
 }
 
@@ -222,16 +222,16 @@ const importProfile = async (event: Event) => {
     const data = JSON.parse(await file.text())
     await profileApi.import(activeProfileId.value, data)
     await refreshProfiles()
-    ElMessage.success('配置已导入当前 Profile')
+    ElMessage.success('配置已导入当前 配置空间')
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || 'Profile 导入失败')
+    ElMessage.error(error.response?.data?.message || '配置空间 导入失败')
   } finally {
     input.value = ''
   }
 }
 
 onMounted(() => {
-  refreshProfiles().catch(() => ElMessage.error('加载 Profile 失败'))
+  refreshProfiles().catch(() => ElMessage.error('加载配置空间失败'))
 })
 </script>
 

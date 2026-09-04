@@ -6,7 +6,7 @@
       size="small"
       class="profile-select"
       :loading="loading"
-      aria-label="当前配置 Profile"
+      aria-label="当前配置空间"
       popper-class="profile-select-popper"
       @change="handleChange"
     >
@@ -54,7 +54,7 @@ const handleChange = async (profileId: string) => {
   try {
     await ElMessageBox.confirm(
       '切换后当前页面将重新加载，未保存的编辑内容会丢失。继续吗？',
-      '切换配置 Profile',
+      '切换配置空间',
       { confirmButtonText: '切换', cancelButtonText: '取消', type: 'warning' }
     )
     switchProfile(profileId)
