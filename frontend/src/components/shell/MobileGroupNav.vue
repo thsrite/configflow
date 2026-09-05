@@ -11,8 +11,10 @@
       :key="item.path"
       :to="item.path"
       :class="cn(
-        'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-3.5 text-[13px] font-medium whitespace-nowrap text-muted-foreground no-underline [scroll-snap-align:start] transition-colors',
-        activePath === item.path && 'border-primary bg-primary text-primary-foreground'
+        'relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] font-medium whitespace-nowrap no-underline [scroll-snap-align:start] transition-colors duration-200',
+        activePath === item.path
+          ? 'border-primary-accent/40 bg-primary-soft/60 text-foreground shadow-glow-soft'
+          : 'border-border/60 bg-card/50 text-muted-foreground'
       )"
       :aria-current="activePath === item.path ? 'page' : undefined"
     >
@@ -38,8 +40,7 @@ const items = computed<NavItem[]>(() => {
   const group = NAV_GROUPS.find(g => g.scope === scope)
   if (!group) return []
   return group.items.filter(
-    item =>
-      item.flag !== 'subscriptionAggregation' || props.subscriptionAggregationEnabled
+    item => item.flag !== 'subscriptionAggregation' || props.subscriptionAggregationEnabled
   )
 })
 </script>

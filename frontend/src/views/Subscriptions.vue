@@ -2,78 +2,59 @@
   <div :class="reorder.active.value && 'cf-reordering'">
     <ScopeBanner scope="resource" :profile-name="cfProfileName" description="订阅源按配置空间隔离，切换配置空间会看到各自的列表" />
 
-    <PageHeader title="订阅来源" description="订阅拉取后的节点进入本配置空间的节点库">
+    <PageHeader
+      eyebrow="Resource"
+      title="订阅来源"
+      description="订阅拉取后的节点进入本配置空间的节点库。"
+    >
       <template #actions>
-        <Button variant="outline" :disabled="isRefreshing || reorder.active.value" @click="handleFetchAll">
+        <Button
+          variant="outline"
+          class="border-border/60 bg-background/40"
+          :disabled="isRefreshing || reorder.active.value"
+          @click="handleFetchAll"
+        >
           <Loader2 v-if="isRefreshing" class="size-4 animate-spin" />
           <RefreshCw v-else class="size-4" />
           批量更新
         </Button>
-        <Button :disabled="reorder.active.value" @click="showAddDialog">
+        <Button class="shadow-glow" :disabled="reorder.active.value" @click="showAddDialog">
           <Plus class="size-4" />
           添加订阅
         </Button>
       </template>
     </PageHeader>
 
-    <!-- 工具栏：搜索 + 筛选 + 排序入口 + 视图切换 -->
-    <div class="mb-4 flex flex-wrap items-center gap-2">
-      <div class="relative min-w-0 flex-[1_1_240px] max-w-md">
-        <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          v-model="keyword"
-          class="h-9 pl-9"
-          placeholder="搜索订阅名称或地址"
-          :disabled="reorder.active.value"
-          aria-label="搜索订阅"
-        />
-      </div>
+    <Toolbar v-model:search="keyword" placeholder="搜索订阅名称或地址…">
+      <template #filters>
+        <Select v-model="statusFilter" :disabled="reorder.active.value">
+          <SelectTrigger class="h-9 w-[132px] border-transparent bg-background/50 text-[13px]" aria-label="按状态筛选">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent class="glass-strong">
+            <SelectItem value="all">全部状态</SelectItem>
+            <SelectItem value="enabled">已启用</SelectItem>
+            <SelectItem value="disabled">已停用</SelectItem>
+            <SelectItem value="error">获取失败</SelectItem>
+          </SelectContent>
+        </Select>
+      </template>
 
-      <Select v-model="statusFilter" :disabled="reorder.active.value">
-        <SelectTrigger class="h-9 w-[132px]" aria-label="按状态筛选">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">全部状态</SelectItem>
-          <SelectItem value="enabled">已启用</SelectItem>
-          <SelectItem value="disabled">已停用</SelectItem>
-          <SelectItem value="error">获取失败</SelectItem>
-        </SelectContent>
-      </Select>
-
-      <Button
-        v-if="!reorder.active.value"
-        variant="outline"
-        class="h-9"
-        :disabled="subscriptions.length < 2"
-        @click="reorder.enter"
-      >
-        <ArrowUpDown class="size-4" />
-        调整顺序
-      </Button>
-
-      <!-- 数据密集区默认表格，卡片作为可选视图 -->
-      <div
-        class="ml-auto flex shrink-0 gap-0.5 rounded-md border border-border bg-secondary p-0.5 max-[900px]:hidden"
-        role="group"
-        aria-label="视图切换"
-      >
-        <button
-          v-for="opt in VIEW_OPTIONS"
-          :key="opt.value"
-          type="button"
-          :class="cn(
-            'grid size-8 cursor-pointer place-items-center rounded-sm border-0 bg-transparent text-muted-foreground transition-colors',
-            viewMode === opt.value && 'bg-card text-foreground shadow-xs'
-          )"
-          :aria-pressed="viewMode === opt.value"
-          :aria-label="opt.label"
-          @click="viewMode = opt.value"
+      <template #actions>
+        <Button
+          v-if="!reorder.active.value"
+          variant="ghost"
+          size="sm"
+          :disabled="subscriptions.length < 2"
+          @click="reorder.enter"
         >
-          <component :is="opt.icon" class="size-4" />
-        </button>
-      </div>
-    </div>
+          <ArrowUpDown class="size-3.5" />
+          调整顺序
+        </Button>
+        <!-- 数据密集区默认表格，卡片作为可选视图 -->
+        <ViewToggle v-model="viewMode" class="max-[900px]:hidden" />
+      </template>
+    </Toolbar>
 
     <ReorderBar
       :active="reorder.active.value"
@@ -84,106 +65,134 @@
       @save="handleSaveOrder"
     />
 
-    <Card v-if="visibleSubscriptions.length === 0" class="py-0">
-      <p class="m-0 px-5 py-14 text-center text-[13px] text-muted-foreground">{{ emptyText }}</p>
-    </Card>
+    <SectionCard v-if="visibleSubscriptions.length === 0" :padded="false">
+      <EmptyState :icon="Link2" title="没有匹配的订阅" :description="emptyText">
+        <Button @click="showAddDialog">
+          <Plus class="size-4" />
+          添加订阅
+        </Button>
+      </EmptyState>
+    </SectionCard>
 
     <!-- ===== 表格视图（桌面默认） ===== -->
-    <Card v-else-if="effectiveView === 'list'" class="gap-0 overflow-hidden py-0">
-      <div class="overflow-x-auto">
-        <table class="w-full border-collapse text-[13px]">
-          <thead>
-            <tr>
-              <th v-if="reorder.active.value" :class="TH" scope="col"><span class="cf-sr">排序</span></th>
-              <th :class="cn(TH, 'w-11')" scope="col">#</th>
-              <th :class="TH" scope="col">名称</th>
-              <th :class="TH" scope="col">地址</th>
-              <th :class="cn(TH, 'text-right')" scope="col">节点</th>
-              <th :class="TH" scope="col">最近更新</th>
-              <th :class="TH" scope="col">状态</th>
-              <th :class="cn(TH, 'text-right')" scope="col">操作</th>
-            </tr>
-          </thead>
-          <tbody ref="subscriptionsContainer">
-            <tr
-              v-for="(sub, index) in visibleSubscriptions"
-              :key="sub.id"
-              :data-id="sub.id"
-              data-reorder-item
-              :class="cn('transition-colors hover:bg-accent/40 last:[&>td]:border-b-0', !sub.enabled && 'opacity-60')"
-            >
-              <td v-if="reorder.active.value" :class="cn(TD, 'pr-0')">
-                <DragHandle
-                  :label="sub.name"
-                  :index="index"
-                  :total="subscriptions.length"
-                  :position="reorder.positionLabel(index)"
-                  :grabbed="reorder.grabbedIndex.value === index"
-                  @up="reorder.moveUp(index)"
-                  @down="reorder.moveDown(index)"
-                  @keydown="reorder.onHandleKeydown($event, index)"
-                />
-              </td>
-              <td :class="cn(TD, 'w-11 text-xs tabular-nums text-muted-foreground')">{{ index + 1 }}</td>
-              <td :class="TD">
-                <div class="flex items-center gap-2">
-                  <span :class="cn('size-1.5 shrink-0 rounded-full', dotTone(sub))" aria-hidden="true" />
-                  <span class="font-medium whitespace-nowrap text-foreground">{{ sub.name }}</span>
-                  <Badge :variant="typeTone(sub.type)">{{ getTypeLabel(sub.type) }}</Badge>
-                </div>
-              </td>
-              <td :class="cn(TD, 'max-w-[320px]')">
-                <div class="flex items-center gap-1">
-                  <span class="cf-mono min-w-0 truncate text-muted-foreground">{{ getDisplayUrl(sub) }}</span>
-                  <button
-                    type="button"
-                    class="cf-reorder-mute grid size-6 shrink-0 cursor-pointer place-items-center rounded-sm border-0 bg-transparent text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    :aria-label="`复制 ${sub.name} 的地址`"
-                    @click="copyUrl(sub)"
-                  >
-                    <Copy class="size-3.5" />
-                  </button>
-                </div>
-              </td>
-              <td :class="cn(TD, 'text-right tabular-nums')">{{ nodeCount(sub) }}</td>
-              <td :class="cn(TD, 'whitespace-nowrap text-muted-foreground')">{{ lastUpdated(sub) }}</td>
-              <td :class="TD">
-                <Badge :variant="statusTone(subscriptionStatus[sub.id])">{{ statusText(sub) }}</Badge>
-              </td>
-              <td :class="cn(TD, 'cf-reorder-mute text-right whitespace-nowrap')">
-                <Button variant="ghost" size="icon-sm" :aria-label="`获取 ${sub.name} 的节点`" @click="handleFetchSubscription(sub)">
-                  <Network class="size-4" />
-                </Button>
-                <Button variant="ghost" size="icon-sm" :aria-label="`编辑 ${sub.name}`" @click="editSubscription(sub)">
-                  <Pencil class="size-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  class="text-destructive-accent hover:bg-destructive-soft hover:text-destructive-accent"
-                  :aria-label="`删除 ${sub.name}`"
-                  @click="deleteSubscription(sub)"
-                >
-                  <Trash2 class="size-4" />
-                </Button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <footer class="border-t border-border px-5 py-2.5 text-xs text-muted-foreground">
-        共 {{ visibleSubscriptions.length }} 条
-      </footer>
-    </Card>
+    <DataTableShell
+      v-else-if="effectiveView === 'list'"
+      :footer="`共 ${visibleSubscriptions.length} 条`"
+    >
+      <TableHeader>
+        <TableRow class="hover:bg-transparent">
+          <TableHead v-if="reorder.active.value" class="w-10"><span class="cf-sr">排序</span></TableHead>
+          <TableHead class="w-12 text-right">#</TableHead>
+          <TableHead>名称</TableHead>
+          <TableHead>地址</TableHead>
+          <TableHead class="w-20 text-right">节点</TableHead>
+          <TableHead class="w-36">最近更新</TableHead>
+          <TableHead class="w-28">状态</TableHead>
+          <TableHead class="w-32 text-right">操作</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody ref="subscriptionsContainer">
+        <TableRow
+          v-for="(sub, index) in visibleSubscriptions"
+          :key="sub.id"
+          :data-id="sub.id"
+          data-reorder-item
+          :class="!sub.enabled && 'opacity-55'"
+        >
+          <TableCell v-if="reorder.active.value">
+            <DragHandle
+              :label="sub.name"
+              :index="index"
+              :total="subscriptions.length"
+              :position="reorder.positionLabel(index)"
+              :grabbed="reorder.grabbedIndex.value === index"
+              @up="reorder.moveUp(index)"
+              @down="reorder.moveDown(index)"
+              @keydown="reorder.onHandleKeydown($event, index)"
+            />
+          </TableCell>
+          <TableCell class="num text-right text-muted-foreground">{{ index + 1 }}</TableCell>
+          <TableCell>
+            <div class="flex items-center gap-2">
+              <span :class="cn('size-1.5 shrink-0 rounded-full', dotTone(sub))" aria-hidden="true" />
+              <span class="font-medium whitespace-nowrap text-foreground">{{ sub.name }}</span>
+              <Badge :variant="typeTone(sub.type)" class="text-[10.5px]">{{ getTypeLabel(sub.type) }}</Badge>
+            </div>
+          </TableCell>
+          <TableCell class="max-w-[320px]">
+            <div class="flex items-center gap-1">
+              <span class="min-w-0 truncate font-mono text-[12px] text-muted-foreground">
+                {{ getDisplayUrl(sub) }}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="cf-reorder-mute size-6 shrink-0"
+                :aria-label="`复制 ${sub.name} 的地址`"
+                title="复制地址"
+                @click="copyUrl(sub)"
+              >
+                <Copy class="size-3.5" />
+              </Button>
+            </div>
+          </TableCell>
+          <TableCell class="num text-right">{{ nodeCount(sub) }}</TableCell>
+          <TableCell class="whitespace-nowrap text-muted-foreground">{{ lastUpdated(sub) }}</TableCell>
+          <TableCell>
+            <Badge :variant="statusTone(subscriptionStatus[sub.id])">{{ statusText(sub) }}</Badge>
+          </TableCell>
+          <TableCell class="cf-reorder-mute text-right">
+            <div class="flex items-center justify-end gap-0.5">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                :aria-label="`获取 ${sub.name} 的节点`"
+                title="获取节点"
+                @click="handleFetchSubscription(sub)"
+              >
+                <Network class="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                :aria-label="`编辑 ${sub.name}`"
+                title="编辑"
+                @click="editSubscription(sub)"
+              >
+                <Pencil class="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="text-destructive-accent hover:bg-destructive-soft"
+                :aria-label="`删除 ${sub.name}`"
+                title="删除"
+                @click="deleteSubscription(sub)"
+              >
+                <Trash2 class="size-4" />
+              </Button>
+            </div>
+          </TableCell>
+        </TableRow>
+      </TableBody>
+    </DataTableShell>
 
     <!-- ===== 卡片视图（移动端与可选） ===== -->
-    <div v-else ref="subscriptionsContainer" class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
-      <Card
+    <div
+      v-else
+      ref="subscriptionsContainer"
+      class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3 max-md:grid-cols-1"
+    >
+      <Motion
         v-for="(sub, index) in visibleSubscriptions"
         :key="sub.id"
-        :class="cn('gap-0 py-0', !sub.enabled && 'opacity-60')"
+        v-bind="listItem(index)"
         :data-id="sub.id"
         data-reorder-item
+        :class="cn(
+          'hairline edge-light relative overflow-hidden rounded-xl border border-border/35 bg-card/55 backdrop-blur-xl transition-all duration-300 hover:shadow-glow-soft',
+          !sub.enabled && 'opacity-60'
+        )"
       >
         <div class="card-header flex items-center gap-2 px-4 pt-3.5 pb-2">
           <span v-if="reorder.active.value" class="text-xs tabular-nums text-muted-foreground">{{ index + 1 }}</span>
@@ -223,7 +232,7 @@
           </div>
 
           <div class="flex items-center gap-2 px-4 pb-2">
-            <span class="cf-mono min-w-0 flex-1 truncate text-xs text-muted-foreground">{{ getDisplayUrl(sub) }}</span>
+            <span class="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{{ getDisplayUrl(sub) }}</span>
             <button
               type="button"
               class="shrink-0 cursor-pointer border-0 bg-transparent text-xs font-medium text-primary-accent hover:underline"
@@ -233,9 +242,7 @@
             </button>
           </div>
 
-          <Separator />
-
-          <div class="card-actions flex items-center gap-1 px-3 py-2">
+          <div class="card-actions flex items-center gap-1 border-0 border-t border-border/50 px-3 py-2">
             <Button variant="ghost" size="sm" @click="handleFetchSubscription(sub)">
               <Network class="size-3.5" />
               获取节点
@@ -255,12 +262,12 @@
             </Button>
           </div>
         </template>
-      </Card>
+      </Motion>
     </div>
 
     <!-- 添加/编辑对话框 -->
     <Dialog v-model:open="dialogVisible">
-      <DialogContent class="sm:max-w-[640px]" @pointer-down-outside.prevent>
+      <DialogContent class="glass-strong hairline border-border/50 sm:max-w-[640px]" @pointer-down-outside.prevent>
         <DialogHeader>
           <DialogTitle>{{ isEdit ? '编辑订阅' : '添加订阅' }}</DialogTitle>
           <DialogDescription>配置订阅名称、链接与同步策略以保持节点数据最新</DialogDescription>
@@ -270,15 +277,15 @@
           <div class="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
             <div class="grid gap-2">
               <Label for="sub-name">订阅名称</Label>
-              <Input id="sub-name" v-model="form.name" placeholder="请输入订阅名称" />
+              <Input id="sub-name" v-model="form.name" class="bg-background/50" placeholder="请输入订阅名称" />
             </div>
             <div class="grid gap-2">
               <Label for="sub-type">订阅类型</Label>
               <Select v-model="form.type">
-                <SelectTrigger id="sub-type" class="w-full">
+                <SelectTrigger id="sub-type" class="w-full bg-background/50">
                   <SelectValue placeholder="请选择订阅类型" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent class="glass-strong">
                   <SelectItem value="universal">通用</SelectItem>
                   <SelectItem value="mihomo">Mihomo</SelectItem>
                   <SelectItem value="surge">Surge</SelectItem>
@@ -289,7 +296,7 @@
 
           <div class="grid gap-2">
             <Label for="sub-url">订阅链接</Label>
-            <Textarea id="sub-url" v-model="form.url" :rows="3" placeholder="请输入订阅 URL" />
+            <Textarea id="sub-url" v-model="form.url" class="bg-background/50 font-mono text-[12px]" :rows="3" placeholder="请输入订阅 URL" />
           </div>
 
           <div class="grid gap-2">
@@ -302,7 +309,7 @@
                 :min="60"
                 :max="604800"
                 :step="3600"
-                class="w-40"
+                class="w-40 bg-background/50"
               />
               <span class="text-xs text-muted-foreground">秒（建议 86400 = 1 天）</span>
             </div>
@@ -313,6 +320,7 @@
             <Input
               id="sub-health"
               v-model="form.health_check_url"
+              class="bg-background/50 font-mono"
               placeholder="留空使用默认（http://www.gstatic.com/generate_204）"
             />
             <p class="m-0 text-xs text-muted-foreground">
@@ -337,16 +345,14 @@
 
     <!-- 节点预览对话框 -->
     <Dialog v-model:open="nodesPreviewVisible">
-      <DialogContent class="sm:max-w-[800px]">
+      <DialogContent class="glass-strong hairline border-border/50 sm:max-w-[800px]">
         <DialogHeader>
           <DialogTitle>节点预览</DialogTitle>
           <DialogDescription>共 {{ previewNodes.length }} 个节点</DialogDescription>
         </DialogHeader>
 
         <div class="max-h-[500px] overflow-y-auto">
-          <p v-if="previewNodes.length === 0" class="m-0 py-10 text-center text-[13px] text-muted-foreground">
-            暂无节点
-          </p>
+          <EmptyState v-if="previewNodes.length === 0" :icon="Network" title="暂无节点" />
           <div
             v-for="(node, index) in previewNodes"
             :key="node.id"
@@ -357,14 +363,14 @@
               <Network class="size-4 shrink-0 text-muted-foreground" />
               <span class="min-w-0 flex-1 truncate font-medium text-foreground">{{ node.name }}</span>
               <Badge variant="secondary">{{ node.type?.toUpperCase() || 'UNKNOWN' }}</Badge>
-              <span class="cf-mono shrink-0 text-xs text-muted-foreground">{{ node.server }}:{{ node.port }}</span>
+              <span class="num shrink-0 font-mono text-xs text-muted-foreground">{{ node.server }}:{{ node.port }}</span>
               <ChevronDown
                 :class="cn('size-4 shrink-0 text-muted-foreground transition-transform', expandedPreviewNodes.has(index) && 'rotate-180')"
               />
             </div>
             <pre
               v-show="expandedPreviewNodes.has(index)"
-              class="cf-mono mt-2 mb-0 overflow-x-auto rounded-md bg-secondary p-3 text-xs leading-relaxed text-muted-foreground"
+              class="mt-2 mb-0 overflow-x-auto rounded-md border border-border/50 bg-background/50 p-3 font-mono text-xs leading-relaxed text-muted-foreground"
               @click.stop
             >{{ formatNodeToYaml(node) }}</pre>
           </div>
@@ -381,26 +387,22 @@
 <script setup lang="ts">
 import { useProfileStore } from '@/stores/profile'
 import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { ElMessage, ElLoading, ElMessageBox } from 'element-plus'
 import {
   ArrowUpDown,
   ChevronDown,
   Copy,
   Eye,
   EyeOff,
-  LayoutGrid,
-  List,
+  Link2,
   Loader2,
   Network,
   Pencil,
   Plus,
   RefreshCw,
-  Search,
   Trash2
 } from '@lucide/vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -418,7 +420,6 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
@@ -426,22 +427,21 @@ import { subscriptionApi, subStoreUrlApi } from '@/api'
 import type { Subscription } from '@/types'
 import api from '@/api'
 import yaml from 'js-yaml'
-import PageHeader from '@/components/shell/PageHeader.vue'
+import PageHeader from '@/components/common/PageHeader.vue'
 import ScopeBanner from '@/components/shell/ScopeBanner.vue'
 import ReorderBar from '@/components/shell/ReorderBar.vue'
 import DragHandle from '@/components/shell/DragHandle.vue'
 import { useReorder } from '@/composables/useReorder'
+import DataTableShell from '@/components/common/DataTableShell.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import SectionCard from '@/components/common/SectionCard.vue'
+import Toolbar from '@/components/common/Toolbar.vue'
+import ViewToggle from '@/components/common/ViewToggle.vue'
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Motion } from 'motion-v'
+import { confirm, confirmDanger, notify } from '@/lib/feedback'
+import { listItem } from '@/lib/motion'
 
-
-/* 表格骨架样式：本页已脱离全局 .cf-table（仍由未改造页面使用） */
-const TH =
-  'border-b border-border px-5 py-2 text-left text-[11px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase'
-const TD = 'border-b border-border px-5 py-2.5 align-middle'
-
-const VIEW_OPTIONS = [
-  { value: 'list' as const, label: '列表视图', icon: List },
-  { value: 'card' as const, label: '卡片视图', icon: LayoutGrid }
-]
 
 const cfProfileStore = useProfileStore()
 const cfProfileName = computed(
@@ -568,7 +568,7 @@ const loadSubscriptions = async () => {
       }
     })
   } catch (error) {
-    ElMessage.error('加载订阅列表失败')
+    notify.error('加载订阅列表失败')
   }
 }
 
@@ -629,21 +629,15 @@ const checkSubStoreUrl = async (): Promise<boolean> => {
     const response = await subStoreUrlApi.get()
     const url = response.data?.sub_store_url || ''
     if (!url) {
-      await ElMessageBox.confirm(
-        '尚未配置 Sub-Store URL，订阅解析和节点格式转换功能将不可用。请前往「生成配置」页面配置 Sub-Store 地址。',
-        '提示',
-        {
-          confirmButtonText: '继续添加',
-          cancelButtonText: '取消',
-          type: 'warning'
-        }
+      return await confirm(
+        '尚未配置 Sub-Store URL，订阅解析和节点格式转换功能将不可用。请前往「配置生成」页面配置 Sub-Store 地址。',
+        { title: '未配置 Sub-Store', confirmText: '继续添加' }
       )
     }
     return true
-  } catch (error: any) {
-    if (error === 'cancel' || error?.toString?.().includes('cancel')) {
-      return false
-    }
+  } catch (error) {
+    // 读取设置失败不应阻断添加流程
+    console.error('Failed to check Sub-Store URL:', error)
     return true
   }
 }
@@ -676,7 +670,7 @@ const saveSubscription = async () => {
   // 这里在提交前兜底，避免把越界值或空串写进订阅配置
   const interval = Number(form.value.interval)
   if (!Number.isFinite(interval) || interval < INTERVAL_MIN || interval > INTERVAL_MAX) {
-    ElMessage.warning(`更新间隔需在 ${INTERVAL_MIN} ~ ${INTERVAL_MAX} 秒之间`)
+    notify.warning(`更新间隔需在 ${INTERVAL_MIN} ~ ${INTERVAL_MAX} 秒之间`)
     return
   }
   form.value.interval = interval
@@ -684,31 +678,25 @@ const saveSubscription = async () => {
   try {
     if (isEdit.value) {
       await subscriptionApi.update(form.value.id!, form.value)
-      ElMessage.success('更新成功')
+      notify.success('更新成功')
     } else {
       await subscriptionApi.create(form.value)
-      ElMessage.success('添加成功')
+      notify.success('添加成功')
     }
     dialogVisible.value = false
     loadSubscriptions()
   } catch (error) {
-    ElMessage.error('保存失败')
+    notify.error('保存失败')
   }
 }
 
 const deleteSubscription = async (row: Subscription) => {
-  try {
-    // 确认删除
-    await ElMessageBox.confirm(
-      '确定要删除该订阅吗？删除后将同步清理策略组中对该订阅的引用。',
-      '删除确认',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
+  const ok = await confirmDanger('确定要删除该订阅吗？删除后将同步清理策略组中对该订阅的引用。', {
+    title: '删除订阅'
+  })
+  if (!ok) return
 
+  try {
     // 先删除订阅
     await subscriptionApi.delete(row.id)
 
@@ -732,25 +720,22 @@ const deleteSubscription = async (row: Subscription) => {
     }
 
     if (updatedCount > 0) {
-      ElMessage.success(`删除成功，已同步清理 ${updatedCount} 个策略组中的引用`)
+      notify.success(`删除成功，已同步清理 ${updatedCount} 个策略组中的引用`)
     } else {
-      ElMessage.success('删除成功')
+      notify.success('删除成功')
     }
     loadSubscriptions()
   } catch (error: any) {
     if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error('删除失败')
+      notify.error('删除失败')
       console.error('删除订阅失败:', error)
     }
   }
 }
 
 const fetchSubscription = async (row: Subscription) => {
-  const loading = ElLoading.service({
-    lock: true,
-    text: '正在解析节点...',
-    background: 'rgba(0, 0, 0, 0.7)'
-  })
+  // 全屏遮罩改为轻提示：解析期间页面其余部分仍可查看
+  const loadingToast = notify.loading('正在解析节点…')
   try {
     // 使用预览模式
     const { data } = await subscriptionApi.fetch(row.id, true)
@@ -771,10 +756,10 @@ const fetchSubscription = async (row: Subscription) => {
       }
 
       if (previewNodes.value.length === 0) {
-        ElMessage.warning('未解析到任何节点')
+        notify.warning('未解析到任何节点')
       }
     } else {
-      ElMessage.error(data.message || '解析节点失败')
+      notify.error(data.message || '解析节点失败')
     }
   } catch (error: any) {
     console.error('获取节点失败:', error)
@@ -785,9 +770,9 @@ const fetchSubscription = async (row: Subscription) => {
       count: subscriptionStatus.value[row.id]?.count,
       updatedAt: subscriptionStatus.value[row.id]?.updatedAt
     }
-    ElMessage.error(message)
+    notify.error(message)
   } finally {
-    loading.close()
+    notify.dismiss(loadingToast)
   }
 }
 
@@ -829,9 +814,9 @@ const getDisplayUrl = (sub: Subscription) => {
 const toggleSubscriptionEnabled = async (sub: Subscription) => {
   try {
     await subscriptionApi.update(sub.id, sub)
-    ElMessage.success(sub.enabled ? '已启用' : '已禁用')
+    notify.success(sub.enabled ? '已启用' : '已禁用')
   } catch (error) {
-    ElMessage.error('更新状态失败')
+    notify.error('更新状态失败')
     // 回滚状态
     sub.enabled = !sub.enabled
     loadSubscriptions()
@@ -908,9 +893,9 @@ const statusText = (sub: Subscription): string => {
 const copyUrl = async (sub: Subscription) => {
   try {
     await navigator.clipboard.writeText(sub.url || '')
-    ElMessage.success('地址已复制')
+    notify.success('地址已复制')
   } catch {
-    ElMessage.error('复制失败，请手动选择地址')
+    notify.error('复制失败，请手动选择地址')
   }
 }
 
@@ -966,9 +951,9 @@ const dotTone = (sub: Subscription): string => {
 const handleSaveOrder = async () => {
   try {
     await reorder.save()
-    ElMessage.success('顺序已保存，所有配置空间生效')
+    notify.success('顺序已保存，所有配置空间生效')
   } catch (error) {
-    ElMessage.error('保存顺序失败，顺序已还原')
+    notify.error('保存顺序失败，顺序已还原')
   }
 }
 

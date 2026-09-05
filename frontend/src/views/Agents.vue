@@ -1,891 +1,600 @@
 <template>
-  <div class="agents-page">
+  <div>
     <ScopeBanner
       scope="system"
       description="Agent 列表为所有配置空间共有；每个 Agent 各自绑定一个配置空间，推送时使用它绑定的那份配置"
     />
 
-    <PageHeader title="Agent" description="Agent 注册、配置推送与运行状态">
+    <PageHeader
+      eyebrow="System"
+      title="Agent"
+      description="Agent 注册、配置推送与运行状态。"
+    >
       <template #actions>
-        <el-button
-         
-          @click="loadAgents"
-        >
-          <el-icon><Refresh /></el-icon>
+        <Button variant="outline" class="border-border/60 bg-background/40" @click="loadAgents">
+          <RefreshCw class="size-4" />
           刷新
-        </el-button>
-        <el-button
-          type="primary"
-          @click="handleGenerateScript"
-        >
-          <el-icon><Document /></el-icon>
+        </Button>
+        <Button class="shadow-glow" @click="handleGenerateScript">
+          <FileText class="size-4" />
           生成安装脚本
-        </el-button>
+        </Button>
       </template>
     </PageHeader>
 
-    <!-- 统计卡片 -->
-    <div class="stats-cards">
-        <el-card class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon" style="background: var(--cf-primary-soft); color: var(--cf-primary);">
-              <el-icon><Monitor /></el-icon>
-            </div>
-            <div class="stat-info">
-              <div class="stat-value">{{ agents.length }}</div>
-              <div class="stat-label">总 Agent 数</div>
-            </div>
-          </div>
-        </el-card>
-        <el-card class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon" style="background: rgba(139, 143, 255, 0.12); color: var(--cf-primary);">
-              <el-icon><SuccessFilled /></el-icon>
-            </div>
-            <div class="stat-info">
-              <div class="stat-value">{{ onlineCount }}</div>
-              <div class="stat-label">在线</div>
-            </div>
-          </div>
-        </el-card>
-        <el-card class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon" style="background: var(--cf-warning-soft); color: var(--cf-warning);">
-              <el-icon><WarningFilled /></el-icon>
-            </div>
-            <div class="stat-info">
-              <div class="stat-value">{{ offlineCount }}</div>
-              <div class="stat-label">离线</div>
-            </div>
-          </div>
-        </el-card>
-      </div>
-
-    <!-- Agent 列表 -->
-    <div v-if="agents.length === 0" class="empty-state">
-      <el-empty description="暂无 Agent，请生成安装脚本部署" />
+    <!-- 统计 -->
+    <div class="mb-4 grid grid-cols-3 gap-3 max-[640px]:grid-cols-1">
+      <StatTile label="总 Agent 数" :value="agents.length" :icon="Server" tone="primary" />
+      <StatTile label="在线" :value="onlineCount" :icon="CircleCheck" tone="success" />
+      <StatTile label="离线" :value="offlineCount" :icon="TriangleAlert" tone="warning" />
     </div>
 
-    <div v-else class="agents-grid">
-      <div
-        v-for="agent in agents"
-        :key="agent.id"
-        class="agent-card"
+    <SectionCard v-if="agents.length === 0" :padded="false">
+      <EmptyState
+        :icon="Server"
+        title="暂无 Agent"
+        description="生成安装脚本并在目标机器上执行，Agent 注册后会出现在这里。"
       >
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-title">{{ agent.name }}</div>
-          </div>
-          <div class="card-meta">
-            <span class="meta-pill type-pill" :class="agent.service_type === 'mihomo' ? 'type-mihomo' : 'type-mosdns'">
-              {{ agent.service_type === 'mihomo' ? 'Mihomo' : 'MosDNS' }}
-            </span>
-            <span class="meta-pill status-pill" :class="agent.status === 'online' ? 'status-online' : 'status-offline'">
-              {{ agent.status === 'online' ? '在线' : '离线' }}
-            </span>
-            <span v-if="agent.deployment_method" class="meta-pill deploy-pill" :class="'deploy-' + agent.deployment_method">
-              {{ agent.deployment_method === 'shell' ? 'Shell' : agent.deployment_method === 'docker' ? 'Docker' : agent.deployment_method }}
-            </span>
-          </div>
-        </div>
+        <Button @click="handleGenerateScript">
+          <FileText class="size-4" />
+          生成安装脚本
+        </Button>
+      </EmptyState>
+    </SectionCard>
 
-        <div class="card-section">
-          <div class="section-label">
-            <el-icon><Connection /></el-icon>
-            地址
-          </div>
-          <div class="section-value">{{ agent.host }}:{{ agent.port }}</div>
-        </div>
+    <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(360px,1fr))] gap-3 max-md:grid-cols-1">
+      <Motion
+        v-for="(agent, index) in agents"
+        :key="agent.id"
+        v-bind="listItem(index)"
+        class="hairline edge-light relative flex flex-col gap-3.5 overflow-hidden rounded-xl border border-border/35 bg-card/55 p-4 backdrop-blur-xl transition-all duration-300 hover:shadow-glow-soft"
+      >
+        <header class="flex flex-wrap items-center gap-2">
+          <StatusDot
+            :tone="agent.status === 'online' ? 'success' : 'muted'"
+            :pulse="agent.status === 'online'"
+          />
+          <p class="m-0 min-w-0 flex-1 truncate text-[14px] font-semibold text-foreground">
+            {{ agent.name }}
+          </p>
+          <Badge :variant="agent.service_type === 'mihomo' ? 'brand' : 'info'" class="text-[10.5px]">
+            {{ agent.service_type === 'mihomo' ? 'Mihomo' : 'MosDNS' }}
+          </Badge>
+          <Badge v-if="agent.deployment_method" variant="outline" class="text-[10.5px]">
+            {{ agent.deployment_method === 'shell' ? 'Shell' : agent.deployment_method === 'docker' ? 'Docker' : agent.deployment_method }}
+          </Badge>
+        </header>
 
-        <div class="card-section inline">
-          <div class="section-label">
-            <el-icon><Document /></el-icon>
-            配置版本
-          </div>
-          <div class="section-value">{{ agent.config_version || 'N/A' }}</div>
-        </div>
+        <dl class="m-0 grid grid-cols-[76px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[12.5px]">
+          <dt class="text-muted-foreground">地址</dt>
+          <dd class="m-0 truncate font-mono text-foreground">{{ agent.host }}:{{ agent.port }}</dd>
+          <dt class="text-muted-foreground">配置版本</dt>
+          <dd class="m-0 truncate font-mono text-foreground">{{ agent.config_version || 'N/A' }}</dd>
+          <dt class="text-muted-foreground">最后心跳</dt>
+          <dd class="m-0 truncate text-foreground">{{ formatTime(agent.last_heartbeat) }}</dd>
+          <dt class="text-muted-foreground">Agent 版本</dt>
+          <dd class="m-0 truncate font-mono text-foreground">{{ agent.version || 'N/A' }}</dd>
+        </dl>
 
-        <div class="card-section inline">
-          <div class="section-label">
-            <el-icon><Clock /></el-icon>
-            最后心跳
-          </div>
-          <div class="section-value">{{ formatTime(agent.last_heartbeat) }}</div>
-        </div>
-
-        <div class="card-section inline">
-          <div class="section-label">
-            <el-icon><InfoFilled /></el-icon>
-            Agent 版本
-          </div>
-          <div class="section-value">{{ agent.version || 'N/A' }}</div>
-        </div>
-
-        <div class="card-section profile-binding">
-          <div class="section-label">
-            <el-icon><Setting /></el-icon>
-            绑定配置空间
-          </div>
-          <select
-            class="agent-profile-native-select"
-            :value="agent.profile_id || 'default'"
+        <FormField label="绑定配置空间">
+          <Select
+            :model-value="agent.profile_id || 'default'"
             :disabled="bindingAgentId === agent.id"
-            @change="handleAgentProfileChange(agent, $event)"
+            @update:model-value="value => handleAgentProfileChange(agent, String(value))"
           >
-            <option
-              v-for="profile in profiles"
-              :key="profile.id"
-              :value="profile.id"
-            >
-              {{ profile.name }}
-            </option>
-          </select>
-        </div>
+            <SelectTrigger class="h-8 w-full bg-background/50 text-[12.5px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent class="glass-strong">
+              <SelectItem v-for="profile in profiles" :key="profile.id" :value="profile.id">
+                {{ profile.name }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </FormField>
 
         <!-- 系统监控指标 -->
-        <div v-if="agent.system_metrics" class="metrics-section">
-          <div class="metrics-header">
-            <span>系统监控</span>
-            <el-button text size="small" @click="showMetricsDetail(agent)">
-              <el-icon><TrendCharts /></el-icon>
-              详情
-            </el-button>
-          </div>
-
-          <div class="metric-item">
-            <div class="metric-label">
-              <span>CPU</span>
-              <span class="metric-value">{{ formatPercent(agent.system_metrics.cpu?.usage_percent) }}</span>
-            </div>
-            <el-progress
-              :percentage="agent.system_metrics.cpu?.usage_percent || 0"
-              :stroke-width="6"
-              :color="getProgressColor(agent.system_metrics.cpu?.usage_percent)"
-              :show-text="false"
-            />
-          </div>
-
-          <div class="metric-item">
-            <div class="metric-label">
-              <span>内存</span>
-              <span class="metric-value">{{ formatPercent(agent.system_metrics.memory?.used_percent) }}</span>
-            </div>
-            <el-progress
-              :percentage="agent.system_metrics.memory?.used_percent || 0"
-              :stroke-width="6"
-              :color="getProgressColor(agent.system_metrics.memory?.used_percent)"
-              :show-text="false"
-            />
-            <div class="metric-detail">{{ formatBytes(agent.system_metrics.memory?.used) }} / {{ formatBytes(agent.system_metrics.memory?.total) }}</div>
-          </div>
-
-          <div class="metric-item">
-            <div class="metric-label">
-              <span>磁盘</span>
-              <span class="metric-value">{{ formatPercent(agent.system_metrics.disk?.used_percent) }}</span>
-            </div>
-            <el-progress
-              :percentage="agent.system_metrics.disk?.used_percent || 0"
-              :stroke-width="6"
-              :color="getProgressColor(agent.system_metrics.disk?.used_percent)"
-              :show-text="false"
-            />
-            <div class="metric-detail">{{ formatBytes(agent.system_metrics.disk?.used) }} / {{ formatBytes(agent.system_metrics.disk?.total) }}</div>
-          </div>
-
-          <div class="metric-item network">
-            <div class="metric-label">
-              <span>网络速率</span>
-            </div>
-            <div class="network-speeds">
-              <div class="speed-item">
-                <span class="speed-label">↑ 上传</span>
-                <span class="speed-value">{{ formatSpeed(agent.system_metrics.network?.speed_sent) }}</span>
-              </div>
-              <div class="speed-item">
-                <span class="speed-label">↓ 下载</span>
-                <span class="speed-value">{{ formatSpeed(agent.system_metrics.network?.speed_recv) }}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="metric-item traffic-total" v-if="agent.system_metrics.network">
-            <div class="metric-label">
-              <span>总流量</span>
-            </div>
-            <div class="network-speeds">
-              <div class="speed-item">
-                <span class="speed-label">↑ 已发送</span>
-                <span class="speed-value">{{ formatBytesShort(agent.system_metrics.network?.bytes_sent) }}</span>
-              </div>
-              <div class="speed-item">
-                <span class="speed-label">↓ 已接收</span>
-                <span class="speed-value">{{ formatBytesShort(agent.system_metrics.network?.bytes_recv) }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="card-actions">
-          <el-button class="card-btn ghost" size="small" @click="pushConfig(agent)">
-            <el-icon><Upload /></el-icon>
-            推送配置
-          </el-button>
-          <el-button class="card-btn warning" size="small" @click="restartAgent(agent)">
-            <el-icon><RefreshRight /></el-icon>
-            重启
-          </el-button>
-          <el-button class="card-btn success" size="small" @click="viewLogs(agent)">
-            <el-icon><View /></el-icon>
-            日志
-          </el-button>
-        </div>
-        <div class="card-actions" style="margin-top: 8px;">
-          <el-button v-if="agent.has_update" class="card-btn primary" size="small" @click="updateAgent(agent)">
-            <el-icon><Download /></el-icon>
-            更新
-          </el-button>
-          <el-button class="card-btn danger" size="small" @click="uninstallAgent(agent)">
-            <el-icon><Delete /></el-icon>
-            卸载
-          </el-button>
-          <el-button class="card-btn info" size="small" :disabled="!isHeartbeatExpired(agent)" @click="deleteAgent(agent)">
-            <el-icon><Close /></el-icon>
-            删除记录
-          </el-button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 生成安装脚本对话框 -->
-    <el-dialog
-      v-model="scriptDialogVisible"
-      title="生成 Agent 安装脚本"
-      width="700px"
-      :close-on-click-modal="false"
-      append-to-body
-      destroy-on-close
-      class="script-dialog"
-    >
-      <el-form v-if="scriptDialogVisible" :key="formKey" :model="scriptForm" label-width="120px">
-        <el-form-item label="安装类型">
-          <div>
-            <el-radio-group v-model="scriptForm.installType" @change="onInstallTypeChange">
-              <el-radio label="shell">Shell 安装</el-radio>
-              <el-radio label="docker">Docker 容器</el-radio>
-            </el-radio-group>
-            <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.5;">
-              <template v-if="scriptForm.installType === 'shell'">
-                Shell 安装：将 Agent 直接安装到系统服务
-              </template>
-              <template v-else>
-                Docker 容器：使用 Docker 容器运行 Agent，内置 Mihomo/MosDNS 服务
-              </template>
-            </div>
-          </div>
-        </el-form-item>
-
-        <el-form-item label="Docker 模式" v-if="scriptForm.installType === 'docker'">
-          <el-radio-group v-model="scriptForm.dockerMode" @change="onDockerModeChange">
-            <el-radio label="mihomo">Mihomo (Clash)</el-radio>
-            <el-radio label="mosdns">MosDNS</el-radio>
-            <el-radio label="aio">All-in-One (三合一)</el-radio>
-          </el-radio-group>
-          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.5;">
-            <template v-if="scriptForm.dockerMode === 'mihomo'">
-              内置 Mihomo，一个容器运行 Agent+Mihomo
-            </template>
-            <template v-else-if="scriptForm.dockerMode === 'mosdns'">
-              内置 MosDNS，一个容器运行 Agent+MosDNS
-            </template>
-            <template v-else>
-              内置 Mihomo+MosDNS，一个容器运行 Agent+Mihomo+MosDNS
-            </template>
-          </div>
-        </el-form-item>
-
-        <el-form-item label="Agent 名称">
-          <el-input v-model="scriptForm.name" placeholder="例如：香港服务器" />
-        </el-form-item>
-
-        <el-form-item v-if="scriptForm.installType !== 'docker'" label="服务类型">
-          <el-radio-group
-            v-model="scriptForm.type"
-            @change="onServiceTypeChange"
-          >
-            <el-radio
-              v-for="option in serviceTypeOptions"
-              :key="option.value"
-              :label="option.value"
-            >
-              {{ option.label }}
-            </el-radio>
-          </el-radio-group>
-        </el-form-item>
-
-        <el-form-item label="Agent 端口" v-if="scriptForm.installType !== 'docker'">
-          <el-input-number v-model="scriptForm.port" :min="1024" :max="65535" />
-        </el-form-item>
-
-        <el-form-item label="Agent 端口" v-else>
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            <div v-if="scriptForm.dockerMode === 'mihomo' || scriptForm.dockerMode === 'aio'" style="display: flex; align-items: center; gap: 8px;">
-              <span style="color: var(--cf-fg-2); font-size: 14px; min-width: 120px;">• Mihomo Agent:</span>
-              <el-input-number v-model="scriptForm.mihomoAgentPort" :min="1024" :max="65535" size="small" style="width: 140px;" />
-            </div>
-            <div v-if="scriptForm.dockerMode === 'mosdns' || scriptForm.dockerMode === 'aio'" style="display: flex; align-items: center; gap: 8px;">
-              <span style="color: var(--cf-fg-2); font-size: 14px; min-width: 120px;">• MosDNS Agent:</span>
-              <el-input-number v-model="scriptForm.mosdnsAgentPort" :min="1024" :max="65535" size="small" style="width: 140px;" />
-            </div>
-          </div>
-        </el-form-item>
-
-        <el-form-item label="Agent IP">
-          <el-input v-model="scriptForm.agent_ip" placeholder="可选，留空则自动获取">
-            <template #append>
-              <el-tooltip content="可选：指定 Agent 的 IP 地址，留空则脚本会自动获取" placement="top">
-                <el-icon><QuestionFilled /></el-icon>
-              </el-tooltip>
-            </template>
-          </el-input>
-        </el-form-item>
-
-        <el-form-item label="配置文件路径" v-if="scriptForm.installType === 'shell'">
-          <el-input v-model="scriptForm.config_path" placeholder="/etc/mihomo/config.yaml">
-            <template #append>
-              <el-tooltip content="Agent 拉取配置后保存的文件路径" placement="top">
-                <el-icon><QuestionFilled /></el-icon>
-              </el-tooltip>
-            </template>
-          </el-input>
-        </el-form-item>
-
-        <el-form-item label="重启命令" v-if="scriptForm.installType === 'shell'">
-          <el-input v-model="scriptForm.restart_command" placeholder="命令或URL">
-            <template #append>
-              <el-tooltip content="用于完全重启服务，会短暂中断" placement="top">
-                <el-icon><QuestionFilled /></el-icon>
-              </el-tooltip>
-            </template>
-          </el-input>
-          <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px; line-height: 1.5;">
-            支持两种方式：<br/>
-            • 命令方式：systemctl restart mihomo<br/>
-            • URL方式：http://127.0.0.1:9090/restart
-          </div>
-        </el-form-item>
-
-        <!-- Docker 特有字段 -->
-        <template v-if="scriptForm.installType === 'docker'">
-          <el-alert
-            type="success"
-            :closable="false"
-            style="margin-bottom: 16px;"
-            v-if="scriptForm.dockerMode === 'mihomo'"
-          >
-            <template #title>
-              <div style="line-height: 1.6; font-size: 13px;">
-                <strong>Docker Mihomo Agent 使用说明：</strong><br/>
-                • 该镜像内置了 Mihomo，Agent 和 Mihomo 在同一个容器中运行<br/>
-                • 无需单独部署 Mihomo 服务，一个容器即可完成<br/>
-                • 支持自动配置拉取、更新和服务重启<br/>
-                • 适合快速部署和测试环境
-              </div>
-            </template>
-          </el-alert>
-
-          <el-alert
-            type="success"
-            :closable="false"
-            style="margin-bottom: 16px;"
-            v-if="scriptForm.dockerMode === 'mosdns'"
-          >
-            <template #title>
-              <div style="line-height: 1.6; font-size: 13px;">
-                <strong>Docker mosdns Agent 使用说明：</strong><br/>
-                • 该镜像内置了 mosdns，Agent 和 mosdns 在同一个容器中运行<br/>
-                • 无需单独部署 mosdns 服务，一个容器即可完成<br/>
-                • 支持自动配置拉取、更新和服务重启<br/>
-                • 适合快速部署和测试环境
-              </div>
-            </template>
-          </el-alert>
-
-          <el-alert
-            type="success"
-            :closable="false"
-            style="margin-bottom: 16px;"
-            v-if="scriptForm.dockerMode === 'aio'"
-          >
-            <template #title>
-              <div style="line-height: 1.6; font-size: 13px;">
-                <strong>Docker All-in-One Agent 使用说明：</strong><br/>
-                • 该镜像内置了 Mihomo 和 Mosdns，可同时运行多个服务<br/>
-                • Mihomo Agent (端口 8080) + Mosdns Agent (端口 8081)<br/>
-                • 支持通过环境变量启用/禁用任一服务<br/>
-                • 适合需要同时部署 Mihomo 和 Mosdns 的场景
-              </div>
-            </template>
-          </el-alert>
-
-          <el-form-item label="Docker 镜像">
-            <el-input v-model="scriptForm.dockerImage" placeholder="默认使用官方镜像">
-              <template #append>
-                <el-tooltip content="可选：指定自定义 Docker 镜像，留空则使用默认镜像" placement="top">
-                  <el-icon><QuestionFilled /></el-icon>
-                </el-tooltip>
-              </template>
-            </el-input>
-          </el-form-item>
-
-          <el-form-item label="Agent 容器名">
-            <el-input v-model="scriptForm.containerName" placeholder="configflow-agent">
-              <template #append>
-                <el-tooltip content="Agent 的 Docker 容器名称" placement="top">
-                  <el-icon><QuestionFilled /></el-icon>
-                </el-tooltip>
-              </template>
-            </el-input>
-          </el-form-item>
-
-
-          <el-form-item label="网络模式">
-            <el-radio-group v-model="scriptForm.networkMode">
-              <el-radio
-                v-for="option in networkModeOptions"
-                :key="option.value"
-                :label="option.value"
-              >
-                {{ option.label }}
-              </el-radio>
-            </el-radio-group>
-            <div style="margin-top: 8px; color: var(--cf-fg-2); font-size: 12px">
-              host 模式可直接访问主机网络，bridge 模式需要端口映射
-            </div>
-          </el-form-item>
-
-          </template>
-      </el-form>
-
-      <el-divider content-position="left">
-        <span style="font-weight: 600; color: #6B73FF;">一键安装命令</span>
-      </el-divider>
-
-      <div v-if="installCommand || dockerComposeContent || dockerRunCommand" class="install-command-box">
-        <el-alert
-          type="success"
-          :closable="false"
-          style="margin-bottom: 16px;"
-          v-if="scriptForm.installType === 'shell'"
+        <section
+          v-if="agent.system_metrics"
+          class="flex flex-col gap-2.5 rounded-lg border border-border/40 bg-background/40 p-3"
         >
-          <template #title>
-            <div style="line-height: 1.6;">
-              在远程服务器上执行以下命令即可自动安装 Agent<br/>
-              <span style="font-size: 12px; color: var(--cf-success);">
-                ✓ 支持 Ubuntu、Debian、CentOS、Alpine Linux 等系统<br/>
-                ✓ 自动检测并配置 systemd 或 OpenRC 服务管理器
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+              系统监控
+            </span>
+            <Button variant="ghost" size="sm" class="ml-auto" @click="showMetricsDetail(agent)">
+              <ChartLine class="size-3.5" />
+              详情
+            </Button>
+          </div>
+
+          <div v-for="metric in metricsOf(agent)" :key="metric.label" class="flex flex-col gap-1">
+            <div class="flex items-baseline gap-2 text-[12px]">
+              <span class="text-muted-foreground">{{ metric.label }}</span>
+              <span class="num ml-auto font-medium" :style="{ color: metric.color }">
+                {{ metric.text }}
               </span>
             </div>
-          </template>
-        </el-alert>
-
-        <el-alert
-          type="info"
-          :closable="false"
-          style="margin-bottom: 16px;"
-          v-if="scriptForm.installType === 'docker'"
-        >
-          <template #title>
-            <div style="line-height: 1.6;">
-              <template v-if="scriptForm.dockerMode === 'mihomo'">
-                使用 Docker 快速部署 Mihomo Agent<br/>
-                <span style="font-size: 12px; color: var(--cf-primary);">
-                  ✓ 内置 Mihomo，一个容器运行 Agent+Mihomo<br/>
-                  ✓ 支持自动配置拉取、更新和服务重启
-                </span>
-              </template>
-              <template v-else-if="scriptForm.dockerMode === 'mosdns'">
-                使用 Docker 快速部署 mosdns Agent<br/>
-                <span style="font-size: 12px; color: var(--cf-primary);">
-                  ✓ 内置 mosdns，一个容器运行 Agent+mosdns<br/>
-                  ✓ 支持自动配置拉取、更新和服务重启
-                </span>
-              </template>
-              <template v-else>
-                使用 Docker 快速部署 All-in-One Agent<br/>
-                <span style="font-size: 12px; color: var(--cf-primary);">
-                  ✓ 内置 Mihomo 和 mosdns，一个容器同时运行两个服务<br/>
-                  ✓ 支持通过环境变量控制启用哪些服务
-                </span>
-              </template>
-            </div>
-          </template>
-        </el-alert>
-
-        <!-- Shell 安装命令 -->
-        <template v-if="scriptForm.installType === 'shell'">
-          <!-- Ubuntu/Debian/CentOS 命令 -->
-          <div class="command-section">
-            <div class="command-label">
-              <span style="font-weight: 600; color: var(--cf-primary);">Ubuntu / Debian / CentOS</span>
-              <span style="font-size: 12px; color: var(--cf-fg-2); margin-left: 8px;">(使用 systemd)</span>
-            </div>
-            <div class="command-container">
-              <el-input
-                v-model="installCommand"
-                type="textarea"
-                :rows="3"
-                readonly
-                class="command-input"
+            <!-- 用原生进度条而不是引第三方组件：只需要一条带阈值配色的细条 -->
+            <div class="h-1.5 overflow-hidden rounded-full bg-border/60">
+              <div
+                class="h-full rounded-full transition-[width] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
+                :style="{ width: `${Math.min(100, metric.percent)}%`, backgroundColor: metric.color }"
               />
-              <el-button
-                type="primary"
-                size="large"
-                @click="copyCommand"
-                style="margin-top: 12px; width: 100%;"
-              >
-                <el-icon><DocumentCopy /></el-icon>
-                复制命令
-              </el-button>
             </div>
+            <p v-if="metric.detail" class="num m-0 text-[11px] text-muted-foreground">
+              {{ metric.detail }}
+            </p>
           </div>
 
-          <!-- Alpine Linux 命令 -->
-          <div class="command-section" style="margin-top: 20px;">
-            <div class="command-label">
-              <span style="font-weight: 600; color: var(--cf-success);">Alpine Linux</span>
-              <span style="font-size: 12px; color: var(--cf-fg-2); margin-left: 8px;">(使用 OpenRC)</span>
-            </div>
-            <div class="command-container">
-              <el-input
-                v-model="installCommandAlpine"
-                type="textarea"
-                :rows="3"
-                readonly
-                class="command-input alpine"
-              />
-              <el-button
-                type="success"
-                size="large"
-                @click="copyCommandAlpine"
-                style="margin-top: 12px; width: 100%;"
-              >
-                <el-icon><DocumentCopy /></el-icon>
-                复制命令
-              </el-button>
+          <div class="grid grid-cols-2 gap-2 border-0 border-t border-border/40 pt-2.5">
+            <div v-for="flow in flowsOf(agent)" :key="flow.label" class="min-w-0">
+              <p class="m-0 text-[11px] text-muted-foreground">{{ flow.label }}</p>
+              <p class="num m-0 truncate text-[12.5px] font-medium text-foreground">{{ flow.value }}</p>
             </div>
           </div>
-        </template>
+        </section>
 
-        <!-- Docker Compose 内容 -->
-        <template v-if="scriptForm.installType === 'docker'">
-          <!-- Docker Run 命令 -->
-          <div class="command-section">
-            <div class="command-label">
-              <span style="font-weight: 600; color: var(--cf-primary);">Docker Run 命令</span>
-              <span style="font-size: 12px; color: var(--cf-fg-2); margin-left: 8px;">(推荐)</span>
-            </div>
-            <div class="command-container">
-              <el-input
-                v-model="dockerRunCommand"
-                type="textarea"
-                :rows="8"
-                readonly
-                class="command-input docker-run"
-              />
-              <el-button
-                type="primary"
-                size="large"
-                @click="copyDockerRun"
-                style="margin-top: 12px; width: 100%;"
+        <footer class="mt-auto flex flex-wrap items-center gap-1 border-0 border-t border-border/50 pt-3">
+          <Button variant="ghost" size="sm" @click="pushConfig(agent)">
+            <Upload class="size-3.5" />
+            推送
+          </Button>
+          <Button variant="ghost" size="sm" @click="restartAgent(agent)">
+            <RotateCw class="size-3.5" />
+            重启
+          </Button>
+          <Button variant="ghost" size="sm" @click="viewLogs(agent)">
+            <ScrollText class="size-3.5" />
+            日志
+          </Button>
+          <Button v-if="agent.has_update" variant="ghost" size="sm" class="text-primary-accent" @click="updateAgent(agent)">
+            <Download class="size-3.5" />
+            更新
+          </Button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <Button variant="ghost" size="icon-sm" class="ml-auto" title="更多操作" aria-label="更多操作">
+                <MoreHorizontal class="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" class="glass-strong">
+              <DropdownMenuItem class="text-destructive-accent" @select="uninstallAgent(agent)">
+                <Trash2 class="size-4" />
+                卸载 Agent
+              </DropdownMenuItem>
+              <DropdownMenuItem :disabled="!isHeartbeatExpired(agent)" @select="deleteAgent(agent)">
+                <X class="size-4" />
+                删除记录
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </footer>
+      </Motion>
+    </div>
+
+    <!-- ===== 生成安装脚本 ===== -->
+    <Dialog v-model:open="scriptDialogVisible">
+      <DialogContent class="glass-strong hairline max-w-[760px] border-border/50">
+        <DialogHeader>
+          <DialogTitle>生成 Agent 安装脚本</DialogTitle>
+          <DialogDescription>填写部署参数，生成可直接在目标机器执行的一键安装命令。</DialogDescription>
+        </DialogHeader>
+
+        <div class="flex max-h-[62dvh] flex-col gap-4 overflow-y-auto pr-1">
+          <FormField label="安装类型" :hint="installTypeHint">
+            <RadioGroup v-model="scriptForm.installType" class="flex gap-2" @update:model-value="onInstallTypeChange">
+              <label
+                v-for="option in INSTALL_TYPES"
+                :key="option.value"
+                :class="chipClass(scriptForm.installType === option.value)"
               >
-                <el-icon><DocumentCopy /></el-icon>
-                复制 Docker Run 命令
-              </el-button>
-            </div>
-          </div>
+                <RadioGroupItem :value="option.value" />
+                {{ option.label }}
+              </label>
+            </RadioGroup>
+          </FormField>
 
-          <!-- Docker Compose 文件 -->
-          <div class="command-section" style="margin-top: 20px;">
-            <div class="command-label">
-              <span style="font-weight: 600; color: var(--cf-success);">docker-compose.yml</span>
-              <span style="font-size: 12px; color: var(--cf-fg-2); margin-left: 8px;">(可选)</span>
-            </div>
-            <div class="command-container">
-              <el-input
-                v-model="dockerComposeContent"
-                type="textarea"
-                :rows="15"
-                readonly
-                class="command-input docker-compose"
-              />
-              <el-button
-                type="success"
-                size="large"
-                @click="copyDockerCompose"
-                style="margin-top: 12px; width: 100%;"
+          <FormField v-if="scriptForm.installType === 'docker'" label="Docker 模式" :hint="dockerModeHint">
+            <RadioGroup v-model="scriptForm.dockerMode" class="flex flex-wrap gap-2" @update:model-value="onDockerModeChange">
+              <label
+                v-for="option in DOCKER_MODES"
+                :key="option.value"
+                :class="chipClass(scriptForm.dockerMode === option.value)"
               >
-                <el-icon><DocumentCopy /></el-icon>
-                复制 docker-compose.yml
-              </el-button>
-            </div>
-          </div>
+                <RadioGroupItem :value="option.value" />
+                {{ option.label }}
+              </label>
+            </RadioGroup>
+          </FormField>
 
-          <el-alert
-            type="info"
-            :closable="false"
-            style="margin-top: 16px;"
-          >
-            <template #title>
-              <div style="line-height: 1.6; font-size: 13px;">
-                <strong>部署方式：</strong><br/>
-                <br/>
-                <strong style="color: var(--cf-primary);">方式一：使用 Docker Run（推荐）</strong><br/>
-                直接在服务器上执行上面的 Docker Run 命令即可<br/>
-                <br/>
-                <strong style="color: var(--cf-success);">方式二：使用 Docker Compose</strong><br/>
-                1. 保存 docker-compose.yml 文件<br/>
-                2. 在同目录执行: <code style="background: var(--cf-s2); padding: 2px 6px; border-radius: 3px;">docker-compose up -d</code><br/>
-                3. 查看日志: <code style="background: var(--cf-s2); padding: 2px 6px; border-radius: 3px;">docker-compose logs -f</code><br/>
-                <br/>
-                <strong style="color: var(--cf-warning);">重要提示：</strong><br/>
-                <template v-if="scriptForm.dockerMode === 'mihomo'">
-                  • 该镜像内置了 Mihomo，Agent 和 Mihomo 在同一容器中运行<br/>
-                  • 会自动创建 ./mihomo 目录存储配置文件<br/>
-                  • 代理端口：7890 (HTTP)、7891 (SOCKS5)、9090 (API)
-                </template>
-                <template v-else-if="scriptForm.dockerMode === 'mosdns'">
-                  • 该镜像内置了 mosdns，Agent 和 mosdns 在同一容器中运行<br/>
-                  • 会自动创建 ./mosdns 目录存储配置文件<br/>
-                  • DNS 端口：53 (TCP/UDP)
-                </template>
-                <template v-else>
-                  • 该镜像内置了 Mihomo 和 mosdns，可同时运行两个服务<br/>
-                  • 会自动创建 ./mihomo 和 ./mosdns 目录存储配置文件<br/>
-                  • Mihomo Agent: 8080，mosdns Agent: 8081<br/>
-                  • 可通过环境变量 ENABLE_MIHOMO/ENABLE_MOSDNS 控制启用哪些服务
-                </template>
+          <FormField label="Agent 名称" html-for="agent-name">
+            <Input id="agent-name" v-model="scriptForm.name" class="bg-background/50" placeholder="例如：香港服务器" />
+          </FormField>
+
+          <FormField v-if="scriptForm.installType !== 'docker'" label="服务类型">
+            <RadioGroup v-model="scriptForm.type" class="flex flex-wrap gap-2" @update:model-value="onServiceTypeChange">
+              <label
+                v-for="option in serviceTypeOptions"
+                :key="option.value"
+                :class="chipClass(scriptForm.type === option.value)"
+              >
+                <RadioGroupItem :value="option.value" />
+                {{ option.label }}
+              </label>
+            </RadioGroup>
+          </FormField>
+
+          <FormField v-if="scriptForm.installType !== 'docker'" label="Agent 端口" html-for="agent-port">
+            <Input
+              id="agent-port"
+              v-model.number="scriptForm.port"
+              type="number"
+              :min="1024"
+              :max="65535"
+              class="w-44 bg-background/50"
+            />
+          </FormField>
+
+          <FormField v-else label="Agent 端口">
+            <div class="flex flex-col gap-2">
+              <div
+                v-if="scriptForm.dockerMode === 'mihomo' || scriptForm.dockerMode === 'aio'"
+                class="flex items-center gap-2"
+              >
+                <span class="w-32 shrink-0 text-[12.5px] text-muted-foreground">Mihomo Agent</span>
+                <Input
+                  v-model.number="scriptForm.mihomoAgentPort"
+                  type="number"
+                  :min="1024"
+                  :max="65535"
+                  class="w-36 bg-background/50"
+                />
               </div>
-            </template>
-          </el-alert>
-        </template>
+              <div
+                v-if="scriptForm.dockerMode === 'mosdns' || scriptForm.dockerMode === 'aio'"
+                class="flex items-center gap-2"
+              >
+                <span class="w-32 shrink-0 text-[12.5px] text-muted-foreground">MosDNS Agent</span>
+                <Input
+                  v-model.number="scriptForm.mosdnsAgentPort"
+                  type="number"
+                  :min="1024"
+                  :max="65535"
+                  class="w-36 bg-background/50"
+                />
+              </div>
+            </div>
+          </FormField>
 
-        <el-divider />
-
-        <el-collapse v-model="activeCollapse" style="margin-top: 16px;">
-          <el-collapse-item title="查看完整安装脚本" name="script">
-            <el-input
-              v-model="installScript"
-              type="textarea"
-              :rows="15"
-              readonly
-              class="script-textarea"
+          <FormField label="Agent IP" html-for="agent-ip" hint="可选：指定 Agent 的 IP 地址，留空则脚本会自动获取。">
+            <Input
+              id="agent-ip"
+              v-model="scriptForm.agent_ip"
+              class="bg-background/50 font-mono"
+              placeholder="留空则自动获取"
             />
-          </el-collapse-item>
-        </el-collapse>
-      </div>
+          </FormField>
 
-      <el-button
-        v-else
-        type="primary"
-        size="large"
-        @click="generateScript"
-        style="width: 100%;"
-      >
-        <el-icon><Document /></el-icon>
-        {{ scriptForm.installType === 'docker' ? '生成 Docker 部署命令' : '生成安装命令' }}
-      </el-button>
-
-      <template #footer>
-        <el-button @click="scriptDialogVisible = false">关闭</el-button>
-        <el-button
-          v-if="installCommand"
-          @click="resetForm"
-        >
-          重新生成
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 查看日志对话框 -->
-    <el-dialog
-      v-model="logsDialogVisible"
-      :title="`Agent 日志 - ${currentAgent?.name}`"
-      width="900px"
-      :close-on-click-modal="false"
-    >
-      <div class="logs-config-section">
-        <el-form :inline="true" size="default">
-          <el-form-item label="日志文件">
-            <el-select
-              v-model="selectedLogPath"
-              placeholder="选择日志文件"
-              class="log-file-select"
-              @change="onLogPathChange"
-            >
-              <el-option
-                v-for="opt in logPathOptions"
-                :key="opt.value"
-                :label="opt.label"
-                :value="opt.value"
+          <template v-if="scriptForm.installType === 'shell'">
+            <FormField label="配置文件路径" html-for="agent-config-path" hint="Agent 拉取配置后保存的文件路径。">
+              <Input
+                id="agent-config-path"
+                v-model="scriptForm.config_path"
+                class="bg-background/50 font-mono"
+                placeholder="/etc/mihomo/config.yaml"
               />
-              <el-option label="自定义路径..." value="custom" />
-            </el-select>
-          </el-form-item>
+            </FormField>
 
-          <el-form-item v-if="selectedLogPath === 'custom'" label="">
-            <el-input
-              v-model="customLogPath"
-              placeholder="/var/log/your-file.log"
-              style="width: 300px"
-              @keyup.enter="validateAndLoadCustomPath"
+            <FormField
+              label="重启命令"
+              html-for="agent-restart"
+              hint="用于完全重启服务，会短暂中断。支持命令方式（systemctl restart mihomo）或 URL 方式（http://127.0.0.1:9090/restart）。"
             >
-              <template #append>
-                <el-button @click="validateAndLoadCustomPath" :loading="validatingPath">
-                  验证
-                </el-button>
-              </template>
-            </el-input>
-          </el-form-item>
-        </el-form>
-      </div>
+              <Input
+                id="agent-restart"
+                v-model="scriptForm.restart_command"
+                class="bg-background/50 font-mono"
+                placeholder="命令或 URL"
+              />
+            </FormField>
+          </template>
 
-      <div class="logs-container">
-        <el-input
-          ref="logsTextareaRef"
-          v-model="logs"
-          type="textarea"
-          :rows="18"
-          readonly
-          class="logs-textarea"
-          placeholder="暂无日志"
-        />
-      </div>
+          <template v-if="scriptForm.installType === 'docker'">
+            <InfoNote>
+              <p><strong class="text-foreground">{{ dockerNote.title }}</strong></p>
+              <p v-for="line in dockerNote.lines" :key="line">• {{ line }}</p>
+            </InfoNote>
 
-      <template #footer>
-        <div class="logs-footer">
-          <div class="logs-footer-left">
-            <el-switch
-              v-if="isMainAgentLog"
-              v-model="loggingEnabled"
-              @change="toggleLogging"
-              active-text="日志已启用"
-              inactive-text="日志已禁用"
-              :loading="togglingLogging"
+            <FormField label="Docker 镜像" html-for="docker-image" hint="可选：留空则使用默认官方镜像。">
+              <Input
+                id="docker-image"
+                v-model="scriptForm.dockerImage"
+                class="bg-background/50 font-mono"
+                placeholder="默认使用官方镜像"
+              />
+            </FormField>
+
+            <FormField label="Agent 容器名" html-for="docker-container" hint="Agent 的 Docker 容器名称。">
+              <Input
+                id="docker-container"
+                v-model="scriptForm.containerName"
+                class="bg-background/50 font-mono"
+                placeholder="configflow-agent"
+              />
+            </FormField>
+
+            <FormField label="网络模式" hint="host 模式可直接访问主机网络，bridge 模式需要端口映射。">
+              <RadioGroup v-model="scriptForm.networkMode" class="flex flex-wrap gap-2">
+                <label
+                  v-for="option in networkModeOptions"
+                  :key="option.value"
+                  :class="chipClass(scriptForm.networkMode === option.value)"
+                >
+                  <RadioGroupItem :value="option.value" />
+                  {{ option.label }}
+                </label>
+              </RadioGroup>
+            </FormField>
+          </template>
+
+          <LabeledDivider label="一键安装命令" />
+
+          <template v-if="installCommand || dockerComposeContent || dockerRunCommand">
+            <div v-for="block in commandBlocks" :key="block.title" class="flex flex-col gap-2">
+              <div class="flex items-baseline gap-2">
+                <span class="text-[12.5px] font-semibold text-foreground">{{ block.title }}</span>
+                <span class="text-[11.5px] text-muted-foreground">{{ block.note }}</span>
+              </div>
+              <Textarea
+                :model-value="block.value"
+                readonly
+                :rows="block.rows"
+                class="bg-background/50 font-mono text-[11.5px]"
+              />
+              <Button variant="outline" class="border-border/60 bg-background/40" @click="block.copy">
+                <Copy class="size-4" />
+                复制
+              </Button>
+            </div>
+
+            <Collapsible v-model:open="scriptPanelOpen">
+              <CollapsibleTrigger as-child>
+                <button
+                  type="button"
+                  class="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-border/50 bg-background/40 px-3 py-2 text-left text-[13px] text-muted-foreground transition-colors hover:border-border-strong"
+                >
+                  查看完整安装脚本
+                  <ChevronDown
+                    class="ml-auto size-3.5 transition-transform duration-200"
+                    :class="scriptPanelOpen && 'rotate-180'"
+                  />
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <Textarea
+                  :model-value="installScript"
+                  readonly
+                  :rows="15"
+                  class="mt-2 bg-background/50 font-mono text-[11.5px]"
+                />
+              </CollapsibleContent>
+            </Collapsible>
+          </template>
+
+          <Button v-else class="w-full shadow-glow" @click="generateScript">
+            <FileText class="size-4" />
+            {{ scriptForm.installType === 'docker' ? '生成 Docker 部署命令' : '生成安装命令' }}
+          </Button>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" @click="scriptDialogVisible = false">关闭</Button>
+          <Button v-if="installCommand" variant="outline" @click="resetForm">重新生成</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- ===== Agent 日志 ===== -->
+    <Dialog v-model:open="logsDialogVisible">
+      <DialogContent class="glass-strong hairline max-w-[900px] border-border/50">
+        <DialogHeader>
+          <DialogTitle>Agent 日志 · {{ currentAgent?.name }}</DialogTitle>
+          <DialogDescription>选择日志文件后查看内容，可清空或刷新。</DialogDescription>
+        </DialogHeader>
+
+        <div class="flex flex-col gap-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <Select v-model="selectedLogPath" @update:model-value="value => onLogPathChange(String(value))">
+              <SelectTrigger class="h-9 w-[260px] bg-background/50 text-[13px]">
+                <SelectValue placeholder="选择日志文件" />
+              </SelectTrigger>
+              <SelectContent class="glass-strong">
+                <SelectItem v-for="opt in logPathOptions" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </SelectItem>
+                <SelectItem value="custom">自定义路径…</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <template v-if="selectedLogPath === 'custom'">
+              <Input
+                v-model="customLogPath"
+                class="w-[300px] bg-background/50 font-mono"
+                placeholder="/var/log/your-file.log"
+                @keyup.enter="validateAndLoadCustomPath"
+              />
+              <Button
+                variant="outline"
+                class="border-border/60 bg-background/40"
+                :disabled="validatingPath"
+                @click="validateAndLoadCustomPath"
+              >
+                <Loader2 v-if="validatingPath" class="size-4 animate-spin" />
+                验证
+              </Button>
+            </template>
+          </div>
+
+          <pre
+            ref="logsPaneRef"
+            class="m-0 max-h-[46dvh] overflow-auto rounded-lg border border-border/50 bg-background/45 p-3 font-mono text-[11.5px] leading-[1.7] whitespace-pre-wrap text-foreground/85"
+          >{{ logs || '暂无日志' }}</pre>
+        </div>
+
+        <DialogFooter class="sm:justify-between">
+          <label
+            v-if="isMainAgentLog"
+            class="flex items-center gap-2 text-[12.5px] text-muted-foreground"
+          >
+            <Switch
+              :model-value="loggingEnabled"
+              :disabled="togglingLogging"
+              @update:model-value="value => toggleLogging(Boolean(value))"
             />
-          </div>
-          <div class="logs-footer-right">
-            <el-button @click="logsDialogVisible = false">关闭</el-button>
-            <el-button type="danger" plain @click="clearLogs">
-              <el-icon><Delete /></el-icon>
+            {{ loggingEnabled ? '日志已启用' : '日志已禁用' }}
+          </label>
+          <div class="flex items-center gap-2">
+            <Button variant="outline" @click="logsDialogVisible = false">关闭</Button>
+            <Button
+              variant="outline"
+              class="border-destructive-accent/30 bg-destructive-soft/40 text-destructive-accent"
+              @click="clearLogs"
+            >
+              <Trash2 class="size-4" />
               清空
-            </el-button>
-            <el-button type="primary" @click="refreshLogs">
-              <el-icon><Refresh /></el-icon>
+            </Button>
+            <Button @click="refreshLogs">
+              <RefreshCw class="size-4" />
               刷新
-            </el-button>
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- ===== 监控详情 ===== -->
+    <Dialog v-model:open="metricsDialogVisible">
+      <DialogContent class="glass-strong hairline max-w-[1100px] border-border/50">
+        <DialogHeader>
+          <DialogTitle>系统监控 · {{ currentMetricsAgent?.name }}</DialogTitle>
+          <DialogDescription>最近 24 小时的监控数据，共 {{ metricsHistory.length }} 个数据点。</DialogDescription>
+        </DialogHeader>
+
+        <LoadingRows v-if="metricsLoading" :rows="4" />
+
+        <EmptyState
+          v-else-if="metricsHistory.length === 0"
+          :icon="ChartLine"
+          title="暂无监控数据"
+          description="Agent 上报心跳后，监控数据会在这里按时间聚合展示。"
+        />
+
+        <div v-else class="flex max-h-[68dvh] flex-col gap-3 overflow-y-auto pr-1">
+          <div
+            v-if="currentMetricsAgent?.system_metrics"
+            class="grid grid-cols-5 gap-2 max-[900px]:grid-cols-2"
+          >
+            <div
+              v-for="item in metricsSummary"
+              :key="item.label"
+              class="rounded-lg border border-border/50 bg-background/40 p-3"
+            >
+              <p class="m-0 text-[11px] text-muted-foreground">{{ item.label }}</p>
+              <p class="num mt-1 mb-0 text-[15px] font-semibold" :style="{ color: item.color }">
+                {{ item.value }}
+              </p>
+              <p v-if="item.detail" class="num mt-0.5 mb-0 text-[11px] text-muted-foreground">
+                {{ item.detail }}
+              </p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 max-[900px]:grid-cols-1">
+            <div
+              v-for="chart in metricsCharts"
+              :key="chart.key"
+              class="rounded-xl border border-border/50 bg-background/40 p-2"
+            >
+              <v-chart :option="chart.option" :autoresize="true" style="height: 280px" />
+            </div>
           </div>
         </div>
-      </template>
-    </el-dialog>
 
-    <!-- 监控详情对话框 -->
-    <el-dialog
-      v-model="metricsDialogVisible"
-      :title="`系统监控 - ${currentMetricsAgent?.name}`"
-      width="90%"
-      :close-on-click-modal="false"
-      top="5vh"
-    >
-      <div v-loading="metricsLoading" class="metrics-dialog-content">
-        <div v-if="metricsHistory.length === 0 && !metricsLoading" class="empty-state">
-          <el-empty description="暂无监控数据" />
-        </div>
-
-        <div v-else class="metrics-charts">
-          <!-- 最新数据摘要 -->
-          <div v-if="currentMetricsAgent?.system_metrics" class="metrics-summary-header">
-            <el-descriptions :column="5" border size="small">
-              <el-descriptions-item label="CPU 使用率">
-                <span :style="{ color: getProgressColor(currentMetricsAgent.system_metrics.cpu?.usage_percent) }">
-                  {{ formatPercent(currentMetricsAgent.system_metrics.cpu?.usage_percent) }}
-                </span>
-                <span style="color: var(--cf-fg-2); font-size: 11px; margin-left: 8px;">
-                  ({{ currentMetricsAgent.system_metrics.cpu?.core_count }} 核)
-                </span>
-              </el-descriptions-item>
-              <el-descriptions-item label="内存使用率">
-                <span :style="{ color: getProgressColor(currentMetricsAgent.system_metrics.memory?.used_percent) }">
-                  {{ formatPercent(currentMetricsAgent.system_metrics.memory?.used_percent) }}
-                </span>
-                <span style="color: var(--cf-fg-2); font-size: 11px; margin-left: 8px;">
-                  {{ formatBytes(currentMetricsAgent.system_metrics.memory?.used) }} / {{ formatBytes(currentMetricsAgent.system_metrics.memory?.total) }}
-                </span>
-              </el-descriptions-item>
-              <el-descriptions-item label="网络速度">
-                <span style="color: var(--cf-primary);">↑ {{ formatNetworkSpeed(currentMetricsAgent.system_metrics.network?.speed_sent) }}</span>
-                <span style="color: var(--cf-success); margin-left: 8px;">↓ {{ formatNetworkSpeed(currentMetricsAgent.system_metrics.network?.speed_recv) }}</span>
-              </el-descriptions-item>
-              <el-descriptions-item label="总流量">
-                <span style="color: var(--cf-primary);">↑ {{ formatBytes(currentMetricsAgent.system_metrics.network?.bytes_sent) }}</span>
-                <span style="color: var(--cf-success); margin-left: 8px;">↓ {{ formatBytes(currentMetricsAgent.system_metrics.network?.bytes_recv) }}</span>
-              </el-descriptions-item>
-              <el-descriptions-item label="磁盘使用率">
-                <span :style="{ color: getProgressColor(currentMetricsAgent.system_metrics.disk?.used_percent) }">
-                  {{ formatPercent(currentMetricsAgent.system_metrics.disk?.used_percent) }}
-                </span>
-                <span style="color: var(--cf-fg-2); font-size: 11px; margin-left: 8px;">
-                  {{ formatBytes(currentMetricsAgent.system_metrics.disk?.used) }} / {{ formatBytes(currentMetricsAgent.system_metrics.disk?.total) }}
-                </span>
-              </el-descriptions-item>
-            </el-descriptions>
-          </div>
-
-          <!-- 图表网格 -->
-          <div class="charts-grid">
-            <div class="chart-card">
-              <v-chart :option="cpuChartOption" :autoresize="true" style="height: 280px;" />
-            </div>
-            <div class="chart-card">
-              <v-chart :option="memoryChartOption" :autoresize="true" style="height: 280px;" />
-            </div>
-            <div class="chart-card">
-              <v-chart :option="networkChartOption" :autoresize="true" style="height: 280px;" />
-            </div>
-            <div class="chart-card">
-              <v-chart :option="trafficChartOption" :autoresize="true" style="height: 280px;" />
-            </div>
-            <div class="chart-card">
-              <v-chart :option="diskChartOption" :autoresize="true" style="height: 280px;" />
-            </div>
-          </div>
-
-          <!-- 数据信息 -->
-          <div class="metrics-info">
-            <el-text size="small" type="info">
-              显示最近 24 小时的监控数据，共 {{ metricsHistory.length }} 个数据点
-            </el-text>
-          </div>
-        </div>
-      </div>
-
-      <template #footer>
-        <el-button @click="metricsDialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="showMetricsDetail(currentMetricsAgent)">
-          <el-icon><Refresh /></el-icon>
-          刷新
-        </el-button>
-      </template>
-    </el-dialog>
+        <DialogFooter>
+          <Button variant="outline" @click="metricsDialogVisible = false">关闭</Button>
+          <Button @click="showMetricsDetail(currentMetricsAgent)">
+            <RefreshCw class="size-4" />
+            刷新
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import ScopeBanner from '@/components/shell/ScopeBanner.vue'
-import PageHeader from '@/components/shell/PageHeader.vue'
+import PageHeader from '@/components/common/PageHeader.vue'
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
-import { Document, Refresh, Monitor, SuccessFilled, WarningFilled, DocumentCopy, QuestionFilled, Connection, Clock, InfoFilled, Upload, RefreshRight, View, Delete, Close, Download, TrendCharts, Setting } from '@element-plus/icons-vue'
+import { Motion } from 'motion-v'
+import {
+  ChartLine,
+  ChevronDown,
+  CircleCheck,
+  Copy,
+  Download,
+  FileText,
+  Loader2,
+  MoreHorizontal,
+  RefreshCw,
+  RotateCw,
+  ScrollText,
+  Server,
+  Trash2,
+  TriangleAlert,
+  Upload,
+  X
+} from '@lucide/vue'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
+import EmptyState from '@/components/common/EmptyState.vue'
+import FormField from '@/components/common/FormField.vue'
+import InfoNote from '@/components/common/InfoNote.vue'
+import LabeledDivider from '@/components/common/LabeledDivider.vue'
+import LoadingRows from '@/components/common/LoadingRows.vue'
+import SectionCard from '@/components/common/SectionCard.vue'
+import StatTile from '@/components/common/StatTile.vue'
+import StatusDot from '@/components/common/StatusDot.vue'
+import { confirm, confirmDanger, notify } from '@/lib/feedback'
+import { listItem } from '@/lib/motion'
 import { agentApi } from '@/api'
 import api from '@/api'
 import type { Agent } from '@/types'
@@ -910,7 +619,6 @@ const installCommand = ref('')
 const installCommandAlpine = ref('')
 const dockerComposeContent = ref('')
 const dockerRunCommand = ref('')
-const activeCollapse = ref<string[]>([])
 const logs = ref('')
 const selectedLogPath = ref('/var/log/configflow-agent.log')
 const customLogPath = ref('')
@@ -921,8 +629,7 @@ const currentAgent = ref<Agent | null>(null)
 const currentMetricsAgent = ref<Agent | null>(null)
 const metricsHistory = ref<any[]>([])
 const metricsLoading = ref(false)
-const logsTextareaRef = ref()
-const formKey = ref(0) // 用于强制重新渲染表单
+const logsPaneRef = ref<HTMLElement | null>(null)
 
 const scriptForm = ref({
   installType: 'shell',
@@ -1331,7 +1038,7 @@ const loadAgents = async () => {
     const { data } = await agentApi.getAll()
     agents.value = data
   } catch (error) {
-    ElMessage.error('加载 Agent 列表失败')
+    notify.error('加载 Agent 列表失败')
   }
 }
 
@@ -1342,22 +1049,20 @@ const bindAgentProfile = async (agent: Agent, profileId: string): Promise<boolea
   try {
     await agentApi.bindProfile(agent.id, profileId)
     agent.profile_id = profileId
-    ElMessage.success('Agent 绑定的配置空间已更新')
+    notify.success('Agent 绑定的配置空间已更新')
     return true
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || 'Agent 绑定配置空间失败')
+    notify.error(error.response?.data?.message || 'Agent 绑定配置空间失败')
     return false
   } finally {
     bindingAgentId.value = null
   }
 }
 
-const handleAgentProfileChange = async (agent: Agent, event: Event) => {
-  const select = event.target
-  if (!(select instanceof HTMLSelectElement)) return
-  const previousProfileId = agent.profile_id || 'default'
-  const updated = await bindAgentProfile(agent, select.value)
-  if (!updated) select.value = previousProfileId
+/* bindAgentProfile 失败时不写回 agent.profile_id，Select 会自动回到原值 */
+const handleAgentProfileChange = async (agent: Agent, profileId: string) => {
+  if (!profileId || profileId === (agent.profile_id || 'default')) return
+  await bindAgentProfile(agent, profileId)
 }
 
 // 格式化时间
@@ -1446,6 +1151,200 @@ const getProgressColor = (percent: number | undefined) => {
   return '#F56C6C' // 红色
 }
 
+/* ---------- 新 UI 的派生数据 ---------- */
+
+const chipClass = (active: boolean): string =>
+  [
+    'flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-[13px] transition-colors',
+    active
+      ? 'border-primary-accent/40 bg-primary-soft/50 text-foreground'
+      : 'border-border/50 bg-background/40 text-muted-foreground hover:border-border-strong'
+  ].join(' ')
+
+const INSTALL_TYPES = [
+  { value: 'shell', label: 'Shell 安装' },
+  { value: 'docker', label: 'Docker 容器' }
+]
+
+const DOCKER_MODES = [
+  { value: 'mihomo', label: 'Mihomo (Clash)' },
+  { value: 'mosdns', label: 'MosDNS' },
+  { value: 'aio', label: 'All-in-One（三合一）' }
+]
+
+const installTypeHint = computed(() =>
+  scriptForm.value.installType === 'shell'
+    ? '将 Agent 直接安装到系统服务。'
+    : '使用 Docker 容器运行 Agent，内置 Mihomo / MosDNS 服务。'
+)
+
+const dockerModeHint = computed(
+  () =>
+    ({
+      mihomo: '内置 Mihomo，一个容器运行 Agent + Mihomo。',
+      mosdns: '内置 MosDNS，一个容器运行 Agent + MosDNS。',
+      aio: '内置 Mihomo + MosDNS，一个容器同时运行三者。'
+    })[scriptForm.value.dockerMode as string] ?? ''
+)
+
+const DOCKER_NOTES: Record<string, { title: string; lines: string[] }> = {
+  mihomo: {
+    title: 'Docker Mihomo Agent 使用说明',
+    lines: [
+      '镜像内置 Mihomo，Agent 与 Mihomo 在同一容器中运行',
+      '无需单独部署 Mihomo 服务，一个容器即可完成',
+      '支持自动配置拉取、更新和服务重启',
+      '代理端口：7890 (HTTP)、7891 (SOCKS5)、9090 (API)'
+    ]
+  },
+  mosdns: {
+    title: 'Docker MosDNS Agent 使用说明',
+    lines: [
+      '镜像内置 MosDNS，Agent 与 MosDNS 在同一容器中运行',
+      '无需单独部署 MosDNS 服务，一个容器即可完成',
+      '支持自动配置拉取、更新和服务重启',
+      'DNS 端口：53 (TCP/UDP)'
+    ]
+  },
+  aio: {
+    title: 'Docker All-in-One Agent 使用说明',
+    lines: [
+      '镜像内置 Mihomo 与 MosDNS，可同时运行多个服务',
+      'Mihomo Agent 端口 8080，MosDNS Agent 端口 8081',
+      '可通过环境变量 ENABLE_MIHOMO / ENABLE_MOSDNS 控制启用哪些服务',
+      '会自动创建 ./mihomo 与 ./mosdns 目录存储配置文件'
+    ]
+  }
+}
+
+const dockerNote = computed(
+  () => DOCKER_NOTES[scriptForm.value.dockerMode as string] ?? DOCKER_NOTES.mihomo
+)
+
+const scriptPanelOpen = ref(false)
+
+/** 生成结果按安装方式给出可复制的命令块，避免模板里重复四段几乎相同的结构 */
+const commandBlocks = computed(() => {
+  if (scriptForm.value.installType === 'shell') {
+    return [
+      {
+        title: 'Ubuntu / Debian / CentOS',
+        note: '使用 systemd',
+        value: installCommand.value,
+        rows: 3,
+        copy: copyCommand
+      },
+      {
+        title: 'Alpine Linux',
+        note: '使用 OpenRC',
+        value: installCommandAlpine.value,
+        rows: 3,
+        copy: copyCommandAlpine
+      }
+    ]
+  }
+  return [
+    {
+      title: 'Docker Run 命令',
+      note: '推荐',
+      value: dockerRunCommand.value,
+      rows: 8,
+      copy: copyDockerRun
+    },
+    {
+      title: 'docker-compose.yml',
+      note: '可选，保存后执行 docker compose up -d',
+      value: dockerComposeContent.value,
+      rows: 15,
+      copy: copyDockerCompose
+    }
+  ]
+})
+
+/** 卡片内的三条资源占用条 */
+const metricsOf = (agent: any) => {
+  const m = agent.system_metrics || {}
+  return [
+    {
+      label: 'CPU',
+      percent: m.cpu?.usage_percent || 0,
+      text: formatPercent(m.cpu?.usage_percent),
+      color: getProgressColor(m.cpu?.usage_percent),
+      detail: ''
+    },
+    {
+      label: '内存',
+      percent: m.memory?.used_percent || 0,
+      text: formatPercent(m.memory?.used_percent),
+      color: getProgressColor(m.memory?.used_percent),
+      detail: `${formatBytes(m.memory?.used)} / ${formatBytes(m.memory?.total)}`
+    },
+    {
+      label: '磁盘',
+      percent: m.disk?.used_percent || 0,
+      text: formatPercent(m.disk?.used_percent),
+      color: getProgressColor(m.disk?.used_percent),
+      detail: `${formatBytes(m.disk?.used)} / ${formatBytes(m.disk?.total)}`
+    }
+  ]
+}
+
+/** 卡片内的网络速率与累计流量 */
+const flowsOf = (agent: any) => {
+  const net = agent.system_metrics?.network || {}
+  return [
+    { label: '↑ 上传', value: formatSpeed(net.speed_sent) },
+    { label: '↓ 下载', value: formatSpeed(net.speed_recv) },
+    { label: '↑ 已发送', value: formatBytesShort(net.bytes_sent) },
+    { label: '↓ 已接收', value: formatBytesShort(net.bytes_recv) }
+  ]
+}
+
+const metricsSummary = computed(() => {
+  const m = currentMetricsAgent.value?.system_metrics
+  if (!m) return []
+  return [
+    {
+      label: 'CPU 使用率',
+      value: formatPercent(m.cpu?.usage_percent),
+      color: getProgressColor(m.cpu?.usage_percent),
+      detail: `${m.cpu?.core_count ?? '—'} 核`
+    },
+    {
+      label: '内存使用率',
+      value: formatPercent(m.memory?.used_percent),
+      color: getProgressColor(m.memory?.used_percent),
+      detail: `${formatBytes(m.memory?.used)} / ${formatBytes(m.memory?.total)}`
+    },
+    {
+      label: '磁盘使用率',
+      value: formatPercent(m.disk?.used_percent),
+      color: getProgressColor(m.disk?.used_percent),
+      detail: `${formatBytes(m.disk?.used)} / ${formatBytes(m.disk?.total)}`
+    },
+    {
+      label: '网络速度',
+      value: `↑ ${formatNetworkSpeed(m.network?.speed_sent)}`,
+      color: 'var(--primary-accent)',
+      detail: `↓ ${formatNetworkSpeed(m.network?.speed_recv)}`
+    },
+    {
+      label: '总流量',
+      value: `↑ ${formatBytes(m.network?.bytes_sent)}`,
+      color: 'var(--success-accent)',
+      detail: `↓ ${formatBytes(m.network?.bytes_recv)}`
+    }
+  ]
+})
+
+const metricsCharts = computed(() => [
+  { key: 'cpu', option: cpuChartOption.value },
+  { key: 'memory', option: memoryChartOption.value },
+  { key: 'network', option: networkChartOption.value },
+  { key: 'traffic', option: trafficChartOption.value },
+  { key: 'disk', option: diskChartOption.value }
+])
+
 // 显示监控详情
 const showMetricsDetail = async (agent: any) => {
   currentMetricsAgent.value = agent
@@ -1458,12 +1357,12 @@ const showMetricsDetail = async (agent: any) => {
     if (response.data.success) {
       metricsHistory.value = response.data.data.history || []
     } else {
-      ElMessage.error('获取监控历史数据失败')
+      notify.error('获取监控历史数据失败')
       metricsHistory.value = []
     }
   } catch (error) {
     console.error('Error fetching metrics history:', error)
-    ElMessage.error('获取监控历史数据失败')
+    notify.error('获取监控历史数据失败')
     metricsHistory.value = []
   } finally {
     metricsLoading.value = false
@@ -1542,7 +1441,7 @@ const showGenerateScriptDialog = () => {
   installCommand.value = ''
   dockerComposeContent.value = ''
   dockerRunCommand.value = ''
-  activeCollapse.value = []
+  scriptPanelOpen.value = false
 
   // 重置表单值
   scriptForm.value = {
@@ -1560,8 +1459,6 @@ const showGenerateScriptDialog = () => {
     networkMode: 'bridge'
   }
 
-  // 递增 formKey 强制重新渲染
-  formKey.value++
 
   // 打开对话框 - v-if 会确保表单完全重新渲染
   scriptDialogVisible.value = true
@@ -1574,13 +1471,13 @@ const resetForm = () => {
   installCommandAlpine.value = ''
   dockerComposeContent.value = ''
   dockerRunCommand.value = ''
-  activeCollapse.value = []
+  scriptPanelOpen.value = false
 }
 
 // 生成安装脚本
 const generateScript = async () => {
   if (!scriptForm.value.name) {
-    ElMessage.warning('请输入 Agent 名称')
+    notify.warning('请输入 Agent 名称')
     return
   }
 
@@ -1588,16 +1485,12 @@ const generateScript = async () => {
   if (scriptForm.value.installType === 'shell') {
     const configPath = scriptForm.value.config_path.trim()
     if (configPath && !configPath.match(/\.\w+$/)) {
-      ElMessage.warning('配置文件路径应指向一个文件（如 config.yaml），而不是文件夹')
+      notify.warning('配置文件路径应指向一个文件（如 config.yaml），而不是文件夹')
       return
     }
   }
 
-  const loading = ElLoading.service({
-    lock: true,
-    text: scriptForm.value.installType === 'docker' ? '正在生成 Docker 部署命令...' : '正在生成安装命令...',
-    background: 'rgba(0, 0, 0, 0.7)'
-  })
+  const loadingToast = notify.loading(scriptForm.value.installType === 'docker' ? '正在生成 Docker 部署命令...' : '正在生成安装命令...')
 
   try {
     console.log('开始生成脚本，参数：', scriptForm.value)
@@ -1628,7 +1521,7 @@ const generateScript = async () => {
 
       dockerComposeContent.value = composeResponse.data
       dockerRunCommand.value = runResponse.data
-      ElMessage.success('Docker 部署命令生成成功！')
+      notify.success('Docker 部署命令生成成功！')
     } else {
       // 生成 Shell 脚本
       const response = await agentApi.generateScript({
@@ -1671,15 +1564,15 @@ const generateScript = async () => {
       // 生成一键命令 - Alpine Linux
       installCommandAlpine.value = `curl -sSL "${scriptUrl}" | sh`
 
-      ElMessage.success('安装命令生成成功！')
+      notify.success('安装命令生成成功！')
     }
   } catch (error: any) {
     console.error('生成脚本失败，错误详情：', error)
     console.error('错误响应：', error.response)
     const errorMsg = error.response?.data?.message || error.message || '生成脚本失败'
-    ElMessage.error(errorMsg)
+    notify.error(errorMsg)
   } finally {
-    loading.close()
+    notify.dismiss(loadingToast)
   }
 }
 
@@ -1690,7 +1583,7 @@ const copyCommand = () => {
   // 检查 Clipboard API 是否可用
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(installCommand.value).then(() => {
-      ElMessage.success('命令已复制到剪贴板')
+      notify.success('命令已复制到剪贴板')
     }).catch(() => {
       fallbackCopy(installCommand.value)
     })
@@ -1707,7 +1600,7 @@ const copyCommandAlpine = () => {
   // 检查 Clipboard API 是否可用
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(installCommandAlpine.value).then(() => {
-      ElMessage.success('Alpine 命令已复制到剪贴板')
+      notify.success('Alpine 命令已复制到剪贴板')
     }).catch(() => {
       fallbackCopy(installCommandAlpine.value)
     })
@@ -1724,7 +1617,7 @@ const copyDockerCompose = () => {
   // 检查 Clipboard API 是否可用
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(dockerComposeContent.value).then(() => {
-      ElMessage.success('Docker Compose 已复制到剪贴板')
+      notify.success('Docker Compose 已复制到剪贴板')
     }).catch(() => {
       fallbackCopy(dockerComposeContent.value)
     })
@@ -1741,7 +1634,7 @@ const copyDockerRun = () => {
   // 检查 Clipboard API 是否可用
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(dockerRunCommand.value).then(() => {
-      ElMessage.success('Docker Run 命令已复制到剪贴板')
+      notify.success('Docker Run 命令已复制到剪贴板')
     }).catch(() => {
       fallbackCopy(dockerRunCommand.value)
     })
@@ -1761,164 +1654,119 @@ const fallbackCopy = (text: string) => {
   textarea.select()
   try {
     document.execCommand('copy')
-    ElMessage.success('内容已复制到剪贴板')
+    notify.success('内容已复制到剪贴板')
   } catch (err) {
-    ElMessage.error('复制失败，请手动复制')
+    notify.error('复制失败，请手动复制')
   }
   document.body.removeChild(textarea)
 }
 
 // 推送配置
 const pushConfig = async (agent: Agent) => {
-  const loading = ElLoading.service({
-    lock: true,
-    text: '正在推送配置...',
-    background: 'rgba(0, 0, 0, 0.7)'
-  })
+  const loadingToast = notify.loading('正在推送配置...')
 
   try {
     await agentApi.pushConfig(agent.id)
-    ElMessage.success('配置推送成功')
+    notify.success('配置推送成功')
     loadAgents()
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || '配置推送失败')
+    notify.error(error.response?.data?.message || '配置推送失败')
   } finally {
-    loading.close()
+    notify.dismiss(loadingToast)
   }
 }
 
 // 重启 Agent
 const restartAgent = async (agent: Agent) => {
-  try {
-    await ElMessageBox.confirm(
-      '确定要重启此 Agent 的服务吗？服务将会短暂中断。',
-      '警告',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
+  const ok = await confirm('确定要重启此 Agent 的服务吗？服务将会短暂中断。', {
+    title: '重启服务',
+    confirmText: '重启'
+  })
+  if (!ok) return
 
-    const loading = ElLoading.service({
-      lock: true,
-      text: '正在重启服务...',
-      background: 'rgba(0, 0, 0, 0.7)'
-    })
+  try {
+    const loadingToast = notify.loading('正在重启服务...')
 
     try {
       await agentApi.restart(agent.id)
-      ElMessage.success('服务重启成功')
+      notify.success('服务重启成功')
     } finally {
-      loading.close()
+      notify.dismiss(loadingToast)
     }
   } catch (error: any) {
-    if (error !== 'cancel') {
-      ElMessage.error(error.response?.data?.message || '服务重启失败')
-    }
+    notify.error(error.response?.data?.message || '服务重启失败')
   }
 }
 
 const updateAgent = async (agent: Agent) => {
-  try {
-    await ElMessageBox.confirm(
-      `检测到新版本可用，是否立即更新 Agent？更新过程中 Agent 将会重启。`,
-      '更新确认',
-      {
-        confirmButtonText: '立即更新',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
+  const ok = await confirm('检测到新版本可用，是否立即更新 Agent？更新过程中 Agent 将会重启。', {
+    title: '更新 Agent',
+    confirmText: '立即更新'
+  })
+  if (!ok) return
 
-    const loading = ElLoading.service({
-      lock: true,
-      text: '正在更新 Agent，请稍候...',
-      background: 'rgba(0, 0, 0, 0.7)'
-    })
+  try {
+    const loadingToast = notify.loading('正在更新 Agent，请稍候...')
 
     try {
       const response = await agentApi.update(agent.id)
-      loading.close()
+      notify.dismiss(loadingToast)
 
-      ElMessage.success('Agent 更新已启动，请等待重启完成')
+      notify.success('Agent 更新已启动，请等待重启完成')
 
       // 3秒后刷新列表
       setTimeout(() => {
         loadAgents()
       }, 3000)
     } catch (error: any) {
-      loading.close()
-      ElMessage.error(error.response?.data?.message || 'Agent 更新失败')
+      notify.dismiss(loadingToast)
+      notify.error(error.response?.data?.message || 'Agent 更新失败')
     }
   } catch (error: any) {
-    if (error !== 'cancel') {
-      ElMessage.error(error.response?.data?.message || 'Agent 更新失败')
-    }
+    notify.error(error.response?.data?.message || 'Agent 更新失败')
   }
 }
 
 // 卸载 Agent
 const uninstallAgent = async (agent: Agent) => {
-  try {
-    await ElMessageBox.confirm(
-      `确定要卸载远程服务器上的 Agent "${agent.name}" 吗？\n\n此操作将：\n• 停止 Agent 服务\n• 删除 Agent 程序文件\n• 删除服务配置（systemd/OpenRC）\n• 从管理列表中移除\n\n⚠️ 此操作不可恢复！`,
-      '卸载 Agent',
-      {
-        confirmButtonText: '确定卸载',
-        cancelButtonText: '取消',
-        type: 'error',
-        dangerouslyUseHTMLString: false
-      }
-    )
+  const ok = await confirmDanger(
+    `确定要卸载远程服务器上的 Agent「${agent.name}」吗？\n\n此操作将：\n• 停止 Agent 服务\n• 删除 Agent 程序文件\n• 删除服务配置（systemd/OpenRC）\n• 从管理列表中移除\n\n此操作不可恢复。`,
+    { title: '卸载 Agent', confirmText: '确定卸载' }
+  )
+  if (!ok) return
 
-    const loading = ElLoading.service({
-      lock: true,
-      text: '正在卸载 Agent...',
-      background: 'rgba(0, 0, 0, 0.7)'
-    })
+  try {
+    const loadingToast = notify.loading('正在卸载 Agent...')
 
     try {
       await agentApi.uninstall(agent.id)
-      ElMessage.success({
-        message: 'Agent 卸载命令已发送，远程服务器正在执行卸载...',
-        duration: 5000
-      })
+      notify.success('Agent 卸载命令已发送，远程服务器正在执行卸载...')
       // 等待几秒后刷新列表
       setTimeout(() => {
         loadAgents()
       }, 3000)
     } finally {
-      loading.close()
+      notify.dismiss(loadingToast)
     }
   } catch (error: any) {
-    if (error !== 'cancel') {
-      ElMessage.error(error.response?.data?.message || '卸载失败')
-    }
+    notify.error(error.response?.data?.message || '卸载失败')
   }
 }
 
 // 删除 Agent 记录
 const deleteAgent = async (agent: Agent) => {
-  try {
-    await ElMessageBox.confirm(
-      `确定要删除 Agent "${agent.name}" 的管理记录吗？\n\n⚠️ 注意：此操作仅删除管理记录，不会卸载远程服务器上的 Agent 程序。\n如需完全卸载，请使用"卸载"按钮。`,
-      '删除记录',
-      {
-        confirmButtonText: '确定删除',
-        cancelButtonText: '取消',
-        type: 'warning',
-        dangerouslyUseHTMLString: false
-      }
-    )
+  const ok = await confirmDanger(
+    `确定要删除 Agent「${agent.name}」的管理记录吗？\n\n注意：此操作仅删除管理记录，不会卸载远程服务器上的 Agent 程序。如需完全卸载，请使用「卸载 Agent」。`,
+    { title: '删除记录', confirmText: '确定删除' }
+  )
+  if (!ok) return
 
+  try {
     await agentApi.delete(agent.id)
-    ElMessage.success('记录删除成功')
+    notify.success('记录删除成功')
     loadAgents()
   } catch (error: any) {
-    if (error !== 'cancel') {
-      ElMessage.error(error.response?.data?.message || '删除失败')
-    }
+    notify.error(error.response?.data?.message || '删除失败')
   }
 }
 
@@ -1986,33 +1834,25 @@ const loadLogs = async () => {
     scrollToBottom()
   } catch (error: any) {
     logs.value = `获取日志失败: ${error.response?.data?.message || error.message || '未知错误'}`
-    ElMessage.error('获取日志失败')
+    notify.error('获取日志失败')
   }
 }
 
 // 滚动到日志底部
 const scrollToBottom = () => {
-  if (logsTextareaRef.value) {
-    const textarea = logsTextareaRef.value.$el.querySelector('textarea')
-    if (textarea) {
-      textarea.scrollTop = textarea.scrollHeight
-    }
-  }
+  const pane = logsPaneRef.value
+  if (pane) pane.scrollTop = pane.scrollHeight
 }
 
 // 刷新日志
 const refreshLogs = async () => {
-  const loading = ElLoading.service({
-    lock: true,
-    text: '正在刷新日志...',
-    background: 'rgba(0, 0, 0, 0.7)'
-  })
+  const loadingToast = notify.loading('正在刷新日志...')
 
   try {
     await loadLogs()
-    ElMessage.success('日志刷新成功')
+    notify.success('日志刷新成功')
   } finally {
-    loading.close()
+    notify.dismiss(loadingToast)
   }
 }
 
@@ -2022,38 +1862,30 @@ const clearLogs = async () => {
 
   let logPath = selectedLogPath.value === 'custom' ? customLogPath.value : selectedLogPath.value
   if (!logPath) {
-    ElMessage.warning('请先选择日志文件')
+    notify.warning('请先选择日志文件')
     return
   }
 
-  try {
-    await ElMessageBox.confirm('确定要清空该日志文件吗？此操作不可恢复。', '清空日志', {
-      confirmButtonText: '确定清空',
-      cancelButtonText: '取消',
-      type: 'warning',
-    })
-  } catch {
-    return
-  }
-
-  const loading = ElLoading.service({
-    lock: true,
-    text: '正在清空日志...',
-    background: 'rgba(0, 0, 0, 0.7)'
+  const ok = await confirmDanger('确定要清空该日志文件吗？此操作不可恢复。', {
+    title: '清空日志',
+    confirmText: '确定清空'
   })
+  if (!ok) return
+
+  const loadingToast = notify.loading('正在清空日志...')
 
   try {
     const { data } = await agentApi.clearLog(currentAgent.value.id, logPath)
     if (data.success) {
-      ElMessage.success('日志已清空')
+      notify.success('日志已清空')
       await loadLogs()
     } else {
-      ElMessage.error(data.message || '清空日志失败')
+      notify.error(data.message || '清空日志失败')
     }
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || '清空日志失败')
+    notify.error(error.response?.data?.message || '清空日志失败')
   } finally {
-    loading.close()
+    notify.dismiss(loadingToast)
   }
 }
 
@@ -2070,7 +1902,7 @@ const onLogPathChange = async (newPath: string) => {
 // 验证并加载自定义路径
 const validateAndLoadCustomPath = async () => {
   if (!currentAgent.value || !customLogPath.value) {
-    ElMessage.warning('请输入日志路径')
+    notify.warning('请输入日志路径')
     return
   }
 
@@ -2079,14 +1911,14 @@ const validateAndLoadCustomPath = async () => {
     const { data } = await agentApi.validateLogPath(currentAgent.value.id, customLogPath.value)
 
     if (data.success && data.valid) {
-      ElMessage.success('路径验证成功')
+      notify.success('路径验证成功')
       await loadLogs()
     } else {
-      ElMessage.error(data.error || '路径验证失败')
+      notify.error(data.error || '路径验证失败')
       logs.value = `路径验证失败: ${data.error || '未知错误'}`
     }
   } catch (error: any) {
-    ElMessage.error('路径验证失败')
+    notify.error('路径验证失败')
     logs.value = `路径验证失败: ${error.response?.data?.message || error.message}`
   } finally {
     validatingPath.value = false
@@ -2116,13 +1948,13 @@ const toggleLogging = async (enabled: boolean) => {
     const { data } = await agentApi.setLoggingConfig(currentAgent.value.id, enabled)
 
     if (data.success) {
-      ElMessage.success(enabled ? '日志已启用' : '日志已禁用')
+      notify.success(enabled ? '日志已启用' : '日志已禁用')
     } else {
-      ElMessage.error('设置失败')
+      notify.error('设置失败')
       loggingEnabled.value = !enabled // 回滚状态
     }
   } catch (error: any) {
-    ElMessage.error('设置日志开关失败')
+    notify.error('设置日志开关失败')
     loggingEnabled.value = !enabled // 回滚状态
   } finally {
     togglingLogging.value = false
@@ -2156,1524 +1988,3 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped>
-.agents-page {
-  --agent-radius-xl: 40px;
-  --agent-radius-lg: 24px;
-  --agent-radius-md: 16px;
-  --agent-radius-sm: 12px;
-  --agent-radius-pill: 999px;
-}
-
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-  /* 固定顶部 */
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  background: var(--cf-bg);
-  margin: -28px -32px 28px -32px;
-  padding: 28px 32px;
-}
-
-.title-block h2 {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 700;
-  color: var(--cf-fg);
-}
-
-.title-block p {
-  margin: 6px 0 0;
-  font-size: 14px;
-  color: var(--cf-fg-2);
-}
-
-.header-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  justify-content: flex-end;
-}
-
-:deep(.action-btn .el-icon) {
-  font-size: 16px;
-}
-
-.stats-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 20px;
-  margin-bottom: 28px;
-}
-
-.stat-card {
-  border-radius: var(--agent-radius-lg, 24px);
-  border: 1px solid rgba(107, 115, 255, 0.1);
-  box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.stat-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 20px 40px rgba(65, 80, 180, 0.16);
-  border-color: rgba(107, 115, 255, 0.25);
-}
-
-.stat-content {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.stat-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
-}
-
-.stat-info {
-  flex: 1;
-}
-
-.stat-value {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--cf-fg);
-  line-height: 1;
-}
-
-.stat-label {
-  font-size: 14px;
-  color: var(--cf-fg-2);
-  margin-top: 4px;
-}
-
-.empty-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 400px;
-  background: var(--cf-s1);
-  border-radius: var(--agent-radius-lg, 24px);
-  box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
-  margin-top: 24px;
-}
-
-.agents-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 24px;
-  margin-top: 24px;
-}
-
-.agent-card {
-  background: var(--cf-s1);
-  border-radius: var(--agent-radius-lg, 24px);
-  padding: 24px;
-  box-shadow: 0 8px 24px rgba(65, 80, 180, 0.08);
-  border: 1px solid rgba(107, 115, 255, 0.1);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.agent-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 22px 48px rgba(91, 112, 255, 0.2);
-  border-color: rgba(107, 115, 255, 0.25);
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  /* 名称长时让标签换行，而不是把名称压成省略号 */
-  flex-wrap: wrap;
-}
-
-.card-title-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-}
-
-.card-title {
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--cf-fg);
-  /* 允许换行显示完整名称；Agent 名常带主机名，截断会看不出是哪台 */
-  overflow-wrap: anywhere;
-  line-height: 1.3;
-}
-
-.card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.meta-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 12px;
-  border-radius: var(--agent-radius-pill, 999px);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.type-pill.type-mihomo {
-  background: rgba(107, 115, 255, 0.12);
-  color: var(--cf-primary);
-  border: 1px solid rgba(107, 115, 255, 0.18);
-}
-
-.type-pill.type-mosdns {
-  background: rgba(139, 143, 255, 0.12);
-  color: var(--cf-primary-hover);
-  border: 1px solid rgba(139, 143, 255, 0.18);
-}
-
-.status-pill.status-online {
-  background: rgba(139, 143, 255, 0.12);
-  color: var(--cf-primary-hover);
-  border: 1px solid rgba(139, 143, 255, 0.18);
-}
-
-.status-pill.status-offline {
-  background: rgba(245, 108, 108, 0.12);
-  color: var(--cf-danger);
-  border: 1px solid rgba(245, 108, 108, 0.18);
-}
-
-.deploy-pill.deploy-shell {
-  background: rgba(103, 194, 58, 0.12);
-  color: var(--cf-success);
-  border: 1px solid rgba(103, 194, 58, 0.18);
-}
-
-.deploy-pill.deploy-docker {
-  background: rgba(64, 158, 255, 0.12);
-  color: var(--cf-primary);
-  border: 1px solid rgba(64, 158, 255, 0.18);
-}
-
-.card-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.card-section.inline {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.section-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--cf-fg-2);
-  font-weight: 600;
-}
-
-.section-label .el-icon {
-  font-size: 16px;
-  color: var(--cf-primary);
-}
-
-.section-value {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--cf-fg);
-  font-family: 'Courier New', Consolas, monospace;
-}
-
-/* 监控指标样式 */
-.metrics-section {
-  padding: 16px 0;
-  margin: 16px 0;
-  border-top: 1px solid rgba(107, 115, 255, 0.08);
-  border-bottom: 1px solid rgba(107, 115, 255, 0.08);
-}
-
-.metrics-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--cf-fg);
-}
-
-.metrics-header .el-button {
-  padding: 4px 8px;
-  height: auto;
-  font-size: 12px;
-}
-
-.metric-item {
-  margin-bottom: 12px;
-}
-
-.metric-item:last-child {
-  margin-bottom: 0;
-}
-
-.metric-label {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 6px;
-  font-size: 12px;
-  color: var(--cf-fg-2);
-}
-
-.metric-value {
-  font-weight: 600;
-  color: var(--cf-fg);
-  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-}
-
-.metric-detail {
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--cf-fg-2);
-  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-}
-
-.metric-item.network {
-  padding: 8px 0;
-}
-
-.network-speeds {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.speed-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 12px;
-  background: rgba(107, 115, 255, 0.05);
-  border-radius: 8px;
-  border: 1px solid rgba(107, 115, 255, 0.1);
-}
-
-.speed-label {
-  font-size: 11px;
-  color: var(--cf-fg-2);
-  font-weight: 500;
-}
-
-.speed-value {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--cf-fg);
-  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-}
-
-.metric-item.traffic-total {
-  padding: 8px 0;
-  border-top: 1px dashed rgba(107, 115, 255, 0.1);
-  margin-top: 8px;
-}
-
-.metric-item.traffic-total .speed-item {
-  background: var(--cf-s2);
-  border: 1px solid rgba(107, 115, 255, 0.15);
-}
-
-.metric-item.traffic-total .speed-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.metric-item.traffic-total .speed-value {
-  font-size: 14px;
-  font-weight: 800;
-  color: var(--cf-fg);
-  }
-
-.card-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: auto;
-}
-
-.card-btn.el-button {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 36px;
-  border-radius: var(--agent-radius-md, 16px);
-  font-size: 13px;
-  font-weight: 600;
-  padding: 0 12px;
-  border: none;
-  transition: all 0.2s ease;
-}
-
-.card-btn.ghost {
-  background: rgba(107, 115, 255, 0.12);
-  color: var(--cf-primary);
-  border: 1px solid rgba(107, 115, 255, 0.25);
-}
-
-.card-btn.ghost:hover {
-  background: rgba(107, 115, 255, 0.18);
-  border-color: rgba(107, 115, 255, 0.35);
-  transform: translateY(-1px);
-}
-
-.card-btn.warning {
-  background: rgba(255, 176, 103, 0.12);
-  color: var(--cf-warning);
-  border: 1px solid rgba(255, 176, 103, 0.25);
-}
-
-.card-btn.warning:hover {
-  background: rgba(255, 176, 103, 0.18);
-  border-color: rgba(255, 176, 103, 0.35);
-  transform: translateY(-1px);
-}
-
-.card-btn.success {
-  background: rgba(139, 143, 255, 0.12);
-  color: var(--cf-primary-hover);
-  border: 1px solid rgba(139, 143, 255, 0.25);
-}
-
-.card-btn.success:hover {
-  background: rgba(139, 143, 255, 0.18);
-  border-color: rgba(139, 143, 255, 0.35);
-  transform: translateY(-1px);
-}
-
-.card-btn.primary {
-  background: rgba(64, 158, 255, 0.12);
-  color: var(--cf-primary);
-  border: 1px solid rgba(64, 158, 255, 0.25);
-}
-
-.card-btn.primary:hover {
-  background: rgba(64, 158, 255, 0.18);
-  border-color: rgba(64, 158, 255, 0.35);
-  transform: translateY(-1px);
-}
-
-.card-btn.danger {
-  background: rgba(155, 143, 255, 0.12);
-  color: var(--cf-primary-hover);
-  border: 1px solid rgba(155, 143, 255, 0.28);
-}
-
-.card-btn.danger:hover {
-  background: rgba(155, 143, 255, 0.18);
-  border-color: rgba(155, 143, 255, 0.35);
-  transform: translateY(-1px);
-}
-
-.card-btn.info {
-  background: rgba(144, 147, 153, 0.12);
-  color: var(--cf-fg-2);
-  border: 1px solid rgba(144, 147, 153, 0.25);
-}
-
-.card-btn.info:hover {
-  background: rgba(144, 147, 153, 0.18);
-  border-color: rgba(144, 147, 153, 0.35);
-  transform: translateY(-1px);
-}
-
-/* 对话框样式 */
-:deep(.el-dialog) {
-  border-radius: var(--agent-radius-lg, 24px);
-  box-shadow: 0 24px 64px rgba(65, 80, 180, 0.18);
-}
-
-:deep(.el-dialog__header) {
-  padding: 24px 32px 20px;
-  border-bottom: 1px solid rgba(107, 115, 255, 0.1);
-}
-
-:deep(.el-dialog__title) {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--cf-fg);
-}
-
-:deep(.el-dialog__body) {
-  padding: 28px 32px;
-}
-
-:deep(.el-dialog__footer) {
-  padding: 16px 32px 24px;
-  border-top: 1px solid rgba(107, 115, 255, 0.1);
-}
-
-:deep(.el-dialog__close) {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(107, 115, 255, 0.08);
-  transition: all 0.2s ease;
-}
-
-:deep(.el-dialog__close:hover) {
-  background: rgba(107, 115, 255, 0.15);
-  transform: rotate(90deg);
-}
-
-/* 表单样式 */
-:deep(.el-form-item) {
-  margin-bottom: 24px;
-}
-
-:deep(.el-form-item__label) {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--cf-fg);
-  padding-bottom: 8px;
-}
-
-/* 输入框样式 - 只影响非select的input */
-:deep(.el-form-item:not(.no-custom-style) .el-input:not(.el-select .el-input) .el-input__wrapper) {
-  border-radius: var(--agent-radius-md, 16px);
-  box-shadow: 0 2px 8px rgba(65, 80, 180, 0.08);
-  border: 1px solid rgba(107, 115, 255, 0.15);
-  transition: all 0.2s ease;
-  padding: 8px 16px;
-  background-color: var(--cf-s1);
-}
-
-:deep(.el-form-item:not(.no-custom-style) .el-input:not(.el-select .el-input) .el-input__wrapper:hover) {
-  border-color: rgba(107, 115, 255, 0.35);
-}
-
-:deep(.el-form-item:not(.no-custom-style) .el-input:not(.el-select .el-input) .el-input__wrapper.is-focus) {
-  border-color: var(--cf-primary);
-  box-shadow: 0 4px 16px rgba(107, 115, 255, 0.15);
-}
-
-:deep(.el-form-item:not(.no-custom-style) .el-input:not(.el-select .el-input) .el-input__inner) {
-  color: var(--cf-fg);
-  font-size: 14px;
-}
-
-/* el-select 使用最小化样式 - 不包括no-custom-style */
-:deep(.el-form-item:not(.no-custom-style) .el-select) {
-  width: 100%;
-}
-
-:deep(.el-form-item:not(.no-custom-style) .el-select .el-input__wrapper) {
-  border-radius: var(--agent-radius-md, 16px);
-  border: 1px solid rgba(107, 115, 255, 0.15);
-  box-shadow: 0 2px 8px rgba(65, 80, 180, 0.08);
-}
-
-:deep(.el-form-item:not(.no-custom-style) .el-select .el-input__wrapper:hover) {
-  border-color: rgba(107, 115, 255, 0.35);
-}
-
-:deep(.el-form-item:not(.no-custom-style) .el-select .el-input__wrapper.is-focus) {
-  border-color: var(--cf-primary);
-  box-shadow: 0 4px 16px rgba(107, 115, 255, 0.15);
-}
-
-/* 确保 el-select 内部的文本颜色正确显示 - Element Plus 2.5.x */
-:deep(.el-select) {
-  width: 100%;
-  --el-text-color-regular: var(--cf-fg);
-  --el-text-color-placeholder: var(--cf-fg-2);
-  --el-fill-color-blank: var(--cf-s1);
-}
-
-:deep(.el-select__wrapper) {
-  background-color: var(--cf-s1) !important;
-  color: var(--cf-fg) !important;
-}
-
-:deep(.el-select .el-input__inner) {
-  color: var(--cf-fg) !important;
-  font-size: 14px !important;
-}
-
-:deep(.el-select input) {
-  color: var(--cf-fg) !important;
-  font-size: 14px !important;
-}
-
-:deep(.el-select .el-select__selected) {
-  color: var(--cf-fg) !important;
-  font-size: 14px !important;
-}
-
-:deep(.el-select .el-select__selected-item) {
-  color: var(--cf-fg) !important;
-  font-size: 14px !important;
-}
-
-/* 强制覆盖 placeholder 类的颜色 - 更高优先级 */
-:deep(.el-select__selection .el-select__selected-item.el-select__placeholder) {
-  color: var(--cf-fg) !important;
-}
-
-:deep(div.el-select__selected-item.el-select__placeholder) {
-  color: var(--cf-fg) !important;
-}
-
-:deep(.el-select__selected-item.el-select__placeholder span) {
-  color: var(--cf-fg) !important;
-}
-
-/* 真正的空 placeholder */
-:deep(.el-select .el-select__placeholder:not(.el-select__selected-item)) {
-  color: var(--cf-fg-2) !important;
-}
-
-:deep(.el-select .el-select__input) {
-  color: var(--cf-fg) !important;
-}
-
-:deep(.el-select span) {
-  color: var(--cf-fg) !important;
-}
-
-:deep(.el-select .el-select__suffix) {
-  color: var(--cf-fg-2) !important;
-}
-
-.agent-profile-native-select {
-  width: 100%;
-  height: 36px;
-  padding: 0 34px 0 12px;
-  border: 1px solid rgba(107, 115, 255, 0.2);
-  border-radius: var(--agent-radius-sm, 12px);
-  background-color: rgba(107, 115, 255, 0.06);
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%235b6dff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' d='M2.5 4.5 6 8l3.5-3.5'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  background-size: 12px 12px;
-  color: var(--cf-fg);
-  /* Safari / iOS 会用系统色渲染原生 select 的文字，必须显式覆盖 */
-  -webkit-text-fill-color: var(--cf-fg);
-  /* 不锁定 color-scheme，让原生下拉跟随当前主题；锁 light 会在深色下弹出浅色面板 */
-  color-scheme: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  transition: all 0.2s ease;
-}
-
-.agent-profile-native-select:hover {
-  border-color: rgba(107, 115, 255, 0.38);
-  background-color: rgba(107, 115, 255, 0.1);
-}
-
-.agent-profile-native-select:focus {
-  border-color: var(--cf-primary);
-  box-shadow: 0 0 0 3px rgba(107, 115, 255, 0.15);
-  outline: none;
-}
-
-.agent-profile-native-select:disabled {
-  cursor: not-allowed;
-  opacity: 0.65;
-}
-
-.agent-profile-native-select option {
-  background: var(--cf-s1);
-  color: var(--cf-fg);
-  font-weight: 500;
-}
-
-:deep(.el-input-number) {
-  width: 100%;
-}
-
-:deep(.el-input-number .el-input__wrapper) {
-  padding: 0;
-}
-
-:deep(.el-input-number__decrease),
-:deep(.el-input-number__increase) {
-  width: 36px;
-  border-radius: var(--agent-radius-sm, 12px);
-  background: rgba(107, 115, 255, 0.08);
-  border: none;
-  transition: all 0.2s ease;
-}
-
-:deep(.el-input-number__decrease:hover),
-:deep(.el-input-number__increase:hover) {
-  background: rgba(107, 115, 255, 0.15);
-  color: var(--cf-primary);
-}
-
-/* 单选按钮样式 */
-:deep(.el-radio-group) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-}
-
-:deep(.el-radio) {
-  margin-right: 0;
-  padding: 10px 16px;
-  border-radius: var(--agent-radius-md, 16px);
-  border: 1px solid rgba(107, 115, 255, 0.15);
-  background: rgba(107, 115, 255, 0.05);
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-:deep(.el-radio:hover) {
-  border-color: rgba(107, 115, 255, 0.35);
-  background: rgba(107, 115, 255, 0.08);
-}
-
-:deep(.el-radio.is-checked) {
-  background: var(--cf-s2);
-  border-color: var(--cf-primary);
-}
-
-:deep(.el-radio__input) {
-  margin-right: 8px;
-}
-
-:deep(.el-radio__input.is-checked .el-radio__inner) {
-  background: var(--cf-s2);
-  border-color: var(--cf-primary);
-}
-
-:deep(.el-radio__label) {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--cf-fg);
-}
-
-/* Alert 样式 */
-:deep(.el-alert) {
-  border-radius: var(--agent-radius-md, 16px);
-  border: none;
-  padding: 16px;
-}
-
-:deep(.el-alert--warning) {
-  background: rgba(255, 176, 103, 0.12);
-  border-left: 3px solid var(--cf-warning);
-}
-
-:deep(.el-alert--success) {
-  background: rgba(139, 143, 255, 0.12);
-  border-left: 3px solid var(--cf-primary-hover);
-}
-
-:deep(.el-alert--info) {
-  background: rgba(107, 115, 255, 0.12);
-  border-left: 3px solid var(--cf-primary);
-}
-
-:deep(.el-alert__title) {
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--cf-fg);
-}
-
-/* Divider 样式 */
-:deep(.el-divider) {
-  margin: 28px 0;
-  border-color: rgba(107, 115, 255, 0.1);
-}
-
-:deep(.el-divider__text) {
-  font-weight: 600;
-  color: var(--cf-primary);
-  background: var(--cf-s1);
-  padding: 0 16px;
-}
-
-/* Collapse 样式 */
-:deep(.el-collapse) {
-  border: 1px solid rgba(107, 115, 255, 0.15);
-  border-radius: var(--agent-radius-md, 16px);
-  overflow: hidden;
-}
-
-:deep(.el-collapse-item__header) {
-  font-weight: 600;
-  color: var(--cf-fg);
-  background: rgba(107, 115, 255, 0.05);
-  padding: 14px 20px;
-  border-bottom: 1px solid rgba(107, 115, 255, 0.1);
-}
-
-:deep(.el-collapse-item__content) {
-  padding: 20px;
-  background: var(--cf-s1);
-}
-
-/* 按钮样式增强 */
-:deep(.el-button) {
-  border-radius: var(--agent-radius-md, 16px);
-  font-weight: 600;
-  transition: all 0.2s ease;
-  border: none;
-}
-
-:deep(.el-button--primary) {
-  box-shadow: 0 8px 20px rgba(107, 115, 255, 0.25);
-}
-
-:deep(.el-button--primary:hover) {
-  transform: translateY(-1px);
-  box-shadow: 0 12px 28px rgba(107, 115, 255, 0.35);
-}
-
-:deep(.el-button--success) {
-  background: var(--cf-primary-fill);
-  color: var(--cf-primary-fg);
-  box-shadow: 0 8px 20px rgba(139, 143, 255, 0.25);
-}
-
-:deep(.el-button--success:hover) {
-  transform: translateY(-1px);
-  box-shadow: 0 12px 28px rgba(139, 143, 255, 0.35);
-}
-
-:deep(.el-button--default) {
-  background: rgba(107, 115, 255, 0.08);
-  color: var(--cf-primary);
-  border: 1px solid rgba(107, 115, 255, 0.15);
-}
-
-:deep(.el-button--default:hover) {
-  background: rgba(107, 115, 255, 0.15);
-  border-color: rgba(107, 115, 255, 0.25);
-  transform: translateY(-1px);
-}
-
-:deep(.el-button.is-disabled) {
-  opacity: 0.5;
-}
-
-:deep(.el-button--large) {
-  padding: 12px 24px;
-  font-size: 15px;
-}
-
-/* Tooltip 样式 */
-:deep(.el-tooltip__trigger) {
-  display: inline-flex;
-  align-items: center;
-}
-
-:deep(.el-input-group__append) {
-  background: rgba(107, 115, 255, 0.08);
-  border: 1px solid rgba(107, 115, 255, 0.15);
-  border-left: none;
-  border-radius: 0 var(--agent-radius-md, 16px) var(--agent-radius-md, 16px) 0;
-  padding: 0 12px;
-  transition: all 0.2s ease;
-}
-
-:deep(.el-input-group__append:hover) {
-  background: rgba(107, 115, 255, 0.12);
-}
-
-:deep(.el-input-group__append .el-icon) {
-  color: var(--cf-primary);
-}
-
-/* 描述文本样式 */
-:deep(.el-form-item__content > div[style*="color"]) {
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--cf-fg-2) !important;
-}
-
-:deep(.el-form-item__content > div[style*="margin-top"]) {
-  margin-top: 10px !important;
-}
-
-/* Select 下拉样式 */
-:deep(.el-select-dropdown) {
-  border-radius: var(--agent-radius-md, 16px);
-  border: 1px solid rgba(107, 115, 255, 0.15);
-  box-shadow: 0 12px 32px rgba(65, 80, 180, 0.12);
-  background: var(--cf-s1);
-  padding: 4px 0;
-}
-
-:deep(.el-select-dropdown .el-select-dropdown__list) {
-  padding: 4px;
-}
-
-:deep(.el-select-dropdown__item) {
-  padding: 10px 16px;
-  border-radius: var(--agent-radius-sm, 12px);
-  margin: 2px 4px;
-  transition: all 0.2s ease;
-  color: var(--cf-fg);
-  font-size: 14px;
-}
-
-:deep(.el-select-dropdown__item:hover) {
-  background: rgba(107, 115, 255, 0.08);
-  color: var(--cf-primary);
-}
-
-:deep(.el-select-dropdown__item.selected) {
-  background: var(--cf-s2);
-  color: var(--cf-primary);
-  font-weight: 600;
-}
-
-:deep(.el-select-dropdown__item.is-disabled) {
-  color: var(--cf-fg-3);
-  cursor: not-allowed;
-}
-
-/* 安装命令样式 */
-.install-command-box {
-  margin-top: 20px;
-}
-
-.command-section {
-  margin-bottom: 20px;
-}
-
-.command-label {
-  margin-bottom: 14px;
-  padding-left: 4px;
-  display: flex;
-  align-items: center;
-  font-weight: 600;
-  font-size: 15px;
-  color: var(--cf-fg);
-}
-
-.command-container {
-  background: var(--cf-s2);
-  padding: 20px;
-  border-radius: var(--agent-radius-md, 16px);
-  border: 1px solid rgba(107, 115, 255, 0.15);
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 12px rgba(65, 80, 180, 0.05);
-}
-
-.command-container:hover {
-  background: var(--cf-s2);
-  border-color: rgba(107, 115, 255, 0.25);
-  box-shadow: 0 6px 18px rgba(65, 80, 180, 0.1);
-  transform: translateY(-2px);
-}
-
-.command-input :deep(.el-textarea__inner) {
-  font-family: 'Courier New', Consolas, monospace;
-  font-size: 14px;
-  font-weight: 500;
-  background: var(--cf-s1);
-  color: var(--cf-fg);
-  border: 2px solid rgba(107, 115, 255, 0.25);
-  border-radius: var(--agent-radius-md, 16px);
-  padding: 16px;
-  line-height: 1.7;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 8px rgba(65, 80, 180, 0.06);
-}
-
-.command-input :deep(.el-textarea__inner):hover {
-  border-color: rgba(107, 115, 255, 0.4);
-}
-
-.command-input :deep(.el-textarea__inner):focus {
-  border-color: var(--cf-primary);
-  box-shadow: 0 4px 16px rgba(107, 115, 255, 0.15);
-  outline: none;
-}
-
-.command-input.alpine :deep(.el-textarea__inner) {
-  border-color: rgba(139, 143, 255, 0.35);
-  background: var(--cf-s2);
-}
-
-.command-input.alpine :deep(.el-textarea__inner):hover {
-  border-color: rgba(139, 143, 255, 0.5);
-}
-
-.command-input.alpine :deep(.el-textarea__inner):focus {
-  border-color: var(--cf-primary-hover);
-  box-shadow: 0 4px 16px rgba(139, 143, 255, 0.15);
-}
-
-.command-input.docker-run :deep(.el-textarea__inner) {
-  font-family: 'Courier New', Consolas, monospace;
-  font-size: 13px;
-  background: var(--cf-s2);
-  color: var(--cf-fg);
-  border: 2px solid rgba(64, 158, 255, 0.35);
-  border-radius: var(--agent-radius-md, 16px);
-  padding: 14px;
-  line-height: 1.7;
-  font-weight: 500;
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.08);
-}
-
-.command-input.docker-run :deep(.el-textarea__inner):hover {
-  border-color: rgba(64, 158, 255, 0.5);
-}
-
-.command-input.docker-run :deep(.el-textarea__inner):focus {
-  border-color: var(--cf-primary);
-  box-shadow: 0 4px 16px rgba(64, 158, 255, 0.18);
-}
-
-.command-input.docker-compose :deep(.el-textarea__inner) {
-  font-family: 'Courier New', Consolas, monospace;
-  font-size: 13px;
-  background: #282c34;
-  color: #abb2bf;
-  border: 2px solid rgba(139, 143, 255, 0.4);
-  border-radius: var(--agent-radius-md, 16px);
-  padding: 14px;
-  line-height: 1.7;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-}
-
-.command-input.docker-compose :deep(.el-textarea__inner):hover {
-  border-color: rgba(139, 143, 255, 0.6);
-}
-
-.command-input.docker-compose :deep(.el-textarea__inner):focus {
-  border-color: var(--cf-primary-hover);
-  box-shadow: 0 6px 20px rgba(139, 143, 255, 0.2);
-}
-
-.script-textarea :deep(.el-textarea__inner) {
-  font-family: 'Courier New', Consolas, monospace;
-  font-size: 12px;
-  background: #282c34;
-  color: #abb2bf;
-  border: 2px solid rgba(139, 143, 255, 0.3);
-  border-radius: var(--agent-radius-md, 16px);
-  line-height: 1.6;
-  padding: 14px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-}
-
-.script-textarea :deep(.el-textarea__inner):focus {
-  border-color: var(--cf-primary-hover);
-  box-shadow: 0 6px 20px rgba(139, 143, 255, 0.2);
-}
-
-/* 日志样式 */
-.log-file-select {
-  width: 280px !important;
-}
-
-.log-file-select :deep(.el-select__wrapper) {
-  width: 100% !important;
-}
-
-.logs-config-section {
-  margin-bottom: 12px;
-  padding: 12px;
-  background: var(--cf-bg);
-  border-radius: 8px;
-}
-
-.logs-container {
-  margin-top: 8px;
-}
-
-.logs-textarea :deep(.el-textarea__inner) {
-  font-family: 'Courier New', Consolas, monospace;
-  font-size: 12px;
-  background: #1e1e1e;
-  color: #d4d4d4;
-  border: 2px solid #3e3e3e;
-  border-radius: var(--agent-radius-md, 16px);
-  line-height: 1.6;
-  padding: 14px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  transition: all 0.3s ease;
-}
-
-.logs-textarea :deep(.el-textarea__inner):hover {
-  border-color: var(--cf-fg-3);
-}
-
-.logs-textarea :deep(.el-textarea__inner):focus {
-  border-color: var(--cf-primary);
-  box-shadow: 0 6px 20px rgba(107, 115, 255, 0.2);
-}
-
-.logs-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-}
-
-.logs-footer-left {
-  flex: 1;
-}
-
-.logs-footer-right {
-  display: flex;
-  gap: 8px;
-}
-
-/* 移动端适配 */
-@media (max-width: 768px) {
-  .agents-page {
-    padding: 20px 16px 32px;
-  }
-
-  .page-header {
-    flex-direction: column;
-    align-items: flex-start;
-    margin: -20px -16px 20px -16px;
-    padding: 20px 16px;
-  }
-
-  .header-actions {
-    width: 100%;
-    flex-direction: column;
-    justify-content: flex-start;
-    gap: 10px;
-    align-items: stretch;
-  }
-
-  :deep(.header-actions .el-button + .el-button) {
-    margin-left: 0;
-  }
-
-  .action-btn {
-    width: 100%;
-    justify-content: center;
-    box-sizing: border-box;
-  }
-
-  .stats-cards {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-
-  .stat-card :deep(.el-card__body) {
-    padding: 14px;
-  }
-
-  .stat-icon {
-    width: 40px;
-    height: 40px;
-    font-size: 20px;
-  }
-
-  .stat-value {
-    font-size: 20px;
-  }
-
-  .stat-label {
-    font-size: 13px;
-  }
-
-  .agents-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .card-actions {
-    flex-direction: column;
-    flex-wrap: nowrap;
-    align-items: stretch;
-    gap: 10px;
-    width: 100%;
-  }
-
-  :deep(.card-actions .el-button + .el-button) {
-    margin-left: 0;
-  }
-
-  .card-btn.el-button {
-    width: 100%;
-    flex: unset;
-    display: flex;
-    box-sizing: border-box;
-    justify-content: center;
-  }
-
-  :deep(.script-dialog .el-dialog__body) {
-    padding: 20px 16px 12px;
-  }
-
-  :deep(.script-dialog .el-form) {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  :deep(.script-dialog .el-form-item) {
-    margin-bottom: 12px;
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  :deep(.script-dialog .el-form-item__label) {
-    width: 100% !important;
-    text-align: left;
-    line-height: 1.4;
-    padding-bottom: 6px;
-  }
-
-  :deep(.script-dialog .el-form-item__content) {
-    width: 100%;
-  }
-
-  :deep(.script-dialog .el-radio-group) {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  :deep(.script-dialog .el-radio) {
-    margin-right: 0;
-    width: 100%;
-    display: inline-flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 8px;
-    padding: 10px 14px;
-    border-radius: 14px;
-    background: rgba(107, 115, 255, 0.06);
-  }
-
-  /* 移动端单选按钮组可换行 */
-  :deep(.el-radio-group) {
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  /* 对话框移动端优化 */
-  :deep(.el-dialog) {
-    width: 95vw !important;
-    max-width: 95vw !important;
-    margin: 0 !important;
-    max-height: 90vh;
-    border-radius: var(--agent-radius-md, 16px) !important;
-  }
-
-  :deep(.el-dialog__header) {
-    padding: 18px 20px 16px;
-  }
-
-  :deep(.el-dialog__title) {
-    font-size: 18px;
-  }
-
-  :deep(.el-dialog__body) {
-    padding: 20px 16px;
-    overflow-y: auto;
-    max-height: calc(90vh - 140px);
-  }
-
-  :deep(.el-dialog__footer) {
-    padding: 14px 16px 18px;
-  }
-
-  :deep(.el-form-item) {
-    margin-bottom: 18px;
-  }
-
-  :deep(.el-form-item__label) {
-    font-size: 13px;
-    width: 90px !important;
-  }
-
-  :deep(.el-input-number) {
-    width: 100%;
-  }
-
-  :deep(.el-radio) {
-    padding: 8px 14px;
-  }
-
-  :deep(.el-radio__label) {
-    font-size: 13px;
-  }
-
-  :deep(.el-alert) {
-    padding: 12px;
-  }
-
-  :deep(.el-alert__title) {
-    font-size: 12px;
-  }
-
-  :deep(.el-divider) {
-    margin: 20px 0;
-  }
-
-  .command-container {
-    padding: 14px;
-  }
-
-  .command-label {
-    font-size: 14px;
-  }
-
-  .command-input :deep(.el-textarea__inner) {
-    font-size: 12px;
-    padding: 12px;
-  }
-
-  :deep(.el-button) {
-    font-size: 13px;
-  }
-
-  :deep(.el-button--large) {
-    padding: 10px 20px;
-    font-size: 14px;
-  }
-
-  .logs-textarea :deep(.el-textarea__inner) {
-    font-size: 11px;
-    padding: 12px;
-  }
-
-  .script-textarea :deep(.el-textarea__inner) {
-    font-size: 11px;
-    padding: 12px;
-  }
-}
-
-/* 超小屏幕适配 */
-@media (max-width: 480px) {
-  .agents-page {
-    padding: 16px;
-    --agent-radius-xl: 24px;
-    --agent-radius-lg: 18px;
-    --agent-radius-md: 12px;
-  }
-
-  .title-block h2 {
-    font-size: 20px;
-  }
-
-  .title-block p {
-    font-size: 13px;
-  }
-
-  .stats-cards {
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-
-  .stat-card :deep(.el-card__body) {
-    padding: 12px;
-  }
-
-  .stat-content {
-    gap: 12px;
-  }
-
-  .stat-icon {
-    width: 36px;
-    height: 36px;
-    font-size: 18px;
-  }
-
-  .stat-value {
-    font-size: 18px;
-  }
-
-  .stat-label {
-    font-size: 12px;
-  }
-
-  .agent-card {
-    padding: 16px;
-  }
-
-  .card-title {
-    font-size: 15px;
-  }
-
-  .card-actions {
-    gap: 6px;
-  }
-
-  .card-btn.el-button {
-    font-size: 12px;
-    padding: 0 10px;
-    height: 32px;
-  }
-
-  :deep(.el-dialog) {
-    width: 100vw !important;
-    max-width: 100vw !important;
-    margin: 0 !important;
-    border-radius: 0 !important;
-    max-height: 100vh;
-  }
-
-  :deep(.el-dialog__header) {
-    padding: 16px 14px 14px;
-  }
-
-  :deep(.el-dialog__title) {
-    font-size: 16px;
-  }
-
-  :deep(.el-dialog__body) {
-    max-height: calc(100vh - 130px);
-    padding: 18px 14px;
-  }
-
-  :deep(.el-dialog__footer) {
-    padding: 12px 14px 16px;
-  }
-
-  :deep(.el-form-item) {
-    margin-bottom: 16px;
-  }
-
-  :deep(.el-form-item__label) {
-    font-size: 12px;
-    width: 80px !important;
-  }
-
-  :deep(.el-radio) {
-    padding: 7px 12px;
-  }
-
-  :deep(.el-radio__label) {
-    font-size: 12px;
-  }
-
-  :deep(.el-alert) {
-    padding: 10px;
-  }
-
-  :deep(.el-alert__title) {
-    font-size: 11px;
-  }
-
-  :deep(.el-divider) {
-    margin: 16px 0;
-  }
-
-  :deep(.el-button) {
-    font-size: 12px;
-  }
-
-  :deep(.el-button--large) {
-    padding: 8px 16px;
-    font-size: 13px;
-  }
-
-  .command-container {
-    padding: 12px;
-  }
-
-  .command-label {
-    font-size: 13px;
-  }
-
-  .command-input :deep(.el-textarea__inner) {
-    font-size: 11px;
-    padding: 10px;
-  }
-
-  .logs-textarea :deep(.el-textarea__inner) {
-    font-size: 10px;
-    padding: 10px;
-  }
-
-  .script-textarea :deep(.el-textarea__inner) {
-    font-size: 10px;
-    padding: 10px;
-  }
-
-  /* 监控详情对话框样式 */
-  .metrics-dialog-content {
-    min-height: 400px;
-  }
-
-  .metrics-summary-header {
-    margin-bottom: 20px;
-  }
-
-  .metrics-summary-header :deep(.el-descriptions__label) {
-    font-size: 12px;
-    font-weight: 500;
-  }
-
-  .metrics-summary-header :deep(.el-descriptions__content) {
-    font-size: 13px;
-  }
-
-  .charts-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 20px;
-    margin-bottom: 20px;
-  }
-
-  .chart-card {
-    background: var(--cf-bg);
-    border-radius: 8px;
-    padding: 16px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  }
-
-  .metrics-info {
-    text-align: center;
-    padding: 12px;
-    background: var(--cf-bg);
-    border-radius: 6px;
-  }
-
-  .empty-state {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 300px;
-  }
-
-  /* 响应式布局 */
-  @media (max-width: 1200px) {
-    .charts-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-}
-</style>

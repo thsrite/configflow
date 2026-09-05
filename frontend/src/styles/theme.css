@@ -1,24 +1,15 @@
 /* ConfigFlow × shadcn 主题层 —— 全站唯一色彩来源
  *
- * 这里定义 shadcn 语义 token（oklch，zinc 冷中性基调 + 单一强调色），
- * tokens.css 里既有的 --cf-* 全部反向引用本文件，
- * 因此未改造的页面无需改动结构即可继承新配色。
+ * 这里定义 shadcn 语义 token（oklch，zinc 冷中性基调 + 双强调色），
+ * tokens.css 里既有的 --cf-* 全部反向引用本文件。
  *
- * 刻意不引入 Tailwind preflight：本项目 12 个页面依赖大量原生元素默认样式
- * 与 Element Plus 样式，全局重置会造成不可控回归。shadcn 组件所需的少量
- * 基线重置在 @layer base 中按需补齐，作用范围限定在组件自身的类上。
- */
-
-/* ⚠️ 迁移约束：element-plus/dist/index.css 是「未分层」样式，而 Tailwind 工具类位于
- * @layer utilities。CSS 规定未分层规则永远压过任何 cascade layer，因此在仍带 .el-*
- * 类的元素上叠加 Tailwind 工具类会静默失效（不报错、不生效）。
- * 后续逐页改造时：一个元素要么完全交给 shadcn，要么继续用 Element Plus + scoped 样式，
- * 不要混用。若将来必须混用，需先把 Element Plus 也 @import 进一个 vendor layer，
- * 那会整体改变它与各页 scoped 样式的优先级，属于独立的破坏性改动。
+ * Element Plus 移除后已启用 Tailwind preflight：全站基线统一，
+ * 不再需要按 data-slot 逐个补回 border-color / box-sizing / button 默认值。
  */
 @layer theme, base, components, utilities;
 
 @import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
 @import 'tailwindcss/utilities.css' layer(utilities);
 
 /* shadcn 组件的进出场动画类（animate-in / fade-in-0 / zoom-in-95 …）来自这里 */
@@ -189,55 +180,268 @@
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
 
-/* ---------- 受限基线重置 ----------
- * 只覆盖 shadcn 组件必须依赖的元素默认值，且限定在带 Tailwind 类的元素上，
- * 避免波及未改造页面的原生元素样式。
- */
+/* ---------- preflight 之后的少量补充 ---------- */
 @layer base {
-  /* preflight 未启用带来的两处默认值缺口，统一在 shadcn 组件
-   * （均带 data-slot）范围内补回，不波及未改造页面：
-   *
-   * 1) border/ring 颜色：Tailwind v4 默认取 currentColor
-   * 2) box-sizing：浏览器 UA 对 <input type=text> / <textarea> 默认是
-   *    content-box，导致 w-full 或固定宽度的输入框会把 padding 溢出到
-   *    容器之外、压住相邻元素（<button>/<select> 的 UA 默认是 border-box，
-   *    所以不会暴露这个问题）。
-   */
-  [data-slot],
-  [data-slot] *,
-  [data-slot]::before,
-  [data-slot]::after {
-    border-color: var(--border);
-    box-sizing: border-box;
-  }
-
-  button:where([class*='inline-flex'], [class*='flex']) {
-    font-family: inherit;
-    font-size: inherit;
-    line-height: inherit;
-    background-color: transparent;
-    background-image: none;
-    border: 0 solid transparent;
-    margin: 0;
-    padding: 0;
-    cursor: pointer;
-  }
-
-  input:where([class*='w-full'], [class*='flex']),
-  textarea:where([class*='w-full'], [class*='flex']) {
-    font-family: inherit;
-    font-size: inherit;
-    line-height: inherit;
-    color: inherit;
-    background-color: transparent;
-    border: 0 solid transparent;
-    margin: 0;
-    padding: 0;
-  }
-
+  /* preflight 会把 placeholder 设成 currentColor 的半透明，
+   * 深色主题下对比不足，统一改用语义色。 */
   input::placeholder,
   textarea::placeholder {
     color: var(--muted-foreground);
     opacity: 1;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+  }
+}
+
+/* ============================================================
+ * 科技感表现层（tech layer）
+ * ------------------------------------------------------------
+ * 只新增「氛围 / 发光 / 网格 / 渐变边」这类表现 token 与工具类，
+ * 不改动上面的语义色板 —— 语义色仍是全站唯一色彩来源。
+ * 深浅色各自给值，保证浅色主题下不出现「深色残留」。
+ * ============================================================ */
+
+:root,
+:root[data-theme='dark'] {
+  /* 副强调色：青。与靛蓝主色组成双色渐变，用于发光、图表、进度 */
+  --accent-2: oklch(0.7800 0.1300 208.0);
+  --accent-2-fill: oklch(0.6200 0.1350 208.0);
+
+  /* 发光：激活态 / 悬停 / 焦点的辉光半径 */
+  --glow-primary: 0 0 0 1px oklch(from var(--primary-accent) l c h / 35%),
+    0 0 20px -4px oklch(from var(--primary-accent) l c h / 45%);
+  --glow-soft: 0 0 24px -8px oklch(from var(--primary-accent) l c h / 55%);
+  --glow-danger: 0 0 20px -6px oklch(from var(--destructive-accent) l c h / 50%);
+  --glow-success: 0 0 20px -6px oklch(from var(--success-accent) l c h / 50%);
+
+  /* 玻璃表面：列表/卡片的半透明底，配合 backdrop-blur */
+  --glass-bg: oklch(from var(--card) l c h / 62%);
+  --glass-bg-strong: oklch(from var(--card) l c h / 86%);
+
+  /* 渐变发丝边：从主色到副色再淡出 */
+  --hairline: linear-gradient(
+    130deg,
+    oklch(from var(--primary-accent) l c h / 22%),
+    oklch(from var(--accent-2) l c h / 13%) 34%,
+    oklch(1 0 0 / 3%) 68%
+  );
+
+  /* 背景网格与极光 */
+  --tech-grid-line: oklch(1 0 0 / 3.5%);
+  --tech-grid-size: 44px;
+  --aurora-1: oklch(from var(--primary) l c h / 26%);
+  --aurora-2: oklch(from var(--accent-2-fill) l c h / 18%);
+
+  /* 顶部装饰条：页面/卡片顶缘的一条渐变光 */
+  --edge-light: linear-gradient(
+    90deg,
+    transparent,
+    oklch(from var(--primary-accent) l c h / 70%) 30%,
+    oklch(from var(--accent-2) l c h / 70%) 62%,
+    transparent
+  );
+}
+
+:root[data-theme='light'] {
+  --accent-2: oklch(0.5000 0.1200 208.0);
+  --accent-2-fill: oklch(0.5600 0.1300 208.0);
+
+  --glow-primary: 0 0 0 1px oklch(from var(--primary) l c h / 22%),
+    0 6px 18px -10px oklch(from var(--primary) l c h / 45%);
+  --glow-soft: 0 8px 24px -14px oklch(from var(--primary) l c h / 55%);
+  --glow-danger: 0 8px 20px -14px oklch(from var(--destructive) l c h / 50%);
+  --glow-success: 0 8px 20px -14px oklch(from var(--success) l c h / 50%);
+
+  --glass-bg: oklch(1 0 0 / 78%);
+  --glass-bg-strong: oklch(1 0 0 / 94%);
+
+  --hairline: linear-gradient(
+    130deg,
+    oklch(from var(--primary) l c h / 16%),
+    oklch(from var(--accent-2) l c h / 10%) 34%,
+    oklch(0.21 0.006 286 / 4%) 68%
+  );
+
+  --tech-grid-line: oklch(0.21 0.006 286 / 5%);
+  --tech-grid-size: 44px;
+  --aurora-1: oklch(from var(--primary) l c h / 12%);
+  --aurora-2: oklch(from var(--accent-2-fill) l c h / 9%);
+
+  --edge-light: linear-gradient(
+    90deg,
+    transparent,
+    oklch(from var(--primary) l c h / 55%) 30%,
+    oklch(from var(--accent-2) l c h / 55%) 62%,
+    transparent
+  );
+}
+
+@theme inline {
+  --color-accent-2: var(--accent-2);
+  --color-accent-2-fill: var(--accent-2-fill);
+  --shadow-glow: var(--glow-primary);
+  --shadow-glow-soft: var(--glow-soft);
+  --ease-tech: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@layer components {
+  /* 页面氛围层：固定在视口的网格 + 两团极光，pointer-events none */
+  .tech-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(to right, var(--tech-grid-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--tech-grid-line) 1px, transparent 1px);
+    background-size: var(--tech-grid-size) var(--tech-grid-size);
+    /* 网格向下淡出，避免底部噪声压过内容 */
+    mask-image: radial-gradient(120% 90% at 50% 0%, #000 25%, transparent 82%);
+  }
+
+  .tech-backdrop::before,
+  .tech-backdrop::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(90px);
+  }
+
+  .tech-backdrop::before {
+    inset: -18% 30% auto -12%;
+    height: 58vh;
+    background: var(--aurora-1);
+    animation: aurora-drift 26s var(--ease-tech) infinite alternate;
+  }
+
+  .tech-backdrop::after {
+    inset: -10% -14% auto 46%;
+    height: 46vh;
+    background: var(--aurora-2);
+    animation: aurora-drift 34s var(--ease-tech) infinite alternate-reverse;
+  }
+
+  /* 渐变发丝边：用 mask 只保留 1px 边框 */
+  .hairline {
+    position: relative;
+  }
+
+  .hairline::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: var(--hairline);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  /* 玻璃表面 */
+  .glass {
+    background-color: var(--glass-bg);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+  }
+
+  .glass-strong {
+    background-color: var(--glass-bg-strong);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+  }
+
+  /* 卡片顶缘光带 */
+  .edge-light {
+    position: relative;
+  }
+
+  .edge-light::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 12%;
+    right: 12%;
+    height: 1px;
+    background: var(--edge-light);
+    opacity: 0.9;
+    pointer-events: none;
+  }
+
+  /* 强调文字渐变 */
+  .text-gradient {
+    background: linear-gradient(100deg, var(--foreground), var(--primary-accent) 55%, var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* 数字统一等宽，避免跳动 */
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  /* 扫描线：数据加载中的顶部进度感 */
+  .scanline {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .scanline::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      100deg,
+      transparent 20%,
+      oklch(from var(--primary-accent) l c h / 10%) 50%,
+      transparent 80%
+    );
+    transform: translateX(-100%);
+    animation: scan 1.8s var(--ease-tech) infinite;
+    pointer-events: none;
+  }
+}
+
+@keyframes aurora-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(6%, 4%, 0) scale(1.18);
+  }
+}
+
+@keyframes scan {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 currentColor;
+  }
+  70% {
+    opacity: 0.85;
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tech-backdrop::before,
+  .tech-backdrop::after,
+  .scanline::after {
+    animation: none;
   }
 }

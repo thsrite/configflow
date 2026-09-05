@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
+import { notify } from '@/lib/feedback'
 import router from '@/router'
 import { clearActiveProfileId, getActiveProfileId } from '@/profileContext'
 
@@ -51,7 +51,7 @@ api.interceptors.response.use(
       // token 无效或过期
       localStorage.removeItem('token')
       localStorage.removeItem('username')
-      ElMessage.error('登录已过期，请重新登录')
+      notify.error('登录已过期，请重新登录')
       router.push('/login')
     }
     return Promise.reject(error)
