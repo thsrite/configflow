@@ -4,13 +4,14 @@ Agent 只负责「经指定节点取页面并匹配标记」，判定全部在�
 判定原则是宁可 unknown 也不猜，每个结论都附带可读的依据。
 """
 
-import json
 import os
 import re
 import threading
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlsplit
+
+from backend.utils.json_store import JsonFileStore
 
 REGION_RETENTION_DAYS = 30
 MAX_GROUP_TARGETS = 4
@@ -327,26 +328,14 @@ def pick_targets(targets: List[Dict[str, Any]], preferred_group: Optional[str] =
 _LOCK = threading.Lock()
 
 
-class RegionStore:
+class RegionStore(JsonFileStore):
     """按 Agent 保存最近一次服务检测矩阵和各域名的地区差异。"""
 
-    def __init__(self, data_dir):
-        self.data_dir = str(data_dir)
-
-    def _path(self, agent_id):
-        safe_id = str(agent_id).replace('/', '_').replace('\\', '_')
-        return os.path.join(self.data_dir, f'{safe_id}.json')
-
     def _read(self, agent_id):
-        try:
-            with open(self._path(agent_id), encoding='utf-8') as handle:
-                data = json.load(handle)
-        except (OSError, ValueError):
-            data = {}
-        if not isinstance(data, dict):
-            data = {}
+        data = self._read_json(agent_id) or {}
         data.setdefault('services', None)
-        data.setdefault('domains', {})
+        if not isinstance(data.get('domains'), dict):
+            data['domains'] = {}
         return data
 
     def update(self, agent_id, mutate: Callable[[Dict[str, Any]], None], now: Optional[datetime] = None):
@@ -357,12 +346,7 @@ class RegionStore:
             oldest = (now - timedelta(days=REGION_RETENTION_DAYS)).isoformat(timespec='seconds')
             data['domains'] = {host: entry for host, entry in data['domains'].items()
                                if entry.get('checked_at', '') >= oldest}
-            os.makedirs(self.data_dir, exist_ok=True)
-            path = self._path(agent_id)
-            temp_path = f'{path}.tmp'
-            with open(temp_path, 'w', encoding='utf-8') as handle:
-                json.dump(data, handle, ensure_ascii=False, separators=(',', ':'))
-            os.replace(temp_path, path)
+            self._write_json(agent_id, data)
 
     def load(self, agent_id):
         with _LOCK:
@@ -370,10 +354,7 @@ class RegionStore:
 
     def delete(self, agent_id):
         with _LOCK:
-            try:
-                os.remove(self._path(agent_id))
-            except FileNotFoundError:
-                pass
+            self._remove(agent_id)
 
 
 def get_region_store():

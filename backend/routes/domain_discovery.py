@@ -135,7 +135,7 @@ def start_region_check():
         job = service.start_region_job(profile_id, services=bool(payload.get('services', True)),
                                        domains=payload.get('domains') or None)
     except service.ProbeBusy as busy:
-        return jsonify({'success': False, 'message': str(busy), 'job': service.public_job(service.get_job(busy.job_id))}), 409
+        return _busy_response(busy, profile_id)
     return jsonify({'success': True, 'job': service.public_job(job)}), 202
 
 

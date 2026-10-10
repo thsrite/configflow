@@ -360,8 +360,16 @@ def _probe_view(entry):
         'direct', 'proxy', 'proxy_path')}
 
 
-def load_domains(profile_id, *, days=7, view='uncovered', agent_id=None):
+def _local_matcher(config):
+    """按当前规则顺序匹配；规则集只读本地缓存，不发网络请求。"""
     from backend.routes.rules import get_ruleset_content
+    return RuleConfigMatcher(
+        config.get('rule_configs', []), config.get('rule_library', []),
+        lambda item, library_rule: get_ruleset_content(item, library_rule, allow_network=False),
+    )
+
+
+def load_domains(profile_id, *, days=7, view='uncovered', agent_id=None):
     from backend.utils.domain_probe import domain_suggestion
 
     config = get_config(profile_id)
@@ -369,10 +377,7 @@ def load_domains(profile_id, *, days=7, view='uncovered', agent_id=None):
     agents = profile_agents(profile_id)
     store = get_traffic_store()
     reports = [(agent, store.load(agent['id'])) for agent in agents]
-    matcher = RuleConfigMatcher(
-        config.get('rule_configs', []), config.get('rule_library', []),
-        lambda item, library_rule: get_ruleset_content(item, library_rule, allow_network=False),
-    )
+    matcher = _local_matcher(config)
     result = summarize(reports, days=days, ignored=settings['ignored'],
                        match_rule=matcher.match, view=view, agent_id=agent_id)
     probes = latest_probes([agent['id'] for agent in agents])
@@ -496,7 +501,33 @@ def apply_domains(profile_id, entries, *, source='manual', evidence=None, now=No
         f'规则集「{info["name"]}」没有在当前配置中启用（或位于兜底规则之后），写入的域名不会生效'
         for info in infos.values() if not info['active']
     ]
+    shadowed = _shadowed_entries(profile_id, added, {target: info['id'] for target, info in infos.items() if info['active']})
+    if shadowed:
+        details = '；'.join(f"{value} → 第 {match['priority']} 条「{match['rule_name']}」（{match['policy']}）"
+                           for value, match in shadowed[:3])
+        more = f' 等 {len(shadowed)} 个' if len(shadowed) > 3 else ''
+        warnings.append(f'以下域名会先命中更靠前的规则，写入的规则不会生效{more}：{details}。'
+                        '请调整规则顺序，或在策略规则里修改那条规则。')
     return {'added': added, 'skipped': skipped, 'warnings': warnings}
+
+
+def _shadowed_entries(profile_id, added, ruleset_by_target):
+    """写入后，哪些域名仍会先被别的规则命中。GEOSITE 等服务端无法展开的规则检测不到。"""
+    if not added or not ruleset_by_target:
+        return []
+    config = get_config(profile_id)
+    references = {}
+    for item in config.get('rule_configs', []):
+        if item.get('itemType') == 'ruleset':
+            references.setdefault(item.get('library_rule_id'), set()).add(item.get('id'))
+    matcher = _local_matcher(config)
+    shadowed = []
+    for entry in added:
+        own = references.get(ruleset_by_target.get(entry['target']), set())
+        match = matcher.match(entry['value'])
+        if own and match and match.get('rule_id') not in own:
+            shadowed.append((entry['value'], match))
+    return shadowed
 
 
 def undo_domain(profile_id, value, target):
@@ -1024,8 +1055,12 @@ def region_payload(profile_id):
     }
 
 
-def ensure_policy_ruleset(profile_id, policy):
-    """为策略组准备「域名发现-<策略组>」规则集：放在默认代理规则集之前（没有时放在 MATCH 之前）。"""
+def ensure_policy_ruleset(profile_id, policy, values=()):
+    """为策略组准备「域名发现-<策略组>」规则集。
+
+    放在默认代理规则集和 MATCH 之前；如果已有规则会命中这些域名（如用户自己的 OpenAI 规则集），
+    再往前放到第一条这样的规则之前，否则指定的走向不会生效。
+    """
     config = get_config(profile_id)
     if policy not in policy_names(config):
         raise ProfileValidationError('请选择当前配置中的策略组')
@@ -1034,6 +1069,8 @@ def ensure_policy_ruleset(profile_id, policy):
     if info and not info['problem'] and info['active']:
         return info['id']
 
+    matcher = _local_matcher(config)
+    competing = {match['rule_id'] for match in (matcher.match(value) for value in values) if match}
     library_id = info['id'] if info and not info['problem'] else None
     if library_id is None:
         created = {}
@@ -1058,13 +1095,11 @@ def ensure_policy_ruleset(profile_id, policy):
                    and item.get('enabled', True) for item in rules):
             # 放在默认代理规则集之前，否则同一域名会先被代理规则集截走
             proxy_ruleset = read_settings(profile)['proxy_ruleset']
-            position = next((index for index, item in enumerate(rules)
-                             if item.get('itemType') == 'ruleset' and proxy_ruleset
-                             and item.get('library_rule_id') == proxy_ruleset), None)
-            if position is None:
-                position = next((index for index, item in enumerate(rules)
-                                 if item.get('itemType') == 'rule' and item.get('rule_type') == 'MATCH'), len(rules))
-            rules.insert(position, {
+            anchors = [index for index, item in enumerate(rules)
+                       if item.get('id') in competing
+                       or (item.get('itemType') == 'ruleset' and proxy_ruleset and item.get('library_rule_id') == proxy_ruleset)
+                       or (item.get('itemType') == 'rule' and item.get('rule_type') == 'MATCH')]
+            rules.insert(min(anchors) if anchors else len(rules), {
                 'id': f'ruleset_{uuid.uuid4()}', 'itemType': 'ruleset', 'library_rule_id': library_id,
                 'policy': policy, 'enabled': True, 'no_resolve': False,
             })
@@ -1092,7 +1127,7 @@ def route_to_policy(profile_id, kind, value, policy):
         values = [cleaned]
     else:
         raise ProfileValidationError('kind 只能是 service 或 domain')
-    ensure_policy_ruleset(profile_id, policy)
+    ensure_policy_ruleset(profile_id, policy, values)
     target = f'{POLICY_TARGET_PREFIX}{policy}'
     entries = [{'value': item, 'rule_type': 'DOMAIN-SUFFIX', 'target': target} for item in values]
     return apply_domains(profile_id, entries, source='region')

@@ -155,6 +155,10 @@ func (a *discoveryAggregator) entry(host string, port int, network, rule, payloa
 }
 
 func (a *discoveryAggregator) addConn(conn mihomoConn, now time.Time) {
+	// 区域检测自己发出的请求不是用户流量，不能计入统计
+	if conn.Metadata.InboundName == regionProbeListener {
+		return
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	host := conn.domain()
@@ -236,6 +240,7 @@ type mihomoConn struct {
 	ID       string `json:"id"`
 	Metadata struct {
 		Network         string `json:"network"`
+		InboundName     string `json:"inboundName"`
 		Host            string `json:"host"`
 		SniffHost       string `json:"sniffHost"`
 		DestinationPort string `json:"destinationPort"`

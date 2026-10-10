@@ -310,3 +310,18 @@ func TestAggregatorTruncatesLongFieldsOnRuneBoundary(t *testing.T) {
 		t.Fatal("unexpected truncation")
 	}
 }
+
+func TestAggregatorIgnoresRegionProbeTraffic(t *testing.T) {
+	agg := newDiscoveryAggregator()
+	probe := conn("1", "netflix.com", 10, time.Now(), "🇺🇸 美国 01", regionProbeGroup)
+	probe.Rule = ""
+	probe.Metadata.InboundName = regionProbeListener
+	agg.addConn(probe, time.Now())
+	user := conn("2", "netflix.com", 10, time.Now(), "DIRECT")
+	user.Metadata.InboundName = "DEFAULT-MIXED"
+	agg.addConn(user, time.Now())
+	items, ipOnly, _ := agg.drain(10)
+	if len(items) != 1 || items[0].Conns != 1 || items[0].Outlet != "direct" || ipOnly != 0 {
+		t.Fatalf("probe traffic leaked into stats: %+v", items)
+	}
+}

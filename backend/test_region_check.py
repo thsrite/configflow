@@ -304,3 +304,50 @@ def test_route_service_to_policy_creates_ruleset_and_undo(env):
     assert entry['target'] == 'policy:🇺🇸 美国' and entry['source'] == 'region'
     undo = client.post('/api/domain-discovery/undo', json={'value': 'shop.test', 'target': 'policy:🇺🇸 美国'}).get_json()
     assert undo['removed'] == ['DOMAIN-SUFFIX,shop.test']
+
+
+def test_route_places_ruleset_before_competing_user_rule(env):
+    client, repository, _, _, _ = env
+    client.post('/api/domain-discovery/rulesets/init', json={'proxy_policy': 'PROXY'})
+
+    def add_user_rule(profile):
+        profile['rule_configs'].insert(0, {'id': 'user-openai', 'itemType': 'rule', 'rule_type': 'DOMAIN-SUFFIX',
+                                           'value': 'chatgpt.com', 'policy': 'PROXY', 'enabled': True})
+    config_module.update_config_transaction(add_user_rule, 'default')
+
+    body = client.post('/api/domain-discovery/region/route',
+                       json={'kind': 'service', 'value': 'openai', 'policy': '🇺🇸 美国'}).get_json()
+    assert body['warnings'] == []
+    rules = repository.get_profile('default')['rule_configs']
+    names = {item['id']: item['name'] for item in repository.get_shared()['rule_library']}
+    order = [names.get(item.get('library_rule_id'), item.get('id')) for item in rules]
+    assert order[:2] == ['域名发现-🇺🇸 美国', 'user-openai']
+
+
+def test_apply_warns_when_an_earlier_rule_still_matches(env):
+    client, _, _, _, _ = env
+    client.post('/api/domain-discovery/rulesets/init', json={'proxy_policy': 'PROXY'})
+
+    def add_user_rule(profile):
+        profile['rule_configs'].insert(0, {'id': 'user-direct', 'itemType': 'rule', 'rule_type': 'DOMAIN-KEYWORD',
+                                           'value': 'blocked', 'policy': 'DIRECT', 'enabled': True})
+    config_module.update_config_transaction(add_user_rule, 'default')
+
+    body = client.post('/api/domain-discovery/apply', json={'items': [
+        {'value': 'blocked.example.com', 'target': 'proxy'}, {'value': 'fine.example.com', 'target': 'proxy'}]}).get_json()
+    assert len(body['warnings']) == 1
+    assert 'blocked.example.com → 第 1 条' in body['warnings'][0] and 'fine.example.com' not in body['warnings'][0]
+
+
+@pytest.mark.parametrize('store_path, factory, empty', [
+    ('backend.agents.traffic_store', 'TrafficStore', lambda store: store.load('a1')['days'] == {}),
+    ('backend.utils.domain_probe', 'ProbeStore', lambda store: store.load('a1') == {}),
+    ('backend.utils.region_check', 'RegionStore', lambda store: store.load('a1')['domains'] == {}),
+])
+def test_stores_treat_corrupt_files_as_empty(tmp_path, store_path, factory, empty):
+    import importlib
+    store = getattr(importlib.import_module(store_path), factory)(tmp_path)
+    (tmp_path / 'a1.json').write_text('{not json', encoding='utf-8')
+    assert empty(store)
+    store.delete('a1')
+    assert not (tmp_path / 'a1.json').exists()
