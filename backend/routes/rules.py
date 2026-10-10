@@ -2,7 +2,7 @@
 import copy
 import os
 import requests
-from flask import request, jsonify, make_response
+from flask import g, request, jsonify, make_response
 from backend.routes import rules_bp as bp, rule_sets_bp as rule_sets_bp
 from backend.common.auth import require_auth
 from backend.common.config import (
@@ -341,23 +341,22 @@ def handle_rule_set(rule_set_id):
 
 
 
-def get_ruleset_content(rule_item: dict, library_rule: dict = None) -> str:
+def get_ruleset_content(rule_item: dict, library_rule: dict = None, *, config_data: dict = None) -> str:
     """获取规则集内容（优先使用本地缓存，从URL获取后会自动缓存）
 
     Args:
         rule_item: 规则集配置项
         library_rule: 规则仓库中的规则（可选）
+        config_data: 本次请求的配置快照，下载远程内容时使用（可选）
 
     Returns:
         规则集内容字符串，获取失败返回空字符串
     """
     import os
-    config_data = get_config()
 
     rule_content = ''
     rule_name = ''
     filepath = ''
-    profile_id = resolve_profile_id()
     repository = get_repository()
 
     # 获取规则名称和缓存路径
@@ -392,6 +391,8 @@ def get_ruleset_content(rule_item: dict, library_rule: dict = None) -> str:
             # 从 URL 获取
             url = library_rule.get('url', '')
             if url:
+                if config_data is None:
+                    config_data = get_config()
                 try:
                     response = request_rule(url, timeout=30, config_data=config_data)
                     if response.status_code == 200:
@@ -414,6 +415,8 @@ def get_ruleset_content(rule_item: dict, library_rule: dict = None) -> str:
     if not rule_content:
         url = rule_item.get('url', '')
         if url:
+            if config_data is None:
+                config_data = get_config()
             # 如果是相对路径，拼接 server_domain
             if url.startswith('/'):
                 server_domain = config_data.get('system_config', {}).get('server_domain', '')
@@ -511,7 +514,7 @@ def match_test_rule():
                     if library_rule_id:
                         library_rule = next((r for r in rule_library if r['id'] == library_rule_id), None)
 
-                    rule_content = get_ruleset_content(rule_item, library_rule)
+                    rule_content = get_ruleset_content(rule_item, library_rule, config_data=config_data)
 
                     # 如果获取失败，记录警告并跳过该规则集
                     if not rule_content:
@@ -572,13 +575,17 @@ def match_test_rule():
 def find_duplicate_rules():
     """查找重复规则 - 检查直接规则与规则集内容中的重复条目"""
     import time
+    import uuid
     config_data = get_config()
 
-    start_time = time.time()
+    start_time = time.perf_counter()
+    scan_id = uuid.uuid4().hex[:12]
+    g.rule_duplicate_scan = (scan_id, start_time)
 
     try:
         rule_configs = config_data.get('rule_configs', [])
         rule_library = config_data.get('rule_library', [])
+        logger.info('Duplicate scan %s started: %d configured items', scan_id, len(rule_configs))
 
         # key: (规则类型, 归一化规则值) -> {'value': 首次出现的原始值, 'items': 出现位置列表}
         occurrences = {}
@@ -626,13 +633,15 @@ def find_duplicate_rules():
                 if library_rule_id:
                     library_rule = next((r for r in rule_library if r.get('id') == library_rule_id), None)
 
-                rule_content = get_ruleset_content(rule_item, library_rule)
+                source_started = time.perf_counter()
+                rule_content = get_ruleset_content(rule_item, library_rule, config_data=config_data)
                 if not rule_content:
-                    logger.warning(f'Skipping ruleset "{rule_set_name}" in duplicate check: unable to fetch content')
+                    logger.warning('Duplicate scan %s skipped ruleset "%s": unable to fetch content', scan_id, rule_set_name)
                     failed_rulesets.append(rule_set_name)
                     continue
 
                 rulesets_checked += 1
+                source_entries = 0
                 for line_no, line in enumerate(rule_content.splitlines(), start=1):
                     parsed = parse_rule_line(line)
                     if not parsed:
@@ -642,6 +651,7 @@ def find_duplicate_rules():
                     if not rule_value:
                         continue
 
+                    source_entries += 1
                     add_occurrence(rule_type, rule_value, {
                         'source_type': 'ruleset',
                         'source': rule_set_name,
@@ -651,6 +661,8 @@ def find_duplicate_rules():
                         'line': line.strip(),
                         'line_no': line_no
                     })
+                logger.info('Duplicate scan %s scanned ruleset "%s": %d entries in %.1f ms',
+                            scan_id, rule_set_name, source_entries, (time.perf_counter() - source_started) * 1000)
 
         # 同一规则集内部与跨来源的重复都算重复
         duplicates = []
@@ -669,7 +681,9 @@ def find_duplicate_rules():
         # 策略冲突的排前面，其余按出现次数降序、优先级升序
         duplicates.sort(key=lambda d: (not d['policy_conflict'], -d['count'], d['occurrences'][0]['priority']))
 
-        elapsed_time = time.time() - start_time
+        elapsed_time = time.perf_counter() - start_time
+        logger.info('Duplicate scan %s matched: %d duplicate groups in %.1f ms; preparing response',
+                    scan_id, len(duplicates), elapsed_time * 1000)
         return jsonify({
             'success': True,
             'duplicates': duplicates,

@@ -15,7 +15,7 @@ interface Preferences {
 }
 
 const STORAGE_KEY = 'configflow-preferences'
-const DEFAULTS: Preferences = { accent: 'clay', density: 1, motion: true, texture: true }
+const DEFAULTS: Preferences = { accent: 'clay', density: 1, motion: false, texture: true }
 
 const read = (): Preferences => {
   try {

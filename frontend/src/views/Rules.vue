@@ -21,10 +21,6 @@
               <FolderOpen class="size-4" />
               添加规则集
             </DropdownMenuItem>
-            <DropdownMenuItem @select="handleShowRuleIndex">
-              <Search class="size-4" />
-              规则索引
-            </DropdownMenuItem>
             <DropdownMenuItem @select="showDuplicateDialog">
               <Copy class="size-4" />
               查找重复
@@ -54,7 +50,6 @@
         <label class="min-w-0">
           <span class="mb-2 block font-mono text-[11px] tracking-[0.14em] text-muted-foreground uppercase">命中模拟</span>
           <Input
-            ref="simInput"
             v-model="simQuery"
             class="h-[46px] font-mono text-[16px]"
             spellcheck="false"
@@ -642,7 +637,11 @@
 
         <LoadingRows v-if="duplicateLoading" :rows="5" />
 
-        <div v-else-if="duplicateResult" class="flex max-h-[58dvh] flex-col gap-3 overflow-y-auto pr-1">
+        <Alert v-else-if="duplicateError" variant="destructive">
+          <AlertDescription>{{ duplicateError }}</AlertDescription>
+        </Alert>
+
+        <div v-else-if="duplicateResult" ref="duplicateResultsContainer" class="flex max-h-[58dvh] flex-col gap-3 overflow-y-auto pr-1">
           <div class="flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
             <span class="num">
               已检查 {{ duplicateResult.stats.rules_checked }} 条规则、{{ duplicateResult.stats.rulesets_checked }} 个规则集
@@ -655,6 +654,7 @@
               {{ duplicateResult.elapsed_time }} ms
             </Badge>
           </div>
+          <p class="m-0 text-[12px] text-muted-foreground">结果为上次扫描的快照，修改规则后请重新扫描。</p>
 
           <Alert v-if="duplicateResult.stats.failed_rulesets.length" variant="default" class="border-warning-accent/35 bg-warning-soft/40">
             <AlertDescription class="text-[12.5px]">
@@ -669,9 +669,10 @@
             description="本次成功检查的规则和规则集中，没有完全相同的条目。"
           />
 
-          <div
-            v-for="group in duplicateResult.duplicates"
+          <article
+            v-for="(group, groupIndex) in duplicateGroupsPage"
             :key="`${group.rule_type},${group.value}`"
+            :aria-label="`重复规则：${group.rule_type},${group.value}`"
             class="rounded-xl border border-border/50 bg-background/40 p-3"
           >
             <div class="mb-2 flex flex-wrap items-center gap-2">
@@ -683,8 +684,8 @@
             </div>
 
             <div
-              v-for="(occ, i) in group.occurrences"
-              :key="i"
+              v-for="(occ, i) in duplicateOccurrencesPage(group, groupIndex)"
+              :key="(occurrencePage(groupIndex) - 1) * DUPLICATE_OCCURRENCE_PAGE_SIZE + i"
               class="flex items-center gap-2 border-0 border-t border-border/40 py-2 text-[12.5px] first:border-t-0"
             >
               <Badge :variant="occ.source_type === 'rule' ? 'brand' : 'info'" class="shrink-0 text-[10.5px]">
@@ -707,8 +708,27 @@
                 <Trash2 class="size-4" />
               </Button>
             </div>
-          </div>
+            <nav
+              v-if="group.occurrences.length > DUPLICATE_OCCURRENCE_PAGE_SIZE"
+              :aria-label="`${group.value} 出现位置分页`"
+              class="mt-2 flex flex-wrap items-center gap-2 border-t border-border/40 pt-2 text-[12px] text-muted-foreground"
+            >
+              <span class="num mr-auto">第 {{ occurrencePage(groupIndex) }} / {{ occurrencePageCount(group) }} 页 · 共 {{ group.occurrences.length }} 处</span>
+              <Button variant="ghost" size="sm" :disabled="occurrencePage(groupIndex) === 1" @click="setOccurrencePage(groupIndex, 1)">首页</Button>
+              <Button variant="outline" size="sm" :disabled="occurrencePage(groupIndex) === 1" @click="setOccurrencePage(groupIndex, occurrencePage(groupIndex) - 1)">上一页</Button>
+              <Button variant="outline" size="sm" :disabled="occurrencePage(groupIndex) === occurrencePageCount(group)" @click="setOccurrencePage(groupIndex, occurrencePage(groupIndex) + 1)">下一页</Button>
+              <Button variant="ghost" size="sm" :disabled="occurrencePage(groupIndex) === occurrencePageCount(group)" @click="setOccurrencePage(groupIndex, occurrencePageCount(group))">末页</Button>
+            </nav>
+          </article>
         </div>
+
+        <nav v-if="!duplicateLoading && duplicateResult && duplicatePageCount > 1" aria-label="重复规则分页" class="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
+          <span class="num mr-auto">第 {{ duplicatePage }} / {{ duplicatePageCount }} 页 · 每页 {{ DUPLICATE_PAGE_SIZE }} 组</span>
+          <Button variant="ghost" size="sm" :disabled="duplicatePage === 1" @click="setDuplicatePage(1)">首页</Button>
+          <Button variant="outline" size="sm" :disabled="duplicatePage === 1" @click="setDuplicatePage(duplicatePage - 1)">上一页</Button>
+          <Button variant="outline" size="sm" :disabled="duplicatePage === duplicatePageCount" @click="setDuplicatePage(duplicatePage + 1)">下一页</Button>
+          <Button variant="ghost" size="sm" :disabled="duplicatePage === duplicatePageCount" @click="setDuplicatePage(duplicatePageCount)">末页</Button>
+        </nav>
 
         <DialogFooter>
           <Button variant="outline" @click="duplicateDialogVisible = false">关闭</Button>
@@ -727,7 +747,7 @@ import ReorderBar from '@/components/shell/ReorderBar.vue'
 import DragHandle from '@/components/shell/DragHandle.vue'
 import { useReorder } from '@/composables/useReorder'
 import PageHeader from '@/components/common/PageHeader.vue'
-import { ref, onMounted, onActivated, computed, nextTick, watch } from 'vue'
+import { ref, shallowRef, onMounted, onUnmounted, onActivated, computed, nextTick, watch } from 'vue'
 import { Motion } from 'motion-v'
 import {
   ArrowUpDown,
@@ -744,7 +764,6 @@ import {
   Pencil,
   Play,
   Plus,
-  Search,
   Trash2,
   TriangleAlert
 } from '@lucide/vue'
@@ -834,16 +853,9 @@ const isEditRuleSet = ref(false)
 const viewMode = ref<'list' | 'card'>('list') // 默认表格视图，与匹配顺序一致
 const rulesContainer = ref<HTMLElement | null>(null)
 
-// 「规则索引」入口改为聚焦页内的命中模拟
-const handleShowRuleIndex = () => {
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-  simInput.value?.$el?.focus?.()
-}
-
 /* ================================================================
  * 命中模拟
  * ================================================================ */
-const simInput = ref<any>(null)
 const simQuery = ref('')
 const simRunning = ref(false)
 const simResult = ref<any>(null)
@@ -990,9 +1002,56 @@ const ruleIndexResult = ref<any>(null)
 const ruleIndexLoading = ref(false)
 
 // 查找重复规则相关
+interface DuplicateOccurrence {
+  source_type: string
+  source: string
+  rule_id: string
+  policy: string
+  priority: number
+  line: string
+  line_no?: number
+}
+interface DuplicateGroup {
+  rule_type: string
+  value: string
+  count: number
+  policy_conflict: boolean
+  occurrences: DuplicateOccurrence[]
+}
+interface DuplicateScanResult {
+  duplicates: DuplicateGroup[]
+  stats: { rules_checked: number; rulesets_checked: number; failed_rulesets: string[] }
+  elapsed_time?: number
+}
+const DUPLICATE_PAGE_SIZE = 20
+const DUPLICATE_OCCURRENCE_PAGE_SIZE = 10
 const duplicateDialogVisible = ref(false)
-const duplicateResult = ref<any>(null)
+// Scan results are immutable snapshots; do not proxy every nested occurrence.
+const duplicateResult = shallowRef<DuplicateScanResult | null>(null)
 const duplicateLoading = ref(false)
+const duplicateError = ref('')
+const duplicateStarted = ref(false)
+const duplicatePage = ref(1)
+const duplicateOccurrencePages = ref<Record<number, number>>({})
+const duplicateResultsContainer = ref<HTMLElement | null>(null)
+const duplicatePageCount = computed(() => Math.max(1, Math.ceil((duplicateResult.value?.duplicates.length || 0) / DUPLICATE_PAGE_SIZE)))
+const duplicateGroupsPage = computed(() => duplicateResult.value?.duplicates.slice((duplicatePage.value - 1) * DUPLICATE_PAGE_SIZE, duplicatePage.value * DUPLICATE_PAGE_SIZE) || [])
+const occurrencePage = (index: number) => duplicateOccurrencePages.value[(duplicatePage.value - 1) * DUPLICATE_PAGE_SIZE + index] || 1
+const occurrencePageCount = (group: DuplicateGroup) => Math.max(1, Math.ceil(group.occurrences.length / DUPLICATE_OCCURRENCE_PAGE_SIZE))
+const duplicateOccurrencesPage = (group: DuplicateGroup, index: number) => {
+  const start = (occurrencePage(index) - 1) * DUPLICATE_OCCURRENCE_PAGE_SIZE
+  return group.occurrences.slice(start, start + DUPLICATE_OCCURRENCE_PAGE_SIZE)
+}
+const setOccurrencePage = (index: number, page: number) => {
+  duplicateOccurrencePages.value[(duplicatePage.value - 1) * DUPLICATE_PAGE_SIZE + index] = page
+}
+const setDuplicatePage = (page: number) => {
+  duplicatePage.value = page
+  if (duplicateResultsContainer.value) duplicateResultsContainer.value.scrollTop = 0
+}
+let duplicateController: AbortController | undefined
+let duplicateScanSequence = 0
+let duplicateViewActive = true
 
 const ruleForm = ref<Partial<Rule> & { itemType?: string }>({
   rule_type: 'DOMAIN-SUFFIX',
@@ -1573,32 +1632,51 @@ const performRuleIndexQuery = async () => {
 // 查找重复规则相关方法
 const showDuplicateDialog = () => {
   duplicateDialogVisible.value = true
-  performDuplicateScan()
+  // Closing the dialog does not start another server scan when it is reopened.
+  if (!duplicateStarted.value) void performDuplicateScan()
 }
 
 const performDuplicateScan = async () => {
+  if (!duplicateViewActive || duplicateLoading.value) return
+  const sequence = ++duplicateScanSequence
+  const controller = new AbortController()
+  duplicateController = controller
+  const isCurrent = () => duplicateViewActive && sequence === duplicateScanSequence && !controller.signal.aborted
+  duplicateStarted.value = true
   duplicateLoading.value = true
   duplicateResult.value = null
+  duplicateError.value = ''
+  duplicatePage.value = 1
+  duplicateOccurrencePages.value = {}
 
   try {
     // 需要拉取并解析规则集内容，与规则索引一样使用较长超时
-    const { data } = await ruleApi.findDuplicates(profileId)
+    const { data } = await ruleApi.findDuplicates(profileId, controller.signal)
+    if (!isCurrent()) return
     if (data.success) {
       duplicateResult.value = data
     } else {
-      notify.error(data.message || '查重失败')
+      duplicateError.value = data.message || '查重失败，请重新扫描'
     }
   } catch (error: any) {
-    console.error('Find duplicates failed:', error)
-    if (error.code === 'ECONNABORTED') {
-      notify.error('查重超时，请检查规则集配置是否正确')
-    } else {
-      notify.error(error.response?.data?.message || '查重失败，请稍后重试')
-    }
+    if (!isCurrent() || error.code === 'ERR_CANCELED') return
+    duplicateError.value = ['ECONNABORTED', 'ETIMEDOUT'].includes(error.code)
+      ? '查重超时，请稍后重新扫描；规则集较多时首次检查可能较慢'
+      : error.response?.data?.message || '查重失败，请稍后重新扫描'
   } finally {
-    duplicateLoading.value = false
+    if (isCurrent()) {
+      duplicateLoading.value = false
+      duplicateController = undefined
+    }
   }
 }
+
+onUnmounted(() => {
+  duplicateViewActive = false
+  ++duplicateScanSequence
+  duplicateController?.abort()
+  duplicateController = undefined
+})
 
 const deleteDuplicateRule = async (occ: any) => {
   // 后端对缺失 itemType 的旧数据按 'rule' 兜底，这里保持同样口径
