@@ -2006,13 +2006,7 @@ const refreshPreview = () => {
     preview.value = { nodes: [], total: 0, loading: false, error: '' }
     return
   }
-  // 正则先在本地校验，非法时保留上一次结果
-  try {
-    new RegExp(draft.value.regex || '.*')
-  } catch {
-    preview.value = { ...preview.value, error: '正则无效，保留上一次结果' }
-    return
-  }
+  // 与配置生成共用后端正则语法（包括 (?i)），不使用 JavaScript RegExp 校验。
   preview.value = { ...preview.value, loading: true, error: '' }
   const seq = ++previewSeq
   previewTimer = window.setTimeout(async () => {
