@@ -19,7 +19,7 @@ export const deploymentLabels: Record<string, string> = {
   preparing: '准备文件', uploading: '上传中', receiving: '接收中',
   verifying: '校验中', ready: '已校验，待激活', stopping: '停止服务',
   backing_up: '备份中', replacing: '替换中', starting: '启动服务',
-  checking: '启动检查', rolling_back: '回滚中', succeeded: '发布成功',
+  checking: '启动检查', rolling_back: '回滚中', succeeded: '上次配置推送：成功',
   recovery_pending: '旧文件已恢复，等待服务检查',
   failed: '发布失败', rolled_back: '发布失败，已回滚',
   rollback_failed: '回滚失败，需要处理', unknown: '结果待确认'

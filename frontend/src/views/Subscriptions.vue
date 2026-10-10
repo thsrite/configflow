@@ -24,7 +24,7 @@
     <Toolbar v-model:search="keyword" placeholder="搜索订阅名称或地址…">
       <template #filters>
         <Select v-model="statusFilter" :disabled="reorder.active.value">
-          <SelectTrigger class="h-9 w-[132px] border-transparent bg-background/50 text-[13px]" aria-label="按状态筛选">
+          <SelectTrigger class="h-9 w-[132px] border-input bg-card text-[13px] dark:border-transparent" aria-label="按状态筛选">
             <SelectValue />
           </SelectTrigger>
           <SelectContent class="glass-strong">

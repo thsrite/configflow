@@ -24,7 +24,7 @@
     <Toolbar v-model:search="searchKeyword" placeholder="搜索关键词…">
       <template #filters>
         <Select v-model="logLines" @update:model-value="reload()">
-          <SelectTrigger class="h-9 w-[120px] border-transparent bg-background/50 text-[13px]" aria-label="显示行数">
+          <SelectTrigger class="h-9 w-[120px] border-input bg-card text-[13px] dark:border-transparent" aria-label="显示行数">
             <SelectValue placeholder="显示行数" />
           </SelectTrigger>
           <SelectContent class="glass-strong">
