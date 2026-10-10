@@ -1,15 +1,13 @@
 """配置生成路由"""
-import io
-import zipfile
-
-import requests
+import logging
 from flask import request, jsonify, send_file
 
 from backend.routes import generate_bp
 from backend.common.auth import require_auth
 from backend.common.config import get_config, get_repository
 from backend.utils.strategy_references import StrategyReferenceError
-from backend.utils.rule_fetch import request_rule
+from backend.utils.mosdns_archive import MosdnsArchiveError, build_mosdns_zip
+from backend.utils.url_utils import safe_exception_details
 from backend.converters.mihomo import generate_mihomo_config
 from backend.converters.surge import generate_surge_config
 from backend.converters.loon import generate_loon_config
@@ -18,6 +16,9 @@ from backend.converters.mosdns import (
     get_mosdns_ruleset_downloads,
     get_mosdns_custom_files,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 @generate_bp.route('/mihomo', methods=['POST'])
@@ -113,60 +114,18 @@ def generate_mosdns():
         ruleset_downloads = get_mosdns_ruleset_downloads(config_data, base_url=base_url)
         custom_files = get_mosdns_custom_files(config_data)
 
-        # 构建 ZIP 包含 config.yaml 与 rules 下的所有规则
-        zip_buffer = io.BytesIO()
-        # Generated callback URLs use this origin even when the frontend's
-        # base_url differs from the current Flask request's host.
-        fetch_config = {'system_config': {
-            **config_data.get('system_config', {}),
-            'server_domain': config_data.get('system_config', {}).get('server_domain', '').strip() or base_url,
-        }}
-
-        def _write_to_zip(zip_file, arcname, content):
-            normalized_name = arcname.lstrip('./')
-            if not normalized_name:
-                return
-            if isinstance(content, bytes):
-                data_bytes = content
-            else:
-                data_bytes = content.encode('utf-8')
-            zip_file.writestr(normalized_name, data_bytes)
-
-        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            # 写入主配置文件
-            zip_file.writestr('config.yaml', yaml_content)
-
-            # 写入自定义规则文件
-            for custom_file in custom_files:
-                path = custom_file.get('path')
-                content = custom_file.get('content', '')
-                if not path or content is None:
-                    continue
-                _write_to_zip(zip_file, path, content)
-
-            # 下载并写入规则集文件
-            for download in ruleset_downloads:
-                download_url = download.get('url')
-                local_path = download.get('local_path')
-                if not download_url or not local_path:
-                    continue
-
-                if download_url.startswith('/'):
-                    download_url = f"{base_url.rstrip('/')}{download_url}"
-
-                try:
-                    response = request_rule(download_url, timeout=20, config_data=fetch_config)
-                    response.raise_for_status()
-                except (requests.exceptions.RequestException, ValueError):
-                    return jsonify({'success': False, 'message': '规则下载失败'}), 500
-
-                _write_to_zip(zip_file, local_path, response.text)
-
-        zip_buffer.seek(0)
-        download_name = 'mosdns-config.zip'
-        return send_file(zip_buffer, as_attachment=True, download_name=download_name, mimetype='application/zip')
-    except Exception as e:
+        zip_buffer = build_mosdns_zip(
+            config_data, yaml_content, ruleset_downloads, custom_files, base_url=base_url,
+        )
+        return send_file(zip_buffer, as_attachment=True, download_name='mosdns-config.zip',
+                         mimetype='application/zip')
+    except MosdnsArchiveError as e:
+        logger.warning('MosDNS ZIP 生成失败：%s', e)
         return jsonify({'success': False, 'message': str(e)}), 500
+    except Exception as e:
+        detail = safe_exception_details(e)
+        logger.error('MosDNS ZIP 生成失败：%s', detail)
+        return jsonify({'success': False, 'message': f'生成 MosDNS 配置失败：{detail}'}), 500
 
 
 @generate_bp.route('/mihomo/preview', methods=['POST'])

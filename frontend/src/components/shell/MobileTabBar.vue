@@ -1,6 +1,6 @@
 <template>
   <nav
-    class="glass-strong fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+10px)] z-900 hidden h-[62px] grid-cols-5 gap-1 rounded-[20px] border border-border-strong p-1.5 shadow-overlay max-[900px]:grid"
+    class="glass-strong fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+10px)] z-30 hidden h-[62px] grid-cols-5 gap-1 rounded-[20px] border border-border-strong p-1.5 shadow-overlay max-[900px]:grid"
     aria-label="主导航"
   >
     <component

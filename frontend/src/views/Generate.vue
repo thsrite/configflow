@@ -1388,8 +1388,23 @@ const generateMosdns = async () => {
     window.URL.revokeObjectURL(url)
 
     notify.success('MosDNS 配置已生成')
-  } catch (error) {
-    notify.error('生成 MosDNS 配置失败')
+  } catch (error: any) {
+    let message = '生成 MosDNS 配置失败'
+    if (error?.code === 'ECONNABORTED' || error?.code === 'ETIMEDOUT') {
+      message = '生成 MosDNS 配置超时，请稍后重试'
+    } else {
+      try {
+        // 下载接口的 JSON 错误也会被 Axios 按 Blob 接收。
+        const data = error?.response?.data
+        const details = data instanceof Blob ? JSON.parse(await data.text()) : data
+        if (typeof details?.message === 'string' && details.message.trim()) {
+          message = `生成 MosDNS 配置失败：${details.message.trim()}`
+        }
+      } catch {
+        // 网关可能返回 HTML 或无效 JSON，保留可读的通用错误提示。
+      }
+    }
+    notify.error(message)
   } finally {
     mosdnsLoading.value = false
   }

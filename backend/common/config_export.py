@@ -2,6 +2,7 @@
 
 import urllib.parse
 from collections import deque
+from functools import lru_cache
 from typing import Any, Dict, Iterable, Optional
 
 
@@ -9,6 +10,8 @@ SENSITIVE_SYSTEM_CONFIG_FIELDS = frozenset(
     {"rule_proxy_token", "retired_rule_proxy_tokens", "rule_fetch_proxy"}
 )
 _REDACTED = "[REDACTED]"
+_STRING_CHECK_CACHE_SIZE = 4096
+_STRING_CHECK_CACHE_MAX_LENGTH = 1024
 
 
 def _repository_rule_proxy_tokens() -> Iterable[str]:
@@ -31,6 +34,13 @@ def _repository_agent_tokens() -> Iterable[str]:
 
 def _contains_encoded_secret(value: str, secrets: set[str]) -> bool:
     """Inspect bounded URL-decoding paths without enumerating encoding depth."""
+    if not secrets:
+        return False
+    # Both URL decoders leave these strings unchanged. Ordinary response keys,
+    # rule names and domains do not need a decoding queue or state tracking.
+    if "%" not in value and "+" not in value:
+        return any(secret in value for secret in secrets)
+
     pending = deque([value])
     seen = {value}
     max_states = max(1, 2 * len(value) + 1)
@@ -75,6 +85,13 @@ def sanitize_external_payload(
             if isinstance(system_config.get(field), str) and system_config[field]
         )
     secrets = {secret for secret in secrets if isinstance(secret, str) and secret}
+
+    # Repeated keys and rule metadata dominate large responses. Scope the cache
+    # to this call so token changes cannot reuse earlier decisions, and bound
+    # both entry count and string length rather than retaining arbitrary input.
+    @lru_cache(maxsize=_STRING_CHECK_CACHE_SIZE)
+    def contains_cached_secret(value: str) -> bool:
+        return _contains_encoded_secret(value, secrets)
 
     # A response sanitizer is an availability boundary: it must not inherit
     # Python's recursion limit or follow hostile object cycles.  Depth counts
@@ -141,8 +158,13 @@ def sanitize_external_payload(
                 stack.append(("visit", value[index], depth + 1, output_items, index))
             continue
 
-        if isinstance(value, str) and _contains_encoded_secret(value, secrets):
-            target[target_key] = _REDACTED
+        if isinstance(value, str):
+            contains_secret = (
+                contains_cached_secret(value)
+                if len(value) <= _STRING_CHECK_CACHE_MAX_LENGTH
+                else _contains_encoded_secret(value, secrets)
+            )
+            target[target_key] = _REDACTED if contains_secret else value
         else:
             target[target_key] = value
 

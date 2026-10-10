@@ -137,6 +137,17 @@ def install_profile_context(app) -> None:
                 ):
                     sanitized["content"] = payload["content"]
                 response.set_data(app.json.dumps(sanitized))
+        scan = getattr(g, "rule_duplicate_scan", None)
+        if scan is not None:
+            import time
+            from backend.utils.logger import get_logger
+
+            scan_id, started = scan
+            get_logger("backend.routes.rules").info(
+                "Duplicate scan %s response ready: status=%d bytes=%d total_ms=%.1f",
+                scan_id, response.status_code, response.calculate_content_length() or 0,
+                (time.perf_counter() - started) * 1000,
+            )
         return response
 
     @app.after_request
