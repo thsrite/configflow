@@ -14,7 +14,10 @@ func StartAPIServer(cfg *Config) {
 	mux := http.NewServeMux()
 
 	// 使用路由注册函数注册所有路由
-	routes.RegisterRoutes(mux, toRoutesConfig(cfg))
+	routesCfg := toRoutesConfig(cfg)
+	routes.RegisterRoutes(mux, routesCfg)
+	// 域名探测依赖主包里的 Mihomo 控制接口定位，在这里单独注册
+	mux.HandleFunc("/api/domain-probe", routes.AuthMiddleware(routesCfg, domainProbeHandler(cfg)))
 
 	listenAddr := fmt.Sprintf("%s:%d", cfg.AgentHost, cfg.AgentPort)
 	log.Printf("Starting API server on %s", listenAddr)

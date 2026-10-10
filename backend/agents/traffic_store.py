@@ -175,6 +175,10 @@ class TrafficStore:
             for item in report.get('items', []):
                 entry = hosts.setdefault(item['host'], {'first_seen': timestamp, 'last_seen': timestamp, 'by_route': {}})
                 entry['last_seen'] = timestamp
+                # 端口用于主动探测时选择 http / https，按连接与失败次数计权
+                ports = entry.setdefault('ports', {})
+                port_key = str(item.get('port', 0))
+                ports[port_key] = ports.get(port_key, 0) + item.get('conns', 0) + item.get('fails', 0)
                 key = route_key(item['rule'], item.get('rule_payload'), item['outlet'], item['policy'])
                 stats = entry['by_route'].setdefault(key, _empty_stats())
                 for field in _COUNT_FIELDS:

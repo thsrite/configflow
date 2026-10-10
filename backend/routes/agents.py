@@ -31,7 +31,8 @@ from backend.utils.logger import get_logger
 from backend.utils.url_utils import safe_url_for_log
 from backend.utils.strategy_references import StrategyReferenceError
 from backend.utils.rule_fetch import is_internal_rule_url, request_rule
-from backend.routes.domain_discovery import discovery_provider_revisions
+from backend.utils.domain_discovery_service import provider_revisions as discovery_provider_revisions
+from backend.utils.domain_probe import get_probe_store
 
 logger = get_logger(__name__)
 
@@ -420,6 +421,7 @@ def clear_agent_domain_discovery(agent_id):
     if not get_agent_manager().get_agent_by_id(agent_id):
         return jsonify({'success': False, 'message': 'Agent not found'}), 404
     get_traffic_store().delete(agent_id)
+    get_probe_store().delete(agent_id)
     return jsonify({'success': True}), 200
 
 
@@ -549,6 +551,7 @@ def handle_agent_item(agent_id):
             result = agent_manager.delete_agent(agent_id)
             if result:
                 get_traffic_store().delete(agent_id)
+                get_probe_store().delete(agent_id)
                 return jsonify({'success': True}), 200
             else:
                 return jsonify({'success': False, 'message': 'Agent not found'}), 404

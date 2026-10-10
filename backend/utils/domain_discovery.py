@@ -87,8 +87,12 @@ def summarize(agent_reports: List[Tuple[Dict[str, Any], Dict[str, Any]]], *, day
                 group['agents'].add(agent.get('name') or agent['id'])
                 host_item = group['hosts'].setdefault(host, {
                     'host': host, 'first_seen': entry['first_seen'], 'last_seen': entry['last_seen'],
-                    'uncovered': False, 'direct_conns': 0, 'direct_fails': 0,
+                    'uncovered': False, 'direct_conns': 0, 'direct_fails': 0, 'ports': {}, 'agent_ids': [],
                 })
+                if agent['id'] not in host_item['agent_ids']:
+                    host_item['agent_ids'].append(agent['id'])
+                for port, weight in entry.get('ports', {}).items():
+                    host_item['ports'][port] = host_item['ports'].get(port, 0) + weight
                 host_item['first_seen'] = min(host_item['first_seen'], entry['first_seen'])
                 host_item['last_seen'] = max(host_item['last_seen'], entry['last_seen'])
                 for key, stats in entry.get('by_route', {}).items():
@@ -107,6 +111,8 @@ def summarize(agent_reports: List[Tuple[Dict[str, Any], Dict[str, Any]]], *, day
         hosts = sorted(group['hosts'].values(), key=lambda item: (item.get('fails', 0), item.get('conns', 0)), reverse=True)
         totals: Dict[str, Any] = {}
         for host_item in hosts:
+            ports = host_item.pop('ports')
+            host_item['port'] = int(max(ports, key=ports.get)) if ports else 443
             _merge_stats(totals, host_item)
             host_item['failing'] = is_failing(host_item['direct_conns'], host_item['direct_fails'])
             host_item['ignored'] = is_ignored(domain, host_item['host'], ignored)

@@ -141,4 +141,10 @@ if __name__ == '__main__':
     print('Press Ctrl+C to stop')
     print('=' * 60 + '\n')
 
+    # 域名发现的自动探测（各配置空间单独开关，默认关闭）。只在作为服务进程运行时启动，
+    # 调试模式的 reloader 父进程不启动；多进程时由文件锁保证只有一个在跑
+    if LOG_LEVEL != 'DEBUG' or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        from backend.utils.domain_discovery_service import start_auto_loop
+        start_auto_loop(os.path.join(str(DATA_DIR), 'probes'))
+
     app.run(host='0.0.0.0', port=5001, debug=(LOG_LEVEL == 'DEBUG'))
