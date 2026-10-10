@@ -1,19 +1,21 @@
 <template>
-  <Transition
-    enter-active-class="transition duration-350 ease-(--ease-flow)"
-    enter-from-class="opacity-0 translate-y-2.5"
-    leave-active-class="transition duration-200"
-    leave-to-class="opacity-0 translate-y-2"
-  >
-    <section
-      v-if="open"
-      class="fixed right-5 bottom-5 z-40 w-[280px] rounded-[18px] border border-border-strong bg-card/92 p-4 shadow-overlay backdrop-blur-xl max-[900px]:right-4 max-[900px]:bottom-[calc(env(safe-area-inset-bottom)+90px)] max-[900px]:left-4 max-[900px]:w-auto"
-      role="dialog"
+  <Popover v-model:open="open">
+    <PopoverTrigger as-child>
+      <Button variant="ghost" size="icon-sm" title="Tweaks" aria-label="Tweaks">
+        <SlidersHorizontal class="size-[17px]" />
+      </Button>
+    </PopoverTrigger>
+    <PopoverContent
+      side="bottom"
+      align="end"
+      :side-offset="10"
+      :collision-padding="12"
+      class="z-40 max-h-(--reka-popover-content-available-height) w-[280px] overflow-y-auto overscroll-contain rounded-[18px] border-border-strong bg-card/92 p-4 text-foreground shadow-overlay backdrop-blur-xl"
       aria-label="Tweaks"
     >
       <h2 class="font-display mb-3 flex items-center text-[18px]">
         Tweaks
-        <Button variant="ghost" size="icon-sm" class="ml-auto size-7" aria-label="关闭" @click="emit('close')">
+        <Button variant="ghost" size="icon-sm" class="ml-auto size-7" aria-label="关闭" @click="open = false">
           <X class="size-4" />
         </Button>
       </h2>
@@ -89,19 +91,20 @@
           />
         </div>
       </div>
-    </section>
-  </Transition>
+    </PopoverContent>
+  </Popover>
 </template>
 
 <script setup lang="ts">
-import { X } from '@lucide/vue'
+import { ref } from 'vue'
+import { SlidersHorizontal, X } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import Segmented from '@/components/common/Segmented.vue'
 import { usePreferences, type AccentName } from '@/stores/preferences'
 import { useThemeStore, type ThemePreference } from '@/stores/theme'
 
-defineProps<{ open: boolean }>()
-const emit = defineEmits<{ (e: 'close'): void }>()
+const open = ref(false)
 
 const { prefs } = usePreferences()
 const { preference, setTheme: applyTheme } = useThemeStore()

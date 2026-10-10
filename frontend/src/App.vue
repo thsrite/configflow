@@ -106,16 +106,7 @@
             <component :is="theme === 'dark' ? Sun : Moon" class="size-[17px]" />
           </Button>
 
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            title="Tweaks"
-            aria-label="Tweaks"
-            :aria-expanded="tweaksOpen"
-            @click="tweaksOpen = !tweaksOpen"
-          >
-            <SlidersHorizontal class="size-[17px]" />
-          </Button>
+          <TweaksPanel />
 
           <Button
             variant="ghost"
@@ -169,8 +160,6 @@
 
     <MobileTabBar :active-path="route.path" @more="palette?.show()" />
 
-    <TweaksPanel :open="tweaksOpen" @close="tweaksOpen = false" />
-
     <CommandPalette
       ref="palette"
       :subscription-aggregation-enabled="subscriptionAggregationEnabled"
@@ -186,7 +175,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { FileText, LogOut, Moon, Search, SlidersHorizontal, Sun, User } from '@lucide/vue'
+import { FileText, LogOut, Moon, Search, Sun, User } from '@lucide/vue'
 import { useMediaQuery } from '@vueuse/core'
 import { MotionConfig } from 'motion-v'
 import { Button } from '@/components/ui/button'
@@ -233,7 +222,6 @@ const subscriptionAggregationEnabled = ref(false)
 const showUserInfo = ref(false)
 const username = ref('')
 const palette = ref<InstanceType<typeof CommandPalette> | null>(null)
-const tweaksOpen = ref(false)
 
 /* ---------- 实时吞吐（顶栏） ---------- */
 const live = useLive()
