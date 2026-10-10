@@ -135,7 +135,7 @@ const props = withDefaults(
 
 const router = useRouter()
 const { theme } = useThemeStore()
-const { prefs, motionEnabled } = usePreferences()
+const { prefs } = usePreferences()
 const root = ref<HTMLElement | null>(null)
 const canvas = ref<HTMLCanvasElement | null>(null)
 
@@ -274,10 +274,12 @@ const spawn = (g: Geo, t = 0, boost = 1) => {
 
 /** 外部触发：向某个节点集中发射一串粒子（例如推送、拉取完成） */
 const burst = (to: string, count = 12) => {
+  if (!canRender() || !animationEnabled()) return
   for (const g of geos) {
     if (g.edge.to !== to || g.edge.dead) continue
     for (let i = 0; i < count; i++) spawn(g, -i * 0.06, 1.8)
   }
+  requestDraw()
 }
 defineExpose({ burst })
 
@@ -285,18 +287,23 @@ const markHit = (id: string, now: number) => {
   if (now - (hitAt.get(id) || 0) < 380) return
   hitAt.set(id, now)
   hits[id] = true
-  clearTimeout(hitTimers.get(id))
-  hitTimers.set(id, window.setTimeout(() => (hits[id] = false), 260))
+  window.clearTimeout(hitTimers.get(id))
+  hitTimers.set(id, window.setTimeout(() => {
+    hitTimers.delete(id)
+    hits[id] = false
+  }, 260))
 }
 
 let visible = true
+let mounted = false
+let reducedMotion = false
+const canRender = () => mounted && visible && !document.hidden
+const animationEnabled = () => prefs.value.motion && !reducedMotion
 
-const draw = (dt: number) => {
+const draw = (dt: number, animate: boolean) => {
   const ctx = canvas.value?.getContext('2d')
   if (!ctx || !W) return
   ctx.clearRect(0, 0, W, H)
-  const animate = motionEnabled()
-
   for (const g of geos) {
     const on = edgeLit(g.edge)
     ctx.beginPath()
@@ -375,49 +382,119 @@ const draw = (dt: number) => {
   ctx.globalCompositeOperation = 'source-over'
 }
 
-let frame = 0
-let last = 0
-const loop = (now: number) => {
-  const dt = Math.min(0.05, (now - last) / 1000)
-  last = now
-  if (visible && !document.hidden) draw(dt)
-  frame = requestAnimationFrame(loop)
+let frame: number | null = null
+let last: number | null = null
+let dirty = true
+let layoutDirty = true
+let paletteDirty = true
+
+// All invalidations share one frame. Static/hidden maps have no idle RAF loop.
+const scheduleDraw = () => {
+  if (!canRender() || frame !== null || (!dirty && !animationEnabled())) return
+  const requested = requestAnimationFrame(now => {
+    if (frame !== requested) return
+    frame = null
+    if (!canRender()) return
+    if (paletteDirty) {
+      readPalette()
+      paletteDirty = false
+    }
+    if (layoutDirty) {
+      layout()
+      layoutDirty = false
+    }
+    const animate = animationEnabled()
+    const dt = animate && last !== null ? Math.min(0.05, (now - last) / 1000) : 0
+    last = animate ? now : null
+    dirty = false
+    draw(dt, animate)
+    scheduleDraw()
+  })
+  frame = requested
+}
+
+const requestDraw = (geometry = false, colors = false) => {
+  dirty = true
+  layoutDirty ||= geometry
+  paletteDirty ||= colors
+  scheduleDraw()
+}
+
+const cancelDraw = () => {
+  if (frame !== null) cancelAnimationFrame(frame)
+  frame = null
+  last = null
+}
+
+const clearTransientEffects = () => {
+  particles = []
+  geos.forEach(g => { g.acc = 0 })
+  hitTimers.forEach(timer => window.clearTimeout(timer))
+  hitTimers.clear()
+  hitAt.clear()
+  Object.keys(hits).forEach(id => { delete hits[id] })
+}
+
+const updateRendering = () => {
+  if (!mounted) return
+  cancelDraw()
+  if (!canRender() || !animationEnabled()) clearTransientEffects()
+  // Re-measure on resume: hidden layouts may have changed without a resize event.
+  requestDraw(true)
 }
 
 let resizeObserver: ResizeObserver | null = null
 let intersection: IntersectionObserver | null = null
+let motionQuery: MediaQueryList | null = null
+const onMotionChange = (event: MediaQueryListEvent) => {
+  reducedMotion = event.matches
+  updateRendering()
+}
 
 onMounted(() => {
-  readPalette()
-  layout()
+  mounted = true
+  motionQuery = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null
+  reducedMotion = motionQuery?.matches ?? false
+  motionQuery?.addEventListener?.('change', onMotionChange)
+  document.addEventListener('visibilitychange', updateRendering)
   // 观察器不可用的环境（旧浏览器、测试环境）退化为：不随尺寸重排、始终视为可见
   if (typeof ResizeObserver === 'function') {
-    resizeObserver = new ResizeObserver(() => layout())
+    resizeObserver = new ResizeObserver(() => requestDraw(true))
     if (root.value) resizeObserver.observe(root.value)
   }
   if (typeof IntersectionObserver === 'function') {
-    intersection = new IntersectionObserver(([entry]) => (visible = entry.isIntersecting))
+    intersection = new IntersectionObserver(([entry]) => {
+      if (!entry || visible === entry.isIntersecting) return
+      visible = entry.isIntersecting
+      updateRendering()
+    })
     if (root.value) intersection.observe(root.value)
   }
-  last = performance.now()
-  frame = requestAnimationFrame(loop)
+  requestDraw()
 })
 
 onUnmounted(() => {
-  cancelAnimationFrame(frame)
+  mounted = false
+  cancelDraw()
   resizeObserver?.disconnect()
   intersection?.disconnect()
-  hitTimers.forEach(t => clearTimeout(t))
+  motionQuery?.removeEventListener?.('change', onMotionChange)
+  document.removeEventListener('visibilitychange', updateRendering)
+  clearTransientEffects()
 })
 
 // 主题切换后 CSS 变量已更新，下一帧再读取
-watch([theme, () => prefs.value.accent], () => requestAnimationFrame(readPalette))
+watch([theme, () => prefs.value.accent], () => requestDraw(false, true), { flush: 'post' })
+watch(() => prefs.value.motion, updateRendering, { flush: 'post' })
+watch(() => prefs.value.density, () => requestDraw(), { flush: 'post' })
+watch(focus, () => requestDraw(), { flush: 'post' })
 // 节点或边变化后等 DOM 更新完再重算几何
 watch(
-  () => [props.columns, props.edges],
-  () => requestAnimationFrame(layout),
+  () => [props.columns, props.edges, props.height, props.minWidth, props.columnsTemplate, props.gapX],
+  () => requestDraw(true),
   { deep: true, flush: 'post' }
 )
+watch(() => props.density, () => requestDraw(), { flush: 'post' })
 </script>
 
 <style scoped>

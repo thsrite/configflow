@@ -27,7 +27,7 @@
 
     <div class="relative flex min-w-0 flex-1 flex-col">
       <header
-        class="glass-strong sticky top-0 z-800 flex h-(--cf-topbar-h) shrink-0 items-center gap-3 border-b border-border/60 px-7 pt-[env(safe-area-inset-top)] max-[900px]:gap-2 max-[900px]:px-3"
+        class="glass-strong sticky top-0 z-20 flex h-(--cf-topbar-h) shrink-0 items-center gap-3 border-b border-border/60 px-7 pt-[env(safe-area-inset-top)] max-[900px]:gap-2 max-[900px]:px-3"
         style="box-sizing: content-box"
       >
         <!-- 移动端没有侧栏，品牌放在顶栏 -->

@@ -50,8 +50,8 @@
             <span v-if="node.kind === 'hub'" class="group flex flex-col items-start p-[18px]">
               <BrandMark class="size-10 text-primary" :busy="pushingAll" />
               <span class="font-display mt-2.5 text-[22px] font-medium">ConfigFlow</span>
-              <span class="mt-1 font-mono text-[10.5px] text-muted-foreground">
-                配置版本 v{{ activeRevision }} · {{ activeProfileName }}
+              <span class="mt-1 text-[10.5px] text-muted-foreground" :title="`当前配置修订号：${activeRevision === undefined ? '暂未获取' : `v${activeRevision}`}`">
+                配置空间 · {{ activeProfileName }}
               </span>
             </span>
           </template>
@@ -187,9 +187,11 @@
           </div>
 
           <footer class="mt-auto flex items-center gap-2 border-t border-border pt-3.5">
-            <span class="mr-auto min-w-0 truncate font-mono text-[12px] text-muted-foreground" :title="`配置哈希 ${agent.config_version || '—'}`">
-              配置 <em class="not-italic text-primary-accent">{{ syncOf(agent).label }}</em>
-              <template v-if="syncOf(agent).stale"> · 待更新</template>
+            <span
+              :class="cn('mr-auto min-w-0 text-[12px]', syncOf(agent).tone === 'success' ? 'text-success-accent' : syncOf(agent).tone === 'warning' ? 'text-warning-accent' : 'text-muted-foreground')"
+              :title="syncOf(agent).title"
+            >
+              {{ syncOf(agent).label }}
             </span>
             <Button
               v-if="agent.status === 'online'"
@@ -650,6 +652,7 @@ import BrandMark from '@/components/common/BrandMark.vue'
 import FlowMap, { type FlowColumn, type FlowEdge, type FlowTone } from '@/components/dashboard/FlowMap.vue'
 import { consumeAction } from '@/lib/actions'
 import { cn } from '@/lib/utils'
+import { getAgentConfigSync } from '@/lib/agentConfigSync'
 import DockerAgentUpdateDialog from '@/components/agents/DockerAgentUpdateDialog.vue'
 import { Motion } from 'motion-v'
 import {
@@ -2201,21 +2204,16 @@ const topology = ref<InstanceType<typeof FlowMap> | null>(null)
 const isNarrow = useMediaQuery('(max-width: 640px)')
 const profileStore = useProfileStore()
 
-const revisionOf = (profileId?: string) =>
-  Number((profiles.value.find(p => p.id === (profileId || 'default')) as any)?.revision || 0)
+const revisionOf = (profileId?: string) => {
+  const revision = profiles.value.find(p => p.id === (profileId || 'default'))?.revision
+  return typeof revision === 'number' && Number.isSafeInteger(revision) && revision >= 0 ? revision : undefined
+}
 const activeRevision = computed(() => revisionOf(profileStore.activeProfileId.value))
 const activeProfileName = computed(
   () => profileStore.activeProfile.value?.name || profileStore.activeProfileId.value
 )
 
-/** Agent 记录的推送修订号与其配置空间当前修订号对比；旧版本推送没有记录时只显示哈希 */
-const syncOf = (agent: any) => {
-  const current = revisionOf(agent.profile_id)
-  if (typeof agent.config_revision !== 'number') {
-    return { label: agent.config_version && agent.config_version !== '0' ? agent.config_version : '未推送', stale: false }
-  }
-  return { label: `v${agent.config_revision}`, stale: agent.config_revision < current }
-}
+const syncOf = (agent: Agent) => getAgentConfigSync(agent, revisionOf(agent.profile_id), deployments[agent.id])
 
 const topoColumns = computed<FlowColumn[]>(() => [
   { key: 'hub', title: '配置中心', nodes: [{ id: 'hub', title: 'ConfigFlow', kind: 'hub', fit: true }] },

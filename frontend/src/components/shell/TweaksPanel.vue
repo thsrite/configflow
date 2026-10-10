@@ -7,7 +7,7 @@
   >
     <section
       v-if="open"
-      class="fixed right-5 bottom-5 z-950 w-[280px] rounded-[18px] border border-border-strong bg-card/92 p-4 shadow-overlay backdrop-blur-xl max-[900px]:right-4 max-[900px]:bottom-[calc(env(safe-area-inset-bottom)+90px)] max-[900px]:left-4 max-[900px]:w-auto"
+      class="fixed right-5 bottom-5 z-40 w-[280px] rounded-[18px] border border-border-strong bg-card/92 p-4 shadow-overlay backdrop-blur-xl max-[900px]:right-4 max-[900px]:bottom-[calc(env(safe-area-inset-bottom)+90px)] max-[900px]:left-4 max-[900px]:w-auto"
       role="dialog"
       aria-label="Tweaks"
     >

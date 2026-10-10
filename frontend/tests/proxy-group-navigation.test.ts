@@ -20,6 +20,7 @@ const matches = [
   { name: '香港 03', type: 'vless' }
 ]
 let wrapper: VueWrapper | undefined
+let scrollDescriptor: PropertyDescriptor | undefined
 let groups: ProxyGroup[]
 let latency: ReturnType<typeof deferred<AxiosResponse>>
 
@@ -43,7 +44,8 @@ beforeEach(() => {
   vi.resetAllMocks()
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
-  Element.prototype.scrollIntoView = vi.fn()
+  scrollDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: vi.fn() })
   sessionStorage.clear()
   setActiveProfileId('profile-a')
   groups = [group('Hong Kong')]
@@ -64,6 +66,8 @@ afterEach(() => {
   document.body.innerHTML = ''
   vi.useRealTimers()
   vi.unstubAllGlobals()
+  if (scrollDescriptor) Object.defineProperty(Element.prototype, 'scrollIntoView', scrollDescriptor)
+  else Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
 })
 
 async function render() {

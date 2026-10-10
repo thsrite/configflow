@@ -66,6 +66,7 @@ Claude 暖色系的「配置流」控制台：炭黑 / 象牙底 + 陶土橙主�
 - 控件高：常规 34px，大 40px；触控目标至少 44px（`--cf-touch`）
 - 布局：顶栏 60px、左侧导航 236px、移动端底部 Tab 56px、内容最大宽 1360px
 - 阴影只有两档：`shadow-surface`（卡片）和 `shadow-overlay`（弹层）
+- 页面与侧栏层级为 `z-10`，顶栏 `z-20`、移动底栏 `z-30`、Tweaks `z-40`；均低于弹窗与遮罩的 `z-50`，保证弹窗打开时整页背景一起变暗。
 
 ## 5. 组件
 
@@ -84,7 +85,8 @@ Claude 暖色系的「配置流」控制台：炭黑 / 象牙底 + 陶土橙主�
 - 缓动：`--ease-tech` / `--cf-ease` = `cubic-bezier(0.32, 0.72, 0, 1)`，`--ease-flow` = `cubic-bezier(0.22, 1, 0.36, 1)`；常规时长 200ms
 - 组件动画用 `motion-v`，弹层进出场用 `tw-animate-css`（shadcn 自带）
 - 必须同时尊重两个开关：系统 `prefers-reduced-motion` 和 Tweaks 的 `data-motion='off'`
-- 关闭动效只能把动画时长压到 0.01ms，**不能**用 `animation-play-state: paused`：
+- 动效默认「静止」，保留用户已保存的选择。Canvas 流向图在静止时只响应数据、布局、配色和交互变化重绘；页面隐藏或图表移出视口时取消帧调度，恢复可见后合并更新。
+- 关闭 CSS 动效时把动画时长压到 0.01ms，**不能**用 `animation-play-state: paused`：
   reka-ui 等不到 `animationend`，菜单关不掉、对话框透明且整页无法点击
 
 ## 7. 状态与无障碍

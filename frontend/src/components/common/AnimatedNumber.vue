@@ -3,8 +3,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { COUNT_DURATION } from '@/lib/motion'
+import { usePreferences } from '@/stores/preferences'
 
 const props = withDefaults(
   defineProps<{
@@ -18,19 +19,33 @@ const props = withDefaults(
 )
 
 const current = ref(0)
-let frame = 0
+const { prefs } = usePreferences()
+const media = typeof window.matchMedia === 'function'
+  ? window.matchMedia('(prefers-reduced-motion: reduce)')
+  : undefined
+const reducedMotion = ref(media?.matches ?? false)
+const pageHidden = ref(document.hidden)
+let frame: number | null = null
+let disposed = false
+
+const cancelFrame = () => {
+  if (frame !== null) cancelAnimationFrame(frame)
+  frame = null
+}
 
 const run = (to: number) => {
-  cancelAnimationFrame(frame)
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  if (props.instant || reduce || !Number.isFinite(to)) {
+  cancelFrame()
+  if (!prefs.value.motion || props.instant || reducedMotion.value || pageHidden.value || !Number.isFinite(to)) {
     current.value = Number.isFinite(to) ? to : 0
     return
   }
   const from = current.value
+  if (from === to) return
   const start = performance.now()
   const duration = COUNT_DURATION * 1000
   const step = (now: number) => {
+    frame = null
+    if (disposed) return
     const t = Math.min(1, (now - start) / duration)
     // easeOutExpo：起步快、收尾稳，读数不会在末尾长时间抖动
     const eased = t === 1 ? 1 : 1 - Math.pow(2, -10 * t)
@@ -40,7 +55,26 @@ const run = (to: number) => {
   frame = requestAnimationFrame(step)
 }
 
-watch(() => props.value, run, { immediate: true })
+watch(
+  [() => props.value, () => props.instant, () => prefs.value.motion, reducedMotion, pageHidden],
+  ([value]) => run(value),
+  { immediate: true, flush: 'sync' }
+)
+
+const onMotionChange = (event: MediaQueryListEvent) => { reducedMotion.value = event.matches }
+const onVisibilityChange = () => { pageHidden.value = document.hidden }
+
+onMounted(() => {
+  media?.addEventListener('change', onMotionChange)
+  document.addEventListener('visibilitychange', onVisibilityChange)
+})
+
+onBeforeUnmount(() => {
+  disposed = true
+  cancelFrame()
+  media?.removeEventListener('change', onMotionChange)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+})
 
 const display = computed(() =>
   current.value.toLocaleString('zh-CN', {
