@@ -32,6 +32,7 @@ TARGET_LABELS = {'direct': '直连', 'proxy': '代理'}
 # 支持流量上报 / 主动探测的最低 Agent 版本
 MIN_AGENT_VERSION = '1.4.0-go'
 MIN_PROBE_AGENT_VERSION = '1.5.0-go'
+MIN_REGION_AGENT_VERSION = '1.6.0-go'
 MAX_APPLY_ITEMS = 500
 MAX_IGNORED = 2000
 MAX_HISTORY = 1000
@@ -56,7 +57,11 @@ _SETTING_DEFAULTS = {
     'auto_apply': False,
     'auto_apply_min_confidence': 90,
     'history': [],
+    'region_check_enabled': False,
+    'region_probe_port': 17999,
+    'regional_rulesets': {},
 }
+POLICY_TARGET_PREFIX = 'policy:'
 
 
 class ProbeError(Exception):
@@ -80,7 +85,24 @@ def read_settings(config) -> Dict[str, Any]:
     settings['auto_apply'] = bool(settings['auto_apply'])
     if settings['auto_apply_min_confidence'] not in CONFIDENCE_CHOICES:
         settings['auto_apply_min_confidence'] = 90
+    settings['region_check_enabled'] = bool(settings['region_check_enabled'])
+    if not isinstance(settings['region_probe_port'], int) or not 1024 <= settings['region_probe_port'] <= 65535:
+        settings['region_probe_port'] = 17999
+    if not isinstance(settings['regional_rulesets'], dict):
+        settings['regional_rulesets'] = {}
     return settings
+
+
+def target_label(target):
+    if target.startswith(POLICY_TARGET_PREFIX):
+        return f'「{target[len(POLICY_TARGET_PREFIX):]}」'
+    return TARGET_LABELS.get(target, target)
+
+
+def _target_ruleset_id(settings, target):
+    if target.startswith(POLICY_TARGET_PREFIX):
+        return settings['regional_rulesets'].get(target[len(POLICY_TARGET_PREFIX):])
+    return settings.get(f'{target}_ruleset')
 
 
 def _mutate_settings(profile_id, mutate: Callable[[Dict[str, Any]], None]):
@@ -148,6 +170,8 @@ def settings_payload(profile_id):
         'auto_apply_min_confidence': settings['auto_apply_min_confidence'],
         'confidence_choices': list(CONFIDENCE_CHOICES),
         'probe_path': proxy_probe_path(config, settings),
+        'region_check_enabled': settings['region_check_enabled'],
+        'region_probe_port': settings['region_probe_port'],
         'candidates': [
             {'id': item.get('id'), 'name': item.get('name'), 'behavior': item.get('behavior', 'classical')}
             for item in config.get('rule_library', []) if ruleset_problem(item) is None
@@ -179,8 +203,29 @@ def update_settings(profile_id, payload):
         if payload['auto_apply_min_confidence'] not in CONFIDENCE_CHOICES:
             raise ProfileValidationError('自动采纳阈值只能是 80、90 或 95')
         changes['auto_apply_min_confidence'] = payload['auto_apply_min_confidence']
+    if 'region_check_enabled' in payload:
+        if not isinstance(payload['region_check_enabled'], bool):
+            raise ProfileValidationError('region_check_enabled 必须是布尔值')
+        changes['region_check_enabled'] = payload['region_check_enabled']
+    if 'region_probe_port' in payload:
+        port = payload['region_probe_port']
+        if not isinstance(port, int) or isinstance(port, bool) or not 1024 <= port <= 65535:
+            raise ProfileValidationError('区域检测入口端口必须在 1024-65535 之间')
+        if port in _custom_config_ports(config):
+            raise ProfileValidationError(f'端口 {port} 已被 Mihomo 配置中的入站占用')
+        changes['region_probe_port'] = port
     _mutate_settings(profile_id, lambda settings: settings.update(changes))
     return settings_payload(profile_id)
+
+
+def _custom_config_ports(config):
+    import yaml
+    from backend.converters.mihomo import mihomo_used_ports
+    try:
+        parsed = yaml.safe_load((config.get('mihomo') or {}).get('custom_config') or '') or {}
+    except yaml.YAMLError:
+        return set()
+    return mihomo_used_ports(parsed) if isinstance(parsed, dict) else set()
 
 
 def _unique_name(existing, base):
@@ -247,8 +292,9 @@ def provider_revisions(profile_id):
     settings = read_settings(config)
     library = {item.get('id'): item for item in config.get('rule_library', [])}
     result = {}
-    for target in TARGETS:
-        info = ruleset_info(config, settings[f'{target}_ruleset'])
+    ruleset_ids = [settings[f'{target}_ruleset'] for target in TARGETS] + list(settings['regional_rulesets'].values())
+    for ruleset_id in ruleset_ids:
+        info = ruleset_info(config, ruleset_id)
         if not info or info['problem'] or not info['active']:
             continue
         result[info['name']] = hashlib.md5(_served_rule_content(library[info['id']])).hexdigest()
@@ -391,9 +437,9 @@ def apply_domains(profile_id, entries, *, source='manual', evidence=None, now=No
     settings = read_settings(config)
     infos = {}
     for target in {entry['target'] for entry in entries}:
-        info = ruleset_info(config, settings[f'{target}_ruleset'])
+        info = ruleset_info(config, _target_ruleset_id(settings, target))
         if info is None or info['problem']:
-            raise ProfileValidationError(f'还没有设置可写入的默认{TARGET_LABELS[target]}规则集')
+            raise ProfileValidationError(f'还没有设置可写入的{target_label(target)}规则集')
         infos[target] = info
 
     added, skipped, updated_items = [], [], []
@@ -456,12 +502,12 @@ def apply_domains(profile_id, entries, *, source='manual', evidence=None, now=No
 def undo_domain(profile_id, value, target):
     """从默认规则集中删除该域名对应的行，并删除历史记录。"""
     value = clean_domain(value)
-    if value is None or target not in TARGETS:
-        raise ProfileValidationError('需要有效域名和 direct/proxy 目标')
+    if value is None or not isinstance(target, str) or not (target in TARGETS or target.startswith(POLICY_TARGET_PREFIX)):
+        raise ProfileValidationError('需要有效域名和规则集目标')
     config = get_config(profile_id)
     settings = read_settings(config)
     history = [entry for entry in settings['history'] if entry.get('value') == value and entry.get('target') == target]
-    ruleset_id = (history[0].get('ruleset_id') if history else None) or settings[f'{target}_ruleset']
+    ruleset_id = (history[0].get('ruleset_id') if history else None) or _target_ruleset_id(settings, target)
     removed_lines, updated_items = [], []
 
     def remove_lines(shared):
@@ -621,7 +667,7 @@ def running_job(profile_id=None):
 def public_job(job):
     if not job:
         return None
-    return {key: job[key] for key in ('id', 'status', 'total', 'done', 'errors', 'message', 'started_at', 'finished_at')}
+    return {key: job.get(key) for key in ('id', 'kind', 'status', 'total', 'done', 'errors', 'message', 'started_at', 'finished_at')}
 
 
 def get_job(job_id):
@@ -639,12 +685,17 @@ def _clean_values(values):
 def start_probe_job(profile_id, values, *, wait=False):
     """后台执行探测任务；同一时间只运行一个任务（探测会占用代理带宽）。"""
     values = _clean_values(values)
+    return _start_job(profile_id, 'probe', lambda progress: run_probes(profile_id, values, progress), wait=wait)
+
+
+def _start_job(profile_id, kind, run: Callable[[Callable[[int, int], None]], Dict[str, Any]], *, wait=False):
+    """探测与区域检测共用：同一时间只运行一个任务。"""
     with _JOBS_LOCK:
         busy = next((job for job in _JOBS.values() if job['status'] == 'running'), None)
         if busy:
             raise ProbeBusy(busy['id'])
         job = {
-            'id': uuid.uuid4().hex, 'profile_id': profile_id, 'status': 'running', 'total': 0, 'done': 0,
+            'id': uuid.uuid4().hex, 'profile_id': profile_id, 'kind': kind, 'status': 'running', 'total': 0, 'done': 0,
             'errors': [], 'message': '', 'started_at': datetime.now().isoformat(timespec='seconds'),
             'finished_at': None, 'results': {},
         }
@@ -660,15 +711,15 @@ def start_probe_job(profile_id, values, *, wait=False):
         from backend.common.config import reset_config_context
         reset_config_context()
         try:
-            outcome = run_probes(profile_id, values, progress)
-            job['errors'] = outcome['errors']
-            job['results'] = outcome['results']
+            outcome = run(progress)
+            job['errors'] = outcome.get('errors', [])
+            job['results'] = outcome.get('results', {})
             job['status'] = 'done'
         except ProbeError as error:
             job['status'], job['message'] = 'failed', str(error)
         except Exception as error:  # 后台线程不能把异常吞掉而不留痕
-            logger.error('Domain probe job failed: %s', safe_exception_details(error))
-            job['status'], job['message'] = 'failed', '探测失败，请查看服务端日志'
+            logger.error('Domain discovery %s job failed: %s', kind, safe_exception_details(error))
+            job['status'], job['message'] = 'failed', '执行失败，请查看服务端日志'
         finally:
             job['finished_at'] = datetime.now().isoformat(timespec='seconds')
 
@@ -677,7 +728,7 @@ def start_probe_job(profile_id, values, *, wait=False):
         if job['status'] == 'failed':
             raise ProbeError(job['message'])
     else:
-        threading.Thread(target=work, name=f'domain-probe-{job["id"][:8]}', daemon=True).start()
+        threading.Thread(target=work, name=f'domain-{kind}-{job["id"][:8]}', daemon=True).start()
     return job
 
 
@@ -735,7 +786,7 @@ def auto_round(profile_id, now=None):
     due = (now - RECHECK_AFTER).isoformat(timespec='seconds')
     history = read_settings(get_config(profile_id))['history']
     to_check = [entry for entry in history
-                if (entry.get('applied_at') or '') < due
+                if entry.get('target') in TARGETS and (entry.get('applied_at') or '') < due
                 and (not entry.get('recheck') or (entry['recheck'].get('at') or '') < due)][:RECHECK_BATCH]
     if to_check:
         results = start_probe_job(profile_id, [entry['value'] for entry in to_check], wait=True)['results']
@@ -803,3 +854,225 @@ def start_auto_loop(lock_dir):
 
     threading.Thread(target=loop, name='domain-discovery-auto', daemon=True).start()
 
+
+
+# ---------- 区域限制检测 ----------
+
+def _region_agents(profile_id):
+    agents = [agent for agent in profile_agents(profile_id)
+              if agent.get('domain_discovery_enabled') and agent_supported(agent.get('version'), MIN_REGION_AGENT_VERSION)]
+    return sorted(agents, key=lambda agent: agent.get('last_heartbeat') or '', reverse=True)
+
+
+def _chunks(items, size):
+    return [items[start:start + size] for start in range(0, len(items), size)]
+
+
+def _region_domain_plan(profile_id, values):
+    """每个主域取流量最多的一个子域；没有流量记录的按给定值访问。"""
+    store = get_traffic_store()
+    summary = summarize([(agent, store.load(agent['id'])) for agent in profile_agents(profile_id)],
+                        days=7, view='all', ignored=())
+    domains = {item['domain']: item for item in summary['items']}
+    hosts = {host['host']: host for item in summary['items'] for host in item['hosts']}
+    plan = []
+    for value in values:
+        host = domains[value]['hosts'][0] if value in domains else hosts.get(value, {'host': value, 'port': 443})
+        if all(entry['host'] != host['host'] for entry in plan):
+            plan.append({'host': host['host'], 'url': probe_url(host['host'], host.get('port'))})
+    return plan
+
+
+def run_region_check(profile_id, *, services=True, domains=(), progress=None, now=None):
+    """经各目标（直连、策略组、地区节点）检测常见服务与指定域名，保存结果。"""
+    from backend.utils import region_check as region
+
+    config = get_config(profile_id)
+    settings = read_settings(config)
+    if not settings['region_check_enabled']:
+        raise ProbeError('请先开启区域检测并部署一次配置')
+    agents = _region_agents(profile_id)
+    if not agents:
+        raise ProbeError(f'没有可用于区域检测的 Agent：需要开启域名发现且 Agent 版本不低于 {MIN_REGION_AGENT_VERSION}')
+    agent = agents[0]
+    manager = get_agent_manager()
+    try:
+        available = manager.region_targets(agent)
+    except Exception as error:
+        raise ProbeError(str(error)) from error
+    targets = region.pick_targets(available, proxy_probe_path(config, settings))
+    domain_plan = _region_domain_plan(profile_id, list(domains))
+    requests = ([*region.service_requests()] if services else [region.EXIT_REQUEST]) + [
+        region.domain_request(f'domain-{index}', entry['url']) for index, entry in enumerate(domain_plan)]
+    # Agent 每次最多 12 个请求：出口检测只放在第一批
+    batches = _chunks(requests, 12)
+    total = len(targets)
+    if progress:
+        progress(0, total)
+    raw: Dict[str, List[Dict[str, Any]]] = {}
+    errors = []
+    for index, target in enumerate(targets):
+        results = []
+        try:
+            for batch in batches:
+                response = manager.region_check(agent, {'target': target['name'], 'timeout_ms': region.CHECK_TIMEOUT_MS,
+                                                        'requests': batch})
+                results += response.get('results') or []
+        except Exception as error:
+            logger.warning('Region check failed on %s via %s: %s', agent['id'], target['name'],
+                           safe_exception_details(error))
+            errors.append({'target': target['name'], 'message': str(error)})
+        raw[target['name']] = results
+        if progress:
+            progress(index + 1, total)
+
+    timestamp = (now or datetime.now()).isoformat(timespec='seconds')
+    target_infos = []
+    for target in targets:
+        results = raw.get(target['name']) or []
+        target_infos.append({**target, 'exit': region.exit_info(results) if results else None,
+                             'error': next((item['message'] for item in errors if item['target'] == target['name']), None)})
+
+    def save(data):
+        if services:
+            data['services'] = {
+                'checked_at': timestamp,
+                'targets': target_infos,
+                'matrix': {name: region.evaluate_services(results) for name, results in raw.items() if results},
+            }
+        for index, entry in enumerate(domain_plan):
+            per_target = {}
+            for name, results in raw.items():
+                if not results:
+                    continue
+                result = next((item for item in results if item['id'] == f'domain-{index}'), None)
+                per_target[name] = region.classify_domain_result(result, entry['url'])
+            data['domains'][entry['host']] = {
+                'checked_at': timestamp, 'url': entry['url'], 'targets': per_target,
+                'target_infos': target_infos, **region.summarize_domain(per_target),
+            }
+
+    region.get_region_store().update(agent['id'], save)
+    return {'errors': errors, 'results': {}}
+
+
+def start_region_job(profile_id, *, services=True, domains=None, wait=False):
+    from backend.utils.region_check import MAX_DOMAINS_PER_CHECK
+    values = []
+    if domains:
+        values = _clean_values(domains)
+        if len(values) > MAX_DOMAINS_PER_CHECK:
+            raise ProfileValidationError(f'一次最多检测 {MAX_DOMAINS_PER_CHECK} 个域名')
+    if not services and not values:
+        raise ProfileValidationError('请选择要检测的服务或域名')
+    return _start_job(profile_id, 'region',
+                      lambda progress: run_region_check(profile_id, services=services, domains=values,
+                                                        progress=progress), wait=wait)
+
+
+def region_payload(profile_id):
+    from backend.utils import region_check as region
+
+    config = get_config(profile_id)
+    settings = read_settings(config)
+    agents = profile_agents(profile_id)
+    store = region.get_region_store()
+    # 取最近有服务检测结果的 Agent
+    data_by_agent = [(agent, store.load(agent['id'])) for agent in agents]
+    with_services = [(agent, data) for agent, data in data_by_agent if data.get('services')]
+    agent, data = max(with_services, key=lambda item: item[1]['services']['checked_at']) if with_services \
+        else (data_by_agent[0] if data_by_agent else (None, {'services': None, 'domains': {}}))
+    domains = {}
+    for _, item in data_by_agent:
+        for host, entry in item.get('domains', {}).items():
+            if host not in domains or entry['checked_at'] > domains[host]['checked_at']:
+                domains[host] = entry
+    region_agents = _region_agents(profile_id)
+    return {
+        'enabled': settings['region_check_enabled'],
+        'port': settings['region_probe_port'],
+        'services': region.public_services(),
+        'result': data.get('services'),
+        'agent': {'id': agent['id'], 'name': agent.get('name')} if agent else None,
+        'domains': domains,
+        'policies': policy_names(config),
+        'ready': bool(region_agents),
+        'min_agent_version': MIN_REGION_AGENT_VERSION,
+        'job': public_job(running_job(profile_id)),
+        'regional_rulesets': {
+            policy: ruleset_info(config, library_id) for policy, library_id in settings['regional_rulesets'].items()},
+    }
+
+
+def ensure_policy_ruleset(profile_id, policy):
+    """为策略组准备「域名发现-<策略组>」规则集：放在默认代理规则集之前（没有时放在 MATCH 之前）。"""
+    config = get_config(profile_id)
+    if policy not in policy_names(config):
+        raise ProfileValidationError('请选择当前配置中的策略组')
+    settings = read_settings(config)
+    info = ruleset_info(config, settings['regional_rulesets'].get(policy))
+    if info and not info['problem'] and info['active']:
+        return info['id']
+
+    library_id = info['id'] if info and not info['problem'] else None
+    if library_id is None:
+        created = {}
+
+        def create(shared):
+            library = shared.setdefault('rule_library', [])
+            item = {
+                'id': f'lib_{uuid.uuid4().hex}',
+                'name': _unique_name({entry.get('name') for entry in library}, f'域名发现-{policy}'),
+                'source_type': 'content', 'content': '', 'behavior': 'classical', 'enabled': True,
+            }
+            library.append(item)
+            created.update(item)
+
+        update_shared_config_transaction(create)
+        save_rule_to_local(created)
+        library_id = created['id']
+
+    def reference(profile):
+        rules = profile.setdefault('rule_configs', [])
+        if not any(item.get('itemType') == 'ruleset' and item.get('library_rule_id') == library_id
+                   and item.get('enabled', True) for item in rules):
+            # 放在默认代理规则集之前，否则同一域名会先被代理规则集截走
+            proxy_ruleset = read_settings(profile)['proxy_ruleset']
+            position = next((index for index, item in enumerate(rules)
+                             if item.get('itemType') == 'ruleset' and proxy_ruleset
+                             and item.get('library_rule_id') == proxy_ruleset), None)
+            if position is None:
+                position = next((index for index, item in enumerate(rules)
+                                 if item.get('itemType') == 'rule' and item.get('rule_type') == 'MATCH'), len(rules))
+            rules.insert(position, {
+                'id': f'ruleset_{uuid.uuid4()}', 'itemType': 'ruleset', 'library_rule_id': library_id,
+                'policy': policy, 'enabled': True, 'no_resolve': False,
+            })
+        settings = read_settings(profile)
+        settings['regional_rulesets'][policy] = library_id
+        profile['domain_discovery'] = settings
+
+    update_config_transaction(reference, profile_id)
+    return library_id
+
+
+def route_to_policy(profile_id, kind, value, policy):
+    """把服务（内置域名列表）或单个域名指定走某个策略组。"""
+    from backend.utils.region_check import SERVICES_BY_ID
+
+    if kind == 'service':
+        service = SERVICES_BY_ID.get(value)
+        if service is None:
+            raise ProfileValidationError('未知的服务')
+        values = service['domains']
+    elif kind == 'domain':
+        cleaned = clean_domain(value)
+        if cleaned is None:
+            raise ProfileValidationError('需要有效域名')
+        values = [cleaned]
+    else:
+        raise ProfileValidationError('kind 只能是 service 或 domain')
+    ensure_policy_ruleset(profile_id, policy)
+    target = f'{POLICY_TARGET_PREFIX}{policy}'
+    entries = [{'value': item, 'rule_type': 'DOMAIN-SUFFIX', 'target': target} for item in values]
+    return apply_domains(profile_id, entries, source='region')

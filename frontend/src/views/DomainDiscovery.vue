@@ -157,12 +157,12 @@
       <template #actions>
         <span v-if="probeJob?.status === 'running'" class="chip chip-sky font-mono" role="status">
           <Loader2 class="size-3 animate-spin" aria-hidden="true" />
-          探测中 {{ probeJob.done }}/{{ probeJob.total || '…' }}
+          {{ probeJob.kind === 'region' ? '区域检测中' : '探测中' }} {{ probeJob.done }}/{{ probeJob.total || '…' }}
         </span>
-        <span v-if="sniffCoverage !== null && view !== 'history'" class="chip font-mono" title="有域名的连接占全部连接的比例；过低说明嗅探没有开启或没有生效">
+        <span v-if="sniffCoverage !== null && view !== 'history' && view !== 'region'" class="chip font-mono" title="有域名的连接占全部连接的比例；过低说明嗅探没有开启或没有生效">
           嗅探覆盖 {{ Math.round(sniffCoverage * 100) }}%
         </span>
-        <template v-if="selected.size && view !== 'history'">
+        <template v-if="selected.size && view !== 'history' && view !== 'region'">
           <span class="text-[12.5px] text-muted-foreground">已选 {{ selected.size }}</span>
           <template v-if="view !== 'ignored'">
             <Button size="sm" variant="outline" :disabled="probing" @click="probeSelected">
@@ -182,7 +182,15 @@
       </template>
     </Toolbar>
 
-    <template v-if="view === 'history'">
+    <RegionPanel
+      v-if="view === 'region'"
+      :region="region"
+      :busy="probing"
+      @check="startRegionCheck"
+      @changed="loadRegion"
+    />
+
+    <template v-else-if="view === 'history'">
       <SectionCard v-if="historyLoading && !history.length" :padded="false"><LoadingRows /></SectionCard>
       <SectionCard v-else-if="!visibleHistory.length" :padded="false">
         <EmptyState title="还没有加入过域名" description="在列表里加入直连或代理后，会记录在这里，可以随时撤销。" :icon="ListPlus" />
@@ -305,6 +313,18 @@
                 <Button size="icon" variant="ghost" class="size-8" :disabled="probing" :aria-label="`探测 ${item.domain}`" title="探测直连与代理" @click="startProbe([item.domain])">
                   <ScanSearch class="size-3.5" />
                 </Button>
+                <Button
+                  v-if="region?.enabled"
+                  size="icon"
+                  variant="ghost"
+                  class="size-8"
+                  :disabled="probing"
+                  :aria-label="`检测 ${item.domain} 的地区差异`"
+                  title="检测地区差异"
+                  @click="startRegionCheck({ services: false, domains: [item.domain] })"
+                >
+                  <Globe class="size-3.5" />
+                </Button>
                 <Button size="sm" variant="ghost" :disabled="applying" @click="apply([{ value: item.domain, target: 'proxy' }])">加入代理</Button>
                 <Button size="sm" variant="ghost" :disabled="applying" @click="apply([{ value: item.domain, target: 'direct' }])">加入直连</Button>
                 <Button size="icon" variant="ghost" class="size-8" :disabled="applying" :aria-label="`忽略 ${item.domain}`" title="忽略" @click="ignore([item.domain])">
@@ -324,6 +344,11 @@
                   <span class="num" :class="host.fails ? 'text-destructive-accent' : 'text-muted-foreground'">失败 {{ host.fails }}</span>
                   <span v-if="host.pending_rule" class="chip chip-sky" :title="host.pending_rule.matched_line">已有规则 · {{ host.pending_rule.policy }}</span>
                   <span v-else-if="!host.uncovered" class="chip">已被规则覆盖</span>
+                  <span
+                    v-if="region?.domains[host.host]"
+                    :class="['chip', region.domains[host.host].verdict === 'suspected' ? 'chip-warn' : '']"
+                    :title="regionTitle(region.domains[host.host])"
+                  >{{ REGION_VERDICT_LABELS[region.domains[host.host].verdict] }}</span>
                   <span v-if="host.probe" class="text-muted-foreground" :title="host.probe.reasons.join('；')">
                     {{ VERDICT_LABELS[host.probe.verdict] || host.probe.verdict }} · {{ relativeTime(host.probe.checked_at) }}
                   </span>
@@ -374,7 +399,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { isAxiosError } from 'axios'
-import { ChevronRight, Eraser, EyeOff, ListPlus, Loader2, Plus, Radar, RefreshCw, ScanSearch, Sparkles, TriangleAlert, Undo2 } from '@lucide/vue'
+import { ChevronRight, Eraser, EyeOff, Globe, ListPlus, Loader2, Plus, Radar, RefreshCw, ScanSearch, Sparkles, TriangleAlert, Undo2 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -390,12 +415,13 @@ import SectionCard from '@/components/common/SectionCard.vue'
 import Segmented from '@/components/common/Segmented.vue'
 import StatusDot from '@/components/common/StatusDot.vue'
 import Toolbar from '@/components/common/Toolbar.vue'
+import RegionPanel, { type DomainRegionEntry, type RegionPayload } from '@/components/domain-discovery/RegionPanel.vue'
 import api from '@/api'
 import { confirmDanger, notify } from '@/lib/feedback'
 import { relativeTime } from '@/lib/format'
 
 type Target = 'direct' | 'proxy'
-type View = 'uncovered' | 'failing' | 'all' | 'ignored' | 'history'
+type View = 'uncovered' | 'failing' | 'all' | 'ignored' | 'history' | 'region'
 type Tag = 'uncovered' | 'failing' | 'pending' | 'ignored'
 
 interface AgentInfo {
@@ -430,6 +456,7 @@ interface Probe {
 
 interface ProbeJob {
   id: string
+  kind: 'probe' | 'region'
   status: 'running' | 'done' | 'failed'
   total: number
   done: number
@@ -527,8 +554,12 @@ const VIEW_OPTIONS: Array<{ value: View; label: string }> = [
   { value: 'failing', label: '直连失败' },
   { value: 'all', label: '全部' },
   { value: 'ignored', label: '已忽略' },
-  { value: 'history', label: '已加入' }
+  { value: 'history', label: '已加入' },
+  { value: 'region', label: '地区限制' }
 ]
+const REGION_VERDICT_LABELS: Record<DomainRegionEntry['verdict'], string> = {
+  suspected: '疑似区域限制', all_restricted: '各地区都受限', no_difference: '无地区差异', unreachable: '地区检测失败'
+}
 const TAG_LABELS: Record<Tag, string> = { uncovered: '未覆盖', failing: '直连失败', pending: '待部署', ignored: '已忽略' }
 const TAG_CLASSES: Record<Tag, string> = { uncovered: 'chip-acc', failing: 'chip-bad', pending: 'chip-sky', ignored: '' }
 const STATUS_LABELS: Record<string, string> = {
@@ -576,6 +607,7 @@ const initProxyPolicy = ref('')
 const initializing = ref(false)
 const probeJob = ref<ProbeJob | null>(null)
 const history = ref<HistoryEntry[]>([])
+const region = ref<RegionPayload | null>(null)
 const historyLoading = ref(false)
 let probeTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -617,7 +649,8 @@ const emptyTitle = computed(() => {
     failing: '没有直连失败的域名',
     all: '暂无数据',
     ignored: '没有忽略的域名',
-    history: '还没有加入过域名'
+    history: '还没有加入过域名',
+    region: ''
   }[view.value]
 })
 
@@ -691,7 +724,23 @@ const loadHistory = async () => {
   }
 }
 
+const loadRegion = async () => {
+  try {
+    const { data } = await api.get('/domain-discovery/region')
+    region.value = data
+  } catch (error) {
+    notify.error(errorMessage(error, '无法读取区域检测结果'))
+  }
+}
+
+const regionTitle = (entry: DomainRegionEntry) =>
+  Object.entries(entry.targets).map(([name, result]) => `${name}：${result.detail}`).join('\n')
+
 const loadDomains = async () => {
+  if (view.value === 'region') {
+    selected.value = new Set()
+    return loadRegion()
+  }
   if (view.value === 'history') {
     selected.value = new Set()
     return loadHistory()
@@ -728,7 +777,7 @@ const loadSettings = async () => {
   }
 }
 
-const reload = () => Promise.all([loadDomains(), loadSettings()])
+const reload = () => Promise.all([loadDomains(), loadSettings(), view.value === 'region' ? null : loadRegion()])
 
 const scheduleProbePoll = () => {
   if (probeTimer) clearTimeout(probeTimer)
@@ -751,14 +800,18 @@ const pollProbe = async () => {
     scheduleProbePoll()
     return
   }
-  if (probeJob.value?.status === 'failed') {
-    notify.error('探测失败', probeJob.value.message)
-  } else if (probeJob.value?.errors.length) {
-    notify.warning(`探测完成，${probeJob.value.errors.length} 批失败`, probeJob.value.errors[0].message)
+  const finished = probeJob.value
+  const label = finished?.kind === 'region' ? '区域检测' : '探测'
+  if (finished?.status === 'failed') {
+    notify.error(`${label}失败`, finished.message)
+  } else if (finished?.errors.length) {
+    notify.warning(`${label}完成，${finished.errors.length} 个目标失败`, finished.errors[0].message)
+  } else if (finished?.kind === 'region') {
+    notify.success(`区域检测完成（${finished.total} 个目标）`, view.value === 'region' ? undefined : '在「地区限制」里查看结果。')
   } else {
-    notify.success(`已探测 ${probeJob.value?.total ?? 0} 个子域`)
+    notify.success(`已探测 ${finished?.total ?? 0} 个子域`)
   }
-  await loadDomains()
+  await Promise.all([loadDomains(), finished?.kind === 'region' && view.value !== 'region' ? loadRegion() : null])
 }
 
 const startProbe = async (domains: string[]) => {
@@ -782,6 +835,22 @@ const startProbe = async (domains: string[]) => {
       return
     }
     notify.error(errorMessage(error, '无法开始探测'))
+  }
+}
+
+const startRegionCheck = async (payload: { services: boolean; domains?: string[] }) => {
+  try {
+    const { data } = await api.post('/domain-discovery/region/check', payload)
+    probeJob.value = data.job
+    scheduleProbePoll()
+  } catch (error) {
+    if (isAxiosError(error) && error.response?.status === 409 && error.response.data?.job) {
+      probeJob.value = error.response.data.job
+      scheduleProbePoll()
+      notify.info('已有检测任务在运行，完成后再试')
+      return
+    }
+    notify.error(errorMessage(error, '无法开始区域检测'))
   }
 }
 

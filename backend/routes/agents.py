@@ -33,6 +33,7 @@ from backend.utils.strategy_references import StrategyReferenceError
 from backend.utils.rule_fetch import is_internal_rule_url, request_rule
 from backend.utils.domain_discovery_service import provider_revisions as discovery_provider_revisions
 from backend.utils.domain_probe import get_probe_store
+from backend.utils.region_check import get_region_store
 
 logger = get_logger(__name__)
 
@@ -421,6 +422,7 @@ def clear_agent_domain_discovery(agent_id):
         return jsonify({'success': False, 'message': 'Agent not found'}), 404
     get_traffic_store().delete(agent_id)
     get_probe_store().delete(agent_id)
+    get_region_store().delete(agent_id)
     return jsonify({'success': True}), 200
 
 
@@ -551,6 +553,7 @@ def handle_agent_item(agent_id):
             if result:
                 get_traffic_store().delete(agent_id)
                 get_probe_store().delete(agent_id)
+                get_region_store().delete(agent_id)
                 return jsonify({'success': True}), 200
             else:
                 return jsonify({'success': False, 'message': 'Agent not found'}), 404
@@ -909,7 +912,8 @@ def push_config_to_agent(agent_id):
         provider_downloads, custom_files, prepared_providers = [], [], []
         if service_type == 'mihomo':
             config_content = generate_mihomo_config(config_data, base_url=base_url,
-                                                    sync_lan_hosts=True, preflight_providers=False)
+                                                    sync_lan_hosts=True, preflight_providers=False,
+                                                    region_probe=True)
             main = yaml.safe_load(config_content)
             provider_downloads = get_mihomo_provider_downloads(config_data, base_url=base_url, main_config=main)
             ruleset_downloads = get_mihomo_ruleset_downloads(config_data, base_url=base_url)

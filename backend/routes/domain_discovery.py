@@ -115,3 +115,30 @@ def get_probe(job_id):
     if job is None or job['profile_id'] != resolve_profile_id():
         return jsonify({'success': False, 'message': 'Probe job not found'}), 404
     return jsonify({'success': True, 'job': service.public_job(job)})
+
+
+@domain_discovery_bp.route('/region', methods=['GET'])
+@require_auth
+def region_status():
+    return jsonify({'success': True, **service.region_payload(resolve_profile_id())})
+
+
+@domain_discovery_bp.route('/region/check', methods=['POST'])
+@require_auth
+def start_region_check():
+    payload = _payload()
+    profile_id = resolve_profile_id()
+    try:
+        job = service.start_region_job(profile_id, services=bool(payload.get('services', True)),
+                                       domains=payload.get('domains') or None)
+    except service.ProbeBusy as busy:
+        return jsonify({'success': False, 'message': str(busy), 'job': service.public_job(service.get_job(busy.job_id))}), 409
+    return jsonify({'success': True, 'job': service.public_job(job)}), 202
+
+
+@domain_discovery_bp.route('/region/route', methods=['POST'])
+@require_auth
+def route_region():
+    payload = _payload()
+    result = service.route_to_policy(resolve_profile_id(), payload.get('kind'), payload.get('value'), payload.get('policy'))
+    return jsonify({'success': True, **result})

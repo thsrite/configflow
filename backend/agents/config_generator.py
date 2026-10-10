@@ -22,7 +22,7 @@ def generate_agent_config(config_data: Dict[str, Any], agent: Dict[str, Any], ba
 
     # 根据服务类型生成配置
     if service_type == 'mihomo':
-        config_content = generate_mihomo_config(config_data, base_url=base_url)
+        config_content = generate_mihomo_config(config_data, base_url=base_url, region_probe=True)
     elif service_type == 'mosdns':
         config_content = generate_mosdns_config(config_data, base_url=base_url)
     elif service_type == 'surge':

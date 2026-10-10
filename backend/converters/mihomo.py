@@ -263,8 +263,53 @@ def sync_mosdns_hosts(mihomo_config: Dict[str, Any], config_data: Dict[str, Any]
         dns_config['use-hosts'] = True
 
 
+REGION_PROBE_GROUP = 'ConfigFlow-Region-Probe'
+REGION_PROBE_LISTENER = 'configflow-region-probe'
+DEFAULT_REGION_PROBE_PORT = 17999
+_INBOUND_PORT_KEYS = ('port', 'socks-port', 'mixed-port', 'redir-port', 'tproxy-port')
+
+
+def mihomo_used_ports(mihomo_config: Dict[str, Any]) -> set:
+    """配置里已经占用的入站端口。"""
+    used = {mihomo_config.get(key) for key in _INBOUND_PORT_KEYS}
+    listeners = mihomo_config.get('listeners')
+    if isinstance(listeners, list):
+        used |= {item.get('port') for item in listeners
+                 if isinstance(item, dict) and item.get('name') != REGION_PROBE_LISTENER}
+    return {port for port in used if isinstance(port, int)}
+
+
+def inject_region_probe(mihomo_config: Dict[str, Any], port: int) -> bool:
+    """注入区域检测入口：只监听本机的 mixed 入站，流量全部交给隐藏的选择组。
+
+    Agent 切换这个组到某个节点 / 策略组后经入口发请求，从而得到经该节点访问的完整响应。
+    组不被任何规则引用，不影响真实流量。端口冲突时不注入并返回 False。
+    """
+    if port in mihomo_used_ports(mihomo_config):
+        logger.warning('区域检测入口端口 %s 与已有入站冲突，本次未注入', port)
+        return False
+    groups = [group for group in mihomo_config.get('proxy-groups') or [] if group.get('name') != REGION_PROBE_GROUP]
+    groups.append({
+        'name': REGION_PROBE_GROUP,
+        'type': 'select',
+        # 策略组用于检测「当前路径」；include-all 收进全部节点（含订阅 provider 里的）
+        'proxies': ['DIRECT', *[group['name'] for group in groups if group.get('name')]],
+        'include-all': True,
+        'hidden': True,
+    })
+    mihomo_config['proxy-groups'] = groups
+    listeners = mihomo_config.get('listeners')
+    listeners = [item for item in listeners if not (isinstance(item, dict) and item.get('name') == REGION_PROBE_LISTENER)] \
+        if isinstance(listeners, list) else []
+    listeners.append({'name': REGION_PROBE_LISTENER, 'type': 'mixed', 'listen': '127.0.0.1',
+                      'port': port, 'proxy': REGION_PROBE_GROUP})
+    mihomo_config['listeners'] = listeners
+    return True
+
+
 def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '',
-                           sync_lan_hosts: bool = False, *, preflight_providers: bool = True) -> str:
+                           sync_lan_hosts: bool = False, *, preflight_providers: bool = True,
+                           region_probe: bool = False) -> str:
     """生成 Mihomo YAML 配置
 
     Args:
@@ -1069,6 +1114,10 @@ def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '',
     if preflight_providers:
         from backend.utils.provider_delivery import prepare_provider_bundle
         prepare_provider_bundle(logical_config, mihomo_config)
+    # 区域检测入口只注入推送给 Agent 的配置，且需在域名发现里开启
+    discovery = logical_config.get('domain_discovery') or {}
+    if region_probe and discovery.get('region_check_enabled'):
+        inject_region_probe(mihomo_config, int(discovery.get('region_probe_port') or DEFAULT_REGION_PROBE_PORT))
     # 转换为 YAML
     return yaml.dump(
         mihomo_config,

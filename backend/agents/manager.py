@@ -973,3 +973,30 @@ class AgentManager:
         if response.status_code != 200 or not body.get('success'):
             raise RuntimeError(body.get('message') or f'Agent 返回 HTTP {response.status_code}')
         return body
+
+    def _region_request(self, agent: Dict[str, Any], method: str, path: str, timeout: int, **kwargs) -> Dict[str, Any]:
+        response = getattr(requests, method)(
+            f"http://{agent['host']}:{agent['port']}{path}",
+            headers={'Authorization': f'Bearer {agent["token"]}'},
+            timeout=timeout,
+            **kwargs,
+        )
+        if response.status_code == 404:
+            raise RuntimeError(f'Agent {agent.get("name") or agent["id"]} 不支持区域检测，请升级')
+        try:
+            body = response.json()
+        except ValueError:
+            body = {}
+        if response.status_code == 409:
+            raise RuntimeError('Agent 上的 Mihomo 还没有区域检测入口，请开启区域检测后部署一次配置')
+        if response.status_code != 200 or not body.get('success'):
+            raise RuntimeError(body.get('message') or f'Agent 返回 HTTP {response.status_code}')
+        return body
+
+    def region_targets(self, agent: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """探测组可切换的目标（节点与策略组）。"""
+        return self._region_request(agent, 'get', '/api/region-check/targets', 15).get('targets') or []
+
+    def region_check(self, agent: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+        """经探测组的某个目标执行一组请求。"""
+        return self._region_request(agent, 'post', '/api/region-check', 120, json=payload)
