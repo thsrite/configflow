@@ -33,6 +33,7 @@
                 <template v-if="!agent.supported">Agent {{ agent.version || '版本未知' }}，需要升级到 {{ minAgentVersion }}</template>
                 <template v-else-if="agent.last_report">
                   {{ relativeTime(agent.last_report) }}上报<span v-if="agent.mihomo_version" class="font-mono"> · Mihomo {{ agent.mihomo_version }}</span>
+                  <span v-if="!agent.probe_supported"> · 升级到 {{ probeAgentVersion }} 后可主动探测</span>
                 </template>
                 <template v-else-if="agent.enabled">等待首次上报</template>
                 <template v-else>未开启</template>
@@ -97,6 +98,54 @@
             </Button>
             <span class="text-[12px] text-muted-foreground">创建空的规则集，并加到兜底规则之前</span>
           </div>
+
+          <div class="mt-1 flex flex-col gap-2.5 border-t border-border pt-3">
+            <p class="m-0 text-[12.5px] font-medium text-foreground">主动探测</p>
+            <p class="m-0 text-[12px] leading-relaxed text-muted-foreground">
+              <template v-if="settings.probe_path">
+                经 Agent 本机的 Mihomo 分别用直连和 <span class="font-mono text-foreground">{{ settings.probe_path }}</span> 访问域名，判断该走哪条路。
+              </template>
+              <template v-else>设置默认代理规则集并在当前配置启用后才能探测，代理路径使用它指向的策略组。</template>
+            </p>
+            <label class="flex items-center justify-between gap-3 text-[13px]">
+              <span>
+                自动探测新域名
+                <span class="block text-[11.5px] text-muted-foreground">每 10 分钟探测一批未覆盖的域名，并复检加入超过 30 天的条目</span>
+              </span>
+              <Switch
+                :model-value="settings.auto_probe"
+                :disabled="savingSettings || !settings.probe_path"
+                aria-label="自动探测新域名"
+                @update:model-value="value => saveAutomation({ auto_probe: Boolean(value) })"
+              />
+            </label>
+            <div class="flex flex-wrap items-center justify-between gap-3 text-[13px]">
+              <span>
+                自动采纳建议
+                <span class="block text-[11.5px] text-muted-foreground">置信度达到阈值的建议直接写入默认规则集，可在「已加入」里撤销</span>
+              </span>
+              <div class="flex items-center gap-2">
+                <Select
+                  :model-value="String(settings.auto_apply_min_confidence)"
+                  :disabled="savingSettings || !settings.auto_probe"
+                  @update:model-value="value => saveAutomation({ auto_apply_min_confidence: Number(value) })"
+                >
+                  <SelectTrigger class="h-8 w-[92px] bg-background/50 text-[12.5px]" aria-label="自动采纳的置信度阈值">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="choice in settings.confidence_choices" :key="choice" :value="String(choice)">≥ {{ choice }}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Switch
+                  :model-value="settings.auto_apply"
+                  :disabled="savingSettings || !settings.auto_probe"
+                  aria-label="自动采纳建议"
+                  @update:model-value="value => saveAutomation({ auto_apply: Boolean(value) })"
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </SectionCard>
     </div>
@@ -106,12 +155,24 @@
         <Segmented v-model="view" :options="VIEW_OPTIONS" label="筛选" @update:model-value="loadDomains" />
       </template>
       <template #actions>
-        <span v-if="sniffCoverage !== null" class="chip font-mono" title="有域名的连接占全部连接的比例；过低说明嗅探没有开启或没有生效">
+        <span v-if="probeJob?.status === 'running'" class="chip chip-sky font-mono" role="status">
+          <Loader2 class="size-3 animate-spin" aria-hidden="true" />
+          探测中 {{ probeJob.done }}/{{ probeJob.total || '…' }}
+        </span>
+        <span v-if="sniffCoverage !== null && view !== 'history'" class="chip font-mono" title="有域名的连接占全部连接的比例；过低说明嗅探没有开启或没有生效">
           嗅探覆盖 {{ Math.round(sniffCoverage * 100) }}%
         </span>
-        <template v-if="selected.size">
+        <template v-if="selected.size && view !== 'history'">
           <span class="text-[12.5px] text-muted-foreground">已选 {{ selected.size }}</span>
           <template v-if="view !== 'ignored'">
+            <Button size="sm" variant="outline" :disabled="probing" @click="probeSelected">
+              <ScanSearch class="size-3.5" />
+              探测
+            </Button>
+            <Button v-if="adoptableSelected.length" size="sm" variant="outline" :disabled="applying" @click="adoptSelected">
+              <Sparkles class="size-3.5" />
+              采纳建议 {{ adoptableSelected.length }}
+            </Button>
             <Button size="sm" :disabled="applying" @click="applySelected('proxy')">加入代理</Button>
             <Button size="sm" variant="outline" :disabled="applying" @click="applySelected('direct')">加入直连</Button>
             <Button size="sm" variant="ghost" :disabled="applying" @click="ignoreSelected">忽略</Button>
@@ -121,7 +182,57 @@
       </template>
     </Toolbar>
 
-    <SectionCard v-if="loading && !loaded" :padded="false"><LoadingRows /></SectionCard>
+    <template v-if="view === 'history'">
+      <SectionCard v-if="historyLoading && !history.length" :padded="false"><LoadingRows /></SectionCard>
+      <SectionCard v-else-if="!visibleHistory.length" :padded="false">
+        <EmptyState title="还没有加入过域名" description="在列表里加入直连或代理后，会记录在这里，可以随时撤销。" :icon="ListPlus" />
+      </SectionCard>
+      <DataTableShell v-else :footer="`共 ${visibleHistory.length} 条`">
+        <TableHeader>
+          <TableRow class="hover:bg-transparent">
+            <TableHead>域名</TableHead>
+            <TableHead class="w-36">规则集</TableHead>
+            <TableHead class="w-40">加入依据</TableHead>
+            <TableHead class="w-28">加入时间</TableHead>
+            <TableHead>复检</TableHead>
+            <TableHead class="w-24 text-right">操作</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <TableRow v-for="entry in visibleHistory" :key="`${entry.value}:${entry.target}`" :class="entry.recheck?.suggest_remove && 'bg-warning-soft/40'">
+            <TableCell class="font-mono text-[13px]">
+              {{ entry.value }}
+              <span class="ml-1 text-[11px] text-muted-foreground">{{ entry.rule_type }}</span>
+            </TableCell>
+            <TableCell>
+              <span :class="['chip', entry.target === 'proxy' ? 'chip-acc' : 'chip-ok']">{{ TARGET_LABELS[entry.target] }}</span>
+              <span v-if="entry.ruleset" class="ml-1.5 text-[11.5px] text-muted-foreground">{{ entry.ruleset }}</span>
+            </TableCell>
+            <TableCell class="text-[12.5px]">
+              {{ entry.source === 'auto' ? '自动采纳' : '手动' }}
+              <span v-if="entry.verdict" class="text-muted-foreground"> · {{ VERDICT_LABELS[entry.verdict] || entry.verdict }}<template v-if="entry.confidence"> {{ entry.confidence }}</template></span>
+            </TableCell>
+            <TableCell class="text-[12.5px] text-muted-foreground">{{ relativeTime(entry.applied_at) }}</TableCell>
+            <TableCell class="text-[12.5px]">
+              <template v-if="entry.recheck">
+                <span v-if="entry.recheck.suggest_remove" class="chip chip-warn">建议移除</span>
+                <span v-else class="chip chip-ok">仍然需要</span>
+                <span class="ml-1.5 text-muted-foreground">{{ entry.recheck.reason || VERDICT_LABELS[entry.recheck.verdict || ''] }} · {{ relativeTime(entry.recheck.at) }}</span>
+              </template>
+              <span v-else class="text-muted-foreground">—</span>
+            </TableCell>
+            <TableCell class="text-right">
+              <Button size="sm" variant="ghost" :disabled="applying" @click="undo(entry)">
+                <Undo2 class="size-3.5" />
+                撤销
+              </Button>
+            </TableCell>
+          </TableRow>
+        </TableBody>
+      </DataTableShell>
+    </template>
+
+    <SectionCard v-else-if="loading && !loaded" :padded="false"><LoadingRows /></SectionCard>
     <SectionCard v-else-if="loadError" :padded="false">
       <EmptyState title="读取失败" :description="loadError" :icon="TriangleAlert">
         <Button variant="outline" size="sm" @click="loadDomains">重试</Button>
@@ -140,8 +251,9 @@
           <TableHead class="w-24 text-right">连接</TableHead>
           <TableHead class="w-36">直连失败</TableHead>
           <TableHead>当前走向</TableHead>
+          <TableHead class="w-40">探测建议</TableHead>
           <TableHead class="w-28">最近出现</TableHead>
-          <TableHead class="w-[220px] text-right">操作</TableHead>
+          <TableHead class="w-[250px] text-right">操作</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -179,9 +291,20 @@
             <TableCell class="max-w-[280px]">
               <span v-if="item.routes[0]" class="block truncate text-[12.5px]" :title="routeText(item.routes[0])">{{ routeText(item.routes[0]) }}</span>
             </TableCell>
+            <TableCell>
+              <span
+                v-if="item.suggestion"
+                :class="['chip', suggestionClass(item.suggestion)]"
+                :title="suggestionTitle(item.suggestion)"
+              >{{ suggestionText(item.suggestion) }}</span>
+              <span v-else class="text-[12px] text-muted-foreground">未探测</span>
+            </TableCell>
             <TableCell class="text-[12.5px] text-muted-foreground">{{ relativeTime(item.last_seen) }}</TableCell>
             <TableCell class="text-right whitespace-nowrap">
               <template v-if="view !== 'ignored'">
+                <Button size="icon" variant="ghost" class="size-8" :disabled="probing" :aria-label="`探测 ${item.domain}`" title="探测直连与代理" @click="startProbe([item.domain])">
+                  <ScanSearch class="size-3.5" />
+                </Button>
                 <Button size="sm" variant="ghost" :disabled="applying" @click="apply([{ value: item.domain, target: 'proxy' }])">加入代理</Button>
                 <Button size="sm" variant="ghost" :disabled="applying" @click="apply([{ value: item.domain, target: 'direct' }])">加入直连</Button>
                 <Button size="icon" variant="ghost" class="size-8" :disabled="applying" :aria-label="`忽略 ${item.domain}`" title="忽略" @click="ignore([item.domain])">
@@ -193,7 +316,7 @@
           </TableRow>
           <TableRow v-if="expanded.has(item.domain)" class="bg-muted/40 hover:bg-muted/40">
             <TableCell />
-            <TableCell colspan="6" class="py-2">
+            <TableCell colspan="7" class="py-2">
               <ul class="m-0 flex list-none flex-col gap-1 p-0">
                 <li v-for="host in item.hosts" :key="host.host" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]">
                   <span class="min-w-0 flex-[1_1_220px] truncate font-mono" :title="host.host">{{ host.host }}</span>
@@ -201,6 +324,9 @@
                   <span class="num" :class="host.fails ? 'text-destructive-accent' : 'text-muted-foreground'">失败 {{ host.fails }}</span>
                   <span v-if="host.pending_rule" class="chip chip-sky" :title="host.pending_rule.matched_line">已有规则 · {{ host.pending_rule.policy }}</span>
                   <span v-else-if="!host.uncovered" class="chip">已被规则覆盖</span>
+                  <span v-if="host.probe" class="text-muted-foreground" :title="host.probe.reasons.join('；')">
+                    {{ VERDICT_LABELS[host.probe.verdict] || host.probe.verdict }} · {{ relativeTime(host.probe.checked_at) }}
+                  </span>
                   <span v-if="view !== 'ignored'" class="ml-auto flex gap-1">
                     <Button size="sm" variant="ghost" class="h-7 text-[12px]" :disabled="applying" @click="apply([{ value: host.host, target: 'proxy', rule_type: 'DOMAIN' }])">仅此子域代理</Button>
                     <Button size="sm" variant="ghost" class="h-7 text-[12px]" :disabled="applying" @click="apply([{ value: host.host, target: 'direct', rule_type: 'DOMAIN' }])">仅此子域直连</Button>
@@ -245,10 +371,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { isAxiosError } from 'axios'
-import { ChevronRight, Eraser, EyeOff, ListPlus, Loader2, Plus, Radar, RefreshCw, TriangleAlert } from '@lucide/vue'
+import { ChevronRight, Eraser, EyeOff, ListPlus, Loader2, Plus, Radar, RefreshCw, ScanSearch, Sparkles, TriangleAlert, Undo2 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -269,7 +395,7 @@ import { confirmDanger, notify } from '@/lib/feedback'
 import { relativeTime } from '@/lib/format'
 
 type Target = 'direct' | 'proxy'
-type View = 'uncovered' | 'failing' | 'all' | 'ignored'
+type View = 'uncovered' | 'failing' | 'all' | 'ignored' | 'history'
 type Tag = 'uncovered' | 'failing' | 'pending' | 'ignored'
 
 interface AgentInfo {
@@ -280,7 +406,47 @@ interface AgentInfo {
   mihomo_version: string
   enabled: boolean
   supported: boolean
+  probe_supported: boolean
   version: string
+}
+
+interface PathStats {
+  ok: number
+  total: number
+  delays: number[]
+}
+
+interface Probe {
+  host: string
+  checked_at: string
+  verdict: string
+  target: Target | null
+  confidence: number
+  reasons: string[]
+  direct?: PathStats
+  proxy?: PathStats
+  proxy_path?: string
+}
+
+interface ProbeJob {
+  id: string
+  status: 'running' | 'done' | 'failed'
+  total: number
+  done: number
+  errors: Array<{ message: string }>
+  message: string
+}
+
+interface HistoryEntry {
+  value: string
+  rule_type: string
+  target: Target
+  ruleset: string | null
+  source: 'manual' | 'auto'
+  applied_at: string
+  verdict: string | null
+  confidence: number | null
+  recheck: { at: string; verdict: string | null; suggest_remove: boolean; reason: string } | null
 }
 
 interface Route {
@@ -305,6 +471,7 @@ interface HostItem {
   uncovered: boolean
   failing: boolean
   pending_rule: MatchedRule | null
+  probe: Probe | null
 }
 
 interface DomainItem {
@@ -317,6 +484,7 @@ interface DomainItem {
   hosts: HostItem[]
   last_seen: string
   pending_rule: MatchedRule | null
+  suggestion: Probe | null
 }
 
 interface RulesetInfo {
@@ -334,6 +502,11 @@ interface Settings {
   ignored: string[]
   candidates: Array<{ id: string; name: string; behavior: string }>
   policies: string[]
+  auto_probe: boolean
+  auto_apply: boolean
+  auto_apply_min_confidence: number
+  confidence_choices: number[]
+  probe_path: string | null
 }
 
 interface ApplyItem {
@@ -353,7 +526,8 @@ const VIEW_OPTIONS: Array<{ value: View; label: string }> = [
   { value: 'uncovered', label: '未覆盖' },
   { value: 'failing', label: '直连失败' },
   { value: 'all', label: '全部' },
-  { value: 'ignored', label: '已忽略' }
+  { value: 'ignored', label: '已忽略' },
+  { value: 'history', label: '已加入' }
 ]
 const TAG_LABELS: Record<Tag, string> = { uncovered: '未覆盖', failing: '直连失败', pending: '待部署', ignored: '已忽略' }
 const TAG_CLASSES: Record<Tag, string> = { uncovered: 'chip-acc', failing: 'chip-bad', pending: 'chip-sky', ignored: '' }
@@ -364,6 +538,17 @@ const STATUS_LABELS: Record<string, string> = {
   unreachable: '连不上 Mihomo',
   no_data: '等待上报'
 }
+const VERDICT_LABELS: Record<string, string> = {
+  needs_proxy: '直连不通，代理可达',
+  direct_only: '代理不通，直连可达',
+  both_ok: '直连与代理都可达',
+  unreachable: '直连与代理都不通',
+  proxy_down: '代理节点不可用',
+  direct_down: '本机直连异常',
+  flaky: '结果不稳定',
+  incomplete: '探测不完整'
+}
+const PROBE_POLL_MS = 1500
 const FAIL_KIND_LABELS: Record<string, string> = {
   timeout: '超时', reset: '重置', refused: '拒绝', eof: '断开', dns: '解析', other: '其他'
 }
@@ -379,6 +564,7 @@ const agents = ref<AgentInfo[]>([])
 const items = ref<DomainItem[]>([])
 const sniffCoverage = ref<number | null>(null)
 const minAgentVersion = ref('')
+const probeAgentVersion = ref('')
 const settings = ref<Settings | null>(null)
 const selected = ref(new Set<string>())
 const expanded = ref(new Set<string>())
@@ -388,6 +574,12 @@ const togglingAgent = ref('')
 const initDialogVisible = ref(false)
 const initProxyPolicy = ref('')
 const initializing = ref(false)
+const probeJob = ref<ProbeJob | null>(null)
+const history = ref<HistoryEntry[]>([])
+const historyLoading = ref(false)
+let probeTimer: ReturnType<typeof setTimeout> | null = null
+
+const probing = computed(() => probeJob.value?.status === 'running')
 
 const errorMessage = (error: unknown, fallback: string) =>
   isAxiosError<{ message?: string }>(error) ? error.response?.data?.message || fallback : fallback
@@ -397,6 +589,15 @@ const visibleItems = computed(() => {
   if (!keyword) return items.value
   return items.value.filter(item => item.domain.includes(keyword) || item.hosts.some(host => host.host.includes(keyword)))
 })
+
+const visibleHistory = computed(() => {
+  const keyword = search.value.trim().toLowerCase()
+  return keyword ? history.value.filter(entry => entry.value.includes(keyword)) : history.value
+})
+
+const adoptableSelected = computed(() =>
+  items.value.filter(item => selected.value.has(item.domain) && item.suggestion?.target)
+)
 
 const allSelected = computed(() =>
   visibleItems.value.length > 0 && visibleItems.value.every(item => selected.value.has(item.domain))
@@ -411,7 +612,13 @@ const enabledAgents = computed(() => agents.value.filter(agent => agent.enabled)
 const emptyTitle = computed(() => {
   if (!enabledAgents.value.length) return '还没有开启域名发现'
   if (search.value.trim()) return '没有匹配的域名'
-  return { uncovered: '没有未覆盖的域名', failing: '没有直连失败的域名', all: '暂无数据', ignored: '没有忽略的域名' }[view.value]
+  return {
+    uncovered: '没有未覆盖的域名',
+    failing: '没有直连失败的域名',
+    all: '暂无数据',
+    ignored: '没有忽略的域名',
+    history: '还没有加入过域名'
+  }[view.value]
 })
 
 const emptyDescription = computed(() => {
@@ -428,6 +635,18 @@ const routeText = (route: Route) => {
   const outlet = route.outlet === 'direct' ? '直连' : route.outlet === 'reject' ? '拒绝' : '代理'
   return `${rule} → ${route.policy} · ${outlet}`
 }
+
+const suggestionText = (probe: Probe) =>
+  probe.target ? `建议${TARGET_LABELS[probe.target]} ${probe.confidence}` : VERDICT_LABELS[probe.verdict] || probe.verdict
+
+const suggestionClass = (probe: Probe) => {
+  if (probe.target === 'proxy') return probe.confidence >= 80 ? 'chip-acc' : ''
+  if (probe.target === 'direct') return probe.confidence >= 80 ? 'chip-ok' : ''
+  return ['proxy_down', 'direct_down', 'unreachable'].includes(probe.verdict) ? 'chip-warn' : ''
+}
+
+const suggestionTitle = (probe: Probe) =>
+  [`${probe.host}：${VERDICT_LABELS[probe.verdict] || probe.verdict}`, ...probe.reasons, `探测于 ${relativeTime(probe.checked_at)}`].join('\n')
 
 const failKindsText = (kinds: Record<string, number>) =>
   Object.entries(kinds)
@@ -460,7 +679,23 @@ const toggleExpanded = (domain: string) => {
   expanded.value = next
 }
 
+const loadHistory = async () => {
+  historyLoading.value = true
+  try {
+    const { data } = await api.get('/domain-discovery/history')
+    history.value = data.items
+  } catch (error) {
+    notify.error(errorMessage(error, '无法读取已加入的记录'))
+  } finally {
+    historyLoading.value = false
+  }
+}
+
 const loadDomains = async () => {
+  if (view.value === 'history') {
+    selected.value = new Set()
+    return loadHistory()
+  }
   loading.value = true
   loadError.value = ''
   try {
@@ -469,6 +704,11 @@ const loadDomains = async () => {
     items.value = data.items
     sniffCoverage.value = data.sniff_coverage
     minAgentVersion.value = data.min_agent_version
+    probeAgentVersion.value = data.min_probe_agent_version
+    if (data.probe_job && !probeJob.value) {
+      probeJob.value = data.probe_job
+      scheduleProbePoll()
+    }
     const present = new Set(data.items.map((item: DomainItem) => item.domain))
     selected.value = new Set([...selected.value].filter(domain => present.has(domain)))
   } catch (error) {
@@ -489,6 +729,95 @@ const loadSettings = async () => {
 }
 
 const reload = () => Promise.all([loadDomains(), loadSettings()])
+
+const scheduleProbePoll = () => {
+  if (probeTimer) clearTimeout(probeTimer)
+  probeTimer = setTimeout(pollProbe, PROBE_POLL_MS)
+}
+
+const pollProbe = async () => {
+  probeTimer = null
+  const job = probeJob.value
+  if (!job) return
+  try {
+    const { data } = await api.get(`/domain-discovery/probe/${job.id}`)
+    probeJob.value = data.job
+  } catch (error) {
+    notify.error(errorMessage(error, '无法读取探测进度'))
+    probeJob.value = null
+    return
+  }
+  if (probeJob.value?.status === 'running') {
+    scheduleProbePoll()
+    return
+  }
+  if (probeJob.value?.status === 'failed') {
+    notify.error('探测失败', probeJob.value.message)
+  } else if (probeJob.value?.errors.length) {
+    notify.warning(`探测完成，${probeJob.value.errors.length} 批失败`, probeJob.value.errors[0].message)
+  } else {
+    notify.success(`已探测 ${probeJob.value?.total ?? 0} 个子域`)
+  }
+  await loadDomains()
+}
+
+const startProbe = async (domains: string[]) => {
+  if (!settings.value?.probe_path) {
+    notify.warning('请先设置并启用默认代理规则集', '探测代理路径时会使用它指向的策略组。')
+    return
+  }
+  if (!agents.value.some(agent => agent.enabled && agent.probe_supported)) {
+    notify.warning(`没有可用于探测的 Agent`, `需要开启域名发现，且 Agent 版本不低于 ${probeAgentVersion.value}。`)
+    return
+  }
+  try {
+    const { data } = await api.post('/domain-discovery/probe', { domains })
+    probeJob.value = data.job
+    scheduleProbePoll()
+  } catch (error) {
+    if (isAxiosError(error) && error.response?.status === 409 && error.response.data?.job) {
+      probeJob.value = error.response.data.job
+      scheduleProbePoll()
+      notify.info('已有探测任务在运行，完成后再试')
+      return
+    }
+    notify.error(errorMessage(error, '无法开始探测'))
+  }
+}
+
+const probeSelected = () => startProbe([...selected.value].slice(0, 100))
+
+const adoptSelected = () => apply(adoptableSelected.value.map(item => ({
+  value: item.domain,
+  target: item.suggestion!.target as Target
+})))
+
+const saveAutomation = async (changes: Partial<Pick<Settings, 'auto_probe' | 'auto_apply' | 'auto_apply_min_confidence'>>) => {
+  savingSettings.value = true
+  try {
+    const { data } = await api.put('/domain-discovery/settings', changes)
+    settings.value = data
+  } catch (error) {
+    notify.error(errorMessage(error, '保存失败'))
+  } finally {
+    savingSettings.value = false
+  }
+}
+
+const undo = async (entry: HistoryEntry) => {
+  if (!(await confirmDanger(`从「${entry.ruleset || TARGET_LABELS[entry.target]}」中移除 ${entry.value}？`))) return
+  applying.value = true
+  try {
+    const { data } = await api.post('/domain-discovery/undo', { value: entry.value, target: entry.target })
+    notify.success(data.removed.length ? `已移除 ${entry.value}` : '规则集中已没有这一条，已删除记录',
+      '已部署过该规则集的 Agent 会在下次上报时自动刷新。')
+    await loadHistory()
+  } catch (error) {
+    notify.error(errorMessage(error, '撤销失败'))
+  } finally {
+    applying.value = false
+  }
+}
 
 const toggleAgent = async (agent: AgentInfo, enabled: boolean) => {
   togglingAgent.value = agent.id
@@ -601,4 +930,7 @@ const ignoreSelected = () => ignore([...selected.value])
 const unignoreSelected = () => unignore([...selected.value])
 
 onMounted(reload)
+onUnmounted(() => {
+  if (probeTimer) clearTimeout(probeTimer)
+})
 </script>

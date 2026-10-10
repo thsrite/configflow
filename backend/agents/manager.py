@@ -955,3 +955,21 @@ class AgentManager:
             return None
 
         return self._update_agents(update)
+
+    def probe_domains(self, agent: Dict[str, Any], payload: Dict[str, Any], timeout: int = 200) -> Dict[str, Any]:
+        """让 Agent 经本机 Mihomo 探测一批域名；失败时抛出异常，消息可展示给用户。"""
+        response = requests.post(
+            f"http://{agent['host']}:{agent['port']}/api/domain-probe",
+            json=payload,
+            headers={'Authorization': f'Bearer {agent["token"]}'},
+            timeout=timeout,
+        )
+        if response.status_code == 404:
+            raise RuntimeError(f'Agent {agent.get("name") or agent["id"]} 不支持域名探测，请升级')
+        try:
+            body = response.json()
+        except ValueError:
+            body = {}
+        if response.status_code != 200 or not body.get('success'):
+            raise RuntimeError(body.get('message') or f'Agent 返回 HTTP {response.status_code}')
+        return body
