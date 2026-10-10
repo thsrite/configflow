@@ -17,7 +17,7 @@ declare module 'axios' {
   }
 }
 
-const scopedPath = /^\/(?:profiles\/[^/]+\/generate|proxy-groups(?:\/|$)|rules(?:\/|$)|rule-sets(?:\/|$)|rule-configs(?:\/|$)|custom-config(?:\/|$)|mosdns(?:\/|$)|stats(?:\/|$))/
+const scopedPath = /^\/(?:profiles\/[^/]+\/generate|proxy-groups(?:\/|$)|rules(?:\/|$)|rule-sets(?:\/|$)|rule-configs(?:\/|$)|custom-config(?:\/|$)|mosdns(?:\/|$)|stats(?:\/|$)|domain-discovery(?:\/|$))/
 const profileOptions = (profileId = getActiveProfileId()) => ({
   headers: { 'X-ConfigFlow-Profile': profileId }
 })

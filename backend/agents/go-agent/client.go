@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -228,6 +229,13 @@ func (c *Config) sendHeartbeatRequest(jsonData []byte) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusOK {
+		var result struct {
+			DomainDiscoveryEnabled bool `json:"domain_discovery_enabled"`
+		}
+		// 旧服务端不返回该字段，解码失败或缺省都视为关闭
+		_ = json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&result)
+		domainDiscovery.SetEnabled(c, result.DomainDiscoveryEnabled)
+
 		status := c.managedServiceStatus()
 		// 心跳成功是常态，仅在服务状态发生变化时记录，避免日志无限累积
 		if status != lastReportedStatus {

@@ -159,7 +159,7 @@ def _default_profile_config() -> Dict[str, Any]:
 
 SHARED_FIELDS = ('subscriptions', 'nodes', 'subscription_aggregations', 'rule_library')
 RESOURCE_FIELDS = SHARED_FIELDS[:3]
-PROFILE_FIELDS = ('proxy_groups', 'rule_configs', 'mihomo', 'surge', 'mosdns', 'loon')
+PROFILE_FIELDS = ('proxy_groups', 'rule_configs', 'mihomo', 'surge', 'mosdns', 'loon', 'domain_discovery')
 BUILTIN_POLICIES = {'DIRECT', 'REJECT'}
 RULE_SOURCE_FIELDS = ('name', 'url', 'behavior', 'content', 'source_type', 'format')
 
@@ -313,7 +313,7 @@ class ProfileRepository:
 
     def _empty_profile(self, profile_id, name, description=''):
         defaults = self._legacy_defaults()
-        result = {key: copy.deepcopy(defaults.get(key, {} if key in ('mihomo', 'surge', 'mosdns', 'loon') else []))
+        result = {key: copy.deepcopy(defaults.get(key, {} if key in ('mihomo', 'surge', 'mosdns', 'loon', 'domain_discovery') else []))
                   for key in PROFILE_FIELDS}
         result.update(id=profile_id, name=name, description=description, _revision=0,
                       created_at=_now(), updated_at=_now())
@@ -1671,6 +1671,9 @@ class ProfileRepository:
         # 旧版本保存的配置没有 loon 字段，缺省视为空对象
         if not isinstance(profile.get('loon', {}), dict):
             raise ProfileValidationError('loon 参数必须是对象')
+        # 域名发现设置同样是后加字段，缺省为空对象
+        if not isinstance(profile.get('domain_discovery', {}), dict):
+            raise ProfileValidationError('domain_discovery 参数必须是对象')
         mosdns = profile['mosdns']
         for key in ('direct_rulesets', 'proxy_rulesets', 'direct_rules', 'proxy_rules'):
             expected = 'ruleset' if key.endswith('rulesets') else 'rule'

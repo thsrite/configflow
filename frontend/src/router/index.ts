@@ -58,6 +58,11 @@ const routes = [
     component: () => import('@/views/Rules.vue')
   },
   {
+    path: '/domain-discovery',
+    name: 'DomainDiscovery',
+    component: () => import('@/views/DomainDiscovery.vue')
+  },
+  {
     path: '/proxy-groups',
     name: 'ProxyGroups',
     component: () => import('@/views/ProxyGroups.vue')

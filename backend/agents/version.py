@@ -1,10 +1,14 @@
 """Agent 版本管理"""
 
 # Agent 最新版本号
-LATEST_AGENT_VERSION = "1.3.1-go"
+LATEST_AGENT_VERSION = "1.4.0-go"
 
 # 版本更新日志（可选）
 VERSION_CHANGELOG = {
+    "1.4.0-go": {
+        "date": "2026-10-10",
+        "features": ["域名发现：采集 Mihomo 未覆盖与直连失败的域名并定期上报，默认规则集更新后自动刷新"]
+    },
     "1.3.1-go": {
         "date": "2026-10-10",
         "features": ["修复 Mihomo HTTP 代理健康检查误判，避免正常推送被错误回滚"]

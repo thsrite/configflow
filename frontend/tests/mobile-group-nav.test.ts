@@ -147,7 +147,7 @@ describe('mobile group navigation', () => {
     { path: '/subscriptions', group: '资源', current: '订阅来源', enabled: true, labels: ['订阅来源', '节点库', '订阅聚合', '规则库'] },
     { path: '/subscriptions', group: '资源', current: '订阅来源', enabled: false, labels: ['订阅来源', '节点库', '规则库'] },
     { path: '/logs', group: '系统', current: '日志', enabled: true, labels: ['系统设置', '配置空间', 'Agent', '日志'] },
-    { path: '/rules', group: '当前配置', current: '策略规则', enabled: true, labels: ['策略组', '策略规则', '配置生成'] }
+    { path: '/rules', group: '当前配置', current: '策略规则', enabled: true, labels: ['策略组', '策略规则', '域名发现', '配置生成'] }
   ])('shows every $group destination and marks the current page (aggregation=$enabled)', async ({ path, group, current, enabled, labels }) => {
     const { wrapper } = await render(path, enabled)
     const nav = await openMenu(wrapper, group, current)

@@ -11,6 +11,7 @@ from flask import request, jsonify, send_file
 
 from backend.agents.config_generator import generate_agent_config
 from backend.agents.manager import AgentDeploymentConflict
+from backend.agents.traffic_store import REPORT_MAX_CONTENT_LENGTH, clean_report, get_traffic_store
 from backend.agents.version import (
     LATEST_AGENT_VERSION,
     compare_versions,
@@ -30,6 +31,7 @@ from backend.utils.logger import get_logger
 from backend.utils.url_utils import safe_url_for_log
 from backend.utils.strategy_references import StrategyReferenceError
 from backend.utils.rule_fetch import is_internal_rule_url, request_rule
+from backend.routes.domain_discovery import discovery_provider_revisions
 
 logger = get_logger(__name__)
 
@@ -312,44 +314,113 @@ def register_agent():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+def _authenticated_agent(agent_manager, agent_id):
+    """按 Bearer token 认证 Agent 自身发起的请求，失败返回 None。"""
+    agent = agent_manager.get_agent_by_id(agent_id)
+    provided_token = parse_bearer_token(request.headers.get('Authorization', ''))
+    expected_token = agent.get('token', '') if agent else ''
+    if (
+        provided_token is None
+        or not isinstance(expected_token, str)
+        or not expected_token
+        or not _constant_time_ascii_equal(provided_token, expected_token)
+    ):
+        return None
+    return agent
+
+
+def _read_json_body(max_length, invalid_message):
+    """读取有大小上限的 JSON 请求体，返回 (数据, 错误响应)。"""
+    if request.content_length is not None and request.content_length > max_length:
+        return None, (jsonify({'success': False, 'message': 'Request body too large'}), 413)
+    raw_body = request.stream.read(max_length + 1)
+    if len(raw_body) > max_length:
+        return None, (jsonify({'success': False, 'message': 'Request body too large'}), 413)
+    if not request.is_json:
+        return None, (jsonify({'success': False, 'message': invalid_message}), 400)
+    try:
+        return json.loads(raw_body), None
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None, (jsonify({'success': False, 'message': invalid_message}), 400)
+
+
+def _domain_discovery_enabled(agent):
+    return bool(agent.get('domain_discovery_enabled')) and agent.get('service_type') == 'mihomo'
+
+
 @bp.route('/<agent_id>/heartbeat', methods=['POST'])
 def agent_heartbeat(agent_id):
     """Agent 心跳"""
     try:
         agent_manager = get_agent_manager()
-        agent = agent_manager.get_agent_by_id(agent_id)
-        provided_token = parse_bearer_token(
-            request.headers.get('Authorization', '')
-        )
-        expected_token = agent.get('token', '') if agent else ''
-        if (
-            provided_token is None
-            or not isinstance(expected_token, str)
-            or not expected_token
-            or not _constant_time_ascii_equal(provided_token, expected_token)
-        ):
+        agent = _authenticated_agent(agent_manager, agent_id)
+        if agent is None:
             return jsonify({'success': False, 'message': 'Unauthorized'}), 401
 
-        if request.content_length is not None and request.content_length > _HEARTBEAT_MAX_CONTENT_LENGTH:
-            return jsonify({'success': False, 'message': 'Request body too large'}), 413
-        raw_body = request.stream.read(_HEARTBEAT_MAX_CONTENT_LENGTH + 1)
-        if len(raw_body) > _HEARTBEAT_MAX_CONTENT_LENGTH:
-            return jsonify({'success': False, 'message': 'Request body too large'}), 413
-        if not request.is_json:
-            return jsonify({'success': False, 'message': 'Invalid heartbeat data'}), 400
-        try:
-            heartbeat_data = json.loads(raw_body)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return jsonify({'success': False, 'message': 'Invalid heartbeat data'}), 400
+        heartbeat_data, error = _read_json_body(_HEARTBEAT_MAX_CONTENT_LENGTH, 'Invalid heartbeat data')
+        if error:
+            return error
         if not _validate_heartbeat_payload(heartbeat_data):
             return jsonify({'success': False, 'message': 'Invalid heartbeat data'}), 400
 
         result = agent_manager.update_heartbeat(agent_id, heartbeat_data)
         if result:
-            return jsonify({'success': True}), 200
+            # 旧 Agent 会忽略多出的字段；新 Agent 据此启停域名发现
+            return jsonify({'success': True, 'domain_discovery_enabled': _domain_discovery_enabled(agent)}), 200
         return jsonify({'success': False, 'message': 'Agent not found'}), 404
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@bp.route('/<agent_id>/traffic-report', methods=['POST'])
+def agent_traffic_report(agent_id):
+    """Agent 上报 mihomo 流量汇总（域名发现）"""
+    agent_manager = get_agent_manager()
+    agent = _authenticated_agent(agent_manager, agent_id)
+    if agent is None:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    report, error = _read_json_body(REPORT_MAX_CONTENT_LENGTH, 'Invalid traffic report')
+    if error:
+        return error
+    if not _domain_discovery_enabled(agent):
+        return jsonify({'success': False, 'enabled': False, 'message': 'Domain discovery disabled'}), 409
+    report = clean_report(report)
+    if report is None:
+        return jsonify({'success': False, 'message': 'Invalid traffic report'}), 400
+    get_traffic_store().add_report(agent_id, report)
+    return jsonify({
+        'success': True,
+        'enabled': True,
+        'rule_providers': discovery_provider_revisions(agent.get('profile_id', 'default')),
+    }), 200
+
+
+@bp.route('/<agent_id>/domain-discovery', methods=['PUT'])
+@require_auth
+def set_agent_domain_discovery(agent_id):
+    """开关 Agent 的域名发现"""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not isinstance(payload.get('enabled'), bool):
+        return jsonify({'success': False, 'message': 'enabled 必须是布尔值'}), 400
+    try:
+        agent = get_agent_manager().set_domain_discovery(agent_id, payload['enabled'])
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    except AgentDeploymentConflict as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 409
+    if agent is None:
+        return jsonify({'success': False, 'message': 'Agent not found'}), 404
+    return jsonify({'success': True, 'data': _public_agent(agent)}), 200
+
+
+@bp.route('/<agent_id>/domain-discovery/clear', methods=['POST'])
+@require_auth
+def clear_agent_domain_discovery(agent_id):
+    """清除 Agent 已采集的域名发现数据"""
+    if not get_agent_manager().get_agent_by_id(agent_id):
+        return jsonify({'success': False, 'message': 'Agent not found'}), 404
+    get_traffic_store().delete(agent_id)
+    return jsonify({'success': True}), 200
 
 
 @bp.route('/<agent_id>/config', methods=['GET'])
@@ -477,6 +548,7 @@ def handle_agent_item(agent_id):
         try:
             result = agent_manager.delete_agent(agent_id)
             if result:
+                get_traffic_store().delete(agent_id)
                 return jsonify({'success': True}), 200
             else:
                 return jsonify({'success': False, 'message': 'Agent not found'}), 404

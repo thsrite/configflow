@@ -127,6 +127,19 @@ ConfigFlow 帮助您管理共享订阅、节点、聚合与规则库，为多份
 
 ---
 
+### 🔭 域名发现
+
+从 Mihomo Agent 收集访问过的域名，找出未被规则覆盖、直连失败的域名，一键加入默认的直连 / 代理规则集。
+
+**主要特性：**
+- 按 Agent 单独开启，只记录域名级统计，保留 7 天
+- 标出未覆盖、直连失败、待部署的域名，按主域合并
+- 一键创建默认直连 / 代理规则集，加入后 Agent 自动刷新，无需重新部署
+
+[查看详细文档 →](module/domain-discovery.md)
+
+---
+
 ### 🚀 配置生成
 
 为当前配置一键生成标准文件；全量备份、恢复与服务设置统一在「系统设置」。
@@ -241,6 +254,7 @@ services:
 - [策略管理](module/proxy-groups.md) - 配置策略组
 - [规则仓库](module/rule-library.md) - 集中管理规则集
 - [规则配置](module/rules.md) - 创建分流规则
+- [域名发现](module/domain-discovery.md) - 从 Agent 流量发现未覆盖与直连失败的域名
 - [配置生成](module/generate.md) - 生成和导出配置
 - [MCP 服务](module/mcp.md) - 通过 MCP 用 AI 客户端操作平台
 

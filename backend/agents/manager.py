@@ -117,6 +117,8 @@ class AgentManager:
                     'deployments': existing_agent.get('deployments', {}),
                     'latest_deployment': existing_agent.get('latest_deployment'),
                     'latest_upgrade': existing_agent.get('latest_upgrade'),
+                    # 管理端设置的开关，重新注册不能把它清掉
+                    'domain_discovery_enabled': existing_agent.get('domain_discovery_enabled', False),
                 }
                 agents[agents.index(existing_agent)] = updated_agent
                 return {'id': agent_id, 'status': 'online', 'is_new': False}
@@ -940,3 +942,18 @@ class AgentManager:
 
         except requests.exceptions.RequestException as e:
             return {'success': False, 'message': f'Connection error: {str(e)}'}
+
+    def set_domain_discovery(self, agent_id: str, enabled: bool) -> Optional[Dict[str, Any]]:
+        """开关 Agent 的域名发现；只对 mihomo Agent 生效。返回更新后的 Agent，不存在时返回 None。"""
+        def update(agents):
+            for agent in agents:
+                if agent['id'] != agent_id:
+                    continue
+                if enabled and agent.get('service_type') != 'mihomo':
+                    raise ValueError('域名发现只支持 mihomo Agent')
+                agent['domain_discovery_enabled'] = bool(enabled)
+                agent['updated_at'] = datetime.now().isoformat()
+                return dict(agent)
+            return None
+
+        return self._update_agents(update)
