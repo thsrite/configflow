@@ -17,9 +17,10 @@ from backend.utils.url_utils import safe_exception_details, safe_url_for_log
 logger = logging.getLogger(__name__)
 
 
-def _load_cached_rule_content_for_url(original_url: str) -> str:
+def _load_cached_rule_content_for_url(original_url: str, config_data=None) -> str:
     """尝试从本地规则缓存中读取与 URL 对应的规则内容。"""
-    config_data = get_config()
+    if config_data is None:
+        config_data = get_config()
     if not original_url:
         return ''
 
@@ -379,12 +380,13 @@ def _validate_remote_url(url: str) -> str:
     return url
 
 
-def _fetch_remote_content(url: str) -> str:
+def _fetch_remote_content(url: str, config_data=None) -> str:
     import requests
 
     response = request_rule(
         url, timeout=(3, 10), stream=True,
         max_redirects=_MAX_RULE_PROXY_REDIRECTS,
+        config_data=config_data,
     )
     try:
         if not 200 <= response.status_code < 300:

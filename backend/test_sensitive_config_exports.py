@@ -9,6 +9,7 @@ import pytest
 from flask import Flask
 
 from backend.common import config as config_module
+from backend.common import config_export
 from backend.common.config_export import sanitize_config_for_output, sanitize_external_payload
 from backend.common.config_repository import ProfileRepository
 from backend.mcp_server import mcp_bp
@@ -18,6 +19,100 @@ from backend.routes import register_blueprints
 RULE_PROXY_SECRET = "rule proxy/&?=秘密"
 CONFIG_TOKEN = "managed-config-token-remains-visible"
 REDACTED = "[REDACTED]"
+
+
+@pytest.mark.parametrize(
+    "value,secrets,expected",
+    [
+        ("ordinary-rule.example", {"private-token"}, False),
+        ("prefix-private-token-suffix", {"private-token"}, True),
+        ("前缀秘密后缀", {"秘密"}, True),
+        ("encoded%20value+with%2520layers", set(), False),
+    ],
+)
+def test_secret_check_skips_decoders_when_they_cannot_change_the_result(
+    monkeypatch, value, secrets, expected
+):
+    def unexpected_decode(_value):
+        pytest.fail("This input does not require URL decoding")
+
+    monkeypatch.setattr(config_export.urllib.parse, "unquote", unexpected_decode)
+    monkeypatch.setattr(config_export.urllib.parse, "unquote_plus", unexpected_decode)
+
+    assert config_export._contains_encoded_secret(value, secrets) is expected
+
+
+@pytest.mark.parametrize(
+    "value,secret,expected",
+    [
+        ("prefix-secret+value-suffix", "secret value", True),
+        ("prefix-%73ecret%20value-suffix", "secret value", True),
+        ("prefix-secret%252Bvalue-suffix", "secret+value", True),
+        ("prefix-secret%2520value-suffix", "secret value", True),
+        ("%broken-secret+value-%ZZ", "secret value", True),
+        ("ordinary%20rule+name", "private-token", False),
+    ],
+)
+def test_secret_check_preserves_percent_and_plus_decoding_boundaries(value, secret, expected):
+    assert config_export._contains_encoded_secret(value, {secret}) is expected
+
+
+def test_sanitizer_reuses_string_checks_for_keys_and_values_without_skipping_redaction(monkeypatch):
+    token = "private secret"
+    monkeypatch.setattr(config_export, "_repository_rule_proxy_tokens", lambda: [token])
+    monkeypatch.setattr(config_export, "_repository_agent_tokens", lambda: [])
+    original_check = config_export._contains_encoded_secret
+    checks = {}
+
+    def count_check(value, secrets):
+        checks[value] = checks.get(value, 0) + 1
+        return original_check(value, secrets)
+
+    monkeypatch.setattr(config_export, "_contains_encoded_secret", count_check)
+    encoded = "private%2520secret"
+    payload = [{"safe": "example.test", encoded: encoded} for _ in range(1000)]
+
+    sanitized = sanitize_external_payload(payload)
+
+    assert sanitized == [{"safe": "example.test", REDACTED: REDACTED} for _ in range(1000)]
+    assert checks == {"safe": 1, "example.test": 1, encoded: 1}
+    assert payload[0][encoded] == encoded
+
+
+def test_sanitizer_string_cache_is_bounded_and_does_not_retain_large_values(monkeypatch):
+    token = "private-token"
+    monkeypatch.setattr(config_export, "_repository_rule_proxy_tokens", lambda: [token])
+    monkeypatch.setattr(config_export, "_repository_agent_tokens", lambda: [])
+    original_check = config_export._contains_encoded_secret
+    checks = {}
+
+    def count_check(value, secrets):
+        checks[value] = checks.get(value, 0) + 1
+        return original_check(value, secrets)
+
+    monkeypatch.setattr(config_export, "_contains_encoded_secret", count_check)
+    large = "x" * 2048 + token
+    payload = [f"safe-{index}" for index in range(4097)] + ["safe-0", large, large]
+
+    sanitized = sanitize_external_payload(payload)
+
+    assert sanitized[:-2] == payload[:-2]
+    assert sanitized[-2:] == [REDACTED, REDACTED]
+    assert checks["safe-0"] == 2
+    assert checks[large] == 2
+
+
+def test_sanitizer_does_not_reuse_string_decisions_across_token_changes(monkeypatch):
+    tokens = []
+    monkeypatch.setattr(config_export, "_repository_rule_proxy_tokens", lambda: tokens)
+    monkeypatch.setattr(config_export, "_repository_agent_tokens", lambda: [])
+    payload = {"value": "prefix-new-secret-suffix"}
+
+    assert sanitize_external_payload(payload) == payload
+    tokens.append("new-secret")
+    assert sanitize_external_payload(payload) == {"value": REDACTED}
+    tokens.clear()
+    assert sanitize_external_payload(payload) == payload
 
 
 def _nested_list(depth, leaf="leaf"):

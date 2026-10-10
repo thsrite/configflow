@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { notify } from '@/lib/feedback'
 import router from '@/router'
+import { getAuthSessionGeneration, getAuthToken, invalidateAuthSession } from '@/authSession'
 import { beginScopedRequest, clearActiveProfileId, endScopedRequest, getActiveProfileId } from '@/profileContext'
 
 const api = axios.create({
@@ -11,6 +12,8 @@ const api = axios.create({
 declare module 'axios' {
   interface InternalAxiosRequestConfig {
     profileRequestTracked?: boolean
+    authSessionToken?: string | null
+    authSessionGeneration?: number
   }
 }
 
@@ -37,7 +40,9 @@ const recoverFromMissingProfile = (): Promise<void> => {
 // 请求拦截器 - 添加 token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token')
+    const token = getAuthToken()
+    config.authSessionToken = token
+    config.authSessionGeneration = getAuthSessionGeneration()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -67,8 +72,14 @@ api.interceptors.response.use(
     const message = error.response?.data?.message
     if (error.response?.status === 404 && typeof message === 'string' && message.startsWith('Profile not found:')) {
       void recoverFromMissingProfile().catch(() => undefined)
-    } else if (error.response?.status === 401) {
+    } else if (
+      error.response?.status === 401
+      && error.config?.authSessionToken === getAuthToken()
+      && error.config?.authSessionGeneration === getAuthSessionGeneration()
+    ) {
       // token 无效或过期
+      // 已退出或重新登录后的旧请求不能清除新会话。
+      invalidateAuthSession()
       localStorage.removeItem('token')
       localStorage.removeItem('username')
       notify.error('登录已过期，请重新登录')
@@ -113,7 +124,7 @@ export const ruleApi = {
   update: (id: string, data: unknown, profileId?: string) => api.put(`/rules/${id}`, data, profileOptions(profileId)),
   delete: (id: string, profileId?: string) => api.delete(`/rules/${id}`, profileOptions(profileId)),
   batchCreate: (data: unknown, profileId?: string) => api.post('/rules/batch', data, profileOptions(profileId)),
-  findDuplicates: (profileId?: string) => api.post('/rules/find-duplicates', {}, { ...profileOptions(profileId), timeout: 120000 })
+  findDuplicates: (profileId?: string, signal?: AbortSignal) => api.post('/rules/find-duplicates', {}, { ...profileOptions(profileId), timeout: 120000, signal })
 }
 
 // 规则集相关
@@ -166,7 +177,7 @@ export const generateApi = {
   mihomo: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/mihomo'), { base_url: getBaseUrl() }, { responseType: 'blob' }),
   surge: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/surge'), { base_url: getBaseUrl() }, { responseType: 'blob' }),
   loon: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/loon'), { base_url: getBaseUrl() }, { responseType: 'blob' }),
-  mosdns: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/mosdns'), { base_url: getBaseUrl() }, { responseType: 'blob' }),
+  mosdns: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/mosdns'), { base_url: getBaseUrl() }, { responseType: 'blob', timeout: 60000 }),
   previewMihomo: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/mihomo/preview'), { base_url: getBaseUrl() }),
   previewSurge: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/surge/preview'), { base_url: getBaseUrl() }),
   previewLoon: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/loon/preview'), { base_url: getBaseUrl() }),
