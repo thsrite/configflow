@@ -14,6 +14,14 @@ def _payload():
     return request.get_json(silent=True) or {}
 
 
+def _busy_response(busy, profile_id):
+    """同一时间只运行一个任务（跨配置空间）。别的配置空间的任务不回传，避免前端去轮询看不到的任务。"""
+    job = service.get_job(busy.job_id)
+    if job is None or job['profile_id'] != profile_id:
+        return jsonify({'success': False, 'message': '另一个配置空间的探测任务正在运行，请稍后再试', 'job': None}), 409
+    return jsonify({'success': False, 'message': str(busy), 'job': service.public_job(job)}), 409
+
+
 @domain_discovery_bp.route('/settings', methods=['GET'])
 @require_auth
 def get_settings():
@@ -59,12 +67,7 @@ def apply_rules():
     profile_id = resolve_profile_id()
     entries = service.parse_apply_items(_payload().get('items'))
     # 手动采纳时，把当时的探测建议一起记进历史
-    listing = service.load_domains(profile_id, view='all', include_ignored=True)
-    evidence = {item['domain']: item['suggestion'] for item in listing['items'] if item.get('suggestion')}
-    for item in listing['items']:
-        for host in item['hosts']:
-            if host.get('probe'):
-                evidence.setdefault(host['host'], host['probe'])
+    evidence = service.probe_evidence(profile_id, [entry['value'] for entry in entries])
     result = service.apply_domains(profile_id, entries, source='manual', evidence=evidence)
     return jsonify({'success': True, **result})
 
@@ -104,7 +107,7 @@ def start_probe():
     try:
         job = service.start_probe_job(profile_id, _payload().get('domains'))
     except service.ProbeBusy as busy:
-        return jsonify({'success': False, 'message': str(busy), 'job': service.public_job(service.get_job(busy.job_id))}), 409
+        return _busy_response(busy, profile_id)
     return jsonify({'success': True, 'job': service.public_job(job)}), 202
 
 
