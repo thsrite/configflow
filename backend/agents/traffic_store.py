@@ -65,7 +65,8 @@ def _valid_item(item):
         return False
     if item.get('outlet') not in OUTLETS:
         return False
-    if not (_bounded_text(item.get('rule'), 64, required=True)
+    # 全局 / 直连模式、或经指定了 proxy 的入站时，Mihomo 不走规则匹配，rule 为空
+    if not (_bounded_text(item.get('rule'), 64)
             and _bounded_text(item.get('rule_payload'), 256)
             and _bounded_text(item.get('policy'), 128, required=True)):
         return False
@@ -77,22 +78,27 @@ def _valid_item(item):
     return all(_count(value) for value in fail_kinds.values())
 
 
-def validate_report(payload) -> bool:
-    """严格校验 Agent 上报体；任何越界都整体拒收。"""
+def clean_report(payload) -> Optional[Dict[str, Any]]:
+    """校验 Agent 上报体。
+
+    顶层字段越界时整体拒收（返回 None）；单条明细越界只丢弃这一条并计入 dropped，
+    避免一条异常连接（如超长的逻辑规则）让整个 5 分钟窗口的数据都丢掉。
+    """
     if not isinstance(payload, dict) or set(payload) - _REPORT_FIELDS:
-        return False
+        return None
     if payload.get('schema') != REPORT_SCHEMA or payload.get('status') not in REPORT_STATUSES:
-        return False
+        return None
     for field in ('mihomo_version', 'window_start', 'window_end'):
         if not _bounded_text(payload.get(field), 64):
-            return False
+            return None
     for field in ('ip_only_conns', 'dropped'):
         if not _count(payload.get(field, 0)):
-            return False
+            return None
     items = payload.get('items', [])
     if not isinstance(items, list) or len(items) > REPORT_MAX_ITEMS:
-        return False
-    return all(_valid_item(item) for item in items)
+        return None
+    valid = [item for item in items if _valid_item(item)]
+    return {**payload, 'items': valid, 'dropped': payload.get('dropped', 0) + len(items) - len(valid)}
 
 
 def route_key(rule, rule_payload, outlet, policy):

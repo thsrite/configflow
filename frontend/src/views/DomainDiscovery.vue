@@ -631,7 +631,8 @@ const statusTone = (status: string) =>
   status === 'running' ? 'success' : status === 'no_data' ? 'muted' : 'warning'
 
 const routeText = (route: Route) => {
-  const rule = route.rule_payload ? `${route.rule}(${route.rule_payload})` : route.rule
+  // 全局 / 直连模式或指定了出口的入站不经过规则匹配，rule 为空
+  const rule = route.rule ? (route.rule_payload ? `${route.rule}(${route.rule_payload})` : route.rule) : '未经规则'
   const outlet = route.outlet === 'direct' ? '直连' : route.outlet === 'reject' ? '拒绝' : '代理'
   return `${rule} → ${route.policy} · ${outlet}`
 }

@@ -232,7 +232,8 @@ class RuleConfigMatcher:
     """
 
     def __init__(self, rule_configs, rule_library, load_content: Callable[[dict, Optional[dict]], str]):
-        self._items = [item for item in rule_configs
+        # 序号按全部规则计（含禁用的），与规则列表上显示的行号一致
+        self._items = [(index, item) for index, item in enumerate(rule_configs, start=1)
                        if item.get('enabled', True) and item.get('library_enabled', True)]
         self._library = {item.get('id'): item for item in rule_library if item.get('id')}
         self._load_content = load_content
@@ -259,7 +260,7 @@ class RuleConfigMatcher:
         return self._parsed[index]
 
     def match(self, query: str) -> Optional[Dict[str, Any]]:
-        for index, rule_item in enumerate(self._items, start=1):
+        for index, rule_item in self._items:
             item_type = rule_item.get('itemType', 'rule')
             policy = rule_item.get('policy', 'DIRECT')
             if item_type == 'rule':
