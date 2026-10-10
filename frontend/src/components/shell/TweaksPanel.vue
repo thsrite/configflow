@@ -1,7 +1,7 @@
 <template>
   <Popover v-model:open="open">
     <PopoverTrigger as-child>
-      <Button variant="ghost" size="icon-sm" title="Tweaks" aria-label="Tweaks">
+      <Button variant="ghost" size="icon-sm" title="外观设置" aria-label="外观设置">
         <SlidersHorizontal class="size-[17px]" />
       </Button>
     </PopoverTrigger>
@@ -11,10 +11,10 @@
       :side-offset="10"
       :collision-padding="12"
       class="z-40 max-h-(--reka-popover-content-available-height) w-[280px] overflow-y-auto overscroll-contain rounded-[18px] border-border-strong bg-card/92 p-4 text-foreground shadow-overlay backdrop-blur-xl"
-      aria-label="Tweaks"
+      aria-label="外观设置"
     >
       <h2 class="font-display mb-3 flex items-center text-[18px]">
-        Tweaks
+        外观设置
         <Button variant="ghost" size="icon-sm" class="ml-auto size-7" aria-label="关闭" @click="open = false">
           <X class="size-4" />
         </Button>
