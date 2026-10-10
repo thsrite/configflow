@@ -41,6 +41,7 @@ def register_blueprints(app):
     from backend.routes.logs import logs_bp  # 日志路由
     from backend.routes.stats import stats_bp  # 统计路由
     from backend.routes import profiles
+    from backend.routes.domain_discovery import domain_discovery_bp
 
     # 注册所有蓝图
     app.register_blueprint(auth_bp)
@@ -60,6 +61,7 @@ def register_blueprints(app):
     app.register_blueprint(logs_bp)  # 注册日志路由
     app.register_blueprint(stats_bp)  # 注册统计路由
     app.register_blueprint(profiles_bp)
+    app.register_blueprint(domain_discovery_bp)
 
     from backend.common.config_repository import (
         ProfileRepositoryError, ProfileNotFound, ProfileValidationError,

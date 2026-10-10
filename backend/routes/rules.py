@@ -12,7 +12,7 @@ from backend.common.config import (
 )
 from backend.common.profile_context import resolve_profile_id
 from backend.common.config_repository import ProfileRepositoryError, ProfileValidationError
-from backend.utils.rule_matcher import parse_rule_line, match_query, is_valid_domain, is_valid_ip
+from backend.utils.rule_matcher import RuleConfigMatcher, parse_rule_line, is_valid_domain, is_valid_ip
 from backend.utils.reorder import reorder_by_ids
 from backend.utils.rule_utils import get_rules_dir, sanitize_rule_name
 from backend.utils.logger import get_logger
@@ -341,12 +341,13 @@ def handle_rule_set(rule_set_id):
 
 
 
-def get_ruleset_content(rule_item: dict, library_rule: dict = None) -> str:
+def get_ruleset_content(rule_item: dict, library_rule: dict = None, allow_network: bool = True) -> str:
     """获取规则集内容（优先使用本地缓存，从URL获取后会自动缓存）
 
     Args:
         rule_item: 规则集配置项
         library_rule: 规则仓库中的规则（可选）
+        allow_network: 为 False 时只读本地缓存和内容型规则，不发起网络请求
 
     Returns:
         规则集内容字符串，获取失败返回空字符串
@@ -388,7 +389,7 @@ def get_ruleset_content(rule_item: dict, library_rule: dict = None) -> str:
             rule_content = library_rule.get('content', '')
             logger.info(f"Using rule content from library config")
             return rule_content
-        else:
+        elif allow_network:
             # 从 URL 获取
             url = library_rule.get('url', '')
             if url:
@@ -411,7 +412,7 @@ def get_ruleset_content(rule_item: dict, library_rule: dict = None) -> str:
                     logger.warning("Failed to fetch rule from library URL %s: %s", safe_url_for_log(url), safe_exception_details(e))
 
     # 3. 如果规则仓库没有，尝试从规则集的 url 字段获取
-    if not rule_content:
+    if not rule_content and allow_network:
         url = rule_item.get('url', '')
         if url:
             # 如果是相对路径，拼接 server_domain
@@ -462,96 +463,17 @@ def match_test_rule():
         if not is_valid_domain(query) and not is_valid_ip(query):
             return jsonify({'success': False, 'message': '请输入有效的域名或IP地址'}), 400
 
-        # 获取所有规则配置
-        rule_configs = config_data.get('rule_configs', [])
-        rule_library = config_data.get('rule_library', [])
-
-        # 遍历规则，按顺序匹配
-        for index, rule_item in enumerate(rule_configs, start=1):
-            # 跳过禁用的规则
-            if not rule_item.get('enabled', True) or not rule_item.get('library_enabled', True):
-                continue
-
-            item_type = rule_item.get('itemType', 'rule')
-
-            if item_type == 'rule':
-                # 直接规则匹配
-                rule_type = rule_item.get('rule_type', '')
-                rule_value = rule_item.get('value', '')
-                policy = rule_item.get('policy', 'DIRECT')
-
-                if match_query(query, rule_type, rule_value):
-                    # 计算耗时
-                    elapsed_time = time.time() - start_time
-                    return jsonify({
-                        'success': True,
-                        'matched': True,
-                        'rule_name': f'{rule_type} 规则',
-                        'rule_type': 'rule',
-                        'matched_line': f'{rule_type},{rule_value}',
-                        'policy': policy,
-                        'source': '直接配置的规则',
-                        'priority': index,
-                        'rule_id': rule_item.get('id'),
-                        'item_type': 'rule',
-                        'behavior': 'classical',
-                        'elapsed_time': round(elapsed_time * 1000, 2)  # 转换为毫秒，保留2位小数
-                    })
-
-            elif item_type == 'ruleset':
-                # 规则集匹配
-                rule_set_name = rule_item.get('name', '规则集')
-                policy = rule_item.get('policy', 'DIRECT')
-                behavior = rule_item.get('behavior', 'classical')
-                library_rule_id = rule_item.get('library_rule_id', '')
-
-                # 获取规则集内容（优先使用本地缓存）
-                try:
-                    library_rule = None
-                    if library_rule_id:
-                        library_rule = next((r for r in rule_library if r['id'] == library_rule_id), None)
-
-                    rule_content = get_ruleset_content(rule_item, library_rule)
-
-                    # 如果获取失败，记录警告并跳过该规则集
-                    if not rule_content:
-                        logger.warning(f'Skipping ruleset "{rule_set_name}": unable to fetch content')
-                        continue
-
-                    # 匹配规则集中的每一行
-                    for line in rule_content.splitlines():
-                        try:
-                            parsed = parse_rule_line(line)
-                            if not parsed:
-                                continue
-
-                            rule_type, rule_value = parsed
-                            if match_query(query, rule_type, rule_value):
-                                # 计算耗时
-                                elapsed_time = time.time() - start_time
-                                return jsonify({
-                                    'success': True,
-                                    'matched': True,
-                                    'rule_name': rule_set_name,
-                                    'rule_type': 'ruleset',
-                                    'matched_line': line.strip(),
-                                    'policy': policy,
-                                    'source': f'规则集: {rule_set_name}',
-                                    'priority': index,
-                                    'rule_id': rule_item.get('id'),
-                                    'item_type': 'ruleset',
-                                    'behavior': behavior,
-                                    'elapsed_time': round(elapsed_time * 1000, 2)  # 转换为毫秒，保留2位小数
-                                })
-                        except Exception as line_error:
-                            # 单条规则解析失败，跳过该行继续处理
-                            logger.debug(f'Failed to parse line in "{rule_set_name}": {line_error}')
-                            continue
-
-                except Exception as e:
-                    # 规则集处理失败，记录错误并跳过该规则集
-                    logger.error('Error processing ruleset "%s": %s', rule_set_name, safe_exception_details(e))
-                    continue
+        matcher = RuleConfigMatcher(config_data.get('rule_configs', []),
+                                    config_data.get('rule_library', []), get_ruleset_content)
+        matched = matcher.match(query)
+        if matched:
+            elapsed_time = time.time() - start_time
+            return jsonify({
+                'success': True,
+                'matched': True,
+                **matched,
+                'elapsed_time': round(elapsed_time * 1000, 2)  # 转换为毫秒，保留2位小数
+            })
 
         # 没有匹配到任何规则
         elapsed_time = time.time() - start_time

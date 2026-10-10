@@ -4,7 +4,12 @@
 """
 import re
 import ipaddress
-from typing import Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+from backend.utils.logger import get_logger
+from backend.utils.url_utils import safe_exception_details
+
+logger = get_logger(__name__)
 
 
 def is_valid_domain(query: str) -> bool:
@@ -217,3 +222,75 @@ def match_query(query: str, rule_type: str, rule_value: str) -> bool:
         return match_domain(query, rule_type, rule_value)
 
     return False
+
+
+class RuleConfigMatcher:
+    """按 rule_configs 顺序匹配域名/IP，返回第一条命中的规则。
+
+    规则集内容只在首次需要时通过 load_content 加载并解析，之后复用，
+    因此同一个实例可以低成本地批量查询。
+    """
+
+    def __init__(self, rule_configs, rule_library, load_content: Callable[[dict, Optional[dict]], str]):
+        self._items = [item for item in rule_configs
+                       if item.get('enabled', True) and item.get('library_enabled', True)]
+        self._library = {item.get('id'): item for item in rule_library if item.get('id')}
+        self._load_content = load_content
+        self._parsed = {}
+
+    def _ruleset_entries(self, index: int, rule_item: dict, library_rule: Optional[dict]) -> List[Tuple[str, str, str]]:
+        if index not in self._parsed:
+            entries = []
+            try:
+                content = self._load_content(rule_item, library_rule) or ''
+            except Exception as error:
+                logger.error('Error processing ruleset "%s": %s', rule_item.get('name', '规则集'), safe_exception_details(error))
+                content = ''
+            if not content:
+                logger.warning('Skipping ruleset "%s": unable to fetch content', rule_item.get('name', '规则集'))
+            for line in content.splitlines():
+                try:
+                    parsed = parse_rule_line(line)
+                except Exception:
+                    continue
+                if parsed:
+                    entries.append((parsed[0], parsed[1], line.strip()))
+            self._parsed[index] = entries
+        return self._parsed[index]
+
+    def match(self, query: str) -> Optional[Dict[str, Any]]:
+        for index, rule_item in enumerate(self._items, start=1):
+            item_type = rule_item.get('itemType', 'rule')
+            policy = rule_item.get('policy', 'DIRECT')
+            if item_type == 'rule':
+                rule_type = rule_item.get('rule_type', '')
+                rule_value = rule_item.get('value', '')
+                if match_query(query, rule_type, rule_value):
+                    return {
+                        'rule_name': f'{rule_type} 规则',
+                        'rule_type': 'rule',
+                        'matched_line': f'{rule_type},{rule_value}',
+                        'policy': policy,
+                        'source': '直接配置的规则',
+                        'priority': index,
+                        'rule_id': rule_item.get('id'),
+                        'item_type': 'rule',
+                        'behavior': 'classical',
+                    }
+            elif item_type == 'ruleset':
+                rule_set_name = rule_item.get('name', '规则集')
+                library_rule = self._library.get(rule_item.get('library_rule_id', ''))
+                for rule_type, rule_value, line in self._ruleset_entries(index, rule_item, library_rule):
+                    if match_query(query, rule_type, rule_value):
+                        return {
+                            'rule_name': rule_set_name,
+                            'rule_type': 'ruleset',
+                            'matched_line': line,
+                            'policy': policy,
+                            'source': f'规则集: {rule_set_name}',
+                            'priority': index,
+                            'rule_id': rule_item.get('id'),
+                            'item_type': 'ruleset',
+                            'behavior': rule_item.get('behavior', 'classical'),
+                        }
+        return None
