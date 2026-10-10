@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // 来自 mihomo v1.19.32 的真实日志行
@@ -292,5 +293,20 @@ func TestCollectorReportsAuthFailure(t *testing.T) {
 	controller, _ := collector.currentController()
 	if _, err := collector.fetchConnections(context.Background(), controller); err != errControllerAuth {
 		t.Fatalf("expected auth error, got %v", err)
+	}
+}
+
+func TestAggregatorTruncatesLongFieldsOnRuneBoundary(t *testing.T) {
+	agg := newDiscoveryAggregator()
+	c := conn("1", "x.com", 1, time.Now(), "DIRECT")
+	c.Rule = "AND"
+	c.RulePayload = strings.Repeat("规", 100) // 300 字节
+	agg.addConn(c, time.Now())
+	items, _, _ := agg.drain(10)
+	if len(items[0].RulePayload) > 256 || !utf8.ValidString(items[0].RulePayload) {
+		t.Fatalf("payload not truncated safely: %d bytes", len(items[0].RulePayload))
+	}
+	if truncateUTF8("abc", 2) != "ab" || truncateUTF8("规则", 4) != "规" {
+		t.Fatal("unexpected truncation")
 	}
 }

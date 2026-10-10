@@ -11,7 +11,7 @@ from flask import request, jsonify, send_file
 
 from backend.agents.config_generator import generate_agent_config
 from backend.agents.manager import AgentDeploymentConflict
-from backend.agents.traffic_store import REPORT_MAX_CONTENT_LENGTH, get_traffic_store, validate_report
+from backend.agents.traffic_store import REPORT_MAX_CONTENT_LENGTH, clean_report, get_traffic_store
 from backend.agents.version import (
     LATEST_AGENT_VERSION,
     compare_versions,
@@ -384,7 +384,8 @@ def agent_traffic_report(agent_id):
         return error
     if not _domain_discovery_enabled(agent):
         return jsonify({'success': False, 'enabled': False, 'message': 'Domain discovery disabled'}), 409
-    if not validate_report(report):
+    report = clean_report(report)
+    if report is None:
         return jsonify({'success': False, 'message': 'Invalid traffic report'}), 400
     get_traffic_store().add_report(agent_id, report)
     return jsonify({
