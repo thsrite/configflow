@@ -1,10 +1,14 @@
 """Agent 版本管理"""
 
 # Agent 最新版本号
-LATEST_AGENT_VERSION = "1.5.0-go"
+LATEST_AGENT_VERSION = "1.6.0-go"
 
 # 版本更新日志（可选）
 VERSION_CHANGELOG = {
+    "1.6.0-go": {
+        "date": "2026-10-10",
+        "features": ["区域检测：经 Mihomo 本机检测入口切换节点访问服务与域名，用于判断解锁情况与地区限制"]
+    },
     "1.5.0-go": {
         "date": "2026-10-10",
         "features": ["域名探测：经本机 Mihomo 分别测试直连与代理的可达性，用于判断域名该走哪条路"]

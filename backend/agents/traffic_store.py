@@ -5,12 +5,12 @@
 """
 
 import copy
-import json
 import os
 import threading
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
+from backend.utils.json_store import JsonFileStore
 from backend.utils.rule_matcher import is_valid_domain, is_valid_ip
 
 REPORT_SCHEMA = 1
@@ -118,36 +118,14 @@ def _host_weight(host_entry):
     return sum(stats['conns'] + stats['fails'] for stats in host_entry['by_route'].values())
 
 
-class TrafficStore:
+class TrafficStore(JsonFileStore):
     """按 Agent 保存域名发现数据，按天分桶并自动过期。"""
 
-    def __init__(self, data_dir):
-        self.data_dir = str(data_dir)
-
-    def _path(self, agent_id):
-        safe_id = str(agent_id).replace('/', '_').replace('\\', '_')
-        return os.path.join(self.data_dir, f'{safe_id}.json')
-
     def _read(self, agent_id):
-        try:
-            with open(self._path(agent_id), encoding='utf-8') as handle:
-                data = json.load(handle)
-        except FileNotFoundError:
-            return {'status': None, 'days': {}}
-        except (OSError, ValueError):
-            # 损坏的统计文件不影响主流程，重新累计即可
-            return {'status': None, 'days': {}}
-        if not isinstance(data, dict) or not isinstance(data.get('days'), dict):
+        data = self._read_json(agent_id)
+        if data is None or not isinstance(data.get('days'), dict):
             return {'status': None, 'days': {}}
         return data
-
-    def _write(self, agent_id, data):
-        os.makedirs(self.data_dir, exist_ok=True)
-        path = self._path(agent_id)
-        temp_path = f'{path}.tmp'
-        with open(temp_path, 'w', encoding='utf-8') as handle:
-            json.dump(data, handle, ensure_ascii=False, separators=(',', ':'))
-        os.replace(temp_path, path)
 
     @staticmethod
     def _prune(data, now):
@@ -191,7 +169,7 @@ class TrafficStore:
                     del hosts[host]
                     day['dropped'] += 1
             self._prune(data, now)
-            self._write(agent_id, data)
+            self._write_json(agent_id, data)
             return copy.deepcopy(data['status'])
 
     def load(self, agent_id, now: Optional[datetime] = None):
@@ -202,10 +180,7 @@ class TrafficStore:
 
     def delete(self, agent_id):
         with _LOCK:
-            try:
-                os.remove(self._path(agent_id))
-            except FileNotFoundError:
-                pass
+            self._remove(agent_id)
 
 
 def get_traffic_store():

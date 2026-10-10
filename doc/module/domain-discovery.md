@@ -24,6 +24,7 @@
 
 - 域名按主域合并（`a.b.example.co.uk` 归到 `example.co.uk`），使用 tldextract 自带的公共后缀列表，不联网。
 - 「加入代理 / 直连」默认写 `DOMAIN-SUFFIX`；展开后的「仅此子域」写 `DOMAIN`。已被规则集里同名或上级后缀覆盖的会跳过。
+- 写入后会检查域名是否仍会先命中更靠前的规则，命中时给出具体是哪一条的警告。GEOSITE 等需要客户端展开的规则服务端检测不到。
 - 失败类型：超时、重置、拒绝、断开、解析失败（DNS）、其他。
 - 嗅探覆盖率 = 有域名的连接 / 全部连接。偏低时检查 Mihomo 的 `sniffer` 是否开启。
 
@@ -56,11 +57,56 @@
 
 「已加入」视图记录每次写入（手动或自动采纳、当时的判定与置信度、复检结果），可以一键「撤销」，从规则集中删除对应的行。
 
+## 地区限制（区域检测）
+
+回答两个问题：常见服务在各个节点下能不能用；某个域名换地区访问结果是否不同。
+
+### 开启
+
+1. 在「地区限制」视图打开「区域检测」，可修改检测入口端口（默认 17999，不能与已有入站冲突）。
+2. **部署一次配置**。推送给 Agent 的 Mihomo 配置会多出：
+   - 一个隐藏的选择组 `ConfigFlow-Region-Probe`（包含 DIRECT、当前所有策略组和全部节点）；
+   - 一个只监听 `127.0.0.1` 的入口 `configflow-region-probe`。
+   这个组不被任何规则引用，不影响真实流量；手机等客户端订阅的配置不变。
+3. 需要 Agent 1.6.0-go 及以上。
+
+Agent 检测时把选择组切到目标节点或策略组，经入口发请求，结束后恢复原来的选择。
+
+### 服务解锁
+
+点「检测服务」后，经以下目标检测 ChatGPT、Claude、Netflix、YouTube Premium：
+
+- 直连；
+- 当前的策略组：测它当前选中的节点，即真实访问时走的路径；
+- 每个地区一个存活的代表节点：地区按节点名识别，最多 8 个地区。
+
+| 结果 | 含义 |
+|---|---|
+| 可用 · XX | 可以使用，XX 为服务识别到的地区 |
+| 部分可用 | 例如 Netflix 仅自制剧 |
+| 不可用 | 地区不支持、被识别为代理等，悬停查看原因 |
+| 未知 | 响应不符合已知模式（如 Cloudflare 质询），不做猜测 |
+
+列头会标出每个目标的**实际出口地区**（Cloudflare trace）。实际出口与节点名不一致时用警示色标出。
+
+每个服务可以「指定走向」：选择一个策略组，把该服务的域名列表写入规则集「域名发现-<策略组>」。规则集会自动创建，放在默认代理规则集之前；如果已有规则会命中这些域名（例如自己维护的 OpenAI 规则集），会再往前放到第一条这样的规则之前，否则指定的走向不会生效。
+
+Gemini、Disney+ 暂不支持：前者没有稳定可用的判断依据，后者需要多步验证流程。
+
+### 域名地区差异
+
+在域名列表行操作里点「检测地区差异」，会经同样的目标访问该域名，并比较结果：
+
+- **受限**：状态 451，或页面提示「not available in your country」等，或跳转到地区不可用页面；
+- 结论：疑似区域限制 / 各地区都受限 / 无地区差异 / 无法访问。
+
+这是启发式判断，页面会展示每个目标的状态码、最终地址和命中的提示，便于人工复核。疑似受限的域名同样可以「指定走向」。
+
 ## 数据与隐私
 
 - 默认关闭，按 Agent 单独开启；关闭后 Agent 立即停止采集。
 - 只保存域名、端口、命中规则、策略、出口类型和计数，不保存网址路径、客户端 IP、进程名。
-- 按天保存在 `data/traffic/<agent_id>.json`，保留 7 天，每天最多 5000 个域名；探测结果保存在 `data/probes/<agent_id>.json`，保留 30 天。可在页面上一键清除；删除 Agent 时一并删除。
+- 按天保存在 `data/traffic/<agent_id>.json`，保留 7 天，每天最多 5000 个域名；探测结果保存在 `data/probes/<agent_id>.json`，区域检测结果保存在 `data/regions/<agent_id>.json`，都保留 30 天。可在页面上一键清除；删除 Agent 时一并删除。
 
 ## 实现要点
 
@@ -68,4 +114,5 @@
 - 两个采集器：每 2 秒轮询 `/connections`，连接从快照中消失即计为结束；订阅 `/logs?level=warning` 解析拨号失败，同一连接 30 秒内的重试只计一次。存活不到 2 秒的成功连接可能漏采。
 - 上报接口 `POST /api/agents/<id>/traffic-report` 使用 Agent token，请求体上限 256 KB，字段严格校验；开关通过心跳响应的 `domain_discovery_enabled` 下发。
 - 主动探测由服务端调用 Agent 的 `POST /api/domain-probe`，Agent 再调用 Mihomo 的 `/proxies/{name}/delay`。
-- 相关接口：`/api/domain-discovery/{domains,settings,rulesets/init,apply,undo,history,ignore,probe}`，`/api/agents/<id>/domain-discovery`（开关）与 `/api/agents/<id>/domain-discovery/clear`（清除数据）。
+- 区域检测由服务端调用 Agent 的 `GET /api/region-check/targets` 与 `POST /api/region-check`。服务的检测方式定义在服务端（`backend/utils/region_check.py`），Agent 只负责经指定目标取页面并匹配标记。
+- 相关接口：`/api/domain-discovery/{domains,settings,rulesets/init,apply,undo,history,ignore,probe,region,region/check,region/route}`，`/api/agents/<id>/domain-discovery`（开关）与 `/api/agents/<id>/domain-discovery/clear`（清除数据）。

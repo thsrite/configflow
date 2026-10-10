@@ -5,12 +5,13 @@
 """
 
 import copy
-import json
 import os
 import statistics
 import threading
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+
+from backend.utils.json_store import JsonFileStore
 
 PROBE_RETENTION_DAYS = 30
 MAX_PROBED_HOSTS = 5000
@@ -130,23 +131,12 @@ def judge(direct: Optional[Dict[str, Any]], proxy: Optional[Dict[str, Any]], *,
     return result('flaky')
 
 
-class ProbeStore:
+class ProbeStore(JsonFileStore):
     """按 Agent 保存每个 host 最近一次的探测结果。"""
 
-    def __init__(self, data_dir):
-        self.data_dir = str(data_dir)
-
-    def _path(self, agent_id):
-        safe_id = str(agent_id).replace('/', '_').replace('\\', '_')
-        return os.path.join(self.data_dir, f'{safe_id}.json')
-
     def _read(self, agent_id):
-        try:
-            with open(self._path(agent_id), encoding='utf-8') as handle:
-                data = json.load(handle)
-        except (OSError, ValueError):
-            return {'hosts': {}}
-        if not isinstance(data, dict) or not isinstance(data.get('hosts'), dict):
+        data = self._read_json(agent_id)
+        if data is None or not isinstance(data.get('hosts'), dict):
             return {'hosts': {}}
         return data
 
@@ -167,12 +157,7 @@ class ProbeStore:
             data = self._read(agent_id)
             data['hosts'].update(copy.deepcopy(results))
             self._prune(data, now)
-            os.makedirs(self.data_dir, exist_ok=True)
-            path = self._path(agent_id)
-            temp_path = f'{path}.tmp'
-            with open(temp_path, 'w', encoding='utf-8') as handle:
-                json.dump(data, handle, ensure_ascii=False, separators=(',', ':'))
-            os.replace(temp_path, path)
+            self._write_json(agent_id, data)
 
     def load(self, agent_id, now: Optional[datetime] = None):
         with _LOCK:
@@ -182,10 +167,7 @@ class ProbeStore:
 
     def delete(self, agent_id):
         with _LOCK:
-            try:
-                os.remove(self._path(agent_id))
-            except FileNotFoundError:
-                pass
+            self._remove(agent_id)
 
 
 def get_probe_store():

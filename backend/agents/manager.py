@@ -960,18 +960,33 @@ class AgentManager:
 
     def probe_domains(self, agent: Dict[str, Any], payload: Dict[str, Any], timeout: int = 200) -> Dict[str, Any]:
         """让 Agent 经本机 Mihomo 探测一批域名；失败时抛出异常，消息可展示给用户。"""
-        response = requests.post(
-            f"http://{agent['host']}:{agent['port']}/api/domain-probe",
-            json=payload,
+        return self._agent_json_request(agent, 'post', '/api/domain-probe', timeout, '域名探测', json=payload)
+
+    def _agent_json_request(self, agent: Dict[str, Any], method: str, path: str, timeout: int,
+                            feature: str, **kwargs) -> Dict[str, Any]:
+        """调用 Agent 的域名发现类接口；失败时抛出可展示给用户的异常。"""
+        response = getattr(requests, method)(
+            f"http://{agent['host']}:{agent['port']}{path}",
             headers={'Authorization': f'Bearer {agent["token"]}'},
             timeout=timeout,
+            **kwargs,
         )
         if response.status_code == 404:
-            raise RuntimeError(f'Agent {agent.get("name") or agent["id"]} 不支持域名探测，请升级')
+            raise RuntimeError(f'Agent {agent.get("name") or agent["id"]} 不支持{feature}，请升级')
         try:
             body = response.json()
         except ValueError:
             body = {}
+        if response.status_code == 409 and path.startswith('/api/region-check'):
+            raise RuntimeError('Agent 上的 Mihomo 还没有区域检测入口，请开启区域检测后部署一次配置')
         if response.status_code != 200 or not body.get('success'):
             raise RuntimeError(body.get('message') or f'Agent 返回 HTTP {response.status_code}')
         return body
+
+    def region_targets(self, agent: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """探测组可切换的目标（节点与策略组）。"""
+        return self._agent_json_request(agent, 'get', '/api/region-check/targets', 15, '区域检测').get('targets') or []
+
+    def region_check(self, agent: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+        """经探测组的某个目标执行一组请求。"""
+        return self._agent_json_request(agent, 'post', '/api/region-check', 120, '区域检测', json=payload)

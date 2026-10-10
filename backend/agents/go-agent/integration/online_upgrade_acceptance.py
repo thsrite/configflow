@@ -77,7 +77,7 @@ def main():
     assert 'LoadState=not-found' in run('systemctl', 'show', 'configflow-agent', '-p', 'LoadState')
     assert not [str(path) for path in owned if path.exists()], 'refusing to touch an existing native Agent installation'
     name = 'configflow-online-upgrade-' + uuid.uuid4().hex[:8]
-    report = {'success': False, 'cases': [], 'legacy_revision': args.legacy_revision, 'legacy_version': args.legacy_version, 'target_version': '1.5.0-go'}
+    report = {'success': False, 'cases': [], 'legacy_revision': args.legacy_revision, 'legacy_version': args.legacy_version, 'target_version': '1.6.0-go'}
     report['new_agent_sha256'] = hashlib.sha256((root / 'new-agent').read_bytes()).hexdigest()
     report['legacy_agent_sha256'] = hashlib.sha256((root / args.legacy_binary).read_bytes()).hexdigest()
     jobs, units = [], []
@@ -177,7 +177,7 @@ def main():
             reset_old()
             update('legacy_one_click_success', 'succeeded')
             info = wait_http('http://127.0.0.1:23680/api/upgrade-info')
-            assert info['version'] == '1.5.0-go' and info['migration_ready']
+            assert info['version'] == '1.6.0-go' and info['migration_ready']
             assert 'configflow-recover-' + kind in run('systemctl', 'show', core_unit, '-p', 'Requires')
             update('new_protocol_success', 'succeeded')
             update('download_http503', 'failed', 'http503')
