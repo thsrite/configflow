@@ -1999,10 +1999,11 @@ const requestPreview = async (kind: SourceKind, sources: string[], regex: string
 
 let previewTimer: number | undefined
 let previewSeq = 0
+let viewActive = true
 const refreshPreview = () => {
   clearTimeout(previewTimer)
   const group = selected.value
-  if (!group || group.follow_group || !draft.value.sources.length) {
+  if (!viewActive || !group || group.follow_group || !draft.value.sources.length) {
     preview.value = { nodes: [], total: 0, loading: false, error: '' }
     return
   }
@@ -2012,11 +2013,11 @@ const refreshPreview = () => {
   previewTimer = window.setTimeout(async () => {
     try {
       const data = await requestPreview(draft.value.kind, draft.value.sources, draft.value.regex)
-      if (seq !== previewSeq) return
+      if (!viewActive || seq !== previewSeq) return
       preview.value = { nodes: data.nodes || [], total: data.total_candidates || 0, loading: false, error: '' }
       if (!draftDirty.value) matchCounts.value = { ...matchCounts.value, [keyOf(group)]: data.count ?? 0 }
     } catch (error: any) {
-      if (seq !== previewSeq) return
+      if (!viewActive || seq !== previewSeq) return
       preview.value = { ...preview.value, loading: false, error: error.response?.data?.message || '预览失败' }
     }
   }, 280)
@@ -2030,12 +2031,13 @@ const matchCounts = ref<Record<string, number>>({})
 const computeMatchCounts = async () => {
   const queue = proxyGroups.value.filter(g => !g.follow_group)
   const worker = async () => {
-    while (queue.length) {
+    while (viewActive && queue.length) {
       const group = queue.shift()!
       const d = draftFrom(group)
       if (!d.sources.length) continue
       try {
         const data = await requestPreview(d.kind, d.sources, d.regex)
+        if (!viewActive) return
         matchCounts.value = { ...matchCounts.value, [keyOf(group)]: data.count ?? 0 }
       } catch {
         // 单个失败不影响其他
@@ -2109,11 +2111,13 @@ const saveDraft = async () => {
 /** 聚合节点数只在查看聚合来源的策略组时才统计，每个页面只取一次 */
 let aggregationCountsLoaded = false
 const loadAggregationCounts = async () => {
-  if (aggregationCountsLoaded || !aggregations.value.length) return
+  if (!viewActive || aggregationCountsLoaded || !aggregations.value.length) return
   aggregationCountsLoaded = true
   for (const agg of aggregations.value) {
+    if (!viewActive) return
     try {
       const { data } = await api.get(`/aggregations/${agg.id}/count`)
+      if (!viewActive) return
       aggregationCounts.value = { ...aggregationCounts.value, [agg.id]: data.total_count ?? 0 }
     } catch {
       // 计数失败只是不显示数字
@@ -2132,13 +2136,15 @@ watch(proxyGroups, groups => {
 
 onMounted(async () => {
   await Promise.all([loadProxyGroups(), loadResources()])
+  if (!viewActive) return
   try {
     const { data } = await nodeApi.latency()
+    if (!viewActive) return
     latencyMap.value = data?.results || {}
   } catch {
     // 没有测速结果时只显示节点名
   }
-  computeMatchCounts()
+  if (viewActive) computeMatchCounts()
 })
 
 // 聚合列表可能晚于选中项加载完成，两者任一变化都再检查一次
@@ -2147,6 +2153,8 @@ watch([() => draft.value.kind, aggregations], ([kind]) => {
 }, { immediate: true })
 
 onUnmounted(() => {
+  viewActive = false
+  ++previewSeq
   clearTimeout(previewTimer)
 })
 </script>

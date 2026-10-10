@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import api from '@/api'
+import { checkNavigationAuth, invalidateAuthSession } from '@/authSession'
 
 // 扩展 RouteMeta 接口以支持自定义属性
 declare module 'vue-router' {
@@ -89,90 +90,29 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach(async (to, from, next) => {
+router.beforeEach(async (to) => {
   // 登录页面直接放行
   if (to.path === '/login') {
-    next()
+    invalidateAuthSession()
     return
   }
 
   try {
-    // 检查是否启用了认证
-    const response = await api.get('/auth/status')
-    const authEnabled = response.data.authEnabled
+    if (!await checkNavigationAuth(api)) return '/login'
+  } catch (error: any) {
+    if (error.response?.status === 401) return '/login'
+    // 临时网络或服务端故障不等于登录失效。后续业务 API 仍由服务端鉴权。
+    console.error('Failed to check authentication:', error)
+  }
 
-    // 如果没有启用认证，直接放行（仅检查订阅聚合权限）
-    if (!authEnabled) {
-      // 如果需要订阅聚合权限，检查订阅聚合是否启用
-      if (to.meta.requiresSubscriptionAggregation) {
-        try {
-          const aggResponse = await api.get('/settings/subscription-aggregation')
-          const subscriptionAggregationEnabled = aggResponse.data.enabled || false
-          if (!subscriptionAggregationEnabled) {
-            console.warn('访问被拒绝：订阅聚合功能未启用')
-            next('/subscriptions')
-            return
-          }
-        } catch (error) {
-          console.error('Failed to check subscription aggregation status:', error)
-          // 检查失败，使用 localStorage 备份
-          const localEnabled = localStorage.getItem('subscriptionAggregationEnabled') === 'true'
-          if (!localEnabled) {
-            next('/subscriptions')
-            return
-          }
-        }
-      }
-
-      next()
-      return
-    }
-
-    // 检查是否有 token
-    const token = localStorage.getItem('token')
-    if (!token) {
-      // 没有 token，跳转到登录页
-      next('/login')
-      return
-    }
-
-    // 验证 token 是否有效
+  if (to.meta.requiresSubscriptionAggregation) {
     try {
-      await api.get('/auth/verify')
-
-      // token 有效，检查订阅聚合权限
-      if (to.meta.requiresSubscriptionAggregation) {
-        try {
-          const aggResponse = await api.get('/settings/subscription-aggregation')
-          const subscriptionAggregationEnabled = aggResponse.data.enabled || false
-          if (!subscriptionAggregationEnabled) {
-            console.warn('访问被拒绝：订阅聚合功能未启用')
-            next('/subscriptions')
-            return
-          }
-        } catch (error) {
-          console.error('Failed to check subscription aggregation status:', error)
-          // 检查失败，使用 localStorage 备份
-          const localEnabled = localStorage.getItem('subscriptionAggregationEnabled') === 'true'
-          if (!localEnabled) {
-            next('/subscriptions')
-            return
-          }
-        }
-      }
-
-      // 所有检查通过，允许访问
-      next()
+      const { data } = await api.get('/settings/subscription-aggregation')
+      if (!data.enabled) return '/subscriptions'
     } catch (error) {
-      // token 无效，清除 token 并跳转到登录页
-      localStorage.removeItem('token')
-      localStorage.removeItem('username')
-      next('/login')
+      console.error('Failed to check subscription aggregation status:', error)
+      if (localStorage.getItem('subscriptionAggregationEnabled') !== 'true') return '/subscriptions'
     }
-  } catch (error) {
-    // 检查认证状态失败，可能是服务器错误，直接放行
-    console.error('Failed to check auth status:', error)
-    next()
   }
 })
 

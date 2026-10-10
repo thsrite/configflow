@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { notify } from '@/lib/feedback'
 import router from '@/router'
+import { getAuthSessionGeneration, getAuthToken, invalidateAuthSession } from '@/authSession'
 import { beginScopedRequest, clearActiveProfileId, endScopedRequest, getActiveProfileId } from '@/profileContext'
 
 const api = axios.create({
@@ -11,6 +12,8 @@ const api = axios.create({
 declare module 'axios' {
   interface InternalAxiosRequestConfig {
     profileRequestTracked?: boolean
+    authSessionToken?: string | null
+    authSessionGeneration?: number
   }
 }
 
@@ -37,7 +40,9 @@ const recoverFromMissingProfile = (): Promise<void> => {
 // 请求拦截器 - 添加 token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token')
+    const token = getAuthToken()
+    config.authSessionToken = token
+    config.authSessionGeneration = getAuthSessionGeneration()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -67,8 +72,14 @@ api.interceptors.response.use(
     const message = error.response?.data?.message
     if (error.response?.status === 404 && typeof message === 'string' && message.startsWith('Profile not found:')) {
       void recoverFromMissingProfile().catch(() => undefined)
-    } else if (error.response?.status === 401) {
+    } else if (
+      error.response?.status === 401
+      && error.config?.authSessionToken === getAuthToken()
+      && error.config?.authSessionGeneration === getAuthSessionGeneration()
+    ) {
       // token 无效或过期
+      // 已退出或重新登录后的旧请求不能清除新会话。
+      invalidateAuthSession()
       localStorage.removeItem('token')
       localStorage.removeItem('username')
       notify.error('登录已过期，请重新登录')
