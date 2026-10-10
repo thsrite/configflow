@@ -1,6 +1,7 @@
 """Rule delivery uses the shared transport without proxying internal tokens."""
 import io
 import zipfile
+from urllib.parse import urlencode
 
 import pytest
 import requests
@@ -127,10 +128,12 @@ def make_generation_client(monkeypatch, urls):
 
 
 @pytest.mark.parametrize('configured_origin', [True, False])
-def test_mosdns_zip_uses_rule_proxy_but_keeps_callbacks_direct(repository, monkeypatch, configured_origin):
+def test_mosdns_zip_uses_rule_proxy_without_http_callbacks(repository, monkeypatch, configured_origin):
     if not configured_origin:
         repository.update_system_transaction(lambda system: system['system_config'].update({'server_domain': ''}))
-    urls = ['https://rules.test/list', 'https://config.test/api/mosdns/rule-proxy?token=internal-secret']
+    urls = ['https://rules.test/list', 'https://config.test/api/mosdns/rule-proxy?' + urlencode({
+        'url': 'https://rules.test/converted', 'token': 'internal-secret',
+    })]
     client = make_generation_client(monkeypatch, urls)
     observed = []
 
@@ -139,17 +142,18 @@ def test_mosdns_zip_uses_rule_proxy_but_keeps_callbacks_direct(repository, monke
         return response()
 
     monkeypatch.setattr(requests, 'get', fetch)
+    monkeypatch.setattr('backend.utils.rule_fetch._RuleSession.get', lambda self, url, **kwargs: fetch(url, **kwargs))
     result = client.post('/api/generate/mosdns', json={'base_url': 'https://config.test'})
 
     assert result.status_code == 200
     with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
         assert archive.read('rules/0.txt') == b'domain:example.test'
         assert archive.read('rules/1.txt') == b'domain:example.test'
-    assert observed[0][1]['proxies'] == {'http': PROXY, 'https': PROXY}
-    assert observed[1][1]['proxies'] == {'http': '', 'https': ''}
+    assert {url for url, _ in observed} == {'https://rules.test/list', 'https://rules.test/converted'}
+    assert all(kwargs['proxies'] == {'http': PROXY, 'https': PROXY} for _, kwargs in observed)
 
 
-def test_mosdns_zip_rejects_callback_escape_without_leaking_token(repository, monkeypatch):
+def test_mosdns_zip_rejects_callback_without_source_or_leaking_token(repository, monkeypatch):
     client = make_generation_client(monkeypatch, ['https://config.test/api/mosdns/rule-proxy?token=internal-secret'])
     observed = []
 
@@ -161,7 +165,7 @@ def test_mosdns_zip_rejects_callback_escape_without_leaking_token(repository, mo
     result = client.post('/api/generate/mosdns', json={})
 
     assert result.status_code == 500
-    assert len(observed) == 1
+    assert observed == []  # Malformed callback is rejected before any self-HTTP.
     assert b'internal-secret' not in result.data
     assert b'proxy-password' not in result.data
 
@@ -173,6 +177,7 @@ def test_mosdns_zip_download_error_does_not_leak_proxy_credentials(repository, m
         raise requests.exceptions.ProxyError(f'Cannot connect to {PROXY}')
 
     monkeypatch.setattr(requests, 'get', fetch)
+    monkeypatch.setattr('backend.utils.rule_fetch._RuleSession.get', lambda self, url, **kwargs: fetch(url, **kwargs))
     result = client.post('/api/generate/mosdns', json={})
 
     assert result.status_code == 500

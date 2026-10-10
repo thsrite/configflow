@@ -166,7 +166,7 @@ export const generateApi = {
   mihomo: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/mihomo'), { base_url: getBaseUrl() }, { responseType: 'blob' }),
   surge: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/surge'), { base_url: getBaseUrl() }, { responseType: 'blob' }),
   loon: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/loon'), { base_url: getBaseUrl() }, { responseType: 'blob' }),
-  mosdns: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/mosdns'), { base_url: getBaseUrl() }, { responseType: 'blob' }),
+  mosdns: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/mosdns'), { base_url: getBaseUrl() }, { responseType: 'blob', timeout: 60000 }),
   previewMihomo: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/mihomo/preview'), { base_url: getBaseUrl() }),
   previewSurge: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/surge/preview'), { base_url: getBaseUrl() }),
   previewLoon: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/loon/preview'), { base_url: getBaseUrl() }),
