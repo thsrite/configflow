@@ -360,7 +360,7 @@ def _probe_view(entry):
         'direct', 'proxy', 'proxy_path')}
 
 
-def load_domains(profile_id, *, days=7, view='uncovered', agent_id=None, include_ignored=False):
+def load_domains(profile_id, *, days=7, view='uncovered', agent_id=None):
     from backend.routes.rules import get_ruleset_content
     from backend.utils.domain_probe import domain_suggestion
 
@@ -373,7 +373,7 @@ def load_domains(profile_id, *, days=7, view='uncovered', agent_id=None, include
         config.get('rule_configs', []), config.get('rule_library', []),
         lambda item, library_rule: get_ruleset_content(item, library_rule, allow_network=False),
     )
-    result = summarize(reports, days=days, ignored=() if include_ignored else settings['ignored'],
+    result = summarize(reports, days=days, ignored=settings['ignored'],
                        match_rule=matcher.match, view=view, agent_id=agent_id)
     probes = latest_probes([agent['id'] for agent in agents])
     for item in result['items']:
@@ -550,6 +550,20 @@ def update_ignored(profile_id, values, add):
 
     _mutate_settings(profile_id, mutate)
     return read_settings(get_config(profile_id))['ignored']
+
+
+def probe_evidence(profile_id, values):
+    """写入时记录的探测依据：取该域名（或其子域）最近一次的探测结果，优先可采纳的建议。"""
+    probes = latest_probes([agent['id'] for agent in profile_agents(profile_id)])
+    evidence = {}
+    for value in values:
+        matches = [probe for host, probe in probes.items() if host == value or host.endswith('.' + value)]
+        actionable = [probe for probe in matches if probe.get('target')]
+        if actionable:
+            evidence[value] = max(actionable, key=lambda probe: probe.get('confidence') or 0)
+        elif matches:
+            evidence[value] = max(matches, key=lambda probe: probe.get('checked_at') or '')
+    return evidence
 
 
 def history_payload(profile_id):
@@ -801,6 +815,12 @@ def auto_round(profile_id, now=None):
                     'at': timestamp, 'verdict': probe.get('verdict'),
                     'suggest_remove': suggest_remove, 'reason': reason,
                 }
+
+        # 没有拿到结果的条目也记一次，否则它会一直到期，每轮都重新探测并改写配置
+        for entry in to_check:
+            outcomes.setdefault((entry['value'], entry['target']), {
+                'at': timestamp, 'verdict': None, 'suggest_remove': False, 'reason': '复检没有得到探测结果',
+            })
 
         def record(settings):
             for entry in settings['history']:

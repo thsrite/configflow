@@ -117,6 +117,8 @@ class AgentManager:
                     'deployments': existing_agent.get('deployments', {}),
                     'latest_deployment': existing_agent.get('latest_deployment'),
                     'latest_upgrade': existing_agent.get('latest_upgrade'),
+                    # 管理端设置的开关，重新注册不能把它清掉
+                    'domain_discovery_enabled': existing_agent.get('domain_discovery_enabled', False),
                 }
                 agents[agents.index(existing_agent)] = updated_agent
                 return {'id': agent_id, 'status': 'online', 'is_new': False}

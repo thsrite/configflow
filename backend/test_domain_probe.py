@@ -308,3 +308,39 @@ def test_provider_revision_follows_served_file_not_config(env):
     with open(os.path.join(get_rules_dir(), '域名发现-代理.list'), 'w', encoding='utf-8') as handle:
         handle.write('DOMAIN-SUFFIX,late.com\n')
     assert service.provider_revisions('default')['域名发现-代理'] != before['域名发现-代理']
+
+
+def test_busy_job_from_another_profile_is_not_exposed(env):
+    client, repository, _, _, _ = env
+    repository.create_profile({'id': 'other', 'name': 'Other'})
+    with service._JOBS_LOCK:
+        service._JOBS['busy'] = {'id': 'busy', 'profile_id': 'default', 'kind': 'probe', 'status': 'running',
+                                 'total': 1, 'done': 0, 'errors': [], 'message': '', 'started_at': '',
+                                 'finished_at': None, 'results': {}}
+    response = client.post("/api/domain-discovery/probe", json={"domains": ["a.com"]},
+                           headers={"X-ConfigFlow-Profile": "other"})
+    body = response.get_json()
+    assert response.status_code == 409 and body["job"] is None and "另一个配置空间" in body["message"]
+
+
+def test_recheck_without_result_is_recorded_once(env, monkeypatch):
+    client, _, _, _, fake = env
+    _init(client)
+    client.put("/api/domain-discovery/settings", json={"auto_probe": True})
+    client.post("/api/domain-discovery/apply", json={"items": [{"value": "blocked.net", "target": "proxy"}]})
+    old = (datetime.now() - timedelta(days=40)).isoformat(timespec='seconds')
+
+    def age(profile):
+        for entry in profile['domain_discovery']['history']:
+            entry['applied_at'] = old
+    config_module.update_config_transaction(age, 'default')
+
+    # Agent 对这批目标什么都没返回：结果数量不符
+    monkeypatch.setattr(AgentManager, 'probe_domains', lambda self, agent, payload, timeout=200: {'success': True, 'results': []})
+    assert service.auto_round('default')['rechecked'] == 1
+    entry = client.get("/api/domain-discovery/history").get_json()["items"][0]
+    assert entry['recheck']['reason'] == '复检没有得到探测结果' and entry['recheck']['suggest_remove'] is False
+
+    revision = config_module.get_repository().get_profile('default')['_revision']
+    assert service.auto_round('default')['rechecked'] == 0
+    assert config_module.get_repository().get_profile('default')['_revision'] == revision

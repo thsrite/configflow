@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -122,7 +123,21 @@ func newDiscoveryAggregator() *discoveryAggregator {
 	return &discoveryAggregator{items: map[trafficKey]*trafficItem{}}
 }
 
+// truncateUTF8 按字节上限截断且不切断多字节字符，与服务端的长度校验对齐
+func truncateUTF8(value string, limit int) string {
+	if len(value) <= limit {
+		return value
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(value[cut]) {
+		cut--
+	}
+	return value[:cut]
+}
+
 func (a *discoveryAggregator) entry(host string, port int, network, rule, payload, policy, outlet string) *trafficItem {
+	// 服务端按字符数限制 rule 64 / rule_payload 256 / policy 128，按字节截断一定不会超
+	rule, payload, policy = truncateUTF8(rule, 64), truncateUTF8(payload, 256), truncateUTF8(policy, 128)
 	key := trafficKey{host, rule, payload, outlet, policy}
 	item := a.items[key]
 	if item == nil {

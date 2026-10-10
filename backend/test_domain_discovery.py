@@ -6,7 +6,7 @@ import pytest
 from flask import Flask
 
 from backend.agents import traffic_store
-from backend.agents.traffic_store import TrafficStore, route_key, validate_report
+from backend.agents.traffic_store import TrafficStore, clean_report, route_key
 from backend.common import config as config_module
 from backend.common.agent_manager import init_agent_manager
 from backend.common.config_repository import ProfileRepository
@@ -34,31 +34,50 @@ def _report(*items, status="running"):
 
 # ---------- 上报校验 ----------
 
-def test_validate_report_accepts_well_formed_report():
-    assert validate_report(_report(_item("www.example.com", fails=3, fail_kinds={"timeout": 3})))
+def test_clean_report_accepts_well_formed_report():
+    report = _report(_item("www.example.com", fails=3, fail_kinds={"timeout": 3}))
+    assert clean_report(report)["items"] == report["items"]
+
+
+def test_clean_report_accepts_empty_rule():
+    """全局 / 直连模式或指定了出口的入站，Mihomo 不经规则匹配，rule 为空。"""
+    assert len(clean_report(_report(_item("www.example.com", rule="")))["items"]) == 1
 
 
 @pytest.mark.parametrize("mutate", [
     lambda r: r.update(extra=1),
     lambda r: r.update(schema=2),
     lambda r: r.update(status="hacked"),
-    lambda r: r["items"][0].update(host="1.2.3.4"),
-    lambda r: r["items"][0].update(host="Example.COM"),
-    lambda r: r["items"][0].update(host="bad host"),
-    lambda r: r["items"][0].update(outlet="tunnel"),
-    lambda r: r["items"][0].update(conns=-1),
-    lambda r: r["items"][0].update(conns=True),
-    lambda r: r["items"][0].update(policy="a\nb"),
-    lambda r: r["items"][0].update(policy="x" * 129),
-    lambda r: r["items"][0].update(fail_kinds={"weird": 1}),
-    lambda r: r["items"][0].update(path="/secret"),
+    lambda r: r.update(dropped=-1),
+    lambda r: r.update(items="nope"),
     lambda r: r.update(items=[_item("a.com")] * (traffic_store.REPORT_MAX_ITEMS + 1)),
-], ids=["extra-field", "schema", "status", "ip-host", "upper-host", "space-host", "outlet",
-        "negative", "bool-count", "control-char", "long-policy", "fail-kind", "item-field", "too-many"])
-def test_validate_report_rejects_out_of_bounds(mutate):
+], ids=["extra-field", "schema", "status", "dropped", "items-type", "too-many"])
+def test_clean_report_rejects_bad_top_level(mutate):
     report = _report(_item("www.example.com"))
     mutate(report)
-    assert not validate_report(report)
+    assert clean_report(report) is None
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda i: i.update(host="1.2.3.4"),
+    lambda i: i.update(host="Example.COM"),
+    lambda i: i.update(host="bad host"),
+    lambda i: i.update(outlet="tunnel"),
+    lambda i: i.update(conns=-1),
+    lambda i: i.update(conns=True),
+    lambda i: i.update(policy="a\nb"),
+    lambda i: i.update(policy="x" * 129),
+    lambda i: i.update(rule_payload="x" * 257),
+    lambda i: i.update(fail_kinds={"weird": 1}),
+    lambda i: i.update(path="/secret"),
+], ids=["ip-host", "upper-host", "space-host", "outlet", "negative", "bool-count", "control-char",
+        "long-policy", "long-payload", "fail-kind", "item-field"])
+def test_clean_report_drops_only_the_bad_item(mutate):
+    bad = _item("bad.example.com")
+    mutate(bad)
+    cleaned = clean_report(_report(_item("good.example.com"), bad))
+    assert [item["host"] for item in cleaned["items"]] == ["good.example.com"]
+    assert cleaned["dropped"] == 1
 
 
 # ---------- 存储 ----------
@@ -197,8 +216,7 @@ def test_report_requires_token_and_enabled_switch(env):
     heartbeat = client.post(f"/api/agents/{agent['id']}/heartbeat", json={}, headers=_auth(agent))
     assert heartbeat.get_json()["domain_discovery_enabled"] is True
 
-    bad = _report(_item("1.2.3.4"))
-    assert client.post(url, json=bad, headers=_auth(agent)).status_code == 400
+    assert client.post(url, json={**_report(), "schema": 9}, headers=_auth(agent)).status_code == 400
     ok = client.post(url, json=_report(_item("www.blocked.com", fails=5)), headers=_auth(agent))
     assert ok.status_code == 200 and ok.get_json()["rule_providers"] == {}
 
@@ -303,3 +321,23 @@ def test_ignore_add_and_remove(env):
     body = client.delete("/api/domain-discovery/ignore", json={"values": ["noise.dev"]}).get_json()
     assert body["ignored"] == []
     assert repository.get_profile("default")["domain_discovery"]["ignored"] == []
+
+
+def test_reregistration_keeps_domain_discovery_switch(env):
+    client, _, manager, agent = env
+    client.put(f"/api/agents/{agent['id']}/domain-discovery", json={"enabled": True})
+    again = manager.register_agent({"name": "gw", "host": "127.0.0.1", "service_type": "mihomo"},
+                                   existing_token=agent["token"])
+    assert again["is_new"] is False
+    assert manager.get_agent_by_id(agent["id"])["domain_discovery_enabled"] is True
+
+
+def test_match_test_priority_counts_disabled_rules(env):
+    client, repository, _, _ = env
+    repository.save_profile("default", {"rule_configs": [
+        {"id": "off", "itemType": "rule", "rule_type": "DOMAIN", "value": "x.com", "policy": "DIRECT", "enabled": False},
+        {"id": "hit", "itemType": "rule", "rule_type": "DOMAIN-SUFFIX", "value": "pending.io", "policy": "PROXY",
+         "enabled": True},
+    ]})
+    body = client.post("/api/rules/match-test", json={"query": "a.pending.io"}).get_json()
+    assert body["rule_id"] == "hit" and body["priority"] == 2
