@@ -1,8 +1,9 @@
 <template>
-  <div :class="reorder.active.value && 'cf-reordering'">
+  <div class="proxy-groups-page" :class="reorder.active.value && 'cf-reordering'">
 
     <PageHeader
       title="策略组"
+      class="shrink-0"
     >
       <template #actions>
         <Button
@@ -22,6 +23,7 @@
       </template>
     </PageHeader>
 
+    <div class="shrink-0">
     <ReorderBar
       :active="reorder.active.value"
       :saving="reorder.saving.value"
@@ -29,6 +31,7 @@
       @cancel="reorder.cancel"
       @save="handleSaveOrder"
     />
+    </div>
 
     <SectionCard v-if="!proxyGroups.length" :padded="false">
       <EmptyState
@@ -43,17 +46,30 @@
       </EmptyState>
     </SectionCard>
 
-    <div v-else class="grid grid-cols-[280px_minmax(0,1fr)] items-start gap-3.5 max-[1180px]:grid-cols-[minmax(0,1fr)]">
+    <div v-else class="group-workspace grid min-h-0 grid-cols-[280px_minmax(0,1fr)] gap-3.5 max-[1180px]:grid-cols-[minmax(0,1fr)]">
+      <Button
+        v-show="!reorder.active.value"
+        variant="outline"
+        class="hidden h-auto min-h-11 w-full min-w-0 justify-between gap-3 bg-card px-3 py-2.5 max-[1180px]:flex"
+        aria-haspopup="dialog"
+        :aria-label="`切换策略组，当前${selected?.name || '未选择'}`"
+        :aria-expanded="groupPickerOpen"
+        @click="groupPickerOpen = true"
+      >
+        <span class="min-w-0 truncate text-left">{{ selected?.name || '选择策略组' }}</span>
+        <span class="ml-auto shrink-0 text-xs text-muted-foreground">{{ proxyGroups.length }} 个策略组</span>
+        <ChevronDown class="size-4 shrink-0" />
+      </Button>
       <!-- 左：策略组列表 -->
-      <SectionCard :padded="false" class="p-2">
-        <div ref="groupsContainer" class="flex flex-col gap-0.5" role="list" aria-label="策略组">
+      <SectionCard :padded="false" class="group-list-card flex min-h-0 flex-col p-2" :class="!reorder.active.value && 'max-[1180px]:hidden'">
+        <div ref="groupsContainer" class="group-list min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]" role="list" aria-label="策略组">
           <div
             v-for="(group, cfIndex) in proxyGroups"
             :key="group.id || group.name"
             :data-name="group.name"
             data-reorder-item
             role="listitem"
-            class="group/row flex items-center gap-1"
+            class="group/row mb-0.5 flex items-center gap-1"
           >
             <DragHandle
               v-if="reorder.active.value"
@@ -68,6 +84,7 @@
             />
             <button
               type="button"
+              :title="group.name"
               :aria-current="selectedKey === keyOf(group) ? 'true' : undefined"
               :class="cn(
                 'flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-xl px-3 py-[11px] text-left transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
@@ -121,9 +138,9 @@
       </SectionCard>
 
       <!-- 右：来源 → 筛选 → 命中节点 -->
-      <SectionCard v-if="selected" :padded="false">
-        <header class="flex flex-wrap items-center gap-2.5 px-[18px] pt-4">
-          <h2 class="m-0 truncate text-[13.5px] font-semibold">{{ selected.name }}</h2>
+      <SectionCard v-if="selected" :padded="false" class="group-detail-card flex min-h-0 min-w-0 flex-col" :class="reorder.active.value && 'max-[1180px]:hidden'" role="region" aria-label="策略组详情">
+        <header class="flex shrink-0 flex-wrap items-center gap-2.5 border-b border-border px-[18px] py-4">
+          <h2 class="m-0 min-w-0 break-words text-[13.5px] font-semibold [overflow-wrap:anywhere]">{{ selected.name }}</h2>
           <span v-if="selected.follow_group" class="chip chip-warn">跟随</span>
           <span v-else class="chip chip-acc font-mono">{{ selected.type }}</span>
           <div class="ml-auto flex items-center gap-1">
@@ -155,6 +172,7 @@
           </div>
         </header>
 
+        <div ref="groupDetailsBody" class="group-detail-body min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
         <!-- 代理链：前置 → 落地，没有来源与正则 -->
         <div v-if="selected.type === 'chain'" class="flex flex-col gap-3 p-5 max-md:p-4">
           <div class="flex flex-wrap items-center gap-2 text-[13px]">
@@ -189,6 +207,7 @@
                 >
                   <Checkbox
                     :model-value="draft.sources.includes(option.id)"
+                    :disabled="draftSaving"
                     @update:model-value="toggleDraftSource(option.id)"
                   />
                   <span class="min-w-0 flex-1 truncate">{{ option.name }}</span>
@@ -217,7 +236,7 @@
                   class="pl-7 font-mono text-[13px]"
                   spellcheck="false"
                   placeholder="不填则全部节点"
-                  :disabled="!!selected.follow_group"
+                  :disabled="!!selected.follow_group || draftSaving"
                   aria-label="正则过滤"
                 />
               </div>
@@ -246,18 +265,18 @@
               <Loader2 v-if="preview.loading" class="ml-1 inline size-3 animate-spin" />
             </div>
             <div class="flex flex-1 flex-col gap-2 rounded-[14px] border border-border bg-background/60 p-3">
-              <div class="flex max-h-[260px] flex-wrap content-start gap-1.5 overflow-auto">
+              <div ref="matchedNodesContainer" class="flex max-h-[260px] flex-wrap content-start gap-1.5 overflow-auto">
                 <span
                   v-for="(node, i) in preview.nodes"
                   :key="node.name"
                   :class="cn(
-                    'matched-node inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 text-[12px]',
+                    'matched-node inline-flex min-h-7 max-w-full items-start gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-[12px]',
                     winner && winner.name === node.name && 'is-winner'
                   )"
                   :style="{ animationDelay: `${Math.min(i, 24) * 18}ms` }"
                 >
-                  {{ node.name }}
-                  <i class="font-mono text-[10.5px] not-italic text-muted-foreground">{{ latencyLabel(node.name) }}</i>
+                  <span class="min-w-0 [overflow-wrap:anywhere]">{{ node.name }}</span>
+                  <i class="shrink-0 font-mono text-[10.5px] not-italic text-muted-foreground">{{ latencyLabel(node.name) }}</i>
                 </span>
                 <span v-if="!preview.nodes.length && !preview.loading" class="text-[12.5px] text-muted-foreground">
                   {{ selected.follow_group ? '跟随策略组不单独筛选节点。' : draft.sources.length ? '没有节点命中这个正则。' : '先选择至少一个来源。' }}
@@ -266,20 +285,45 @@
             </div>
           </div>
         </div>
+        </div>
 
         <footer
           v-if="draftDirty && selected.type !== 'chain'"
-          class="flex items-center gap-2 border-t border-border px-5 py-3 text-[12.5px] text-muted-foreground"
+          class="flex shrink-0 flex-wrap items-center gap-2 border-t border-border px-5 py-3 text-[12.5px] text-muted-foreground"
         >
           来源或正则有改动，保存后进入配置
-          <Button variant="ghost" size="sm" class="ml-auto" @click="resetDraft">还原</Button>
-          <Button size="sm" :disabled="draftSaving || !!preview.error" @click="saveDraft">
+          <Button variant="ghost" size="sm" class="ml-auto min-h-11" :disabled="draftSaving" @click="resetDraft">还原</Button>
+          <Button size="sm" class="min-h-11" :disabled="draftSaving || !!preview.error" @click="saveDraft()">
             <Loader2 v-if="draftSaving" class="size-3.5 animate-spin" />
             保存
           </Button>
         </footer>
       </SectionCard>
     </div>
+
+    <Dialog v-model:open="groupPickerOpen">
+      <DialogContent class="max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle>选择策略组</DialogTitle>
+          <DialogDescription>搜索名称，选择要查看的策略组。</DialogDescription>
+        </DialogHeader>
+        <Input v-model="groupPickerSearch" placeholder="搜索策略组名称…" aria-label="搜索策略组名称" class="min-h-11" />
+        <div class="max-h-[50dvh] overflow-y-auto overscroll-contain" role="list" aria-label="搜索结果">
+          <div v-for="group in filteredPickerGroups" :key="keyOf(group)" role="listitem">
+            <button
+              type="button"
+              :aria-current="selectedKey === keyOf(group) ? 'true' : undefined"
+              :class="cn('mb-1 flex min-h-11 w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none', selectedKey === keyOf(group) ? 'bg-secondary' : 'hover:bg-secondary')"
+              @click="groupPickerOpen = false; selectGroup(group)"
+            >
+              <span class="min-w-0 flex-1 break-words text-sm [overflow-wrap:anywhere]">{{ group.name }}</span>
+              <span class="shrink-0 text-xs text-muted-foreground">{{ selectedKey === keyOf(group) ? '当前' : getGroupTypeLabel(group.type) }}</span>
+            </button>
+          </div>
+          <p v-if="!filteredPickerGroups.length" class="py-6 text-center text-sm text-muted-foreground">没有匹配的策略组</p>
+        </div>
+      </DialogContent>
+    </Dialog>
 
     <!-- ===== 新增 / 编辑策略组 ===== -->
     <Dialog v-model:open="dialogVisible">
@@ -743,6 +787,15 @@ const lazyChoice = computed<string>({
 const orderPanelOpen = ref(false)
 
 const groupsContainer = ref<HTMLElement | null>(null)
+const groupDetailsBody = ref<HTMLElement | null>(null)
+const matchedNodesContainer = ref<HTMLElement | null>(null)
+const groupPickerOpen = ref(false)
+const groupPickerSearch = ref('')
+const filteredPickerGroups = computed(() => {
+  const query = groupPickerSearch.value.trim().toLocaleLowerCase()
+  return proxyGroups.value.filter(group => !query || group.name.toLocaleLowerCase().includes(query))
+})
+watch(groupPickerOpen, open => { if (open) groupPickerSearch.value = '' })
 const orderedProxiesRef = ref<HTMLElement | null>(null)
 let orderedProxiesSortable: any = null
 const originalGroupName = ref<string>('') // 保存原始策略组名称，用于检测名称变化
@@ -1930,9 +1983,60 @@ const draftFrom = (group: ProxyGroup) => {
   }
 }
 
-const selectGroup = (group: ProxyGroup) => {
-  selectedKey.value = keyOf(group)
-  draft.value = draftFrom(group)
+let selectionSwitchPending = false
+let selectionVersion = 0
+
+const applyGroupSelection = async (group: ProxyGroup | null): Promise<boolean> => {
+  const version = ++selectionVersion
+  ++previewSeq
+  clearTimeout(previewTimer)
+  preview.value = { nodes: [], total: 0, loading: false, error: '' }
+  selectedKey.value = group ? keyOf(group) : ''
+  draft.value = group ? draftFrom(group) : { kind: 'subscription', sources: [], regex: '' }
+  groupPickerOpen.value = false
+  await nextTick()
+  if (!viewActive || version !== selectionVersion) return false
+  if (groupDetailsBody.value) groupDetailsBody.value.scrollTop = 0
+  if (matchedNodesContainer.value) matchedNodesContainer.value.scrollTop = 0
+  return true
+}
+
+const selectGroup = async (group: ProxyGroup): Promise<boolean> => {
+  if (!viewActive || selectionSwitchPending || draftSaving.value) return false
+  const targetKey = keyOf(group)
+  if (targetKey === selectedKey.value) {
+    groupPickerOpen.value = false
+    return true
+  }
+  if (!proxyGroups.value.some(item => keyOf(item) === targetKey)) return false
+
+  selectionSwitchPending = true
+  const version = selectionVersion
+  const isCurrent = () => viewActive && version === selectionVersion
+  try {
+    if (selected.value && draftDirty.value) {
+      const choice = await choose(`「${selected.value.name}」的来源或正则尚未保存。`, {
+        title: '切换策略组前保存改动？',
+        confirmText: '保存并切换',
+        altText: '放弃并切换',
+        cancelText: '继续编辑'
+      })
+      if (!isCurrent() || choice === 'cancel') return false
+      if (choice === 'confirm') {
+        if (!await persistDraft(true) || !isCurrent()) return false
+        // A late edit must not be discarded even if the form was changed while saving.
+        if (draftDirty.value) {
+          notify.warning('保存期间内容又有改动，请确认后再切换')
+          return false
+        }
+      }
+    }
+    if (!isCurrent()) return false
+    const target = proxyGroups.value.find(item => keyOf(item) === targetKey)
+    return target ? await applyGroupSelection(target) : false
+  } finally {
+    selectionSwitchPending = false
+  }
 }
 
 const resetDraft = () => {
@@ -2002,6 +2106,7 @@ let previewSeq = 0
 let viewActive = true
 const refreshPreview = () => {
   clearTimeout(previewTimer)
+  const seq = ++previewSeq
   const group = selected.value
   if (!viewActive || !group || group.follow_group || !draft.value.sources.length) {
     preview.value = { nodes: [], total: 0, loading: false, error: '' }
@@ -2009,7 +2114,6 @@ const refreshPreview = () => {
   }
   // 与配置生成共用后端正则语法（包括 (?i)），不使用 JavaScript RegExp 校验。
   preview.value = { ...preview.value, loading: true, error: '' }
-  const seq = ++previewSeq
   previewTimer = window.setTimeout(async () => {
     try {
       const data = await requestPreview(draft.value.kind, draft.value.sources, draft.value.regex)
@@ -2088,25 +2192,40 @@ const strategyText = computed(() => {
 
 /* ---------- 保存管道里的改动 ---------- */
 const draftSaving = ref(false)
-const saveDraft = async () => {
+const persistDraft = async (fromSelection = false): Promise<boolean> => {
+  if (!viewActive || draftSaving.value || (selectionSwitchPending && !fromSelection)) return false
   const group = selected.value as any
-  if (!group?.id) return
+  if (!group?.id) return false
+  if (preview.value.error) {
+    notify.error('请先解决预览错误，再保存改动')
+    return false
+  }
+  const snapshot = { kind: draft.value.kind, sources: [...draft.value.sources], regex: draft.value.regex }
+  const savedCount = !preview.value.loading ? preview.value.nodes.length : null
   draftSaving.value = true
   const patch =
-    draft.value.kind === 'aggregation'
-      ? { aggregations: draft.value.sources, aggregation_regex: draft.value.regex }
-      : { subscriptions: draft.value.sources, regex: draft.value.regex }
+    snapshot.kind === 'aggregation'
+      ? { aggregations: [...snapshot.sources], aggregation_regex: snapshot.regex }
+      : { subscriptions: [...snapshot.sources], regex: snapshot.regex }
   try {
     await proxyGroupApi.update(group.id, { ...group, ...patch }, profileId)
-    Object.assign(group, patch)
-    matchCounts.value = { ...matchCounts.value, [keyOf(group)]: preview.value.nodes.length }
+    if (!viewActive) return false
+    const savedGroup = proxyGroups.value.find(item => keyOf(item) === keyOf(group))
+    if (!savedGroup) return false
+    Object.assign(savedGroup, patch)
+    if (selectedKey.value === keyOf(group) && !draftDirty.value && savedCount !== null) {
+      matchCounts.value = { ...matchCounts.value, [keyOf(group)]: savedCount }
+    }
     notify.success(`「${group.name}」已保存`)
+    return true
   } catch (error: any) {
-    notify.error(error.response?.data?.message || '保存失败')
+    if (viewActive) notify.error(error.response?.data?.message || '保存失败')
+    return false
   } finally {
     draftSaving.value = false
   }
 }
+const saveDraft = (): Promise<boolean> => persistDraft()
 
 /** 聚合节点数只在查看聚合来源的策略组时才统计，每个页面只取一次 */
 let aggregationCountsLoaded = false
@@ -2127,11 +2246,9 @@ const loadAggregationCounts = async () => {
 
 // 列表变化（新增、删除、重排后重载）时保证始终有一个选中项
 watch(proxyGroups, groups => {
-  if (!groups.length) {
-    selectedKey.value = ''
-    return
-  }
-  if (!groups.some(g => keyOf(g) === selectedKey.value)) selectGroup(groups[0])
+  if (!viewActive) return
+  // A deleted selection has no draft destination to protect; don't prompt here.
+  if (!groups.some(g => keyOf(g) === selectedKey.value)) void applyGroupSelection(groups[0] || null)
 })
 
 onMounted(async () => {
@@ -2160,6 +2277,32 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* Keep desktop browsing within one viewport; only the list and detail body scroll. */
+@media (min-width: 1181px) {
+  .proxy-groups-page {
+    display: flex;
+    flex-direction: column;
+    /* App main padding (pt-7 + pb-12) and the content-box header's 1px border. */
+    height: calc(100dvh - var(--cf-topbar-h) - 4.75rem - 1px - env(safe-area-inset-top));
+    min-height: 360px;
+  }
+
+  .group-workspace {
+    flex: 1;
+  }
+}
+
+@media (max-width: 1180px) {
+  .group-list {
+    max-height: 60dvh;
+  }
+
+  .group-detail-body {
+    flex: none;
+    overflow: visible;
+  }
+}
+
 .pipe-link {
   position: relative;
   align-self: center;
