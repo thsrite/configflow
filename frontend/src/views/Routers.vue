@@ -104,7 +104,7 @@
           刷新路由
         </Button>
         <Button size="sm" :disabled="routeLoading || routeBusy || Boolean(routeError)" @click="openRouteEditor()"><Plus class="size-3.5" />新增路由</Button>
-        <Button size="sm" variant="ghost" :disabled="routeBusy" @click="closeRouteManager">关闭静态路由</Button>
+        <Button size="sm" variant="ghost" :disabled="routeBusy" @click="closeRouteManager">收起路由列表</Button>
       </template>
       <p class="m-0 px-5 pb-4 text-[12px] leading-relaxed text-muted-foreground max-md:px-4">
         此处只修改选中的静态路由。带 cf 标记的路由可能被后续自动发布调整；NAT、DHCP DNS 和 mihomo 回流配置不随手工操作变化。
@@ -224,14 +224,29 @@
         </div>
       </SectionCard>
 
-      <SectionCard v-if="report.policy_routing" class="mt-4" :padded="false" title="按来源策略路由" description="单独核对所选规则集的来源、目的地址列表、标记规则和独立路由表。fake-ip 及其余规则集仍按静态路由核对。">
+      <SectionCard
+        v-if="report.policy_routing"
+        class="mt-4"
+        :padded="false"
+        title="按设备和目标 IP 分流"
+        :description="report.policy_routing.enabled
+          ? '指定设备访问下表 IP 网段时，将流量交给 Mihomo 处理。修改后需发布到路由器才会生效。'
+          : '本次未选择按设备分流的规则集。'"
+        help="设备 IP 和访问的目标 IP 都符合条件时，才会使用这项策略；其他流量仍按 ROS 原有路由处理。
+
+设备范围来自当前配置空间已保存的 OxiDNS「智能分流」设置。范围重叠时，更具体的 IP 或网段设置优先；Mihomo 网关本身不参与。这里统计的是地址或网段条数，不是设备台数。
+
+Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置处理。
+
+「已同步」表示路由器配置与当前设置一致，不代表已测试上网是否正常。ROS 内部通过地址列表、Mangle 标记规则和独立路由表实现分流。"
+      >
         <div class="flex flex-col gap-2 px-5 pb-4 text-[12.5px] max-md:px-4">
           <p v-if="report.policy_routing.enabled" class="m-0 text-muted-foreground">
-            当前配置空间的 OxiDNS 智能分流来源：<span class="num">{{ report.policy_routing.sources.length }}</span> 个 IPv4 范围，已排除更具体的直连设备和 Mihomo 网关。
+            设备范围来自当前配置空间的 OxiDNS「智能分流」设置。
           </p>
-          <p v-else class="m-0 text-muted-foreground">已清空策略路由选择；发布后撤销本功能的策略配置，按上方选择恢复静态路由。</p>
+          <p v-else class="m-0 text-muted-foreground">发布后将移除本功能的分流配置，相关网段按上方的静态路由设置处理。未发布前保持原样。</p>
           <details v-if="report.policy_routing.sources.length" class="rounded-md border border-border">
-            <summary class="min-h-11 cursor-pointer rounded-md px-3 py-3 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-accent">查看实际来源范围</summary>
+            <summary class="min-h-11 cursor-pointer rounded-md px-3 py-3 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-accent">查看适用的设备 IP · <span class="num">{{ report.policy_routing.sources.length }}</span> 个 IPv4 地址或网段</summary>
             <div class="max-h-40 overflow-y-auto px-3 pb-3 font-mono text-[12px]">
               <p v-for="source in report.policy_routing.sources" :key="source" class="m-0">{{ source }}</p>
             </div>
@@ -239,14 +254,13 @@
           <p v-for="blocker in report.policy_routing.blockers" :key="blocker" role="alert" class="m-0 break-words text-warning-accent">{{ blocker }}</p>
         </div>
         <div v-if="report.policy_routing.items.length" class="cf-table-wrap">
-          <table class="cf-table min-w-[640px]">
-            <thead><tr><th>目的网段</th><th>规则集</th><th>状态</th><th>说明</th></tr></thead>
+          <table class="cf-table min-w-[440px]">
+            <thead><tr><th>访问的目标 IP / 网段</th><th>所属规则集</th><th>配置状态</th></tr></thead>
             <tbody>
               <tr v-for="item in report.policy_routing.items" :key="item.cidr">
                 <td class="font-mono text-[12px]">{{ item.cidr }}</td>
                 <td class="text-[12px] text-muted-foreground">{{ item.sources.join('、') }}</td>
                 <td><span :class="['chip', statusInfo(item.status).chip]">{{ statusInfo(item.status).label }}</span></td>
-                <td class="min-w-[240px] whitespace-normal break-words text-[12px] text-muted-foreground">{{ item.detail }}</td>
               </tr>
             </tbody>
           </table>

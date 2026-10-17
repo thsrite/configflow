@@ -192,7 +192,7 @@ describe('routers view', () => {
     await flushPromises()
     const sections = wrapper.findAllComponents(SectionCard)
     const staticRoutes = sections.find(item => item.props('title') === '代理路由')!
-    const policy = sections.find(item => item.props('title') === '按来源策略路由')!
+    const policy = sections.find(item => item.props('title') === '按设备和目标 IP 分流')!
     expect(staticRoutes.text()).not.toContain('91.108.4.0/22')
     expect(policy.text()).toContain('91.108.4.0/22')
     expect(policy.find('[role="alert"]').text()).toContain('网段重叠')
@@ -216,7 +216,7 @@ describe('routers view', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('静态路由 · 主路由')
     expect(wrapper.text()).not.toContain('差异报告 ·')
-    buttonInDocument('关闭静态路由').click()
+    buttonInDocument('收起路由列表').click()
     await flushPromises()
     expect(wrapper.text()).not.toContain('差异报告 ·')
   })
