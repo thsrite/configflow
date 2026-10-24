@@ -61,7 +61,8 @@ def test_production_uses_reusable_workers_and_debug_keeps_reloader(monkeypatch):
                            channel_timeout=300, clear_untrusted_proxy_headers=False)
     app.run.assert_not_called()
     run_http_server(app, debug=True)
-    app.run.assert_called_once_with(host='0.0.0.0', port=5001, debug=True)
+    # The debug reloader passes SIGTERM on to the serving child (test_agent_metrics_history).
+    app.run.assert_called_once_with(host='0.0.0.0', port=5001, debug=True, reloader_type='configflow')
 
 
 @pytest.mark.parametrize('value', ['', 'zero', '0', '-1', '65', '2.5'])

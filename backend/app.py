@@ -179,6 +179,7 @@ if __name__ == '__main__':
         # Agent 监控历史在内存中，按间隔写入磁盘；SIGTERM（docker stop、supervisord）
         # 和 Ctrl+C 时先保存再退出。调试 reloader 的父进程不接收心跳，不参与
         from backend.agents import metrics_flush
+        metrics_flush.load_history()
         metrics_flush.start_loop()
         metrics_flush.install_signal_handlers()
 
@@ -189,3 +190,4 @@ if __name__ == '__main__':
         if service_process:
             # 停止期间处理完的心跳；没有新数据时不再记一次运行
             metrics_flush.flush_on_shutdown(record_idle=False)
+            metrics_flush.exit_after_stop_signal()

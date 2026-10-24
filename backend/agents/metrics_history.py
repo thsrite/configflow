@@ -1,6 +1,7 @@
 """Agent 监控数据历史存储
 
-每台 Agent 最近 24 小时的监控点保存在内存中，心跳只追加内存。
+每台 Agent 最近 24 小时的监控点保存在内存中，心跳只追加内存。每个点按写入
+文件的 JSON 行保存（约为解析后字典的六分之一），查询时再解析。
 「监控历史保存」任务（agents/metrics_flush.py）按间隔把新增的点追加到
 每台 Agent 的 JSON Lines 文件；文件行数明显多于内存保留的点时，从内存重写
 临时文件后原子替换。服务启动时读回文件（容忍写到一半的行），旧版
@@ -82,6 +83,7 @@ class MetricsHistory:
         # lock 保护内存；flush_lock 让保存、整理与删除逐个进行，写盘时不阻塞心跳
         self.lock = Lock()
         self.flush_lock = Lock()
+        # agent_id -> deque[(datetime, 该点的 JSON 行)]
         self._points: Dict[str, deque] = {}
         # 每台 Agent 最新的多少个点还没有写入文件
         self._pending: Dict[str, int] = {}
@@ -142,7 +144,7 @@ class MetricsHistory:
             except (ValueError, TypeError, KeyError):
                 continue
             seen.add(point['timestamp'])
-            points.append((timestamp, point))
+            points.append((timestamp, _encode(point)))
         return points, count
 
     def _read_file(self, agent_id: str, cutoff):
@@ -252,8 +254,8 @@ class MetricsHistory:
             'network': system_metrics.get('network', {})
         }
         try:
-            # 与以前从文件读回的结果一致，也不与心跳数据共享可变对象
-            data_point = json.loads(_encode(data_point))
+            # 查询时解析这一行，结果与以前从文件读回的一致，也不与心跳数据共享可变对象
+            line = _encode(data_point)
         except (TypeError, ValueError) as error:
             logger.warning('Agent %s 的监控数据无法保存：%s', agent_id, error)
             return False
@@ -261,7 +263,7 @@ class MetricsHistory:
             points = self._points.get(agent_id)
             if points is None:
                 points = self._points[agent_id] = deque(maxlen=self.max_points)
-            points.append((now, data_point))
+            points.append((now, line))
             self._pending[agent_id] = min(self._pending.get(agent_id, 0) + 1, len(points))
             self._prune(agent_id)
         return True
@@ -280,9 +282,11 @@ class MetricsHistory:
         with self.lock:
             points = self._prune(agent_id)
             if hours is None:
-                return [point for _, point in points]
-            cutoff = self._cutoff(hours)
-            return [point for timestamp, point in points if timestamp >= cutoff]
+                lines = [line for _, line in points]
+            else:
+                cutoff = self._cutoff(hours)
+                lines = [line for timestamp, line in points if timestamp >= cutoff]
+        return [json.loads(line) for line in lines]
 
     def get_latest_metrics(self, agent_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -324,6 +328,19 @@ class MetricsHistory:
             removed = [self._remove(self._get_agent_file(agent_id), report=True),
                        self._remove(self._get_legacy_file(agent_id), report=True)]
         return all(item is not None for item in removed)
+
+    def retain_agents(self, agent_ids) -> int:
+        """删除不在 agent_ids 中的 Agent 的历史（内存与文件），返回删除的 Agent 数。
+
+        导入备份、WebDAV 恢复或重置会直接替换 Agent 列表，不经过删除 Agent；
+        每次保存前按当前列表清理一次。
+        """
+        agent_ids = set(agent_ids)
+        with self.lock:
+            stale = (set(self._points) | set(self._file_lines) | set(self._legacy)) - agent_ids
+        for agent_id in sorted(stale):
+            self.delete_agent_history(agent_id)
+        return len(stale)
 
     # ---- 写入文件 -------------------------------------------------------
 
@@ -381,9 +398,9 @@ class MetricsHistory:
                 if not compact and not pending:
                     continue
                 if compact:
-                    lines = [_encode(point) for _, point in points]
+                    lines = [line for _, line in points]
                 else:
-                    lines = [_encode(point) for _, point in list(points)[len(points) - pending:]]
+                    lines = [line for _, line in list(points)[len(points) - pending:]]
                 self._pending[agent_id] = 0
                 jobs.append((agent_id, compact, pending, lines))
                 if not points:

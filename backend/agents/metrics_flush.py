@@ -7,7 +7,10 @@ graceful stop loses nothing. Every run, including failures such as a full disk
 or a read-only directory, is recorded in task_status for the task list.
 """
 from datetime import datetime, timedelta, timezone
+import logging
+import os
 import signal
+import sys
 import threading
 import time
 
@@ -26,7 +29,12 @@ _run_lock = threading.Lock()
 _wake = threading.Event()
 _start_guard = threading.Lock()
 _started_at = None
+# 本进程上次开始保存的时间：运行记录写不进去时，也不会每个 TICK 都重跑
+_attempted_at = None
+# 服务正在停止（收到停止信号，或 app.py 已在做最后一次保存）
 _stopping = False
+_shutdown_flushing = False
+_stop_signum = None
 
 
 def validate_interval(value):
@@ -61,7 +69,7 @@ def is_running():
 def next_run_at(entry, interval):
     """Due time of the next scheduled run; None before the loop has started."""
     last = task_status.parse_time(entry.get('last_run_at'))
-    base = max(filter(None, (last, _started_at)), default=None)
+    base = max(filter(None, (last, _started_at, _attempted_at)), default=None)
     if base is None:
         return None
     return base + timedelta(seconds=interval)
@@ -73,11 +81,17 @@ def run(trigger='schedule', record_idle=True):
     The result, or the reason it failed, lands in task_status. A failed run
     keeps the points in memory for the next one, and re-raises.
     """
+    global _attempted_at
     from backend.common.agent_manager import get_agent_manager
     with _run_lock:
+        _attempted_at = datetime.now(timezone.utc)
         started, clock = task_status.now_iso(), time.monotonic()
         try:
-            result = get_agent_manager().metrics_history.flush()
+            manager = get_agent_manager()
+            # 导入、恢复或重置配置后已不存在的 Agent，不再保存它们的历史
+            manager.metrics_history.retain_agents(
+                agent['id'] for agent in manager.repository.get_system().get('agents', []))
+            result = manager.metrics_history.flush()
         except Exception as error:
             reason = str(error) or type(error).__name__
             logger.warning('监控历史保存失败：%s', reason)
@@ -119,6 +133,23 @@ def _loop():
         _wake.clear()
 
 
+def load_history():
+    """Read saved history back at service startup; migrates the old format.
+
+    Only the service process does this: it also deletes files of Agents that no
+    longer exist, and the default directory is shared by every AgentManager
+    built from this checkout (tests, integration harnesses, other repositories).
+    """
+    from backend.common.agent_manager import get_agent_manager
+    manager = get_agent_manager()
+    try:
+        return manager.metrics_history.load(
+            agent['id'] for agent in manager.repository.get_system().get('agents', []))
+    except Exception as error:
+        logger.warning('监控历史加载失败：%s', error)
+        return None
+
+
 def start_loop():
     """Start the per-process flush loop; memory is per process, so is the loop."""
     global _started_at
@@ -130,11 +161,21 @@ def start_loop():
 
 
 def flush_on_shutdown(record_idle=True):
-    """Final flush when the service stops; never raises."""
+    """Final flush when the service stops; never raises.
+
+    Marks the service as stopping first, so a stop signal that arrives during
+    this flush (on the same main thread) does not try to take _run_lock again.
+    """
+    global _stopping, _shutdown_flushing
+    _stopping = True
+    _wake.set()
+    _shutdown_flushing = True
     try:
         result = run('shutdown', record_idle=record_idle)
     except Exception:
         return None
+    finally:
+        _shutdown_flushing = False
     if result['appended']:
         logger.info('服务停止前已保存 %d 个监控点', result['appended'])
     return result
@@ -145,16 +186,40 @@ def handle_stop_signal(signum, frame):
 
     Waitress (and the debug server) treat SystemExit like Ctrl+C and return
     from serve(); app.py then flushes once more for heartbeats that finished
-    during shutdown. A repeated signal while stopping is ignored.
+    during shutdown and calls exit_after_stop_signal(). A repeated signal is
+    ignored while a shutdown save runs; after it, the signal's default action
+    ends the process, so a second Ctrl+C still force-quits a hung shutdown.
     """
-    global _stopping
+    global _stop_signum
     if _stopping:
-        return
-    _stopping = True
-    _wake.set()
+        if _shutdown_flushing:
+            return None
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+        return None
+    _stop_signum = signum
     logger.info('收到停止信号 %s，正在保存监控历史', signal.Signals(signum).name)
     flush_on_shutdown()
     raise SystemExit(0)
+
+
+def exit_after_stop_signal():
+    """After the final save of a SIGTERM stop, exit without waiting for threads.
+
+    SIGTERM used to end the process at once. Keep that: busy executor workers
+    (subscription downloads, rule sync) would otherwise hold the process until
+    supervisord's SIGKILL, using up docker stop's grace period. Ctrl+C keeps the
+    normal interpreter exit.
+    """
+    if _stop_signum != signal.SIGTERM:
+        return
+    logging.shutdown()
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except Exception:
+            pass
+    os._exit(0)
 
 
 def install_signal_handlers():
