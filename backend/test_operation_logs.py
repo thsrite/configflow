@@ -93,14 +93,16 @@ def test_presence_logs_transitions_but_not_the_startup_baseline(monkeypatch, cap
     online = {'id': 'a1', 'name': 'gw\nfake', 'status': 'online', 'last_heartbeat': '2026-10-20T10:00:00'}
     offline = {**online, 'status': 'offline'}
     with caplog.at_level(logging.INFO, logger='backend.agents.presence_log'):
-        presence_log.observe([offline])           # baseline after restart: silent
+        presence_log.observe([offline])           # after restart, not heard from yet: silent
+        presence_log.observe([offline])
+        presence_log.observe([online])            # first heartbeat since start: baseline, silent
+        presence_log.observe([online])
         presence_log.observe([offline])
         presence_log.observe([online])
-        presence_log.observe([online])
-        presence_log.observe([offline])
         presence_log.observe([])                  # deleted: silent
-    assert _messages(caplog) == ['Agent gw?fake 已恢复在线',
-                                 'Agent gw?fake 已离线：超过 2 分钟没有心跳（最后心跳 2026-10-20T10:00:00）']
+        presence_log.observe([offline])           # back but not heard from: silent
+    assert _messages(caplog) == ['Agent gw?fake 已离线：超过 2 分钟没有心跳（最后心跳 2026-10-20T10:00:00）',
+                                 'Agent gw?fake 已恢复在线']
 
 
 def test_agent_rule_sync_logs_each_state_change_once(monkeypatch, caplog):

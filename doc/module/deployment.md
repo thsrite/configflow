@@ -74,7 +74,6 @@ data/
 ├── configflow.sqlite3   # 系统、共享资源和全部配置空间
 ├── config.json          # 仅升级前的旧格式副本（若存在），新版本不再写入
 ├── configflow.sqlite3.corrupt-*  # 数据库损坏时保留的原文件（仅在出现损坏时）
-├── runtime.sqlite3      # Agent 心跳状态（版本、服务状态、监控指标），可丢弃，下次心跳重建
 ├── shared/              # 共享订阅和规则缓存
 ├── profiles/<id>/       # 每个配置的生成文件、Provider 和转换规则
 ├── sub-store/           # 内置 Sub-Store 数据及在线更新组件
@@ -123,7 +122,7 @@ docker compose logs --tail=100 config-flow
 
 `latest` 是可变化的标签，不代表已核实包含某个修复。重要实例应记录可回退的版本或摘要，并先用数据副本验证。
 
-`runtime.sqlite3` 只保存 Agent 心跳状态，不在 JSON 导出和 WebDAV 备份里。原机恢复时它仍保留，各 Agent 显示恢复前最后一次心跳的状态；在没有它的新机器上恢复时，各 Agent 在下一次心跳前显示为注册时的状态。
+Agent 最近一次心跳的状态（在线时间、服务状态、当前监控指标）只保存在内存里，不写入配置，也不在 JSON 导出和 WebDAV 备份里。服务重启后，各 Agent 在下一次心跳（通常 30–60 秒内）前显示为离线；版本号在变化时已写入配置数据库，会随备份保留。监控历史曲线（最近 24 小时）是另一回事：每次带监控数据的心跳都会写入磁盘上的 `metrics` 目录（容器内是 `/opt/configflow/data/metrics`，不在挂载的 `./data` 里；直接运行源码时是 `backend/data/metrics`），服务重启后仍在，重建容器后清空，也不在备份里。旧版本留下的 `runtime.sqlite3` 会在升级后首次启动时读入并删除。
 
 旧版多配置必须完整备份 `system.json`、`profiles/`、`.bak` 和缓存，不能只备份根 `config.json`。完整 JSON 导出也不包含主机上所有运行文件。迁移边界和恢复方法见 [升级、备份与恢复](../design/multi-config-management.md#升级备份与恢复)。
 

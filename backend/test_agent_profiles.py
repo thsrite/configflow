@@ -129,8 +129,8 @@ def test_agent_mutations_persist_through_system_transactions(tmp_path, monkeypat
     assert persisted["name"] == "updated"
     assert persisted["profile_id"] == "beta"
     assert persisted["config_version"] == "heartbeat"
-    # The reported version is heartbeat state, kept outside config.json.
-    assert manager.get_agent_by_id(agent_id)["version"] == "2.0.0"
+    # A changed version is persisted so a restart does not fall back to the registered one.
+    assert persisted["version"] == "2.0.0"
 
     class SuccessfulResponse:
         status_code = 200
