@@ -6,8 +6,8 @@ import { Select } from '@/components/ui/select'
 import { routerApi, tasksApi } from '@/api'
 import { notify } from '@/lib/feedback'
 import {
-  cacheNote, intervalText, isOverdue, relativeTo, sourceIntervalOptions, taskStatusView, taskSummary,
-  type ScheduledTask
+  CATEGORY_LABELS, cacheNote, intervalText, isOverdue, relativeTo, sourceIntervalOptions, taskIntervalOptions,
+  taskStatusView, taskSummary, type ScheduledTask
 } from '@/lib/scheduledTasks'
 
 vi.mock('@/api', () => ({
@@ -24,6 +24,11 @@ const task = (changes: Partial<ScheduledTask> = {}): ScheduledTask => ({
   state_message: '', link: '/rule-library', last_run_at: '2026-10-23T11:00:00Z', last_status: 'success',
   last_error: '', last_duration_ms: 1200, last_trigger: 'schedule', last_success_at: '2026-10-23T11:00:00Z',
   run_count: 42, failure_count: 3, cache_retained: null, cache_updated_at: '2026-10-23T11:00:00Z', ...changes
+})
+const metricsFlush = (changes: Partial<ScheduledTask> = {}) => task({
+  key: 'metrics_history_flush', category: 'metrics_history', name: '监控历史保存', detail: '', resource_id: '',
+  interval_seconds: 1800, link: '/agents', next_run_at: '2026-10-24T08:20:00Z', last_run_at: '2026-10-24T07:50:00Z',
+  last_trigger: 'shutdown', run_count: 5, failure_count: 0, cache_updated_at: null, ...changes
 })
 const failed = task({
   last_status: 'failed', last_error: '连接上游超时', cache_retained: true,
@@ -43,6 +48,17 @@ describe('scheduled task helpers', () => {
     expect(sourceIntervalOptions(7200)).toContain(7200)
     expect(taskSummary([task(), failed, task({ enabled: false, last_status: 'failed' }), task({ running: true })]))
       .toEqual({ total: 4, enabled: 3, failed: 1, running: 1 })
+  })
+
+  it('offers fixed intervals for monitoring history and routers, and source intervals otherwise', () => {
+    expect(CATEGORY_LABELS.metrics_history).toBe('监控历史')
+    expect(taskIntervalOptions(metricsFlush())).toEqual([
+      { value: '300', label: '每 5 分钟' }, { value: '600', label: '每 10 分钟' },
+      { value: '1800', label: '每 30 分钟' }, { value: '3600', label: '每 1 小时' },
+    ])
+    expect(taskIntervalOptions(task({ category: 'router_rule_sync', interval_seconds: 1800 })).map(option => option.value))
+      .toEqual(['900', '1800', '3600', '10800', '21600', '43200', '86400'])
+    expect(taskIntervalOptions(task())[0]).toEqual({ value: '0', label: '关闭自动更新（仅手动）' })
   })
 
   it('colours a failure by whether the previous cache is still in use', () => {
@@ -172,6 +188,30 @@ describe('ScheduledTasks', () => {
     await flushPromises()
     expect(tasksApi.setInterval).toHaveBeenCalledWith('rule_source:r1', 0)
     expect(notify.success).toHaveBeenCalledWith('已更新「Streaming」')
+  })
+
+  it('shows the monitoring history row and edits its save interval', async () => {
+    const wrapper = await render([metricsFlush()])
+    const row = wrapper.get('[data-task="metrics_history_flush"]')
+    expect(row.text()).toContain('监控历史保存')
+    expect(row.text()).toContain('监控历史')
+    expect(row.text()).toContain('每 30 分钟')
+    expect(row.text()).toContain('20 分钟后')
+    expect(row.text()).toContain('服务停止时')
+    expect(row.get('a').attributes('href')).toBe('/agents')
+    vi.mocked(tasksApi.setInterval).mockResolvedValue({ data: { success: true, task: null } } as any)
+    await wrapper.get('button[aria-label="编辑「监控历史保存」的间隔"]').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"] label[for="task-interval"]')?.textContent).toBe('保存间隔')
+    expect(document.body.textContent).toContain('服务正常停止时也会保存一次')
+    expect(document.querySelector('#task-interval')?.textContent).toContain('每 30 分钟')
+    wrapper.findAllComponents(Select)[0]!.vm.$emit('update:modelValue', '300')
+    await flushPromises()
+    document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(tasksApi.setInterval).toHaveBeenCalledWith('metrics_history_flush', 300)
+    expect(routerApi.saveRuleSync).not.toHaveBeenCalled()
+    expect(notify.success).toHaveBeenCalledWith('已更新「监控历史保存」')
   })
 
   it('edits a router through its own rule sync settings and keeps errors in the dialog', async () => {

@@ -11,10 +11,9 @@ import time
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
-import sqlite3
 import requests
+from . import runtime_state
 from .metrics_history import MetricsHistory
-from .runtime_store import AgentRuntimeStore
 from .diagnostics import dns_report_fields, failure_text, response_failure
 from .operation_events import append_event, event_time
 
@@ -45,6 +44,10 @@ class AgentDeploymentConflict(ValueError):
     """A profile binding cannot change during an unfinished deployment."""
 
 
+class _NothingToSave(Exception):
+    """Aborts a configuration transaction that would change nothing."""
+
+
 def _upgrade_busy(agent):
     upgrade = agent.get('latest_upgrade') or {}
     return bool(upgrade) and upgrade.get('status') not in ('succeeded', 'failed', 'rolled_back')
@@ -71,13 +74,35 @@ class AgentManager:
         self._preparation_files = {}
         self._deployment_lock = threading.RLock()
 
-        # 初始化监控历史管理器
+        # 初始化监控历史管理器（只在内存中）；服务进程启动时由
+        # metrics_flush.load_history() 读回文件并迁移旧格式
         self.metrics_history = MetricsHistory()
-        # 心跳状态单独存放，不再每次心跳重写整份配置
-        self.runtime = AgentRuntimeStore(repository.data_dir)
+        # 心跳状态只放在内存，不再每次心跳重写整份配置；版本号变化时才写配置
+        self.runtime = runtime_state.for_data_dir(repository.data_dir)
+        runtime_state.import_legacy_database(repository, self.runtime, self._save_reported_fields)
 
     def _agents(self) -> List[Dict[str, Any]]:
         return self.runtime.overlay(self.repository.get_system().get('agents', []))
+
+    def _save_reported_fields(self, changes):
+        """Write {agent_id: {field: value}} reported by heartbeats into the configuration in one transaction.
+
+        Returns the IDs written; when none of the Agents exists any more nothing is written.
+        """
+        saved = set()
+
+        def update(agents):
+            for item in agents:
+                if item['id'] in changes:
+                    item.update(changes[item['id']])
+                    saved.add(item['id'])
+            if not saved:
+                raise _NothingToSave()
+        try:
+            self._update_agents(update)
+        except _NothingToSave:
+            pass
+        return saved
 
     def _update_agents(self, updater, profile_id=None):
         result = {}
@@ -321,18 +346,16 @@ class AgentManager:
         result = self._update_agents(delete)
         if deleted:
             logger.info('已删除 Agent %s', _agent_label(deleted[0]))
-            try:
-                self.runtime.delete(agent_id)
-            except (OSError, sqlite3.Error) as error:
-                # A leftover row is never shown: only registered Agents are overlaid.
-                logger.warning('Agent %s 的心跳状态清理失败：%s', _agent_label(deleted[0]), error)
+            self.runtime.delete(agent_id)
+            # 删除失败时文件会在下次启动时清理
+            self.metrics_history.delete_agent_history(agent_id)
         return result
 
     def update_heartbeat(self, agent_id: str, heartbeat_data: Dict[str, Any] = None) -> bool:
         """
         更新 Agent 心跳
 
-        心跳状态写入运行状态库，不改动配置文件；只有 config_version 变化时才写配置。
+        心跳状态只记在内存，不改动配置文件；只有 version 或 config_version 变化时才写配置。
 
         Args:
             agent_id: Agent ID
@@ -342,24 +365,18 @@ class AgentManager:
             bool: 是否更新成功
         """
         heartbeat_data = heartbeat_data or {}
+        mark = self.runtime.mark()
         agent = next((item for item in self.repository.get_system().get('agents', []) if item['id'] == agent_id), None)
-        if agent is None:
+        # 查到 Agent 之后它又被删除时，不能把心跳状态再记回去
+        if agent is None or not self.runtime.record_heartbeat(agent, heartbeat_data, mark):
             return False
-        try:
-            self.runtime.record_heartbeat(agent, heartbeat_data)
-        except (OSError, sqlite3.Error) as error:
-            # 心跳状态允许丢失；config_version 和监控历史照常保存
-            logger.warning('Agent %s 的心跳状态写入失败：%s', _agent_label(agent), error)
 
-        # config_version 是发布基线，仍随配置保存
-        if 'config_version' in heartbeat_data and heartbeat_data['config_version'] != agent.get('config_version'):
-            def update(agents):
-                for item in agents:
-                    if item['id'] == agent_id:
-                        item['config_version'] = heartbeat_data['config_version']
-                        return True
-                return False
-            self._update_agents(update)
+        # config_version 是发布基线；version 决定更新检查和版本门槛，重启后不能退回注册时的值。
+        # 两者都很少变化，只在变化时写配置。
+        changes = {key: heartbeat_data[key] for key in ('version', 'config_version')
+                   if key in heartbeat_data and heartbeat_data[key] != agent.get(key)}
+        if changes and not self._save_reported_fields({agent_id: changes}):
+            return False
 
         if 'system_metrics' in heartbeat_data:
             # 保存监控数据到历史记录

@@ -120,7 +120,7 @@
               <Switch id="task-router-auto" :model-value="routerEnabled" @update:model-value="value => (routerEnabled = Boolean(value))" />
             </div>
             <div class="flex flex-col gap-1.5">
-              <Label for="task-interval">{{ editing.category === 'router_rule_sync' ? '检查间隔' : '更新间隔' }}</Label>
+              <Label for="task-interval">{{ intervalLabel }}</Label>
               <Select v-model="intervalChoice">
                 <SelectTrigger id="task-interval" class="w-full max-md:min-h-11"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -155,8 +155,8 @@ import { routerApi, tasksApi } from '@/api'
 import { notify } from '@/lib/feedback'
 import { isAxiosError } from 'axios'
 import {
-  CATEGORY_LABELS, ROUTER_INTERVAL_MINUTES, absoluteTime, cacheNote, durationText, intervalText, isOverdue,
-  relativeTo, scheduleText, sourceIntervalOptions, taskStatusView, taskSummary,
+  CATEGORY_LABELS, absoluteTime, cacheNote, durationText, isOverdue,
+  relativeTo, scheduleText, taskIntervalOptions, taskStatusView, taskSummary,
   type ScheduledTask, type TaskCategory
 } from '@/lib/scheduledTasks'
 
@@ -208,7 +208,7 @@ function problemTone(task: ScheduledTask) {
 }
 
 function triggerText(task: ScheduledTask) {
-  return { manual: '手动运行', pull: '设备首次拉取', schedule: '', event: '', }[task.last_trigger || 'schedule'] || ''
+  return { manual: '手动运行', pull: '设备首次拉取', shutdown: '服务停止时', schedule: '', event: '', }[task.last_trigger || 'schedule'] || ''
 }
 
 function schedule() {
@@ -263,18 +263,23 @@ const routerEnabled = ref(false)
 const saving = ref(false)
 const editorError = ref('')
 
-const intervalOptions = computed(() => {
-  if (!editing.value) return []
-  if (editing.value.category === 'router_rule_sync') {
-    return ROUTER_INTERVAL_MINUTES.map(minutes => ({ value: String(minutes * 60), label: intervalText(minutes * 60) }))
+const intervalOptions = computed(() => editing.value ? taskIntervalOptions(editing.value) : [])
+
+const intervalLabel = computed(() => {
+  switch (editing.value?.category) {
+    case 'router_rule_sync':
+      return '检查间隔'
+    case 'metrics_history':
+      return '保存间隔'
+    default:
+      return '更新间隔'
   }
-  return sourceIntervalOptions(editing.value.interval_seconds ?? 86400).map(seconds => ({
-    value: String(seconds), label: seconds ? intervalText(seconds) : '关闭自动更新（仅手动）'
-  }))
 })
 
 const editorDescription = computed(() => {
   switch (editing.value?.category) {
+    case 'metrics_history':
+      return 'Agent 监控数据先保存在内存中，按此间隔把新增的数据追加到磁盘；服务正常停止时也会保存一次。间隔越短，意外断电时丢失的数据越少。'
     case 'subscription':
       return '服务端按此间隔下载订阅并更新缓存；关闭后只在订阅页手动更新。与订阅编辑中的「订阅源更新间隔」是同一设置。'
     case 'rule_source':

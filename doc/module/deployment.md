@@ -74,13 +74,14 @@ data/
 ├── configflow.sqlite3   # 系统、共享资源和全部配置空间
 ├── config.json          # 仅升级前的旧格式副本（若存在），新版本不再写入
 ├── configflow.sqlite3.corrupt-*  # 数据库损坏时保留的原文件（仅在出现损坏时）
-├── runtime.sqlite3      # Agent 心跳状态（版本、服务状态、监控指标），可丢弃，下次心跳重建
 ├── shared/              # 共享订阅和规则缓存
 ├── profiles/<id>/       # 每个配置的生成文件、Provider 和转换规则
 ├── sub-store/           # 内置 Sub-Store 数据及在线更新组件
 ├── migrations/          # 迁移/导入快照（含数据库备份）与删除配置的保留数据（含 deleted-profile.json）
 └── app.log              # 服务日志，路径可由 LOG_FILE 调整
 ```
+
+Agent 主机监控图表（CPU、内存、磁盘和流量，最近 24 小时）的数据先保存在内存中，每台 Agent 最多保留 4000 个点。「系统设置 → 定时任务 → 监控历史保存」按间隔把新增数据追加写入磁盘，可选 5、10、30 或 60 分钟，默认 30 分钟；文件明显大于内存数据时自动整理。`docker compose stop` / `restart` 等正常停止（包括 `LOG_LEVEL=DEBUG` 调试模式）会先保存再退出；意外断电或强制结束最多丢失一个间隔的数据。写入失败（如磁盘已满、没有权限）会显示在该任务的上次运行结果中。这些文件目前位于容器内的 `/opt/configflow/data/metrics/`（源码运行时为 `backend/data/metrics/`），不在 `/data` 中，重建容器后从空开始。删除 Agent 时同时删除它的监控历史；恢复备份或重置后不再存在的 Agent，其监控历史在下次保存时删除。
 
 旧实例还可能保留 `system.json`、旧 `profiles/<id>/config.json` 等文件。不要只看根配置就清理旧数据；迁移和恢复需要保留完整目录。
 
@@ -123,7 +124,7 @@ docker compose logs --tail=100 config-flow
 
 `latest` 是可变化的标签，不代表已核实包含某个修复。重要实例应记录可回退的版本或摘要，并先用数据副本验证。
 
-`runtime.sqlite3` 只保存 Agent 心跳状态，不在 JSON 导出和 WebDAV 备份里。原机恢复时它仍保留，各 Agent 显示恢复前最后一次心跳的状态；在没有它的新机器上恢复时，各 Agent 在下一次心跳前显示为注册时的状态。
+Agent 最近一次心跳的状态（在线时间、服务状态、当前监控指标）只保存在内存里，不写入配置，也不在 JSON 导出和 WebDAV 备份里。服务重启后，各 Agent 在下一次心跳（通常 30–60 秒内）前显示为离线；版本号在变化时已写入配置数据库，会随备份保留。监控历史曲线（最近 24 小时）按上文「监控历史保存」的间隔写入磁盘，不随每次心跳写入。旧版本留下的 `runtime.sqlite3` 会在升级后首次启动时读入并删除。
 
 旧版多配置必须完整备份 `system.json`、`profiles/`、`.bak` 和缓存，不能只备份根 `config.json`。完整 JSON 导出也不包含主机上所有运行文件。迁移边界和恢复方法见 [升级、备份与恢复](../design/multi-config-management.md#升级备份与恢复)。
 

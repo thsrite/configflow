@@ -29,3 +29,12 @@ def isolated_agent_metrics(tmp_path, monkeypatch):
         return MetricsHistory(data_dir if data_dir is not None else str(tmp_path / 'metrics'))
 
     monkeypatch.setattr(manager, 'MetricsHistory', metrics_history)
+
+
+@pytest.fixture(autouse=True)
+def fresh_agent_runtime_state():
+    # Heartbeat state lives in process memory; start each test as a fresh process would.
+    from backend.agents import runtime_state
+    runtime_state.reset()
+    yield
+    runtime_state.reset()

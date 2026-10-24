@@ -167,7 +167,8 @@ if __name__ == '__main__':
 
     # 域名发现的自动探测（各配置空间单独开关，默认关闭）。只在作为服务进程运行时启动，
     # 调试模式的 reloader 父进程不启动；多进程时由文件锁保证只有一个在跑
-    if LOG_LEVEL != 'DEBUG' or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+    service_process = LOG_LEVEL != 'DEBUG' or os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
+    if service_process:
         from backend.utils.domain_discovery_service import start_auto_loop
         start_auto_loop(os.path.join(str(DATA_DIR), 'probes'))
         from backend.routers.rule_sync import start_loop as start_rule_sync_loop
@@ -175,6 +176,18 @@ if __name__ == '__main__':
         # 订阅与规则集按各自间隔在服务端更新（系统设置 → 定时任务）
         from backend.utils.scheduled_refresh import start_loop as start_scheduled_refresh
         start_scheduled_refresh()
+        # Agent 监控历史在内存中，按间隔写入磁盘；SIGTERM（docker stop、supervisord）
+        # 和 Ctrl+C 时先保存再退出。调试 reloader 的父进程不接收心跳，不参与
+        from backend.agents import metrics_flush
+        metrics_flush.load_history()
+        metrics_flush.start_loop()
+        metrics_flush.install_signal_handlers()
 
     from backend.http_server import run_http_server
-    run_http_server(app, debug=(LOG_LEVEL == 'DEBUG'))
+    try:
+        run_http_server(app, debug=(LOG_LEVEL == 'DEBUG'))
+    finally:
+        if service_process:
+            # 停止期间处理完的心跳；没有新数据时不再记一次运行
+            metrics_flush.flush_on_shutdown(record_idle=False)
+            metrics_flush.exit_after_stop_signal()

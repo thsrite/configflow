@@ -16,7 +16,7 @@
 | `shared` | 订阅、节点、订阅聚合、规则仓库的资源定义 | 共享资源页面；修改会影响所有引用它的配置 |
 | `profiles.<id>` | 策略组与命名代理链、规则排序与目标、Mihomo / Surge / Loon / MosDNS / OxiDNS 参数、域名发现、路由器与设备备注 | 当前配置独立保存，通过稳定 ID 引用共享资源，不复制资源本体 |
 
-Agent 心跳上报的版本、服务状态和监控指标另存于 `DATA_DIR/runtime.sqlite3`，读取 Agent 时叠加在注册信息上，以心跳时间较新的一方为准；心跳不再改写 `config.json`。发布基线 `config_version` 仍随 Agent 保存在 `config.json`。
+Agent 心跳上报的在线时间、服务状态和当前监控指标只保存在服务进程内存里（最近 24 小时的监控历史曲线另由 `MetricsHistory` 按「监控历史保存」任务的间隔追加写入 `metrics` 目录，不在 `DATA_DIR` 里），读取 Agent 时叠加在注册信息上，以心跳时间较新的一方为准；重启后各 Agent 在下一次心跳前显示为离线。心跳只在上报的版本号或发布基线 `config_version` 变化时写入配置，所以重启后更新检查和版本门槛仍按 Agent 实际运行的版本判断。旧版留下的 `DATA_DIR/runtime.sqlite3` 会在启动时读入一次后删除。
 
 ### 使用流程
 
@@ -205,7 +205,7 @@ MCP 工具通过 `backend/mcp_server/invoker.py` 进程内调用现有 REST API�
 建议全局保存：
 
 - Profile 索引；
-- Agent 注册信息（心跳和监控元数据另存于 `runtime.sqlite3`）；
+- Agent 注册信息和最近上报的版本号（心跳和监控元数据只在内存中）；
 - 登录/认证相关系统设置；
 - ConfigFlow 服务地址；
 - 全局备份配置。

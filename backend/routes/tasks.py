@@ -4,7 +4,8 @@ Subscriptions and library rule sources are refreshed by the server-side
 scheduler (utils/scheduled_refresh). The other rows describe jobs that already
 run on their own (router rule sync, Agent rule sync, DNS follow, domain
 discovery, WebDAV backup); their own state stays the source of truth and
-task_status adds the run history.
+task_status adds the run history. Agent monitoring history is saved by its own
+per-process loop (agents/metrics_flush) and shown as one system-level row.
 """
 from datetime import timedelta
 import threading
@@ -203,6 +204,15 @@ def _backup_row(repository, statuses):
         running=_is_background(BACKUP_TASK_KEY), link='/system-settings', **_history(statuses.get(BACKUP_TASK_KEY) or {}))]
 
 
+def _metrics_row(statuses):
+    from backend.agents import metrics_flush
+    entry = statuses.get(metrics_flush.TASK_KEY) or {}
+    interval = metrics_flush.interval_seconds()
+    return [_row(metrics_flush.TASK_KEY, 'metrics_history', '监控历史保存', interval_seconds=interval,
+        editable=True, can_run=True, running=_is_background(metrics_flush.TASK_KEY) or metrics_flush.is_running(),
+        next_run_at=_iso(metrics_flush.next_run_at(entry, interval)), link='/agents', **_history(entry))]
+
+
 def _is_background(key):
     with _background_guard:
         return key in _background
@@ -241,7 +251,7 @@ def list_tasks():
     shared = repository.get_shared()
     return (_subscription_rows(shared, statuses) + _rule_rows(shared, statuses)
             + _router_rows(repository, statuses) + _agent_rows(get_agent_manager(), statuses)
-            + _domain_rows(repository, statuses) + _backup_row(repository, statuses))
+            + _domain_rows(repository, statuses) + _backup_row(repository, statuses) + _metrics_row(statuses))
 
 
 @tasks_bp.route('', methods=['GET'])
@@ -296,6 +306,9 @@ def run_task():
                 snapshot = repository.export_all()
                 upload_backup(snapshot, snapshot['system'].get('backup', {}))
             _start_background(key, backup)
+        elif key == 'metrics_history_flush':
+            from backend.agents import metrics_flush
+            _start_background(key, lambda: metrics_flush.run('manual'))
         else:
             return jsonify(success=False, message='这个任务不能在这里立即运行'), 400
     except refresh.TaskBusy as error:
@@ -310,12 +323,19 @@ def run_task():
 @tasks_bp.route('/interval', methods=['PUT'])
 @require_auth
 def set_interval():
-    """Subscriptions and rule sources; routers keep their own settings API."""
+    """Subscriptions, rule sources and monitoring history; routers keep their own settings API."""
     from backend.common.config import update_shared_config_transaction
     from backend.utils.subscription_refresh import validate_refresh_interval
     key, body = _body_key()
     if key is None or set(body) != {'key', 'interval_seconds'}:
         return jsonify(success=False, message='请指定任务和更新间隔'), 400
+    if key == 'metrics_history_flush':
+        from backend.agents import metrics_flush
+        try:
+            metrics_flush.set_interval(body['interval_seconds'])
+        except ValueError as error:
+            return jsonify(success=False, message=str(error)), 400
+        return jsonify(success=True, task=next((row for row in list_tasks() if row['key'] == key), None))
     category, _, resource_id = key.partition(':')
     if category not in ('subscription', 'rule_source'):
         return jsonify(success=False, message='这个任务的间隔不能在这里修改'), 400
