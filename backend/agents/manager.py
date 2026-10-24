@@ -74,8 +74,12 @@ class AgentManager:
         self._preparation_files = {}
         self._deployment_lock = threading.RLock()
 
-        # 初始化监控历史管理器
+        # 初始化监控历史管理器：读回现有 Agent 的历史，旧格式在这里迁移
         self.metrics_history = MetricsHistory()
+        try:
+            self.metrics_history.load(agent['id'] for agent in repository.get_system().get('agents', []))
+        except Exception as error:
+            logger.warning('监控历史加载失败：%s', error)
         # 心跳状态只放在内存，不再每次心跳重写整份配置；版本号变化时才写配置
         self.runtime = runtime_state.for_data_dir(repository.data_dir)
         runtime_state.import_legacy_database(repository, self.runtime, self._save_reported_fields)
@@ -346,6 +350,8 @@ class AgentManager:
         if deleted:
             logger.info('已删除 Agent %s', _agent_label(deleted[0]))
             self.runtime.delete(agent_id)
+            # 删除失败时文件会在下次启动时清理
+            self.metrics_history.delete_agent_history(agent_id)
         return result
 
     def update_heartbeat(self, agent_id: str, heartbeat_data: Dict[str, Any] = None) -> bool:

@@ -1,11 +1,11 @@
 /**
  * 系统设置「定时任务」：每个后台任务一行（/api/tasks）。
- * 订阅与规则集由服务端按间隔更新；其余任务沿用各自已有的触发方式，这里只展示结果。
+ * 订阅、规则集与监控历史保存由服务端按间隔运行；其余任务沿用各自已有的触发方式，这里只展示结果。
  */
 
 export type TaskCategory =
   | 'subscription' | 'rule_source' | 'router_rule_sync' | 'agent_rule_sync'
-  | 'dns_follow' | 'domain_discovery' | 'webdav_backup'
+  | 'dns_follow' | 'domain_discovery' | 'webdav_backup' | 'metrics_history'
 
 export type TaskRunStatus = 'success' | 'failed' | 'skipped'
 
@@ -35,7 +35,7 @@ export interface ScheduledTask {
   last_status: TaskRunStatus | null
   last_error: string | null
   last_duration_ms: number | null
-  last_trigger: 'schedule' | 'manual' | 'pull' | 'event' | null
+  last_trigger: 'schedule' | 'manual' | 'pull' | 'event' | 'shutdown' | null
   last_success_at: string | null
   run_count: number
   failure_count: number
@@ -52,6 +52,7 @@ export const CATEGORY_LABELS: Record<TaskCategory, string> = {
   dns_follow: 'DNS 联动',
   domain_discovery: '域名发现',
   webdav_backup: '配置备份',
+  metrics_history: '监控历史',
 }
 
 /** 「每 24 小时」「每 30 分钟」；0 表示关闭自动更新。 */
@@ -133,9 +134,22 @@ export function isOverdue(task: ScheduledTask, now = Date.now()): boolean {
 
 export const SOURCE_INTERVAL_OPTIONS = [0, 3600, 6 * 3600, 12 * 3600, 86400, 3 * 86400, 7 * 86400]
 export const ROUTER_INTERVAL_MINUTES = [15, 30, 60, 180, 360, 720, 1440]
+/** 监控历史保存只提供这几档，与后端 metrics_flush.INTERVAL_CHOICES 一致 */
+export const METRICS_FLUSH_MINUTES = [5, 10, 30, 60]
 
 export function sourceIntervalOptions(current: number): number[] {
   return [...new Set([...SOURCE_INTERVAL_OPTIONS, current])].sort((a, b) => a - b)
+}
+
+/** 编辑弹窗里的间隔选项（值为秒数字符串）。路由器与监控历史只有固定几档。 */
+export function taskIntervalOptions(task: ScheduledTask): { value: string; label: string }[] {
+  if (task.category === 'router_rule_sync' || task.category === 'metrics_history') {
+    const minutes = task.category === 'router_rule_sync' ? ROUTER_INTERVAL_MINUTES : METRICS_FLUSH_MINUTES
+    return minutes.map(value => ({ value: String(value * 60), label: intervalText(value * 60) }))
+  }
+  return sourceIntervalOptions(task.interval_seconds ?? 86400).map(seconds => ({
+    value: String(seconds), label: seconds ? intervalText(seconds) : '关闭自动更新（仅手动）'
+  }))
 }
 
 export function taskSummary(tasks: ScheduledTask[]) {
