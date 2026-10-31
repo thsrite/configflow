@@ -159,6 +159,38 @@ def redact_secrets_in_text(text: str) -> str:
     return "".join(lines)
 
 
+def stored_secret_finder():
+    """``text -> [(start, end)]`` of the stored credentials, from one snapshot of them.
+
+    For responses that mark credentials in display text instead of dropping
+    it (see ``redact_secrets_in_text``): every credential and its URL-encoded
+    forms is one range; a text that still decodes to one afterwards is
+    returned as a single range.
+    """
+    secrets = _external_payload_secrets()
+    variants = sorted({variant for secret in secrets
+                       for variant in (secret, urllib.parse.quote(secret, safe=""), urllib.parse.quote_plus(secret))},
+                      key=len, reverse=True)
+
+    def find(text):
+        if not secrets or not isinstance(text, str) or not text or not _contains_encoded_secret(text, secrets):
+            return []
+        ranges = []
+        for variant in variants:
+            start = text.find(variant)
+            while start >= 0:
+                ranges.append((start, start + len(variant)))
+                start = text.find(variant, start + 1)
+        rest = list(text)
+        for start, end in ranges:
+            rest[start:end] = "\0" * (end - start)
+        if _contains_encoded_secret("".join(rest), secrets):
+            return [(0, len(text))]
+        return sorted(ranges)
+
+    return find
+
+
 def _sanitize_with_secrets(payload, secrets, *, sort_dict_keys=False):
     """Sanitize with one request-local credential snapshot."""
 

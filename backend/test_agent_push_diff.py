@@ -1,4 +1,5 @@
-"""What a push would change: file digests, YAML key paths, bounded lists, redaction, speed."""
+"""What a push would change: file digests, YAML key paths, bounded lists, marked credentials, speed."""
+import difflib
 import json
 import time
 
@@ -7,7 +8,8 @@ import yaml
 
 from backend.agents import push_diff
 from backend.agents.deployment_bundle import build_deployment_bundle, deployment_content_digests
-from backend.agents.push_diff import build_push_diff, diff_config, redact_text, rule_entries
+from backend.agents.push_diff import (build_push_diff, diff_config, rule_entries, secret_spans, unpack, without_secrets,
+                                      without_stored)
 
 SECRETS = {
     'ss-password': 'Pa55-ss-node-0001',
@@ -85,13 +87,31 @@ def items_by_key(result):
     return {item['key']: item for item in result['items']}
 
 
+def raw_lines(old, new):
+    """The unified diff of the documents as yaml.safe_dump writes them, nothing replaced."""
+    return list(difflib.unified_diff(yaml.safe_dump(old, allow_unicode=True, sort_keys=False).splitlines(),
+                                     yaml.safe_dump(new, allow_unicode=True, sort_keys=False).splitlines(),
+                                     'a/config.yaml', 'b/config.yaml', lineterm=''))
+
+
+def secrets_of(value):
+    """Every credential piece of a response or display text."""
+    if isinstance(value, dict):
+        if set(value) == {'secret'}:
+            return [value['secret']]
+        return [piece for item in value.values() for piece in secrets_of(item)]
+    if isinstance(value, list):
+        return [piece for item in value for piece in secrets_of(item)]
+    return []
+
+
 def test_main_yaml_is_compared_by_key_path_with_old_and_new_values():
     result = diff_config(dump(base_config()), dump(changed_config()))
     items = items_by_key(result)
     assert result['status'] == 'compared'
-    assert items['log-level'] == {'key': 'log-level', 'change': 'modified', 'masked': False,
+    assert items['log-level'] == {'key': 'log-level', 'change': 'modified', 'sensitive': False,
                                   'old': 'info', 'new': 'debug'}
-    assert items['hosts.printer.lan'] == {'key': 'hosts.printer.lan', 'change': 'added', 'masked': False,
+    assert items['hosts.printer.lan'] == {'key': 'hosts.printer.lan', 'change': 'added', 'sensitive': False,
                                           'old': None, 'new': '192.168.1.20'}
     policy = items['dns.proxy-server-nameserver-policy.new.example.com']
     assert (policy['change'], policy['new']) == ('added', '192.0.2.54')
@@ -112,8 +132,9 @@ def test_named_lists_match_entries_by_name_and_list_member_changes():
     entries = {(entry['change'], entry['text']): entry for entry in proxies['entries']}
     assert {('added', 'US 01'), ('added', 'WG'), ('added', 'HY2'), ('removed', 'JP 01'), ('modified', 'HK 01')} == set(entries)
     fields = {field['key']: field for field in entries['modified', 'HK 01']['fields']}
-    assert fields['port'] == {'key': 'port', 'change': 'modified', 'masked': False, 'old': '443', 'new': '8388'}
-    assert fields['password'] == {'key': 'password', 'change': 'modified', 'masked': True}
+    assert fields['port'] == {'key': 'port', 'change': 'modified', 'sensitive': False, 'old': '443', 'new': '8388'}
+    assert fields['password'] == {'key': 'password', 'change': 'modified', 'sensitive': True,
+                                  'old': [{'secret': 'old-ss-password-9999'}], 'new': [{'secret': SECRETS['ss-password']}]}
     group = items['proxy-groups']['list']['entries'][0]
     assert (group['change'], group['text']) == ('modified', 'Proxy')
     members = group['fields'][0]
@@ -146,47 +167,120 @@ def test_rows_values_and_raw_diff_are_bounded():
     result = diff_config(dump(old), dump(new))
     assert len(result['items']) == push_diff.MAX_CONFIG_ROWS
     assert result['omitted'] == 1001 - push_diff.MAX_CONFIG_ROWS and result['total'] == 1001
-    raw = result['raw']
-    assert len(raw['text'].encode()) <= push_diff.MAX_RAW_BYTES
-    assert raw['text'].count('\n') < push_diff.MAX_RAW_LINES
+    assert [unpack(line)[0] for line in result['raw']['lines']] == raw_lines(old, new)
+    big = {'hosts': {f'host-{index}.lan': 'x' * 100 for index in range(3000)}}
+    raw = diff_config(dump(old), dump(big))['raw']
+    assert sum(len(unpack(line)[0].encode()) + 1 for line in raw['lines']) <= push_diff.MAX_RAW_BYTES
+    assert len(raw['lines']) <= push_diff.MAX_RAW_LINES and raw['truncated']
+    assert raw['omitted_lines'] == len(raw_lines(old, big)) - len(raw['lines'])
+    assert [unpack(line)[0] for line in raw['lines']] == raw_lines(old, big)[:len(raw['lines'])]  # the first part
     huge = {'rules': [f'DOMAIN,{index}.example.com,DIRECT' for index in range(push_diff.MAX_RAW_INPUT_LINES)]}
     assert diff_config(dump({'rules': []}), dump(huge))['raw'] == {
-        'text': None, 'reason': 'too_large', 'lines': push_diff.MAX_RAW_INPUT_LINES + 2}
+        'lines': None, 'reason': 'too_large', 'total_lines': push_diff.MAX_RAW_INPUT_LINES + 2}
     long_row = items_by_key(result)['long']
     assert len(long_row['new']) < 300 and long_row['new'].endswith('（共 5000 字符）')
 
 
-def test_secret_values_never_reach_the_response_or_raw_diff():
-    result = diff_config(dump(base_config()), dump(changed_config()))
+def test_values_are_returned_with_every_credential_marked():
+    old, new = base_config(), changed_config()
+    result = diff_config(dump(old), dump(new))
     encoded = json.dumps(result, ensure_ascii=False)
-    for value in [*SECRETS.values(), 'old-controller-secret', 'old-ss-password-9999', 'old-uuid-0000-1111',
-                  'auth-pass-0007', 'user:urlPassw0rd0005', 'OLDtoken0123456789abcdefXYZ']:
-        assert value not in encoded, value
+    hidden = json.dumps(without_secrets(result), ensure_ascii=False)
+    shown = [*(value for name, value in SECRETS.items() if name != 'vmess-uuid'), 'old-controller-secret', 'old-ss-password-9999', 'old-uuid-0000-1111',
+             'OLDtoken0123456789abcdefXYZ']
+    for value in shown:
+        assert value in encoded, value  # the dialog shows values as they are by default
+        assert value not in hidden, value  # ... and hides every one of them on request
+    for value in ('auth-pass-0007', 'user:urlPassw0rd0005', 'urlPassw0rd0005'):
+        assert value not in hidden, value
     items = items_by_key(result)
-    assert items['secret'] == {'key': 'secret', 'change': 'modified', 'masked': True}
-    assert items['authentication'] == {'key': 'authentication', 'change': 'added', 'masked': True}
+    assert items['secret'] == {'key': 'secret', 'change': 'modified', 'sensitive': True,
+                               'old': [{'secret': 'old-controller-secret'}], 'new': [{'secret': SECRETS['controller']}]}
+    assert items['authentication'] == {'key': 'authentication', 'change': 'added', 'sensitive': True, 'old': None,
+                                       'new': [{'secret': '["admin:auth-pass-0007"]'}]}
     assert items['proxy-providers.Feed.header.Authorization'] == {
-        'key': 'proxy-providers.Feed.header.Authorization', 'change': 'added', 'masked': True}
+        'key': 'proxy-providers.Feed.header.Authorization', 'change': 'added', 'sensitive': True, 'old': None,
+        'new': [{'secret': '["Bearer header-token-0006"]'}]}
+    # Host, port, path and harmless parameters are plain; only the token is a credential piece.
     feed = items['proxy-providers.Feed.url']
-    # Host, port, path and harmless parameters stay readable; only the token is replaced,
-    # with a different tag for a different token.
-    for value in (feed['old'], feed['new']):
-        assert value.startswith('https://sub.example.com:8443/api/v1/client/subscribe?token=<已隐藏 ')
-        assert value.endswith('&flag=clash')
-    assert feed['old'] != feed['new'] and feed['change'] == 'modified'
-    # A whole new provider is one row; its credentials are masked inside the value.
+    assert feed['old'] == ['https://sub.example.com:8443/api/v1/client/subscribe?token=',
+                           {'secret': 'OLDtoken0123456789abcdefXYZ'}, '&flag=clash']
+    assert feed['new'][1] == {'secret': SECRETS['sub-token']} and feed['sensitive'] is False
+    # A whole new provider is one row; the credentials inside its JSON are marked.
     private = items['rule-providers.Private']
     assert private['change'] == 'added' and private['old'] is None
-    rule_url = json.loads(private['new'])['url']
-    assert rule_url.startswith('https://<已隐藏 ') and '@rules.example.com/<已隐藏 ' in rule_url
-    assert rule_url.endswith('/private.list')
+    text, _ = unpack(private['new'])
+    assert json.loads(text)['url'] == f'https://user:{SECRETS["url-pass"]}@rules.example.com/{SECRETS["path-token"]}/private.list'
+    assert secrets_of(private['new']) == [f'user:{SECRETS["url-pass"]}', SECRETS['path-token']]
     assert not any(key.startswith('rule-providers.Private.') for key in items)
-    # Domains, IP addresses and ports are not credentials.
-    for visible in ('hk.example.com', '203.0.113.9', '51820', 'us.example.net', '192.168.1.20'):
-        assert visible in encoded
-    raw = result['raw']['text']
-    assert '-secret: <已隐藏 ' in raw and '+secret: <已隐藏 ' in raw  # the change itself stays visible
-    assert '+  password: <已隐藏 ' in raw or '+    password: <已隐藏 ' in raw
+    # Domains, IP addresses and ports are never marked.
+    for visible in ('hk.example.com', '203.0.113.9', '51820', 'us.example.net', '192.168.1.20', 'rules.example.com'):
+        assert visible in hidden
+    # The raw diff is the real unified diff, line for line, with the same credentials marked.
+    raw = result['raw']['lines']
+    assert [unpack(line)[0] for line in raw] == raw_lines(old, new)
+    assert ['-secret: ', {'secret': 'old-controller-secret'}] in raw
+    assert ['+secret: ', {'secret': SECRETS['controller']}] in raw
+    assert ['+  password: ', {'secret': SECRETS['ss-password']}] in raw
+    assert '+  printer.lan: 192.168.1.20' in raw
+
+
+def test_raw_diff_marks_credentials_exactly_where_yaml_writes_them():
+    pem = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmU\n-----END OPENSSH PRIVATE KEY-----\n'
+    long_auth = ' '.join(f'word{index}secret' for index in range(30))  # folded over several lines
+    new = {
+        'proxies': [
+            {'name': 'quote', 'type': 'ss', 'password': "it's-a-secret"},
+            {'name': 'digits', 'type': 'ss', 'password': '123456'},
+            {'name': 'number', 'type': 'ss', 'password': 987654},
+            {'name': 'ssh', 'type': 'ssh', 'private-key': pem},
+            {'name': 'nested', 'type': 'http', 'auth': {'user': 'nested-user', 'pass': 'nested-pass'}},
+            {'name': 'socks', 'type': 'socks5', 'dialer': "relay user1:p'ass1@10.0.0.9:1080"},
+            {'name': 'tab', 'type': 'http', 'note': 'tab\there https://u2:tabpass2@h.example/x'},
+        ],
+        'auth-str': long_auth,
+        'rule-providers': {'R': {'url': 'https://h.example/q?a=1&key=quoted-key-1: tail'}},
+    }
+    secrets = ["it's-a-secret", '123456', '987654', 'b3BlbnNzaC1rZXktdjEAAAAABG5vbmU', 'BEGIN OPENSSH',
+               'nested-user', 'nested-pass', "p'ass1", 'tabpass2', 'quoted-key-1', 'word0secret', 'word29secret']
+    result = diff_config(dump({'proxies': []}), dump(new))
+    lines = result['raw']['lines']
+    assert [unpack(line)[0] for line in lines] == raw_lines({'proxies': []}, new)
+    text = '\n'.join(unpack(line)[0] for line in lines)
+    hidden = '\n'.join(without_secrets({'lines': lines})['lines'])
+    for value in secrets:
+        assert value in text and value not in hidden, value
+    # Hosts stay readable where a credential was found inside the string.
+    assert '@10.0.0.9:1080' in hidden and 'relay ' in hidden and 'h.example/q?a=1&key=' in hidden
+    assert "password: '已隐藏" not in hidden  # the quotes belong to the hidden value
+    assert '+  password: 已隐藏' in hidden
+
+
+def test_display_texts_escape_and_mark_credentials_inside_json():
+    old = {'hosts': {}, 'odd': 'scalar'}
+    new = {'hosts': {}, 'proxy-providers': {'P': {'url': 'https://h.example/s', 'header': {'Cookie': ['a"b\\c']}}},
+           'odd': {1: 'x', None: 'y', 2.5: 'z'}}
+    items = items_by_key(diff_config(dump(old), dump(new)))
+    provider = items['proxy-providers.P']['new']
+    assert json.loads(unpack(provider)[0]) == new['proxy-providers']['P']
+    assert secrets_of(provider) == ['["a\\"b\\\\c"]']
+    assert items['odd']['new'] == '{"1": "x", "null": "y", "2.5": "z"}'  # json.dumps would raise on mixed keys
+
+
+def test_stored_tokens_become_hidden_redactions_inside_display_texts():
+    def find(text):
+        index = text.find('stored-token-1')
+        return [(index, index + len('stored-token-1'))] if index >= 0 else []
+
+    result = {'files': [{'path': 'p', 'name': 'feed stored-token-1'}],
+              'config': {'items': [{'key': 'url', 'old': ['https://h/?token=', {'secret': 'stored-token-1'}], 'new': 'x'}],
+                         'raw': {'lines': ['+a: stored-token-1 tail', '-b']}}}
+    cleaned = without_stored(result, find)
+    assert cleaned['files'][0]['name'] == ['feed ', {'secret': '[REDACTED]'}]
+    assert cleaned['config']['items'][0]['old'] == ['https://h/?token=', {'secret': '[REDACTED]'}]
+    assert cleaned['config']['raw']['lines'] == [['+a: ', {'secret': '[REDACTED]'}, ' tail'], '-b']
+    assert 'stored-token-1' not in json.dumps(cleaned)
+    assert without_stored(result, lambda text: []) == result
 
 
 def test_secret_detection_keeps_domains_and_data_keys():
@@ -202,12 +296,18 @@ def test_secret_detection_keeps_domains_and_data_keys():
     assert json.loads(items['rule-providers.secret']['new'])['url'] == 'https://rules.example.com/a.list'
 
 
-def test_url_and_userinfo_redaction():
-    assert redact_text('https://dns.example.com/dns-query') == 'https://dns.example.com/dns-query'
-    masked = redact_text('socks5 user:pa55word@10.0.0.1:1080 then https://x.example.com/?key=abc&v=1')
-    assert 'pa55word' not in masked and 'key=<已隐藏 ' in masked and '10.0.0.1:1080' in masked
-    assert redact_text('alice:wonder@192.0.2.10:1080').endswith('@192.0.2.10:1080')
-    assert 'wonder' not in redact_text('alice:wonder@192.0.2.10:1080')
+def pieces(text):
+    return [text[start:end] for start, end in secret_spans(text)]
+
+
+def test_credential_spans_inside_text():
+    assert secret_spans('https://dns.example.com/dns-query') == []
+    assert pieces('socks5 user:pa55word@10.0.0.1:1080 then https://x.example.com/?key=abc&v=1') == ['user:pa55word', 'abc']
+    assert secret_spans('alice:wonder@192.0.2.10:1080') == [(0, 12)]
+    assert pieces('https://h.example/?Q2xhc2hTdWJzY3JpcHRpb25QYXRoVG9rZW4wMDg') == ['Q2xhc2hTdWJzY3JpcHRpb25QYXRoVG9rZW4wMDg']
+    assert pieces('https://h.example/a?api_key=k%2B1&x=2#frag') == ['k%2B1']
+    assert pieces('see http://[::1/broken') == ['http://[::1/broken']  # unparsable: the whole URL
+    assert pieces('mail me: someone@example.com') == []
 
 
 def test_formatting_only_changes_are_not_reported_as_items():

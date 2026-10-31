@@ -1,4 +1,6 @@
-import type { PushDiffChange, PushDiffFile, PushDiffItem, PushDiffList, PushDiffResponse, PushDiffSummary } from '@/api/agentPushDiff'
+import type {
+  PushDiffChange, PushDiffFile, PushDiffItem, PushDiffList, PushDiffResponse, PushDiffSummary, PushDiffText,
+} from '@/api/agentPushDiff'
 import { formatBytes } from '@/lib/format'
 
 export const CHANGE_LABELS: Record<PushDiffChange | 'unchanged', string> = {
@@ -10,8 +12,29 @@ export const ROLE_LABELS: Record<string, string> = { config: '主配置', provid
 export type Tone = 'plain' | 'muted' | 'added' | 'removed'
 export interface Segment { text: string; tone: Tone }
 
+/** 打开「隐藏敏感信息」后，敏感片段显示的文字 */
+export const HIDDEN_TEXT = '已隐藏'
+
+/** 显示文字的一段；secret 为服务端标出的敏感片段 */
+export interface TextPiece { text: string; secret: boolean }
+
+export function textPieces(value: PushDiffText | null | undefined): TextPiece[] {
+  if (value == null || value === '') return []
+  if (typeof value === 'string') return [{ text: value, secret: false }]
+  return value.map(part => typeof part === 'string' ? { text: part, secret: false } : { text: part.secret, secret: true })
+}
+
+/** 拼成纯文本；hidden 时敏感片段换成「已隐藏」 */
+export function piecesText(pieces: TextPiece[], hidden: boolean): string {
+  return pieces.map(piece => piece.secret && hidden ? HIDDEN_TEXT : piece.text).join('')
+}
+
+export const textOf = (value: PushDiffText | null | undefined, hidden: boolean) => piecesText(textPieces(value), hidden)
+
+const plain = (text: string): TextPiece => ({ text, secret: false })
+
 /** 文件表第一列：主配置、订阅名、规则集名，没有名称时用文件名 */
-export function fileTitle(file: PushDiffFile): string {
+export function fileTitle(file: PushDiffFile): PushDiffText {
   if (file.role === 'config') return '主配置'
   return file.name || file.path.split('/').pop() || file.path
 }
@@ -80,32 +103,39 @@ export function listSegments(list: PushDiffList): Segment[] {
   return parts
 }
 
-/** 原值 / 新值单元格的文字；打码的项只说明已隐藏 */
-export function valueText(item: PushDiffItem, side: 'old' | 'new'): { text: string; masked: boolean; empty: boolean } {
+/** 原值 / 新值单元格：值本身（敏感片段由模板按开关显示），缺失时为「—」 */
+export function valueText(item: PushDiffItem, side: 'old' | 'new'): { value: PushDiffText; empty: boolean } {
   const absent = (side === 'old' && item.change === 'added') || (side === 'new' && item.change === 'removed')
-  if (absent) return { text: '—', masked: false, empty: true }
-  if (item.masked) return { text: '已隐藏', masked: true, empty: false }
-  if (item.list) return { text: `${side === 'old' ? item.list.before : item.list.after} 条`, masked: false, empty: false }
+  if (absent) return { value: '—', empty: true }
+  if (item.list) return { value: `${side === 'old' ? item.list.before : item.list.after} 条`, empty: false }
   const value = side === 'old' ? item.old : item.new
-  return { text: value ?? '—', masked: false, empty: value == null }
+  return value == null ? { value: '—', empty: true } : { value, empty: false }
 }
 
-/** 条目内的字段变化，例如「port：443 → 8388」「password：已修改（已隐藏）」 */
-export function fieldText(field: PushDiffItem): string {
-  if (field.masked) return `${field.key}：${field.change === 'added' ? '已新增' : field.change === 'removed' ? '已删除' : '已修改'}（已隐藏）`
-  if (field.list) {
-    const parts: string[] = []
-    if (field.list.added_items?.length) parts.push(`+ ${field.list.added_items.join('、')}`)
-    if (field.list.removed_items?.length) parts.push(`− ${field.list.removed_items.join('、')}`)
-    const hidden = (field.list.added - (field.list.added_items?.length || 0)) + (field.list.removed - (field.list.removed_items?.length || 0))
-    if (hidden > 0) parts.push(`另有 ${hidden} 条`)
-    if (field.list.reordered) parts.push('顺序调整')
-    return `${field.key}：${parts.join('；') || `${field.list.before} → ${field.list.after} 条`}`
-  }
-  if (field.change === 'added') return `${field.key}：新增 ${field.new ?? ''}`.trimEnd()
-  if (field.change === 'removed') return `${field.key}：删除（原 ${field.old ?? ''}）`
-  return `${field.key}：${field.old ?? '—'} → ${field.new ?? '—'}`
+function joined(values: PushDiffText[], separator: string): TextPiece[] {
+  return values.flatMap((value, index) => [...(index ? [plain(separator)] : []), ...textPieces(value)])
 }
+
+/** 条目内的字段变化，例如「port：443 → 8388」；password 这类值整段是敏感片段 */
+export function fieldPieces(field: PushDiffItem): TextPiece[] {
+  const label = plain(`${field.key}：`)
+  if (field.list) {
+    const groups: TextPiece[][] = []
+    if (field.list.added_items?.length) groups.push([plain('+ '), ...joined(field.list.added_items, '、')])
+    if (field.list.removed_items?.length) groups.push([plain('− '), ...joined(field.list.removed_items, '、')])
+    const more = (field.list.added - (field.list.added_items?.length || 0)) + (field.list.removed - (field.list.removed_items?.length || 0))
+    if (more > 0) groups.push([plain(`另有 ${more} 条`)])
+    if (field.list.reordered) groups.push([plain('顺序调整')])
+    if (!groups.length) return [label, plain(`${field.list.before} → ${field.list.after} 条`)]
+    return [label, ...groups.flatMap((group, index) => [...(index ? [plain('；')] : []), ...group])]
+  }
+  if (field.change === 'added') return [label, plain('新增 '), ...textPieces(field.new)]
+  if (field.change === 'removed') return [label, plain('删除（原 '), ...textPieces(field.old), plain('）')]
+  return [label, ...(field.old == null ? [plain('—')] : textPieces(field.old)), plain(' → '),
+    ...(field.new == null ? [plain('—')] : textPieces(field.new))]
+}
+
+export const fieldText = (field: PushDiffItem, hidden = false) => piecesText(fieldPieces(field), hidden).trimEnd()
 
 const NO_BASELINE = '没有可对比的基准'
 

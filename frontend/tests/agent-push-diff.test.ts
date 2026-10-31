@@ -3,7 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import AgentPushDiff from '@/components/agents/AgentPushDiff.vue'
 import api from '@/api'
 import type { PushDiffResponse } from '@/api/agentPushDiff'
-import { diffLineTone, fieldText, summaryText, unavailableCopy, valueText } from '@/lib/agentPushDiff'
+import { diffLineTone, fieldText, summaryText, textOf, unavailableCopy, valueText } from '@/lib/agentPushDiff'
 import { getAgentConfigSync } from '@/lib/agentConfigSync'
 import type { Agent } from '@/types'
 
@@ -23,6 +23,10 @@ const agent = (overrides: Partial<Agent> = {}) => ({
   content_sync: { status: 'changed' }, ...overrides,
 }) as Agent
 
+// Every credential the response below carries; the dialog shows them by default and hides them on request.
+const SECRETS = ['old-controller-0000', 'controller-secret-0001', 'ss-pass-before', 'ss-pass-after', 'pull-token-0000',
+  'pull-token-1234', 'feed-user:feed-pass']
+
 const changed: PushDiffResponse = {
   status: 'changed', checked_at: new Date().toISOString(), service_type: 'mihomo', content: 'full', content_reason: null,
   baseline: { pushed_at: '2026-10-31T08:00:00Z', config_revision: 12 },
@@ -37,22 +41,27 @@ const changed: PushDiffResponse = {
       summary: { kind: 'rules', before: null, after: 8, added: 8, removed: 0 } },
   ],
   unchanged: [{ path: 'ruleset/广告.list', role: 'rule', name: '广告', status: 'unchanged' },
-    { path: 'providers/备用.yaml', role: 'provider', name: '备用', status: 'unchanged' }],
+    { path: 'providers/备用.yaml', role: 'provider', name: ['备用 ', { secret: 'feed-user:feed-pass' }, '@relay.lab'], status: 'unchanged' }],
   unchanged_omitted: 0,
   config: {
-    format: 'yaml', status: 'compared', omitted: 0, total: 4,
+    format: 'yaml', status: 'compared', omitted: 0, total: 5,
     items: [
-      { key: 'hosts.printer.lan', change: 'added', masked: false, old: null, new: '192.168.1.30' },
-      { key: 'secret', change: 'modified', masked: true },
-      { key: 'dns.fake-ip-filter', change: 'modified', masked: false, list: {
+      { key: 'hosts.printer.lan', change: 'added', sensitive: false, old: null, new: '192.168.1.30' },
+      { key: 'secret', change: 'modified', sensitive: true, old: [{ secret: 'old-controller-0000' }], new: [{ secret: 'controller-secret-0001' }] },
+      { key: 'proxy-providers.实验机场.url', change: 'modified', sensitive: false,
+        old: ['https://cf.lab/api/subscriptions/feed/proxies?token=', { secret: 'pull-token-0000' }],
+        new: ['https://cf.lab/api/subscriptions/feed/proxies?token=', { secret: 'pull-token-1234' }] },
+      { key: 'dns.fake-ip-filter', change: 'modified', sensitive: false, list: {
         before: 2, after: 63, added: 61, removed: 0, modified: 0, reordered: false, omitted: 1,
         entries: Array.from({ length: 60 }, (_, index) => ({ change: 'added' as const, text: `+.site-${index}.example` })) } },
-      { key: 'proxies', change: 'modified', masked: false, list: {
+      { key: 'proxies', change: 'modified', sensitive: false, list: {
         before: 1, after: 1, added: 0, removed: 0, modified: 1, reordered: false, omitted: 0, identity: 'name',
-        entries: [{ change: 'modified', text: '手动 SS', fields: [{ key: 'password', change: 'modified', masked: true },
-          { key: 'port', change: 'modified', masked: false, old: '443', new: '8388' }], fields_omitted: 0 }] } },
+        entries: [{ change: 'modified', text: '手动 SS', fields: [
+          { key: 'password', change: 'modified', sensitive: true, old: [{ secret: 'ss-pass-before' }], new: [{ secret: 'ss-pass-after' }] },
+          { key: 'port', change: 'modified', sensitive: false, old: '443', new: '8388' }], fields_omitted: 0 }] } },
     ],
-    raw: { text: '--- a/config.yaml\n+++ b/config.yaml\n@@ -1,3 +1,4 @@\n hosts:\n+  printer.lan: 192.168.1.30\n-secret: <已隐藏 1a2b3c>\n+secret: <已隐藏 4d5e6f>', truncated: false, omitted_lines: 0 },
+    raw: { lines: ['--- a/config.yaml', '+++ b/config.yaml', '@@ -1,3 +1,4 @@', ' hosts:', '+  printer.lan: 192.168.1.30', '',
+      ['-secret: ', { secret: 'old-controller-0000' }], ['+secret: ', { secret: 'controller-secret-0001' }]], truncated: false, omitted_lines: 0 },
   },
 }
 
@@ -77,16 +86,22 @@ describe('push diff copy', () => {
     expect(summaryText({ path: 'x', role: 'rule', status: 'modified' })).toBe('上次推送的内容未保存，无法细分')
   })
 
-  it('never shows masked values and describes field changes', () => {
+  it('shows values as they are and replaces only the marked pieces when hidden', () => {
     const secret = changed.config!.items[1]!
-    expect(valueText(secret, 'old')).toEqual({ text: '已隐藏', masked: true, empty: false })
-    expect(valueText(changed.config!.items[0]!, 'old')).toEqual({ text: '—', masked: false, empty: true })
-    const [password, port] = changed.config!.items[3]!.list!.entries![0]!.fields!
-    expect(fieldText(password!)).toBe('password：已修改（已隐藏）')
-    expect(fieldText(port!)).toBe('port：443 → 8388')
-    expect(fieldText({ key: 'proxies', change: 'modified', masked: false, list: {
-      before: 3, after: 3, added: 1, removed: 1, modified: 0, reordered: false, added_items: ['US'], removed_items: ['JP'] } }))
-      .toBe('proxies：+ US；− JP')
+    expect(valueText(secret, 'old')).toEqual({ value: [{ secret: 'old-controller-0000' }], empty: false })
+    expect(textOf(valueText(secret, 'old').value, false)).toBe('old-controller-0000')
+    expect(textOf(valueText(secret, 'old').value, true)).toBe('已隐藏')
+    expect(textOf(changed.config!.items[2]!.new, true)).toBe('https://cf.lab/api/subscriptions/feed/proxies?token=已隐藏')
+    expect(valueText(changed.config!.items[0]!, 'old')).toEqual({ value: '—', empty: true })
+    const [password, port] = changed.config!.items[4]!.list!.entries![0]!.fields!
+    expect(fieldText(password!)).toBe('password：ss-pass-before → ss-pass-after')
+    expect(fieldText(password!, true)).toBe('password：已隐藏 → 已隐藏')
+    expect(fieldText(port!, true)).toBe('port：443 → 8388')
+    expect(fieldText({ key: 'proxies', change: 'modified', sensitive: false, list: {
+      before: 3, after: 3, added: 2, removed: 1, modified: 0, reordered: false,
+      added_items: ['US', ['relay ', { secret: 'u:p' }, '@h']], removed_items: ['JP'] } }, true))
+      .toBe('proxies：+ US、relay 已隐藏@h；− JP')
+    expect(fieldText({ key: 'token', change: 'added', sensitive: true, old: null, new: [{ secret: 'abc' }] }, true)).toBe('token：新增 已隐藏')
   })
 
   it('explains each missing baseline by its server reason', () => {
@@ -140,7 +155,7 @@ describe('AgentPushDiff dialog', () => {
     expect(hosts.textContent).toContain('新增')
     expect(hosts.textContent).toContain('192.168.1.30')
     const secret = config.querySelector('[data-key="secret"]')!
-    expect(secret.textContent!.replace(/\s+/g, '')).toBe('secret修改已隐藏已隐藏')
+    expect(secret.textContent!.replace(/\s+/g, '')).toBe('secret修改old-controller-0000controller-secret-0001')
     const filter = config.querySelector('[data-key="dns.fake-ip-filter"]')!
     expect(filter.textContent).toContain('2 条')
     expect(filter.textContent).toContain('63 条 +61 / −0')
@@ -148,7 +163,8 @@ describe('AgentPushDiff dialog', () => {
 
     const raw = body().querySelector('[data-push-diff-raw]')!
     expect(raw.querySelector('pre')).toBeNull()
-    expect(raw.textContent).toContain('密码、令牌等已隐藏')
+    expect(raw.textContent).toContain('主配置的 unified diff')
+    expect(raw.textContent).not.toContain('已隐藏')
     vi.useRealTimers()
   })
 
@@ -167,7 +183,7 @@ describe('AgentPushDiff dialog', () => {
     ;[...proxies.querySelectorAll('button')].find(button => button.textContent!.includes('展开明细'))!.click()
     await flushPromises()
     expect(body().textContent).toContain('~ 手动 SS')
-    expect(body().textContent).toContain('password：已修改（已隐藏）')
+    expect(body().textContent).toContain('password：ss-pass-before → ss-pass-after')
 
     const rawToggle = [...body().querySelectorAll('[data-push-diff-raw] button')].find(button => button.textContent!.includes('原始差异'))!
     rawToggle.dispatchEvent(new Event('click'))
@@ -175,6 +191,60 @@ describe('AgentPushDiff dialog', () => {
     const lines = [...body().querySelectorAll('#push-diff-raw-text > span')]
     expect(lines.map(line => line.textContent)).toContain('+  printer.lan: 192.168.1.30')
     expect(lines.find(line => line.textContent === '+  printer.lan: 192.168.1.30')!.className).toContain('text-success-accent')
+    expect(lines.map(line => line.textContent)).toContain('+secret: controller-secret-0001')
+    expect(lines[5]!.textContent).toBe(' ')  // an empty line keeps its height
+  })
+
+  async function expandAll() {
+    for (const key of ['dns.fake-ip-filter', 'proxies']) {
+      const row = body().querySelector(`[data-key="${key}"]`)!
+      ;[...row.querySelectorAll('button')].find(button => button.textContent!.includes('展开明细'))!.click()
+    }
+    ;[...body().querySelectorAll('[data-push-diff-files] button')].find(button => button.textContent!.includes('未变的'))!.click()
+    ;[...body().querySelectorAll('[data-push-diff-raw] button')].find(button => button.textContent!.includes('原始差异'))!.click()
+    await flushPromises()
+  }
+
+  const hideSwitch = () => body().querySelector<HTMLButtonElement>('[data-push-diff-hide] button[role="switch"]')!
+
+  it('hides every marked value on request, also in details, file names and the raw diff, and shows them again', async () => {
+    await open([changed])
+    await expandAll()
+    const html = () => body().innerHTML
+    expect(hideSwitch().getAttribute('aria-checked')).toBe('false')
+    for (const secret of SECRETS) expect(html()).toContain(secret)
+    expect(body().querySelector('[data-push-diff-hide]')!.textContent).toContain('隐藏敏感信息')
+
+    hideSwitch().click()
+    await flushPromises()
+    expect(hideSwitch().getAttribute('aria-checked')).toBe('true')
+    for (const secret of SECRETS) expect(html()).not.toContain(secret)
+    // secret and URL rows (old and new), the node's password (old and new), the file name, two raw diff lines
+    expect(body().querySelectorAll('[data-secret-hidden]')).toHaveLength(9)
+    expect(body().querySelector('[data-key="secret"]')!.textContent!.replace(/\s+/g, '')).toBe('secret修改已隐藏已隐藏')
+    expect(body().querySelector('[data-key="proxy-providers.实验机场.url"]')!.textContent).toContain('?token=已隐藏')
+    expect(body().textContent).toContain('password：已隐藏 → 已隐藏')
+    expect(body().textContent).toContain('备用 已隐藏@relay.lab')
+    const lines = [...body().querySelectorAll('#push-diff-raw-text > span')].map(line => line.textContent)
+    expect(lines).toContain('+secret: 已隐藏')
+    expect(lines).toContain('+  printer.lan: 192.168.1.30')  // domains and addresses stay
+    expect(body().querySelector('[data-push-diff-raw]')!.textContent).toContain('敏感信息已隐藏')
+
+    hideSwitch().click()
+    await flushPromises()
+    for (const secret of SECRETS) expect(html()).toContain(secret)
+    expect(body().querySelector('[data-secret-hidden]')).toBeNull()
+  })
+
+  it('does not remember the switch: every opening shows values', async () => {
+    await open([changed])
+    hideSwitch().click()
+    await flushPromises()
+    expect(body().innerHTML).not.toContain('controller-secret-0001')
+    wrappers.splice(0).forEach(wrapper => wrapper.unmount())
+    await open([changed])
+    expect(hideSwitch().getAttribute('aria-checked')).toBe('false')
+    expect(body().innerHTML).toContain('controller-secret-0001')
   })
 
   it('offers the existing push and reports it to the page', async () => {
@@ -197,6 +267,7 @@ describe('AgentPushDiff dialog', () => {
   it('shows no changes when synced and asks the page to refresh an outdated card', async () => {
     const wrapper = await open([{ status: 'synced', baseline: { pushed_at: '2026-10-31T08:00:00Z' } }])
     expect(body().querySelector('[data-push-diff-synced]')!.textContent).toContain('无变更')
+    expect(body().querySelector('[data-push-diff-hide]')).toBeNull()  // nothing to hide
     expect(body().querySelector('[data-push-diff-push]')).toBeNull()
     expect(wrapper.emitted('refresh')).toHaveLength(1)
   })

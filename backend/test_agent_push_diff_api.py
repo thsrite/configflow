@@ -7,12 +7,15 @@ from flask import Flask
 
 from backend.agents.content_sync import ContentSyncChecker
 from backend.agents.manager import AgentManager
+from backend.agents.push_diff import unpack, without_secrets
 from backend.routes import agents, register_blueprints
 from backend.test_agent_content_preparation import content_env  # noqa: F401
 
 CONTROLLER_SECRET = 'controller-secret-value-1234'
 OLD_PASSWORD = 'manual-node-password-old'
 NEW_PASSWORD = 'manual-node-password-new'
+CONFIG_TOKEN = 'fixture-config-token-before'
+NEW_CONFIG_TOKEN = 'fixture-config-token-after'
 
 
 class DeferredExecutor:
@@ -31,6 +34,8 @@ class DeferredExecutor:
 @pytest.fixture
 def diff_env(content_env, monkeypatch):
     config, remote, _fetches, repository = content_env
+    # ConfigFlow's own pull token: Mihomo fetches the subscription provider with ?token=...
+    config['system_config']['config_token'] = CONFIG_TOKEN
     config['nodes'] = [{'id': 'manual', 'name': 'Manual SS', 'type': 'ss', 'server': 'manual.example.com', 'port': 8388,
                         'enabled': True, 'params': {'cipher': 'aes-128-gcm', 'password': OLD_PASSWORD}}]
     config['proxy_groups'][0]['manual_nodes'] = ['manual']
@@ -95,7 +100,7 @@ def test_unpushed_and_legacy_agents_explain_the_missing_baseline(diff_env):
     assert client.get('/api/agents/missing/push-diff').status_code == 404
 
 
-def test_synced_after_push_then_real_changes_are_listed_and_redacted(diff_env):
+def test_synced_after_push_then_real_changes_are_listed_with_credentials_marked(diff_env):
     client, manager, config, remote, _repository, ids, executor = diff_env
     agent_id = ids['mihomo']
     push(client, agent_id)
@@ -122,15 +127,20 @@ def test_synced_after_push_then_real_changes_are_listed_and_redacted(diff_env):
                                                               'added': 2, 'removed': 0}
     items = {item['key']: item for item in result['config']['items']}
     assert items['hosts.printer.lan']['new'] == '192.168.1.30'
-    assert items['secret'] == {'key': 'secret', 'change': 'added', 'masked': True}
+    # Values come as they are; credentials are marked so the dialog can hide them.
+    assert items['secret'] == {'key': 'secret', 'change': 'added', 'sensitive': True, 'old': None,
+                               'new': [{'secret': CONTROLLER_SECRET}]}
     node = next(entry for entry in items['proxies']['list']['entries'] if entry['text'] == 'Manual SS')
-    assert node['fields'] == [{'key': 'password', 'change': 'modified', 'masked': True}]
+    assert node['fields'] == [{'key': 'password', 'change': 'modified', 'sensitive': True,
+                               'old': [{'secret': OLD_PASSWORD}], 'new': [{'secret': NEW_PASSWORD}]}]
     body = json.dumps(result, ensure_ascii=False)
-    for secret in (CONTROLLER_SECRET, OLD_PASSWORD, NEW_PASSWORD, 'fixture-rule-token'):
-        assert secret not in body
-    assert '[REDACTED]' not in body  # nothing needed the response hook's whole-string fallback
-    raw = result['config']['raw']['text']
-    assert '+  printer.lan: 192.168.1.30' in raw and 'secret: <已隐藏 ' in raw
+    hidden = json.dumps(without_secrets(result), ensure_ascii=False)
+    for secret in (CONTROLLER_SECRET, OLD_PASSWORD, NEW_PASSWORD):
+        assert secret in body and secret not in hidden
+    assert 'fixture-rule-token' not in body
+    assert '[REDACTED]' not in body  # no stored token, and nothing needed the response hook's fallback
+    raw = result['config']['raw']['lines']
+    assert '+  printer.lan: 192.168.1.30' in raw and ['+secret: ', {'secret': CONTROLLER_SECRET}] in raw
     # The change list is cached with the status: polling again does not rebuild it.
     assert diff(client, agent_id) == result and not executor.jobs
     listed = {item['id']: item for item in client.get('/api/agents').json}
@@ -185,3 +195,29 @@ def test_pending_deployment_and_failed_preparation_are_reported(diff_env, monkey
         assert diff(client, agent_id)['reason'] == 'deployment_pending'
     finally:
         manager.finish_deployment_preparation(agent_id, 'running')
+
+
+def test_pull_token_is_shown_and_marked_and_stored_tokens_never_leave(diff_env):
+    client, _manager, config, _remote, repository, ids, executor = diff_env
+    repository.update_system_transaction(lambda system: system['system_config'].update(
+        rule_proxy_token='fixture-rule-token'))
+    agent_id = ids['mihomo']
+    push(client, agent_id)
+    assert settle(client, executor, agent_id)['status'] == 'synced'
+    # The pull token changes (系统设置 → 访问令牌), and a stored rule-proxy token ends up in the YAML.
+    config['system_config']['config_token'] = NEW_CONFIG_TOKEN
+    config['mihomo']['custom_config'] += 'external-ui-name: ui-fixture-rule-token\n'
+    result = settle(client, executor, agent_id)
+    items = {item['key']: item for item in result['config']['items']}
+    url = next(item for key, item in items.items() if key.startswith('proxy-providers.') and key.endswith('.url'))
+    assert url['sensitive'] is False
+    assert url['old'][-1] == {'secret': CONFIG_TOKEN} and url['new'][-1] == {'secret': NEW_CONFIG_TOKEN}
+    assert unpack(url['new'])[0].endswith('?token=' + NEW_CONFIG_TOKEN)
+    # ConfigFlow's stored credentials are replaced on the server, as their own hidden piece.
+    assert items['external-ui-name']['new'] == ['ui-', {'secret': '[REDACTED]'}]
+    raw = result['config']['raw']['lines']
+    assert ['+external-ui-name: ui-', {'secret': '[REDACTED]'}] in raw
+    body = json.dumps(result, ensure_ascii=False)
+    hidden = json.dumps(without_secrets(result), ensure_ascii=False)
+    assert NEW_CONFIG_TOKEN in body and NEW_CONFIG_TOKEN not in hidden and CONFIG_TOKEN not in hidden
+    assert 'fixture-rule-token' not in body and '[REDACTED]' not in hidden

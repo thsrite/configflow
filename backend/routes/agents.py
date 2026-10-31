@@ -1395,6 +1395,8 @@ def agent_push_diff(agent_id):
     status; answers ``checking`` until a worker has prepared the candidate.
     """
     from backend.agents.content_sync import get_push_diff
+    from backend.agents.push_diff import without_stored
+    from backend.common.config_export import stored_secret_finder
     agent = get_agent_manager().get_agent_by_id(agent_id)
     if not agent:
         return jsonify(success=False, message='找不到这台 Agent，请刷新设备列表。'), 404
@@ -1411,11 +1413,10 @@ def agent_push_diff(agent_id):
     result['service_type'] = agent.get('service_type', 'mihomo')
     if agent.get('applied_content'):
         result['baseline'] = {'pushed_at': agent.get('pushed_at'), 'config_revision': agent.get('config_revision')}
-    raw = (result.get('config') or {}).get('raw') or {}
-    if raw.get('text'):
-        # Tokens inside the text are already masked; this only replaces a
-        # stored credential still present, instead of blanking the whole diff.
-        raw['text'] = redact_secrets_in_text(raw['text'])
+    # Values are shown with credentials marked (the dialog hides them on
+    # request). ConfigFlow's own stored tokens still never leave: they become
+    # hidden "[REDACTED]" pieces instead of the response hook blanking whole texts.
+    result = without_stored(result, stored_secret_finder())
     response = jsonify(result)
     response.headers['Cache-Control'] = 'no-store'
     return response

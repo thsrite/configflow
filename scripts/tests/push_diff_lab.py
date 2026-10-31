@@ -16,7 +16,7 @@ restore) with its own work directory, and never touches other guests:
   device LABEL    the managed files actually on CT152 (digests, main YAML, provider nodes, rule lines)
   change          real edits through the API: a hosts entry and controller secret, rule set lines,
                   the manual node's password, one more subscription node
-  diff LABEL      GET /push-diff until it settles; asserts no secret leaves the server
+  diff LABEL      GET /push-diff until it settles; asserts every credential shown is marked (hidden on request)
   check LABEL B A compare the dialog's lists (diff LABEL) with what changed on CT152 between device B and A
   extra-delete    delete the old-version Agent record (the dialog's request error case)
   restore         stop everything, put CT152 back from the backup and compare (journal, cache.db, file times)
@@ -130,20 +130,25 @@ def diff(label, agent=None):
             break
         time.sleep(1.5)
     save(f'evidence/{label}-push-diff.json', {'http_status': status, 'body': body})
+    sys.path.insert(0, str(ROOT))
+    from backend.agents.push_diff import without_secrets
     encoded = json.dumps(body, ensure_ascii=False)
+    hidden = json.dumps(without_secrets(body), ensure_ascii=False)  # 隐藏敏感信息 on
     lab_token = base.lab_agent()['token']
-    leaks = [name for name, value in (('manual password before', PASSWORD_BEFORE), ('manual password after', PASSWORD_AFTER),
-                                      ('controller secret', CONTROLLER_SECRET), ('agent token', lab_token),
-                                      ('config token', base.credentials()['config_token']))
-             if value in encoded]
+    credentials = (('manual password before', PASSWORD_BEFORE), ('manual password after', PASSWORD_AFTER),
+                   ('controller secret', CONTROLLER_SECRET), ('agent token', lab_token),
+                   ('config token', base.credentials()['config_token']))
+    leaks = [name for name, value in credentials if value in hidden]
     summary = {'status': status, 'result': body.get('status'), 'reason': body.get('reason'), 'counts': body.get('counts'),
                'files': [(item['path'], item['status'], item.get('summary')) for item in body.get('files') or []],
-               'config': [(item['key'], item['change'], item.get('masked'), item.get('old'), item.get('new'),
+               'config': [(item['key'], item['change'], item.get('sensitive'), item.get('old'), item.get('new'),
                            item.get('list') and {k: item['list'][k] for k in ('before', 'after', 'added', 'removed', 'modified')})
-                          for item in (body.get('config') or {}).get('items', [])],
-               'leaks': leaks, 'bytes': len(encoded.encode())}
+                          for item in json.loads(hidden).get('config', {}).get('items', [])] if body.get('config') else [],
+               'shown': [name for name, value in credentials if value in encoded],
+               'leaks_when_hidden': leaks, 'bytes': len(encoded.encode())}
     print(json.dumps(summary, ensure_ascii=False, indent=1))
     assert not leaks, leaks
+    assert lab_token not in encoded  # the Agent's own token is a stored credential: never sent
     return body
 
 
@@ -217,7 +222,7 @@ def check(label, before_label, after_label):
     result.update(device_counts=counts, dialog_counts=shown_counts, counts_match=counts == shown_counts)
     # The device's own main files, before and after, compared by the same key paths.
     device_items = diff_config(before['config'].encode(), after['config'].encode())['items']
-    keys = lambda items: sorted((item['key'], item['change'], bool(item['masked'])) for item in items)
+    keys = lambda items: sorted((item['key'], item['change'], bool(item['sensitive'])) for item in items)
     result.update(device_config_items=keys(device_items), dialog_config_items=keys(shown['config']['items']),
                   config_match=keys(device_items) == keys(shown['config']['items']))
     deployed = yaml.safe_load(after['config'])

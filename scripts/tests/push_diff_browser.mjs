@@ -1,9 +1,12 @@
 #!/usr/bin/env node
-// 「待推送的变更」 in the real app, against the private lab ConfigFlow of push_diff_lab.py (no API mocks).
-// Test server only, after `cf-test typecheck` linked frontend/node_modules:
+// 「待推送的变更」 in the real app, against a private ConfigFlow (no API mocks): the PVE lab one of
+// push_diff_lab.py, or the device-less one of push_diff_local.py (CF_PUSHDIFF_WORK=/tmp/cf-pushdiff-local
+// CF_PUSHDIFF_AGENT='实验 Mihomo'). Test server only, after `cf-test typecheck` linked frontend/node_modules:
 //   rt --no-sync --back doc/img/guide --back .ci-results/push-diff -- node scripts/tests/push_diff_browser.mjs changed
-//   ... push_diff_browser.mjs nobaseline | error | synced
+//   ... push_diff_browser.mjs nobaseline | error | synced   (lab data only)
 // Reads only: never clicks 推送 (the lab script publishes). `error` deletes the old-version record through the API.
+// `changed` checks values are shown by default, that 隐藏敏感信息 leaves no credential in the page (tables,
+// details, raw diff) and that switching it off shows them again, on a light desktop and a dark phone.
 import assert from 'node:assert/strict'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { networkInterfaces } from 'node:os'
@@ -20,12 +23,14 @@ const apiPort = 15951
 const webPort = 15955
 const playwright = process.env.CF_PLAYWRIGHT_MODULE
   || '/home/sunbroke/rt/private__tmp__configflow-real-env-rebuild__browser-runtime/node_modules/playwright/index.mjs'
-const LAB = '实验 Mihomo（CT152）'
-const SECRETS = ['lab-manual-pass-before-7c1e', 'lab-manual-pass-after-93ab', 'lab-controller-secret-5d20']
-const report = { scene, steps: [], browserErrors: [] }
+const WORK = process.env.CF_PUSHDIFF_WORK || '/tmp/cf-pushdiff-lab'
+const LAB = process.env.CF_PUSHDIFF_AGENT || '实验 Mihomo（CT152）'
+const report = { scene, work: WORK, steps: [], browserErrors: [] }
 let vite, browser
 
-const credentials = JSON.parse(await readFile('/tmp/cf-pushdiff-lab/credentials.json', 'utf8'))
+const credentials = JSON.parse(await readFile(join(WORK, 'credentials.json'), 'utf8'))
+// Lab credentials, and ConfigFlow's own access token in the subscription pull URLs.
+const SECRETS = ['lab-manual-pass-before-7c1e', 'lab-manual-pass-after-93ab', 'lab-controller-secret-5d20', credentials.config_token]
 const login = await fetch(`http://127.0.0.1:${apiPort}/api/auth/login`, {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ username: credentials.username, password: credentials.password }) })
@@ -98,6 +103,29 @@ async function assertNoSecrets(tab) {
   for (const secret of SECRETS) assert.ok(!html.includes(secret), `secret visible: ${secret.slice(0, 12)}…`)
 }
 
+async function assertSecretsShown(tab, secrets = SECRETS) {
+  const html = await tab.content()
+  for (const secret of secrets) assert.ok(html.includes(secret), `value not shown: ${secret.slice(0, 12)}…`)
+}
+
+/** 隐藏敏感信息: a real switch with a 44px target, off on every opening. */
+async function setHidden(tab, dialog, on, name) {
+  const control = dialog.locator('[data-push-diff-hide]')
+  const box = await control.boundingBox()
+  const toggle = control.getByRole('switch')
+  report.steps.push({ name: `${name}: switch ${on ? 'on' : 'off'}`, height: box?.height, before: await toggle.getAttribute('aria-checked') })
+  assert.ok(box && box.height >= 44, `switch target ${box?.height}px high`)
+  await control.getByText('隐藏敏感信息').click()  // the label text toggles it too
+  assert.equal(await toggle.getAttribute('aria-checked'), String(on))
+  await tab.waitForTimeout(150)
+}
+
+async function openRaw(dialog) {
+  const button = dialog.getByRole('button', { name: '原始差异' })
+  if ((await button.getAttribute('aria-expanded')) !== 'true') await button.click()
+  await dialog.locator('#push-diff-raw-text').waitFor()
+}
+
 async function expand(dialog, key) {
   const row = dialog.locator(`[data-key="${key}"]`)
   const toggle = row.getByRole('button', { name: '展开明细' })
@@ -131,22 +159,52 @@ try {
     assert.match(text, /实验机场.*订阅.*修改.*节点 \+1 \/ −0/)
     assert.match(text, /实验直连.*规则集.*修改.*规则 \+2 \/ −1/)
     assert.match(text, /hosts\.printer\.lab\.invalid 新增 — 198\.51\.100\.30/)
-    assert.match(text, /secret 新增 — 已隐藏/)
+    assert.match(text, /secret 新增 — lab-controller-secret-5d20/)  // values as they are by default
+    // A subscription added to the group: its pull URL carries ConfigFlow's access token (push_diff_local.py).
+    const backup = dialog.locator('[data-key="proxy-providers.备用机场"]')
+    const pullToken = await backup.count() > 0
+    if (pullToken) assert.ok((await backup.innerText()).includes(`token=${credentials.config_token}`), 'pull token shown')
+    const shown = pullToken ? SECRETS : SECRETS.slice(0, 3)
     await expand(dialog, 'proxies')
     const proxies = (await dialog.locator('[data-key="proxies"] + tr').innerText()).replace(/\s+/g, ' ')
-    assert.match(proxies, /~ 手动 SS password：已修改（已隐藏）/)
-    await assertNoSecrets(desktop)
+    assert.match(proxies, /~ 手动 SS password：lab-manual-pass-before-7c1e → lab-manual-pass-after-93ab/)
+    await assertSecretsShown(desktop, shown)
     await shot(desktop, dialog, join(shots, 'push-diff-changed.png'))
-    await dialog.locator('[data-push-diff-config]').scrollIntoViewIfNeeded()
-    await dialog.getByRole('button', { name: '原始差异' }).click()
-    const raw = await dialog.locator('#push-diff-raw-text').innerText()
-    assert.match(raw, /\+ {2}printer\.lab\.invalid: 198\.51\.100\.30/)
-    assert.match(raw, /\+secret: <已隐藏 [0-9a-f]{6}>/)
-    report.steps.push({ name: 'raw diff (redacted)', lines: raw.split('\n').length })
+
+    await setHidden(desktop, dialog, true, 'desktop')
+    const hiddenText = (await dialog.innerText()).replace(/\s+/g, ' ')
+    report.steps.push({ name: 'hidden (desktop, light)', text: hiddenText.slice(0, 2400) })
+    assert.match(hiddenText, /secret 新增 — 已隐藏/)
+    assert.match(hiddenText, /hosts\.printer\.lab\.invalid 新增 — 198\.51\.100\.30/)  // addresses stay
+    const hiddenProxies = (await dialog.locator('[data-key="proxies"] + tr').innerText()).replace(/\s+/g, ' ')
+    assert.match(hiddenProxies, /~ 手动 SS password：已隐藏 → 已隐藏/)
+    if (pullToken) assert.match(await backup.innerText(), /proxies\?token=已隐藏/)
     await assertNoSecrets(desktop)
+    await shot(desktop, dialog, join(shots, 'push-diff-hidden.png'))
+    await dialog.locator('[data-push-diff-config]').scrollIntoViewIfNeeded()
+    await openRaw(dialog)
+    const hiddenRaw = await dialog.locator('#push-diff-raw-text').innerText()
+    assert.match(hiddenRaw, /\+secret: 已隐藏/)
+    assert.match(hiddenRaw, /\+ {2}printer\.lab\.invalid: 198\.51\.100\.30/)
+    await assertNoSecrets(desktop)
+    await dialog.locator('[data-push-diff-raw]').scrollIntoViewIfNeeded()
+    await shot(desktop, dialog, join(evidence, 'raw-hidden-desktop-light.png'))
+
+    await setHidden(desktop, dialog, false, 'desktop')
+    const raw = await dialog.locator('#push-diff-raw-text').innerText()
+    assert.match(raw, /\+secret: lab-controller-secret-5d20/)
+    assert.match(raw, /\+ {2}printer\.lab\.invalid: 198\.51\.100\.30/)
+    report.steps.push({ name: 'raw diff (values shown again)', lines: raw.split('\n').length })
+    await assertSecretsShown(desktop, shown)
     await dialog.locator('[data-push-diff-raw]').scrollIntoViewIfNeeded()
     await shot(desktop, dialog, join(shots, 'push-diff-raw.png'))
     await noOverflow(desktop, dialog, 'desktop')
+    // Not remembered: the next opening shows values again.
+    await desktop.keyboard.press('Escape')
+    const again = await openDialog(desktop, LAB, '有变更，待推送', '[data-push-diff-changed]')
+    assert.equal(await again.locator('[data-push-diff-hide]').getByRole('switch').getAttribute('aria-checked'), 'false')
+    assert.match((await again.innerText()).replace(/\s+/g, ' '), /secret 新增 — lab-controller-secret-5d20/)
+    report.steps.push({ name: 'reopened: values shown, switch off' })
 
     const phone = await page('dark', { width: 375, height: 812 })
     const mobile = await openDialog(phone, LAB, '有变更，待推送', '[data-push-diff-changed]')
@@ -156,9 +214,17 @@ try {
     await shot(phone, mobile, join(shots, 'push-diff-mobile-dark.png'))
     await expand(mobile, 'proxies')
     await noOverflow(phone, mobile, 'phone, details open')
+    await assertSecretsShown(phone, shown)
+    await setHidden(phone, mobile, true, 'phone')
+    await openRaw(mobile)
     await assertNoSecrets(phone)
+    await noOverflow(phone, mobile, 'phone, hidden, raw diff open')
     await mobile.locator('[data-key="proxies"]').scrollIntoViewIfNeeded()
-    await shot(phone, mobile, join(shots, 'push-diff-config-mobile-dark.png'))
+    await shot(phone, mobile, join(evidence, 'hidden-mobile-dark.png'))
+    await setHidden(phone, mobile, false, 'phone')
+    await assertSecretsShown(phone, shown)
+    await mobile.locator('[data-key="proxies"]').scrollIntoViewIfNeeded()
+    await shot(phone, mobile, join(evidence, 'config-mobile-dark.png'))
   } else if (scene === 'nobaseline') {
     const desktop = await page('light', { width: 1280, height: 900 })
     const never = await openDialog(desktop, '实验 · 从未推送', '尚未推送', '[data-push-diff-unavailable]')
