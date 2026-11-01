@@ -26,6 +26,7 @@ const clock = ref(Date.now())
 let timer: ReturnType<typeof setInterval> | undefined
 let controller: AbortController | undefined
 let disposed = false
+let destination: NotificationItem | undefined
 const acknowledged = new Map<string, string>()
 const scoped = computed(() => items.value.filter(item => scope.value === 'all' || item.scope !== 'profile' || item.profile_id === scope.value))
 const scopeLabel = (item: NotificationItem) => item.scope === 'shared' ? '共享资源' : item.scope === 'system' ? '系统' : item.profile_name || item.profile_id
@@ -69,11 +70,20 @@ async function read(rows: NotificationItem[]) {
   finally { if (!disposed) reading.value = false }
 }
 const paths = new Set(['/subscriptions', '/rule-library', '/agents', '/routers', '/system-settings'])
-async function go(item: NotificationItem) {
+function go(item: NotificationItem) {
   if (navigating.value || !paths.has(item.target.path)) return
   navigating.value = true
+  destination = item
   open.value = false
+}
+async function followDestination() {
+  const item = destination
+  if (!item) return
+  destination = undefined
+  // Reka emits closeAutoFocus after the exit animation. Let the old dialog
+  // unmount before navigation mounts another overlay or focuses its target.
   await nextTick()
+  if (disposed) return
   try {
     if (!canReloadPage()) {
       notify.warning('请先保存或关闭当前编辑窗口，再打开通知中的设置。')
@@ -103,7 +113,7 @@ onUnmounted(() => { disposed = true; controller?.abort(); clearInterval(timer); 
         <span v-else-if="error" class="absolute right-0 top-0 text-xs text-warning-accent" aria-hidden="true">!</span>
       </Button>
     </SheetTrigger>
-    <SheetContent class="w-full gap-0 bg-card sm:max-w-[440px] max-sm:[&>button]:size-11 max-sm:[&>button]:right-2 max-sm:[&>button]:top-2 max-sm:[&>button]:grid max-sm:[&>button]:place-items-center" data-notifications-panel>
+    <SheetContent overlay-class="bg-transparent" class="w-full gap-0 bg-card shadow-overlay sm:max-w-[440px] transition-none ease-(--ease-flow) data-[state=open]:duration-200 data-[state=closed]:duration-150 data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:slide-in-from-right-3 data-[state=closed]:slide-out-to-right-2 max-sm:[&>button]:size-11 max-sm:[&>button]:right-2 max-sm:[&>button]:top-2 max-sm:[&>button]:grid max-sm:[&>button]:place-items-center" data-notifications-panel @close-auto-focus="followDestination">
       <SheetHeader class="shrink-0 pr-12">
         <SheetTitle class="font-display text-2xl">通知中心</SheetTitle>
         <SheetDescription>查看失败和待操作事项，直接前往对应设置。</SheetDescription>

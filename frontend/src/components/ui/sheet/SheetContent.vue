@@ -15,6 +15,7 @@ import SheetOverlay from "./SheetOverlay.vue"
 
 interface SheetContentProps extends DialogContentProps {
   class?: HTMLAttributes["class"]
+  overlayClass?: HTMLAttributes["class"]
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
 }
@@ -29,7 +30,7 @@ const props = withDefaults(defineProps<SheetContentProps>(), {
 })
 const emits = defineEmits<DialogContentEmits>()
 
-const delegatedProps = reactiveOmit(props, "class", "side", "showCloseButton")
+const delegatedProps = reactiveOmit(props, "class", "overlayClass", "side", "showCloseButton")
 
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
 
@@ -41,7 +42,7 @@ function onOpenAutoFocus(event: Event) {
 
 <template>
   <DialogPortal>
-    <SheetOverlay />
+    <SheetOverlay :class="props.overlayClass" />
     <DialogContent
       data-slot="sheet-content"
       :class="cn(
