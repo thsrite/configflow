@@ -953,6 +953,10 @@ def _node_entry(change, items, index, places):
     return entry
 
 
+# A modified node's fields read type, server and port first, then in the file's order.
+_NODE_FIELD_ORDER = {'type': 0, 'server': 1, 'port': 2}
+
+
 def _node_details(before, after, pairs, budget):
     """Which nodes were added, removed or modified, with field changes; bounded."""
     added, removed, modified, repeated = pairs
@@ -968,8 +972,8 @@ def _node_details(before, after, pairs, budget):
             if change == 'modified':
                 old_index, new_index = item
                 entry = _node_entry(change, after, new_index, new_places)
-                entry['fields'], entry['fields_omitted'] = _entry_fields(
-                    before[old_index][1], after[new_index][1], ('proxies',))
+                fields, entry['fields_omitted'] = _entry_fields(before[old_index][1], after[new_index][1], ('proxies',))
+                entry['fields'] = sorted(fields, key=lambda field: _NODE_FIELD_ORDER.get(field['key'], 3))
             elif change == 'added':
                 entry = _node_entry(change, after, item, new_places)
             else:

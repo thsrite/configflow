@@ -522,6 +522,8 @@ def test_subscription_details_list_nodes_and_their_field_changes():
         'port': ('11005', '11008', False),
         'password': ([{'secret': 'hk-pass-before'}], [{'secret': 'hk-pass-after'}], True),
         'plugin-opts.host': ('cdn-a.example', 'cdn-b.example', False)}  # nested fields by path
+    # Server and port first, then the rest as the file writes them (here sorted by key).
+    assert [field['key'] for field in hk['fields']] == ['server', 'port', 'password', 'plugin-opts.host']
     jp_fields = {field['key']: field for field in jp['fields']}
     assert jp_fields['uuid']['sensitive'] and jp_fields['uuid']['new'] == [{'secret': 'jp-uuid-after-0002'}]
     host = jp_fields['ws-opts.headers.Host']
