@@ -12,7 +12,7 @@ import {notify,settleConfirm} from '@/lib/feedback'
 import {setActiveProfileId} from '@/profileContext'
 vi.mock('@/api',()=>{
  const crud=()=>({getAll:vi.fn(),list:vi.fn(),create:vi.fn(),update:vi.fn(),delete:vi.fn(),fetch:vi.fn()})
- return {default:{get:vi.fn(),put:vi.fn(),post:vi.fn(),delete:vi.fn()},nodeApi:crud(),subscriptionApi:crud(),ruleApi:crud(),ruleSetApi:crud(),profileApi:crud(),proxyGroupApi:crud()}
+ return {default:{get:vi.fn(),put:vi.fn(),post:vi.fn(),delete:vi.fn()},nodeApi:{...crud(),previewDeletion:vi.fn(),deleteWithReferences:vi.fn()},subscriptionApi:crud(),ruleApi:crud(),ruleSetApi:crud(),profileApi:crud(),proxyGroupApi:crud()}
 })
 let nodes:any[],groups:any[],rules:any[],subs:any[],profiles:any[]
 const wrappers:any[]=[]
@@ -50,7 +50,7 @@ describe('QA integrity regressions',()=>{
   await render(Subscriptions);await click('添加订阅');await fill('#sub-name',blank);await fill('#sub-url','https://valid.test');await click('保存');expect(subscriptionApi.create).not.toHaveBeenCalled();await fill('#sub-name','Valid');await fill('#sub-url',blank);await click('保存');expect(subscriptionApi.create).not.toHaveBeenCalled();await click('取消');await attr('[aria-label="编辑 Feed"]');await fill('#sub-name',blank);await click('保存');expect(subscriptionApi.update).not.toHaveBeenCalled();await fill('#sub-name','Feed');await fill('#sub-url',blank);await click('保存');expect(subscriptionApi.update).not.toHaveBeenCalled();expect(dialog()).not.toBeNull();await fill('#sub-url','ss://valid-existing-protocol');await click('保存');expect(subscriptionApi.update).toHaveBeenCalledWith('s1',expect.objectContaining({name:'Feed',url:'ss://valid-existing-protocol'}))
  })
  it('filtered select-all deletes only visible rows after explicit confirmation',async()=>{
-  const w=await render(Nodes);await render(ConfirmHost);await w.find('input').setValue('Alpha');await flushPromises();expect(w.text()).not.toContain('Beta');await click('全选');await click('删除 1 项');expect(document.body.textContent).toContain('1 个节点');await click('删除');expect(nodeApi.delete).toHaveBeenCalledWith('n1');expect(nodeApi.delete).not.toHaveBeenCalledWith('n2')
+  const w=await render(Nodes);await render(ConfirmHost);await w.find('input').setValue('Alpha');await flushPromises();expect(w.text()).not.toContain('Beta');vi.mocked(nodeApi.previewDeletion).mockImplementation(async(ids:string[])=>({data:{nodes:nodes.filter(n=>ids.includes(n.id)).map(n=>({id:n.id,name:n.name})),usages:[],groups:[],blockers:[],empty_sources:[],confirmation:'confirm-n1'}}) as any);vi.mocked(nodeApi.deleteWithReferences).mockResolvedValue({data:{success:true,deleted_ids:['n1']}} as any);await click('全选');await click('删除 1 项');expect(nodeApi.previewDeletion).toHaveBeenCalledWith(['n1']);const dialog=document.querySelector('[role="dialog"]')!;expect(dialog.textContent).toContain('Alpha');expect(dialog.textContent).not.toContain('Beta');await click('删除节点');expect(nodeApi.deleteWithReferences).toHaveBeenCalledWith(['n1'],'confirm-n1');expect(nodeApi.delete).not.toHaveBeenCalled()
  })
  it('visible deselection preserves explicitly selected hidden rows',async()=>{
   const w=await render(Nodes);await click('全选');await w.find('input').setValue('Alpha');await flushPromises();await click('取消全选');expect(w.text()).toContain('删除 1 项');await w.find('input').setValue('Beta');await flushPromises();await click('取消全选');expect(w.text()).not.toContain('删除 1 项')

@@ -15,7 +15,7 @@ import { setActiveProfileId } from '@/profileContext'
 // Only the network seam is mocked; forms, selects, dialogs and confirmations are real.
 vi.mock('@/api', () => ({
   default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
-  nodeApi: { getAll: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+  nodeApi: { getAll: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), previewDeletion: vi.fn(), deleteWithReferences: vi.fn() },
   proxyGroupApi: { getAll: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
   ruleApi: { getAll: vi.fn(), create: vi.fn(), update: vi.fn(), compose: vi.fn(), getDns: vi.fn() },
   ruleSetApi: { getAll: vi.fn() },
@@ -526,12 +526,17 @@ it('shared node editing preserves raw dialer-proxy without adding a profile chai
 it('shared batch delete conflict never rewrites groups and shows backend guidance', async () => {
   await render(Nodes)
   host = mount(ConfirmHost, { attachTo: document.body })
-  vi.mocked(nodeApi.delete).mockRejectedValue({ response: { data: { message: '节点仍被代理链引用' } } })
+  vi.mocked(nodeApi.previewDeletion).mockImplementation(async (ids: string[]) => response({
+    nodes: ids.map(id => ({ id, name: id })), usages: [], groups: [], blockers: [], empty_sources: [], confirmation: 'confirm'
+  }) as any)
+  vi.mocked(nodeApi.deleteWithReferences).mockRejectedValue({ response: { data: { message: '节点仍被代理链引用' } } })
   await button('全选')
   await button('删除 4 项')
-  await button('删除')
+  await button('删除节点')
+  expect(nodeApi.deleteWithReferences).toHaveBeenCalledTimes(1)
+  // 由服务端统一解除引用，前端不自己改写策略组；失败原因显示在删除窗口里
   expect(api.put).not.toHaveBeenCalled()
-  expect(notify.error).toHaveBeenCalledWith('节点仍被代理链引用')
+  expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain('节点仍被代理链引用')
 })
 
 it('shared node disable conflict restores enabled row and shows backend guidance', async () => {
