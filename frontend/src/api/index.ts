@@ -592,9 +592,12 @@ export interface ClientDeviceAgent {
   id: string; name: string; host: string; status: string
   deployment: import('@/composables/useAgentDeployments').AgentDeployment | null
 }
+/** A DNS listener on a non-client port whose own chain skips sequence_main, so device policies do not apply to it. */
+export interface ClientDeviceSideEntry { tags: string[]; listen: string; entry: string }
 export interface ClientDevicesState {
   success: true; profile_id: string; profile_name: string; oxidns_revision: string
   devices: ClientDevice[]; editable: boolean; reason: string; agents: ClientDeviceAgent[]
+  side_entries?: ClientDeviceSideEntry[]
 }
 export type ClientPresence = 'online' | 'recent' | 'offline' | 'unknown' | 'network'
 export type ClientPresenceBasis = '' | 'arp' | 'lease' | 'probe' | 'terminal' | 'stale' | 'absent' | 'router' | 'outside'

@@ -24,7 +24,8 @@ def list_devices(config):
     for row in devices:
         if row['ip'] in bindings(config):
             row['fixed_ip'] = dict(bindings(config)[row['ip']])
-    return {'devices': devices, 'editable': policies['editable'], 'reason': policies['reason']}
+    return {'devices': devices, 'editable': policies['editable'], 'reason': policies['reason'],
+            'side_entries': policies.get('side_entries', [])}
 
 
 def normalize_change(body):

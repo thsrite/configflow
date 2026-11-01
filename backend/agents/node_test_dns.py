@@ -253,6 +253,29 @@ def _owned(document, record, *, absent=False):
     return True
 
 
+def recorded_listeners(plugins, agents, profile_id):
+    """Server tags of intact managed listeners that this profile's records own.
+
+    Only an exact match with the stored plugin definitions counts; a tag that
+    merely looks like ours, or a hand-edited copy, is not trusted.
+    """
+    result = set()
+    for agent in agents or []:
+        if not isinstance(agent, dict) or not isinstance(agent.get(FIELD), dict):
+            continue
+        for record in agent[FIELD].values():
+            if not isinstance(record, dict) or record.get('status') == 'removed' or \
+                    record.get('profile_id') != profile_id or not isinstance(record.get('plugins'), list):
+                continue
+            expected = {p.get('tag'): p for p in record['plugins'] if isinstance(p, dict)}
+            if expected and len(expected) == len(record['plugins']) and all(
+                    isinstance(plugins.get(tag), dict) and _normalize_plugin(plugins[tag]) == plugin
+                    for tag, plugin in expected.items()):
+                result.update(tag for tag, plugin in expected.items()
+                              if str(plugin.get('type', '')).endswith('_server'))
+    return result
+
+
 def _collision(document, record):
     for plugin in document['plugins']:
         if not isinstance(plugin, dict) or plugin.get('type') not in ('udp_server', 'tcp_server'):
