@@ -449,9 +449,10 @@ def test_large_rule_sets_are_counted_quickly_and_keep_the_response_small():
     yaml_new = 'payload:\n' + ''.join(f"  - '{line}'\n" for line in lines[:-700])
     old = bundle(base_config(), rules={'ruleset/Big.list': old_rules, 'ruleset/Big.yaml': yaml_old})
     new = bundle(base_config(), rules={'ruleset/Big.list': new_rules, 'ruleset/Big.yaml': yaml_new}, deployment='d2')
-    started = time.perf_counter()
+    # 只计本进程占用的 CPU 时间：测试服务器忙或与其他测试并行时，墙钟时间会被拉长而误报超时
+    started = time.process_time()
     result = build_push_diff(agent_for(old), new, None, receipt=receipt_for(old))
-    elapsed = time.perf_counter() - started
+    elapsed = time.process_time() - started
     files = {item['path']: item['summary'] for item in result['files']}
     assert files['ruleset/Big.list'] == {'kind': 'rules', 'before': 60000, 'after': 61000, 'added': 2500, 'removed': 1500}
     assert files['ruleset/Big.yaml'] == {'kind': 'rules', 'before': 60000, 'after': 59300, 'added': 0, 'removed': 700}
@@ -471,9 +472,10 @@ def test_large_rule_sets_are_counted_quickly_and_keep_the_response_small():
 def test_large_inline_rules_in_the_main_file_stay_bounded():
     old = {'rules': [f'DOMAIN-SUFFIX,site-{index}.example.com,DIRECT' for index in range(30000)]}
     new = {'rules': old['rules'][1000:] + [f'DOMAIN-SUFFIX,new-{index}.example.com,Proxy' for index in range(3000)]}
-    started = time.perf_counter()
+    # 只计本进程占用的 CPU 时间：测试服务器忙或与其他测试并行时，墙钟时间会被拉长而误报超时
+    started = time.process_time()
     result = diff_config(dump(old), dump(new))
-    elapsed = time.perf_counter() - started
+    elapsed = time.process_time() - started
     rules = items_by_key(result)['rules']['list']
     assert (rules['added'], rules['removed']) == (3000, 1000)
     assert elapsed < 6, elapsed
@@ -679,9 +681,10 @@ def test_large_subscriptions_and_rule_sets_are_detailed_quickly():
                  rules={'ruleset/Big.list': '\n'.join(lines[2000:] + [f'DOMAIN,new-{index}.example.org'
                                                                       for index in range(3000)]) + '\n'},
                  deployment='d2')
-    started = time.perf_counter()
+    # 只计本进程占用的 CPU 时间：测试服务器忙或与其他测试并行时，墙钟时间会被拉长而误报超时
+    started = time.process_time()
     result = build_push_diff(agent_for(old), new, None, receipt=receipt_for(old))
-    elapsed = time.perf_counter() - started
+    elapsed = time.process_time() - started
     files = {item['path']: item for item in result['files']}
     assert files['providers/Feed.yaml']['summary'] == {'kind': 'nodes', 'before': 3000, 'after': 3000,
                                                       'added': 300, 'removed': 300, 'modified': 450}
