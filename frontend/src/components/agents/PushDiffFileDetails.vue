@@ -6,12 +6,14 @@
         <Input v-model="search" :placeholder="placeholder" :aria-label="placeholder" :maxlength="MAX_QUERY_CHARS" :disabled="stale"
           enterkeyhint="search" autocomplete="off" class="h-8 bg-background pr-9 pl-8 text-[12.5px] max-md:pr-11" data-detail-search
           @keydown.enter.prevent="applyQuery(search.trim())" />
-        <Button v-if="search && !stale" variant="ghost" size="icon-sm" class="absolute top-1/2 right-0 -translate-y-1/2 text-muted-foreground"
+        <!-- 不用 translate 居中：按钮按下时的 active:translate-y-px 会把它挪开 -->
+        <Button v-if="search && !stale" variant="ghost" size="icon-sm" class="absolute inset-y-0 right-0 my-auto text-muted-foreground"
           aria-label="清空搜索" @click="clearSearch">
           <X class="size-3.5" />
         </Button>
       </div>
-      <span class="text-[12px] text-muted-foreground" aria-live="polite" data-search-summary><template v-if="query && !stale"><template v-if="searching">正在搜索…</template><template v-else>匹配 <span class="num">{{ matched }}</span> {{ unit.unit }}</template></template></span>
+      <!-- 手机上只给读屏：每组标题已写匹配条数，不再单占一行 -->
+      <span class="text-[12px] text-muted-foreground max-sm:sr-only" aria-live="polite" data-search-summary><template v-if="query && !stale"><template v-if="searching">正在搜索…</template><template v-else>匹配 <span class="num">{{ matched }}</span> {{ unit.unit }}</template></template></span>
     </div>
 
     <div v-if="stale" role="alert" class="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md bg-warning-soft px-2.5 py-1.5 text-[12.5px]" data-details-stale>
@@ -23,7 +25,7 @@
       </Button>
     </div>
 
-    <div class="push-diff-detail-scroll -mx-1 flex max-h-[420px] min-w-0 flex-col gap-2.5 overflow-y-auto overscroll-contain px-1 max-sm:max-h-[60dvh]"
+    <div class="-mx-1 flex max-h-[420px] min-w-0 flex-col gap-2.5 overflow-y-auto overscroll-contain px-1 max-sm:max-h-[60dvh]"
       tabindex="0" role="region" :aria-label="`${unit.noun}明细`" data-details-scroll>
       <section v-for="group in details.groups" :key="group.change" :data-group="group.change">
         <p class="m-0 text-[12px] text-muted-foreground">
@@ -62,7 +64,7 @@
           <span v-else-if="footer(group) === 'done'" data-all-loaded>已全部加载</span>
         </div>
       </section>
-      <p v-if="query && !stale && !searching && !matched" class="m-0 text-[12px] text-muted-foreground" data-search-empty>
+      <p v-if="query && !stale && !searching && !matched && !failed" class="m-0 text-[12px] text-muted-foreground" data-search-empty>
         没有匹配「{{ query }}」的{{ unit.noun }}。
       </p>
     </div>
@@ -115,7 +117,7 @@ const unit = computed(() => detailUnit(props.details.kind))
 const pageable = computed(() => Boolean(props.details.paging && props.version))
 // 还有没随接口返回的条目时才需要搜索
 const searchable = computed(() => pageable.value && props.details.groups.some(group => group.total > group.entries.length))
-const placeholder = computed(() => props.details.kind === 'nodes' ? '搜索节点名、类型、服务器或字段' : '搜索规则')
+const placeholder = computed(() => props.details.kind === 'nodes' ? '搜索节点名、服务器或字段' : '搜索规则')
 
 const base = reactive<Record<string, ListState>>({})
 const found = reactive<Record<string, ListState>>({})
@@ -136,6 +138,7 @@ watch(() => props.details, details => {
 const view = (group: PushDiffDetailGroup): ListState => (query.value ? found[group.change] : base[group.change]) || blank()
 const searching = computed(() => props.details.groups.some(group => found[group.change]?.loading && !found[group.change]?.entries.length))
 const matched = computed(() => props.details.groups.reduce((sum, group) => sum + (found[group.change]?.total || 0), 0))
+const failed = computed(() => props.details.groups.some(group => found[group.change]?.error))
 
 function remaining(group: PushDiffDetailGroup) {
   const state = view(group)

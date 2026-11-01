@@ -256,7 +256,7 @@ describe('push diff details: search', () => {
     const calls = server()
     await open()
     const detail = await expand(FEED)
-    expect(detail.querySelector<HTMLInputElement>('[data-detail-search]')!.getAttribute('aria-label')).toBe('搜索节点名、类型、服务器或字段')
+    expect(detail.querySelector<HTMLInputElement>('[data-detail-search]')!.getAttribute('aria-label')).toBe('搜索节点名、服务器或字段')
     await type(detail, '备用 05')
     detail.querySelector<HTMLInputElement>('[data-detail-search]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
     await flushPromises()

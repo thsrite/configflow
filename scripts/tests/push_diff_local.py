@@ -12,9 +12,10 @@ Run on the test server only, from this checkout synced by rt. Touches no PVE gue
   start    serve in the background (its own session, no inherited descriptors such as rt's lock) and wait
   prepare  (server running) push once as the baseline through the API, wait for 已同步, then make the edits of
            push_diff_lab.py change through the same API as the pages, plus a second subscription in the group
-           (its pull URL carries the access token, its 130 nodes are more than one file lists). The subscription
-           gets a node added, one removed, one renamed twin and one modified (server, port, password and a nested
-           plugin-opts field); the large rule set gains 300 rules and loses 150 (more than one file lists).
+           (its pull URL carries the access token, its 300 new nodes take several pages). The subscription gets a
+           node added, one removed, one renamed twin and one modified (server, port, password and a nested
+           plugin-opts field), and 40 more nodes change their password (a second page of credentials); the large
+           rule set gains 3000 rules and loses 1500 (pages, search, inner scrolling).
   stop     stop a background serve;  clean  remove the private data
 
 Then: CF_PUSHDIFF_WORK=/tmp/cf-pushdiff-local CF_PUSHDIFF_AGENT='实验 Mihomo' node scripts/tests/push_diff_browser.mjs changed
@@ -48,10 +49,10 @@ NODE_PASSWORD_BEFORE = 'lab-node-pass-before-41f2'
 NODE_PASSWORD_AFTER = 'lab-node-pass-after-8d3c'
 RULES_BEFORE = '+.alpha.lab.invalid\n+.beta.lab.invalid\n+.gamma.lab.invalid'
 RULES_AFTER = '+.alpha.lab.invalid\n+.gamma.lab.invalid\n+.delta.lab.invalid\n+.epsilon.lab.invalid'
-# More changes than one file lists (200 rules): 300 added, 150 removed.
-BIG_BEFORE = '\n'.join(f'+.site-{index:04d}.big.lab.invalid' for index in range(1200))
-BIG_AFTER = '\n'.join([f'+.site-{index:04d}.big.lab.invalid' for index in range(150, 1200)]
-                      + [f'+.fresh-{index:03d}.big.lab.invalid' for index in range(300)])
+# Many pages: 3000 rules added, 1500 removed.
+BIG_BEFORE = '\n'.join(f'+.site-{index:04d}.big.lab.invalid' for index in range(6000))
+BIG_AFTER = '\n'.join([f'+.site-{index:04d}.big.lab.invalid' for index in range(1500, 6000)]
+                      + [f'+.fresh-{index:04d}.big.lab.invalid' for index in range(3000)])
 HOSTS_DOMAIN = 'printer.lab.invalid'
 CUSTOM = '''mixed-port: 7890
 allow-lan: true
@@ -66,12 +67,21 @@ dns:
   nameserver: [198.51.100.53]
   proxy-server-nameserver: [198.51.100.53]
 '''
+# 40 nodes whose password changes: past the first page, so later pages carry credentials too.
+BULK = 40
+
+
+def bulk(when):
+    return ''.join(f'  - {{name: F 批量 {index:02d}, type: ss, server: bulk-{index:02d}.lab.invalid, port: {30000 + index}, '
+                   f'cipher: aes-128-gcm, password: lab-bulk-pass-{when}-{index:02d}}}\n' for index in range(1, BULK + 1))
+
+
 NODES = f'''proxies:
   - {{name: A 香港, type: ss, server: edge-a.lab.invalid, port: 11005, cipher: aes-128-gcm,
      password: {NODE_PASSWORD_BEFORE}, plugin: obfs, plugin-opts: {{mode: tls, host: cdn-a.lab.invalid}}}}
   - {{name: B 日本, type: socks5, server: edge-b.lab.invalid, port: 1080}}
   - {{name: E 下线, type: socks5, server: edge-e.lab.invalid, port: 1080}}
-'''
+''' + bulk('before')
 # A 香港 changes server, port, password and plugin-opts.host; E 下线 goes; C 新增节点 and a second B 日本 arrive.
 NODES_AFTER = f'''proxies:
   - {{name: A 香港, type: ss, server: edge-a2.lab.invalid, port: 11008, cipher: aes-128-gcm,
@@ -79,12 +89,12 @@ NODES_AFTER = f'''proxies:
   - {{name: B 日本, type: socks5, server: edge-b.lab.invalid, port: 1080}}
   - {{name: C 新增节点, type: trojan, server: edge-c.lab.invalid, port: 443, password: lab-trojan-pass-c7}}
   - {{name: B 日本, type: socks5, server: '2001:db8::b', port: 1080}}
-'''
+''' + bulk('after')
 SUBSCRIPTIONS = {
     'airport-v1': NODES,
     'airport-v2': NODES_AFTER,
     'backup': 'proxies:\n' + ''.join(f'  - {{name: D 备用 {index:03d}, type: socks5, server: backup.lab.invalid, '
-                                     f'port: {20000 + index}}}\n' for index in range(1, 131)),
+                                     f'port: {20000 + index}}}\n' for index in range(1, 301)),
 }
 
 
