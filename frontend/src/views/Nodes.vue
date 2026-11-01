@@ -153,7 +153,9 @@
           :key="node.readonly ? `sub:${subscriptionNodeKey(node)}` : node.id || node.name"
           :data-name="node.name"
           :data-reorder-item="node.readonly ? undefined : ''"
-          :class="!node.enabled && 'opacity-55'"
+          :data-state="!node.readonly && selectedNodeIds.has(node.id) ? 'selected' : undefined"
+          :class="cn(!node.enabled && 'opacity-55', !node.readonly && !reorder.active.value && 'cursor-pointer')"
+          @click="handleNodeSelectionClick(node, $event)"
         >
           <TableCell v-if="reorder.active.value">
             <DragHandle
@@ -172,6 +174,7 @@
               v-if="!node.readonly"
               :model-value="selectedNodeIds.has(node.id)"
               :aria-label="`选择 ${node.name}`"
+              :disabled="reorder.active.value"
               @update:model-value="toggleNodeSelection(node.id)"
             />
           </TableCell>
@@ -277,11 +280,13 @@
         :aria-busy="testingKeys.has(latencyKey(node)) || undefined"
         :data-reorder-item="node.readonly ? undefined : ''"
         :class="cn(
-          'node-tile cf-cv-row [--cf-cv-row-h:85px] max-md:[--cf-cv-row-h:101px] group relative overflow-hidden rounded-[14px] border bg-card/90 px-[13px] pt-3 pb-2.5 transition-[transform,border-color,opacity] duration-300 ease-(--ease-flow) hover:-translate-y-0.5 hover:border-border-strong',
-          selectedNodeIds.has(node.id) ? 'border-primary-accent/55' : 'border-border',
+          'node-tile cf-cv-row [--cf-cv-row-h:85px] max-md:[--cf-cv-row-h:101px] group relative overflow-hidden rounded-[14px] border px-[13px] pt-3 pb-2.5 transition-[transform,border-color,opacity] duration-300 ease-(--ease-flow) hover:-translate-y-0.5',
+          !node.readonly && selectedNodeIds.has(node.id) ? 'border-primary-accent/55 bg-primary-soft/40 hover:border-primary-accent/70' : 'border-border bg-card/90 hover:border-border-strong',
+          !node.readonly && !reorder.active.value && 'cursor-pointer',
           !node.enabled && 'opacity-55',
           flashKeys.has(latencyKey(node)) && 'is-flash'
         )"
+        @click="handleNodeSelectionClick(node, $event)"
       >
         <header class="flex items-center gap-2">
           <DragHandle
@@ -296,15 +301,12 @@
             @keydown="reorder.onHandleKeydown($event, cfIndex)"
           />
           <Checkbox
-            v-else-if="selectedNodeIds.size > 0 && !node.readonly"
+            v-else-if="!node.readonly"
             class="cf-reorder-mute"
             :model-value="selectedNodeIds.has(node.id)"
             :aria-label="`选择 ${node.name}`"
             @update:model-value="toggleNodeSelection(node.id)"
           />
-          <span class="grid h-5 w-7 shrink-0 place-items-center rounded-md bg-secondary font-mono text-[10.5px] font-semibold text-muted-foreground">
-            {{ regionOf(node.name).code === '其他' ? '··' : regionOf(node.name).code }}
-          </span>
           <span class="min-w-0 flex-1 truncate text-[12.5px] font-medium" :title="node.remark ? `${node.name} · ${node.remark}` : node.name">
             {{ node.name }}
           </span>
@@ -392,7 +394,7 @@
             <template v-else>{{ latencyOf(node) }}<small class="ml-0.5 font-mono text-[10.5px] text-muted-foreground">ms</small></template>
           </span>
           <span class="min-w-0 text-right font-mono text-[10.5px] leading-snug text-muted-foreground">
-            {{ nodeProtocol(node) }}<br />
+            <template v-if="regionOf(node.name).code !== '其他'">{{ regionOf(node.name).code }} · </template>{{ nodeProtocol(node) }}<br />
             <span class="block max-w-[110px] truncate">{{ node.subscription_name || '手动添加' }}</span>
           </span>
         </div>
@@ -772,6 +774,18 @@ const toggleNodeSelection = (nodeId: string) => {
   }
   // 触发响应式更新
   selectedNodeIds.value = new Set(selectedNodeIds.value)
+}
+
+const handleNodeSelectionClick = (node: { id: string; readonly?: boolean }, event: MouseEvent) => {
+  if (node.readonly || reorder.active.value || event.defaultPrevented) return
+  const target = event.target
+  // Child controls retain their own action, including clicks on their icons.
+  if (!(target instanceof Element) || target.closest('button, a, input, select, textarea, label, [role="button"], [role="checkbox"], [role="menuitem"], [contenteditable="true"]')) return
+  // Selecting node text for copying must not also select the node.
+  const selection = window.getSelection()
+  if (selection && !selection.isCollapsed && event.currentTarget instanceof Element
+    && (event.currentTarget.contains(selection.anchorNode) || event.currentTarget.contains(selection.focusNode))) return
+  toggleNodeSelection(node.id)
 }
 
 // 切换节点字符串展开/收起
