@@ -682,6 +682,16 @@ export const mihomoPanelApi = {
   flushDNS: (id: string) => api.post(mihomoPath(id, 'cache/dns/flush'))
 }
 
+/** Mihomo 流量记录（Agent 1.8.51-go+）：开关、按范围读取、清空与保留天数 */
+export const trafficHistoryApi = {
+  get: (id: string, range: string, by: string, options: { signal?: AbortSignal } = {}) =>
+    api.get(`/agents/${encodeURIComponent(id)}/traffic-history`, { params: { range, by }, ...options }),
+  setEnabled: (id: string, enabled: boolean, clear = false) =>
+    api.put(`/agents/${encodeURIComponent(id)}/traffic-history`, { enabled, clear }),
+  clear: (id: string) => api.delete(`/agents/${encodeURIComponent(id)}/traffic-history`),
+  setRetention: (days: number) => api.put('/agents/traffic-history/retention', { days })
+}
+
 // 系统信息
 export const systemApi = {
   getVersion: () => api.get('/version')

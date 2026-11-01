@@ -1,10 +1,17 @@
 """Agent 版本管理"""
 
 # Agent 最新版本号
-LATEST_AGENT_VERSION = "1.8.50-go"
+LATEST_AGENT_VERSION = "1.8.51-go"
 
 # 版本更新日志（可选）
 VERSION_CHANGELOG = {
+    "1.8.51-go": {
+        "date": "2026-11-01",
+        "features": [
+            "Mihomo 流量记录：开启后在后台持续采样连接，按小时、设备、策略组、出口节点和目标累加流量并定期上报，不依赖面板是否打开",
+            "域名发现与流量记录共用同一次连接轮询，两者都开启时不重复读取"
+        ]
+    },
     "1.8.50-go": {
         "date": "2026-10-30",
         "features": [

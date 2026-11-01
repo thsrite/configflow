@@ -14,6 +14,7 @@ from typing import Dict, Any, List, Optional
 import requests
 from . import runtime_state
 from .metrics_history import MetricsHistory
+from .traffic_history import TrafficHistory
 from .diagnostics import dns_report_fields, failure_text, response_failure
 from .operation_events import append_event, event_time
 
@@ -123,6 +124,8 @@ class AgentManager:
         # 监控历史在内存中，文件位于数据目录的 metrics/；服务进程启动时由
         # metrics_flush.load_history() 移入旧目录的文件、读回并迁移旧格式
         self.metrics_history = MetricsHistory(os.path.join(str(repository.data_dir), 'metrics'))
+        # 流量记录同样先放内存，随监控历史一起保存到 metrics/traffic_history.sqlite3
+        self.traffic_history = TrafficHistory(os.path.join(str(repository.data_dir), 'metrics'))
         # 心跳状态只放在内存，不再每次心跳重写整份配置；版本号变化时才写配置
         self.runtime = runtime_state.for_data_dir(repository.data_dir)
         runtime_state.import_legacy_database(repository, self.runtime, self._save_reported_fields)
@@ -240,6 +243,9 @@ class AgentManager:
                     # 管理端设置的开关，重新注册不能把它清掉
                     'domain_discovery_enabled': existing_agent.get('domain_discovery_enabled', False),
                 }
+                for field in ('traffic_history_enabled', 'traffic_history_since'):
+                    if field in existing_agent:
+                        updated_agent[field] = existing_agent[field]
                 for field in ('config_revision', 'pushed_at', 'applied_content', 'dns_follow', 'dns_follow_state', 'dns_follow_job', 'rule_sync',
                               'oxidns_ha', 'oxidns_ha_state', 'oxidns_ha_publication', 'node_test_dns_endpoints',
                               'ipv6_verification_settings', 'ipv6_verifications'):
@@ -410,6 +416,11 @@ class AgentManager:
             self.runtime.delete(agent_id)
             # 删除失败时文件会在下次启动时清理
             self.metrics_history.delete_agent_history(agent_id)
+            try:
+                self.traffic_history.delete(agent_id)
+            except Exception as error:
+                # 下次保存时按 Agent 列表清理
+                logger.warning('删除 Agent %s 的流量记录失败：%s', agent_id, error)
         return result
 
     def update_heartbeat(self, agent_id: str, heartbeat_data: Dict[str, Any] = None) -> bool:
@@ -1554,6 +1565,24 @@ class AgentManager:
                 if enabled and agent.get('service_type') != 'mihomo':
                     raise ValueError('域名发现只支持 mihomo Agent')
                 agent['domain_discovery_enabled'] = bool(enabled)
+                agent['updated_at'] = datetime.now().isoformat()
+                return dict(agent)
+            return None
+
+        result = self._update_agents(update)
+        return self.runtime.overlay([result])[0] if result else None
+
+    def set_traffic_history(self, agent_id: str, enabled: bool) -> Optional[Dict[str, Any]]:
+        """开关 mihomo Agent 的流量记录；开启时记下开始时间。返回更新后的 Agent，不存在时返回 None。"""
+        def update(agents):
+            for agent in agents:
+                if agent['id'] != agent_id:
+                    continue
+                if enabled and agent.get('service_type') != 'mihomo':
+                    raise ValueError('流量记录只支持 mihomo Agent')
+                if enabled and not agent.get('traffic_history_enabled'):
+                    agent['traffic_history_since'] = datetime.now(timezone.utc).isoformat()
+                agent['traffic_history_enabled'] = bool(enabled)
                 agent['updated_at'] = datetime.now().isoformat()
                 return dict(agent)
             return None

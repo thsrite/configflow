@@ -62,6 +62,42 @@ export function aggregateConnections(
 
 export const isInnerSource = (key: string) => key === INNER_SOURCE
 
+/** 流量记录：空键是「未归属」（采样间隔内开始又结束的短连接），* 是并入的「其他」目标 */
+export const UNATTRIBUTED_KEY = ''
+export const OTHER_TARGET_KEY = '*'
+
+export type TrafficRange = 'live' | '24h' | '7d' | '30d'
+export const TRAFFIC_RANGES: Array<{ value: TrafficRange; label: string }> = [
+  { value: 'live', label: '实时' },
+  { value: '24h', label: '24 小时' },
+  { value: '7d', label: '7 天' },
+  { value: '30d', label: '30 天' }
+]
+
+export interface TrafficHistoryRow {
+  key: string
+  up: number
+  down: number
+  conns: number
+}
+
+export interface TrafficHistoryData {
+  enabled: boolean
+  since: string | null
+  supported: boolean
+  min_version: string
+  retention_days: number
+  retention_choices: number[]
+  range?: string
+  by?: string
+  step?: number
+  start?: string
+  rows?: TrafficHistoryRow[]
+  omitted?: number
+  total?: { up: number; down: number; conns: number }
+  trend?: Array<{ at: string; up: number; down: number }>
+}
+
 /** Mihomo v1.19.19 起 /rules 带 extra（命中、未命中次数与时间），更早的内核没有 */
 export interface MihomoRuleWithExtra extends MihomoRule {
   index?: number

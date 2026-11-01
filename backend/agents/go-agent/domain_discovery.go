@@ -41,9 +41,6 @@ const (
 
 var errControllerAuth = errors.New("mihomo controller rejected the secret")
 
-// 连接轮询间隔；存活不到一个间隔的连接可能漏采，失败的连接由日志兜底
-var discoveryPollInterval = 2 * time.Second
-
 // ---------- 控制接口定位 ----------
 
 type mihomoController struct {
@@ -240,6 +237,8 @@ type mihomoConn struct {
 	ID       string `json:"id"`
 	Metadata struct {
 		Network         string `json:"network"`
+		SourceIP        string `json:"sourceIP"`
+		DestinationIP   string `json:"destinationIP"`
 		InboundName     string `json:"inboundName"`
 		Host            string `json:"host"`
 		SniffHost       string `json:"sniffHost"`
@@ -477,31 +476,6 @@ func (d *discoveryCollector) run(ctx context.Context) {
 	wg.Wait()
 }
 
-func (d *discoveryCollector) fetchConnections(ctx context.Context, controller *mihomoController) ([]mihomoConn, error) {
-	req, err := controller.request(ctx, http.MethodGet, "/connections")
-	if err != nil {
-		return nil, err
-	}
-	resp, err := d.pollClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, errControllerAuth
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
-	}
-	var body struct {
-		Connections []mihomoConn `json:"connections"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<20)).Decode(&body); err != nil {
-		return nil, err
-	}
-	return body.Connections, nil
-}
-
 func (d *discoveryCollector) fetchVersion(ctx context.Context, controller *mihomoController) {
 	req, err := controller.request(ctx, http.MethodGet, "/version")
 	if err != nil {
@@ -522,45 +496,45 @@ func (d *discoveryCollector) fetchVersion(ctx context.Context, controller *mihom
 	}
 }
 
+// pollLoop 订阅共用的连接轮询（与流量记录共用），连接从快照中消失即计入域名统计。
+// 存活不到一个轮询间隔的连接可能漏采，失败的连接由日志兜底。
 func (d *discoveryCollector) pollLoop(ctx context.Context) {
+	snapshots, unsubscribe := mihomoConns.subscribe(d.cfg)
+	defer unsubscribe()
 	tracker := newConnTracker(discoveryMaxTracked)
-	ticker := time.NewTicker(discoveryPollInterval)
-	defer ticker.Stop()
 	connected := false
 	for {
-		if controller, err := d.currentController(); err == nil {
-			conns, err := d.fetchConnections(ctx, controller)
-			switch {
-			case err == nil:
-				if !connected {
-					d.fetchVersion(ctx, controller)
-					connected = true
-				}
-				d.setStatus("running", false)
-				finished, overflow := tracker.observe(conns)
-				now := time.Now()
-				for _, conn := range finished {
-					d.aggregator.addConn(conn, now)
-				}
-				if overflow > 0 {
-					d.aggregator.mu.Lock()
-					d.aggregator.dropped += int64(overflow)
-					d.aggregator.mu.Unlock()
-				}
-			case errors.Is(err, errControllerAuth):
-				connected = false
-				d.setStatus("auth_failed", true)
-			case ctx.Err() != nil:
-				return
-			default:
-				connected = false
-				d.setStatus("unreachable", true)
-			}
-		}
+		var snapshot mihomoConnSnapshot
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case snapshot = <-snapshots:
+		}
+		switch err := snapshot.Err; {
+		case err == nil:
+			if !connected {
+				d.fetchVersion(ctx, snapshot.Controller)
+				connected = true
+			}
+			d.setStatus("running", false)
+			finished, overflow := tracker.observe(snapshot.Conns)
+			for _, conn := range finished {
+				d.aggregator.addConn(conn, snapshot.At)
+			}
+			if overflow > 0 {
+				d.aggregator.mu.Lock()
+				d.aggregator.dropped += int64(overflow)
+				d.aggregator.mu.Unlock()
+			}
+		case snapshot.Controller == nil:
+			connected = false
+			d.setStatus("no_controller", true)
+		case errors.Is(err, errControllerAuth):
+			connected = false
+			d.setStatus("auth_failed", true)
+		default:
+			connected = false
+			d.setStatus("unreachable", true)
 		}
 	}
 }

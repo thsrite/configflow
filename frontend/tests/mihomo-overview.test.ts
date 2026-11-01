@@ -3,10 +3,15 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { aggregateConnections, destinationKey, ruleHitCounts } from '@/lib/mihomo-overview'
 import MihomoLatencyCard from '@/components/mihomo/MihomoLatencyCard.vue'
 import MihomoConnectionStats from '@/components/mihomo/MihomoConnectionStats.vue'
-import { mihomoPanelApi } from '@/api'
+import { mihomoPanelApi, trafficHistoryApi } from '@/api'
+import { choose } from '@/lib/feedback'
 import type { MihomoConnection } from '@/types/mihomo'
 
-vi.mock('@/api', () => ({ mihomoPanelApi: { proxies: vi.fn(), proxyDelay: vi.fn() } }))
+vi.mock('@/api', () => ({
+  mihomoPanelApi: { proxies: vi.fn(), proxyDelay: vi.fn() },
+  trafficHistoryApi: { get: vi.fn(), setEnabled: vi.fn(), clear: vi.fn(), setRetention: vi.fn() }
+}))
+vi.mock('@/lib/feedback', () => ({ choose: vi.fn(), confirmDanger: vi.fn(), notify: { success: vi.fn(), error: vi.fn() } }))
 vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
 
 const connection = (id: string, options: { source?: string; host?: string; ip?: string; chains?: string[]; up?: number; down?: number }): MihomoConnection => ({
@@ -128,5 +133,70 @@ describe('latency card', () => {
     await flushPromises()
     // 默认取配置里第一个策略组
     expect(vi.mocked(mihomoPanelApi.proxyDelay).mock.calls.map(call => call[1])).toContain('Proxy')
+  })
+})
+
+describe('traffic history on the statistics card', () => {
+  const state = (extra: Record<string, unknown> = {}) => ({ data: { success: true, data: {
+    enabled: false, since: null, supported: true, min_version: '1.8.51-go', retention_days: 90, retention_choices: [30, 90, 180, 365], ...extra
+  } } }) as any
+  const history = state({
+    enabled: true, since: '2026-11-01T02:00:00+00:00', range: '24h', by: 'source', step: 3600,
+    rows: [{ key: '10.0.0.2', up: 10, down: 4096, conns: 7 }, { key: '', up: 1, down: 1024, conns: 0 }],
+    total: { up: 11, down: 5120, conns: 7 }, trend: [{ at: 'a', up: 1, down: 100 }, { at: 'b', up: 10, down: 5020 }]
+  })
+  const mountCard = async () => {
+    const wrapper = mount(MihomoConnectionStats, { props: {
+      connections: [connection('a', { source: '10.0.0.2', host: 'a.example.com', down: 2048 })],
+      speeds: new Map(), notes: { '10.0.0.2': '书房电脑' }, agentId: 'gw', active: true
+    } })
+    await flushPromises()
+    return wrapper
+  }
+  beforeEach(() => {
+    vi.resetAllMocks()
+    localStorage.clear()
+  })
+
+  it('turns recording on and shows only the live view until it is on', async () => {
+    vi.mocked(trafficHistoryApi.get).mockResolvedValueOnce(state()).mockResolvedValue(history)
+    vi.mocked(trafficHistoryApi.setEnabled).mockResolvedValue({} as any)
+    const wrapper = await mountCard()
+    expect(wrapper.text()).toContain('开启后 Agent 在后台持续记录')
+    expect(wrapper.findAll('[data-segment]').map(button => button.text())).not.toContain('24 小时')
+    await wrapper.get('button[role="switch"]').trigger('click')
+    await flushPromises()
+    expect(trafficHistoryApi.setEnabled).toHaveBeenCalledWith('gw', true, false)
+    expect(wrapper.text()).toContain('记录中')
+    await wrapper.findAll('[data-segment]').find(button => button.text() === '24 小时')!.trigger('click')
+    await flushPromises()
+    expect(trafficHistoryApi.get).toHaveBeenLastCalledWith('gw', '24h', 'source', expect.anything())
+    // 历史范围：没有速度列，「未归属」单独一行，设备数不算它
+    expect(wrapper.text()).toContain('新建连接')
+    expect(wrapper.text()).not.toContain('速度')
+    expect(wrapper.text()).toContain('未归属')
+    expect(wrapper.text()).toContain('5.0 KB')
+    expect(wrapper.findAll('tbody tr')[0].text()).toContain('书房电脑')
+    expect(localStorage.getItem('configflow:mihomo-overview:range')).toBe('24h')
+    wrapper.unmount()
+  })
+
+  it('asks whether to keep the data when recording stops', async () => {
+    vi.mocked(trafficHistoryApi.get).mockResolvedValueOnce(history).mockResolvedValue(state())
+    vi.mocked(trafficHistoryApi.setEnabled).mockResolvedValue({} as any)
+    vi.mocked(choose).mockResolvedValue('alt')
+    const wrapper = await mountCard()
+    await wrapper.get('button[role="switch"]').trigger('click')
+    await flushPromises()
+    expect(trafficHistoryApi.setEnabled).toHaveBeenCalledWith('gw', false, true)
+    wrapper.unmount()
+  })
+
+  it('keeps the switch off for agents that are too old', async () => {
+    vi.mocked(trafficHistoryApi.get).mockResolvedValue(state({ supported: false }))
+    const wrapper = await mountCard()
+    expect(wrapper.text()).toContain('需要将 Agent 更新到 1.8.51-go')
+    expect(wrapper.get('button[role="switch"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
   })
 })
