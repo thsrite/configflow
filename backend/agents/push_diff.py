@@ -6,7 +6,10 @@ prepares (``content_sync``). Nothing here builds bundles or contacts devices.
 
 Files are compared by the same per-file digests as the "changed" status.
 Changed provider, rule and main configuration files are then summarised from
-their bytes; the main YAML is compared key by key. Values are returned as they
+their bytes; the main YAML is compared key by key. Subscription files also list
+which nodes were added, removed or modified (matched by name, field by field)
+and rule set files which rules were added or removed, a bounded number per file
+and per response. Values are returned as they
 are, with every credential marked: credential fields, URL credentials and long
 opaque URL parts, also inside the unified diff. A display text is a plain
 string when nothing in it is a credential, else a list of strings and
@@ -37,9 +40,14 @@ MAX_RAW_BYTES = 160 * 1024
 MAX_RAW_INPUT_LINES = 60000
 MAX_LISTED_FILES = 500
 MAX_DEPTH = 64
+# Per subscription / rule set file; and for all file details of one response together.
+MAX_NODE_DETAILS = 100
+MAX_RULE_DETAILS = 200
+MAX_DETAIL_BYTES = 256 * 1024
 CONFIG_ROLE = 'config'
 HIDDEN = '已隐藏'
 STORED = '[REDACTED]'
+UNNAMED = '（未命名节点）'
 
 # A field whose value is a credential, matched on the normalized key name.
 _SECRET_KEYS = frozenset({
@@ -157,8 +165,9 @@ def unpack(value):
     return ''.join(text), ranges
 
 
-# The display texts of a response: file names, values, list entries, raw diff lines.
-_TEXT_KEYS = frozenset({'name', 'old', 'new', 'text'})
+# The display texts of a response: file names, values, list entries (a new node's type and
+# server:port in ``info``), raw diff lines.
+_TEXT_KEYS = frozenset({'name', 'old', 'new', 'text', 'info'})
 _TEXT_LIST_KEYS = frozenset({'added_items', 'removed_items', 'lines'})
 
 
@@ -803,27 +812,189 @@ def diff_config(old_bytes, new_bytes, *, old_name='config.yaml', new_name='confi
     return result
 
 
-def _nodes(data):
+class _DetailBudget:
+    """Bytes of file details one response may still carry; past it entries are only counted."""
+
+    def __init__(self, limit=None):
+        self.left, self.spent = MAX_DETAIL_BYTES if limit is None else limit, False
+
+    def take(self, entry):
+        if self.spent:
+            return False
+        size = len(json.dumps(entry, ensure_ascii=False).encode())
+        if size > self.left:
+            self.spent = True  # keep each file's listed part contiguous
+            return False
+        self.left -= size
+        return True
+
+
+def _quotas(totals, limit):
+    """``limit`` listed entries shared fairly between change groups (a small group is listed in full)."""
+    quotas = {change: 0 for change in totals}
+    pending = [change for change, total in totals.items() if total]
+    left = limit
+    while left > 0 and pending:
+        share = max(1, left // len(pending))
+        for change in list(pending):
+            give = min(share, totals[change] - quotas[change], left)
+            quotas[change] += give
+            left -= give
+            if quotas[change] >= totals[change]:
+                pending.remove(change)
+            if left <= 0:
+                break
+    return quotas
+
+
+def _group(change, total, entries):
+    return {'change': change, 'total': total, 'entries': entries, 'omitted': total - len(entries)}
+
+
+def _details(kind, groups, budget, *, repeated=0):
+    details = {'kind': kind, 'groups': groups}
+    if budget.spent:  # this response's budget, not the per-file limit, cut the list
+        details['limited'] = True
+    if repeated:  # names used by several nodes, matched in file order
+        details['repeated'] = repeated
+    return details
+
+
+def _node_items(data):
+    """(name or None, node, comparable text) for every node of a subscription file."""
     document = _load_yaml(data)
     proxies = document.get('proxies') if isinstance(document, dict) else None
     if not isinstance(proxies, list):
         raise ValueError('not a node list')
-    nodes = {}
-    for index, item in enumerate(proxies):
+    items = []
+    for item in proxies:
         name = item.get('name') if isinstance(item, dict) else None
-        nodes[name if isinstance(name, str) else f'#{index}'] = _json(item)
-    return nodes
+        items.append((name if isinstance(name, str) and name else None, item, _json(item)))
+    return items
 
 
-def _node_summary(old, new):
+def _pair_nodes(before, after):
+    """Nodes matched by name: added and removed indices, modified (old, new) index pairs, repeated names.
+
+    A name used by several nodes is matched in two steps: identical nodes are
+    unchanged, the rest pair up in file order; what is left over was added or
+    removed. Nodes without a name are matched the same way among themselves.
+    """
+    old_by, new_by = {}, {}
+    for index, (name, _, _) in enumerate(before):
+        old_by.setdefault(name, []).append(index)
+    for index, (name, _, _) in enumerate(after):
+        new_by.setdefault(name, []).append(index)
+    added, removed, modified, repeated = [], [], [], 0
+    for name in {**old_by, **new_by}:
+        olds, news = old_by.get(name, []), new_by.get(name, [])
+        if len(olds) == 1 and len(news) == 1:
+            if before[olds[0]][2] != after[news[0]][2]:
+                modified.append((olds[0], news[0]))
+            continue
+        if len(olds) > 1 or len(news) > 1:
+            repeated += 1
+            same = {}
+            for index in olds:
+                same.setdefault(before[index][2], []).append(index)
+            left_new = []
+            for index in news:
+                twins = same.get(after[index][2])
+                if twins:
+                    twins.pop(0)
+                else:
+                    left_new.append(index)
+            olds, news = sorted(index for twins in same.values() for index in twins), left_new
+        modified.extend(zip(olds, news))
+        removed.extend(olds[len(news):])
+        added.extend(news[len(olds):])
+    added.sort()
+    removed.sort()
+    modified.sort(key=lambda pair: pair[1])
+    return added, removed, modified, repeated
+
+
+def _occurrences(items):
+    """Per node index, its place among nodes of the same name (1-based), only for repeated names."""
+    counts = Counter(name for name, _, _ in items)
+    seen, places = Counter(), {}
+    for index, (name, _, _) in enumerate(items):
+        if counts[name] > 1:
+            seen[name] += 1
+            places[index] = seen[name]
+    return places
+
+
+def _node_info(node):
+    """Type and server:port of a node, e.g. ``ss · hk.example.com:443``."""
+    if not isinstance(node, dict):
+        return None
+    parts = []
+    kind, server, port = node.get('type'), node.get('server'), node.get('port')
+    if isinstance(kind, str) and kind:
+        parts.append(kind)
+    if isinstance(server, (str, int)) and str(server):
+        host = str(server)
+        if ':' in host and not host.startswith('['):
+            host = f'[{host}]'  # an IPv6 address
+        parts.append(f'{host}:{_scalar(port)}' if port is not None and port != '' else host)
+    return _show(' · '.join(parts)) if parts else None
+
+
+def _node_entry(change, items, index, places):
+    name, node, _ = items[index]
+    entry = {'change': change, 'text': _show(UNNAMED if name is None else name)}
+    if index in places:
+        entry['nth'] = places[index]
+    if change == 'added':
+        info = _node_info(node)
+        if info:
+            entry['info'] = info
+    return entry
+
+
+def _node_details(before, after, pairs, budget):
+    """Which nodes were added, removed or modified, with field changes; bounded."""
+    added, removed, modified, repeated = pairs
+    totals = {'added': len(added), 'removed': len(removed), 'modified': len(modified)}
+    quotas = _quotas(totals, MAX_NODE_DETAILS)
+    old_places, new_places = _occurrences(before), _occurrences(after)
+    groups = []
+    for change, indices in (('added', added), ('removed', removed), ('modified', modified)):
+        if not indices:
+            continue
+        entries = []
+        for item in indices[:quotas[change]]:
+            if change == 'modified':
+                old_index, new_index = item
+                entry = _node_entry(change, after, new_index, new_places)
+                entry['fields'], entry['fields_omitted'] = _entry_fields(
+                    before[old_index][1], after[new_index][1], ('proxies',))
+            elif change == 'added':
+                entry = _node_entry(change, after, item, new_places)
+            else:
+                entry = _node_entry(change, before, item, old_places)
+            if not budget.take(entry):
+                break
+            entries.append(entry)
+        groups.append(_group(change, totals[change], entries))
+    return _details('nodes', groups, budget, repeated=repeated)
+
+
+def _node_change(old, new, budget):
+    """Summary of a subscription file and, when both sides parse, which nodes changed."""
     try:
-        before = _nodes(old) if old is not None else {}
-        after = _nodes(new) if new is not None else {}
+        before = _node_items(old) if old is not None else []
+        after = _node_items(new) if new is not None else []
     except (UnicodeDecodeError, yaml.YAMLError, ValueError, RecursionError, AttributeError):
-        return _size_summary(old, new)
-    return {'kind': 'nodes', 'before': None if old is None else len(before), 'after': None if new is None else len(after),
-            'added': len(after.keys() - before.keys()), 'removed': len(before.keys() - after.keys()),
-            'modified': sum(1 for name in after.keys() & before.keys() if after[name] != before[name])}
+        return _size_summary(old, new), None
+    pairs = _pair_nodes(before, after)
+    summary = {'kind': 'nodes', 'before': None if old is None else len(before),
+               'after': None if new is None else len(after),
+               'added': len(pairs[0]), 'removed': len(pairs[1]), 'modified': len(pairs[2])}
+    if budget is None or not any(summary[key] for key in ('added', 'removed', 'modified')):
+        return summary, None
+    return summary, _node_details(before, after, pairs, budget)
 
 
 def rule_entries(data):
@@ -844,15 +1015,43 @@ def rule_entries(data):
     return [stripped for line in lines if (stripped := line.strip()) and not stripped.startswith(('#', '//'))]
 
 
-def _rule_summary(old, new):
+def _rule_details(before, after, added, removed, budget):
+    """Added rules in the new file's order, removed ones in the old file's; bounded."""
+    totals = {'added': sum(added.values()), 'removed': sum(removed.values())}
+    quotas = _quotas(totals, MAX_RULE_DETAILS)
+    groups = []
+    for change, changed, entries in (('added', added, after), ('removed', removed, before)):
+        if not totals[change]:
+            continue
+        listed, left = [], Counter(changed)
+        for entry in entries:
+            if len(listed) >= quotas[change]:
+                break
+            if left[entry] > 0:  # a rule kept twice and now once is one removal
+                left[entry] -= 1
+                row = {'change': change, 'text': _show(entry)}
+                if not budget.take(row):
+                    break
+                listed.append(row)
+        groups.append(_group(change, totals[change], listed))
+    return _details('rules', groups, budget)
+
+
+def _rule_change(old, new, budget):
+    """Summary of a rule set file and, for text and YAML payloads, which rules changed."""
     try:
         before = rule_entries(old) if old is not None else []
         after = rule_entries(new) if new is not None else []
     except UnicodeDecodeError:  # binary rule sets (mrs)
-        return _size_summary(old, new)
+        return _size_summary(old, new), None
     old_count, new_count = Counter(before), Counter(after)
-    return {'kind': 'rules', 'before': None if old is None else len(before), 'after': None if new is None else len(after),
-            'added': sum((new_count - old_count).values()), 'removed': sum((old_count - new_count).values())}
+    added, removed = new_count - old_count, old_count - new_count
+    summary = {'kind': 'rules', 'before': None if old is None else len(before),
+               'after': None if new is None else len(after),
+               'added': sum(added.values()), 'removed': sum(removed.values())}
+    if budget is None or not summary['added'] and not summary['removed']:
+        return summary, None
+    return summary, _rule_details(before, after, added, removed, budget)
 
 
 def _size_summary(old, new):
@@ -886,12 +1085,14 @@ def _comparison_digests(manifest, comparison_config=None):
     return deployment_content_digests(manifest)
 
 
-def _public_file(entry, status, summary=None):
+def _public_file(entry, status, summary=None, details=None):
     item = {'path': entry['path'], 'role': entry.get('role'), 'status': status}
     if entry.get('name'):
         item['name'] = _show(entry['name'], clip=False)
     if summary is not None:
         item['summary'] = summary
+    if details is not None:
+        item['details'] = details
     return item
 
 
@@ -945,15 +1146,18 @@ def build_push_diff(agent, bundle, repository, *, receipt=_MISSING):
     old_bytes = (_read(receipt['bundle'].archive, [old_entries[path]['path'] for path in listed if path in old_entries])
                  if receipt else {})
 
-    files, config = [], None
-    for path in listed:
+    config, public = None, {}
+    # Without the previous bundle only digests are compared: no node or rule details either.
+    budget = _DetailBudget() if receipt is not None else None
+    # Modified files are detailed first: past the response's budget the rest are only counted.
+    for path in sorted(listed, key=lambda path: statuses[path] != 'modified'):
         status = statuses[path]
         entry = entry_for(path)
         old = old_bytes.get(old_entries[path]['path']) if path in old_entries else None
         new = new_bytes.get(new_entries[path]['path']) if path in new_entries else None
         known_old = status == 'added' or old is not None
         role = entry.get('role')
-        summary = None
+        summary = details = None
         if not known_old and status == 'modified':
             summary = None
         elif role == CONFIG_ROLE:
@@ -963,13 +1167,14 @@ def build_push_diff(agent, bundle, repository, *, receipt=_MISSING):
                            'before': len(old), 'after': len(new)}
             else:
                 summary = _size_summary(old, new)
-        elif role == 'provider':
-            summary = _node_summary(old, new)
-        elif role == 'rule':
-            summary = _rule_summary(old, new)
+        elif role == 'provider' and (old is not None or new is not None):
+            summary, details = _node_change(old, new, budget)
+        elif role == 'rule' and (old is not None or new is not None):
+            summary, details = _rule_change(old, new, budget)
         elif status != 'removed' or old is not None:
             summary = _size_summary(old, new)
-        files.append(_public_file(entry, status, summary))
+        public[path] = _public_file(entry, status, summary, details)
+    files = [public[path] for path in listed]
     if config is None and statuses.get('config.yaml') == 'modified':
         config = {'format': 'yaml', 'status': 'unavailable', 'reason': content_reason or 'bundle_missing',
                   'items': [], 'omitted': 0}

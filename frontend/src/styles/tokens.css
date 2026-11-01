@@ -267,11 +267,13 @@ body {
   white-space: nowrap;
 }
 
-/* 待推送的变更：展开的明细接在配置项下方，不另起分隔线。 */
+/* 待推送的变更：展开的明细接在文件或配置项下方，不另起分隔线。 */
+.push-diff-files tr.is-expanded td,
 .push-diff-config tr.is-expanded td {
   border-bottom: none;
 }
 
+.push-diff-files tr.push-diff-detail td,
 .push-diff-config tr.push-diff-detail td {
   padding-top: 0;
 }
@@ -562,7 +564,7 @@ body {
     min-width: 0;
   }
 
-  /* 待推送的变更：名称与变化同排，摘要、原值、新值各占一行；明细紧跟在所属配置项下。 */
+  /* 待推送的变更：名称与变化同排，摘要、原值、新值各占一行；明细紧跟在所属文件或配置项下。 */
   .push-diff-files tbody tr,
   .push-diff-config tbody tr {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -581,6 +583,7 @@ body {
   .push-diff-config td:nth-child(4) { grid-area: new; }
 
   .push-diff-files tbody tr.push-diff-more,
+  .push-diff-files tbody tr.push-diff-detail,
   .push-diff-config tbody tr.push-diff-detail {
     display: block;
   }
@@ -590,6 +593,7 @@ body {
     display: none;
   }
 
+  .push-diff-files tbody tr.push-diff-detail,
   .push-diff-config tbody tr.push-diff-detail {
     padding-top: 0;
     border-top: 0;

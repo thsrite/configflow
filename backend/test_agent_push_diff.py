@@ -1,6 +1,7 @@
 """What a push would change: file digests, YAML key paths, bounded lists, marked credentials, speed."""
 import difflib
 import json
+import re
 import time
 
 import pytest
@@ -388,7 +389,16 @@ def test_files_are_listed_by_digest_with_role_summaries():
     assert [item['path'] for item in result['unchanged']] == ['ruleset/Same.list']
     # Order: main configuration, subscriptions, rule sets, other files.
     assert [item['role'] for item in result['files']] == ['config', 'provider', 'provider', 'rule', 'custom']
-    encoded = json.dumps(result, ensure_ascii=False)
+    # Node and rule details come with the file; a credential is only ever a marked piece.
+    feed = {group['change']: group for group in files['providers/Feed.yaml']['details']['groups']}
+    assert [entry['text'] for entry in feed['added']['entries']] == ['Node D', 'Node E']
+    assert [entry['text'] for entry in feed['removed']['entries']] == ['Node C']
+    assert feed['modified']['entries'][0]['fields'] == [{
+        'key': 'password', 'change': 'modified', 'sensitive': True,
+        'old': [{'secret': 'node-a-password'}], 'new': [{'secret': 'rotated-password'}]}]
+    assert [entry['text'] for entry in files['providers/Second.yaml']['details']['groups'][0]['entries']] == ['Node A']
+    assert 'details' not in files['extra.txt'] and 'details' not in files['config.yaml']
+    encoded = json.dumps(without_secrets(result), ensure_ascii=False)
     assert 'rotated-password' not in encoded and 'node-a-password' not in encoded
 
 
@@ -417,6 +427,7 @@ def test_without_saved_bundle_only_digests_are_compared():
     files = {item['path']: item for item in result['files']}
     assert 'summary' not in files['providers/Feed.yaml']  # previous bytes were not kept
     assert files['rules/new.txt']['summary'] == {'kind': 'rules', 'before': None, 'after': 1, 'added': 1, 'removed': 0}
+    assert not any('details' in item for item in result['files'])  # digests only: nothing to expand
     assert result['config'] == {'format': 'yaml', 'status': 'unavailable', 'reason': 'service_without_bundle',
                                 'items': [], 'omitted': 0}
     mihomo = build_push_diff(agent_for(old, 'mihomo'), new, None, receipt=None)
@@ -441,7 +452,16 @@ def test_large_rule_sets_are_counted_quickly_and_keep_the_response_small():
     assert files['ruleset/Big.list'] == {'kind': 'rules', 'before': 60000, 'after': 61000, 'added': 2500, 'removed': 1500}
     assert files['ruleset/Big.yaml'] == {'kind': 'rules', 'before': 60000, 'after': 59300, 'added': 0, 'removed': 700}
     assert elapsed < 3, elapsed
-    assert len(json.dumps(result, ensure_ascii=False)) < 4000
+    details = {item['path']: item['details'] for item in result['files']}
+    big = {group['change']: group for group in details['ruleset/Big.list']['groups']}
+    assert [len(big['added']['entries']), len(big['removed']['entries'])] == [100, 100]  # 200 per file, shared
+    assert (big['added']['omitted'], big['removed']['omitted']) == (2400, 1400)
+    assert big['added']['entries'][0]['text'] == '+.fresh-0.example.org'
+    assert big['removed']['entries'][0]['text'] == '+.domain-0.example.com'
+    payload = details['ruleset/Big.yaml']['groups']
+    assert [(group['change'], len(group['entries']), group['omitted']) for group in payload] == [('removed', 200, 500)]
+    assert payload[0]['entries'][0]['text'] == '+.domain-59300.example.com'  # quotes of the YAML payload removed
+    assert len(json.dumps(result, ensure_ascii=False)) < 40000
 
 
 def test_large_inline_rules_in_the_main_file_stay_bounded():
@@ -454,6 +474,213 @@ def test_large_inline_rules_in_the_main_file_stay_bounded():
     assert (rules['added'], rules['removed']) == (3000, 1000)
     assert elapsed < 6, elapsed
     assert len(json.dumps(result, ensure_ascii=False).encode()) < push_diff.MAX_RAW_BYTES + 32 * 1024
+
+
+def groups_of(details):
+    return {group['change']: group for group in details['groups']}
+
+
+def provider_bytes(nodes):
+    dumper = getattr(yaml, 'CSafeDumper', yaml.SafeDumper)
+    return yaml.dump({'proxies': nodes}, Dumper=dumper, allow_unicode=True, sort_keys=False).encode()
+
+
+def node_change(old_nodes, new_nodes):
+    return push_diff._node_change(provider_bytes(old_nodes), provider_bytes(new_nodes), push_diff._DetailBudget())
+
+
+HK = {'name': 'HK 01', 'type': 'ss', 'server': 'a.example', 'port': 11005, 'cipher': 'aes-128-gcm',
+      'password': 'hk-pass-before', 'plugin': 'v2ray-plugin',
+      'plugin-opts': {'mode': 'websocket', 'host': 'cdn-a.example', 'path': '/ws'}}
+JP = {'name': 'JP 01', 'type': 'vmess', 'server': 'jp.example', 'port': 443, 'uuid': 'jp-uuid-before-0001',
+      'network': 'ws', 'ws-opts': {'path': '/v', 'headers': {'Host': 'jp-cdn.example'}}, 'alpn': ['h2']}
+SG = {'name': 'SG 01', 'type': 'trojan', 'server': 'sg.example', 'port': 443, 'password': 'sg-pass-0001'}
+
+
+def test_subscription_details_list_nodes_and_their_field_changes():
+    new_hk = {**HK, 'server': 'b.example', 'port': 11008, 'password': 'hk-pass-after',
+              'plugin-opts': {**HK['plugin-opts'], 'host': 'cdn-b.example'}}
+    new_jp = {**JP, 'uuid': 'jp-uuid-after-0002', 'ws-opts': {'path': '/v', 'headers': {'Host': 'jp-cdn2.example'}},
+              'alpn': ['h2', 'http/1.1']}
+    us = {'name': 'US 01', 'type': 'hysteria2', 'server': '2001:db8::7', 'port': 8443, 'password': 'us-pass-0001'}
+    old = bundle(base_config(), providers={'Feed': provider([HK, JP, SG])})
+    new = bundle(base_config(), providers={'Feed': provider([new_hk, new_jp, us])}, deployment='d2')
+    result = build_push_diff(agent_for(old), new, None, receipt=receipt_for(old))
+    feed = next(item for item in result['files'] if item['path'] == 'providers/Feed.yaml')
+    assert feed['summary'] == {'kind': 'nodes', 'before': 3, 'after': 3, 'added': 1, 'removed': 1, 'modified': 2}
+    assert [group['change'] for group in feed['details']['groups']] == ['added', 'removed', 'modified']
+    groups = groups_of(feed['details'])
+    # A new node: its name, type and server:port (an IPv6 address in brackets); a removed one: its name.
+    assert groups['added'] == {'change': 'added', 'total': 1, 'omitted': 0, 'entries': [
+        {'change': 'added', 'text': 'US 01', 'info': 'hysteria2 · [2001:db8::7]:8443'}]}
+    assert groups['removed'] == {'change': 'removed', 'total': 1, 'omitted': 0,
+                                 'entries': [{'change': 'removed', 'text': 'SG 01'}]}
+    hk, jp = groups['modified']['entries']
+    assert (hk['text'], hk['fields_omitted']) == ('HK 01', 0)
+    assert {field['key']: (field['old'], field['new'], field['sensitive']) for field in hk['fields']} == {
+        'server': ('a.example', 'b.example', False),
+        'port': ('11005', '11008', False),
+        'password': ([{'secret': 'hk-pass-before'}], [{'secret': 'hk-pass-after'}], True),
+        'plugin-opts.host': ('cdn-a.example', 'cdn-b.example', False)}  # nested fields by path
+    jp_fields = {field['key']: field for field in jp['fields']}
+    assert jp_fields['uuid']['sensitive'] and jp_fields['uuid']['new'] == [{'secret': 'jp-uuid-after-0002'}]
+    host = jp_fields['ws-opts.headers.Host']
+    assert (host['old'], host['new'], host['sensitive']) == ('jp-cdn.example', 'jp-cdn2.example', False)
+    assert jp_fields['alpn']['list']['added_items'] == ['http/1.1']
+    assert 'limited' not in feed['details'] and 'repeated' not in feed['details']
+    # With 隐藏敏感信息 on no credential is left anywhere; servers and ports stay readable.
+    shown = json.dumps(result, ensure_ascii=False)
+    hidden = json.dumps(without_secrets(result), ensure_ascii=False)
+    for secret in ('hk-pass-before', 'hk-pass-after', 'jp-uuid-before-0001', 'jp-uuid-after-0002'):
+        assert secret in shown and secret not in hidden
+    for secret in ('us-pass-0001', 'sg-pass-0001'):  # a new node shows type and address, a removed one its name
+        assert secret not in shown
+    for value in ('b.example', '11008', 'cdn-b.example', '[2001:db8::7]:8443'):
+        assert value in hidden
+
+
+def test_repeated_and_unnamed_nodes_are_matched_in_file_order():
+    first = {'name': 'Dup', 'type': 'ss', 'server': 'd1.example', 'port': 1}
+    second, third, fourth = ({**first, 'server': f'd{index}.example', 'port': index} for index in (2, 3, 4))
+    unnamed_old = {'type': 'ss', 'server': 'u1.example', 'port': 9}
+    summary, details = node_change([first, second, unnamed_old, 'not a node'],
+                                   [second, third, fourth, {**unnamed_old, 'server': 'u2.example'}, 'not a node'])
+    # The identical "Dup" stays unchanged, the next one pairs with the first left over, the last one is new.
+    assert summary == {'kind': 'nodes', 'before': 4, 'after': 5, 'added': 1, 'removed': 0, 'modified': 2}
+    groups = groups_of(details)
+    assert groups['added']['entries'] == [{'change': 'added', 'text': 'Dup', 'nth': 3, 'info': 'ss · d4.example:4'}]
+    dup, unnamed = groups['modified']['entries']
+    assert (dup['text'], dup['nth']) == ('Dup', 2)
+    assert {field['key']: (field['old'], field['new']) for field in dup['fields']} == {
+        'server': ('d1.example', 'd3.example'), 'port': ('1', '3')}
+    assert unnamed['text'] == push_diff.UNNAMED and unnamed['nth'] == 1  # two unnamed entries in the new file
+    assert unnamed['fields'][0]['key'] == 'server'
+    assert details['repeated'] == 2  # "Dup" and the unnamed entries
+    # A name now used twice: the identical one is unchanged, the copy is new.
+    summary, details = node_change([SG], [SG, {**SG, 'server': 'sg2.example'}])
+    assert (summary['added'], summary['modified']) == (1, 0)
+    assert groups_of(details)['added']['entries'][0]['nth'] == 2
+
+
+def test_unchanged_or_unparsable_subscriptions_have_no_details():
+    summary, details = node_change([HK, JP], [JP, HK])  # only the order changed
+    assert summary['added'] == summary['removed'] == summary['modified'] == 0 and details is None
+    summary, details = push_diff._node_change(b'proxies: [', provider_bytes([HK]), push_diff._DetailBudget())
+    assert summary['kind'] == 'size' and details is None
+    summary, details = push_diff._node_change(b'ss://not-a-yaml-list', provider_bytes([HK]), push_diff._DetailBudget())
+    assert summary['kind'] == 'size' and details is None
+
+
+def test_rule_set_details_list_added_and_removed_rules():
+    old = (b'# comment\nDOMAIN-SUFFIX,a.example\nDOMAIN-SUFFIX,b.example\n'
+           b'DOMAIN-SUFFIX,twice.example\nDOMAIN-SUFFIX,twice.example\n')
+    new = b'DOMAIN-SUFFIX,a.example\nDOMAIN-SUFFIX,twice.example\nDOMAIN-SUFFIX,c.example\nIP-CIDR,192.0.2.0/24,no-resolve\n'
+    summary, details = push_diff._rule_change(old, new, push_diff._DetailBudget())
+    assert summary == {'kind': 'rules', 'before': 4, 'after': 4, 'added': 2, 'removed': 2}
+    groups = groups_of(details)
+    assert [entry['text'] for entry in groups['added']['entries']] == ['DOMAIN-SUFFIX,c.example',
+                                                                      'IP-CIDR,192.0.2.0/24,no-resolve']
+    # A rule kept twice and now once is one removal.
+    assert [entry['text'] for entry in groups['removed']['entries']] == ['DOMAIN-SUFFIX,b.example',
+                                                                        'DOMAIN-SUFFIX,twice.example']
+    payload_old = b"payload:\n  - '+.x.example'\n  - '+.y.example'\n"
+    payload_new = b'payload:\n  - \'+.x.example\'\n  - "+.z.example"\n'
+    summary, details = push_diff._rule_change(payload_old, payload_new, push_diff._DetailBudget())
+    assert [(group['change'], [entry['text'] for entry in group['entries']]) for group in details['groups']] == [
+        ('added', ['+.z.example']), ('removed', ['+.y.example'])]
+    assert push_diff._rule_change(b'+.a\n+.b\n', b'+.b\n+.a\n', push_diff._DetailBudget())[1] is None
+    summary, details = push_diff._rule_change(b'\xff\x00mrs', b'\xfe\x01mrs', push_diff._DetailBudget())
+    assert summary['kind'] == 'size' and details is None  # binary rule sets
+
+
+def test_details_are_bounded_per_file_and_every_group_keeps_a_share():
+    keep_old = [{'name': f'Keep {index}', 'type': 'ss', 'server': 'k.example', 'port': index} for index in range(3)]
+    keep_new = [{**node, 'server': 'k2.example'} for node in keep_old]
+    gone = [{'name': f'Gone {index}', 'type': 'ss', 'server': 'g.example', 'port': index} for index in range(5)]
+    fresh = [{'name': f'New {index}', 'type': 'ss', 'server': 'n.example', 'port': index} for index in range(300)]
+    summary, details = node_change(gone + keep_old, keep_new + fresh)
+    assert (summary['added'], summary['removed'], summary['modified']) == (300, 5, 3)
+    groups = groups_of(details)
+    assert [(change, groups[change]['total'], len(groups[change]['entries']), groups[change]['omitted'])
+            for change in ('added', 'removed', 'modified')] == [
+        ('added', 300, 92, 208), ('removed', 5, 5, 0), ('modified', 3, 3, 0)]
+    assert sum(len(group['entries']) for group in details['groups']) == push_diff.MAX_NODE_DETAILS
+    assert groups['added']['entries'][0]['text'] == 'New 0'  # in file order
+    old_rules = ''.join(f'+.old-{index}.example\n' for index in range(10)).encode()
+    new_rules = ''.join(f'+.new-{index}.example\n' for index in range(500)).encode()
+    summary, details = push_diff._rule_change(old_rules, new_rules, push_diff._DetailBudget())
+    assert [(group['change'], len(group['entries']), group['omitted']) for group in details['groups']] == [
+        ('added', 190, 310), ('removed', 10, 0)]
+    assert 'limited' not in details
+
+
+def test_one_response_carries_a_bounded_amount_of_details(monkeypatch):
+    monkeypatch.setattr(push_diff, 'MAX_DETAIL_BYTES', 6000)
+    old_rules = {f'ruleset/R{index}.list': ''.join(f'+.old-{index}-{line}.example\n' for line in range(300))
+                 for index in range(6)}
+    new_rules = {path: content.replace('.old-', '.new-') for path, content in old_rules.items()}
+    # A new subscription is listed before the rule sets but detailed after the modified files.
+    old = bundle(base_config(), rules=old_rules)
+    new = bundle(base_config(), rules=new_rules, deployment='d2',
+                 providers={'Feed': provider([{**SG, 'name': f'Zed {index}'} for index in range(50)])})
+    result = build_push_diff(agent_for(old), new, None, receipt=receipt_for(old))
+    files = {item['path']: item for item in result['files']}
+    rules = [files[f'ruleset/R{index}.list']['details'] for index in range(6)]
+    entries = [entry for details in rules for group in details['groups'] for entry in group['entries']]
+    assert 0 < len(entries) < 6 * push_diff.MAX_RULE_DETAILS
+    assert sum(len(json.dumps(entry, ensure_ascii=False).encode()) for entry in entries) <= 6000
+    for details in rules:  # counts stay exact; only the listing stops
+        for group in details['groups']:
+            assert group['total'] == 300 and group['omitted'] + len(group['entries']) == 300
+    assert rules[0]['groups'][0]['entries'] and rules[-1].get('limited') is True
+    assert not any(group['entries'] for group in rules[-1]['groups'])
+    zed = files['providers/Feed.yaml']
+    assert zed['status'] == 'added' and zed['summary']['added'] == 50
+    assert zed['details']['limited'] is True and zed['details']['groups'][0]['omitted'] == 50
+
+
+def test_large_subscriptions_and_rule_sets_are_detailed_quickly():
+    def node(index, port=443):
+        return {'name': f'节点 {index:04d}', 'type': 'vmess', 'server': f's{index}.example.com', 'port': port,
+                'uuid': f'uuid-{index:04d}-aaaa-bbbb', 'network': 'ws',
+                'ws-opts': {'path': '/ray', 'headers': {'Host': f'cdn{index}.example.com'}}}
+    old_nodes = [node(index) for index in range(3000)]
+    new_nodes = ([node(index, 8443 if index % 6 == 0 else 443) for index in range(300, 3000)]
+                 + [node(index) for index in range(3000, 3300)])
+    lines = [f'DOMAIN-SUFFIX,domain-{index}.example.com' for index in range(60000)]
+    old = bundle(base_config(), providers={'Feed': provider_bytes(old_nodes).decode()},
+                 rules={'ruleset/Big.list': '\n'.join(lines) + '\n'})
+    new = bundle(base_config(), providers={'Feed': provider_bytes(new_nodes).decode()},
+                 rules={'ruleset/Big.list': '\n'.join(lines[2000:] + [f'DOMAIN,new-{index}.example.org'
+                                                                      for index in range(3000)]) + '\n'},
+                 deployment='d2')
+    started = time.perf_counter()
+    result = build_push_diff(agent_for(old), new, None, receipt=receipt_for(old))
+    elapsed = time.perf_counter() - started
+    files = {item['path']: item for item in result['files']}
+    assert files['providers/Feed.yaml']['summary'] == {'kind': 'nodes', 'before': 3000, 'after': 3000,
+                                                      'added': 300, 'removed': 300, 'modified': 450}
+    nodes = groups_of(files['providers/Feed.yaml']['details'])
+    assert [len(nodes[change]['entries']) for change in ('added', 'removed', 'modified')] == [34, 33, 33]
+    assert nodes['modified']['entries'][0]['fields'] == [
+        {'key': 'port', 'change': 'modified', 'sensitive': False, 'old': '443', 'new': '8443'}]
+    rules = groups_of(files['ruleset/Big.list']['details'])
+    assert (rules['added']['total'], rules['removed']['total']) == (3000, 2000)
+    assert len(rules['added']['entries']) + len(rules['removed']['entries']) == push_diff.MAX_RULE_DETAILS
+    assert elapsed < 5, elapsed
+    assert len(json.dumps(result, ensure_ascii=False).encode()) < 64 * 1024
+
+
+def test_node_details_are_display_texts_for_stored_token_redaction():
+    entry = {'change': 'added', 'text': 'relay stored-tok-1', 'info': 'ss · relay-stored-tok-1.example:443'}
+    value = {'files': [{'details': {'kind': 'nodes', 'groups': [{'change': 'added', 'entries': [entry]}]}}]}
+    redacted = without_stored(value, lambda text: [(match.start(), match.end())
+                                                   for match in re.finditer('stored-tok-1', text)])
+    listed = redacted['files'][0]['details']['groups'][0]['entries'][0]
+    assert listed['text'] == ['relay ', {'secret': '[REDACTED]'}]
+    assert listed['info'] == ['ss · relay-', {'secret': '[REDACTED]'}, '.example:443']
+    assert without_secrets(redacted)['files'][0]['details']['groups'][0]['entries'][0]['info'] == \
+        'ss · relay-已隐藏.example:443'
 
 
 @pytest.mark.parametrize('value,shown', [('plain', 'plain'), (7, '7'), (1.5, '1.5'), (True, 'true'), (None, 'null'),

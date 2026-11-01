@@ -27,6 +27,26 @@ export interface PushDiffFile {
   status: PushDiffChange | 'unchanged'
   /** 缺失表示上次推送的内容没有保存，无法细分 */
   summary?: PushDiffSummary
+  /** 订阅、规则集的明细（哪些节点、规则变了），随接口一起返回；没有时不提供展开 */
+  details?: PushDiffFileDetails
+}
+
+/** 一组明细：新增、删除或修改；每个文件最多列出若干条，omitted 为没有列出的条数 */
+export interface PushDiffDetailGroup {
+  change: PushDiffChange
+  total: number
+  entries: PushDiffListEntry[]
+  omitted: number
+}
+
+/** 订阅按节点名对应，修改的节点带逐个字段的原值、新值；规则集按规则行列出新增和删除 */
+export interface PushDiffFileDetails {
+  kind: 'nodes' | 'rules'
+  groups: PushDiffDetailGroup[]
+  /** 这次响应的明细总量已达上限，之后的条目只计数 */
+  limited?: boolean
+  /** 被多个节点共用的节点名个数：内容相同的视为未变，其余按出现顺序对应 */
+  repeated?: number
 }
 
 /** 列表类配置项只给条数和增减；条目已在服务端截断，敏感片段已标出 */
@@ -49,6 +69,10 @@ export interface PushDiffList {
 export interface PushDiffListEntry {
   change: PushDiffChange
   text: PushDiffText
+  /** 订阅里新增的节点：类型与服务器:端口 */
+  info?: PushDiffText
+  /** 同名节点中的第几个（只在节点名重复时提供） */
+  nth?: number
   fields?: PushDiffItem[]
   fields_omitted?: number
 }

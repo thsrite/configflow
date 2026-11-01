@@ -25,7 +25,7 @@ const agent = (overrides: Partial<Agent> = {}) => ({
 
 // Every credential the response below carries; the dialog shows them by default and hides them on request.
 const SECRETS = ['old-controller-0000', 'controller-secret-0001', 'ss-pass-before', 'ss-pass-after', 'pull-token-0000',
-  'pull-token-1234', 'feed-user:feed-pass']
+  'pull-token-1234', 'feed-user:feed-pass', 'hk-node-pass-before', 'hk-node-pass-after']
 
 const changed: PushDiffResponse = {
   status: 'changed', checked_at: new Date().toISOString(), service_type: 'mihomo', content: 'full', content_reason: null,
@@ -34,9 +34,24 @@ const changed: PushDiffResponse = {
   files: [
     { path: 'config.yaml', role: 'config', status: 'modified', summary: { kind: 'config', changes: 4, before: 2048, after: 2300 } },
     { path: 'providers/实验机场.yaml', role: 'provider', name: '实验机场', status: 'modified',
-      summary: { kind: 'nodes', before: 2, after: 3, added: 2, removed: 1, modified: 1 } },
+      summary: { kind: 'nodes', before: 2, after: 3, added: 2, removed: 1, modified: 1 },
+      details: { kind: 'nodes', repeated: 1, groups: [
+        { change: 'added', total: 2, omitted: 0, entries: [
+          { change: 'added', text: 'C 新增节点', info: 'socks5 · edge-c.lab:1080' },
+          { change: 'added', text: 'B 日本', nth: 2, info: 'ss · [2001:db8::7]:8443' }] },
+        { change: 'removed', total: 1, omitted: 0, entries: [{ change: 'removed', text: 'D 下线' }] },
+        { change: 'modified', total: 1, omitted: 0, entries: [{ change: 'modified', text: 'HK 01', fields_omitted: 0, fields: [
+          { key: 'server', change: 'modified', sensitive: false, old: 'a.lab', new: 'b.lab' },
+          { key: 'port', change: 'modified', sensitive: false, old: '11005', new: '11008' },
+          { key: 'password', change: 'modified', sensitive: true, old: [{ secret: 'hk-node-pass-before' }], new: [{ secret: 'hk-node-pass-after' }] },
+          { key: 'plugin-opts.host', change: 'modified', sensitive: false, old: 'cdn-a.lab', new: 'cdn-b.lab' }] }] },
+      ] } },
     { path: 'ruleset/直连.list', role: 'rule', name: '直连', status: 'modified',
-      summary: { kind: 'rules', before: 40000, after: 40120, added: 150, removed: 30 } },
+      summary: { kind: 'rules', before: 40000, after: 40120, added: 150, removed: 30 },
+      details: { kind: 'rules', limited: true, groups: [
+        { change: 'added', total: 150, omitted: 147, entries: ['+.new-0.lab', '+.new-1.lab', '+.new-2.lab'].map(text => ({ change: 'added' as const, text })) },
+        { change: 'removed', total: 30, omitted: 28, entries: ['+.old-0.lab', '+.old-1.lab'].map(text => ({ change: 'removed' as const, text })) },
+      ] } },
     { path: 'ruleset/新规则.list', role: 'rule', name: '新规则', status: 'added',
       summary: { kind: 'rules', before: null, after: 8, added: 8, removed: 0 } },
   ],
@@ -195,11 +210,68 @@ describe('AgentPushDiff dialog', () => {
     expect(lines[5]!.textContent).toBe(' ')  // an empty line keeps its height
   })
 
-  async function expandAll() {
-    for (const key of ['dns.fake-ip-filter', 'proxies']) {
-      const row = body().querySelector(`[data-key="${key}"]`)!
-      ;[...row.querySelectorAll('button')].find(button => button.textContent!.includes('展开明细'))!.click()
+  /** A detail group: its title and each entry's own line (without the field changes below it). */
+  const groupOf = (detail: Element, change: string) => {
+    const group = detail.querySelector(`[data-group="${change}"]`)!
+    const clean = (text: string) => text.replace(/\s+/g, ' ').trim()
+    return {
+      title: clean(group.querySelector('p')!.textContent!),
+      entries: [...group.querySelectorAll(':scope > ul > li')].map(item =>
+        clean([...item.childNodes].filter(node => node.nodeName !== 'UL' && node.nodeType !== Node.COMMENT_NODE)
+          .map(node => node.textContent).join(''))),
     }
+  }
+
+  const expandButton = (row: Element) => [...row.querySelectorAll('button')].find(button => button.textContent!.includes('展开明细'))!
+
+  it('expands subscription and rule set rows into nodes and rules grouped by change', async () => {
+    await open([changed])
+    const files = body().querySelector('[data-push-diff-files]')!
+    // Only files with details offer it: not the main configuration (table 2) or a file without node or rule detail.
+    expect(files.querySelector('[data-file="config.yaml"] button')).toBeNull()
+    expect(files.querySelector('[data-file="ruleset/新规则.list"] button')).toBeNull()
+    const feed = files.querySelector('[data-file="providers/实验机场.yaml"]')!
+    const toggle = expandButton(feed)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(files.querySelector('[data-file-details]')).toBeNull()  // collapsed until asked
+    toggle.click()
+    await flushPromises()
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(toggle.textContent).toContain('收起明细')
+    expect(feed.className).toContain('is-expanded')
+    const detail = body().querySelector(`#${toggle.getAttribute('aria-controls')}`)!
+    expect(detail.previousElementSibling).toBe(feed)  // right below its file
+    expect(groupOf(detail, 'added')).toEqual({ title: '新增 2 个节点', entries: [
+      '+ C 新增节点 · socks5 · edge-c.lab:1080', '+ B 日本（同名第 2 个） · ss · [2001:db8::7]:8443'] })
+    expect(groupOf(detail, 'removed')).toEqual({ title: '删除 1 个节点', entries: ['− D 下线'] })
+    expect(groupOf(detail, 'modified')).toEqual({ title: '修改 1 个节点', entries: ['~ HK 01'] })
+    const fields = [...detail.querySelectorAll('[data-group="modified"] li li')].map(item => item.textContent)
+    expect(fields).toEqual(['server：a.lab → b.lab', 'port：11005 → 11008', 'password：hk-node-pass-before → hk-node-pass-after',
+      'plugin-opts.host：cdn-a.lab → cdn-b.lab'])
+    expect(detail.querySelector('[data-group="added"] .text-success-accent')!.textContent).toContain('+ C 新增节点')
+    expect(detail.textContent).toContain('有 1 个节点名被多个节点共用')
+    expect(detail.textContent).not.toContain('未列出')
+
+    const rules = files.querySelector('[data-file="ruleset/直连.list"]')!
+    expandButton(rules).click()
+    await flushPromises()
+    const ruleDetail = rules.nextElementSibling!
+    expect(groupOf(ruleDetail, 'added')).toEqual({ title: '新增 150 条规则', entries: ['+ +.new-0.lab', '+ +.new-1.lab', '+ +.new-2.lab'] })
+    expect(groupOf(ruleDetail, 'removed')).toEqual({ title: '删除 30 条规则', entries: ['− +.old-0.lab', '− +.old-1.lab'] })
+    expect(ruleDetail.querySelector('[data-group="added"]')!.textContent).toContain('还有 147 条未列出')
+    expect(ruleDetail.querySelector('[data-group="removed"]')!.textContent).toContain('还有 28 条未列出')
+    expect(ruleDetail.textContent).toContain('明细已达总量上限')
+
+    toggle.click()
+    await flushPromises()
+    expect(body().querySelector('[data-file-details="nodes"]')).toBeNull()
+    expect(toggle.textContent).toContain('展开明细')
+    expect(body().querySelector('[data-file-details="rules"]')).not.toBeNull()  // each file on its own
+  })
+
+  async function expandAll() {
+    for (const key of ['dns.fake-ip-filter', 'proxies']) expandButton(body().querySelector(`[data-key="${key}"]`)!).click()
+    for (const path of ['providers/实验机场.yaml', 'ruleset/直连.list']) expandButton(body().querySelector(`[data-file="${path}"]`)!).click()
     ;[...body().querySelectorAll('[data-push-diff-files] button')].find(button => button.textContent!.includes('未变的'))!.click()
     ;[...body().querySelectorAll('[data-push-diff-raw] button')].find(button => button.textContent!.includes('原始差异'))!.click()
     await flushPromises()
@@ -219,8 +291,11 @@ describe('AgentPushDiff dialog', () => {
     await flushPromises()
     expect(hideSwitch().getAttribute('aria-checked')).toBe('true')
     for (const secret of SECRETS) expect(html()).not.toContain(secret)
-    // secret and URL rows (old and new), the node's password (old and new), the file name, two raw diff lines
-    expect(body().querySelectorAll('[data-secret-hidden]')).toHaveLength(9)
+    // secret and URL rows (old and new), the manual node's and the subscription node's passwords (old and new),
+    // the file name, two raw diff lines
+    expect(body().querySelectorAll('[data-secret-hidden]')).toHaveLength(11)
+    expect(body().querySelector('[data-file-details="nodes"]')!.textContent).toContain('password：已隐藏 → 已隐藏')
+    expect(body().querySelector('[data-file-details="nodes"]')!.textContent).toContain('server：a.lab → b.lab')  // addresses stay
     expect(body().querySelector('[data-key="secret"]')!.textContent!.replace(/\s+/g, '')).toBe('secret修改已隐藏已隐藏')
     expect(body().querySelector('[data-key="proxy-providers.实验机场.url"]')!.textContent).toContain('?token=已隐藏')
     expect(body().textContent).toContain('password：已隐藏 → 已隐藏')

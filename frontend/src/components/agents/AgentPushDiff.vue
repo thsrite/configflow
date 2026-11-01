@@ -62,16 +62,28 @@
                   <tr><th>文件</th><th class="w-20">变化</th><th>摘要</th></tr>
                 </thead>
                 <tbody>
-                  <tr v-for="file in result.files" :key="file.path" :data-file="file.path">
-                    <td class="min-w-0 align-top">
-                      <div class="break-words text-[13px] font-medium"><PushDiffText :value="fileTitle(file)" :hidden="hideSecrets" /></div>
-                      <div class="mt-0.5 break-all text-[11.5px] text-muted-foreground"><template v-if="file.role !== 'config'">{{ fileRole(file) }} · </template><span class="font-mono">{{ file.path }}</span></div>
-                    </td>
-                    <td class="align-top"><span :class="['chip', CHANGE_CHIPS[file.status as PushDiffChange]]">{{ CHANGE_LABELS[file.status] }}</span></td>
-                    <td class="align-top text-[12.5px]" data-summary>
-                      <span v-for="(part, index) in summarySegments(file)" :key="index" :class="TONE_CLASSES[part.tone]">{{ part.text }}</span>
-                    </td>
-                  </tr>
+                  <template v-for="(file, fileIndex) in result.files" :key="file.path">
+                    <tr :data-file="file.path" :class="{ 'is-expanded': file.details && filesOpen.has(file.path) }">
+                      <td class="min-w-0 align-top">
+                        <div class="break-words text-[13px] font-medium"><PushDiffText :value="fileTitle(file)" :hidden="hideSecrets" /></div>
+                        <div class="mt-0.5 break-all text-[11.5px] text-muted-foreground"><template v-if="file.role !== 'config'">{{ fileRole(file) }} · </template><span class="font-mono">{{ file.path }}</span></div>
+                      </td>
+                      <td class="align-top"><span :class="['chip', CHANGE_CHIPS[file.status as PushDiffChange]]">{{ CHANGE_LABELS[file.status] }}</span></td>
+                      <td class="align-top text-[12.5px]" data-summary>
+                        <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                          <span><span v-for="(part, index) in summarySegments(file)" :key="index" :class="TONE_CLASSES[part.tone]">{{ part.text }}</span></span>
+                          <Button v-if="file.details" variant="ghost" size="xs" class="-my-1 text-primary-accent max-md:-my-2"
+                            :aria-expanded="filesOpen.has(file.path)" :aria-controls="`push-diff-file-detail-${fileIndex}`" @click="toggleFile(file.path)">
+                            <ChevronDown :class="['size-3 transition-transform', filesOpen.has(file.path) && 'rotate-180']" />
+                            {{ filesOpen.has(file.path) ? '收起明细' : '展开明细' }}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr v-if="file.details && filesOpen.has(file.path)" :id="`push-diff-file-detail-${fileIndex}`" class="push-diff-detail">
+                      <td colspan="3"><PushDiffFileDetails :details="file.details" :hidden="hideSecrets" /></td>
+                    </tr>
+                  </template>
                   <tr v-if="result.files_omitted" class="push-diff-more">
                     <td colspan="3" class="text-[12px] text-muted-foreground">还有 <span class="num">{{ result.files_omitted }}</span> 个变化的文件未列出。</td>
                   </tr>
@@ -190,6 +202,7 @@ import {
 import { checkedAgo } from '@/lib/format'
 import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingRows from '@/components/common/LoadingRows.vue'
+import PushDiffFileDetails from '@/components/agents/PushDiffFileDetails.vue'
 import PushDiffText from '@/components/agents/PushDiffText.vue'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -222,6 +235,8 @@ const loading = ref(true)
 const error = ref('')
 const result = ref<PushDiffResponse | null>(null)
 const expanded = ref(new Set<number>())
+// 表 1 展开了明细的文件（按路径）
+const filesOpen = ref(new Set<string>())
 const unchangedOpen = ref(false)
 const rawOpen = ref(false)
 // 截图分享时才需要；不记住，每次打开窗口都显示原值
@@ -258,11 +273,19 @@ function valueClass(item: PushDiffItem, side: 'old' | 'new') {
   return 'font-mono text-[12px] break-all'
 }
 
+function toggled<T>(set: Set<T>, key: T) {
+  const next = new Set(set)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  return next
+}
+
 function toggle(index: number) {
-  const next = new Set(expanded.value)
-  if (next.has(index)) next.delete(index)
-  else next.add(index)
-  expanded.value = next
+  expanded.value = toggled(expanded.value, index)
+}
+
+function toggleFile(path: string) {
+  filesOpen.value = toggled(filesOpen.value, path)
 }
 
 function wait(ms: number, signal: AbortSignal) {
@@ -281,6 +304,7 @@ async function load() {
   error.value = ''
   result.value = null
   expanded.value = new Set()
+  filesOpen.value = new Set()
   rawOpen.value = false
   const started = Date.now()
   try {
