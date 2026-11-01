@@ -67,7 +67,7 @@
       </SectionCard>
       <!-- 子标签首次打开后保持挂载，切回保留测速结果和连接记录；换设备时重建，只挂载当前标签 -->
       <Tabs v-else :key="agentId" keep-visited :model-value="tab" class="min-w-0" @update:model-value="changeTab(String($event))">
-        <TabsList class="mb-4 min-h-11 max-w-full overflow-x-auto max-sm:mb-0">
+        <TabsList class="mb-4 h-auto min-h-11 max-w-full overflow-x-auto max-sm:mb-0">
           <TabsTrigger value="overview" class="min-h-11 px-4">概览</TabsTrigger>
           <TabsTrigger value="proxies" class="min-h-11 px-4">策略</TabsTrigger>
           <TabsTrigger value="connections" class="min-h-11 px-4">连接</TabsTrigger>
