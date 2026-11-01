@@ -65,6 +65,23 @@ def finalize_bundle(manager, agent, bundle, config):
 
 
 def save(repository, agent, config, revision, base_url, prepared, *, members):
+    key = uuid.uuid4().hex
+    bundle = prepared.get('bundle')
+    source = deepcopy(config)
+    source.pop('agents', None)
+    record = {'id': key, 'expires_at': int(time.time()) + TTL,
+        'agent_id': agent['id'], 'profile_id': config['profile_id'], 'service_type': agent['service_type'],
+        'identities': {member['id']: agent_identity(member) for member in members},
+        'config_revision': revision, 'input_digest': input_digest(config), 'source': source,
+        'base_url': base_url, 'deployment_id': bundle.manifest['deployment_id'] if bundle else uuid.uuid4().hex,
+        'config_content': '' if bundle else prepared['config_content']}
+    if bundle:
+        record['bundle_meta'] = {'manifest': bundle.manifest, 'sha256': bundle.sha256,
+            'config_version': bundle.config_version, 'comparison_config': bundle.comparison_config}
+    metadata = json.dumps(record, ensure_ascii=False).encode()
+    incoming = len(metadata) + (len(bundle.archive) if bundle else 0)
+    if incoming > MAX_BYTES:
+        raise ValueError('生成结果超过临时存储上限，请减少配套文件后重试。')
     root = Path(repository.data_dir) / '.generated-previews'
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     # Bound private artifacts across workers and restarts. A missing/evicted
@@ -74,30 +91,16 @@ def save(repository, agent, config, revision, base_url, prepared, *, members):
         fcntl.flock(lock, fcntl.LOCK_EX)
         folders = sorted((p for p in root.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime)
         total = sum(f.stat().st_size for p in folders for f in p.iterdir() if f.is_file())
-        incoming = len(prepared['bundle'].archive) if prepared.get('bundle') else len(prepared['config_content'].encode())
         while folders and (len(folders) >= MAX_PREVIEWS or total + incoming > MAX_BYTES
                            or folders[0].stat().st_mtime < time.time() - TTL):
             old = folders.pop(0)
             total -= sum(f.stat().st_size for f in old.iterdir() if f.is_file())
             shutil.rmtree(old)
-        key = uuid.uuid4().hex
         folder = root / key
         folder.mkdir(mode=0o700)
-        bundle = prepared.get('bundle')
-        source = deepcopy(config)
-        source.pop('agents', None)
-        record = {'id': key, 'expires_at': int(time.time()) + TTL,
-            'agent_id': agent['id'], 'profile_id': config['profile_id'], 'service_type': agent['service_type'],
-            'identities': {member['id']: agent_identity(member) for member in members},
-            'config_revision': revision, 'input_digest': input_digest(config), 'source': source,
-            'base_url': base_url, 'deployment_id': bundle.manifest['deployment_id'] if bundle else uuid.uuid4().hex,
-            'config_content': prepared['config_content'],
-            'prepared_providers': prepared.get('prepared_providers', [])}
         if bundle:
-            record['bundle_meta'] = {'manifest': bundle.manifest, 'sha256': bundle.sha256,
-                'config_version': bundle.config_version, 'comparison_config': bundle.comparison_config}
             _write(folder / 'bundle.tar.gz', bundle.archive)
-        _write(folder / 'record.json', json.dumps(record, ensure_ascii=False).encode())
+        _write(folder / 'record.json', metadata)
     return load(repository, key, agent['id'])
 
 
@@ -140,7 +143,7 @@ def public(record):
     path = bundle.manifest['config_path'] if bundle else 'surge.conf'
     return {key: record[key] for key in ('id', 'deployment_id', 'agent_id', 'profile_id', 'service_type', 'expires_at')} | {
         'content': files[path][0].decode('utf-8'), 'config_path': path,
-        'files': [{ 'path': name, 'size': len(value), 'sha256': hashlib.sha256(value).hexdigest(), 'role': role}
+        'files': [{'path': name, 'size': len(value), 'sha256': hashlib.sha256(value).hexdigest(), 'role': role}
                   for name, (value, role) in files.items()],
         'target_ids': list(record['identities'])}
 

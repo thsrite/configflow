@@ -169,6 +169,18 @@ def test_preview_storage_is_bounded_and_tampering_is_rejected(preview_env, monke
     assert push(preview_env, second).status_code == 409
 
 
+def test_preview_quota_counts_private_source_metadata(preview_env, monkeypatch):
+    client, _, config, _, _, ids, *_ = preview_env
+    # Unused metadata is not part of the compressed archive, but still consumes
+    # disk in the private source snapshot and must count against the limit.
+    config['large_source_metadata'] = 'x' * 100000
+    monkeypatch.setattr(previews, 'MAX_BYTES', 50000)
+    response = client.post(f'/api/agents/{ids["mihomo"]}/generate-config', json={
+        'expected_profile_id': 'default', 'expected_service_type': 'mihomo'})
+    assert response.status_code == 400
+    assert '临时存储上限' in response.json['message']
+
+
 def test_ha_generation_names_both_devices_and_rejects_changed_peer(preview_env):
     _, manager, _, _, _, ids, uploads, _, _ = preview_env
     peer = manager.register_agent({'name': 'DNS peer', 'host': 'peer.test', 'service_type': 'oxidns'})['id']

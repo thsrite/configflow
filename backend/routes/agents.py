@@ -1850,7 +1850,7 @@ def push_config_to_agent(agent_id):
             previews.require_current(agent_manager, generated)
             config_data = generated['source']
             prepared = {'bundle': generated['bundle'], 'config_content': previews.public(generated)['content'],
-                        'prepared_providers': generated['prepared_providers'],
+                        'prepared_providers': [],
                         'provider_downloads': [], 'ruleset_downloads': [], 'custom_files': []}
         else:
             prepared = _prepare_transactional_content(agent, config_data, base_url=base_url,
@@ -1874,8 +1874,8 @@ def push_config_to_agent(agent_id):
                                                     config_revision=config_revision)
         result['profile_id'] = profile_id
         result['file_count'] = len(bundle.manifest['files'])
-        result['provider_count'] = len(prepared['provider_downloads'])
-        result['rule_count'] = len(prepared['ruleset_downloads'])
+        result['provider_count'] = sum(item['role'] == 'provider' for item in bundle.manifest['files'])
+        result['rule_count'] = sum(item['role'] == 'rule' for item in bundle.manifest['files'])
         return _deployment_response(result)
     except previews.PreviewChanged as exc:
         result = {'success': False, 'status': 'failed', 'code': 'preview_changed', 'message': str(exc)}
