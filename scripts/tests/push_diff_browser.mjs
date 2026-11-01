@@ -6,7 +6,9 @@
 //   ... push_diff_browser.mjs nobaseline | error | synced   (lab data only)
 // Reads only: never clicks 推送 (the lab script publishes). `error` deletes the old-version record through the API.
 // `changed` checks values are shown by default, that 隐藏敏感信息 leaves no credential in the page (tables,
-// details, raw diff) and that switching it off shows them again, on a light desktop and a dark phone.
+// details, raw diff) and that switching it off shows them again, on a light desktop and a dark phone; with the
+// local data it also expands the subscription and rule set rows (nodes added, removed, modified field by field,
+// a repeated name, rules added and removed) and the ones with more changes than a file lists.
 import assert from 'node:assert/strict'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { networkInterfaces } from 'node:os'
@@ -31,6 +33,10 @@ let vite, browser
 const credentials = JSON.parse(await readFile(join(WORK, 'credentials.json'), 'utf8'))
 // Lab credentials, and ConfigFlow's own access token in the subscription pull URLs.
 const SECRETS = ['lab-manual-pass-before-7c1e', 'lab-manual-pass-after-93ab', 'lab-controller-secret-5d20', credentials.config_token]
+// The subscription node's password before and after (push_diff_local.py only).
+const NODE_SECRETS = ['lab-node-pass-before-41f2', 'lab-node-pass-after-8d3c']
+const LOCAL = WORK.endsWith('cf-pushdiff-local')
+if (LOCAL) SECRETS.push(...NODE_SECRETS)
 const login = await fetch(`http://127.0.0.1:${apiPort}/api/auth/login`, {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ username: credentials.username, password: credentials.password }) })
@@ -132,9 +138,35 @@ async function expand(dialog, key) {
   if (await toggle.count()) await toggle.click()
 }
 
+/** 展开明细 of a file row in table 1; returns the detail row right below it. */
+async function expandFile(dialog, path, name) {
+  const row = dialog.locator(`[data-file="${path}"]`)
+  const toggle = row.getByRole('button', { name: '展开明细' })
+  await toggle.scrollIntoViewIfNeeded()
+  const box = await toggle.boundingBox()
+  report.steps.push({ name: `${name}: 展开明细 of ${path}`, width: box?.width, height: box?.height })
+  await toggle.click()
+  assert.equal(await row.getByRole('button', { name: '收起明细' }).getAttribute('aria-expanded'), 'true')
+  const detail = row.locator('xpath=following-sibling::tr[1]')
+  await detail.locator('[data-file-details]').waitFor()
+  return { detail, box }
+}
+
+const flat = async locator => (await locator.innerText()).replace(/\s+/g, ' ')
+
+/** Scroll the dialog body (not the dialog itself) so ``selector`` sits at its top. */
+async function scrollToTop(dialog, selector) {
+  await dialog.evaluate((element, target) => {
+    const scroller = element.querySelector('.overflow-y-auto')
+    const node = element.querySelector(target)
+    scroller.scrollTop += node.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 8
+  }, selector)
+}
+
 async function shot(tab, dialog, file) {
   await tab.locator('[data-sonner-toast]').first().waitFor({ state: 'detached', timeout: 15000 }).catch(() => {})
   await tab.evaluate(() => document.activeElement?.blur())
+  await dialog.evaluate(element => { element.scrollTop = 0 })  // header and footer stay in the picture
   await tab.mouse.move(0, 0)
   await tab.waitForTimeout(250)
   await dialog.screenshot({ path: file })
@@ -156,8 +188,12 @@ try {
     const text = (await dialog.innerText()).replace(/\s+/g, ' ')
     report.steps.push({ name: 'changed (desktop, light)', text: text.slice(0, 2400) })
     assert.match(text, /主配置.*修改/)
-    assert.match(text, /实验机场.*订阅.*修改.*节点 \+1 \/ −0/)
+    assert.match(text, LOCAL ? /实验机场.*订阅.*修改.*节点 \+2 \/ −1 · 修改 1 · 共 4 个/ : /实验机场.*订阅.*修改.*节点 \+1 \/ −0/)
     assert.match(text, /实验直连.*规则集.*修改.*规则 \+2 \/ −1/)
+    if (LOCAL) {
+      assert.match(text, /备用机场.*订阅.*新增.*节点 \+130 \/ −0/)
+      assert.match(text, /实验大规则集.*规则集.*修改.*规则 \+300 \/ −150/)
+    }
     assert.match(text, /hosts\.printer\.lab\.invalid 新增 — 198\.51\.100\.30/)
     assert.match(text, /secret 新增 — lab-controller-secret-5d20/)  // values as they are by default
     // A subscription added to the group: its pull URL carries ConfigFlow's access token (push_diff_local.py).
@@ -168,8 +204,44 @@ try {
     await expand(dialog, 'proxies')
     const proxies = (await dialog.locator('[data-key="proxies"] + tr').innerText()).replace(/\s+/g, ' ')
     assert.match(proxies, /~ 手动 SS password：lab-manual-pass-before-7c1e → lab-manual-pass-after-93ab/)
-    await assertSecretsShown(desktop, shown)
+    await assertSecretsShown(desktop, shown.filter(secret => !NODE_SECRETS.includes(secret)))
     await shot(desktop, dialog, join(shots, 'push-diff-changed.png'))
+
+    if (LOCAL) {
+      // Table 1 rows expand into nodes and rules, grouped by change, values as they are.
+      const { detail: feed } = await expandFile(dialog, 'providers/实验机场.yaml', 'desktop')
+      const nodes = await flat(feed)
+      report.steps.push({ name: 'subscription details (desktop, light)', text: nodes })
+      for (const part of ['新增 2 个节点', '+ C 新增节点 · trojan · edge-c.lab.invalid:443',
+        '+ B 日本（同名第 2 个） · socks5 · [2001:db8::b]:1080', '删除 1 个节点', '− E 下线', '修改 1 个节点', '~ A 香港',
+        'server：edge-a.lab.invalid → edge-a2.lab.invalid', 'port：11005 → 11008',
+        'password：lab-node-pass-before-41f2 → lab-node-pass-after-8d3c', 'plugin-opts.host：cdn-a.lab.invalid → cdn-b.lab.invalid',
+        '有 1 个节点名被多个节点共用']) assert.ok(nodes.includes(part), `subscription details miss: ${part}`)
+      assert.ok(!nodes.includes('lab-trojan-pass-c7'), 'a new node shows type and address only')
+      const { detail: direct } = await expandFile(dialog, 'ruleset/实验直连.list', 'desktop')
+      const rules = await flat(direct)
+      for (const part of ['新增 2 条规则', '+ +.delta.lab.invalid', '+ +.epsilon.lab.invalid', '删除 1 条规则', '− +.beta.lab.invalid']) {
+        assert.ok(rules.includes(part), `rule details miss: ${part}`)
+      }
+      assert.ok(!rules.includes('未列出'))
+      await assertSecretsShown(desktop, shown)
+      await scrollToTop(dialog, '#push-diff-files-title')
+      await shot(desktop, dialog, join(shots, 'push-diff-file-details.png'))
+
+      // More changes than one file lists: 100 nodes, 200 rules shared between added and removed.
+      const { detail: big } = await expandFile(dialog, 'ruleset/实验大规则集.list', 'desktop')
+      const bigText = await flat(big)
+      assert.match(bigText, /新增 300 条规则.*还有 200 条未列出.*删除 150 条规则.*还有 50 条未列出/)
+      assert.equal(await big.locator('[data-file-details] li').count(), 200)
+      const { detail: backupNodes } = await expandFile(dialog, 'providers/备用机场.yaml', 'desktop')
+      assert.match(await flat(backupNodes), /新增 130 个节点 .*D 备用 001 · socks5 · backup\.lab\.invalid:20001.*还有 30 个未列出/)
+      assert.equal(await backupNodes.locator('[data-file-details] li').count(), 100)
+      report.steps.push({ name: 'truncated details', rules: bigText.slice(0, 200), nodes: 100 })
+      await scrollToTop(dialog, '[data-file="ruleset/实验大规则集.list"] + tr li:nth-child(96)')
+      await shot(desktop, dialog, join(evidence, 'details-truncated-desktop-light.png'))
+      await noOverflow(desktop, dialog, 'desktop, details open')
+      await scrollToTop(dialog, '[data-push-diff-changed]')
+    }
 
     await setHidden(desktop, dialog, true, 'desktop')
     const hiddenText = (await dialog.innerText()).replace(/\s+/g, ' ')
@@ -180,6 +252,14 @@ try {
     assert.match(hiddenProxies, /~ 手动 SS password：已隐藏 → 已隐藏/)
     if (pullToken) assert.match(await backup.innerText(), /proxies\?token=已隐藏/)
     await assertNoSecrets(desktop)
+    if (LOCAL) {
+      const feed = await flat(dialog.locator('[data-file="providers/实验机场.yaml"] + tr'))
+      assert.ok(feed.includes('password：已隐藏 → 已隐藏'), 'node password hidden in the details')
+      assert.ok(feed.includes('server：edge-a.lab.invalid → edge-a2.lab.invalid'), 'servers stay')
+      await scrollToTop(dialog, '[data-file="providers/实验机场.yaml"]')
+      await shot(desktop, dialog, join(evidence, 'details-hidden-desktop-light.png'))
+      await scrollToTop(dialog, '[data-push-diff-changed]')
+    }
     await shot(desktop, dialog, join(shots, 'push-diff-hidden.png'))
     await dialog.locator('[data-push-diff-config]').scrollIntoViewIfNeeded()
     await openRaw(dialog)
@@ -212,6 +292,26 @@ try {
     assert.ok(touch.height >= 44, `phone sync label ${touch.height}px high`)
     await noOverflow(phone, mobile, 'phone')
     await shot(phone, mobile, join(shots, 'push-diff-mobile-dark.png'))
+    if (LOCAL) {
+      const { detail: feed, box } = await expandFile(mobile, 'providers/实验机场.yaml', 'phone')
+      assert.ok(box && box.height >= 44, `phone 展开明细 ${box?.height}px high`)
+      await expandFile(mobile, 'ruleset/实验大规则集.list', 'phone')
+      await expandFile(mobile, 'providers/备用机场.yaml', 'phone')
+      await noOverflow(phone, mobile, 'phone, file details open')
+      await assertSecretsShown(phone, NODE_SECRETS)
+      await setHidden(phone, mobile, true, 'phone, file details')
+      assert.ok((await flat(feed)).includes('password：已隐藏 → 已隐藏'))
+      await assertNoSecrets(phone)
+      await noOverflow(phone, mobile, 'phone, file details hidden')
+      await scrollToTop(mobile, '[data-file="providers/实验机场.yaml"]')
+      await shot(phone, mobile, join(shots, 'push-diff-file-details-mobile-dark.png'))
+      await setHidden(phone, mobile, false, 'phone, file details')
+      await assertSecretsShown(phone, NODE_SECRETS)
+      await scrollToTop(mobile, '[data-file="providers/实验机场.yaml"]')
+      await shot(phone, mobile, join(evidence, 'details-shown-mobile-dark.png'))
+      await scrollToTop(mobile, '[data-file="ruleset/实验大规则集.list"] + tr li:nth-child(97)')
+      await shot(phone, mobile, join(evidence, 'details-truncated-mobile-dark.png'))
+    }
     await expand(mobile, 'proxies')
     await noOverflow(phone, mobile, 'phone, details open')
     await assertSecretsShown(phone, shown)

@@ -1,5 +1,6 @@
 import type {
-  PushDiffChange, PushDiffFile, PushDiffItem, PushDiffList, PushDiffResponse, PushDiffSummary, PushDiffText,
+  PushDiffChange, PushDiffFile, PushDiffFileDetails, PushDiffItem, PushDiffList, PushDiffResponse, PushDiffSummary,
+  PushDiffText,
 } from '@/api/agentPushDiff'
 import { formatBytes } from '@/lib/format'
 
@@ -136,6 +137,24 @@ export function fieldPieces(field: PushDiffItem): TextPiece[] {
 }
 
 export const fieldText = (field: PushDiffItem, hidden = false) => piecesText(fieldPieces(field), hidden).trimEnd()
+
+/** 明细分组标题里的单位：「新增 2 个节点」「删除 1 条规则」 */
+export function detailUnit(kind: PushDiffFileDetails['kind']): { noun: string; unit: string } {
+  return kind === 'nodes' ? { noun: '节点', unit: '个' } : { noun: '规则', unit: '条' }
+}
+
+/** 同名节点的序号，例如「（同名第 2 个）」 */
+export const nthText = (nth?: number) => nth ? `（同名第 ${nth} 个）` : ''
+
+/** 明细末尾的说明：重名节点怎么对应、明细总量是否已达上限 */
+export function detailNotes(details: PushDiffFileDetails): string[] {
+  const notes: string[] = []
+  if (details.repeated) {
+    notes.push(`有 ${details.repeated} 个节点名被多个节点共用：内容相同的视为未变，其余按出现顺序对应。`)
+  }
+  if (details.limited) notes.push('这次变化较多，明细已达总量上限，没有列出的只计入数量。')
+  return notes
+}
 
 const NO_BASELINE = '没有可对比的基准'
 

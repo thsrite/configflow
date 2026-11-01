@@ -14,6 +14,7 @@ from backend.test_agent_content_preparation import content_env  # noqa: F401
 CONTROLLER_SECRET = 'controller-secret-value-1234'
 OLD_PASSWORD = 'manual-node-password-old'
 NEW_PASSWORD = 'manual-node-password-new'
+NODE_PASSWORD = 'subscription-node-password'
 CONFIG_TOKEN = 'fixture-config-token-before'
 NEW_CONFIG_TOKEN = 'fixture-config-token-after'
 
@@ -114,17 +115,27 @@ def test_synced_after_push_then_real_changes_are_listed_with_credentials_marked(
                                          f'secret: {CONTROLLER_SECRET}\nhosts: {{printer.lan: 192.168.1.30}}\n')
     config['rule_library'][0]['content'] = '+.first.test\n+.second.test\n+.third.test'
     config['nodes'][0]['params']['password'] = NEW_PASSWORD
-    remote['provider'] = 'proxies: [{name: Remote, type: http, server: first.test, port: 8080}, ' \
-                         '{name: Added, type: http, server: added.test, port: 8081}]'
+    remote['provider'] = ('proxies: [{name: Remote, type: http, server: first.test, port: 8090, '
+                          f'password: {NODE_PASSWORD}}}, {{name: Added, type: http, server: added.test, port: 8081}}]')
     refresh_subscription(config)
     result = settle(client, executor, agent_id)
     assert result['status'] == 'changed' and result['content'] == 'full' and result['checked_at']
     files = {item['path']: item for item in result['files']}
-    assert files['providers/Feed.yaml']['summary'] == {'kind': 'nodes', 'before': 1, 'after': 2, 'added': 1,
-                                                       'removed': 0, 'modified': 0}
+    feed = files['providers/Feed.yaml']
+    assert feed['summary'] == {'kind': 'nodes', 'before': 1, 'after': 2, 'added': 1, 'removed': 0, 'modified': 1}
+    # The subscription's row expands to the nodes: the new one with type and address, field changes of the other.
+    groups = {group['change']: group for group in feed['details']['groups']}
+    assert groups['added']['entries'] == [{'change': 'added', 'text': 'Added', 'info': 'http · added.test:8081'}]
+    remote_node = groups['modified']['entries'][0]
+    assert remote_node['text'] == 'Remote'
+    assert {field['key']: field for field in remote_node['fields']} == {
+        'port': {'key': 'port', 'change': 'modified', 'sensitive': False, 'old': '8080', 'new': '8090'},
+        'password': {'key': 'password', 'change': 'added', 'sensitive': True, 'old': None,
+                     'new': [{'secret': NODE_PASSWORD}]}}
     rule = next(item for item in result['files'] if item['role'] == 'rule')
     assert rule['name'] == 'Selected' and rule['summary'] == {'kind': 'rules', 'before': 1, 'after': 3,
                                                               'added': 2, 'removed': 0}
+    assert [entry['text'] for entry in rule['details']['groups'][0]['entries']] == ['+.second.test', '+.third.test']
     items = {item['key']: item for item in result['config']['items']}
     assert items['hosts.printer.lan']['new'] == '192.168.1.30'
     # Values come as they are; credentials are marked so the dialog can hide them.
@@ -135,7 +146,7 @@ def test_synced_after_push_then_real_changes_are_listed_with_credentials_marked(
                                'old': [{'secret': OLD_PASSWORD}], 'new': [{'secret': NEW_PASSWORD}]}]
     body = json.dumps(result, ensure_ascii=False)
     hidden = json.dumps(without_secrets(result), ensure_ascii=False)
-    for secret in (CONTROLLER_SECRET, OLD_PASSWORD, NEW_PASSWORD):
+    for secret in (CONTROLLER_SECRET, OLD_PASSWORD, NEW_PASSWORD, NODE_PASSWORD):
         assert secret in body and secret not in hidden
     assert 'fixture-rule-token' not in body
     assert '[REDACTED]' not in body  # no stored token, and nothing needed the response hook's fallback

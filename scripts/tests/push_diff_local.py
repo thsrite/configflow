@@ -4,15 +4,17 @@
 Run on the test server only, from this checkout synced by rt. Touches no PVE guest:
 
   setup    fresh private data in /tmp/cf-pushdiff-local (refuses to overwrite): a subscription served by a
-           local fixture, a manual SS node with a password, a content rule set, ConfigFlow's access token
-           (系统设置 → 访问令牌) and one Mihomo Agent record
+           local fixture, a manual SS node with a password, a small and a large content rule set, ConfigFlow's
+           access token (系统设置 → 访问令牌) and one Mihomo Agent record
   serve    the private ConfigFlow on 127.0.0.1:15951 (foreground), plus the subscription fixture and a stand-in
            for the Agent's HTTP API: it answers capabilities and accepts a deployment (succeeded), so the push
            route stores the applied receipt and bundle exactly as for a real device. The record stays online.
   start    serve in the background (its own session, no inherited descriptors such as rt's lock) and wait
   prepare  (server running) push once as the baseline through the API, wait for 已同步, then make the edits of
            push_diff_lab.py change through the same API as the pages, plus a second subscription in the group
-           (its pull URL carries the access token)
+           (its pull URL carries the access token, its 130 nodes are more than one file lists). The subscription
+           gets a node added, one removed, one renamed twin and one modified (server, port, password and a nested
+           plugin-opts field); the large rule set gains 300 rules and loses 150 (more than one file lists).
   stop     stop a background serve;  clean  remove the private data
 
 Then: CF_PUSHDIFF_WORK=/tmp/cf-pushdiff-local CF_PUSHDIFF_AGENT='实验 Mihomo' node scripts/tests/push_diff_browser.mjs changed
@@ -42,8 +44,14 @@ AGENT_VERSION = '0a1b2c3d'  # the main file digest a real Agent reports after in
 PASSWORD_BEFORE = 'lab-manual-pass-before-7c1e'
 PASSWORD_AFTER = 'lab-manual-pass-after-93ab'
 CONTROLLER_SECRET = 'lab-controller-secret-5d20'
+NODE_PASSWORD_BEFORE = 'lab-node-pass-before-41f2'
+NODE_PASSWORD_AFTER = 'lab-node-pass-after-8d3c'
 RULES_BEFORE = '+.alpha.lab.invalid\n+.beta.lab.invalid\n+.gamma.lab.invalid'
 RULES_AFTER = '+.alpha.lab.invalid\n+.gamma.lab.invalid\n+.delta.lab.invalid\n+.epsilon.lab.invalid'
+# More changes than one file lists (200 rules): 300 added, 150 removed.
+BIG_BEFORE = '\n'.join(f'+.site-{index:04d}.big.lab.invalid' for index in range(1200))
+BIG_AFTER = '\n'.join([f'+.site-{index:04d}.big.lab.invalid' for index in range(150, 1200)]
+                      + [f'+.fresh-{index:03d}.big.lab.invalid' for index in range(300)])
 HOSTS_DOMAIN = 'printer.lab.invalid'
 CUSTOM = '''mixed-port: 7890
 allow-lan: true
@@ -58,14 +66,25 @@ dns:
   nameserver: [198.51.100.53]
   proxy-server-nameserver: [198.51.100.53]
 '''
-NODES = '''proxies:
-  - {name: A 香港, type: socks5, server: edge-a.lab.invalid, port: 1080}
-  - {name: B 日本, type: socks5, server: edge-b.lab.invalid, port: 1080}
+NODES = f'''proxies:
+  - {{name: A 香港, type: ss, server: edge-a.lab.invalid, port: 11005, cipher: aes-128-gcm,
+     password: {NODE_PASSWORD_BEFORE}, plugin: obfs, plugin-opts: {{mode: tls, host: cdn-a.lab.invalid}}}}
+  - {{name: B 日本, type: socks5, server: edge-b.lab.invalid, port: 1080}}
+  - {{name: E 下线, type: socks5, server: edge-e.lab.invalid, port: 1080}}
+'''
+# A 香港 changes server, port, password and plugin-opts.host; E 下线 goes; C 新增节点 and a second B 日本 arrive.
+NODES_AFTER = f'''proxies:
+  - {{name: A 香港, type: ss, server: edge-a2.lab.invalid, port: 11008, cipher: aes-128-gcm,
+     password: {NODE_PASSWORD_AFTER}, plugin: obfs, plugin-opts: {{mode: tls, host: cdn-b.lab.invalid}}}}
+  - {{name: B 日本, type: socks5, server: edge-b.lab.invalid, port: 1080}}
+  - {{name: C 新增节点, type: trojan, server: edge-c.lab.invalid, port: 443, password: lab-trojan-pass-c7}}
+  - {{name: B 日本, type: socks5, server: '2001:db8::b', port: 1080}}
 '''
 SUBSCRIPTIONS = {
     'airport-v1': NODES,
-    'airport-v2': NODES + '  - {name: C 新增节点, type: socks5, server: edge-c.lab.invalid, port: 1080}\n',
-    'backup': 'proxies:\n  - {name: D 备用, type: socks5, server: backup.lab.invalid, port: 1080}\n',
+    'airport-v2': NODES_AFTER,
+    'backup': 'proxies:\n' + ''.join(f'  - {{name: D 备用 {index:03d}, type: socks5, server: backup.lab.invalid, '
+                                     f'port: {20000 + index}}}\n' for index in range(1, 131)),
 }
 
 
@@ -135,12 +154,17 @@ def setup():
     rule = {'id': 'lab-direct', 'name': '实验直连', 'source_type': 'content', 'behavior': 'domain', 'format': 'text',
             'content': RULES_BEFORE, 'enabled': True}
     repo.create_rule_library_item(rule, RULES_BEFORE)
+    big = {'id': 'lab-big', 'name': '实验大规则集', 'source_type': 'content', 'behavior': 'domain', 'format': 'text',
+           'content': BIG_BEFORE, 'enabled': True}
+    repo.create_rule_library_item(big, BIG_BEFORE)
 
     def profile(document):
         document['proxy_groups'] = [{'id': 'lab-group', 'name': '代理', 'type': 'select', 'subscriptions': ['lab-airport'],
                                      'manual_nodes': ['lab-manual'], 'enabled': True}]
         document['rule_configs'] = [
             {'id': 'lab-direct-ref', 'itemType': 'ruleset', 'name': '实验直连', 'library_rule_id': 'lab-direct',
+             'policy': 'DIRECT', 'enabled': True, 'behavior': 'domain'},
+            {'id': 'lab-big-ref', 'itemType': 'ruleset', 'name': '实验大规则集', 'library_rule_id': 'lab-big',
              'policy': 'DIRECT', 'enabled': True, 'behavior': 'domain'},
             {'id': 'lab-match', 'itemType': 'rule', 'rule_type': 'MATCH', 'policy': '代理', 'enabled': True}]
         document.setdefault('mihomo', {}).update(custom_config=CUSTOM, provider_update_interval=3600)
@@ -282,9 +306,10 @@ def prepare():
     node = next(item for item in api('GET', '/nodes') if item['id'] == 'lab-manual')
     node['params']['password'] = PASSWORD_AFTER
     api('PUT', '/nodes/lab-manual', node)
-    rule = next(item for item in api('GET', '/rule-library') if item['id'] == 'lab-direct')
-    rule.pop('has_ip_part', None)
-    api('PUT', '/rule-library/lab-direct', {**rule, 'content': RULES_AFTER})
+    for rule_id, content in (('lab-direct', RULES_AFTER), ('lab-big', BIG_AFTER)):
+        rule = next(item for item in api('GET', '/rule-library') if item['id'] == rule_id)
+        rule.pop('has_ip_part', None)
+        api('PUT', f'/rule-library/{rule_id}', {**rule, 'content': content})
     custom = CUSTOM + f'secret: {CONTROLLER_SECRET}\nhosts:\n  {HOSTS_DOMAIN}: 198.51.100.30\n'
     api('POST', '/custom-config/mihomo', {'config': custom, 'provider_update_interval': 3600})
     write_subscription('airport', 'airport-v2')
@@ -296,8 +321,10 @@ def prepare():
     api('POST', '/subscriptions/lab-backup/fetch', {'preview': True})
     body = diff_status('changed')
     save('evidence/prepared-push-diff.json', body)
-    print(json.dumps({'counts': body.get('counts'), 'files': [(item['path'], item['status']) for item in body['files']],
-                      'items': [item['key'] for item in body['config']['items']]}, ensure_ascii=False))
+    print(json.dumps({'counts': body.get('counts'),
+                      'files': [(item['path'], item['status'], item.get('summary')) for item in body['files']],
+                      'items': [item['key'] for item in body['config']['items']],
+                      'bytes': len(json.dumps(body, ensure_ascii=False).encode())}, ensure_ascii=False))
 
 
 def start():
