@@ -116,7 +116,7 @@ describe('mihomo panel view', () => {
     routeState.replace.mockImplementation(({ query }) => { routeState.route.query = query })
     const wrapper = mount(MihomoPanel)
     await flushPromises()
-    expect(wrapper.findAll('[role="tab"]').map(tab => tab.text())).toEqual(['概览', '统计', '策略', '连接', '规则', '日志'])
+    expect(wrapper.findAll('[role="tab"]').map(tab => tab.text())).toEqual(['概览', '策略', '连接', '规则', '日志', '统计'])
     expect(wrapper.get('[role="tab"][data-state="active"]').text()).toBe('日志')
     expect(wrapper.getComponent(MihomoLogs).props('agentId')).toBe('gw')
     expect(wrapper.text()).toContain('Mihomo log entry')
