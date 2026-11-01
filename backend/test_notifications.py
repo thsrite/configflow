@@ -99,6 +99,19 @@ def test_completed_receipt_is_persisted_before_worker_releases_running_flag(setu
     assert json.loads(path.read_text())['items']['task:subscription:feed']['state'] == 'resolved'
 
 
+def test_manual_backup_failure_is_actionable_even_without_automatic_backup(setup):
+    client, repo = setup
+    repo.update_system_transaction(lambda system: system.update(backup={
+        'auto_backup': False, 'webdav_url': 'https://backup.invalid', 'webdav_username': 'admin', 'webdav_password': 'private',
+    }))
+    task_status.record('webdav_backup', ok=False, error='HTTP 401', trigger='manual')
+    row = items(client)['task:webdav_backup']
+    assert row['state'] == 'pending' and row['title'] == 'WebDAV 手动备份'
+    assert row['target']['query'] == {'section': 'backup'}
+    task_status.record('webdav_backup', ok=True, trigger='manual')
+    assert items(client)['task:webdav_backup']['state'] == 'resolved'
+
+
 def test_corrupt_store_is_not_replaced_by_empty_success(setup):
     client, repo = setup
     path = repo.data_dir / 'notifications.json'
@@ -187,6 +200,9 @@ def test_same_router_id_in_different_profiles_does_not_merge(setup):
     rows = items(client)
     assert rows['router:default:r:ipv6_dns']['profile_id'] == 'default'
     assert rows['router:other:r:ipv6_dns']['profile_id'] == 'other'
+    notifications.record_router('other', get_config('other'), router, {'desired': {}, 'routes': {}})
+    assert items(client)['router:other:r:ipv6_dns']['resolution'] == '已不再适用'
+    assert items(client)['router:default:r:ipv6_dns']['state'] == 'pending'
 
 
 def test_confirmed_empty_router_release_clears_previous_failure(setup, monkeypatch):

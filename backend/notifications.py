@@ -55,6 +55,8 @@ def task_observation(task, agents, profiles):
     impact = ('仍使用上一次有效缓存' + (f'（{cache_time}）' if cache_time else '') if cache else
               '没有可用缓存' if cache is False else '')
     title = task['name'] if category in ('webdav_backup', 'domain_discovery', 'metrics_history') else f'{task["name"]} · {labels.get(category, "后台任务")}'
+    if category == 'webdav_backup' and task.get('last_trigger') == 'manual':
+        title = 'WebDAV 手动备份'
     return {'state': state, 'source': 'task', 'title': title,
             'message': event_message(message), 'impact': impact,
             'status_label': '需要手动处理' if manual or status == 'skipped' else '执行失败',
@@ -127,6 +129,9 @@ def record_router(profile_id, config, router, report, plan=None, *, checked_at=N
         for key, title, data, reason, section in checks:
             state = ('pending' if reason else 'unknown' if not data or data.get('status') in ('unknown', 'error')
                      else 'inactive' if data.get('enabled') is False else 'resolved')
+            if not data and 'desired' in report and 'routes' in report:
+                # A complete report omits sections that no longer apply to this configuration.
+                state = 'inactive'
             store.observe(items, prefix + key, {**common, 'state': state, 'severity': 'warning',
                 'title': f'{router.get("name") or router["id"]} · {title}', 'status_label': '需要手动处理',
                 'message': event_message(reason, (router.get('password'),)),

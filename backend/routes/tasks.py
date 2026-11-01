@@ -201,9 +201,11 @@ def _backup_row(repository, statuses):
     configured = all(backup.get(key) for key in ('webdav_url', 'webdav_username', 'webdav_password'))
     if not configured and BACKUP_TASK_KEY not in statuses:
         return []
+    history = _history(statuses.get(BACKUP_TASK_KEY) or {})
     return [_row(BACKUP_TASK_KEY, 'webdav_backup', 'WebDAV 自动备份', enabled=bool(backup.get('auto_backup')),
+        notifications_enabled=bool(backup.get('auto_backup')) or bool(configured and history.get('last_trigger') == 'manual'),
         schedule_text='配置变更后自动备份', can_run=configured, run_hint='' if configured else '请先填写 WebDAV 配置',
-        running=_is_background(BACKUP_TASK_KEY), link='/system-settings', **_history(statuses.get(BACKUP_TASK_KEY) or {}))]
+        running=_is_background(BACKUP_TASK_KEY), link='/system-settings', **history)]
 
 
 def _metrics_row(statuses):

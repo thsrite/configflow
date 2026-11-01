@@ -148,10 +148,12 @@ try {
   await page.getByRole('heading', { name: '编辑订阅', exact: true }).waitFor()
   assert.equal(await page.locator('#sub-name').inputValue(), '常用订阅')
   await page.locator('#sub-url[data-notification-focus]').waitFor()
+  await page.waitForFunction(() => document.activeElement?.id === 'sub-url')
   await page.getByRole('button', { name: '取消', exact: true }).click()
 
   await follow('task:rule_source:rule')
   await page.locator('#lib-url[data-notification-focus]').waitFor()
+  await page.waitForFunction(() => document.activeElement?.id === 'lib-url')
   assert.equal(await page.locator('#lib-url').inputValue(), 'https://notification-demo.invalid/rule')
   await page.getByRole('button', { name: '取消', exact: true }).click()
 
@@ -182,6 +184,7 @@ try {
 
   await follow('task:webdav_backup')
   await page.locator('#webdav-url[data-notification-focus]').waitFor()
+  await page.waitForFunction(() => document.activeElement?.id === 'webdav-url')
   assert.equal(await page.locator('#webdav-url').inputValue(), 'https://backup.invalid')
   await page.getByRole('button', { name: '取消', exact: true }).click()
 
