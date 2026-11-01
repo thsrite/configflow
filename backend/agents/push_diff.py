@@ -821,7 +821,8 @@ class _DetailBudget:
     def take(self, entry):
         if self.spent:
             return False
-        size = len(json.dumps(entry, ensure_ascii=False).encode())
+        # surrogatepass: a YAML escape can yield a lone surrogate; it is still only counted here.
+        size = len(json.dumps(entry, ensure_ascii=False).encode('utf-8', 'surrogatepass'))
         if size > self.left:
             self.spent = True  # keep each file's listed part contiguous
             return False

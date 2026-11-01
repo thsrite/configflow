@@ -564,13 +564,17 @@ def test_repeated_and_unnamed_nodes_are_matched_in_file_order():
     assert groups_of(details)['added']['entries'][0]['nth'] == 2
 
 
-def test_unchanged_or_unparsable_subscriptions_have_no_details():
+def test_unchanged_or_unparsable_subscriptions_have_no_details_and_odd_names_are_listed():
     summary, details = node_change([HK, JP], [JP, HK])  # only the order changed
     assert summary['added'] == summary['removed'] == summary['modified'] == 0 and details is None
     summary, details = push_diff._node_change(b'proxies: [', provider_bytes([HK]), push_diff._DetailBudget())
     assert summary['kind'] == 'size' and details is None
     summary, details = push_diff._node_change(b'ss://not-a-yaml-list', provider_bytes([HK]), push_diff._DetailBudget())
     assert summary['kind'] == 'size' and details is None
+    # An escaped lone surrogate in a name is listed, not an error for the whole change list.
+    odd = b'proxies:\n  - {name: "\\ud800 odd", type: ss, server: a.example, port: 1}\n'
+    summary, details = push_diff._node_change(odd, odd.replace(b'port: 1', b'port: 2'), push_diff._DetailBudget())
+    assert summary['modified'] == 1 and details['groups'][0]['entries'][0]['fields'][0]['new'] == '2'
 
 
 def test_rule_set_details_list_added_and_removed_rules():
