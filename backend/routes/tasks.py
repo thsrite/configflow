@@ -30,7 +30,7 @@ def _iso(value):
 
 def _history(entry):
     keys = ('last_run_at', 'last_status', 'last_error', 'last_duration_ms', 'last_trigger',
-            'last_success_at', 'run_count', 'failure_count', 'cache_retained', 'cache_updated_at')
+            'last_success_at', 'run_count', 'failure_count', 'consecutive_failures', 'cache_retained', 'cache_updated_at')
     row = {key: entry.get(key) for key in keys}
     row['run_count'] = int(row['run_count'] or 0)
     row['failure_count'] = int(row['failure_count'] or 0)
@@ -63,6 +63,7 @@ def _subscription_rows(shared, statuses):
         due = refresh.next_run_at(entry, interval, refresh.subscription_cache_time(sub)) if enabled else None
         rows.append(_row(key, 'subscription', sub.get('name') or sub['id'], resource_id=sub['id'],
             enabled=enabled and bool(interval), interval_seconds=interval, editable=bool(sub.get('url')),
+            notifications_enabled=enabled,
             can_run=bool(sub.get('url')), run_hint='' if sub.get('url') else '没有订阅地址',
             running=refresh.is_running(key), next_run_at=_iso(due),
             state_message='' if sub.get('enabled', True) is not False else '订阅已停用',
@@ -85,6 +86,7 @@ def _rule_rows(shared, statuses):
             history['cache_updated_at'] = refresh.rule_cache_time(rule)
         rows.append(_row(key, 'rule_source', rule.get('name') or rule['id'], resource_id=rule['id'],
             detail=_host(rule.get('url')), enabled=enabled and bool(interval), interval_seconds=interval,
+            notifications_enabled=enabled,
             editable=True, can_run=True, running=refresh.is_running(key), next_run_at=_iso(due),
             state_message='' if enabled else '规则集已停用', link='/rule-library', **history))
     return rows

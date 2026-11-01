@@ -1,5 +1,5 @@
 <template>
-  <SectionCard :title="`规则同步 · ${name}`" description="定时同步已发布规则的 IP 变化，保留手工路由。" :help="syncHelp">
+  <SectionCard data-router-rule-sync :title="`规则同步 · ${name}`" description="定时同步已发布规则的 IP 变化，保留手工路由。" :help="syncHelp">
     <template #actions>
       <Button variant="outline" class="min-h-11" :disabled="loading || saving || disabled" @click="load"><RefreshCw class="size-4" />刷新状态</Button>
       <Button variant="outline" class="min-h-11" :disabled="saving || disabled || running" @click="emit('preview')">预览发布</Button>

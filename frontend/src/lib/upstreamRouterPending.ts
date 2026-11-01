@@ -30,8 +30,8 @@ export function upstreamRouterLink(router: Pick<UpstreamRouterStatus, 'id' | 'pr
   return { path: '/routers', query: { router: router.id, ...(router.profile_id ? { profile: router.profile_id } : {}), ...(preview ? { preview: '1' } : {}) } }
 }
 
-export interface RouterDeepLink { router: string; profile: string; preview: boolean }
-export const ROUTER_DEEP_LINK_KEYS = ['router', 'profile', 'preview'] as const
+export interface RouterDeepLink { router: string; profile: string; preview: boolean; section?: string }
+export const ROUTER_DEEP_LINK_KEYS = ['router', 'profile', 'preview', 'section'] as const
 
 const single = (value: LocationQuery[string]) => (typeof value === 'string' ? value.trim() : '')
 
@@ -40,5 +40,8 @@ export function readRouterDeepLink(query: LocationQuery): RouterDeepLink | null 
   const router = single(query.router)
   if (!router || router.length > 128) return null
   const profile = single(query.profile)
-  return { router, profile: profile.length <= 128 ? profile : '', preview: single(query.preview) === '1' }
+  const section = single(query.section)
+  const sections = ['report', 'rule-sync', 'ipv4-forward-hint', 'ipv6-fakeip', 'ipv6-routes', 'ipv6-dns', 'ipv6-pd-guard']
+  return { router, profile: profile.length <= 128 ? profile : '', preview: single(query.preview) === '1',
+    ...(sections.includes(section) ? { section } : {}) }
 }

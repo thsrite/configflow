@@ -685,6 +685,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useSettingLink, queryText, focusSetting } from '@/lib/settingLink'
 import { load as loadYaml } from 'js-yaml'
 import {
   ArrowUpDown,
@@ -1662,6 +1663,21 @@ const handleSaveOrder = async () => {
     notify.error('保存顺序失败，顺序已还原')
   }
 }
+
+useSettingLink({
+  keys: ['rule', 'section'], ready: () => libraryLoaded.value,
+  matches: query => !!queryText(query.rule) && query.section === 'settings',
+  open: async query => {
+    if (dialogVisible.value || batchImportDialogVisible.value || savingRule.value) {
+      notify.warning('请先保存或关闭正在编辑的规则集。'); return
+    }
+    const rule = ruleLibrary.value.find(item => item.id === queryText(query.rule))
+    if (!rule) { notify.warning('对应规则集不存在或已删除。'); return }
+    editRule(rule)
+    await nextTick()
+    await focusSetting(document.getElementById('lib-url'))
+  },
+})
 
 onMounted(() => {
   syncNarrow()

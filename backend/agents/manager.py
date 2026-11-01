@@ -661,6 +661,8 @@ class AgentManager:
             if unchanged is not None:
                 return unchanged
         result = self._update_agents(record)
+        from backend.notifications import safely, record_agent
+        safely(record_agent, self.get_agent_by_id(agent_id), self.repository)
         for label, state in finished[-1:]:
             level, text = _DEPLOYMENT_RESULTS[state['status']]
             detail = state.get('error') or state.get('rollback_error') or state.get('message') or ''

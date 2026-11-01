@@ -42,6 +42,14 @@ describe('Agent deployment history rollback availability', () => {
 })
 
 describe('Agent deployment history diagnostics', () => {
+  it('focuses the requested historical failure and expands its diagnostic details', async () => {
+    const failure = { deployment_id: 'failed-id', status: 'failed', error: '校验失败', error_details: '具体失败位置', updated_at: '2026-10-15T09:00:00Z' }
+    await render({ agent: { ...agent, deployments: { ...agent.deployments, failure } }, focusDeployment: 'failed-id' })
+    const target = document.querySelector('[data-deployment-record="failed-id"]')!
+    expect(target.hasAttribute('data-notification-focus')).toBe(true)
+    expect(target.querySelector('details')?.open).toBe(true)
+    expect(target.textContent).toContain('具体失败位置')
+  })
   it('reopens the recorded operation steps and their specific work items', async () => {
     const events = [{ at: '2026-10-18T12:00:00Z', status: 'uploading', message: '上传配置和 3 个规则文件' },
       { at: '2026-10-18T12:00:01Z', status: 'succeeded', message: 'OxiDNS 配置已应用并通过 DNS 检查' }]

@@ -8,7 +8,7 @@ import { deploymentErrorSummary } from '@/lib/agentFailure'
 import { deploymentLabels, type AgentDeployment } from '@/composables/useAgentDeployments'
 import AgentDNSChecks from './AgentDNSChecks.vue'
 
-const props = withDefaults(defineProps<{ task: Partial<AgentDeployment>; showProgressMessage?: boolean; showDNSChecks?: boolean }>(), { showProgressMessage: true, showDNSChecks: true })
+const props = withDefaults(defineProps<{ task: Partial<AgentDeployment>; showProgressMessage?: boolean; showDNSChecks?: boolean; expanded?: boolean }>(), { showProgressMessage: true, showDNSChecks: true })
 const failed = computed(() => !!props.task.error || !!props.task.error_details || !!props.task.rollback_error || !!props.task.rollback_error_details || ['failed', 'rollback_failed'].includes(props.task.status || '') || (props.task.status === 'rolled_back' && !props.task.manual_rollback))
 const sections = computed(() => [
   { key: 'publish', label: '发布失败详情', summary: props.task.error || ((props.showProgressMessage || failed.value) ? props.task.message : '') || '', details: props.task.error_details || '' },
@@ -34,7 +34,7 @@ async function copy(text: string) {
     <p v-if="stage" class="m-0">失败步骤：{{ stage }}</p>
     <div v-for="section in sections" :key="section.key" class="min-w-0">
       <p v-if="section.short" class="m-0">{{ section.key === 'rollback' ? '回滚：' : '' }}{{ section.short }}</p>
-      <details v-if="section.details" :key="`${task.deployment_id}:${section.key}:${section.details}`" class="mt-1 min-w-0 rounded-md border border-border bg-background/50 text-foreground">
+      <details v-if="section.details" :open="expanded" :key="`${task.deployment_id}:${section.key}:${section.details}`" class="mt-1 min-w-0 rounded-md border border-border bg-background/50 text-foreground">
         <summary class="min-h-11 cursor-pointer px-3 py-3 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-accent">{{ section.label }}</summary>
         <div class="min-w-0 border-t border-border px-3 pb-3">
           <div class="flex justify-end"><Button type="button" variant="ghost" size="sm" class="min-h-11" :aria-label="`复制${section.label}`" @click="copy(section.details)"><Copy class="size-3.5" aria-hidden="true" />复制</Button></div>

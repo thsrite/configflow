@@ -825,6 +825,12 @@ body {
 }
 
 /* 仅供屏幕阅读器的说明文本 */
+[data-notification-focus] {
+  scroll-margin-top: 90px;
+  outline: 2px solid var(--primary-accent);
+  outline-offset: 3px;
+}
+
 .cf-sr {
   position: absolute;
   width: 1px;

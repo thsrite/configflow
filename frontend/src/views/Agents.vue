@@ -40,6 +40,7 @@
         <div
           v-for="(agent, index) in agents"
           :key="agent.id"
+          :data-notification-agent="agent.id"
           class="cf-list-in"
           :style="listItemStyle(index)"
           :class="cn(
@@ -161,6 +162,7 @@
             <AgentDNSChecks v-if="deployments[agent.id]" :key="deployments[agent.id].deployment_id" :checks="deployments[agent.id].dns_checks" :checked-at="deployments[agent.id].dns_checked_at" compact />
 
             <AgentDNSFollow
+              :ref="instance => setDNSFollowRef(agent.id, instance)"
               v-if="agent.service_type === 'oxidns'"
               :agent="agent"
               :source-name="agents.find(item => item.id === agent.dns_follow?.source_agent_id)?.name"
@@ -344,7 +346,7 @@
       @refresh="loadAgents"
       @push="pushFromDiff(pushDiffAgent)"
     />
-    <AgentDeploymentHistory v-if="deploymentHistoryAgent" :agent="deploymentHistoryAgent" :progress="deployments[deploymentHistoryAgent.id]" :busy="deploymentBusy(deploymentHistoryAgent.id)" :blocked="upgradeBusy(deploymentHistoryAgent.id) || pushingIds.has(deploymentHistoryAgent.id) || rollbackConfirming" @close="deploymentHistoryAgentId = null" @rollback="requestRollback(deploymentHistoryAgent, $event)" />
+    <AgentDeploymentHistory v-if="deploymentHistoryAgent" :agent="deploymentHistoryAgent" :focus-deployment="notificationDeploymentId" :progress="deployments[deploymentHistoryAgent.id]" :busy="deploymentBusy(deploymentHistoryAgent.id)" :blocked="upgradeBusy(deploymentHistoryAgent.id) || pushingIds.has(deploymentHistoryAgent.id) || rollbackConfirming" @close="deploymentHistoryAgentId = null; notificationDeploymentId = ''" @rollback="requestRollback(deploymentHistoryAgent, $event)" />
 
     <GatewayInstallWizard
       v-if="gatewayInstallContext"
@@ -994,6 +996,7 @@ import AgentUpgradeStatus from '@/components/agents/AgentUpgradeStatus.vue'
 import AgentGatewayForwarding from '@/components/agents/AgentGatewayForwarding.vue'
 import OxiDNSRuleUpdate from '@/components/agents/OxiDNSRuleUpdate.vue'
 import AgentRuleSync from '@/components/agents/AgentRuleSync.vue'
+import { useSettingLink, queryText, focusSetting } from '@/lib/settingLink'
 import { submitAgentRequests, uniquePublicationTargets } from '@/lib/agentRequests'
 import { deploymentErrorSummary } from '@/lib/agentFailure'
 import { upgradeLabels, useAgentUpgrades } from '@/composables/useAgentUpgrades'
@@ -1018,6 +1021,12 @@ function ruleUpdateBlocked(agent: Agent) {
 }
 const { deployments, busy: deploymentBusy, track: trackDeployment, beginSubmission, endSubmission, refresh: refreshDeployment, activate: activateDeployment, retryPublish: retryDeployment, rollback: rollbackDeployment } = useAgentDeployments(() => { void loadAgents() })
 const deploymentHistoryAgentId = ref<string | null>(null)
+const notificationDeploymentId = ref('')
+const dnsFollowRefs = new Map<string, InstanceType<typeof AgentDNSFollow>>()
+function setDNSFollowRef(id: string, instance: Element | ComponentPublicInstance | null) {
+  if (instance) dnsFollowRefs.set(id, instance as InstanceType<typeof AgentDNSFollow>)
+  else dnsFollowRefs.delete(id)
+}
 const deploymentHistoryAgent = computed(() => agents.value.find(agent => agent.id === deploymentHistoryAgentId.value))
 const rollbackConfirming = ref(false)
 const requestRollback = async (agent: Agent, record: AgentDeployment) => {
@@ -1764,6 +1773,7 @@ const trafficChartOption = computed(() => {
 
 // 加载 Agent 列表
 let agentsLoadGeneration = 0
+const agentsLoaded = ref(false)
 const trafficNow = ref(Date.now())
 const loadAgents = async () => {
   trafficNow.value = Date.now()
@@ -1773,6 +1783,7 @@ const loadAgents = async () => {
     if (generation !== agentsLoadGeneration) return
     trafficNow.value = Date.now()
     agents.value = data
+    agentsLoaded.value = true
     for (const agent of agents.value) {
       if (agent.latest_upgrade) trackUpgrade(agent.id, agent.latest_upgrade)
       if (agent.latest_deployment && !deploymentBusy(agent.id)) trackDeployment(agent.id, agent.latest_deployment, false)
@@ -2781,6 +2792,31 @@ const runPending = () => {
   if (consumeAction(router, 'push-all')) pushAll()
 }
 watch(() => router?.currentRoute.value.query.run, run => run === 'push-all' && runPending())
+useSettingLink({
+  keys: ['agent', 'profile', 'section', 'deployment'], ready: () => agentsLoaded.value,
+  matches: query => !!queryText(query.agent) && ['deployment', 'rule-sync', 'dns-follow'].includes(queryText(query.section)),
+  open: async query => {
+    const agent = agents.value.find(item => item.id === queryText(query.agent))
+    if (!agent) { notify.warning('对应设备不存在或已删除。'); return }
+    if (queryText(query.profile) && queryText(query.profile) !== (agent.profile_id || defaultProfileId.value)) {
+      notify.warning('设备所属配置空间已变化，请从 Agent 页面确认后再操作。'); return
+    }
+    if (agentSettings.value || scriptDialogVisible.value || logsDialogVisible.value || metricsDialogVisible.value) {
+      notify.warning('请先保存或关闭当前编辑窗口。'); return
+    }
+    await nextTick()
+    const card = Array.from(document.querySelectorAll<HTMLElement>('[data-notification-agent]'))
+      .find(element => element.dataset.notificationAgent === agent.id)
+    if (query.section === 'deployment') {
+      notificationDeploymentId.value = queryText(query.deployment)
+      deploymentHistoryAgentId.value = agent.id
+    } else if (query.section === 'dns-follow') {
+      dnsFollowRefs.get(agent.id)?.showSettings()
+    } else {
+      await focusSetting(card?.querySelector<HTMLElement>('[aria-label="规则同步"]'))
+    }
+  },
+})
 
 onMounted(async () => {
   await Promise.all([loadAgents(), refreshProfiles().catch(() => undefined)])

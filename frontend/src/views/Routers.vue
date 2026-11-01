@@ -200,6 +200,9 @@
             {{ statusInfo(key).label }} <span class="num">{{ count }}</span>
           </span>
         </div>
+        <p v-if="reportRouter?.last_release?.ok === false" class="mt-3 break-words text-[13px] text-destructive-accent" data-router-last-release>
+          上次发布失败：{{ reportRouter.last_release.message || `阶段「${reportRouter.last_release.failed_stage || '未知'}」未完成，请检查差异后重新预览。` }}
+        </p>
         <dl class="mt-4 mb-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[12.5px]">
           <dt class="text-muted-foreground">fake-ip 网段</dt>
           <dd class="m-0 font-mono">{{ report.desired.fake_ip_range }}</dd>
@@ -918,6 +921,8 @@ import MultiSelect from '@/components/common/MultiSelect.vue'
 import AgentStatusRow from '@/components/agents/AgentStatusRow.vue'
 import PolicyRoutingPanel from '@/components/routers/PolicyRoutingPanel.vue'
 import RouterRuleSync from '@/components/routers/RouterRuleSync.vue'
+import { focusSetting } from '@/lib/settingLink'
+import { canReloadPage } from '@/lib/pageReloadGuard'
 import RouterOperationPreview from '@/components/routers/RouterOperationPreview.vue'
 import { agentApi, routerApi as baseRouterApi, ruleApi, type StaticRouteChange, type StaticRouteItem, type StaticRoutePlan, type StaticRouteValues } from '@/api'
 import { setupApi } from '@/api/setup'
@@ -1025,6 +1030,7 @@ interface RouterItem {
   ipv6_pd_guard?: { enabled: boolean }
   has_password: boolean
   last_probe?: { ok: boolean; version?: string; message?: string; at: string }
+  last_release?: { ok: boolean; failed_stage?: string; message?: string; at?: string }
 }
 
 interface DnsGuardSettings {
@@ -1823,6 +1829,10 @@ const followDeepLinkProfile = async (link: RouterDeepLink) => {
     notify.warning(`这台路由器属于配置空间「${profile.name}」。当前配置正在保存，完成后请切换到该空间再查看。`)
     return false
   }
+  if (!canReloadPage()) {
+    notify.warning('请先保存或关闭当前编辑，再切换到通知中的配置空间。')
+    return false
+  }
   setActiveProfileId(profile.id)
   notify.info(`已切换到配置空间「${profile.name}」，查看链接中的路由器。`)
   return true
@@ -1836,6 +1846,16 @@ const openDeepLink = async (link: RouterDeepLink) => {
     notify.error('链接中的路由器不存在或已删除，请从提醒处重新打开。')
     return
   }
+  if (dialogVisible.value || saving.value || applying.value || policyLocked.value || !canReloadPage()) {
+    notify.warning('请先保存或关闭当前编辑，再打开对应路由器设置。')
+    return
+  }
+  if (link.section === 'rule-sync') {
+    await openRuleSync(target)
+    await nextTick()
+    await focusSetting(document.querySelector<HTMLElement>('[data-router-rule-sync]'))
+    return
+  }
   const opening = openReport(target)
   await nextTick()
   scrollToReport()
@@ -1843,6 +1863,11 @@ const openDeepLink = async (link: RouterDeepLink) => {
   if (pageDisposed || reportRouter.value?.id !== target.id || !report.value) return
   await nextTick()
   scrollToReport()
+  if (link.section) {
+    const section = document.querySelector<HTMLElement>(`[data-router-${link.section}]`)
+    if (section) await focusSetting(section)
+    else notify.info('此设置区域当前不适用，已打开对应路由器的最新差异报告。')
+  }
   if (link.preview) await openPlan()
 }
 const handleDeepLink = async (link: RouterDeepLink, loaded: boolean) => {
