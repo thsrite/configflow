@@ -45,6 +45,8 @@ afterEach(() => {
 
 describe('publish bar upstream router reminder', () => {
   it('appears only after a Mihomo draft is saved, and refreshes after each later save', async () => {
+    vi.mocked(upstreamRouterApi.pending).mockImplementation(async id => response({ success: true, agent_id: id, agent_profile_id: 'office',
+      routers: [{ ...pendingRouter, profile_id: 'test', profile_name: '测试空间' }, pendingRouter] }))
     const saveDraft = vi.fn().mockResolvedValue(guard())
     const wrapper = await render({ onSaveDraft: saveDraft })
     expect(wrapper.findComponent(UpstreamRouterPending).exists()).toBe(false)
@@ -53,13 +55,14 @@ describe('publish bar upstream router reminder', () => {
     await flushPromises()
     expect(saveDraft).toHaveBeenCalledTimes(1)
     const reminder = wrapper.getComponent(UpstreamRouterPending)
-    expect(reminder.props()).toMatchObject({ agentId: 'one', refreshKey: 1, compact: true })
+    expect(reminder.props()).toMatchObject({ agentId: 'one', profileId: 'office', refreshKey: 1, compact: true })
+    expect(wrapper.findAll('[data-publish-upstream-routers] a')).toHaveLength(1)
     expect(wrapper.get('[data-publish-upstream-routers]').text()).toContain('上游路由「主路由」有 1 项待发布')
     expect(wrapper.text()).not.toContain('IPv6 Fake-IP 分流路由：待添加')
     expect(wrapper.get('[data-publish-upstream-routers] a').attributes('href')).toBe('/routers?router=ros&profile=office&preview=1')
     await button(wrapper, '保存草稿').trigger('click')
     await flushPromises()
-    expect(upstreamRouterApi.pending).toHaveBeenLastCalledWith('one', expect.objectContaining({ refresh: true }))
+    expect(upstreamRouterApi.pending).toHaveBeenLastCalledWith('one', expect.objectContaining({ profileId: 'office', refresh: true }))
   })
 
   it('stays hidden when the draft was not saved, and for other software', async () => {

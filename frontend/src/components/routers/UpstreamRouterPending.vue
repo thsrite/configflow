@@ -12,6 +12,8 @@ import { checkedAgo } from '@/lib/format'
 const props = defineProps<{
   /** 作为代理网关的 Mihomo Agent；为空时不读取，发出 none */
   agentId: string
+  /** 固定为设置窗口正在编辑的空间，不随全局空间或设备重绑漂移。 */
+  profileId: string
   /** 变化时强制重新读取路由器（不用服务端上次的结果），用于保存草稿、发布或重新检查之后 */
   refreshKey?: unknown
   /** 只显示每台路由器一行，不列出待发布项目 */
@@ -90,7 +92,8 @@ async function load(refresh: boolean) {
   controller = null
   const generation = ++session
   const id = props.agentId
-  if (!id) {
+  const profileId = props.profileId
+  if (!id || !profileId) {
     routers.value = []
     failure.value = ''
     publish()
@@ -99,12 +102,13 @@ async function load(refresh: boolean) {
   const abort = new AbortController()
   controller = abort
   try {
-    const { data } = await upstreamRouterApi.pending(id, { refresh, signal: abort.signal })
+    const { data } = await upstreamRouterApi.pending(id, { profileId, refresh, signal: abort.signal })
     if (disposed || generation !== session) return
     if (data?.success !== true || data.agent_id !== id || !Array.isArray(data.routers)) {
       throw new Error(data?.message || '上游路由状态响应无效，请稍后重试。')
     }
-    routers.value = data.routers.filter(valid)
+    // Also protect mixed-version deployments where the server ignores the scope.
+    routers.value = data.routers.filter(item => valid(item) && item.profile_id === profileId)
     agentProfileId.value = typeof data.agent_profile_id === 'string' ? data.agent_profile_id : ''
     checkedAt.value = typeof data.checked_at === 'string' ? data.checked_at : ''
     failure.value = ''
@@ -122,15 +126,15 @@ async function load(refresh: boolean) {
   }
 }
 
-watch(() => [props.agentId, props.refreshKey] as const, ([agentId, refreshKey], previous) => {
-  const sameAgent = !!previous && previous[0] === agentId
-  if (!sameAgent) {
+watch(() => [props.agentId, props.profileId, props.refreshKey] as const, ([agentId, profileId, refreshKey], previous) => {
+  const sameScope = !!previous && previous[0] === agentId && previous[1] === profileId
+  if (!sameScope) {
     routers.value = []
     failure.value = ''
     agentProfileId.value = ''
     checkedAt.value = ''
   }
-  void load(sameAgent && previous![1] !== refreshKey)
+  void load(sameScope && previous![2] !== refreshKey)
 }, { immediate: true })
 
 onMounted(() => { ticker = setInterval(() => { now.value = Date.now() }, 30000) })

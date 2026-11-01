@@ -11,7 +11,7 @@ from backend.routes import agents_bp
 @agents_bp.route('/<agent_id>/upstream-routers', methods=['GET'])
 @require_auth
 def upstream_router_pending(agent_id):
-    """Routers in any profile that use this Agent as proxy gateway, with their live release state.
+    """Linked routers, optionally restricted to the editor's explicit profile.
 
     Read-only: each router gets the 上游路由 page's report and release preview.
     The last read is reused while its key holds; ``?refresh=1`` (after a save, a
@@ -19,7 +19,7 @@ def upstream_router_pending(agent_id):
     """
     refresh = request.args.get('refresh') in ('1', 'true')
     try:
-        data = pending.agent_routers(agent_id, refresh=refresh)
+        data = pending.agent_routers(agent_id, refresh=refresh, profile_id=request.args.get('profile'))
         response, status = jsonify({'success': True, **data}), 200
     except FutureTimeout:
         response, status = jsonify({'success': False, 'message': '读取上游路由状态超时，请稍后重试。'}), 504

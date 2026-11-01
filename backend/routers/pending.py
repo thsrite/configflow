@@ -162,14 +162,18 @@ def _read_all(targets: List[Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]
     return entries
 
 
-def _targets(agent_id: str):
-    """Routers in any profile that use this Agent as proxy gateway, the Agent's profile and a cache key."""
+def _targets(agent_id: str, profile_id: Optional[str] = None):
+    """Linked routers in the requested scope, the Agent's profile and a cache key."""
     from backend.common.agent_manager import get_agent_manager
     from backend.common.config import get_config, get_repository
     repository = get_repository()
     agent = get_agent_manager().get_agent_by_id(agent_id)
-    targets, key = [], []
-    for profile in repository.list_profiles():
+    profiles = repository.list_profiles()
+    if profile_id is not None:
+        repository._profile_metadata(profile_id)  # Invalid scopes must not fall back to all profiles.
+        profiles = [profile for profile in profiles if profile['id'] == profile_id]
+    targets, key = [], [['profile', profile_id]]
+    for profile in profiles:
         config = get_config(profile['id'])
         linked = [router for router in routers_of(config) if router.get('proxy_gateway_agent_id') == agent_id]
         if linked:
@@ -242,10 +246,10 @@ _cache = PendingCache()
 
 
 def agent_routers(agent_id: str, refresh: bool = False, *, cache: Optional[PendingCache] = None,
-                  timeout: Optional[float] = None) -> Dict[str, Any]:
+                  timeout: Optional[float] = None, profile_id: Optional[str] = None) -> Dict[str, Any]:
     """Payload of GET /api/agents/<agent_id>/upstream-routers."""
     timeout = timeout or ROUTER_TIMEOUT
-    targets, agent_profile, signature = _targets(agent_id)
+    targets, agent_profile, signature = _targets(agent_id, profile_id)
     result = {'agent_id': agent_id, 'agent_profile_id': agent_profile, 'routers': [], 'cached': False,
               'checked_at': datetime.now().astimezone().isoformat(timespec='seconds')}
     if not targets:

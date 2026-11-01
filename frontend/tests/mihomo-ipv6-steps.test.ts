@@ -237,7 +237,7 @@ describe('Mihomo IPv6 step list', () => {
   it('keeps the reminder hidden, follows its status and links to the waiting router', async () => {
     const wrapper = await mount({}, true)
     const pending = wrapper.getComponent(UpstreamRouterPending)
-    expect(pending.props()).toMatchObject({ agentId: 'gw', compact: true })
+    expect(pending.props()).toMatchObject({ agentId: 'gw', profileId: 'bound', compact: true })
     // Its own lines belong to the publish bar and the device check, never twice on one screen.
     expect(wrapper.get('[data-ipv6-step-upstream-reminder]').classes()).toContain('hidden')
     pending.vm.$emit('status', { state: 'synced', pending: 0 })
@@ -250,7 +250,7 @@ describe('Mihomo IPv6 step list', () => {
     await flushPromises()
     expect(status(wrapper, 'upstream')).toBe('2 项待处理')
     // Read without refresh: the reminder's read is reused, no router is contacted again.
-    expect(upstreamRouterApi.pending).toHaveBeenCalledExactlyOnceWith('gw')
+    expect(upstreamRouterApi.pending).toHaveBeenCalledExactlyOnceWith('gw', { profileId: 'bound' })
     const link = wrapper.get('[data-ipv6-step-upstream]').getComponent(RouterLink)
     expect(link.props('to')).toEqual({ path: '/routers', query: { router: 'ros', profile: 'bound', preview: '1' } })
     expect(link.text()).toBe('「主路由」查看并发布')
@@ -320,8 +320,10 @@ describe('Mihomo IPv6 step list', () => {
     expect(status(wrapper, 'firewall')).toBe('需处理')
   })
 
-  it('works with the real reminder: blocked counts as waiting, the reminder lines stay hidden', async () => {
-    vi.mocked(upstreamRouterApi.pending).mockResolvedValue(response(pendingResponse([waitingRouter('blocked')])))
+  it('counts and links only routers in the editor profile, including with duplicate router IDs', async () => {
+    vi.mocked(upstreamRouterApi.pending).mockResolvedValue(response(pendingResponse([
+      waitingRouter('blocked', { profile_id: 'test', profile_name: '测试空间' }), waitingRouter('blocked'),
+    ])))
     const wrapper = shallowMount(MihomoIPv6Steps, {
       props: { open: true, profileId: 'bound', preferredAgentId: 'gw', mode: 'clients', dirty: false },
       global: { renderStubDefaultSlot: true, stubs: { Button: false, Primitive: false, AgentStatusRow: RowStub, UpstreamRouterPending: false } },
@@ -329,11 +331,14 @@ describe('Mihomo IPv6 step list', () => {
     wrappers.push(wrapper)
     await flushPromises()
     await flushPromises()
-    expect(upstreamRouterApi.pending).toHaveBeenNthCalledWith(1, 'gw', expect.objectContaining({ refresh: false }))
+    expect(upstreamRouterApi.pending).toHaveBeenNthCalledWith(1, 'gw', expect.objectContaining({ profileId: 'bound', refresh: false }))
     expect(status(wrapper, 'upstream')).toBe('1 项待处理')
     expect(wrapper.get('[data-ipv6-step-upstream-reminder]').text()).toContain('有改动暂时无法发布')
     expect(wrapper.get('[data-ipv6-step-upstream-reminder]').classes()).toContain('hidden')
     expect(wrapper.get('[data-ipv6-step-upstream]').getComponent(RouterLink).text()).toBe('「主路由」查看原因')
+    const links = wrapper.get('[data-ipv6-step-upstream]').findAllComponents(RouterLink)
+    expect(links).toHaveLength(1)
+    expect(links[0].props('to')).toEqual({ path: '/routers', query: { router: 'ros', profile: 'bound', preview: '1' } })
   })
 
   it('collapses acceptance to one line once the embedded verification passes', async () => {
