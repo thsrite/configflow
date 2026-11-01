@@ -19,10 +19,13 @@
 | `oxidns-docker-ha-macvlan.jpg` | macvlan 主机字段 | 独立容器地址、网卡、网段和网关是演示填写 |
 | `oxidns-ha-pair-empty.jpg` | 没有设备时的验证与配对页 | 如实保留空列表／等待状态；不是高可用验证成功 |
 | `aggregation-subscription-cache.png` | 聚合预览中查看单个订阅 | 只读隔离数据里的订阅缓存；来源设为「仅手动」，没有请求上游 |
+| `generate-result-replay.png` | 默认静止外观下，生成步骤与配置文字依次展开 | 最终配置已返回，展示回放过程；并非后端实时阶段进度，可点「立即显示」跳过 |
 
 采集脚本：[capture-guide.mjs](../../../scripts/docs/capture-guide.mjs)。机器可读记录见 [capture-report.json](capture-report.json)。图片为浏览器直接输出的 JPEG，质量 82，未经后期拼接或生成。
 
 聚合缓存预览的 PNG 由 [aggregation_cache_preview_browser.mjs](../../../scripts/tests/aggregation_cache_preview_browser.mjs) 单独采集，使用真实页面和 API、临时数据及演示节点；脚本验证预览不产生上游请求或拉取记录，并检查来源缓存更新、缓存缺失和手机布局。准备好下述依赖后，在测试服务器运行 `rt --no-sync --back doc/img/guide/aggregation-subscription-cache.png -- node scripts/tests/aggregation_cache_preview_browser.mjs`。
+
+生成结果回放截图由 [final_config_browser.mjs](../../../scripts/tests/final_config_browser.mjs) 采集，使用真实页面与 API、隔离数据库和模拟 Agent 传输。浏览器没有保存动效偏好，系统不要求减少动效；脚本记录五个步骤和文字行数的逐帧变化，验证跳过回放及发布文件哈希一致。录像与采样记录保存到 `.ci-results/final-config/`。
 
 ## 在测试服务器重现
 

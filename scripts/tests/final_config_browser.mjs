@@ -82,8 +82,9 @@ try {
     await new Promise(resolve => setTimeout(resolve, 250))
   }
   browser = await chromium.launch({ headless: true })
-  async function open(viewport, theme, { chooseTarget = true, motion = false } = {}) {
-    const context = await browser.newContext({ viewport, reducedMotion: motion ? 'no-preference' : 'reduce', colorScheme: theme })
+  async function open(viewport, theme, { chooseTarget = true, motion = false, reducedMotion = true, record = false } = {}) {
+    const context = await browser.newContext({ viewport, reducedMotion: reducedMotion ? 'reduce' : 'no-preference', colorScheme: theme,
+      ...(record ? { recordVideo: { dir: join(evidence, 'video'), size: viewport } } : {}) })
     await context.addInitScript(mode => localStorage.setItem('configflow-theme', mode), theme)
     if (motion) await context.addInitScript(() => localStorage.setItem('configflow-preferences', JSON.stringify({ motion: true })))
     const page = await context.newPage()
@@ -143,7 +144,18 @@ try {
   assert.equal(await multiple.getByRole('button', { name: '生成', exact: true }).isEnabled(), true)
 
   await fetch(`${base}/lab/long-config`, { method: 'POST' })
-  const animated = await open({ width: 1280, height: 900 }, 'dark', { motion: true })
+  // Reproduce the default appearance: no saved motion opt-in, no OS reduction.
+  const animated = await open({ width: 1440, height: 1050 }, 'light', { reducedMotion: false, record: true })
+  assert.equal(await animated.evaluate(() => document.documentElement.dataset.motion), 'off')
+  assert.equal(await animated.evaluate(() => localStorage.getItem('configflow-preferences')), null)
+  await animated.evaluate(() => {
+    window.replaySamples = []
+    window.replayTimer = setInterval(() => {
+      const steps = [...document.querySelectorAll('.gen-step')]
+      window.replaySamples.push({ stage: steps.findIndex(step => step.classList.contains('run')),
+        shown: document.querySelectorAll('.gen-line').length, done: steps.filter(step => step.classList.contains('done')).length })
+    }, 16)
+  })
   const response = animated.waitForResponse(res => res.url().endsWith('/generate-config'))
   await animated.getByRole('button', { name: '生成', exact: true }).click()
   const rendered = await (await response).json()
@@ -153,13 +165,27 @@ try {
     return shown > 0 && shown < count
   }, total)
   assert.equal(await animated.getByRole('button', { name: '推送', exact: true }).isEnabled(), false)
-  await animated.screenshot({ path: join(evidence, 'generation-animation.png') })
+  await animated.waitForFunction(() => document.querySelectorAll('.gen-step.done').length === 2)
+  assert.match(await animated.locator('[data-result-replay]').textContent(), /配置已生成/)
+  await animated.screenshot({ path: resolve(root, 'doc/img/guide/generate-result-replay.png') })
   await animated.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.trim() === '推送' && !button.disabled))
   assert.equal(await animated.locator('.gen-line').count(), total)
+  const samples = await animated.evaluate(() => { clearInterval(window.replayTimer); return window.replaySamples })
+  assert.deepEqual([...new Set(samples.filter(item => item.stage >= 0).map(item => item.stage))], [0, 1, 2, 3, 4])
+  assert.ok(samples.some(item => item.shown > 0 && item.shown < total && item.done < 4), 'Code appears while earlier steps are replaying')
+  await writeFile(join(evidence, 'replay-samples.json'), JSON.stringify(samples, null, 2))
   const animatedUpload = animated.waitForResponse(res => res.url().endsWith('/push-config'))
   await animated.getByRole('button', { name: '推送', exact: true }).click()
   assert.equal((await animatedUpload).status(), 200)
   assert.deepEqual((await (await fetch(`${base}/lab/uploads`)).json()).at(-1), Object.fromEntries(rendered.files.map(file => [file.path, file.sha256])))
+  // Skip a second playback and confirm the exact final file is shown immediately.
+  await animated.getByRole('button', { name: '生成', exact: true }).click()
+  await animated.getByRole('button', { name: '立即显示', exact: true }).click()
+  await animated.waitForFunction(() => document.querySelectorAll('.gen-step.done').length === 5)
+  assert.equal(await animated.locator('.gen-line').count(), total)
+  const video = animated.video()
+  await animated.context().close()
+  await video.saveAs(join(evidence, 'generation-replay.webm'))
   for (const theme of ['light', 'dark']) {
     const phone = await open({ width: 375, height: 812 }, theme)
     await generate(phone)
@@ -168,7 +194,7 @@ try {
     await phone.screenshot({ path: join(evidence, `mobile-${theme}.png`), animations: 'disabled' })
   }
   assert.deepEqual(errors, [])
-  await writeFile(join(evidence, 'result.json'), JSON.stringify({ passed: true, checks: ['single Agent default', 'multiple Agents require selection', 'remember Agent after reload', 'fixed-result animation', 'final content', 'rule file preview', 'stale rejection', 'upload file hashes', '375px light/dark'], files: current.files.map(f => f.path) }, null, 2))
+  await writeFile(join(evidence, 'result.json'), JSON.stringify({ passed: true, checks: ['single Agent default', 'multiple Agents require selection', 'remember Agent after reload', 'default static appearance replays all five steps', 'progressive final-result text', 'skip playback', 'system reduced motion', 'final content', 'rule file preview', 'stale rejection', 'upload file hashes', '375px light/dark'], files: current.files.map(f => f.path) }, null, 2))
   console.log('PASS: destination defaults/restoration, animation, exact upload and mobile light/dark')
 } catch (error) {
   console.error(logs.split('\n').slice(-20).join('\n'))

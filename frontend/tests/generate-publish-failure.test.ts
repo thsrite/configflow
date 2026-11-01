@@ -25,6 +25,7 @@ beforeEach(() => {
   localStorage.clear()
   vi.useFakeTimers()
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => cb(1), 1))
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id))
   for (const api of Object.values(generateApi)) vi.mocked(api).mockResolvedValue({ data: { content: 'rules: []' } } as any)
   vi.mocked(agentApi.generateConfig).mockImplementation(async (id, profile, service) => ({ data: {
     id: `preview-${id}`, deployment_id: `deployment-${id}`, agent_id: id, profile_id: profile, service_type: service,
@@ -46,6 +47,8 @@ async function render(service: keyof typeof labels, agents = [{ id: service as s
     wrapper.findAllComponents(Select)[1].vm.$emit('update:modelValue', agent.id)
     await flushPromises()
     await button(wrapper, '生成').trigger('click')
+    await flushPromises()
+    await button(wrapper, '立即显示')?.trigger('click')
     await flushPromises()
     expect(button(wrapper, '推送').attributes('disabled')).toBeUndefined()
     await button(wrapper, '推送').trigger('click')

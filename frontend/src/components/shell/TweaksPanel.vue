@@ -79,7 +79,7 @@
             @update:model-value="v => (prefs.motion = v === 'on')"
           />
           <p class="m-0 text-xs leading-relaxed text-muted-foreground">
-            {{ reduceMotion ? '系统已开启减少动态效果，加载状态仍会显示。' : '静止模式下，加载圈仍会转动。' }}
+            {{ reduceMotion ? '系统已开启减少动态效果，加载状态仍会显示。' : '静止模式保留加载圈、规则扫描和生成结果的逐步展示。' }}
           </p>
         </div>
 
