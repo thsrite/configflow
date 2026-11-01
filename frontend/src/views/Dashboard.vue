@@ -10,12 +10,19 @@
       </div>
       <!-- 实时吞吐：来自已绑定且在线的 Agent 心跳上报的网卡速率；没有上报时不显示 -->
       <div v-if="throughputItems.length" class="flex items-end gap-7 max-md:w-full max-md:gap-5 max-sm:col-span-2 max-sm:row-start-2">
-        <div v-for="item in throughputItems" :key="item.label" class="text-right max-md:text-left">
-          <div class="font-mono text-[10.5px] tracking-[0.12em] text-muted-foreground uppercase">{{ item.label }}</div>
+        <component
+          :is="item.route ? RouterLink : 'div'"
+          v-for="item in throughputItems"
+          :key="item.label"
+          :to="item.route"
+          :aria-label="item.route ? `上报 Agent ${item.value} 台，查看 Agent 页面` : undefined"
+          :class="cn('text-right max-md:text-left', item.route && 'group min-h-11 min-w-11 rounded-md transition-colors hover:text-primary-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50')"
+        >
+          <div class="font-mono text-[10.5px] tracking-[0.12em] text-muted-foreground uppercase group-hover:text-primary-accent group-focus-visible:text-primary-accent">{{ item.label }}</div>
           <div :class="cn('font-display text-[40px] leading-none max-md:text-[28px]', item.accent && 'text-primary-accent')">
             {{ item.value }}<span class="ml-1 font-mono text-[12px] tracking-normal text-muted-foreground">{{ item.unit }}</span>
           </div>
-        </div>
+        </component>
       </div>
       <Button
         variant="outline"
@@ -249,7 +256,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import api, { nodeApi, proxyGroupApi, ruleSetApi, statsApi, subscriptionApi } from '@/api'
 import {
   Activity,
@@ -314,7 +321,7 @@ const throughputItems = computed(() => {
   return [
     { label: '下行', value: down, unit: downUnit, accent: true },
     { label: '上行', value: up, unit: upUnit, accent: false },
-    { label: '上报 Agent', value: String(t.agents), unit: '台', accent: false }
+    { label: '上报 Agent', value: String(t.agents), unit: '台', accent: false, route: '/agents' }
   ]
 })
 
