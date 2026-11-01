@@ -30,7 +30,7 @@
         <EmptyState title="暂无法统计请求排行" :description="rankingsUnavailableReason" />
       </SectionCard>
       <div v-else class="grid min-w-0 grid-cols-1 gap-4 max-sm:gap-3 lg:grid-cols-3">
-        <OxiDNSRankingTable title="客户端排行" name-label="客户端" :entries="rankings.clients.rows.map(row => ({ name: row.key, count: row.count }))"
+        <OxiDNSRankingTable title="客户端排行" name-label="客户端" :entries="clientRankings"
           empty-title="暂无客户端请求" empty-description="当前统计范围内还没有客户端查询记录。" />
         <OxiDNSRankingTable title="请求域名排行" name-label="域名" :entries="rankings.domains.rows.map(row => ({ name: row.key, count: row.count }))"
           empty-title="暂无请求域名" empty-description="当前统计范围内还没有域名查询记录。" />
@@ -115,11 +115,15 @@ import FieldHelp from '@/components/common/FieldHelp.vue'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import OxiDNSMetric from './OxiDNSMetric.vue'
 import OxiDNSRankingTable from './OxiDNSRankingTable.vue'
+import { deviceNote } from '@/lib/device-notes'
 import { formatMonitorNumber, monitorNumber, type OxiDNSOverview, type OxiDNSRankings } from '@/types/oxidnsMonitor'
-const props = defineProps<{ overview: OxiDNSOverview; qps: number | null; recorder?: string; resetting?: boolean }>()
+const props = defineProps<{ overview: OxiDNSOverview; qps: number | null; recorder?: string; resetting?: boolean; notes?: Record<string, string> }>()
 defineEmits<{ recorder: [value: string] }>()
 const periodLabel = computed(() => props.overview.statistics ? '自本轮统计开始以来' : '自核心启动以来')
 const rankings = computed<OxiDNSRankings | null>(() => props.overview.rankings && 'success' in props.overview.rankings && props.overview.rankings.success === true ? props.overview.rankings : null)
+const clientRankings = computed(() => (rankings.value?.clients.rows || []).map(row => ({
+  name: row.key, count: row.count, note: deviceNote(props.notes || {}, row.key)
+})))
 const rankingSampleDescription = computed(() => {
   if (!rankings.value) return ''
   const { clients, domains } = rankings.value
