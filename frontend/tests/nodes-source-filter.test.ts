@@ -6,6 +6,9 @@ import NodeLatencySettings from '@/components/nodes/NodeLatencySettings.vue'
 import api, { nodeApi } from '@/api'
 import { notify } from '@/lib/feedback'
 
+// This suite checks selection while reordering, not Sortable's drag implementation.
+vi.mock('sortablejs', () => ({ default: { create: vi.fn(() => ({ destroy: vi.fn() })) } }))
+
 vi.mock('@/api', () => ({
   default: { get: vi.fn(), post: vi.fn() },
   nodeApi: { getAll: vi.fn(), latency: vi.fn(), testLatency: vi.fn() },
@@ -45,6 +48,7 @@ beforeEach(() => {
   vi.mocked(api.post).mockResolvedValue({ data: { nodes: previewNodes, imported_node_ids: ['imported'] } } as any)
 })
 afterEach(() => {
+  window.getSelection()?.removeAllRanges()
   wrapper?.unmount()
   wrapper = undefined
   vi.restoreAllMocks()
@@ -72,6 +76,78 @@ async function click(label: string, group?: string) {
 function names() {
   return wrapper!.findAll('[data-name]').map(node => node.attributes('data-name'))
 }
+
+describe.each(['card', 'list'] as const)('%s 整项选择', view => {
+  it('点击名称或空白区域可连续多选和取消，包括已停用节点', async () => {
+    await render(view)
+    const first = wrapper!.get('[data-name="香港 手动"]')
+    const second = wrapper!.get('[data-name="日本 手动"]')
+    const name = first.findAll('span').find(span => span.text() === '香港 手动')!
+    await name.trigger('click')
+    await second.trigger('click')
+    expect(first.get('[role="checkbox"]').attributes('aria-checked')).toBe('true')
+    expect(second.get('[role="checkbox"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper!.text()).toContain('删除 2 项')
+    await first.trigger('click')
+    expect(first.get('[role="checkbox"]').attributes('aria-checked')).toBe('false')
+    expect(wrapper!.text()).toContain('删除 1 项')
+  })
+
+  it('点击复选框只切换一次，不被整项点击再次取消', async () => {
+    await render(view)
+    const checkbox = wrapper!.get('[aria-label="选择 香港 手动"]')
+    await checkbox.trigger('click')
+    expect(checkbox.attributes('aria-checked')).toBe('true')
+    await checkbox.get('svg').trigger('click')
+    expect(checkbox.attributes('aria-checked')).toBe('false')
+    expect(wrapper!.text()).not.toContain('删除 1 项')
+  })
+
+  it('点击编辑按钮内的图标不改变已有选择', async () => {
+    await render(view)
+    const first = wrapper!.get('[data-name="香港 手动"]')
+    await first.trigger('click')
+    await first.get('[aria-label="编辑 香港 手动"] svg').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('编辑节点')
+    expect(first.get('[role="checkbox"]').attributes('aria-checked')).toBe('true')
+  })
+
+  it('订阅预览节点的内容不可选', async () => {
+    await render(view)
+    const preview = wrapper!.get('[data-name="日本 订阅预览"]')
+    await preview.trigger('click')
+    expect(preview.find('[role="checkbox"]').exists()).toBe(false)
+    expect(wrapper!.text()).not.toContain('删除 1 项')
+  })
+
+  it('拖选节点文字时不切换选择', async () => {
+    await render(view)
+    const first = wrapper!.get('[data-name="香港 手动"]')
+    const name = first.findAll('span').find(span => span.text() === '香港 手动')!
+    const range = document.createRange()
+    range.selectNodeContents(name.element)
+    window.getSelection()!.addRange(range)
+    await name.trigger('click')
+    expect(first.get('[role="checkbox"]').attributes('aria-checked')).toBe('false')
+    window.getSelection()!.removeAllRanges()
+    await name.trigger('click')
+    expect(first.get('[role="checkbox"]').attributes('aria-checked')).toBe('true')
+  })
+
+  it('排序时暂停整项选择，退出后恢复', async () => {
+    await render(view)
+    await click('调整顺序')
+    const first = wrapper!.get('[data-name="香港 手动"]')
+    await first.trigger('click')
+    expect(wrapper!.text()).not.toContain('删除 1 项')
+    if (view === 'list') expect(first.get('[role="checkbox"]').attributes('disabled')).toBeDefined()
+    else expect(first.find('[role="checkbox"]').exists()).toBe(false)
+    await click('取消')
+    await first.trigger('click')
+    expect(first.get('[role="checkbox"]').attributes('aria-checked')).toBe('true')
+  })
+})
 
 describe.each(['card', 'list'] as const)('%s 来源筛选', view => {
   it('手动节点仅显示无订阅来源的节点，订阅节点包含导入和预览节点', async () => {
