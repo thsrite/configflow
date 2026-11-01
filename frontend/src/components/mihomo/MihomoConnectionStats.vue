@@ -23,6 +23,9 @@
         <Button variant="ghost" size="sm" class="ml-auto max-sm:min-h-11" :disabled="saving" @click="clearHistory">
           <Trash2 class="size-3.5" />清空记录
         </Button>
+        <span v-if="history.full_chain === false" class="w-full text-[12px] text-muted-foreground">
+          Agent 更新到 {{ history.full_chain_version }} 后记录完整链路；在此之前的记录只有策略组和出口节点两层。
+        </span>
       </template>
       <span v-else-if="history && !history.supported" class="text-warning-accent">需要将 Agent 更新到 {{ history.min_version }} 或更新版本。</span>
       <span v-else-if="historyError" role="alert" class="text-warning-accent">{{ historyError }}</span>
@@ -47,12 +50,18 @@
 
     <LoadingRows v-if="live ? loading : !data" :rows="4" />
     <EmptyState v-else-if="!rows.length" :icon="Cable" :title="live ? '没有活动连接' : '这段时间还没有记录'" :description="live ? '有流量经过 Mihomo 时自动显示。' : 'Agent 每 5 分钟上报一次，刚开启时稍等几分钟。'" />
-    <div v-else class="cf-table-wrap max-h-[420px] overflow-y-auto overscroll-contain border-t border-border" tabindex="0" role="region" :aria-label="`连接统计，${column}`">
+    <div v-else class="stats-frame cf-table-wrap w-full max-h-[560px] overflow-y-auto overscroll-contain border-t border-border" tabindex="0" role="region" :aria-label="`连接统计，${column}`">
       <table class="cf-table stats-table">
         <thead>
           <tr>
-            <th scope="col">{{ column }}</th>
-            <th v-for="item in sorts" :key="item.key" scope="col" class="text-right" :aria-sort="sort === item.key ? 'descending' : 'none'">
+            <th scope="col">
+              <span class="flex items-center gap-2">
+                {{ column }} / {{ partsLabel }}
+                <button type="button" class="stats-toggle-all" @click="toggleAll">{{ allCollapsed ? '展开明细' : '收起明细' }}</button>
+              </span>
+            </th>
+            <th scope="col" class="text-right">{{ partsBySource ? '类型' : '直连占比' }}</th>
+            <th v-for="item in sorts" :key="item.key" scope="col" class="text-right" :class="item.key === 'total' ? 'stats-total' : 'stats-detail'" :aria-sort="sort === item.key ? 'descending' : 'none'">
               <button type="button" class="stats-sort" :data-active="sort === item.key" :aria-label="`按${item.label}排序`" @click="sort = item.key">
                 {{ item.label }}<ArrowDown v-if="sort === item.key" class="size-3" />
               </button>
@@ -61,46 +70,56 @@
         </thead>
         <tbody>
           <template v-for="row in sorted" :key="row.key">
-            <tr>
+            <tr class="stats-group" data-group>
               <td class="stats-name">
                 <div class="flex min-w-0 items-center gap-1">
-                  <button v-if="row.parts.length" type="button" class="stats-expand" :aria-expanded="expanded.has(row.key)"
-                    :aria-label="`${expanded.has(row.key) ? '收起' : '展开'} ${nameOf(row.key).label} 的${partsLabel}`" @click="toggleRow(row.key)">
-                    <ChevronRight class="size-3.5 transition-transform" :class="expanded.has(row.key) && 'rotate-90'" />
+                  <button v-if="row.parts.length" type="button" class="stats-expand" :aria-expanded="!collapsed.has(row.key)"
+                    :aria-label="`${collapsed.has(row.key) ? '展开' : '收起'} ${groupTitle(row.key)} 的${partsLabel}`" @click="toggleGroup(row.key)">
+                    <ChevronRight class="size-3.5 transition-transform" :class="!collapsed.has(row.key) && 'rotate-90'" />
                   </button>
                   <span v-else class="stats-expand-spacer" aria-hidden="true" />
-                  <span class="min-w-0">
-                    <span class="flex min-w-0 items-center gap-1.5">
-                      <span class="truncate" :class="nameOf(row.key).mono ? 'font-mono text-[12.5px]' : ''" :title="nameOf(row.key).title">{{ nameOf(row.key).label }}</span>
-                      <span v-if="by === 'outbound' && kindChip(row.key)" class="chip shrink-0" :class="kindChip(row.key)!.class">{{ kindChip(row.key)!.label }}</span>
-                    </span>
-                    <span v-if="nameOf(row.key).detail" class="block truncate text-[11px] text-muted-foreground" :class="nameOf(row.key).detailMono && 'font-mono'">{{ nameOf(row.key).detail }}</span>
+                  <ChainLabel v-if="by === 'chain' && row.key !== UNATTRIBUTED_KEY" class="min-w-0" :layers="chainLayers(row.key)" strong />
+                  <span v-else class="min-w-0">
+                    <span class="block truncate font-medium" :class="nameOf(row.key).mono && 'font-mono text-[12.5px]'" :title="nameOf(row.key).title">{{ nameOf(row.key).label }}</span>
+                    <span v-if="nameOf(row.key).detail" class="block truncate text-[11px] font-normal text-muted-foreground" :class="nameOf(row.key).detailMono && 'font-mono'">{{ nameOf(row.key).detail }}</span>
                   </span>
                 </div>
               </td>
-              <td v-if="splitColumns" class="num text-right" :class="!row.direct && 'text-muted-foreground'">{{ row.key === UNATTRIBUTED_KEY ? '—' : formatBytes(row.direct) }}</td>
-              <td v-if="splitColumns" class="num text-right" :class="!row.proxy && 'text-muted-foreground'">{{ row.key === UNATTRIBUTED_KEY ? '—' : formatBytes(row.proxy) }}</td>
-              <td class="num text-right">{{ formatBytes(row.download) }}</td>
-              <td class="num text-right">{{ formatBytes(row.upload) }}</td>
-              <td class="num text-right">{{ formatBytes(row.download + row.upload) }}</td>
-              <td v-if="live" class="num text-right" :class="row.speed ? '' : 'text-muted-foreground'">{{ speedText(row.speed) }}</td>
-              <td class="num text-right">{{ row.count }}</td>
+              <td class="text-right">
+                <span v-if="row.key === UNATTRIBUTED_KEY" class="text-muted-foreground">—</span>
+                <span v-else-if="partsBySource" class="chip" :class="kindChip(outletOfGroup(row.key))?.class">{{ kindChip(outletOfGroup(row.key))?.label ?? '—' }}</span>
+                <span v-else class="inline-flex items-center gap-2" :title="`直连 ${formatBytes(row.direct)} · 代理 ${formatBytes(row.proxy)}`">
+                  <span class="stats-share" aria-hidden="true"><span :style="{ width: `${share(row)}%` }" /></span>
+                  <span class="num w-9 text-right">{{ share(row) }}%</span>
+                </span>
+              </td>
+              <td class="stats-detail num text-right">{{ formatBytes(row.download) }}</td>
+              <td class="stats-detail num text-right">{{ formatBytes(row.upload) }}</td>
+              <td class="stats-total num text-right font-medium">{{ formatBytes(row.download + row.upload) }}</td>
+              <td v-if="live" class="stats-detail num text-right" :class="row.speed ? '' : 'text-muted-foreground'">{{ speedText(row.speed) }}</td>
+              <td class="stats-detail num text-right">{{ row.count }}</td>
             </tr>
-            <template v-if="expanded.has(row.key)">
-              <tr v-for="part in row.parts" :key="row.key + '\u0000' + part.key" class="stats-part">
+            <template v-if="!collapsed.has(row.key)">
+              <tr v-for="part in shownParts(row)" :key="row.key + '\u0000' + part.key" class="stats-part">
                 <td class="stats-name">
-                  <span class="flex min-w-0 items-center gap-1.5">
-                    <span class="truncate" :class="partName(part.key).mono ? 'font-mono text-[12px]' : ''" :title="partName(part.key).title">{{ partName(part.key).label }}</span>
-                    <span v-if="by !== 'outbound' && kindChip(part.key)" class="chip shrink-0" :class="kindChip(part.key)!.class">{{ kindChip(part.key)!.label }}</span>
-                  </span>
+                  <ChainLabel v-if="!partsBySource" :layers="chainLayers(part.key)" />
+                  <span v-else class="block truncate" :class="partName(part.key).mono && 'font-mono text-[12px]'" :title="partName(part.key).title">{{ partName(part.key).label }}</span>
                 </td>
-                <td v-if="splitColumns" class="num text-right text-muted-foreground">{{ part.direct ? formatBytes(part.direct) : '' }}</td>
-                <td v-if="splitColumns" class="num text-right text-muted-foreground">{{ part.proxy ? formatBytes(part.proxy) : '' }}</td>
-                <td class="num text-right text-muted-foreground">{{ formatBytes(part.download) }}</td>
-                <td class="num text-right text-muted-foreground">{{ formatBytes(part.upload) }}</td>
-                <td class="num text-right text-muted-foreground">{{ formatBytes(part.download + part.upload) }}</td>
-                <td v-if="live" class="num text-right text-muted-foreground">{{ speedText(part.speed) }}</td>
-                <td class="num text-right text-muted-foreground">{{ part.count }}</td>
+                <td class="text-right">
+                  <span v-if="!partsBySource && kindChip(lastLayer(part.key))" class="chip" :class="kindChip(lastLayer(part.key))!.class">{{ kindChip(lastLayer(part.key))!.label }}</span>
+                </td>
+                <td class="stats-detail num text-right text-muted-foreground">{{ formatBytes(part.download) }}</td>
+                <td class="stats-detail num text-right text-muted-foreground">{{ formatBytes(part.upload) }}</td>
+                <td class="stats-total num text-right">{{ formatBytes(part.download + part.upload) }}</td>
+                <td v-if="live" class="stats-detail num text-right text-muted-foreground">{{ speedText(part.speed) }}</td>
+                <td class="stats-detail num text-right text-muted-foreground">{{ part.count }}</td>
+              </tr>
+              <tr v-if="hiddenParts(row).count" class="stats-part stats-more">
+                <td :colspan="live ? 7 : 6">
+                  <button type="button" class="stats-more-button" @click="showAll(row.key)">
+                    其余 {{ hiddenParts(row).count }} 条{{ partsLabel }} · {{ formatBytes(hiddenParts(row).bytes) }}
+                  </button>
+                </td>
               </tr>
             </template>
           </template>
@@ -112,7 +131,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineComponent, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArrowDown, Cable, ChevronRight, Trash2 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -127,16 +146,33 @@ import { choose, confirmDanger, notify } from '@/lib/feedback'
 import { formatBytes } from '@/lib/format'
 import { deviceNote } from '@/lib/device-notes'
 import {
-  aggregateConnections, isInnerSource, OTHER_TARGET_KEY, outletKind, OVERVIEW_AGGREGATES, TRAFFIC_RANGES, UNATTRIBUTED_KEY,
-  type OverviewAggregate, type TrafficHistoryData, type TrafficRange
+  aggregateConnections, chainLayers, isInnerSource, OTHER_TARGET_KEY, outletKind, OVERVIEW_AGGREGATES, PARTS_BY_SOURCE,
+  TRAFFIC_RANGES, UNATTRIBUTED_KEY, type OverviewAggregate, type TrafficHistoryData, type TrafficRange
 } from '@/lib/mihomo-overview'
 import { panelError, type MihomoConnection } from '@/types/mihomo'
 
-const HELP = '「实时」汇总当前活动连接：流量是每条连接建立以来的累计字节，速度来自最近两次采样之差，连接关闭后不再计入。开启后台记录后，Agent 持续采样并每 5 分钟上报，服务端按「定时任务 → 监控历史保存」的间隔写入数据库；24 小时到 30 天的范围包括已关闭的连接。目标按主域名归并；「未归属」是两次采样之间开始又结束的短连接，只知道总量。超过 7 天的数据按天保存（目标超过 2 天按天、每台设备每天保留流量最大的 100 个），范围边界按整天计。'
+const HELP = '「实时」汇总当前活动连接：流量是每条连接建立以来的累计字节，速度来自最近两次采样之差，连接关闭后不再计入。开启后台记录后，Agent 持续采样并每 5 分钟上报，服务端按「定时任务 → 监控历史保存」的间隔写入数据库；24 小时到 30 天的范围包括已关闭的连接。链路从入口策略组排到出口节点，出口是直连还是代理按 Mihomo 当前的节点类型判断。目标按主域名归并；「未归属」是两次采样之间开始又结束的短连接，只知道总量。超过 7 天的数据按天保存（目标超过 2 天按天、每台设备每天保留流量最大的 100 个），范围边界按整天计。'
 const STORAGE_KEY = 'configflow:mihomo-overview:aggregate'
 const RANGE_KEY = 'configflow:mihomo-overview:range'
 const HISTORY_POLL_MS = 60_000
-type SortKey = 'direct' | 'proxy' | 'download' | 'upload' | 'total' | 'speed' | 'count'
+// 每组默认列出的明细条数，其余折成「其余 N 条」
+const PARTS_SHOWN = 3
+type SortKey = 'download' | 'upload' | 'total' | 'speed' | 'count'
+
+/** 链路：各层名称用箭头连接，最后一层是出口节点 */
+const ChainLabel = defineComponent({
+  props: { layers: { type: Array as () => string[], required: true }, strong: Boolean },
+  setup(componentProps) {
+    return () => {
+      const layers = componentProps.layers.length ? componentProps.layers : ['—']
+      const children = layers.flatMap((name, index) => [
+        ...(index ? [h('span', { class: 'stats-chain-arrow', 'aria-hidden': 'true' }, '→')] : []),
+        h('span', { class: index === layers.length - 1 ? 'stats-chain-exit' : '' }, name)
+      ])
+      return h('span', { class: ['stats-chain', componentProps.strong && 'font-medium'], title: layers.join(' → ') }, children)
+    }
+  }
+})
 
 const props = defineProps<{
   connections: MihomoConnection[]
@@ -164,6 +200,9 @@ const range = ref<TrafficRange>(read(RANGE_KEY, TRAFFIC_RANGES.map(item => item.
 watch(range, value => remember(RANGE_KEY, value))
 const sort = ref<SortKey>('download')
 const column = computed(() => OVERVIEW_AGGREGATES.find(item => item.value === by.value)!.column)
+// 明细的维度：按链路、出站节点汇总时是设备，其余是链路
+const partsBySource = computed(() => PARTS_BY_SOURCE.includes(by.value))
+const partsLabel = computed(() => partsBySource.value ? '设备' : '链路')
 
 const history = ref<TrafficHistoryData | null>(null)
 const data = ref<TrafficHistoryData | null>(null)
@@ -180,20 +219,26 @@ const sinceText = computed(() => history.value?.since ? new Date(history.value.s
 
 /** 出口节点名称 → Mihomo 节点类型，用来判断直连、代理还是拦截 */
 const proxyTypes = ref<Record<string, string>>({})
-interface StatPart { key: string; download: number; upload: number; speed: number; count: number; direct: number; proxy: number }
-interface StatRow extends StatPart { parts: StatPart[] }
-// 明细的维度：按出站节点汇总时是设备，其余是出口节点
-const partsLabel = computed(() => by.value === 'outbound' ? '设备' : '出口节点')
-const splitColumns = computed(() => by.value !== 'outbound')
-function split(outbound: string, bytes: number) {
-  const kind = outletKind(outbound, proxyTypes.value)
-  return { direct: kind === 'direct' ? bytes : 0, proxy: kind === 'proxy' ? bytes : 0 }
+interface StatPart { key: string; download: number; upload: number; speed: number; count: number }
+interface StatRow extends StatPart { parts: StatPart[]; partCount: number; direct: number; proxy: number }
+const lastLayer = (chain: string) => {
+  const layers = chainLayers(chain)
+  return layers.length ? layers[layers.length - 1] : ''
 }
-function withSplit(row: Omit<StatRow, 'direct' | 'proxy' | 'parts'>, parts: Array<Omit<StatPart, 'direct' | 'proxy'>>): StatRow {
-  const filled = parts.map(part => ({ ...part, ...(by.value === 'outbound' ? { direct: 0, proxy: 0 } : split(part.key, part.download + part.upload)) }))
-  const own = by.value === 'outbound' ? split(row.key, row.download + row.upload)
-    : filled.reduce((acc, part) => ({ direct: acc.direct + part.direct, proxy: acc.proxy + part.proxy }), { direct: 0, proxy: 0 })
-  return { ...row, ...own, parts: filled }
+/** 分组行自己的出口：按链路时是链路的最后一层，按出站节点时就是节点 */
+const outletOfGroup = (key: string) => by.value === 'chain' ? lastLayer(key) : key
+
+function withSplit(row: StatPart, parts: StatPart[], partCount = parts.length): StatRow {
+  let direct = 0
+  let proxy = 0
+  const add = (outlet: string, bytes: number) => {
+    const kind = outletKind(outlet, proxyTypes.value)
+    if (kind === 'direct') direct += bytes
+    else if (kind === 'proxy') proxy += bytes
+  }
+  if (partsBySource.value) add(outletOfGroup(row.key), row.download + row.upload)
+  else parts.forEach(part => add(lastLayer(part.key), part.download + part.upload))
+  return { ...row, parts, partCount, direct, proxy }
 }
 const rows = computed<StatRow[]>(() => live.value
   ? aggregateConnections(props.connections, by.value, props.speeds).map(row => withSplit(
@@ -201,9 +246,9 @@ const rows = computed<StatRow[]>(() => live.value
     row.parts.map(part => ({ key: part.key, download: part.download, upload: part.upload, speed: part.downSpeed + part.upSpeed, count: part.count }))))
   : (data.value?.rows || []).map(row => withSplit(
     { key: row.key, download: row.down, upload: row.up, speed: 0, count: row.conns },
-    (row.parts || []).map(part => ({ key: part.key, download: part.down, upload: part.up, speed: 0, count: part.conns })))))
+    (row.parts || []).map(part => ({ key: part.key, download: part.down, upload: part.up, speed: 0, count: part.conns })),
+    row.part_count ?? row.parts?.length ?? 0)))
 const sorts = computed(() => [
-  ...(splitColumns.value ? [{ key: 'direct' as const, label: '直连' }, { key: 'proxy' as const, label: '代理' }] : []),
   { key: 'download' as const, label: '下载' },
   { key: 'upload' as const, label: '上传' },
   { key: 'total' as const, label: '总流量' },
@@ -211,17 +256,7 @@ const sorts = computed(() => [
   { key: 'count' as const, label: live.value ? '连接数' : '新建连接' }
 ])
 watch(live, isLive => { if (!isLive && sort.value === 'speed') sort.value = 'download' })
-watch(splitColumns, shown => { if (!shown && (sort.value === 'direct' || sort.value === 'proxy')) sort.value = 'download' })
-const expanded = ref(new Set<string>())
-watch(by, () => { expanded.value = new Set() })
-function toggleRow(key: string) {
-  const next = new Set(expanded.value)
-  if (!next.delete(key)) next.add(key)
-  expanded.value = next
-}
-const metric: Record<SortKey, (row: StatRow) => number> = {
-  direct: row => row.direct,
-  proxy: row => row.proxy,
+const metric: Record<SortKey, (row: StatPart) => number> = {
   download: row => row.download,
   upload: row => row.upload,
   total: row => row.download + row.upload,
@@ -229,9 +264,34 @@ const metric: Record<SortKey, (row: StatRow) => number> = {
   count: row => row.count
 }
 const sorted = computed(() => [...rows.value].sort((a, b) => metric[sort.value](b) - metric[sort.value](a) || a.key.localeCompare(b.key)))
+const share = (row: StatRow) => row.direct + row.proxy ? Math.round(row.direct / (row.direct + row.proxy) * 100) : 0
+
+/* ---------- 明细：默认展开每组前几条 ---------- */
+const collapsed = ref(new Set<string>())
+const expandedAll = ref(new Set<string>())
+watch(by, () => { collapsed.value = new Set(); expandedAll.value = new Set() })
+const allCollapsed = computed(() => rows.value.some(row => row.parts.length) && rows.value.every(row => !row.parts.length || collapsed.value.has(row.key)))
+function toggleGroup(key: string) {
+  const next = new Set(collapsed.value)
+  if (!next.delete(key)) next.add(key)
+  collapsed.value = next
+}
+function toggleAll() {
+  collapsed.value = allCollapsed.value ? new Set() : new Set(rows.value.filter(row => row.parts.length).map(row => row.key))
+}
+function showAll(key: string) {
+  expandedAll.value = new Set(expandedAll.value).add(key)
+}
+const shownParts = (row: StatRow) => expandedAll.value.has(row.key) ? row.parts : row.parts.slice(0, PARTS_SHOWN)
+function hiddenParts(row: StatRow) {
+  const shown = shownParts(row)
+  const shownBytes = shown.reduce((sum, part) => sum + part.download + part.upload, 0)
+  // 服务端最多返回 50 条明细；没列出的部分按行合计减去已显示的计算
+  return { count: Math.max(0, row.partCount - shown.length), bytes: Math.max(0, row.download + row.upload - shownBytes) }
+}
 
 const tiles = computed(() => {
-  const count = (key: string) => key !== UNATTRIBUTED_KEY && key !== OTHER_TARGET_KEY
+  const counted = (key: string) => key !== UNATTRIBUTED_KEY && key !== OTHER_TARGET_KEY
   const sum = live.value
     ? rows.value.reduce((acc, row) => ({ down: acc.down + row.download, up: acc.up + row.upload, count: acc.count + row.count }), { down: 0, up: 0, count: 0 })
     : { down: data.value?.total?.down ?? 0, up: data.value?.total?.up ?? 0, count: data.value?.total?.conns ?? 0 }
@@ -239,16 +299,18 @@ const tiles = computed(() => {
   const outlets = live.value
     ? aggregateConnections(props.connections, 'outbound', props.speeds).map(row => ({ key: row.key, bytes: row.download + row.upload }))
     : (data.value?.outbounds || []).map(row => ({ key: row.key, bytes: row.down + row.up }))
-  const kinds = outlets.reduce((acc, outlet) => {
-    const parts = split(outlet.key, outlet.bytes)
-    return { direct: acc.direct + parts.direct, proxy: acc.proxy + parts.proxy }
-  }, { direct: 0, proxy: 0 })
-  const share = (bytes: number) => kinds.direct + kinds.proxy ? `占 ${Math.round(bytes / (kinds.direct + kinds.proxy) * 100)}%` : ''
+  const kinds = { direct: 0, proxy: 0 }
+  for (const outlet of outlets) {
+    const kind = outletKind(outlet.key, proxyTypes.value)
+    if (kind === 'direct') kinds.direct += outlet.bytes
+    else if (kind === 'proxy') kinds.proxy += outlet.bytes
+  }
+  const shareText = (bytes: number) => kinds.direct + kinds.proxy ? `占 ${Math.round(bytes / (kinds.direct + kinds.proxy) * 100)}%` : ''
   return [
-    { label: column.value, value: String(rows.value.filter(row => count(row.key)).length) },
+    { label: column.value, value: String(rows.value.filter(row => counted(row.key)).length) },
     { label: '总流量', value: formatBytes(sum.down + sum.up), sub: `↓ ${formatBytes(sum.down)} · ↑ ${formatBytes(sum.up)}` },
-    { label: '直连', value: formatBytes(kinds.direct), sub: share(kinds.direct) },
-    { label: '代理', value: formatBytes(kinds.proxy), sub: share(kinds.proxy) },
+    { label: '直连', value: formatBytes(kinds.direct), sub: shareText(kinds.direct) },
+    { label: '代理', value: formatBytes(kinds.proxy), sub: shareText(kinds.proxy) },
     { label: live.value ? '连接数' : '新建连接', value: String(sum.count) }
   ]
 })
@@ -264,10 +326,10 @@ function nameOf(key: string): { label: string; detail?: string; detailMono?: boo
   const note = deviceNote(props.notes, key)
   return note ? { label: note, detail: key, detailMono: true, title: `${note} · ${key}`, mono: false } : { label: key, title: key, mono: true }
 }
+const groupTitle = (key: string) => by.value === 'chain' ? chainLayers(key).join(' → ') : nameOf(key).label
 
-/** 明细行的名称：按出站节点汇总时是设备，其余是出口节点 */
+/** 明细行是设备时的名称 */
 function partName(key: string): { label: string; title: string; mono: boolean } {
-  if (by.value !== 'outbound') return { label: key, title: key, mono: false }
   if (isInnerSource(key)) return { label: 'Inner', title: 'Mihomo 自身发起的连接', mono: false }
   const note = deviceNote(props.notes, key)
   return note ? { label: `${note} · ${key}`, title: `${note} · ${key}`, mono: false } : { label: key, title: key, mono: true }
@@ -401,20 +463,42 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.stats-table { min-width: 820px; }
+.stats-table { min-width: 760px; }
 .stats-table th { position: sticky; top: 0; z-index: 1; background: var(--card); white-space: nowrap; }
 .stats-table td { white-space: nowrap; }
-.stats-name { max-width: 300px; }
+.stats-name { max-width: 420px; }
+.stats-group td { border-top: 1px solid var(--border-strong); }
 .stats-expand, .stats-expand-spacer { display: inline-flex; width: 22px; height: 22px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: var(--radius-sm); color: var(--muted-foreground); }
 .stats-expand:hover { background: var(--accent); color: var(--foreground); }
-.stats-expand:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
-.stats-part td { background: color-mix(in oklab, var(--secondary) 45%, transparent); font-size: 12.5px; }
-.stats-part td.stats-name { padding-left: 36px; }
+.stats-part td { border-top: 0; font-size: 12.5px; }
+.stats-part td.stats-name { padding-left: 34px; }
+/* 链路由同文件内的 ChainLabel 渲染，内部元素不带本组件的 scoped 标记 */
+:deep(.stats-chain) { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats-part :deep(.stats-chain) { color: var(--muted-foreground); }
+:deep(.stats-chain-arrow) { margin: 0 5px; color: var(--muted-foreground); opacity: .7; }
+:deep(.stats-chain-exit) { color: var(--foreground); }
+.stats-share { display: inline-block; width: 44px; height: 5px; overflow: hidden; border-radius: 999px; background: color-mix(in oklab, var(--primary-accent) 55%, transparent); }
+.stats-share span { display: block; height: 100%; background: var(--success-accent); }
+.stats-toggle-all, .stats-more-button { border-radius: var(--radius-sm); color: var(--muted-foreground); font-size: 11.5px; font-weight: 400; }
+.stats-toggle-all:hover, .stats-more-button:hover { color: var(--primary-accent); }
+.stats-more-button { min-height: 24px; padding: 0 4px; }
 .stats-sort { display: inline-flex; min-height: 28px; align-items: center; gap: 2px; border-radius: var(--radius-sm); color: inherit; }
 .stats-sort[data-active='true'], .stats-sort:hover { color: var(--primary-accent); }
-.stats-sort:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.stats-sort:focus-visible, .stats-expand:focus-visible, .stats-toggle-all:focus-visible, .stats-more-button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.stats-frame { container-type: inline-size; }
+/* 窄屏只留名称、直连占比 / 类型和总流量，链路不被挤出可见区域 */
+@container (max-width: 680px) {
+  .stats-table { min-width: 0; }
+  .stats-table .stats-detail { display: none; }
+  /* 名称列占满其余宽度，超长的链路截断显示（max-width: 0 让自动布局的单元格可以收缩） */
+  .stats-name { width: 100%; max-width: 0; }
+  .stats-part td.stats-name { padding-left: 24px; }
+  .stats-share { display: none; }
+  /* 链路最多折成两行，窄屏也能看到出口节点 */
+  :deep(.stats-chain) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: anywhere; }
+}
 @media (pointer: coarse) {
-  .stats-sort { min-height: 44px; }
+  .stats-sort, .stats-toggle-all, .stats-more-button { min-height: 44px; }
   .stats-expand, .stats-expand-spacer { width: 44px; height: 44px; }
 }
 </style>

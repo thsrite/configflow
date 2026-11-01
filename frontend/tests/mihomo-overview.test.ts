@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
-import { aggregateConnections, destinationKey, outletKind, ruleHitCounts } from '@/lib/mihomo-overview'
+import { aggregateConnections, CHAIN_SEPARATOR, chainLayers, destinationKey, outletKind, ruleHitCounts } from '@/lib/mihomo-overview'
 import MihomoLatencyCard from '@/components/mihomo/MihomoLatencyCard.vue'
 import MihomoConnectionStats from '@/components/mihomo/MihomoConnectionStats.vue'
 import { mihomoPanelApi, trafficHistoryApi } from '@/api'
@@ -43,9 +43,11 @@ describe('connection aggregation', () => {
 
   it('sums bytes, current speed and connection count per key', () => {
     const bySource = aggregateConnections(connections, 'source', speeds)
-    // 设备按出口节点拆开，出站节点按设备拆开
-    expect(bySource[0].parts.map(part => [part.key, part.download])).toEqual([['HK-01', 4000]])
+    // 设备按完整链路（入口策略组 → 出口节点）拆开，出站节点、链路按设备拆开
+    expect(bySource[0].parts.map(part => [part.key.split(CHAIN_SEPARATOR), part.download])).toEqual([[['Proxy', 'Media', 'HK-01'], 4000]])
     expect(aggregateConnections(connections, 'outbound', speeds)[0].parts.map(part => part.key)).toEqual(['10.0.0.2'])
+    expect(aggregateConnections(connections, 'chain', speeds).map(row => [chainLayers(row.key), row.parts.map(part => part.key)])).toEqual([
+      [['Proxy', 'Media', 'HK-01'], ['10.0.0.2']], [['DIRECT'], ['10.0.0.3']], [['Proxy', 'JP-02'], ['Inner']]])
     expect(bySource.map(({ parts, ...row }) => row)).toEqual([
       { key: '10.0.0.2', download: 4000, upload: 40, downSpeed: 100, upSpeed: 1, count: 2 },
       { key: '10.0.0.3', download: 500, upload: 0, downSpeed: 50, upSpeed: 0, count: 1 },
@@ -239,35 +241,50 @@ describe('traffic history on the statistics card', () => {
     wrapper.unmount()
   })
 
-  it('splits direct and proxy traffic by the node type and expands a device into its nodes', async () => {
+  it('lists each device with its chains expanded, direct share and a fold for the rest', async () => {
     vi.mocked(trafficHistoryApi.get).mockResolvedValue(state())
     vi.mocked(mihomoPanelApi.proxies).mockResolvedValue({ data: { data: { proxies: { 直连节点: { type: 'Direct' }, HK: { type: 'Shadowsocks' } } } } } as any)
     const wrapper = mount(MihomoConnectionStats, { props: {
       connections: [
-        connection('a', { source: '10.0.0.2', host: 'a.example.com', down: 3072, chains: ['HK', 'Proxy'] }),
-        connection('b', { source: '10.0.0.2', host: 'b.example.cn', down: 1024, chains: ['直连节点', 'Media'] })
+        connection('a', { source: '10.0.0.2', host: 'a.example.com', down: 3072, chains: ['HK', '美国自建', '人工智能'] }),
+        connection('b', { source: '10.0.0.2', host: 'b.example.cn', down: 1024, chains: ['直连节点', '全球直连'] }),
+        connection('c', { source: '10.0.0.2', host: 'c.example', down: 10, chains: ['JP', 'Proxy'] }),
+        connection('d', { source: '10.0.0.2', host: 'd.example', down: 5, chains: ['US', 'Proxy'] })
       ],
       speeds: new Map(), notes: {}, agentId: 'gw', active: true
     } })
     await flushPromises()
     const tiles = wrapper.findAll('[data-tile]').map(tile => tile.text())
     expect(tiles.find(text => text.startsWith('直连'))).toContain('1.0 KB')
-    expect(tiles.find(text => text.startsWith('直连'))).toContain('占 25%')
     expect(tiles.find(text => text.startsWith('代理'))).toContain('3.0 KB')
-    const cells = wrapper.findAll('tbody tr')[0].findAll('td').map(cell => cell.text())
-    expect(cells.slice(1, 3)).toEqual(['1.0 KB', '3.0 KB'])
-    await wrapper.get('button.stats-expand[aria-expanded="false"]').trigger('click')
+    // 设备行显示直连占比；链路不用点开就列出，前 3 条之外折成「其余」
+    const group = wrapper.get('tbody tr[data-group]')
+    expect(group.text()).toContain('25%')
     const parts = wrapper.findAll('tbody tr.stats-part').map(row => row.text())
-    expect(parts[0]).toContain('HK')
+    expect(parts[0]).toContain('人工智能→美国自建→HK')
     expect(parts[0]).toContain('代理')
-    expect(parts[1]).toContain('直连节点')
+    expect(parts[1]).toContain('全球直连→直连节点')
     expect(parts[1]).toContain('直连')
-    // 按出站节点汇总：名称旁标出直连 / 代理，不再有直连、代理两列，展开后是设备
-    await wrapper.findAll('[data-segment]').find(button => button.text() === '按出站节点')!.trigger('click')
-    expect(wrapper.findAll('thead th').map(th => th.text())).not.toContain('直连')
-    expect(wrapper.findAll('tbody tr')[0].text()).toContain('代理')
-    await wrapper.get('button.stats-expand[aria-expanded="false"]').trigger('click')
+    expect(parts[3]).toContain('其余 1 条链路 · 5 B')
+    await wrapper.get('.stats-more-button').trigger('click')
+    expect(wrapper.findAll('tbody tr.stats-part').map(row => row.text())[3]).toContain('Proxy→US')
+    // 收起全部明细
+    await wrapper.get('.stats-toggle-all').trigger('click')
+    expect(wrapper.findAll('tbody tr.stats-part')).toHaveLength(0)
+    // 按链路汇总：链路行标出直连 / 代理，明细是设备
+    await wrapper.findAll('[data-segment]').find(button => button.text() === '按链路')!.trigger('click')
+    expect(wrapper.findAll('thead th')[1].text()).toBe('类型')
+    const first = wrapper.findAll('tbody tr[data-group]')[0]
+    expect(first.text()).toContain('人工智能→美国自建→HK')
+    expect(first.text()).toContain('代理')
     expect(wrapper.get('tbody tr.stats-part').text()).toContain('10.0.0.2')
+    wrapper.unmount()
+  })
+
+  it('tells 1.8.51-go agents that full chains need an update', async () => {
+    vi.mocked(trafficHistoryApi.get).mockResolvedValue(state({ enabled: true, since: '2026-11-01T02:00:00+00:00', full_chain: false, full_chain_version: '1.8.52-go' }))
+    const wrapper = await mountCard()
+    expect(wrapper.text()).toContain('Agent 更新到 1.8.52-go 后记录完整链路')
     wrapper.unmount()
   })
 

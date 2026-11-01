@@ -2,14 +2,24 @@ import { getDomain } from 'tldts-icann'
 import { INNER_SOURCE, sourceLabel, type MihomoConnection, type MihomoRule } from '@/types/mihomo'
 
 /** 概览「连接统计」的聚合方式；进程在旁路由上只有本机连接才有，不提供 */
-export type OverviewAggregate = 'source' | 'destination' | 'outbound' | 'group'
+export type OverviewAggregate = 'source' | 'destination' | 'chain' | 'outbound' | 'group'
 
 export const OVERVIEW_AGGREGATES: Array<{ value: OverviewAggregate; label: string; column: string }> = [
   { value: 'source', label: '按设备', column: '设备' },
   { value: 'destination', label: '按目标', column: '目标' },
+  { value: 'chain', label: '按链路', column: '链路' },
   { value: 'outbound', label: '按出站节点', column: '出站节点' },
   { value: 'group', label: '按策略组', column: '策略组' }
 ]
+
+/** 明细按设备拆开的聚合方式；其余按链路拆开 */
+export const PARTS_BY_SOURCE: readonly OverviewAggregate[] = ['chain', 'outbound']
+
+/** 链路用这个字符连接各层名称，从入口策略组到出口节点（与服务端一致） */
+export const CHAIN_SEPARATOR = '\u001f'
+export const chainLayers = (key: string) => key ? key.split(CHAIN_SEPARATOR) : []
+/** mihomo 的 chains 出口节点在前，这里反过来，从入口策略组排到出口节点 */
+export const chainKey = (connection: MihomoConnection) => [...connection.chains].reverse().join(CHAIN_SEPARATOR)
 
 export interface OverviewStatPart {
   key: string
@@ -21,7 +31,7 @@ export interface OverviewStatPart {
 }
 
 export interface OverviewStatRow extends OverviewStatPart {
-  /** 明细：按出站节点汇总时按设备拆开，其余按出口节点拆开 */
+  /** 明细：按链路、出站节点汇总时按设备拆开，其余按链路拆开 */
   parts: OverviewStatPart[]
 }
 
@@ -41,6 +51,7 @@ function aggregateKey(connection: MihomoConnection, by: OverviewAggregate): stri
   if (by === 'destination') return destinationKey(connection)
   // chains 从出口节点排到入口策略组
   if (by === 'outbound') return outboundOf(connection)
+  if (by === 'chain') return chainKey(connection)
   return connection.chains[connection.chains.length - 1] || '—'
 }
 
@@ -67,7 +78,7 @@ export function aggregateConnections(
     let row = rows.get(key)
     if (!row) rows.set(key, row = { key, download: 0, upload: 0, downSpeed: 0, upSpeed: 0, count: 0, parts: [], partMap: new Map() })
     add(row, connection)
-    const partKey = by === 'outbound' ? sourceLabel(connection) : outboundOf(connection)
+    const partKey = PARTS_BY_SOURCE.includes(by) ? sourceLabel(connection) : chainKey(connection)
     let part = row.partMap.get(partKey)
     if (!part) row.partMap.set(partKey, part = { key: partKey, download: 0, upload: 0, downSpeed: 0, upSpeed: 0, count: 0 })
     add(part, connection)
@@ -112,6 +123,8 @@ export interface TrafficHistoryRow {
   down: number
   conns: number
   parts?: TrafficHistoryRow[]
+  /** 明细总条数（parts 最多列出 50 条） */
+  part_count?: number
 }
 
 export interface TrafficHistoryData {
@@ -119,6 +132,9 @@ export interface TrafficHistoryData {
   since: string | null
   supported: boolean
   min_version: string
+  /** Agent 是否上报完整链路（1.8.52-go 起）；更早的只有策略组和出口节点两层 */
+  full_chain?: boolean
+  full_chain_version?: string
   retention_days: number
   retention_choices: number[]
   range?: string

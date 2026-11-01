@@ -42,3 +42,8 @@ def test_existing_agent_can_update_for_ipv6_readiness_support():
 def test_existing_agent_can_update_for_traffic_history_support():
     assert has_update("1.8.50-go") is True
     assert has_update(LATEST_AGENT_VERSION) is False
+
+
+def test_existing_agent_can_update_for_full_traffic_chains():
+    assert has_update("1.8.51-go") is True
+    assert has_update(LATEST_AGENT_VERSION) is False

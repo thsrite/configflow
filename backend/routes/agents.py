@@ -773,6 +773,8 @@ def _traffic_history_state(agent):
         'since': agent.get('traffic_history_since') if _traffic_history_enabled(agent) else None,
         'supported': traffic_history.agent_supported(agent.get('version')),
         'min_version': traffic_history.MIN_AGENT_VERSION,
+        'full_chain': traffic_history.agent_supported(agent.get('version'), traffic_history.FULL_CHAIN_AGENT_VERSION),
+        'full_chain_version': traffic_history.FULL_CHAIN_AGENT_VERSION,
         'retention_days': traffic_history.retention_days(),
         'retention_choices': list(traffic_history.RETENTION_CHOICES),
     }
