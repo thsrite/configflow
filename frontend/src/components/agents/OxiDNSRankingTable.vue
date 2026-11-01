@@ -8,7 +8,10 @@
         <tbody>
           <tr v-for="(entry, index) in entries.slice(0, 10)" :key="entry.name">
             <td class="num text-muted-foreground">{{ index + 1 }}</td>
-            <td class="break-all font-mono text-xs">{{ entry.name }}</td>
+            <td class="break-all text-xs">
+              <span v-if="entry.note" class="mb-0.5 block font-sans">{{ entry.note }}</span>
+              <span :class="['font-mono', { 'text-muted-foreground': entry.note }]">{{ entry.name }}</span>
+            </td>
             <td class="num break-all text-right">{{ formatMonitorNumber(entry.count) }}</td>
           </tr>
         </tbody>
@@ -24,7 +27,7 @@ import { formatMonitorNumber } from '@/types/oxidnsMonitor'
 defineProps<{
   title: string
   nameLabel: string
-  entries: Array<{ name: string; count: number }>
+  entries: Array<{ name: string; count: number; note?: string }>
   emptyTitle: string
   emptyDescription: string
 }>()

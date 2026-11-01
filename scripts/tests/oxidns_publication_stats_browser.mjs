@@ -32,7 +32,7 @@ const data = {
   upstreams: [{ id: 'local', tag: 'forward_local', upstream: 'local', address: '223.5.5.5', requests: 22100, failed: 4, avg_latency_ms: 12.4 }],
   rankings: { success: true, recorder: 'query_recorder', collected_at_ms: 1793535000000, source_revision: 'example',
     instance_id: 'example', retention_days: 7, sample_limit: 10000,
-    clients: section([['192.0.2.10', 3900], ['2001:db8:1234:5678:abcd:ef01:2345:6789', 2600], ['192.0.2.12', 1400]]),
+    clients: section([['192.0.2.10', 3900], ['2001:db8:0:0:abcd:ef01:2345:6789', 2600], ['192.0.2.12', 1400]]),
     domains: section([['example.com.', 2300], ['updates.example.net.', 1200], ['api.example.org.', 1000]]),
     blocked: { ...section([['ads.example.test.', 300]]), available: true, reason: '拦截规则' } }
 }
@@ -42,6 +42,7 @@ import './style.css'
 import Overview from '@/components/agents/OxiDNSOverview.vue'
 import Controls from '@/components/agents/OxiDNSStatisticsControls.vue'
 const data = ${JSON.stringify(data)}
+const notes = { '192.0.2.10': '客厅 NAS', '2001:db8::abcd:ef01:2345:6789': '书房工作电脑（有线网卡 · IPv6）' }
 const params = new URLSearchParams(location.search)
 document.documentElement.dataset.theme = params.get('theme') || 'light'
 document.documentElement.dataset.accent = params.get('accent') || 'clay'
@@ -49,7 +50,7 @@ createApp({ render: () => h('main', { class: 'mx-auto max-w-[1320px] space-y-5 p
   h('header', { class: 'space-y-1' }, [h('h1', { class: 'm-0 font-display text-3xl' }, 'OxiDNS 面板'),
     h('p', { class: 'm-0 text-sm text-muted-foreground' }, 'OxiDNS · 192.0.2.2 · 示例数据')]),
   h('div', { class: 'flex flex-wrap items-center justify-end gap-3' }, [h(Controls, { statistics: data.statistics })]),
-  h(Overview, { overview: data, qps: 32.8, recorder: 'query_recorder', resetting: false }),
+  h(Overview, { overview: data, qps: 32.8, recorder: 'query_recorder', resetting: false, notes }),
 ]) }).mount('#app')
 `)
 
@@ -71,6 +72,12 @@ try {
     const layout = await page.evaluate(() => ({ viewport: innerWidth, width: document.documentElement.scrollWidth }))
     assert.ok(layout.width <= width, `Overflow: ${JSON.stringify({ width, theme, accent, layout })}`)
     assert.equal(await page.locator('.oxidns-overview > div.grid').evaluate(el => getComputedStyle(el).display), 'grid')
+    const clients = page.getByRole('region', { name: '客户端排行', exact: true })
+    assert.match(await clients.innerText(), /客厅 NAS/)
+    assert.match(await clients.innerText(), /书房工作电脑（有线网卡 · IPv6）/)
+    assert.match(await clients.innerText(), /2001:db8:0:0:abcd:ef01:2345:6789/)
+    assert.equal((await clients.locator('tbody tr').nth(2).locator('td').nth(1).innerText()).trim(), '192.0.2.12')
+    assert.equal(await clients.evaluate(el => el.scrollWidth <= el.clientWidth), true)
     await page.getByRole('button', { name: '统计周期' }).click()
     const help = page.locator('[data-field-help-content]').filter({ hasText: '配置发布后继续累计' })
     await help.waitFor()
@@ -80,6 +87,7 @@ try {
     await page.screenshot({ path: join(output, name), fullPage: true })
     if (width === 1360 && theme === 'light' && accent === 'clay') {
       await page.screenshot({ path: resolve(root, 'doc/img/guide/oxidns-publication-statistics.png'), fullPage: true })
+      await clients.locator('..').screenshot({ path: resolve(root, 'doc/img/guide/oxidns-client-ranking-notes.png') })
     }
     report.cases.push({ width, theme, accent, ...layout })
     await page.close()

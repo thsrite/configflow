@@ -82,12 +82,12 @@
             </EmptyState>
           </SectionCard>
         </template>
-        <TabsContent value="overview"><OxiDNSOverviewPanel v-if="overview" :overview="overview" :qps="qps" :recorder="recorder" :resetting="resettingStatistics"
+        <p v-if="clientNotesError" role="alert" class="mb-3 break-words text-xs text-warning-accent">
+          设备备注暂未读取：{{ clientNotesError }}<span v-if="Object.keys(clientNotes).length"> 保留上次成功读取的备注。</span>
+        </p>
+        <TabsContent value="overview"><OxiDNSOverviewPanel v-if="overview" :overview="overview" :qps="qps" :recorder="recorder" :resetting="resettingStatistics" :notes="clientNotes"
           @recorder="selectRecorder" /></TabsContent>
         <TabsContent value="queries">
-          <p v-if="clientNotesError" role="alert" class="mb-3 break-words text-xs text-warning-accent">
-            设备备注暂未读取：{{ clientNotesError }}<span v-if="Object.keys(clientNotes).length"> 保留上次成功读取的备注。</span>
-          </p>
           <SectionCard v-if="overview && !overview.recorders.length">
             <EmptyState :icon="Search" title="尚未启用查询记录" description="打开此 Agent 所属配置空间的查询记录设置，启用并保存草稿后，发布到此 Agent 生效。">
               <Button class="min-h-11" :disabled="openingSettings" @click="openSettings('query_recorder')"><Settings class="size-4" />{{ openingSettings ? '正在打开…' : '前往设置' }}</Button>
