@@ -60,15 +60,10 @@
       </p>
       <Tabs :model-value="tab" class="min-w-0" @update:model-value="changeTab(String($event))">
         <div class="mb-4 flex min-w-0 flex-wrap items-start justify-between gap-x-4 gap-y-2 max-sm:mb-2 max-sm:gap-y-1">
-          <div class="flex min-w-0 shrink-0 items-center gap-2 max-sm:w-full">
-            <TabsList class="min-h-11 shrink-0 max-sm:grid max-sm:h-auto max-sm:flex-1 max-sm:grid-cols-2">
-              <TabsTrigger value="overview" class="min-h-11 px-4 max-sm:px-2">运行概览</TabsTrigger>
-              <TabsTrigger value="queries" class="min-h-11 px-4 max-sm:px-2">查询记录</TabsTrigger>
-            </TabsList>
-            <Button variant="ghost" class="min-h-11 shrink-0 px-3 text-primary-accent" :disabled="!agentId" @click="openClientDevices">
-              <MonitorSmartphone class="size-4" />客户端设备
-            </Button>
-          </div>
+          <TabsList class="min-h-11 shrink-0 max-sm:grid max-sm:h-auto max-sm:w-full max-sm:grid-cols-2">
+            <TabsTrigger value="overview" class="min-h-11 px-4 max-sm:px-2">运行概览</TabsTrigger>
+            <TabsTrigger value="queries" class="min-h-11 px-4 max-sm:px-2">查询记录</TabsTrigger>
+          </TabsList>
           <div class="oxidns-panel-actions ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2 max-sm:w-full sm:min-w-[28rem] sm:justify-end">
             <OxiDNSStatisticsControls v-if="tab === 'overview' && overview" :statistics="overview.statistics" :resetting="resettingStatistics" @reset="confirmResetStatistics" />
             <OxiDNSRuleUpdate :agent-id="agentId" :disabled="switchingDevice || currentDevice?.status !== 'online'" @updated="refreshAll" />
@@ -113,7 +108,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Loader2, MonitorSmartphone, RefreshCw, Search, Server, Settings, TriangleAlert } from '@lucide/vue'
+import { Loader2, RefreshCw, Search, Server, Settings, TriangleAlert } from '@lucide/vue'
 import { agentApi, clientToolsApi, profileApi } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -172,9 +167,6 @@ const tab = ref(route.query.tab === 'queries' ? 'queries' : 'overview')
 function changeTab(value: string) {
   tab.value = value
 }
-// Device policies moved to the profile's client devices page; old links land there.
-const openClientDevices = () => router.push({ path: '/client-devices', query: { agent: agentId.value } })
-if (route.query.tab === 'devices') void router.replace({ path: '/client-devices', query: { agent: agentId.value } })
 const selectedRecord = ref<OxiDNSQuery | null>(null)
 const { overview, overviewLoading, overviewError, overviewErrorCode, resettingStatistics, resetError, resetStatistics, clockSkewMs, qps, queries, queriesLoading, queriesError, recorder, filters,
   page, hasNext, autoRefresh, refresh, loadQueries, selectRecorder, applyFilters, nextPage, previousPage } = useOxiDNSMonitor(agentId, tab)
