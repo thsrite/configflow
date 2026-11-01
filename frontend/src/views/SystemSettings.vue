@@ -206,100 +206,15 @@
     </div>
 
     <!-- ===== 第三方依赖 ===== -->
-    <SectionCard
-      title="第三方依赖"
-      :icon="Package"
-      description="检测内置组件的版本，有新版本时可在线更新。访问 GitHub 时使用上方的规则下载代理和 GitHub 代理域名设置。"
-      class="mt-3 min-w-0"
-    >
-      <template #actions>
-        <Button
-          variant="outline"
-          size="sm"
-          class="border-border/60 bg-background/40"
-          :disabled="checkingDependencies"
-          @click="loadDependencies(true)"
-        >
-          <Loader2 v-if="checkingDependencies" class="size-3.5 animate-spin" />
-          <RefreshCw v-else class="size-3.5" />
-          检查更新
-        </Button>
-      </template>
-
-      <div v-if="!dependencies.length" class="text-[13px] text-muted-foreground">
-        {{ checkingDependencies ? '正在检测…' : '暂无依赖信息' }}
-      </div>
-
-      <div class="flex flex-col gap-3">
-        <div
-          v-for="dep in dependencies"
-          :key="dep.key"
-          class="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-border/60 bg-background/40 p-3"
-        >
-          <div class="min-w-0 flex-[1_1_14rem]">
-            <div class="flex flex-wrap items-center gap-2">
-              <a
-                :href="dep.homepage"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-[13px] font-semibold text-foreground hover:underline"
-              >{{ dep.name }}</a>
-              <StatusDot v-if="dep.key !== 'sub-store'" :tone="dep.running ? 'success' : 'danger'" :label="dep.running ? '运行中' : '无法连接'" />
-            </div>
-            <p class="mt-1 mb-0 text-[12px] text-muted-foreground">
-              {{ dep.description }}<template v-if="dep.runtime"> · Node.js {{ dep.runtime }}</template>
-            </p>
-          </div>
-
-          <SubStoreRuntime v-if="dep.key === 'sub-store'" :dependency="dep" class="min-w-0 flex-[1_1_16rem]" @changed="loadDependencies()" />
-
-          <dl class="m-0 grid grid-cols-[auto_auto] gap-x-3 gap-y-1 text-[12px]">
-            <dt class="text-muted-foreground">当前版本</dt>
-            <dd class="m-0 font-mono">{{ dep.current_version || '未知' }}</dd>
-            <dt class="text-muted-foreground">最新版本</dt>
-            <dd class="m-0 font-mono">
-              <a
-                v-if="dep.latest_version && dep.release_url"
-                :href="dep.release_url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="hover:underline"
-                :title="dep.latest_published_at ? `发布于 ${formatDate(dep.latest_published_at)}` : undefined"
-              >{{ dep.latest_version }}</a>
-              <span v-else>{{ dep.check_error ? '检查失败' : '—' }}</span>
-            </dd>
-          </dl>
-
-          <div class="flex min-w-0 flex-[0_1_auto] flex-col items-end gap-1 max-[640px]:items-start">
-            <template v-if="dep.update.state === 'running'">
-              <span class="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                <Loader2 class="size-3.5 animate-spin" />
-                {{ dep.update.message }}
-              </span>
-            </template>
-            <template v-else>
-              <Button
-                v-if="dep.has_update && dep.updatable"
-                size="sm"
-                :disabled="updatingKey === dep.key"
-                @click="updateDependency(dep)"
-              >
-                <Loader2 v-if="updatingKey === dep.key" class="size-3.5 animate-spin" />
-                <CircleArrowUp v-else class="size-3.5" />
-                更新到 {{ dep.latest_version }}
-              </Button>
-              <Badge v-else-if="dep.has_update" variant="warning">有新版本</Badge>
-              <Badge v-else-if="dep.current_version && dep.latest_version && !dep.check_error" variant="success">已是最新</Badge>
-              <span v-if="dep.check_error" class="max-w-[22rem] text-[12px] text-destructive-accent">{{ dep.check_error }}</span>
-              <span
-                v-else-if="dep.update.state === 'failed'"
-                class="max-w-[22rem] text-[12px] text-destructive-accent"
-              >{{ dep.update.message }}</span>
-            </template>
-          </div>
-        </div>
-      </div>
-    </SectionCard>
+    <DependenciesCard
+      class="mt-3"
+      :dependencies="dependencies"
+      :checking="checkingDependencies"
+      :updating-key="updatingKey"
+      @check="loadDependencies(true)"
+      @update="updateDependency"
+      @changed="loadDependencies()"
+    />
       </TabsContent>
     </Tabs>
 
@@ -426,16 +341,14 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { isAxiosError } from 'axios'
-import { Archive, CircleArrowUp, CloudUpload, Copy, Download, Eye, EyeOff, Loader2, Package, RefreshCw, RotateCcw, Settings, ShieldCheck, Trash2, Upload } from '@lucide/vue'
+import { Archive, CloudUpload, Copy, Download, Eye, EyeOff, Loader2, RefreshCw, RotateCcw, Settings, ShieldCheck, Trash2, Upload } from '@lucide/vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import SectionCard from '@/components/common/SectionCard.vue'
 import FormField from '@/components/common/FormField.vue'
-import StatusDot from '@/components/common/StatusDot.vue'
-import SubStoreRuntime from '@/components/settings/SubStoreRuntime.vue'
+import DependenciesCard from '@/components/settings/DependenciesCard.vue'
 import ScheduledTasks from '@/components/settings/ScheduledTasks.vue'
 import WebPortSettings from '@/components/settings/WebPortSettings.vue'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -511,11 +424,6 @@ const checkingDependencies = ref(false)
 const updatingKey = ref('')
 let dependenciesDisposed = false
 let dependencyPollTimer: ReturnType<typeof setTimeout> | undefined
-
-const formatDate = (value: string) => {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
 
 const loadDependencies = async (refresh = false) => {
   checkingDependencies.value = true

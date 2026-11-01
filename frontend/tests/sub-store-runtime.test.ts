@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import SubStoreRuntime from '@/components/settings/SubStoreRuntime.vue'
+import { Select } from '@/components/ui/select'
 import { dependenciesApi, type DependencyStatus } from '@/api'
 import { notify } from '@/lib/feedback'
 
@@ -17,29 +18,34 @@ function render(dep = dependency()) {
 }
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} unobserve() {} })
 })
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.unstubAllGlobals() })
 
 describe('Sub-Store runtime settings', () => {
-  it('shows idle as normal and does not wake the service on mount', () => {
+  it('shows the saved mode without waking the service on mount', () => {
     const wrapper = render()
-    expect(wrapper.text()).toContain('休眠中')
+    expect(wrapper.get('[role="combobox"]').attributes('aria-label')).toBe('Sub-Store 运行方式')
+    expect(wrapper.getComponent(Select).props('modelValue')).toBe('on_demand')
     expect(wrapper.text()).toContain('空闲 5 分钟')
-    expect(wrapper.text()).not.toContain('无法连接')
     expect(dependenciesApi.setSubStoreMode).not.toHaveBeenCalled()
   })
 
-  it('waits for a successful mode change and reports it', async () => {
+  it('waits for a successful mode change and prevents duplicate saves', async () => {
     let done!: () => void
     vi.mocked(dependenciesApi.setSubStoreMode).mockReturnValue(new Promise(resolve => { done = () => resolve({ data: { success: true } } as any) }))
     const wrapper = render()
-    await wrapper.findAll('[role="radio"]')[1].trigger('click')
+    const select = wrapper.getComponent(Select)
+    select.vm.$emit('update:modelValue', 'always')
+    await flushPromises()
     expect(dependenciesApi.setSubStoreMode).toHaveBeenCalledWith('always')
     expect(wrapper.text()).toContain('正在保存')
-    expect(wrapper.findAll('button').every(button => button.attributes('disabled') !== undefined)).toBe(true)
+    expect(select.props('modelValue')).toBe('on_demand')
+    expect(wrapper.get('[role="combobox"]').attributes('disabled')).toBeDefined()
+    select.vm.$emit('update:modelValue', 'always')
+    expect(dependenciesApi.setSubStoreMode).toHaveBeenCalledTimes(1)
     done(); await flushPromises()
-    expect(wrapper.findAll('[role="radio"]')[1].attributes('aria-checked')).toBe('true')
+    expect(select.props('modelValue')).toBe('always')
     expect(wrapper.emitted('changed')).toHaveLength(1)
     expect(notify.success).toHaveBeenCalled()
   })
@@ -47,27 +53,26 @@ describe('Sub-Store runtime settings', () => {
   it('retains the saved mode when switching fails', async () => {
     vi.mocked(dependenciesApi.setSubStoreMode).mockRejectedValue(new Error('unavailable'))
     const wrapper = render()
-    await wrapper.findAll('[role="radio"]')[1].trigger('click')
+    wrapper.getComponent(Select).vm.$emit('update:modelValue', 'always')
     await flushPromises()
-    expect(wrapper.findAll('[role="radio"]')[0].attributes('aria-checked')).toBe('true')
+    expect(wrapper.getComponent(Select).props('modelValue')).toBe('on_demand')
     expect(wrapper.emitted('changed')).toBeUndefined()
     expect(notify.error).toHaveBeenCalled()
   })
 
-  it('prevents mode changes while updating and explains startup failure', () => {
-    const dep = dependency({ update: { state: 'running' } })
-    dep.lifecycle = { ...dep.lifecycle!, state: 'failed', error: '启动未就绪，请检查容器日志' }
-    const wrapper = render(dep)
-    expect(wrapper.text()).toContain('无法连接')
-    expect(wrapper.text()).toContain('启动未就绪')
-    expect(wrapper.findAll('button').every(button => button.attributes('disabled') !== undefined)).toBe(true)
+  it('prevents mode changes while updating', async () => {
+    const wrapper = render(dependency({ update: { state: 'running' } }))
+    expect(wrapper.get('[role="combobox"]').attributes('disabled')).toBeDefined()
+    wrapper.getComponent(Select).vm.$emit('update:modelValue', 'always')
+    await flushPromises()
+    expect(dependenciesApi.setSubStoreMode).not.toHaveBeenCalled()
   })
 
   it('does not offer local process controls for an external server', () => {
     const dep = dependency()
     dep.lifecycle = { ...dep.lifecycle!, managed: false, mode: 'external', state: 'running' }
     const wrapper = render(dep)
-    expect(wrapper.text()).toContain('运行中')
-    expect(wrapper.find('[role="radiogroup"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('由外部服务管理')
+    expect(wrapper.find('[role="combobox"]').exists()).toBe(false)
   })
 })
