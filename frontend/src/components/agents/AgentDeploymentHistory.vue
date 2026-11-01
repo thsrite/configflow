@@ -1,6 +1,6 @@
 <template>
   <Dialog :open="true" @update:open="open => !open && emit('close')">
-    <DialogContent class="max-h-[85dvh] max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-[820px]">
+    <DialogContent class="max-h-[85dvh] max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-[820px]" @open-auto-focus="focusRecord">
       <DialogHeader>
         <DialogTitle>{{ agent.name }} · 发布记录</DialogTitle>
         <DialogDescription>查看已记录的配置发布。当前最新成功部署可恢复到这次发布前的配置和受管规则；state/ 运行数据保留。</DialogDescription>
@@ -11,7 +11,7 @@
         <table class="cf-table cf-mobile-records w-full text-sm" role="table">
           <thead role="rowgroup"><tr role="row"><th role="columnheader" class="text-left">发布</th><th role="columnheader" class="text-left">结果</th><th role="columnheader" class="text-right">操作</th></tr></thead>
           <tbody role="rowgroup">
-            <tr role="row" v-for="record in records" :key="record.deployment_id">
+            <tr role="row" v-for="record in records" :key="record.deployment_id" :data-deployment-record="record.deployment_id">
               <td role="cell" data-label="发布" class="cf-record-wide max-w-[260px] align-top max-sm:max-w-none">
                 <div class="break-all font-mono text-xs" :title="record.deployment_id">{{ record.deployment_id }}</div>
                 <div class="mt-1 text-xs text-muted-foreground">{{ formatDate(record.updated_at || record.created_at) }}<template v-if="record.config_revision !== undefined"> · 修订 {{ record.config_revision }}</template></div>
@@ -21,7 +21,7 @@
                 <AgentDeploymentStatus :task="record" compact>
                   <template v-if="deploymentNeedsNotice(record)" #notice>
                     <AgentOperationSteps :task="record" :show-current="false" :show-steps="false" />
-                    <AgentFailureDetails :show-progress-message="false" :showDNSChecks="false" :task="record" />
+                    <AgentFailureDetails :show-progress-message="false" :showDNSChecks="false" :task="record" :expanded="record.deployment_id === focusDeployment" />
                   </template>
                   <template #details>
                     <AgentOperationSteps :task="record" :show-current="false" :show-message="!deploymentNeedsNotice(record)" embedded />
@@ -44,7 +44,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, watch } from 'vue'
+import { focusSetting } from '@/lib/settingLink'
+import { notify } from '@/lib/feedback'
 import type { Agent } from '@/types'
 import { deploymentNeedsNotice, type AgentDeployment } from '@/composables/useAgentDeployments'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -55,7 +57,7 @@ import AgentDNSChecks from './AgentDNSChecks.vue'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
-const props = defineProps<{ agent: Agent; progress?: AgentDeployment; busy: boolean; blocked: boolean }>()
+const props = defineProps<{ agent: Agent; progress?: AgentDeployment; busy: boolean; blocked: boolean; focusDeployment?: string }>()
 const emit = defineEmits<{ (event: 'close'): void; (event: 'rollback', record: AgentDeployment): void }>()
 const latestId = computed(() => props.agent.latest_deployment?.deployment_id || props.progress?.deployment_id)
 const records = computed(() => {
@@ -69,4 +71,15 @@ const records = computed(() => {
   })
 })
 const formatDate = (date?: string) => date ? new Date(date).toLocaleString() : '时间未记录'
+async function focusRecord(event?: Event) {
+  const id = props.focusDeployment
+  if (!id) return
+  event?.preventDefault()
+  await nextTick()
+  const row = Array.from(document.querySelectorAll<HTMLElement>('[data-deployment-record]'))
+    .find(element => element.dataset.deploymentRecord === id)
+  if (row) await focusSetting(row)
+  else notify.warning('该发布记录已清理，当前显示此设备仍保留的记录。')
+}
+watch(() => props.focusDeployment, () => { void focusRecord() }, { flush: 'post' })
 </script>

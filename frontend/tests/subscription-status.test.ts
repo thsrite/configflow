@@ -44,15 +44,30 @@ afterEach(() => {
   window.localStorage.removeItem('configflow-subscriptions-view')
 })
 
-async function render() {
+async function render(path = '/') {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: Subscriptions }] })
-  await router.push('/')
+  await router.push(path)
   await router.isReady()
   wrapper = mount(Subscriptions, { attachTo: document.body, global: { plugins: [router] } })
   await flushPromises()
-  await wrapper.get('[aria-label="列表视图"]').trigger('click')
+  if (!path.includes('section=settings')) await wrapper.get('[aria-label="列表视图"]').trigger('click')
   return wrapper
 }
+
+it('opens the exact subscription editor from a notification and focuses its URL', async () => {
+  await render('/?subscription=feed&section=settings')
+  await flushPromises()
+  expect(document.body.textContent).toContain('编辑订阅')
+  expect((document.getElementById('sub-name') as HTMLInputElement).value).toBe('Feed')
+  expect(document.getElementById('sub-url')?.hasAttribute('data-notification-focus')).toBe(true)
+  expect(subscriptionApi.fetch).not.toHaveBeenCalled()
+})
+
+it('reports a removed subscription without opening an unrelated editor', async () => {
+  await render('/?subscription=removed&section=settings')
+  expect(notify.warning).toHaveBeenCalledWith('对应订阅不存在或已删除。')
+  expect(document.getElementById('sub-url')).toBeNull()
+})
 
 async function clickText(text: string) {
   const button = wrapper!.findAll('button').find(item => item.text() === text)

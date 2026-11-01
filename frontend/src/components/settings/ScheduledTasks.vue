@@ -141,7 +141,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ArrowUpRight, CalendarClock, Loader2, Pencil, Play, RefreshCw } from '@lucide/vue'
 import SectionCard from '@/components/common/SectionCard.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -154,6 +154,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { routerApi, tasksApi } from '@/api'
 import { notify } from '@/lib/feedback'
+import { useSettingLink, queryText, focusSetting } from '@/lib/settingLink'
 import { isAxiosError } from 'axios'
 import {
   CATEGORY_LABELS, absoluteTime, cacheNote, durationText, isOverdue,
@@ -177,6 +178,17 @@ const loading = ref(false)
 const loaded = ref(false)
 const error = ref('')
 const filter = ref<'all' | 'failed' | TaskCategory>('all')
+useSettingLink({
+  keys: ['task'], ready: () => loaded.value && !error.value && active.value,
+  matches: query => !!queryText(query.task),
+  open: async query => {
+    const key = queryText(query.task)
+    if (!tasks.value.some(task => task.key === key)) { notify.warning('对应任务不存在或已停用。'); return }
+    filter.value = 'all'
+    await nextTick()
+    await focusSetting(Array.from(document.querySelectorAll<HTMLElement>('[data-task]')).find(element => element.dataset.task === key))
+  },
+})
 const starting = ref(new Set<string>())
 const now = ref(Date.now())
 let fastUntil = 0

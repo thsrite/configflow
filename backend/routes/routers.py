@@ -5,6 +5,7 @@ import requests
 from flask import jsonify, request
 
 from backend.common.auth import require_auth
+from backend.agents.operation_events import event_message
 from backend.common.config import get_config, get_repository, reset_config_context, save_config
 from backend.routers import dns_guard, ipv6_pd_guard
 from backend.routers.base import RouterConflictError, RouterError, as_dict, retire_policy_routes
@@ -396,6 +397,9 @@ def router_report(router_id):
         return jsonify({'success': False, 'message': str(error)}), 502
     finally:
         driver.close()
+    from backend.common.profile_context import resolve_profile_id
+    from backend.notifications import safely, record_router
+    safely(record_router, resolve_profile_id(), config, router, report)
     return jsonify({'success': True, 'report': report, 'generated_at': _now()})
 
 
@@ -415,6 +419,9 @@ def router_plan(router_id):
         return jsonify({'success': False, 'message': str(error)}), 502
     finally:
         driver.close()
+    from backend.common.profile_context import resolve_profile_id
+    from backend.notifications import safely, record_router
+    safely(record_router, resolve_profile_id(), config, router, report, plan)
     if plan['empty'] and not plan['blockers']:
         from backend.common.profile_context import resolve_profile_id
         from backend.routers.rule_sync import needs_baseline
@@ -455,6 +462,12 @@ def router_apply(router_id):
                                 'plan': plan}), 409
             if plan['empty']:
                 _capture_sync(config, router, driver, desired)
+                get_repository().save_router_publication(resolve_profile_id(), router, last_release={
+                    'at': _now(), 'ok': True, 'fingerprint': plan['fingerprint'], 'failed_stage': '', 'message': '',
+                })
+                reset_config_context()
+                from backend.notifications import safely, refresh_tasks
+                safely(refresh_tasks)
                 logger.info('主路由 %s 发布：没有需要写入的变更', _label(router))
                 return jsonify({'success': True, 'result': {'ok': True, 'log': [], 'rollback': []}, 'plan': plan})
             agent_client = None
@@ -470,6 +483,8 @@ def router_apply(router_id):
             publication = {'last_release': {
                 'at': _now(), 'ok': result['ok'], 'fingerprint': plan['fingerprint'],
                 'failed_stage': result.get('failed_stage', ''),
+                'message': event_message('；'.join(entry.get('summary', '') for entry in
+                    result.get('log', []) + result.get('rollback', []) if entry.get('status') == 'failed'), (router.get('password'),)),
             }}
             if hasattr(driver, 'ros_policy_manifest'):
                 publication['manifest'] = driver.ros_policy_manifest
@@ -483,6 +498,8 @@ def router_apply(router_id):
                 publication['ipv6_pd_guard'] = driver.ipv6_pd_guard_manifest
             get_repository().save_router_publication(resolve_profile_id(), router, **publication)
             reset_config_context()
+            from backend.notifications import safely, refresh_tasks
+            safely(refresh_tasks)
             if result['ok']:
                 _capture_sync(published_config, router, driver, desired)
     except RouterError as error:

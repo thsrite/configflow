@@ -124,7 +124,7 @@ def _read_router(config: Dict[str, Any], router: Dict[str, Any]) -> Dict[str, An
         plan = build_plan(router, desired, state, report, report['return_routing'], driver)
     finally:
         driver.close()
-    return summarize(report, plan)
+    return {**summarize(report, plan), '_notification_report': report, '_notification_plan': plan}
 
 
 def _unknown(message: str) -> Dict[str, Any]:
@@ -140,7 +140,7 @@ def _read_all(targets: List[Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]
     wait(futures, timeout=timeout)
     pool.shutdown(wait=False, cancel_futures=True)
     entries = []
-    for (profile, _, router), future in zip(targets, futures):
+    for (profile, config, router), future in zip(targets, futures):
         if not future.done() or future.cancelled():
             result = _unknown(f'读取超时（{timeout:g} 秒），请检查路由器负载和网络后重试。')
         else:
@@ -151,6 +151,11 @@ def _read_all(targets: List[Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]
             except Exception as error:  # a parsing bug must not hide the other routers
                 logger.exception('Upstream router status failed for router %s', router.get('id'))
                 result = _unknown(f'读取失败：{error.__class__.__name__}')
+        report = result.pop('_notification_report', None)
+        plan = result.pop('_notification_plan', None)
+        if report is not None:
+            from backend.notifications import safely, record_router
+            safely(record_router, profile['id'], config, router, report, plan)
         entries.append({'id': router.get('id') or '', 'name': router.get('name') or router.get('id') or '',
                         'type': router.get('type') or '', 'profile_id': profile['id'],
                         'profile_name': profile.get('name') or profile['id'], **result})

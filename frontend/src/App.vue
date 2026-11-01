@@ -108,6 +108,7 @@
           </Button>
 
           <TweaksPanel />
+          <NotificationCenter />
 
           <Button
             variant="ghost"
@@ -204,6 +205,7 @@ import CommandPalette from './components/shell/CommandPalette.vue'
 import MobileGroupNav from './components/shell/MobileGroupNav.vue'
 import MobileTabBar from './components/shell/MobileTabBar.vue'
 import TweaksPanel from './components/shell/TweaksPanel.vue'
+import NotificationCenter from './components/shell/NotificationCenter.vue'
 import { formatRate, useLive } from './stores/live'
 import { confirm, notify } from './lib/feedback'
 import { usePreferences } from './stores/preferences'

@@ -111,7 +111,10 @@ def record(key, *, ok, started_at=None, duration_ms=0, error='', trigger='schedu
             entry['cache_updated_at'] = cache_updated_at
         data[key] = entry
         _write(path, data)
-        return dict(entry)
+        result = dict(entry)
+    from backend.notifications import safely, refresh_tasks
+    safely(refresh_tasks, key)
+    return result
 
 
 def forget(*keys):

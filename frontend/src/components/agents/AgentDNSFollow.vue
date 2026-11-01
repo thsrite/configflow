@@ -125,6 +125,7 @@ async function run(kind: 'save' | 'remove' | 'retry') {
     if (!disposed) action.value = ''
   }
 }
+defineExpose({ showSettings: () => { if (!action.value) open.value = true } })
 </script>
 
 <template>

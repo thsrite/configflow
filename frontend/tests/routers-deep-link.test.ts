@@ -62,6 +62,15 @@ afterEach(() => {
 })
 
 describe('router page deep link', () => {
+  it('locates the exact firewall section without publishing or opening a release dialog', async () => {
+    vi.mocked(routerApi.report).mockResolvedValue({ data: { success: true, report: {
+      ...REPORT, routes: { ...REPORT.routes, forward_hint: { status: 'drop', warning: '需要放行同口转发', fix_command: 'example command' } }
+    } } } as any)
+    const { wrapper } = await open('/routers?router=router_1&profile=default&section=ipv4-forward-hint')
+    expect(wrapper.get('[data-router-ipv4-forward-hint]').attributes('data-notification-focus')).toBe('')
+    expect(routerApi.plan).not.toHaveBeenCalled()
+    expect(routerApi.apply).not.toHaveBeenCalled()
+  })
   it('opens the router report and its release preview, then drops the link from the address', async () => {
     const { wrapper, navigation } = await open('/routers?router=router_1&profile=default&preview=1&tab=x')
     expect(routerApi.report).toHaveBeenCalledExactlyOnceWith('router_1')

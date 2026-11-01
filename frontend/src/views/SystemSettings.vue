@@ -340,6 +340,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useSettingLink, focusSetting } from '@/lib/settingLink'
 import { isAxiosError } from 'axios'
 import { Archive, CloudUpload, Copy, Download, Eye, EyeOff, Loader2, RefreshCw, RotateCcw, Settings, ShieldCheck, Trash2, Upload } from '@lucide/vue'
 import PageHeader from '@/components/common/PageHeader.vue'
@@ -794,6 +795,17 @@ const showBackupDialog = async () => {
     notify.error('加载备份配置失败')
   }
 }
+
+useSettingLink({
+  keys: ['section'], ready: () => true,
+  matches: query => query.section === 'backup',
+  open: async (_query, current) => {
+    if (backupDialogVisible.value) return
+    await showBackupDialog()
+    if (!current()) return
+    await focusSetting(document.getElementById('webdav-url'))
+  },
+})
 
 const testWebDAVConnection = async () => {
   if (!backupForm.value.webdav_url) {

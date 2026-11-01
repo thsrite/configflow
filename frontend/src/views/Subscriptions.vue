@@ -545,6 +545,7 @@ import { confirmDanger, notify } from '@/lib/feedback'
 import { isRefreshInterval, referencedProfileNames } from '@/lib/subscriptionRefresh'
 import { copyText } from '@/lib/clipboard'
 import { listItemStyle } from '@/lib/motion'
+import { useSettingLink, queryText, focusSetting } from '@/lib/settingLink'
 
 
 const router = useRouter()
@@ -559,6 +560,7 @@ const ringOffset = (sub: Subscription) => {
 const lastFetchText = (sub: Subscription) =>
   relativeTime((sub as any).last_fetch?.at || (sub as any).cached_updated_at)
 const subscriptions = ref<Subscription[]>([])
+const subscriptionsLoaded = ref(false)
 const subscriptionsContainer = ref<HTMLElement | null>(null)
 const dialogVisible = ref(false)
 const isEdit = ref(false)
@@ -663,6 +665,7 @@ const loadSubscriptions = async (keepStatus = false) => {
   try {
     const { data } = await subscriptionApi.getAll()
     subscriptions.value = data
+    subscriptionsLoaded.value = true
     // 初始化订阅状态；刷新时保留刚拿到的失败状态，避免被缓存值覆盖
     subscriptions.value.forEach(sub => {
       if (keepStatus && ['error', 'cache'].includes(subscriptionStatus.value[sub.id]?.status ?? '')) return
@@ -1149,6 +1152,19 @@ const handleSaveOrder = async () => {
     notify.error('保存顺序失败，顺序已还原')
   }
 }
+
+useSettingLink({
+  keys: ['subscription', 'section'], ready: () => subscriptionsLoaded.value,
+  matches: query => !!queryText(query.subscription) && query.section === 'settings',
+  open: async query => {
+    if (dialogVisible.value) { notify.warning('请先保存或关闭正在编辑的订阅。'); return }
+    const subscription = subscriptions.value.find(item => item.id === queryText(query.subscription))
+    if (!subscription) { notify.warning('对应订阅不存在或已删除。'); return }
+    editSubscription(subscription)
+    await nextTick()
+    await focusSetting(document.getElementById('sub-url'))
+  },
+})
 
 onMounted(async () => {
   syncNarrow()
