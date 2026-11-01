@@ -191,12 +191,13 @@ def _refresh(items, repository, completed_task=None):
                 'message': event_message(release.get('message') or f'阶段「{release.get("failed_stage") or "未知"}」失败，请重新检查差异。', (router.get('password'),)),
                 'checked_at': release.get('at'), 'evidence': release.get('at'),
                 'target': target('/routers', '查看发布结果', router=router['id'], profile=profile_id, section='report')})
-    for key, item in items.items():
+    for key, item in list(items.items()):
         if item.get('source') == 'router-check':
             prefix = key.rsplit(':', 1)[0] + ':'
             if prefix in routers:
                 keys.add(key)
-                item['stale'] = item.get('signature') != routers[prefix]
+                if item['state'] == 'pending':
+                    item['stale'] = item.get('signature') != routers[prefix]
         if key not in keys:
             store.observe(items, key, {'state': 'inactive'})
         if item.get('profile_id') in profiles:
@@ -209,10 +210,10 @@ def snapshot(completed_task=None):
     with store.transaction(repository.data_dir) as items:
         _refresh(items, repository, completed_task)
         result = [{key: value for key, value in item.items() if key not in ('signature', 'evidence')}
-                  for item in items.values()]
+                  for item in items.values() if item['state'] == 'pending']
     priority = {'error': 0, 'warning': 1, 'neutral': 2}
     result.sort(key=lambda item: item.get('last_seen_at') or '', reverse=True)
-    result.sort(key=lambda item: (item['state'] != 'pending', priority.get(item.get('severity'), 2)))
+    result.sort(key=lambda item: priority.get(item.get('severity'), 2))
     return deepcopy(result)
 
 

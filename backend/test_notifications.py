@@ -1,5 +1,4 @@
 """Notification lifecycle and precise, profile-bound destinations, with no device I/O."""
-from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 import json
 
@@ -32,7 +31,7 @@ def fail():
     task_status.record('subscription:feed', ok=False, error='连接上游超时', cache_retained=True)
 
 
-def test_receipts_persist_without_an_open_page_and_read_does_not_resolve(setup):
+def test_read_removes_body_persists_dedupe_and_a_new_failure_notifies_again(setup):
     client, repo = setup
     fail()
     saved = json.loads((repo.data_dir / 'notifications.json').read_text())['items']
@@ -42,12 +41,20 @@ def test_receipts_persist_without_an_open_page_and_read_does_not_resolve(setup):
     assert first['severity'] == 'warning' and first['impact'] == '仍使用上一次有效缓存'
     assert first['target'] == notifications.target('/subscriptions', '检查订阅设置', subscription='feed', section='settings')
     assert client.post('/api/notifications/read', json={'versions': {key: first['version']}}).status_code == 200
-    second = items(client)[key]
-    assert second['read'] and second['state'] == 'pending' and second['occurrences'] == 1
-    assert items(client)[key]['occurrences'] == 1
+    assert key not in items(client)
+    saved = json.loads((repo.data_dir / 'notifications.json').read_text())['items'][key]
+    assert set(saved) == {'state', 'fingerprint', 'source'}
+    assert len(saved['fingerprint']) == 64 and saved['state'] == 'dismissed'
+    assert key not in items(client)  # another read reloads the persisted acknowledgement
+    assert task_status.get('subscription:feed')['last_status'] == 'failed'
     fail()
     third = items(client)[key]
-    assert third['read'] and third['occurrences'] == 2 and third['failure_count'] == 2
+    assert not third['read'] and third['failure_count'] == 2 and third['version'] != first['version']
+    client.post('/api/notifications/read', json={'versions': {key: first['version']}})
+    assert key in items(client)
+    client.post('/api/notifications/read', json={'versions': {key: third['version']}})
+    task_status.record('subscription:feed', ok=True)
+    assert key not in json.loads((repo.data_dir / 'notifications.json').read_text())['items']
 
 
 def test_recovery_and_recurrence_without_browser_and_stale_read_is_ignored(setup):
@@ -56,8 +63,8 @@ def test_recovery_and_recurrence_without_browser_and_stale_read_is_ignored(setup
     key = 'task:subscription:feed'
     original = items(client)[key]
     task_status.record('subscription:feed', ok=True)
-    saved = json.loads((repo.data_dir / 'notifications.json').read_text())['items'][key]
-    assert saved['state'] == 'resolved' and saved['resolved_at']
+    saved = json.loads((repo.data_dir / 'notifications.json').read_text())['items']
+    assert key not in saved
     fail()
     reopened = items(client)[key]
     assert reopened['state'] == 'pending' and not reopened['read']
@@ -66,18 +73,24 @@ def test_recovery_and_recurrence_without_browser_and_stale_read_is_ignored(setup
     assert not items(client)[key]['read']
 
 
-def test_removed_and_disabled_sources_retire_instead_of_claiming_recovery(setup):
+def test_removed_and_disabled_sources_clear_notifications_and_dedupe_markers(setup):
     client, repo = setup
     fail()
     shared = repo.get_shared()
     shared['subscriptions'][0]['enabled'] = False
     repo.save_shared(shared)
-    row = items(client)['task:subscription:feed']
-    assert row['state'] == 'resolved' and row['resolution'] == '已不再适用'
+    key = 'task:subscription:feed'
+    assert key not in items(client)
+    shared = repo.get_shared()
+    shared['subscriptions'][0]['enabled'] = True
+    repo.save_shared(shared)
+    row = items(client)[key]
+    client.post('/api/notifications/read', json={'versions': {key: row['version']}})
     shared = repo.get_shared()
     shared['subscriptions'] = []
     repo.save_shared(shared)
-    assert items(client)['task:subscription:feed']['state'] == 'resolved'
+    assert key not in items(client)
+    assert key not in json.loads((repo.data_dir / 'notifications.json').read_text())['items']
 
 
 def test_task_running_or_source_read_failure_never_clears_pending(setup, monkeypatch):
@@ -96,7 +109,7 @@ def test_completed_receipt_is_persisted_before_worker_releases_running_flag(setu
     fail()
     assert json.loads(path.read_text())['items']['task:subscription:feed']['state'] == 'pending'
     task_status.record('subscription:feed', ok=True)
-    assert json.loads(path.read_text())['items']['task:subscription:feed']['state'] == 'resolved'
+    assert 'task:subscription:feed' not in json.loads(path.read_text())['items']
 
 
 def test_manual_backup_failure_is_actionable_even_without_automatic_backup(setup):
@@ -109,7 +122,7 @@ def test_manual_backup_failure_is_actionable_even_without_automatic_backup(setup
     assert row['state'] == 'pending' and row['title'] == 'WebDAV 手动备份'
     assert row['target']['query'] == {'section': 'backup'}
     task_status.record('webdav_backup', ok=True, trigger='manual')
-    assert items(client)['task:webdav_backup']['state'] == 'resolved'
+    assert 'task:webdav_backup' not in items(client)
 
 
 def test_corrupt_store_is_not_replaced_by_empty_success(setup):
@@ -125,15 +138,33 @@ def test_read_payload_validation(setup, body):
     assert setup[0].post('/api/notifications/read', json=body).status_code == 400
 
 
-def test_resolved_history_expires_but_pending_never_expires(setup):
+def test_existing_history_and_read_bodies_are_removed_on_upgrade(setup):
     client, repo = setup
     fail()
     key = 'task:subscription:feed'
-    stamp = (datetime.now(timezone.utc) - timedelta(days=31)).isoformat()
+    path = repo.data_dir / 'notifications.json'
+    data = json.loads(path.read_text())
+    data['items']['recently-recovered'] = {**data['items'][key], 'state': 'resolved', 'resolved_at': notification_store.now()}
+    data['items'][key]['read'] = True
+    path.write_text(json.dumps(data))
+    assert not items(client)
+    saved = json.loads(path.read_text())['items']
+    assert 'recently-recovered' not in saved
+    assert set(saved[key]) == {'state', 'fingerprint', 'source'}
+
+
+def test_old_unread_problem_is_retained_and_stale_read_cannot_clear_a_new_receipt(setup):
+    client, repo = setup
+    fail()
+    key = 'task:subscription:feed'
+    first = items(client)[key]
     with notification_store.transaction(repo.data_dir) as data:
-        data[key]['first_seen_at'] = stamp
-        data['old'] = {**data[key], 'id': 'old', 'state': 'resolved', 'resolved_at': stamp}
-    assert key in items(client) and 'old' not in items(client)
+        data[key]['first_seen_at'] = '2000-01-01T00:00:00+00:00'
+    assert key in items(client)
+    fail()
+    assert items(client)[key]['version'] != first['version']
+    client.post('/api/notifications/read', json={'versions': {key: first['version']}})
+    assert key in items(client)
 
 
 def test_latest_deployment_status_uses_exact_record_and_keeps_failures_while_retrying(setup):
@@ -156,7 +187,7 @@ def test_latest_deployment_status_uses_exact_record_and_keeps_failures_while_ret
     agent['latest_deployment']['status'] = 'succeeded'
     repo.update_system_transaction(lambda system: system.update(agents=[agent]))
     notifications.record_agent(manager.get_agent_by_id('a'), repo)
-    assert items(client)['deployment:a']['state'] == 'resolved'
+    assert 'deployment:a' not in items(client)
 
 
 def seed_router(repo, profile='default'):
@@ -187,7 +218,7 @@ def test_router_notices_keep_profile_section_freshness_and_unknown_is_not_recove
     report['routes']['forward_hint'] = {'status': 'ok'}
     report['in_sync'] = True
     notifications.record_router('default', get_config('default'), router, report)
-    assert items(client)[key]['state'] == 'resolved'
+    assert key not in items(client)
 
 
 def test_same_router_id_in_different_profiles_does_not_merge(setup):
@@ -201,7 +232,7 @@ def test_same_router_id_in_different_profiles_does_not_merge(setup):
     assert rows['router:default:r:ipv6_dns']['profile_id'] == 'default'
     assert rows['router:other:r:ipv6_dns']['profile_id'] == 'other'
     notifications.record_router('other', get_config('other'), router, {'desired': {}, 'routes': {}})
-    assert items(client)['router:other:r:ipv6_dns']['resolution'] == '已不再适用'
+    assert 'router:other:r:ipv6_dns' not in items(client)
     assert items(client)['router:default:r:ipv6_dns']['state'] == 'pending'
 
 
@@ -220,8 +251,39 @@ def test_confirmed_empty_router_release_clears_previous_failure(setup, monkeypat
     result = client.post('/api/routers/r/apply', json={'fingerprint': 'confirmed'})
     assert result.status_code == 200, result.get_json()
     saved = json.loads((repo.data_dir / 'notifications.json').read_text())['items']
-    assert saved[key]['state'] == 'resolved'
-    assert items(client)[key]['state'] == 'resolved'
+    assert key not in saved
+    assert key not in items(client)
+
+
+def test_router_read_is_not_replayed_by_repeated_checks_and_marker_clears_on_removal(setup):
+    client, repo = setup
+    router = seed_router(repo)
+    config = get_config('default')
+    report = {'in_sync': False, 'routes': {'forward_hint': {'status': 'drop', 'warning': '同口转发被阻止', 'fix_command': 'command'}}}
+    plan = {'stages': [{'key': 'routes', 'title': '代理路由', 'ops': [{'kind': 'route_add'}]}]}
+    notifications.record_router('default', config, router, report, plan)
+    rows = items(client)
+    assert len(rows) == 2
+    client.post('/api/notifications/read', json={'versions': {key: row['version'] for key, row in rows.items()}})
+    notifications.record_router('default', config, router, report)
+    notifications.record_router('default', config, router, report, plan)
+    assert not items(client)
+    report['routes']['forward_hint'] = {'status': 'unknown'}
+    notifications.record_router('default', config, router, report)
+    assert not items(client)
+    report['routes']['forward_hint'] = {'status': 'ok'}
+    report['in_sync'] = True
+    notifications.record_router('default', config, router, report)
+    assert not json.loads((repo.data_dir / 'notifications.json').read_text())['items']
+    report['routes']['forward_hint'] = {'status': 'drop', 'warning': '同口转发被阻止', 'fix_command': 'command'}
+    report['in_sync'] = False
+    notifications.record_router('default', config, router, report, plan)
+    rows = items(client)
+    assert len(rows) == 2
+    client.post('/api/notifications/read', json={'versions': {key: row['version'] for key, row in rows.items()}})
+    repo.update_profile_transaction('default', lambda config: config.update(routers={'items': []}))
+    assert not items(client)
+    assert not json.loads((repo.data_dir / 'notifications.json').read_text())['items']
 
 
 def test_notifications_require_authentication(authenticated_app):

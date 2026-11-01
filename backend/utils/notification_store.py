@@ -1,8 +1,9 @@
 """Persistent attention items, separate from configuration revisions and exports."""
 from contextlib import contextmanager
 from copy import deepcopy
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -10,11 +11,27 @@ import tempfile
 import threading
 
 _guard = threading.RLock()
-RETENTION_DAYS = 30
 
 
 def now():
     return datetime.now(timezone.utc).isoformat(timespec='microseconds')
+
+
+def fingerprint(key, item):
+    """Identify an incident, not a polling result or the time it was displayed."""
+    if item.get('source') == 'router-check' and key.endswith(':changes'):
+        # Report and preview describe the same unpublished configuration differently.
+        fields = ('signature',)
+    else:
+        fields = ('title', 'message', 'severity', 'status_label', 'target')
+        fields += ('signature',) if item.get('source') == 'router-check' else ('evidence',)
+    value = {field: item.get(field) for field in fields}
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def dismissed(key, item):
+    # No notification body/history: just enough to avoid replaying an acknowledged receipt.
+    return {'state': 'dismissed', 'fingerprint': fingerprint(key, item), 'source': item.get('source')}
 
 
 @contextmanager
@@ -31,9 +48,10 @@ def transaction(data_dir):
             except FileNotFoundError:
                 data = {'items': {}}
             before = deepcopy(data)
-            cutoff = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).isoformat()
-            data['items'] = {key: item for key, item in data['items'].items()
-                             if item.get('state') == 'pending' or item.get('resolved_at', '') >= cutoff}
+            # Migrate old read/resolved records on first access, without replaying old failures.
+            data['items'] = {key: dismissed(key, item) if item.get('read') else item
+                             for key, item in data['items'].items()
+                             if item.get('state') in ('pending', 'dismissed')}
             yield data['items']
             if data != before:
                 fd, temporary = tempfile.mkstemp(dir=path.parent, prefix='.notifications-')
@@ -49,20 +67,21 @@ def transaction(data_dir):
 
 
 def observe(items, key, observation):
-    """Unknown/running never resolves an issue. Repeated receipts never add unread items."""
+    """Keep unread incidents; unknown/running does not count as recovery."""
     status = observation.pop('state')
     previous = items.get(key)
     if status == 'unknown':
         return
     if status in ('resolved', 'inactive'):
-        if previous and previous['state'] == 'pending':
-            previous.update(state='resolved', resolved_at=now(),
-                            resolution='已不再适用' if status == 'inactive' else '已恢复')
+        items.pop(key, None)
+        return
+    identity = fingerprint(key, observation)
+    if previous and previous['state'] == 'dismissed' and previous['fingerprint'] == identity:
         return
     stamp = now()
     evidence = observation.pop('evidence', '')
     if previous and previous['state'] == 'pending':
-        changed = any(previous.get(field) != observation.get(field) for field in ('title', 'message', 'severity', 'status_label', 'target'))
+        changed = fingerprint(key, previous) != identity
         previous.update(observation)
         if evidence != previous.get('evidence'):
             previous['occurrences'] += 1
@@ -81,4 +100,4 @@ def mark_read(data_dir, versions):
     with transaction(data_dir) as items:
         for key, version in versions.items():
             if key in items and items[key].get('version') == version:
-                items[key]['read'] = True
+                items[key] = dismissed(key, items[key])

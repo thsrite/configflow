@@ -77,6 +77,15 @@ def state(): return jsonify(mutations=mutations)
 def recover():
     task_status.record('subscription:feed', ok=True)
     return jsonify(success=True)
+@app.post('/audit/fail')
+def fail():
+    task_status.record('subscription:feed', ok=False, error='请求超时', cache_retained=True, cache_updated_at=stamp)
+    return jsonify(success=True)
+@app.post('/audit/repeat')
+def repeat():
+    fail()
+    task_status.record('webdav_backup', ok=False, error='备份服务器返回 HTTP 401')
+    return jsonify(success=True)
 @app.post('/audit/remove')
 def remove():
     repo.update_shared_transaction(lambda shared: shared.update(subscriptions=[]))
@@ -120,14 +129,14 @@ try {
   const open = async () => {
     await page.locator('[data-notifications-trigger]').click()
     await panel.waitFor()
-    await panel.locator('[data-notification]').first().waitFor()
+    await page.waitForFunction(() => {
+      const panel = document.querySelector('[data-notifications-panel]')
+      return panel?.querySelector('[data-notification]') || panel?.textContent?.includes('暂无新通知')
+    })
   }
-  const follow = async id => { await open(); await panel.locator(`[data-notification="${id}"]`).getByRole('button').click(); await panel.waitFor({ state: 'hidden' }) }
+  const follow = async id => { await open(); await panel.locator(`[data-notification="${id}"]`).getByRole('button').last().click(); await panel.waitFor({ state: 'hidden' }) }
   await open()
   const badge = await page.locator('[data-notification-count]').textContent()
-  await panel.getByRole('button', { name: '全部已读', exact: true }).click()
-  await page.waitForFunction(() => !document.querySelector('[data-notifications-panel] [aria-label="未读"]'))
-  assert.equal(await page.locator('[data-notification-count]').textContent(), badge)
   await mkdir(resolve(root, 'doc/img/guide'), { recursive: true })
   for (const theme of ['dark', 'light']) {
     await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.documentElement.dataset.motion = 'off' }, theme)
@@ -188,10 +197,31 @@ try {
   assert.equal(await page.locator('#webdav-url').inputValue(), 'https://backup.invalid')
   await page.getByRole('button', { name: '取消', exact: true }).click()
 
-  await fetch(`${apiBase}/audit/recover`, { method: 'POST' })
+  await fetch(`${apiBase}/audit/fail`, { method: 'POST' })
   await open()
-  await panel.getByRole('button', { name: /已恢复/ }).click()
-  await panel.locator('[data-notification="task:subscription:feed"]').waitFor()
+  const subscriptionNotice = panel.locator('[data-notification="task:subscription:feed"]')
+  await subscriptionNotice.waitFor()
+  await subscriptionNotice.getByRole('button', { name: '标为已读', exact: true }).click()
+  await subscriptionNotice.waitFor({ state: 'hidden' })
+  await page.reload()
+  await open()
+  assert.equal(await subscriptionNotice.count(), 0, 'read receipt must remain cleared after reload')
+  await fetch(`${apiBase}/audit/fail`, { method: 'POST' })
+  await panel.getByRole('button', { name: '刷新通知', exact: true }).click()
+  await subscriptionNotice.waitFor()
+  await fetch(`${apiBase}/audit/recover`, { method: 'POST' })
+  await panel.getByRole('button', { name: '刷新通知', exact: true }).click()
+  await subscriptionNotice.waitFor({ state: 'hidden' })
+  assert.equal(await panel.getByRole('button', { name: /已恢复/ }).count(), 0)
+  await fetch(`${apiBase}/audit/repeat`, { method: 'POST' })
+  await panel.getByRole('button', { name: '刷新通知', exact: true }).click()
+  await subscriptionNotice.waitFor()
+  await panel.getByRole('button', { name: '全部已读', exact: true }).click()
+  await page.waitForFunction(() => !document.querySelector('[data-notifications-panel] [data-notification]'))
+  assert.equal(await page.locator('[data-notification-count]').count(), 0)
+  await page.reload()
+  await open()
+  assert.equal(await panel.locator('[data-notification]').count(), 0)
   await page.keyboard.press('Escape')
   await panel.waitFor({ state: 'hidden' })
   await fetch(`${apiBase}/audit/remove`, { method: 'POST' })
@@ -200,7 +230,7 @@ try {
   assert.equal(await page.locator('#sub-url').count(), 0)
   assert.deepEqual((await (await fetch(`${apiBase}/audit/state`)).json()).mutations, [])
   assert.deepEqual(errors, [])
-  console.log(JSON.stringify({ pending: Number(badge), read_preserves_pending: true, destinations: ['subscription', 'rule', 'deployment', 'agent-rule-sync', 'dns-follow', 'router-rule-sync', 'router-firewall', 'router-preview', 'webdav'], cross_profile: true, recovery: true, missing_target: true, mobile: true, mutations: 0, browser_errors: errors }))
+  console.log(JSON.stringify({ initial: Number(badge), read_clears: true, read_survives_reload: true, new_failure: true, recovery_clears: true, destinations: ['subscription', 'rule', 'deployment', 'agent-rule-sync', 'dns-follow', 'router-rule-sync', 'router-firewall', 'router-preview', 'webdav'], cross_profile: true, missing_target: true, mobile: true, mutations: 0, browser_errors: errors }))
 } catch (error) {
   console.error(logs.slice(-3500))
   throw error

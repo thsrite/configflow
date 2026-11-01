@@ -35,15 +35,26 @@ async function render() {
 }
 const button = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('[data-notifications-panel] button')].find(item => item.textContent?.trim() === label)!
 
-it('counts pending, and marking read preserves the pending item and badge', async () => {
+it('clears the list and badge when marking all read', async () => {
   await render()
   expect(wrapper.get('[data-notification-count]').text()).toBe('1')
   button('全部已读').click()
   await flushPromises()
   expect(notificationsApi.read).toHaveBeenCalledWith({ [row.id]: 'v1' })
-  expect(document.querySelector('[aria-label="未读"]')).toBeNull()
+  expect(wrapper.find('[data-notification-count]').exists()).toBe(false)
+  expect(document.querySelector('[data-notification]')).toBeNull()
+  expect(document.body.textContent).toContain('暂无新通知')
+})
+
+it('can clear one notification while keeping other notifications', async () => {
+  vi.mocked(notificationsApi.list).mockResolvedValue({ data: { success: true, items: [row, { ...row, id: 'another', version: 'v2' }] } } as any)
+  await render()
+  button('已读').click()
+  await flushPromises()
+  expect(notificationsApi.read).toHaveBeenCalledWith({ [row.id]: 'v1' })
+  expect(document.querySelector(`[data-notification="${row.id}"]`)).toBeNull()
+  expect(document.querySelector('[data-notification="another"]')).not.toBeNull()
   expect(wrapper.get('[data-notification-count]').text()).toBe('1')
-  expect(document.querySelector('[data-notification]')).not.toBeNull()
 })
 
 it('navigates with the exact object and settings section, without an operation request', async () => {
@@ -52,6 +63,7 @@ it('navigates with the exact object and settings section, without an operation r
   await flushPromises()
   expect(router.currentRoute.value.fullPath).toBe('/subscriptions?subscription=feed&section=settings')
   expect(notificationsApi.read).toHaveBeenCalledWith({ [row.id]: 'v1' })
+  expect(wrapper.find('[data-notification-count]').exists()).toBe(false)
 })
 
 it('keeps the current page and unread state when unsaved work blocks navigation', async () => {
@@ -73,11 +85,58 @@ it('preserves the previous pending list when refresh fails', async () => {
   expect(wrapper.get('[data-notification-count]').text()).toBe('1')
 })
 
-it('shows resolved history without counting it as pending', async () => {
-  vi.mocked(notificationsApi.list).mockResolvedValue({ data: { success: true, items: [{ ...row, state: 'resolved', resolution: '已恢复' }] } } as any)
+it('has no history tab and ignores old read or recovered records', async () => {
+  vi.mocked(notificationsApi.list).mockResolvedValue({ data: { success: true, items: [{ ...row, state: 'resolved' }, { ...row, id: 'read', read: true }] } } as any)
   await render()
   expect(wrapper.find('[data-notification-count]').exists()).toBe(false)
-  button('已恢复 1').click()
+  expect(document.querySelector('[data-notification]')).toBeNull()
+  expect(document.querySelector('[aria-label="通知状态"]')).toBeNull()
+  expect(document.body.textContent).toContain('暂无新通知')
+})
+
+it('keeps a notification if marking read fails', async () => {
+  vi.mocked(notificationsApi.read).mockRejectedValue(new Error('offline'))
+  await render()
+  button('已读').click()
   await flushPromises()
-  expect(document.querySelector('[data-notification]')?.textContent).toContain('已恢复')
+  expect(wrapper.get('[data-notification-count]').text()).toBe('1')
+  expect(document.querySelector('[data-notification]')).not.toBeNull()
+})
+
+it('does not restore a cleared item from an in-flight stale refresh, but allows a new failure', async () => {
+  await render()
+  let finish!: (value: any) => void
+  vi.mocked(notificationsApi.list).mockReturnValue(new Promise(resolve => { finish = resolve }))
+  document.querySelector<HTMLButtonElement>('[aria-label="刷新通知"]')!.click()
+  button('已读').click()
+  await flushPromises()
+  expect(wrapper.find('[data-notification-count]').exists()).toBe(false)
+  finish({ data: { success: true, items: [row] } })
+  await flushPromises()
+  expect(document.querySelector('[data-notification]')).toBeNull()
+  vi.mocked(notificationsApi.list).mockResolvedValue({ data: { success: true, items: [{ ...row, version: 'new-failure' }] } } as any)
+  document.querySelector<HTMLButtonElement>('[aria-label="刷新通知"]')!.click()
+  await flushPromises()
+  expect(wrapper.get('[data-notification-count]').text()).toBe('1')
+  expect(document.querySelector('[data-notification]')).not.toBeNull()
+})
+
+it('marks only the selected profile and shared notifications as read', async () => {
+  vi.mocked(notificationsApi.list).mockResolvedValue({ data: { success: true, items: [
+    row, { ...row, id: 'home', scope: 'profile', profile_id: 'home' },
+    { ...row, id: 'office', scope: 'profile', profile_id: 'office' },
+  ] } } as any)
+  await render()
+  document.querySelector<HTMLButtonElement>('[aria-label="通知配置空间"]')!
+    .dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  await flushPromises()
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(item => item.textContent?.includes('家庭配置与共享事项'))!
+  option.focus()
+  option.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  await flushPromises()
+  expect(document.querySelectorAll('[data-notification]')).toHaveLength(2)
+  button('全部已读').click()
+  await flushPromises()
+  expect(notificationsApi.read).toHaveBeenCalledWith({ [row.id]: 'v1', home: 'v1' })
+  expect(wrapper.get('[data-notification-count]').text()).toBe('1')
 })
