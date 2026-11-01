@@ -164,18 +164,49 @@ export function ruleHitCounts(rules: MihomoRuleWithExtra[]): { supported: boolea
   return { supported, total: items.reduce((sum, item) => sum + item.hits, 0), items }
 }
 
-/** 延迟测试：直连站点走 DIRECT，海外站点走所选策略组当前的出口 */
+export type LatencyMode = 'mihomo' | 'browser'
+export const LATENCY_MODES: Array<{ value: LatencyMode; label: string }> = [
+  { value: 'mihomo', label: '经 Mihomo' },
+  { value: 'browser', label: '经浏览器' }
+]
+
+/**
+ * 延迟测试目标。经 Mihomo：直连站点走 DIRECT，海外站点走所选策略组当前的出口；
+ * 经浏览器：与 zashboard 相同，在浏览器里加载各站点的小图标计时。
+ */
 export interface LatencyTarget {
   key: string
   label: string
   url: string
   via: 'direct' | 'group'
+  /** 经浏览器测试时加载的图标 */
+  icon: string
 }
 
 export const LATENCY_TARGETS: LatencyTarget[] = [
-  { key: 'baidu', label: '百度', url: 'https://www.baidu.com', via: 'direct' },
-  { key: 'google', label: 'Google', url: 'https://www.google.com/generate_204', via: 'group' },
-  { key: 'cloudflare', label: 'Cloudflare', url: 'https://cp.cloudflare.com/generate_204', via: 'group' },
-  { key: 'github', label: 'GitHub', url: 'https://github.com', via: 'group' },
-  { key: 'youtube', label: 'YouTube', url: 'https://www.youtube.com/generate_204', via: 'group' }
+  { key: 'baidu', label: '百度', url: 'https://www.baidu.com', via: 'direct', icon: 'https://apps.bdimg.com/favicon.ico' },
+  { key: 'google', label: 'Google', url: 'https://www.google.com/generate_204', via: 'group', icon: 'https://www.google.com/favicon.ico' },
+  { key: 'cloudflare', label: 'Cloudflare', url: 'https://cp.cloudflare.com/generate_204', via: 'group', icon: 'https://www.cloudflare.com/favicon.ico' },
+  { key: 'github', label: 'GitHub', url: 'https://github.com', via: 'group', icon: 'https://github.githubassets.com/favicon.ico' },
+  { key: 'youtube', label: 'YouTube', url: 'https://www.youtube.com/generate_204', via: 'group', icon: 'https://yt3.ggpht.com/favicon.ico' }
 ]
+
+/** 浏览器测试：加载图标并计时（含建立连接），失败或超时记为 0 */
+export function browserLatency(url: string, timeout = 5000): Promise<number> {
+  return new Promise(resolve => {
+    const image = new Image()
+    const started = performance.now()
+    const finish = (value: number) => {
+      clearTimeout(timer)
+      image.onload = image.onerror = null
+      resolve(value)
+    }
+    const timer = setTimeout(() => {
+      image.src = ''
+      finish(0)
+    }, timeout)
+    image.onload = () => finish(Math.max(1, Math.round(performance.now() - started)))
+    image.onerror = () => finish(0)
+    image.src = `${url}?_=${Date.now()}`
+  })
+}

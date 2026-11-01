@@ -12,14 +12,13 @@
       </div>
     </div>
 
+    <MihomoLatencyCard :agent-id="agentId" :active="active" :reload-token="reloadToken" />
+
     <SectionCard title="连接拓扑" :padded="false" help="来源设备 → 命中规则 → 策略组 → 出口节点，按最近一次采样的实时速率绘制，每列最多 6 项。点节点可到「连接」查看明细。">
       <LiveFlow :agents="flowAgents" :paused="!active" />
     </SectionCard>
 
-    <div class="grid grid-cols-2 items-start gap-4 max-lg:grid-cols-1 max-sm:gap-3">
-      <MihomoLatencyCard :agent-id="agentId" :active="active" :reload-token="reloadToken" />
-      <MihomoRuleHitsCard :agent-id="agentId" :active="active" :reload-token="reloadToken" />
-    </div>
+    <MihomoRuleHitsCard :agent-id="agentId" :active="active" :reload-token="reloadToken" />
 
     <MihomoConnectionStats :connections="snapshot?.connections || []" :speeds="speeds" :notes="notes" :loading="!snapshot && !error" :agent-id="agentId" :active="active" />
   </div>

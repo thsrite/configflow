@@ -127,10 +127,46 @@ describe('latency card', () => {
     expect(calls).toContainEqual(['DIRECT', 'https://www.baidu.com'])
     expect(calls).toContainEqual(['Media', 'https://www.google.com/generate_204'])
     expect(calls.filter(call => call[0] === 'Media')).toHaveLength(4)
-    const rows = wrapper.findAll('li').map(row => row.text())
+    const rows = wrapper.findAll('[data-latency]').map(row => row.text())
     expect(rows[0]).toContain('35 ms')
     expect(rows[1]).toContain('经 Media')
     expect(rows[1]).toContain('超时')
+  })
+
+  it('can measure from the browser instead, like zashboard, and remembers the choice', async () => {
+    const loaded: string[] = []
+    vi.stubGlobal('Image', class {
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      set src(value: string) {
+        if (!value) return
+        loaded.push(value)
+        // YouTube 的图标加载失败
+        setTimeout(() => (value.includes('ggpht') ? this.onerror : this.onload)?.(), 0)
+      }
+    })
+    vi.mocked(mihomoPanelApi.proxyDelay).mockResolvedValue({ data: { data: { delay: 35 } } } as any)
+    const wrapper = mount(MihomoLatencyCard, { props: { agentId: 'gw', active: true } })
+    wrappers.push(wrapper)
+    await flushPromises()
+    vi.mocked(mihomoPanelApi.proxyDelay).mockClear()
+    await wrapper.findAll('[data-segment]').find(button => button.text() === '经浏览器')!.trigger('click')
+    await new Promise(resolve => setTimeout(resolve, 10))
+    await flushPromises()
+    expect(mihomoPanelApi.proxyDelay).not.toHaveBeenCalled()
+    expect(loaded.map(url => url.split('?')[0])).toContain('https://www.cloudflare.com/favicon.ico')
+    // 只有经 Mihomo 时才选策略组
+    expect(wrapper.find('[aria-label="海外站点经过的策略组"]').exists()).toBe(false)
+    const rows = wrapper.findAll('[data-latency]').map(row => row.text())
+    expect(rows[0]).toContain('浏览器直接访问')
+    expect(rows[0]).toMatch(/\d+ ms/)
+    expect(rows[4]).toContain('超时')
+    expect(localStorage.getItem('configflow:mihomo-overview:latency-mode')).toBe('browser')
+    // 切回经 Mihomo，之前的结果还在
+    await wrapper.findAll('[data-segment]').find(button => button.text() === '经 Mihomo')!.trigger('click')
+    expect(wrapper.findAll('[data-latency]')[0].text()).toContain('35 ms')
+    vi.unstubAllGlobals()
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
   })
 
   it('does not poll while hidden', async () => {
