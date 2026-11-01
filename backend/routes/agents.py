@@ -1422,6 +1422,64 @@ def agent_push_diff(agent_id):
     return response
 
 
+@bp.route('/<agent_id>/push-diff/entries', methods=['GET'])
+@require_auth
+def agent_push_diff_entries(agent_id):
+    """Read-only: one page of a subscription's nodes or a rule set's rules from the shown change list.
+
+    ``version`` is the change list's (from /push-diff); ``file`` its path; ``change``
+    added / removed / modified; ``offset``, ``limit`` (default 50, at most 200) and an
+    optional case-insensitive ``q``. Answers ``stale`` once that list is no longer the
+    current one, so the dialog reloads instead of mixing two comparisons.
+    """
+    from backend.agents.content_sync import get_push_diff_entries
+    from backend.agents.push_diff import MAX_PAGE_SIZE, MAX_QUERY_CHARS, PAGE_SIZE, search_query, without_stored
+    from backend.common.config_export import stored_secret_finder
+
+    def number(name, default, low, high):
+        raw = request.args.get(name)
+        if raw is None or raw == '':
+            return default
+        if not (raw.isascii() and raw.isdigit()) or not low <= int(raw) <= high:
+            raise ValueError(name)
+        return int(raw)
+
+    version, path, change = (request.args.get(name, '') for name in ('version', 'file', 'change'))
+    query = request.args.get('q', '')
+    try:
+        offset = number('offset', 0, 0, 10_000_000)
+        limit = number('limit', PAGE_SIZE, 1, MAX_PAGE_SIZE)
+        if not version or len(version) > 64 or not path or len(path) > 1024 or len(query) > MAX_QUERY_CHARS:
+            raise ValueError('arguments')
+        if change not in ('added', 'removed', 'modified'):
+            raise ValueError('change')
+    except ValueError:
+        return jsonify(success=False, message='分页参数无效，请重新加载。'), 400
+    agent = get_agent_manager().get_agent_by_id(agent_id)
+    if not agent:
+        return jsonify(success=False, message='找不到这台 Agent，请刷新设备列表。'), 404
+    repository = get_repository()
+    profile_id = agent.get('profile_id') or get_default_profile_id()
+    try:
+        config = repository.get_compat_config(profile_id)
+    except ProfileRepositoryError:
+        result = {'status': 'stale', 'reason': 'changed'}
+    else:
+        find = stored_secret_finder()
+        try:
+            result = get_push_diff_entries(
+                agent, config, (agent.get('applied_content') or {}).get('base_url', ''), version=version, path=path,
+                change=change, offset=offset, limit=limit, query=search_query(query), find=find,
+                scope=str(repository.data_dir), repository=repository)
+        except KeyError:
+            return jsonify(success=False, message='这个文件没有可加载的明细，请重新加载。'), 404
+        # Same as /push-diff: ConfigFlow's own stored tokens become hidden "[REDACTED]" pieces.
+        result = without_stored(result, find)
+    response = jsonify(result)
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 @bp.route('/<agent_id>/rule-sync', methods=['GET', 'PUT'])
 @require_auth
 def agent_rule_sync(agent_id):

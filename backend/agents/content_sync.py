@@ -6,7 +6,10 @@ Remote changes are checked on a fifteen-minute successful-result cache interval.
 ``compare_now`` answers in its caller's thread, for callers that are already in
 a background worker; it shares the cache with the list. ``get_push_diff`` asks
 the same workers to also list what changed (``push_diff``), from the bundle the
-comparison prepares anyway; a few of those answers are kept with the result.
+comparison prepares anyway; a few of those answers are kept with the result,
+each with every node and rule entry of its files (compressed, bounded in
+bytes), which ``get_push_diff_entries`` reads page by page under the answer's
+``version``.
 """
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
@@ -49,6 +52,15 @@ class _Detail:
     repository: object
     value: dict
     expires: float
+    # Every node / rule entry by file path (push_diff.FileEntries), read page by page.
+    lists: dict | None = None
+    version: str | None = None
+    size: int = 0
+
+
+# Kept entries of all cached change lists together, compressed; the oldest lists go first.
+MAX_LIST_BYTES = 48 * 1024 * 1024
+_CHANGES = frozenset({'added', 'removed', 'modified'})
 
 
 def _unknown(reason):
@@ -95,7 +107,7 @@ def _input_key(agent, config, base_url):
 
 class ContentSyncChecker:
     def __init__(self, *, executor=None, clock=time.monotonic, max_workers=2,
-                 success_ttl=900, error_ttl=30, max_entries=512, max_details=8):
+                 success_ttl=900, error_ttl=30, max_entries=512, max_details=8, max_list_bytes=MAX_LIST_BYTES):
         self._executor = executor or ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix='agent-content-sync')
         self._clock = clock
         self._success_ttl = success_ttl
@@ -107,6 +119,7 @@ class ContentSyncChecker:
         # Change lists are larger than a status; keep only the latest few.
         self._details = OrderedDict()
         self._max_details = max(1, max_details)
+        self._max_list_bytes = max_list_bytes
         self._running = {}
         # Bumped by invalidate(), so a compare_now that prepared from an older
         # cache does not store its answer.
@@ -200,15 +213,23 @@ class ContentSyncChecker:
         from backend.agents.deployment_bundle import deployment_content_fingerprint
         return deployment_content_fingerprint(cls._prepare_bundle(agent, config, base_url, prepare).manifest)
 
-    def _store_detail(self, identity, entry, value, ttl):
-        self._details[identity] = _Detail(entry.key, entry.repository, value, self._clock() + ttl)
+    def _store_detail(self, identity, entry, value, ttl, lists=None):
+        now = self._clock()
+        size = sum(item.size for item in lists.values()) if lists else 0
+        self._details[identity] = _Detail(entry.key, entry.repository, value, now + ttl, lists,
+                                          value.get('version'), size)
         self._details.move_to_end(identity)
-        while len(self._details) > self._max_details:
+        for other in [other for other, detail in self._details.items() if other != identity and detail.expires <= now]:
+            del self._details[other]
+        # The newest list stays even alone over the byte limit (one comparison keeps at most
+        # push_diff.MAX_KEPT_BYTES before compression).
+        while len(self._details) > 1 and (len(self._details) > self._max_details or sum(
+                detail.size for detail in self._details.values()) > self._max_list_bytes):
             self._details.popitem(last=False)
 
     def _check(self, identity, entry, token, agent, config, base_url, prepare):
         result = None
-        detail = None
+        detail = lists = None
         ttl = self._error_ttl
         with self._lock:
             want_detail = entry.want_detail
@@ -227,7 +248,7 @@ class ContentSyncChecker:
                           'checked_at': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}
                 ttl = self._success_ttl
                 if bundle is not None and result['status'] == 'changed':
-                    detail = self._build_detail(agent, bundle, entry.repository)
+                    detail, lists = self._build_detail(agent, bundle, entry.repository)
         except Exception:
             # Preparation exceptions can contain tokens, URLs or YAML excerpts.
             result = _unknown('check_failed')
@@ -241,9 +262,11 @@ class ContentSyncChecker:
                     entry.result = result
                     entry.expires = self._clock() + ttl
                     if detail is not None:
-                        # A failed listing is retried soon; the status itself stays cached.
-                        self._store_detail(identity, entry, {**detail, 'checked_at': result['checked_at']},
-                                           self._error_ttl if detail.get('reason') == 'diff_failed' else ttl)
+                        # A failed listing is retried soon; the status itself stays cached. Pages of
+                        # this answer name its version; a later answer has another one.
+                        self._store_detail(identity, entry, {**detail, 'checked_at': result['checked_at'],
+                                                             'version': uuid.uuid4().hex[:16]},
+                                           self._error_ttl if detail.get('reason') == 'diff_failed' else ttl, lists)
                     if want_detail:
                         # Later list refreshes need no change list until one is asked for again.
                         entry.want_detail = False
@@ -253,12 +276,14 @@ class ContentSyncChecker:
 
     @staticmethod
     def _build_detail(agent, bundle, repository):
+        """The change list and every node / rule entry of its files."""
         from backend.agents.push_diff import build_push_diff
+        lists = {}
         try:
-            return build_push_diff(agent, bundle, repository)
+            return build_push_diff(agent, bundle, repository, lists=lists), lists
         except Exception:
             # The status stands; only the itemized list is unavailable.
-            return {'status': 'changed', 'files': None, 'reason': 'diff_failed'}
+            return {'status': 'changed', 'files': None, 'reason': 'diff_failed'}, None
 
     def get_push_diff(self, agent, config, base_url, prepare, *, scope='', repository=_UNBOUND_REPOSITORY):
         """What a push would change, prepared by the same bounded workers.
@@ -310,6 +335,43 @@ class ContentSyncChecker:
                 self._slots.release()
                 return _unknown('check_failed')
             return {'status': 'checking'}
+
+    def get_push_diff_entries(self, agent, config, base_url, *, version, path, change, offset=0, limit=50,
+                              query=None, find=None, scope='', repository=_UNBOUND_REPOSITORY):
+        """One page of a file's nodes or rules from the cached change list ``version``.
+
+        Answers ``stale`` (with a reason) unless that list is still the current one for
+        these inputs: ``expired`` (gone, past its interval or invalidated), ``changed``
+        (the agent or configuration differs now), ``replaced`` (a newer list). Pages of
+        different lists are never mixed. Raises KeyError for a file or group without kept
+        entries. ``query`` is a ``push_diff.search_query``; ``find`` the stored-credential
+        finder that search leaves out.
+        """
+        if not isinstance(agent, dict) or not isinstance(config, dict) or not isinstance(agent.get('id'), str):
+            return {'status': 'stale', 'reason': 'changed'}
+        identity = (scope, agent['id'])
+        if repository is _UNBOUND_REPOSITORY:
+            repository = _current_repository()
+        try:
+            unavailable = _precondition(agent, config)
+            key = None if unavailable else _input_key(agent, config, base_url)
+        except Exception:
+            unavailable, key = True, None
+        with self._lock:
+            detail = self._details.get(identity)
+            if (detail is None or detail.repository is not repository or _current_repository() is not repository
+                    or self._clock() >= detail.expires):
+                return {'status': 'stale', 'reason': 'expired'}
+            if unavailable or detail.key != key:
+                return {'status': 'stale', 'reason': 'changed'}
+            if detail.version != version:
+                return {'status': 'stale', 'reason': 'replaced'}
+            files = detail.lists or {}
+        if change not in _CHANGES:
+            raise KeyError(change)
+        # Read outside the lock: kept entries never change once stored.
+        page = files[path].page(change, offset, limit, query, find)
+        return {'status': 'ok', 'version': version, 'file': path, 'change': change, **page}
 
     def compare_now(self, agent, config, base_url, prepare, *, scope='', repository=_UNBOUND_REPOSITORY):
         """The same comparison, answered in the caller's thread.
@@ -375,6 +437,10 @@ def compare_now(agent, config, base_url, prepare, *, scope='', repository=_UNBOU
 
 def get_push_diff(agent, config, base_url, prepare, *, scope='', repository=_UNBOUND_REPOSITORY):
     return _checker.get_push_diff(agent, config, base_url, prepare, scope=scope, repository=repository)
+
+
+def get_push_diff_entries(agent, config, base_url, **kwargs):
+    return _checker.get_push_diff_entries(agent, config, base_url, **kwargs)
 
 
 def invalidate_content_sync():

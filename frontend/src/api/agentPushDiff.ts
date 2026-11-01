@@ -31,12 +31,14 @@ export interface PushDiffFile {
   details?: PushDiffFileDetails
 }
 
-/** 一组明细：新增、删除或修改；每个文件最多列出若干条，omitted 为没有列出的条数 */
+/** 一组明细：新增、删除或修改；接口只带每组前 20 条，omitted 为没有随接口返回的条数 */
 export interface PushDiffDetailGroup {
   change: PushDiffChange
   total: number
   entries: PushDiffListEntry[]
   omitted: number
+  /** 可分页读取的条数（含已返回的）；小于 total 时其余超出明细上限，没有保留 */
+  available?: number
 }
 
 /** 订阅按节点名对应，修改的节点带逐个字段的原值、新值；规则集按规则行列出新增和删除 */
@@ -47,6 +49,8 @@ export interface PushDiffFileDetails {
   limited?: boolean
   /** 被多个节点共用的节点名个数：内容相同的视为未变，其余按出现顺序对应 */
   repeated?: number
+  /** 服务端保留了全部条目，可以用 entries 接口加载更多和搜索 */
+  paging?: boolean
 }
 
 /** 列表类配置项只给条数和增减；条目已在服务端截断，敏感片段已标出 */
@@ -123,9 +127,35 @@ export interface PushDiffResponse {
   unchanged?: PushDiffFile[]
   unchanged_omitted?: number
   config?: PushDiffConfig | null
+  /** 这次对比结果的版本；分页时带上，结果更新后旧版本的分页请求返回 stale */
+  version?: string
+}
+
+export interface PushDiffEntriesQuery {
+  version: string
+  /** 文件路径（PushDiffFile.path） */
+  file: string
+  change: PushDiffChange
+  offset: number
+  limit?: number
+  /** 搜索词，不区分大小写；敏感值不参与匹配 */
+  q?: string
+}
+
+/** 一页明细；stale 表示对比结果已过期、配置已变或已有更新的结果，需要重新加载 */
+export interface PushDiffEntriesPage {
+  status: 'ok' | 'stale'
+  reason?: 'expired' | 'changed' | 'replaced'
+  /** 这一组可读取的条数；有搜索词时为匹配的条数 */
+  total?: number
+  offset?: number
+  entries?: PushDiffListEntry[]
+  next_offset?: number | null
 }
 
 export const agentPushDiffApi = {
   get: (agentId: string, signal?: AbortSignal) =>
     api.get<PushDiffResponse>(`/agents/${encodeURIComponent(agentId)}/push-diff`, { signal }),
+  entries: (agentId: string, params: PushDiffEntriesQuery, signal?: AbortSignal) =>
+    api.get<PushDiffEntriesPage>(`/agents/${encodeURIComponent(agentId)}/push-diff/entries`, { params, signal }),
 }

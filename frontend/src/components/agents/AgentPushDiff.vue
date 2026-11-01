@@ -28,7 +28,7 @@
           </div>
           <p class="m-0 text-[14px] font-medium">无法读取待推送的变更</p>
           <p class="m-0 max-w-[52ch] break-words text-[13px] leading-relaxed text-muted-foreground">{{ error }}</p>
-          <Button variant="outline" size="sm" class="mt-1" @click="load">
+          <Button variant="outline" size="sm" class="mt-1" @click="load()">
             <RefreshCw class="size-3.5" />
             重试
           </Button>
@@ -81,7 +81,10 @@
                       </td>
                     </tr>
                     <tr v-if="file.details && filesOpen.has(file.path)" :id="`push-diff-file-detail-${fileIndex}`" class="push-diff-detail">
-                      <td colspan="3"><PushDiffFileDetails :details="file.details" :hidden="hideSecrets" /></td>
+                      <td colspan="3">
+                        <PushDiffFileDetails :details="file.details" :hidden="hideSecrets" :agent-id="agent.id" :path="file.path"
+                          :version="result.version" :stale="stale" @stale="stale = true" @reload="load(true)" />
+                      </td>
                     </tr>
                   </template>
                   <tr v-if="result.files_omitted" class="push-diff-more">
@@ -241,6 +244,8 @@ const unchangedOpen = ref(false)
 const rawOpen = ref(false)
 // 截图分享时才需要；不记住，每次打开窗口都显示原值
 const hideSecrets = ref(false)
+// 明细分页发现对比结果已更新：所有展开的明细都提示重新加载
+const stale = ref(false)
 let controller: AbortController | null = null
 let request = 0
 
@@ -295,14 +300,17 @@ function wait(ms: number, signal: AbortSignal) {
   })
 }
 
-async function load() {
+/** 读取对比结果；keepOpen 为明细里的「重新加载」，保留已展开的文件 */
+async function load(keepOpen = false) {
   controller?.abort()
   const current = ++request
   const own = new AbortController()
   controller = own
+  const reopen = keepOpen ? filesOpen.value : new Set<string>()
   loading.value = true
   error.value = ''
   result.value = null
+  stale.value = false
   expanded.value = new Set()
   filesOpen.value = new Set()
   rawOpen.value = false
@@ -314,6 +322,7 @@ async function load() {
       if (!data || typeof data.status !== 'string') throw new Error('服务端返回的格式异常，请更新 ConfigFlow 后重试。')
       if (data.status !== 'checking') {
         result.value = data
+        filesOpen.value = new Set((data.files || []).filter(file => file.details && reopen.has(file.path)).map(file => file.path))
         break
       }
       if (Date.now() - started > POLL_LIMIT_MS) throw new Error('生成发布包超过 2 分钟仍未完成，请稍后重试。')
@@ -331,7 +340,7 @@ async function load() {
   }
 }
 
-onMounted(load)
+onMounted(() => load())
 onBeforeUnmount(() => {
   request++
   controller?.abort()
