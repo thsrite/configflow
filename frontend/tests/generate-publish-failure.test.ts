@@ -84,6 +84,19 @@ describe('Generated config publication diagnostics', () => {
     expect(button(wrapper, '推送').attributes('disabled')).toBeDefined()
   })
 
+  it('discards a late generation response after leaving its profile', async () => {
+    vi.mocked(agentApi.pushConfig).mockImplementation(async (_id, deploymentId) => ({ data: { deployment_id: deploymentId, status: 'succeeded' } }) as any)
+    const wrapper = await render('mihomo')
+    let resolve!: (value: any) => void
+    vi.mocked(agentApi.generateConfig).mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    await button(wrapper, '生成').trigger('click')
+    await wrapper.setProps({ profileId: 'different' })
+    resolve({ data: { id: 'late', agent_id: 'mihomo', content: 'OLD PROFILE', files: [], target_ids: [] } })
+    await flushPromises()
+    expect(wrapper.get('.gen-code').text()).toBe('')
+    expect(button(wrapper, '推送').attributes('disabled')).toBeDefined()
+  })
+
   it('lists separate device outcomes with one shared history link and a single disclosure for successful logs', async () => {
     const completedName = '家庭网络与办公设备的长名称主网关'
     const tasks: Record<string, Record<string, unknown>> = {

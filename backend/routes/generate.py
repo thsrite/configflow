@@ -21,6 +21,18 @@ from backend.converters.mosdns import (
 logger = logging.getLogger(__name__)
 
 
+def _subscription_hosts_report(config_data, report):
+    hosts = report.get('subscription_hosts')
+    dns = (hosts or {}).get('dns')
+    if dns and dns.get('applied'):
+        from backend.utils.proxy_server_dns import outdated_agents
+        try:
+            dns['outdated_agents'] = outdated_agents(config_data.get('profile_id'))
+        except Exception:
+            logger.debug('读取 Agent 上报的 Mihomo 版本失败', exc_info=True)
+    return hosts
+
+
 @generate_bp.route('/<service>/artifact', methods=['POST'])
 @require_auth
 def generate_artifact(service):
@@ -89,7 +101,7 @@ def generate_mihomo():
         # 传递 base_url 给生成器
         report = {}
         yaml_content = generate_mihomo_config(config_data, base_url=base_url, report=report)
-        g.generated_subscription_hosts = report.get('subscription_hosts')
+        g.generated_subscription_hosts = _subscription_hosts_report(config_data, report)
 
         # 保存到数据目录
         output_file = get_repository().write_generated(
@@ -198,15 +210,7 @@ def preview_mihomo():
         # 传递 base_url 给生成器
         report = {}
         yaml_content = generate_mihomo_config(config_data, base_url=base_url, report=report)
-        hosts_report = report.get('subscription_hosts')
-        dns_report = (hosts_report or {}).get('dns')
-        if dns_report and dns_report.get('applied'):
-            # The preview is for no device in particular; name the ones whose reported core ignores the policy.
-            from backend.utils.proxy_server_dns import outdated_agents
-            try:
-                dns_report['outdated_agents'] = outdated_agents(config_data.get('profile_id'))
-            except Exception:
-                logger.debug('读取 Agent 上报的 Mihomo 版本失败', exc_info=True)
+        hosts_report = _subscription_hosts_report(config_data, report)
         return jsonify({'content': yaml_content, 'subscription_hosts': hosts_report})
     except StrategyReferenceError as e:
         return jsonify({'success': False, 'message': str(e)}), 400
