@@ -257,6 +257,37 @@ def apply_metrics_baseline(current, baseline):
     return adjusted, partial
 
 
+def zero_baseline(snapshot):
+    """New plugin lifetimes start at zero, including newly added series."""
+    return {kind: [{**row, **dict.fromkeys(fields, 0)} for row in snapshot[kind]]
+            for kind, fields in _COUNTERS.items()}
+
+
+def add_observations(current, carried):
+    """Carry counters across a publication, never gauges or averaged ratios.
+
+    Retired series still contribute their historical counters. Their live
+    gauges are zero; missing values in a present series remain unknown.
+    """
+    result = {}
+    for kind, fields in _COUNTERS.items():
+        identity = lambda row: tuple(row[key] for key in _IDENTITIES[kind])
+        live = {identity(row): row for row in current[kind]}
+        old = {identity(row): row for row in carried[kind]}
+        rows = []
+        for key in sorted(live.keys() | old.keys()):
+            row = dict(live[key] if key in live else old[key])
+            if key in live and key in old:
+                row.update({field: _sum((live[key].get(field), old[key].get(field))) for field in fields})
+            if key not in live:
+                for gauge in ('inflight', 'entries'):
+                    if gauge in row:
+                        row[gauge] = 0
+            rows.append(row)
+        result[kind] = rows
+    return result
+
+
 def summarize_observations(snapshot):
     """Compute weighted dashboard ratios from raw or reset-adjusted counters."""
     servers = []

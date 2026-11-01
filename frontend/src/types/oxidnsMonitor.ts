@@ -38,8 +38,9 @@ export interface OxiDNSOverview {
   statistics?: {
     generation: string
     started_at_ms: number
-    reason: 'initial' | 'manual' | 'core_changed' | 'configuration_changed' | 'target_changed' | 'counters_changed'
+    reason: 'initial' | 'manual' | 'core_changed' | 'configuration_changed' | 'target_changed' | 'counters_changed' | 'publication'
     partial: boolean
+    publication_count?: number
   } | null
   rankings?: OxiDNSRankings | { available: false; reason: string }
   upstreams?: Array<{

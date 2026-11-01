@@ -5,13 +5,13 @@ import ipaddress
 import json
 import math
 import re
-import secrets
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
 from .version import compare_versions
 from . import oxidns_metrics
+from . import oxidns_publication_stats
 from .oxidns_dashboard_state import DashboardStateStore, DashboardStateError, DashboardStateConflict
 
 MIN_AGENT_VERSION = '1.7.0-go'
@@ -396,21 +396,11 @@ def _dashboard_overview(manager, agent_id, params, *, manual=False):
         snapshot, core, recorders, observations, labels = _overview_snapshot(agent, True)
         target = _target(agent)
         _verify_target(manager, agent_id, target)
-        reason = ('manual' if manual else 'initial' if previous is None else
-                  'target_changed' if previous['target'] != target else
-                  'core_changed' if previous['instance_id'] != core['instance_id'] else
-                  'configuration_changed' if previous['source_revision'] != snapshot['source_revision'] else
-                  'core_changed' if previous['runtime_revision'] != snapshot['runtime_revision'] else
-                  'counters_changed' if oxidns_metrics.metrics_counters_restarted(observations, previous['baseline']) else None)
-        state = previous
-        if reason is not None:
-            state = {'schema': 1, 'generation': secrets.token_hex(16),
-                     'started_at_ms': snapshot['collected_at_ms'], 'reason': reason, 'target': target,
-                     'instance_id': core['instance_id'], 'source_revision': snapshot['source_revision'],
-                     'runtime_revision': snapshot['runtime_revision'], 'baseline': observations}
+        state = oxidns_publication_stats.advance(previous, snapshot, core, observations, target,
+                                                manager.get_agent_by_id(agent_id), manual=manual)
         if snapshot['collected_at_ms'] < state['started_at_ms']:
             raise MonitorError('SNAPSHOT_CHANGED', 409)
-        adjusted, partial = oxidns_metrics.apply_metrics_baseline(observations, state['baseline'])
+        adjusted, partial = oxidns_publication_stats.totals(state, observations)
         summary = oxidns_metrics.summarize_observations(adjusted)
         summary['upstreams'] = _public_upstreams(summary.get('upstreams', []), labels)
         try:
@@ -424,14 +414,18 @@ def _dashboard_overview(manager, agent_id, params, *, manual=False):
                 raise
             rankings = _rankings_unavailable(error.code.lower())
         store.compare_and_set(agent_id, previous['generation'] if previous else None,
-                              state if reason is not None else None,
+                              state if state != previous else None,
                               verify=lambda: _verify_target(manager, agent_id, target))
         return {'success': True, 'agent': {key: agent.get(key) for key in (
                     'id', 'name', 'host', 'profile_id', 'version', 'status')},
                 'collected_at': datetime.fromtimestamp(snapshot['collected_at_ms'] / 1000, timezone.utc).isoformat(),
                 'core': core, 'recorders': recorders, **summary,
                 'statistics': {'generation': state['generation'], 'started_at_ms': state['started_at_ms'],
-                               'reason': state['reason'], 'partial': partial}, 'rankings': rankings}
+                               'reason': state['reason'], 'partial': partial,
+                               **({'publication_count': state['publication_count']} if state.get('publication_count') else {})},
+                'rankings': rankings}
+    except oxidns_publication_stats.PublicationPending:
+        raise MonitorError('SNAPSHOT_CHANGED', 409) from None
     except DashboardStateError:
         raise MonitorError('DASHBOARD_STATE_ERROR', 500) from None
     except DashboardStateConflict:
