@@ -60,7 +60,7 @@ def test_direct_and_smart_clients_resolve_same_domain_independently(tmp_path, ra
     config = {'oxidns': {
         'listen': f'127.0.0.1:{port4}', 'tcp_enabled': False, 'prefer_ipv4': False,
         'local_dns': f'udp://127.0.0.1:{direct_port}', 'remote_dns': f'udp://127.0.0.1:{proxy_port}',
-        'query_recorder': {'enabled': True}, 'log': {'level': 'warn'},
+        'query_recorder': {'enabled': True}, 'log': {'level': 'warn'}, 'api': {'enabled': False},
         'custom_config': yaml.safe_dump({'plugins': [{'tag': 'server_v6', 'type': 'udp_server',
             'args': {'listen': f'[::1]:{port6}', 'entry': 'sequence_main'}}]}),
     }}
@@ -172,7 +172,7 @@ def test_side_node_test_entry_keeps_its_upstream_while_main_clients_follow_polic
               'oxidns': {
                   'listen': f'127.0.0.1:{main_port}', 'tcp_enabled': False, 'prefer_ipv4': False,
                   'local_dns': f'udp://127.0.0.1:{ports["direct"]}', 'remote_dns': f'udp://127.0.0.1:{ports["proxy"]}',
-                  'query_recorder': {'enabled': True}, 'log': {'level': 'warn'},
+                  'query_recorder': {'enabled': True}, 'log': {'level': 'warn'}, 'api': {'enabled': False},
                   'custom_config': yaml.safe_dump({'plugins': side})}}
     process = None
 

@@ -129,7 +129,8 @@ def _check_main(document, plugins):
         if not isinstance(item, dict) or not isinstance(item.get('exec'), str):
             _refuse(f'主处理链 sequence_main 第 {index} 步没有 exec 动作')
     if args[-1] not in ({'exec': 'goto china_dns'}, {'exec': 'goto proxy_dns_seq'}):
-        last = args[-1]['exec'] + ('（带匹配条件）' if args[-1].get('matches') else '')
+        extra = set(args[-1]) - {'exec'}
+        last = args[-1]['exec'] + ('（带匹配条件）' if 'matches' in extra else '（带其他字段）' if extra else '')
         _refuse(f'主处理链 sequence_main 的最后一步是「{last}」，'
                 '设备策略要求最后一步是不带条件的 goto china_dns 或 goto proxy_dns_seq')
     forward = plugins.get('forward_local')
@@ -273,7 +274,8 @@ def inspect_entries(document, plugins, config=None):
     groups, main_ports, has_main = {}, {53}, False
     for plugin in servers:
         listen = plugin['args'].get('listen') if isinstance(plugin.get('args'), dict) else None
-        name = f'监听入口 {plugin["tag"]}' + (f'（{listen}）' if isinstance(listen, str) else '')
+        listen = listen if isinstance(listen, str) and listen.strip() else '未填写监听地址'
+        name = f'监听入口 {plugin["tag"]}（{listen}）'
         entries = _server_entries(plugin)
         if entries is None:
             _refuse(f'{name} 的 entry 无法读取')
@@ -282,7 +284,7 @@ def inspect_entries(document, plugins, config=None):
             if _listen_port(listen) is not None:
                 main_ports.add(_listen_port(listen))
         else:
-            groups.setdefault((str(listen), tuple(entries)), []).append((plugin, entries))
+            groups.setdefault((listen, tuple(entries)), []).append((plugin, entries))
     if not has_main:
         _refuse('没有任何监听入口进入主处理链 sequence_main')
     context = entry_context(config) if groups else {}
