@@ -11,6 +11,13 @@ from backend.utils.logger import client_ip, get_logger, log_text
 logger = get_logger(__name__)
 
 
+@profiles_bp.route('/<profile_id>/generate/<service>/artifact', methods=['POST'])
+@require_auth
+def profile_generate_artifact(profile_id, service):
+    from backend.routes.generate import generate_artifact
+    return generate_artifact(service)
+
+
 def _profile_label(profile):
     return f"{log_text(profile.get('name') or profile.get('id'))}（{log_text(profile.get('id'), 64)}）"
 

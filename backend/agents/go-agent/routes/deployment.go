@@ -48,6 +48,7 @@ type DeploymentManifest struct {
 	ProfileID       interface{} `json:"profile_id"`
 	ServiceType     string      `json:"service_type"`
 	ConfigPath      string      `json:"config_path"`
+	FinalConfig     bool        `json:"final_config,omitempty"`
 	// ReloadOnly refuses candidate activation when native hot reload is not
 	// available. Rollback may still restart the previous service for recovery.
 	ReloadOnly bool             `json:"reload_only,omitempty"`
@@ -63,6 +64,9 @@ func (m *DeploymentManifest) UnmarshalJSON(data []byte) error {
 	}
 	if flag, exists := fields["reload_only"]; exists && string(flag) != "true" && string(flag) != "false" {
 		return fmt.Errorf("reload_only must be a boolean")
+	}
+	if flag, exists := fields["final_config"]; exists && string(flag) != "true" && string(flag) != "false" {
+		return fmt.Errorf("final_config must be a boolean")
 	}
 	type plainManifest DeploymentManifest
 	return json.Unmarshal(data, (*plainManifest)(m))
@@ -288,6 +292,7 @@ func CapabilitiesHandler(cfg *Config) http.HandlerFunc {
 		}
 		result := map[string]interface{}{"success": true, "deployment_protocols": []int{1}, "return_routing_safety_protocols": []int{1}, "service_type": cfg.ServiceType, "config_path": filepath.Base(cfg.ConfigPath)}
 		result["reload_only_protocols"] = []int{1}
+		result["final_config_protocols"] = []int{1}
 		result["rule_sync_snapshot_protocols"] = []int{1}
 		result["platform"] = gatewayOS
 		if ipv6VerifySupported(cfg) {

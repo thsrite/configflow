@@ -250,6 +250,7 @@ func validateStagedDeployment(cfg *Config, s *DeploymentState) (result error) {
 	if e != nil {
 		return e
 	}
+	original := string(data)
 	if cfg.ServiceType == "mihomo" {
 		modified, err := adaptNativeAIODNS(cfg, string(data))
 		if err != nil {
@@ -344,6 +345,9 @@ func validateStagedDeployment(cfg *Config, s *DeploymentState) (result error) {
 	normalized, e := yaml.Marshal(doc)
 	if e != nil {
 		return e
+	}
+	if s.Manifest.FinalConfig && string(normalized) != original {
+		return fmt.Errorf("设备环境已改变，最终配置与预览不一致，请重新生成后推送")
 	}
 	if e = durableWrite(name, normalized, 0600); e != nil {
 		return e

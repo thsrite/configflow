@@ -6,11 +6,12 @@ import GenerateStudio from '@/components/generate/GenerateStudio.vue'
 import { agentApi, generateApi, statsApi, ruleSetApi } from '@/api'
 import { notify } from '@/lib/feedback'
 import { ruleLocationDetails } from './fixtures/agent-failure'
+import { Select } from '@/components/ui/select'
 
 const live = vi.hoisted(() => ({ agents: [] as any[], start: vi.fn(), stop: vi.fn(), refresh: vi.fn() }))
 vi.mock('@/api', () => ({
-  agentApi: { pushConfig: vi.fn(), getDeployment: vi.fn() },
-  generateApi: { previewMihomo: vi.fn(), previewMosdns: vi.fn(), previewOxidns: vi.fn(), previewSurge: vi.fn(), previewLoon: vi.fn() },
+  agentApi: { pushConfig: vi.fn(), getDeployment: vi.fn(), generateConfig: vi.fn() },
+  generateApi: { artifact: vi.fn() },
   statsApi: { getOverview: vi.fn() }, ruleSetApi: { getAll: vi.fn() },
 }))
 vi.mock('@/stores/live', () => ({ useLive: () => ({ ...live, boundAgents: computed(() => live.agents), isOnline: () => true }) }))
@@ -24,6 +25,10 @@ beforeEach(() => {
   vi.useFakeTimers()
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => cb(1), 1))
   for (const api of Object.values(generateApi)) vi.mocked(api).mockResolvedValue({ data: { content: 'rules: []' } } as any)
+  vi.mocked(agentApi.generateConfig).mockImplementation(async (id, profile, service) => ({ data: {
+    id: `preview-${id}`, deployment_id: `deployment-${id}`, agent_id: id, profile_id: profile, service_type: service,
+    content: 'rules: []', config_path: 'config.yaml', files: [{ path: 'config.yaml', size: 9, role: 'config', sha256: 'hash' }], target_ids: [id], expires_at: 9999999999
+  } }) as any)
   vi.mocked(statsApi.getOverview).mockResolvedValue({ data: { success: true, data: {} } } as any)
   vi.mocked(ruleSetApi.getAll).mockResolvedValue({ data: [] } as any)
 })
@@ -33,19 +38,65 @@ async function render(service: keyof typeof labels, agents = [{ id: service as s
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: icon }, { path: '/agents', component: icon }] })
   await router.push('/')
   const targets = Object.entries(labels).map(([key, title]) => ({ key: key as keyof typeof labels, title, icon, desc: '', url: '', urlDisplay: '', actions: [] }))
-  const wrapper = mount(GenerateStudio, { props: { targets }, global: { plugins: [router] }, attachTo: document.body })
+  const wrapper = mount(GenerateStudio, { props: { targets, profileId: 'default' }, global: { plugins: [router] }, attachTo: document.body })
   wrappers.push(wrapper)
   if (service !== 'mihomo') await button(wrapper, labels[service]).trigger('click')
-  await button(wrapper, '生成').trigger('click')
-  await vi.advanceTimersByTimeAsync(3000)
-  await flushPromises()
-  expect(button(wrapper, '推送').attributes('disabled')).toBeUndefined()
-  await button(wrapper, '推送').trigger('click')
-  await flushPromises()
+  for (const agent of agents) {
+    wrapper.findAllComponents(Select)[1].vm.$emit('update:modelValue', agent.id)
+    await flushPromises()
+    await button(wrapper, '生成').trigger('click')
+    await flushPromises()
+    expect(button(wrapper, '推送').attributes('disabled')).toBeUndefined()
+    await button(wrapper, '推送').trigger('click')
+    await flushPromises()
+  }
   return wrapper
 }
 
 describe('Generated config publication diagnostics', () => {
+  it('pushes the displayed generation and never asks the server to render again', async () => {
+    vi.mocked(agentApi.pushConfig).mockImplementation(async (_id, deploymentId) => ({ data: { deployment_id: deploymentId, status: 'succeeded' } }) as any)
+    const wrapper = await render('mihomo')
+    expect(wrapper.get('.gen-code').text()).toContain('rules: []')
+    expect(agentApi.generateConfig).toHaveBeenCalledTimes(1)
+    expect(agentApi.generateConfig).toHaveBeenCalledWith('mihomo', 'default', 'mihomo')
+    expect(agentApi.pushConfig).toHaveBeenCalledWith('mihomo', 'deployment-mihomo', { generation_id: 'preview-mihomo' })
+    expect(generateApi.artifact).not.toHaveBeenCalled()
+  })
+
+  it('keeps the old preview visible but prevents another push after a stale rejection', async () => {
+    vi.mocked(agentApi.pushConfig).mockRejectedValueOnce({ response: { status: 409, data: { code: 'preview_changed', message: '配置已改变，请重新生成并检查后推送。' } } })
+    const wrapper = await render('mihomo')
+    expect(wrapper.get('.gen-code').text()).toContain('rules: []')
+    expect(wrapper.get('[role="alert"]').text()).toContain('重新生成')
+    expect(button(wrapper, '推送').attributes('disabled')).toBeDefined()
+    expect(agentApi.generateConfig).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears an old result when the target or profile changes', async () => {
+    vi.mocked(agentApi.pushConfig).mockImplementation(async (_id, deploymentId) => ({ data: { deployment_id: deploymentId, status: 'succeeded' } }) as any)
+    const wrapper = await render('mihomo')
+    wrapper.findAllComponents(Select)[1].vm.$emit('update:modelValue', 'manual')
+    await flushPromises()
+    expect(wrapper.get('.gen-code').text()).toBe('')
+    expect(button(wrapper, '推送').attributes('disabled')).toBeDefined()
+    await wrapper.setProps({ profileId: 'different' })
+    expect(button(wrapper, '推送').attributes('disabled')).toBeDefined()
+  })
+
+  it('discards a late generation response after leaving its profile', async () => {
+    vi.mocked(agentApi.pushConfig).mockImplementation(async (_id, deploymentId) => ({ data: { deployment_id: deploymentId, status: 'succeeded' } }) as any)
+    const wrapper = await render('mihomo')
+    let resolve!: (value: any) => void
+    vi.mocked(agentApi.generateConfig).mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    await button(wrapper, '生成').trigger('click')
+    await wrapper.setProps({ profileId: 'different' })
+    resolve({ data: { id: 'late', agent_id: 'mihomo', content: 'OLD PROFILE', files: [], target_ids: [] } })
+    await flushPromises()
+    expect(wrapper.get('.gen-code').text()).toBe('')
+    expect(button(wrapper, '推送').attributes('disabled')).toBeDefined()
+  })
+
   it('lists separate device outcomes with one shared history link and a single disclosure for successful logs', async () => {
     const completedName = '家庭网络与办公设备的长名称主网关'
     const tasks: Record<string, Record<string, unknown>> = {

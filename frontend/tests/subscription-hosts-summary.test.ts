@@ -9,7 +9,7 @@ import type { SubscriptionHostsDns, SubscriptionHostsReport } from '@/types'
 
 vi.mock('@/api', () => ({
   agentApi: { pushConfig: vi.fn(), getDeployment: vi.fn() },
-  generateApi: { previewMihomo: vi.fn(), previewMosdns: vi.fn(), previewOxidns: vi.fn(), previewSurge: vi.fn(), previewLoon: vi.fn() },
+  generateApi: { artifact: vi.fn() },
   statsApi: { getOverview: vi.fn() }, ruleSetApi: { getAll: vi.fn() },
 }))
 vi.mock('@/stores/live', () => ({ useLive: () => ({ boundAgents: computed(() => []), isOnline: () => true, start: vi.fn(), stop: vi.fn(), refresh: vi.fn() }) }))
@@ -180,16 +180,15 @@ describe('generation studio', () => {
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => cb(1), 1))
     vi.mocked(statsApi.getOverview).mockResolvedValue({ data: { success: true, data: {} } } as any)
     vi.mocked(ruleSetApi.getAll).mockResolvedValue({ data: [] } as any)
-    vi.mocked(generateApi.previewSurge).mockResolvedValue({ data: { content: '[General]' } } as any)
   })
 
   async function generate(key: 'mihomo' | 'surge', hosts: SubscriptionHostsReport | null) {
-    vi.mocked(generateApi.previewMihomo).mockResolvedValue({ data: { content: 'hosts: {}', subscription_hosts: hosts } } as any)
+    vi.mocked(generateApi.artifact).mockResolvedValue({ data: { id: 'preview', agent_id: 'manual', content: 'hosts: {}', config_path: 'config.yaml', files: [{ path: 'config.yaml', size: 9 }], target_ids: [], subscription_hosts: hosts } } as any)
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: icon }] })
     await router.push('/')
     const targets = [{ key: 'mihomo', title: 'Mihomo' }, { key: 'surge', title: 'Surge' }]
       .map(item => ({ ...item, icon, desc: '', url: '', urlDisplay: '', actions: [] })) as any
-    const wrapper = mount(GenerateStudio, { props: { targets }, global: { plugins: [router] }, attachTo: document.body })
+    const wrapper = mount(GenerateStudio, { props: { targets, profileId: 'default' }, global: { plugins: [router] }, attachTo: document.body })
     wrappers.push(wrapper)
     if (key === 'surge') await wrapper.findAll('button').find(b => b.text() === 'Surge')!.trigger('click')
     await wrapper.findAll('button').find(b => b.text() === '生成')!.trigger('click')

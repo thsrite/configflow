@@ -1361,7 +1361,7 @@ def _prepare_transactional_content(agent, config_data, *, base_url='', deploymen
                                    store_downloads=False):
     """Materialize exactly the files used by a push, without publishing.
 
-    Caches are saved only with ``store_downloads`` (a real publication): a
+    Caches are saved only with ``store_downloads`` (publication or explicit final generation): a
     subscription without a current node cache is downloaded, validated with the
     whole provider graph, saved like a manual update, and the Mihomo main file
     and providers are then rendered again from the saved nodes. Without that,
@@ -1390,6 +1390,7 @@ def _prepare_transactional_content(agent, config_data, *, base_url='', deploymen
         service_name = {'mihomo': 'Mihomo', 'mosdns': 'MosDNS', 'oxidns': 'OxiDNS'}.get(service_type, service_type)
         phase_progress(f'正在生成 {service_name} config.yaml 并检查基础配置', force=True)
     provider_downloads, custom_files, prepared_providers = [], [], []
+    report = {}
     if service_type == 'mihomo':
         from backend.converters.mihomo import node_conversions
         from backend.utils.proxy_server_dns import reported_core_version
@@ -1400,7 +1401,7 @@ def _prepare_transactional_content(agent, config_data, *, base_url='', deploymen
                 content = generate_mihomo_config(config_data, base_url=base_url,
                                                  sync_lan_hosts=True, preflight_providers=False,
                                                  region_probe=bool(agent.get('domain_discovery_enabled')),
-                                                 mihomo_core_version=reported_core_version(agent))
+                                                 mihomo_core_version=reported_core_version(agent), report=report)
             try:
                 return content, yaml.safe_load(content)
             except yaml.YAMLError as exc:
@@ -1487,6 +1488,7 @@ def _prepare_transactional_content(agent, config_data, *, base_url='', deploymen
                                      deployment_id=deployment_id, progress=progress, detail_progress=detail_progress,
                                      phase_progress=(lambda message: phase_progress(message, force=True)) if phase_progress else None)
     return {'bundle': bundle, 'config_content': config_content, 'prepared_providers': prepared_providers,
+            'subscription_hosts': report.get('subscription_hosts'),
             'provider_downloads': provider_downloads, 'ruleset_downloads': ruleset_downloads,
             'custom_files': custom_files}
 
@@ -1494,6 +1496,84 @@ def _prepare_transactional_content(agent, config_data, *, base_url='', deploymen
 def _prepare_content_bundle(agent, config_data, *, base_url='', deployment_id=None):
     return _prepare_transactional_content(agent, config_data, base_url=base_url,
                                           deployment_id=deployment_id, prefer_cached=True)['bundle']
+
+
+@bp.route('/<agent_id>/generate-config', methods=['POST'])
+@require_auth
+def generate_final_agent_config(agent_id):
+    """Capture and render the exact delivery, without publishing or reserving a device."""
+    from backend.agents import generated_preview as previews
+    from backend.agents.oxidns_ha_publish import pair
+    manager = get_agent_manager()
+    agent = manager.get_agent_by_id(agent_id)
+    if not agent:
+        return jsonify(success=False, message='找不到这台 Agent，请刷新设备列表。'), 404
+    data = request.get_json(silent=True)
+    profile_id = agent.get('profile_id') or get_default_profile_id()
+    if (not isinstance(data, dict) or data.get('expected_profile_id') != profile_id
+            or data.get('expected_service_type') != agent.get('service_type')):
+        return jsonify(success=False, message='目标设备或绑定已改变，请刷新后重新生成。'), 409
+    try:
+        config, revision = manager.repository.get_publish_snapshot(profile_id)
+        base_url = str(data.get('base_url') or request.host_url).rstrip('/')
+        members = pair(manager, agent_id) or [agent]
+        if agent['service_type'] == 'surge':
+            prepared = {'config_content': generate_surge_config(config, base_url=base_url)}
+        else:
+            # Materialize newly downloaded subscription caches before the last
+            # render, so hosts and provider bytes match subsequent sync checks.
+            prepared = _prepare_transactional_content(agent, config, base_url=base_url, store_downloads=True)
+            prepared['bundle'] = previews.finalize_bundle(manager, agent, prepared['bundle'], config)
+            # A HA publication affects both members. Verify the same final
+            # configuration can be used on both before showing either as ready.
+            for peer in members:
+                if peer['id'] != agent_id:
+                    other = previews.finalize_bundle(manager, peer, prepared['bundle'], config)
+                    if other.archive != prepared['bundle'].archive:
+                        raise ValueError('主备设备需要不同的最终配置，请先统一主备配置路径与设备设置。')
+        record = previews.save(manager.repository, agent, config, revision, base_url, prepared, members=members)
+        previews.require_current(manager, record)
+        response = jsonify(success=True, **previews.public(record), subscription_hosts=prepared.get('subscription_hosts'))
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except previews.PreviewChanged as exc:
+        return jsonify(success=False, code='preview_changed', message=str(exc)), 409
+    except Exception as exc:
+        return jsonify(success=False, message=failure_text(str(exc), (agent.get('token'),))), 400
+
+
+@bp.route('/<agent_id>/generated-config/<preview_id>/download', methods=['GET'])
+@require_auth
+def download_final_agent_config(agent_id, preview_id):
+    from backend.agents import generated_preview as previews
+    try:
+        record = previews.load(get_repository(), preview_id, agent_id)
+        response = send_file(previews.download(record), mimetype='application/zip',
+                             as_attachment=True, download_name=f'{record["service_type"]}-final-config.zip')
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except previews.PreviewChanged as exc:
+        return jsonify(success=False, code='preview_changed', message=str(exc)), 409
+
+
+@bp.route('/<agent_id>/generated-config/<preview_id>/file', methods=['GET'])
+@require_auth
+def read_final_agent_file(agent_id, preview_id):
+    from io import BytesIO
+    from backend.agents import generated_preview as previews
+    from backend.agents.rule_sync_store import bundle_files
+    try:
+        record = previews.load(get_repository(), preview_id, agent_id)
+        files = bundle_files(record['bundle']) if record.get('bundle') else {
+            'surge.conf': (record['config_content'].encode(), 'config')}
+        value, _ = files[request.args.get('path', '')]
+        response = send_file(BytesIO(value), mimetype='application/octet-stream')
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except KeyError:
+        return jsonify(success=False, message='生成结果中没有这个文件。'), 404
+    except previews.PreviewChanged as exc:
+        return jsonify(success=False, code='preview_changed', message=str(exc)), 409
 
 
 @bp.route('/<agent_id>/push-diff', methods=['GET'])
@@ -1620,11 +1700,13 @@ def push_config_to_agent(agent_id):
     import uuid
     from backend.agents.deployment_bundle import DeploymentPreparationError
     from backend.utils.provider_delivery import commit_provider_bundle
+    from backend.agents import generated_preview as previews
 
     agent_manager = get_agent_manager()
     deployment_id = None
     owns_preparation = False
     agent = {}
+    generated = None
     try:
         agent = agent_manager.get_agent_by_id(agent_id)
         if not agent:
@@ -1632,6 +1714,20 @@ def push_config_to_agent(agent_id):
         data = request.get_json(silent=True) or {}
         if not isinstance(data, dict):
             return jsonify({'success': False, 'message': '发布请求格式无效，请重新提交。'}), 400
+        if 'generation_id' in data:
+            generated = previews.load(agent_manager.repository, data['generation_id'], agent_id)
+            if data.get('deployment_id') not in (None, generated['deployment_id']):
+                raise previews.PreviewChanged('发布任务与生成结果不匹配，请重新生成。')
+            # Retry the same transaction even if newer drafts have since been
+            # saved. Never start a different transaction for a shown artifact.
+            previous = (agent.get('deployments') or {}).get(generated['deployment_id'])
+            if previous:
+                return _deployment_response(agent_manager.get_deployment(agent_id, generated['deployment_id']))
+            previews.require_current(agent_manager, generated)
+            data = {**data, 'base_url': generated['base_url'], 'deployment_id': generated['deployment_id'],
+                    'expected_profile_id': generated['profile_id'],
+                    'expected_service_type': generated['service_type'],
+                    'expected_config_revision': generated['config_revision']}
         base_url = data.get('base_url', '').strip()
         if not base_url:
             scheme = request.headers.get('X-Forwarded-Proto', request.scheme)
@@ -1673,7 +1769,7 @@ def push_config_to_agent(agent_id):
                 # The code tells multi-device publishers that every target would be rejected.
                 return jsonify(success=False, code='draft_changed', message='配置或设备绑定已改变，请重新载入后发布。'), 409
         if service_type == 'surge':
-            content = generate_surge_config(config_data, base_url=base_url)
+            content = generated['config_content'] if generated else generate_surge_config(config_data, base_url=base_url)
             restart = data.get('restart', True)
             self_restart = _supports_self_restart(agent.get('version') or '')
             extra = {'restart_after_update': True} if restart and self_restart else None
@@ -1750,16 +1846,23 @@ def push_config_to_agent(agent_id):
                 'status': 'preparing', 'message': message})
             last_progress_at = now
 
-        prepared = _prepare_transactional_content(agent, config_data, base_url=base_url,
-                                                   deployment_id=deployment_id, progress=rule_progress,
-                                                   detail_progress=rule_detail, phase_progress=preparation_detail,
-                                                   store_downloads=True)
+        if generated:
+            previews.require_current(agent_manager, generated)
+            config_data = generated['source']
+            prepared = {'bundle': generated['bundle'], 'config_content': previews.public(generated)['content'],
+                        'prepared_providers': [],
+                        'provider_downloads': [], 'ruleset_downloads': [], 'custom_files': []}
+        else:
+            prepared = _prepare_transactional_content(agent, config_data, base_url=base_url,
+                                                       deployment_id=deployment_id, progress=rule_progress,
+                                                       detail_progress=rule_detail, phase_progress=preparation_detail,
+                                                       store_downloads=True)
         bundle = prepared['bundle']
         prepared_providers = prepared['prepared_providers']
         # Publish caches only after all files and the exact graph are ready.
         # (Subscriptions downloaded for this push were validated with that
         # graph and saved during preparation, so the files use the saved nodes.)
-        if prepared_providers:
+        if prepared_providers and not generated:
             commit_provider_bundle(profile_id, prepared_providers)
         agent_manager.record_deployment(agent_id, deployment_id, {
             'status': 'preparing', 'message': '文件已准备，正在校验并连接设备'})
@@ -1771,9 +1874,14 @@ def push_config_to_agent(agent_id):
                                                     config_revision=config_revision)
         result['profile_id'] = profile_id
         result['file_count'] = len(bundle.manifest['files'])
-        result['provider_count'] = len(prepared['provider_downloads'])
-        result['rule_count'] = len(prepared['ruleset_downloads'])
+        result['provider_count'] = sum(item['role'] == 'provider' for item in bundle.manifest['files'])
+        result['rule_count'] = sum(item['role'] == 'rule' for item in bundle.manifest['files'])
         return _deployment_response(result)
+    except previews.PreviewChanged as exc:
+        result = {'success': False, 'status': 'failed', 'code': 'preview_changed', 'message': str(exc)}
+        if owns_preparation:
+            agent_manager.record_deployment(agent_id, deployment_id, result)
+        return jsonify(result), 409
     except (StrategyReferenceError, DeploymentPreparationError, ValueError) as exc:
         details = failure_text(str(exc), (agent.get('token'),))
         result = {'success': False, 'status': 'failed', 'failed_stage': 'preparing',

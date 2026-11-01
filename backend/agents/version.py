@@ -1,10 +1,14 @@
 """Agent 版本管理"""
 
 # Agent 最新版本号
-LATEST_AGENT_VERSION = "1.8.52-go"
+LATEST_AGENT_VERSION = "1.8.53-go"
 
 # 版本更新日志（可选）
 VERSION_CHANGELOG = {
+    "1.8.53-go": {
+        "date": "2026-11-01",
+        "features": ["支持生成最终下发配置；提前完成设备适配，发布时拒绝改写已预览的配置"]
+    },
     "1.8.52-go": {
         "date": "2026-11-01",
         "features": [

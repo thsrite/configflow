@@ -3,7 +3,7 @@
     <PageHeader v-if="!agentSettings" title="配置生成" />
 
     <!-- ===== 生成工作台：目标切换 + 编译步骤 + 代码面板 ===== -->
-    <GenerateStudio v-if="!agentSettings" :targets="studioTargets" @copy="copyUrl" />
+    <GenerateStudio v-if="!agentSettings" :targets="studioTargets" :profile-id="profileId" :loon-file-name="`${loonConfigName}.lcf`" @copy="copyUrl" />
 
     <LinuxGatewaySettings v-model:open="linuxGatewayDialogVisible" :profile-id="profileId" />
 

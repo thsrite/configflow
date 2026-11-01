@@ -10,7 +10,7 @@
             variant="ghost"
             :class="cn('min-h-11 w-full justify-start gap-2 px-3', active === target.key && 'bg-primary-soft text-primary-accent hover:bg-primary-soft hover:text-primary-accent')"
             :aria-pressed="active === target.key"
-            :disabled="running"
+            :disabled="running || pushing"
             @click="active = target.key"
           >
             <component :is="target.icon" class="size-4 shrink-0" aria-hidden="true" />
@@ -21,7 +21,7 @@
       </div>
       <div class="flex items-center gap-2 p-3 md:hidden">
         <label for="generate-software" class="shrink-0 text-xs font-medium text-muted-foreground">生成软件</label>
-        <Select v-model="active" :disabled="running">
+        <Select v-model="active" :disabled="running || pushing">
           <SelectTrigger id="generate-software" class="min-h-11 min-w-0 flex-1 bg-card" aria-label="生成软件">
             <SelectValue />
           </SelectTrigger>
@@ -54,7 +54,7 @@
               :key="action.label"
               variant="outline"
               class="min-h-11 border-border-strong bg-primary-soft text-primary-accent hover:bg-accent hover:text-foreground"
-              :disabled="action.loading"
+              :disabled="action.loading || running || pushing"
               @click="action.run"
             >
               <Loader2 v-if="action.loading" class="size-4 animate-spin" />
@@ -64,6 +64,22 @@
           </div>
         </div>
       </section>
+
+      <div class="space-y-2 border-b border-border px-5 py-3 max-md:px-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <label for="generate-destination" class="text-xs font-medium">配置用途</label>
+          <Select v-model="destination" :disabled="running || pushing">
+            <SelectTrigger id="generate-destination" class="min-h-11 min-w-0 w-full sm:w-80" aria-label="配置用途"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="manual" class="min-h-11">手动导出</SelectItem>
+              <SelectItem v-for="agent in availableAgents" :key="agent.id" :value="agent.id" class="min-h-11" :disabled="!live.isOnline(agent)">{{ agent.name }}{{ live.isOnline(agent) ? '' : '（离线）' }}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <p class="m-0 text-xs text-muted-foreground">{{ destination === 'manual' ? '预览和下载使用同一次生成结果。向 Agent 发布时，请先选择目标设备。' : '先生成并检查最终配置，再原样推送。设备适配和配套文件都在生成时完成。' }}</p>
+        <p v-if="generation?.target_ids.length && generation.target_ids.length > 1" class="m-0 text-xs text-warning-accent">主备发布将同步更新：{{ generation.target_ids.map(id => live.boundAgents.value.find(a => a.id === id)?.name || id).join('、') }}</p>
+        <p v-if="staleMessage" role="alert" class="m-0 text-xs text-warning-accent">{{ staleMessage }}</p>
+      </div>
 
       <div class="grid grid-cols-[minmax(0,1fr)] @min-[720px]/studio:grid-cols-[260px_minmax(0,1fr)]">
         <section class="order-2 min-w-0 border-t border-border p-5 max-md:p-3 @min-[720px]/studio:order-none @min-[720px]/studio:border-t-0 @min-[720px]/studio:border-r" role="list" aria-label="生成步骤">
@@ -105,6 +121,10 @@
                 <Copy v-if="!isPhone" class="size-3.5" />
                 复制
               </Button>
+              <Button v-if="generation" variant="outline" size="sm" class="min-h-11" :disabled="running || downloading || fileLoading" @click="downloadGenerated">
+                <Loader2 v-if="downloading" class="size-3.5 animate-spin" />
+                <Download v-else-if="!isPhone" class="size-3.5" />下载
+              </Button>
               <Button
                 v-for="action in exportActions"
                 :key="action.label"
@@ -123,7 +143,7 @@
                 variant="outline"
                 size="sm"
                 class="min-h-11"
-                :disabled="!output || running || pushing || deploying || !pushTargets.length"
+                :disabled="!generation || !!staleMessage || running || pushing || deploying || !pushTargets.length"
                 :title="pushTitle"
                 @click="pushToAgents"
               >
@@ -138,7 +158,17 @@
             </div>
           </div>
 
+          <div v-if="generation" class="flex flex-wrap items-center gap-2 border-b border-border px-5 py-2 max-md:px-3">
+            <label for="generated-file" class="text-xs text-muted-foreground">文件（{{ generation.files.length }}）</label>
+            <Select :model-value="selectedFile" :disabled="running || fileLoading" @update:model-value="value => showFile(String(value))">
+              <SelectTrigger id="generated-file" class="min-h-11 min-w-0 flex-1 font-mono text-xs" aria-label="预览文件"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem v-for="file in generation.files" :key="file.path" :value="file.path" class="min-h-11 font-mono text-xs">{{ file.path }} · {{ file.size }} B</SelectItem></SelectContent>
+            </Select>
+            <span class="text-xs text-muted-foreground">{{ destination === 'manual' ? '本次导出' : '最终下发文件' }}</span>
+          </div>
+
           <SubscriptionHostsSummary v-if="hostsReport && !running" :report="hostsReport" />
+          <p v-if="previewLimited" class="m-0 border-b border-border px-5 py-2 text-xs text-muted-foreground">文件较长，仅显示前 2000 行；复制和下载包含完整内容。</p>
 
           <div v-if="pushResults.length" class="min-w-0 border-b border-border px-5 py-2 max-sm:px-3" aria-label="配置发布结果">
             <div class="min-w-0 divide-y divide-border/70">
@@ -227,15 +257,15 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Component } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { RouterLink, useRouter } from 'vue-router'
-import { Check, ChevronRight, Copy, Loader2, Play, Send, X } from '@lucide/vue'
+import { Check, ChevronRight, Copy, Download, Loader2, Play, Send, X } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import BrandMark from '@/components/common/BrandMark.vue'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import SectionCard from '@/components/common/SectionCard.vue'
 import FieldHelp from '@/components/common/FieldHelp.vue'
-import { agentApi, generateApi, ruleSetApi, statsApi } from '@/api'
-import { createDeploymentId, deploymentNeedsNotice, useAgentDeployments, type AgentDeployment } from '@/composables/useAgentDeployments'
+import { agentApi, generateApi, ruleSetApi, statsApi, type GeneratedConfig } from '@/api'
+import { deploymentNeedsNotice, useAgentDeployments, type AgentDeployment } from '@/composables/useAgentDeployments'
 import AgentFailureDetails from '@/components/agents/AgentFailureDetails.vue'
 import AgentOperationSteps from '@/components/agents/AgentOperationSteps.vue'
 import AgentDeploymentStatus from '@/components/agents/AgentDeploymentStatus.vue'
@@ -265,7 +295,7 @@ export interface StudioTarget {
   actions: Array<{ label: string; icon: Component; run: () => void; loading?: boolean; group?: 'settings' | 'export' }>
 }
 
-const props = defineProps<{ targets: StudioTarget[] }>()
+const props = defineProps<{ targets: StudioTarget[]; profileId: string; loonFileName?: string }>()
 const emit = defineEmits<{ (e: 'copy', url: string, title: string): void }>()
 
 const router = useRouter()
@@ -275,10 +305,19 @@ const metaKey = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
 const active = ref<TargetKey>('mihomo')
 const current = computed(() => props.targets.find(t => t.key === active.value))
 const settingsActions = computed(() => current.value?.actions.filter(action => action.group === 'settings') ?? [])
-const exportActions = computed(() => current.value?.actions.filter(action => action.group !== 'settings') ?? [])
+const exportActions = computed(() => current.value?.actions.filter(action => action.group !== 'settings' && action.label !== '下载') ?? [])
+const destination = ref('manual')
+const availableAgents = computed(() => live.boundAgents.value.filter(a => a.service_type === active.value))
+const generation = ref<GeneratedConfig | null>(null)
+const selectedFile = ref('')
+const staleMessage = ref('')
+const fileLoading = ref(false)
+const previewLimited = ref(false)
+const downloading = ref(false)
+let requestSequence = 0
 
 const FILES: Record<TargetKey, string> = { mihomo: 'config.yaml', surge: 'surge.conf', loon: 'loon.conf', mosdns: 'mosdns.yaml', oxidns: 'oxidns.yaml' }
-const fileName = computed(() => FILES[active.value])
+const fileName = computed(() => selectedFile.value || FILES[active.value])
 
 /* ---------- 步骤（计数取真实数据） ---------- */
 const counts = ref({ subscriptions: 0, nodes: 0, proxyGroups: 0, rules: 0, ruleSets: 0 })
@@ -324,9 +363,6 @@ const codeEl = ref<HTMLElement | null>(null)
 /** Mihomo only: hosts merged from subscriptions; hidden when no subscription carries any. */
 const hostsReport = ref<SubscriptionHostsReport | null>(null)
 
-const wait = (ms: number) => new Promise(resolve => window.setTimeout(resolve, ms))
-const frame = () => new Promise(resolve => requestAnimationFrame(() => resolve(null)))
-
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 /** 轻量高亮：YAML 键 / 字符串 / 数字与布尔 / 注释；Surge / Loon 的 [段] 与 key = value */
@@ -358,36 +394,33 @@ const loadCounts = async () => {
 }
 
 const generate = async () => {
-  if (running.value) return
+  if (running.value || pushing.value) return
+  const sequence = ++requestSequence
+  const profile = props.profileId
+  const device = destination.value
   running.value = true
   phase.value = 'steps'
   error.value = ''
   failedAt.value = -1
   lines.value = []
   output.value = ''
+  previewLimited.value = false
+  generation.value = null
+  selectedFile.value = ''
+  staleMessage.value = ''
   hostsReport.value = null
   freshFrom.value = 0
   const target = active.value
-  const api = {
-    mihomo: generateApi.previewMihomo,
-    surge: generateApi.previewSurge,
-    loon: generateApi.previewLoon,
-    mosdns: generateApi.previewMosdns,
-    oxidns: generateApi.previewOxidns
-  }[target]
-
-  const request = api()
-    .then(res => ({ ok: true as const, content: String(res.data?.content ?? res.data ?? ''),
+  const request = (device === 'manual' ? generateApi.artifact(target, profile) : agentApi.generateConfig(device, profile, target))
+    .then(res => ({ ok: true as const, artifact: res.data, content: res.data.content,
       hosts: (res.data?.subscription_hosts ?? null) as SubscriptionHostsReport | null }))
     .catch((err: any) => ({ ok: false as const, message: err.response?.data?.message || '生成失败' }))
   loadCounts()
 
   try {
-    for (let i = 0; i < 4; i++) {
-      stepIndex.value = i
-      await wait(320 + Math.random() * 180)
-    }
+    stepIndex.value = 0
     const result = await request
+    if (sequence !== requestSequence || props.profileId !== profile || destination.value !== device || active.value !== target) return
     if (!result.ok) {
       failedAt.value = 3
       error.value = result.message
@@ -398,15 +431,11 @@ const generate = async () => {
     stepIndex.value = 4
     phase.value = 'write'
     output.value = result.content
+    generation.value = result.artifact
+    selectedFile.value = result.artifact.config_path
     const all = result.content.replace(/\n$/, '').split('\n')
-    // 约 150 帧写完：短配置逐行出现，长配置按块追加，避免卡顿
-    const perFrame = Math.max(1, Math.ceil(all.length / 150))
-    for (let i = 0; i < all.length; i += perFrame) {
-      freshFrom.value = lines.value.length
-      lines.value.push(...all.slice(i, i + perFrame).map(highlight))
-      await frame()
-      if (codeEl.value) codeEl.value.scrollTop = codeEl.value.scrollHeight
-    }
+    previewLimited.value = all.length > 2000
+    lines.value = all.slice(0, 2000).map(highlight)
     stepIndex.value = 5
     freshFrom.value = lines.value.length
     const hosts = result.hosts
@@ -415,9 +444,60 @@ const generate = async () => {
     if (codeEl.value) codeEl.value.scrollTop = 0
     notify.success(`${FILES[target]} 已生成 · ${all.length} 行`)
   } finally {
-    running.value = false
-    phase.value = ''
+    if (sequence === requestSequence) { running.value = false; phase.value = '' }
   }
+}
+
+const showFile = async (path: string) => {
+  const snapshot = generation.value
+  if (!snapshot) return
+  fileLoading.value = true
+  selectedFile.value = path
+  output.value = ''
+  lines.value = []
+  previewLimited.value = false
+  try {
+    let content = snapshot.content
+    if (path !== snapshot.config_path) {
+      const { data } = snapshot.agent_id === 'manual'
+        ? await generateApi.artifactFile(snapshot.id, path)
+        : await agentApi.generatedFile(snapshot.agent_id, snapshot.id, path)
+      try { content = new TextDecoder('utf-8', { fatal: true }).decode(data); if (content.includes('\0')) throw new Error('binary') }
+      catch {
+        if (generation.value?.id === snapshot.id && selectedFile.value === path) lines.value = ['此文件为二进制内容，请下载完整生成包查看。']
+        return
+      }
+    }
+    if (generation.value?.id !== snapshot.id || selectedFile.value !== path) return
+    output.value = content
+    const all = content.replace(/\n$/, '').split('\n')
+    previewLimited.value = all.length > 2000
+    lines.value = all.slice(0, 2000).map(highlight)
+  } catch (err: any) { notify.error('读取生成文件失败', err.response?.data?.message || '请重新生成后重试。') }
+  finally { fileLoading.value = false }
+}
+
+const downloadGenerated = async () => {
+  const snapshot = generation.value
+  if (!snapshot) return
+  downloading.value = true
+  try {
+    // Single text files can be downloaded directly from the exact displayed artifact.
+    const blob = snapshot.files.length === 1
+      ? new Blob([snapshot.content], { type: 'text/plain;charset=utf-8' })
+      : (snapshot.agent_id === 'manual' ? await generateApi.artifactDownload(snapshot.id)
+        : await agentApi.generatedDownload(snapshot.agent_id, snapshot.id)).data
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    const manualName = snapshot.service_type === 'mihomo' ? 'mihomo.yaml'
+      : snapshot.service_type === 'loon' ? props.loonFileName || 'loon.lcf' : snapshot.config_path
+    link.download = snapshot.files.length === 1 ? (snapshot.agent_id === 'manual' ? manualName : snapshot.config_path)
+      : `${snapshot.service_type}-${snapshot.agent_id === 'manual' ? 'config' : 'final-config'}.zip`
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch { notify.error('下载失败', '生成结果可能已过期，请重新生成后重试。') }
+  finally { downloading.value = false }
 }
 
 const copyOutput = async () => {
@@ -436,7 +516,7 @@ const pushedAgents = ref<Record<string, { name: string; serviceType: string }>>(
 const pushTargets = computed(() =>
   active.value === 'loon'
     ? []
-    : live.boundAgents.value.filter(a => a.service_type === active.value && live.isOnline(a))
+    : live.boundAgents.value.filter(a => a.id === destination.value && a.service_type === active.value && live.isOnline(a))
 )
 const pushTitle = computed(() => {
   if (active.value === 'loon') return 'Loon 没有对应的 Agent'
@@ -466,11 +546,13 @@ type PushOutcome = 'submitted' | 'done' | 'failed' | 'busy'
 const pushOne = async (agent: { id: string; name: string }): Promise<PushOutcome> => {
   delete submissionFailures.value[agent.id]
   pushedAgents.value[agent.id] = { name: agent.name, serviceType: active.value }
-  const deploymentId = createDeploymentId()
+  const snapshot = generation.value
+  if (!snapshot || snapshot.agent_id !== agent.id || staleMessage.value) return 'failed'
+  const deploymentId = snapshot.deployment_id
   const transactional = active.value !== 'surge'
   if (transactional && !beginSubmission(agent.id, deploymentId)) return 'busy'
   try {
-    const { data } = await agentApi.pushConfig(agent.id, deploymentId)
+    const { data } = await agentApi.pushConfig(agent.id, deploymentId, { generation_id: snapshot.id })
     if (data.deployment_id === deploymentId && typeof data.status === 'string') {
       endSubmission(agent.id, deploymentId, data)
       return 'submitted'
@@ -486,6 +568,9 @@ const pushOne = async (agent: { id: string; name: string }): Promise<PushOutcome
     }
     return 'done'
   } catch (error: any) {
+    if (error.response?.data?.code === 'preview_changed') {
+      staleMessage.value = error.response.data.message
+    }
     // 409 携带的未完成任务同样跟踪到终态，旧任务收尾后即可再次推送。
     if (error.response?.data?.deployment_id) {
       if (error.response.data.deployment_id === deploymentId) {
@@ -510,7 +595,7 @@ const pushOne = async (agent: { id: string; name: string }): Promise<PushOutcome
 
 const pushToAgents = async () => {
   const targets = uniquePublicationTargets(pushTargets.value.filter(a => !deploymentBusy(a.id)))
-  if (!targets.length || pushing.value) return
+  if (!targets.length || pushing.value || !generation.value || staleMessage.value) return
   pushing.value = true
   try {
     const outcomes = await submitAgentRequests(targets, pushOne)
@@ -538,14 +623,27 @@ const runPending = () => {
   }
 }
 
-watch(active, () => {
-  if (running.value) return
+const clearGenerated = () => {
+  requestSequence++
+  running.value = false
+  generation.value = null
+  previewLimited.value = false
+  selectedFile.value = ''
+  staleMessage.value = ''
   lines.value = []
   output.value = ''
   hostsReport.value = null
   stepIndex.value = -1
   failedAt.value = -1
   error.value = ''
+}
+watch(active, () => { destination.value = 'manual'; clearGenerated() })
+watch(() => props.profileId, () => { destination.value = 'manual'; clearGenerated() })
+watch(destination, clearGenerated)
+watch(() => availableAgents.value.map(a => `${a.id}:${a.profile_id}:${a.service_type}:${a.host}:${a.port}:${a.version}`).join('|'), () => {
+  if (generation.value && destination.value !== 'manual') {
+    if (!availableAgents.value.some(a => a.id === generation.value?.agent_id)) staleMessage.value = '目标设备已不可用，请重新选择并生成。'
+  }
 })
 
 watch(() => router?.currentRoute.value.query.run, run => run === 'generate-mihomo' && runPending())
@@ -558,6 +656,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  requestSequence++
   live.stop()
   document.removeEventListener('keydown', onKeydown)
 })

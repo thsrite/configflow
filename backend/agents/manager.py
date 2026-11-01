@@ -990,6 +990,10 @@ class AgentManager:
                     'success': False, 'status': 'failed', 'http_status': 409,
                     'message': '请升级 Agent 到 1.8.30-go 或更新版本后使用规则自动热加载'})
             from .deployment_bundle import retarget_config_path
+            if bundle.manifest.get('final_config') and (
+                    1 not in capability.get('final_config_protocols', [])
+                    or capability.get('config_path', 'config.yaml') != bundle.manifest['config_path']):
+                raise ValueError('目标设备配置已改变，请重新生成最终配置后推送。')
             bundle = retarget_config_path(bundle, capability.get('config_path', 'config.yaml'))
             previous = self.get_agent_by_id(agent_id).get('deployments', {}).get(deployment_id, {})
             if previous.get('status') in ('failed', 'rolled_back') and not previous.get('submitted'):
@@ -1000,7 +1004,16 @@ class AgentManager:
                             'message': 'Deployment ID already belongs to different content'}
                 return self.get_deployment(agent_id, deployment_id)
             content_bundle = bundle
-            if agent.get('service_type') == 'mihomo':
+            if bundle.manifest.get('final_config'):
+                # Geo assets are already frozen. Keep them out of the profile
+                # comparison, just as for ordinary publications.
+                from .deployment_bundle import _pack
+                from .rule_sync_store import bundle_files
+                manifest = deepcopy(bundle.manifest)
+                manifest['files'] = [item for item in manifest['files'] if item['role'] != 'resource']
+                files = {path: item for path, item in bundle_files(bundle).items() if item[1] != 'resource'}
+                content_bundle = _pack(manifest, files, bundle.config_version, comparison_config=bundle.comparison_config)
+            elif agent.get('service_type') == 'mihomo':
                 from .mihomo_resources import prepare_mihomo_resources
                 self.record_deployment(agent_id, deployment_id, {
                     'status': 'preparing', 'message': '正在检查并准备 Mihomo Geo 资源'})

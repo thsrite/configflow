@@ -296,6 +296,9 @@ export const profileApi = {
 
 // 配置生成
 export const generateApi = {
+  artifact: (service: string, profileId = getActiveProfileId()) => api.post<GeneratedConfig>(profilePath(profileId, `/generate/${service}/artifact`), { base_url: getBaseUrl() }, { timeout: 180000 }),
+  artifactDownload: (id: string) => api.get(`/generate/artifacts/${id}/download`, { responseType: 'blob' }),
+  artifactFile: (id: string, path: string) => api.get(`/generate/artifacts/${id}/file`, { params: { path }, responseType: 'arraybuffer' }),
   mihomo: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/mihomo'), { base_url: getBaseUrl() }, { responseType: 'blob' }),
   surge: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/surge'), { base_url: getBaseUrl() }, { responseType: 'blob' }),
   loon: (profileId = getActiveProfileId()) => api.post(profilePath(profileId, '/generate/loon'), { base_url: getBaseUrl() }, { responseType: 'blob' }),
@@ -452,6 +455,20 @@ export const customConfigApi = {
 }
 
 // Agent 管理
+export interface GeneratedConfig {
+  id: string
+  deployment_id: string
+  agent_id: string
+  profile_id: string
+  service_type: string
+  content: string
+  config_path: string
+  expires_at: number
+  files: Array<{ path: string; size: number; sha256: string; role: string }>
+  target_ids: string[]
+  subscription_hosts?: import('@/types').SubscriptionHostsReport
+}
+
 export interface PublishGuard {
   expected_profile_id: string
   expected_service_type: string
@@ -545,7 +562,12 @@ export const agentApi = {
     return api.get(`/agents/${encodeURIComponent(id)}/logs?${params.toString()}`, options)
   },
   clearLog: (id: string, target: AgentLogTarget) => api.post(`/agents/${id}/logs/clear`, target.source ? { source: target.source } : { log_path: target.logPath }),
-  pushConfig: (id: string, deploymentId?: string, expected?: PublishGuard | { expected_profile_id: string; expected_oxidns_revision: string; expected_config_revision?: number }) => api.post(`/agents/${id}/push-config`, {
+  generateConfig: (id: string, profileId: string, serviceType: string) => api.post<GeneratedConfig>(`/agents/${id}/generate-config`, {
+    base_url: getBaseUrl(), expected_profile_id: profileId, expected_service_type: serviceType
+  }, { timeout: 180000 }),
+  generatedDownload: (id: string, generationId: string) => api.get(`/agents/${id}/generated-config/${generationId}/download`, { responseType: 'blob' }),
+  generatedFile: (id: string, generationId: string, path: string) => api.get(`/agents/${id}/generated-config/${generationId}/file`, { params: { path }, responseType: 'arraybuffer' }),
+  pushConfig: (id: string, deploymentId?: string, expected?: PublishGuard | { generation_id: string } | { expected_profile_id: string; expected_oxidns_revision: string; expected_config_revision?: number }) => api.post(`/agents/${id}/push-config`, {
     base_url: getBaseUrl(), deployment_id: deploymentId, ...expected
   }, { timeout: 120000 }),
   getDeployment: (id: string, deploymentId: string) => api.get(`/agents/${id}/deployments/${deploymentId}`),
