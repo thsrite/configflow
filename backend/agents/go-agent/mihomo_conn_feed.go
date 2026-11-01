@@ -13,8 +13,21 @@ import (
 // 共用的 /connections 轮询：域名发现和流量记录都订阅它，同时开启时也只轮询一次。
 // 没有订阅者时停止轮询。
 
-// 连接轮询间隔；存活不到一个间隔的连接可能漏采
-var discoveryPollInterval = 2 * time.Second
+// 连接轮询的基础间隔；存活不到一个间隔的连接可能漏采（流量记录里计为未归属）
+var discoveryPollInterval = time.Second
+
+// connPollInterval 按上次读到的连接数放慢轮询：连接越多，序列化和解析一次完整列表越重，
+// 而这时流量以长连接为主，放慢采样漏掉的很少。
+func connPollInterval(base time.Duration, conns int) time.Duration {
+	switch {
+	case conns > 5000:
+		return 5 * base
+	case conns > 2000:
+		return 2 * base
+	default:
+		return base
+	}
+}
 
 type mihomoConnSnapshot struct {
 	At            time.Time
@@ -70,8 +83,9 @@ func (f *mihomoConnFeed) loop(ctx context.Context) {
 		f.client = &http.Client{Timeout: 5 * time.Second}
 	}
 	var controller *mihomoController
-	ticker := time.NewTicker(discoveryPollInterval)
-	defer ticker.Stop()
+	base := discoveryPollInterval
+	timer := time.NewTimer(base)
+	defer timer.Stop()
 	for {
 		f.mu.Lock()
 		cfg := f.cfg
@@ -92,10 +106,11 @@ func (f *mihomoConnFeed) loop(ctx context.Context) {
 			return
 		}
 		f.publish(snapshot)
+		timer.Reset(connPollInterval(base, len(snapshot.Conns)))
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-timer.C:
 		}
 	}
 }

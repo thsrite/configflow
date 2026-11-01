@@ -192,7 +192,7 @@ func TestFailureDeduperMergesRetries(t *testing.T) {
 // 端到端：假 mihomo 控制接口 + 假 ConfigFlow 服务端
 func TestCollectorEndToEnd(t *testing.T) {
 	discoveryPollInterval = 50 * time.Millisecond
-	defer func() { discoveryPollInterval = 2 * time.Second }()
+	defer func() { discoveryPollInterval = time.Second }()
 
 	var mu sync.Mutex
 	polls := 0

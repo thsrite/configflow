@@ -152,10 +152,18 @@ func TestTrafficHistoryReportOutcomes(t *testing.T) {
 	}
 }
 
+func TestConnPollSlowsDownWithManyConnections(t *testing.T) {
+	for conns, want := range map[int]time.Duration{0: time.Second, 2000: time.Second, 2001: 2 * time.Second, 5000: 2 * time.Second, 5001: 5 * time.Second} {
+		if got := connPollInterval(time.Second, conns); got != want {
+			t.Fatalf("%d connections: got %v, want %v", conns, got, want)
+		}
+	}
+}
+
 // 域名发现与流量记录同时开启时只轮询一次 /connections
 func TestConnFeedSharesOnePollBetweenSubscribers(t *testing.T) {
 	discoveryPollInterval = 40 * time.Millisecond
-	defer func() { discoveryPollInterval = 2 * time.Second }()
+	defer func() { discoveryPollInterval = time.Second }()
 	var mu sync.Mutex
 	polls := 0
 	mihomo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
