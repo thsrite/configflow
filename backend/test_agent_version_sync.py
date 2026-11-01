@@ -37,3 +37,8 @@ def test_existing_compose_agent_can_update_for_compact_identity_support():
 def test_existing_agent_can_update_for_ipv6_readiness_support():
     assert has_update("1.8.49-go") is True
     assert has_update(LATEST_AGENT_VERSION) is False
+
+
+def test_existing_agent_can_update_for_traffic_history_support():
+    assert has_update("1.8.50-go") is True
+    assert has_update(LATEST_AGENT_VERSION) is False

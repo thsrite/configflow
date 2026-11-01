@@ -21,7 +21,7 @@
       <MihomoRuleHitsCard :agent-id="agentId" :active="active" :reload-token="reloadToken" />
     </div>
 
-    <MihomoConnectionStats :connections="snapshot?.connections || []" :speeds="speeds" :notes="notes" :loading="!snapshot && !error" />
+    <MihomoConnectionStats :connections="snapshot?.connections || []" :speeds="speeds" :notes="notes" :loading="!snapshot && !error" :agent-id="agentId" :active="active" />
   </div>
 </template>
 

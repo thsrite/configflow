@@ -86,21 +86,42 @@ def run(trigger='schedule', record_idle=True):
     with _run_lock:
         _attempted_at = datetime.now(timezone.utc)
         started, clock = task_status.now_iso(), time.monotonic()
+        failures = []
+        result = {'agents': 0, 'appended': 0, 'compacted': 0}
         try:
             manager = get_agent_manager()
-            # 导入、恢复或重置配置后已不存在的 Agent，不再保存它们的历史
-            manager.metrics_history.retain_agents(
-                agent['id'] for agent in manager.repository.get_system().get('agents', []))
-            result = manager.metrics_history.flush()
+            system = manager.repository.get_system()
+            agent_ids = [agent['id'] for agent in system.get('agents', [])]
         except Exception as error:
-            reason = str(error) or type(error).__name__
+            failures.append(error)
+        else:
+            try:
+                # 导入、恢复或重置配置后已不存在的 Agent，不再保存它们的历史
+                manager.metrics_history.retain_agents(agent_ids)
+                result = manager.metrics_history.flush()
+            except Exception as error:
+                failures.append(error)
+            # 流量记录与监控历史一起保存；一项失败不影响另一项
+            try:
+                from backend.agents import traffic_history
+                manager.traffic_history.retain_agents(agent_ids)
+                result['traffic_rows'] = manager.traffic_history.flush(traffic_history.retention_days(system))['rows']
+            except Exception as error:
+                failures.append(TrafficHistoryFlushError(error))
+        if failures:
+            reason = '；'.join(str(error) or type(error).__name__ for error in failures)
             logger.warning('监控历史保存失败：%s', reason)
             _record(ok=False, started_at=started, trigger=trigger, error=reason,
                     duration_ms=(time.monotonic() - clock) * 1000)
-            raise
-        if record_idle or result['appended'] or result['compacted']:
+            raise failures[0]
+        if record_idle or result['appended'] or result['compacted'] or result.get('traffic_rows'):
             _record(ok=True, started_at=started, trigger=trigger, duration_ms=(time.monotonic() - clock) * 1000)
         return result
+
+
+class TrafficHistoryFlushError(RuntimeError):
+    def __init__(self, error):
+        super().__init__(f'流量记录：{error}' if str(error) else f'流量记录：{type(error).__name__}')
 
 
 def _record(**fields):

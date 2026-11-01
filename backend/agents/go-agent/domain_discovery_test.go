@@ -291,7 +291,7 @@ func TestCollectorReportsAuthFailure(t *testing.T) {
 	os.WriteFile(configPath, []byte("external-controller: "+strings.TrimPrefix(mihomo.URL, "http://")+"\n"), 0600)
 	collector := newDiscoveryCollector(&Config{ConfigPath: configPath}, nil)
 	controller, _ := collector.currentController()
-	if _, err := collector.fetchConnections(context.Background(), controller); err != errControllerAuth {
+	if _, _, _, err := fetchMihomoConnections(context.Background(), collector.pollClient, controller); err != errControllerAuth {
 		t.Fatalf("expected auth error, got %v", err)
 	}
 }

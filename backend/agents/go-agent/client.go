@@ -267,6 +267,7 @@ func (c *Config) sendHeartbeatRequest(jsonData []byte) error {
 	if resp.StatusCode == http.StatusOK {
 		var result struct {
 			DomainDiscoveryEnabled bool `json:"domain_discovery_enabled"`
+			TrafficHistoryEnabled  bool `json:"traffic_history_enabled"`
 		}
 		// Older servers may return an empty body or omit the optional field.
 		// Read the complete, bounded response: a valid JSON prefix alone does
@@ -285,6 +286,7 @@ func (c *Config) sendHeartbeatRequest(jsonData []byte) error {
 			}
 		}
 		domainDiscovery.SetEnabled(c, result.DomainDiscoveryEnabled)
+		trafficHistory.SetEnabled(c, result.TrafficHistoryEnabled)
 
 		status := c.managedServiceStatus()
 		// 心跳成功是常态，仅在服务状态发生变化时记录，避免日志无限累积

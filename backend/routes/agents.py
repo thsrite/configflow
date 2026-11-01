@@ -15,6 +15,7 @@ from backend.agents.config_generator import generate_agent_config
 from backend.agents.deployment_messages import public_deployment_messages
 from backend.agents.manager import AgentDeploymentConflict
 from backend.agents.traffic_store import REPORT_MAX_CONTENT_LENGTH, clean_report, get_traffic_store
+from backend.agents import traffic_history
 from backend.agents.upgrade_messages import public_upgrade_state, upgrade_error_message
 from backend.agents.version import (
     LATEST_AGENT_VERSION,
@@ -665,6 +666,10 @@ def _domain_discovery_enabled(agent):
     return bool(agent.get('domain_discovery_enabled')) and agent.get('service_type') == 'mihomo'
 
 
+def _traffic_history_enabled(agent):
+    return bool(agent.get('traffic_history_enabled')) and agent.get('service_type') == 'mihomo'
+
+
 @bp.route('/<agent_id>/heartbeat', methods=['POST'])
 def agent_heartbeat(agent_id):
     """Agent 心跳"""
@@ -683,7 +688,8 @@ def agent_heartbeat(agent_id):
         result = agent_manager.update_heartbeat(agent_id, heartbeat_data)
         if result:
             # 旧 Agent 会忽略多出的字段；新 Agent 据此启停域名发现
-            return jsonify({'success': True, 'domain_discovery_enabled': _domain_discovery_enabled(agent)}), 200
+            return jsonify({'success': True, 'domain_discovery_enabled': _domain_discovery_enabled(agent),
+                            'traffic_history_enabled': _traffic_history_enabled(agent)}), 200
         return jsonify({'success': False, 'message': 'Agent not found'}), 404
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -740,6 +746,108 @@ def clear_agent_domain_discovery(agent_id):
     get_probe_store().delete(agent_id)
     get_region_store().delete(agent_id)
     return jsonify({'success': True}), 200
+
+
+@bp.route('/<agent_id>/traffic-history', methods=['POST'])
+def agent_traffic_history_report(agent_id):
+    """Agent 上报按小时累加的流量增量（流量记录）"""
+    agent_manager = get_agent_manager()
+    agent = _authenticated_agent(agent_manager, agent_id)
+    if agent is None:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    report, error = _read_json_body(traffic_history.REPORT_MAX_CONTENT_LENGTH, 'Invalid traffic history report')
+    if error:
+        return error
+    if not _traffic_history_enabled(agent):
+        return jsonify({'success': False, 'enabled': False, 'message': 'Traffic history disabled'}), 409
+    cleaned = traffic_history.clean_report(report)
+    if cleaned is None:
+        return jsonify({'success': False, 'message': 'Invalid traffic history report'}), 400
+    agent_manager.traffic_history.add_report(agent_id, cleaned)
+    return jsonify({'success': True}), 200
+
+
+def _traffic_history_state(agent):
+    return {
+        'enabled': _traffic_history_enabled(agent),
+        'since': agent.get('traffic_history_since') if _traffic_history_enabled(agent) else None,
+        'supported': traffic_history.agent_supported(agent.get('version')),
+        'min_version': traffic_history.MIN_AGENT_VERSION,
+        'retention_days': traffic_history.retention_days(),
+        'retention_choices': list(traffic_history.RETENTION_CHOICES),
+    }
+
+
+def _mihomo_agent_or_error(agent_id):
+    agent = get_agent_manager().get_agent_by_id(agent_id)
+    if not agent:
+        return None, (jsonify({'success': False, 'message': 'Agent not found'}), 404)
+    if agent.get('service_type', 'mihomo') != 'mihomo':
+        return None, (jsonify({'success': False, 'message': '流量记录只支持 mihomo Agent'}), 400)
+    return agent, None
+
+
+@bp.route('/<agent_id>/traffic-history', methods=['GET'])
+@require_auth
+def get_agent_traffic_history(agent_id):
+    """读取流量记录：按设备、目标、出站节点或策略组汇总所选范围，并给出趋势"""
+    agent, error = _mihomo_agent_or_error(agent_id)
+    if error:
+        return error
+    range_key, by = request.args.get('range', '24h'), request.args.get('by', 'source')
+    if range_key not in traffic_history.RANGES or by not in traffic_history.AGGREGATES:
+        return jsonify({'success': False, 'message': 'range 或 by 参数无效'}), 400
+    data = _traffic_history_state(agent)
+    data.update(get_agent_manager().traffic_history.query(agent_id, range_key, by))
+    return jsonify({'success': True, 'data': data}), 200
+
+
+@bp.route('/<agent_id>/traffic-history', methods=['PUT'])
+@require_auth
+def set_agent_traffic_history(agent_id):
+    """开关流量记录；关闭时可同时删除已记录的数据（clear: true）"""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not isinstance(payload.get('enabled'), bool) \
+            or not isinstance(payload.get('clear', False), bool):
+        return jsonify({'success': False, 'message': 'enabled 必须是布尔值'}), 400
+    _, error = _mihomo_agent_or_error(agent_id)
+    if error:
+        return error
+    manager = get_agent_manager()
+    try:
+        agent = manager.set_traffic_history(agent_id, payload['enabled'])
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    except AgentDeploymentConflict as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 409
+    if agent is None:
+        return jsonify({'success': False, 'message': 'Agent not found'}), 404
+    if not payload['enabled'] and payload.get('clear'):
+        manager.traffic_history.delete(agent_id)
+    return jsonify({'success': True, 'data': _traffic_history_state(agent)}), 200
+
+
+@bp.route('/<agent_id>/traffic-history', methods=['DELETE'])
+@require_auth
+def clear_agent_traffic_history(agent_id):
+    """删除这台 Agent 已记录的流量，不改变开关"""
+    _, error = _mihomo_agent_or_error(agent_id)
+    if error:
+        return error
+    get_agent_manager().traffic_history.delete(agent_id)
+    return jsonify({'success': True}), 200
+
+
+@bp.route('/traffic-history/retention', methods=['PUT'])
+@require_auth
+def set_traffic_history_retention():
+    """所有 Agent 共用的流量记录保留天数"""
+    payload = request.get_json(silent=True)
+    try:
+        days = traffic_history.set_retention_days(payload.get('days') if isinstance(payload, dict) else None)
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    return jsonify({'success': True, 'data': {'retention_days': days}}), 200
 
 
 @bp.route('/<agent_id>/config', methods=['GET'])

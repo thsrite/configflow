@@ -51,6 +51,7 @@ vi.mock('@/api', () => {
   const ok = (data: unknown) => vi.fn().mockResolvedValue({ data: { success: true, data } })
   return {
     clientToolsApi: { notes: vi.fn().mockResolvedValue({ data: { success: true, notes: {} } }) },
+    trafficHistoryApi: { get: vi.fn().mockResolvedValue({ data: { success: true, data: { enabled: false, since: null, supported: true, min_version: '1.8.51-go', retention_days: 90, retention_choices: [30, 90] } } }) },
     agentApi: {
       getAll: vi.fn(), summaries: vi.fn(),
       getLogSources: vi.fn().mockResolvedValue({ data: { success: true, sources: [{ id: 'core', label: 'Mihomo 日志', kind: 'journal', unit: 'mihomo' }] } }),
