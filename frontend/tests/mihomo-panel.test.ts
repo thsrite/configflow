@@ -38,6 +38,7 @@ import { reactive } from 'vue'
 import { vi } from 'vitest'
 import MihomoPanel from '@/views/MihomoPanel.vue'
 import MihomoConnections from '@/components/mihomo/MihomoConnections.vue'
+import MihomoOverview from '@/components/mihomo/MihomoOverview.vue'
 import MihomoProxies from '@/components/mihomo/MihomoProxies.vue'
 import MihomoRules from '@/components/mihomo/MihomoRules.vue'
 import MihomoLogs from '@/components/mihomo/MihomoLogs.vue'
@@ -57,6 +58,8 @@ vi.mock('@/api', () => {
     },
     mihomoPanelApi: {
       groupDelay: vi.fn(),
+      proxyDelay: vi.fn().mockResolvedValue({ data: { success: true, data: { delay: 120 } } }),
+      flow: vi.fn().mockResolvedValue({ data: { success: true, data: { interval: 0, connections: 0, active: 0, up: 0, down: 0, paths: [], omitted: 0 } } }),
       version: ok({ version: 'v1.19.0' }),
       configs: ok({ mode: 'Rule' }),
       proxies: ok({ proxies: {
@@ -81,7 +84,7 @@ vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect()
 describe('mihomo panel view', () => {
   beforeEach(() => invalidateAgentSummaries())
   it('picks a mihomo agent and renders groups with the current node', async () => {
-    routeState.route = reactive({ query: {} })
+    routeState.route = reactive({ query: { tab: 'proxies' } })
     vi.mocked(agentApi.summaries).mockResolvedValue({ data: [
       { id: 'dns', name: 'DNS', service_type: 'oxidns', status: 'online' },
       { id: 'gw', name: 'Gateway', service_type: 'mihomo', status: 'online', host: '192.0.2.1' }
@@ -89,7 +92,7 @@ describe('mihomo panel view', () => {
     routeState.replace.mockImplementation(({ query }) => { routeState.route.query = query })
     const wrapper = mount(MihomoPanel)
     await flushPromises()
-    expect(routeState.replace).toHaveBeenCalledWith({ query: { agent: 'gw' } })
+    expect(routeState.replace).toHaveBeenCalledWith({ query: { tab: 'proxies', agent: 'gw' } })
     await flushPromises()
     expect(wrapper.text()).toContain('Mihomo v1.19.0')
     expect(wrapper.text()).toContain('Proxy')
@@ -111,7 +114,7 @@ describe('mihomo panel view', () => {
     routeState.replace.mockImplementation(({ query }) => { routeState.route.query = query })
     const wrapper = mount(MihomoPanel)
     await flushPromises()
-    expect(wrapper.findAll('[role="tab"]').map(tab => tab.text())).toEqual(['策略', '连接', '规则', '日志'])
+    expect(wrapper.findAll('[role="tab"]').map(tab => tab.text())).toEqual(['概览', '策略', '连接', '规则', '日志'])
     expect(wrapper.get('[role="tab"][data-state="active"]').text()).toBe('日志')
     expect(wrapper.getComponent(MihomoLogs).props('agentId')).toBe('gw')
     expect(wrapper.text()).toContain('Mihomo log entry')
@@ -133,7 +136,7 @@ describe('mihomo panel view', () => {
   })
 
   it('keeps visited tabs mounted, reloads hidden ones only when shown and rebuilds on device change', async () => {
-    routeState.route = reactive({ query: { agent: 'gw' } })
+    routeState.route = reactive({ query: { agent: 'gw', tab: 'proxies' } })
     vi.mocked(agentApi.summaries).mockResolvedValue({ data: [
       { id: 'gw', name: 'Gateway', service_type: 'mihomo', status: 'online' },
       { id: 'gw2', name: 'Gateway 2', service_type: 'mihomo', status: 'online' }
@@ -177,7 +180,7 @@ describe('mihomo panel view', () => {
   })
 
   it('keeps a batch speed test running while its tab is hidden until the panel is refreshed', async () => {
-    routeState.route = reactive({ query: { agent: 'gw' } })
+    routeState.route = reactive({ query: { agent: 'gw', tab: 'proxies' } })
     vi.mocked(agentApi.summaries).mockResolvedValue({ data: [
       { id: 'gw', name: 'Gateway', service_type: 'mihomo', status: 'online' }
     ] } as any)
@@ -206,6 +209,33 @@ describe('mihomo panel view', () => {
     expect(wrapper.text()).not.toContain('123 ms')
     expect(wrapper.text()).not.toContain('正在测速')
     expect(mihomoPanelApi.groupDelay).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('opens the overview by default and drops the tab from the address when it is chosen', async () => {
+    routeState.route = reactive({ query: { agent: 'gw', tab: 'rules' } })
+    vi.mocked(agentApi.summaries).mockResolvedValue({ data: [{ id: 'gw', name: 'Gateway', service_type: 'mihomo', status: 'online' }] } as any)
+    routeState.replace.mockReset().mockImplementation(({ query }) => { routeState.route.query = query })
+    const wrapper = mount(MihomoPanel)
+    await flushPromises()
+    routeState.route.query = { agent: 'gw' }
+    await flushPromises()
+    expect(wrapper.get('[role="tab"][data-state="active"]').text()).toBe('概览')
+    const overview = wrapper.getComponent(MihomoOverview)
+    expect(overview.text()).toContain('累计下载')
+    expect(overview.text()).toContain('192.0.2.10')
+    // 延迟：百度走直连，其余站点走配置里的第一个策略组
+    expect(mihomoPanelApi.proxyDelay).toHaveBeenCalledWith('gw', 'DIRECT', 'https://www.baidu.com', 5000)
+    expect(mihomoPanelApi.proxyDelay).toHaveBeenCalledWith('gw', 'Proxy', 'https://www.google.com/generate_204', 5000)
+    // 内核没有 extra 字段时说明需要新版内核
+    expect(overview.text()).toContain('内核没有提供命中次数')
+    await wrapper.findAll('[role="tab"]').find(tab => tab.text() === '规则')!.trigger('mousedown', { button: 0 })
+    await flushPromises()
+    expect(routeState.replace).toHaveBeenLastCalledWith({ query: { agent: 'gw', tab: 'rules' } })
+    routeState.replace.mockClear()
+    await wrapper.findAll('[role="tab"]').find(tab => tab.text() === '概览')!.trigger('mousedown', { button: 0 })
+    await flushPromises()
+    expect(routeState.replace).toHaveBeenLastCalledWith({ query: { agent: 'gw', tab: undefined } })
     wrapper.unmount()
   })
 

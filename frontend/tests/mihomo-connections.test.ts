@@ -52,12 +52,13 @@ describe('mihomo connections', () => {
     expect(state.ruleAction).toEqual({ values: ['192.0.2.8'], target: 'proxy' })
     expect(document.body.textContent).toContain('IP-CIDR,192.0.2.8/32,no-resolve')
   })
-  it('shows memory and records connections that disappear as closed', async () => {
+  it('records connections that disappear as closed', async () => {
     vi.mocked(mihomoPanelApi.connections)
       .mockResolvedValueOnce(snapshot([connection('a', 'www.example.com', '10.0.0.3'), connection('b', '223.5.5.5', '')]))
       .mockResolvedValueOnce(snapshot([connection('a', 'www.example.com', '10.0.0.3')]))
     const { wrapper, state } = await render()
-    expect(wrapper.text()).toContain('125.0 MB')
+    // 连接数、累计流量与内存已移到概览
+    expect(wrapper.text()).not.toContain('125.0 MB')
     expect(wrapper.text()).toContain('活跃 (2)')
     await state.load()
     await flushPromises()
@@ -441,13 +442,6 @@ describe('mihomo connection summary', () => {
     expect(signal?.aborted).toBe(false)
     finish(snapshot([connection('a', 'a.example', '192.0.2.1')])); await flushPromises()
     expect(state.snapshot.connections.map((row: any) => row.id)).toEqual(['a'])
-  })
-
-  it('puts counters on the first row and trend metrics on the second', async () => {
-    vi.mocked(mihomoPanelApi.connections).mockResolvedValue(snapshot([]))
-    const { state } = await render()
-    expect(state.summary.map((item: { label: string }) => item.label))
-      .toEqual(['连接', '累计上传', '累计下载', '内存使用', '上传速度', '下载速度'])
   })
 })
 
