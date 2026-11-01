@@ -102,6 +102,27 @@ describe('connection statistics card', () => {
   })
 })
 
+describe('strategy group chain labels', () => {
+  it('omits only the repeated parent while keeping the full path accessible and single-layer exits visible', async () => {
+    localStorage.clear()
+    localStorage.setItem('configflow:mihomo-overview:aggregate', 'group')
+    const wrapper = mount(MihomoConnectionStats, { props: {
+      connections: [
+        connection('proxy', { source: '10.0.0.2', down: 2048, chains: ['HK', '美国自建', '人工智能'] }),
+        connection('direct', { source: '10.0.0.3', down: 1024, chains: ['DIRECT'] })
+      ], speeds: new Map(), notes: {}
+    } })
+    const labels = wrapper.findAll('.stats-part .stats-chain')
+    expect(labels.map(label => label.get('[aria-hidden="true"]').text())).toEqual(['美国自建→HK', 'DIRECT'])
+    expect(labels[0].attributes('title')).toBe('人工智能 → 美国自建 → HK')
+    expect(labels[0].get('.cf-sr').text()).toBe('人工智能 → 美国自建 → HK')
+    await wrapper.findAll('[data-segment]').find(button => button.text() === '按设备')!.trigger('click')
+    expect(wrapper.findAll('.stats-part .stats-chain')[0].get('[aria-hidden="true"]').text()).toBe('人工智能→美国自建→HK')
+    wrapper.unmount()
+    localStorage.clear()
+  })
+})
+
 describe('latency card', () => {
   const wrappers: VueWrapper[] = []
   beforeEach(() => {
