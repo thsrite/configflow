@@ -127,11 +127,14 @@ it('marks only the selected profile and shared notifications as read', async () 
     { ...row, id: 'office', scope: 'profile', profile_id: 'office' },
   ] } } as any)
   await render()
-  document.querySelector<HTMLButtonElement>('[aria-label="通知配置空间"]')!.click()
+  document.querySelector<HTMLButtonElement>('[aria-label="通知配置空间"]')!
+    .dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
   await flushPromises()
   const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(item => item.textContent?.includes('家庭配置与共享事项'))!
-  option.click()
+  option.focus()
+  option.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   await flushPromises()
+  expect(document.querySelectorAll('[data-notification]')).toHaveLength(2)
   button('全部已读').click()
   await flushPromises()
   expect(notificationsApi.read).toHaveBeenCalledWith({ [row.id]: 'v1', home: 'v1' })

@@ -70,7 +70,7 @@
 | 页面 | 你可以做什么 |
 | --- | --- |
 | [系统设置](manual/system-settings.md) | 改服务地址和端口，备份、恢复、更新组件、查看自动任务 |
-| [通知中心](manual/notifications.md) | 汇总失败和待操作事项，直接定位对应设置，查看恢复状态 |
+| [通知中心](manual/notifications.md) | 汇总失败和待操作事项，直接定位对应设置，已读或恢复后自动清理 |
 | [连接 AI 工具（MCP）](manual/mcp.md) | 复制连接地址、填写访问令牌，让 AI 工具读取或管理配置 |
 | [配置空间](manual/profiles.md) | 分开管理家庭、办公等方案，复制、导入、调整设备归属 |
 | [Agent](manual/agents.md) | 管理设备、发送配置、检查状态、更新和查看发布记录 |

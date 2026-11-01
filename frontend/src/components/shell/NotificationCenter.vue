@@ -133,7 +133,7 @@ onUnmounted(() => { disposed = true; controller?.abort(); clearInterval(timer); 
             <span class="min-w-0 break-words text-xs text-muted-foreground">{{ scopeLabel(item) }} · {{ when(item) }}</span>
             <div class="flex flex-wrap items-center gap-1">
               <Button variant="ghost" size="sm" class="min-h-9 text-xs max-sm:min-h-11" aria-label="标为已读" :disabled="reading" @click="read([item])">已读</Button>
-              <Button variant="outline" size="sm" class="min-h-9 shrink-0 text-xs max-sm:min-h-11" :disabled="navigating" @click="go(item)">{{ item.target.label }}</Button>
+              <Button variant="outline" size="sm" class="min-h-9 shrink-0 text-xs max-sm:min-h-11" :disabled="navigating || reading" @click="go(item)">{{ item.target.label }}</Button>
             </div>
           </div>
         </article>
