@@ -56,7 +56,11 @@ import { panelError } from '@/types/mihomo'
  * 实时流量视图：轮询在线 Mihomo Agent 的聚合流向，只展示真实速率。
  * 没有可用 Agent、仍在建立基线或当前没有流量时给出空状态，不回落到其他数据。
  */
-const props = defineProps<{ agents: Array<{ id: string; name?: string }> }>()
+const props = defineProps<{
+  agents: Array<{ id: string; name?: string }>
+  /** 所在标签隐藏时暂停轮询，切回后立即补采 */
+  paused?: boolean
+}>()
 
 const POLL_MS = 3000
 const STORAGE_KEY = 'configflow:dashboard:live-agent'
@@ -178,7 +182,7 @@ const pollAgent = async (id: string) => {
 }
 
 const poll = async () => {
-  if (disposed || document.hidden) return
+  if (disposed || document.hidden || props.paused) return
   await Promise.all(props.agents.map(a => pollAgent(a.id)))
   if (!disposed) loaded.value = true
 }
@@ -199,6 +203,7 @@ const onVisibilityChange = () => {
 }
 
 watch(currentId, id => void loadNotes(id), { immediate: true })
+watch(() => props.paused, paused => { if (!paused) void poll() })
 // Agent 上下线后立即补采新出现的 Agent，并丢掉已离开的结果
 watch(
   () => props.agents.map(a => a.id).join('\n'),

@@ -1,16 +1,5 @@
 <template>
   <div ref="panelElement" class="min-w-0 mihomo-connections">
-    <div class="mb-4 grid grid-cols-3 gap-3 max-md:gap-2">
-      <div v-for="item in summary" :key="item.label" class="flex min-w-0 flex-col rounded-xl border border-border bg-card px-4 py-3 max-md:px-3">
-        <div class="truncate text-[12px] text-muted-foreground">{{ item.label }}</div>
-        <div class="num mt-1 truncate text-[18px] text-foreground max-md:text-[15px]">{{ item.value }}</div>
-        <template v-if="item.trend">
-          <Sparkline class="mt-2 h-9 w-full" :data="item.trend" :color="item.color" />
-          <div class="num mt-1 truncate text-[11px] text-muted-foreground" :title="`近 2 分钟峰值 ${item.peak}`">近 2 分钟峰值 {{ item.peak }}</div>
-        </template>
-      </div>
-    </div>
-
     <div class="mb-4 min-w-0 rounded-xl border border-border bg-card">
       <div class="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-3 py-2">
         <Segmented v-model="view" :options="viewOptions" label="连接状态" class="max-w-full overflow-x-auto" />
@@ -214,7 +203,6 @@ import Segmented from '@/components/common/Segmented.vue'
 import SectionCard from '@/components/common/SectionCard.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingRows from '@/components/common/LoadingRows.vue'
-import Sparkline from '@/components/common/Sparkline.vue'
 import FieldHelp from '@/components/common/FieldHelp.vue'
 import FormField from '@/components/common/FormField.vue'
 import MultiSelect from '@/components/common/MultiSelect.vue'
@@ -242,8 +230,6 @@ type ViewKey = 'active' | 'closed' | 'all'
 const POLL_MS = 2000
 const PAGE_SIZE = 100
 const CLOSED_LIMIT = 500
-/** 趋势图保留的采样数：2 秒一次，约 2 分钟 */
-const TREND_POINTS = 60
 
 const props = withDefaults(defineProps<{ agentId: string; active?: boolean }>(), { active: true })
 // 所在标签是否为当前标签：由 Tabs 注入，切换标签不经过 props，隐藏的面板不会整表重新渲染
@@ -294,13 +280,11 @@ const selectedId = ref('')
 /** 两次采样之间消失的连接，按关闭时间倒序，只保存在本页 */
 const closed = ref<ConnectionRow[]>([])
 let lastById = new Map<string, MihomoConnection>()
-const trend = ref<{ down: number[]; up: number[]; memory: number[] }>({ down: [], up: [], memory: [] })
 const live = ref(true)
 const closingAll = ref(false)
 const now = ref(Date.now())
 const speeds = ref(new Map<string, { up: number; down: number }>())
-const totalSpeed = ref({ up: 0, down: 0 })
-let previous: { at: number; totals: { up: number; down: number }; byId: Map<string, { up: number; down: number }> } | null = null
+let previous: { at: number; byId: Map<string, { up: number; down: number }> } | null = null
 
 function toRow(connection: MihomoConnection, closedAt?: number): ConnectionRow {
   const meta = connection.metadata
@@ -447,26 +431,6 @@ watch([search, view, filters, () => settings.value.sort, () => settings.value.di
 watch(pageCount, count => { page.value = Math.min(page.value, count) })
 watch(settings, saveConnectionTableSettings, { deep: true })
 
-const peak = (values: number[]) => values.length ? Math.max(...values) : 0
-// 上排是计数与累计量，下排是带趋势线的实时指标，两排高度各自一致
-const summary = computed(() => [
-  { label: '连接', value: String(snapshot.value?.connections?.length ?? '—') },
-  { label: '累计上传', value: formatBytes(snapshot.value?.uploadTotal) },
-  { label: '累计下载', value: formatBytes(snapshot.value?.downloadTotal) },
-  {
-    label: '内存使用', value: formatBytes(snapshot.value?.memory),
-    trend: trend.value.memory, color: '--warning-accent', peak: formatBytes(peak(trend.value.memory))
-  },
-  {
-    label: '上传速度', value: speedText(totalSpeed.value.up),
-    trend: trend.value.up, color: '--success-accent', peak: speedText(peak(trend.value.up))
-  },
-  {
-    label: '下载速度', value: speedText(totalSpeed.value.down),
-    trend: trend.value.down, color: '--info-accent', peak: speedText(peak(trend.value.down))
-  }
-])
-
 function speedText(bytesPerSecond: number) {
   return bytesPerSecond > 0 ? formatBytes(bytesPerSecond) + '/s' : '—'
 }
@@ -487,12 +451,9 @@ function startText(start: string) {
   return Number.isFinite(Date.parse(start)) ? new Date(start).toLocaleString() : '—'
 }
 
-/** 返回本次是否算出了速率（需要有上一个样本） */
-function updateSpeeds(data: MihomoConnectionsSnapshot): boolean {
-  const measured = previous !== null
+function updateSpeeds(data: MihomoConnectionsSnapshot) {
   const at = Date.now()
   const byId = new Map((data.connections || []).map(c => [c.id, { up: c.upload, down: c.download }]))
-  const totals = { up: data.uploadTotal, down: data.downloadTotal }
   const next = new Map<string, { up: number; down: number }>()
   if (previous) {
     const seconds = Math.max((at - previous.at) / 1000, 0.5)
@@ -500,12 +461,10 @@ function updateSpeeds(data: MihomoConnectionsSnapshot): boolean {
       const before = previous.byId.get(id)
       if (before) next.set(id, { up: Math.max(0, (current.up - before.up) / seconds), down: Math.max(0, (current.down - before.down) / seconds) })
     }
-    totalSpeed.value = { up: Math.max(0, (totals.up - previous.totals.up) / seconds), down: Math.max(0, (totals.down - previous.totals.down) / seconds) }
   }
   speeds.value = next
-  previous = { at, totals, byId }
+  previous = { at, byId }
   now.value = at
-  return measured
 }
 
 let timer: ReturnType<typeof setTimeout> | null = null
@@ -518,24 +477,13 @@ async function load() {
   try {
     const { data } = await mihomoPanelApi.connections(props.agentId, { signal: controller.signal })
     const result: MihomoConnectionsSnapshot = data.data || { connections: [], uploadTotal: 0, downloadTotal: 0 }
-    const measured = updateSpeeds(result)
+    updateSpeeds(result)
     recordClosed(result.connections || [])
-    recordTrend(result, measured)
     snapshot.value = result
     error.value = ''
   } catch (failure: any) {
     if (failure?.code === 'ERR_CANCELED') return
     error.value = panelError(failure, '暂时无法读取连接。')
-  }
-}
-
-function recordTrend(data: MihomoConnectionsSnapshot, hasSpeed: boolean) {
-  const push = (values: number[], value: number) => [...values, value].slice(-TREND_POINTS)
-  trend.value = {
-    // 第一个样本没有前值，速率无从计算，不补 0
-    down: hasSpeed ? push(trend.value.down, totalSpeed.value.down) : trend.value.down,
-    up: hasSpeed ? push(trend.value.up, totalSpeed.value.up) : trend.value.up,
-    memory: typeof data.memory === 'number' ? push(trend.value.memory, data.memory) : trend.value.memory
   }
 }
 

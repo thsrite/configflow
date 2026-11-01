@@ -44,7 +44,7 @@
     </div>
 
     <SectionCard v-if="devices && !devices.length">
-      <EmptyState :icon="Server" title="暂无 Mihomo Agent" description="接入 Mihomo Agent 后，即可在这里切换策略组、查看连接、规则和日志。">
+      <EmptyState :icon="Server" title="暂无 Mihomo Agent" description="接入 Mihomo Agent 后，即可在这里查看概览、切换策略组、查看连接、规则和日志。">
         <Button class="min-h-11" @click="router.push('/agents')">前往 Agent 接入</Button>
       </EmptyState>
     </SectionCard>
@@ -68,11 +68,13 @@
       <!-- 子标签首次打开后保持挂载，切回保留测速结果和连接记录；换设备时重建，只挂载当前标签 -->
       <Tabs v-else :key="agentId" keep-visited :model-value="tab" class="min-w-0" @update:model-value="changeTab(String($event))">
         <TabsList class="mb-4 min-h-11 max-sm:mb-0">
+          <TabsTrigger value="overview" class="min-h-11 px-4">概览</TabsTrigger>
           <TabsTrigger value="proxies" class="min-h-11 px-4">策略</TabsTrigger>
           <TabsTrigger value="connections" class="min-h-11 px-4">连接</TabsTrigger>
           <TabsTrigger value="rules" class="min-h-11 px-4">规则</TabsTrigger>
           <TabsTrigger value="logs" class="min-h-11 px-4">日志</TabsTrigger>
         </TabsList>
+        <TabsContent value="overview"><MihomoOverview :key="agentId" :agent-id="agentId" :agent-name="currentDevice?.name" :reload-token="reloadToken" /></TabsContent>
         <TabsContent value="proxies"><MihomoProxies :key="agentId" :agent-id="agentId" :reload-token="reloadToken" /></TabsContent>
         <TabsContent value="connections"><MihomoConnections :key="agentId" :agent-id="agentId" /></TabsContent>
         <TabsContent value="rules"><MihomoRules :key="agentId" :agent-id="agentId" :reload-token="reloadToken" /></TabsContent>
@@ -97,6 +99,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingRows from '@/components/common/LoadingRows.vue'
 import StatusDot from '@/components/common/StatusDot.vue'
 import Segmented from '@/components/common/Segmented.vue'
+import MihomoOverview from '@/components/mihomo/MihomoOverview.vue'
 import MihomoProxies from '@/components/mihomo/MihomoProxies.vue'
 import MihomoConnections from '@/components/mihomo/MihomoConnections.vue'
 import MihomoRules from '@/components/mihomo/MihomoRules.vue'
@@ -111,7 +114,7 @@ import type { Agent } from '@/types'
 const MihomoSettings = defineAsyncComponent(() => import('@/components/generate/MihomoSettings.vue'))
 type Device = Pick<Agent, 'id' | 'name' | 'host' | 'status'>
 const STORAGE_KEY = 'configflow:mihomo-panel:agent'
-const TABS = ['proxies', 'connections', 'rules', 'logs']
+const TABS = ['overview', 'proxies', 'connections', 'rules', 'logs']
 const MODE_OPTIONS: Array<{ value: MihomoMode; label: string }> = [
   { value: 'rule', label: '规则' },
   { value: 'global', label: '全局' },
@@ -125,7 +128,7 @@ const devicesLoading = ref(false)
 const devicesError = ref('')
 const agentId = computed(() => typeof route.query.agent === 'string' ? route.query.agent : '')
 const currentDevice = computed(() => devices.value?.find(device => device.id === agentId.value))
-const tab = computed(() => TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'proxies')
+const tab = computed(() => TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'overview')
 
 const coreVersion = ref('')
 const mode = ref<MihomoMode>('rule')
@@ -199,7 +202,7 @@ function selectDevice(id: string) {
 }
 
 function changeTab(value: string) {
-  router.replace({ query: { ...route.query, tab: value === 'proxies' ? undefined : value } })
+  router.replace({ query: { ...route.query, tab: value === 'overview' ? undefined : value } })
 }
 
 let statusEpoch = 0

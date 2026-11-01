@@ -103,6 +103,18 @@ describe('LiveFlow', () => {
     expect(localStorage.getItem('configflow:dashboard:live-agent')).toBe('a')
   })
 
+  it('stops polling while paused and samples again as soon as it resumes', async () => {
+    vi.mocked(mihomoPanelApi.flow).mockResolvedValue(reply(snapshot([path('10.0.0.2', 'Match', 'DIRECT', 'DIRECT', 2048)])))
+    const view = await render([{ id: 'gw' }])
+    expect(mihomoPanelApi.flow).toHaveBeenCalledTimes(1)
+    await view.setProps({ paused: true })
+    await vi.advanceTimersByTimeAsync(9000)
+    expect(mihomoPanelApi.flow).toHaveBeenCalledTimes(1)
+    await view.setProps({ paused: false })
+    await flushPromises()
+    expect(mihomoPanelApi.flow).toHaveBeenCalledTimes(2)
+  })
+
   it('shows the agent error when every agent fails', async () => {
     vi.mocked(mihomoPanelApi.flow).mockRejectedValue({ response: { data: { message: '请将此 Agent 升级到 1.8.26-go 或更新版本后使用实时流量。' } } })
     const view = await render([{ id: 'gw' }])
