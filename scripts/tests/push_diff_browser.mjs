@@ -8,7 +8,9 @@
 // `changed` checks values are shown by default, that 隐藏敏感信息 leaves no credential in the page (tables,
 // details, raw diff) and that switching it off shows them again, on a light desktop and a dark phone; with the
 // local data it also expands the subscription and rule set rows (nodes added, removed, modified field by field,
-// a repeated name, rules added and removed) and the ones with more changes than a file lists.
+// a repeated name, rules added and removed), loads every page of the large ones (+3000 / −1500 rules, +300 nodes)
+// inside their own scroll area, searches them (hits and misses), checks that credentials on pages loaded while
+// 隐藏敏感信息 is on never reach the page, and changes the configuration under an open dialog to see 对比结果已更新.
 import assert from 'node:assert/strict'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { networkInterfaces } from 'node:os'
@@ -35,6 +37,9 @@ const credentials = JSON.parse(await readFile(join(WORK, 'credentials.json'), 'u
 const SECRETS = ['lab-manual-pass-before-7c1e', 'lab-manual-pass-after-93ab', 'lab-controller-secret-5d20', credentials.config_token]
 // The subscription node's password before and after (push_diff_local.py only).
 const NODE_SECRETS = ['lab-node-pass-before-41f2', 'lab-node-pass-after-8d3c']
+// 40 more nodes changing their password: 19 on the first page, the rest on the next one.
+const BULK_SECRETS = Array.from({ length: 40 }, (_, index) => String(index + 1).padStart(2, '0'))
+  .flatMap(index => [`lab-bulk-pass-before-${index}`, `lab-bulk-pass-after-${index}`])
 const LOCAL = WORK.endsWith('cf-pushdiff-local')
 if (LOCAL) SECRETS.push(...NODE_SECRETS)
 const login = await fetch(`http://127.0.0.1:${apiPort}/api/auth/login`, {
@@ -154,6 +159,85 @@ async function expandFile(dialog, path, name) {
 
 const flat = async locator => (await locator.innerText()).replace(/\s+/g, ' ')
 
+const group = (detail, change) => detail.locator(`[data-group="${change}"]`)
+const entryCount = async (detail, change) => group(detail, change).locator(':scope > ul > li').count()
+
+/** 加载更多 once and wait for the page to be added. */
+async function loadMore(detail, change) {
+  const section = group(detail, change)
+  const before = await entryCount(detail, change)
+  await section.locator('[data-load-more]').click()
+  await detail.page().waitForFunction(([element, count]) => element.querySelectorAll(':scope > ul > li').length > count
+    && !element.querySelector('[data-load-more][disabled]'), [await section.elementHandle(), before])
+}
+
+/** 加载更多 in one group until it is gone; returns the number of clicks. */
+async function loadAll(detail, change) {
+  let clicks = 0
+  while (await group(detail, change).locator('[data-load-more]').count()) {
+    await loadMore(detail, change)
+    clicks += 1
+  }
+  return clicks
+}
+
+/** Type into the details' search box and wait for the server's answers (one request per group). */
+async function searchFor(detail, text) {
+  const tab = detail.page()
+  const answered = tab.waitForResponse(response => response.url().includes('/push-diff/entries')
+    && new URL(response.url()).searchParams.get('q') === text)
+  await detail.locator('[data-detail-search]').fill(text)
+  await answered
+  await tab.waitForFunction(element => /匹配/.test(element.textContent), await detail.locator('[data-search-summary]').elementHandle())
+  return flat(detail.locator('[data-search-summary]'))
+}
+
+/** The details' own scroll area: bounded height, scrolled by the wheel without moving the dialog. */
+async function innerScroll(tab, dialog, detail, name, limit) {
+  const scroller = detail.locator('[data-details-scroll]')
+  await scroller.evaluate(element => { element.scrollTop = 0 })
+  const box = await scroller.boundingBox()
+  const before = await scroller.evaluate(element => ({ top: element.scrollTop, height: element.clientHeight, content: element.scrollHeight }))
+  const outer = () => dialog.evaluate(element => element.querySelector('.overflow-y-auto').scrollTop)
+  const outerBefore = await outer()
+  await tab.mouse.move(box.x + box.width / 2, box.y + Math.min(box.height / 2, 120))
+  await tab.mouse.wheel(0, 600)
+  await tab.waitForTimeout(300)
+  const after = await scroller.evaluate(element => element.scrollTop)
+  const outerAfter = await outer()
+  report.steps.push({ name: `${name}: inner scroll`, ...before, after, outerBefore, outerAfter, limit })
+  assert.ok(before.height <= limit + 1, `details area ${before.height}px high, limit ${limit}`)
+  assert.ok(before.content > before.height, 'details area scrolls')
+  assert.ok(after > before.top, 'the wheel scrolls the details area')
+  assert.equal(outerAfter, outerBefore, 'the dialog stays where it is')
+  await tab.mouse.move(0, 0)
+}
+
+async function collapseFile(dialog, path) {
+  const toggle = dialog.locator(`[data-file="${path}"]`).getByRole('button', { name: '收起明细' })
+  if (await toggle.count()) await toggle.click()
+}
+
+/** Change the small rule set while a dialog is open (reverted in revertBump). */
+let bumped = null
+async function ruleLibrary(method, path, body) {
+  const response = await fetch(`http://127.0.0.1:${apiPort}/api${path}`, { method, headers: { 'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}` }, body: body && JSON.stringify(body) })
+  assert.ok(response.ok, `${method} ${path}: ${response.status}`)
+  return response.json()
+}
+async function bump() {
+  const rule = (await ruleLibrary('GET', '/rule-library')).find(item => item.id === 'lab-direct')
+  delete rule.has_ip_part
+  bumped = rule
+  await ruleLibrary('PUT', '/rule-library/lab-direct', { ...rule, content: `${rule.content}\n+.bump.lab.invalid` })
+}
+async function revertBump() {
+  if (!bumped) return
+  await ruleLibrary('PUT', '/rule-library/lab-direct', bumped)
+  bumped = null
+}
+
 /** Scroll the dialog body (not the dialog itself) so ``selector`` sits at its top. */
 async function scrollToTop(dialog, selector) {
   await dialog.evaluate((element, target) => {
@@ -188,11 +272,11 @@ try {
     const text = (await dialog.innerText()).replace(/\s+/g, ' ')
     report.steps.push({ name: 'changed (desktop, light)', text: text.slice(0, 2400) })
     assert.match(text, /主配置.*修改/)
-    assert.match(text, LOCAL ? /实验机场.*订阅.*修改.*节点 \+2 \/ −1 · 修改 1 · 共 4 个/ : /实验机场.*订阅.*修改.*节点 \+1 \/ −0/)
+    assert.match(text, LOCAL ? /实验机场.*订阅.*修改.*节点 \+2 \/ −1 · 修改 41 · 共 44 个/ : /实验机场.*订阅.*修改.*节点 \+1 \/ −0/)
     assert.match(text, /实验直连.*规则集.*修改.*规则 \+2 \/ −1/)
     if (LOCAL) {
-      assert.match(text, /备用机场.*订阅.*新增.*节点 \+130 \/ −0/)
-      assert.match(text, /实验大规则集.*规则集.*修改.*规则 \+300 \/ −150/)
+      assert.match(text, /备用机场.*订阅.*新增.*节点 \+300 \/ −0/)
+      assert.match(text, /实验大规则集.*规则集.*修改.*规则 \+3000 \/ −1500/)
     }
     assert.match(text, /hosts\.printer\.lab\.invalid 新增 — 198\.51\.100\.30/)
     assert.match(text, /secret 新增 — lab-controller-secret-5d20/)  // values as they are by default
@@ -213,10 +297,12 @@ try {
       const nodes = await flat(feed)
       report.steps.push({ name: 'subscription details (desktop, light)', text: nodes })
       for (const part of ['新增 2 个节点', '+ C 新增节点 · trojan · edge-c.lab.invalid:443',
-        '+ B 日本（同名第 2 个） · socks5 · [2001:db8::b]:1080', '删除 1 个节点', '− E 下线', '修改 1 个节点', '~ A 香港',
+        '+ B 日本（同名第 2 个） · socks5 · [2001:db8::b]:1080', '删除 1 个节点', '− E 下线', '修改 41 个节点', '~ A 香港',
         'server：edge-a.lab.invalid → edge-a2.lab.invalid', 'port：11005 → 11008',
         'password：lab-node-pass-before-41f2 → lab-node-pass-after-8d3c', 'plugin-opts.host：cdn-a.lab.invalid → cdn-b.lab.invalid',
+        '~ F 批量 19', 'password：lab-bulk-pass-before-19 → lab-bulk-pass-after-19', '加载更多（还剩 21 个）',
         '有 1 个节点名被多个节点共用']) assert.ok(nodes.includes(part), `subscription details miss: ${part}`)
+      assert.ok(!nodes.includes('F 批量 20'), 'the first page ends at 20 modified nodes')
       assert.ok(!nodes.includes('lab-trojan-pass-c7'), 'a new node shows type and address only')
       const { detail: direct } = await expandFile(dialog, 'ruleset/实验直连.list', 'desktop')
       const rules = await flat(direct)
@@ -228,18 +314,69 @@ try {
       await scrollToTop(dialog, '#push-diff-files-title')
       await shot(desktop, dialog, join(shots, 'push-diff-file-details.png'))
 
-      // More changes than one file lists: 100 nodes, 200 rules shared between added and removed.
-      const { detail: big } = await expandFile(dialog, 'ruleset/实验大规则集.list', 'desktop')
+      // Many changes: 20 of each group first, 50 more per click, inside the expanded area's own scroll.
+      const bigPath = 'ruleset/实验大规则集.list'
+      const { detail: big } = await expandFile(dialog, bigPath, 'desktop')
+      assert.match(await flat(big), /新增 3000 条规则.*加载更多（还剩 2980 条）.*删除 1500 条规则.*加载更多（还剩 1480 条）/)
+      assert.equal(await entryCount(big, 'added'), 20)
+      await loadMore(big, 'added')
+      assert.ok((await flat(group(big, 'added'))).includes('加载更多（还剩 2930 条）'))
+      assert.equal(await entryCount(big, 'added'), 70)
+      await scrollToTop(dialog, `[data-file="${bigPath}"]`)
+      await innerScroll(desktop, dialog, big, 'desktop', 420)
+      // The picture: the end of the loaded part with the next 加载更多, inside the area's own scroll.
+      await big.locator('[data-details-scroll]').evaluate(element => {
+        const button = element.querySelector('[data-group="added"] [data-load-more]')
+        element.scrollTop += button.getBoundingClientRect().bottom - element.getBoundingClientRect().bottom + 12
+      })
+      await shot(desktop, dialog, join(shots, 'push-diff-load-more.png'))
+      const started = Date.now()
+      const clicks = (await loadAll(big, 'added')) + 1
+      const removedClicks = await loadAll(big, 'removed')
+      assert.equal(await entryCount(big, 'added'), 3000)
+      assert.equal(await entryCount(big, 'removed'), 1500)
+      assert.equal(await group(big, 'added').locator('[data-all-loaded]').innerText(), '已全部加载')
       const bigText = await flat(big)
-      assert.match(bigText, /新增 300 条规则.*还有 200 条未列出.*删除 150 条规则.*还有 50 条未列出/)
-      assert.equal(await big.locator('[data-file-details] li').count(), 200)
-      const { detail: backupNodes } = await expandFile(dialog, 'providers/备用机场.yaml', 'desktop')
-      assert.match(await flat(backupNodes), /新增 130 个节点 .*D 备用 001 · socks5 · backup\.lab\.invalid:20001.*还有 30 个未列出/)
-      assert.equal(await backupNodes.locator('[data-file-details] li').count(), 100)
-      report.steps.push({ name: 'truncated details', rules: bigText.slice(0, 200), nodes: 100 })
-      await scrollToTop(dialog, '[data-file="ruleset/实验大规则集.list"] + tr li:nth-child(96)')
-      await shot(desktop, dialog, join(evidence, 'details-truncated-desktop-light.png'))
-      await noOverflow(desktop, dialog, 'desktop, details open')
+      for (const part of ['+ +.fresh-0000.big.lab.invalid', '+ +.fresh-2999.big.lab.invalid', '− +.site-0000.big.lab.invalid',
+        '− +.site-1499.big.lab.invalid']) assert.ok(bigText.includes(part), `all pages: missing ${part}`)
+      report.steps.push({ name: 'rules: every page loaded', added: 3000, removed: 1500, clicks, removedClicks, ms: Date.now() - started })
+      await innerScroll(desktop, dialog, big, 'desktop, all loaded', 420)
+      await noOverflow(desktop, dialog, 'desktop, all pages')
+
+      // Search on the server: hits page like the list, a miss says so, clearing restores the list.
+      assert.equal(await searchFor(big, 'FRESH-12'), '匹配 100 条')
+      assert.match(await flat(group(big, 'added').locator('p').first()), /新增 3000 条规则 · 匹配 100 条/)
+      assert.match(await flat(group(big, 'removed').locator('p').first()), /删除 1500 条规则 · 匹配 0 条/)
+      assert.equal(await entryCount(big, 'added'), 50)
+      assert.ok((await flat(group(big, 'added'))).includes('加载更多（还剩 50 条）'))
+      await scrollToTop(dialog, `[data-file="${bigPath}"]`)
+      await big.locator('[data-details-scroll]').evaluate(element => { element.scrollTop = 0 })
+      await shot(desktop, dialog, join(shots, 'push-diff-search.png'))
+      await loadAll(big, 'added')
+      assert.equal(await entryCount(big, 'added'), 100)
+      const hits = await group(big, 'added').locator(':scope > ul > li').allInnerTexts()
+      assert.ok(hits.every(item => item.includes('fresh-12')), 'every hit matches')
+      report.steps.push({ name: 'rules: search hit', query: 'FRESH-12', matched: 100, first: hits[0], last: hits.at(-1) })
+      assert.equal(await searchFor(big, 'zzz-no-match'), '匹配 0 条')
+      assert.equal(await big.locator('[data-search-empty]').innerText(), '没有匹配「zzz-no-match」的规则。')
+      await shot(desktop, dialog, join(evidence, 'search-miss-desktop-light.png'))
+      report.steps.push({ name: 'rules: search miss', query: 'zzz-no-match' })
+      await big.getByRole('button', { name: '清空搜索' }).click()
+      assert.equal(await entryCount(big, 'added'), 3000)
+      await collapseFile(dialog, bigPath)
+
+      // 300 new nodes: pages, and search by name and by server:port.
+      const backupPath = 'providers/备用机场.yaml'
+      const { detail: backupNodes } = await expandFile(dialog, backupPath, 'desktop')
+      assert.match(await flat(backupNodes), /新增 300 个节点 .*D 备用 001 · socks5 · backup\.lab\.invalid:20001.*加载更多（还剩 280 个）/)
+      assert.equal(await loadAll(backupNodes, 'added'), 6)
+      assert.equal(await entryCount(backupNodes, 'added'), 300)
+      assert.equal(await searchFor(backupNodes, 'backup.lab.invalid:2025'), '匹配 10 个')
+      assert.equal(await searchFor(backupNodes, 'd 备用 29'), '匹配 10 个')
+      assert.deepEqual((await group(backupNodes, 'added').locator(':scope > ul > li').allInnerTexts()).map(item => item.split(' · ')[0]),
+        Array.from({ length: 10 }, (_, index) => `+ D 备用 29${index}`))
+      report.steps.push({ name: 'nodes: every page and search', added: 300 })
+      await collapseFile(dialog, backupPath)
       await scrollToTop(dialog, '[data-push-diff-changed]')
     }
 
@@ -253,9 +390,23 @@ try {
     if (pullToken) assert.match(await backup.innerText(), /proxies\?token=已隐藏/)
     await assertNoSecrets(desktop)
     if (LOCAL) {
-      const feed = await flat(dialog.locator('[data-file="providers/实验机场.yaml"] + tr'))
+      const feedDetail = dialog.locator('[data-file="providers/实验机场.yaml"] + tr')
+      const feed = await flat(feedDetail)
       assert.ok(feed.includes('password：已隐藏 → 已隐藏'), 'node password hidden in the details')
       assert.ok(feed.includes('server：edge-a.lab.invalid → edge-a2.lab.invalid'), 'servers stay')
+      // The next page arrives while hidden: its credentials never reach the page.
+      await loadAll(feedDetail, 'modified')
+      assert.equal(await entryCount(feedDetail, 'modified'), 41)
+      assert.ok((await flat(feedDetail)).includes('~ F 批量 40 password：已隐藏 → 已隐藏'))
+      assert.equal(await feedDetail.locator('[data-group="modified"] [data-secret-hidden]').count(), 82)
+      const page = await desktop.content()
+      for (const secret of BULK_SECRETS) assert.ok(!page.includes(secret), `secret on a later page visible: ${secret}`)
+      assert.equal(await searchFor(feedDetail, '批量 3'), '匹配 10 个')
+      assert.equal(await feedDetail.locator('[data-group="modified"] [data-secret-hidden]').count(), 20)
+      const searched = await desktop.content()
+      for (const secret of BULK_SECRETS) assert.ok(!searched.includes(secret), `secret in a search result visible: ${secret}`)
+      report.steps.push({ name: 'hidden: later pages and search results', modified: 41, hiddenPieces: 82 })
+      await feedDetail.getByRole('button', { name: '清空搜索' }).click()
       await scrollToTop(dialog, '[data-file="providers/实验机场.yaml"]')
       await shot(desktop, dialog, join(evidence, 'details-hidden-desktop-light.png'))
       await scrollToTop(dialog, '[data-push-diff-changed]')
@@ -271,6 +422,7 @@ try {
     await shot(desktop, dialog, join(evidence, 'raw-hidden-desktop-light.png'))
 
     await setHidden(desktop, dialog, false, 'desktop')
+    if (LOCAL) await assertSecretsShown(desktop, BULK_SECRETS)  // the later page, loaded while hidden
     const raw = await dialog.locator('#push-diff-raw-text').innerText()
     assert.match(raw, /\+secret: lab-controller-secret-5d20/)
     assert.match(raw, /\+ {2}printer\.lab\.invalid: 198\.51\.100\.30/)
@@ -285,6 +437,33 @@ try {
     assert.equal(await again.locator('[data-push-diff-hide]').getByRole('switch').getAttribute('aria-checked'), 'false')
     assert.match((await again.innerText()).replace(/\s+/g, ' '), /secret 新增 — lab-controller-secret-5d20/)
     report.steps.push({ name: 'reopened: values shown, switch off' })
+    if (LOCAL) {
+      // The configuration changes under the open dialog: the next page is refused, not mixed in.
+      const bigPath = 'ruleset/实验大规则集.list'
+      const { detail: big } = await expandFile(again, bigPath, 'desktop, before the change')
+      await bump()
+      await group(big, 'added').locator('[data-load-more]').click()
+      const alert = big.locator('[data-details-stale]')
+      await alert.waitFor()
+      assert.match(await flat(alert), /对比结果已更新，请重新加载。/)
+      assert.equal(await entryCount(big, 'added'), 20)
+      assert.equal(await big.locator('[data-load-more]').count(), 0)
+      const focused = await desktop.evaluate(() => document.activeElement?.textContent?.trim())
+      assert.equal(focused, '重新加载')
+      await scrollToTop(again, `[data-file="${bigPath}"]`)
+      await shot(desktop, again, join(shots, 'push-diff-stale.png'))
+      await alert.getByRole('button', { name: '重新加载' }).click()
+      await again.locator('[data-push-diff-loading]').waitFor()
+      await again.locator('[data-push-diff-changed]').waitFor({ timeout: 180000 })
+      const reopened = again.locator(`[data-file="${bigPath}"] + tr [data-file-details]`)
+      await reopened.waitFor()
+      assert.equal(await reopened.locator('[data-details-stale]').count(), 0)
+      await loadMore(reopened, 'added')
+      assert.ok((await flat(group(reopened, 'added'))).includes('加载更多（还剩 2930 条）'))
+      assert.match(await flat(again), /实验直连.*规则 \+3 \/ −1/)  // the new comparison includes the change
+      report.steps.push({ name: 'stale: reload keeps the file open and pages again', focused })
+      await revertBump()
+    }
 
     const phone = await page('dark', { width: 375, height: 812 })
     const mobile = await openDialog(phone, LAB, '有变更，待推送', '[data-push-diff-changed]')
@@ -295,7 +474,22 @@ try {
     if (LOCAL) {
       const { detail: feed, box } = await expandFile(mobile, 'providers/实验机场.yaml', 'phone')
       assert.ok(box && box.height >= 44, `phone 展开明细 ${box?.height}px high`)
-      await expandFile(mobile, 'ruleset/实验大规则集.list', 'phone')
+      const { detail: big } = await expandFile(mobile, 'ruleset/实验大规则集.list', 'phone')
+      // Touch targets of 44px: the search box, its clear button and 加载更多.
+      const more = group(big, 'added').locator('[data-load-more]')
+      const sizes = { more: (await more.boundingBox())?.height, search: (await big.locator('[data-detail-search]').boundingBox())?.height }
+      await loadMore(big, 'added')
+      await scrollToTop(mobile, '[data-file="ruleset/实验大规则集.list"]')
+      await innerScroll(phone, mobile, big, 'phone', Math.round(812 * 0.6))
+      assert.equal(await searchFor(big, 'fresh-12'), '匹配 100 条')
+      sizes.clear = (await big.getByRole('button', { name: '清空搜索' }).boundingBox())?.height
+      report.steps.push({ name: 'phone: touch targets', ...sizes })
+      for (const [key, value] of Object.entries(sizes)) assert.ok(value >= 44, `phone ${key} ${value}px high`)
+      await noOverflow(phone, mobile, 'phone, search')
+      await scrollToTop(mobile, '[data-file="ruleset/实验大规则集.list"]')
+      await big.locator('[data-details-scroll]').evaluate(element => { element.scrollTop = 0 })
+      await shot(phone, mobile, join(shots, 'push-diff-search-mobile-dark.png'))
+      await big.getByRole('button', { name: '清空搜索' }).click()
       await expandFile(mobile, 'providers/备用机场.yaml', 'phone')
       await noOverflow(phone, mobile, 'phone, file details open')
       await assertSecretsShown(phone, NODE_SECRETS)
@@ -309,8 +503,8 @@ try {
       await assertSecretsShown(phone, NODE_SECRETS)
       await scrollToTop(mobile, '[data-file="providers/实验机场.yaml"]')
       await shot(phone, mobile, join(evidence, 'details-shown-mobile-dark.png'))
-      await scrollToTop(mobile, '[data-file="ruleset/实验大规则集.list"] + tr li:nth-child(97)')
-      await shot(phone, mobile, join(evidence, 'details-truncated-mobile-dark.png'))
+      await scrollToTop(mobile, '[data-file="ruleset/实验大规则集.list"]')
+      await shot(phone, mobile, join(evidence, 'details-pages-mobile-dark.png'))
     }
     await expand(mobile, 'proxies')
     await noOverflow(phone, mobile, 'phone, details open')
@@ -370,6 +564,7 @@ try {
   assert.deepEqual(report.browserErrors, [])
   console.log(JSON.stringify(report, null, 1))
 } finally {
+  await revertBump().catch(error => report.steps.push({ name: 'revert failed', error: String(error) }))
   await writeFile(join(evidence, `browser-${scene}.json`), JSON.stringify(report, null, 2))
   await browser?.close()
   await vite?.close()

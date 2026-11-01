@@ -8,8 +8,10 @@ Files are compared by the same per-file digests as the "changed" status.
 Changed provider, rule and main configuration files are then summarised from
 their bytes; the main YAML is compared key by key. Subscription files also list
 which nodes were added, removed or modified (matched by name, field by field)
-and rule set files which rules were added or removed, a bounded number per file
-and per response. Values are returned as they
+and rule set files which rules were added or removed: the first few of each
+group in the response, and, when asked for (``lists``), every one of them kept
+compressed (``FileEntries``) for reading page by page and searching. Values are
+returned as they
 are, with every credential marked: credential fields, URL credentials and long
 opaque URL parts, also inside the unified diff. A display text is a plain
 string when nothing in it is a credential, else a list of strings and
@@ -25,6 +27,7 @@ import json
 import re
 import tarfile
 from urllib.parse import unquote, urlsplit
+import zlib
 
 import yaml
 
@@ -40,10 +43,19 @@ MAX_RAW_BYTES = 160 * 1024
 MAX_RAW_INPUT_LINES = 60000
 MAX_LISTED_FILES = 500
 MAX_DEPTH = 64
-# Per subscription / rule set file; and for all file details of one response together.
-MAX_NODE_DETAILS = 100
-MAX_RULE_DETAILS = 200
+# Node / rule entries per change group in the response; and for all file details of one response together.
+FIRST_PAGE = 20
 MAX_DETAIL_BYTES = 256 * 1024
+# Every entry of a file kept for paging: per file at most this many and these many bytes (JSON lines and
+# search lines, before compression); for all files of one comparison together.
+MAX_KEPT_ENTRIES = 100_000
+MAX_KEPT_FILE_BYTES = 16 * 1024 * 1024
+MAX_KEPT_BYTES = 48 * 1024 * 1024
+# One page read back: entries by default and at most; bytes at most (always one entry); search text.
+PAGE_SIZE = 50
+MAX_PAGE_SIZE = 200
+MAX_PAGE_BYTES = 512 * 1024
+MAX_QUERY_CHARS = 200
 CONFIG_ROLE = 'config'
 HIDDEN = '已隐藏'
 STORED = '[REDACTED]'
@@ -848,16 +860,239 @@ def _quotas(totals, limit):
     return quotas
 
 
-def _group(change, total, entries):
-    return {'change': change, 'total': total, 'entries': entries, 'omitted': total - len(entries)}
+def _encode(text):
+    # surrogatepass: a YAML escape can yield a lone surrogate in a name; it is kept as it is.
+    return text.encode('utf-8', 'surrogatepass')
 
 
-def _details(kind, groups, budget, *, repeated=0):
+def _decode(data):
+    return data.decode('utf-8', 'surrogatepass')
+
+
+def _plain_pieces(value):
+    """The non-credential pieces of a display text, each on its own."""
+    if isinstance(value, str):
+        return [value] if value else []
+    if isinstance(value, list):
+        return [piece for piece in value if isinstance(piece, str) and piece]
+    return []
+
+
+def _search_text(entry):
+    """What a search matches in one entry: names, a new node's info, field names and values, never credentials.
+
+    Pieces are joined by NUL, so a match never spans a credential or two values.
+    """
+    parts = [*_plain_pieces(entry.get('text')), *_plain_pieces(entry.get('info'))]
+    for field in entry.get('fields') or ():
+        parts.append(field['key'])
+        if field.get('sensitive'):
+            continue  # the whole value is a credential
+        parts += _plain_pieces(field.get('old')) + _plain_pieces(field.get('new'))
+        listed = field.get('list') or {}
+        for item in (*listed.get('added_items', ()), *listed.get('removed_items', ())):
+            parts += _plain_pieces(item)
+    return '\x00'.join(parts).replace('\n', ' ')
+
+
+def search_query(text):
+    """A search as entries are matched: case folded, no line breaks or NUL; None when blank."""
+    if not isinstance(text, str):
+        return None
+    text = text.replace('\n', ' ').replace('\r', ' ').replace('\x00', ' ').strip()
+    return text.casefold() or None
+
+
+def _matches_outside(line, needle, ranges):
+    """``needle`` still found once the ``ranges`` of ``line`` (stored credentials) are cut out."""
+    pieces, position = [], 0
+    for start, end in _merge(ranges):
+        pieces.append(line[position:start])
+        position = max(position, end)
+    pieces.append(line[position:])
+    return needle in '\x00'.join(pieces).casefold()
+
+
+class _StoredGroup:
+    """One change group kept for paging: entry JSON lines and search lines, each zlib-compressed."""
+
+    __slots__ = ('count', 'entries', 'search')
+
+    def __init__(self, count, entries, search):
+        self.count, self.entries, self.search = count, entries, search
+
+    def lines(self):
+        return zlib.decompress(self.entries).split(b'\n')[:self.count]
+
+    def matches(self, needle, find=None):
+        """Indices of the entries whose search text holds ``needle`` (case folded), credentials left out.
+
+        Credentials marked in the display texts never reach the search text. ConfigFlow's
+        stored ones (``find``, the route's ``stored_secret_finder``) are replaced only when a
+        response is sent, so a line holding one is matched with it cut out.
+        """
+        hits = []
+        for index, raw in enumerate(zlib.decompress(self.search).split(b'\n')[:self.count]):
+            line = _decode(raw)
+            if needle in line.casefold():
+                ranges = find(line) if find is not None else None
+                if not ranges or _matches_outside(line, needle, ranges):
+                    hits.append(index)
+        return hits
+
+
+class FileEntries:
+    """Every kept node or rule entry of one file, per change group, read back page by page."""
+
+    __slots__ = ('groups',)
+
+    def __init__(self, groups):
+        self.groups = groups
+
+    @property
+    def size(self):
+        """Bytes held (compressed)."""
+        return sum(len(group.entries) + len(group.search) for group in self.groups.values())
+
+    def page(self, change, offset=0, limit=PAGE_SIZE, query=None, find=None):
+        """Entries ``offset`` onwards of one group, or of its entries matching ``query`` (see ``search_query``).
+
+        ``total`` counts the group's kept entries, or the matching ones. At most ``limit``
+        entries and ``MAX_PAGE_BYTES`` (always one); ``next_offset`` is None at the end.
+        """
+        group = self.groups[change]
+        lines = group.lines()
+        if query:
+            indices = group.matches(query, find)
+            total = len(indices)
+            chosen = indices[offset:offset + limit]
+        else:
+            total = group.count
+            chosen = range(offset, min(total, offset + limit))
+        entries, size = [], 0
+        for index in chosen:
+            raw = lines[index]
+            if entries and size + len(raw) > MAX_PAGE_BYTES:
+                break
+            size += len(raw)
+            entries.append(json.loads(_decode(raw)))
+        end = offset + len(entries)
+        return {'total': total, 'offset': offset, 'entries': entries, 'next_offset': end if end < total else None}
+
+
+class _GroupWriter:
+    """Streams one group's entries into compressed lines; stops at its share of entries or bytes."""
+
+    def __init__(self, quota, limit):
+        self.quota, self.limit = quota, limit
+        self.count = self.raw = 0
+        self.full = quota <= 0 or limit <= 0
+        self._entries, self._search = zlib.compressobj(6), zlib.compressobj(6)
+        self._entry_parts, self._search_parts = [], []
+
+    def add(self, entry):
+        if self.full:
+            return False
+        line = _encode(json.dumps(entry, ensure_ascii=False, separators=(',', ':'))) + b'\n'
+        search = _encode(_search_text(entry)) + b'\n'
+        size = len(line) + len(search)
+        if size > self.limit - self.raw:
+            self.full = True  # what is kept stays a contiguous start of the group
+            return False
+        self.raw += size
+        self.count += 1
+        for compressor, parts, data in ((self._entries, self._entry_parts, line),
+                                        (self._search, self._search_parts, search)):
+            chunk = compressor.compress(data)
+            if chunk:
+                parts.append(chunk)
+        if self.count >= self.quota:
+            self.full = True
+        return True
+
+    def close(self):
+        entries = b''.join([*self._entry_parts, self._entries.flush()])
+        search = b''.join([*self._search_parts, self._search.flush()])
+        self._entry_parts = self._search_parts = None
+        return _StoredGroup(self.count, entries, search)
+
+
+class _Keep:
+    """Raw bytes the kept entries of one comparison may still take; hands each file's entries back."""
+
+    def __init__(self, limit=None):
+        self.left = MAX_KEPT_BYTES if limit is None else limit
+        self.last = None
+
+    def file(self, totals):
+        """A keeper for one file's groups, or None once this comparison has kept all it may."""
+        return _FileKeeper(self, totals) if self.left > 0 else None
+
+    def claim(self):
+        last, self.last = self.last, None
+        return last
+
+
+class _FileKeeper:
+    """One file: ``MAX_KEPT_ENTRIES`` shared fairly between its groups, and its bytes likewise."""
+
+    def __init__(self, keep, totals):
+        self.keep = keep
+        self.quotas = _quotas(totals, MAX_KEPT_ENTRIES)
+        self.pending = sum(1 for total in totals.values() if total)
+        self.left = min(MAX_KEPT_FILE_BYTES, keep.left)
+        self.groups = {}
+
+    def writer(self, change):
+        # A small group leaves the rest of its share to the groups after it.
+        return _GroupWriter(self.quotas[change], self.left // max(1, self.pending))
+
+    def finish(self, change, writer):
+        self.left -= writer.raw
+        self.keep.left -= writer.raw
+        self.pending -= 1
+        self.groups[change] = writer.close()
+
+    def done(self):
+        self.keep.last = FileEntries(self.groups)
+
+
+def _list_groups(kind, totals, produce, budget, keep, *, repeated=0):
+    """Response groups of one file: the first ``FIRST_PAGE`` entries of each, within the response's budget.
+
+    ``produce(change)`` yields a group's entries in order; with ``keep`` every entry is
+    also kept (bounded) for reading back page by page (``paging``, ``available``).
+    """
+    keeper = keep.file(totals) if keep is not None else None
+    groups, available = [], {}
+    for change, total in totals.items():
+        if not total:
+            continue
+        writer = keeper.writer(change) if keeper is not None else None
+        shown, showing = [], True
+        for entry in produce(change):
+            if showing:
+                # The response's budget may cut a group short: the shown part stays contiguous.
+                showing = len(shown) < FIRST_PAGE and budget.take(entry)
+                if showing:
+                    shown.append(entry)
+            kept = writer is not None and writer.add(entry)
+            if not showing and not kept:
+                break
+        if writer is not None:
+            keeper.finish(change, writer)
+            available[change] = writer.count
+        groups.append({'change': change, 'total': total, 'entries': shown, 'omitted': total - len(shown)})
     details = {'kind': kind, 'groups': groups}
-    if budget.spent:  # this response's budget, not the per-file limit, cut the list
+    if budget.spent:  # this response's budget, not the per-group page, cut the list
         details['limited'] = True
     if repeated:  # names used by several nodes, matched in file order
         details['repeated'] = repeated
+    if any(available.values()):  # nothing kept (this comparison's bytes spent): no paging
+        keeper.done()
+        details['paging'] = True
+        for group in groups:  # entries a page can read, the shown ones included
+            group['available'] = available[group['change']]
     return details
 
 
@@ -958,35 +1193,30 @@ def _node_entry(change, items, index, places):
 _NODE_FIELD_ORDER = {'type': 0, 'server': 1, 'port': 2}
 
 
-def _node_details(before, after, pairs, budget):
+def _node_details(before, after, pairs, budget, keep=None):
     """Which nodes were added, removed or modified, with field changes; bounded."""
     added, removed, modified, repeated = pairs
     totals = {'added': len(added), 'removed': len(removed), 'modified': len(modified)}
-    quotas = _quotas(totals, MAX_NODE_DETAILS)
     old_places, new_places = _occurrences(before), _occurrences(after)
-    groups = []
-    for change, indices in (('added', added), ('removed', removed), ('modified', modified)):
-        if not indices:
-            continue
-        entries = []
-        for item in indices[:quotas[change]]:
-            if change == 'modified':
-                old_index, new_index = item
+
+    def produce(change):
+        if change == 'added':
+            for index in added:
+                yield _node_entry(change, after, index, new_places)
+        elif change == 'removed':
+            for index in removed:
+                yield _node_entry(change, before, index, old_places)
+        else:
+            for old_index, new_index in modified:
                 entry = _node_entry(change, after, new_index, new_places)
                 fields, entry['fields_omitted'] = _entry_fields(before[old_index][1], after[new_index][1], ('proxies',))
                 entry['fields'] = sorted(fields, key=lambda field: _NODE_FIELD_ORDER.get(field['key'], 3))
-            elif change == 'added':
-                entry = _node_entry(change, after, item, new_places)
-            else:
-                entry = _node_entry(change, before, item, old_places)
-            if not budget.take(entry):
-                break
-            entries.append(entry)
-        groups.append(_group(change, totals[change], entries))
-    return _details('nodes', groups, budget, repeated=repeated)
+                yield entry
+
+    return _list_groups('nodes', totals, produce, budget, keep, repeated=repeated)
 
 
-def _node_change(old, new, budget):
+def _node_change(old, new, budget, keep=None):
     """Summary of a subscription file and, when both sides parse, which nodes changed."""
     try:
         before = _node_items(old) if old is not None else []
@@ -999,7 +1229,7 @@ def _node_change(old, new, budget):
                'added': len(pairs[0]), 'removed': len(pairs[1]), 'modified': len(pairs[2])}
     if budget is None or not any(summary[key] for key in ('added', 'removed', 'modified')):
         return summary, None
-    return summary, _node_details(before, after, pairs, budget)
+    return summary, _node_details(before, after, pairs, budget, keep)
 
 
 def rule_entries(data):
@@ -1020,29 +1250,22 @@ def rule_entries(data):
     return [stripped for line in lines if (stripped := line.strip()) and not stripped.startswith(('#', '//'))]
 
 
-def _rule_details(before, after, added, removed, budget):
+def _rule_details(before, after, added, removed, budget, keep=None):
     """Added rules in the new file's order, removed ones in the old file's; bounded."""
     totals = {'added': sum(added.values()), 'removed': sum(removed.values())}
-    quotas = _quotas(totals, MAX_RULE_DETAILS)
-    groups = []
-    for change, changed, entries in (('added', added, after), ('removed', removed, before)):
-        if not totals[change]:
-            continue
-        listed, left = [], Counter(changed)
+
+    def produce(change):
+        changed, entries = (added, after) if change == 'added' else (removed, before)
+        left = Counter(changed)
         for entry in entries:
-            if len(listed) >= quotas[change]:
-                break
             if left[entry] > 0:  # a rule kept twice and now once is one removal
                 left[entry] -= 1
-                row = {'change': change, 'text': _show(entry)}
-                if not budget.take(row):
-                    break
-                listed.append(row)
-        groups.append(_group(change, totals[change], listed))
-    return _details('rules', groups, budget)
+                yield {'change': change, 'text': _show(entry)}
+
+    return _list_groups('rules', totals, produce, budget, keep)
 
 
-def _rule_change(old, new, budget):
+def _rule_change(old, new, budget, keep=None):
     """Summary of a rule set file and, for text and YAML payloads, which rules changed."""
     try:
         before = rule_entries(old) if old is not None else []
@@ -1056,7 +1279,7 @@ def _rule_change(old, new, budget):
                'added': sum(added.values()), 'removed': sum(removed.values())}
     if budget is None or not summary['added'] and not summary['removed']:
         return summary, None
-    return summary, _rule_details(before, after, added, removed, budget)
+    return summary, _rule_details(before, after, added, removed, budget, keep)
 
 
 def _size_summary(old, new):
@@ -1105,11 +1328,13 @@ _ROLE_ORDER = {CONFIG_ROLE: 0, 'provider': 1, 'rule': 2, 'custom': 3, None: 4}
 _STATUS_ORDER = {'modified': 0, 'added': 1, 'removed': 2, 'unchanged': 3}
 
 
-def build_push_diff(agent, bundle, repository, *, receipt=_MISSING):
+def build_push_diff(agent, bundle, repository, *, receipt=_MISSING, lists=None):
     """File and main-configuration changes from the applied receipt to ``bundle``.
 
     ``agent`` is the snapshot whose ``applied_content`` passed the content
-    comparison's preconditions; ``bundle`` is the candidate it prepared.
+    comparison's preconditions; ``bundle`` is the candidate it prepared. With a
+    dict as ``lists``, every node and rule entry of the detailed files is kept
+    there too, as ``FileEntries`` by file path (their details say ``paging``).
     """
     from . import rule_sync_store
     applied = agent.get('applied_content') or {}
@@ -1154,6 +1379,7 @@ def build_push_diff(agent, bundle, repository, *, receipt=_MISSING):
     config, public = None, {}
     # Without the previous bundle only digests are compared: no node or rule details either.
     budget = _DetailBudget() if receipt is not None else None
+    keep = _Keep() if budget is not None and lists is not None else None
     # Modified files are detailed first: past the response's budget the rest are only counted.
     for path in sorted(listed, key=lambda path: statuses[path] != 'modified'):
         status = statuses[path]
@@ -1173,11 +1399,13 @@ def build_push_diff(agent, bundle, repository, *, receipt=_MISSING):
             else:
                 summary = _size_summary(old, new)
         elif role == 'provider' and (old is not None or new is not None):
-            summary, details = _node_change(old, new, budget)
+            summary, details = _node_change(old, new, budget, keep)
         elif role == 'rule' and (old is not None or new is not None):
-            summary, details = _rule_change(old, new, budget)
+            summary, details = _rule_change(old, new, budget, keep)
         elif status != 'removed' or old is not None:
             summary = _size_summary(old, new)
+        if keep is not None and (kept := keep.claim()) is not None:
+            lists[entry['path']] = kept
         public[path] = _public_file(entry, status, summary, details)
     files = [public[path] for path in listed]
     if config is None and statuses.get('config.yaml') == 'modified':

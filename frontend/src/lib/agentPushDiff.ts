@@ -1,6 +1,6 @@
 import type {
-  PushDiffChange, PushDiffFile, PushDiffFileDetails, PushDiffItem, PushDiffList, PushDiffResponse, PushDiffSummary,
-  PushDiffText,
+  PushDiffChange, PushDiffDetailGroup, PushDiffFile, PushDiffFileDetails, PushDiffItem, PushDiffList, PushDiffResponse,
+  PushDiffSummary, PushDiffText,
 } from '@/api/agentPushDiff'
 import { formatBytes } from '@/lib/format'
 
@@ -146,14 +146,28 @@ export function detailUnit(kind: PushDiffFileDetails['kind']): { noun: string; u
 /** 同名节点的序号，例如「（同名第 2 个）」 */
 export const nthText = (nth?: number) => nth ? `（同名第 ${nth} 个）` : ''
 
-/** 明细末尾的说明：重名节点怎么对应、明细总量是否已达上限 */
+/** 明细末尾的说明：重名节点怎么对应、明细总量是否已达上限（可以加载更多时不必说明） */
 export function detailNotes(details: PushDiffFileDetails): string[] {
   const notes: string[] = []
   if (details.repeated) {
     notes.push(`有 ${details.repeated} 个节点名被多个节点共用：内容相同的视为未变，其余按出现顺序对应。`)
   }
-  if (details.limited) notes.push('这次变化较多，明细已达总量上限，没有列出的只计入数量。')
+  if (details.limited && !details.paging) notes.push('这次变化较多，明细已达总量上限，没有列出的只计入数量。')
   return notes
+}
+
+/** 每次「加载更多」读取的条数 */
+export const PAGE_SIZE = 50
+/** 搜索框停止输入多久后才向服务端搜索 */
+export const SEARCH_DELAY_MS = 300
+/** 搜索词最长字符数，与服务端一致 */
+export const MAX_QUERY_CHARS = 200
+
+/** 一组明细的分页进度：还能加载多少条，多少条超出明细上限没有保留（不能分页时都为 0） */
+export function groupPaging(group: PushDiffDetailGroup, loaded: number, pageable: boolean) {
+  if (!pageable) return { remaining: 0, notKept: 0 }
+  const available = group.available ?? group.total
+  return { remaining: Math.max(0, available - loaded), notKept: Math.max(0, group.total - Math.max(available, loaded)) }
 }
 
 const NO_BASELINE = '没有可对比的基准'

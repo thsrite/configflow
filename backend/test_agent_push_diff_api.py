@@ -232,3 +232,83 @@ def test_pull_token_is_shown_and_marked_and_stored_tokens_never_leave(diff_env):
     hidden = json.dumps(without_secrets(result), ensure_ascii=False)
     assert NEW_CONFIG_TOKEN in body and NEW_CONFIG_TOKEN not in hidden and CONFIG_TOKEN not in hidden
     assert 'fixture-rule-token' not in body and '[REDACTED]' not in hidden
+
+
+def entries(client, agent_id, **params):
+    response = client.get(f'/api/agents/{agent_id}/push-diff/entries', query_string=params)
+    if response.status_code == 200:
+        assert response.headers['Cache-Control'] == 'no-store'
+    return response
+
+
+def test_every_node_and_rule_is_paged_and_searched_through_the_api(diff_env):
+    client, _manager, config, remote, repository, ids, executor = diff_env
+    repository.update_system_transaction(lambda system: system['system_config'].update(
+        rule_proxy_token='fixture-rule-token'))
+    agent_id = ids['mihomo']
+    push(client, agent_id)
+    assert settle(client, executor, agent_id)['status'] == 'synced'
+    rules = [f'+.r{index:03d}.test' for index in range(300)]
+    config['rule_library'][0]['content'] = '\n'.join(['+.first.test', *rules, '+.fixture-rule-token.test'])
+    remote['provider'] = 'proxies: [{name: Remote, type: http, server: first.test, port: 8080, password: remote-pw-new}, ' + ', '.join(
+        f'{{name: N{index:02d}, type: http, server: n{index}.test, port: {8000 + index}, password: pw-{index}-x}}'
+        for index in range(60)) + ']'
+    refresh_subscription(config)
+    result = settle(client, executor, agent_id)
+    version = result['version']
+    rule = next(item for item in result['files'] if item['role'] == 'rule')
+    feed = next(item for item in result['files'] if item['path'] == 'providers/Feed.yaml')
+    added = rule['details']['groups'][0]
+    assert rule['details']['paging'] is True
+    assert (added['total'], len(added['entries']), added['available']) == (301, 20, 301)
+
+    # 加载更多: from where the first page ends, 50 at a time, up to the end.
+    page = entries(client, agent_id, version=version, file=rule['path'], change='added', offset=20).json
+    assert (page['status'], page['total'], page['offset'], page['next_offset']) == ('ok', 301, 20, 70)
+    assert [entry['text'] for entry in page['entries']][:2] == ['+.r020.test', '+.r021.test']
+    listed, offset = list(added['entries']), 20
+    while offset is not None:
+        page = entries(client, agent_id, version=version, file=rule['path'], change='added', offset=offset,
+                       limit=200).json
+        listed += page['entries']
+        offset = page['next_offset']
+    assert len(listed) == 301 and listed[-2]['text'] == '+.r299.test'
+    # ConfigFlow's stored token never leaves, also in a later page, and search does not find it.
+    assert listed[-1]['text'] == ['+.', {'secret': '[REDACTED]'}, '.test']
+    assert 'fixture-rule-token' not in json.dumps(listed)
+    for query in ('fixture', '-TOKEN.test'):
+        found = entries(client, agent_id, version=version, file=rule['path'], change='added', q=query).json
+        assert found['total'] == 0, query
+    found = entries(client, agent_id, version=version, file=rule['path'], change='added', q='R29').json
+    assert found['total'] == 10 and [entry['text'] for entry in found['entries']][0] == '+.r290.test'
+
+    nodes = {group['change']: group for group in feed['details']['groups']}
+    assert (nodes['added']['total'], nodes['added']['available']) == (60, 60)
+    found = entries(client, agent_id, version=version, file=feed['path'], change='added', q='n7.test:8007').json
+    assert [entry['text'] for entry in found['entries']] == ['N07']
+    assert entries(client, agent_id, version=version, file=feed['path'], change='added', q='pw-7').json['total'] == 0
+    modified = entries(client, agent_id, version=version, file=feed['path'], change='modified').json
+    password = next(field for field in modified['entries'][0]['fields'] if field['key'] == 'password')
+    assert password['new'] == [{'secret': 'remote-pw-new'}]  # marked, so 隐藏敏感信息 hides it in loaded entries
+    assert 'remote-pw-new' not in json.dumps(without_secrets(modified), ensure_ascii=False)
+    assert entries(client, agent_id, version=version, file=feed['path'], change='modified',
+                   q='remote-pw').json['total'] == 0
+
+    # Requests that cannot be a page of this list.
+    for params in ({'change': 'bad'}, {'limit': 201}, {'limit': 0}, {'offset': -1}, {'offset': 'x'},
+                   {'version': ''}, {'file': ''}, {'q': 'x' * 201}):
+        response = entries(client, agent_id, **{'version': version, 'file': rule['path'], 'change': 'added', **params})
+        assert response.status_code == 400, params
+    assert entries(client, agent_id, version=version, file='ruleset/missing.list', change='added').status_code == 404
+    assert entries(client, agent_id, version=version, file=rule['path'], change='modified').status_code == 404
+    assert entries(client, 'missing', version=version, file=rule['path'], change='added').status_code == 404
+    assert entries(client, agent_id, version='older', file=rule['path'], change='added').json == {
+        'status': 'stale', 'reason': 'replaced'}
+    # The configuration changes while the dialog is open: reload instead of mixing two comparisons.
+    config['mihomo']['custom_config'] += 'tcp-concurrent: true\n'
+    assert entries(client, agent_id, version=version, file=rule['path'], change='added', offset=20).json == {
+        'status': 'stale', 'reason': 'changed'}
+    fresh = settle(client, executor, agent_id)
+    assert fresh['version'] != version
+    assert entries(client, agent_id, version=version, file=rule['path'], change='added').json['reason'] == 'replaced'
+    assert entries(client, agent_id, version=fresh['version'], file=rule['path'], change='added').json['status'] == 'ok'

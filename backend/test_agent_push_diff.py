@@ -454,12 +454,12 @@ def test_large_rule_sets_are_counted_quickly_and_keep_the_response_small():
     assert elapsed < 3, elapsed
     details = {item['path']: item['details'] for item in result['files']}
     big = {group['change']: group for group in details['ruleset/Big.list']['groups']}
-    assert [len(big['added']['entries']), len(big['removed']['entries'])] == [100, 100]  # 200 per file, shared
-    assert (big['added']['omitted'], big['removed']['omitted']) == (2400, 1400)
+    assert [len(big['added']['entries']), len(big['removed']['entries'])] == [20, 20]  # the first page of each
+    assert (big['added']['omitted'], big['removed']['omitted']) == (2480, 1480)
     assert big['added']['entries'][0]['text'] == '+.fresh-0.example.org'
     assert big['removed']['entries'][0]['text'] == '+.domain-0.example.com'
     payload = details['ruleset/Big.yaml']['groups']
-    assert [(group['change'], len(group['entries']), group['omitted']) for group in payload] == [('removed', 200, 500)]
+    assert [(group['change'], len(group['entries']), group['omitted']) for group in payload] == [('removed', 20, 680)]
     assert payload[0]['entries'][0]['text'] == '+.domain-59300.example.com'  # quotes of the YAML payload removed
     assert len(json.dumps(result, ensure_ascii=False)) < 40000
 
@@ -599,7 +599,7 @@ def test_rule_set_details_list_added_and_removed_rules():
     assert summary['kind'] == 'size' and details is None  # binary rule sets
 
 
-def test_details_are_bounded_per_file_and_every_group_keeps_a_share():
+def test_the_response_lists_the_first_page_of_every_group():
     keep_old = [{'name': f'Keep {index}', 'type': 'ss', 'server': 'k.example', 'port': index} for index in range(3)]
     keep_new = [{**node, 'server': 'k2.example'} for node in keep_old]
     gone = [{'name': f'Gone {index}', 'type': 'ss', 'server': 'g.example', 'port': index} for index in range(5)]
@@ -609,14 +609,14 @@ def test_details_are_bounded_per_file_and_every_group_keeps_a_share():
     groups = groups_of(details)
     assert [(change, groups[change]['total'], len(groups[change]['entries']), groups[change]['omitted'])
             for change in ('added', 'removed', 'modified')] == [
-        ('added', 300, 92, 208), ('removed', 5, 5, 0), ('modified', 3, 3, 0)]
-    assert sum(len(group['entries']) for group in details['groups']) == push_diff.MAX_NODE_DETAILS
+        ('added', 300, push_diff.FIRST_PAGE, 280), ('removed', 5, 5, 0), ('modified', 3, 3, 0)]
     assert groups['added']['entries'][0]['text'] == 'New 0'  # in file order
+    assert 'paging' not in details and 'available' not in groups['added']  # nothing kept unless asked
     old_rules = ''.join(f'+.old-{index}.example\n' for index in range(10)).encode()
     new_rules = ''.join(f'+.new-{index}.example\n' for index in range(500)).encode()
     summary, details = push_diff._rule_change(old_rules, new_rules, push_diff._DetailBudget())
     assert [(group['change'], len(group['entries']), group['omitted']) for group in details['groups']] == [
-        ('added', 190, 310), ('removed', 10, 0)]
+        ('added', 20, 480), ('removed', 10, 0)]
     assert 'limited' not in details
 
 
@@ -633,7 +633,7 @@ def test_one_response_carries_a_bounded_amount_of_details(monkeypatch):
     files = {item['path']: item for item in result['files']}
     rules = [files[f'ruleset/R{index}.list']['details'] for index in range(6)]
     entries = [entry for details in rules for group in details['groups'] for entry in group['entries']]
-    assert 0 < len(entries) < 6 * push_diff.MAX_RULE_DETAILS
+    assert 0 < len(entries) < 6 * 2 * push_diff.FIRST_PAGE
     assert sum(len(json.dumps(entry, ensure_ascii=False).encode()) for entry in entries) <= 6000
     for details in rules:  # counts stay exact; only the listing stops
         for group in details['groups']:
@@ -667,12 +667,12 @@ def test_large_subscriptions_and_rule_sets_are_detailed_quickly():
     assert files['providers/Feed.yaml']['summary'] == {'kind': 'nodes', 'before': 3000, 'after': 3000,
                                                       'added': 300, 'removed': 300, 'modified': 450}
     nodes = groups_of(files['providers/Feed.yaml']['details'])
-    assert [len(nodes[change]['entries']) for change in ('added', 'removed', 'modified')] == [34, 33, 33]
+    assert [len(nodes[change]['entries']) for change in ('added', 'removed', 'modified')] == [20, 20, 20]
     assert nodes['modified']['entries'][0]['fields'] == [
         {'key': 'port', 'change': 'modified', 'sensitive': False, 'old': '443', 'new': '8443'}]
     rules = groups_of(files['ruleset/Big.list']['details'])
     assert (rules['added']['total'], rules['removed']['total']) == (3000, 2000)
-    assert len(rules['added']['entries']) + len(rules['removed']['entries']) == push_diff.MAX_RULE_DETAILS
+    assert len(rules['added']['entries']) + len(rules['removed']['entries']) == 2 * push_diff.FIRST_PAGE
     assert elapsed < 5, elapsed
     assert len(json.dumps(result, ensure_ascii=False).encode()) < 64 * 1024
 
@@ -710,14 +710,14 @@ def test_change_list_shares_the_status_worker_and_cache(setup, monkeypatch):
     checker, executor, now, agent, config, prepare, calls = setup
     built = []
     monkeypatch.setattr('backend.agents.push_diff.build_push_diff',
-                        lambda item, candidate, repository: built.append(candidate) or {'status': 'changed', 'files': []})
+                        lambda item, candidate, repository, **_: built.append(candidate) or {'status': 'changed', 'files': []})
     config['test_rule'] = 'DOMAIN,changed.example.test\n'
     for _ in range(5):
         assert push_diff_of(setup) == {'status': 'checking'}
     assert len(executor.jobs) == 1 and calls == []
     executor.run()
     result = push_diff_of(setup)
-    assert result == {'status': 'changed', 'files': [], 'checked_at': result['checked_at']}
+    assert result == {'status': 'changed', 'files': [], 'checked_at': result['checked_at'], 'version': result['version']}
     # The list's status came from the same preparation, and polling reuses the list.
     assert checker.get_content_sync(agent, config, BASE_URL, prepare)['status'] == 'changed'
     assert push_diff_of(setup) == result
@@ -735,7 +735,7 @@ def test_change_list_shares_the_status_worker_and_cache(setup, monkeypatch):
 
 def test_synced_and_unavailable_answers_skip_the_change_list(setup, monkeypatch):
     checker, executor, _, agent, config, prepare, _ = setup
-    monkeypatch.setattr('backend.agents.push_diff.build_push_diff', lambda *_: pytest.fail('nothing to list'))
+    monkeypatch.setattr('backend.agents.push_diff.build_push_diff', lambda *_, **__: pytest.fail('nothing to list'))
     assert push_diff_of(setup) == {'status': 'checking'}
     executor.run()
     assert push_diff_of(setup)['status'] == 'synced'
@@ -749,7 +749,7 @@ def test_failed_listing_keeps_the_status_and_retries_soon(setup, monkeypatch):
     checker, executor, now, agent, config, prepare, _ = setup
     attempts = []
 
-    def flaky(*_):
+    def flaky(*_, **__):
         attempts.append(1)
         raise OSError('receipt unreadable')
 
@@ -768,7 +768,7 @@ def test_failed_listing_keeps_the_status_and_retries_soon(setup, monkeypatch):
 
 def test_only_a_few_change_lists_are_kept(setup, monkeypatch):
     checker, executor, _, agent, config, prepare, _ = setup
-    monkeypatch.setattr('backend.agents.push_diff.build_push_diff', lambda *_: {'status': 'changed', 'files': []})
+    monkeypatch.setattr('backend.agents.push_diff.build_push_diff', lambda *_, **__: {'status': 'changed', 'files': []})
     config['test_rule'] = 'DOMAIN,changed.example.test\n'
     checker._max_details = 2
     for index in range(4):
