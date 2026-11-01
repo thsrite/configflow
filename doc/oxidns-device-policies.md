@@ -119,6 +119,13 @@
 
 无需修改 OxiDNS 核心。ConfigFlow 使用原生 `client_ip` 匹配器，维护 `cf_device_policy` / `cf_device_direct` 两个插件和主处理链中的一个入口。直连使用独立执行链，不复用代理响应缓存，也不触发分流用的 RouterOS 动态规则。
 
-仅对可识别的主处理链开放编辑。执行链来自 include、入口不一致、插件命名冲突或设备策略片段被手动改动时，页面会给出原因并停止自动修改；其他原生字段和附加文件保留。删除最后一条直连策略会移除专用插件及入口。
+仅对可识别的主处理链开放编辑：没有 include，`sequence_main` 每一步都有 `exec`、最后一步是 `goto china_dns` 或 `goto proxy_dns_seq`，`forward_local` 配有上游。插件命名冲突或设备策略片段被手动改动时，同样停止自动修改。拒绝时提示写明具体是哪一项，例如“主处理链 sequence_main 的最后一步是「accept」”；其他原生字段和附加文件保留。删除最后一条直连策略会移除专用插件及入口。
 
-可选真实核心验收：设置 `OXIDNS_TEST_BINARY` 指向本机 OxiDNS，运行 `backend/test_oxidns_device_policy_core.py`。测试仅启动临时本地 DNS 上游与核心，以 IPv4 / IPv6 客户端验证单 IP、网段、智能分流例外、嵌套网段和全地址族规则下的同域名查询互不串流。
+DNS 监听入口（`udp_server`、`tcp_server`、`quic_server`、`http_server`）按端口区分：
+
+- 监听客户端 DNS 端口的入口必须以 `sequence_main` 为 `entry`。客户端端口指 53，以及主处理链入口自己监听的端口；IPv6、高可用虚拟 IP 的 `:53` 同样算。端口无法确认（例如用了环境变量）时也按客户端端口处理。不满足时提示入口名、监听地址和实际的 `entry`。
+- 其他端口上的入口可以用独立的处理链：处理链不能直接或间接调用 `sequence_main`，用到的插件必须存在，也不能含未展开的环境变量。设备策略对这些入口不生效，接口在 `side_entries` 中返回 `{tags, listen, entry}`，客户端设备页列出提示。
+- ConfigFlow 自己的节点测速入口不列出。托管入口（`cf_node_test_<ID>_*`）按 Agent 记录 `node_test_dns_endpoints` 中保存的插件定义逐项核对，记录属于当前配置空间、未删除且完全一致才算；被手动改过的按普通旁路入口提示。旧版手工创建的测速入口不看名字，同时满足两点才算：测速 DNS（`node_test_dns` 或自定义模式的服务器）正指向这个监听地址；入口只进一个 sequence，这个 sequence 只被这组入口使用、不再跳转到其他 sequence，用到的 forward 也只被它使用。
+- 设备策略只改 `sequence_main` 和两个专用插件，旁路入口的插件原样保留。
+
+可选真实核心验收：设置 `OXIDNS_TEST_BINARY` 指向本机 OxiDNS，运行 `backend/test_oxidns_device_policy_core.py`。测试仅启动临时本地 DNS 上游与核心，以 IPv4 / IPv6 客户端验证单 IP、网段、智能分流例外、嵌套网段和全地址族规则下的同域名查询互不串流；另有一项在旁边放一个测速专用入口，验证插入、修改、撤销设备策略时，主入口按设备分流，测速入口始终使用自己的上游。`scripts/tests/device_policy_side_entries_lab.py` 在 PVE 隔离实验网的容器里用真实核心重复这一流程。
