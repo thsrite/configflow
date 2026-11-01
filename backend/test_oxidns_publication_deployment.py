@@ -67,13 +67,20 @@ def test_direct_and_staged_activation_resume_after_lost_response(oxidns_env, mon
 def test_unavailable_monitoring_never_blocks_successful_publication(oxidns_env, monkeypatch):
     repository, manager, agent, config, requests_seen, remote = oxidns_env
     manager._update_agents(lambda agents: agents[0].update(version='1.8.53-go'))
+    transport(monkeypatch)
+    monitor.overview(manager, agent['id'])
+    state_path = DashboardStateStore(repository.data_dir).path(agent['id'])
+    before = state_path.read_bytes()
+    attempted = []
     def unavailable(*args, **kwargs):
+        attempted.append(True)
         raise monitor.MonitorError('CORE_UNREACHABLE')
     monkeypatch.setattr(monitor, '_overview_snapshot', unavailable)
     remote.update(status='succeeded')
     assert manager.publish_deployment(agent['id'], bundle_for(agent, config))['status'] == 'succeeded'
     assert any(path == 'deployments' and method == 'post' for method, path, _ in requests_seen)
-    assert not DashboardStateStore(repository.data_dir).path(agent['id']).exists()
+    assert attempted == [True]
+    assert state_path.read_bytes() == before
 
 
 @pytest.mark.parametrize('entry', ['primary', 'secondary'])
