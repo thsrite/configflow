@@ -26,9 +26,10 @@ func snapshotAt(at time.Time, up, down int64, conns ...mihomoConn) mihomoConnSna
 	return mihomoConnSnapshot{At: at, Conns: conns, UploadTotal: up, DownloadTotal: down, Controller: &mihomoController{}}
 }
 
-func usageOf(report trafficHistoryReport, source, group, outbound string) trafficUsageItem {
+// chain 用 > 连接，从入口策略组到出口节点
+func usageOf(report trafficHistoryReport, source, chain string) trafficUsageItem {
 	for _, item := range report.Usage {
-		if item.Source == source && item.Group == group && item.Outbound == outbound {
+		if item.Source == source && strings.Join(item.Chain, ">") == chain {
 			return item
 		}
 	}
@@ -38,7 +39,8 @@ func usageOf(report trafficHistoryReport, source, group, outbound string) traffi
 func TestTrafficHistoryCountsDeltasNewConnectionsAndUnattributed(t *testing.T) {
 	collector := newTrafficHistoryCollector(&Config{}, nil)
 	at := time.Date(2026, 11, 1, 10, 15, 0, 0, time.UTC)
-	proxied := []string{"HK", "Proxy"}
+	// mihomo 的 chains 出口节点在前：Proxy 选了 Media，Media 选了 HK
+	proxied := []string{"HK", "Media", "Proxy"}
 	// 基线：建立前的累计量不计入
 	collector.observe(snapshotAt(at, 1000, 5000, historyConn("a", "10.0.0.2", "www.example.com", proxied, 100, 4000)))
 	if report := collector.drain(); len(report.Usage) != 0 {
@@ -48,26 +50,26 @@ func TestTrafficHistoryCountsDeltasNewConnectionsAndUnattributed(t *testing.T) {
 		historyConn("a", "10.0.0.2", "www.example.com", proxied, 150, 5000),
 		historyConn("b", "", "", nil, 10, 20)))
 	report := collector.drain()
-	if got := usageOf(report, "10.0.0.2", "Proxy", "HK"); got.Up != 50 || got.Down != 1000 || got.Conns != 0 {
+	if got := usageOf(report, "10.0.0.2", "Proxy>Media>HK"); got.Up != 50 || got.Down != 1000 || got.Conns != 0 {
 		t.Fatalf("existing connection delta: %+v", got)
 	}
 	// 来源为空记为 Inner；新连接的字节全部计入并计一个连接
-	if got := usageOf(report, "Inner", "DIRECT", ""); got.Up != 10 || got.Down != 20 || got.Conns != 1 {
+	if got := usageOf(report, "Inner", ""); got.Up != 10 || got.Down != 20 || got.Conns != 1 {
 		t.Fatalf("new inner connection: %+v", got)
 	}
 	// 内核总量增量减去各连接增量：上行 300-60，下行 2000-1020
-	if got := usageOf(report, "", "", ""); got.Up != 240 || got.Down != 980 {
+	if got := usageOf(report, "", ""); got.Up != 240 || got.Down != 980 {
 		t.Fatalf("unattributed: %+v", got)
 	}
-	if got := usageOf(report, "10.0.0.2", "Proxy", "HK"); got.Hour != at.Truncate(time.Hour).Unix() {
+	if got := usageOf(report, "10.0.0.2", "Proxy>Media>HK"); got.Hour != at.Truncate(time.Hour).Unix() {
 		t.Fatalf("hour bucket: %d", got.Hour)
 	}
 	domains := map[string]trafficDomainItem{}
 	for _, item := range report.Domains {
-		domains[item.Source+"|"+item.Domain+"|"+item.Outbound] = item
+		domains[item.Source+"|"+item.Domain+"|"+strings.Join(item.Chain, ">")] = item
 	}
-	// 目标同样按出口节点分开，没有链路的连接出口为空
-	if domains["10.0.0.2|www.example.com|HK"].Down != 1000 || domains["Inner|203.0.113.9|"].Conns != 1 {
+	// 目标同样按链路分开，没有链路的连接链路为空
+	if domains["10.0.0.2|www.example.com|Proxy>Media>HK"].Down != 1000 || domains["Inner|203.0.113.9|"].Conns != 1 {
 		t.Fatalf("targets: %+v", report.Domains)
 	}
 }
@@ -93,7 +95,7 @@ func TestTrafficHistoryFoldsExtraTargetsIntoOther(t *testing.T) {
 	collector := newTrafficHistoryCollector(&Config{}, nil)
 	collector.mu.Lock()
 	for i := 0; i < trafficHistoryMaxDomains+3; i++ {
-		collector.addDomain(1, "10.0.0.2", fmt.Sprintf("site%d.example", i), "DIRECT", trafficCounters{Down: 1})
+		collector.addDomain(1, "10.0.0.2", fmt.Sprintf("site%d.example", i), "全球直连"+trafficChainSeparator+"DIRECT", trafficCounters{Down: 1})
 	}
 	collector.mu.Unlock()
 	report := collector.drain()
@@ -101,7 +103,7 @@ func TestTrafficHistoryFoldsExtraTargetsIntoOther(t *testing.T) {
 		t.Fatalf("expected %d rows, got %d", trafficHistoryMaxDomains+1, len(report.Domains))
 	}
 	for _, item := range report.Domains {
-		if item.Domain == "" && (item.Down != 3 || item.Outbound != "DIRECT") {
+		if item.Domain == "" && (item.Down != 3 || strings.Join(item.Chain, ">") != "全球直连>DIRECT") {
 			t.Fatalf("other bucket: %+v", item)
 		}
 	}
@@ -126,7 +128,7 @@ func TestTrafficHistoryReportOutcomes(t *testing.T) {
 	collector := newTrafficHistoryCollector(&Config{ServerURL: server.URL, AgentID: "agent-1", Token: "tok"}, func() { disabled = true })
 	add := func() {
 		collector.mu.Lock()
-		collector.addUsage(trafficUsageKey{Hour: 3600, Source: "10.0.0.2", Group: "Proxy", Outbound: "HK"}, trafficCounters{Down: 10})
+		collector.addUsage(trafficUsageKey{Hour: 3600, Source: "10.0.0.2", Chain: "Proxy" + trafficChainSeparator + "HK"}, trafficCounters{Down: 10})
 		collector.mu.Unlock()
 	}
 	add()

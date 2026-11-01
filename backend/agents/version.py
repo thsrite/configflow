@@ -1,10 +1,16 @@
 """Agent 版本管理"""
 
 # Agent 最新版本号
-LATEST_AGENT_VERSION = "1.8.51-go"
+LATEST_AGENT_VERSION = "1.8.52-go"
 
 # 版本更新日志（可选）
 VERSION_CHANGELOG = {
+    "1.8.52-go": {
+        "date": "2026-11-01",
+        "features": [
+            "流量记录按完整链路（入口策略组 → 中间策略组 → 出口节点）累加，连接统计可直接显示每台设备走的链路"
+        ]
+    },
     "1.8.51-go": {
         "date": "2026-11-01",
         "features": [
