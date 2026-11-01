@@ -90,8 +90,10 @@ async function expand(path: string) {
 }
 
 const group = (detail: Element, change: string) => detail.querySelector(`[data-group="${change}"]`)!
-const items = (detail: Element, change: string) => [...group(detail, change).querySelectorAll(':scope > ul > li')]
-const itemTexts = (detail: Element, change: string) => items(detail, change).map(item => item.querySelector('span')!.textContent!.replace(/\s+/g, ' ').trim())
+// Rules are list items, nodes are table row groups (one tbody per node).
+const items = (detail: Element, change: string) => [...group(detail, change).querySelectorAll(':scope > ul > li, :scope > table > tbody')]
+const itemTexts = (detail: Element, change: string) => items(detail, change)
+  .map(item => (item.querySelector('th') || item.querySelector('span'))!.textContent!.replace(/\s+/g, ' ').trim())
 const flat = (element: Element) => element.textContent!.replace(/\s+/g, ' ').trim()
 
 async function type(detail: Element, text: string) {
@@ -261,7 +263,11 @@ describe('push diff details: search', () => {
     detail.querySelector<HTMLInputElement>('[data-detail-search]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
     await flushPromises()
     expect(calls).toEqual([{ version: 'v1', file: FEED, change: 'modified', offset: 0, limit: 50, q: '备用 05' }])
-    expect(itemTexts(detail, 'modified')).toEqual(Array.from({ length: 10 }, (_, index) => `~ D 备用 05${index}`))
+    // Matches show in the same table as the list.
+    expect(itemTexts(detail, 'modified')).toEqual(Array.from({ length: 10 }, (_, index) => `D 备用 05${index}`))
+    expect(group(detail, 'modified').querySelectorAll('[data-node-table]')).toHaveLength(1)
+    expect([...group(detail, 'modified').querySelectorAll('[data-node-table] > tbody:first-of-type tr')].map(row => row.textContent))
+      .toEqual(['D 备用 050port：443 → 8050', 'password：pw-before-050 → pw-after-050'])
 
     const small = response()
     small.files![0]!.details!.groups[0] = { change: 'modified', total: 2, available: 2, omitted: 0, entries: NODES.slice(0, 2) }
@@ -337,8 +343,12 @@ describe('push diff details: stale results and hidden values', () => {
       expect(html()).not.toContain(`pw-after-${pad(index)}`)
     }
     expect(detail.querySelectorAll('[data-secret-hidden]')).toHaveLength(120)
+    // Loaded rows join the same table: still one table, each node's name across its two field rows.
+    expect(group(detail, 'modified').querySelectorAll('[data-node-table]')).toHaveLength(1)
     const last = items(detail, 'modified')[59]!
-    expect([...last.querySelectorAll('li')].map(item => item.textContent)).toEqual(['port：443 → 8059', 'password：已隐藏 → 已隐藏'])
+    expect(last.querySelector('th')!.getAttribute('rowspan')).toBe('2')
+    expect([...last.querySelectorAll('tr')].map(row => [...row.querySelectorAll('td')].map(cell => cell.textContent).join('')))
+      .toEqual(['port：443 → 8059', 'password：已隐藏 → 已隐藏'])
     hide.click()
     await flushPromises()
     expect(html()).toContain('pw-after-059')

@@ -1,6 +1,6 @@
 import type {
-  PushDiffChange, PushDiffDetailGroup, PushDiffFile, PushDiffFileDetails, PushDiffItem, PushDiffList, PushDiffResponse,
-  PushDiffSummary, PushDiffText,
+  PushDiffChange, PushDiffDetailGroup, PushDiffFile, PushDiffFileDetails, PushDiffItem, PushDiffList, PushDiffListEntry,
+  PushDiffResponse, PushDiffSummary, PushDiffText,
 } from '@/api/agentPushDiff'
 import { formatBytes } from '@/lib/format'
 
@@ -137,6 +137,149 @@ export function fieldPieces(field: PushDiffItem): TextPiece[] {
 }
 
 export const fieldText = (field: PushDiffItem, hidden = false) => piecesText(fieldPieces(field), hidden).trimEnd()
+
+/** 节点表「变更前 / 变更后」的一格；empty 为「—」（这一侧没有这个节点或字段） */
+export interface NodeValue { pieces: TextPiece[]; empty: boolean }
+
+/**
+ * 节点表的一行：change 为新增、删除的节点（变更项写「新增 / 删除」，另一侧是类型 · 服务器:端口），
+ * field 为修改的节点的一个字段（变更项写字段路径），note 为跨三列的说明（另有 N 处变化）。
+ */
+export type NodeRow =
+  | { kind: 'change'; change: PushDiffChange; before: NodeValue; after: NodeValue }
+  | { kind: 'field'; key: string; before: NodeValue; after: NodeValue }
+  | { kind: 'note'; text: string }
+
+const NO_VALUE: NodeValue = { pieces: [plain('—')], empty: true }
+
+/** 修改的节点里一个字段的原值或新值；列表字段写条数，删掉的条目在变更前一侧、加上的在变更后一侧 */
+export function fieldSide(field: PushDiffItem, side: 'old' | 'new'): NodeValue {
+  if ((side === 'old' && field.change === 'added') || (side === 'new' && field.change === 'removed')) return NO_VALUE
+  if (field.list) {
+    const list = field.list
+    const items = (side === 'old' ? list.removed_items : list.added_items) || []
+    const count = side === 'old' ? list.removed : list.added
+    const pieces = [plain(`${side === 'old' ? list.before : list.after} 条`)]
+    if (items.length) {
+      pieces.push(plain(`：${side === 'old' ? '−' : '+'} `), ...joined(items, '、'))
+      if (count > items.length) pieces.push(plain(` 等 ${count} 条`))
+    } else if (count) {
+      pieces.push(plain(`：${side === 'old' ? '删除' : '新增'} ${count} 条`))
+    }
+    if (side === 'new' && list.reordered) pieces.push(plain('，顺序调整'))
+    return { pieces, empty: false }
+  }
+  const value = side === 'old' ? field.old : field.new
+  return value == null ? NO_VALUE : { pieces: textPieces(value), empty: false }
+}
+
+/** 一个节点在表里占的行：新增、删除一行，修改的节点每个字段一行（type、server、port 在前，服务端已排好） */
+export function nodeRows(entry: PushDiffListEntry): NodeRow[] {
+  if (entry.change !== 'modified') {
+    const info: NodeValue = entry.info ? { pieces: textPieces(entry.info), empty: false } : NO_VALUE
+    return [{ kind: 'change', change: entry.change, before: entry.change === 'removed' ? info : NO_VALUE,
+      after: entry.change === 'added' ? info : NO_VALUE }]
+  }
+  const rows = (entry.fields || []).map((field): NodeRow => ({
+    kind: 'field', key: field.key, before: fieldSide(field, 'old'), after: fieldSide(field, 'new') }))
+  if (entry.fields_omitted) rows.push({ kind: 'note', text: `另有 ${entry.fields_omitted} 处变化` })
+  // 逐个字段比较没有差别（例如只是键的顺序不同）时也占一行，节点名不会悬空
+  if (!rows.length) rows.push({ kind: 'note', text: '字段顺序或写法有变化' })
+  return rows
+}
+
+/** 表 2 按顶层键分组时的中文名；其他键直接显示原名，顶层的单个值（secret、mixed-port 等）归入「基础设置」 */
+export const CONFIG_GROUP_NAMES: Record<string, string> = {
+  dns: 'DNS', hosts: 'Hosts', rules: '分流规则', 'proxy-groups': '代理组', proxies: '节点', 'proxy-providers': '订阅',
+  'rule-providers': '规则集', sniffer: '嗅探', tun: 'TUN', listeners: '入站监听',
+}
+export const BASIC_GROUP_NAME = '基础设置'
+/** 改动超过这么多行的组默认收起 */
+export const CONFIG_GROUP_FOLD = 20
+
+export type ChangeCounts = Record<PushDiffChange, number>
+
+/** 表 2 的一行配置项：label 为组内的相对路径（块里的行只写子键），nested 表示在某个块下面 */
+export interface ConfigRow { item: PushDiffItem; index: number; label: string; nested: boolean }
+/** 组里的一行：配置项，或同一个映射块有 2 处及以上改动时的块标题 */
+export type ConfigLine = { kind: 'row'; row: ConfigRow } | { kind: 'block'; name: string; counts: ChangeCounts }
+/** 一组：id 为顶层键，基础设置为空串；raw 为标题里等宽显示的原始键名（没有中文名或基础设置时为空） */
+export interface ConfigGroup { id: string; name: string; raw: string; counts: ChangeCounts; size: number; lines: ConfigLine[]; folded: boolean }
+
+/** 配置项的键路径；旧版服务端没有 path 时按点号拆（域名会被拆开，只影响分组） */
+export function itemPath(item: PushDiffItem): string[] {
+  return item.path?.length ? item.path : item.key.split('.')
+}
+
+function countChanges(rows: ConfigRow[]): ChangeCounts {
+  const counts: ChangeCounts = { added: 0, removed: 0, modified: 0 }
+  for (const row of rows) counts[row.item.change] += 1
+  return counts
+}
+
+/** 组或块的汇总，例如「新增 3 项 · 修改 1 项」 */
+export function countsText(counts: ChangeCounts): string {
+  return (['added', 'removed', 'modified'] as const).filter(change => counts[change])
+    .map(change => `${CHANGE_LABELS[change]} ${counts[change]} 项`).join(' · ')
+}
+
+/**
+ * 表 2 按顶层键分组（顺序按第一次出现）。组内只写相对路径；同一个映射块（相对路径的第一段，
+ * 如 dns.proxy-server-nameserver-policy、proxy-providers.某订阅）有 2 处及以上改动时加一行块标题，
+ * 下面只写子键；只有 1 处时直接写相对路径。改动超过 CONFIG_GROUP_FOLD 行的组默认收起。
+ */
+export function configGroups(items: PushDiffItem[]): ConfigGroup[] {
+  const buckets = new Map<string, { item: PushDiffItem; index: number; rel: string[]; basic: boolean }[]>()
+  items.forEach((item, index) => {
+    const path = itemPath(item)
+    const top = path[0] ?? item.key
+    const basic = path.length <= 1 && !(top in CONFIG_GROUP_NAMES)
+    const id = basic ? '' : top
+    if (!buckets.has(id)) buckets.set(id, [])
+    buckets.get(id)!.push({ item, index, rel: basic ? path : path.slice(1), basic })
+  })
+  return [...buckets].map(([id, members]) => {
+    const blockOf = (rel: string[]) => rel.length >= 2 ? rel[0]! : null
+    const sizes = new Map<string, number>()
+    for (const member of members) {
+      const block = blockOf(member.rel)
+      if (block != null) sizes.set(block, (sizes.get(block) || 0) + 1)
+    }
+    const shared = (rel: string[]) => {
+      const block = blockOf(rel)
+      return block != null && (sizes.get(block) || 0) >= 2 ? block : null
+    }
+    const rowOf = (member: (typeof members)[number], nested: boolean): ConfigRow => ({
+      item: member.item, index: member.index, nested,
+      label: nested ? member.rel.slice(1).join('.') : (member.rel.join('.') || id || member.item.key),
+    })
+    const lines: ConfigLine[] = []
+    const done = new Set<string>()
+    const rows: ConfigRow[] = []
+    for (const member of members) {
+      const block = shared(member.rel)
+      if (block == null) {
+        const row = rowOf(member, false)
+        rows.push(row)
+        lines.push({ kind: 'row', row })
+        continue
+      }
+      if (done.has(block)) continue
+      done.add(block)
+      const inside = members.filter(other => shared(other.rel) === block).map(other => rowOf(other, true))
+      rows.push(...inside)
+      lines.push({ kind: 'block', name: block, counts: countChanges(inside) }, ...inside.map(row => ({ kind: 'row' as const, row })))
+    }
+    const known = CONFIG_GROUP_NAMES[id]
+    return { id, name: id ? known || id : BASIC_GROUP_NAME, raw: known ? id : '', counts: countChanges(rows), size: rows.length,
+      lines, folded: rows.length > CONFIG_GROUP_FOLD }
+  })
+}
+
+/** 长路径、长键名和值只在「.」「-」「/」之后断行：按这些位置切开，模板在段之间插 <wbr> */
+export function breakSegments(text: string): string[] {
+  return text ? text.split(/(?<=[./-])(?=.)/) : []
+}
 
 /** 明细分组标题里的单位：「新增 2 个节点」「删除 1 条规则」 */
 export function detailUnit(kind: PushDiffFileDetails['kind']): { noun: string; unit: string } {

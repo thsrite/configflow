@@ -110,12 +110,15 @@ def test_main_yaml_is_compared_by_key_path_with_old_and_new_values():
     result = diff_config(dump(base_config()), dump(changed_config()))
     items = items_by_key(result)
     assert result['status'] == 'compared'
-    assert items['log-level'] == {'key': 'log-level', 'change': 'modified', 'sensitive': False,
+    assert items['log-level'] == {'key': 'log-level', 'path': ['log-level'], 'change': 'modified', 'sensitive': False,
                                   'old': 'info', 'new': 'debug'}
-    assert items['hosts.printer.lan'] == {'key': 'hosts.printer.lan', 'change': 'added', 'sensitive': False,
-                                          'old': None, 'new': '192.168.1.20'}
+    # The path keeps a domain key whole, so the dialog can group rows by dns, hosts and the policy block.
+    assert items['hosts.printer.lan'] == {'key': 'hosts.printer.lan', 'path': ['hosts', 'printer.lan'], 'change': 'added',
+                                          'sensitive': False, 'old': None, 'new': '192.168.1.20'}
     policy = items['dns.proxy-server-nameserver-policy.new.example.com']
     assert (policy['change'], policy['new']) == ('added', '192.0.2.54')
+    assert policy['path'] == ['dns', 'proxy-server-nameserver-policy', 'new.example.com']
+    assert items['dns.fake-ip-filter']['path'] == ['dns', 'fake-ip-filter']
     assert 'dns.proxy-server-nameserver-policy.old.example.com' not in items
     fake = items['dns.fake-ip-filter']['list']
     assert (fake['before'], fake['after'], fake['added'], fake['removed']) == (2, 3, 1, 0)
@@ -133,6 +136,7 @@ def test_named_lists_match_entries_by_name_and_list_member_changes():
     entries = {(entry['change'], entry['text']): entry for entry in proxies['entries']}
     assert {('added', 'US 01'), ('added', 'WG'), ('added', 'HY2'), ('removed', 'JP 01'), ('modified', 'HK 01')} == set(entries)
     fields = {field['key']: field for field in entries['modified', 'HK 01']['fields']}
+    # Fields inside an entry are rows of their own table, keyed by their path; no separate path list.
     assert fields['port'] == {'key': 'port', 'change': 'modified', 'sensitive': False, 'old': '443', 'new': '8388'}
     assert fields['password'] == {'key': 'password', 'change': 'modified', 'sensitive': True,
                                   'old': [{'secret': 'old-ss-password-9999'}], 'new': [{'secret': SECRETS['ss-password']}]}
@@ -195,13 +199,13 @@ def test_values_are_returned_with_every_credential_marked():
     for value in ('auth-pass-0007', 'user:urlPassw0rd0005', 'urlPassw0rd0005'):
         assert value not in hidden, value
     items = items_by_key(result)
-    assert items['secret'] == {'key': 'secret', 'change': 'modified', 'sensitive': True,
+    assert items['secret'] == {'key': 'secret', 'path': ['secret'], 'change': 'modified', 'sensitive': True,
                                'old': [{'secret': 'old-controller-secret'}], 'new': [{'secret': SECRETS['controller']}]}
-    assert items['authentication'] == {'key': 'authentication', 'change': 'added', 'sensitive': True, 'old': None,
-                                       'new': [{'secret': '["admin:auth-pass-0007"]'}]}
+    assert items['authentication'] == {'key': 'authentication', 'path': ['authentication'], 'change': 'added',
+                                       'sensitive': True, 'old': None, 'new': [{'secret': '["admin:auth-pass-0007"]'}]}
     assert items['proxy-providers.Feed.header.Authorization'] == {
-        'key': 'proxy-providers.Feed.header.Authorization', 'change': 'added', 'sensitive': True, 'old': None,
-        'new': [{'secret': '["Bearer header-token-0006"]'}]}
+        'key': 'proxy-providers.Feed.header.Authorization', 'path': ['proxy-providers', 'Feed', 'header', 'Authorization'],
+        'change': 'added', 'sensitive': True, 'old': None, 'new': [{'secret': '["Bearer header-token-0006"]'}]}
     # Host, port, path and harmless parameters are plain; only the token is a credential piece.
     feed = items['proxy-providers.Feed.url']
     assert feed['old'] == ['https://sub.example.com:8443/api/v1/client/subscribe?token=',
@@ -510,11 +514,11 @@ def test_subscription_details_list_nodes_and_their_field_changes():
     assert feed['summary'] == {'kind': 'nodes', 'before': 3, 'after': 3, 'added': 1, 'removed': 1, 'modified': 2}
     assert [group['change'] for group in feed['details']['groups']] == ['added', 'removed', 'modified']
     groups = groups_of(feed['details'])
-    # A new node: its name, type and server:port (an IPv6 address in brackets); a removed one: its name.
+    # A new node and a removed one alike: name, type and server:port (an IPv6 address in brackets).
     assert groups['added'] == {'change': 'added', 'total': 1, 'omitted': 0, 'entries': [
         {'change': 'added', 'text': 'US 01', 'info': 'hysteria2 · [2001:db8::7]:8443'}]}
     assert groups['removed'] == {'change': 'removed', 'total': 1, 'omitted': 0,
-                                 'entries': [{'change': 'removed', 'text': 'SG 01'}]}
+                                 'entries': [{'change': 'removed', 'text': 'SG 01', 'info': 'trojan · sg.example:443'}]}
     hk, jp = groups['modified']['entries']
     assert (hk['text'], hk['fields_omitted']) == ('HK 01', 0)
     assert {field['key']: (field['old'], field['new'], field['sensitive']) for field in hk['fields']} == {
@@ -535,10 +539,25 @@ def test_subscription_details_list_nodes_and_their_field_changes():
     hidden = json.dumps(without_secrets(result), ensure_ascii=False)
     for secret in ('hk-pass-before', 'hk-pass-after', 'jp-uuid-before-0001', 'jp-uuid-after-0002'):
         assert secret in shown and secret not in hidden
-    for secret in ('us-pass-0001', 'sg-pass-0001'):  # a new node shows type and address, a removed one its name
+    for secret in ('us-pass-0001', 'sg-pass-0001'):  # added and removed nodes show type and address only
         assert secret not in shown
     for value in ('b.example', '11008', 'cdn-b.example', '[2001:db8::7]:8443'):
         assert value in hidden
+
+
+def test_removed_nodes_carry_type_and_address_like_added_ones():
+    gone_v6 = {'name': 'Old v6', 'type': 'socks5', 'server': '2001:db8::e', 'port': 1080, 'password': 'gone-pass-1'}
+    gone_bare = {'name': 'Bare', 'server': 'bare.example'}  # no type, no port: what there is
+    odd = {'name': 'Odd', 'type': 'ss'}  # no server
+    twin = {'name': 'Dup', 'type': 'ss', 'server': 'd1.example', 'port': 1}
+    summary, details = node_change([gone_v6, gone_bare, odd, twin, {**twin, 'server': 'd2.example'}], [twin])
+    assert summary['removed'] == 4
+    assert groups_of(details)['removed']['entries'] == [
+        {'change': 'removed', 'text': 'Old v6', 'info': 'socks5 · [2001:db8::e]:1080'},
+        {'change': 'removed', 'text': 'Bare', 'info': 'bare.example'},
+        {'change': 'removed', 'text': 'Odd', 'info': 'ss'},
+        {'change': 'removed', 'text': 'Dup', 'nth': 2, 'info': 'ss · d2.example:1'}]
+    assert 'gone-pass-1' not in json.dumps(details, ensure_ascii=False)
 
 
 def test_repeated_and_unnamed_nodes_are_matched_in_file_order():

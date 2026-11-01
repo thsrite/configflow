@@ -39,7 +39,7 @@ const changed: PushDiffResponse = {
         { change: 'added', total: 2, omitted: 0, entries: [
           { change: 'added', text: 'C 新增节点', info: 'socks5 · edge-c.lab:1080' },
           { change: 'added', text: 'B 日本', nth: 2, info: 'ss · [2001:db8::7]:8443' }] },
-        { change: 'removed', total: 1, omitted: 0, entries: [{ change: 'removed', text: 'D 下线' }] },
+        { change: 'removed', total: 1, omitted: 0, entries: [{ change: 'removed', text: 'D 下线', info: 'trojan · d.lab:443' }] },
         { change: 'modified', total: 1, omitted: 0, entries: [{ change: 'modified', text: 'HK 01', fields_omitted: 0, fields: [
           { key: 'server', change: 'modified', sensitive: false, old: 'a.lab', new: 'b.lab' },
           { key: 'port', change: 'modified', sensitive: false, old: '11005', new: '11008' },
@@ -61,15 +61,15 @@ const changed: PushDiffResponse = {
   config: {
     format: 'yaml', status: 'compared', omitted: 0, total: 5,
     items: [
-      { key: 'hosts.printer.lan', change: 'added', sensitive: false, old: null, new: '192.168.1.30' },
-      { key: 'secret', change: 'modified', sensitive: true, old: [{ secret: 'old-controller-0000' }], new: [{ secret: 'controller-secret-0001' }] },
-      { key: 'proxy-providers.实验机场.url', change: 'modified', sensitive: false,
+      { key: 'hosts.printer.lan', path: ['hosts', 'printer.lan'], change: 'added', sensitive: false, old: null, new: '192.168.1.30' },
+      { key: 'secret', path: ['secret'], change: 'modified', sensitive: true, old: [{ secret: 'old-controller-0000' }], new: [{ secret: 'controller-secret-0001' }] },
+      { key: 'proxy-providers.实验机场.url', path: ['proxy-providers', '实验机场', 'url'], change: 'modified', sensitive: false,
         old: ['https://cf.lab/api/subscriptions/feed/proxies?token=', { secret: 'pull-token-0000' }],
         new: ['https://cf.lab/api/subscriptions/feed/proxies?token=', { secret: 'pull-token-1234' }] },
-      { key: 'dns.fake-ip-filter', change: 'modified', sensitive: false, list: {
+      { key: 'dns.fake-ip-filter', path: ['dns', 'fake-ip-filter'], change: 'modified', sensitive: false, list: {
         before: 2, after: 63, added: 61, removed: 0, modified: 0, reordered: false, omitted: 1,
         entries: Array.from({ length: 60 }, (_, index) => ({ change: 'added' as const, text: `+.site-${index}.example` })) } },
-      { key: 'proxies', change: 'modified', sensitive: false, list: {
+      { key: 'proxies', path: ['proxies'], change: 'modified', sensitive: false, list: {
         before: 1, after: 1, added: 0, removed: 0, modified: 1, reordered: false, omitted: 0, identity: 'name',
         entries: [{ change: 'modified', text: '手动 SS', fields: [
           { key: 'password', change: 'modified', sensitive: true, old: [{ secret: 'ss-pass-before' }], new: [{ secret: 'ss-pass-after' }] },
@@ -91,6 +91,12 @@ async function open(responses: PushDiffResponse[], props: Partial<{ canPush: boo
 }
 
 const body = () => document.body
+/** Text as the desktop table shows it: without the separators only the phone layout shows (aria-hidden). */
+const shown = (element: Element) => {
+  const copy = element.cloneNode(true) as Element
+  copy.querySelectorAll('[aria-hidden="true"]').forEach(node => node.remove())
+  return copy.textContent!.replace(/\s+/g, ' ').trim()
+}
 
 describe('push diff copy', () => {
   it('summarises nodes, rules, sizes and configuration changes', () => {
@@ -170,7 +176,11 @@ describe('AgentPushDiff dialog', () => {
     expect(hosts.textContent).toContain('新增')
     expect(hosts.textContent).toContain('192.168.1.30')
     const secret = config.querySelector('[data-key="secret"]')!
-    expect(secret.textContent!.replace(/\s+/g, '')).toBe('secret修改old-controller-0000controller-secret-0001')
+    expect(shown(secret).replace(/\s+/g, '')).toBe('secret修改old-controller-0000controller-secret-0001')
+    // Grouped by top-level key: the label is the path inside the group.
+    expect([...config.querySelectorAll('[data-group-toggle]')].map(shown))
+      .toEqual(['Hosts hosts 新增 1 项', '基础设置 修改 1 项', '订阅 proxy-providers 修改 1 项', 'DNS dns 修改 1 项', '节点 proxies 修改 1 项'])
+    expect(shown(hosts.querySelector('[data-config-label]')!)).toBe('printer.lan')
     const filter = config.querySelector('[data-key="dns.fake-ip-filter"]')!
     expect(filter.textContent).toContain('2 条')
     expect(filter.textContent).toContain('63 条 +61 / −0')
@@ -224,6 +234,16 @@ describe('AgentPushDiff dialog', () => {
 
   const expandButton = (row: Element) => [...row.querySelectorAll('button')].find(button => button.textContent!.includes('展开明细'))!
 
+  /** A group's node table: the header and, per node (one tbody each), its rows' cells. */
+  const nodeTable = (detail: Element, change: string) => {
+    const table = detail.querySelector(`[data-group="${change}"] [data-node-table]`)!
+    return {
+      table,
+      head: [...table.querySelectorAll('thead th')].map(shown),
+      nodes: [...table.querySelectorAll(':scope > tbody')].map(node => [...node.querySelectorAll('tr')].map(row => [...row.children].map(shown))),
+    }
+  }
+
   it('expands subscription and rule set rows into nodes and rules grouped by change', async () => {
     await open([changed])
     const files = body().querySelector('[data-push-diff-files]')!
@@ -241,14 +261,30 @@ describe('AgentPushDiff dialog', () => {
     expect(feed.className).toContain('is-expanded')
     const detail = body().querySelector(`#${toggle.getAttribute('aria-controls')}`)!
     expect(detail.previousElementSibling).toBe(feed)  // right below its file
-    expect(groupOf(detail, 'added')).toEqual({ title: '新增 2 个节点', entries: [
-      '+ C 新增节点 · socks5 · edge-c.lab:1080', '+ B 日本（同名第 2 个） · ss · [2001:db8::7]:8443'] })
-    expect(groupOf(detail, 'removed')).toEqual({ title: '删除 1 个节点', entries: ['− D 下线'] })
-    expect(groupOf(detail, 'modified')).toEqual({ title: '修改 1 个节点', entries: ['~ HK 01'] })
-    const fields = [...detail.querySelectorAll('[data-group="modified"] li li')].map(item => item.textContent)
-    expect(fields).toEqual(['server：a.lab → b.lab', 'port：11005 → 11008', 'password：hk-node-pass-before → hk-node-pass-after',
-      'plugin-opts.host：cdn-a.lab → cdn-b.lab'])
-    expect(detail.querySelector('[data-group="added"] .text-success-accent')!.textContent).toContain('+ C 新增节点')
+    // Nodes: one table per group (the groups page and search on their own), 节点 | 变更项 | 变更前 | 变更后.
+    expect(groupOf(detail, 'added').title).toBe('新增 2 个节点')
+    expect(groupOf(detail, 'removed').title).toBe('删除 1 个节点')
+    expect(groupOf(detail, 'modified').title).toBe('修改 1 个节点')
+    const added = nodeTable(detail, 'added')
+    expect(added.head).toEqual(['节点', '变更项', '变更前', '变更后'])
+    expect(added.nodes).toEqual([[['C 新增节点', '新增', '—', 'socks5 · edge-c.lab:1080']],
+      [['B 日本（同名第 2 个）', '新增', '—', 'ss · [2001:db8::7]:8443']]])
+    // A removed node mirrors an added one: its type and server:port before, nothing after.
+    expect(nodeTable(detail, 'removed').nodes).toEqual([[['D 下线', '删除', 'trojan · d.lab:443', '—']]])
+    const modified = nodeTable(detail, 'modified')
+    expect(modified.nodes).toEqual([[['HK 01', 'server', 'a.lab', 'b.lab'], ['port', '11005', '11008'],
+      ['password', 'hk-node-pass-before', 'hk-node-pass-after'], ['plugin-opts.host', 'cdn-a.lab', 'cdn-b.lab']]])
+    // The node's name spans its rows and heads them for screen readers; each table is named by its group title.
+    const name = modified.table.querySelector(':scope > tbody th')!
+    expect([name.getAttribute('scope'), name.getAttribute('rowspan')]).toEqual(['rowgroup', '4'])
+    expect(document.getElementById(modified.table.getAttribute('aria-labelledby')!)!.textContent!.trim()).toBe('修改 1 个节点')
+    expect(added.table.querySelector('[data-node-key] .chip')!.className).toContain('chip-ok')
+    expect(nodeTable(detail, 'removed').table.querySelector('[data-node-key] .chip')!.className).toContain('chip-bad')
+    // The phone reads each row as 变更项：变更前 → 变更后.
+    expect([...modified.table.querySelectorAll(':scope > tbody tr')].map(row => [...row.querySelectorAll('td')].map(cell => cell.textContent).join('')))
+      .toEqual(['server：a.lab → b.lab', 'port：11005 → 11008', 'password：hk-node-pass-before → hk-node-pass-after',
+        'plugin-opts.host：cdn-a.lab → cdn-b.lab'])
+    expect(detail.querySelector('[data-group="added"] ul')).toBeNull()  // no + / − list for nodes any more
     expect(detail.textContent).toContain('有 1 个节点名被多个节点共用')
     expect(detail.textContent).not.toContain('未列出')
 
@@ -296,7 +332,7 @@ describe('AgentPushDiff dialog', () => {
     expect(body().querySelectorAll('[data-secret-hidden]')).toHaveLength(11)
     expect(body().querySelector('[data-file-details="nodes"]')!.textContent).toContain('password：已隐藏 → 已隐藏')
     expect(body().querySelector('[data-file-details="nodes"]')!.textContent).toContain('server：a.lab → b.lab')  // addresses stay
-    expect(body().querySelector('[data-key="secret"]')!.textContent!.replace(/\s+/g, '')).toBe('secret修改已隐藏已隐藏')
+    expect(shown(body().querySelector('[data-key="secret"]')!).replace(/\s+/g, '')).toBe('secret修改已隐藏已隐藏')
     expect(body().querySelector('[data-key="proxy-providers.实验机场.url"]')!.textContent).toContain('?token=已隐藏')
     expect(body().textContent).toContain('password：已隐藏 → 已隐藏')
     expect(body().textContent).toContain('备用 已隐藏@relay.lab')

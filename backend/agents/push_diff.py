@@ -177,8 +177,8 @@ def unpack(value):
     return ''.join(text), ranges
 
 
-# The display texts of a response: file names, values, list entries (a new node's type and
-# server:port in ``info``), raw diff lines.
+# The display texts of a response: file names, values, list entries (an added or removed node's
+# type and server:port in ``info``), raw diff lines.
 _TEXT_KEYS = frozenset({'name', 'old', 'new', 'text', 'info'})
 _TEXT_LIST_KEYS = frozenset({'added_items', 'removed_items', 'lines'})
 
@@ -490,11 +490,17 @@ def _brief_list(diff):
 
 
 def _row(budget, path, full, change, old=_MISSING, new=_MISSING, *, sensitive=False, listed=None, nested=False):
-    """One changed item; ``sensitive`` marks a credential field, whose whole value is secret."""
+    """One changed item; ``sensitive`` marks a credential field, whose whole value is secret.
+
+    ``nested`` rows are fields inside a list entry (a node, a proxy group): a brief list and no ``path``.
+    """
     if budget.full:  # counted, not rendered
         budget.omitted += 1
         return
     row = {'key': '.'.join(path), 'change': change, 'sensitive': sensitive}
+    if not nested:
+        # The key's segments: a domain key holds dots of its own, so the dialog groups by these, not by the key.
+        row['path'] = list(path)
     if listed is not None:
         row['list'] = _brief_list(listed) if nested else listed
     else:
@@ -511,12 +517,12 @@ def _walk(old, new, path, budget, *, base=(), nested=False):
     if len(full) and is_secret_key(full[-1]) and full[:-1] not in _DATA_KEYED:
         if old is _MISSING or new is _MISSING or not _same(old, new):
             _row(budget, path, full, 'added' if old is _MISSING else 'removed' if new is _MISSING else 'modified',
-                 old, new, sensitive=True)
+                 old, new, sensitive=True, nested=nested)
         return
     change = 'added' if old is _MISSING else 'removed' if new is _MISSING else 'modified'
     if change != 'modified' and full[:-1] in _DATA_KEYED:
         # A whole provider or policy entry appears or goes: one row, not one per field.
-        _row(budget, path, full, change, old, new)
+        _row(budget, path, full, change, old, new, nested=nested)
         return
     if isinstance(old, dict) and isinstance(new, dict) or (
             change != 'modified' and isinstance(old if new is _MISSING else new, dict)
@@ -538,7 +544,7 @@ def _walk(old, new, path, budget, *, base=(), nested=False):
         return
     if change == 'modified' and _same(old, new):
         return
-    _row(budget, path, full, change, old, new)
+    _row(budget, path, full, change, old, new, nested=nested)
 
 
 def _load_yaml(data):
@@ -879,7 +885,7 @@ def _plain_pieces(value):
 
 
 def _search_text(entry):
-    """What a search matches in one entry: names, a new node's info, field names and values, never credentials.
+    """What a search matches in one entry: names, a node's info, field names and values, never credentials.
 
     Pieces are joined by NUL, so a match never spans a credential or two values.
     """
@@ -1182,7 +1188,7 @@ def _node_entry(change, items, index, places):
     entry = {'change': change, 'text': _show(UNNAMED if name is None else name)}
     if index in places:
         entry['nth'] = places[index]
-    if change == 'added':
+    if change != 'modified':  # added and removed alike: what the node was or is, never its credentials
         info = _node_info(node)
         if info:
             entry['info'] = info

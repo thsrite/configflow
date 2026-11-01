@@ -14,8 +14,11 @@ Run on the test server only, from this checkout synced by rt. Touches no PVE gue
            push_diff_lab.py change through the same API as the pages, plus a second subscription in the group
            (its pull URL carries the access token, its 300 new nodes take several pages). The subscription gets a
            node added, one removed, one renamed twin and one modified (server, port, password and a nested
-           plugin-opts field), and 40 more nodes change their password (a second page of credentials); the large
-           rule set gains 3000 rules and loses 1500 (pages, search, inner scrolling).
+           plugin-opts field), the removed node and the second twin have IPv6 servers, and 40 more nodes change
+           their password (a second page of credentials); the large rule set gains 3000 rules and loses 1500
+           (pages, search, inner scrolling). The main file: log-level and unified-delay change, secret is set,
+           dns.fake-ip-filter gains one entry, dns.proxy-server-nameserver-policy three long domains and hosts
+           three names (表 2 grouped by top-level key).
   stop     stop a background serve;  clean  remove the private data
 
 Then: CF_PUSHDIFF_WORK=/tmp/cf-pushdiff-local CF_PUSHDIFF_AGENT='实验 Mihomo' node scripts/tests/push_diff_browser.mjs changed
@@ -54,19 +57,32 @@ BIG_BEFORE = '\n'.join(f'+.site-{index:04d}.big.lab.invalid' for index in range(
 BIG_AFTER = '\n'.join([f'+.site-{index:04d}.big.lab.invalid' for index in range(1500, 6000)]
                       + [f'+.fresh-{index:04d}.big.lab.invalid' for index in range(3000)])
 HOSTS_DOMAIN = 'printer.lab.invalid'
+# 主配置改了哪些项: the reported case, grouped by top-level key. fake-ip-filter gains one entry,
+# proxy-server-nameserver-policy three long server names, hosts three names; top-level settings change too.
+HOSTS = {HOSTS_DOMAIN: '198.51.100.30', 'nas.lab.invalid': '198.51.100.31', 'camera-01.lab.invalid': '198.51.100.32'}
+POLICY_DOMAINS = ['node-1.backbone-edges.example.net', 'node-2.backbone-edges.example.net', 'node-3.backbone-edges.example.net']
+DNS_BEFORE = '''dns:
+  enable: true
+  listen: 127.0.0.1:1053
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-filter: ['+.lan', '+.local']
+  nameserver: [198.51.100.53]
+  proxy-server-nameserver: [198.51.100.53]
+  proxy-server-nameserver-policy:
+    keep.backbone-edges.example.net: 198.51.100.53
+'''
 CUSTOM = '''mixed-port: 7890
 allow-lan: true
 mode: rule
 log-level: info
 external-controller: 127.0.0.1:9090
-dns:
-  enable: true
-  listen: 127.0.0.1:1053
-  enhanced-mode: fake-ip
-  fake-ip-range: 198.18.0.1/16
-  nameserver: [198.51.100.53]
-  proxy-server-nameserver: [198.51.100.53]
-'''
+''' + DNS_BEFORE
+CUSTOM_AFTER = (CUSTOM.replace('log-level: info', 'log-level: debug\nunified-delay: true')
+                .replace("['+.lan', '+.local']", "['+.lan', '+.local', '+.msftconnecttest.com']")
+                .replace('    keep.backbone-edges.example.net: 198.51.100.53\n', '    keep.backbone-edges.example.net: 198.51.100.53\n'
+                         + ''.join(f'    {domain}: 198.51.100.54\n' for domain in POLICY_DOMAINS))
+                + f'secret: {CONTROLLER_SECRET}\nhosts:\n' + ''.join(f'  {name}: {address}\n' for name, address in HOSTS.items()))
 # 40 nodes whose password changes: past the first page, so later pages carry credentials too.
 BULK = 40
 
@@ -80,9 +96,10 @@ NODES = f'''proxies:
   - {{name: A 香港, type: ss, server: edge-a.lab.invalid, port: 11005, cipher: aes-128-gcm,
      password: {NODE_PASSWORD_BEFORE}, plugin: obfs, plugin-opts: {{mode: tls, host: cdn-a.lab.invalid}}}}
   - {{name: B 日本, type: socks5, server: edge-b.lab.invalid, port: 1080}}
-  - {{name: E 下线, type: socks5, server: edge-e.lab.invalid, port: 1080}}
+  - {{name: E 下线, type: socks5, server: '2001:db8::e', port: 1080}}
 ''' + bulk('before')
-# A 香港 changes server, port, password and plugin-opts.host; E 下线 goes; C 新增节点 and a second B 日本 arrive.
+# A 香港 changes server, port, password and plugin-opts.host; E 下线 (an IPv6 server) goes; C 新增节点 and a
+# second B 日本 (an IPv6 server too) arrive.
 NODES_AFTER = f'''proxies:
   - {{name: A 香港, type: ss, server: edge-a2.lab.invalid, port: 11008, cipher: aes-128-gcm,
      password: {NODE_PASSWORD_AFTER}, plugin: obfs, plugin-opts: {{mode: tls, host: cdn-b.lab.invalid}}}}
@@ -320,8 +337,7 @@ def prepare():
         rule = next(item for item in api('GET', '/rule-library') if item['id'] == rule_id)
         rule.pop('has_ip_part', None)
         api('PUT', f'/rule-library/{rule_id}', {**rule, 'content': content})
-    custom = CUSTOM + f'secret: {CONTROLLER_SECRET}\nhosts:\n  {HOSTS_DOMAIN}: 198.51.100.30\n'
-    api('POST', '/custom-config/mihomo', {'config': custom, 'provider_update_interval': 3600})
+    api('POST', '/custom-config/mihomo', {'config': CUSTOM_AFTER, 'provider_update_interval': 3600})
     write_subscription('airport', 'airport-v2')
     # 订阅来源 → 更新 reuses a download of the same URL for 30 seconds.
     time.sleep(max(0.0, 31 - (time.monotonic() - pushed)))

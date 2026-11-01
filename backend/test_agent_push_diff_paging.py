@@ -104,7 +104,8 @@ def test_nodes_are_searched_by_name_info_and_field_but_never_by_credentials():
     assert found('added', 'fresh') == ['Fresh SG'] and found('added', 'FRESH sg') == ['Fresh SG']  # case-insensitive
     assert found('added', 'sg-edge.example:443') == ['Fresh SG']  # a new node's type and server:port
     assert found('added', 'trojan') == ['Fresh SG']
-    assert found('removed', 'gone') == ['Gone JP'] and found('removed', 'socks5') == []  # removed: by name only
+    assert found('removed', 'gone') == ['Gone JP']
+    assert found('removed', 'socks5') == ['Gone JP'] and found('removed', 'gone.example:1080') == ['Gone JP']  # its info too
     assert found('modified', '香港') == ['HK 香港 01']
     assert found('modified', 'port') == ['HK 香港 01'] and found('modified', '8443') == ['HK 香港 01']
     assert found('modified', 'password') == ['HK 香港 01']  # the field's name, not its value
