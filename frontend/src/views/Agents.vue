@@ -36,37 +36,6 @@
     </SectionCard>
 
     <template v-else>
-      <!-- 拓扑：ConfigFlow → 各 Agent，每台设备一条下发通道 -->
-      <details :open="!isNarrow" class="group/topology mb-3.5" data-agent-topology>
-        <summary class="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl border border-border bg-card px-3 text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:hidden [&::-webkit-details-marker]:hidden">
-          <span>下发拓扑</span>
-          <span class="ml-auto text-xs font-normal text-muted-foreground">{{ agents.length }} 台 · {{ onlineCount }} 在线</span>
-          <ChevronDown class="size-4 shrink-0 text-muted-foreground transition-transform group-open/topology:rotate-180" aria-hidden="true" />
-        </summary>
-        <SectionCard :padded="false" class="max-sm:mt-2" role="region" aria-label="下发拓扑">
-          <FlowMap
-            ref="topology"
-            label="下发拓扑"
-            :columns="topoColumns"
-            :edges="topoEdges"
-            :height="Math.max(260, agents.length * 72)"
-            :min-width="640"
-            columns-template="minmax(0,1fr) minmax(0,1.2fr)"
-            :gap-x="200"
-          >
-            <template #node="{ node }">
-              <span v-if="node.kind === 'hub'" class="group flex flex-col items-start p-[18px]">
-                <BrandMark class="size-10 text-primary" :busy="pushingAll" />
-                <span class="font-display mt-2.5 text-[22px] font-medium">ConfigFlow</span>
-                <span class="mt-1 max-w-full text-[10.5px] text-muted-foreground [overflow-wrap:anywhere]" :title="`当前配置修订号：${activeRevision === undefined ? '暂未获取' : `v${activeRevision}`}`">
-                  配置空间 · {{ activeProfileName }}
-                </span>
-              </span>
-            </template>
-          </FlowMap>
-        </SectionCard>
-      </details>
-
       <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5 max-md:grid-cols-1">
         <div
           v-for="(agent, index) in agents"
@@ -933,10 +902,6 @@ import { useChartPalette, withAlpha } from '@/lib/chartPalette'
 import PageHeader from '@/components/common/PageHeader.vue'
 import { ref, shallowRef, computed, onMounted, onUnmounted, nextTick, watch, type ComponentPublicInstance } from 'vue'
 import { useRouter } from 'vue-router'
-import { useMediaQuery } from '@vueuse/core'
-import BrandMark from '@/components/common/BrandMark.vue'
-import FlowMap from '@/components/dashboard/FlowMapViewer.vue'
-import type { FlowColumn, FlowEdge, FlowTone } from '@/components/dashboard/FlowMap.vue'
 import { consumeAction } from '@/lib/actions'
 import { cn } from '@/lib/utils'
 import { optionCopy, optionHelp } from '@/lib/optionCopy'
@@ -2468,7 +2433,7 @@ const pushingAll = ref(false)
 type PushOutcome = 'submitted' | 'done' | 'failed' | 'busy'
 
 /**
- * 推送：数据包沿拓扑通道送出；mihomo / mosdns / oxidns 走事务发布，结果由 useAgentDeployments 跟踪并提示，
+ * 推送：mihomo / mosdns / oxidns 走事务发布，结果由 useAgentDeployments 跟踪并提示，
  * 这里只处理「提交」本身的成败。
  */
 const pushOne = async (agent: Agent, quiet = false): Promise<PushOutcome> => {
@@ -2478,7 +2443,6 @@ const pushOne = async (agent: Agent, quiet = false): Promise<PushOutcome> => {
   const transactional = agent.service_type !== 'surge'
   if (transactional && !beginSubmission(agent.id, deploymentId)) return 'busy'
   pushingIds.value = new Set([...pushingIds.value, agent.id])
-  topology.value?.burst(`agent:${agent.id}`, 16)
   try {
     const { data } = await agentApi.pushConfig(agent.id, deploymentId)
     if (data.deployment_id === deploymentId && typeof data.status === 'string') {
@@ -2794,16 +2758,13 @@ const stopAutoRefresh = () => {
   }
 }
 
-/* ---------- 拓扑与配置版本 ---------- */
-const topology = ref<InstanceType<typeof FlowMap> | null>(null)
-const isNarrow = useMediaQuery('(max-width: 639px)')
+/* ---------- 配置版本 ---------- */
 const profileStore = useProfileStore()
 
 const revisionOf = (profileId?: string) => {
   const revision = profiles.value.find(p => p.id === (profileId || defaultProfileId.value))?.revision
   return typeof revision === 'number' && Number.isSafeInteger(revision) && revision >= 0 ? revision : undefined
 }
-const activeRevision = computed(() => revisionOf(profileStore.activeProfileId.value))
 const activeProfileName = computed(
   () => profileStore.activeProfile.value?.name || profileStore.activeProfileId.value
 )
@@ -2813,31 +2774,6 @@ const syncTone = (agent: Agent) => {
   const tone = syncOf(agent).tone
   return tone === 'success' ? 'text-success-accent' : tone === 'warning' ? 'text-warning-accent' : 'text-muted-foreground'
 }
-
-const topoColumns = computed<FlowColumn[]>(() => [
-  { key: 'hub', title: '配置中心', nodes: [{ id: 'hub', title: 'ConfigFlow', kind: 'hub', fit: true }] },
-  {
-    key: 'agents',
-    title: 'Agent',
-    nodes: agents.value.map(a => ({
-      id: `agent:${a.id}`,
-      title: a.name,
-      meta: `${a.host}:${a.port}`,
-      icon: Server,
-      status: (a.status === 'online' ? 'online' : 'offline') as 'online' | 'offline'
-    }))
-  }
-])
-
-const topoEdges = computed<FlowEdge[]>(() =>
-  agents.value.map(a => ({
-    from: 'hub',
-    to: `agent:${a.id}`,
-    weight: 0.7,
-    tone: (['mosdns', 'oxidns'].includes(a.service_type) ? 'info' : 'success') as FlowTone,
-    dead: a.status !== 'online'
-  }))
-)
 
 /* 推送与跨页动作 */
 const router = useRouter()
