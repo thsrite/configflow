@@ -65,6 +65,7 @@ export function intervalText(seconds: number): string {
 }
 
 export function scheduleText(task: ScheduledTask): string {
+  if (!task.enabled) return '已关闭'
   return task.interval_seconds === null ? task.schedule_text : intervalText(task.interval_seconds)
 }
 
