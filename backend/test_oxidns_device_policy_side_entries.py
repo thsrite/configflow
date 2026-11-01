@@ -223,10 +223,12 @@ def test_template_generation_allows_side_listeners_without_profile_context():
     ('[fd00::53]:53', '（[fd00::53]:53）监听客户端 DNS 端口 53'),
     ('198.51.100.53:53', '（198.51.100.53:53）监听客户端 DNS 端口 53'),   # an HA VIP
     ('${SIDE_LISTEN}', '（${SIDE_LISTEN}）无法确认监听端口'),
+    (None, '监听入口 side_udp（未填写监听地址）无法确认监听端口'),
 ])
 def test_client_port_listener_outside_the_main_chain_is_refused_with_details(listen, expected):
+    server = {'entry': 'side_seq'} if listen is None else {'listen': listen, 'entry': 'side_seq'}
     extra = [{'tag': 'side_seq', 'type': 'sequence', 'args': [{'exec': '$forward_local'}, {'exec': 'accept'}]},
-             {'tag': 'side_udp', 'type': 'udp_server', 'args': {'listen': listen, 'entry': 'side_seq'}}]
+             {'tag': 'side_udp', 'type': 'udp_server', 'args': server}]
     config = context()
     settings = native(config, extra)
     state = read_policies(settings, config)
@@ -308,6 +310,8 @@ def _all_servers_to(entry):
      '主处理链 sequence_main 的最后一步是「accept」'),
     (lambda d: _set_main(d, [{'matches': ['qname $x'], 'exec': 'goto china_dns'}]),
      '最后一步是「goto china_dns（带匹配条件）」'),
+    (lambda d: _set_main(d, [{'exec': 'goto proxy_dns_seq', 'note': 'manual'}]),
+     '最后一步是「goto proxy_dns_seq（带其他字段）」'),
     (_edit('forward_local', type='sequence', args=[]), '本地上游 forward_local 的类型是 sequence，不是 forward'),
     (_edit('forward_local', args={'upstreams': []}), '本地上游 forward_local 没有配置上游地址'),
     (lambda d: d['plugins'].append({'tag': 'sequence_main', 'type': 'sequence', 'args': []}),
