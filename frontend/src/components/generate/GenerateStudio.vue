@@ -83,6 +83,7 @@
 
       <div class="grid grid-cols-[minmax(0,1fr)] @min-[720px]/studio:grid-cols-[260px_minmax(0,1fr)]">
         <section class="order-2 min-w-0 border-t border-border p-5 max-md:p-3 @min-[720px]/studio:order-none @min-[720px]/studio:border-t-0 @min-[720px]/studio:border-r" role="list" aria-label="生成步骤">
+          <p v-if="running && phase === 'write'" role="presentation" class="mt-0 mb-3 text-[11px] text-muted-foreground">已生成 · 步骤回放</p>
           <div
             v-for="(step, i) in steps"
             :key="step.title"
@@ -171,6 +172,10 @@
 
           <SubscriptionHostsSummary v-if="hostsReport && !running" :report="hostsReport" />
           <p v-if="previewLimited" class="m-0 border-b border-border px-5 py-2 text-xs text-muted-foreground">文件较长，仅显示前 2000 行；复制和下载包含完整内容。</p>
+          <div v-if="running && phase === 'write'" class="flex min-h-11 flex-wrap items-center justify-between gap-x-3 border-b border-border px-5 text-xs text-muted-foreground max-md:px-3" data-result-replay>
+            <span><span role="status">配置已生成，正在展开结果</span><span class="num"> · {{ lines.length }} / {{ previewLineCount }} 行</span></span>
+            <Button variant="ghost" size="sm" class="min-h-11 text-primary-accent" @click="showResultImmediately">立即显示</Button>
+          </div>
 
           <div v-if="pushResults.length" class="min-w-0 border-b border-border px-5 py-2 max-sm:px-3" aria-label="配置发布结果">
             <div class="min-w-0 divide-y divide-border/70">
@@ -284,7 +289,7 @@ import { notify } from '@/lib/feedback'
 import { copyText } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 import { useLive } from '@/stores/live'
-import { usePreferences } from '@/stores/preferences'
+import { systemReducesMotion } from '@/stores/preferences'
 import type { SubscriptionHostsReport } from '@/types'
 
 const isPhone = useMediaQuery('(max-width: 639px)')
@@ -306,7 +311,6 @@ const emit = defineEmits<{ (e: 'copy', url: string, title: string): void }>()
 
 const router = useRouter()
 const live = useLive()
-const { motionEnabled } = usePreferences()
 const metaKey = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
 
 const active = ref<TargetKey>('mihomo')
@@ -392,6 +396,12 @@ const phase = ref<'steps' | 'write' | ''>('')
 const output = ref('')
 const lines = ref<string[]>([])
 const freshFrom = ref(0)
+const previewLineCount = ref(0)
+let skipReplay = false
+const showResultImmediately = () => {
+  skipReplay = true
+  finishFrame?.()
+}
 const error = ref('')
 const codeEl = ref<HTMLElement | null>(null)
 /** Mihomo only: hosts merged from subscriptions; hidden when no subscription carries any. */
@@ -449,6 +459,8 @@ const generate = async () => {
   staleMessage.value = ''
   hostsReport.value = null
   freshFrom.value = 0
+  previewLineCount.value = 0
+  skipReplay = false
   const target = active.value
   const request = (device === 'manual' ? generateApi.artifact(target, profile) : agentApi.generateConfig(device, profile, target))
     .then(res => ({ ok: true as const, artifact: res.data, content: res.data.content,
@@ -466,7 +478,6 @@ const generate = async () => {
       return
     }
 
-    stepIndex.value = 4
     phase.value = 'write'
     output.value = result.content
     generation.value = result.artifact
@@ -474,14 +485,24 @@ const generate = async () => {
     const all = result.content.replace(/\n$/, '').split('\n')
     previewLimited.value = all.length > 2000
     const preview = all.slice(0, 2000).map(highlight)
-    if (motionEnabled() && !document.hidden) {
-      // Only animate rendering the fixed result, after generation has completed.
-      const perFrame = Math.max(1, Math.ceil(preview.length / 90))
-      for (let i = 0; i < preview.length; i += perFrame) {
+    previewLineCount.value = preview.length
+    if (!systemReducesMotion() && !document.hidden) {
+      // Result playback, not backend progress: all bytes are already final.
+      // Like rule simulation, static appearance keeps this ordered feedback.
+      // Elapsed time gives short files and high-refresh displays visible steps.
+      const duration = Math.min(2600, Math.max(1800, preview.length * 6))
+      const started = performance.now()
+      while (true) {
         if (sequence !== requestSequence) return
-        if (!motionEnabled() || document.hidden) { lines.value = preview; break }
-        freshFrom.value = lines.value.length
-        lines.value.push(...preview.slice(i, i + perFrame))
+        if (skipReplay || systemReducesMotion() || document.hidden) { lines.value = preview; break }
+        const progress = Math.min(1, (performance.now() - started) / duration)
+        stepIndex.value = Math.min(steps.value.length - 1, Math.floor(progress * steps.value.length))
+        const count = Math.max(1, Math.ceil(progress * preview.length))
+        if (count > lines.value.length) {
+          freshFrom.value = lines.value.length
+          lines.value.push(...preview.slice(lines.value.length, count))
+        }
+        if (progress === 1) break
         await nextFrame()
         if (sequence !== requestSequence) return
         if (codeEl.value) codeEl.value.scrollTop = codeEl.value.scrollHeight

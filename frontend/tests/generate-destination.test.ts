@@ -6,6 +6,7 @@ import GenerateStudio from '@/components/generate/GenerateStudio.vue'
 import { Select } from '@/components/ui/select'
 import { agentApi, generateApi } from '@/api'
 import { copyText } from '@/lib/clipboard'
+import { notify } from '@/lib/feedback'
 import { usePreferences } from '@/stores/preferences'
 
 const live = vi.hoisted(() => ({ agents: undefined as unknown as Ref<any[]>, loaded: undefined as unknown as Ref<boolean> }))
@@ -47,7 +48,7 @@ beforeEach(() => {
   localStorage.clear()
   live.agents.value = []
   live.loaded.value = true
-  reduced = false
+  reduced = true
   usePreferences().prefs.value.motion = false
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('prefers-reduced-motion') && reduced,
     media: query, addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn() }))
@@ -204,13 +205,14 @@ describe('Generation destination', () => {
 describe('Fixed-result generation animation', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => cb(0), 16))
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => cb(performance.now()), 16))
     vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id))
-    usePreferences().prefs.value.motion = true
+    reduced = false
     live.agents.value = [agent('home')]
   })
 
-  it('shows real loading, then reveals the fixed result and pushes its original generation id', async () => {
+  it.each([false, true])('replays every step and the fixed result with appearance motion=%s', async motion => {
+    usePreferences().prefs.value.motion = motion
     let resolve!: (value: any) => void
     vi.mocked(agentApi.generateConfig).mockImplementationOnce(() => new Promise(done => { resolve = done }))
     const wrapper = await render()
@@ -223,10 +225,23 @@ describe('Fixed-result generation animation', () => {
     await flushPromises()
     expect(wrapper.findAll('.gen-line').length).toBeGreaterThan(0)
     expect(wrapper.findAll('.gen-line').length).toBeLessThan(120)
+    expect(wrapper.get('[data-result-replay]').text()).toContain('配置已生成')
     expect(button(wrapper, '推送').attributes('disabled')).toBeDefined()
-    await vi.advanceTimersByTimeAsync(2000)
+    expect(wrapper.findAll('.gen-step.done')).toHaveLength(0)
+    expect(wrapper.findAll('.gen-step')[0].classes()).toContain('run')
+    let previousLines = wrapper.findAll('.gen-line').length
+    for (let stage = 1; stage <= 4; stage++) {
+      await vi.advanceTimersByTimeAsync(370)
+      expect(wrapper.findAll('.gen-step.done')).toHaveLength(stage)
+      expect(wrapper.findAll('.gen-step')[stage].classes()).toContain('run')
+      expect(wrapper.findAll('.gen-line').length).toBeGreaterThan(previousLines)
+      previousLines = wrapper.findAll('.gen-line').length
+    }
+    await vi.advanceTimersByTimeAsync(400)
     await flushPromises()
     expect(wrapper.findAll('.gen-line')).toHaveLength(120)
+    expect(wrapper.findAll('.gen-step.done')).toHaveLength(5)
+    expect(wrapper.find('[data-result-replay]').exists()).toBe(false)
     await button(wrapper, '复制').trigger('click')
     expect(copyText).toHaveBeenCalledWith(content)
     await button(wrapper, '推送').trigger('click')
@@ -244,13 +259,95 @@ describe('Fixed-result generation animation', () => {
     expect(button(wrapper, '推送').attributes('disabled')).toBeDefined()
   })
 
-  it.each(['preference', 'system'])('shows the full result immediately when %s disables motion', async mode => {
-    if (mode === 'preference') usePreferences().prefs.value.motion = false
-    else reduced = true
+  it('respects system reduced motion even when appearance motion is enabled', async () => {
+    usePreferences().prefs.value.motion = true
+    reduced = true
     const wrapper = await render()
     await button(wrapper, '生成').trigger('click')
     await flushPromises()
     expect(wrapper.findAll('.gen-line')).toHaveLength(120)
     expect(button(wrapper, '推送').attributes('disabled')).toBeUndefined()
+  })
+
+  it('lets the user finish playback immediately without changing the final file', async () => {
+    const wrapper = await render()
+    await button(wrapper, '生成').trigger('click')
+    await flushPromises()
+    await button(wrapper, '立即显示').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.gen-line')).toHaveLength(120)
+    expect(wrapper.findAll('.gen-step.done')).toHaveLength(5)
+    expect(button(wrapper, '推送').attributes('disabled')).toBeUndefined()
+    await button(wrapper, '复制').trigger('click')
+    expect(copyText).toHaveBeenCalledWith(content)
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(notify.success).toHaveBeenCalledTimes(2) // Generated, then copied.
+  })
+
+  it('keeps short files and high-refresh displays from finishing all steps in a few frames', async () => {
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => cb(performance.now()), 4))
+    const result = artifact('home')
+    result.data.content = 'mode: rule\nrules:\n  - MATCH,DIRECT\n'
+    vi.mocked(agentApi.generateConfig).mockResolvedValueOnce(result)
+    const wrapper = await render()
+    await button(wrapper, '生成').trigger('click')
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(400)
+    expect(wrapper.findAll('.gen-step.done')).toHaveLength(1)
+    expect(wrapper.findAll('.gen-line')).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(wrapper.findAll('.gen-step.done')).toHaveLength(5)
+    expect(wrapper.findAll('.gen-line')).toHaveLength(3)
+  })
+
+  it.each(['hidden', 'reduced'])('finishes a partial result when the page becomes %s', async mode => {
+    const wrapper = await render()
+    await button(wrapper, '生成').trigger('click')
+    await flushPromises()
+    if (mode === 'hidden') {
+      vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+      document.dispatchEvent(new Event('visibilitychange'))
+    } else {
+      reduced = true
+      await vi.advanceTimersByTimeAsync(16)
+    }
+    await flushPromises()
+    expect(wrapper.findAll('.gen-line')).toHaveLength(120)
+    expect(button(wrapper, '推送').attributes('disabled')).toBeUndefined()
+  })
+
+  it('limits a long preview while copying all original bytes', async () => {
+    const result = artifact('home')
+    result.data.content = Array.from({ length: 2500 }, (_, i) => `key${i}: value`).join('\n') + '\n'
+    vi.mocked(agentApi.generateConfig).mockResolvedValueOnce(result)
+    const wrapper = await render()
+    await button(wrapper, '生成').trigger('click')
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(2700)
+    expect(wrapper.findAll('.gen-line')).toHaveLength(2000)
+    expect(wrapper.text()).toContain('仅显示前 2000 行')
+    await button(wrapper, '复制').trigger('click')
+    expect(copyText).toHaveBeenCalledWith(result.data.content)
+  })
+
+  it('cancels playback on unmount without reporting success', async () => {
+    const wrapper = await render()
+    await button(wrapper, '生成').trigger('click')
+    await flushPromises()
+    wrapper.unmount()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(notify.success).not.toHaveBeenCalled()
+  })
+
+  it('never replays completed steps when generation fails', async () => {
+    vi.mocked(agentApi.generateConfig).mockRejectedValueOnce({ response: { data: { message: '目标设备未就绪' } } })
+    const wrapper = await render()
+    await button(wrapper, '生成').trigger('click')
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(wrapper.findAll('.gen-step.done')).toHaveLength(0)
+    expect(wrapper.find('[data-result-replay]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('目标设备未就绪')
+    expect(button(wrapper, '推送').attributes('disabled')).toBeDefined()
   })
 })
