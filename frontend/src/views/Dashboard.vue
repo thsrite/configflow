@@ -154,7 +154,12 @@
           <h2 class="m-0 flex min-h-7 items-center text-[13.5px] font-semibold">事件流</h2>
           <span class="ml-auto font-mono text-[12px] text-muted-foreground">{{ events.length }} 条</span>
         </header>
-        <div :class="cn('event-stream mt-2.5 h-[360px] grow overflow-hidden', !events.length && 'max-sm:h-auto max-sm:grow-0')">
+        <div
+          :class="cn('event-stream mt-2.5 h-[360px] grow overflow-x-hidden overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50', !events.length && 'max-sm:h-auto max-sm:grow-0')"
+          role="region"
+          aria-label="最近日志事件"
+          :tabindex="events.length ? 0 : undefined"
+        >
           <p v-if="!events.length" class="px-[18px] py-10 text-center text-[13px] max-sm:px-3 max-sm:py-6 text-muted-foreground">
             {{ eventsLoaded ? '还没有日志事件' : '正在读取日志…' }}
           </p>
@@ -759,10 +764,6 @@ onUnmounted(() => {
   to {
     left: 100%;
   }
-}
-
-.event-stream {
-  mask-image: linear-gradient(#000 70%, transparent);
 }
 
 .event-enter-active {
