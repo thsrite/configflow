@@ -232,9 +232,10 @@ def test_sanitize_external_payload_handles_wide_container_with_bounded_overhead(
     config_module.set_repository(repository)
     payload = {f"key-{index}": [index, "safe"] for index in range(20_000)}
 
-    started = time.perf_counter()
+    # 只计本进程占用的 CPU 时间：测试服务器忙或与其他测试并行时，墙钟时间会被拉长而误报超时
+    started = time.process_time()
     sanitized = sanitize_external_payload(payload)
-    elapsed = time.perf_counter() - started
+    elapsed = time.process_time() - started
 
     assert sanitized == payload
     assert sanitized is not payload
