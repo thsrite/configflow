@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
-import { aggregateConnections, destinationKey, ruleHitCounts } from '@/lib/mihomo-overview'
+import { aggregateConnections, destinationKey, outletKind, ruleHitCounts } from '@/lib/mihomo-overview'
 import MihomoLatencyCard from '@/components/mihomo/MihomoLatencyCard.vue'
 import MihomoConnectionStats from '@/components/mihomo/MihomoConnectionStats.vue'
 import { mihomoPanelApi, trafficHistoryApi } from '@/api'
@@ -43,7 +43,10 @@ describe('connection aggregation', () => {
 
   it('sums bytes, current speed and connection count per key', () => {
     const bySource = aggregateConnections(connections, 'source', speeds)
-    expect(bySource).toEqual([
+    // 设备按出口节点拆开，出站节点按设备拆开
+    expect(bySource[0].parts.map(part => [part.key, part.download])).toEqual([['HK-01', 4000]])
+    expect(aggregateConnections(connections, 'outbound', speeds)[0].parts.map(part => part.key)).toEqual(['10.0.0.2'])
+    expect(bySource.map(({ parts, ...row }) => row)).toEqual([
       { key: '10.0.0.2', download: 4000, upload: 40, downSpeed: 100, upSpeed: 1, count: 2 },
       { key: '10.0.0.3', download: 500, upload: 0, downSpeed: 50, upSpeed: 0, count: 1 },
       // Mihomo 自身的连接没有来源 IP
@@ -52,6 +55,14 @@ describe('connection aggregation', () => {
     // chains 从出口节点排到入口策略组
     expect(aggregateConnections(connections, 'outbound', speeds).map(row => row.key)).toEqual(['HK-01', 'DIRECT', 'JP-02'])
     expect(aggregateConnections(connections, 'group', speeds).map(row => [row.key, row.count])).toEqual([['Proxy', 3], ['DIRECT', 1]])
+  })
+})
+
+describe('outlet kind', () => {
+  it('uses the current node types so custom direct nodes count as direct', () => {
+    const types = { 直连节点: 'Direct', 拦截: 'RejectDrop', HK: 'Shadowsocks' }
+    expect(['DIRECT', '直连节点', 'REJECT', '拦截', 'HK', 'provider-node', '—', ''].map(name => outletKind(name, types)))
+      .toEqual(['direct', 'direct', 'reject', 'reject', 'proxy', 'proxy', 'none', 'none'])
   })
 })
 
@@ -116,10 +127,46 @@ describe('latency card', () => {
     expect(calls).toContainEqual(['DIRECT', 'https://www.baidu.com'])
     expect(calls).toContainEqual(['Media', 'https://www.google.com/generate_204'])
     expect(calls.filter(call => call[0] === 'Media')).toHaveLength(4)
-    const rows = wrapper.findAll('li').map(row => row.text())
+    const rows = wrapper.findAll('[data-latency]').map(row => row.text())
     expect(rows[0]).toContain('35 ms')
     expect(rows[1]).toContain('经 Media')
     expect(rows[1]).toContain('超时')
+  })
+
+  it('can measure from the browser instead, like zashboard, and remembers the choice', async () => {
+    const loaded: string[] = []
+    vi.stubGlobal('Image', class {
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      set src(value: string) {
+        if (!value) return
+        loaded.push(value)
+        // YouTube 的图标加载失败
+        setTimeout(() => (value.includes('ggpht') ? this.onerror : this.onload)?.(), 0)
+      }
+    })
+    vi.mocked(mihomoPanelApi.proxyDelay).mockResolvedValue({ data: { data: { delay: 35 } } } as any)
+    const wrapper = mount(MihomoLatencyCard, { props: { agentId: 'gw', active: true } })
+    wrappers.push(wrapper)
+    await flushPromises()
+    vi.mocked(mihomoPanelApi.proxyDelay).mockClear()
+    await wrapper.findAll('[data-segment]').find(button => button.text() === '经浏览器')!.trigger('click')
+    await new Promise(resolve => setTimeout(resolve, 10))
+    await flushPromises()
+    expect(mihomoPanelApi.proxyDelay).not.toHaveBeenCalled()
+    expect(loaded.map(url => url.split('?')[0])).toContain('https://www.cloudflare.com/favicon.ico')
+    // 只有经 Mihomo 时才选策略组
+    expect(wrapper.find('[aria-label="海外站点经过的策略组"]').exists()).toBe(false)
+    const rows = wrapper.findAll('[data-latency]').map(row => row.text())
+    expect(rows[0]).toContain('浏览器直接访问')
+    expect(rows[0]).toMatch(/\d+ ms/)
+    expect(rows[4]).toContain('超时')
+    expect(localStorage.getItem('configflow:mihomo-overview:latency-mode')).toBe('browser')
+    // 切回经 Mihomo，之前的结果还在
+    await wrapper.findAll('[data-segment]').find(button => button.text() === '经 Mihomo')!.trigger('click')
+    expect(wrapper.findAll('[data-latency]')[0].text()).toContain('35 ms')
+    vi.unstubAllGlobals()
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
   })
 
   it('does not poll while hidden', async () => {
@@ -189,6 +236,38 @@ describe('traffic history on the statistics card', () => {
     await wrapper.get('button[role="switch"]').trigger('click')
     await flushPromises()
     expect(trafficHistoryApi.setEnabled).toHaveBeenCalledWith('gw', false, true)
+    wrapper.unmount()
+  })
+
+  it('splits direct and proxy traffic by the node type and expands a device into its nodes', async () => {
+    vi.mocked(trafficHistoryApi.get).mockResolvedValue(state())
+    vi.mocked(mihomoPanelApi.proxies).mockResolvedValue({ data: { data: { proxies: { 直连节点: { type: 'Direct' }, HK: { type: 'Shadowsocks' } } } } } as any)
+    const wrapper = mount(MihomoConnectionStats, { props: {
+      connections: [
+        connection('a', { source: '10.0.0.2', host: 'a.example.com', down: 3072, chains: ['HK', 'Proxy'] }),
+        connection('b', { source: '10.0.0.2', host: 'b.example.cn', down: 1024, chains: ['直连节点', 'Media'] })
+      ],
+      speeds: new Map(), notes: {}, agentId: 'gw', active: true
+    } })
+    await flushPromises()
+    const tiles = wrapper.findAll('[data-tile]').map(tile => tile.text())
+    expect(tiles.find(text => text.startsWith('直连'))).toContain('1.0 KB')
+    expect(tiles.find(text => text.startsWith('直连'))).toContain('占 25%')
+    expect(tiles.find(text => text.startsWith('代理'))).toContain('3.0 KB')
+    const cells = wrapper.findAll('tbody tr')[0].findAll('td').map(cell => cell.text())
+    expect(cells.slice(1, 3)).toEqual(['1.0 KB', '3.0 KB'])
+    await wrapper.get('button.stats-expand[aria-expanded="false"]').trigger('click')
+    const parts = wrapper.findAll('tbody tr.stats-part').map(row => row.text())
+    expect(parts[0]).toContain('HK')
+    expect(parts[0]).toContain('代理')
+    expect(parts[1]).toContain('直连节点')
+    expect(parts[1]).toContain('直连')
+    // 按出站节点汇总：名称旁标出直连 / 代理，不再有直连、代理两列，展开后是设备
+    await wrapper.findAll('[data-segment]').find(button => button.text() === '按出站节点')!.trigger('click')
+    expect(wrapper.findAll('thead th').map(th => th.text())).not.toContain('直连')
+    expect(wrapper.findAll('tbody tr')[0].text()).toContain('代理')
+    await wrapper.get('button.stats-expand[aria-expanded="false"]').trigger('click')
+    expect(wrapper.get('tbody tr.stats-part').text()).toContain('10.0.0.2')
     wrapper.unmount()
   })
 

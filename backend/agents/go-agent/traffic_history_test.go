@@ -64,9 +64,10 @@ func TestTrafficHistoryCountsDeltasNewConnectionsAndUnattributed(t *testing.T) {
 	}
 	domains := map[string]trafficDomainItem{}
 	for _, item := range report.Domains {
-		domains[item.Source+"|"+item.Domain] = item
+		domains[item.Source+"|"+item.Domain+"|"+item.Outbound] = item
 	}
-	if domains["10.0.0.2|www.example.com"].Down != 1000 || domains["Inner|203.0.113.9"].Conns != 1 {
+	// 目标同样按出口节点分开，没有链路的连接出口为空
+	if domains["10.0.0.2|www.example.com|HK"].Down != 1000 || domains["Inner|203.0.113.9|"].Conns != 1 {
 		t.Fatalf("targets: %+v", report.Domains)
 	}
 }
@@ -92,7 +93,7 @@ func TestTrafficHistoryFoldsExtraTargetsIntoOther(t *testing.T) {
 	collector := newTrafficHistoryCollector(&Config{}, nil)
 	collector.mu.Lock()
 	for i := 0; i < trafficHistoryMaxDomains+3; i++ {
-		collector.addDomain(1, "10.0.0.2", fmt.Sprintf("site%d.example", i), trafficCounters{Down: 1})
+		collector.addDomain(1, "10.0.0.2", fmt.Sprintf("site%d.example", i), "DIRECT", trafficCounters{Down: 1})
 	}
 	collector.mu.Unlock()
 	report := collector.drain()
@@ -100,7 +101,7 @@ func TestTrafficHistoryFoldsExtraTargetsIntoOther(t *testing.T) {
 		t.Fatalf("expected %d rows, got %d", trafficHistoryMaxDomains+1, len(report.Domains))
 	}
 	for _, item := range report.Domains {
-		if item.Domain == "" && item.Down != 3 {
+		if item.Domain == "" && (item.Down != 3 || item.Outbound != "DIRECT") {
 			t.Fatalf("other bucket: %+v", item)
 		}
 	}
@@ -152,10 +153,18 @@ func TestTrafficHistoryReportOutcomes(t *testing.T) {
 	}
 }
 
+func TestConnPollSlowsDownWithManyConnections(t *testing.T) {
+	for conns, want := range map[int]time.Duration{0: time.Second, 2000: time.Second, 2001: 2 * time.Second, 5000: 2 * time.Second, 5001: 5 * time.Second} {
+		if got := connPollInterval(time.Second, conns); got != want {
+			t.Fatalf("%d connections: got %v, want %v", conns, got, want)
+		}
+	}
+}
+
 // 域名发现与流量记录同时开启时只轮询一次 /connections
 func TestConnFeedSharesOnePollBetweenSubscribers(t *testing.T) {
 	discoveryPollInterval = 40 * time.Millisecond
-	defer func() { discoveryPollInterval = 2 * time.Second }()
+	defer func() { discoveryPollInterval = time.Second }()
 	var mu sync.Mutex
 	polls := 0
 	mihomo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -6,10 +6,12 @@ Agent 每 5 分钟上报一次增量，这里先在内存里累加，由系统�
 
 两张表：
 - usage：设备 × 策略组 × 出口节点。来源为空的一行是「未归属」（采样间隔内开始又结束的短连接）。
-- targets：设备 × 目标（主域名或 IP）。目标为 ``*`` 的一行是「其他」（超出每小时上限的目标）。
+- targets：设备 × 目标（主域名或 IP）× 出口节点。目标为 ``*`` 的是「其他」（超出上限的目标），
+  仍按出口节点分开，直连与代理的合计不受影响。
 
 超过 USAGE_HOURLY_DAYS / TARGET_HOURLY_DAYS 天的小时数据合并为按天（UTC）一行，
 目标按天只保留每台设备流量最大的 TARGET_DAILY_TOP 个；超过保留天数的数据删除。
+出口节点是直连、代理还是拦截由前端按 Mihomo 当前的节点类型判断，这里只按名称保存。
 """
 from datetime import datetime, timezone
 import ipaddress
@@ -45,6 +47,8 @@ OTHER_TARGET = '*'
 RANGES = {'24h': DAY, '7d': 7 * DAY, '30d': 30 * DAY}
 AGGREGATES = ('source', 'destination', 'outbound', 'group')
 QUERY_ROW_LIMIT = 500
+# 每行展开后最多列出的明细
+QUERY_PART_LIMIT = 50
 
 SCHEMA = (
     'CREATE TABLE IF NOT EXISTS usage ('
@@ -54,10 +58,16 @@ SCHEMA = (
     ' PRIMARY KEY (agent_id, bucket, span, source, policy_group, outbound)) WITHOUT ROWID',
     'CREATE TABLE IF NOT EXISTS targets ('
     ' agent_id TEXT NOT NULL, bucket INTEGER NOT NULL, span INTEGER NOT NULL,'
-    ' source TEXT NOT NULL, target TEXT NOT NULL,'
+    ' source TEXT NOT NULL, target TEXT NOT NULL, outbound TEXT NOT NULL,'
     ' up INTEGER NOT NULL, down INTEGER NOT NULL, conns INTEGER NOT NULL,'
-    ' PRIMARY KEY (agent_id, bucket, span, source, target)) WITHOUT ROWID',
+    ' PRIMARY KEY (agent_id, bucket, span, source, target, outbound)) WITHOUT ROWID',
 )
+USAGE_UPSERT = ('INSERT INTO usage VALUES (?, ?, {span}, ?, ?, ?, ?, ?, ?) '
+                'ON CONFLICT (agent_id, bucket, span, source, policy_group, outbound) DO UPDATE '
+                'SET up = up + excluded.up, down = down + excluded.down, conns = conns + excluded.conns')
+TARGET_UPSERT = ('INSERT INTO targets VALUES (?, ?, {span}, ?, ?, ?, ?, ?, ?) '
+                 'ON CONFLICT (agent_id, bucket, span, source, target, outbound) DO UPDATE '
+                 'SET up = up + excluded.up, down = down + excluded.down, conns = conns + excluded.conns')
 
 _MAX_TEXT = {'source': 64, 'group': 128, 'outbound': 128, 'domain': 253}
 
@@ -124,18 +134,22 @@ def clean_report(report: Any, now: Optional[float] = None) -> Optional[Dict[str,
 
     def hour(item):
         value = item.get('hour')
-        return value if type(value) is int and value % HOUR == 0 and oldest <= value <= newest else None
+        if type(value) is not int or value % HOUR:
+            return None, False
+        # 积压太久或时间不对的整点数据直接丢弃，不算格式错误
+        return value, oldest <= value <= newest
 
     result = {'usage': [], 'targets': []}
     for item in usage:
         if not isinstance(item, dict):
             return None
-        fields = (hour(item), _text(item, 'source', _MAX_TEXT['source']), _text(item, 'group', _MAX_TEXT['group']),
+        bucket, fresh = hour(item)
+        fields = (bucket, _text(item, 'source', _MAX_TEXT['source']), _text(item, 'group', _MAX_TEXT['group']),
                   _text(item, 'outbound', _MAX_TEXT['outbound']), counters(item))
-        if fields[0] is None and type(item.get('hour')) is int and item['hour'] % HOUR == 0:
-            continue  # 积压太久的整点数据直接丢弃
         if None in fields:
             return None
+        if not fresh:
+            continue
         bucket, source, group, outbound, values = fields
         if source == UNATTRIBUTED:
             group = outbound = ''
@@ -143,24 +157,31 @@ def clean_report(report: Any, now: Optional[float] = None) -> Optional[Dict[str,
     for item in domains:
         if not isinstance(item, dict):
             return None
-        fields = (hour(item), _text(item, 'source', _MAX_TEXT['source']), _text(item, 'domain', _MAX_TEXT['domain']),
-                  counters(item))
-        if fields[0] is None and type(item.get('hour')) is int and item['hour'] % HOUR == 0:
-            continue
+        bucket, fresh = hour(item)
+        fields = (bucket, _text(item, 'source', _MAX_TEXT['source']), _text(item, 'domain', _MAX_TEXT['domain']),
+                  _text(item, 'outbound', _MAX_TEXT['outbound']), counters(item))
         if None in fields or fields[1] == UNATTRIBUTED:
             return None
-        bucket, source, domain, values = fields
-        result['targets'].append((bucket, source, _target_key(domain)) + values)
+        if not fresh:
+            continue
+        bucket, source, domain, outbound, values = fields
+        result['targets'].append((bucket, source, _target_key(domain), outbound) + values)
     return result
 
 
-def _add(table: Dict[tuple, List[int]], key: tuple, values: Iterable[int]):
+def _add(table: Dict[Any, List[int]], key: Any, values: Iterable[int]):
     current = table.get(key)
     if current is None:
         table[key] = list(values)
     else:
         for index, value in enumerate(values):
             current[index] += value
+
+
+def _rows(table: Dict[str, List[int]], limit: int) -> List[Dict[str, Any]]:
+    rows = sorted(({'key': key, 'up': v[0], 'down': v[1], 'conns': v[2]} for key, v in table.items()),
+                  key=lambda row: (-(row['up'] + row['down']), row['key']))
+    return rows[:limit]
 
 
 class TrafficHistory:
@@ -170,7 +191,7 @@ class TrafficHistory:
         self.data_dir = data_dir
         self.path = os.path.join(data_dir, FILENAME)
         self._lock = threading.RLock()
-        # (agent_id, bucket, source, group, outbound) / (agent_id, bucket, source, target) → [up, down, conns]
+        # (agent_id, bucket, source, group, outbound) / (agent_id, bucket, source, target, outbound) → [up, down, conns]
         self._usage: Dict[tuple, List[int]] = {}
         self._targets: Dict[tuple, List[int]] = {}
 
@@ -180,8 +201,8 @@ class TrafficHistory:
         with self._lock:
             for bucket, source, group, outbound, up, down, conns in cleaned['usage']:
                 _add(self._usage, (agent_id, bucket, source, group, outbound), (up, down, conns))
-            for bucket, source, target, up, down, conns in cleaned['targets']:
-                _add(self._targets, (agent_id, bucket, source, target), (up, down, conns))
+            for bucket, source, target, outbound, up, down, conns in cleaned['targets']:
+                _add(self._targets, (agent_id, bucket, source, target, outbound), (up, down, conns))
 
     def pending_count(self) -> int:
         with self._lock:
@@ -208,14 +229,8 @@ class TrafficHistory:
                 connection = self._connect()
                 try:
                     connection.execute('BEGIN IMMEDIATE')
-                    connection.executemany(
-                        'INSERT INTO usage VALUES (?, ?, 3600, ?, ?, ?, ?, ?, ?) '
-                        'ON CONFLICT (agent_id, bucket, span, source, policy_group, outbound) DO UPDATE SET up = up + excluded.up, down = down + excluded.down, conns = conns + excluded.conns',
-                        [key + tuple(values) for key, values in usage.items()])
-                    connection.executemany(
-                        'INSERT INTO targets VALUES (?, ?, 3600, ?, ?, ?, ?, ?) '
-                        'ON CONFLICT (agent_id, bucket, span, source, target) DO UPDATE SET up = up + excluded.up, down = down + excluded.down, conns = conns + excluded.conns',
-                        [key + tuple(values) for key, values in targets.items()])
+                    connection.executemany(USAGE_UPSERT.format(span=HOUR), [key + tuple(v) for key, v in usage.items()])
+                    connection.executemany(TARGET_UPSERT.format(span=HOUR), [key + tuple(v) for key, v in targets.items()])
                     compacted = self._compact(connection, now)
                     pruned = self._prune(connection, now - retention * DAY)
                     connection.execute('COMMIT')
@@ -244,47 +259,46 @@ class TrafficHistory:
             'FROM usage WHERE span = 3600 AND bucket < ? GROUP BY 1, 2, 3, 4, 5', (usage_before,)).fetchall()
         if rows:
             compacted += connection.execute('DELETE FROM usage WHERE span = 3600 AND bucket < ?', (usage_before,)).rowcount
-            connection.executemany(
-                'INSERT INTO usage VALUES (?, ?, 86400, ?, ?, ?, ?, ?, ?) '
-                'ON CONFLICT (agent_id, bucket, span, source, policy_group, outbound) DO UPDATE SET up = up + excluded.up, down = down + excluded.down, conns = conns + excluded.conns',
-                rows)
+            connection.executemany(USAGE_UPSERT.format(span=DAY), rows)
         targets_before = int(now // DAY * DAY - TARGET_HOURLY_DAYS * DAY)
         rows = connection.execute(
-            'SELECT agent_id, bucket / 86400 * 86400, source, target, SUM(up), SUM(down), SUM(conns) '
-            'FROM targets WHERE span = 3600 AND bucket < ? GROUP BY 1, 2, 3, 4', (targets_before,)).fetchall()
+            'SELECT agent_id, bucket / 86400 * 86400, source, target, outbound, SUM(up), SUM(down), SUM(conns) '
+            'FROM targets WHERE span = 3600 AND bucket < ? GROUP BY 1, 2, 3, 4, 5', (targets_before,)).fetchall()
         if rows:
             compacted += connection.execute('DELETE FROM targets WHERE span = 3600 AND bucket < ?', (targets_before,)).rowcount
-            connection.executemany(
-                'INSERT INTO targets VALUES (?, ?, 86400, ?, ?, ?, ?, ?) '
-                'ON CONFLICT (agent_id, bucket, span, source, target) DO UPDATE SET up = up + excluded.up, down = down + excluded.down, conns = conns + excluded.conns',
-                rows)
-            days = {(agent_id, day) for agent_id, day, *_ in rows}
-            for agent_id, day in days:
+            connection.executemany(TARGET_UPSERT.format(span=DAY), rows)
+            for agent_id, day in {(row[0], row[1]) for row in rows}:
                 compacted += TrafficHistory._trim_day(connection, agent_id, day)
         return compacted
 
     @staticmethod
     def _trim_day(connection: sqlite3.Connection, agent_id: str, day: int) -> int:
+        """每台设备只留当天流量最大的若干个目标（各出口合计排名），其余按出口并入「其他」。"""
         rows = connection.execute(
-            'SELECT source, target, up, down, conns FROM targets WHERE agent_id = ? AND bucket = ? AND span = 86400 '
-            'ORDER BY source, up + down DESC, target', (agent_id, day)).fetchall()
-        by_source: Dict[str, List[tuple]] = {}
-        for row in rows:
-            by_source.setdefault(row[0], []).append(row)
-        removed = 0
-        for source, items in by_source.items():
-            kept = [item for item in items if item[1] != OTHER_TARGET][:TARGET_DAILY_TOP]
-            extra = [item for item in items if item not in kept and item[1] != OTHER_TARGET]
-            if not extra:
-                continue
-            connection.executemany('DELETE FROM targets WHERE agent_id = ? AND bucket = ? AND span = 86400 AND source = ? AND target = ?',
-                                   [(agent_id, day, source, item[1]) for item in extra])
-            connection.execute(
-                'INSERT INTO targets VALUES (?, ?, 86400, ?, ?, ?, ?, ?) '
-                'ON CONFLICT (agent_id, bucket, span, source, target) DO UPDATE SET up = up + excluded.up, down = down + excluded.down, conns = conns + excluded.conns',
-                (agent_id, day, source, OTHER_TARGET, sum(i[2] for i in extra), sum(i[3] for i in extra), sum(i[4] for i in extra)))
-            removed += len(extra)
-        return removed
+            'SELECT source, target, outbound, up, down, conns FROM targets WHERE agent_id = ? AND bucket = ? AND span = 86400',
+            (agent_id, day)).fetchall()
+        totals: Dict[Tuple[str, str], int] = {}
+        for source, target, _outbound, up, down, _conns in rows:
+            if target != OTHER_TARGET:
+                totals[(source, target)] = totals.get((source, target), 0) + up + down
+        ranked: Dict[str, List[str]] = {}
+        for (source, target), total in sorted(totals.items(), key=lambda item: (-item[1], item[0][1])):
+            ranked.setdefault(source, []).append(target)
+        dropped = {(source, target) for source, targets in ranked.items() for target in targets[TARGET_DAILY_TOP:]}
+        if not dropped:
+            return 0
+        merged: Dict[Tuple[str, str], List[int]] = {}
+        for source, target, outbound, up, down, conns in rows:
+            if (source, target) in dropped:
+                _add(merged, (source, outbound), (up, down, conns))
+        extra = [row for row in rows if (row[0], row[1]) in dropped]
+        connection.executemany(
+            'DELETE FROM targets WHERE agent_id = ? AND bucket = ? AND span = 86400 AND source = ? AND target = ? AND outbound = ?',
+            [(agent_id, day, source, target, outbound) for source, target, outbound, *_ in extra])
+        connection.executemany(TARGET_UPSERT.format(span=DAY),
+                               [(agent_id, day, source, OTHER_TARGET, outbound, *values)
+                                for (source, outbound), values in merged.items()])
+        return len(extra)
 
     @staticmethod
     def _prune(connection: sqlite3.Connection, cutoff: float) -> int:
@@ -295,17 +309,6 @@ class TrafficHistory:
         return pruned
 
     # ---------- 删除 ----------
-
-    def delete(self, agent_id: str):
-        with self._lock:
-            self._usage = {key: value for key, value in self._usage.items() if key[0] != agent_id}
-            self._targets = {key: value for key, value in self._targets.items() if key[0] != agent_id}
-            if os.path.exists(self.path):
-                connection = self._connect()
-                try:
-                    self._delete_agents(connection, [agent_id])
-                finally:
-                    connection.close()
 
     @staticmethod
     def _delete_agents(connection: sqlite3.Connection, agent_ids: Iterable[str]):
@@ -318,6 +321,17 @@ class TrafficHistory:
         except BaseException:
             connection.execute('ROLLBACK')
             raise
+
+    def delete(self, agent_id: str):
+        with self._lock:
+            self._usage = {key: value for key, value in self._usage.items() if key[0] != agent_id}
+            self._targets = {key: value for key, value in self._targets.items() if key[0] != agent_id}
+            if os.path.exists(self.path):
+                connection = self._connect()
+                try:
+                    self._delete_agents(connection, [agent_id])
+                finally:
+                    connection.close()
 
     def retain_agents(self, agent_ids: Iterable[str]) -> int:
         """删除已不存在的 Agent 的数据（导入、恢复或重置配置后）。"""
@@ -340,38 +354,57 @@ class TrafficHistory:
     # ---------- 查询 ----------
 
     def query(self, agent_id: str, range_key: str, by: str, now: Optional[float] = None) -> Dict[str, Any]:
-        """返回范围内按 by 汇总的行、总量和趋势。趋势 24 小时与 7 天按小时，30 天按天。"""
+        """返回范围内按 by 汇总的行（附明细）、总量、各出口节点的总量和趋势。
+
+        明细：按设备、目标、策略组汇总时按出口节点拆开；按出站节点汇总时按设备拆开。
+        趋势 24 小时与 7 天按小时，30 天按天。
+        """
         now = time.time() if now is None else now
         start = now - RANGES[range_key]
         step = DAY if range_key == '30d' else HOUR
         usage_rows, target_rows = self._rows(agent_id, start, by == 'destination')
 
         totals = [0, 0, 0]
+        outbounds: Dict[str, List[int]] = {}
         trend: Dict[int, List[int]] = {}
         grouped: Dict[str, List[int]] = {}
-        field = {'source': 0, 'group': 1, 'outbound': 2}.get(by)
+        parts: Dict[str, Dict[str, List[int]]] = {}
+
+        def add(key, part, values):
+            _add(grouped, key, values)
+            if part is not None:
+                _add(parts.setdefault(key, {}), part, values)
+
         for bucket, _span, source, group, outbound, up, down, conns in usage_rows:
-            for index, value in enumerate((up, down, conns)):
+            values = (up, down, conns)
+            for index, value in enumerate(values):
                 totals[index] += value
+            if source != UNATTRIBUTED:
+                _add(outbounds, outbound, values)
             point = trend.setdefault(int(bucket // step * step), [0, 0])
             point[0] += up
             point[1] += down
-            if field is not None:
-                key = UNATTRIBUTED if source == UNATTRIBUTED else (source, group, outbound)[field]
-                _add(grouped, key, (up, down, conns))
-            elif source == UNATTRIBUTED:
-                _add(grouped, UNATTRIBUTED, (up, down, conns))
-        for _bucket, _span, _source, target, up, down, conns in target_rows:
-            _add(grouped, target, (up, down, conns))
+            if source == UNATTRIBUTED:
+                add(UNATTRIBUTED, None, values)
+            elif by == 'source':
+                add(source, outbound, values)
+            elif by == 'group':
+                add(group, outbound, values)
+            elif by == 'outbound':
+                add(outbound, source, values)
+        for _bucket, _span, source, target, outbound, up, down, conns in target_rows:
+            add(target, outbound, (up, down, conns))
 
-        rows = sorted(({'key': key, 'up': v[0], 'down': v[1], 'conns': v[2]} for key, v in grouped.items()),
-                      key=lambda row: (-(row['up'] + row['down']), row['key']))
+        rows = _rows(grouped, QUERY_ROW_LIMIT)
+        for row in rows:
+            row['parts'] = _rows(parts.get(row['key'], {}), QUERY_PART_LIMIT)
         first = int(start // step * step)
         return {
             'range': range_key, 'by': by, 'step': step,
             'start': datetime.fromtimestamp(start, timezone.utc).isoformat(),
-            'rows': rows[:QUERY_ROW_LIMIT], 'omitted': max(0, len(rows) - QUERY_ROW_LIMIT),
+            'rows': rows, 'omitted': max(0, len(grouped) - QUERY_ROW_LIMIT),
             'total': {'up': totals[0], 'down': totals[1], 'conns': totals[2]},
+            'outbounds': _rows(outbounds, len(outbounds)),
             'trend': [{'at': datetime.fromtimestamp(at, timezone.utc).isoformat(), 'up': trend.get(at, [0, 0])[0],
                        'down': trend.get(at, [0, 0])[1]} for at in range(first, int(now) + 1, step)],
         }
@@ -384,9 +417,9 @@ class TrafficHistory:
                 if owner == agent_id and bucket + HOUR > start:
                     usage.append((bucket, HOUR, source, group, outbound, *values))
             if with_targets:
-                for (owner, bucket, source, target), values in self._targets.items():
+                for (owner, bucket, source, target, outbound), values in self._targets.items():
                     if owner == agent_id and bucket + HOUR > start:
-                        targets.append((bucket, HOUR, source, target, *values))
+                        targets.append((bucket, HOUR, source, target, outbound, *values))
             if not os.path.exists(self.path):
                 return usage, targets
             connection = self._connect()
@@ -396,22 +429,8 @@ class TrafficHistory:
                     'WHERE agent_id = ? AND bucket + span > ?', (agent_id, int(start))).fetchall()
                 if with_targets:
                     targets += connection.execute(
-                        'SELECT bucket, span, source, target, up, down, conns FROM targets '
+                        'SELECT bucket, span, source, target, outbound, up, down, conns FROM targets '
                         'WHERE agent_id = ? AND bucket + span > ?', (agent_id, int(start))).fetchall()
             finally:
                 connection.close()
         return usage, targets
-
-    def first_bucket(self, agent_id: str) -> Optional[int]:
-        """最早一条数据的时间（含未保存的），没有数据时为 None。"""
-        with self._lock:
-            pending = [key[1] for key in self._usage if key[0] == agent_id]
-            stored = None
-            if os.path.exists(self.path):
-                connection = self._connect()
-                try:
-                    stored = connection.execute('SELECT MIN(bucket) FROM usage WHERE agent_id = ?', (agent_id,)).fetchone()[0]
-                finally:
-                    connection.close()
-        values = pending + ([stored] if stored is not None else [])
-        return min(values) if values else None

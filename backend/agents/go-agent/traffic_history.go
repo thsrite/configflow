@@ -13,7 +13,7 @@ import (
 )
 
 // 流量记录：订阅共用的连接轮询，把每次采样的字节增量按小时、来源设备、策略组和出口节点累加，
-// 目标另按小时与来源设备累加，定期上报给服务端保存。只在内存里累加，不写本机磁盘。
+// 目标另按小时、来源设备与出口节点累加，定期上报给服务端保存。只在内存里累加，不写本机磁盘。
 // 内核总量的增量减去各连接增量之和记为「未归属」（采样间隔内开始又结束的短连接）。
 
 const (
@@ -37,9 +37,10 @@ type trafficUsageKey struct {
 }
 
 type trafficDomainKey struct {
-	Hour   int64
-	Source string
-	Domain string
+	Hour     int64
+	Source   string
+	Domain   string
+	Outbound string
 }
 
 type trafficCounters struct {
@@ -63,12 +64,13 @@ type trafficUsageItem struct {
 }
 
 type trafficDomainItem struct {
-	Hour   int64  `json:"hour"`
-	Source string `json:"source"`
-	Domain string `json:"domain"`
-	Up     int64  `json:"up"`
-	Down   int64  `json:"down"`
-	Conns  int64  `json:"conns"`
+	Hour     int64  `json:"hour"`
+	Source   string `json:"source"`
+	Domain   string `json:"domain"`
+	Outbound string `json:"outbound"`
+	Up       int64  `json:"up"`
+	Down     int64  `json:"down"`
+	Conns    int64  `json:"conns"`
 }
 
 type trafficHistoryReport struct {
@@ -180,7 +182,7 @@ func (t *trafficHistoryCollector) observe(snapshot mihomoConnSnapshot) {
 		attributed[1] += delta.Down
 		source := connSource(conn)
 		t.addUsage(trafficUsageKey{Hour: hour, Source: source, Group: conn.policy(), Outbound: conn.outletName()}, delta)
-		t.addDomain(hour, source, connTarget(conn), delta)
+		t.addDomain(hour, source, connTarget(conn), conn.outletName(), delta)
 	}
 	if rest := (trafficCounters{Up: positive(totals[0] - t.prevTotals[0] - attributed[0]), Down: positive(totals[1] - t.prevTotals[1] - attributed[1])}); rest.Up > 0 || rest.Down > 0 {
 		t.addUsage(trafficUsageKey{Hour: hour}, rest)
@@ -203,9 +205,9 @@ func (t *trafficHistoryCollector) addUsage(key trafficUsageKey, delta trafficCou
 	t.usage[key] = &counters
 }
 
-// 调用方持有 t.mu
-func (t *trafficHistoryCollector) addDomain(hour int64, source, domain string, delta trafficCounters) {
-	key := trafficDomainKey{Hour: hour, Source: source, Domain: domain}
+// 调用方持有 t.mu。超出上限的目标并入空目标，仍按出口节点分开，直连与代理的合计不受影响
+func (t *trafficHistoryCollector) addDomain(hour int64, source, domain, outbound string, delta trafficCounters) {
+	key := trafficDomainKey{Hour: hour, Source: source, Domain: domain, Outbound: outbound}
 	if counters, ok := t.domains[key]; ok {
 		counters.add(delta)
 		return
@@ -237,7 +239,7 @@ func (t *trafficHistoryCollector) drain() trafficHistoryReport {
 		report.Usage = append(report.Usage, trafficUsageItem{Hour: key.Hour, Source: key.Source, Group: key.Group, Outbound: key.Outbound, Up: c.Up, Down: c.Down, Conns: c.Conns})
 	}
 	for key, c := range t.domains {
-		report.Domains = append(report.Domains, trafficDomainItem{Hour: key.Hour, Source: key.Source, Domain: key.Domain, Up: c.Up, Down: c.Down, Conns: c.Conns})
+		report.Domains = append(report.Domains, trafficDomainItem{Hour: key.Hour, Source: key.Source, Domain: key.Domain, Outbound: key.Outbound, Up: c.Up, Down: c.Down, Conns: c.Conns})
 	}
 	t.usage = map[trafficUsageKey]*trafficCounters{}
 	t.domains = map[trafficDomainKey]*trafficCounters{}
@@ -254,7 +256,7 @@ func (t *trafficHistoryCollector) restore(report trafficHistoryReport) {
 		t.addUsage(trafficUsageKey{Hour: item.Hour, Source: item.Source, Group: item.Group, Outbound: item.Outbound}, trafficCounters{Up: item.Up, Down: item.Down, Conns: item.Conns})
 	}
 	for _, item := range report.Domains {
-		t.addDomain(item.Hour, item.Source, item.Domain, trafficCounters{Up: item.Up, Down: item.Down, Conns: item.Conns})
+		t.addDomain(item.Hour, item.Source, item.Domain, item.Outbound, trafficCounters{Up: item.Up, Down: item.Down, Conns: item.Conns})
 	}
 	t.dropped += report.Dropped
 }
