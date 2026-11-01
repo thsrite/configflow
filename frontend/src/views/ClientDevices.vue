@@ -32,6 +32,15 @@
         </template>
         <p v-if="!state.editable" role="alert" class="mb-4 mt-0 rounded-lg bg-warning-soft p-3 text-sm text-warning-accent">{{ state.reason }} 名称仍可修改。</p>
         <p v-else-if="fromSetup" role="status" class="mb-4 mt-0 rounded-lg bg-info-soft p-3 text-sm text-info-accent" data-setup-names-only>配置向导进行中，这里只用于命名。DNS 策略会改动向导刚发布的 OxiDNS 配置，请完成向导后再设置 DNS 策略。</p>
+        <div v-if="state.editable && !fromSetup && sideEntries.length" role="note" class="mb-4 rounded-lg bg-warning-soft p-3 text-sm max-sm:p-2.5" data-side-entries>
+          <p class="m-0 flex items-start gap-1.5 font-medium text-warning-accent"><TriangleAlert class="mt-0.5 size-4 shrink-0" />以下入口没有经过主处理链，设备策略对它们不生效：</p>
+          <ul class="mb-0 mt-1.5 list-none space-y-1 p-0 pl-[1.375rem] text-[13px]">
+            <li v-for="item in sideEntries" :key="item.tags.join('|')" class="break-words [overflow-wrap:anywhere]">
+              <span class="font-mono">{{ item.tags.join('、') }}</span>（<span class="font-mono">{{ item.listen }}</span>）<span class="text-muted-foreground"> · 处理链 <span class="font-mono">{{ item.entry }}</span></span>
+            </li>
+          </ul>
+          <p class="mb-0 mt-1.5 pl-[1.375rem] text-xs leading-relaxed text-muted-foreground">它们用自己的处理链，客户端只有查询主入口时才按设备策略处理。要让这些入口也受控，请在 OxiDNS 完整参数中把它们的 entry 改为 sequence_main。</p>
+        </div>
         <p v-if="error" role="alert" class="mb-4 mt-0 text-sm text-destructive-accent">{{ error }}</p>
         <p v-if="fixedError" role="alert" class="mb-4 mt-0 text-sm text-destructive-accent">{{ fixedError }}</p>
         <p v-if="fixing" role="status" class="mb-3 flex items-center gap-2 text-sm text-muted-foreground"><Loader2 class="size-4 animate-spin motion-reduce:animate-none" />正在处理固定 IP，请保持页面打开…</p>
@@ -360,6 +369,8 @@ const pageSession = getAuthSessionGeneration()
 const sameSession = () => getAuthToken() === pageToken && getAuthSessionGeneration() === pageSession
 const previewing = ref(!!initialSnapshot)
 const state = ref<ClientDevicesState | null>(initialSnapshot?.state || null)
+// Listeners on other ports with their own chain; node-test entries are left out by the server.
+const sideEntries = computed(() => state.value?.side_entries ?? [])
 const policyEditable = computed(() => !!state.value?.editable && !fromSetup.value)
 const rows = ref<ClientDevice[]>(initialSnapshot?.state.devices.map(row => ({ ...row })) || [])
 const loading = ref(false)

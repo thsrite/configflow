@@ -366,6 +366,28 @@ describe('client devices page', () => {
     expect(wrapper.get('[aria-label="移除 192.0.2.5"]').attributes('disabled')).toBeDefined()
     expect(nameInput(wrapper, '192.0.2.5').attributes('disabled')).toBeUndefined()
   })
+
+  it('lists side DNS entries that bypass the main chain while policies stay editable', async () => {
+    const side = [{ tags: ['debug_dns_udp', 'debug_dns_tcp'], listen: '198.51.100.3:5300', entry: 'debug_dns_sequence' }]
+    vi.mocked(clientDeviceApi.get).mockResolvedValue(response(state(undefined, { side_entries: side })))
+    const { wrapper } = await render()
+    const note = wrapper.get('[data-side-entries]')
+    expect(note.attributes('role')).toBe('note')
+    expect(note.text()).toContain('以下入口没有经过主处理链，设备策略对它们不生效：')
+    expect(note.text()).toContain('debug_dns_udp、debug_dns_tcp（198.51.100.3:5300）')
+    expect(note.text()).toContain('处理链 debug_dns_sequence')
+    expect(wrapper.get('[aria-label="192.0.2.5 DNS 策略"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('shows no side entry note without entries, while read-only or during the setup wizard', async () => {
+    const side = [{ tags: ['debug_dns_udp'], listen: '198.51.100.3:5300', entry: 'debug_dns_sequence' }]
+    vi.mocked(clientDeviceApi.get).mockResolvedValue(response(state()))
+    expect((await render()).wrapper.find('[data-side-entries]').exists()).toBe(false)
+    vi.mocked(clientDeviceApi.get).mockResolvedValue(response(state(undefined, { editable: false, reason: '处理链已手动修改。', side_entries: side })))
+    expect((await render()).wrapper.find('[data-side-entries]').exists()).toBe(false)
+    vi.mocked(clientDeviceApi.get).mockResolvedValue(response(state(undefined, { side_entries: side })))
+    expect((await render('/client-devices?from=%2Fsetup%3Fsession%3Dabc')).wrapper.find('[data-side-entries]').exists()).toBe(false)
+  })
 })
 
 describe('client device fixed IP', () => {
