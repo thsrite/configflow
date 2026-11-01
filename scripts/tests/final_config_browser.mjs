@@ -52,6 +52,17 @@ def edit():
 @app.route('/lab/uploads')
 def uploaded():
     return jsonify(uploads)
+@app.route('/lab/add-agent', methods=['POST'])
+def add_agent():
+    return jsonify(manager.register_agent({'name': '办公网关 · Mihomo', 'host': '192.0.2.11', 'service_type': 'mihomo', 'profile_id': 'default', 'version': '1.8.53-go'}))
+@app.route('/lab/long-config', methods=['POST'])
+def long_config():
+    def edit(profile):
+        config = yaml.safe_load(profile['mihomo']['custom_config'])
+        config['hosts'] = {f'host-{index}.test': '192.0.2.1' for index in range(200)}
+        profile['mihomo']['custom_config'] = yaml.safe_dump(config)
+    repo.update_profile_transaction('default', edit)
+    return jsonify(success=True)
 frontend = Path.cwd() / 'frontend/dist'
 @app.route('/')
 @app.route('/<path:path>')
@@ -71,14 +82,21 @@ try {
     await new Promise(resolve => setTimeout(resolve, 250))
   }
   browser = await chromium.launch({ headless: true })
-  async function open(viewport, theme) {
-    const context = await browser.newContext({ viewport, reducedMotion: 'reduce', colorScheme: theme })
+  async function open(viewport, theme, { chooseTarget = true, motion = false } = {}) {
+    const context = await browser.newContext({ viewport, reducedMotion: motion ? 'no-preference' : 'reduce', colorScheme: theme })
     await context.addInitScript(mode => localStorage.setItem('configflow-theme', mode), theme)
+    if (motion) await context.addInitScript(() => localStorage.setItem('configflow-preferences', JSON.stringify({ motion: true })))
     const page = await context.newPage()
     page.on('pageerror', err => errors.push(err.message))
     await page.goto(`${base}/generate`)
-    await page.getByRole('combobox', { name: '配置用途' }).click()
-    await page.getByRole('option', { name: '客厅网关 · Mihomo', exact: true }).click()
+    await page.waitForFunction(() => {
+      const selector = document.querySelector('#generate-destination')
+      return selector && !selector.textContent.includes('正在读取')
+    })
+    if (chooseTarget) {
+      await page.getByRole('combobox', { name: '配置用途' }).click()
+      await page.getByRole('option', { name: '客厅网关 · Mihomo', exact: true }).click()
+    }
     return page
   }
   async function generate(page) {
@@ -88,10 +106,11 @@ try {
     const result = await res.json()
     assert.equal(res.status(), 200, JSON.stringify(result))
     await page.locator('.gen-code').filter({ hasText: 'store-selected' }).waitFor()
-    assert.equal(await page.getByRole('button', { name: '推送', exact: true }).isEnabled(), true)
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.trim() === '推送' && !button.disabled))
     return result
   }
-  const page = await open({ width: 1280, height: 900 }, 'light')
+  const page = await open({ width: 1280, height: 900 }, 'light', { chooseTarget: false })
+  assert.match(await page.getByRole('combobox', { name: '配置用途' }).textContent(), /客厅网关/)
   const first = await generate(page)
   assert.ok(first.files.length > 1, 'Rule file is in the generated artifact')
   await page.locator('[data-sonner-toast]').first().waitFor({ state: 'detached', timeout: 15000 }).catch(() => {})
@@ -110,6 +129,37 @@ try {
   await page.getByRole('button', { name: '推送', exact: true }).click()
   assert.equal((await uploaded).status(), 200)
   assert.deepEqual((await (await fetch(`${base}/lab/uploads`)).json())[0], Object.fromEntries(current.files.map(file => [file.path, file.sha256])))
+  const second = await (await fetch(`${base}/lab/add-agent`, { method: 'POST' })).json()
+  const multiple = await open({ width: 1280, height: 900 }, 'light', { chooseTarget: false })
+  assert.match(await multiple.getByRole('combobox', { name: '配置用途' }).textContent(), /请选择/)
+  assert.equal(await multiple.getByRole('button', { name: '生成', exact: true }).isEnabled(), false)
+  await multiple.getByRole('combobox', { name: '配置用途' }).click()
+  await multiple.getByRole('option', { name: '办公网关 · Mihomo', exact: true }).waitFor()
+  await multiple.screenshot({ path: resolve(root, 'doc/img/guide/generate-destination-choice.png'), animations: 'disabled' })
+  await multiple.getByRole('option', { name: '办公网关 · Mihomo', exact: true }).click()
+  assert.equal((await generate(multiple)).agent_id, second.id)
+  await multiple.reload()
+  await multiple.waitForFunction(() => document.querySelector('#generate-destination')?.textContent.includes('办公网关'))
+  assert.equal(await multiple.getByRole('button', { name: '生成', exact: true }).isEnabled(), true)
+
+  await fetch(`${base}/lab/long-config`, { method: 'POST' })
+  const animated = await open({ width: 1280, height: 900 }, 'dark', { motion: true })
+  const response = animated.waitForResponse(res => res.url().endsWith('/generate-config'))
+  await animated.getByRole('button', { name: '生成', exact: true }).click()
+  const rendered = await (await response).json()
+  const total = rendered.content.trimEnd().split('\n').length
+  await animated.waitForFunction(count => {
+    const shown = document.querySelectorAll('.gen-code .gen-line').length
+    return shown > 0 && shown < count
+  }, total)
+  assert.equal(await animated.getByRole('button', { name: '推送', exact: true }).isEnabled(), false)
+  await animated.screenshot({ path: join(evidence, 'generation-animation.png') })
+  await animated.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.trim() === '推送' && !button.disabled))
+  assert.equal(await animated.locator('.gen-line').count(), total)
+  const animatedUpload = animated.waitForResponse(res => res.url().endsWith('/push-config'))
+  await animated.getByRole('button', { name: '推送', exact: true }).click()
+  assert.equal((await animatedUpload).status(), 200)
+  assert.deepEqual((await (await fetch(`${base}/lab/uploads`)).json()).at(-1), Object.fromEntries(rendered.files.map(file => [file.path, file.sha256])))
   for (const theme of ['light', 'dark']) {
     const phone = await open({ width: 375, height: 812 }, theme)
     await generate(phone)
@@ -118,8 +168,8 @@ try {
     await phone.screenshot({ path: join(evidence, `mobile-${theme}.png`), animations: 'disabled' })
   }
   assert.deepEqual(errors, [])
-  await writeFile(join(evidence, 'result.json'), JSON.stringify({ passed: true, checks: ['target selection', 'final content', 'rule file preview', 'stale rejection', 'upload file hashes', '375px light/dark'], files: current.files.map(f => f.path) }, null, 2))
-  console.log('PASS: final preview/file browsing/stale rejection/exact upload and mobile light/dark')
+  await writeFile(join(evidence, 'result.json'), JSON.stringify({ passed: true, checks: ['single Agent default', 'multiple Agents require selection', 'remember Agent after reload', 'fixed-result animation', 'final content', 'rule file preview', 'stale rejection', 'upload file hashes', '375px light/dark'], files: current.files.map(f => f.path) }, null, 2))
+  console.log('PASS: destination defaults/restoration, animation, exact upload and mobile light/dark')
 } catch (error) {
   console.error(logs.split('\n').slice(-20).join('\n'))
   throw error

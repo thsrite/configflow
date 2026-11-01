@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, defineComponent, markRaw } from 'vue'
+import { computed, defineComponent, markRaw, ref } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import GenerateStudio from '@/components/generate/GenerateStudio.vue'
@@ -14,7 +14,7 @@ vi.mock('@/api', () => ({
   generateApi: { artifact: vi.fn() },
   statsApi: { getOverview: vi.fn() }, ruleSetApi: { getAll: vi.fn() },
 }))
-vi.mock('@/stores/live', () => ({ useLive: () => ({ ...live, boundAgents: computed(() => live.agents), isOnline: () => true }) }))
+vi.mock('@/stores/live', () => ({ useLive: () => ({ ...live, loaded: ref(true), boundAgents: computed(() => live.agents), isOnline: () => true }) }))
 vi.mock('@/lib/feedback', () => ({ notify: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), loading: vi.fn(), dismiss: vi.fn() } }))
 const wrappers: VueWrapper[] = []
 const labels = { mihomo: 'Mihomo', mosdns: 'MosDNS', oxidns: 'OxiDNS', surge: 'Surge' } as const
@@ -22,6 +22,7 @@ const icon = markRaw(defineComponent({ template: '<i />' }))
 const button = (w: VueWrapper, label: string) => w.findAll('button').find(item => item.text() === label)!
 beforeEach(() => {
   vi.resetAllMocks()
+  localStorage.clear()
   vi.useFakeTimers()
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => cb(1), 1))
   for (const api of Object.values(generateApi)) vi.mocked(api).mockResolvedValue({ data: { content: 'rules: []' } } as any)

@@ -68,15 +68,15 @@
       <div class="space-y-2 border-b border-border px-5 py-3 max-md:px-3">
         <div class="flex flex-wrap items-center gap-2">
           <label for="generate-destination" class="text-xs font-medium">配置用途</label>
-          <Select v-model="destination" :disabled="running || pushing">
-            <SelectTrigger id="generate-destination" class="min-h-11 min-w-0 w-full sm:w-80" aria-label="配置用途"><SelectValue /></SelectTrigger>
+          <Select :model-value="destination || undefined" :disabled="running || pushing" @update:model-value="value => chooseDestination(String(value))">
+            <SelectTrigger id="generate-destination" class="min-h-11 min-w-0 w-full sm:w-80" aria-label="配置用途"><SelectValue :placeholder="live.loaded.value || active === 'loon' ? '请选择目标设备或手动导出' : '正在读取设备…'" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="manual" class="min-h-11">手动导出</SelectItem>
               <SelectItem v-for="agent in availableAgents" :key="agent.id" :value="agent.id" class="min-h-11" :disabled="!live.isOnline(agent)">{{ agent.name }}{{ live.isOnline(agent) ? '' : '（离线）' }}</SelectItem>
             </SelectContent>
           </Select>
         </div>
-        <p class="m-0 text-xs text-muted-foreground">{{ destination === 'manual' ? '预览和下载使用同一次生成结果。向 Agent 发布时，请先选择目标设备。' : '先生成并检查最终配置，再原样推送。设备适配和配套文件都在生成时完成。' }}</p>
+        <p class="m-0 text-xs text-muted-foreground" aria-live="polite">{{ generationBlock || (destination === 'manual' ? '预览和下载使用同一次生成结果。向 Agent 发布时，请先选择目标设备。' : '先生成并检查最终配置，再原样推送。设备适配和配套文件都在生成时完成。') }}</p>
         <p v-if="generation?.target_ids.length && generation.target_ids.length > 1" class="m-0 text-xs text-warning-accent">主备发布将同步更新：{{ generation.target_ids.map(id => live.boundAgents.value.find(a => a.id === id)?.name || id).join('、') }}</p>
         <p v-if="staleMessage" role="alert" class="m-0 text-xs text-warning-accent">{{ staleMessage }}</p>
       </div>
@@ -112,8 +112,9 @@
               <span class="truncate font-mono text-[12px] text-muted-foreground" :title="fileName">{{ fileName }}</span>
               <span v-if="lines.length && !running" class="whitespace-nowrap font-mono text-[11px] text-muted-foreground">· {{ lines.length }} 行</span>
             </div>
-            <Button v-if="isPhone" size="sm" class="min-h-11 shadow-glow" :disabled="running" @click="generate">
-              <Play class="size-3.5" />
+            <Button v-if="isPhone" size="sm" class="min-h-11 shadow-glow" :disabled="running || pushing || !!generationBlock" @click="generate">
+              <Loader2 v-if="running" class="size-3.5 animate-spin" />
+              <Play v-else class="size-3.5" />
               生成
             </Button>
             <div class="flex flex-wrap items-center gap-1.5 max-sm:w-full max-sm:gap-1 max-sm:[&>button]:flex-1 max-sm:[&>button]:px-1 max-sm:[&>button]:text-[13px]">
@@ -151,8 +152,9 @@
                 <Send v-else-if="!isPhone" class="size-3.5" />
                 推送
               </Button>
-              <Button v-if="!isPhone" size="sm" class="min-h-11 shadow-glow" :disabled="running" @click="generate">
-                <Play class="size-3.5" />
+              <Button v-if="!isPhone" size="sm" class="min-h-11 shadow-glow" :disabled="running || pushing || !!generationBlock" @click="generate">
+                <Loader2 v-if="running" class="size-3.5 animate-spin" />
+                <Play v-else class="size-3.5" />
                 生成
               </Button>
             </div>
@@ -197,6 +199,9 @@
             </div>
           </div>
           <div class="relative">
+            <div v-if="running && phase === 'steps'" class="absolute inset-0 z-10 flex items-center justify-center gap-2 text-sm text-muted-foreground" role="status">
+              <Loader2 class="size-4 animate-spin" aria-hidden="true" />正在生成最终配置…
+            </div>
             <pre
               ref="codeEl"
               class="gen-code m-0 h-[520px] overflow-auto bg-background/70 py-4 font-mono text-[12.5px] leading-[1.7] max-md:py-3"
@@ -215,8 +220,8 @@
               class="absolute inset-0 grid place-content-center gap-2.5 bg-background/70 px-4 text-center text-muted-foreground max-md:relative max-md:min-h-40 max-md:py-4"
             >
               <BrandMark class="mx-auto size-11 text-primary" />
-              <b class="font-display text-[24px] font-medium text-foreground/80">{{ error ? '生成失败' : '准备就绪' }}</b>
-              <span class="text-[12.5px] [overflow-wrap:anywhere]">{{ error || `按「生成」开始编译，或 ${metaKey} + Enter` }}</span>
+              <b class="font-display text-[24px] font-medium text-foreground/80">{{ error ? '生成失败' : generationBlock ? (selectedAgent ? '等待设备就绪' : '选择配置用途') : '准备就绪' }}</b>
+              <span class="text-[12.5px] [overflow-wrap:anywhere]">{{ error || generationBlock || `按「生成」开始编译，或 ${metaKey} + Enter` }}</span>
             </div>
           </div>
         </section>
@@ -279,6 +284,7 @@ import { notify } from '@/lib/feedback'
 import { copyText } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 import { useLive } from '@/stores/live'
+import { usePreferences } from '@/stores/preferences'
 import type { SubscriptionHostsReport } from '@/types'
 
 const isPhone = useMediaQuery('(max-width: 639px)')
@@ -300,14 +306,37 @@ const emit = defineEmits<{ (e: 'copy', url: string, title: string): void }>()
 
 const router = useRouter()
 const live = useLive()
+const { motionEnabled } = usePreferences()
 const metaKey = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
 
 const active = ref<TargetKey>('mihomo')
 const current = computed(() => props.targets.find(t => t.key === active.value))
 const settingsActions = computed(() => current.value?.actions.filter(action => action.group === 'settings') ?? [])
 const exportActions = computed(() => current.value?.actions.filter(action => action.group !== 'settings' && action.label !== '下载') ?? [])
-const destination = ref('manual')
-const availableAgents = computed(() => live.boundAgents.value.filter(a => a.service_type === active.value))
+const destination = ref('')
+const availableAgents = computed(() => live.boundAgents.value.filter(a => a.service_type === active.value
+  && a.enabled !== false && (!a.profile_id || a.profile_id === props.profileId)))
+const selectedAgent = computed(() => availableAgents.value.find(a => a.id === destination.value))
+const generationBlock = computed(() => {
+  if (destination.value === 'manual') return ''
+  if (!live.loaded.value) return '正在读取设备，请稍候；也可以主动选择手动导出。'
+  if (!destination.value || !selectedAgent.value) return '请先选择目标设备或手动导出，再生成配置。'
+  return live.isOnline(selectedAgent.value) ? '' : '目标设备离线，暂时无法生成最终配置；请等待上线或选择手动导出。'
+})
+const destinationKey = computed(() => `configflow-generate-agent:${encodeURIComponent(props.profileId)}:${active.value}`)
+const rememberedAgents = new Map<string, string>()
+let automaticSelection = true
+let destinationContext = ''
+const rememberAgent = (id: string) => {
+  if (!id || id === 'manual') return
+  rememberedAgents.set(destinationKey.value, id)
+  try { localStorage.setItem(destinationKey.value, id) } catch { /* 本次访问仍记住选择。 */ }
+}
+const chooseDestination = (value: string) => {
+  automaticSelection = false
+  destination.value = value
+  rememberAgent(value)
+}
 const generation = ref<GeneratedConfig | null>(null)
 const selectedFile = ref('')
 const staleMessage = ref('')
@@ -315,6 +344,11 @@ const fileLoading = ref(false)
 const previewLimited = ref(false)
 const downloading = ref(false)
 let requestSequence = 0
+let finishFrame: (() => void) | undefined
+const nextFrame = () => new Promise<void>(resolve => {
+  const frame = requestAnimationFrame(() => { finishFrame = undefined; resolve() })
+  finishFrame = () => { cancelAnimationFrame(frame); finishFrame = undefined; resolve() }
+})
 
 const FILES: Record<TargetKey, string> = { mihomo: 'config.yaml', surge: 'surge.conf', loon: 'loon.conf', mosdns: 'mosdns.yaml', oxidns: 'oxidns.yaml' }
 const fileName = computed(() => selectedFile.value || FILES[active.value])
@@ -395,6 +429,11 @@ const loadCounts = async () => {
 
 const generate = async () => {
   if (running.value || pushing.value) return
+  if (generationBlock.value) {
+    notify.info(generationBlock.value)
+    return
+  }
+  automaticSelection = false
   const sequence = ++requestSequence
   const profile = props.profileId
   const device = destination.value
@@ -418,11 +457,10 @@ const generate = async () => {
   loadCounts()
 
   try {
-    stepIndex.value = 0
+    stepIndex.value = -1
     const result = await request
     if (sequence !== requestSequence || props.profileId !== profile || destination.value !== device || active.value !== target) return
     if (!result.ok) {
-      failedAt.value = 3
       error.value = result.message
       notify.error(`${FILES[target]} 生成失败`, result.message)
       return
@@ -435,7 +473,20 @@ const generate = async () => {
     selectedFile.value = result.artifact.config_path
     const all = result.content.replace(/\n$/, '').split('\n')
     previewLimited.value = all.length > 2000
-    lines.value = all.slice(0, 2000).map(highlight)
+    const preview = all.slice(0, 2000).map(highlight)
+    if (motionEnabled() && !document.hidden) {
+      // Only animate rendering the fixed result, after generation has completed.
+      const perFrame = Math.max(1, Math.ceil(preview.length / 90))
+      for (let i = 0; i < preview.length; i += perFrame) {
+        if (sequence !== requestSequence) return
+        if (!motionEnabled() || document.hidden) { lines.value = preview; break }
+        freshFrom.value = lines.value.length
+        lines.value.push(...preview.slice(i, i + perFrame))
+        await nextFrame()
+        if (sequence !== requestSequence) return
+        if (codeEl.value) codeEl.value.scrollTop = codeEl.value.scrollHeight
+      }
+    } else lines.value = preview
     stepIndex.value = 5
     freshFrom.value = lines.value.length
     const hosts = result.hosts
@@ -616,16 +667,19 @@ const onKeydown = (event: KeyboardEvent) => {
   }
 }
 
+const pendingGenerate = ref('')
 const runPending = () => {
   if (consumeAction(router, 'generate-mihomo')) {
     active.value = 'mihomo'
-    generate()
+    pendingGenerate.value = `configflow-generate-agent:${encodeURIComponent(props.profileId)}:mihomo`
   }
 }
 
 const clearGenerated = () => {
   requestSequence++
+  finishFrame?.()
   running.value = false
+  phase.value = ''
   generation.value = null
   previewLimited.value = false
   selectedFile.value = ''
@@ -637,9 +691,32 @@ const clearGenerated = () => {
   failedAt.value = -1
   error.value = ''
 }
-watch(active, () => { destination.value = 'manual'; clearGenerated() })
-watch(() => props.profileId, () => { destination.value = 'manual'; clearGenerated() })
-watch(destination, clearGenerated)
+watch([destinationKey, () => live.loaded.value, () => availableAgents.value.map(a => a.id).sort().join('|')], () => {
+  if (destinationContext !== destinationKey.value) {
+    destinationContext = destinationKey.value
+    destination.value = ''
+    automaticSelection = true
+    clearGenerated()
+  }
+  if (!live.loaded.value && active.value !== 'loon') return
+  if (!automaticSelection) {
+    if (destination.value && destination.value !== 'manual' && !selectedAgent.value) {
+      destination.value = ''
+    }
+    return
+  }
+  let remembered = rememberedAgents.get(destinationKey.value)
+  try { remembered = localStorage.getItem(destinationKey.value) || remembered } catch { /* 使用本次访问的选择。 */ }
+  const agents = availableAgents.value
+  const choice = agents.length === 0 ? 'manual' : agents.length === 1 ? agents[0].id
+    : agents.some(a => a.id === remembered) ? remembered! : ''
+  destination.value = choice
+  if (choice && choice !== 'manual') {
+    automaticSelection = false
+    rememberAgent(choice)
+  }
+}, { immediate: true })
+watch(destination, clearGenerated, { flush: 'sync' })
 watch(() => availableAgents.value.map(a => `${a.id}:${a.profile_id}:${a.service_type}:${a.host}:${a.port}:${a.version}`).join('|'), () => {
   if (generation.value && destination.value !== 'manual') {
     if (!availableAgents.value.some(a => a.id === generation.value?.agent_id)) staleMessage.value = '目标设备已不可用，请重新选择并生成。'
@@ -647,18 +724,27 @@ watch(() => availableAgents.value.map(a => `${a.id}:${a.profile_id}:${a.service_
 })
 
 watch(() => router?.currentRoute.value.query.run, run => run === 'generate-mihomo' && runPending())
+watch([pendingGenerate, destinationKey, generationBlock], () => {
+  if (!pendingGenerate.value) return
+  if (pendingGenerate.value !== destinationKey.value) { pendingGenerate.value = ''; return }
+  if (!generationBlock.value) { pendingGenerate.value = ''; generate() }
+}, { flush: 'post' })
+const finishHiddenAnimation = () => { if (document.hidden) finishFrame?.() }
 
 onMounted(() => {
   live.start()
   loadCounts()
   document.addEventListener('keydown', onKeydown)
+  document.addEventListener('visibilitychange', finishHiddenAnimation)
   runPending()
 })
 
 onUnmounted(() => {
   requestSequence++
+  finishFrame?.()
   live.stop()
   document.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('visibilitychange', finishHiddenAnimation)
 })
 </script>
 
