@@ -12,7 +12,7 @@ vi.mock('@/api', () => ({
   generateApi: { artifact: vi.fn() },
   statsApi: { getOverview: vi.fn() }, ruleSetApi: { getAll: vi.fn() },
 }))
-vi.mock('@/stores/live', () => ({ useLive: () => ({ boundAgents: computed(() => []), isOnline: () => true, start: vi.fn(), stop: vi.fn(), refresh: vi.fn() }) }))
+vi.mock('@/stores/live', () => ({ useLive: () => ({ loaded: computed(() => true), boundAgents: computed(() => []), isOnline: () => true, start: vi.fn(), stop: vi.fn(), refresh: vi.fn() }) }))
 vi.mock('@/lib/feedback', () => ({ notify: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() } }))
 
 const report = (overrides: Partial<SubscriptionHostsReport> = {}): SubscriptionHostsReport => ({
