@@ -26,7 +26,7 @@ const task = (changes: Partial<ScheduledTask> = {}): ScheduledTask => ({
   run_count: 42, failure_count: 3, cache_retained: null, cache_updated_at: '2026-10-23T11:00:00Z', ...changes
 })
 const metricsFlush = (changes: Partial<ScheduledTask> = {}) => task({
-  key: 'metrics_history_flush', category: 'metrics_history', name: '监控历史保存', detail: '', resource_id: '',
+  key: 'metrics_history_flush', category: 'metrics_history', name: '监控历史保存', detail: 'Agent 系统监控（CPU、内存、网速） · Mihomo 流量记录', resource_id: '',
   interval_seconds: 1800, link: '/agents', next_run_at: '2026-10-24T08:20:00Z', last_run_at: '2026-10-24T07:50:00Z',
   last_trigger: 'shutdown', run_count: 5, failure_count: 0, cache_updated_at: null, ...changes
 })
@@ -220,6 +220,8 @@ describe('ScheduledTasks', () => {
     const wrapper = await render([metricsFlush()])
     const row = wrapper.get('[data-task="metrics_history_flush"]')
     expect(row.text()).toContain('监控历史保存')
+    // 写明保存的是哪个软件的数据
+    expect(row.text()).toContain('Mihomo 流量记录')
     expect(row.text()).toContain('监控历史')
     expect(row.text()).toContain('每 30 分钟')
     expect(row.text()).toContain('20 分钟后')

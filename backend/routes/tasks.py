@@ -208,7 +208,9 @@ def _metrics_row(statuses):
     from backend.agents import metrics_flush
     entry = statuses.get(metrics_flush.TASK_KEY) or {}
     interval = metrics_flush.interval_seconds()
+    # 一个任务保存两样数据，写明各属于哪个软件
     return [_row(metrics_flush.TASK_KEY, 'metrics_history', '监控历史保存', interval_seconds=interval,
+        detail='Agent 系统监控（CPU、内存、网速） · Mihomo 流量记录',
         editable=True, can_run=True, running=_is_background(metrics_flush.TASK_KEY) or metrics_flush.is_running(),
         next_run_at=_iso(metrics_flush.next_run_at(entry, interval)), link='/agents', **_history(entry))]
 

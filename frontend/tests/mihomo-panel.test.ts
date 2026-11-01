@@ -39,6 +39,7 @@ import { vi } from 'vitest'
 import MihomoPanel from '@/views/MihomoPanel.vue'
 import MihomoConnections from '@/components/mihomo/MihomoConnections.vue'
 import MihomoOverview from '@/components/mihomo/MihomoOverview.vue'
+import MihomoStatsTab from '@/components/mihomo/MihomoStatsTab.vue'
 import MihomoProxies from '@/components/mihomo/MihomoProxies.vue'
 import MihomoRules from '@/components/mihomo/MihomoRules.vue'
 import MihomoLogs from '@/components/mihomo/MihomoLogs.vue'
@@ -115,7 +116,7 @@ describe('mihomo panel view', () => {
     routeState.replace.mockImplementation(({ query }) => { routeState.route.query = query })
     const wrapper = mount(MihomoPanel)
     await flushPromises()
-    expect(wrapper.findAll('[role="tab"]').map(tab => tab.text())).toEqual(['概览', '策略', '连接', '规则', '日志'])
+    expect(wrapper.findAll('[role="tab"]').map(tab => tab.text())).toEqual(['概览', '统计', '策略', '连接', '规则', '日志'])
     expect(wrapper.get('[role="tab"][data-state="active"]').text()).toBe('日志')
     expect(wrapper.getComponent(MihomoLogs).props('agentId')).toBe('gw')
     expect(wrapper.text()).toContain('Mihomo log entry')
@@ -224,7 +225,9 @@ describe('mihomo panel view', () => {
     expect(wrapper.get('[role="tab"][data-state="active"]').text()).toBe('概览')
     const overview = wrapper.getComponent(MihomoOverview)
     expect(overview.text()).toContain('累计下载')
-    expect(overview.text()).toContain('192.0.2.10')
+    // 连接统计在单独的「统计」标签，概览里没有
+    expect(overview.text()).not.toContain('连接统计')
+    expect(wrapper.findComponent(MihomoStatsTab).exists()).toBe(false)
     // 延迟：百度走直连，其余站点走配置里的第一个策略组
     expect(mihomoPanelApi.proxyDelay).toHaveBeenCalledWith('gw', 'DIRECT', 'https://www.baidu.com', 5000)
     expect(mihomoPanelApi.proxyDelay).toHaveBeenCalledWith('gw', 'Proxy', 'https://www.google.com/generate_204', 5000)
@@ -233,6 +236,9 @@ describe('mihomo panel view', () => {
     await wrapper.findAll('[role="tab"]').find(tab => tab.text() === '规则')!.trigger('mousedown', { button: 0 })
     await flushPromises()
     expect(routeState.replace).toHaveBeenLastCalledWith({ query: { agent: 'gw', tab: 'rules' } })
+    routeState.route.query = { agent: 'gw', tab: 'stats' }
+    await flushPromises()
+    expect(wrapper.getComponent(MihomoStatsTab).text()).toContain('192.0.2.10')
     routeState.replace.mockClear()
     await wrapper.findAll('[role="tab"]').find(tab => tab.text() === '概览')!.trigger('mousedown', { button: 0 })
     await flushPromises()

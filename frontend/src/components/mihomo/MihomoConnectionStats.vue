@@ -50,7 +50,7 @@
 
     <LoadingRows v-if="live ? loading : !data" :rows="4" />
     <EmptyState v-else-if="!rows.length" :icon="Cable" :title="live ? '没有活动连接' : '这段时间还没有记录'" :description="live ? '有流量经过 Mihomo 时自动显示。' : 'Agent 每 5 分钟上报一次，刚开启时稍等几分钟。'" />
-    <div v-else class="stats-frame cf-table-wrap w-full max-h-[560px] overflow-y-auto overscroll-contain border-t border-border" tabindex="0" role="region" :aria-label="`连接统计，${column}`">
+    <div v-else class="stats-frame cf-table-wrap w-full overflow-y-auto overscroll-contain border-t border-border" :class="tall ? 'max-h-[75dvh]' : 'max-h-[560px]'" tabindex="0" role="region" :aria-label="`连接统计，${column}`">
       <table class="cf-table stats-table">
         <thead>
           <tr>
@@ -182,6 +182,8 @@ const props = defineProps<{
   /** 有 Agent 时显示后台记录的开关与历史范围 */
   agentId?: string
   active?: boolean
+  /** 单独成页时表格可以更高 */
+  tall?: boolean
 }>()
 
 function read<T extends string>(key: string, allowed: readonly T[], fallback: T): T {

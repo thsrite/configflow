@@ -265,6 +265,7 @@ def test_task_row_runs_now_and_surfaces_failures(tasks_app, monkeypatch):
     assert (row['category'], row['name'], row['interval_seconds'], row['editable'], row['can_run'], row['enabled']) == \
         ('metrics_history', '监控历史保存', 1800, True, True, True)
     assert (row['last_run_at'], row['next_run_at'], row['link'], row['profile_id']) == (None, None, '/agents', None)
+    assert row['detail'] == 'Agent 系统监控（CPU、内存、网速） · Mihomo 流量记录'
 
     manager.update_heartbeat('agent_1', {'system_metrics': metrics(1)})
     response = app.test_client().post('/api/tasks/run', json={'key': 'metrics_history_flush'})

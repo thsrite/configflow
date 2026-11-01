@@ -288,7 +288,7 @@ const intervalLabel = computed(() => {
 const editorDescription = computed(() => {
   switch (editing.value?.category) {
     case 'metrics_history':
-      return 'Agent 监控数据先保存在内存中，按此间隔把新增的数据追加到磁盘；服务正常停止时也会保存一次。间隔越短，意外断电时丢失的数据越少。'
+      return '保存两样数据：各 Agent 的系统监控（CPU、内存、网速曲线），以及开启了「后台记录」的 Mihomo 流量记录。两者都先保存在内存中，按此间隔写入磁盘；服务正常停止时也会保存一次。间隔越短，意外断电时丢失的数据越少。'
     case 'subscription':
       return '服务端按此间隔下载订阅并更新缓存；关闭后只在订阅页手动更新。与订阅编辑中的「订阅源更新间隔」是同一设置。'
     case 'rule_source':
