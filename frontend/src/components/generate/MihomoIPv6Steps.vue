@@ -235,11 +235,12 @@ async function followUpstream(status: UpstreamPendingStatus) {
   upstreamLinks.value = []
   const generation = ++upstreamSession
   const id = selectedId.value
+  const profileId = props.profileId
   if (status.state !== 'pending' && status.state !== 'unknown') return
   try {
-    const { data } = await upstreamRouterApi.pending(id)
-    if (generation !== upstreamSession || disposed || id !== selectedId.value || data?.success !== true || !Array.isArray(data.routers)) return
-    upstreamLinks.value = data.routers.filter(router => router.state !== 'synced').slice(0, 3).map(router => ({
+    const { data } = await upstreamRouterApi.pending(id, { profileId })
+    if (generation !== upstreamSession || disposed || id !== selectedId.value || profileId !== props.profileId || data?.success !== true || !Array.isArray(data.routers)) return
+    upstreamLinks.value = data.routers.filter(router => router.profile_id === profileId && router.state !== 'synced').slice(0, 3).map(router => ({
       key: `${router.profile_id}:${router.id}`,
       label: `「${router.name || router.id}」${router.state === 'pending' ? '查看并发布' : router.state === 'blocked' ? '查看原因' : '查看差异报告'}`,
       to: upstreamRouterLink(router, router.state !== 'unknown'),
@@ -335,7 +336,7 @@ onUnmounted(() => { clearInterval(ticker); clearTimeout(publicationTimer); dispo
           <!-- Mounted but hidden: this row shows only its status; its own lines appear in the
                publish bar and the device check, not twice on one screen. -->
           <div class="hidden" data-ipv6-step-upstream-reminder>
-            <UpstreamRouterPending :agent-id="selectedId" :refresh-key="upstreamKey" compact @status="followUpstream" />
+            <UpstreamRouterPending :agent-id="selectedId" :profile-id="profileId" :refresh-key="upstreamKey" compact @status="followUpstream" />
           </div>
           <div v-if="!dirty && (upstream?.state === 'pending' || upstream?.state === 'unknown')" class="-mt-1 mb-2 flex min-w-0 flex-wrap gap-x-4 text-xs" data-ipv6-step-upstream>
             <RouterLink v-for="link in upstreamLinks" :key="link.key" class="inline-flex min-h-11 items-center text-primary-accent underline underline-offset-4" :to="link.to">{{ link.label }}</RouterLink>

@@ -26,7 +26,7 @@ async function render(props: Record<string, unknown> = {}, withRouter = false) {
     { path: '/', component: { template: '<div />' } }, { path: '/routers', component: { template: '<div />' } }] })
   if (withRouter) { await navigation.push('/'); await navigation.isReady() }
   const wrapper = mount(UpstreamRouterPending, {
-    props: { agentId: 'gw', ...props }, attachTo: document.body,
+    props: { agentId: 'gw', profileId: 'home', ...props }, attachTo: document.body,
     global: { plugins: withRouter ? [navigation] : [] },
   })
   wrappers.push(wrapper)
@@ -44,7 +44,7 @@ afterEach(() => {
 describe('upstream router pending reminder', () => {
   it('shows nothing when every router is in sync, and reports it', async () => {
     const { wrapper } = await render()
-    expect(upstreamRouterApi.pending).toHaveBeenCalledExactlyOnceWith('gw', expect.objectContaining({ refresh: false }))
+    expect(upstreamRouterApi.pending).toHaveBeenCalledExactlyOnceWith('gw', expect.objectContaining({ profileId: 'home', refresh: false }))
     expect(wrapper.find('[data-upstream-router-pending]').exists()).toBe(false)
     expect(wrapper.emitted('status')).toEqual([[{ state: 'synced', pending: 0 }]])
   })
@@ -100,7 +100,7 @@ describe('upstream router pending reminder', () => {
   it('shows blocked and unreadable routers with their reasons, each on its own line', async () => {
     vi.mocked(upstreamRouterApi.pending).mockResolvedValue(reply([
       router({ id: 'a', name: '主路由', state: 'blocked', pending: 1, message: '代理网关不属于当前配置空间' }),
-      router({ id: 'b', name: '分店', profile_id: 'shop', profile_name: '分店空间', state: 'unknown', message: '读取超时（25 秒）' }),
+      router({ id: 'b', name: '分店', state: 'unknown', message: '读取超时（25 秒）' }),
       router({ id: 'c', name: '已同步' }),
     ]))
     const { wrapper } = await render({ compact: true })
@@ -111,9 +111,9 @@ describe('upstream router pending reminder', () => {
     expect(lines[0].get('a').text()).toBe('查看原因')
     expect(lines[0].get('a').attributes('href')).toBe('/routers?router=a&profile=home&preview=1')
     expect(lines[1].text()).toContain('无法确认上游路由「分店」状态')
-    expect(lines[1].text()).toContain('配置空间「分店空间」 · 读取超时（25 秒）')
+    expect(lines[1].text()).toContain('读取超时（25 秒）')
     expect(lines[1].get('a').text()).toBe('查看差异报告')
-    expect(lines[1].get('a').attributes('href')).toBe('/routers?router=b&profile=shop')
+    expect(lines[1].get('a').attributes('href')).toBe('/routers?router=b&profile=home')
     expect(wrapper.text()).not.toContain('已同步')
     expect(wrapper.emitted('status')).toEqual([[{ state: 'pending', pending: 1 }]])
   })
@@ -130,6 +130,40 @@ describe('upstream router pending reminder', () => {
     await wrapper.setProps({ refreshKey: 1 })
     await flushPromises()
     expect(wrapper.text()).toContain('上游路由状态响应无效')
+  })
+
+  it('excludes another profile even when its router has the same ID and the server returns all profiles', async () => {
+    const foreign = router({ ...PENDING, profile_id: 'test', profile_name: '测试空间' })
+    vi.mocked(upstreamRouterApi.pending).mockResolvedValue(reply([foreign, router()]))
+    const { wrapper } = await render()
+    expect(wrapper.text()).toBe('')
+    expect(wrapper.emitted('status')!.at(-1)).toEqual([{ state: 'synced', pending: 0 }])
+    vi.mocked(upstreamRouterApi.pending).mockResolvedValue(reply([foreign, PENDING]))
+    await wrapper.setProps({ refreshKey: 1 })
+    await flushPromises()
+    expect(wrapper.findAll('[data-upstream-router]')).toHaveLength(1)
+    expect(wrapper.get('a').attributes('href')).toBe('/routers?router=ros&profile=home&preview=1')
+    expect(wrapper.emitted('status')!.at(-1)).toEqual([{ state: 'pending', pending: 2 }])
+    vi.mocked(upstreamRouterApi.pending).mockResolvedValue(reply([foreign]))
+    await wrapper.setProps({ refreshKey: 2 })
+    await flushPromises()
+    expect(wrapper.emitted('status')!.at(-1)).toEqual([{ state: 'none', pending: 0 }])
+    expect(wrapper.find('a').exists()).toBe(false)
+  })
+
+  it('discards a response from the previous profile when the editor scope changes on the same Agent', async () => {
+    let resolveFirst!: (value: any) => void
+    vi.mocked(upstreamRouterApi.pending)
+      .mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve }))
+      .mockResolvedValueOnce(reply([router({ profile_id: 'test' })]))
+    const { wrapper } = await render()
+    await wrapper.setProps({ profileId: 'test' })
+    await flushPromises()
+    resolveFirst(reply([PENDING]))
+    await flushPromises()
+    expect(upstreamRouterApi.pending).toHaveBeenLastCalledWith('gw', expect.objectContaining({ profileId: 'test', refresh: false }))
+    expect(wrapper.text()).toBe('')
+    expect(wrapper.emitted('status')!.at(-1)).toEqual([{ state: 'synced', pending: 0 }])
   })
 
   it('reads again, skipping the short reuse, when the refresh key changes; a new Agent starts over', async () => {

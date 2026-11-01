@@ -184,6 +184,52 @@ def test_lists_linked_routers_in_every_profile_with_their_live_state(lab):
     assert 'secret' not in client.get(PATH.format(gateway), headers=admin).get_data(as_text=True)
 
 
+def test_explicit_profile_reads_only_its_router_even_with_a_cloned_id(lab):
+    from backend.common.config import get_repository
+    client, admin, agent, routers, states, reads, get = lab
+    gateway = agent()
+    routers('home', ('ROS', 'http://home', gateway))
+    routers('other', ('ROS', 'http://other', gateway))
+    get_repository().update_profile_transaction('other', lambda profile: profile['routers']['items'][0].update(id='home-1'))
+    states.update({'http://home': synced_state(), 'http://other': RouterState()})
+
+    home = get(gateway, profile='home')
+    assert [(item['id'], item['profile_id'], item['state']) for item in home['routers']] == [('home-1', 'home', 'synced')]
+    assert reads == ['http://home']  # Exclude foreign routers before contacting devices.
+    assert get(gateway, profile='home')['cached'] is True
+    other = get(gateway, profile='other')
+    assert [(item['id'], item['profile_id'], item['state']) for item in other['routers']] == [('home-1', 'other', 'pending')]
+    assert reads == ['http://home', 'http://other']
+    assert get(gateway, profile='home')['routers'] == home['routers']
+
+
+def test_scoped_request_does_not_reuse_an_unscoped_result(lab):
+    client, admin, agent, routers, states, reads, get = lab
+    gateway = agent()
+    routers('home', ('主路由', 'http://home', gateway))
+    routers('other', ('测试路由', 'http://other', gateway))
+    states.update({'http://home': synced_state(), 'http://other': RouterState()})
+    assert len(get(gateway)['routers']) == 2
+    reads.clear()
+    scoped = get(gateway, profile='home')
+    assert scoped['cached'] is False
+    assert [item['profile_id'] for item in scoped['routers']] == ['home']
+    assert reads == ['http://home']
+    assert len(get(gateway)['routers']) == 2
+
+
+def test_empty_or_missing_profile_never_falls_back_to_another_profile(lab):
+    client, admin, agent, routers, states, reads, get = lab
+    gateway = agent()
+    routers('other', ('测试路由', 'http://other', gateway))
+    assert get(gateway, profile='home')['routers'] == []
+    for profile, status in (('deleted', 404), ('', 400)):
+        response = client.get(PATH.format(gateway), headers=admin, query_string={'profile': profile})
+        assert response.status_code == status
+        assert response.get_json()['success'] is False
+    assert reads == []
+
+
 def test_an_agent_without_linked_routers_reads_nothing(lab):
     client, admin, agent, routers, states, reads, get = lab
     gateway = agent()

@@ -443,7 +443,7 @@ onUnmounted(() => { disposed = true; session++ })
       <p v-if="blockedRecovery" class="m-0 text-destructive-accent">请先到 Agent 页面处理回滚结果，确认服务恢复后再发布。</p>
     </div>
     <div v-if="routerAgentIds.length" class="min-w-0 space-y-2" data-publish-upstream-routers>
-      <UpstreamRouterPending v-for="agentId in routerAgentIds" :key="agentId" :agent-id="agentId" :refresh-key="routerCheck" compact />
+      <UpstreamRouterPending v-for="agentId in routerAgentIds" :key="agentId" :agent-id="agentId" :profile-id="profileId" :refresh-key="routerCheck" compact />
     </div>
   </div>
 </template>

@@ -69,6 +69,7 @@ async function page(theme, viewport) {
     localStorage.setItem('token', value)
     localStorage.setItem('username', 'admin')
     localStorage.setItem('configflow-theme', mode)
+    sessionStorage.setItem('configflow.activeProfile', 'default')
   }, [token, theme])
   const tab = await context.newPage()
   tab.on('pageerror', error => report.browserErrors.push(error.message))
@@ -204,26 +205,34 @@ try {
   step('synced: nothing shown', { api: synced.routers })
   await desktop.locator('[data-settings-publish-bar]').screenshot({ path: join(evidence, 'synced-bar.png') })
 
-  // 5. 另一配置空间的路由器：提醒注明空间，链接切换到该空间再打开差异报告。
-  await api('POST', '/profiles', { id: 'lab-shop', name: '分店空间' })
-  await api('POST', '/routers', { name: '分店 ROS', type: 'routeros', endpoint: 'http://127.0.0.1:9', username: 'admin',
+  // 5. 另一空间也关联同一 Mihomo：Default 的步骤和发布栏仍只核对 Default。
+  await api('POST', '/profiles', { id: 'lab-shop', name: '测试空间' })
+  await api('POST', '/routers', { name: '同步示例', type: 'routeros', endpoint: 'http://127.0.0.1:9', username: 'admin',
     password: 'lab-only', proxy_gateway_agent_id: lab.agent_id }, 'lab-shop')
+  const unscoped = await api('GET', `/agents/${lab.agent_id}/upstream-routers`)
+  assert.ok(unscoped.routers.some(item => item.profile_id === 'lab-shop' && item.state !== 'synced'))
+  const requestedScopes = []
+  desktop.on('request', request => {
+    const url = new URL(request.url())
+    if (url.pathname.endsWith('/upstream-routers')) requestedScopes.push(url.searchParams.get('profile'))
+  })
   await openMihomoSettings(desktop)
   await saveDraft(desktop)
-  const remote = desktop.locator('[data-publish-upstream-routers] [data-state="unknown"]')
-  await remote.waitFor({ timeout: 60000 })
-  const remoteText = (await remote.innerText()).replace(/\s+/g, ' ')
-  assert.match(remoteText, /配置空间「分店空间」/)
-  await remote.getByRole('link', { name: '查看差异报告' }).click()
-  await desktop.getByText('已切换到配置空间「分店空间」').first().waitFor({ timeout: 30000 })
-  await desktop.locator('[data-router-report]').getByText('差异报告 · 分店 ROS').waitFor({ timeout: 60000 })
-  await desktop.locator('[data-router-report] [role="alert"]').waitFor({ timeout: 60000 })
-  assert.equal(new URL(desktop.url()).search, '')
+  const upstreamStep = desktop.locator('[data-ipv6-step="upstream"]')
+  await upstreamStep.getByText('已同步', { exact: true }).waitFor({ timeout: 60000 })
+  assert.equal(await desktop.locator('[data-publish-upstream-routers] [data-upstream-router-pending]').count(), 0)
+  assert.equal(await desktop.locator('[data-ipv6-step-upstream] a').count(), 0)
+  assert.ok(requestedScopes.length > 0 && requestedScopes.every(profile => profile === 'default'))
+  const scoped = await api('GET', `/agents/${lab.agent_id}/upstream-routers?profile=default`)
+  assert.ok(scoped.routers.length > 0 && scoped.routers.every(item => item.profile_id === 'default' && item.state === 'synced'))
   const active = await desktop.evaluate(() => sessionStorage.getItem('configflow.activeProfile'))
-  assert.equal(active, 'lab-shop')
-  step('another profile: link switches profile and opens the report', { text: remoteText,
-    report: (await desktop.locator('[data-router-report]').innerText()).replace(/\s+/g, ' ').slice(0, 200) })
-  await desktop.screenshot({ path: join(evidence, 'cross-profile-report.png') })
+  assert.equal(active, 'default')
+  step('Default excludes another profile linked to the same Mihomo', { scopes: requestedScopes, active, api: scoped.routers })
+  await quiet(desktop)
+  await upstreamStep.scrollIntoViewIfNeeded()
+  const scopeBox = await upstreamStep.boundingBox()
+  await desktop.screenshot({ path: join(shots, 'upstream-router-profile-scope.png'),
+    clip: { x: scopeBox.x - 12, y: scopeBox.y - 12, width: scopeBox.width + 24, height: scopeBox.height + 24 } })
   assert.deepEqual(report.browserErrors, [])
 } finally {
   await writeFile(join(evidence, 'report.json'), JSON.stringify(report, null, 2))

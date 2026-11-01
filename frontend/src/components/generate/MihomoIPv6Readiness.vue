@@ -221,7 +221,7 @@ onUnmounted(() => { clearInterval(ticker); disposed = true; session++; emit('bus
       </MihomoIPv6Verification>
       <p v-if="result.can_prepare" class="m-0 text-xs leading-relaxed text-muted-foreground">补齐仅处理 Mihomo 主机配置，必要时重新加载 Mihomo。</p>
     </template>
-    <UpstreamRouterPending v-if="selectedId && routerCheck && !dirty" :agent-id="selectedId" :refresh-key="routerCheck" />
+    <UpstreamRouterPending v-if="selectedId && routerCheck && !dirty" :agent-id="selectedId" :profile-id="profileId" :refresh-key="routerCheck" />
     <MihomoIPv6VerificationSettings v-if="selected" :open="open" :agent-id="selectedId" :profile-id="profileId" :disabled="busy || disabled" @saved="verificationVersion++" />
   </div>
 </template>

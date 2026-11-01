@@ -43,13 +43,13 @@ const path = (agentId: string) => `/agents/${encodeURIComponent(agentId)}/upstre
 
 export const upstreamRouterApi = {
   /**
-   * 把这台 Mihomo 设为代理网关的上游路由（可跨配置空间）及其实时发布状态；只读。
+   * 把这台 Mihomo 设为代理网关的上游路由及其实时发布状态；设置页显式传入正在编辑的空间。
    * 路由器记录、配置空间修订号和 Agent 记录不变时，服务端沿用上次读取（checked_at 为读取时间）；
    * refresh 强制重新读取，用于保存、发布成功或重新检查之后。
    */
-  pending: (agentId: string, options: { refresh?: boolean; signal?: AbortSignal } = {}) =>
+  pending: (agentId: string, options: { profileId?: string; refresh?: boolean; signal?: AbortSignal } = {}) =>
     api.get<UpstreamRouterPendingResponse>(path(agentId), {
-      params: options.refresh ? { refresh: 1 } : undefined,
+      params: { ...(options.profileId !== undefined ? { profile: options.profileId } : {}), ...(options.refresh ? { refresh: 1 } : {}) },
       signal: options.signal,
       timeout: 60000,
     }),
