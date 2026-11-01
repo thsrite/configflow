@@ -253,3 +253,50 @@ def test_deleting_an_agent_deletes_its_traffic_history(env):
                 json=report([usage(hour=int(time.time()) // HOUR * HOUR)]))
     manager.delete_agent('gw')
     assert manager.traffic_history.pending_count() == 0
+
+
+def test_agents_can_report_when_panel_login_is_enabled(tmp_path, monkeypatch):
+    """开启登录时，Agent 用自己的令牌上报不能被全局登录检查拦下；网页端的查询仍然要登录。"""
+    from flask import Flask
+    from backend.common import auth as auth_module
+    from backend.routes import register_blueprints
+    from backend.routes.auth import setup_before_request
+    from backend.common.config_repository import ProfileRepository
+    from backend.common import agent_manager as singleton
+    monkeypatch.setattr(auth_module, 'ADMIN_USERNAME', 'admin')
+    monkeypatch.setattr(auth_module, 'ADMIN_PASSWORD', 'admin-password')
+    repository = ProfileRepository(tmp_path / 'config')
+    config_module.set_repository(repository)
+    repository.update_system_transaction(lambda system: system.update(agents=[
+        {'id': 'gw', 'name': 'Edge', 'service_type': 'mihomo', 'profile_id': 'default', 'token': TOKEN, 'host': 'h', 'port': 8080,
+         'version': '1.8.52-go', 'traffic_history_enabled': True}]))
+    monkeypatch.setattr(singleton, '_agent_manager', None)
+    app = Flask(__name__)
+    register_blueprints(app)
+    setup_before_request(app)
+    client = app.test_client()
+    url = '/api/agents/gw/traffic-history'
+    body = report([usage(hour=int(time.time()) // HOUR * HOUR)])
+    try:
+        assert client.post(url, json=body, headers=auth()).status_code == 200
+        assert client.post(url, json=body, headers=auth('wrong-token')).status_code == 401
+        # 查询、开关和清空是网页端接口：Agent 令牌不行，要网页登录
+        assert client.get(url, headers=auth()).status_code == 401
+        admin = auth(auth_module.generate_token('admin'))
+        data = client.get(url + '?range=24h&by=source', headers=admin).get_json()['data']
+        assert data['total']['down'] == 10
+    finally:
+        config_module.reset_config_context()
+
+
+def test_every_agent_token_route_bypasses_the_panel_login():
+    """用 Agent 令牌鉴权的接口都要在全局登录检查的放行名单里，否则开启登录后 Agent 的请求全被 401。"""
+    import re
+    root = Path(__file__).resolve().parent
+    agents_source = (root / 'routes' / 'agents.py').read_text(encoding='utf-8')
+    auth_source = (root / 'routes' / 'auth.py').read_text(encoding='utf-8')
+    handlers = re.findall(r"@bp\.route\([^\n]*\)\n(?:@[^\n]*\n)*def (\w+)\([^)]*\):\n(?:(?!\ndef ).)*?_authenticated_agent\(",
+                          agents_source, re.S)
+    assert 'agent_traffic_history_report' in handlers and 'agent_heartbeat' in handlers
+    missing = [name for name in handlers if f"'agents.{name}'" not in auth_source]
+    assert missing == []
