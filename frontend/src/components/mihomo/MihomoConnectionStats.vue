@@ -57,7 +57,10 @@
             <th scope="col">
               <span class="flex items-center gap-2">
                 {{ column }} / {{ partsLabel }}
-                <button type="button" class="stats-toggle-all" @click="toggleAll">{{ allCollapsed ? '展开明细' : '收起明细' }}</button>
+                <button type="button" class="stats-toggle-all" @click="toggleAll">
+                  <ChevronsUpDown v-if="allCollapsed" class="size-3" aria-hidden="true" /><ChevronsDownUp v-else class="size-3" aria-hidden="true" />
+                  {{ allCollapsed ? '展开明细' : '收起明细' }}
+                </button>
               </span>
             </th>
             <th scope="col" class="text-right">{{ partsBySource ? '类型' : '直连占比' }}</th>
@@ -117,7 +120,8 @@
               <tr v-if="hiddenParts(row).count" class="stats-part stats-more">
                 <td :colspan="live ? 7 : 6">
                   <button type="button" class="stats-more-button" @click="showAll(row.key)">
-                    其余 {{ hiddenParts(row).count }} 条{{ partsLabel }} · {{ formatBytes(hiddenParts(row).bytes) }}
+                    <ChevronDown class="size-3.5" aria-hidden="true" />
+                    显示其余 {{ hiddenParts(row).count }} 条{{ partsLabel }}<span class="num text-muted-foreground"> · {{ formatBytes(hiddenParts(row).bytes) }}</span>
                   </button>
                 </td>
               </tr>
@@ -132,7 +136,7 @@
 
 <script setup lang="ts">
 import { computed, defineComponent, h, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ArrowDown, Cable, ChevronRight, Trash2 } from '@lucide/vue'
+import { ArrowDown, Cable, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Trash2 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -481,9 +485,11 @@ onUnmounted(() => {
 :deep(.stats-chain-exit) { color: var(--foreground); }
 .stats-share { display: inline-block; width: 44px; height: 5px; overflow: hidden; border-radius: 999px; background: color-mix(in oklab, var(--primary-accent) 55%, transparent); }
 .stats-share span { display: block; height: 100%; background: var(--success-accent); }
-.stats-toggle-all, .stats-more-button { border-radius: var(--radius-sm); color: var(--muted-foreground); font-size: 11.5px; font-weight: 400; }
-.stats-toggle-all:hover, .stats-more-button:hover { color: var(--primary-accent); }
-.stats-more-button { min-height: 24px; padding: 0 4px; }
+/* 表头里的小号描边按钮，看得出可以点 */
+.stats-toggle-all { display: inline-flex; height: 22px; align-items: center; gap: 3px; padding: 0 7px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--card); color: var(--muted-foreground); font-size: 11.5px; font-weight: 500; line-height: 1; }
+.stats-toggle-all:hover { background: var(--accent); color: var(--foreground); }
+.stats-more-button { display: inline-flex; min-height: 26px; align-items: center; gap: 4px; padding: 0 4px; border-radius: var(--radius-sm); color: var(--primary-accent); font-size: 12px; }
+.stats-more-button:hover { background: var(--primary-soft); }
 .stats-sort { display: inline-flex; min-height: 28px; align-items: center; gap: 2px; border-radius: var(--radius-sm); color: inherit; }
 .stats-sort[data-active='true'], .stats-sort:hover { color: var(--primary-accent); }
 .stats-sort:focus-visible, .stats-expand:focus-visible, .stats-toggle-all:focus-visible, .stats-more-button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
@@ -500,7 +506,10 @@ onUnmounted(() => {
   :deep(.stats-chain) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: anywhere; }
 }
 @media (pointer: coarse) {
-  .stats-sort, .stats-toggle-all, .stats-more-button { min-height: 44px; }
+  .stats-sort, .stats-more-button { min-height: 44px; }
+  /* 表头按钮外观保持 22px，点击区扩到 44px */
+  .stats-toggle-all { position: relative; }
+  .stats-toggle-all::after { content: ''; position: absolute; inset: -11px -4px; }
   .stats-expand, .stats-expand-spacer { width: 44px; height: 44px; }
 }
 </style>

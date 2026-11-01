@@ -69,11 +69,11 @@
       <Tabs v-else :key="agentId" keep-visited :model-value="tab" class="min-w-0" @update:model-value="changeTab(String($event))">
         <TabsList class="mb-4 min-h-11 max-w-full overflow-x-auto max-sm:mb-0">
           <TabsTrigger value="overview" class="min-h-11 px-4">概览</TabsTrigger>
-          <TabsTrigger value="stats" class="min-h-11 px-4">统计</TabsTrigger>
           <TabsTrigger value="proxies" class="min-h-11 px-4">策略</TabsTrigger>
           <TabsTrigger value="connections" class="min-h-11 px-4">连接</TabsTrigger>
           <TabsTrigger value="rules" class="min-h-11 px-4">规则</TabsTrigger>
           <TabsTrigger value="logs" class="min-h-11 px-4">日志</TabsTrigger>
+          <TabsTrigger value="stats" class="min-h-11 px-4">统计</TabsTrigger>
         </TabsList>
         <TabsContent value="overview"><MihomoOverview :key="agentId" :agent-id="agentId" :agent-name="currentDevice?.name" :reload-token="reloadToken" /></TabsContent>
         <TabsContent value="stats"><MihomoStatsTab :key="agentId" :agent-id="agentId" :reload-token="reloadToken" /></TabsContent>
@@ -117,7 +117,7 @@ import type { Agent } from '@/types'
 const MihomoSettings = defineAsyncComponent(() => import('@/components/generate/MihomoSettings.vue'))
 type Device = Pick<Agent, 'id' | 'name' | 'host' | 'status'>
 const STORAGE_KEY = 'configflow:mihomo-panel:agent'
-const TABS = ['overview', 'stats', 'proxies', 'connections', 'rules', 'logs']
+const TABS = ['overview', 'proxies', 'connections', 'rules', 'logs', 'stats']
 const MODE_OPTIONS: Array<{ value: MihomoMode; label: string }> = [
   { value: 'rule', label: '规则' },
   { value: 'global', label: '全局' },
