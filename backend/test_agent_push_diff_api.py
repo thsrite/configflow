@@ -139,8 +139,9 @@ def test_synced_after_push_then_real_changes_are_listed_with_credentials_marked(
     items = {item['key']: item for item in result['config']['items']}
     assert items['hosts.printer.lan']['new'] == '192.168.1.30'
     # Values come as they are; credentials are marked so the dialog can hide them.
-    assert items['secret'] == {'key': 'secret', 'change': 'added', 'sensitive': True, 'old': None,
+    assert items['secret'] == {'key': 'secret', 'path': ['secret'], 'change': 'added', 'sensitive': True, 'old': None,
                                'new': [{'secret': CONTROLLER_SECRET}]}
+    assert items['hosts.printer.lan']['path'] == ['hosts', 'printer.lan']
     node = next(entry for entry in items['proxies']['list']['entries'] if entry['text'] == 'Manual SS')
     assert node['fields'] == [{'key': 'password', 'change': 'modified', 'sensitive': True,
                                'old': [{'secret': OLD_PASSWORD}], 'new': [{'secret': NEW_PASSWORD}]}]

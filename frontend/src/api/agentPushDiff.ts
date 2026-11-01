@@ -84,6 +84,8 @@ export interface PushDiffListEntry {
 /** 主配置的一个配置项；sensitive 表示整个值都是凭据（键名为 password、secret 等） */
 export interface PushDiffItem {
   key: string
+  /** 主配置项的键路径（域名这类键自带点号，不能按 key 拆）；条目内的字段没有 */
+  path?: string[]
   change: PushDiffChange
   sensitive: boolean
   old?: PushDiffText | null

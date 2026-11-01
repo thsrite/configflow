@@ -267,20 +267,124 @@ body {
   white-space: nowrap;
 }
 
-/* 待推送的变更：展开的明细接在文件或配置项下方，不另起分隔线。 */
-.push-diff-files tr.is-expanded td,
-.push-diff-config tr.is-expanded td {
+/* 待推送的变更：展开的明细接在文件或配置项下方，不另起分隔线。
+ * 只选外层表自己的行和格（>）：明细里嵌着节点表，不能被外层的样式波及。 */
+.push-diff-files > tbody > tr.is-expanded > td,
+.push-diff-config > tbody > tr.is-expanded > td {
   border-bottom: none;
 }
 
-.push-diff-files tr.push-diff-detail td,
-.push-diff-config tr.push-diff-detail td {
+.push-diff-files > tbody > tr.push-diff-detail > td,
+.push-diff-config > tbody > tr.push-diff-detail > td {
   padding-top: 0;
 }
 
-.push-diff-files tr.push-diff-more td {
+.push-diff-files > tbody > tr.push-diff-more > td {
   padding-top: var(--cf-sp-2);
   padding-bottom: var(--cf-sp-2);
+}
+
+/* 表 2「主配置改了哪些项」：按顶层键分组，一组一个 tbody。组标题占一整行、可点开 / 收起；
+ * 同一个映射块有多处改动时加块标题，块下的配置项缩进。列宽按比例固定，原值、新值两列等宽。 */
+.push-diff-config {
+  table-layout: fixed;
+}
+
+.push-diff-config > tbody > tr.push-diff-group > th {
+  padding: 2px var(--cf-sp-2);
+  background: var(--muted);
+  border-bottom: 1px solid var(--cf-bd);
+  white-space: normal;
+}
+
+.push-diff-config > tbody + tbody > tr.push-diff-group > th {
+  border-top: 1px solid var(--cf-bd);
+}
+
+.push-diff-config > tbody > tr.push-diff-group:hover,
+.push-diff-config > tbody > tr.push-diff-block:hover {
+  background: none;
+}
+
+.push-diff-config > tbody > tr.push-diff-block > th {
+  padding: var(--cf-sp-2) var(--cf-sp-4) 0;
+  border-bottom: 0;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+/* 组标题按钮：整行宽、文字可换行；手机上至少 44px 高（见下方窄屏规则） */
+.push-diff-group-toggle {
+  width: 100%;
+  height: auto;
+  min-height: 2rem;
+  justify-content: flex-start;
+  white-space: normal;
+  text-align: left;
+}
+
+@media (width >= 768px) {
+  .push-diff-config > tbody > tr.is-nested > td.push-diff-key {
+    padding-left: var(--cf-sp-6);
+  }
+}
+
+/* 订阅明细的节点表：节点 | 变更项 | 变更前 | 变更后。一个节点一个 tbody，节点名跨行；
+ * 列宽按比例固定，变更前、变更后两列等宽，长值在格内折行，不会把表撑宽。 */
+.push-diff-nodes {
+  table-layout: fixed;
+  font-size: 12px;
+}
+
+.push-diff-nodes > tbody th {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--foreground);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.push-diff-nodes > tbody td {
+  overflow-wrap: anywhere;
+}
+
+@media (width >= 768px) {
+  .push-diff-nodes th,
+  .push-diff-nodes td {
+    padding: 5px 10px;
+    border-bottom: 0;
+    vertical-align: top;
+  }
+
+  .push-diff-nodes > thead th {
+    padding-top: 2px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--cf-bd);
+  }
+
+  .push-diff-nodes > tbody > tr:first-child > * {
+    padding-top: 8px;
+  }
+
+  .push-diff-nodes > tbody > tr:last-child > *,
+  .push-diff-nodes > tbody th {
+    padding-bottom: 8px;
+  }
+
+  .push-diff-nodes > tbody + tbody > tr:first-child > * {
+    border-top: 1px solid var(--cf-bd);
+  }
+
+  /* 悬停时整个节点（跨行的节点名和它的所有字段）一起高亮 */
+  .push-diff-nodes > tbody > tr:hover {
+    background: none;
+  }
+
+  .push-diff-nodes > tbody:hover {
+    background: var(--cf-s2);
+  }
 }
 
 .cf-table__foot {
@@ -564,39 +668,129 @@ body {
     min-width: 0;
   }
 
-  /* 待推送的变更：名称与变化同排，摘要、原值、新值各占一行；明细紧跟在所属文件或配置项下。 */
-  .push-diff-files tbody tr,
-  .push-diff-config tbody tr {
+  /* 待推送的变更：文件名与变化同排，摘要占一行；明细紧跟在所属文件或配置项下。 */
+  .push-diff-files > tbody > tr {
     grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'file change' 'summary summary';
     gap: var(--cf-sp-2);
     padding: var(--cf-sp-3);
   }
 
-  .push-diff-files tbody tr { grid-template-areas: 'file change' 'summary summary'; }
-  .push-diff-files td:nth-child(1) { grid-area: file; }
-  .push-diff-files td:nth-child(2) { grid-area: change; }
-  .push-diff-files td:nth-child(3) { grid-area: summary; }
-  .push-diff-config tbody tr { grid-template-areas: 'key change' 'old old' 'new new'; }
-  .push-diff-config td:nth-child(1) { grid-area: key; }
-  .push-diff-config td:nth-child(2) { grid-area: change; }
-  .push-diff-config td:nth-child(3) { grid-area: old; }
-  .push-diff-config td:nth-child(4) { grid-area: new; }
+  .push-diff-files > tbody > tr > td:nth-child(1) { grid-area: file; }
+  .push-diff-files > tbody > tr > td:nth-child(2) { grid-area: change; }
+  .push-diff-files > tbody > tr > td:nth-child(3) { grid-area: summary; }
 
-  .push-diff-files tbody tr.push-diff-more,
-  .push-diff-files tbody tr.push-diff-detail,
-  .push-diff-config tbody tr.push-diff-detail {
+  /* 表 2：组标题作分隔，每条记录一行「配置项：原值 → 新值」，变化胶囊在右上角，长值折行。 */
+  .push-diff-config > tbody > tr {
+    display: block;
+    padding: var(--cf-sp-2) var(--cf-sp-3);
+    line-height: 1.75;
+  }
+
+  .push-diff-config > tbody > tr > td {
+    display: inline;
+  }
+
+  /* 胶囊固定在记录右上角，右侧留出它的宽度：长配置项占满第一行时胶囊也不会掉到下一行 */
+  .push-diff-config > tbody > tr[data-key] {
+    position: relative;
+    padding-right: calc(var(--cf-sp-3) + 56px);
+  }
+
+  .push-diff-config > tbody > tr > td.push-diff-change {
+    display: block;
+    position: absolute;
+    top: var(--cf-sp-2);
+    right: var(--cf-sp-3);
+  }
+
+  .push-diff-config > tbody > tr.is-nested {
+    padding-left: var(--cf-sp-6);
+  }
+
+  .push-diff-config > tbody + tbody {
+    border-top: 1px solid var(--cf-bd);
+  }
+
+  .push-diff-config > tbody > tr.push-diff-group {
+    padding: 0 var(--cf-sp-1);
+    background: var(--muted);
+  }
+
+  .push-diff-config > tbody > tr.push-diff-group > th,
+  .push-diff-config > tbody > tr.push-diff-block > th {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  .push-diff-config > tbody > tr.push-diff-block {
+    padding-bottom: 0;
+  }
+
+  .push-diff-config > tbody > tr.push-diff-block + tr {
+    border-top: 0;
+  }
+
+  .push-diff-config > tbody > tr.push-diff-detail > td {
+    display: block;
+  }
+
+  .push-diff-group-toggle {
+    min-height: var(--cf-touch);
+  }
+
+  .push-diff-files > tbody > tr.push-diff-more,
+  .push-diff-files > tbody > tr.push-diff-detail,
+  .push-diff-config > tbody > tr.push-diff-detail {
     display: block;
   }
 
   /* 新增项没有原值、删除项没有新值：手机上不占一行。 */
-  .push-diff-config td.push-diff-empty {
+  .push-diff-config td.push-diff-empty,
+  .push-diff-nodes td.push-diff-empty {
     display: none;
   }
 
-  .push-diff-files tbody tr.push-diff-detail,
-  .push-diff-config tbody tr.push-diff-detail {
+  .push-diff-files > tbody > tr.push-diff-detail,
+  .push-diff-config > tbody > tr.push-diff-detail {
     padding-top: 0;
     border-top: 0;
+  }
+
+  /* 节点表：一个节点一条记录，节点名作标题，下面每行「变更项：变更前 → 变更后」，长值折行。 */
+  .push-diff-nodes > tbody {
+    padding: var(--cf-sp-2) 0;
+  }
+
+  .push-diff-nodes > tbody:first-of-type {
+    padding-top: 0;
+  }
+
+  .push-diff-nodes > tbody + tbody {
+    border-top: 1px solid var(--cf-bd);
+  }
+
+  .push-diff-nodes > tbody > tr {
+    display: block;
+    padding: 0;
+  }
+
+  .push-diff-nodes > tbody > tr + tr {
+    border-top: 0;
+  }
+
+  .push-diff-nodes > tbody > tr > th {
+    display: block;
+    padding: 0 0 var(--cf-sp-1);
+    border: 0;
+    font-size: 13px;
+  }
+
+  .push-diff-nodes > tbody > tr > td {
+    display: inline;
+    line-height: 1.75;
   }
 }
 

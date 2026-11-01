@@ -114,47 +114,69 @@
             <p v-if="configNoticeText" class="m-0 text-[12.5px] text-muted-foreground" data-push-diff-config-notice>{{ configNoticeText }}</p>
             <div v-if="items.length" class="cf-table-wrap">
               <table class="cf-table cf-mobile-records push-diff-config" data-push-diff-config>
+                <colgroup><col class="w-[36%]"><col class="w-20"><col><col></colgroup>
                 <thead>
-                  <tr><th class="w-[30%]">配置项</th><th class="w-20">变化</th><th class="min-w-24">原值</th><th class="min-w-24">新值</th></tr>
+                  <tr><th scope="col">配置项</th><th scope="col">变化</th><th scope="col">原值</th><th scope="col">新值</th></tr>
                 </thead>
-                <tbody>
-                  <template v-for="(item, index) in items" :key="item.key">
-                    <tr :data-key="item.key" :class="{ 'is-expanded': item.list && expanded.has(index) }">
-                      <td class="align-top font-mono text-[12px] break-all">{{ item.key }}</td>
-                      <td class="align-top"><span :class="['chip', CHANGE_CHIPS[item.change]]">{{ CHANGE_LABELS[item.change] }}</span></td>
-                      <td data-label="原值" :class="['align-top', valueText(item, 'old').empty && 'push-diff-empty']">
-                        <span :class="valueClass(item, 'old')"><PushDiffText :value="valueText(item, 'old').value" :hidden="hideSecrets" /></span>
-                      </td>
-                      <td data-label="新值" :class="['align-top', !item.list && valueText(item, 'new').empty && 'push-diff-empty']">
-                        <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                          <span v-if="item.list" class="text-[12.5px]" data-list-summary>
-                            <span v-for="(part, partIndex) in listSegments(item.list)" :key="partIndex" :class="TONE_CLASSES[part.tone]">{{ part.text }}</span>
-                          </span>
-                          <span v-else :class="valueClass(item, 'new')"><PushDiffText :value="valueText(item, 'new').value" :hidden="hideSecrets" /></span>
-                          <Button v-if="item.list?.entries?.length" variant="ghost" size="xs" class="-my-1 text-primary-accent max-md:-my-2"
-                            :aria-expanded="expanded.has(index)" :aria-controls="`push-diff-detail-${index}`" @click="toggle(index)">
-                            <ChevronDown :class="['size-3 transition-transform', expanded.has(index) && 'rotate-180']" />
-                            {{ expanded.has(index) ? '收起明细' : '展开明细' }}
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                    <tr v-if="item.list && expanded.has(index)" :id="`push-diff-detail-${index}`" class="push-diff-detail">
-                      <td colspan="4">
-                        <ul class="m-0 flex list-none flex-col gap-1 rounded-md border border-border bg-background/50 p-2.5 font-mono text-[12px] leading-relaxed">
-                          <li v-for="(entry, entryIndex) in item.list.entries" :key="entryIndex" class="min-w-0 break-all">
-                            <span :class="ENTRY_TONES[entry.change]">{{ ENTRY_SIGNS[entry.change] }} <PushDiffText :value="entry.text" :hidden="hideSecrets" /></span>
-                            <ul v-if="entry.fields?.length" class="m-0 mt-0.5 flex list-none flex-col gap-0.5 border-l border-border py-0.5 pl-3 text-muted-foreground">
-                              <li v-for="(field, fieldIndex) in entry.fields" :key="fieldIndex"><PushDiffText :pieces="fieldPieces(field)" :hidden="hideSecrets" /></li>
-                              <li v-if="entry.fields_omitted">另有 <span class="num">{{ entry.fields_omitted }}</span> 处变化</li>
+                <!-- 按顶层键分组：组标题可点开 / 收起；同一个映射块有多处改动时加块标题，组内只写相对路径 -->
+                <tbody v-for="group in groups" :key="group.id" :data-config-group="group.id || 'basic'">
+                  <tr class="push-diff-group">
+                    <th colspan="4" scope="rowgroup">
+                      <Button variant="ghost" size="sm" class="push-diff-group-toggle" :aria-expanded="!isFolded(group)" data-group-toggle
+                        @click="toggleGroup(group)">
+                        <ChevronRight :class="['size-3.5 shrink-0 text-muted-foreground transition-transform', !isFolded(group) && 'rotate-90']" />
+                        <!-- 同一行写出空格：读屏和复制得到「DNS dns 新增 3 项」，而不是粘在一起 -->
+                        <span class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-left"><span class="text-[13px] font-semibold text-foreground">{{ group.name }}</span> <span v-if="group.raw" class="font-mono text-[11.5px] font-normal text-muted-foreground">{{ group.raw }}</span> <span class="text-[12px] font-normal text-muted-foreground" data-group-counts>{{ countsText(group.counts) }}</span></span>
+                      </Button>
+                    </th>
+                  </tr>
+                  <template v-if="!isFolded(group)">
+                    <template v-for="line in group.lines" :key="line.kind === 'row' ? line.row.index : `block-${line.name}`">
+                      <tr v-if="line.kind === 'block'" class="push-diff-block" data-config-block>
+                        <th colspan="4"><span class="font-mono"><PushDiffText :value="line.name" :hidden="hideSecrets" breaks /></span> · {{ countsText(line.counts) }}</th>
+                      </tr>
+                      <template v-else>
+                        <tr :data-key="line.row.item.key" :class="{ 'is-expanded': line.row.item.list && expanded.has(line.row.index), 'is-nested': line.row.nested }">
+                          <td class="push-diff-key align-top font-mono text-[12px] wrap-break-word" data-config-label>
+                            <PushDiffText :value="line.row.label" :hidden="hideSecrets" breaks /><span class="hidden max-md:inline" aria-hidden="true">：</span>
+                          </td>
+                          <td class="push-diff-change align-top"><span :class="['chip', CHANGE_CHIPS[line.row.item.change]]">{{ CHANGE_LABELS[line.row.item.change] }}</span></td>
+                          <td :class="['align-top', valueText(line.row.item, 'old').empty && 'push-diff-empty']" data-config-old>
+                            <span :class="valueClass(line.row.item, 'old')"><PushDiffText :value="valueText(line.row.item, 'old').value" :hidden="hideSecrets" breaks /></span>
+                          </td>
+                          <td :class="['align-top', !line.row.item.list && valueText(line.row.item, 'new').empty && 'push-diff-empty']" data-config-new>
+                            <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 max-md:inline">
+                              <span v-if="!valueText(line.row.item, 'old').empty" class="hidden max-md:inline" aria-hidden="true"> → </span>
+                              <span v-if="line.row.item.list" class="text-[12.5px]" data-list-summary>
+                                <span v-for="(part, partIndex) in listSegments(line.row.item.list)" :key="partIndex" :class="TONE_CLASSES[part.tone]">{{ part.text }}</span>
+                              </span>
+                              <span v-else :class="valueClass(line.row.item, 'new')"><PushDiffText :value="valueText(line.row.item, 'new').value" :hidden="hideSecrets" breaks /></span>
+                              <Button v-if="line.row.item.list?.entries?.length" variant="ghost" size="xs" class="-my-1 text-primary-accent max-md:my-0 max-md:ml-1"
+                                :aria-expanded="expanded.has(line.row.index)" :aria-controls="`push-diff-detail-${line.row.index}`" @click="toggle(line.row.index)">
+                                <ChevronDown :class="['size-3 transition-transform', expanded.has(line.row.index) && 'rotate-180']" />
+                                {{ expanded.has(line.row.index) ? '收起明细' : '展开明细' }}
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                        <tr v-if="line.row.item.list && expanded.has(line.row.index)" :id="`push-diff-detail-${line.row.index}`" class="push-diff-detail">
+                          <td colspan="4">
+                            <ul class="m-0 flex list-none flex-col gap-1 rounded-md border border-border bg-background/50 p-2.5 font-mono text-[12px] leading-relaxed">
+                              <li v-for="(entry, entryIndex) in line.row.item.list.entries" :key="entryIndex" class="min-w-0 break-all">
+                                <span :class="ENTRY_TONES[entry.change]">{{ ENTRY_SIGNS[entry.change] }} <PushDiffText :value="entry.text" :hidden="hideSecrets" /></span>
+                                <ul v-if="entry.fields?.length" class="m-0 mt-0.5 flex list-none flex-col gap-0.5 border-l border-border py-0.5 pl-3 text-muted-foreground">
+                                  <li v-for="(field, fieldIndex) in entry.fields" :key="fieldIndex"><PushDiffText :pieces="fieldPieces(field)" :hidden="hideSecrets" /></li>
+                                  <li v-if="entry.fields_omitted">另有 <span class="num">{{ entry.fields_omitted }}</span> 处变化</li>
+                                </ul>
+                              </li>
                             </ul>
-                          </li>
-                        </ul>
-                        <p v-if="item.list.omitted" class="m-0 mt-1.5 text-[12px] text-muted-foreground">
-                          还有 <span class="num">{{ item.list.omitted }}</span> 条未列出{{ rawLines.length ? '，完整内容见下方「原始差异」' : '' }}。
-                        </p>
-                      </td>
-                    </tr>
+                            <p v-if="line.row.item.list.omitted" class="m-0 mt-1.5 text-[12px] text-muted-foreground">
+                              还有 <span class="num">{{ line.row.item.list.omitted }}</span> 条未列出{{ rawLines.length ? '，完整内容见下方「原始差异」' : '' }}。
+                            </p>
+                          </td>
+                        </tr>
+                      </template>
+                    </template>
                   </template>
                 </tbody>
               </table>
@@ -199,8 +221,8 @@ import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, FileQuestion, Info
 import type { Agent } from '@/types'
 import { agentPushDiffApi, type PushDiffChange, type PushDiffItem, type PushDiffResponse } from '@/api/agentPushDiff'
 import {
-  CHANGE_CHIPS, CHANGE_LABELS, configNotice, contentNotice, diffLineTone, fieldPieces, fileRole, fileTitle, listSegments,
-  summarySegments, textOf, unavailableCopy, valueText, type DiffLineTone, type Tone,
+  CHANGE_CHIPS, CHANGE_LABELS, configGroups, configNotice, contentNotice, countsText, diffLineTone, fieldPieces, fileRole,
+  fileTitle, listSegments, summarySegments, textOf, unavailableCopy, valueText, type ConfigGroup, type DiffLineTone, type Tone,
 } from '@/lib/agentPushDiff'
 import { checkedAgo } from '@/lib/format'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -254,6 +276,9 @@ const unavailable = computed(() => result.value && (result.value.status === 'nev
 const notice = computed(() => result.value ? contentNotice(result.value) : '')
 const configNoticeText = computed(() => result.value ? configNotice(result.value) : '')
 const items = computed<PushDiffItem[]>(() => result.value?.config?.items || [])
+const groups = computed(() => configGroups(items.value))
+// 表 2 中与默认展开状态相反的组（按顶层键；改动多的组默认收起）
+const groupsToggled = ref(new Set<string>())
 const rawLines = computed(() => result.value?.config?.raw?.lines || [])
 const rawRows = computed(() => rawOpen.value ? rawLines.value.map(line => {
   const text = textOf(line, false)
@@ -275,7 +300,8 @@ const pushOffered = computed(() => result.value?.status === 'changed' || Boolean
 
 function valueClass(item: PushDiffItem, side: 'old' | 'new') {
   if (valueText(item, side).empty) return 'text-[12.5px] text-muted-foreground'
-  return 'font-mono text-[12px] break-all'
+  // 在「.」「-」「/」处断行；没有这些位置的长串（如令牌）才任意处折行
+  return 'font-mono text-[12px] wrap-anywhere'
 }
 
 function toggled<T>(set: Set<T>, key: T) {
@@ -291,6 +317,12 @@ function toggle(index: number) {
 
 function toggleFile(path: string) {
   filesOpen.value = toggled(filesOpen.value, path)
+}
+
+const isFolded = (group: ConfigGroup) => group.folded !== groupsToggled.value.has(group.id)
+
+function toggleGroup(group: ConfigGroup) {
+  groupsToggled.value = toggled(groupsToggled.value, group.id)
 }
 
 function wait(ms: number, signal: AbortSignal) {
@@ -312,6 +344,7 @@ async function load(keepOpen = false) {
   result.value = null
   stale.value = false
   expanded.value = new Set()
+  groupsToggled.value = new Set()
   filesOpen.value = new Set()
   rawOpen.value = false
   const started = Date.now()

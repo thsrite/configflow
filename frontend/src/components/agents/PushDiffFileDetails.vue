@@ -28,18 +28,15 @@
     <div class="-mx-1 flex max-h-[420px] min-w-0 flex-col gap-2.5 overflow-y-auto overscroll-contain px-1 max-sm:max-h-[60dvh]"
       tabindex="0" role="region" :aria-label="`${unit.noun}明细`" data-details-scroll>
       <section v-for="group in details.groups" :key="group.change" :data-group="group.change">
-        <p class="m-0 text-[12px] text-muted-foreground">
+        <p :id="`${uid}-${group.change}`" class="m-0 text-[12px] text-muted-foreground">
           {{ CHANGE_LABELS[group.change] }} <span class="num">{{ group.total }}</span> {{ unit.unit }}{{ unit.noun }}<template v-if="query"> · <template v-if="view(group).loading && !view(group).entries.length">正在搜索…</template><template v-else>匹配 <span class="num">{{ view(group).total }}</span> {{ unit.unit }}</template></template>
         </p>
-        <ul v-if="view(group).entries.length" class="m-0 mt-1 flex list-none flex-col gap-1 p-0 font-mono text-[12px] leading-relaxed">
+        <!-- 节点用表格（节点 | 变更项 | 变更前 | 变更后），规则仍是一行一条的 + / − 列表 -->
+        <PushDiffNodeTable v-if="details.kind === 'nodes' && view(group).entries.length" class="mt-1" :entries="view(group).entries"
+          :hidden="hidden" :labelledby="`${uid}-${group.change}`" />
+        <ul v-else-if="view(group).entries.length" class="m-0 mt-1 flex list-none flex-col gap-1 p-0 font-mono text-[12px] leading-relaxed">
           <li v-for="(entry, index) in view(group).entries" :key="index" class="min-w-0 break-all">
             <span :class="ENTRY_TONES[entry.change]">{{ ENTRY_SIGNS[entry.change] }} <PushDiffText :value="entry.text" :hidden="hidden" /></span>
-            <span v-if="entry.nth" class="font-sans text-muted-foreground">{{ nthText(entry.nth) }}</span>
-            <span v-if="entry.info" class="text-muted-foreground"> · <PushDiffText :value="entry.info" :hidden="hidden" /></span>
-            <ul v-if="entry.fields?.length" class="m-0 mt-0.5 flex list-none flex-col gap-0.5 border-l border-border py-0.5 pl-3 text-muted-foreground">
-              <li v-for="(field, fieldIndex) in entry.fields" :key="fieldIndex"><PushDiffText :pieces="fieldPieces(field)" :hidden="hidden" /></li>
-              <li v-if="entry.fields_omitted">另有 <span class="num">{{ entry.fields_omitted }}</span> 处变化</li>
-            </ul>
           </li>
         </ul>
         <p v-if="!pageable && group.omitted" class="m-0 mt-1 text-[12px] text-muted-foreground">
@@ -73,14 +70,16 @@
 </template>
 
 <script setup lang="ts">
-// 「待推送的变更」表 1 里订阅、规则集展开的明细：按新增、删除、修改分组；接口只带每组前 20 条，
-// 其余用「加载更多」和服务端搜索按页读取（带对比结果的版本，结果更新后提示重新加载）；敏感片段随开关隐藏。
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+// 「待推送的变更」表 1 里订阅、规则集展开的明细：按新增、删除、修改分组，节点每组一张表，规则每组一个列表；
+// 接口只带每组前 20 条，其余用「加载更多」和服务端搜索按页读取（带对比结果的版本，结果更新后提示重新加载）；
+// 敏感片段随开关隐藏。
+import { computed, nextTick, onBeforeUnmount, reactive, ref, useId, watch } from 'vue'
 import { Info, Loader2, RefreshCw, Search, X } from '@lucide/vue'
 import { agentPushDiffApi, type PushDiffChange, type PushDiffDetailGroup, type PushDiffFileDetails, type PushDiffListEntry } from '@/api/agentPushDiff'
 import {
-  CHANGE_LABELS, MAX_QUERY_CHARS, PAGE_SIZE, SEARCH_DELAY_MS, detailNotes, detailUnit, fieldPieces, groupPaging, nthText,
+  CHANGE_LABELS, MAX_QUERY_CHARS, PAGE_SIZE, SEARCH_DELAY_MS, detailNotes, detailUnit, groupPaging,
 } from '@/lib/agentPushDiff'
+import PushDiffNodeTable from '@/components/agents/PushDiffNodeTable.vue'
 import PushDiffText from '@/components/agents/PushDiffText.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -113,6 +112,8 @@ interface ListState {
   loadedMore: boolean
 }
 
+// 分组标题的 id 前缀：节点表用它作名称
+const uid = useId()
 const unit = computed(() => detailUnit(props.details.kind))
 const pageable = computed(() => Boolean(props.details.paging && props.version))
 // 还有没随接口返回的条目时才需要搜索
