@@ -27,7 +27,7 @@ beforeAll(() => {
     addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn()
   }) })
   Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() })
-  // jsdom has no canvas drawing surface; the real topology still renders its DOM.
+  // jsdom has no canvas drawing surface.
   Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => null })
 })
 
@@ -83,33 +83,15 @@ async function render(item = agent(), profiles: Record<string, unknown>[] = [{ i
   return { wrapper, footer, title: () => footer.get('[title]').attributes('title') }
 }
 
-describe('Agent topology disclosure', () => {
-  it('starts collapsed on phones and toggles the original map without hiding device status', async () => {
-    narrowViewport = true
+describe('Agent page layout', () => {
+  it('shows the device cards directly, without a delivery topology', async () => {
     const { wrapper } = await render([
       agent(),
       agent({ id: 'offline-agent', name: 'Offline test', status: 'offline' })
     ] as any)
-    const details = wrapper.get('details[data-agent-topology]')
-    const element = details.element as HTMLDetailsElement
-    const map = details.get('canvas').element
-    expect(element.open).toBe(false)
-    expect(details.get('summary').text()).toContain('2 台 · 1 在线')
+    expect(wrapper.find('[data-agent-topology]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Offline test')
     expect(wrapper.get('footer').text()).toContain('已同步')
-
-    await details.get('summary').trigger('click')
-    expect(element.open).toBe(true)
-    expect(details.get('canvas').element).toBe(map)
-    expect(details.text()).toContain('Offline test')
-
-    await details.get('summary').trigger('click')
-    expect(element.open).toBe(false)
-    expect(wrapper.get('footer').text()).toContain('已同步')
-  })
-
-  it('starts expanded on desktop', async () => {
-    const { wrapper } = await render()
-    expect((wrapper.get('details[data-agent-topology]').element as HTMLDetailsElement).open).toBe(true)
   })
 })
 
