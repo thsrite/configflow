@@ -412,6 +412,7 @@
       </div>
     </div>
 
+    <NodeDeleteDialog ref="nodeDeleteDialog" @deleted="onNodesDeleted" />
     <!-- 节点字符串 -->
     <Dialog :open="!!viewingNode" @update:open="v => !v && (viewingNode = null)">
       <DialogContent class="glass-strong max-w-[680px]">
@@ -579,7 +580,8 @@ import NodeLatencySettings from '@/components/nodes/NodeLatencySettings.vue'
 import ReorderBar from '@/components/shell/ReorderBar.vue'
 import DragHandle from '@/components/shell/DragHandle.vue'
 import { useReorder } from '@/composables/useReorder'
-import { confirmDanger, notify } from '@/lib/feedback'
+import { notify } from '@/lib/feedback'
+import NodeDeleteDialog from '@/components/nodes/NodeDeleteDialog.vue'
 import { listItemStyle } from '@/lib/motion'
 import { nodeApi } from '@/api'
 import type { ProxyNode } from '@/types'
@@ -611,6 +613,7 @@ const batchForm = ref({
 
 // 批量删除相关
 const selectedNodeIds = ref<Set<string>>(new Set())
+const nodeDeleteDialog = ref<InstanceType<typeof NodeDeleteDialog> | null>(null)
 const isAllSelected = computed(() => {
   return visibleNodes.value.length > 0 && visibleNodes.value.every(n => selectedNodeIds.value.has(n.id))
 })
@@ -795,46 +798,20 @@ const toggleSelectAll = () => {
 }
 
 // 批量删除
-const batchDeleteNodes = async () => {
+const batchDeleteNodes = () => {
   if (selectedNodeIds.value.size === 0) {
     notify.warning('请先选择要删除的节点')
     return
   }
 
-  const confirmed = await confirmDanger(
-    `确定删除选中的 ${selectedNodeIds.value.size} 个节点吗？删除后无法恢复。仍被配置或聚合使用的节点无法删除，请先取消相关使用。`,
-    { title: '批量删除节点' }
-  )
-  if (!confirmed) return
+  nodeDeleteDialog.value?.show(Array.from(selectedNodeIds.value))
+}
 
-  try {
-    const nodeIdsToDelete = Array.from(selectedNodeIds.value)
-    let successCount = 0
-    let failCount = 0
-
-    // 批量删除节点
-    for (const nodeId of nodeIdsToDelete) {
-      try {
-        await nodeApi.delete(nodeId)
-        successCount++
-      } catch (error: any) {
-        failCount++
-        notify.error(error?.response?.data?.message || '删除节点失败')
-      }
-    }
-
-    if (failCount === 0) notify.success(`批量删除成功！已删除 ${successCount} 个节点`)
-    else notify.warning(`批量删除完成！成功 ${successCount} 个，失败 ${failCount} 个`)
-
-    // 清空选择并刷新列表
-    selectedNodeIds.value.clear()
-    loadNodes()
-  } catch (error: any) {
-    if (error !== 'cancel' && error !== 'close') {
-      notify.error('批量删除失败')
-      console.error('批量删除节点失败:', error)
-    }
-  }
+const onNodesDeleted = (ids: string[]) => {
+  const remaining = new Set(selectedNodeIds.value)
+  ids.forEach(id => remaining.delete(id))
+  selectedNodeIds.value = remaining
+  void loadNodes()
 }
 
 const handleToggle = (node: ProxyNode) => {
@@ -1233,26 +1210,7 @@ const saveBatchNodes = async () => {
   }
 }
 
-const deleteNode = async (row: ProxyNode) => {
-  const confirmed = await confirmDanger(
-    '确定删除该节点吗？删除后无法恢复。仍被配置或聚合使用的节点无法删除，请先取消相关使用。',
-    { title: '删除节点' }
-  )
-  if (!confirmed) return
-
-  try {
-    // 先删除节点
-    await nodeApi.delete(row.id)
-
-    notify.success('删除成功')
-    loadNodes()
-  } catch (error: any) {
-    if (error !== 'cancel' && error !== 'close') {
-      notify.error(error?.response?.data?.message || '删除失败')
-      console.error('删除节点失败:', error)
-    }
-  }
-}
+const deleteNode = (row: ProxyNode) => nodeDeleteDialog.value?.show([row.id])
 
 
 
