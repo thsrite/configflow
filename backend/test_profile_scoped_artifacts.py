@@ -80,7 +80,7 @@ def test_generated_configuration_is_written_under_selected_profile(tmp_path, mon
     repository = setup_repository(tmp_path, monkeypatch)
     app = Flask(__name__)
     register_blueprints(app)
-    monkeypatch.setattr("backend.routes.generate.generate_mihomo_config", lambda data, base_url="": "profile-config")
+    monkeypatch.setattr("backend.routes.generate.generate_mihomo_config", lambda data, base_url="", **kwargs: "profile-config")
 
     response = app.test_client().post(
         "/api/generate/mihomo",

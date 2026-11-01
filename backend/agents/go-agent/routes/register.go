@@ -17,6 +17,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *Config) {
 	mux.HandleFunc("/api/oxidns/cache", cache)
 	mux.HandleFunc("/api/oxidns/cache/flush", cache)
 	mux.HandleFunc("/api/capabilities", AuthMiddleware(cfg, CapabilitiesHandler(cfg)))
+	mux.HandleFunc("/api/config/final-preview", AuthMiddleware(cfg, FinalConfigPreviewHandler(cfg)))
 	mux.HandleFunc("/api/rule-sync/snapshot", oxidnsMonitorAuth(cfg, RuleSyncSnapshotHandler(cfg)))
 	mux.HandleFunc("/api/dns/listener", AuthMiddleware(cfg, DNSListenerHandler(cfg)))
 	mux.HandleFunc("/api/dns/active", AuthMiddleware(cfg, DNSActiveHandler(cfg)))

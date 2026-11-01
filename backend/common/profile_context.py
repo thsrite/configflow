@@ -123,7 +123,8 @@ def install_profile_context(app) -> None:
                 sanitized = sanitize_external_payload(payload)
                 # These authenticated editor endpoints must round-trip native
                 # YAML and managed asset bytes, including rule capability URLs.
-                # Preview/share/export endpoints remain fully sanitized.
+                # Ordinary metadata/share responses remain fully sanitized;
+                # exact generated artifacts have a narrow content exception below.
                 if response.status_code == 200 and isinstance(payload, dict):
                     if endpoint in ('oxidns.render_oxidns_draft', 'profiles.profile_render_oxidns_draft'):
                         if isinstance(payload.get('config'), str):
@@ -165,10 +166,11 @@ def install_profile_context(app) -> None:
                     and isinstance(payload.get("token"), str)
                 ):
                     sanitized["token"] = payload["token"]
-                # An authenticated Agent pull is a generated artifact, not metadata.
+                # Authenticated pulls/final previews are generated artifacts, not metadata.
                 # Keep its bytes and checksum consistent; other fields stay scrubbed.
                 if (
-                    endpoint == "agents.get_agent_config"
+                    endpoint in {"agents.get_agent_config", "agents.generate_final_agent_config",
+                                 "generate.generate_artifact", "profiles.profile_generate_artifact"}
                     and response.status_code == 200
                     and isinstance(payload, dict)
                     and payload.get("success") is True
