@@ -1,5 +1,6 @@
 <template>
   <div class="oxidns-overview min-w-0 space-y-4 max-sm:space-y-3">
+    <p v-if="overview.statistics?.publication_count" class="m-0 text-xs leading-relaxed text-muted-foreground">已接续 {{ overview.statistics.publication_count }} 次配置发布，沿用原统计起点；发布切换期间可能有少量漏计。</p>
     <p v-if="overview.statistics?.partial" class="m-0 text-xs leading-relaxed text-warning-accent">部分指标缺少基线或插件已重新计数，本轮统计可能不完整；无法确认的值显示「—」。</p>
     <div class="grid min-w-0 grid-cols-2 gap-3 max-sm:gap-2 xl:grid-cols-3">
       <OxiDNSMetric label="DNS 请求" :value="overview.metrics.requests_total" :hint="periodLabel" />

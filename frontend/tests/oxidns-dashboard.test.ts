@@ -70,6 +70,16 @@ function controls(data = overview()) {
 }
 
 describe('OxiDNS dashboard periods and availability', () => {
+  it('explains publication continuity without presenting a new statistics period', () => {
+    const data = overview()
+    data.statistics = { ...data.statistics!, reason: 'publication', publication_count: 2 }
+    const wrapper = panel(data)
+    expect(wrapper.text()).toContain('已接续 2 次配置发布，沿用原统计起点')
+    expect(wrapper.text()).toContain('发布切换期间可能有少量漏计')
+    expect(helpText(controls(data), '统计周期')).toContain('配置发布后继续累计')
+    expect(wrapper.text()).toContain('自本轮统计开始以来')
+  })
+
   it('disables recorder selection only while statistics are resetting', async () => {
     const data = overview()
     data.recorders = ['query_recorder', 'other_recorder']

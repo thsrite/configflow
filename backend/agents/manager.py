@@ -659,6 +659,9 @@ class AgentManager:
             unchanged = self._unchanged_deployment(record, agent_id, deployment_id)
             finished.clear()
             if unchanged is not None:
+                if unchanged.get('service_type') == 'oxidns':
+                    from .oxidns_publication_stats import complete
+                    complete(self, agent_id, deployment_id, unchanged.get('status'))
                 return unchanged
         result = self._update_agents(record)
         for label, state in finished[-1:]:
@@ -666,6 +669,9 @@ class AgentManager:
             detail = state.get('error') or state.get('rollback_error') or state.get('message') or ''
             logger.log(level, 'Agent %s %s（任务 %s）%s', label, text, deployment_id[:12],
                        '：' + log_text(detail, 300) if detail and state['status'] != 'succeeded' else '')
+        if result.get('service_type') == 'oxidns':
+            from .oxidns_publication_stats import complete
+            complete(self, agent_id, deployment_id, result.get('status'))
         return result
 
     def _unchanged_deployment(self, record, agent_id, deployment_id):
@@ -837,6 +843,9 @@ class AgentManager:
                     return self._update_agents(reject_unchecked)
         if state.get('http_status') or state.get('status') != 'ready':
             return {**state, 'success': False, 'message': 'Deployment must be ready before activation', 'http_status': 409}
+        if agent.get('service_type') == 'oxidns':
+            from .oxidns_publication_stats import checkpoint
+            checkpoint(self, agent_id, deployment_id, (state.get('prepared_content') or {}).get('deployed_config_sha256'))
         try:
             result = self._deployment_request(agent, 'post', f'deployments/{deployment_id}/activate')
             if result.get('http_status'):
@@ -943,6 +952,10 @@ class AgentManager:
                     'config_path': manifest['config_path'], 'base_url': base_url,
                     # Explain later drift: which files changed, and whether the draft did.
                     'files': deployment_content_digests(comparison_manifest)}
+        if manifest['service_type'] == 'oxidns':
+            # Monitoring identifies the exact installed YAML, not the short
+            # display version or the comparison digest without managed hooks.
+            prepared['deployed_config_sha256'] = next(item['sha256'] for item in manifest['files'] if item['role'] == 'config')
         if source is not None and manifest['service_type'] == 'oxidns':
             from .dns_follow import settings_digest
             prepared['settings_digest'] = settings_digest(source)
@@ -1042,6 +1055,10 @@ class AgentManager:
                 'message': f'正在上传发布包（{len(bundle.manifest["files"])} 个文件，{len(bundle.archive):,} 字节）',
                 'sha256': bundle.sha256, 'source_sha256': content_bundle.sha256, 'config_version': bundle.config_version,
                 'config_revision': config_revision})
+            if activate and agent.get('service_type') == 'oxidns':
+                from .oxidns_publication_stats import checkpoint
+                checkpoint(self, agent_id, deployment_id,
+                           next(item['sha256'] for item in bundle.manifest['files'] if item['role'] == 'config'))
             result = self._deployment_request(agent, 'post', 'deployments', data=bundle.archive, timeout=(10, 120), headers={
                 'Content-Type': 'application/gzip', 'X-Deployment-ID': deployment_id,
                 'X-Content-SHA256': bundle.sha256, 'X-Activate': 'true' if activate else 'false'})

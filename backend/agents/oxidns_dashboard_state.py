@@ -13,7 +13,7 @@ import time
 MAX_STATE_BYTES = 4 * 1024 * 1024
 MAX_ROWS = 10_000
 LOCK_TIMEOUT = 5
-_REASONS = {'initial', 'manual', 'core_changed', 'configuration_changed', 'target_changed', 'counters_changed'}
+_REASONS = {'initial', 'manual', 'core_changed', 'configuration_changed', 'target_changed', 'counters_changed', 'publication'}
 # A fixed set keeps lock bookkeeping bounded as Agents are added and removed.
 _LOCKS = tuple(threading.RLock() for _ in range(64))
 _FIELDS = {
@@ -43,11 +43,16 @@ def _finite(value):
 
 
 def validate_state(value):
-    if not isinstance(value, dict) or set(value) != {
-            'schema', 'generation', 'started_at_ms', 'reason', 'target',
-            'instance_id', 'source_revision', 'runtime_revision', 'baseline'}:
+    if not isinstance(value, dict):
         return False
-    if value.get('schema') != 1 or type(value.get('schema')) is not int:
+    fields = {
+            'schema', 'generation', 'started_at_ms', 'reason', 'target',
+            'instance_id', 'source_revision', 'runtime_revision', 'baseline'}
+    if value.get('schema') == 2:
+        fields |= {'carried', 'carried_partial', 'publication_count', 'pending'}
+    if set(value) != fields:
+        return False
+    if value.get('schema') not in (1, 2) or type(value.get('schema')) is not int:
         return False
     if any(not isinstance(value.get(key), str) or not re.fullmatch(pattern, value[key])
            for key, pattern in (('generation', r'[0-9a-f]{32}'), ('target', r'[0-9a-f]{64}'),
@@ -57,7 +62,28 @@ def validate_state(value):
             or value.get('reason') not in _REASONS or not isinstance(value.get('instance_id'), str)
             or not 0 < len(value['instance_id']) <= 128):
         return False
-    baseline = value.get('baseline')
+    if not validate_observations(value['baseline']):
+        return False
+    if value['schema'] == 1:
+        return True
+    if (not validate_observations(value['carried']) or type(value['carried_partial']) is not bool
+            or type(value['publication_count']) is not int or not 0 <= value['publication_count'] <= 2 ** 53 - 1):
+        return False
+    pending = value['pending']
+    if pending is None:
+        return True
+    return (isinstance(pending, dict) and set(pending) == {
+                'deployment_id', 'expected_revision', 'collected_at_ms', 'totals', 'partial'}
+            and isinstance(pending['deployment_id'], str)
+            and re.fullmatch(r'[A-Za-z0-9_-]{1,128}', pending['deployment_id']) is not None
+            and isinstance(pending['expected_revision'], str)
+            and re.fullmatch(r'[0-9a-f]{64}', pending['expected_revision']) is not None
+            and type(pending['collected_at_ms']) is int
+            and value['started_at_ms'] <= pending['collected_at_ms'] <= 253402300799999
+            and type(pending['partial']) is bool and validate_observations(pending['totals']))
+
+
+def validate_observations(baseline):
     if not isinstance(baseline, dict) or set(baseline) != set(_FIELDS):
         return False
     total = 0

@@ -27,7 +27,8 @@ const statisticsLabel = computed(() => props.statistics
   : '当前 Agent 不支持面板统计重置')
 const resetReasons: Record<string, string> = {
   initial: '首次查看时开始统计', manual: '已手动重置统计', core_changed: '核心重启或重载后已重新统计',
-  configuration_changed: '配置变化后已重新统计', target_changed: '监控目标变化后已重新统计', counters_changed: '插件重新计数后已重新统计'
+  configuration_changed: '配置变化后已重新统计', target_changed: '监控目标变化后已重新统计', counters_changed: '插件重新计数后已重新统计',
+  publication: '配置发布后继续累计，沿用原统计起点'
 }
 const statisticsNote = computed(() => props.statistics
   ? (resetReasons[props.statistics.reason] || '本轮统计') + '。重置仅影响此设备的面板统计；缓存条目、处理中数量及查询记录保持原样。'
