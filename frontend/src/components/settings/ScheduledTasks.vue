@@ -17,12 +17,18 @@
       </Button>
     </template>
 
-    <div v-if="categories.length > 1 || summary.failed" class="flex min-w-0 gap-2 overflow-x-auto px-5 pb-3 max-md:px-4 max-sm:px-3" role="group" aria-label="筛选任务">
-      <button type="button" class="chip shrink-0" :aria-pressed="filter === 'all'" @click="filter = 'all'">全部 <span class="num">{{ tasks.length }}</span></button>
-      <button v-if="summary.failed" type="button" class="chip shrink-0" :aria-pressed="filter === 'failed'" @click="filter = 'failed'">失败 <span class="num">{{ summary.failed }}</span></button>
-      <button v-for="item in categories" :key="item.category" type="button" class="chip shrink-0" :aria-pressed="filter === item.category" @click="filter = item.category">
-        {{ CATEGORY_LABELS[item.category] }} <span class="num">{{ item.count }}</span>
-      </button>
+    <div v-if="tasks.length" class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 px-5 pb-3 max-md:px-4 max-sm:px-3">
+      <div v-if="categories.length > 1 || summary.failed" class="flex min-w-0 max-w-full flex-1 gap-2 overflow-x-auto" role="group" aria-label="筛选任务">
+        <button type="button" class="chip shrink-0" :aria-pressed="filter === 'all'" @click="filter = 'all'">全部 <span class="num">{{ included.length }}</span></button>
+        <button v-if="summary.failed" type="button" class="chip shrink-0" :aria-pressed="filter === 'failed'" @click="filter = 'failed'">失败 <span class="num">{{ summary.failed }}</span></button>
+        <button v-for="item in categories" :key="item.category" type="button" class="chip shrink-0" :aria-pressed="filter === item.category" @click="filter = item.category">
+          {{ CATEGORY_LABELS[item.category] }} <span class="num">{{ item.count }}</span>
+        </button>
+      </div>
+      <Label for="show-disabled-tasks" class="ml-auto flex min-h-11 shrink-0 cursor-pointer items-center gap-2 text-xs">
+        <Checkbox id="show-disabled-tasks" :model-value="showDisabled" @update:model-value="value => (showDisabled = value === true)" />
+        显示已停用
+      </Label>
     </div>
 
     <p v-if="error" role="alert" class="m-0 break-words px-5 pb-3 text-[12.5px] text-destructive-accent max-md:px-4 max-sm:px-3">
@@ -31,6 +37,7 @@
 
     <LoadingRows v-if="loading && !loaded" :rows="4" />
     <EmptyState v-else-if="loaded && !tasks.length" :icon="CalendarClock" title="还没有定时任务" description="添加订阅或远端规则集后，会在这里按间隔自动更新。" />
+    <EmptyState v-else-if="loaded && !included.length" :icon="CalendarClock" title="没有已启用的任务" description="勾选「显示已停用」可查看历史记录和操作入口。" />
     <div v-else-if="tasks.length" class="cf-table-wrap">
       <table class="cf-table cf-mobile-records scheduled-task-records min-w-[980px]">
         <thead>
@@ -147,6 +154,7 @@ import SectionCard from '@/components/common/SectionCard.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingRows from '@/components/common/LoadingRows.vue'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useTabActive } from '@/components/ui/tabs'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -178,12 +186,15 @@ const loading = ref(false)
 const loaded = ref(false)
 const error = ref('')
 const filter = ref<'all' | 'failed' | TaskCategory>('all')
+const showDisabled = ref(false)
 useSettingLink({
   keys: ['task'], ready: () => loaded.value && !error.value && active.value,
   matches: query => !!queryText(query.task),
   open: async query => {
     const key = queryText(query.task)
-    if (!tasks.value.some(task => task.key === key)) { notify.warning('对应任务不存在或已停用。'); return }
+    const target = tasks.value.find(task => task.key === key)
+    if (!target) { notify.warning('对应任务不存在或已停用。'); return }
+    if (!target.enabled) showDisabled.value = true
     filter.value = 'all'
     await nextTick()
     await focusSetting(Array.from(document.querySelectorAll<HTMLElement>('[data-task]')).find(element => element.dataset.task === key))
@@ -200,15 +211,20 @@ let readToken = 0
 let disposed = false
 
 const summary = computed(() => taskSummary(tasks.value))
+// A run already in progress stays visible even if future automatic runs were disabled.
+const included = computed(() => tasks.value.filter(task => showDisabled.value || task.enabled || task.running))
 const categories = computed(() => {
   const counts = new Map<TaskCategory, number>()
-  for (const task of tasks.value) counts.set(task.category, (counts.get(task.category) || 0) + 1)
+  for (const task of included.value) counts.set(task.category, (counts.get(task.category) || 0) + 1)
   return [...counts].map(([category, count]) => ({ category, count }))
 })
-const visible = computed(() => tasks.value.filter(task =>
+const visible = computed(() => included.value.filter(task =>
   filter.value === 'all' ? true
     : filter.value === 'failed' ? task.enabled && !task.running && task.last_status === 'failed'
       : task.category === filter.value))
+watch(categories, items => {
+  if (filter.value !== 'all' && filter.value !== 'failed' && !items.some(item => item.category === filter.value)) filter.value = 'all'
+})
 
 const statusView = taskStatusView
 
