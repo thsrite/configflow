@@ -340,12 +340,13 @@
         <DialogHeader>
           <DialogTitle>{{ currentSubscription.name }} · 节点列表</DialogTitle>
           <DialogDescription>
-            {{ subscriptionNodesLoading ? '正在拉取节点…' : `共 ${subscriptionNodes.length} 个节点` }}
+            {{ subscriptionNodesLoading ? '正在读取缓存…' : `共 ${subscriptionNodes.length} 个缓存节点。` }}仅查看已保存的节点，更新请到「订阅来源」手动拉取。
           </DialogDescription>
         </DialogHeader>
 
         <LoadingRows v-if="subscriptionNodesLoading" :rows="4" />
 
+        <p v-else-if="subscriptionNodesError" role="alert" class="m-0 text-sm text-destructive-accent">{{ subscriptionNodesError }}</p>
         <div v-else class="flex max-h-[55dvh] flex-col gap-1.5 overflow-y-auto pr-1">
           <div
             v-for="node in subscriptionNodes"
@@ -356,7 +357,11 @@
             <span class="min-w-0 flex-1 truncate text-foreground">{{ node.name }}</span>
             <Badge variant="outline" class="shrink-0 font-mono text-[10px]">{{ node.type }}</Badge>
           </div>
-          <EmptyState v-if="!subscriptionNodes.length" :icon="Network" title="暂无节点" />
+          <EmptyState
+            v-if="!subscriptionNodes.length" :icon="Network"
+            :title="subscriptionCacheAvailable ? '缓存中暂无匹配节点' : '暂无可用缓存'"
+            :description="subscriptionCacheAvailable ? '请检查订阅自身的节点筛选条件。' : '请先到「订阅来源」手动拉取此订阅，再回来查看。'"
+          />
         </div>
 
         <DialogFooter>
@@ -459,6 +464,8 @@ const expandedPreviewNodes = ref<Set<number>>(new Set())
 const subscriptionNodesDialogVisible = ref(false)
 const subscriptionNodesLoading = ref(false)
 const subscriptionNodes = ref<any[]>([])
+const subscriptionNodesError = ref('')
+const subscriptionCacheAvailable = ref(false)
 const currentSubscription = ref<{ id: string; name: string }>({ id: '', name: '' })
 
 const form = ref<Aggregation>({
@@ -679,7 +686,7 @@ const handlePreviewNodes = async (aggregation: Aggregation) => {
       previewNodes.value = response.data.nodes || []
       previewSubscriptionCounts.value = response.data.subscription_node_counts || {}
 
-      // 预览后更新列表中的节点数量（因为预览会更新各订阅的本地缓存）
+      // 按本次预览的筛选结果更新聚合节点数量。
       aggregation.node_count = response.data.count || 0
     } else {
       notify.error(response.data.message || '获取节点失败')
@@ -697,17 +704,20 @@ const showSubscriptionNodes = async (subscription: { id: string; name: string })
   subscriptionNodesDialogVisible.value = true
   subscriptionNodesLoading.value = true
   subscriptionNodes.value = []
+  subscriptionNodesError.value = ''
+  subscriptionCacheAvailable.value = false
 
   try {
-    const response = await api.post(`/subscriptions/${subscription.id}/fetch`, { preview: true })
+    const response = await api.get(`/subscriptions/${subscription.id}/nodes`, { params: { source: 'cache' } })
     if (response.data.success) {
       subscriptionNodes.value = response.data.nodes || []
+      subscriptionCacheAvailable.value = response.data.cache_available === true
     } else {
-      notify.error(response.data.message || '获取节点列表失败')
+      subscriptionNodesError.value = response.data.message || '读取缓存失败，请稍后重试'
     }
   } catch (error) {
-    console.error('Failed to get subscription nodes:', error)
-    notify.error('获取节点列表失败')
+    console.error('Failed to read subscription cache:', error)
+    subscriptionNodesError.value = '读取缓存失败，请稍后重试'
   } finally {
     subscriptionNodesLoading.value = false
   }

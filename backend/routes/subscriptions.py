@@ -187,13 +187,30 @@ def subscriptions_health():
 @subscriptions_bp.route('/<sub_id>/nodes', methods=['GET'])
 @require_auth
 def get_subscription_nodes(sub_id):
-    """获取订阅下的所有节点"""
+    """List imported nodes; source=cache previews saved subscription nodes only."""
     config_data = get_shared_config()
     subs = config_data['subscriptions']
     sub = next((s for s in subs if s['id'] == sub_id), None)
 
     if not sub:
         return jsonify({'success': False, 'message': 'Subscription not found'}), 404
+
+    if request.args.get('source') == 'cache':
+        cache = load_subscription_cache(sub_id)
+        # Legacy node-only caches remain usable. Never show another URL's cache
+        # or call the downloader, even when the cache is missing or expired.
+        if cache and (cache.get('metadata') or {}).get('url') not in (None, sub.get('url')):
+            cache = None
+        cached_nodes = cache.get('nodes') if cache else None
+        available = isinstance(cached_nodes, list)
+        nodes = filter_subscription_items(sub, cached_nodes) if available else []
+        return jsonify({
+            'success': True,
+            'nodes': nodes,
+            'count': len(nodes),
+            'cache_available': available,
+            'cached_updated_at': cache.get('updated_at') if available else None,
+        })
 
     # 从全局节点列表中过滤出属于该订阅的节点
     nodes = [n for n in config_data.get('nodes', []) if n.get('subscription_id') == sub_id]
