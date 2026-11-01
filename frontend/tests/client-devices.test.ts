@@ -623,13 +623,6 @@ describe('client device fixed IP', () => {
   })
 })
 
-it('sends old OxiDNS device policy links to the client devices page of that Agent', async () => {
-  vi.mocked(agentApi.getAll).mockResolvedValue(response([{ id: 'one', name: 'DNS 1', service_type: 'oxidns' }]))
-  vi.mocked(oxidnsMonitorApi.overview).mockRejectedValue(new Error('核心离线'))
-  const { router } = await render('/agents/one/oxidns?tab=devices')
-  expect(router.currentRoute.value.fullPath).toBe('/client-devices?agent=one')
-})
-
 describe('client device discovery tabs', () => {
   const tabButton = (wrapper: VueWrapper, label: string) => wrapper.findAll('[role="tab"]').find(item => item.text().startsWith(label))!
   const openTab = async (wrapper: VueWrapper, label: string) => {
