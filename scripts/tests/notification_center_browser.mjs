@@ -1,7 +1,7 @@
 // Test-server-only integration: real notification APIs, isolated data, controlled router reports.
 // rt --back doc/img/guide/notifications-dark.png --back doc/img/guide/notifications-light.png --back doc/img/guide/notifications-mobile.png -- bash -lc 'cf-test-remote typecheck && node scripts/tests/notification_center_browser.mjs'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { networkInterfaces, tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
@@ -135,6 +135,53 @@ try {
     })
   }
   const follow = async id => { await open(); await panel.locator(`[data-notification="${id}"]`).getByRole('button').last().click(); await panel.waitFor({ state: 'hidden' }) }
+  // Sample actual frames: opening the notification drawer must leave the rest
+  // of the page's brightness unchanged, including static and reduced motion.
+  const motion = []
+  for (const theme of ['dark', 'light']) {
+    for (const mode of ['on', 'off', 'reduced']) {
+      await page.emulateMedia({ reducedMotion: mode === 'reduced' ? 'reduce' : 'no-preference' })
+      await page.evaluate(({ theme, mode }) => {
+        document.documentElement.dataset.theme = theme
+        document.documentElement.dataset.motion = mode === 'off' ? 'off' : 'on'
+      }, { theme, mode })
+      await page.waitForTimeout(250)
+      const frames = await page.evaluate(() => new Promise(resolve => {
+        const frames = []
+        const start = performance.now()
+        document.querySelector('[data-notifications-trigger]').click()
+        const sample = time => {
+          const panel = document.querySelector('[data-notifications-panel]')
+          const overlay = document.querySelector('[data-slot="sheet-overlay"]')
+          if (panel && overlay) {
+            const style = getComputedStyle(panel)
+            const box = panel.getBoundingClientRect()
+            frames.push({ at: time - start, opacity: Number(style.opacity), travel: box.right - innerWidth,
+              duration: parseFloat(style.animationDuration), overlay: getComputedStyle(overlay).backgroundColor })
+          }
+          if (time - start < 400) requestAnimationFrame(sample)
+          else resolve(frames)
+        }
+        requestAnimationFrame(sample)
+      }))
+      assert.ok(frames.length > 1, `${theme}/${mode}: no frames captured`)
+      assert.ok(frames.every(frame => frame.overlay === 'rgba(0, 0, 0, 0)'), `${theme}/${mode}: background dimmed`)
+      assert.ok(frames.every(frame => frame.travel >= -1 && frame.travel <= 16), `${theme}/${mode}: full-width slide`)
+      if (mode === 'on') {
+        assert.ok(frames.some(frame => frame.opacity > 0 && frame.opacity < 1), `${theme}: missing gradual entrance`)
+        assert.ok(frames.every(frame => frame.duration <= 0.25), `${theme}: entrance too slow`)
+      } else assert.ok(frames.every(frame => frame.duration < 0.001), `${theme}/${mode}: ignored motion preference`)
+      assert.equal(frames.at(-1).opacity, 1)
+      motion.push({ theme, mode, frames })
+      await page.keyboard.press('Escape')
+      await panel.waitFor({ state: 'hidden' })
+      await page.waitForFunction(() => document.activeElement?.matches('[data-notifications-trigger]'))
+      assert.equal(await page.locator('[data-slot="sheet-overlay"]').count(), 0, 'overlay survived close')
+    }
+  }
+  await mkdir(resolve(root, '.ci-results/notification-motion'), { recursive: true })
+  await writeFile(resolve(root, '.ci-results/notification-motion/frames.json'), JSON.stringify(motion, null, 2))
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
   await open()
   const badge = await page.locator('[data-notification-count]').textContent()
   await mkdir(resolve(root, 'doc/img/guide'), { recursive: true })
@@ -153,8 +200,20 @@ try {
   await panel.waitFor({ state: 'hidden' })
   await page.setViewportSize({ width: 1280, height: 900 })
 
+  await page.evaluate(() => { document.documentElement.dataset.motion = 'on' })
+  // A destination dialog must not mount under the drawer's exit animation.
+  await page.evaluate(() => {
+    window.notificationOverlap = false
+    window.notificationObserver = new MutationObserver(() => {
+      if (document.querySelector('[data-notifications-panel]') && document.querySelector('[data-slot="dialog-content"][data-state="open"]')) {
+        window.notificationOverlap = true
+      }
+    })
+    window.notificationObserver.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-state'] })
+  })
   await follow('task:subscription:feed')
   await page.getByRole('heading', { name: '编辑订阅', exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => { window.notificationObserver.disconnect(); return window.notificationOverlap }), false, 'drawer overlapped destination dialog')
   assert.equal(await page.locator('#sub-name').inputValue(), '常用订阅')
   await page.locator('#sub-url[data-notification-focus]').waitFor()
   await page.waitForFunction(() => document.activeElement?.id === 'sub-url')
