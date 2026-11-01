@@ -30,9 +30,10 @@
     </div>
 
     <div class="grid grid-cols-5 gap-3 px-5 pb-4 max-md:grid-cols-3 max-md:gap-2 max-md:px-4 max-sm:px-3">
-      <div v-for="tile in tiles" :key="tile.label" class="min-w-0 rounded-xl bg-secondary/60 px-3 py-2.5">
+      <div v-for="tile in tiles" :key="tile.label" data-tile class="min-w-0 rounded-xl bg-secondary/60 px-3 py-2.5">
         <div class="truncate text-[12px] text-muted-foreground">{{ tile.label }}</div>
         <div class="num mt-0.5 truncate text-[16px]">{{ tile.value }}</div>
+        <div v-if="tile.sub" class="num mt-0.5 truncate text-[11px] text-muted-foreground" :title="tile.sub">{{ tile.sub }}</div>
       </div>
     </div>
     <div v-if="!live && trend.length" class="px-5 pb-4 max-md:px-4 max-sm:px-3">
@@ -59,17 +60,50 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="row in sorted" :key="row.key">
-            <td class="stats-name">
-              <span class="block truncate" :class="nameOf(row.key).mono ? 'font-mono text-[12.5px]' : ''" :title="nameOf(row.key).title">{{ nameOf(row.key).label }}</span>
-              <span v-if="nameOf(row.key).detail" class="block truncate text-[11px] text-muted-foreground" :class="nameOf(row.key).detailMono && 'font-mono'">{{ nameOf(row.key).detail }}</span>
-            </td>
-            <td class="num text-right">{{ formatBytes(row.download) }}</td>
-            <td class="num text-right">{{ formatBytes(row.upload) }}</td>
-            <td class="num text-right">{{ formatBytes(row.download + row.upload) }}</td>
-            <td v-if="live" class="num text-right" :class="row.speed ? '' : 'text-muted-foreground'">{{ speedText(row.speed) }}</td>
-            <td class="num text-right">{{ row.count }}</td>
-          </tr>
+          <template v-for="row in sorted" :key="row.key">
+            <tr>
+              <td class="stats-name">
+                <div class="flex min-w-0 items-center gap-1">
+                  <button v-if="row.parts.length" type="button" class="stats-expand" :aria-expanded="expanded.has(row.key)"
+                    :aria-label="`${expanded.has(row.key) ? '收起' : '展开'} ${nameOf(row.key).label} 的${partsLabel}`" @click="toggleRow(row.key)">
+                    <ChevronRight class="size-3.5 transition-transform" :class="expanded.has(row.key) && 'rotate-90'" />
+                  </button>
+                  <span v-else class="stats-expand-spacer" aria-hidden="true" />
+                  <span class="min-w-0">
+                    <span class="flex min-w-0 items-center gap-1.5">
+                      <span class="truncate" :class="nameOf(row.key).mono ? 'font-mono text-[12.5px]' : ''" :title="nameOf(row.key).title">{{ nameOf(row.key).label }}</span>
+                      <span v-if="by === 'outbound' && kindChip(row.key)" class="chip shrink-0" :class="kindChip(row.key)!.class">{{ kindChip(row.key)!.label }}</span>
+                    </span>
+                    <span v-if="nameOf(row.key).detail" class="block truncate text-[11px] text-muted-foreground" :class="nameOf(row.key).detailMono && 'font-mono'">{{ nameOf(row.key).detail }}</span>
+                  </span>
+                </div>
+              </td>
+              <td v-if="splitColumns" class="num text-right" :class="!row.direct && 'text-muted-foreground'">{{ row.key === UNATTRIBUTED_KEY ? '—' : formatBytes(row.direct) }}</td>
+              <td v-if="splitColumns" class="num text-right" :class="!row.proxy && 'text-muted-foreground'">{{ row.key === UNATTRIBUTED_KEY ? '—' : formatBytes(row.proxy) }}</td>
+              <td class="num text-right">{{ formatBytes(row.download) }}</td>
+              <td class="num text-right">{{ formatBytes(row.upload) }}</td>
+              <td class="num text-right">{{ formatBytes(row.download + row.upload) }}</td>
+              <td v-if="live" class="num text-right" :class="row.speed ? '' : 'text-muted-foreground'">{{ speedText(row.speed) }}</td>
+              <td class="num text-right">{{ row.count }}</td>
+            </tr>
+            <template v-if="expanded.has(row.key)">
+              <tr v-for="part in row.parts" :key="row.key + '\u0000' + part.key" class="stats-part">
+                <td class="stats-name">
+                  <span class="flex min-w-0 items-center gap-1.5">
+                    <span class="truncate" :class="partName(part.key).mono ? 'font-mono text-[12px]' : ''" :title="partName(part.key).title">{{ partName(part.key).label }}</span>
+                    <span v-if="by !== 'outbound' && kindChip(part.key)" class="chip shrink-0" :class="kindChip(part.key)!.class">{{ kindChip(part.key)!.label }}</span>
+                  </span>
+                </td>
+                <td v-if="splitColumns" class="num text-right text-muted-foreground">{{ part.direct ? formatBytes(part.direct) : '' }}</td>
+                <td v-if="splitColumns" class="num text-right text-muted-foreground">{{ part.proxy ? formatBytes(part.proxy) : '' }}</td>
+                <td class="num text-right text-muted-foreground">{{ formatBytes(part.download) }}</td>
+                <td class="num text-right text-muted-foreground">{{ formatBytes(part.upload) }}</td>
+                <td class="num text-right text-muted-foreground">{{ formatBytes(part.download + part.upload) }}</td>
+                <td v-if="live" class="num text-right text-muted-foreground">{{ speedText(part.speed) }}</td>
+                <td class="num text-right text-muted-foreground">{{ part.count }}</td>
+              </tr>
+            </template>
+          </template>
         </tbody>
       </table>
       <p v-if="!live && data?.omitted" class="m-0 border-t border-border px-5 py-2 text-[12px] text-muted-foreground">另有 {{ data.omitted }} 项流量较小，未列出。</p>
@@ -79,7 +113,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ArrowDown, Cable, Trash2 } from '@lucide/vue'
+import { ArrowDown, Cable, ChevronRight, Trash2 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -88,12 +122,12 @@ import Segmented from '@/components/common/Segmented.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingRows from '@/components/common/LoadingRows.vue'
 import Sparkline from '@/components/common/Sparkline.vue'
-import { trafficHistoryApi } from '@/api'
+import { mihomoPanelApi, trafficHistoryApi } from '@/api'
 import { choose, confirmDanger, notify } from '@/lib/feedback'
 import { formatBytes } from '@/lib/format'
 import { deviceNote } from '@/lib/device-notes'
 import {
-  aggregateConnections, isInnerSource, OTHER_TARGET_KEY, OVERVIEW_AGGREGATES, TRAFFIC_RANGES, UNATTRIBUTED_KEY,
+  aggregateConnections, isInnerSource, OTHER_TARGET_KEY, outletKind, OVERVIEW_AGGREGATES, TRAFFIC_RANGES, UNATTRIBUTED_KEY,
   type OverviewAggregate, type TrafficHistoryData, type TrafficRange
 } from '@/lib/mihomo-overview'
 import { panelError, type MihomoConnection } from '@/types/mihomo'
@@ -102,7 +136,7 @@ const HELP = '「实时」汇总当前活动连接：流量是每条连接建立
 const STORAGE_KEY = 'configflow:mihomo-overview:aggregate'
 const RANGE_KEY = 'configflow:mihomo-overview:range'
 const HISTORY_POLL_MS = 60_000
-type SortKey = 'download' | 'upload' | 'total' | 'speed' | 'count'
+type SortKey = 'direct' | 'proxy' | 'download' | 'upload' | 'total' | 'speed' | 'count'
 
 const props = defineProps<{
   connections: MihomoConnection[]
@@ -144,12 +178,32 @@ const description = computed(() => live.value
   : `最近 ${TRAFFIC_RANGES.find(item => item.value === range.value)!.label}，包括已关闭的连接；数据约每 5 分钟更新。`)
 const sinceText = computed(() => history.value?.since ? new Date(history.value.since).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }) : '')
 
-interface StatRow { key: string; download: number; upload: number; speed: number; count: number }
+/** 出口节点名称 → Mihomo 节点类型，用来判断直连、代理还是拦截 */
+const proxyTypes = ref<Record<string, string>>({})
+interface StatPart { key: string; download: number; upload: number; speed: number; count: number; direct: number; proxy: number }
+interface StatRow extends StatPart { parts: StatPart[] }
+// 明细的维度：按出站节点汇总时是设备，其余是出口节点
+const partsLabel = computed(() => by.value === 'outbound' ? '设备' : '出口节点')
+const splitColumns = computed(() => by.value !== 'outbound')
+function split(outbound: string, bytes: number) {
+  const kind = outletKind(outbound, proxyTypes.value)
+  return { direct: kind === 'direct' ? bytes : 0, proxy: kind === 'proxy' ? bytes : 0 }
+}
+function withSplit(row: Omit<StatRow, 'direct' | 'proxy' | 'parts'>, parts: Array<Omit<StatPart, 'direct' | 'proxy'>>): StatRow {
+  const filled = parts.map(part => ({ ...part, ...(by.value === 'outbound' ? { direct: 0, proxy: 0 } : split(part.key, part.download + part.upload)) }))
+  const own = by.value === 'outbound' ? split(row.key, row.download + row.upload)
+    : filled.reduce((acc, part) => ({ direct: acc.direct + part.direct, proxy: acc.proxy + part.proxy }), { direct: 0, proxy: 0 })
+  return { ...row, ...own, parts: filled }
+}
 const rows = computed<StatRow[]>(() => live.value
-  ? aggregateConnections(props.connections, by.value, props.speeds)
-    .map(row => ({ key: row.key, download: row.download, upload: row.upload, speed: row.downSpeed + row.upSpeed, count: row.count }))
-  : (data.value?.rows || []).map(row => ({ key: row.key, download: row.down, upload: row.up, speed: 0, count: row.conns })))
+  ? aggregateConnections(props.connections, by.value, props.speeds).map(row => withSplit(
+    { key: row.key, download: row.download, upload: row.upload, speed: row.downSpeed + row.upSpeed, count: row.count },
+    row.parts.map(part => ({ key: part.key, download: part.download, upload: part.upload, speed: part.downSpeed + part.upSpeed, count: part.count }))))
+  : (data.value?.rows || []).map(row => withSplit(
+    { key: row.key, download: row.down, upload: row.up, speed: 0, count: row.conns },
+    (row.parts || []).map(part => ({ key: part.key, download: part.down, upload: part.up, speed: 0, count: part.conns })))))
 const sorts = computed(() => [
+  ...(splitColumns.value ? [{ key: 'direct' as const, label: '直连' }, { key: 'proxy' as const, label: '代理' }] : []),
   { key: 'download' as const, label: '下载' },
   { key: 'upload' as const, label: '上传' },
   { key: 'total' as const, label: '总流量' },
@@ -157,7 +211,17 @@ const sorts = computed(() => [
   { key: 'count' as const, label: live.value ? '连接数' : '新建连接' }
 ])
 watch(live, isLive => { if (!isLive && sort.value === 'speed') sort.value = 'download' })
+watch(splitColumns, shown => { if (!shown && (sort.value === 'direct' || sort.value === 'proxy')) sort.value = 'download' })
+const expanded = ref(new Set<string>())
+watch(by, () => { expanded.value = new Set() })
+function toggleRow(key: string) {
+  const next = new Set(expanded.value)
+  if (!next.delete(key)) next.add(key)
+  expanded.value = next
+}
 const metric: Record<SortKey, (row: StatRow) => number> = {
+  direct: row => row.direct,
+  proxy: row => row.proxy,
   download: row => row.download,
   upload: row => row.upload,
   total: row => row.download + row.upload,
@@ -171,11 +235,20 @@ const tiles = computed(() => {
   const sum = live.value
     ? rows.value.reduce((acc, row) => ({ down: acc.down + row.download, up: acc.up + row.upload, count: acc.count + row.count }), { down: 0, up: 0, count: 0 })
     : { down: data.value?.total?.down ?? 0, up: data.value?.total?.up ?? 0, count: data.value?.total?.conns ?? 0 }
+  // 直连 / 代理按出口节点合计；历史范围用服务端的出口总量，不受表格行数上限影响
+  const outlets = live.value
+    ? aggregateConnections(props.connections, 'outbound', props.speeds).map(row => ({ key: row.key, bytes: row.download + row.upload }))
+    : (data.value?.outbounds || []).map(row => ({ key: row.key, bytes: row.down + row.up }))
+  const kinds = outlets.reduce((acc, outlet) => {
+    const parts = split(outlet.key, outlet.bytes)
+    return { direct: acc.direct + parts.direct, proxy: acc.proxy + parts.proxy }
+  }, { direct: 0, proxy: 0 })
+  const share = (bytes: number) => kinds.direct + kinds.proxy ? `占 ${Math.round(bytes / (kinds.direct + kinds.proxy) * 100)}%` : ''
   return [
     { label: column.value, value: String(rows.value.filter(row => count(row.key)).length) },
-    { label: '总流量', value: formatBytes(sum.down + sum.up) },
-    { label: '下载', value: formatBytes(sum.down) },
-    { label: '上传', value: formatBytes(sum.up) },
+    { label: '总流量', value: formatBytes(sum.down + sum.up), sub: `↓ ${formatBytes(sum.down)} · ↑ ${formatBytes(sum.up)}` },
+    { label: '直连', value: formatBytes(kinds.direct), sub: share(kinds.direct) },
+    { label: '代理', value: formatBytes(kinds.proxy), sub: share(kinds.proxy) },
     { label: live.value ? '连接数' : '新建连接', value: String(sum.count) }
   ]
 })
@@ -190,6 +263,31 @@ function nameOf(key: string): { label: string; detail?: string; detailMono?: boo
   if (isInnerSource(key)) return { label: 'Inner', detail: 'Mihomo 自身发起', title: 'Mihomo 自身发起的连接，例如 DNS 上游和测速', mono: false }
   const note = deviceNote(props.notes, key)
   return note ? { label: note, detail: key, detailMono: true, title: `${note} · ${key}`, mono: false } : { label: key, title: key, mono: true }
+}
+
+/** 明细行的名称：按出站节点汇总时是设备，其余是出口节点 */
+function partName(key: string): { label: string; title: string; mono: boolean } {
+  if (by.value !== 'outbound') return { label: key, title: key, mono: false }
+  if (isInnerSource(key)) return { label: 'Inner', title: 'Mihomo 自身发起的连接', mono: false }
+  const note = deviceNote(props.notes, key)
+  return note ? { label: `${note} · ${key}`, title: `${note} · ${key}`, mono: false } : { label: key, title: key, mono: true }
+}
+
+const KIND_CHIPS = { direct: { label: '直连', class: 'chip-ok' }, proxy: { label: '代理', class: 'chip-acc' }, reject: { label: '拦截', class: 'chip-bad' } } as const
+function kindChip(outbound: string) {
+  const kind = outletKind(outbound, proxyTypes.value)
+  return kind === 'none' ? null : KIND_CHIPS[kind]
+}
+
+async function loadProxyTypes() {
+  if (!props.agentId) return
+  try {
+    const { data: body } = await mihomoPanelApi.proxies(props.agentId)
+    const proxies: Record<string, { type?: string }> = body.data?.proxies || {}
+    if (!disposed) proxyTypes.value = Object.fromEntries(Object.entries(proxies).map(([name, proxy]) => [name, proxy?.type || '']))
+  } catch {
+    // 读不到节点类型时只按 DIRECT / REJECT 名称判断
+  }
 }
 
 const speedText = (bytesPerSecond: number) => bytesPerSecond > 0 ? formatBytes(bytesPerSecond) + '/s' : '—'
@@ -290,7 +388,11 @@ function startPolling() {
 
 watch([range, by], () => { if (props.active !== false && !live.value) void loadHistory() })
 watch(() => props.active, shown => { if (shown === false) stopPolling(); else startPolling() })
-onMounted(startPolling)
+onMounted(() => {
+  startPolling()
+  if (props.active !== false) void loadProxyTypes()
+})
+watch(() => props.active, shown => { if (shown !== false && !Object.keys(proxyTypes.value).length) void loadProxyTypes() })
 onUnmounted(() => {
   disposed = true
   stopPolling()
@@ -299,14 +401,20 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.stats-table { min-width: 640px; }
+.stats-table { min-width: 820px; }
 .stats-table th { position: sticky; top: 0; z-index: 1; background: var(--card); white-space: nowrap; }
 .stats-table td { white-space: nowrap; }
-.stats-name { max-width: 280px; }
+.stats-name { max-width: 300px; }
+.stats-expand, .stats-expand-spacer { display: inline-flex; width: 22px; height: 22px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: var(--radius-sm); color: var(--muted-foreground); }
+.stats-expand:hover { background: var(--accent); color: var(--foreground); }
+.stats-expand:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.stats-part td { background: color-mix(in oklab, var(--secondary) 45%, transparent); font-size: 12.5px; }
+.stats-part td.stats-name { padding-left: 36px; }
 .stats-sort { display: inline-flex; min-height: 28px; align-items: center; gap: 2px; border-radius: var(--radius-sm); color: inherit; }
 .stats-sort[data-active='true'], .stats-sort:hover { color: var(--primary-accent); }
 .stats-sort:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 @media (pointer: coarse) {
   .stats-sort { min-height: 44px; }
+  .stats-expand, .stats-expand-spacer { width: 44px; height: 44px; }
 }
 </style>

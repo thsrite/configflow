@@ -11,13 +11,18 @@ export const OVERVIEW_AGGREGATES: Array<{ value: OverviewAggregate; label: strin
   { value: 'group', label: '按策略组', column: '策略组' }
 ]
 
-export interface OverviewStatRow {
+export interface OverviewStatPart {
   key: string
   download: number
   upload: number
   downSpeed: number
   upSpeed: number
   count: number
+}
+
+export interface OverviewStatRow extends OverviewStatPart {
+  /** 明细：按出站节点汇总时按设备拆开，其余按出口节点拆开 */
+  parts: OverviewStatPart[]
 }
 
 /** 目标按主域名归并（a.b.example.com.cn → example.com.cn），IP 与无法识别的主机保持原样 */
@@ -28,11 +33,14 @@ export function destinationKey(connection: MihomoConnection): string {
   return getDomain(host) || host
 }
 
+/** 出口节点：chains 的第一个，即实际出站的节点（直连为 DIRECT） */
+export const outboundOf = (connection: MihomoConnection) => connection.chains[0] || '—'
+
 function aggregateKey(connection: MihomoConnection, by: OverviewAggregate): string {
   if (by === 'source') return sourceLabel(connection)
   if (by === 'destination') return destinationKey(connection)
   // chains 从出口节点排到入口策略组
-  if (by === 'outbound') return connection.chains[0] || '—'
+  if (by === 'outbound') return outboundOf(connection)
   return connection.chains[connection.chains.length - 1] || '—'
 }
 
@@ -45,19 +53,43 @@ export function aggregateConnections(
   by: OverviewAggregate,
   speeds: Map<string, { up: number; down: number }>
 ): OverviewStatRow[] {
-  const rows = new Map<string, OverviewStatRow>()
+  const rows = new Map<string, OverviewStatRow & { partMap: Map<string, OverviewStatPart> }>()
+  const add = (target: OverviewStatPart, connection: MihomoConnection) => {
+    const speed = speeds.get(connection.id)
+    target.download += connection.download
+    target.upload += connection.upload
+    target.downSpeed += speed?.down || 0
+    target.upSpeed += speed?.up || 0
+    target.count++
+  }
   for (const connection of connections) {
     const key = aggregateKey(connection, by)
     let row = rows.get(key)
-    if (!row) rows.set(key, row = { key, download: 0, upload: 0, downSpeed: 0, upSpeed: 0, count: 0 })
-    const speed = speeds.get(connection.id)
-    row.download += connection.download
-    row.upload += connection.upload
-    row.downSpeed += speed?.down || 0
-    row.upSpeed += speed?.up || 0
-    row.count++
+    if (!row) rows.set(key, row = { key, download: 0, upload: 0, downSpeed: 0, upSpeed: 0, count: 0, parts: [], partMap: new Map() })
+    add(row, connection)
+    const partKey = by === 'outbound' ? sourceLabel(connection) : outboundOf(connection)
+    let part = row.partMap.get(partKey)
+    if (!part) row.partMap.set(partKey, part = { key: partKey, download: 0, upload: 0, downSpeed: 0, upSpeed: 0, count: 0 })
+    add(part, connection)
   }
-  return [...rows.values()]
+  return [...rows.values()].map(({ partMap, ...row }) => ({
+    ...row,
+    parts: [...partMap.values()].sort((a, b) => b.download + b.upload - (a.download + a.upload) || a.key.localeCompare(b.key))
+  }))
+}
+
+export type OutletKind = 'direct' | 'proxy' | 'reject' | 'none'
+
+/**
+ * 按 Mihomo 当前的节点类型判断出口是直连、代理还是拦截。配置里自定义的 type: direct 节点也算直连；
+ * proxy-providers 的节点不在 /proxies 里，按名称以外一律视为代理。
+ */
+export function outletKind(name: string, types: Record<string, string> = {}): OutletKind {
+  if (!name || name === '—') return 'none'
+  const type = types[name]
+  if (name === 'DIRECT' || type === 'Direct') return 'direct'
+  if (name.startsWith('REJECT') || type === 'Reject' || type === 'RejectDrop') return 'reject'
+  return 'proxy'
 }
 
 export const isInnerSource = (key: string) => key === INNER_SOURCE
@@ -79,6 +111,7 @@ export interface TrafficHistoryRow {
   up: number
   down: number
   conns: number
+  parts?: TrafficHistoryRow[]
 }
 
 export interface TrafficHistoryData {
@@ -95,6 +128,8 @@ export interface TrafficHistoryData {
   rows?: TrafficHistoryRow[]
   omitted?: number
   total?: { up: number; down: number; conns: number }
+  /** 各出口节点的总量（不含未归属），用于直连 / 代理合计 */
+  outbounds?: TrafficHistoryRow[]
   trend?: Array<{ at: string; up: number; down: number }>
 }
 

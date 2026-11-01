@@ -20,8 +20,8 @@ def usage(hour=THIS_HOUR, source='10.0.0.2', group='Proxy', outbound='HK', up=1,
     return {'hour': hour, 'source': source, 'group': group, 'outbound': outbound, 'up': up, 'down': down, 'conns': conns}
 
 
-def target(hour=THIS_HOUR, source='10.0.0.2', domain='www.example.com', up=1, down=10, conns=1):
-    return {'hour': hour, 'source': source, 'domain': domain, 'up': up, 'down': down, 'conns': conns}
+def target(hour=THIS_HOUR, source='10.0.0.2', domain='www.example.com', outbound='HK', up=1, down=10, conns=1):
+    return {'hour': hour, 'source': source, 'domain': domain, 'outbound': outbound, 'up': up, 'down': down, 'conns': conns}
 
 
 def report(usage_items=(), target_items=()):
@@ -33,9 +33,12 @@ def test_clean_report_merges_targets_by_main_domain_and_rejects_bad_items():
                                   [target(domain='a.b.example.com.cn'), target(domain='203.0.113.9'), target(domain='')]), now=NOW)
     # 未归属的一行不带策略组和出口
     assert cleaned['usage'][1][:4] == (THIS_HOUR, UNATTRIBUTED, '', '')
-    assert [row[2] for row in cleaned['targets']] == ['example.com.cn', '203.0.113.9', OTHER_TARGET]
+    assert [row[2:4] for row in cleaned['targets']] == [('example.com.cn', 'HK'), ('203.0.113.9', 'HK'), (OTHER_TARGET, 'HK')]
     for bad in (usage(hour=THIS_HOUR + 1), usage(up=-1), usage(down='1'), usage(source='x' * 65), None):
         assert clean_report(report([bad]), now=NOW) is None
+    missing_outbound = target()
+    del missing_outbound['outbound']
+    assert clean_report(report([], [missing_outbound]), now=NOW) is None
     assert clean_report({'schema': 2, 'usage': [], 'domains': []}, now=NOW) is None
     # 积压超过 2 天的整点数据直接丢弃，其余照收
     stale = clean_report(report([usage(hour=THIS_HOUR - 3 * DAY), usage()]), now=NOW)
@@ -44,24 +47,37 @@ def test_clean_report_merges_targets_by_main_domain_and_rejects_bad_items():
 
 def test_reports_stay_in_memory_until_flush_and_queries_include_pending(tmp_path):
     history = TrafficHistory(str(tmp_path))
-    history.add_report('a1', clean_report(report([usage(down=100), usage(source='10.0.0.3', group='DIRECT', outbound='DIRECT', down=50)],
-                                                 [target(down=100)]), now=NOW))
+    history.add_report('a1', clean_report(report(
+        [usage(down=100), usage(group='Media', outbound='DIRECT', down=40), usage(source='10.0.0.3', group='DIRECT', outbound='DIRECT', down=50),
+         usage(source='', down=9)],
+        [target(down=100), target(outbound='DIRECT', down=40)]), now=NOW))
     assert not (tmp_path / module.FILENAME).exists()
     by_source = history.query('a1', '24h', 'source', now=NOW)
-    assert [(row['key'], row['down']) for row in by_source['rows']] == [('10.0.0.2', 100), ('10.0.0.3', 50)]
-    assert by_source['total'] == {'up': 2, 'down': 150, 'conns': 2}
-    assert history.flush(now=NOW) == {'rows': 3, 'compacted': 0, 'pruned': 0}
+    assert [(row['key'], row['down']) for row in by_source['rows']] == [('10.0.0.2', 140), ('10.0.0.3', 50), (UNATTRIBUTED, 9)]
+    # 每行按出口节点拆开，未归属没有明细；出口节点总量不含未归属
+    assert [(part['key'], part['down']) for part in by_source['rows'][0]['parts']] == [('HK', 100), ('DIRECT', 40)]
+    assert by_source['rows'][2]['parts'] == []
+    assert [(row['key'], row['down']) for row in by_source['outbounds']] == [('HK', 100), ('DIRECT', 90)]
+    assert by_source['total'] == {'up': 4, 'down': 199, 'conns': 4}
+    # 按出站节点汇总时按设备拆开
+    by_outbound = history.query('a1', '24h', 'outbound', now=NOW)
+    direct = next(row for row in by_outbound['rows'] if row['key'] == 'DIRECT')
+    assert [(part['key'], part['down']) for part in direct['parts']] == [('10.0.0.3', 50), ('10.0.0.2', 40)]
+    destination = history.query('a1', '24h', 'destination', now=NOW)
+    assert [(part['key'], part['down']) for part in destination['rows'][0]['parts']] == [('HK', 100), ('DIRECT', 40)]
+    assert history.flush(now=NOW) == {'rows': 6, 'compacted': 0, 'pruned': 0}
     assert history.pending_count() == 0
     # 保存后再收到同一小时的数据，累加而不是覆盖
     history.add_report('a1', clean_report(report([usage(down=1)]), now=NOW))
     history.flush(now=NOW)
     rows = sqlite3.connect(tmp_path / module.FILENAME).execute(
-        "SELECT down FROM usage WHERE source = '10.0.0.2'").fetchall()
+        "SELECT down FROM usage WHERE source = '10.0.0.2' AND outbound = 'HK'").fetchall()
     assert rows == [(101,)]
-    assert history.query('a1', '24h', 'group', now=NOW)['rows'][0] == {'key': 'Proxy', 'up': 2, 'down': 101, 'conns': 2}
+    group = history.query('a1', '24h', 'group', now=NOW)['rows'][0]
+    assert (group['key'], group['down'], group['conns']) == ('Proxy', 101, 2)
     destination = history.query('a1', '24h', 'destination', now=NOW)
-    assert destination['rows'] == [{'key': 'example.com', 'up': 1, 'down': 100, 'conns': 1}]
-    assert len(destination['trend']) == 25 and destination['trend'][-1]['down'] == 151
+    assert [(row['key'], row['down']) for row in destination['rows']] == [('example.com', 140), (UNATTRIBUTED, 9)]
+    assert len(destination['trend']) == 25 and destination['trend'][-1]['down'] == 200
 
 
 def test_failed_flush_keeps_the_data_for_the_next_run(tmp_path, monkeypatch):
@@ -86,7 +102,9 @@ def test_old_hours_are_merged_into_days_and_expired_days_are_deleted(tmp_path):
     cleaned = {
         'usage': [(old, '10.0.0.2', 'Proxy', 'HK', 1, 10, 1), (old + HOUR, '10.0.0.2', 'Proxy', 'HK', 1, 20, 1),
                   (today - 200 * DAY, '10.0.0.2', 'Proxy', 'HK', 1, 1, 1)],
-        'targets': [(old, '10.0.0.2', f'site{i}.example', 0, 1000 - i, 1) for i in range(module.TARGET_DAILY_TOP + 2)],
+        # 同一目标走两个出口时按合计排名；被挤出的目标按出口并入「其他」
+        'targets': [(old, '10.0.0.2', f'site{i}.example', 'HK', 0, 1000 - i, 1) for i in range(module.TARGET_DAILY_TOP + 2)]
+        + [(old + HOUR, '10.0.0.2', 'site101.example', 'DIRECT', 0, 1, 1)],
     }
     history.add_report('a1', cleaned)
     result = history.flush(retention=90, now=NOW)
@@ -94,9 +112,10 @@ def test_old_hours_are_merged_into_days_and_expired_days_are_deleted(tmp_path):
     db = sqlite3.connect(tmp_path / module.FILENAME)
     assert db.execute('SELECT bucket, span, down FROM usage').fetchall() == [(today - 10 * DAY, DAY, 30)]
     # 每台设备每天只留流量最大的若干个目标，其余并入「其他」
-    targets = dict(db.execute('SELECT target, down FROM targets').fetchall())
-    assert len(targets) == module.TARGET_DAILY_TOP + 1
-    assert targets[OTHER_TARGET] == (1000 - module.TARGET_DAILY_TOP) + (1000 - module.TARGET_DAILY_TOP - 1)
+    targets = {(target, outbound): down for target, outbound, down in db.execute('SELECT target, outbound, down FROM targets')}
+    assert len(targets) == module.TARGET_DAILY_TOP + 2
+    assert targets[(OTHER_TARGET, 'HK')] == (1000 - module.TARGET_DAILY_TOP) + (1000 - module.TARGET_DAILY_TOP - 1)
+    assert targets[(OTHER_TARGET, 'DIRECT')] == 1
     assert history.query('a1', '30d', 'source', now=NOW)['total']['down'] == 30
 
 

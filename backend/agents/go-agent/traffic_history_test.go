@@ -64,9 +64,10 @@ func TestTrafficHistoryCountsDeltasNewConnectionsAndUnattributed(t *testing.T) {
 	}
 	domains := map[string]trafficDomainItem{}
 	for _, item := range report.Domains {
-		domains[item.Source+"|"+item.Domain] = item
+		domains[item.Source+"|"+item.Domain+"|"+item.Outbound] = item
 	}
-	if domains["10.0.0.2|www.example.com"].Down != 1000 || domains["Inner|203.0.113.9"].Conns != 1 {
+	// 目标同样按出口节点分开，没有链路的连接出口为空
+	if domains["10.0.0.2|www.example.com|HK"].Down != 1000 || domains["Inner|203.0.113.9|"].Conns != 1 {
 		t.Fatalf("targets: %+v", report.Domains)
 	}
 }
@@ -92,7 +93,7 @@ func TestTrafficHistoryFoldsExtraTargetsIntoOther(t *testing.T) {
 	collector := newTrafficHistoryCollector(&Config{}, nil)
 	collector.mu.Lock()
 	for i := 0; i < trafficHistoryMaxDomains+3; i++ {
-		collector.addDomain(1, "10.0.0.2", fmt.Sprintf("site%d.example", i), trafficCounters{Down: 1})
+		collector.addDomain(1, "10.0.0.2", fmt.Sprintf("site%d.example", i), "DIRECT", trafficCounters{Down: 1})
 	}
 	collector.mu.Unlock()
 	report := collector.drain()
@@ -100,7 +101,7 @@ func TestTrafficHistoryFoldsExtraTargetsIntoOther(t *testing.T) {
 		t.Fatalf("expected %d rows, got %d", trafficHistoryMaxDomains+1, len(report.Domains))
 	}
 	for _, item := range report.Domains {
-		if item.Domain == "" && item.Down != 3 {
+		if item.Domain == "" && (item.Down != 3 || item.Outbound != "DIRECT") {
 			t.Fatalf("other bucket: %+v", item)
 		}
 	}
