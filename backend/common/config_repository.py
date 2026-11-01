@@ -58,6 +58,10 @@ class ProfileInUse(ProfileRepositoryError, ValueError):
         self.usages = usages or []
 
 
+class NodeDeletionChanged(ProfileInUse):
+    """The reviewed node deletion no longer matches the current references."""
+
+
 _PROFILE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 _THREAD_LOCKS: Dict[str, threading.RLock] = {}
 _THREAD_LOCKS_GUARD = threading.Lock()
@@ -1428,6 +1432,43 @@ class ProfileRepository:
         with self._document(write=True) as document:
             proposed = self._apply_shared_locked(document, updater)
         return copy.deepcopy(proposed)
+
+    def _node_deletion_plan(self, document, node_ids):
+        from backend.common.node_deletion import plan_node_deletion
+        preview, candidate = plan_node_deletion(document, node_ids)
+        if not preview['blockers']:
+            try:
+                self._validate_document(candidate)
+            except ProfileRepositoryError as error:
+                preview['blockers'].append(str(error))
+        return preview, candidate
+
+    def preview_node_deletion(self, node_ids):
+        with self._document() as document:
+            preview, _ = self._node_deletion_plan(document, node_ids)
+        return preview
+
+    def delete_nodes_with_references(self, node_ids, confirmation):
+        if not isinstance(confirmation, str) or not re.fullmatch(r'[a-f0-9]{64}', confirmation):
+            raise ProfileValidationError('请先查看并确认删除影响')
+        with self._document(write=True) as document:
+            preview, candidate = self._node_deletion_plan(document, node_ids)
+            if not secrets.compare_digest(confirmation, preview['confirmation']):
+                raise NodeDeletionChanged('节点或引用关系已变化，请重新查看删除影响并确认')
+            if preview['blockers']:
+                raise ProfileInUse('无法删除：' + '；'.join(preview['blockers']), preview['usages'])
+            changed_profiles = {group['profile_id'] for group in preview['groups']}
+            for profile_id in changed_profiles:
+                def update(profile, profile_id=profile_id):
+                    profile['proxy_groups'] = candidate['profiles'][profile_id]['proxy_groups']
+                self._update_profile_locked(document, profile_id, update)
+            # Detach first inside the same transaction, then retain the normal
+            # shared-resource deletion guard and the final document validation.
+            document['shared']['subscription_aggregations'] = candidate['shared']['subscription_aggregations']
+            def remove(shared):
+                shared['nodes'] = candidate['shared']['nodes']
+            self._apply_shared_locked(document, remove)
+        return preview
 
     def update_shared_and_profiles_transaction(self, shared_updater, profile_updater, profile_ids):
         """Update shared resources and profiles in one commit; any failure writes nothing.

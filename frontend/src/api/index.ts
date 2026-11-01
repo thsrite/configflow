@@ -166,12 +166,24 @@ export interface NodeLatencyDnsCheck {
   latency_ms?: number
 }
 
+export interface NodeDeletionPreview {
+  nodes: Array<{ id: string; name: string }>
+  usages: Array<{ kind: 'aggregation' | 'profile'; id: string; name: string }>
+  groups: Array<{ id: string; name: string; profile_id: string; profile_name: string }>
+  blockers: string[]
+  empty_sources: string[]
+  confirmation: string
+}
+
 // 节点相关
 export const nodeApi = {
   getAll: () => api.get('/nodes'),
   create: (data: any) => api.post('/nodes', data),
   update: (id: string, data: any) => api.put(`/nodes/${id}`, data),
   delete: (id: string) => api.delete(`/nodes/${id}`),
+  previewDeletion: (ids: string[]) => api.post<NodeDeletionPreview>('/nodes/delete-preview', { ids }),
+  deleteWithReferences: (ids: string[], confirmation: string) =>
+    api.post<{ success: boolean; deleted_ids: string[] }>('/nodes/delete', { ids, confirmation }),
   /** 最近一次代理延迟结果（按节点来源与身份） */
   latency: () => api.get('/nodes/latency'),
   latencySettings: () => api.get<NodeLatencyDnsSettings>('/nodes/latency/settings'),

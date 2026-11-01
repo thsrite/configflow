@@ -4,8 +4,8 @@ import uuid
 
 from backend.routes import nodes_bp
 from backend.common.auth import require_auth
-from backend.common.config import get_shared_config, update_shared_config_transaction
-from backend.common.config_repository import ProfileRepositoryError
+from backend.common.config import get_shared_config, update_shared_config_transaction, get_repository, reset_config_context
+from backend.common.config_repository import ProfileRepositoryError, NodeDeletionChanged
 from backend.utils.reorder import resolve_new_order
 
 
@@ -50,6 +50,28 @@ def parse_node_lines():
         proxy = convert_proxy_string(line.strip()) if line.strip() else None
         results.append({'proxy': proxy} if proxy else {'error': '无法识别的节点格式'})
     return jsonify({'success': True, 'results': results})
+
+
+@nodes_bp.route('/delete-preview', methods=['POST'])
+@nodes_bp.route('/delete', methods=['POST'])
+@require_auth
+def delete_nodes_with_references():
+    """Preview, then atomically detach ordinary references and delete selected nodes."""
+    from werkzeug.exceptions import NotFound
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'message': '节点请求必须是 JSON 对象'}), 400
+    repository = get_repository()
+    try:
+        if request.path.endswith('/delete-preview'):
+            return jsonify(repository.preview_node_deletion(data.get('ids')))
+        result = repository.delete_nodes_with_references(data.get('ids'), data.get('confirmation'))
+        reset_config_context()
+        return jsonify({'success': True, 'deleted_ids': [node['id'] for node in result['nodes']]})
+    except NodeDeletionChanged as error:
+        return jsonify({'success': False, 'code': 'node_deletion_changed', 'message': str(error)}), 409
+    except NotFound as error:
+        return jsonify({'success': False, 'message': error.description}), 404
 
 
 @nodes_bp.route('/<node_id>', methods=['DELETE', 'PUT'])
