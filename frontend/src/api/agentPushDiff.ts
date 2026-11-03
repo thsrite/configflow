@@ -17,6 +17,8 @@ export interface PushDiffSummary {
   removed?: number
   modified?: number
   changes?: number
+  /** 主配置的大小变化主要来自缩进、转义等写法，而不是配置内容 */
+  reformatted?: boolean
 }
 
 export interface PushDiffFile {
