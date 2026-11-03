@@ -5,7 +5,8 @@ from backend.utils.subscription_parser import parse_uri_list
 from backend.utils.logger import get_logger
 from backend.common.profile_context import append_url_query, config_api_path, profile_api_path
 from backend.converters.common import (
-    after_match_comment, has_port_list, network_as_protocol, ruleset_format, set_general_option, udp_fallback,
+    after_match_comment, emitted_rules, has_port_list, network_as_protocol, ruleset_format, set_general_option,
+    udp_fallback,
 )
 
 logger = get_logger(__name__)
@@ -332,7 +333,7 @@ def generate_surge_config(config_data: Dict[str, Any], base_url: str = '') -> st
 
     # 遍历合并后的规则数组，保持用户配置的顺序
     after_match = False
-    for item in config_data.get('rule_configs', []):
+    for item in emitted_rules(config_data):
         if not item.get('enabled', True) or not item.get('library_enabled', True):
             continue
 

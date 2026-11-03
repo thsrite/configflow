@@ -12,13 +12,31 @@ _PORT_CONDITION = re.compile(r'\(\s*(?:DST|DEST|SRC|IN)-PORT\s*,\s*([^()]*)\)', 
 AFTER_MATCH_NOTE = '仅 Mihomo 生效（位于 MATCH 之后，只匹配节点不支持 UDP 而跳过的连接），已忽略'
 
 
+# NTP 只需对时服务器的真实地址，走代理只会增加延迟；放在最前面，不受代理规则和节点 UDP 能力影响
+NTP_DIRECT_RULE = {'id': 'builtin-ntp-direct', 'itemType': 'rule', 'rule_type': 'AND',
+                   'value': '((NETWORK,udp),(DST-PORT,123))', 'policy': 'DIRECT', 'enabled': True}
+
+
+def _effective_match(config_data):
+    """The first enabled MATCH rule, which carries the profile's UDP choices."""
+    return next((item for item in config_data.get('rule_configs', [])
+                 if item.get('itemType') == 'rule' and item.get('rule_type') == 'MATCH'
+                 and item.get('enabled', True)), {})
+
+
 def udp_fallback(config_data):
     """DIRECT or REJECT chosen on the effective MATCH rule; None follows the client default."""
-    for item in config_data.get('rule_configs', []):
-        if item.get('itemType') == 'rule' and item.get('rule_type') == 'MATCH' and item.get('enabled', True):
-            choice = item.get('udp_fallback')
-            return choice if choice in UDP_FALLBACK_POLICIES else None
-    return None
+    choice = _effective_match(config_data).get('udp_fallback')
+    return choice if choice in UDP_FALLBACK_POLICIES else None
+
+
+def ntp_direct(config_data):
+    return _effective_match(config_data).get('ntp_direct') is True
+
+
+def emitted_rules(config_data):
+    """Rule items in output order, with the built-in NTP rule first when enabled."""
+    return ([dict(NTP_DIRECT_RULE)] if ntp_direct(config_data) else []) + list(config_data.get('rule_configs', []))
 
 
 def after_match_comment(item):

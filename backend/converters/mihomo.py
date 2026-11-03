@@ -12,7 +12,7 @@ from backend.utils.logger import get_logger
 from backend.utils.proxy_utils import fix_proxy_fields
 from backend.common.profile_context import append_url_query, profile_api_path
 from backend.utils.url_utils import safe_url_for_log
-from backend.converters.common import parse_hosts_pairs, ruleset_format, udp_fallback
+from backend.converters.common import emitted_rules, parse_hosts_pairs, ruleset_format, udp_fallback
 
 # 获取当前模块的日志记录器
 logger = get_logger(__name__)
@@ -54,6 +54,14 @@ def _default_mihomo_template() -> dict:
             'listen': '0.0.0.0:53',
             'enhanced-mode': 'fake-ip',
             'fake-ip-range': '198.18.0.1/16',
+            # 写入该键会替换内核默认名单，前三项沿用内核默认；对时服务器需要真实地址，
+            # 否则客户端长期缓存的假地址被回收后，对时会发到无关域名
+            'fake-ip-filter': [
+                'dns.msftnsci.com',
+                'www.msftnsci.com',
+                'www.msftconnecttest.com',
+                '+.pool.ntp.org',
+            ],
             'nameserver': [
                 '223.5.5.5',
                 '119.29.29.29',
@@ -784,7 +792,7 @@ def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '',
     rules = []
 
     # 遍历合并后的规则数组，保持用户配置的顺序
-    for item in config_data.get('rule_configs', []):
+    for item in emitted_rules(config_data):
         if not item.get('enabled', True) or not item.get('library_enabled', True):
             continue
 

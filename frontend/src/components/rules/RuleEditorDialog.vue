@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import FormField from '@/components/common/FormField.vue'
+import FieldHelp from '@/components/common/FieldHelp.vue'
 import InfoNote from '@/components/common/InfoNote.vue'
 import Segmented from '@/components/common/Segmented.vue'
 import RuleDnsField from '@/components/rules/RuleDnsField.vue'
@@ -93,7 +94,8 @@ const form = reactive({
   position: 'top' as 'top' | 'bottom',
   enabled: true,
   no_resolve: false,
-  udp_fallback: '' as UdpFallback
+  udp_fallback: '' as UdpFallback,
+  ntp_direct: false
 })
 const dnsChoice = ref<RuleDnsValue>('default')
 const dnsTouched = ref(false)
@@ -129,6 +131,10 @@ const UDP_FALLBACK_HELP = [
   '直连：连接能通，但会绕过代理，网站可能看到真实 IP。',
   '拒绝：Mihomo 在全部规则最后追加 NETWORK,udp,REJECT，Surge 写入 udp-policy-not-supported-behaviour，Loon 写入 udp-fallback-mode。浏览器的 QUIC 会改用 TCP 走代理。',
   '基础配置的 [General] 已写对应项时，Surge 与 Loon 以基础配置为准。'
+].join('\n\n')
+const NTP_DIRECT_HELP = [
+  '在全部规则最前面加一条 UDP 123 端口直连规则（Surge、Loon 写作 PROTOCOL,UDP），对时不再经过代理，也不受节点是否支持 UDP 影响。',
+  '对时服务器还需要返回真实地址：新的默认模板已把 +.pool.ntp.org 加进 fake-ip-filter；已有的 Mihomo 基础配置请在 dns.fake-ip-filter 中自行加入这一项。'
 ].join('\n\n')
 
 const libraryById = computed(() => new Map([...props.library, ...Object.values(sourceOverrides.value)].map(item => [item.id, item])))
@@ -320,6 +326,7 @@ function reset() {
     position: 'top',
     enabled: item ? item.enabled !== false : true,
     udp_fallback: item && item.itemType !== 'ruleset' ? item.udp_fallback || '' : '',
+    ntp_direct: item?.itemType !== 'ruleset' && item?.ntp_direct === true,
     no_resolve: item?.no_resolve ?? (item ? (item.itemType === 'ruleset' ? item.behavior === 'ipcidr' : NO_RESOLVE_RULE_TYPES.includes(item.rule_type)) : false)
   })
   noResolveBase = showNoResolve.value
@@ -495,7 +502,8 @@ async function submitLegacySingle() {
   // 逻辑规则与 MATCH 的值含逗号或为空，不能按行解析，沿用单条添加；它们不参与 DNS 分流。
   const rule = { id: `rule_${Date.now()}`, itemType: 'rule', rule_type: form.ruleType, value: form.value.trim(), policy: form.policy,
     enabled: form.enabled, remark: form.remark.trim(), group_name: form.group_name.trim(), no_resolve: form.no_resolve,
-    ...(isMatch.value && form.udp_fallback ? { udp_fallback: form.udp_fallback } : {}) }
+    ...(isMatch.value && form.udp_fallback ? { udp_fallback: form.udp_fallback } : {}),
+    ...(isMatch.value && form.ntp_direct ? { ntp_direct: true } : {}) }
   await ruleApi.create(rule, props.profileId)
   notifyPublish(['rules'], '已添加 1 条规则')
   emit('saved', { ids: [rule.id] })
@@ -516,7 +524,7 @@ async function submitEdit(withDns = true) {
   } else {
     const payload = { ...rulePayload(item), itemType: 'rule', rule_type: form.ruleType, value: form.value.trim(), policy: form.policy,
       remark: form.remark.trim(), enabled: form.enabled, no_resolve: form.no_resolve, group_name: groupName,
-      udp_fallback: isMatch.value ? form.udp_fallback : '' }
+      udp_fallback: isMatch.value ? form.udp_fallback : '', ntp_direct: isMatch.value && form.ntp_direct }
     response = await ruleApi.update(item.id, { ...payload, ...dnsField }, props.profileId)
   }
   const warningsList: string[] = response?.data?.warnings || []
@@ -777,10 +785,17 @@ async function save() {
             v-if="isMatch"
             label="节点不支持 UDP 时"
             :help="UDP_FALLBACK_HELP"
-            :hint="form.udp_fallback === 'REJECT' ? 'NTP 对时等应直连的 UDP，请放进前面的直连规则。' : undefined"
+            :hint="form.udp_fallback === 'REJECT' && !form.ntp_direct ? '拒绝也会拦下对时，建议同时开启下方「对时（NTP）始终直连」。' : undefined"
+            persistent-hint
           >
             <Segmented v-model="form.udp_fallback" :options="UDP_FALLBACK_OPTIONS" label="节点不支持 UDP 时" block />
           </FormField>
+
+          <div v-if="isMatch" class="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <Switch id="rule-ntp-direct" v-model="form.ntp_direct" />
+            <Label for="rule-ntp-direct" class="text-[13px]">对时（NTP）始终直连</Label>
+            <span class="cf-compact-help"><FieldHelp label="对时（NTP）始终直连" :text="NTP_DIRECT_HELP" /></span>
+          </div>
 
           <RuleDnsField
             v-if="inUse"

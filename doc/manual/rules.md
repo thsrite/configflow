@@ -56,7 +56,8 @@
 | 测试地址 | 新建远程规则集时检查来源 URL。成功只说明当时能取得响应，不等于所有规则都符合每个目标核心。 |
 | no-resolve | 仅相关 IP/逻辑规则出现。开启后不为了匹配这条 IP 条件主动解析域名；关闭允许核心按规则需要解析。已有目标 IP 仍可匹配。需要避免额外 DNS 查询时开启，想用 IP 条件处理域名连接时核对影响。 |
 | 策略 | `DIRECT` 直连、拒绝类策略阻止连接，或选择代理组。不会因组名写着“国内”就自动保证 DNS 直连。 |
-| 节点不支持 UDP 时 | 仅 `MATCH` 规则出现。规则命中的代理节点不支持 UDP（例如没开 udp 的 ss 节点）时，QUIC、STUN 等 UDP 连接的去向。「客户端默认」不额外写入：Mihomo 与 Loon 直连，Surge 6 起拒绝。「直连」能通但绕过代理，网站可能看到真实 IP。「拒绝」时 Mihomo 在全部规则最后追加 `NETWORK,udp,REJECT`，Surge 写入 `udp-policy-not-supported-behaviour`，Loon 写入 `udp-fallback-mode`；浏览器的 QUIC 会改用 TCP 走代理。选拒绝前，把 NTP 对时等应直连的 UDP 放进前面的直连规则。Surge、Loon 基础配置的 `[General]` 已写对应项时以基础配置为准。列表里的 `MATCH` 会显示当前选择。 |
+| 节点不支持 UDP 时 | 仅 `MATCH` 规则出现。规则命中的代理节点不支持 UDP（例如没开 udp 的 ss 节点）时，QUIC、STUN 等 UDP 连接的去向。「客户端默认」不额外写入：Mihomo 与 Loon 直连，Surge 6 起拒绝。「直连」能通但绕过代理，网站可能看到真实 IP。「拒绝」时 Mihomo 在全部规则最后追加 `NETWORK,udp,REJECT`，Surge 写入 `udp-policy-not-supported-behaviour`，Loon 写入 `udp-fallback-mode`；浏览器的 QUIC 会改用 TCP 走代理。拒绝同样会拦下对时（NTP），建议同时开启下面的「对时（NTP）始终直连」。Surge、Loon 基础配置的 `[General]` 已写对应项时以基础配置为准。列表里的 `MATCH` 会显示当前选择。 |
+| 对时（NTP）始终直连 | 仅 `MATCH` 规则出现，默认关闭。开启后生成配置时在全部规则最前面加入 `AND,((NETWORK,udp),(DST-PORT,123)),DIRECT`（Surge、Loon 为 `PROTOCOL,UDP`），对时不经过代理，也不受节点是否支持 UDP 影响，不必手写这条规则。对时服务器还需要真实地址：新的默认模板已在 Mihomo `dns.fake-ip-filter` 中加入 `+.pool.ntp.org`；已有的基础配置不会自动修改，请手动加入。否则客户端长期缓存的假地址被回收后，对时会发到无关的域名。 |
 | DNS（OxiDNS） | 见下一节；仅控制 OxiDNS 域名分流。 |
 | 更多选项 → 备注 | 给自己留说明，不影响匹配。 |
 | 分组名 | 把相邻规则整理成可折叠显示的组，不是新增一个代理出口。 |

@@ -166,3 +166,50 @@ def test_new_match_keeps_its_fallback(client):
                                             'policy': 'DIRECT', 'udp_fallback': 'REJECT'})
     assert response.status_code == 200
     assert _saved(repository, 'new')['udp_fallback'] == 'REJECT'
+
+
+NTP = 'AND,((NETWORK,udp),(DST-PORT,123)),DIRECT'
+
+
+def test_ntp_direct_goes_first_in_every_client():
+    config = _config([_rule('lan', 'DOMAIN', 'lan.test'), _rule('final', 'MATCH', '', ntp_direct=True)])
+    assert _mihomo_rules(config)[:2] == [NTP, 'DOMAIN,lan.test,DIRECT']
+    assert _section(generate_surge_config(config), 'Rule')[0] == 'AND,((PROTOCOL,UDP), (DEST-PORT,123)),DIRECT'
+    assert _section(generate_loon_config(config), 'Rule')[0] == 'AND,((PROTOCOL,UDP),(DEST-PORT,123)),DIRECT'
+    assert config['rule_configs'][0]['id'] == 'lan' and len(config['rule_configs']) == 2
+
+
+@pytest.mark.parametrize('match', [_rule('final', 'MATCH', ''), _rule('final', 'MATCH', '', ntp_direct=True, enabled=False)])
+def test_ntp_direct_is_off_unless_the_effective_match_enables_it(match):
+    config = _config([_rule('lan', 'DOMAIN', 'lan.test'), match])
+    assert NTP not in _mihomo_rules(config)
+    assert 'DEST-PORT,123' not in generate_surge_config(config) + generate_loon_config(config)
+
+
+def test_rule_sync_notices_a_changed_ntp_switch():
+    before = _config([_rule('final', 'MATCH', '')])
+    after = _config([_rule('final', 'MATCH', '', ntp_direct=True)])
+    assert rule_signature(before, 'mihomo') != rule_signature(after, 'mihomo')
+
+
+def test_only_match_stores_the_ntp_switch(client):
+    api, repository = client
+    assert api.put('/api/rules/final', json={'ntp_direct': True}).status_code == 200
+    assert _saved(repository, 'final')['ntp_direct'] is True
+    assert api.put('/api/rules/final', json={'ntp_direct': 'yes'}).status_code == 400
+    assert api.put('/api/rules/final', json={'ntp_direct': False}).status_code == 200
+    assert 'ntp_direct' not in _saved(repository, 'final')
+    assert api.put('/api/rules/lan', json={'ntp_direct': True}).status_code == 200
+    assert 'ntp_direct' not in _saved(repository, 'lan')
+
+
+def test_default_templates_give_ntp_servers_real_addresses():
+    import json
+    from backend.common.resource import get_backend_resource
+    from backend.converters.mihomo import _default_mihomo_template
+    with open(get_backend_resource('config_template.json'), encoding='utf-8') as handle:
+        template = yaml.safe_load(json.load(handle)['mihomo']['custom_config'])
+    assert '+.pool.ntp.org' in template['dns']['fake-ip-filter']
+    # The embedded template writes the key, so it must keep Mihomo's own defaults too.
+    assert _default_mihomo_template()['dns']['fake-ip-filter'] == [
+        'dns.msftnsci.com', 'www.msftnsci.com', 'www.msftconnecttest.com', '+.pool.ntp.org']

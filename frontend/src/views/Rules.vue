@@ -321,6 +321,7 @@
                 />
               </template>
               <span v-if="udpFallbackLabel(item)" class="chip shrink-0 text-[11px]" :title="UDP_FALLBACK_TITLE">{{ udpFallbackLabel(item) }}</span>
+              <span v-if="ntpDirect(item)" class="chip shrink-0 text-[11px]" :title="NTP_DIRECT_TITLE">对时直连</span>
               <span v-if="afterMatch.has(item.uniqueId)" class="chip shrink-0 text-[11px]" :title="AFTER_MATCH_TITLE">仅 Mihomo</span>
             </div>
             <span class="w-[160px] shrink-0 truncate text-[12px] text-muted-foreground max-lg:hidden" :title="item.remark">
@@ -552,8 +553,9 @@
             <p v-if="item.remark" class="mt-1.5 mb-0 break-all text-[11.5px] text-muted-foreground" :title="item.remark">
               {{ item.remark }}
             </p>
-            <div v-if="udpFallbackLabel(item) || afterMatch.has(item.uniqueId)" class="mt-1.5 flex flex-wrap gap-1.5">
+            <div v-if="udpFallbackLabel(item) || ntpDirect(item) || afterMatch.has(item.uniqueId)" class="mt-1.5 flex flex-wrap gap-1.5">
               <span v-if="udpFallbackLabel(item)" class="chip text-[11px]" :title="UDP_FALLBACK_TITLE">{{ udpFallbackLabel(item) }}</span>
+              <span v-if="ntpDirect(item)" class="chip text-[11px]" :title="NTP_DIRECT_TITLE">对时直连</span>
               <span v-if="afterMatch.has(item.uniqueId)" class="chip text-[11px]" :title="AFTER_MATCH_TITLE">仅 Mihomo</span>
             </div>
           </div>
@@ -880,6 +882,8 @@ const policyChip = (policy: string) =>
 
 const UDP_FALLBACK_TITLE = '代理节点不支持 UDP 时的处理，编辑这条 MATCH 规则可修改'
 const AFTER_MATCH_TITLE = '位于 MATCH 之后：Mihomo 只用它匹配因节点不支持 UDP 而跳过的连接，Surge 和 Loon 会忽略这一条'
+const NTP_DIRECT_TITLE = '生成配置时在全部规则最前面加入 UDP 123 端口直连，编辑这条 MATCH 规则可修改'
+const ntpDirect = (item: any) => item.itemType === 'rule' && item.rule_type === 'MATCH' && item.ntp_direct === true
 const udpFallbackLabel = (item: any) =>
   item.itemType === 'rule' && item.rule_type === 'MATCH' && item.udp_fallback
     ? `UDP 不支持时${item.udp_fallback === 'REJECT' ? '拒绝' : '直连'}` : ''
