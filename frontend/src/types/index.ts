@@ -38,6 +38,7 @@ export interface Rule {
   remark?: string  // 备注
   no_resolve?: boolean  // no-resolve 开关
   group_name?: string  // 分组名称
+  udp_fallback?: 'DIRECT' | 'REJECT'  // 仅 MATCH：节点不支持 UDP 时的去向，缺省跟随客户端
 }
 
 export interface RuleSet {

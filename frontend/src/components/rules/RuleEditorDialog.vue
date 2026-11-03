@@ -92,7 +92,8 @@ const form = reactive({
   group_name: '',
   position: 'top' as 'top' | 'bottom',
   enabled: true,
-  no_resolve: false
+  no_resolve: false,
+  udp_fallback: '' as UdpFallback
 })
 const dnsChoice = ref<RuleDnsValue>('default')
 const dnsTouched = ref(false)
@@ -117,6 +118,18 @@ const locked = computed(() => engine.value?.editable === false)
 const entry = computed(() => (editItem.value ? props.dns?.rules[editItem.value.id] : undefined))
 const libraryFormat = computed(() => detectRuleContentFormat(form.library.content))
 const singleType = computed(() => !editing.value && source.value === 'values' && SINGLE_RULE_TYPES.includes(form.ruleType))
+type UdpFallback = '' | 'DIRECT' | 'REJECT'
+const isMatch = computed(() => source.value === 'values' && (editing.value || singleType.value) && form.ruleType === 'MATCH')
+const UDP_FALLBACK_OPTIONS: { value: UdpFallback; label: string }[] = [
+  { value: '', label: '客户端默认' }, { value: 'DIRECT', label: '直连' }, { value: 'REJECT', label: '拒绝' }
+]
+const UDP_FALLBACK_HELP = [
+  '规则命中的代理节点不支持 UDP（例如没有开启 udp 的 ss 节点）时，QUIC、STUN 等 UDP 连接的去向。Mihomo 会跳过这类规则继续向下匹配，全部跳过后直连。',
+  '客户端默认：Mihomo 与 Loon 直连；Surge 6 起默认拒绝。',
+  '直连：连接能通，但会绕过代理，网站可能看到真实 IP。',
+  '拒绝：Mihomo 在全部规则最后追加 NETWORK,udp,REJECT，Surge 写入 udp-policy-not-supported-behaviour，Loon 写入 udp-fallback-mode。浏览器的 QUIC 会改用 TCP 走代理。',
+  '基础配置的 [General] 已写对应项时，Surge 与 Loon 以基础配置为准。'
+].join('\n\n')
 
 const libraryById = computed(() => new Map([...props.library, ...Object.values(sourceOverrides.value)].map(item => [item.id, item])))
 const libraryOptions = computed(() => [...libraryById.value.values()])
@@ -306,6 +319,7 @@ function reset() {
     group_name: item?.group_name || '',
     position: 'top',
     enabled: item ? item.enabled !== false : true,
+    udp_fallback: item && item.itemType !== 'ruleset' ? item.udp_fallback || '' : '',
     no_resolve: item?.no_resolve ?? (item ? (item.itemType === 'ruleset' ? item.behavior === 'ipcidr' : NO_RESOLVE_RULE_TYPES.includes(item.rule_type)) : false)
   })
   noResolveBase = showNoResolve.value
@@ -480,7 +494,8 @@ async function submitCreate(withDns = true) {
 async function submitLegacySingle() {
   // 逻辑规则与 MATCH 的值含逗号或为空，不能按行解析，沿用单条添加；它们不参与 DNS 分流。
   const rule = { id: `rule_${Date.now()}`, itemType: 'rule', rule_type: form.ruleType, value: form.value.trim(), policy: form.policy,
-    enabled: form.enabled, remark: form.remark.trim(), group_name: form.group_name.trim(), no_resolve: form.no_resolve }
+    enabled: form.enabled, remark: form.remark.trim(), group_name: form.group_name.trim(), no_resolve: form.no_resolve,
+    ...(isMatch.value && form.udp_fallback ? { udp_fallback: form.udp_fallback } : {}) }
   await ruleApi.create(rule, props.profileId)
   notifyPublish(['rules'], '已添加 1 条规则')
   emit('saved', { ids: [rule.id] })
@@ -500,7 +515,8 @@ async function submitEdit(withDns = true) {
     response = await ruleSetApi.update(item.id, { ...payload, ...dnsField }, props.profileId)
   } else {
     const payload = { ...rulePayload(item), itemType: 'rule', rule_type: form.ruleType, value: form.value.trim(), policy: form.policy,
-      remark: form.remark.trim(), enabled: form.enabled, no_resolve: form.no_resolve, group_name: groupName }
+      remark: form.remark.trim(), enabled: form.enabled, no_resolve: form.no_resolve, group_name: groupName,
+      udp_fallback: isMatch.value ? form.udp_fallback : '' }
     response = await ruleApi.update(item.id, { ...payload, ...dnsField }, props.profileId)
   }
   const warningsList: string[] = response?.data?.warnings || []
@@ -755,6 +771,15 @@ async function save() {
                 <SelectItem v-for="policy in policies" :key="policy" :value="policy" :title="policy"><span class="break-all">{{ policy }}</span></SelectItem>
               </SelectContent>
             </Select>
+          </FormField>
+
+          <FormField
+            v-if="isMatch"
+            label="节点不支持 UDP 时"
+            :help="UDP_FALLBACK_HELP"
+            :hint="form.udp_fallback === 'REJECT' ? 'NTP 对时等应直连的 UDP，请放进前面的直连规则。' : undefined"
+          >
+            <Segmented v-model="form.udp_fallback" :options="UDP_FALLBACK_OPTIONS" label="节点不支持 UDP 时" block />
           </FormField>
 
           <RuleDnsField

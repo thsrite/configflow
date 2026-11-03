@@ -12,7 +12,7 @@ from backend.utils.logger import get_logger
 from backend.utils.proxy_utils import fix_proxy_fields
 from backend.common.profile_context import append_url_query, profile_api_path
 from backend.utils.url_utils import safe_url_for_log
-from backend.converters.common import parse_hosts_pairs, ruleset_format
+from backend.converters.common import parse_hosts_pairs, ruleset_format, udp_fallback
 
 # 获取当前模块的日志记录器
 logger = get_logger(__name__)
@@ -826,6 +826,11 @@ def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '',
                 rules.append(f"RULE-SET,{ruleset_name},{policy},no-resolve")
             else:
                 rules.append(f"RULE-SET,{ruleset_name},{policy}")
+
+    # 节点不支持 UDP 时 Mihomo 跳过该规则继续向下匹配，全部跳过后默认 DIRECT；
+    # 选择拒绝时在最后接住这些连接。DIRECT 与内核默认相同，不额外写规则。
+    if udp_fallback(config_data) == 'REJECT':
+        rules.append('NETWORK,udp,REJECT')
 
     mihomo_config['rules'] = rules
     from backend.utils.group_candidates import lower_group_provider_filters

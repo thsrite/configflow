@@ -639,6 +639,34 @@ describe('rule editor dialog', () => {
     expect(wrapper.emitted('saved')).toEqual([[{ ids: ['rule-new'], dns: { 'rule-new': { state: 'explicit', route: 'blackhole' } } }]])
   })
 
+  it('offers the UDP fallback only on MATCH and clears it when the type changes', async () => {
+    const item = { id: 'final', itemType: 'rule', rule_type: 'MATCH', value: '', policy: 'Proxy', enabled: true, udp_fallback: 'DIRECT' }
+    let wrapper = await render({ mode: 'edit', item })
+    expect(text()).toContain('节点不支持 UDP 时')
+    expect(dialog().querySelector('[role="radio"][aria-checked="true"]')!.textContent?.trim()).toBe('直连')
+    await source('拒绝')
+    expect(text()).toContain('NTP 对时等应直连的 UDP')
+    await click(save())
+    expect(network.update).toHaveBeenLastCalledWith('final', expect.objectContaining({ udp_fallback: 'REJECT' }), 'p1')
+
+    wrappers.splice(0).forEach(entry => entry.unmount())
+    document.body.innerHTML = ''
+    wrapper = await render({ mode: 'edit', item })
+    await choose(wrapper, '规则类型', 'DOMAIN')
+    expect(text()).not.toContain('节点不支持 UDP 时')
+    await type('#rule-value', 'x.test')
+    await click(save())
+    expect(network.update).toHaveBeenLastCalledWith('final', expect.objectContaining({ rule_type: 'DOMAIN', udp_fallback: '' }), 'p1')
+
+    wrappers.splice(0).forEach(entry => entry.unmount())
+    document.body.innerHTML = ''
+    wrapper = await render()
+    await choose(wrapper, '规则类型', 'MATCH')
+    await source('拒绝')
+    await click(save())
+    expect(network.create).toHaveBeenCalledWith(expect.objectContaining({ rule_type: 'MATCH', udp_fallback: 'REJECT' }), 'p1')
+  })
+
   it('keeps a group name typed together with a policy change, and clears the old one otherwise', async () => {
     const item = { id: 'rule-g', itemType: 'rule', rule_type: 'DOMAIN-SUFFIX', value: 'g.test', policy: 'DIRECT', enabled: true, group_name: '国内' }
     let wrapper = await render({ mode: 'edit', item })
