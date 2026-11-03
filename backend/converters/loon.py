@@ -13,7 +13,8 @@ from backend.utils.subscription_parser import parse_uri_list
 from backend.utils.logger import get_logger
 from backend.common.profile_context import append_url_query, profile_api_path
 from backend.converters.common import (
-    after_match_comment, has_port_list, network_as_protocol, ruleset_format, set_general_option, udp_fallback,
+    after_match_comment, emitted_rules, has_port_list, network_as_protocol, ruleset_format, set_general_option,
+    udp_fallback,
 )
 
 logger = get_logger(__name__)
@@ -380,7 +381,7 @@ def _build_rules(config_data: Dict[str, Any], effective_base_url: str) -> Tuple[
         if lib_rule.get('enabled', True):
             ruleset_urls[lib_rule.get('name', '')] = lib_rule.get('url', '') or ''
 
-    for item in config_data.get('rule_configs', []):
+    for item in emitted_rules(config_data):
         if not item.get('enabled', True) or not item.get('library_enabled', True):
             continue
         item_type = item.get('itemType', '')

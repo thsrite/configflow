@@ -39,6 +39,7 @@ export interface Rule {
   no_resolve?: boolean  // no-resolve 开关
   group_name?: string  // 分组名称
   udp_fallback?: 'DIRECT' | 'REJECT'  // 仅 MATCH：节点不支持 UDP 时的去向，缺省跟随客户端
+  ntp_direct?: boolean  // 仅 MATCH：生成时在最前面加入 UDP 123 直连
 }
 
 export interface RuleSet {

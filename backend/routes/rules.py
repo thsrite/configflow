@@ -60,13 +60,18 @@ def normalize_rule_config(rule_item: dict, previous=None) -> None:
     if not isinstance(rule_item, dict):
         raise ProfileValidationError('规则请求必须是 JSON 对象')
     rule_item.setdefault('itemType', 'rule' if 'rule_type' in rule_item else 'ruleset')
-    # 「节点不支持 UDP 时」只属于 MATCH：空值跟随各客户端默认
+    # 「节点不支持 UDP 时」与「对时始终直连」只属于 MATCH：空值跟随各客户端默认，对时默认关闭
     fallback = rule_item.pop('udp_fallback', None) or ''
+    ntp = rule_item.pop('ntp_direct', False)
     if rule_item['itemType'] != 'ruleset' and rule_item.get('rule_type') == 'MATCH':
         if fallback not in ('', *UDP_FALLBACK_POLICIES):
             raise ProfileValidationError('节点不支持 UDP 时只能选择跟随客户端默认、直连或拒绝')
+        if not isinstance(ntp, bool):
+            raise ProfileValidationError('对时始终直连只能是开启或关闭')
         if fallback:
             rule_item['udp_fallback'] = fallback
+        if ntp:
+            rule_item['ntp_direct'] = True
     if rule_item['itemType'] != 'ruleset':
         # Keep unrelated edits to legacy rules possible; validate every new or
         # changed type/value before it reaches the saved profile.

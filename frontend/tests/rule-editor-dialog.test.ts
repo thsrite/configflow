@@ -639,15 +639,17 @@ describe('rule editor dialog', () => {
     expect(wrapper.emitted('saved')).toEqual([[{ ids: ['rule-new'], dns: { 'rule-new': { state: 'explicit', route: 'blackhole' } } }]])
   })
 
-  it('offers the UDP fallback only on MATCH and clears it when the type changes', async () => {
+  it('offers the UDP fallback and NTP switch only on MATCH and clears them when the type changes', async () => {
     const item = { id: 'final', itemType: 'rule', rule_type: 'MATCH', value: '', policy: 'Proxy', enabled: true, udp_fallback: 'DIRECT' }
     let wrapper = await render({ mode: 'edit', item })
     expect(text()).toContain('节点不支持 UDP 时')
     expect(dialog().querySelector('[role="radio"][aria-checked="true"]')!.textContent?.trim()).toBe('直连')
     await source('拒绝')
-    expect(text()).toContain('NTP 对时等应直连的 UDP')
+    expect(text()).toContain('建议同时开启下方「对时（NTP）始终直连」')
+    await click(document.querySelector('#rule-ntp-direct'))
+    expect(text()).not.toContain('建议同时开启下方「对时（NTP）始终直连」')
     await click(save())
-    expect(network.update).toHaveBeenLastCalledWith('final', expect.objectContaining({ udp_fallback: 'REJECT' }), 'p1')
+    expect(network.update).toHaveBeenLastCalledWith('final', expect.objectContaining({ udp_fallback: 'REJECT', ntp_direct: true }), 'p1')
 
     wrappers.splice(0).forEach(entry => entry.unmount())
     document.body.innerHTML = ''
@@ -656,7 +658,8 @@ describe('rule editor dialog', () => {
     expect(text()).not.toContain('节点不支持 UDP 时')
     await type('#rule-value', 'x.test')
     await click(save())
-    expect(network.update).toHaveBeenLastCalledWith('final', expect.objectContaining({ rule_type: 'DOMAIN', udp_fallback: '' }), 'p1')
+    expect(document.querySelector('#rule-ntp-direct')).toBeNull()
+    expect(network.update).toHaveBeenLastCalledWith('final', expect.objectContaining({ rule_type: 'DOMAIN', udp_fallback: '', ntp_direct: false }), 'p1')
 
     wrappers.splice(0).forEach(entry => entry.unmount())
     document.body.innerHTML = ''
