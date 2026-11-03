@@ -75,8 +75,10 @@ function segmentsFor(summary: PushDiffSummary): Segment[] {
   }
   if (summary.kind === 'config') {
     const size = sizeText(summary.before, summary.after)
+    // 上次推送存的是 Agent 渲染后的文件，写法与本次发布包不同，大小差主要来自格式
+    const note = size && summary.reformatted ? '，主要是缩进、转义等写法不同' : ''
     return [{ text: summary.changes ? `${summary.changes} 项配置变化` : '配置项未变，格式有变化', tone: 'plain' },
-      ...(size ? [{ text: ` · ${size}`, tone: 'muted' as Tone }] : [])]
+      ...(size ? [{ text: ` · ${size}${note}`, tone: 'muted' as Tone }] : [])]
   }
   return [{ text: sizeText(summary.before, summary.after) || '大小未知', tone: 'plain' }]
 }

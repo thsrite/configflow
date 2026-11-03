@@ -103,6 +103,8 @@ describe('push diff copy', () => {
     expect(summaryText(changed.files![1])).toBe('节点 +2 / −1 · 修改 1 · 共 3 个')
     expect(summaryText(changed.files![2])).toBe('规则 +150 / −30 · 共 40120 条')
     expect(summaryText(changed.files![0])).toBe('4 项配置变化 · 2.0 KB → 2.2 KB（+252 B）')
+    const reformatted = { ...changed.files![0]!, summary: { ...changed.files![0]!.summary!, before: 24156, after: 19251, changes: 2, reformatted: true } }
+    expect(summaryText(reformatted)).toBe('2 项配置变化 · 23.6 KB → 18.8 KB（−4.8 KB），主要是缩进、转义等写法不同')
     expect(summaryText({ path: 'extra.txt', role: 'custom', status: 'removed', summary: { kind: 'size', before: 3, after: null } })).toBe('原 3 B')
     expect(summaryText({ path: 'x', role: 'rule', status: 'modified' })).toBe('上次推送的内容未保存，无法细分')
   })

@@ -24,6 +24,7 @@ from collections import Counter
 import difflib
 import io
 import json
+import posixpath
 import re
 import tarfile
 from urllib.parse import unquote, urlsplit
@@ -816,16 +817,66 @@ def _raw_diff(old_doc, new_doc, old_name, new_name):
     return {'lines': shown, 'truncated': total > len(shown), 'omitted_lines': total - len(shown)}
 
 
+_PROVIDER_SECTIONS = ('proxy-providers', 'rule-providers')
+# A size change this much larger or smaller than the content's own is reported as formatting.
+FORMAT_NOTE_BYTES = 512
+
+
+def _agent_path(provider):
+    """``provider`` with the relative path the Agent writes (Go ``filepath.Clean``), else itself."""
+    path = provider.get('path') if isinstance(provider, dict) else None
+    if not isinstance(path, str) or not path or path.startswith('/'):
+        return provider
+    clean = posixpath.normpath(path)
+    return provider if clean == path else {**provider, 'path': clean}
+
+
+def _agent_paths(document):
+    """``./ruleset/a.list`` and ``ruleset/a.list`` are one file.
+
+    The Agent rewrites provider paths when it renders the final configuration,
+    so a receipt from a final-preview push holds cleaned paths while the
+    candidate bundle still has the generated ones. Both sides, the rows and
+    the raw diff, show the path the Agent writes. Absolute paths depend on
+    the device's configuration directory and are left as they are.
+    """
+    if not isinstance(document, dict):
+        return document
+    changed = {}
+    for section in _PROVIDER_SECTIONS:
+        providers = document.get(section)
+        if isinstance(providers, dict):
+            cleaned = {name: _agent_path(provider) for name, provider in providers.items()}
+            if any(cleaned[name] is not provider for name, provider in providers.items()):
+                changed[section] = cleaned
+    return {**document, **changed} if changed else document
+
+
+def _canonical_size(document):
+    dumper = getattr(yaml, 'CSafeDumper', yaml.SafeDumper)
+    return len(yaml.dump(document, Dumper=dumper, allow_unicode=True, sort_keys=False).encode('utf-8', 'surrogatepass'))
+
+
 def diff_config(old_bytes, new_bytes, *, old_name='config.yaml', new_name='config.yaml'):
-    """Key-path comparison of two YAML main files, bounded, credentials marked."""
+    """Key-path comparison of two YAML main files, bounded, credentials marked.
+
+    ``reformatted`` tells that the byte sizes differ mostly by how the files
+    are written (indentation, escapes, quoting), not by what they configure.
+    """
     try:
         old_doc, new_doc = _load_yaml(old_bytes), _load_yaml(new_bytes)
     except (UnicodeDecodeError, yaml.YAMLError, RecursionError):
         return {'format': 'yaml', 'status': 'unparsable', 'items': [], 'omitted': 0}
+    old_doc, new_doc = _agent_paths(old_doc), _agent_paths(new_doc)
     budget = _Budget(MAX_CONFIG_ROWS)
     _walk(old_doc, new_doc, (), budget)
     result = {'format': 'yaml', 'status': 'compared' if budget.rows else 'formatting', 'items': budget.rows,
               'omitted': budget.omitted, 'total': len(budget.rows) + budget.omitted}
+    try:
+        content_delta = _canonical_size(new_doc) - _canonical_size(old_doc)
+    except (yaml.YAMLError, UnicodeError, RecursionError):
+        content_delta = len(new_bytes) - len(old_bytes)  # no note rather than a wrong one
+    result['reformatted'] = abs(len(new_bytes) - len(old_bytes) - content_delta) >= FORMAT_NOTE_BYTES
     result['raw'] = _raw_diff(old_doc, new_doc, old_name, new_name)
     return result
 
@@ -1401,7 +1452,7 @@ def build_push_diff(agent, bundle, repository, *, receipt=_MISSING, lists=None):
             if old is not None and new is not None:
                 config = diff_config(old, new, old_name=old_entries[path]['path'], new_name=new_entries[path]['path'])
                 summary = {'kind': 'config', 'changes': config.get('total', 0),
-                           'before': len(old), 'after': len(new)}
+                           'before': len(old), 'after': len(new), 'reformatted': config.get('reformatted', False)}
             else:
                 summary = _size_summary(old, new)
         elif role == 'provider' and (old is not None or new is not None):

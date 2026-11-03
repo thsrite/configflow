@@ -9,7 +9,7 @@ import yaml
 
 from backend.agents import push_diff
 from backend.agents.deployment_bundle import build_deployment_bundle, deployment_content_digests
-from backend.agents.push_diff import (build_push_diff, diff_config, rule_entries, secret_spans, unpack, without_secrets,
+from backend.agents.push_diff import (FORMAT_NOTE_BYTES, build_push_diff, diff_config, rule_entries, secret_spans, unpack, without_secrets,
                                       without_stored)
 
 SECRETS = {
@@ -89,7 +89,8 @@ def items_by_key(result):
 
 
 def raw_lines(old, new):
-    """The unified diff of the documents as yaml.safe_dump writes them, nothing replaced."""
+    """The unified diff of the documents as yaml.safe_dump writes them, provider paths as the Agent writes them."""
+    old, new = push_diff._agent_paths(old), push_diff._agent_paths(new)
     return list(difflib.unified_diff(yaml.safe_dump(old, allow_unicode=True, sort_keys=False).splitlines(),
                                      yaml.safe_dump(new, allow_unicode=True, sort_keys=False).splitlines(),
                                      'a/config.yaml', 'b/config.yaml', lineterm=''))
@@ -798,3 +799,49 @@ def test_only_a_few_change_lists_are_kept(setup, monkeypatch):
         checker.get_push_diff(item, config, BASE_URL, prepare)
         executor.run()
     assert len(checker._details) == 2
+
+
+
+def _agent_rendered(document):
+    """A final-preview push receipt: Go yaml.v3 style (4-space indents, escaped emoji) with cleaned paths."""
+    text = yaml.safe_dump(document, allow_unicode=False, sort_keys=False, indent=4, width=4096)
+    return re.sub(r'(?m)^( *)- ', lambda m: m.group(1) + '    - ', text).encode()
+
+
+def _providers(prefix, count=40):
+    return {
+        'proxy-providers': {'feed': {'type': 'http', 'url': 'https://feed.test/sub', 'path': f'{prefix}providers/feed.yaml'}},
+        'rule-providers': {f'Set{index}': {'type': 'http', 'behavior': 'domain', 'format': 'text',
+                                           'url': f'https://config.test/rules/Set{index}',
+                                           'path': f'{prefix}ruleset/Set{index}.list'} for index in range(count)},
+        'rules': [f'RULE-SET,Set{index},🐟 漏网之鱼' for index in range(count)] + ['MATCH,🐟 漏网之鱼'],
+    }
+
+
+def _changed_lines(result):
+    return [line for line in result['raw']['lines'] if line[:1] in '+-' and line[:3] not in ('+++', '---')]
+
+
+def test_agent_cleaned_provider_paths_are_not_changes():
+    new = _providers('./')
+    new['rules'] = ['AND,((NETWORK,udp),(DST-PORT,123)),DIRECT', *new['rules'], 'NETWORK,udp,REJECT']
+    result = diff_config(_agent_rendered(_providers('')), dump(new))
+    assert [item['key'] for item in result['items']] == ['rules']
+    assert not any('ruleset/' in line or 'providers/' in line for line in _changed_lines(result))
+    assert result['reformatted'] is True
+
+
+def test_paths_that_name_another_file_still_count():
+    old, new = _providers('./', 2), _providers('./', 2)
+    new['rule-providers']['Set0']['path'] = './ruleset/../other/Set0.list'
+    new['proxy-providers']['feed']['path'] = '/etc/mihomo/providers/feed.yaml'
+    result = diff_config(dump(old), dump(new))
+    assert [item['key'] for item in result['items']] == ['proxy-providers.feed.path', 'rule-providers.Set0.path']
+    assert {line.split('path: ')[-1] for line in _changed_lines(result) if line.startswith('+')} == {
+        'other/Set0.list', '/etc/mihomo/providers/feed.yaml'}
+
+
+def test_same_writing_style_is_not_called_reformatting():
+    new = _providers('./')
+    new['rules'] = [f'DOMAIN,host{index}.example.test,DIRECT' for index in range(200)] + new['rules']
+    assert diff_config(dump(_providers('./')), dump(new))['reformatted'] is False
