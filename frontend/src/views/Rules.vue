@@ -286,7 +286,8 @@
 
             <div class="flex min-w-0 flex-1 items-center gap-2">
               <template v-if="item.itemType === 'rule'">
-                <span class="min-w-0 truncate font-mono text-[12.5px] text-foreground" :title="item.value">
+                <!-- MATCH 没有匹配值：不留空 span，否则 gap 会把后面的 chip 推离列首 -->
+                <span v-if="item.value" class="min-w-0 truncate font-mono text-[12.5px] text-foreground" :title="item.value">
                   {{ item.value }}
                 </span>
               </template>
@@ -516,7 +517,7 @@
               <p class="m-0 font-mono text-[11px] tracking-[0.04em] text-info-accent uppercase">
                 {{ item.rule_type }}
               </p>
-              <p class="mt-1 mb-0 font-mono text-[13px] break-all text-foreground" :title="item.value">
+              <p v-if="item.value" class="mt-1 mb-0 font-mono text-[13px] break-all text-foreground" :title="item.value">
                 {{ item.value }}
               </p>
             </template>
