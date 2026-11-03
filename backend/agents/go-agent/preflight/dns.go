@@ -83,6 +83,7 @@ func checkDNSWithProbe(candidate DNSCandidate, options DNSOptions, ports portPro
 						}
 					}
 					report = append(report, dnsRelationshipChecks(candidate, doc, requirements, *options.Peer, peerDoc, peerRequirements)...)
+					report = append(report, dnsTUNUpstreamChecks(cfg, doc, options.Peer.Config, peerDoc)...)
 				}
 			}
 		}
@@ -226,4 +227,30 @@ func dnsHijackChecks(cfg Config, doc map[string]interface{}) []Check {
 		}
 	}
 	return nil
+}
+
+// Mihomo adds these exclusions when it is published; an OxiDNS publication can
+// only report upstreams that the running Mihomo would still answer itself.
+func dnsTUNUpstreamChecks(cfg Config, doc map[string]interface{}, peer Config, peerDoc map[string]interface{}) []Check {
+	if cfg.ServiceType != "oxidns" || peer.ServiceType != "mihomo" {
+		return nil
+	}
+	marker, _ := peerDoc["x-configflow-linux-gateway"].(map[string]interface{})
+	tun, _ := peerDoc["tun"].(map[string]interface{})
+	if marker["enabled"] == true || tun["enable"] != true {
+		return nil
+	}
+	excluded, _ := tun["route-exclude-address"].([]interface{})
+	var missing []string
+	for _, address := range TUNHijackedOxiDNSUpstreams(doc, tun) {
+		if !PrefixesCover(excluded, address) {
+			missing = append(missing, address.String())
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return []Check{{Name: "同机 TUN 劫持上游", Level: "warn",
+		Message: fmt.Sprintf("同机 Mihomo 的 TUN 会劫持发往 %s 的 53 端口查询并返回 fake-ip，OxiDNS 拿不到这些上游的真实解析", strings.Join(missing, "、")),
+		Fix:     "OxiDNS 发布后再发布一次同机 Mihomo，Agent 会自动把这些地址加入 tun.route-exclude-address。"}}
 }
