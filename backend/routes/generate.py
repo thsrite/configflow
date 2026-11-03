@@ -72,7 +72,8 @@ def generate_artifact(service):
     record = previews.save(repository, {'id': 'manual', 'service_type': service}, config,
         repository.config_revision(config['profile_id']), '',
         {'bundle': bundle, 'config_content': files[main][0].decode('utf-8')}, members=[])
-    result = jsonify(success=True, **previews.public(record), subscription_hosts=getattr(g, 'generated_subscription_hosts', None))
+    result = jsonify(success=True, **previews.public(record), subscription_hosts=getattr(g, 'generated_subscription_hosts', None),
+                     subscription_dialers=getattr(g, 'generated_subscription_dialers', None))
     result.headers['Cache-Control'] = 'no-store'
     return result
 
@@ -102,6 +103,7 @@ def generate_mihomo():
         report = {}
         yaml_content = generate_mihomo_config(config_data, base_url=base_url, report=report)
         g.generated_subscription_hosts = _subscription_hosts_report(config_data, report)
+        g.generated_subscription_dialers = report.get('subscription_dialers')
 
         # 保存到数据目录
         output_file = get_repository().write_generated(
@@ -211,7 +213,8 @@ def preview_mihomo():
         report = {}
         yaml_content = generate_mihomo_config(config_data, base_url=base_url, report=report)
         hosts_report = _subscription_hosts_report(config_data, report)
-        return jsonify({'content': yaml_content, 'subscription_hosts': hosts_report})
+        return jsonify({'content': yaml_content, 'subscription_hosts': hosts_report,
+                        'subscription_dialers': report.get('subscription_dialers')})
     except StrategyReferenceError as e:
         return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:

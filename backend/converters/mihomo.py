@@ -862,6 +862,12 @@ def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '',
     if report is not None:
         report['subscription_hosts'] = hosts_report
 
+    # 订阅自带的链式节点：补上它们依赖的机场中转分组，补不上的节点在交付时跳过
+    from backend.utils.subscription_dialers import add_dialer_groups
+    dialer_report = add_dialer_groups(mihomo_config, config_data)
+    if report is not None and dialer_report:
+        report['subscription_dialers'] = dialer_report
+
     from backend.utils.strategy_references import validate_rule_policies
     validate_rule_policies(
         config_data,

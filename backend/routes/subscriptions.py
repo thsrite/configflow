@@ -394,6 +394,7 @@ def get_all_subscription_proxies():
                         except Exception:
                             continue
 
+            proxies = snapshot.adapt(sub, proxies)
             if not proxies:
                 current_app.logger.warning(f"订阅 '{sub_name}' (id: {sub_id}) 没有可用节点")
                 continue
@@ -523,6 +524,8 @@ def get_subscription_proxies(sub_id):
                 return Response(rendered['content'], mimetype='text/yaml; charset=utf-8')
             sub_name = sub.get('name', 'Unknown')
             sub_url = sub.get('url')
+            # Surge and Loon have no dialer-proxy: the airport's chained nodes are left out.
+            chains = request.args.get('format') not in ('surge', 'loon')
             proxies = None
             cache_updated = False
             fetch_error = None
@@ -544,7 +547,7 @@ def get_subscription_proxies(sub_id):
                     yaml_text, source = result
                     from backend.utils.provider_delivery import parse_provider_proxies
                     raw_proxies = parse_provider_proxies(yaml_text, name=sub_name)
-                    proxies = filter_subscription_items(sub, raw_proxies)
+                    proxies = snapshot.adapt(sub, filter_subscription_items(sub, raw_proxies), chains=chains)
                     # Reject the actual raw graph before node transforms/cache writes.
                     if request.args.get('format') == 'surge':
                         from backend.converters.surge import convert_proxies_to_surge_text
@@ -618,6 +621,7 @@ def get_subscription_proxies(sub_id):
                     except Exception as e:
                         current_app.logger.error("转换节点失败: %s", safe_exception_details(e))
                         continue
+                proxies = snapshot.adapt(sub, proxies, chains=chains)
 
             # Alternate-format fallback responses must also pass the publication
             # gate; preserve the explicit Surge unsupported-chain error first.

@@ -142,6 +142,13 @@ export interface SubscriptionHostsReport {
   dns?: SubscriptionHostsDns
 }
 
+/** 订阅自带链式节点（dialer-proxy）：自动补上的中转分组与跳过的节点 */
+export interface SubscriptionDialersReport {
+  groups: Array<{ subscription: string; target: string; group: string; members: string[]; copied: boolean }>
+  skipped: Array<{ subscription: string; node: string; target: string; reason: 'refresh' | 'missing' }>
+  skipped_count: number
+}
+
 export interface AgentContentSync {
   status: 'synced' | 'changed' | 'unknown' | 'never-pushed' | 'checking'
   /** Stable server reason code; never display raw errors as UI copy. */

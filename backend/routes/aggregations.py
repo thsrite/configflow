@@ -5,6 +5,7 @@
 - 生成聚合 provider 文件
 - 清理策略组中的聚合引用
 """
+import json
 import os
 import re
 import uuid
@@ -263,18 +264,31 @@ def generate_aggregation_provider(aggregation: Dict[str, Any], *, config=None,
             sub_store_proxy_by_name[p.get('name', '')] = p
 
     from backend.utils.dialer_references import validate_dialers, overlay_dialer
+    from backend.utils.subscription_dialers import adapt_subscription_proxies, dialer_record
+    from flask import has_request_context
     validate_dialers(config_data)
+    # Subscription nodes' own chained targets follow the main configuration;
+    # Surge and Loon have no dialer-proxy, so those nodes are left out there.
+    main_document = json.loads(snapshot.main_json)
+    subscription_names = {item.get('id'): item.get('name', '') for item in config_data.get('subscriptions', [])}
+    records = {item['id']: dialer_record(item) for item in config_data.get('subscriptions', [])
+               if item.get('id') in set(aggregation.get('subscriptions', []))}
+    chains = not (has_request_context() and request.args.get('format') in ('surge', 'loon'))
     proxies = []
     for node in all_nodes:
         node_name = node.get('name', '')
         # 优先使用 Sub-Store 返回的原始 proxy（已经是 mihomo 格式）
         if node_name in sub_store_proxy_by_name:
-            proxies.append(sub_store_proxy_by_name[node_name])
+            proxy = sub_store_proxy_by_name[node_name]
         else:
             # 手动节点或缓存降级节点，使用 convert_node_to_mihomo
             proxy = overlay_dialer(config_data, node, convert_node_to_mihomo(node))
-            if proxy:
-                proxies.append(proxy)
+        if proxy and node.get('subscription_id') in subscription_names:
+            sub_id = node['subscription_id']
+            proxy = next(iter(adapt_subscription_proxies(subscription_names[sub_id], [proxy], main_document,
+                                                         records.get(sub_id), chains=chains)), None)
+        if proxy:
+            proxies.append(proxy)
 
     # Activation belongs to the actual immutable main, not stored metadata.
     # Validate every collection before replacing any last-known-good artifact.

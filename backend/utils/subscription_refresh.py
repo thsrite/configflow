@@ -32,6 +32,11 @@ def source_cache_metadata(sub, result):
         hosts = extract_subscription_hosts(text)
         if hosts is not None:
             metadata['hosts'] = hosts
+        # Groups the subscription's own chained nodes need; see subscription_dialers.
+        from backend.utils.subscription_dialers import extract_subscription_dialers
+        dialers = extract_subscription_dialers(text)
+        if dialers is not None:
+            metadata['dialers'] = dialers
     return metadata
 
 
