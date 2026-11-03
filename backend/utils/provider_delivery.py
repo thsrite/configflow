@@ -82,6 +82,9 @@ class DeliverySnapshot:
         return bool(self.chain_names) or any(p.get('dialer-proxy') is not None for p in main.get('proxies', [])) or any(
             p.get('override', {}).get('dialer-proxy') for p in main.get('proxy-providers', {}).values())
 
+    def adapt(self, sub, proxies, *, chains=True):
+        return adapt_delivered(self, sub, proxies, chains=chains)
+
     def validate(self, proxies, *, force_chains=False, provider_name=None):
         validate_proxy_shapes(proxies)
         main = json.loads(self.main_json)
@@ -102,6 +105,16 @@ class DeliverySnapshot:
             validate_emitted({**main,
                 'proxies': [p for p in main.get('proxies', []) if p['name'] not in names] + proxies,
             }, force_chains=self.has_chains or force_chains)
+
+
+def adapt_delivered(snapshot, sub, proxies, *, chains=True):
+    """A subscription's own chained nodes as delivered with the snapshot's main configuration."""
+    main_json = getattr(snapshot, 'main_json', None)
+    if main_json is None or not sub.get('id'):
+        return proxies
+    from backend.utils.subscription_dialers import adapt_subscription_proxies, dialer_record
+    return adapt_subscription_proxies(sub.get('name', ''), proxies, json.loads(main_json), dialer_record(sub),
+                                      chains=chains)
 
 
 def validate_proxy_shapes(proxies):
@@ -181,7 +194,7 @@ def _prepare_subscription_provider(sub, config, snapshot, *, fetch=None,
             result = fetch(sub['id'], sub['url']) if source_prepared else fetch_subscription_source(sub, fetch=fetch)
             text, _source = result
             raw_proxies = parse_provider_proxies(text, name=sub.get('name', ''), path=source_path)
-            proxies = filter_subscription_items(sub, raw_proxies)
+            proxies = adapt_delivered(snapshot, sub, filter_subscription_items(sub, raw_proxies))
             snapshot.validate(proxies, provider_name=sub['name'])
             if raw_proxies and _source not in ('cache', 'prepared_yaml'):
                 nodes = proxies_to_nodes(raw_proxies)
@@ -204,8 +217,8 @@ def _prepare_subscription_provider(sub, config, snapshot, *, fetch=None,
             detail = ('\n原始诊断：' + failure_text(str(transport_error))) if transport_error is not None else ''
             raise DialerReferenceError('订阅没有可用缓存或远程代理' + detail) from transport_error
         validate_shapes({'nodes': cache['nodes']}, require_ids=False)
-        proxies = [p for n in filter_subscription_items(sub, cache['nodes'])
-                   if (p := convert_node_to_mihomo(n))]
+        proxies = adapt_delivered(snapshot, sub, [p for n in filter_subscription_items(sub, cache['nodes'])
+                                                  if (p := convert_node_to_mihomo(n))])
     snapshot.validate(proxies, provider_name=sub['name'])
     content = yaml.dump({'proxies': proxies}, Dumper=IndentDumper, allow_unicode=True,
                         default_flow_style=False, sort_keys=False, indent=2)

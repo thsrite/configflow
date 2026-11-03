@@ -171,6 +171,7 @@
           </div>
 
           <SubscriptionHostsSummary v-if="hostsReport && !running" :report="hostsReport" />
+          <SubscriptionDialersSummary v-if="dialersReport && !running" :report="dialersReport" />
           <p v-if="previewLimited" class="m-0 border-b border-border px-5 py-2 text-xs text-muted-foreground">文件较长，仅显示前 2000 行；复制和下载包含完整内容。</p>
           <div v-if="running && phase === 'write'" class="flex min-h-11 flex-wrap items-center justify-between gap-x-3 border-b border-border px-5 text-xs text-muted-foreground max-md:px-3" data-result-replay>
             <span><span role="status">配置已生成，正在展开结果</span><span class="num"> · {{ lines.length }} / {{ previewLineCount }} 行</span></span>
@@ -282,6 +283,7 @@ import AgentDeploymentStatus from '@/components/agents/AgentDeploymentStatus.vue
 import AgentStatusRow from '@/components/agents/AgentStatusRow.vue'
 import AgentDNSChecks from '@/components/agents/AgentDNSChecks.vue'
 import SubscriptionHostsSummary from '@/components/generate/SubscriptionHostsSummary.vue'
+import SubscriptionDialersSummary from '@/components/generate/SubscriptionDialersSummary.vue'
 import { submitAgentRequests, uniquePublicationTargets } from '@/lib/agentRequests'
 import { deploymentErrorSummary } from '@/lib/agentFailure'
 import { consumeAction } from '@/lib/actions'
@@ -290,7 +292,7 @@ import { copyText } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 import { useLive } from '@/stores/live'
 import { systemReducesMotion } from '@/stores/preferences'
-import type { SubscriptionHostsReport } from '@/types'
+import type { SubscriptionDialersReport, SubscriptionHostsReport } from '@/types'
 
 const isPhone = useMediaQuery('(max-width: 639px)')
 
@@ -406,6 +408,7 @@ const error = ref('')
 const codeEl = ref<HTMLElement | null>(null)
 /** Mihomo only: hosts merged from subscriptions; hidden when no subscription carries any. */
 const hostsReport = ref<SubscriptionHostsReport | null>(null)
+const dialersReport = ref<SubscriptionDialersReport | null>(null)
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
@@ -458,13 +461,15 @@ const generate = async () => {
   selectedFile.value = ''
   staleMessage.value = ''
   hostsReport.value = null
+  dialersReport.value = null
   freshFrom.value = 0
   previewLineCount.value = 0
   skipReplay = false
   const target = active.value
   const request = (device === 'manual' ? generateApi.artifact(target, profile) : agentApi.generateConfig(device, profile, target))
     .then(res => ({ ok: true as const, artifact: res.data, content: res.data.content,
-      hosts: (res.data?.subscription_hosts ?? null) as SubscriptionHostsReport | null }))
+      hosts: (res.data?.subscription_hosts ?? null) as SubscriptionHostsReport | null,
+      dialers: (res.data?.subscription_dialers ?? null) as SubscriptionDialersReport | null }))
     .catch((err: any) => ({ ok: false as const, message: err.response?.data?.message || '生成失败' }))
   loadCounts()
 
@@ -512,6 +517,7 @@ const generate = async () => {
     freshFrom.value = lines.value.length
     const hosts = result.hosts
     hostsReport.value = target === 'mihomo' && hosts && (hosts.merged || hosts.ignored) ? hosts : null
+    dialersReport.value = target === 'mihomo' ? result.dialers : null
     await nextTick()
     if (codeEl.value) codeEl.value.scrollTop = 0
     notify.success(`${FILES[target]} 已生成 · ${all.length} 行`)
@@ -708,6 +714,7 @@ const clearGenerated = () => {
   lines.value = []
   output.value = ''
   hostsReport.value = null
+  dialersReport.value = null
   stepIndex.value = -1
   failedAt.value = -1
   error.value = ''

@@ -467,6 +467,7 @@ export interface GeneratedConfig {
   files: Array<{ path: string; size: number; sha256: string; role: string }>
   target_ids: string[]
   subscription_hosts?: import('@/types').SubscriptionHostsReport
+  subscription_dialers?: import('@/types').SubscriptionDialersReport | null
 }
 
 export interface PublishGuard {

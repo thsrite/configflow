@@ -1489,6 +1489,7 @@ def _prepare_transactional_content(agent, config_data, *, base_url='', deploymen
                                      phase_progress=(lambda message: phase_progress(message, force=True)) if phase_progress else None)
     return {'bundle': bundle, 'config_content': config_content, 'prepared_providers': prepared_providers,
             'subscription_hosts': report.get('subscription_hosts'),
+            'subscription_dialers': report.get('subscription_dialers'),
             'provider_downloads': provider_downloads, 'ruleset_downloads': ruleset_downloads,
             'custom_files': custom_files}
 
@@ -1533,7 +1534,8 @@ def generate_final_agent_config(agent_id):
                         raise ValueError('主备设备需要不同的最终配置，请先统一主备配置路径与设备设置。')
         record = previews.save(manager.repository, agent, config, revision, base_url, prepared, members=members)
         previews.require_current(manager, record)
-        response = jsonify(success=True, **previews.public(record), subscription_hosts=prepared.get('subscription_hosts'))
+        response = jsonify(success=True, **previews.public(record), subscription_hosts=prepared.get('subscription_hosts'),
+                           subscription_dialers=prepared.get('subscription_dialers'))
         response.headers['Cache-Control'] = 'no-store'
         return response
     except previews.PreviewChanged as exc:

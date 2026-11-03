@@ -390,7 +390,9 @@ def validate_emitted(config, *, force_chains=False, provider_proxies=None, requi
                 raise DialerReferenceError('Provider 节点名称与代理拓扑冲突')
             target = override.get('dialer-proxy', definition.get('dialer-proxy', proxy.get('dialer-proxy')))
             if target is not None and (not isinstance(target, str) or target not in available):
-                raise DialerReferenceError('Provider dialer-proxy 引用了不存在的代理或策略组')
+                raise DialerReferenceError(
+                    f'Provider 节点「{emitted_name}」的 dialer-proxy「{target}」引用了不存在的代理或策略组；'
+                    '若它是机场订阅自带的中转分组，在「订阅来源」刷新该订阅后 ConfigFlow 会自动补上')
             graph[key] = [target] if target is not None else []
             candidates[name].append({'name': emitted_name, 'key': key, 'type': proxy.get('type', '')})
     groups = {g['name']: g for g in config.get('proxy-groups', [])}
