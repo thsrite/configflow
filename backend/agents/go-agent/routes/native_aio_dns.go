@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"agent/preflight"
 	"fmt"
 	"net/netip"
 
@@ -79,6 +80,57 @@ func adaptNativeAIODNS(cfg *Config, content string) (string, error) {
 			excluded = append(excluded, value)
 			existing = append(existing, required)
 		}
+	}
+	tun["route-exclude-address"] = excluded
+	result, err := yaml.Marshal(doc)
+	return string(result), err
+}
+
+// readAIOPeerDNS reads the same-host DNS Agent and its running configuration.
+var readAIOPeerDNS = readDNSConfigFile
+
+// adaptAIOUpstreamDNS routes the same-host OxiDNS plain-DNS upstreams around
+// an enabled TUN whose dns-hijack would otherwise answer them with fake-ip.
+// Only the running OxiDNS configuration is known here; an OxiDNS publication
+// that adds upstreams warns until Mihomo is published again.
+func adaptAIOUpstreamDNS(cfg *Config, content string) (string, error) {
+	if dnsPeerService(cfg) != "oxidns" {
+		return content, nil
+	}
+	var doc map[string]interface{}
+	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
+		return "", err
+	}
+	marker, _ := doc["x-configflow-linux-gateway"].(map[string]interface{})
+	tun, _ := doc["tun"].(map[string]interface{})
+	if marker["enabled"] == true || tun["enable"] != true {
+		return content, nil
+	}
+	peer, _ := deploymentDNSPeer(cfg, readAIOPeerDNS)
+	if peer == nil {
+		return content, nil
+	}
+	var peerDoc map[string]interface{}
+	if yaml.Unmarshal(peer.Content, &peerDoc) != nil {
+		return content, nil
+	}
+	var excluded []interface{}
+	if tun["route-exclude-address"] != nil {
+		values, ok := tun["route-exclude-address"].([]interface{})
+		if !ok {
+			return "", fmt.Errorf("mihomo tun.route-exclude-address must be a CIDR list")
+		}
+		excluded = append(excluded, values...)
+	}
+	changed := false
+	for _, address := range preflight.TUNHijackedOxiDNSUpstreams(peerDoc, tun) {
+		if !preflight.PrefixesCover(excluded, address) {
+			excluded = append(excluded, netip.PrefixFrom(address, address.BitLen()).String())
+			changed = true
+		}
+	}
+	if !changed {
+		return content, nil
 	}
 	tun["route-exclude-address"] = excluded
 	result, err := yaml.Marshal(doc)
