@@ -12,7 +12,9 @@ from typing import Dict, Any, List, Optional, Tuple
 from backend.utils.subscription_parser import parse_uri_list
 from backend.utils.logger import get_logger
 from backend.common.profile_context import append_url_query, profile_api_path
-from backend.converters.common import ruleset_format
+from backend.converters.common import (
+    after_match_comment, has_port_list, network_as_protocol, ruleset_format, set_general_option, udp_fallback,
+)
 
 logger = get_logger(__name__)
 
@@ -196,7 +198,15 @@ def generate_loon_config(config_data: Dict[str, Any], base_url: str = '') -> str
     config_token = config_data.get('system_config', {}).get('config_token', '')
 
     custom_sections = _parse_custom_sections(config_data.get('loon', {}).get('custom_config', ''))
-    sections = [custom_sections.get('General') or '\n'.join(DEFAULT_GENERAL)]
+    # 节点不支持 UDP 时的处理：用户在基础配置里写了该项时以基础配置为准
+    fallback = udp_fallback(config_data)
+    general = custom_sections.get('General')
+    if general:
+        general = set_general_option(general, 'udp-fallback-mode', fallback) if fallback else general
+    else:
+        general = '\n'.join(f'udp-fallback-mode = {fallback}' if fallback and line.startswith('udp-fallback-mode')
+                            else line for line in DEFAULT_GENERAL)
+    sections = [general]
 
     all_groups = config_data.get('proxy_groups', [])
     nodes_by_id = {n.get('id'): n for n in config_data.get('nodes', [])}
@@ -375,6 +385,11 @@ def _build_rules(config_data: Dict[str, Any], effective_base_url: str) -> Tuple[
             continue
         item_type = item.get('itemType', '')
 
+        # FINAL 固定放在最后：MATCH 之后的规则若照常输出会排到 FINAL 之前，改变匹配结果
+        if final_rule:
+            (remote_rules if item_type == 'ruleset' else rules).append(after_match_comment(item))
+            continue
+
         if item_type == 'rule':
             rule_type = item['rule_type']
             value = item.get('value', '')
@@ -382,6 +397,11 @@ def _build_rules(config_data: Dict[str, Any], effective_base_url: str) -> Tuple[
             if rule_type == 'MATCH':
                 final_rule = f"FINAL,{policy}"
                 continue
+            if has_port_list(rule_type, value):
+                rules.append(f"# Loon 不支持一条规则写多个端口，已忽略: {rule_type},{value},{policy}")
+                continue
+            # NETWORK 在 Loon 中是 PROTOCOL
+            rule_type, value = network_as_protocol(rule_type, value)
             if rule_type in ('AND', 'OR', 'NOT'):
                 loon_value = value
                 for src, dst in LOON_RULE_TYPE_MAP.items():

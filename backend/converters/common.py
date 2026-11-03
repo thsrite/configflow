@@ -1,6 +1,60 @@
 """Small input conversions shared by client configuration generators."""
+import re
 from ipaddress import ip_address
 from urllib.parse import urlsplit
+
+
+UDP_FALLBACK_POLICIES = ('DIRECT', 'REJECT')
+LOGIC_TYPES = ('AND', 'OR', 'NOT')
+PORT_RULE_TYPES = ('DST-PORT', 'SRC-PORT', 'IN-PORT')
+_NETWORK_CONDITION = re.compile(r'\(\s*NETWORK\s*,\s*(tcp|udp)\s*\)', re.IGNORECASE)
+_PORT_CONDITION = re.compile(r'\(\s*(?:DST|DEST|SRC|IN)-PORT\s*,\s*([^()]*)\)', re.IGNORECASE)
+AFTER_MATCH_NOTE = '仅 Mihomo 生效（位于 MATCH 之后，只匹配节点不支持 UDP 而跳过的连接），已忽略'
+
+
+def udp_fallback(config_data):
+    """DIRECT or REJECT chosen on the effective MATCH rule; None follows the client default."""
+    for item in config_data.get('rule_configs', []):
+        if item.get('itemType') == 'rule' and item.get('rule_type') == 'MATCH' and item.get('enabled', True):
+            choice = item.get('udp_fallback')
+            return choice if choice in UDP_FALLBACK_POLICIES else None
+    return None
+
+
+def after_match_comment(item):
+    """Surge and Loon have no rules past FINAL; keep the Mihomo-only line visible."""
+    if item.get('itemType') == 'ruleset':
+        line = f"RULE-SET,{item.get('name', '')},{item.get('policy', '')}"
+    else:
+        line = f"{item.get('rule_type', '')},{item.get('value', '')},{item.get('policy', '')}"
+    return f'# {AFTER_MATCH_NOTE}: {line}'
+
+
+def network_as_protocol(rule_type, value):
+    """Surge and Loon match the transport with PROTOCOL,TCP/UDP instead of NETWORK."""
+    if rule_type == 'NETWORK':
+        return 'PROTOCOL', value.strip().upper()
+    if rule_type in LOGIC_TYPES:
+        return rule_type, _NETWORK_CONDITION.sub(lambda match: f'(PROTOCOL,{match.group(1).upper()})', value)
+    return rule_type, value
+
+
+def has_port_list(rule_type, value):
+    """Surge and Loon take one port, range or comparison per rule, not a / or , list."""
+    if rule_type in PORT_RULE_TYPES:
+        values = [value]
+    elif rule_type in LOGIC_TYPES:
+        values = _PORT_CONDITION.findall(value)
+    else:
+        return False
+    return any('/' in item or ',' in item for item in values)
+
+
+def set_general_option(section, key, value):
+    """Add ``key = value`` to a [General] section unless it already sets the key."""
+    if re.search(rf'^\s*{re.escape(key)}\s*=', section, re.MULTILINE):
+        return section
+    return f'{section.rstrip()}\n{key} = {value}'
 
 
 def ruleset_format(rule, config_data, source_url=None):

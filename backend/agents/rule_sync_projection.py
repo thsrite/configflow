@@ -288,7 +288,7 @@ def _source_rule_state(config, *, include_content=True):
             if include_content:
                 keys += ('content',)
         elif _scope(item) == 'rules':
-            keys = ('rule_type', 'value', 'policy', 'no_resolve')
+            keys = ('rule_type', 'value', 'policy', 'no_resolve', 'udp_fallback')
         else:
             continue
         state.append({key: deepcopy(item[key]) for key in keys if key in item})

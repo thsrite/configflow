@@ -20,6 +20,7 @@ from backend.utils.logger import get_logger
 from backend.utils.url_utils import safe_exception_details, safe_url_for_log
 from backend.utils.rule_fetch import request_rule
 from backend.utils.rule_syntax import COMMA_PAYLOAD_TYPES, rule_value_error
+from backend.converters.common import UDP_FALLBACK_POLICIES
 
 logger = get_logger(__name__)
 
@@ -59,6 +60,13 @@ def normalize_rule_config(rule_item: dict, previous=None) -> None:
     if not isinstance(rule_item, dict):
         raise ProfileValidationError('规则请求必须是 JSON 对象')
     rule_item.setdefault('itemType', 'rule' if 'rule_type' in rule_item else 'ruleset')
+    # 「节点不支持 UDP 时」只属于 MATCH：空值跟随各客户端默认
+    fallback = rule_item.pop('udp_fallback', None) or ''
+    if rule_item['itemType'] != 'ruleset' and rule_item.get('rule_type') == 'MATCH':
+        if fallback not in ('', *UDP_FALLBACK_POLICIES):
+            raise ProfileValidationError('节点不支持 UDP 时只能选择跟随客户端默认、直连或拒绝')
+        if fallback:
+            rule_item['udp_fallback'] = fallback
     if rule_item['itemType'] != 'ruleset':
         # Keep unrelated edits to legacy rules possible; validate every new or
         # changed type/value before it reaches the saved profile.

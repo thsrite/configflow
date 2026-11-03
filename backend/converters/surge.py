@@ -4,7 +4,9 @@ from typing import Dict, Any, List
 from backend.utils.subscription_parser import parse_uri_list
 from backend.utils.logger import get_logger
 from backend.common.profile_context import append_url_query, config_api_path, profile_api_path
-from backend.converters.common import ruleset_format
+from backend.converters.common import (
+    after_match_comment, has_port_list, network_as_protocol, ruleset_format, set_general_option, udp_fallback,
+)
 
 logger = get_logger(__name__)
 
@@ -138,6 +140,11 @@ def generate_surge_config(config_data: Dict[str, Any], base_url: str = '') -> st
             'exclude-simple-hostnames = true'
         ]
         general_section = '\n'.join(general)
+
+    # 节点不支持 UDP 时的处理：用户在基础配置里写了该项时以基础配置为准
+    fallback = udp_fallback(config_data)
+    if fallback:
+        general_section = set_general_option(general_section, 'udp-policy-not-supported-behaviour', fallback)
 
     sections.append(general_section)
 
@@ -324,11 +331,17 @@ def generate_surge_config(config_data: Dict[str, Any], base_url: str = '') -> st
     }
 
     # 遍历合并后的规则数组，保持用户配置的顺序
+    after_match = False
     for item in config_data.get('rule_configs', []):
         if not item.get('enabled', True) or not item.get('library_enabled', True):
             continue
 
         item_type = item.get('itemType', '')
+
+        # FINAL 之后的规则 Surge 永远不会匹配；它们在 Mihomo 中只接住节点不支持 UDP 的连接
+        if after_match:
+            rules.append(after_match_comment(item))
+            continue
 
         if item_type == 'rule':
             # 单条规则
@@ -339,8 +352,11 @@ def generate_surge_config(config_data: Dict[str, Any], base_url: str = '') -> st
             # MATCH 规则在 Surge 中是 FINAL，只有两个字段：FINAL,POLICY
             if rule_type == 'MATCH':
                 rules.append(f"FINAL,{policy}")
+                after_match = True
             elif rule_type == 'RULE-SET':
                 rules.append(f"RULE-SET,{value},{policy}")
+            elif has_port_list(rule_type, value):
+                rules.append(f"# Surge 不支持一条规则写多个端口，已忽略: {rule_type},{value},{policy}")
             # 逻辑规则类型（AND、OR、NOT）需要特殊处理
             elif rule_type in ['AND', 'OR', 'NOT']:
                 # Surge 逻辑规则格式：AND,((SRC-IP,192.168.1.110), (DOMAIN,example.com)),POLICY
@@ -349,10 +365,12 @@ def generate_surge_config(config_data: Dict[str, Any], base_url: str = '') -> st
                 # 2. 替换子条件中的规则类型为 Surge 等效类型
                 for mihomo_type, surge_type in surge_rule_type_map.items():
                     surge_value = surge_value.replace(mihomo_type, surge_type)
+                _, surge_value = network_as_protocol(rule_type, surge_value)
                 rules.append(f"{rule_type},{surge_value},{policy}")
             else:
-                # 标准规则类型，映射为 Surge 等效类型
-                surge_rule_type = surge_rule_type_map.get(rule_type, rule_type)
+                # 标准规则类型，映射为 Surge 等效类型；NETWORK 在 Surge 中是 PROTOCOL
+                surge_rule_type, value = network_as_protocol(rule_type, value)
+                surge_rule_type = surge_rule_type_map.get(surge_rule_type, surge_rule_type)
                 # 根据配置决定是否添加 no-resolve 参数
                 no_resolve = item.get('no_resolve', False)
                 if no_resolve:
