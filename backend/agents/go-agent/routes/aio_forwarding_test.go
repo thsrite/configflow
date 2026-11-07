@@ -29,6 +29,9 @@ type aioFixture struct {
 	showErr     error
 	tunCalls    int
 	writes      []string
+	boot        preflight.SysctlBootState // OpenRC sysctl service state
+	bootAdds    int
+	bootAddErr  error
 }
 
 // Both Shell layouts whose Mihomo Agent can persist IPv4 forwarding.
@@ -70,6 +73,7 @@ func newAIOLayoutFixture(t *testing.T, manager, layout string) *aioFixture {
 		g.cfg.NativeAIO, g.cfg.AgentServiceUnit = true, "configflow-agent-mihomo"
 		g.cfg.AgentConfigFile = filepath.Join(aioAgentRoot, "mihomo/config.json")
 	}
+	aioSysctlBoot = func() preflight.SysctlBootState { return f.boot }
 	f.writeUnit(t, f.fixtureUnit(t, "plain"))
 	f.loaded = f.fixtureUnit(t, "plain")
 	write := gatewayWriteSysctl
@@ -108,6 +112,13 @@ func newAIOLayoutFixture(t *testing.T, manager, layout string) *aioFixture {
 				extra, _ := os.ReadFile(dropin)
 				f.loaded += "\n" + string(extra)
 			}
+			return "", nil
+		case "rc-update add sysctl boot":
+			f.bootAdds++
+			if f.bootAddErr != nil {
+				return "", f.bootAddErr
+			}
+			f.boot = preflight.SysctlBootEnabled
 			return "", nil
 		case "/bin/sh " + f.hookPath():
 			// Emulates the hook: a missing config is a no-op, a managed one enables.
@@ -795,5 +806,71 @@ func TestCapabilitiesAdvertiseAIOForwardingForMihomoOnly(t *testing.T) {
 		if got := bytes.Contains(recorder.Body.Bytes(), []byte(`"aio_forwarding_protocols":[1]`)); got != want {
 			t.Fatalf("%s capability=%v: %s", service, got, recorder.Body.String())
 		}
+	}
+}
+
+// PVE's Alpine LXC template has the OpenRC sysctl service in no runlevel, so
+// sysctl.d is never applied at boot; persisting forwarding adds it, like the
+// installers do.
+func TestAIOForwardingAddsOpenRCSysctlServiceToBoot(t *testing.T) {
+	for _, layout := range aioLayouts {
+		t.Run(layout, func(t *testing.T) {
+			f := newAIOLayoutFixture(t, "openrc", layout)
+			f.boot = preflight.SysctlBootDisabled
+			status := aioForwardingStatus(f.cfg)
+			if status["boot_sysctl"] != "disabled" || status["persisted"] != false || !strings.Contains(fmt.Sprint(status["notice"]), "rc-update add sysctl boot") {
+				t.Fatalf("disabled sysctl service not reported: %+v", status)
+			}
+			if _, err := persistAIOForwarding(f.cfg, false); err != nil {
+				t.Fatal(err)
+			}
+			if f.bootAdds != 1 || f.boot != preflight.SysctlBootEnabled {
+				t.Fatalf("sysctl service not added to boot: adds=%d state=%q", f.bootAdds, f.boot)
+			}
+			f.assertPersisted(t)
+			if status := aioForwardingStatus(f.cfg); status["boot_sysctl"] != "enabled" || status["notice"] != nil {
+				t.Fatalf("enabled sysctl service still flagged: %+v", status)
+			}
+			if _, err := persistAIOForwarding(f.cfg, false); err != nil || f.bootAdds != 1 {
+				t.Fatalf("repeated persist re-ran rc-update: adds=%d err=%v", f.bootAdds, err)
+			}
+		})
+	}
+}
+
+func TestAIOForwardingGivesManualStepsWhenSysctlBootCannotBeSet(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		boot  preflight.SysctlBootState
+		err   error
+		wants []string
+	}{
+		{"rc-update-fails", preflight.SysctlBootDisabled, fmt.Errorf("permission denied"), []string{"permission denied", "rc-update add sysctl boot", "sysctl net.ipv4.ip_forward"}},
+		{"no-sysctl-service", preflight.SysctlBootUnavailable, nil, []string{"/etc/init.d/sysctl", "/etc/local.d/configflow-ip-forward.start", "rc-update add local default"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newAIOFixture(t, "openrc")
+			f.boot, f.bootAddErr = tc.boot, tc.err
+			_, err := persistAIOForwarding(f.cfg, false)
+			if err == nil {
+				t.Fatal("unapplied boot loader reported as persisted")
+			}
+			for _, want := range tc.wants {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("manual step %q missing: %v", want, err)
+				}
+			}
+			// Forwarding stays on and committed; only the boot step is missing.
+			if f.forwarding(t) != "1" || !aioForwardingConfigManaged() {
+				t.Fatal("forwarding rolled back after the commit point")
+			}
+			status := aioForwardingStatus(f.cfg)
+			if status["persisted"] != false || status["config"] != "managed" || status["startup_hook"] != "registered" {
+				t.Fatalf("status overclaimed persistence: %+v", status)
+			}
+			if tc.boot == preflight.SysctlBootUnavailable && !strings.Contains(fmt.Sprint(status["notice"]), "rc-update add local default") {
+				t.Fatalf("status lacks manual steps: %+v", status)
+			}
+		})
 	}
 }

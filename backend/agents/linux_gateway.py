@@ -608,6 +608,10 @@ def _entry_from_status(agent_id, agent, routers, status):
         # when a Linux gateway record is removed.
         return _gateway_entry(agent_id, agent, routers, 'system_persisted', '', status, can_persist=True)
     error = forwarding.get('error')
+    if not isinstance(error, str) or not error:
+        # Newer Agents: why ConfigFlow's files are not yet persisted at boot
+        # (OpenRC's sysctl service in no runlevel) and what persisting will do.
+        error = forwarding.get('notice')
     return _gateway_entry(agent_id, agent, routers, 'needs_persist', error if isinstance(error, str) else '',
                           status, can_persist=True)
 
