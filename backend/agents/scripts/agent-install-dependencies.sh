@@ -1,4 +1,4 @@
-# Shared by the native single-Agent and All-in-One installers. Call only after
+# Shared by the native single-Agent, All-in-One and Linux gateway installers. Call only after
 # the user chooses installation and the architecture/init checks have passed.
 agent_dependency_fail() { printf '%s\n' "$*" >&2; exit 1; }
 agent_add_package() {
@@ -62,6 +62,15 @@ agent_collect_dependencies() {
                 keepalived|jq) agent_add_package "$agent_tool" ;;
                 grep|sed) agent_add_package "$agent_tool" ;;
                 cmp) agent_add_package diffutils ;;
+                # Linux gateway tools; BusyBox has no ss or nft.
+                nft) agent_add_package nftables ;;
+                ss)
+                    case "$AGENT_PACKAGE_MANAGER" in
+                        dnf|yum) agent_add_package iproute ;;
+                        *) agent_add_package iproute2 ;;
+                    esac
+                    ;;
+                tar|gzip) agent_add_package "$agent_tool" ;;
                 sysctl)
                     case "$AGENT_PACKAGE_MANAGER" in
                         pacman|dnf|yum) agent_add_package procps-ng ;;
@@ -77,6 +86,16 @@ agent_collect_dependencies() {
         agent_add_package curl
         agent_add_package ca-certificates
     fi
+}
+# A command the user can copy when automatic installation cannot finish.
+agent_manual_install_command() {
+    case "$AGENT_PACKAGE_MANAGER" in
+        apk) printf 'apk add --no-cache %s' "$AGENT_PACKAGES" ;;
+        apt-get) printf 'apt-get update && apt-get install -y --no-install-recommends %s' "$AGENT_PACKAGES" ;;
+        dnf|yum) printf '%s install -y %s' "$AGENT_PACKAGE_MANAGER" "$AGENT_PACKAGES" ;;
+        pacman) printf 'pacman -S --needed %s' "$AGENT_PACKAGES" ;;
+        zypper) printf 'zypper install %s' "$AGENT_PACKAGES" ;;
+    esac
 }
 agent_install_packages() {
     if [ -z "$AGENT_PACKAGE_MANAGER" ]; then
@@ -98,7 +117,7 @@ agent_ensure_dependencies() {
     if [ -n "$AGENT_MISSING_DEPENDENCIES" ]; then
         # Package names are selected from the fixed list above.
         if ! agent_install_packages $AGENT_PACKAGES; then
-            agent_dependency_fail "Agent 系统依赖安装失败，尚未下载或安装 Agent。请检查网络、软件源及包管理器锁后重试；Arch 请先运行 pacman -Syu。缺少的工具：${AGENT_MISSING_DEPENDENCIES}。"
+            agent_dependency_fail "Agent 系统依赖安装失败，尚未下载或安装 Agent。请检查网络、软件源及包管理器锁后重试；Arch 请先运行 pacman -Syu。缺少的工具：${AGENT_MISSING_DEPENDENCIES}。可在 root 下手动执行：$(agent_manual_install_command)"
         fi
         agent_collect_dependencies "$@"
         [ -z "$AGENT_MISSING_DEPENDENCIES" ] || agent_dependency_fail "包管理器执行后仍缺少 Agent 工具：${AGENT_MISSING_DEPENDENCIES}。请检查 PATH，手动安装 ${AGENT_PACKAGES} 后重试；尚未下载或安装 Agent。"

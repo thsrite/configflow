@@ -65,7 +65,8 @@ if 'tzdata' in sys.argv or 'timezone' in sys.argv:
 for executable in Path(os.environ['TEST_UNAVAILABLE']).iterdir():
     packages = {{'awk': ['gawk'], 'grep': ['grep'], 'sed': ['sed'], 'wget': ['curl'],
                 'sysctl': ['procps-ng' if Path(sys.argv[0]).name in ('pacman', 'dnf', 'yum') else 'procps'],
-                'cmp': ['diffutils']}}.get(executable.name, ['coreutils'])
+                'cmp': ['diffutils'], 'nft': ['nftables'], 'ss': ['iproute2', 'iproute'],
+                'tar': ['tar'], 'gzip': ['gzip']}}.get(executable.name, ['coreutils'])
     if any(package in sys.argv[1:] for package in packages):
         executable.rename(Path(os.environ['TEST_COMMANDS']) / executable.name)
 ''')
@@ -158,6 +159,54 @@ def test_nominal_package_success_must_provide_actual_tools(tmp_path):
     assert "ready" not in result.stdout
 
 
+GATEWAY_TOOLS = ("nft", "ss", "tar", "gzip")
+
+
+@pytest.mark.parametrize("manager,prefix", [
+    ("apk", ["add", "--no-cache"]),
+    ("apt-get", ["install", "-y", "--no-install-recommends"]),
+    ("dnf", ["install", "-y"]),
+    ("pacman", ["-S", "--needed", "--noconfirm"]),
+    ("zypper", ["--non-interactive", "install", "--no-recommends"]),
+])
+def test_gateway_tools_install_distribution_packages_once(tmp_path, manager, prefix):
+    for tool in GATEWAY_TOOLS:
+        (tmp_path / "commands").mkdir(exist_ok=True)
+        (tmp_path / "commands" / tool).write_text("#!/bin/sh\nexit 0\n")
+        (tmp_path / "commands" / tool).chmod(0o755)
+    script, env, events = dependency_harness(tmp_path, GATEWAY_TOOLS, manager, required=GATEWAY_TOOLS)
+    result = run(script, env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "缺少工具：nft ss tar gzip" in result.stdout
+    iproute = "iproute" if manager == "dnf" else "iproute2"
+    installs = [json.loads(line) for line in events.read_text().splitlines() if json.loads(line)[1] != ["update"]]
+    assert installs == [[manager, prefix + ["nftables", iproute, "tar", "gzip"],
+                         "noninteractive" if manager == "apt-get" else None]]
+    count = len(events.read_text().splitlines())
+    assert run(script, env).returncode == 0
+    assert len(events.read_text().splitlines()) == count
+
+
+@pytest.mark.parametrize("manager,command", [
+    ("apk", "apk add --no-cache nftables iproute2"),
+    ("apt-get", "apt-get update && apt-get install -y --no-install-recommends nftables iproute2"),
+    ("dnf", "dnf install -y nftables iproute"),
+    ("pacman", "pacman -S --needed nftables iproute2"),
+    ("zypper", "zypper install nftables iproute2"),
+])
+def test_failed_install_prints_a_copyable_manual_command(tmp_path, manager, command):
+    for tool in ("nft", "ss"):
+        (tmp_path / "commands").mkdir(exist_ok=True)
+        (tmp_path / "commands" / tool).write_text("#!/bin/sh\nexit 0\n")
+        (tmp_path / "commands" / tool).chmod(0o755)
+    script, env, events = dependency_harness(tmp_path, ("nft", "ss"), manager, required=("nft", "ss"),
+                                             FAIL_PACKAGE="install")
+    result = run(script, env)
+    assert result.returncode != 0
+    assert result.stderr.strip().endswith("可在 root 下手动执行：" + command)
+    assert "ready" not in result.stdout
+
+
 @pytest.mark.parametrize("manager,prefix,sysctl_package", FORWARDING_MANAGERS)
 @pytest.mark.parametrize("missing", [
     missing for count in (1, 2, 3) for missing in combinations(FORWARDING_TOOLS, count)
@@ -234,10 +283,12 @@ def test_install_entrypoints_request_forwarding_tools_only_when_enabled():
                              (optout, "agent_ensure_dependencies zoneinfo"),
                              (single.generated(), "agent_ensure_dependencies"),
                              (single.generated("oxidns"), "agent_ensure_dependencies zoneinfo"),
-                             (gateway.generate(), "agent_ensure_dependencies zoneinfo")):
+                             # The gateway checks its own tools first, then the inner AIO step.
+                             (gateway.generate(), ["agent_ensure_dependencies ha_ip nft ss tar gzip sha256sum cmp zoneinfo",
+                                                   "agent_ensure_dependencies zoneinfo"])):
         calls = [line.strip() for line in source.splitlines()
                  if line.strip().startswith("agent_ensure_dependencies") and not line.endswith("{")]
-        assert calls == [expected]
+        assert calls == (expected if isinstance(expected, list) else [expected])
 
 
 def installer_harness(tmp_path, monkeypatch, mode, combined):

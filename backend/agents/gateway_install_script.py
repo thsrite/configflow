@@ -14,7 +14,7 @@ import re
 import shlex
 from urllib.parse import urlsplit
 
-from .go_install_script import generate_go_aio_install_script
+from .go_install_script import AGENT_INSTALL_DEPENDENCIES, generate_go_aio_install_script
 from .install_output import with_install_output
 
 _TEMPLATE = (Path(__file__).parent / 'scripts' / 'install-gateway.sh').read_text(encoding='utf-8')
@@ -159,6 +159,7 @@ def generate_gateway_install_script(
     )
     values = {
         'aio_script': aio,
+        'agent_install_dependencies': AGENT_INSTALL_DEPENDENCIES.rstrip('\n'),
         **(FULL_TUN_TEXT if full_tun else SELECTIVE_TEXT),
         'binary_download_url_shell': shlex.quote(binary_download_url),
         'enrollment_url_shell': shlex.quote(enrollment_url),
