@@ -1036,3 +1036,31 @@ def test_a_disabled_agent_with_a_fresh_heartbeat_is_refused_by_publishing_and_th
     assert set(sessions._pair(manager.repository, manager, saved)) == set(sessions.SERVICES)
     with pytest.raises(SetupError, match='Linux 转发尚未启用'):
         check_installation(manager.repository, setup_session)
+
+
+@pytest.mark.parametrize('downloader', ['curl', 'wget'])
+def test_fallback_command_downloads_with_curl_or_busybox_wget(setup, tmp_path, downloader):
+    """Native Alpine has only BusyBox wget; the fallback command must still run."""
+    import shutil
+    import subprocess
+    client, _, admin, _, saved = setup
+    command = client.get(BASE + '/' + saved['id'], headers=admin).json['command']
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    for tool in ('sh', 'mktemp', 'rm'):
+        (bin_dir / tool).symlink_to(shutil.which(tool))
+    (bin_dir / 'id').write_text('#!/bin/sh\necho 0\n')
+    # Each fake downloader records the URL and writes a script that marks its run.
+    output_flag = '-o' if downloader == 'curl' else '-O'
+    (bin_dir / downloader).write_text(
+        '#!/bin/sh\nout=; url=\nwhile [ "$#" -gt 0 ]; do case "$1" in ' + output_flag
+        + ') out=$2; shift 2;; -*) shift;; *) url=$1; shift;; esac; done\n'
+        'printf "%s" "$url" > "$TEST_DIR/url"\nprintf "printf ran > \\"\\$TEST_DIR/ran\\"\\n" > "$out"\n')
+    for path in bin_dir.iterdir():
+        if not path.is_symlink():
+            path.chmod(0o755)
+    result = subprocess.run(['/bin/sh', '-c', command], env={'PATH': str(bin_dir), 'TEST_DIR': str(tmp_path)},
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / 'ran').read_text() == 'ran'
+    assert (tmp_path / 'url').read_text().endswith('/script?token=' + saved['token'])

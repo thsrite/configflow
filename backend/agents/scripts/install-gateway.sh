@@ -22,7 +22,7 @@ trap cleanup_gateway EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
-need() { command -v "$1" >/dev/null 2>&1 || fail "缺少命令 $1。Debian/Ubuntu: apt-get update && apt-get install -y ca-certificates curl iproute2 nftables tar gzip coreutils；Alpine: apk add ca-certificates curl iproute2 nftables tar gzip coreutils。安装依赖后重跑。"; }
+{agent_install_dependencies}
 download() {
     if command -v curl >/dev/null 2>&1; then
         curl -fsSL --connect-timeout 15 --max-time 300 --retry 2 -o "$2" "$1"
@@ -105,19 +105,10 @@ elif command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
 else
     fail '需要正在运行的 systemd 或 OpenRC。Docker/普通无 init 容器请使用其他安装方式。'
 fi
-for dependency in ip nft ss tar gzip sha256sum awk sed grep mktemp readlink head cmp; do need "$dependency"; done
-command -v curl >/dev/null 2>&1 || need wget
-# OxiDNS cron plugins resolve IANA timezones from the system database; minimal
-# Alpine images ship without it. The package stays installed like other deps.
-if [ ! -f "${TZDIR:-/usr/share/zoneinfo}/Asia/Shanghai" ]; then
-    printf '%s\n' '缺少时区数据，正在安装 tzdata；系统依赖会保留。'
-    if command -v apk >/dev/null 2>&1; then
-        apk add --no-cache tzdata || fail '安装 tzdata 失败；请检查网络和软件源后运行 apk add tzdata，再重跑。'
-    elif command -v apt-get >/dev/null 2>&1; then
-        { apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tzdata; } || fail '安装 tzdata 失败；请检查网络和软件源后运行 apt-get install -y tzdata，再重跑。'
-    fi
-    [ -f "${TZDIR:-/usr/share/zoneinfo}/Asia/Shanghai" ] || fail '缺少时区数据，OxiDNS 的定时任务无法使用时区。请手动安装 tzdata 后重跑。'
-fi
+# Install missing tools with the system package manager, as ordinary native
+# installs do (Alpine lacks nft and ss). The gateway Agent reads `ip -j`, which
+# BusyBox ip lacks; OxiDNS cron plugins need the timezone database.
+agent_ensure_dependencies ha_ip nft ss tar gzip sha256sum cmp zoneinfo
 [ -c /dev/net/tun ] || fail '缺少 /dev/net/tun。请先在宿主机/LXC 配置中开放 TUN，再重跑；安装器不会修改宿主机权限。'
 nft -j list ruleset >/dev/null || fail '无法读取 nftables，缺少 CAP_NET_ADMIN 或内核 nftables 支持；请检查宿主机/LXC 权限。'
 [ -r /proc/sys/net/ipv4/ip_forward ] || fail '无法读取 IPv4 转发设置，请检查内核网络命名空间。'
