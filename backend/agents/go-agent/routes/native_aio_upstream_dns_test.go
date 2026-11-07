@@ -75,7 +75,8 @@ func TestAIOUpstreamDNSLeavesOtherConfigurationsUnchanged(t *testing.T) {
 		"tun: {enable: false, dns-hijack: [any:53]}\n",
 		"tun: {enable: true, dns-hijack: []}\n",
 		"tun: {enable: true, dns-hijack: [any:53], route-exclude-address: [0.0.0.0/0]}\n",
-		"tun: {enable: true, dns-hijack: [any:53]}\nx-configflow-linux-gateway: {enabled: true}\n",
+		// Full TUN without address sets: local queries meet only dns-hijack.
+		"tun: {enable: true, auto-route: true, auto-redirect: true, dns-hijack: []}\n",
 	} {
 		got, err := adaptAIOUpstreamDNS(&Config{ServiceType: "mihomo", NativeAIO: true}, input)
 		if err != nil || got != input {
@@ -108,5 +109,35 @@ func TestRenderFinalConfigIncludesAIOUpstreamExclusions(t *testing.T) {
 	want := []string{"223.5.5.5/32", "127.0.0.0/8", "192.168.8.2/32", "119.29.29.29/32"}
 	if excluded := aioExclusions(t, got); !reflect.DeepEqual(excluded, want) {
 		t.Fatalf("final exclusions = %v, want %v", excluded, want)
+	}
+}
+
+// The Linux gateway's mark-mode auto-redirect DNATs the same-host OxiDNS
+// plain upstreams to Mihomo although dns-hijack is empty (lab: fake-ip for
+// every domain). Its exclusion list is replaced first, then the upstreams are
+// appended, so the replacement no longer drops them.
+func TestRenderFinalConfigExcludesOxiDNSUpstreamsOnLinuxGateway(t *testing.T) {
+	stubAgentIPv4(t, func() (string, error) { return "192.168.8.2", nil })
+	stubAIOPeerOxiDNS(t, aioUpstreamOxiDNS)
+	cfg := testDeploymentConfig(t)
+	cfg.NativeAIO = true
+	input := "mode: rule\ndns: {enable: true, enhanced-mode: fake-ip, listen: 127.0.0.1:1053}\n" +
+		"tun: {enable: true, auto-route: true, auto-redirect: true, dns-hijack: [], route-address-set: [cf_gateway_fake_ip], route-exclude-address: [10.0.0.0/8]}\n" +
+		"x-configflow-linux-gateway: {enabled: true, version: 1}\n"
+	got, err := renderFinalConfig(cfg, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"127.0.0.0/8", "192.168.8.2/32", "119.29.29.29/32", "223.5.5.5/32"}
+	if excluded := aioExclusions(t, got); !reflect.DeepEqual(excluded, want) {
+		t.Fatalf("gateway exclusions = %v, want %v", excluded, want)
+	}
+	if again, err := renderFinalConfig(cfg, got); err != nil || !reflect.DeepEqual(aioExclusions(t, again), want) {
+		t.Fatalf("gateway upstream exclusion is not idempotent: %v\n%s", err, again)
+	}
+	// A gateway OxiDNS that already uses DoH needs nothing beyond the gateway's own entries.
+	stubAIOPeerOxiDNS(t, "plugins:\n- {tag: forward_local, type: forward, args: {upstreams: [{addr: 'https://223.5.5.5/dns-query'}]}}\n")
+	if got, err = renderFinalConfig(cfg, input); err != nil || !reflect.DeepEqual(aioExclusions(t, got), want[:2]) {
+		t.Fatalf("DoH gateway exclusions = %v, %v", aioExclusions(t, got), err)
 	}
 }

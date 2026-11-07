@@ -90,7 +90,9 @@ func adaptNativeAIODNS(cfg *Config, content string) (string, error) {
 var readAIOPeerDNS = readDNSConfigFile
 
 // adaptAIOUpstreamDNS routes the same-host OxiDNS plain-DNS upstreams around
-// an enabled TUN whose dns-hijack would otherwise answer them with fake-ip.
+// an enabled TUN that would otherwise answer them with fake-ip, either through
+// dns-hijack or through the Linux gateway's mark-mode port-53 DNAT. It runs
+// after adaptGatewayDNS, which replaces the gateway's exclusion list.
 // Only the running OxiDNS configuration is known here; an OxiDNS publication
 // that adds upstreams warns until Mihomo is published again.
 func adaptAIOUpstreamDNS(cfg *Config, content string) (string, error) {
@@ -101,9 +103,8 @@ func adaptAIOUpstreamDNS(cfg *Config, content string) (string, error) {
 	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
 		return "", err
 	}
-	marker, _ := doc["x-configflow-linux-gateway"].(map[string]interface{})
 	tun, _ := doc["tun"].(map[string]interface{})
-	if marker["enabled"] == true || tun["enable"] != true {
+	if tun["enable"] != true {
 		return content, nil
 	}
 	peer, _ := deploymentDNSPeer(cfg, readAIOPeerDNS)

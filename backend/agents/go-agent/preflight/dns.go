@@ -235,9 +235,8 @@ func dnsTUNUpstreamChecks(cfg Config, doc map[string]interface{}, peer Config, p
 	if cfg.ServiceType != "oxidns" || peer.ServiceType != "mihomo" {
 		return nil
 	}
-	marker, _ := peerDoc["x-configflow-linux-gateway"].(map[string]interface{})
 	tun, _ := peerDoc["tun"].(map[string]interface{})
-	if marker["enabled"] == true || tun["enable"] != true {
+	if tun["enable"] != true {
 		return nil
 	}
 	excluded, _ := tun["route-exclude-address"].([]interface{})
@@ -252,5 +251,5 @@ func dnsTUNUpstreamChecks(cfg Config, doc map[string]interface{}, peer Config, p
 	}
 	return []Check{{Name: "同机 TUN 劫持上游", Level: "warn",
 		Message: fmt.Sprintf("同机 Mihomo 的 TUN 会劫持发往 %s 的 53 端口查询并返回 fake-ip，OxiDNS 拿不到这些上游的真实解析", strings.Join(missing, "、")),
-		Fix:     "OxiDNS 发布后再发布一次同机 Mihomo，Agent 会自动把这些地址加入 tun.route-exclude-address。"}}
+		Fix:     "OxiDNS 发布后再发布一次同机 Mihomo，Agent 会把这些地址加入 tun.route-exclude-address 并重载 OxiDNS；若仍返回 fake-ip，再发布一次 OxiDNS。"}}
 }
