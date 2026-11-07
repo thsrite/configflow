@@ -254,6 +254,7 @@ def generate_go_agent_install_script(
             f'echo "先安装或保留 {service_type} 核心，成功后继续安装 Agent。"\n'
             '(\n'
             f'set -- --core {service_type}\n'
+            'CF_OUTPUT_OWNER=false\n'
             + generate_core_install_script(installer_forwarding=manage_ipv4_forwarding).rstrip() + '\n)\n'
             'BINARY_TMP=""\n'
             'configflow_agent_cleanup() {\n'
@@ -517,7 +518,7 @@ fi''',
             # An unconditional subshell preserves set -e, unlike an if/&&/||
             # context, and isolates core variables, exit statements and traps.
             "core_install_phase": 'echo "先安装或保留两个核心，成功后继续安装两个 Agent。"\n'
-                + '(\nset -- --core both\n'
+                + '(\nset -- --core both\nCF_OUTPUT_OWNER=false\n'
                 + generate_core_install_script(installer_forwarding=manage_ipv4_forwarding).rstrip() + '\n)\n'
                 + 'CORE_PHASE_COMPLETED=true\n'
                 + '''# Minimal systems may not yet have /opt, needed for physical path checks.

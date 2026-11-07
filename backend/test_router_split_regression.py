@@ -8,6 +8,7 @@ from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
+import re
 
 import pytest
 import yaml
@@ -63,6 +64,7 @@ _NATIVE_HA_DEPENDENCY_CASES = '''        if [ "$agent_tool" = ha_ip ]; then
 '''
 _NATIVE_HA_PACKAGE_CASE = '                keepalived|jq) agent_add_package "$agent_tool" ;;\n'
 _CORE_INSTALL_PATH = 'PATH="${PATH:-/usr/sbin:/usr/bin:/sbin:/bin}:/usr/local/sbin:/usr/local/bin"\nexport PATH\n'
+_CORE_AGENT_FOLLOWS = 'CF_OUTPUT_OWNER=false\n'
 
 
 def without_reviewed_installer_deltas(script, *, core_path=False):
@@ -76,6 +78,11 @@ def without_reviewed_installer_deltas(script, *, core_path=False):
         # /usr/local/bin, even in minimal root shells. Require the exact location.
         assert script.count('set -eu\n' + _CORE_INSTALL_PATH + 'for cf_argument do\n') == 1
         script = script.replace(_CORE_INSTALL_PATH, '', 1)
+        # The Agent follows the embedded core phase, so that phase no longer
+        # asks for a separate Agent install. Require the exact location.
+        embedded = re.findall(r'\(\nset -- --core [a-z]+\n' + _CORE_AGENT_FOLLOWS, script)
+        assert len(embedded) == 1, 'the embedded core phase must not ask for a separate Agent'
+        script = script.replace(embedded[0], embedded[0].removesuffix(_CORE_AGENT_FOLLOWS), 1)
     return script
 
 
@@ -150,12 +157,24 @@ def baseline():
 RULE_DNS_DEFAULTS = {'rule_actions': {}, 'rule_dns_follow': [], 'rule_dns_parked': {}}
 
 
+_PLAIN_SETUP_NAMESERVER = '  nameserver:\n  - 223.5.5.5\n  - 119.29.29.29\n'
+
+
+def with_current_setup_nameserver(fields):
+    """0ef9e89's wizard wrote plain Mihomo upstreams; it now writes the gateway's DoH default."""
+    from backend.common.gateway_onboarding import DEFAULT_MIHOMO_NAMESERVERS
+    source = fields['mihomo']['custom_config']
+    assert source.count(_PLAIN_SETUP_NAMESERVER) == 1 and source.endswith(_PLAIN_SETUP_NAMESERVER)
+    current = '  nameserver:\n' + ''.join(f'  - {value}\n' for value in DEFAULT_MIHOMO_NAMESERVERS)
+    return {**fields, 'mihomo': {**fields['mihomo'], 'custom_config': source.replace(_PLAIN_SETUP_NAMESERVER, current)}}
+
+
 def test_gateway_goal_drafts_match_the_previous_release(tmp_path):
     fields = gateway_goal_fields(tmp_path)
     oxidns = fields['oxidns']
     assert {key: oxidns.get(key) for key in RULE_DNS_DEFAULTS} == RULE_DNS_DEFAULTS
     fields['oxidns'] = {key: value for key, value in oxidns.items() if key not in RULE_DNS_DEFAULTS}
-    assert fields == baseline()['gateway_goal_fields']
+    assert fields == with_current_setup_nameserver(baseline()['gateway_goal_fields'])
 
 
 def test_single_service_scripts_match_the_previous_release():
