@@ -750,6 +750,27 @@ def test_default_output_summarizes_every_core_selection_and_keeps_verbose_log(tm
     assert "如需面板管理，请继续安装对应 Agent" in result.stdout + result.stderr
 
 
+@pytest.mark.parametrize("installer_kind,selected", [("single", "mihomo"), ("single", "oxidns"), ("aio", "both")])
+def test_embedded_core_phase_does_not_ask_for_a_separate_agent(tmp_path, installer_kind, selected):
+    from backend.agents.go_install_script import generate_go_agent_install_script, generate_go_aio_install_script
+
+    if installer_kind == "single":
+        combined = generate_go_agent_install_script("https://config.test", "single", selected, install_core=True)
+    else:
+        combined = generate_go_aio_install_script("https://config.test", "cohost", install_core=True)
+    # Run the real core installer behind the exact preamble the combined
+    # installer puts in front of it; the Agent is installed right after.
+    start = combined.index(f"(\nset -- --core {selected}\n")
+    preamble = combined[start:combined.index("#!/bin/sh", start)]
+    installer, env, root, events = harness(tmp_path)
+    installer.write_text(preamble + installer.read_text().rstrip() + "\n)\n")
+    result = run(installer, env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "核心安装完成" in result.stdout + result.stderr
+    assert "继续安装对应 Agent" not in result.stdout + result.stderr
+    assert "独立的 Agent 接入安装" not in result.detail_output
+
+
 def test_existing_core_summary_does_not_claim_dns_or_tun_success(tmp_path):
     installer, env, root, events = harness(tmp_path)
     for service in ("mihomo", "oxidns"):

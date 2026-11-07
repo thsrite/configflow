@@ -26,6 +26,9 @@ from backend.converters.oxidns import _forward, generate_oxidns_config
 from backend.converters.mihomo import generate_mihomo_config, _default_mihomo_template
 
 DEFAULT_LOCAL_DNS = 'https://223.5.5.5/dns-query'
+# IP-address DoH needs no bootstrap resolver and is not exposed to plain :53
+# hijacking; the first-run wizard writes the same default.
+DEFAULT_MIHOMO_NAMESERVERS = ('https://223.5.5.5/dns-query', 'https://1.1.1.1/dns-query')
 DNS_TARGET = '127.0.0.1:1053'
 INPUT_FIELDS = {'rule_set_ids', 'direct_rule_set_ids', 'proxy_rule_set_ids', 'local_dns',
                 'query_recorder', 'confirm_template_conversion', 'expected_config_revision', 'default_forward'}
@@ -402,7 +405,7 @@ def _prepare_mihomo_dns(config, *, local_addresses=()):
         raise GatewayOnboardingError('Mihomo 基础配置及 dns 必须是 YAML 对象，请先修正基础配置')
     dns = document.setdefault('dns', {})
     if not source.strip() or not dns.get('nameserver'):
-        dns['nameserver'] = ['https://223.5.5.5/dns-query', 'https://1.1.1.1/dns-query']
+        dns['nameserver'] = list(DEFAULT_MIHOMO_NAMESERVERS)
     for key in ('nameserver', 'fallback', 'default-nameserver', 'proxy-server-nameserver', 'direct-nameserver', 'nameserver-policy', 'proxy-server-nameserver-policy'):
         values = dns.get(key, [])
         pending = list(values.values()) if isinstance(values, dict) else [values]
