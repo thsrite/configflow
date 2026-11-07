@@ -1124,6 +1124,10 @@ func activateDeployment(cfg *Config, s *DeploymentState) {
 		failUnchanged(e)
 		return
 	}
+	var previousLive []byte
+	if cfg.ServiceType == "mihomo" {
+		previousLive, _ = os.ReadFile(cfg.ConfigPath)
+	}
 	if e = replaceDeployment(cfg, s); e != nil {
 		fail(e)
 		return
@@ -1194,6 +1198,9 @@ func activateDeployment(cfg *Config, s *DeploymentState) {
 	}
 	cleanupDeployments(cfg, s.DeploymentID)
 	ReconcileLinuxGateway(cfg)
+	if cfg.ServiceType == "mihomo" {
+		refreshAIOPeerUpstreams(cfg, previousLive)
+	}
 }
 func rollbackDeployment(cfg *Config, s *DeploymentState, start bool) {
 	s.RollbackError, s.RollbackErrorDetails = "", ""
