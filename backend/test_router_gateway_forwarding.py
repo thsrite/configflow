@@ -474,3 +474,19 @@ def test_persisting_a_system_persisted_host_switches_to_configflow_persistence(h
     code, data = post(client, headers, {'agent_id': agent_id})
     assert code == 200, data
     assert data['gateway']['state'] == 'persisted' and data['gateway']['system_source'] is None
+
+
+def test_view_explains_openrc_sysctl_service_outside_runlevels(home):
+    """ConfigFlow's files are in place, but OpenRC never applies sysctl.d at boot: the Agent's
+    notice says so, and one-click persistence (which adds the service to boot) stays offered."""
+    client, headers, agent, routers, seen, replies = home
+    routers('home', agent(9043))
+    notice = 'OpenRC 的 sysctl 服务没有加入任何运行级别；开启并持久化时会自动执行 rc-update add sysctl boot。'
+    replies[(9043, 'status')] = status(current='1', persisted=False, boot_sysctl='disabled', notice=notice)
+    [entry] = entries(client, headers)
+    assert entry['state'] == 'needs_persist' and entry['can_persist'] is True
+    assert entry['message'] == notice
+    # A real read error still takes precedence over the notice.
+    replies[(9043, 'status')] = status(current='1', persisted=False, notice=notice, error='无法读取 IPv4 转发状态')
+    [entry] = entries(client, headers)
+    assert entry['message'] == '无法读取 IPv4 转发状态'

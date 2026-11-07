@@ -3,6 +3,7 @@ IPV4_CONFIG="/etc/sysctl.d/99-configflow-aio-forward.conf"
 IPV4_MARKER="# Managed by ConfigFlow Shell AIO IPv4 forwarding v1"
 IPV4_CONFIG_CREATED=0
 IPV4_TEMP=""
+IPV4_BOOT_RESULT=""
 
 ipv4_failure() {
     fail "$*。请在运行 Mihomo 的 Linux/虚拟机/容器内检查 sysctl、CAP_NET_ADMIN 和 /proc/sys 的写权限；LXC 权限受限时需由宿主机管理员调整容器权限。本脚本不会修改 PVE 宿主机。"
@@ -99,6 +100,33 @@ persist_ipv4_forwarding() {
     [ -f "$IPV4_CONFIG" ] && [ ! -L "$IPV4_CONFIG" ] && cmp -s "$IPV4_CONFIG" "$STAGE_DIR/ipv4-forward.conf" ||
         ipv4_failure "IPv4 转发持久化配置在应用期间发生变化"
     [ "$(cat /proc/sys/net/ipv4/ip_forward)" = 1 ] || ipv4_failure "最终 IPv4 转发状态不是 1"
+    ensure_ipv4_sysctl_boot
+}
+
+ipv4_sysctl_boot_state() {
+    # Matches the Agent's SysctlBoot: only OpenRC can leave sysctl.d unapplied.
+    [ "$INIT_SYSTEM" = openrc ] || { echo na; return 0; }
+    [ -f /etc/init.d/sysctl ] || { echo unavailable; return 0; }
+    for ipv4_level in sysinit boot default; do
+        [ -e "/etc/runlevels/$ipv4_level/sysctl" ] && { echo enabled; return 0; }
+    done
+    echo disabled
+}
+
+ensure_ipv4_sysctl_boot() {
+    # PVE's Alpine LXC template has the OpenRC sysctl service in no runlevel, so
+    # sysctl.d would never apply at boot and forwarding would rely on the Agent
+    # alone. Forwarding is already on, so a failure only asks for a manual step.
+    case "$(ipv4_sysctl_boot_state)" in
+        disabled)
+            if rc-update add sysctl boot >/dev/null 2>&1 && [ "$(ipv4_sysctl_boot_state)" = enabled ]; then
+                IPV4_BOOT_RESULT=added
+            else
+                IPV4_BOOT_RESULT=failed
+            fi
+            ;;
+        unavailable) IPV4_BOOT_RESULT=unavailable ;;
+    esac
 }
 
 summarize_ipv4_forwarding() {
@@ -118,6 +146,11 @@ summarize_ipv4_forwarding() {
         done
     fi
     cf_note forwarding "IPv4 转发已设置持久化，尚未实际重启验证；其他配置或服务仍可能在重启后把它改回 0，重启后可执行 sysctl net.ipv4.ip_forward 确认仍为 1。"
+    case "${IPV4_BOOT_RESULT:-}" in
+        added) cf_fact ipv4_forwarding_boot "OpenRC 的 sysctl 服务原本不在开机运行级别，已执行 rc-update add sysctl boot，开机时会应用 $IPV4_CONFIG。" ;;
+        failed) cf_note forwarding_boot "无法自动把 OpenRC 的 sysctl 服务加入开机运行级别，开机时不会应用 $IPV4_CONFIG（目前只靠 Mihomo Agent 启动前检查补设）。请执行：rc-update add sysctl boot" ;;
+        unavailable) cf_note forwarding_boot "系统没有 OpenRC 的 sysctl 服务，开机时不会应用 $IPV4_CONFIG（目前只靠 Mihomo Agent 启动前检查补设）。请执行：mkdir -p /etc/local.d && printf '#!/bin/sh\\nsysctl -w net.ipv4.ip_forward=1\\n' > /etc/local.d/configflow-ip-forward.start && chmod 755 /etc/local.d/configflow-ip-forward.start && rc-update add local default" ;;
+    esac
     # The environment check only warns about these; repeat them in the final
     # summary because neither stops the install.
     if [ -n "${CONFIGFLOW_LOG_FILE:-}" ] && [ -f "$CONFIGFLOW_LOG_FILE" ]; then

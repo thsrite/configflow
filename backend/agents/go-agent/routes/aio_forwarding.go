@@ -30,6 +30,10 @@ var aioPrepareTUN = preflight.PrepareTUNAssumeEnabled
 // aioSystemForwarding reads whether the host's own sysctl configuration
 // persists forwarding, for hosts that did so before ConfigFlow managed it.
 var aioSystemForwarding = preflight.SystemForwardingPersistence
+
+// aioSysctlBoot reports whether the boot-time sysctl loader runs (OpenRC's
+// sysctl service may be in no runlevel, e.g. PVE's Alpine LXC template).
+var aioSysctlBoot = preflight.SysctlBoot
 var aioLookPath = exec.LookPath
 
 // daemon-reload and the hook may exceed the 3s diagnostic command timeout.
@@ -352,7 +356,15 @@ func aioForwardingStatus(cfg *Config) map[string]interface{} {
 		}
 	}
 	result["config"], result["hook_script"], result["startup_hook"] = config, hook, startup
-	result["persisted"] = config == "managed" && hook == "managed" && startup == "registered"
+	// The Agent's start hook alone stops keeping forwarding on once the Agent
+	// is stopped or removed; the sysctl.d file must also be applied at boot.
+	boot := aioSysctlBoot()
+	result["boot_sysctl"] = string(boot)
+	bootReady := boot != preflight.SysctlBootDisabled && boot != preflight.SysctlBootUnavailable
+	if !bootReady {
+		result["notice"] = aioSysctlBootNotice(boot)
+	}
+	result["persisted"] = config == "managed" && hook == "managed" && startup == "registered" && bootReady
 	// Persistence the host configured itself keeps forwarding on across
 	// reboots, but only ConfigFlow's own keeps it when a gateway record is
 	// removed, so it is reported separately and never counts as "persisted".
@@ -662,6 +674,9 @@ func persistAIOForwarding(cfg *Config, prepareTUN bool) (result map[string]inter
 	if value, err := gatewayReadSysctl(key); err != nil || value != "1" {
 		return nil, aioForwardingFailure("最终 IPv4 转发状态不是 1", fmt.Errorf("读回 %q：%v", value, err))
 	}
+	if err := aioEnsureSysctlBoot(); err != nil {
+		return nil, err
+	}
 	result = map[string]interface{}{"tun_prepare": nil}
 	if prepareTUN {
 		// TUN preparation is advisory here: forwarding is already persisted.
@@ -698,4 +713,35 @@ func aioCommitForwardingConfig(target string) error {
 		return fmt.Errorf("无法提交 IPv4 转发持久化配置：%w", err)
 	}
 	return syncDirectory(aioSysctlDir)
+}
+
+func aioSysctlBootNotice(boot preflight.SysctlBootState) string {
+	problem := preflight.SysctlBootProblem(boot)
+	if boot == preflight.SysctlBootDisabled {
+		return problem + "；开启并持久化时会自动执行 rc-update add sysctl boot。"
+	}
+	return problem + "；请在这台 Linux 上执行：" + strings.Join(preflight.SysctlBootManualCommands(boot), " && ") + "，重启后用 sysctl net.ipv4.ip_forward 确认为 1。"
+}
+
+// aioEnsureSysctlBoot makes OpenRC apply sysctl.d at boot, as the installers
+// do (ensure_ipv4_sysctl_boot): the existing sysctl service is added to the
+// boot runlevel. Forwarding is already on and kept by the Agent hook, so a
+// failure only asks for the manual step.
+func aioEnsureSysctlBoot() error {
+	boot := aioSysctlBoot()
+	if boot == preflight.SysctlBootDisabled {
+		command := preflight.SysctlBootEnableCommand
+		_, err := aioRun(command[0], command[1:]...)
+		if boot = aioSysctlBoot(); boot == preflight.SysctlBootEnabled {
+			return nil
+		}
+		if err == nil {
+			err = fmt.Errorf("执行后 sysctl 服务仍不在开机运行级别")
+		}
+		return fmt.Errorf("IPv4 转发已开启并写入 %s，但无法把 OpenRC 的 sysctl 服务加入开机运行级别（%v），开机时不会应用该设置。请在这台 Linux 上执行：%s，重启后用 sysctl net.ipv4.ip_forward 确认为 1", aioForwardingConfigPath(), err, strings.Join(preflight.SysctlBootManualCommands(preflight.SysctlBootDisabled), " && "))
+	}
+	if boot == preflight.SysctlBootUnavailable {
+		return fmt.Errorf("IPv4 转发已开启并写入 %s，但%s。请在这台 Linux 上执行：%s，重启后用 sysctl net.ipv4.ip_forward 确认为 1", aioForwardingConfigPath(), preflight.SysctlBootProblem(boot), strings.Join(preflight.SysctlBootManualCommands(boot), " && "))
+	}
+	return nil
 }

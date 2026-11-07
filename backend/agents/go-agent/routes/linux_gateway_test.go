@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"agent/preflight"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -30,10 +31,12 @@ func newGatewayFixture(t *testing.T) *gatewayFixture {
 	oldWrite := gatewayWriteSysctl
 	oldCoreVersion := gatewayCoreVersion
 	oldAIOSysctl := aioSysctlDir
-	oldSystemForwarding := aioSystemForwarding
+	oldSystemForwarding, oldSysctlBoot := aioSystemForwarding, aioSysctlBoot
 	// Never read the test machine's own sysctl configuration.
 	aioSystemForwarding = func() (string, bool) { return "", false }
+	aioSysctlBoot = func() preflight.SysctlBootState { return preflight.SysctlBootNotApplicable }
 	t.Cleanup(func() {
+		aioSysctlBoot = oldSysctlBoot
 		gatewayOS, gatewayGeteuid, gatewaySysctlRoot = oldOS, oldUID, oldRoot
 		gatewayRun, gatewayRunInput, gatewayLookPath = oldRun, oldInput, oldLook
 		gatewayWriteSysctl = oldWrite
