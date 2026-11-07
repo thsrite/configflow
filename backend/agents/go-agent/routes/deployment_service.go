@@ -256,11 +256,11 @@ func validateStagedDeployment(cfg *Config, s *DeploymentState) (result error) {
 		if err != nil {
 			return err
 		}
-		modified, err = adaptAIOUpstreamDNS(cfg, modified)
+		modified, err = adaptGatewayDNS(cfg, modified)
 		if err != nil {
 			return err
 		}
-		modified, err = adaptGatewayDNS(cfg, modified)
+		modified, err = adaptAIOUpstreamDNS(cfg, modified)
 		if err != nil {
 			return err
 		}

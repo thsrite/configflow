@@ -19,11 +19,11 @@ func renderFinalConfig(cfg *Config, content string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	content, err = adaptAIOUpstreamDNS(cfg, content)
+	content, err = adaptGatewayDNS(cfg, content)
 	if err != nil {
 		return "", err
 	}
-	content, err = adaptGatewayDNS(cfg, content)
+	content, err = adaptAIOUpstreamDNS(cfg, content)
 	if err != nil {
 		return "", err
 	}

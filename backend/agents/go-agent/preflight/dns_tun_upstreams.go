@@ -30,7 +30,25 @@ func tunHijackEntries(tun map[string]interface{}) []netip.AddrPort {
 			entries = append(entries, entry)
 		}
 	}
+	if tunMarkModeHijacksLocalDNS(tun) {
+		entries = append(entries, netip.AddrPortFrom(netip.IPv4Unspecified(), 53))
+	}
 	return entries
+}
+
+// A route-address-set or route-exclude-address-set puts auto-redirect into
+// mark mode. sing-tun then also DNATs this host's own port-53 traffic (except
+// to route-exclude-address and loopback) to Mihomo's DNS, whatever dns-hijack
+// says; the Linux gateway always works this way. Without those sets the host's
+// queries only meet Mihomo inside the TUN, where dns-hijack alone decides.
+func tunMarkModeHijacksLocalDNS(tun map[string]interface{}) bool {
+	if tun["auto-route"] != true || tun["auto-redirect"] != true {
+		return false
+	}
+	if mode, _ := tun["dns-mode"].(string); mode != "" && mode != "hijack" {
+		return false
+	}
+	return len(dnsStrings(tun["route-address-set"])) > 0 || len(dnsStrings(tun["route-exclude-address-set"])) > 0
 }
 
 func tunHijacks(entries []netip.AddrPort, target netip.AddrPort) bool {

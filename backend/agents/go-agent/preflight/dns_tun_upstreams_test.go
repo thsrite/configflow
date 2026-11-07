@@ -1,6 +1,7 @@
 package preflight
 
 import (
+	"fmt"
 	"net/netip"
 	"reflect"
 	"strings"
@@ -81,6 +82,26 @@ func TestTUNHijackedOxiDNSUpstreamsFollowsMihomoMatching(t *testing.T) {
 			}
 		})
 	}
+	// Mark mode (auto-redirect plus an address set) DNATs every local port 53
+	// even with an empty dns-hijack; the Linux gateway always publishes it.
+	for _, test := range []struct {
+		name, tun string
+		want      []netip.Addr
+	}{
+		{"gateway route-address-set", "{enable: true, auto-route: true, auto-redirect: true, dns-hijack: [], route-address-set: [cf_gateway_fake_ip]}", all},
+		{"route-exclude-address-set", "{enable: true, auto-route: true, auto-redirect: true, route-exclude-address-set: [cn]}", all},
+		{"explicit hijack dns-mode", "{enable: true, auto-route: true, auto-redirect: true, dns-mode: hijack, route-address-set: [a]}", all},
+		{"full TUN without sets", "{enable: true, auto-route: true, auto-redirect: true, dns-hijack: []}", nil},
+		{"sets without auto-redirect", "{enable: true, auto-route: true, dns-hijack: [], route-address-set: [a]}", nil},
+		{"auto-redirect needs auto-route", "{enable: true, auto-redirect: true, route-address-set: [a]}", nil},
+		{"native dns-mode", "{enable: true, auto-route: true, auto-redirect: true, dns-mode: native, route-address-set: [a]}", nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := TUNHijackedOxiDNSUpstreams(oxidns, tunUpstreamDoc(t, test.tun)); !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("hijacked upstreams = %v, want %v", got, test.want)
+			}
+		})
+	}
 }
 
 func TestDNSWarnsWhenRunningMihomoStillHijacksOxiDNSUpstream(t *testing.T) {
@@ -110,9 +131,16 @@ func TestDNSWarnsWhenRunningMihomoStillHijacksOxiDNSUpstream(t *testing.T) {
 			}
 		})
 	}
-	gateway := dnsTestCandidate("mihomo", "dns: {enable: true, listen: '127.0.0.1:1053'}\ntun: {enable: true, dns-hijack: [any:53]}\nx-configflow-linux-gateway: {enabled: true}\n", true)
-	if report := dnsTestCheck(oxidns, &gateway); dnsHas(report, "", "同机 TUN 劫持上游") {
-		t.Fatalf("gateway publication is adapted separately: %+v", report)
+	gatewayTUN := "{enable: true, auto-route: true, auto-redirect: true, dns-hijack: [], route-address-set: [cf_gateway_fake_ip], route-exclude-address: [127.0.0.0/8, 192.168.1.2/32%s]}"
+	gateway := func(extra string) *DNSCandidate {
+		peer := dnsTestCandidate("mihomo", "dns: {enable: true, listen: '127.0.0.1:1053'}\ntun: "+fmt.Sprintf(gatewayTUN, extra)+"\nx-configflow-linux-gateway: {enabled: true}\n", true)
+		return &peer
+	}
+	if report := dnsTestCheck(oxidns, gateway("")); !dnsHas(report, "warn", "119.29.29.29") || !dnsHas(report, "warn", "223.5.5.5") {
+		t.Fatalf("running gateway still hijacks upstreams but no warning: %+v", report)
+	}
+	if report := dnsTestCheck(oxidns, gateway(", 223.5.5.5/32, 119.29.29.29/32")); dnsHas(report, "", "同机 TUN 劫持上游") {
+		t.Fatalf("excluded gateway upstreams reported: %+v", report)
 	}
 	if report := dnsTestCheck(dnsTestCandidate("mihomo", "tun: {enable: true, dns-hijack: [any:53]}\n", true), &oxidns); dnsHas(report, "", "同机 TUN 劫持上游") {
 		t.Fatalf("mihomo publications adapt instead of warning: %+v", report)

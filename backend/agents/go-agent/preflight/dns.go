@@ -235,9 +235,8 @@ func dnsTUNUpstreamChecks(cfg Config, doc map[string]interface{}, peer Config, p
 	if cfg.ServiceType != "oxidns" || peer.ServiceType != "mihomo" {
 		return nil
 	}
-	marker, _ := peerDoc["x-configflow-linux-gateway"].(map[string]interface{})
 	tun, _ := peerDoc["tun"].(map[string]interface{})
-	if marker["enabled"] == true || tun["enable"] != true {
+	if tun["enable"] != true {
 		return nil
 	}
 	excluded, _ := tun["route-exclude-address"].([]interface{})
