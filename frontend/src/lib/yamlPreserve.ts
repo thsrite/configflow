@@ -1,4 +1,4 @@
-import { parseDocument, type Document, type DocumentOptions, type ParseOptions, type SchemaOptions } from 'yaml'
+import { parseDocument, type Document, type DocumentOptions, type ParseOptions, type SchemaOptions, type Tags } from 'yaml'
 
 /**
  * Write an edited YAML document back without reformatting the rest of the user's text.
@@ -6,8 +6,21 @@ import { parseDocument, type Document, type DocumentOptions, type ParseOptions, 
  */
 
 export type YamlParseOptions = ParseOptions & DocumentOptions & SchemaOptions
-/** The server reads the YAML with PyYAML, i.e. YAML 1.1 (`off`, `yes` are booleans, `0755` is octal). */
-export const YAML_1_1 = { version: '1.1', merge: true, uniqueKeys: true } as const satisfies YamlParseOptions
+const BOOL = 'tag:yaml.org,2002:bool'
+// PyYAML's booleans: unlike the YAML 1.1 spec (and the yaml library), `y` / `n` stay text.
+const PYYAML_TRUE = /^(?:[Yy]es|YES|[Tt]rue|TRUE|[Oo]n|ON)$/
+const PYYAML_FALSE = /^(?:[Nn]o|NO|[Ff]alse|FALSE|[Oo]ff|OFF)$/
+function pyyamlTags(tags: Tags): Tags {
+  return tags.map(tag => typeof tag === 'object' && tag.tag === BOOL && 'test' in tag && tag.test
+    ? { ...tag, test: tag.identify?.(true) ? PYYAML_TRUE : PYYAML_FALSE } : tag)
+}
+
+/**
+ * Read YAML as the server's PyYAML `safe_load` does: YAML 1.1 (`yes` / `on` / `off`
+ * are booleans, `017` is octal, `1:20` is 80) with PyYAML's narrower booleans.
+ * Known remaining differences, numbers only: `09` and `1e3` are text for PyYAML.
+ */
+export const YAML_1_1: YamlParseOptions = { version: '1.1', merge: true, uniqueKeys: true, customTags: pyyamlTags }
 export const YAML_PRINT_OPTIONS = { lineWidth: 0 } as const
 
 /** Deep equality of parsed YAML values (plain objects, arrays, Map, Set, Date, scalars). */

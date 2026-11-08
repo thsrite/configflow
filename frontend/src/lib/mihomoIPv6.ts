@@ -1,5 +1,5 @@
-import { isAlias, isMap, isScalar, parseDocument, visit } from 'yaml'
-import { printYamlPreserving } from './yamlPreserve'
+import { isAlias, isMap, isScalar, parseDocument, visit, type Document, type YAMLMap } from 'yaml'
+import { YAML_1_1, printYamlPreserving } from './yamlPreserve'
 
 export type MihomoIPv6Field = 'core' | 'dns'
 export const DEFAULT_MIHOMO_FAKE_IPV6_RANGE = 'fc00::1/64'
@@ -31,8 +31,22 @@ export interface MihomoIPv6Config {
 const invalid = (message: string): MihomoIPv6Value => ({ value: null, source: 'invalid', editable: false, message })
 const pathFor = (field: MihomoIPv6Field) => field === 'core' ? ['ipv6'] : ['dns', 'ipv6']
 
-// Reading keeps the editor's YAML 1.2 rules (`ipv6: yes` is reported, not guessed).
-const YAML_OPTIONS = { merge: true, uniqueKeys: true } as const
+// Read as the server's PyYAML does, so `ipv6: yes` / `on` / `off` are booleans here too.
+const YAML_OPTIONS = YAML_1_1
+
+/** Like document.setIn, but a missing parent becomes a plain map (setIn writes `!!omap` under YAML 1.1). */
+function setPath(document: Document, path: readonly string[], value: unknown) {
+  let map = document.contents as YAMLMap
+  for (const key of path.slice(0, -1)) {
+    let child = map.get(key, true) as unknown
+    if (child === undefined) {
+      child = document.createNode({})
+      map.set(key, child)
+    }
+    map = child as YAMLMap
+  }
+  map.set(path[path.length - 1], value)
+}
 
 function parse(source: string) {
   const document = parseDocument(source, YAML_OPTIONS)
@@ -155,7 +169,7 @@ export function setMihomoFakeIPv6Range(source: string, value: string, defaultSou
     previous.value = value.trim()
     // Explicitly correcting a typed scalar must not leave e.g. !!int on a CIDR.
     if (previous.tag && previous.tag !== 'tag:yaml.org,2002:str') delete previous.tag
-  } else document.setIn(path, value.trim())
+  } else setPath(document, path, value.trim())
   return printYamlPreserving(original, document, YAML_OPTIONS)
 }
 
@@ -168,7 +182,7 @@ export function setMihomoIPv6WithDetails(source: string, field: MihomoIPv6Field,
   const path = pathFor(field)
   const previous = document.getIn(path, true)
   if (isScalar(previous) && !isAlias(previous)) previous.value = enabled
-  else document.setIn(path, enabled)
+  else setPath(document, path, enabled)
 
   let addedFakeIPv6Range = false
   let notice = ''
@@ -188,7 +202,7 @@ export function setMihomoIPv6WithDetails(source: string, field: MihomoIPv6Field,
       } else if (!state.dns.editable) {
         notice = 'IPv6 开关已更新，但 DNS 使用共享或继承配置，未自动补充 IPv6 Fake-IP 网段；请在 YAML 中填写 fake-ip-range6。'
       } else {
-        document.setIn(['dns', 'fake-ip-range6'], DEFAULT_MIHOMO_FAKE_IPV6_RANGE)
+        setPath(document, ['dns', 'fake-ip-range6'], DEFAULT_MIHOMO_FAKE_IPV6_RANGE)
         addedFakeIPv6Range = true
         notice = `已补充 IPv6 Fake-IP 网段 ${DEFAULT_MIHOMO_FAKE_IPV6_RANGE}。`
       }

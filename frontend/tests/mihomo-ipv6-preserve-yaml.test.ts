@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { parse } from 'yaml'
 import { readMihomoIPv6Mode, setMihomoFakeIPv6Range, setMihomoIPv6Mode, setMihomoIPv6WithDetails } from '@/lib/mihomoIPv6'
 
-// `legacy.on` switches the IPv6 edits back to the previous full printout
-// (`document.toString({ lineWidth: 0 })`), so each case compares both outputs.
+// `legacy.on` switches the IPv6 edits back to a full printout of the same edit
+// (`document.toString({ lineWidth: 0 })`, as before), so each case compares both outputs.
 const legacy = vi.hoisted(() => ({ on: false }))
 vi.mock('@/lib/yamlPreserve', async importOriginal => {
   const actual = await importOriginal<typeof import('@/lib/yamlPreserve')>()
@@ -201,14 +201,21 @@ describe('IPv6 settings write back only the lines they change', () => {
     expect(next.content.startsWith(kept.replace('ipv6: false          # 先关着', 'ipv6: true # 先关着'))).toBe(true)
   })
 
-  it('keeps values the old printout changed for the server (YAML 1.1 octal)', () => {
-    const source = 'port: 017\nipv6: false\ndns:\n  enable: true\n  enhanced-mode: fake-ip\n'
+  it('keeps YAML 1.1 values (octal, hex, base 60, y, ~) exactly as the server reads them', () => {
+    const source = 'port: 017\nmark: 0x1F\ntimeout: 1:20\nflag: y\nnothing: ~\nipv6: off\ndns:\n  enable: yes\n  enhanced-mode: fake-ip\n'
     const { next, old } = run(source, text => setMihomoIPv6Mode(text, 'nodes'))
-    expect(parse(next.content, { merge: true })).toEqual(parse(old.content, { merge: true }))
-    // The editor reads 017 as 17 and printed it so; PyYAML reads the original as 15.
-    expect(old.content).toContain('port: 17\n')
-    expect(next.content).toContain('port: 017\n')
-    expect(parse(next.content, { version: '1.1' }).port).toBe(parse(source, { version: '1.1' }).port)
+    // The full printout writes 1:20 as 01:20: the same 80 for YAML 1.1, a different string for 1.2.
+    expect(old.content).toContain('timeout: 01:20\n')
+    expect(parse(next.content, { version: '1.1' })).toEqual(parse(old.content, { version: '1.1' }))
+    expect(lineDiff(source, next.content)).toEqual({ removed: ['ipv6: off'], added: ['ipv6: true', '  fake-ip-range6: fc00::1/64'] })
+    const server = parse(next.content, { version: '1.1' })
+    expect(server).toMatchObject({ port: 15, mark: 31, timeout: 80, nothing: null, ipv6: true, dns: { enable: true } })
+  })
+
+  it('creates a missing dns section as a plain map', () => {
+    const next = setMihomoIPv6Mode('mixed-port: 7890\n', 'clients').content
+    expect(next).toBe('mixed-port: 7890\ndns:\n  ipv6: true\n')
+    expect(next).not.toContain('!!')
   })
 
   it('still refuses YAML it cannot parse', () => {
