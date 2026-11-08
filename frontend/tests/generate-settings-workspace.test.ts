@@ -287,7 +287,8 @@ describe('generation settings workspace integration', () => {
     await flushPromises()
     expect(workspace.props()).toMatchObject({ open: true, dirty: true, busy: false })
     expect(draft.customConfigContent).toBe('')
-    expect(notify.error).toHaveBeenCalledWith('保存基础配置失败')
+    // The server's reason (e.g. a port conflict) is shown with the failure.
+    expect(notify.error).toHaveBeenCalledWith('保存基础配置失败', 'network unavailable')
     workspace.vm.$emit('save')
     await flushPromises()
     expect(customConfigApi.saveMihomo).toHaveBeenLastCalledWith({ config: '', provider_update_interval: 3600 }, 'workspace-profile')
@@ -414,6 +415,20 @@ describe('generation settings workspace integration', () => {
     control.vm.$emit('validation', { invalid: false, dirty: false })
     await nextTick()
     expect(workspace.getComponent(SettingsPublishBar).props('disabled')).toBe(false)
+  })
+
+  it('shows the base settings form and blocks saving while it reports a problem', async () => {
+    const { workspace } = await openSettings('mihomo', '基础配置')
+    const form = workspace.getComponent({ name: 'MihomoBaseSettings' })
+    expect(form.props()).toMatchObject({ open: true })
+    form.vm.$emit('validation', { invalid: true, dirty: false })
+    await nextTick()
+    expect(workspace.props('saveDisabled')).toBe(true)
+    expect(await workspace.getComponent(SettingsPublishBar).props('save')()).toBeNull()
+    expect(customConfigApi.saveMihomo).not.toHaveBeenCalled()
+    form.vm.$emit('validation', { invalid: false, dirty: false })
+    await nextTick()
+    expect(workspace.props('saveDisabled')).toBe(false)
   })
 
   it('keeps Loon as draft-only because it has no publish target', async () => {

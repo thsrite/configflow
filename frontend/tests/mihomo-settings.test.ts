@@ -168,6 +168,19 @@ describe('Mihomo settings editor', () => {
     expect(wrapper.getComponent(SettingsPublishBar).props('disabled')).toBe(false)
   })
 
+  it('passes the saved draft and server context to the base settings form, which can block saving', async () => {
+    const context = { takeover: 'full_tun', reserved_ports: [{ port: 8080, owner: 'Mihomo Agent「gw」的端口' }], local_addresses: ['10.0.0.5'] }
+    vi.mocked(customConfigApi.getMihomo).mockResolvedValueOnce(response({ config: initialConfig, base_settings: context }))
+    const wrapper = await editor()
+    const form = wrapper.getComponent({ name: 'MihomoBaseSettings' })
+    expect(form.props()).toMatchObject({ modelValue: initialConfig, savedContent: initialConfig, context, open: true })
+    form.vm.$emit('validation', { invalid: true, dirty: false })
+    await flushPromises()
+    expect(wrapper.getComponent(SettingsWorkspace).props('saveDisabled')).toBe(true)
+    expect(await wrapper.getComponent(SettingsPublishBar).props('save')()).toBeNull()
+    expect(customConfigApi.saveMihomo).not.toHaveBeenCalled()
+  })
+
   it('saves a zero sync interval independently of the YAML and marks only that edit dirty', async () => {
     const wrapper = await editor()
     const input = wrapper.getComponent({ name: 'MihomoSyncInterval' })

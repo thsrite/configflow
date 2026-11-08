@@ -393,6 +393,47 @@ def gateway_onboarding_state(config, revision, base_url='', *, takeover='selecti
             'proxy_prerequisites': prerequisites}
 
 
+MIHOMO_DNS_UPSTREAM_KEYS = ('nameserver', 'fallback', 'default-nameserver', 'proxy-server-nameserver',
+                            'direct-nameserver', 'nameserver-policy', 'proxy-server-nameserver-policy')
+
+
+def mihomo_dns_loop(dns, host_addresses=()):
+    """The first ``(key, upstream)`` of Mihomo's dns section that resolves through this host, or None.
+
+    Loopback, unspecified and ``localhost`` addresses, ``system``, and this
+    host's own addresses on port 53 or 1053 (OxiDNS, Mihomo's DNS) would loop.
+    """
+    for key in MIHOMO_DNS_UPSTREAM_KEYS:
+        values = dns.get(key, []) if isinstance(dns, dict) else []
+        pending = list(values.values()) if isinstance(values, dict) else [values]
+        while pending:
+            value = pending.pop()
+            if isinstance(value, list):
+                pending.extend(value)
+                continue
+            if not isinstance(value, str):
+                continue
+            raw = value.split('#', 1)[0]
+            try:
+                parts = urlsplit(raw if '://' in raw else 'udp://' + raw)
+                hostname, upstream_port = parts.hostname, parts.port
+            except ValueError:
+                continue  # Not an address Mihomo could dial; its own check reports it.
+            try:
+                address = ipaddress.ip_address(hostname or '')
+                local_address = address.is_loopback or address.is_unspecified or bool(
+                    getattr(address, 'ipv4_mapped', None) and address.ipv4_mapped.is_loopback)
+                matches_host = address in host_addresses or getattr(address, 'ipv4_mapped', None) in host_addresses
+            except ValueError:
+                local_address = hostname == 'localhost'
+                matches_host = False
+            if upstream_port is None and parts.scheme in ('udp', 'tcp'):
+                upstream_port = 53
+            if local_address or (matches_host and upstream_port in (53, 1053)) or raw.strip() in ('system', 'system://'):
+                return key, value
+    return None
+
+
 def _prepare_mihomo_dns(config, *, local_addresses=()):
     try:
         host_addresses = {ipaddress.ip_address(value) for value in local_addresses}
@@ -407,31 +448,8 @@ def _prepare_mihomo_dns(config, *, local_addresses=()):
     dns = document.setdefault('dns', {})
     if not source.strip() or not dns.get('nameserver'):
         dns['nameserver'] = list(DEFAULT_MIHOMO_NAMESERVERS)
-    for key in ('nameserver', 'fallback', 'default-nameserver', 'proxy-server-nameserver', 'direct-nameserver', 'nameserver-policy', 'proxy-server-nameserver-policy'):
-        values = dns.get(key, [])
-        pending = list(values.values()) if isinstance(values, dict) else [values]
-        while pending:
-            value = pending.pop()
-            if isinstance(value, list):
-                pending.extend(value)
-                continue
-            if not isinstance(value, str):
-                continue
-            raw = value.split('#', 1)[0]
-            parts = urlsplit(raw if '://' in raw else 'udp://' + raw)
-            try:
-                address = ipaddress.ip_address(parts.hostname or '')
-                local_address = address.is_loopback or address.is_unspecified or bool(
-                    getattr(address, 'ipv4_mapped', None) and address.ipv4_mapped.is_loopback)
-                matches_host = address in host_addresses or getattr(address, 'ipv4_mapped', None) in host_addresses
-            except ValueError:
-                local_address = parts.hostname == 'localhost'
-                matches_host = False
-            upstream_port = parts.port
-            if upstream_port is None and parts.scheme in ('udp', 'tcp'):
-                upstream_port = 53
-            if local_address or (matches_host and upstream_port in (53, 1053)) or raw in ('system', 'system://'):
-                raise GatewayOnboardingError('Mihomo DNS 上游不能指向本机 OxiDNS 或系统 DNS，否则会形成解析循环；请先修改基础配置')
+    if mihomo_dns_loop(dns, host_addresses):
+        raise GatewayOnboardingError('Mihomo DNS 上游不能指向本机 OxiDNS 或系统 DNS，否则会形成解析循环；请先修改基础配置')
     config['mihomo']['custom_config'] = yaml.safe_dump(document, allow_unicode=True, sort_keys=False)
 
 

@@ -289,6 +289,26 @@ def reset_config():
 from backend.routes import custom_config_bp
 
 
+def _mihomo_agent_context():
+    from backend.common.agent_manager import get_agent_manager
+    from backend.common.mihomo_base_settings import agent_context
+    return agent_context(get_repository(), get_agent_manager(), resolve_profile_id())
+
+
+def _saved_mihomo_base(config_data):
+    """The saved base document the form's changes are compared with; None when unreadable."""
+    import yaml
+    from backend.converters.mihomo import _default_mihomo_template
+    text = (config_data.get('mihomo') or {}).get('custom_config') or ''
+    if not isinstance(text, str) or not text.strip():
+        return _default_mihomo_template()
+    try:
+        document = yaml.safe_load(text)
+    except (yaml.YAMLError, RecursionError):
+        return None
+    return document if isinstance(document, dict) else None
+
+
 @custom_config_bp.route('/mihomo', methods=['GET', 'POST'])
 @require_auth
 def handle_custom_mihomo_config():
@@ -303,10 +323,16 @@ def handle_custom_mihomo_config():
         # 获取自定义配置（从嵌套结构中读取）
         mihomo_config = config_data['mihomo'].get('custom_config', '')
         from backend.converters.mihomo import _default_mihomo_template
+        from backend.common.mihomo_base_settings import takeover_mode
         import yaml
+        reserved, hosts = _mihomo_agent_context()
         return jsonify({'config': mihomo_config,
                         'default_config': yaml.safe_dump(_default_mihomo_template(), allow_unicode=True, sort_keys=False),
-                        'provider_update_interval': config_data['mihomo'].get('provider_update_interval', 3600)})
+                        'provider_update_interval': config_data['mihomo'].get('provider_update_interval', 3600),
+                        # What the base settings form needs to check what the server checks on save.
+                        'base_settings': {'takeover': takeover_mode(config_data),
+                                          'reserved_ports': [{'port': port, 'owner': owner} for port, owner in sorted(reserved.items())],
+                                          'local_addresses': hosts}})
 
     elif request.method == 'POST':
         # 保存自定义配置（保存到嵌套结构中）
@@ -326,9 +352,14 @@ def handle_custom_mihomo_config():
                     import yaml as _yaml
                     document = _yaml.safe_load(custom_config)
                     from backend.converters.mihomo import validate_ipv6_flags, CustomConfigYAMLError
+                    from backend.common.mihomo_base_settings import BaseSettingsError, validate_base_settings
                     try:
                         validate_ipv6_flags(document)
-                    except CustomConfigYAMLError as error:
+                        if isinstance(document, dict):
+                            reserved, hosts = _mihomo_agent_context()
+                            validate_base_settings(document, _saved_mihomo_base(config_data),
+                                                   reserved_ports=reserved, local_addresses=hosts)
+                    except (CustomConfigYAMLError, BaseSettingsError) as error:
                         return jsonify(success=False, message=str(error)), 400
                 except _yaml.YAMLError as e:
                     return jsonify({
