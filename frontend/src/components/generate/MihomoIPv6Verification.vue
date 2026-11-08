@@ -33,7 +33,7 @@ const canRetryAutomatic = computed(() => verification.value && !running.value
 const shown = computed(() => verification.value && !running.value && !error.value ? verification.value : undefined)
 const progress = computed(() => {
   if (notApplicable.value || !props.readiness) return ''
-  const groups = buildMihomoIPv6Summary({ readiness: props.readiness, verification: shown.value, preferVerificationSnapshot: freshVerification.value })
+  const groups = buildMihomoIPv6Summary({ readiness: props.readiness, verification: shown.value, preferVerificationSnapshot: freshVerification.value, besideSteps: true })
   return `${groups.filter(group => group.tone === 'success').length} / ${groups.length} 通过`
 })
 const current = (session: number) => !disposed && props.open && session === generation

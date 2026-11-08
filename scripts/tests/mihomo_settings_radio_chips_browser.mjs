@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Radio chips in the Mihomo settings (IPv6 mode, 控制面板监听, DNS 方案) in the real app: keyboard, phone layout,
-// the same look as the Agent install dialog, and the IPv6 mode screenshots. Test server only, from the task worktree:
+// Radio chips in the Mihomo settings (IPv6 mode, 控制面板监听, DNS 方案) in the real app: the IPv6 card's 配置 cells,
+// keyboard, phone layout, the same look as the Agent install dialog, and the IPv6 mode screenshots. Test server only, from the task worktree:
 //   cf-test typecheck   # syncs and links frontend/node_modules
 //   rt --no-sync --back doc/img/guide --back .ci-results/mihomo-radio-chips -- node scripts/tests/mihomo_settings_radio_chips_browser.mjs
 // Real Vue frontend and Flask API on a temporary data directory (no login, nothing published). There is no device:
@@ -119,10 +119,28 @@ async function openSettings(tab) {
   await tab.locator('[data-mihomo-ipv6-settings]').waitFor({ timeout: 30000 })
   await tab.waitForTimeout(400)
 }
+// The IPv6 mode is the first cell of the card's 配置 group; its chips open in a menu.
+const modeCell = tab => tab.locator('[data-ipv6-mode-trigger]')
 const modes = tab => tab.locator('[role="radiogroup"][aria-label="IPv6 模式"]')
-const modeName = tab => modes(tab).evaluate(group => [...group.querySelectorAll('label')]
-  .filter(label => label.querySelector('[role="radio"]')?.getAttribute('aria-checked') === 'true').map(label => label.textContent.trim()).join(''))
+async function openModes(tab) {
+  if (!await modes(tab).isVisible()) await modeCell(tab).click()
+  await modes(tab).waitFor()
+  await tab.waitForTimeout(200)
+}
+async function closeModes(tab) {
+  if (await modes(tab).isVisible()) await tab.keyboard.press('Escape')
+  await modes(tab).waitFor({ state: 'detached' })
+}
+// What the cell shows: the mode, 自定义, or 无法修改.
+const modeName = async tab => (await modeCell(tab).getAttribute('aria-label')).replace(/^IPv6 模式：/, '')
 const chip = (tab, label) => modes(tab).locator('label', { hasText: new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) })
+// Choosing closes the menu.
+async function choose(tab, label, how = 'click') {
+  await openModes(tab)
+  await chip(tab, label)[how]()
+  await modes(tab).waitFor({ state: 'detached' })
+  await tab.waitForTimeout(400)
+}
 const yaml = tab => tab.$eval('.cm-content', el => [...el.querySelectorAll('.cm-line')].map(line => line.textContent).join('\n'))
 async function saveDraft(tab, next) {
   scene = next
@@ -177,8 +195,9 @@ function sameLook(ours, theirs, label) {
   }
 }
 
-// No horizontal scroll, every chip at least 44px, and the long option fully inside its chip.
+// No horizontal scroll, every chip at least 44px, and the long option fully inside its chip (menu open).
 async function checkPhone(tab, label) {
+  await openModes(tab)
   const result = await tab.evaluate(() => {
     const settings = document.querySelector('[data-mihomo-ipv6-settings]')
     const scroller = settings.closest('.overflow-y-auto') || document.scrollingElement
@@ -187,7 +206,9 @@ async function checkPhone(tab, label) {
       return { text: item.textContent.trim(), left: Math.round(box.left), right: Math.round(box.right), width: Math.round(box.width), height: Math.round(box.height),
         overflow: item.scrollWidth - item.clientWidth }
     })
-    const wide = [...settings.querySelectorAll('*')].filter(element => element.getBoundingClientRect().right > window.innerWidth + 0.5)
+    const menu = document.querySelector('[role="radiogroup"][aria-label="IPv6 模式"]').closest('[role="dialog"]')
+    const wide = [...settings.querySelectorAll('*'), menu, ...menu.querySelectorAll('*')].filter(element => element.getBoundingClientRect().right > window.innerWidth + 0.5
+      || element.getBoundingClientRect().left < -0.5)
       .map(element => element.tagName.toLowerCase())
     return { pageScroll: document.documentElement.scrollWidth - window.innerWidth, scroller: scroller.scrollWidth - scroller.clientWidth, chips, wide: wide.slice(0, 10) }
   })
@@ -199,6 +220,7 @@ async function checkPhone(tab, label) {
     assert.ok(item.overflow <= 0, `${label}: ${item.text} is cut off`)
   }
   step(`phone layout ${label}`, result)
+  await closeModes(tab)
   return result
 }
 
@@ -233,63 +255,79 @@ app.run(host='127.0.0.1', port=int(os.environ['CF_API_PORT']), debug=False, use_
   assert.match(initial.data.config, /^ipv6: false$/m)
   assert.doesNotMatch(initial.data.config, /fake-ip-range6/)
 
-  // 1. Desktop, light: the chips, the keyboard, and the YAML they write.
+  // 1. Desktop, light: the 配置 cells, the chips in the menu, the keyboard, and the YAML they write.
   const desktop = await page('light', { width: 1440, height: 1000 })
   await openSettings(desktop)
-  assert.deepEqual(await modes(desktop).locator('label').allTextContents(), ['关闭', NODES, CLIENTS])
   assert.equal(await modeName(desktop), '关闭')
-  // Label above, chips below it, the description under the chips; all start at the same left edge.
-  const layout = await desktop.evaluate(() => {
-    const group = document.querySelector('[role="radiogroup"][aria-label="IPv6 模式"]')
-    const field = group.closest('.cf-form-field')
-    const heading = field.querySelector('.cf-field-heading').getBoundingClientRect()
-    const chips = group.getBoundingClientRect()
-    const description = document.querySelector('[data-ipv6-mode-description]').getBoundingClientRect()
-    return { heading: { left: heading.left, bottom: heading.bottom }, chips: { left: chips.left, top: chips.top, bottom: chips.bottom }, description: { left: description.left, top: description.top } }
+  // IPv6 off: the card holds the 配置 group only, without device buttons.
+  assert.deepEqual(await desktop.$$eval('[data-ipv6-steps-sheet] > section', groups => groups.map(group => group.getAttribute('aria-label'))), ['配置'])
+  assert.equal(await desktop.locator('[data-ipv6-steps-recheck]').count(), 0)
+  await openModes(desktop)
+  assert.deepEqual(await modes(desktop).locator('label').allTextContents(), ['关闭', NODES, CLIENTS])
+  assert.match(await desktop.locator('[data-ipv6-mode-description]').innerText(), /Mihomo 不使用 IPv6/)
+  // The chips stack in the menu, which opens under the cell.
+  const menu = await desktop.evaluate(() => {
+    const cell = document.querySelector('[data-ipv6-mode-trigger]').getBoundingClientRect()
+    const chips = [...document.querySelectorAll('[role="radiogroup"][aria-label="IPv6 模式"] label')].map(label => label.getBoundingClientRect())
+    return { cell: { left: cell.left, bottom: cell.bottom }, lefts: chips.map(box => Math.round(box.left)), tops: chips.map(box => Math.round(box.top)) }
   })
-  assert.ok(layout.chips.top >= layout.heading.bottom && layout.description.top >= layout.chips.bottom, JSON.stringify(layout))
-  assert.equal(Math.round(layout.chips.left), Math.round(layout.heading.left))
-  assert.equal(Math.round(layout.description.left), Math.round(layout.chips.left))
-  step('label above, chips, description below, left-aligned', layout)
+  assert.equal(new Set(menu.lefts).size, 1, JSON.stringify(menu))
+  assert.ok(menu.tops[0] < menu.tops[1] && menu.tops[1] < menu.tops[2] && menu.tops[0] > menu.cell.bottom, JSON.stringify(menu))
+  step('IPv6 off: 配置 group only; the mode menu stacks the three chips under the cell', menu)
+  await top(desktop)
+  await quiet(desktop)
+  await openModes(desktop)
+  await desktop.screenshot({ path: join(shots, 'mihomo-ipv6-mode-menu.png'), animations: 'disabled',
+    clip: { x: 0, y: 0, width: 1440, height: 560 } })
+  step('screenshot mihomo-ipv6-mode-menu.png')
 
-  // Tab lands on the checked chip; the arrow keys move the choice and skip nothing that is enabled.
+  // Tab lands on the checked chip; an arrow key chooses the next mode, closes the menu and returns to the cell.
   await desktop.locator('[role="radiogroup"][aria-label="IPv6 模式"] [role="radio"][aria-checked="true"]').focus()
   // A key held as briefly as a person does: reka-ui checks the focused radio a moment after the keydown.
   await desktop.keyboard.press('ArrowRight', { delay: 80 })
+  await modes(desktop).waitFor({ state: 'detached' })
   await desktop.waitForTimeout(400)
   assert.equal(await modeName(desktop), NODES)
-  assert.equal(await desktop.evaluate(() => document.activeElement?.closest('label')?.textContent.trim()), NODES)
+  assert.equal(await desktop.evaluate(() => !!document.activeElement?.closest('[data-ipv6-mode]')), true)
   let text = await yaml(desktop)
   assert.match(text, /^ipv6: true$/m)
   assert.match(text, /^ {2}ipv6: false$/m)
   assert.match(text, /^ {2}fake-ip-range6: fc00::1\/64$/m)
-  await desktop.keyboard.press('ArrowLeft', { delay: 80 })
-  await desktop.waitForTimeout(400)
+  await choose(desktop, '关闭')
   assert.equal(await modeName(desktop), '关闭')
-  await desktop.keyboard.press('ArrowLeft', { delay: 80 })   // wraps around to the last option
-  await desktop.waitForTimeout(400)
+  await choose(desktop, CLIENTS)
   assert.equal(await modeName(desktop), CLIENTS)
-  await chip(desktop, NODES).click()
-  await desktop.waitForTimeout(400)
+  await choose(desktop, NODES)
   assert.equal(await modeName(desktop), NODES)
   step('arrow keys and clicks choose the IPv6 mode and write the YAML')
 
-  // The range input sits under the chips, at the same left edge.
+  // The range is the cell beside the mode, on the same row of the 配置 group.
   const range = desktop.getByLabel('IPv6 Fake-IP 网段', { exact: true })
-  assert.equal(Math.round((await range.boundingBox()).x), Math.round(layout.chips.left))
+  const cells = await desktop.evaluate(() => {
+    const box = selector => document.querySelector(selector).getBoundingClientRect()
+    return { mode: box('[data-ipv6-mode]'), range: box('[data-ipv6-fakeip-range]'), group: box('[data-ipv6-config-group]') }
+  })
+  assert.equal(Math.round(cells.mode.top), Math.round(cells.range.top), JSON.stringify(cells))
+  assert.ok(cells.range.left > cells.mode.right - 1 && cells.range.bottom <= cells.group.bottom, JSON.stringify(cells))
   await range.fill('fc00:0:0:2::1/64')
   await range.blur()
   assert.match(await yaml(desktop), /fake-ip-range6: fc00:0:0:2::1\/64/)
+  // Esc puts back the range the cell had when it was focused, and leaves the settings open.
+  await range.fill('fc00:0:0:9::1/64')
+  await range.press('Escape')
+  assert.equal(await range.inputValue(), 'fc00:0:0:2::1/64')
+  assert.match(await yaml(desktop), /fake-ip-range6: fc00:0:0:2::1\/64/)
+  await desktop.locator('[data-mihomo-ipv6-settings]').waitFor()
   await saveDraft(desktop, 'nodes')
   await settle(desktop)
   await top(desktop)
   await quiet(desktop)
+  assert.deepEqual(await desktop.$$eval('[data-ipv6-steps-sheet] > section', groups => groups.map(group => group.getAttribute('aria-label'))), ['配置', '部署', '验收'])
   await desktop.screenshot({ path: join(shots, 'mihomo-ipv6-mode-nodes.png'), animations: 'disabled' })
   step('screenshot mihomo-ipv6-mode-nodes.png')
 
   // 2. 客户端也走 IPv6.
-  await chip(desktop, CLIENTS).click()
-  await desktop.waitForTimeout(400)
+  await choose(desktop, CLIENTS)
   text = await yaml(desktop)
   assert.match(text, /^ {2}ipv6: true$/m)
   assert.equal(text.match(/fake-ip-range6:/g).length, 1)
@@ -307,25 +345,30 @@ app.run(host='127.0.0.1', port=int(os.environ['CF_API_PORT']), debug=False, use_
   for (let index = 0; index < 4; index++) await desktop.keyboard.press('Backspace')
   await desktop.keyboard.type('false')
   await desktop.waitForTimeout(500)
-  assert.equal(await modeName(desktop), '')
-  assert.equal(await modes(desktop).locator('[role="radio"][aria-checked="true"]').count(), 0)
-  assert.equal(await modes(desktop).locator('[role="radio"]:disabled').count(), 0)
-  assert.match(await desktop.locator('[data-ipv6-mode-custom]').innerText(), /^自定义：/)
-  assert.equal(await desktop.locator('[data-ipv6-mode-custom]').evaluate(el => el.classList.contains('text-warning-accent')), true)
+  assert.equal(await modeName(desktop), '自定义')
+  // The cell says why without opening the menu.
+  assert.match(await desktop.locator('[data-ipv6-mode] [data-base-status]').innerText(), /dns\.ipv6 却为 true/)
+  assert.equal(await desktop.locator('[data-ipv6-mode] [data-base-status]').evaluate(el => el.classList.contains('text-warning-accent')), true)
   assert.match(await yaml(desktop), /^ipv6: false$/m, 'not rewritten by itself')
   await top(desktop)
   await desktop.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur())
   await desktop.screenshot({ path: join(shots, 'mihomo-ipv6-mode-custom.png'), animations: 'disabled' })
+  await openModes(desktop)
+  assert.equal(await modes(desktop).locator('[role="radio"][aria-checked="true"]').count(), 0)
+  assert.equal(await modes(desktop).locator('[role="radio"]:disabled').count(), 0)
+  assert.match(await desktop.locator('[data-ipv6-mode-custom]').innerText(), /^自定义：/)
+  await closeModes(desktop)
   step('custom combination selects no chip; screenshot mihomo-ipv6-mode-custom.png')
 
-  // Unreadable YAML disables every chip.
+  // Unreadable YAML locks the mode cell and says why under it.
   await desktop.locator('.cm-content').click()
   await desktop.keyboard.press('ControlOrMeta+a')
   await desktop.keyboard.type('a: b: c')
   await desktop.waitForTimeout(500)
-  assert.equal(await modes(desktop).locator('[role="radio"]:disabled').count(), 3)
-  assert.equal(await desktop.locator('[data-ipv6-mode-description] [role="alert"]').count(), 1)
-  step('unreadable YAML disables the IPv6 chips')
+  assert.equal(await modeCell(desktop).isDisabled(), true)
+  assert.equal(await modeName(desktop), '无法修改')
+  assert.ok((await desktop.locator('[data-ipv6-mode] [data-base-status]').innerText()).length > 0)
+  step('unreadable YAML locks the IPv6 mode cell')
 
   // 4. The same chips as the Agent install dialog, in both themes.
   for (const theme of ['light', 'dark']) {
@@ -337,9 +380,11 @@ app.run(host='127.0.0.1', port=int(os.environ['CF_API_PORT']), debug=False, use_
     const theirs = pick(await chipStyles(agents, '[role="radiogroup"][aria-label="使用模式"]'))
     const settings = await page(theme, { width: 1440, height: 1000 })
     await openSettings(settings)
+    await openModes(settings)
     const ours = pick(await chipStyles(settings, '[role="radiogroup"][aria-label="IPv6 模式"]'))
     sameLook(ours, theirs, `${theme} IPv6 模式`)
-    // Both choices sit in the menus of the base settings sheet.
+    await closeModes(settings)
+    // The other choices sit in the menus of the base settings sheet.
     await settings.locator('[data-base-controller-scope]').click()
     await settings.waitForTimeout(300)
     sameLook(pick(await chipStyles(settings, '[role="radiogroup"][aria-label="控制面板监听"]')), theirs, `${theme} 控制面板监听`)
@@ -358,14 +403,13 @@ app.run(host='127.0.0.1', port=int(os.environ['CF_API_PORT']), debug=False, use_
   scene = 'nodes'
   const phone = await page('dark', { width: 390, height: 844 })
   await openSettings(phone)
-  await chip(phone, NODES).tap()
-  await phone.waitForTimeout(400)
+  await choose(phone, NODES, 'tap')
   await phone.getByLabel('IPv6 Fake-IP 网段', { exact: true }).fill('fc00:0:0:2::1/64')
   await phone.getByLabel('IPv6 Fake-IP 网段', { exact: true }).blur()
   await saveDraft(phone, 'nodes')
   await settle(phone)
   const phoneLayout = await checkPhone(phone, '390px')
-  assert.ok(new Set(phoneLayout.chips.map(item => item.left)).size > 1 || phoneLayout.chips.every(item => item.right <= 374), 'chips stay inside the gutter')
+  assert.ok(phoneLayout.chips.every(item => item.left >= 16 && item.right <= 374), 'chips stay inside the gutter')
   await top(phone)
   await quiet(phone)
   await phone.screenshot({ path: join(shots, 'mihomo-ipv6-mode-mobile-dark.png'), animations: 'disabled' })
@@ -392,8 +436,8 @@ app.run(host='127.0.0.1', port=int(os.environ['CF_API_PORT']), debug=False, use_
   scene = 'passed'
   await dark.locator('[data-ipv6-steps-recheck]').click()
   await settle(dark)
-  // 验收 is its own group of the checklist: every check passed.
-  await dark.waitForFunction(() => document.querySelector('[data-ipv6-step="verify"] [data-ipv6-group-progress]')?.textContent.trim() === '3 / 3 通过', null, { timeout: 30000 })
+  // 验收 is its own group of the checklist: both traffic tests passed (「IPv6 网络」 is left to the 部署 steps).
+  await dark.waitForFunction(() => document.querySelector('[data-ipv6-step="verify"] [data-ipv6-group-progress]')?.textContent.trim() === '2 / 2 通过', null, { timeout: 30000 })
   await top(dark)
   await quiet(dark)
   await sectionShot(dark, 'mihomo-ipv6-steps-after-router')

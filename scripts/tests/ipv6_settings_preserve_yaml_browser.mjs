@@ -66,7 +66,9 @@ const server = text => parse(text, { version: '1.1', merge: true })
 // The editor renders only visible lines; read the whole document from CodeMirror.
 const editorText = tab => tab.$eval('.cm-content', element => element.cmView?.view?.state.doc.toString()
   ?? [...element.querySelectorAll('.cm-line')].map(line => line.textContent).join('\n'))
+// The mode is a cell of the IPv6 card; its choices open in a menu.
 const choose = async (tab, label) => {
+  await tab.locator('[data-ipv6-mode-trigger]').click()
   await tab.getByRole('radio', { name: label, exact: true }).click()
   await tab.waitForTimeout(400)
 }
@@ -112,7 +114,7 @@ app.run(host='127.0.0.1', port=int(os.environ['CF_API_PORT']), debug=False, use_
   tab.on('pageerror', error => report.browserErrors.push(error.message))
   await tab.goto(`${base}/generate`)
   await tab.getByRole('button', { name: '基础配置' }).first().click()
-  await tab.locator('[role="radiogroup"][aria-label="IPv6 模式"]').waitFor({ timeout: 30000 })
+  await tab.locator('[data-ipv6-mode-trigger]').waitFor({ timeout: 30000 })
   await tab.waitForTimeout(400)
   const shown = await editorText(tab)
   assert.equal(shown.replace(/\n$/, ''), original.replace(/\n$/, ''), 'the editor shows the saved template')
@@ -122,7 +124,7 @@ app.run(host='127.0.0.1', port=int(os.environ['CF_API_PORT']), debug=False, use_
   const inEditor = await editorText(tab)
   let diff = lineDiff(original, inEditor)
   assert.deepEqual(diff, { removed: ['ipv6: false', '  ipv6: false'], added: ['ipv6: true', '  ipv6: true', '  fake-ip-range6: fc00::1/64'] })
-  await tab.locator('[role="radiogroup"][aria-label="IPv6 模式"]').scrollIntoViewIfNeeded()
+  await tab.locator('[data-ipv6-mode]').scrollIntoViewIfNeeded()
   await tab.screenshot({ path: join(evidence, 'clients.png'), animations: 'disabled' })
   const clients = await save(tab)
   assert.deepEqual(lineDiff(original, clients), diff)

@@ -12,7 +12,7 @@ const wrappers: VueWrapper[] = []
 const mount = (modelValue = 'ipv6: true\ndns:\n  ipv6: false\n', extra = {}) => {
   const wrapper = shallowMount(MihomoIPv6Settings, {
     props: { open: true, modelValue, profileId: 'bound', preferredAgentId: 'entry-device', ...extra },
-    global: { renderStubDefaultSlot: true, stubs: { Button: false, Primitive: false } },
+    global: { renderStubDefaultSlot: true, stubs: { Button: false, Primitive: false, MihomoBaseCell: false } },
   })
   wrappers.push(wrapper)
   return wrapper
@@ -56,7 +56,10 @@ describe('Mihomo IPv6 mode selector', () => {
     expect(selector(wrapper).props('modelValue')).toBe('')
     expect(wrapper.get('[data-ipv6-mode-custom]').text()).toContain('自定义')
     expect(wrapper.get('[data-ipv6-mode-custom]').text()).toContain('dns.ipv6 却为 true')
-    expect(wrapper.findComponent(MihomoIPv6Steps).exists()).toBe(false)
+    // The cell names it and says why without opening the menu.
+    expect(wrapper.get('[data-ipv6-mode-trigger]').attributes('aria-label')).toBe('IPv6 模式：自定义')
+    expect(wrapper.get('[data-ipv6-mode] [data-base-status]').text()).toContain('dns.ipv6 却为 true')
+    expect(wrapper.getComponent(MihomoIPv6Steps).props('mode')).toBeNull()
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     const changed = await choose(wrapper, 'off')
     expect(changed).toBe('ipv6: false # off\ndns:\n  ipv6: false # AAAA\n')
@@ -168,16 +171,20 @@ describe('Mihomo IPv6 mode selector', () => {
     expect(selector(wrapper).props('modelValue')).toBe('')
     expect(wrapper.text()).toContain('不要加引号')
     expect(wrapper.text()).toContain('dns 必须是 YAML 对象')
-    expect(wrapper.findComponent(MihomoIPv6Steps).exists()).toBe(false)
+    expect(wrapper.get('[data-ipv6-mode-trigger]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-ipv6-mode] [data-base-status]').text()).toContain('dns 必须是 YAML 对象')
+    expect(wrapper.getComponent(MihomoIPv6Steps).props('mode')).toBeNull()
   })
 
-  it('lists steps for both IPv6 modes but not when IPv6 is off', async () => {
+  it('lists steps for both IPv6 modes and keeps only the 配置 group when IPv6 is off', async () => {
     const wrapper = mount(undefined, { dirty: true, refreshKey: 3 })
     expect(wrapper.getComponent(MihomoIPv6Steps).props()).toMatchObject({ open: true, profileId: 'bound', preferredAgentId: 'entry-device', mode: 'nodes', dirty: true, refreshKey: 3 })
     await wrapper.setProps({ modelValue: 'ipv6: true\ndns:\n  ipv6: true\n' })
     expect(wrapper.getComponent(MihomoIPv6Steps).props('mode')).toBe('clients')
     await wrapper.setProps({ modelValue: 'ipv6: false\n' })
-    expect(wrapper.findComponent(MihomoIPv6Steps).exists()).toBe(false)
+    expect(wrapper.getComponent(MihomoIPv6Steps).props('mode')).toBeNull()
+    // The mode cell stays inside the card in every mode.
+    expect(wrapper.getComponent(MihomoIPv6Steps).find('[data-ipv6-mode]').exists()).toBe(true)
   })
 
   it('opens the device check for the step target and refreshes the steps after closing it', async () => {
