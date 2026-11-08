@@ -115,7 +115,7 @@ const messages = (field: string, extra = '') => [...(extra ? [{ message: extra, 
 
     <FormField label="控制面板监听（external-controller）" html-for="mihomo-base-controller-port" :help="controllerHelp" class="sm:col-span-2" data-base-field="external-controller">
       <Segmented :model-value="shownScope" :options="(Object.keys(scopeLabels) as Scope[]).map(value => ({ value, label: scopeLabels[value] }))"
-        label="控制面板监听" class="max-w-full" :disabled="disabled || !controller.editable" @update:model-value="chooseScope" />
+        label="控制面板监听" class="max-w-full self-start" :disabled="disabled || !controller.editable" @update:model-value="chooseScope" />
       <div class="flex min-w-0 flex-wrap items-end gap-2">
         <label v-if="shownScope === 'custom'" class="grid min-w-0 flex-1 basis-48 gap-1 text-xs text-muted-foreground">
           监听地址
