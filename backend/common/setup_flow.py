@@ -14,7 +14,8 @@ from urllib.parse import urlsplit
 import yaml
 
 from backend.common.config_repository import ProfileExists, ProfileInUse
-from backend.common.gateway_onboarding import DEFAULT_LOCAL_DNS, GatewayOnboardingError, _local_upstreams
+from backend.common.gateway_onboarding import (
+    DEFAULT_LOCAL_DNS, DEFAULT_MIHOMO_NAMESERVERS, GatewayOnboardingError, _local_upstreams)
 from backend.converters.mihomo import generate_mihomo_config, convert_node_to_mihomo
 from backend.utils.subscription_cache import load_subscription_cache
 from backend.utils.subscription_filter import filter_subscription_items
@@ -333,7 +334,7 @@ def prepare(repository, session, body, base_url):
                 'mode': 'rule', 'log-level': 'info', 'external-controller': '127.0.0.1:9090',
                 **({'tun': deepcopy(FULL_TUN)} if full_tun else {}),
                 'dns': {'enable': True, 'listen': '127.0.0.1:1053', 'enhanced-mode': 'fake-ip',
-                        'nameserver': ['223.5.5.5', '119.29.29.29']}}
+                        'nameserver': list(DEFAULT_MIHOMO_NAMESERVERS)}}
     from backend.common.oxidns_settings import get_default_oxidns_settings
     dns = get_default_oxidns_settings()
     dns.update(local_dns=local_dns, remote_dns='127.0.0.1:1053',

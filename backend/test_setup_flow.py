@@ -124,7 +124,12 @@ def test_prepare_is_resumable_scoped_and_has_a_real_proxy_exit(setup_api, goal):
     # 'Test node' names no region, so only the all-node group carries it.
     assert groups['ALL']['manual_nodes'] == ['node'] and '🇭🇰 香港节点' not in groups
     assert profile['rule_configs'][-1]['policy'] == '🐟 漏网之鱼'
-    assert yaml.safe_load(profile['mihomo']['custom_config'])['dns']['listen'] == '127.0.0.1:1053'
+    mihomo_dns = yaml.safe_load(profile['mihomo']['custom_config'])['dns']
+    assert mihomo_dns['listen'] == '127.0.0.1:1053'
+    # Same IP-address DoH upstreams the gateway installer fills in by default.
+    from backend.common.gateway_onboarding import DEFAULT_MIHOMO_NAMESERVERS
+    assert mihomo_dns['nameserver'] == ['https://223.5.5.5/dns-query', 'https://1.12.12.12/dns-query']
+    assert mihomo_dns['nameserver'] == list(DEFAULT_MIHOMO_NAMESERVERS)
     assert repository.get_profile('default') == old
     response = client.post(f'/api/setup/{SESSION}/finish', json={})
     assert response.status_code == 409
@@ -1106,6 +1111,8 @@ def test_gateway_setup_fields_match_the_previous_release(setup_api):
     profile = repository.get_profile(session['profile_id'])
     # Captured from 0ef9e89 with the same inputs.
     expected = json.loads((Path(__file__).parent / 'testdata' / 'setup_gateway_fields_0ef9e89.json').read_text(encoding='utf-8'))
+    from backend.test_router_split_regression import with_current_setup_nameserver
+    expected = with_current_setup_nameserver(expected)
     # Per-rule OxiDNS DNS settings postdate 0ef9e89; they must be stored empty.
     rule_dns = {'rule_actions': {}, 'rule_dns_follow': [], 'rule_dns_parked': {}}
     assert {key: profile['oxidns'].get(key) for key in rule_dns} == rule_dns
