@@ -34,7 +34,29 @@ func inspectInstallerForwarding(probe systemProbe) []Check {
 	if conflict, ok := inspectInstallerForwardingConflict(probe); ok {
 		checks = append(checks, conflict)
 	}
+	if boot, ok := inspectInstallerSysctlBoot(probe); ok {
+		checks = append(checks, boot)
+	}
 	return checks
+}
+
+const installerSysctlBootName = "IPv4 转发开机加载"
+
+// The installers add the OpenRC sysctl service to the boot runlevel
+// (ensure_ipv4_sysctl_boot); only a host without that service needs a manual
+// step.
+func inspectInstallerSysctlBoot(probe systemProbe) (Check, bool) {
+	switch state := detectSysctlBootState(probe); state {
+	case SysctlBootDisabled:
+		return Check{Name: installerSysctlBootName, Level: "pass",
+			Message: SysctlBootProblem(state) + "；安装器会执行 rc-update add sysctl boot，让持久化的转发设置开机生效。"}, true
+	case SysctlBootUnavailable:
+		return Check{Name: installerSysctlBootName, Level: "warn",
+			Message: SysctlBootProblem(state) + "；安装器无法自动设置，开机后转发只能靠 Mihomo Agent 启动前检查补设。",
+			Fix:     "在这台 Linux 上执行下面的命令，让开机时开启转发。",
+			Groups:  []CommandGroup{sysctlBootGroup(state)}}, true
+	}
+	return Check{}, false
 }
 
 // inspectInstallerForwardingConflict recomputes the boot-time value as if the

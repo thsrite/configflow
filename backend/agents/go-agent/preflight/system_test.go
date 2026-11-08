@@ -18,6 +18,7 @@ type systemFixture struct {
 	tunCalls int
 	unit     string
 	unitErr  error
+	links    map[string]string
 }
 
 type fixtureDevice struct{ mode os.FileMode }
@@ -101,6 +102,18 @@ func (f *systemFixture) probe() systemProbe {
 			return f.tunFlags, f.tunErr
 		},
 		showUnit: func(string) ([]byte, error) { return []byte(f.unit), f.unitErr },
+		readlink: func(path string) (string, error) {
+			if target, ok := f.links[path]; ok {
+				return target, nil
+			}
+			return "", os.ErrNotExist
+		},
+		resolve: func(path string) (string, error) {
+			if target, ok := f.links[path]; ok {
+				return target, nil
+			}
+			return path, nil
+		},
 	}
 }
 
@@ -115,6 +128,27 @@ func (f *systemFixture) useLoader(loader string) {
 		f.devices["/run/systemd/system"] = os.ModeDir
 	case "alpine":
 		f.files["/etc/alpine-release"] = []byte("3.20.3\n")
+		f.useOpenRC("boot")
+	}
+}
+
+// useOpenRC boots the fixture with OpenRC and its sysctl service in runlevel
+// ("" = in none, "missing" = no service script).
+func (f *systemFixture) useOpenRC(runlevel string) {
+	if f.devices == nil {
+		f.devices = map[string]os.FileMode{}
+	}
+	f.devices["/run/openrc"] = os.ModeDir
+	for _, level := range []string{"sysinit", "boot", "default"} {
+		delete(f.files, "/etc/runlevels/"+level+"/sysctl")
+	}
+	if runlevel == "missing" {
+		delete(f.files, "/etc/init.d/sysctl")
+		return
+	}
+	f.files["/etc/init.d/sysctl"] = []byte("#!/sbin/openrc-run\n")
+	if runlevel != "" {
+		f.files["/etc/runlevels/"+runlevel+"/sysctl"] = f.files["/etc/init.d/sysctl"]
 	}
 }
 

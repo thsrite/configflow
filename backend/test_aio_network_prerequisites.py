@@ -187,3 +187,50 @@ def test_core_tun_permissions_guidance_matches_actual_service_manager(manager):
             assert option in result.stdout
         assert "OpenRC" not in result.stdout
         assert "command_user" not in result.stdout
+
+
+@pytest.mark.parametrize("case", ["added", "failed", "unavailable", "enabled", "systemd"])
+def test_forwarding_persistence_makes_openrc_apply_sysctl_at_boot(tmp_path, case):
+    """PVE's Alpine LXC template has the OpenRC sysctl service in no runlevel, so
+    sysctl.d is never applied at boot; the installer adds it to the boot runlevel,
+    or notes the exact manual step when it cannot."""
+    installer, env, units = harness(tmp_path, "systemd" if case == "systemd" else "openrc")
+    runlevels = tmp_path / "etc/runlevels"
+    script = tmp_path / "etc/init.d/sysctl"
+    if case != "unavailable":
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text("#!/sbin/openrc-run\n")
+    if case == "enabled":
+        (runlevels / "boot").mkdir(parents=True)
+        (runlevels / "boot/sysctl").symlink_to(script)
+    rc_update = tmp_path / "commands/rc-update"
+    if rc_update.exists():
+        rc_update.write_text(
+            '#!/bin/sh\nprintf \'%s %s\\n\' "${0##*/}" "$*" >> "$EVENTS"\n'
+            'if [ "$*" = "add sysctl boot" ]; then\n'
+            '    [ "${FAIL_RC_UPDATE:-}" != yes ] || exit 1\n'
+            f'    mkdir -p "{runlevels}/boot" && ln -s "{script}" "{runlevels}/boot/sysctl"\n'
+            'fi\n')
+    if case == "failed":
+        env["FAIL_RC_UPDATE"] = "yes"
+    result = run(installer, env)
+
+    # Forwarding itself is persisted either way; only the boot step differs.
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "ip_forward").read_text() == "1\n"
+    events = (tmp_path / "events").read_text().splitlines()
+    added = [line for line in events if line == "rc-update add sysctl boot"]
+    output = result.stdout + detail_output(result)
+    assert len(added) == (1 if case in ("added", "failed") else 0), events
+    if case == "added":
+        assert (runlevels / "boot/sysctl").is_symlink()
+        assert "已执行 rc-update add sysctl boot" in output
+    elif case == "failed":
+        assert "无法自动把 OpenRC 的 sysctl 服务加入开机运行级别" in output
+        assert "请执行：rc-update add sysctl boot" in output
+    elif case == "unavailable":
+        assert "系统没有 OpenRC 的 sysctl 服务" in output
+        assert "rc-update add local default" in output
+        assert "/etc/local.d/configflow-ip-forward.start" in output
+    else:
+        assert "forwarding_boot" not in output and "OpenRC 的 sysctl 服务" not in output

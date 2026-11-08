@@ -244,6 +244,7 @@ func runAgent() int {
 	routes.ReapplyReturnRouting(toRoutesConfig(cfg))
 	routes.ReapplyLinuxGateway(toRoutesConfig(cfg))
 	routes.ReapplyIPv6Readiness(toRoutesConfig(cfg))
+	routes.ReapplyForwardingBoot(toRoutesConfig(cfg))
 	routes.ReapplyOxiDNSHA(toRoutesConfig(cfg))
 	routes.StartDNSWatchdog(toRoutesConfig(cfg))
 

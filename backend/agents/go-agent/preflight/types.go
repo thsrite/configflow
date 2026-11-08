@@ -148,6 +148,8 @@ func (r Report) PrintWithOptions(out io.Writer, options clioutput.Options, prepa
 	}
 }
 
+var coreCapEffSummary = regexp.MustCompile(`持有有效 CAP_NET_ADMIN（PID ([0-9]+)，CapEff=([0-9a-f]+)）`)
+
 var tunRuntimeSummary = regexp.MustCompile(`Mihomo 核心 PID ([0-9]+) 正持有内核 TUN/TAP 接口 (.+?)，`)
 
 // Keep just the facts useful at a glance. All permission checks, port evidence,
@@ -168,6 +170,12 @@ func compactPass(check Check) string {
 			return "IPv4 转发  当前为 0，安装器将开启并持久化（" + installerForwardingConfig + "）"
 		}
 		return "IPv4 转发  当前为 1，安装器将持久化（" + installerForwardingConfig + "）"
+	case installerSysctlBootName:
+		return "IPv4 转发  安装器将把 OpenRC sysctl 服务加入开机运行级别"
+	case "Mihomo 运行权限":
+		if match := coreCapEffSummary.FindStringSubmatch(check.Message); len(match) == 3 {
+			return "TUN 权限  Mihomo PID " + match[1] + " 持有 CAP_NET_ADMIN（CapEff=" + match[2] + "）"
+		}
 	case "IPv4 转发权限":
 		// Passes with forwarding still off: the gateway apply turns it on later.
 		if strings.Contains(check.Message, "ip_forward=1") {

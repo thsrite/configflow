@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -42,6 +43,8 @@ type systemProbe struct {
 	showUnit  func(string) ([]byte, error)
 	getenv    func(string) string
 	writeFile func(string, []byte) error
+	readlink  func(string) (string, error)
+	resolve   func(string) (string, error)
 	// forwardFilter inspects FORWARD filtering; nil skips the check.
 	forwardFilter func(netfilter.Target) netfilter.Result
 	lanAddresses  func() []net.IP
@@ -51,6 +54,7 @@ func defaultSystemProbe() systemProbe {
 	return systemProbe{
 		goos: runtime.GOOS, readFile: os.ReadFile, readDir: os.ReadDir, stat: os.Stat, glob: filepath.Glob, tun: systemTunFeatures,
 		getenv: os.Getenv, writeFile: func(path string, data []byte) error { return os.WriteFile(path, data, 0o644) },
+		readlink: os.Readlink, resolve: filepath.EvalSymlinks,
 		forwardFilter: boundedForwardFilter, lanAddresses: netfilter.LANAddresses,
 		showUnit: func(unit string) ([]byte, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
@@ -139,6 +143,11 @@ func systemChecksWithProbe(configs []Config, probe systemProbe) []Check {
 		checks = append(checks, serviceChecks...)
 	} else {
 		checks = append(checks, Check{Name: "TUN / CAP_NET_ADMIN", Level: "pass", Message: "本次仅接管 DNS 核心，不需要 TUN 或网络管理能力。"})
+	}
+	// A DNS core never forwards other hosts' traffic; only Mihomo (alone or
+	// beside a DNS core) needs IPv4 forwarding.
+	if len(configs) > 0 && !hasMihomo {
+		return checks
 	}
 	switch {
 	case probe.getenv != nil && probe.getenv("CONFIGFLOW_FORWARDING_OWNER") == "gateway":
@@ -334,8 +343,15 @@ func inspectCoreService(probe systemProbe, cfg Config, state tunState) ([]Check,
 		return []Check{{Name: name, Level: "pass", Message: "当前配置未启用 TUN；不以 TUN 服务权限作为安装前提。"}}, false
 	}
 	if cfg.ServiceManager == "openrc" {
-		return []Check{{Name: name, Level: "warn", Message: "核心由 OpenRC 管理；尚未取得并验证其实际运行 PID，无法确认核心获得的能力与设备访问权限。当前检查进程的权限不能代表核心服务。", Fix: openRCTunCapabilityFix},
-			tunRuntimeWarning("未取得 OpenRC 管理的 Mihomo 核心 PID，无法读取其持有的 TUN 接口。", openRCTunCapabilityFix)}, false
+		pid, identity, reason := openRCServicePID(probe, cfg)
+		if pid <= 0 {
+			return []Check{{Name: name, Level: "warn", Message: "核心由 OpenRC 管理；尚未取得并验证其实际运行 PID（" + reason + "），无法确认核心获得的能力与设备访问权限。当前检查进程的权限不能代表核心服务。", Fix: openRCTunCapabilityFix},
+				tunRuntimeWarning("未取得 OpenRC 管理的 Mihomo 核心 PID（"+reason+"），无法读取其持有的 TUN 接口。", openRCTunCapabilityFix)}, false
+		}
+		checks := []Check{{Name: name, Level: "pass", Message: "已按 OpenRC 服务 " + cfg.ServiceUnit + " 的 " + identity + "取得核心 PID " + strconv.Itoa(pid) + "，以下检查读取该进程的实际权限。"}}
+		processChecks, hasCapability := inspectCoreProcess(probe, pid, openRCTunCapabilityFix, openRCTunDeviceFix)
+		checks = append(checks, processChecks...)
+		return append(checks, inspectCoreTUNRuntime(probe, pid)), hasCapability
 	}
 	if cfg.ServiceManager != "systemd" {
 		return []Check{{Name: name, Level: "warn", Message: "当前服务管理方式未提供可验证的核心 PID，无法确认核心实际获得的能力与设备访问权限；当前检查进程的权限不能代表核心服务。", Fix: tunCapabilityFix},
@@ -364,26 +380,9 @@ func inspectCoreService(probe systemProbe, cfg Config, state tunState) ([]Check,
 	if pid <= 0 {
 		checks = append(checks, Check{Name: "Mihomo 运行权限", Level: "warn", Message: "未取得运行中的核心 PID，无法验证实际 CapEff 或服务内的 TUN 设备视图。", Fix: systemdTunCapabilityFix})
 	} else {
-		status, readErr := probe.readFile(fmt.Sprintf("/proc/%d/status", pid))
-		mask, parseErr := capabilityMask(status, "CapEff")
-		if readErr != nil || parseErr != nil {
-			checks = append(checks, Check{Name: "Mihomo 运行权限", Level: "warn", Message: "无法读取核心进程的有效能力，不能用安装进程的权限推断核心权限。", Fix: systemdTunCapabilityFix})
-		} else if mask&netAdminCapability == 0 {
-			checks = append(checks, Check{Name: "Mihomo 运行权限", Level: "warn", Message: "运行中的核心未持有有效 CAP_NET_ADMIN；它可能已降权，无法据此确认重启后能重新创建 TUN。", Fix: systemdTunCapabilityFix})
-		} else {
-			coreHasCapability = true
-			checks = append(checks, Check{Name: "Mihomo 运行权限", Level: "pass", Message: "当前核心进程持有有效 CAP_NET_ADMIN。"})
-		}
-		device, statErr := probe.stat(fmt.Sprintf("/proc/%d/root/dev/net/tun", pid))
-		if readErr != nil {
-			checks = append(checks, Check{Name: "Mihomo 设备视图", Level: "warn", Message: "核心 PID 已退出或无法检查，不能确认运行服务内的 TUN 设备视图。", Fix: systemdTunCapabilityFix})
-		} else if os.IsNotExist(statErr) || statErr == nil && device.Mode()&os.ModeCharDevice == 0 {
-			checks = append(checks, Check{Name: "Mihomo 设备视图", Level: "error", Message: "已启用 TUN，但当前核心进程的文件系统视图内没有 TUN 字符设备。", Fix: "检查服务 PrivateDevices、RootDirectory/RootImage 和设备绑定；仅向该服务提供 /dev/net/tun，并核对 DeviceAllow。"})
-		} else if statErr != nil {
-			checks = append(checks, Check{Name: "Mihomo 设备视图", Level: "warn", Message: "无法读取核心服务内的设备视图，不能确认服务能够访问 /dev/net/tun。", Fix: systemdTunCapabilityFix})
-		} else {
-			checks = append(checks, Check{Name: "Mihomo 设备视图", Level: "pass", Message: "当前核心进程的文件系统视图内可见 TUN 字符设备；设备访问策略仍可能限制打开。"})
-		}
+		processChecks, hasCapability := inspectCoreProcess(probe, pid, systemdTunCapabilityFix, systemdTunDeviceFix)
+		checks = append(checks, processChecks...)
+		coreHasCapability = hasCapability
 	}
 	policy := properties["DevicePolicy"]
 	if properties["PrivateDevices"] == "yes" || policy == "closed" || policy == "strict" || properties["DeviceAllow"] != "" {
@@ -394,6 +393,130 @@ func inspectCoreService(probe systemProbe, cfg Config, state tunState) ([]Check,
 	}
 	checks = append(checks, inspectCoreTUNRuntime(probe, pid))
 	return checks, coreHasCapability
+}
+
+const systemdTunDeviceFix = "检查服务 PrivateDevices、RootDirectory/RootImage 和设备绑定；仅向该服务提供 /dev/net/tun，并核对 DeviceAllow。"
+const openRCTunDeviceFix = "核对 Mihomo 服务脚本是否使用 chroot 或独立挂载命名空间；在容器内还需核对 /dev/net/tun 的设备映射（PVE LXC 的 devN 设置）。"
+
+// inspectCoreProcess reads the running core's effective capabilities and its
+// view of /dev/net/tun, whichever service manager supplied the PID.
+func inspectCoreProcess(probe systemProbe, pid int, fix, deviceFix string) ([]Check, bool) {
+	var checks []Check
+	coreHasCapability := false
+	status, readErr := probe.readFile(fmt.Sprintf("/proc/%d/status", pid))
+	mask, parseErr := capabilityMask(status, "CapEff")
+	if readErr != nil || parseErr != nil {
+		checks = append(checks, Check{Name: "Mihomo 运行权限", Level: "warn", Message: "无法读取核心进程的有效能力，不能用安装进程的权限推断核心权限。", Fix: fix})
+	} else if mask&netAdminCapability == 0 {
+		checks = append(checks, Check{Name: "Mihomo 运行权限", Level: "warn", Message: fmt.Sprintf("运行中的核心未持有有效 CAP_NET_ADMIN（PID %d，CapEff=%016x）；它可能已降权，无法据此确认重启后能重新创建 TUN。", pid, mask), Fix: fix})
+	} else {
+		coreHasCapability = true
+		checks = append(checks, Check{Name: "Mihomo 运行权限", Level: "pass", Message: fmt.Sprintf("当前核心进程持有有效 CAP_NET_ADMIN（PID %d，CapEff=%016x）。", pid, mask)})
+	}
+	device, statErr := probe.stat(fmt.Sprintf("/proc/%d/root/dev/net/tun", pid))
+	if readErr != nil {
+		checks = append(checks, Check{Name: "Mihomo 设备视图", Level: "warn", Message: "核心 PID 已退出或无法检查，不能确认运行服务内的 TUN 设备视图。", Fix: fix})
+	} else if os.IsNotExist(statErr) || statErr == nil && device.Mode()&os.ModeCharDevice == 0 {
+		checks = append(checks, Check{Name: "Mihomo 设备视图", Level: "error", Message: "已启用 TUN，但当前核心进程的文件系统视图内没有 TUN 字符设备。", Fix: deviceFix})
+	} else if statErr != nil {
+		checks = append(checks, Check{Name: "Mihomo 设备视图", Level: "warn", Message: "无法读取核心服务内的设备视图，不能确认服务能够访问 /dev/net/tun。", Fix: fix})
+	} else {
+		checks = append(checks, Check{Name: "Mihomo 设备视图", Level: "pass", Message: "当前核心进程的文件系统视图内可见 TUN 字符设备；设备访问策略仍可能限制打开。"})
+	}
+	return checks, coreHasCapability
+}
+
+var openRCServiceName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.@-]*$`)
+
+// openRCScriptValue returns the last top-level assignment of key in an OpenRC
+// service script or conf.d file, with quotes removed. RC_SVCNAME expands to the
+// service name; any other expansion yields an empty (unusable) value.
+func openRCScriptValue(data []byte, key, service string) (string, bool) {
+	value, found := "", false
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		name, rest, ok := strings.Cut(line, "=")
+		if !ok || name != key {
+			continue
+		}
+		rest = strings.TrimSpace(strings.SplitN(rest, " #", 2)[0])
+		if len(rest) >= 2 && (rest[0] == '"' && rest[len(rest)-1] == '"' || rest[0] == '\'' && rest[len(rest)-1] == '\'') {
+			rest = rest[1 : len(rest)-1]
+		}
+		for _, variable := range []string{"${RC_SVCNAME}", "$RC_SVCNAME", "${SVCNAME}", "$SVCNAME"} {
+			rest = strings.ReplaceAll(rest, variable, service)
+		}
+		value, found = rest, true
+	}
+	if strings.ContainsAny(value, "$`\"' ") {
+		// Assigned, but not to a value this check can resolve.
+		return "", found
+	}
+	return value, found
+}
+
+// openRCServicePID finds the core's PID from its OpenRC pidfile (the service
+// script's pidfile=, else /etc/conf.d, else ConfigFlow's /run/<service>.pid)
+// and accepts it only if /proc/<PID>/exe is the service's command, so a stale
+// pidfile or a reused PID is never read as the core.
+func openRCServicePID(probe systemProbe, cfg Config) (int, string, string) {
+	service := cfg.ServiceUnit
+	if !openRCServiceName.MatchString(service) {
+		return 0, "", "未指定有效的 OpenRC 服务名"
+	}
+	script, err := probe.readFile("/etc/init.d/" + service)
+	if err != nil {
+		return 0, "", "无法读取 /etc/init.d/" + service
+	}
+	confd, _ := probe.readFile("/etc/conf.d/" + service)
+	pidfile, ok := openRCScriptValue(script, "pidfile", service)
+	if !ok {
+		if pidfile, ok = openRCScriptValue(confd, "pidfile", service); !ok {
+			pidfile = "/run/" + service + ".pid"
+		}
+	}
+	if !filepath.IsAbs(pidfile) || filepath.Clean(pidfile) != pidfile {
+		return 0, "", "服务脚本的 pidfile 不是可识别的绝对路径"
+	}
+	data, err := probe.readFile(pidfile)
+	if err != nil {
+		return 0, "", "无法读取 " + pidfile + "，服务可能未运行"
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		return 0, "", pidfile + " 中不是有效的 PID"
+	}
+	if probe.readlink == nil {
+		return 0, "", "无法核对 PID 对应的程序"
+	}
+	exe, err := probe.readlink(fmt.Sprintf("/proc/%d/exe", pid))
+	if err != nil {
+		return 0, "", fmt.Sprintf("%s 中的 PID %d 已退出或无法读取其程序路径", pidfile, pid)
+	}
+	exe = strings.TrimSuffix(exe, " (deleted)")
+	command, _ := openRCScriptValue(script, "command", service)
+	if !openRCCommandMatches(probe, exe, command, cfg.ServiceBinary) {
+		return 0, "", fmt.Sprintf("%s 中的 PID %d 运行的是 %s，不是该服务的核心程序", pidfile, pid, exe)
+	}
+	return pid, "pidfile（" + pidfile + "）", ""
+}
+
+func openRCCommandMatches(probe systemProbe, exe, command, binary string) bool {
+	if filepath.IsAbs(command) {
+		if exe == command {
+			return true
+		}
+		if probe.resolve != nil {
+			if resolved, err := probe.resolve(command); err == nil && resolved == exe {
+				return true
+			}
+		}
+		return false
+	}
+	if binary == "" {
+		binary = "mihomo"
+	}
+	return filepath.Base(exe) == filepath.Base(binary)
 }
 
 func inspectIPv4Forwarding(probe systemProbe) []Check {
@@ -536,13 +659,14 @@ type systemForwarding struct {
 	loader     sysctlLoader
 	effective  forwardingSetting
 	unreadable bool
+	boot       SysctlBootState
 }
 
 // persisted reports whether the configuration certainly turns forwarding on
 // at boot: the last applied setting is '=1', it is not in /run (emptied at
-// boot) and every file was readable.
+// boot), every file was readable and the loader actually runs at boot.
 func (s systemForwarding) persisted() bool {
-	return s.effective.value == "1" && !strings.HasPrefix(s.effective.where, "/run/") && !s.unreadable
+	return s.effective.value == "1" && !strings.HasPrefix(s.effective.where, "/run/") && !s.unreadable && !s.boot.needsAction()
 }
 
 func readSystemForwarding(probe systemProbe) systemForwarding {
@@ -558,7 +682,7 @@ func readSystemForwardingWith(probe systemProbe, pending map[string][]byte) syst
 		extra = append(extra, path)
 	}
 	files, unreadable := sysctlBootFiles(probe, loader, extra)
-	result := systemForwarding{loader: loader, unreadable: unreadable}
+	result := systemForwarding{loader: loader, unreadable: unreadable, boot: detectSysctlBootState(probe)}
 	seen := make(map[string]bool, len(files))
 	for _, path := range files {
 		if seen[path] {
@@ -604,6 +728,11 @@ func inspectForwardingPersistence(probe systemProbe) Check {
 		check.Level = "pass"
 		check.Message = "按开机时的加载方式（" + string(system.loader) + "）计算，最后生效的设置为 net.ipv4.ip_forward=1（" + effective.where + "）；仅确认文件设置，启动服务仍可能覆盖，重启后仍需验证。"
 		check.Fix = ""
+		return check
+	}
+	fileOn := effective.value == "1" && !strings.HasPrefix(effective.where, "/run/") && !system.unreadable
+	if fileOn && system.boot.needsAction() {
+		check.Message = "按开机时的加载方式（" + string(system.loader) + "）计算，最后生效的设置为 net.ipv4.ip_forward=1（" + effective.where + "），但 " + SysctlBootProblem(system.boot) + "；当前的转发只能靠其他服务（如 Mihomo Agent 启动前检查）在启动后补设，该服务停止或卸载后重启就会关闭。"
 	} else if effective.where != "" {
 		check.Message = "按开机时的加载方式（" + string(system.loader) + "）计算，最后生效的设置为 net.ipv4.ip_forward=" + effective.value + "（" + effective.where + "）；不能确认重启后的转发状态。"
 	} else {
@@ -614,6 +743,16 @@ func inspectForwardingPersistence(probe systemProbe) Check {
 	}
 	if strings.HasPrefix(effective.where, "/run/") {
 		check.Message += " 该设置位于临时目录 /run，重启后不保证保留。"
+	}
+	if system.boot.needsAction() {
+		bootFix := "并让开机时实际应用该设置：在这台 Linux 上执行下面的命令。"
+		if fileOn {
+			check.Fix = "让开机时实际应用该设置：在这台 Linux 上执行下面的命令。"
+		} else {
+			check.Message += " 另外，" + SysctlBootProblem(system.boot) + "。"
+			check.Fix = forwardingFix + " " + bootFix
+		}
+		check.Groups = append(check.Groups, sysctlBootGroup(system.boot))
 	}
 	return check
 }
