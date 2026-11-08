@@ -82,10 +82,26 @@ function commonLines(left: string[], right: string[]): Array<[number, number]> |
  * the changed lines replace the matching lines of the original text (a line-level
  * three-way merge). Untouched lines, comments and spacing stay exactly as written.
  */
+/** Follow the text's own list style: `key:\n- item` (as PyYAML writes) or `key:\n  - item`. */
+function printOptions(source: string) {
+  const lines = source.split('\n')
+  let indentless = 0
+  let indented = 0
+  for (let index = 0; index + 1 < lines.length; index++) {
+    const key = /^(\s*)[^\s#-][^#]*:\s*(#.*)?$/.exec(lines[index])
+    const item = key && /^(\s*)- /.exec(lines[index + 1])
+    if (!key || !item) continue
+    if (item[1].length === key[1].length) indentless++
+    else if (item[1].length > key[1].length) indented++
+  }
+  return { ...PRINT_OPTIONS, indentSeq: indentless <= indented }
+}
+
 function printPreserving(original: string, before: Document, after: Document): string {
-  const edited = after.toString(PRINT_OPTIONS)
+  const options = printOptions(original)
+  const edited = after.toString(options)
   const O = original.split('\n')
-  const B = before.toString(PRINT_OPTIONS).split('\n')
+  const B = before.toString(options).split('\n')
   const T = edited.split('\n')
   const toOriginal = commonLines(B, O)
   const toEdited = commonLines(B, T)
@@ -227,9 +243,28 @@ function insertPair(map: YAMLMap, key: string, node: Node, root = false) {
   const group = root ? KEY_GROUPS.find(keys => keys.includes(key)) : undefined
   const pair = new Pair(new Scalar(key), node)
   if (group) {
-    const index = map.items.reduce((last, item, position) => group.includes(keyOf(item as Pair)) ? position : last, -1)
-    if (index >= 0) {
-      map.items.splice(index + 1, 0, pair)
+    // After the closest related key that comes before it in the group, else before the closest one after it.
+    const rank = group.indexOf(key)
+    let after = -1
+    let before = -1
+    map.items.forEach((item, position) => {
+      const other = group.indexOf(keyOf(item as Pair))
+      if (other < 0) return
+      if (other < rank && (after < 0 || other > group.indexOf(keyOf(map.items[after] as Pair)))) after = position
+      if (other > rank && (before < 0 || other < group.indexOf(keyOf(map.items[before] as Pair)))) before = position
+    })
+    if (after >= 0 || before >= 0) {
+      map.items.splice(after >= 0 ? after + 1 : before, 0, pair)
+      if (after < 0 && before >= 0) {
+        // The heading comment above the following key now belongs above the new one.
+        const next = map.items[before + 1] as Pair
+        if (isScalar(next.key) && next.key.commentBefore) {
+          ;(pair.key as Scalar).commentBefore = next.key.commentBefore
+          ;(pair.key as Scalar).spaceBefore = next.key.spaceBefore
+          next.key.commentBefore = undefined
+          next.key.spaceBefore = undefined
+        }
+      }
       return
     }
   }
