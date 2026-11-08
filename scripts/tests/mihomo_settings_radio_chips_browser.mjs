@@ -339,12 +339,12 @@ app.run(host='127.0.0.1', port=int(os.environ['CF_API_PORT']), debug=False, use_
     await openSettings(settings)
     const ours = pick(await chipStyles(settings, '[role="radiogroup"][aria-label="IPv6 模式"]'))
     sameLook(ours, theirs, `${theme} IPv6 模式`)
-    const controller = settings.locator('[data-base-section="controller"]')
-    await controller.locator('button[aria-label]').first().click()
+    // Both choices sit in the menus of the base settings sheet.
+    await settings.locator('[data-base-controller-scope]').click()
     await settings.waitForTimeout(300)
     sameLook(pick(await chipStyles(settings, '[role="radiogroup"][aria-label="控制面板监听"]')), theirs, `${theme} 控制面板监听`)
-    const dns = settings.locator('[data-base-section="dns"]')
-    await dns.locator('button[aria-label]').first().click()
+    await settings.keyboard.press('Escape')
+    await settings.locator('[data-base-dns-preset]').click()
     await settings.waitForTimeout(300)
     sameLook(pick(await chipStyles(settings, '[role="radiogroup"][aria-label="DNS 方案"]')), theirs, `${theme} DNS 方案`)
     report.styles[theme] = { agentDialog: theirs, ipv6: ours }

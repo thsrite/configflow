@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Eye, EyeOff } from '@lucide/vue'
-import FormField from '@/components/common/FormField.vue'
+import { ChevronDown, Eye, EyeOff } from '@lucide/vue'
 import RadioChips from '@/components/common/RadioChips.vue'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Switch } from '@/components/ui/switch'
 import { controllerHelp, externalUiHelp, externalUiUrlHelp, secretHelp, type BaseFieldDef } from '@/lib/mihomoBaseCopy'
 import { joinHostPort, splitHostPort, type BaseFieldState, type BaseIssue, type BasePath } from '@/lib/mihomoBaseSettings'
+import MihomoBaseCell from './MihomoBaseCell.vue'
 import MihomoBaseField from './MihomoBaseField.vue'
+import { CELL_INPUT, CELL_POPOVER, CELL_SWITCH, CELL_TRIGGER } from './mihomoBaseCell'
 
 const props = defineProps<{
   secret: BaseFieldState
@@ -29,9 +30,9 @@ const showSecret = ref(false)
 const secretText = computed(() => typeof props.secret.value === 'string' ? props.secret.value : props.secret.value === undefined || props.secret.value === null ? '' : String(props.secret.value))
 const secretStatus = computed(() => {
   if (!props.secret.editable) return props.secret.reason
-  if (!props.secret.present || secretText.value === '') return '未设置密码。'
-  if (secretText.value === '123456') return '仍是初始模板的默认密码 123456，请改成自己的密码。'
-  return '已设置密码。'
+  if (!props.secret.present || secretText.value === '') return '未设置密码，局域网内谁都能打开控制面板。'
+  // 123456 is reported by the checks below the field (a warning when saved, blocking when typed).
+  return ''
 })
 function changeSecret(value: string | number) {
   const text = String(value)
@@ -66,6 +67,7 @@ function chooseScope(value: string) {
     return
   }
   customOpen.value = false
+  scopeOpen.value = false
   emit('change', ['external-controller'], joinHostPort(value === 'lan' ? '0.0.0.0' : '127.0.0.1', currentPort()))
 }
 function changeHost(value: string | number) {
@@ -81,6 +83,10 @@ function changePort(value: string | number) {
   const host = shownScope.value === 'custom' ? hostDraft.value : shownScope.value === 'local' ? '127.0.0.1' : '0.0.0.0'
   emit('change', ['external-controller'], joinHostPort(host, portDraft.value))
 }
+const scopeShown = computed(() => !props.controller.present ? '未设置' : scope.value === 'custom' ? String(props.controller.value) : scopeLabels[scope.value as Scope])
+const scopeOpen = ref(false)
+// Missing or locked: the note is a warning kept in view; otherwise it describes the choice inside the menu.
+const controllerWarning = computed(() => !props.controller.editable || !props.controller.present)
 const controllerNote = computed(() => {
   if (!props.controller.editable) return props.controller.reason
   if (!props.controller.present) return '未设置控制面板：Agent 无法读取连接和流量，网页面板也打不开。选择一种监听方式即可写入（端口默认 9090）。'
@@ -89,6 +95,7 @@ const controllerNote = computed(() => {
   return '自定义地址需为 ::（所有地址）或 ::1、localhost 等回环地址。'
 })
 const uiOn = computed(() => props.ui.present)
+const label = (field: 'secret' | 'controller' | 'port' | 'ui') => ({ secret: '访问密码', controller: '监听范围', port: '端口', ui: '网页面板' })[field]
 function toggleUi(value: boolean) {
   emit('change', ['external-ui'], value ? (typeof props.ui.value === 'string' && props.ui.value ? props.ui.value : DEFAULT_UI) : undefined)
   if (value && !props.uiUrl.present) emit('change', ['external-ui-url'], DEFAULT_UI_URL)
@@ -97,51 +104,56 @@ const messages = (field: string, extra = '') => [...(extra ? [{ message: extra, 
 </script>
 
 <template>
-  <div class="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2" data-base-controller>
-    <FormField label="控制面板密码（secret）" html-for="mihomo-base-secret" :help="secretHelp" class="sm:col-span-2" data-base-field="secret">
-      <div class="flex min-w-0 max-w-md gap-2">
-        <Input id="mihomo-base-secret" :model-value="secretText" :type="showSecret ? 'text' : 'password'" autocomplete="new-password" :spellcheck="false"
-          :disabled="disabled || !secret.editable" placeholder="8–64 个字母、数字或符号" class="min-h-11 min-w-0 font-mono"
-          :aria-invalid="messages('secret').some(item => item.blocking)" @update:model-value="changeSecret" />
-        <Button type="button" variant="outline" size="icon" class="size-11 shrink-0" :disabled="disabled || !secret.editable"
-          :aria-label="showSecret ? '隐藏控制面板密码' : '显示控制面板密码'" :aria-pressed="showSecret" @click="showSecret = !showSecret">
+  <div class="contents" data-base-controller>
+    <MihomoBaseCell :label="label('controller')" :help="`YAML 键：external-controller\n${controllerHelp}`" :status="controllerWarning ? controllerNote : ''" warn
+      :messages="messages('external-controller')" data-base-field="external-controller">
+      <Popover v-model:open="scopeOpen">
+        <PopoverTrigger as-child>
+          <button type="button" :class="CELL_TRIGGER" :disabled="disabled || !controller.editable" :aria-label="`控制面板监听：${scopeShown}`" data-base-controller-scope>
+            <span class="min-w-0 flex-1 truncate" :class="[!controller.present && 'text-warning-accent', scope === 'custom' && 'font-mono']">{{ scopeShown }}</span>
+            <ChevronDown class="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" :class="CELL_POPOVER">
+          <p class="m-0 text-[13px] font-medium">控制面板监听（external-controller）</p>
+          <RadioChips :model-value="shownScope" :options="scopeOptions" aria-label="控制面板监听" @update:model-value="chooseScope" />
+          <label v-if="shownScope === 'custom'" class="grid min-w-0 gap-1 text-xs text-muted-foreground">
+            监听地址
+            <Input :model-value="hostDraft" placeholder="::" autocomplete="off" autocapitalize="off" :spellcheck="false" class="min-h-11 font-mono text-foreground"
+              @update:model-value="changeHost" />
+          </label>
+          <p v-if="!controllerWarning" class="m-0 break-words text-xs leading-relaxed text-muted-foreground" data-base-controller-note>{{ controllerNote }}</p>
+        </PopoverContent>
+      </Popover>
+    </MihomoBaseCell>
+
+    <MihomoBaseCell :label="label('port')" html-for="mihomo-base-controller-port" :messages="portError ? [{ message: portError, blocking: true }] : []">
+      <input id="mihomo-base-controller-port" :value="portDraft" inputmode="numeric" placeholder="9090" autocomplete="off" :class="CELL_INPUT"
+        :disabled="disabled || !controller.editable || !shownScope" :aria-invalid="!!portError || messages('external-controller').some(item => item.blocking)"
+        @input="changePort(($event.target as HTMLInputElement).value)" @keydown.enter.prevent="($event.target as HTMLElement).blur()" />
+    </MihomoBaseCell>
+
+    <MihomoBaseCell :label="label('secret')" html-for="mihomo-base-secret" :help="`YAML 键：secret\n${secretHelp}`" :status="secretStatus" warn
+      :messages="messages('secret')" data-base-field="secret">
+      <div class="flex min-w-0 items-center gap-0.5">
+        <input id="mihomo-base-secret" :value="secretText" :type="showSecret ? 'text' : 'password'" autocomplete="new-password" :spellcheck="false"
+          :disabled="disabled || !secret.editable" placeholder="未设置" :class="CELL_INPUT"
+          :aria-invalid="messages('secret').some(item => item.blocking)" @input="changeSecret(($event.target as HTMLInputElement).value)"
+          @keydown.enter.prevent="($event.target as HTMLElement).blur()" />
+        <button type="button" class="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary-accent disabled:opacity-50 sm:size-8"
+          :disabled="disabled || !secret.editable" :aria-label="showSecret ? '隐藏控制面板密码' : '显示控制面板密码'" :aria-pressed="showSecret" @click="showSecret = !showSecret">
           <EyeOff v-if="showSecret" class="size-4" /><Eye v-else class="size-4" />
-        </Button>
+        </button>
       </div>
-      <p class="m-0 break-words text-xs leading-relaxed" :class="secretText === '123456' || !secret.editable ? 'text-warning-accent' : 'text-muted-foreground'" data-base-secret-status>{{ secretStatus }}</p>
-      <p v-for="item in messages('secret')" :key="item.message" class="m-0 break-words text-xs leading-relaxed" :class="item.blocking ? 'text-destructive-accent' : 'text-warning-accent'" :role="item.blocking ? 'alert' : undefined" data-base-issue>
-        {{ item.blocking ? item.message : `已保存的配置：${item.message}` }}
-      </p>
-    </FormField>
+    </MihomoBaseCell>
 
-    <FormField label="控制面板监听（external-controller）" html-for="mihomo-base-controller-port" :help="controllerHelp" class="sm:col-span-2" data-base-field="external-controller">
-      <RadioChips :model-value="shownScope" :options="scopeOptions" aria-label="控制面板监听" :disabled="disabled || !controller.editable" @update:model-value="chooseScope" />
-      <div class="flex min-w-0 flex-wrap items-end gap-2">
-        <label v-if="shownScope === 'custom'" class="grid min-w-0 flex-1 basis-48 gap-1 text-xs text-muted-foreground">
-          监听地址
-          <Input :model-value="hostDraft" placeholder="::" autocomplete="off" autocapitalize="off" :spellcheck="false" class="min-h-11 font-mono text-foreground"
-            :disabled="disabled || !controller.editable" @update:model-value="changeHost" />
-        </label>
-        <label class="grid w-32 gap-1 text-xs text-muted-foreground" for="mihomo-base-controller-port">
-          端口
-          <Input id="mihomo-base-controller-port" :model-value="portDraft" inputmode="numeric" placeholder="9090" autocomplete="off" class="min-h-11 font-mono text-foreground"
-            :disabled="disabled || !controller.editable || !shownScope" :aria-invalid="!!portError || messages('external-controller').some(item => item.blocking)" @update:model-value="changePort" />
-        </label>
-      </div>
-      <p class="m-0 break-words text-xs leading-relaxed" :class="controller.present && controller.editable ? 'text-muted-foreground' : 'text-warning-accent'" data-base-controller-note>{{ controllerNote }}</p>
-      <p v-for="item in messages('external-controller', portError)" :key="item.message" class="m-0 break-words text-xs leading-relaxed" :class="item.blocking ? 'text-destructive-accent' : 'text-warning-accent'" :role="item.blocking ? 'alert' : undefined" data-base-issue>
-        {{ item.blocking ? item.message : `已保存的配置：${item.message}` }}
-      </p>
-    </FormField>
-
-    <FormField label="网页控制面板（external-ui）" html-for="mihomo-base-external-ui" :help="externalUiHelp" data-base-field="external-ui">
-      <div class="flex min-h-11 items-center gap-3">
+    <MihomoBaseCell :label="label('ui')" :help="`YAML 键：external-ui\n${externalUiHelp}`" :status="ui.editable ? '' : ui.reason" warn
+      :messages="messages('external-ui')" data-base-field="external-ui">
+      <div :class="CELL_SWITCH">
         <Switch id="mihomo-base-external-ui" :model-value="uiOn" :disabled="disabled || !ui.editable" aria-label="网页控制面板" @update:model-value="toggleUi" />
-        <label for="mihomo-base-external-ui" class="cursor-pointer text-[13px]">{{ uiOn ? `开启，目录 ${String(ui.value)}` : '关闭' }}</label>
+        <label for="mihomo-base-external-ui" class="min-w-0 cursor-pointer truncate">{{ uiOn ? '开' : '关' }}<span v-if="uiOn" class="font-mono text-muted-foreground"> · {{ String(ui.value) }}</span></label>
       </div>
-      <p v-if="!ui.editable" class="m-0 text-xs text-warning-accent">{{ ui.reason }}</p>
-      <p v-for="item in messages('external-ui')" :key="item.message" class="m-0 break-words text-xs" :class="item.blocking ? 'text-destructive-accent' : 'text-warning-accent'" data-base-issue>{{ item.message }}</p>
-    </FormField>
+    </MihomoBaseCell>
     <MihomoBaseField v-if="uiOn" :field="uiUrlField" :state="uiUrl" :issues="issues('external-ui-url')" :disabled="disabled"
       @change="emit('change', ['external-ui-url'], $event)" />
   </div>
