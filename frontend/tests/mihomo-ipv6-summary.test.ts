@@ -254,3 +254,47 @@ describe('Mihomo IPv6 three outcomes', () => {
     expect(groups.flatMap(row => [...row.issues, row.note || '']).join()).not.toContain('展开')
   })
 })
+
+describe('Mihomo IPv6 outcomes beside the step list', () => {
+  it('drops 「IPv6 网络」, which repeats the host check of the 部署 steps', () => {
+    const groups = buildMihomoIPv6Summary({ readiness: readiness(), besideSteps: true })
+    expect(groups.map(row => row.label)).toEqual(['IPv6 节点连接', '客户端分流'])
+    expect(groups.every(row => !!row.help)).toBe(true)
+    expect(groups[0]).toMatchObject({ status: '待验证', tone: 'neutral', issues: [] })
+    expect(groups[0]!.note).toContain('验证连接与分流')
+  })
+
+  it('leaves host problems to the 部署 steps', () => {
+    const current = readiness({ checks: [check('host_address', 'error'), check('host_default_route', 'warning'), check('host_persistence')] })
+    const [node] = buildMihomoIPv6Summary({ readiness: current, besideSteps: true })
+    expect(node).toMatchObject({ status: '待验证', tone: 'neutral', issues: [] })
+  })
+
+  it('moves the runtime and router problems of 「IPv6 网络」 to the node outcome with the next action', () => {
+    const report = verification({ status: 'error', checks: [...runtimeChecks(), check('runtime_dns_aaaa', 'error'), check('host_address', 'error')] })
+    const [node] = buildMihomoIPv6Summary({ verification: report, besideSteps: true })
+    expect(node).toMatchObject({ status: '未通过', tone: 'danger' })
+    expect(node!.issues).toEqual(['Mihomo 的 DNS 查询失败，请检查 DNS 设置后重新验证。'])
+
+    const current = readiness()
+    current.routers[0]!.checks = [check('wan', 'error')]
+    const [pending] = buildMihomoIPv6Summary({ readiness: current, besideSteps: true })
+    expect(pending).toMatchObject({ status: '未通过', tone: 'danger' })
+    expect(pending!.issues).toEqual(['路由器 IPv6 出口存在问题，请检查上网设置。'])
+  })
+
+  it('asks to publish first while the saved configuration is not published yet', () => {
+    const groups = buildMihomoIPv6Summary({ readiness: readiness({ publication: 'changed' }), besideSteps: true })
+    expect(groups.map(row => row.note)).toEqual(['先「保存并发布」到 Mihomo，再点击「验证连接与分流」。', '先「保存并发布」到 Mihomo，再点击「验证连接与分流」。'])
+    // The device check and the publish bar keep their own wording.
+    expect(group('node', { readiness: readiness({ publication: 'changed' }) }).note).toBe('点击「验证连接与分流」开始测试。')
+  })
+
+  it('keeps the next action when a moved problem does not change the status', () => {
+    const report = verification({ checks: [...runtimeChecks(), check('runtime_expected_config', 'unknown')] })
+    const [node] = buildMihomoIPv6Summary({ verification: report, besideSteps: true })
+    expect(node!.status).toBe('待验证')
+    expect(node!.note).toBeUndefined()
+    expect(node!.issues).toEqual(['尚未确认设备使用的是当前保存配置。先「保存并发布」到 Mihomo，再点击「验证连接与分流」。'])
+  })
+})

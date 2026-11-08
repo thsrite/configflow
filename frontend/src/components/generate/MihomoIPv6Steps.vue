@@ -25,8 +25,10 @@ import type { IPv6Verification, MihomoIPv6Readiness } from '@/types/mihomoIPv6'
 type Agent = { id: string; name: string; profile_id?: string; service_type?: string; status?: string; enabled?: boolean }
 type Profile = { id: string; is_default?: boolean }
 type Router = { id: string; name?: string; proxy_gateway_agent_id?: string; dns_agent_id?: string }
+// The IPv6 card: its 配置 group (the default slot) and, in an IPv6 mode, the 部署 and 验收 groups.
+// mode: null while IPv6 is off (or the YAML sets no mode), which shows the 配置 group only and reads no device.
 // refreshKey: a confirmed publish; recheckKey: the device check window closed.
-const props = defineProps<{ open: boolean; profileId: string; preferredAgentId?: string; mode: 'nodes' | 'clients'; dirty?: boolean; disabled?: boolean; refreshKey?: number; recheckKey?: number }>()
+const props = defineProps<{ open: boolean; profileId: string; preferredAgentId?: string; mode: 'nodes' | 'clients' | null; dirty?: boolean; disabled?: boolean; refreshKey?: number; recheckKey?: number }>()
 const emit = defineEmits<{ check: [agentId: string] }>()
 
 const agents = ref<Agent[]>([])
@@ -63,26 +65,28 @@ const candidates = computed(() => agents.value.filter(agent => (agent.service_ty
   && (agent.profile_id || defaultProfile.value) === props.profileId))
 const selected = computed(() => candidates.value.find(agent => agent.id === selectedId.value))
 const online = computed(() => selected.value?.status === 'online' && selected.value.enabled !== false)
-const available = computed(() => props.open && !props.dirty && online.value)
+const available = computed(() => props.open && !!props.mode && !props.dirty && online.value)
 // The last check is shown for an offline device too; the server does not contact it.
-const readable = computed(() => props.open && !props.dirty && !!selected.value && selected.value.enabled !== false)
+const readable = computed(() => props.open && !!props.mode && !props.dirty && !!selected.value && selected.value.enabled !== false)
 const current = (generation: number, id?: string) => !disposed && props.open && generation === session && (!id || id === selectedId.value)
 const messageOf = (failure: any) => failure?.response?.data?.message || failure?.message || '读取失败，请重试。'
 
 const context = computed<IPv6StepContext>(() => ({ dirty: !!props.dirty, readiness: readiness.value, checking: phase.value !== 'idle' }))
 const groups = computed(() => readiness.value && verifier.value ? buildMihomoIPv6Summary({ readiness: readiness.value,
   verification: verifier.value.verification?.status === 'running' ? undefined : verifier.value.verification || undefined,
-  preferVerificationSnapshot: verifier.value.fresh }) : null)
+  preferVerificationSnapshot: verifier.value.fresh, besideSteps: true }) : null)
 const steps = computed(() => {
+  const mode = props.mode
+  if (!mode) return []
   const all: Record<IPv6StepId, IPv6Step | null> = {
     host: hostStep(context.value),
     publish: publishStep(context.value),
-    upstream: upstreamStep(upstream.value, !!props.dirty, props.mode),
+    upstream: upstreamStep(upstream.value, !!props.dirty, mode),
     firewall: firewallStep(context.value),
     oxidns: oxidnsStep(oxidns.value),
     verify: verifyStep(context.value, groups.value, verifier.value?.verification?.status === 'running'),
   }
-  return stepOrder(props.mode, oxidns.value.length > 0).map(id => all[id]).filter((item): item is IPv6Step => !!item)
+  return stepOrder(mode, oxidns.value.length > 0).map(id => all[id]).filter((item): item is IPv6Step => !!item)
 })
 // 「部署」 holds the steps before 验收, which is its own group with the verify button.
 const deploySteps = computed(() => steps.value.filter(item => item.id !== 'verify'))
@@ -283,7 +287,9 @@ async function copyCommand(command: string) {
   }
 }
 
-watch(() => [props.open, props.profileId, props.preferredAgentId] as const, () => {
+// Turning IPv6 on starts reading the device; switching between the two modes keeps what was read.
+// Separate sources: a getter returning a new array would also fire on every mode change.
+watch([() => props.open, () => props.profileId, () => props.preferredAgentId, () => !!props.mode], () => {
   session++
   initialized = false
   agents.value = []
@@ -293,7 +299,7 @@ watch(() => [props.open, props.profileId, props.preferredAgentId] as const, () =
   error.value = ''
   phase.value = 'idle'
   clearResults()
-  if (props.open) void loadTargets()
+  if (props.open && props.mode) void loadTargets()
 }, { immediate: true, flush: 'sync' })
 // A save changes the saved configuration (the server checks again if its
 // content did); a publish changes the device, so it is checked again; a closed
@@ -306,30 +312,33 @@ onUnmounted(() => { clearInterval(ticker); clearTimeout(publicationTimer); dispo
 </script>
 
 <template>
-  <section class="@container/steps min-w-0 space-y-2 pt-3" aria-label="IPv6 设置步骤" data-mihomo-ipv6-steps>
+  <section class="@container/steps min-w-0 space-y-2" aria-label="IPv6" data-ipv6-card :data-mihomo-ipv6-steps="mode ? '' : undefined">
     <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
       <!-- At least 12rem wide, so on a phone the buttons move to their own line instead of squeezing it. -->
-      <div class="min-w-48 flex-1">
-        <h3 class="m-0 text-[13px] font-semibold">需要完成的步骤<span v-if="selected" class="block break-words font-normal text-muted-foreground sm:ml-2 sm:inline">设备：{{ selected.name }}</span></h3>
-        <p v-if="checked" class="m-0 flex flex-wrap items-center gap-x-0.5 text-xs text-muted-foreground" data-ipv6-steps-checked>
+      <div class="min-h-8 min-w-48 flex-1 content-center">
+        <h3 class="m-0 text-[13px] font-semibold">IPv6<span v-if="mode && selected" class="block break-words font-normal text-muted-foreground sm:ml-2 sm:inline">设备：{{ selected.name }}</span></h3>
+        <p v-if="mode && checked" class="m-0 flex flex-wrap items-center gap-x-0.5 text-xs text-muted-foreground" data-ipv6-steps-checked>
           {{ checked }}<span class="cf-compact-help"><FieldHelp label="检查时间" text="结果来自上次检查。路由器或主机上的手动修改不会自动发现，改过之后请点「重新检查」。" /></span>
         </p>
       </div>
-      <div class="flex shrink-0 items-center gap-1">
+      <div v-if="mode" class="flex shrink-0 items-center gap-1">
         <Button type="button" variant="ghost" class="min-h-11 px-3 text-[13px]" :disabled="!open || dirty || disabled || phase !== 'idle'" data-ipv6-steps-recheck @click="refresh">
           <RefreshCw class="size-4" :class="phase === 'checking' && 'animate-spin motion-reduce:animate-none'" aria-hidden="true" />重新检查
         </Button>
         <Button type="button" variant="outline" class="min-h-11 shrink-0 border-border-strong text-[13px]" aria-label="检查设备 IPv6" :disabled="disabled" @click="emit('check', selectedId)"><ScanLine class="size-4" aria-hidden="true" />检查设备</Button>
       </div>
     </div>
-    <Select v-if="!preferredAgentId && candidates.length > 1" :model-value="selectedId" :disabled="phase !== 'idle' || disabled" @update:model-value="selectTarget">
-      <SelectTrigger class="min-h-11 w-full min-w-0 sm:max-w-xs" aria-label="IPv6 步骤检查的设备"><SelectValue placeholder="选择检查设备" /></SelectTrigger>
-      <SelectContent><SelectItem v-for="agent in candidates" :key="agent.id" :value="agent.id" :disabled="agent.status !== 'online' || agent.enabled === false" class="min-h-11 break-all whitespace-normal">{{ agent.name }}{{ agent.status !== 'online' ? '（离线）' : agent.enabled === false ? '（已禁用）' : '' }}</SelectItem></SelectContent>
-    </Select>
-    <p v-if="notice" class="m-0 break-words text-xs leading-relaxed" :class="notice.tone === 'warning' ? 'text-warning-accent' : 'text-muted-foreground'" role="status">{{ notice.text }}</p>
-    <p v-if="recheckFailed" class="m-0 break-words text-xs leading-relaxed text-warning-accent" role="status" data-ipv6-steps-recheck-failed>{{ recheckFailed }}</p>
+    <template v-if="mode">
+      <Select v-if="!preferredAgentId && candidates.length > 1" :model-value="selectedId" :disabled="phase !== 'idle' || disabled" @update:model-value="selectTarget">
+        <SelectTrigger class="min-h-11 w-full min-w-0 sm:max-w-xs" aria-label="IPv6 步骤检查的设备"><SelectValue placeholder="选择检查设备" /></SelectTrigger>
+        <SelectContent><SelectItem v-for="agent in candidates" :key="agent.id" :value="agent.id" :disabled="agent.status !== 'online' || agent.enabled === false" class="min-h-11 break-all whitespace-normal">{{ agent.name }}{{ agent.status !== 'online' ? '（离线）' : agent.enabled === false ? '（已禁用）' : '' }}</SelectItem></SelectContent>
+      </Select>
+      <p v-if="notice" class="m-0 break-words text-xs leading-relaxed" :class="notice.tone === 'warning' ? 'text-warning-accent' : 'text-muted-foreground'" role="status">{{ notice.text }}</p>
+      <p v-if="recheckFailed" class="m-0 break-words text-xs leading-relaxed text-warning-accent" role="status" data-ipv6-steps-recheck-failed>{{ recheckFailed }}</p>
+    </template>
     <div class="min-w-0 overflow-hidden rounded-lg border border-border-strong bg-card" data-ipv6-steps-sheet>
-      <MihomoIPv6StepGroup title="部署" :progress="deployProgress">
+      <MihomoIPv6StepGroup title="配置" data-ipv6-config-group><slot /></MihomoIPv6StepGroup>
+      <MihomoIPv6StepGroup v-if="mode" title="部署" :progress="deployProgress">
         <ol class="m-0 min-w-0 list-none divide-y divide-border/60 p-0">
           <li v-for="item in deploySteps" :key="item.id" class="min-w-0" :data-ipv6-step="item.id">
             <MihomoIPv6StepRow :label="item.label" :status="item.status" :tone="item.tone">

@@ -15,6 +15,8 @@ export interface IPv6SummaryGroup {
   status: string
   tone: SummaryTone
   issues: string[]
+  // What the result tests, for the step list's help button.
+  help?: string
   // Retain source evidence for result decisions; the UI renders only the three
   // outcomes and their short problems, never the raw rule trace or details.
   checks: IPv6SummaryCheck[]
@@ -25,12 +27,16 @@ interface SummaryInput {
   readiness?: MihomoIPv6Readiness | null
   verification?: IPv6Verification | null
   preferVerificationSnapshot?: boolean
+  // Shown beside the IPv6 step list, whose 部署 steps already report the host
+  // and the publication: 「IPv6 网络」 then mostly repeats them, so its other
+  // problems (runtime, routers) move to 「IPv6 节点连接」.
+  besideSteps?: boolean
 }
 
-const definitions: Array<{ id: GroupId; label: string }> = [
+const definitions: Array<{ id: GroupId; label: string; help?: string }> = [
   { id: 'ipv6-network', label: 'IPv6 网络' },
-  { id: 'node', label: 'IPv6 节点连接' },
-  { id: 'client', label: '客户端分流' },
+  { id: 'node', label: 'IPv6 节点连接', help: '在 Mihomo 主机上经代理节点打开检测网址，确认 Mihomo 能用 IPv6 连到节点。' },
+  { id: 'client', label: '客户端分流', help: '在「检查设备 → 验收设置」选的检测客户端像手机一样上网，确认它的请求经上游路由到 Mihomo，并按规则分流。「Mihomo 用 IPv6，客户端走 IPv4」时它用 IPv4 测。' },
 ]
 const invalidResultIds = new Set(['result_stale', 'target_changed', 'interrupted', 'verification_failed', 'runtime_config_stability'])
 const publicationIds = new Set(['runtime_deployed_config', 'runtime_expected_config', 'deployed_config'])
@@ -39,6 +45,10 @@ const recoveryIds = new Set(['host_persistence', 'persistence', 'host_tun_recove
 const nodeRequired = ['runtime_proxy_http', 'runtime_node_ipv6_transport']
 const clientRequired = ['client_http_ipv4', 'client_mihomo_path', 'client_ros_path', 'client_ipv6_transport']
 const verifyAction = '点击「验证连接与分流」开始测试。'
+// Checks a 部署 step reports (the host and the saved publication); see besideSteps.
+// Router problems stay: the steps only show the routes and the client Fake-IP path.
+const coveredBySteps = (id: string) => id.startsWith('host_') || ['configuration', 'deployed_config', 'prepare_tun_recovery'].includes(id)
+const toneRank: Record<SummaryTone, number> = { danger: 0, warning: 1, neutral: 2, progress: 3, success: 4 }
 const publishAction = '先「保存并发布」到 Mihomo，再点击「验证连接与分流」。'
 const clientSetup = '在「检查设备 → 验收设置」选择独立检测客户端，再点击「验证连接与分流」。'
 
@@ -139,7 +149,7 @@ function reportChecks(readiness: MihomoIPv6Readiness | null | undefined, verific
   return [...checks.values()]
 }
 
-export function buildMihomoIPv6Summary({ readiness, verification, preferVerificationSnapshot }: SummaryInput): IPv6SummaryGroup[] {
+export function buildMihomoIPv6Summary({ readiness, verification, preferVerificationSnapshot, besideSteps }: SummaryInput): IPv6SummaryGroup[] {
   const checks = reportChecks(readiness, verification, preferVerificationSnapshot)
   const invalidated = checks.some(check => invalidResultIds.has(check.id) && check.status !== 'ok')
   const publicationMissing = checks.some(check => publicationIds.has(check.id) && check.status !== 'ok')
@@ -150,7 +160,10 @@ export function buildMihomoIPv6Summary({ readiness, verification, preferVerifica
   const clientComplete = passed(clientRequired)
   const hasActualIPv6 = nodeComplete || clientComplete
 
-  return definitions.map(definition => {
+  // The problems of 「IPv6 网络」 that decide its status, kept for besideSteps.
+  let networkProblems: IPv6SummaryCheck[] = []
+  let networkIssues: Array<{ check: IPv6SummaryCheck; issue: string }> = []
+  const groups = definitions.map(definition => {
     const rows = checks.filter(check => groupFor(check) === definition.id)
     const group: IPv6SummaryGroup = { ...definition, status: '待验证', tone: 'neutral', issues: [], checks: rows }
     const notConfigured = definition.id === 'client' && rows.some(check => check.id === 'client_not_configured' && check.status === 'unknown')
@@ -180,6 +193,10 @@ export function buildMihomoIPv6Summary({ readiness, verification, preferVerifica
     const actionable = problems.filter(check => !staticAdvisories.includes(check) && !recoveryAdvisories.includes(check))
     const canPrepare = readiness?.can_prepare === true && !preferVerificationSnapshot
     group.issues = [...new Set([...actionable, ...recoveryAdvisories].map(check => issueFor(check, canPrepare)))]
+    if (definition.id === 'ipv6-network') {
+      networkProblems = actionable
+      networkIssues = [...actionable, ...recoveryAdvisories].map(check => ({ check, issue: issueFor(check, canPrepare) }))
+    }
 
     if (actionable.some(check => check.status === 'error')) {
       group.status = '未通过'; group.tone = 'danger'
@@ -228,4 +245,25 @@ export function buildMihomoIPv6Summary({ readiness, verification, preferVerifica
     }
     return group
   })
+  if (!besideSteps) return groups
+  const [, node, client] = groups
+  // 「保存并发布 Mihomo」 waits for a publish: verifying first would test the previous files.
+  if (readiness?.publication === 'changed') {
+    for (const group of [node, client]) if (group.note === verifyAction) group.note = publishAction
+  }
+  const extra = networkProblems.filter(check => !coveredBySteps(check.id))
+  const worst: SummaryTone | null = extra.some(check => check.status === 'error') ? 'danger'
+    : extra.some(check => check.status === 'warning') ? 'warning' : null
+  if (worst && toneRank[worst] < toneRank[node.tone]) {
+    node.status = worst === 'danger' ? '未通过' : '需处理'
+    node.tone = worst
+  }
+  const moved = networkIssues.filter(item => !coveredBySteps(item.check.id)).map(item => item.issue)
+  if (moved.length) {
+    // The rows show either the issues or the note, so the next action joins the issues.
+    const action = node.tone === 'neutral' && !node.issues.length && !moved.some(issue => issue.includes('验证连接与分流')) ? node.note : undefined
+    node.issues = [...new Set([...moved, ...node.issues, ...(action ? [action] : [])])]
+    delete node.note
+  }
+  return [node, client]
 }

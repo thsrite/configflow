@@ -199,6 +199,34 @@ beforeEach(() => {
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.restoreAllMocks() })
 
 describe('Mihomo IPv6 step list', () => {
+  it('shows only the 配置 group while IPv6 is off and reads the device once a mode is chosen', async () => {
+    const wrapper = shallowMount(MihomoIPv6Steps, {
+      props: { open: true, profileId: 'bound', preferredAgentId: 'gw', mode: null },
+      slots: { default: '<div data-config-cells>模式</div>' },
+      global: { stubs: { Button: false, Primitive: false, MihomoIPv6StepRow: RowStub, MihomoIPv6StepGroup: false } },
+    })
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(agentApi.summaries).not.toHaveBeenCalled()
+    expect(agentApi.ipv6Readiness).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-mihomo-ipv6-steps]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-ipv6-steps-sheet] > section').map(group => group.attributes('aria-label'))).toEqual(['配置'])
+    expect(wrapper.get('[data-ipv6-config-group]').find('[data-config-cells]').exists()).toBe(true)
+    expect(wrapper.find('[data-ipv6-steps-recheck]').exists()).toBe(false)
+    expect(wrapper.get('h3').text()).toBe('IPv6')
+
+    await wrapper.setProps({ mode: 'clients' })
+    await flushPromises()
+    expect(agentApi.ipv6Readiness).toHaveBeenCalledExactlyOnceWith('gw', 'bound', { refresh: false })
+    expect(wrapper.findAll('[data-ipv6-steps-sheet] > section').map(group => group.attributes('aria-label'))).toEqual(['配置', '部署'])
+    expect(wrapper.find('[data-ipv6-step="verify"]').exists()).toBe(true)
+    expect(wrapper.get('h3').text()).toContain('设备：客厅 Mihomo')
+    // Switching between the two modes keeps what was read.
+    await wrapper.setProps({ mode: 'nodes' })
+    await flushPromises()
+    expect(agentApi.ipv6Readiness).toHaveBeenCalledOnce()
+  })
+
   it('checks the fixed device once and never reads a router report of its own', async () => {
     const wrapper = await mount()
     expect(agentApi.ipv6Readiness).toHaveBeenCalledExactlyOnceWith('gw', 'bound', { refresh: false })
