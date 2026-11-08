@@ -387,12 +387,13 @@ app.run(host='127.0.0.1', port=int(os.environ['CF_API_PORT']), debug=False, use_
   await settle(dark)
   await top(dark)
   await quiet(dark)
-  assert.equal(await dark.$eval('[data-ipv6-step="publish"] [data-agent-status-row] [aria-live]', el => el.textContent.trim()), '待发布')
+  assert.equal(await dark.$eval('[data-ipv6-step="publish"] [data-status]', el => el.textContent.trim()), '待发布')
   await sectionShot(dark, 'mihomo-ipv6-pending-after-change', 700)
   scene = 'passed'
   await dark.locator('[data-ipv6-steps-recheck]').click()
   await settle(dark)
-  await dark.waitForFunction(() => document.querySelector('[data-ipv6-step="verify"] [data-agent-status-row] [aria-live]')?.textContent.trim() === '已通过', null, { timeout: 30000 })
+  // 验收 is its own group of the checklist: every check passed.
+  await dark.waitForFunction(() => document.querySelector('[data-ipv6-step="verify"] [data-ipv6-group-progress]')?.textContent.trim() === '3 / 3 通过', null, { timeout: 30000 })
   await top(dark)
   await quiet(dark)
   await sectionShot(dark, 'mihomo-ipv6-steps-after-router')

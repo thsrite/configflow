@@ -27,6 +27,22 @@ beforeEach(() => {
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('Mihomo verification lifecycle', () => {
+  it('as a group of the step list, puts the pass count and the verify button beside checklist rows', async () => {
+    const readiness = { config_revision: 7, checks: [], routers: [], connectivity: { status: 'not_checked', message: '' } }
+    const wrapper = shallowMount(MihomoIPv6Verification, { props: { open: true, agentId: 'gw', profileId: 'bound', configRevision: 7, readiness, group: '验收' },
+      global: { stubs: { Button: false, Primitive: false, MihomoIPv6StepGroup: false } } })
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.get('h4').text()).toBe('验收')
+    expect(wrapper.get('[data-ipv6-group-progress]').text()).toMatch(/^0 \/ \d 通过$/)
+    expect(wrapper.getComponent(MihomoIPv6CheckSummary).props('checklist')).toBe(true)
+    const button = wrapper.get('button[aria-label="验证连接与分流"]')
+    expect(button.text()).toBe('验证')
+    await button.trigger('click')
+    await flushPromises()
+    expect(agentApi.verifyIPv6).toHaveBeenCalledWith('gw', expect.objectContaining({ profile_id: 'bound', expected_config_revision: 7 }))
+  })
+
   it('reports only settled results to an embedding step list', async () => {
     const wrapper = await render()
     expect(wrapper.emitted('result')).toEqual([[{ verification: null, fresh: false }]])
