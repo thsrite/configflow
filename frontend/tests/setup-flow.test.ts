@@ -20,7 +20,7 @@ vi.mock('@/lib/feedback', () => ({ confirm: vi.fn().mockResolvedValue(false), co
 
 const record = (changes: Partial<SetupSession> = {}): SetupSession => ({
   id: 'a'.repeat(32), profile_id: 'setup_test', name: '我的分流配置', goal: 'router', step: 1,
-  max_step: 1, prepared: false, completed: false, subscription_ids: [], node_ids: [], updated_at: '', ...changes
+  max_step: 1, prepared: false, completed: false, subscription_ids: [], node_ids: [], updated_at: '', controller_secret_saved: true, ...changes
 })
 const installation = { id: 'pair', mihomo: { id: 'm', name: 'Mihomo', host: '192.0.2.10' }, oxidns: { id: 'o', name: 'OxiDNS', host: '192.0.2.10' } }
 const defaultRules = { direct: ['builtin:direct'], proxy: ['builtin:proxy'] }
@@ -158,6 +158,36 @@ describe('首次使用分流向导', () => {
     wrapper!.getComponent(SetupInstallation).vm.$emit('completed'); await flushPromises()
     expect(wrapper!.get('[role="alert"]').text()).toContain('OxiDNS 发布尚未完成')
     expect(setupApi.finish).not.toHaveBeenCalled()
+  })
+
+  it('新配置空间必须自己设置控制面板密码，拒绝默认 123456，提交后不再保留在页面', async () => {
+    vi.mocked(setupApi.get).mockResolvedValue({ data: record({ step: 2, max_step: 2, node_ids: ['node'], controller_secret_saved: false }) } as never)
+    vi.mocked(setupApi.prepare).mockResolvedValue({ data: record({ step: 2, max_step: 3, prepared: true, controller_secret_saved: true, controller_address: '0.0.0.0:9090' }) } as never)
+    await open('/setup?session=' + 'a'.repeat(32))
+    const submit = () => wrapper!.findAll('button').find(button => button.text() === '生成配置并继续')!
+    const input = wrapper!.get('#setup-controller-secret')
+    expect(wrapper!.text()).toContain('控制面板密码（必填）')
+    expect(wrapper!.text()).toContain('控制面板监听 0.0.0.0:9090，局域网内的设备都能打开，靠这个密码保护')
+    expect(input.attributes('type')).toBe('password')
+    expect(submit().attributes('disabled')).toBeDefined()
+    await input.setValue('123456')
+    expect(wrapper!.get('#setup-controller-secret-warning').text()).toContain('默认密码 123456')
+    expect(submit().attributes('disabled')).toBeDefined()
+    await input.setValue('short')
+    expect(wrapper!.get('#setup-controller-secret-warning').text()).toContain('8–64')
+    await input.setValue('my-panel-pass')
+    await wrapper!.get('[aria-label="显示控制面板密码"]').trigger('click')
+    expect(wrapper!.get('#setup-controller-secret').attributes('type')).toBe('text')
+    expect(submit().attributes('disabled')).toBeUndefined()
+    await click('生成配置并继续')
+    expect(setupApi.prepare).toHaveBeenCalledWith('a'.repeat(32), expect.objectContaining({ controller_secret: 'my-panel-pass' }))
+    // The saved password is not shown again; leaving the field empty keeps it.
+    expect((wrapper!.get('#setup-controller-secret').element as HTMLInputElement).value).toBe('')
+    expect(wrapper!.get('#setup-controller-secret').attributes('type')).toBe('password')
+    expect(wrapper!.text()).toContain('已设置密码；留空保留原密码')
+    expect(wrapper!.html()).not.toContain('my-panel-pass')
+    await click('生成配置并继续')
+    expect(vi.mocked(setupApi.prepare).mock.calls[1]![1]).not.toHaveProperty('controller_secret')
   })
 
   it('安装步骤列出向导对 Mihomo 基础配置的调整，没有调整时不显示', async () => {

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, ArrowRight, Check, CircleCheck, LoaderCircle, Network, Router as RouterIcon } from '@lucide/vue'
+import { ArrowLeft, ArrowRight, Check, CircleCheck, Eye, EyeOff, LoaderCircle, Network, Router as RouterIcon } from '@lucide/vue'
 import { setupApi, type SetupDomainRule, type SetupGoal, type SetupIndex, type SetupSession } from '@/api/setup'
-import { SETUP_GOALS, SETUP_STEPS, abandonSetup, setupError, setupLocalDnsWarning, setupRuleConflicts, setupRuleOptions, useLibraryNamesake } from '@/lib/setupFlow'
+import { SETUP_GOALS, SETUP_STEPS, abandonSetup, setupControllerSecretWarning, setupError, setupLocalDnsWarning, setupRuleConflicts, setupRuleOptions, useLibraryNamesake } from '@/lib/setupFlow'
 import { confirm } from '@/lib/feedback'
 import { stripTrailingPunctuation } from '@/lib/text'
 import { createDeploymentId } from '@/composables/useAgentDeployments'
@@ -44,6 +44,15 @@ const proxyRules = ref(['builtin:proxy'])
 const ipTakeoverRules = ['builtin:telegram', 'builtin:googlefcm']
 const ipTakeover = computed(() => proxyRules.value.some(id => ipTakeoverRules.includes(id)))
 const localDnsWarning = computed(() => setupLocalDnsWarning(localDns.value))
+// Typed by the user only; a saved password is never sent back to the page.
+const controllerSecret = ref('')
+const showControllerSecret = ref(false)
+const controllerSecretWarning = computed(() => setupControllerSecretWarning(controllerSecret.value, !session.value?.controller_secret_saved))
+const controllerHint = computed(() => {
+  const address = session.value?.controller_address || '0.0.0.0:9090'
+  const exposure = /^(0\.0\.0\.0|\[::\]|:)/.test(address) ? `控制面板监听 ${address}，局域网内的设备都能打开，靠这个密码保护。` : `控制面板监听 ${address}。`
+  return session.value?.controller_secret_saved ? `${exposure}已设置密码；留空保留原密码，填写则更换。` : `${exposure}8–64 个字母、数字或符号，不含空格。`
+})
 const domainRules = computed(() => setupRuleOptions(options.value.domain_rules || []))
 const ruleConflicts = computed(() => setupRuleConflicts(options.value.domain_rules || [], { direct: directRules.value, proxy: proxyRules.value }))
 function useNamesake(rule: SetupDomainRule) {
@@ -152,7 +161,9 @@ async function prepare() {
   if (!current) return
   await run(async () => {
     const { data } = await setupApi.prepare(current.id, { dns_fallback: dnsFallback.value, traffic_fallback: trafficFallback.value,
-      local_dns: localDns.value, domain_rules: { direct: directRules.value, proxy: proxyRules.value }, query_recorder: queryRecorder.value })
+      local_dns: localDns.value, domain_rules: { direct: directRules.value, proxy: proxyRules.value }, query_recorder: queryRecorder.value,
+      ...(controllerSecret.value ? { controller_secret: controllerSecret.value } : {}) })
+    controllerSecret.value = ''; showControllerSecret.value = false
     await accept(data); await profileStore.refreshProfiles()
   })
 }
@@ -309,7 +320,16 @@ onUnmounted(() => { disposed = true })
                 <Textarea id="setup-local-dns" v-model="localDns" :disabled="working || session?.completed" :rows="2" :spellcheck="false" :aria-invalid="!!localDnsWarning" :aria-describedby="localDnsWarning ? 'setup-local-dns-warning' : undefined" class="min-h-16 font-mono text-xs" :placeholder="defaultLocalDns" />
                 <p v-if="localDnsWarning" id="setup-local-dns-warning" role="alert" class="m-0 text-xs leading-relaxed text-destructive-accent">{{ localDnsWarning }}</p>
               </FormField>
-              <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"><span class="font-medium">Mihomo DNS</span><span class="text-muted-foreground">自动配置，无需填写</span><FieldHelp label="Mihomo DNS" text="向导在现有 Mihomo 基础配置上只调整必要项：DNS 开启 fake-IP 并监听 127.0.0.1:1053，dns.nameserver 为空时补入 IP 地址的 DoH；主路由分流还会设为完整 TUN。端口、嗅探、控制面板及其他 DNS 设置原样保留，基础配置为空时使用内置模板。OxiDNS 的代理上游指向本机 127.0.0.1:1053，两项核心安装在同一台 Linux 上，无需填写设备 IP 或 DNS 地址；后续可在 Mihomo 基础配置中修改上游。DNS 解析与连接出口是两个设置，交给 Mihomo DNS 不代表连接一定走代理。" /></div>
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"><span class="font-medium">Mihomo DNS</span><span class="text-muted-foreground">自动配置，无需填写</span><FieldHelp label="Mihomo DNS" text="向导在现有 Mihomo 基础配置上只调整必要项：DNS 开启 fake-IP 并监听 127.0.0.1:1053，dns.nameserver 为空时补入 IP 地址的 DoH；主路由分流还会设为完整 TUN。端口、嗅探、控制面板及其他 DNS 设置原样保留，基础配置为空时使用初始模板。OxiDNS 的代理上游指向本机 127.0.0.1:1053，两项核心安装在同一台 Linux 上，无需填写设备 IP 或 DNS 地址；后续可在 Mihomo 基础配置中修改上游。DNS 解析与连接出口是两个设置，交给 Mihomo DNS 不代表连接一定走代理。" /></div>
+            </section>
+            <section class="border-t border-border pt-4" aria-label="控制面板密码">
+              <FormField :label="session?.controller_secret_saved ? '控制面板密码' : '控制面板密码（必填）'" html-for="setup-controller-secret" :hint="controllerHint" persistent-hint help="写入 Mihomo 基础配置的 secret，打开 Mihomo 控制面板（external-controller）时需要输入。初始模板让控制面板监听 0.0.0.0:9090，同一局域网的设备都能访问，所以必须自己设置密码，不能使用模板默认的 123456。Agent 在本机用同一密码读取连接和流量统计。向导不会再显示已保存的密码；以后可在「配置生成 → Mihomo → 基础配置」的 secret 修改。">
+                <div class="flex items-center gap-2">
+                  <Input id="setup-controller-secret" v-model="controllerSecret" :type="showControllerSecret ? 'text' : 'password'" autocomplete="new-password" :spellcheck="false" :aria-required="!session?.controller_secret_saved" :disabled="working || session?.completed" :aria-invalid="!!controllerSecret && !!controllerSecretWarning" :aria-describedby="controllerSecret && controllerSecretWarning ? 'setup-controller-secret-warning' : undefined" class="min-h-11 min-w-0 font-mono" :placeholder="session?.controller_secret_saved ? '已设置，留空保留' : '设置控制面板密码'" />
+                  <Button variant="outline" size="icon" class="size-11 shrink-0" :disabled="working || session?.completed" :aria-label="showControllerSecret ? '隐藏控制面板密码' : '显示控制面板密码'" @click="showControllerSecret = !showControllerSecret"><EyeOff v-if="showControllerSecret" class="size-4" /><Eye v-else class="size-4" /></Button>
+                </div>
+                <p v-if="controllerSecret && controllerSecretWarning" id="setup-controller-secret-warning" role="alert" class="m-0 text-xs leading-relaxed text-destructive-accent">{{ controllerSecretWarning }}</p>
+              </FormField>
             </section>
             <section class="space-y-1 border-t border-border pt-3" aria-label="未匹配规则时">
               <div class="flex min-h-11 flex-wrap items-center justify-between gap-x-2">
@@ -327,7 +347,7 @@ onUnmounted(() => { disposed = true })
                 <Switch id="setup-query-recorder" v-model="queryRecorder" :disabled="working || session?.completed" class="shrink-0" />
               </div>
             </section>
-            <div class="space-y-2 border-t border-border pt-4"><p class="text-xs text-muted-foreground">{{ session?.subscription_ids.length }} 个订阅 · {{ session?.node_ids.length }} 个已有节点</p><Button :disabled="working || session?.completed || !!localDnsWarning" class="min-h-11" @click="prepare"><LoaderCircle v-if="working" class="size-4 animate-spin" />生成配置并继续<ArrowRight class="size-4" /></Button></div>
+            <div class="space-y-2 border-t border-border pt-4"><p class="text-xs text-muted-foreground">{{ session?.subscription_ids.length }} 个订阅 · {{ session?.node_ids.length }} 个已有节点</p><Button :disabled="working || session?.completed || !!localDnsWarning || !!controllerSecretWarning" class="min-h-11" @click="prepare"><LoaderCircle v-if="working" class="size-4 animate-spin" />生成配置并继续<ArrowRight class="size-4" /></Button></div>
           </div>
           <div v-if="step === 3 && session" class="space-y-4">
             <SetupInstallation :key="session.id" :profile-id="session.profile_id" :goal="session.goal" @busy="childBusy = $event" @completed="checkInstallation" />

@@ -15,6 +15,13 @@ export function setupLocalDnsWarning(value: string): string {
   }
   return ''
 }
+/** Same rules as controller_secret_error in backend/common/setup_flow.py. */
+export function setupControllerSecretWarning(value: string, required: boolean): string {
+  if (!value) return required ? '请设置控制面板密码。' : ''
+  if (value === '123456') return '不能使用初始模板的默认密码 123456，请自己设置一个。'
+  if (value.length < 8 || value.length > 64 || !/^[!-~]+$/.test(value)) return '控制面板密码需为 8–64 个字母、数字或符号，不含空格。'
+  return ''
+}
 export const SETUP_GOALS: { id: SetupGoal; title: string; detail: string; help: string }[] = [
   { id: 'router', title: 'Mihomo + OxiDNS 分流', detail: '有 Linux 主机，能修改主路由的静态路由和 DNS', help: 'Mihomo 负责代理，OxiDNS 负责域名分流。需要一台有管理员权限、固定局域网 IP 的 Linux。安装时开启并持久化 IPv4 转发、准备 TUN，Mihomo 以完整 TUN 接管主路由转来的连接，与普通同机安装一致。主路由添加静态路由并把客户端 DNS 指向 OxiDNS；iKuai / RouterOS 可自动发布，其他路由器按向导手动配置。客户端默认网关仍指向主路由。' },
   { id: 'gateway', title: 'Linux 网关', detail: '有 Linux 主机，能修改客户端的网关和 DNS', help: '将 Linux 作为客户端的网关，由 Mihomo + OxiDNS 处理分流。需要原生 Linux（systemd / OpenRC）、管理员权限、与客户端同网段的固定 IPv4 地址，以及可用的 DNS 53 端口。向导安装两项核心、发布配置并显式启用 Linux 转发；最后将测试客户端的网关和 DNS 指向该主机，验证后再扩大使用范围。' }

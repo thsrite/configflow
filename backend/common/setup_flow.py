@@ -174,17 +174,44 @@ def legacy_takeover(profile):
 
 
 _SETUP_DNS = {'enable': True, 'listen': DNS_TARGET, 'enhanced-mode': 'fake-ip'}
+# The initial template's controller password; the wizard never keeps it.
+TEMPLATE_SECRET = '123456'
 
 
-def setup_mihomo_base(text, *, full_tun, reserved=None):
+def initial_mihomo_base():
+    """The initial template's base YAML, which a new installation's default profile starts with."""
+    from backend.common.resource import get_backend_resource
+    with open(get_backend_resource('config_template.json'), encoding='utf-8') as handle:
+        return json.load(handle)['mihomo']['custom_config']
+
+
+def controller_secret_error(value):
+    """Why ``value`` cannot protect the controller, or None."""
+    if value == TEMPLATE_SECRET:
+        return '不能使用初始模板的默认密码 123456，请自己设置一个'
+    if not isinstance(value, str) or not 8 <= len(value) <= 64 or not all('!' <= c <= '~' for c in value):
+        return '控制面板密码需为 8–64 个字母、数字或符号，不含空格'
+    return None
+
+
+def custom_controller_secret(document):
+    secret = document.get('secret') if isinstance(document, dict) else None
+    return isinstance(secret, str) and bool(secret) and secret != TEMPLATE_SECRET
+
+
+def setup_mihomo_base(text, *, full_tun, reserved=None, secret=None):
     """The wizard's Mihomo base YAML: the profile's own, changed only where the plan needs it.
 
     Returns the YAML and what was changed, for the wizard to show. An empty
-    base starts from the built-in template, like the gateway installer; an
-    unreadable one is reported instead of replaced.
+    base starts from the initial template; an unreadable one is reported
+    instead of replaced. ``secret`` replaces the controller password; it is
+    required unless the base already has one of the user's own.
     """
     from backend.common.linux_gateway import LinuxGatewayError
     from backend.common.router_split import ROUTE_KEYS_REMOVED, _load_base, full_tun_document, tun_filters
+    empty = isinstance(text, str) and not text.strip()
+    if empty:
+        text = initial_mihomo_base()
     try:
         original = _load_base(text)
         holder = {'mihomo': {'custom_config': text}}
@@ -193,16 +220,23 @@ def setup_mihomo_base(text, *, full_tun, reserved=None):
     except (LinuxGatewayError, GatewayOnboardingError) as error:
         raise SetupError(str(error)) from error
     document = yaml.safe_load(holder['mihomo']['custom_config'])
-    empty = not text.strip()
-    changes = ['基础配置为空，已使用内置 Mihomo 模板'] if empty else []
-    if not empty and not (original.get('dns') or {}).get('nameserver'):
+    changes = ['基础配置为空，已使用初始模板'] if empty else []
+    if not (original.get('dns') or {}).get('nameserver'):
         changes.append('dns.nameserver 为空，已补入 ' + '、'.join(DEFAULT_MIHOMO_NAMESERVERS))
+    if secret is not None:
+        error = controller_secret_error(secret)
+        if error:
+            raise SetupError(error)
+        if document.get('secret') != secret:
+            changes.append('控制面板密码（secret）已' + ('更新' if custom_controller_secret(document) else '设置'))
+            document['secret'] = secret
+    elif not custom_controller_secret(document):
+        raise SetupError('请设置控制面板密码：Mihomo 控制面板（external-controller）需要用它防止他人访问')
     dns = document['dns']
     for key, value in _SETUP_DNS.items():
         if dns.get(key) != value:
-            if not empty:
-                shown = [item if isinstance(item, str) else json.dumps(item) for item in (dns.get(key), value)]
-                changes.append(f'dns.{key} 由 {shown[0]} 改为 {shown[1]}' if key in dns else f'dns.{key} 设为 {shown[1]}')
+            shown = [item if isinstance(item, str) else json.dumps(item) for item in (dns.get(key), value)]
+            changes.append(f'dns.{key} 由 {shown[0]} 改为 {shown[1]}' if key in dns else f'dns.{key} 设为 {shown[1]}')
             dns[key] = value
     if document.get('mode', 'rule') != 'rule':
         changes.append(f"mode 由 {document['mode']} 改为 rule")
@@ -215,7 +249,7 @@ def setup_mihomo_base(text, *, full_tun, reserved=None):
             document = full_tun_document(document)
         except LinuxGatewayError as error:
             raise SetupError(str(error)) from error
-        if not empty and document['tun'] != tun:
+        if document['tun'] != tun:
             removed = [f'tun.{key}' for key in ROUTE_KEYS_REMOVED if key in (tun or {})]
             changes.append('tun 设为完整 TUN（enable、auto-route、auto-redirect、auto-detect-interface，'
                            'dns-hijack 为 any:53）' + ('，移除 ' + '、'.join(removed) if removed else ''))
@@ -336,7 +370,8 @@ def _resources(config, session):
 
 
 def prepare(repository, session, body, base_url):
-    if set(body) - {'dns_fallback', 'traffic_fallback', 'local_dns', 'domain_rules', 'template', 'query_recorder'}:
+    if set(body) - {'dns_fallback', 'traffic_fallback', 'local_dns', 'domain_rules', 'template', 'query_recorder',
+                    'controller_secret'}:
         raise SetupError('漏网处理参数无效')
     if body.get('template', 'basic') != 'basic':
         raise SetupError('代理优先模式已移除，请刷新向导并分别选择 DNS 与连接的漏网处理')
@@ -409,7 +444,8 @@ def prepare(repository, session, body, base_url):
     if dns['api']['enabled']:
         reserved[int(dns['api']['listen'].rpartition(':')[2])] = f' OxiDNS 管理 API {dns["api"]["listen"]} '
     base, base_changes = setup_mihomo_base(config.get('mihomo', {}).get('custom_config', ''),
-                                           full_tun=full_tun, reserved=reserved)
+                                           full_tun=full_tun, reserved=reserved,
+                                           secret=body.get('controller_secret') or None)
     fields = {'proxy_groups': groups, 'rule_configs': rules, 'oxidns': dns,
               'mihomo': {**config.get('mihomo', {}), 'custom_config': base}}
     if full_tun:
@@ -475,6 +511,10 @@ def prepare(repository, session, body, base_url):
     if not unchanged:
         # What this preparation changed in the base YAML; a repeat that writes nothing keeps the last list.
         session['mihomo_changes'] = base_changes
+    # Never the password itself: the page only learns that one is saved and where the controller listens.
+    controller = yaml.safe_load(base).get('external-controller')
+    session.update(controller_secret_saved=True,
+                   controller_address=controller if isinstance(controller, str) else '')
     if session['goal'] == 'router':
         session['legacy_takeover'] = legacy
     session.update(prepared=True, dns_fallback=dns_fallback, traffic_fallback=traffic_fallback, local_dns=local_dns,

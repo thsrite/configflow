@@ -25,6 +25,7 @@ from backend.test_gateway_onboarding import form, snapshot
 
 BASELINE = Path(__file__).parent / 'testdata' / 'router_split_regression_0ef9e89.json'
 SESSION = 'c' * 32
+SECRET = 'lab-panel-pass'
 NODE = {'id': 'node', 'name': 'Test node', 'type': 'ss', 'server': '192.0.2.1',
         'port': 443, 'cipher': 'aes-128-gcm', 'password': 'private'}
 IP_RULE = {'id': 'chat', 'name': '聊天', 'behavior': 'classical', 'format': 'text', 'source_type': 'content',
@@ -104,7 +105,7 @@ def gateway_goal_fields(tmp_path):
             nodes=[deepcopy(NODE)], rule_library=[deepcopy(IP_RULE)]))
         assert client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']}).status_code == 200
         # The DNS query recorder switch postdates 0ef9e89, which left it off.
-        response = client.post(f'/api/setup/{SESSION}/prepare', json={'domain_rules': DOMAIN_RULES, 'query_recorder': False})
+        response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'domain_rules': DOMAIN_RULES, 'query_recorder': False})
         assert response.status_code == 200, response.get_json()
         url = f"/api/profiles/{session['profile_id']}/gateway-onboarding"
         state = client.get(url).get_json()
@@ -171,21 +172,26 @@ def with_current_setup_nameserver(fields):
 
 # 0ef9e89's wizard replaced the base YAML with a short one. It now keeps the
 # profile's base and only sets what the plan needs; the new setup profile's base
-# is empty, so it starts from the built-in template, whose fake-IP range and
-# filter and DoH fallback are kept. Freeze exactly these reviewed additions.
-_TEMPLATE_FAKE_IP = ('  fake-ip-range: 198.18.0.1/16\n  fake-ip-filter:\n  - dns.msftnsci.com\n  - www.msftnsci.com\n'
-                     '  - www.msftconnecttest.com\n  - +.pool.ntp.org\n')
-_TEMPLATE_FALLBACK = '  fallback:\n  - https://1.1.1.1/dns-query\n  - https://dns.google/dns-query\n'
+# is empty, so it starts from the initial template (config_template.json), with
+# the user's controller password, Mihomo DNS on 127.0.0.1:1053 and the
+# template's TUN left to the Linux gateway. Freeze exactly this reviewed change.
+_SETUP_SHORT_BASE = ("mixed-port: 7890\nallow-lan: true\nbind-address: '*'\nmode: rule\nlog-level: info\n"
+                     'external-controller: 127.0.0.1:9090\ndns:\n  enable: true\n  listen: 127.0.0.1:1053\n'
+                     '  enhanced-mode: fake-ip\n')
 
 
 def with_current_setup_base(fields):
-    """The wizard's own base for a new profile: the built-in template with the plan's DNS settings."""
+    """The wizard's own base for a new gateway profile: the initial template with the plan's settings."""
+    from backend.common.resource import get_backend_resource
     fields = with_current_setup_nameserver(fields)
     source = fields['mihomo']['custom_config']
-    anchor = '  enhanced-mode: fake-ip\n'
-    assert source.count(anchor) == 1 and 'tun:' not in source
-    source = source.replace(anchor, anchor + _TEMPLATE_FAKE_IP) + _TEMPLATE_FALLBACK
-    return {**fields, 'mihomo': {**fields['mihomo'], 'custom_config': source}}
+    assert source.startswith(_SETUP_SHORT_BASE) and 'tun:' not in source
+    template = yaml.safe_load(json.loads(Path(get_backend_resource('config_template.json')).read_text(encoding='utf-8'))['mihomo']['custom_config'])
+    template['secret'] = SECRET
+    template['dns']['listen'] = '127.0.0.1:1053'
+    template['tun']['enable'] = False
+    current = yaml.safe_dump(template, allow_unicode=True, sort_keys=False)
+    return {**fields, 'mihomo': {**fields['mihomo'], 'custom_config': current}}
 
 
 def test_gateway_goal_drafts_match_the_previous_release(tmp_path):
@@ -240,7 +246,7 @@ def test_router_setup_runs_end_to_end_on_a_full_tun(authenticated_app, monkeypat
     session = client.post('/api/setup', headers=admin, json={'id': SESSION, 'name': '分流配置', 'goal': 'router'}).get_json()
     profile_id = session['profile_id']
     assert client.post(f'/api/setup/{SESSION}/source', headers=admin, json={'node_ids': ['node']}).status_code == 200
-    prepared = client.post(f'/api/setup/{SESSION}/prepare', headers=admin, json={'domain_rules': DOMAIN_RULES})
+    prepared = client.post(f'/api/setup/{SESSION}/prepare', headers=admin, json={'controller_secret': SECRET, 'domain_rules': DOMAIN_RULES})
     assert prepared.status_code == 200, prepared.get_json()
     assert prepared.get_json()['legacy_takeover'] is False
 
