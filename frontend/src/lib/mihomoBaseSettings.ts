@@ -1,9 +1,11 @@
 import { isAlias, isMap, isScalar, isSeq, parseDocument, visit, type Document, type Node, Pair, Scalar, YAMLMap, YAMLSeq } from 'yaml'
+import { YAML_1_1, printYamlPreserving, sameYamlValue as same } from './yamlPreserve'
 
 /**
  * Form view of the Mihomo base YAML. The YAML stays the only source of truth:
- * each edit parses the text, changes only the targeted keys and prints it
- * again, so comments and every other key are kept (as in mihomoIPv6.ts).
+ * each edit parses the text, changes only the targeted keys and writes back only
+ * the changed lines (printYamlPreserving, shared with mihomoIPv6.ts), so comments,
+ * spacing and every other key are kept.
  * Values are read and written with YAML 1.1 rules, like the server's PyYAML, so
  * a string such as `off` or `123456` is quoted instead of turning into a boolean or number.
  *
@@ -42,93 +44,7 @@ export interface BaseIssue {
 }
 export type MihomoTakeover = 'linux_gateway' | 'full_tun' | null
 
-const YAML_OPTIONS = { version: '1.1', merge: true, uniqueKeys: true } as const
-const PRINT_OPTIONS = { lineWidth: 0 } as const
-
-/** Line pairs [a, b] of a longest common subsequence of two line lists. */
-function commonLines(left: string[], right: string[]): Array<[number, number]> | null {
-  let start = 0
-  while (start < left.length && start < right.length && left[start] === right[start]) start++
-  let leftEnd = left.length
-  let rightEnd = right.length
-  while (leftEnd > start && rightEnd > start && left[leftEnd - 1] === right[rightEnd - 1]) { leftEnd--; rightEnd-- }
-  const rows = leftEnd - start
-  const columns = rightEnd - start
-  if (rows * columns > 4_000_000) return null
-  const table = new Int32Array((rows + 1) * (columns + 1))
-  for (let i = rows - 1; i >= 0; i--) {
-    for (let j = columns - 1; j >= 0; j--) {
-      table[i * (columns + 1) + j] = left[start + i] === right[start + j] ? table[(i + 1) * (columns + 1) + j + 1] + 1
-        : Math.max(table[(i + 1) * (columns + 1) + j], table[i * (columns + 1) + j + 1])
-    }
-  }
-  const pairs: Array<[number, number]> = []
-  for (let i = 0; i < start; i++) pairs.push([i, i])
-  let i = 0
-  let j = 0
-  while (i < rows && j < columns) {
-    if (left[start + i] === right[start + j]) { pairs.push([start + i, start + j]); i++; j++ }
-    else if (table[(i + 1) * (columns + 1) + j] >= table[i * (columns + 1) + j + 1]) i++
-    else j++
-  }
-  for (let k = 0; k < left.length - leftEnd; k++) pairs.push([leftEnd + k, rightEnd + k])
-  return pairs
-}
-
-/**
- * Print an edited document without reformatting the rest of the user's text.
- * The YAML printer normalizes comments, spacing and flow lists everywhere, so the
- * change is computed between two printouts (before / after the edit) and only
- * the changed lines replace the matching lines of the original text (a line-level
- * three-way merge). Untouched lines, comments and spacing stay exactly as written.
- */
-/** Follow the text's own list style: `key:\n- item` (as PyYAML writes) or `key:\n  - item`. */
-function printOptions(source: string) {
-  const lines = source.split('\n')
-  let indentless = 0
-  let indented = 0
-  for (let index = 0; index + 1 < lines.length; index++) {
-    const key = /^(\s*)[^\s#-][^#]*:\s*(#.*)?$/.exec(lines[index])
-    const item = key && /^(\s*)- /.exec(lines[index + 1])
-    if (!key || !item) continue
-    if (item[1].length === key[1].length) indentless++
-    else if (item[1].length > key[1].length) indented++
-  }
-  return { ...PRINT_OPTIONS, indentSeq: indentless <= indented }
-}
-
-function printPreserving(original: string, before: Document, after: Document): string {
-  const options = printOptions(original)
-  const edited = after.toString(options)
-  const O = original.split('\n')
-  const B = before.toString(options).split('\n')
-  const T = edited.split('\n')
-  const toOriginal = commonLines(B, O)
-  const toEdited = commonLines(B, T)
-  if (!toOriginal || !toEdited) return edited
-  const inOriginal = new Map(toOriginal)
-  // Base lines kept by the edit and also found in the original text.
-  const anchors: Array<[number, number, number]> = [[-1, -1, -1]]
-  for (const [b, t] of toEdited) {
-    const o = inOriginal.get(b)
-    if (o !== undefined && o > anchors[anchors.length - 1][1] && t > anchors[anchors.length - 1][2]) anchors.push([b, o, t])
-  }
-  anchors.push([B.length, O.length, T.length])
-  const output: string[] = []
-  for (let index = 1; index < anchors.length; index++) {
-    const [b1, o1, t1] = anchors[index - 1]
-    const [b2, o2, t2] = anchors[index]
-    const baseGap = B.slice(b1 + 1, b2)
-    const editedGap = T.slice(t1 + 1, t2)
-    const unchanged = baseGap.length === editedGap.length && baseGap.every((line, position) => line === editedGap[position])
-    output.push(...(unchanged ? O.slice(o1 + 1, o2) : editedGap))
-    if (index < anchors.length - 1) output.push(O[o2])
-  }
-  // Never trade correctness for formatting: the merged text must mean exactly the edited document.
-  const merged = output.join('\n')
-  const check = parseDocument(merged, YAML_OPTIONS)
-  return !check.errors.length && same(check.toJS({ maxAliasCount: 100 }), after.toJS({ maxAliasCount: 100 })) ? merged : edited
-}
+const YAML_OPTIONS = YAML_1_1
 
 function parse(source: string) {
   const document = parseDocument(source, YAML_OPTIONS)
@@ -325,7 +241,7 @@ export function editMihomoBase(source: string, edits: BaseEdit[], defaultSource?
   }
   const document = parse(source.trim() ? source : defaultSource || '')
   for (const edit of edits) applyEdit(document, edit)
-  return source.trim() ? printPreserving(source, parse(source), document) : document.toString(PRINT_OPTIONS)
+  return printYamlPreserving(source, document)
 }
 
 /* ---------- DNS presets ---------- */
@@ -396,7 +312,7 @@ export function applyDnsPreset(source: string, preset: Exclude<DnsPreset, 'custo
   if (view.value(['dns', 'fallback']) !== undefined) edits.push({ path: ['dns', 'fallback'], value: undefined, kind: 'list' })
   const policy = view.value(['dns', 'nameserver-policy'])
   const policyEntries = policy !== null && typeof policy === 'object' && !Array.isArray(policy) ? Object.keys(policy) : []
-  // Edit one document so the printout keeps the user's formatting (see printPreserving).
+  // Edit one document so the printout keeps the user's formatting (see printYamlPreserving).
   const document = parse(source.trim() ? source : defaultSource || '')
   for (const edit of edits) {
     const state = view.field(edit.path, edit.kind)
@@ -421,7 +337,7 @@ export function applyDnsPreset(source: string, preset: Exclude<DnsPreset, 'custo
     removePair(map, DNS_POLICY_KEY)
     if (!map.items.length && isMap(dnsNode)) removePair(dnsNode, 'nameserver-policy')
   }
-  return source.trim() ? printPreserving(source, parse(source), document) : document.toString(PRINT_OPTIONS)
+  return printYamlPreserving(source, document)
 }
 
 /* ---------- controller ---------- */
@@ -482,17 +398,6 @@ const TEXTS: BasePath[] = [['external-ui'], ['global-ua']]
 const DNS_UPSTREAM_PATHS: BasePath[] = [...DNS_LIST_KEYS.map(key => ['dns', key]), ['dns', 'nameserver-policy'], ['dns', 'proxy-server-nameserver-policy']]
 const PORT_PATHS: BasePath[] = [...INBOUND_PORT_KEYS.map(key => [key]), ['external-controller'], ['dns', 'listen'], ['dns', 'enable'], ['listeners']]
 const REGION_PROBE_LISTENER = 'configflow-region-probe'
-
-function same(left: unknown, right: unknown): boolean {
-  if (Array.isArray(left) || Array.isArray(right)) {
-    return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((item, index) => same(item, right[index]))
-  }
-  if (left && right && typeof left === 'object' && typeof right === 'object') {
-    const keys = Object.keys(left)
-    return keys.length === Object.keys(right).length && keys.every(key => same((left as never)[key], (right as never)[key]))
-  }
-  return left === right
-}
 
 function parseIP(host: string): 'v4' | 'v6' | null {
   if (/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(host)) return host.split('.').every(part => Number(part) <= 255) ? 'v4' : null

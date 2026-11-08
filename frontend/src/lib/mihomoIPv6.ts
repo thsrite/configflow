@@ -1,4 +1,5 @@
 import { isAlias, isMap, isScalar, parseDocument, visit } from 'yaml'
+import { printYamlPreserving } from './yamlPreserve'
 
 export type MihomoIPv6Field = 'core' | 'dns'
 export const DEFAULT_MIHOMO_FAKE_IPV6_RANGE = 'fc00::1/64'
@@ -30,8 +31,11 @@ export interface MihomoIPv6Config {
 const invalid = (message: string): MihomoIPv6Value => ({ value: null, source: 'invalid', editable: false, message })
 const pathFor = (field: MihomoIPv6Field) => field === 'core' ? ['ipv6'] : ['dns', 'ipv6']
 
+// Reading keeps the editor's YAML 1.2 rules (`ipv6: yes` is reported, not guessed).
+const YAML_OPTIONS = { merge: true, uniqueKeys: true } as const
+
 function parse(source: string) {
-  const document = parseDocument(source, { merge: true, uniqueKeys: true })
+  const document = parseDocument(source, YAML_OPTIONS)
   if (document.errors.length) throw new Error(`YAML 无法解析：${document.errors[0].message}`)
   if (document.contents === null) throw new Error('当前没有可编辑的基础配置，请重新读取默认模板或在 YAML 中填写配置。')
   if (!isMap(document.contents)) throw new Error('基础配置必须是 YAML 对象，请在下方修正。')
@@ -143,7 +147,8 @@ export function setMihomoFakeIPv6Range(source: string, value: string, defaultSou
   if (!state.visible) throw new Error('请先开启 IPv6，并使用 Fake-IP 模式。')
   const error = validateMihomoFakeIPv6Range(value)
   if (error) throw new Error(error)
-  const document = parse(source.trim() ? source : defaultSource || '')
+  const original = source.trim() ? source : defaultSource || ''
+  const document = parse(original)
   const path = ['dns', 'fake-ip-range6']
   const previous = document.getIn(path, true)
   if (isScalar(previous)) {
@@ -151,14 +156,15 @@ export function setMihomoFakeIPv6Range(source: string, value: string, defaultSou
     // Explicitly correcting a typed scalar must not leave e.g. !!int on a CIDR.
     if (previous.tag && previous.tag !== 'tag:yaml.org,2002:str') delete previous.tag
   } else document.setIn(path, value.trim())
-  return document.toString({ lineWidth: 0 })
+  return printYamlPreserving(original, document, YAML_OPTIONS)
 }
 
 /** Edit the selected flag and fill a missing Fake-IP IPv6 range once Mihomo uses IPv6 with Fake-IP. */
 export function setMihomoIPv6WithDetails(source: string, field: MihomoIPv6Field, enabled: boolean, defaultSource?: string): MihomoIPv6Edit {
   const state = readMihomoIPv6(source, defaultSource)
   if (!state[field].editable) throw new Error(state[field].message)
-  const document = parse(source.trim() ? source : defaultSource || '')
+  const original = source.trim() ? source : defaultSource || ''
+  const document = parse(original)
   const path = pathFor(field)
   const previous = document.getIn(path, true)
   if (isScalar(previous) && !isAlias(previous)) previous.value = enabled
@@ -193,7 +199,8 @@ export function setMihomoIPv6WithDetails(source: string, field: MihomoIPv6Field,
     && Object.prototype.hasOwnProperty.call(dns, 'fake-ip-range6')) {
     notice = '已关闭 IPv6 Fake-IP，网段保留供再次开启。'
   }
-  return { content: document.toString({ lineWidth: 0 }), addedFakeIPv6Range, notice }
+  // Only the changed lines are written back; the rest of the text stays as typed.
+  return { content: printYamlPreserving(original, document, YAML_OPTIONS), addedFakeIPv6Range, notice }
 }
 
 /** String-only compatibility API for callers that do not display edit notices. */

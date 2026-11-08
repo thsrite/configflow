@@ -90,6 +90,12 @@ describe('Mihomo base YAML editing', () => {
     expect(next).toBe('socks-port: 7891\nmixed-port: 7890\ntun:\n  enable: true\n  dns-hijack:\n  - any:53\n  - tcp://any:53\n  mtu: 1500\ndns:\n  enable: true\n  nameserver:\n  - https://doh.pub/dns-query\n')
   })
 
+  it('keeps four-space sections, trailing spaces and a missing final newline', () => {
+    const source = 'mixed-port: 7890   \nsniffer:\n  enable: true\n  sniff:\n    HTTP:\n      ports: [80, 8080-8880]\ndns:\n    enable: true\n    listen: 0.0.0.0:1053\n    nameserver:\n      - https://223.5.5.5/dns-query'
+    const next = editMihomoBase(source, [{ path: ['dns', 'listen'], value: '0.0.0.0:53' }, { path: ['dns', 'ipv6'], value: false }])
+    expect(next).toBe(source.replace('listen: 0.0.0.0:1053', 'listen: 0.0.0.0:53') + '\n    ipv6: false')
+  })
+
   it('starts from the default config when the base is empty, like the IPv6 settings', () => {
     const next = editMihomoBase('', [{ path: ['log-level'], value: 'warning' }], coreDefault)
     expect(parse(next)).toMatchObject({ 'mixed-port': 7890, 'log-level': 'warning' })
