@@ -204,7 +204,8 @@ export function readMihomoBase(source: string, defaultSource?: string): MihomoBa
     }
   } catch (failure) {
     const error = failure instanceof Error ? failure.message : '无法读取基础配置，请检查 YAML。'
-    return { error, value: () => undefined, field: () => locked(undefined, error) }
+    // The form shows the parse error once; the fields themselves stay quiet.
+    return { error, value: () => undefined, field: () => locked(undefined, '') }
   }
 }
 
@@ -361,7 +362,7 @@ const sameList = (value: unknown, expected: string[]) =>
   Array.isArray(value) && value.length === expected.length && value.every((item, index) => item === expected[index])
 
 export function readDnsPreset(view: MihomoBaseView): { preset: DnsPreset | null; editable: boolean; reason: string } {
-  if (view.error) return { preset: null, editable: false, reason: view.error }
+  if (view.error) return { preset: null, editable: false, reason: '' }
   const dns = view.value(['dns'])
   if (dns !== undefined && (dns === null || typeof dns !== 'object' || Array.isArray(dns))) {
     return { preset: null, editable: false, reason: 'dns 必须是 YAML 对象，请先在下方 YAML 中修正。' }

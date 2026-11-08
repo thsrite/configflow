@@ -111,6 +111,10 @@ watch(() => [props.open, props.savedContent], () => { editError.value = '' })
 const value = (path: BasePath) => view.value.value(path)
 const shown = (item: unknown) => item === undefined ? '未填写' : Array.isArray(item) ? (item.length ? item.join(', ') : '[]') : typeof item === 'object' && item !== null ? JSON.stringify(item) : String(item)
 const summaries = computed(() => {
+  if (view.value.error) {
+    // Nothing can be read; never show defaults as if they were the current values.
+    return Object.fromEntries(Object.keys(sections).map(key => [key, 'YAML 无法解析'])) as Record<Section, string>
+  }
   const secret = value(['secret'])
   const controller = value(['external-controller'])
   const ports = PORT_FIELDS.filter(field => typeof value(field.path) === 'number')

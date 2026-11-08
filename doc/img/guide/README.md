@@ -21,9 +21,19 @@
 | `aggregation-subscription-cache.png` | 聚合预览中查看单个订阅 | 只读隔离数据里的订阅缓存；来源设为「仅手动」，没有请求上游 |
 | `generate-result-replay.png` | 默认静止外观下，生成步骤与配置文字依次展开 | 最终配置已返回，展示回放过程；并非后端实时阶段进度，可点「立即显示」跳过 |
 
+| `mihomo-base-settings-overview.png` | Mihomo 基础配置的基础参数表单，分组默认折叠 | 初始模板；控制面板标出「仍为默认密码」的提醒 |
+| `mihomo-base-settings-controller.png` | 控制面板分组 | 密码为演示填写，默认隐藏 |
+| `mihomo-base-settings-port-conflict.png` | 两个端口相同 | 由截图脚本故意填写冲突端口，用于展示保存被阻止 |
+| `mihomo-base-settings-dns.png` | DNS 上游切换到「国内外分开解析」 | 只改草稿，未发布 |
+| `mihomo-base-settings-managed.png` | 接管与 DNS 监听（只读） | 未启用 Linux 网关、非向导配置空间 |
+| `mihomo-base-settings-yaml-error.png` | YAML 无法解析时表单停用 | 脚本在编辑器中输入错误 YAML |
+| `mihomo-base-settings-mobile-dark.png` | 手机 390px 深色 | 展开控制面板分组 |
+
 采集脚本：[capture-guide.mjs](../../../scripts/docs/capture-guide.mjs)。机器可读记录见 [capture-report.json](capture-report.json)。图片为浏览器直接输出的 JPEG，质量 82，未经后期拼接或生成。
 
 聚合缓存预览的 PNG 由 [aggregation_cache_preview_browser.mjs](../../../scripts/tests/aggregation_cache_preview_browser.mjs) 单独采集，使用真实页面和 API、临时数据及演示节点；脚本验证预览不产生上游请求或拉取记录，并检查来源缓存更新、缓存缺失和手机布局。准备好下述依赖后，在测试服务器运行 `rt --no-sync --back doc/img/guide/aggregation-subscription-cache.png -- node scripts/tests/aggregation_cache_preview_browser.mjs`。
+
+Mihomo 基础参数的 PNG 由 [mihomo_base_settings_browser.mjs](../../../scripts/tests/mihomo_base_settings_browser.mjs) 采集，使用真实页面与 API 和临时数据（初始模板，无 Agent、未发布）；脚本同时检查保存时的服务器校验、YAML 双向同步、表单停用，以及 390px 手机宽度下无横向滚动、触控目标不小于 44px。运行：`cf-test typecheck` 后 `rt --no-sync --back doc/img/guide --back .ci-results/mihomo-base-settings -- node scripts/tests/mihomo_base_settings_browser.mjs`。
 
 生成结果回放截图由 [final_config_browser.mjs](../../../scripts/tests/final_config_browser.mjs) 采集，使用真实页面与 API、隔离数据库和模拟 Agent 传输。浏览器没有保存动效偏好，系统不要求减少动效；脚本记录五个步骤和文字行数的逐帧变化，验证跳过回放及发布文件哈希一致。录像与采样记录保存到 `.ci-results/final-config/`。
 

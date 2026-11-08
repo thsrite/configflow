@@ -91,6 +91,7 @@ describe('Mihomo base settings form', () => {
   it('disables the form without touching unreadable YAML', async () => {
     const wrapper = form('dns: [\n')
     expect(wrapper.get('[data-base-yaml-error]').text()).toContain('表单已停用')
+    expect(wrapper.findAllComponents(MihomoBaseSection)[0].props('summary')).toBe('YAML 无法解析')
     expect(wrapper.get('[inert]').attributes('aria-disabled')).toBe('true')
     field(wrapper, 'log-level').vm.$emit('change', 'debug')
     await wrapper.vm.$nextTick()

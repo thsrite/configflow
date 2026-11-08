@@ -208,6 +208,9 @@ app.run(host='127.0.0.1', port=int(os.environ['CF_API_PORT']), debug=False, use_
   step('draft saved through the server checks, comments kept')
 
   // Unreadable YAML disables the form instead of overwriting it.
+  for (const name of ['controller', 'ports', 'lan', 'dns', 'fakeip', 'sniffer', 'process', 'advanced', 'managed']) {
+    if (await section(desktop, name).getAttribute('data-state') === 'open') await section(desktop, name).locator('button[aria-label]').first().click()
+  }
   await desktop.locator('.cm-content').click()
   await desktop.keyboard.press('ControlOrMeta+a')
   // The editor closes brackets and quotes by itself, so use a nested compact mapping.
@@ -215,6 +218,8 @@ app.run(host='127.0.0.1', port=int(os.environ['CF_API_PORT']), debug=False, use_
   await form.locator('[data-base-yaml-error]').waitFor()
   assert.equal(await form.locator('[inert]').count() > 0, true)
   assert.equal((await yaml(desktop)).trim(), 'a: b: c')
+  // The parse error is shown once, not under every field.
+  assert.equal((await form.textContent()).split('YAML 无法解析：').length - 1, 1)
   await shot(form, 'mihomo-base-settings-yaml-error')
   step('unreadable YAML disables the form')
 
