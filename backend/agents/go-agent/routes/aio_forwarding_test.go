@@ -874,3 +874,102 @@ func TestAIOForwardingGivesManualStepsWhenSysctlBootCannotBeSet(t *testing.T) {
 		})
 	}
 }
+
+// persistedOpenRCFixture is a host ConfigFlow persisted forwarding on while
+// its sysctl service was in a runlevel, which is then missing again, as on
+// hosts installed before Agents added it.
+func persistedOpenRCFixture(t *testing.T, layout string) *aioFixture {
+	t.Helper()
+	f := newAIOLayoutFixture(t, "openrc", layout)
+	f.boot = preflight.SysctlBootEnabled
+	if _, err := persistAIOForwarding(f.cfg, false); err != nil {
+		t.Fatal(err)
+	}
+	f.boot = preflight.SysctlBootDisabled
+	if status := aioForwardingStatus(f.cfg); status["persisted"] != false {
+		t.Fatalf("missing boot loader still persisted: %+v", status)
+	}
+	return f
+}
+
+func TestAgentStartAddsSysctlServiceForPersistedForwarding(t *testing.T) {
+	for _, layout := range aioLayouts {
+		t.Run(layout, func(t *testing.T) {
+			f := persistedOpenRCFixture(t, layout)
+			before := f.hookRuns
+			repaired, err := aioRepairSysctlBoot(f.cfg)
+			if err != nil || !repaired || f.bootAdds != 1 || f.boot != preflight.SysctlBootEnabled {
+				t.Fatalf("not repaired: %v %v adds=%d", repaired, err, f.bootAdds)
+			}
+			if f.hookRuns != before || f.forwarding(t) != "1" {
+				t.Fatal("repair touched forwarding itself")
+			}
+			if status := aioForwardingStatus(f.cfg); status["persisted"] != true || status["notice"] != nil {
+				t.Fatalf("status not restored: %+v", status)
+			}
+			// Already in a runlevel: nothing runs again.
+			if repaired, err := aioRepairSysctlBoot(f.cfg); repaired || err != nil || f.bootAdds != 1 {
+				t.Fatalf("repeated repair: %v %v adds=%d", repaired, err, f.bootAdds)
+			}
+		})
+	}
+}
+
+func TestAgentStartLeavesHostsWithoutPersistedForwardingAlone(t *testing.T) {
+	for _, mode := range []string{"never-persisted", "foreign-config", "hook-not-registered", "oxidns", "systemd"} {
+		t.Run(mode, func(t *testing.T) {
+			manager := "openrc"
+			if mode == "systemd" {
+				manager = "systemd"
+			}
+			f := newAIOFixture(t, manager)
+			switch mode {
+			case "foreign-config":
+				if err := os.WriteFile(aioForwardingConfigPath(), []byte("net.ipv4.ip_forward=1\n"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			case "hook-not-registered":
+				// Managed config and hook script, but the service never runs it.
+				if err := os.WriteFile(aioForwardingConfigPath(), []byte(aioForwardingContent), 0644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(f.hookPath(), []byte(f.hookContent()), 0755); err != nil {
+					t.Fatal(err)
+				}
+			case "oxidns":
+				f.cfg.ServiceType = "oxidns"
+			case "systemd":
+				if _, err := persistAIOForwarding(f.cfg, false); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode != "systemd" {
+				f.boot = preflight.SysctlBootDisabled
+			}
+			repaired, err := aioRepairSysctlBoot(f.cfg)
+			if repaired || err != nil || f.bootAdds != 0 {
+				t.Fatalf("host changed: %v %v adds=%d", repaired, err, f.bootAdds)
+			}
+		})
+	}
+}
+
+func TestAgentStartSysctlRepairFailureOnlyLogs(t *testing.T) {
+	f := persistedOpenRCFixture(t, "standalone")
+	f.bootAddErr = fmt.Errorf("permission denied")
+	repaired, err := aioRepairSysctlBoot(f.cfg)
+	if repaired || err == nil || !strings.Contains(err.Error(), "rc-update add sysctl boot") {
+		t.Fatalf("failure not reported with the manual step: %v %v", repaired, err)
+	}
+	// The background entry point swallows the failure; startup is unaffected.
+	reapplyForwardingBoot(f.cfg)
+	status := aioForwardingStatus(f.cfg)
+	if status["persisted"] != false || !strings.Contains(fmt.Sprint(status["notice"]), "rc-update add sysctl boot && rc-update show boot | grep sysctl") {
+		t.Fatalf("status lacks the manual command: %+v", status)
+	}
+	if f.forwarding(t) != "1" || !aioForwardingConfigManaged() {
+		t.Fatal("failed repair changed forwarding")
+	}
+	// A nil configuration never panics the Agent.
+	reapplyForwardingBoot(nil)
+}

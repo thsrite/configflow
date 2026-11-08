@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -718,7 +719,7 @@ func aioCommitForwardingConfig(target string) error {
 func aioSysctlBootNotice(boot preflight.SysctlBootState) string {
 	problem := preflight.SysctlBootProblem(boot)
 	if boot == preflight.SysctlBootDisabled {
-		return problem + "；开启并持久化时会自动执行 rc-update add sysctl boot。"
+		return problem + "；开启并持久化时会自动执行 rc-update add sysctl boot，也可在这台 Linux 上手动执行：" + strings.Join(preflight.SysctlBootManualCommands(boot), " && ") + "。"
 	}
 	return problem + "；请在这台 Linux 上执行：" + strings.Join(preflight.SysctlBootManualCommands(boot), " && ") + "，重启后用 sysctl net.ipv4.ip_forward 确认为 1。"
 }
@@ -744,4 +745,56 @@ func aioEnsureSysctlBoot() error {
 		return fmt.Errorf("IPv4 转发已开启并写入 %s，但%s。请在这台 Linux 上执行：%s，重启后用 sysctl net.ipv4.ip_forward 确认为 1", aioForwardingConfigPath(), preflight.SysctlBootProblem(boot), strings.Join(preflight.SysctlBootManualCommands(boot), " && "))
 	}
 	return nil
+}
+
+// ReapplyForwardingBoot runs at Agent start: a host whose IPv4 forwarding
+// ConfigFlow already persisted (the same managed config, hook and registered
+// start hook that status reports as persisted) but whose OpenRC sysctl service
+// is in no runlevel, e.g. one installed before Agents added it, gets
+// rc-update add sysctl boot. It runs in the background and never delays or
+// fails the Agent; a failure is logged and status keeps the manual command.
+func ReapplyForwardingBoot(cfg *Config) {
+	go reapplyForwardingBoot(cfg)
+}
+
+func reapplyForwardingBoot(cfg *Config) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			log.Printf("IPv4 forwarding boot check skipped after an internal error: %v", recovered)
+		}
+	}()
+	repaired, err := aioRepairSysctlBoot(cfg)
+	switch {
+	case err != nil:
+		log.Printf("IPv4 forwarding boot check needs attention: %v", err)
+	case repaired:
+		log.Printf("IPv4 forwarding persisted by ConfigFlow: added the OpenRC sysctl service to the boot runlevel so %s applies at boot", aioForwardingConfigPath())
+	}
+}
+
+// aioRepairSysctlBoot reports whether it added the sysctl service; hosts
+// without ConfigFlow's persisted forwarding, non-OpenRC hosts and hosts whose
+// service is already in a runlevel are left unchanged.
+func aioRepairSysctlBoot(cfg *Config) (bool, error) {
+	target, err := aioInstallation(cfg)
+	if err != nil {
+		return false, nil
+	}
+	// Cheap file checks first: systemd hosts never reach the unit query.
+	if aioSysctlBoot() != preflight.SysctlBootDisabled {
+		return false, nil
+	}
+	if config, err := aioForwardingConfigState(); err != nil || config != "managed" {
+		return false, nil
+	}
+	if hook, err := aioHookScriptState(target); err != nil || hook != "managed" {
+		return false, nil
+	}
+	if startup, err := aioStartupHookState(target); err != nil || startup != "registered" {
+		return false, nil
+	}
+	if err := aioEnsureSysctlBoot(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
