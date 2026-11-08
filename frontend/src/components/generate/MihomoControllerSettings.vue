@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { Eye, EyeOff } from '@lucide/vue'
 import FormField from '@/components/common/FormField.vue'
-import Segmented from '@/components/common/Segmented.vue'
+import RadioChips from '@/components/common/RadioChips.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -41,6 +41,7 @@ function changeSecret(value: string | number) {
 const parsed = computed(() => splitHostPort(props.controller.value))
 const scopeLabels = { lan: '局域网可访问', local: '仅本机', custom: '自定义' } as const
 type Scope = keyof typeof scopeLabels
+const scopeOptions = (Object.keys(scopeLabels) as Scope[]).map(value => ({ value, label: scopeLabels[value] }))
 const scope = computed<Scope | ''>(() => {
   if (!props.controller.present) return ''
   if (!parsed.value) return 'custom'
@@ -114,8 +115,7 @@ const messages = (field: string, extra = '') => [...(extra ? [{ message: extra, 
     </FormField>
 
     <FormField label="控制面板监听（external-controller）" html-for="mihomo-base-controller-port" :help="controllerHelp" class="sm:col-span-2" data-base-field="external-controller">
-      <Segmented :model-value="shownScope" :options="(Object.keys(scopeLabels) as Scope[]).map(value => ({ value, label: scopeLabels[value] }))"
-        label="控制面板监听" class="max-w-full self-start" :disabled="disabled || !controller.editable" @update:model-value="chooseScope" />
+      <RadioChips :model-value="shownScope" :options="scopeOptions" aria-label="控制面板监听" :disabled="disabled || !controller.editable" @update:model-value="chooseScope" />
       <div class="flex min-w-0 flex-wrap items-end gap-2">
         <label v-if="shownScope === 'custom'" class="grid min-w-0 flex-1 basis-48 gap-1 text-xs text-muted-foreground">
           监听地址

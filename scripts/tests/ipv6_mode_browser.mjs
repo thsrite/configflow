@@ -116,8 +116,9 @@ async function quiet(tab) {
 
 const yaml = tab => tab.$eval('.cm-content', el =>
   [...el.querySelectorAll('.cm-line')].map(line => line.textContent).join('\n'))
-const modeName = tab => tab.$$eval('[role="radiogroup"][aria-label="IPv6 模式"] [role="radio"]',
-  items => items.filter(item => item.getAttribute('aria-checked') === 'true').map(item => item.textContent.trim()).join(''))
+// Radio chips: each label holds the radio dot and the option name.
+const modeName = tab => tab.$$eval('[role="radiogroup"][aria-label="IPv6 模式"] label',
+  items => items.filter(item => item.querySelector('[role="radio"]')?.getAttribute('aria-checked') === 'true').map(item => item.textContent.trim()).join(''))
 const stepStatus = (tab, id) => tab.$eval(`[data-ipv6-step="${id}"] [data-agent-status-row] [aria-live]`, el => el.textContent.trim()).catch(() => null)
 const stepIds = tab => tab.$$eval('[data-ipv6-step]', items => items.filter(item => getComputedStyle(item).display !== 'none').map(item => item.dataset.ipv6Step))
 const choose = async (tab, label) => { await tab.getByRole('radio', { name: label, exact: true }).click(); await tab.waitForTimeout(400) }
@@ -156,7 +157,7 @@ try {
   const desktop = await page('light', { width: 1440, height: 1000 })
   await openSettings(desktop)
   assert.equal(await modeName(desktop), '关闭')
-  const labels = await desktop.$$eval('[role="radiogroup"][aria-label="IPv6 模式"] [role="radio"]', items => items.map(item => item.textContent.trim()))
+  const labels = await desktop.$$eval('[role="radiogroup"][aria-label="IPv6 模式"] label', items => items.map(item => item.textContent.trim()))
   assert.deepEqual(labels, ['关闭', NODES, CLIENTS])
   await choose(desktop, NODES)
   let text = await yaml(desktop)
@@ -289,14 +290,15 @@ try {
   await choose(phone, NODES)
   await saveDraft(phone)
   await settle(phone)
-  const wrap = await phone.$eval('[role="radiogroup"][aria-label="IPv6 模式"] [data-wrap]', el => ({
+  const wrap = await phone.$$eval('[role="radiogroup"][aria-label="IPv6 模式"] label', items => items.map(el => ({
     text: el.textContent.trim(), height: Math.round(el.getBoundingClientRect().height), width: Math.round(el.getBoundingClientRect().width) }))
+    .sort((a, b) => b.text.length - a.text.length)[0])
   assert.equal(wrap.text, NODES)
   assert.ok(wrap.height >= 44, `touch target ${wrap.height}`)
   const overflow = await phone.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   assert.ok(overflow <= 0, `horizontal overflow ${overflow}`)
   const group = await phone.$eval('[role="radiogroup"][aria-label="IPv6 模式"]', el => el.getBoundingClientRect().right)
-  assert.ok(group <= 390, `segmented right edge ${group}`)
+  assert.ok(group <= 390, `radio chips right edge ${group}`)
   const small = await phone.$$eval('[data-mihomo-ipv6-settings] button, [data-mihomo-ipv6-settings] a', items => items
     .filter(item => getComputedStyle(item).display !== 'none' && item.getBoundingClientRect().height > 0 && item.getBoundingClientRect().height < 44
       && !item.hasAttribute('data-field-help-trigger') && !item.closest('[data-agent-status-row]') && !/复制/.test(item.textContent))

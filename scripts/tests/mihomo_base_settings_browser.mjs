@@ -79,8 +79,8 @@ async function checkPhoneLayout(tab, label) {
     for (const element of form.querySelectorAll('button, input, textarea, [role="combobox"], [role="switch"]')) {
       const box = element.getBoundingClientRect()
       if (!box.width || !box.height || getComputedStyle(element).visibility === 'hidden') continue
-      // A switch is operated through its 44px label row.
-      const target = element.getAttribute('role') === 'switch' ? element.closest('.min-h-11, label') || element : element
+      // A switch is operated through its 44px label row, a radio through its chip.
+      const target = ['switch', 'radio'].includes(element.getAttribute('role')) ? element.closest('.min-h-11, label') || element : element
       const area = target.getBoundingClientRect()
       if (area.height < 43.5 || area.width < 43.5) small.push(`${element.tagName.toLowerCase()} ${element.getAttribute('aria-label') || element.textContent.trim().slice(0, 20)} ${Math.round(area.width)}x${Math.round(area.height)}`)
     }

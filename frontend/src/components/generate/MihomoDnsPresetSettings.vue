@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import FieldHelp from '@/components/common/FieldHelp.vue'
-import Segmented from '@/components/common/Segmented.vue'
+import FormField from '@/components/common/FormField.vue'
+import RadioChips from '@/components/common/RadioChips.vue'
 import { DNS_LIST_COPY, dnsPresetHelp, followPolicyHelp, respectRulesHelp, type BaseFieldDef } from '@/lib/mihomoBaseCopy'
 import { DNS_POLICY_KEY, readDnsPreset, type BaseIssue, type BasePath, type DnsPreset, type MihomoBaseView } from '@/lib/mihomoBaseSettings'
 import MihomoBaseField from './MihomoBaseField.vue'
@@ -9,6 +9,7 @@ import MihomoBaseField from './MihomoBaseField.vue'
 const props = defineProps<{ view: MihomoBaseView; issues: (field: string) => BaseIssue[]; disabled?: boolean }>()
 const emit = defineEmits<{ change: [path: BasePath, value: unknown, kind: 'list' | 'scalar']; preset: [preset: Exclude<DnsPreset, 'custom'>]; draft: [field: string, error: string] }>()
 const labels: Record<DnsPreset, string> = { domestic: '国内 DoH', split: '国内外分开解析', custom: '自定义' }
+const options = (Object.keys(labels) as DnsPreset[]).map(value => ({ value, label: labels[value] }))
 const descriptions: Record<DnsPreset, string> = {
   domestic: '与初始模板一致：全部使用国内 DoH，respect-rules 开启。',
   split: '国内和私有域名用国内 DoH，其他域名经代理用 Google、Cloudflare DoH；依赖 GeoSite 数据和可用节点。',
@@ -40,16 +41,11 @@ const userPolicies = computed(() => policyEntries.value.filter(key => key !== DN
 
 <template>
   <div class="min-w-0 space-y-3" data-base-dns>
-    <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-      <div class="flex min-h-11 shrink-0 items-center gap-1">
-        <span class="text-[13px] font-medium">DNS 方案</span>
-        <FieldHelp label="DNS 方案" :text="dnsPresetHelp" />
-      </div>
-      <Segmented :model-value="shown" :options="(Object.keys(labels) as DnsPreset[]).map(value => ({ value, label: labels[value] }))" label="DNS 方案"
-        class="max-w-full" wrap :disabled="disabled || !state.editable" @update:model-value="choose" />
-    </div>
-    <p v-if="state.preset" class="m-0 break-words text-xs leading-relaxed text-muted-foreground" data-base-dns-description>{{ descriptions[shown || state.preset] }}</p>
-    <p v-if="!state.editable" class="m-0 break-words text-xs leading-relaxed text-warning-accent" role="alert">{{ state.reason }}</p>
+    <FormField label="DNS 方案" :help="dnsPresetHelp">
+      <RadioChips :model-value="shown" :options="options" aria-label="DNS 方案" :disabled="disabled || !state.editable" @update:model-value="choose" />
+      <p v-if="state.preset" class="m-0 break-words text-xs leading-relaxed text-muted-foreground" data-base-dns-description>{{ descriptions[shown || state.preset] }}</p>
+      <p v-if="!state.editable" class="m-0 break-words text-xs leading-relaxed text-warning-accent" role="alert">{{ state.reason }}</p>
+    </FormField>
     <p class="m-0 break-words text-xs leading-relaxed text-muted-foreground" data-base-dns-policy>
       <template v-if="userPolicies.length">nameserver-policy 中你自己的 {{ userPolicies.length }} 条（{{ userPolicies.slice(0, 3).join('、') }}{{ userPolicies.length > 3 ? ' 等' : '' }}）切换方案时保留并优先匹配，请在下方 YAML 中编辑。</template>
       <template v-else>nameserver-policy 没有自己写的条目；需要为个别域名指定 DNS 时请在下方 YAML 中添加。</template>

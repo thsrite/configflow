@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import FieldHelp from '@/components/common/FieldHelp.vue'
-import Segmented from '@/components/common/Segmented.vue'
+import FormField from '@/components/common/FormField.vue'
+import RadioChips from '@/components/common/RadioChips.vue'
 import { optionHelp } from '@/lib/optionCopy'
 import { readMihomoIPv6Mode, setMihomoIPv6Mode, readMihomoFakeIPv6Range, setMihomoFakeIPv6Range, type MihomoIPv6Mode } from '@/lib/mihomoIPv6'
 import MihomoIPv6Readiness from './MihomoIPv6Readiness.vue'
@@ -32,7 +33,7 @@ const rangeError = ref('')
 const rangeDirty = ref(false)
 const rangeHelp = optionHelp('客户端收到的 IPv6 Fake-IP 取自此网段，通常保留默认值即可。',
   '填写 IPv6 内网网段，例如 fc00::1/64，并避开局域网正在使用的网段。两个 IPv6 模式都把此网段发布到上游路由，切换模式不用再改路由器；选择「关闭」会保留此值。')
-// The segmented option uses the short name; the description gives the full one.
+// The chip uses the short name; the description gives the full one.
 const modeLabels: Record<MihomoIPv6Mode, string> = { off: '关闭', nodes: 'Mihomo 用 IPv6，客户端走 IPv4', clients: '客户端也走 IPv6' }
 const modeDescriptions: Record<MihomoIPv6Mode, string> = {
   off: 'Mihomo 不使用 IPv6，客户端也只拿到 IPv4 地址。',
@@ -110,21 +111,17 @@ watch(busy, value => emit('busy', value))
 <template>
   <Dialog :open="checksOpen" @update:open="setChecksOpen">
     <div class="min-w-0 shrink-0 border-b border-border px-4 py-3 md:px-5" data-mihomo-ipv6-settings>
-      <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-        <div class="flex min-h-11 shrink-0 items-center gap-1">
-          <span class="text-[13px] font-medium">IPv6 模式</span>
-          <FieldHelp label="IPv6 模式" :text="modeHelp" />
+      <FormField label="IPv6 模式" :help="modeHelp">
+        <RadioChips :model-value="state.mode === 'custom' ? '' : state.mode || ''" :options="modeOptions" aria-label="IPv6 模式"
+          :aria-describedby="`${id}-mode-description`" :disabled="disabled || busy || state.mode === null" @update:model-value="changeMode" />
+        <div :id="`${id}-mode-description`" class="min-w-0 space-y-1 text-xs leading-relaxed" data-ipv6-mode-description>
+          <p v-if="state.mode && state.mode !== 'custom'" class="m-0 break-words text-muted-foreground">{{ modeDescriptions[state.mode] }}</p>
+          <p v-if="state.mode === 'custom'" class="m-0 break-words text-warning-accent" data-ipv6-mode-custom><span class="font-medium">自定义：</span>{{ state.customReason }}</p>
+          <p v-if="state.mode === null" class="m-0 break-words text-warning-accent" role="alert">{{ state.lockedReason }}</p>
+          <p v-else-if="state.lockedReason" class="m-0 break-words text-warning-accent">{{ state.lockedReason }}</p>
+          <p v-if="state.defaultNote" class="m-0 break-words text-muted-foreground">{{ state.defaultNote }}</p>
         </div>
-        <Segmented :model-value="state.mode || ''" :options="modeOptions" label="IPv6 模式" class="max-w-full" wrap
-          :disabled="disabled || busy || state.mode === null" @update:model-value="changeMode" />
-      </div>
-      <div :id="`${id}-mode-description`" class="min-w-0 space-y-1 text-xs leading-relaxed" data-ipv6-mode-description>
-        <p v-if="state.mode && state.mode !== 'custom'" class="m-0 break-words text-muted-foreground">{{ modeDescriptions[state.mode] }}</p>
-        <p v-if="state.mode === 'custom'" class="m-0 break-words text-warning-accent" data-ipv6-mode-custom><span class="font-medium">自定义：</span>{{ state.customReason }}</p>
-        <p v-if="state.mode === null" class="m-0 break-words text-warning-accent" role="alert">{{ state.lockedReason }}</p>
-        <p v-else-if="state.lockedReason" class="m-0 break-words text-warning-accent">{{ state.lockedReason }}</p>
-        <p v-if="state.defaultNote" class="m-0 break-words text-muted-foreground">{{ state.defaultNote }}</p>
-      </div>
+      </FormField>
       <div v-if="fakeRange.visible" class="min-w-0 max-w-sm space-y-1 pt-2" data-ipv6-fakeip-range>
         <div class="flex min-h-8 items-center gap-1">
           <label :for="`${id}-fakeip-range`" class="text-[13px] font-medium">IPv6 Fake-IP 网段</label>
