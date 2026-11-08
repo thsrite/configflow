@@ -440,3 +440,53 @@ describe('Mihomo IPv6 mode', () => {
     expect(() => setMihomoIPv6Mode(source, 'nodes')).toThrow('锚点')
   })
 })
+
+
+describe('Mihomo IPv6 values read like the server (PyYAML, YAML 1.1)', () => {
+  it.each(['yes', 'Yes', 'YES', 'on', 'On', 'ON', 'true', 'True', 'TRUE'])('reads %s as on', spelling => {
+    expect(readMihomoIPv6(`ipv6: ${spelling}\ndns:\n  ipv6: ${spelling}\n`)).toMatchObject({
+      core: { value: true, source: 'explicit', editable: true }, dns: { value: true, source: 'explicit', editable: true }, error: '' })
+  })
+
+  it.each(['no', 'No', 'NO', 'off', 'Off', 'OFF', 'false', 'False', 'FALSE'])('reads %s as off', spelling => {
+    expect(readMihomoIPv6(`ipv6: ${spelling}\ndns:\n  ipv6: ${spelling}\n`)).toMatchObject({
+      core: { value: false, source: 'explicit' }, dns: { value: false, source: 'explicit' }, error: '' })
+  })
+
+  it.each([
+    ['ipv6: yes\ndns:\n  ipv6: on\n', 'clients'],
+    ['ipv6: on\ndns: { ipv6: off }\n', 'nodes'],
+    ['ipv6: off\ndns:\n  ipv6: no\n', 'off'],
+    ['ipv6: no\n', 'off'],
+    ['ipv6: no\ndns:\n  ipv6: yes\n', 'custom'],
+  ] as const)('derives the mode of %j', (source, mode) => {
+    expect(readMihomoIPv6Mode(source).mode).toBe(mode)
+  })
+
+  // PyYAML keeps y / n as text (unlike the YAML 1.1 spec); numbers and null are not booleans either,
+  // so the server refuses them (backend/converters/mihomo.py validate_ipv6_flags).
+  it.each(['y', 'Y', 'n', 'N', '~', 'null', '', '1', '0', '017', '0x1', '1:20', '1e3', '09', '"yes"', "'off'"])('reports ipv6: %s as invalid, as the server does', spelling => {
+    const state = readMihomoIPv6Mode(`ipv6: ${spelling}\n`)
+    expect(state.mode).toBeNull()
+    expect(state.config.core).toMatchObject({ value: null, source: 'invalid', editable: false })
+    expect(state.lockedReason).toContain('true 或 false')
+    expect(() => setMihomoIPv6Mode(`ipv6: ${spelling}\n`, 'nodes')).toThrow()
+  })
+
+  it('keeps a yes / on spelling that already has the chosen value and writes true / false for a change', () => {
+    const source = 'ipv6: yes   # keep\ndns:\n  ipv6: off # DNS\n'
+    expect(setMihomoIPv6Mode(source, 'nodes').content).toBe(source)
+    expect(setMihomoIPv6WithDetails(source, 'core', true).content).toBe(source)
+    expect(setMihomoIPv6WithDetails(source, 'dns', false).content).toBe(source)
+    expect(setMihomoIPv6Mode(source, 'clients').content).toBe('ipv6: yes   # keep\ndns:\n  ipv6: true # DNS\n')
+    expect(setMihomoIPv6Mode(source, 'off').content).toBe('ipv6: false # keep\ndns:\n  ipv6: off # DNS\n')
+  })
+
+  it('shows the Fake-IP range when DNS is enabled with yes / on, but not with y', () => {
+    expect(readMihomoFakeIPv6Range('ipv6: on\ndns:\n  enable: yes\n  enhanced-mode: fake-ip\n')).toMatchObject({ visible: true, source: 'default' })
+    expect(readMihomoFakeIPv6Range('ipv6: on\ndns:\n  enable: y\n  enhanced-mode: fake-ip\n').visible).toBe(false)
+    const edit = setMihomoIPv6WithDetails('ipv6: off\ndns:\n  enable: on\n  enhanced-mode: fake-ip\n', 'core', true)
+    expect(edit.addedFakeIPv6Range).toBe(true)
+    expect(edit.content).toBe('ipv6: true\ndns:\n  enable: on\n  enhanced-mode: fake-ip\n  fake-ip-range6: fc00::1/64\n')
+  })
+})
