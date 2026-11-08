@@ -367,10 +367,7 @@
 
         <div class="cf-focus-gutter flex max-h-[65dvh] min-h-0 flex-col gap-5 overflow-y-auto">
           <FormField label="使用模式" hint="安装服务选普通模式，需要局域网分流选 Linux 网关。" :help="optionHelp('普通模式按服务选择 Shell 或 Docker 安装；需要局域网分流时选 Linux 网关。', 'OxiDNS 的高可用安装在对应服务内选择；网关向导会安装代理与 DNS，并检查网络转发。')">
-            <RadioGroup v-model="installationMode" class="flex flex-wrap gap-2" aria-label="使用模式">
-              <label :class="[chipClass(installationMode === 'ordinary'), 'min-h-11']"><RadioGroupItem value="ordinary" />普通模式</label>
-              <label :class="[chipClass(installationMode === 'gateway'), 'min-h-11']"><RadioGroupItem value="gateway" />Linux 网关</label>
-            </RadioGroup>
+            <RadioChips v-model="installationMode" :options="INSTALLATION_MODES" aria-label="使用模式" />
           </FormField>
           <div v-if="installationMode === 'gateway'" class="space-y-4 rounded-lg border border-border bg-muted p-4">
             <div class="space-y-2 text-sm leading-relaxed">
@@ -383,46 +380,24 @@
           <template v-else>
           <div class="space-y-4">
             <FormField label="安装类型" v-bind="installTypeCopy">
-              <RadioGroup v-model="scriptForm.installType" class="flex gap-2" @update:model-value="onInstallTypeChange">
-                <label v-for="option in INSTALL_TYPES" :key="option.value" :class="[chipClass(scriptForm.installType === option.value), 'min-h-11']">
-                  <RadioGroupItem :value="option.value" />
-                  {{ option.label }}
-                </label>
-              </RadioGroup>
+              <RadioChips v-model="scriptForm.installType" :options="INSTALL_TYPES" class="flex gap-2" @update:model-value="onInstallTypeChange" />
             </FormField>
 
             <FormField v-if="scriptForm.installType === 'shell'" label="Shell 模式" hint="只管理一个服务，或在同机管理代理与 DNS。" :help="optionHelp('只需一种服务选单服务；代理与 DNS 同机运行选同机模式。', '同机模式分别登记 Mihomo 和 OxiDNS Agent，可管理两项服务。是否补装核心由下方开关决定，选择同机模式不会自动启用网关转发。')">
-              <RadioGroup v-model="scriptForm.shellMode" class="flex flex-wrap gap-2" @update:model-value="resetForm">
-                <label v-for="option in SHELL_MODES" :key="option.value" :class="[chipClass(scriptForm.shellMode === option.value), 'min-h-11']">
-                  <RadioGroupItem :value="option.value" />
-                  {{ option.label }}
-                </label>
-              </RadioGroup>
+              <RadioChips v-model="scriptForm.shellMode" :options="SHELL_MODES" @update:model-value="resetForm" />
             </FormField>
 
             <FormField v-if="scriptForm.installType === 'shell' && scriptForm.shellMode === 'single'" label="服务类型">
-              <RadioGroup v-model="scriptForm.type" class="grid grid-cols-3 gap-2 sm:flex" @update:model-value="onServiceTypeChange">
-                <label v-for="option in serviceTypeOptions" :key="option.value" :class="[chipClass(scriptForm.type === option.value), 'min-h-11 justify-center max-sm:gap-1.5 max-sm:px-2']">
-                  <RadioGroupItem :value="option.value" />
-                  {{ option.label }}
-                </label>
-              </RadioGroup>
+              <RadioChips v-model="scriptForm.type" :options="serviceTypeOptions" class="grid grid-cols-3 gap-2 sm:flex" item-class="justify-center max-sm:gap-1.5 max-sm:px-2"
+                @update:model-value="onServiceTypeChange" />
             </FormField>
 
             <FormField v-if="scriptForm.installType === 'docker'" label="Docker 模式" v-bind="dockerModeCopy">
-              <RadioGroup v-model="scriptForm.dockerMode" class="flex flex-wrap gap-2" @update:model-value="onDockerModeChange">
-                <label v-for="option in DOCKER_MODES" :key="option.value" :class="[chipClass(scriptForm.dockerMode === option.value), 'min-h-11']">
-                  <RadioGroupItem :value="option.value" />
-                  {{ option.label }}
-                </label>
-              </RadioGroup>
+              <RadioChips v-model="scriptForm.dockerMode" :options="DOCKER_MODES" @update:model-value="onDockerModeChange" />
             </FormField>
 
             <FormField v-if="isOxiDNSInstallation" label="OxiDNS 部署方式">
-              <RadioGroup v-model="oxidnsInstallMode" class="flex flex-wrap gap-2" aria-label="OxiDNS 部署方式">
-                <label :class="[chipClass(oxidnsInstallMode === 'standard'), 'min-h-11']"><RadioGroupItem value="standard" />常规安装</label>
-                <label :class="[chipClass(oxidnsInstallMode === 'ha'), 'min-h-11']"><RadioGroupItem value="ha" />高可用安装</label>
-              </RadioGroup>
+              <RadioChips v-model="oxidnsInstallMode" :options="OXIDNS_INSTALL_MODES" aria-label="OxiDNS 部署方式" />
             </FormField>
           </div>
 
@@ -479,10 +454,7 @@
             </p>
             <template v-if="dockerDNSHA">
               <FormField label="高可用网络">
-                <RadioGroup v-model="scriptForm.haNetworkMode" class="flex flex-wrap gap-2" aria-label="高可用网络">
-                  <label :class="[chipClass(scriptForm.haNetworkMode === 'host'), 'min-h-11']"><RadioGroupItem value="host" />Host（推荐）</label>
-                  <label :class="[chipClass(scriptForm.haNetworkMode === 'macvlan'), 'min-h-11']"><RadioGroupItem value="macvlan" />Macvlan</label>
-                </RadioGroup>
+                <RadioChips v-model="scriptForm.haNetworkMode" :options="HA_NETWORK_MODES" aria-label="高可用网络" />
               </FormField>
               <p v-if="scriptForm.haNetworkMode === 'host'" class="m-0 text-[12px] leading-relaxed text-muted-foreground">
                 使用宿主机网络与固定地址，另起独立的高可用容器管理虚拟 IP。请确认宿主机的 DNS 53 端口与 Agent 端口未被其他服务占用，并保留高可用容器运行。
@@ -633,12 +605,7 @@
                 </FormField>
                 <p v-if="dockerDNSHA" class="m-0 text-[13px]">网络模式：{{ scriptForm.haNetworkMode === 'host' ? 'Host，配合独立高可用容器' : '专用 Macvlan，使用固定局域网地址' }}，不设置端口映射。</p>
                 <FormField v-else label="网络模式" hint="共享主机网络，或用端口映射访问容器服务。" :help="optionHelp('使用 Docker 安装，需决定设备如何访问容器内服务。', 'host 直接使用主机网络，bridge 通过端口映射访问。使用 bridge 时需确认所需端口已映射；切换网络方式不代表自动配置局域网网关。')">
-                  <RadioGroup v-model="scriptForm.networkMode" class="flex flex-wrap gap-2">
-                    <label v-for="option in networkModeOptions" :key="option.value" :class="[chipClass(scriptForm.networkMode === option.value), 'min-h-11']">
-                      <RadioGroupItem :value="option.value" />
-                      {{ option.label }}
-                    </label>
-                  </RadioGroup>
+                  <RadioChips v-model="scriptForm.networkMode" :options="networkModeOptions" />
                 </FormField>
               </CollapsibleContent>
             </Collapsible>
@@ -681,12 +648,7 @@
               <CollapsibleContent>
                 <section aria-labelledby="core-install-title" class="min-w-0 space-y-3 pb-4">
                   <p class="m-0 text-[12.5px] text-muted-foreground">无需填写 Agent 信息。保留已有核心和配置，仅补装缺少部分。</p>
-                  <RadioGroup v-model="coreInstallTarget" aria-label="要安装的核心" class="flex flex-wrap gap-2">
-                    <label v-for="option in CORE_INSTALL_TARGETS" :key="option.value" :class="[chipClass(coreInstallTarget === option.value), 'min-h-11']">
-                      <RadioGroupItem :value="option.value" />
-                      {{ option.label }}
-                    </label>
-                  </RadioGroup>
+                  <RadioChips v-model="coreInstallTarget" :options="CORE_INSTALL_TARGETS" aria-label="要安装的核心" />
                   <p v-if="coreInstallTarget === 'both'" class="m-0 text-[12px] leading-relaxed text-muted-foreground">OxiDNS 53 → Mihomo 1053。已有 Mihomo 时仅补装 OxiDNS；请确认 Mihomo DNS 监听 <code class="font-mono">127.0.0.1:1053</code>。</p>
                   <p v-else-if="coreInstallTarget === 'oxidns'" class="m-0 text-[12px] leading-relaxed text-muted-foreground">OxiDNS 监听 53，使用公共 DNS 上游，无需 Mihomo。</p>
                   <p v-else class="m-0 text-[12px] leading-relaxed text-muted-foreground">Mihomo DNS 监听 1053，使用公共 DNS 上游。</p>
@@ -948,7 +910,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import RadioChips from '@/components/common/RadioChips.vue'
 import InstallerDownloaderPicker from '@/components/agents/InstallerDownloaderPicker.vue'
 import {
   Select,
@@ -1896,13 +1858,20 @@ const getProgressColor = (percent: number | undefined) => {
 
 /* ---------- 新 UI 的派生数据 ---------- */
 
-const chipClass = (active: boolean): string =>
-  [
-    'flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-[13px] transition-colors',
-    active
-      ? 'border-primary-accent bg-primary-soft text-primary-accent dark:border-primary-accent/40 dark:bg-primary-soft/50 dark:text-foreground'
-      : 'border-input bg-card text-muted-foreground hover:border-border-strong dark:border-border/50 dark:bg-background/40'
-  ].join(' ')
+const INSTALLATION_MODES = [
+  { value: 'ordinary', label: '普通模式' },
+  { value: 'gateway', label: 'Linux 网关' }
+] as const
+
+const OXIDNS_INSTALL_MODES = [
+  { value: 'standard', label: '常规安装' },
+  { value: 'ha', label: '高可用安装' }
+] as const
+
+const HA_NETWORK_MODES = [
+  { value: 'host', label: 'Host（推荐）' },
+  { value: 'macvlan', label: 'Macvlan' }
+] as const
 
 const INSTALL_TYPES = [
   { value: 'shell', label: 'Shell 安装' },

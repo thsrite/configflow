@@ -35,6 +35,8 @@
 
 Mihomo 基础参数的 PNG 由 [mihomo_base_settings_browser.mjs](../../../scripts/tests/mihomo_base_settings_browser.mjs) 采集，使用真实页面与 API 和临时数据（初始模板，无 Agent、未发布）；脚本同时检查保存时的服务器校验、YAML 双向同步、表单停用，以及 390px 手机宽度下无横向滚动、触控目标不小于 44px。运行：`cf-test typecheck` 后 `rt --no-sync --back doc/img/guide --back .ci-results/mihomo-base-settings -- node scripts/tests/mihomo_base_settings_browser.mjs`。
 
+Mihomo IPv6 模式的 `mihomo-ipv6-mode-nodes.png`、`mihomo-ipv6-mode-steps.png`、`mihomo-ipv6-mode-custom.png`、`mihomo-ipv6-mode-mobile-dark.png`、`mihomo-ipv6-pending-after-change.png`、`mihomo-ipv6-steps-after-router.png` 由 [mihomo_settings_radio_chips_browser.mjs](../../../scripts/tests/mihomo_settings_radio_chips_browser.mjs) 采集，使用真实页面与 API 和临时数据（初始模板，未发布）。没有真实设备：一台演示 Mihomo 与一台演示 RouterOS 的设备列表、设备检查、验收和上游路由状态由浏览器内的模拟应答提供，步骤状态与实验网截图一致，不代表设备已检查或已发布。脚本同时检查单选胶囊的方向键切换、「自定义」不选中任何项、YAML 无法解析时停用、与 Agent 安装弹窗胶囊的计算样式一致（浅色与深色），以及 390px 手机宽度下无横向滚动、胶囊不小于 44px、长选项在更窄宽度下于胶囊内换行。运行：`cf-test typecheck` 后 `rt --no-sync --back doc/img/guide --back .ci-results/mihomo-radio-chips -- node scripts/tests/mihomo_settings_radio_chips_browser.mjs`。
+
 生成结果回放截图由 [final_config_browser.mjs](../../../scripts/tests/final_config_browser.mjs) 采集，使用真实页面与 API、隔离数据库和模拟 Agent 传输。浏览器没有保存动效偏好，系统不要求减少动效；脚本记录五个步骤和文字行数的逐帧变化，验证跳过回放及发布文件哈希一致。录像与采样记录保存到 `.ci-results/final-config/`。
 
 ## 在测试服务器重现

@@ -8,7 +8,7 @@ import MihomoBaseField from '@/components/generate/MihomoBaseField.vue'
 import MihomoBaseSection from '@/components/generate/MihomoBaseSection.vue'
 import MihomoControllerSettings from '@/components/generate/MihomoControllerSettings.vue'
 import MihomoDnsPresetSettings from '@/components/generate/MihomoDnsPresetSettings.vue'
-import Segmented from '@/components/common/Segmented.vue'
+import RadioChips from '@/components/common/RadioChips.vue'
 import { Input } from '@/components/ui/input'
 import { PORT_FIELDS, ADVANCED_FIELDS } from '@/lib/mihomoBaseCopy'
 import { readMihomoBase } from '@/lib/mihomoBaseSettings'
@@ -122,6 +122,28 @@ describe('Mihomo base settings form', () => {
     expect(wrapper.findAllComponents(MihomoBaseSection)[3].props('summary')).toBe('国内外分开解析')
   })
 
+  it('picks the DNS preset with radio chips and locks them when dns is not an object', async () => {
+    const preset = (source: string) => {
+      const wrapper = shallowMount(MihomoDnsPresetSettings, { props: { view: readMihomoBase(source), issues: () => [] }, global: { renderStubDefaultSlot: true } })
+      wrappers.push(wrapper)
+      return wrapper
+    }
+    const wrapper = preset(template)
+    const chips = wrapper.getComponent(RadioChips)
+    expect(chips.attributes('aria-label')).toBe('DNS 方案')
+    expect(chips.props('options').map((option: { label: string }) => option.label)).toEqual(['国内 DoH', '国内外分开解析', '自定义'])
+    expect(chips.props('modelValue')).toBe('domestic')
+    expect(chips.props('disabled')).toBe(false)
+    chips.vm.$emit('update:modelValue', 'split')
+    expect(wrapper.emitted('preset')).toEqual([['split']])
+    chips.vm.$emit('update:modelValue', 'custom')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-base-dns-custom]').exists()).toBe(true)
+    const locked = preset('dns: false\n')
+    expect(locked.getComponent(RadioChips).props('disabled')).toBe(true)
+    expect(locked.get('[role="alert"]').text()).toContain('dns 必须是 YAML 对象')
+  })
+
   it('fills the common sniff protocols when sniffing is turned on for the first time', async () => {
     const wrapper = form('sniffer:\n  enable: false\n')
     field(wrapper, 'sniffer.enable').vm.$emit('change', true)
@@ -160,7 +182,7 @@ describe('Controller settings', () => {
 
   it('maps the listen choices to external-controller and keeps the port', async () => {
     const wrapper = controller()
-    const scope = wrapper.getComponent(Segmented)
+    const scope = wrapper.getComponent(RadioChips)
     expect(scope.props('modelValue')).toBe('lan')
     scope.vm.$emit('update:modelValue', 'local')
     expect(wrapper.emitted('change')?.at(-1)).toEqual([['external-controller'], '127.0.0.1:9090'])
@@ -176,6 +198,8 @@ describe('Controller settings', () => {
   it('warns that a missing controller leaves the Agent blind and turns the web UI on with a download address', async () => {
     const wrapper = controller('mixed-port: 7890\n')
     expect(wrapper.get('[data-base-controller-note]').text()).toContain('Agent 无法读取连接和流量')
+    // Nothing selected until a listen choice writes the key.
+    expect(wrapper.getComponent(RadioChips).props('modelValue')).toBe('')
     wrapper.findAllComponents({ name: 'Switch' }).at(-1)!.vm.$emit('update:modelValue', true)
     expect(wrapper.emitted('change')).toEqual([[['external-ui'], 'ui'], [['external-ui-url'], 'https://github.com/Zephyruso/zashboard/archive/refs/heads/gh-pages.zip']])
   })

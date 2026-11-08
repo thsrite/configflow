@@ -4,7 +4,7 @@ import { parse } from 'yaml'
 import MihomoIPv6Settings from '@/components/generate/MihomoIPv6Settings.vue'
 import MihomoIPv6Readiness from '@/components/generate/MihomoIPv6Readiness.vue'
 import MihomoIPv6Steps from '@/components/generate/MihomoIPv6Steps.vue'
-import Segmented from '@/components/common/Segmented.vue'
+import RadioChips from '@/components/common/RadioChips.vue'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 
@@ -17,7 +17,7 @@ const mount = (modelValue = 'ipv6: true\ndns:\n  ipv6: false\n', extra = {}) => 
   wrappers.push(wrapper)
   return wrapper
 }
-const selector = (wrapper: VueWrapper) => wrapper.getComponent(Segmented)
+const selector = (wrapper: VueWrapper) => wrapper.getComponent(RadioChips)
 const choose = async (wrapper: VueWrapper, mode: string) => {
   selector(wrapper).vm.$emit('update:modelValue', mode)
   await wrapper.vm.$nextTick()
@@ -29,8 +29,8 @@ describe('Mihomo IPv6 mode selector', () => {
   it('offers the three modes and reflects handwritten YAML in both directions', async () => {
     const wrapper = mount()
     expect(selector(wrapper).props('options').map((option: { label: string }) => option.label)).toEqual(['关闭', 'Mihomo 用 IPv6，客户端走 IPv4', '客户端也走 IPv6'])
-    // The long middle option may wrap on a phone instead of widening the page.
-    expect(selector(wrapper).props('wrap')).toBe(true)
+    // Radio chips like the Agent install dialog, named for assistive technology.
+    expect(selector(wrapper).attributes('aria-label')).toBe('IPv6 模式')
     expect(selector(wrapper).props('modelValue')).toBe('nodes')
     const changed = await choose(wrapper, 'clients')
     expect(parse(changed)).toEqual({ ipv6: true, dns: { ipv6: true } })
@@ -52,7 +52,8 @@ describe('Mihomo IPv6 mode selector', () => {
   it('shows a custom combination with its reason and only rewrites it when a mode is chosen', async () => {
     const source = 'ipv6: false # off\ndns:\n  ipv6: true # AAAA\n'
     const wrapper = mount(source)
-    expect(selector(wrapper).props('modelValue')).toBe('custom')
+    // A custom combination selects none of the three modes.
+    expect(selector(wrapper).props('modelValue')).toBe('')
     expect(wrapper.get('[data-ipv6-mode-custom]').text()).toContain('自定义')
     expect(wrapper.get('[data-ipv6-mode-custom]').text()).toContain('dns.ipv6 却为 true')
     expect(wrapper.findComponent(MihomoIPv6Steps).exists()).toBe(false)
