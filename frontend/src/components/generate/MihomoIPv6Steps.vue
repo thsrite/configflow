@@ -5,7 +5,9 @@ import { Copy, RefreshCw, ScanLine } from '@lucide/vue'
 import { agentApi, profileApi, routerApi } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import AgentStatusRow from '@/components/agents/AgentStatusRow.vue'
+import FieldHelp from '@/components/common/FieldHelp.vue'
+import MihomoIPv6StepGroup from './MihomoIPv6StepGroup.vue'
+import MihomoIPv6StepRow from './MihomoIPv6StepRow.vue'
 import MihomoIPv6Verification from './MihomoIPv6Verification.vue'
 import UpstreamRouterPending from '@/components/routers/UpstreamRouterPending.vue'
 import { upstreamRouterApi } from '@/api/upstreamRouterPending'
@@ -82,6 +84,13 @@ const steps = computed(() => {
   }
   return stepOrder(props.mode, oxidns.value.length > 0).map(id => all[id]).filter((item): item is IPv6Step => !!item)
 })
+// 「部署」 holds the steps before 验收, which is its own group with the verify button.
+const deploySteps = computed(() => steps.value.filter(item => item.id !== 'verify'))
+const verify = computed(() => steps.value.find(item => item.id === 'verify'))
+const deployProgress = computed(() => `${deploySteps.value.filter(item => item.tone === 'success').length} / ${deploySteps.value.length} 完成`)
+const upstreamLinksShown = computed(() => !props.dirty && (upstream.value?.state === 'pending' || upstream.value?.state === 'unknown'))
+const hasNotice = (item: IPv6Step) => item.issues.length > 0 || !!item.note || !!item.commands?.length || item.id === 'oxidns'
+  || (item.id === 'upstream' && (upstream.value?.state === 'none' || upstreamLinksShown.value))
 // Shown once above the list instead of repeating the same reason on every step.
 const notice = computed(() => {
   if (phase.value === 'loading') return { text: '正在读取设备…', tone: 'muted' }
@@ -100,7 +109,7 @@ const checked = computed(() => {
   const at = readiness.value?.checked_at
   if (!at || props.dirty || phase.value !== 'idle') return ''
   const routers = upstream.value?.checkedAt ? `，上游路由${checkedAgo(upstream.value.checkedAt, '读取')}` : ''
-  return `设备${checkedAgo(at)}${routers}。路由器或主机上的手动修改不会自动发现，请点「重新检查」。`
+  return `设备${checkedAgo(at)}${routers}`
 })
 const recheckFailed = computed(() => {
   const failure = readiness.value?.refresh_error
@@ -297,9 +306,15 @@ onUnmounted(() => { clearInterval(ticker); clearTimeout(publicationTimer); dispo
 </script>
 
 <template>
-  <section class="min-w-0 space-y-1 pt-3" aria-label="IPv6 设置步骤" data-mihomo-ipv6-steps>
+  <section class="@container/steps min-w-0 space-y-2 pt-3" aria-label="IPv6 设置步骤" data-mihomo-ipv6-steps>
     <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-      <h3 class="m-0 min-w-0 flex-1 text-[13px] font-semibold">需要完成的步骤<span v-if="selected" class="block break-words font-normal text-muted-foreground sm:ml-2 sm:inline">设备：{{ selected.name }}</span></h3>
+      <!-- At least 12rem wide, so on a phone the buttons move to their own line instead of squeezing it. -->
+      <div class="min-w-48 flex-1">
+        <h3 class="m-0 text-[13px] font-semibold">需要完成的步骤<span v-if="selected" class="block break-words font-normal text-muted-foreground sm:ml-2 sm:inline">设备：{{ selected.name }}</span></h3>
+        <p v-if="checked" class="m-0 flex flex-wrap items-center gap-x-0.5 text-xs text-muted-foreground" data-ipv6-steps-checked>
+          {{ checked }}<span class="cf-compact-help"><FieldHelp label="检查时间" text="结果来自上次检查。路由器或主机上的手动修改不会自动发现，改过之后请点「重新检查」。" /></span>
+        </p>
+      </div>
       <div class="flex shrink-0 items-center gap-1">
         <Button type="button" variant="ghost" class="min-h-11 px-3 text-[13px]" :disabled="!open || dirty || disabled || phase !== 'idle'" data-ipv6-steps-recheck @click="refresh">
           <RefreshCw class="size-4" :class="phase === 'checking' && 'animate-spin motion-reduce:animate-none'" aria-hidden="true" />重新检查
@@ -313,41 +328,47 @@ onUnmounted(() => { clearInterval(ticker); clearTimeout(publicationTimer); dispo
     </Select>
     <p v-if="notice" class="m-0 break-words text-xs leading-relaxed" :class="notice.tone === 'warning' ? 'text-warning-accent' : 'text-muted-foreground'" role="status">{{ notice.text }}</p>
     <p v-if="recheckFailed" class="m-0 break-words text-xs leading-relaxed text-warning-accent" role="status" data-ipv6-steps-recheck-failed>{{ recheckFailed }}</p>
-    <p v-if="checked" class="m-0 break-words text-xs leading-relaxed text-muted-foreground" data-ipv6-steps-checked>{{ checked }}</p>
-    <ol class="m-0 min-w-0 list-none divide-y divide-border/70 p-0">
-      <li v-for="item in steps" :key="item.id" class="min-w-0" :data-ipv6-step="item.id">
-        <AgentStatusRow :label="item.label" :status="item.status" :tone="item.tone">
-          <template v-if="item.issues.length || item.note || item.commands?.length" #notice>
-            <p v-for="issue in item.issues" :key="issue" class="m-0 [overflow-wrap:anywhere]" :role="item.tone === 'danger' ? 'alert' : undefined">{{ issue }}</p>
-            <p v-if="item.note" class="m-0 text-muted-foreground [overflow-wrap:anywhere]">{{ item.note }}</p>
-            <div v-for="entry in item.commands || []" :key="entry.command" class="min-w-0 space-y-1.5" data-ipv6-step-command>
-              <div class="flex min-h-8 items-center justify-between gap-2 max-md:min-h-11">
-                <p class="m-0 min-w-0 font-medium">{{ entry.label }}</p>
-                <Button type="button" variant="ghost" size="sm" class="shrink-0 px-2 text-xs max-md:min-h-11" aria-label="复制 IPv6 同口转发放行命令" @click="copyCommand(entry.command)"><Copy class="size-3.5" aria-hidden="true" />复制</Button>
-              </div>
-              <pre class="m-0 min-w-0 overflow-x-auto whitespace-pre rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs leading-relaxed text-foreground">{{ entry.command }}</pre>
+    <div class="min-w-0 overflow-hidden rounded-lg border border-border-strong bg-card" data-ipv6-steps-sheet>
+      <MihomoIPv6StepGroup title="部署" :progress="deployProgress">
+        <ol class="m-0 min-w-0 list-none divide-y divide-border/60 p-0">
+          <li v-for="item in deploySteps" :key="item.id" class="min-w-0" :data-ipv6-step="item.id">
+            <MihomoIPv6StepRow :label="item.label" :status="item.status" :tone="item.tone">
+              <template v-if="hasNotice(item)" #notice>
+                <p v-for="issue in item.issues" :key="issue" class="m-0 [overflow-wrap:anywhere]" :role="item.tone === 'danger' ? 'alert' : undefined">{{ issue }}</p>
+                <p v-if="item.note" class="m-0 text-muted-foreground [overflow-wrap:anywhere]">{{ item.note }}</p>
+                <div v-for="entry in item.commands || []" :key="entry.command" class="min-w-0 space-y-1.5" data-ipv6-step-command>
+                  <div class="flex min-h-8 items-center justify-between gap-2 max-md:min-h-11">
+                    <p class="m-0 min-w-0 font-medium">{{ entry.label }}</p>
+                    <Button type="button" variant="ghost" size="sm" class="shrink-0 px-2 text-xs max-md:min-h-11" aria-label="复制 IPv6 同口转发放行命令" @click="copyCommand(entry.command)"><Copy class="size-3.5" aria-hidden="true" />复制</Button>
+                  </div>
+                  <pre class="m-0 min-w-0 overflow-x-auto whitespace-pre rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs leading-relaxed text-foreground">{{ entry.command }}</pre>
+                </div>
+                <Button v-if="item.id === 'host' && item.issues.length" type="button" variant="outline" size="sm" class="min-h-11 md:min-h-8" :disabled="disabled" @click="emit('check', selectedId)"><ScanLine class="size-4" aria-hidden="true" />检查设备</Button>
+                <RouterLink v-if="item.id === 'upstream' && upstream?.state === 'none'" class="inline-flex min-h-11 items-center text-primary-accent underline underline-offset-4 md:min-h-0" to="/routers">前往上游路由</RouterLink>
+                <div v-if="item.id === 'upstream' && upstreamLinksShown" class="flex min-w-0 flex-wrap gap-x-4" data-ipv6-step-upstream>
+                  <RouterLink v-for="link in upstreamLinks" :key="link.key" class="inline-flex min-h-11 items-center text-primary-accent underline underline-offset-4 md:min-h-0" :to="link.to">{{ link.label }}</RouterLink>
+                  <RouterLink v-if="!upstreamLinks.length" class="inline-flex min-h-11 items-center text-primary-accent underline underline-offset-4 md:min-h-0" to="/routers">前往上游路由查看</RouterLink>
+                </div>
+                <RouterLink v-if="item.id === 'oxidns'" class="inline-flex min-h-11 items-center text-primary-accent underline underline-offset-4 md:min-h-0" to="/agents">到 Agent 页打开 OxiDNS 设置</RouterLink>
+              </template>
+            </MihomoIPv6StepRow>
+            <!-- Mounted but hidden: this row shows only its status; its own lines appear in the
+                 publish bar and the device check, not twice on one screen. -->
+            <div v-if="item.id === 'upstream' && selectedId" class="hidden" data-ipv6-step-upstream-reminder>
+              <UpstreamRouterPending :agent-id="selectedId" :profile-id="profileId" :refresh-key="upstreamKey" compact @status="followUpstream" />
             </div>
-            <Button v-if="item.id === 'host' && item.issues.length" type="button" variant="outline" class="min-h-11" :disabled="disabled" @click="emit('check', selectedId)"><ScanLine class="size-4" aria-hidden="true" />检查设备</Button>
-            <RouterLink v-if="item.id === 'upstream' && upstream?.state === 'none'" class="inline-flex min-h-11 items-center text-primary-accent underline underline-offset-4" to="/routers">前往上游路由</RouterLink>
-            <RouterLink v-if="item.id === 'oxidns'" class="inline-flex min-h-11 items-center text-primary-accent underline underline-offset-4" to="/agents">到 Agent 页打开 OxiDNS 设置</RouterLink>
-          </template>
-        </AgentStatusRow>
-        <template v-if="item.id === 'upstream' && selectedId">
-          <!-- Mounted but hidden: this row shows only its status; its own lines appear in the
-               publish bar and the device check, not twice on one screen. -->
-          <div class="hidden" data-ipv6-step-upstream-reminder>
-            <UpstreamRouterPending :agent-id="selectedId" :profile-id="profileId" :refresh-key="upstreamKey" compact @status="followUpstream" />
-          </div>
-          <div v-if="!dirty && (upstream?.state === 'pending' || upstream?.state === 'unknown')" class="-mt-1 mb-2 flex min-w-0 flex-wrap gap-x-4 text-xs" data-ipv6-step-upstream>
-            <RouterLink v-for="link in upstreamLinks" :key="link.key" class="inline-flex min-h-11 items-center text-primary-accent underline underline-offset-4" :to="link.to">{{ link.label }}</RouterLink>
-            <RouterLink v-if="!upstreamLinks.length" class="inline-flex min-h-11 items-center text-primary-accent underline underline-offset-4" to="/routers">前往上游路由查看</RouterLink>
-          </div>
-        </template>
-        <div v-if="item.id === 'verify' && readiness && !dirty" v-show="item.tone !== 'success'" class="mb-2 ml-2 min-w-0 border-l border-border pl-4 text-xs" data-ipv6-step-verify>
-          <MihomoIPv6Verification :key="`${selectedId}-${readings}`" :open="open" :agent-id="selectedId" :profile-id="profileId"
-            :config-revision="readiness.config_revision" :readiness="readiness" :disabled="!available || phase !== 'idle'" @result="verifier = $event" />
-        </div>
-      </li>
-    </ol>
+          </li>
+        </ol>
+      </MihomoIPv6StepGroup>
+      <template v-if="verify">
+        <MihomoIPv6Verification v-if="readiness && !dirty" :key="`${selectedId}-${readings}`" group="验收" :open="open" :agent-id="selectedId" :profile-id="profileId"
+          :config-revision="readiness.config_revision" :readiness="readiness" :disabled="!available || phase !== 'idle'" data-ipv6-step="verify" data-ipv6-step-verify
+          @result="verifier = $event" />
+        <!-- Nothing to verify before a check of the saved configuration. -->
+        <MihomoIPv6StepGroup v-else title="验收" :progress="verify.status" data-ipv6-step="verify">
+          <p class="m-0 py-3 text-xs text-muted-foreground" data-ipv6-step-verify-waiting>{{ dirty ? '保存草稿并检查设备后，再验证连接与分流。' : '检查设备后，再验证连接与分流。' }}</p>
+        </MihomoIPv6StepGroup>
+      </template>
+    </div>
   </section>
 </template>

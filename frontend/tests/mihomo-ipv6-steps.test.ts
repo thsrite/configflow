@@ -4,6 +4,7 @@ import { defineComponent, h } from 'vue'
 import { RouterLink } from 'vue-router'
 import { agentApi, profileApi, routerApi } from '@/api'
 import MihomoIPv6Steps from '@/components/generate/MihomoIPv6Steps.vue'
+import FieldHelp from '@/components/common/FieldHelp.vue'
 import MihomoIPv6Verification from '@/components/generate/MihomoIPv6Verification.vue'
 import UpstreamRouterPending from '@/components/routers/UpstreamRouterPending.vue'
 import { upstreamRouterApi } from '@/api/upstreamRouterPending'
@@ -178,7 +179,7 @@ const wrappers: VueWrapper[] = []
 async function mount(props = {}, slots = false) {
   const wrapper = shallowMount(MihomoIPv6Steps, {
     props: { open: true, profileId: 'bound', preferredAgentId: 'gw', mode: 'clients', dirty: false, ...props },
-    global: { renderStubDefaultSlot: slots, stubs: { Button: false, Primitive: false, AgentStatusRow: RowStub } },
+    global: { renderStubDefaultSlot: slots, stubs: { Button: false, Primitive: false, MihomoIPv6StepRow: RowStub, MihomoIPv6StepGroup: false } },
   })
   wrappers.push(wrapper)
   await flushPromises()
@@ -300,10 +301,12 @@ describe('Mihomo IPv6 step list', () => {
     vi.mocked(agentApi.ipv6Readiness).mockResolvedValue(response({ ...hinted(), cached: true, checked_at: new Date(Date.now() - 12 * 60000).toISOString() }))
     const wrapper = await mount()
     const line = () => wrapper.get('[data-ipv6-steps-checked]').text()
-    expect(line()).toBe('设备检查于 12 分钟前。路由器或主机上的手动修改不会自动发现，请点「重新检查」。')
+    expect(line()).toBe('设备检查于 12 分钟前')
+    // How to catch manual edits sits in the help beside the time.
+    expect(wrapper.get('[data-ipv6-steps-checked]').getComponent(FieldHelp).props('text')).toContain('手动修改不会自动发现')
     wrapper.getComponent(UpstreamRouterPending).vm.$emit('status', { state: 'synced', pending: 0, checkedAt: new Date(Date.now() - 3 * 60000).toISOString() })
     await flushPromises()
-    expect(line()).toContain('设备检查于 12 分钟前，上游路由读取于 3 分钟前。')
+    expect(line()).toBe('设备检查于 12 分钟前，上游路由读取于 3 分钟前')
     expect(wrapper.get('[data-ipv6-steps-recheck]').text()).toBe('重新检查')
     await wrapper.setProps({ dirty: true })
     expect(wrapper.find('[data-ipv6-steps-checked]').exists()).toBe(false)
@@ -326,7 +329,7 @@ describe('Mihomo IPv6 step list', () => {
     ])))
     const wrapper = shallowMount(MihomoIPv6Steps, {
       props: { open: true, profileId: 'bound', preferredAgentId: 'gw', mode: 'clients', dirty: false },
-      global: { renderStubDefaultSlot: true, stubs: { Button: false, Primitive: false, AgentStatusRow: RowStub, UpstreamRouterPending: false } },
+      global: { renderStubDefaultSlot: true, stubs: { Button: false, Primitive: false, MihomoIPv6StepRow: RowStub, MihomoIPv6StepGroup: false, UpstreamRouterPending: false } },
     })
     wrappers.push(wrapper)
     await flushPromises()
@@ -341,21 +344,16 @@ describe('Mihomo IPv6 step list', () => {
     expect(links[0].props('to')).toEqual({ path: '/routers', query: { router: 'ros', profile: 'bound', preview: '1' } })
   })
 
-  it('collapses acceptance to one line once the embedded verification passes', async () => {
+  it('shows acceptance as its own group, with the verify button beside the checks, after a check of the saved configuration', async () => {
     const wrapper = await mount()
     const verifier = wrapper.getComponent(MihomoIPv6Verification)
-    expect(verifier.props()).toMatchObject({ open: true, agentId: 'gw', profileId: 'bound', configRevision: 7 })
-    verifier.vm.$emit('result', { verification: null, fresh: false })
-    await flushPromises()
-    expect(status(wrapper, 'verify')).toBe('待验证')
-    expect((wrapper.get('[data-ipv6-step-verify]').element as HTMLElement).style.display).not.toBe('none')
-    verifier.vm.$emit('result', { verification: { ...passedVerification, status: 'running' }, fresh: true })
-    await flushPromises()
-    expect(status(wrapper, 'verify')).toBe('验证中')
-    verifier.vm.$emit('result', { verification: passedVerification, fresh: true })
-    await flushPromises()
-    expect(status(wrapper, 'verify')).toBe('已通过')
-    expect((wrapper.get('[data-ipv6-step-verify]').element as HTMLElement).style.display).toBe('none')
+    expect(verifier.props()).toMatchObject({ open: true, agentId: 'gw', profileId: 'bound', configRevision: 7, group: '验收' })
+    expect(verifier.attributes('data-ipv6-step')).toBe('verify')
+    // The deploy group counts the steps before acceptance.
+    expect(wrapper.get('[data-ipv6-group-progress]').text()).toMatch(/^\d \/ 5 完成$/)
+    await wrapper.setProps({ dirty: true })
+    expect(wrapper.findComponent(MihomoIPv6Verification).exists()).toBe(false)
+    expect(row(wrapper, 'verify').text()).toContain('保存草稿并检查设备后，再验证连接与分流。')
   })
 
   it('reads only saved configurations: waits while dirty and checks again after saving', async () => {
@@ -464,7 +462,8 @@ describe('Mihomo IPv6 step list', () => {
     vi.mocked(agentApi.ipv6Readiness).mockRejectedValue({ response: { data: { message: '无法连接 Agent 进行 IPv6 检查' } } })
     const wrapper = await mount()
     expect(wrapper.text()).toContain('无法连接 Agent 进行 IPv6 检查')
-    for (const id of ['host', 'publish', 'firewall', 'verify']) expect(status(wrapper, id)).toBe('待检查')
+    for (const id of ['host', 'publish', 'firewall']) expect(status(wrapper, id)).toBe('待检查')
+    expect(row(wrapper, 'verify').get('[data-ipv6-group-progress]').text()).toBe('待检查')
     expect(routerApi.list).not.toHaveBeenCalled()
   })
 })

@@ -6,9 +6,11 @@ import { buildMihomoIPv6Summary } from '@/lib/mihomoIPv6Summary'
 import { Button } from '@/components/ui/button'
 import MihomoIPv6VerificationResult from './MihomoIPv6VerificationResult.vue'
 import MihomoIPv6CheckSummary from './MihomoIPv6CheckSummary.vue'
+import MihomoIPv6StepGroup from './MihomoIPv6StepGroup.vue'
 import type { IPv6Verification, IPv6VerificationResult, MihomoIPv6Readiness } from '@/types/mihomoIPv6'
 
-const props = defineProps<{ open: boolean; agentId: string; profileId: string; configRevision?: number; deploymentId?: string; auto?: boolean; disabled?: boolean; readiness?: MihomoIPv6Readiness }>()
+// group: shown as that group of the IPv6 step list, with its pass count and the verify button beside the rows.
+const props = defineProps<{ open: boolean; agentId: string; profileId: string; configRevision?: number; deploymentId?: string; auto?: boolean; disabled?: boolean; readiness?: MihomoIPv6Readiness; group?: string }>()
 // Lets an embedding view (the IPv6 step list) follow the result shown here.
 const emit = defineEmits<{ result: [value: { verification: IPv6Verification | null; fresh: boolean }] }>()
 const verification = ref<IPv6Verification | null>(null)
@@ -28,6 +30,12 @@ const validRevision = computed(() => Number.isInteger(props.configRevision) && p
 const running = computed(() => verification.value?.status === 'running')
 const canRetryAutomatic = computed(() => verification.value && !running.value
   && buildMihomoIPv6Summary({ verification: verification.value }).some(group => group.tone !== 'success'))
+const shown = computed(() => verification.value && !running.value && !error.value ? verification.value : undefined)
+const progress = computed(() => {
+  if (notApplicable.value || !props.readiness) return ''
+  const groups = buildMihomoIPv6Summary({ readiness: props.readiness, verification: shown.value, preferVerificationSnapshot: freshVerification.value })
+  return `${groups.filter(group => group.tone === 'success').length} / ${groups.length} 通过`
+})
 const current = (session: number) => !disposed && props.open && session === generation
 const failureMessage = (failure: any) => failure?.response?.data?.message || failure?.message || '验收结果暂时无法读取，请重试。'
 
@@ -125,7 +133,23 @@ onUnmounted(() => { disposed = true; generation++; clearTimeout(timer) })
 </script>
 
 <template>
-  <section class="min-w-0 space-y-2" :aria-label="auto ? '发布后验收' : '连接与分流验收'" data-ipv6-verifier>
+  <MihomoIPv6StepGroup v-if="group" :title="group" :progress="progress" data-ipv6-verifier>
+    <template v-if="!notApplicable" #actions>
+      <Button type="button" variant="outline" size="sm" class="min-h-11 border-border-strong px-2.5 text-xs @xl/steps:min-h-8" aria-label="验证连接与分流"
+        :disabled="disabled || pending || running || !validRevision" @click="start"><RefreshCw class="size-3.5" aria-hidden="true" />验证</Button>
+    </template>
+    <div v-if="pending || running || message || error || !validRevision || notApplicable" class="space-y-1 py-2.5 text-xs">
+      <p v-if="pending || running" class="m-0 flex items-center gap-2" role="status"><LoaderCircle class="size-4 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" />{{ running || starting ? '正在验证连接与分流…' : '正在读取验收结果…' }}</p>
+      <p v-if="starting || running" class="m-0 text-muted-foreground">可以离开此窗口，验收会在后台继续；重新打开设备检查可查看结果。</p>
+      <p v-if="message" class="m-0 break-words text-warning-accent" role="status">{{ message }}</p>
+      <p v-if="error" class="m-0 break-words text-destructive-accent" role="alert">{{ error }}</p>
+      <p v-if="!validRevision" class="m-0 text-warning-accent">请重新检查设备，取得当前配置版本后再验证。</p>
+      <p v-if="notApplicable" class="m-0 text-muted-foreground" role="status" data-ipv6-not-applicable>未启用 IPv6，无需验收。</p>
+      <Button v-if="message || (error && running)" type="button" variant="ghost" class="min-h-11" :disabled="pending" @click="error = ''; message = ''; started = Date.now(); read(generation)">重新读取结果</Button>
+    </div>
+    <MihomoIPv6CheckSummary v-if="!notApplicable && readiness" checklist :readiness="readiness" :prefer-verification-snapshot="freshVerification" :verification="shown" data-mihomo-ipv6-verification />
+  </MihomoIPv6StepGroup>
+  <section v-else class="min-w-0 space-y-2" :aria-label="auto ? '发布后验收' : '连接与分流验收'" data-ipv6-verifier>
     <p v-if="pending || running" class="m-0 flex items-center gap-2 text-xs" role="status"><LoaderCircle class="size-4 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" />{{ running || starting ? auto ? '配置已发布，正在验证连接与分流…' : '正在验证连接与分流…' : '正在读取验收结果…' }}</p>
     <p v-if="starting || running" class="m-0 text-xs text-muted-foreground">可以离开此窗口，验收会在后台继续；重新打开设备检查可查看结果。</p>
     <p v-if="message" class="m-0 break-words text-xs text-warning-accent" role="status">{{ message }}</p>
@@ -133,7 +157,7 @@ onUnmounted(() => { disposed = true; generation++; clearTimeout(timer) })
     <p v-if="!validRevision" class="m-0 text-xs text-warning-accent">请重新检查设备，取得当前配置版本后再验证。</p>
     <p v-if="notApplicable" class="m-0 text-xs text-muted-foreground" role="status" data-ipv6-not-applicable>未启用 IPv6，无需验收。</p>
     <div v-else-if="readiness" data-mihomo-ipv6-verification>
-      <MihomoIPv6CheckSummary :readiness="readiness" :prefer-verification-snapshot="freshVerification" :verification="verification && !running && !error ? verification : undefined" />
+      <MihomoIPv6CheckSummary :readiness="readiness" :prefer-verification-snapshot="freshVerification" :verification="shown" />
     </div>
     <MihomoIPv6VerificationResult v-else-if="verification && verification.status !== 'running'" :verification="verification" :compact="auto" />
     <div class="flex flex-wrap gap-2">
