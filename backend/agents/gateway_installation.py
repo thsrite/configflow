@@ -449,9 +449,12 @@ def public(repository, manager, session):
         url = session['server_url'] + '/api/agents/gateway-installations/' + session['id'] + '/script?' + urlencode({'token': session['token']})
         result['download_url'] = session['server_url'] + session['download_path'] if session.get('download_path') else url
         # Download to a private temp file; a failed transfer never executes a
-        # partial script. sudo is conditional so Alpine/root works as well.
-        result['command'] = "sh -c " + shlex.quote('set -eu; f=$(mktemp); trap \'rm -f "$f"\' EXIT; curl -fSL ' + shlex.quote(url)
-            + ' -o "$f"; if [ "$(id -u)" -eq 0 ]; then sh "$f"; else sudo sh "$f"; fi')
+        # partial script. sudo is conditional so Alpine/root works as well, and
+        # BusyBox wget is used where curl is absent (native Alpine). The wizard
+        # builds its curl/wget choice from download_url; this is the fallback.
+        result['command'] = "sh -c " + shlex.quote('set -eu; f=$(mktemp); trap \'rm -f "$f"\' EXIT; '
+            + 'if command -v curl >/dev/null 2>&1; then curl -fSL ' + shlex.quote(url) + ' -o "$f"; '
+            + 'else wget -O "$f" ' + shlex.quote(url) + '; fi; if [ "$(id -u)" -eq 0 ]; then sh "$f"; else sudo sh "$f"; fi')
     return result
 
 

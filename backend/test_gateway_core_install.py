@@ -15,7 +15,7 @@ import tarfile
 import pytest
 
 from backend.agents import gateway_install_script as installer
-from backend.agents.go_install_script import generate_go_aio_install_script
+from backend.agents.go_install_script import AGENT_INSTALL_DEPENDENCIES, generate_go_aio_install_script
 from backend.test_router_split_regression import without_reviewed_installer_deltas
 
 
@@ -263,6 +263,125 @@ def test_timezone_data_install_failure_stops_before_mutation(tmp_path,monkeypatc
     assert not (tmp_path/'etc/oxidns').exists()
 
 
+PACKAGE_MANAGERS = ('apk', 'apt-get', 'dnf', 'yum', 'pacman', 'zypper')
+
+
+def without_host_tools(tmp_path, hidden):
+    """PATH of the fake commands plus host tools, minus the hidden ones and every package manager."""
+    shadow = tmp_path / 'host-tools'
+    shadow.mkdir()
+    for directory in os.environ['PATH'].split(os.pathsep):
+        if not os.path.isdir(directory):
+            continue
+        for entry in os.scandir(directory):
+            target = shadow / entry.name
+            if entry.name in hidden or entry.name in PACKAGE_MANAGERS or target.exists() or target.is_symlink():
+                continue
+            if entry.is_file() and os.access(entry.path, os.X_OK):
+                target.symlink_to(entry.path)
+    return str(tmp_path / 'commands') + os.pathsep + str(shadow)
+
+
+def gateway_package_manager(tmp_path, name, fail=False):
+    """Mock manager: logs the transaction, then provides the tools of the named packages."""
+    provides = {'nftables': ['nft'], 'iproute2': ['ss', 'ip'], 'iproute': ['ss', 'ip']}
+    manager = tmp_path / 'commands' / name
+    manager.write_text('#!' + sys.executable + """ -S
+import os,sys
+from pathlib import Path
+with open(os.environ['EVENTS'],'a') as f: f.write(Path(sys.argv[0]).name+' '+' '.join(sys.argv[1:])+'\\n')
+if sys.argv[1:]==['update']: raise SystemExit()
+if %r: raise SystemExit(1)
+pending=Path(os.environ['FAKE_ROOT'])/'pending'
+for package,tools in %r.items():
+    if package in sys.argv[1:]:
+        for tool in tools:
+            if (pending/tool).exists(): (pending/tool).rename(Path(os.environ['FAKE_ROOT'])/'commands'/tool)
+""" % (fail, provides))
+    manager.chmod(0o755)
+
+
+def all_output(result):
+    """Terminal output plus the full installer log it points to."""
+    text = result.stdout + result.stderr
+    for line in text.splitlines():
+        if line.startswith('完整日志：') and Path(line.removeprefix('完整日志：')).is_file():
+            text += Path(line.removeprefix('完整日志：')).read_text()
+    return text
+
+
+def hide_gateway_tools(tmp_path, tools):
+    pending = tmp_path / 'pending'
+    pending.mkdir()
+    for tool in tools:
+        (tmp_path / 'commands' / tool).rename(pending / tool)
+    return without_host_tools(tmp_path, set(tools))
+
+
+@pytest.mark.parametrize('manager,package_manager,transaction', [
+    ('openrc', 'apk', 'apk add --no-cache nftables iproute2'),
+    ('systemd', 'apt-get', 'apt-get install -y --no-install-recommends nftables iproute2'),
+    ('systemd', 'pacman', 'pacman -S --needed --noconfirm nftables iproute2'),
+    ('systemd', 'dnf', 'dnf install -y nftables iproute'),
+])
+def test_missing_gateway_tools_installed_and_rechecked_before_any_change(tmp_path, monkeypatch, manager, package_manager, transaction):
+    # Native Alpine ships BusyBox without nft and ss; the installer adds them.
+    run, events, _ = host(tmp_path, monkeypatch, manager)
+    path = hide_gateway_tools(tmp_path, ('nft', 'ss'))
+    gateway_package_manager(tmp_path, package_manager)
+    result = run(PATH=path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert '缺少工具：nft ss' in all_output(result)
+    log = events.read_text()
+    assert log.count(transaction) == 1
+    first_change = 'rc-update -u' if manager == 'openrc' else 'systemctl enable'
+    assert log.index(transaction) < log.index('core-check mihomo') < log.index(first_change)
+    # Rerunning with the tools present makes no package transaction.
+    events.write_text('')
+    assert run(PATH=path).returncode == 0
+    assert package_manager + ' ' not in events.read_text()
+
+
+def test_busybox_ip_without_json_installs_iproute2(tmp_path, monkeypatch):
+    run, events, _ = host(tmp_path, monkeypatch, 'openrc')
+    path = hide_gateway_tools(tmp_path, ('ip',))
+    # BusyBox ip exists but rejects -j, which the gateway Agent reads.
+    busybox_ip = tmp_path / 'commands/ip'
+    busybox_ip.write_text('#!/bin/sh\n[ "$1" != -j ]\n')
+    busybox_ip.chmod(0o755)
+    (tmp_path / 'pending/ip').write_text('#!/bin/sh\nexit 0\n')
+    gateway_package_manager(tmp_path, 'apk')
+    result = run(PATH=path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert events.read_text().count('apk add --no-cache iproute2') == 1
+
+
+@pytest.mark.parametrize('package_manager,command', [
+    ('apk', 'apk add --no-cache nftables iproute2'),
+    ('apt-get', 'apt-get update && apt-get install -y --no-install-recommends nftables iproute2'),
+])
+def test_failed_gateway_tool_install_stops_with_copyable_command(tmp_path, monkeypatch, package_manager, command):
+    run, events, _ = host(tmp_path, monkeypatch, 'openrc')
+    path = hide_gateway_tools(tmp_path, ('nft', 'ss'))
+    gateway_package_manager(tmp_path, package_manager, fail=True)
+    result = run(PATH=path)
+    assert result.returncode != 0
+    assert '可在 root 下手动执行：' + command in all_output(result)
+    assert not (tmp_path / 'etc/mihomo').exists() and not (tmp_path / 'etc/oxidns').exists()
+    assert not (tmp_path / 'opt/configflow-agent').exists()
+    assert 'download ' not in events.read_text()
+
+
+def test_gateway_without_package_manager_names_the_packages(tmp_path, monkeypatch):
+    run, events, _ = host(tmp_path, monkeypatch, 'openrc')
+    path = hide_gateway_tools(tmp_path, ('nft',))
+    result = run(PATH=path)
+    assert result.returncode != 0
+    output = all_output(result)
+    assert '未找到支持的包管理器' in output and '请手动安装 nftables 后重新运行' in output
+    assert not (tmp_path / 'etc/mihomo').exists()
+
+
 @pytest.mark.parametrize('failure',[{'CORRUPT':'oxidns.tar.gz'},{'FAIL_DOWNLOAD':'agent'}, {'FAIL_CHECK':'oxidns'},
                                   {'AGENT_VERSION':'1.8.24-go'}, {'AGENT_VERSION':'invalid'},
                                   {'AGENT_VERSION':'1.8.25-beta'}, {'BUSY_PORT':'53'}, {'FAIL_NFT':'yes'}])
@@ -465,9 +584,31 @@ def test_existing_mihomo_must_be_supported_stable_release_before_any_install_cha
 BASELINES = Path(__file__).parent / 'testdata'
 
 
+# The gateway installer now installs its missing tools with the shared helper
+# (as ordinary native installs do) instead of failing on the first one.
+GATEWAY_OLD_NEED = ('need() { command -v "$1" >/dev/null 2>&1 || fail "缺少命令 $1。Debian/Ubuntu: apt-get update && '
+                    'apt-get install -y ca-certificates curl iproute2 nftables tar gzip coreutils；Alpine: apk add '
+                    'ca-certificates curl iproute2 nftables tar gzip coreutils。安装依赖后重跑。"; }\n')
+GATEWAY_DEPENDENCY_CALL = ('# Install missing tools with the system package manager, as ordinary native\n'
+                           '# installs do (Alpine lacks nft and ss). The gateway Agent reads `ip -j`, which\n'
+                           '# BusyBox ip lacks; OxiDNS cron plugins need the timezone database.\n'
+                           'agent_ensure_dependencies ha_ip nft ss tar gzip sha256sum cmp zoneinfo\n')
+
+
+def with_gateway_dependency_delta(expected):
+    assert expected.count(GATEWAY_OLD_NEED) == 1
+    helper = without_reviewed_installer_deltas(AGENT_INSTALL_DEPENDENCIES)
+    expected = expected.replace(GATEWAY_OLD_NEED, helper, 1)
+    start = expected.index('for dependency in ip nft ss tar gzip')
+    end = expected.index('[ -c /dev/net/tun ]')
+    assert 'apk add --no-cache tzdata' in expected[start:end]
+    return expected[:start] + GATEWAY_DEPENDENCY_CALL + expected[end:]
+
+
 def test_selective_gateway_script_is_byte_identical_to_the_previous_release():
     # Captured from 0ef9e89 with exactly these inputs.
-    expected = (BASELINES / 'gateway_install_selective_0ef9e89.sh').read_text(encoding='utf-8')
+    expected = with_gateway_dependency_delta(
+        (BASELINES / 'gateway_install_selective_0ef9e89.sh').read_text(encoding='utf-8'))
     assert without_reviewed_installer_deltas(generate()) == expected
     assert without_reviewed_installer_deltas(generate(full_tun=False)) == expected
     assert 'CONFIGFLOW_INSTALLER_FORWARDING' not in expected
@@ -534,7 +675,8 @@ def test_full_tun_script_persists_forwarding_and_prepares_tun(tmp_path):
                      '# ConfigFlow Linux gateway installation. Full-TUN router split',
                      '请回到 ConfigFlow 安装向导，继续发布 Mihomo、发布 OxiDNS，再检查转发与 TUN。',
                      # Shared with the selective installer: timezone data and the Agent's -version check.
-                     'apk add --no-cache tzdata', '"$GATEWAY_STAGE/configflow-agent" -version >/dev/null',
+                     'agent_ensure_dependencies ha_ip nft ss tar gzip sha256sum cmp zoneinfo',
+                     '"$GATEWAY_STAGE/configflow-agent" -version >/dev/null',
                      'agent_ensure_dependencies zoneinfo sysctl cmp ln'):
         assert expected in script, expected
     assert 'CONFIGFLOW_FORWARDING_OWNER' not in script

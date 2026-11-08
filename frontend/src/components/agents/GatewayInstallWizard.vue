@@ -10,7 +10,7 @@ import type { SetupGoal } from '@/api/setup'
 import { gatewayEnvironmentErrors, installationHostMatches, installationMatches, onboardingSettingsKey } from '@/lib/gatewayOnboarding'
 import { copyText } from '@/lib/clipboard'
 import { forwardFilterWarning } from '@/lib/forwardFilter'
-import { buildInstallCommand } from '@/lib/coreInstallCommand'
+import { buildInstallCommand, type InstallerDownloader } from '@/lib/coreInstallCommand'
 import { confirm, confirmDanger, notify } from '@/lib/feedback'
 import { forwardingLabel, forwardingTone, fullTunReady, gatewayLeftover, routerSplitErrorMessage, tunLabel, tunTone, type StatusTone } from '@/lib/routerSplit'
 import SettingsWorkspace from '@/components/generate/SettingsWorkspace.vue'
@@ -25,6 +25,7 @@ import FieldHelp from '@/components/common/FieldHelp.vue'
 import GatewayNetworkFields from '@/components/agents/GatewayNetworkFields.vue'
 import GatewayClientInstructions from '@/components/agents/GatewayClientInstructions.vue'
 import GatewayDetectedNetwork from '@/components/agents/GatewayDetectedNetwork.vue'
+import InstallerDownloaderPicker from '@/components/agents/InstallerDownloaderPicker.vue'
 import { gatewayCopy } from '@/lib/gatewayCopy'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -75,8 +76,10 @@ const fullTun = computed(() => takeover.value === 'full_tun')
 const legacy = computed(() => takeover.value === 'legacy')
 const steps = computed(() => ['设备与网络', '分流规则', '安装核心', '发布并检查', fullTun.value ? '转发与 TUN' : '启用与验证'])
 const tunPrepareNote = ref('')
+// Same curl / wget choice as the Agent page; native Alpine ships only BusyBox wget.
+const installerDownloader = ref<InstallerDownloader>('curl')
 const installCommand = computed(() => installation.value?.expired ? '' : installation.value?.download_url
-  ? buildInstallCommand(installation.value.download_url) : installation.value?.command || '')
+  ? buildInstallCommand(installation.value.download_url, installerDownloader.value) : installation.value?.command || '')
 const locked = computed(() => !!installation.value)
 const availableStep = computed(() => !installation.value ? step.value : installation.value.phase === 'published' ? 4 : installation.value.phase === 'waiting' ? 2 : 3)
 const commandExpiry = computed(() => {
@@ -527,14 +530,11 @@ onBeforeUnmount(() => { disposed = true; generation++; stopPolling(); emit('busy
           <details class="border-b border-border text-sm">
             <summary class="min-h-11 cursor-pointer content-center py-2 font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary-accent">安装要求</summary>
             <div class="space-y-3 pt-1 pb-4 text-xs leading-relaxed text-muted-foreground">
-              <p class="m-0">支持 x86_64 / ARM64，systemd / OpenRC（含 Alpine）。需要 root 或 sudo、<code>/dev/net/tun</code> 和网络管理权限，不支持普通受限容器。</p>
+              <p class="m-0">支持 x86_64 / ARM64，systemd / OpenRC（含 Alpine）。需要 root 或 sudo、<code>/dev/net/tun</code> 和网络管理权限。LXC 容器可用非特权容器，开启 nesting 并映射 <code>/dev/net/tun</code>（Proxmox：<code class="break-all">pct set &lt;ID&gt; --dev0 /dev/net/tun</code>）；Docker 等无 systemd / OpenRC 的容器不支持。</p>
               <p class="m-0">在主路由保留 Linux 的 IP，或为 Linux 设置静态 IP。向导不会修改设备 IP 或默认路由。{{ goal === 'router' ? '本方案需要在主路由添加静态路由与 DNS，客户端网关保持主路由。' : '网关方案通过修改客户端网关接入，主路由无需添加静态路由。' }}</p>
               <div>
                 <p class="mt-0 mb-1 font-medium text-foreground">缺少依赖时</p>
-                <p class="my-1">Debian / Ubuntu：</p>
-                <pre class="m-0 overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs">sudo apt-get update &amp;&amp; sudo apt-get install -y ca-certificates curl iproute2 nftables tar gzip coreutils</pre>
-                <p class="mt-2 mb-1">Alpine（root）：</p>
-                <pre class="m-0 overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs">apk add ca-certificates curl iproute2 nftables tar gzip coreutils</pre>
+                <p class="m-0">安装命令会用系统包管理器（apk、apt-get、dnf、yum、pacman、zypper）自动补装缺少的工具，如 nftables、iproute2 和时区数据，已有的跳过，补装后再次检查。补装失败时终端会给出可直接复制的手动安装命令。</p>
               </div>
               <div>
                 <p class="mt-0 mb-1 font-medium text-foreground">已有 Mihomo / OxiDNS</p>
@@ -641,6 +641,10 @@ onBeforeUnmount(() => { disposed = true; generation++; stopPolling(); emit('busy
             <div class="flex min-h-8 items-center justify-between gap-2 max-md:min-h-11">
               <label for="onboarding-command" class="text-xs font-medium">安装命令</label>
               <Button variant="ghost" size="sm" class="px-2 text-xs" aria-label="复制安装命令" :disabled="!installCommand" @click="copyCommand"><Copy class="size-3.5" aria-hidden="true" />复制</Button>
+            </div>
+            <div v-if="installation?.download_url && !installation.expired" class="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <InstallerDownloaderPicker v-model="installerDownloader" aria-label="安装命令下载方式" />
+              <p class="m-0 text-xs text-muted-foreground">原生 Alpine 未自带 curl，请选择 wget。</p>
             </div>
             <Textarea id="onboarding-command" :model-value="installCommand" readonly :rows="3" class="min-h-24 max-h-48 font-mono text-xs" />
             <div class="flex flex-wrap gap-x-3 gap-y-1 text-xs leading-relaxed text-muted-foreground"><p class="m-0">使用 root，或按提示输入 sudo 密码。</p><p class="m-0 break-words">{{ commandExpiry }}</p></div>

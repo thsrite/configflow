@@ -18,7 +18,7 @@ outline: 2
 | 准备项 | 要求 |
 | --- | --- |
 | ConfigFlow 面板 | 已按 [安装管理面板](install.md) 部署，Linux 设备能访问它的地址 |
-| 一台处理流量的 Linux | x86_64 或 ARM64，使用 systemd／OpenRC 管理服务，能用 root 或 sudo；普通受限容器不适用本向导 |
+| 一台处理流量的 Linux | x86_64 或 ARM64，使用 systemd／OpenRC 管理服务，能用 root 或 sudo；Docker 等没有 systemd／OpenRC 的容器不适用本向导。Proxmox 非特权 LXC 开启 nesting 并映射 `/dev/net/tun`（`pct set <ID> --dev0 /dev/net/tun`）后可以使用 |
 | 固定的局域网 IPv4 | 建议在主路由为 Linux 保留地址；网关方案中 Linux 与测试设备需在同一网段 |
 | TUN 设备与权限 | Linux 要有 `/dev/net/tun` 和管理网络的权限；向导会检查，缺少时按提示修复 |
 | DNS 端口 | Linux 的 `53` 端口要能供 OxiDNS 使用；发现冲突时先确认原服务用途 |
@@ -139,7 +139,7 @@ Linux 网关方案中，所选规则含 Telegram、Google 推送（FCM）时，�
 ### 2. 生成并执行安装命令
 
 1. 点击「生成安装命令」。这只是准备命令，还没有登录目标 Linux，也没有开始安装。
-2. 点击安装命令旁的「复制」，在**目标 Linux** 的终端执行；需要管理员权限时先使用 root 或 sudo。
+2. 按目标 Linux 已有的下载工具选择 curl 或 wget（原生 Alpine 只自带 wget），点击安装命令旁的「复制」，在**目标 Linux** 的终端执行；需要管理员权限时先使用 root 或 sudo。缺少的系统工具（如 nftables、iproute2、时区数据）由安装器用系统包管理器自动补装。
 3. 等待终端完成检查、下载、安装和登记。命令含临时凭据并有有效期，不要公开分享。
 4. 回到页面查看两项 Agent 的登记状态；需要时点击「检查安装进度」。
 

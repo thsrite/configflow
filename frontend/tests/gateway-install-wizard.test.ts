@@ -7,6 +7,8 @@ import SettingsWorkspace from '@/components/generate/SettingsWorkspace.vue'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import FormField from '@/components/common/FormField.vue'
+import InstallerDownloaderPicker from '@/components/agents/InstallerDownloaderPicker.vue'
+import { buildInstallCommand } from '@/lib/coreInstallCommand'
 import { gatewayOnboardingApi } from '@/api/gatewayOnboarding'
 import { linuxGatewayApi } from '@/api/linuxGateway'
 import { gatewayEnvironmentErrors, installationMatches } from '@/lib/gatewayOnboarding'
@@ -239,6 +241,26 @@ describe('gateway installation wizard', () => {
     expect(linuxGatewayApi.apply).not.toHaveBeenCalled()
     expect(localStorage.getItem('configflow.gateway-installation.office')).toBe('installation-1')
     expect(localStorage.length).toBe(1)
+  })
+  it('offers the same curl / wget choice as the Agent page for the short install link', async () => {
+    const url = 'http://192.168.1.3:8000/api/agents/i/short-link'
+    vi.mocked(gatewayOnboardingApi.create).mockResolvedValue(response(session('waiting', { download_url: url })))
+    const wrapper = await render(); await prepare(wrapper)
+    const picker = wrapper.getComponent(InstallerDownloaderPicker)
+    expect(picker.props('modelValue')).toBe('curl')
+    expect(picker.attributes('aria-label')).toBe('安装命令下载方式')
+    expect(wrapper.get('#onboarding-command').element).toHaveProperty('value', buildInstallCommand(url, 'curl'))
+    // Native Alpine has only BusyBox wget.
+    expect(wrapper.text()).toContain('原生 Alpine 未自带 curl，请选择 wget。')
+    picker.vm.$emit('update:modelValue', 'wget'); await flushPromises()
+    expect(wrapper.get('#onboarding-command').element).toHaveProperty('value', `wget -O configflow-install.sh '${url}' && sh configflow-install.sh`)
+    await button(wrapper, '复制安装命令').trigger('click'); await flushPromises()
+    expect(writeText).toHaveBeenCalledWith(buildInstallCommand(url, 'wget'))
+  })
+  it('hides the downloader choice when only the server fallback command is available', async () => {
+    const wrapper = await render(); await prepare(wrapper)
+    expect(wrapper.findComponent(InstallerDownloaderPicker).exists()).toBe(false)
+    expect(wrapper.get('#onboarding-command').element).toHaveProperty('value', session().command)
   })
   it('offers to adopt the install address when it differs from the system server address', async () => {
     const message = '系统设置中的服务地址是 http://172.17.0.2:5001，与这里填写的 http://192.168.1.3:8000 不一致。'

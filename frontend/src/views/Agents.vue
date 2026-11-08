@@ -693,11 +693,7 @@
                   <p class="m-0 text-[12px] leading-relaxed text-muted-foreground">以 root 执行，支持 systemd / OpenRC；自动补齐依赖，完整下载后安装。使用默认路径，不受高级配置影响。TUN 检测规则见安装说明。</p>
                   <template v-if="coreInstallCommand">
                     <div class="flex flex-wrap items-center justify-between gap-2">
-                      <RadioGroup v-model="installerDownloader" aria-label="核心安装命令下载方式" class="flex gap-2">
-                        <label v-for="downloader in INSTALLER_DOWNLOADERS" :key="downloader" :class="[chipClass(installerDownloader === downloader), 'min-h-11']">
-                          <RadioGroupItem :value="downloader" />{{ downloader }}
-                        </label>
-                      </RadioGroup>
+                      <InstallerDownloaderPicker v-model="installerDownloader" aria-label="核心安装命令下载方式" />
                       <Button variant="outline" class="min-h-11" @click="copyAgentContent(coreInstallCommand, '核心安装命令已复制到剪贴板')">
                         <Copy class="size-4" />复制命令
                       </Button>
@@ -724,11 +720,7 @@
 
           <section v-if="installCommand || dockerComposeContent || dockerRunCommand" ref="installCommandSection" aria-label="一键安装命令" class="space-y-4">
             <LabeledDivider label="一键安装命令" />
-            <RadioGroup v-if="scriptForm.installType === 'shell'" v-model="installerDownloader" aria-label="安装命令下载方式" class="flex gap-2">
-              <label v-for="downloader in INSTALLER_DOWNLOADERS" :key="downloader" :class="[chipClass(installerDownloader === downloader), 'min-h-11']">
-                <RadioGroupItem :value="downloader" />{{ downloader }}
-              </label>
-            </RadioGroup>
+            <InstallerDownloaderPicker v-if="scriptForm.installType === 'shell'" v-model="installerDownloader" aria-label="安装命令下载方式" />
             <p v-if="scriptForm.installType === 'shell'" class="m-0 text-[11.5px] text-muted-foreground">链接有效至 {{ installLinkExpiry }}，过期后请重新生成。</p>
             <div v-for="block in commandBlocks" :key="block.title" class="flex min-w-0 flex-col gap-2">
               <div class="flex flex-wrap items-center justify-between gap-2">
@@ -957,6 +949,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import InstallerDownloaderPicker from '@/components/agents/InstallerDownloaderPicker.vue'
 import {
   Select,
   SelectContent,
@@ -1170,7 +1163,6 @@ const installCommandSection = ref<HTMLElement | null>(null)
 const installScript = ref('')
 const scriptLoading = ref(false)
 let scriptRequest = 0
-const INSTALLER_DOWNLOADERS = ['curl', 'wget'] as const
 const installerDownloader = ref<InstallerDownloader>('curl')
 const installScriptUrl = ref('')
 const installLinkExpiry = ref('')

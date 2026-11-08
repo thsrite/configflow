@@ -64,6 +64,36 @@ _NATIVE_HA_DEPENDENCY_CASES = '''        if [ "$agent_tool" = ha_ip ]; then
         fi
 '''
 _NATIVE_HA_PACKAGE_CASE = '                keepalived|jq) agent_add_package "$agent_tool" ;;\n'
+# The Linux gateway installer reuses the shared helper for its own tools (nft,
+# ss, tar, gzip) and a failed package transaction prints a copyable command.
+# Ordinary installers never request these tools; freeze the reviewed text.
+_GATEWAY_DEPENDENCY_CASES = '''                # Linux gateway tools; BusyBox has no ss or nft.
+                nft) agent_add_package nftables ;;
+                ss)
+                    case "$AGENT_PACKAGE_MANAGER" in
+                        dnf|yum) agent_add_package iproute ;;
+                        *) agent_add_package iproute2 ;;
+                    esac
+                    ;;
+                tar|gzip) agent_add_package "$agent_tool" ;;
+'''
+_MANUAL_INSTALL_COMMAND = '''# A command the user can copy when automatic installation cannot finish.
+agent_manual_install_command() {
+    case "$AGENT_PACKAGE_MANAGER" in
+        apk) printf 'apk add --no-cache %s' "$AGENT_PACKAGES" ;;
+        apt-get) printf 'apt-get update && apt-get install -y --no-install-recommends %s' "$AGENT_PACKAGES" ;;
+        dnf|yum) printf '%s install -y %s' "$AGENT_PACKAGE_MANAGER" "$AGENT_PACKAGES" ;;
+        pacman) printf 'pacman -S --needed %s' "$AGENT_PACKAGES" ;;
+        zypper) printf 'zypper install %s' "$AGENT_PACKAGES" ;;
+    esac
+}
+'''
+_GATEWAY_DEPENDENCY_REWORDS = (
+    ('# Shared by the native single-Agent, All-in-One and Linux gateway installers. Call only after\n',
+     '# Shared by the native single-Agent and All-in-One installers. Call only after\n'),
+    ('缺少的工具：${AGENT_MISSING_DEPENDENCIES}。可在 root 下手动执行：$(agent_manual_install_command)"\n',
+     '缺少的工具：${AGENT_MISSING_DEPENDENCIES}。"\n'),
+)
 _CORE_INSTALL_PATH = 'PATH="${PATH:-/usr/sbin:/usr/bin:/sbin:/bin}:/usr/local/sbin:/usr/local/bin"\nexport PATH\n'
 _CORE_AGENT_FOLLOWS = 'CF_OUTPUT_OWNER=false\n'
 
@@ -74,6 +104,12 @@ def without_reviewed_installer_deltas(script, *, core_path=False):
     assert script.count(_NATIVE_HA_DEPENDENCY_CASES + '        if ! command -v "$agent_tool"') == count
     assert script.count(_NATIVE_HA_PACKAGE_CASE) == count
     script = script.replace(_NATIVE_HA_DEPENDENCY_CASES, '').replace(_NATIVE_HA_PACKAGE_CASE, '')
+    assert script.count('                cmp) agent_add_package diffutils ;;\n' + _GATEWAY_DEPENDENCY_CASES) == count
+    assert script.count(_MANUAL_INSTALL_COMMAND + 'agent_install_packages() {') == count
+    script = script.replace(_GATEWAY_DEPENDENCY_CASES, '').replace(_MANUAL_INSTALL_COMMAND, '')
+    for new, old in _GATEWAY_DEPENDENCY_REWORDS:
+        assert script.count(new) == count, new
+        script = script.replace(new, old)
     if core_path:
         # 707208f4 makes combined single-service installs find cores placed in
         # /usr/local/bin, even in minimal root shells. Require the exact location.
