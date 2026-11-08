@@ -28,7 +28,7 @@ export interface BaseFieldDef {
 const RESTART = '保存并发布后生效。'
 
 export const allowLanField: BaseFieldDef = {
-  path: ['allow-lan'], label: '允许局域网连接代理端口', type: 'bool', coreDefault: false,
+  path: ['allow-lan'], label: '允许局域网连接（allow-lan）', type: 'bool', coreDefault: false,
   help: settingHelp({
     what: '是否允许局域网里的其他设备连接本页的代理端口（mixed-port 等）。',
     recommend: 'Mihomo 默认关闭，初始模板开启。手机、电脑要手动填写代理地址时开启；只靠 TUN、网关或主路由分流接管，或只在本机使用时可以关闭。',

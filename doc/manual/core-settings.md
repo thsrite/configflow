@@ -28,9 +28,9 @@ outline: 2
 
 页面从上到下是 **订阅同步间隔**、**IPv6 模式**、**基础参数**表单和 **YAML 编辑器**。基础 YAML 是唯一的数据来源：表单只是它的另一种编辑方式，修改表单就是修改 YAML 中对应的键，在 YAML 中修改后表单立即更新。
 
-![基础参数默认折叠，标题行显示当前值；有问题的分组标出提醒或需修正](../img/guide/mihomo-base-settings-overview.png)
+![基础参数是一张属性表：左侧是分组名，右侧平铺当前值；有问题的分组在名称下标出提醒或需修正](../img/guide/mihomo-base-settings-overview.png)
 
-1. 点开要改的分组，按每项问号里的说明修改；问号写明作用、默认 / 推荐值、修改后的结果和注意事项。
+1. 直接点要改的值：数字和文字就地输入，回车或点别处结束，按 Esc 撤回这次输入；开关直接点；几选一和列表（显示为「N 条」）会弹出小窗修改。每项问号写明 YAML 键名、作用、默认 / 推荐值、修改后的结果和注意事项。
 2. 有标红的「需修正」时先改正，否则不能保存。只是「提醒」（已保存配置中原有的问题，例如仍在用模板密码 123456）不阻止保存其他改动，但建议顺手改掉。
 3. 保存草稿，或「保存并发布」到目标设备。保存时服务器做同样的检查，不通过会显示原因且不保存。
 
@@ -39,17 +39,17 @@ outline: 2
 | 控制面板 | `secret`（默认隐藏，可点眼睛查看）、`external-controller` 监听（局域网可访问 0.0.0.0 / 仅本机 127.0.0.1 / 自定义）与端口、网页面板 `external-ui` 开关和 `external-ui-url` | 密码规则与首次向导相同：8–64 个字母、数字或符号，不含空格，不能是 123456；对局域网开放时必须设置。自定义地址只能是 `::` 或回环地址，监听某个局域网 IP 时 Agent 无法热重载和做 IPv6 检查。Agent 遇到 0.0.0.0 会改用 127.0.0.1，两种选择都能读取连接和流量。改动控制面板相关设置后发布会重启 Mihomo |
 | 代理端口 | `mixed-port`，以及 `port`、`socks-port`、`redir-port`、`tproxy-port` 是否保留和端口 | 一般只留混合端口；使用 TUN（含向导方案）时不需要 redir / tproxy。端口不能互相重复，也不能与 DNS 监听、控制面板或同机 Agent 的端口相同 |
 | 局域网访问 | `allow-lan`、`bind-address` | 其他设备手动填代理时才需要允许局域网；TUN、网关和主路由分流的接管不受影响 |
-| DNS 上游 | 「国内 DoH」/「国内外分开解析」预设，或「自定义」逐项编辑 `default-nameserver`、`nameserver`、`proxy-server-nameserver`、`direct-nameserver`（每行一个）及 `respect-rules`、`direct-nameserver-follow-policy` | 「国内 DoH」与初始模板一致。「国内外分开解析」让 `geosite:cn,private` 用国内 DoH、其他域名经代理用 Google / Cloudflare DoH，依赖 GeoSite 数据（Mihomo 首次自动下载）和可用节点。切换预设只改这几项并删除旧的 `fallback` / `fallback-filter`；`nameserver-policy` 只增删 `geosite:cn,private` 一条（追加在最后），自己写的条目（如 `+.115.com`）保留并优先匹配。上游不能指向本机、本机 OxiDNS 或 `system`，否则形成解析循环 |
+| DNS 上游 | 「DNS 方案」选「国内 DoH」或「国内外分开解析」预设；旁边的 `default-nameserver`、`nameserver`、`proxy-server-nameserver`、`direct-nameserver`（点开后每行一个）及 `respect-rules`、`direct-nameserver-follow-policy` 可直接修改，改过后方案显示为「自定义」 | 「国内 DoH」与初始模板一致。「国内外分开解析」让 `geosite:cn,private` 用国内 DoH、其他域名经代理用 Google / Cloudflare DoH，依赖 GeoSite 数据（Mihomo 首次自动下载）和可用节点。切换预设只改这几项并删除旧的 `fallback` / `fallback-filter`；`nameserver-policy` 只增删 `geosite:cn,private` 一条（追加在最后），自己写的条目（如 `+.115.com`）保留并优先匹配。上游不能指向本机、本机 OxiDNS 或 `system`，否则形成解析循环 |
 | Fake-IP 过滤 | `fake-ip-filter-mode`、`fake-ip-filter`（每行一个） | 写入列表会替换 Mihomo 自带的默认名单；局域网域名、对时服务器等需要真实地址的服务放在这里 |
 | 域名嗅探 | `sniffer.enable`、`skip-domain`、`force-domain` | 关闭后按 IP 进入的连接无法匹配域名规则；首次开启时补上 HTTP / TLS / QUIC 常用端口 |
 | 进程匹配与日志 | `find-process-mode`、`log-level` | 网关、主路由分流等替别的设备转发的机器建议 `off`：客户端进程不在本机，查找只会白耗 CPU。已有配置不会被自动修改。`debug` 只在排查时临时使用 |
-| 进阶（默认折叠） | `tun.stack`、`tun.mtu`、`unified-delay`、`tcp-concurrent`、`global-client-fingerprint`、`keep-alive-idle`、`keep-alive-interval`、`disable-keep-alive`、`profile.store-selected`、`profile.store-fake-ip`、`global-ua` | 一般保持初始模板的值，遇到兼容性问题再调整 |
+| 进阶 | `tun.stack`、`tun.mtu`、`unified-delay`、`tcp-concurrent`、`global-client-fingerprint`、`keep-alive-idle`、`keep-alive-interval`、`disable-keep-alive`、`profile.store-selected`、`profile.store-fake-ip`、`global-ua` | 一般保持初始模板的值，遇到兼容性问题再调整 |
 
-![端口冲突时两个字段都标出原因，保存按钮不可用](../img/guide/mihomo-base-settings-port-conflict.png)
+![端口冲突时两个端口都标红并写明原因，保存按钮不可用](../img/guide/mihomo-base-settings-port-conflict.png)
 
-**只读项**：`dns.listen`、`dns.enhanced-mode` 以及 `tun.enable`、`tun.auto-route`、`tun.auto-redirect`、`tun.dns-hijack` 决定流量和 DNS 由谁接管，在「接管与 DNS 监听（只读）」中只显示不修改。启用 Linux 网关时发布会自动改写它们；首次向导的「Mihomo + OxiDNS 分流（完整 TUN）」要求 TUN 保持完整，改动会在发布前被拒绝。确实需要调整时在 YAML 中编辑。
+**只读项**：`dns.listen`、`dns.enhanced-mode` 以及 `tun.enable`、`tun.auto-route`、`tun.auto-redirect`、`tun.dns-hijack` 决定流量和 DNS 由谁接管，在「接管与 DNS 监听」（标有「只读」）中只显示不修改。启用 Linux 网关时发布会自动改写它们；首次向导的「Mihomo + OxiDNS 分流（完整 TUN）」要求 TUN 保持完整，改动会在发布前被拒绝。确实需要调整时在 YAML 中编辑。
 
-**与 YAML 的同步**：表单每次只改对应的键，未涉及的键、注释和缩进保持原样；只有紧挨着改动的几行可能按标准格式重新排版（例如注释前的空格）。YAML 无法解析，或某个值使用了锚点、别名、合并（`<<`）时，表单停用或该项只读并说明原因，不会覆盖你的内容。密码以明文保存在 YAML 中，编辑器里同样可见；表单只是默认隐藏。
+**与 YAML 的同步**：表单每次只改对应的键，未涉及的键、注释和缩进保持原样；只有紧挨着改动的几行可能按标准格式重新排版（例如注释前的空格）。YAML 无法解析时属性表隐藏（读不出当前值，不拿默认值冒充），只显示错误原因；某个值使用了锚点、别名、合并（`<<`）时该项只读并说明原因。两种情况都不会覆盖你的内容。密码以明文保存在 YAML 中，编辑器里同样可见；表单只是默认隐藏。
 
 | 项目 | 用途与推荐选择 | 修改后的结果 |
 | --- | --- | --- |
