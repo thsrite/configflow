@@ -26,9 +26,10 @@ from backend.converters.oxidns import _forward, generate_oxidns_config
 from backend.converters.mihomo import generate_mihomo_config, _default_mihomo_template
 
 DEFAULT_LOCAL_DNS = 'https://223.5.5.5/dns-query'
-# IP-address DoH needs no bootstrap resolver and is not exposed to plain :53
+# Domestic IP-address DoH (AliDNS, DNSPod): Mihomo resolves direct and proxy
+# server names with it, needs no bootstrap resolver and is not exposed to plain :53
 # hijacking; the first-run wizard writes the same default.
-DEFAULT_MIHOMO_NAMESERVERS = ('https://223.5.5.5/dns-query', 'https://1.1.1.1/dns-query')
+DEFAULT_MIHOMO_NAMESERVERS = ('https://223.5.5.5/dns-query', 'https://1.12.12.12/dns-query')
 DNS_TARGET = '127.0.0.1:1053'
 INPUT_FIELDS = {'rule_set_ids', 'direct_rule_set_ids', 'proxy_rule_set_ids', 'local_dns',
                 'query_recorder', 'confirm_template_conversion', 'expected_config_revision', 'default_forward'}

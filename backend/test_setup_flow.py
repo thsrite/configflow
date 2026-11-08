@@ -128,7 +128,7 @@ def test_prepare_is_resumable_scoped_and_has_a_real_proxy_exit(setup_api, goal):
     assert mihomo_dns['listen'] == '127.0.0.1:1053'
     # Same IP-address DoH upstreams the gateway installer fills in by default.
     from backend.common.gateway_onboarding import DEFAULT_MIHOMO_NAMESERVERS
-    assert mihomo_dns['nameserver'] == ['https://223.5.5.5/dns-query', 'https://1.1.1.1/dns-query']
+    assert mihomo_dns['nameserver'] == ['https://223.5.5.5/dns-query', 'https://1.12.12.12/dns-query']
     assert mihomo_dns['nameserver'] == list(DEFAULT_MIHOMO_NAMESERVERS)
     assert repository.get_profile('default') == old
     response = client.post(f'/api/setup/{SESSION}/finish', json={})

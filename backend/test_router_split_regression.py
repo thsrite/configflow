@@ -191,7 +191,20 @@ def test_mihomo_without_marker_matches_the_previous_release(name):
         if '/rules/local/' in url and provider.get('format') != 'mrs':
             expected = expected.replace('url: ' + url + '\n',
                                         'url: ' + url + '?target=mihomo\n')
+    if name == 'gateway':
+        expected = with_current_gateway_nameserver(expected)
     assert unmarked_mihomo_outputs()[name] == expected
+
+
+_PREVIOUS_GATEWAY_NAMESERVER = '  nameserver:\n    - https://223.5.5.5/dns-query\n    - https://1.1.1.1/dns-query\n'
+
+
+def with_current_gateway_nameserver(expected):
+    """0ef9e89 filled the gateway's missing Mihomo upstreams with Cloudflare DoH; it is now domestic."""
+    from backend.common.gateway_onboarding import DEFAULT_MIHOMO_NAMESERVERS
+    assert expected.count(_PREVIOUS_GATEWAY_NAMESERVER) == 1
+    current = '  nameserver:\n' + ''.join(f'    - {value}\n' for value in DEFAULT_MIHOMO_NAMESERVERS)
+    return expected.replace(_PREVIOUS_GATEWAY_NAMESERVER, current)
 
 
 def test_router_setup_runs_end_to_end_on_a_full_tun(authenticated_app, monkeypatch):
