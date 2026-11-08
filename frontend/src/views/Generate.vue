@@ -15,7 +15,7 @@
       :back-label="settingsBackLabel"
       :dirty="customConfigDirty"
       :busy="savingCustomConfig || ipv6NetworkBusy"
-      :save-disabled="currentConfigType === 'mihomo' && ipv6Validation.invalid"
+      :save-disabled="currentConfigType === 'mihomo' && (ipv6Validation.invalid || baseValidation.invalid)"
       size="wide"
       save-label="保存草稿"
       @save="saveCustomConfig()"
@@ -26,6 +26,9 @@
         :profile-id="profileId" :preferred-agent-id="agentSettings?.agentId" :default-config="mihomoDefaultConfig"
         :dirty="customConfigDirty" :disabled="savingCustomConfig" @busy="ipv6NetworkBusy = $event" @validation="ipv6Validation = $event"
         :refresh-key="ipv6Published" />
+      <MihomoBaseSettings v-if="currentConfigType === 'mihomo'" v-model="customConfigContent" :open="customConfigDialogVisible"
+        :saved-content="customConfigSavedContent" :default-config="mihomoDefaultConfig" :context="mihomoBaseContext"
+        :disabled="savingCustomConfig" :inert="ipv6NetworkBusy" @validation="baseValidation = $event" />
       <div :inert="savingCustomConfig || ipv6NetworkBusy" class="flex min-h-80 min-w-0 flex-1 flex-col gap-3 p-4 md:p-5">
         <p v-if="settingsContextLabel" class="m-0 shrink-0 break-words text-xs text-muted-foreground">{{ settingsContextLabel }}</p>
         <YamlEditor
@@ -672,6 +675,7 @@ import GenerateStudio from '@/components/generate/GenerateStudio.vue'
 import SettingsWorkspace from '@/components/generate/SettingsWorkspace.vue'
 import MihomoSyncInterval from '@/components/generate/MihomoSyncInterval.vue'
 import MihomoIPv6Settings from '@/components/generate/MihomoIPv6Settings.vue'
+import MihomoBaseSettings, { type MihomoBaseServerContext } from '@/components/generate/MihomoBaseSettings.vue'
 import { isRefreshInterval } from '@/lib/subscriptionRefresh'
 import SettingsPublishBar from '@/components/generate/SettingsPublishBar.vue'
 import { useProfileStore } from '@/stores/profile'
@@ -1046,13 +1050,15 @@ const customConfigContent = ref('')
 const mihomoDefaultConfig = ref('')
 const ipv6NetworkBusy = ref(false)
 const ipv6Validation = ref({ invalid: false, dirty: false })
+const baseValidation = ref({ invalid: false, dirty: false })
+const mihomoBaseContext = ref<MihomoBaseServerContext | null>(null)
 // A confirmed Mihomo publish changes what the IPv6 steps read from the device.
 const ipv6Published = ref(0)
 const customConfigSavedContent = ref('')
 const mihomoSyncInterval = ref<number | string>(3600)
 const mihomoSavedSyncInterval = ref(3600)
 const customConfigDirty = computed(() => customConfigContent.value !== customConfigSavedContent.value
-  || (currentConfigType.value === 'mihomo' && (mihomoSyncInterval.value !== mihomoSavedSyncInterval.value || ipv6Validation.value.dirty)))
+  || (currentConfigType.value === 'mihomo' && (mihomoSyncInterval.value !== mihomoSavedSyncInterval.value || ipv6Validation.value.dirty || baseValidation.value.dirty)))
 const savingCustomConfig = ref(false)
 const currentConfigType = ref<ConfigType>('mihomo')
 const customConfigSession = trackEditorSession(customConfigDialogVisible, savingCustomConfig)
@@ -1637,6 +1643,7 @@ const showCustomConfigDialog = async (type: ConfigType) => {
     if (!pageActive) return
     customConfigContent.value = response.data.config || ''
     mihomoDefaultConfig.value = response.data.default_config || ''
+    mihomoBaseContext.value = response.data.base_settings ?? null
     customConfigSavedContent.value = customConfigContent.value
     if (type === 'mihomo') mihomoSyncInterval.value = mihomoSavedSyncInterval.value = response.data.provider_update_interval ?? 3600
     customConfigDialogVisible.value = true
@@ -1649,7 +1656,7 @@ const saveCustomConfig = async (close = currentConfigType.value !== 'mihomo'): P
   if (!pageActive || !customConfigDialogVisible.value || savingCustomConfig.value || ipv6NetworkBusy.value) return null
   const session = customConfigSession.capture()
   const type = currentConfigType.value
-  if (type === 'mihomo' && ipv6Validation.value.invalid) return null
+  if (type === 'mihomo' && (ipv6Validation.value.invalid || baseValidation.value.invalid)) return null
   const content = customConfigContent.value
   const interval = mihomoSyncInterval.value
   if (type === 'mihomo' && !isRefreshInterval(interval)) {
@@ -1672,7 +1679,7 @@ const saveCustomConfig = async (close = currentConfigType.value !== 'mihomo'): P
     if (close) customConfigDialogVisible.value = false
     return response.data.publish_guard ?? null
   } catch (error) {
-    if (customConfigSession.isCurrent(session)) notify.error('保存基础配置失败')
+    if (customConfigSession.isCurrent(session)) notify.error('保存基础配置失败', (error as any)?.response?.data?.message || (error as any)?.message)
     return null
   } finally {
     if (customConfigSession.isCurrent(session)) savingCustomConfig.value = false

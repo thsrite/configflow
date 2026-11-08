@@ -9,6 +9,7 @@ import SettingsWorkspace from './SettingsWorkspace.vue'
 import SettingsPublishBar from './SettingsPublishBar.vue'
 import MihomoSyncInterval from './MihomoSyncInterval.vue'
 import MihomoIPv6Settings from './MihomoIPv6Settings.vue'
+import MihomoBaseSettings, { type MihomoBaseServerContext } from './MihomoBaseSettings.vue'
 import { isRefreshInterval } from '@/lib/subscriptionRefresh'
 
 const props = defineProps<{ open: boolean; profileId: string; contextLabel: string; preferredAgentId?: string }>()
@@ -18,6 +19,8 @@ const savedContent = ref('')
 const defaultConfig = ref('')
 const networkBusy = ref(false)
 const ipv6Validation = ref({ invalid: false, dirty: false })
+const baseValidation = ref({ invalid: false, dirty: false })
+const baseContext = ref<MihomoBaseServerContext | null>(null)
 // A confirmed publish changes what the IPv6 steps read from the device.
 const ipv6Published = ref(0)
 const syncInterval = ref<number | string>(3600)
@@ -25,7 +28,8 @@ const savedSyncInterval = ref(3600)
 const loading = ref(false)
 const saving = ref(false)
 const loadError = ref('')
-const dirty = computed(() => content.value !== savedContent.value || syncInterval.value !== savedSyncInterval.value || ipv6Validation.value.dirty)
+const dirty = computed(() => content.value !== savedContent.value || syncInterval.value !== savedSyncInterval.value || ipv6Validation.value.dirty || baseValidation.value.dirty)
+const invalid = computed(() => ipv6Validation.value.invalid || baseValidation.value.invalid)
 let session = 0
 let disposed = false
 const current = (request: number) => !disposed && props.open && session === request
@@ -37,11 +41,13 @@ async function load() {
   loadError.value = ''
   content.value = savedContent.value = ''
   defaultConfig.value = ''
+  baseContext.value = null
   try {
     const response = await customConfigApi.getMihomo(props.profileId)
     if (current(request)) {
       content.value = savedContent.value = response.data.config || ''
       defaultConfig.value = response.data.default_config || ''
+      baseContext.value = response.data.base_settings ?? null
       syncInterval.value = savedSyncInterval.value = response.data.provider_update_interval ?? 3600
     }
   } catch (failure: any) {
@@ -52,7 +58,7 @@ async function load() {
 }
 
 async function save(close = false): Promise<PublishGuard | null> {
-  if (!props.open || disposed || loading.value || loadError.value || saving.value || networkBusy.value || ipv6Validation.value.invalid) return null
+  if (!props.open || disposed || loading.value || loadError.value || saving.value || networkBusy.value || invalid.value) return null
   const request = session
   const submitted = content.value
   const interval = syncInterval.value
@@ -86,7 +92,7 @@ onUnmounted(() => { disposed = true })
 
 <template>
   <SettingsWorkspace :open="open" title="Mihomo 基础配置" :dirty="dirty" :busy="saving || networkBusy"
-    :save-disabled="loading || Boolean(loadError) || ipv6Validation.invalid" save-label="保存草稿" back-label="返回 Mihomo 面板" size="wide"
+    :save-disabled="loading || Boolean(loadError) || invalid" save-label="保存草稿" back-label="返回 Mihomo 面板" size="wide"
     description="设置端口、DNS、TUN 等基础选项。生成时会合并此配置空间的节点、策略组和规则。请使用 YAML 格式；留空并保存可恢复默认基础配置。"
     @update:open="emit('update:open', $event)" @save="save()">
     <p class="m-0 shrink-0 break-words border-b border-border px-4 py-2 text-xs text-muted-foreground sm:px-5">{{ contextLabel }}</p>
@@ -100,6 +106,8 @@ onUnmounted(() => { disposed = true })
       <MihomoIPv6Settings v-model="content" :open="open" :profile-id="profileId" :preferred-agent-id="preferredAgentId"
         :default-config="defaultConfig" :dirty="dirty" :disabled="saving" @busy="networkBusy = $event" @validation="ipv6Validation = $event"
         :refresh-key="ipv6Published" />
+      <MihomoBaseSettings v-model="content" :open="open" :saved-content="savedContent" :default-config="defaultConfig" :context="baseContext"
+        :disabled="saving" :inert="networkBusy" @validation="baseValidation = $event" />
       <div :inert="networkBusy" class="min-h-80 flex-1 p-4 md:p-5">
         <YamlEditor v-model="content" class="h-full min-h-0" placeholder="输入 Mihomo 基础 YAML 配置，例如 mixed-port、dns、tun。" />
       </div>
