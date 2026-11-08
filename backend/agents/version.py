@@ -1,10 +1,19 @@
 """Agent 版本管理"""
 
 # Agent 最新版本号
-LATEST_AGENT_VERSION = "1.8.53-go"
+LATEST_AGENT_VERSION = "1.8.54-go"
 
 # 版本更新日志（可选）
 VERSION_CHANGELOG = {
+    "1.8.54-go": {
+        "date": "2026-11-08",
+        "features": [
+            "同机安装 OxiDNS 的明文上游和 bootstrap 地址自动排除出 Mihomo TUN（含 Linux 网关模式），不再被劫持成 fake-ip；新排除后热重载同机 OxiDNS，清掉沿用的旧连接",
+            "OpenRC 上 IPv4 转发持久化开机生效：安装器和面板“开启并持久化”自动将 sysctl 服务加入 boot 运行级别，已持久化的主机升级 Agent 后自动补上，无法设置时给出手动步骤",
+            "OpenRC 按服务 pidfile 取得 Mihomo 核心 PID，实际检查 TUN 权限和持有的 TUN 接口；只装 DNS 核心时不再检查 IPv4 转发",
+            "安装向导可选 wget，网关安装器自动补装 nftables、iproute2 等缺少的依赖；同时安装核心后不再提示另装 Agent"
+        ]
+    },
     "1.8.53-go": {
         "date": "2026-11-01",
         "features": ["支持生成最终下发配置；提前完成设备适配，发布时拒绝改写已预览的配置"]
