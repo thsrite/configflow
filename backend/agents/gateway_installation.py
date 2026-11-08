@@ -608,7 +608,10 @@ def _publish_service(repository, manager, session, service):
                         **{key: prepared[key] for key in ('provider_downloads', 'ruleset_downloads', 'custom_files')}},
             config_revision=session['config_revision'], expected_profile_id=session['profile_id'], expected_service_type=service)
     except Exception:
-        manager.record_deployment(agent['id'], deployment_id, {'success': False, 'status': 'failed', 'message': '安装向导配置发布准备失败，请检查错误后重试。'})
+        task = manager.record_deployment(agent['id'], deployment_id, {'success': False, 'status': 'failed', 'message': '安装向导配置发布准备失败，请检查错误后重试。'})
+        # Mirror the terminal record into the session; a stale preparing status
+        # would make the next retry reuse this ID and only read back the failure.
+        _progress(repository, session['id'], service, task)
         raise
     finally:
         manager.finish_deployment_preparation(agent['id'], deployment_id)

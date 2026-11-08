@@ -5,6 +5,7 @@ import fcntl
 import json
 from pathlib import Path
 import stat
+from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 import pytest
@@ -651,6 +652,50 @@ def test_real_bundle_preparation_and_manager_delivery_use_exact_pair_revision_an
     manager._update_agents(lambda agents: next(a for a in agents if a['id'] == saved['agent_ids']['oxidns']).update(
         latest_deployment={'deployment_id': 'different', 'status': 'succeeded'}))
     assert sessions.get(manager.repository, manager, saved['id'])['target_changed']
+
+
+def test_preparation_failure_lets_the_first_retry_publish_with_a_new_task(setup, monkeypatch):
+    """A rule download failure before upload must not leave the session at preparing."""
+    from backend.agents.deployment_bundle import RuleDownloadError
+    import backend.routes.agents as agent_routes
+    client, manager, admin, body, saved = setup
+    saved = prepare_run(manager, saved)
+    original_prepare = agent_routes._prepare_transactional_content
+    attempts = []
+    def prepare(agent, *args, **kwargs):
+        attempts.append(kwargs['deployment_id'])
+        if len(attempts) == 1:
+            raise RuleDownloadError('无法下载「Telegram」规则集：连接失败', remedy={'kind': 'rule_download', 'github': True})
+        return original_prepare(agent, *args, **kwargs)
+    deliveries = []
+    def request(agent, method, path, **kwargs):
+        if path == 'capabilities':
+            return {'deployment_protocols': [1], 'service_type': agent['service_type'], 'config_path': 'config.yaml'}
+        assert method == 'post' and path == 'deployments'
+        deliveries.append((agent['service_type'], kwargs['headers']['X-Deployment-ID']))
+        return {'status': 'succeeded', 'success': True, 'deployment_id': kwargs['headers']['X-Deployment-ID']}
+    monkeypatch.setattr(agent_routes, '_prepare_transactional_content', prepare)
+    monkeypatch.setattr(manager, '_deployment_request', request)
+    sessions.run_publication(manager.repository, manager, saved['id'], pause=lambda _: None)
+    failed = sessions._read(manager.repository, saved['id'])
+    assert failed['phase'] == 'publish_failed' and failed['remedy']
+    assert failed['deployments']['mihomo']['status'] == 'failed'
+    assert manager.get_deployment(saved['agent_ids']['mihomo'], 'job-mihomo')['status'] == 'failed'
+    assert deliveries == []
+
+    workers = []
+    with monkeypatch.context() as patch:
+        # Only capture the publication worker; bundle downloads still use real threads.
+        patch.setattr(sessions.threading, 'Thread', lambda target, **kw: workers.append(target) or SimpleNamespace(start=lambda: None))
+        response = client.post(BASE + '/' + saved['id'] + '/publish', headers=admin, json={'retry_failed': True})
+    assert response.status_code == 202, response.get_json()
+    workers.pop()()
+    result = sessions._read(manager.repository, saved['id'])
+    assert result['phase'] == 'published', result['message']
+    retried = result['deployments']['mihomo']['deployment_id']
+    assert retried != 'job-mihomo' and attempts[1] == retried
+    # OxiDNS never started, so its untouched task ID is still the one to use.
+    assert deliveries == [('mihomo', retried), ('oxidns', 'job-oxidns')]
 
 
 def test_install_address_must_match_persisted_rule_callback_origin(setup):
