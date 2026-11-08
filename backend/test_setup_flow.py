@@ -1,4 +1,5 @@
 from copy import deepcopy
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +13,7 @@ from backend.routes import register_blueprints
 from backend.utils.subscription_cache import save_subscription_nodes
 
 SESSION = 'a' * 32
+SECRET = 'lab-panel-pass'
 NODE = {'id': 'node', 'name': 'Test node', 'type': 'ss', 'server': '192.0.2.1',
         'port': 443, 'cipher': 'aes-128-gcm', 'password': 'private'}
 DOMAIN_RULE = {'id': 'work', 'name': '工作域名', 'behavior': 'domain', 'format': 'yaml',
@@ -101,7 +103,7 @@ def test_sources_are_idempotent_and_bad_subscription_cannot_complete(setup_api):
         response = client.post(f'/api/setup/{SESSION}/source', json=body)
         assert response.status_code == 200, response.json
     assert len(repository.get_shared()['subscriptions']) == 1
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET})
     assert response.status_code == 400
     assert '可用节点' in response.json['message']
     assert client.post(f'/api/setup/{SESSION}/finish', json={}).status_code == 409
@@ -116,7 +118,7 @@ def test_prepare_is_resumable_scoped_and_has_a_real_proxy_exit(setup_api, goal):
     response = client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
     assert response.status_code == 200
     for _ in range(2):
-        response = client.post(f'/api/setup/{SESSION}/prepare', json={'template': 'basic'})
+        response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'template': 'basic'})
         assert response.status_code == 200, response.json
     profile = repository.get_profile(session['profile_id'])
     assert profile['_revision'] == 1
@@ -126,10 +128,8 @@ def test_prepare_is_resumable_scoped_and_has_a_real_proxy_exit(setup_api, goal):
     assert profile['rule_configs'][-1]['policy'] == '🐟 漏网之鱼'
     mihomo_dns = yaml.safe_load(profile['mihomo']['custom_config'])['dns']
     assert mihomo_dns['listen'] == '127.0.0.1:1053'
-    # Same IP-address DoH upstreams the gateway installer fills in by default.
-    from backend.common.gateway_onboarding import DEFAULT_MIHOMO_NAMESERVERS
-    assert mihomo_dns['nameserver'] == ['https://223.5.5.5/dns-query', 'https://1.12.12.12/dns-query']
-    assert mihomo_dns['nameserver'] == list(DEFAULT_MIHOMO_NAMESERVERS)
+    # The new profile's empty base starts from the initial template, whose upstreams are kept.
+    assert mihomo_dns['nameserver'] == yaml.safe_load(_template_base())['dns']['nameserver']
     assert repository.get_profile('default') == old
     response = client.post(f'/api/setup/{SESSION}/finish', json={})
     assert response.status_code == 409
@@ -150,18 +150,18 @@ def test_dns_query_recorder_is_on_by_default_and_follows_the_switch(setup_api):
     profile_id = session['profile_id']
     repository.update_shared_transaction(lambda shared: shared['nodes'].append(deepcopy(NODE)))
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET})
     assert response.status_code == 200, response.json
     assert response.json['query_recorder'] is True
     default_args = get_default_oxidns_settings()['query_recorder']['args']
     assert _recorder(repository, profile_id) == {'enabled': True, 'args': default_args}
     # The embedded installer starts from the profile, so it keeps the choice.
     assert client.get(f'/api/profiles/{profile_id}/gateway-onboarding').json['settings']['query_recorder'] is True
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={'query_recorder': False})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'query_recorder': False})
     assert response.status_code == 200, response.json
     assert _recorder(repository, profile_id) == {'enabled': False, 'args': default_args}
     # A later prepare without the field keeps the saved choice.
-    assert client.post(f'/api/setup/{SESSION}/prepare', json={}).json['query_recorder'] is False
+    assert client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET}).json['query_recorder'] is False
     assert _recorder(repository, profile_id)['enabled'] is False
     assert client.get(f'/api/profiles/{profile_id}/gateway-onboarding').json['settings']['query_recorder'] is False
 
@@ -171,12 +171,12 @@ def test_setup_prepared_before_the_recorder_switch_keeps_it_off(setup_api):
     session = start(client)
     repository.update_shared_transaction(lambda shared: shared['nodes'].append(deepcopy(NODE)))
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
-    assert client.post(f'/api/setup/{SESSION}/prepare', json={'query_recorder': False}).status_code == 200
+    assert client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'query_recorder': False}).status_code == 200
     from backend.common import setup_flow
     stored = setup_flow.read(repository, SESSION)
     del stored['query_recorder']
     setup_flow.write(repository, stored)
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET})
     assert response.status_code == 200, response.json
     assert _recorder(repository, session['profile_id'])['enabled'] is False
 
@@ -188,7 +188,7 @@ def test_invalid_recorder_switch_does_not_change_the_profile(setup_api, value):
     repository.update_shared_transaction(lambda shared: shared['nodes'].append(deepcopy(NODE)))
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
     before = repository.export_all()
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={'query_recorder': value})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'query_recorder': value})
     assert response.status_code == 400
     assert repository.export_all() == before
 
@@ -198,10 +198,10 @@ def test_subscription_cache_and_manual_profile_changes_are_checked(setup_api):
     session = start(client)
     client.post(f'/api/setup/{SESSION}/source', json={'url': 'https://subscription.test/list'})
     save_subscription_nodes('setup_sub_' + SESSION, [NODE])
-    assert client.post(f'/api/setup/{SESSION}/prepare', json={}).status_code == 200
+    assert client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET}).status_code == 200
     repository.save_profile(session['profile_id'], {'mihomo': {'custom_config': 'mixed-port: 9999'}})
     before = repository.export_all()
-    assert client.post(f'/api/setup/{SESSION}/prepare', json={}).status_code == 409
+    assert client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET}).status_code == 409
     assert repository.export_all() == before
     assert client.post(f'/api/setup/{SESSION}/finish', json={}).status_code == 409
 
@@ -212,7 +212,7 @@ def test_embedded_installation_and_router_writes_do_not_block_new_choices(setup_
     profile_id = session['profile_id']
     repository.update_shared_transaction(lambda shared: shared['nodes'].append(deepcopy(NODE)))
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
-    assert client.post(f'/api/setup/{SESSION}/prepare', json={}).status_code == 200
+    assert client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET}).status_code == 200
     # Step 4 saves the installation settings before generating the command.
     state = client.get(f'/api/profiles/{profile_id}/gateway-onboarding').json
     response = client.post(f'/api/profiles/{profile_id}/gateway-onboarding',
@@ -220,11 +220,11 @@ def test_embedded_installation_and_router_writes_do_not_block_new_choices(setup_
     assert response.status_code == 200, response.json
     response = client.post('/api/routers', json=ROUTER_DRAFT, headers={'X-ConfigFlow-Profile': profile_id})
     assert response.status_code == 200, response.json
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={'traffic_fallback': 'direct'})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'traffic_fallback': 'direct'})
     assert response.status_code == 200, response.json
     assert repository.get_profile(profile_id)['rule_configs'][-1]['policy'] == 'DIRECT'
     repository.save_profile(profile_id, {'mihomo': {'custom_config': 'mixed-port: 9999'}})
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={'traffic_fallback': 'proxy'})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'traffic_fallback': 'proxy'})
     assert response.status_code == 409
     assert '其他页面' in response.json['message']
 
@@ -260,7 +260,7 @@ def installed(setup_api, monkeypatch):
     session = start(client)
     repository.update_shared_transaction(lambda shared: shared['nodes'].append(deepcopy(NODE)))
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
-    client.post(f'/api/setup/{SESSION}/prepare', json={})
+    client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET})
     profile_id = session['profile_id']
     revision = repository.config_revision(profile_id)
     agents = {service: {'id': service, 'name': service, 'host': '192.0.2.10', 'status': 'online',
@@ -445,7 +445,7 @@ def test_dns_and_connection_fallbacks_are_independent_through_installation(setup
     repository.update_shared_transaction(lambda shared: shared['nodes'].append(deepcopy(NODE)))
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
     local_dns = 'https://223.6.6.6/dns-query\ntls://223.5.5.5:853'
-    choices = {'dns_fallback': dns_fallback, 'traffic_fallback': traffic_fallback, 'local_dns': f'  {local_dns}\n',
+    choices = {'controller_secret': SECRET, 'dns_fallback': dns_fallback, 'traffic_fallback': traffic_fallback, 'local_dns': f'  {local_dns}\n',
                'domain_rules': {'direct': ['builtin:direct'], 'proxy': ['builtin:proxy']}}
     for _ in range(2):
         response = client.post(f'/api/setup/{SESSION}/prepare', json=choices)
@@ -504,7 +504,7 @@ def test_invalid_direct_dns_does_not_change_profile_presets_or_session(setup_api
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
     before = repository.export_all()
     session = client.get(f'/api/setup/{SESSION}').json
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={'local_dns': local_dns})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'local_dns': local_dns})
     assert response.status_code == 400, response.json
     assert '直连 DNS' in response.json['message']
     assert repository.export_all() == before
@@ -533,7 +533,7 @@ def test_old_two_preset_choices_use_template_sources_without_extra_rule_library(
     start(client)
     repository.update_shared_transaction(lambda shared: shared['nodes'].append(deepcopy(NODE)))
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={'domain_rules': {
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'domain_rules': {
         'direct': ['preset:direct'], 'proxy': ['preset:proxy']}})
     assert response.status_code == 200, response.json
     assert response.json['domain_rules'] == {'direct': ['builtin:chinamax'], 'proxy': ['builtin:proxy']}
@@ -556,7 +556,7 @@ def test_selected_domain_rules_reach_both_core_configs_and_installer(setup_api, 
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
     before_rule = deepcopy(repository.get_shared()['rule_library'][0])
     for _ in range(2):
-        response = client.post(f'/api/setup/{SESSION}/prepare', json={'domain_rules': selections})
+        response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'domain_rules': selections})
         assert response.status_code == 200, response.json
         assert response.json['domain_rules'] == selections
     assert client.get(f'/api/setup/{SESSION}').json['domain_rules'] == selections
@@ -596,7 +596,7 @@ def test_invalid_domain_selections_do_not_create_presets_or_change_drafts(setup_
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
     before = repository.export_all()
     session = client.get(f'/api/setup/{SESSION}').json
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={'domain_rules': selections})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'domain_rules': selections})
     assert response.status_code in (400, 409), response.json
     assert repository.export_all() == before
     assert client.get(f'/api/setup/{SESSION}').json == session
@@ -637,7 +637,7 @@ def test_recommended_classical_library_is_ready_and_existing_sources_are_not_dup
     session = start(client)
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
     for _ in range(2):
-        response = client.post(f'/api/setup/{SESSION}/prepare', json={})
+        response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET})
         assert response.status_code == 200, response.json
         assert response.json['domain_rules'] == recommended_domain_rules()
     shared = repository.get_shared()['rule_library']
@@ -662,7 +662,7 @@ def test_recommended_classical_library_is_ready_and_existing_sources_are_not_dup
     assert 'library:existing_telegram' in telegram['aliases']
     assert not any(item['id'] == 'library:existing_telegram' for item in index['domain_rules'])
     # An older saved library identity is still accepted and resolves to the same source.
-    result = client.post(f'/api/setup/{SESSION}/prepare', json={'domain_rules': {'direct': [], 'proxy': ['library:existing_telegram']}})
+    result = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'domain_rules': {'direct': [], 'proxy': ['library:existing_telegram']}})
     assert result.status_code == 200, result.json
     assert result.json['domain_rules'] == {'direct': [], 'proxy': ['builtin:telegram']}
 
@@ -677,7 +677,7 @@ def test_disabled_existing_builtin_source_is_not_cloned_or_reenabled(setup_api):
     index = client.get('/api/setup').json
     assert 'builtin:telegram' not in index['recommended_domain_rules']['proxy']
     assert not any(item['id'] == 'builtin:telegram' for item in index['domain_rules'])
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET})
     assert response.status_code == 200, response.json
     shared = repository.get_shared()['rule_library']
     assert len(shared) == len(builtin_rule_catalog())
@@ -737,7 +737,7 @@ def test_equivalent_hand_written_set_is_reused_instead_of_copied(setup_api):
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
     grok = next(item for item in client.get('/api/setup').json['domain_rules'] if item['id'] == 'builtin:grok')
     assert grok['aliases'] == ['library:my_grok'] and 'conflict' not in grok
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={'domain_rules': {'direct': [], 'proxy': ['library:my_grok']}})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'domain_rules': {'direct': [], 'proxy': ['library:my_grok']}})
     assert response.status_code == 200, response.json
     assert response.json['domain_rules'] == {'direct': [], 'proxy': ['builtin:grok']}
     shared = repository.get_shared()['rule_library']
@@ -758,14 +758,14 @@ def test_namesake_with_different_rules_is_offered_and_copied_only_when_chosen(se
     assert grok['conflict'] == {'id': 'library:my_grok', 'name': 'Grok'}
     assert any(item['id'] == 'library:my_grok' for item in options)
     # Choosing the user's set leaves no copy behind, even for template sets not chosen at all.
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={'domain_rules': {'direct': [], 'proxy': ['library:my_grok']}})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'domain_rules': {'direct': [], 'proxy': ['library:my_grok']}})
     assert response.status_code == 200, response.json
     shared = repository.get_shared()['rule_library']
     assert [item['name'] for item in shared].count('Grok') == 1
     assert not any(item['name'].startswith('Grok（') for item in shared)
     assert len(shared) == len(builtin_rule_catalog())
     # Choosing the template's set adds it under a name that says where it came from.
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={'domain_rules': {'direct': [], 'proxy': ['builtin:grok']}})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'domain_rules': {'direct': [], 'proxy': ['builtin:grok']}})
     assert response.status_code == 200, response.json
     copy = next(item for item in repository.get_shared()['rule_library'] if item['name'].startswith('Grok（'))
     assert copy['name'] == 'Grok（内置）' and copy['id'] == 'builtin_grok'
@@ -792,10 +792,10 @@ def test_new_choices_after_installation_check_clear_stale_later_steps(installed)
     response = client.post(f'/api/setup/{SESSION}/check', json={})
     assert response.status_code == 200, response.json
     assert response.json['max_step'] == 4 and response.json['route_instructions']
-    retry = client.post(f'/api/setup/{SESSION}/prepare', json={})
+    retry = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET})
     assert retry.status_code == 200 and retry.json['max_step'] == 4
     assert 'route_instructions' in retry.json
-    changed = client.post(f'/api/setup/{SESSION}/prepare', json={'traffic_fallback': 'direct'})
+    changed = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'traffic_fallback': 'direct'})
     assert changed.status_code == 200, changed.json
     assert changed.json['max_step'] == 3 and changed.json['step'] == 3
     assert not {'installation', 'route_instructions', 'router_verification'} & set(changed.json)
@@ -819,7 +819,7 @@ def test_gateway_takes_over_only_ip_app_rule_sets(setup_api):
     # out: their ranges overlap direct sites that would then be proxied.
     selections = {'direct': ['library:lan-chat', 'builtin:direct'],
                   'proxy': ['builtin:telegram', 'builtin:apple', 'builtin:googlefcm', 'library:chat', 'library:work']}
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={'domain_rules': selections})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'domain_rules': selections})
     assert response.status_code == 200, response.json
     snapshot, revision = repository.get_publish_snapshot(session['profile_id'])
     names = {item['id']: item['name'] for item in snapshot['rule_configs'] if item['itemType'] == 'ruleset'}
@@ -835,7 +835,7 @@ def test_gateway_takes_over_only_ip_app_rule_sets(setup_api):
     assert len(mihomo['tun']['route-address-set']) == 3
     # Without either app rule set among the proxy rules nothing is taken over.
     selections = {'direct': [], 'proxy': ['builtin:apple', 'library:chat']}
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={'domain_rules': selections})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'domain_rules': selections})
     assert response.status_code == 200, response.json
     assert repository.get_profile(session['profile_id'])['mihomo']['linux_gateway']['rule_set_ids'] == []
 
@@ -846,7 +846,7 @@ def test_router_setup_leaves_ip_takeover_to_the_router_settings(setup_api):
     repository.update_shared_transaction(lambda shared: shared.update(nodes=[deepcopy(NODE)], rule_library=[deepcopy(IP_RULE)]))
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
     selections = {'direct': [], 'proxy': ['builtin:telegram', 'library:chat']}
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={'domain_rules': selections})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'domain_rules': selections})
     assert response.status_code == 200, response.json
     mihomo = repository.get_profile(session['profile_id'])['mihomo']
     assert mihomo['linux_gateway'] == {'enabled': False, 'rule_set_ids': []}
@@ -897,7 +897,7 @@ def test_setup_profile_uses_template_groups_with_regions_from_the_nodes(setup_ap
     japan = {**deepcopy(NODE), 'id': 'jp', 'name': '日本 01', 'server': '192.0.2.2'}
     repository.update_shared_transaction(lambda shared: shared['nodes'].extend([hong_kong, japan]))
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['hk', 'jp']})
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET})
     assert response.status_code == 200, response.json
     snapshot, _ = repository.get_publish_snapshot(session['profile_id'])
     document = yaml.safe_load(generate_mihomo_config(snapshot, base_url='https://config.test', preflight_providers=False))
@@ -1060,14 +1060,15 @@ def test_router_setup_writes_full_tun_and_marker_instead_of_the_gateway(setup_ap
     repository.update_shared_transaction(lambda shared: shared['nodes'].append(deepcopy(NODE)))
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
     for _ in range(2):
-        response = client.post(f'/api/setup/{SESSION}/prepare', json={})
+        response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET})
         assert response.status_code == 200, response.json
         assert response.json['legacy_takeover'] is False
     profile = repository.get_profile(session['profile_id'])
     assert profile['_revision'] == 1
     base = yaml.safe_load(profile['mihomo']['custom_config'])
     assert base['tun'] == FULL_TUN
-    assert list(base) == ['mixed-port', 'allow-lan', 'bind-address', 'mode', 'log-level', 'external-controller', 'tun', 'dns']
+    # The new profile's base is empty, so the initial template is kept around the full TUN.
+    assert list(base) == list(yaml.safe_load(_template_base())) and base['secret'] == SECRET
     assert profile['mihomo']['router_split'] == {'version': 1, 'takeover': 'full_tun', 'origin': 'setup',
                                                  'route_rule_set_ids': []}
     assert profile['mihomo']['linux_gateway'] == {'enabled': False, 'rule_set_ids': []}
@@ -1083,7 +1084,7 @@ def test_router_reprepare_keeps_forwarded_rule_sets_that_still_exist(setup_api):
     repository.update_shared_transaction(lambda shared: shared.update(nodes=[deepcopy(NODE)], rule_library=[deepcopy(IP_RULE)]))
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
     selections = {'direct': [], 'proxy': ['library:chat']}
-    assert client.post(f'/api/setup/{SESSION}/prepare', json={'domain_rules': selections}).status_code == 200
+    assert client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'domain_rules': selections}).status_code == 200
     profile_id = session['profile_id']
     before = repository.get_profile(profile_id)
     chat = next(rule['id'] for rule in before['rule_configs'] if rule.get('library_rule_id') == 'chat')
@@ -1092,7 +1093,7 @@ def test_router_reprepare_keeps_forwarded_rule_sets_that_still_exist(setup_api):
     repository.save_profile(profile_id, {'mihomo': mihomo})
     from backend.common.setup_flow import adopt_owned_write
     adopt_owned_write(repository, profile_id, before, repository.get_profile(profile_id))
-    assert client.post(f'/api/setup/{SESSION}/prepare', json={'domain_rules': selections}).status_code == 200
+    assert client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'domain_rules': selections}).status_code == 200
     assert repository.get_profile(profile_id)['mihomo']['router_split']['route_rule_set_ids'] == [chat]
 
 
@@ -1105,14 +1106,14 @@ def test_gateway_setup_fields_match_the_previous_release(setup_api):
     assert client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']}).status_code == 200
     selections = {'direct': ['builtin:direct'], 'proxy': ['builtin:telegram', 'library:chat', 'builtin:proxy']}
     # The DNS query recorder switch postdates 0ef9e89, which left it off.
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={'domain_rules': selections, 'query_recorder': False})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'domain_rules': selections, 'query_recorder': False})
     assert response.status_code == 200, response.json
     assert 'legacy_takeover' not in response.json
     profile = repository.get_profile(session['profile_id'])
     # Captured from 0ef9e89 with the same inputs.
     expected = json.loads((Path(__file__).parent / 'testdata' / 'setup_gateway_fields_0ef9e89.json').read_text(encoding='utf-8'))
-    from backend.test_router_split_regression import with_current_setup_nameserver
-    expected = with_current_setup_nameserver(expected)
+    from backend.test_router_split_regression import with_current_setup_base
+    expected = with_current_setup_base(expected)
     # Per-rule OxiDNS DNS settings postdate 0ef9e89; they must be stored empty.
     rule_dns = {'rule_actions': {}, 'rule_dns_follow': [], 'rule_dns_parked': {}}
     assert {key: profile['oxidns'].get(key) for key in rule_dns} == rule_dns
@@ -1139,7 +1140,7 @@ def test_router_session_prepared_before_the_takeover_field_reports_legacy(setup_
     session = start(client)
     repository.update_shared_transaction(lambda shared: shared['nodes'].append(deepcopy(NODE)))
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
-    client.post(f'/api/setup/{SESSION}/prepare', json={})
+    client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET})
     stored = setup_flow.read(repository, SESSION)
     stored.pop('legacy_takeover')
     setup_flow.write(repository, stored)
@@ -1154,9 +1155,9 @@ def test_legacy_router_setup_keeps_the_gateway_when_prepared_again(setup_api):
     session = start(client)
     repository.update_shared_transaction(lambda shared: shared['nodes'].append(deepcopy(NODE)))
     client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
-    client.post(f'/api/setup/{SESSION}/prepare', json={})
+    client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET})
     _make_legacy(repository, session['profile_id'])
-    response = client.post(f'/api/setup/{SESSION}/prepare', json={'traffic_fallback': 'direct'})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'traffic_fallback': 'direct'})
     assert response.status_code == 200, response.json
     assert response.json['legacy_takeover'] is True
     mihomo = repository.get_profile(session['profile_id'])['mihomo']
@@ -1373,3 +1374,209 @@ def test_legacy_and_gateway_installation_checks_still_use_gateway_forwarding(ins
     assert client.post(f'/api/setup/{SESSION}/check', json={}).status_code == 200
     status['managed']['active'] = False
     assert client.post(f'/api/setup/{SESSION}/check', json={}).status_code == 409
+
+
+# The wizard keeps the profile's Mihomo base YAML and only sets what its plan needs.
+SETUP_RESERVED = {1053: ' Mihomo DNS ', 53: ' OxiDNS ', 9199: ' OxiDNS 管理 API '}
+
+
+def _template_base():
+    import json
+    from pathlib import Path
+    return json.loads((Path(__file__).parent / 'config_template.json').read_text(encoding='utf-8'))['mihomo']['custom_config']
+
+
+def _base(text, full_tun=True, secret=SECRET):
+    from backend.common.setup_flow import setup_mihomo_base
+    result, changes = setup_mihomo_base(text, full_tun=full_tun, reserved=SETUP_RESERVED, secret=secret)
+    return yaml.safe_load(result), changes, result
+
+
+SECRET_SET = '控制面板密码（secret）已设置'
+TEMPLATE_LISTEN = 'dns.listen 由 0.0.0.0:1053 改为 127.0.0.1:1053'
+
+
+def test_setup_base_keeps_the_initial_template_around_the_full_tun():
+    from backend.common.router_split import FULL_TUN, is_full_tun_document
+    original = yaml.safe_load(_template_base())
+    document, changes, text = _base(_template_base())
+    assert changes == [SECRET_SET, TEMPLATE_LISTEN]
+    assert document['tun'] == FULL_TUN and is_full_tun_document(document)
+    assert document['dns'] == {**original['dns'], 'listen': '127.0.0.1:1053'}
+    assert document['secret'] == SECRET and list(document) == list(original)
+    for key in ('sniffer', 'profile', 'external-controller', 'external-ui', 'external-ui-url',
+                'port', 'socks-port', 'mixed-port', 'redir-port', 'tproxy-port', 'find-process-mode'):
+        assert document[key] == original[key], key
+    assert {key: value for key, value in document.items() if key not in ('tun', 'dns', 'secret')} == \
+        {key: value for key, value in original.items() if key not in ('tun', 'dns', 'secret')}
+    for key in ('proxy-server-nameserver', 'direct-nameserver', 'default-nameserver', 'nameserver-policy',
+                'fake-ip-filter', 'respect-rules', 'nameserver'):
+        assert document['dns'][key] == original['dns'][key], key
+    # Preparing again changes nothing, with or without the password.
+    assert _base(text)[1:] == ([], text)
+    assert _base(text, secret=None)[1:] == ([], text)
+
+
+def test_setup_base_keeps_user_settings_and_existing_nameservers():
+    source = ('mixed-port: 17890\nexternal-controller: 0.0.0.0:19090\nsecret: own-secret\nsniffer: {enable: true}\n'
+              'dns:\n  enable: false\n  listen: 0.0.0.0:53\n  enhanced-mode: redir-host\n  nameserver: [tls://192.0.2.53]\n'
+              '  proxy-server-nameserver: [https://192.0.2.1/dns-query]\ntun:\n  enable: true\n  stack: gvisor\n  mtu: 1400\n'
+              '  dns-hijack: [udp://1.2.3.4:53]\n  route-address-set: [proxy-ip]\n  route-exclude-address: [192.0.2.9/32]\n'
+              "mode: global\nrules: ['MATCH,DIRECT']\n")
+    document, changes, _ = _base(source, secret=None)
+    assert document['dns'] == {'enable': True, 'listen': '127.0.0.1:1053', 'enhanced-mode': 'fake-ip',
+                               'nameserver': ['tls://192.0.2.53'],
+                               'proxy-server-nameserver': ['https://192.0.2.1/dns-query']}
+    # Full TUN keys win; the user's stack, MTU and the OxiDNS upstream exclusions stay.
+    assert document['tun'] == {'enable': True, 'stack': 'gvisor', 'mtu': 1400, 'dns-hijack': ['any:53', 'tcp://any:53'],
+                               'route-exclude-address': ['192.0.2.9/32'], 'auto-route': True, 'auto-redirect': True,
+                               'auto-detect-interface': True}
+    assert document['mode'] == 'rule'
+    # The user's own controller password is kept unless a new one is given.
+    assert {key: document[key] for key in ('mixed-port', 'external-controller', 'secret', 'sniffer', 'rules')} == {
+        'mixed-port': 17890, 'external-controller': '0.0.0.0:19090', 'secret': 'own-secret', 'sniffer': {'enable': True},
+        'rules': ['MATCH,DIRECT']}
+    assert changes == ['dns.enable 由 false 改为 true', 'dns.listen 由 0.0.0.0:53 改为 127.0.0.1:1053',
+                       'dns.enhanced-mode 由 redir-host 改为 fake-ip', 'mode 由 global 改为 rule',
+                       'tun 设为完整 TUN（enable、auto-route、auto-redirect、auto-detect-interface，dns-hijack 为 any:53），'
+                       '移除 tun.route-address-set']
+    document, changes, _ = _base(source)
+    assert document['secret'] == SECRET and changes[0] == '控制面板密码（secret）已更新'
+
+
+def test_setup_base_fills_missing_nameservers_only():
+    from backend.common.gateway_onboarding import DEFAULT_MIHOMO_NAMESERVERS
+    document, changes, _ = _base('log-level: debug\ndns:\n  fallback: [https://192.0.2.2/dns-query]\n')
+    assert document['dns']['nameserver'] == list(DEFAULT_MIHOMO_NAMESERVERS)
+    assert document['dns']['fallback'] == ['https://192.0.2.2/dns-query'] and document['log-level'] == 'debug'
+    assert changes[0] == 'dns.nameserver 为空，已补入 ' + '、'.join(DEFAULT_MIHOMO_NAMESERVERS)
+    assert _base('dns: {nameserver: [https://192.0.2.3/dns-query]}\n')[0]['dns']['nameserver'] == ['https://192.0.2.3/dns-query']
+
+
+def test_setup_base_starts_an_empty_profile_from_the_initial_template():
+    for text in ('', '  \n'):
+        for full_tun in (True, False):
+            assert _base(text, full_tun)[0] == _base(_template_base(), full_tun)[0]
+        document, changes, _ = _base(text)
+        assert changes == ['基础配置为空，已使用初始模板', SECRET_SET, TEMPLATE_LISTEN]
+        # No DoH fallback or GeoIP filter of the built-in fallback template.
+        assert 'fallback' not in document['dns'] and document['sniffer']['enable'] is True
+
+
+@pytest.mark.parametrize('secret, message', [
+    (None, '请设置控制面板密码'), ('123456', '默认密码 123456'), ('short', '8–64'), ('has space 123', '8–64'),
+    ('x' * 65, '8–64'), ('密码密码密码密码', '8–64'),
+])
+def test_setup_base_requires_a_controller_password_of_the_users_own(secret, message):
+    from backend.common.setup_flow import SetupError
+    for text in ('', _template_base(), 'mixed-port: 7890\n', 'secret: ""\n'):
+        with pytest.raises(SetupError, match=message):
+            _base(text, secret=secret)
+
+
+@pytest.mark.parametrize('text, message', [
+    ('dns: [broken', '无法解析'), ('- a\n', 'YAML 对象'), ('dns: 1\n', 'dns 必须是 YAML 对象'), ('tun: [x]\n', 'tun 必须是对象'),
+    ('dns: {nameserver: [127.0.0.1:53]}\n', '解析循环'), ('dns: {proxy-server-nameserver: [system]}\n', '解析循环'),
+    ('mixed-port: 53\n', 'mixed-port 使用端口 53'), ('external-controller: 127.0.0.1:9199\n', 'external-controller 使用端口 9199'),
+    ('port: 1053\n', 'port 使用端口 1053'), ('listeners: [{name: x, type: mixed, port: 53}]\n', 'listeners 使用端口 53'),
+    ('tun: {enable: true, include-interface: [eth1]}\n', 'tun.include-interface'),
+])
+def test_setup_base_reports_what_it_cannot_change_safely(text, message):
+    from backend.common.setup_flow import SetupError
+    for full_tun in (True, False):
+        with pytest.raises(SetupError, match=message.replace('.', r'\.')):
+            _base(text, full_tun)
+
+
+def test_setup_base_without_the_full_tun_leaves_the_tun_to_the_gateway():
+    document, changes, text = _base(_template_base(), full_tun=False)
+    tun = yaml.safe_load(_template_base())['tun']
+    assert document['tun'] == {**tun, 'enable': False} and 'sniffer' in document
+    assert changes == [SECRET_SET, TEMPLATE_LISTEN, 'tun 已停用，由 Linux 网关启用时接管']
+    assert _base(text, full_tun=False)[1:] == ([], text)
+    assert 'tun' not in _base('mixed-port: 7890\n', full_tun=False)[0]
+
+
+def _prepare_with_base(client, repository, text, goal='router'):
+    """Prepare a wizard whose new profile already holds ``text`` as its base."""
+    from backend.common import setup_flow
+    session = start(client, goal)
+    repository.update_shared_transaction(lambda shared: shared['nodes'].append(deepcopy(NODE)))
+    client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
+    repository.save_profile(session['profile_id'], {'mihomo': {'custom_config': text}})
+    stored = setup_flow.read(repository, SESSION)
+    stored['profile_revision'] = repository.get_profile(session['profile_id'])['_revision']
+    setup_flow.write(repository, stored)
+    return session
+
+
+def test_router_prepare_keeps_the_base_and_publishes_it(setup_api):
+    from backend.converters.mihomo import generate_mihomo_config
+    client, repository = setup_api
+    session = _prepare_with_base(client, repository, _template_base())
+    revision = repository.get_profile(session['profile_id'])['_revision']
+    for _ in range(2):
+        response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET})
+        assert response.status_code == 200, response.json
+        assert response.json['mihomo_changes'] == [SECRET_SET, TEMPLATE_LISTEN]
+        # Only whether a password is saved, never the password, reaches the page.
+        assert response.json['controller_secret_saved'] is True and SECRET not in json.dumps(response.json)
+        assert response.json['controller_address'] == '0.0.0.0:9090'
+    profile = repository.get_profile(session['profile_id'])
+    assert profile['_revision'] == revision + 1
+    snapshot, _ = repository.get_publish_snapshot(session['profile_id'])
+    generated = yaml.safe_load(generate_mihomo_config(snapshot, preflight_providers=False))
+    assert generated['sniffer']['enable'] is True and generated['secret'] == SECRET
+    assert generated['dns']['listen'] == '127.0.0.1:1053' and generated['dns']['proxy-server-nameserver']
+    assert generated['tun']['dns-hijack'] == ['any:53', 'tcp://any:53'] and 'route-address-set' not in generated['tun']
+
+
+def test_prepare_again_keeps_base_edits_made_after_it(setup_api):
+    client, repository = setup_api
+    session = start(client)
+    repository.update_shared_transaction(lambda shared: shared['nodes'].append(deepcopy(NODE)))
+    client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
+    assert client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET}).status_code == 200
+    profile_id = session['profile_id']
+    mihomo = repository.get_profile(profile_id)['mihomo']
+    assert 'log-level: warning\n' in mihomo['custom_config']
+    edited = mihomo['custom_config'].replace('log-level: warning\n', 'log-level: debug\n')
+    repository.save_profile(profile_id, {'mihomo': {**mihomo, 'custom_config': edited}})
+    # The same choices leave the edited base as it is instead of reporting a conflict.
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET})
+    assert response.status_code == 200, response.json
+    assert repository.get_profile(profile_id)['mihomo']['custom_config'] == edited
+    # New choices keep it too; only what the plan needs is set again.
+    document = yaml.safe_load(edited)
+    document['dns']['listen'] = '0.0.0.0:53'
+    repository.save_profile(profile_id, {'mihomo': {**mihomo, 'custom_config': yaml.safe_dump(document, sort_keys=False)}})
+    # The saved password is kept without sending it again.
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'traffic_fallback': 'direct'})
+    assert response.status_code == 200, response.json
+    assert response.json['mihomo_changes'] == ['dns.listen 由 0.0.0.0:53 改为 127.0.0.1:1053']
+    profile = repository.get_profile(profile_id)
+    assert yaml.safe_load(profile['mihomo']['custom_config']) == yaml.safe_load(edited)
+    assert profile['rule_configs'][-1]['policy'] == 'DIRECT'
+    # Edits to anything else the wizard writes still stop it.
+    repository.save_profile(profile_id, {'rule_configs': profile['rule_configs'][:-1]})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET, 'traffic_fallback': 'proxy'})
+    assert response.status_code == 409 and '其他页面' in response.json['message']
+
+
+def test_prepare_reports_an_unreadable_base_without_writing(setup_api):
+    client, repository = setup_api
+    session = _prepare_with_base(client, repository, 'dns: [broken')
+    before = repository.get_profile(session['profile_id'])
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET})
+    assert response.status_code == 400 and '无法解析' in response.json['message']
+    assert repository.get_profile(session['profile_id']) == before
+
+
+def test_gateway_prepare_keeps_the_base_and_disables_its_tun(setup_api):
+    client, repository = setup_api
+    session = _prepare_with_base(client, repository, _template_base(), goal='gateway')
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'controller_secret': SECRET})
+    assert response.status_code == 200, response.json
+    base = yaml.safe_load(repository.get_profile(session['profile_id'])['mihomo']['custom_config'])
+    assert base['tun']['enable'] is False and base['sniffer']['enable'] is True
+    assert 'router_split' not in repository.get_profile(session['profile_id'])['mihomo']

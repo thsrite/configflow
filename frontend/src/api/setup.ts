@@ -21,6 +21,12 @@ export interface SetupSession {
   step: number; max_step: number; prepared: boolean; completed: boolean; abandoned?: boolean
   /** 主路由分流仍使用旧版 Linux 网关接管（升级前准备的方案） */
   legacy_takeover?: boolean
+  /** 最近一次生成方案时对 Mihomo 基础配置所做的调整；其余设置原样保留 */
+  mihomo_changes?: string[]
+  /** 基础配置已有用户自己的控制面板密码（只返回是否已设置，不返回密码） */
+  controller_secret_saved?: boolean
+  /** 基础配置的 external-controller 监听地址 */
+  controller_address?: string
   subscription_ids: string[]; node_ids: string[]; dns_fallback?: 'mihomo' | 'direct'; traffic_fallback?: 'proxy' | 'direct'
   local_dns?: string; query_recorder?: boolean
   domain_rules?: SetupDomainSelection
@@ -49,7 +55,7 @@ export const setupApi = {
   get: (id: string) => api.get<SetupSession>(path(id)),
   progress: (id: string, data: { step?: number; router_id?: string; router_mode?: 'manual' | 'managed' }) => api.patch<SetupSession>(path(id), data),
   source: (id: string, data: { url?: string; subscription_ids?: string[]; node_ids?: string[] }) => api.post<SetupSession>(`${path(id)}/source`, data),
-  prepare: (id: string, settings: { dns_fallback: 'mihomo' | 'direct'; traffic_fallback: 'proxy' | 'direct'; local_dns: string; domain_rules: SetupDomainSelection; query_recorder: boolean }) => api.post<SetupSession>(`${path(id)}/prepare`, settings, { timeout: 90000 }),
+  prepare: (id: string, settings: { dns_fallback: 'mihomo' | 'direct'; traffic_fallback: 'proxy' | 'direct'; local_dns: string; domain_rules: SetupDomainSelection; query_recorder: boolean; controller_secret?: string }) => api.post<SetupSession>(`${path(id)}/prepare`, settings, { timeout: 90000 }),
   check: (id: string) => api.post<SetupSession>(`${path(id)}/check`, {}, { timeout: 90000 }),
   saveRouterDraft: (id: string, router: unknown) => api.post<SetupSession>(`${path(id)}/router-draft`, { router }),
   abandon: (id: string, dryRun = false) => api.post<SetupAbandonPlan>(`${path(id)}/abandon`, dryRun ? { dry_run: true } : {}),

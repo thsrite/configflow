@@ -345,6 +345,8 @@ def test_admin_apis_reject_anonymous_and_agent_tokens(setup, operation):
 @pytest.mark.parametrize('changes', [
     {'network': {**SPEC, 'interface': 'eth0; reboot'}}, {'server_url': 'http://localhost:5000'},
     {'name': 'bad;name'}, {'mihomo_agent_port': 1053}, {'mihomo_agent_port': 8082},
+    # Mihomo keeps the ports of its base YAML (mixed-port 7890 here).
+    {'mihomo_agent_port': 7890}, {'oxidns_agent_port': 7890},
     {'config_revision': True}, {'config_revision': 0}, {'command': 'nft flush ruleset'},
 ])
 def test_invalid_create_never_changes_existing_profile_or_session(setup, changes):

@@ -288,6 +288,17 @@ def mihomo_used_ports(mihomo_config: Dict[str, Any]) -> set:
     return {port for port in used if isinstance(port, int)}
 
 
+def mihomo_listen_ports(mihomo_config: Dict[str, Any]) -> Dict[int, str]:
+    """{端口: 配置项}：入站、listeners 与 external-controller 占用的端口。"""
+    owners = {mihomo_config[key]: key for key in _INBOUND_PORT_KEYS if isinstance(mihomo_config.get(key), int)}
+    owners.update({port: 'listeners' for port in mihomo_used_ports(mihomo_config) if port not in owners})
+    controller = mihomo_config.get('external-controller')
+    port = controller.rpartition(':')[2] if isinstance(controller, str) else ''
+    if port.isdigit():
+        owners.setdefault(int(port), 'external-controller')
+    return owners
+
+
 def inject_region_probe(mihomo_config: Dict[str, Any], port: int) -> bool:
     """注入区域检测入口：只监听本机的 mixed 入站，流量全部交给隐藏的选择组。
 

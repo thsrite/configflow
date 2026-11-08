@@ -100,9 +100,22 @@ outline: 2
 | 直连 DNS 上游 | `https://223.5.5.5/dns-query` | 新手可先保持；可填写 IP 地址形式的 DoH／DoT，每行一个，最多 16 个 | 不能留空；不要填普通 `8.8.8.8:53`、本机地址或绕回代理的地址 | 发布后生效；以后在 OxiDNS 设置修改 |
 | 未匹配域名 | **Mihomo DNS** | 未命中任何域名规则时交给 Mihomo DNS 查询 | 选「直连 DNS」则交给上面填写的直连上游 | 只决定 DNS 查询，不单独决定连接代理与否 |
 | 未匹配连接 | **走代理** | 已经进入 Mihomo 且未命中规则的连接，交给「🐟 漏网之鱼」，默认跟随「✈️ 节点选择」 | 选「直连」则为 DIRECT；不会让没有进入 Mihomo 的连接自动进入它 | 发布后生效；以后在策略规则中调整最后的 MATCH 规则 |
+| 控制面板密码 | 新配置空间**必填** | Mihomo 控制面板（`external-controller`）的密码，写入基础配置的 `secret`。初始模板让控制面板监听 `0.0.0.0:9090`，同一局域网的设备都能打开，靠这个密码保护；需 8–64 个字母、数字或符号，不含空格，不能用模板默认的 `123456`。Agent 在本机用同一密码读取连接和流量统计 | 基础配置已有自己的密码时显示「已设置」，留空即保留，填写则更换；页面不会显示已保存的密码 | 发布后生效；以后在「配置生成 → Mihomo → 基础配置」的 `secret` 修改 |
 | 记录 DNS 查询（OxiDNS 面板用） | **开启** | 想查看每次域名查询、结果和耗时时保留；默认保留 7 天，会持续写入 OxiDNS 的存储 | 关闭后不再记录新的查询；使用闪存或 SD 卡且不需要记录时可关闭 | 发布后生效；以后在 OxiDNS 设置修改 |
 
-Mihomo DNS 的监听、fake-IP 和上游由向导自动配置：上游与 Linux 网关安装默认一致，使用 IP 地址的 DoH `https://223.5.5.5/dns-query` 和 `https://1.12.12.12/dns-query`（阿里、腾讯，均为国内服务），不依赖引导 DNS，也不怕普通 53 端口被劫持；以后可在「配置生成 → Mihomo → 基础配置」的 `dns.nameserver` 修改。OxiDNS 的代理上游指向同机 `127.0.0.1:1053`，本页无需再手填。
+Mihomo DNS 的监听、fake-IP 和上游由向导自动配置。向导以配置空间现有的「配置生成 → Mihomo → 基础配置」为底，只调整方案必需的几项，其余设置（端口、嗅探、控制面板、`fake-ip-filter`、各类 DNS 服务器、`respect-rules` 等）原样保留。向导新建的配置空间基础配置为空，会使用初始模板（与新装面板的「默认配置」相同，带嗅探、控制面板、`fake-ip-filter` 和各类 DNS 服务器），再按下表调整：
+
+| 项目 | 向导的处理 |
+| --- | --- |
+| `secret`（控制面板密码） | 写入本页填写的密码；已有自己的密码且本页留空时保留，模板默认的 `123456` 一定会被替换 |
+| `dns.enable`、`dns.enhanced-mode` | 设为 `true`、`fake-ip` |
+| `dns.listen` | 设为 `127.0.0.1:1053`，与 OxiDNS 的代理上游对应；原来监听 `53` 等其他地址时会改掉，避免与 OxiDNS 抢端口 |
+| `dns.nameserver` | 只在为空时补入 IP 地址的 DoH `https://223.5.5.5/dns-query` 和 `https://1.12.12.12/dns-query`（阿里、腾讯，均为国内服务；与 Linux 网关安装默认一致，不依赖引导 DNS，也不怕普通 53 端口被劫持）；已有的上游不改 |
+| `mode` | 不是 `rule` 时改为 `rule` |
+| `tun`（Mihomo + OxiDNS 分流） | 设为完整 TUN：开启 `auto-route`、`auto-redirect`、`auto-detect-interface`，`dns-hijack` 统一为 `any:53`，移除 `route-address-set` 等只接管部分地址的设置；`stack`、`mtu`、`route-exclude-address` 等其他设置保留。同机 OxiDNS 的明文上游由 Agent 发布时自动加入 `route-exclude-address`，不会被劫持 |
+| `tun`（网关分流） | 已开启时改为停用，由 Linux 网关启用时按选择性接管打开 |
+
+生成后，安装步骤顶部会列出本次实际调整的项。以下情况不会自动改，而是直接提示，需先在基础配置中修正：基础配置无法解析；DNS 上游指向本机或 `system`（会形成解析循环）；`tun` 带 `include-interface` 等过滤；入站端口、`listeners` 或 `external-controller` 占用 `53`、`1053` 或 OxiDNS 管理 API 的 `9199`。安装时填写的 Agent 端口也不能与基础配置中的端口相同。OxiDNS 的代理上游指向同机 `127.0.0.1:1053`，本页无需再手填。
 
 Linux 网关方案中，所选规则含 Telegram、Google 推送（FCM）时，向导还会把对应的 IP 网段交给 Mihomo，照顾不先查询域名、直接连接 IP 的应用。安装后可在「配置生成 → Mihomo → Linux 网关 → IP 接管」调整。
 
