@@ -136,6 +136,22 @@ def _saved_snapshot(repository, session):
     return config
 
 
+def _check_mihomo_ports(repository, profile_id, ports):
+    """Both Agents run beside Mihomo, which keeps the ports of its base YAML."""
+    import yaml
+    from backend.converters.mihomo import _default_mihomo_template, mihomo_listen_ports
+    text = (repository.get_profile(profile_id).get('mihomo') or {}).get('custom_config') or ''
+    try:
+        document = yaml.safe_load(text) if isinstance(text, str) and text.strip() else _default_mihomo_template()
+    except (yaml.YAMLError, RecursionError):
+        return  # Reported by the onboarding check with its own message.
+    owners = mihomo_listen_ports(document) if isinstance(document, dict) else {}
+    for service, port in ports.items():
+        if port in owners:
+            raise InstallationError(f'{service} Agent 端口 {port} 与 Mihomo 基础配置的 {owners[port]} 冲突，'
+                                    '请换一个 Agent 端口，或先修改 Mihomo 基础配置。')
+
+
 def create(repository, manager, body):
     allowed = {'profile_id', 'name', 'server_url', 'network', 'config_revision', 'mihomo_agent_port', 'oxidns_agent_port', 'auto_network', 'agent_ip',
                'use_as_server_domain'}
@@ -169,6 +185,7 @@ def create(repository, manager, body):
     ports = {service: body.get(service + '_agent_port', default) for service, default in zip(SERVICES, (8080, 8082))}
     if any(type(port) is not int or not 1024 <= port <= 65535 or port == 1053 for port in ports.values()) or len(set(ports.values())) != 2:
         raise InstallationError('两个 Agent 需要不同的 1024–65535 端口，不能占用 Mihomo DNS 1053。')
+    _check_mihomo_ports(repository, profile_id, ports)
     now = time.time()
     session = {'id': uuid.uuid4().hex, 'profile_id': profile_id, 'config_revision': body['config_revision'],
                'name': name, 'server_url': _server_url(body.get('server_url')), 'network': network, 'ports': ports,

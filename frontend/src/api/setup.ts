@@ -21,6 +21,8 @@ export interface SetupSession {
   step: number; max_step: number; prepared: boolean; completed: boolean; abandoned?: boolean
   /** 主路由分流仍使用旧版 Linux 网关接管（升级前准备的方案） */
   legacy_takeover?: boolean
+  /** 最近一次生成方案时对 Mihomo 基础配置所做的调整；其余设置原样保留 */
+  mihomo_changes?: string[]
   subscription_ids: string[]; node_ids: string[]; dns_fallback?: 'mihomo' | 'direct'; traffic_fallback?: 'proxy' | 'direct'
   local_dns?: string; query_recorder?: boolean
   domain_rules?: SetupDomainSelection

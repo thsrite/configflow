@@ -269,6 +269,7 @@ onUnmounted(() => { disposed = true })
         <SectionCard :title="steps[step]" :help="help[step]" class="min-w-0">
           <div v-if="session" class="mb-6 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border pb-4 text-xs text-muted-foreground"><span class="break-words font-medium text-foreground">{{ session.name }}</span><span>{{ SETUP_GOALS.find(item => item.id === session?.goal)?.title }}</span></div>
           <p v-if="session?.legacy_takeover && (step === 3 || step === 4)" role="status" class="mt-0 mb-5 rounded-lg border border-primary-accent/30 bg-primary-soft px-3 py-2.5 text-sm leading-relaxed text-foreground" data-legacy-takeover>此配置空间使用旧版 Linux 网关接管，保持不变。</p>
+          <div v-if="session?.mihomo_changes?.length && step === 3" role="status" class="mt-0 mb-5 space-y-1 rounded-lg bg-muted px-3 py-2.5 text-sm leading-relaxed" data-mihomo-changes><p class="m-0 font-medium">已调整 Mihomo 基础配置的以下项，其余设置原样保留：</p><ul class="m-0 list-disc space-y-0.5 pl-5 text-xs text-muted-foreground"><li v-for="item in session.mihomo_changes" :key="item" class="break-words">{{ item }}</li></ul></div>
           <div v-if="step === 0" class="space-y-5">
             <FormField label="选择分流方式" help="两种方式都需要原生 Linux、管理员权限、固定局域网 IP 和可用代理节点。按能调整主路由的静态路由，还是能调整客户端网关来选择。详细条件见每个选项旁的问号。">
               <label v-for="item in SETUP_GOALS" :key="item.id" class="flex min-h-20 cursor-pointer items-center gap-3 rounded-lg border p-3" :class="goal === item.id ? 'border-primary-accent/50 bg-primary-soft' : 'border-border'">
@@ -308,7 +309,7 @@ onUnmounted(() => { disposed = true })
                 <Textarea id="setup-local-dns" v-model="localDns" :disabled="working || session?.completed" :rows="2" :spellcheck="false" :aria-invalid="!!localDnsWarning" :aria-describedby="localDnsWarning ? 'setup-local-dns-warning' : undefined" class="min-h-16 font-mono text-xs" :placeholder="defaultLocalDns" />
                 <p v-if="localDnsWarning" id="setup-local-dns-warning" role="alert" class="m-0 text-xs leading-relaxed text-destructive-accent">{{ localDnsWarning }}</p>
               </FormField>
-              <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"><span class="font-medium">Mihomo DNS</span><span class="text-muted-foreground">自动配置，无需填写</span><FieldHelp label="Mihomo DNS" text="向导自动生成 Mihomo 的 fake-IP DNS、上游及监听配置，并将 OxiDNS 的代理上游指向本机 127.0.0.1:1053。两项核心安装在同一台 Linux 上，无需填写设备 IP 或 DNS 地址；后续可在 Mihomo 基础配置中修改上游。DNS 解析与连接出口是两个设置，交给 Mihomo DNS 不代表连接一定走代理。" /></div>
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"><span class="font-medium">Mihomo DNS</span><span class="text-muted-foreground">自动配置，无需填写</span><FieldHelp label="Mihomo DNS" text="向导在现有 Mihomo 基础配置上只调整必要项：DNS 开启 fake-IP 并监听 127.0.0.1:1053，dns.nameserver 为空时补入 IP 地址的 DoH；主路由分流还会设为完整 TUN。端口、嗅探、控制面板及其他 DNS 设置原样保留，基础配置为空时使用内置模板。OxiDNS 的代理上游指向本机 127.0.0.1:1053，两项核心安装在同一台 Linux 上，无需填写设备 IP 或 DNS 地址；后续可在 Mihomo 基础配置中修改上游。DNS 解析与连接出口是两个设置，交给 Mihomo DNS 不代表连接一定走代理。" /></div>
             </section>
             <section class="space-y-1 border-t border-border pt-3" aria-label="未匹配规则时">
               <div class="flex min-h-11 flex-wrap items-center justify-between gap-x-2">

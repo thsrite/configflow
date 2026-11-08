@@ -1067,7 +1067,8 @@ def test_router_setup_writes_full_tun_and_marker_instead_of_the_gateway(setup_ap
     assert profile['_revision'] == 1
     base = yaml.safe_load(profile['mihomo']['custom_config'])
     assert base['tun'] == FULL_TUN
-    assert list(base) == ['mixed-port', 'allow-lan', 'bind-address', 'mode', 'log-level', 'external-controller', 'tun', 'dns']
+    # The new profile's base is empty, so the built-in template is kept around the full TUN.
+    assert list(base) == ['mixed-port', 'allow-lan', 'bind-address', 'mode', 'log-level', 'external-controller', 'dns', 'tun']
     assert profile['mihomo']['router_split'] == {'version': 1, 'takeover': 'full_tun', 'origin': 'setup',
                                                  'route_rule_set_ids': []}
     assert profile['mihomo']['linux_gateway'] == {'enabled': False, 'rule_set_ids': []}
@@ -1111,8 +1112,8 @@ def test_gateway_setup_fields_match_the_previous_release(setup_api):
     profile = repository.get_profile(session['profile_id'])
     # Captured from 0ef9e89 with the same inputs.
     expected = json.loads((Path(__file__).parent / 'testdata' / 'setup_gateway_fields_0ef9e89.json').read_text(encoding='utf-8'))
-    from backend.test_router_split_regression import with_current_setup_nameserver
-    expected = with_current_setup_nameserver(expected)
+    from backend.test_router_split_regression import with_current_setup_base
+    expected = with_current_setup_base(expected)
     # Per-rule OxiDNS DNS settings postdate 0ef9e89; they must be stored empty.
     rule_dns = {'rule_actions': {}, 'rule_dns_follow': [], 'rule_dns_parked': {}}
     assert {key: profile['oxidns'].get(key) for key in rule_dns} == rule_dns
@@ -1373,3 +1374,187 @@ def test_legacy_and_gateway_installation_checks_still_use_gateway_forwarding(ins
     assert client.post(f'/api/setup/{SESSION}/check', json={}).status_code == 200
     status['managed']['active'] = False
     assert client.post(f'/api/setup/{SESSION}/check', json={}).status_code == 409
+
+
+# The wizard keeps the profile's Mihomo base YAML and only sets what its plan needs.
+SETUP_RESERVED = {1053: ' Mihomo DNS ', 53: ' OxiDNS ', 9199: ' OxiDNS 管理 API '}
+
+
+def _template_base():
+    import json
+    from pathlib import Path
+    return json.loads((Path(__file__).parent / 'config_template.json').read_text(encoding='utf-8'))['mihomo']['custom_config']
+
+
+def _base(text, full_tun=True):
+    from backend.common.setup_flow import setup_mihomo_base
+    result, changes = setup_mihomo_base(text, full_tun=full_tun, reserved=SETUP_RESERVED)
+    return yaml.safe_load(result), changes, result
+
+
+def test_setup_base_keeps_the_initial_template_around_the_full_tun():
+    from backend.common.router_split import FULL_TUN, is_full_tun_document
+    original = yaml.safe_load(_template_base())
+    document, changes, text = _base(_template_base())
+    assert changes == ['dns.listen 由 0.0.0.0:1053 改为 127.0.0.1:1053']
+    assert document['tun'] == FULL_TUN and is_full_tun_document(document)
+    assert document['dns'] == {**original['dns'], 'listen': '127.0.0.1:1053'}
+    for key in ('sniffer', 'profile', 'external-controller', 'secret', 'external-ui', 'external-ui-url',
+                'port', 'socks-port', 'mixed-port', 'redir-port', 'tproxy-port', 'find-process-mode'):
+        assert document[key] == original[key], key
+    assert {key: value for key, value in document.items() if key not in ('tun', 'dns')} == \
+        {key: value for key, value in original.items() if key not in ('tun', 'dns')}
+    for key in ('proxy-server-nameserver', 'direct-nameserver', 'default-nameserver', 'nameserver-policy',
+                'fake-ip-filter', 'respect-rules', 'nameserver'):
+        assert document['dns'][key] == original['dns'][key], key
+    # Preparing again changes nothing.
+    assert _base(text)[1:] == ([], text)
+
+
+def test_setup_base_keeps_user_settings_and_existing_nameservers():
+    source = ('mixed-port: 17890\nexternal-controller: 0.0.0.0:19090\nsecret: s\nsniffer: {enable: true}\n'
+              'dns:\n  enable: false\n  listen: 0.0.0.0:53\n  enhanced-mode: redir-host\n  nameserver: [tls://192.0.2.53]\n'
+              '  proxy-server-nameserver: [https://192.0.2.1/dns-query]\ntun:\n  enable: true\n  stack: gvisor\n  mtu: 1400\n'
+              '  dns-hijack: [udp://1.2.3.4:53]\n  route-address-set: [proxy-ip]\n  route-exclude-address: [192.0.2.9/32]\n'
+              "mode: global\nrules: ['MATCH,DIRECT']\n")
+    document, changes, _ = _base(source)
+    assert document['dns'] == {'enable': True, 'listen': '127.0.0.1:1053', 'enhanced-mode': 'fake-ip',
+                               'nameserver': ['tls://192.0.2.53'],
+                               'proxy-server-nameserver': ['https://192.0.2.1/dns-query']}
+    # Full TUN keys win; the user's stack, MTU and the OxiDNS upstream exclusions stay.
+    assert document['tun'] == {'enable': True, 'stack': 'gvisor', 'mtu': 1400, 'dns-hijack': ['any:53', 'tcp://any:53'],
+                               'route-exclude-address': ['192.0.2.9/32'], 'auto-route': True, 'auto-redirect': True,
+                               'auto-detect-interface': True}
+    assert document['mode'] == 'rule'
+    assert {key: document[key] for key in ('mixed-port', 'external-controller', 'secret', 'sniffer', 'rules')} == {
+        'mixed-port': 17890, 'external-controller': '0.0.0.0:19090', 'secret': 's', 'sniffer': {'enable': True},
+        'rules': ['MATCH,DIRECT']}
+    assert changes == ['dns.enable 由 false 改为 true', 'dns.listen 由 0.0.0.0:53 改为 127.0.0.1:1053',
+                       'dns.enhanced-mode 由 redir-host 改为 fake-ip', 'mode 由 global 改为 rule',
+                       'tun 设为完整 TUN（enable、auto-route、auto-redirect、auto-detect-interface，dns-hijack 为 any:53），'
+                       '移除 tun.route-address-set']
+
+
+def test_setup_base_fills_missing_nameservers_only():
+    from backend.common.gateway_onboarding import DEFAULT_MIHOMO_NAMESERVERS
+    document, changes, _ = _base('log-level: debug\ndns:\n  fallback: [https://192.0.2.2/dns-query]\n')
+    assert document['dns']['nameserver'] == list(DEFAULT_MIHOMO_NAMESERVERS)
+    assert document['dns']['fallback'] == ['https://192.0.2.2/dns-query'] and document['log-level'] == 'debug'
+    assert changes[0] == 'dns.nameserver 为空，已补入 ' + '、'.join(DEFAULT_MIHOMO_NAMESERVERS)
+    assert _base('dns: {nameserver: [https://192.0.2.3/dns-query]}\n')[0]['dns']['nameserver'] == ['https://192.0.2.3/dns-query']
+
+
+def test_setup_base_starts_an_empty_profile_from_the_built_in_template():
+    from backend.common.gateway_onboarding import DEFAULT_MIHOMO_NAMESERVERS
+    from backend.common.router_split import FULL_TUN
+    from backend.converters.mihomo import _default_mihomo_template
+    template = _default_mihomo_template()
+    for text in ('', '  \n'):
+        document, changes, _ = _base(text)
+        assert changes == ['基础配置为空，已使用内置 Mihomo 模板']
+        assert document == {**template, 'tun': FULL_TUN,
+                            'dns': {**template['dns'], 'listen': '127.0.0.1:1053', 'nameserver': list(DEFAULT_MIHOMO_NAMESERVERS)}}
+    assert 'tun' not in _base('', full_tun=False)[0]
+
+
+@pytest.mark.parametrize('text, message', [
+    ('dns: [broken', '无法解析'), ('- a\n', 'YAML 对象'), ('dns: 1\n', 'dns 必须是 YAML 对象'), ('tun: [x]\n', 'tun 必须是对象'),
+    ('dns: {nameserver: [127.0.0.1:53]}\n', '解析循环'), ('dns: {proxy-server-nameserver: [system]}\n', '解析循环'),
+    ('mixed-port: 53\n', 'mixed-port 使用端口 53'), ('external-controller: 127.0.0.1:9199\n', 'external-controller 使用端口 9199'),
+    ('port: 1053\n', 'port 使用端口 1053'), ('listeners: [{name: x, type: mixed, port: 53}]\n', 'listeners 使用端口 53'),
+    ('tun: {enable: true, include-interface: [eth1]}\n', 'tun.include-interface'),
+])
+def test_setup_base_reports_what_it_cannot_change_safely(text, message):
+    from backend.common.setup_flow import SetupError
+    for full_tun in (True, False):
+        with pytest.raises(SetupError, match=message.replace('.', r'\.')):
+            _base(text, full_tun)
+
+
+def test_setup_base_without_the_full_tun_leaves_the_tun_to_the_gateway():
+    document, changes, text = _base(_template_base(), full_tun=False)
+    tun = yaml.safe_load(_template_base())['tun']
+    assert document['tun'] == {**tun, 'enable': False} and 'sniffer' in document
+    assert changes == ['dns.listen 由 0.0.0.0:1053 改为 127.0.0.1:1053', 'tun 已停用，由 Linux 网关启用时接管']
+    assert _base(text, full_tun=False)[1:] == ([], text)
+    assert 'tun' not in _base('mixed-port: 7890\n', full_tun=False)[0]
+
+
+def _prepare_with_base(client, repository, text, goal='router'):
+    """Prepare a wizard whose new profile already holds ``text`` as its base."""
+    from backend.common import setup_flow
+    session = start(client, goal)
+    repository.update_shared_transaction(lambda shared: shared['nodes'].append(deepcopy(NODE)))
+    client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
+    repository.save_profile(session['profile_id'], {'mihomo': {'custom_config': text}})
+    stored = setup_flow.read(repository, SESSION)
+    stored['profile_revision'] = repository.get_profile(session['profile_id'])['_revision']
+    setup_flow.write(repository, stored)
+    return session
+
+
+def test_router_prepare_keeps_the_base_and_publishes_it(setup_api):
+    from backend.converters.mihomo import generate_mihomo_config
+    client, repository = setup_api
+    session = _prepare_with_base(client, repository, _template_base())
+    revision = repository.get_profile(session['profile_id'])['_revision']
+    for _ in range(2):
+        response = client.post(f'/api/setup/{SESSION}/prepare', json={})
+        assert response.status_code == 200, response.json
+        assert response.json['mihomo_changes'] == ['dns.listen 由 0.0.0.0:1053 改为 127.0.0.1:1053']
+    profile = repository.get_profile(session['profile_id'])
+    assert profile['_revision'] == revision + 1
+    snapshot, _ = repository.get_publish_snapshot(session['profile_id'])
+    generated = yaml.safe_load(generate_mihomo_config(snapshot, preflight_providers=False))
+    assert generated['sniffer']['enable'] is True and generated['secret'] == '123456'
+    assert generated['dns']['listen'] == '127.0.0.1:1053' and generated['dns']['proxy-server-nameserver']
+    assert generated['tun']['dns-hijack'] == ['any:53', 'tcp://any:53'] and 'route-address-set' not in generated['tun']
+
+
+def test_prepare_again_keeps_base_edits_made_after_it(setup_api):
+    client, repository = setup_api
+    session = start(client)
+    repository.update_shared_transaction(lambda shared: shared['nodes'].append(deepcopy(NODE)))
+    client.post(f'/api/setup/{SESSION}/source', json={'node_ids': ['node']})
+    assert client.post(f'/api/setup/{SESSION}/prepare', json={}).status_code == 200
+    profile_id = session['profile_id']
+    mihomo = repository.get_profile(profile_id)['mihomo']
+    edited = mihomo['custom_config'] + 'sniffer:\n  enable: true\n'
+    repository.save_profile(profile_id, {'mihomo': {**mihomo, 'custom_config': edited}})
+    # The same choices leave the edited base as it is instead of reporting a conflict.
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={})
+    assert response.status_code == 200, response.json
+    assert repository.get_profile(profile_id)['mihomo']['custom_config'] == edited
+    # New choices keep it too; only what the plan needs is set again.
+    document = yaml.safe_load(edited)
+    document['dns']['listen'] = '0.0.0.0:53'
+    repository.save_profile(profile_id, {'mihomo': {**mihomo, 'custom_config': yaml.safe_dump(document, sort_keys=False)}})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'traffic_fallback': 'direct'})
+    assert response.status_code == 200, response.json
+    assert response.json['mihomo_changes'] == ['dns.listen 由 0.0.0.0:53 改为 127.0.0.1:1053']
+    profile = repository.get_profile(profile_id)
+    assert yaml.safe_load(profile['mihomo']['custom_config']) == yaml.safe_load(edited)
+    assert profile['rule_configs'][-1]['policy'] == 'DIRECT'
+    # Edits to anything else the wizard writes still stop it.
+    repository.save_profile(profile_id, {'rule_configs': profile['rule_configs'][:-1]})
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={'traffic_fallback': 'proxy'})
+    assert response.status_code == 409 and '其他页面' in response.json['message']
+
+
+def test_prepare_reports_an_unreadable_base_without_writing(setup_api):
+    client, repository = setup_api
+    session = _prepare_with_base(client, repository, 'dns: [broken')
+    before = repository.get_profile(session['profile_id'])
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={})
+    assert response.status_code == 400 and '无法解析' in response.json['message']
+    assert repository.get_profile(session['profile_id']) == before
+
+
+def test_gateway_prepare_keeps_the_base_and_disables_its_tun(setup_api):
+    client, repository = setup_api
+    session = _prepare_with_base(client, repository, _template_base(), goal='gateway')
+    response = client.post(f'/api/setup/{SESSION}/prepare', json={})
+    assert response.status_code == 200, response.json
+    base = yaml.safe_load(repository.get_profile(session['profile_id'])['mihomo']['custom_config'])
+    assert base['tun']['enable'] is False and base['sniffer']['enable'] is True
+    assert 'router_split' not in repository.get_profile(session['profile_id'])['mihomo']

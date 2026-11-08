@@ -160,6 +160,19 @@ describe('首次使用分流向导', () => {
     expect(setupApi.finish).not.toHaveBeenCalled()
   })
 
+  it('安装步骤列出向导对 Mihomo 基础配置的调整，没有调整时不显示', async () => {
+    const changes = ['dns.listen 由 0.0.0.0:53 改为 127.0.0.1:1053', 'mode 由 global 改为 rule']
+    vi.mocked(setupApi.get).mockResolvedValue({ data: record({ step: 3, max_step: 3, prepared: true, mihomo_changes: changes }) } as never)
+    await open('/setup?session=' + 'a'.repeat(32))
+    const notice = wrapper!.get('[data-mihomo-changes]')
+    expect(notice.text()).toContain('其余设置原样保留')
+    expect(notice.findAll('li').map(item => item.text())).toEqual(changes)
+    wrapper!.unmount()
+    vi.mocked(setupApi.get).mockResolvedValue({ data: record({ step: 3, max_step: 3, prepared: true, mihomo_changes: [] }) } as never)
+    await open('/setup?session=' + 'a'.repeat(32))
+    expect(wrapper!.find('[data-mihomo-changes]').exists()).toBe(false)
+  })
+
   it.each([
     ['mihomo', 'proxy', 'Mihomo DNS', '走代理'],
     ['mihomo', 'direct', 'Mihomo DNS', '直连'],

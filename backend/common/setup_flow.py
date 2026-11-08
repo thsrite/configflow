@@ -15,7 +15,8 @@ import yaml
 
 from backend.common.config_repository import ProfileExists, ProfileInUse
 from backend.common.gateway_onboarding import (
-    DEFAULT_LOCAL_DNS, DEFAULT_MIHOMO_NAMESERVERS, GatewayOnboardingError, _local_upstreams)
+    DEFAULT_LOCAL_DNS, DEFAULT_MIHOMO_NAMESERVERS, DNS_TARGET, GatewayOnboardingError, _local_upstreams,
+    _prepare_mihomo_dns)
 from backend.converters.mihomo import generate_mihomo_config, convert_node_to_mihomo
 from backend.utils.subscription_cache import load_subscription_cache
 from backend.utils.subscription_filter import filter_subscription_items
@@ -124,8 +125,11 @@ def remove(repository, session_id):
     _path(repository, session_id).unlink(missing_ok=True)
 
 
-def owned_digest(profile):
+def owned_digest(profile, *, base=True):
+    """Digest of the fields the wizard writes; ``base=False`` leaves out the Mihomo base YAML."""
     owned = {key: profile.get(key) for key in _OWNED_FIELDS}
+    if not base and isinstance(owned['mihomo'], dict):
+        owned['mihomo'] = {key: value for key, value in owned['mihomo'].items() if key != 'custom_config'}
     return hashlib.sha256(json.dumps(owned, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
@@ -138,6 +142,7 @@ def adopt_owned_write(repository, profile_id, before, after):
             if session and (session['profile_id'] == profile_id and not session.get('completed')
                     and session.get('owned_digest') == owned_digest(before)):
                 session['owned_digest'] = owned_digest(after)
+                session['owned_digest_without_base'] = owned_digest(after, base=False)
                 write(repository, session)
 
 
@@ -166,6 +171,66 @@ def legacy_takeover(profile):
     from backend.common.linux_gateway import gateway_settings
     from backend.common.router_split import read_marker
     return read_marker(profile)[0] == 'absent' and gateway_settings(profile)['enabled']
+
+
+_SETUP_DNS = {'enable': True, 'listen': DNS_TARGET, 'enhanced-mode': 'fake-ip'}
+
+
+def setup_mihomo_base(text, *, full_tun, reserved=None):
+    """The wizard's Mihomo base YAML: the profile's own, changed only where the plan needs it.
+
+    Returns the YAML and what was changed, for the wizard to show. An empty
+    base starts from the built-in template, like the gateway installer; an
+    unreadable one is reported instead of replaced.
+    """
+    from backend.common.linux_gateway import LinuxGatewayError
+    from backend.common.router_split import ROUTE_KEYS_REMOVED, _load_base, full_tun_document, tun_filters
+    try:
+        original = _load_base(text)
+        holder = {'mihomo': {'custom_config': text}}
+        # Fills dns.nameserver only when missing and rejects loops to OxiDNS.
+        _prepare_mihomo_dns(holder)
+    except (LinuxGatewayError, GatewayOnboardingError) as error:
+        raise SetupError(str(error)) from error
+    document = yaml.safe_load(holder['mihomo']['custom_config'])
+    empty = not text.strip()
+    changes = ['基础配置为空，已使用内置 Mihomo 模板'] if empty else []
+    if not empty and not (original.get('dns') or {}).get('nameserver'):
+        changes.append('dns.nameserver 为空，已补入 ' + '、'.join(DEFAULT_MIHOMO_NAMESERVERS))
+    dns = document['dns']
+    for key, value in _SETUP_DNS.items():
+        if dns.get(key) != value:
+            if not empty:
+                shown = [item if isinstance(item, str) else json.dumps(item) for item in (dns.get(key), value)]
+                changes.append(f'dns.{key} 由 {shown[0]} 改为 {shown[1]}' if key in dns else f'dns.{key} 设为 {shown[1]}')
+            dns[key] = value
+    if document.get('mode', 'rule') != 'rule':
+        changes.append(f"mode 由 {document['mode']} 改为 rule")
+        document['mode'] = 'rule'
+    tun = document.get('tun')
+    if tun is not None and not isinstance(tun, dict):
+        raise SetupError('Mihomo tun 必须是对象，请先修正基础配置')
+    if full_tun:
+        try:
+            document = full_tun_document(document)
+        except LinuxGatewayError as error:
+            raise SetupError(str(error)) from error
+        if not empty and document['tun'] != tun:
+            removed = [f'tun.{key}' for key in ROUTE_KEYS_REMOVED if key in (tun or {})]
+            changes.append('tun 设为完整 TUN（enable、auto-route、auto-redirect、auto-detect-interface，'
+                           'dns-hijack 为 any:53）' + ('，移除 ' + '、'.join(removed) if removed else ''))
+    elif tun:
+        for key in tun_filters(tun):
+            raise SetupError(f'Linux 网关与现有 tun.{key} 过滤冲突，请先在 Mihomo 基础 YAML 中移除该过滤，避免客户端绕过接管')
+        if tun.get('enable'):
+            # The Linux gateway turns the TUN on with its own takeover keys.
+            tun['enable'] = False
+            changes.append('tun 已停用，由 Linux 网关启用时接管')
+    from backend.converters.mihomo import mihomo_listen_ports
+    for port, key in mihomo_listen_ports(document).items():
+        if port in (reserved or {}):
+            raise SetupError(f'Mihomo 基础配置的 {key} 使用端口 {port}，与{reserved[port]}冲突；请先在 Mihomo 基础配置中改用其他端口')
+    return yaml.safe_dump(document, allow_unicode=True, sort_keys=False), changes
 
 
 def profile_sessions(repository, profile_id):
@@ -326,25 +391,27 @@ def prepare(repository, session, body, base_url):
     rules += [{'id': rule_id, 'itemType': 'ruleset', 'library_rule_id': library_id, 'enabled': True, 'policy': policy}
               for (_, _, rule_id, library_id), policy in zip(selected_rules, policies)]
     rules.append({'id': 'setup_final', 'itemType': 'rule', 'rule_type': 'MATCH', 'policy': final, 'enabled': True})
-    from backend.common.router_split import FULL_TUN, MARKER_KEY, read_marker
+    from backend.common.router_split import MARKER_KEY, read_marker
     stored = repository.get_profile(session['profile_id'])
     legacy = session['goal'] == 'router' and legacy_takeover(stored)
     full_tun = session['goal'] == 'router' and not legacy
-    settings = {'mixed-port': 7890, 'allow-lan': True, 'bind-address': '*',
-                'mode': 'rule', 'log-level': 'info', 'external-controller': '127.0.0.1:9090',
-                **({'tun': deepcopy(FULL_TUN)} if full_tun else {}),
-                'dns': {'enable': True, 'listen': '127.0.0.1:1053', 'enhanced-mode': 'fake-ip',
-                        'nameserver': list(DEFAULT_MIHOMO_NAMESERVERS)}}
     from backend.common.oxidns_settings import get_default_oxidns_settings
     dns = get_default_oxidns_settings()
-    dns.update(local_dns=local_dns, remote_dns='127.0.0.1:1053',
-               fallback_dns='127.0.0.1:1053', direct_rulesets=[identity for identity, _ in domain_rules['direct']],
+    dns.update(local_dns=local_dns, remote_dns=DNS_TARGET,
+               fallback_dns=DNS_TARGET, direct_rulesets=[identity for identity, _ in domain_rules['direct']],
                proxy_rulesets=[identity for identity, _ in domain_rules['proxy']],
                default_forward='forward_remote' if dns_fallback == 'mihomo' else 'forward_local')
     dns['rule_update']['enabled'] = bool(domain_rules['direct'] or domain_rules['proxy'])
     dns['query_recorder']['enabled'] = query_recorder
+    # Same host as OxiDNS: Mihomo must not listen where OxiDNS or its own DNS does.
+    reserved = {int(DNS_TARGET.rpartition(':')[2]): f' Mihomo DNS {DNS_TARGET} ',
+                int(dns['listen'].rpartition(':')[2]): f' OxiDNS 监听 {dns["listen"]} '}
+    if dns['api']['enabled']:
+        reserved[int(dns['api']['listen'].rpartition(':')[2])] = f' OxiDNS 管理 API {dns["api"]["listen"]} '
+    base, base_changes = setup_mihomo_base(config.get('mihomo', {}).get('custom_config', ''),
+                                           full_tun=full_tun, reserved=reserved)
     fields = {'proxy_groups': groups, 'rule_configs': rules, 'oxidns': dns,
-              'mihomo': {**config.get('mihomo', {}), 'custom_config': yaml.safe_dump(settings, sort_keys=False)}}
+              'mihomo': {**config.get('mihomo', {}), 'custom_config': base}}
     if full_tun:
         # The router forwards fake-IP, plus rule sets chosen later, to the full
         # TUN; the gateway's selective takeover never applies here.
@@ -376,8 +443,13 @@ def prepare(repository, session, body, base_url):
                                              'rule_set_ids': takeover}
         candidate['mihomo'] = deepcopy(fields['mihomo'])
     unchanged = all(stored.get(key) == value for key, value in fields.items())
-    edited = (stored['_revision'] != session['profile_revision'] if 'owned_digest' not in session
-              else owned_digest(stored) != session['owned_digest'])
+    if 'owned_digest' not in session:
+        edited = stored['_revision'] != session['profile_revision']
+    elif 'owned_digest_without_base' in session:
+        # Base YAML edits made elsewhere are kept: the wizard only sets what its plan needs there.
+        edited = owned_digest(stored, base=False) != session['owned_digest_without_base']
+    else:  # Prepared before the base was kept.
+        edited = owned_digest(stored) != session['owned_digest']
     if edited and not unchanged:
         raise SetupError('该空间已在其他页面修改，向导不会覆盖；请新建向导或前往配置生成继续', 409)
     from backend.converters.oxidns import generate_oxidns_config
@@ -400,11 +472,15 @@ def prepare(repository, session, body, base_url):
             session['max_step'] = 3
     saved = repository.get_profile(session['profile_id'])
     session.pop('template', None)
+    if not unchanged:
+        # What this preparation changed in the base YAML; a repeat that writes nothing keeps the last list.
+        session['mihomo_changes'] = base_changes
     if session['goal'] == 'router':
         session['legacy_takeover'] = legacy
     session.update(prepared=True, dns_fallback=dns_fallback, traffic_fallback=traffic_fallback, local_dns=local_dns,
                    domain_rules=selections, query_recorder=query_recorder,
                    node_count=count, profile_revision=saved['_revision'], owned_digest=owned_digest(saved),
+                   owned_digest_without_base=owned_digest(saved, base=False),
                    config_revision=repository.config_revision(session['profile_id']), step=3,
                    max_step=max(session['max_step'], 3), completed=False)
     return session

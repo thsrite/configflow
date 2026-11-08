@@ -169,12 +169,31 @@ def with_current_setup_nameserver(fields):
     return {**fields, 'mihomo': {**fields['mihomo'], 'custom_config': source.replace(_PLAIN_SETUP_NAMESERVER, current)}}
 
 
+# 0ef9e89's wizard replaced the base YAML with a short one. It now keeps the
+# profile's base and only sets what the plan needs; the new setup profile's base
+# is empty, so it starts from the built-in template, whose fake-IP range and
+# filter and DoH fallback are kept. Freeze exactly these reviewed additions.
+_TEMPLATE_FAKE_IP = ('  fake-ip-range: 198.18.0.1/16\n  fake-ip-filter:\n  - dns.msftnsci.com\n  - www.msftnsci.com\n'
+                     '  - www.msftconnecttest.com\n  - +.pool.ntp.org\n')
+_TEMPLATE_FALLBACK = '  fallback:\n  - https://1.1.1.1/dns-query\n  - https://dns.google/dns-query\n'
+
+
+def with_current_setup_base(fields):
+    """The wizard's own base for a new profile: the built-in template with the plan's DNS settings."""
+    fields = with_current_setup_nameserver(fields)
+    source = fields['mihomo']['custom_config']
+    anchor = '  enhanced-mode: fake-ip\n'
+    assert source.count(anchor) == 1 and 'tun:' not in source
+    source = source.replace(anchor, anchor + _TEMPLATE_FAKE_IP) + _TEMPLATE_FALLBACK
+    return {**fields, 'mihomo': {**fields['mihomo'], 'custom_config': source}}
+
+
 def test_gateway_goal_drafts_match_the_previous_release(tmp_path):
     fields = gateway_goal_fields(tmp_path)
     oxidns = fields['oxidns']
     assert {key: oxidns.get(key) for key in RULE_DNS_DEFAULTS} == RULE_DNS_DEFAULTS
     fields['oxidns'] = {key: value for key, value in oxidns.items() if key not in RULE_DNS_DEFAULTS}
-    assert fields == with_current_setup_nameserver(baseline()['gateway_goal_fields'])
+    assert fields == with_current_setup_base(baseline()['gateway_goal_fields'])
 
 
 def test_single_service_scripts_match_the_previous_release():
