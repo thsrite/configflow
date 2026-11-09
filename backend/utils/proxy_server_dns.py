@@ -24,8 +24,10 @@ from backend.utils.subscription_hosts import _address, _matches
 POLICY_KEY = 'proxy-server-nameserver-policy'
 MIN_CORE_VERSION = (1, 19, 20)
 MIN_CORE_TEXT = 'v1.19.20'
-# Mihomo's own fake-ip-filter when the key is absent; writing the key replaces it.
-MIHOMO_DEFAULT_FILTER = ('dns.msftnsci.com', 'www.msftnsci.com', 'www.msftconnecttest.com')
+# Windows' connectivity check (NCSI): Mihomo's own fake-ip-filter when the key is absent, and
+# writing the key replaces it. Mihomo spells two of them "msftnsci", which matches no domain;
+# they are written as Windows uses them, so Windows does not report "No Internet" on a Fake-IP.
+CONNECTIVITY_FILTER = ('dns.msftncsi.com', 'www.msftncsi.com', 'www.msftconnecttest.com')
 _SIMPLE_PATTERN = re.compile(r'^(?:\+\.|\.|\*\.)?[a-z0-9_*.-]+$')
 _VERSION = re.compile(r'\s*(?:mihomo\s+)?(?:meta\s+)?v?(\d+)\.(\d+)\.(\d+)', re.IGNORECASE)
 
@@ -211,7 +213,7 @@ def outdated_agents(profile_id):
 # --------------------------------------------------------------- fake-ip filter
 
 def _written_filter(dns):
-    value = dns.get('fake-ip-filter', list(MIHOMO_DEFAULT_FILTER))
+    value = dns.get('fake-ip-filter', list(CONNECTIVITY_FILTER))
     return [] if value is None else value
 
 
