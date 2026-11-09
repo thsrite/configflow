@@ -49,7 +49,7 @@ outline: 2
 
 ![域名嗅探：每个协议一格，端口就地修改，右侧开关增删协议](../img/guide/mihomo-base-settings-sniffer.png)
 
-**表单里没有的 DNS 键**：`nameserver-policy` 是映射，表单只提示其中你自己写的条目，请在 YAML 中编辑；`dns.concurrent`、`dns.query-timeout` 不是 Mihomo 的配置项（初始模板里有这两行），Mihomo 会忽略它们，写不写都不影响解析。
+**表单里没有的 DNS 键**：`nameserver-policy` 是映射，表单只提示其中你自己写的条目，请在 YAML 中编辑；`dns.concurrent`、`dns.query-timeout` 不是 Mihomo 的配置项（旧版初始模板里有这两行，删掉即可），Mihomo 会忽略它们，写不写都不影响解析。
 
 **只读项**：`dns.enable`、`dns.listen`、`dns.enhanced-mode` 以及 `tun.enable`、`tun.auto-route`、`tun.auto-detect-interface`、`tun.auto-redirect`、`tun.dns-hijack` 决定流量和 DNS 由谁接管，未填写时注明 Mihomo 的默认值，在「接管与 DNS 监听」（标有「只读」）中只显示不修改。启用 Linux 网关时发布会自动改写它们；首次向导的「Mihomo + OxiDNS 分流（完整 TUN）」要求 TUN 保持完整，改动会在发布前被拒绝。确实需要调整时在 YAML 中编辑。
 
