@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
 import {
   applyDnsPreset, checkMihomoBase, controllerScope, controllerSecretError, DNS_POLICY_KEY, dnsLoop, editMihomoBase,
-  FOREIGN_DOH, DOMESTIC_DOH, readDnsPreset, readMihomoBase, splitHostPort,
+  FOREIGN_DOH, DOMESTIC_DOH, fakeIpRangeError, parseSniffPorts, readDnsPreset, readMihomoBase, readSniff, splitHostPort,
 } from '@/lib/mihomoBaseSettings'
 
 const template: string = JSON.parse(readFileSync(resolve(process.cwd(), '../backend/config_template.json'), 'utf8')).mihomo.custom_config
@@ -233,5 +233,55 @@ describe('Mihomo base checks (same rules as the server)', () => {
     expect(controllerScope('localhost')).toBe('local')
     expect(controllerScope('127.0.0.2')).toBe('local')
     expect(controllerScope('10.0.0.1')).toBe('other')
+  })
+})
+
+describe('Sniffer protocols, Fake-IP range and DNS tuning', () => {
+  const blocking = (source: string) => checkMihomoBase(source, template, undefined).filter(item => item.blocking)
+
+  it('reads the protocols case-insensitively and points out a sniffer without any', () => {
+    const view = readMihomoBase('sniffer:\n  enable: true\n  sniff:\n    http:\n      ports: [80]\n')
+    const state = readSniff(view)
+    expect(state.editable).toBe(true)
+    expect(state.protocols.HTTP).toMatchObject({ key: 'http', present: true, ports: { value: [80], editable: true } })
+    expect(state.protocols.TLS).toMatchObject({ key: 'TLS', present: false })
+    expect(state.idle).toBe(false)
+    expect(readSniff(readMihomoBase('sniffer:\n  enable: true\n  sniff: {}\n')).idle).toBe(true)
+    // The older sniffing list is only read while sniff is empty, and stays a YAML edit.
+    const legacy = readSniff(readMihomoBase('sniffer:\n  enable: true\n  sniffing: [tls]\n'))
+    expect(legacy).toMatchObject({ editable: false, idle: false })
+    expect(legacy.reason).toContain('sniffing')
+  })
+
+  it('parses typed ports into numbers and ranges', () => {
+    expect(parseSniffPorts('80, 8080-8880，443 8443')).toEqual({ ports: [80, '8080-8880', 443, 8443], error: '' })
+    expect(parseSniffPorts(' ').error).toContain('至少填写一个端口')
+    for (const text of ['0', '70000', '9-1', 'abc', '80-']) expect(parseSniffPorts(text).error).toContain('8080-8880')
+  })
+
+  it('edits one protocol in place and checks only what the edit changed', () => {
+    const changed = editMihomoBase(template, [{ path: ['sniffer', 'sniff', 'TLS', 'ports'], value: [443, '8443-8445'], kind: 'list' }])
+    expect(parse(changed).sniffer.sniff.TLS.ports).toEqual([443, '8443-8445'])
+    expect(changed.split('\n').filter((line, index) => line !== template.split('\n')[index]).length).toBeLessThanOrEqual(3)
+    expect(blocking(changed)).toEqual([])
+    const unknown = editMihomoBase(template, [{ path: ['sniffer', 'sniff', 'SSH'], value: { ports: [22] }, kind: 'any' }])
+    expect(blocking(unknown).map(item => [item.field, item.message])).toEqual([['sniffer.sniff', expect.stringContaining('「SSH」无法识别')]])
+    const bad = editMihomoBase(template, [{ path: ['sniffer', 'sniff', 'QUIC', 'ports'], value: ['9-1'], kind: 'list' }])
+    expect(blocking(bad).map(item => item.field)).toEqual(['sniffer.sniff.QUIC'])
+  })
+
+  it('accepts the same IPv4 Fake-IP ranges as the Linux gateway', () => {
+    for (const value of ['198.18.0.1/16', '10.10.0.1/16', '100.64.0.0/10']) expect(fakeIpRangeError(value)).toBe('')
+    for (const value of ['198.18.0.1/31', '10.0.0.0/7', '127.0.0.1/16', '224.0.0.1/8', '169.254.0.1/16', '0.0.0.0/8', 'fc00::1/64', ' 198.18.0.1/16', '010.0.0.1/8', 16]) {
+      expect(fakeIpRangeError(value)).toContain('dns.fake-ip-range 需为 IPv4 网段')
+    }
+    const changed = editMihomoBase(template, [{ path: ['dns', 'fake-ip-range'], value: '127.0.0.1/16' }])
+    expect(blocking(changed).map(item => item.field)).toEqual(['dns.fake-ip-range'])
+  })
+
+  it('checks the DNS HTTP/3 switch and cache algorithm like the server', () => {
+    expect(blocking(editMihomoBase(template, [{ path: ['dns', 'cache-algorithm'], value: 'arc' }, { path: ['dns', 'prefer-h3'], value: true }]))).toEqual([])
+    const wrong = editMihomoBase(template, [{ path: ['dns', 'cache-algorithm'], value: 'fifo' }])
+    expect(blocking(wrong).map(item => item.message)).toEqual(['dns.cache-algorithm 只能是 lru / arc 之一'])
   })
 })

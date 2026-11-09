@@ -9,6 +9,7 @@ import MihomoBaseCell from '@/components/generate/MihomoBaseCell.vue'
 import MihomoBaseGroup from '@/components/generate/MihomoBaseGroup.vue'
 import MihomoControllerSettings from '@/components/generate/MihomoControllerSettings.vue'
 import MihomoDnsPresetSettings from '@/components/generate/MihomoDnsPresetSettings.vue'
+import MihomoSniffSettings from '@/components/generate/MihomoSniffSettings.vue'
 import RadioChips from '@/components/common/RadioChips.vue'
 import { Input } from '@/components/ui/input'
 import { ADVANCED_FIELDS, PORT_FIELDS, logLevelField } from '@/lib/mihomoBaseCopy'
@@ -34,13 +35,13 @@ describe('Mihomo base settings form', () => {
   it('lays every group out as one sheet with all values in view, the read-only group last', () => {
     const wrapper = form()
     const sections = wrapper.findAllComponents(MihomoBaseGroup)
-    expect(sections.map(item => item.props('title'))).toEqual(['控制面板', '代理端口', '局域网访问', 'DNS 上游', 'Fake-IP 过滤', '域名嗅探', '进程匹配与日志', '进阶', '接管与 DNS 监听'])
+    expect(sections.map(item => item.props('title'))).toEqual(['控制面板', '代理端口', '局域网访问', 'DNS 上游', 'Fake-IP', '域名嗅探', '进程匹配与日志', '进阶', '接管与 DNS 监听'])
     expect(sections.map(item => item.props('readonly'))).toEqual([...Array(8).fill(false), true])
     // Nothing is folded: every field of the sheet is rendered up front.
     expect(wrapper.findAllComponents(MihomoBaseField).map(item => item.props('field').path.join('.'))).toEqual(expect.arrayContaining(['mixed-port', 'log-level', 'tun.mtu', 'global-ua']))
     const advanced = ADVANCED_FIELDS.map(item => item.path.join('.'))
     expect(advanced).toEqual(['tun.stack', 'tun.mtu', 'unified-delay', 'tcp-concurrent', 'global-client-fingerprint', 'keep-alive-idle',
-      'keep-alive-interval', 'disable-keep-alive', 'profile.store-selected', 'profile.store-fake-ip', 'global-ua'])
+      'keep-alive-interval', 'disable-keep-alive', 'profile.store-selected', 'profile.store-fake-ip', 'dns.prefer-h3', 'dns.cache-algorithm', 'global-ua'])
     // Every option explains itself.
     for (const item of wrapper.findAllComponents(MihomoBaseField)) expect(item.props('field').help).toMatch(/【作用】[\s\S]+【默认 \/ 推荐】[\s\S]+【修改后】/)
   })
@@ -286,5 +287,81 @@ describe('Base field inputs', () => {
     expect(wrapper.emitted('change')?.at(-1)).toEqual([['a.com', 'b.com']])
     await wrapper.get('textarea').setValue('  \n')
     expect(wrapper.emitted('change')?.at(-1)).toEqual([undefined])
+  })
+})
+
+describe('Sniffer protocol cells', () => {
+  function sniff(source: string, disabled = false) {
+    const wrapper = mount(MihomoSniffSettings, {
+      props: { view: readMihomoBase(source), issues: () => [], disabled },
+      global: { stubs: { FieldHelp: true } },
+    })
+    wrappers.push(wrapper)
+    return wrapper
+  }
+  const input = (wrapper: VueWrapper, name: string) => wrapper.get(`#mihomo-base-sniff-${name}`)
+  const toggle = (wrapper: VueWrapper, name: string) => wrapper.get(`[aria-label="嗅探 ${name}"]`)
+  const lastEdit = (wrapper: VueWrapper) => wrapper.emitted('edit')?.at(-1)?.[0]
+
+  it('shows each protocol of the template with its ports and a switch', () => {
+    const wrapper = sniff(template)
+    expect((input(wrapper, 'HTTP').element as HTMLInputElement).value).toBe('80, 8080-8880')
+    expect((input(wrapper, 'TLS').element as HTMLInputElement).value).toBe('443, 8443')
+    expect(['HTTP', 'TLS', 'QUIC'].map(name => toggle(wrapper, name).attributes('aria-checked'))).toEqual(['true', 'true', 'true'])
+    expect(wrapper.get('[data-base-sniff-override] button[role="switch"]').attributes('aria-checked')).toBe('true')
+  })
+
+  it('writes typed ports, holds a wrong entry as a draft and puts the ports back on Esc', async () => {
+    const wrapper = sniff(template)
+    await input(wrapper, 'TLS').setValue('443, 8443-8445')
+    expect(lastEdit(wrapper)).toEqual([{ path: ['sniffer', 'sniff', 'TLS', 'ports'], value: [443, '8443-8445'], kind: 'list' }])
+    const edits = wrapper.emitted('edit')!.length
+    await input(wrapper, 'TLS').setValue('443, 9-1')
+    expect(wrapper.emitted('edit')!.length).toBe(edits)
+    expect(wrapper.emitted('draft')?.at(-1)).toEqual(['sniffer.sniff.TLS', expect.stringContaining('8080-8880')])
+    expect(wrapper.get('[data-base-field="sniffer.sniff.TLS"] [data-base-issue]').text()).toContain('8080-8880')
+    await input(wrapper, 'TLS').trigger('focus')
+    await input(wrapper, 'TLS').trigger('keydown', { key: 'Escape' })
+    expect(wrapper.emitted('draft')?.at(-1)).toEqual(['sniffer.sniff.TLS', ''])
+  })
+
+  it('adds a protocol with the template ports and removes it again', async () => {
+    const wrapper = sniff('sniffer:\n  enable: true\n  sniff:\n    HTTP:\n      ports: [80]\n')
+    expect(toggle(wrapper, 'QUIC').attributes('aria-checked')).toBe('false')
+    expect(input(wrapper, 'QUIC').attributes('disabled')).toBeDefined()
+    expect(input(wrapper, 'QUIC').attributes('placeholder')).toBe('未启用')
+    await toggle(wrapper, 'QUIC').trigger('click')
+    expect(lastEdit(wrapper)).toEqual([{ path: ['sniffer', 'sniff', 'QUIC'], value: { ports: [443, 8443] }, kind: 'any' }])
+    await toggle(wrapper, 'HTTP').trigger('click')
+    expect(lastEdit(wrapper)).toEqual([{ path: ['sniffer', 'sniff', 'HTTP'], value: undefined, kind: 'any' }])
+  })
+
+  it('edits a lowercase protocol under its own key and follows the global override', async () => {
+    const wrapper = sniff('sniffer:\n  enable: true\n  override-destination: false\n  sniff:\n    http:\n      ports: [80]\n')
+    await input(wrapper, 'HTTP').setValue('80, 8080')
+    expect(lastEdit(wrapper)).toEqual([{ path: ['sniffer', 'sniff', 'http', 'ports'], value: [80, 8080], kind: 'list' }])
+    const override = wrapper.findComponent(MihomoBaseField)
+    expect(override.props('field')).toMatchObject({ path: ['sniffer', 'sniff', 'http', 'override-destination'], coreDefault: false })
+  })
+
+  it('locks the cells for the older sniffing list and when HTTP is off for the override', () => {
+    const legacy = sniff('sniffer:\n  enable: true\n  sniffing: [tls]\n')
+    expect(legacy.findAll('button[role="switch"]').every(item => item.attributes('disabled') !== undefined)).toBe(true)
+    expect(legacy.get('[data-base-field="sniffer.sniff.HTTP"] [data-base-status]').text()).toContain('sniffing')
+    const noHttp = sniff('sniffer:\n  enable: true\n  sniff:\n    TLS:\n      ports: [443]\n')
+    expect(noHttp.findComponent(MihomoBaseField).props('disabled')).toBe(true)
+    expect(noHttp.findComponent(MihomoBaseField).props('note')).toBe('先开启 HTTP 嗅探')
+  })
+
+  it('tells when sniffing is on without any protocol, and shows the new read-only keys with their defaults', () => {
+    const wrapper = form('sniffer:\n  enable: true\n  sniff: {}\ntun:\n  enable: true\n')
+    expect(field(wrapper, 'sniffer.enable').props('note')).toBe('没有开启任何协议，嗅探不生效。')
+    const full = mount(MihomoBaseSettings, {
+      props: { modelValue: 'tun:\n  enable: true\n', savedContent: '', open: true, context: { takeover: null } },
+      global: { stubs: { FieldHelp: true, MihomoControllerSettings: true, MihomoDnsPresetSettings: true, MihomoSniffSettings: true } },
+    })
+    wrappers.push(full)
+    expect(full.get('[data-base-managed-field="tun.auto-detect-interface"] [data-base-managed-value]').text()).toBe('未填写（默认 true）')
+    expect(full.get('[data-base-managed-field="dns.enable"] [data-base-managed-value]').text()).toBe('未填写（默认 false）')
   })
 })

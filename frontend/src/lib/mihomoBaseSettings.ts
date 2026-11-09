@@ -378,6 +378,67 @@ export function controllerSecretError(value: unknown): string {
   return ''
 }
 
+/* ---------- sniffer protocols ---------- */
+
+export const SNIFF_PROTOCOLS = ['HTTP', 'TLS', 'QUIC'] as const
+export type SniffProtocol = typeof SNIFF_PROTOCOLS[number]
+/** The initial template's ports, written when a protocol is switched on. */
+export const SNIFF_DEFAULT_PORTS: Record<SniffProtocol, Array<number | string>> = { HTTP: [80, '8080-8880'], TLS: [443, 8443], QUIC: [443, 8443] }
+export interface SniffProtocolState {
+  /** The key in sniffer.sniff (Mihomo matches it case-insensitively); the canonical name when missing. */
+  key: string
+  present: boolean
+  ports: BaseFieldState
+}
+export interface SniffState {
+  editable: boolean
+  reason: string
+  protocols: Record<SniffProtocol, SniffProtocolState>
+  /** sniffer.enable is on but no protocol is sniffed. */
+  idle: boolean
+}
+
+const asMap = (value: unknown) => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+
+export function readSniff(view: MihomoBaseView): SniffState {
+  const sniff = view.value(['sniffer', 'sniff'])
+  const map = asMap(sniff)
+  const legacy = view.value(['sniffer', 'sniffing'])
+  const container = view.field(['sniffer', 'sniff'], 'any')
+  let reason = view.error ? '' : !container.editable ? container.reason
+    : sniff !== undefined && sniff !== null && !map ? 'sniffer.sniff 必须是 YAML 对象，请在下方 YAML 中修改。' : ''
+  // Mihomo reads the older `sniffing` list only while `sniff` is empty.
+  if (!reason && Array.isArray(legacy) && legacy.length && !Object.keys(map || {}).length) reason = 'YAML 使用旧写法 sniffing，请在下方 YAML 中修改。'
+  const protocols = Object.fromEntries(SNIFF_PROTOCOLS.map(name => {
+    const key = Object.keys(map || {}).find(item => item.toUpperCase() === name) ?? name
+    const present = !!map && Object.prototype.hasOwnProperty.call(map, key)
+    const ports = view.field(['sniffer', 'sniff', key, 'ports'], 'list')
+    return [name, { key, present, ports: reason ? { ...ports, editable: false, reason } : ports }]
+  })) as Record<SniffProtocol, SniffProtocolState>
+  const sniffed = SNIFF_PROTOCOLS.some(name => protocols[name].present) || (Array.isArray(legacy) && legacy.length > 0)
+  return { editable: !view.error && !reason, reason, protocols, idle: view.value(['sniffer', 'enable']) === true && !sniffed }
+}
+
+/** Same as sniff_ports_error in the backend: 80 or 8080-8880, each port 1–65535. */
+export function sniffPortError(value: unknown): boolean {
+  if (typeof value === 'number') return !Number.isInteger(value) || value < 1 || value > 65535
+  if (typeof value !== 'string') return true
+  const match = /^\s*(\d+)\s*(?:-\s*(\d+)\s*)?$/.exec(value)
+  if (!match) return true
+  const low = Number(match[1])
+  const high = Number(match[2] ?? match[1])
+  return low < 1 || high > 65535 || low > high
+}
+export const SNIFF_PORTS_HINT = '端口写成 80 或 8080-8880，多个用逗号分隔，范围 1–65535'
+export const sniffPortsText = (value: unknown) => Array.isArray(value) ? value.map(String).join(', ') : ''
+/** Ports typed in a cell: numbers stay numbers, ranges are text. */
+export function parseSniffPorts(text: string): { ports: Array<number | string>; error: string } {
+  const parts = text.split(/[,，\s]+/).filter(Boolean)
+  if (!parts.length) return { ports: [], error: '至少填写一个端口；不需要这个协议时关闭右侧开关' }
+  if (parts.some(sniffPortError)) return { ports: [], error: SNIFF_PORTS_HINT }
+  return { ports: parts.map(part => /^\d+$/.test(part) ? Number(part) : part), error: '' }
+}
+
 /* ---------- checks ---------- */
 
 export const INBOUND_PORT_KEYS = ['mixed-port', 'port', 'socks-port', 'redir-port', 'tproxy-port'] as const
@@ -387,12 +448,15 @@ export const FAKE_IP_FILTER_MODES = ['blacklist', 'whitelist', 'rule'] as const
 export const TUN_STACKS = ['system', 'gvisor', 'mixed'] as const
 export const CLIENT_FINGERPRINTS = ['chrome', 'firefox', 'safari', 'ios', 'android', 'edge', '360', 'qq', 'random'] as const
 
+export const CACHE_ALGORITHMS = ['lru', 'arc'] as const
+
 const BOOLEANS: BasePath[] = [['allow-lan'], ['unified-delay'], ['tcp-concurrent'], ['disable-keep-alive'], ['profile', 'store-selected'],
-  ['profile', 'store-fake-ip'], ['sniffer', 'enable'], ['dns', 'respect-rules'], ['dns', 'direct-nameserver-follow-policy']]
+  ['profile', 'store-fake-ip'], ['sniffer', 'enable'], ['dns', 'respect-rules'], ['dns', 'direct-nameserver-follow-policy'], ['dns', 'prefer-h3']]
 const INTEGERS: Array<[BasePath, number, number]> = [...INBOUND_PORT_KEYS.map(key => [[key], 1, 65535] as [BasePath, number, number]),
   [['tun', 'mtu'], 576, 65535], [['keep-alive-idle'], 1, 86400], [['keep-alive-interval'], 1, 86400]]
 const ENUMS: Array<[BasePath, readonly string[]]> = [[['log-level'], LOG_LEVELS], [['find-process-mode'], FIND_PROCESS_MODES],
-  [['dns', 'fake-ip-filter-mode'], FAKE_IP_FILTER_MODES], [['tun', 'stack'], TUN_STACKS], [['global-client-fingerprint'], CLIENT_FINGERPRINTS]]
+  [['dns', 'fake-ip-filter-mode'], FAKE_IP_FILTER_MODES], [['tun', 'stack'], TUN_STACKS], [['global-client-fingerprint'], CLIENT_FINGERPRINTS],
+  [['dns', 'cache-algorithm'], CACHE_ALGORITHMS]]
 const STRING_LISTS: BasePath[] = [...DNS_LIST_KEYS.map(key => ['dns', key]), ['dns', 'fake-ip-filter'], ['sniffer', 'skip-domain'], ['sniffer', 'force-domain']]
 const TEXTS: BasePath[] = [['external-ui'], ['global-ua']]
 const DNS_UPSTREAM_PATHS: BasePath[] = [...DNS_LIST_KEYS.map(key => ['dns', key]), ['dns', 'nameserver-policy'], ['dns', 'proxy-server-nameserver-policy']]
@@ -446,6 +510,31 @@ export function dnsLoop(dns: unknown, localAddresses: string[] = []): { key: str
 
 function listenPort(value: unknown) { return splitHostPort(value)?.port ?? null }
 
+const ipv4Number = (text: string) => text.split('.').reduce((total, part) => total * 256 + Number(part), 0)
+// Both ends of the network inside a special block, as ipaddress.IPv4Network's is_loopback / is_multicast / is_link_local.
+const SPECIAL_IPV4: Array<[string, number]> = [['127.0.0.0', 8], ['224.0.0.0', 4], ['169.254.0.0', 16]]
+/** Same as fake_ip_network in backend/common/linux_gateway.py: an IPv4 network /8–/30, not loopback, multicast, link-local or 0.0.0.0. */
+export function fakeIpRangeError(value: unknown): string {
+  const message = 'dns.fake-ip-range 需为 IPv4 网段（/8 至 /30），例如 198.18.0.1/16，不能是回环、多播或链路本地地址'
+  if (typeof value !== 'string') return message
+  // No spaces or leading zeros: Python's ipaddress refuses them.
+  const octet = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)'
+  const match = new RegExp(`^(${octet}(?:\\.${octet}){3})/(\\d{1,2})$`).exec(value)
+  if (!match) return message
+  const prefix = Number(match[2])
+  if (prefix < 8 || prefix > 30) return message
+  const size = 2 ** (32 - prefix)
+  const first = Math.floor(ipv4Number(match[1]) / size) * size
+  const last = first + size - 1
+  if (first === 0) return message
+  for (const [base, bits] of SPECIAL_IPV4) {
+    const start = ipv4Number(base)
+    const end = start + 2 ** (32 - bits) - 1
+    if (first >= start && last <= end) return message
+  }
+  return ''
+}
+
 /** Every problem; `changed` decides which of them this edit introduced. */
 function problems(values: Record<string, unknown>, changed: (path: BasePath) => boolean, context: BaseContext): Array<{ field: string; message: string }> {
   const found: Array<{ field: string; message: string }> = []
@@ -478,6 +567,34 @@ function problems(values: Record<string, unknown>, changed: (path: BasePath) => 
   for (const path of TEXTS) {
     const value = get(path)
     if (changed(path) && value !== undefined && (typeof value !== 'string' || !value.trim())) add(path, `${pathId(path)} 需为非空文本；不需要时删除该项`)
+  }
+
+  const fakeRange = get(['dns', 'fake-ip-range'])
+  if (changed(['dns', 'fake-ip-range']) && fakeRange !== undefined && fakeIpRangeError(fakeRange)) add(['dns', 'fake-ip-range'], fakeIpRangeError(fakeRange))
+
+  // Sniffer protocols: Mihomo refuses the whole configuration for an unknown protocol or a bad port.
+  const sniff = get(['sniffer', 'sniff'])
+  if (sniff !== undefined && sniff !== null) {
+    const map = asMap(sniff)
+    if (!map) {
+      if (changed(['sniffer', 'sniff'])) add('sniffer.sniff', 'sniffer.sniff 需为对象，按协议 HTTP / TLS / QUIC 分别填写')
+    } else {
+      for (const [key, item] of Object.entries(map)) {
+        const name = key.toUpperCase()
+        if (!(SNIFF_PROTOCOLS as readonly string[]).includes(name)) {
+          if (changed(['sniffer', 'sniff'])) add('sniffer.sniff', `sniffer.sniff 只支持 HTTP / TLS / QUIC，「${key}」无法识别，Mihomo 会拒绝加载`)
+          continue
+        }
+        if (!changed(['sniffer', 'sniff', key])) continue
+        const field = `sniffer.sniff.${name}`
+        const config = asMap(item)
+        const ports = config?.ports
+        if (!config || !Array.isArray(ports) || !ports.length || ports.some(sniffPortError)) add(field, `sniffer.sniff.${key}.ports：${SNIFF_PORTS_HINT}`)
+        else if (config['override-destination'] !== undefined && typeof config['override-destination'] !== 'boolean') {
+          add(field, `sniffer.sniff.${key}.override-destination 只能填写 true 或 false，不要加引号`)
+        }
+      }
+    }
   }
 
   // Controller and password.

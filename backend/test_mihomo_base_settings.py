@@ -190,3 +190,41 @@ def test_agent_ports_and_takeover_are_reported_and_enforced(app):
     result = client.post('/api/custom-config/mihomo?profile=office',
                          json={'config': 'dns:\n  enable: true\n  nameserver: [10.0.0.5]\n'})
     assert result.status_code == 400 and '解析循环' in result.json['message']
+
+
+@pytest.mark.parametrize('value', ['10.10.0.1/16', '198.18.0.1/15', '100.64.0.0/10'])
+def test_fake_ip_range_accepts_private_ipv4_networks(value):
+    check(lambda doc: doc['dns'].update({'fake-ip-range': value}))
+
+
+@pytest.mark.parametrize('value', ['198.18.0.1/31', '10.0.0.0/7', '127.0.0.1/16', '224.0.0.1/8', '169.254.0.1/16',
+                                   '0.0.0.0/8', 'fc00::1/64', ' 198.18.0.1/16', 16])
+def test_fake_ip_range_follows_the_gateway_rule(value):
+    rejects(lambda doc: doc['dns'].update({'fake-ip-range': value}), 'dns.fake-ip-range 需为 IPv4 网段')
+
+
+def test_dns_prefer_h3_and_cache_algorithm():
+    check(lambda doc: doc['dns'].update({'prefer-h3': True, 'cache-algorithm': 'arc'}))
+    rejects(lambda doc: doc['dns'].update({'prefer-h3': 'yes please'}), 'dns.prefer-h3 只能填写 true 或 false')
+    rejects(lambda doc: doc['dns'].update({'cache-algorithm': 'fifo'}), 'dns.cache-algorithm 只能是 lru / arc 之一')
+
+
+def test_sniff_protocols_and_ports():
+    def sniff(value):
+        return lambda doc: doc['sniffer'].update({'sniff': value})
+    check(sniff({'HTTP': {'ports': [80, '8080-8880'], 'override-destination': False}, 'tls': {'ports': ['443']}}))
+    check(sniff({}))
+    rejects(sniff({'HTTP': {'ports': [80]}, 'SSH': {'ports': [22]}}), '「SSH」无法识别')
+    rejects(sniff(['HTTP']), 'sniffer.sniff 需为对象')
+    for ports in ([], [0], ['8880-8080'], ['80-'], [True], None):
+        rejects(sniff({'TLS': {'ports': ports}}), 'sniffer.sniff.TLS.ports')
+    rejects(sniff({'QUIC': {'ports': [443], 'override-destination': 'true'}}), 'override-destination 只能填写 true 或 false')
+
+
+def test_sniff_checks_only_the_protocol_this_save_changes():
+    saved = template()
+    saved['sniffer']['sniff']['QUIC'] = {'ports': ['bad']}
+    # The saved QUIC problem does not block a TLS edit, but a new one does.
+    check(lambda doc: doc['sniffer']['sniff']['TLS'].update({'ports': [443]}), previous=saved)
+    with pytest.raises(BaseSettingsError):
+        check(lambda doc: doc['sniffer']['sniff']['QUIC'].update({'ports': ['worse']}), previous=saved)

@@ -1,5 +1,5 @@
 import type { BasePath } from './mihomoBaseSettings'
-import { CLIENT_FINGERPRINTS } from './mihomoBaseSettings'
+import { CACHE_ALGORITHMS, CLIENT_FINGERPRINTS, type SniffProtocol } from './mihomoBaseSettings'
 
 /** Help text of a base setting: what it does, the default / recommendation, the effect of a change and the risk. */
 export function settingHelp(parts: { what: string; recommend: string; effect: string; risk?: string }): string {
@@ -157,6 +157,15 @@ export const followPolicyHelp = settingHelp({
   effect: '开启后命中 geosite:cn 等策略的直连域名使用策略中的上游。保存并发布后生效。',
 })
 
+export const fakeIpRangeField: BaseFieldDef = {
+  path: ['dns', 'fake-ip-range'], label: 'IPv4 网段（dns.fake-ip-range）', type: 'text', coreDefault: '198.18.0.1/16',
+  help: settingHelp({
+    what: '客户端收到的 IPv4 Fake-IP 从这个网段分配。上游路由把它路由到 Mihomo，Linux 网关也按它接管连接。',
+    recommend: '198.18.0.1/16（初始模板写明此值，与 Mihomo 默认相同）。只在它与局域网或其他网络冲突时修改。',
+    effect: '保存并发布后生效；之后到「上游路由」预览并发布新的路由。客户端缓存的旧 Fake-IP 要等缓存过期或重新联网才会更新。清空会删除该项，改用默认网段。',
+    risk: '只接受 /8 至 /30 的 IPv4 网段，不能是回环、多播或链路本地地址；与局域网网段重叠会让局域网访问出错。',
+  }),
+}
 export const fakeIpFilterModeField: BaseFieldDef = {
   path: ['dns', 'fake-ip-filter-mode'], label: 'Fake-IP 过滤方式', type: 'enum', coreDefault: 'blacklist',
   options: [{ value: 'blacklist', label: 'blacklist：列表内返回真实 IP' }, { value: 'whitelist', label: 'whitelist：只有列表内用 Fake-IP' }, { value: 'rule', label: 'rule：列表每行是规则' }],
@@ -200,6 +209,34 @@ export const forceDomainField: BaseFieldDef = {
     what: '无论连接是否已有域名，都对这些域名嗅探并按嗅探结果改写目标。每行一个。',
     recommend: '通常留空或只列少数需要按真实域名分流的网站。',
     effect: '保存并发布后生效。清空会删除该项。',
+  }),
+}
+
+// One cell per protocol: its ports with a switch, like the inbound ports.
+export const SNIFF_PROTOCOL_COPY: Record<SniffProtocol, { label: string; help: string }> = {
+  HTTP: { label: 'HTTP 端口（sniffer.sniff.HTTP）', help: settingHelp({
+    what: '对这些端口上的明文 HTTP 连接读取 Host，识别真实域名。',
+    recommend: '初始模板为 80, 8080-8880。',
+    effect: '关闭右侧开关会删除这个协议，不再嗅探 HTTP。保存并发布后生效。',
+  }) },
+  TLS: { label: 'TLS 端口（sniffer.sniff.TLS）', help: settingHelp({
+    what: '对这些端口上的 TLS（HTTPS 等）连接读取 SNI，识别真实域名。',
+    recommend: '初始模板为 443, 8443。',
+    effect: '关闭右侧开关会删除这个协议，不再嗅探 TLS，大部分网站的按 IP 连接将无法匹配域名规则。保存并发布后生效。',
+  }) },
+  QUIC: { label: 'QUIC 端口（sniffer.sniff.QUIC）', help: settingHelp({
+    what: '对这些端口上的 QUIC（HTTP/3）连接读取 SNI，识别真实域名。',
+    recommend: '初始模板为 443, 8443。',
+    effect: '关闭右侧开关会删除这个协议，不再嗅探 QUIC。保存并发布后生效。',
+  }) },
+}
+export const sniffOverrideField: BaseFieldDef = {
+  path: ['sniffer', 'sniff', 'HTTP', 'override-destination'], label: 'HTTP 改写目标（override-destination）', type: 'bool', coreDefault: true,
+  help: settingHelp({
+    what: '嗅探到 HTTP 域名后，是否把连接的目标改成这个域名再交给节点。关闭时只用于匹配规则，仍按原 IP 连接。',
+    recommend: '开启（初始模板开启）。未填写时沿用 sniffer.override-destination，Mihomo 默认开启。',
+    effect: '保存并发布后生效。',
+    risk: '个别应用被改写目标后会连不上，可以把它的域名加入跳过列表，或关闭这一项。',
   }),
 }
 
@@ -290,6 +327,19 @@ export const ADVANCED_FIELDS: BaseFieldDef[] = [
       recommend: '网关和分流方案建议开启（初始模板开启）。',
       effect: '关闭后 Mihomo 重启时客户端缓存的 Fake-IP 会暂时失效，需等 DNS 缓存过期。保存并发布后生效。',
     }) },
+  { path: ['dns', 'prefer-h3'], label: 'DoH 优先 HTTP/3（dns.prefer-h3）', type: 'bool', coreDefault: false,
+    help: settingHelp({
+      what: '使用 DoH 上游时优先尝试 HTTP/3（QUIC）连接。',
+      recommend: '保持关闭（Mihomo 默认关闭，初始模板未设置）。',
+      effect: '开启后支持 HTTP/3 的 DoH 可能更快；网络屏蔽 UDP 443 时会先失败再回退，反而更慢。保存并发布后生效。',
+    }) },
+  { path: ['dns', 'cache-algorithm'], label: 'DNS 缓存算法（dns.cache-algorithm）', type: 'enum', unset: '不设置（lru）',
+    options: CACHE_ALGORITHMS.map(value => ({ value, label: value === 'lru' ? 'lru：淘汰最久没用的' : 'arc：兼顾最近和常用' })),
+    help: settingHelp({
+      what: 'DNS 缓存满了时先淘汰哪些记录。',
+      recommend: '不设置时为 lru（初始模板未设置）。改为 arc 时常用域名更不容易被挤出缓存。',
+      effect: '只影响缓存命中率，不影响解析结果。保存并发布后生效。选「不设置」会删除该项。',
+    }) },
   { path: ['global-ua'], label: '下载使用的 User-Agent（global-ua）', type: 'text', placeholder: '不填写则使用 Mihomo 默认值',
     help: settingHelp({
       what: 'Mihomo 下载订阅、规则集、GeoIP / GeoSite 数据和网页面板时使用的 User-Agent。',
@@ -299,11 +349,14 @@ export const ADVANCED_FIELDS: BaseFieldDef[] = [
     }) },
 ]
 
-export const MANAGED_FIELDS: Array<{ path: BasePath; label: string; help: string }> = [
+// coreDefault: what Mihomo uses when the key is missing.
+export const MANAGED_FIELDS: Array<{ path: BasePath; label: string; help: string; coreDefault?: unknown }> = [
+  { path: ['dns', 'enable'], label: 'DNS 开关（dns.enable）', coreDefault: false, help: '决定是否启用 Mihomo 自己的 DNS。Fake-IP、分流的 DNS 和 IPv6 设置都依赖它，关闭后客户端拿不到 Fake-IP，连接无法按域名分流。由向导和 Linux 网关设定。' },
   { path: ['dns', 'listen'], label: 'DNS 监听（dns.listen）', help: 'Mihomo DNS 的监听地址。首次向导固定为 127.0.0.1:1053，由同机 OxiDNS 把需要代理的域名转给它；Linux 网关发布时也改写为 127.0.0.1:1053。改动会让 OxiDNS 或网关找不到 Mihomo DNS。' },
   { path: ['dns', 'enhanced-mode'], label: 'DNS 模式（dns.enhanced-mode）', help: '网关、主路由分流和 IPv6 设置都依赖 fake-ip：客户端拿到 Fake-IP 后连接才会进入 Mihomo。' },
   { path: ['tun', 'enable'], label: 'TUN 开关（tun.enable）', help: '决定 Mihomo 是否接管本机和转发来的连接。主路由分流要求保持开启，Linux 网关发布时自动开启。' },
   { path: ['tun', 'auto-route'], label: '自动路由（tun.auto-route）', help: '自动添加把流量送进 TUN 的路由。由向导和 Linux 网关设定。' },
+  { path: ['tun', 'auto-detect-interface'], label: '自动识别出口（tun.auto-detect-interface）', coreDefault: true, help: '自动找到真正连外网的网卡，让 Mihomo 自己的出站连接不再进入 TUN，避免回环。完整 TUN 和 Linux 网关都要求开启。' },
   { path: ['tun', 'auto-redirect'], label: '自动重定向（tun.auto-redirect）', help: '在 Linux 上用 nftables 把转发来的 TCP 交给 Mihomo，网关和主路由分流需要它。' },
   { path: ['tun', 'dns-hijack'], label: 'DNS 劫持（tun.dns-hijack）', help: '把发往 53 端口的 DNS 查询交给 Mihomo。完整 TUN 方案要求包含 any:53；Linux 网关改为空，由 OxiDNS 负责 DNS。' },
 ]

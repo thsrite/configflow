@@ -25,6 +25,7 @@
 | `mihomo-base-settings-controller.png` | 控制面板分组，打开「监听范围」小窗 | 密码为演示填写，默认隐藏 |
 | `mihomo-base-settings-port-conflict.png` | 两个端口相同 | 由截图脚本故意填写冲突端口，用于展示保存被阻止 |
 | `mihomo-base-settings-dns.png` | DNS 上游切换到「国内外分开解析」，打开「默认 DNS」列表 | 只改草稿，未发布 |
+| `mihomo-base-settings-sniffer.png` | 域名嗅探分组：HTTP / TLS / QUIC 端口与开关 | 脚本把 TLS 端口改为 443, 8443-8445，只改草稿 |
 | `mihomo-base-settings-managed.png` | 接管与 DNS 监听（只读） | 未启用 Linux 网关、非向导配置空间 |
 | `mihomo-base-settings-yaml-error.png` | YAML 无法解析时隐藏属性表，只显示原因 | 脚本在编辑器中输入错误 YAML |
 | `mihomo-base-settings-mobile-dark.png` | 手机 390px 深色 | 分组名在上，格子两列 |
@@ -33,7 +34,7 @@
 
 聚合缓存预览的 PNG 由 [aggregation_cache_preview_browser.mjs](../../../scripts/tests/aggregation_cache_preview_browser.mjs) 单独采集，使用真实页面和 API、临时数据及演示节点；脚本验证预览不产生上游请求或拉取记录，并检查来源缓存更新、缓存缺失和手机布局。准备好下述依赖后，在测试服务器运行 `rt --no-sync --back doc/img/guide/aggregation-subscription-cache.png -- node scripts/tests/aggregation_cache_preview_browser.mjs`。
 
-Mihomo 基础参数的 PNG 由 [mihomo_base_settings_browser.mjs](../../../scripts/tests/mihomo_base_settings_browser.mjs) 采集，使用真实页面与 API 和临时数据（初始模板，无 Agent、未发布）；脚本同时检查保存时的服务器校验、YAML 双向同步、Esc 撤回输入且不关闭编辑窗口、小窗选择、表单停用，以及 390px 手机宽度下无横向滚动、触控目标不小于 44px、小窗不超出屏幕。运行：`cf-test typecheck` 后 `rt --no-sync --back doc/img/guide --back .ci-results/mihomo-base-settings -- node scripts/tests/mihomo_base_settings_browser.mjs`。
+Mihomo 基础参数的 PNG 由 [mihomo_base_settings_browser.mjs](../../../scripts/tests/mihomo_base_settings_browser.mjs) 采集，使用真实页面与 API 和临时数据（初始模板，无 Agent、未发布）；脚本同时检查保存时的服务器校验、YAML 双向同步、Esc 撤回输入且不关闭编辑窗口、小窗选择、嗅探端口格式错误与无效 Fake-IP 网段阻止保存、协议开关增删、表单停用，以及 390px 手机宽度下无横向滚动、触控目标不小于 44px、小窗不超出屏幕。运行：`cf-test typecheck` 后 `rt --no-sync --back doc/img/guide --back .ci-results/mihomo-base-settings -- node scripts/tests/mihomo_base_settings_browser.mjs`。
 
 Mihomo IPv6 模式的 `mihomo-ipv6-mode-menu.png`、`mihomo-ipv6-mode-nodes.png`、`mihomo-ipv6-mode-steps.png`、`mihomo-ipv6-mode-custom.png`、`mihomo-ipv6-mode-mobile-dark.png`、`mihomo-ipv6-pending-after-change.png`、`mihomo-ipv6-steps-after-router.png` 由 [mihomo_settings_radio_chips_browser.mjs](../../../scripts/tests/mihomo_settings_radio_chips_browser.mjs) 采集，使用真实页面与 API 和临时数据（初始模板，未发布）。没有真实设备：一台演示 Mihomo 与一台演示 RouterOS 的设备列表、设备检查、验收和上游路由状态由浏览器内的模拟应答提供，步骤状态与实验网截图一致，不代表设备已检查或已发布。脚本同时检查「关闭」时 IPv6 卡片只有「配置」一组、模式小窗竖排三个胶囊、方向键选择后关闭小窗并回到格子、网段格子与模式同一行且 Esc 撤回不关闭窗口、「自定义」不选中任何项并在格子下方说明原因、YAML 无法解析时模式格子停用、验收组只列两项、与 Agent 安装弹窗胶囊的计算样式一致（浅色与深色），以及 390px 手机宽度下无横向滚动、胶囊不小于 44px、小窗不超出屏幕、长选项在更窄宽度下于胶囊内换行。运行：`cf-test typecheck` 后 `rt --no-sync --back doc/img/guide --back .ci-results/mihomo-radio-chips -- node scripts/tests/mihomo_settings_radio_chips_browser.mjs`。
 

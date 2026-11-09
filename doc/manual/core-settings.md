@@ -40,14 +40,18 @@ outline: 2
 | 代理端口 | `mixed-port`，以及 `port`、`socks-port`、`redir-port`、`tproxy-port` 是否保留和端口 | 一般只留混合端口；使用 TUN（含向导方案）时不需要 redir / tproxy。端口不能互相重复，也不能与 DNS 监听、控制面板或同机 Agent 的端口相同 |
 | 局域网访问 | `allow-lan`、`bind-address` | 其他设备手动填代理时才需要允许局域网；TUN、网关和主路由分流的接管不受影响 |
 | DNS 上游 | 「DNS 方案」选「国内 DoH」或「国内外分开解析」预设；旁边的 `default-nameserver`、`nameserver`、`proxy-server-nameserver`、`direct-nameserver`（点开后每行一个）及 `respect-rules`、`direct-nameserver-follow-policy` 可直接修改，改过后方案显示为「自定义」 | 「国内 DoH」与初始模板一致。「国内外分开解析」让 `geosite:cn,private` 用国内 DoH、其他域名经代理用 Google / Cloudflare DoH，依赖 GeoSite 数据（Mihomo 首次自动下载）和可用节点。切换预设只改这几项并删除旧的 `fallback` / `fallback-filter`；`nameserver-policy` 只增删 `geosite:cn,private` 一条（追加在最后），自己写的条目（如 `+.115.com`）保留并优先匹配。上游不能指向本机、本机 OxiDNS 或 `system`，否则形成解析循环 |
-| Fake-IP 过滤 | `fake-ip-filter-mode`、`fake-ip-filter`（每行一个） | 写入列表会替换 Mihomo 自带的默认名单；局域网域名、对时服务器等需要真实地址的服务放在这里 |
-| 域名嗅探 | `sniffer.enable`、`skip-domain`、`force-domain` | 关闭后按 IP 进入的连接无法匹配域名规则；首次开启时补上 HTTP / TLS / QUIC 常用端口 |
+| Fake-IP | `fake-ip-range`（IPv4 网段）、`fake-ip-filter-mode`、`fake-ip-filter`（每行一个） | 网段只接受 /8 至 /30 的 IPv4 网段（与 Linux 网关的规则相同），改了以后到「上游路由」预览并发布新的路由；写入过滤列表会替换 Mihomo 自带的默认名单，局域网域名、对时服务器等需要真实地址的服务放在这里。IPv6 网段在上方 IPv6 卡片里 |
+| 域名嗅探 | `sniffer.enable`；`sniff` 的 HTTP、TLS、QUIC 各一格：端口就地输入（逗号分隔，单个端口或 `8080-8880` 这样的范围），右侧开关增删这个协议；HTTP 的 `override-destination`；`skip-domain`、`force-domain` | 关闭后按 IP 进入的连接无法匹配域名规则；首次开启时补上 HTTP / TLS / QUIC 常用端口，打开某个协议的开关时写入初始模板的端口。端口写错时标红并禁止保存，不会等到发布后 Mihomo 才报错。协议名大小写不限（如 `http`），表单改动沿用原来的写法；还在用旧写法 `sniffing` 时这几格只读，请在 YAML 中修改。总开关开着但三个协议都关了时会提示嗅探不生效 |
 | 进程匹配与日志 | `find-process-mode`、`log-level` | 网关、主路由分流等替别的设备转发的机器建议 `off`：客户端进程不在本机，查找只会白耗 CPU。已有配置不会被自动修改。`debug` 只在排查时临时使用 |
-| 进阶 | `tun.stack`、`tun.mtu`、`unified-delay`、`tcp-concurrent`、`global-client-fingerprint`、`keep-alive-idle`、`keep-alive-interval`、`disable-keep-alive`、`profile.store-selected`、`profile.store-fake-ip`、`global-ua` | 一般保持初始模板的值，遇到兼容性问题再调整 |
+| 进阶 | `tun.stack`、`tun.mtu`、`unified-delay`、`tcp-concurrent`、`global-client-fingerprint`、`keep-alive-idle`、`keep-alive-interval`、`disable-keep-alive`、`profile.store-selected`、`profile.store-fake-ip`、`dns.prefer-h3`、`dns.cache-algorithm`、`global-ua` | 一般保持初始模板的值，遇到兼容性问题再调整 |
 
 ![端口冲突时两个端口都标红并写明原因，保存按钮不可用](../img/guide/mihomo-base-settings-port-conflict.png)
 
-**只读项**：`dns.listen`、`dns.enhanced-mode` 以及 `tun.enable`、`tun.auto-route`、`tun.auto-redirect`、`tun.dns-hijack` 决定流量和 DNS 由谁接管，在「接管与 DNS 监听」（标有「只读」）中只显示不修改。启用 Linux 网关时发布会自动改写它们；首次向导的「Mihomo + OxiDNS 分流（完整 TUN）」要求 TUN 保持完整，改动会在发布前被拒绝。确实需要调整时在 YAML 中编辑。
+![域名嗅探：每个协议一格，端口就地修改，右侧开关增删协议](../img/guide/mihomo-base-settings-sniffer.png)
+
+**表单里没有的 DNS 键**：`nameserver-policy` 是映射，表单只提示其中你自己写的条目，请在 YAML 中编辑；`dns.concurrent`、`dns.query-timeout` 不是 Mihomo 的配置项（旧版初始模板里有这两行，删掉即可），Mihomo 会忽略它们，写不写都不影响解析。
+
+**只读项**：`dns.enable`、`dns.listen`、`dns.enhanced-mode` 以及 `tun.enable`、`tun.auto-route`、`tun.auto-detect-interface`、`tun.auto-redirect`、`tun.dns-hijack` 决定流量和 DNS 由谁接管，未填写时注明 Mihomo 的默认值，在「接管与 DNS 监听」（标有「只读」）中只显示不修改。启用 Linux 网关时发布会自动改写它们；首次向导的「Mihomo + OxiDNS 分流（完整 TUN）」要求 TUN 保持完整，改动会在发布前被拒绝。确实需要调整时在 YAML 中编辑。
 
 **与 YAML 的同步**：表单每次只改对应的键，未涉及的键、注释和缩进保持原样；只有紧挨着改动的几行可能按标准格式重新排版（例如注释前的空格）。YAML 无法解析时属性表隐藏（读不出当前值，不拿默认值冒充），只显示错误原因；某个值使用了锚点、别名、合并（`<<`）时该项只读并说明原因。两种情况都不会覆盖你的内容。密码以明文保存在 YAML 中，编辑器里同样可见；表单只是默认隐藏。
 

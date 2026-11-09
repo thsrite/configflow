@@ -15,6 +15,9 @@ FIND_PROCESS_MODES = ('always', 'strict', 'off')
 FAKE_IP_FILTER_MODES = ('blacklist', 'whitelist', 'rule')
 TUN_STACKS = ('system', 'gvisor', 'mixed')
 CLIENT_FINGERPRINTS = ('chrome', 'firefox', 'safari', 'ios', 'android', 'edge', '360', 'qq', 'random')
+CACHE_ALGORITHMS = ('lru', 'arc')
+SNIFF_PROTOCOLS = ('HTTP', 'TLS', 'QUIC')
+SNIFF_PORTS_HINT = '端口写成 80 或 8080-8880，多个用逗号分隔，范围 1–65535'
 DNS_LIST_KEYS = ('default-nameserver', 'nameserver', 'proxy-server-nameserver', 'direct-nameserver', 'fallback')
 DNS_UPSTREAM_PATHS = tuple(('dns', key) for key in DNS_LIST_KEYS + ('nameserver-policy', 'proxy-server-nameserver-policy'))
 REGION_PROBE_LISTENER = 'configflow-region-probe'
@@ -29,6 +32,7 @@ BOOLEANS = {
     ('sniffer', 'enable'): 'sniffer.enable',
     ('dns', 'respect-rules'): 'dns.respect-rules',
     ('dns', 'direct-nameserver-follow-policy'): 'dns.direct-nameserver-follow-policy',
+    ('dns', 'prefer-h3'): 'dns.prefer-h3',
 }
 INTEGERS = {
     **{(key,): (key, 1, 65535) for key in INBOUND_PORT_KEYS},
@@ -42,6 +46,7 @@ ENUMS = {
     ('dns', 'fake-ip-filter-mode'): ('dns.fake-ip-filter-mode', FAKE_IP_FILTER_MODES),
     ('tun', 'stack'): ('tun.stack', TUN_STACKS),
     ('global-client-fingerprint',): ('global-client-fingerprint', CLIENT_FINGERPRINTS),
+    ('dns', 'cache-algorithm'): ('dns.cache-algorithm', CACHE_ALGORITHMS),
 }
 STRING_LISTS = {
     **{('dns', key): f'dns.{key}' for key in DNS_LIST_KEYS},
@@ -160,6 +165,57 @@ def _check_types(document, changed):
             raise BaseSettingsError(f'{label} 需为非空文本；不需要时删除该项')
 
 
+def sniff_port_error(value):
+    """True unless ``value`` is a port (80) or a range (\"8080-8880\") of ports 1–65535."""
+    if type(value) is int:
+        return not 1 <= value <= 65535
+    if not isinstance(value, str):
+        return True
+    low, separator, high = value.strip().partition('-')
+    low, high = low.strip(), (high.strip() if separator else low.strip())
+    if not low.isdigit() or not high.isdigit():
+        return True
+    return not 1 <= int(low) <= int(high) <= 65535
+
+
+def _check_fake_range(document, changed):
+    from backend.common.linux_gateway import LinuxGatewayError, fake_ip_network
+    value = _get(document, ('dns', 'fake-ip-range'))
+    if not changed(('dns', 'fake-ip-range')) or value is _MISSING:
+        return
+    try:
+        if not isinstance(value, str):
+            raise LinuxGatewayError('')
+        fake_ip_network({'dns': {'fake-ip-range': value}})
+    except LinuxGatewayError:
+        raise BaseSettingsError('dns.fake-ip-range 需为 IPv4 网段（/8 至 /30），例如 198.18.0.1/16，'
+                                '不能是回环、多播或链路本地地址') from None
+
+
+def _check_sniff(document, changed):
+    """Mihomo refuses the whole configuration for an unknown protocol or a bad port."""
+    sniff = _get(document, ('sniffer', 'sniff'))
+    if sniff is _MISSING or sniff is None:
+        return
+    if not isinstance(sniff, dict):
+        if changed(('sniffer', 'sniff')):
+            raise BaseSettingsError('sniffer.sniff 需为对象，按协议 HTTP / TLS / QUIC 分别填写')
+        return
+    for key, item in sniff.items():
+        if str(key).upper() not in SNIFF_PROTOCOLS:
+            if changed(('sniffer', 'sniff')):
+                raise BaseSettingsError(f'sniffer.sniff 只支持 HTTP / TLS / QUIC，「{key}」无法识别，Mihomo 会拒绝加载')
+            continue
+        if not changed(('sniffer', 'sniff', key)):
+            continue
+        ports = item.get('ports') if isinstance(item, dict) else None
+        if not isinstance(ports, list) or not ports or any(sniff_port_error(port) for port in ports):
+            raise BaseSettingsError(f'sniffer.sniff.{key}.ports：{SNIFF_PORTS_HINT}')
+        override = item.get('override-destination', _MISSING)
+        if override is not _MISSING and type(override) is not bool:
+            raise BaseSettingsError(f'sniffer.sniff.{key}.override-destination 只能填写 true 或 false，不要加引号')
+
+
 def _check_controller(document, changed):
     from backend.common.setup_flow import controller_secret_error
     controller = _get(document, ('external-controller',))
@@ -265,6 +321,8 @@ def validate_base_settings(document, previous=None, *, reserved_ports=None, loca
         except (TypeError, ValueError):
             continue
     _check_types(document, changed)
+    _check_fake_range(document, changed)
+    _check_sniff(document, changed)
     _check_controller(document, changed)
     _check_access(document, changed)
     _check_ports(document, changed, reserved_ports or {})
