@@ -2,18 +2,19 @@
 import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import FieldHelp from '@/components/common/FieldHelp.vue'
 import {
-  ADVANCED_FIELDS, MANAGED_FIELDS, MANAGED_NOTES, PORT_FIELDS, allowLanField, bindAddressField, fakeIpFilterField, fakeIpFilterModeField,
+  ADVANCED_FIELDS, MANAGED_FIELDS, MANAGED_NOTES, PORT_FIELDS, allowLanField, bindAddressField, fakeIpFilterField, fakeIpFilterModeField, fakeIpRangeField,
   findProcessField, forceDomainField, logLevelField, skipDomainField, snifferEnableField, type BaseFieldDef,
 } from '@/lib/mihomoBaseCopy'
 import {
-  applyDnsPreset, checkMihomoBase, editMihomoBase, pathId, readDnsPreset, readMihomoBase, splitHostPort,
-  type BaseContext, type BaseIssue, type BasePath, type FieldKind, type MihomoTakeover,
+  applyDnsPreset, checkMihomoBase, editMihomoBase, pathId, readDnsPreset, readMihomoBase, readSniff, splitHostPort,
+  type BaseContext, type BaseEdit, type BaseIssue, type BasePath, type FieldKind, type MihomoTakeover,
 } from '@/lib/mihomoBaseSettings'
 import MihomoBaseField from './MihomoBaseField.vue'
 import MihomoBaseCell from './MihomoBaseCell.vue'
 import MihomoBaseGroup from './MihomoBaseGroup.vue'
 import MihomoControllerSettings from './MihomoControllerSettings.vue'
 import MihomoDnsPresetSettings from './MihomoDnsPresetSettings.vue'
+import MihomoSniffSettings from './MihomoSniffSettings.vue'
 import { shortLabel } from './mihomoBaseCell'
 
 export interface MihomoBaseServerContext {
@@ -34,9 +35,12 @@ const editError = ref('')
 const locked = computed(() => props.disabled || !!view.value.error)
 
 function change(path: BasePath, value: unknown, kind?: FieldKind) {
+  apply([{ path, value, kind }])
+}
+function apply(edits: BaseEdit[]) {
   if (locked.value) return
   try {
-    content.value = editMihomoBase(content.value, [{ path, value, kind }], props.defaultConfig)
+    content.value = editMihomoBase(content.value, edits, props.defaultConfig)
     editError.value = ''
   } catch (failure) {
     editError.value = failure instanceof Error ? failure.message : '无法修改，请在下方 YAML 中调整。'
@@ -91,8 +95,8 @@ const sections = {
   ports: [...PORT_FIELDS.map(field => field.key), 'listeners', 'dns.listen'],
   lan: ['allow-lan', 'bind-address'],
   dns: ['dns.default-nameserver', 'dns.nameserver', 'dns.proxy-server-nameserver', 'dns.direct-nameserver', 'dns.fallback', 'dns.nameserver-policy', 'dns.proxy-server-nameserver-policy', 'dns.respect-rules', 'dns.direct-nameserver-follow-policy'],
-  fakeip: ['dns.fake-ip-filter-mode', 'dns.fake-ip-filter'],
-  sniffer: ['sniffer.enable', 'sniffer.skip-domain', 'sniffer.force-domain'],
+  fakeip: ['dns.fake-ip-range', 'dns.fake-ip-filter-mode', 'dns.fake-ip-filter'],
+  sniffer: ['sniffer.enable', 'sniffer.sniff', 'sniffer.sniff.HTTP', 'sniffer.sniff.TLS', 'sniffer.sniff.QUIC', 'sniffer.skip-domain', 'sniffer.force-domain'],
   process: ['find-process-mode', 'log-level'],
   advanced: ADVANCED_FIELDS.map(field => pathId(field.path)),
 } as const
@@ -107,7 +111,7 @@ onUnmounted(() => emit('validation', { invalid: false, dirty: false }))
 watch(() => [props.open, props.savedContent], () => { editError.value = '' })
 
 const value = (path: BasePath) => view.value.value(path)
-const shown = (item: unknown) => item === undefined ? '未填写' : Array.isArray(item) ? (item.length ? item.join(', ') : '[]') : typeof item === 'object' && item !== null ? JSON.stringify(item) : String(item)
+const shown = (item: unknown, coreDefault?: unknown) => item === undefined ? (coreDefault === undefined ? '未填写' : `未填写（默认 ${String(coreDefault)}）`) : Array.isArray(item) ? (item.length ? item.join(', ') : '[]') : typeof item === 'object' && item !== null ? JSON.stringify(item) : String(item)
 const takeover = computed(() => props.context?.takeover ?? null)
 const managedNote = computed(() => MANAGED_NOTES[takeover.value ?? 'none'])
 const syncHelp = '表单与下方 YAML 双向同步：点值直接修改，几选一和列表在弹出的小窗里改，Esc 撤回正在输入的修改。修改表单只改对应的键，其他键和大部分注释原样保留（表单会按 YAML 标准格式重新排版这份文本，例如统一缩进和引号）；在 YAML 中修改后表单立即更新。YAML 无法解析时表单停用，不会覆盖你的内容。新规则只拦截本次改动引入的问题，已保存配置中原有的问题显示为提醒，不阻止保存其他改动。保存时服务器做同样的检查。'
@@ -150,14 +154,15 @@ const fieldState = (field: BaseFieldDef) => view.value.field(field.path, field.t
         <MihomoDnsPresetSettings :view="view" :issues="issuesFor" :disabled="locked" @change="change" @preset="choosePreset" />
       </MihomoBaseGroup>
 
-      <MihomoBaseGroup section="fakeip" title="Fake-IP 过滤" :blocking="count('fakeip', true)" :warnings="count('fakeip', false)">
-        <MihomoBaseField v-for="field in [fakeIpFilterModeField, fakeIpFilterField]" :key="pathId(field.path)" :field="field" :state="fieldState(field)"
+      <MihomoBaseGroup section="fakeip" title="Fake-IP" :blocking="count('fakeip', true)" :warnings="count('fakeip', false)">
+        <MihomoBaseField v-for="field in [fakeIpRangeField, fakeIpFilterModeField, fakeIpFilterField]" :key="pathId(field.path)" :field="field" :state="fieldState(field)"
           :issues="issuesFor(pathId(field.path))" :disabled="locked" @change="change(field.path, $event, field.type === 'list' ? 'list' : 'scalar')" />
       </MihomoBaseGroup>
 
       <MihomoBaseGroup section="sniffer" title="域名嗅探" :blocking="count('sniffer', true)" :warnings="count('sniffer', false)">
         <MihomoBaseField :field="snifferEnableField" :state="fieldState(snifferEnableField)" :issues="issuesFor('sniffer.enable')" :disabled="locked"
-          :note="value(['sniffer', 'enable']) === true ? '' : '关闭后，按 IP 进入的连接无法匹配域名规则。'" @change="changeSniffer" />
+          :note="value(['sniffer', 'enable']) !== true ? '关闭后，按 IP 进入的连接无法匹配域名规则。' : readSniff(view).idle ? '没有开启任何协议，嗅探不生效。' : ''" @change="changeSniffer" />
+        <MihomoSniffSettings :view="view" :issues="issuesFor" :disabled="locked" @edit="apply" @draft="setDraft" />
         <MihomoBaseField v-for="field in [skipDomainField, forceDomainField]" :key="pathId(field.path)" :field="field" :state="fieldState(field)"
           :issues="issuesFor(pathId(field.path))" :disabled="locked" @change="change(field.path, $event, 'list')" />
       </MihomoBaseGroup>
@@ -168,7 +173,7 @@ const fieldState = (field: BaseFieldDef) => view.value.field(field.path, field.t
       </MihomoBaseGroup>
 
       <MihomoBaseGroup section="advanced" title="进阶" :blocking="count('advanced', true)" :warnings="count('advanced', false)"
-        help="TUN 协议栈与 MTU、延迟与并发、TLS 指纹、TCP 保活、缓存和下载 User-Agent。一般保持初始模板的值即可，遇到兼容性问题再调整。">
+        help="TUN 协议栈与 MTU、延迟与并发、TLS 指纹、TCP 保活、缓存、DNS 的 HTTP/3 与缓存算法、下载 User-Agent。一般保持初始模板的值即可，遇到兼容性问题再调整。">
         <MihomoBaseField v-for="field in ADVANCED_FIELDS" :key="pathId(field.path)" :field="field" :state="fieldState(field)"
           :issues="issuesFor(pathId(field.path))" :disabled="locked" @change="change(field.path, $event)" @draft="setDraft(pathId(field.path), $event)" />
       </MihomoBaseGroup>
@@ -177,7 +182,7 @@ const fieldState = (field: BaseFieldDef) => view.value.field(field.path, field.t
         <div class="contents" data-base-managed>
           <MihomoBaseCell v-for="field in MANAGED_FIELDS" :key="pathId(field.path)" :label="shortLabel(field.label)" :help="`YAML 键：${pathId(field.path)}\n${field.help}`"
             :data-base-managed-field="pathId(field.path)">
-            <p class="m-0 flex min-h-8 items-center break-all px-1.5 font-mono text-[13px] text-muted-foreground" data-base-managed-value>{{ shown(value(field.path)) }}</p>
+            <p class="m-0 flex min-h-8 items-center break-all px-1.5 font-mono text-[13px] text-muted-foreground" data-base-managed-value>{{ shown(value(field.path), field.coreDefault) }}</p>
           </MihomoBaseCell>
         </div>
         <p class="col-span-full m-0 break-words px-2 pt-1 text-[11.5px] leading-relaxed text-muted-foreground" data-base-managed-note>{{ managedNote }}</p>
