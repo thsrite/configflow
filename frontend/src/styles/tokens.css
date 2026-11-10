@@ -46,6 +46,8 @@
 :root {
   /* 应用布局 */
   --cf-topbar-h: 60px;
+  /* 页面内吸顶元素停在顶栏下方的位置 */
+  --cf-sticky-top: var(--cf-topbar-h);
   --cf-rail-w: 236px;
   --cf-rail-collapsed-w: 72px;
   --cf-tabbar-h: 56px;
@@ -449,6 +451,11 @@ body {
     margin-right: var(--cf-sp-1);
     color: var(--cf-fg-3);
     font-size: 12px;
+  }
+
+  /* 顶栏在手机上由内容撑开：上下 4px 内边距 + 44px 按钮 + 1px 下边框，再加安全区 */
+  :root {
+    --cf-sticky-top: calc(env(safe-area-inset-top) + 53px);
   }
 
   .cf-app-topbar {

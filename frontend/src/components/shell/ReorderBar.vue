@@ -1,7 +1,7 @@
 <template>
   <div
     v-if="active"
-    class="sticky top-(--cf-shell-header-h) z-20 mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card py-3 pr-3 pl-4"
+    class="sticky top-(--cf-sticky-top) z-20 mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card py-3 pr-3 pl-4"
     role="region"
     aria-label="排序模式"
   >
