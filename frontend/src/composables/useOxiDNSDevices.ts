@@ -1,18 +1,14 @@
 import { onUnmounted, ref } from 'vue'
 import { loadAgentSummaries } from '@/lib/agentSummaries'
+import { rememberedOxiDNSDevice } from '@/lib/oxidnsDevice'
 import type { Agent } from '@/types'
 
-export type OxiDNSDevice = Pick<Agent, 'id' | 'name' | 'host' | 'status'>
-export const OXIDNS_DEVICE_STORAGE_KEY = 'configflow:oxidns-monitor:agent'
-export const oxidnsMonitorPath = (id: string) => '/agents/' + encodeURIComponent(id) + '/oxidns'
+export { OXIDNS_DEVICE_STORAGE_KEY, forgetOxiDNSDevice, oxidnsMonitorPath, rememberOxiDNSDevice } from '@/lib/oxidnsDevice'
 
-export function rememberOxiDNSDevice(id: string) {
-  try { window.localStorage.setItem(OXIDNS_DEVICE_STORAGE_KEY, id) } catch { /* Storage can be unavailable in private browsers. */ }
-}
+export type OxiDNSDevice = Pick<Agent, 'id' | 'name' | 'host' | 'status'>
 
 export function preferredOxiDNSDevice(devices: OxiDNSDevice[]) {
-  let saved: string | null = null
-  try { saved = window.localStorage.getItem(OXIDNS_DEVICE_STORAGE_KEY) } catch { /* Selection still works without storage. */ }
+  const saved = rememberedOxiDNSDevice()
   return devices.find(device => device.id === saved) || devices.find(device => device.status === 'online') || devices[0]
 }
 
