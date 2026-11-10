@@ -486,3 +486,260 @@ def test_compare_now_rejects_another_repository(setup, monkeypatch):
     monkeypatch.setattr(config_module, '_repository', object())
     assert compare(setup, repository=object()) == {'status': 'unknown', 'reason': 'check_failed'}
     assert calls == []
+
+
+# --- The list reads its inputs and copies them only for a worker ------------
+
+@pytest.fixture
+def copies(monkeypatch):
+    """Every deepcopy the checker makes, by the copied object's identity."""
+    from backend.agents import content_sync
+    made = []
+
+    def counting(value):
+        made.append(id(value))
+        return deepcopy(value)
+    monkeypatch.setattr(content_sync, 'deepcopy', counting)
+    return made
+
+
+def test_a_kept_answer_and_a_running_check_copy_nothing(setup, copies):
+    """The Agent page polls the list; a poll that finds an answer, or a check
+    under way, must not copy the whole profile for each device."""
+    _, executor, now, agent, config, _, _ = setup
+    assert query(setup) == {'status': 'checking'}
+    assert copies == [id(agent), id(config)]  # for the worker, once
+    del copies[:]
+    for _ in range(5):
+        assert query(setup) == {'status': 'checking'}
+    executor.run()
+    for _ in range(5):
+        assert query(setup)['status'] == 'synced'
+    agent.update(last_heartbeat='later')
+    assert query(setup)['status'] == 'synced'
+    assert copies == []
+    now[0] += 900
+    assert query(setup) == {'status': 'checking'}
+    assert copies == [id(agent), id(config)]
+
+
+@pytest.mark.parametrize('change', [
+    {'latest_deployment': {'deployment_id': 'next', 'status': 'uploading'}},
+    {'applied_content': None},
+    {'config_version': 'another'},
+])
+def test_an_unavailable_comparison_copies_nothing(setup, copies, change):
+    _, executor, _, agent, _, _, _ = setup
+    agent.update(change)
+    assert query(setup)['status'] == 'unknown'
+    assert copies == [] and executor.jobs == []
+
+
+def test_the_list_never_changes_what_it_was_given(setup):
+    _, executor, _, agent, config, _, _ = setup
+    agent['deployments'] = {'previous': {'deployment_id': 'previous', 'status': 'succeeded'}}
+    before = deepcopy((agent, config))
+    query(setup)
+    executor.run()
+    query(setup)
+    assert (agent, config) == before
+
+
+def test_the_worker_keeps_the_values_of_the_request_that_started_it(setup):
+    """A request's values are its own: changing them after the answer, as the
+    route does when it finishes the public record, must not reach the worker."""
+    _, executor, _, agent, config, _, calls = setup
+    expected = deepcopy((agent, config))
+    assert query(setup) == {'status': 'checking'}
+    (_, _, (_, _, _, worker_agent, worker_config, _, _)), = executor.jobs
+    assert worker_agent is not agent and worker_config is not config
+    agent['service_type'] = 'mosdns'
+    agent['applied_content']['fingerprint'] = 'v1:' + '0' * 64
+    config['test_rule'] = 'DOMAIN,changed-after-the-answer.test\n'
+    config['system_config']['server_domain'] = 'https://changed.test'
+    executor.run()
+    assert calls[0][:2] == expected
+
+
+def test_devices_of_one_profile_get_separate_copies_of_it(setup):
+    """The route passes one profile snapshot for all devices bound to it; two
+    workers preparing at the same time must not share it."""
+    checker, executor, _, agent, config, prepare, _ = setup
+    other = {**deepcopy(agent), 'id': 'agent-other'}
+    for item in (agent, other):
+        assert checker.get_content_sync(item, config, 'https://config.example.test', prepare) == {'status': 'checking'}
+    first, second = (job[2] for job in executor.jobs)
+    assert first[4] is not second[4] and first[4] is not config and first[4] == second[4] == config
+    assert first[3]['id'] == 'agent-test' and second[3]['id'] == 'agent-other'
+
+
+def test_inputs_that_cannot_be_copied_start_no_worker_and_keep_no_slot(setup, monkeypatch):
+    from backend.agents import content_sync
+    checker, executor, _, agent, config, prepare, _ = setup
+
+    def failing(value):
+        raise TypeError('cannot copy')
+    monkeypatch.setattr(content_sync, 'deepcopy', failing)
+    for _ in range(4):  # more than the two worker slots
+        assert query(setup) == {'status': 'unknown', 'reason': 'invalid_inputs'}
+    assert executor.jobs == [] and not checker._running and not checker._entries
+    monkeypatch.setattr(content_sync, 'deepcopy', deepcopy)
+    assert query(setup) == {'status': 'checking'}
+    executor.run()
+    assert query(setup)['status'] == 'synced'
+
+
+def test_requests_arriving_while_the_copies_are_made_start_no_second_worker(setup, monkeypatch):
+    """The copies are made outside the lock; the slot is reserved before them."""
+    from backend.agents import content_sync
+    checker, executor, _, agent, config, prepare, _ = setup
+    copying, proceed = threading.Event(), threading.Event()
+
+    def slow(value):
+        copying.set()
+        assert proceed.wait(10)
+        return deepcopy(value)
+    monkeypatch.setattr(content_sync, 'deepcopy', slow)
+    answers = []
+    first = threading.Thread(target=lambda: answers.append(query(setup)))
+    first.start()
+    assert copying.wait(10)
+    monkeypatch.setattr(content_sync, 'deepcopy', deepcopy)
+    # Not blocked by the first request, and no second job.
+    assert query(setup) == {'status': 'checking'}
+    assert executor.jobs == []
+    # An invalidation in between only makes the coming worker's answer land nowhere.
+    checker.invalidate()
+    proceed.set()
+    first.join(10)
+    assert answers == [{'status': 'checking'}] and len(executor.jobs) == 1
+    executor.run()
+    assert not checker._running
+    assert query(setup) == {'status': 'checking'}  # the invalidated answer was not kept
+    executor.run()
+    assert query(setup)['status'] == 'synced'
+
+
+class _CopyFirstChecker(ContentSyncChecker):
+    """get_content_sync as it was: both inputs copied on every request."""
+
+    def get_content_sync(self, agent, config, base_url, prepare, *, scope='', repository=None):
+        from backend.agents import content_sync
+        if not isinstance(agent, dict) or not isinstance(config, dict) or not isinstance(agent.get('id'), str):
+            return content_sync._unknown('invalid_inputs')
+        identity = (scope, agent['id'])
+        repository = content_sync._current_repository()
+        try:
+            agent_snapshot, config_snapshot = deepcopy(agent), deepcopy(config)
+            unavailable = content_sync._precondition(agent_snapshot, config_snapshot)
+            key = None if unavailable else content_sync._input_key(agent_snapshot, config_snapshot, base_url)
+        except Exception:
+            unavailable, key = content_sync._unknown('invalid_inputs'), None
+        with self._lock:
+            if unavailable:
+                self._entries.pop(identity, None)
+                return unavailable
+            entry = self._entries.get(identity)
+            if entry is None or entry.key != key or entry.repository is not repository:
+                entry = content_sync._Entry(key, repository)
+                self._entries[identity] = entry
+            self._entries.move_to_end(identity)
+            self._trim()
+            if entry.result is not None and self._clock() < entry.expires:
+                return dict(entry.result)
+            if identity in self._running:
+                return {'status': 'checking'}
+            if not self._slots.acquire(blocking=False):
+                return {'status': 'checking'}
+            token = object()
+            self._running[identity] = token
+            self._executor.submit(self._check, identity, entry, token, agent_snapshot, config_snapshot, base_url, prepare)
+            return {'status': 'checking'}
+
+
+def test_random_histories_answer_as_when_every_request_copied_first():
+    """Three devices on one shared profile through the same random histories
+    of edits, publications, failures, time and invalidations, once with the
+    checker as it is and once copying first: every answer, every scheduled
+    worker and everything a worker was given must be the same."""
+    import random
+
+    def world(checker_class):
+        executor, now, calls, failing = DeferredExecutor(), [100.0], [], [False]
+        checker = checker_class(executor=executor, clock=lambda: now[0])
+        config = {'profile_id': 'default', 'system_config': {'server_domain': 'https://config.example.test'},
+                  'test_main': 'mode: rule\nrules: []\n', 'test_rule': 'DOMAIN,example.test\n'}
+
+        def bundle_for(item, snapshot, *, base_url='', deployment_id='previous'):
+            return build_deployment_bundle(item, snapshot, snapshot['test_main'],
+                                           custom_files=[{'path': 'rules/example.list', 'content': snapshot['test_rule']}],
+                                           base_url=base_url, deployment_id=deployment_id)
+
+        def prepare(item, snapshot, **kwargs):
+            calls.append((deepcopy(item), deepcopy(snapshot), kwargs.get('base_url')))
+            if failing[0]:
+                raise ValueError('preparation failed')
+            return bundle_for(item, snapshot, **kwargs)
+
+        agents = []
+        for number in range(3):
+            agent = {'id': f'agent-{number}', 'profile_id': 'default', 'service_type': 'mihomo',
+                     'config_version': 'applied-config'}
+            agent['applied_content'] = {
+                'fingerprint': deployment_content_fingerprint(bundle_for(agent, config).manifest), 'profile_id': 'default',
+                'service_type': 'mihomo', 'config_version': 'applied-config', 'deployment_id': 'previous',
+                'base_url': 'https://config.example.test', 'config_path': 'config.yaml'}
+            agents.append(agent)
+        return checker, executor, now, agents, config, prepare, calls, failing
+
+    def step(state, action, choice, amount, index, counter):
+        checker, executor, now, agents, config, prepare, calls, failing = state
+        agent, answer = agents[choice], None
+        if action == 'poll':
+            # One request lists every device against one profile snapshot.
+            answer = [checker.get_content_sync(item, config, item['applied_content']['base_url'], prepare) for item in agents]
+            for item in answer:
+                item.pop('checked_at', None)
+        elif action == 'run' and executor.jobs:
+            executor.run(index % len(executor.jobs))
+        elif action == 'rule':
+            config['test_rule'] = ('DOMAIN,example.test\n', 'DOMAIN,other.test\n', 'DOMAIN,third.test\n')[choice]
+        elif action == 'main':
+            config['test_main'] = f'mode: rule\nrules: []\n# {choice}\n'
+        elif action == 'pending':
+            agent['latest_deployment'] = {'deployment_id': 'next', 'status': 'uploading'}
+        elif action == 'settled':
+            agent['latest_deployment'] = {'deployment_id': 'next', 'status': ('succeeded', 'failed', 'rolled_back')[choice]}
+        elif action == 'heartbeat':
+            agent.update(last_heartbeat=str(counter), cpu=choice)
+            config['_revision'] = counter
+        elif action == 'time':
+            now[0] += amount
+        elif action == 'invalidate':
+            checker.invalidate()
+        elif action in ('fail', 'recover'):
+            failing[0] = action == 'fail'
+        elif action == 'base_url':
+            agent['applied_content']['base_url'] = ('https://config.example.test', 'https://second.test')[choice % 2]
+        elif action == 'version':
+            agent['config_version'] = ('applied-config', 'reported-another')[choice % 2]
+        queued = [(args[0], args[3], args[4], args[5]) for _future, _function, args in executor.jobs]
+        return answer, queued, calls, sorted(checker._running), checker._slots._value
+
+    actions = ['poll'] * 8 + ['run'] * 4 + ['rule', 'main', 'pending', 'settled', 'heartbeat', 'time', 'invalidate',
+                                            'fail', 'recover', 'base_url', 'version']
+    seen = set()
+    for seed in range(12):
+        ours, reference = world(ContentSyncChecker), world(_CopyFirstChecker)
+        random_ = random.Random(seed)
+        for counter in range(400):
+            move = (random_.choice(actions), random_.randrange(3), random_.choice([1, 20, 31, 400, 901]),
+                    random_.randrange(1 << 30), counter)
+            result = step(ours, *move)
+            assert result == step(reference, *move), (seed, counter, move[0])
+            seen.update(json.dumps(item, sort_keys=True) for item in result[0] or ())
+    # The histories went through every kind of answer.
+    assert seen >= {json.dumps(item, sort_keys=True) for item in (
+        {'status': 'checking'}, {'status': 'synced'}, {'status': 'changed'},
+        {'status': 'unknown', 'reason': 'check_failed'}, {'status': 'unknown', 'reason': 'deployment_pending'},
+        {'status': 'unknown', 'reason': 'version_mismatch'})}

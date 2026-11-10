@@ -138,10 +138,12 @@ class ContentSyncChecker:
         identity = (scope, agent['id'])
         if repository is _UNBOUND_REPOSITORY:
             repository = _current_repository()
+        # The Agent page asks every few seconds and nearly always gets a kept
+        # answer: the inputs are only read here, and copied when a worker is
+        # going to keep them.
         try:
-            agent_snapshot, config_snapshot = deepcopy(agent), deepcopy(config)
-            unavailable = _precondition(agent_snapshot, config_snapshot)
-            key = None if unavailable else _input_key(agent_snapshot, config_snapshot, base_url)
+            unavailable = _precondition(agent, config)
+            key = None if unavailable else _input_key(agent, config, base_url)
         except Exception:
             unavailable, key = _unknown('invalid_inputs'), None
         with self._lock:
@@ -168,16 +170,32 @@ class ContentSyncChecker:
                 return {'status': 'checking'}
             token = object()
             self._running[identity] = token
-            try:
-                self._executor.submit(self._check, identity, entry, token, agent_snapshot,
-                                      config_snapshot, base_url, prepare)
-            except Exception:
-                self._running.pop(identity, None)
-                self._slots.release()
+        # Reserved above: other requests answer "checking" meanwhile. The
+        # worker reads its own copies, whatever the caller does with its values
+        # afterwards and whatever other workers of the same profile do.
+        try:
+            agent_snapshot, config_snapshot = deepcopy(agent), deepcopy(config)
+        except Exception:
+            with self._lock:
+                self._release(identity, token)
+                if self._entries.get(identity) is entry:
+                    del self._entries[identity]
+            return _unknown('invalid_inputs')
+        try:
+            self._executor.submit(self._check, identity, entry, token, agent_snapshot,
+                                  config_snapshot, base_url, prepare)
+        except Exception:
+            with self._lock:
+                self._release(identity, token)
                 entry.result = _unknown('check_failed')
                 entry.expires = self._clock() + self._error_ttl
                 return dict(entry.result)
-            return {'status': 'checking'}
+        return {'status': 'checking'}
+
+    def _release(self, identity, token):
+        if self._running.get(identity) is token:
+            del self._running[identity]
+        self._slots.release()
 
     def invalidate(self):
         """Forget finished results; running checks keep their slot but not their answer.
