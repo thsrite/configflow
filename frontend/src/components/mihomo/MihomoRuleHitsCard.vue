@@ -40,6 +40,7 @@ import SectionCard from '@/components/common/SectionCard.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingRows from '@/components/common/LoadingRows.vue'
 import { mihomoPanelApi } from '@/api'
+import { cachedPanelData } from '@/lib/mihomoPanelCache'
 import { relativeTime } from '@/lib/format'
 import { ruleHitCounts, type MihomoRuleWithExtra, type RuleHitItem } from '@/lib/mihomo-overview'
 import { panelError } from '@/types/mihomo'
@@ -62,6 +63,12 @@ let disposed = false
 let epoch = 0
 async function load() {
   const request = ++epoch
+  // 先用这台设备上次读到的规则排出命中榜，读到新数据后替换
+  const cached = cachedPanelData<{ rules?: MihomoRuleWithExtra[] }>(props.agentId, 'rules')?.rules
+  if (cached && !loaded.value) {
+    rules.value = cached
+    loaded.value = true
+  }
   try {
     const { data } = await mihomoPanelApi.rules(props.agentId)
     if (disposed || request !== epoch) return

@@ -19,6 +19,10 @@
     </div>
     <MihomoProxySettings v-model:open="settingsOpen" :settings="settings" @update:settings="applySettings" />
 
+    <p v-if="error && groups.length" role="alert" class="mb-3 flex flex-wrap items-center gap-x-3 break-words text-[12.5px] text-warning-accent">
+      <span>读取最新策略组失败，下面是上次读到的内容：{{ error }}</span>
+      <Button variant="ghost" size="sm" class="min-h-11" :disabled="loading" @click="load">重试</Button>
+    </p>
     <LoadingRows v-if="loading && !groups.length" :rows="5" />
     <SectionCard v-else-if="error && !groups.length">
       <EmptyState :icon="TriangleAlert" title="读取策略组失败" :description="error">
@@ -112,7 +116,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, toRaw, watch } from 'vue'
 import { ArrowRight, ChevronRight, ChevronsUpDown, Loader2, Search, Settings2, TriangleAlert, Zap } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import Toolbar from '@/components/common/Toolbar.vue'
@@ -124,6 +128,7 @@ import { useTabActive } from '@/components/ui/tabs'
 import { mihomoPanelApi } from '@/api'
 import { notify } from '@/lib/feedback'
 import { formatBytes, relativeTime } from '@/lib/format'
+import { cachedPanelData, rememberPanelProxy } from '@/lib/mihomoPanelCache'
 import {
   GROUP_TYPE_LABELS, GROUP_TYPES, SWITCHABLE_GROUP_TYPES, compatibleFirst, delayText, delayTone, finalNode, latestDelay, loadProxySettings,
   orderedGroups, panelError, saveProxySettings, type MihomoProvider, type MihomoProxy, type ProxyPanelSettings
@@ -282,7 +287,10 @@ async function load() {
   }
   const providerResult = await providerRequest
   if (requestEpoch !== epoch || !providerResult) return
-  const providerMap: Record<string, MihomoProvider> = providerResult.data.data?.providers || {}
+  applyProviders(providerResult.data.data?.providers || {})
+}
+
+function applyProviders(providerMap: Record<string, MihomoProvider>) {
   // /proxies 不含 proxy-providers 里的节点，合并进来才能显示策略组成员的类型和延迟。
   // Compatible 集合是 /proxies 已经完整列出的配置节点和策略组，后端只给名字，排在前面不覆盖完整信息。
   providerProxies = Object.fromEntries(compatibleFirst(Object.values(providerMap))
@@ -301,12 +309,24 @@ async function load() {
   providers.value = Object.values(providerMap).filter(provider => provider.vehicleType !== 'Compatible')
 }
 
+/** 先显示这台设备上次读到的策略组和订阅节点，load() 读到新数据后替换 */
+function showCached() {
+  const core = cachedPanelData<{ proxies?: Record<string, MihomoProxy> }>(props.agentId, 'proxies')?.proxies
+  if (!core || groups.value.length) return
+  coreProxyNames.value = new Set(Object.keys(core))
+  proxies.value = { ...core }
+  const providerMap = cachedPanelData<{ providers?: Record<string, MihomoProvider> }>(props.agentId, 'providers/proxies')?.providers
+  if (providerMap) applyProviders(providerMap)
+}
+
 async function select(group: MihomoProxy, member: string) {
   if (member === group.now && !group.fixed) return
   busy.add(group.name)
   try {
     await mihomoPanelApi.selectProxy(props.agentId, group.name, member)
-    proxies.value[group.name] = { ...group, now: member, fixed: group.type === 'Selector' ? group.fixed : member }
+    const switched = { ...toRaw(group), now: member, fixed: group.type === 'Selector' ? group.fixed : member }
+    proxies.value[group.name] = switched
+    rememberPanelProxy(props.agentId, switched)
     const closed = settings.value.closeConnectionsOnSwitch ? await closeGroupConnections(group.name) : 0
     notify.success(`${group.name} 已切换到 ${member}`, closed ? `已断开经过该策略组的 ${closed} 条连接` : undefined)
   } catch (failure) {
@@ -477,10 +497,11 @@ watch(() => props.reloadToken, () => { resetTests(); stale = !active.value; if (
 watch(active, shown => { if (shown && stale) { stale = false; void load() } })
 watch(() => props.agentId, () => {
   resetTests(); epoch++; proxies.value = {}; providerProxies = {}; providers.value = []; coreProxyNames.value.clear(); nodeProviders.value.clear()
+  showCached()
   void load()
 })
 onUnmounted(() => { disposed = true; testEpoch++; epoch++; batchStop.value = true })
-onMounted(load)
+onMounted(() => { showCached(); void load() })
 </script>
 
 <style scoped>

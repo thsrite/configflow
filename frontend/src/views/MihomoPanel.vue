@@ -110,6 +110,7 @@ import MihomoLogs from '@/components/mihomo/MihomoLogs.vue'
 import MihomoCoreActions from '@/components/mihomo/MihomoCoreActions.vue'
 import { agentApi, mihomoPanelApi, profileApi } from '@/api'
 import { loadAgentSummaries } from '@/lib/agentSummaries'
+import { cachedPanelData } from '@/lib/mihomoPanelCache'
 import { notify } from '@/lib/feedback'
 import { panelError, type MihomoMode } from '@/types/mihomo'
 import type { Agent } from '@/types'
@@ -216,6 +217,13 @@ async function loadStatus() {
   statusLoading.value = true
   statusError.value = ''
   upgradeRequired.value = false
+  // 再次打开时先显示上次读到的版本和模式，标签页不用等这两个请求
+  const cachedVersion = cachedPanelData<{ version?: string }>(id, 'version')
+  const cachedConfigs = cachedPanelData<{ mode?: string }>(id, 'configs')
+  if (cachedVersion && cachedConfigs && !coreVersion.value) {
+    coreVersion.value = cachedVersion.version || '未知版本'
+    mode.value = (cachedConfigs.mode || 'rule').toLowerCase() as MihomoMode
+  }
   try {
     const [version, configs] = await Promise.all([mihomoPanelApi.version(id), mihomoPanelApi.configs(id)])
     if (epoch !== statusEpoch) return

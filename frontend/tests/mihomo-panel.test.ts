@@ -45,6 +45,7 @@ import MihomoRules from '@/components/mihomo/MihomoRules.vue'
 import MihomoLogs from '@/components/mihomo/MihomoLogs.vue'
 import { agentApi, mihomoPanelApi } from '@/api'
 import { invalidateAgentSummaries } from '@/lib/agentSummaries'
+import { rememberPanelData } from '@/lib/mihomoPanelCache'
 
 const routeState = vi.hoisted(() => ({ route: null as any, replace: vi.fn() }))
 vi.mock('vue-router', () => ({ useRoute: () => routeState.route, useRouter: () => ({ replace: routeState.replace, push: vi.fn() }) }))
@@ -251,6 +252,37 @@ describe('mihomo panel view', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('www.example.com:443')
     expect(wrapper.text()).toContain('Proxy → HK')
+    wrapper.unmount()
+  })
+
+  it('shows the cached core version and rules before the fresh reads answer', async () => {
+    rememberPanelData('gw', 'version', { version: 'v1.18.9' })
+    rememberPanelData('gw', 'configs', { mode: 'global' })
+    rememberPanelData('gw', 'rules', { rules: [{ type: 'Match', payload: '', proxy: 'DIRECT' }] })
+    rememberPanelData('gw', 'providers/rules', { providers: { cached: { name: 'cached', type: 'Rule', vehicleType: 'HTTP' } } })
+    const never = () => new Promise<any>(() => {})
+    vi.mocked(mihomoPanelApi.version).mockImplementationOnce(never)
+    vi.mocked(mihomoPanelApi.configs).mockImplementationOnce(never)
+    vi.mocked(mihomoPanelApi.rules).mockImplementationOnce(never)
+    vi.mocked(mihomoPanelApi.ruleProviders).mockImplementationOnce(never)
+    routeState.route = reactive({ query: { agent: 'gw', tab: 'rules' } })
+    vi.mocked(agentApi.summaries).mockResolvedValue({ data: [{ id: 'gw', name: 'Gateway', service_type: 'mihomo', status: 'online' }] } as any)
+    const wrapper = mount(MihomoPanel)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Mihomo v1.18.9')
+    expect(wrapper.get('[role="radio"][aria-checked="true"]').text()).toBe('全局')
+    expect(wrapper.getComponent(MihomoRules).text()).toContain('1 / 1 条')
+    expect(wrapper.getComponent(MihomoRules).text()).toContain('cached')
+    wrapper.unmount()
+  })
+
+  it('says the rules are from the last read when the fresh read fails', async () => {
+    rememberPanelData('gw', 'rules', { rules: [{ type: 'Match', payload: '', proxy: 'DIRECT' }] })
+    vi.mocked(mihomoPanelApi.rules).mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mount(MihomoRules, { props: { agentId: 'gw', reloadToken: 0 } })
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('读取最新规则失败，下面是上次读到的内容')
+    expect(wrapper.text()).toContain('1 / 1 条')
     wrapper.unmount()
   })
 

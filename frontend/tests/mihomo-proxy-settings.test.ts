@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import MihomoProxies from '@/components/mihomo/MihomoProxies.vue'
 import { mihomoPanelApi } from '@/api'
 import { notify } from '@/lib/feedback'
 import { DEFAULT_PROXY_SETTINGS, finalNode, loadProxySettings, saveProxySettings } from '@/types/mihomo'
+import { cachedPanelData, rememberPanelData } from '@/lib/mihomoPanelCache'
 
 vi.mock('@/api', () => ({
   mihomoPanelApi: { groupDelay: vi.fn(), proxyDelay: vi.fn(), providerProxyDelay: vi.fn(), proxies: vi.fn(), proxyProviders: vi.fn(), selectProxy: vi.fn(), connections: vi.fn(), closeConnection: vi.fn() }
@@ -698,5 +700,51 @@ describe('policy groups before the provider list', () => {
     expect(fastCard(wrapper).text()).toContain('Trojan')
     expect(state.delayOf('Fast', PROXIES.Proxy)).toBe(40)
     expect(state.sourcesOf('Slow')).toEqual(['default'])
+  })
+})
+
+describe('opening again with the last reply', () => {
+  it('shows the cached groups and subscription nodes before /proxies answers, then replaces them', async () => {
+    rememberPanelData('gw', 'proxies', { proxies: PROXIES })
+    rememberPanelData('gw', 'providers/proxies', { providers: PROVIDERS })
+    let answer!: (value: any) => void
+    vi.mocked(mihomoPanelApi.proxies).mockImplementation(() => new Promise(yes => { answer = yes }))
+    const wrapper = mount(MihomoProxies, { props: { agentId: 'gw', reloadToken: 0 }, attachTo: document.body })
+    wrappers.push(wrapper)
+    ;(wrapper.vm as any).$.setupState.expanded = new Set(['Proxy'])
+    await nextTick()
+    expect(memberNames(wrapper)).toEqual(['Slow', 'Dead', 'Auto', 'Fast'])
+    expect(wrapper.findAll('button[aria-pressed]').find(button => button.text().includes('Fast'))!.text()).toContain('Trojan')
+    answer({ data: { data: { proxies: { ...PROXIES, Proxy: { ...PROXIES.Proxy, all: ['Slow', 'Fast'] } } } } }); await flushPromises()
+    expect(memberNames(wrapper)).toEqual(['Slow', 'Fast'])
+  })
+
+  it('says the groups are from the last read when the fresh read fails', async () => {
+    rememberPanelData('gw', 'proxies', { proxies: PROXIES })
+    vi.mocked(mihomoPanelApi.proxies).mockRejectedValueOnce({ response: { data: { message: '暂时无法连接 Agent' } } })
+    const wrapper = mount(MihomoProxies, { props: { agentId: 'gw', reloadToken: 0 } })
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('读取最新策略组失败，下面是上次读到的内容：暂时无法连接 Agent')
+    expect(wrapper.text()).toContain('Proxy')
+    await wrapper.get('[role="alert"] button').trigger('click'); await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  })
+
+  it('opens empty for a device that was never read and keeps devices apart', async () => {
+    rememberPanelData('other', 'proxies', { proxies: PROXIES })
+    vi.mocked(mihomoPanelApi.proxies).mockImplementation(() => new Promise(() => {}))
+    const wrapper = mount(MihomoProxies, { props: { agentId: 'gw', reloadToken: 0 } })
+    wrappers.push(wrapper)
+    await nextTick()
+    expect(wrapper.text()).not.toContain('Proxy')
+  })
+
+  it('writes a switch into the cache so the next opening shows the new choice', async () => {
+    rememberPanelData('gw', 'proxies', { proxies: PROXIES })
+    vi.mocked(mihomoPanelApi.selectProxy).mockResolvedValue({ data: { success: true } } as any)
+    const { state } = await render()
+    await state.select(PROXIES.Proxy, 'Slow')
+    expect(cachedPanelData<any>('gw', 'proxies').proxies.Proxy.now).toBe('Slow')
   })
 })

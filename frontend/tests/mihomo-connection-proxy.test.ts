@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import MihomoConnectionProxy from '@/components/mihomo/MihomoConnectionProxy.vue'
 import { mihomoPanelApi } from '@/api'
 import { notify } from '@/lib/feedback'
+import { cachedPanelData, rememberPanelData } from '@/lib/mihomoPanelCache'
 import { DEFAULT_PROXY_SETTINGS, saveProxySettings, type ConnectionRow, type MihomoConnection, type MihomoProvider, type MihomoProxy } from '@/types/mihomo'
 
 vi.mock('@/api', () => ({
@@ -335,5 +337,29 @@ describe('incomplete proxy data', () => {
     const enabledChoices = wrapper.findAll('button').filter(item => item.attributes('aria-label')?.startsWith('选择 ') && item.attributes('disabled') === undefined)
     expect(enabledChoices).toHaveLength(0)
     expect(mihomoPanelApi.selectProxy).not.toHaveBeenCalled()
+  })
+})
+
+describe('opening again with the last reply', () => {
+  it('shows the cached path and members at once, but switches only after the fresh read', async () => {
+    rememberPanelData('gateway', 'proxies', { proxies: structuredClone(proxies) })
+    rememberPanelData('gateway', 'providers/proxies', { providers: structuredClone(providers) })
+    let answer!: () => void
+    vi.mocked(mihomoPanelApi.proxies).mockImplementation(() => new Promise(yes => { answer = () => yes(result({ proxies: structuredClone(proxies) })) }))
+    const wrapper = mount(MihomoConnectionProxy, { props: { agentId: 'gateway', row: row() }, attachTo: document.body })
+    wrappers.push(wrapper)
+    await nextTick()
+    expect(wrapper.find('nav[aria-label="代理路径"]').text()).toContain(OLD)
+    expect(button(wrapper, `选择 ${REGION}`).attributes('disabled')).toBeDefined()
+    answer(); await flushPromises()
+    expect(button(wrapper, `选择 ${REGION}`).attributes('disabled')).toBeUndefined()
+  })
+
+  it('writes a switch into the cache', async () => {
+    rememberPanelData('gateway', 'proxies', { proxies: structuredClone(proxies) })
+    const wrapper = await render()
+    await browse(wrapper, NODES)
+    await choose(wrapper, FAST)
+    expect(cachedPanelData<any>('gateway', 'proxies').proxies[NODES].now).toBe(FAST)
   })
 })
