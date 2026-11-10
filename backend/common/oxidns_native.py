@@ -14,6 +14,7 @@ import re
 import yaml
 
 from backend.common.oxidns_settings import OxidnsSettingsError, safe_relative_path
+from backend.utils import fast_yaml
 
 MAX_NATIVE_BYTES = 2 * 1024 * 1024
 MAX_ADDITIONAL_FILES = 256
@@ -51,11 +52,21 @@ NativeLoader.add_constructor('tag:yaml.org,2002:int', lambda loader, node: int(
     0 if loader.construct_scalar(node).lstrip('-+').startswith(('0x', '0o', '0b')) else 10))
 
 
+if fast_yaml.LIBYAML_SAFE_LOADER is not None:
+    class _LibyamlNativeLoader(fast_yaml.LIBYAML_SAFE_LOADER):
+        """NativeLoader's rules on the libyaml parser; see fast_yaml for when it is used."""
+        yaml_implicit_resolvers = {key: list(values) for key, values in NativeLoader.yaml_implicit_resolvers.items()}
+        yaml_constructors = dict(NativeLoader.yaml_constructors)
+        construct_mapping = NativeLoader.construct_mapping
+else:
+    _LibyamlNativeLoader = None
+
+
 def load_native_yaml(text, label='完整配置'):
     if not isinstance(text, str) or len(text.encode('utf-8')) > MAX_NATIVE_BYTES:
         raise OxidnsSettingsError(f'OxiDNS {label}必须为不超过 2 MiB 的 YAML 文本')
     try:
-        value = yaml.load(text, Loader=NativeLoader)
+        value = fast_yaml.load(text, NativeLoader, _LibyamlNativeLoader)
     except OxidnsSettingsError:
         raise
     except (yaml.YAMLError, RecursionError, ValueError):
