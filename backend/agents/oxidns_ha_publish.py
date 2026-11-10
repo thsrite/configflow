@@ -19,6 +19,7 @@ import uuid
 
 from .deployment_bundle import DeploymentBundle, _pack, deployment_content_fingerprint
 from .diagnostics import failure_text
+from .idle_rounds import IdleRounds
 from . import rule_sync_store as store
 from . import oxidns_ha_handoff as handoffs
 
@@ -632,6 +633,25 @@ def activate(manager, agent_id, deployment_id):
     return deployment(manager, agent_id, deployment_id, reconcile=False)
 
 
+_rounds = IdleRounds()
+
+
+def reconcile(manager):
+    """Advance every unfinished pair publication once."""
+    head = _rounds.due(manager.repository)
+    if head is None:
+        return
+    seen = set()
+    for agent in manager.get_all_agents():
+        job = agent.get(FIELD) or {}
+        if (active(agent) or job.get('status') == 'rollback_failed') and job.get('status') != 'ready' and job.get('id') not in seen:
+            seen.add(job['id'])
+            _rounds.done(manager.repository, head, False)
+            advance(manager, agent['id'])
+    # A job is stored with its devices, so none can appear without a commit.
+    _rounds.done(manager.repository, head, not seen)
+
+
 def start_loop(manager):
     """Resume durable pair work independently of an open browser tab."""
     key = (os.getpid(), str(manager.repository.data_dir))
@@ -644,12 +664,7 @@ def start_loop(manager):
         try:
             while config_module._repository is manager.repository:
                 try:
-                    seen = set()
-                    for agent in manager.get_all_agents():
-                        job = agent.get(FIELD) or {}
-                        if (active(agent) or job.get('status') == 'rollback_failed') and job.get('status') != 'ready' and job.get('id') not in seen:
-                            seen.add(job['id'])
-                            advance(manager, agent['id'])
+                    reconcile(manager)
                 except Exception as error:
                     _log.warning('OxiDNS pair publication reconciliation failed (%s)', type(error).__name__)
                 finally:

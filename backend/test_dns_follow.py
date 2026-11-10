@@ -1333,3 +1333,163 @@ def test_start_loop_is_registered_once_and_agent_initialization_starts_it(follow
     monkeypatch.setattr(agent_manager, 'get_repository', lambda: env.repository)
     manager = agent_manager.init_agent_manager()
     assert called == [manager]
+
+
+# ---- a settled binding is left alone until the configuration changes -------------------------
+
+
+def settle_follow(env):
+    env.bind()
+    env.publish_source()
+    env.advance('succeeded')
+    dns_follow.tick(env.manager)
+    dns_follow.tick(env.manager)
+
+
+def test_settled_binding_reads_nothing_until_the_next_commit(follow_env, monkeypatch):
+    env = follow_env
+    settle_follow(env)
+    head, calls, uploads = env.repository.head(), len(env.calls), len(env.uploads)
+    with monkeypatch.context() as patched:
+        patched.setattr(env.manager, 'get_all_agents', lambda: pytest.fail('idle round read the Agents'))
+        patched.setattr(env.manager, 'get_agent_by_id', lambda *_a: pytest.fail('idle round read an Agent'))
+        patched.setattr(dns_follow, '_job_lock', lambda *_a: pytest.fail('idle round took the job lock'))
+        for _ in range(5):
+            dns_follow.tick(env.manager)
+    assert (env.repository.head(), len(env.calls), len(env.uploads)) == (head, calls, uploads)
+    # The next source publication is a commit: it is followed as before.
+    env.listener.update(port=3053, listen='0.0.0.0:3053')
+    env.publish_source('source-later')
+    state = env.advance('succeeded')
+    assert state['source_deployment_id'] == 'source-later' and state['address'] == 'udp://127.0.0.1:3053'
+    assert len(env.uploads) == uploads + 1
+
+
+def test_unbound_and_disabled_devices_let_the_rounds_rest(follow_env, monkeypatch):
+    env = follow_env
+    dns_follow.tick(env.manager)
+    with monkeypatch.context() as patched:
+        patched.setattr(env.manager, 'get_all_agents', lambda: pytest.fail('idle round read the Agents'))
+        dns_follow.tick(env.manager)
+    env.bind()
+    dns_follow.disable(env.manager, env.target_id)
+    env.publish_source()
+    dns_follow.tick(env.manager)
+    monkeypatch.setattr(env.manager, 'get_all_agents', lambda: pytest.fail('idle round read the Agents'))
+    dns_follow.tick(env.manager)
+    assert env.uploads == []
+
+
+def test_unfinished_child_publication_is_resumed_on_every_round(follow_env):
+    env = follow_env
+    env.bind()
+    env.target_status = 'starting'
+    env.publish_source()
+    dns_follow.tick(env.manager)
+    assert env.state()['status'] == 'publishing'
+    polls = lambda: len([call for call in env.calls if call[0] == env.target_id and call[1] == 'get'
+                         and call[2].startswith('deployments/')])
+    before = polls()
+    for _ in range(4):
+        dns_follow.tick(env.manager)
+    assert polls() == before + 4
+    # The device finishes on its own; no commit happens on this side before the next round.
+    ident = env.uploads[-1][0]
+    env.remote[(env.target_id, ident)].update(status='succeeded', success=True)
+    assert env.advance('succeeded')['target_deployment_id'] == ident
+
+
+def test_pending_source_publication_is_polled_on_every_round(follow_env):
+    env = follow_env
+    env.bind()
+    env.publish_source(status='starting')
+    polls = lambda: len([call for call in env.calls if call[:3] == (env.source_id, 'get', 'deployments/source-next')])
+    for expected in range(1, 5):
+        dns_follow.tick(env.manager)
+        assert polls() == expected and env.uploads == []
+
+
+def test_round_lost_to_another_worker_is_not_taken_for_an_idle_one(follow_env):
+    env = follow_env
+    env.bind()
+    env.publish_source()
+    with dns_follow._job_lock(env.manager):
+        dns_follow.tick(env.manager)  # another worker holds the job lock
+        dns_follow.tick(env.manager)
+    assert env.uploads == [] and not env.state().get('source_deployment_id')
+    env.advance('succeeded')
+    assert len(env.uploads) == 1
+
+
+@pytest.mark.parametrize('broken', ['source disabled', 'source deleted', 'target disabled'])
+def test_unusable_binding_reports_the_same_failure_from_the_listed_agents(follow_env, broken):
+    env = follow_env
+    settle_follow(env)
+    if broken == 'source deleted':
+        env.manager._update_agents(lambda agents: agents.remove(next(a for a in agents if a['id'] == env.source_id)))
+    else:
+        agent_id = env.source_id if broken == 'source disabled' else env.target_id
+        env.manager._update_agents(lambda agents: next(a for a in agents if a['id'] == agent_id).update(enabled=False))
+    dns_follow.tick(env.manager)
+    service = 'oxidns' if broken == 'target disabled' else 'mihomo'
+    assert env.state()['status'] == 'failed'
+    assert env.state()['message'].endswith(f'{service} Agent 不存在、已停用或类型不符')
+    # A failing binding keeps being checked; it never counts as idle.
+    reads, real = [], env.manager.get_all_agents
+    env.manager.get_all_agents = lambda: reads.append(1) or real()
+    for _ in range(3):
+        dns_follow.tick(env.manager)
+    assert len(reads) == 3
+
+
+def test_source_republished_between_listing_and_work_waits_for_the_next_round(follow_env, monkeypatch):
+    env = follow_env
+    env.bind()
+    env.publish_source()
+    real = dns_follow._agent
+    def republished(manager, agent_id, service):
+        agent = real(manager, agent_id, service)
+        if agent_id == env.source_id:
+            agent = deepcopy(agent)
+            agent['latest_deployment']['deployment_id'] = 'source-newer'
+        return agent
+    with monkeypatch.context() as patched:
+        patched.setattr(dns_follow, '_agent', republished)
+        patched.setattr(dns_follow, '_run', lambda *_a: pytest.fail('followed a publication that is no longer the latest'))
+        dns_follow.tick(env.manager)
+    assert env.uploads == []
+    env.advance('succeeded')
+    assert len(env.uploads) == 1
+
+
+@pytest.mark.parametrize('rest', [True, False])
+def test_resting_between_rounds_changes_no_follow_outcome(follow_env, monkeypatch, rest):
+    from backend.agents import idle_rounds
+    if not rest:
+        monkeypatch.setattr(idle_rounds, 'RECHECK_SECONDS', 0)  # every round runs, as before
+    env = follow_env
+    trace = []
+    def rounds(count=3):
+        for _ in range(count):
+            dns_follow.tick(env.manager)
+            state = env.state()
+            trace.append((state.get('status'), state.get('source_deployment_id'), state.get('address'), len(env.uploads)))
+    rounds()
+    env.bind()
+    rounds()
+    env.publish_source('one')
+    rounds(4)
+    env.repository.save_profile('default', {'mihomo': {'dns': {'listen': '0.0.0.0:9999'}}})
+    rounds()
+    env.publish_source('failed-one', status='failed')
+    rounds()
+    env.listener.update(port=3053, listen='0.0.0.0:3053')
+    env.publish_source('two')
+    rounds(4)
+    env.publish_source('three')  # same address again: no child publication
+    rounds(4)
+    first, second = ('succeeded', 'one', 'udp://127.0.0.1:2053', 1), ('succeeded', 'two', 'udp://127.0.0.1:3053', 2)
+    assert trace[:3] == [(None, None, None, 0)] * 3
+    assert trace[6:9] == [first] * 3 and trace[9:16] == [first] * 7
+    assert trace[16:20] == [second] * 4
+    assert trace[20:] == [('succeeded', 'three', 'udp://127.0.0.1:3053', 2)] * 4

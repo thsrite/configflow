@@ -629,3 +629,131 @@ def test_device_check_reports_publication_from_mihomo_files(verification, offlin
     assert publication() == 'checking'
     settle()
     assert publication() == 'changed'
+
+
+# ---- the scheduler leaves an unchanged configuration alone ---------------------------------
+
+
+def settled(manager, agent, monkeypatch, ident='publication-one'):
+    """A published, enrolled and automatically verified device."""
+    config, _ = manager.repository.get_publish_snapshot('v6')
+    publish(manager, agent, ident)
+    snapshot(monkeypatch, config, ident)
+    verify.enroll(manager, agent['id'], ident, config)
+    verify.tick(manager)
+    verify.tick(manager)
+    assert manager.get_agent_by_id(agent['id'])['ipv6_verifications'][ident]['status'] == 'ok'
+    return config
+
+
+def test_scheduler_reads_nothing_while_the_configuration_is_unchanged(verification, monkeypatch):
+    _, manager, agent, _, _, calls, _ = verification
+    settled(manager, agent, monkeypatch)
+    head = manager.repository.head()
+    with monkeypatch.context() as patched:
+        patched.setattr(manager, 'get_all_agents', lambda: pytest.fail('idle round read the Agents'))
+        patched.setattr(manager, 'get_agent_by_id', lambda *_a: pytest.fail('idle round read an Agent'))
+        for _ in range(5):
+            verify.tick(manager)
+    assert manager.repository.head() == head and len(calls) == 1
+    # Any commit ends the rest: the next publication is verified as before.
+    config, _ = manager.repository.get_publish_snapshot('v6')
+    publish(manager, agent, 'publication-two')
+    snapshot(monkeypatch, config, 'publication-two')
+    verify.enroll(manager, agent['id'], 'publication-two', config)
+    verify.tick(manager)
+    assert len(calls) == 2
+    assert manager.get_agent_by_id(agent['id'])['ipv6_verifications']['publication-two']['status'] == 'ok'
+
+
+def test_scheduler_does_not_reenter_start_for_a_publication_it_already_verified(verification, monkeypatch):
+    _, manager, agent, _, _, calls, _ = verification
+    settled(manager, agent, monkeypatch)
+    monkeypatch.setattr(verify, 'start', lambda *_a, **_k: pytest.fail('verified publication was started again'))
+    monkeypatch.setattr(verify, 'result', lambda *_a, **_k: pytest.fail('verified publication was read back'))
+    for change in range(3):
+        manager.repository.update_profile_fields('v6', {'description': f'edit {change}'})
+        verify.tick(manager)
+    assert len(calls) == 1
+
+
+def test_running_report_expires_by_the_clock_without_any_commit(verification, monkeypatch):
+    _, manager, agent, _, _, _, _ = verification
+    import time
+    started = time.time()
+    def running(agents):
+        next(a for a in agents if a['id'] == agent['id'])['ipv6_verifications'] = {
+            'manual': {'status': 'running', 'started_epoch': started, 'profile_id': 'v6', 'checks': []}}
+    manager._update_agents(running)
+    for _ in range(3):
+        verify.tick(manager)
+    assert manager.get_agent_by_id(agent['id'])['ipv6_verifications']['manual']['status'] == 'running'
+    monkeypatch.setattr(verify.time, 'time', lambda: started + 301)
+    verify.tick(manager)
+    report = manager.get_agent_by_id(agent['id'])['ipv6_verifications']['manual']
+    assert report['status'] == 'error' and report['checks'][0]['id'] == 'interrupted'
+    # Nothing is running any more: after one more look the following rounds rest.
+    verify.tick(manager)
+    monkeypatch.setattr(manager, 'get_all_agents', lambda: pytest.fail('idle round read the Agents'))
+    verify.tick(manager)
+    verify.tick(manager)
+
+
+def test_unfinished_publication_is_polled_on_every_round(verification, monkeypatch):
+    _, manager, agent, _, _, calls, _ = verification
+    config, _ = manager.repository.get_publish_snapshot('v6')
+    ident, _ = publish(manager, agent)
+    snapshot(monkeypatch, config, ident)
+    verify.enroll(manager, agent['id'], ident, config)
+    def unfinished(agents):
+        current = next(a for a in agents if a['id'] == agent['id'])
+        current['deployments'][ident].update(status='verifying', submitted=True)
+        current['latest_deployment'] = deepcopy(current['deployments'][ident])
+    manager._update_agents(unfinished)
+    polls, real = [], manager.get_deployment
+    def get_deployment(agent_id, deployment_id):
+        polls.append(deployment_id)
+        return real(agent_id, deployment_id)
+    monkeypatch.setattr(manager, 'get_deployment', get_deployment)
+    monkeypatch.setattr(type(manager), '_deployment_request', lambda _self, *_a, **_k: {'status': 'verifying'}, raising=False)
+    for _ in range(4):
+        verify.tick(manager)
+    assert polls == [ident] * 4 and not calls
+    # The device finishes without any change on this side: the next round verifies it.
+    monkeypatch.setattr(type(manager), '_deployment_request',
+                        lambda _self, *_a, **_k: {'status': 'succeeded', 'success': True, 'config_version': 'a' * 64}, raising=False)
+    verify.tick(manager)
+    verify.tick(manager)
+    assert [c[0] for c in calls] == ['verify']
+
+
+@pytest.mark.parametrize('rest', [True, False])
+def test_resting_between_rounds_changes_no_outcome(verification, monkeypatch, rest):
+    from backend.agents import idle_rounds
+    if not rest:
+        monkeypatch.setattr(idle_rounds, 'RECHECK_SECONDS', 0)  # every round runs, as before
+    _, manager, agent, _, _, calls, responses = verification
+    trace = []
+    def rounds(count=3):
+        for _ in range(count):
+            verify.tick(manager)
+            runs = manager.get_agent_by_id(agent['id']).get('ipv6_verifications') or {}
+            trace.append((sorted((key, run['status']) for key, run in runs.items()), len(calls)))
+    rounds()
+    config, _ = manager.repository.get_publish_snapshot('v6')
+    publish(manager, agent, 'one')
+    snapshot(monkeypatch, config, 'one')
+    rounds()
+    verify.enroll(manager, agent['id'], 'one', config)
+    rounds()
+    manager.repository.update_profile_fields('v6', {'description': 'edited'})
+    rounds()
+    responses.append({'checks': [{'id': 'proxy_http', 'status': 'error', 'message': 'temporary failure'}]})
+    publish(manager, agent, 'two')
+    snapshot(monkeypatch, config, 'two')
+    verify.enroll(manager, agent['id'], 'two', config)
+    rounds()
+    publish(manager, agent, 'three', status='failed')
+    verify.enroll(manager, agent['id'], 'three', config)
+    rounds()
+    assert trace == [([], 0)] * 6 + [([('one', 'ok')], 1)] * 6 + [([('one', 'ok'), ('two', 'error')], 2)] * 6

@@ -24,6 +24,7 @@ from backend.agents.deployment_bundle import (
     deployment_content_digests, deployment_content_fingerprint, render_deployment_config,
 )
 from backend.agents.diagnostics import failure_text
+from backend.agents.idle_rounds import IdleRounds
 from backend.agents.operation_events import append_event
 from backend.common.oxidns_editor import prepare_editor
 from backend.common.oxidns_native import load_native_yaml
@@ -585,26 +586,49 @@ def _target_release_in_flight(manager, target):
     return manager.get_deployment(target['id'], latest['deployment_id']).get('status') not in _TERMINAL
 
 
+_rounds = IdleRounds()
+
+
 def tick(manager):
     """Run one bounded round. Source polling continues even when the UI closes."""
     from backend.common.config import reset_config_context
     reset_config_context()
+    head = _rounds.due(manager.repository)
+    if head is None:
+        return
+    _rounds.done(manager.repository, head, _round(manager))
+
+
+def _listed(agents, agent_id, service):
+    """_agent() against the Agents this round already read."""
+    agent = agents.get(agent_id)
+    if not agent or agent.get('service_type') != service or not agent.get('enabled', True):
+        raise FollowError(f'{service} Agent 不存在、已停用或类型不符')
+    return agent
+
+
+def _round(manager):
+    """One round; True when no binding had anything to do, poll or wait for."""
+    idle = True
     try:
         with _job_lock(manager):
-            targets = [item for item in manager.get_all_agents() if item.get('dns_follow')]
+            agents = {item['id']: item for item in manager.get_all_agents()}
+            targets = [item for item in agents.values() if item.get('dns_follow')]
             for target in targets:
                 try:
                     state, binding = target.get('dns_follow_state') or {}, target['dns_follow']
                     if state.get('status') in _RUNNING:
+                        idle = False
                         _resume(manager, target)
                         continue
-                    _agent(manager, target['id'], 'oxidns')
-                    source = _agent(manager, binding['source_agent_id'], 'mihomo')
+                    _listed(agents, target['id'], 'oxidns')
+                    source = _listed(agents, binding['source_agent_id'], 'mihomo')
                     if (_profile(manager, target) != binding['target_profile_id']
                             or _profile(manager, source) != binding['source_profile_id']):
                         raise FollowError('Agent 的配置绑定已改变，请重新设置 DNS 联动')
                     latest = source.get('latest_deployment') or {}
                     if latest.get('deployment_id') and latest.get('status') not in _TERMINAL:
+                        idle = False
                         latest = manager.get_deployment(source['id'], latest['deployment_id'])
                     source_id = latest.get('deployment_id')
                     if (not source_id or latest.get('status') != 'succeeded' or latest.get('manual_rollback')
@@ -612,15 +636,22 @@ def tick(manager):
                         continue
                     if source_id == state.get('source_deployment_id') and not state.get('retry_requested'):
                         continue
+                    idle = False
                     if _target_release_in_flight(manager, target):
                         # Keep the source unrecorded so the next round still runs.
                         if (state.get('status'), state.get('message')) != ('waiting', WAITING_FOR_TARGET):
                             _state(manager, target['id'], 'waiting', WAITING_FOR_TARGET)
                         continue
-                    # The check may just have recorded the release's outcome.
+                    # The check may just have recorded the release's outcome. The
+                    # source is read again as well: the work below takes the stored
+                    # record, not this round's listing.
                     target = manager.get_agent_by_id(target['id'])
+                    source = _agent(manager, binding['source_agent_id'], 'mihomo')
+                    if (source.get('latest_deployment') or {}).get('deployment_id') != source_id:
+                        continue
                     _run(manager, target, source, binding, latest)
                 except Exception as error:
+                    idle = False
                     # Requests errors can contain tokens/config URLs. Do not log
                     # payloads or include opaque third-party exception strings.
                     message = str(error) if isinstance(error, ValueError) else '联动处理异常，请检查 Agent 连接后重试'
@@ -637,7 +668,8 @@ def tick(manager):
                         prefix = 'Mihomo 已更新，OxiDNS 同步失败：' if state.get('source_deployment_id') else 'DNS 联动暂不可用：'
                         _state(manager, target['id'], 'failed', prefix + message)
     except FollowError:
-        pass  # Another worker owns this round; the next tick will reconcile it.
+        return False  # Another worker owns this round; the next tick will reconcile it.
+    return idle
 
 
 def start_loop(manager):

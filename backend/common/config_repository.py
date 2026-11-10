@@ -1515,6 +1515,11 @@ class ProfileRepository:
         with self._document() as document:
             return copy.deepcopy(document['system'])
 
+    def get_system_settings(self):
+        """system_config alone, without the backup settings and the Agents."""
+        with self._document() as document:
+            return copy.deepcopy(document['system']['system_config'])
+
     def get_system_with_source(self):
         """系统节副本，以及它所读的已提交 system 节（见 _committed_source）。"""
         with self._committed_source() as (document, committed):
