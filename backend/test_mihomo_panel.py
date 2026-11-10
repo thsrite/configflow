@@ -248,3 +248,46 @@ def test_live_flow_needs_newer_agent_and_forwards_without_params(calls):
     assert calls[0]['method'] == 'GET'
     assert calls[0]['url'].endswith('/api/mihomo/flow')
     assert calls[0]['params'] == {} and calls[0]['data'] is None
+
+
+def _node(name, **extra):
+    return {'name': name, 'type': 'Trojan', 'udp': True, 'xudp': True, 'tfo': False, 'mptcp': False, 'smux': False,
+            'interface': '', 'routing-mark': 0, 'dialer-proxy': '', 'provider-name': 'sub', 'id': 'x' * 36, 'alive': True,
+            'history': [{'time': 't1', 'delay': 300}, {'time': 't2', 'delay': 120}],
+            'extra': {'https://cp.cloudflare.com/generate_204': {'alive': False, 'history': [{'time': 't1', 'delay': 90}, {'time': 't2', 'delay': 0}]}},
+            **extra}
+
+
+def test_node_listings_keep_only_panel_fields_and_the_newest_delay(calls):
+    group = _node('Proxy', type='Selector', now='HK', all=['HK', 'JP'], testUrl='https://cp.cloudflare.com/generate_204', hidden=False, icon='i', fixed='')
+    calls.replies.append(Response({'proxies': {'Proxy': group, 'HK': _node('HK'), 'odd': 'not a dict'}}))
+    proxies = panel.call(Manager(), 'mihomo', 'proxies', 'GET', MultiDict())['data']['proxies']
+    assert proxies['HK'] == {'name': 'HK', 'type': 'Trojan', 'udp': True, 'alive': True,
+                             'history': [{'time': 't2', 'delay': 120}],
+                             'extra': {'https://cp.cloudflare.com/generate_204': {'alive': False, 'history': [{'time': 't2', 'delay': 0}]}}}
+    assert {key: proxies['Proxy'][key] for key in ('now', 'all', 'testUrl', 'hidden', 'icon', 'fixed')} == {
+        'now': 'HK', 'all': ['HK', 'JP'], 'testUrl': 'https://cp.cloudflare.com/generate_204', 'hidden': False, 'icon': 'i', 'fixed': ''}
+    assert proxies['odd'] == 'not a dict'
+
+
+def test_provider_listing_slims_nodes_and_keeps_only_names_of_compatible_members(calls):
+    subscription = {'name': 'sub', 'type': 'Proxy', 'vehicleType': 'HTTP', 'updatedAt': 'now', 'testUrl': 'u',
+                    'subscriptionInfo': {'Total': 1}, 'proxies': [_node('HK'), _node('JP', history=[])]}
+    compatible = {'name': 'Proxy', 'type': 'Proxy', 'vehicleType': 'Compatible',
+                  'proxies': [_node('DIRECT', type='Direct'), _node('Auto', type='URLTest', all=['HK'] * 500, now='HK')]}
+    calls.replies.append(Response({'providers': {'sub': subscription, 'Proxy': compatible, 'empty': {'name': 'empty', 'vehicleType': 'File'}}}))
+    providers = panel.call(Manager(), 'mihomo', 'providers/proxies', 'GET', MultiDict())['data']['providers']
+    assert {key: value for key, value in providers['sub'].items() if key != 'proxies'} == {
+        key: value for key, value in subscription.items() if key != 'proxies'}
+    assert providers['sub']['proxies'][0]['history'] == [{'time': 't2', 'delay': 120}]
+    assert 'xudp' not in providers['sub']['proxies'][0] and providers['sub']['proxies'][1]['history'] == []
+    assert providers['Proxy']['proxies'] == [{'name': 'DIRECT'}, {'name': 'Auto'}]
+    assert providers['empty'] == {'name': 'empty', 'vehicleType': 'File'}
+
+
+def test_other_replies_pass_through_unchanged(calls):
+    reply = {'proxies': {'HK': _node('HK')}}
+    calls.replies.append(Response(reply))
+    assert panel.call(Manager(), 'mihomo', 'proxy', 'PUT', MultiDict({'name': 'Proxy'}), {'name': 'HK'})['data'] == reply
+    calls.replies.append(Response(['unexpected']))
+    assert panel.call(Manager(), 'mihomo', 'proxies', 'GET', MultiDict())['data'] == ['unexpected']

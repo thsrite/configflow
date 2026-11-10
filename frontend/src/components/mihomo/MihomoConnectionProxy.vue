@@ -90,7 +90,7 @@ import LoadingRows from '@/components/common/LoadingRows.vue'
 import { mihomoPanelApi } from '@/api'
 import { notify } from '@/lib/feedback'
 import {
-  GROUP_TYPES, GROUP_TYPE_LABELS, SWITCHABLE_GROUP_TYPES, delayText, delayTone, latestDelay, loadProxySettings, panelError,
+  GROUP_TYPES, GROUP_TYPE_LABELS, SWITCHABLE_GROUP_TYPES, compatibleFirst, delayText, delayTone, latestDelay, loadProxySettings, panelError,
   type ConnectionRow, type MihomoProvider, type MihomoProxy
 } from '@/types/mihomo'
 
@@ -175,7 +175,7 @@ async function load() {
     ])
     if (epoch !== generation || revision !== request) return
     const providers: Record<string, MihomoProvider> = providerResult?.data.data?.providers || {}
-    const members = Object.fromEntries(Object.values(providers).flatMap(provider => provider.proxies || []).map(proxy => [proxy.name, proxy]))
+    const members = Object.fromEntries(compatibleFirst(Object.values(providers)).flatMap(provider => provider.proxies || []).map(proxy => [proxy.name, proxy]))
     proxies.value = { ...members, ...(proxyResult.data.data?.proxies || {}) }
     providerWarning.value = failedProvider ? '代理集合读取失败，部分节点的类型和延迟暂不可用。' : ''
     const prefix = path.value.length ? path.value.slice(0, activeIndex.value + 1) : originalPath.value.slice(0, 1)

@@ -92,6 +92,12 @@ export interface MihomoProvider {
 }
 
 export const GROUP_TYPES = new Set(['Selector', 'URLTest', 'Fallback', 'LoadBalance', 'Relay'])
+/**
+ * 代理集合按 Compatible 在前排序。Compatible 是各策略组自带的集合，后端只给出成员名字；
+ * 按名字合并节点时排在前面，同名的订阅节点不会被只有名字的条目覆盖。
+ */
+export const compatibleFirst = (providers: MihomoProvider[]) =>
+  [...providers].sort((a, b) => Number(b.vehicleType === 'Compatible') - Number(a.vehicleType === 'Compatible'))
 /** 可在面板里手动切换成员的策略组；url-test / fallback 切换后会固定，直到取消固定 */
 export const SWITCHABLE_GROUP_TYPES = new Set(['Selector', 'URLTest', 'Fallback'])
 

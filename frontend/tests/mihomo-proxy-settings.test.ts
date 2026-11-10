@@ -648,3 +648,55 @@ describe('individual and all-group delay tests', () => {
     expect(state.delayOf('Fast', PROXIES.Proxy)).toBe(123)
   })
 })
+
+describe('policy groups before the provider list', () => {
+  const providerReply = (providers = PROVIDERS) => ({ data: { data: { providers } } } as any)
+  function deferProviders() {
+    let resolve!: (value: any) => void
+    vi.mocked(mihomoPanelApi.proxyProviders).mockImplementation(() => new Promise(yes => { resolve = yes }))
+    return (providers = PROVIDERS) => resolve(providerReply(providers))
+  }
+  const fastCard = (wrapper: VueWrapper) => wrapper.findAll('button[aria-pressed]').find(button => button.find('span').text() === 'Fast')!
+
+  it('shows the groups from /proxies and fills subscription nodes in when the providers arrive', async () => {
+    const finish = deferProviders()
+    const { wrapper } = await render()
+    expect(wrapper.text()).toContain('Proxy')
+    expect(memberNames(wrapper)).toEqual(['Slow', 'Dead', 'Auto', 'Fast'])
+    expect(fastCard(wrapper).text()).toContain('—')
+    finish(); await flushPromises()
+    expect(fastCard(wrapper).text()).toContain('Trojan')
+    expect(wrapper.text()).toContain('代理集合')
+  })
+
+  it('keeps the previous subscription nodes while a reload reads the providers again', async () => {
+    const { wrapper } = await render()
+    expect(fastCard(wrapper).text()).toContain('Trojan')
+    const finish = deferProviders()
+    await wrapper.setProps({ reloadToken: 1 }); await flushPromises()
+    expect(fastCard(wrapper).text()).toContain('Trojan')
+    finish({ sub: { ...PROVIDERS.sub, proxies: [{ name: 'Fast', type: 'Vless', history: history(55) }] } }); await flushPromises()
+    expect(fastCard(wrapper).text()).toContain('Vless')
+  })
+
+  it('waits for the providers before testing a subscription node', async () => {
+    const finish = deferProviders()
+    const { state } = await render()
+    const test = state.testNode('Fast', PROXIES.Proxy)
+    await flushPromises()
+    expect(mihomoPanelApi.providerProxyDelay).not.toHaveBeenCalled()
+    finish(); await test
+    expect(mihomoPanelApi.providerProxyDelay).toHaveBeenCalledWith('gw', 'sub', 'Fast', undefined)
+    expect(notify.error).not.toHaveBeenCalled()
+  })
+
+  it('takes only names from Compatible providers', async () => {
+    vi.mocked(mihomoPanelApi.proxyProviders).mockResolvedValue(providerReply({
+      ...PROVIDERS, Proxy: { name: 'Proxy', type: 'Proxy', vehicleType: 'Compatible', proxies: [{ name: 'Fast' }, { name: 'Slow' }] },
+    } as any))
+    const { wrapper, state } = await render()
+    expect(fastCard(wrapper).text()).toContain('Trojan')
+    expect(state.delayOf('Fast', PROXIES.Proxy)).toBe(40)
+    expect(state.sourcesOf('Slow')).toEqual(['default'])
+  })
+})

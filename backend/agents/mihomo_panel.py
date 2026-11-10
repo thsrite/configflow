@@ -54,6 +54,11 @@ RESOURCE_MIN_VERSION = {
 RESOURCE_FEATURE = {'providers/proxy/delay': '订阅节点测速', 'flow': '实时流量'}
 RESOURCE_TIMEOUT = {'configs/reload': 70, 'upgrade': 200}
 MODES = ('rule', 'global', 'direct')
+# What the panel reads from a node or group. Mihomo also reports transport
+# flags and keeps up to ten delay results per test URL for every node, and its
+# per-group Compatible providers repeat each group's members in full; with an
+# airport subscription that made providers/proxies about 6 MB.
+PROXY_FIELDS = ('name', 'type', 'udp', 'alive', 'now', 'all', 'fixed', 'testUrl', 'hidden', 'icon')
 
 MESSAGES = {
     'CONTROLLER_UNAVAILABLE': 'Agent 未找到 Mihomo 控制接口，请确认配置里启用了 external-controller。',
@@ -126,6 +131,43 @@ def _body(resource, method, body):
     return {}
 
 
+def _slim_proxy(proxy):
+    """The panel's fields of a node or group, with only the newest delay result per test URL."""
+    if not isinstance(proxy, dict):
+        return proxy
+    slim = {key: proxy[key] for key in PROXY_FIELDS if key in proxy}
+    if isinstance(proxy.get('history'), list):
+        slim['history'] = proxy['history'][-1:]
+    if isinstance(proxy.get('extra'), dict):
+        slim['extra'] = {
+            url: {**({'alive': entry['alive']} if 'alive' in entry else {}),
+                  'history': entry['history'][-1:] if isinstance(entry.get('history'), list) else []}
+            for url, entry in proxy['extra'].items() if isinstance(entry, dict)
+        }
+    return slim
+
+
+def _slim(resource, data):
+    """Drop what the panel never shows from the node listings before they reach the browser."""
+    if not isinstance(data, dict):
+        return data
+    if resource == 'proxies' and isinstance(data.get('proxies'), dict):
+        return {**data, 'proxies': {name: _slim_proxy(proxy) for name, proxy in data['proxies'].items()}}
+    if resource == 'providers/proxies' and isinstance(data.get('providers'), dict):
+        providers = {}
+        for name, provider in data['providers'].items():
+            if isinstance(provider, dict) and isinstance(provider.get('proxies'), list):
+                # A group's Compatible provider holds config nodes and groups that
+                # /proxies already lists in full; the panel needs only its names.
+                compatible = provider.get('vehicleType') == 'Compatible'
+                provider = {**provider, 'proxies': [
+                    {'name': proxy.get('name')} if compatible and isinstance(proxy, dict) else _slim_proxy(proxy)
+                    for proxy in provider['proxies']]}
+            providers[name] = provider
+        return {**data, 'providers': providers}
+    return data
+
+
 def call(manager, agent_id, resource, method, args, body=None):
     template = ROUTES.get((resource, method))
     if template is None:
@@ -181,4 +223,4 @@ def call(manager, agent_id, resource, method, args, body=None):
         if not isinstance(message, str) or not message:
             message = f'Mihomo 返回 HTTP {status}'
         raise _fail('CORE_ERROR', 504 if status in (408, 504) else 400 if status < 500 else 502, message[:300])
-    return {'success': True, 'data': data}
+    return {'success': True, 'data': _slim(resource, data) if method == 'GET' else data}
