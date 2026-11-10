@@ -95,7 +95,8 @@ def checkpoint(manager, agent_id, deployment_id, expected_revision):
     if not agent or agent.get('service_type') != 'oxidns':
         return
     try:
-        agent = monitor._agent(manager, agent_id, monitor.MIN_DASHBOARD_AGENT_VERSION)
+        # The checkpoint is matched against this device's publication records.
+        agent = monitor._agent(manager, agent_id, monitor.MIN_DASHBOARD_AGENT_VERSION, history=True)
         if not isinstance(expected_revision, str) or not re.fullmatch(r'[0-9a-f]{64}', expected_revision):
             return
         store = DashboardStateStore(manager.repository.data_dir)

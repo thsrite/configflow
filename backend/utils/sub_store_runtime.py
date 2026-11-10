@@ -27,8 +27,10 @@ class RuntimeUnavailable(RuntimeError):
 
 
 def get_mode():
-    from backend.common.config import get_system_config
-    mode = get_system_config().get('system_config', {}).get('sub_store_mode')
+    # The idle monitor asks every few seconds: read the settings alone, not the
+    # whole system section with every Agent's deployment history.
+    from backend.common.config import get_repository
+    mode = get_repository().get_system_settings().get('sub_store_mode')
     return mode if mode in ('on_demand', 'always') else 'on_demand'
 
 

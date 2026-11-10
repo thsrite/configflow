@@ -231,3 +231,23 @@ def test_mode_route_validation_and_atomic_persistence(tmp_path, monkeypatch):
     assert all(after['system_config'][k] == v for k, v in before['system_config'].items())
     monkeypatch.setattr('backend.common.auth.is_auth_enabled', lambda: True)
     assert http.post(path, json={'mode': 'on_demand'}).status_code == 401
+
+
+def test_mode_is_read_from_the_settings_alone(tmp_path, monkeypatch):
+    repo = ProfileRepository(tmp_path / 'config')
+    monkeypatch.setattr(config, '_repository', repo)
+    repo.update_system_transaction(lambda system: system['agents'].append(
+        {'id': 'agent', 'name': 'Agent', 'token': 'agent-token', 'profile_id': 'default',
+         'deployments': {'d': {'status': 'succeeded'}}}))
+    monkeypatch.setattr(repo, 'get_system', lambda: pytest.fail('whole system section copied'))
+    monkeypatch.setattr(repo, 'get_system_with_source', lambda: pytest.fail('whole system section copied'))
+    assert lifecycle.get_mode() == 'on_demand'
+    repo.update_system_transaction(lambda system: system['system_config'].update(sub_store_mode='always'))
+    assert lifecycle.get_mode() == 'always'
+    repo.update_system_transaction(lambda system: system['system_config'].update(sub_store_mode='bogus'))
+    assert lifecycle.get_mode() == 'on_demand'
+    # The settings are a copy: editing them does not reach the stored document.
+    settings = repo.get_system_settings()
+    settings['sub_store_mode'] = 'always'
+    assert repo.get_system_settings()['sub_store_mode'] == 'bogus'
+    assert set(settings) == set(repo.update_system_transaction(lambda system: None)['system_config'])

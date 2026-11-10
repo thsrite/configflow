@@ -744,3 +744,52 @@ def test_rule_sync_scopes_are_shared_when_changed_from_either_member(ha_publish,
         rule_sync.configure(env.manager, getattr(env, entry)['id'], scopes)
         for agent in (env.primary, env.secondary):
             assert rule_sync.settings_for(env.manager.get_agent_by_id(agent['id'])) == scopes
+
+
+def test_reconciliation_rests_without_unfinished_pair_work_and_resumes_with_it(ha_publish, monkeypatch):
+    from backend.agents import oxidns_ha_publish
+    env = ha_publish
+    env.pair()
+    advanced = []
+    real = oxidns_ha_publish.advance
+    monkeypatch.setattr(oxidns_ha_publish, 'advance', lambda manager, agent_id: advanced.append(agent_id) or real(manager, agent_id))
+    oxidns_ha_publish.reconcile(env.manager)
+    assert advanced == []
+    with monkeypatch.context() as patched:
+        patched.setattr(env.manager, 'get_all_agents', lambda: pytest.fail('idle round read the Agents'))
+        for _ in range(5):
+            oxidns_ha_publish.reconcile(env.manager)
+    # A staged pair publication is unfinished work: every round advances it once, for one member.
+    candidate = env.bundle()
+    env.manager.publish_deployment(env.primary['id'], candidate, activate=False)
+    for _ in range(16):
+        if env.manager.get_deployment(env.primary['id'], candidate.manifest['deployment_id'])['status'] == 'ready':
+            break
+        before = len(advanced)
+        oxidns_ha_publish.reconcile(env.manager)
+        assert len(advanced) == before + 1
+    assert env.manager.get_deployment(env.primary['id'], candidate.manifest['deployment_id'])['status'] == 'ready'
+    # 'ready' waits for the user: rounds rest again after one look.
+    del advanced[:]
+    oxidns_ha_publish.reconcile(env.manager)
+    monkeypatch.setattr(env.manager, 'get_all_agents', lambda: pytest.fail('idle round read the Agents'))
+    oxidns_ha_publish.reconcile(env.manager)
+    assert advanced == []
+
+
+def test_failed_reconciliation_round_is_not_taken_for_an_idle_one(ha_publish, monkeypatch):
+    from backend.agents import oxidns_ha_publish
+    env = ha_publish
+    env.pair()
+    reads, real = [], env.manager.get_all_agents
+    def failing():
+        reads.append(1)
+        raise RuntimeError('database busy')
+    monkeypatch.setattr(env.manager, 'get_all_agents', failing)
+    for _ in range(2):
+        with pytest.raises(RuntimeError):
+            oxidns_ha_publish.reconcile(env.manager)
+    assert len(reads) == 2
+    monkeypatch.setattr(env.manager, 'get_all_agents', lambda: reads.append(1) or real())
+    oxidns_ha_publish.reconcile(env.manager)
+    assert len(reads) == 3

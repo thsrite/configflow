@@ -109,7 +109,7 @@ def test_agent_rule_sync_logs_each_state_change_once(monkeypatch, caplog):
     agent = {'id': 'a1', 'name': 'edge', 'rule_sync': {'state': {}}}
 
     class Manager:
-        def get_agent_by_id(self, agent_id):
+        def get_agent_by_id(self, agent_id, history=True):
             return agent
 
     def update(manager, agent_id, state):

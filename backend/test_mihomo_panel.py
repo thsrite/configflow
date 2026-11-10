@@ -19,7 +19,7 @@ class Manager:
     def __init__(self, agent=None):
         self.agent = copy.deepcopy(AGENT if agent is None else agent)
 
-    def get_agent_by_id(self, aid):
+    def get_agent_by_id(self, aid, history=True):
         return self.agent if aid == 'mihomo' else None
 
 

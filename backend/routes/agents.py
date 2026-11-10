@@ -168,7 +168,7 @@ def agent_dns_follow(agent_id):
             result = dns_follow.options(manager, agent_id)
         return jsonify(result)
     except ValueError as error:
-        secrets = tuple(agent.get('token') for agent in manager.get_all_agents())
+        secrets = tuple(agent.get('token') for agent in manager.get_all_agents(history=False))
         return jsonify({'success': False, 'message': failure_text(str(error), secrets)}), 409
 
 
@@ -180,7 +180,7 @@ def retry_agent_dns_follow(agent_id):
     try:
         return jsonify(dns_follow.retry(manager, agent_id)), 202
     except ValueError as error:
-        secrets = tuple(agent.get('token') for agent in manager.get_all_agents())
+        secrets = tuple(agent.get('token') for agent in manager.get_all_agents(history=False))
         return jsonify({'success': False, 'message': failure_text(str(error), secrets)}), 409
 
 
@@ -201,7 +201,7 @@ def agent_oxidns_ha(agent_id):
         code = 202 if request.method == 'PUT' and publication.get('status') not in ('succeeded', 'failed', 'rollback_failed') else 200
         return jsonify(result), code
     except ValueError as error:
-        secrets = tuple(agent.get('token') for agent in manager.get_all_agents())
+        secrets = tuple(agent.get('token') for agent in manager.get_all_agents(history=False))
         body = {'success': False, 'message': failure_text(str(error), secrets)}
         for key, value in getattr(error, 'details', {}).items():
             body[key] = [failure_text(item, secrets) for item in value] if isinstance(value, list) else value
@@ -634,7 +634,7 @@ def register_agent():
 
 def _authenticated_agent(agent_manager, agent_id):
     """按 Bearer token 认证 Agent 自身发起的请求，失败返回 None。"""
-    agent = agent_manager.get_agent_by_id(agent_id)
+    agent = agent_manager.get_agent_by_id(agent_id, history=False)
     provided_token = parse_bearer_token(request.headers.get('Authorization', ''))
     expected_token = agent.get('token', '') if agent else ''
     if (
@@ -740,7 +740,7 @@ def set_agent_domain_discovery(agent_id):
 @require_auth
 def clear_agent_domain_discovery(agent_id):
     """清除 Agent 已采集的域名发现数据"""
-    if not get_agent_manager().get_agent_by_id(agent_id):
+    if not get_agent_manager().get_agent_by_id(agent_id, history=False):
         return jsonify({'success': False, 'message': 'Agent not found'}), 404
     get_traffic_store().delete(agent_id)
     get_probe_store().delete(agent_id)

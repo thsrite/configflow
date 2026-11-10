@@ -80,8 +80,9 @@ def _upgrade_required(min_version):
                         f'请将此 Agent 升级到 {min_version} 或更新版本后使用{feature}。')
 
 
-def _agent(manager, agent_id, min_version=MIN_AGENT_VERSION):
-    agent = manager.get_agent_by_id(agent_id)
+def _agent(manager, agent_id, min_version=MIN_AGENT_VERSION, *, history=False):
+    # Monitoring polls every second or two and only talks to the device.
+    agent = manager.get_agent_by_id(agent_id, history=history)
     if not agent:
         raise MonitorError('AGENT_NOT_FOUND', 404, '未找到这台 Agent。')
     if agent.get('service_type') != 'oxidns':

@@ -92,7 +92,7 @@ def pinned_withheld(repository, profile_id, rule_ids):
 
 
 def status(manager, agent_id):
-    agent = manager.get_agent_by_id(agent_id)
+    agent = manager.get_agent_by_id(agent_id, history=False)
     if agent is None:
         raise KeyError('Agent not found')
     if agent.get('service_type') not in ('mihomo', 'oxidns'):
@@ -141,7 +141,7 @@ def _identity(agent):
 
 
 def _unchanged(manager, agent, settings, *, deployment_id=None):
-    latest = manager.get_agent_by_id(agent['id'])
+    latest = manager.get_agent_by_id(agent['id'], history=False)
     return (latest and _identity(latest) == _identity(agent) and settings_for(latest) == settings
             and ((latest.get('latest_deployment') or {}).get('status') in (*TERMINAL, None)
                  or (latest.get('latest_deployment') or {}).get('deployment_id') ==
@@ -308,7 +308,7 @@ class RuleSyncWorker:
         state = {'status': status, 'message': f'{message}；{self.notice}' if self.notice else message, **fields}
         if known is not None and {key: value for key, value in known.items() if key != 'updated_at'} == state:
             return  # the state this round started from: nothing to read or write
-        agent = self.manager.get_agent_by_id(agent_id) or {}
+        agent = self.manager.get_agent_by_id(agent_id, history=False) or {}
         previous = {key: value for key, value in ((agent.get('rule_sync') or {}).get('state') or {}).items()
                     if key != 'updated_at'}
         if previous != state:
@@ -334,7 +334,7 @@ class RuleSyncWorker:
                 self._run(agent_id)
             except Exception as error:
                 logger.warning('Agent rule sync failed (%s)', type(error).__name__)
-                agent = self.manager.get_agent_by_id(agent_id) or {}
+                agent = self.manager.get_agent_by_id(agent_id, history=False) or {}
                 state = (agent.get('rule_sync') or {}).get('state') or {}
                 from .oxidns_rule_update import MESSAGES as ox_messages
                 from .mihomo_panel import MESSAGES as mh_messages
@@ -351,7 +351,8 @@ class RuleSyncWorker:
     def _run(self, agent_id):
         from .rule_sync_projection import PINNED_WITHHELD, rule_changes
         self.notice = ''
-        agent = next((item for item in self.manager.get_all_agents() if item['id'] == agent_id), None)
+        # The rounds of an unchanged device only look at the device itself.
+        agent = next((item for item in self.manager.get_all_agents(history=False) if item['id'] == agent_id), None)
         if agent is None or agent.get('service_type') not in ('mihomo', 'oxidns'):
             return
         from . import oxidns_ha_publish as publications
@@ -396,7 +397,7 @@ class RuleSyncWorker:
                             retry_at=self.clock() + RETRY_SECONDS)
                 return
             self._state(agent_id, 'succeeded', '规则已通过原生接口热加载')
-            agent = self.manager.get_agent_by_id(agent_id)
+            agent = self.manager.get_agent_by_id(agent_id, history=False)
             # The publication carried every rule file. Its finished 'running'
             # state must not force a refresh, which Mihomo serves by another
             # publication when providers are not all HTTP: an endless cycle.
@@ -604,7 +605,7 @@ def start_loop():
             try:
                 manager = get_agent_manager()
                 pending = {key: value for key, value in pending.items() if not value.done()}
-                agents = manager.get_all_agents()
+                agents = manager.get_all_agents(history=False)
                 try:
                     presence_log.observe(agents)
                 except Exception as error:

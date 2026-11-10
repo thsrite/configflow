@@ -15,6 +15,7 @@ import uuid
 from urllib.parse import urlsplit
 
 from backend.agents import ipv6_readiness as readiness
+from backend.agents.idle_rounds import IdleRounds
 from backend.agents.oxidns_monitor import MonitorError
 from backend.utils.health_check import validate_health, GROUP_DEFAULTS
 
@@ -537,18 +538,33 @@ def _unavailable(manager, source, deployment_id, error):
     manager._update_agents(store)
 
 
+_rounds = IdleRounds()
+
+
 def tick(manager):
     from backend.common.config import reset_config_context
     reset_config_context()
+    head = _rounds.due(manager.repository)
+    if head is None:
+        return
+    _rounds.done(manager.repository, head, _round(manager))
+
+
+def _round(manager):
+    """One scheduling round; True when it found nothing to start, poll or wait for."""
     def expire(agents):
         for agent in agents:
             for report in (agent.get('ipv6_verifications') or {}).values():
                 if _expired(report):
                     _interrupt(report)
-    if any(_expired(r)
-           for a in manager.get_all_agents() for r in (a.get('ipv6_verifications') or {}).values()):
+    agents = manager.get_all_agents()
+    reports = [r for a in agents for r in (a.get('ipv6_verifications') or {}).values()]
+    # A running report expires by the clock, not by a configuration change.
+    idle = not any(r.get('status') == 'running' for r in reports)
+    if any(_expired(r) for r in reports):
         manager._update_agents(expire)
-    for agent in manager.get_all_agents():
+        agents = manager.get_all_agents()
+    for agent in agents:
         if agent.get('service_type') != 'mihomo' or agent.get('enabled') is False:
             continue
         latest = agent.get('latest_deployment') or {}
@@ -557,8 +573,13 @@ def tick(manager):
             continue
         try:
             if latest.get('status') not in _TERMINAL:
+                idle = False
                 latest = manager.get_deployment(agent['id'], ident)
             if latest.get('status') == 'succeeded' and not latest.get('manual_rollback'):
+                if ident in (agent.get('ipv6_verifications') or {}):
+                    # Scheduled once per publication: start() would only read that run back.
+                    continue
+                idle = False
                 start(manager, agent['id'], _profile(manager, agent), {'deployment_id': ident}, automatic=True)
         except MonitorError as error:
             if error.code in {'SNAPSHOT_UNAVAILABLE', 'CLIENT_UNAVAILABLE', 'CLIENT_UPGRADE_REQUIRED',
@@ -568,6 +589,7 @@ def tick(manager):
             # tick. Definite missing prerequisites remain visible until retry.
         except Exception:
             logger.warning('IPv6 automatic verification could not be scheduled')
+    return idle
 
 
 def start_loop(manager):
