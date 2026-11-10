@@ -125,7 +125,7 @@ import { mihomoPanelApi } from '@/api'
 import { notify } from '@/lib/feedback'
 import { formatBytes, relativeTime } from '@/lib/format'
 import {
-  GROUP_TYPE_LABELS, GROUP_TYPES, SWITCHABLE_GROUP_TYPES, delayText, delayTone, finalNode, latestDelay, loadProxySettings,
+  GROUP_TYPE_LABELS, GROUP_TYPES, SWITCHABLE_GROUP_TYPES, compatibleFirst, delayText, delayTone, finalNode, latestDelay, loadProxySettings,
   orderedGroups, panelError, saveProxySettings, type MihomoProvider, type MihomoProxy, type ProxyPanelSettings
 } from '@/types/mihomo'
 
@@ -256,39 +256,49 @@ function subscriptionText(provider: MihomoProvider) {
 }
 
 let epoch = 0
+/** 上次读到的订阅节点，重新读取时先沿用，免得节点类型和延迟闪成空白 */
+let providerProxies: Record<string, MihomoProxy> = {}
+/** 正在读的代理集合；单节点测速要等它读完才能判断节点来源 */
+let providersRead: Promise<unknown> | null = null
 async function load() {
   const requestEpoch = ++epoch
   loading.value = true
   error.value = ''
+  // 代理集合列出每个订阅节点，比 /proxies 大得多、慢得多；策略组先显示，节点信息读到后再补上
+  const providerRequest = mihomoPanelApi.proxyProviders(props.agentId).catch(() => null)
+  providersRead = providerRequest
+  void providerRequest.then(() => { if (providersRead === providerRequest) providersRead = null })
   try {
-    const [proxyResult, providerResult] = await Promise.all([
-      mihomoPanelApi.proxies(props.agentId),
-      mihomoPanelApi.proxyProviders(props.agentId).catch(() => null)
-    ])
+    const proxyResult = await mihomoPanelApi.proxies(props.agentId)
     if (requestEpoch !== epoch) return
-    const providerMap: Record<string, MihomoProvider> = providerResult?.data.data?.providers || {}
-    // /proxies 不含 proxy-providers 里的节点，合并进来才能显示策略组成员的类型和延迟
-    const providerProxies = Object.fromEntries(Object.values(providerMap)
-      .flatMap(provider => provider.proxies || []).map(proxy => [proxy.name, proxy]))
-    const sources = new Map<string, Set<string>>()
-    for (const [providerName, provider] of Object.entries(providerMap)) {
-      // 普通节点会同时出现在 default 和各策略组的 Compatible 集合中，均属于配置节点。
-      const source = provider.vehicleType === 'Compatible' ? 'default' : providerName
-      for (const proxy of provider.proxies || []) {
-        if (!sources.has(proxy.name)) sources.set(proxy.name, new Set())
-        sources.get(proxy.name)!.add(source)
-      }
-    }
     const coreProxies = proxyResult.data.data?.proxies || {}
     coreProxyNames.value = new Set(Object.keys(coreProxies))
-    nodeProviders.value = sources
     proxies.value = { ...providerProxies, ...coreProxies }
-    providers.value = Object.values(providerMap).filter(provider => provider.vehicleType !== 'Compatible')
   } catch (failure) {
     if (requestEpoch === epoch) error.value = panelError(failure, '暂时无法读取策略组。')
+    return
   } finally {
     if (requestEpoch === epoch) loading.value = false
   }
+  const providerResult = await providerRequest
+  if (requestEpoch !== epoch || !providerResult) return
+  const providerMap: Record<string, MihomoProvider> = providerResult.data.data?.providers || {}
+  // /proxies 不含 proxy-providers 里的节点，合并进来才能显示策略组成员的类型和延迟。
+  // Compatible 集合是 /proxies 已经完整列出的配置节点和策略组，后端只给名字，排在前面不覆盖完整信息。
+  providerProxies = Object.fromEntries(compatibleFirst(Object.values(providerMap))
+    .flatMap(provider => provider.proxies || []).map(proxy => [proxy.name, proxy]))
+  const sources = new Map<string, Set<string>>()
+  for (const [providerName, provider] of Object.entries(providerMap)) {
+    // 普通节点会同时出现在 default 和各策略组的 Compatible 集合中，均属于配置节点。
+    const source = provider.vehicleType === 'Compatible' ? 'default' : providerName
+    for (const proxy of provider.proxies || []) {
+      if (!sources.has(proxy.name)) sources.set(proxy.name, new Set())
+      sources.get(proxy.name)!.add(source)
+    }
+  }
+  nodeProviders.value = sources
+  proxies.value = { ...providerProxies, ...Object.fromEntries([...coreProxyNames.value].map(name => [name, proxies.value[name]])) }
+  providers.value = Object.values(providerMap).filter(provider => provider.vehicleType !== 'Compatible')
 }
 
 async function select(group: MihomoProxy, member: string) {
@@ -350,6 +360,11 @@ async function testNode(name: string, group: MihomoProxy) {
   nodeTesting.add(key)
   let exit = ''
   try {
+    // 策略组先于代理集合显示，订阅节点的来源要等集合读完才知道
+    if (providersRead) {
+      await providersRead
+      if (disposed || generation !== testEpoch) return
+    }
     if (GROUP_TYPES.has(proxies.value[name]?.type || '') && !await refreshExits(agentId, generation)) return
     const target = finalNode(proxies.value, name)
     const proxy = proxies.value[target]
@@ -461,7 +476,7 @@ let stale = false
 watch(() => props.reloadToken, () => { resetTests(); stale = !active.value; if (active.value) void load() })
 watch(active, shown => { if (shown && stale) { stale = false; void load() } })
 watch(() => props.agentId, () => {
-  resetTests(); epoch++; proxies.value = {}; providers.value = []; coreProxyNames.value.clear(); nodeProviders.value.clear()
+  resetTests(); epoch++; proxies.value = {}; providerProxies = {}; providers.value = []; coreProxyNames.value.clear(); nodeProviders.value.clear()
   void load()
 })
 onUnmounted(() => { disposed = true; testEpoch++; epoch++; batchStop.value = true })
