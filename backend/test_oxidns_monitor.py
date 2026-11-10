@@ -25,7 +25,7 @@ OVERVIEW = {'success': True, 'health': {'version': '1.6.1', 'status': 'ok', 'upt
 class Manager:
     def __init__(self, agent=None):
         self.agent = copy.deepcopy(AGENT if agent is None else agent)
-    def get_agent_by_id(self, aid):
+    def get_agent_by_id(self, aid, history=True):
         return self.agent if aid == 'oxi' else None
 
 

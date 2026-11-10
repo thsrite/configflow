@@ -53,7 +53,7 @@ def _fail(code, status=502):
 
 
 def _agent(manager, agent_id):
-    agent = manager.get_agent_by_id(agent_id)
+    agent = manager.get_agent_by_id(agent_id, history=False)
     if not agent:
         raise _fail('AGENT_NOT_FOUND', 404)
     if agent.get('service_type') != 'oxidns':

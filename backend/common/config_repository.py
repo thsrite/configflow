@@ -340,6 +340,46 @@ def _collect_resource_refs(profile, catalogs, resource_roots=None):
             pending.append(node_targets[0])
     return selected
 
+# Per-publication records and verification reports: most of an Agent record,
+# and needed by few of its readers.
+AGENT_HISTORY_FIELDS = ('deployments', 'ipv6_verifications')
+
+
+class _AgentHistoryNotRead:
+    """Stands in for a history field of an Agent record read without its history.
+
+    Code that needs the history has to read the record with it. Using this
+    value instead would quietly behave as if the device had no publications,
+    so every use fails.
+    """
+    __slots__ = ()
+
+    def _refuse(self, *_args, **_kwargs):
+        raise RuntimeError('Agent 记录是不带发布历史读取的，需要历史的代码必须用 history=True 读取')
+
+    __bool__ = __len__ = __iter__ = __contains__ = __getitem__ = __setitem__ = __delitem__ = _refuse
+    get = items = keys = values = setdefault = pop = update = copy = _refuse
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, _memo):
+        return self
+
+    def __reduce__(self):
+        return _agent_history_not_read, ()
+
+    def __repr__(self):
+        return '<Agent history not read>'
+
+
+def _agent_history_not_read():
+    return AGENT_HISTORY_NOT_READ
+
+
+AGENT_HISTORY_NOT_READ = _AgentHistoryNotRead()
+
+
 class ProfileRepository:
     """One locked atomic document; only derived artifacts are profile-local."""
     DEFAULT_PROFILE_ID = 'default'
@@ -1514,6 +1554,20 @@ class ProfileRepository:
     def get_system(self):
         with self._document() as document:
             return copy.deepcopy(document['system'])
+
+    def get_agents(self, *, history=True):
+        """Copies of the Agent records.
+
+        history=False does not copy AGENT_HISTORY_FIELDS, which outweigh the rest
+        of a record many times over; the fields then hold AGENT_HISTORY_NOT_READ,
+        which refuses every use.
+        """
+        with self._document() as document:
+            agents = document['system']['agents']
+            if history:
+                return copy.deepcopy(agents)
+            return [{**{key: copy.deepcopy(value) for key, value in agent.items() if key not in AGENT_HISTORY_FIELDS},
+                     **dict.fromkeys(AGENT_HISTORY_FIELDS, AGENT_HISTORY_NOT_READ)} for agent in agents]
 
     def get_system_settings(self):
         """system_config alone, without the backup settings and the Agents."""

@@ -20,7 +20,7 @@ class Manager:
         self.repository = SimpleNamespace(data_dir=Path(directory))
         self.agents = {agent_id: {**AGENT, 'id': agent_id, 'version': '1.8.14-go'}}
 
-    def get_agent_by_id(self, aid):
+    def get_agent_by_id(self, aid, history=True):
         return copy.deepcopy(self.agents.get(aid))
 
 

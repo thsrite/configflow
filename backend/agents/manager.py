@@ -130,8 +130,8 @@ class AgentManager:
         self.runtime = runtime_state.for_data_dir(repository.data_dir)
         runtime_state.import_legacy_database(repository, self.runtime, self._save_reported_fields)
 
-    def _agents(self) -> List[Dict[str, Any]]:
-        return self.runtime.overlay(self.repository.get_system().get('agents', []))
+    def _agents(self, *, history=True) -> List[Dict[str, Any]]:
+        return self.runtime.overlay(self.repository.get_agents(history=history))
 
     def _save_reported_fields(self, changes):
         """Write {agent_id: {field: value}} reported by heartbeats into the configuration in one transaction.
@@ -289,23 +289,27 @@ class AgentManager:
 
         return self._update_agents(register, requested_profile_id)
 
-    def get_all_agents(self) -> List[Dict[str, Any]]:
-        """获取所有 Agent 列表"""
-        agents = self._agents()
+    def get_all_agents(self, *, history=True) -> List[Dict[str, Any]]:
+        """获取所有 Agent 列表
+
+        history=False 不拷贝发布历史和验收记录（见 ProfileRepository.get_agents），
+        给只看设备本身、调用又频繁的读取用。
+        """
+        agents = self._agents(history=history)
 
         # 更新在线状态（超过 2 分钟未心跳视为离线）
         for agent in agents:
             agent['status'] = online_status(agent)
         return agents
 
-    def get_agent_by_id(self, agent_id: str) -> Optional[Dict[str, Any]]:
+    def get_agent_by_id(self, agent_id: str, *, history=True) -> Optional[Dict[str, Any]]:
         """根据 ID 获取 Agent
 
         Keeps the stored status and never derives offline: syncs and gates that
         run right after a restart act on the registered Agent. Where freshness
         matters, check it with is_online / online_status.
         """
-        agents = self._agents()
+        agents = self._agents(history=history)
         return next((a for a in agents if a['id'] == agent_id), None)
 
     def get_agent_by_token(self, token: str) -> Optional[Dict[str, Any]]:
@@ -438,7 +442,7 @@ class AgentManager:
         """
         heartbeat_data = heartbeat_data or {}
         mark = self.runtime.mark()
-        agent = next((item for item in self.repository.get_system().get('agents', []) if item['id'] == agent_id), None)
+        agent = next((item for item in self.repository.get_agents(history=False) if item['id'] == agent_id), None)
         # 查到 Agent 之后它又被删除时，不能把心跳状态再记回去
         if agent is None or not self.runtime.record_heartbeat(agent, heartbeat_data, mark):
             return False

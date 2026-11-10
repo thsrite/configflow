@@ -76,7 +76,7 @@ def _fail(code, status=502, message=None):
 
 
 def _agent(manager, agent_id, min_version=MIN_AGENT_VERSION, feature=None):
-    agent = manager.get_agent_by_id(agent_id)
+    agent = manager.get_agent_by_id(agent_id, history=False)
     if not agent:
         raise _fail('AGENT_NOT_FOUND', 404, '未找到这台 Agent。')
     if agent.get('service_type', 'mihomo') != 'mihomo':

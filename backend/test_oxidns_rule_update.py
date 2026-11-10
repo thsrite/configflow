@@ -17,7 +17,7 @@ class Manager:
     def __init__(self, agent=AGENT):
         self.agent = copy.deepcopy(agent)
 
-    def get_agent_by_id(self, agent_id):
+    def get_agent_by_id(self, agent_id, history=True):
         return self.agent if agent_id == 'dns' else None
 
 
