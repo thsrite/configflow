@@ -82,13 +82,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, toRaw, watch } from 'vue'
 import { ChevronRight, Loader2, Network, RefreshCw, TriangleAlert } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingRows from '@/components/common/LoadingRows.vue'
 import { mihomoPanelApi } from '@/api'
 import { notify } from '@/lib/feedback'
+import { cachedPanelData, rememberPanelProxy } from '@/lib/mihomoPanelCache'
 import {
   GROUP_TYPES, GROUP_TYPE_LABELS, SWITCHABLE_GROUP_TYPES, compatibleFirst, delayText, delayTone, latestDelay, loadProxySettings, panelError,
   type ConnectionRow, type MihomoProvider, type MihomoProxy
@@ -161,12 +162,28 @@ const toneClass = (delay: number | undefined) => ({
   success: 'text-success-accent', warning: 'text-warning-accent', danger: 'text-destructive-accent', muted: 'text-muted-foreground'
 })[delayTone(delay)]
 
+function merged(providers: Record<string, MihomoProvider>, core: Record<string, MihomoProxy>) {
+  const members = Object.fromEntries(compatibleFirst(Object.values(providers)).flatMap(provider => provider.proxies || []).map(proxy => [proxy.name, proxy]))
+  return { ...members, ...core }
+}
+
+function showPath() {
+  const prefix = path.value.length ? path.value.slice(0, activeIndex.value + 1) : originalPath.value.slice(0, 1)
+  path.value = follow(prefix)
+}
+
 async function load() {
   const epoch = generation
   const revision = ++request
   const agentId = props.agentId
   loading.value = true
   error.value = ''
+  // 先显示这台设备上次读到的策略组和节点，读到新数据后替换；读取期间仍不能切换
+  const cached = cachedPanelData<{ proxies?: Record<string, MihomoProxy> }>(agentId, 'proxies')?.proxies
+  if (cached && !path.value.length) {
+    proxies.value = merged(cachedPanelData<{ providers?: Record<string, MihomoProvider> }>(agentId, 'providers/proxies')?.providers || {}, cached)
+    showPath()
+  }
   try {
     let failedProvider = false
     const [proxyResult, providerResult] = await Promise.all([
@@ -174,12 +191,9 @@ async function load() {
       mihomoPanelApi.proxyProviders(agentId).catch(() => { failedProvider = true; return null })
     ])
     if (epoch !== generation || revision !== request) return
-    const providers: Record<string, MihomoProvider> = providerResult?.data.data?.providers || {}
-    const members = Object.fromEntries(compatibleFirst(Object.values(providers)).flatMap(provider => provider.proxies || []).map(proxy => [proxy.name, proxy]))
-    proxies.value = { ...members, ...(proxyResult.data.data?.proxies || {}) }
+    proxies.value = merged(providerResult?.data.data?.providers || {}, proxyResult.data.data?.proxies || {})
     providerWarning.value = failedProvider ? '代理集合读取失败，部分节点的类型和延迟暂不可用。' : ''
-    const prefix = path.value.length ? path.value.slice(0, activeIndex.value + 1) : originalPath.value.slice(0, 1)
-    path.value = follow(prefix)
+    showPath()
   } catch (failure) {
     if (epoch === generation && revision === request) error.value = panelError(failure, '暂时无法读取策略组。')
   } finally {
@@ -201,7 +215,9 @@ async function select(member: string) {
   try {
     await mihomoPanelApi.selectProxy(agentId, group.name, member)
     if (epoch !== generation) return
-    proxies.value[group.name] = { ...group, now: member, fixed: group.type === 'Selector' ? group.fixed : member }
+    const switched = { ...toRaw(group), now: member, fixed: group.type === 'Selector' ? group.fixed : member }
+    proxies.value[group.name] = switched
+    rememberPanelProxy(agentId, switched)
     path.value = follow(prefix)
     let closed = 0
     if (shouldClose) {

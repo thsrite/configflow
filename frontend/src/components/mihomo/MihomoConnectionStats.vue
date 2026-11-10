@@ -158,6 +158,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingRows from '@/components/common/LoadingRows.vue'
 import Sparkline from '@/components/common/Sparkline.vue'
 import { mihomoPanelApi, trafficHistoryApi } from '@/api'
+import { cachedPanelData } from '@/lib/mihomoPanelCache'
 import { choose, confirmDanger, notify } from '@/lib/feedback'
 import { formatBytes } from '@/lib/format'
 import { deviceNote } from '@/lib/device-notes'
@@ -364,12 +365,18 @@ function kindChip(outbound: string) {
   return kind === 'none' ? null : KIND_CHIPS[kind]
 }
 
+function showProxyTypes(proxies: Record<string, { type?: string }>) {
+  proxyTypes.value = Object.fromEntries(Object.entries(proxies).map(([name, proxy]) => [name, proxy?.type || '']))
+}
+
 async function loadProxyTypes() {
   if (!props.agentId) return
+  const cached = cachedPanelData<{ proxies?: Record<string, { type?: string }> }>(props.agentId, 'proxies')?.proxies
+  if (cached && !Object.keys(proxyTypes.value).length) showProxyTypes(cached)
   try {
     const { data: body } = await mihomoPanelApi.proxies(props.agentId)
     const proxies: Record<string, { type?: string }> = body.data?.proxies || {}
-    if (!disposed) proxyTypes.value = Object.fromEntries(Object.entries(proxies).map(([name, proxy]) => [name, proxy?.type || '']))
+    if (!disposed) showProxyTypes(proxies)
   } catch {
     // 读不到节点类型时只按 DIRECT / REJECT 名称判断
   }

@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { notify } from '@/lib/feedback'
 import { explainRequestError } from '@/lib/requestError'
+import { rememberPanelData, type CachedPanelResource } from '@/lib/mihomoPanelCache'
 import router from '@/router'
 import { getAuthSessionGeneration, getAuthToken, invalidateAuthSession } from '@/authSession'
 import { beginScopedRequest, clearActiveProfileId, endScopedRequest, getActiveProfileId } from '@/profileContext'
@@ -685,11 +686,14 @@ export const oxidnsMonitorApi = {
 // Mihomo 面板：经 Agent 访问本机 Mihomo 控制接口，浏览器不接触控制接口地址与 secret
 const mihomoPath = (id: string, resource: string) => `/agents/${encodeURIComponent(id)}/mihomo/${resource}`
 const mihomoName = (name: string) => ({ params: { name } })
+/** 读到的内核状态、策略和规则留一份在内存里，再次打开面板时先显示（见 mihomoPanelCache） */
+const mihomoCached = (id: string, resource: CachedPanelResource) =>
+  api.get(mihomoPath(id, resource)).then(response => { rememberPanelData(id, resource, response.data?.data); return response })
 export const mihomoPanelApi = {
-  version: (id: string) => api.get(mihomoPath(id, 'version')),
-  configs: (id: string) => api.get(mihomoPath(id, 'configs')),
+  version: (id: string) => mihomoCached(id, 'version'),
+  configs: (id: string) => mihomoCached(id, 'configs'),
   setMode: (id: string, mode: 'rule' | 'global' | 'direct') => api.patch(mihomoPath(id, 'configs'), { mode }),
-  proxies: (id: string) => api.get(mihomoPath(id, 'proxies')),
+  proxies: (id: string) => mihomoCached(id, 'proxies'),
   selectProxy: (id: string, group: string, name: string) => api.put(mihomoPath(id, 'proxy'), { name }, mihomoName(group)),
   /** 取消自动策略组（url-test / fallback）的手动固定 */
   unfixProxy: (id: string, group: string) => api.delete(mihomoPath(id, 'proxy'), mihomoName(group)),
@@ -705,12 +709,12 @@ export const mihomoPanelApi = {
   flow: (id: string, options: { signal?: AbortSignal } = {}) => api.get(mihomoPath(id, 'flow'), options),
   closeConnection: (id: string, connectionId: string) => api.delete(mihomoPath(id, 'connection'), mihomoName(connectionId)),
   closeAllConnections: (id: string) => api.delete(mihomoPath(id, 'connections')),
-  rules: (id: string) => api.get(mihomoPath(id, 'rules')),
-  proxyProviders: (id: string) => api.get(mihomoPath(id, 'providers/proxies')),
+  rules: (id: string) => mihomoCached(id, 'rules'),
+  proxyProviders: (id: string) => mihomoCached(id, 'providers/proxies'),
   updateProxyProvider: (id: string, name: string) => api.put(mihomoPath(id, 'providers/proxy'), {}, { ...mihomoName(name), timeout: 60000 }),
   healthcheckProxyProvider: (id: string, name: string) =>
     api.get(mihomoPath(id, 'providers/proxy/healthcheck'), { ...mihomoName(name), timeout: 60000 }),
-  ruleProviders: (id: string) => api.get(mihomoPath(id, 'providers/rules')),
+  ruleProviders: (id: string) => mihomoCached(id, 'providers/rules'),
   updateRuleProvider: (id: string, name: string) => api.put(mihomoPath(id, 'providers/rule'), {}, { ...mihomoName(name), timeout: 60000 }),
   /** 从内核当前使用的配置文件重载（Agent 1.8.16-go+） */
   reloadConfig: (id: string) => api.put(mihomoPath(id, 'configs/reload'), {}, { timeout: 80000 }),

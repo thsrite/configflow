@@ -42,6 +42,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import SectionCard from '@/components/common/SectionCard.vue'
 import Segmented from '@/components/common/Segmented.vue'
 import { mihomoPanelApi } from '@/api'
+import { cachedPanelData } from '@/lib/mihomoPanelCache'
 import { browserLatency, LATENCY_MODES, LATENCY_TARGETS, type LatencyMode, type LatencyTarget } from '@/lib/mihomo-overview'
 import { delayText, delayTone, orderedGroups, panelError, type MihomoProxy } from '@/types/mihomo'
 
@@ -112,11 +113,22 @@ function pickGroup(value: string) {
   void runTests()
 }
 
+function showGroups(proxies: Record<string, MihomoProxy>) {
+  groups.value = orderedGroups(proxies).map(item => item.name).filter(name => name !== 'GLOBAL')
+}
+
 async function loadGroups() {
+  // 策略组下拉框先用这台设备上次读到的列表
+  const cached = cachedPanelData<{ proxies?: Record<string, MihomoProxy> }>(props.agentId, 'proxies')?.proxies
+  if (cached && !groups.value.length) {
+    showGroups(cached)
+    const saved = readGroup()
+    group.value = groups.value.includes(saved) ? saved : groups.value[0] || ''
+  }
   try {
     const { data } = await mihomoPanelApi.proxies(props.agentId)
     const proxies: Record<string, MihomoProxy> = data.data?.proxies || {}
-    groups.value = orderedGroups(proxies).map(item => item.name).filter(name => name !== 'GLOBAL')
+    showGroups(proxies)
     groupsError.value = groups.value.length ? '' : '没有可用的策略组，只测试直连站点。'
     const saved = readGroup()
     // 默认取配置里第一个策略组，通常就是主要的代理选择组

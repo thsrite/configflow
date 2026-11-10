@@ -32,6 +32,10 @@
       </template>
     </Toolbar>
 
+    <p v-if="error && rules.length" role="alert" class="mb-3 flex flex-wrap items-center gap-x-3 break-words text-[12.5px] text-warning-accent">
+      <span>读取最新规则失败，下面是上次读到的内容：{{ error }}</span>
+      <Button variant="ghost" size="sm" class="min-h-11" :disabled="loading" @click="load">重试</Button>
+    </p>
     <LoadingRows v-if="loading && !rules.length" :rows="6" />
     <SectionCard v-else-if="error && !rules.length">
       <EmptyState :icon="TriangleAlert" title="读取规则失败" :description="error">
@@ -74,6 +78,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingRows from '@/components/common/LoadingRows.vue'
 import { useTabActive } from '@/components/ui/tabs'
 import { mihomoPanelApi } from '@/api'
+import { cachedPanelData } from '@/lib/mihomoPanelCache'
 import { notify } from '@/lib/feedback'
 import { relativeTime } from '@/lib/format'
 import { panelError, type MihomoProvider, type MihomoRule } from '@/types/mihomo'
@@ -100,11 +105,21 @@ const filtered = computed(() => {
 })
 watch(search, () => { limit.value = PAGE })
 
+const showProviders = (providerMap: Record<string, MihomoProvider>) => {
+  providers.value = Object.values(providerMap).sort((a, b) => a.name.localeCompare(b.name))
+}
+
 let epoch = 0
 async function load() {
   const requestEpoch = ++epoch
   loading.value = true
   error.value = ''
+  // 先显示这台设备上次读到的规则和规则集合，读到新数据后替换
+  const cached = cachedPanelData<{ rules?: MihomoRule[] }>(props.agentId, 'rules')?.rules
+  if (cached && !rules.value.length) {
+    rules.value = cached
+    showProviders(cachedPanelData<{ providers?: Record<string, MihomoProvider> }>(props.agentId, 'providers/rules')?.providers || {})
+  }
   try {
     const [ruleResult, providerResult] = await Promise.all([
       mihomoPanelApi.rules(props.agentId),
@@ -112,8 +127,7 @@ async function load() {
     ])
     if (requestEpoch !== epoch) return
     rules.value = ruleResult.data.data?.rules || []
-    const providerMap: Record<string, MihomoProvider> = providerResult?.data.data?.providers || {}
-    providers.value = Object.values(providerMap).sort((a, b) => a.name.localeCompare(b.name))
+    showProviders(providerResult?.data.data?.providers || {})
   } catch (failure) {
     if (requestEpoch === epoch) error.value = panelError(failure, '暂时无法读取规则。')
   } finally {
