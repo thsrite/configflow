@@ -168,6 +168,12 @@
   --radius-xl: calc(var(--radius) * 1.5);
 }
 
+/* 宽屏断点：内容区铺满后，wide 起部分页面并排展示，ultra 起放得下三栏表单 */
+@theme {
+  --breakpoint-wide: 106.25rem;
+  --breakpoint-ultra: 137.5rem;
+}
+
 /* ---------- 暴露给 Tailwind 工具类 ---------- */
 @theme inline {
   --color-background: var(--background);

@@ -144,11 +144,10 @@
       <main
         id="main-content"
         tabindex="-1"
-        class="relative z-10 min-w-0 flex-1 scroll-mt-32 overflow-x-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        class="relative z-10 min-w-0 flex-1 scroll-mt-32 overflow-x-clip focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <div
-          :class="route.path === '/mihomo' ? 'max-w-none' : 'max-w-(--cf-content-max)'"
-          class="mx-auto px-8 pt-7 pb-12 max-[900px]:px-4 max-[900px]:pt-4 max-[900px]:pb-[calc(env(safe-area-inset-bottom)+var(--cf-tabbar-h)+16px)] max-sm:px-3 max-sm:pt-2"
+          class="px-8 pt-7 pb-12 max-[900px]:px-4 max-[900px]:pt-4 max-[900px]:pb-[calc(env(safe-area-inset-bottom)+var(--cf-tabbar-h)+16px)] max-sm:px-3 max-sm:pt-2"
         >
           <!-- 不做整页过渡：out-in 会在两页之间留一帧空白，观感是闪一下。
                进场动效交给页面内的卡片与列表逐项播放。 -->

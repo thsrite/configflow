@@ -16,7 +16,7 @@
       </TabsContent>
       <TabsContent value="general" class="mt-0 min-w-0">
     <!-- ===== 服务配置 / 配置管理 ===== -->
-    <div class="grid grid-cols-2 gap-3 max-[1100px]:grid-cols-1">
+    <div class="grid grid-cols-2 gap-3 max-[1100px]:grid-cols-1 ultra:grid-cols-3">
       <SectionCard title="服务配置" :icon="Settings" class="min-w-0">
         <div class="flex flex-col gap-4">
           <FormField
@@ -203,18 +203,19 @@
           </div>
         </div>
       </SectionCard>
-    </div>
 
-    <!-- ===== 第三方依赖 ===== -->
-    <DependenciesCard
-      class="mt-3"
-      :dependencies="dependencies"
-      :checking="checkingDependencies"
-      :updating-key="updatingKey"
-      @check="loadDependencies(true)"
-      @update="updateDependency"
-      @changed="loadDependencies()"
-    />
+      <!-- ===== 第三方依赖 ===== -->
+      <!-- 足够宽时与上面两张卡片并排成三栏，否则占满下方一整行 -->
+      <DependenciesCard
+        class="col-span-full ultra:col-span-1"
+        :dependencies="dependencies"
+        :checking="checkingDependencies"
+        :updating-key="updatingKey"
+        @check="loadDependencies(true)"
+        @update="updateDependency"
+        @changed="loadDependencies()"
+      />
+    </div>
       </TabsContent>
     </Tabs>
 

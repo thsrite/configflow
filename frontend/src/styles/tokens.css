@@ -49,7 +49,6 @@
   --cf-rail-w: 236px;
   --cf-rail-collapsed-w: 72px;
   --cf-tabbar-h: 56px;
-  --cf-content-max: 1360px;
 
   /* 圆角单一来源：theme.css 的 --radius 体系 */
   --cf-r-sm: var(--radius-sm);
