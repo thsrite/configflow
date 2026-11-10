@@ -1077,12 +1077,20 @@ class ProfileRepository:
             profile = self._profile(document, profile_id)
             return int(profile.get('_revision', 0)) + int(document['shared'].get('_revision', 0))
 
-    def get_publish_snapshot(self, profile_id):
-        """Capture generated inputs and their revision from the same read snapshot."""
+    def head(self):
+        """Identity of the committed generation; every commit, by any process, changes it."""
+        return self._read_entry().head
+
+    def get_publish_snapshot(self, profile_id, *, agents=True):
+        """Capture generated inputs and their revision from the same read snapshot.
+
+        agents=False leaves the Agent records out, for callers that only render
+        rules: with their deployment history they outweigh the rest of the snapshot.
+        """
         with self._document() as document:
             profile = self._profile(document, profile_id)
             revision = int(profile.get('_revision', 0)) + int(document['shared'].get('_revision', 0))
-            return self._resolve_profile(document, profile_id), revision
+            return self._resolve_profile(document, profile_id, agents=agents), revision
 
     def create_profile(self, metadata, clone_from=None):
         if not isinstance(metadata, dict):
@@ -1549,12 +1557,12 @@ class ProfileRepository:
         with self._document() as document:
             return copy.deepcopy(self._resource_usage(document, resource_type, resource_id))
 
-    def _resolve_profile(self, document, profile_id, resource_roots=None):
+    def _resolve_profile(self, document, profile_id, resource_roots=None, *, agents=True):
         profile = self._profile(document, profile_id)
         shared = document['shared']
         result = copy.deepcopy(profile)
         result['profile_id'] = profile_id
-        for key in ('system_config', 'backup', 'agents'):
+        for key in ('system_config', 'backup', 'agents') if agents else ('system_config', 'backup'):
             result[key] = copy.deepcopy(document['system'][key])
         catalogs = {field: _items_by_id(shared[field], field) for field in RESOURCE_FIELDS}
         selected = _collect_resource_refs(profile, catalogs, resource_roots)
