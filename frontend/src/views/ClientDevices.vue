@@ -21,7 +21,9 @@
       </EmptyState>
     </SectionCard>
     <template v-else>
-      <SectionCard title="设备列表" :help="phone ? `${listHelp}\n\n${modeHelp}` : listHelp" class="mb-5">
+      <!-- 宽屏时发布卡片放在设备列表右侧并吸顶，不用滚到列表底部才能发布 -->
+      <div class="wide:grid wide:grid-cols-[minmax(0,1fr)_minmax(22.5rem,28rem)] wide:items-start wide:gap-5">
+      <SectionCard title="设备列表" :help="phone ? `${listHelp}\n\n${modeHelp}` : listHelp" class="mb-5 wide:mb-0">
         <template #actions>
           <span class="flex min-h-11 items-center gap-1.5 text-xs text-muted-foreground" role="status" aria-live="polite">
             <template v-if="previewing"><Loader2 v-if="loading" class="size-3.5 animate-spin motion-reduce:animate-none" />{{ loading ? '正在核对最新记录…' : '上次记录 · 暂不可编辑' }}</template>
@@ -253,7 +255,7 @@
         </Tabs>
       </SectionCard>
 
-      <SectionCard id="client-device-publish" title="发布 DNS 策略" :help="publishHelp">
+      <SectionCard id="client-device-publish" title="发布 DNS 策略" :help="publishHelp" class="wide:sticky wide:top-[calc(var(--cf-topbar-h)+1rem)]">
         <p v-if="!state.agents.length" class="m-0 text-sm text-muted-foreground">此配置空间没有 OxiDNS Agent。DNS 策略会保存在草稿中，接入 OxiDNS 并发布后生效。</p>
         <ul v-else class="m-0 list-none divide-y divide-border/70 p-0" aria-label="OxiDNS 发布目标">
           <li v-for="agent in state.agents" :key="agent.id" class="py-2">
@@ -288,6 +290,7 @@
           </Button>
         </div>
       </SectionCard>
+      </div>
     </template>
   </div>
 </template>

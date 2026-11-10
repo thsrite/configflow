@@ -2,7 +2,7 @@
   <div class="oxidns-overview min-w-0 space-y-4 max-sm:space-y-3">
     <p v-if="overview.statistics?.publication_count" class="m-0 text-xs leading-relaxed text-muted-foreground">已接续 {{ overview.statistics.publication_count }} 次配置发布，沿用原统计起点；发布切换期间可能有少量漏计。</p>
     <p v-if="overview.statistics?.partial" class="m-0 text-xs leading-relaxed text-warning-accent">部分指标缺少基线或插件已重新计数，本轮统计可能不完整；无法确认的值显示「—」。</p>
-    <div class="grid min-w-0 grid-cols-2 gap-3 max-sm:gap-2 xl:grid-cols-3">
+    <div class="grid min-w-0 grid-cols-2 gap-3 max-sm:gap-2 xl:grid-cols-3 wide:grid-cols-6">
       <OxiDNSMetric label="DNS 请求" :value="overview.metrics.requests_total" :hint="periodLabel" />
       <OxiDNSMetric label="近期请求速率" :value="qps" unit="次/秒" :precision="2" :hint="qps === null ? '采样中，需两次数据计算' : '最近两次采样之间的平均值'" />
       <OxiDNSMetric label="平均响应时间" :value="overview.metrics.avg_latency_ms" unit="ms" :precision="2" :hint="periodLabel" />
