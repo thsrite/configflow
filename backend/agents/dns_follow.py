@@ -268,8 +268,24 @@ def disable(manager, target_id):
 _LOG_LEVELS = {'preparing': logging.INFO, 'succeeded': logging.INFO, 'failed': logging.WARNING}
 
 
+class _Unchanged(Exception):
+    """Leaves the save without a commit."""
+
+
 def _state(manager, target_id, status, message, *, before_save=None, **fields):
-    names = []
+    return _save_state(manager, target_id, status, message, before_save=before_save, **fields)[0]
+
+
+def _save_state(manager, target_id, status, message, *, before_save=None, **fields):
+    """Record the state; returns (state, whether anything was written).
+
+    A round that finds what the previous one found, a binding that stays
+    broken or a publication still waiting for its device, would only move the
+    timestamp. That is not written: each write is a commit of every Agent
+    record, and it would wake everything that rests until the configuration
+    changes.
+    """
+    names, kept = [], []
 
     def save(agents):
         if before_save is not None:
@@ -278,11 +294,20 @@ def _state(manager, target_id, status, message, *, before_save=None, **fields):
         secrets = tuple(item.get('token') for item in agents)
         state = target.setdefault('dns_follow_state', {})
         message_safe = failure_text(message, secrets)
+        events = append_event(state.get('events'), status, message_safe, secrets=secrets)
+        if (before_save is None and (state.get('status'), state.get('message')) == (status, message_safe)
+                and all(key in state and state[key] == value for key, value in fields.items())
+                and events == state.get('events')):
+            kept.append(deepcopy(state))
+            raise _Unchanged()
         names.append((target.get('name') or target_id, (state.get('status'), state.get('message'))))
         state.update(fields, status=status, message=message_safe, updated_at=_now())
-        state['events'] = append_event(state.get('events'), status, message_safe, secrets=secrets)
+        state['events'] = events
         return deepcopy(state)
-    result = manager._update_agents(save)
+    try:
+        result = manager._update_agents(save)
+    except _Unchanged:
+        return kept[0], False
     if names and status in ('succeeded', 'failed') and names[-1][1][0] != status:
         # One finished run for 系统设置 → 定时任务, not one per reconcile round.
         from backend.utils import task_status
@@ -293,7 +318,7 @@ def _state(manager, target_id, status, message, *, before_save=None, **fields):
         from backend.utils.logger import log_text
         _logger.log(_LOG_LEVELS.get(status, logging.DEBUG), 'OxiDNS %s DNS 联动：%s',
                     log_text(names[-1][0]), log_text(result.get('message', ''), 300))
-    return result
+    return result, True
 
 
 def retry(manager, target_id):
@@ -615,10 +640,13 @@ def _round(manager):
             agents = {item['id']: item for item in manager.get_all_agents()}
             targets = [item for item in agents.values() if item.get('dns_follow')]
             for target in targets:
+                # Until the round asks a device or starts work, what it finds
+                # follows from the stored configuration alone.
+                stored_only = True
                 try:
                     state, binding = target.get('dns_follow_state') or {}, target['dns_follow']
                     if state.get('status') in _RUNNING:
-                        idle = False
+                        idle = stored_only = False
                         _resume(manager, target)
                         continue
                     _listed(agents, target['id'], 'oxidns')
@@ -628,7 +656,7 @@ def _round(manager):
                         raise FollowError('Agent 的配置绑定已改变，请重新设置 DNS 联动')
                     latest = source.get('latest_deployment') or {}
                     if latest.get('deployment_id') and latest.get('status') not in _TERMINAL:
-                        idle = False
+                        idle = stored_only = False
                         latest = manager.get_deployment(source['id'], latest['deployment_id'])
                     source_id = latest.get('deployment_id')
                     if (not source_id or latest.get('status') != 'succeeded' or latest.get('manual_rollback')
@@ -636,7 +664,7 @@ def _round(manager):
                         continue
                     if source_id == state.get('source_deployment_id') and not state.get('retry_requested'):
                         continue
-                    idle = False
+                    idle = stored_only = False
                     if _target_release_in_flight(manager, target):
                         # Keep the source unrecorded so the next round still runs.
                         if (state.get('status'), state.get('message')) != ('waiting', WAITING_FOR_TARGET):
@@ -651,7 +679,6 @@ def _round(manager):
                         continue
                     _run(manager, target, source, binding, latest)
                 except Exception as error:
-                    idle = False
                     # Requests errors can contain tokens/config URLs. Do not log
                     # payloads or include opaque third-party exception strings.
                     message = str(error) if isinstance(error, ValueError) else '联动处理异常，请检查 Agent 连接后重试'
@@ -660,13 +687,22 @@ def _round(manager):
                     child_id = state.get('target_deployment_id')
                     child = current.get('deployments', {}).get(child_id)
                     if child and child.get('status') not in _TERMINAL and child.get('submitted'):
+                        idle = False
                         _state(manager, target['id'], 'publishing', 'Mihomo 已更新，OxiDNS 发布结果待确认：' + message)
                     else:
                         if child and child.get('status') not in _TERMINAL:
+                            idle = False
                             manager.record_deployment(target['id'], child_id, {'status': 'failed', 'success': False,
                                 'message': 'DNS 联动准备失败', 'error_details': message}, only_unsubmitted=True)
                         prefix = 'Mihomo 已更新，OxiDNS 同步失败：' if state.get('source_deployment_id') else 'DNS 联动暂不可用：'
-                        _state(manager, target['id'], 'failed', prefix + message)
+                        _, written = _save_state(manager, target['id'], 'failed', prefix + message)
+                        # A binding broken in the stored configuration, and already
+                        # recorded as such, stays broken until that configuration
+                        # changes: the rounds may rest. Anything a device, this
+                        # round's own writes or an unexpected error had a part in
+                        # is tried again.
+                        if written or not stored_only or not isinstance(error, FollowError):
+                            idle = False
     except FollowError:
         return False  # Another worker owns this round; the next tick will reconcile it.
     return idle

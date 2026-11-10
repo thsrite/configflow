@@ -2,6 +2,7 @@
 from copy import deepcopy
 import hashlib
 import io
+import json
 import tarfile
 
 import pytest
@@ -1421,25 +1422,281 @@ def test_round_lost_to_another_worker_is_not_taken_for_an_idle_one(follow_env):
     assert len(env.uploads) == 1
 
 
-@pytest.mark.parametrize('broken', ['source disabled', 'source deleted', 'target disabled'])
-def test_unusable_binding_reports_the_same_failure_from_the_listed_agents(follow_env, broken):
+def break_binding(env, how):
+    """Make the stored configuration unusable for the binding; returns the expected failure text."""
+    if how == 'source deleted':
+        env.manager._update_agents(lambda agents: agents.remove(next(a for a in agents if a['id'] == env.source_id)))
+    elif how in ('source disabled', 'target disabled'):
+        agent_id = env.source_id if how == 'source disabled' else env.target_id
+        env.manager._update_agents(lambda agents: next(a for a in agents if a['id'] == agent_id).update(enabled=False))
+    elif how == 'source is not mihomo':
+        env.manager._update_agents(lambda agents: next(a for a in agents if a['id'] == env.source_id).update(service_type='mosdns'))
+    else:
+        env.repository.create_profile({'id': 'other', 'name': 'Other'})
+        env.manager.update_agent(env.source_id if how == 'source rebound' else env.target_id, {'profile_id': 'other'})
+    if how in ('source rebound', 'target rebound'):
+        return 'Agent 的配置绑定已改变，请重新设置 DNS 联动'
+    return ('oxidns' if how == 'target disabled' else 'mihomo') + ' Agent 不存在、已停用或类型不符'
+
+
+BROKEN = ['source disabled', 'source deleted', 'target disabled', 'source is not mihomo', 'source rebound', 'target rebound']
+
+
+@pytest.mark.parametrize('broken', BROKEN)
+def test_broken_binding_is_recorded_once_and_then_left_alone(follow_env, broken, monkeypatch, caplog):
+    from backend.utils import task_status
     env = follow_env
     settle_follow(env)
-    if broken == 'source deleted':
-        env.manager._update_agents(lambda agents: agents.remove(next(a for a in agents if a['id'] == env.source_id)))
+    recorded = []
+    monkeypatch.setattr(task_status, 'record', lambda key, **fields: recorded.append((key, fields.get('ok'))))
+    expected = break_binding(env, broken)
+    caplog.clear()
+    dns_follow.tick(env.manager)
+    state = env.state()
+    assert state['status'] == 'failed' and state['message'].endswith(expected)
+    head, events = env.repository.head(), deepcopy(state['events'])
+    # The next round finds the same failure: nothing is written, not even the timestamp.
+    dns_follow.tick(env.manager)
+    assert env.repository.head() == head and env.state() == state
+    # From then on the rounds rest: no Agent is read, no lock is taken, no device is asked.
+    calls = len(env.calls)
+    with monkeypatch.context() as patched:
+        patched.setattr(env.manager, 'get_all_agents', lambda: pytest.fail('resting round read the Agents'))
+        patched.setattr(env.manager, 'get_agent_by_id', lambda *_a: pytest.fail('resting round read an Agent'))
+        patched.setattr(env.manager, '_update_agents', lambda *_a: pytest.fail('resting round opened a write'))
+        patched.setattr(dns_follow, '_job_lock', lambda *_a: pytest.fail('resting round took the job lock'))
+        for _ in range(10):
+            dns_follow.tick(env.manager)
+    assert (env.repository.head(), env.state(), len(env.calls)) == (head, state, calls)
+    assert env.state()['events'] == events and events[-1]['status'] == 'failed'
+    # One finished run for the task list and one log line, not one per round.
+    assert recorded == [(f'dns_follow:{env.target_id}', False)]
+    assert len([record for record in caplog.records if 'DNS 联动' in record.getMessage()]) == 1
+
+
+@pytest.mark.parametrize('broken', ['source disabled', 'target disabled', 'source rebound'])
+def test_repaired_binding_is_checked_again_on_the_next_round_and_follows_the_next_publication(follow_env, broken):
+    env = follow_env
+    settle_follow(env)
+    break_binding(env, broken)
+    for _ in range(4):
+        dns_follow.tick(env.manager)
+    assert env.state()['status'] == 'failed'
+    uploads = len(env.uploads)
+    # The repair is a commit, so the very next round looks again.
+    if broken == 'source rebound':
+        env.manager.update_agent(env.source_id, {'profile_id': 'default'})
     else:
         agent_id = env.source_id if broken == 'source disabled' else env.target_id
-        env.manager._update_agents(lambda agents: next(a for a in agents if a['id'] == agent_id).update(enabled=False))
-    dns_follow.tick(env.manager)
-    service = 'oxidns' if broken == 'target disabled' else 'mihomo'
-    assert env.state()['status'] == 'failed'
-    assert env.state()['message'].endswith(f'{service} Agent 不存在、已停用或类型不符')
-    # A failing binding keeps being checked; it never counts as idle.
+        env.manager._update_agents(lambda agents: next(a for a in agents if a['id'] == agent_id).update(enabled=True))
     reads, real = [], env.manager.get_all_agents
     env.manager.get_all_agents = lambda: reads.append(1) or real()
+    dns_follow.tick(env.manager)
+    assert reads == [1]
+    env.listener.update(port=4053, listen='0.0.0.0:4053')
+    env.publish_source('source-after-repair')
+    state = env.advance('succeeded')
+    assert state['source_deployment_id'] == 'source-after-repair' and state['address'] == 'udp://127.0.0.1:4053'
+    assert len(env.uploads) == uploads + 1
+
+
+def test_binding_that_breaks_differently_is_recorded_again(follow_env):
+    env = follow_env
+    settle_follow(env)
+    first = break_binding(env, 'source disabled')
     for _ in range(3):
         dns_follow.tick(env.manager)
-    assert len(reads) == 3
+    assert env.state()['message'].endswith(first)
+    second = break_binding(env, 'target disabled')
+    dns_follow.tick(env.manager)
+    state = env.state()
+    assert state['message'].endswith(second) and [event['status'] for event in state['events']][-2:] == ['failed', 'failed']
+    head = env.repository.head()
+    for _ in range(3):
+        dns_follow.tick(env.manager)
+    assert env.repository.head() == head
+
+
+def test_resting_on_a_broken_binding_ends_with_the_recheck_interval(follow_env, monkeypatch):
+    from backend.agents import idle_rounds
+    env = follow_env
+    settle_follow(env)
+    now = [1000.0]
+    monkeypatch.setattr(dns_follow, '_rounds', idle_rounds.IdleRounds(clock=lambda: now[0]))
+    break_binding(env, 'source disabled')
+    for _ in range(3):
+        dns_follow.tick(env.manager)
+    reads, real = [], env.manager.get_all_agents
+    env.manager.get_all_agents = lambda: reads.append(1) or real()
+    now[0] += idle_rounds.RECHECK_SECONDS - 1
+    dns_follow.tick(env.manager)
+    assert reads == []
+    now[0] += 1
+    head = env.repository.head()
+    dns_follow.tick(env.manager)
+    assert reads == [1] and env.repository.head() == head and env.state()['status'] == 'failed'
+
+
+def test_unexpected_error_before_any_work_is_retried_on_every_round(follow_env, monkeypatch):
+    env = follow_env
+    settle_follow(env)
+    env.listener.update(port=5053, listen='0.0.0.0:5053')
+    env.publish_source('source-pending')
+    # Reading the configuration fails for a while, e.g. a busy database: not a verdict on the binding.
+    real, failures = dns_follow._profile, []
+    def unreadable(manager, agent):
+        failures.append(1)
+        raise RuntimeError('database is locked')
+    monkeypatch.setattr(dns_follow, '_profile', unreadable)
+    for _ in range(4):
+        dns_follow.tick(env.manager)
+    assert len(failures) == 4 and env.state()['status'] == 'failed'
+    assert env.state()['message'].endswith('联动处理异常，请检查 Agent 连接后重试')
+    head = env.repository.head()
+    dns_follow.tick(env.manager)
+    assert env.repository.head() == head  # retried, but the same failure is not written again
+    # As soon as reading works, the waiting publication is followed.
+    monkeypatch.setattr(dns_follow, '_profile', real)
+    state = env.advance('succeeded')
+    assert state['source_deployment_id'] == 'source-pending' and state['address'] == 'udp://127.0.0.1:5053'
+
+
+def test_two_bindings_rest_only_when_both_are_settled(follow_env, monkeypatch):
+    env = follow_env
+    settle_follow(env)
+    # A second OxiDNS follows the same Mihomo and has a publication in flight.
+    second = env.manager.register_agent({'name': 'OxiDNS two', 'host': 'oxidns2.test', 'port': 8082, 'service_type': 'oxidns'})
+    def bind_second(agents):
+        first = next(a for a in agents if a['id'] == env.target_id)
+        other = next(a for a in agents if a['id'] == second['id'])
+        other['dns_follow'] = deepcopy(first['dns_follow'])
+        other['dns_follow_state'] = {'status': 'publishing', 'message': 'waiting', 'target_deployment_id': 'missing', 'events': []}
+    env.manager._update_agents(bind_second)
+    break_binding(env, 'source disabled')
+    resumed = []
+    monkeypatch.setattr(dns_follow, '_resume', lambda _manager, target: resumed.append(target['id']))
+    for _ in range(4):
+        dns_follow.tick(env.manager)
+    # The broken binding is settled after two rounds, the unfinished one keeps every round running.
+    assert resumed == [second['id']] * 4
+    assert env.state()['status'] == 'failed'
+
+
+def test_unconfirmed_child_publication_is_polled_every_round_without_rewriting_its_state(follow_env):
+    env = follow_env
+    env.bind()
+    env.lose_upload_response = True
+    env.poll_offline = True
+    env.publish_source()
+    dns_follow.tick(env.manager)
+    ident = env.uploads[0][0]
+    dns_follow.tick(env.manager)
+    state, head = env.state(), env.repository.head()
+    assert state['status'] == 'publishing' and state['target_deployment_id'] == ident
+    polls = lambda: len([call for call in env.calls if call[:3] == (env.target_id, 'get', f'deployments/{ident}')])
+    before = polls()
+    for _ in range(5):
+        dns_follow.tick(env.manager)
+    # The device is asked on every round; the unchanged answer is not saved again.
+    assert polls() == before + 5
+    assert env.repository.head() == head and env.state() == state
+    env.poll_offline = False
+    assert env.advance('succeeded')['target_deployment_id'] == ident
+    assert len(env.uploads) == 1
+
+
+def test_failed_rollback_stays_pending_without_a_write_per_round(follow_env):
+    env = follow_env
+    env.bind()
+    env.target_status = 'rollback_failed'
+    env.publish_source()
+    dns_follow.tick(env.manager)
+    dns_follow.tick(env.manager)
+    state, head = env.state(), env.repository.head()
+    assert state['status'] == 'publishing' and '回滚失败' in state['message']
+    polls = lambda: len([call for call in env.calls if call[0] == env.target_id and call[1] == 'get'])
+    before = polls()
+    for _ in range(5):
+        dns_follow.tick(env.manager)
+    assert polls() > before and env.repository.head() == head and env.state() == state
+    # The device recovers: the next round notices and finishes.
+    ident = env.uploads[0][0]
+    env.remote[(env.target_id, ident)].update(status='succeeded', success=True)
+    assert env.advance('succeeded')['target_deployment_id'] == ident
+
+
+def test_state_is_saved_exactly_when_something_but_the_time_changes(follow_env):
+    env = follow_env
+    settle_follow(env)
+    save = lambda *args, **fields: dns_follow._save_state(env.manager, env.target_id, *args, **fields)
+    state, written = save('failed', 'DNS 联动暂不可用：x', attempt=2)
+    assert written and state['attempt'] == 2 and state['events'][-1]['message'] == 'DNS 联动暂不可用：x'
+    head = env.repository.head()
+    again, written = save('failed', 'DNS 联动暂不可用：x', attempt=2)
+    assert not written and again == state and env.repository.head() == head and env.state() == state
+    assert dns_follow._state(env.manager, env.target_id, 'failed', 'DNS 联动暂不可用：x') == state
+    assert env.repository.head() == head
+    # The returned state is a copy.
+    again['status'] = 'edited'
+    assert env.state()['status'] == 'failed'
+    for change in (('failed', 'DNS 联动暂不可用：y', {}), ('publishing', 'DNS 联动暂不可用：y', {}),
+                   ('publishing', 'DNS 联动暂不可用：y', {'attempt': 3}), ('publishing', 'DNS 联动暂不可用：y', {'address': 'udp://192.0.2.1:53'})):
+        before = env.repository.head()
+        state, written = save(change[0], change[1], **change[2])
+        assert written and env.repository.head() != before and state['status'] == change[0]
+        assert all(state[key] == value for key, value in change[2].items())
+    # A caller that edits other fields in the same transaction is always saved.
+    before = env.repository.head()
+    seen = []
+    state, written = save(state['status'], state['message'], before_save=lambda agents: seen.append(len(agents)))
+    assert written and seen and env.repository.head() != before
+    # A secret that must now be redacted from the stored events is a change too.
+    token = env.agent(False)['token']
+    env.manager._update_agents(lambda agents: next(a for a in agents if a['id'] == env.target_id)['dns_follow_state']['events'].append(
+        {'at': '2026-01-01T00:00:00Z', 'status': 'failed', 'message': 'leaked ' + token}))
+    before = env.repository.head()
+    state, written = save(state['status'], state['message'])
+    assert written and env.repository.head() != before and token not in json.dumps(env.state())
+
+
+# (status, followed source publication, recorded events, uploads to the OxiDNS) after each round.
+FAILURE_TRACE = (
+    [('succeeded', 'one', 5, 1)] * 4
+    + [('failed', 'one', 6, 1)] * 4      # the source is disabled: one event however many rounds see it
+    + [('failed', 'one', 6, 1)] * 2      # enabled again; nothing new to follow yet
+    + [('succeeded', 'two', 11, 2)] * 4
+    + [('failed', 'two', 12, 2)] * 4     # the target moves to another profile
+    + [('succeeded', 'three', 14, 2)] * 4)
+
+
+@pytest.mark.parametrize('rest', [True, False])
+def test_resting_on_failures_changes_no_follow_outcome(follow_env, monkeypatch, rest):
+    from backend.agents import idle_rounds
+    if not rest:
+        monkeypatch.setattr(idle_rounds, 'RECHECK_SECONDS', 0)  # every round runs
+    env = follow_env
+    trace = []
+    def rounds(count=3):
+        for _ in range(count):
+            dns_follow.tick(env.manager)
+            state = env.state()
+            trace.append((state.get('status'), state.get('source_deployment_id'), len(state.get('events') or []), len(env.uploads)))
+    env.bind()
+    env.publish_source('one')
+    rounds(4)
+    break_binding(env, 'source disabled')
+    rounds(4)
+    env.manager._update_agents(lambda agents: next(a for a in agents if a['id'] == env.source_id).update(enabled=True))
+    rounds(2)
+    env.listener.update(port=3053, listen='0.0.0.0:3053')
+    env.publish_source('two')
+    rounds(4)
+    break_binding(env, 'target rebound')
+    rounds(4)
+    env.manager.update_agent(env.target_id, {'profile_id': 'default'})
+    env.publish_source('three')
+    rounds(4)
+    assert trace == FAILURE_TRACE
 
 
 def test_source_republished_between_listing_and_work_waits_for_the_next_round(follow_env, monkeypatch):
