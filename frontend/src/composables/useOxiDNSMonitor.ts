@@ -28,9 +28,13 @@ function rememberSample(id: string, next: OxiDNSOverview) {
     statistics: next.statistics ? { generation: next.statistics.generation } : undefined
   } })
 }
-/** Drop every remembered sample, e.g. between tests. */
+// The last full overview of each device, for this tab only: reopening the panel
+// shows it at once (its sample time says how old it is) while a fresh one is read.
+const lastOverviews = new Map<string, OxiDNSOverview>()
+/** Drop every remembered sample and overview, e.g. between tests. */
 export function forgetOxiDNSRateSamples() {
   recentSamples.clear()
+  lastOverviews.clear()
 }
 function recentSample(id: string): RateSample | undefined {
   const entry = recentSamples.get(id)
@@ -137,6 +141,7 @@ export function useOxiDNSMonitor(agentId: Ref<string>, tab: Ref<string>) {
       ? (currentCount - priorCount) / seconds : null
     overview.value = next
     rememberSample(agentId.value, next)
+    lastOverviews.set(agentId.value, next)
     if (!next.recorders.includes(recorder.value)) {
       recorder.value = next.recorders[0] || ''
       resetQueries()
@@ -264,7 +269,7 @@ export function useOxiDNSMonitor(agentId: Ref<string>, tab: Ref<string>) {
     queryEpoch++
     overviewLoading.value = false
     queriesLoading.value = false
-    overview.value = null
+    overview.value = lastOverviews.get(agentId.value) ?? null
     overviewError.value = ''
     overviewErrorCode.value = ''
     qps.value = null

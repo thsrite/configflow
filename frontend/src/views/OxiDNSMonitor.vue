@@ -126,7 +126,8 @@ import OxiDNSQueryDetail from '@/components/agents/OxiDNSQueryDetail.vue'
 import OxiDNSRuleUpdate from '@/components/agents/OxiDNSRuleUpdate.vue'
 import OxiDNSCacheFlush from '@/components/agents/OxiDNSCacheFlush.vue'
 import { useOxiDNSMonitor } from '@/composables/useOxiDNSMonitor'
-import { oxidnsMonitorPath, rememberOxiDNSDevice, useOxiDNSDevices } from '@/composables/useOxiDNSDevices'
+import { forgetOxiDNSDevice, oxidnsMonitorPath, rememberOxiDNSDevice, useOxiDNSDevices } from '@/composables/useOxiDNSDevices'
+import { invalidateAgentSummaries } from '@/lib/agentSummaries'
 import { monitorNumber, type OxiDNSQuery } from '@/types/oxidnsMonitor'
 import { confirm, notify } from '@/lib/feedback'
 const OxidnsSettings = defineAsyncComponent(() => import('@/components/generate/OxidnsSettings.vue'))
@@ -177,6 +178,14 @@ const switchError = ref('')
 watch([agentId, recorder], () => { selectedRecord.value = null })
 watch([agentId, devices], () => {
   if (devices.value?.some(device => device.id === agentId.value)) rememberOxiDNSDevice(agentId.value)
+})
+// 侧栏直接打开记住的设备；设备已删除（或不是 OxiDNS）时忘掉它，回到入口页重新选择
+watch(overviewErrorCode, code => {
+  if (code !== 'AGENT_NOT_FOUND' && code !== 'WRONG_SERVICE') return
+  forgetOxiDNSDevice(agentId.value)
+  // 入口页按新的设备列表选，不会又选回这台
+  invalidateAgentSummaries()
+  void router.replace('/oxidns')
 })
 onMounted(loadDevices)
 async function switchDevice(id: string) {

@@ -3,6 +3,7 @@ import api from '@/api'
 import { checkNavigationAuth, invalidateAuthSession } from '@/authSession'
 import { notify } from '@/lib/feedback'
 import { clearRecoveryParameter, recoverPage, type RecoveryResult } from '@/lib/pageRecovery'
+import { oxidnsMonitorPath, rememberedOxiDNSDevice } from '@/lib/oxidnsDevice'
 
 // 扩展 RouteMeta 接口以支持自定义属性
 declare module 'vue-router' {
@@ -32,7 +33,12 @@ const routes = [
   {
     path: '/oxidns',
     name: 'OxiDNSMonitorEntry',
-    component: () => import('@/views/OxiDNSMonitorEntry.vue')
+    component: () => import('@/views/OxiDNSMonitorEntry.vue'),
+    // 记得上次看的设备就直接打开它，不先读设备列表；设备已不存在时面板会退回这里重新选择
+    beforeEnter: (to: RouteLocationNormalized) => {
+      const id = rememberedOxiDNSDevice()
+      return id ? { path: oxidnsMonitorPath(id), query: to.query } : true
+    }
   },
   {
     path: '/mihomo',

@@ -8,6 +8,7 @@ import OxiDNSMonitor from '@/views/OxiDNSMonitor.vue'
 import { Select } from '@/components/ui/select'
 import { confirm, notify } from '@/lib/feedback'
 import { OXIDNS_DEVICE_STORAGE_KEY } from '@/composables/useOxiDNSDevices'
+import { forgetOxiDNSRateSamples } from '@/composables/useOxiDNSMonitor'
 
 vi.mock('@/api', () => ({ clientToolsApi: { notes: vi.fn() }, agentApi: { getAll: vi.fn(), summaries: vi.fn() }, profileApi: { list: vi.fn() }, oxidnsMonitorApi: { overview: vi.fn(), queries: vi.fn(), query: vi.fn(), resetStatistics: vi.fn() } }))
 vi.mock('@/lib/feedback', () => ({ confirm: vi.fn(), notify: { success: vi.fn(), error: vi.fn() } }))
@@ -32,7 +33,8 @@ const snapshot = (id: string) => ({
 })
 async function render(path = '/agents/one/oxidns', remount = true) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: '/agents/:agentId/oxidns', component: OxiDNSMonitor }, { path: '/agents', component: { template: '<div>Agents</div>' } }
+    { path: '/agents/:agentId/oxidns', component: OxiDNSMonitor }, { path: '/agents', component: { template: '<div>Agents</div>' } },
+    { path: '/oxidns', component: { template: '<div data-test="entry">Entry</div>' } }
   ] })
   await router.push(path)
   await router.isReady()
@@ -64,6 +66,7 @@ beforeEach(() => {
   vi.mocked(oxidnsMonitorApi.queries).mockImplementation(async id => response({ success: true, recorder: 'queries', records: [{ id: 12, client_ip: 'client-' + id }], next_cursor: null }))
 })
 afterEach(() => {
+  forgetOxiDNSRateSamples()
   wrappers.splice(0).forEach(wrapper => wrapper.unmount())
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
@@ -319,5 +322,50 @@ describe('OxiDNS query names follow the Agent binding', () => {
     await wrapper.get('[aria-label="刷新监控"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-test="client-name"]').text()).toBe('恢复后的名称')
+  })
+})
+
+describe('opening the remembered device directly', () => {
+  it.each(['AGENT_NOT_FOUND', 'WRONG_SERVICE'])('forgets a device the server reports as %s and goes back to the entry page', async code => {
+    localStorage.setItem(OXIDNS_DEVICE_STORAGE_KEY, 'gone')
+    vi.mocked(oxidnsMonitorApi.overview).mockRejectedValue({ response: { data: { code, message: '未找到这台 Agent。' } } })
+    const { router, wrapper } = await render('/agents/gone/oxidns')
+    expect(router.currentRoute.value.path).toBe('/oxidns')
+    expect(wrapper.find('[data-test="entry"]').exists()).toBe(true)
+    expect(localStorage.getItem(OXIDNS_DEVICE_STORAGE_KEY)).toBeNull()
+  })
+
+  it('keeps another remembered device and stays on the panel for other failures', async () => {
+    localStorage.setItem(OXIDNS_DEVICE_STORAGE_KEY, 'two')
+    vi.mocked(oxidnsMonitorApi.overview).mockRejectedValueOnce({ response: { data: { code: 'AGENT_NOT_FOUND' } } })
+    await render('/agents/gone/oxidns')
+    expect(localStorage.getItem(OXIDNS_DEVICE_STORAGE_KEY)).toBe('two')
+    vi.mocked(oxidnsMonitorApi.overview).mockRejectedValueOnce({ response: { data: { code: 'AGENT_UNREACHABLE', message: '暂时无法连接 Agent' } } })
+    const { router, wrapper } = await render('/agents/one/oxidns')
+    expect(router.currentRoute.value.path).toBe('/agents/one/oxidns')
+    expect(wrapper.text()).toContain('暂时无法连接 Agent')
+  })
+})
+
+describe('reopening with the last overview', () => {
+  it('shows the last overview of the device at once and replaces it with the fresh one', async () => {
+    const first = await render('/agents/one/oxidns')
+    expect(first.wrapper.get('[data-test="overview"]').text()).toBe('Device one')
+    first.wrapper.unmount()
+    wrappers.splice(wrappers.indexOf(first.wrapper), 1)
+    let answer!: () => void
+    vi.mocked(oxidnsMonitorApi.overview).mockImplementation(id => new Promise(yes => { answer = () => yes(response({ ...snapshot(id), agent: { ...snapshot(id).agent, name: 'Fresh one' } })) }))
+    const { wrapper } = await render('/agents/one/oxidns')
+    expect(wrapper.get('[data-test="overview"]').text()).toBe('Device one')
+    expect(wrapper.text()).toContain('采样')
+    answer(); await flushPromises()
+    expect(wrapper.get('[data-test="overview"]').text()).toBe('Fresh one')
+  })
+
+  it('opens a device that was never read with the loading state', async () => {
+    await render('/agents/one/oxidns')
+    vi.mocked(oxidnsMonitorApi.overview).mockReturnValue(new Promise(() => {}))
+    const { wrapper } = await render('/agents/two/oxidns')
+    expect(wrapper.find('[data-test="overview"]').exists()).toBe(false)
   })
 })
