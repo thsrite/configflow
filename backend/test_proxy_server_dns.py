@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from backend.test_subscription_hosts import generate, profile, repo, store, sub  # noqa: F401
-from backend.utils.proxy_server_dns import (MIHOMO_DEFAULT_FILTER, MIN_CORE_TEXT, POLICY_KEY, compress, core_too_old,
+from backend.utils.proxy_server_dns import (CONNECTIVITY_FILTER, MIN_CORE_TEXT, POLICY_KEY, compress, core_too_old,
                                             final_target, listener_address, parse_core_version, reported_core_version)
 
 FEED = """\
@@ -139,7 +139,9 @@ def test_fake_ip_mapping_adds_a_policy_and_filters_only_the_target(repo):
     assert dns[POLICY_KEY] == {'hk1.example.net': LISTENER}
     assert dns['proxy-server-nameserver'] == ['https://223.5.5.5/dns-query']
     # Absent key: keep Mihomo's own defaults, then only the mapping target.
-    assert dns['fake-ip-filter'] == [*MIHOMO_DEFAULT_FILTER, 'hk1.example.org']
+    assert dns['fake-ip-filter'] == [*CONNECTIVITY_FILTER, 'hk1.example.org']
+    # Windows' connectivity check as Windows spells it, not Mihomo's "msftnsci".
+    assert dns['fake-ip-filter'][:2] == ['dns.msftncsi.com', 'www.msftncsi.com']
     assert 'rule-providers' not in main or all('node' not in name for name in main['rule-providers'])
     dns_report = report['dns']
     assert dns_report['applied'] is True and dns_report['listener'] == LISTENER and dns_report['fake_ip'] == 'blacklist'

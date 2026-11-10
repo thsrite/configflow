@@ -9,6 +9,7 @@ from threading import RLock, local
 from urllib.parse import urlsplit
 from typing import Dict, Any, List, Optional
 from backend.utils.logger import get_logger
+from backend.utils.proxy_server_dns import CONNECTIVITY_FILTER
 from backend.utils.proxy_utils import fix_proxy_fields
 from backend.common.profile_context import append_url_query, profile_api_path
 from backend.utils.url_utils import safe_url_for_log
@@ -54,14 +55,9 @@ def _default_mihomo_template() -> dict:
             'listen': '0.0.0.0:53',
             'enhanced-mode': 'fake-ip',
             'fake-ip-range': '198.18.0.1/16',
-            # 写入该键会替换内核默认名单，前三项沿用内核默认；对时服务器需要真实地址，
-            # 否则客户端长期缓存的假地址被回收后，对时会发到无关域名
-            'fake-ip-filter': [
-                'dns.msftnsci.com',
-                'www.msftnsci.com',
-                'www.msftconnecttest.com',
-                '+.pool.ntp.org',
-            ],
+            # 写入该键会替换内核默认名单，前三项是内核默认的 Windows 联网检测域名（改正了内核的拼写）；
+            # 对时服务器需要真实地址，否则客户端长期缓存的假地址被回收后，对时会发到无关域名
+            'fake-ip-filter': [*CONNECTIVITY_FILTER, '+.pool.ntp.org'],
             'nameserver': [
                 '223.5.5.5',
                 '119.29.29.29',

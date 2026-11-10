@@ -210,6 +210,7 @@ def test_default_templates_give_ntp_servers_real_addresses():
     with open(get_backend_resource('config_template.json'), encoding='utf-8') as handle:
         template = yaml.safe_load(json.load(handle)['mihomo']['custom_config'])
     assert '+.pool.ntp.org' in template['dns']['fake-ip-filter']
-    # The embedded template writes the key, so it must keep Mihomo's own defaults too.
+    # The embedded template writes the key, so it must keep Mihomo's own defaults too
+    # (Windows' connectivity check, spelled as Windows uses it).
     assert _default_mihomo_template()['dns']['fake-ip-filter'] == [
-        'dns.msftnsci.com', 'www.msftnsci.com', 'www.msftconnecttest.com', '+.pool.ntp.org']
+        'dns.msftncsi.com', 'www.msftncsi.com', 'www.msftconnecttest.com', '+.pool.ntp.org']
