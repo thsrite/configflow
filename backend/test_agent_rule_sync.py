@@ -976,3 +976,337 @@ def test_pinned_withheld_reports_only_auto_synced_unpublished_pins(sync_env):
     assert rule_sync.pinned_withheld(repository, 'default', ['single']) is False
     update_agent(manager, agent['id'], enabled=True, service_type='mihomo')
     assert rule_sync.pinned_withheld(repository, 'default', ['single']) is False
+
+
+# ---- a device nothing happened to is not compared again ---------------------------------------
+
+
+@pytest.fixture
+def comparisons(monkeypatch):
+    """Every full comparison the worker runs, as (service type, kind or error)."""
+    from backend.agents import rule_sync_projection
+    seen, real = [], rule_sync_projection.rule_changes
+
+    def rule_changes(base, current, service_type, settings):
+        try:
+            result = real(base, current, service_type, settings)
+        except Exception as error:
+            seen.append((service_type, type(error).__name__))
+            raise
+        seen.append((service_type, result[0]))
+        return result
+    monkeypatch.setattr(rule_sync_projection, 'rule_changes', rule_changes)
+    return seen
+
+
+def settle(worker, now, agent_id, comparisons):
+    """Run until the device is idle and remembered, then forget the comparisons so far."""
+    worker.run(agent_id)
+    tick(worker, now, agent_id)  # the first round saved its state, which is a new generation
+    tick(worker, now, agent_id)
+    del comparisons[:]
+
+
+def state_of(manager, agent_id):
+    state = manager.get_agent_by_id(agent_id)['rule_sync']['state']
+    return state['status'], state['message']
+
+
+@pytest.mark.parametrize('service', ['mihomo', 'oxidns'])
+def test_unchanged_device_is_compared_once_and_then_left_alone(sync_env, comparisons, service):
+    repository, manager, agent, _, _ = as_oxidns(sync_env) if service == 'oxidns' else sync_env
+    worker, now = worker_for(manager)
+    worker.run(agent['id'])
+    assert comparisons == [(service, 'none')]
+    tick(worker, now, agent['id'])
+    assert comparisons == [(service, 'none')] * 2  # the saved state moved the generation once
+    head, saved = repository.head(), manager.get_agent_by_id(agent['id'])['rule_sync']['state']
+    for _ in range(20):
+        tick(worker, now, agent['id'])
+    assert comparisons == [(service, 'none')] * 2
+    # Nothing was written either: same generation, same state timestamp.
+    assert repository.head() == head
+    assert manager.get_agent_by_id(agent['id'])['rule_sync']['state'] == saved
+    assert state_of(manager, agent['id']) == ('idle', '已引用的规则没有待同步变化')
+
+
+def rewrite_receipt(repository, manager, agent_id):
+    agent = manager.get_agent_by_id(agent_id)
+    record = store.load(repository, agent)
+    store.capture(repository, agent_id, record['bundle'], record['source'], record['base_url'])
+
+
+def touch_rule_cache(repository, _manager, _agent_id):
+    folder = repository.shared_rules_dir() / 'by-source'
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / 'cached.list').write_text('example.test\n')
+
+
+@pytest.mark.parametrize('change', [
+    lambda repository, manager, agent_id: edit_library(repository, 'unused-new.test', 'lib-unused'),
+    lambda repository, manager, agent_id: repository.update_profile_transaction(
+        'default', lambda profile: profile['mihomo'].update(custom_config='port: 9999')),
+    lambda repository, manager, agent_id: update_agent(manager, agent_id, name='renamed'),
+    lambda repository, manager, agent_id: rule_sync.configure(manager, agent_id, {'library': True, 'rules': True}),
+    rewrite_receipt, touch_rule_cache,
+], ids=['shared edit', 'profile edit', 'agent edit', 'scope', 'receipt', 'rule cache'])
+def test_any_changed_input_is_compared_again_exactly_once(sync_env, comparisons, change):
+    repository, manager, agent, _, _ = sync_env
+    worker, now = worker_for(manager)
+    settle(worker, now, agent['id'], comparisons)
+    change(repository, manager, agent['id'])
+    for _ in range(5):
+        tick(worker, now, agent['id'])
+    assert comparisons == [('mihomo', 'none')]
+    assert state_of(manager, agent['id'])[0] == 'idle'
+
+
+def test_rule_cache_stamp_follows_content_size_time_and_subfolders(sync_env):
+    repository, _, _, _, _ = sync_env
+    import os
+    root = repository.shared_rules_dir()
+    (root / 'by-id').mkdir(parents=True, exist_ok=True)
+    first = root / 'a.list'
+    first.write_text('one\n')
+    stamps = [rule_sync._rule_cache_stamp(repository)]
+    def changed():
+        stamps.append(rule_sync._rule_cache_stamp(repository))
+        return stamps[-1] != stamps[-2]
+    assert not changed()
+    first.write_text('one\ntwo\n')
+    assert changed()                                           # size
+    stat = first.stat()
+    os.utime(first, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+    assert changed()                                           # same bytes refreshed
+    (root / 'by-id' / 'nested.list').write_text('three\n')
+    assert changed()                                           # a file in a subfolder
+    (root / 'by-id' / 'nested.list').unlink()
+    assert changed()
+    assert not changed()
+
+
+def test_comparison_is_repeated_after_the_recheck_interval_and_after_a_clock_step_back(sync_env, comparisons):
+    _, manager, agent, _, _ = sync_env
+    worker, now = worker_for(manager)
+    settle(worker, now, agent['id'], comparisons)
+    tick(worker, now, agent['id'], rule_sync.RECHECK_SECONDS - 20)
+    assert comparisons == []
+    tick(worker, now, agent['id'], 20)
+    assert comparisons == [('mihomo', 'none')]
+    tick(worker, now, agent['id'])
+    assert comparisons == [('mihomo', 'none')]
+    now[0] -= 600  # the system clock was set back
+    worker.run(agent['id'])
+    assert comparisons == [('mihomo', 'none')] * 2
+    tick(worker, now, agent['id'])
+    assert comparisons == [('mihomo', 'none')] * 2
+
+
+def test_remembered_device_still_notices_and_syncs_a_later_edit(sync_env, comparisons, monkeypatch):
+    repository, manager, agent, _, _ = sync_env
+    from backend.agents import mihomo_panel
+    calls = []
+    monkeypatch.setattr(mihomo_panel, 'call', lambda *args: calls.append(args) or {'success': True})
+    worker, now = worker_for(manager)
+    settle(worker, now, agent['id'], comparisons)
+    for _ in range(3):
+        tick(worker, now, agent['id'])
+    edit_library(repository, 'later.test')
+    tick(worker, now, agent['id'])
+    assert state_of(manager, agent['id']) == ('pending', '检测到规则变化，等待连续编辑完成')
+    tick(worker, now, agent['id'])
+    assert [entry[1:] for entry in calls] == [(agent['id'], 'providers/rule', 'PUT', {'name': 'selected'})]
+    assert state_of(manager, agent['id'])[0] == 'succeeded'
+    assert source_for(manager, agent['id'])['rule_library'][0]['content'] == 'later.test'
+    # A pending change is compared on every round, as before; only "no change" is remembered.
+    assert [kind for _, kind in comparisons[:2]] == ['content', 'content']
+    del comparisons[:]
+    for _ in range(4):
+        tick(worker, now, agent['id'])
+    assert len(calls) == 1 and len(comparisons) <= 2 and state_of(manager, agent['id'])[0] == 'succeeded'
+
+
+def test_edit_reverted_before_the_next_round_is_not_mistaken_for_the_remembered_state(sync_env, comparisons):
+    repository, manager, agent, _, _ = sync_env
+    worker, now = worker_for(manager)
+    settle(worker, now, agent['id'], comparisons)
+    edit_library(repository, 'brief.test')
+    edit_library(repository, 'old.test')
+    tick(worker, now, agent['id'])
+    assert comparisons == [('mihomo', 'none')]  # two saves are a new generation even with the old content
+    assert state_of(manager, agent['id'])[0] == 'idle'
+
+
+def test_unsafe_structure_is_remembered_until_something_changes(sync_env, comparisons, monkeypatch):
+    repository, manager, agent, _, _ = sync_env
+    from backend.agents import rule_sync_projection
+    real = rule_sync_projection.rule_changes
+    unsafe = [True]
+
+    def rule_changes(*args):
+        if unsafe[0]:
+            comparisons.append(('mihomo', 'RuleSyncProjectionError'))
+            raise rule_sync_projection.RuleSyncProjectionError('custom structure')
+        return real(*args)
+    monkeypatch.setattr(rule_sync_projection, 'rule_changes', rule_changes)
+    worker, now = worker_for(manager)
+    worker.run(agent['id'])
+    blocked = ('blocked', '当前原生规则结构无法安全自动合并，请手动检查并发布配置')
+    assert state_of(manager, agent['id']) == blocked
+    tick(worker, now, agent['id'])
+    assert len(comparisons) == 2  # once more for the generation its own state created
+    head = repository.head()
+    for _ in range(10):
+        tick(worker, now, agent['id'])
+    assert len(comparisons) == 2 and repository.head() == head and state_of(manager, agent['id']) == blocked
+    # The user repairs the configuration: the next round compares again and recovers.
+    unsafe[0] = False
+    edit_library(repository, 'unused-new.test', 'lib-unused')
+    tick(worker, now, agent['id'])
+    assert state_of(manager, agent['id']) == ('idle', '已引用的规则没有待同步变化')
+
+
+def test_forced_refresh_is_not_skipped_by_a_remembered_comparison(sync_env, comparisons, monkeypatch):
+    _, manager, agent, _, _ = sync_env
+    from backend.agents import mihomo_panel
+    calls = []
+    monkeypatch.setattr(mihomo_panel, 'call', lambda *args: calls.append(args) or {'success': True})
+    worker, now = worker_for(manager)
+    settle(worker, now, agent['id'], comparisons)
+    # An interrupted download left the device asking for a refresh although the rules compare equal.
+    state = {'status': 'pending', 'message': '等待设备上线后同步规则', 'force_refresh': True}
+    update_agent(manager, agent['id'], rule_sync={'settings': {'library': True, 'rules': False}, 'state': state})
+    worker.run(agent['id'])
+    worker.run(agent['id'])
+    assert calls == []  # debounce
+    tick(worker, now, agent['id'])
+    assert [entry[2:] for entry in calls] == [('providers/rule', 'PUT', {'name': 'selected'})]
+    assert state_of(manager, agent['id'])[0] == 'succeeded'
+    assert all(kind == 'none' for _, kind in comparisons) and len(comparisons) >= 3
+
+
+def test_devices_and_repositories_do_not_share_remembered_comparisons(sync_env, comparisons, tmp_path_factory):
+    repository, manager, agent, source, _ = sync_env
+    worker, now = worker_for(manager)
+    settle(worker, now, agent['id'], comparisons)
+    # A second device of the same profile is compared on its own.
+    registration = manager.register_agent({'name': 'second', 'host': 'second.test', 'port': 8080, 'service_type': 'mihomo'})
+    second = update_agent(manager, registration['id'], version='1.8.30-go')
+    second, _ = enroll(manager, second, source, artifact(second, source, 'second-applied'))
+    rule_sync.configure(manager, second['id'], {'library': True, 'rules': False})
+    del comparisons[:]
+    worker.run(second['id'])
+    assert comparisons == [('mihomo', 'none')]
+    assert set(rule_sync._comparisons[repository]) == {agent['id'], second['id']}
+    # Another repository (another data directory) starts with nothing remembered.
+    from backend.common.config_repository import ProfileRepository
+    other = ProfileRepository(tmp_path_factory.mktemp('other'))
+    assert other not in rule_sync._comparisons
+
+
+def test_idle_rounds_need_no_publication_snapshot_or_receipt_read(sync_env, comparisons, monkeypatch):
+    repository, manager, agent, _, _ = sync_env
+    worker, now = worker_for(manager)
+    settle(worker, now, agent['id'], comparisons)
+    monkeypatch.setattr(repository, 'get_publish_snapshot', lambda *_a, **_k: pytest.fail('snapshot read'))
+    monkeypatch.setattr(store, 'load', lambda *_a, **_k: pytest.fail('receipt read'))
+    monkeypatch.setattr(manager, 'get_agent_by_id', lambda *_a, **_k: pytest.fail('second Agent read'))
+    monkeypatch.setattr(manager, '_update_agents', lambda *_a, **_k: pytest.fail('state write'))
+    for _ in range(5):
+        tick(worker, now, agent['id'])
+    assert comparisons == []
+
+
+def test_withheld_pin_notice_stays_while_the_comparison_is_remembered(sync_env, comparisons, monkeypatch):
+    repository, manager, agent, _, _ = as_oxidns(sync_env)
+    rule_sync.configure(manager, agent['id'], {'library': False, 'rules': True})
+    draft = {'action': 'upstream', 'source': 'local', 'upstream': {'addr': 'udp://192.0.2.77'}}
+    repository.update_profile_transaction('default', lambda profile: profile['oxidns'].update(
+        local_dns='udp://192.0.2.77', direct_rules=[], rule_actions={'single': draft}))
+    monkeypatch.setattr(manager, 'publish_deployment', lambda *_a, **_k: pytest.fail('DNS draft was published'))
+    worker, now = worker_for(manager)
+    settle(worker, now, agent['id'], comparisons)
+    head = repository.head()
+    for _ in range(5):
+        tick(worker, now, agent['id'])
+    assert comparisons == [] and repository.head() == head
+    assert state_of(manager, agent['id']) == ('idle', '已引用的规则没有待同步变化；指定上游需手动发布')
+    # Publishing the upstream by hand is a new receipt: the notice goes away.
+    current, _ = repository.get_publish_snapshot('default')
+    enroll(manager, manager.get_agent_by_id(agent['id']), current, artifact(agent, current, 'manual'))
+    tick(worker, now, agent['id'])
+    tick(worker, now, agent['id'])
+    assert state_of(manager, agent['id']) == ('idle', '已引用的规则没有待同步变化')
+
+
+def test_ha_pair_is_only_looked_up_for_paired_oxidns_devices(sync_env, comparisons, monkeypatch):
+    _, manager, agent, _, _ = as_oxidns(sync_env)
+    from backend.agents import oxidns_ha_publish
+    monkeypatch.setattr(oxidns_ha_publish, 'pair', lambda *_a: pytest.fail('unpaired device looked up a peer'))
+    worker, _ = worker_for(manager)
+    worker.run(agent['id'])
+    assert comparisons == [('oxidns', 'none')]
+
+
+SCENARIO_TRACE = [
+    ('idle', '已引用的规则没有待同步变化', 0),
+    ('idle', '已引用的规则没有待同步变化', 0),
+    ('idle', '已引用的规则没有待同步变化', 0),          # unused library entry edited
+    ('pending', '检测到规则变化，等待连续编辑完成', 0),  # used entry edited
+    ('pending', '检测到规则变化，等待连续编辑完成', 0),  # edited again within the debounce
+    ('succeeded', '已引用的规则集已下载并热重载', 1),
+    ('succeeded', '已引用的规则集已下载并热重载', 1),
+    ('succeeded', '已引用的规则集已下载并热重载', 1),    # inline rule edited: scope is off
+    ('pending', '检测到规则变化，等待连续编辑完成', 1),  # scope switched on
+    ('pending', '设备正在执行其他操作，稍后同步规则', 1),
+    ('idle', '已引用的规则没有待同步变化', 1),          # inline edit reverted
+    ('idle', '已引用的规则没有待同步变化', 1),
+]
+
+
+@pytest.mark.parametrize('remember', [True, False])
+def test_remembering_comparisons_changes_no_state_transition(sync_env, monkeypatch, remember):
+    """The same edits give the same states whether or not unchanged rounds are skipped."""
+    repository, manager, agent, _, _ = sync_env
+    if not remember:
+        monkeypatch.setattr(rule_sync, 'RECHECK_SECONDS', 0)  # every round compares, as before
+    from backend.agents import mihomo_panel
+    calls = []
+    monkeypatch.setattr(mihomo_panel, 'call', lambda *args: calls.append(args) or {'success': True})
+    monkeypatch.setattr(manager, 'begin_deployment', lambda *_a, **_k: {'success': False})
+    worker, now = worker_for(manager)
+    trace = []
+    def step(edit=None, seconds=5):
+        if edit:
+            edit()
+        tick(worker, now, agent['id'], seconds)
+        trace.append((*state_of(manager, agent['id']), len(calls)))
+    step()
+    step()
+    step(lambda: edit_library(repository, 'unused-new.test', 'lib-unused'))
+    step(lambda: edit_library(repository, 'first.test'))
+    step(lambda: edit_library(repository, 'second.test'), seconds=1)
+    step()
+    step()
+    step(lambda: edit_inline(repository))
+    step(lambda: rule_sync.configure(manager, agent['id'], {'library': True, 'rules': True}))
+    step()
+    step(lambda: edit_inline(repository, 'old-inline.test'))
+    step()
+    assert trace == SCENARIO_TRACE
+
+
+def test_receipt_stamp_changes_exactly_when_the_receipt_file_is_replaced(sync_env):
+    repository, manager, agent, source, _ = sync_env
+    stamp = store.stamp(repository, agent)
+    assert stamp is not None and store.stamp(repository, agent) == stamp
+    assert store.stamp(repository, {**agent, 'applied_content': None}) is None
+    assert store.stamp(repository, {**agent, 'applied_content': {'deployment_id': 'never-captured'}}) is None
+    store.load(repository, agent)
+    assert store.stamp(repository, agent) == stamp  # reading does not touch it
+    rewrite_receipt(repository, manager, agent['id'])
+    replaced = store.stamp(repository, agent)
+    assert replaced != stamp
+    # A new publication is another receipt file altogether.
+    agent, _ = enroll(manager, agent, source, artifact(agent, source, 'next'))
+    assert store.stamp(repository, agent) not in (stamp, replaced)

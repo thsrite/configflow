@@ -15,6 +15,7 @@ import os
 import threading
 import time
 import uuid
+import weakref
 
 import yaml
 
@@ -26,6 +27,9 @@ from .version import compare_versions
 MIN_AGENT_VERSION = '1.8.30-go'
 POLL_SECONDS = 5
 RETRY_SECONDS = 60
+# A device whose inputs did not change is not compared again until this long
+# after its last full comparison.
+RECHECK_SECONDS = 600
 TERMINAL = ('succeeded', 'failed', 'rolled_back')
 logger = logging.getLogger(__name__)
 
@@ -76,7 +80,7 @@ def pinned_withheld(repository, profile_id, rule_ids):
         if baseline is None:
             continue  # No baseline: the device needs a manual publish anyway.
         if current is None:
-            current, _ = repository.get_publish_snapshot(profile_id)
+            current, _ = repository.get_publish_snapshot(profile_id, agents=False)
         withheld = set()
         try:
             project_rule_changes(baseline['source'], current, settings, service_type='oxidns', withheld=withheld)
@@ -234,6 +238,39 @@ def _log_state(agent, agent_id, status, message):
                log_text(agent.get('name') or agent_id), log_text(message, 300))
 
 
+class _Comparison:
+    """What the last full comparison of one device read and found."""
+    __slots__ = ('at', 'inputs', 'outcome', 'withheld')
+
+    def __init__(self, at):
+        self.at = at
+        self.inputs = self.outcome = None
+        self.withheld = frozenset()
+
+
+# repository -> {agent_id: _Comparison}; per process, gone with the repository.
+_comparisons = weakref.WeakKeyDictionary()
+_comparisons_lock = threading.Lock()
+
+
+def _rule_cache_stamp(repository):
+    """Cached rule files by name, size and time: their content decides whether
+    a classical rule set has an IP part in the rendered OxiDNS configuration."""
+    found, folders = [], [str(repository.shared_rules_dir())]
+    while folders:
+        try:
+            with os.scandir(folders.pop()) as entries:
+                for entry in entries:
+                    if entry.is_dir(follow_symlinks=False):
+                        folders.append(entry.path)
+                    else:
+                        stat = entry.stat(follow_symlinks=False)
+                        found.append((entry.path, stat.st_size, stat.st_mtime_ns))
+        except OSError:
+            continue
+    return tuple(sorted(found))
+
+
 class RuleSyncWorker:
     def __init__(self, manager, *, clock=time.time, prepare=prepare_candidate):
         self.manager = manager
@@ -241,10 +278,36 @@ class RuleSyncWorker:
         self.prepare = prepare
         self.notice = ''
 
-    def _state(self, agent_id, status, message, **fields):
+    def _comparison(self, agent, settings):
+        """This device's remembered comparison and what a comparison would read now.
+
+        The comparison renders both configurations, far too much to repeat
+        every few seconds for a device nothing happened to. Its result is
+        reused while every input is the same: the configuration database
+        generation, the device's publication receipt and the cached rule files.
+        The inputs are taken before anything is read, so a change in between
+        only costs another comparison. RECHECK_SECONDS bounds an input this
+        list does not know.
+        """
+        repository = self.manager.repository
+        inputs = (repository.head(), store.stamp(repository, agent),
+                  json.dumps(agent.get('applied_content') or {}, sort_keys=True),
+                  *(agent.get(key) for key in ('profile_id', 'service_type', 'config_version')),
+                  _rule_cache_stamp(repository), tuple(sorted(settings.items())))
+        now = self.clock()
+        with _comparisons_lock:
+            remembered = _comparisons.setdefault(repository, {})
+            entry = remembered.get(agent['id'])
+            if entry is None or not 0 <= now - entry.at < RECHECK_SECONDS:
+                entry = remembered[agent['id']] = _Comparison(now)
+        return entry, inputs
+
+    def _state(self, agent_id, status, message, *, known=None, **fields):
         # A rule pinned to an unpublished upstream stays out of every automatic
         # publication; say so with whatever the device is doing.
         state = {'status': status, 'message': f'{message}；{self.notice}' if self.notice else message, **fields}
+        if known is not None and {key: value for key, value in known.items() if key != 'updated_at'} == state:
+            return  # the state this round started from: nothing to read or write
         agent = self.manager.get_agent_by_id(agent_id) or {}
         previous = {key: value for key, value in ((agent.get('rule_sync') or {}).get('state') or {}).items()
                     if key != 'updated_at'}
@@ -286,7 +349,7 @@ class RuleSyncWorker:
                             **{key: state[key] for key in ('native_task', 'key') if key in state})
 
     def _run(self, agent_id):
-        from .rule_sync_projection import PINNED_WITHHELD, project_rule_changes, rule_change_kind
+        from .rule_sync_projection import PINNED_WITHHELD, rule_changes
         self.notice = ''
         agent = next((item for item in self.manager.get_all_agents() if item['id'] == agent_id), None)
         if agent is None or agent.get('service_type') not in ('mihomo', 'oxidns'):
@@ -295,7 +358,8 @@ class RuleSyncWorker:
         if publications.active(agent):
             publications.advance(self.manager, agent_id)
             return
-        members = publications.pair(self.manager, agent_id) if agent.get('service_type') == 'oxidns' else None
+        members = (publications.pair(self.manager, agent_id) if agent.get('service_type') == 'oxidns'
+                   and (agent.get('oxidns_ha') or {}).get('enabled') is True else None)
         if members:
             leaders = sorted((item for item in members if any(settings_for(item).values())),
                              key=lambda item: ((item.get('oxidns_ha') or {}).get('role') != 'primary', item['id']))
@@ -337,24 +401,34 @@ class RuleSyncWorker:
             # state must not force a refresh, which Mihomo serves by another
             # publication when providers are not all HTTP: an endless cycle.
             old_state = (agent.get('rule_sync') or {}).get('state') or {}
-        baseline = store.load(self.manager.repository, agent, with_bundle=False)
-        if baseline is None:
-            self._state(agent_id, 'blocked', '先成功发布一次配置，建立自动同步基线')
+        # An interrupted or forced refresh continues below even without a change.
+        resuming = bool(old_state.get('native_task') or settings['library'] and
+                        (old_state.get('force_refresh') or old_state.get('status') == 'running'))
+        remembered, inputs = self._comparison(agent, settings)
+        unsafe = '当前原生规则结构无法安全自动合并，请手动检查并发布配置'
+        if remembered.inputs == inputs and remembered.outcome == 'unsafe':
+            self._state(agent_id, 'blocked', unsafe, known=old_state)
             return
-        current, _ = self.manager.repository.get_publish_snapshot(agent['profile_id'])
-        withheld = set()
-        try:
-            kind = rule_change_kind(baseline['source'], current, agent['service_type'], settings)
-            source = project_rule_changes(baseline['source'], current, settings, service_type=agent['service_type'],
-                                          withheld=withheld)
-        except ValueError:
-            self._state(agent_id, 'blocked', '当前原生规则结构无法安全自动合并，请手动检查并发布配置')
-            return
+        if remembered.inputs == inputs and remembered.outcome == 'none' and not resuming:
+            kind, source, withheld = 'none', None, remembered.withheld
+        else:
+            baseline = store.load(self.manager.repository, agent, with_bundle=False)
+            if baseline is None:
+                self._state(agent_id, 'blocked', '先成功发布一次配置，建立自动同步基线')
+                return
+            current, _ = self.manager.repository.get_publish_snapshot(agent['profile_id'], agents=False)
+            try:
+                kind, source, withheld = rule_changes(baseline['source'], current, agent['service_type'], settings)
+            except ValueError:
+                remembered.inputs, remembered.outcome = inputs, 'unsafe'
+                self._state(agent_id, 'blocked', unsafe)
+                return
+            remembered.inputs, remembered.outcome, remembered.withheld = (
+                inputs, 'none' if kind == 'none' else None, frozenset(withheld))
         self.notice = PINNED_WITHHELD if withheld and agent['service_type'] == 'oxidns' else ''
-        if kind == 'none' and not (old_state.get('native_task') or settings['library'] and
-                                  (old_state.get('force_refresh') or old_state.get('status') == 'running')):
+        if kind == 'none' and not resuming:
             if old_state.get('status') != 'succeeded' or self.notice not in old_state.get('message', ''):
-                self._state(agent_id, 'idle', '已引用的规则没有待同步变化')
+                self._state(agent_id, 'idle', '已引用的规则没有待同步变化', known=old_state)
             return
         if kind == 'none':
             kind = 'content'  # reconcile a reverted edit after an interrupted download
@@ -470,7 +544,7 @@ class RuleSyncWorker:
         # A source edited during the download must be checked again, not
         # silently acknowledged as part of the previous API operation.
         from .rule_sync_projection import project_rule_changes
-        current, _ = self.manager.repository.get_publish_snapshot(agent['profile_id'])
+        current, _ = self.manager.repository.get_publish_snapshot(agent['profile_id'], agents=False)
         if project_rule_changes(baseline['source'], current, settings, service_type=agent['service_type']) != source:
             self._state(agent_id, 'pending', '更新期间规则又有变化，继续同步最新内容')
             return
