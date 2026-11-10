@@ -233,3 +233,41 @@ def test_tokens_written_by_another_repository_are_redacted(repository):
     other.update_system_transaction(lambda system: system['agents'].append(
         {'id': 'b', 'name': 'B', 'profile_id': 'default', 'token': 'external-agent-token'}))
     assert sanitize_external_payload({'token': 'external-agent-token'}) == {'token': REDACTED}
+
+
+def test_head_changes_with_every_commit_and_only_then(repository, tmp_path):
+    head = repository.head()
+    repository.get_system(), repository.get_publish_snapshot('default'), repository.get_shared()
+    assert repository.head() == head
+    seen = {head}
+    for write in (lambda: repository.update_shared_transaction(lambda shared: shared['rule_library'].append(
+                      {'id': 'r', 'name': 'Rule', 'source_type': 'content', 'content': 'a.test'})),
+                  lambda: repository.update_profile_fields('other', {'description': 'edited'}),
+                  lambda: repository.update_system_transaction(lambda system: system['agents'].append(
+                      {'id': 'agent', 'name': 'Agent', 'token': 'agent-token', 'profile_id': 'default'}))):
+        write()
+        seen.add(repository.head())
+    assert len(seen) == 4
+    # A write by another process (another repository object on the same files) is noticed too.
+    other = ProfileRepository(tmp_path)
+    other.update_profile_fields('default', {'description': 'elsewhere'})
+    assert repository.head() == other.head() and repository.head() not in seen
+    # Saving a value and saving the old one back are two generations, not the first one again.
+    before = repository.head()
+    repository.update_profile_fields('default', {'description': 'x'})
+    repository.update_profile_fields('default', {'description': 'elsewhere'})
+    assert repository.head() != before
+
+
+def test_publish_snapshot_without_agents_only_leaves_the_agent_records_out(repository):
+    repository.update_system_transaction(lambda system: system['agents'].append(
+        {'id': 'agent', 'name': 'Agent', 'token': 'agent-token', 'profile_id': 'default',
+         'deployments': {'d': {'status': 'succeeded'}}}))
+    repository.update_shared_transaction(lambda shared: shared['rule_library'].append(
+        {'id': 'r', 'name': 'Rule', 'source_type': 'content', 'content': 'a.test'}))
+    repository.update_profile_fields('default', {'rule_configs': [{'id': 'set', 'itemType': 'ruleset', 'library_rule_id': 'r'}]})
+    full, revision = repository.get_publish_snapshot('default')
+    bare, bare_revision = repository.get_publish_snapshot('default', agents=False)
+    assert [agent['id'] for agent in full['agents']] == ['agent'] and 'agents' not in bare
+    assert {key: value for key, value in full.items() if key != 'agents'} == bare and revision == bare_revision
+    assert bare['system_config'] == full['system_config'] and bare['rule_configs'][0]['library_rule_id'] == 'r'

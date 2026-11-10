@@ -66,6 +66,21 @@ def capture(repository, agent_id, bundle, source, base_url, *, comparison_config
             shutil.rmtree(child)
 
 
+def stamp(repository, agent):
+    """Identity of the receipt file load() would read, or None without one.
+
+    Receipts are replaced atomically, so the same stamp means the same bytes.
+    """
+    applied = agent.get('applied_content') or {}
+    if not applied.get('deployment_id'):
+        return None
+    try:
+        stat = (_receipt(repository, agent['id'], applied['deployment_id']) / 'receipt.json').stat()
+    except OSError:
+        return None
+    return stat.st_ino, stat.st_size, stat.st_mtime_ns
+
+
 def load(repository, agent, *, with_bundle=True):
     applied = agent.get('applied_content') or {}
     if (not applied.get('deployment_id') or applied.get('profile_id') != agent.get('profile_id', 'default')

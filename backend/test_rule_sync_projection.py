@@ -798,3 +798,107 @@ def test_isolation_allows_owned_dns_helpers():
     for value in (unpublished, edited):
         with pytest.raises(RuleSyncProjectionError):
             isolate_rule_bundle(bundle(previous, 'oxidns', files), bundle(value, 'oxidns', files), 'oxidns')
+
+
+# ---- one pass for the projection and both signatures ------------------------------------------
+
+
+def _edits():
+    """(name, edit of the current configuration) pairs covering none, content and structure."""
+    def unused(config):
+        config['rule_library'].append({'id': 'unused', 'name': 'Unused', 'source_type': 'content', 'content': 'unused.test'})
+    def content(config):
+        config['rule_library'][0]['content'] = 'new.test'
+    def inline(config):
+        config['rule_configs'][1]['value'] = 'new-inline.test'
+    def reference(config):
+        add_set(config)
+        config['oxidns']['proxy_rulesets'] = ['set-b']
+    def metadata(config):
+        config['rule_library'][0]['behavior'] = 'classical'
+    def unrelated(config):
+        config['nodes'][0]['server'] = 'new-node.test'
+        config['oxidns']['local_dns'] = 'udp://192.0.2.9'
+    def everything(config):
+        content(config), inline(config), reference(config)
+    return [('nothing', lambda config: None), ('unused', unused), ('content', content), ('inline', inline),
+            ('reference', reference), ('metadata', metadata), ('unrelated', unrelated), ('everything', everything)]
+
+
+def _reference_kind(base, current, service, settings):
+    """The classification as it was computed before rule_changes: one rendering per signature."""
+    projected = project_rule_changes(base, current, settings, service_type=service)
+    if rule_signature(base, service) == rule_signature(projected, service):
+        return 'none'
+    if rule_signature(base, service, include_content=False) == rule_signature(projected, service, include_content=False):
+        return 'content'
+    return 'structure'
+
+
+@pytest.mark.parametrize('mode', ['mihomo', 'template', 'native'])
+def test_signatures_from_one_rendering_equal_the_separate_ones(mode):
+    from backend.agents.rule_sync_projection import rule_signatures
+    service = 'mihomo' if mode == 'mihomo' else 'oxidns'
+    for _, edit in _edits():
+        config = native(fixture()) if mode == 'native' else fixture()
+        edit(config)
+        assert rule_signatures(config, service) == (
+            rule_signature(config, service), rule_signature(config, service, include_content=False))
+    # The two differ exactly when content is part of what the device consumes.
+    with_content, without = rule_signatures(fixture(), service)
+    assert with_content != without
+
+
+@pytest.mark.parametrize('mode', ['mihomo', 'template', 'native'])
+@pytest.mark.parametrize('settings', [{'library': True}, {'rules': True}, {'library': True, 'rules': True}, {}])
+def test_rule_changes_matches_the_separate_projection_and_classification(mode, settings):
+    from backend.agents.rule_sync_projection import rule_changes
+    service = 'mihomo' if mode == 'mihomo' else 'oxidns'
+    kinds = set()
+    for name, edit in _edits():
+        base = native(fixture()) if mode == 'native' else fixture()
+        current = deepcopy(base)
+        edit(current)
+        before, draft = deepcopy(base), deepcopy(current)
+        expected_withheld = set()
+        expected = project_rule_changes(base, current, settings, service_type=service, withheld=expected_withheld)
+        kind, projected, withheld = rule_changes(base, current, service, settings)
+        assert (kind, projected, withheld) == (_reference_kind(base, current, service, settings), expected, expected_withheld), name
+        # Repeating it gives the same answer, and nothing is mutated.
+        assert rule_changes(base, current, service, settings) == (kind, projected, withheld), name
+        assert rule_change_kind(base, current, service, settings) == kind
+        assert (base, current) == (before, draft), name
+        kinds.add(kind)
+    if settings.get('library') and settings.get('rules'):
+        assert kinds == {'none', 'content', 'structure'}
+
+
+def test_rule_changes_reports_withheld_pins_and_unsafe_structures():
+    from backend.agents.rule_sync_projection import rule_changes
+    from backend.common.rule_dns import entry_key
+    base = fixture()
+    draft = deepcopy(base)
+    draft['oxidns']['local_dns'] = 'udp://192.0.2.1\nudp://192.0.2.7'
+    current = with_dns(draft, {'single': 'upstream:' + entry_key(DRAFT['upstream'], 'local')})
+    kind, projected, withheld = rule_changes(base, current, 'oxidns', {'library': True, 'rules': True})
+    assert withheld == {'single'} and kind == 'none'
+    assert 'single' not in (projected['oxidns'].get('rule_actions') or {})
+    broken = deepcopy(base)
+    broken['rule_configs'][0]['library_rule_id'] = 'missing'
+    with pytest.raises(RuleSyncProjectionError):
+        rule_changes(base, broken, 'oxidns', {'library': True})
+
+
+@pytest.mark.parametrize('mode', ['mihomo', 'template', 'native'])
+def test_agent_records_in_the_current_snapshot_do_not_affect_rule_changes(mode):
+    from backend.agents.rule_sync_projection import rule_changes
+    service = 'mihomo' if mode == 'mihomo' else 'oxidns'
+    for name, edit in _edits():
+        base = native(fixture()) if mode == 'native' else fixture()
+        current = deepcopy(base)
+        edit(current)
+        with_agents = {**deepcopy(current), 'agents': [
+            {'id': 'agent', 'profile_id': 'home', 'service_type': service, 'token': 'secret', 'host': '192.0.2.50',
+             'oxidns_ha': {'enabled': True, 'role': 'primary'}, 'deployments': {'d': {'status': 'succeeded'}}}]}
+        settings = {'library': True, 'rules': True}
+        assert rule_changes(base, with_agents, service, settings) == rule_changes(base, current, service, settings), name

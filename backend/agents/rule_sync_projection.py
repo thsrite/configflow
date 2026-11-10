@@ -23,6 +23,7 @@ from backend.common.rule_dns import (
     BLACKHOLE_PLUGIN, BLACKHOLE_TAG, UPSTREAM_PREFIX, entry_key, hydrate_ruleset, normalize_action,
     parse_exec, pinned_action, upstream_catalog,
 )
+from backend.utils import fast_yaml
 from .deployment_bundle import (
     DeploymentPreparationError, _local_rule, _pack, deployment_content_fingerprint, relative_path,
 )
@@ -303,7 +304,7 @@ def _rule_state(config, service_type, *, include_content):
         raise RuleSyncProjectionError('规则自动同步仅支持 Mihomo 和 OxiDNS。')
     from backend.converters.oxidns import generate_oxidns_config, _rule_path, _ruleset_parts
     from backend.common.oxidns_native import resource_references, relative_resource
-    document = yaml.safe_load(generate_oxidns_config(config))
+    document = fast_yaml.safe_load(generate_oxidns_config(config))
     referenced = {relative_resource(path) for path in resource_references(document)}
     sources = []
     for item in config.get('rule_configs', []):
@@ -320,20 +321,41 @@ def _rule_state(config, service_type, *, include_content):
     return {'document': document, 'sources': sources}
 
 
+def _state_hash(state):
+    return hashlib.sha256(json.dumps(state, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
+
+
 def rule_signature(config, service_type, *, include_content=True):
     """Hash effective consumers, excluding unused library entries and metadata."""
-    state = _rule_state(config, service_type, include_content=include_content)
-    return hashlib.sha256(json.dumps(state, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
+    return _state_hash(_rule_state(config, service_type, include_content=include_content))
+
+
+def rule_signatures(config, service_type):
+    """rule_signature with and without rule content, from one rendering."""
+    state = _rule_state(config, service_type, include_content=True)
+    bare = lambda items: [{key: value for key, value in item.items() if key != 'content'} for item in items]
+    return _state_hash(state), _state_hash(
+        bare(state) if service_type == 'mihomo' else {**state, 'sources': bare(state['sources'])})
+
+
+def rule_changes(base, current, service_type, settings):
+    """Project the opted-in scopes and classify the result in one pass.
+
+    Returns (kind, projected source, withheld rule ids); kind is none,
+    content (source content only) or structure.
+    """
+    withheld = set()
+    projected = project_rule_changes(base, current, settings, service_type=service_type, withheld=withheld)
+    # Both sides are rendered now: what a rendering reads besides its source
+    # (cached rule files, the stored rule library) then affects them alike.
+    before, after = rule_signatures(base, service_type), rule_signatures(projected, service_type)
+    kind = 'none' if before[0] == after[0] else 'content' if before[1] == after[1] else 'structure'
+    return kind, projected, withheld
 
 
 def rule_change_kind(base, current, service_type, settings):
     """Classify the isolated projection as none, source-content, or structure."""
-    projected = project_rule_changes(base, current, settings, service_type=service_type)
-    if rule_signature(base, service_type) == rule_signature(projected, service_type):
-        return 'none'
-    if rule_signature(base, service_type, include_content=False) == rule_signature(projected, service_type, include_content=False):
-        return 'content'
-    return 'structure'
+    return rule_changes(base, current, service_type, settings)[0]
 
 
 def rule_source_fingerprint(url, config, base_url, *, depth=0):
