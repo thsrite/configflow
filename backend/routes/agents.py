@@ -30,7 +30,7 @@ from backend.routes import agents_bp as bp
 from backend.common.config_export import redact_secrets_in_text
 from backend.common.auth import is_token_within_length, parse_bearer_token, require_auth
 from backend.common.config import get_config, get_default_profile_id, get_repository
-from backend.common.config_repository import ProfileRepositoryError
+from backend.common.config_repository import AGENT_HISTORY_NOT_READ, ProfileRepositoryError
 from backend.common.agent_manager import get_agent_manager
 from backend.common.utils import str_to_bool
 from backend.utils.logger import get_logger
@@ -139,8 +139,13 @@ def _supports_self_restart(agent_version: str) -> bool:
 
 
 def _public_agent(agent):
-    """Hide credentials and private deployment comparison metadata."""
-    public = {key: value for key, value in agent.items() if key not in ('token', 'applied_content', 'dns_follow_job')}
+    """Hide credentials and private deployment comparison metadata.
+
+    A record read without its history (history=False) is published without
+    those fields.
+    """
+    public = {key: value for key, value in agent.items()
+              if key not in ('token', 'applied_content', 'dns_follow_job') and value is not AGENT_HISTORY_NOT_READ}
     if public.get('oxidns_ha_publication'):
         from backend.agents.oxidns_ha_publish import summary
         public['oxidns_ha_publication'] = summary(public['oxidns_ha_publication'])
@@ -929,8 +934,10 @@ def handle_agents():
     if request.method == 'GET':
         if request.args.get('summary') == '1':
             # Device pickers and live polling need no content comparison, which
-            # loads and hashes each profile's full configuration.
-            return jsonify([_public_agent(agent) for agent in agent_manager.get_all_agents()]), 200
+            # loads and hashes each profile's full configuration, and no
+            # deployment history or verification runs, which are most of a
+            # record: every open page asks for this list every few seconds.
+            return jsonify([_public_agent(agent) for agent in agent_manager.get_all_agents(history=False)]), 200
         snapshots = {}
         agents = [_agent_with_content_sync(agent, snapshots) for agent in agent_manager.get_all_agents()]
         from backend.agents.upgrades import artifacts

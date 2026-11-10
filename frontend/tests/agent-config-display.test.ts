@@ -391,3 +391,41 @@ describe('Agent card diagnostics', () => {
     expect(wrapper.findAll('pre').map(item => item.text())).toContain('permission denied')
   })
 })
+
+describe('Agent page refresh', () => {
+  // The full list compares every device's configuration on the server.
+  it('leaves the list alone in a background tab and reads it again on return', async () => {
+    let hidden = false
+    const hiddenSpy = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden)
+    const show = (visible: boolean) => { hidden = !visible; document.dispatchEvent(new Event('visibilitychange')) }
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      const { wrapper } = await render()
+      expect(agentApi.getAll).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(10000)
+      expect(agentApi.getAll).toHaveBeenCalledTimes(2)
+
+      show(false)
+      await vi.advanceTimersByTimeAsync(60000)
+      expect(agentApi.getAll).toHaveBeenCalledTimes(2)
+
+      vi.mocked(agentApi.getAll).mockResolvedValue({ data: [agent({ name: 'Renamed while away' })] } as any)
+      show(true)
+      await flushPromises()
+      expect(agentApi.getAll).toHaveBeenCalledTimes(3)
+      expect(wrapper.text()).toContain('Renamed while away')
+      await vi.advanceTimersByTimeAsync(10000)
+      expect(agentApi.getAll).toHaveBeenCalledTimes(4)
+
+      wrapper.unmount()
+      wrappers.splice(wrappers.indexOf(wrapper), 1)
+      show(false)
+      show(true)
+      await vi.advanceTimersByTimeAsync(30000)
+      expect(agentApi.getAll).toHaveBeenCalledTimes(4)
+    } finally {
+      vi.useRealTimers()
+      hiddenSpy.mockRestore()
+    }
+  })
+})
