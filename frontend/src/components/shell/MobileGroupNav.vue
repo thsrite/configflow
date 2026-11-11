@@ -31,17 +31,23 @@
 
     <Sheet v-model:open="open">
       <SheetTrigger as-child>
+        <!-- 卡片样式的按钮：左侧主色图标方块，右侧圆形箭头，一眼能看出可以点 -->
         <button
           v-show="!showTabs"
           type="button"
-          class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2 text-left text-[13px] font-medium text-foreground transition-colors hover:border-primary-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring max-sm:gap-2 max-sm:border-transparent max-sm:bg-transparent max-sm:px-0 max-sm:hover:bg-muted/60"
+          data-group-nav-trigger
+          class="flex min-h-12 w-full cursor-pointer items-center gap-2.5 rounded-xl border border-border-strong bg-card py-2 pr-2 pl-2.5 text-left text-[13.5px] font-medium text-foreground transition-colors hover:border-primary-accent/40 active:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           :aria-label="`切换${group.tabLabel}页面，当前${activeItem.label}`"
         >
-          <component :is="iconOf(activeItem.icon)" class="size-4 shrink-0 text-primary-accent" :stroke-width="2" aria-hidden="true" />
+          <span class="flex size-[30px] shrink-0 items-center justify-center rounded-[9px] bg-primary-soft text-primary-accent" aria-hidden="true">
+            <component :is="iconOf(activeItem.icon)" class="size-4" :stroke-width="2" />
+          </span>
           <span class="min-w-0 flex-1 [overflow-wrap:anywhere]">
             <span class="text-muted-foreground">{{ group.tabLabel }} · </span>{{ activeItem.label }}
           </span>
-          <ChevronDown class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <span class="flex size-[30px] shrink-0 items-center justify-center rounded-full bg-accent text-foreground" aria-hidden="true">
+            <ChevronDown class="size-4" />
+          </span>
         </button>
       </SheetTrigger>
 

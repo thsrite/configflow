@@ -183,6 +183,19 @@ describe('mobile group navigation', () => {
     expect(selected[0].getAttribute('href')).toBe(path)
   })
 
+  it('renders the phone trigger as a visible button with an icon tile and a round chevron', async () => {
+    const { wrapper } = await render('/dashboard')
+    const trigger = wrapper.get('[data-group-nav-trigger]')
+    // 手机上也保留卡片底色和边框，不再退成一行透明文字
+    expect(trigger.classes()).toEqual(expect.arrayContaining(['bg-card', 'border-border-strong', 'rounded-xl']))
+    expect(trigger.classes().some(name => name.includes('transparent'))).toBe(false)
+    expect(trigger.text()).toBe('总览 · 数据统计')
+    expect(trigger.findAll('[aria-hidden="true"]').map(part => part.classes())).toEqual(expect.arrayContaining([
+      expect.arrayContaining(['bg-primary-soft']),
+      expect.arrayContaining(['rounded-full', 'bg-accent'])
+    ]))
+  })
+
   it('navigates through real router links and closes the sheet after selecting another page', async () => {
     const { wrapper, router } = await render('/subscriptions')
     const nav = await openMenu(wrapper, '资源', '订阅来源')
