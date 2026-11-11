@@ -141,7 +141,7 @@
                       <span v-if="!saved(row.ip)" class="chip ml-2">未保存</span>
                       <ClientSightingChips :sources="infoOf(row.ip)?.sources" />
                     </td>
-                    <td role="cell" data-label="状态" :class="unsupported && !infoOf(row.ip) && 'client-device-status-unknown'">
+                    <td role="cell" data-label="状态" :class="['unknown', 'network'].includes(presenceOf(row.ip)) && !discovering && infoOf(row.ip)?.fixed_ip?.status !== 'static' && 'client-device-status-unknown'">
                       <StatusDot v-bind="statusOf(row.ip)" />
                       <span v-if="!fromSetup && infoOf(row.ip)?.fixed_ip?.status === 'static'" class="chip chip-ok ml-2" :title="infoOf(row.ip)?.fixed_ip?.owned ? '由 ConfigFlow 固定 IP' : '路由器已有静态 DHCP 绑定'">已固定</span>
                       <p v-if="hintOf(row.ip)" class="mb-0 mt-0.5 text-[11.5px] text-muted-foreground max-sm:hidden">{{ hintOf(row.ip) }}</p>
