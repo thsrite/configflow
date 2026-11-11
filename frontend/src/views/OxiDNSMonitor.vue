@@ -3,7 +3,7 @@
     <PageHeader title="OxiDNS 面板" class="oxidns-monitor-header">
       <template #title-extra>
         <Select :model-value="agentId" :disabled="!devices?.length || switchingDevice" @update:model-value="switchDevice(String($event))">
-          <SelectTrigger class="min-h-11 w-auto min-w-0 max-w-32 sm:max-w-48" aria-label="监控设备" :title="currentDevice?.name || currentDevice?.id">
+          <SelectTrigger class="min-h-11 w-auto min-w-0 max-w-32 sm:max-w-48 [.cf-page-header--untitled_&]:max-w-none [.cf-page-header--untitled_&]:flex-1" aria-label="监控设备" :title="currentDevice?.name || currentDevice?.id">
             <SelectValue class="min-w-0 flex-1 text-left" :placeholder="devicesLoading ? '读取设备…' : '选择设备'">
               <span class="truncate font-medium">{{ currentDevice?.name || currentDevice?.id || (devicesLoading ? '读取设备…' : '选择设备') }}</span>
             </SelectValue>
