@@ -1920,11 +1920,24 @@ onActivated(() => {
   .rule-group-head .rule-grename { grid-area: rename; width: auto; }
   .rule-group-head .rule-gdns { grid-area: gdns; width: auto; margin-left: -8px; }
 
-  /* 菜单按钮视觉 32px，透明区域补足 44px 点击区 */
+  /* 行内的策略、DNS 视觉降到 24px，两行加起来不超过 60px；透明区域仍补足 44px 点击区。
+     策略在上行右侧，向下只多 2px，避免压到下行的「⋯」 */
+  .rule-row :deep(.rule-policy-trigger),
+  .rule-row :deep(.rule-dns-cell-trigger),
+  .rule-group-head :deep(.rule-policy-trigger),
+  .rule-group-head .rule-group-dns-trigger { height: 24px; }
+  .rule-row .rule-dns :deep(span.h-\[30px\]) { height: 24px; }
+  .rule-row :deep(.rule-policy-trigger)::before,
+  .rule-group-head :deep(.rule-policy-trigger)::before { inset: -14px 0 -2px; }
+  .rule-row :deep(.rule-dns-cell-trigger)::before,
+  .rule-group-head .rule-group-dns-trigger::before { inset: -6px 0 -14px; }
+  .rule-row .rule-menu { width: 28px; height: 24px; }
+
+  /* 菜单按钮视觉 28×24，透明区域补足 44px 点击区 */
   .rule-menu::before {
     content: '';
     position: absolute;
-    inset: calc((32px - var(--cf-touch, 44px)) / 2);
+    inset: -10px -8px;
   }
 }
 </style>
