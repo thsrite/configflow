@@ -190,13 +190,17 @@ def _text(value, limit=512):
     return value[:limit] if isinstance(value, str) else ''
 
 
+RANKING_RANGES = ('round', '24h', '7d', '30d')
+
+
 def _dashboard_params(args=None):
     if args is None:
         return {}
     result = {}
     for key in args:
         values = args.getlist(key)
-        if key != 'recorder' or len(values) != 1 or not _valid_recorder_tag(values[0]):
+        if (len(values) != 1 or key == 'recorder' and not _valid_recorder_tag(values[0])
+                or key == 'range' and values[0] not in RANKING_RANGES or key not in ('recorder', 'range')):
             raise MonitorError('INVALID_QUERY', 400)
         result[key] = values[0]
     return result
@@ -298,12 +302,13 @@ def _rankings_unavailable(code, **fields):
             'sample_size': 0, 'rows': [], 'at_limit': False, **fields}
 
 
-def _ranking_section(value, kind):
+def _ranking_section(value, kind, *, rows=10):
     if not isinstance(value, dict):
         raise MonitorError('INVALID_RESPONSE')
+    limit = rows
     sample, rows, at_limit = value.get('sample_size'), value.get('rows'), value.get('at_limit')
     if (type(sample) is not int or not 0 <= sample <= CLIENT_SAMPLE_LIMIT
-            or not isinstance(rows, list) or len(rows) > 10
+            or not isinstance(rows, list) or len(rows) > limit
             or type(at_limit) is not bool or at_limit != (sample == CLIENT_SAMPLE_LIMIT)):
         raise MonitorError('INVALID_RESPONSE')
     result, seen, total = [], set(), 0
@@ -424,6 +429,41 @@ def _dashboard_rankings(agent, params, snapshot, state, recorders):
             'domains': _ranking_section(data.get('domains'), 'domains'), 'blocked': blocked_result}
 
 
+def _history_rankings(manager, agent, recorder, range_key, snapshot, state, recorders):
+    """Complete rankings added up from the stored periods, or None to fall back to the live sample."""
+    from . import oxidns_ranking_history as history
+    if not recorders or recorder not in recorders or not history.supported(agent):
+        return None
+    now = snapshot['collected_at_ms'] // 1000
+    if range_key == 'round':
+        since = state['started_at_ms'] // 1000
+    else:
+        since = now - history.RANGES[range_key]
+    since -= since % history.HOUR
+    stored = history.get_history(manager.repository.data_dir).query(agent['id'], recorder, since, now + history.HOUR)
+    if not stored['slots']:
+        return None
+    first, last = stored['first'], stored['last']
+    expected = max(1, (last - first) // history.SLOT)
+    records = stored['records']
+
+    def section(kind, total):
+        return {'sample_size': total, 'at_limit': False,
+                'rows': [{**row, 'share': row['count'] / total if total else 0} for row in stored['rows'][kind]]}
+    if stored['blocked_slots']:
+        blocked = {'available': True, 'code': 'history', 'reason': '拦截路径', **section('blocked', stored['blocked_records'])}
+    else:
+        blocked = _rankings_unavailable('unsupported_configuration')
+    return {'available': True, 'success': True, 'source': 'history', 'range': range_key, 'recorder': recorder,
+            'collected_at_ms': last * 1000, 'instance_id': state['instance_id'],
+            'source_revision': state['source_revision'], 'runtime_revision': state['runtime_revision'],
+            'retention_days': history.RETENTION_DAYS, 'sample_limit': CLIENT_SAMPLE_LIMIT,
+            'since_ms': since * 1000, 'until_ms': last * 1000, 'first_ms': first * 1000,
+            'slot_seconds': history.SLOT, 'missing_slots': max(0, expected - stored['slots']),
+            'partial_slots': stored['partial_slots'],
+            'clients': section('clients', records), 'domains': section('domains', records), 'blocked': blocked}
+
+
 def _verify_target(manager, agent_id, expected):
     current = manager.get_agent_by_id(agent_id)
     if current is None or _target(current) != expected:
@@ -459,8 +499,18 @@ def _dashboard_overview(manager, agent_id, params, *, manual=False):
             # A pushed configuration may remove the UI's selected recorder.
             # GET must return the new list so viewers can recover automatically;
             # a manual reset remains strict about its explicitly selected target.
-            effective_params = params if manual or params.get('recorder') in recorders else {}
-            rankings = _kept_rankings(manager, agent, effective_params, snapshot, state, recorders, manual=manual)
+            effective_params = {key: value for key, value in params.items() if key == 'recorder'}
+            if not manual and params.get('recorder') not in recorders:
+                effective_params = {}
+            rankings = _history_rankings(manager, agent, effective_params.get('recorder') or (recorders or [None])[0],
+                                         params.get('range', 'round'), snapshot, state, recorders)
+            if rankings is None:
+                rankings = _kept_rankings(manager, agent, effective_params, snapshot, state, recorders, manual=manual)
+                if rankings.get('success') is True:
+                    from . import oxidns_ranking_history
+                    # Why the panel shows the newest-records sample instead of complete counts.
+                    rankings = {**rankings, 'history': 'collecting' if oxidns_ranking_history.supported(agent)
+                                else 'upgrade_required', 'history_version': oxidns_ranking_history.HISTORY_AGENT_VERSION}
         except MonitorError as error:
             if manual or error.code == 'INVALID_QUERY':
                 raise

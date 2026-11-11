@@ -85,8 +85,8 @@
         <p v-if="clientNotesError" role="alert" class="mb-3 break-words text-xs text-warning-accent">
           设备备注暂未读取：{{ clientNotesError }}<span v-if="Object.keys(clientNotes).length"> 保留上次成功读取的备注。</span>
         </p>
-        <TabsContent value="overview"><OxiDNSOverviewPanel v-if="overview" :overview="overview" :qps="qps" :recorder="recorder" :resetting="resettingStatistics" :notes="clientNotes"
-          @recorder="selectRecorder" /></TabsContent>
+        <TabsContent value="overview"><OxiDNSOverviewPanel v-if="overview" :overview="overview" :qps="qps" :recorder="recorder" :ranking-range="rankingRange" :resetting="resettingStatistics" :notes="clientNotes"
+          @recorder="selectRecorder" @range="selectRankingRange" /></TabsContent>
         <TabsContent value="queries">
           <SectionCard v-if="overview && !overview.recorders.length">
             <EmptyState :icon="Search" title="尚未启用查询记录" description="打开此 Agent 所属配置空间的查询记录设置，启用并保存草稿后，发布到此 Agent 生效。">
@@ -169,7 +169,7 @@ function changeTab(value: string) {
   tab.value = value
 }
 const selectedRecord = ref<OxiDNSQuery | null>(null)
-const { overview, overviewLoading, overviewError, overviewErrorCode, resettingStatistics, resetError, resetStatistics, clockSkewMs, qps, queries, queriesLoading, queriesError, recorder, filters,
+const { overview, overviewLoading, overviewError, overviewErrorCode, resettingStatistics, resetError, resetStatistics, clockSkewMs, qps, queries, queriesLoading, queriesError, recorder, rankingRange, selectRankingRange, filters,
   page, hasNext, autoRefresh, refresh, loadQueries, selectRecorder, applyFilters, nextPage, previousPage } = useOxiDNSMonitor(agentId, tab)
 const { devices, loading: devicesLoading, error: devicesError, load: loadDevices } = useOxiDNSDevices()
 const currentDevice = computed(() => devices.value?.find(device => device.id === agentId.value) || overview.value?.agent)

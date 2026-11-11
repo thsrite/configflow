@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -203,17 +204,17 @@ func TestOxiDNSRankingsValidationAndEmptyResponses(t *testing.T) {
 		`{"ok":true,"sample_size":1,"rows":[{"key":"x.","count":1},{"key":"x.","count":1}]}`,
 		`{"ok":true,"sample_size":1,"rows":[{"key":"x.\nsecret","count":1}]}`,
 	} {
-		if _, err := oxDecodeRanking([]byte(body), false); err == nil {
+		if _, err := oxDecodeRanking([]byte(body), false, oxRankingLimit); err == nil {
 			t.Errorf("accepted malformed ranking: %s", body)
 		}
 	}
-	if _, err := oxDecodeRanking([]byte(`{"ok":true,"sample_size":1,"rows":[{"key":"192.0.2.1","count":1},{"key":"192.0.2.2","count":1}]}`), true); err == nil {
+	if _, err := oxDecodeRanking([]byte(`{"ok":true,"sample_size":1,"rows":[{"key":"192.0.2.1","count":1},{"key":"192.0.2.2","count":1}]}`), true, oxRankingLimit); err == nil {
 		t.Fatal("client total exceeded recorded query count")
 	}
-	if result, err := oxDecodeRanking([]byte(`{"ok":true,"sample_size":0,"rows":[]}`), true); err != nil || result.Rows == nil || result.AtLimit {
+	if result, err := oxDecodeRanking([]byte(`{"ok":true,"sample_size":0,"rows":[]}`), true, oxRankingLimit); err != nil || result.Rows == nil || result.AtLimit {
 		t.Fatalf("empty ranking: %#v %v", result, err)
 	}
-	if result, err := oxDecodeRanking([]byte(`{"ok":true,"sample_size":2,"rows":[{"key":"multi.example.","count":3,"share":0}]}`), false); err != nil || result.Rows[0].Share != 1.5 {
+	if result, err := oxDecodeRanking([]byte(`{"ok":true,"sample_size":2,"rows":[{"key":"multi.example.","count":3,"share":0}]}`), false, oxRankingLimit); err != nil || result.Rows[0].Share != 1.5 {
 		t.Fatalf("multi-question occurrence counts must be preserved: %#v %v", result, err)
 	}
 }
@@ -223,7 +224,7 @@ func TestOxiDNSRankingsRejectInvalidRequestsBeforeCore(t *testing.T) {
 	core := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1) }))
 	defer core.Close()
 	cfg := oxMonitorTestConfig(t, core.URL, oxRankingTestPlugins)
-	for _, query := range []string{"", "recorder=records", "since_ms=-1", "since_ms=9223372036854775808", "since_ms=1&since_ms=2", "since_ms=3&until_ms=2", "since_ms=1&limit=10000", "since_ms=1&matcher_tag=ads", "since_ms=1&recorder=../flush", "since_ms=1&url=http://evil.test", "since_ms=1&qname=abc"} {
+	for _, query := range []string{"", "recorder=records", "since_ms=-1", "since_ms=9223372036854775808", "since_ms=1&since_ms=2", "since_ms=3&until_ms=2", "since_ms=1&limit=10000", "since_ms=1&matcher_tag=ads", "since_ms=1&recorder=../flush", "since_ms=1&url=http://evil.test", "since_ms=1&qname=abc", "since_ms=1&rows=0", "since_ms=1&rows=2001", "since_ms=1&rows=-5", "since_ms=1&rows=10.5", "since_ms=1&rows=010", "since_ms=1&rows=10&rows=20", "since_ms=1&rows=all"} {
 		oxMonitorTestError(t, oxMonitorTestRequest(cfg, "GET", "/api/oxidns/rankings?"+query), 400, "INVALID_QUERY")
 	}
 	for _, method := range []string{"POST", "DELETE", "PUT"} {
@@ -514,14 +515,14 @@ func TestRankingsMergeRuleBlockSamples(t *testing.T) {
 		return result
 	}
 	single := oxRankingGroup{SampleSize: 3, Rows: rows("a.", 3), AtLimit: false}
-	if got := oxMergeRankings([]oxRankingGroup{single}); !reflect.DeepEqual(got, single) {
+	if got := oxMergeRankings([]oxRankingGroup{single}, oxRankingLimit); !reflect.DeepEqual(got, single) {
 		t.Fatalf("single group changed: %#v", got)
 	}
 	merged := oxMergeRankings([]oxRankingGroup{
 		{SampleSize: 4, Rows: rows("a.", 2, "b.", 2)},
 		{SampleSize: 0, Rows: rows()},
 		{SampleSize: 3, Rows: rows("c.", 2, "a.", 1)},
-	})
+	}, oxRankingLimit)
 	want := []oxRankingRow{{"a.", 3, 3.0 / 7}, {"b.", 2, 2.0 / 7}, {"c.", 2, 2.0 / 7}}
 	if merged.SampleSize != 7 || merged.AtLimit || !reflect.DeepEqual(merged.Rows, want) {
 		t.Fatalf("merged: %#v", merged)
@@ -530,7 +531,7 @@ func TestRankingsMergeRuleBlockSamples(t *testing.T) {
 	for i := 0; i < 12; i++ {
 		many[0].Rows = append(many[0].Rows, oxRankingRow{Key: fmt.Sprintf("d%02d.", i), Count: uint64(100 - i)})
 	}
-	capped := oxMergeRankings(many)
+	capped := oxMergeRankings(many, oxRankingLimit)
 	if capped.SampleSize != oxMonitorClientSampleLimit || !capped.AtLimit || len(capped.Rows) != oxRankingLimit || capped.Rows[0].Key != "d00." || capped.Rows[9].Key != "d09." {
 		t.Fatalf("capped: %#v", capped)
 	}
@@ -627,3 +628,80 @@ func TestRankingsTooManyRuleBlocksUnavailable(t *testing.T) {
 		t.Fatalf("too many block rules: %d %s (%d block calls)", response.Code, response.Body.String(), blockCalls.Load())
 	}
 }
+
+// ConfigFlow asks for every name of a short period to add periods up exactly.
+func TestOxiDNSRankingsReturnMoreRowsOnRequest(t *testing.T) {
+	var cfg *Config
+	limits := map[string][]string{}
+	var mu sync.Mutex
+	many := func(prefix string, n int) string {
+		rows := []string{}
+		for i := 0; i < n; i++ {
+			rows = append(rows, fmt.Sprintf(`{"key":"%s%d.example.","count":%d,"share":0}`, prefix, i, n-i))
+		}
+		return strings.Join(rows, ",")
+	}
+	core := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/health":
+			fmt.Fprint(w, oxMonitorTestHealth)
+			return
+		case "/api/reload/status":
+			oxRankingTestRuntime(t, w, cfg)
+			return
+		}
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		mu.Lock()
+		limits[r.URL.Path] = append(limits[r.URL.Path], r.URL.Query().Get("limit"))
+		mu.Unlock()
+		switch {
+		case r.URL.Path == "/api/plugins/records/stats/top_clients":
+			fmt.Fprintf(w, `{"ok":true,"sample_size":3,"rows":[{"key":"192.0.2.1","count":2,"share":0},{"key":"192.0.2.2","count":1,"share":0}]}`)
+		case r.URL.Query().Get("matcher_tag") != "":
+			fmt.Fprintf(w, `{"ok":true,"sample_size":9000,"rows":[%s]}`, many("ad", limit))
+		default:
+			fmt.Fprintf(w, `{"ok":true,"sample_size":9000,"rows":[%s]}`, many("site", limit))
+		}
+	}))
+	defer core.Close()
+	cfg = oxMonitorTestConfig(t, core.URL, oxRankingTestPlugins)
+	var result struct {
+		RowsLimit int            `json:"rows_limit"`
+		Domains   oxRankingGroup `json:"domains"`
+		Blocked   oxRankingGroup `json:"blocked"`
+		Clients   oxRankingGroup `json:"clients"`
+	}
+	response := oxMonitorTestRequest(cfg, "GET", "/api/oxidns/rankings?since_ms=100&until_ms=200&rows=2000")
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != 200 {
+		t.Fatalf("rows=2000: %d %s", response.Code, response.Body.String()[:200])
+	}
+	if result.RowsLimit != 2000 || len(result.Domains.Rows) != 2000 || result.Domains.SampleSize != 9000 || result.Domains.AtLimit || len(result.Clients.Rows) != 2 {
+		t.Fatalf("more rows: limit %d, %d domains, sample %d", result.RowsLimit, len(result.Domains.Rows), result.Domains.SampleSize)
+	}
+	if len(result.Blocked.Rows) != 2000 || result.Blocked.Rows[0].Key != "ad0.example." {
+		t.Fatalf("blocked rows: %d", len(result.Blocked.Rows))
+	}
+	mu.Lock()
+	for path, seen := range limits {
+		for _, limit := range seen {
+			if limit != "2000" {
+				t.Fatalf("%s asked the core for %s rows", path, limit)
+			}
+		}
+	}
+	limits = map[string][]string{}
+	mu.Unlock()
+	// Without rows= nothing changes: ten rows, as older ConfigFlow versions expect.
+	response = oxMonitorTestRequest(cfg, "GET", "/api/oxidns/rankings?since_ms=100&until_ms=200")
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != 200 || result.RowsLimit != 10 || len(result.Domains.Rows) != 10 {
+		t.Fatalf("default: %d rows, limit %d", len(result.Domains.Rows), result.RowsLimit)
+	}
+	// A core answering with more rows than were asked for is rejected.
+	if _, err := oxDecodeRanking([]byte(`{"ok":true,"sample_size":9,"rows":[`+many("x", 11)+`]}`), false, 10); err == nil {
+		t.Fatal("eleven rows accepted for ten")
+	}
+	if got, err := oxDecodeRanking([]byte(`{"ok":true,"sample_size":9,"rows":[`+many("x", 11)+`]}`), false, 11); err != nil || len(got.Rows) != 11 {
+		t.Fatalf("eleven rows for eleven: %v", err)
+	}
+}
+

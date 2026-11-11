@@ -1,10 +1,16 @@
 """Agent 版本管理"""
 
 # Agent 最新版本号
-LATEST_AGENT_VERSION = "1.8.54-go"
+LATEST_AGENT_VERSION = "1.8.55-go"
 
 # 版本更新日志（可选）
 VERSION_CHANGELOG = {
+    "1.8.55-go": {
+        "date": "2026-11-11",
+        "features": [
+            "OxiDNS 排行接口可一次返回某个时段的全部客户端和域名（最多 2000 项），ConfigFlow 据此每 15 分钟保存一个时段，面板显示完整统计而不是最新 1 万条记录的样本"
+        ]
+    },
     "1.8.54-go": {
         "date": "2026-11-08",
         "features": [

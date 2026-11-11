@@ -487,6 +487,23 @@ describe('OxiDNS dashboard resets', () => {
     expect(model.recorder.value).toBe('second-recorder')
   })
 
+  it('asks for the selected rankings range and keeps it on later refreshes', async () => {
+    vi.mocked(oxidnsMonitorApi.overview).mockResolvedValue(response(periodSnapshot()))
+    const { model } = harness()
+    await flushPromises()
+    expect(oxidnsMonitorApi.overview).toHaveBeenLastCalledWith('one', expect.objectContaining({ range: 'round' }))
+    model.selectRankingRange('7d')
+    await flushPromises()
+    expect(model.rankingRange.value).toBe('7d')
+    expect(oxidnsMonitorApi.overview).toHaveBeenLastCalledWith('one', expect.objectContaining({ range: '7d' }))
+    const calls = vi.mocked(oxidnsMonitorApi.overview).mock.calls.length
+    model.selectRankingRange('7d')  // the same range asks nothing
+    await flushPromises()
+    expect(vi.mocked(oxidnsMonitorApi.overview).mock.calls.length).toBe(calls)
+    await model.refresh()
+    expect(oxidnsMonitorApi.overview).toHaveBeenLastCalledWith('one', expect.objectContaining({ range: '7d' }))
+  })
+
   it('does not send a reset for an older Agent without period support', async () => {
     const { model } = harness()
     await flushPromises()

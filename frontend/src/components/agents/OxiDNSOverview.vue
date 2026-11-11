@@ -16,11 +16,19 @@
       <header class="flex flex-col items-start justify-between gap-3 px-1 sm:flex-row">
         <div class="min-w-0 flex-1">
           <h2 class="m-0 flex items-center gap-2 text-sm font-semibold">请求排行<FieldHelp label="请求排行" :text="rankingsDescription" /></h2>
-          <p v-if="rankings" class="mb-0 mt-1 text-xs leading-relaxed text-muted-foreground">
+          <p v-if="rankings && complete" class="mb-0 mt-1 text-xs leading-relaxed text-muted-foreground" data-ranking-coverage>
+            {{ completeDescription }}<span v-if="rankings.blocked.available"> 其中可确认被拦截的 {{ formatMonitorNumber(rankings.blocked.sample_size) }} 次。</span>
+            <span v-if="coverageNotice" class="text-warning-accent"> {{ coverageNotice }}</span>
+          </p>
+          <p v-else-if="rankings" class="mb-0 mt-1 text-xs leading-relaxed text-muted-foreground">
             {{ rankingSampleDescription }}<span v-if="rankings.blocked.available"> 拦截排行另基于 {{ formatMonitorNumber(rankings.blocked.sample_size) }} 条查询记录。</span>
             <span v-if="rankings.clients.at_limit || rankings.domains.at_limit || rankings.blocked.at_limit" class="text-warning-accent">已达到样本上限，可能未覆盖本轮所有请求。</span>
+            <span v-if="rankings.history === 'upgrade_required'" class="text-warning-accent" data-ranking-upgrade> 这是最新记录的样本；将 Agent 升级到 {{ rankings.history_version }} 或更新版本后显示完整统计。</span>
+            <span v-else-if="rankings.history === 'collecting'" data-ranking-collecting> 正在收集完整统计，第一个 15 分钟时段结束后改为显示完整统计。</span>
           </p>
         </div>
+        <Segmented v-if="complete" class="max-w-full" label="排行范围" :model-value="rankingRange || 'round'" :options="rangeOptions" :disabled="resetting"
+          @update:model-value="$emit('range', $event)" />
         <Select v-if="overview.recorders.length > 1" :model-value="recorder" :disabled="resetting" @update:model-value="$emit('recorder', String($event))">
           <SelectTrigger class="min-h-11 w-full sm:w-[180px] max-w-full" aria-label="排行记录器"><SelectValue placeholder="选择记录器" /></SelectTrigger>
           <SelectContent><SelectItem v-for="tag in overview.recorders" :key="tag" :value="tag">{{ tag }}</SelectItem></SelectContent>
@@ -110,15 +118,16 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import SectionCard from '@/components/common/SectionCard.vue'
+import Segmented from '@/components/common/Segmented.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import FieldHelp from '@/components/common/FieldHelp.vue'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import OxiDNSMetric from './OxiDNSMetric.vue'
 import OxiDNSRankingTable from './OxiDNSRankingTable.vue'
 import { deviceNote } from '@/lib/device-notes'
-import { formatMonitorNumber, monitorNumber, type OxiDNSOverview, type OxiDNSRankings } from '@/types/oxidnsMonitor'
-const props = defineProps<{ overview: OxiDNSOverview; qps: number | null; recorder?: string; resetting?: boolean; notes?: Record<string, string> }>()
-defineEmits<{ recorder: [value: string] }>()
+import { formatMonitorNumber, formatQueryTime, monitorNumber, type OxiDNSOverview, type OxiDNSRankingRange, type OxiDNSRankings } from '@/types/oxidnsMonitor'
+const props = defineProps<{ overview: OxiDNSOverview; qps: number | null; recorder?: string; rankingRange?: OxiDNSRankingRange; resetting?: boolean; notes?: Record<string, string> }>()
+defineEmits<{ recorder: [value: string]; range: [value: OxiDNSRankingRange] }>()
 const periodLabel = computed(() => props.overview.statistics ? '自本轮统计开始以来' : '自核心启动以来')
 const rankings = computed<OxiDNSRankings | null>(() => props.overview.rankings && 'success' in props.overview.rankings && props.overview.rankings.success === true ? props.overview.rankings : null)
 const clientRankings = computed(() => (rankings.value?.clients.rows || []).map(row => ({
@@ -135,7 +144,35 @@ const rankingSampleDescription = computed(() => {
 // The server stops the window a day back; older records would not change a busy resolver's newest sample.
 const rankingsSinceDay = computed(() => !!rankings.value && !!props.overview.statistics
   && typeof rankings.value.since_ms === 'number' && rankings.value.since_ms > props.overview.statistics.started_at_ms)
-const rankingsDescription = computed(() => rankings.value
+const rangeOptions: Array<{ value: OxiDNSRankingRange; label: string }> = [
+  { value: 'round', label: '本轮' }, { value: '24h', label: '24 小时' }, { value: '7d', label: '7 天' }, { value: '30d', label: '30 天' }
+]
+const complete = computed(() => rankings.value?.source === 'history')
+const completeDescription = computed(() => {
+  const value = rankings.value
+  if (!value) return ''
+  return '完整统计：' + formatQueryTime(value.first_ms ?? 0) + ' 至 ' + formatQueryTime(value.until_ms ?? value.collected_at_ms)
+    + ' 的全部 ' + formatMonitorNumber(value.clients.sample_size) + ' 次查询，每 15 分钟更新。'
+})
+const coverageNotice = computed(() => {
+  const value = rankings.value
+  if (!value || !complete.value) return ''
+  const notes: string[] = []
+  const slot = (value.slot_seconds || 900) * 1000
+  if (typeof value.first_ms === 'number' && typeof value.since_ms === 'number' && value.first_ms - value.since_ms >= slot) {
+    notes.push('完整记录从 ' + formatQueryTime(value.first_ms) + ' 开始，此前没有数据。')
+  }
+  if (value.missing_slots) {
+    notes.push('其中约 ' + formatMonitorNumber(Math.round(value.missing_slots * (value.slot_seconds || 900) / 60)) + ' 分钟没有取到（设备离线或忙碌），未计入。')
+  }
+  if (value.partial_slots) {
+    notes.push(formatMonitorNumber(value.partial_slots) + ' 个时段每分钟查询超过 1 万次，只统计了其中最新的部分。')
+  }
+  return notes.join('')
+})
+const rankingsDescription = computed(() => complete.value
+  ? 'ConfigFlow 每 15 分钟从设备取回刚结束的时段，统计其中每一条查询记录，再把所选范围内的时段相加；不是抽样。时段按整点对齐，「本轮」从统计起点所在的整点算起。域名按问题名计数，一条查询可包含多个问题。被拦截域名只统计能确认命中拦截规则的查询。完整统计最多保留 90 天，7 天前的按天保存。'
+  : rankings.value
   ? (rankingsSinceDay.value ? '统计最近 24 小时（本轮起点更早时不再往前统计，以免拖慢核心）' : '从本轮起点起') + '，在记录器「' + rankings.value.recorder + '」保留的记录中，分别取最近 ' + formatMonitorNumber(rankings.value.sample_limit) + ' 条统计前 10 项；这是记录样本排行，不是全量累计。样本数是查询记录条数，不是客户端数或去重域名数。域名按问题名计数，一条查询可包含多个问题。' + (monitorNumber(rankings.value.retention_days) ? '核心保留期 ' + formatMonitorNumber(rankings.value.retention_days) + ' 天。' : '')
   : '排行依据核心保留的查询记录计算。')
 const rankingsUnavailableReason = computed(() => props.overview.rankings && 'reason' in props.overview.rankings

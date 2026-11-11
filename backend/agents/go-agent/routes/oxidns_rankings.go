@@ -21,6 +21,9 @@ import (
 
 const (
 	oxRankingLimit = 10
+	// rows= asks for more: ConfigFlow keeps every name of a short period to add
+	// periods up exactly (the core ranks at most 10,000 records per request).
+	oxRankingMaxRows = 2000
 	// Each confirmed block branch costs one top_qnames request per snapshot.
 	oxRankingBlockLimit = 32
 )
@@ -263,9 +266,18 @@ func oxMonitorParseRankings(raw string) (string, url.Values, *oxMonitorError) {
 	if err != nil || len(raw) > 8192 || !values.Has("since_ms") {
 		return "", nil, oxMonitorBadQuery()
 	}
+	rows := oxRankingLimit
 	for key, items := range values {
-		if len(items) != 1 || key != "recorder" && key != "since_ms" && key != "until_ms" {
+		if len(items) != 1 || key != "recorder" && key != "since_ms" && key != "until_ms" && key != "rows" {
 			return "", nil, oxMonitorBadQuery()
+		}
+		if key == "rows" {
+			n, err := strconv.Atoi(items[0])
+			if err != nil || n < 1 || n > oxRankingMaxRows || strconv.Itoa(n) != items[0] {
+				return "", nil, oxMonitorBadQuery()
+			}
+			rows = n
+			continue
 		}
 		if key != "recorder" {
 			if _, err := strconv.ParseInt(items[0], 10, 64); err != nil || strings.HasPrefix(items[0], "-") {
@@ -273,11 +285,12 @@ func oxMonitorParseRankings(raw string) (string, url.Values, *oxMonitorError) {
 			}
 		}
 	}
-	recorder, query, queryErr := oxMonitorParseQuery(raw, false)
+	values.Del("rows")
+	recorder, query, queryErr := oxMonitorParseQuery(values.Encode(), false)
 	if queryErr != nil {
 		return "", nil, queryErr
 	}
-	query.Set("limit", strconv.Itoa(oxRankingLimit))
+	query.Set("limit", strconv.Itoa(rows))
 	return recorder, query, nil
 }
 
@@ -327,14 +340,14 @@ func (config *oxMonitorConfig) runtimeSnapshot(ctx context.Context, client *http
 	return &status.oxMonitorRuntime, nil
 }
 
-func oxDecodeRanking(data []byte, clients bool) (oxRankingGroup, *oxMonitorError) {
+func oxDecodeRanking(data []byte, clients bool, rows int) (oxRankingGroup, *oxMonitorError) {
 	bad := oxMonitorFail(http.StatusBadGateway, "INVALID_RESPONSE", "OxiDNS API returned invalid ranking statistics")
 	var core struct {
 		OK         bool            `json:"ok"`
 		SampleSize *uint64         `json:"sample_size"`
 		Rows       *[]oxRankingRow `json:"rows"`
 	}
-	if json.Unmarshal(data, &core) != nil || !core.OK || core.SampleSize == nil || core.Rows == nil || *core.SampleSize > oxMonitorClientSampleLimit || len(*core.Rows) > oxRankingLimit {
+	if json.Unmarshal(data, &core) != nil || !core.OK || core.SampleSize == nil || core.Rows == nil || *core.SampleSize > oxMonitorClientSampleLimit || len(*core.Rows) > rows {
 		return oxRankingGroup{}, bad
 	}
 	result := oxRankingGroup{*core.SampleSize, *core.Rows, *core.SampleSize == oxMonitorClientSampleLimit}
@@ -366,7 +379,7 @@ func oxDecodeRanking(data []byte, clients bool) (oxRankingGroup, *oxMonitorError
 // Block branches are terminal, so each query is counted under one matcher and
 // samples add up. A total beyond one request's sample cap is reported at the
 // cap; per-domain counts then cover more than the reported sample.
-func oxMergeRankings(groups []oxRankingGroup) oxRankingGroup {
+func oxMergeRankings(groups []oxRankingGroup, rows int) oxRankingGroup {
 	if len(groups) == 1 {
 		return groups[0]
 	}
@@ -389,8 +402,8 @@ func oxMergeRankings(groups []oxRankingGroup) oxRankingGroup {
 		a, b := result.Rows[i], result.Rows[j]
 		return a.Count > b.Count || a.Count == b.Count && a.Key < b.Key
 	})
-	if len(result.Rows) > oxRankingLimit {
-		result.Rows = result.Rows[:oxRankingLimit]
+	if len(result.Rows) > rows {
+		result.Rows = result.Rows[:rows]
 	}
 	return result
 }
@@ -431,6 +444,10 @@ func (config *oxMonitorConfig) writeRankings(w http.ResponseWriter, ctx context.
 	if recorder == "" && len(config.capabilities.QueryRecorders) > 0 {
 		recorder = config.capabilities.QueryRecorders[0]
 	}
+	rows, rowsErr := strconv.Atoi(query.Get("limit"))
+	if rowsErr != nil || rows < 1 || rows > oxRankingMaxRows {
+		rows = oxRankingLimit
+	}
 	tag, err := config.recorder(recorder)
 	if err != nil {
 		oxMonitorWriteError(w, err)
@@ -457,7 +474,7 @@ func (config *oxMonitorConfig) writeRankings(w http.ResponseWriter, ctx context.
 		if fetchErr != nil {
 			return oxRankingGroup{}, fetchErr
 		}
-		return oxDecodeRanking(data, kind == "top_clients")
+		return oxDecodeRanking(data, kind == "top_clients", rows)
 	}
 	clients, err := fetch("top_clients", query)
 	if err != nil {
@@ -499,7 +516,7 @@ func (config *oxMonitorConfig) writeRankings(w http.ResponseWriter, ctx context.
 		} else if adguard {
 			reason = "standard_adguard"
 		}
-		group := oxMergeRankings(groups)
+		group := oxMergeRankings(groups, rows)
 		blocked = map[string]interface{}{"available": true, "reason": reason, "matcher_tags": matchers, "sample_size": group.SampleSize, "rows": group.Rows, "at_limit": group.AtLimit}
 		if len(matchers) == 1 {
 			blocked["matcher_tag"] = matchers[0]
@@ -509,5 +526,5 @@ func (config *oxMonitorConfig) writeRankings(w http.ResponseWriter, ctx context.
 		oxMonitorWriteError(w, err)
 		return
 	}
-	JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "recorder": tag, "collected_at_ms": collectedAt, "source_revision": config.sourceRevision, "runtime_revision": running.revision(), "instance_id": oxSourceInstance(health), "retention_days": config.rankings.retention[tag], "sample_limit": oxMonitorClientSampleLimit, "clients": clients, "domains": domains, "blocked": blocked})
+	JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "recorder": tag, "collected_at_ms": collectedAt, "source_revision": config.sourceRevision, "runtime_revision": running.revision(), "instance_id": oxSourceInstance(health), "retention_days": config.rankings.retention[tag], "sample_limit": oxMonitorClientSampleLimit, "rows_limit": rows, "clients": clients, "domains": domains, "blocked": blocked})
 }

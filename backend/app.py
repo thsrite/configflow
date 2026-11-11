@@ -180,6 +180,9 @@ if __name__ == '__main__':
         # 订阅与规则集按各自间隔在服务端更新（系统设置 → 定时任务）
         from backend.utils.scheduled_refresh import start_loop as start_scheduled_refresh
         start_scheduled_refresh()
+        # OxiDNS 请求排行的完整统计：每 15 分钟从各设备取回一个时段，不依赖面板是否打开
+        from backend.agents import oxidns_ranking_history
+        oxidns_ranking_history.start_loop()
         # Agent 监控历史在内存中，按间隔写入磁盘；SIGTERM（docker stop、supervisord）
         # 和 Ctrl+C 时先保存再退出。调试 reloader 的父进程不接收心跳，不参与
         from backend.agents import metrics_flush
