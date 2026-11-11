@@ -88,6 +88,33 @@ def test_preview_rejects_invalid_filters(regex_env, patch, message):
     assert message in response.json['message']
 
 
+@pytest.mark.parametrize('include,exclude,expected', [
+    # Mihomo splits a group filter on backticks: parts are ordered buckets, each node once.
+    ('JP`HK 02`HK', '', ['JP 01', 'HK 02', 'HK 01', 'HK manual']),
+    ('(?i)^jp`(?i)^hk', 'manual', ['JP 01', 'HK 01', 'HK 02']),
+    ('HK 02`', '', ['HK 02', 'HK 01', 'JP 01', '广告', 'HK manual']),
+    # Exclusions render backticks as name characters, so they stay one pattern.
+    ('JP`HK', 'HK`02', ['JP 01', 'HK 01', 'HK 02', 'HK manual']),
+])
+def test_preview_orders_backtick_filter_buckets_like_mihomo(regex_env, include, exclude, expected):
+    client, _ = regex_env
+    response = client.post('/api/proxy-groups/preview-regex', json={
+        'source': 'aggregation', 'aggregations': ['agg'], 'regex': include, 'exclude_regex': exclude,
+    })
+    assert response.status_code == 200, response.json
+    assert [node['name'] for node in response.json['nodes']] == expected
+    assert response.json['count'] == len(expected)
+
+
+def test_preview_reports_invalid_backtick_filter_part(regex_env):
+    client, _ = regex_env
+    response = client.post('/api/proxy-groups/preview-regex', json={
+        'source': 'subscription', 'subscriptions': ['feed'], 'regex': 'HK`(',
+    })
+    assert response.status_code == 400
+    assert '正则表达式无效' in response.json['message']
+
+
 def test_aggregation_preview_applies_source_filter_before_group_exclusion(regex_env):
     client, repository = regex_env
     shared = repository.get_shared()
