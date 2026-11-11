@@ -117,6 +117,28 @@ describe('OxiDNS dashboard periods and availability', () => {
     expect(helpText(wrapper, '上游服务器排行')).toContain('包含成功和失败的已完成尝试')
   })
 
+  // Upstream failures are single attempts; a query another upstream answered did not fail.
+  it('tells failed attempts apart from failed requests', () => {
+    const wrapper = panel()
+    const headers = wrapper.get('[aria-label="上游服务器排行"]').findAll('th').map(cell => cell.text())
+    expect(headers).toEqual(['上游服务器', '请求尝试', '失败尝试', '平均响应时间'])
+    expect(helpText(wrapper, '上游服务器排行')).toContain('可以多于「失败请求」')
+    expect(wrapper.text()).toContain('最终未能应答的查询')
+  })
+
+  it('says when the rankings window stops a day back instead of at the round start', () => {
+    const data = overview()
+    const start = data.statistics!.started_at_ms
+    expect(helpText(panel(data), '请求排行')).toContain('从本轮起点起')
+    ;(data.rankings as OxiDNSRankings).since_ms = start
+    expect(helpText(panel(data), '请求排行')).toContain('从本轮起点起')
+    ;(data.rankings as OxiDNSRankings).since_ms = start + 21 * 86_400_000
+    const text = helpText(panel(data), '请求排行')
+    expect(text).toContain('统计最近 24 小时')
+    expect(text).not.toContain('从本轮起点起')
+    expect(text).toContain('记录样本排行，不是全量累计')
+  })
+
   it('keeps older Agent metrics visible while disabling reset and explaining unavailable rankings', () => {
     const data = overview()
     data.statistics = null

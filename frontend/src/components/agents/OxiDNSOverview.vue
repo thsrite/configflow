@@ -7,7 +7,7 @@
       <OxiDNSMetric label="近期请求速率" :value="qps" unit="次/秒" :precision="2" :hint="qps === null ? '采样中，需两次数据计算' : '最近两次采样之间的平均值'" />
       <OxiDNSMetric label="平均响应时间" :value="overview.metrics.avg_latency_ms" unit="ms" :precision="2" :hint="periodLabel" />
       <OxiDNSMetric label="缓存命中率" :value="cacheRate" unit="%" :precision="1" :hint="selectedCache === '__all__' ? '全部缓存 · 命中数 / 查找次数' : selectedTag + ' · 命中数 / 查找次数'" />
-      <OxiDNSMetric label="失败请求" :value="overview.metrics.failed_total" :hint="periodLabel" />
+      <OxiDNSMetric label="失败请求" :value="overview.metrics.failed_total" :hint="periodLabel + ' · 最终未能应答的查询'" />
       <OxiDNSMetric label="当前处理中" :value="overview.metrics.inflight" hint="采样那一刻尚未完成的请求，0 表示当时已处理完" />
     </div>
 
@@ -41,11 +41,11 @@
       </div>
     </section>
 
-    <SectionCard class="min-w-0" title="上游服务器排行" :help="periodLabel + '，按请求尝试次数排列 · 前 10 项。竞速或重试可能为一次 DNS 查询产生多次上游请求；平均响应时间包含成功和失败的已完成尝试。'" :padded="false">
+    <SectionCard class="min-w-0" title="上游服务器排行" :help="periodLabel + '，按请求尝试次数排列 · 前 10 项。竞速或重试可能为一次 DNS 查询产生多次上游请求；失败尝试是单次上游请求失败，同一查询的其他上游应答时，这次查询不算失败请求，所以各上游的失败尝试可以多于「失败请求」。平均响应时间包含成功和失败的已完成尝试。'" :padded="false">
       <EmptyState v-if="!upstreams.length" title="暂无上游请求统计" description="尚无上游请求，或当前核心未返回具体上游服务器的指标。" />
       <div v-else class="cf-table-wrap max-w-full" tabindex="0" role="region" aria-label="上游服务器排行">
         <table class="cf-table">
-          <thead><tr><th class="min-w-40">上游服务器</th><th class="text-right">请求尝试</th><th class="text-right">失败</th><th class="text-right">平均响应时间</th></tr></thead>
+          <thead><tr><th class="min-w-40">上游服务器</th><th class="text-right">请求尝试</th><th class="text-right">失败尝试</th><th class="text-right">平均响应时间</th></tr></thead>
           <tbody>
             <tr v-for="upstream in upstreams" :key="upstream.id || upstream.tag + ':' + upstream.upstream">
               <td><span class="block break-all font-mono text-xs">{{ upstream.address || upstream.upstream }}</span><span class="mt-1 block break-all text-xs text-muted-foreground">{{ upstream.tag }}<template v-if="upstream.address && upstream.address !== upstream.upstream"> · {{ upstream.upstream }}</template></span></td>
@@ -132,8 +132,11 @@ const rankingSampleDescription = computed(() => {
   }
   return '客户端排行基于 ' + formatMonitorNumber(clients.sample_size) + ' 条查询记录；域名排行基于 ' + formatMonitorNumber(domains.sample_size) + ' 条查询记录。'
 })
+// The server stops the window a day back; older records would not change a busy resolver's newest sample.
+const rankingsSinceDay = computed(() => !!rankings.value && !!props.overview.statistics
+  && typeof rankings.value.since_ms === 'number' && rankings.value.since_ms > props.overview.statistics.started_at_ms)
 const rankingsDescription = computed(() => rankings.value
-  ? '从本轮起点起，在记录器「' + rankings.value.recorder + '」保留的记录中，分别取最近 ' + formatMonitorNumber(rankings.value.sample_limit) + ' 条统计前 10 项；这是记录样本排行，不是全量累计。样本数是查询记录条数，不是客户端数或去重域名数。域名按问题名计数，一条查询可包含多个问题。' + (monitorNumber(rankings.value.retention_days) ? '核心保留期 ' + formatMonitorNumber(rankings.value.retention_days) + ' 天。' : '')
+  ? (rankingsSinceDay.value ? '统计最近 24 小时（本轮起点更早时不再往前统计，以免拖慢核心）' : '从本轮起点起') + '，在记录器「' + rankings.value.recorder + '」保留的记录中，分别取最近 ' + formatMonitorNumber(rankings.value.sample_limit) + ' 条统计前 10 项；这是记录样本排行，不是全量累计。样本数是查询记录条数，不是客户端数或去重域名数。域名按问题名计数，一条查询可包含多个问题。' + (monitorNumber(rankings.value.retention_days) ? '核心保留期 ' + formatMonitorNumber(rankings.value.retention_days) + ' 天。' : '')
   : '排行依据核心保留的查询记录计算。')
 const rankingsUnavailableReason = computed(() => props.overview.rankings && 'reason' in props.overview.rankings
   ? props.overview.rankings.reason : '当前 Agent 未返回排行数据，请确认已启用查询记录并升级 Agent。')

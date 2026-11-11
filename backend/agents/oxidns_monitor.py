@@ -5,6 +5,8 @@ import ipaddress
 import json
 import math
 import re
+import threading
+import time
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
@@ -18,6 +20,15 @@ MIN_AGENT_VERSION = '1.7.0-go'
 MIN_CLIENTS_AGENT_VERSION = '1.7.1-go'
 MIN_DASHBOARD_AGENT_VERSION = '1.8.14-go'
 CLIENT_SAMPLE_LIMIT = 10000
+# Rankings count the newest CLIENT_SAMPLE_LIMIT records of their window, yet the
+# core reads the whole window to find them. Since a statistics start weeks back,
+# one request outlasts the Agent's 5 s limit and holds up the core's query
+# records meanwhile; a busy resolver fills the sample within minutes anyway.
+RANKING_WINDOW_MS = 24 * 3600 * 1000
+# The overview is polled every 10 s; rankings are reused for this long, and
+# after a timeout not asked for again for the second interval.
+RANKING_REUSE_SECONDS = 60
+RANKING_BACKOFF_SECONDS = 180
 MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 MAX_INTEGER = 2 ** 53 - 1
 
@@ -280,6 +291,7 @@ def _rankings_unavailable(code, **fields):
         'too_many_block_rules': (f'拦截规则分组超过 {BLOCK_RANKING_MATCHER_LIMIT} 个，暂不统计被拦截域名排行；'
                                  '请合并拒绝/黑洞规则后再查看。'),
         'snapshot_changed': '采集期间核心或配置发生变化，请稍后刷新。',
+        'rankings_paused': f'上次统计排行超时，已暂停 {RANKING_BACKOFF_SECONDS // 60} 分钟后再试，以免影响查询记录。',
     }
     reason = reasons.get(code, MESSAGES.get(code.upper(), '暂时无法获取排行，请稍后刷新。'))
     return {'available': False, 'success': False, 'code': code, 'reason': reason,
@@ -321,8 +333,47 @@ def _ranking_section(value, kind):
     return {'sample_size': sample, 'rows': result, 'at_limit': at_limit}
 
 
+_rankings_kept = {}  # (data dir, Agent id) -> {'key', 'result', 'at', 'failed_at'}
+_rankings_lock = threading.Lock()
+
+
+def _kept_rankings(manager, agent, params, snapshot, state, recorders, *, manual):
+    """_dashboard_rankings, reused for a minute and paused after a timeout.
+
+    Kept per Agent for one statistics round on one core and configuration. A
+    manual reset always asks again.
+    """
+    identity = (str(manager.repository.data_dir), agent['id'])
+    key = (params.get('recorder', ''), tuple(recorders), state['generation'], state['instance_id'],
+           state['source_revision'], state['runtime_revision'])
+    now = time.monotonic()
+    with _rankings_lock:
+        kept = _rankings_kept.get(identity)
+        kept = kept if kept is not None and kept['key'] == key else None
+    if kept is not None and not manual:
+        if kept['result'] is not None and kept['failed_at'] is None and 0 <= now - kept['at'] < RANKING_REUSE_SECONDS:
+            return kept['result']
+        if kept['failed_at'] is not None and 0 <= now - kept['failed_at'] < RANKING_BACKOFF_SECONDS:
+            return kept['result'] or _rankings_unavailable('rankings_paused')
+    try:
+        result = _dashboard_rankings(agent, params, snapshot, state, recorders)
+    except MonitorError as error:
+        if error.code in ('CORE_UNREACHABLE', 'AGENT_UNREACHABLE'):
+            previous = kept['result'] if kept else None
+            with _rankings_lock:
+                _rankings_kept[identity] = {'key': key, 'result': previous,
+                                            'at': kept['at'] if kept else now, 'failed_at': now}
+            if previous is not None and not manual:
+                return previous  # this round's last answer, rather than an error
+        raise
+    with _rankings_lock:
+        _rankings_kept[identity] = {'key': key, 'result': result, 'at': now, 'failed_at': None}
+    return result
+
+
 def _dashboard_rankings(agent, params, snapshot, state, recorders):
-    bounds = {'since_ms': state['started_at_ms'], 'until_ms': snapshot['collected_at_ms']}
+    bounds = {'since_ms': max(state['started_at_ms'], snapshot['collected_at_ms'] - RANKING_WINDOW_MS),
+              'until_ms': snapshot['collected_at_ms']}
     if params.get('recorder') and params['recorder'] not in recorders:
         raise MonitorError('INVALID_QUERY', 400)
     if not recorders:
@@ -409,7 +460,7 @@ def _dashboard_overview(manager, agent_id, params, *, manual=False):
             # GET must return the new list so viewers can recover automatically;
             # a manual reset remains strict about its explicitly selected target.
             effective_params = params if manual or params.get('recorder') in recorders else {}
-            rankings = _dashboard_rankings(agent, effective_params, snapshot, state, recorders)
+            rankings = _kept_rankings(manager, agent, effective_params, snapshot, state, recorders, manual=manual)
         except MonitorError as error:
             if manual or error.code == 'INVALID_QUERY':
                 raise
