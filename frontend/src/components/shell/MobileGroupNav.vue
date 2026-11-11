@@ -99,7 +99,7 @@ import { useElementSize, useMediaQuery } from '@vueuse/core'
 import { Check, ChevronDown, X } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
-import { MOBILE_TAB_PATHS, NAV_GROUPS, scopeOfPath, type NavItem } from '@/navigation'
+import { MOBILE_RELATED_PAGES, MOBILE_TAB_PATHS, NAV_GROUPS, navItemOf, scopeOfPath, type NavGroup, type NavItem } from '@/navigation'
 import { iconOf } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
@@ -115,7 +115,12 @@ const { width } = useElementSize(navContainer)
 const isMobileLayout = useMediaQuery('(max-width: 900px)')
 const isTablet = useMediaQuery('(min-width: 640px) and (max-width: 900px)')
 
-const group = computed(() => NAV_GROUPS.find(g => g.scope === scopeOfPath(props.activePath)))
+// 规则等底栏页面只列相关页面（见 MOBILE_RELATED_PAGES），其他页面列整个分组
+const group = computed<Pick<NavGroup, 'tabLabel' | 'items'> | undefined>(() => {
+  const related = MOBILE_RELATED_PAGES[props.activePath]
+  if (related) return { tabLabel: related.label, items: related.paths.map(navItemOf).filter((item): item is NavItem => !!item) }
+  return NAV_GROUPS.find(g => g.scope === scopeOfPath(props.activePath))
+})
 const items = computed<NavItem[]>(() =>
   (group.value?.items ?? []).filter(
     item => item.flag !== 'subscriptionAggregation' || props.subscriptionAggregationEnabled

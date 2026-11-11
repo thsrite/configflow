@@ -30,6 +30,17 @@ export const CURRENT_NAV_PATH: InjectionKey<Readonly<Ref<string>>> = Symbol('cur
 /** 是否为导航里的页面（手机上已由分组按钮或底栏写明所在页） */
 export const isNavPath = (path: string) => NAV_GROUPS.some(group => group.items.some(item => item.path === path))
 
+/**
+ * 底栏直达页面上的手机切换按钮只列与它相关的页面，不列整个分组；
+ * 其余页面仍可从底栏「更多」进入。
+ */
+export const MOBILE_RELATED_PAGES: Record<string, { label: string; paths: string[] }> = {
+  '/rules': { label: '规则', paths: ['/rules', '/rule-library', '/proxy-groups', '/domain-discovery'] }
+}
+
+export const navItemOf = (path: string): NavItem | undefined =>
+  NAV_GROUPS.flatMap(group => group.items).find(item => item.path === path)
+
 /** 手机底栏直达的页面；其余页面收进底栏「更多」 */
 export const MOBILE_TAB_PATHS = ['/dashboard', '/oxidns', '/mihomo', '/rules', '/agents'] as const
 
