@@ -745,15 +745,78 @@ def test_change_list_shares_the_status_worker_and_cache(setup, monkeypatch):
     assert checker.get_content_sync(agent, config, BASE_URL, prepare)['status'] == 'changed'
     assert push_diff_of(setup) == result
     assert len(calls) == 1 and len(built) == 1 and not executor.jobs
-    # A later status-only refresh does not rebuild a list nobody asked for.
+    # A later refresh from the device list lists the changes too: opening the
+    # list afterwards needs no preparation of its own.
     checker.invalidate()
     assert checker.get_content_sync(agent, config, BASE_URL, prepare) == {'status': 'checking'}
     executor.run()
-    assert len(built) == 1
-    # Asking again prepares once more and lists the changes.
+    assert len(built) == 2 and len(calls) == 2
+    again = push_diff_of(setup)
+    assert again['status'] == 'changed' and again['version'] != result['version']
+    assert len(built) == 2 and len(calls) == 2 and not executor.jobs
+
+
+def test_the_device_list_check_leaves_the_change_list_ready(setup, monkeypatch):
+    """The Agent page's comparison prepared the whole bundle; whoever opens
+    「待推送的变更」 next must not wait for the same preparation again."""
+    checker, executor, now, agent, config, prepare, calls = setup
+    built = []
+    monkeypatch.setattr('backend.agents.push_diff.build_push_diff',
+                        lambda item, candidate, repository, **_: built.append(candidate) or {'status': 'changed', 'files': ['one']})
+    config['test_rule'] = 'DOMAIN,changed.example.test\n'
+    assert checker.get_content_sync(agent, config, BASE_URL, prepare) == {'status': 'checking'}
+    executor.run()
+    assert checker.get_content_sync(agent, config, BASE_URL, prepare)['status'] == 'changed'
+    assert len(calls) == 1 and len(built) == 1
+    first = push_diff_of(setup)
+    assert first['status'] == 'changed' and first['files'] == ['one'] and first['version']
+    assert push_diff_of(setup) == first
+    assert len(calls) == 1 and len(built) == 1 and not executor.jobs
+    # The list lives as long as the status it belongs to, and is renewed with it.
+    now[0] += 899
+    assert push_diff_of(setup) == first and not executor.jobs
+    now[0] += 1
     assert push_diff_of(setup) == {'status': 'checking'}
     executor.run()
-    assert push_diff_of(setup)['status'] == 'changed' and len(built) == 2
+    assert push_diff_of(setup)['version'] != first['version'] and len(calls) == 2
+
+
+def test_a_device_found_in_sync_gets_no_change_list_and_drops_an_old_one(setup, monkeypatch):
+    checker, executor, _, agent, config, prepare, calls = setup
+    built = []
+    monkeypatch.setattr('backend.agents.push_diff.build_push_diff',
+                        lambda *_, **__: built.append(1) or {'status': 'changed', 'files': []})
+    original = config['test_rule']
+    config['test_rule'] = 'DOMAIN,changed.example.test\n'
+    checker.get_content_sync(agent, config, BASE_URL, prepare)
+    executor.run()
+    assert len(built) == 1 and len(checker._details) == 1
+    # Edited back: the comparison answers synced and the list of the edit goes.
+    config['test_rule'] = original
+    assert checker.get_content_sync(agent, config, BASE_URL, prepare) == {'status': 'checking'}
+    executor.run()
+    assert checker.get_content_sync(agent, config, BASE_URL, prepare)['status'] == 'synced'
+    assert len(built) == 1 and not checker._details
+    assert push_diff_of(setup)['status'] == 'synced' and not executor.jobs
+
+
+def test_a_list_pushed_out_by_newer_ones_is_prepared_again_on_request(setup, monkeypatch):
+    checker, executor, _, agent, config, prepare, calls = setup
+    monkeypatch.setattr('backend.agents.push_diff.build_push_diff', lambda *_, **__: {'status': 'changed', 'files': []})
+    config['test_rule'] = 'DOMAIN,changed.example.test\n'
+    checker._max_details = 2
+    devices = [{**agent, 'id': f'agent-{index}'} for index in range(3)]
+    for item in devices:
+        checker.get_content_sync(item, config, BASE_URL, prepare)
+        executor.run()
+    assert len(checker._details) == 2 and len(calls) == 3
+    # The two newest answer at once; the oldest was pushed out and is prepared again.
+    for item in devices[1:]:
+        assert checker.get_push_diff(item, config, BASE_URL, prepare)['status'] == 'changed'
+    assert not executor.jobs and len(calls) == 3
+    assert checker.get_push_diff(devices[0], config, BASE_URL, prepare) == {'status': 'checking'}
+    executor.run()
+    assert checker.get_push_diff(devices[0], config, BASE_URL, prepare)['status'] == 'changed' and len(calls) == 4
 
 
 def test_synced_and_unavailable_answers_skip_the_change_list(setup, monkeypatch):

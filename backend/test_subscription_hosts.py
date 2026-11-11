@@ -338,7 +338,8 @@ def test_hosts_change_invalidates_agent_content_checks_once(repo, monkeypatch):
     assert invalidate.call_count == 2
 
 
-def test_content_checker_invalidation_drops_finished_and_in_flight_results():
+def test_content_checker_invalidation_drops_finished_and_in_flight_results(monkeypatch):
+    from types import SimpleNamespace
     from backend.agents.content_sync import ContentSyncChecker
     from backend.test_agent_content_sync import DeferredExecutor
     executor = DeferredExecutor()
@@ -347,7 +348,9 @@ def test_content_checker_invalidation_drops_finished_and_in_flight_results():
     agent = {'id': 'a', 'profile_id': 'default', 'service_type': 'mihomo', 'config_version': 'x',
              'applied_content': {'fingerprint': fingerprints['value'], 'profile_id': 'default', 'service_type': 'mihomo',
                                  'config_version': 'x', 'deployment_id': 'd', 'config_path': 'config.yaml'}}
-    checker._prepare_fingerprint = lambda *_args: fingerprints['value']
+    # The worker prepares a bundle and fingerprints its manifest; here the manifest is the fingerprint.
+    checker._prepare_bundle = lambda *_args: SimpleNamespace(manifest=fingerprints['value'])
+    monkeypatch.setattr('backend.agents.deployment_bundle.deployment_content_fingerprint', lambda manifest: manifest)
     from backend.agents import content_sync as module
     query = lambda: checker.get_content_sync(agent, {'profile_id': 'default'}, '', None,
                                              repository=module._current_repository())
