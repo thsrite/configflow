@@ -74,7 +74,9 @@ export function useAgentUpgrades(onSuccess: () => void) {
     if (previous?.update_id === state.update_id && terminal.has(previous.status) && !terminal.has(state.status)) return
     if (previous?.update_id !== state.update_id && previous?.updated_at && state.updated_at && state.updated_at < previous.updated_at) return
     upgrades[id] = { ...state, events: state.events ?? (previous?.update_id === state.update_id ? previous.events : undefined), query_error: false }
-    if (state.status === 'succeeded' && previous?.status !== 'succeeded') onSuccess()
+    // 只有在这里看着它变成成功才通知；首次载入时已经成功的任务来自刚读到的列表，
+    // 再通知一次只会让页面为每台设备把完整列表重读一遍
+    if (state.status === 'succeeded' && previous && previous.status !== 'succeeded') onSuccess()
     schedule(id, !previous || confirmedRequest)
   }
   async function refresh(id: string) {
