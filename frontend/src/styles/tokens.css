@@ -511,6 +511,11 @@ body {
     margin-left: 0;
   }
 
+  /* 这一行占满，但按钮保持本来的宽度，不被拉长 */
+  .cf-page-header--untitled .cf-page-actions > button {
+    flex: 0 0 auto;
+  }
+
   .cf-section-header {
     gap: var(--cf-sp-2);
   }
