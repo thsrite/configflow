@@ -21,6 +21,9 @@ export interface OxiDNSRankings {
   success: true
   recorder: string
   collected_at_ms: number
+  /** Window the newest sample is taken from: the round's start or the last 24 hours, whichever is later. */
+  since_ms?: number
+  until_ms?: number
   source_revision: string
   instance_id: string
   retention_days: MonitorNumber

@@ -15,6 +15,14 @@ from backend.test_oxidns_metrics import server, cache
 from backend.test_agent_upgrade_auth import authenticated_app
 
 
+@pytest.fixture(autouse=True)
+def fresh_rankings(monkeypatch):
+    """Every poll asks for rankings again, unless a test turns reuse on."""
+    monkeypatch.setattr(monitor, 'RANKING_REUSE_SECONDS', 0)
+    monkeypatch.setattr(monitor, 'RANKING_BACKOFF_SECONDS', 0)
+    monkeypatch.setattr(monitor, '_rankings_kept', {})
+
+
 class Manager:
     def __init__(self, directory, agent_id='one'):
         self.repository = SimpleNamespace(data_dir=Path(directory))
@@ -184,6 +192,9 @@ def test_unavailable_rankings_leave_existing_metrics_usable(tmp_path, monkeypatc
     previous = monitor.overview(manager, 'one')
     current.update(snapshot(now=2000, count=20))
     transport(monkeypatch, current, monitor.MonitorError('CORE_UNREACHABLE'))
+    # Without an earlier answer of this round (a timeout after one keeps showing
+    # it: test_after_a_timeout_rankings_rest_and_the_overview_still_answers).
+    monitor._rankings_kept.clear()
     result = monitor.overview(manager, 'one')
     assert result['statistics'] == previous['statistics']
     assert result['metrics']['requests_total'] == 10
@@ -521,3 +532,151 @@ def test_too_many_block_rules_reason_is_actionable(tmp_path, monkeypatch):
     ranks['blocked'] = {'available': False, 'reason': '当前配置未包含可确认的标准 AdGuard 拦截路径'}
     result = monitor.overview(manager, 'one')['rankings']['blocked']
     assert result['code'] == 'unsupported_configuration' and '拒绝/黑洞' in result['reason']
+
+
+# --- Rankings: bounded window, reuse between polls, pause after a timeout ----
+
+@pytest.fixture
+def clock(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(monitor, 'time', SimpleNamespace(monotonic=lambda: now[0]))
+    monkeypatch.setattr(monitor, 'RANKING_REUSE_SECONDS', 60)
+    monkeypatch.setattr(monitor, 'RANKING_BACKOFF_SECONDS', 180)
+    return now
+
+
+def ranking_calls(calls):
+    return [params for _, endpoint, params in calls if endpoint == 'rankings']
+
+
+def test_rankings_cover_at_most_the_last_day_of_a_long_round(tmp_path, monkeypatch):
+    """A statistics round can run for weeks; the core reads the whole window
+    to find the newest sample, so the window stops a day back."""
+    day = monitor.RANKING_WINDOW_MS
+    current, ranks, calls = transport(monkeypatch, snapshot(now=1000), ranking(now=1000))
+    manager = Manager(tmp_path)
+    monitor.overview(manager, 'one')
+    assert ranking_calls(calls)[-1] == {'since_ms': '1000', 'until_ms': '1000'}
+    # Hours later the window still starts at the round's start.
+    current['collected_at_ms'] = ranks['collected_at_ms'] = 1000 + day // 2
+    result = monitor.overview(manager, 'one')
+    assert ranking_calls(calls)[-1] == {'since_ms': '1000', 'until_ms': str(1000 + day // 2)}
+    assert result['statistics']['started_at_ms'] == 1000
+    # Weeks later: the last 24 hours, while the totals keep the round's start.
+    later = 1000 + 23 * day
+    current['collected_at_ms'] = ranks['collected_at_ms'] = later
+    result = monitor.overview(manager, 'one')
+    assert ranking_calls(calls)[-1] == {'since_ms': str(later - day), 'until_ms': str(later)}
+    assert (result['rankings']['since_ms'], result['rankings']['until_ms']) == (later - day, later)
+    assert result['statistics']['started_at_ms'] == 1000
+
+
+def test_rankings_are_reused_between_polls_for_a_minute(tmp_path, monkeypatch, clock):
+    current, ranks, calls = transport(monkeypatch)
+    manager = Manager(tmp_path)
+    first = monitor.overview(manager, 'one')
+    assert len(ranking_calls(calls)) == 1 and first['rankings']['success'] is True
+    for step in range(5):  # the panel polls every 10 s
+        clock[0] += 10
+        current['collected_at_ms'] += 10_000
+        polled = monitor.overview(manager, 'one')
+        assert polled['rankings'] == first['rankings']
+        # The counters are read fresh every time.
+        assert polled['collected_at'] != first['collected_at']
+    assert len(ranking_calls(calls)) == 1
+    clock[0] += 10  # 60 s after the first
+    current['collected_at_ms'] += 10_000
+    ranks['collected_at_ms'] = current['collected_at_ms']
+    monitor.overview(manager, 'one')
+    assert len(ranking_calls(calls)) == 2
+
+
+def test_a_reset_or_another_recorder_asks_again_at_once(tmp_path, monkeypatch, clock):
+    current, ranks, calls = transport(monkeypatch)
+    manager = Manager(tmp_path)
+    monitor.overview(manager, 'one')
+    current['capabilities'] = {'query_recorders': ['records', 'other']}
+    monitor.overview(manager, 'one')
+    assert len(ranking_calls(calls)) == 2  # the recorder list changed
+    monitor.overview(manager, 'one')
+    assert len(ranking_calls(calls)) == 2
+    clock[0] += 1
+    monitor.reset_dashboard(manager, 'one', {})
+    assert len(ranking_calls(calls)) == 3  # a manual reset never reuses
+    monitor.overview(manager, 'one')
+    assert len(ranking_calls(calls)) == 3  # and its answer serves the new round
+    ranks['recorder'] = 'other'
+    monitor.overview(manager, 'one', MultiDict({'recorder': 'other'}))
+    assert ranking_calls(calls)[-1]['recorder'] == 'other' and len(ranking_calls(calls)) == 4
+
+
+@pytest.mark.parametrize('code', ['CORE_UNREACHABLE', 'AGENT_UNREACHABLE'])
+def test_after_a_timeout_rankings_rest_and_the_overview_still_answers(tmp_path, monkeypatch, clock, code):
+    """A timed-out ranking keeps the core busy; asking again every 10 s kept the
+    query records page failing as well."""
+    current, ranks, calls = transport(monkeypatch)
+    manager = Manager(tmp_path)
+    monitor.overview(manager, 'one')
+    clock[0] += 61
+    good = copy.deepcopy(ranks)
+    monkeypatch.setattr(monitor, '_request', _failing_rankings(calls, current, monitor.MonitorError(code)))
+    failed = monitor.overview(manager, 'one')
+    assert len(ranking_calls(calls)) == 2
+    # The last answer of this round stays on screen; the counters keep updating.
+    assert failed['rankings']['success'] is True and failed['metrics']['requests_total'] is not None
+    for _ in range(17):
+        clock[0] += 10
+        assert monitor.overview(manager, 'one')['rankings']['success'] is True
+    assert len(ranking_calls(calls)) == 2
+    clock[0] += 10  # 180 s after the timeout
+    monkeypatch.setattr(monitor, '_request', _failing_rankings(calls, current, good))
+    monitor.overview(manager, 'one')
+    assert len(ranking_calls(calls)) == 3
+
+
+def test_a_timeout_without_an_earlier_answer_says_why_rankings_wait(tmp_path, monkeypatch, clock):
+    current, _, calls = transport(monkeypatch)
+    monkeypatch.setattr(monitor, '_request', _failing_rankings(calls, current, monitor.MonitorError('CORE_UNREACHABLE')))
+    manager = Manager(tmp_path)
+    first = monitor.overview(manager, 'one')
+    assert first['rankings']['available'] is False and first['rankings']['code'] == 'core_unreachable'
+    clock[0] += 10
+    paused = monitor.overview(manager, 'one')
+    assert paused['rankings']['code'] == 'rankings_paused' and '查询记录' in paused['rankings']['reason']
+    assert len(ranking_calls(calls)) == 1
+    # A manual reset is asked for explicitly and does not wait.
+    with pytest.raises(monitor.MonitorError):
+        monitor.reset_dashboard(manager, 'one', {})
+    assert len(ranking_calls(calls)) == 2
+
+
+def test_other_ranking_errors_do_not_pause(tmp_path, monkeypatch, clock):
+    current, _, calls = transport(monkeypatch)
+    monkeypatch.setattr(monitor, '_request', _failing_rankings(calls, current, monitor.MonitorError('INVALID_RESPONSE')))
+    manager = Manager(tmp_path)
+    for _ in range(3):
+        assert monitor.overview(manager, 'one')['rankings']['code'] == 'invalid_response'
+        clock[0] += 10
+    assert len(ranking_calls(calls)) == 3
+
+
+def test_kept_rankings_belong_to_one_device(tmp_path, monkeypatch, clock):
+    current, ranks, calls = transport(monkeypatch)
+    manager = Manager(tmp_path)
+    manager.agents['two'] = {**manager.agents['one'], 'id': 'two', 'host': '192.0.2.99'}
+    monitor.overview(manager, 'one')
+    monitor.overview(manager, 'two')
+    monitor.overview(manager, 'one')
+    assert [agent for agent, endpoint, _ in calls if endpoint == 'rankings'] == ['one', 'two']
+
+
+def _failing_rankings(calls, current, answer):
+    def request(agent, endpoint, params=None, **kwargs):
+        calls.append((agent['id'], endpoint, copy.deepcopy(params)))
+        if endpoint == 'overview':
+            return copy.deepcopy(current)
+        if isinstance(answer, Exception):
+            raise answer
+        return copy.deepcopy(answer)
+    return request
+
