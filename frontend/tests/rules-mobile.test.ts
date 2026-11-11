@@ -106,6 +106,16 @@ describe('rules on a phone', () => {
     document.body.querySelectorAll('[role="dialog"]').forEach(dialog => dialog.remove())
   })
 
+  it('makes the matched value its own tap target so touch adjustment cannot steer the tap to the DNS button', async () => {
+    const wrapper = await render()
+    const value = wrapper.get('[data-rule-key] .rule-value')
+    // 匹配值上直接绑了点按：浏览器修正点按目标时会优先选中它，而不是下方的 DNS 按钮
+    await value.trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('编辑规则')
+    document.body.querySelectorAll('[role="dialog"]').forEach(dialog => dialog.remove())
+  })
+
   it('marks disabled rules in text because the eye icon is gone', async () => {
     network.state.rules[0].enabled = false
     const wrapper = await render()

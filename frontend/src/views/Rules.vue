@@ -299,7 +299,8 @@
               {{ item.itemType === 'rule' ? item.rule_type : 'RULE-SET' }}
             </span>
 
-            <div class="rule-value flex min-w-0 flex-1 items-center gap-2">
+            <!-- 匹配值本身也是点按目标：否则手机浏览器的「点按目标修正」会把落在这里的点按吸到下一行的 DNS 按钮 -->
+            <div class="rule-value flex min-w-0 flex-1 items-center gap-2" @click.stop="onRowTap($event, item)">
               <template v-if="item.itemType === 'rule'">
                 <!-- MATCH 没有匹配值：不留空 span，否则 gap 会把后面的 chip 推离列首 -->
                 <span v-if="item.value" class="min-w-0 truncate font-mono text-[12.5px] text-foreground" :title="item.value">
