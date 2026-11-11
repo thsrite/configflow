@@ -1,7 +1,7 @@
 <template>
   <DropdownMenu>
     <DropdownMenuTrigger as-child>
-      <Button variant="outline" class="min-h-11 max-sm:size-11 max-sm:gap-0" :disabled="disabled || !!running" :aria-label="running || '内核操作'" :title="running || '内核操作'" :aria-busy="!!running">
+      <Button variant="outline" class="cf-choice-height min-h-11 max-sm:w-11 max-sm:min-w-0 max-sm:gap-0" :disabled="disabled || !!running" :aria-label="running || '内核操作'" :title="running || '内核操作'" :aria-busy="!!running">
         <Loader2 v-if="running" class="size-4 animate-spin" /><Cpu v-else class="size-4" /><span class="max-sm:sr-only">{{ running || '内核' }}</span>
       </Button>
     </DropdownMenuTrigger>

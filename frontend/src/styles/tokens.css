@@ -431,6 +431,20 @@ body {
 
 /* 手机沿用相同控件与操作，只调整信息和按钮的排列。宽数据表仍在自身容器滚动。 */
 @media (width < 640px) {
+  /* 与分段控件同排的选择框、描边按钮：视觉降到分段底槽的高度，透明区域仍补足 44px 点击区，
+     免得右边的控件比左边的分段控件高一截 */
+  .cf-choice-height {
+    position: relative;
+    height: var(--cf-choice-track);
+    min-height: 0;
+  }
+
+  .cf-choice-height::before {
+    content: '';
+    position: absolute;
+    inset: calc((var(--cf-choice-track) - var(--cf-touch)) / 2) 0;
+  }
+
   .cf-node-filters {
     display: grid;
     gap: 0;

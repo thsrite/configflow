@@ -4,7 +4,7 @@
       <template #actions>
         <div class="flex w-full flex-wrap items-center justify-between gap-2 max-sm:justify-start">
           <Segmented v-model="days" :options="DAY_OPTIONS" label="时间范围" @update:model-value="loadDomains" />
-          <Button variant="outline" class="ml-auto border-border/60 bg-background/40 max-sm:ml-0" :disabled="refreshing || loading" @click="reload">
+          <Button variant="outline" class="cf-choice-height ml-auto border-border/60 bg-background/40 max-sm:ml-0" :disabled="refreshing || loading" @click="reload">
             <RefreshCw class="size-4" :class="(refreshing || loading) && 'animate-spin'" />
             刷新
           </Button>
