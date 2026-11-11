@@ -1,10 +1,16 @@
 """Agent 版本管理"""
 
 # Agent 最新版本号
-LATEST_AGENT_VERSION = "1.8.55-go"
+LATEST_AGENT_VERSION = "1.8.56-go"
 
 # 版本更新日志（可选）
 VERSION_CHANGELOG = {
+    "1.8.56-go": {
+        "date": "2026-11-11",
+        "features": [
+            "Mihomo 面板支持实时日志：打开日志页时才订阅内核日志流，可临时查看 debug 等比配置更详细的等级；15 秒无人查看自动断开"
+        ]
+    },
     "1.8.55-go": {
         "date": "2026-11-11",
         "features": [

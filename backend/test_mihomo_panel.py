@@ -124,7 +124,7 @@ def test_route_requires_admin_auth_and_forwards_name(authenticated_app, calls):
     response = client.put(url, json={'name': 'HK'}, headers=admin)
     assert response.status_code == 200 and response.headers['Cache-Control'] == 'no-store'
     assert calls[0]['url'].endswith('/api/mihomo/proxies/%E8%8A%82%E7%82%B9%2FA')
-    assert client.get(f'/api/agents/{aid}/mihomo/logs', headers=admin).status_code == 404
+    assert client.get(f'/api/agents/{aid}/mihomo/restart', headers=admin).status_code == 404
 
 
 def test_reload_and_upgrade_need_newer_agent_and_send_no_body(calls):
@@ -248,6 +248,33 @@ def test_live_flow_needs_newer_agent_and_forwards_without_params(calls):
     assert calls[0]['method'] == 'GET'
     assert calls[0]['url'].endswith('/api/mihomo/flow')
     assert calls[0]['params'] == {} and calls[0]['data'] is None
+
+
+def test_live_logs_need_newer_agent_and_forward_only_level_and_cursor(calls):
+    with pytest.raises(MonitorError) as exc:
+        panel.call(Manager({**AGENT, 'version': '1.8.55-go'}), 'mihomo', 'logs', 'GET', MultiDict())
+    assert exc.value.code == 'UPGRADE_REQUIRED'
+    assert '1.8.56-go' in exc.value.message and '实时日志' in exc.value.message
+    assert calls == []
+
+    agent = Manager({**AGENT, 'version': '1.8.56-go'})
+    calls.replies.append(Response({'stream': 'debug', 'entries': [], 'next': 7}))
+    result = panel.call(agent, 'mihomo', 'logs', 'GET', MultiDict({'level': 'debug', 'after': '7', 'path': '/etc'}))
+    assert result['data'] == {'stream': 'debug', 'entries': [], 'next': 7}
+    assert calls[0]['url'].endswith('/api/mihomo/logs')
+    assert calls[0]['params'] == {'level': 'debug', 'after': '7'}
+
+    panel.call(agent, 'mihomo', 'logs', 'GET', MultiDict())
+    assert calls[1]['params'] == {'level': 'info', 'after': '0'}
+
+
+@pytest.mark.parametrize('args', [{'level': 'trace'}, {'level': 'silent'}, {'after': '-1'}, {'after': '1e3'},
+                                  {'after': '9' * 19}])
+def test_live_logs_reject_invalid_level_or_cursor(calls, args):
+    with pytest.raises(MonitorError) as exc:
+        panel.call(Manager({**AGENT, 'version': '1.8.56-go'}), 'mihomo', 'logs', 'GET', MultiDict(args))
+    assert exc.value.code == 'INVALID_REQUEST'
+    assert calls == []
 
 
 def _node(name, **extra):

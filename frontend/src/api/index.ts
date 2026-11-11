@@ -711,6 +711,9 @@ export const mihomoPanelApi = {
   connections: (id: string, options: { signal?: AbortSignal } = {}) => api.get(mihomoPath(id, 'connections'), options),
   /** Agent 端聚合的实时流向（Agent 1.8.26-go+） */
   flow: (id: string, options: { signal?: AbortSignal } = {}) => api.get(mihomoPath(id, 'flow'), options),
+  /** 实时日志（Agent 1.8.56-go+）：按等级增量读取，after 为上次返回的 next */
+  logs: (id: string, params: { level: string; after: number }, options: { signal?: AbortSignal } = {}) =>
+    api.get(mihomoPath(id, 'logs'), { params, ...options }),
   closeConnection: (id: string, connectionId: string) => api.delete(mihomoPath(id, 'connection'), mihomoName(connectionId)),
   closeAllConnections: (id: string) => api.delete(mihomoPath(id, 'connections')),
   rules: (id: string) => mihomoCached(id, 'rules'),
