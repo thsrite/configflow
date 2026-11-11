@@ -128,6 +128,18 @@ describe('responsive logs with synthetic API data', () => {
     expect(wrapper.findAll('button').some(button => button.text().trim() === '暂停')).toBe(true)
   })
 
+  it('colours messages like the Mihomo log view and marks the search keyword', async () => {
+    const { wrapper } = await render()
+    // 引号字符串着色；原始堆栈作为续行，不画分隔线
+    expect(wrapper.findAll('.log-tk-str').map(node => node.text())).toContain('"synthetic failure"')
+    expect(wrapper.findAll('.log-row').map(row => row.classes().includes('is-raw'))).toEqual([false, false, true])
+    expect(wrapper.find('.log-hit').exists()).toBe(false)
+
+    await wrapper.get('[aria-label="搜索关键词…"]').setValue('Failure')
+    expect(wrapper.findAll('.log-hit').map(node => node.text())).toEqual(['failure', 'failure', 'failure'])
+    expect(wrapper.get('.logs-list').element.textContent).toContain(rawTrace)
+  })
+
   it.each(['visible', 'auto'] as const)('preserves the initial scroll behavior and does not jump on manual refresh (%s)', async mode => {
     const { wrapper, container } = await render(mode)
     expect(api.get).toHaveBeenCalledWith('/logs/tail', { params: { lines: 200 } })

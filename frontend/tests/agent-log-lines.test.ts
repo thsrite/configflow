@@ -137,6 +137,11 @@ describe('log message colouring', () => {
     expect(kinds(tokenizeLogMessage('reload done using cached config, no match found'))).toEqual([])
   })
 
+  it('colours single-quoted names but not contractions', () => {
+    expect(kinds(tokenizeLogMessage("节点 'Claude-2' 为 URI/base64 格式"))).toEqual([['str', "'Claude-2'"]])
+    expect(kinds(tokenizeLogMessage("don't retry, it's fine"))).toEqual([])
+  })
+
   it('marks search hits across token boundaries, ignoring case', () => {
     const tokens = markLogTokens(tokenizeLogMessage('[TCP] 192.168.1.23:1 --> WWW.example.com:443 match Domain(x) using DIRECT'), '--> www')
     expect(tokens.filter(token => token.hit).map(token => [token.kind, token.text])).toEqual([
@@ -149,9 +154,9 @@ describe('log message colouring', () => {
     const wrapper = mount(AgentLogLines, {
       props: { text: 'time="2026-10-21T00:01:02+08:00" level=info msg="[TCP] 192.168.0.5:1 --> www.example.com:443 match Match using DIRECT"', highlight: 'example' }
     })
-    expect(wrapper.find('.tk-dst').text()).toBe('www.')
-    expect(wrapper.find('mark.tk-dst').text()).toBe('example')
-    expect(wrapper.find('.tk-direct').text()).toBe('DIRECT')
+    expect(wrapper.find('.log-tk-dst').text()).toBe('www.')
+    expect(wrapper.find('mark.log-hit.log-tk-dst').text()).toBe('example')
+    expect(wrapper.find('.log-tk-direct').text()).toBe('DIRECT')
     expect(wrapper.find('.log-message').text()).toBe('[TCP] 192.168.0.5:1 --> www.example.com:443 match Match using DIRECT')
   })
 })

@@ -11,10 +11,10 @@
           <span v-if="hasLevels" :class="cn('log-level', entry.level && `lv-${entry.level}`)">{{ entry.level }}</span>
           <div class="log-body">
             <span v-if="entry.sourceShort" class="log-source" :title="entry.source">{{ entry.sourceShort }}</span>
-            <span v-if="entry.message" class="log-message"><template v-for="(token, tokenIndex) in messageTokens(entry)" :key="tokenIndex"><mark v-if="token.hit" :class="token.kind && `tk-${token.kind}`">{{ token.text }}</mark><span v-else-if="token.kind" :class="`tk-${token.kind}`">{{ token.text }}</span><template v-else>{{ token.text }}</template></template></span>
+            <span v-if="entry.message" class="log-message"><LogText :tokens="tokensOf(entry)" :highlight="highlight" /></span>
             <span v-if="entry.fields.length" class="log-fields">
               <span v-for="(field, fieldIndex) in entry.fields" :key="fieldIndex" class="log-field">
-                <span class="log-key">{{ field.key }}=</span><span class="log-value"><template v-for="(token, tokenIndex) in marked(field.value || EMPTY_VALUE)" :key="tokenIndex"><mark v-if="token.hit">{{ token.text }}</mark><template v-else>{{ token.text }}</template></template></span>
+                <span class="log-key">{{ field.key }}=</span><span class="log-value"><LogText :tokens="[{ text: field.value || EMPTY_VALUE, kind: '' }]" :highlight="highlight" /></span>
               </span>
             </span>
           </div>
@@ -27,9 +27,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
-  filterLogLevel, markLogTokens, parseAgentLogs, tokenizeLogMessage,
+  filterLogLevel, parseAgentLogs, tokenizeLogMessage,
   type AgentLogEntry, type AgentLogLevel, type LogToken
 } from '@/lib/agentLogs'
+import LogText from '@/components/common/LogText'
 import { cn } from '@/lib/utils'
 
 const props = withDefaults(defineProps<{
@@ -70,8 +71,6 @@ const tokensOf = (entry: AgentLogEntry) => {
   }
   return tokens
 }
-const messageTokens = (entry: AgentLogEntry) => markLogTokens(tokensOf(entry), props.highlight)
-const marked = (text: string) => markLogTokens([{ text, kind: '' }], props.highlight)
 
 /** 日期变化时插入分隔行；续行与无时间的行不打断 */
 const dateChanged = (index: number) => {
@@ -186,57 +185,6 @@ defineExpose({ scrollToBottom })
 
 .log-value {
   color: #c4c0b4;
-}
-
-/* 正文按含义着色：目标最亮，来源与连接词压暗，规则淡紫，策略按直连 / 拦截 / 代理区分，错误原因红色 */
-.tk-tag {
-  color: #9a968b;
-}
-
-.tk-src,
-.tk-kw,
-.tk-arrow {
-  color: #7c786e;
-}
-
-.tk-dst {
-  color: #f1ede3;
-}
-
-.tk-rule {
-  color: #b9a9d9;
-}
-
-.tk-proxy {
-  color: #e2bd7a;
-}
-
-.tk-direct {
-  color: #8fb996;
-}
-
-.tk-reject {
-  color: #e0705e;
-}
-
-.tk-str {
-  color: #94c3bd;
-}
-
-.tk-err {
-  color: #e8806f;
-}
-
-/* 搜索命中 */
-mark {
-  border-radius: 2px;
-  background: rgb(226 189 122 / 28%);
-  box-shadow: 0 0 0 1px rgb(226 189 122 / 35%);
-  color: inherit;
-}
-
-mark:not([class]) {
-  color: #f1ede3;
 }
 
 /* 桌面：时间、级别固定列宽，正文换行后与首行对齐 */

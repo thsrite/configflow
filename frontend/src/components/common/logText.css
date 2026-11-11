@@ -1,0 +1,49 @@
+/*
+ * 日志正文按含义着色（LogText）。日志终端在两套主题下都是暖炭底色，颜色固定。
+ * 目标最亮，来源与连接词压暗，规则淡紫，策略按直连 / 拦截 / 代理区分，错误原因红色。
+ */
+/* 搜索命中；放在着色规则之前，命中着色片段时保留片段颜色 */
+.log-hit {
+  border-radius: 2px;
+  background: rgb(226 189 122 / 28%);
+  box-shadow: 0 0 0 1px rgb(226 189 122 / 35%);
+  color: #f1ede3;
+}
+
+.log-tk-tag {
+  color: #9a968b;
+}
+
+.log-tk-src,
+.log-tk-kw,
+.log-tk-arrow {
+  color: #7c786e;
+}
+
+.log-tk-dst {
+  color: #f1ede3;
+}
+
+.log-tk-rule {
+  color: #b9a9d9;
+}
+
+.log-tk-proxy {
+  color: #e2bd7a;
+}
+
+.log-tk-direct {
+  color: #8fb996;
+}
+
+.log-tk-reject {
+  color: #e0705e;
+}
+
+.log-tk-str {
+  color: #94c3bd;
+}
+
+.log-tk-err {
+  color: #e8806f;
+}

@@ -190,9 +190,10 @@ export interface LogToken {
 const LEADING_TAG = /^\[[A-Za-z][\w-]*\]/
 // Mihomo 的错误原因都写在 error: 之后，例如 dial … error: i/o timeout
 const ERROR_AT = /\berror:/
-// 箭头、match 规则、using 策略（只在 match 之后）、引号字符串。
+// 箭头、match 规则、using 策略（只在 match 之后）、引号字符串（单引号两侧不能紧贴字母，
+// 避免把 don't 这类缩写当成字符串）。
 // 规则写法有 RuleSet(google)（连接日志）和 RuleSet/google（拨号失败）两种
-const MESSAGE_TOKEN = /-->|\bmatch ([A-Z][\w-]*(?:\([^)]*\)|\/[^\s)]+)?)|\busing (\S(?:.*\S)?)|"[^"\n]*"/g
+const MESSAGE_TOKEN = /-->|\bmatch ([A-Z][\w-]*(?:\([^)]*\)|\/[^\s)]+)?)|\busing (\S(?:.*\S)?)|"[^"\n]*"|(?<![\w'])'[^'\n]+'(?![\w'])/g
 // 来源可能带进程名：192.168.1.5:51234(chrome)
 const ADDRESS_BEFORE = /([^\s()/[\]]+(?:\([^)]*\))?)(\s*)$/
 const ADDRESS_AFTER = /^(\s*)([^\s()[\]]+)/
@@ -203,7 +204,7 @@ const policyKind = (policy: string): LogTokenKind =>
 /**
  * 把一条日志正文切成着色片段，原文一个字不改，拼起来与输入相同。
  * 主要识别 Mihomo 的连接日志（[TCP] 来源 --> 目标 match 规则 using 策略）；
- * 其他格式只给开头标签、引号字符串和 error: 之后的原因着色。
+ * 其他格式（OxiDNS、Agent、系统日志）只给开头标签、引号字符串和 error: 之后的原因着色。
  */
 export function tokenizeLogMessage(message: string): LogToken[] {
   const tokens: LogToken[] = []
