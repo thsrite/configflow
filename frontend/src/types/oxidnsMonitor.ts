@@ -31,7 +31,7 @@ export interface OxiDNSRankings {
   missing_slots?: number
   partial_slots?: number
   /** Why a sample is shown instead of complete counts. */
-  history?: 'collecting' | 'upgrade_required'
+  history?: 'collecting' | 'pending_range' | 'upgrade_required'
   history_version?: string
   /** Window the newest sample is taken from: the round's start or the last 24 hours, whichever is later. */
   since_ms?: number

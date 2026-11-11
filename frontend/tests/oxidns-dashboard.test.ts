@@ -173,7 +173,14 @@ describe('OxiDNS dashboard periods and availability', () => {
     expect(old.get('[data-ranking-upgrade]').text()).toContain('升级到 1.8.55-go')
     expect(old.find('[aria-label="排行范围"]').exists()).toBe(false)
     ;(data.rankings as OxiDNSRankings).history = 'collecting'
-    expect(panel(data).get('[data-ranking-collecting]').text()).toContain('正在收集完整统计')
+    const collecting = panel(data)
+    expect(collecting.get('[data-ranking-collecting]').text()).toContain('正在收集完整统计')
+    expect(collecting.find('[aria-label="排行范围"]').exists()).toBe(true)
+    // A round that just began: other ranges are complete, and the range can still be changed.
+    ;(data.rankings as OxiDNSRankings).history = 'pending_range'
+    const pending = panel(data)
+    expect(pending.get('[data-ranking-pending]').text()).toContain('可切换到其他范围')
+    expect(pending.find('[aria-label="排行范围"]').exists()).toBe(true)
   })
 
   it('says when the rankings window stops a day back instead of at the round start', () => {

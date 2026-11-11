@@ -464,6 +464,18 @@ def _history_rankings(manager, agent, recorder, range_key, snapshot, state, reco
             'clients': section('clients', records), 'domains': section('domains', records), 'blocked': blocked}
 
 
+def _history_status(manager, agent, recorders, recorder):
+    """Why the panel shows the newest-records sample instead of complete counts."""
+    from . import oxidns_ranking_history as history
+    status = {'history_version': history.HISTORY_AGENT_VERSION}
+    if not history.supported(agent):
+        return {**status, 'history': 'upgrade_required'}
+    stored = history.get_history(manager.repository.data_dir).query(agent['id'], recorder, 0, 2 ** 40) \
+        if recorder in (recorders or []) else {'slots': 0}
+    # Other ranges may already be complete while this one has no finished period yet.
+    return {**status, 'history': 'pending_range' if stored['slots'] else 'collecting'}
+
+
 def _verify_target(manager, agent_id, expected):
     current = manager.get_agent_by_id(agent_id)
     if current is None or _target(current) != expected:
@@ -507,10 +519,8 @@ def _dashboard_overview(manager, agent_id, params, *, manual=False):
             if rankings is None:
                 rankings = _kept_rankings(manager, agent, effective_params, snapshot, state, recorders, manual=manual)
                 if rankings.get('success') is True:
-                    from . import oxidns_ranking_history
-                    # Why the panel shows the newest-records sample instead of complete counts.
-                    rankings = {**rankings, 'history': 'collecting' if oxidns_ranking_history.supported(agent)
-                                else 'upgrade_required', 'history_version': oxidns_ranking_history.HISTORY_AGENT_VERSION}
+                    rankings = {**rankings, **_history_status(manager, agent, recorders,
+                                                              effective_params.get('recorder') or (recorders or [None])[0])}
         except MonitorError as error:
             if manual or error.code == 'INVALID_QUERY':
                 raise

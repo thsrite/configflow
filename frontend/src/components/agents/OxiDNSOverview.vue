@@ -25,9 +25,10 @@
             <span v-if="rankings.clients.at_limit || rankings.domains.at_limit || rankings.blocked.at_limit" class="text-warning-accent">已达到样本上限，可能未覆盖本轮所有请求。</span>
             <span v-if="rankings.history === 'upgrade_required'" class="text-warning-accent" data-ranking-upgrade> 这是最新记录的样本；将 Agent 升级到 {{ rankings.history_version }} 或更新版本后显示完整统计。</span>
             <span v-else-if="rankings.history === 'collecting'" data-ranking-collecting> 正在收集完整统计，第一个 15 分钟时段结束后改为显示完整统计。</span>
+            <span v-else-if="rankings.history === 'pending_range'" data-ranking-pending> 所选范围内还没有结束的 15 分钟时段，暂时显示最新记录的样本；可切换到其他范围查看完整统计。</span>
           </p>
         </div>
-        <Segmented v-if="complete" class="max-w-full" label="排行范围" :model-value="rankingRange || 'round'" :options="rangeOptions" :disabled="resetting"
+        <Segmented v-if="rangeAvailable" class="max-w-full" label="排行范围" :model-value="rankingRange || 'round'" :options="rangeOptions" :disabled="resetting"
           @update:model-value="$emit('range', $event)" />
         <Select v-if="overview.recorders.length > 1" :model-value="recorder" :disabled="resetting" @update:model-value="$emit('recorder', String($event))">
           <SelectTrigger class="min-h-11 w-full sm:w-[180px] max-w-full" aria-label="排行记录器"><SelectValue placeholder="选择记录器" /></SelectTrigger>
@@ -148,6 +149,8 @@ const rangeOptions: Array<{ value: OxiDNSRankingRange; label: string }> = [
   { value: 'round', label: '本轮' }, { value: '24h', label: '24 小时' }, { value: '7d', label: '7 天' }, { value: '30d', label: '30 天' }
 ]
 const complete = computed(() => rankings.value?.source === 'history')
+// The range can be changed whenever the device keeps complete counts, also while the chosen range has none yet.
+const rangeAvailable = computed(() => complete.value || rankings.value?.history === 'collecting' || rankings.value?.history === 'pending_range')
 const completeDescription = computed(() => {
   const value = rankings.value
   if (!value) return ''

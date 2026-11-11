@@ -337,3 +337,19 @@ def test_a_collection_round_covers_usable_new_oxidns_devices_only(tmp_path, monk
                               get_all_agents=lambda history=True: copy.deepcopy(agents))
     history.collect_round(manager, now=T0)
     assert seen == ['new']
+
+
+def test_a_round_without_a_finished_period_says_other_ranges_are_complete(tmp_path, monkeypatch):
+    """A round that began minutes ago has no period yet; the stored days are still there."""
+    records = generate(12, T0, 1, 300)
+    now = T0 + DAY + 120
+    manager, current, live = panel_env(tmp_path, monkeypatch, records, now)
+    later = now + 5 * 60
+    current.update(snapshot(now=later * 1000))
+    monkeypatch.setattr(monitor, '_request', lambda agent, endpoint, params=None, **kwargs:
+                        copy.deepcopy(current) if endpoint == 'overview' else ranking(now=later * 1000))
+    monitor.reset_dashboard(manager, 'one', {})  # the round now starts after the newest stored period
+    result = monitor.overview(manager, 'one')['rankings']
+    assert result.get('source') != 'history' and result['history'] == 'pending_range'
+    assert monitor.overview(manager, 'one', MultiDict({'range': '24h'}))['rankings']['source'] == 'history'
+
