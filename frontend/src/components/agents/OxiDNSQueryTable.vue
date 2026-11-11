@@ -38,17 +38,16 @@
     <DataTableShell v-else-if="data" :footer="'本页 ' + data.records.length + ' 条 · 第 ' + page + ' 页'">
       <TableHeader><TableRow><TableHead><span class="inline-flex items-center gap-1">时间<FieldHelp label="查询时间" :text="`按浏览器时区（${queryTimeZone()}）显示。最近 1 小时和最近 24 小时按 DNS 设备的采样时间计算，翻页时保留原时间范围。全部时间不设起止限制。`" /></span></TableHead><TableHead>查询</TableHead><TableHead>客户端</TableHead><TableHead>结果</TableHead><TableHead>解析来源</TableHead><TableHead class="text-right">耗时</TableHead><TableHead class="text-right">详情</TableHead></TableRow></TableHeader>
       <TableBody>
-        <TableRow v-for="record in data.records" :key="record.id">
+        <TableRow v-for="record in data.records" :key="record.id" class="[&>td]:py-1.5">
           <TableCell class="num text-xs">{{ formatQueryTime(record.created_at_ms) }}</TableCell>
           <TableCell class="max-w-[320px]">
-            <div v-for="(question, index) in record.questions_json" :key="index" class="flex items-start gap-2">
+            <div v-for="(question, index) in record.questions_json" :key="index" class="flex items-center gap-2">
               <span class="min-w-0 truncate font-mono text-xs" :title="question.name">{{ question.name }}</span><span class="chip shrink-0 font-mono">{{ formatDNSType(question.qtype) }}</span>
             </div>
             <span v-if="!record.questions_json?.length" class="text-muted-foreground">—</span>
           </TableCell>
-          <TableCell class="max-w-60 whitespace-normal text-xs">
-            <span v-if="note(record.client_ip)" class="mb-0.5 block break-all">{{ note(record.client_ip) }}</span>
-            <span class="flex flex-wrap items-center gap-1.5"><span :class="['break-all font-mono', { 'text-muted-foreground': note(record.client_ip) }]">{{ record.client_ip || '—' }}</span><span v-if="isAgentProbe(record)" class="chip shrink-0 font-sans" :title="AGENT_PROBE_NOTE">Agent 检查<span class="sr-only">：{{ AGENT_PROBE_NOTE }}</span></span></span>
+          <TableCell class="max-w-72 whitespace-normal text-xs">
+            <span class="flex flex-wrap items-center gap-x-2 gap-y-0.5"><span v-if="note(record.client_ip)" class="break-all">{{ note(record.client_ip) }}</span><span :class="['break-all font-mono', { 'text-muted-foreground': note(record.client_ip) }]">{{ record.client_ip || '—' }}</span><span v-if="isAgentProbe(record)" class="chip shrink-0 font-sans" :title="AGENT_PROBE_NOTE">Agent 检查<span class="sr-only">：{{ AGENT_PROBE_NOTE }}</span></span></span>
           </TableCell>
           <TableCell>
             <span :class="['chip', record.error ? 'chip-bad' : record.has_response ? 'chip-ok' : 'chip-warn']">
@@ -56,11 +55,11 @@
             </span>
           </TableCell>
           <TableCell class="text-xs" title="根据执行轨迹显示转发组、缓存或本地策略">
-            <Button v-if="sourceOf(record).failed" variant="ghost" class="min-h-11 text-warning-accent" :aria-label="'重试读取查询 ' + record.id + ' 的解析来源'" @click="retrySource(record)">读取失败 · 重试</Button>
+            <Button v-if="sourceOf(record).failed" variant="ghost" :class="[ROW_ACTION, 'text-warning-accent']" :aria-label="'重试读取查询 ' + record.id + ' 的解析来源'" @click="retrySource(record)">读取失败 · 重试</Button>
             <span v-else class="chip">{{ sourceOf(record).label }}</span>
           </TableCell>
           <TableCell class="num text-right">{{ formatMonitorNumber(record.elapsed_ms, 2) }}<span v-if="monitorNumber(record.elapsed_ms)"> ms</span></TableCell>
-          <TableCell class="text-right"><Button variant="ghost" class="min-h-11" :aria-label="'查看查询 ' + record.id + ' 详情'" @click="emit('detail', record)">查看</Button></TableCell>
+          <TableCell class="text-right"><Button variant="ghost" :class="ROW_ACTION" :aria-label="'查看查询 ' + record.id + ' 详情'" @click="emit('detail', record)">查看</Button></TableCell>
         </TableRow>
       </TableBody>
     </DataTableShell>
@@ -99,6 +98,8 @@ const emit = defineEmits<{
   filter: [value: OxiDNSQueryFilters]; recorder: [value: string]; detail: [value: OxiDNSQuery]
   next: []; previous: []; retry: []
 }>()
+// 行内操作看起来 28px 高，上下各 8px 透明区仍可点，点击区保持 44px，不撑高整行
+const ROW_ACTION = "relative h-7 min-h-0 px-2.5 max-md:min-h-0 after:absolute after:inset-x-0 after:-inset-y-2 after:content-['']"
 const note = (ip: unknown) => typeof ip === 'string' ? deviceNote(props.notes || {}, ip) : ''
 const draft = reactive({ ...props.filters })
 const { sourceOf, retry: retrySource } = useOxiDNSQuerySources(props)

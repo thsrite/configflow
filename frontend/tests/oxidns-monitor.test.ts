@@ -549,6 +549,24 @@ describe('OxiDNS monitor display', () => {
     expect(rows[1].text()).not.toContain('Agent 检查')
     expect(rows[2].text()).not.toContain('Agent 检查')
   })
+  it('keeps rows compact: the device name and IP share a line and the detail button keeps a 44px hit area', async () => {
+    const wrapper = mount(OxiDNSQueryTable, { props: {
+      agentId: 'one', recorders: ['queries'], recorder: 'queries', filters: emptyQueryFilters(), data: records(),
+      notes: { [queryRecord.client_ip as string]: '群晖' }, loading: false, error: '', page: 1, hasNext: false
+    } })
+    wrappers.push(wrapper)
+    await flushPromises()
+    const row = wrapper.get('tbody tr')
+    expect(row.classes()).toContain('[&>td]:py-1.5')
+    const client = row.findAll('td')[2]
+    expect(client.findAll(':scope > span')).toHaveLength(1)
+    expect(client.text()).toContain('群晖')
+    expect(client.text()).toContain(queryRecord.client_ip as string)
+    // 看起来 28px，上下各 8px 透明区，点击区仍为 44px；手机上也不被按钮默认的 44px 撑高
+    const detail = row.get('button[aria-label^="查看查询"]')
+    expect(detail.classes()).toEqual(expect.arrayContaining(['h-7', 'max-md:min-h-0', 'after:-inset-y-2']))
+    expect(detail.classes()).not.toContain('min-h-11')
+  })
   it('recognizes only loopback example.com checks as Agent probes', () => {
     const probe = (client_ip: string, name: string) => isAgentProbe({ client_ip, questions_json: [{ name, qtype: 1, qclass: 1 }] })
     expect(probe('127.0.0.1', 'example.com.')).toBe(true)
