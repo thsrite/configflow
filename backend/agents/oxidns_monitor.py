@@ -440,7 +440,9 @@ def _history_rankings(manager, agent, recorder, range_key, snapshot, state, reco
     else:
         since = now - history.RANGES[range_key]
     since -= since % history.HOUR
-    stored = history.get_history(manager.repository.data_dir).query(agent['id'], recorder, since, now + history.HOUR)
+    # The end only bounds the newest period; a fixed one keeps the answer reusable between polls.
+    until = now - now % history.HOUR + history.HOUR
+    stored = history.get_history(manager.repository.data_dir).query(agent['id'], recorder, since, until)
     if not stored['slots']:
         return None
     first, last = stored['first'], stored['last']
@@ -470,10 +472,9 @@ def _history_status(manager, agent, recorders, recorder):
     status = {'history_version': history.HISTORY_AGENT_VERSION}
     if not history.supported(agent):
         return {**status, 'history': 'upgrade_required'}
-    stored = history.get_history(manager.repository.data_dir).query(agent['id'], recorder, 0, 2 ** 40) \
-        if recorder in (recorders or []) else {'slots': 0}
+    stored = recorder in (recorders or []) and history.get_history(manager.repository.data_dir).has_any(agent['id'], recorder)
     # Other ranges may already be complete while this one has no finished period yet.
-    return {**status, 'history': 'pending_range' if stored['slots'] else 'collecting'}
+    return {**status, 'history': 'pending_range' if stored else 'collecting'}
 
 
 def _verify_target(manager, agent_id, expected):

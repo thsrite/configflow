@@ -12,6 +12,7 @@
   新的时段优先；每轮最多取 SLOTS_PER_ROUND 个，不集中占用核心。
 - 只取 HISTORY_AGENT_VERSION 及以上的 Agent：更早的排行接口每类只返回前 10 项。
 """
+from collections import OrderedDict
 import os
 import sqlite3
 import threading
@@ -40,6 +41,10 @@ ROUND_SECONDS = 60
 KINDS = ('clients', 'domains', 'blocked')
 RANGES = {'24h': DAY, '7d': 7 * DAY, '30d': 30 * DAY}
 TOP = 10
+# Answers are kept until the stored data changes (a new slot, at most every 15
+# minutes): the panel polls every 10 s, and adding up a week of hours costs
+# about 0.35 s at production volume.
+QUERY_CACHE = 32
 
 _SCHEMA = (
     # 一行一个小时（seconds=3600）或一天（86400）；slots 是其中已取回的 15 分钟时段数
@@ -73,6 +78,12 @@ class RankingHistory:
     def __init__(self, data_dir):
         self.path = os.path.join(str(data_dir), 'metrics', FILENAME)
         self._lock = threading.Lock()
+        self._version = 0  # bumped by every change of the stored data
+        self._answers = OrderedDict()
+        # Agent id -> the slot end it was last brought up to: nothing is due
+        # for it until the next slot ends.
+        self.caught_up = {}
+        self._maintained_hour = None
 
     def _connect(self):
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
@@ -105,6 +116,7 @@ class RankingHistory:
                 (agent_id, recorder, start)).rowcount
             if not inserted:
                 return False
+            self._version += 1
             connection.execute(
                 'INSERT INTO ranking_periods (agent_id, recorder, start, seconds, records, blocked_records,'
                 ' blocked_slots, slots, partial_slots) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)'
@@ -126,6 +138,9 @@ class RankingHistory:
         if not os.path.exists(self.path):
             return
         now = int(now if now is not None else time.time())
+        if self._maintained_hour == now - now % HOUR:
+            return  # merging and expiry only move by the hour
+        self._maintained_hour = now - now % HOUR
         hourly_before = now - now % DAY - HOURLY_DAYS * DAY
         cutoff = now - RETENTION_DAYS * DAY
         with self._lock, self._connect() as connection:
@@ -142,6 +157,8 @@ class RankingHistory:
             for table in ('ranking_periods', 'ranking_rows'):
                 connection.execute(f'DELETE FROM {table} WHERE start < ?', (cutoff,))
             connection.execute('DELETE FROM ranking_slots WHERE start < ?', (cutoff,))
+            if connection.total_changes:
+                self._version += 1
 
     @staticmethod
     def _merge_day(connection, agent_id, recorder, day):
@@ -180,8 +197,33 @@ class RankingHistory:
 
     # --- reading -----------------------------------------------------------
 
+    def has_any(self, agent_id, recorder):
+        """Whether any slot of this recorder is stored, without adding anything up."""
+        if not os.path.exists(self.path):
+            return False
+        with self._lock, self._connect() as connection:
+            return connection.execute('SELECT 1 FROM ranking_slots WHERE agent_id = ? AND recorder = ? LIMIT 1',
+                                      (agent_id, recorder)).fetchone() is not None
+
     def query(self, agent_id, recorder, since, until):
         """Totals and the top entries of the stored periods starting in [since, until)."""
+        key = (agent_id, recorder, since, until)
+        with self._lock:
+            kept = self._answers.get(key)
+            if kept is not None and kept[0] == self._version:
+                self._answers.move_to_end(key)
+                return kept[1]
+            version = self._version
+        answer = self._query(agent_id, recorder, since, until)
+        with self._lock:
+            if version == self._version:
+                self._answers[key] = (version, answer)
+                self._answers.move_to_end(key)
+                while len(self._answers) > QUERY_CACHE:
+                    self._answers.popitem(last=False)
+        return answer
+
+    def _query(self, agent_id, recorder, since, until):
         empty = {'records': 0, 'blocked_records': 0, 'blocked_slots': 0, 'slots': 0, 'partial_slots': 0,
                  'first': None, 'last': None, 'rows': {kind: [] for kind in KINDS}}
         if not os.path.exists(self.path):
@@ -268,6 +310,7 @@ def collect_agent(history, agent, recorders, now=None, budget=SLOTS_PER_ROUND, r
     days = min(RETENTION_DAYS, max(1, retention_days or CORE_RETENTION_DAYS))
     starts = list(range(end - SLOT, end - days * DAY - 1, -SLOT))
     stored = 0
+    history.caught_up.pop(agent['id'], None)
     for recorder in recorders:
         done = history.fetched(agent['id'], recorder, starts)
         for start in (start for start in starts if start not in done):
@@ -283,6 +326,7 @@ def collect_agent(history, agent, recorders, now=None, budget=SLOTS_PER_ROUND, r
             stored += history.add_slot(agent['id'], recorder, start, slot)
             if pause:
                 time.sleep(pause)
+    history.caught_up[agent['id']] = end
     return stored
 
 
@@ -297,9 +341,12 @@ def collect_round(manager, history=None, now=None):
     from backend.agents.oxidns_monitor import MonitorError
     history = history or get_history(manager.repository.data_dir)
     agents = manager.get_all_agents(history=False)
+    end = last_complete_slot_end(now if now is not None else time.time())
     for agent in agents:
         if agent.get('service_type') != 'oxidns' or not supported(agent) or not is_usable(agent):
             continue
+        if history.caught_up.get(agent['id']) == end:
+            continue  # nothing new until the next slot ends: no request at all
         try:
             recorders = _recorders(agent)
         except MonitorError:

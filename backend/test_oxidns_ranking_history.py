@@ -353,3 +353,72 @@ def test_a_round_without_a_finished_period_says_other_ranges_are_complete(tmp_pa
     assert result.get('source') != 'history' and result['history'] == 'pending_range'
     assert monitor.overview(manager, 'one', MultiDict({'range': '24h'}))['rankings']['source'] == 'history'
 
+
+
+# --- idle cost: nothing is added up or asked for again until the data changes ---
+
+def test_answers_are_reused_until_a_slot_is_stored(store, monkeypatch):
+    slot = lambda key: {'records': 1, 'blocked': None, 'partial': False, 'rows': {'clients': {'192.0.2.1': 1}, 'domains': {key: 1}}}
+    store.add_slot('dns', 'records', T0, slot('a.test.'))
+    sums = []
+    real = store._query
+    monkeypatch.setattr(store, '_query', lambda *args: sums.append(args) or real(*args))
+    first = store.query('dns', 'records', T0, T0 + HOUR)
+    for _ in range(5):  # the panel polls
+        assert store.query('dns', 'records', T0, T0 + HOUR) is first
+    assert len(sums) == 1
+    store.add_slot('dns', 'records', T0 + SLOT, slot('b.test.'))
+    assert store.query('dns', 'records', T0, T0 + HOUR)['records'] == 2 and len(sums) == 2
+    store.add_slot('dns', 'records', T0 + SLOT, slot('b.test.'))  # already stored: nothing changed
+    store.query('dns', 'records', T0, T0 + HOUR)
+    assert len(sums) == 2
+    # Maintenance that removes data also makes answers stale.
+    store.maintain(['someone-else'], now=T0 + HOUR)
+    assert store.query('dns', 'records', T0, T0 + HOUR)['slots'] == 0 and len(sums) == 3
+
+
+def test_maintenance_runs_once_an_hour(store):
+    store.add_slot('dns', 'records', T0, {'records': 1, 'blocked': None, 'partial': False, 'rows': {'clients': {'192.0.2.1': 1}}})
+    store.maintain(['dns'], now=T0 + 10)
+    store.maintain([], now=T0 + 20)  # the same hour: skipped, the device's data stays
+    assert store.query('dns', 'records', T0, T0 + HOUR)['slots'] == 1
+    store.maintain([], now=T0 + HOUR)
+    assert store.query('dns', 'records', T0, T0 + HOUR)['slots'] == 0
+
+
+def test_a_caught_up_device_is_not_contacted_until_the_next_slot_ends(tmp_path, monkeypatch):
+    asked = []
+    monkeypatch.setattr(history, '_recorders', lambda agent: asked.append('overview') or ['records'])
+    fake = FakeAgent(generate(13, T0, 1, 100))
+    monkeypatch.setattr(monitor, '_request', lambda *args, **kwargs: asked.append('rankings') or fake(*args, **kwargs))
+    monkeypatch.setattr(history.time, 'sleep', lambda seconds: None)
+    monkeypatch.setattr('backend.agents.manager.is_usable', lambda agent: True)
+    agents = [{'id': 'dns', 'service_type': 'oxidns', 'version': history.HISTORY_AGENT_VERSION}]
+    manager = SimpleNamespace(repository=SimpleNamespace(data_dir=Path(tmp_path)),
+                              get_all_agents=lambda history=True: copy.deepcopy(agents))
+    store = history.RankingHistory(tmp_path)
+    now = T0 + DAY + 120
+    rounds = 0
+    while 'dns' not in store.caught_up:  # the backfill: up to SLOTS_PER_ROUND slots a round
+        history.collect_round(manager, store, now=now)
+        rounds += 1
+    assert asked.count('overview') == rounds and asked.count('rankings') == 7 * DAY // SLOT
+    assert rounds == -(-7 * DAY // SLOT // history.SLOTS_PER_ROUND)
+    asked.clear()
+    for minute in range(1, 14):  # the rest of this quarter hour
+        history.collect_round(manager, store, now=now + minute * 60)
+    assert asked == []
+    history.collect_round(manager, store, now=now + 15 * 60)  # the next slot ended
+    assert asked == ['overview', 'rankings']
+
+
+def test_a_device_cut_short_is_not_counted_as_caught_up(tmp_path, monkeypatch):
+    fake = FakeAgent(generate(14, T0, 1, 100))
+    fake.fail_at = 2
+    monkeypatch.setattr(monitor, '_request', fake)
+    store = history.RankingHistory(tmp_path)
+    history.collect_agent(store, AGENT, ['records'], now=T0 + DAY + 120, budget=5, pause=0, retention_days=1)
+    assert 'dns' not in store.caught_up
+    fake.fail_at = None
+    history.collect_agent(store, AGENT, ['records'], now=T0 + DAY + 120, budget=2, pause=0, retention_days=1)
+    assert 'dns' not in store.caught_up  # out of budget: more is due next round
