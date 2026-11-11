@@ -26,15 +26,11 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { filterLogLevel, parseAgentLogs, type AgentLogEntry, type AgentLogLevel } from '@/lib/agentLogs'
+import { parseAgentLogs } from '@/lib/agentLogs'
 import { cn } from '@/lib/utils'
 
 const props = withDefaults(defineProps<{
   text?: string
-  /** 已解析好的条目（如实时日志），提供时不再解析 text */
-  items?: AgentLogEntry[]
-  /** 只显示不低于该级别的条目 */
-  minLevel?: AgentLogLevel | ''
   /** 加载中、读取失败或不可读时的提示，优先于日志内容 */
   notice?: string
   /** 没有可显示的条目时的提示 */
@@ -42,15 +38,13 @@ const props = withDefaults(defineProps<{
   heightClass?: string
 }>(), {
   text: '',
-  items: undefined,
-  minLevel: '',
   notice: '',
   emptyText: '该日志暂无内容',
   heightClass: 'max-h-[56dvh]'
 })
 
 const scroller = ref<HTMLElement | null>(null)
-const entries = computed(() => filterLogLevel(props.items ?? parseAgentLogs(props.text), props.minLevel))
+const entries = computed(() => parseAgentLogs(props.text))
 const hasLevels = computed(() => entries.value.some(entry => entry.level))
 
 /** 日期变化时插入分隔行；续行与无时间的行不打断 */

@@ -1,16 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import MihomoLogs from '@/components/mihomo/MihomoLogs.vue'
-import AgentLogLines from '@/components/agents/AgentLogLines.vue'
+import MihomoLogView from '@/components/mihomo/MihomoLogView.vue'
 import { Select } from '@/components/ui/select'
 import Segmented from '@/components/common/Segmented.vue'
-import { agentApi, mihomoPanelApi } from '@/api'
+import { agentApi, clientToolsApi, mihomoPanelApi } from '@/api'
 import { filterLogLevel, parseAgentLogs } from '@/lib/agentLogs'
 import { cachedPanelData } from '@/lib/mihomoPanelCache'
+import type { MihomoLogRow } from '@/lib/mihomoLogView'
 
 vi.mock('@/api', () => ({
   agentApi: { getLogSources: vi.fn(), getLogs: vi.fn() },
-  mihomoPanelApi: { configs: vi.fn(), logs: vi.fn() }
+  mihomoPanelApi: { configs: vi.fn(), logs: vi.fn() },
+  clientToolsApi: { notes: vi.fn() }
 }))
 vi.mock('@/lib/mihomoPanelCache', () => ({ cachedPanelData: vi.fn() }))
 vi.mock('vue-router', () => ({ RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } }))
@@ -43,7 +45,9 @@ async function render(props: Partial<{ agentId: string; active: boolean; reloadT
   return wrapper
 }
 
-const logText = (wrapper: VueWrapper) => wrapper.findComponent(AgentLogLines).props('text')
+const shownRows = (wrapper: VueWrapper) => wrapper.findComponent(MihomoLogView).props('rows') as MihomoLogRow[]
+const logText = (wrapper: VueWrapper) => shownRows(wrapper).map(row => row.entry.raw).join('\n')
+const shownLevels = (wrapper: VueWrapper) => shownRows(wrapper).map(row => `${row.entry.level}:${row.entry.message}`)
 const button = (wrapper: VueWrapper, label: string) => {
   const match = wrapper.findAll('button').find(item => item.attributes('aria-label') === label || item.text() === label)
   if (!match) throw new Error(`Missing button: ${label}`)
@@ -59,6 +63,8 @@ beforeEach(() => {
   vi.mocked(agentApi.getLogs).mockResolvedValue(logs('core startup complete'))
   vi.mocked(mihomoPanelApi.configs).mockResolvedValue({ data: { success: true, data: { 'log-level': 'info' } } } as any)
   vi.mocked(mihomoPanelApi.logs).mockResolvedValue(live([]))
+  vi.mocked(clientToolsApi.notes).mockResolvedValue({ data: { success: true, notes: {} } } as any)
+  localStorage.clear()
 })
 
 afterEach(() => {
@@ -225,16 +231,13 @@ describe('Mihomo logs', () => {
       'time="2026-11-11T10:00:02+08:00" level=error msg="c"'
     ].join('\n')))
     const wrapper = await render()
-    const pane = wrapper.findComponent(AgentLogLines)
-    expect(pane.props('minLevel')).toBe('WARN')
-    expect(pane.text()).not.toContain('[TCP] a')
-    expect(pane.text()).toContain('[DNS] b')
+    expect(shownLevels(wrapper)).toEqual(['WARN:[DNS] b', 'ERROR:c'])
     expect(wrapper.find('[data-file-level-hint]').exists()).toBe(false)
 
     // 选得比配置更详细：文件里没有这些日志，提示切到实时
     wrapper.findAllComponents(Select).at(-1)!.vm.$emit('update:modelValue', 'debug')
     await flushPromises()
-    expect(wrapper.findComponent(AgentLogLines).text()).toContain('[TCP] a')
+    expect(shownLevels(wrapper)).toEqual(['INFO:[TCP] a', 'WARN:[DNS] b', 'ERROR:c'])
     expect(wrapper.get('[data-file-level-hint]').text()).toContain('只记录 warning 及以上')
     expect(mihomoPanelApi.logs).not.toHaveBeenCalled()
   })
@@ -243,7 +246,7 @@ describe('Mihomo logs', () => {
     vi.mocked(cachedPanelData).mockReturnValue({ 'log-level': 'error' })
     const wrapper = await render()
     expect(mihomoPanelApi.configs).not.toHaveBeenCalled()
-    expect(wrapper.findComponent(AgentLogLines).props('minLevel')).toBe('ERROR')
+    expect(wrapper.get('[aria-label="最低日志等级"]').text()).toContain('error')
   })
 
   it('streams live logs incrementally at the chosen level every second', async () => {
@@ -260,8 +263,7 @@ describe('Mihomo logs', () => {
     expect(wrapper.text()).toContain('log-level 是 silent')
     await vi.advanceTimersByTimeAsync(1000)
     expect(mihomoPanelApi.logs).toHaveBeenLastCalledWith('gw', { level: 'info', after: 2 }, expect.anything())
-    const items = wrapper.findComponent(AgentLogLines).props('items') as Array<{ message: string; level: string }>
-    expect(items.map(item => `${item.level}:${item.message}`)).toEqual(['INFO:[TCP] first', 'WARN:[DNS] second', 'ERROR:third'])
+    expect(shownLevels(wrapper)).toEqual(['INFO:[TCP] first', 'WARN:[DNS] second', 'ERROR:third'])
     expect(wrapper.text()).toContain('已跳过 4 条')
     expect(wrapper.text()).toContain('实时接收中')
 
@@ -270,7 +272,7 @@ describe('Mihomo logs', () => {
     wrapper.findAllComponents(Select).at(-1)!.vm.$emit('update:modelValue', 'debug')
     await flushPromises()
     expect(mihomoPanelApi.logs).toHaveBeenLastCalledWith('gw', { level: 'debug', after: 0 }, expect.anything())
-    expect((wrapper.findComponent(AgentLogLines).props('items') as Array<{ message: string }>).map(item => item.message)).toEqual(['verbose'])
+    expect(shownLevels(wrapper)).toEqual(['DEBUG:verbose'])
     expect(wrapper.text()).not.toContain('已跳过')
 
     // 回到日志文件后不再轮询实时接口

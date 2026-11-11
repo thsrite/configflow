@@ -24,10 +24,11 @@
 
     <div class="mb-3 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
       <span role="status">{{ refreshStatus }}</span>
-      <span v-if="mode === 'file'">最近 {{ MAX_LINES }} 行<span v-if="search.trim()"> · 匹配 {{ matchingLines.length }} 行</span></span>
-      <span v-else>保留最近 {{ LIVE_MAX }} 条<span v-if="search.trim()"> · 匹配 {{ liveMatches.length }} 条</span><span v-if="skipped" class="text-warning-accent"> · 日志过多，已跳过 {{ skipped }} 条</span></span>
+      <span v-if="mode === 'file'">最近 {{ MAX_LINES }} 行<span v-if="keyword"> · 匹配 {{ rows.length }} 条</span></span>
+      <span v-else>保留最近 {{ LIVE_MAX }} 条<span v-if="keyword"> · 匹配 {{ rows.length }} 条</span><span v-if="skipped" class="text-warning-accent"> · 日志过多，已跳过 {{ skipped }} 条</span></span>
       <span v-if="updatedAt" class="num">更新于 {{ updatedAt }}</span>
-      <Button variant="ghost" size="sm" class="ml-auto min-h-11" :class="follow && 'bg-primary-soft text-primary-accent'" :aria-pressed="follow" @click="toggleFollow">
+      <Segmented v-model="view" :options="VIEWS" label="日志显示方式" class="ml-auto" />
+      <Button variant="ghost" size="sm" class="min-h-11" :class="follow && 'bg-primary-soft text-primary-accent'" :aria-pressed="follow" @click="toggleFollow">
         <ArrowDownToLine class="size-3.5" />跟随日志
       </Button>
     </div>
@@ -48,15 +49,15 @@
         <Button variant="outline" class="min-h-11" as-child><RouterLink to="/agents">前往升级 Agent</RouterLink></Button>
       </EmptyState>
     </SectionCard>
-    <AgentLogLines v-else-if="mode === 'live'" ref="logPane" :items="liveMatches" :notice="liveNotice" height-class="h-[55dvh] min-h-60 max-h-[640px]" />
+    <MihomoLogView v-else-if="mode === 'live'" ref="logPane" :rows="rows" :notes="notes" :merged="view === 'merged'" :notice="liveNotice" />
     <SectionCard v-else-if="legacy || unavailable || (sourcesReady && !sources.length)">
       <EmptyState :icon="FileText" :title="legacy ? '需要升级 Agent' : '暂无可读取的 Mihomo 日志'" :description="unavailableMessage">
         <Button v-if="legacy" variant="outline" class="min-h-11" as-child><RouterLink to="/agents">前往升级 Agent</RouterLink></Button>
         <Button v-else variant="outline" class="min-h-11" :disabled="loading" @click="refresh">重新读取来源</Button>
       </EmptyState>
     </SectionCard>
-    <AgentLogLines v-else ref="logPane" :text="filteredText" :min-level="agentLevelOf(level)" :notice="notice"
-      empty-text="没有该等级及以上的日志" height-class="h-[55dvh] min-h-60 max-h-[640px]" />
+    <MihomoLogView v-else ref="logPane" :rows="rows" :notes="notes" :merged="view === 'merged'" :notice="notice"
+      empty-text="没有该等级及以上的日志" />
   </div>
 </template>
 
@@ -70,17 +71,19 @@ import Toolbar from '@/components/common/Toolbar.vue'
 import Segmented from '@/components/common/Segmented.vue'
 import SectionCard from '@/components/common/SectionCard.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import AgentLogLines from '@/components/agents/AgentLogLines.vue'
+import MihomoLogView from '@/components/mihomo/MihomoLogView.vue'
 import { useTabActive } from '@/components/ui/tabs'
-import { agentApi, mihomoPanelApi, type AgentLogSource } from '@/api'
+import { agentApi, clientToolsApi, mihomoPanelApi, type AgentLogSource } from '@/api'
 import { panelError } from '@/types/mihomo'
 import { cachedPanelData } from '@/lib/mihomoPanelCache'
 import {
-  agentLevelOf, isMihomoLogLevel, MIHOMO_LOG_LEVELS, mihomoLevelRank, mihomoLiveEntry,
+  agentLevelOf, filterLogLevel, isMihomoLogLevel, MIHOMO_LOG_LEVELS, mihomoLevelRank, mihomoLiveEntry, parseAgentLogs,
   type AgentLogEntry, type MihomoLiveLog, type MihomoLogLevel
 } from '@/lib/agentLogs'
+import { rowMatches, toLogRows } from '@/lib/mihomoLogView'
 
 type LogMode = 'file' | 'live'
+type LogView = 'merged' | 'list'
 
 const props = withDefaults(defineProps<{ agentId: string; active?: boolean; reloadToken: number }>(), { active: true })
 // 所在标签是否为当前标签：由 Tabs 注入，切换标签不经过 props，隐藏的面板不会整组件重新渲染
@@ -91,6 +94,8 @@ const REFRESH_MS = 3000
 const LIVE_REFRESH_MS = 1000
 const LIVE_MAX = 1000
 const MODES: Array<{ value: LogMode; label: string }> = [{ value: 'file', label: '日志文件' }, { value: 'live', label: '实时' }]
+const VIEWS: Array<{ value: LogView; label: string }> = [{ value: 'merged', label: '合并' }, { value: 'list', label: '逐条' }]
+const VIEW_KEY = 'cf.mihomo.logs.view'
 const LIVE_ERRORS: Record<string, string> = {
   CORE_UNREACHABLE: '无法连接 Mihomo 控制接口，正在重试…',
   CORE_AUTH_FAILED: 'Mihomo 控制接口拒绝了 Agent 的 secret，请检查配置。'
@@ -109,7 +114,11 @@ const follow = ref(true)
 const search = ref('')
 const updatedAt = ref('')
 const visible = ref(document.visibilityState !== 'hidden')
-const logPane = ref<InstanceType<typeof AgentLogLines> | null>(null)
+const logPane = ref<InstanceType<typeof MihomoLogView> | null>(null)
+// 合并重复 / 逐条，记住本机上次的选择
+const view = ref<LogView>(readView())
+// 「客户端设备」里的备注，用来把来源 IP 显示成设备名
+const notes = ref<Record<string, string>>({})
 // 配置文件里的 log-level（读运行中的内核）；用户没手动选过时，等级默认跟随它
 const configuredLevel = ref('')
 const level = ref<MihomoLogLevel>('info')
@@ -130,22 +139,21 @@ const unavailableMessage = computed(() => legacy.value
   ? '旧版 Agent 无法区分核心与 Agent 日志，请升级 Agent 后查看 Mihomo 日志。'
   : currentSource.value?.note || 'Agent 未找到 Mihomo 核心日志，请检查设备上的服务日志配置。')
 const keyword = computed(() => search.value.trim().toLowerCase())
-const matchingLines = computed(() =>
-  text.value.split(/\r?\n/).filter(line => line.trim() && (!keyword.value || line.toLowerCase().includes(keyword.value))))
-const filteredText = computed(() => keyword.value ? matchingLines.value.join('\n') : text.value)
-const liveMatches = computed(() => keyword.value
-  ? liveEntries.value.filter(entry => entry.raw.toLowerCase().includes(keyword.value)) : liveEntries.value)
+// 日志文件每次读取后整体解析；实时日志的条目已解析好。两者都按等级过滤（实时由 Agent 过滤）再搜索
+const fileEntries = computed(() => filterLogLevel(parseAgentLogs(text.value), agentLevelOf(level.value)))
+const rows = computed(() => toLogRows(mode.value === 'live' ? liveEntries.value : fileEntries.value)
+  .filter(row => rowMatches(row, keyword.value, notes.value)))
 // 选的等级比日志文件记录的更详细时，提示改看实时日志
 const fileLevelHint = computed(() => mode.value === 'file' && isMihomoLogLevel(configuredLevel.value)
   && mihomoLevelRank(level.value) < mihomoLevelRank(configuredLevel.value))
 const notice = computed(() => {
-  if (text.value) return keyword.value && !matchingLines.value.length ? '没有匹配的日志' : ''
+  if (text.value) return keyword.value && !rows.value.length ? '没有匹配的日志' : ''
   if (loading.value) return '正在读取日志…'
   if (error.value) return '日志读取失败，请点击「刷新日志」重试。'
   return updatedAt.value ? 'Mihomo 日志暂无内容' : '等待读取日志'
 })
 const liveNotice = computed(() => {
-  if (liveEntries.value.length) return keyword.value && !liveMatches.value.length ? '没有匹配的日志' : ''
+  if (liveEntries.value.length) return keyword.value && !rows.value.length ? '没有匹配的日志' : ''
   if (error.value) return '实时日志读取失败，请点击「刷新日志」重试。'
   if (liveStatus.value === 'streaming') return `正在接收 ${level.value} 及以上的日志，等待新日志…`
   if (liveStatus.value === 'error') return LIVE_ERRORS[liveCode.value] || '暂时无法读取 Mihomo 日志流。'
@@ -212,6 +220,24 @@ function applyConfiguredLevel(value: unknown) {
   if (levelChosen.value) return
   // silent 时日志文件为空，实时日志也收不到内容，按 info 显示
   level.value = isMihomoLogLevel(configuredLevel.value) ? configuredLevel.value : 'info'
+}
+
+function readView(): LogView {
+  try { return window.localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'merged' } catch { return 'merged' }
+}
+
+let notesEpoch = 0
+/** 读一次设备备注；失败时照常显示 IP，不影响看日志 */
+async function loadNotes(id: string) {
+  const generation = ++notesEpoch
+  try {
+    const { data } = await clientToolsApi.notes(id)
+    if (generation !== notesEpoch || disposed || !data?.success) return
+    // 内容没变就不替换，免得整个列表再渲染一次
+    if (JSON.stringify(data.notes) !== JSON.stringify(notes.value)) notes.value = data.notes || {}
+  } catch {
+    // 忽略：设备名只是辅助信息
+  }
 }
 
 async function readConfiguredLevel(id: string) {
@@ -362,6 +388,15 @@ watch([() => props.agentId, active, visible, paused], ([id], previous) => {
   if (!paused.value) void load()
 }, { immediate: true })
 watch(() => props.reloadToken, refresh)
+watch(view, value => {
+  try { window.localStorage.setItem(VIEW_KEY, value) } catch { /* 隐私模式下不记住选择 */ }
+  void nextTick(() => { if (follow.value) logPane.value?.scrollToBottom() })
+})
+// 设备备注可能在连接页刚改过：换设备或切回日志标签时重读一次，不轮询
+watch([() => props.agentId, active], ([id, isActive], previous) => {
+  if (previous && id !== previous[0]) { notesEpoch++; notes.value = {} }
+  if (id && isActive) void loadNotes(id)
+}, { immediate: true })
 onMounted(() => document.addEventListener('visibilitychange', visibilityChanged))
 onUnmounted(() => {
   disposed = true
