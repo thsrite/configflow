@@ -3,7 +3,7 @@
     <template #actions>
       <Segmented v-model="mode" :options="LATENCY_MODES" label="测试方式" />
       <Select v-if="mode === 'mihomo'" :model-value="group" :disabled="!groups.length" @update:model-value="pickGroup(String($event))">
-        <SelectTrigger class="cf-choice-height min-h-11 w-40 min-w-0 max-sm:w-32" aria-label="海外站点经过的策略组" title="海外站点经过的策略组">
+        <SelectTrigger class="cf-choice-height min-h-11 w-40 min-w-0 max-sm:w-[7.25rem]" aria-label="海外站点经过的策略组" title="海外站点经过的策略组">
           <SelectValue placeholder="选择策略组"><span class="truncate">{{ group || '选择策略组' }}</span></SelectValue>
         </SelectTrigger>
         <SelectContent>
