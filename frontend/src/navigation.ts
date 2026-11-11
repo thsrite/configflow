@@ -32,10 +32,12 @@ export const isNavPath = (path: string) => NAV_GROUPS.some(group => group.items.
 
 /**
  * 底栏直达页面上的手机切换按钮只列与它相关的页面，不列整个分组；
- * 其余页面仍可从底栏「更多」进入。
+ * 其余页面仍可从底栏「更多」进入。其他页面的切换按钮列整个分组，但不重复底栏已有的页面。
  */
 export const MOBILE_RELATED_PAGES: Record<string, { label: string; paths: string[] }> = {
-  '/rules': { label: '规则', paths: ['/rules', '/rule-library', '/proxy-groups', '/domain-discovery'] }
+  '/rules': { label: '规则', paths: ['/rules', '/rule-library', '/proxy-groups', '/domain-discovery'] },
+  // Agent 没有密切相关的页面：只剩自己，不显示切换按钮
+  '/agents': { label: 'Agent', paths: ['/agents'] }
 }
 
 export const navItemOf = (path: string): NavItem | undefined =>

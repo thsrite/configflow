@@ -1,7 +1,7 @@
 <template>
   <!-- 手机用底部面板切换；平板空间足够时平铺，桌面仍使用侧栏。 -->
   <nav
-    v-if="group && activeItem && items.length > 1 && !allInTabBar"
+    v-if="group && activeItem && items.length > 1"
     ref="navContainer"
     class="mb-5 hidden min-w-0 max-[900px]:block max-sm:mb-2"
     aria-label="分组内页面"
@@ -121,13 +121,14 @@ const group = computed<Pick<NavGroup, 'tabLabel' | 'items'> | undefined>(() => {
   if (related) return { tabLabel: related.label, items: related.paths.map(navItemOf).filter((item): item is NavItem => !!item) }
   return NAV_GROUPS.find(g => g.scope === scopeOfPath(props.activePath))
 })
+const tabPaths = new Set<string>(MOBILE_TAB_PATHS)
+// 底栏已有的页面点一下就到，菜单里不重复（当前页除外）；只剩当前页时不显示切换按钮
 const items = computed<NavItem[]>(() =>
   (group.value?.items ?? []).filter(
-    item => item.flag !== 'subscriptionAggregation' || props.subscriptionAggregationEnabled
+    item => (item.flag !== 'subscriptionAggregation' || props.subscriptionAggregationEnabled)
+      && (item.path === props.activePath || MOBILE_RELATED_PAGES[props.activePath] || !tabPaths.has(item.path))
   )
 )
-// 同组页面都已在手机底栏直达（如总览），不再重复显示切换按钮
-const allInTabBar = computed(() => items.value.every(item => (MOBILE_TAB_PATHS as readonly string[]).includes(item.path)))
 const activeItem = computed(() => group.value?.items.find(item => item.path === props.activePath))
 
 // 平铺时为每项的图标、完整名称和内边距预留空间；入口增多自动回到菜单。

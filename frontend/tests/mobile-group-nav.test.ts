@@ -197,10 +197,11 @@ describe('mobile group navigation', () => {
   it.each([
     { path: '/subscriptions', group: '资源', current: '订阅来源', enabled: true, labels: ['订阅来源', '节点库', '订阅聚合', '规则库'] },
     { path: '/subscriptions', group: '资源', current: '订阅来源', enabled: false, labels: ['订阅来源', '节点库', '规则库'] },
-    { path: '/logs', group: '系统', current: '日志', enabled: true, labels: ['系统设置', '配置空间', 'Agent', '日志'] },
+    // 底栏已有的 Agent 不在菜单里重复
+    { path: '/logs', group: '系统', current: '日志', enabled: true, labels: ['系统设置', '配置空间', '日志'] },
     // 规则页只列与规则相关的页面；同组的其他页面从底栏「更多」进入
     { path: '/rules', group: '规则', current: '策略规则', enabled: true, labels: ['策略规则', '规则库', '策略组', '域名发现'] },
-    { path: '/proxy-groups', group: '当前配置', current: '策略组', enabled: true, labels: ['策略组', '策略规则', '客户端设备', '域名发现', '上游路由', '配置生成'] }
+    { path: '/proxy-groups', group: '当前配置', current: '策略组', enabled: true, labels: ['策略组', '客户端设备', '域名发现', '上游路由', '配置生成'] }
   ])('shows every $group destination and marks the current page (aggregation=$enabled)', async ({ path, group, current, enabled, labels }) => {
     const { wrapper } = await render(path, enabled)
     const nav = await openMenu(wrapper, group, current)
@@ -329,9 +330,10 @@ describe('mobile group navigation', () => {
       expect(wrapper.get('button[aria-label="切换系统页面，当前日志"]').isVisible()).toBe(true)
       const nav = await openMenu(wrapper, '系统', '日志')
       const links = [...nav.querySelectorAll('a')]
-      expect(links).toHaveLength(8)
-      expect(links.map(link => link.getAttribute('href'))).toEqual(systemGroup.items.map(item => item.path))
-      expect(links.map(link => link.textContent?.trim())).toEqual(systemGroup.items.map(item => item.label))
+      // 底栏已有的 Agent 不在菜单里重复
+      expect(links).toHaveLength(7)
+      expect(links.map(link => link.getAttribute('href'))).toEqual(systemGroup.items.filter(item => item.path !== '/agents').map(item => item.path))
+      expect(links.map(link => link.textContent?.trim())).toEqual(systemGroup.items.filter(item => item.path !== '/agents').map(item => item.label))
       expect(nav.querySelector('a[aria-current="page"]')?.getAttribute('href')).toBe('/logs')
     } finally {
       // Restore shared configuration even if an assertion fails, before any
@@ -354,6 +356,11 @@ describe('mobile group navigation', () => {
     await flushPromises()
     expect(openSheet()).toBeNull()
     expect(router.currentRoute.value.path).toBe('/subscriptions')
+  })
+
+  it('does not show a switcher on the Agent page, which has no closely related pages', async () => {
+    const { wrapper } = await render('/agents')
+    expect(wrapper.find('nav[aria-label="分组内页面"]').exists()).toBe(false)
   })
 
   it('does not repeat the overview switcher because all its pages are in the tab bar', async () => {
