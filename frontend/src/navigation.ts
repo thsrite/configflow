@@ -22,6 +22,9 @@ export interface NavGroup {
   items: NavItem[]
 }
 
+/** 手机底栏直达的页面；其余页面收进底栏「更多」 */
+export const MOBILE_TAB_PATHS = ['/dashboard', '/oxidns', '/mihomo', '/rules', '/agents'] as const
+
 export const NAV_GROUPS: NavGroup[] = [
   {
     scope: 'overview',

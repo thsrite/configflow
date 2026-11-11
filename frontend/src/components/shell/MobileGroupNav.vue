@@ -1,7 +1,7 @@
 <template>
   <!-- 手机用底部面板切换；平板空间足够时平铺，桌面仍使用侧栏。 -->
   <nav
-    v-if="group && activeItem && items.length > 1"
+    v-if="group && activeItem && items.length > 1 && !allInTabBar"
     ref="navContainer"
     class="mb-5 hidden min-w-0 max-[900px]:block max-sm:mb-2"
     aria-label="分组内页面"
@@ -99,7 +99,7 @@ import { useElementSize, useMediaQuery } from '@vueuse/core'
 import { Check, ChevronDown, X } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
-import { NAV_GROUPS, scopeOfPath, type NavItem } from '@/navigation'
+import { MOBILE_TAB_PATHS, NAV_GROUPS, scopeOfPath, type NavItem } from '@/navigation'
 import { iconOf } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
@@ -121,6 +121,8 @@ const items = computed<NavItem[]>(() =>
     item => item.flag !== 'subscriptionAggregation' || props.subscriptionAggregationEnabled
   )
 )
+// 同组页面都已在手机底栏直达（如总览），不再重复显示切换按钮
+const allInTabBar = computed(() => items.value.every(item => (MOBILE_TAB_PATHS as readonly string[]).includes(item.path)))
 const activeItem = computed(() => group.value?.items.find(item => item.path === props.activePath))
 
 // 平铺时为每项的图标、完整名称和内边距预留空间；入口增多自动回到菜单。

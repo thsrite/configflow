@@ -161,7 +161,7 @@
       </main>
     </div>
 
-    <MobileTabBar :active-path="navigationPath(route.path)" @more="palette?.show()" />
+    <MobileTabBar :active-path="navigationPath(route.path)" :subscription-aggregation-enabled="subscriptionAggregationEnabled" />
 
     <CommandPalette
       ref="palette"
