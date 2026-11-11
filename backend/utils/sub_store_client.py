@@ -11,6 +11,8 @@ Sub-Store API 参考:
 """
 import os
 import uuid
+from collections import OrderedDict
+from copy import deepcopy
 from datetime import datetime, timezone
 from concurrent.futures import Future
 from threading import Lock
@@ -315,8 +317,30 @@ def _get_subscription_proxies_yaml(sub_id, url, target='ClashMeta'):
         raise SubscriptionFetchError(sub_store_error, direct_error) from direct_error
 
 
+NODE_CONVERSION_LIMIT = 512
+_node_conversions = OrderedDict()  # (Sub-Store version, target, node string) -> converted proxy
+_node_conversions_lock = Lock()
+
+
+def _node_conversion_version():
+    """Version of the bundled Sub-Store, or None where conversions are not kept.
+
+    A node converts to the same proxy for as long as the converter is the same
+    program. Only the bundled Sub-Store's version is known without asking it;
+    one reached through SUB_STORE_URL can change without notice.
+    """
+    from backend.utils.dependencies import active_bundle, is_builtin_available
+    try:
+        return (active_bundle()[1] or None) if is_builtin_available() else None
+    except Exception:
+        return None
+
+
 def convert_proxy_string(proxy_string, target='ClashMeta'):
     """通过 Sub-Store 将单个节点字符串（URI / YAML）转换为 mihomo 格式的 proxy dict。
+
+    成功的结果按内置 Sub-Store 的版本记住：每次核对配置、生成订阅聚合都要转换
+    同样的节点，而按需模式下每问一次都要把 Sub-Store 启动起来、再多留几分钟。
 
     Args:
         proxy_string: 节点字符串，如 vless://...、ss://... 或 YAML 对象
@@ -325,6 +349,26 @@ def convert_proxy_string(proxy_string, target='ClashMeta'):
     Returns:
         dict 或 None: 转换后的 mihomo proxy dict，失败返回 None
     """
+    version = _node_conversion_version() if isinstance(proxy_string, str) else None
+    key = (version, target, proxy_string)
+    if version is not None:
+        with _node_conversions_lock:
+            kept = _node_conversions.get(key)
+            if kept is not None:
+                _node_conversions.move_to_end(key)
+                return deepcopy(kept)
+    proxy = _convert_proxy_string(proxy_string, target)
+    # An online update in between means another program may have answered.
+    if proxy is not None and version is not None and _node_conversion_version() == version:
+        with _node_conversions_lock:
+            _node_conversions[key] = deepcopy(proxy)
+            _node_conversions.move_to_end(key)
+            while len(_node_conversions) > NODE_CONVERSION_LIMIT:
+                _node_conversions.popitem(last=False)
+    return proxy
+
+
+def _convert_proxy_string(proxy_string, target):
     base = _get_base_url()
     proxy_type = "unknown"
     if isinstance(proxy_string, str) and '://' in proxy_string:
