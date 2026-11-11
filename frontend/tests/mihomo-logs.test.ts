@@ -6,6 +6,7 @@ import { Select } from '@/components/ui/select'
 import Segmented from '@/components/common/Segmented.vue'
 import { agentApi, mihomoPanelApi } from '@/api'
 import { filterLogLevel, parseAgentLogs } from '@/lib/agentLogs'
+import { cachedPanelData } from '@/lib/mihomoPanelCache'
 
 vi.mock('@/api', () => ({
   agentApi: { getLogSources: vi.fn(), getLogs: vi.fn() },
@@ -236,6 +237,13 @@ describe('Mihomo logs', () => {
     expect(wrapper.findComponent(AgentLogLines).text()).toContain('[TCP] a')
     expect(wrapper.get('[data-file-level-hint]').text()).toContain('只记录 warning 及以上')
     expect(mihomoPanelApi.logs).not.toHaveBeenCalled()
+  })
+
+  it('reuses the configs the panel header already read instead of requesting them again', async () => {
+    vi.mocked(cachedPanelData).mockReturnValue({ 'log-level': 'error' })
+    const wrapper = await render()
+    expect(mihomoPanelApi.configs).not.toHaveBeenCalled()
+    expect(wrapper.findComponent(AgentLogLines).props('minLevel')).toBe('ERROR')
   })
 
   it('streams live logs incrementally at the chosen level every second', async () => {
