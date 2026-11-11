@@ -921,3 +921,19 @@ body {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/*
+ * iOS Safari 在聚焦字号小于 16px 的输入框时会自动放大页面，关掉键盘后也不缩回。
+ * 只在 iOS 上（-webkit-touch-callout 仅 iOS 支持）把文字输入的字号保证不小于 16px；
+ * 不用 maximum-scale，以免连双指缩放也一起禁掉。安卓和桌面不受影响。
+ */
+@supports (-webkit-touch-callout: none) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']):not([type='button']):not([type='submit']),
+  textarea,
+  select,
+  [contenteditable='true'],
+  [contenteditable=''] {
+    font-size: max(16px, 1em);
+  }
+}
+
