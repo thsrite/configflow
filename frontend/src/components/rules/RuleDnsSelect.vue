@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { Check, ChevronDown, ChevronsUpDown, Loader2 } from '@lucide/vue'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import { useScrollToCurrent } from '@/lib/scrollToCurrent'
 import FieldHelp from '@/components/common/FieldHelp.vue'
 import { cn } from '@/lib/utils'
 import { BLOCK_ROUTES, CHOICE_LABELS, DNS_COPY, ROUTE_LABELS, choiceLabel, forwardLabel, upstreamOptions } from '@/lib/ruleDns'
@@ -32,6 +33,8 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{ 'update:modelValue': [value: RuleDnsValue] }>()
 const open = ref(false)
+// 打开时滚到当前选中的选项
+useScrollToCurrent(open)
 
 watch(() => [props.disabled, props.loading], () => {
   if (props.disabled || props.loading) open.value = false
@@ -95,7 +98,7 @@ function choose(value: RuleDnsValue, disabled = false) {
         <CommandList :aria-label="`${label} 可选处理`" class="max-h-[min(24rem,calc(var(--reka-popover-content-available-height)-3rem))] p-1">
           <CommandEmpty class="px-3 py-6 text-muted-foreground">没有匹配的 DNS 处理</CommandEmpty>
           <CommandGroup heading="跟随与默认">
-            <CommandItem v-for="option in defaultOptions" :key="option.value" :value="option.value" :class="optionClass" @select="choose(option.value)">
+            <CommandItem v-for="option in defaultOptions" :key="option.value" :value="option.value" :data-current="modelValue === option.value || undefined" :class="optionClass" @select="choose(option.value)">
               <Check class="size-4 shrink-0" :class="modelValue === option.value ? 'text-primary-accent' : 'opacity-0'" aria-hidden="true" />
               <span class="min-w-0 flex-1">
                 <span class="block text-sm font-medium">{{ option.label }}</span>
@@ -106,7 +109,7 @@ function choose(value: RuleDnsValue, disabled = false) {
             </CommandItem>
           </CommandGroup>
           <CommandGroup heading="解析">
-            <CommandItem v-for="option in resolveOptions" :key="option.value" :value="option.value" :class="optionClass" @select="choose(option.value)">
+            <CommandItem v-for="option in resolveOptions" :key="option.value" :value="option.value" :data-current="modelValue === option.value || undefined" :class="optionClass" @select="choose(option.value)">
               <Check class="size-4 shrink-0" :class="modelValue === option.value ? 'text-primary-accent' : 'opacity-0'" aria-hidden="true" />
               <span class="min-w-0 flex-1">
                 <span class="block text-sm font-medium">{{ option.label }}</span>
@@ -118,6 +121,7 @@ function choose(value: RuleDnsValue, disabled = false) {
           <CommandGroup heading="指定上游">
             <CommandItem
               v-for="option in pinned"
+              :data-current="modelValue === option.value || undefined"
               :key="option.value"
               :value="option.value"
               :disabled="option.linked"
@@ -134,7 +138,7 @@ function choose(value: RuleDnsValue, disabled = false) {
             <p v-if="!pinned.length" class="m-0 px-2 py-1.5 text-xs text-muted-foreground">没有可固定的上游</p>
           </CommandGroup>
           <CommandGroup heading="拦截">
-            <CommandItem v-for="option in blockOptions" :key="option.value" :value="option.value" :class="optionClass" @select="choose(option.value)">
+            <CommandItem v-for="option in blockOptions" :key="option.value" :value="option.value" :data-current="modelValue === option.value || undefined" :class="optionClass" @select="choose(option.value)">
               <Check class="size-4 shrink-0" :class="modelValue === option.value ? 'text-primary-accent' : 'opacity-0'" aria-hidden="true" />
               <span class="min-w-0 flex-1">
                 <span class="block text-sm font-medium">{{ option.label }}</span>

@@ -58,7 +58,7 @@ watch(() => props.warnings.length, count => { if (count < 2) expanded.value = fa
       >
         <component
           :is="warning.tone === 'warning' ? TriangleAlert : Info"
-          :class="['mt-0.5 size-3.5 shrink-0', warning.tone === 'warning' ? 'text-warning-accent' : 'text-primary-accent']"
+          :class="['mt-[3px] size-3.5 shrink-0', warning.tone === 'warning' ? 'text-warning-accent' : 'text-primary-accent']"
           aria-hidden="true"
         />
         <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
@@ -68,14 +68,14 @@ watch(() => props.warnings.length, count => { if (count < 2) expanded.value = fa
             href="/generate?oxidns=config"
             target="_blank"
             rel="noopener"
-            class="inline-flex min-h-6 items-center gap-1 text-primary-accent underline-offset-4 hover:underline max-sm:min-h-11"
+            class="dns-warning-action relative inline-flex min-h-6 items-center gap-1 text-primary-accent underline-offset-4 hover:underline"
           >{{ warning.actionLabel }}<ExternalLink class="size-3" aria-hidden="true" /></a>
           <Button
             v-else-if="warning.action"
             type="button"
             variant="ghost"
             size="xs"
-            class="h-6 px-1.5 text-primary-accent max-sm:h-11"
+            class="dns-warning-action relative h-6 min-h-0 min-w-0 max-md:min-h-0 max-md:min-w-0 px-1.5 text-primary-accent"
             @click="emit('action', warning.action!)"
           >{{ warning.actionLabel }}</Button>
         </div>
@@ -84,7 +84,7 @@ watch(() => props.warnings.length, count => { if (count < 2) expanded.value = fa
           type="button"
           variant="ghost"
           size="xs"
-          class="h-6 shrink-0 px-1.5 text-muted-foreground max-sm:h-11"
+          class="dns-warning-action relative h-6 min-h-0 min-w-0 max-md:min-h-0 max-md:min-w-0 shrink-0 px-1.5 text-muted-foreground"
           :aria-expanded="false"
           @click="expanded = true"
         >另有 {{ warnings.length - 1 }} 条提示</Button>
@@ -92,3 +92,12 @@ watch(() => props.warnings.length, count => { if (count < 2) expanded.value = fa
     </div>
   </FormField>
 </template>
+
+<style scoped>
+/* 提示里的操作：视觉与文字同高，上下透明区域补足 44px 点击区 */
+.dns-warning-action::before {
+  content: '';
+  position: absolute;
+  inset: calc((24px - var(--cf-touch, 44px)) / 2) 0;
+}
+</style>
