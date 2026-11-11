@@ -23,7 +23,7 @@
         <div class="flex w-full flex-wrap items-center justify-between gap-2">
           <Segmented class="shrink-0 max-sm:[&_[data-segment]]:min-w-11 max-sm:[&_[data-segment]]:px-2" :model-value="mode" :options="MODE_OPTIONS" label="代理模式" :disabled="!coreVersion || modeSaving" @update:model-value="changeMode" />
           <div class="ml-auto flex shrink-0 items-center gap-2 max-sm:gap-1">
-            <MihomoCoreActions :agent-id="agentId" :disabled="!coreVersion && !statusError" @changed="reloadAll" @status-change="coreActionStatus = $event" />
+            <MihomoCoreActions :agent-id="agentId" :core-version="coreVersion" :disabled="!coreVersion && !statusError" @changed="reloadAll" @status-change="coreActionStatus = $event" />
             <Button variant="outline" class="cf-choice-height min-h-11 max-sm:w-11 max-sm:min-w-0 max-sm:gap-0" aria-label="刷新面板" title="刷新面板" :aria-busy="statusLoading" :disabled="statusLoading" @click="reloadAll">
               <RefreshCw class="size-4" :class="{ 'animate-spin': statusLoading }" /><span class="max-sm:sr-only">刷新</span>
             </Button>

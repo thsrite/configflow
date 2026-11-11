@@ -4,6 +4,8 @@ The Agent forwards to its local Mihomo controller with the controller secret it
 reads itself; neither the secret nor arbitrary controller paths pass through here.
 """
 import json
+import re
+import time
 from urllib.parse import quote
 
 import requests
@@ -184,11 +186,91 @@ def _slim(resource, data):
     return data
 
 
-def call(manager, agent_id, resource, method, args, body=None):
+# Mihomo's own updater (component/updater/update_core.go) reads one of these and
+# refuses to upgrade when the text equals the running version. A version that
+# starts with "alpha" follows the alpha channel; every other version follows
+# the latest release. Checking the same files gives the same verdict as the core.
+CORE_VERSION_URLS = {
+    'release': 'https://github.com/MetaCubeX/mihomo/releases/latest/download/version.txt',
+    'alpha': 'https://github.com/MetaCubeX/mihomo/releases/download/Prerelease-Alpha/version.txt',
+}
+# v1.19.32, alpha-0a1b2c3; anything else (a captive or mirror error page) is not a version.
+CORE_VERSION_PATTERN = re.compile(r'[A-Za-z0-9][A-Za-z0-9._+-]{0,63}')
+CORE_RELEASE_PAGES = {
+    'release': 'https://github.com/MetaCubeX/mihomo/releases/tag/{version}',
+    'alpha': 'https://github.com/MetaCubeX/mihomo/releases/tag/Prerelease-Alpha',
+}
+
+
+# The panel checks on every open; GitHub answers are kept an hour (like
+# zashboard's local cache) and failures five minutes so an unreachable GitHub
+# does not hold every open for the request timeout. A manual check bypasses it.
+CORE_CHECK_TTL = 3600
+CORE_CHECK_FAILURE_TTL = 300
+_core_latest = {}
+
+
+def _latest_core_version(channel):
+    """Read the channel's version.txt with the rule download proxy and GitHub mirror."""
+    from backend.utils.rule_fetch import request_rule
+    response = request_rule(CORE_VERSION_URLS[channel], timeout=(5, 10), max_bytes=256)
+    response.raise_for_status()
+    version = response.content.decode('utf-8', 'replace').strip()
+    if not CORE_VERSION_PATTERN.fullmatch(version):
+        raise ValueError('version.txt is not a version')
+    return version
+
+
+def _check_failure(exc):
+    """A short reason without URLs, proxy credentials or response bodies."""
+    exc = getattr(exc, 'last_error', exc)  # source and mirror both failed: report the last try
+    if isinstance(exc, requests.Timeout):
+        return '连接 GitHub 超时'
+    if isinstance(exc, requests.HTTPError) and getattr(exc.response, 'status_code', None):
+        return f'GitHub 返回 HTTP {exc.response.status_code}'
+    if isinstance(exc, requests.RequestException):
+        return '无法连接 GitHub'
+    if isinstance(exc, ValueError):
+        return 'version.txt 内容不是版本号'
+    return type(exc).__name__
+
+
+def _cached_latest(channel, force):
+    """(version, error) for a channel, from the cache unless forced or expired."""
+    now = time.monotonic()
+    cached = _core_latest.get(channel)
+    if cached and not force and now - cached[0] < (CORE_CHECK_FAILURE_TTL if cached[2] else CORE_CHECK_TTL):
+        return cached[1], cached[2]
+    try:
+        latest, error = _latest_core_version(channel), ''
+    except Exception as exc:  # the device may still reach GitHub through the core itself
+        latest, error = '', f'无法获取最新版本（{_check_failure(exc)}），可检查设置里的「规则下载代理」和「GitHub 代理域名」。'
+    _core_latest[channel] = (now, latest, error)
+    return latest, error
+
+
+def check_core_update(manager, agent_id, force=False):
+    """Compare the running core with the version its own updater would install."""
+    current = call(manager, agent_id, 'version', 'GET', {}, min_version=RESOURCE_MIN_VERSION['upgrade'])
+    current = current['data'].get('version') if isinstance(current['data'], dict) else None
+    if not isinstance(current, str) or not current:
+        raise _fail('INVALID_RESPONSE')
+    channel = 'alpha' if current.startswith('alpha') else 'release'
+    latest, error = _cached_latest(channel, force)
+    result = {'current': current, 'channel': channel, 'latest': latest, 'has_update': bool(latest) and latest != current,
+              'error': error}
+    if latest:
+        result['release_url'] = CORE_RELEASE_PAGES[channel].format(version=quote(latest, safe=''))
+    return {'success': True, 'data': result}
+
+
+def call(manager, agent_id, resource, method, args, body=None, min_version=None):
+    if (resource, method) == ('core/update', 'GET'):
+        return check_core_update(manager, agent_id, force=args.get('force') == '1')
     template = ROUTES.get((resource, method))
     if template is None:
         raise _fail('NOT_ALLOWED', 404, '面板不支持这个操作。')
-    agent = _agent(manager, agent_id, RESOURCE_MIN_VERSION.get(resource, MIN_AGENT_VERSION),
+    agent = _agent(manager, agent_id, min_version or RESOURCE_MIN_VERSION.get(resource, MIN_AGENT_VERSION),
                    RESOURCE_FEATURE.get(resource))
     path = template
     for key in ('provider', 'name'):

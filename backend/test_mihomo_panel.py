@@ -318,3 +318,102 @@ def test_other_replies_pass_through_unchanged(calls):
     assert panel.call(Manager(), 'mihomo', 'proxy', 'PUT', MultiDict({'name': 'Proxy'}), {'name': 'HK'})['data'] == reply
     calls.replies.append(Response(['unexpected']))
     assert panel.call(Manager(), 'mihomo', 'proxies', 'GET', MultiDict())['data'] == ['unexpected']
+
+
+class VersionText:
+    def __init__(self, text, status=200):
+        self.content = text.encode()
+        self.status_code = status
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(response=self)
+
+
+@pytest.fixture
+def latest(monkeypatch):
+    seen = Calls()
+    replies = []
+
+    def request_rule(url, **kwargs):
+        seen.append((url, kwargs))
+        reply = replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    monkeypatch.setattr('backend.utils.rule_fetch.request_rule', request_rule)
+    monkeypatch.setattr(panel, '_core_latest', {})
+    seen.replies = replies
+    return seen
+
+
+@pytest.mark.parametrize('current, upstream, channel, has_update', [
+    ('v1.19.32', 'v1.19.33\n', 'release', True),
+    ('v1.19.32', 'v1.19.32\n', 'release', False),
+    ('alpha-0a1b2c3', 'alpha-4d5e6f7', 'alpha', True),
+    ('alpha-0a1b2c3', 'alpha-0a1b2c3', 'alpha', False),
+])
+def test_core_update_check_follows_the_cores_own_channel_and_comparison(calls, latest, current, upstream, channel,
+                                                                          has_update):
+    calls.replies.append(Response({'meta': True, 'version': current}))
+    latest.replies.append(VersionText(upstream))
+    result = panel.call(Manager({**AGENT, 'version': '1.8.16-go'}), 'mihomo', 'core/update', 'GET', MultiDict())
+    data = result['data']
+    assert (data['current'], data['latest'], data['channel'], data['has_update'], data['error']) == (
+        current, upstream.strip(), channel, has_update, '')
+    assert latest[0][0] == panel.CORE_VERSION_URLS[channel]
+    assert [(c['method'], c['url'].rsplit('/api/mihomo/', 1)[1]) for c in calls] == [('GET', 'version')]
+
+
+def test_core_update_check_needs_the_upgrade_agent_version(calls, latest):
+    with pytest.raises(MonitorError) as exc:
+        panel.call(Manager(), 'mihomo', 'core/update', 'GET', MultiDict())
+    assert exc.value.code == 'UPGRADE_REQUIRED' and '1.8.16-go' in exc.value.message
+    assert calls == [] and latest == []
+
+
+@pytest.mark.parametrize('failure, reason', [
+    (requests.ConnectTimeout('https://user:secret@proxy.invalid'), '连接 GitHub 超时'),
+    (requests.HTTPError(response=VersionText('', 404)), 'GitHub 返回 HTTP 404'),
+    (requests.ConnectionError('https://user:secret@proxy.invalid'), '无法连接 GitHub'),
+    (VersionText('<html>blocked</html>'), 'version.txt 内容不是版本号'),
+])
+def test_core_update_check_failure_still_reports_the_running_version(calls, latest, failure, reason):
+    calls.replies.append(Response({'meta': True, 'version': 'v1.19.32'}))
+    latest.replies.append(failure)
+    data = panel.call(Manager({**AGENT, 'version': '1.8.16-go'}), 'mihomo', 'core/update', 'GET', MultiDict())['data']
+    assert data['current'] == 'v1.19.32' and data['latest'] == '' and data['has_update'] is False
+    assert reason in data['error'] and 'secret' not in data['error']
+
+
+def test_core_update_check_reports_an_unreachable_core(calls, latest):
+    calls.replies.append(Response({'success': False, 'code': 'CORE_UNREACHABLE'}, status=502))
+    with pytest.raises(MonitorError) as exc:
+        panel.call(Manager({**AGENT, 'version': '1.8.16-go'}), 'mihomo', 'core/update', 'GET', MultiDict())
+    assert exc.value.code == 'CORE_UNREACHABLE'
+    assert latest == []
+
+
+def test_core_update_check_caches_github_and_a_manual_check_refreshes(calls, latest, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(panel.time, 'monotonic', lambda: clock[0])
+    manager = Manager({**AGENT, 'version': '1.8.16-go'})
+
+    def check(force=False):
+        calls.replies.append(Response({'meta': True, 'version': 'v1.19.32'}))
+        return panel.call(manager, 'mihomo', 'core/update', 'GET', MultiDict({'force': '1'} if force else {}))['data']
+
+    latest.replies.append(requests.ConnectTimeout())
+    assert check()['error']
+    clock[0] += panel.CORE_CHECK_FAILURE_TTL - 1
+    assert check()['error'] and len(latest) == 1  # a failure is not retried on every open
+    clock[0] += 2
+    latest.replies.append(VersionText('v1.19.32'))
+    assert check()['has_update'] is False and len(latest) == 2
+    clock[0] += panel.CORE_CHECK_TTL - 1
+    assert check()['latest'] == 'v1.19.32' and len(latest) == 2
+    latest.replies.append(VersionText('v1.19.33'))
+    data = check(force=True)
+    assert data['has_update'] is True and data['latest'] == 'v1.19.33' and len(latest) == 3
+    assert data['release_url'].endswith('/releases/tag/v1.19.33')
