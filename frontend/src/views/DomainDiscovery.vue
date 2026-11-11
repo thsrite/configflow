@@ -251,7 +251,7 @@
       <SectionCard v-if="!visibleHistory.length" :padded="false">
         <EmptyState title="还没有加入过域名" description="在列表里加入直连或代理后，会记录在这里，可以随时撤销。" :icon="ListPlus" />
       </SectionCard>
-      <DataTableShell v-else :footer="`共 ${visibleHistory.length} 条`">
+      <DataTableShell v-else :class="isPhone && 'domain-phone-rows domain-history-rows'" :footer="`共 ${visibleHistory.length} 条`">
         <TableHeader>
           <TableRow class="hover:bg-transparent">
             <TableHead>域名</TableHead>
@@ -264,7 +264,7 @@
         </TableHeader>
         <TableBody>
           <TableRow v-for="entry in visibleHistory" :key="`${entry.value}:${entry.target}`" :class="entry.recheck?.suggest_remove && 'bg-warning-soft/40'">
-            <TableCell class="font-mono text-[13px]">
+            <TableCell class="font-mono text-[13px]" :title="isPhone ? entry.value : undefined">
               {{ entry.value }}
               <span class="ml-1 text-[11px] text-muted-foreground">{{ entry.rule_type }}</span>
             </TableCell>
@@ -286,7 +286,7 @@
               <span v-else class="text-muted-foreground">—</span>
             </TableCell>
             <TableCell class="text-right">
-              <Button size="sm" variant="ghost" :disabled="applying" @click="undo(entry)">
+              <Button size="sm" variant="ghost" class="domain-compact-action" :disabled="applying" @click="undo(entry)">
                 <Undo2 class="size-3.5" />
                 撤销
               </Button>
@@ -299,7 +299,7 @@
     <SectionCard v-else-if="!visibleItems.length" :padded="false">
       <EmptyState :title="emptyTitle" :description="emptyDescription" :icon="Radar" />
     </SectionCard>
-    <DataTableShell v-else :footer="`共 ${visibleItems.length} 个域名`">
+    <DataTableShell v-else :class="isPhone && 'domain-phone-rows domain-item-rows'" :footer="`共 ${visibleItems.length} 个域名`">
       <TableHeader>
         <TableRow class="hover:bg-transparent">
           <TableHead class="w-10">
@@ -319,6 +319,7 @@
           <TableRow>
             <TableCell>
               <Checkbox
+                class="domain-check"
                 :model-value="selected.has(item.domain)"
                 :aria-label="`选择 ${item.domain}`"
                 @update:model-value="toggleSelected(item.domain)"
@@ -328,42 +329,88 @@
               <div class="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1 rounded-sm font-mono text-[13px] text-foreground hover:text-primary-accent focus-visible:outline-2 focus-visible:outline-ring max-md:min-h-11"
+                  class="domain-toggle inline-flex items-center gap-1 rounded-sm font-mono text-[13px] text-foreground hover:text-primary-accent focus-visible:outline-2 focus-visible:outline-ring max-md:min-h-11"
                   :aria-expanded="expanded.has(item.domain)"
                   :aria-label="`${expanded.has(item.domain) ? '收起' : '展开'} ${item.domain} 的子域`"
+                  :title="isPhone ? item.domain : undefined"
                   @click="toggleExpanded(item.domain)"
                 >
-                  <ChevronRight class="size-3.5 transition-transform" :class="expanded.has(item.domain) && 'rotate-90'" aria-hidden="true" />
-                  {{ item.domain }}
+                  <ChevronRight class="size-3.5 shrink-0 transition-transform" :class="expanded.has(item.domain) && 'rotate-90'" aria-hidden="true" />
+                  <span class="min-w-0 truncate">{{ item.domain }}</span>
                 </button>
-                <span v-if="item.hosts.length > 1" class="text-[11.5px] text-muted-foreground">{{ item.hosts.length }} 个子域</span>
-                <span v-for="tag in item.tags" :key="tag" :class="['chip', TAG_CLASSES[tag]]" :title="tagTitle(item, tag)">{{ TAG_LABELS[tag] }}</span>
+                <span v-if="item.hosts.length > 1 && !isPhone" class="text-[11.5px] text-muted-foreground">{{ item.hosts.length }} 个子域</span>
+                <template v-if="!isPhone">
+                  <span v-for="tag in item.tags" :key="tag" :class="['chip', TAG_CLASSES[tag]]" :title="tagTitle(item, tag)">{{ TAG_LABELS[tag] }}</span>
+                </template>
               </div>
-              <button type="button" class="mt-1 block max-w-[300px] truncate rounded-sm text-left text-xs text-muted-foreground hover:text-primary-accent focus-visible:outline-2 focus-visible:outline-ring max-md:min-h-11"
+              <button v-if="!isPhone" type="button" class="mt-1 block max-w-[300px] truncate rounded-sm text-left text-xs text-muted-foreground hover:text-primary-accent focus-visible:outline-2 focus-visible:outline-ring max-md:min-h-11"
                 :aria-label="`查看 ${item.domain} 的网站信息`" :title="websiteLabel(item)" @click="websiteDomain = item.domain">
                 {{ websiteLabel(item) }}
               </button>
             </TableCell>
-            <TableCell class="num text-right">{{ item.conns }}</TableCell>
+            <TableCell class="num text-right">{{ item.conns }}<span v-if="isPhone"> 连接</span></TableCell>
             <TableCell>
-              <span v-if="item.fails" class="num text-destructive-accent">{{ item.fails }}</span>
-              <span v-else class="text-muted-foreground">—</span>
-              <span v-if="item.fails" class="ml-1.5 text-[11.5px] text-muted-foreground">{{ failKindsText(item.fail_kinds) }}</span>
+              <span v-if="item.fails && isPhone" class="num text-destructive-accent" :title="failKindsText(item.fail_kinds)">失败 {{ item.fails }}</span>
+              <template v-else-if="!isPhone">
+                <span v-if="item.fails" class="num text-destructive-accent">{{ item.fails }}</span>
+                <span v-else class="text-muted-foreground">—</span>
+                <span v-if="item.fails" class="ml-1.5 text-[11.5px] text-muted-foreground">{{ failKindsText(item.fail_kinds) }}</span>
+              </template>
             </TableCell>
             <TableCell class="max-w-[280px]">
               <span v-if="item.routes[0]" class="block truncate text-[12.5px]" :title="routeText(item.routes[0])">{{ routeText(item.routes[0]) }}</span>
             </TableCell>
             <TableCell>
+              <!-- 手机第二行开头：标签与探测建议，子域数量 -->
+              <template v-if="isPhone">
+                <span v-for="tag in item.tags" :key="tag" :class="['chip', TAG_CLASSES[tag]]" :title="tagTitle(item, tag)">{{ TAG_LABELS[tag] }}</span>
+                <span v-if="item.hosts.length > 1">{{ item.hosts.length }} 个子域</span>
+              </template>
               <span
                 v-if="item.suggestion"
                 :class="['chip', suggestionClass(item.suggestion)]"
                 :title="suggestionTitle(item.suggestion)"
               >{{ suggestionText(item.suggestion) }}</span>
-              <span v-else class="text-[12px] text-muted-foreground">未探测</span>
+              <span v-else-if="!isPhone" class="text-[12px] text-muted-foreground">未探测</span>
             </TableCell>
             <TableCell class="text-[12.5px] text-muted-foreground">{{ relativeTime(item.last_seen) }}</TableCell>
             <TableCell class="text-right whitespace-nowrap">
-              <template v-if="view !== 'ignored'">
+              <!-- 手机：行内操作收进「⋯」菜单，菜单项与桌面按钮一一对应 -->
+              <DropdownMenu v-if="isPhone">
+                <DropdownMenuTrigger as-child>
+                  <Button size="icon" variant="ghost" class="domain-compact-action domain-more" :aria-label="`${item.domain} 的操作`" title="更多操作">
+                    <Ellipsis class="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" class="min-w-44">
+                  <template v-if="view !== 'ignored'">
+                    <DropdownMenuItem :disabled="applying" @select="apply([{ value: item.domain, target: 'proxy' }])">
+                      <ListPlus class="size-4" />加入代理
+                    </DropdownMenuItem>
+                    <DropdownMenuItem :disabled="applying" @select="apply([{ value: item.domain, target: 'direct' }])">
+                      <ListPlus class="size-4" />加入直连
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem :disabled="probing" @select="startProbe([item.domain])">
+                      <ScanSearch class="size-4" />探测直连与代理
+                    </DropdownMenuItem>
+                    <DropdownMenuItem v-if="region?.enabled" :disabled="probing" @select="startRegionCheck({ services: false, domains: [item.domain] })">
+                      <Globe class="size-4" />检测地区差异
+                    </DropdownMenuItem>
+                  </template>
+                  <DropdownMenuItem @select="websiteDomain = item.domain">
+                    <Info class="size-4" /><span class="min-w-0 truncate">{{ websiteLabel(item) }}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem v-if="view !== 'ignored'" :disabled="applying" @select="ignore([item.domain])">
+                    <EyeOff class="size-4" />忽略
+                  </DropdownMenuItem>
+                  <DropdownMenuItem v-else :disabled="applying" @select="unignore([item.domain])">
+                    <Undo2 class="size-4" />取消忽略
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <template v-else-if="view !== 'ignored'">
                 <Button size="icon" variant="ghost" class="size-8" :disabled="probing" :aria-label="`探测 ${item.domain}`" title="探测直连与代理" @click="startProbe([item.domain])">
                   <ScanSearch class="size-3.5" />
                 </Button>
@@ -388,7 +435,7 @@
               <Button v-else size="sm" variant="ghost" :disabled="applying" @click="unignore([item.domain])">取消忽略</Button>
             </TableCell>
           </TableRow>
-          <TableRow v-if="expanded.has(item.domain)" class="bg-muted/40 hover:bg-muted/40">
+          <TableRow v-if="expanded.has(item.domain)" class="domain-hosts-row bg-muted/40 hover:bg-muted/40">
             <TableCell />
             <TableCell colspan="7" class="py-2">
               <ul class="m-0 flex list-none flex-col gap-1 p-0">
@@ -407,8 +454,8 @@
                     {{ VERDICT_LABELS[host.probe.verdict] || host.probe.verdict }} · {{ relativeTime(host.probe.checked_at) }}
                   </span>
                   <span v-if="view !== 'ignored'" class="ml-auto flex gap-1">
-                    <Button size="sm" variant="ghost" class="h-7 text-[12px]" :disabled="applying" @click="apply([{ value: host.host, target: 'proxy', rule_type: 'DOMAIN' }])">仅此子域代理</Button>
-                    <Button size="sm" variant="ghost" class="h-7 text-[12px]" :disabled="applying" @click="apply([{ value: host.host, target: 'direct', rule_type: 'DOMAIN' }])">仅此子域直连</Button>
+                    <Button size="sm" variant="ghost" class="domain-compact-action h-7 text-[12px]" :disabled="applying" @click="apply([{ value: host.host, target: 'proxy', rule_type: 'DOMAIN' }])">仅此子域代理</Button>
+                    <Button size="sm" variant="ghost" class="domain-compact-action h-7 text-[12px]" :disabled="applying" @click="apply([{ value: host.host, target: 'direct', rule_type: 'DOMAIN' }])">仅此子域直连</Button>
                   </span>
                 </li>
               </ul>
@@ -455,10 +502,12 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { isAxiosError, isCancel, type AxiosResponse } from 'axios'
-import { ChevronRight, Eraser, EyeOff, Globe, ListPlus, Loader2, Plus, Radar, RefreshCw, ScanSearch, Sparkles, TriangleAlert, Undo2 } from '@lucide/vue'
+import { ChevronRight, Ellipsis, Eraser, EyeOff, Globe, Info, ListPlus, Loader2, Plus, Radar, RefreshCw, ScanSearch, Sparkles, TriangleAlert, Undo2 } from '@lucide/vue'
+import { useMediaQuery } from '@vueuse/core'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
@@ -649,6 +698,8 @@ const FAIL_KIND_LABELS: Record<string, string> = {
 const router = useRouter()
 const days = ref('7')
 const view = ref<View>('uncovered')
+// 手机（< 640px）上域名列表排成两行记录，行内操作收进「⋯」菜单
+const isPhone = useMediaQuery('(max-width: 639px)')
 const search = ref('')
 const loading = ref(false)
 const loadedKey = ref('')
@@ -1259,5 +1310,165 @@ onUnmounted(() => {
   .domain-discovery-header :deep(.cf-page-actions) {
     flex-grow: 1;
   }
+}
+
+/* 手机两行记录：第一行域名（等宽、截断）与连接数、最近出现，第二行次要信息与操作；不横向滚动 */
+.domain-phone-rows :deep(thead) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.domain-phone-rows :deep(table),
+.domain-phone-rows :deep(tbody) {
+  display: block;
+}
+
+.domain-phone-rows :deep(tbody tr) {
+  display: grid;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 8px 8px 8px 12px;
+}
+
+.domain-phone-rows :deep(tbody td) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 11.5px;
+  line-height: 20px;
+  color: var(--muted-foreground);
+}
+
+.domain-phone-rows :deep(tbody td > span:not(.chip)) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.domain-phone-rows :deep(.chip) {
+  flex-shrink: 0;
+  height: 20px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+/* 域名列表：勾选 | 域名 · 连接 · 最近出现 | ⋯；第二行 标签与建议 · 失败 · 当前走向 */
+.domain-item-rows :deep(tbody tr:not(.domain-hosts-row)) {
+  grid-template-columns: 20px minmax(0, auto) auto minmax(0, 1fr) auto auto 28px;
+  grid-template-areas:
+    'check domain domain domain conns seen more'
+    'check sugg fails route route route more';
+}
+
+.domain-item-rows :deep(tbody tr:not(.domain-hosts-row) > td:nth-child(1)) { grid-area: check; overflow: visible; }
+.domain-item-rows :deep(tbody tr:not(.domain-hosts-row) > td:nth-child(2)) { grid-area: domain; color: var(--foreground); }
+.domain-item-rows :deep(tbody tr:not(.domain-hosts-row) > td:nth-child(3)) { grid-area: conns; justify-content: flex-end; }
+.domain-item-rows :deep(tbody tr:not(.domain-hosts-row) > td:nth-child(4)) { grid-area: fails; }
+.domain-item-rows :deep(tbody tr:not(.domain-hosts-row) > td:nth-child(5)) { grid-area: route; }
+.domain-item-rows :deep(tbody tr:not(.domain-hosts-row) > td:nth-child(6)) { grid-area: sugg; }
+.domain-item-rows :deep(tbody tr:not(.domain-hosts-row) > td:nth-child(7)) { grid-area: seen; }
+.domain-item-rows :deep(tbody tr:not(.domain-hosts-row) > td:nth-child(8)) { grid-area: more; justify-content: center; overflow: visible; }
+
+.domain-item-rows :deep(td:nth-child(7))::before {
+  content: '·';
+}
+
+.domain-item-rows :deep(td:nth-child(5) > span) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.domain-item-rows :deep(td:nth-child(2) > div) {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.domain-item-rows :deep(.domain-toggle) {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  line-height: 20px;
+}
+
+.domain-item-rows :deep(.domain-toggle)::before {
+  content: '';
+  position: absolute;
+  inset: -10px -4px;
+}
+
+/* 勾选框看起来 16px，四周透明区让点击区达到 44px */
+.domain-item-rows :deep(.domain-check) {
+  position: relative;
+}
+
+.domain-item-rows :deep(.domain-check)::before {
+  content: '';
+  position: absolute;
+  inset: -14px;
+}
+
+/* 展开的子域：整块排在记录下方，与域名对齐 */
+.domain-item-rows :deep(tbody tr.domain-hosts-row) {
+  display: block;
+  padding: 6px 8px 8px 40px;
+}
+
+.domain-item-rows :deep(tr.domain-hosts-row > td:first-child) {
+  display: none;
+}
+
+.domain-item-rows :deep(tr.domain-hosts-row > td) {
+  display: block;
+  overflow: visible;
+  white-space: normal;
+}
+
+.domain-item-rows :deep(tr.domain-hosts-row li > span:first-child) {
+  flex-basis: 100%;
+}
+
+/* 已加入：域名 · 加入时间；第二行 规则集 · 依据 · 复检 · 撤销 */
+.domain-history-rows :deep(tbody tr) {
+  grid-template-columns: minmax(0, auto) minmax(0, auto) minmax(0, 1fr) auto;
+  grid-template-areas:
+    'domain domain domain time'
+    'target basis recheck undo';
+}
+
+.domain-history-rows :deep(td:nth-child(1)) { grid-area: domain; display: block; overflow: hidden; text-overflow: ellipsis; font-size: 13px; color: var(--foreground); }
+.domain-history-rows :deep(td:nth-child(2)) { grid-area: target; }
+.domain-history-rows :deep(td:nth-child(3)) { grid-area: basis; display: block; text-overflow: ellipsis; }
+.domain-history-rows :deep(td:nth-child(4)) { grid-area: time; justify-content: flex-end; }
+.domain-history-rows :deep(td:nth-child(5)) { grid-area: recheck; }
+.domain-history-rows :deep(td:nth-child(6)) { grid-area: undo; justify-content: flex-end; overflow: visible; }
+
+/* 行内按钮看起来 28px，透明外扩让点击区仍为 44px */
+.domain-phone-rows :deep(.domain-compact-action) {
+  position: relative;
+  height: 28px;
+  min-width: 0;
+  min-height: 0;
+  padding-inline: 8px;
+  font-size: 12px;
+}
+
+.domain-phone-rows :deep(.domain-more) {
+  width: 28px;
+  padding: 0;
+}
+
+.domain-phone-rows :deep(.domain-compact-action)::before {
+  content: '';
+  position: absolute;
+  inset: -8px -8px;
 }
 </style>
