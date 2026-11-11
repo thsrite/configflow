@@ -311,8 +311,10 @@ def preview_proxy_group_regex():
         if not regex_text and not exclude_text:
             return jsonify({'success': False, 'message': '请输入正则表达式'}), 400
 
+        # The inclusion becomes the group's Mihomo filter, which Mihomo splits on
+        # backticks and orders by part. The exclusion renders backticks literally.
         try:
-            regex = re.compile(regex_text) if regex_text else None
+            buckets = [re.compile(part) for part in regex_text.split('`')] if regex_text else [None]
         except re.error as exc:
             return jsonify({'success': False, 'message': f'正则表达式无效: {exc}'}), 400
         try:
@@ -365,7 +367,7 @@ def preview_proxy_group_regex():
 
         matched = []
         seen_names = set()
-        for node in candidates:
+        for regex, node in ((regex, node) for regex in buckets for node in candidates):
             name = node.get('name', '')
             if not name or (regex and not regex.search(name)):
                 continue
