@@ -7,17 +7,18 @@
         </Button>
       </template>
       <div class="cf-table-wrap max-h-80 overflow-y-auto rounded-none border-x-0 border-b-0">
-        <table class="cf-table min-w-[620px]">
+        <table class="cf-table rule-provider-rows min-w-[620px] max-sm:min-w-0">
           <thead><tr><th>名称</th><th>类型</th><th>规则数</th><th>更新时间</th><th class="cf-table__right">操作</th></tr></thead>
           <tbody>
             <tr v-for="provider in providers" :key="provider.name">
-              <td class="break-all font-medium">{{ provider.name }}</td>
-              <td class="text-xs text-muted-foreground">{{ provider.behavior }} · {{ provider.format || '—' }} · {{ provider.vehicleType }}</td>
-              <td class="num">{{ provider.ruleCount ?? '—' }}</td>
-              <td class="text-xs text-muted-foreground">{{ provider.updatedAt ? relativeTime(provider.updatedAt) : '—' }}</td>
-              <td class="cf-table__right">
-                <Button v-if="provider.vehicleType === 'HTTP'" variant="ghost" size="sm" class="min-h-11" :disabled="busy.has(provider.name) || updatingAll" @click="updateProvider(provider)">
-                  <Loader2 v-if="busy.has(provider.name)" class="size-3.5 animate-spin" />更新
+              <td class="break-all font-medium" data-cell="name" :title="provider.name">{{ provider.name }}</td>
+              <!-- 手机只显示 behavior，格式与来源留给读屏 -->
+              <td class="text-xs text-muted-foreground" data-cell="meta">{{ provider.behavior }}<span class="max-sm:sr-only"> · {{ provider.format || '—' }} · {{ provider.vehicleType }}</span></td>
+              <td class="num" data-cell="meta">{{ provider.ruleCount ?? '—' }}<span class="sm:hidden"> 条</span></td>
+              <td class="text-xs text-muted-foreground" data-cell="meta">{{ provider.updatedAt ? relativeTime(provider.updatedAt) : '—' }}</td>
+              <td class="cf-table__right" data-cell="actions">
+                <Button v-if="provider.vehicleType === 'HTTP'" variant="ghost" size="sm" class="mihomo-row-action min-h-11" :disabled="busy.has(provider.name) || updatingAll" @click="updateProvider(provider)">
+                  <Loader2 v-if="busy.has(provider.name)" class="size-3.5 animate-spin" /><RefreshCw v-else class="size-3.5 sm:hidden" aria-hidden="true" /><span class="max-sm:sr-only">更新</span>
                 </Button>
               </td>
             </tr>
@@ -46,17 +47,20 @@
       <EmptyState :icon="Search" :title="search ? '没有匹配的规则' : '暂无规则'" />
     </SectionCard>
     <div v-else class="cf-table-wrap">
-      <table class="cf-table min-w-[640px] table-fixed">
+      <table class="cf-table mihomo-rule-rows min-w-[640px] table-fixed max-sm:min-w-0">
         <thead><tr><th class="cf-table__num">#</th><th class="w-[22%]">类型</th><th>内容</th><th class="w-[24%]">策略</th></tr></thead>
         <tbody>
           <tr v-for="item in filtered.slice(0, limit)" :key="item.index">
-            <td class="cf-table__num num">{{ item.index + 1 }}</td>
-            <td class="truncate text-xs">{{ item.rule.type }}</td>
-            <td class="break-all font-mono text-xs">
-              {{ item.rule.payload || '—' }}
-              <span v-if="item.rule.size && item.rule.size > 0" class="ml-1 text-muted-foreground">({{ item.rule.size }})</span>
+            <td class="cf-table__num num" data-cell="index">{{ item.index + 1 }}</td>
+            <td class="truncate text-xs" data-cell="type">
+              {{ item.rule.type }}
+              <span v-if="item.rule.size && item.rule.size > 0" class="num sm:hidden"> · {{ item.rule.size }} 条</span>
             </td>
-            <td class="truncate text-xs">{{ item.rule.proxy }}</td>
+            <td class="break-all font-mono text-xs" data-cell="payload" :title="item.rule.payload || undefined">
+              {{ item.rule.payload || '—' }}
+              <span v-if="item.rule.size && item.rule.size > 0" class="ml-1 text-muted-foreground max-sm:hidden">({{ item.rule.size }})</span>
+            </td>
+            <td class="truncate text-xs" data-cell="proxy"><span class="mihomo-rule-proxy" :title="item.rule.proxy">{{ item.rule.proxy }}</span></td>
           </tr>
         </tbody>
       </table>
@@ -172,3 +176,143 @@ watch(() => props.reloadToken, () => { stale = !active.value; if (active.value) 
 watch(active, shown => { if (shown && stale) { stale = false; void load() } })
 onMounted(load)
 </script>
+
+<style scoped>
+/* 手机（< 640px）：表格行改为紧凑网格，不横向滚动；表头只留给读屏 */
+@media (max-width: 639px) {
+  .rule-provider-rows,
+  .rule-provider-rows tbody,
+  .mihomo-rule-rows,
+  .mihomo-rule-rows tbody { display: block; }
+
+  .rule-provider-rows thead,
+  .mihomo-rule-rows thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .rule-provider-rows td,
+  .mihomo-rule-rows td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .rule-provider-rows tbody tr,
+  .mihomo-rule-rows tbody tr { border-bottom: 1px solid var(--cf-bd); }
+
+  .rule-provider-rows tbody tr:last-child,
+  .mihomo-rule-rows tbody tr:last-child { border-bottom: 0; }
+
+  /* 规则集合一行：名称在左，类型 · 规则数 · 更新时间与 28px 更新图标在右，行高 44px */
+  .rule-provider-rows tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+    align-items: center;
+    column-gap: 6px;
+    min-height: var(--cf-touch);
+    padding: 8px 8px 8px 12px;
+  }
+
+  .rule-provider-rows td[data-cell='name'] {
+    font-size: 14px;
+    word-break: normal;
+  }
+
+  .rule-provider-rows td[data-cell='meta'] {
+    font-size: 11.5px;
+    color: var(--muted-foreground);
+  }
+
+  .rule-provider-rows td[data-cell='meta'] + td[data-cell='meta']::before {
+    content: '· ';
+  }
+
+  .rule-provider-rows td[data-cell='actions'] {
+    overflow: visible;
+    margin-left: 2px;
+  }
+
+  .rule-provider-rows td[data-cell='actions']:empty { display: none; }
+
+  /* 规则两行：序号、内容与策略胶囊在上，规则类型（及规则集条数）在下 */
+  .mihomo-rule-rows tbody tr {
+    display: grid;
+    grid-template-columns: 2.25rem minmax(0, 1fr) auto;
+    grid-template-areas: 'index payload proxy' 'index type proxy';
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 1px;
+    padding: 6px 12px 6px 8px;
+  }
+
+  .mihomo-rule-rows td[data-cell='index'] {
+    grid-area: index;
+    align-self: start;
+    width: auto;
+    padding-top: 1px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted-foreground);
+    text-align: right;
+  }
+
+  .mihomo-rule-rows td[data-cell='payload'] {
+    grid-area: payload;
+    font-size: 12.5px;
+    line-height: 20px;
+    word-break: normal;
+  }
+
+  .mihomo-rule-rows td[data-cell='type'] {
+    grid-area: type;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 15px;
+    color: var(--muted-foreground);
+  }
+
+  .mihomo-rule-rows td[data-cell='proxy'] {
+    grid-area: proxy;
+    max-width: 9.5rem;
+  }
+
+  .mihomo-rule-proxy {
+    display: block;
+    overflow: hidden;
+    height: 22px;
+    padding: 0 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    font-size: 11.5px;
+    line-height: 20px;
+    color: var(--foreground);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 行内按钮看起来 28px，透明 ::before 向外 8px，点击区仍为 44px；不被基础按钮的 44px 最小尺寸撑高 */
+  .mihomo-row-action {
+    position: relative;
+    width: 28px;
+    height: 28px;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+  }
+
+  .mihomo-row-action::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
+  }
+}
+</style>

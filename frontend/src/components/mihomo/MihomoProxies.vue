@@ -93,18 +93,20 @@
 
     <SectionCard v-if="providers.length" class="mt-5" title="代理集合" description="proxy-providers 订阅，可手动更新或触发健康检查" :padded="false">
       <div class="cf-table-wrap rounded-none border-x-0 border-b-0">
-        <table class="cf-table min-w-[640px]">
+        <table class="cf-table proxy-provider-rows min-w-[640px] max-sm:min-w-0">
           <thead><tr><th>名称</th><th>节点数</th><th>流量 / 到期</th><th>更新时间</th><th class="cf-table__right">操作</th></tr></thead>
           <tbody>
             <tr v-for="provider in providers" :key="provider.name">
-              <td class="break-all font-medium">{{ provider.name }} <span class="chip ml-1">{{ provider.vehicleType }}</span></td>
-              <td class="num">{{ provider.proxies?.length || 0 }}</td>
-              <td class="text-xs text-muted-foreground">{{ subscriptionText(provider) }}</td>
-              <td class="text-xs text-muted-foreground">{{ provider.updatedAt ? relativeTime(provider.updatedAt) : '—' }}</td>
-              <td class="cf-table__right">
-                <Button variant="ghost" size="sm" class="min-h-11" :disabled="busy.has('p:' + provider.name)" @click="healthcheck(provider)">健康检查</Button>
-                <Button v-if="provider.vehicleType === 'HTTP'" variant="ghost" size="sm" class="min-h-11" :disabled="busy.has('p:' + provider.name)" @click="updateProvider(provider)">
-                  <Loader2 v-if="busy.has('p:' + provider.name)" class="size-3.5 animate-spin" />更新
+              <td class="break-all font-medium" data-cell="name"><span class="proxy-provider-name" :title="provider.name">{{ provider.name }}</span> <span class="chip ml-1">{{ provider.vehicleType }}</span></td>
+              <td class="num" data-cell="count">{{ provider.proxies?.length || 0 }}<span class="sm:hidden"> 个节点</span></td>
+              <td class="text-xs text-muted-foreground" data-cell="usage" :data-empty="subscriptionText(provider) === '—' || undefined">{{ subscriptionText(provider) }}</td>
+              <td class="text-xs text-muted-foreground" data-cell="updated">{{ provider.updatedAt ? relativeTime(provider.updatedAt) : '—' }}</td>
+              <td class="cf-table__right" data-cell="actions">
+                <Button variant="ghost" size="sm" class="mihomo-row-action min-h-11" title="健康检查" :disabled="busy.has('p:' + provider.name)" @click="healthcheck(provider)">
+                  <Activity class="size-3.5 sm:hidden" aria-hidden="true" /><span class="max-sm:sr-only">健康检查</span>
+                </Button>
+                <Button v-if="provider.vehicleType === 'HTTP'" variant="ghost" size="sm" class="mihomo-row-action min-h-11" title="更新" :disabled="busy.has('p:' + provider.name)" @click="updateProvider(provider)">
+                  <Loader2 v-if="busy.has('p:' + provider.name)" class="size-3.5 animate-spin" /><RefreshCw v-else class="size-3.5 sm:hidden" aria-hidden="true" /><span class="max-sm:sr-only">更新</span>
                 </Button>
               </td>
             </tr>
@@ -117,7 +119,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, toRaw, watch } from 'vue'
-import { ArrowRight, ChevronRight, ChevronsUpDown, Loader2, Search, Settings2, TriangleAlert, Zap } from '@lucide/vue'
+import { Activity, ArrowRight, ChevronRight, ChevronsUpDown, Loader2, RefreshCw, Search, Settings2, TriangleAlert, Zap } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import Toolbar from '@/components/common/Toolbar.vue'
 import SectionCard from '@/components/common/SectionCard.vue'
@@ -515,6 +517,101 @@ onMounted(() => { showCached(); void load() })
     grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
     margin-left: 0;
+  }
+
+  /* 代理集合两行：名称与来源在上、健康检查和更新两个 28px 图标在右；节点数 · 流量 / 到期 · 更新时间在下 */
+  .proxy-provider-rows,
+  .proxy-provider-rows tbody { display: block; }
+
+  .proxy-provider-rows thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .proxy-provider-rows tbody tr {
+    display: grid;
+    /* 流量 / 到期过长时只截断它，更新时间紧跟其后；末尾空列吸收剩余宽度 */
+    grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr) auto;
+    grid-template-areas: 'name name name name actions' 'count usage updated . actions';
+    align-items: center;
+    column-gap: 6px;
+    row-gap: 2px;
+    padding: 8px 8px 8px 12px;
+    border-bottom: 1px solid var(--cf-bd);
+  }
+
+  .proxy-provider-rows tbody tr:last-child { border-bottom: 0; }
+
+  .proxy-provider-rows td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    line-height: 16px;
+    color: var(--muted-foreground);
+  }
+
+  .proxy-provider-rows td[data-cell='name'] {
+    grid-area: name;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--foreground);
+  }
+
+  .proxy-provider-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .proxy-provider-rows td[data-cell='name'] .chip {
+    flex-shrink: 0;
+    height: 18px;
+    margin-left: 0;
+    padding: 0 6px;
+    font-size: 10.5px;
+  }
+
+  .proxy-provider-rows td[data-cell='count'] { grid-area: count; }
+  .proxy-provider-rows td[data-cell='usage'] { grid-area: usage; }
+  .proxy-provider-rows td[data-cell='updated'] { grid-area: updated; }
+  .proxy-provider-rows td[data-cell='usage'][data-empty] { display: none; }
+  .proxy-provider-rows td[data-cell='usage']::before,
+  .proxy-provider-rows td[data-cell='updated']::before { content: '· '; }
+
+  .proxy-provider-rows td[data-cell='actions'] {
+    grid-area: actions;
+    display: flex;
+    gap: 16px;
+    overflow: visible;
+    margin-left: 4px;
+  }
+
+  /* 行内按钮看起来 28px，透明 ::before 向外 8px，点击区仍为 44px；不被基础按钮的 44px 最小尺寸撑高 */
+  .mihomo-row-action {
+    position: relative;
+    width: 28px;
+    height: 28px;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+  }
+
+  .mihomo-row-action::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
   }
 }
 </style>
