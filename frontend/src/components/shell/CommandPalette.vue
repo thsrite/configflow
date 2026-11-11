@@ -1,9 +1,22 @@
 <template>
   <CommandDialog v-model:open="open">
-    <CommandInput placeholder="搜索页面或操作…" />
+    <CommandInput placeholder="搜索页面或操作…" @update:model-value="onQuery" />
     <CommandList>
       <CommandEmpty>没有找到匹配项，试试其他关键词。</CommandEmpty>
-      <CommandGroup v-for="group in groups" :key="group.scope" :heading="group.title || '总览'">
+      <!-- 没输入时只列常用页面；开始输入后搜索全部页面 -->
+      <CommandGroup v-if="!searching" heading="常用页面" data-frequent-pages>
+        <CommandItem
+          v-for="item in frequent"
+          :key="item.path"
+          :value="`${item.label} ${item.path}`"
+          @select="go(item.path)"
+        >
+          <component :is="iconOf(item.icon)" class="size-4 text-muted-foreground" aria-hidden="true" />
+          <span>{{ item.label }}</span>
+          <CommandShortcut class="font-mono">{{ item.path }}</CommandShortcut>
+        </CommandItem>
+      </CommandGroup>
+      <CommandGroup v-for="group in searching ? groups : []" :key="group.scope" :heading="group.title || '总览'">
         <CommandItem
           v-for="item in visibleItems(group)"
           :key="item.path"
@@ -16,7 +29,7 @@
         </CommandItem>
       </CommandGroup>
       <CommandSeparator />
-      <CommandGroup heading="动作">
+      <CommandGroup :heading="searching ? '动作' : '常用操作'">
         <CommandItem
           v-for="action in ACTIONS"
           :key="action.id"
@@ -40,7 +53,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Download, Monitor, RefreshCw, Send, SunMoon, Zap } from '@lucide/vue'
 import {
@@ -53,7 +66,8 @@ import {
   CommandSeparator,
   CommandShortcut
 } from '@/components/ui/command'
-import { NAV_GROUPS, type NavGroup, type NavItem } from '@/navigation'
+import { NAV_GROUPS, navigationPath, type NavGroup, type NavItem } from '@/navigation'
+import { frequentPages, recordVisit } from '@/lib/frequentPages'
 import { iconOf } from '@/lib/icons'
 import { useThemeStore } from '@/stores/theme'
 import { ACTION_LABEL, runAction, type AppAction } from '@/lib/actions'
@@ -69,6 +83,28 @@ const visibleItems = (group: NavGroup): NavItem[] =>
   group.items.filter(
     item => item.flag !== 'subscriptionAggregation' || props.subscriptionAggregationEnabled
   )
+
+const query = ref('')
+const onQuery = (value: unknown) => { query.value = String(value ?? '') }
+const searching = computed(() => !!query.value.trim())
+// 每次打开时按最新的访问次数重排
+const frequentVersion = ref(0)
+watch(open, value => {
+  if (!value) return
+  query.value = ''
+  frequentVersion.value++
+})
+const allItems = computed(() => groups.flatMap(group => visibleItems(group)))
+const frequent = computed<NavItem[]>(() => {
+  void frequentVersion.value
+  const byPath = new Map(allItems.value.map(item => [item.path, item]))
+  return frequentPages(new Set(byPath.keys())).map(path => byPath.get(path)!).filter(Boolean)
+})
+// 记录每次进入的导航页面，用于排出「常用页面」
+router.afterEach(to => {
+  const path = navigationPath(to.path)
+  if (allItems.value.some(item => item.path === path)) recordVisit(path)
+})
 
 const go = (path: string): void => {
   open.value = false
