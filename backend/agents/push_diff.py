@@ -22,11 +22,9 @@ small response.
 """
 from collections import Counter
 import difflib
-import io
 import json
 import posixpath
 import re
-import tarfile
 from urllib.parse import unquote, urlsplit
 import zlib
 
@@ -1343,22 +1341,6 @@ def _size_summary(old, new):
     return {'kind': 'size', 'before': None if old is None else len(old), 'after': None if new is None else len(new)}
 
 
-def _read(archive, paths):
-    """Selected members of a bundle, in one pass over the compressed stream."""
-    wanted = {'files/' + path: path for path in paths}
-    found = {}
-    if not wanted:
-        return found
-    with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as tar:
-        for member in tar:
-            path = wanted.get(member.name)
-            if path is not None and member.isfile():
-                found[path] = tar.extractfile(member).read()
-                if len(found) == len(wanted):
-                    break
-    return found
-
-
 def _canonical(entry):
     return 'config.yaml' if entry['role'] == CONFIG_ROLE else entry['path']
 
@@ -1429,8 +1411,8 @@ def build_push_diff(agent, bundle, repository, *, receipt=_MISSING, lists=None):
 
     changed = sorted((path for path, status in statuses.items() if status != 'unchanged'), key=order)
     listed = changed[:MAX_LISTED_FILES]  # only listed files are read and summarised
-    new_bytes = _read(bundle.archive, [new_entries[path]['path'] for path in listed if path in new_entries])
-    old_bytes = (_read(receipt['bundle'].archive, [old_entries[path]['path'] for path in listed if path in old_entries])
+    new_bytes = bundle.files([new_entries[path]['path'] for path in listed if path in new_entries])
+    old_bytes = (receipt['bundle'].files([old_entries[path]['path'] for path in listed if path in old_entries])
                  if receipt else {})
 
     config, public = None, {}
