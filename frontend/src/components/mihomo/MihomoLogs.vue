@@ -4,7 +4,7 @@
       <template #filters>
         <Segmented :model-value="mode" :options="MODES" label="日志来源方式" @update:model-value="changeMode" />
         <Select v-if="mode === 'file' && sources.length" :model-value="sourceId" @update:model-value="changeSource(String($event))">
-          <SelectTrigger class="min-h-11 w-44 max-w-full" aria-label="日志来源"><SelectValue placeholder="日志来源" /></SelectTrigger>
+          <SelectTrigger class="min-h-11 w-40 max-w-full" aria-label="日志来源"><SelectValue placeholder="日志来源" /></SelectTrigger>
           <SelectContent>
             <SelectItem v-for="source in sources" :key="source.id" :value="source.id">
               {{ source.label }}{{ source.kind === 'unavailable' ? '（不可读）' : '' }}
@@ -12,7 +12,7 @@
           </SelectContent>
         </Select>
         <Select :model-value="level" @update:model-value="changeLevel(String($event))">
-          <SelectTrigger class="min-h-11 w-40 max-w-full" aria-label="最低日志等级"><SelectValue placeholder="日志等级" /></SelectTrigger>
+          <SelectTrigger class="min-h-11 w-36 max-w-full" aria-label="最低日志等级"><SelectValue placeholder="日志等级" /></SelectTrigger>
           <SelectContent>
             <SelectItem v-for="item in MIHOMO_LOG_LEVELS" :key="item.value" :value="item.value">
               {{ item.label }}{{ item.value === configuredLevel ? ' · 配置' : '' }}
