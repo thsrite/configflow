@@ -48,14 +48,14 @@
         <Button variant="outline" class="min-h-11" as-child><RouterLink to="/agents">前往升级 Agent</RouterLink></Button>
       </EmptyState>
     </SectionCard>
-    <AgentLogLines v-else-if="mode === 'live'" ref="logPane" :items="liveMatches" :notice="liveNotice" height-class="h-[55dvh] min-h-60 max-h-[640px]" />
+    <AgentLogLines v-else-if="mode === 'live'" ref="logPane" :items="liveMatches" :highlight="keyword" :notice="liveNotice" height-class="h-[55dvh] min-h-60 max-h-[640px]" />
     <SectionCard v-else-if="legacy || unavailable || (sourcesReady && !sources.length)">
       <EmptyState :icon="FileText" :title="legacy ? '需要升级 Agent' : '暂无可读取的 Mihomo 日志'" :description="unavailableMessage">
         <Button v-if="legacy" variant="outline" class="min-h-11" as-child><RouterLink to="/agents">前往升级 Agent</RouterLink></Button>
         <Button v-else variant="outline" class="min-h-11" :disabled="loading" @click="refresh">重新读取来源</Button>
       </EmptyState>
     </SectionCard>
-    <AgentLogLines v-else ref="logPane" :text="filteredText" :min-level="agentLevelOf(level)" :notice="notice"
+    <AgentLogLines v-else ref="logPane" :text="filteredText" :highlight="keyword" :min-level="agentLevelOf(level)" :notice="notice"
       empty-text="没有该等级及以上的日志" height-class="h-[55dvh] min-h-60 max-h-[640px]" />
   </div>
 </template>
