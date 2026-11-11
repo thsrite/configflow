@@ -674,9 +674,10 @@ export const clientDeviceApi = {
 export const oxidnsMonitorApi = {
   clients: (id: string, params: Record<string, string | number | undefined>, options: { signal?: AbortSignal } = {}) =>
     api.get(`/agents/${encodeURIComponent(id)}/oxidns/clients`, { params, ...options }),
-  overview: (id: string, options: { signal?: AbortSignal; recorder?: string } = {}) => {
-    const { recorder, ...requestOptions } = options
-    return api.get(`/agents/${encodeURIComponent(id)}/oxidns/overview`, { ...requestOptions, params: recorder ? { recorder } : undefined })
+  overview: (id: string, options: { signal?: AbortSignal; recorder?: string; range?: string } = {}) => {
+    const { recorder, range, ...requestOptions } = options
+    const params = { ...(recorder ? { recorder } : {}), ...(range && range !== 'round' ? { range } : {}) }
+    return api.get(`/agents/${encodeURIComponent(id)}/oxidns/overview`, { ...requestOptions, params: Object.keys(params).length ? params : undefined })
   },
   resetStatistics: (id: string, recorder?: string, options: { signal?: AbortSignal } = {}) =>
     api.post(`/agents/${encodeURIComponent(id)}/oxidns/dashboard/reset`, recorder ? { recorder } : {}, options),

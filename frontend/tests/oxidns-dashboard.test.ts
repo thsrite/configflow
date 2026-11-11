@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import OxiDNSRankingTable from '@/components/agents/OxiDNSRankingTable.vue'
 import OxiDNSOverview from '@/components/agents/OxiDNSOverview.vue'
@@ -7,7 +7,9 @@ import FieldHelp from '@/components/common/FieldHelp.vue'
 import type { OxiDNSOverview as Overview, OxiDNSRankings } from '@/types/oxidnsMonitor'
 
 const wrappers: VueWrapper[] = []
-afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))
+// The range selector measures its options.
+beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }) })
+afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.unstubAllGlobals() })
 
 describe('OxiDNS dashboard rankings', () => {
   it('shows bounded rankings with complete long addresses and real counts', () => {
@@ -124,6 +126,61 @@ describe('OxiDNS dashboard periods and availability', () => {
     expect(headers).toEqual(['上游服务器', '请求尝试', '失败尝试', '平均响应时间'])
     expect(helpText(wrapper, '上游服务器排行')).toContain('可以多于「失败请求」')
     expect(wrapper.text()).toContain('最终未能应答的查询')
+  })
+
+  // Complete counts from the stored periods, not the newest 10,000 records.
+  it('shows complete counts with their period and lets the range be chosen', async () => {
+    const data = overview()
+    const start = Date.UTC(2026, 10, 4, 0, 0)
+    Object.assign(data.rankings as OxiDNSRankings, {
+      source: 'history', range: '7d', since_ms: start, first_ms: start, until_ms: start + 7 * 86_400_000,
+      slot_seconds: 900, missing_slots: 0, partial_slots: 0
+    })
+    ;(data.rankings as OxiDNSRankings).clients.sample_size = 2_771_000
+    ;(data.rankings as OxiDNSRankings).clients.at_limit = false
+    const wrapper = mount(OxiDNSOverview, { props: { overview: data, qps: null, recorder: 'query_recorder', rankingRange: '7d', resetting: false } })
+    wrappers.push(wrapper)
+    const coverage = wrapper.get('[data-ranking-coverage]').text()
+    expect(coverage).toContain('完整统计')
+    expect(coverage).toContain('2,771,000 次查询')
+    expect(coverage).not.toContain('此前没有数据')
+    expect(wrapper.text()).not.toContain('样本上限')
+    expect(helpText(wrapper, '请求排行')).toContain('不是抽样')
+    const range = wrapper.get('[aria-label="排行范围"]')
+    expect(range.findAll('[role="radio"]').map(item => item.text())).toEqual(['本轮', '24 小时', '7 天', '30 天'])
+    await range.findAll('[role="radio"]')[3].trigger('click')
+    expect(wrapper.emitted('range')).toEqual([['30d']])
+  })
+
+  it('says where complete records begin and what is missing', () => {
+    const data = overview()
+    const start = Date.UTC(2026, 10, 4, 0, 0)
+    Object.assign(data.rankings as OxiDNSRankings, {
+      source: 'history', range: '30d', since_ms: start, first_ms: start + 20 * 86_400_000, until_ms: start + 30 * 86_400_000,
+      slot_seconds: 900, missing_slots: 8, partial_slots: 2
+    })
+    const text = panel(data).get('[data-ranking-coverage]').text()
+    expect(text).toContain('完整记录从')
+    expect(text).toContain('约 120 分钟没有取到')
+    expect(text).toContain('2 个时段')
+  })
+
+  it('explains why the sample is shown when complete counts are not available', () => {
+    const data = overview()
+    ;(data.rankings as OxiDNSRankings).history = 'upgrade_required'
+    ;(data.rankings as OxiDNSRankings).history_version = '1.8.55-go'
+    const old = panel(data)
+    expect(old.get('[data-ranking-upgrade]').text()).toContain('升级到 1.8.55-go')
+    expect(old.find('[aria-label="排行范围"]').exists()).toBe(false)
+    ;(data.rankings as OxiDNSRankings).history = 'collecting'
+    const collecting = panel(data)
+    expect(collecting.get('[data-ranking-collecting]').text()).toContain('正在收集完整统计')
+    expect(collecting.find('[aria-label="排行范围"]').exists()).toBe(true)
+    // A round that just began: other ranges are complete, and the range can still be changed.
+    ;(data.rankings as OxiDNSRankings).history = 'pending_range'
+    const pending = panel(data)
+    expect(pending.get('[data-ranking-pending]').text()).toContain('可切换到其他范围')
+    expect(pending.find('[aria-label="排行范围"]').exists()).toBe(true)
   })
 
   it('says when the rankings window stops a day back instead of at the round start', () => {

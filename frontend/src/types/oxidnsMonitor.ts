@@ -17,10 +17,22 @@ export interface OxiDNSRanking {
   rows: Array<{ key: string; count: number; share: number }>
   at_limit: boolean
 }
+export type OxiDNSRankingRange = 'round' | '24h' | '7d' | '30d'
 export interface OxiDNSRankings {
   success: true
   recorder: string
   collected_at_ms: number
+  /** history: complete counts added up from the stored 15-minute periods; otherwise the core's newest-records sample. */
+  source?: 'history'
+  range?: OxiDNSRankingRange
+  /** Earliest stored period inside the range. */
+  first_ms?: number
+  slot_seconds?: number
+  missing_slots?: number
+  partial_slots?: number
+  /** Why a sample is shown instead of complete counts. */
+  history?: 'collecting' | 'pending_range' | 'upgrade_required'
+  history_version?: string
   /** Window the newest sample is taken from: the round's start or the last 24 hours, whichever is later. */
   since_ms?: number
   until_ms?: number

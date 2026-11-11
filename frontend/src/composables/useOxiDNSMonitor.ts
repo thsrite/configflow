@@ -1,6 +1,6 @@
 import { computed, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 import { oxidnsMonitorApi } from '@/api'
-import { emptyQueryFilters, monitorNumber, type OxiDNSOverview, type OxiDNSQueries, type OxiDNSQueryFilters } from '@/types/oxidnsMonitor'
+import { emptyQueryFilters, monitorNumber, type OxiDNSOverview, type OxiDNSQueries, type OxiDNSQueryFilters, type OxiDNSRankingRange } from '@/types/oxidnsMonitor'
 import { oxiDNSQueryTimeRange, useOxiDNSClock } from '@/composables/useOxiDNSClock'
 
 const messageOf = (error: any) => error?.response?.data?.message || error?.message || '读取失败，请稍后重试。'
@@ -56,6 +56,8 @@ export function useOxiDNSMonitor(agentId: Ref<string>, tab: Ref<string>) {
   const queriesLoading = ref(false)
   const queriesError = ref('')
   const recorder = ref('')
+  // 排行范围：本轮统计以来、最近 24 小时 / 7 天 / 30 天（完整统计时生效）
+  const rankingRange = ref<OxiDNSRankingRange>('round')
   const filters = ref<OxiDNSQueryFilters>(emptyQueryFilters())
   const cursors = ref<Array<string | undefined>>([undefined])
   const autoRefresh = ref(true)
@@ -159,7 +161,7 @@ export function useOxiDNSMonitor(agentId: Ref<string>, tab: Ref<string>) {
     overviewError.value = ''
     overviewErrorCode.value = ''
     try {
-      const { data } = await oxidnsMonitorApi.overview(agentId.value, { signal: controller.signal, recorder: recorder.value || undefined })
+      const { data } = await oxidnsMonitorApi.overview(agentId.value, { signal: controller.signal, recorder: recorder.value || undefined, range: rankingRange.value })
       if (controller.signal.aborted || requestEpoch !== epoch || requestNumber !== overviewRequest) return
       applyOverview(checked(data) as OxiDNSOverview)
     } catch (error) {
@@ -213,6 +215,11 @@ export function useOxiDNSMonitor(agentId: Ref<string>, tab: Ref<string>) {
     if (value === recorder.value || resettingStatistics.value || !overview.value?.recorders.includes(value)) return
     recorder.value = value
     resetQueries()
+    void loadOverview(true)
+  }
+  function selectRankingRange(value: OxiDNSRankingRange) {
+    if (value === rankingRange.value || resettingStatistics.value) return
+    rankingRange.value = value
     void loadOverview(true)
   }
   function applyFilters(value: OxiDNSQueryFilters) {
@@ -293,6 +300,6 @@ export function useOxiDNSMonitor(agentId: Ref<string>, tab: Ref<string>) {
     if (timer) clearInterval(timer)
     document.removeEventListener('visibilitychange', onVisible)
   })
-  return { overview, overviewLoading, overviewError, overviewErrorCode, resettingStatistics, resetError, resetStatistics, clockSkewMs: queryClock.skewMs, qps, queries, queriesLoading, queriesError, recorder,
-    filters, page, hasNext, autoRefresh, refresh, loadQueries, selectRecorder, applyFilters, nextPage, previousPage }
+  return { overview, overviewLoading, overviewError, overviewErrorCode, resettingStatistics, resetError, resetStatistics, clockSkewMs: queryClock.skewMs, qps, queries, queriesLoading, queriesError, recorder, rankingRange,
+    selectRankingRange, filters, page, hasNext, autoRefresh, refresh, loadQueries, selectRecorder, applyFilters, nextPage, previousPage }
 }
