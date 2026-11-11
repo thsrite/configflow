@@ -11,10 +11,10 @@
           <span v-if="hasLevels" :class="cn('log-level', entry.level && `lv-${entry.level}`)">{{ entry.level }}</span>
           <div class="log-body">
             <span v-if="entry.sourceShort" class="log-source" :title="entry.source">{{ entry.sourceShort }}</span>
-            <span v-if="entry.message" class="log-message">{{ entry.message }}</span>
+            <span v-if="entry.message" class="log-message"><template v-for="(token, tokenIndex) in messageTokens(entry)" :key="tokenIndex"><mark v-if="token.hit" :class="token.kind && `tk-${token.kind}`">{{ token.text }}</mark><span v-else-if="token.kind" :class="`tk-${token.kind}`">{{ token.text }}</span><template v-else>{{ token.text }}</template></template></span>
             <span v-if="entry.fields.length" class="log-fields">
               <span v-for="(field, fieldIndex) in entry.fields" :key="fieldIndex" class="log-field">
-                <span class="log-key">{{ field.key }}=</span><span class="log-value">{{ field.value || '""' }}</span>
+                <span class="log-key">{{ field.key }}=</span><span class="log-value"><template v-for="(token, tokenIndex) in marked(field.value || EMPTY_VALUE)" :key="tokenIndex"><mark v-if="token.hit">{{ token.text }}</mark><template v-else>{{ token.text }}</template></template></span>
               </span>
             </span>
           </div>
@@ -26,7 +26,10 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { filterLogLevel, parseAgentLogs, type AgentLogEntry, type AgentLogLevel } from '@/lib/agentLogs'
+import {
+  filterLogLevel, markLogTokens, parseAgentLogs, tokenizeLogMessage,
+  type AgentLogEntry, type AgentLogLevel, type LogToken
+} from '@/lib/agentLogs'
 import { cn } from '@/lib/utils'
 
 const props = withDefaults(defineProps<{
@@ -40,18 +43,35 @@ const props = withDefaults(defineProps<{
   /** 没有可显示的条目时的提示 */
   emptyText?: string
   heightClass?: string
+  /** 搜索词：在正文与字段值中标出命中的文字 */
+  highlight?: string
 }>(), {
   text: '',
   items: undefined,
   minLevel: '',
   notice: '',
   emptyText: '该日志暂无内容',
-  heightClass: 'max-h-[56dvh]'
+  heightClass: 'max-h-[56dvh]',
+  highlight: ''
 })
 
 const scroller = ref<HTMLElement | null>(null)
 const entries = computed(() => filterLogLevel(props.items ?? parseAgentLogs(props.text), props.minLevel))
 const hasLevels = computed(() => entries.value.some(entry => entry.level))
+
+const EMPTY_VALUE = '""'
+// 着色片段按条目缓存：实时日志每秒追加，旧条目不必重新切分
+const tokenCache = new WeakMap<AgentLogEntry, LogToken[]>()
+const tokensOf = (entry: AgentLogEntry) => {
+  let tokens = tokenCache.get(entry)
+  if (!tokens) {
+    tokens = tokenizeLogMessage(entry.message)
+    tokenCache.set(entry, tokens)
+  }
+  return tokens
+}
+const messageTokens = (entry: AgentLogEntry) => markLogTokens(tokensOf(entry), props.highlight)
+const marked = (text: string) => markLogTokens([{ text, kind: '' }], props.highlight)
 
 /** 日期变化时插入分隔行；续行与无时间的行不打断 */
 const dateChanged = (index: number) => {
@@ -116,6 +136,11 @@ defineExpose({ scrollToBottom })
   background: rgb(255 255 255 / 3%);
 }
 
+/* 条与条之间的细分隔线；续行属于上一条，不画线 */
+.log-row + .log-row:not(.is-continuation) {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5.5%);
+}
+
 .log-row.is-continuation {
   padding-top: 0;
 }
@@ -161,6 +186,57 @@ defineExpose({ scrollToBottom })
 
 .log-value {
   color: #c4c0b4;
+}
+
+/* 正文按含义着色：目标最亮，来源与连接词压暗，规则淡紫，策略按直连 / 拦截 / 代理区分，错误原因红色 */
+.tk-tag {
+  color: #9a968b;
+}
+
+.tk-src,
+.tk-kw,
+.tk-arrow {
+  color: #7c786e;
+}
+
+.tk-dst {
+  color: #f1ede3;
+}
+
+.tk-rule {
+  color: #b9a9d9;
+}
+
+.tk-proxy {
+  color: #e2bd7a;
+}
+
+.tk-direct {
+  color: #8fb996;
+}
+
+.tk-reject {
+  color: #e0705e;
+}
+
+.tk-str {
+  color: #94c3bd;
+}
+
+.tk-err {
+  color: #e8806f;
+}
+
+/* 搜索命中 */
+mark {
+  border-radius: 2px;
+  background: rgb(226 189 122 / 28%);
+  box-shadow: 0 0 0 1px rgb(226 189 122 / 35%);
+  color: inherit;
+}
+
+mark:not([class]) {
+  color: #f1ede3;
 }
 
 /* 桌面：时间、级别固定列宽，正文换行后与首行对齐 */

@@ -172,3 +172,134 @@ export const mihomoLiveEntry = (log: MihomoLiveLog): AgentLogEntry => {
     source: '', sourceShort: '', message: log.payload, fields: [], continuation: false
   }
 }
+
+/**
+ * 日志正文按含义着色时的片段类别；空字符串为普通文字。
+ * tag 开头的 [TCP] 等标签，src / dst 箭头两侧的来源与目标，kw 为 match / using，
+ * rule 命中的规则，direct / reject / proxy 为所走策略，str 为引号字符串，err 为 error: 之后的原因。
+ */
+export type LogTokenKind = '' | 'tag' | 'src' | 'arrow' | 'dst' | 'kw' | 'rule' | 'direct' | 'reject' | 'proxy' | 'str' | 'err'
+
+export interface LogToken {
+  text: string
+  kind: LogTokenKind
+  /** 命中搜索词 */
+  hit?: boolean
+}
+
+const LEADING_TAG = /^\[[A-Za-z][\w-]*\]/
+// Mihomo 的错误原因都写在 error: 之后，例如 dial … error: i/o timeout
+const ERROR_AT = /\berror:/
+// 箭头、match 规则、using 策略（只在 match 之后）、引号字符串。
+// 规则写法有 RuleSet(google)（连接日志）和 RuleSet/google（拨号失败）两种
+const MESSAGE_TOKEN = /-->|\bmatch ([A-Z][\w-]*(?:\([^)]*\)|\/[^\s)]+)?)|\busing (\S(?:.*\S)?)|"[^"\n]*"/g
+// 来源可能带进程名：192.168.1.5:51234(chrome)
+const ADDRESS_BEFORE = /([^\s()/[\]]+(?:\([^)]*\))?)(\s*)$/
+const ADDRESS_AFTER = /^(\s*)([^\s()[\]]+)/
+
+const policyKind = (policy: string): LogTokenKind =>
+  policy === 'DIRECT' ? 'direct' : /^REJECT\b/.test(policy) ? 'reject' : 'proxy'
+
+/**
+ * 把一条日志正文切成着色片段，原文一个字不改，拼起来与输入相同。
+ * 主要识别 Mihomo 的连接日志（[TCP] 来源 --> 目标 match 规则 using 策略）；
+ * 其他格式只给开头标签、引号字符串和 error: 之后的原因着色。
+ */
+export function tokenizeLogMessage(message: string): LogToken[] {
+  const tokens: LogToken[] = []
+  const push = (text: string, kind: LogTokenKind = '') => {
+    if (!text) return
+    const last = tokens[tokens.length - 1]
+    if (last && last.kind === kind) last.text += text
+    else tokens.push({ text, kind })
+  }
+  let rest = message
+  const tag = LEADING_TAG.exec(rest)
+  if (tag) {
+    push(tag[0], 'tag')
+    rest = rest.slice(tag[0].length)
+  }
+  const errorAt = rest.search(ERROR_AT)
+  const head = errorAt < 0 ? rest : rest.slice(0, errorAt)
+  let index = 0
+  let wantTarget = false
+  let matched = false
+  // 箭头后的第一个地址是目标
+  const plain = (text: string) => {
+    if (wantTarget) {
+      wantTarget = false
+      const target = ADDRESS_AFTER.exec(text)
+      if (target) {
+        push(target[1])
+        push(target[2], 'dst')
+        text = text.slice(target[0].length)
+      }
+    }
+    return text
+  }
+  for (const match of head.matchAll(MESSAGE_TOKEN)) {
+    const at = match.index ?? 0
+    const before = plain(head.slice(index, at))
+    index = at + match[0].length
+    if (match[0] === '-->') {
+      const source = ADDRESS_BEFORE.exec(before)
+      if (source) {
+        push(before.slice(0, source.index))
+        push(source[1], 'src')
+        push(source[2])
+      } else {
+        push(before)
+      }
+      push('-->', 'arrow')
+      wantTarget = true
+    } else if (match[1] !== undefined) {
+      push(before)
+      push('match', 'kw')
+      push(' ')
+      push(match[1], 'rule')
+      matched = true
+    } else if (match[2] !== undefined && matched) {
+      push(before)
+      push('using', 'kw')
+      push(' ')
+      push(match[2], policyKind(match[2]))
+    } else if (match[2] !== undefined) {
+      push(before + match[0])
+    } else {
+      push(before)
+      push(match[0], 'str')
+    }
+  }
+  push(plain(head.slice(index)))
+  if (errorAt >= 0) push(rest.slice(errorAt), 'err')
+  return tokens
+}
+
+/** 按搜索词（忽略大小写的普通文本）把片段再切开并标出命中部分，可跨片段命中 */
+export function markLogTokens(tokens: LogToken[], keyword: string): LogToken[] {
+  const needle = keyword.trim().toLowerCase()
+  if (!needle) return tokens
+  const text = tokens.map(token => token.text).join('').toLowerCase()
+  const ranges: Array<[number, number]> = []
+  for (let at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + needle.length)) {
+    ranges.push([at, at + needle.length])
+  }
+  if (!ranges.length) return tokens
+  const result: LogToken[] = []
+  let offset = 0
+  let range = 0
+  for (const token of tokens) {
+    const end = offset + token.text.length
+    let cursor = offset
+    while (cursor < end) {
+      while (range < ranges.length && ranges[range][1] <= cursor) range++
+      const current = ranges[range]
+      const hit = !!current && current[0] <= cursor
+      const stop = Math.min(end, current ? (hit ? current[1] : current[0]) : end)
+      result.push({ text: token.text.slice(cursor - offset, stop - offset), kind: token.kind, hit })
+      cursor = stop
+    }
+    offset = end
+  }
+  return result
+}
