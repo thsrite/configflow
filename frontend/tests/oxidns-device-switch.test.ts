@@ -55,7 +55,7 @@ beforeEach(() => {
   invalidateAgentSummaries()
   stubStorage()
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
-  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })))
+  vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: !String(query).includes('639px'), addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })))
   vi.mocked(clientToolsApi.notes).mockResolvedValue(response({ success: true, profile_id: 'default', profile_name: '默认配置', notes: {} }))
   vi.mocked(confirm).mockResolvedValue(true)
   vi.mocked(oxidnsMonitorApi.resetStatistics).mockImplementation(async id => response({ ...snapshot(id), statistics: { generation: 'reset', started_at_ms: 0, reason: 'manual', partial: false } }))
