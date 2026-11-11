@@ -2,11 +2,11 @@
   <div>
     <header class="relative mb-5 flex flex-wrap items-end gap-4 max-md:mb-4 max-sm:mb-3 max-sm:grid max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-2">
       <div class="min-w-0 flex-[1_1_260px]">
-        <div class="mb-2 flex min-w-0 items-center gap-2 font-mono text-[11px] tracking-[0.14em] text-muted-foreground uppercase">
+        <div class="mb-2 flex min-w-0 items-center gap-2 font-mono text-[11px] tracking-[0.14em] text-muted-foreground uppercase max-sm:mb-0 max-sm:min-h-11">
           <span class="live-dot" aria-hidden="true" />
           <span class="shrink-0">实时流向 ·</span> <span class="truncate normal-case" :title="profileName">{{ profileName }}</span>
         </div>
-        <h1 class="font-display m-0 text-[34px] leading-[1.12] text-foreground max-md:text-[26px]">数据统计</h1>
+        <h1 class="font-display m-0 text-[34px] leading-[1.12] text-foreground max-md:text-[26px] max-sm:sr-only">数据统计</h1>
       </div>
       <!-- 实时吞吐：来自已绑定且在线的 Agent 心跳上报的网卡速率；没有上报时不显示 -->
       <div v-if="throughputItems.length" class="flex items-end gap-7 max-md:w-full max-md:gap-5 max-sm:col-span-2 max-sm:row-start-2">
