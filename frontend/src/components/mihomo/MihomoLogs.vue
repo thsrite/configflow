@@ -215,8 +215,12 @@ function applyConfiguredLevel(value: unknown) {
 }
 
 async function readConfiguredLevel(id: string) {
+  // 面板头部打开时已读过 /configs 并缓存，有缓存就不再请求
   const cached = cachedPanelData<Record<string, unknown>>(id, 'configs')
-  if (cached) applyConfiguredLevel(cached['log-level'])
+  if (cached) {
+    applyConfiguredLevel(cached['log-level'])
+    return
+  }
   try {
     const { data } = await mihomoPanelApi.configs(id)
     if (id === props.agentId && !disposed && data?.success) applyConfiguredLevel(data.data?.['log-level'])
