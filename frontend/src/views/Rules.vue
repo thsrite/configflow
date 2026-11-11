@@ -1931,7 +1931,13 @@ onActivated(() => {
   .rule-group-head :deep(.rule-policy-trigger)::before { inset: -14px 0 -2px; }
   .rule-row :deep(.rule-dns-cell-trigger)::before,
   .rule-group-head .rule-group-dns-trigger::before { inset: -6px 0 -14px; }
-  .rule-row .rule-menu { width: 28px; height: 24px; }
+  /* Button 在窄屏自带 44px 最小尺寸，会把整行撑高；这里改由透明区域补足点击区 */
+  .rule-row .rule-menu,
+  .rule-group-head .rule-gchev :deep(button),
+  .rule-group-head .rule-grename :deep(button) { position: relative; min-width: 0; min-height: 0; width: 28px; height: 24px; }
+  .rule-group-head .rule-gchev :deep(button) { margin-left: -6px; }
+  .rule-group-head .rule-gchev :deep(button)::before,
+  .rule-group-head .rule-grename :deep(button)::before { content: ''; position: absolute; inset: -10px -8px; }
 
   /* 菜单按钮视觉 28×24，透明区域补足 44px 点击区 */
   .rule-menu::before {
