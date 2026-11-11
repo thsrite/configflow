@@ -982,7 +982,38 @@ function setDNSFollowRef(id: string, instance: Element | ComponentPublicInstance
   if (instance) dnsFollowRefs.set(id, instance as InstanceType<typeof AgentDNSFollow>)
   else dnsFollowRefs.delete(id)
 }
-const deploymentHistoryAgent = computed(() => agents.value.find(agent => agent.id === deploymentHistoryAgentId.value))
+// 列表每隔几秒读一次，不带发布历史；打开发布记录时单独读这一台设备，
+// 它的最新发布有变化（例如回滚完成）时重读
+const deploymentHistory = ref<{ agentId: string; deployments: Record<string, AgentDeployment> } | null>(null)
+let deploymentHistoryRequest = 0
+const deploymentHistoryStamp = computed(() => {
+  const agent = agents.value.find(agent => agent.id === deploymentHistoryAgentId.value)
+  const latest = agent?.latest_deployment
+  return agent ? [agent.id, latest?.deployment_id, latest?.status, latest?.updated_at].join('|') : ''
+})
+watch(deploymentHistoryStamp, async stamp => {
+  const id = deploymentHistoryAgentId.value
+  const current = ++deploymentHistoryRequest
+  if (!stamp || !id) {
+    deploymentHistory.value = null
+    return
+  }
+  try {
+    const { data } = await agentApi.getOne(id)
+    if (current !== deploymentHistoryRequest) return
+    deploymentHistory.value = { agentId: id, deployments: data?.deployments || {} }
+  } catch {
+    if (current !== deploymentHistoryRequest || deploymentHistory.value?.agentId === id) return
+    notify.error('读取发布记录失败，请重试')
+    deploymentHistoryAgentId.value = null
+    notificationDeploymentId.value = ''
+  }
+})
+const deploymentHistoryAgent = computed(() => {
+  const agent = agents.value.find(agent => agent.id === deploymentHistoryAgentId.value)
+  const history = deploymentHistory.value
+  return agent && history?.agentId === agent.id ? { ...agent, deployments: history.deployments } : undefined
+})
 const rollbackConfirming = ref(false)
 const requestRollback = async (agent: Agent, record: AgentDeployment) => {
   if (rollbackConfirming.value || agent.status !== 'online' || deploymentBusy(agent.id) || upgradeBusy(agent.id) || pushingIds.value.has(agent.id)) return
@@ -1733,7 +1764,7 @@ const loadAgents = async () => {
   trafficNow.value = Date.now()
   const generation = ++agentsLoadGeneration
   try {
-    const { data } = await agentApi.getAll()
+    const { data } = await agentApi.getAll({ history: false })
     if (generation !== agentsLoadGeneration) return
     trafficNow.value = Date.now()
     agents.value = data

@@ -5,13 +5,14 @@ import Agents from '@/views/Agents.vue'
 import api, { agentApi, profileApi } from '@/api'
 import { setActiveProfileId } from '@/profileContext'
 import { getAgentConfigSync } from '@/lib/agentConfigSync'
+import { notify } from '@/lib/feedback'
 import { Select } from '@/components/ui/select'
 import { ruleLocationDetails } from './fixtures/agent-failure'
 
 // Keep the actual Agent cards, stores and deployment state; mock their HTTP requests.
 vi.mock('@/api', () => ({
   default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
-  agentApi: { getAll: vi.fn(), getDeployment: vi.fn(), getUpgrade: vi.fn(), bindProfile: vi.fn(), pushConfig: vi.fn() },
+  agentApi: { getAll: vi.fn(), getOne: vi.fn(), getDeployment: vi.fn(), getUpgrade: vi.fn(), bindProfile: vi.fn(), pushConfig: vi.fn() },
   profileApi: { list: vi.fn() }
 }))
 
@@ -508,5 +509,71 @@ describe('Agent page refresh', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('Agent deployment history', () => {
+  const older = deployment({ deployment_id: 'older-release', updated_at: '2026-10-09T12:00:00Z' })
+  const openHistory = async (wrapper: ReturnType<typeof mount>) => {
+    await wrapper.get('button[aria-label="Config display test 的更多操作"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const item = [...document.querySelectorAll('[role="menuitem"]')].find(node => node.textContent?.trim() === '发布记录与回滚') as HTMLElement
+    item.click()
+    await flushPromises()
+  }
+  const rows = () => [...document.querySelectorAll<HTMLElement>('[data-deployment-record]')].map(row => row.dataset.deploymentRecord)
+
+  // The list is read every few seconds; a device's history is most of its record.
+  it('asks for the list without history and reads one device when its records are opened', async () => {
+    vi.mocked(agentApi.getOne).mockResolvedValue({ data: agent({ deployments: { a: deployment(), b: older } }) } as any)
+    const { wrapper } = await render()
+    expect(agentApi.getAll).toHaveBeenCalledWith({ history: false })
+    expect(agentApi.getOne).not.toHaveBeenCalled()
+    await openHistory(wrapper)
+    expect(agentApi.getOne).toHaveBeenCalledExactlyOnceWith('config-display-agent')
+    expect(rows()).toEqual(['deployment-success', 'older-release'])
+    expect(document.body.textContent).toContain('Config display test · 发布记录')
+  })
+
+  it('opens only once the records are read, and reads them again when the latest deployment changes', async () => {
+    let answer!: (value: any) => void
+    vi.mocked(agentApi.getOne).mockImplementationOnce(() => new Promise(resolve => { answer = resolve }))
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      const { wrapper } = await render()
+      await openHistory(wrapper)
+      expect(document.body.textContent).not.toContain('发布记录')  // nothing half-filled meanwhile
+      answer({ data: agent({ deployments: { a: deployment(), b: older } }) })
+      await flushPromises()
+      expect(rows()).toEqual(['deployment-success', 'older-release'])
+
+      // A new deployment shows up in the list refresh: the open dialog follows.
+      const next = deployment({ deployment_id: 'next-release', updated_at: '2026-10-12T12:00:00Z' })
+      vi.mocked(agentApi.getAll).mockResolvedValue({ data: [agent({ latest_deployment: next })] } as any)
+      vi.mocked(agentApi.getOne).mockResolvedValue({ data: agent({ latest_deployment: next, deployments: { a: deployment(), b: older, c: next } }) } as any)
+      await vi.advanceTimersByTimeAsync(10000)
+      await flushPromises()
+      expect(agentApi.getOne).toHaveBeenCalledTimes(2)
+      expect(rows()).toEqual(['next-release', 'deployment-success', 'older-release'])
+      // An unchanged refresh reads nothing more.
+      await vi.advanceTimersByTimeAsync(10000)
+      await flushPromises()
+      expect(agentApi.getOne).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('says so and stays closed when the records cannot be read, and can be tried again', async () => {
+    vi.mocked(agentApi.getOne).mockRejectedValueOnce(new Error('offline'))
+    const failed = vi.spyOn(notify, 'error')
+    const { wrapper } = await render()
+    await openHistory(wrapper)
+    expect(document.body.textContent).not.toContain('Config display test · 发布记录')
+    expect(failed).toHaveBeenCalledExactlyOnceWith('读取发布记录失败，请重试')
+    vi.mocked(agentApi.getOne).mockResolvedValue({ data: agent({ deployments: { a: deployment() } }) } as any)
+    await openHistory(wrapper)
+    expect(agentApi.getOne).toHaveBeenCalledTimes(2)
+    expect(rows()).toEqual(['deployment-success'])
   })
 })

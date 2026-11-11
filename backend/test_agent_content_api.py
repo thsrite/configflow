@@ -242,3 +242,51 @@ def test_first_check_after_activation_sees_inputs_changed_since_preparation(api_
     assert listing(client)['mihomo']['content_sync'] == {'status': 'checking'}
     executor.run()
     assert listing(client)['mihomo']['content_sync']['status'] == 'changed'
+
+
+def test_listing_without_history_keeps_the_comparison_and_drops_only_the_history(api_env):
+    """The Agent page re-reads the list every few seconds; the history is shown
+    in a dialog that reads its one device."""
+    client, manager, _config, ids, executor, _replies, _fetches = api_env
+    for number in range(2):
+        assert push(client, ids['mihomo'], f'release-{number}').status_code == 200
+    assert push(client, ids['mosdns']).status_code == 200
+    manager._update_agents(lambda agents: next(
+        agent for agent in agents if agent['id'] == ids['mihomo']).update(ipv6_verifications={'run': {'status': 'passed'}}))
+    listing(client)
+    while executor.jobs:
+        executor.run()
+
+    full = listing(client)
+    response = client.get('/api/agents?history=0', base_url='http://another-ui-origin.test')
+    assert response.status_code == 200
+    light = {agent['service_type']: agent for agent in response.json}
+    assert set(light) == set(full) == {'mihomo', 'mosdns'}
+    for service, agent in light.items():
+        assert 'deployments' not in agent and 'ipv6_verifications' not in agent
+        assert agent['content_sync']['status'] == 'synced' and 'has_update' in agent and 'upgrade_available' in agent
+        assert agent == {key: value for key, value in full[service].items() if key not in ('deployments', 'ipv6_verifications')}
+    assert set(full['mihomo']['deployments']) == {'release-0', 'release-1'} and full['mihomo']['ipv6_verifications']
+    # Anything but history=0 is the full list, as older pages and the MCP tools ask for it.
+    for query in ('', '?history=1', '?history=false'):
+        answer = {agent['service_type']: agent for agent in client.get('/api/agents' + query).json}
+        assert set(answer['mihomo']['deployments']) == {'release-0', 'release-1'}
+    # One device, as the history dialog reads it.
+    one = client.get(f'/api/agents/{ids["mihomo"]}').json
+    assert set(one['deployments']) == {'release-0', 'release-1'} and one['ipv6_verifications'] == {'run': {'status': 'passed'}}
+
+
+def test_listing_without_history_still_sees_an_unfinished_deployment(api_env):
+    """The comparison reads the history even when the answer leaves it out."""
+    client, manager, _config, ids, executor, _replies, _fetches = api_env
+    assert push(client, ids['mihomo']).status_code == 200
+
+    def unfinished(agents):
+        agent = next(agent for agent in agents if agent['id'] == ids['mihomo'])
+        agent['deployments']['stuck'] = {'deployment_id': 'stuck', 'status': 'uploading'}
+    manager._update_agents(unfinished)
+    light = {agent['service_type']: agent for agent in client.get('/api/agents?history=0').json}
+    assert light['mihomo']['content_sync'] == {'status': 'unknown', 'reason': 'deployment_pending'}
+    assert light['mihomo']['content_sync'] == listing(client)['mihomo']['content_sync']
+    assert 'deployments' not in light['mihomo'] and not executor.jobs
+
