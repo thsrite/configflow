@@ -9,6 +9,20 @@
           <Plus class="size-4" />
           添加规则
         </Button>
+        <!-- 手机上命中模拟默认收起，点这里展开 -->
+        <Button
+          v-if="compact && allRules.length && !reorder.active.value"
+          variant="outline"
+          size="icon"
+          :class="cn('size-11 border-border/60 bg-background/40', simShown && 'border-primary-accent text-primary-accent')"
+          :aria-pressed="simShown"
+          aria-label="命中模拟"
+          title="命中模拟"
+          data-sim-toggle
+          @click="simOpen = !simShown"
+        >
+          <Play class="size-4" />
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger as-child>
             <Button variant="outline" class="border-border/60 bg-background/40">
@@ -53,7 +67,7 @@
     />
 
     <!-- 命中模拟：后端按真实规则与规则集内容逐条匹配，前端按顺序扫描到命中行 -->
-    <SectionCard v-if="!reorder.active.value && allRules.length" :padded="false" class="mb-3.5 overflow-hidden">
+    <SectionCard v-if="!reorder.active.value && allRules.length && (!compact || simShown)" :padded="false" class="mb-3.5 overflow-hidden" data-sim-card>
       <form class="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3.5 p-5 max-md:p-4 max-sm:gap-2 max-sm:p-3" @submit.prevent="simulate()">
         <label class="min-w-0">
           <span class="mb-2 block font-mono text-[11px] tracking-[0.14em] text-muted-foreground uppercase max-sm:mb-1">命中模拟</span>
@@ -140,9 +154,9 @@
     <!-- ===== 列表视图 ===== -->
     <SectionCard v-else-if="viewMode === 'list'" :padded="false">
       <div class="max-w-full overflow-x-auto" role="region" aria-label="策略规则列表" tabindex="0">
-      <div :class="dnsColumn ? 'min-w-[828px] max-lg:min-w-[668px] xl:min-w-[868px]' : 'min-w-[680px]'">
+      <div :class="cn(dnsColumn ? 'min-w-[828px] max-lg:min-w-[668px] xl:min-w-[868px]' : 'min-w-[680px]', 'max-sm:min-w-0')">
       <div
-        class="flex items-center gap-2.5 border-b border-border px-4 py-3 font-mono text-[10.5px] tracking-[0.12em] text-muted-foreground uppercase"
+        class="flex items-center gap-2.5 border-b border-border px-4 py-3 font-mono text-[10.5px] tracking-[0.12em] text-muted-foreground uppercase max-sm:hidden"
         aria-hidden="true"
       >
         <span v-if="reorder.active.value" class="w-11" />
@@ -158,7 +172,7 @@
         <div
           v-for="(item, cfIndex) in displayList"
           :key="item.uniqueId"
-          class="cf-cv-row max-md:[--cf-cv-row-h:67px]"
+          class="cf-cv-row max-md:[--cf-cv-row-h:67px] max-sm:[--cf-cv-row-h:58px]"
           data-reorder-item
           :data-id="item.uniqueId"
         >
@@ -166,8 +180,8 @@
           <div
             v-if="item.isGroup"
             :class="cn(
-              'flex w-full items-center gap-2.5 border-0 border-b border-border px-4 py-2 transition-colors',
-              !reorder.active.value && 'mt-4',
+              'rule-group-head flex w-full items-center gap-2.5 border-0 border-b border-border px-4 py-2 transition-colors',
+              !reorder.active.value && 'mt-4 max-sm:mt-2',
               !reorder.active.value && 'cursor-pointer hover:bg-accent/40'
             )"
             :title="item.groupLabel"
@@ -185,7 +199,7 @@
               @down="reorder.moveDown(cfIndex)"
               @keydown="reorder.onHandleKeydown($event, cfIndex)"
             />
-            <span class="flex w-9 shrink-0 items-center">
+            <span class="rule-gchev flex w-9 shrink-0 items-center">
               <Button
                 v-if="!reorder.active.value"
                 variant="ghost"
@@ -198,19 +212,19 @@
                 <ChevronRight :class="cn('size-4 transition-transform', !item.collapsed && 'rotate-90')" />
               </Button>
             </span>
-            <span class="flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
-              <span :class="cn('min-w-0 max-w-[60%] truncate text-[14px]', item.groupName ? 'font-medium text-foreground' : 'text-muted-foreground')">
+            <span class="rule-gtitle flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
+              <span :class="cn('min-w-0 max-w-[60%] truncate text-[14px] max-sm:max-w-none max-sm:shrink', item.groupName ? 'font-medium text-foreground' : 'text-muted-foreground')">
                 {{ groupTitle(item) }}
               </span>
               <span class="num shrink-0 font-mono text-[11px] text-muted-foreground">
                 {{ groupRange(item) }}<template v-if="item.groupName"> · {{ item.count }} 项</template>
               </span>
-              <span v-if="item.collapsed" class="min-w-0 truncate font-mono text-[11.5px] text-muted-foreground" :title="groupPreview(item)">
+              <span v-if="item.collapsed" class="min-w-0 truncate font-mono text-[11.5px] text-muted-foreground max-sm:hidden" :title="groupPreview(item)">
                 {{ groupPreview(item) }}
               </span>
             </span>
             <span class="w-[160px] shrink-0 max-lg:hidden" aria-hidden="true" />
-            <span class="flex w-[120px] shrink-0">
+            <span class="rule-gpolicy flex w-[120px] shrink-0">
               <RulePolicySelect
                 :model-value="item.policy"
                 :policies="availablePolicies"
@@ -221,7 +235,7 @@
                 @update:model-value="value => setGroupPolicy(item, value)"
               />
             </span>
-            <span v-if="dnsColumn" class="cf-reorder-mute flex w-[148px] shrink-0 items-center xl:w-[188px]">
+            <span v-if="dnsColumn" class="rule-gdns cf-reorder-mute flex w-[148px] shrink-0 items-center xl:w-[188px]">
               <span v-if="dnsLoading && (!dnsSnapshot || groupStale(item))" class="ml-2 inline-block h-6 w-24 animate-pulse rounded-md bg-primary/10" role="status" aria-label="DNS 状态加载中" />
               <button
                 v-else-if="dnsEditable"
@@ -238,8 +252,8 @@
               <span v-else :class="cn('min-w-0 truncate px-2 text-[12px]', groupDns(item).tone === 'warn' ? 'text-warning-accent' : 'text-muted-foreground')" :title="groupDns(item).title" data-group-dns>{{ groupDns(item).text }}</span>
             </span>
             <!-- 与成员行的「启停 / 编辑 / 删除」同位，重命名落在编辑的位置 -->
-            <span class="flex w-[136px] shrink-0 items-center justify-end gap-0.5">
-              <span class="size-8" aria-hidden="true" />
+            <span class="rule-grename flex w-[136px] shrink-0 items-center justify-end gap-0.5">
+              <span class="size-8 max-sm:hidden" aria-hidden="true" />
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -250,7 +264,7 @@
               >
                 <Pencil class="size-4" />
               </Button>
-              <span class="size-8" aria-hidden="true" />
+              <span class="size-8 max-sm:hidden" aria-hidden="true" />
             </span>
           </div>
 
@@ -265,6 +279,7 @@
               !item.enabled && 'opacity-55',
               (simMatchKey === item.uniqueId || recentKeys.has(item.uniqueId)) && 'is-match'
             ]"
+            @click="onRowTap($event, item)"
           >
             <DragHandle
               v-if="reorder.active.value"
@@ -280,11 +295,11 @@
             <span class="rule-index w-9 shrink-0 font-mono text-[11px] text-muted-foreground">
               {{ String(rawIndex(item.uniqueId)).padStart(2, '0') }}
             </span>
-            <span class="w-[118px] shrink-0 truncate font-mono text-[11px] text-muted-foreground max-md:w-[92px]">
+            <span class="rule-type w-[118px] shrink-0 truncate font-mono text-[11px] text-muted-foreground max-md:w-[92px]">
               {{ item.itemType === 'rule' ? item.rule_type : 'RULE-SET' }}
             </span>
 
-            <div class="flex min-w-0 flex-1 items-center gap-2">
+            <div class="rule-value flex min-w-0 flex-1 items-center gap-2">
               <template v-if="item.itemType === 'rule'">
                 <!-- MATCH 没有匹配值：不留空 span，否则 gap 会把后面的 chip 推离列首 -->
                 <span v-if="item.value" class="min-w-0 truncate font-mono text-[12.5px] text-foreground" :title="item.value">
@@ -324,12 +339,14 @@
               <span v-if="udpFallbackLabel(item)" class="chip shrink-0 text-[11px]" :title="UDP_FALLBACK_TITLE">{{ udpFallbackLabel(item) }}</span>
               <span v-if="ntpDirect(item)" class="chip shrink-0 text-[11px]" :title="NTP_DIRECT_TITLE">对时直连</span>
               <span v-if="afterMatch.has(item.uniqueId)" class="chip shrink-0 text-[11px]" :title="AFTER_MATCH_TITLE">仅 Mihomo</span>
+              <!-- 手机上没有启停图标，停用状态写出来 -->
+              <span v-if="compact && !item.enabled" class="chip shrink-0 text-[11px]">已停用</span>
             </div>
             <span class="w-[160px] shrink-0 truncate text-[12px] text-muted-foreground max-lg:hidden" :title="item.remark">
               {{ item.remark || '—' }}
             </span>
 
-            <span class="flex w-[120px] shrink-0">
+            <span class="rule-policy flex w-[120px] shrink-0">
               <!-- 组内策略已在组头显示，成员行降为文字；改单条会离开原分组 -->
               <RulePolicySelect
                 :model-value="item.policy"
@@ -341,7 +358,7 @@
                 @update:model-value="value => setRulePolicy(item, value)"
               />
             </span>
-            <span v-if="dnsColumn" class="cf-reorder-mute flex w-[148px] shrink-0 items-center xl:w-[188px]">
+            <span v-if="dnsColumn" class="rule-dns cf-reorder-mute flex w-[148px] shrink-0 items-center xl:w-[188px]">
               <RuleDnsCell
                 :item="item"
                 :snapshot="dnsSnapshot"
@@ -353,7 +370,23 @@
               />
             </span>
 
-            <div class="cf-reorder-mute flex w-[136px] shrink-0 items-center justify-end gap-0.5">
+            <!-- 手机：启停、编辑、删除收进一个菜单 -->
+            <DropdownMenu v-if="compact">
+              <DropdownMenuTrigger as-child>
+                <Button variant="ghost" size="icon-sm" class="rule-menu cf-reorder-mute relative text-muted-foreground" :disabled="reorder.active.value" :aria-label="`操作 ${ruleName(item)}`">
+                  <Ellipsis class="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem class="min-h-11" @select="editItem(item)"><Pencil class="size-4" />编辑</DropdownMenuItem>
+                <DropdownMenuItem class="min-h-11" @select="toggleItemStatus(item)">
+                  <component :is="item.enabled ? EyeOff : Eye" class="size-4" />{{ item.enabled ? '停用' : '启用' }}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem class="min-h-11 text-destructive-accent" @select="deleteItem(item)"><Trash2 class="size-4" />删除</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <div v-else class="rule-actions cf-reorder-mute flex w-[136px] shrink-0 items-center justify-end gap-0.5">
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -786,6 +819,7 @@ import {
   ChevronsUpDown,
   CircleCheck,
   Copy,
+  Ellipsis,
   ExternalLink,
   Eye,
   EyeOff,
@@ -839,6 +873,7 @@ import api from '@/api'
 import { getActiveProfileId } from '@/profileContext'
 import { systemReducesMotion } from '@/stores/preferences'
 import { isAxiosError } from 'axios'
+import { useMediaQuery } from '@vueuse/core'
 
 const errorMessage = (error: unknown, fallback: string) =>
   isAxiosError<{ message?: string }>(error) ? error.response?.data?.message || fallback : fallback
@@ -858,6 +893,9 @@ const allRules = ref<any[]>([])  // 包含规则和规则集的合并数组
 const proxyGroups = ref<ProxyGroup[]>([])
 const ruleLibrary = ref<any[]>([])  // 规则仓库
 const viewMode = ref<'list' | 'card'>('list') // 默认表格视图，与匹配顺序一致
+// 手机宽度：列表每条排成两行，行内操作收进菜单，命中模拟默认收起
+const compact = useMediaQuery('(max-width: 639px)')
+const simOpen = ref(false)
 const rulesContainer = ref<HTMLElement | null>(null)
 
 /* ================================================================
@@ -866,6 +904,8 @@ const rulesContainer = ref<HTMLElement | null>(null)
 const simQuery = ref('')
 const simRunning = ref(false)
 const simResult = ref<any>(null)
+// 手机上有结果或正在模拟时保持展开
+const simShown = computed(() => simOpen.value || simRunning.value || !!simResult.value)
 const simMatchKey = ref('')
 const simVia = ref<{ label: string; hint: string } | null>(null)
 /** 命中项的 DNS 处理，与列表 chip 同源 */
@@ -1326,6 +1366,13 @@ const openEditor = (source: 'values' | 'library' | 'new_library') => {
 }
 
 // 统一的编辑方法：传原始对象，表单不会带上展示用的分组字段
+// 手机上点规则的空白处打开编辑；点到策略、DNS、菜单等控件时不处理
+const onRowTap = (event: MouseEvent, item: any) => {
+  if (!compact.value || reorder.active.value) return
+  if ((event.target as HTMLElement).closest('button, a, input, [role="combobox"], [role="menu"], [data-reorder-handle]')) return
+  editItem(item)
+}
+
 const editItem = (row: any) => {
   editorItem.value = allRules.value.find(r => r.id === row.id && r.itemType === row.itemType) || row
   editorOpen.value = true
@@ -1832,5 +1879,52 @@ onActivated(() => {
 
 .rule-row.is-match .rule-index {
   color: var(--primary-accent);
+}
+/* 手机：每条规则两行。上行序号、匹配值、策略；下行类型、DNS、操作菜单。同一份 DOM，只换排布 */
+@media (max-width: 639px) {
+  .rule-row {
+    display: grid;
+    grid-template-columns: auto 24px auto minmax(0, 1fr) auto;
+    grid-template-areas: 'drag idx value value policy' 'drag . type dns menu';
+    column-gap: 6px;
+    row-gap: 1px;
+    padding: 7px 12px;
+    cursor: pointer;
+  }
+  .rule-row > :first-child:not(.rule-index) { grid-area: drag; }
+  .rule-row .rule-index { grid-area: idx; width: auto; }
+  .rule-row .rule-value { grid-area: value; }
+  .rule-row .rule-value > span:first-child { font-size: 13.5px; }
+  .rule-row .rule-policy { grid-area: policy; width: auto; max-width: 46vw; }
+  .rule-row .rule-type { grid-area: type; width: auto; font-size: 10.5px; }
+  .rule-row .rule-dns { grid-area: dns; width: auto; min-width: 0; }
+  .rule-row .rule-menu { grid-area: menu; justify-self: end; }
+  /* 组内成员的策略在组头已有，手机上不重复；匹配值占满这一行 */
+  .rule-row.in-group .rule-policy { display: none; }
+  .rule-row.in-group .rule-value { grid-column: 3 / -1; }
+  .rule-row.in-group { padding-left: 20px; }
+
+  .rule-group-head {
+    display: grid;
+    grid-template-columns: auto 24px minmax(0, 1fr) auto auto;
+    grid-template-areas: 'drag chev title policy rename' 'drag . gdns gdns gdns';
+    column-gap: 6px;
+    row-gap: 0;
+    padding: 4px 12px;
+    background: color-mix(in oklab, var(--secondary) 60%, transparent);
+  }
+  .rule-group-head > :first-child:not(.rule-gchev) { grid-area: drag; }
+  .rule-group-head .rule-gchev { grid-area: chev; width: auto; }
+  .rule-group-head .rule-gtitle { grid-area: title; }
+  .rule-group-head .rule-gpolicy { grid-area: policy; width: auto; max-width: 40vw; }
+  .rule-group-head .rule-grename { grid-area: rename; width: auto; }
+  .rule-group-head .rule-gdns { grid-area: gdns; width: auto; margin-left: -8px; }
+
+  /* 菜单按钮视觉 32px，透明区域补足 44px 点击区 */
+  .rule-menu::before {
+    content: '';
+    position: absolute;
+    inset: calc((32px - var(--cf-touch, 44px)) / 2);
+  }
 }
 </style>
