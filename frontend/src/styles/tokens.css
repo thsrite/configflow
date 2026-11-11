@@ -505,6 +505,12 @@ body {
     margin-left: auto;
   }
 
+  /* 手机上导航页面不显示大标题：操作区占满这一行，从左边开始 */
+  .cf-page-header--untitled .cf-page-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
   .cf-section-header {
     gap: var(--cf-sp-2);
   }
