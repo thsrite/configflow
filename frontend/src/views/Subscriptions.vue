@@ -200,11 +200,15 @@
           aria-hidden="true"
         />
 
-        <div class="card-header flex items-center gap-4 max-md:gap-2">
+        <div :class="cn('card-header flex items-center gap-4 max-md:gap-2', compact && 'gap-2.5 max-md:gap-2.5')">
           <span v-if="reorder.active.value" class="text-xs tabular-nums text-muted-foreground">{{ index + 1 }}</span>
 
-          <!-- 流量环：subscription-userinfo 的已用比例；服务商不提供时显示不计量 -->
-          <div v-if="!reorder.active.value" class="card-stats relative size-24 shrink-0 max-md:size-16">
+          <!-- 流量环：subscription-userinfo 的已用比例；服务商不提供时显示不计量。手机上缩成 40px 小环 -->
+          <div
+            v-if="!reorder.active.value"
+            :class="cn('card-stats relative size-24 shrink-0 max-md:size-16', compact && 'size-10 max-md:size-10')"
+            :title="compact ? (traffic(sub).metered ? `已用 ${Math.round(traffic(sub).ratio * 100)}%` : '不计量') : undefined"
+          >
             <svg viewBox="0 0 96 96" class="size-full -rotate-90" aria-hidden="true">
               <defs>
                 <linearGradient :id="`ring-${index}`" x1="0" y1="0" x2="1" y2="1">
@@ -212,14 +216,14 @@
                   <stop offset="1" stop-color="var(--accent-2)" />
                 </linearGradient>
               </defs>
-              <circle cx="48" cy="48" r="42" fill="none" stroke="var(--accent)" stroke-width="7" />
+              <circle cx="48" cy="48" r="42" fill="none" stroke="var(--accent)" :stroke-width="compact ? 10 : 7" />
               <circle
                 cx="48"
                 cy="48"
                 r="42"
                 fill="none"
                 :stroke="`url(#ring-${index})`"
-                stroke-width="7"
+                :stroke-width="compact ? 10 : 7"
                 stroke-linecap="round"
                 :stroke-dasharray="RING"
                 :stroke-dashoffset="ringOffset(sub)"
@@ -228,23 +232,35 @@
             </svg>
             <div class="absolute inset-0 grid place-content-center text-center">
               <template v-if="traffic(sub).metered">
-                <b class="font-display text-[24px] leading-none font-medium max-md:text-[20px]">
-                  {{ Math.round(traffic(sub).ratio * 100) }}<small class="text-[12px]">%</small>
+                <b
+                  :class="compact
+                    ? 'num font-mono text-[11px] leading-none font-medium'
+                    : 'font-display text-[24px] leading-none font-medium max-md:text-[20px]'"
+                >
+                  {{ Math.round(traffic(sub).ratio * 100) }}<small :class="compact ? 'text-[8.5px]' : 'text-[12px]'">%</small>
                 </b>
-                <span class="mt-0.5 font-mono text-[10px] text-muted-foreground">已用</span>
+                <span :class="compact ? 'cf-sr' : 'mt-0.5 font-mono text-[10px] text-muted-foreground'">已用</span>
               </template>
               <template v-else>
-                <b class="font-display text-[24px] leading-none font-medium">∞</b>
-                <span class="mt-0.5 font-mono text-[10px] text-muted-foreground">不计量</span>
+                <b :class="cn('font-display text-[24px] leading-none font-medium', compact && 'text-[16px]')">∞</b>
+                <span :class="compact ? 'cf-sr' : 'mt-0.5 font-mono text-[10px] text-muted-foreground'">不计量</span>
               </template>
             </div>
           </div>
 
-          <div class="card-title-group min-w-0 flex-1">
-            <h3 class="card-title font-display m-0 truncate text-[20px] leading-tight font-medium tracking-[-0.01em]">
+          <div :class="cn('card-title-group min-w-0 flex-1', compact && 'flex items-center gap-1.5')">
+            <h3
+              :class="cn(
+                'card-title m-0 truncate',
+                isPhone
+                  ? 'min-w-0 text-[16px] leading-snug font-medium'
+                  : 'font-display text-[20px] leading-tight font-medium tracking-[-0.01em]'
+              )"
+            >
               {{ sub.name }}
             </h3>
-            <div v-if="!reorder.active.value" class="card-meta mt-2 flex flex-wrap gap-1.5">
+            <span v-if="compact" class="chip h-5 shrink-0 px-1.5 font-mono text-[10.5px]">{{ getTypeLabel(sub.type) }}</span>
+            <div v-if="!reorder.active.value && !compact" class="card-meta mt-2 flex flex-wrap gap-1.5">
               <span class="chip font-mono">{{ getTypeLabel(sub.type) }}</span>
               <span
                 v-if="traffic(sub).expireDays !== null"
@@ -263,6 +279,38 @@
             </div>
           </div>
 
+          <!-- 手机：拉取与更多收进标题行；视觉 32px，透明 ::before 补足 44px 触区，两键间距 12px 避免触区重叠 -->
+          <div v-if="compact" class="card-compact-actions flex shrink-0 items-center gap-3">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              :class="PHONE_ICON_BUTTON"
+              :aria-label="`拉取 ${sub.name}`"
+              title="拉取"
+              :disabled="subscriptionStatus[sub.id]?.status === 'loading'"
+              :aria-busy="subscriptionStatus[sub.id]?.status === 'loading'"
+              @click="pullOne(sub)"
+            >
+              <RefreshCw :class="cn('size-3.5', subscriptionStatus[sub.id]?.status === 'loading' && 'animate-spin')" />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <Button variant="ghost" size="icon-sm" :class="PHONE_ICON_BUTTON" :aria-label="`${sub.name} 的更多操作`">
+                  <MoreHorizontal class="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" class="glass-strong min-w-[160px]">
+                <template v-for="item in cardMenu(sub)" :key="item.key">
+                  <DropdownMenuSeparator v-if="item.destructive" />
+                  <DropdownMenuItem :variant="item.destructive ? 'destructive' : 'default'" @select="item.run">
+                    <component :is="item.icon" class="size-4" />
+                    {{ item.label }}
+                  </DropdownMenuItem>
+                </template>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
           <DragHandle
             v-if="reorder.active.value"
             :label="sub.name"
@@ -276,7 +324,35 @@
           />
         </div>
 
-        <template v-if="!reorder.active.value">
+        <!-- 手机：统计压成两行次要文字，状态胶囊跟在上次拉取后面，不再用分隔线和三列表格 -->
+        <div v-if="compact" class="card-compact-summary mt-1.5 grid gap-1 text-[12px] leading-[18px] text-muted-foreground">
+          <p class="m-0 truncate">
+            <b class="num font-medium text-foreground">
+              <AnimatedNumber v-if="nodeCount(sub) !== '—'" :value="Number(nodeCount(sub))" />
+              <template v-else>—</template>
+            </b>
+            <span v-if="filteredTotal(sub) !== null" class="num" :title="`已按正则筛选，原始 ${filteredTotal(sub)} 个节点`"> / {{ filteredTotal(sub) }}</span> 节点<span class="mx-1.5" aria-hidden="true">·</span>剩余 <b class="num font-medium text-foreground">{{ traffic(sub).left !== null ? formatBytes(traffic(sub).left) : '—' }}</b><span class="mx-1.5" aria-hidden="true">·</span>{{ intervalSummary(sub) }}
+          </p>
+          <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+            <span class="mr-0.5">上次拉取 {{ lastFetchText(sub) }}</span>
+            <span
+              v-if="traffic(sub).expireDays !== null"
+              :class="cn(PHONE_CHIP, traffic(sub).expireDays! <= 10 && 'chip-warn')"
+            >
+              {{ traffic(sub).expireDays! > 0 ? `${traffic(sub).expireDays} 天后到期` : '已到期' }}
+            </span>
+            <span v-if="traffic(sub).ratio > 0.8" :class="cn(PHONE_CHIP, 'chip-bad')">余量不足</span>
+            <span v-if="subscriptionStatus[sub.id]?.status === 'error'" :class="cn(PHONE_CHIP, 'chip-bad')" :title="subscriptionStatus[sub.id]?.error">
+              拉取失败
+            </span>
+            <span v-if="subscriptionStatus[sub.id]?.status === 'cache'" :class="cn(PHONE_CHIP, 'chip-warn')" :title="subscriptionStatus[sub.id]?.error">
+              拉取失败，已使用缓存
+            </span>
+            <span v-if="!sub.enabled" :class="PHONE_CHIP">已停用</span>
+          </div>
+        </div>
+
+        <template v-if="!reorder.active.value && !compact">
           <div class="card-section mt-[18px] grid grid-cols-3 border-t border-border pt-3.5 max-md:mt-2 max-md:pt-2">
             <div>
               <small class="block text-[11px] text-muted-foreground">节点</small>
@@ -320,23 +396,13 @@
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" class="glass-strong min-w-[160px]">
-                <DropdownMenuItem @select="handleFetchSubscription(sub)">
-                  <Network class="size-4" />
-                  查看节点
-                </DropdownMenuItem>
-                <DropdownMenuItem @select="copyUrl(sub)">
-                  <Copy class="size-4" />
-                  复制地址
-                </DropdownMenuItem>
-                <DropdownMenuItem @select="handleToggle(sub)">
-                  <component :is="sub.enabled ? EyeOff : Eye" class="size-4" />
-                  {{ sub.enabled ? '停用' : '启用' }}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" @select="deleteSubscription(sub)">
-                  <Trash2 class="size-4" />
-                  删除
-                </DropdownMenuItem>
+                <template v-for="item in cardMenu(sub)" :key="item.key">
+                  <DropdownMenuSeparator v-if="item.destructive" />
+                  <DropdownMenuItem :variant="item.destructive ? 'destructive' : 'default'" @select="item.run">
+                    <component :is="item.icon" class="size-4" />
+                    {{ item.label }}
+                  </DropdownMenuItem>
+                </template>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -546,6 +612,7 @@ import { isRefreshInterval, referencedProfileNames } from '@/lib/subscriptionRef
 import { copyText } from '@/lib/clipboard'
 import { listItemStyle } from '@/lib/motion'
 import { useSettingLink, queryText, focusSetting } from '@/lib/settingLink'
+import { useMediaQuery } from '@vueuse/core'
 
 
 const router = useRouter()
@@ -559,6 +626,18 @@ const ringOffset = (sub: Subscription) => {
 }
 const lastFetchText = (sub: Subscription) =>
   relativeTime((sub as any).last_fetch?.at || (sub as any).cached_updated_at)
+
+/* ---------- 手机紧凑卡片（< 640px） ---------- */
+const isPhone = useMediaQuery('(max-width: 639px)')
+// 内联图标按钮：视觉 32px，透明 ::before 向外扩 6px 凑足 44px 触区；
+// Button 在窄屏自带 max-md:min-h-11 / min-w-11，必须用同一变体才能覆盖
+const PHONE_ICON_BUTTON = "relative size-8 max-md:min-h-0 max-md:min-w-0 before:absolute before:-inset-1.5 before:content-['']"
+// 状态胶囊在紧凑卡片里缩到 20px 高，颜色沿用 chip-warn / chip-bad
+const PHONE_CHIP = 'chip h-5 gap-1 px-1.5 text-[11px]'
+const intervalSummary = (sub: Subscription) => {
+  const seconds = sub.interval ?? 86400
+  return seconds === 0 ? '仅手动' : `每 ${formatInterval(seconds)}更新`
+}
 const subscriptions = ref<Subscription[]>([])
 const subscriptionsLoaded = ref(false)
 const subscriptionsContainer = ref<HTMLElement | null>(null)
@@ -1143,6 +1222,18 @@ const dotTone = (sub: Subscription): string => {
   if (status === 'loading') return 'bg-primary-accent'
   return status === 'success' ? 'bg-success-accent' : 'bg-muted-foreground'
 }
+
+// 卡片视图的紧凑布局只在手机且不在排序模式时启用；排序模式沿用原来的序号 + 名称 + 手柄
+const compact = computed(() => isPhone.value && !reorder.active.value)
+
+// 卡片「⋯」菜单；手机上标题行放不下「编辑」，收进菜单第一项，处理函数不变
+const cardMenu = (sub: Subscription) => [
+  ...(isPhone.value ? [{ key: 'edit', label: '编辑', icon: Pencil, destructive: false, run: () => editSubscription(sub) }] : []),
+  { key: 'nodes', label: '查看节点', icon: Network, destructive: false, run: () => handleFetchSubscription(sub) },
+  { key: 'copy', label: '复制地址', icon: Copy, destructive: false, run: () => copyUrl(sub) },
+  { key: 'toggle', label: sub.enabled ? '停用' : '启用', icon: sub.enabled ? EyeOff : Eye, destructive: false, run: () => handleToggle(sub) },
+  { key: 'delete', label: '删除', icon: Trash2, destructive: true, run: () => deleteSubscription(sub) }
+]
 
 const handleSaveOrder = async () => {
   try {
