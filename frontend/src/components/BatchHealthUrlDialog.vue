@@ -1,7 +1,7 @@
 <template>
-  <Button variant="outline" :disabled="disabled || !eligibleGroups.length" @click="openDialog">
+  <Button variant="outline" class="max-sm:size-11 max-sm:gap-0" aria-label="批量测速地址" title="批量测速地址" :disabled="disabled || !eligibleGroups.length" @click="openDialog">
     <Timer class="size-4" />
-    批量测速地址
+    <span class="max-sm:sr-only">批量测速地址</span>
   </Button>
 
   <Dialog :open="open" @update:open="value => { if (!saving) open = value }">

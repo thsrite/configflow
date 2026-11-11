@@ -14,12 +14,14 @@
         />
         <Button
           variant="outline"
-          class="border-border/60 bg-background/40"
+          class="border-border/60 bg-background/40 max-sm:size-11 max-sm:gap-0"
+          aria-label="调整顺序"
+          title="调整顺序"
           :disabled="proxyGroups.length < 2 || draftSaving || Object.values(savingStatus).some(Boolean)"
           @click="reorderOpen = true"
         >
           <ArrowUpDown class="size-4" />
-          调整顺序
+          <span class="max-sm:sr-only">调整顺序</span>
         </Button>
         <Button class="shadow-glow" @click="showAddDialog">
           <Plus class="size-4" />
@@ -49,7 +51,18 @@
     </SectionCard>
 
     <div v-else class="group-workspace grid min-h-0 grid-cols-[280px_minmax(0,1fr)] gap-3.5 max-[1180px]:grid-cols-[minmax(0,1fr)] max-sm:gap-2">
+      <!-- 手机：先列出全部策略组，点一个进入详情，详情上方「全部策略组」返回 -->
       <Button
+        v-if="compact && mobileDetail"
+        variant="ghost"
+        class="min-h-11 w-fit justify-start gap-1 px-2 text-muted-foreground"
+        data-group-back
+        @click="mobileDetail = false"
+      >
+        <ChevronLeft class="size-4" />全部策略组
+      </Button>
+      <Button
+        v-if="!compact"
         variant="outline"
         class="hidden h-auto min-h-11 w-full min-w-0 justify-between gap-3 bg-card px-3 py-2.5 max-[1180px]:flex"
         aria-haspopup="dialog"
@@ -62,7 +75,7 @@
         <ChevronDown class="size-4 shrink-0" />
       </Button>
       <!-- 左：策略组列表 -->
-      <SectionCard :padded="false" class="group-list-card flex min-h-0 flex-col p-2 max-[1180px]:hidden">
+      <SectionCard v-if="!compact || !mobileDetail" :padded="false" :class="cn('group-list-card flex min-h-0 flex-col p-2', !compact && 'max-[1180px]:hidden')">
         <div class="group-list min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]" role="list" aria-label="策略组">
           <div
             v-for="group in proxyGroups"
@@ -80,7 +93,7 @@
                 selectedKey === keyOf(group) ? 'bg-secondary shadow-[inset_0_0_0_1px_var(--border-strong)]' : 'hover:bg-secondary',
                 group.enabled === false && 'opacity-55'
               )"
-              @click="selectGroup(group)"
+              @click="openGroup(group)"
             >
               <span
                 :class="cn(
@@ -125,7 +138,7 @@
       </SectionCard>
 
       <!-- 右：来源 → 筛选 → 命中节点 -->
-      <SectionCard v-if="selected" :padded="false" class="group-detail-card flex min-h-0 min-w-0 flex-col" role="region" aria-label="策略组详情">
+      <SectionCard v-if="selected && (!compact || mobileDetail)" :padded="false" class="group-detail-card flex min-h-0 min-w-0 flex-col" role="region" aria-label="策略组详情">
         <header class="flex shrink-0 flex-wrap items-center gap-2.5 border-b border-border px-[18px] py-4 max-sm:gap-2 max-sm:px-3 max-sm:py-2">
           <h2 class="m-0 min-w-0 break-words text-[13.5px] font-semibold [overflow-wrap:anywhere]">{{ selected.name }}</h2>
           <span v-if="selected.follow_group" class="chip chip-warn">跟随</span>
@@ -649,9 +662,11 @@ import ProxyGroupOrderDialog from '@/components/ProxyGroupOrderDialog.vue'
 import { usePageReloadGuard } from '@/lib/pageReloadGuard'
 import PageHeader from '@/components/common/PageHeader.vue'
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import {
   ArrowUpDown,
   ChevronDown,
+  ChevronLeft,
   Eye,
   EyeOff,
   Filter,
@@ -1960,6 +1975,19 @@ const applyGroupSelection = async (group: ProxyGroup | null): Promise<boolean> =
   return true
 }
 
+// 手机：列表与详情分两屏
+const compact = useMediaQuery('(max-width: 639px)')
+const mobileDetail = ref(false)
+watch(compact, phone => { if (!phone) mobileDetail.value = false })
+const openGroup = async (group: ProxyGroup) => {
+  const switched = await selectGroup(group)
+  if (switched && compact.value) {
+    mobileDetail.value = true
+    await nextTick()
+    window.scrollTo({ top: 0 })
+  }
+}
+
 const selectGroup = async (group: ProxyGroup): Promise<boolean> => {
   if (!viewActive || selectionSwitchPending || draftSaving.value) return false
   const targetKey = keyOf(group)
@@ -2234,6 +2262,16 @@ onUnmounted(() => {
   .group-list {
     max-height: 60dvh;
   }
+}
+
+/* 手机上列表单独一屏，整页滚动，不再限制高度 */
+@media (max-width: 639px) {
+  .group-list {
+    max-height: none;
+  }
+}
+
+@media (max-width: 1180px) {
 
   .group-detail-body {
     flex: none;
