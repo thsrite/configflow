@@ -170,18 +170,18 @@ describe('Mihomo logs', () => {
     expect(logText(wrapper)).toBe('new gateway log')
   })
 
-  it('clears the old source snapshot immediately when switching core log sources', async () => {
-    vi.mocked(agentApi.getLogSources).mockResolvedValue(sources([coreSource, { id: 'core-error', label: 'Mihomo 错误日志', kind: 'file' }]))
+  // The core's log has no choice of source: the first readable one is read.
+  it('offers no source choice and reads the first readable core log', async () => {
+    vi.mocked(agentApi.getLogSources).mockResolvedValue(sources([
+      { id: 'core-file', label: 'Mihomo 日志文件', kind: 'unavailable', note: '文件不存在' },
+      coreSource,
+      { id: 'core-error', label: 'Mihomo 错误日志', kind: 'file' }
+    ]))
     const wrapper = await render()
-    const pending = deferred<any>()
-    vi.mocked(agentApi.getLogs).mockReturnValueOnce(pending.promise)
-    wrapper.getComponent(Select).vm.$emit('update:modelValue', 'core-error')
-    await flushPromises()
-    expect(agentApi.getLogs).toHaveBeenLastCalledWith('gw', 500, { source: 'core-error' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(wrapper.text()).not.toContain('core startup complete')
-    pending.resolve(logs('core error output'))
-    await flushPromises()
-    expect(logText(wrapper)).toBe('core error output')
+    expect(wrapper.find('[aria-label="日志来源"]').exists()).toBe(false)
+    expect(agentApi.getLogs).toHaveBeenLastCalledWith('gw', 500, { source: 'core' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(logText(wrapper)).toBe('core startup complete')
+    expect(wrapper.text()).not.toContain('Mihomo 错误日志')
   })
 
   it('keeps the last successful snapshot visible after failure and supports retry', async () => {
