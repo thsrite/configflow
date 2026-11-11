@@ -3,16 +3,8 @@
     <Toolbar v-model:search="search" placeholder="搜索日志">
       <template #filters>
         <Segmented :model-value="mode" :options="MODES" label="日志来源方式" @update:model-value="changeMode" />
-        <Select v-if="mode === 'file' && sources.length" :model-value="sourceId" @update:model-value="changeSource(String($event))">
-          <SelectTrigger class="min-h-11 w-40 max-w-full" aria-label="日志来源"><SelectValue placeholder="日志来源" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="source in sources" :key="source.id" :value="source.id">
-              {{ source.label }}{{ source.kind === 'unavailable' ? '（不可读）' : '' }}
-            </SelectItem>
-          </SelectContent>
-        </Select>
         <Select :model-value="level" @update:model-value="changeLevel(String($event))">
-          <SelectTrigger class="min-h-11 w-36 max-w-full" aria-label="最低日志等级"><SelectValue placeholder="日志等级" /></SelectTrigger>
+          <SelectTrigger class="min-h-11 w-44 max-w-full" aria-label="最低日志等级"><SelectValue placeholder="日志等级" /></SelectTrigger>
           <SelectContent>
             <SelectItem v-for="item in MIHOMO_LOG_LEVELS" :key="item.value" :value="item.value">
               {{ item.label }}{{ item.value === configuredLevel ? ' · 配置' : '' }}
@@ -242,6 +234,8 @@ async function loadFile(request: number, id: string, signal: AbortSignal) {
     sources.value = (Array.isArray(data.sources) ? data.sources : []).filter((source: AgentLogSource) =>
       (source.id === 'core' || source.id?.startsWith('core-')) && ['file', 'journal', 'unavailable'].includes(source.kind))
     sourcesReady.value = true
+    // The core's log is read from its first readable source; a second one (a
+    // separate log file) holds the same lines, so there is nothing to choose.
     if (!sources.value.some(source => source.id === sourceId.value)) {
       sourceId.value = (sources.value.find(source => source.kind !== 'unavailable') || sources.value[0])?.id || ''
       text.value = ''
@@ -333,16 +327,6 @@ function changeLevel(value: string) {
   resetLive()
   error.value = ''
   if (!paused.value) void load()
-}
-
-function changeSource(id: string) {
-  if (id === sourceId.value) return
-  stop()
-  sourceId.value = id
-  text.value = ''
-  updatedAt.value = ''
-  error.value = ''
-  void load()
 }
 
 async function toggleFollow() {
