@@ -47,6 +47,8 @@ var mihomoPanelRoutes = []mihomoPanelRoute{
 	{regexp.MustCompile(`^connections$`), "GET DELETE", nil},
 	// 由 Agent 自己聚合，不转发到控制接口
 	{regexp.MustCompile(`^flow$`), "GET", nil},
+	// 实时日志：Agent 按需订阅 /logs 并缓存，面板增量轮询
+	{regexp.MustCompile(`^logs$`), "GET", nil},
 	{regexp.MustCompile(`^connections/` + panelSegment + `$`), "DELETE", nil},
 	{regexp.MustCompile(`^rules$`), "GET", nil},
 	{regexp.MustCompile(`^providers/proxies$`), "GET", nil},
@@ -83,6 +85,8 @@ func mihomoPanelFail(w http.ResponseWriter, status int, code, message string) {
 func mihomoPanelHandler(cfg *Config) http.HandlerFunc {
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	flow := newMihomoFlowSampler()
+	// 日志订阅是长连接，不能用带超时的面板客户端
+	logs := newMihomoLogTail(&http.Client{CheckRedirect: client.CheckRedirect})
 	return func(w http.ResponseWriter, r *http.Request) {
 		if cfg.ServiceType != "mihomo" {
 			mihomoPanelFail(w, http.StatusBadRequest, "WRONG_SERVICE", "mihomo panel requires a mihomo agent")
@@ -127,6 +131,10 @@ func mihomoPanelHandler(cfg *Config) http.HandlerFunc {
 		}
 		if path == "flow" {
 			flow.serve(r.Context(), w, client, controller)
+			return
+		}
+		if path == "logs" {
+			logs.serve(w, r, controller)
 			return
 		}
 		if reload || upgrading || providerUpdate {

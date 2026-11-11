@@ -32,6 +32,8 @@ ROUTES = {
     ('connection', 'DELETE'): 'connections/{name}',
     # Agent-side aggregated live traffic (source → rule → policy → outlet).
     ('flow', 'GET'): 'flow',
+    # Agent-side subscription to the core's /logs stream, read incrementally.
+    ('logs', 'GET'): 'logs',
     ('rules', 'GET'): 'rules',
     ('providers/proxies', 'GET'): 'providers/proxies',
     ('providers/proxy', 'PUT'): 'providers/proxies/{name}',
@@ -50,8 +52,10 @@ RESOURCE_MIN_VERSION = {
     'configs/reload': '1.8.16-go', 'upgrade': '1.8.16-go',
     'providers/proxy/delay': '1.8.18-go',
     'flow': '1.8.26-go',
+    'logs': '1.8.56-go',
 }
-RESOURCE_FEATURE = {'providers/proxy/delay': '订阅节点测速', 'flow': '实时流量'}
+RESOURCE_FEATURE = {'providers/proxy/delay': '订阅节点测速', 'flow': '实时流量', 'logs': '实时日志'}
+LOG_LEVELS = ('debug', 'info', 'warning', 'error')
 RESOURCE_TIMEOUT = {'configs/reload': 70, 'upgrade': 200}
 MODES = ('rule', 'global', 'direct')
 # What the panel reads from a node or group. Mihomo also reports transport
@@ -99,7 +103,19 @@ def _name(args, key='name'):
     return name
 
 
+def _logs_query(args):
+    level = args.get('level', 'info')
+    if level not in LOG_LEVELS:
+        raise _fail('INVALID_REQUEST', 400, '日志等级只能是 debug、info、warning 或 error。')
+    after = args.get('after', '0')
+    if not isinstance(after, str) or not after.isdigit() or len(after) > 18:
+        raise _fail('INVALID_REQUEST', 400)
+    return {'level': level, 'after': after}
+
+
 def _query(resource, args):
+    if resource == 'logs':
+        return _logs_query(args)
     if not resource.endswith('/delay'):
         return {}
     test_url = args.get('url') or DEFAULT_TEST_URL

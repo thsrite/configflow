@@ -3,15 +3,31 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import MihomoLogs from '@/components/mihomo/MihomoLogs.vue'
 import AgentLogLines from '@/components/agents/AgentLogLines.vue'
 import { Select } from '@/components/ui/select'
-import { agentApi } from '@/api'
+import Segmented from '@/components/common/Segmented.vue'
+import { agentApi, mihomoPanelApi } from '@/api'
+import { filterLogLevel, parseAgentLogs } from '@/lib/agentLogs'
 
-vi.mock('@/api', () => ({ agentApi: { getLogSources: vi.fn(), getLogs: vi.fn() } }))
+vi.mock('@/api', () => ({
+  agentApi: { getLogSources: vi.fn(), getLogs: vi.fn() },
+  mihomoPanelApi: { configs: vi.fn(), logs: vi.fn() }
+}))
+vi.mock('@/lib/mihomoPanelCache', () => ({ cachedPanelData: vi.fn() }))
 vi.mock('vue-router', () => ({ RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } }))
 vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
 
 const coreSource = { id: 'core', label: 'Mihomo 运行日志', kind: 'journal', unit: 'mihomo' }
 const sources = (items: unknown[] = [coreSource]) => ({ data: { success: true, sources: items } } as any)
 const logs = (text: string) => ({ data: { success: true, logs: text } } as any)
+const live = (entries: Array<[number, string, string]>, extra: Record<string, unknown> = {}) => ({
+  data: {
+    success: true,
+    data: {
+      stream: 'info', status: 'streaming', next: entries.at(-1)?.[0] ?? 0, skipped: 0,
+      entries: entries.map(([seq, level, payload]) => ({ seq, level, payload, time: '2026-11-11T08:00:0' + (seq % 10) + 'Z' })),
+      ...extra
+    }
+  }
+} as any)
 const wrappers: VueWrapper[] = []
 const deferred = <T,>() => {
   let resolve!: (value: T) => void
@@ -40,6 +56,8 @@ beforeEach(() => {
   Object.defineProperty(document, 'hidden', { configurable: true, value: false })
   vi.mocked(agentApi.getLogSources).mockResolvedValue(sources())
   vi.mocked(agentApi.getLogs).mockResolvedValue(logs('core startup complete'))
+  vi.mocked(mihomoPanelApi.configs).mockResolvedValue({ data: { success: true, data: { 'log-level': 'info' } } } as any)
+  vi.mocked(mihomoPanelApi.logs).mockResolvedValue(live([]))
 })
 
 afterEach(() => {
@@ -196,5 +214,83 @@ describe('Mihomo logs', () => {
     expect(wrapper.text()).toContain('旧版 Agent')
     expect(wrapper.text()).toContain('升级 Agent')
     expect(agentApi.getLogs).not.toHaveBeenCalled()
+  })
+
+  it('defaults the level to the configured log-level and filters file logs by it', async () => {
+    vi.mocked(mihomoPanelApi.configs).mockResolvedValue({ data: { success: true, data: { 'log-level': 'warning' } } } as any)
+    vi.mocked(agentApi.getLogs).mockResolvedValue(logs([
+      'time="2026-11-11T10:00:00+08:00" level=info msg="[TCP] a"',
+      'time="2026-11-11T10:00:01+08:00" level=warning msg="[DNS] b"',
+      'time="2026-11-11T10:00:02+08:00" level=error msg="c"'
+    ].join('\n')))
+    const wrapper = await render()
+    const pane = wrapper.findComponent(AgentLogLines)
+    expect(pane.props('minLevel')).toBe('WARN')
+    expect(pane.text()).not.toContain('[TCP] a')
+    expect(pane.text()).toContain('[DNS] b')
+    expect(wrapper.find('[data-file-level-hint]').exists()).toBe(false)
+
+    // 选得比配置更详细：文件里没有这些日志，提示切到实时
+    wrapper.findAllComponents(Select).at(-1)!.vm.$emit('update:modelValue', 'debug')
+    await flushPromises()
+    expect(wrapper.findComponent(AgentLogLines).text()).toContain('[TCP] a')
+    expect(wrapper.get('[data-file-level-hint]').text()).toContain('只记录 warning 及以上')
+    expect(mihomoPanelApi.logs).not.toHaveBeenCalled()
+  })
+
+  it('streams live logs incrementally at the chosen level every second', async () => {
+    vi.mocked(mihomoPanelApi.configs).mockResolvedValue({ data: { success: true, data: { 'log-level': 'silent' } } } as any)
+    vi.mocked(mihomoPanelApi.logs)
+      .mockResolvedValueOnce(live([[1, 'info', '[TCP] first'], [2, 'warning', '[DNS] second']]))
+      .mockResolvedValueOnce(live([[3, 'error', 'third']], { skipped: 4 }))
+      .mockResolvedValue(live([], { next: 3 }))
+    const wrapper = await render()
+    wrapper.getComponent(Segmented).vm.$emit('update:modelValue', 'live')
+    await flushPromises()
+    // silent 时按 info 订阅
+    expect(mihomoPanelApi.logs).toHaveBeenLastCalledWith('gw', { level: 'info', after: 0 }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(wrapper.text()).toContain('log-level 是 silent')
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(mihomoPanelApi.logs).toHaveBeenLastCalledWith('gw', { level: 'info', after: 2 }, expect.anything())
+    const items = wrapper.findComponent(AgentLogLines).props('items') as Array<{ message: string; level: string }>
+    expect(items.map(item => `${item.level}:${item.message}`)).toEqual(['INFO:[TCP] first', 'WARN:[DNS] second', 'ERROR:third'])
+    expect(wrapper.text()).toContain('已跳过 4 条')
+    expect(wrapper.text()).toContain('实时接收中')
+
+    // 改等级：清空并从头按新等级取
+    vi.mocked(mihomoPanelApi.logs).mockResolvedValueOnce(live([[4, 'debug', 'verbose']], { stream: 'debug' }))
+    wrapper.findAllComponents(Select).at(-1)!.vm.$emit('update:modelValue', 'debug')
+    await flushPromises()
+    expect(mihomoPanelApi.logs).toHaveBeenLastCalledWith('gw', { level: 'debug', after: 0 }, expect.anything())
+    expect((wrapper.findComponent(AgentLogLines).props('items') as Array<{ message: string }>).map(item => item.message)).toEqual(['verbose'])
+    expect(wrapper.text()).not.toContain('已跳过')
+
+    // 回到日志文件后不再轮询实时接口
+    const calls = vi.mocked(mihomoPanelApi.logs).mock.calls.length
+    wrapper.getComponent(Segmented).vm.$emit('update:modelValue', 'file')
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(mihomoPanelApi.logs).toHaveBeenCalledTimes(calls)
+  })
+
+  it('asks for an Agent upgrade and stops polling when live logs are unsupported', async () => {
+    vi.mocked(mihomoPanelApi.logs).mockRejectedValue({ response: { status: 409, data: { code: 'UPGRADE_REQUIRED', message: '请将此 Agent 升级到 1.8.56-go 或更新版本后使用实时日志。' } } })
+    const wrapper = await render()
+    wrapper.getComponent(Segmented).vm.$emit('update:modelValue', 'live')
+    await flushPromises()
+    expect(wrapper.text()).toContain('1.8.56-go')
+    expect(wrapper.text()).toContain('前往升级 Agent')
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(mihomoPanelApi.logs).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps continuation lines with their entry when filtering by level', () => {
+    const entries = parseAgentLogs([
+      'time="2026-11-11T10:00:00+08:00" level=debug msg="noise"',
+      'stack line of noise',
+      'time="2026-11-11T10:00:01+08:00" level=error msg="boom"',
+      'stack line of boom'
+    ].join('\n'))
+    expect(filterLogLevel(entries, 'WARN').map(entry => entry.message)).toEqual(['boom', 'stack line of boom'])
+    expect(filterLogLevel(entries, '')).toHaveLength(4)
   })
 })

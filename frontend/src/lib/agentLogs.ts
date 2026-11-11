@@ -115,3 +115,60 @@ export const parseAgentLogs = (text: string): AgentLogEntry[] =>
     .split(/\r?\n/)
     .filter(line => line.trim() !== '')
     .map(parseAgentLogLine)
+
+const LEVEL_RANK: Record<AgentLogLevel, number> = { TRACE: 0, DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 }
+
+/**
+ * 只保留不低于 min 的条目。续行跟随上一条的去留；文件开头没有级别的行保留，
+ * 避免认不出格式的日志被整段藏起来。
+ */
+export const filterLogLevel = (entries: AgentLogEntry[], min: AgentLogLevel | ''): AgentLogEntry[] => {
+  if (!min) return entries
+  let keep = true
+  return entries.filter(entry => {
+    if (entry.level) keep = LEVEL_RANK[entry.level] >= LEVEL_RANK[min]
+    else if (!entry.continuation) keep = true
+    return keep
+  })
+}
+
+/** Mihomo 的日志等级（控制接口 /logs 与配置 log-level 共用） */
+export type MihomoLogLevel = 'debug' | 'info' | 'warning' | 'error'
+
+export const MIHOMO_LOG_LEVELS: ReadonlyArray<{ value: MihomoLogLevel; label: string; level: AgentLogLevel }> = [
+  { value: 'debug', label: '调试（debug）', level: 'DEBUG' },
+  { value: 'info', label: '信息（info）', level: 'INFO' },
+  { value: 'warning', label: '警告（warning）', level: 'WARN' },
+  { value: 'error', label: '错误（error）', level: 'ERROR' }
+]
+
+export const isMihomoLogLevel = (value: unknown): value is MihomoLogLevel =>
+  MIHOMO_LOG_LEVELS.some(item => item.value === value)
+
+export const mihomoLevelRank = (level: MihomoLogLevel) => MIHOMO_LOG_LEVELS.findIndex(item => item.value === level)
+
+export const agentLevelOf = (level: MihomoLogLevel): AgentLogLevel =>
+  MIHOMO_LOG_LEVELS.find(item => item.value === level)!.level
+
+/** Agent 转来的一条实时日志；time 为 Agent 收到时的 RFC 3339 时间 */
+export interface MihomoLiveLog {
+  seq: number
+  time: string
+  level: string
+  payload: string
+}
+
+const pad = (value: number) => String(value).padStart(2, '0')
+
+/** 实时日志按浏览器时区显示时间 */
+export const mihomoLiveEntry = (log: MihomoLiveLog): AgentLogEntry => {
+  const at = new Date(log.time)
+  const valid = !Number.isNaN(at.getTime())
+  const date = valid ? `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}` : ''
+  const time = valid ? `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}` : ''
+  const level = isMihomoLogLevel(log.level) ? agentLevelOf(log.level) : ''
+  return {
+    id: nextId++, raw: `${date} ${time} ${log.level} ${log.payload}`.trim(), date, time, level,
+    source: '', sourceShort: '', message: log.payload, fields: [], continuation: false
+  }
+}
