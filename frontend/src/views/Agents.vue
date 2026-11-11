@@ -1742,10 +1742,32 @@ const loadAgents = async () => {
       if (agent.latest_upgrade) trackUpgrade(agent.id, agent.latest_upgrade)
       if (agent.latest_deployment && !deploymentBusy(agent.id)) trackDeployment(agent.id, agent.latest_deployment, false)
     }
+    followContentChecks()
   } catch (error) {
     if (generation !== agentsLoadGeneration) return
     notify.error('加载 Agent 列表失败')
   }
+}
+
+// 核对配置在后台进行，通常几秒就有结果；只等 10 秒一次的刷新，「正在核对配置」会白白多停留很久。
+// 有设备在核对时提前再读，全部有结果后停下；一直核对不完就退回 10 秒一次。
+const CHECK_POLL_MS = 1500
+const CHECK_POLL_LIMIT_MS = 120_000
+let checkTimer: number | undefined
+let checkingSince = 0
+const stopFollowingContentChecks = () => {
+  if (checkTimer !== undefined) clearTimeout(checkTimer)
+  checkTimer = undefined
+}
+const followContentChecks = () => {
+  stopFollowingContentChecks()
+  if (!agents.value.some(agent => agent.content_sync?.status === 'checking')) {
+    checkingSince = 0
+    return
+  }
+  checkingSince ||= Date.now()
+  if (Date.now() - checkingSince > CHECK_POLL_LIMIT_MS) return
+  checkTimer = window.setTimeout(() => { checkTimer = undefined; refreshWhenVisible() }, CHECK_POLL_MS)
 }
 
 const profileBindingBlocked = (agentId: string) => {
@@ -2727,6 +2749,7 @@ const startAutoRefresh = () => {
 // 停止定时刷新
 const stopAutoRefresh = () => {
   document.removeEventListener('visibilitychange', refreshWhenVisible)
+  stopFollowingContentChecks()
   if (refreshTimer) {
     clearInterval(refreshTimer)
     refreshTimer = null

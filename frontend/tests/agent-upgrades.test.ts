@@ -136,3 +136,15 @@ it('a task restored on page load is queried immediately', async()=>{
  await vi.advanceTimersByTimeAsync(0)
  expect(agentApi.getUpgrade).toHaveBeenCalledTimes(1);expect(flow.busy('a')).toBe(false)
 })
+it('a task already succeeded when first seen is not announced; one watched to success is', async()=>{
+ const {flow,success}=setup()
+ // 首次载入列表：每台设备上一次升级早已成功，页面不需要为它们再读列表
+ flow.track('a',state('succeeded'));flow.track('b',state('succeeded'))
+ expect(success).not.toHaveBeenCalled();expect(flow.busy('a')).toBe(false)
+ flow.track('a',state('succeeded'));expect(success).not.toHaveBeenCalled()
+ // 载入时还在进行，之后看着它成功
+ vi.mocked(agentApi.getUpgrade).mockResolvedValue({data:state('succeeded')} as any)
+ flow.track('c',state('installing'));expect(success).not.toHaveBeenCalled()
+ await vi.advanceTimersByTimeAsync(0);expect(success).toHaveBeenCalledTimes(1)
+ flow.track('c',state('succeeded'));expect(success).toHaveBeenCalledTimes(1)
+})

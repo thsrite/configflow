@@ -428,4 +428,85 @@ describe('Agent page refresh', () => {
       hiddenSpy.mockRestore()
     }
   })
+
+  // Each device's last upgrade is long finished when the page opens; none of them is news.
+  it('reads the list once on opening, however many devices have a finished upgrade', async () => {
+    const upgrade = { update_id: 'done', target_version: '1.3.0-go', previous_version: '1.2.0-go', status: 'succeeded' }
+    const { wrapper } = await render([
+      agent({ latest_upgrade: upgrade }),
+      agent({ id: 'second-agent', name: 'Second', latest_upgrade: { ...upgrade, update_id: 'done-2' } }),
+      agent({ id: 'third-agent', name: 'Third', latest_upgrade: { ...upgrade, update_id: 'done-3' } })
+    ] as any)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Third')
+    expect(agentApi.getAll).toHaveBeenCalledTimes(1)
+  })
+
+  // The comparison runs in the background and usually answers within seconds.
+  it('reads again shortly while a device is still being compared, then returns to the slow refresh', async () => {
+    let hidden = false
+    const hiddenSpy = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden)
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const checking = agent({ content_sync: { status: 'checking' } })
+      const { wrapper } = await render([checking, agent({ id: 'settled-agent', name: 'Settled' })] as any)
+      expect(agentApi.getAll).toHaveBeenCalledTimes(1)
+      expect(wrapper.text()).toContain('正在核对配置')
+      await vi.advanceTimersByTimeAsync(1400)
+      expect(agentApi.getAll).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(100)
+      expect(agentApi.getAll).toHaveBeenCalledTimes(2)  // still checking: another one follows
+      vi.mocked(agentApi.getAll).mockResolvedValue({ data: [agent({ content_sync: { status: 'changed' } })] } as any)
+      await vi.advanceTimersByTimeAsync(1500)
+      expect(agentApi.getAll).toHaveBeenCalledTimes(3)
+      expect(wrapper.text()).toContain('有变更，待推送')
+      expect(wrapper.text()).not.toContain('正在核对配置')
+      // Every device has an answer: only the 10 s refresh is left (10 s after mount comes first).
+      await vi.advanceTimersByTimeAsync(5500)
+      expect(agentApi.getAll).toHaveBeenCalledTimes(3)
+      await vi.advanceTimersByTimeAsync(1500)
+      expect(agentApi.getAll).toHaveBeenCalledTimes(4)
+      await vi.advanceTimersByTimeAsync(9000)
+      expect(agentApi.getAll).toHaveBeenCalledTimes(4)
+
+      // A background tab reads nothing, and the follow-up starts again on return.
+      vi.mocked(agentApi.getAll).mockResolvedValue({ data: [checking] } as any)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(agentApi.getAll).toHaveBeenCalledTimes(5)
+      hidden = true
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(30000)
+      expect(agentApi.getAll).toHaveBeenCalledTimes(5)
+      hidden = false
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(agentApi.getAll).toHaveBeenCalledTimes(6)
+      await vi.advanceTimersByTimeAsync(1500)
+      expect(agentApi.getAll).toHaveBeenCalledTimes(7)
+
+      wrapper.unmount()
+      wrappers.splice(wrappers.indexOf(wrapper), 1)
+      await vi.advanceTimersByTimeAsync(30000)
+      expect(agentApi.getAll).toHaveBeenCalledTimes(7)
+    } finally {
+      vi.useRealTimers()
+      hiddenSpy.mockRestore()
+    }
+  })
+
+  it('stops reading early when a comparison never finishes', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      await render(agent({ content_sync: { status: 'checking' } }))
+      await vi.advanceTimersByTimeAsync(120_000)
+      const early = vi.mocked(agentApi.getAll).mock.calls.length
+      expect(early).toBeGreaterThan(60)  // about one every 1.5 s, plus the 10 s refresh
+      await vi.advanceTimersByTimeAsync(60_000)
+      // Past the limit only the 10 s refresh remains.
+      expect(vi.mocked(agentApi.getAll).mock.calls.length - early).toBeLessThanOrEqual(7)
+      expect(vi.mocked(agentApi.getAll).mock.calls.length - early).toBeGreaterThanOrEqual(5)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
