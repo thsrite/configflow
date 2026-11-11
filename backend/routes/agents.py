@@ -30,7 +30,7 @@ from backend.routes import agents_bp as bp
 from backend.common.config_export import redact_secrets_in_text
 from backend.common.auth import is_token_within_length, parse_bearer_token, require_auth
 from backend.common.config import get_config, get_default_profile_id, get_repository
-from backend.common.config_repository import AGENT_HISTORY_NOT_READ, ProfileRepositoryError
+from backend.common.config_repository import AGENT_HISTORY_FIELDS, AGENT_HISTORY_NOT_READ, ProfileRepositoryError
 from backend.common.agent_manager import get_agent_manager
 from backend.common.utils import str_to_bool
 from backend.utils.logger import get_logger
@@ -221,9 +221,12 @@ def _public_deployment(record):
                                       if key not in ('prepared_content', 'oxidns_validation_receipt')})
 
 
-def _agent_with_content_sync(agent, snapshots):
+def _agent_with_content_sync(agent, snapshots, *, history=True):
+    """The public record with its content comparison; history=False leaves the
+    deployment history and verification runs out of the answer (the comparison
+    itself still reads them)."""
     from backend.agents.content_sync import get_content_sync
-    public = _public_agent(agent)
+    public = _public_agent(agent if history else {**agent, **dict.fromkeys(AGENT_HISTORY_FIELDS, AGENT_HISTORY_NOT_READ)})
     repository = get_repository()
     profile_id = (agent.get('profile_id') or get_default_profile_id())
     try:
@@ -938,8 +941,11 @@ def handle_agents():
             # deployment history or verification runs, which are most of a
             # record: every open page asks for this list every few seconds.
             return jsonify([_public_agent(agent) for agent in agent_manager.get_all_agents(history=False)]), 200
+        # The Agent page re-reads this list every few seconds and shows the
+        # history only in a dialog, which reads its one device (history=0).
+        history = request.args.get('history') != '0'
         snapshots = {}
-        agents = [_agent_with_content_sync(agent, snapshots) for agent in agent_manager.get_all_agents()]
+        agents = [_agent_with_content_sync(agent, snapshots, history=history) for agent in agent_manager.get_all_agents()]
         from backend.agents.upgrades import artifacts
         upgrade_files_ready = bool(artifacts())
         # 为每个 agent 添加 has_update 字段

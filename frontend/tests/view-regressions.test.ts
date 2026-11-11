@@ -19,7 +19,7 @@ vi.mock('@/api', () => ({
   { id: 'agg-on', name: 'Synthetic enabled aggregation', enabled: true },
   { id: 'agg-off', name: 'Synthetic disabled aggregation', enabled: false }
  ] : path === '/subscriptions' ? [{ id: 'sub-one', name: 'Synthetic subscription' }] : [] })), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
- agentApi: { getAll: vi.fn(), update: vi.fn(), getUpgrade: vi.fn(), rollbackDeployment: vi.fn(), getDeployment: vi.fn() },
+ agentApi: { getAll: vi.fn(), getOne: vi.fn(), update: vi.fn(), getUpgrade: vi.fn(), rollbackDeployment: vi.fn(), getDeployment: vi.fn() },
  proxyGroupApi: { getAll: vi.fn(async () => ({ data: [
   { id: 'group-one', name: 'Synthetic strategy', type: 'select', enabled: true, manual_nodes: ['DIRECT'] }
  ] })), create: vi.fn(async () => ({})), update: vi.fn(async () => ({})) },
@@ -86,11 +86,14 @@ async function addSource(w: ReturnType<typeof mount>, label: string) {
 describe('real view regressions with synthetic API data', () => {
  it('requires a concrete confirmation before manually rolling back the latest successful OxiDNS deployment', async () => {
   const latest = { deployment_id: 'current-release', status: 'succeeded' }
-  vi.mocked(agentApi.getAll).mockResolvedValue({ data: [{
+  const device = {
    id: 'oxi', name: 'Oxi rollback test', host: '192.0.2.30', port: 8082,
    profile_id: 'default', status: 'online', service_type: 'oxidns', deployment_method: 'shell',
-   latest_deployment: latest, deployments: { current: latest }, version: '1.3.0-go', last_heartbeat: ''
-  }] } as any)
+   latest_deployment: latest, version: '1.3.0-go', last_heartbeat: ''
+  }
+  // The list carries no history; the dialog reads its one device.
+  vi.mocked(agentApi.getAll).mockResolvedValue({ data: [device] } as any)
+  vi.mocked(agentApi.getOne).mockResolvedValue({ data: { ...device, deployments: { current: latest } } } as any)
   vi.mocked(agentApi.rollbackDeployment).mockResolvedValue({ data: { ...latest, status: 'rolling_back', manual_rollback: true } } as any)
   const w = render(Agents)
   render(ConfirmHost)
@@ -100,6 +103,8 @@ describe('real view regressions with synthetic API data', () => {
   const historyMenu = [...document.querySelectorAll('[role="menuitem"]')].find(item => item.textContent?.trim() === '发布记录与回滚') as HTMLElement
   expect(historyMenu).toBeDefined()
   historyMenu.click()
+  await flushPromises()
+  expect(agentApi.getOne).toHaveBeenCalledExactlyOnceWith('oxi')
   await clickText('回滚到发布前')
   expect(feedback.confirmState.open).toBe(true)
   expect(feedback.confirmState.description).toContain('current-release')

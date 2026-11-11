@@ -515,7 +515,10 @@ export interface AgentLogTarget {
 }
 
 export const agentApi = {
-  getAll: () => api.get('/agents'),
+  /** history: false leaves each device's deployment history and verification runs out (most of the answer). */
+  getAll: (options: { history?: boolean } = {}) => api.get('/agents', options.history === false ? { params: { history: 0 } } : undefined),
+  /** One device, with its deployment history. */
+  getOne: (id: string) => api.get(`/agents/${encodeURIComponent(id)}`),
   /** Without content sync status: much cheaper, for pickers and polling. */
   summaries: () => api.get('/agents', { params: { summary: 1 } }),
   create: (data: any) => api.post('/agents', data),
