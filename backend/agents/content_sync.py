@@ -4,12 +4,12 @@ List requests only inspect snapshots/cache and schedule work. Downloads and bund
 generation run in at most two workers; a missing baseline never implies a match.
 Remote changes are checked on a fifteen-minute successful-result cache interval.
 ``compare_now`` answers in its caller's thread, for callers that are already in
-a background worker; it shares the cache with the list. ``get_push_diff`` asks
-the same workers to also list what changed (``push_diff``), from the bundle the
-comparison prepares anyway; a few of those answers are kept with the result,
-each with every node and rule entry of its files (compressed, bounded in
-bytes), which ``get_push_diff_entries`` reads page by page under the answer's
-``version``.
+a background worker; it shares the cache with the list. A worker that finds
+changes also lists them (``push_diff``) from the bundle it prepared, so that
+``get_push_diff`` answers at once when the list is opened; a few of those
+answers are kept with the result, each with every node and rule entry of its
+files (compressed, bounded in bytes), which ``get_push_diff_entries`` reads
+page by page under the answer's ``version``.
 """
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
@@ -42,8 +42,6 @@ class _Entry:
     repository: object = None
     result: dict | None = None
     expires: float = 0
-    # Set by get_push_diff: the next worker for these inputs also lists changes.
-    want_detail: bool = False
 
 
 @dataclass
@@ -249,23 +247,20 @@ class ContentSyncChecker:
         result = None
         detail = lists = None
         ttl = self._error_ttl
-        with self._lock:
-            want_detail = entry.want_detail
         try:
             if _current_repository() is not entry.repository:
                 result = _unknown('check_failed')
             else:
-                bundle = None
-                if want_detail:
-                    from backend.agents.deployment_bundle import deployment_content_fingerprint
-                    bundle = self._prepare_bundle(agent, config, base_url, prepare)
-                    fingerprint = deployment_content_fingerprint(bundle.manifest)
-                else:
-                    fingerprint = self._prepare_fingerprint(agent, config, base_url, prepare)
+                from backend.agents.deployment_bundle import deployment_content_fingerprint
+                bundle = self._prepare_bundle(agent, config, base_url, prepare)
+                fingerprint = deployment_content_fingerprint(bundle.manifest)
                 result = {'status': 'synced' if fingerprint == agent['applied_content']['fingerprint'] else 'changed',
                           'checked_at': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}
                 ttl = self._success_ttl
-                if bundle is not None and result['status'] == 'changed':
+                if result['status'] == 'changed':
+                    # Listing the changes costs little next to the preparation
+                    # that is already done; left for the moment someone opens
+                    # the list, it would take the whole preparation again.
                     detail, lists = self._build_detail(agent, bundle, entry.repository)
         except Exception:
             # Preparation exceptions can contain tokens, URLs or YAML excerpts.
@@ -285,9 +280,9 @@ class ContentSyncChecker:
                         self._store_detail(identity, entry, {**detail, 'checked_at': result['checked_at'],
                                                              'version': uuid.uuid4().hex[:16]},
                                            self._error_ttl if detail.get('reason') == 'diff_failed' else ttl, lists)
-                    if want_detail:
-                        # Later list refreshes need no change list until one is asked for again.
-                        entry.want_detail = False
+                    elif result.get('status') != 'changed':
+                        # The list of an earlier comparison describes nothing any more.
+                        self._details.pop(identity, None)
                 if self._running.get(identity) is token:
                     del self._running[identity]
                 self._slots.release()
@@ -337,8 +332,8 @@ class ContentSyncChecker:
                 return deepcopy(detail.value)
             if entry.result is not None and now < entry.expires and entry.result.get('status') != 'changed':
                 return dict(entry.result)
-            # A queued worker for these inputs reads this when it starts.
-            entry.want_detail = True
+            # Every worker lists what it found changed; one is needed again when
+            # the kept list is gone (expired, failed or pushed out by newer ones).
             if identity in self._running:
                 return {'status': 'checking'}
             if not self._slots.acquire(blocking=False):
