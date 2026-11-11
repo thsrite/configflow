@@ -629,17 +629,68 @@ body {
   .router-records td:nth-child(5) { grid-area: status; }
   .router-records td:last-child { grid-area: actions; }
 
-  /* 客户端设备：地址与移除同排，名称占一行，状态与 DNS 策略同排。 */
+  /* 客户端设备：每台两行。上行名称（看起来是文字，点一下就能改）与 DNS 策略，
+     下行 IP / MAC、状态与移除。未接入路由器时状态在列表上方说一次，行内不重复。 */
   .client-device-records tbody tr {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-    grid-template-areas: 'ip ip actions' 'name name name' 'status mode mode';
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: 'name mode mode' 'ip status actions';
+    gap: 2px var(--cf-sp-2);
+    align-items: center;
+    padding: var(--cf-sp-2) var(--cf-sp-3);
   }
 
   .client-device-records td:nth-child(1) { grid-area: name; }
-  .client-device-records td:nth-child(2) { grid-area: ip; align-self: center; }
-  .client-device-records td:nth-child(3) { grid-area: status; }
+  .client-device-records td:nth-child(2) { grid-area: ip; display: flex; min-width: 0; align-items: center; overflow: hidden; }
+  .client-device-records td:nth-child(3) { grid-area: status; display: flex; align-items: center; justify-content: flex-end; gap: var(--cf-sp-1); font-size: 12px; }
   .client-device-records td:nth-child(4) { grid-area: mode; }
-  .client-device-records td:last-child { grid-area: actions; align-self: start; }
+  .client-device-records td:last-child { grid-area: actions; }
+  .client-device-records td[data-label]::before { display: none; }
+  .client-device-records td.client-device-status-unknown { display: none; }
+
+  .client-device-records .client-device-name {
+    height: 32px;
+    min-height: 32px;
+    padding-inline: 6px;
+    margin-left: -6px;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .client-device-records .client-device-name:hover,
+  .client-device-records .client-device-name:focus-visible {
+    border-color: var(--input);
+    background: var(--background);
+  }
+
+  .client-device-records .client-device-mode {
+    position: relative;
+    width: auto;
+    height: 30px;
+    min-height: 30px;
+    padding-inline: 10px 8px;
+    font-size: 12.5px;
+  }
+
+  .client-device-records .client-device-mode::before,
+  .client-device-records .client-device-remove::before {
+    content: '';
+    position: absolute;
+    inset: -7px 0;
+  }
+
+  .client-device-records .client-device-remove {
+    position: relative;
+    width: 28px;
+    height: 28px;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  /* 触屏点按后 hover 会停住，卡片排列时不加 hover 底色 */
+  .cf-mobile-records tbody tr:hover { background: transparent; }
 
   /* 未添加：勾选、设备与添加同排，地址与状态同排；没有网段策略时不占一行。 */
   .client-discovery-records tbody tr {
