@@ -287,7 +287,7 @@
           </FormField>
           <FormField label="分组" html-for="mobile-connection-group">
             <Select :model-value="settings.groupBy || 'none'" @update:model-value="value => setGroup(String(value))">
-              <SelectTrigger id="mobile-connection-group" class="min-h-11"><SelectValue /></SelectTrigger>
+              <SelectTrigger id="mobile-connection-group" class="min-h-11 w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">不分组</SelectItem>
                 <SelectItem v-for="field in CONNECTION_GROUP_FIELDS" :key="field" :value="field">按{{ columnLabel(field) }}分组</SelectItem>

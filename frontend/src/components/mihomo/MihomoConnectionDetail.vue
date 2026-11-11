@@ -33,8 +33,8 @@
           <MihomoConnectionProxy v-if="tab === 'proxy'" :agent-id="agentId" :row="row" @changed="emit('proxyChanged')" />
         </TabsContent>
       </Tabs>
-      <!-- 原来只在列表每行的「⋯」菜单里；手机列表的行不放按钮，统一在这里操作 -->
-      <div v-if="row" class="grid grid-cols-2 gap-2 border-t border-border pt-3 sm:flex sm:flex-wrap sm:justify-end" data-connection-actions>
+      <!-- 原来只在列表每行的「⋯」菜单里；手机列表的行不放按钮，统一在这里操作。固定在弹窗底部，信息很长也不用滑到底 -->
+      <div v-if="row" class="sticky -bottom-6 z-1 -mx-6 -mb-6 grid grid-cols-2 gap-2 border-t border-border bg-card px-6 py-3 max-sm:-bottom-4 max-sm:-mx-4 max-sm:-mb-4 max-sm:px-4 sm:flex sm:flex-wrap sm:justify-end" data-connection-actions>
         <Button variant="outline" class="min-h-11" :disabled="!ruleValues.length" :title="ruleValues.length ? undefined : '此连接没有可用的域名或真实目标 IP'" @click="emit('addRule', row, 'proxy')">加入代理规则集</Button>
         <Button variant="outline" class="min-h-11" :disabled="!ruleValues.length" :title="ruleValues.length ? undefined : '此连接没有可用的域名或真实目标 IP'" @click="emit('addRule', row, 'direct')">加入直连规则集</Button>
         <Button variant="outline" class="min-h-11" :disabled="!deviceAddress(row.metadata.sourceIP)" @click="emit('editNote', row)">编辑设备备注</Button>
