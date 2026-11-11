@@ -77,15 +77,15 @@
           <div
             v-for="line in visibleLines"
             :key="line.id"
-            :class="cn('log-row px-[18px]', line.fresh && 'is-fresh')"
+            :class="cn('log-row px-[18px]', line.fresh && 'is-fresh', !line.level && 'is-raw')"
           >
             <template v-if="line.level">
               <span class="log-time ts" :title="line.stamp">{{ line.time }}</span>
               <span :class="cn('log-level font-semibold', `lv-${line.level}`)">{{ line.levelLabel }}</span>
               <span class="log-logger md" :title="line.logger">[{{ line.logger }}]</span>
-              <span class="log-message">{{ line.message }}</span>
+              <span class="log-message"><LogText :tokens="line.tokens" :highlight="searchKeyword" /></span>
             </template>
-            <span v-else class="log-message log-raw opacity-75">{{ line.raw }}</span>
+            <span v-else class="log-message log-raw opacity-75"><LogText :tokens="line.tokens" :highlight="searchKeyword" /></span>
           </div>
         </div>
         <div ref="logEnd" data-testid="logs-end" class="logs-end" aria-hidden="true" />
@@ -95,7 +95,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, markRaw, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArrowDownToLine, FileText, Pause, Play, RefreshCw, Trash2 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import {
@@ -107,9 +107,11 @@ import {
 } from '@/components/ui/select'
 import PageHeader from '@/components/common/PageHeader.vue'
 import Toolbar from '@/components/common/Toolbar.vue'
+import LogText from '@/components/common/LogText'
 import api from '@/api'
 import { confirmDanger, notify } from '@/lib/feedback'
 import { cn } from '@/lib/utils'
+import { tokenizeLogMessage, type LogToken } from '@/lib/agentLogs'
 
 /* WARNING / CRITICAL 在芯片上缩写，筛选时与原级别对应 */
 const LEVELS = ['DEBUG', 'INFO', 'WARN', 'ERROR'] as const
@@ -142,6 +144,8 @@ interface LogLine {
   level: string
   levelLabel: string
   message: string
+  /** 正文（续行为整行）的着色片段，解析时切好 */
+  tokens: LogToken[]
   fresh: boolean
 }
 
@@ -161,7 +165,7 @@ let nextId = 1
 
 const parse = (raw: string, fresh: boolean): LogLine => {
   const m = LOG_LINE.exec(raw)
-  if (!m) return { id: nextId++, raw, stamp: '', time: '', logger: '', level: '', levelLabel: '', message: '', fresh }
+  if (!m) return { id: nextId++, raw, stamp: '', time: '', logger: '', level: '', levelLabel: '', message: '', tokens: markRaw(tokenizeLogMessage(raw)), fresh }
   const level = m[5]
   return {
     id: nextId++,
@@ -172,6 +176,7 @@ const parse = (raw: string, fresh: boolean): LogLine => {
     level,
     levelLabel: CHIP_OF[level] || level,
     message: m[6],
+    tokens: markRaw(tokenizeLogMessage(m[6])),
     fresh
   }
 }
@@ -391,7 +396,7 @@ onUnmounted(() => {
     grid-template-columns: 96px 64px 150px minmax(0, 1fr);
     grid-template-areas: 'time level logger message';
     gap: 0.625rem;
-    padding-block: 0;
+    padding-block: 0.1875rem;
   }
 
   .log-logger {
@@ -407,6 +412,11 @@ onUnmounted(() => {
 
 .log-row:hover {
   background: rgb(255 255 255 / 3%);
+}
+
+/* 条与条之间的细分隔线，与 Mihomo / Agent 日志一致；堆栈等续行属于上一条，不画线 */
+.log-row + .log-row:not(.is-raw) {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5.5%);
 }
 
 .log-row.is-fresh {
