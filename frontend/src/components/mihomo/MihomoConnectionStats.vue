@@ -1,7 +1,7 @@
 <template>
   <SectionCard class="stats-card" title="连接统计" :padded="false" :description="description" :help="HELP">
     <template #actions>
-      <Segmented v-if="history?.enabled" v-model="range" :options="TRAFFIC_RANGES" label="统计范围" class="max-w-full overflow-x-auto" />
+      <Segmented v-if="history?.enabled" v-model="range" :options="TRAFFIC_RANGES" label="统计范围" class="stats-range max-w-full overflow-x-auto" />
     </template>
 
     <div v-if="agentId" class="stats-record">
@@ -9,12 +9,19 @@
         <Switch :model-value="!!history?.enabled" :disabled="!canToggle" aria-label="后台记录流量" @update:model-value="toggle(!!$event)" />后台记录
       </label>
       <template v-if="history?.enabled">
-        <span class="text-muted-foreground">记录中<template v-if="history.since"> · 从 {{ sinceText }} 开始</template></span>
-        <span class="text-muted-foreground">保留 {{ history.retention_days }} 天</span>
+        <!-- 手机：记录状态合成一行次要文字，放在开关下方 -->
+        <span v-if="phone" class="stats-record-status" :title="statusText">{{ statusText }}</span>
+        <template v-else>
+          <span class="text-muted-foreground">记录中<template v-if="history.since"> · 从 {{ sinceText }} 开始</template></span>
+          <span class="text-muted-foreground">保留 {{ history.retention_days }} 天</span>
+        </template>
         <div class="stats-record-actions">
-          <Popover>
+          <Popover v-model:open="settingsOpen">
             <PopoverTrigger as-child>
-              <Button variant="ghost" size="sm" :disabled="saving">记录设置</Button>
+              <Button v-if="phone" variant="ghost" size="icon-sm" class="stats-record-menu" :disabled="saving" aria-label="记录设置" title="记录设置">
+                <Settings2 class="size-4" aria-hidden="true" />
+              </Button>
+              <Button v-else variant="ghost" size="sm" :disabled="saving">记录设置</Button>
             </PopoverTrigger>
             <PopoverContent align="end" class="w-64" role="dialog" aria-label="记录设置">
               <div class="flex items-center justify-between gap-3">
@@ -27,9 +34,15 @@
                 </Select>
               </div>
               <p class="mt-3 mb-0 text-[12px] text-muted-foreground">所有设备共用；缩短时长需要确认。</p>
+              <!-- 手机只留一个设置按钮，清空记录也收在这里 -->
+              <div v-if="phone" class="mt-3 border-t border-border pt-2">
+                <Button variant="ghost" size="sm" class="w-full justify-start text-destructive-accent" :disabled="saving" @click="clearFromMenu">
+                  <Trash2 class="size-3.5" aria-hidden="true" />清空记录
+                </Button>
+              </div>
             </PopoverContent>
           </Popover>
-          <Button variant="ghost" size="sm" :disabled="saving" @click="clearHistory"><Trash2 class="size-3.5" />清空记录</Button>
+          <Button v-if="!phone" variant="ghost" size="sm" :disabled="saving" @click="clearHistory"><Trash2 class="size-3.5" />清空记录</Button>
         </div>
         <span v-if="history.full_chain === false" class="w-full text-[12px] text-muted-foreground">
           Agent 更新到 {{ history.full_chain_version }} 后记录完整链路；在此之前的记录只有策略组和出口节点两层。
@@ -63,7 +76,7 @@
       </div>
       <button v-if="rows.some(row => row.parts.length)" type="button" class="stats-toggle-all" @click="toggleAll">
         <ChevronsUpDown v-if="allCollapsed" class="size-3" aria-hidden="true" /><ChevronsDownUp v-else class="size-3" aria-hidden="true" />
-        {{ allCollapsed ? '展开全部明细' : '收起全部明细' }}
+        <span>{{ allCollapsed ? '展开' : '收起' }}</span><span class="max-sm:sr-only">全部明细</span>
       </button>
     </div>
 
@@ -147,7 +160,8 @@
 
 <script setup lang="ts">
 import { computed, defineComponent, h, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ArrowDown, Cable, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Trash2 } from '@lucide/vue'
+import { ArrowDown, Cable, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Settings2, Trash2 } from '@lucide/vue'
+import { useMediaQuery } from '@vueuse/core'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -240,6 +254,12 @@ const description = computed(() => live.value
   ? '当前活动连接的汇总，连接关闭后不再计入。'
   : `最近 ${TRAFFIC_RANGES.find(item => item.value === range.value)!.label}，包括已关闭的连接；数据约每 5 分钟更新。`)
 const sinceText = computed(() => history.value?.since ? new Date(history.value.since).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }) : '')
+// 手机上记录状态合成一行
+const statusText = computed(() => history.value?.enabled
+  ? `记录中${history.value.since ? ` · 从 ${sinceText.value} 开始` : ''} · 保留 ${history.value.retention_days} 天`
+  : '')
+const phone = useMediaQuery('(max-width: 639px)')
+const settingsOpen = ref(false)
 
 /** 出口节点名称 → Mihomo 节点类型，用来判断直连、代理还是拦截 */
 const proxyTypes = ref<Record<string, string>>({})
@@ -449,6 +469,12 @@ async function changeRetention(days: number) {
   }
 }
 
+/** 手机的设置菜单里清空：先收起菜单，再弹确认 */
+function clearFromMenu() {
+  settingsOpen.value = false
+  void clearHistory()
+}
+
 async function clearHistory() {
   if (!props.agentId || !await confirmDanger('删除这台设备已记录的全部流量，开关保持开启，之后继续记录。', { title: '清空记录', confirmText: '清空' })) return
   saving.value = true
@@ -573,19 +599,47 @@ onUnmounted(() => {
   .stats-aggregate :deep(.cf-segmented-options) { width: 100%; gap: 0 12px; }
   .stats-aggregate :deep([data-segment]) { min-height: var(--cf-touch); font-size: 12px; }
 }
-@media (max-width: 639px) {
-  .stats-record, .stats-summary, .stats-toolbar, .stats-frame { margin-inline: 12px; }
-  .stats-record-actions { width: 100%; justify-content: flex-end; }
-  .stats-record-actions :deep(button), .stats-toggle-all { min-height: var(--cf-touch); }
-  .stats-summary { padding: 12px; }
-  .stats-metric { padding-inline: 8px; }
-  .stats-metric-value { font-size: 16px; }
-  .stats-metric-primary .stats-metric-value { font-size: 20px; }
-  .stats-metric-sub { font-size: 10px; }
-}
 @media (pointer: coarse) {
   .stats-sort, .stats-more-button, .stats-toggle-all, .stats-aggregate :deep([data-segment]) { min-height: var(--cf-touch); }
   .stats-expand, .stats-expand-spacer { width: 22px; height: 44px; position: relative; }
   .stats-expand::after { content: ''; position: absolute; inset: 0 -11px; }
+}
+/* 手机：标题与范围同排（放不下时范围占满下一行），记录栏一个设置按钮，汇总两列无空格；写在触屏规则之后以便覆盖 */
+@media (max-width: 639px) {
+  .stats-record, .stats-summary, .stats-toolbar, .stats-frame { margin-inline: 12px; }
+
+  /* 标题按内容宽度，范围控件填满剩余宽度；放不下时整行换到标题下方，左对齐占满 */
+  .stats-card :deep(.cf-section-header > :first-child) { flex: 0 1 auto; }
+  .stats-card :deep(.cf-section-actions) { flex: 1 1 auto; margin-left: 0; }
+  .stats-card .stats-range { display: flex; width: 100%; }
+  .stats-card .stats-range :deep(.cf-segmented-options) { width: 100%; }
+  .stats-card .stats-range :deep([data-segment]) { flex: 1 0 auto; min-width: 40px; padding-inline: 8px; }
+
+  /* 记录栏：开关在左、设置按钮在右，状态一行在下 */
+  .stats-record { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 8px; }
+  .stats-record > * { grid-column: 1 / -1; min-width: 0; }
+  .stats-record > label { grid-column: 1; }
+  .stats-record-actions { grid-row: 1; grid-column: 2; margin-left: 0; }
+  .stats-record-status { margin-top: -6px; overflow: hidden; color: var(--muted-foreground); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  .stats-record-menu { position: relative; width: 32px; height: 32px; min-width: 0; min-height: 0; padding: 0; color: var(--muted-foreground); }
+  .stats-record-menu::before { content: ''; position: absolute; inset: -6px; }
+
+  /* 汇总：总流量占满首行，下面代理 / 直连、连接数 / 分组数各两列 */
+  .stats-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 0; padding: 12px; }
+  .stats-metric { padding-inline: 12px 0; border-left: 1px solid var(--border); }
+  .stats-metric:nth-child(2n) { padding-inline: 0 12px; border-left: 0; }
+  .stats-metric.stats-metric-primary { grid-column: 1 / -1; padding: 0 0 12px; border-left: 0; border-bottom: 1px solid var(--border); }
+  .stats-metric-value { font-size: 16px; line-height: 24px; }
+  .stats-metric-primary .stats-metric-value { font-size: 24px; line-height: 32px; }
+  .stats-metric-sub { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
+
+  /* 统计维度一行横滑不换行，右侧紧凑的「收起 / 展开」 */
+  .stats-toolbar { flex-wrap: nowrap; gap: 8px; }
+  .stats-toolbar .stats-dimension { flex: 1 1 auto; width: auto; min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+  .stats-toolbar .stats-aggregate { width: max-content; padding: 0; border: 0; background: transparent; }
+  .stats-toolbar .stats-aggregate :deep(.cf-segmented-options) { width: max-content; flex-wrap: nowrap; height: auto; padding: 0; background: transparent; box-shadow: none; }
+  .stats-toolbar .stats-aggregate :deep([data-segment]) { height: var(--cf-touch); min-width: 0; margin-block: 0; }
+  .stats-toggle-all { position: relative; min-height: 32px; padding: 0 6px; border: 0; background: transparent; }
+  .stats-toggle-all::before { content: ''; position: absolute; inset: -6px -4px; }
 }
 </style>
