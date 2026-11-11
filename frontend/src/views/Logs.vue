@@ -73,7 +73,7 @@
         <p v-if="!visibleLines.length" class="px-[18px] py-10 text-center text-[13px] opacity-60">
           {{ lines.length ? '当前级别筛选下没有日志' : loading ? '正在读取日志…' : '暂无日志' }}
         </p>
-        <div v-else class="logs-list">
+        <div v-else :class="cn('logs-list', isPhone && 'logs-phone')">
           <div
             v-for="line in visibleLines"
             :key="line.id"
@@ -83,7 +83,18 @@
               <span class="log-time ts" :title="line.stamp">{{ line.time }}</span>
               <span :class="cn('log-level font-semibold', `lv-${line.level}`)">{{ line.levelLabel }}</span>
               <span class="log-logger md" :title="line.logger">[{{ line.logger }}]</span>
-              <span class="log-message"><LogText :tokens="line.tokens" :highlight="searchKeyword" /></span>
+              <span
+                v-if="isPhone && line.long"
+                :class="cn('log-message is-long', !expandedIds.has(line.id) && 'is-clamped')"
+                role="button"
+                tabindex="0"
+                :aria-expanded="expandedIds.has(line.id)"
+                :title="expandedIds.has(line.id) ? '点按收起' : '点按展开全文'"
+                @click="toggleExpanded(line.id)"
+                @keydown.enter.prevent="toggleExpanded(line.id)"
+                @keydown.space.prevent="toggleExpanded(line.id)"
+              ><LogText :tokens="line.tokens" :highlight="searchKeyword" /></span>
+              <span v-else class="log-message"><LogText :tokens="line.tokens" :highlight="searchKeyword" /></span>
             </template>
             <span v-else class="log-message log-raw opacity-75"><LogText :tokens="line.tokens" :highlight="searchKeyword" /></span>
           </div>
@@ -97,6 +108,7 @@
 <script setup lang="ts">
 import { computed, markRaw, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArrowDownToLine, FileText, Pause, Play, RefreshCw, Trash2 } from '@lucide/vue'
+import { useMediaQuery } from '@vueuse/core'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -146,6 +158,8 @@ interface LogLine {
   message: string
   /** 正文（续行为整行）的着色片段，解析时切好 */
   tokens: LogToken[]
+  /** 手机上可能超过三行的正文：先折叠，点按展开 */
+  long: boolean
   fresh: boolean
 }
 
@@ -158,14 +172,39 @@ const levelsOn = ref<Set<LevelChip>>(new Set(LEVELS))
 const paused = ref(false)
 const loading = ref(false)
 const logContainer = ref<HTMLElement>()
+// 手机（< 640px）每条两行：时间 · 来源 · 级别，下一行正文（最多三行，点按展开）
+const isPhone = useMediaQuery('(max-width: 639px)')
+const expandedIds = ref<Set<number>>(new Set())
+const toggleExpanded = (id: number) => {
+  const next = new Set(expandedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  expandedIds.value = next
+}
 const logEnd = ref<HTMLElement>()
+
+/**
+ * 估算正文在手机上占几行：每行约 40 个半角字符，全角按两个算。
+ * 只用于决定是否折叠；估多了只是多一个可点的展开，不会把短正文截掉。
+ */
+const PHONE_LINE_UNITS = 40
+const isLongMessage = (message: string) => {
+  let rows = 0
+  for (const part of message.split('\n')) {
+    let units = 0
+    for (const char of part) units += char.charCodeAt(0) > 0x2e7f ? 2 : 1
+    rows += Math.max(1, Math.ceil(units / PHONE_LINE_UNITS))
+    if (rows > 3) return true
+  }
+  return false
+}
 
 const LOG_LINE = /^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})[,.](\d+)\s+-\s+([\w.]+)\s+-\s+(\w+)\s+-\s+([\s\S]*)$/
 let nextId = 1
 
 const parse = (raw: string, fresh: boolean): LogLine => {
   const m = LOG_LINE.exec(raw)
-  if (!m) return { id: nextId++, raw, stamp: '', time: '', logger: '', level: '', levelLabel: '', message: '', tokens: markRaw(tokenizeLogMessage(raw)), fresh }
+  if (!m) return { id: nextId++, raw, stamp: '', time: '', logger: '', level: '', levelLabel: '', message: '', tokens: markRaw(tokenizeLogMessage(raw)), long: false, fresh }
   const level = m[5]
   return {
     id: nextId++,
@@ -177,6 +216,7 @@ const parse = (raw: string, fresh: boolean): LogLine => {
     levelLabel: CHIP_OF[level] || level,
     message: m[6],
     tokens: markRaw(tokenizeLogMessage(m[6])),
+    long: isLongMessage(m[6]),
     fresh
   }
 }
@@ -227,6 +267,7 @@ const merge = (incoming: string[], reset: boolean) => {
   const limit = Number(logLines.value)
   if (reset || !lines.value.length) {
     lines.value = incoming.map(raw => parse(raw, false))
+    expandedIds.value = new Set()
     return
   }
   const lastRaw = lines.value[lines.value.length - 1].raw
@@ -378,6 +419,58 @@ onUnmounted(() => {
 
 .log-raw {
   grid-column: 1 / -1;
+}
+
+/* 手机：第一行 时间 · 来源（截断）· 级别胶囊，第二行正文；短正文每条约 50px */
+.logs-phone .log-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'time logger level' 'message message message';
+  align-items: center;
+  gap: 0 0.5rem;
+  padding-inline: 12px;
+  padding-block: 0.375rem;
+}
+
+.logs-phone .log-time,
+.logs-phone .log-logger {
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.logs-phone .log-logger {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logs-phone .log-level {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  font-size: 10.5px;
+  line-height: 16px;
+}
+
+.logs-phone .log-message {
+  line-height: 1.55;
+}
+
+.logs-phone .log-message.is-long {
+  cursor: pointer;
+}
+
+.logs-phone .log-message.is-clamped {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.logs-phone .log-message.is-long:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 /* 跳到最后一条时，让正文停在移动导航栏及安全区上方 */
