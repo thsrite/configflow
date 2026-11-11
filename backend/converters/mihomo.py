@@ -1130,7 +1130,7 @@ def convert_node_to_mihomo(node: Dict[str, Any]) -> Dict[str, Any]:
         if scope is not None and scope[1] and proxy_string in scope[0]:
             proxy = deepcopy(scope[0][proxy_string])
         else:
-            logger.info(f"节点 '{outer_name}' 为 URI/base64 格式，调用 Sub-Store 转换")
+            logger.info(f"节点 '{outer_name}' 为 URI/base64 格式，使用 Sub-Store 的转换结果")
             proxy = convert_proxy_string(proxy_string)
             if scope is not None:
                 scope[0][proxy_string] = deepcopy(proxy)
