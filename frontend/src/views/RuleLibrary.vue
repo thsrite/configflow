@@ -283,11 +283,14 @@
         </TableBody>
       </DataTableShell>
 
-      <!-- ===== 卡片视图 ===== -->
+      <!-- ===== 卡片视图（手机 < 640px 为两行紧凑行） ===== -->
       <div
         v-else
         ref="rulesContainer"
-        class="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3 max-md:grid-cols-1"
+        :data-phone-list="isPhone || undefined"
+        :class="isPhone
+          ? 'overflow-hidden rounded-[var(--cf-r-xl)] border border-border bg-card/90 shadow-surface'
+          : 'grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3 max-md:grid-cols-1'"
       >
         <div
           v-for="(rule, cfIndex) in visibleRules"
@@ -297,18 +300,27 @@
           :data-id="rule.id"
           :data-library-rule-id="rule.id"
           :data-highlighted="highlightedRuleId === rule.id || undefined"
+          :data-disabled="!rule.enabled || undefined"
           :tabindex="highlightedRuleId === rule.id ? -1 : undefined"
           data-reorder-item
-          :class="[
-            'relative flex flex-col gap-3 overflow-hidden rounded-[18px] border bg-card/90 p-4 shadow-surface transition-colors duration-200 hover:border-border-strong max-sm:gap-2 max-sm:p-3',
-            selectedRules.includes(rule.id) ? 'border-primary-accent' : 'border-border',
-            !rule.enabled && 'dark:opacity-60',
-            highlightedRuleId === rule.id && 'outline-2 -outline-offset-2 outline-primary-accent'
-          ]"
+          :class="isPhone
+            ? [
+              'cf-rl-row relative transition-colors duration-200',
+              selectedRules.includes(rule.id) && 'bg-primary-soft/60',
+              highlightedRuleId === rule.id && 'outline-2 -outline-offset-2 outline-primary-accent'
+            ]
+            : [
+              'relative flex flex-col gap-3 overflow-hidden rounded-[18px] border bg-card/90 p-4 shadow-surface transition-colors duration-200 hover:border-border-strong max-sm:gap-2 max-sm:p-3',
+              selectedRules.includes(rule.id) ? 'border-primary-accent' : 'border-border',
+              !rule.enabled && 'dark:opacity-60',
+              highlightedRuleId === rule.id && 'outline-2 -outline-offset-2 outline-primary-accent'
+            ]"
+          @click="onPhoneRowClick($event, rule)"
         >
-          <header class="flex items-start gap-2.5">
+          <header :class="isPhone ? 'cf-rl-line1' : 'flex items-start gap-2.5'">
             <Checkbox
-              class="cf-reorder-mute mt-0.5"
+              class="cf-reorder-mute"
+              :class="isPhone ? 'cf-rl-hit' : 'mt-0.5'"
               :model-value="selectedRules.includes(rule.id)"
               :aria-label="`选择 ${rule.name}`"
               @update:model-value="toggleRuleSelection(rule.id)"
@@ -324,11 +336,29 @@
               @down="reorder.moveDown(cfIndex)"
               @keydown="reorder.onHandleKeydown($event, cfIndex)"
             />
-            <p class="m-0 min-w-0 flex-1 truncate text-[14px] font-semibold text-foreground">
+            <!-- 手机：名称是打开编辑窗口（显示完整内容）的按钮，整行空白处同样可点 -->
+            <button
+              v-if="isPhone"
+              type="button"
+              class="cf-rl-name cf-reorder-mute"
+              data-rule-open
+              :aria-label="`查看并编辑 ${rule.name}`"
+              :title="rule.name"
+              @click="openFromPhoneRow(rule)"
+            >
+              {{ rule.name }}
+            </button>
+            <p v-else class="m-0 min-w-0 flex-1 truncate text-[14px] font-semibold text-foreground">
               {{ rule.name }}
             </p>
             <span v-if="highlightedRuleId === rule.id" class="shrink-0 text-[11px] text-primary-accent">已定位</span>
+            <span
+              v-if="isPhone && ruleCount(rule) !== null"
+              class="cf-rl-count num shrink-0 font-mono text-[12px] text-muted-foreground"
+              data-rule-count
+            >{{ ruleCount(rule) }} 条</span>
             <Button
+              v-if="!isPhone"
               variant="ghost"
               size="icon-sm"
               class="cf-reorder-mute shrink-0"
@@ -341,66 +371,115 @@
             </Button>
           </header>
 
-          <div class="cf-reorder-mute flex flex-wrap gap-1.5">
-            <Badge variant="outline" class="font-mono text-[10.5px]">{{ rule.behavior }}</Badge>
-            <Badge :variant="rule.source_type === 'content' ? 'info' : 'secondary'" class="text-[10.5px]">
-              {{ rule.source_type === 'content' ? '规则内容' : 'URL 地址' }}
-            </Badge>
+          <!-- 手机第二行：类型 · 来源 · 已停用，右侧一个「⋯」收纳全部操作 -->
+          <div v-if="isPhone" class="cf-rl-line2">
+            <span class="cf-rl-meta">
+              <span class="cf-rl-chip font-mono">{{ rule.behavior }}</span>
+              <span aria-hidden="true">·</span>
+              <span class="cf-rl-source" :class="rule.source_type !== 'content' && 'font-mono'" :title="rule.source_type === 'content' ? undefined : rule.url">
+                {{ sourceLabel(rule) }}
+              </span>
+            </span>
+            <span v-if="!rule.enabled" class="cf-rl-chip cf-rl-off" data-rule-disabled>已停用</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  class="cf-rl-more cf-rl-hit cf-reorder-mute"
+                  data-rule-menu
+                  :aria-label="`${rule.name} 的操作`"
+                  title="操作"
+                >
+                  <Ellipsis class="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" class="min-w-40">
+                <DropdownMenuItem v-if="rule.source_type === 'content'" @select="showAddRuleToSetDialog(rule)">
+                  <Plus class="size-4" />添加规则
+                </DropdownMenuItem>
+                <DropdownMenuItem @select="showReferenceDialog([rule.id])">
+                  <Send class="size-4" />加入当前配置
+                </DropdownMenuItem>
+                <DropdownMenuItem @select="copyRuleUrl(rule)">
+                  <Copy class="size-4" />复制下载地址
+                </DropdownMenuItem>
+                <DropdownMenuItem @select="editRule(rule)">
+                  <Pencil class="size-4" />编辑
+                </DropdownMenuItem>
+                <DropdownMenuItem @select="handleToggle(rule)">
+                  <component :is="rule.enabled ? EyeOff : Eye" class="size-4" />{{ rule.enabled ? '停用' : '启用' }}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" @select="deleteRule(rule)">
+                  <Trash2 class="size-4" />删除
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
-          <div class="cf-reorder-mute">
-            <p class="m-0 mb-1.5 flex items-center gap-1.5 text-[11px] font-medium tracking-[0.04em] text-muted-foreground uppercase">
-              <component :is="rule.source_type === 'content' ? FileText : Link2" class="size-3" aria-hidden="true" />
-              {{ rule.source_type === 'content' ? '规则内容' : '规则地址' }}
-            </p>
-            <pre
-              v-if="rule.source_type === 'content'"
-              class="m-0 max-h-24 overflow-auto rounded-lg border border-border/50 bg-background/50 p-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all text-muted-foreground"
-            >{{ getContentPreview(rule.content) }}</pre>
-            <a
-              v-else
-              class="block truncate rounded-lg border border-border/50 bg-background/50 px-2.5 py-1.5 font-mono text-[11.5px] text-info-accent hover:underline"
-              :href="rule.url"
-              :title="rule.url"
-              target="_blank"
-              rel="noreferrer"
-            >
-              {{ rule.url }}
-            </a>
-          </div>
+          <template v-else>
+            <div class="cf-reorder-mute flex flex-wrap gap-1.5">
+              <Badge variant="outline" class="font-mono text-[10.5px]">{{ rule.behavior }}</Badge>
+              <Badge :variant="rule.source_type === 'content' ? 'info' : 'secondary'" class="text-[10.5px]">
+                {{ rule.source_type === 'content' ? '规则内容' : 'URL 地址' }}
+              </Badge>
+            </div>
 
-          <footer class="cf-reorder-mute mt-auto flex items-center gap-0.5 border-0 border-t border-border/50 pt-3 max-sm:pt-2">
-            <Button
-              v-if="rule.source_type === 'content'"
-              variant="ghost"
-              size="sm"
-              :aria-label="`向 ${rule.name} 添加规则`"
-              title="添加规则"
-              @click="showAddRuleToSetDialog(rule)"
-            >
-              <Plus class="size-3.5" />
-              <span class="max-sm:hidden">添加规则</span>
-            </Button>
-            <Button variant="ghost" size="icon-sm" title="加入当前配置" :aria-label="`将 ${rule.name} 加入当前配置`" @click="showReferenceDialog([rule.id])">
-              <Send class="size-4" />
-            </Button>
-            <Button variant="ghost" size="icon-sm" title="复制下载地址" aria-label="复制下载地址" @click="copyRuleUrl(rule)">
-              <Copy class="size-4" />
-            </Button>
-            <Button variant="ghost" size="icon-sm" class="ml-auto" title="编辑" aria-label="编辑" @click="editRule(rule)">
-              <Pencil class="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              class="text-destructive-accent hover:bg-destructive-soft"
-              title="删除"
-              aria-label="删除"
-              @click="deleteRule(rule)"
-            >
-              <Trash2 class="size-4" />
-            </Button>
-          </footer>
+            <div class="cf-reorder-mute">
+              <p class="m-0 mb-1.5 flex items-center gap-1.5 text-[11px] font-medium tracking-[0.04em] text-muted-foreground uppercase">
+                <component :is="rule.source_type === 'content' ? FileText : Link2" class="size-3" aria-hidden="true" />
+                {{ rule.source_type === 'content' ? '规则内容' : '规则地址' }}
+              </p>
+              <pre
+                v-if="rule.source_type === 'content'"
+                class="m-0 max-h-24 overflow-auto rounded-lg border border-border/50 bg-background/50 p-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all text-muted-foreground"
+              >{{ getContentPreview(rule.content) }}</pre>
+              <a
+                v-else
+                class="block truncate rounded-lg border border-border/50 bg-background/50 px-2.5 py-1.5 font-mono text-[11.5px] text-info-accent hover:underline"
+                :href="rule.url"
+                :title="rule.url"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {{ rule.url }}
+              </a>
+            </div>
+
+            <footer class="cf-reorder-mute mt-auto flex items-center gap-0.5 border-0 border-t border-border/50 pt-3 max-sm:pt-2">
+              <Button
+                v-if="rule.source_type === 'content'"
+                variant="ghost"
+                size="sm"
+                :aria-label="`向 ${rule.name} 添加规则`"
+                title="添加规则"
+                @click="showAddRuleToSetDialog(rule)"
+              >
+                <Plus class="size-3.5" />
+                <span class="max-sm:hidden">添加规则</span>
+              </Button>
+              <Button variant="ghost" size="icon-sm" title="加入当前配置" :aria-label="`将 ${rule.name} 加入当前配置`" @click="showReferenceDialog([rule.id])">
+                <Send class="size-4" />
+              </Button>
+              <Button variant="ghost" size="icon-sm" title="复制下载地址" aria-label="复制下载地址" @click="copyRuleUrl(rule)">
+                <Copy class="size-4" />
+              </Button>
+              <Button variant="ghost" size="icon-sm" class="ml-auto" title="编辑" aria-label="编辑" @click="editRule(rule)">
+                <Pencil class="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="text-destructive-accent hover:bg-destructive-soft"
+                title="删除"
+                aria-label="删除"
+                @click="deleteRule(rule)"
+              >
+                <Trash2 class="size-4" />
+              </Button>
+            </footer>
+          </template>
         </div>
       </div>
     </template>
@@ -685,6 +764,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useMediaQuery } from '@vueuse/core'
 import { useSettingLink, queryText, focusSetting } from '@/lib/settingLink'
 import { load as loadYaml } from 'js-yaml'
 import {
@@ -692,6 +772,7 @@ import {
   ChevronDown,
   Copy,
   Download,
+  Ellipsis,
   Eye,
   EyeOff,
   FileText,
@@ -1585,6 +1666,43 @@ const syncNarrow = () => {
 }
 const effectiveView = computed(() => (isNarrow.value ? 'card' : viewMode.value))
 
+/* ---------- 手机（< 640px）两行紧凑行 ---------- */
+// 手机上每个规则集只占两行：名称与条数一行，类型、来源与「⋯」操作一行；内容预览收起，点行打开编辑窗口查看完整内容
+const isPhone = useMediaQuery('(max-width: 639px)')
+
+// 只统计手写内容的有效行（跳过空行、注释和 YAML 的 payload 头），远端地址未下载时不显示条数
+const ruleCount = (rule: RuleLibraryItem): number | null => {
+  if (rule.source_type !== 'content') return null
+  return String(rule.content || '').split('\n').filter(line => {
+    const text = line.trim()
+    return text && !text.startsWith('#') && !text.startsWith('//') && text !== 'payload:'
+  }).length
+}
+
+// 来源一栏：手写内容写「内容」，地址只显示主机名，太长由样式截断
+const sourceLabel = (rule: RuleLibraryItem) => {
+  if (rule.source_type === 'content') return '内容'
+  if (!isFullUrl(rule.url)) return rule.url || 'URL'
+  try {
+    return new URL(rule.url).hostname.replace(/^www\./, '')
+  } catch {
+    return rule.url
+  }
+}
+
+const openFromPhoneRow = (rule: RuleLibraryItem) => {
+  if (reorder.active.value) return
+  editRule(rule)
+}
+
+// 点行内空白处与点名称相同；勾选框、「⋯」、排序手柄等控件各管各的
+const onPhoneRowClick = (event: MouseEvent, rule: RuleLibraryItem) => {
+  if (!isPhone.value) return
+  const target = event.target as Element | null
+  if (target?.closest('button, a, input, label, [role="checkbox"], [role="menu"]')) return
+  openFromPhoneRow(rule)
+}
+
 const keyword = ref('')
 const behaviorFilter = ref('all')
 
@@ -1690,3 +1808,103 @@ onUnmounted(() => {
   window.removeEventListener('resize', syncNarrow)
 })
 </script>
+
+<style scoped>
+/* 手机（< 640px）规则集两行紧凑行：同一个列表容器，条目之间只用细分隔线，约 62px 一行 */
+.cf-rl-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 56px;
+  padding: 8px 12px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.cf-rl-row + .cf-rl-row { border-top: 1px solid var(--border); }
+.cf-rl-row:active { background: var(--secondary); }
+.cf-rl-line1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 20px;
+}
+.cf-rl-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cf-rl-name:focus-visible { outline: 2px solid var(--primary-accent); outline-offset: 2px; border-radius: 4px; }
+.cf-rl-line2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 24px;
+  /* 与名称对齐：勾选框 16px + 间距 10px */
+  padding-left: 26px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 16px;
+}
+.cf-rl-meta {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.cf-rl-source {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cf-rl-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.cf-rl-off { background: var(--secondary); }
+/* 已停用：名称与说明变淡，勾选框和「⋯」保持正常对比度 */
+.cf-rl-row[data-disabled] .cf-rl-name,
+.cf-rl-row[data-disabled] .cf-rl-meta,
+.cf-rl-row[data-disabled] .cf-rl-count { opacity: 0.6; }
+/* 「⋯」视觉 28×24px；基础 Button 在窄屏给的 44px 最小尺寸改由透明 ::before 承担 */
+.cf-rl-more {
+  flex: none;
+  width: 28px;
+  height: 24px;
+  min-width: 0;
+  min-height: 0;
+  margin-right: -4px;
+  color: var(--muted-foreground);
+}
+.cf-rl-hit { position: relative; }
+.cf-rl-hit::before {
+  content: '';
+  position: absolute;
+  inset: -10px -8px;
+}
+/* 勾选框只有 16px，点击区向四周各扩 14px 到 44px */
+.cf-rl-line1 > .cf-rl-hit::before { inset: -14px; }
+</style>
