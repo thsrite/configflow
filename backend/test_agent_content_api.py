@@ -172,6 +172,53 @@ def test_summary_listing_skips_content_comparison_and_hides_private_baselines(ap
     assert executor.jobs == []
 
 
+def test_summary_listing_leaves_out_the_history_and_never_copies_it(api_env, monkeypatch):
+    """Every open page asks for the summary every few seconds; the deployment
+    history and the verification runs are most of a record and no summary
+    reader shows them."""
+    client, manager, _config, ids, _executor, _replies, _fetches = api_env
+    for number in range(3):
+        assert push(client, ids['mihomo'], f'release-{number}').status_code == 200
+    manager._update_agents(lambda agents: next(
+        agent for agent in agents if agent['id'] == ids['mihomo']).update(ipv6_verifications={'run': {'status': 'passed'}}))
+    stored = manager.get_agent_by_id(ids['mihomo'])
+    assert set(stored['deployments']) == {'release-0', 'release-1', 'release-2'} and stored['ipv6_verifications']
+
+    reads = []
+    read = manager.repository.get_agents
+    monkeypatch.setattr(manager.repository, 'get_agents', lambda **kwargs: reads.append(kwargs) or read(**kwargs))
+    response = client.get('/api/agents?summary=1')
+    assert response.status_code == 200 and reads == [{'history': False}]
+    listed = {agent['service_type']: agent for agent in response.json}
+    for agent in listed.values():
+        assert 'deployments' not in agent and 'ipv6_verifications' not in agent
+    # What the pickers, the live poll and the publish bar read stays.
+    summary = listed['mihomo']
+    assert summary['latest_deployment']['deployment_id'] == 'release-2' and summary['latest_deployment']['status'] == 'succeeded'
+    assert 'prepared_content' not in summary['latest_deployment']
+    assert {key: summary[key] for key in ('id', 'name', 'host', 'profile_id', 'config_version', 'status')} == {
+        key: stored[key] for key in ('id', 'name', 'host', 'profile_id', 'config_version', 'status')}
+
+    # Without the history the summary is the full record minus what the full
+    # list adds and the two history fields: nothing else went missing.
+    full = listing(client)
+    for service, agent in listed.items():
+        extra = {'deployments', 'ipv6_verifications', 'content_sync', 'has_update', 'upgrade_available'}
+        assert {key: value for key, value in full[service].items() if key not in extra} == agent
+    assert set(full['mihomo']['deployments']) == {'release-0', 'release-1', 'release-2'}
+    assert full['mihomo']['ipv6_verifications'] == {'run': {'status': 'passed'}}
+
+
+def test_single_agent_and_full_listing_still_carry_the_history(api_env):
+    client, _manager, _config, ids, _executor, _replies, _fetches = api_env
+    assert push(client, ids['mihomo']).status_code == 200
+    assert set(listing(client)['mihomo']['deployments']) == {'first'}
+    response = client.get(f'/api/agents/{ids["mihomo"]}')
+    assert response.status_code == 200
+    body = response.json.get('data', response.json)
+    assert set(body['deployments']) == {'first'}
+
+
 @pytest.mark.parametrize('change', ['agent_field', 'remote_source'])
 def test_first_check_after_activation_sees_inputs_changed_since_preparation(api_env, content_env, change):
     """Preparation and activation can be far apart: a ready release waits for

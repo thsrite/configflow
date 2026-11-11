@@ -2714,16 +2714,19 @@ const onLogSourceChange = async (value: string) => {
   }
 }
 
+// 完整列表每次都要核对每台设备的配置，后台标签页不刷新；切回来时立即补一次
+const refreshWhenVisible = () => { if (!document.hidden) void loadAgents() }
+
 // 启动定时刷新
 const startAutoRefresh = () => {
   // 每 10 秒刷新一次
-  refreshTimer = window.setInterval(() => {
-    loadAgents()
-  }, 10000)
+  refreshTimer = window.setInterval(refreshWhenVisible, 10000)
+  document.addEventListener('visibilitychange', refreshWhenVisible)
 }
 
 // 停止定时刷新
 const stopAutoRefresh = () => {
+  document.removeEventListener('visibilitychange', refreshWhenVisible)
   if (refreshTimer) {
     clearInterval(refreshTimer)
     refreshTimer = null
