@@ -1,13 +1,12 @@
 """Only the exact candidate checked by the current rules can be activated."""
 from copy import deepcopy
-from dataclasses import replace
 import hashlib
 
 import pytest
 import requests
 from flask import Flask
 
-from backend.agents.deployment_bundle import _pack, build_deployment_bundle, retarget_config_path
+from backend.agents.deployment_bundle import DeploymentBundle, _pack, build_deployment_bundle, retarget_config_path
 from backend.agents.manager import AgentManager
 from backend.agents.oxidns_validation_receipt import receipt_matches, validate_bundle
 from backend.routes import register_blueprints
@@ -205,7 +204,7 @@ def test_receipt_inspects_archive_bytes_and_refuses_unexpanded_includes(oxidns_e
     _, _, agent, config, _, _ = oxidns_env
     bundle = bundle_for(agent, config)
     with pytest.raises(ValueError, match='digest'):
-        validate_bundle(agent['id'], replace(bundle, sha256='0' * 64))
+        validate_bundle(agent['id'], DeploymentBundle(bundle.manifest, bundle.archive, '0' * 64, bundle.config_version))
     raw = b'include: [parts.yaml]\nplugins: []\n'
     manifest = deepcopy(bundle.manifest)
     manifest['files'][0].update(size=len(raw), sha256=hashlib.sha256(raw).hexdigest())

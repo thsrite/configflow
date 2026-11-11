@@ -7,7 +7,6 @@ an Agent to download a partial configuration.
 from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from copy import deepcopy
-from dataclasses import dataclass
 import hashlib
 import gzip
 import io
@@ -85,13 +84,85 @@ def _download_error_message(exc):
     return '下载失败，请检查规则下载地址及网络连接'
 
 
-@dataclass(frozen=True)
+_packing = Lock()
+
+
 class DeploymentBundle:
-    manifest: dict
-    archive: bytes
-    sha256: str
-    config_version: str
-    comparison_config: dict | None = None
+    """A delivery: its manifest, and the gzip archive a device receives.
+
+    A bundle made from its files (``from_files``) packs the archive on first
+    use. Comparing content needs the manifest alone, and listing changes reads
+    a few files; compressing every file for those was a large part of each
+    comparison. The archive bytes do not depend on when they are packed.
+    """
+
+    def __init__(self, manifest, archive, sha256, config_version, comparison_config=None):
+        self.manifest = manifest
+        self.config_version = config_version
+        self.comparison_config = comparison_config
+        self._archive, self._sha256, self._files = archive, sha256, None
+
+    @classmethod
+    def from_files(cls, manifest, files, config_version, comparison_config=None):
+        """files: {path: (bytes, role)}, as the manifest lists them."""
+        bundle = cls(manifest, None, None, config_version, comparison_config)
+        bundle._files = files
+        return bundle
+
+    def _packed(self):
+        with _packing:
+            if self._archive is None:
+                self._archive = _archive_bytes(self.manifest, self._files)
+                self._sha256 = hashlib.sha256(self._archive).hexdigest()
+                self._files = None  # the archive holds them now
+            return self._archive
+
+    @property
+    def archive(self):
+        return self._archive if self._archive is not None else self._packed()
+
+    @property
+    def sha256(self):
+        if self._sha256 is None:
+            self._packed()
+        return self._sha256
+
+    def files(self, paths=None):
+        """{path: bytes} of the listed manifest paths (all of them by default)."""
+        wanted = [item['path'] for item in self.manifest['files']] if paths is None else list(paths)
+        with _packing:
+            unpacked = self._files
+        if unpacked is not None:
+            return {path: unpacked[path][0] for path in wanted if path in unpacked}
+        return _archive_files(self._archive, wanted)
+
+    def _fields(self):
+        return self.manifest, self.archive, self.sha256, self.config_version, self.comparison_config
+
+    def __eq__(self, other):
+        return self._fields() == other._fields() if isinstance(other, DeploymentBundle) else NotImplemented
+
+    __hash__ = None
+
+    def __repr__(self):
+        return (f'DeploymentBundle(files={len(self.manifest.get("files", []))}, config_version={self.config_version!r}, '
+                f'packed={self._archive is not None})')
+
+
+def _archive_files(archive, paths):
+    """Selected members of a packed bundle, in one pass over the compressed stream."""
+    wanted = {'files/' + path: path for path in paths}
+    found = {}
+    if not wanted:
+        return found
+    with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as tar:
+        for member in tar:
+            path = wanted.get(member.name)
+            if path is not None and member.isfile():
+                found[path] = tar.extractfile(member).read()
+                if len(found) == len(wanted):
+                    break
+    return found
 
 
 def relative_path(value):
@@ -721,6 +792,10 @@ def _unbundled_references(main, files):
 
 
 def _pack(manifest, files, config_version, *, comparison_config=None):
+    return DeploymentBundle.from_files(manifest, dict(files), config_version, comparison_config)
+
+
+def _archive_bytes(manifest, files):
     archive = io.BytesIO()
     with gzip.GzipFile(fileobj=archive, mode='wb', mtime=0) as compressed, \
             tarfile.open(fileobj=compressed, mode='w', format=tarfile.PAX_FORMAT) as tar:
@@ -731,8 +806,7 @@ def _pack(manifest, files, config_version, *, comparison_config=None):
             member.size = len(value)
             member.mode = 0o600
             tar.addfile(member, io.BytesIO(value))
-    content = archive.getvalue()
-    return DeploymentBundle(manifest, content, hashlib.sha256(content).hexdigest(), config_version, comparison_config)
+    return archive.getvalue()
 
 
 def retarget_config_path(bundle, config_path):
@@ -748,12 +822,12 @@ def retarget_config_path(bundle, config_path):
         raise DeploymentPreparationError('Agent configuration filename collides with a managed file')
     manifest['config_path'] = path
     files = {}
-    with tarfile.open(fileobj=io.BytesIO(bundle.archive), mode='r:gz') as archive:
-        for item in manifest['files']:
-            old_path = item['path']
-            if old_path == current:
-                item['path'] = path
-            files[item['path']] = (archive.extractfile('files/' + old_path).read(), item['role'])
+    content = bundle.files()
+    for item in manifest['files']:
+        old_path = item['path']
+        if old_path == current:
+            item['path'] = path
+        files[item['path']] = (content[old_path], item['role'])
     comparison = deepcopy(bundle.comparison_config)
     if comparison:
         comparison['path'] = path
