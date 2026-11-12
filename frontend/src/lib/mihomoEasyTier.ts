@@ -67,8 +67,8 @@ export const EASYTIER_GROUPS: EasyTierGroup[] = [
     fields: [
       field('network-name', '网络名', 'text', '要加入的 EasyTier 网络名，和其他节点填写的一致。', { placeholder: '必填' }),
       { secret: 'network-secret', label: '网络密钥（network-secret）', help: help('网络密钥。网络名和密钥都相同的节点才在同一个虚拟网里。', '导出脱敏备份时会被隐去。') },
-      field('hostname', '主机名', 'text', '本节点在虚拟网里的名字，也用于 MagicDNS（如 phone.et.net）。', { placeholder: '自动' }),
-      field('ipv4', '虚拟 IPv4', 'text', '本节点的虚拟网地址，例如 10.144.144.10/24。', { help: '不填时自动分配（DHCP），每次重启可能变化；要固定地址就在这里填写。', placeholder: '自动分配' }),
+      field('hostname', '主机名', 'text', '本节点在虚拟网里的名字，也用于 MagicDNS（如 phone.et.net）。', { help: '同一个配置空间的订阅被多台设备使用时请留空：大家拿到的是同一份配置，写死会让几台设备同名，用名字访问时分不清是哪台。', placeholder: '自动' }),
+      field('ipv4', '虚拟 IPv4', 'text', '本节点的虚拟网地址，例如 10.144.144.10/24。', { help: '不填时自动分配（DHCP），每次重启可能变化；要固定地址就在这里填写。\n同一个配置空间的订阅被多台设备使用时请留空：大家拿到的是同一份配置，写死会让几台设备抢同一个地址。', placeholder: '自动分配' }),
       field('dhcp', '自动分配地址', 'bool', '是否通过 DHCP 自动获取虚拟 IPv4。', { help: '不填虚拟 IPv4 时默认开启；填了则默认关闭。' }),
       field('peers', '入网节点', 'list', '启动时主动连接的节点，可以写多个，例如中转 VPS 和家里节点。', {
         help: '每行一个，如 tcp://203.0.113.10:11010、udp://[2001:db8::1]:11010。都会同时连接，入网后 EasyTier 自动选择直连或中转。不会自动连接公共节点。不监听端口时至少填一个。',
@@ -102,8 +102,8 @@ export const EASYTIER_GROUPS: EasyTierGroup[] = [
     id: 'security', title: '安全', help: '加密、安全模式和固定节点身份。',
     fields: [
       field('secure-mode', '安全模式', 'bool', '启用 Noise 端到端加密。网络开启了安全模式时这里也要开启。', { coreDefault: false, help: '填写本机密钥或在入网节点地址里带 peer-public-key 时会自动开启。' }),
-      { secret: 'local-private-key', label: '本机私钥（local-private-key）', help: help('本机的 X25519 私钥（Base64），固定节点身份，重启后不变。', '导出脱敏备份时会被隐去。') },
-      field('local-public-key', '本机公钥', 'text', '本机的 X25519 公钥（Base64），通常可由私钥推出。', { help: '需要和本机私钥一起填写。' }),
+      { secret: 'local-private-key', label: '本机私钥（local-private-key）', help: help('本机的 X25519 私钥（Base64），固定节点身份，重启后不变。', '同一个配置空间的订阅被多台设备使用时请留空：大家拿到的是同一份配置，写死会让几台设备变成同一个身份，互相顶掉连接。\n导出脱敏备份时会被隐去。') },
+      field('local-public-key', '本机公钥', 'text', '本机的 X25519 公钥（Base64），通常可由私钥推出。', { help: '需要和本机私钥一起填写。多台设备共用这份配置时和私钥一样留空。' }),
       field('enable-encryption', '节点间加密', 'bool', '节点之间的流量是否加密。', { coreDefault: true }),
       field('encryption-algorithm', '加密算法', 'text', '节点间加密使用的算法。', { placeholder: 'aes-gcm' }),
       field('private-mode', '私有模式', 'bool', '只与同网络名和密钥的节点通信，不为其他网络转发。', { coreDefault: false }),
