@@ -64,6 +64,7 @@ vi.mock('@/api', () => {
       proxyDelay: vi.fn().mockResolvedValue({ data: { success: true, data: { delay: 120 } } }),
       flow: vi.fn().mockResolvedValue({ data: { success: true, data: { interval: 0, connections: 0, active: 0, up: 0, down: 0, paths: [], omitted: 0 } } }),
       version: ok({ version: 'v1.19.0' }),
+      checkCoreUpdate: ok({ current: 'v1.19.0', latest: 'v1.19.0', channel: 'release', has_update: false, error: '' }),
       configs: ok({ mode: 'Rule' }),
       proxies: ok({ proxies: {
         GLOBAL: { name: 'GLOBAL', type: 'Selector', all: ['Proxy'], now: 'Proxy' },
@@ -256,6 +257,7 @@ describe('mihomo panel view', () => {
   })
 
   it('shows the cached core version and rules before the fresh reads answer', async () => {
+    vi.mocked(mihomoPanelApi.checkCoreUpdate).mockClear()
     rememberPanelData('gw', 'version', { version: 'v1.18.9' })
     rememberPanelData('gw', 'configs', { mode: 'global' })
     rememberPanelData('gw', 'rules', { rules: [{ type: 'Match', payload: '', proxy: 'DIRECT' }] })
@@ -270,9 +272,28 @@ describe('mihomo panel view', () => {
     const wrapper = mount(MihomoPanel)
     await flushPromises()
     expect(wrapper.text()).toContain('Mihomo v1.18.9')
+    // 缓存里的旧版本号不检查更新，等读到实际版本再查
+    expect(mihomoPanelApi.checkCoreUpdate).not.toHaveBeenCalled()
     expect(wrapper.get('[role="radio"][aria-checked="true"]').text()).toBe('全局')
     expect(wrapper.getComponent(MihomoRules).text()).toContain('1 / 1 条')
     expect(wrapper.getComponent(MihomoRules).text()).toContain('cached')
+    wrapper.unmount()
+  })
+
+  it('checks for a core update once per open, with the version read from the core', async () => {
+    rememberPanelData('gw', 'version', { version: 'v1.18.9' })
+    rememberPanelData('gw', 'configs', { mode: 'global' })
+    vi.mocked(mihomoPanelApi.checkCoreUpdate).mockClear()
+    routeState.route = reactive({ query: { agent: 'gw', tab: 'rules' } })
+    vi.mocked(agentApi.summaries).mockResolvedValue({ data: [{ id: 'gw', name: 'Gateway', service_type: 'mihomo', status: 'online' }] } as any)
+    const wrapper = mount(MihomoPanel)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Mihomo v1.19.0')
+    expect(vi.mocked(mihomoPanelApi.checkCoreUpdate).mock.calls).toEqual([['gw']])
+    // 刷新面板版本不变，不再检查
+    await wrapper.get('button[aria-label="刷新面板"]').trigger('click')
+    await flushPromises()
+    expect(mihomoPanelApi.checkCoreUpdate).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 

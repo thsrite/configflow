@@ -318,3 +318,210 @@ def test_other_replies_pass_through_unchanged(calls):
     assert panel.call(Manager(), 'mihomo', 'proxy', 'PUT', MultiDict({'name': 'Proxy'}), {'name': 'HK'})['data'] == reply
     calls.replies.append(Response(['unexpected']))
     assert panel.call(Manager(), 'mihomo', 'proxies', 'GET', MultiDict())['data'] == ['unexpected']
+
+
+class VersionText:
+    def __init__(self, text, status=200):
+        self.content = text.encode()
+        self.status_code = status
+
+    def __enter__(self): return self
+    def __exit__(self, *args): pass
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(response=self)
+
+
+@pytest.fixture
+def latest(monkeypatch):
+    seen = Calls()
+    replies = []
+
+    def request_rule(url, **kwargs):
+        seen.append((url, kwargs))
+        reply = replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    class Repository:
+        def get_system_settings(self):
+            return dict(settings)
+
+    settings = {'rule_fetch_proxy': '', 'github_proxy_domain': '', 'backup': {'large': 'not needed'}}
+    seen.settings = settings
+
+    monkeypatch.setattr('backend.utils.rule_fetch.request_rule', request_rule)
+    monkeypatch.setattr('backend.common.config.get_repository', Repository)
+    monkeypatch.setattr(panel, '_core_latest', {})
+    seen.replies = replies
+    return seen
+
+
+@pytest.mark.parametrize('current, upstream, channel, has_update', [
+    ('v1.19.32', 'v1.19.33\n', 'release', True),
+    ('v1.19.32', 'v1.19.32\n', 'release', False),
+    ('alpha-0a1b2c3', 'alpha-4d5e6f7', 'alpha', True),
+    ('alpha-0a1b2c3', 'alpha-0a1b2c3', 'alpha', False),
+])
+def test_core_update_check_follows_the_cores_own_channel_and_comparison(calls, latest, current, upstream, channel,
+                                                                          has_update):
+    calls.replies.append(Response({'meta': True, 'version': current}))
+    latest.replies.append(VersionText(upstream))
+    result = panel.call(Manager({**AGENT, 'version': '1.8.16-go'}), 'mihomo', 'core/update', 'GET', MultiDict())
+    data = result['data']
+    assert (data['current'], data['latest'], data['channel'], data['has_update'], data['error']) == (
+        current, upstream.strip(), channel, has_update, '')
+    assert latest[0][0] == panel.CORE_VERSION_URLS[channel]
+    # Bounded streaming read, with only the download settings rather than the whole system section.
+    assert latest[0][1]['stream'] is True and latest[0][1]['max_bytes'] == 256
+    assert set(latest[0][1]['config_data']) == {'system_config'}
+    assert 'backup' not in latest[0][1]['config_data']['system_config']
+    assert [(c['method'], c['url'].rsplit('/api/mihomo/', 1)[1]) for c in calls] == [('GET', 'version')]
+
+
+def test_core_update_check_needs_the_upgrade_agent_version(calls, latest):
+    with pytest.raises(MonitorError) as exc:
+        panel.call(Manager(), 'mihomo', 'core/update', 'GET', MultiDict())
+    assert exc.value.code == 'UPGRADE_REQUIRED' and '1.8.16-go' in exc.value.message
+    assert calls == [] and latest == []
+
+
+@pytest.mark.parametrize('failure, reason', [
+    (requests.ConnectTimeout('https://user:secret@proxy.invalid'), '连接 GitHub 超时'),
+    (requests.HTTPError(response=VersionText('', 404)), 'GitHub 返回 HTTP 404'),
+    (requests.ConnectionError('https://user:secret@proxy.invalid'), '无法连接 GitHub'),
+    (VersionText('<html>blocked</html>'), 'version.txt 内容不是版本号'),
+])
+def test_core_update_check_failure_still_reports_the_running_version(calls, latest, failure, reason):
+    calls.replies.append(Response({'meta': True, 'version': 'v1.19.32'}))
+    latest.replies.append(failure)
+    data = panel.call(Manager({**AGENT, 'version': '1.8.16-go'}), 'mihomo', 'core/update', 'GET', MultiDict())['data']
+    assert data['current'] == 'v1.19.32' and data['latest'] == '' and data['has_update'] is False
+    assert reason in data['error'] and 'secret' not in data['error']
+
+
+def test_core_update_check_reports_an_unreachable_core(calls, latest):
+    calls.replies.append(Response({'success': False, 'code': 'CORE_UNREACHABLE'}, status=502))
+    with pytest.raises(MonitorError) as exc:
+        panel.call(Manager({**AGENT, 'version': '1.8.16-go'}), 'mihomo', 'core/update', 'GET', MultiDict())
+    assert exc.value.code == 'CORE_UNREACHABLE'
+    assert latest == []
+
+
+def test_core_update_check_caches_github_and_a_manual_check_refreshes(calls, latest, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(panel.time, 'monotonic', lambda: clock[0])
+    manager = Manager({**AGENT, 'version': '1.8.16-go'})
+
+    def check(force=False):
+        calls.replies.append(Response({'meta': True, 'version': 'v1.19.32'}))
+        return panel.call(manager, 'mihomo', 'core/update', 'GET', MultiDict({'force': '1'} if force else {}))['data']
+
+    latest.replies.append(requests.ConnectTimeout())
+    assert check()['error']
+    clock[0] += panel.CORE_CHECK_FAILURE_TTL - 1
+    assert check()['error'] and len(latest) == 1  # a failure is not retried on every open
+    clock[0] += 2
+    latest.replies.append(VersionText('v1.19.32'))
+    assert check()['has_update'] is False and len(latest) == 2
+    clock[0] += panel.CORE_CHECK_TTL - 1
+    assert check()['latest'] == 'v1.19.32' and len(latest) == 2
+    latest.replies.append(VersionText('v1.19.33'))
+    data = check(force=True)
+    assert data['has_update'] is True and data['latest'] == 'v1.19.33' and len(latest) == 3
+    assert data['release_url'].endswith('/releases/tag/v1.19.33')
+
+
+def test_a_core_newer_than_the_release_is_not_offered_a_downgrade(calls, latest, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(panel.time, 'monotonic', lambda: clock[0])
+    manager = Manager({**AGENT, 'version': '1.8.16-go'})
+
+    def check(current):
+        calls.replies.append(Response({'meta': True, 'version': current}))
+        return panel.call(manager, 'mihomo', 'core/update', 'GET', MultiDict())['data']
+
+    latest.replies.append(VersionText('v1.19.33'))
+    assert check('v1.19.32')['has_update'] is True
+    # Upgraded elsewhere (or a dev build) past the cached release: no "update" to an older version,
+    # and the cache is looked at again only after the short TTL, not on every open.
+    data = check('v1.19.34')
+    assert data['has_update'] is False and data['latest'] == 'v1.19.33' and len(latest) == 1
+    clock[0] += panel.CORE_CHECK_FAILURE_TTL - 1
+    assert check('v1.19.34')['has_update'] is False and len(latest) == 1
+    clock[0] += 2
+    latest.replies.append(VersionText('v1.19.34'))
+    data = check('v1.19.34')
+    assert data['has_update'] is False and data['latest'] == 'v1.19.34' and len(latest) == 2
+    # Equal versions use the long TTL again.
+    clock[0] += panel.CORE_CHECK_FAILURE_TTL + 1
+    assert check('v1.19.34')['latest'] == 'v1.19.34' and len(latest) == 2
+
+
+def test_core_update_check_fetches_github_once_for_concurrent_requests(latest, monkeypatch):
+    import threading
+    release, fetches = threading.Event(), []
+
+    def slow(channel, settings):
+        fetches.append(channel)
+        release.wait(5)
+        return 'v1.19.33'
+
+    monkeypatch.setattr(panel, '_latest_core_version', slow)
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(panel._cached_latest('release', 'v1.19.32', False)))
+               for _ in range(6)]
+    for thread in threads:
+        thread.start()
+    while not fetches:
+        threading.Event().wait(0.01)
+    release.set()
+    for thread in threads:
+        thread.join(5)
+    assert fetches == ['release']
+    assert results == [('v1.19.33', '')] * 6
+    # A manual check started after that fetch finished asks GitHub again.
+    assert panel._cached_latest('release', 'v1.19.32', True) == ('v1.19.33', '') and len(fetches) == 2
+
+
+def test_an_expired_cache_answers_at_once_while_another_request_refreshes(latest, monkeypatch):
+    monkeypatch.setattr(panel, '_core_latest', {'release': (0.0, 'v1.19.33', '', panel._download_settings())})
+    monkeypatch.setattr(panel.time, 'monotonic', lambda: panel.CORE_CHECK_TTL + 10.0)
+    monkeypatch.setattr(panel, '_latest_core_version', lambda channel, settings: pytest.fail('must not fetch'))
+    lock = panel._core_locks['release']
+    assert lock.acquire(blocking=False)
+    try:
+        assert panel._cached_latest('release', 'v1.19.32', False) == ('v1.19.33', '')
+    finally:
+        lock.release()
+
+
+def test_failure_cache_counts_from_when_the_fetch_ended(latest, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(panel.time, 'monotonic', lambda: clock[0])
+
+    def slow_failure(channel, settings):
+        clock[0] += 30
+        raise requests.ConnectTimeout()
+
+    monkeypatch.setattr(panel, '_latest_core_version', slow_failure)
+    assert panel._cached_latest('release', 'v1.19.32', False)[1]
+    assert panel._core_latest['release'][0] == 1030.0
+
+
+def test_changing_the_download_proxy_retries_a_cached_failure_at_once(calls, latest):
+    manager = Manager({**AGENT, 'version': '1.8.16-go'})
+
+    def check():
+        calls.replies.append(Response({'meta': True, 'version': 'v1.19.32'}))
+        return panel.call(manager, 'mihomo', 'core/update', 'GET', MultiDict())['data']
+
+    latest.replies.append(requests.ConnectionError())
+    assert check()['error'] and check()['error'] and len(latest) == 1
+    latest.settings['rule_fetch_proxy'] = 'http://127.0.0.1:7890'
+    latest.replies.append(VersionText('v1.19.33'))
+    data = check()
+    assert data['error'] == '' and data['has_update'] is True and len(latest) == 2
+    assert latest[1][1]['config_data']['system_config']['rule_fetch_proxy'] == 'http://127.0.0.1:7890'
