@@ -6,6 +6,15 @@
         <AlertDialogDescription class="whitespace-pre-line">
           {{ confirmState.description }}
         </AlertDialogDescription>
+        <a
+          v-if="confirmState.link"
+          :href="confirmState.link.href"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex min-h-11 items-center gap-1 self-center text-sm sm:self-start text-primary-accent underline-offset-4 hover:underline"
+        >
+          {{ confirmState.link.text }}<ExternalLink class="size-4" aria-hidden="true" />
+        </a>
       </AlertDialogHeader>
       <AlertDialogFooter>
         <AlertDialogCancel @click="settleConfirm('cancel')">
@@ -32,6 +41,7 @@
 </template>
 
 <script setup lang="ts">
+import { ExternalLink } from '@lucide/vue'
 import {
   AlertDialog,
   AlertDialogAction,

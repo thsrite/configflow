@@ -124,11 +124,14 @@ describe('mihomo core actions', () => {
 
   it('offers the update only when a newer version is found, and upgrades after confirmation', async () => {
     const { wrapper, actions } = render()
-    check({ latest: 'v1.19.33', has_update: true })
+    check({ latest: 'v1.19.33', has_update: true, release_url: 'https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.33' })
     vi.mocked(confirm).mockResolvedValueOnce(false)
     await actions.checkUpdate()
     expect(vi.mocked(confirm).mock.calls[0][0]).toContain('发现新版本 v1.19.33，当前 v1.19.32')
-    expect(vi.mocked(confirm).mock.calls[0][1]).toMatchObject({ title: '内核有更新', confirmText: '更新' })
+    expect(vi.mocked(confirm).mock.calls[0][1]).toMatchObject({
+      title: '内核有更新', confirmText: '更新',
+      link: { href: 'https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.33', text: '查看 v1.19.33 的更新内容' }
+    })
     expect(mihomoPanelApi.upgradeCore).not.toHaveBeenCalled()
 
     vi.mocked(confirm).mockResolvedValueOnce(true)
