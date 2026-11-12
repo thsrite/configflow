@@ -24,6 +24,12 @@ export const notify = {
   dismiss: (id?: string | number) => toast.dismiss(id)
 }
 
+/** 确认框里的外部链接，在新标签页打开，例如「查看更新内容」 */
+export interface ConfirmLink {
+  href: string
+  text: string
+}
+
 export interface ConfirmOptions {
   title?: string
   description?: string
@@ -33,6 +39,8 @@ export interface ConfirmOptions {
   altText?: string
   /** 破坏性操作用红色确认按钮 */
   danger?: boolean
+  /** 说明下方的外部链接（只接受 http(s) 地址） */
+  link?: ConfirmLink | null
 }
 
 /** 三选一的结果；两按钮场景只会出现 confirm / cancel */
@@ -51,6 +59,7 @@ export const confirmState = reactive<ConfirmState>({
   cancelText: '取消',
   altText: '',
   danger: false,
+  link: null,
   resolve: null
 })
 
@@ -68,6 +77,7 @@ export const choose = (
   confirmState.cancelText = options.cancelText ?? '取消'
   confirmState.altText = options.altText ?? ''
   confirmState.danger = options.danger ?? false
+  confirmState.link = options.link && /^https?:\/\//.test(options.link.href) ? options.link : null
   confirmState.open = true
 
   return new Promise<ConfirmChoice>(resolve => {

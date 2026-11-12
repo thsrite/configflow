@@ -95,7 +95,7 @@ async function flush(kind: 'fakeip' | 'dns') {
 
 const UPGRADE_NOTE = 'Mihomo 会从官方发布页下载新版本并替换自身，完成后自动重启，期间网络会短暂中断。面板可显示请求和重新上线阶段；内核未提供逐文件下载、校验进度。'
 
-interface CoreUpdateCheck { current: string; latest: string; channel: string; has_update: boolean; error: string }
+interface CoreUpdateCheck { current: string; latest: string; channel: string; has_update: boolean; error: string; release_url?: string }
 
 /** 自动检查发现的新版本：按钮上显示圆点，菜单项改为「更新到 …」 */
 const update = ref<CoreUpdateCheck | null>(null)
@@ -117,10 +117,12 @@ watch(() => [props.agentId, props.coreVersion] as const, async ([agentId, versio
 }, { immediate: true })
 
 async function offerUpdate(check: CoreUpdateCheck) {
-  if (await confirm(`发现新版本 ${check.latest}${channelNote(check)}，当前 ${check.current}。\n\n${UPGRADE_NOTE}`, { title: '内核有更新', confirmText: '更新' })) await upgradeCore()
+  // 发布页上这个版本的更新说明（Alpha 为 Prerelease-Alpha 页），在新标签页打开
+  const link = check.release_url ? { href: check.release_url, text: `查看 ${check.latest} 的更新内容` } : null
+  if (await confirm(`发现新版本 ${check.latest}${channelNote(check)}，当前 ${check.current}。\n\n${UPGRADE_NOTE}`, { title: '内核有更新', confirmText: '更新', link })) await upgradeCore()
 }
 
-/** 手动检查跳过缓存：有新版才提供更新，查不到时可让内核自己检查 */
+/** 手动检查跳过缓存：只有检查到新版本才提供更新 */
 async function checkUpdate() {
   let check: CoreUpdateCheck | undefined
   checkSeq++
@@ -134,8 +136,9 @@ async function checkUpdate() {
   })
   if (!check) return
   update.value = check.has_update ? check : null
+  // 查不到最新版本就不提供更新：内核自更新只看版本是否相同，比发布页新的内核会被换回旧版
   if (check.error) {
-    if (await confirm(`${check.error}\n\n当前版本 ${check.current}${channelNote(check)}。仍可让 Mihomo 自己联网检查，有新版时直接更新；已是最新时会提示无需更新。\n\n${UPGRADE_NOTE}`, { title: '无法检查更新', confirmText: '仍然更新' })) await upgradeCore()
+    notify.error('无法检查更新', check.error)
     return
   }
   if (!check.has_update) {

@@ -34,6 +34,24 @@ async function clickText(text: string) {
  await flushPromises()
 }
 describe('confirmation choices and profile switching', () => {
+ it('shows an optional external link that opens in a new tab without settling the dialog', async () => {
+  host()
+  const result = feedback.confirm('New version', { confirmText: 'Update', link: { href: 'https://example.com/notes', text: 'Release notes' } })
+  await flushPromises()
+  const link = Array.from(document.querySelectorAll('a')).find(a => a.textContent?.includes('Release notes'))!
+  expect(link.getAttribute('href')).toBe('https://example.com/notes')
+  expect(link.getAttribute('target')).toBe('_blank')
+  expect(link.getAttribute('rel')).toContain('noopener')
+  expect(feedback.confirmState.open).toBe(true)
+  await clickText('Update')
+  await expect(result).resolves.toBe(true)
+ })
+ it('drops a link that is not http(s)', async () => {
+  host()
+  void feedback.confirm('x', { link: { href: 'javascript:alert(1)', text: 'bad' } })
+  await flushPromises()
+  expect(Array.from(document.querySelectorAll('a')).some(a => a.textContent?.includes('bad'))).toBe(false)
+ })
  it('uninstrumented confirmation click must resolve true', async () => {
   host()
   const result = feedback.confirm('Switch profile?', { confirmText: 'Switch' })
