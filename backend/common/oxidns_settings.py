@@ -26,7 +26,7 @@ def get_default_oxidns_settings():
         'aggregate_rules': True, 'local_concurrent': 2, 'remote_concurrent': 1,
         'fallback_concurrent': 2, 'fallback_threshold': 500, 'always_standby': False,
         'remote_ttl': 1, 'cache_enabled': True, 'cache_size': 10240,
-        'cache_lazy_ttl': 300, 'cache_dump_enabled': False,
+        'cache_lazy_ttl': 3600, 'cache_dump_enabled': False,
         'cache_dump_file': './state/cache.dump', 'cache_dump_interval': 300,
         'probe_cache_enabled': True, 'probe_cache_size': 2048,
         'api': {'enabled': True, 'listen': '127.0.0.1:9199', 'username': '',

@@ -34,7 +34,7 @@ def test_verified_defaults_independent_from_mosdns():
     oxi = yaml.safe_load(generate_oxidns_config(original))
     assert original == before
     oxicache = next(p for p in oxi['plugins'] if p['tag'] == 'lazy_cache')['args']
-    assert oxicache == {'size': 10240, 'lazy_cache_ttl': 300, 'short_circuit': True}
+    assert oxicache == {'size': 10240, 'lazy_cache_ttl': 3600, 'short_circuit': True}
     assert oxi['runtime'] == {'worker_threads': 2}
     assert oxi['api'] == {'http': {'listen': '127.0.0.1:9199'}} and 'file' not in oxi['log']
     assert not any('query_summary' in str(p) for p in oxi['plugins'])
@@ -477,8 +477,8 @@ GOLDEN_ROUTING = {'direct_rules': ['d1', 'd3', 'i1', 'off'], 'proxy_rules': ['d2
                   'custom_matches': [{'matches': 'qname domain:corp.test', 'exec': 'goto china_dns'}],
                   'custom_match_position': 'head', 'custom_hosts': 'full:nas.test 192.168.1.2', 'block_qtypes': [65]}
 GOLDEN_CASES = {
-    'defaults': ({}, '008e259709b5b359e1bfe14748d3077fe161c9555c81fe55315b8156b3ec6fa5'),
-    'routing': (GOLDEN_ROUTING, '8ff25727c430eff6b48db19e654fb6f9b4491d8d078c66e372421fc2b8f2231e'),
+    'defaults': ({}, '64d578c5b847e15c1b8cb6da114a16eac3855b3f139fbd42bdcb0ab047581b71'),
+    'routing': (GOLDEN_ROUTING, 'd9f02ffdac1c906fbafc55a22891ddab538421bbd189f5c31c0334b8902bbb2d'),
     'features': ({**GOLDEN_ROUTING, 'aggregate_rules': False, 'default_forward': 'forward_local', 'cache_lazy_ttl': 0,
                   'custom_match_position': 'tail', 'fallback_dns': 'udp://9.9.9.9', 'remote_ttl': 60,
                   'local_dns': 'udp://10.0.0.1\nudp://10.0.0.2',
