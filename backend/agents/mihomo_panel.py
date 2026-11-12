@@ -5,6 +5,7 @@ reads itself; neither the secret nor arbitrary controller paths pass through her
 """
 import json
 import re
+import threading
 import time
 from urllib.parse import quote
 
@@ -203,19 +204,34 @@ CORE_RELEASE_PAGES = {
 
 
 # The panel checks on every open; GitHub answers are kept a day (releases come
-# weeks apart) and failures five minutes so an unreachable GitHub
-# does not hold every open for the request timeout. A manual check bypasses it.
+# weeks apart) and failures five minutes so an unreachable GitHub does not hold
+# every open for the request timeout. A manual check bypasses the cache.
 CORE_CHECK_TTL = 86400
 CORE_CHECK_FAILURE_TTL = 300
+# channel -> (finished_at, latest, error, download settings). An answer obtained
+# with other proxy/mirror settings is not reused, so fixing the proxy takes effect at once.
 _core_latest = {}
+# One GitHub fetch per channel at a time: concurrent opens wait for it, or answer
+# with the previous result while it runs.
+_core_locks = {channel: threading.Lock() for channel in CORE_VERSION_URLS}
+_RELEASE = re.compile(r'v?(\d+)\.(\d+)\.(\d+)')
 
 
-def _latest_core_version(channel):
+def _download_settings():
+    """Only the download proxy and mirror settings, not the whole system section with the Agents."""
+    from backend.common.config import get_repository
+    settings = get_repository().get_system_settings()
+    return {key: settings.get(key, '') for key in ('rule_fetch_proxy', 'github_proxy_domain', 'server_domain')}
+
+
+def _latest_core_version(channel, settings):
     """Read the channel's version.txt with the rule download proxy and GitHub mirror."""
     from backend.utils.rule_fetch import request_rule
-    response = request_rule(CORE_VERSION_URLS[channel], timeout=(5, 10), max_bytes=256)
-    response.raise_for_status()
-    version = response.content.decode('utf-8', 'replace').strip()
+    config = {'system_config': dict(settings)}
+    # stream + max_bytes stops reading at the limit instead of downloading the whole body.
+    with request_rule(CORE_VERSION_URLS[channel], config_data=config, timeout=(5, 10),
+                      stream=True, max_bytes=256) as response:
+        version = response.content.decode('utf-8', 'replace').strip()
     if not CORE_VERSION_PATTERN.fullmatch(version):
         raise ValueError('version.txt is not a version')
     return version
@@ -235,29 +251,64 @@ def _check_failure(exc):
     return type(exc).__name__
 
 
-def _cached_latest(channel, force):
-    """(version, error) for a channel, from the cache unless forced or expired."""
-    now = time.monotonic()
+def _newer_release(current, latest):
+    a, b = _RELEASE.fullmatch(current), _RELEASE.fullmatch(latest)
+    return bool(a and b) and tuple(map(int, a.groups())) > tuple(map(int, b.groups()))
+
+
+def _usable(cached, current, now, settings):
+    finished_at, latest, error, used = cached
+    if used != settings:
+        return False
+    if error:
+        return now - finished_at < CORE_CHECK_FAILURE_TTL
+    # A core newer than the cached release: a release probably came out since (or it
+    # is a dev build). Look again after the short TTL rather than on every open.
+    return now - finished_at < (CORE_CHECK_FAILURE_TTL if _newer_release(current, latest) else CORE_CHECK_TTL)
+
+
+def _cached_latest(channel, current, force):
+    """(version, error) for a channel, from the cache unless forced or no longer usable."""
+    requested = time.monotonic()
+    settings = _download_settings()
     cached = _core_latest.get(channel)
-    if cached and not force and now - cached[0] < (CORE_CHECK_FAILURE_TTL if cached[2] else CORE_CHECK_TTL):
+    if cached and not force and _usable(cached, current, requested, settings):
+        return cached[1], cached[2]
+    lock = _core_locks[channel]
+    # An automatic check with something to show does not wait for another request's fetch.
+    if not lock.acquire(blocking=force or not cached):
         return cached[1], cached[2]
     try:
-        latest, error = _latest_core_version(channel), ''
-    except Exception as exc:  # the device may still reach GitHub through the core itself
-        latest, error = '', f'无法获取最新版本（{_check_failure(exc)}），可检查设置里的「规则下载代理」和「GitHub 代理域名」。'
-    _core_latest[channel] = (now, latest, error)
-    return latest, error
+        cached = _core_latest.get(channel)
+        # Fetched by another request after this one started: reuse it, forced or not.
+        if cached and cached[3] == settings and (
+                cached[0] >= requested or not force and _usable(cached, current, time.monotonic(), settings)):
+            return cached[1], cached[2]
+        try:
+            latest, error = _latest_core_version(channel, settings), ''
+        except Exception as exc:  # the device may still reach GitHub through the core itself
+            latest, error = '', (f'无法获取最新版本（{_check_failure(exc)}），'
+                                 '可检查设置里的「规则下载代理」和「GitHub 代理域名」。')
+        _core_latest[channel] = (time.monotonic(), latest, error, settings)
+        return latest, error
+    finally:
+        lock.release()
 
 
 def check_core_update(manager, agent_id, force=False):
-    """Compare the running core with the version its own updater would install."""
+    """Compare the running core with the version its own updater would install.
+
+    Mihomo itself upgrades whenever the versions differ; a core newer than the
+    release page is never offered an "update", which would be a downgrade.
+    """
     current = call(manager, agent_id, 'version', 'GET', {}, min_version=RESOURCE_MIN_VERSION['upgrade'])
     current = current['data'].get('version') if isinstance(current['data'], dict) else None
     if not isinstance(current, str) or not current:
         raise _fail('INVALID_RESPONSE')
     channel = 'alpha' if current.startswith('alpha') else 'release'
-    latest, error = _cached_latest(channel, force)
-    result = {'current': current, 'channel': channel, 'latest': latest, 'has_update': bool(latest) and latest != current,
+    latest, error = _cached_latest(channel, current, force)
+    result = {'current': current, 'channel': channel, 'latest': latest, 'has_update': bool(latest) and latest != current
+              and not _newer_release(current, latest),
               'error': error}
     if latest:
         result['release_url'] = CORE_RELEASE_PAGES[channel].format(version=quote(latest, safe=''))

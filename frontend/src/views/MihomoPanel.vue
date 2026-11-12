@@ -23,7 +23,7 @@
         <div class="flex w-full flex-wrap items-center justify-between gap-2">
           <Segmented class="shrink-0 max-sm:[&_[data-segment]]:min-w-11 max-sm:[&_[data-segment]]:px-2" :model-value="mode" :options="MODE_OPTIONS" label="代理模式" :disabled="!coreVersion || modeSaving" @update:model-value="changeMode" />
           <div class="ml-auto flex shrink-0 items-center gap-2 max-sm:gap-1">
-            <MihomoCoreActions :agent-id="agentId" :core-version="coreVersion" :disabled="!coreVersion && !statusError" @changed="reloadAll" @status-change="coreActionStatus = $event" />
+            <MihomoCoreActions :agent-id="agentId" :core-version="liveCoreVersion" :disabled="!coreVersion && !statusError" @changed="reloadAll" @status-change="coreActionStatus = $event" />
             <Button variant="outline" class="cf-choice-height min-h-11 max-sm:w-11 max-sm:min-w-0 max-sm:gap-0" aria-label="刷新面板" title="刷新面板" :aria-busy="statusLoading" :disabled="statusLoading" @click="reloadAll">
               <RefreshCw class="size-4" :class="{ 'animate-spin': statusLoading }" /><span class="max-sm:sr-only">刷新</span>
             </Button>
@@ -135,6 +135,8 @@ const currentDevice = computed(() => devices.value?.find(device => device.id ===
 const tab = computed(() => TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'overview')
 
 const coreVersion = ref('')
+/** 本次从内核读到的版本（不含上次缓存的），检查更新只对它做，避免对旧版本号多查一次 */
+const liveCoreVersion = ref('')
 const mode = ref<MihomoMode>('rule')
 const modeSaving = ref(false)
 const statusLoading = ref(false)
@@ -228,10 +230,12 @@ async function loadStatus() {
     const [version, configs] = await Promise.all([mihomoPanelApi.version(id), mihomoPanelApi.configs(id)])
     if (epoch !== statusEpoch) return
     coreVersion.value = version.data.data?.version || '未知版本'
+    liveCoreVersion.value = coreVersion.value
     mode.value = (configs.data.data?.mode || 'rule').toLowerCase()
   } catch (failure: any) {
     if (epoch !== statusEpoch) return
     coreVersion.value = ''
+    liveCoreVersion.value = ''
     statusError.value = panelError(failure, '暂时无法连接 Mihomo。')
     upgradeRequired.value = failure?.response?.data?.code === 'UPGRADE_REQUIRED'
   } finally {
@@ -265,6 +269,7 @@ watch(agentId, () => {
   openingSettings.value = false
   settingsError.value = ''
   coreVersion.value = ''
+  liveCoreVersion.value = ''
   loadStatus()
 })
 onMounted(() => {

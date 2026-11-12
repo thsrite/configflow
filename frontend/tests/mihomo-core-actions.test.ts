@@ -160,6 +160,8 @@ describe('mihomo core actions', () => {
     expect(vi.mocked(confirm).mock.calls[0][1]).toMatchObject({ title: '无法检查更新', confirmText: '仍然更新' })
     expect(notify.success).toHaveBeenCalledWith('已是最新版本', '当前版本 v1.19.32')
     expect(notify.error).not.toHaveBeenCalled()
+    // 刷新服务端缓存：手动检查 1 次 + 内核回复已是最新后 1 次
+    expect(vi.mocked(mihomoPanelApi.checkCoreUpdate).mock.calls).toEqual([['gw', true], ['gw', true]])
   })
 
   it('reports a failed check without offering an update', async () => {

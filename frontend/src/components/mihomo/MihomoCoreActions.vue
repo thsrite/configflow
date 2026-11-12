@@ -11,8 +11,9 @@
       <DropdownMenuItem @select="flush('fakeip')"><Eraser class="size-4" />清空 FakeIP 缓存</DropdownMenuItem>
       <DropdownMenuItem @select="flush('dns')"><Eraser class="size-4" />清空 DNS 缓存</DropdownMenuItem>
       <DropdownMenuSeparator />
-      <DropdownMenuItem v-if="update" class="text-primary-accent" @select="offerUpdate(update)">
+      <DropdownMenuItem v-if="update" @select="offerUpdate(update)">
         <ArrowUpCircle class="size-4" />更新到 <span class="font-mono">{{ update.latest }}</span>
+        <span class="ml-auto size-2 shrink-0 rounded-full bg-primary-accent" aria-hidden="true" />
       </DropdownMenuItem>
       <DropdownMenuItem v-else @select="checkUpdate"><ArrowUpCircle class="size-4" />检查更新</DropdownMenuItem>
       <DropdownMenuItem class="text-destructive-accent" @select="restartCore"><Power class="size-4" />重启内核</DropdownMenuItem>
@@ -31,7 +32,7 @@ import { agentApi, mihomoPanelApi } from '@/api'
 import { confirm, confirmDanger, notify } from '@/lib/feedback'
 import { panelError } from '@/types/mihomo'
 
-/** coreVersion：面板读到的内核版本，读到后自动检查一次更新 */
+/** coreVersion：面板本次从内核读到的版本（不含缓存），读到后自动检查一次更新 */
 const props = defineProps<{ agentId: string; disabled?: boolean; coreVersion?: string }>()
 /** 内核状态可能已变化（重载、重启、更新后），父组件据此刷新版本、模式和各标签数据 */
 const emit = defineEmits<{ changed: []; 'status-change': [status: string] }>()
@@ -155,6 +156,8 @@ async function upgradeCore() {
       if (latest) {
         update.value = null
         notify.success('已是最新版本', latest[1] ? `当前版本 ${latest[1]}` : undefined)
+        // 服务端缓存的版本落后于发布页（如 Alpha 一天多个构建），刷新它，免得下次又提示
+        mihomoPanelApi.checkCoreUpdate(props.agentId, true).catch(() => {})
       }
       else notify.error('更新内核失败', message)
       return
