@@ -150,18 +150,24 @@ describe('mihomo core actions', () => {
     expect(vi.mocked(confirm).mock.calls[0][0]).toContain('发现新版本 alpha-4d5e6f7（Alpha 通道），当前 alpha-0a1b2c3')
   })
 
-  it('lets the core check by itself when the server cannot reach GitHub', async () => {
-    const { actions } = render()
+  it('offers no update when the latest version cannot be checked', async () => {
+    const { wrapper, actions } = render()
     check({ error: '无法获取最新版本（连接 GitHub 超时）' })
-    vi.mocked(confirm).mockResolvedValueOnce(true)
-    vi.mocked(mihomoPanelApi.upgradeCore).mockRejectedValue({ response: { data: { message: 'update error: already using latest version v1.19.32' } } })
     await actions.checkUpdate()
-    expect(vi.mocked(confirm).mock.calls[0][0]).toContain('连接 GitHub 超时')
-    expect(vi.mocked(confirm).mock.calls[0][1]).toMatchObject({ title: '无法检查更新', confirmText: '仍然更新' })
+    expect(notify.error).toHaveBeenCalledWith('无法检查更新', '无法获取最新版本（连接 GitHub 超时）')
+    expect(confirm).not.toHaveBeenCalled()
+    expect(mihomoPanelApi.upgradeCore).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="core-update-dot"]').exists()).toBe(false)
+  })
+
+  it('treats the core saying it is already latest as success and refreshes the server cache', async () => {
+    const { actions } = render()
+    vi.mocked(mihomoPanelApi.upgradeCore).mockRejectedValue({ response: { data: { message: 'update error: already using latest version v1.19.32' } } })
+    vi.mocked(mihomoPanelApi.checkCoreUpdate).mockResolvedValue({ data: { data: {} } } as any)
+    await actions.upgradeCore()
     expect(notify.success).toHaveBeenCalledWith('已是最新版本', '当前版本 v1.19.32')
     expect(notify.error).not.toHaveBeenCalled()
-    // 刷新服务端缓存：手动检查 1 次 + 内核回复已是最新后 1 次
-    expect(vi.mocked(mihomoPanelApi.checkCoreUpdate).mock.calls).toEqual([['gw', true], ['gw', true]])
+    expect(vi.mocked(mihomoPanelApi.checkCoreUpdate).mock.calls).toEqual([['gw', true]])
   })
 
   it('reports a failed check without offering an update', async () => {

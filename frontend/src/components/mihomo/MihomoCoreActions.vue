@@ -120,7 +120,7 @@ async function offerUpdate(check: CoreUpdateCheck) {
   if (await confirm(`发现新版本 ${check.latest}${channelNote(check)}，当前 ${check.current}。\n\n${UPGRADE_NOTE}`, { title: '内核有更新', confirmText: '更新' })) await upgradeCore()
 }
 
-/** 手动检查跳过缓存：有新版才提供更新，查不到时可让内核自己检查 */
+/** 手动检查跳过缓存：只有检查到新版本才提供更新 */
 async function checkUpdate() {
   let check: CoreUpdateCheck | undefined
   checkSeq++
@@ -134,8 +134,9 @@ async function checkUpdate() {
   })
   if (!check) return
   update.value = check.has_update ? check : null
+  // 查不到最新版本就不提供更新：内核自更新只看版本是否相同，比发布页新的内核会被换回旧版
   if (check.error) {
-    if (await confirm(`${check.error}\n\n当前版本 ${check.current}${channelNote(check)}。仍可让 Mihomo 自己联网检查，有新版时直接更新；已是最新时会提示无需更新。\n\n${UPGRADE_NOTE}`, { title: '无法检查更新', confirmText: '仍然更新' })) await upgradeCore()
+    notify.error('无法检查更新', check.error)
     return
   }
   if (!check.has_update) {
