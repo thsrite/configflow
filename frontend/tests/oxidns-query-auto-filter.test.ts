@@ -28,7 +28,7 @@ async function choose(label: string, option: string) {
 beforeEach(async () => {
   vi.clearAllMocks()
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
-  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })))
+  vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: !String(query).includes('639px'), addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })))
   Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() })
   vi.mocked(oxidnsMonitorApi.overview).mockResolvedValue(response({
     success: true, recorders: ['queries', 'other'], core: { instance_id: 'core' }, metrics: {},

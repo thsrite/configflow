@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { Check, ChevronDown, Loader2 } from '@lucide/vue'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import { useScrollToCurrent } from '@/lib/scrollToCurrent'
 import { cn } from '@/lib/utils'
 
 /**
@@ -21,6 +22,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const open = ref(false)
+// 打开时滚到当前选中的选项
+useScrollToCurrent(open)
 
 watch(() => [props.disabled, props.loading], () => {
   if (props.disabled || props.loading) open.value = false
@@ -77,13 +80,13 @@ function choose(value: string) {
         <CommandList :aria-label="`${label} 可选策略`" class="max-h-[min(22rem,calc(var(--reka-popover-content-available-height)-3rem))] p-1">
           <CommandEmpty class="px-3 py-6 text-muted-foreground">没有匹配的策略</CommandEmpty>
           <CommandGroup v-if="builtin.length" heading="内置">
-            <CommandItem v-for="policy in builtin" :key="policy" :value="policy" :class="optionClass" @select="choose(policy)">
+            <CommandItem v-for="policy in builtin" :key="policy" :value="policy" :data-current="modelValue === policy || undefined" :class="optionClass" @select="choose(policy)">
               <Check class="size-4 shrink-0" :class="modelValue === policy ? 'text-primary-accent' : 'opacity-0'" aria-hidden="true" />
               <span class="min-w-0 flex-1 font-mono text-[12.5px]">{{ policy }}</span>
             </CommandItem>
           </CommandGroup>
           <CommandGroup v-if="groups.length" heading="策略组">
-            <CommandItem v-for="policy in groups" :key="policy" :value="policy" :class="optionClass" @select="choose(policy)">
+            <CommandItem v-for="policy in groups" :key="policy" :value="policy" :data-current="modelValue === policy || undefined" :class="optionClass" @select="choose(policy)">
               <Check class="size-4 shrink-0" :class="modelValue === policy ? 'text-primary-accent' : 'opacity-0'" aria-hidden="true" />
               <span class="min-w-0 flex-1 break-all text-sm">{{ policy }}</span>
               <span v-if="!policies.includes(policy)" class="shrink-0 text-xs text-warning-accent">已不存在</span>

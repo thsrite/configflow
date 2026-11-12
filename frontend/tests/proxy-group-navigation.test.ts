@@ -42,7 +42,8 @@ function group(id: string, overrides: Partial<ProxyGroup> = {}): ProxyGroup {
 beforeEach(() => {
   vi.resetAllMocks()
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+  // 平板布局：手机断点（639px）以外的查询都命中
+  vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: !String(query).includes('639px'), addEventListener: vi.fn(), removeEventListener: vi.fn() })))
   scrollDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
   Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: vi.fn() })
   sessionStorage.clear()

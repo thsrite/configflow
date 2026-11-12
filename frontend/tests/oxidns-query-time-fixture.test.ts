@@ -106,7 +106,7 @@ beforeEach(() => {
   // Separate monitor tests verify advancement when the browser clock changes.
   vi.spyOn(performance, 'now').mockReturnValue(0)
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
-  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })))
+  vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: !String(query).includes('639px'), addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })))
   Object.defineProperty(document, 'hidden', { configurable: true, value: false })
 })
 afterEach(() => {

@@ -45,7 +45,7 @@ beforeEach(() => {
   forgetOxiDNSRateSamples()
   Object.defineProperty(document, 'hidden', { configurable: true, value: false })
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
-  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })))
+  vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: !String(query).includes('639px'), addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })))
   vi.mocked(oxidnsMonitorApi.overview).mockResolvedValue(response(snapshot()))
   vi.mocked(oxidnsMonitorApi.queries).mockResolvedValue(response(records()))
   vi.mocked(oxidnsMonitorApi.query).mockResolvedValue(response({ success: true, recorder: 'queries', record: { ...queryRecord, steps: [] } }))

@@ -131,24 +131,25 @@
                 <tbody role="rowgroup">
                   <tr v-for="row in visibleRows" :key="row.ip" role="row" :data-client-ip="row.ip" @focusin="hold(row.ip)">
                     <td role="cell">
-                      <Input v-model="row.name" :aria-label="row.ip + ' 名称'" maxlength="80" :placeholder="infoOf(row.ip)?.hostname || '设备或网段名称'" class="min-h-11 min-w-36 max-sm:min-w-0"
+                      <Input v-model="row.name" :aria-label="row.ip + ' 名称'" maxlength="80" :placeholder="infoOf(row.ip)?.hostname || '设备或网段名称'" class="client-device-name min-h-11 min-w-36 max-sm:min-w-0"
                         :readonly="previewing" :disabled="publishing || fixing" @blur="save(row.ip)" @keydown.enter.prevent="save(row.ip)" />
-                      <p v-if="infoOf(row.ip)?.mac" class="mb-0 mt-1 font-mono text-[11px] text-muted-foreground">{{ infoOf(row.ip)!.mac }}</p>
+                      <p v-if="infoOf(row.ip)?.mac" class="mb-0 mt-1 font-mono text-[11px] text-muted-foreground max-sm:hidden">{{ infoOf(row.ip)!.mac }}</p>
                     </td>
                     <td role="cell">
-                      <span class="whitespace-nowrap font-mono text-xs max-sm:text-[13px] max-sm:font-medium">{{ row.ip }}</span>
+                      <span class="whitespace-nowrap font-mono text-xs max-sm:text-[12px] max-sm:text-muted-foreground">{{ row.ip }}</span>
+                      <span v-if="infoOf(row.ip)?.mac" class="ml-1.5 truncate font-mono text-[11px] text-muted-foreground sm:hidden">{{ infoOf(row.ip)!.mac }}</span>
                       <span v-if="!saved(row.ip)" class="chip ml-2">未保存</span>
                       <ClientSightingChips :sources="infoOf(row.ip)?.sources" />
                     </td>
-                    <td role="cell" data-label="状态">
+                    <td role="cell" data-label="状态" :class="['unknown', 'network'].includes(presenceOf(row.ip)) && !discovering && infoOf(row.ip)?.fixed_ip?.status !== 'static' && 'client-device-status-unknown'">
                       <StatusDot v-bind="statusOf(row.ip)" />
                       <span v-if="!fromSetup && infoOf(row.ip)?.fixed_ip?.status === 'static'" class="chip chip-ok ml-2" :title="infoOf(row.ip)?.fixed_ip?.owned ? '由 ConfigFlow 固定 IP' : '路由器已有静态 DHCP 绑定'">已固定</span>
-                      <p v-if="hintOf(row.ip)" class="mb-0 mt-0.5 text-[11.5px] text-muted-foreground">{{ hintOf(row.ip) }}</p>
+                      <p v-if="hintOf(row.ip)" class="mb-0 mt-0.5 text-[11.5px] text-muted-foreground max-sm:hidden">{{ hintOf(row.ip) }}</p>
                     </td>
                     <td role="cell" data-label="DNS 策略">
                       <div class="flex flex-wrap items-center gap-2">
                         <Select :model-value="row.mode || 'default'" :disabled="previewing || publishing || fixing || !policyEditable" @update:model-value="value => setMode(row, String(value))">
-                          <SelectTrigger :aria-label="row.ip + ' DNS 策略'" class="min-h-11 w-36 max-sm:w-full"><SelectValue /></SelectTrigger>
+                          <SelectTrigger :aria-label="row.ip + ' DNS 策略'" class="client-device-mode min-h-11 w-36"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="default">默认</SelectItem>
                             <SelectItem value="smart">智能分流</SelectItem>
@@ -168,7 +169,7 @@
                         <span v-else-if="failures[row.ip]" class="flex items-center gap-1 text-xs text-destructive-accent" role="alert">
                           {{ failures[row.ip] }}<Button variant="ghost" class="min-h-11 px-2 text-xs" @click="save(row.ip)">重试</Button>
                         </span>
-                        <Button variant="ghost" size="icon" class="size-11" :aria-label="'移除 ' + row.ip" :disabled="previewing || publishing || fixing || (!policyEditable && !!saved(row.ip)?.mode)" @click="remove(row)"><Trash2 class="size-4" /></Button>
+                        <Button variant="ghost" size="icon" class="client-device-remove size-11" :aria-label="'移除 ' + row.ip" :disabled="previewing || publishing || fixing || (!policyEditable && !!saved(row.ip)?.mode)" @click="remove(row)"><Trash2 class="size-4" /></Button>
                       </div>
                     </td>
                   </tr>

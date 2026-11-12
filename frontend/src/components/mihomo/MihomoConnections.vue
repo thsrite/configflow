@@ -1,6 +1,39 @@
 <template>
   <div ref="panelElement" class="min-w-0 mihomo-connections">
-    <div class="mb-4 min-w-0 rounded-xl border border-border bg-card">
+    <!-- 手机：两行工具栏。排序、分组和筛选收进一个底部面板 -->
+    <div v-if="compact" class="mb-2 grid min-w-0 gap-2" data-mobile-toolbar>
+      <div class="flex min-w-0 items-center gap-2">
+        <div class="relative min-w-0 flex-1">
+          <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <Input v-model="search" class="min-h-11 bg-secondary pl-9 text-[13px]" placeholder="搜索主机、IP、备注、规则" aria-label="搜索连接" />
+        </div>
+        <Button variant="outline" size="icon" class="relative size-11 shrink-0" :class="(filterCount || settings.groupBy) && 'border-primary-accent text-primary-accent'"
+          :aria-label="`排序与筛选${filterCount ? `，${filterCount} 项条件` : ''}`" data-mobile-filter @click="filterSheet = true">
+          <ListFilter class="size-4" />
+          <span v-if="filterCount" class="num absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] text-primary-foreground">{{ filterCount }}</span>
+        </Button>
+      </div>
+      <div class="flex min-w-0 items-center gap-1">
+        <Segmented v-model="view" :options="viewOptions" label="连接状态" class="min-w-0 overflow-x-auto" />
+        <label class="ml-auto flex min-h-11 shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+          <Switch v-model="live" aria-label="每 2 秒刷新连接" />实时
+        </label>
+        <Button v-if="view === 'closed'" variant="ghost" size="icon" class="size-11 shrink-0" aria-label="清空记录" title="清空记录" :disabled="!closed.length" @click="closed = []">
+          <Eraser class="size-4" />
+        </Button>
+        <Button v-else variant="ghost" size="icon" class="size-11 shrink-0 text-destructive-accent" :aria-label="filtering ? '断开筛选结果' : '全部断开'" :title="filtering ? '断开筛选结果' : '全部断开'"
+          :disabled="!activeMatches.length || closingAll" @click="closeAll">
+          <Loader2 v-if="closingAll" class="size-4 animate-spin" /><X v-else class="size-4" />
+        </Button>
+      </div>
+      <div class="flex min-w-0 items-center justify-between gap-2 px-0.5 text-xs text-muted-foreground" data-mobile-summary>
+        <span class="min-w-0 truncate">
+          <template v-if="settings.groupBy">按{{ columnLabel(settings.groupBy) }}分组 · </template>{{ sortLabel }}{{ settings.direction === 'asc' ? '↑' : '↓' }} · {{ filtering ? '匹配' : '共' }} <span class="num text-foreground">{{ rows.length }}</span> 条
+        </span>
+        <span v-if="view !== 'closed'" class="num shrink-0">↓ {{ speedText(totalSpeed.down) }} · ↑ {{ speedText(totalSpeed.up) }}</span>
+      </div>
+    </div>
+    <div v-else class="mb-4 min-w-0 rounded-xl border border-border bg-card">
       <div class="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-3 py-2">
         <Segmented v-model="view" :options="viewOptions" label="连接状态" class="max-w-full overflow-x-auto" />
         <div class="ml-auto flex flex-wrap items-center gap-2">
@@ -110,6 +143,50 @@
       <EmptyState :icon="Cable" :title="filtering ? '没有匹配的连接' : view === 'closed' ? '暂无已关闭的连接' : '当前没有活动连接'"
         :description="view === 'closed' && !filtering ? '打开本页后关闭的连接会记录在这里（最近 500 条），切换设备或刷新页面后清空。' : undefined" />
     </SectionCard>
+    <!-- 手机：每条两行。上面目标和下载速度，下面设备、规则、策略和时长；点一条看详情 -->
+    <div v-else-if="compact" class="min-w-0 overflow-hidden rounded-xl border border-border bg-card" data-mobile-connections>
+      <ol class="m-0 list-none p-0" aria-label="连接列表，点一条查看详情和操作">
+        <template v-for="entry in visibleEntries" :key="entry.id">
+          <li v-if="entry.kind === 'group'" class="border-b border-border bg-secondary/60 last:border-b-0">
+            <button type="button" class="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-[13px]" :aria-expanded="expanded.has(entry.group.id)"
+              :aria-label="(expanded.has(entry.group.id) ? '收起 ' : '展开 ') + entry.group.label + '（' + entry.group.members.length + ' 条连接）'" @click="toggleExpanded(entry.group.id)">
+              <ChevronDown v-if="expanded.has(entry.group.id)" class="size-4 shrink-0 text-muted-foreground" /><ChevronRight v-else class="size-4 shrink-0 text-muted-foreground" />
+              <span class="min-w-0 flex-1 truncate font-medium">{{ entry.group.label }}</span>
+              <span class="num shrink-0 text-xs text-muted-foreground">{{ entry.group.members.length }} 条</span>
+              <span class="num shrink-0 text-xs" :class="entry.group.downSpeed > 0 ? 'text-primary-accent' : 'text-muted-foreground'">↓{{ speedText(entry.group.downSpeed) }}</span>
+            </button>
+          </li>
+          <li v-else-if="entry.kind === 'more'" class="border-b border-border last:border-b-0">
+            <Button variant="ghost" class="min-h-11 w-full" @click="showMore(entry.group.id)">继续显示本组 · 剩余 {{ entry.group.members.length - memberLimit(entry.group.id) }} 条</Button>
+          </li>
+          <li v-else class="border-b border-border last:border-b-0" :data-connection-id="entry.row.id">
+            <button type="button" class="mobile-connection" :class="{ 'pl-6': entry.parent, 'opacity-60': entry.row.closedAt }" :aria-label="'查看 ' + entry.row.target + ' 的连接详情'" @click="selectedId = entry.row.id">
+              <span class="flex min-w-0 items-baseline gap-2">
+                <span class="min-w-0 flex-1 truncate font-mono text-[13.5px]">{{ hostOf(entry.row) }}<span class="text-muted-foreground">{{ portOf(entry.row) }}</span></span>
+                <span v-if="entry.row.closedAt" class="shrink-0 text-xs text-muted-foreground">已关闭</span>
+                <span v-else-if="entry.row.downSpeed > 0" class="num shrink-0 text-xs text-primary-accent">↓{{ speedText(entry.row.downSpeed) }}</span>
+                <span v-else class="shrink-0 text-xs text-muted-foreground">空闲</span>
+              </span>
+              <span class="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                <span class="max-w-[34%] shrink-0 truncate" :class="{ 'font-mono': !sourceName(entry.row) }">{{ sourceName(entry.row) || sourceLabel(entry.row) }}</span>
+                <span aria-hidden="true">·</span>
+                <span class="min-w-0 shrink truncate">{{ entry.row.rulePayload || entry.row.rule }}</span>
+                <span :class="cn('mobile-policy', `policy-${policyKind(entry.row)}`)">{{ policyText(entry.row) }}</span>
+                <span class="num ml-auto shrink-0">{{ durationText(entry.row.start, entry.row.closedAt) }}</span>
+              </span>
+            </button>
+          </li>
+        </template>
+      </ol>
+      <div v-if="pageCount > 1" class="flex items-center justify-between gap-2 border-t border-border px-3 py-1 text-xs text-muted-foreground">
+        <span class="num">{{ (page - 1) * PAGE_SIZE + 1 }}–{{ Math.min(page * PAGE_SIZE, pageTotal) }}{{ settings.groupBy ? ' 组' : ' 条' }}</span>
+        <div class="flex items-center gap-1">
+          <Button variant="ghost" size="icon" class="size-11" aria-label="上一页连接" :disabled="page === 1" @click="page--"><ChevronLeft class="size-4" /></Button>
+          <span class="num px-1">{{ page }} / {{ pageCount }}</span>
+          <Button variant="ghost" size="icon" class="size-11" aria-label="下一页连接" :disabled="page === pageCount" @click="page++"><ChevronRight class="size-4" /></Button>
+        </div>
+      </div>
+    </div>
     <div v-else class="connection-table-frame min-w-0 overflow-hidden rounded-xl border border-border bg-card">
       <div class="connection-table-scroll max-h-[min(65dvh,640px)] overflow-y-auto overscroll-contain" tabindex="0" role="region" aria-label="连接列表，点击连接查看完整详情">
         <table class="cf-table connection-table table-fixed">
@@ -182,14 +259,57 @@
     </div>
     <DeviceNoteDialog v-if="noteIP" :key="agentId + noteIP" :agent-id="agentId" :ip="noteIP" @close="noteIP = ''" @saved="applyNotes" />
     <ConnectionRuleDialog v-if="ruleAction" :key="agentId" :agent-id="agentId" :values="ruleAction.values" :target="ruleAction.target" @close="ruleAction = null" />
-    <MihomoConnectionDetail :agent-id="agentId" :row="selected" :source-name="selected ? sourceName(selected) : ''" @close="selectedId = ''" @proxy-changed="load" />
+    <MihomoConnectionDetail :agent-id="agentId" :row="selected" :source-name="selected ? sourceName(selected) : ''" @close="selectedId = ''" @proxy-changed="load"
+      @edit-note="row => { selectedId = ''; noteIP = deviceAddress(row.metadata.sourceIP) }" @add-rule="(row, target) => { selectedId = ''; openRule(row, target) }" @disconnect="row => { closeOne(row.id); selectedId = '' }" />
+    <Sheet v-if="compact" v-model:open="filterSheet">
+      <SheetContent side="bottom" :show-close-button="false" class="max-h-[85dvh] gap-0 rounded-t-2xl border-border bg-card pb-[env(safe-area-inset-bottom)] shadow-overlay">
+        <SheetHeader class="shrink-0 flex-row items-center justify-between gap-2 border-b border-border px-4 py-2">
+          <SheetTitle class="text-base">排序与筛选</SheetTitle>
+          <SheetDescription class="sr-only">选择排序、分组和筛选条件</SheetDescription>
+          <div class="flex shrink-0 items-center gap-1">
+            <Button variant="ghost" class="min-h-11 px-2" :disabled="!filtering && !settings.groupBy" @click="clearFilters(); setGroup('none')">清除</Button>
+            <SheetClose as-child><Button variant="secondary" class="min-h-11 px-3">完成</Button></SheetClose>
+          </div>
+        </SheetHeader>
+        <div class="grid min-h-0 gap-4 overflow-y-auto overscroll-contain px-4 pt-3 pb-5">
+          <FormField label="排序" html-for="mobile-connection-sort">
+            <div class="flex gap-2">
+              <Select :model-value="settings.sort" @update:model-value="value => changeSort(String(value) as ConnectionSort)">
+                <SelectTrigger id="mobile-connection-sort" class="min-h-11 min-w-0 flex-1"><SelectValue /></SelectTrigger>
+                <SelectContent class="max-h-80">
+                  <SelectItem v-for="option in CONNECTION_SORT_OPTIONS" :key="option.key" :value="option.key">{{ option.label }}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" class="min-h-11 shrink-0 px-3" @click="settings.direction = settings.direction === 'asc' ? 'desc' : 'asc'">
+                <ArrowUp v-if="settings.direction === 'asc'" class="size-4" /><ArrowDown v-else class="size-4" />{{ settings.direction === 'asc' ? '升序' : '降序' }}
+              </Button>
+            </div>
+          </FormField>
+          <FormField label="分组" html-for="mobile-connection-group">
+            <Select :model-value="settings.groupBy || 'none'" @update:model-value="value => setGroup(String(value))">
+              <SelectTrigger id="mobile-connection-group" class="min-h-11 w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">不分组</SelectItem>
+                <SelectItem v-for="field in CONNECTION_GROUP_FIELDS" :key="field" :value="field">按{{ columnLabel(field) }}分组</SelectItem>
+              </SelectContent>
+            </Select>
+          </FormField>
+          <FormField v-for="group in filterGroups" :key="group.key" :label="group.label" :html-for="`mobile-connection-filter-${group.key}`">
+            <MultiSelect v-model="filters[group.key]" :trigger-id="`mobile-connection-filter-${group.key}`" :options="group.options" :placeholder="`全部${group.label}`" :search-placeholder="`搜索${group.label}…`" :max-visible="1" />
+          </FormField>
+          <FormField label="隐藏匹配的连接" html-for="mobile-connection-exclude" help="符合这里内容的连接会从结果中隐藏。支持正则表达式，留空时不隐藏。">
+            <Input id="mobile-connection-exclude" v-model="filters.exclude" placeholder="例如：测速域名或进程名" class="min-h-11" />
+          </FormField>
+        </div>
+      </SheetContent>
+    </Sheet>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useElementSize, useMediaQuery } from '@vueuse/core'
-import { ChevronDown, Layers, ZoomIn, ZoomOut, ArrowDown, ArrowUp, ArrowUpDown, Cable, ChevronLeft, ChevronRight, Columns3, Ellipsis, Eraser, ListFilter, Loader2, Pencil, TriangleAlert, X } from '@lucide/vue'
+import { ChevronDown, Layers, ZoomIn, ZoomOut, ArrowDown, ArrowUp, ArrowUpDown, Cable, ChevronLeft, ChevronRight, Columns3, Ellipsis, Eraser, ListFilter, Loader2, Pencil, Search, TriangleAlert, X } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -198,6 +318,8 @@ import { PopoverClose } from 'reka-ui'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { cn } from '@/lib/utils'
 import Toolbar from '@/components/common/Toolbar.vue'
 import Segmented from '@/components/common/Segmented.vue'
 import SectionCard from '@/components/common/SectionCard.vue'
@@ -240,6 +362,9 @@ const { width: measuredWidth } = useElementSize(panelElement)
 const panelWidth = ref(0)
 watch(measuredWidth, width => { if (width) panelWidth.value = width }, { immediate: true })
 const touchPointer = useMediaQuery('(pointer: coarse)')
+// 手机宽度用两行列表和精简工具栏；更宽时仍是表格
+const compact = useMediaQuery('(max-width: 639px)')
+const filterSheet = ref(false)
 const actionsWidth = computed(() => touchPointer.value ? 100 : 76)
 
 const notes = ref<Record<string, string>>({})
@@ -409,6 +534,25 @@ const viewOptions = computed<Array<{ value: ViewKey; label: string }>>(() => [
   { value: 'closed', label: `已关闭 (${closed.value.length})` },
   { value: 'all', label: '全部' }
 ])
+const sortLabel = computed(() => CONNECTION_SORT_OPTIONS.find(option => option.key === settings.value.sort)?.label || '')
+const totalSpeed = computed(() => rows.value.reduce((sum, row) => row.closedAt ? sum : { up: sum.up + row.upSpeed, down: sum.down + row.downSpeed }, { up: 0, down: 0 }))
+function hostOf(row: ConnectionRow) {
+  const index = row.target.lastIndexOf(':')
+  return index > 0 ? row.target.slice(0, index) : row.target
+}
+function portOf(row: ConnectionRow) {
+  const index = row.target.lastIndexOf(':')
+  return index > 0 ? row.target.slice(index) : ''
+}
+/** 策略组 · 出口节点；单层时只写一个 */
+function policyText(row: ConnectionRow) {
+  const node = row.chains[0] || '', group = row.chains[row.chains.length - 1] || ''
+  return !group || group === node ? node || '—' : `${group} · ${node}`
+}
+function policyKind(row: ConnectionRow) {
+  const node = (row.chains[0] || '').toUpperCase()
+  return node === 'DIRECT' ? 'direct' : node.startsWith('REJECT') ? 'reject' : 'proxy'
+}
 const selected = computed(() => selectedId.value
   ? activeRows.value.find(row => row.id === selectedId.value) || closed.value.find(row => row.id === selectedId.value) || null
   : null)
@@ -600,6 +744,14 @@ onUnmounted(() => { notesEpoch++ })
   .connection-sort, .connection-host, .connection-group-label { min-width: 44px; min-height: 44px; }
   .connection-table .connection-actions { width: 100px; }
 }
+/* 手机两行列表 */
+.mobile-connection { display: block; width: 100%; min-height: 52px; padding: 8px 12px; text-align: left; }
+.mobile-connection:active { background: var(--accent); }
+.mobile-connection:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.mobile-policy { min-width: 0; max-width: 46%; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 999px; padding: 0 8px; font-size: 11.5px; line-height: 1.6; }
+.policy-proxy { background: var(--primary-soft); color: var(--primary-accent); }
+.policy-direct { background: var(--success-soft); color: var(--success-accent); }
+.policy-reject { background: var(--destructive-soft); color: var(--destructive-accent); }
 /* The same records and actions reflow on narrow panels, with touch-friendly targets. */
 @container (max-width: 740px) {
   .connection-table, .connection-table tbody { display: block; }

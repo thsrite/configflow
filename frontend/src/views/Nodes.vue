@@ -155,7 +155,7 @@
           :data-reorder-item="node.readonly ? undefined : ''"
           :data-state="!node.readonly && selectedNodeIds.has(node.id) ? 'selected' : undefined"
           :class="cn(!node.enabled && 'opacity-55', !node.readonly && !reorder.active.value && 'cursor-pointer')"
-          @click="handleNodeSelectionClick(node, $event)"
+          @click="handleNodeRowClick(node, $event)"
         >
           <TableCell v-if="reorder.active.value">
             <DragHandle
@@ -264,11 +264,11 @@
       </TableBody>
     </DataTableShell>
 
-    <!-- ===== 延迟磁贴（默认） ===== -->
+    <!-- ===== 延迟磁贴（默认）；手机（< 640px）由下方 scoped 样式排成两行紧凑列表 ===== -->
     <div
       v-else
       ref="nodesContainer"
-      class="grid grid-cols-[repeat(auto-fill,minmax(212px,1fr))] gap-2.5 max-[420px]:grid-cols-1"
+      class="node-tiles grid grid-cols-[repeat(auto-fill,minmax(212px,1fr))] gap-2.5 max-[420px]:grid-cols-1"
     >
       <div
         v-for="(node, cfIndex) in tileNodes"
@@ -279,6 +279,7 @@
         :data-tile="cfIndex"
         :aria-busy="testingKeys.has(latencyKey(node)) || undefined"
         :data-reorder-item="node.readonly ? undefined : ''"
+        :data-selected="!node.readonly && selectedNodeIds.has(node.id) ? '' : undefined"
         :class="cn(
           'node-tile cf-cv-row [--cf-cv-row-h:85px] max-md:[--cf-cv-row-h:101px] group relative overflow-hidden rounded-[14px] border px-[13px] pt-3 pb-2.5 transition-[transform,border-color,opacity] duration-300 ease-(--ease-flow) hover:-translate-y-0.5',
           !node.readonly && selectedNodeIds.has(node.id) ? 'border-primary-accent/55 bg-primary-soft/40 hover:border-primary-accent/70' : 'border-border bg-card/90 hover:border-border-strong',
@@ -286,11 +287,12 @@
           !node.enabled && 'opacity-55',
           flashKeys.has(latencyKey(node)) && 'is-flash'
         )"
-        @click="handleNodeSelectionClick(node, $event)"
+        @click="handleNodeRowClick(node, $event)"
       >
         <header class="flex items-center gap-2">
           <DragHandle
             v-if="reorder.active.value"
+            class="node-tile-check"
             :label="node.name || node.id"
             :index="cfIndex"
             :total="nodes.length"
@@ -302,16 +304,16 @@
           />
           <Checkbox
             v-else-if="!node.readonly"
-            class="cf-reorder-mute"
+            class="node-tile-check cf-reorder-mute"
             :model-value="selectedNodeIds.has(node.id)"
             :aria-label="`选择 ${node.name}`"
             @update:model-value="toggleNodeSelection(node.id)"
           />
-          <span class="min-w-0 flex-1 truncate text-[12.5px] font-medium" :title="node.remark ? `${node.name} · ${node.remark}` : node.name">
+          <span class="node-tile-name min-w-0 flex-1 truncate text-[12.5px] font-medium" :title="node.remark ? `${node.name} · ${node.remark}` : node.name">
             {{ node.name }}
           </span>
           <Button
-            v-if="node.readonly"
+            v-if="node.readonly && !isPhone"
             variant="ghost"
             size="icon-sm"
             class="-my-1 -mr-1.5 size-7 shrink-0 opacity-60 group-hover:opacity-100"
@@ -323,7 +325,8 @@
             <Zap class="size-3.5" />
           </Button>
           <template v-else-if="!reorder.active.value">
-          <!-- 高频操作直接放在卡片上，悬停显示；其余收进「更多」 -->
+          <!-- 高频操作直接放在卡片上，悬停显示；其余收进「更多」。手机上全部收进「更多」 -->
+          <template v-if="!isPhone">
           <Button
             variant="ghost"
             size="icon-sm"
@@ -348,62 +351,82 @@
           >
             <Pencil class="size-3.5" />
           </Button>
+          </template>
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
               <Button
                 variant="ghost"
                 size="icon-sm"
-                class="cf-reorder-mute -my-1 -mr-1.5 size-7 shrink-0 opacity-60 group-hover:opacity-100"
+                class="node-tile-menu cf-reorder-mute -my-1 -mr-1.5 size-7 shrink-0 opacity-60 group-hover:opacity-100"
                 :aria-label="`${node.name} 的更多操作`"
               >
                 <MoreHorizontal class="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" class="glass-strong min-w-[168px]">
-              <DropdownMenuItem @select="testOne(node)">
+              <template v-if="isPhone && !node.readonly">
+                <DropdownMenuItem @select="editNode(node)">
+                  <Pencil class="size-4" />
+                  编辑
+                </DropdownMenuItem>
+                <DropdownMenuItem :disabled="savingStatus[node.id]" @select="handleToggle(node)">
+                  <component :is="node.enabled ? EyeOff : Eye" class="size-4" />
+                  {{ node.enabled ? '停用' : '启用' }}
+                </DropdownMenuItem>
+              </template>
+              <DropdownMenuItem :disabled="node.readonly && testing" @select="testOne(node)">
                 <Zap class="size-4" />
                 单独测速
               </DropdownMenuItem>
-              <DropdownMenuItem @select="viewingNode = node">
-                <Link2 class="size-4" />
-                节点字符串
-              </DropdownMenuItem>
-              <DropdownMenuItem @select="toggleNodeSelection(node.id)">
-                <CheckSquare class="size-4" />
-                {{ selectedNodeIds.has(node.id) ? '取消选择' : '选择' }}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" @select="deleteNode(node)">
-                <Trash2 class="size-4" />
-                删除
-              </DropdownMenuItem>
+              <template v-if="!node.readonly">
+                <DropdownMenuItem @select="viewingNode = node">
+                  <Link2 class="size-4" />
+                  节点字符串
+                </DropdownMenuItem>
+                <DropdownMenuItem @select="toggleNodeSelection(node.id)">
+                  <CheckSquare class="size-4" />
+                  {{ selectedNodeIds.has(node.id) ? '取消选择' : '选择' }}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" @select="deleteNode(node)">
+                  <Trash2 class="size-4" />
+                  删除
+                </DropdownMenuItem>
+              </template>
             </DropdownMenuContent>
           </DropdownMenu>
           </template>
         </header>
 
-        <div class="cf-reorder-mute mt-3 flex items-end justify-between gap-2">
-          <span :title="testedAtLabel(node)" :class="cn('font-display text-[26px] leading-none font-medium tracking-[-0.02em]', latencyTone(node))">
-            <span v-if="testingKeys.has(latencyKey(node))" class="inline-flex items-center gap-1.5 font-sans text-[14px] leading-6 tracking-normal">
+        <div class="node-tile-body cf-reorder-mute mt-3 flex items-end justify-between gap-2">
+          <span :title="testedAtLabel(node)" :class="cn('node-tile-latency font-display text-[26px] leading-none font-medium tracking-[-0.02em]', latencyTone(node))">
+            <span v-if="testingKeys.has(latencyKey(node))" class="node-tile-latency-note inline-flex items-center gap-1.5 font-sans text-[14px] leading-6 tracking-normal">
               <Loader2 v-if="activeTestingKeys.has(latencyKey(node))" class="size-4 shrink-0 animate-spin" aria-hidden="true" />
               {{ activeTestingKeys.has(latencyKey(node)) ? '正在测速…' : '等待测速' }}
             </span>
-            <template v-else-if="unresolvedKeys.has(latencyKey(node))"><span class="text-[18px] text-muted-foreground" title="节点已删除或停用，请刷新后重试">不可用</span></template>
-            <template v-else-if="latencyOf(node) === undefined"><span class="text-[18px] text-muted-foreground">未测速</span></template>
+            <template v-else-if="unresolvedKeys.has(latencyKey(node))"><span class="node-tile-latency-note text-[18px] text-muted-foreground" title="节点已删除或停用，请刷新后重试">不可用</span></template>
+            <template v-else-if="latencyOf(node) === undefined"><span class="node-tile-latency-note text-[18px] text-muted-foreground">未测速</span></template>
             <template v-else-if="latencyOf(node) === null">{{ failureLabel(node) }}</template>
             <template v-else>{{ latencyOf(node) }}<small class="ml-0.5 font-mono text-[10.5px] text-muted-foreground">ms</small></template>
           </span>
-          <span class="min-w-0 text-right font-mono text-[10.5px] leading-snug text-muted-foreground">
+          <!-- 手机第二行：协议 · 来源 · 状态，整行截断，停用时附「已停用」 -->
+          <span v-if="isPhone" class="node-tile-meta" data-node-meta>
+            <span class="shrink-0"><template v-if="regionOf(node.name).code !== '其他'">{{ regionOf(node.name).code }} · </template>{{ nodeProtocol(node) }}</span>
+            <span aria-hidden="true">·</span>
+            <span class="min-w-0 truncate">{{ node.subscription_name || '手动添加' }}</span>
+            <span v-if="!node.enabled" class="node-tile-chip chip">已停用</span>
+          </span>
+          <span v-else class="min-w-0 text-right font-mono text-[10.5px] leading-snug text-muted-foreground">
             <template v-if="regionOf(node.name).code !== '其他'">{{ regionOf(node.name).code }} · </template>{{ nodeProtocol(node) }}<br />
             <span class="block max-w-[110px] truncate">{{ node.subscription_name || '手动添加' }}</span>
           </span>
         </div>
 
-        <p v-if="!testingKeys.has(latencyKey(node)) && latencyMap[latencyKey(node)]?.error" class="mt-2 break-words text-xs text-destructive-accent">
+        <p v-if="!testingKeys.has(latencyKey(node)) && latencyMap[latencyKey(node)]?.error" class="node-tile-error mt-2 break-words text-xs text-destructive-accent">
           {{ latencyMap[latencyKey(node)]?.error }}
         </p>
         <!-- 最近 14 次代理延迟；失败画一截红色短柱 -->
-        <div class="cf-reorder-mute mt-2 flex h-4 items-end gap-0.5" aria-hidden="true">
+        <div class="node-tile-history cf-reorder-mute mt-2 flex h-4 items-end gap-0.5" aria-hidden="true">
           <i
             v-for="(bar, i) in historyBars(node)"
             :key="i"
@@ -776,7 +799,8 @@ const toggleNodeSelection = (nodeId: string) => {
   selectedNodeIds.value = new Set(selectedNodeIds.value)
 }
 
-const handleNodeSelectionClick = (node: { id: string; readonly?: boolean }, event: MouseEvent) => {
+// 点整行（不含复选框、按钮等控件）：桌面切换选择，手机打开编辑（行内不再放编辑按钮）
+const handleNodeRowClick = (node: ProxyNode & { readonly?: boolean }, event: MouseEvent) => {
   if (node.readonly || reorder.active.value || event.defaultPrevented) return
   const target = event.target
   // Child controls retain their own action, including clicks on their icons.
@@ -785,7 +809,8 @@ const handleNodeSelectionClick = (node: { id: string; readonly?: boolean }, even
   const selection = window.getSelection()
   if (selection && !selection.isCollapsed && event.currentTarget instanceof Element
     && (event.currentTarget.contains(selection.anchorNode) || event.currentTarget.contains(selection.focusNode))) return
-  toggleNodeSelection(node.id)
+  if (isPhone.value) editNode(node)
+  else toggleNodeSelection(node.id)
 }
 
 // 切换节点字符串展开/收起
@@ -1570,6 +1595,171 @@ onUnmounted(() => {
   }
   100% {
     box-shadow: 0 0 0 12px transparent;
+  }
+}
+
+/* ---------- 手机（< 640px）：节点排成两行紧凑列表 ----------
+ * 沿用磁贴的 DOM，header 与延迟区用 display: contents 拆开，按网格重排：
+ *   复选框 | 名称             | 延迟
+ *   复选框 | 协议 · 来源 · 状态 | ⋯
+ *          | 失败原因（有才显示，单行截断）
+ * 行高约 61px（上下内边距 10px + 20px 名称行 + 2px 行距 + 18px 次要行 + 1px 分隔线）。
+ * 这里的样式不在 @layer 里，能直接盖过 Tailwind 工具类，包括 Button 自带的
+ * max-md:min-h-11 / min-w-11（不重置的话每行的按钮会把行撑到 44px 一行）。
+ */
+@media (max-width: 639px) {
+  .node-tiles {
+    display: block;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--card);
+  }
+
+  .node-tile {
+    /* 离屏行的估高：内容高度，不含内边距和分隔线 */
+    --cf-cv-row-h: 40px;
+    display: grid;
+    grid-template-columns: minmax(16px, auto) minmax(0, 1fr) auto;
+    grid-template-areas:
+      'check name latency'
+      'check meta menu';
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 2px;
+    padding: 10px 12px;
+    border-width: 0 0 1px;
+    border-color: var(--border);
+    border-radius: 0;
+    /* Tailwind v4 的 hover:-translate-y-0.5 用的是 translate 属性 */
+    translate: none;
+  }
+
+  .node-tile:last-child {
+    border-bottom-width: 0;
+  }
+
+  .node-tile:not([data-selected]) {
+    background-color: transparent;
+  }
+
+  .node-tile.is-flash {
+    animation-name: row-flash;
+  }
+
+  .node-tile > header,
+  .node-tile > .node-tile-body {
+    display: contents;
+  }
+
+  /* 复选框、按钮是子组件，根元素未必带本页的 scoped 属性，用 :deep 选中 */
+  .node-tile :deep(.node-tile-check) {
+    grid-area: check;
+    position: relative;
+  }
+
+  /* 复选框只有 16px，透明扩展到 44px 点击区 */
+  .node-tile :deep(.node-tile-check[data-slot='checkbox'])::before {
+    content: '';
+    position: absolute;
+    inset: -14px;
+  }
+
+  .node-tile-name {
+    grid-area: name;
+    font-size: 14px;
+    line-height: 20px;
+  }
+
+  .node-tile-latency {
+    grid-area: latency;
+    justify-self: end;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 20px;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+
+  /* 小号「ms」不撑高行盒 */
+  .node-tile-latency small {
+    line-height: 1;
+  }
+
+  .node-tile-latency-note {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 20px;
+  }
+
+  .node-tile-meta {
+    grid-area: meta;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--muted-foreground);
+    white-space: nowrap;
+  }
+
+  .node-tile-chip {
+    flex-shrink: 0;
+    height: 18px;
+    margin-left: 2px;
+    padding: 0 6px;
+    font-size: 11px;
+  }
+
+  /* 排序时左侧手柄占宽，次要行放不下「已停用」，靠变暗区分即可 */
+  .cf-reordering .node-tile-chip {
+    display: none;
+  }
+
+  /* 视觉 24px，负外边距不撑高次要行；透明 ::before 补足 44px 点击区 */
+  .node-tile :deep(.node-tile-menu) {
+    grid-area: menu;
+    justify-self: end;
+    position: relative;
+    width: 24px;
+    height: 24px;
+    min-width: 0;
+    min-height: 0;
+    /* 右侧不再内收：行有 content-visibility 的绘制裁切，点击区不能超出行 */
+    margin: -3px 0;
+    opacity: 1;
+  }
+
+  .node-tile :deep(.node-tile-menu)::before {
+    content: '';
+    position: absolute;
+    inset: -10px;
+  }
+
+  /* 失败原因只在有时占第三行（隐式行），没有时不留行距 */
+  .node-tile-error {
+    grid-column: 2 / -1;
+    grid-row: 3;
+    margin-top: 0;
+    overflow: hidden;
+    font-size: 11.5px;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .node-tile-history {
+    display: none;
+  }
+}
+
+@keyframes row-flash {
+  0% {
+    background-color: var(--primary-soft);
   }
 }
 </style>

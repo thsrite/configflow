@@ -34,7 +34,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(oxidnsMonitorApi.clients).mockResolvedValue(result())
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
-  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })))
+  vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: !String(query).includes('639px'), addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })))
   scrollDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
   Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: vi.fn() })
 })

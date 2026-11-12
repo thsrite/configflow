@@ -1,3 +1,5 @@
+import type { InjectionKey, Ref } from 'vue'
+
 /** 全站导航的唯一来源：按作用域分组，桌面 rail 与移动端底栏共用。 */
 
 export type NavScope = 'overview' | 'resource' | 'profile' | 'system'
@@ -21,6 +23,28 @@ export interface NavGroup {
   hint?: string
   items: NavItem[]
 }
+
+/** 当前所在的导航页面路径，由应用外壳提供；不在外壳里（如单独挂载）时为空 */
+export const CURRENT_NAV_PATH: InjectionKey<Readonly<Ref<string>>> = Symbol('current-nav-path')
+
+/** 是否为导航里的页面（手机上已由分组按钮或底栏写明所在页） */
+export const isNavPath = (path: string) => NAV_GROUPS.some(group => group.items.some(item => item.path === path))
+
+/**
+ * 底栏直达页面上的手机切换按钮只列与它相关的页面，不列整个分组；
+ * 其余页面仍可从底栏「更多」进入。其他页面的切换按钮列整个分组，但不重复底栏已有的页面。
+ */
+export const MOBILE_RELATED_PAGES: Record<string, { label: string; paths: string[] }> = {
+  '/rules': { label: '规则', paths: ['/rules', '/rule-library', '/proxy-groups', '/domain-discovery'] },
+  // Agent 没有密切相关的页面：只剩自己，不显示切换按钮
+  '/agents': { label: 'Agent', paths: ['/agents'] }
+}
+
+export const navItemOf = (path: string): NavItem | undefined =>
+  NAV_GROUPS.flatMap(group => group.items).find(item => item.path === path)
+
+/** 手机底栏直达的页面；其余页面收进底栏「更多」 */
+export const MOBILE_TAB_PATHS = ['/dashboard', '/oxidns', '/mihomo', '/rules', '/agents'] as const
 
 export const NAV_GROUPS: NavGroup[] = [
   {

@@ -144,35 +144,64 @@ async function openMenu(wrapper: ReturnType<typeof mount>, group: string, curren
 }
 
 describe('mobile group navigation', () => {
-  it('keeps the configuration tab selected across its pages and still opens generation directly', async () => {
-    const { router } = await render('/generate')
+  it('puts the five most used pages in the tab bar and the rest behind 更多', async () => {
+    const { router } = await render('/dashboard')
     const bar = mount(MobileTabBar, {
-      props: { activePath: '/generate' },
+      props: { activePath: '/dashboard', subscriptionAggregationEnabled: true },
+      attachTo: document.body,
       global: { plugins: [router], stubs: { Motion: true } }
     })
     wrappers.push(bar)
-    const configuration = bar.get('a[href="/generate"]')
-    expect(configuration.text()).toBe('配置')
-    for (const item of NAV_GROUPS.find(group => group.scope === 'profile')!.items) {
-      await router.push(item.path)
-      await bar.setProps({ activePath: item.path })
-      expect(configuration.attributes('aria-current')).toBe('page')
-      expect(bar.findAll('[aria-current="page"]')).toHaveLength(1)
-    }
-    await router.push('/routers')
-    await configuration.trigger('click')
+    expect(bar.findAll('nav[aria-label="主导航"] > *').map(tab => tab.text())).toEqual(['首页', 'OxiDNS', 'Mihomo', '规则', 'Agent', '更多'])
+    expect(bar.get('a[href="/dashboard"]').attributes('aria-current')).toBe('page')
+
+    // 「更多」不再打开搜索，而是列出底栏之外的页面
+    const more = bar.get('button[aria-haspopup="dialog"]')
+    await more.trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/generate')
+    const sheet = openSheet()!
+    expect(sheet.textContent).toContain('更多页面')
+    const sections = [...sheet.querySelectorAll('section')].map(section => ({
+      title: section.querySelector('h3')!.textContent!.trim(),
+      items: [...section.querySelectorAll('[data-more-item]')].map(item => item.textContent!.trim())
+    }))
+    expect(sections).toEqual([
+      { title: '共享资源', items: ['订阅来源', '节点库', '订阅聚合', '规则库'] },
+      { title: '当前配置', items: ['策略组', '客户端设备', '域名发现', '上游路由', '配置生成'] },
+      { title: '系统', items: ['系统设置', '配置空间', '日志'] }
+    ])
+    // 选一项后跳转并关闭；当前页不在底栏时高亮「更多」
+    sheet.querySelector<HTMLElement>('[data-more-item][href="/nodes"]')!.click()
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/nodes')
     await bar.setProps({ activePath: '/nodes' })
-    expect(configuration.attributes('aria-current')).toBeUndefined()
-    expect(bar.get('a[href="/nodes"]').attributes('aria-current')).toBe('page')
+    await flushPromises()
+    expect(openSheet()).toBeNull()
+    expect(more.classes()).toContain('text-primary-accent')
+    expect(bar.findAll('[aria-current="page"]')).toHaveLength(0)
+  })
+
+  it('hides 订阅聚合 in 更多 when the feature is off', async () => {
+    const { router } = await render('/dashboard')
+    const bar = mount(MobileTabBar, {
+      props: { activePath: '/dashboard', subscriptionAggregationEnabled: false },
+      attachTo: document.body,
+      global: { plugins: [router], stubs: { Motion: true } }
+    })
+    wrappers.push(bar)
+    await bar.get('button[aria-haspopup="dialog"]').trigger('click')
+    await flushPromises()
+    expect(openSheet()!.textContent).not.toContain('订阅聚合')
   })
 
   it.each([
     { path: '/subscriptions', group: '资源', current: '订阅来源', enabled: true, labels: ['订阅来源', '节点库', '订阅聚合', '规则库'] },
     { path: '/subscriptions', group: '资源', current: '订阅来源', enabled: false, labels: ['订阅来源', '节点库', '规则库'] },
-    { path: '/logs', group: '系统', current: '日志', enabled: true, labels: ['系统设置', '配置空间', 'Agent', '日志'] },
-    { path: '/rules', group: '当前配置', current: '策略规则', enabled: true, labels: ['策略组', '策略规则', '客户端设备', '域名发现', '上游路由', '配置生成'] }
+    // 底栏已有的 Agent 不在菜单里重复
+    { path: '/logs', group: '系统', current: '日志', enabled: true, labels: ['系统设置', '配置空间', '日志'] },
+    // 规则页只列与规则相关的页面；同组的其他页面从底栏「更多」进入
+    { path: '/rules', group: '规则', current: '策略规则', enabled: true, labels: ['策略规则', '规则库', '策略组', '域名发现'] },
+    { path: '/proxy-groups', group: '当前配置', current: '策略组', enabled: true, labels: ['策略组', '客户端设备', '域名发现', '上游路由', '配置生成'] }
   ])('shows every $group destination and marks the current page (aggregation=$enabled)', async ({ path, group, current, enabled, labels }) => {
     const { wrapper } = await render(path, enabled)
     const nav = await openMenu(wrapper, group, current)
@@ -181,6 +210,19 @@ describe('mobile group navigation', () => {
     const selected = nav.querySelectorAll('a[aria-current="page"]')
     expect(selected).toHaveLength(1)
     expect(selected[0].getAttribute('href')).toBe(path)
+  })
+
+  it('renders the phone trigger as a visible button with an icon tile and a round chevron', async () => {
+    const { wrapper } = await render('/nodes')
+    const trigger = wrapper.get('[data-group-nav-trigger]')
+    // 手机上也保留卡片底色和边框，不再退成一行透明文字
+    expect(trigger.classes()).toEqual(expect.arrayContaining(['bg-card', 'border-border-strong', 'rounded-xl']))
+    expect(trigger.classes().some(name => name.includes('transparent'))).toBe(false)
+    expect(trigger.text()).toBe('资源 · 节点库')
+    expect(trigger.findAll('[aria-hidden="true"]').map(part => part.classes())).toEqual(expect.arrayContaining([
+      expect.arrayContaining(['bg-primary-soft']),
+      expect.arrayContaining(['rounded-full', 'bg-accent'])
+    ]))
   })
 
   it('navigates through real router links and closes the sheet after selecting another page', async () => {
@@ -288,9 +330,10 @@ describe('mobile group navigation', () => {
       expect(wrapper.get('button[aria-label="切换系统页面，当前日志"]').isVisible()).toBe(true)
       const nav = await openMenu(wrapper, '系统', '日志')
       const links = [...nav.querySelectorAll('a')]
-      expect(links).toHaveLength(8)
-      expect(links.map(link => link.getAttribute('href'))).toEqual(systemGroup.items.map(item => item.path))
-      expect(links.map(link => link.textContent?.trim())).toEqual(systemGroup.items.map(item => item.label))
+      // 底栏已有的 Agent 不在菜单里重复
+      expect(links).toHaveLength(7)
+      expect(links.map(link => link.getAttribute('href'))).toEqual(systemGroup.items.filter(item => item.path !== '/agents').map(item => item.path))
+      expect(links.map(link => link.textContent?.trim())).toEqual(systemGroup.items.filter(item => item.path !== '/agents').map(item => item.label))
       expect(nav.querySelector('a[aria-current="page"]')?.getAttribute('href')).toBe('/logs')
     } finally {
       // Restore shared configuration even if an assertion fails, before any
@@ -315,15 +358,16 @@ describe('mobile group navigation', () => {
     expect(router.currentRoute.value.path).toBe('/subscriptions')
   })
 
-  it('opens the OxiDNS panel below the dashboard in the overview menu', async () => {
-    const { wrapper, router } = await render('/dashboard')
-    const menu = await openMenu(wrapper, '总览', '数据统计')
-    const links = Array.from(menu.querySelectorAll('a'))
-    expect(links.map(link => link.textContent?.trim())).toEqual(['数据统计', 'OxiDNS 面板', 'Mihomo 面板'])
-    links[1]!.click()
-    await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/oxidns')
-    expect(openSheet()).toBeNull()
+  it('does not show a switcher on the Agent page, which has no closely related pages', async () => {
+    const { wrapper } = await render('/agents')
+    expect(wrapper.find('nav[aria-label="分组内页面"]').exists()).toBe(false)
+  })
+
+  it('does not repeat the overview switcher because all its pages are in the tab bar', async () => {
+    for (const path of ['/dashboard', '/oxidns', '/mihomo']) {
+      const { wrapper } = await render(path)
+      expect(wrapper.find('nav[aria-label="分组内页面"]').exists()).toBe(false)
+    }
   })
 
   it('does not render a switcher when the active path has no navigation group', async () => {

@@ -161,7 +161,7 @@
       </main>
     </div>
 
-    <MobileTabBar :active-path="navigationPath(route.path)" @more="palette?.show()" />
+    <MobileTabBar :active-path="navigationPath(route.path)" :subscription-aggregation-enabled="subscriptionAggregationEnabled" />
 
     <CommandPalette
       ref="palette"
@@ -176,7 +176,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { FileText, LogOut, Moon, Search, Sun, User } from '@lucide/vue'
 import { useMediaQuery } from '@vueuse/core'
@@ -210,13 +210,15 @@ import { confirm, notify } from './lib/feedback'
 import { usePreferences } from './stores/preferences'
 import { useProfileStore } from './stores/profile'
 import { useThemeStore } from './stores/theme'
-import { groupOfScope, labelOfPath, navigationPath, scopeOfPath } from './navigation'
+import { CURRENT_NAV_PATH, groupOfScope, labelOfPath, navigationPath, scopeOfPath } from './navigation'
 
 const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
 const { prefs } = usePreferences()
 const skipAnimations = computed(() => reduceMotion.value || !prefs.value.motion)
 
 const route = useRoute()
+// 页面标题据此判断手机上是否已由分组按钮或底栏写明所在页
+provide(CURRENT_NAV_PATH, computed(() => navigationPath(route.path)))
 const router = useRouter()
 const profileStore = useProfileStore()
 const { activeProfileId } = profileStore

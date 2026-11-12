@@ -165,3 +165,31 @@ describe.each(overlays.filter(item => item.name === 'DialogContent' || item.name
     expect(visibleHelp()).not.toBeNull()
   })
 })
+
+describe.each(overlays)('$name on a touch screen', overlay => {
+  const coarse = () => vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+    matches: query.includes('pointer: coarse'), media: query, onchange: null,
+    addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false
+  })))
+
+  it('does not focus a text field on open, so the soft keyboard stays down', async () => {
+    coarse()
+    await openOverlay(overlay, input + '<button id="later-button">按钮</button>')
+    await vi.waitFor(() => expect(document.activeElement).not.toBe(overlayTrigger()))
+    expect(document.activeElement).not.toBe(element('real-control'))
+    // 焦点仍在弹层里
+    expect(overlayContainer().contains(document.activeElement) || document.activeElement?.contains(overlayContainer())).toBe(true)
+  })
+
+  it('still focuses a field explicitly marked autofocus', async () => {
+    coarse()
+    await openOverlay(overlay, '<input id="wanted" autofocus />')
+    await vi.waitFor(() => expect(document.activeElement).toBe(element('wanted')))
+  })
+
+  it('still focuses a non-text control first, which does not raise a keyboard', async () => {
+    coarse()
+    await openOverlay(overlay, '<button id="first-button">选项</button>' + input)
+    await vi.waitFor(() => expect(document.activeElement).toBe(element('first-button')))
+  })
+})
