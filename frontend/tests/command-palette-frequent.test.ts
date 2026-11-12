@@ -9,6 +9,8 @@ const wrappers: VueWrapper[] = []
 beforeEach(() => {
   localStorage.clear()
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
+  // jsdom 没有 scrollIntoView；输入后列表会把高亮项滚进视野
+  Element.prototype.scrollIntoView = vi.fn()
 })
 afterEach(() => { wrappers.splice(0).forEach(w => w.unmount()); document.body.innerHTML = ''; vi.unstubAllGlobals() })
 
