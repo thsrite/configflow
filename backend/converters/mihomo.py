@@ -326,7 +326,7 @@ def inject_region_probe(mihomo_config: Dict[str, Any], port: int) -> bool:
 def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '',
                            sync_lan_hosts: bool = False, *, preflight_providers: bool = True,
                            region_probe: bool = False, report: Optional[Dict[str, Any]] = None,
-                           mihomo_core_version: Optional[str] = None) -> str:
+                           mihomo_core_version: Optional[str] = None, for_agent: bool = False) -> str:
     """生成 Mihomo YAML 配置
 
     Args:
@@ -337,7 +337,10 @@ def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '',
             hosts 条目及原因，供预览展示；有「域名 → 域名」映射时含 ``dns``
             （被映射的节点域名改由本机 DNS 监听解析、映射目标加入 Fake-IP 过滤的结果）。
         mihomo_core_version: 目标设备上报的 Mihomo 版本（推送给 Agent 时已知才传）；
-            早于 v1.19.20 时不写 ``proxy-server-nameserver-policy``。
+            早于 v1.19.20 时不写 ``proxy-server-nameserver-policy``；
+            早于 v1.19.31 且开启了 EasyTier 时拒绝生成。
+        for_agent: 推送给 Agent 设备时为 True，决定 EasyTier 设置是否下发
+            （设置里的下发范围：订阅 / Agent / 全部）。
     """
 
     from backend.utils.proxy_chains import lower_proxy_chains
@@ -848,6 +851,9 @@ def generate_mihomo_config(config_data: Dict[str, Any], base_url: str = '',
         rules.append('NETWORK,udp,REJECT')
 
     mihomo_config['rules'] = rules
+    # EasyTier 组网：节点、保活策略组和最前面的路由规则；关闭或不在下发范围时不改动
+    from backend.common.mihomo_easytier import apply_easytier
+    apply_easytier(mihomo_config, logical_config, for_agent=for_agent, core_version=mihomo_core_version)
     from backend.utils.group_candidates import lower_group_provider_filters
     lower_group_provider_filters(config_data, mihomo_config)
     from backend.utils.proxy_chains import lower_chain_providers

@@ -1699,6 +1699,9 @@ class ProfileRepository:
                 # Recovery snapshots contain the original opaque YAML and DNS
                 # credentials. Human-shareable exports must omit them entirely.
                 profile['mihomo'].pop('linux_gateway_restore_point', None)
+                if 'easytier' in profile['mihomo']:
+                    from backend.common.mihomo_easytier import redact_settings
+                    profile['mihomo']['easytier'] = redact_settings(profile['mihomo']['easytier'])
                 if isinstance(profile.get('loon'), dict):
                     profile['loon']['custom_config'] = ''
             result = sanitize_external_payload(result, system_config)

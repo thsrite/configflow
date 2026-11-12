@@ -1414,7 +1414,8 @@ def _prepare_transactional_content(agent, config_data, *, base_url='', deploymen
                 content = generate_mihomo_config(config_data, base_url=base_url,
                                                  sync_lan_hosts=True, preflight_providers=False,
                                                  region_probe=bool(agent.get('domain_discovery_enabled')),
-                                                 mihomo_core_version=reported_core_version(agent), report=report)
+                                                 mihomo_core_version=reported_core_version(agent), report=report,
+                                                 for_agent=True)
             try:
                 return content, yaml.safe_load(content)
             except yaml.YAMLError as exc:

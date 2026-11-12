@@ -326,7 +326,14 @@ def handle_custom_mihomo_config():
         from backend.common.mihomo_base_settings import takeover_mode
         import yaml
         reserved, hosts = _mihomo_agent_context()
+        from backend.common.mihomo_easytier import EasyTierSettingsError, default_settings, normalize_settings
+        try:
+            easytier = normalize_settings(config_data['mihomo'].get('easytier'))
+        except EasyTierSettingsError:
+            # 旧数据不合规时仍能打开设置页修正
+            easytier = default_settings()
         return jsonify({'config': mihomo_config,
+                        'easytier': easytier,
                         'default_config': yaml.safe_dump(_default_mihomo_template(), allow_unicode=True, sort_keys=False),
                         'provider_update_interval': config_data['mihomo'].get('provider_update_interval', 3600),
                         # What the base settings form needs to check what the server checks on save.
@@ -366,6 +373,12 @@ def handle_custom_mihomo_config():
                         'success': False,
                         'message': f'YAML 语法错误，未保存: {e}',
                     }), 400
+            if 'easytier' in request.json:
+                from backend.common.mihomo_easytier import EasyTierSettingsError, normalize_settings
+                try:
+                    config_data['mihomo']['easytier'] = normalize_settings(request.json['easytier'])
+                except EasyTierSettingsError as error:
+                    return jsonify(success=False, message=f'EasyTier 设置未保存：{error}'), 400
             config_data['mihomo']['custom_config'] = custom_config
             guard = save_config_with_publish_guard(config_data, 'mihomo')
             return jsonify({'success': True, 'publish_guard': guard})

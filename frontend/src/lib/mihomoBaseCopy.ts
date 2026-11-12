@@ -23,6 +23,8 @@ export interface BaseFieldDef {
   unit?: string
   placeholder?: string
   wide?: boolean
+  /** Enum cells show the chosen option's label instead of the raw value (values that are not YAML). */
+  showOptionLabel?: boolean
 }
 
 const RESTART = '保存并发布后生效。'
