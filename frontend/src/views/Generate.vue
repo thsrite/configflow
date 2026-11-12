@@ -15,7 +15,7 @@
       :back-label="settingsBackLabel"
       :dirty="customConfigDirty"
       :busy="savingCustomConfig || ipv6NetworkBusy"
-      :save-disabled="currentConfigType === 'mihomo' && (ipv6Validation.invalid || baseValidation.invalid)"
+      :save-disabled="currentConfigType === 'mihomo' && (ipv6Validation.invalid || baseValidation.invalid || easyTierInvalid)"
       size="wide"
       save-label="保存草稿"
       @save="saveCustomConfig()"
@@ -26,6 +26,8 @@
         :profile-id="profileId" :preferred-agent-id="agentSettings?.agentId" :default-config="mihomoDefaultConfig"
         :dirty="customConfigDirty" :disabled="savingCustomConfig" @busy="ipv6NetworkBusy = $event" @validation="ipv6Validation = $event"
         :refresh-key="ipv6Published" />
+      <MihomoEasyTierSettings v-if="currentConfigType === 'mihomo'" v-model="easyTier" :disabled="savingCustomConfig" :inert="ipv6NetworkBusy"
+        @validation="easyTierInvalid = $event" />
       <MihomoBaseSettings v-if="currentConfigType === 'mihomo'" v-model="customConfigContent" :open="customConfigDialogVisible"
         :saved-content="customConfigSavedContent" :default-config="mihomoDefaultConfig" :context="mihomoBaseContext"
         :disabled="savingCustomConfig" :inert="ipv6NetworkBusy" @validation="baseValidation = $event" />
@@ -676,6 +678,8 @@ import SettingsWorkspace from '@/components/generate/SettingsWorkspace.vue'
 import MihomoSyncInterval from '@/components/generate/MihomoSyncInterval.vue'
 import MihomoIPv6Settings from '@/components/generate/MihomoIPv6Settings.vue'
 import MihomoBaseSettings, { type MihomoBaseServerContext } from '@/components/generate/MihomoBaseSettings.vue'
+import MihomoEasyTierSettings from '@/components/generate/MihomoEasyTierSettings.vue'
+import { defaultEasyTier, easyTierKey, readEasyTier, type EasyTierSettings } from '@/lib/mihomoEasyTier'
 import { isRefreshInterval } from '@/lib/subscriptionRefresh'
 import SettingsPublishBar from '@/components/generate/SettingsPublishBar.vue'
 import { useProfileStore } from '@/stores/profile'
@@ -1057,8 +1061,12 @@ const ipv6Published = ref(0)
 const customConfigSavedContent = ref('')
 const mihomoSyncInterval = ref<number | string>(3600)
 const mihomoSavedSyncInterval = ref(3600)
+const easyTier = ref<EasyTierSettings>(defaultEasyTier())
+const savedEasyTier = ref(easyTierKey(defaultEasyTier()))
+const easyTierInvalid = ref(false)
 const customConfigDirty = computed(() => customConfigContent.value !== customConfigSavedContent.value
-  || (currentConfigType.value === 'mihomo' && (mihomoSyncInterval.value !== mihomoSavedSyncInterval.value || ipv6Validation.value.dirty || baseValidation.value.dirty)))
+  || (currentConfigType.value === 'mihomo' && (mihomoSyncInterval.value !== mihomoSavedSyncInterval.value || ipv6Validation.value.dirty || baseValidation.value.dirty
+    || easyTierKey(easyTier.value) !== savedEasyTier.value)))
 const savingCustomConfig = ref(false)
 const currentConfigType = ref<ConfigType>('mihomo')
 const customConfigSession = trackEditorSession(customConfigDialogVisible, savingCustomConfig)
@@ -1645,7 +1653,11 @@ const showCustomConfigDialog = async (type: ConfigType) => {
     mihomoDefaultConfig.value = response.data.default_config || ''
     mihomoBaseContext.value = response.data.base_settings ?? null
     customConfigSavedContent.value = customConfigContent.value
-    if (type === 'mihomo') mihomoSyncInterval.value = mihomoSavedSyncInterval.value = response.data.provider_update_interval ?? 3600
+    if (type === 'mihomo') {
+      mihomoSyncInterval.value = mihomoSavedSyncInterval.value = response.data.provider_update_interval ?? 3600
+      easyTier.value = readEasyTier(response.data.easytier)
+      savedEasyTier.value = easyTierKey(easyTier.value)
+    }
     customConfigDialogVisible.value = true
   } catch (error) {
     if (pageActive) notify.error('加载自定义配置失败')
@@ -1656,9 +1668,12 @@ const saveCustomConfig = async (close = currentConfigType.value !== 'mihomo'): P
   if (!pageActive || !customConfigDialogVisible.value || savingCustomConfig.value || ipv6NetworkBusy.value) return null
   const session = customConfigSession.capture()
   const type = currentConfigType.value
-  if (type === 'mihomo' && (ipv6Validation.value.invalid || baseValidation.value.invalid)) return null
+  if (type === 'mihomo' && (ipv6Validation.value.invalid || baseValidation.value.invalid || easyTierInvalid.value)) return null
   const content = customConfigContent.value
   const interval = mihomoSyncInterval.value
+  const easytier = JSON.parse(JSON.stringify(easyTier.value)) as EasyTierSettings
+  // Sent only when edited, so saving the YAML alone never rewrites the stored EasyTier setting.
+  const easytierChanged = type === 'mihomo' && easyTierKey(easytier) !== savedEasyTier.value
   if (type === 'mihomo' && !isRefreshInterval(interval)) {
     notify.warning('订阅同步间隔需为 0 或 60 ~ 604800 秒的整数')
     return null
@@ -1671,10 +1686,13 @@ const saveCustomConfig = async (close = currentConfigType.value !== 'mihomo'): P
       loon: customConfigApi.saveLoon,
       mosdns: customConfigApi.saveMosdns
     }
-    const response = await apiMap[type]({ config: content, ...(type === 'mihomo' ? { provider_update_interval: interval } : {}) }, profileId)
+    const response = await apiMap[type]({ config: content, ...(type === 'mihomo' ? { provider_update_interval: interval } : {}), ...(easytierChanged ? { easytier } : {}) }, profileId)
     if (!customConfigSession.isCurrent(session) || type !== currentConfigType.value) return null
     customConfigSavedContent.value = content
-    if (type === 'mihomo') mihomoSavedSyncInterval.value = interval as number
+    if (type === 'mihomo') {
+      mihomoSavedSyncInterval.value = interval as number
+      savedEasyTier.value = easyTierKey(easytier)
+    }
     notify.success('基础配置草稿已保存')
     if (close) customConfigDialogVisible.value = false
     return response.data.publish_guard ?? null

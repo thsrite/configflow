@@ -196,7 +196,7 @@ def prepare_candidate(agent, source, baseline, settings, deployment_id, *, force
     if service == 'mihomo':
         from backend.converters.mihomo import generate_mihomo_config
         content = generate_mihomo_config(source, base_url=base_url,
-                    sync_lan_hosts=True, preflight_providers=False,
+                    sync_lan_hosts=True, preflight_providers=False, for_agent=True,
                     region_probe=bool(agent.get('domain_discovery_enabled')))
         downloads = []  # materializer reads the final rule-providers graph
     else:

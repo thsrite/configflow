@@ -25,7 +25,7 @@ def generate_agent_config(config_data: Dict[str, Any], agent: Dict[str, Any], ba
         from backend.utils.proxy_server_dns import reported_core_version
         config_content = generate_mihomo_config(config_data, base_url=base_url,
                                                 region_probe=bool(agent.get('domain_discovery_enabled')),
-                                                mihomo_core_version=reported_core_version(agent))
+                                                mihomo_core_version=reported_core_version(agent), for_agent=True)
     elif service_type == 'mosdns':
         config_content = generate_mosdns_config(config_data, base_url=base_url)
     elif service_type == 'oxidns':

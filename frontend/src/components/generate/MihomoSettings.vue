@@ -10,6 +10,8 @@ import SettingsPublishBar from './SettingsPublishBar.vue'
 import MihomoSyncInterval from './MihomoSyncInterval.vue'
 import MihomoIPv6Settings from './MihomoIPv6Settings.vue'
 import MihomoBaseSettings, { type MihomoBaseServerContext } from './MihomoBaseSettings.vue'
+import MihomoEasyTierSettings from './MihomoEasyTierSettings.vue'
+import { defaultEasyTier, easyTierKey, readEasyTier, type EasyTierSettings } from '@/lib/mihomoEasyTier'
 import { isRefreshInterval } from '@/lib/subscriptionRefresh'
 
 const props = defineProps<{ open: boolean; profileId: string; contextLabel: string; preferredAgentId?: string }>()
@@ -21,6 +23,9 @@ const networkBusy = ref(false)
 const ipv6Validation = ref({ invalid: false, dirty: false })
 const baseValidation = ref({ invalid: false, dirty: false })
 const baseContext = ref<MihomoBaseServerContext | null>(null)
+const easyTier = ref<EasyTierSettings>(defaultEasyTier())
+const savedEasyTier = ref(easyTierKey(defaultEasyTier()))
+const easyTierInvalid = ref(false)
 // A confirmed publish changes what the IPv6 steps read from the device.
 const ipv6Published = ref(0)
 const syncInterval = ref<number | string>(3600)
@@ -28,8 +33,9 @@ const savedSyncInterval = ref(3600)
 const loading = ref(false)
 const saving = ref(false)
 const loadError = ref('')
-const dirty = computed(() => content.value !== savedContent.value || syncInterval.value !== savedSyncInterval.value || ipv6Validation.value.dirty || baseValidation.value.dirty)
-const invalid = computed(() => ipv6Validation.value.invalid || baseValidation.value.invalid)
+const dirty = computed(() => content.value !== savedContent.value || syncInterval.value !== savedSyncInterval.value || ipv6Validation.value.dirty || baseValidation.value.dirty
+  || easyTierKey(easyTier.value) !== savedEasyTier.value)
+const invalid = computed(() => ipv6Validation.value.invalid || baseValidation.value.invalid || easyTierInvalid.value)
 let session = 0
 let disposed = false
 const current = (request: number) => !disposed && props.open && session === request
@@ -42,6 +48,8 @@ async function load() {
   content.value = savedContent.value = ''
   defaultConfig.value = ''
   baseContext.value = null
+  easyTier.value = defaultEasyTier()
+  savedEasyTier.value = easyTierKey(easyTier.value)
   try {
     const response = await customConfigApi.getMihomo(props.profileId)
     if (current(request)) {
@@ -49,6 +57,8 @@ async function load() {
       defaultConfig.value = response.data.default_config || ''
       baseContext.value = response.data.base_settings ?? null
       syncInterval.value = savedSyncInterval.value = response.data.provider_update_interval ?? 3600
+      easyTier.value = readEasyTier(response.data.easytier)
+      savedEasyTier.value = easyTierKey(easyTier.value)
     }
   } catch (failure: any) {
     if (current(request)) loadError.value = failure?.response?.data?.message || failure?.message || '基础配置读取失败，请重试。'
@@ -62,16 +72,20 @@ async function save(close = false): Promise<PublishGuard | null> {
   const request = session
   const submitted = content.value
   const interval = syncInterval.value
+  const easytier = JSON.parse(JSON.stringify(easyTier.value)) as EasyTierSettings
   if (!isRefreshInterval(interval)) {
     notify.warning('订阅同步间隔需为 0 或 60 ~ 604800 秒的整数')
     return null
   }
   saving.value = true
   try {
-    const response = await customConfigApi.saveMihomo({ config: submitted, provider_update_interval: interval }, props.profileId)
+    // Sent only when edited, so saving the YAML alone never rewrites the stored EasyTier setting.
+    const easytierChanged = easyTierKey(easytier) !== savedEasyTier.value
+    const response = await customConfigApi.saveMihomo({ config: submitted, provider_update_interval: interval, ...(easytierChanged ? { easytier } : {}) }, props.profileId)
     if (!current(request)) return null
     savedContent.value = submitted
     savedSyncInterval.value = interval
+    savedEasyTier.value = easyTierKey(easytier)
     notify.success('基础配置草稿已保存')
     if (close) emit('update:open', false)
     return response.data.publish_guard ?? null
@@ -106,6 +120,7 @@ onUnmounted(() => { disposed = true })
       <MihomoIPv6Settings v-model="content" :open="open" :profile-id="profileId" :preferred-agent-id="preferredAgentId"
         :default-config="defaultConfig" :dirty="dirty" :disabled="saving" @busy="networkBusy = $event" @validation="ipv6Validation = $event"
         :refresh-key="ipv6Published" />
+      <MihomoEasyTierSettings v-model="easyTier" :disabled="saving" :inert="networkBusy" @validation="easyTierInvalid = $event" />
       <MihomoBaseSettings v-model="content" :open="open" :saved-content="savedContent" :default-config="defaultConfig" :context="baseContext"
         :disabled="saving" :inert="networkBusy" @validation="baseValidation = $event" />
       <div :inert="networkBusy" class="min-h-80 flex-1 p-4 md:p-5">

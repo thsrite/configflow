@@ -73,7 +73,11 @@ const enumValue = computed(() => typeof props.state.value === 'string' || typeof
     ? (props.state.value ? 'always' : 'off') : '')
 const unknownEnum = computed(() => props.state.present && !props.field.options?.some(option => option.value === enumValue.value))
 const enumOptions = computed(() => [...(props.field.unset ? [{ value: UNSET, label: props.field.unset }] : []), ...(props.field.options || [])])
-const enumShown = computed(() => props.state.present ? String(props.state.value) : props.field.unset || fallback.value)
+const enumShown = computed(() => {
+  if (!props.state.present) return props.field.unset || fallback.value
+  const option = props.field.showOptionLabel ? props.field.options?.find(item => item.value === String(props.state.value)) : undefined
+  return option ? option.label : String(props.state.value)
+})
 const menuOpen = ref(false)
 function updateEnum(value: string) {
   emit('change', value === UNSET ? undefined : value)
@@ -97,7 +101,7 @@ const invalid = computed(() => messages.value.some(item => item.blocking))
     <Popover v-else-if="field.type === 'enum'" v-model:open="menuOpen">
       <PopoverTrigger as-child>
         <button type="button" :class="CELL_TRIGGER" :disabled="locked" :aria-label="`${label}：${enumShown}`">
-          <span class="min-w-0 flex-1 truncate" :class="state.present ? 'font-mono' : 'text-muted-foreground'">{{ enumShown }}</span>
+          <span class="min-w-0 flex-1 truncate" :class="!state.present ? 'text-muted-foreground' : field.showOptionLabel ? '' : 'font-mono'">{{ enumShown }}</span>
           <ChevronDown class="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         </button>
       </PopoverTrigger>

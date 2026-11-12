@@ -29,12 +29,16 @@
 | `mihomo-base-settings-managed.png` | 接管与 DNS 监听（只读） | 未启用 Linux 网关、非向导配置空间 |
 | `mihomo-base-settings-yaml-error.png` | YAML 无法解析时隐藏属性表，只显示原因 | 脚本在编辑器中输入错误 YAML |
 | `mihomo-base-settings-mobile-dark.png` | 手机 390px 深色 | 分组名在上，格子两列 |
+| `mihomo-easytier-settings.png` | EasyTier 组网卡片：生成方式、网络、监听三组 | 示例网络 home-lab、文档用地址（203.0.113.10、2001:db8::10），只保存草稿 |
+| `mihomo-easytier-settings-mobile-dark.png` | EasyTier 组网卡片，手机 390px 深色 | 同上 |
 
 采集脚本：[capture-guide.mjs](../../../scripts/docs/capture-guide.mjs)。机器可读记录见 [capture-report.json](capture-report.json)。图片为浏览器直接输出的 JPEG，质量 82，未经后期拼接或生成。
 
 聚合缓存预览的 PNG 由 [aggregation_cache_preview_browser.mjs](../../../scripts/tests/aggregation_cache_preview_browser.mjs) 单独采集，使用真实页面和 API、临时数据及演示节点；脚本验证预览不产生上游请求或拉取记录，并检查来源缓存更新、缓存缺失和手机布局。准备好下述依赖后，在测试服务器运行 `rt --no-sync --back doc/img/guide/aggregation-subscription-cache.png -- node scripts/tests/aggregation_cache_preview_browser.mjs`。
 
 Mihomo 基础参数的 PNG 由 [mihomo_base_settings_browser.mjs](../../../scripts/tests/mihomo_base_settings_browser.mjs) 采集，使用真实页面与 API 和临时数据（初始模板，无 Agent、未发布）；脚本同时检查保存时的服务器校验、YAML 双向同步、Esc 撤回输入且不关闭编辑窗口、小窗选择、嗅探端口格式错误与无效 Fake-IP 网段阻止保存、协议开关增删、表单停用，以及 390px 手机宽度下无横向滚动、触控目标不小于 44px、小窗不超出屏幕。运行：`cf-test typecheck` 后 `rt --no-sync --back doc/img/guide --back .ci-results/mihomo-base-settings -- node scripts/tests/mihomo_base_settings_browser.mjs`。
+
+EasyTier 组网的 PNG 由 [mihomo_easytier_browser.mjs](../../../scripts/tests/mihomo_easytier_browser.mjs) 采集，使用真实页面与 API 和临时数据（无 Agent、未发布）；脚本同时检查服务器拒绝 `->` 映射、开启后缺少网络名和入网节点时不能保存、映射网段在表单中标红、保存后重新打开内容不变、生成的配置里有 EasyTier 节点且分流规则排在最前、MagicDNS 写入 `nameserver-policy`，以及 390px 手机宽度下无横向滚动、触控目标不小于 44px。运行：`cf-test typecheck` 后 `rt --no-sync --back doc/img/guide --back .ci-results/mihomo-easytier -- node scripts/tests/mihomo_easytier_browser.mjs`。
 
 Mihomo IPv6 模式的 `mihomo-ipv6-mode-menu.png`、`mihomo-ipv6-mode-nodes.png`、`mihomo-ipv6-mode-steps.png`、`mihomo-ipv6-mode-custom.png`、`mihomo-ipv6-mode-mobile-dark.png`、`mihomo-ipv6-pending-after-change.png`、`mihomo-ipv6-steps-after-router.png` 由 [mihomo_settings_radio_chips_browser.mjs](../../../scripts/tests/mihomo_settings_radio_chips_browser.mjs) 采集，使用真实页面与 API 和临时数据（初始模板，未发布）。没有真实设备：一台演示 Mihomo 与一台演示 RouterOS 的设备列表、设备检查、验收和上游路由状态由浏览器内的模拟应答提供，步骤状态与实验网截图一致，不代表设备已检查或已发布。脚本同时检查「关闭」时 IPv6 卡片只有「配置」一组、模式小窗竖排三个胶囊、方向键选择后关闭小窗并回到格子、网段格子与模式同一行且 Esc 撤回不关闭窗口、「自定义」不选中任何项并在格子下方说明原因、YAML 无法解析时模式格子停用、验收组只列两项、与 Agent 安装弹窗胶囊的计算样式一致（浅色与深色），以及 390px 手机宽度下无横向滚动、胶囊不小于 44px、小窗不超出屏幕、长选项在更窄宽度下于胶囊内换行。运行：`cf-test typecheck` 后 `rt --no-sync --back doc/img/guide --back .ci-results/mihomo-radio-chips -- node scripts/tests/mihomo_settings_radio_chips_browser.mjs`。
 
