@@ -725,7 +725,7 @@ export const mihomoPanelApi = {
   updateRuleProvider: (id: string, name: string) => api.put(mihomoPath(id, 'providers/rule'), {}, { ...mihomoName(name), timeout: 60000 }),
   /** 从内核当前使用的配置文件重载（Agent 1.8.16-go+） */
   reloadConfig: (id: string) => api.put(mihomoPath(id, 'configs/reload'), {}, { timeout: 80000 }),
-  /** 检查内核更新：服务端读取内核自更新用的同一个 version.txt，缓存 1 小时，force 跳过缓存（Agent 1.8.16-go+） */
+  /** 检查内核更新：服务端读取内核自更新用的同一个 version.txt，缓存 1 天，force 跳过缓存（Agent 1.8.16-go+） */
   checkCoreUpdate: (id: string, force = false) =>
     api.get(mihomoPath(id, 'core/update'), { params: force ? { force: 1 } : {}, timeout: 70000 }),
   /** 内核自更新并重启（Agent 1.8.16-go+） */

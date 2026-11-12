@@ -101,7 +101,7 @@ const update = ref<CoreUpdateCheck | null>(null)
 const buttonLabel = computed(() => running.value || (update.value ? `内核操作：有新版本 ${update.value.latest}` : '内核操作'))
 const channelNote = (check: CoreUpdateCheck) => check.channel === 'alpha' ? '（Alpha 通道）' : ''
 
-/** 打开面板、切换设备或内核版本变化后自动检查（服务端缓存 1 小时），失败不打扰 */
+/** 打开面板、切换设备或内核版本变化后自动检查（服务端缓存 1 天），失败不打扰 */
 let checkSeq = 0
 watch(() => [props.agentId, props.coreVersion] as const, async ([agentId, version]) => {
   const seq = ++checkSeq

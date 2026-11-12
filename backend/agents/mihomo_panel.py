@@ -202,10 +202,10 @@ CORE_RELEASE_PAGES = {
 }
 
 
-# The panel checks on every open; GitHub answers are kept an hour (like
-# zashboard's local cache) and failures five minutes so an unreachable GitHub
+# The panel checks on every open; GitHub answers are kept a day (releases come
+# weeks apart) and failures five minutes so an unreachable GitHub
 # does not hold every open for the request timeout. A manual check bypasses it.
-CORE_CHECK_TTL = 3600
+CORE_CHECK_TTL = 86400
 CORE_CHECK_FAILURE_TTL = 300
 _core_latest = {}
 
