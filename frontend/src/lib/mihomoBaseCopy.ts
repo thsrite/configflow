@@ -1,5 +1,5 @@
 import type { BasePath } from './mihomoBaseSettings'
-import { CACHE_ALGORITHMS, CLIENT_FINGERPRINTS, type SniffProtocol } from './mihomoBaseSettings'
+import { CACHE_ALGORITHMS, type SniffProtocol } from './mihomoBaseSettings'
 
 /** Help text of a base setting: what it does, the default / recommendation, the effect of a change and the risk. */
 export function settingHelp(parts: { what: string; recommend: string; effect: string; risk?: string }): string {
@@ -18,6 +18,8 @@ export interface BaseFieldDef {
   options?: Array<{ value: string; label: string }>
   /** Enum fields that may be removed again. */
   unset?: string
+  /** Removed from Mihomo: the cell shows only while the YAML still has the key, so it can be deleted. */
+  removed?: boolean
   min?: number
   max?: number
   unit?: string
@@ -290,13 +292,13 @@ export const ADVANCED_FIELDS: BaseFieldDef[] = [
       recommend: 'Mihomo 默认关闭，初始模板开启。',
       effect: '可缩短连接时间，连接数略有增加。保存并发布后生效。',
     }) },
-  { path: ['global-client-fingerprint'], label: '全局 TLS 指纹（global-client-fingerprint）', type: 'enum', unset: '不设置',
-    options: CLIENT_FINGERPRINTS.map(value => ({ value, label: value === 'random' ? 'random：每次随机' : value })),
+  // Removed in Mihomo v1.19.27. Shown only to clear it out of older configs: 「不设置」 deletes it.
+  { path: ['global-client-fingerprint'], label: '全局 TLS 指纹（global-client-fingerprint）', type: 'enum', unset: '不设置', removed: true,
+    options: ['chrome', 'firefox', 'safari', 'ios', 'android', 'edge', '360', 'qq', 'random'].map(value => ({ value, label: value })),
     help: settingHelp({
-      what: '给支持 uTLS 的节点（VLESS、Trojan 等）统一伪装成指定浏览器的 TLS 指纹。节点自己写的 client-fingerprint 优先。',
-      recommend: '初始模板为 chrome。机场或节点没有要求时可以不设置。',
-      effect: '保存并发布后生效。选「不设置」会删除该项。',
-      risk: '不支持 uTLS 的协议会忽略此项；个别节点要求特定指纹，设错可能连不上。',
+      what: '旧版 Mihomo 给支持 uTLS 的节点统一设置浏览器 TLS 指纹。',
+      recommend: 'Mihomo v1.19.27 起已移除：写了不生效，每次加载还会报错。旧版初始模板写的是 chrome，请选「不设置」删除。',
+      effect: '删除后不影响连接；需要指纹的节点在节点自己的 client-fingerprint 里设置。',
     }) },
   { path: ['keep-alive-idle'], label: 'TCP 保活空闲时间（keep-alive-idle）', type: 'int', min: 1, max: 86400, unit: '秒',
     help: settingHelp({

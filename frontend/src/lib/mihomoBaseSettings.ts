@@ -446,16 +446,16 @@ export const LOG_LEVELS = ['silent', 'error', 'warning', 'info', 'debug'] as con
 export const FIND_PROCESS_MODES = ['always', 'strict', 'off'] as const
 export const FAKE_IP_FILTER_MODES = ['blacklist', 'whitelist', 'rule'] as const
 export const TUN_STACKS = ['system', 'gvisor', 'mixed'] as const
-export const CLIENT_FINGERPRINTS = ['chrome', 'firefox', 'safari', 'ios', 'android', 'edge', '360', 'qq', 'random'] as const
 
 export const CACHE_ALGORITHMS = ['lru', 'arc'] as const
+export const REMOVED_FINGERPRINT = 'global-client-fingerprint 已在 Mihomo v1.19.27 移除，写了也不生效，加载时还会报错；请选「不设置」删除，需要时在节点上设置 client-fingerprint'
 
 const BOOLEANS: BasePath[] = [['allow-lan'], ['unified-delay'], ['tcp-concurrent'], ['disable-keep-alive'], ['profile', 'store-selected'],
   ['profile', 'store-fake-ip'], ['sniffer', 'enable'], ['dns', 'respect-rules'], ['dns', 'direct-nameserver-follow-policy'], ['dns', 'prefer-h3']]
 const INTEGERS: Array<[BasePath, number, number]> = [...INBOUND_PORT_KEYS.map(key => [[key], 1, 65535] as [BasePath, number, number]),
   [['tun', 'mtu'], 576, 65535], [['keep-alive-idle'], 1, 86400], [['keep-alive-interval'], 1, 86400]]
 const ENUMS: Array<[BasePath, readonly string[]]> = [[['log-level'], LOG_LEVELS], [['find-process-mode'], FIND_PROCESS_MODES],
-  [['dns', 'fake-ip-filter-mode'], FAKE_IP_FILTER_MODES], [['tun', 'stack'], TUN_STACKS], [['global-client-fingerprint'], CLIENT_FINGERPRINTS],
+  [['dns', 'fake-ip-filter-mode'], FAKE_IP_FILTER_MODES], [['tun', 'stack'], TUN_STACKS],
   [['dns', 'cache-algorithm'], CACHE_ALGORITHMS]]
 const STRING_LISTS: BasePath[] = [...DNS_LIST_KEYS.map(key => ['dns', key]), ['dns', 'fake-ip-filter'], ['sniffer', 'skip-domain'], ['sniffer', 'force-domain']]
 const TEXTS: BasePath[] = [['external-ui'], ['global-ua']]
@@ -596,6 +596,9 @@ function problems(values: Record<string, unknown>, changed: (path: BasePath) => 
       }
     }
   }
+
+  // Removed in Mihomo v1.19.27: kept only to remind; adding or changing it is refused, as on the server.
+  if (changed(['global-client-fingerprint']) && get(['global-client-fingerprint']) !== undefined) add('global-client-fingerprint', REMOVED_FINGERPRINT)
 
   // Controller and password.
   const controller = get(['external-controller'])

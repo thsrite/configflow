@@ -105,7 +105,6 @@ def test_dns_requirements():
     (('find-process-mode',), 'sometimes', 'always / strict / off'),
     (('dns', 'fake-ip-filter-mode'), 'greylist', 'blacklist'),
     (('tun', 'stack'), 'lwip', 'system / gvisor / mixed'),
-    (('global-client-fingerprint',), 'opera', 'chrome'),
     (('tun', 'mtu'), 100, '576–65535'),
     (('keep-alive-idle',), 0, '1–86400'),
     (('allow-lan',), 'yes', 'true 或 false'),
@@ -124,9 +123,18 @@ def test_enum_and_type_checks(path, value, text):
     rejects(change, text)
 
 
+def test_removed_fingerprint_is_refused_but_an_old_one_may_stay():
+    # Mihomo v1.19.27 removed it; the initial template no longer writes it.
+    assert 'global-client-fingerprint' not in template()
+    rejects(lambda doc: doc.update({'global-client-fingerprint': 'chrome'}), 'v1.19.27')
+    old = {**template(), 'global-client-fingerprint': 'chrome'}
+    check(lambda doc: doc.update({'log-level': 'info'}), previous=old)
+    rejects(lambda doc: doc.update({'global-client-fingerprint': 'firefox'}), 'v1.19.27', previous=old)
+    check(lambda doc: doc.pop('global-client-fingerprint'), previous=old)
+
+
 def test_yaml_spellings_generation_accepts():
     check(lambda doc: doc.update({'find-process-mode': False}))  # Unquoted off.
-    check(lambda doc: doc.update({'global-client-fingerprint': 360}))
     check(lambda doc: doc['tun'].update(stack='gVisor', mtu=1500))
     check(lambda doc: doc.update({'bind-address': '::'}))
     check(lambda doc: doc['sniffer'].update({'skip-domain': None}))

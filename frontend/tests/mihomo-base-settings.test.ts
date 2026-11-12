@@ -179,6 +179,17 @@ describe('Mihomo base checks (same rules as the server)', () => {
     expect(blocking(edit([{ path: ['log-level'], value: 'info' }]))).toEqual([])
   })
 
+  it('reminds about the removed global-client-fingerprint and refuses adding it again', () => {
+    expect(template).not.toContain('global-client-fingerprint')
+    const old = `${template}\nglobal-client-fingerprint: chrome\n`
+    const reminder = checkMihomoBase(old, old, undefined).filter(item => item.field === 'global-client-fingerprint')
+    expect(reminder).toHaveLength(1)
+    expect(reminder[0]).toMatchObject({ blocking: false })
+    expect(reminder[0].message).toContain('v1.19.27')
+    expect(blocking(old).map(item => item.field)).toContain('global-client-fingerprint')
+    expect(blocking(old.replace('chrome', 'firefox'), old).map(item => item.field)).toEqual(['global-client-fingerprint'])
+  })
+
   it('applies the wizard password rules and requires one for a LAN controller', () => {
     expect(blocking(edit([{ path: ['secret'], value: 'short' }]))[0].message).toContain('8–64')
     expect(blocking(edit([{ path: ['secret'], value: undefined }]))[0].message).toContain('必须设置控制面板密码')
