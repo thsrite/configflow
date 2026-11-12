@@ -157,6 +157,15 @@ app.run(host='127.0.0.1', port=int(os.environ['CF_API_PORT']), debug=False, use_
   assert.match(await card(desktop).locator('[data-base-field="easytier.apply_to"]').textContent(), /订阅和下载/)
   step('filled network, secret, peers and routes')
 
+  // Listening is one switch; its addresses show only while it is on, and turning it off clears them.
+  assert.equal(await card(desktop).locator('[data-base-field="easytier.listeners"]').count(), 0)
+  await card(desktop).locator('[data-easytier-listen] [role="switch"]').click()
+  await card(desktop).locator('[data-base-field="easytier.listeners"]').waitFor()
+  assert.match(await card(desktop).locator('[data-easytier-listen]').textContent(), /启动即连接/)
+  await card(desktop).locator('[data-easytier-listen] [role="switch"]').click()
+  assert.equal(await card(desktop).locator('[data-base-field="easytier.listeners"]').count(), 0)
+  step('listen switch shows and clears the listen addresses')
+
   // A mapped network in the advanced fields is refused in place.
   await card(desktop).locator('[data-easytier-advanced]').click()
   await fillList(desktop, 'proxy-networks', ['192.168.0.0/24->10.200.0.0/24'])

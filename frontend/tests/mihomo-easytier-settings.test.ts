@@ -7,7 +7,7 @@ import MihomoSettings from '@/components/generate/MihomoSettings.vue'
 import MihomoEasyTierSettings from '@/components/generate/MihomoEasyTierSettings.vue'
 import SettingsWorkspace from '@/components/generate/SettingsWorkspace.vue'
 import SettingsPublishBar from '@/components/generate/SettingsPublishBar.vue'
-import { EASYTIER_GROUPS, defaultEasyTier, easyTierIssues, readEasyTier, type EasyTierSettings } from '@/lib/mihomoEasyTier'
+import { EASYTIER_GROUPS, LISTEN_FIELD, defaultEasyTier, easyTierIssues, readEasyTier, type EasyTierSettings } from '@/lib/mihomoEasyTier'
 
 const wrappers: VueWrapper[] = []
 const response = (data: any) => ({ data } as any)
@@ -37,7 +37,9 @@ afterEach(() => {
 
 describe('EasyTier field list', () => {
   it('covers every documented outbound option exactly once', () => {
-    const keys = EASYTIER_GROUPS.flatMap(group => group.fields.map(item => 'secret' in item ? item.secret : String(item.path[1])))
+    // 「监听端口」 stands for no-listener.
+    expect(LISTEN_FIELD.label).toBe('监听端口')
+    const keys = [...EASYTIER_GROUPS.flatMap(group => group.fields.map(item => 'secret' in item ? item.secret : String(item.path[1]))), 'no-listener']
     expect(new Set(keys).size).toBe(keys.length)
     expect(keys.sort()).toEqual([
       'accept-dns', 'dhcp', 'dialer-proxy', 'disable-kcp-input', 'disable-p2p', 'disable-quic-input', 'enable-encryption',
@@ -97,6 +99,26 @@ describe('EasyTier card', () => {
     expect(model.value.options['network-secret']).toBe('new-secret')
     await wrapper.get('[data-base-field="easytier.network-secret"] input').setValue('')
     expect('network-secret' in model.value.options).toBe(false)
+  })
+
+  it('shows the listen addresses only while listening and writes Mihomo keys for each state', async () => {
+    const { wrapper, model } = card()
+    const listen = () => wrapper.get('[data-easytier-listen] [role="switch"]')
+    expect(wrapper.find('[data-base-field="easytier.listeners"]').exists()).toBe(false)
+    expect(wrapper.find('[data-base-field="easytier.mapped-listeners"]').exists()).toBe(false)
+    await listen().trigger('click')
+    expect(model.value.options['no-listener']).toBe(false)
+    expect(wrapper.find('[data-base-field="easytier.listeners"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('启动即连接')
+    // Filled listeners drop no-listener; turning listening off clears every listen key.
+    const listenersField = wrapper.findAllComponents({ name: 'MihomoBaseField' }).find(item => item.props('field').path[1] === 'listeners')!
+    listenersField.vm.$emit('change', ['tcp://0.0.0.0:11010'])
+    await flushPromises()
+    expect(model.value.options).toMatchObject({ listeners: ['tcp://0.0.0.0:11010'] })
+    expect('no-listener' in model.value.options).toBe(false)
+    await listen().trigger('click')
+    expect(['listeners', 'mapped-listeners', 'no-listener'].some(key => key in model.value.options)).toBe(false)
+    expect(wrapper.find('[data-base-field="easytier.listeners"]').exists()).toBe(false)
   })
 
   it('turns the whole setting on and off with one switch', async () => {

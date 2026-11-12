@@ -77,11 +77,14 @@ export const EASYTIER_GROUPS: EasyTierGroup[] = [
     ],
   },
   {
-    id: 'listen', title: '监听', help: '默认不监听端口，只主动连出去；开启监听后，其他节点也能直接连进来。',
+    id: 'listen', title: '监听', help: '默认不监听端口，只主动连出去；打开「监听端口」后，其他节点也能直接连进来。',
     fields: [
-      field('listeners', '监听地址', 'list', '让其他节点连进来的地址，例如 tcp://0.0.0.0:11010。', { help: '要同时接受 IPv6 连接，再加一行 tcp://[::]:11010。填写后不要开启「不监听」。', placeholder: 'tcp://0.0.0.0:11010' }),
-      field('no-listener', '不监听', 'bool', '不监听任何端口。', { coreDefault: true, help: '默认开启。关掉且没填监听地址时，使用 tcp://0.0.0.0:11010。' }),
-      field('mapped-listeners', '对外公布地址', 'list', '经过端口映射时，告诉其他节点从哪个公网地址连进来。', { placeholder: 'tcp://203.0.113.10:11010' }),
+      field('listeners', '监听地址', 'list', '让其他节点连进来的地址，例如 tcp://0.0.0.0:11010。', {
+        help: '不填时使用 tcp://0.0.0.0:11010。要同时接受 IPv6 连接，再加一行 tcp://[::]:11010。', placeholder: 'tcp://0.0.0.0:11010',
+      }),
+      field('mapped-listeners', '对外公布地址', 'list', '经过端口映射或内网穿透时，告诉其他节点从哪个公网地址连进来。', {
+        help: '外面看到的地址或端口和本机监听的一样时不用填。', placeholder: 'tcp://203.0.113.10:11010',
+      }),
     ],
   },
   {
@@ -101,7 +104,7 @@ export const EASYTIER_GROUPS: EasyTierGroup[] = [
   {
     id: 'security', title: '安全', help: '加密、安全模式和固定节点身份。',
     fields: [
-      field('secure-mode', '安全模式', 'bool', '启用 Noise 端到端加密。网络开启了安全模式时这里也要开启。', { coreDefault: false, help: '填写本机密钥或在入网节点地址里带 peer-public-key 时会自动开启。' }),
+      field('secure-mode', '安全模式', 'bool', '启用 Noise 端到端加密。网络开启了安全模式时这里也要开启。', { coreDefault: false, help: '填写本机密钥或在入网节点地址里带 peer-public-key 时会自动开启。\nMihomo v1.19.34 以下（例如 FlClash 0.9.3 内置的 v1.19.33）开启安全模式时必须填写本机私钥和公钥，否则 EasyTier 启动失败（local private key is not set）；v1.19.34 起不填会自动生成。' }),
       { secret: 'local-private-key', label: '本机私钥（local-private-key）', help: help('本机的 X25519 私钥（Base64），固定节点身份，重启后不变。', '同一个配置空间的订阅被多台设备使用时请留空：大家拿到的是同一份配置，写死会让几台设备变成同一个身份，互相顶掉连接。\n导出脱敏备份时会被隐去。') },
       field('local-public-key', '本机公钥', 'text', '本机的 X25519 公钥（Base64），通常可由私钥推出。', { help: '需要和本机私钥一起填写。多台设备共用这份配置时和私钥一样留空。' }),
       field('enable-encryption', '节点间加密', 'bool', '节点之间的流量是否加密。', { coreDefault: true }),
@@ -134,6 +137,14 @@ export const EASYTIER_GROUPS: EasyTierGroup[] = [
     ],
   },
 ]
+
+/** 「监听端口」 stands for no-listener: off writes nothing (Mihomo's default, no listener); on writes no-listener: false
+ *  until listeners are filled in, which listen by themselves. */
+export const LISTEN_FIELD: BaseFieldDef = {
+  path: ['easytier', 'listen'], label: '监听端口', type: 'bool', coreDefault: false,
+  help: help('是否监听端口，让其他节点直接连进来。', '默认关闭，只主动连出去，外出设备一般不需要。打开后不填监听地址时使用 tcp://0.0.0.0:11010（对应 no-listener: false）。关闭时一并清除监听地址和对外公布地址。'),
+}
+export const isListening = (options: EasyTierOptions) => (Array.isArray(options.listeners) && options.listeners.length > 0) || options['no-listener'] === false
 
 export const OUTPUT_FIELDS = {
   name: { path: ['easytier', 'name'], label: '节点名称', type: 'text', help: help('生成的 EasyTier 节点名，规则里也可以直接引用。', '不能和已有节点或策略组重名。'), placeholder: 'EasyTier' },
