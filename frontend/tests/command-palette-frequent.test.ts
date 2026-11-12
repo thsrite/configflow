@@ -56,4 +56,17 @@ describe('command palette suggestions', () => {
     expect(text).toContain('上游路由')
     expect(document.querySelector('[data-frequent-pages]')).toBeNull()
   })
+
+  it('does not repeat the bottom bar on phones and suggests pages only reachable from 更多', async () => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query.includes('max-width: 900px'), media: query, onchange: null,
+      addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false
+    })))
+    const { wrapper, router } = await render()
+    // 底栏页面去得再多也不推荐
+    for (let i = 0; i < 5; i++) { await router.push('/rules'); await router.push('/routers') }
+    await openPalette(wrapper)
+    expect(frequentLabels()).toEqual(['上游路由', '节点库', '订阅来源', '策略组', '客户端设备'])
+    for (const tab of ['数据统计', 'OxiDNS 面板', 'Mihomo 面板', '策略规则', 'Agent']) expect(frequentLabels()).not.toContain(tab)
+  })
 })

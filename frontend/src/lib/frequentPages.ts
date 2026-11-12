@@ -4,8 +4,10 @@
  */
 const KEY = 'cf.palette.visits'
 const LIMIT = 5
-/** 没有访问记录时的默认常用页面 */
+/** 没有访问记录时的默认常用页面（桌面） */
 export const DEFAULT_FREQUENT = ['/dashboard', '/oxidns', '/mihomo', '/rules', '/agents']
+/** 有手机底栏时：底栏已直达的页面不再推荐，默认推荐只能从「更多」进入的常用页面 */
+export const DEFAULT_FREQUENT_BEYOND_TABBAR = ['/nodes', '/subscriptions', '/proxy-groups', '/client-devices', '/generate']
 
 type Visits = Record<string, { n: number; at: number }>
 
@@ -25,13 +27,13 @@ export function recordVisit(path: string, now = Date.now()) {
   try { localStorage.setItem(KEY, JSON.stringify(visits)) } catch { /* 隐私模式下不记录 */ }
 }
 
-/** 按次数、再按最近一次排序，取前 5 个；只保留仍在导航里的页面，不足时用默认页面补足 */
-export function frequentPages(valid: Set<string>): string[] {
+/** 按次数、再按最近一次排序，取前 5 个；只保留可推荐的页面（valid），不足时用默认页面补足 */
+export function frequentPages(valid: Set<string>, defaults: string[] = DEFAULT_FREQUENT): string[] {
   const visits = read()
   const ranked = Object.entries(visits)
     .filter(([path]) => valid.has(path))
     .sort(([, a], [, b]) => b.n - a.n || b.at - a.at)
     .map(([path]) => path)
-  for (const path of DEFAULT_FREQUENT) if (valid.has(path) && !ranked.includes(path)) ranked.push(path)
+  for (const path of defaults) if (valid.has(path) && !ranked.includes(path)) ranked.push(path)
   return ranked.slice(0, LIMIT)
 }

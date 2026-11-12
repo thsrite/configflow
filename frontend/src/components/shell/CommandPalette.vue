@@ -66,8 +66,9 @@ import {
   CommandSeparator,
   CommandShortcut
 } from '@/components/ui/command'
-import { NAV_GROUPS, navigationPath, type NavGroup, type NavItem } from '@/navigation'
-import { frequentPages, recordVisit } from '@/lib/frequentPages'
+import { MOBILE_TAB_PATHS, NAV_GROUPS, navigationPath, type NavGroup, type NavItem } from '@/navigation'
+import { DEFAULT_FREQUENT, DEFAULT_FREQUENT_BEYOND_TABBAR, frequentPages, recordVisit } from '@/lib/frequentPages'
+import { useMediaQuery } from '@vueuse/core'
 import { iconOf } from '@/lib/icons'
 import { useThemeStore } from '@/stores/theme'
 import { ACTION_LABEL, runAction, type AppAction } from '@/lib/actions'
@@ -94,11 +95,17 @@ watch(open, value => {
   query.value = ''
   frequentVersion.value++
 })
+// 手机和平板显示底栏（与 MobileTabBar 的 max-[900px] 一致）
+const hasTabBar = useMediaQuery('(max-width: 900px)')
+const tabPaths = new Set<string>(MOBILE_TAB_PATHS)
 const allItems = computed(() => groups.flatMap(group => visibleItems(group)))
 const frequent = computed<NavItem[]>(() => {
   void frequentVersion.value
   const byPath = new Map(allItems.value.map(item => [item.path, item]))
-  return frequentPages(new Set(byPath.keys())).map(path => byPath.get(path)!).filter(Boolean)
+  // 有底栏时底栏页面点一下就到，不再推荐；改推只能从「更多」进入的页面
+  const valid = new Set([...byPath.keys()].filter(path => !hasTabBar.value || !tabPaths.has(path)))
+  const defaults = hasTabBar.value ? DEFAULT_FREQUENT_BEYOND_TABBAR : DEFAULT_FREQUENT
+  return frequentPages(valid, defaults).map(path => byPath.get(path)!).filter(Boolean)
 })
 // 记录每次进入的导航页面，用于排出「常用页面」
 router.afterEach(to => {
