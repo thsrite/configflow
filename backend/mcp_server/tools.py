@@ -1155,7 +1155,7 @@ _AGENT_INSTALL_ENDPOINTS = {
             'params': free_object(
                 '生成参数（作为 query 传给后端），如 server_url、name / agent_name、'
                 'type（mihomo / mosdns / oxidns）、port、agent_ip、config_path、restart_command、'
-                'agent_type（go / shell）、data_dir、network_mode、enable_mihomo、enable_mosdns、enable_oxidns'
+                'data_dir、network_mode、enable_mihomo、enable_mosdns、enable_oxidns'
             ),
         },
         ['method'],

@@ -227,3 +227,14 @@ def test_ha_preparation_requires_a_json_boolean(client, admin, value):
     })
     assert response.status_code == 400
     assert snapshot_count() == 0
+
+
+@pytest.mark.parametrize('service', ['mihomo', 'mosdns'])
+def test_legacy_shell_agent_is_no_longer_generated(client, service):
+    # The script-only Agent was removed; the public endpoint must say how to move on.
+    response = client.get('/api/agents/install-script', query_string={
+        'name': 'old', 'type': service, 'agent_type': 'shell', 'restart_command': 'x "$(id)"'})
+    assert response.status_code == 400
+    message = response.get_json()['message']
+    assert '旧版 Shell Agent' in message and 'Go Agent' in message
+    assert '$(id)' not in response.get_data(as_text=True)

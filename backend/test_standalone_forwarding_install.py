@@ -443,7 +443,7 @@ def test_api_custom_lifecycle_without_the_field_skips_forwarding(client, admin):
     ({"ipv4_forwarding": 1}, "ipv4_forwarding 必须为 true 或 false"),
     ({"ipv4_forwarding": False, "type": "oxidns"}, "仅 Mihomo 单独安装"),
     ({"ipv4_forwarding": False, "type": "aio"}, "仅 Mihomo 单独安装"),
-    ({"ipv4_forwarding": False, "agent_type": "shell"}, "仅 Mihomo 单独安装"),
+    ({"ipv4_forwarding": False, "agent_type": "shell"}, "旧版 Shell Agent"),
     ({"ipv4_forwarding": True, "restart_command": "/custom/restart", "stop_command": "/s",
       "start_command": "/t", "status_command": "/u"}, "仅使用 systemd 或 OpenRC"),
 ])

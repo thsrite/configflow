@@ -293,6 +293,19 @@ _INSTALL_COMMAND_NUMBERS = frozenset({
 })
 
 
+# The script-only Agent had no transactional publishing or rollback and is no
+# longer generated. Installed ones keep working; the Go installer replaces them.
+LEGACY_SHELL_AGENT_REMOVED = ('旧版 Shell Agent（agent_type=shell）已停止提供。请去掉该参数使用 Go Agent；'
+                              '已安装旧版的设备直接运行 Go Agent 安装命令即可原地升级。')
+
+
+def _require_go_agent(agent_type):
+    if agent_type == 'shell':
+        raise ValueError(LEGACY_SHELL_AGENT_REMOVED)
+    if agent_type != 'go':
+        raise ValueError('agent_type 只支持 go')
+
+
 def _install_command_params(payload):
     if not isinstance(payload, dict) or set(payload) - _INSTALL_COMMAND_FIELDS:
         raise ValueError('安装参数无效，请重新生成命令。')
@@ -309,8 +322,7 @@ def _install_command_params(payload):
         elif not isinstance(value, str) or len(value) > 4096 or '\0' in value:
             raise ValueError(f'{key} 参数无效')
         params[key] = value
-    if params.get('agent_type', 'go') not in ('go', 'shell'):
-        raise ValueError('agent_type 必须为 go 或 shell')
+    _require_go_agent(params.get('agent_type', 'go'))
     return params
 
 
@@ -395,7 +407,6 @@ def _install_script_response(params):
     try:
         import os
         from backend.agents.go_install_script import generate_go_agent_install_script, generate_go_aio_install_script
-        from backend.agents.install_script import generate_lightweight_install_script
 
         # 获取参数
         agent_name = params.get('name', 'My-Agent')
@@ -405,8 +416,8 @@ def _install_script_response(params):
         config_path = params.get('config_path', f'/etc/{service_type}/config.yaml')
         restart_command = params.get('restart_command', f'systemctl restart {service_type}')
 
-        # agent_type: 'go' (默认) 或 'shell'
         agent_type = params.get('agent_type', 'go').lower().strip()
+        _require_go_agent(agent_type)
         install_core_value = params.get('install_core', 'false')
         if install_core_value not in ('true', 'false'):
             raise ValueError('install_core 必须为 true 或 false')
@@ -479,21 +490,7 @@ def _install_script_response(params):
                        ('service_binary', service),
                    )},
             )
-        elif agent_type == 'shell':
-            # Shell 版本（兼容性更好）
-            logger.info("生成 Shell 版本安装脚本")
-            script = generate_lightweight_install_script(
-                server_url=server_url,
-                agent_name=agent_name,
-                service_type=service_type,
-                agent_port=agent_port,
-                agent_ip=agent_ip,
-                config_path=config_path,
-                restart_command=restart_command
-            )
         else:
-            # Go 版本（默认，性能更好）
-            logger.info("生成 Go 版本安装脚本")
             binary_download_url = f"{server_url}/api/agents/download"
             script = generate_go_agent_install_script(
                 server_url=server_url,
