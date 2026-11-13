@@ -227,7 +227,10 @@ def with_current_setup_base(fields):
     template['dns']['listen'] = '127.0.0.1:1053'
     template['tun']['enable'] = False
     current = yaml.safe_dump(template, allow_unicode=True, sort_keys=False)
-    return {**fields, 'mihomo': {**fields['mihomo'], 'custom_config': current}}
+    # New profiles keep stale cache entries for an hour instead of 300 seconds;
+    # profiles saved earlier keep their stored value.
+    oxidns = {**fields['oxidns'], 'cache_lazy_ttl': 3600}
+    return {**fields, 'mihomo': {**fields['mihomo'], 'custom_config': current}, 'oxidns': oxidns}
 
 
 def test_gateway_goal_drafts_match_the_previous_release(tmp_path):

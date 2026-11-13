@@ -52,7 +52,7 @@ export const upstreamFields: OxidnsField[] = [
 export const cacheFields: OxidnsField[] = [
   toggle('cache_enabled', '启用主缓存', optionCopy('重复访问直连网站时，直接复用查询结果。', '希望减少直连网站的重复查询、加快 DNS 响应时开启。', '保存直连分支的 DNS 响应，命中后直接返回。此主缓存不用于代理或 Fake-IP 分支，关闭它不会关闭其他独立缓存。')),
   number('cache_size', '主缓存条目数', 1, optionCopy('保存更多直连查询结果，同时占用更多内存。', '经常访问的域名较多，且设备有足够内存时可增大。', '设置主缓存最多保存的查询条目数，单位是条而非字节。更大的容量能容纳更多结果，但不保证每次查询都命中缓存。')),
-  number('cache_lazy_ttl', 'Lazy cache 总保留时长（秒）', 0, optionCopy('允许先用过期结果应答，再在后台刷新。', '希望减少缓存刚过期时的等待，可以设置大于 0 的秒数。', '300 表示从写入起至少保留 300 秒，并非原 TTL 加 300 秒；原 TTL 更长时沿用原值。过期命中后后台刷新，0 仅关闭此功能。')),
+  number('cache_lazy_ttl', 'Lazy cache 总保留时长（秒）', 0, optionCopy('允许先用过期结果应答，再在后台刷新。', '希望减少缓存刚过期时的等待，可以设置大于 0 的秒数。', '3600 表示从写入起至少保留 3600 秒（1 小时），并非原 TTL 加 3600 秒；原 TTL 更长时沿用原值。过期命中后后台刷新，0 仅关闭此功能。')),
   toggle('cache_dump_enabled', '缓存持久化', optionCopy('将主缓存保存到磁盘，供服务重启后恢复。', '希望重启后继续使用主缓存，且能接受额外写盘时开启。', '定期保存缓存快照；v1.6.1 恢复时不会扣除停机时长，因此结果可能偏旧。默认关闭，只在主缓存同时启用时有意义。')),
   text('cache_dump_file', '缓存文件', optionCopy('指定缓存快照位置，使用工作目录内路径。', '已开启主缓存持久化，需要指定保存位置时填写。', '路径以 OxiDNS 工作目录为起点，如 ./state/cache.dump。只能使用相对路径，不能填写绝对路径或包含 ../ 的上级目录路径。')),
   number('cache_dump_interval', '持久化间隔（秒）', 1, optionCopy('控制缓存写盘频率，间隔越短写入越频繁。', '主缓存和缓存持久化均已开启时，此设置才生效。', '按此秒数定期将主缓存保存到磁盘。间隔较短可减少意外停止时丢失的缓存，但会增加磁盘写入；不会改变 DNS 响应的有效期。'))
@@ -161,7 +161,7 @@ export const applyVerifiedOxidnsTemplate = (settings: Record<string, any>) => Ob
   worker_threads: 2, aggregate_rules: true, metrics_enabled: true,
   local_concurrent: 2, remote_concurrent: 1, fallback_concurrent: 2,
   fallback_threshold: 500, always_standby: false, remote_ttl: 1,
-  cache_enabled: true, cache_size: 10240, cache_lazy_ttl: 300, cache_dump_enabled: false
+  cache_enabled: true, cache_size: 10240, cache_lazy_ttl: 3600, cache_dump_enabled: false
 })
 
 /** MosDNS 支持的单条规则类型；OxiDNS 仅使用下面的域名子集。 */

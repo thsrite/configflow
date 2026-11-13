@@ -9,7 +9,7 @@
           <div class="flex flex-wrap items-center gap-1">
             <h3 class="mr-auto text-sm font-semibold">核心设置</h3>
             <Button variant="outline" type="button" class="min-h-11 text-xs" :disabled="disabled || !canApplyPerformance || Boolean(activeError())" @click="applyPerformance">填入已验证性能参数</Button>
-            <FieldHelp label="已验证性能参数" :text="canApplyPerformance ? optionHelp('想使用已验证的一组性能参数，且当前结构支持编辑。', '填入 2 线程、300 秒过期缓存保留及并发和备用参数。保留上游地址、规则及自定义参数，仅改草稿，需统一保存。') : '当前性能设置使用自定义结构，请通过完整参数编辑。'" />
+            <FieldHelp label="已验证性能参数" :text="canApplyPerformance ? optionHelp('想使用已验证的一组性能参数，且当前结构支持编辑。', '填入 2 线程、3600 秒过期缓存保留及并发和备用参数。保留上游地址、规则及自定义参数，仅改草稿，需统一保存。') : '当前性能设置使用自定义结构，请通过完整参数编辑。'" />
           </div>
           <OxidnsFields :settings="draft" :fields="coreFields" :disabled="disabled" :capabilities="fieldCapabilities" :navigation-disabled="navigationDisabled" @change="change" @error="setError" @navigate="navigate" />
           <OxidnsFields class="border-t border-border pt-4" :settings="draft" :fields="hostFields" :disabled="disabled" :capabilities="fieldCapabilities" :navigation-disabled="navigationDisabled" @change="change" @error="setError" @navigate="navigate" />

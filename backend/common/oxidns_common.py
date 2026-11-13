@@ -744,7 +744,7 @@ def _default_args(tag):
     if tag in _FEATURES:
         return deepcopy(_DEFAULTS[tag]['args'])
     if tag == 'lazy_cache':
-        return {'size': 10240, 'lazy_cache_ttl': 300, 'short_circuit': True}
+        return {'size': 10240, 'lazy_cache_ttl': 3600, 'short_circuit': True}
     if tag == 'local_probe_cache':
         return {'size': 2048, 'short_circuit': False}
     if tag == 'dynamic_domains':

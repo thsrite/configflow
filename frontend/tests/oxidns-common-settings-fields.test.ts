@@ -64,7 +64,7 @@ describe('OxiDNS current common settings', () => {
     const wrapper = await render()
     await click('填入已验证性能参数')
     const changes = lastChange(wrapper) as Record<string, any>
-    expect(changes).toMatchObject({worker_threads: 2, cache_lazy_ttl: 300})
+    expect(changes).toMatchObject({worker_threads: 2, cache_lazy_ttl: 3600})
     expect(changes).not.toHaveProperty('probe_cache_size')
     expect(changes).not.toHaveProperty('probe_cache_enabled')
     expect(changes).not.toHaveProperty('local_dns')
@@ -199,7 +199,7 @@ describe('OxiDNS current common settings', () => {
     const wrapper = await render({navigationDisabled: true, capabilities: {aggregate_rules: {editable: false, reason: '当前无需合并'}, worker_threads: {editable: false, reason: '手工结构'}}})
     await click('填入已验证性能参数')
     const changes = lastChange(wrapper) as Record<string, any>
-    expect(changes.cache_lazy_ttl).toBe(300)
+    expect(changes.cache_lazy_ttl).toBe(3600)
     expect(changes).not.toHaveProperty('aggregate_rules')
     expect(changes).not.toHaveProperty('worker_threads')
     const native = [...document.querySelectorAll('button')].filter(button => ['全部功能', '完整参数'].includes(button.textContent?.trim() || ''))

@@ -48,7 +48,7 @@ def test_defaults_and_legacy_profile_without_oxidns_are_compatible(tmp_path):
     reopened = ProfileRepository(tmp_path)
     assert reopened.get_profile('default')['mosdns'] == document['profiles']['default']['mosdns']
     defaults = get_default_oxidns_settings()
-    assert (defaults['worker_threads'], defaults['cache_lazy_ttl'], defaults['probe_cache_size']) == (2, 300, 2048)
+    assert (defaults['worker_threads'], defaults['cache_lazy_ttl'], defaults['probe_cache_size']) == (2, 3600, 2048)
     assert defaults['cache_dump_enabled'] is False
 
 
@@ -62,7 +62,7 @@ def test_settings_are_independent_and_clone_backup_restore_roundtrip(oxidns_app)
     result = client.post('/api/oxidns/settings?profile=office', json=settings)
     assert result.status_code == 200, result.get_json()
     assert repository.get_profile('office')['mosdns'] == before_mos
-    assert client.get('/api/oxidns/settings').get_json()['cache_lazy_ttl'] == 300
+    assert client.get('/api/oxidns/settings').get_json()['cache_lazy_ttl'] == 3600
     repository.create_profile({'id': 'copy', 'name': 'Copy'}, clone_from='office')
     assert repository.get_profile('copy')['oxidns'] == repository.get_profile('office')['oxidns']
     backup = repository.export_all()
