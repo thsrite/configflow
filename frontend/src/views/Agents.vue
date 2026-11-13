@@ -152,7 +152,10 @@
                 <p v-if="deployments[agent.id].not_recorded && !deployments[agent.id].manual_rollback" class="m-0 text-warning-accent">后端暂未记录此发布，正在继续查询。可使用原发布编号重新提交。</p>
                 <AgentFailureDetails :show-progress-message="false" :showDNSChecks="false" :task="deployments[agent.id]" />
                 <Button v-if="deployments[agent.id].status === 'ready'" variant="outline" size="sm" class="min-h-11" @click="activateDeployment(agent.id)">应用并启动</Button>
-                <Button v-if="deployments[agent.id].status === 'rollback_failed'" variant="outline" size="sm" class="min-h-11" @click="refreshDeployment(agent.id)">查询恢复状态</Button>
+                <div v-if="deployments[agent.id].status === 'rollback_failed'" class="flex flex-wrap gap-2">
+                  <Button size="sm" class="min-h-11" :disabled="recoveringDeployments.has(deployments[agent.id].deployment_id)" @click="recoverDeployment(agent.id)">{{ recoveringDeployments.has(deployments[agent.id].deployment_id) ? '正在请求恢复…' : '重新恢复原配置' }}</Button>
+                  <Button variant="outline" size="sm" class="min-h-11" @click="refreshDeployment(agent.id)">查询恢复状态</Button>
+                </div>
                 <Button v-if="!deployments[agent.id].manual_rollback && (deployments[agent.id].not_recorded || deployments[agent.id].retrying)" variant="outline" size="sm" class="min-h-11" :disabled="deployments[agent.id].retrying" @click="retryDeployment(agent.id)">{{ deployments[agent.id].retrying ? '正在重新提交…' : '重试同一次发布' }}</Button>
               </template>
               <template #details>
@@ -974,7 +977,7 @@ function setRuleUpdateRef(id: string, instance: Element | ComponentPublicInstanc
 function ruleUpdateBlocked(agent: Agent) {
   return agent.status !== 'online' || pushingIds.value.has(agent.id) || upgradeBusy(agent.id) || deploymentBusy(agent.id) || deployments[agent.id]?.status === 'rollback_failed'
 }
-const { deployments, busy: deploymentBusy, track: trackDeployment, beginSubmission, endSubmission, refresh: refreshDeployment, activate: activateDeployment, retryPublish: retryDeployment, rollback: rollbackDeployment } = useAgentDeployments(() => { void loadAgents() })
+const { deployments, busy: deploymentBusy, track: trackDeployment, beginSubmission, endSubmission, refresh: refreshDeployment, activate: activateDeployment, retryPublish: retryDeployment, rollback: rollbackDeployment, recover: recoverDeployment, recovering: recoveringDeployments } = useAgentDeployments(() => { void loadAgents() })
 const deploymentHistoryAgentId = ref<string | null>(null)
 const notificationDeploymentId = ref('')
 const dnsFollowRefs = new Map<string, InstanceType<typeof AgentDNSFollow>>()

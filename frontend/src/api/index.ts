@@ -578,6 +578,8 @@ export const agentApi = {
   getDeployment: (id: string, deploymentId: string) => api.get(`/agents/${id}/deployments/${deploymentId}`),
   activateDeployment: (id: string, deploymentId: string) => api.post(`/agents/${id}/deployments/${deploymentId}/activate`),
   rollbackDeployment: (id: string, deploymentId: string) => api.post(`/agents/${id}/deployments/${deploymentId}/rollback`, {}),
+  /** 回滚失败后让 Agent 重新恢复原配置（Agent 1.8.57-go+） */
+  recoverDeployment: (id: string, deploymentId: string) => api.post(`/agents/${id}/deployments/${deploymentId}/recover`, {}),
   uninstall: (id: string) => api.post(`/agents/${id}/uninstall`),
   generateInstallCommand: (params: AgentInstallScriptParams) =>
     api.post<InstallCommandResult>('/agents/install-command', params),

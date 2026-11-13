@@ -129,11 +129,48 @@ func commandExitCode(err error) int {
 	}
 	return -1
 }
+
+// OpenRC's start-stop-daemon stops waiting after 5 s unless the init script
+// sets retry, and never sends KILL. A core that is still finishing an
+// in-process reload (OxiDNS handles SIGTERM only afterwards) then outlives
+// "rc-service stop" although it is already shutting down. Give it the patience
+// systemd's stop timeout would before calling the stop a failure.
+var (
+	openrcStopGrace = 60 * time.Second
+	openrcStopPoll  = 500 * time.Millisecond
+)
+
+// waitServiceExit reports whether the service is still running once it has
+// stopped or the grace period ends. Transitional states count as running.
+func waitServiceExit(cfg *Config, grace time.Duration) (bool, error) {
+	deadline := time.Now().Add(grace)
+	for {
+		time.Sleep(openrcStopPoll)
+		running, e := serviceRunning(cfg)
+		if errors.Is(e, errServiceTransition) {
+			running, e = true, nil
+		}
+		if e != nil || !running || !time.Now().Before(deadline) {
+			return running, e
+		}
+	}
+}
+
 func stopService(cfg *Config) error {
 	// Stop the manager even for EXITED/BACKOFF/activating: those states may have
 	// a scheduled auto-restart and are not a quiescent backup boundary.
 	out, commandErr := serviceCommand(cfg, "stop")
 	running, e := serviceRunning(cfg)
+	if cfg.ServiceManager == "openrc" && commandErr != nil && (running || errors.Is(e, errServiceTransition)) {
+		if running, e = waitServiceExit(cfg, openrcStopGrace); e == nil && !running {
+			// The daemon exited after start-stop-daemon gave up. OpenRC now
+			// records it as crashed; startService zaps that before starting.
+			return nil
+		}
+		if e == nil && running {
+			out = append(out, []byte(fmt.Sprintf("\n服务在停止命令返回后继续等待 %d 秒仍未退出。", int(openrcStopGrace/time.Second)))...)
+		}
+	}
 	if e != nil {
 		if commandErr != nil {
 			return diagnosticFailure("service stop failed; cannot confirm service status", commandErr, out, cfg.Token)

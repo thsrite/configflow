@@ -923,3 +923,83 @@ def test_manual_rollback_busy_after_ambiguous_request_remains_pending(env, monke
     result = manager.get_deployment(agent['id'], deployment_id)
     assert result['status'] == 'unknown' and result['manual_rollback'] and result['pending']
     assert manager.begin_deployment(agent['id'], 'unsafe-next')['http_status'] == 409
+
+
+def failed_rollback(manager, agent, deployment_id='broken'):
+    manager.begin_deployment(agent['id'], deployment_id)
+    manager.record_deployment(agent['id'], deployment_id, {
+        'success': False, 'status': 'rollback_failed', 'submitted': True,
+        'error': 'service remains running after stop', 'rollback_error': 'rollback cannot stop service',
+        'rollback_error_details': '1 process refused to stop'})
+    return deployment_id
+
+
+def test_recover_failed_rollback_requests_agent_recovery_and_reconciles(env, monkeypatch):
+    _, manager, agent, _ = env
+    deployment_id = failed_rollback(manager, agent)
+    def post(url, **kwargs):
+        assert url.endswith(f'/deployments/{deployment_id}/recover')
+        reserved = manager.get_agent_by_id(agent['id'])['latest_deployment']
+        assert reserved['status'] == 'rolling_back' and 'rollback_error' not in reserved
+        assert manager.begin_deployment(agent['id'], 'raced-publish')['http_status'] == 409
+        return response({'success': True, 'deployment_id': deployment_id, 'status': 'rolling_back', 'recovering': True}, 202)
+    monkeypatch.setattr('backend.agents.manager.requests.post', post)
+    result = manager.recover_deployment(agent['id'], deployment_id)
+    assert result['status'] == 'rolling_back' and not result.get('http_status')
+    assert any(event.get('message') == '正在请求 Agent 重新恢复原配置' for event in result['events'])
+    monkeypatch.setattr('backend.agents.manager.requests.get', lambda *_a, **_k: response({
+        'success': False, 'status': 'rolled_back', 'error': 'service remains running after stop'}))
+    recovered = manager.get_deployment(agent['id'], deployment_id)
+    assert recovered['status'] == 'rolled_back' and 'rollback_error' not in recovered
+    assert manager.begin_deployment(agent['id'], 'next')['success']
+    manager.finish_deployment_preparation(agent['id'], 'next')
+
+
+@pytest.mark.parametrize('status', [404, 405])
+def test_recover_on_agent_without_endpoint_keeps_failure_and_names_the_command(env, monkeypatch, status):
+    _, manager, agent, _ = env
+    deployment_id = failed_rollback(manager, agent)
+    monkeypatch.setattr('backend.agents.manager.requests.post', lambda *_a, **_k: response({}, status))
+    result = manager.recover_deployment(agent['id'], deployment_id)
+    assert result['http_status'] == status
+    current = manager.get_agent_by_id(agent['id'])['latest_deployment']
+    assert current['status'] == 'rollback_failed'
+    assert current['rollback_error'] == 'rollback cannot stop service'
+    assert current['rollback_error_details'] == '1 process refused to stop'
+    assert '1.8.57-go' in current['message']
+    assert '-config /opt/configflow-agent/config-mihomo.json -recover-and-exit' in current['message']
+    assert manager.begin_deployment(agent['id'], 'blocked')['http_status'] == 409
+
+
+def test_recover_rejected_by_agent_keeps_failure_with_reason(env, monkeypatch):
+    _, manager, agent, _ = env
+    deployment_id = failed_rollback(manager, agent)
+    monkeypatch.setattr('backend.agents.manager.requests.post', lambda *_a, **_k: response({
+        'success': False, 'message': 'deployment broken does not need recovery (status rolled_back)'}, 409))
+    result = manager.recover_deployment(agent['id'], deployment_id)
+    assert result['http_status'] == 409
+    current = manager.get_agent_by_id(agent['id'])['latest_deployment']
+    assert current['status'] == 'rollback_failed' and 'does not need recovery' in current['message']
+    assert current['events'][-1]['status'] == 'rollback_failed'
+
+
+def test_recover_transport_error_waits_for_agent_status(env, monkeypatch):
+    _, manager, agent, _ = env
+    deployment_id = failed_rollback(manager, agent)
+    def fail(*_a, **_k):
+        raise requests.ConnectionError('reset')
+    monkeypatch.setattr('backend.agents.manager.requests.post', fail)
+    assert manager.recover_deployment(agent['id'], deployment_id)['status'] == 'unknown'
+    monkeypatch.setattr('backend.agents.manager.requests.get', lambda *_a, **_k: response({
+        'success': False, 'status': 'rolled_back'}))
+    assert manager.get_deployment(agent['id'], deployment_id)['status'] == 'rolled_back'
+
+
+def test_recover_only_applies_to_failed_rollback(env, monkeypatch):
+    _, manager, agent, _ = env
+    deployment_id = successful_deployment(manager, agent)
+    monkeypatch.setattr('backend.agents.manager.requests.post', lambda *_a, **_k: pytest.fail('must not contact the Agent'))
+    result = manager.recover_deployment(agent['id'], deployment_id)
+    assert result['http_status'] == 409
+    assert manager.get_agent_by_id(agent['id'])['latest_deployment']['status'] == 'succeeded'
+    assert manager.recover_deployment(agent['id'], 'missing')['http_status'] == 404

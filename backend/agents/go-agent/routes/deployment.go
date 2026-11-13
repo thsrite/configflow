@@ -442,6 +442,10 @@ func DeploymentHandler(cfg *Config) http.HandlerFunc {
 			manualRollbackHandler(cfg, id, w, r)
 			return
 		}
+		if len(parts) == 2 && parts[1] == "recover" && r.Method == http.MethodPost {
+			recoverHandler(cfg, id, w)
+			return
+		}
 		if len(parts) == 1 && r.Method == http.MethodGet {
 			s, e := loadDeployment(cfg, id)
 			if e != nil {
@@ -1148,6 +1152,11 @@ func activateDeployment(cfg *Config, s *DeploymentState) {
 			// A manual deployment may resolve a failed or uncertain reload by
 			// applying the candidate through the usual stop/start health checks.
 			log.Printf("%s release %s: reload failed (%v), restarting", cfg.ServiceType, s.DeploymentID, e)
+			// A reload that outlived the wait is still running and the core
+			// ignores SIGTERM until it ends; let it finish before stopping.
+			if ox, ok := reloader.(*oxidnsReloader); ok && !ox.settle(oxidnsReloadSettleTimeout) {
+				log.Printf("%s release %s: core still reloading after %s; stopping anyway", cfg.ServiceType, s.DeploymentID, oxidnsReloadSettleTimeout)
+			}
 			reloader = nil
 			if e = saveDeployment(cfg, s, "stopping"); e != nil {
 				fail(e)
@@ -1313,6 +1322,54 @@ func RecoverDeployments(cfg *Config, startService bool) error {
 		return e
 	}
 	defer release()
+	return recoverDeploymentsLocked(cfg, startService)
+}
+
+// recoveryStates are the statuses -recover-and-exit acts on. While the service
+// operation lock is held no worker owns them, so they need explicit recovery.
+var recoveryStates = map[string]bool{"rollback_failed": true, "recovery_pending": true, "stopping": true, "backing_up": true,
+	"replacing": true, "reloading": true, "starting": true, "checking": true, "rolling_back": true}
+
+// recoverHandler runs the same recovery as -recover-and-exit, so a deployment
+// whose rollback failed can be recovered from ConfigFlow instead of a shell.
+func recoverHandler(cfg *Config, id string, w http.ResponseWriter) {
+	release, err := AcquireServiceOperation(cfg)
+	if err != nil {
+		deploymentFailure(w, 409, err)
+		return
+	}
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			release()
+		}
+	}()
+	s, err := loadDeployment(cfg, id)
+	if err != nil {
+		deploymentFailure(w, 404, fmt.Errorf("deployment not found"))
+		return
+	}
+	if !recoveryStates[s.Status] {
+		deploymentFailure(w, 409, fmt.Errorf("deployment %s does not need recovery (status %s)", id, s.Status))
+		return
+	}
+	if err := validateServiceLifecycle(cfg); err != nil {
+		deploymentFailure(w, 409, err)
+		return
+	}
+	JsonResponse(w, 202, map[string]interface{}{"success": true, "deployment_id": id, "status": "rolling_back", "recovering": true})
+	handedOff = true
+	go func() {
+		defer release()
+		if err := recoverDeploymentsLocked(cfg, true); err != nil {
+			log.Printf("Deployment recovery requested from ConfigFlow did not complete: %v", err)
+			return
+		}
+		log.Println("Deployment recovery requested from ConfigFlow completed.")
+	}()
+}
+
+func recoverDeploymentsLocked(cfg *Config, startService bool) error {
 	entries, e := os.ReadDir(deploymentRoot(cfg))
 	if e != nil {
 		return e

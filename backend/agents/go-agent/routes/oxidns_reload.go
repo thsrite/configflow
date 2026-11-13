@@ -145,6 +145,27 @@ func (r *oxidnsReloader) status() (*oxidnsReloadStatus, error) {
 	return &status, nil
 }
 
+// oxidnsReloadSettleTimeout bounds waiting, before a fallback stop, for a reload
+// that outlived oxidnsReloadTimeout; replaceable in tests.
+var oxidnsReloadSettleTimeout = 90 * time.Second
+
+// settle waits until the core is reachable again and no reload is pending or in
+// progress. OxiDNS closes its API while reloading and handles SIGTERM only after
+// the reload, so stopping it mid-reload outlasts OpenRC's stop timeout. It
+// reports whether the core settled within the timeout.
+func (r *oxidnsReloader) settle(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if status, err := r.status(); err == nil && !status.Pending && !status.InProgress {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 // reload asks the core to apply the on-disk configuration and waits until it
 // reports running exactly that file.
 func (r *oxidnsReloader) reload(cfg *Config) error {
