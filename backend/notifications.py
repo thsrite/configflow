@@ -3,7 +3,7 @@ from copy import deepcopy
 import hashlib
 import json
 
-from backend.agents.operation_events import event_message
+from backend.agents.operation_events import MESSAGE_LIMIT, event_message
 from backend.utils import notification_store as store
 from backend.utils.logger import get_logger
 
@@ -123,6 +123,22 @@ def record_registration_rejection(repository, agent_data, reason):
             'target': target('/agents', '查看 Agent 列表')})
 
 
+NOTICE_SOURCE = 'notice'
+
+
+def record_notice(repository, key, title, message, link):
+    """Something ConfigFlow changed on its own; shown once, until it is read.
+
+    The text is ConfigFlow's own and may name a public DoH address, which the
+    URL redaction applied to device output would hide.
+    """
+    with store.transaction(repository.data_dir) as items:
+        store.observe(items, key, {
+            'state': 'pending', 'source': NOTICE_SOURCE, 'scope': 'system', 'severity': 'warning',
+            'status_label': '已自动调整', 'title': title, 'message': str(message)[:MESSAGE_LIMIT], 'impact': '',
+            'checked_at': store.now(), 'evidence': key, 'target': link})
+
+
 def _registration_fresh(item):
     from datetime import datetime, timezone
     try:
@@ -232,6 +248,8 @@ def _refresh(items, repository, completed_task=None):
                 if item['state'] == 'pending':
                     item['stale'] = item.get('signature') != routers[prefix]
         if item.get('source') == REGISTRATION_SOURCE and _registration_fresh(item):
+            keys.add(key)
+        if item.get('source') == NOTICE_SOURCE:
             keys.add(key)
         if key not in keys:
             store.observe(items, key, {'state': 'inactive'})

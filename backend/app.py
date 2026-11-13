@@ -142,6 +142,13 @@ def initialize_app():
     try:
         # 初始化 Agent 管理器
         init_agent_manager()
+        try:
+            # 旧版「OxiDNS 托管」测速入口：从配置中移除并把测速 DNS 改为 DoH（只执行一次）
+            from backend.agents.node_test_dns_cleanup import migrate
+            from backend.common.config import get_repository
+            migrate(get_repository())
+        except Exception as e:
+            app.logger.warning(f"清理旧版测速托管入口失败: {str(e)}")
         app.logger.info("✅ 应用初始化完成")
     except Exception as e:
         app.logger.error(f"❌ 应用初始化失败: {str(e)}")

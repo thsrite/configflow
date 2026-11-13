@@ -9,6 +9,8 @@ from urllib.parse import urlsplit, urlunsplit
 from backend.common.config import get_repository, get_system_config, reset_config_context
 
 CONFIG_KEY = 'node_test_dns_config'
+# Port 443 is not taken over by a gateway's DNS hijack, and an IP needs no bootstrap lookup.
+DIRECT_DOH = ('https://223.5.5.5/dns-query', 'https://1.12.12.12/dns-query')
 DNS_ERROR = '测速 DNS 须为 IPv4[:端口]、https://DoH 或 tls://DoT，最多 4 个；不支持凭据、查询参数或片段'
 BOOTSTRAP_ERROR = '引导 DNS 须为 IPv4 或 IPv4:端口，最多 4 个'
 CHECK_MESSAGES = {
@@ -114,10 +116,10 @@ def load_config():
     saved = system.get(CONFIG_KEY)
     if isinstance(saved, dict) and saved.get('mode') != 'managed':
         return normalize_config(saved)
-    # Before node_test_dns_config existed, and for the removed "OxiDNS 托管"
-    # mode: its listener stays in the device's configuration and its address
-    # was always mirrored into node_test_dns, so keep querying it as a custom
-    # server. Nothing is rewritten while reading.
+    # Before node_test_dns_config existed. The removed "OxiDNS 托管" mode is
+    # converted at startup (agents.node_test_dns_cleanup); until then its
+    # address, always mirrored into node_test_dns, is read the same way.
+    # Nothing is rewritten while reading.
     servers = normalize_dns_servers(system.get('node_test_dns', []))
     return normalize_config({'mode': 'custom' if servers else 'system', 'servers': servers})
 
