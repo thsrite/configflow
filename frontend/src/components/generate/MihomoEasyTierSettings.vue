@@ -6,7 +6,7 @@ import FieldHelp from '@/components/common/FieldHelp.vue'
 import type { BaseFieldDef } from '@/lib/mihomoBaseCopy'
 import type { BaseFieldState, BaseIssue } from '@/lib/mihomoBaseSettings'
 import {
-  EASYTIER_GROUPS, OUTPUT_FIELDS, easyTierIssues, type EasyTierSettings,
+  EASYTIER_GROUPS, LISTEN_FIELD, OUTPUT_FIELDS, easyTierIssues, isListening, type EasyTierSettings,
 } from '@/lib/mihomoEasyTier'
 import MihomoBaseCell from './MihomoBaseCell.vue'
 import MihomoBaseField from './MihomoBaseField.vue'
@@ -39,8 +39,25 @@ function setOption(key: string, value: unknown) {
   update(next => {
     if (value === undefined || value === '' || (Array.isArray(value) && !value.length)) delete next.options[key]
     else next.options[key] = value as EasyTierSettings['options'][string]
+    // Filled listeners listen by themselves; emptied while listening, the core's default listener stays on.
+    if (key === 'listeners') {
+      if (Array.isArray(next.options.listeners) && next.options.listeners.length) delete next.options['no-listener']
+      else next.options['no-listener'] = false
+    }
   })
 }
+const listening = computed(() => isListening(settings.value.options))
+function setListening(on: boolean) {
+  update(next => {
+    delete next.options.listeners
+    delete next.options['mapped-listeners']
+    delete next.options['no-listener']
+    if (on) next.options['no-listener'] = false
+  })
+}
+const listenNote = computed(() => listening.value && !settings.value.keepalive.enabled
+  ? '「启动即连接」未开启时，EasyTier 要等第一次访问才启动，在那之前别人连不进来。' : '')
+const shownFields = (group: (typeof EASYTIER_GROUPS)[number]) => group.id === 'listen' && !listening.value ? [] : group.fields
 const outputValue = (key: keyof typeof OUTPUT_FIELDS): unknown => {
   const value = settings.value
   switch (key) {
@@ -117,7 +134,9 @@ const summary = computed(() => {
       <template v-for="group in EASYTIER_GROUPS" :key="group.id">
         <MihomoBaseGroup v-if="advancedOpen || ['network', 'listen'].includes(group.id) || groupBlocking(group.fields) > 0" :title="group.title" :section="`easytier-${group.id}`"
           :help="group.help" :blocking="groupBlocking(group.fields)">
-          <template v-for="item in group.fields" :key="'secret' in item ? item.secret : fieldKey(item)">
+          <MihomoBaseField v-if="group.id === 'listen'" :field="LISTEN_FIELD" :state="state(listening)" :note="listenNote"
+            :issues="issueOf('no-listener')" :disabled="disabled" data-easytier-listen @change="setListening($event === true)" />
+          <template v-for="item in shownFields(group)" :key="'secret' in item ? item.secret : fieldKey(item)">
             <MihomoBaseCell v-if="'secret' in item" :label="item.label.replace(/（[^（）]*）$/, '')" :help="`YAML 键：${item.secret}\n${item.help}`"
               :html-for="`${id}-${item.secret}`" :messages="issueOf(item.secret)" :data-base-field="`easytier.${item.secret}`">
               <div class="flex min-w-0 items-center gap-0.5">
