@@ -173,8 +173,8 @@ const fieldState = (field: BaseFieldDef) => view.value.field(field.path, field.t
       </MihomoBaseGroup>
 
       <MihomoBaseGroup section="advanced" title="进阶" :blocking="count('advanced', true)" :warnings="count('advanced', false)"
-        help="TUN 协议栈与 MTU、延迟与并发、TLS 指纹、TCP 保活、缓存、DNS 的 HTTP/3 与缓存算法、下载 User-Agent。一般保持初始模板的值即可，遇到兼容性问题再调整。">
-        <MihomoBaseField v-for="field in ADVANCED_FIELDS" :key="pathId(field.path)" :field="field" :state="fieldState(field)"
+        help="TUN 协议栈与 MTU、延迟与并发、TCP 保活、缓存、DNS 的 HTTP/3 与缓存算法、下载 User-Agent。一般保持初始模板的值即可，遇到兼容性问题再调整。">
+        <MihomoBaseField v-for="field in ADVANCED_FIELDS.filter(item => !item.removed || fieldState(item).present)" :key="pathId(field.path)" :field="field" :state="fieldState(field)"
           :issues="issuesFor(pathId(field.path))" :disabled="locked" @change="change(field.path, $event)" @draft="setDraft(pathId(field.path), $event)" />
       </MihomoBaseGroup>
 

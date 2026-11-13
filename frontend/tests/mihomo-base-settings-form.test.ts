@@ -46,6 +46,13 @@ describe('Mihomo base settings form', () => {
     for (const item of wrapper.findAllComponents(MihomoBaseField)) expect(item.props('field').help).toMatch(/【作用】[\s\S]+【默认 \/ 推荐】[\s\S]+【修改后】/)
   })
 
+  it('shows the removed global-client-fingerprint only while the YAML still has it', () => {
+    expect(field(form(), 'global-client-fingerprint')).toBeUndefined()
+    const old = `${template}\nglobal-client-fingerprint: chrome\n`
+    const cell = field(form(old, { savedContent: old }), 'global-client-fingerprint')
+    expect(cell.props('issues')).toEqual([expect.objectContaining({ blocking: false, message: expect.stringContaining('v1.19.27') })])
+  })
+
   it('writes a form change into the YAML and follows edits made in the YAML', async () => {
     const wrapper = form()
     field(wrapper, 'log-level').vm.$emit('change', 'debug')

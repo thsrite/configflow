@@ -14,9 +14,10 @@ LOG_LEVELS = ('silent', 'error', 'warning', 'info', 'debug')
 FIND_PROCESS_MODES = ('always', 'strict', 'off')
 FAKE_IP_FILTER_MODES = ('blacklist', 'whitelist', 'rule')
 TUN_STACKS = ('system', 'gvisor', 'mixed')
-CLIENT_FINGERPRINTS = ('chrome', 'firefox', 'safari', 'ios', 'android', 'edge', '360', 'qq', 'random')
 CACHE_ALGORITHMS = ('lru', 'arc')
 SNIFF_PROTOCOLS = ('HTTP', 'TLS', 'QUIC')
+REMOVED_FINGERPRINT = ('global-client-fingerprint 已在 Mihomo v1.19.27 移除，写了也不生效，加载时还会报错；'
+                       '请删除这一项，需要时在节点上设置 client-fingerprint')
 SNIFF_PORTS_HINT = '端口写成 80 或 8080-8880，多个用逗号分隔，范围 1–65535'
 DNS_LIST_KEYS = ('default-nameserver', 'nameserver', 'proxy-server-nameserver', 'direct-nameserver', 'fallback')
 DNS_UPSTREAM_PATHS = tuple(('dns', key) for key in DNS_LIST_KEYS + ('nameserver-policy', 'proxy-server-nameserver-policy'))
@@ -45,7 +46,6 @@ ENUMS = {
     ('find-process-mode',): ('find-process-mode', FIND_PROCESS_MODES),
     ('dns', 'fake-ip-filter-mode'): ('dns.fake-ip-filter-mode', FAKE_IP_FILTER_MODES),
     ('tun', 'stack'): ('tun.stack', TUN_STACKS),
-    ('global-client-fingerprint',): ('global-client-fingerprint', CLIENT_FINGERPRINTS),
     ('dns', 'cache-algorithm'): ('dns.cache-algorithm', CACHE_ALGORITHMS),
 }
 STRING_LISTS = {
@@ -144,14 +144,15 @@ def _check_types(document, changed):
         value = _get(document, path)
         if changed(path) and value is not _MISSING and (type(value) is not int or not low <= value <= high):
             raise BaseSettingsError(f'{label} 需为 {low}–{high} 的整数')
+    # Mihomo v1.19.27 removed it: ignored, with an error logged on every load. Not added back.
+    if changed(('global-client-fingerprint',)) and _get(document, ('global-client-fingerprint',)) is not _MISSING:
+        raise BaseSettingsError(REMOVED_FINGERPRINT)
     for path, (label, options) in ENUMS.items():
         value = _get(document, path)
         if not changed(path) or value is _MISSING:
             continue
         if path == ('find-process-mode',) and type(value) is bool:
             continue  # Unquoted off / on; generation maps them back to the mode names.
-        if type(value) is int:
-            value = str(value)  # global-client-fingerprint: 360 without quotes.
         if not isinstance(value, str) or value.strip().lower() not in options:
             raise BaseSettingsError(f'{label} 只能是 {" / ".join(options)} 之一')
     for path, label in STRING_LISTS.items():
