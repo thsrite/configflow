@@ -433,6 +433,35 @@ def test_rerun_preserves_published_configs_and_existing_agent_identity(tmp_path,
         assert cfg['agent_id']=='registered-'+kind
 
 
+def test_openrc_rerun_upgrades_earlier_core_script_to_wait_for_exit(tmp_path,monkeypatch):
+    run,events,source=host(tmp_path,monkeypatch,'openrc')
+    assert run().returncode==0
+    retry='retry="TERM/30/KILL/5"\n'
+    for kind in ('mihomo','oxidns'):
+        unit=tmp_path/f'etc/init.d/{kind}'
+        assert retry in unit.read_text()
+        # Scripts written before retry existed, otherwise identical.
+        unit.write_text(unit.read_text().replace(retry,''))
+    result=run(FAIL_GITHUB='yes')
+    assert result.returncode==0,result.stdout+result.stderr
+    for kind in ('mihomo','oxidns'):
+        unit=tmp_path/f'etc/init.d/{kind}'
+        assert unit.read_text().count(retry)==1
+        assert os.stat(unit).st_mode & 0o777==0o755
+
+
+def test_openrc_rerun_still_refuses_other_core_script_edits(tmp_path,monkeypatch):
+    run,events,source=host(tmp_path,monkeypatch,'openrc')
+    assert run().returncode==0
+    unit=tmp_path/'etc/init.d/oxidns'
+    edited=unit.read_text().replace('retry="TERM/30/KILL/5"\n','').replace('need net','need net localmount')
+    unit.write_text(edited)
+    result=run(FAIL_GITHUB='yes')
+    assert result.returncode!=0
+    assert '已被修改' in result.stdout+result.stderr
+    assert unit.read_text()==edited
+
+
 def test_partial_start_failure_can_resume_without_rewriting_configs(tmp_path,monkeypatch):
     run,events,source=host(tmp_path,monkeypatch)
     failed=run(FAIL_START='oxidns')

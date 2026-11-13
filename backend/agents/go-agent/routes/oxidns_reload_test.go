@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // fakeReloadCore models the OxiDNS control API: it runs a config version and
@@ -21,6 +22,9 @@ type fakeReloadCore struct {
 	lastErr  string
 	reloads  int
 	unhealth bool
+	// slowPolls keeps a "slow-reload" reload in progress for that many status
+	// polls, like a core still re-assembling large rule sets.
+	slowPolls int
 }
 
 func (c *fakeReloadCore) serve(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +43,16 @@ func (c *fakeReloadCore) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Fprint(w, `{"status":"ready"}`)
 	case r.URL.Path == "/api/reload/status" && r.Method == http.MethodGet:
+		if c.slowPolls > 0 {
+			c.slowPolls--
+			if c.slowPolls > 0 {
+				fmt.Fprintf(w, `{"status":"reloading","pending":false,"in_progress":true,"last_error":null,"running_version":%q}`, c.running)
+				return
+			}
+			data, _ := os.ReadFile(c.cfg.ConfigPath)
+			c.running = sha256Hex(data)
+			appendLifecycle(c.cfg, "reload-finished")
+		}
 		lastErr := "null"
 		if c.lastErr != "" {
 			lastErr = fmt.Sprintf("%q", c.lastErr)
@@ -49,6 +63,9 @@ func (c *fakeReloadCore) serve(w http.ResponseWriter, r *http.Request) {
 		data, _ := os.ReadFile(c.cfg.ConfigPath)
 		if bytes.Contains(data, []byte("reject-reload")) {
 			c.lastErr = "plugin assembly failed"
+		} else if bytes.Contains(data, []byte("slow-reload")) {
+			c.lastErr = ""
+			c.slowPolls = 8
 		} else {
 			c.lastErr = ""
 			c.running = sha256Hex(data)
@@ -175,5 +192,51 @@ func TestOxiDNSReloadHealthFailureRollsBack(t *testing.T) {
 	}
 	if actions := lifecycle(t, cfg); actions != "stop\nstart\n" {
 		t.Fatalf("rollback restarts onto the restored files: %q", actions)
+	}
+}
+
+func appendLifecycle(cfg *Config, action string) {
+	f, err := os.OpenFile(filepath.Join(filepath.Dir(cfg.ConfigPath), "lifecycle-actions"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err == nil {
+		fmt.Fprintln(f, action)
+		f.Close()
+	}
+}
+
+// A reload that outlives the Agent's wait is still running, and OxiDNS handles
+// SIGTERM only after it. The fallback restart must not stop the core mid-reload.
+func TestOxiDNSFallbackRestartWaitsForUnfinishedReload(t *testing.T) {
+	cfg, core, render := testOxiReloadDeployment(t)
+	oldTimeout, oldSettle := oxidnsReloadTimeout, oxidnsReloadSettleTimeout
+	oxidnsReloadTimeout, oxidnsReloadSettleTimeout = 300*time.Millisecond, 10*time.Second
+	t.Cleanup(func() { oxidnsReloadTimeout, oxidnsReloadSettleTimeout = oldTimeout, oldSettle })
+	state := submitBundle(t, cfg, "slow-reload", map[string][]byte{"config.yaml": []byte(render("# slow-reload\n"))}, true)
+	if state.Status != "succeeded" {
+		t.Fatalf("fallback publish failed: %+v", state)
+	}
+	if core.reloads != 1 {
+		t.Fatalf("reload should be attempted once, got %d", core.reloads)
+	}
+	if actions := lifecycle(t, cfg); actions != "reload-finished\nstop\nstart\n" {
+		t.Fatalf("stop must wait for the unfinished reload: %q", actions)
+	}
+}
+
+func TestOxiDNSReloadSettleGivesUpAfterTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"status":"reloading","pending":false,"in_progress":true,"last_error":null,"running_version":null}`)
+	}))
+	defer server.Close()
+	r := &oxidnsReloader{endpoint: server.URL, client: server.Client()}
+	start := time.Now()
+	if r.settle(300 * time.Millisecond) {
+		t.Fatal("a reload that never ends must not count as settled")
+	}
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("settle ignored its timeout: %s", elapsed)
+	}
+	unreachable := &oxidnsReloader{endpoint: "http://127.0.0.1:1", client: server.Client()}
+	if unreachable.settle(300 * time.Millisecond) {
+		t.Fatal("an unreachable core must not count as settled")
 	}
 }

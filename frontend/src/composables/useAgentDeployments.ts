@@ -90,6 +90,8 @@ export function useAgentDeployments(onSuccess: () => void, shouldAnnounce: (agen
   const submissions = new Map<string, { id: string; observed: boolean }>()
   const actions = reactive(new Map<string, { id: string; kind: 'activate' | 'rollback'; observed: boolean }>())
   const announced = new Set<string>()
+  // Deployments whose failed rollback the user asked the Agent to recover.
+  const recovering = reactive(new Set<string>())
   let disposed = false
 
   function busy(agentId: string) {
@@ -185,7 +187,12 @@ export function useAgentDeployments(onSuccess: () => void, shouldAnnounce: (agen
     if (terminal.has(task.status)) {
       const key = `${agentId}:${task.deployment_id}:${task.status}`
       if (announce && !announced.has(key)) {
-        if (task.status === 'succeeded' || (task.manual_rollback && task.status === 'rolled_back')) {
+        if (recovering.has(task.deployment_id) && task.status === 'rolled_back') {
+          notify.success('已恢复发布前配置', '服务已按原配置启动并通过检查，本次发布未生效。')
+          onSuccess()
+        } else if (recovering.has(task.deployment_id) && task.status === 'rollback_failed') {
+          notify.error('重新恢复失败', deploymentErrorSummary(task))
+        } else if (task.status === 'succeeded' || (task.manual_rollback && task.status === 'rolled_back')) {
           // Keep the DNS warning visible; completion remains in the page's status.
           if (!dnsWarnings?.length) notify.success(task.manual_rollback ? '手动回滚成功，发布前配置已恢复并通过服务检查' : '配置发布成功，服务检查已通过')
           onSuccess()
@@ -194,6 +201,7 @@ export function useAgentDeployments(onSuccess: () => void, shouldAnnounce: (agen
         }
       }
       announced.add(key)
+      recovering.delete(task.deployment_id)
     } else if (task.status !== 'ready') {
       // An older list response must not replace an in-progress status request.
       schedule(agentId, previous?.deployment_id === task.deployment_id ? 2000 : 0)
@@ -313,6 +321,27 @@ export function useAgentDeployments(onSuccess: () => void, shouldAnnounce: (agen
     } finally { actions.delete(agentId) }
   }
 
+  /** Ask the Agent to recover a deployment whose rollback failed (same as -recover-and-exit). */
+  async function recover(agentId: string) {
+    const task = deployments[agentId]
+    if (!task || task.status !== 'rollback_failed' || disposed || actions.has(agentId) || recovering.has(task.deployment_id)) return
+    clearTimeout(timers.get(agentId))
+    const id = task.deployment_id
+    for (const status of ['rolled_back', 'rollback_failed']) announced.delete(`${agentId}:${id}:${status}`)
+    recovering.add(id)
+    try {
+      const { data } = await agentApi.recoverDeployment(agentId, id)
+      if (!disposed && deployments[agentId]?.deployment_id === id) track(agentId, data)
+    } catch (error: any) {
+      recovering.delete(id)
+      if (disposed || deployments[agentId]?.deployment_id !== id) return
+      const data = error.response?.data
+      if (data?.deployment_id) deployments[agentId] = { ...task, ...data }
+      announced.add(`${agentId}:${id}:rollback_failed`)
+      notify.error('无法重新恢复', deploymentErrorSummary({ error: data?.message || '请求没有送达 Agent，请稍后重试。' }))
+    }
+  }
+
   onUnmounted(() => {
     disposed = true
     timers.forEach(clearTimeout)
@@ -321,5 +350,5 @@ export function useAgentDeployments(onSuccess: () => void, shouldAnnounce: (agen
     actions.clear()
   })
 
-  return { deployments, busy, track, refresh, beginSubmission, endSubmission, activate, retryPublish, rollback }
+  return { deployments, busy, track, refresh, beginSubmission, endSubmission, activate, retryPublish, rollback, recover, recovering }
 }

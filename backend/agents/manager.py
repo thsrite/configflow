@@ -712,7 +712,7 @@ class AgentManager:
         headers.update(kwargs.pop('headers', {}))
         timeout = kwargs.pop('timeout', (5, 30))
         retry_busy = method == 'post' and (suffix == 'deployments' or
-                     (suffix.startswith('deployments/') and suffix.endswith(('/activate', '/rollback'))))
+                     (suffix.startswith('deployments/') and suffix.endswith(('/activate', '/rollback', '/recover'))))
         deadline = time.monotonic() + 2
         for attempt in range(21):
             # Only this exact lock rejection proves no mutation was accepted.
@@ -920,6 +920,75 @@ class AgentManager:
             return self.record_deployment(agent_id, deployment_id, {
                 'success': True, 'status': 'unknown', 'manual_rollback': True,
                 'message': 'Rollback outcome unknown; awaiting Agent status'})
+
+    def recover_deployment(self, agent_id, deployment_id):
+        """Ask the Agent to recover a deployment whose rollback failed.
+
+        The Agent runs the same recovery as -recover-and-exit: stop the core,
+        restore the verified backups and start it again.
+        """
+        previous = {}  # Rollback diagnostics to restore if the Agent rejects the request.
+
+        def reserve(agents):
+            agent = next((item for item in agents if item['id'] == agent_id), None)
+            if agent is None:
+                return {'success': False, 'message': 'Agent not found', 'http_status': 404}
+            state = agent.get('deployments', {}).get(deployment_id)
+            if not state:
+                return {'success': False, 'message': 'Deployment not found', 'http_status': 404}
+            if _upgrade_busy(agent):
+                return {'success': False, 'message': 'Agent update is in progress', 'http_status': 409}
+            if state.get('status') != 'rollback_failed':
+                return {'success': False, 'message': '只有回滚失败的发布需要重新恢复', 'http_status': 409}
+            previous.update({field: state[field] for field in ('rollback_error', 'rollback_error_details') if field in state})
+            state.update(status='rolling_back', success=False, submitted=True)
+            state['events'] = append_event(state.get('events'), 'rolling_back', '正在请求 Agent 重新恢复原配置')
+            for field in ('http_status', 'message', 'rollback_error', 'rollback_error_details'):
+                state.pop(field, None)
+            if (agent.get('latest_deployment') or {}).get('deployment_id') == deployment_id:
+                agent['latest_deployment'] = state.copy()
+            return state.copy()
+
+        state = self._update_agents(reserve)
+        if state.get('http_status'):
+            return state
+        agent = self.get_agent_by_id(agent_id)
+        try:
+            result = self._deployment_request(agent, 'post', f'deployments/{deployment_id}/recover')
+        except requests.RequestException:
+            return self.record_deployment(agent_id, deployment_id, {
+                'success': False, 'status': 'unknown', 'message': 'Recovery outcome unknown; awaiting Agent status'})
+        if result.get('http_status') in (404, 405):
+            # Agents before 1.8.57-go have no recovery endpoint.
+            config = f"/opt/configflow-agent/config-{(agent or {}).get('service_type') or 'oxidns'}.json"
+            message = ('此 Agent 版本不支持在 ConfigFlow 中重新恢复。请升级 Agent 到 1.8.57-go 或更新版本，'
+                       '或在设备上依次执行：停止 configflow-agent 服务，运行 '
+                       f'/usr/local/bin/configflow-agent -config {config} -recover-and-exit，再启动 configflow-agent 服务。')
+            return self._restore_rollback_failed(agent_id, deployment_id, message, result, previous)
+        if result.get('http_status') in (400, 409):
+            return self._restore_rollback_failed(agent_id, deployment_id, result.get('message') or 'Agent 拒绝了恢复请求',
+                                                 result, previous)
+        if result.get('http_status'):
+            return self.record_deployment(agent_id, deployment_id, {
+                'success': False, 'status': 'unknown', 'message': 'Recovery outcome unknown; awaiting Agent status'})
+        return self.record_deployment(agent_id, deployment_id, {'success': False, 'status': 'rolling_back'})
+
+    def _restore_rollback_failed(self, agent_id, deployment_id, message, rejection, previous):
+        """A rejected recovery request changed nothing on the Agent."""
+        def restore(agents):
+            current = next(item for item in agents if item['id'] == agent_id)
+            task = current['deployments'][deployment_id]
+            if task.get('status') in ('rolling_back', 'unknown'):
+                task.update(previous)
+                task.update(status='rollback_failed', success=False,
+                            message=failure_text(message, (current.get('token'),)))
+                task['updated_at'] = datetime.now().isoformat()
+                task['events'] = append_event(task.get('events'), 'rollback_failed',
+                                              '恢复请求未执行：' + message, secrets=(current.get('token'),))
+                if (current.get('latest_deployment') or {}).get('deployment_id') == deployment_id:
+                    current['latest_deployment'] = task.copy()
+            return {**task, 'http_status': rejection.get('http_status', 409)}
+        return self._update_agents(restore)
 
     def _cancel_manual_rollback(self, agent_id, deployment_id, rejection):
         """A definite preflight rejection preserves the successful publication."""

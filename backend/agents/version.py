@@ -1,10 +1,17 @@
 """Agent 版本管理"""
 
 # Agent 最新版本号
-LATEST_AGENT_VERSION = "1.8.56-go"
+LATEST_AGENT_VERSION = "1.8.57-go"
 
 # 版本更新日志（可选）
 VERSION_CHANGELOG = {
+    "1.8.57-go": {
+        "date": "2026-11-13",
+        "features": [
+            "OxiDNS 热重载超时后先等重载真正结束再改为重启；OpenRC 停止命令先返回、核心随后才退出时继续等待，不再误报停止失败并导致回滚失败",
+            "发布回滚失败后可在 ConfigFlow 中直接重新恢复，效果与在设备上执行 -recover-and-exit 相同"
+        ]
+    },
     "1.8.56-go": {
         "date": "2026-11-11",
         "features": [

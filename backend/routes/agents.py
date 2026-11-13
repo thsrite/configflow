@@ -1959,6 +1959,13 @@ def rollback_agent_deployment(agent_id, deployment_id):
     return _deployment_response(get_agent_manager().rollback_deployment(agent_id, deployment_id))
 
 
+@bp.route('/<agent_id>/deployments/<deployment_id>/recover', methods=['POST'])
+@require_auth
+def recover_agent_deployment(agent_id, deployment_id):
+    """回滚失败后请求 Agent 重新恢复原配置（等同于设备上的 -recover-and-exit）"""
+    return _deployment_response(get_agent_manager().recover_deployment(agent_id, deployment_id))
+
+
 @bp.route('/<agent_id>/metrics', methods=['GET'])
 @require_auth
 def get_agent_metrics(agent_id):

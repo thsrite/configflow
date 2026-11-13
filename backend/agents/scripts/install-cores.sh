@@ -466,6 +466,7 @@ command="/usr/local/bin/$service"
 command_args="$core_args"
 command_background=true
 pidfile="/run/$service.pid"
+retry="TERM/30/KILL/5"
 directory="/etc/$service"
 output_log="/etc/$service/$service.log"
 error_log="/etc/$service/$service.log"

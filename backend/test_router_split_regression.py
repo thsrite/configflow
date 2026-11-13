@@ -98,6 +98,17 @@ _CORE_INSTALL_PATH = 'PATH="${PATH:-/usr/sbin:/usr/bin:/sbin:/bin}:/usr/local/sb
 _CORE_AGENT_FOLLOWS = 'CF_OUTPUT_OWNER=false\n'
 
 
+# OpenRC core scripts let a core that is still reloading exit before KILL
+# (start-stop-daemon otherwise gives up after 5 s), and gateway reruns upgrade
+# exactly the earlier script in place. Require the exact locations.
+_OPENRC_STOP_RETRY_DELTAS = (
+    ('pidfile="/run/$service.pid"\nretry="TERM/30/KILL/5"\n', 'pidfile="/run/$service.pid"\n'),
+    ('pidfile="/run/$core.pid"\nretry="TERM/30/KILL/5"\n', 'pidfile="/run/$core.pid"\n'),
+    ('    if [ -e "$CORE_UNIT" ]; then\n        if ! cmp -s "$GATEWAY_STAGE/$core.service" "$CORE_UNIT"; then\n            # Earlier installs wrote the same OpenRC script without retry, so\n            # stop waited only 5 s; upgrade exactly that script in place.\n            grep -v \'^retry="TERM/30/KILL/5"$\' "$GATEWAY_STAGE/$core.service" > "$GATEWAY_STAGE/$core.service.v1"\n            if [ "$GATEWAY_INIT" = openrc ] && cmp -s "$GATEWAY_STAGE/$core.service.v1" "$CORE_UNIT"; then\n                cp "$GATEWAY_STAGE/$core.service" "$CORE_UNIT.new"\n                chmod 755 "$CORE_UNIT.new"\n                mv "$CORE_UNIT.new" "$CORE_UNIT"\n            else\n                fail "$CORE_UNIT 已被修改；请人工核对服务后重跑，不会覆盖。"\n            fi\n        fi\n    else\n',
+     '    if [ -e "$CORE_UNIT" ]; then\n        cmp -s "$GATEWAY_STAGE/$core.service" "$CORE_UNIT" || fail "$CORE_UNIT 已被修改；请人工核对服务后重跑，不会覆盖。"\n    else\n'),
+)
+
+
 def without_reviewed_installer_deltas(script, *, core_path=False):
     count = script.count(_NATIVE_HA_DEPENDENCY_CASES)
     assert count >= 1, 'the reviewed native HA dependency addition changed'
@@ -120,6 +131,9 @@ def without_reviewed_installer_deltas(script, *, core_path=False):
         embedded = re.findall(r'\(\nset -- --core [a-z]+\n' + _CORE_AGENT_FOLLOWS, script)
         assert len(embedded) == 1, 'the embedded core phase must not ask for a separate Agent'
         script = script.replace(embedded[0], embedded[0].removesuffix(_CORE_AGENT_FOLLOWS), 1)
+    for new, old in _OPENRC_STOP_RETRY_DELTAS:
+        assert script.count(new) <= 1, new
+        script = script.replace(new, old)
     return script
 
 

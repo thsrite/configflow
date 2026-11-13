@@ -6,7 +6,7 @@ import { notify } from '@/lib/feedback'
 import { deploymentStatusLabel, useAgentDeployments } from '@/composables/useAgentDeployments'
 import { ruleLocationDetails } from './fixtures/agent-failure'
 
-vi.mock('@/api', () => ({ agentApi: { getDeployment: vi.fn(), activateDeployment: vi.fn(), rollbackDeployment: vi.fn(), pushConfig: vi.fn() } }))
+vi.mock('@/api', () => ({ agentApi: { getDeployment: vi.fn(), activateDeployment: vi.fn(), rollbackDeployment: vi.fn(), recoverDeployment: vi.fn(), pushConfig: vi.fn() } }))
 vi.mock('@/lib/feedback', () => ({ notify: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
 const wrappers: ReturnType<typeof mount>[] = []
 function render(shouldAnnounce?: Parameters<typeof useAgentDeployments>[1]) {
@@ -461,5 +461,46 @@ describe('Agent failure response diagnostics', () => {
     expect(flow.deployments.one).toMatchObject({ status: 'succeeded', rollback_rejected: true, rollback_error_details: 'missing previous/config.yaml' })
     expect(deploymentStatusLabel(flow.deployments.one)).toBe('手动回滚未执行')
     expect(flow.busy('one')).toBe(false)
+  })
+
+  it('recovers a failed rollback through the Agent and reports the restored configuration', async () => {
+    const { flow, onSuccess } = render()
+    flow.track('agent-1', { deployment_id: 'broken', status: 'rollback_failed', rollback_error: 'rollback cannot stop service' }, false)
+    vi.mocked(agentApi.recoverDeployment).mockResolvedValue({ data: { deployment_id: 'broken', status: 'rolling_back' } } as any)
+    vi.mocked(agentApi.getDeployment).mockResolvedValue({ data: { deployment_id: 'broken', status: 'rolled_back', error: 'service remains running after stop' } } as any)
+    const request = flow.recover('agent-1')
+    expect(flow.recovering.has('broken')).toBe(true)
+    await flow.recover('agent-1')
+    await request
+    expect(agentApi.recoverDeployment).toHaveBeenCalledExactlyOnceWith('agent-1', 'broken')
+    expect(flow.busy('agent-1')).toBe(true)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(flow.deployments['agent-1'].status).toBe('rolled_back')
+    expect(notify.success).toHaveBeenCalledWith('已恢复发布前配置', '服务已按原配置启动并通过检查，本次发布未生效。')
+    expect(notify.error).not.toHaveBeenCalled()
+    expect(onSuccess).toHaveBeenCalledOnce()
+    expect(flow.recovering.has('broken')).toBe(false)
+  })
+
+  it('keeps a failed rollback and explains a rejected recovery request', async () => {
+    const { flow } = render()
+    flow.track('agent-1', { deployment_id: 'broken', status: 'rollback_failed' }, false)
+    vi.mocked(agentApi.recoverDeployment).mockRejectedValue({ response: { status: 404, data: {
+      deployment_id: 'broken', status: 'rollback_failed', message: '此 Agent 版本不支持在 ConfigFlow 中重新恢复。' } } })
+    await flow.recover('agent-1')
+    expect(flow.deployments['agent-1'].status).toBe('rollback_failed')
+    expect(flow.deployments['agent-1'].message).toContain('不支持')
+    expect(notify.error).toHaveBeenCalledWith('无法重新恢复', expect.stringContaining('不支持'))
+    expect(flow.recovering.has('broken')).toBe(false)
+  })
+
+  it('reports a recovery that failed again on the Agent', async () => {
+    const { flow } = render()
+    flow.track('agent-1', { deployment_id: 'broken', status: 'rollback_failed' }, false)
+    vi.mocked(agentApi.recoverDeployment).mockResolvedValue({ data: { deployment_id: 'broken', status: 'rolling_back' } } as any)
+    vi.mocked(agentApi.getDeployment).mockResolvedValue({ data: { deployment_id: 'broken', status: 'rollback_failed', rollback_error: 'old service failed to start' } } as any)
+    await flow.recover('agent-1')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(notify.error).toHaveBeenCalledWith('重新恢复失败', expect.stringContaining('old service failed to start'))
   })
 })

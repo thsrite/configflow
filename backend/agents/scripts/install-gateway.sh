@@ -304,6 +304,7 @@ command="$CORE_BINARY"
 command_args="$CORE_ARGS"
 command_background="yes"
 pidfile="/run/$core.pid"
+retry="TERM/30/KILL/5"
 directory="$CORE_DIR"
 output_log="/var/log/$core.log"
 error_log="/var/log/$core.log"
@@ -314,7 +315,18 @@ depend() {
 UNIT
     fi
     if [ -e "$CORE_UNIT" ]; then
-        cmp -s "$GATEWAY_STAGE/$core.service" "$CORE_UNIT" || fail "$CORE_UNIT 已被修改；请人工核对服务后重跑，不会覆盖。"
+        if ! cmp -s "$GATEWAY_STAGE/$core.service" "$CORE_UNIT"; then
+            # Earlier installs wrote the same OpenRC script without retry, so
+            # stop waited only 5 s; upgrade exactly that script in place.
+            grep -v '^retry="TERM/30/KILL/5"$' "$GATEWAY_STAGE/$core.service" > "$GATEWAY_STAGE/$core.service.v1"
+            if [ "$GATEWAY_INIT" = openrc ] && cmp -s "$GATEWAY_STAGE/$core.service.v1" "$CORE_UNIT"; then
+                cp "$GATEWAY_STAGE/$core.service" "$CORE_UNIT.new"
+                chmod 755 "$CORE_UNIT.new"
+                mv "$CORE_UNIT.new" "$CORE_UNIT"
+            else
+                fail "$CORE_UNIT 已被修改；请人工核对服务后重跑，不会覆盖。"
+            fi
+        fi
     else
         cp "$GATEWAY_STAGE/$core.service" "$CORE_UNIT"
         if [ "$GATEWAY_INIT" = openrc ]; then chmod 755 "$CORE_UNIT"; else chmod 644 "$CORE_UNIT"; fi
