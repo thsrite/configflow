@@ -124,8 +124,11 @@ def harness(tmp_path, monkeypatch, service="mihomo", manager="systemd", real_cor
         ("/opt/configflow-agent", str(root / "opt/configflow-agent")),
         ("/var/log", str(root / "var/log")),
         ("/dev/tty", "/dev/stdin"),
+        # A supervised OpenRC Agent is confirmed through its child process.
+        ("/proc/[0-9]*/status", str(tmp_path / "agent-process")),
     ):
         source = source.replace(old, new)
+    (tmp_path / "agent-process").write_text("PPid:\tmissing\n")
     # The core's directory checks also contain standalone /run and /etc names.
     source = source.replace("in /run /etc /usr/local ", f"in {root}/run {root}/etc {root}/usr/local ")
     if sys.platform == "darwin":

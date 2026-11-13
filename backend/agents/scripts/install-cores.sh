@@ -368,12 +368,15 @@ case "$NEW_CORES" in
     mihomo) cf_step '下载安装 Mihomo 核心' ;;
     oxidns) cf_step '下载安装 OxiDNS 核心' ;;
 esac
-STAGE=$(mktemp -d /tmp/configflow-cores.XXXXXX)
+# /tmp is often mounted noexec, and the downloaded cores validate their
+# configuration from the stage. /usr/local was checked above and holds the
+# installed binaries anyway.
+STAGE=$(mktemp -d /usr/local/.configflow-cores.XXXXXX)
 chmod 700 "$STAGE"
 for service in ${NEW_CORES}; do mkdir "$STAGE/$service"; done
 download() {
     if [ "$DOWNLOAD" = curl ]; then
-        curl --fail --location --connect-timeout 15 --max-time 300 --retry 2 --output "$2" "$1" || fail "下载失败：$1。请检查到 GitHub 的网络和系统时间；若证书验证失败，请安装或修复 ca-certificates / 自定义 CA 信任后重试，不要关闭证书校验。"
+        curl --fail --silent --show-error --location --connect-timeout 15 --max-time 300 --retry 2 --output "$2" "$1" || fail "下载失败：$1。请检查到 GitHub 的网络和系统时间；若证书验证失败，请安装或修复 ca-certificates / 自定义 CA 信任后重试，不要关闭证书校验。"
     else
         wget -T 60 -O "$2" "$1" || fail "下载失败：$1。请检查到 GitHub 的网络和系统时间；若证书验证失败，请安装或修复 ca-certificates / 自定义 CA 信任后重试，不要关闭证书校验。"
     fi
@@ -524,6 +527,14 @@ output_log="/etc/$service/$service.log"
 error_log="/etc/$service/$service.log"
 depend() {
     need net
+}
+start_pre() {
+    # OpenRC appends the core's output here and never rotates it. Keep one
+    # previous file once it passes 10 MB; a ConfigFlow Agent also trims it.
+    log_size=\$(wc -c < "/etc/$service/$service.log" 2>/dev/null || echo 0)
+    if [ "\$log_size" -gt 10485760 ]; then
+        mv -f "/etc/$service/$service.log" "/etc/$service/$service.log.1"
+    fi
 }
 UNIT
     fi

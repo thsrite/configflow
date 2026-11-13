@@ -137,10 +137,11 @@ case "$(uname -m)" in
 esac
 cf_step "检查网关安装环境"
 [ -n "$AGENT_SHA" ] || fail "ConfigFlow 服务器未提供 $GATEWAY_ARCH 的 Agent 构建，请更新服务器的 Agent 下载文件后重新生成命令。"
-if command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
-    GATEWAY_INIT=openrc
-elif command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+# systemd as the running init wins: OpenRC tools can be installed beside it.
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
     GATEWAY_INIT=systemd
+elif command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
+    GATEWAY_INIT=openrc
 else
     fail '需要正在运行的 systemd 或 OpenRC。Docker/普通无 init 容器请使用其他安装方式。'
 fi
@@ -185,7 +186,10 @@ for core in mihomo oxidns; do
 done
 mkdir /run/configflow-gateway-install.lock 2>/dev/null || fail '另一个网关安装正在运行；若之前异常断电，请确认无安装进程后删除 /run/configflow-gateway-install.lock 再重跑。'
 GATEWAY_LOCK=/run/configflow-gateway-install.lock
-GATEWAY_STAGE=$(mktemp -d /tmp/configflow-gateway.XXXXXX)
+# /tmp is often mounted noexec, and the downloaded cores and Agent run from the
+# stage before anything is installed.
+mkdir -p /usr/local
+GATEWAY_STAGE=$(mktemp -d /usr/local/.configflow-gateway.XXXXXX)
 export GATEWAY_STAGE
 BINARY_BASE={binary_download_url_shell}
 cf_step "校验核心并下载所需程序"

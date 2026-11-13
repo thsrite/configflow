@@ -120,7 +120,7 @@ def test_hook_is_registered_where_the_agent_looks_for_it(tmp_path, install_core)
     # Before stopping the previous Agent; committed only after the new one started.
     assert script.index("prepare_ipv4_forwarding\n") < script.index("systemctl stop configflow-agent 2>/dev/null || true\n", script.index('cf_step "安装并启动 Agent 服务"'))
     assert script.index("install_ipv4_forwarding_hook\n") < script.index("cat > /etc/systemd/system/configflow-agent.service")
-    assert script.index("rc-service configflow-agent status\n") < script.index("persist_ipv4_forwarding\n")
+    assert script.index("if ! rc-service configflow-agent status ||\n") < script.index("persist_ipv4_forwarding\n")
     assert script.count('cleanup_ipv4_forwarding "$agent_status"') == 1
     path = tmp_path / "install.sh"
     path.write_text(script)
@@ -166,6 +166,7 @@ def harness(tmp_path, monkeypatch, manager="systemd", install_core=False, **opti
     root = tmp_path / "root"
     for relative in ("etc/systemd/system", "etc/init.d", "usr/local/bin", "sbin", "run", "var/log"):
         (root / relative).mkdir(parents=True)
+    (tmp_path / "agent-process").write_text("PPid:\tmissing\n")
     if manager == "systemd":
         (root / "run/systemd/system").mkdir(parents=True)
     else:
@@ -173,6 +174,8 @@ def harness(tmp_path, monkeypatch, manager="systemd", install_core=False, **opti
         (root / "sbin/openrc-run").chmod(0o755)
     for old, new in (
         ("/proc/sys/net/ipv4/ip_forward", str(tmp_path / "ip_forward")),
+        # A supervised OpenRC Agent is confirmed through its child process.
+        ("/proc/[0-9]*/status", str(tmp_path / "agent-process")),
         ("/usr/local/", str(root / "usr/local") + "/"),
         ("/etc/", str(root / "etc") + "/"),
         ("/run/", str(root / "run") + "/"),
@@ -233,6 +236,7 @@ Path(os.environ['FORWARD_PROC']).write_text(args[-1].rsplit('=', 1)[1] + '\\n')
     else:
         mocks["rc-service"] = manager_mock
         mocks["rc-update"] = manager_mock
+    mocks["sleep"] = "exit 0\n"  # The installer waits before confirming a started Agent.
     for name, body in mocks.items():
         command = commands / name
         command.write_text(body if body.startswith("#!") else "#!/bin/sh\nset -eu\n" + body)

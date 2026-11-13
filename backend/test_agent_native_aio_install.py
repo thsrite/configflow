@@ -82,8 +82,15 @@ def harness(tmp_path, manager="systemd", existing=True, **options):
         ("/var/log", str(tmp_path / "logs")),
         ("/dev/tty", "/dev/stdin"),
         ("/proc/sys/net/ipv4/ip_forward", str(tmp_path / "ip_forward")),
+        # The installer prefers a running systemd; never read the test host's.
+        ("/run/systemd/system", str(tmp_path / "run-systemd")),
+        # A supervised OpenRC Agent is confirmed through its child process.
+        ("/proc/[0-9]*/status", str(tmp_path / "agent-process")),
     ):
         source = source.replace(old, new)
+    (tmp_path / "agent-process").write_text("PPid:\tmissing\n")
+    if manager == "systemd":
+        (tmp_path / "run-systemd").mkdir()
     installer = tmp_path / "install.sh"
     installer.write_text(source)
     commands = tmp_path / "commands"
@@ -199,6 +206,7 @@ if value == '1' and os.environ.get('DELETE_FORWARD_CONFIG_ON_ENABLE') == 'yes':
         mocks["rc-update"] = manager_mock
         units = tmp_path / "etc/init.d"
     units.mkdir(parents=True)
+    mocks["sleep"] = "exit 0\n"  # The installer waits before confirming a started Agent.
     for name, body in mocks.items():
         executable = commands / name
         executable.write_text(body if body.startswith("#!") else "#!/bin/sh\nset -eu\n" + body)

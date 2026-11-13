@@ -22,7 +22,7 @@ RESTART_ON_FAILURE=""
             if [ "$INIT_SYSTEM" = systemd ]; then
                 systemctl start "configflow-agent-$stopped_service" || true
             else
-                rc-service "configflow-agent-$stopped_service" start || true
+                rc-service "configflow-agent-$stopped_service" start 3>&- 4>&- || true
             fi
         done
     fi
@@ -178,10 +178,12 @@ case "$choice" in
             select_service "$service"
             [ -f "$CONFIG_FILE" ] || continue
             if [ "$INIT_SYSTEM" = systemd ]; then
-                systemctl disable "$AGENT_UNIT"
+                systemctl disable "$AGENT_UNIT" 2>/dev/null || true
                 rm -f "/etc/systemd/system/$AGENT_UNIT.service"
             else
-                rc-update del "$AGENT_UNIT" default
+                # Not being in the runlevel (an install that failed before
+                # enabling it) must not leave the uninstall stuck halfway.
+                rc-update del "$AGENT_UNIT" default 2>/dev/null || true
                 rm -f "/etc/init.d/$AGENT_UNIT"
             fi
             rm -rf "$AGENT_DIR"
@@ -352,11 +354,14 @@ SERVICEEOF
 name="ConfigFlow Agent ($SERVICE)"
 command="$AGENT_BINARY"
 command_args="-config $CONFIG_FILE"
+# Restart a crashed Agent, as Restart=always does under systemd.
+supervisor="supervise-daemon"
+respawn_delay=10
+respawn_max=0
 pidfile="/run/$AGENT_UNIT.pid"
 output_log="$AGENT_LOG"
 error_log="$AGENT_LOG"
 directory="$AGENT_DIR"
-command_background="yes"
 depend() {
     need net
     after firewall
@@ -376,11 +381,26 @@ for service in mihomo oxidns; do
     if [ "$INIT_SYSTEM" = systemd ]; then
         systemctl enable "$AGENT_UNIT"
         systemctl start "$AGENT_UNIT"
-        systemctl is-active --quiet "$AGENT_UNIT"
     else
         rc-update add "$AGENT_UNIT" default
-        rc-service "$AGENT_UNIT" start
-        rc-service "$AGENT_UNIT" status
+        # supervise-daemon keeps inherited descriptors: close the report fds,
+        # or a piped or non-interactive SSH run would never return.
+        rc-service "$AGENT_UNIT" start 3>&- 4>&-
+    fi
+done
+# An Agent that exits right after starting must not count as started.
+sleep 2
+for service in mihomo oxidns; do
+    select_service "$service"
+    if [ "$INIT_SYSTEM" = systemd ]; then
+        systemctl is-active --quiet "$AGENT_UNIT" || fail "$SERVICE Agent 启动后未保持运行，请查看 journalctl -u $AGENT_UNIT 或 $AGENT_LOG。"
+    else
+        # supervise-daemon stays "started" while it waits to respawn an Agent
+        # that exited, so also require the child of the supervisor in its pidfile.
+        agent_supervisor=$(cat "/run/$AGENT_UNIT.pid" 2>/dev/null || true)
+        rc-service "$AGENT_UNIT" status &&
+            grep -qs "^PPid:[[:space:]]*${agent_supervisor:-missing}\$" /proc/[0-9]*/status ||
+            fail "$SERVICE Agent 启动后未保持运行，请查看 $AGENT_LOG。"
     fi
 done
 {ipv4_forwarding_apply}

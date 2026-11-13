@@ -310,6 +310,17 @@ def generate_docker_agent_compose(
     return yaml.dump(compose_config, sort_keys=False, allow_unicode=True)
 
 
+_SHELL_SAFE = re.compile(r"[A-Za-z0-9@%+=:,./_-]+")
+
+
+def _shell_word(value, plain=True) -> str:
+    """Quote panel input for the generated command; ordinary values keep their form."""
+    value = str(value)
+    if _SHELL_SAFE.fullmatch(value):
+        return value if plain else f'"{value}"'
+    return shlex.quote(value)
+
+
 def generate_docker_agent_run(
     server_url: str,
     agent_name: str = "agent",
@@ -392,13 +403,14 @@ def generate_docker_agent_run(
 
     # 构建卷映射
     volumes_args = ""
-    volumes = [f"-v {data_dir}/agent:/opt/configflow-agent"]
+    # A data directory with spaces must stay one argument.
+    volumes = ["-v " + _shell_word(f"{data_dir}/agent:/opt/configflow-agent")]
     if enable_mihomo:
-        volumes.append(f"-v {data_dir}/mihomo:/etc/mihomo")
+        volumes.append("-v " + _shell_word(f"{data_dir}/mihomo:/etc/mihomo"))
     if enable_mosdns:
-        volumes.append(f"-v {data_dir}/mosdns:/etc/mosdns")
+        volumes.append("-v " + _shell_word(f"{data_dir}/mosdns:/etc/mosdns"))
     if enable_oxidns:
-        volumes.append(f"-v {data_dir}/oxidns:/etc/oxidns")
+        volumes.append("-v " + _shell_word(f"{data_dir}/oxidns:/etc/oxidns"))
         
     if volumes:
         volumes_args = " ".join(volumes) + " \\"
@@ -409,18 +421,18 @@ def generate_docker_agent_run(
 docker run -d \\
   --name {container_name} \\
   --restart unless-stopped \\
-  --network {network_mode} \\"""
+  --network {_shell_word(network_mode)} \\"""
 
     if ports_args:
         cmd += f"\n  {ports_args}"
 
     cmd += f"""
-  -e SERVER_URL="{server_url}" \\
+  -e SERVER_URL={_shell_word(server_url, plain=False)} \\
   -e ENABLE_MIHOMO="{'true' if enable_mihomo else 'false'}" \\
   -e ENABLE_MOSDNS="{'true' if enable_mosdns else 'false'}" \\"""
 
     if agent_ip:
-        cmd += f"\n  -e AGENT_IP={agent_ip} \\"
+        cmd += f"\n  -e AGENT_IP={_shell_word(agent_ip)} \\"
 
     if enable_mihomo:
         cmd += f"""

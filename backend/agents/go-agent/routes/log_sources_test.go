@@ -199,3 +199,31 @@ func TestGetLogsBySourceReturnsReadableError(t *testing.T) {
 		t.Fatalf("result = %v", result)
 	}
 }
+
+func TestOpenRCCoreLogPaths(t *testing.T) {
+	dir := stubLogEnvironment(t, "openrc", nil)
+	out, errOut := filepath.Join(dir, "mihomo.log"), filepath.Join(dir, "mihomo.err.log")
+	write := func(script string) {
+		if err := os.WriteFile(filepath.Join(logOpenRCInitDir, "mihomo"), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := &Config{ServiceType: "mihomo", ServiceManager: "openrc", ServiceUnit: "mihomo.service"}
+	write("#!/sbin/openrc-run\noutput_log=\"" + out + "\"\nerror_log=\"" + out + "\"\n")
+	if got := OpenRCCoreLogPaths(cfg); len(got) != 1 || got[0] != out {
+		t.Fatalf("shared output = %v", got)
+	}
+	write("#!/sbin/openrc-run\noutput_log=\"" + out + "\"\nerror_log=\"" + errOut + "\"\n")
+	if got := OpenRCCoreLogPaths(cfg); len(got) != 2 || got[0] != out || got[1] != errOut {
+		t.Fatalf("separate outputs = %v", got)
+	}
+	// Devices and relative paths are never compacted.
+	write("#!/sbin/openrc-run\noutput_log=\"/dev/null\"\nerror_log=\"relative.log\"\n")
+	if got := OpenRCCoreLogPaths(cfg); len(got) != 0 {
+		t.Fatalf("unusable outputs = %v", got)
+	}
+	cfg.ServiceManager = "systemd"
+	if got := OpenRCCoreLogPaths(cfg); got != nil {
+		t.Fatalf("systemd core = %v", got)
+	}
+}

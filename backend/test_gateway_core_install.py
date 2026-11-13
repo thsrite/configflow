@@ -128,7 +128,7 @@ if cfg['service_type'] == os.environ.get('FAIL_AGENT_CHECK'): raise SystemExit(4
                     ('/usr/local', str(tmp_path / 'usr/local')), ('/opt/', str(tmp_path / 'opt') + '/'),
                     ('/opt ', str(tmp_path / 'opt') + ' '), ('/run/', str(tmp_path / 'run') + '/'),
                     ('/run;', str(tmp_path / 'run') + ';'), ('/var/log', str(tmp_path / 'logs')),
-                    ('/tmp/configflow-gateway.', str(tmp_path / 'stage.')),
+                    ('/proc/[0-9]*/status', str(tmp_path / 'agent-process')),
                     ('/dev/net/tun', '/dev/null'), ('/proc/sys/net/ipv4/ip_forward', str(tmp_path / 'ip_forward')),
                     # Absent unless a test answers a prompt; then it holds the typed answer.
                     ('/dev/tty', str(tmp_path / 'tty'))]
@@ -136,9 +136,11 @@ if cfg['service_type'] == os.environ.get('FAIL_AGENT_CHECK'): raise SystemExit(4
         source=source.replace(old,new)
     if sys.platform == 'darwin':
         source=source.replace('sed -i ', "sed -i '' ")
-    for directory in ['etc','usr/local/bin','opt','run/systemd/system','logs']:
+    # systemd is detected by its runtime directory, which wins over OpenRC tools.
+    for directory in ['etc','usr/local/bin','opt','run/systemd/system' if manager=='systemd' else 'run','logs']:
         (tmp_path / directory).mkdir(parents=True,exist_ok=True)
     (tmp_path / 'ip_forward').write_text('0\n')
+    (tmp_path / 'agent-process').write_text('PPid:\tmissing\n')
     (tmp_path / 'active').write_text('')
     # Timezone data is looked up through TZDIR, never the host's zoneinfo.
     (tmp_path / 'zoneinfo/Asia').mkdir(parents=True)
