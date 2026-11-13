@@ -193,12 +193,12 @@ func assertSavedToken(t *testing.T, path, expected string) {
 func TestRegisterRejectionCarriesServerReason(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusConflict)
-		_, _ = w.Write([]byte(`{"success":false,"message":"托管接口需要独立配置空间，\n请先分开绑定"}`))
+		_, _ = w.Write([]byte(`{"success":false,"message":"Agent 正在升级，\n请稍后重试"}`))
 	}))
 	defer server.Close()
 	cfg := &Config{ServerURL: server.URL}
 	_, err := cfg.sendRegisterRequest(RegisterRequest{Name: "second-dns"})
-	if err == nil || !strings.Contains(err.Error(), "409: 托管接口需要独立配置空间， 请先分开绑定") {
+	if err == nil || !strings.Contains(err.Error(), "409: Agent 正在升级， 请稍后重试") {
 		t.Fatalf("error = %v", err)
 	}
 	if got := registerRejection(strings.NewReader("<html>bad gateway</html>")); got != "" {

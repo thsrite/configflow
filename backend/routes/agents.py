@@ -459,16 +459,6 @@ def _install_script_response(params):
 
         # logger.info(f"服务器URL: {server_url}")
 
-        # A second OxiDNS Agent cannot join a profile whose OxiDNS serves a managed
-        # node-test listener; say so before the device is installed.
-        if service_type in ('oxidns', 'aio'):
-            from backend.agents.node_test_dns import registration_blocker
-            repository = get_repository()
-            blocker = registration_blocker(repository.get_system(), repository.default_profile_id(),
-                                           (agent_name, f'{agent_name}-oxidns'))
-            if blocker:
-                raise ValueError(blocker)
-
         # 根据 agent_type 生成对应的脚本
         if service_type == 'aio':
             if agent_type != 'go':
@@ -546,11 +536,6 @@ def _install_script_response(params):
         logger.error(f"错误详情:\n{error_detail}")
         logger.error(f"请求参数: name={params.get('name')}, type={params.get('type')}, port={params.get('port')}, agent_type={params.get('agent_type')}")
         return jsonify({'success': False, 'message': str(e)}), 500
-
-
-def _registration_conflict_reason(message):
-    from backend.agents.node_test_dns import REGISTRATION_BLOCKED
-    return REGISTRATION_BLOCKED if '托管接口需要独立配置空间' in message else message
 
 
 def _registration_rejected(agent_data, reason):
@@ -651,7 +636,7 @@ def register_agent():
         return jsonify(response_data), 200
 
     except AgentDeploymentConflict as exc:
-        _registration_rejected(locals().get('agent_data'), _registration_conflict_reason(str(exc)))
+        _registration_rejected(locals().get('agent_data'), str(exc))
         return jsonify(success=False, message=str(exc)), 409
 
     except PermissionError:

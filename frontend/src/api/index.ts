@@ -110,53 +110,16 @@ export const subscriptionApi = {
   health: () => api.get('/subscriptions/health')
 }
 
-export type NodeLatencyDnsMode = 'system' | 'custom' | 'managed'
+export type NodeLatencyDnsMode = 'system' | 'custom'
 export interface NodeLatencyDnsConfig {
   mode: NodeLatencyDnsMode
   servers: string[]
   bootstrap: string[]
-  managed: { agent_id?: string; endpoint_id?: string }
 }
-export interface NodeLatencyManagedEndpoint {
-  agent_id: string
-  endpoint_id: string
-  status: string
-  endpoint?: string
-  listen_address?: string
-  port?: number
-  upstream?: string
-  message?: string
-}
-export interface NodeLatencyManagedUpstream {
-  id: string
-  label: string
-  address: string
-  bootstrap: string[]
-  eligible: boolean
-  reason: string
-  validation: 'unverified'
-}
-export interface NodeLatencyManagedAgent {
-  id: string
-  name: string
-  profile_id: string
-  profile_name?: string
-  address?: string
-  eligible?: boolean
-  reason?: string
-  endpoints?: NodeLatencyManagedEndpoint[]
-  upstreams?: NodeLatencyManagedUpstream[]
-  upstreams_reason?: string
-}
-export type NodeLatencyManagedCreate = { agent_id: string; listen_address: string; port: number } & (
-  { upstream_id: string; upstream?: never; bootstrap?: never } |
-  { upstream: string; bootstrap?: string[]; upstream_id?: never }
-)
 export interface NodeLatencyDnsSettings {
   success: boolean
   dns_servers: string[]
   dns?: NodeLatencyDnsConfig
-  managed_status?: { status: string; message?: string }
   message?: string
 }
 export interface NodeLatencyDnsCheck {
@@ -190,10 +153,6 @@ export const nodeApi = {
   latencySettings: () => api.get<NodeLatencyDnsSettings>('/nodes/latency/settings'),
   saveLatencySettings: (dns: NodeLatencyDnsConfig | string[]) => api.post<NodeLatencyDnsSettings>('/nodes/latency/settings', Array.isArray(dns) ? { dns_servers: dns } : { dns }),
   checkLatencyDns: (dns: NodeLatencyDnsConfig) => api.post<NodeLatencyDnsCheck>('/nodes/latency/dns/check', { dns }, { timeout: 120000 }),
-  latencyManagedDns: () => api.get<{ success: boolean; agents: NodeLatencyManagedAgent[]; default_port?: number; message?: string }>('/nodes/latency/dns/managed'),
-  createLatencyManagedDns: (data: NodeLatencyManagedCreate) => api.post<NodeLatencyManagedEndpoint & { success: boolean }>('/nodes/latency/dns/managed', data),
-  latencyManagedDnsStatus: (agentId: string, endpointId: string) => api.get<NodeLatencyManagedEndpoint & { success: boolean }>(`/nodes/latency/dns/managed/${encodeURIComponent(agentId)}/${encodeURIComponent(endpointId)}`),
-  removeLatencyManagedDns: (agentId: string, endpointId: string) => api.delete<NodeLatencyManagedEndpoint & { success: boolean }>(`/nodes/latency/dns/managed/${encodeURIComponent(agentId)}/${encodeURIComponent(endpointId)}`),
   /** 通过独立组件测试代理延迟；每批最多 20 个节点 */
   testLatency: (keys: string[]) => api.post('/nodes/latency', { keys }, { timeout: 120000 }),
   /** 用内置 Sub-Store 把 Surge / Loon 节点行（如 snell）转成结构化节点，按行返回 */

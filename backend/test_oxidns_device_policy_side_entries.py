@@ -9,7 +9,6 @@ from copy import deepcopy
 import pytest
 import yaml
 
-from backend.agents.node_test_dns import _plugins as managed_plugins
 from backend.common.agent_manager import get_agent_manager
 from backend.common.oxidns_common_routing import _plugins as plugin_map
 from backend.common.oxidns_device_policy import (DIRECT_TAG, HOOK, POLICY_TAG, apply_policies,
@@ -37,23 +36,24 @@ def legacy(listen=f'{HOST}:15353', prefix='node_test_real'):
     ]
 
 
-def managed(endpoint_id='0123456789abcdef', port=15353):
-    spec = {'listen_address': HOST, 'port': port, 'endpoint': f'{HOST}:{port}',
-            'upstream': 'udp://198.51.100.53', 'bootstrap': []}
-    return spec, managed_plugins(endpoint_id, spec)
+def formerly_managed(endpoint_id='0123456789abcdef', port=15353):
+    """The listener the removed "OxiDNS 托管" mode left in a device's configuration."""
+    prefix, endpoint = 'cf_node_test_' + endpoint_id, f'{HOST}:{port}'
+    return endpoint, [
+        {'tag': prefix + '_forward', 'type': 'forward', 'args': {'upstreams': [{'addr': 'udp://198.51.100.53'}]}},
+        {'tag': prefix + '_sequence', 'type': 'sequence', 'args': [
+            {'exec': '$' + prefix + '_forward'}, {'matches': ['!has_resp'], 'exec': 'reject 2'}, {'exec': 'accept'}]},
+        *[{'tag': prefix + '_' + protocol, 'type': protocol + '_server',
+           'args': {'listen': endpoint, 'entry': prefix + '_sequence'}} for protocol in ('udp', 'tcp')],
+    ]
 
 
-def context(node_test_dns=(), records=(), profile='default', host=HOST, mode=None):
+def context(node_test_dns=(), profile='default', host=HOST, mode=None):
     system = {'node_test_dns': list(node_test_dns)}
     if mode:
-        system['node_test_dns_config'] = {'mode': mode, 'servers': list(node_test_dns), 'bootstrap': [], 'managed': {}}
-    endpoints = {}
-    for index, (spec, plugins, owner) in enumerate(records):
-        endpoints[f'e{index}'] = {**spec, 'endpoint_id': f'e{index}', 'profile_id': owner,
-                                  'agent_host': host, 'status': 'ready', 'plugins': deepcopy(plugins)}
+        system['node_test_dns_config'] = {'mode': mode, 'servers': list(node_test_dns), 'bootstrap': []}
     return {'oxidns': {'query_recorder': {'enabled': True}}, 'profile_id': profile, 'system_config': system,
-            'agents': [{'id': 'dns', 'service_type': 'oxidns', 'profile_id': profile, 'host': host,
-                        'node_test_dns_endpoints': endpoints}]}
+            'agents': [{'id': 'dns', 'service_type': 'oxidns', 'profile_id': profile, 'host': host}]}
 
 
 def native(config, extra=(), mutate=None):
@@ -137,56 +137,36 @@ def test_unconfirmed_legacy_entries_are_reported_but_still_allowed(node_test_dns
     assert report(settings, config)['node_test_entries'] == []
 
 
-def test_current_managed_entry_confirmed_by_its_record_is_silent_and_untouched():
-    spec, plugins = managed()
-    config = context([spec['endpoint']], records=[(spec, plugins, 'default')], mode='managed')
+@pytest.mark.parametrize('saved', [
+    # Still stored as the removed mode: its address was mirrored into node_test_dns.
+    {'mode': 'managed', 'servers': [], 'bootstrap': [], 'managed': {'agent_id': 'dns', 'endpoint_id': '0123456789abcdef'}},
+    {'mode': 'custom', 'servers': [f'{HOST}:15353'], 'bootstrap': []},
+])
+def test_formerly_managed_entry_still_queried_by_node_tests_is_silent_and_untouched(saved):
+    endpoint, plugins = formerly_managed()
+    config = context([endpoint])
+    config['system_config']['node_test_dns_config'] = saved
     settings = native(config, plugins)
     state = read_policies(settings, config)
     assert state['editable'], state['reason']
     assert state['side_entries'] == []
-    assert [item['kind'] for item in report(settings, config)['node_test_entries']] == ['managed']
+    assert [item['kind'] for item in report(settings, config)['node_test_entries']] == ['legacy']
     lifecycle(settings, config, {p['tag'] for p in plugins})
 
 
-def test_managed_and_legacy_entries_together_and_one_unknown_side_entry():
-    spec, plugins = managed(port=15354)
+def test_formerly_managed_entry_no_longer_queried_is_an_ordinary_reported_side_entry():
+    # Node tests moved to DoH: the leftover listener is the user's own entry now.
+    endpoint, plugins = formerly_managed()
     unknown = legacy(listen='198.51.100.3:5300', prefix='debug_dns')
-    config = context([f'{HOST}:15353'], records=[(spec, plugins, 'default')])
-    settings = native(config, legacy() + plugins + unknown)
+    config = context([], mode='custom')
+    config['system_config']['node_test_dns_config']['servers'] = ['https://198.51.100.53/dns-query']
+    settings = native(config, plugins + unknown)
     state = read_policies(settings, config)
     assert state['editable'], state['reason']
-    assert state['side_entries'] == [{'tags': ['debug_dns_udp', 'debug_dns_tcp'],
-                                      'listen': '198.51.100.3:5300', 'entry': 'debug_dns_sequence'}]
-    assert sorted(item['kind'] for item in report(settings, config)['node_test_entries']) == ['legacy', 'managed']
-    lifecycle(settings, config, {p['tag'] for p in legacy() + plugins + unknown})
-
-
-@pytest.mark.parametrize('variant', ['edited', 'other_profile', 'removed', 'no_record'])
-def test_managed_tags_without_an_intact_record_are_only_a_reported_side_entry(variant):
-    spec, plugins = managed()
-    deployed = deepcopy(plugins)
-    records = [(spec, plugins, 'other' if variant == 'other_profile' else 'default')]
-    if variant == 'edited':
-        deployed[0]['args']['upstreams'][0]['addr'] = 'udp://198.51.100.99'
-    config = context(records=[] if variant == 'no_record' else records)
-    if variant == 'removed':
-        config['agents'][0]['node_test_dns_endpoints']['e0']['status'] = 'removed'
-    settings = native(config, deployed)
-    state = read_policies(settings, config)
-    assert state['editable'], state['reason']
-    assert [item['tags'] for item in state['side_entries']] == [[plugins[2]['tag'], plugins[3]['tag']]]
-
-
-def test_managed_entry_on_port_53_is_trusted_only_with_its_record():
-    spec, plugins = managed(port=53)
-    config = context(records=[(spec, plugins, 'default')])
-    settings = native(config, plugins)
-    assert read_policies(settings, config)['editable']
-    lifecycle(settings, config, {p['tag'] for p in plugins})
-    config['agents'][0]['node_test_dns_endpoints'].clear()
-    state = read_policies(settings, config)
-    assert not state['editable']
-    assert f'{HOST}:53' in state['reason'] and '没有进入主处理链 sequence_main' in state['reason']
+    assert [item['tags'] for item in state['side_entries']] == [
+        [plugins[2]['tag'], plugins[3]['tag']], ['debug_dns_udp', 'debug_dns_tcp']]
+    assert report(settings, config)['node_test_entries'] == []
+    lifecycle(settings, config, {p['tag'] for p in plugins + unknown})
 
 
 def test_unknown_side_entry_on_another_port_is_allowed_reported_and_untouched():

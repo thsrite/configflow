@@ -197,9 +197,9 @@ def _endpoint(listen):
 def entry_context(config):
     """What ConfigFlow itself knows about node-test DNS listeners of this profile.
 
-    Read from the profile's compatibility view only (no I/O): the managed
-    listener records and the addresses node tests are currently configured to
-    query. Missing context means nothing is recognized, never that it is trusted.
+    Read from the profile's compatibility view only (no I/O): the addresses
+    node tests are currently configured to query. Missing context means
+    nothing is recognized, never that it is trusted.
     """
     if not isinstance(config, dict):
         return {}
@@ -288,17 +288,10 @@ def inspect_entries(document, plugins, config=None):
     if not has_main:
         _refuse('没有任何监听入口进入主处理链 sequence_main')
     context = entry_context(config) if groups else {}
-    managed = set()
-    if context.get('agents'):
-        from backend.agents.node_test_dns import recorded_listeners
-        managed = recorded_listeners(plugins, context['agents'], context['profile_id'])
     side, node_test = [], []
     for (listen, entries), members in groups.items():
         tags = [plugin['tag'] for plugin, _ in members]
         item = {'tags': tags, 'listen': listen, 'entry': '、'.join(dict.fromkeys(entries))}
-        if set(tags) <= managed:
-            node_test.append({**item, 'kind': 'managed'})
-            continue
         name = f'监听入口 {"、".join(tags)}（{listen}）'
         port = _listen_port(listen)
         if port is None or port in main_ports:

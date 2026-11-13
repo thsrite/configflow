@@ -1147,11 +1147,6 @@ class ProfileRepository:
                 # Router credentials, sync settings and ownership belong to the source devices.
                 profile['routers'] = {'items': []}
                 profile['client_fixed_ips'] = {}
-                from backend.agents.node_test_dns import strip_owned_for_clone
-                try:
-                    strip_owned_for_clone(document['system'], clone_from, profile)
-                except ValueError as error:
-                    raise ProfileInUse(str(error)) from None
             profile.update(id=profile_id, name=name.strip(), description=str(metadata.get('description') or ''),
                            created_at=_now(), updated_at=_now(), _revision=0)
             document['profiles'][profile_id] = profile
@@ -1300,11 +1295,6 @@ class ProfileRepository:
         # Updaters may inspect hydrated resources but cannot persist copies.
         snapshot = self._resolve_profile(document, profile_id)
         updated = self._apply_updater(snapshot, updater)
-        from backend.agents.node_test_dns import guard_profile_change
-        try:
-            guard_profile_change(document['system'], profile_id, current, updated)
-        except ValueError as error:
-            raise ProfileInUse(str(error)) from None
         for key in PROFILE_FIELDS:
             if key in updated:
                 current[key] = copy.deepcopy(updated[key])
@@ -1583,11 +1573,6 @@ class ProfileRepository:
         with self._document(write=True) as document:
             current = document['system']
             updated = self._apply_updater(copy.deepcopy(current), updater)
-            from backend.agents.node_test_dns import guard_system_change
-            try:
-                guard_system_change(current, updated)
-            except ValueError as error:
-                raise ProfileInUse(str(error)) from None
             document['system'] = {key: copy.deepcopy(updated.get(key, current[key])) for key in ('system_config', 'backup', 'agents')}
             document['system']['_revision'] = current['_revision'] + 1
             self._ensure_rule_proxy_token(document['system'])
