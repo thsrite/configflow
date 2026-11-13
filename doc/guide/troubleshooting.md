@@ -61,6 +61,14 @@
 
 先看宿主机是否已有 DNS 服务。Host 容器共用宿主机端口，普通 bridge 则看映射；macvlan 用容器自己的独立地址。按 [安装组合](agent-install.md) 选择合适方式，不要只把 DNS 随意换成客户端不会使用的端口。
 
+Debian、Ubuntu 等默认开启 systemd-resolved，它的本机 DNS（`127.0.0.53`、`127.0.0.54`）会占用 53 端口。Shell 安装 OxiDNS（含高可用安装和 Linux 网关安装）时，如果 53 端口只被它占用，安装器会说明情况并询问 `是否自动修复？[y/N]`：
+
+- 输入 `Y`：写入 `/etc/systemd/resolved.conf.d/configflow.conf`（`DNSStubListener=no`）并重启 systemd-resolved，本机解析改为直接使用上游 DNS，然后继续安装。如需恢复，删除该文件后执行 `systemctl restart systemd-resolved`。
+- 直接回车或输入其他内容：安装停止，不修改任何文件，并给出可以手动执行的命令。
+- 没有可交互的终端（例如由自动化工具调用）：同样停止，并给出手动命令。
+
+53 端口被其他 DNS 服务占用时，安装器不会提议修改，请自行检查并处理冲突。
+
 ### macvlan 容器连不到宿主机上的面板
 
 macvlan 默认隔离容器与所在宿主机的直接通信。先安排实际可达的面板地址或网络，再继续安装；单纯修改 Agent 名称或密码无法解决此问题。支持条件允许时，初次 HA 部署可使用 Host 方案。
