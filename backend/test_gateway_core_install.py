@@ -129,7 +129,9 @@ if cfg['service_type'] == os.environ.get('FAIL_AGENT_CHECK'): raise SystemExit(4
                     ('/opt ', str(tmp_path / 'opt') + ' '), ('/run/', str(tmp_path / 'run') + '/'),
                     ('/run;', str(tmp_path / 'run') + ';'), ('/var/log', str(tmp_path / 'logs')),
                     ('/tmp/configflow-gateway.', str(tmp_path / 'stage.')),
-                    ('/dev/net/tun', '/dev/null'), ('/proc/sys/net/ipv4/ip_forward', str(tmp_path / 'ip_forward'))]
+                    ('/dev/net/tun', '/dev/null'), ('/proc/sys/net/ipv4/ip_forward', str(tmp_path / 'ip_forward')),
+                    # Absent unless a test answers a prompt; then it holds the typed answer.
+                    ('/dev/tty', str(tmp_path / 'tty'))]
     for old,new in replacements:
         source=source.replace(old,new)
     if sys.platform == 'darwin':
@@ -168,6 +170,8 @@ if action=='start':
   p.write_text(json.dumps(cfg,indent=2))
 if action=='stop':
  active.discard(service); (root/'active').write_text(' '.join(sorted(active)))
+if name=='systemctl' and action=='restart' and service=='systemd-resolved' and (root/'etc/systemd/resolved.conf.d/configflow.conf').exists():
+ (root/'resolved-stub-off').write_text('')
 '''
     curl = shebang + '''import json,os,shutil,sys
 from pathlib import Path
@@ -188,7 +192,7 @@ if os.environ.get('CORRUPT')==src.name: out.write_bytes(b'bad checksum')
 '''
     mocks={'id':'#!/bin/sh\necho 0\n','uname':f'#!/bin/sh\nif [ "$1" = -s ]; then echo Linux; else echo {architecture}; fi\n',
            'curl':curl,'ip':'#!/bin/sh\nexit 0\n','nft':'#!/bin/sh\n[ "${FAIL_NFT:-}" != yes ]\n',
-           'ss':'#!/bin/sh\nif [ -n "${BUSY_PORT:-}" ]; then echo "udp UNCONN 0 0 0.0.0.0:$BUSY_PORT 0.0.0.0:* ${BUSY_OWNER:-}"; fi\n',
+           'ss':'#!/bin/sh\ncase "${BUSY_OWNER:-}" in *systemd-resolve*) [ -e "$FAKE_ROOT/resolved-stub-off" ] && exit 0 ;; esac\nif [ -n "${BUSY_PORT:-}" ]; then echo "udp UNCONN 0 0 ${BUSY_ADDR:-0.0.0.0}:$BUSY_PORT 0.0.0.0:* ${BUSY_OWNER:-}"; fi\n',
            'sysctl':(shebang + '''import os,sys
 args=sys.argv[1:]
 with open(os.environ['EVENTS'],'a') as f: f.write('sysctl '+' '.join(args)+'\\n')
@@ -395,15 +399,54 @@ def test_preflight_download_and_validation_failures_leave_host_untouched(tmp_pat
     assert (tmp_path/'ip_forward').read_text()=='0\n'
 
 
-def test_systemd_resolved_stub_conflict_names_the_fix(tmp_path,monkeypatch):
+RESOLVED_OWNER='users:(("systemd-resolve",pid=367,fd=18))'
+
+
+def resolved_host(tmp_path,monkeypatch,answer=None):
     run,events,source=host(tmp_path,monkeypatch)
-    result=run(BUSY_PORT='53',BUSY_OWNER='users:(("systemd-resolve",pid=367,fd=18))')
+    (tmp_path/'active').write_text('systemd-resolved')
+    if answer is not None:
+        (tmp_path/'tty').write_text(answer+'\n')
+    return run,events
+
+
+def test_systemd_resolved_stub_without_terminal_names_the_fix(tmp_path,monkeypatch):
+    run,events=resolved_host(tmp_path,monkeypatch)
+    result=run(BUSY_PORT='53',BUSY_ADDR='127.0.0.53%lo',BUSY_OWNER=RESOLVED_OWNER)
     assert result.returncode!=0
     output=result.stdout+result.stderr
-    assert 'systemd-resolved' in output and 'DNSStubListener=no' in output
+    assert 'systemd-resolved' in output and '没有可交互的终端' in output and 'DNSStubListener=no' in output
+    assert not (tmp_path/'etc/systemd/resolved.conf.d').exists()
     assert not (tmp_path/'etc/oxidns').exists()
-    other=run(BUSY_PORT='53',BUSY_OWNER='users:(("dnsmasq",pid=9,fd=4))')
-    assert other.returncode!=0 and 'DNSStubListener' not in other.stdout+other.stderr
+    assert 'restart systemd-resolved' not in events.read_text()
+
+
+def test_systemd_resolved_stub_fixed_after_user_confirms(tmp_path,monkeypatch):
+    run,events=resolved_host(tmp_path,monkeypatch,answer='Y')
+    result=run(BUSY_PORT='53',BUSY_ADDR='127.0.0.53%lo',BUSY_OWNER=RESOLVED_OWNER)
+    assert result.returncode==0,result.stdout+result.stderr
+    assert '[y/N]' in (tmp_path/'tty').read_text()
+    assert (tmp_path/'etc/systemd/resolved.conf.d/configflow.conf').read_text().endswith('DNSStubListener=no\n')
+    assert 'systemctl restart systemd-resolved' in events.read_text()
+    assert (tmp_path/'etc/oxidns').exists()
+
+
+@pytest.mark.parametrize('answer',['','n','no'])
+def test_systemd_resolved_stub_left_alone_unless_user_types_y(tmp_path,monkeypatch,answer):
+    run,events=resolved_host(tmp_path,monkeypatch,answer=answer)
+    result=run(BUSY_PORT='53',BUSY_ADDR='127.0.0.53%lo',BUSY_OWNER=RESOLVED_OWNER)
+    assert result.returncode!=0
+    assert '已取消自动修复' in result.stdout+result.stderr
+    assert not (tmp_path/'etc/systemd/resolved.conf.d').exists()
+    assert not (tmp_path/'etc/oxidns').exists()
+
+
+def test_other_dns_owner_is_never_offered_the_resolved_fix(tmp_path,monkeypatch):
+    run,events=resolved_host(tmp_path,monkeypatch,answer='Y')
+    result=run(BUSY_PORT='53',BUSY_OWNER='users:(("dnsmasq",pid=9,fd=4))')
+    output=result.stdout+result.stderr
+    assert result.returncode!=0 and 'DNSStubListener' not in output and '已被占用' in output
+    assert '[y/N]' not in (tmp_path/'tty').read_text()
 
 
 def test_fresh_cores_are_not_reported_as_existing_but_reruns_are(tmp_path,monkeypatch):

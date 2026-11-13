@@ -130,6 +130,18 @@ if args[0] == 'show':
     raise SystemExit(0)
 action = args[0] if name != 'rc-service' else args[1]
 service = args[-1] if name == 'systemctl' else (args[0] if name == 'rc-service' else args[1])
+if name == 'systemctl' and service == 'systemd-resolved':
+    if action == 'is-active':
+        raise SystemExit(0 if os.environ.get('RESOLVED_ACTIVE') else 3)
+    if action == 'restart':
+        # The stub listener is gone once the drop-in disables it.
+        root = os.environ['ROOT']
+        if os.path.exists(os.path.join(root, 'etc/systemd/resolved.conf.d/configflow.conf')):
+            for network in ('tcp', 'udp', 'tcp6', 'udp6'):
+                path = os.path.join(root, 'proc/net', network)
+                lines = open(path).read().splitlines(True)
+                open(path, 'w').write(''.join(line for line in lines if '3500007F:0035' not in line and '3600007F:0035' not in line))
+    raise SystemExit(0)
 if os.environ.get('FAIL_SERVICE') == action + ':' + service or os.environ.get('FAIL_ROLLBACK') == action + ':' + service:
     if name == 'rc-service' and action == 'start':
         with open(os.path.join(os.environ['ROOT'], 'etc', service, service + '.log'), 'w') as log:
@@ -995,3 +1007,59 @@ def test_tun_wait_is_bounded_before_dns_fallback(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
     assert yaml.safe_load((root / "etc/mihomo/config.yaml").read_text())["tun"]["enable"] is False
     assert (root / "run/tun-wait-count").read_text() == "10"
+
+
+def resolved_stub(root, answer=None):
+    with (root / "proc/net/udp").open("a") as file:
+        file.write("0: 3500007F:0035 00000000:0000 07\n1: 3600007F:0035 00000000:0000 07\n")
+    with (root / "proc/net/tcp").open("a") as file:
+        file.write("0: 3500007F:0035 00000000:0000 0A\n1: 3600007F:0035 00000000:0000 0A\n")
+    if answer is not None:
+        (root / "dev/tty").write_text(answer + "\n")
+
+
+def test_resolved_stub_without_terminal_stops_with_the_fix(tmp_path):
+    installer, env, root, events = harness(tmp_path, RESOLVED_ACTIVE="1")
+    resolved_stub(root)
+    result = run(installer, env, "--core", "oxidns")
+    assert result.returncode != 0
+    assert "没有可交互的终端" in result.stderr and "DNSStubListener=no" in result.stderr
+    assert "download " not in events.read_text() and "restart systemd-resolved" not in events.read_text()
+    assert not (root / "etc/systemd/resolved.conf.d").exists()
+    assert_uninstalled(root)
+
+
+def test_resolved_stub_disabled_after_user_confirms_then_installs(tmp_path):
+    installer, env, root, events = harness(tmp_path, RESOLVED_ACTIVE="1")
+    resolved_stub(root, "y")
+    result = run(installer, env, "--core", "oxidns")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "[y/N]" in (root / "dev/tty").read_text()
+    assert (root / "etc/systemd/resolved.conf.d/configflow.conf").read_text().endswith("DNSStubListener=no\n")
+    assert "systemctl restart systemd-resolved" in events.read_text()
+    assert (root / "usr/local/bin/oxidns").exists()
+
+
+@pytest.mark.parametrize("answer", ["", "n", "no"])
+def test_resolved_stub_left_alone_unless_user_types_y(tmp_path, answer):
+    installer, env, root, events = harness(tmp_path, RESOLVED_ACTIVE="1")
+    resolved_stub(root, answer)
+    result = run(installer, env, "--core", "oxidns")
+    assert result.returncode != 0 and "已取消自动修复" in result.stderr
+    assert not (root / "etc/systemd/resolved.conf.d").exists()
+    assert_uninstalled(root)
+
+
+@pytest.mark.parametrize("variant", ["other-listener", "resolved-inactive", "openrc"])
+def test_resolved_fix_only_offered_for_a_lone_running_stub(tmp_path, variant):
+    options = {} if variant == "resolved-inactive" else {"RESOLVED_ACTIVE": "1"}
+    installer, env, root, events = harness(tmp_path, "openrc" if variant == "openrc" else "systemd", **options)
+    resolved_stub(root, "y")
+    if variant == "other-listener":
+        with (root / "proc/net/udp").open("a") as file:
+            file.write("2: 00000000:0035 00000000:0000 07\n")
+    result = run(installer, env, "--core", "oxidns")
+    assert result.returncode != 0 and "端口被占用" in result.stderr
+    assert "[y/N]" not in (root / "dev/tty").read_text()
+    assert not (root / "etc/systemd/resolved.conf.d").exists()
+    assert_uninstalled(root)

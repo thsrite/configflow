@@ -18,6 +18,7 @@ INIT_SYSTEM=""
 TUN_ENABLED=false
 TUN_REASON=""
 DEPENDENCIES_ATTEMPTED=false
+RESOLVED_STUB_DISABLED=false
 CORE_SELECTION=both
 NEW_CORES=""
 NEW_MIHOMO=false
@@ -56,6 +57,7 @@ cleanup() {
                 printf '%s\n' '安装已停止；尚未修改核心、配置或服务。' >&2
             fi
             if [ "$DEPENDENCIES_ATTEMPTED" = true ]; then printf '%s\n' '包管理器安装的系统依赖会保留，不会随核心回滚而卸载。' >&2; fi
+            if [ "$RESOLVED_STUB_DISABLED" = true ]; then printf '%s\n' '已按你的确认关闭 systemd-resolved 的本机 DNS 监听，此设置会保留；如需恢复：rm /etc/systemd/resolved.conf.d/configflow.conf && systemctl restart systemd-resolved' >&2; fi
         fi
     fi
     [ -z "$STAGE" ] || rm -rf "$STAGE"
@@ -226,6 +228,48 @@ fi
 LOCKED=true
 printf '%s\n' "$$" > "$LOCK/pid"
 
+# Prints the listeners occupying the DNS ports this run needs, one per line.
+dns_port_conflicts() {
+    awk -v mihomo="$NEW_MIHOMO" -v oxidns="$NEW_OXIDNS" 'FNR > 1 {split($2, addr, ":"); port=toupper(addr[2]); if (((port == "0035" && oxidns == "true") || (port == "041D" && mihomo == "true")) && (FILENAME ~ /udp/ || $4 == "0A")) print toupper($2) " " FILENAME}' $proc_files
+}
+# Debian and Ubuntu enable systemd-resolved's local stub on 127.0.0.53 and
+# 127.0.0.54 port 53. Offer to disable only that stub, never other DNS services.
+RESOLVED_STUB_FIX="mkdir -p /etc/systemd/resolved.conf.d && printf '[Resolve]\\nDNSStubListener=no\\n' > /etc/systemd/resolved.conf.d/configflow.conf && systemctl restart systemd-resolved"
+only_resolved_stub() {
+    [ "$INIT_SYSTEM" = systemd ] && [ -n "$1" ] || return 1
+    systemctl is-active --quiet systemd-resolved 2>/dev/null || return 1
+    printf '%s\n' "$1" | awk '{if ($1 != "3500007F:0035" && $1 != "3600007F:0035") other=1} END {exit other ? 1 : 0}'
+}
+disable_resolved_stub() {
+    mkdir -p /etc/systemd/resolved.conf.d || return 1
+    printf '[Resolve]\n# ConfigFlow：让出 53 端口给 OxiDNS；删除此文件并重启 systemd-resolved 即恢复\nDNSStubListener=no\n' > /etc/systemd/resolved.conf.d/configflow.conf || return 1
+    RESOLVED_STUB_DISABLED=true
+    systemctl restart systemd-resolved || return 1
+    # Older systemd keeps 127.0.0.53 in stub-resolv.conf; point at the upstreams.
+    if grep -q '^nameserver 127\.0\.0\.53' /etc/resolv.conf 2>/dev/null && [ -f /run/systemd/resolve/resolv.conf ]; then
+        ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf || return 1
+    fi
+}
+offer_resolved_stub_fix() {
+    resolved_message='端口 53 被 systemd-resolved 的本机 DNS（127.0.0.53 / 127.0.0.54）占用，OxiDNS 需要使用此端口。自动修复会关闭它的本机监听（DNSStubListener=no），本机解析改为直接使用上游 DNS，其他服务不受影响。'
+    # A failed redirection on the special built-in ':' would exit the whole
+    # script; probe the terminal in a subshell instead.
+    if ( : < /dev/tty && : >> /dev/tty ) 2>/dev/null; then
+        printf '%s\n是否自动修复？输入 Y 确认，其他任意键取消 [y/N]: ' "$resolved_message" >> /dev/tty
+        resolved_answer=""
+        read -r resolved_answer < /dev/tty || resolved_answer=""
+        case "$resolved_answer" in
+            Y|y|YES|yes|Yes)
+                disable_resolved_stub || fail "关闭 systemd-resolved 本机监听失败。可手动执行后重跑安装命令：$RESOLVED_STUB_FIX"
+                printf '%s\n' '已关闭 systemd-resolved 的本机 DNS 监听：/etc/systemd/resolved.conf.d/configflow.conf'
+                cf_fact resolved_stub "已按确认关闭 systemd-resolved 的本机 DNS 监听；如需恢复：rm /etc/systemd/resolved.conf.d/configflow.conf && systemctl restart systemd-resolved"
+                return 0 ;;
+        esac
+        fail "已取消自动修复，安装停止。可手动执行后重跑安装命令：$RESOLVED_STUB_FIX"
+    fi
+    fail "${resolved_message}当前没有可交互的终端，安装停止。可执行后重跑安装命令：$RESOLVED_STUB_FIX"
+}
+
 check_ports() {
     proc_files=""
     for network in /proc/net/tcp /proc/net/udp /proc/net/tcp6 /proc/net/udp6; do
@@ -233,9 +277,17 @@ check_ports() {
     done
     [ -r /proc/net/tcp ] && [ -r /proc/net/udp ] || fail '无法读取 /proc/net/tcp 或 udp，不能检查 DNS 端口，请挂载容器 /proc 后重试。'
     # Any IPv4/IPv6 listener on these ports can conflict with a wildcard bind.
-    if ! awk -v mihomo="$NEW_MIHOMO" -v oxidns="$NEW_OXIDNS" 'FNR > 1 {split($2, addr, ":"); port=toupper(addr[2]); if (((port == "0035" && oxidns == "true") || (port == "041D" && mihomo == "true")) && (FILENAME ~ /udp/ || $4 == "0A")) {print "已占用 DNS 端口：" $2 " (" FILENAME ")"; conflict=1}} END {exit conflict ? 1 : 0}' $proc_files; then
-        fail "DNS 端口被占用（本次安装需要：${DNS_PORTS}）。请用 ss -lntup 检查并调整已有 DNS 服务的监听地址/端口，再重试；本脚本不会关闭系统 DNS 服务。"
+    conflicts=$(dns_port_conflicts)
+    [ -n "$conflicts" ] || return 0
+    printf '%s\n' "$conflicts" | awk '{print "已占用 DNS 端口：" $1 " (" $2 ")"}'
+    if only_resolved_stub "$conflicts"; then
+        offer_resolved_stub_fix
+        conflicts=$(dns_port_conflicts)
+        [ -n "$conflicts" ] || return 0
+        printf '%s\n' "$conflicts" | awk '{print "已占用 DNS 端口：" $1 " (" $2 ")"}'
+        fail "关闭 systemd-resolved 本机监听后，DNS 端口仍被占用。请用 ss -lntup 检查后重试。"
     fi
+    fail "DNS 端口被占用（本次安装需要：${DNS_PORTS}）。请用 ss -lntup 检查并调整已有 DNS 服务的监听地址/端口，再重试；本脚本不会关闭系统 DNS 服务。"
 }
 check_ports
 

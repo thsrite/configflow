@@ -63,16 +63,55 @@ check_ordinary_layout() {
     fi
     core_running || fail "$CORE 现有服务未运行；请先检查并启动原服务，再运行安装命令。"
 }
+port_busy() {
+    ss -H -lntu | awk -v wanted="$1" '{ n=split($5,a,":"); if (a[n]==wanted) found=1 } END {exit !found}'
+}
+# Debian and Ubuntu enable systemd-resolved's local DNS stub on port 53. Offer
+# to disable only that stub when it is the sole owner; never other DNS services.
+RESOLVED_STUB_FIX="mkdir -p /etc/systemd/resolved.conf.d && printf '[Resolve]\\nDNSStubListener=no\\n' > /etc/systemd/resolved.conf.d/configflow.conf && systemctl restart systemd-resolved"
+only_resolved_stub() {
+    [ "$GATEWAY_INIT" = systemd ] || return 1
+    systemctl is-active --quiet systemd-resolved 2>/dev/null || return 1
+    ss -H -lntup 2>/dev/null | awk '{ n=split($5,a,":"); if (a[n]=="53") { found=1; if (!/systemd-resolve/) other=1 } } END {exit (found && !other) ? 0 : 1}'
+}
+disable_resolved_stub() {
+    mkdir -p /etc/systemd/resolved.conf.d || return 1
+    printf '[Resolve]\n# ConfigFlow：让出 53 端口给 OxiDNS；删除此文件并重启 systemd-resolved 即恢复\nDNSStubListener=no\n' > /etc/systemd/resolved.conf.d/configflow.conf || return 1
+    systemctl restart systemd-resolved || return 1
+    # Older systemd keeps 127.0.0.53 in stub-resolv.conf; point at the upstreams.
+    if grep -q '^nameserver 127\.0\.0\.53' /etc/resolv.conf 2>/dev/null && [ -f /run/systemd/resolve/resolv.conf ]; then
+        ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf || return 1
+    fi
+}
+offer_resolved_stub_fix() {
+    resolved_message='端口 53 被 systemd-resolved 的本机 DNS（127.0.0.53 / 127.0.0.54）占用，OxiDNS 需要使用此端口。自动修复会关闭它的本机监听（DNSStubListener=no），本机解析改为直接使用上游 DNS，其他服务不受影响。'
+    # A failed redirection on the special built-in ':' would exit the whole
+    # script; probe the terminal in a subshell instead.
+    if ( : < /dev/tty && : >> /dev/tty ) 2>/dev/null; then
+        printf '%s\n是否自动修复？输入 Y 确认，其他任意键取消 [y/N]: ' "$resolved_message" >> /dev/tty
+        resolved_answer=""
+        read -r resolved_answer < /dev/tty || resolved_answer=""
+        case "$resolved_answer" in
+            Y|y|YES|yes|Yes)
+                disable_resolved_stub || fail "关闭 systemd-resolved 本机监听失败。可手动执行后重跑安装命令：$RESOLVED_STUB_FIX"
+                printf '%s\n' '已关闭 systemd-resolved 的本机 DNS 监听：/etc/systemd/resolved.conf.d/configflow.conf'
+                cf_fact resolved_stub "已按确认关闭 systemd-resolved 的本机 DNS 监听；如需恢复：rm /etc/systemd/resolved.conf.d/configflow.conf && systemctl restart systemd-resolved"
+                return 0 ;;
+        esac
+        fail "已取消自动修复，安装停止，未修改任何文件。可手动执行后重跑安装命令：$RESOLVED_STUB_FIX"
+    fi
+    fail "${resolved_message}当前没有可交互的终端，安装停止。可执行后重跑安装命令：$RESOLVED_STUB_FIX"
+}
 check_port_free() {
     # Only called for a new core; existing services have their listeners checked
     # by the Agent's paired environment preflight below.
-    if ss -H -lntu | awk -v wanted="$1" '{ n=split($5,a,":"); if (a[n]==wanted) found=1 } END {exit !found}'; then
-        # Debian and Ubuntu enable this local stub by default; name the fix.
-        if [ "$1" = 53 ] && ss -H -lntup 2>/dev/null | awk '{ n=split($5,a,":"); if (a[n]=="53" && /systemd-resolve/) found=1 } END {exit !found}'; then
-            fail "端口 53 被 systemd-resolved 的本机 DNS（127.0.0.53）占用，OxiDNS 需要使用此端口。可关闭其本机监听后重跑安装命令：mkdir -p /etc/systemd/resolved.conf.d && printf '[Resolve]\nDNSStubListener=no\n' > /etc/systemd/resolved.conf.d/configflow.conf && ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf && systemctl restart systemd-resolved"
-        fi
-        fail "端口 $1 已被占用。请用 ss -lntup 检查所属服务并先处理冲突；安装器不会停止现有 DNS 服务。"
+    port_busy "$1" || return 0
+    if [ "$1" = 53 ] && only_resolved_stub; then
+        offer_resolved_stub_fix
+        port_busy 53 || return 0
+        fail "关闭 systemd-resolved 本机监听后，端口 53 仍被占用。请用 ss -lntup 检查后重试。"
     fi
+    fail "端口 $1 已被占用。请用 ss -lntup 检查所属服务并先处理冲突；安装器不会停止现有 DNS 服务。"
 }
 
 [ "$(id -u)" -eq 0 ] || fail '请在目标 Linux 上使用 root 运行命令（或 sudo sh）。'
