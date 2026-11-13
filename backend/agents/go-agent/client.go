@@ -79,8 +79,11 @@ func (c *Config) sendRegisterRequest(reqBody RegisterRequest) (*RegisterResponse
 	log.Printf("Register request response status: %d", resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Register request failed with status code: %d", resp.StatusCode)
-		return nil, fmt.Errorf("register request failed with status code: %d", resp.StatusCode)
+		// The server says why (for example another Agent's settings exclude this
+		// one); without it the service log only shows an endless retry.
+		reason := registerRejection(resp.Body)
+		log.Printf("Register request failed with status code: %d%s", resp.StatusCode, reason)
+		return nil, fmt.Errorf("register request failed with status code: %d%s", resp.StatusCode, reason)
 	}
 
 	var regResp RegisterResponse
@@ -322,4 +325,26 @@ func (c *Config) SendHeartbeat() {
 	if err := c.sendHeartbeatRequest(jsonData); err != nil {
 		log.Printf("Error sending heartbeat: %v", err)
 	}
+}
+
+// registerRejection returns the server's bounded, single-line refusal message.
+func registerRejection(body io.Reader) string {
+	data, err := io.ReadAll(io.LimitReader(body, 4096))
+	if err != nil {
+		return ""
+	}
+	var payload struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(data, &payload) != nil {
+		return ""
+	}
+	message := strings.Join(strings.Fields(payload.Message), " ")
+	if runes := []rune(message); len(runes) > 300 {
+		message = string(runes[:300]) + "…"
+	}
+	if message == "" {
+		return ""
+	}
+	return ": " + message
 }

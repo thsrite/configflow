@@ -400,7 +400,21 @@ async function removeEndpoint() {
     if (disposed) return
     if (!data.success) throw new Error(data.message || '移除专用 DNS 失败，请重试。')
     upsertEndpoint(data)
-    if (data.status === 'removed') { endpointId.value = '__new__'; notify.success('专用 DNS 入口已移除') }
+    // The removal is published to the device in the background; follow it to its
+    // result instead of leaving「正在移除」until someone presses 刷新状态.
+    let current = data
+    for (let attempt = 0; current.status === 'removing' && attempt < 60; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      if (disposed || !open.value) return
+      const status = await nodeApi.latencyManagedDnsStatus(endpoint.agent_id, endpoint.endpoint_id)
+      if (disposed || !open.value) return
+      if (!status.data.success) throw new Error(status.data.message || '读取专用 DNS 状态失败。')
+      current = status.data
+      upsertEndpoint(current)
+    }
+    if (current.status === 'removed') { endpointId.value = '__new__'; notify.success('专用 DNS 入口已移除') }
+    else if (current.status === 'removing') error.value = '设备仍在处理移除，稍后点「刷新状态」查看结果。'
+    else error.value = current.message || '移除专用 DNS 失败，请重试。'
   } catch (failure: any) { if (!disposed) error.value = failureMessage(failure, '移除专用 DNS 失败，请重试。') }
   finally { if (!disposed) removing.value = false }
 }

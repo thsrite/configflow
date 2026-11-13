@@ -551,6 +551,31 @@ describe('节点库三模式测速 DNS 设置', () => {
     expect(document.body.textContent).toContain('入口仍被测速设置引用')
   })
 
+  it('移除入口后自动跟进到完成，不必手动刷新状态', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(nodeApi.latencySettings).mockResolvedValue(response(managed))
+      vi.mocked(nodeApi.latencyManagedDns).mockResolvedValue({ data: { success: true, agents: [agent([endpoint()])] } } as any)
+      vi.mocked(confirmDanger).mockResolvedValue(true)
+      vi.mocked(nodeApi.removeLatencyManagedDns).mockResolvedValue({ data: { success: true, ...endpoint('removing') } } as any)
+      vi.mocked(nodeApi.latencyManagedDnsStatus)
+        .mockResolvedValueOnce({ data: { success: true, ...endpoint('removing') } } as any)
+        .mockResolvedValueOnce({ data: { success: true, ...endpoint('removed') } } as any)
+      await render()
+      await click('测速设置')
+      await click('移除入口')
+      expect(document.body.textContent).toContain('正在移除')
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(nodeApi.latencyManagedDnsStatus).toHaveBeenCalledTimes(1)
+      expect(notify.success).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(nodeApi.latencyManagedDnsStatus).toHaveBeenCalledTimes(2)
+      expect(notify.success).toHaveBeenCalledWith('专用 DNS 入口已移除')
+      expect(document.body.textContent).not.toContain('正在移除')
+    } finally { vi.useRealTimers() }
+  })
+
   it('测速禁用设置入口和已打开保存；保存中禁止重复提交和关闭', async () => {
     await render(true)
     expect(button('测速设置').disabled).toBe(true)

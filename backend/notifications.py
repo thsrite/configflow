@@ -99,6 +99,39 @@ def record_agent(agent, repository):
             store.observe(items, 'deployment:' + agent['id'], agent_observation(agent, repository))
 
 
+REGISTRATION_SOURCE = 'agent-registration'
+REGISTRATION_LIMIT = 20
+# A refused Agent retries every few seconds; the notice goes away once it stops.
+REGISTRATION_FRESH_SECONDS = 300
+
+
+def record_registration_rejection(repository, agent_data, reason):
+    """A device keeps trying to register and is refused: say so where the user looks."""
+    import time
+    name = event_message(str((agent_data or {}).get('name') or '未命名'))[:64]
+    host = event_message(str((agent_data or {}).get('host') or ''))[:64]
+    service = str((agent_data or {}).get('service_type') or 'mihomo')[:16]
+    key = 'registration:' + hashlib.sha256(f'{name}|{host}|{service}'.encode()).hexdigest()[:24]
+    with store.transaction(repository.data_dir) as items:
+        if key not in items and sum(item.get('source') == REGISTRATION_SOURCE for item in items.values()) >= REGISTRATION_LIMIT:
+            return
+        store.observe(items, key, {
+            'state': 'pending', 'source': REGISTRATION_SOURCE, 'scope': 'system', 'severity': 'error',
+            'status_label': '注册被拒绝', 'title': f'{name}（{host or "地址未知"}）· Agent 注册被拒绝',
+            'message': event_message(reason), 'impact': '设备上的 Agent 会一直重试，处理后自动注册',
+            'checked_at': store.now(), 'evidence': str(int(time.time()) // 60),
+            'target': target('/agents', '查看 Agent 列表')})
+
+
+def _registration_fresh(item):
+    from datetime import datetime, timezone
+    try:
+        seen = datetime.fromisoformat(item.get('last_seen_at') or '')
+    except ValueError:
+        return False
+    return (datetime.now(timezone.utc) - seen).total_seconds() < REGISTRATION_FRESH_SECONDS
+
+
 def router_signature(config, router):
     # Digest only: credentials and configuration contents never enter a notification.
     return hashlib.sha256(json.dumps([config, router], sort_keys=True, default=str).encode()).hexdigest()
@@ -198,6 +231,8 @@ def _refresh(items, repository, completed_task=None):
                 keys.add(key)
                 if item['state'] == 'pending':
                     item['stale'] = item.get('signature') != routers[prefix]
+        if item.get('source') == REGISTRATION_SOURCE and _registration_fresh(item):
+            keys.add(key)
         if key not in keys:
             store.observe(items, key, {'state': 'inactive'})
         if item.get('profile_id') in profiles:
