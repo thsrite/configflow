@@ -169,6 +169,8 @@
               v-if="agent.service_type === 'oxidns'"
               :agent="agent"
               :source-name="agents.find(item => item.id === agent.dns_follow?.source_agent_id)?.name"
+              :peer="haPeer(agent)"
+              :peer-source-name="agents.find(item => item.id === haPeer(agent)?.dns_follow?.source_agent_id)?.name"
               :blocked="deploymentBusy(agent.id) || upgradeBusy(agent.id) || pushingIds.has(agent.id)"
               @changed="loadAgents"
             />
@@ -989,6 +991,7 @@ const deploymentHistoryAgentId = ref<string | null>(null)
 const notificationDeploymentId = ref('')
 const addressAgentId = ref<string | null>(null)
 const addressAgent = computed(() => agents.value.find(agent => agent.id === addressAgentId.value) || null)
+const haPeer = (agent: Agent) => agent.oxidns_ha?.enabled === true ? agents.value.find(item => item.id === agent.oxidns_ha?.peer_id) || null : null
 const dnsFollowRefs = new Map<string, InstanceType<typeof AgentDNSFollow>>()
 function setDNSFollowRef(id: string, instance: Element | ComponentPublicInstance | null) {
   if (instance) dnsFollowRefs.set(id, instance as InstanceType<typeof AgentDNSFollow>)

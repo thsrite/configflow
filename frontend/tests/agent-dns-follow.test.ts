@@ -288,4 +288,28 @@ describe('DNS follow results and retry', () => {
     expect(wrapper.text()).not.toContain('重试同步')
     expect(agentApi.retryDNSFollow).not.toHaveBeenCalled()
   })
+
+  it('shows a high-availability member without its own binding as following through its peer', async () => {
+    const ha = { enabled: true, peer_id: 'oxi-1', role: 'secondary' }
+    const peer = agent({ oxidns_ha: { enabled: true, peer_id: 'oxi-2', role: 'primary' }, dns_follow: binding,
+      dns_follow_state: { status: 'succeeded', message: '', address: 'udp://192.0.2.3:1053' } })
+    const wrapper = mount(AgentDNSFollow, { props: { agent: agent({ id: 'oxi-2', name: '备用 OxiDNS', oxidns_ha: ha }), peer, peerSourceName: '家庭 Mihomo' }, attachTo: document.body })
+    wrappers.push(wrapper)
+    const row = wrapper.getComponent(AgentStatusRow)
+    expect(row.props()).toMatchObject({ label: 'DNS 联动', status: '随 家庭 OxiDNS 联动', tone: 'success' })
+    expect(wrapper.find('[aria-label="跟随 Mihomo DNS"]').exists()).toBe(false)   // no second binding from here
+    await wrapper.get('[data-dns-follow-via-peer] button').trigger('click')
+    expect(wrapper.text()).toContain('这台不用再设置')
+    expect(wrapper.text()).toContain('udp://192.0.2.3:1053')
+    await wrapper.setProps({ peer: { ...peer, dns_follow_state: { status: 'failed', message: 'x' } } })
+    expect(wrapper.getComponent(AgentStatusRow).props('tone')).toBe('danger')
+    expect(wrapper.text()).toContain('联动同步失败')
+    // Its own binding, a peer without one, or no pair: the usual rows.
+    await wrapper.setProps({ peer: { ...peer, dns_follow: null } })
+    expect(wrapper.getComponent(AgentStatusRow).props('status')).toBe('未开启')
+    await wrapper.setProps({ peer, agent: agent({ id: 'oxi-2', name: '备用 OxiDNS' }) })
+    expect(wrapper.getComponent(AgentStatusRow).props('status')).toBe('未开启')
+    await wrapper.setProps({ agent: agent({ id: 'oxi-2', oxidns_ha: ha, dns_follow: binding, dns_follow_state: { status: 'succeeded', message: '' } }) })
+    expect(wrapper.getComponent(AgentStatusRow).props('status')).toBe('已同步')
+  })
 })

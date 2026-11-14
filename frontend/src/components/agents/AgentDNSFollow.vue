@@ -14,7 +14,7 @@ import AgentStatusRow from './AgentStatusRow.vue'
 import type { Agent } from '@/types'
 import type { AgentDNSFollowBinding, AgentDNSFollowInput, AgentDNSFollowOptions, AgentDNSFollowState } from '@/types/agentDNSFollow'
 
-const props = defineProps<{ agent: Agent; sourceName?: string; blocked?: boolean }>()
+const props = defineProps<{ agent: Agent; sourceName?: string; blocked?: boolean; peer?: Agent | null; peerSourceName?: string }>()
 const emit = defineEmits<{ changed: [] }>()
 const binding = ref<AgentDNSFollowBinding | null>(props.agent.dns_follow || null)
 const state = ref<AgentDNSFollowState | null>(props.agent.dns_follow_state || null)
@@ -23,6 +23,10 @@ watch(() => [props.agent.dns_follow, props.agent.dns_follow_state] as const, ([n
   state.value = nextState || null
   if (!open.value && nextState?.status !== 'failed') error.value = ''
 })
+// A DNS high-availability pair is published as one: the member that holds the binding updates the upstream and both devices receive it.
+const viaPeer = computed(() => !binding.value && props.agent.oxidns_ha?.enabled === true && props.peer?.oxidns_ha?.enabled === true
+  && props.peer.dns_follow ? props.peer : null)
+const peerState = computed(() => viaPeer.value?.dns_follow_state || null)
 const open = ref(false)
 const loading = ref(false)
 const action = ref<'save' | 'remove' | 'retry' | ''>('')
@@ -146,6 +150,16 @@ defineExpose({ showSettings: () => { if (!action.value) open.value = true } })
         <p v-if="!showNotice && shownState.message" class="m-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{{ shownState.message }}</p>
         <p v-if="shownState.address" class="m-0 font-mono [overflow-wrap:anywhere]">{{ shownState.address }}</p>
         <AgentOperationSteps :task="shownState" kind="dns-follow" :busy="following || action === 'retry'" embedded :show-current="false" :show-message="false" />
+      </div>
+    </AgentStatusRow>
+    <AgentStatusRow
+      v-else-if="viaPeer" label="DNS 联动" :status="`随 ${viaPeer.name} 联动`" data-dns-follow-via-peer
+      :tone="peerState?.status === 'failed' ? 'danger' : peerState?.status === 'succeeded' ? 'success' : 'neutral'"
+    >
+      <div class="min-w-0 space-y-2 text-xs leading-relaxed text-muted-foreground">
+        <p class="m-0 [overflow-wrap:anywhere]">联动设置在高可用组的另一台设备 {{ viaPeer.name }} 上，跟随 {{ peerSourceName || 'Mihomo' }} DNS。上游变化时两台一起发布，这台不用再设置。</p>
+        <p v-if="peerState?.status === 'failed'" class="m-0 text-destructive-accent [overflow-wrap:anywhere]">{{ viaPeer.name }} 的联动同步失败，请在它的卡片上查看原因并重试。</p>
+        <p v-if="peerState?.address" class="m-0 font-mono [overflow-wrap:anywhere]">{{ peerState.address }}</p>
       </div>
     </AgentStatusRow>
     <AgentStatusRow v-else label="DNS 联动" status="未开启" tone="neutral">
