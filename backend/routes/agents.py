@@ -708,13 +708,18 @@ def agent_heartbeat(agent_id):
         reported_host = heartbeat_data.pop('host', None)
         result = agent_manager.update_heartbeat(agent_id, heartbeat_data)
         if result:
+            reply = {'success': True, 'domain_discovery_enabled': _domain_discovery_enabled(agent),
+                     'traffic_history_enabled': _traffic_history_enabled(agent), 'reads_host': True}
             if reported_host:
                 from backend.agents import address_follow
                 address_follow.follow(agent_manager, agent, reported_host)
+                # 记录里已经是 Agent 上报的地址时告诉它；Agent 据此把配置文件里失效的 agent_ip 改成这个地址。
+                confirmed_host = address_follow.confirmed(agent, reported_host)
+                if confirmed_host:
+                    reply['confirmed_host'] = confirmed_host
             # 旧 Agent 会忽略多出的字段；新 Agent 据此启停域名发现。reads_host 告诉新 Agent
             # 可以在心跳里带上自己的地址（旧版面板会拒绝不认识的字段）。
-            return jsonify({'success': True, 'domain_discovery_enabled': _domain_discovery_enabled(agent),
-                            'traffic_history_enabled': _traffic_history_enabled(agent), 'reads_host': True}), 200
+            return jsonify(reply), 200
         return jsonify({'success': False, 'message': 'Agent not found'}), 404
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -1024,6 +1029,22 @@ def handle_agent_item(agent_id):
             return jsonify({'success': False, 'message': str(exc)}), 409
         except Exception as e:
             return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@bp.route('/<agent_id>/address', methods=['GET', 'PUT'])
+@require_auth
+def agent_address(agent_id):
+    """查看或手动修改面板联系这台 Agent 的地址"""
+    from backend.agents import address_follow
+    agent_manager = get_agent_manager()
+    agent = agent_manager.get_agent_by_id(agent_id)
+    if not agent:
+        return jsonify({'success': False, 'message': 'Agent not found'}), 404
+    if request.method == 'GET':
+        return jsonify({'success': True, 'data': address_follow.describe(agent)}), 200
+    body = request.get_json(silent=True)
+    result, status = address_follow.change(agent_manager, agent, body.get('host') if isinstance(body, dict) else None)
+    return jsonify(result), status
 
 
 @bp.route('/<agent_id>/restart', methods=['POST'])

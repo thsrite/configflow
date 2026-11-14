@@ -54,21 +54,24 @@ type CustomFileItem struct {
 
 // Config 结构体定义
 type Config struct {
-	AgentConfigFile   string `json:"-"`
-	ServerURL         string `json:"server_url"`
-	AgentName         string `json:"agent_name"`
-	AgentHost         string `json:"agent_host"`
-	AgentPort         int    `json:"agent_port"`
-	AgentIP           string `json:"agent_ip,omitempty"`
-	ServiceType       string `json:"service_type"`
-	ServiceName       string `json:"service_name"`
-	ConfigPath        string `json:"config_path"`
-	RestartCommand    string `json:"restart_command"`
-	HeartbeatInterval int    `json:"heartbeat_interval"`
-	AgentID           string `json:"agent_id,omitempty"`
-	AgentServiceUnit  string `json:"agent_service_unit,omitempty"`
-	NativeAIO         bool   `json:"native_aio,omitempty"`
-	Token             string `json:"token,omitempty"`
+	AgentConfigFile string `json:"-"`
+	ServerURL       string `json:"server_url"`
+	AgentName       string `json:"agent_name"`
+	AgentHost       string `json:"agent_host"`
+	AgentPort       int    `json:"agent_port"`
+	AgentIP         string `json:"agent_ip,omitempty"`
+	// AgentIPSource, when set, is read instead of AgentIP: the address can
+	// change while the Agent runs (renumbered host, address set from the panel).
+	AgentIPSource     func() string `json:"-"`
+	ServiceType       string        `json:"service_type"`
+	ServiceName       string        `json:"service_name"`
+	ConfigPath        string        `json:"config_path"`
+	RestartCommand    string        `json:"restart_command"`
+	HeartbeatInterval int           `json:"heartbeat_interval"`
+	AgentID           string        `json:"agent_id,omitempty"`
+	AgentServiceUnit  string        `json:"agent_service_unit,omitempty"`
+	NativeAIO         bool          `json:"native_aio,omitempty"`
+	Token             string        `json:"token,omitempty"`
 
 	ServiceManager          string `json:"service_manager,omitempty"`
 	ServiceBinary           string `json:"service_binary,omitempty"`
@@ -875,4 +878,11 @@ func cleanOldBackups(backupRootDir string, maxBackups int) {
 			log.Printf("Successfully deleted old backup: %s", backup.name)
 		}
 	}
+}
+
+func (c *Config) agentIP() string {
+	if c.AgentIPSource != nil {
+		return c.AgentIPSource()
+	}
+	return c.AgentIP
 }

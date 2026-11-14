@@ -13,6 +13,7 @@ import (
 
 var detectLocalIPv4 = localip.Detect
 var detectLocalIPv4Except = localip.DetectExcept
+var detectAllLocalIPv4 = localip.DetectAll
 
 // getLocalIP 优先使用 LAN IPv4，兼容仅有 VPN 或点对点接口的注册。
 // excluded 是本机可能临时持有的 DNS 高可用虚拟 IP，不能当作 Agent 地址上报。
