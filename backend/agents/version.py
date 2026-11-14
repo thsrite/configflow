@@ -1,10 +1,16 @@
 """Agent 版本管理"""
 
 # Agent 最新版本号
-LATEST_AGENT_VERSION = "1.8.59-go"
+LATEST_AGENT_VERSION = "1.8.60-go"
 
 # 版本更新日志（可选）
 VERSION_CHANGELOG = {
+    "1.8.60-go": {
+        "date": "2026-11-14",
+        "features": [
+            "设备换 IP 后不用再手改 Agent 配置：配置里的 agent_ip 已不在本机时自动改用检测到的地址，并随心跳上报，面板核实可连接后自动更新记录"
+        ]
+    },
     "1.8.59-go": {
         "date": "2026-11-13",
         "features": [

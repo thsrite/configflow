@@ -123,6 +123,27 @@ def record_registration_rejection(repository, agent_data, reason):
             'target': target('/agents', '查看 Agent 列表')})
 
 
+AGENT_ADDRESS_SOURCE = 'agent-address'
+
+
+def record_agent_address(repository, agent, host, label, message):
+    """An Agent reports a new address that ConfigFlow did not adopt; repeated while it lasts."""
+    import time
+    name = event_message(str(agent.get('name') or agent['id']))[:64]
+    with store.transaction(repository.data_dir) as items:
+        store.observe(items, 'agent-address:' + agent['id'], {
+            'state': 'pending', 'source': AGENT_ADDRESS_SOURCE, 'scope': 'system', 'severity': 'warning',
+            'status_label': label, 'title': f'{name} · 地址已从 {agent.get("host")} 变为 {host}',
+            'message': str(message)[:MESSAGE_LIMIT], 'impact': '面板仍按旧地址联系这台设备',
+            'checked_at': store.now(), 'evidence': str(int(time.time()) // 120),
+            'target': target('/agents', '查看 Agent', agent=agent['id'])})
+
+
+def resolve_agent_address(repository, agent_id):
+    with store.transaction(repository.data_dir) as items:
+        store.observe(items, 'agent-address:' + agent_id, {'state': 'resolved'})
+
+
 NOTICE_SOURCE = 'notice'
 
 
@@ -247,7 +268,7 @@ def _refresh(items, repository, completed_task=None):
                 keys.add(key)
                 if item['state'] == 'pending':
                     item['stale'] = item.get('signature') != routers[prefix]
-        if item.get('source') == REGISTRATION_SOURCE and _registration_fresh(item):
+        if item.get('source') in (REGISTRATION_SOURCE, AGENT_ADDRESS_SOURCE) and _registration_fresh(item):
             keys.add(key)
         if item.get('source') == NOTICE_SOURCE:
             keys.add(key)

@@ -43,7 +43,10 @@ type RegisterResponse struct {
 }
 
 type HeartbeatRequest struct {
-	Version       string         `json:"version"`
+	Version string `json:"version"`
+	// The address the server should use for this Agent; sent only to servers
+	// that announced they read it.
+	Host          string         `json:"host,omitempty"`
 	ServiceStatus string         `json:"service_status"`
 	SystemMetrics *SystemMetrics `json:"system_metrics,omitempty"`
 }
@@ -136,8 +139,8 @@ func (c *Config) handleRegisterResponse(regResp *RegisterResponse) error {
 func (c *Config) RegisterAgent() error {
 	log.Println("Agent not registered. Attempting to register...")
 
-	// 优先使用配置中的 AgentIP
-	hostIP := strings.TrimSpace(c.AgentIP)
+	// 优先使用配置中的 AgentIP（本机已没有这个地址时改为自动检测）
+	hostIP := c.effectiveAgentIP()
 	if hostIP == "" {
 		localIP, err := getLocalIP(routes.OxiDNSHAVirtualIPs(&routes.Config{AgentConfigFile: c.filePath, ServiceType: c.ServiceType, NativeAIO: c.NativeAIO})...)
 		if err != nil {
@@ -188,6 +191,9 @@ func (c *Config) createHeartbeatRequest() ([]byte, error) {
 	reqBody := HeartbeatRequest{
 		Version:       AgentVersion,
 		ServiceStatus: status,
+	}
+	if serverReadsHeartbeatHost.Load() {
+		reqBody.Host = c.heartbeatHost()
 	}
 
 	// 收集系统监控数据（如果启用）
@@ -271,6 +277,7 @@ func (c *Config) sendHeartbeatRequest(jsonData []byte) error {
 		var result struct {
 			DomainDiscoveryEnabled bool `json:"domain_discovery_enabled"`
 			TrafficHistoryEnabled  bool `json:"traffic_history_enabled"`
+			ReadsHost              bool `json:"reads_host"`
 		}
 		// Older servers may return an empty body or omit the optional field.
 		// Read the complete, bounded response: a valid JSON prefix alone does
@@ -290,6 +297,7 @@ func (c *Config) sendHeartbeatRequest(jsonData []byte) error {
 		}
 		domainDiscovery.SetEnabled(c, result.DomainDiscoveryEnabled)
 		trafficHistory.SetEnabled(c, result.TrafficHistoryEnabled)
+		serverReadsHeartbeatHost.Store(result.ReadsHost)
 
 		status := c.managedServiceStatus()
 		// 心跳成功是常态，仅在服务状态发生变化时记录，避免日志无限累积

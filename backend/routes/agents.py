@@ -46,7 +46,7 @@ logger = get_logger(__name__)
 # 更早的版本不认识 restart_after_update 字段，只能由服务端触发重启。
 _SELF_RESTART_MIN_VERSION = "1.1.0-go"
 _HEARTBEAT_MAX_CONTENT_LENGTH = 32 * 1024
-_HEARTBEAT_FIELDS = frozenset({'version', 'config_version', 'service_status', 'system_metrics'})
+_HEARTBEAT_FIELDS = frozenset({'version', 'config_version', 'service_status', 'system_metrics', 'host'})
 _METRIC_FIELDS = {
     'cpu': frozenset({'usage_percent', 'core_count'}),
     'memory': frozenset({'total', 'used', 'available', 'used_percent'}),
@@ -114,7 +114,7 @@ def _validate_system_metrics(metrics):
 def _validate_heartbeat_payload(payload):
     if not isinstance(payload, dict) or set(payload) - _HEARTBEAT_FIELDS:
         return False
-    for field, max_length in (('version', 128), ('config_version', 128), ('service_status', 64)):
+    for field, max_length in (('version', 128), ('config_version', 128), ('service_status', 64), ('host', 64)):
         if field in payload:
             value = payload[field]
             if not isinstance(value, str) or len(value) > max_length:
@@ -703,11 +703,18 @@ def agent_heartbeat(agent_id):
         if not _validate_heartbeat_payload(heartbeat_data):
             return jsonify({'success': False, 'message': 'Invalid heartbeat data'}), 400
 
+        # The address is not part of the stored heartbeat; it only tells the
+        # panel where the Agent now is.
+        reported_host = heartbeat_data.pop('host', None)
         result = agent_manager.update_heartbeat(agent_id, heartbeat_data)
         if result:
-            # 旧 Agent 会忽略多出的字段；新 Agent 据此启停域名发现
+            if reported_host:
+                from backend.agents import address_follow
+                address_follow.follow(agent_manager, agent, reported_host)
+            # 旧 Agent 会忽略多出的字段；新 Agent 据此启停域名发现。reads_host 告诉新 Agent
+            # 可以在心跳里带上自己的地址（旧版面板会拒绝不认识的字段）。
             return jsonify({'success': True, 'domain_discovery_enabled': _domain_discovery_enabled(agent),
-                            'traffic_history_enabled': _traffic_history_enabled(agent)}), 200
+                            'traffic_history_enabled': _traffic_history_enabled(agent), 'reads_host': True}), 200
         return jsonify({'success': False, 'message': 'Agent not found'}), 404
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
