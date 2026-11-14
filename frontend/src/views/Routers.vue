@@ -956,7 +956,7 @@ const routerApi = {
 const routerPageHelp = '在这里查看和调整主路由的分流设置。「差异报告」只检查，不会修改设备。点「预览发布」查看具体改动，确认后再应用；如果发布失败，会尝试撤销本次改动，并显示结果。'
 
 type RouterType = 'ikuai' | 'routeros'
-type Status = 'synced' | 'adoptable' | 'conflict' | 'missing' | 'extra' | 'not_required' | 'unknown' | 'pending'
+type Status = 'synced' | 'adoptable' | 'conflict' | 'missing' | 'extra' | 'not_required' | 'unknown' | 'pending' | 'add' | 'remove'
 type ReportSummary = Partial<Record<Status, number>>
 type DhcpDnsStatus = 'disabled' | 'synced' | 'pending' | 'unknown'
 type IPv6FakeIPStatus = 'synced' | 'missing' | 'pending' | 'conflict' | 'unknown' | 'disabled' | 'borrowed'
@@ -1044,7 +1044,7 @@ interface DnsGuardReport {
   enabled: boolean
   status: 'disabled' | 'synced' | 'pending' | 'unknown'
   message: string
-  items: { role: string; object: string; detail: string; status: 'synced' | 'pending'; paused: boolean }[]
+  items: { role: string; object: string; detail: string; status: 'synced' | 'pending' | 'add' | 'remove'; paused: boolean }[]
   blockers: string[]
   warnings: string[]
 }
@@ -1083,7 +1083,9 @@ const STATUS: Record<Status, { label: string; chip: string }> = {
   extra: { label: '多余', chip: 'chip-warn' },
   not_required: { label: '无需免转换', chip: 'chip-ok' },
   unknown: { label: '待确认', chip: 'chip-warn' },
-  pending: { label: '待更新', chip: 'chip-warn' }
+  pending: { label: '待更新', chip: 'chip-warn' },
+  add: { label: '待添加', chip: 'chip-warn' },
+  remove: { label: '待移除', chip: 'chip-warn' }
 }
 const statusInfo = (status: string) => STATUS[status as Status] || STATUS.unknown
 // IPv6 routes have their own ownership/status meanings; do not reuse NAT's

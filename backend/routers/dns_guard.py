@@ -321,6 +321,39 @@ def _matches(item: Dict[str, Any], row: Dict[str, Any], failover: bool) -> bool:
                for key, value in item['values'].items() if not _paused_field(item['role'], key, failover))
 
 
+def _hijack_on_top(row: Dict[str, Any], nat: List[Dict[str, Any]], owned_ids: set) -> bool:
+    """No other enabled port-53 dst-nat precedes this owned hijack (verify() requires it)."""
+    for other in nat:
+        if str(other.get('.id')) == str(row.get('.id')):
+            return True
+        if (other.get('chain') == 'dstnat' and str(other.get('dst-port', '')) == '53'
+                and str(other.get('disabled')).lower() not in ('true', 'yes')
+                and (NAT, str(other.get('.id'))) not in owned_ids):
+            return False
+    return False
+
+
+def _kept_roles(items: List[Dict[str, Any]], owned: List[Dict[str, Any]], live, failover: bool) -> set:
+    """Owned objects that already are exactly what the new spec asks for stay untouched.
+
+    Re-creating them would briefly drop the hijack and give the rules new IDs for
+    no reason; only the objects whose content changes are deleted and created.
+    """
+    by_role = {entry['role']: entry for entry in owned}
+    rows = {(path, str(row.get('.id'))): row for path in PATHS for row in live[path] or []}
+    owned_ids = {(entry['path'], entry['id']) for entry in owned}
+    kept = set()
+    for item in items:
+        entry = by_role.get(item['role'])
+        row = rows.get((item['path'], entry['id'])) if entry and entry['path'] == item['path'] else None
+        if row is None or not _matches(item, row, failover):
+            continue
+        if item['role'].startswith('hijack') and not _hijack_on_top(row, live[NAT] or [], owned_ids):
+            continue
+        kept.add(item['role'])
+    return kept
+
+
 def _summary(spec: Optional[Dict[str, Any]], previous: Optional[Dict[str, Any]]) -> str:
     if spec is None:
         return '撤销 DNS 劫持：删除已核实归属的受管对象'
@@ -366,16 +399,26 @@ def build(desired: Dict[str, Any], state) -> Dict[str, Any]:
     by_role = {entry['role']: entry for entry in owned}
     rows = {(path, str(row.get('.id'))): row for path in PATHS for row in live[path] or []}
     failover = bool(spec and spec['failover'])
-    synced = bool(previous) and previous.get('spec') == spec and [entry['role'] for entry in owned] == result['roles'] \
-        and all(_matches(item, rows[(item['path'], by_role[item['role']]['id'])], failover) for item in items)
+    kept = _kept_roles(items, owned, live, failover)
+    removed = [entry for entry in owned if entry['role'] not in kept]
+    synced = (bool(previous) and previous.get('spec') == spec and len(kept) == len(items)
+              and [entry['role'] for entry in owned] == result['roles'])
     for item in items:
         entry = by_role.get(item['role'])
         row = rows.get((item['path'], entry['id'])) if entry else None
-        status = 'synced' if row is not None and _matches(item, row, failover) and synced else 'pending'
+        # Each row says what publishing does to it: nothing, replace, or create.
+        # A first enable keeps its original all-pending report.
+        status = 'synced' if item['role'] in kept else ('pending' if row is not None or not owned else 'add')
         result['items'].append({'role': item['role'], 'object': PATH_NAMES[item['path']],
                                 'detail': _describe(item), 'status': status,
                                 'paused': bool(item['role'].startswith('hijack') and row is not None
                                                and str(row.get('disabled')).lower() in ('true', 'yes'))})
+    roles = set(result['roles'])
+    for entry in removed:
+        if entry['role'] not in roles:
+            result['items'].append({'role': entry['role'], 'object': PATH_NAMES[entry['path']],
+                                    'detail': _describe({'role': entry['role'], 'values': entry['config']}),
+                                    'status': 'remove', 'paused': False})
     if not spec and not owned:
         result['status'] = 'disabled'
         result['message'] = '未开启强制 DNS；已发布的受管对象均已不存在。' if previous else '未开启强制 DNS。'
@@ -391,9 +434,16 @@ def build(desired: Dict[str, Any], state) -> Dict[str, Any]:
         return result
     result['status'] = 'pending'
     result['message'] = '发布后撤销强制 DNS。' if spec is None else '发布后按以下对象维护强制 DNS。'
-    result['ops'].append({'kind': 'dns_guard_replace', 'spec': spec, 'previous': previous,
-                          'owned': [{key: entry[key] for key in ('role', 'path', 'id', 'config')} for entry in owned],
-                          'create': items, 'summary': _summary(spec, previous)})
+    op = {'kind': 'dns_guard_replace', 'spec': spec, 'previous': previous,
+          'owned': [{key: entry[key] for key in ('role', 'path', 'id', 'config')} for entry in owned],
+          'create': [item for item in items if item['role'] not in kept], 'summary': _summary(spec, previous)}
+    if owned:
+        # Without owned objects (a first enable) everything is created, exactly as before.
+        op.update(keep=[role for role in result['roles'] if role in kept],
+                  delete=[{key: entry[key] for key in ('role', 'path', 'id', 'config')} for entry in removed],
+                  roles=result['roles'])
+        op = {key: op[key] for key in ('kind', 'spec', 'previous', 'owned', 'keep', 'delete', 'create', 'roles', 'summary')}
+    result['ops'].append(op)
     return result
 
 
@@ -448,16 +498,28 @@ def _remapped(manifest: Optional[Dict[str, Any]], remap: Dict[str, str], driver)
 
 
 def apply(driver, op: Dict[str, Any]) -> Dict[str, Any]:
-    """Delete the owned objects, then create the new set; undo on any failure."""
+    """Delete the changed owned objects, then create their replacements; undo on any failure.
+
+    Owned objects the preview found already correct are left in place.
+    """
     previous = op.get('previous')
     live = snapshot(driver)
     owned = owned_entries(previous, live)
     if [entry['id'] for entry in owned] != [entry['id'] for entry in op.get('owned') or []]:
         raise RouterError('强制 DNS 的受管对象在预览后发生变化，请重新预览')
+    keep = set(op.get('keep') or [])
+    by_role = {entry['role']: entry for entry in owned}
+    failover = bool((op.get('spec') or {}).get('failover'))
+    for item in resources(op['spec']) if op.get('spec') else []:
+        if item['role'] in keep:
+            entry = by_role.get(item['role'])
+            row = next((row for row in live[item['path']] or [] if entry and str(row.get('.id')) == entry['id']), None)
+            if row is None or not _matches(item, row, failover):
+                raise RouterError('强制 DNS 的受管对象在预览后发生变化，请重新预览')
     undo: List[Dict[str, Any]] = []
     created = []
     try:
-        for entry in reversed(owned):
+        for entry in reversed([entry for entry in owned if entry['role'] not in keep]):
             row = driver._row(entry['path'], entry['id'])
             check = driver._perform({'method': 'DELETE', 'path': entry['path'], 'id': entry['id'],
                                      'expected': driver._ownership_snapshot(entry['path'], row)}, undo)
@@ -471,8 +533,10 @@ def apply(driver, op: Dict[str, Any]) -> Dict[str, Any]:
             check = driver._perform({'method': 'PUT', 'path': item['path'], 'values': values}, undo)
             driver._verify_change(check)
             created.append({'role': item['role'], 'path': item['path'], 'id': check['id']})
-        resources_ = [{**entry, 'config': stable(entry['path'], driver._row(entry['path'], entry['id']))}
-                      for entry in created]
+        ids = {entry['role']: entry for entry in created}
+        ids.update({role: {key: by_role[role][key] for key in ('role', 'path', 'id')} for role in keep})
+        resources_ = [{**ids[role], 'config': stable(ids[role]['path'], driver._row(ids[role]['path'], ids[role]['id']))}
+                      for role in op.get('roles') or [entry['role'] for entry in created]]
     except RouterError as error:
         try:
             remap = _rollback(driver, list(reversed(undo)))

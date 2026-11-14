@@ -262,7 +262,9 @@ def test_settings_change_replaces_objects_and_rolls_back_with_new_ids():
     changed = copy.deepcopy(item)
     changed['dns_guard']['bypass'] = ['10.0.0.50', '10.0.0.60']
     _, plan = preview(driver, changed)
-    session.counts, session.fail = {}, {('PUT', NAT, 2)}  # the replacement's second hairpin
+    # Only the new member and the Netwatch (its resume flush spares the new host)
+    # change; the replacement Netwatch fails after the old one was deleted.
+    session.counts, session.fail = {}, {('PUT', NETWATCH, 1)}
     result = execute(plan, driver, None)
     assert not result['ok'] and result['failed_stage'] == 'dns_guard'
     after = {path: [{key: value for key, value in row.items() if key not in RUNTIME} for row in session.rows[path]]
@@ -512,3 +514,73 @@ def test_missing_address_members_read_as_absent_by_id():
     driver._verify_change(check)
     assert session.rows[ADDRESSES] == []
     assert whole_address_reads(session) == [] and session.reads.count(ADDRESSES + '/*A1') == 2
+
+
+def test_changing_the_bypass_only_touches_what_changes():
+    session, driver = device()
+    _, item = publish(driver, router())
+    ids = {path: [row['.id'] for row in guard_rows(session, path)] for path in (NAT, FILTER)}
+    changed = copy.deepcopy(item)
+    changed['dns_guard']['bypass'] = ['10.0.0.60']
+    report, plan = preview(driver, changed)
+    status = {entry['role']: entry['status'] for entry in report['dns_guard']['items']}
+    assert status == {'bypass:10.0.0.2/32': 'synced', 'bypass:10.0.0.4/32': 'synced', 'bypass:10.0.0.60/32': 'add',
+                      'hairpin-udp': 'synced', 'hairpin-tcp': 'synced', 'hijack-udp': 'synced', 'hijack-tcp': 'synced',
+                      'dot-tcp': 'synced', 'dot-udp': 'synced', 'netwatch': 'pending', 'bypass:10.0.0.50/32': 'remove'}
+    assert report['dns_guard']['status'] == 'pending'
+    op = plan['stages'][-1]['ops'][0]
+    assert [entry['role'] for entry in op['delete']] == ['bypass:10.0.0.50/32', 'netwatch']
+    assert [entry['role'] for entry in op['create']] == ['bypass:10.0.0.60/32', 'netwatch']
+    session.writes = []
+    result, item = publish(driver, changed)
+    assert result['ok'], result
+    # The hijack, hairpin and 853 rules were neither deleted nor re-created.
+    assert not [write for write in session.writes if write[1] in (NAT, FILTER)]
+    assert {path: [row['.id'] for row in guard_rows(session, path)] for path in (NAT, FILTER)} == ids
+    assert sorted(row['address'] for row in guard_rows(session, ADDRESSES)) == ['10.0.0.2/32', '10.0.0.4/32', '10.0.0.60/32']
+    assert '10.0.0.60' in session.rows[NETWATCH][0]['up-script']
+    assert [entry['role'] for entry in item['dns_guard_state']['resources']] == [
+        'bypass:10.0.0.2/32', 'bypass:10.0.0.4/32', 'bypass:10.0.0.60/32',
+        'hairpin-udp', 'hairpin-tcp', 'hijack-udp', 'hijack-tcp', 'dot-tcp', 'dot-udp', 'netwatch']
+    report, plan = preview(driver, item)
+    assert report['dns_guard']['status'] == 'synced' and plan['empty']
+    assert {entry['status'] for entry in report['dns_guard']['items']} == {'synced'}
+
+
+def test_a_paused_hijack_stays_paused_through_an_unrelated_change():
+    session, driver = device()
+    _, item = publish(driver, router())
+    for row in guard_rows(session, NAT):
+        if row['comment'] == 'cf-dnsguard:hijack':
+            row['disabled'] = 'true'
+    changed = copy.deepcopy(item)
+    changed['dns_guard']['bypass'] = ['10.0.0.50', '10.0.0.60']
+    result, item = publish(driver, changed)
+    assert result['ok'], result
+    # Re-creating the pair would have re-enabled it while OxiDNS is still down.
+    assert [row['disabled'] for row in guard_rows(session, NAT) if row['comment'] == 'cf-dnsguard:hijack'] == ['true', 'true']
+    report, plan = preview(driver, item)
+    assert report['dns_guard']['status'] == 'synced' and plan['empty']
+
+
+def test_a_hijack_overtaken_by_another_port_53_rule_is_moved_back_to_the_top():
+    session, driver = device()
+    _, item = publish(driver, router())
+    session.rows[NAT].insert(0, {**LEGACY_HIJACK, '.id': '*F1', 'comment': 'someone else'})
+    report, plan = preview(driver, item)
+    status = {entry['role']: entry['status'] for entry in report['dns_guard']['items']}
+    assert status['hijack-udp'] == status['hijack-tcp'] == 'pending' and status['hairpin-udp'] == 'synced'
+    result, item = publish(driver, item)
+    assert result['ok'], result
+    assert [row.get('comment') for row in session.rows[NAT]][:2] == ['cf-dnsguard:hijack'] * 2
+
+
+def test_an_object_changed_after_the_preview_is_not_silently_kept():
+    session, driver = device()
+    _, item = publish(driver, router())
+    changed = copy.deepcopy(item)
+    changed['dns_guard']['bypass'] = ['10.0.0.60']
+    _, plan = preview(driver, changed)
+    next(row for row in guard_rows(session, NAT) if row['comment'] == 'cf-dnsguard:hairpin')['src-address'] = '10.0.0.0/16'
+    result = execute(plan, driver, None)
+    assert not result['ok'] and result['failed_stage'] == 'dns_guard'

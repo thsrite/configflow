@@ -94,9 +94,14 @@ export function operationDetails(op: RouterPlanOperation): DetailGroup[] {
     }
     add('新建对象', list(op.create).map(value => guardRow(value, record(value).values)),
       '按列表顺序创建：先写放行与回包规则，再启用劫持；劫持与 853 规则放在各自列表最前。')
-    add('删除旧受管对象', [...list(op.owned)].reverse().map(value => guardRow(value, record(value).config)),
-      list(op.create).length ? '先按以下顺序删除本功能上次创建的对象，再创建新对象；手工规则不在此列表中。'
+    // Plans from before incremental publishing list every owned object as replaced.
+    const removed = Array.isArray(op.delete) ? list(op.delete) : list(op.owned)
+    add('删除旧受管对象', [...removed].reverse().map(value => guardRow(value, record(value).config)),
+      list(op.create).length ? '先按以下顺序删除本功能上次创建、内容有变化的对象，再创建新对象；手工规则不在此列表中。'
         : '关闭强制 DNS，仅删除以下已核实归属的对象。')
+    const kept = strings(op.keep)
+    if (kept.length) add('保持不变', kept.map(role => ({ label: role, value: '内容一致，不删除也不重建' })),
+      '这些对象已经符合本次设置，发布时原样保留。')
   } else if (op.kind === 'return_routing_apply') {
     const before = record(op.previous), after = record(op.spec)
     groups.push(changedFields('回流参数', before, after, ['router_ip', 'mark', 'table', 'priority']))
