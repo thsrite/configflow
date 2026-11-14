@@ -63,6 +63,11 @@ const stateLabel = computed(() => stateLabels[state.value.status])
 const stateTone = computed(() => ({ succeeded: 'text-success-accent', failed: 'text-destructive-accent',
   blocked: 'text-warning-accent', pending: 'text-warning-accent', running: 'text-primary-accent',
   disabled: 'text-muted-foreground', idle: 'text-muted-foreground' }[state.value.status]))
+const PAIR_SAVED = 'configflow:rule-sync-pair-saved'
+const onPairSaved = (event: Event) => {
+  if (props.highAvailability && (event as CustomEvent<string>).detail !== props.agentId) void load()
+}
+window.addEventListener(PAIR_SAVED, onPairSaved)
 let request = 0
 let disposed = false
 let controller: AbortController | undefined
@@ -129,6 +134,8 @@ async function save(key: keyof AgentRuleSyncSettings, enabled: boolean) {
     apply(data)
     errorKind.value = 'load'
     notify.success('自动同步设置已保存')
+    // The switches of a high-availability pair are saved to both members; the other card must show them too.
+    if (props.highAvailability) window.dispatchEvent(new CustomEvent(PAIR_SAVED, { detail: props.agentId }))
   } catch (failure: any) {
     if (disposed || current !== request) return
     errorKind.value = 'save'
@@ -152,5 +159,5 @@ watch(() => props.agentId, () => {
   errorKind.value = 'load'
   void load()
 }, { immediate: true })
-onBeforeUnmount(() => { disposed = true; request++; clearTimer(); controller?.abort() })
+onBeforeUnmount(() => { disposed = true; request++; clearTimer(); controller?.abort(); window.removeEventListener(PAIR_SAVED, onPairSaved) })
 </script>
