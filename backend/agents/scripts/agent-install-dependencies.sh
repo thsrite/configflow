@@ -19,7 +19,7 @@ agent_collect_dependencies() {
     AGENT_PACKAGES=""
     # Extra commands are supplied only by installers that actually need them.
     # Existing BusyBox applets count as available; do not replace working tools.
-    for agent_tool in awk basename cat chmod cp dirname grep head mkdir mktemp mv readlink rm sed wc "$@"; do
+    for agent_tool in awk basename cat chmod cp dirname grep head mkdir mktemp mv readlink rm sed sleep wc "$@"; do
         if [ "$agent_tool" = zoneinfo ]; then
             # OxiDNS cron plugins resolve IANA timezones from the system
             # database; minimal Alpine images ship without it.

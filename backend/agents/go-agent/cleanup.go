@@ -15,9 +15,17 @@ import (
 const agentLogLimit = 4 << 20
 const agentLogTail = 256 << 10
 
+// Core output under OpenRC (Mihomo logs every connection at info level).
+const coreLogLimit = 16 << 20
+const coreLogTail = 1 << 20
+
 // Compact in place: OpenRC keeps its descriptors open for the service lifetime.
 // Do not follow symlinks or truncate pipes, journals, or container stdout.
 func compactAgentLog(path string) error {
+	return compactLog(path, agentLogLimit, agentLogTail)
+}
+
+func compactLog(path string, limit, keep int64) error {
 	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -31,15 +39,15 @@ func compactAgentLog(path string) error {
 	if err != nil {
 		return err
 	}
-	if !info.Mode().IsRegular() || info.Size() <= agentLogLimit {
+	if !info.Mode().IsRegular() || info.Size() <= limit {
 		return nil
 	}
 	if err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		return err
 	}
 	defer unix.Flock(fd, unix.LOCK_UN)
-	tail := make([]byte, agentLogTail)
-	n, err := f.ReadAt(tail, info.Size()-agentLogTail)
+	tail := make([]byte, keep)
+	n, err := f.ReadAt(tail, info.Size()-keep)
 	if err != nil && err != io.EOF {
 		return err
 	}
@@ -60,7 +68,11 @@ func cleanupDisk(cfg *Config) error {
 		prune = upgrade.PruneCompleted(binary)
 	}
 	routeConfig := toRoutesConfig(cfg)
-	return errors.Join(compactAgentLog(routes.AgentLogPath(routeConfig)), routes.CleanupDisk(routeConfig), prune)
+	results := []error{compactAgentLog(routes.AgentLogPath(routeConfig)), routes.CleanupDisk(routeConfig), prune}
+	for _, path := range routes.OpenRCCoreLogPaths(routeConfig) {
+		results = append(results, compactLog(path, coreLogLimit, coreLogTail))
+	}
+	return errors.Join(results...)
 }
 
 func startDiskCleanup(cfg *Config) {

@@ -2,11 +2,14 @@
 name="ConfigFlow Agent (Go)"
 command="/usr/local/bin/configflow-agent"
 command_args="-config /opt/configflow-agent/config-mihomo.json"
+# Restart a crashed Agent, as Restart=always does under systemd.
+supervisor="supervise-daemon"
+respawn_delay=10
+respawn_max=0
 pidfile="/run/configflow-agent.pid"
 output_log="/var/log/configflow-agent.log"
 error_log="/var/log/configflow-agent.log"
 directory="/opt/configflow-agent"
-command_background="yes"
 depend() {
     need net
     after firewall

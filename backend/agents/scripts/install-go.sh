@@ -14,6 +14,31 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 {init_detection}
+BINARY_TMP=""
+RESTART_PREVIOUS_AGENT=0
+{core_phase_state}{ipv4_forwarding_state}# One cleanup for every exit: a signal must stop the installer instead of
+# letting it continue without its staged files, and an Agent that was running
+# before a failed upgrade is started again.
+configflow_agent_cleanup() {
+    agent_status=$?
+    trap - 0 HUP INT TERM
+    if [ -n "$BINARY_TMP" ]; then rm -f "$BINARY_TMP" || true; fi
+{ipv4_forwarding_cleanup}    if [ "$agent_status" -ne 0 ]; then
+        if [ "$RESTART_PREVIOUS_AGENT" = 1 ]; then
+            echo "安装未完成，正在重新启动原先运行的 Agent。" >&2
+            if [ "$INIT_SYSTEM" = "systemd" ]; then
+                systemctl start configflow-agent || true
+            else
+                rc-service configflow-agent start 3>&- 4>&- || true
+            fi
+        fi
+{core_cleanup_message}    fi
+    exit "$agent_status"
+}
+trap configflow_agent_cleanup 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 {agent_install_dependencies}
 {dns_ha_functions}{ipv4_forwarding_notice}{installation_choice}
@@ -244,7 +269,6 @@ BINARY_URL="$BINARY_BASE/configflow-agent-$AGENT_ARCH"
 # works and replacement is an atomic rename on the same filesystem.
 mkdir -p /usr/local/bin
 BINARY_TMP=$(mktemp /usr/local/bin/.configflow-agent.install.XXXXXX)
-{agent_cleanup_trap}
 cf_step "下载并校验 Agent"
 # The download URL may carry credentials; do not print it.
 if command -v wget >/dev/null 2>&1; then
@@ -304,8 +328,10 @@ fi
 {ipv4_forwarding_prepare}cf_step "安装并启动 Agent 服务"
 # Stop the previous Go or legacy Shell Agent before replacing its binary/config.
 if [ "$INIT_SYSTEM" = "systemd" ]; then
+    if systemctl is-active --quiet configflow-agent 2>/dev/null; then RESTART_PREVIOUS_AGENT=1; fi
     systemctl stop configflow-agent 2>/dev/null || true
 else
+    if rc-service configflow-agent status >/dev/null 2>&1; then RESTART_PREVIOUS_AGENT=1; fi
     rc-service configflow-agent stop 2>/dev/null || true
 fi
 # Existing journals belong to the old config root, which may differ from the
@@ -356,18 +382,26 @@ SERVICEEOF
     systemctl daemon-reload
     systemctl enable configflow-agent
     systemctl start configflow-agent
-    systemctl is-active --quiet configflow-agent
+    # An Agent that exits right after starting must not count as started.
+    sleep 2
+    if ! systemctl is-active --quiet configflow-agent; then
+        echo "Agent 启动后未保持运行，请查看 journalctl -u configflow-agent -n 50。" >&2
+        exit 1
+    fi
 else
     cat > /etc/init.d/configflow-agent <<'SERVICEEOF'
 #!/sbin/openrc-run
 name="ConfigFlow Agent (Go)"
 command="/usr/local/bin/configflow-agent"
 command_args="-config /opt/configflow-agent/config-{service_type}.json"
+# Restart a crashed Agent, as Restart=always does under systemd.
+supervisor="supervise-daemon"
+respawn_delay=10
+respawn_max=0
 pidfile="/run/configflow-agent.pid"
 output_log="/var/log/configflow-agent.log"
 error_log="/var/log/configflow-agent.log"
 directory="/opt/configflow-agent"
-command_background="yes"
 depend() {
     need net
     after firewall
@@ -388,9 +422,20 @@ SERVICEEOF
     chmod 755 /etc/init.d/configflow-agent
     rc-update add configflow-agent default
     rc-update -u
-    rc-service configflow-agent start
-    rc-service configflow-agent status
+    # supervise-daemon keeps inherited descriptors: close the report fds, or a
+    # piped or non-interactive SSH run would never return.
+    rc-service configflow-agent start 3>&- 4>&-
+    sleep 2
+    # supervise-daemon stays "started" while it waits to respawn an Agent that
+    # exited, so also require the child of the supervisor named in its pidfile.
+    agent_supervisor=$(cat /run/configflow-agent.pid 2>/dev/null || true)
+    if ! rc-service configflow-agent status ||
+        ! grep -qs "^PPid:[[:space:]]*${agent_supervisor:-missing}\$" /proc/[0-9]*/status; then
+        echo "Agent 启动后未保持运行，请查看 /var/log/configflow-agent.log。" >&2
+        exit 1
+    fi
 fi
+RESTART_PREVIOUS_AGENT=0
 {ipv4_forwarding_apply}cf_step_done "Agent 服务已启动"
 {ipv4_forwarding_summary}cf_fact agent_{service_type} "{service_label} Agent：端口 {agent_summary_port}，服务已启动"
 cf_complete "安装完成"

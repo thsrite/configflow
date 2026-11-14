@@ -35,9 +35,10 @@ def isolate_dependencies(tmp_path, env, missing=(), package_manager="apk", tzdat
     for tool in [*TOOLS, "sh"]:
         if not (commands / tool).exists():
             (commands / tool).symlink_to(shutil.which(tool))
-    if not (commands / "wget").exists():
-        (commands / "wget").write_text("#!/bin/sh\nexit 0\n")
-        (commands / "wget").chmod(0o755)
+    for tool in ("wget", "sleep"):
+        if not (commands / tool).exists():
+            (commands / tool).write_text("#!/bin/sh\nexit 0\n")
+            (commands / tool).chmod(0o755)
     if not (commands / "sysctl").exists():
         # Dependency-only tests may discover sysctl, but must never call the host's.
         (commands / "sysctl").write_text("#!/bin/sh\nprintf 'unexpected sysctl execution\\n' >&2\nexit 97\n")

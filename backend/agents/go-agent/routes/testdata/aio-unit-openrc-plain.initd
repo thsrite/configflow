@@ -2,11 +2,14 @@
 name="ConfigFlow Agent (mihomo)"
 command="/opt/configflow-agent/mihomo/configflow-agent"
 command_args="-config /opt/configflow-agent/mihomo/config.json"
+# Restart a crashed Agent, as Restart=always does under systemd.
+supervisor="supervise-daemon"
+respawn_delay=10
+respawn_max=0
 pidfile="/run/configflow-agent-mihomo.pid"
 output_log="/var/log/configflow-agent-mihomo.log"
 error_log="/var/log/configflow-agent-mihomo.log"
 directory="/opt/configflow-agent/mihomo"
-command_background="yes"
 depend() {
     need net
     after firewall

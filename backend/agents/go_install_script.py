@@ -15,7 +15,10 @@ AGENT_INSTALL_DEPENDENCIES = (Path(__file__).parent / "scripts" / "agent-install
 AGENT_CORE_INSTALL_INTERFACE = "# ConfigFlow Agent + core installer interface: 1"
 DNS_HA_PREPARATION_INTERFACE = "# ConfigFlow DNS HA preparation interface: 1"
 DNS_HA_PREPARATION = (Path(__file__).parent / "scripts" / "prepare-dns-ha.sh").read_text(encoding="utf-8")
-_AGENT_INIT_DETECTION = '''if command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
+# systemd as the running init wins: OpenRC tools can be installed beside it.
+_AGENT_INIT_DETECTION = '''if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    INIT_SYSTEM="systemd"
+elif command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
     INIT_SYSTEM="openrc"
 elif command -v systemctl >/dev/null 2>&1; then
     INIT_SYSTEM="systemd"
@@ -76,19 +79,12 @@ STAGE_DIR=$(mktemp -d "$AGENT_DIR/.ipv4-forward.XXXXXX")
 prepare_ipv4_forwarding
 cf_step_done "IPv4 转发持久化检查通过"
 '''
-_STANDALONE_FORWARDING_CLEANUP = '''    cleanup_ipv4_forwarding "$agent_status"
-    if [ -n "$STAGE_DIR" ]; then rm -rf "$STAGE_DIR" || true; fi
+# The cleanup trap is installed before the helpers are defined.
+_STANDALONE_FORWARDING_CLEANUP = '''    if [ "$IPV4_FORWARDING_READY" = 1 ]; then
+        cleanup_ipv4_forwarding "$agent_status"
+        if [ -n "$STAGE_DIR" ]; then rm -rf "$STAGE_DIR" || true; fi
+    fi
 '''
-_STANDALONE_FORWARDING_TRAP = '''configflow_agent_cleanup() {
-    agent_status=$?
-    trap - 0 HUP INT TERM
-    rm -f "$BINARY_TMP" || true
-''' + _STANDALONE_FORWARDING_CLEANUP + '''    exit "$agent_status"
-}
-trap configflow_agent_cleanup 0
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM'''
 
 
 def generate_go_agent_install_script(
@@ -120,9 +116,8 @@ def generate_go_agent_install_script(
     restart command is not parsed to invent stop/start/status operations.
 
     ``manage_ipv4_forwarding`` enables and persists IPv4 forwarding like the
-    Shell All-in-One installer: ``False`` keeps the script byte-identical to
-    earlier releases, ``None`` enables it for Mihomo under systemd/OpenRC, and
-    ``True`` requires that.
+    Shell All-in-One installer: ``False`` leaves forwarding alone, ``None``
+    enables it for Mihomo under systemd/OpenRC, and ``True`` requires that.
     """
     if service_type not in ("mihomo", "mosdns", "oxidns"):
         raise ValueError("Go Agent transactional deployment supports mihomo, mosdns and oxidns")
@@ -217,8 +212,8 @@ def generate_go_agent_install_script(
         "dns_ha_prepare": "",
         "dns_ha_existing_config": "",
         "agent_summary_port": str(cfg["agent_port"]),
-
-        "agent_cleanup_trap": 'trap \'rm -f "$BINARY_TMP"\' EXIT HUP INT TERM',
+        "core_phase_state": "",
+        "core_cleanup_message": "",
     }
     # Every placeholder starts a line and carries its own newline, so the
     # opt-out output is byte-identical to the installer before this option.
@@ -228,8 +223,10 @@ def generate_go_agent_install_script(
         "ipv4_forwarding_dependencies": " sysctl cmp ln",
         "ipv4_forwarding_environment": _STANDALONE_GATEWAY_RECORD_REFUSAL + INSTALLER_FORWARDING_ENVIRONMENT,
         "ipv4_forwarding_environment_end": INSTALLER_FORWARDING_ENVIRONMENT_END,
+        "ipv4_forwarding_state": "IPV4_FORWARDING_READY=0\n",
+        "ipv4_forwarding_cleanup": _STANDALONE_FORWARDING_CLEANUP,
         "ipv4_forwarding_functions": ('fail() { echo "$*" >&2; exit 1; }\nSERVICE=mihomo\nSTAGE_DIR=""\n'
-                                      + _standalone_forwarding_functions()),
+                                      + _standalone_forwarding_functions() + "IPV4_FORWARDING_READY=1\n"),
         "ipv4_forwarding_prepare": _STANDALONE_FORWARDING_PREPARE,
         "ipv4_forwarding_hook": "install_ipv4_forwarding_hook\n",
         "ipv4_systemd_pre": f"ExecStartPre=/bin/sh {STANDALONE_FORWARDING_HOOK}\n",
@@ -240,8 +237,6 @@ def generate_go_agent_install_script(
                                      'cf_ui "IPv4 转发及其 sysctl.d 持久化设置保留，避免影响仍在运行的 Mihomo。"\n',
     }
     replacements.update({key: value if manage_ipv4_forwarding else "" for key, value in forwarding.items()})
-    if manage_ipv4_forwarding:
-        replacements["agent_cleanup_trap"] = _STANDALONE_FORWARDING_TRAP
     if install_core:
         from backend.agents.core_install_script import generate_core_install_script
 
@@ -256,21 +251,7 @@ def generate_go_agent_install_script(
             f'set -- --core {service_type}\n'
             'CF_OUTPUT_OWNER=false\n'
             + generate_core_install_script(installer_forwarding=manage_ipv4_forwarding).rstrip() + '\n)\n'
-            'BINARY_TMP=""\n'
-            'configflow_agent_cleanup() {\n'
-            '    agent_status=$?\n'
-            '    trap - 0 HUP INT TERM\n'
-            '    if [ -n "${BINARY_TMP:-}" ]; then rm -f "$BINARY_TMP" || true; fi\n'
-            + (_STANDALONE_FORWARDING_CLEANUP if manage_ipv4_forwarding else '') +
-            '    if [ "$agent_status" -ne 0 ]; then\n'
-            f'        echo "Agent 安装未完成；{service_type} 核心安装阶段已结束，已安装或原有的核心予以保留。修复上方 Agent 错误后可重新运行。" >&2\n'
-            '    fi\n'
-            '    exit "$agent_status"\n'
-            '}\n'
-            'trap configflow_agent_cleanup 0\n'
-            "trap 'exit 129' HUP\n"
-            "trap 'exit 130' INT\n"
-            "trap 'exit 143' TERM\n"
+            'CORE_PHASE_COMPLETED=true\n'
             f'CORE_BINARY={shlex.quote(service_binary or service_type)}\n'
             f'if [ ! -f /etc/{service_type}/config.yaml ] || [ ! -r /etc/{service_type}/config.yaml ] || ! command -v "$CORE_BINARY" >/dev/null 2>&1; then\n'
             f'    echo "{service_type} 核心缺少默认配置或可执行文件。请补齐 /etc/{service_type}/config.yaml 和核心程序；已有自定义部署请取消同时安装核心，并设置实际路径。" >&2\n'
@@ -288,7 +269,11 @@ def generate_go_agent_install_script(
             'fi\n'
         )
         replacements["init_detection"] = _CORE_INIT_DETECTION
-        replacements["agent_cleanup_trap"] = "# The Agent cleanup trap above preserves the completed core phase."
+        replacements["core_phase_state"] = "CORE_PHASE_COMPLETED=false\n"
+        replacements["core_cleanup_message"] = (
+            '        if [ "$CORE_PHASE_COMPLETED" = true ]; then\n'
+            f'            echo "Agent 安装未完成；{service_type} 核心安装阶段已结束，已安装或原有的核心予以保留。修复上方 Agent 错误后可重新运行。" >&2\n'
+            '        fi\n')
     replacements["installation_choice"] = replacements["installation_choice"].replace("{installation_action}", replacements["installation_action"])
     if prepare_dns_ha:
         replacements["init_detection"] = _CORE_INIT_DETECTION
@@ -313,7 +298,6 @@ fi
         if install_core:
             replacements["core_install_phase"] = ('if [ -z "$DNS_HA_EXISTING_CONFIG" ]; then\n'
                                                   + replacements["core_install_phase"] + 'fi\n')
-            replacements["agent_cleanup_trap"] = 'trap \'rm -f "$BINARY_TMP"\' EXIT HUP INT TERM'
     if install_core or prepare_dns_ha:
         # Minimal root shells (notably Alpine pct/SSH sessions) can omit the
         # location where the canonical core installer places its binaries.
@@ -488,7 +472,9 @@ cf_step_done "TUN 准备完成（具体处理结果见日志）"''' if manage_tu
     *) fail "不支持的 CPU 架构" ;;
 esac'''
     replacements.update({
-        "init_detection": '''if command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
+        "init_detection": '''if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    INIT_SYSTEM=systemd
+elif command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
     INIT_SYSTEM=openrc
 elif command -v systemctl >/dev/null 2>&1; then
     INIT_SYSTEM=systemd

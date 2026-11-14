@@ -79,8 +79,15 @@ def native_install_harness(tmp_path, manager, service):
         ("/opt/configflow-agent", str(tmp_path / "agent")),
         ("/var/log", str(tmp_path / "logs")),
         ("/dev/tty", "/dev/stdin"),
+        # The installer prefers a running systemd; never read the test host's.
+        ("/run/systemd/system", str(tmp_path / "run-systemd")),
+        # A supervised OpenRC Agent is confirmed through its child process.
+        ("/proc/[0-9]*/status", str(tmp_path / "agent-process")),
     ):
         source = source.replace(original, replacement)
+    (tmp_path / "agent-process").write_text("PPid:\tmissing\n")
+    if manager == "systemd":
+        (tmp_path / "run-systemd").mkdir()
     script = tmp_path / "install.sh"
     script.write_text(source)
     commands = tmp_path / "commands"
@@ -156,6 +163,7 @@ fi
         agent_dropin = conf / "configflow-agent"
         agent_dropin.write_text(f'rc_need="keep configflow-recover-other configflow-recover-{service}"\nCUSTOM=yes\n')
     gate.write_text("old recovery service\n")
+    mocks["sleep"] = "exit 0\n"  # The installer waits before confirming a started Agent.
     for name, body in mocks.items():
         executable = commands / name
         executable.write_text("#!/bin/sh\nset -eu\n" + body)

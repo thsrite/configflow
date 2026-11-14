@@ -53,3 +53,23 @@ func TestCompactAgentLog(t *testing.T) {
 		t.Fatal("small log changed")
 	}
 }
+
+func TestCompactLogKeepsRequestedTail(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "core.log")
+	data := append(bytes.Repeat([]byte("a"), 100), []byte("0123456789")...)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := compactLog(path, 200, 10); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(path); !bytes.Equal(got, data) {
+		t.Fatal("log below its limit changed")
+	}
+	if err := compactLog(path, 50, 10); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "0123456789" {
+		t.Fatalf("tail = %q", got)
+	}
+}

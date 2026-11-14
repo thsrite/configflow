@@ -65,6 +65,8 @@ def preparation_harness(tmp_path, manager='apt-get', init='systemd'):
         (root / directory).mkdir(parents=True, exist_ok=True)
     for tool in 'awk basename cat chmod cp dirname grep head mkdir mktemp mv readlink rm sed wc sh uname'.split():
         (commands / tool).symlink_to(shutil.which(tool))
+    (commands / 'sleep').write_text('#!/bin/sh\nexit 0\n')
+    (commands / 'sleep').chmod(0o755)
     jq = shutil.which('jq')
     assert jq, 'Run this test on the Linux test server with jq installed'
     (commands / 'jq').symlink_to(jq)

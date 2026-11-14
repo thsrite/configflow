@@ -132,6 +132,232 @@ _RESOLVED_STUB_PROMPT_DELTAS = (
 )
 
 
+# Installer hardening: stages on an executable filesystem instead of a possibly
+# noexec /tmp, OpenRC restarts a crashed Agent and rotates the core log, a
+# started Agent must still be running two seconds later, the previous Agent is
+# started again after a failed upgrade, the All-in-One uninstall tolerates an
+# Agent that was never enabled, and a running systemd wins over OpenRC tools.
+_INSTALLER_HARDENING_DELTAS = (
+    # install-go.sh
+    ('''if [ "$INIT_SYSTEM" = "systemd" ]; then
+    if systemctl is-active --quiet configflow-agent 2>/dev/null; then RESTART_PREVIOUS_AGENT=1; fi
+    systemctl stop configflow-agent 2>/dev/null || true
+else
+    if rc-service configflow-agent status >/dev/null 2>&1; then RESTART_PREVIOUS_AGENT=1; fi
+    rc-service configflow-agent stop 2>/dev/null || true
+fi
+''', '''if [ "$INIT_SYSTEM" = "systemd" ]; then
+    systemctl stop configflow-agent 2>/dev/null || true
+else
+    rc-service configflow-agent stop 2>/dev/null || true
+fi
+'''),
+    ('''    systemctl start configflow-agent
+    # An Agent that exits right after starting must not count as started.
+    sleep 2
+    if ! systemctl is-active --quiet configflow-agent; then
+        echo "Agent 启动后未保持运行，请查看 journalctl -u configflow-agent -n 50。" >&2
+        exit 1
+    fi
+else''', '''    systemctl start configflow-agent
+    systemctl is-active --quiet configflow-agent
+else'''),
+    ('''# Restart a crashed Agent, as Restart=always does under systemd.
+supervisor="supervise-daemon"
+respawn_delay=10
+respawn_max=0
+pidfile="/run/configflow-agent.pid"
+output_log="/var/log/configflow-agent.log"
+error_log="/var/log/configflow-agent.log"
+directory="/opt/configflow-agent"
+''', '''pidfile="/run/configflow-agent.pid"
+output_log="/var/log/configflow-agent.log"
+error_log="/var/log/configflow-agent.log"
+directory="/opt/configflow-agent"
+command_background="yes"
+'''),
+    ('''    # supervise-daemon keeps inherited descriptors: close the report fds, or a
+    # piped or non-interactive SSH run would never return.
+    rc-service configflow-agent start 3>&- 4>&-
+    sleep 2
+    # supervise-daemon stays "started" while it waits to respawn an Agent that
+    # exited, so also require the child of the supervisor named in its pidfile.
+    agent_supervisor=$(cat /run/configflow-agent.pid 2>/dev/null || true)
+    if ! rc-service configflow-agent status ||
+        ! grep -qs "^PPid:[[:space:]]*${agent_supervisor:-missing}\\$" /proc/[0-9]*/status; then
+        echo "Agent 启动后未保持运行，请查看 /var/log/configflow-agent.log。" >&2
+        exit 1
+    fi
+fi
+RESTART_PREVIOUS_AGENT=0
+''', '''    rc-service configflow-agent start
+    rc-service configflow-agent status
+fi
+'''),
+    ('''if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    INIT_SYSTEM="systemd"
+elif command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
+    INIT_SYSTEM="openrc"
+elif command -v systemctl >/dev/null 2>&1; then
+    INIT_SYSTEM="systemd"
+else''', '''if command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
+    INIT_SYSTEM="openrc"
+elif command -v systemctl >/dev/null 2>&1; then
+    INIT_SYSTEM="systemd"
+else'''),
+    # install-go-aio.sh
+    ('''                systemctl disable "$AGENT_UNIT" 2>/dev/null || true
+''', '''                systemctl disable "$AGENT_UNIT"
+'''),
+    ('''                # Not being in the runlevel (an install that failed before
+                # enabling it) must not leave the uninstall stuck halfway.
+                rc-update del "$AGENT_UNIT" default 2>/dev/null || true
+''', '''                rc-update del "$AGENT_UNIT" default
+'''),
+    ('''# Restart a crashed Agent, as Restart=always does under systemd.
+supervisor="supervise-daemon"
+respawn_delay=10
+respawn_max=0
+pidfile="/run/$AGENT_UNIT.pid"
+output_log="$AGENT_LOG"
+error_log="$AGENT_LOG"
+directory="$AGENT_DIR"
+''', '''pidfile="/run/$AGENT_UNIT.pid"
+output_log="$AGENT_LOG"
+error_log="$AGENT_LOG"
+directory="$AGENT_DIR"
+command_background="yes"
+'''),
+    ('''        systemctl enable "$AGENT_UNIT"
+        systemctl start "$AGENT_UNIT"
+    else
+        rc-update add "$AGENT_UNIT" default
+        # supervise-daemon keeps inherited descriptors: close the report fds,
+        # or a piped or non-interactive SSH run would never return.
+        rc-service "$AGENT_UNIT" start 3>&- 4>&-
+    fi
+done
+# An Agent that exits right after starting must not count as started.
+sleep 2
+for service in mihomo oxidns; do
+    select_service "$service"
+    if [ "$INIT_SYSTEM" = systemd ]; then
+        systemctl is-active --quiet "$AGENT_UNIT" || fail "$SERVICE Agent 启动后未保持运行，请查看 journalctl -u $AGENT_UNIT 或 $AGENT_LOG。"
+    else
+        # supervise-daemon stays "started" while it waits to respawn an Agent
+        # that exited, so also require the child of the supervisor in its pidfile.
+        agent_supervisor=$(cat "/run/$AGENT_UNIT.pid" 2>/dev/null || true)
+        rc-service "$AGENT_UNIT" status &&
+            grep -qs "^PPid:[[:space:]]*${agent_supervisor:-missing}\\$" /proc/[0-9]*/status ||
+            fail "$SERVICE Agent 启动后未保持运行，请查看 $AGENT_LOG。"
+    fi
+done
+''', '''        systemctl enable "$AGENT_UNIT"
+        systemctl start "$AGENT_UNIT"
+        systemctl is-active --quiet "$AGENT_UNIT"
+    else
+        rc-update add "$AGENT_UNIT" default
+        rc-service "$AGENT_UNIT" start
+        rc-service "$AGENT_UNIT" status
+    fi
+done
+'''),
+    ('''if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    INIT_SYSTEM=systemd
+elif command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
+    INIT_SYSTEM=openrc
+elif command -v systemctl >/dev/null 2>&1; then
+    INIT_SYSTEM=systemd
+else''', '''if command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
+    INIT_SYSTEM=openrc
+elif command -v systemctl >/dev/null 2>&1; then
+    INIT_SYSTEM=systemd
+else'''),
+    ('''                rc-service "configflow-agent-$stopped_service" start 3>&- 4>&- || true
+''', '''                rc-service "configflow-agent-$stopped_service" start || true
+'''),
+    # install-cores.sh
+    ('''# /tmp is often mounted noexec, and the downloaded cores validate their
+# configuration from the stage. /usr/local was checked above and holds the
+# installed binaries anyway.
+STAGE=$(mktemp -d /usr/local/.configflow-cores.XXXXXX)
+''', '''STAGE=$(mktemp -d /tmp/configflow-cores.XXXXXX)
+'''),
+    ('curl --fail --silent --show-error --location --connect-timeout 15', 'curl --fail --location --connect-timeout 15'),
+    ('''depend() {
+    need net
+}
+start_pre() {
+    # OpenRC appends the core's output here and never rotates it. Keep one
+    # previous file once it passes 10 MB; a ConfigFlow Agent also trims it.
+    log_size=\\$(wc -c < "/etc/$service/$service.log" 2>/dev/null || echo 0)
+    if [ "\\$log_size" -gt 10485760 ]; then
+        mv -f "/etc/$service/$service.log" "/etc/$service/$service.log.1"
+    fi
+}
+''', '''depend() {
+    need net
+}
+'''),
+    # install-gateway.sh
+    ('''# /tmp is often mounted noexec, and the downloaded cores and Agent run from the
+# stage before anything is installed.
+mkdir -p /usr/local
+GATEWAY_STAGE=$(mktemp -d /usr/local/.configflow-gateway.XXXXXX)
+''', '''GATEWAY_STAGE=$(mktemp -d /tmp/configflow-gateway.XXXXXX)
+'''),
+    ('''# systemd as the running init wins: OpenRC tools can be installed beside it.
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+    GATEWAY_INIT=systemd
+elif command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
+    GATEWAY_INIT=openrc
+else''', '''if command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
+    GATEWAY_INIT=openrc
+elif command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+    GATEWAY_INIT=systemd
+else'''),
+)
+_UNIFIED_CLEANUP = re.compile(r'BINARY_TMP=""\nRESTART_PREVIOUS_AGENT=0\n.*?\ntrap \'exit 143\' TERM\n(?=\n# Shared by the native single-Agent)', re.S)
+_STAGED_AGENT = 'BINARY_TMP=$(mktemp /usr/local/bin/.configflow-agent.install.XXXXXX)\n'
+_PREVIOUS_CORE_CLEANUP = '''BINARY_TMP=""
+configflow_agent_cleanup() {
+    agent_status=$?
+    trap - 0 HUP INT TERM
+    if [ -n "${BINARY_TMP:-}" ]; then rm -f "$BINARY_TMP" || true; fi
+    if [ "$agent_status" -ne 0 ]; then
+        echo "Agent 安装未完成；%s 核心安装阶段已结束，已安装或原有的核心予以保留。修复上方 Agent 错误后可重新运行。" >&2
+    fi
+    exit "$agent_status"
+}
+trap configflow_agent_cleanup 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+'''
+
+
+def without_unified_agent_cleanup(script, *, core_path):
+    """The single-service installer now installs one cleanup trap before any change.
+
+    Earlier releases set a bare ``rm`` trap after staging the Agent, or, with a
+    core phase, a cleanup function after that phase.
+    """
+    blocks = _UNIFIED_CLEANUP.findall(script)
+    if not blocks:
+        return script  # All-in-One and gateway installers keep their own cleanup.
+    assert len(blocks) == 1 and script.count(_STAGED_AGENT) == 1
+    script = script.replace(blocks[0], '', 1)
+    if not core_path:
+        assert 'CORE_PHASE_COMPLETED' not in blocks[0]
+        return script.replace(_STAGED_AGENT, _STAGED_AGENT + 'trap \'rm -f "$BINARY_TMP"\' EXIT HUP INT TERM\n', 1)
+    service = re.search(r'Agent 安装未完成；([a-z]+) 核心安装阶段已结束', blocks[0])[1]
+    assert script.count('\n)\nCORE_PHASE_COMPLETED=true\nCORE_BINARY=') == 1
+    script = script.replace('\n)\nCORE_PHASE_COMPLETED=true\nCORE_BINARY=',
+                            '\n)\n' + _PREVIOUS_CORE_CLEANUP % service + 'CORE_BINARY=', 1)
+    return script.replace(
+        _STAGED_AGENT, _STAGED_AGENT + '# The Agent cleanup trap above preserves the completed core phase.\n', 1)
+
+
 def without_reviewed_installer_deltas(script, *, core_path=False):
     count = script.count(_NATIVE_HA_DEPENDENCY_CASES)
     assert count >= 1, 'the reviewed native HA dependency addition changed'
@@ -160,7 +386,14 @@ def without_reviewed_installer_deltas(script, *, core_path=False):
     for new, old in _RESOLVED_STUB_PROMPT_DELTAS:
         assert script.count(new) <= 1, new
         script = script.replace(new, old)
-    return script
+    for new, old in _INSTALLER_HARDENING_DELTAS:
+        assert script.count(new) <= 1, new
+        script = script.replace(new, old)
+    # The wait before confirming a started Agent made sleep a checked dependency
+    # (the gateway installer embeds the dependency helper twice).
+    assert script.count('readlink rm sed sleep wc "$@"; do') == count
+    script = script.replace('readlink rm sed sleep wc "$@"; do', 'readlink rm sed wc "$@"; do')
+    return without_unified_agent_cleanup(script, core_path=core_path)
 
 
 def _app(tmp_path):

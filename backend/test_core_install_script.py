@@ -71,7 +71,6 @@ if os.environ.get('FAIL_VALIDATE') == name: raise SystemExit(29)
     source = re.sub(r"OXIDNS_SHA=[0-9a-f]{64}", "OXIDNS_SHA=" + hashlib.sha256(oxidns).hexdigest(), source)
     source = re.sub(r"(?<![A-Za-z0-9_])/(etc|run|usr|lib|sbin|proc|dev|sys)/", lambda m: str(root / m[1]) + "/", source)
     source = source.replace("in /run /etc ", f"in {root}/run {root}/etc ")
-    source = source.replace("/tmp/configflow-cores.", str(tmp_path / "stage."))
     installer = tmp_path / "install.sh"
     installer.write_text(source)
     command_bodies = {

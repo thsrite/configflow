@@ -123,6 +123,26 @@ func openrcOutputs(unit string) (stdout, stderr string) {
 	return stdout, stderr
 }
 
+// OpenRCCoreLogPaths lists the files an OpenRC-managed core appends its output
+// to. OpenRC never rotates them, unlike the systemd journal and Supervisor.
+func OpenRCCoreLogPaths(cfg *Config) []string {
+	if coreServiceManager(cfg) != "openrc" {
+		return nil
+	}
+	unit := trimUnit(cfg.ServiceUnit)
+	if unit == "" {
+		unit = cfg.ServiceType
+	}
+	stdout, stderr := openrcOutputs(unit)
+	var paths []string
+	for _, path := range []string{stdout, stderr} {
+		if usableOutputFile(path) && filepath.IsAbs(path) && (len(paths) == 0 || paths[0] != path) {
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
 // supervisorOutputs reads stdout_logfile/stderr_logfile of [program:name].
 func supervisorOutputs(program string) (stdout, stderr string) {
 	files, _ := filepath.Glob(filepath.Join(logSupervisorConfDir, "*.conf"))

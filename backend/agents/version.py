@@ -1,10 +1,16 @@
 """Agent 版本管理"""
 
 # Agent 最新版本号
-LATEST_AGENT_VERSION = "1.8.57-go"
+LATEST_AGENT_VERSION = "1.8.58-go"
 
 # 版本更新日志（可选）
 VERSION_CHANGELOG = {
+    "1.8.58-go": {
+        "date": "2026-11-13",
+        "features": [
+            "OpenRC（Alpine）上核心的运行日志超过 16 MB 时自动裁剪为最新的 1 MB，不再无限增长"
+        ]
+    },
     "1.8.57-go": {
         "date": "2026-11-13",
         "features": [
