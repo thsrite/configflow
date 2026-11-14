@@ -12,7 +12,7 @@ from backend.agents.deployment_bundle import (
 )
 from backend.agents.go_install_script import generate_go_agent_install_script
 from backend.agents.install_script import (
-    generate_docker_agent_compose, generate_docker_agent_run, generate_lightweight_install_script,
+    generate_docker_agent_compose, generate_docker_agent_run,
 )
 
 AGENT = {'id': 'oxi-test', 'service_type': 'oxidns', 'profile_id': 'default'}
@@ -71,8 +71,6 @@ def test_oxidns_native_install_and_legacy_guard(tmp_path):
     installer = tmp_path / 'install.sh'
     installer.write_text(script)
     assert subprocess.run(['sh', '-n', str(installer)]).returncode == 0
-    with pytest.raises(ValueError, match='Go Agent'):
-        generate_lightweight_install_script('https://config.test', 'oxi-test', 'oxidns')
 
 
 def test_oxidns_docker_persists_state_and_maps_udp_tcp():

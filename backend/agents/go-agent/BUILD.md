@@ -29,10 +29,7 @@ cp dist/sublink-agent-* ../../static/agents/
 curl "http://your-server/api/agents/install-script?name=MyAgent&type=mihomo"
 ```
 
-#### 切换到 Shell 版本
-```bash
-curl "http://your-server/api/agents/install-script?name=MyAgent&type=mihomo&agent_type=shell"
-```
+旧版纯脚本 Agent（`agent_type=shell`）已停止提供，请求会返回 400。已安装旧版的设备运行上面的安装命令即可原地升级为 Go Agent。
 
 ### 安装脚本参数
 
@@ -40,7 +37,6 @@ curl "http://your-server/api/agents/install-script?name=MyAgent&type=mihomo&agen
 |------|------|--------|
 | `name` | Agent 名称 | My Agent |
 | `type` | 服务类型 (mihomo/mosdns) | mihomo |
-| `agent_type` | Agent 类型 (go/shell) | **go** |
 | `port` | Agent 端口 | 8080 |
 | `agent_ip` | Agent IP（可选） | 自动检测 |
 | `config_path` | 配置文件路径 | /etc/{type}/config.yaml |
