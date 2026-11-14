@@ -1,5 +1,7 @@
 """Short-lived installer snapshots shared by all workers and server restarts."""
 from contextlib import contextmanager
+from functools import lru_cache
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -16,6 +18,28 @@ _TOKEN = re.compile(r"[A-Za-z0-9_-]{22}")
 
 class InstallCommandStoreFull(Exception):
     """Keep existing unexpired links valid instead of silently evicting them."""
+
+
+# Served in place of a script that an older ConfigFlow generated. A link stays
+# valid for a day, which can span a panel update; running the old script would
+# silently skip whatever the update fixed. It is a script, not an HTTP error,
+# because the command is "download && sh": this text is what reaches the terminal.
+STALE_SCRIPT = """#!/bin/sh
+printf '%s\\n' 'ConfigFlow 已更新，这条安装命令是更新前生成的，对应旧版安装脚本。' '请回到面板重新生成安装命令后再执行；本次没有做任何改动。' >&2
+exit 1
+"""
+
+
+@lru_cache(maxsize=1)
+def generator_fingerprint():
+    """Identify what would generate a script now: the templates, their generators and the Agent version."""
+    from backend.agents.version import LATEST_AGENT_VERSION
+    directory = Path(__file__).parent
+    digest = hashlib.sha256(LATEST_AGENT_VERSION.encode())
+    for path in sorted([*directory.glob('scripts/*.sh'), *directory.glob('*install*.py'), directory / 'docker_ha_guide.py']):
+        if path.is_file() and path.name != Path(__file__).name:
+            digest.update(path.name.encode() + b'\0' + path.read_bytes())
+    return digest.hexdigest()[:32]
 
 
 def _database_path():
@@ -36,6 +60,9 @@ def _database():
     try:
         connection.execute('CREATE TABLE IF NOT EXISTS snapshots '
                            '(token TEXT PRIMARY KEY, script TEXT NOT NULL, expires_at INTEGER NOT NULL)')
+        # Links saved before this column existed came from an older version.
+        if 'generator' not in {row[1] for row in connection.execute('PRAGMA table_info(snapshots)')}:
+            connection.execute('ALTER TABLE snapshots ADD COLUMN generator TEXT')
         connection.execute('BEGIN IMMEDIATE')
         connection.execute('DELETE FROM snapshots WHERE expires_at <= ?', (int(time.time()),))
         yield connection
@@ -57,7 +84,8 @@ def save_install_script(script, *, expires_at=None):
     with _database() as connection:
         if connection.execute('SELECT COUNT(*) FROM snapshots').fetchone()[0] >= MAX_SNAPSHOTS:
             raise InstallCommandStoreFull()
-        connection.execute('INSERT INTO snapshots VALUES (?, ?, ?)', (token, script, expires_at))
+        connection.execute('INSERT INTO snapshots (token, script, expires_at, generator) VALUES (?, ?, ?, ?)',
+                           (token, script, expires_at, generator_fingerprint()))
     return token, expires_at
 
 
@@ -65,5 +93,7 @@ def load_install_script(token):
     if not _TOKEN.fullmatch(token) or not _database_path().is_file():
         return None
     with _database() as connection:
-        row = connection.execute('SELECT script FROM snapshots WHERE token = ?', (token,)).fetchone()
-    return row[0] if row else None
+        row = connection.execute('SELECT script, generator FROM snapshots WHERE token = ?', (token,)).fetchone()
+    if not row:
+        return None
+    return row[0] if row[1] == generator_fingerprint() else STALE_SCRIPT

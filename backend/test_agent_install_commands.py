@@ -238,3 +238,47 @@ def test_legacy_shell_agent_is_no_longer_generated(client, service):
     message = response.get_json()['message']
     assert '旧版 Shell Agent' in message and 'Go Agent' in message
     assert '$(id)' not in response.get_data(as_text=True)
+
+
+def test_link_generated_before_a_panel_update_asks_to_regenerate(client, admin, monkeypatch, tmp_path):
+    result = make(client, admin)
+    fresh = client.get(result['download_path'])
+    assert fresh.status_code == 200 and fresh.get_data(as_text=True) == result['script']
+    # The panel is updated: templates, generators or the Agent version differ.
+    monkeypatch.setattr(store, 'generator_fingerprint', lambda: 'after-update')
+    stale = client.get(result['download_path'])
+    assert stale.status_code == 200 and stale.headers['Cache-Control'] == 'no-store'
+    text = stale.get_data(as_text=True)
+    assert text == store.STALE_SCRIPT and 'configflow-agent' not in text
+    # The command is "download && sh": the reason must reach the terminal and stop there.
+    script = tmp_path / 'configflow-install.sh'
+    script.write_text(text)
+    run = subprocess.run(['sh', str(script)], capture_output=True, text=True)
+    assert run.returncode == 1 and run.stdout == ''
+    assert 'ConfigFlow 已更新' in run.stderr and '重新生成安装命令' in run.stderr
+    # A command generated after the update works again; the old link stays refused.
+    renewed = make(client, admin)
+    assert client.get(renewed['download_path']).get_data(as_text=True) == renewed['script']
+    assert client.get(result['download_path']).get_data(as_text=True) == store.STALE_SCRIPT
+
+
+def test_links_saved_by_a_version_without_the_marker_are_old(client, admin):
+    path = store._database_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(path) as connection:
+        connection.execute('CREATE TABLE snapshots (token TEXT PRIMARY KEY, script TEXT NOT NULL, expires_at INTEGER NOT NULL)')
+        connection.execute('INSERT INTO snapshots VALUES (?, ?, ?)', ('B' * 22, '#!/bin/sh\necho old\n', 2 ** 40))
+    assert client.get('/api/agents/i/' + 'B' * 22).get_data(as_text=True) == store.STALE_SCRIPT
+    result = make(client, admin)
+    assert client.get(result['download_path']).get_data(as_text=True) == result['script']
+    assert snapshot_count() == 2
+
+
+def test_generator_fingerprint_follows_templates_and_agent_version(monkeypatch):
+    store.generator_fingerprint.cache_clear()
+    first = store.generator_fingerprint()
+    assert first == store.generator_fingerprint() and len(first) == 32
+    monkeypatch.setattr('backend.agents.version.LATEST_AGENT_VERSION', '9.9.9-go')
+    store.generator_fingerprint.cache_clear()
+    assert store.generator_fingerprint() != first
+    store.generator_fingerprint.cache_clear()
