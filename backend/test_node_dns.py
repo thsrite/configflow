@@ -23,7 +23,7 @@ def test_legacy_migration_is_read_only_and_does_not_adopt_manual_listener(repo):
     repo.update_system_transaction(lambda system: system['system_config'].update(
         node_test_dns=['192.168.0.2:15353']))
     before = repo.get_system()
-    assert dns.load_config() == {'mode': 'custom', 'servers': ['192.168.0.2:15353'], 'bootstrap': [], 'managed': {}}
+    assert dns.load_config() == {'mode': 'custom', 'servers': ['192.168.0.2:15353'], 'bootstrap': []}
     assert repo.get_system() == before
 
 
@@ -83,31 +83,43 @@ def test_custom_save_is_global_and_does_not_publish_or_change_profile(repo, monk
     system = client.post('/api/nodes/latency/settings', json={'dns': {
         'mode': 'system', 'servers': ['invalid'], 'bootstrap': ['invalid'], 'managed': {'agent_id': 'old'}}})
     assert system.get_json()['dns_servers'] == []
-    assert dns.load_config() == {'mode': 'system', 'servers': [], 'bootstrap': [], 'managed': {}}
+    assert dns.load_config() == {'mode': 'system', 'servers': [], 'bootstrap': []}
 
 
-def test_unavailable_managed_setting_can_be_read_and_replaced(repo, monkeypatch):
-    from backend.agents import node_test_dns
+def test_removed_managed_mode_keeps_querying_its_listener_as_custom_dns(repo):
+    # "OxiDNS 托管" was removed. Its listener stays on the device and its address
+    # was always mirrored into node_test_dns, so tests keep working unchanged.
+    value = {'mode': 'managed', 'servers': [], 'bootstrap': [], 'managed': {'agent_id': 'dns', 'endpoint_id': 'e'}}
+    repo.update_system_transaction(lambda system: system['system_config'].update(
+        node_test_dns_config=value, node_test_dns=['192.0.2.2:15353']))
+    before = repo.get_system()
+    expected = {'mode': 'custom', 'servers': ['192.0.2.2:15353'], 'bootstrap': []}
+    assert dns.load_config() == expected
+    assert dns.effective_settings() == {'dns_servers': ['192.0.2.2:15353'], 'dns_bootstrap': []}
+    client = make_client(repo)
+    shown = client.get('/api/nodes/latency/settings').get_json()
+    assert shown['dns'] == expected and shown['dns_servers'] == ['192.0.2.2:15353'] and 'managed_status' not in shown
+    assert repo.get_system() == before                       # reading migrates nothing on disk
+    # Saving what is shown stores the ordinary custom form.
+    assert client.post('/api/nodes/latency/settings', json={'dns': shown['dns']}).status_code == 200
+    assert repo.get_system()['system_config']['node_test_dns_config'] == expected
+
+
+def test_removed_managed_mode_without_a_recorded_address_falls_back_to_system_dns(repo):
     value = {'mode': 'managed', 'servers': [], 'bootstrap': [], 'managed': {'agent_id': 'missing', 'endpoint_id': 'gone'}}
     repo.update_system_transaction(lambda system: system['system_config'].update(node_test_dns_config=value))
-    monkeypatch.setattr(node_test_dns, 'resolve', lambda *args: (_ for _ in ()).throw(ValueError('接口已不可用')))
+    assert dns.load_config() == {'mode': 'system', 'servers': [], 'bootstrap': []}
+
+
+def test_managed_mode_can_no_longer_be_saved_or_reached(repo):
     client = make_client(repo)
-    response = client.get('/api/nodes/latency/settings')
-    assert response.status_code == 200
-    assert response.get_json()['managed_status']['status'] == 'unavailable'
-    with pytest.raises(latency.ProbeUnavailable, match='不可用'):
-        latency.settings()
-    assert client.post('/api/nodes/latency/settings', json={'dns': {'mode': 'system'}}).status_code == 200
-
-
-def test_managed_binding_revalidated_in_same_transaction(repo, monkeypatch):
-    from backend.agents import node_test_dns
-    monkeypatch.setattr(node_test_dns, 'resolve', lambda *args: '192.0.2.2:15353')
-    monkeypatch.setattr(node_test_dns, 'validate_binding', lambda *args: (_ for _ in ()).throw(ValueError('接口已删除')))
     before = repo.get_system()
-    with pytest.raises(ValueError, match='已删除'):
-        dns.save_config({'mode': 'managed', 'managed': {'agent_id': 'a', 'endpoint_id': 'e'}}, manager=object())
+    response = client.post('/api/nodes/latency/settings', json={'dns': {
+        'mode': 'managed', 'managed': {'agent_id': 'a', 'endpoint_id': 'e'}}})
+    assert response.status_code == 400 and '系统 DNS 或自定义 DNS' in response.get_json()['message']
     assert repo.get_system() == before
+    assert client.get('/api/nodes/latency/dns/managed').status_code == 404
+    assert client.post('/api/nodes/latency/dns/managed', json={}).status_code in (404, 405)
 
 
 def test_dns_check_uses_only_unsaved_dns_config_and_preserves_history(repo, monkeypatch):

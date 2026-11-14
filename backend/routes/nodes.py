@@ -176,7 +176,7 @@ def node_latency():
 @nodes_bp.route('/latency/settings', methods=['GET', 'POST'])
 @require_auth
 def node_latency_settings():
-    """Global DNS selection; creating a managed endpoint is a separate operation."""
+    """Global DNS selection for node tests."""
     from backend.utils.node_dns import describe_settings, normalize_dns_servers, save_config
 
     try:
@@ -211,43 +211,3 @@ def node_dns_check():
         return jsonify({'success': False, 'message': str(exc)}), 400
     except ProbeUnavailable as exc:
         return jsonify({'success': False, 'message': str(exc)}), 503
-
-
-def _verify_managed_dns(endpoint):
-    from backend.utils.node_dns import check_settings
-    return check_settings({'mode': 'custom', 'servers': [endpoint], 'bootstrap': []})
-
-
-@nodes_bp.route('/latency/dns/managed', methods=['GET', 'POST'])
-@require_auth
-def node_dns_managed():
-    from backend.agents import node_test_dns
-    from backend.common.agent_manager import get_agent_manager
-    manager = get_agent_manager()
-    try:
-        if request.method == 'GET':
-            result = node_test_dns.options(manager)
-        else:
-            payload = request.get_json(silent=True)
-            if not isinstance(payload, dict):
-                raise ValueError('请提供 OxiDNS 托管接口设置')
-            result = node_test_dns.create(manager, payload, verify=_verify_managed_dns)
-        return jsonify({'success': True, **result})
-    except ValueError as exc:
-        return jsonify({'success': False, 'message': str(exc)}), 400
-
-
-@nodes_bp.route('/latency/dns/managed/<agent_id>/<endpoint_id>', methods=['GET', 'DELETE'])
-@require_auth
-def node_dns_managed_endpoint(agent_id, endpoint_id):
-    from backend.agents import node_test_dns
-    from backend.common.agent_manager import get_agent_manager
-    manager = get_agent_manager()
-    try:
-        if request.method == 'DELETE':
-            result = node_test_dns.remove(manager, agent_id, endpoint_id)
-        else:
-            result = node_test_dns.status(manager, agent_id, endpoint_id, verify=_verify_managed_dns)
-        return jsonify({'success': True, **result})
-    except ValueError as exc:
-        return jsonify({'success': False, 'message': str(exc)}), 400

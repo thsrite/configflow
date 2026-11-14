@@ -2,18 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import NodeLatencySettings from '@/components/nodes/NodeLatencySettings.vue'
 import { nodeApi, type NodeLatencyDnsConfig } from '@/api'
-import { confirmDanger, notify } from '@/lib/feedback'
+import { notify } from '@/lib/feedback'
 
-vi.mock('@/api', () => ({ nodeApi: { latencySettings: vi.fn(), saveLatencySettings: vi.fn(), checkLatencyDns: vi.fn(), latencyManagedDns: vi.fn(), createLatencyManagedDns: vi.fn(), latencyManagedDnsStatus: vi.fn(), removeLatencyManagedDns: vi.fn() } }))
-vi.mock('@/lib/feedback', () => ({ notify: { success: vi.fn() }, confirmDanger: vi.fn() }))
+vi.mock('@/api', () => ({ nodeApi: { latencySettings: vi.fn(), saveLatencySettings: vi.fn(), checkLatencyDns: vi.fn() } }))
+vi.mock('@/lib/feedback', () => ({ notify: { success: vi.fn() } }))
 let wrapper: VueWrapper | undefined
 const scrollDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
-const system: NodeLatencyDnsConfig = { mode: 'system', servers: [], bootstrap: [], managed: {} }
-const custom = (servers = ['192.0.2.53:15353'], bootstrap: string[] = []): NodeLatencyDnsConfig => ({ mode: 'custom', servers, bootstrap, managed: {} })
-const managed: NodeLatencyDnsConfig = { mode: 'managed', servers: [], bootstrap: [], managed: { agent_id: 'agent-a', endpoint_id: 'dns-a' } }
-const endpoint = (status = 'ready') => ({ agent_id: 'agent-a', endpoint_id: 'dns-a', endpoint: '192.0.2.2:15353', status, upstream: '192.0.2.53' })
-const agent = (endpoints: ReturnType<typeof endpoint>[] = []) => ({ id: 'agent-a', name: '测试 DNS 设备', profile_id: 'profile-a', profile_name: '实验配置', address: '192.0.2.2', eligible: true, endpoints })
-const candidate = (id = 'upstream-a', eligible = true) => ({ id, label: `forward_${id} · 上游 1 · tls://dns.example`, address: `tls://${id}.dns.example`, bootstrap: ['192.0.2.53'], eligible, reason: eligible ? '' : '此上游依赖代理出站，暂不支持复用', validation: 'unverified' as const })
+const system: NodeLatencyDnsConfig = { mode: 'system', servers: [], bootstrap: [] }
+const custom = (servers = ['192.0.2.53:15353'], bootstrap: string[] = []): NodeLatencyDnsConfig => ({ mode: 'custom', servers, bootstrap })
 function response(dns: NodeLatencyDnsConfig = system) { return { data: { success: true, dns_servers: dns.servers, dns } } as any }
 function button(label: string) {
   const found = [...document.querySelectorAll('button')].find(item => (item.getAttribute('aria-label') || item.textContent?.trim()) === label)
@@ -44,24 +40,13 @@ async function render(disabled = false) {
   await flushPromises()
   return wrapper
 }
-async function newManagedForm() {
-  await render()
-  await click('测速设置')
-  await click('OxiDNS 托管')
-  await choose('node-latency-agent', '测试 DNS 设备')
-  await click('手动指定')
-  await enter('192.0.2.53', 'node-latency-upstream')
-}
 beforeEach(() => {
   vi.resetAllMocks()
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
   Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() })
   vi.mocked(nodeApi.latencySettings).mockResolvedValue(response())
   vi.mocked(nodeApi.saveLatencySettings).mockResolvedValue(response())
-  vi.mocked(nodeApi.latencyManagedDns).mockResolvedValue({ data: { success: true, agents: [agent()] } } as any)
   vi.mocked(nodeApi.checkLatencyDns).mockResolvedValue({ data: { success: true, addresses: ['93.184.215.14'], latency_ms: 8 } } as any)
-  vi.mocked(nodeApi.createLatencyManagedDns).mockResolvedValue({ data: { success: true, ...endpoint('preparing') } } as any)
-  vi.mocked(nodeApi.latencyManagedDnsStatus).mockResolvedValue({ data: { success: true, ...endpoint() } } as any)
 })
 afterEach(() => {
   wrapper?.unmount()
@@ -73,7 +58,7 @@ afterEach(() => {
   else Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
 })
 
-describe('节点库三模式测速 DNS 设置', () => {
+describe('节点库测速 DNS 设置', () => {
   it('打开才读取，系统模式明确实际解析位置，不预填公共 DNS', async () => {
     await render()
     expect(nodeApi.latencySettings).not.toHaveBeenCalled()
@@ -86,7 +71,7 @@ describe('节点库三模式测速 DNS 设置', () => {
     expect(input().value).toBe('')
   })
 
-  it('旧非空 DNS 作为自定义读取；仅显式保存三模式结构', async () => {
+  it('旧非空 DNS 作为自定义读取；仅显式保存', async () => {
     vi.mocked(nodeApi.latencySettings).mockResolvedValue({ data: { success: true, dns_servers: ['192.0.2.1:15353'] } } as any)
     await render()
     await click('测速设置')
@@ -96,183 +81,18 @@ describe('节点库三模式测速 DNS 设置', () => {
     expect(nodeApi.saveLatencySettings).toHaveBeenCalledExactlyOnceWith(custom(['192.0.2.3:5353', '192.0.2.4', '192.0.2.5']))
     expect(wrapper!.emitted('saved')).toHaveLength(1)
     expect(notify.success).toHaveBeenCalledWith('测速设置已保存')
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
     expect(document.querySelector('[role="dialog"]')).toBeNull()
   })
 
-  it('切换三个模式只编辑草稿，不创建、删除或保存；保留自定义输入', async () => {
+  it('切换模式只编辑草稿，不保存；保留自定义输入', async () => {
     await render()
     await click('测速设置')
     await click('自定义 DNS')
     await enter('192.0.2.53:15353')
-    await click('OxiDNS 托管')
     await click('系统 DNS')
     await click('自定义 DNS')
     expect(input().value).toBe('192.0.2.53:15353')
     expect(nodeApi.saveLatencySettings).not.toHaveBeenCalled()
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
-    expect(nodeApi.removeLatencyManagedDns).not.toHaveBeenCalled()
-  })
-
-  it('默认复用现有上游，唯一候选自动选中；仅显式创建时发送候选 ID', async () => {
-    vi.mocked(nodeApi.latencyManagedDns).mockResolvedValue({ data: { success: true, agents: [{ ...agent(), upstreams: [candidate()] }] } } as any)
-    vi.mocked(nodeApi.createLatencyManagedDns).mockResolvedValueOnce({ data: { success: true, ...endpoint() } } as any)
-    await render()
-    await click('测速设置')
-    await click('OxiDNS 托管')
-    await choose('node-latency-agent', '测试 DNS 设备')
-    expect(document.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toContain('OxiDNS 托管')
-    expect(input('node-latency-existing-upstream').textContent).toContain(candidate().address)
-    expect(input('node-latency-upstream')).toBeNull()
-    expect(input('node-latency-managed-bootstrap')).toBeNull()
-    expect(document.body.textContent).toContain('验证返回真实 IP 后启用')
-    expect(document.body.textContent).not.toContain('已验证上游')
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
-    await click('创建并启用')
-    expect(nodeApi.createLatencyManagedDns).toHaveBeenCalledExactlyOnceWith({ agent_id: 'agent-a', listen_address: '192.0.2.2', port: 15353, upstream_id: 'upstream-a' })
-    expect(nodeApi.saveLatencySettings).toHaveBeenCalledExactlyOnceWith(managed)
-  })
-
-  it('多个候选必须选择；不能按插件名猜测哪个返回真实 IP', async () => {
-    vi.mocked(nodeApi.latencyManagedDns).mockResolvedValue({ data: { success: true, agents: [{ ...agent(), upstreams: [candidate('local'), candidate('remote')] }] } } as any)
-    vi.mocked(nodeApi.createLatencyManagedDns).mockResolvedValueOnce({ data: { success: true, ...endpoint('failed') } } as any)
-    await render()
-    await click('测速设置')
-    await click('OxiDNS 托管')
-    await choose('node-latency-agent', '测试 DNS 设备')
-    expect(input('node-latency-existing-upstream').textContent).toContain('选择要使用的上游')
-    expect(button('创建并启用').disabled).toBe(true)
-    await choose('node-latency-existing-upstream', 'forward_remote')
-    expect(button('创建并启用').disabled).toBe(false)
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
-    await click('创建并启用')
-    expect(nodeApi.createLatencyManagedDns).toHaveBeenCalledExactlyOnceWith({ agent_id: 'agent-a', listen_address: '192.0.2.2', port: 15353, upstream_id: 'remote' })
-    expect(nodeApi.saveLatencySettings).not.toHaveBeenCalled()
-  })
-
-  it('不可复用候选显示原因且不能选择，唯一可复用候选仍可自动选中', async () => {
-    vi.mocked(nodeApi.latencyManagedDns).mockResolvedValue({ data: { success: true, agents: [{ ...agent(), upstreams: [candidate('blocked', false), candidate('usable')] }] } } as any)
-    await render()
-    await click('测速设置')
-    await click('OxiDNS 托管')
-    await choose('node-latency-agent', '测试 DNS 设备')
-    expect(input('node-latency-existing-upstream').textContent).toContain(candidate('usable').address)
-    input('node-latency-existing-upstream').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-    await flushPromises()
-    const blocked = [...document.querySelectorAll('[role="option"]')].find(item => item.textContent?.includes('forward_blocked'))
-    expect(blocked?.getAttribute('aria-disabled')).toBe('true')
-    expect(blocked?.textContent).toContain('依赖代理出站')
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
-  })
-
-  it('无可复用候选说明原因，可以切换手动且保留旧请求格式', async () => {
-    vi.mocked(nodeApi.latencyManagedDns).mockResolvedValue({ data: { success: true, agents: [{ ...agent(), upstreams: [candidate('blocked', false)], upstreams_reason: '已发布上游均依赖代理出站。' }] } } as any)
-    vi.mocked(nodeApi.createLatencyManagedDns).mockResolvedValueOnce({ data: { success: true, ...endpoint() } } as any)
-    await render()
-    await click('测速设置')
-    await click('OxiDNS 托管')
-    await choose('node-latency-agent', '测试 DNS 设备')
-    expect(document.body.textContent).toContain('已发布上游均依赖代理出站')
-    expect(button('创建并启用').disabled).toBe(true)
-    await click('手动指定')
-    await enter('tls://dns.example', 'node-latency-upstream')
-    await enter('192.0.2.53:15355', 'node-latency-managed-bootstrap')
-    await click('创建并启用')
-    expect(nodeApi.createLatencyManagedDns).toHaveBeenCalledExactlyOnceWith({ agent_id: 'agent-a', listen_address: '192.0.2.2', port: 15353, upstream: 'tls://dns.example', bootstrap: ['192.0.2.53:15355'] })
-  })
-
-  it('切换上游来源保留草稿，复用现有时不会提交手动地址或 Bootstrap', async () => {
-    vi.mocked(nodeApi.latencyManagedDns).mockResolvedValue({ data: { success: true, agents: [{ ...agent(), upstreams: [candidate()] }] } } as any)
-    vi.mocked(nodeApi.createLatencyManagedDns).mockResolvedValueOnce({ data: { success: true, ...endpoint() } } as any)
-    await newManagedForm()
-    await enter('https://manual.example/dns-query', 'node-latency-upstream')
-    await click('选择现有上游')
-    expect(input('node-latency-upstream')).toBeNull()
-    expect(input('node-latency-managed-bootstrap')).toBeNull()
-    await click('手动指定')
-    expect(input('node-latency-upstream').value).toBe('https://manual.example/dns-query')
-    await click('选择现有上游')
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
-    await click('创建并启用')
-    expect(nodeApi.createLatencyManagedDns).toHaveBeenCalledExactlyOnceWith({ agent_id: 'agent-a', listen_address: '192.0.2.2', port: 15353, upstream_id: 'upstream-a' })
-  })
-
-  it('候选过期失败保留表单，刷新到新候选后仍须显式创建', async () => {
-    vi.mocked(nodeApi.latencyManagedDns)
-      .mockResolvedValueOnce({ data: { success: true, agents: [{ ...agent(), upstreams: [candidate('old')] }] } } as any)
-      .mockResolvedValueOnce({ data: { success: true, agents: [{ ...agent(), upstreams: [candidate('new')] }] } } as any)
-    vi.mocked(nodeApi.createLatencyManagedDns).mockRejectedValueOnce({ response: { data: { message: '已发布上游已变化，请刷新后重试' } } })
-    await render()
-    await click('测速设置')
-    await click('OxiDNS 托管')
-    await choose('node-latency-agent', '测试 DNS 设备')
-    await click('创建并启用')
-    expect(document.body.textContent).toContain('已发布上游已变化')
-    expect(input('node-latency-existing-upstream').textContent).toContain(candidate('old').address)
-    await click('刷新上游')
-    expect(input('node-latency-existing-upstream').textContent).toContain(candidate('new').address)
-    expect(nodeApi.createLatencyManagedDns).toHaveBeenCalledOnce()
-    expect(nodeApi.saveLatencySettings).not.toHaveBeenCalled()
-  })
-
-  it('换设备不沿用前一设备上游，多个候选重新等待选择', async () => {
-    vi.mocked(nodeApi.latencyManagedDns).mockResolvedValue({ data: { success: true, agents: [
-      { ...agent(), upstreams: [candidate('a')] },
-      { ...agent(), id: 'agent-b', name: '另一 DNS 设备', address: '192.0.2.3', upstreams: [candidate('b'), candidate('c')] }
-    ] } } as any)
-    await render()
-    await click('测速设置')
-    await click('OxiDNS 托管')
-    await choose('node-latency-agent', '测试 DNS 设备')
-    expect(input('node-latency-existing-upstream').textContent).toContain(candidate('a').address)
-    await choose('node-latency-agent', '另一 DNS 设备')
-    expect(input('node-latency-listen').value).toBe('192.0.2.3')
-    expect(input('node-latency-existing-upstream').textContent).toContain('选择要使用的上游')
-    expect(button('创建并启用').disabled).toBe(true)
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
-  })
-
-  it('同一设备从已保存入口切换新入口时补全空监听 IP，保留已编辑的地址', async () => {
-    vi.mocked(nodeApi.latencySettings).mockResolvedValue(response(managed))
-    vi.mocked(nodeApi.latencyManagedDns).mockResolvedValue({ data: { success: true, agents: [{ ...agent([endpoint()]), upstreams: [candidate()] }] } } as any)
-    await render()
-    await click('测速设置')
-    await choose('node-latency-endpoint', '创建新入口')
-    expect(input('node-latency-listen').value).toBe('192.0.2.2')
-    await enter('192.0.2.22', 'node-latency-listen')
-    await choose('node-latency-endpoint', '192.0.2.2:15353')
-    await choose('node-latency-endpoint', '创建新入口')
-    expect(input('node-latency-listen').value).toBe('192.0.2.22')
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
-    expect(nodeApi.saveLatencySettings).not.toHaveBeenCalled()
-  })
-
-  it('入口地址默认显示摘要，编辑后可折叠；错误时重新展开并聚焦待修正项', async () => {
-    await newManagedForm()
-    const details = document.querySelector('details')!
-    const summary = details.querySelector('summary')!
-    expect(details.open).toBe(false)
-    expect(summary.textContent).toContain('192.0.2.2:15353')
-    summary.click()
-    await flushPromises()
-    expect(details.open).toBe(true)
-    await enter('', 'node-latency-listen')
-    summary.click()
-    await flushPromises()
-    expect(details.open).toBe(false)
-    await click('创建并启用')
-    expect(details.open).toBe(true)
-    expect(document.activeElement).toBe(input('node-latency-listen'))
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
-    await enter('192.0.2.22', 'node-latency-listen')
-    await enter('65536', 'node-latency-port')
-    summary.click()
-    await flushPromises()
-    await click('创建并启用')
-    expect(details.open).toBe(true)
-    expect(document.activeElement).toBe(input('node-latency-port'))
-    expect(input('node-latency-listen').value).toBe('192.0.2.22')
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
   })
 
   it('IP DNS 不显示空引导字段；域名改成 IP 后已有引导值仍可查看和清除', async () => {
@@ -298,54 +118,6 @@ describe('节点库三模式测速 DNS 设置', () => {
     expect(nodeApi.saveLatencySettings).toHaveBeenLastCalledWith(custom())
   })
 
-  it.each(['999.1.1.1', '0.0.0.0', '127.0.0.1', '224.0.0.1', '255.255.255.255', '192.0.02.2'])('折叠入口后拒绝无效或不可访问的监听地址 %s，展开聚焦且不发布', async address => {
-    await newManagedForm()
-    const details = document.querySelector('details')!
-    const summary = details.querySelector('summary')!
-    summary.click()
-    await flushPromises()
-    await enter(address, 'node-latency-listen')
-    summary.click()
-    await flushPromises()
-    expect(details.open).toBe(false)
-    await click('创建并启用')
-    expect(details.open).toBe(true)
-    expect(document.activeElement).toBe(input('node-latency-listen'))
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
-  })
-
-  it('手动上游按域名解释引导 DNS，缺失时聚焦且不发布；改成 IP 后旧值仍可清除', async () => {
-    await newManagedForm()
-    expect(input('node-latency-managed-bootstrap')).toBeNull()
-    await enter('tls://provider.example:853', 'node-latency-upstream')
-    expect(document.body.textContent).toContain('查询 provider.example 的 IP')
-    expect(document.body.textContent).toContain('仅填一个 IPv4[:端口]')
-    await click('创建并启用')
-    expect(document.activeElement).toBe(input('node-latency-managed-bootstrap'))
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
-    await enter('192.0.2.54', 'node-latency-managed-bootstrap')
-    await enter('192.0.2.53', 'node-latency-upstream')
-    expect(input('node-latency-managed-bootstrap').value).toBe('192.0.2.54')
-    await enter('', 'node-latency-managed-bootstrap')
-    expect(input('node-latency-managed-bootstrap')).toBeNull()
-    expect(nodeApi.saveLatencySettings).not.toHaveBeenCalled()
-  })
-
-  it('上游来源支持键盘切换，切换只改草稿且保留手动输入', async () => {
-    await newManagedForm()
-    button('手动指定').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
-    await flushPromises()
-    expect(button('选择现有上游').getAttribute('aria-checked')).toBe('true')
-    expect(document.activeElement).toBe(button('选择现有上游'))
-    expect(input('node-latency-upstream')).toBeNull()
-    button('选择现有上游').dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
-    await flushPromises()
-    expect(document.activeElement).toBe(button('手动指定'))
-    expect(input('node-latency-upstream').value).toBe('192.0.2.53')
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
-    expect(nodeApi.saveLatencySettings).not.toHaveBeenCalled()
-  })
-
   it('域名 DoH / DoT 需要引导 DNS，校验失败聚焦字段；保存加密 DNS 不发布设备配置', async () => {
     await render()
     await click('测速设置')
@@ -363,7 +135,6 @@ describe('节点库三模式测速 DNS 设置', () => {
     await enter('192.0.2.53:15353', 'node-latency-bootstrap')
     await submit()
     expect(nodeApi.saveLatencySettings).toHaveBeenCalledExactlyOnceWith(custom(['https://dns.example/dns-query', 'tls://dns.example:853'], ['192.0.2.53:15353']))
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
   })
 
   it('检测当前草稿只查询 DNS，编辑后丢弃旧检测响应', async () => {
@@ -379,7 +150,6 @@ describe('节点库三模式测速 DNS 设置', () => {
     await flushPromises()
     expect(document.body.textContent).not.toContain('解析成功')
     expect(nodeApi.saveLatencySettings).not.toHaveBeenCalled()
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
     await click('检测 DNS')
     const result = document.querySelector('[role="status"]')!
     expect(result.textContent).toContain('解析成功')
@@ -387,19 +157,48 @@ describe('节点库三模式测速 DNS 设置', () => {
     expect(result.textContent).toContain('8 ms')
   })
 
-  it('检测返回 Fake-IP 时依据错误码提供切换建议，切换模式清除结果且不保存', async () => {
-    vi.mocked(nodeApi.checkLatencyDns).mockResolvedValueOnce({ data: { success: false, addresses: [], error_code: 'dns_fake_ip', message: '上游返回虚拟地址' } } as any)
+  it('检测返回 Fake-IP 时可一键改用 IP 形式的 DoH；只改草稿，检测通过后再保存', async () => {
+    const doh = ['https://223.5.5.5/dns-query', 'https://1.12.12.12/dns-query']
+    vi.mocked(nodeApi.checkLatencyDns).mockResolvedValue({ data: { success: false, addresses: [], error_code: 'dns_fake_ip', message: 'DNS 返回了 Fake-IP' } } as any)
     await render()
     await click('测速设置')
     await click('检测 DNS')
-    const result = document.querySelector('[role="status"]')!
-    expect(result.textContent).toContain('返回 Fake-IP')
-    expect(result.textContent).toContain('OxiDNS 托管或自定义 DNS')
-    expect(nodeApi.checkLatencyDns).toHaveBeenCalledExactlyOnceWith(system)
-    await click('自定义 DNS')
-    expect(document.querySelector('[role="status"]')).toBeNull()
+    expect(document.body.textContent).toContain('返回 Fake-IP')
+    expect(document.body.textContent).toContain('这台机器的 DNS 被网关接管')
+    await click('改用 DoH（223.5.5.5 / 1.12.12.12）')
+    expect(input().value).toBe(doh.join('\n'))
+    expect(input('node-latency-bootstrap')).toBeNull()
+    expect(document.body.textContent).not.toContain('返回 Fake-IP')
     expect(nodeApi.saveLatencySettings).not.toHaveBeenCalled()
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
+    vi.mocked(nodeApi.checkLatencyDns).mockResolvedValue({ data: { success: true, addresses: ['93.184.215.14'], latency_ms: 40 } } as any)
+    await click('检测 DNS')
+    expect(nodeApi.checkLatencyDns).toHaveBeenLastCalledWith(custom(doh))
+    expect(document.body.textContent).toContain('解析成功')
+    await submit()
+    expect(nodeApi.saveLatencySettings).toHaveBeenCalledExactlyOnceWith(custom(doh))
+  })
+
+  it('自定义 DNS 返回 Fake-IP 时同样提示改用 IP 形式的 DoH', async () => {
+    vi.mocked(nodeApi.latencySettings).mockResolvedValue(response(custom(['192.0.2.53'])))
+    vi.mocked(nodeApi.checkLatencyDns).mockResolvedValue({ data: { success: false, addresses: [], error_code: 'dns_fake_ip' } } as any)
+    await render()
+    await click('测速设置')
+    await click('检测 DNS')
+    expect(document.body.textContent).toContain('53 端口的普通 DNS 和域名形式的 DoH 会被网关接管')
+    await click('改用 DoH（223.5.5.5 / 1.12.12.12）')
+    expect(input().value).toBe('https://223.5.5.5/dns-query\nhttps://1.12.12.12/dns-query')
+  })
+
+  it('保存返回 success:false 不算成功，保留弹窗和输入', async () => {
+    vi.mocked(nodeApi.saveLatencySettings).mockResolvedValue({ data: { success: false, message: '系统设置已更新，请刷新后重试' } } as any)
+    await render()
+    await click('测速设置')
+    await click('自定义 DNS')
+    await enter('192.0.2.53:15353')
+    await submit()
+    expect(document.body.textContent).toContain('系统设置已更新，请刷新后重试')
+    expect(notify.success).not.toHaveBeenCalled()
+    expect(input().value).toBe('192.0.2.53:15353')
   })
 
   it('一般检测失败保留后端原因，重试成功后替换失败状态', async () => {
@@ -454,128 +253,6 @@ describe('节点库三模式测速 DNS 设置', () => {
     expect(document.querySelector('form')).not.toBeNull()
   })
 
-  it('托管设备读取失败不妨碍切换并保存系统 DNS', async () => {
-    vi.mocked(nodeApi.latencySettings).mockResolvedValue(response(managed))
-    vi.mocked(nodeApi.latencyManagedDns).mockRejectedValueOnce(new Error('设备离线'))
-    await render()
-    await click('测速设置')
-    expect(document.body.textContent).toContain('设备离线')
-    await click('系统 DNS')
-    await submit()
-    expect(nodeApi.saveLatencySettings).toHaveBeenCalledExactlyOnceWith(system)
-  })
-
-  it('托管绑定失效显示原因，但可切换自定义；success:false 不算保存成功', async () => {
-    vi.mocked(nodeApi.latencySettings).mockResolvedValue({ data: { ...response(managed).data, managed_status: { status: 'unavailable', message: '绑定的 DNS 入口已不存在' } } } as any)
-    vi.mocked(nodeApi.saveLatencySettings).mockResolvedValueOnce({ data: { success: false, message: 'DNS 配置无效' } } as any)
-    await render()
-    await click('测速设置')
-    expect(document.body.textContent).toContain('绑定的 DNS 入口已不存在')
-    await click('自定义 DNS')
-    await enter('192.0.2.53')
-    await submit()
-    expect(input().value).toBe('192.0.2.53')
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain('DNS 配置无效')
-    expect(notify.success).not.toHaveBeenCalled()
-  })
-
-  it('创建展示准确设备和空间，pending 不启用，ready 后才保存绑定', async () => {
-    await newManagedForm()
-    expect(input('node-latency-listen').value).toBe('192.0.2.2')
-    expect(document.body.textContent).toContain('实验配置')
-    expect(document.body.textContent).toContain('将发布到「测试 DNS 设备」（实验配置）')
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    await click('创建并启用')
-    expect(nodeApi.createLatencyManagedDns).toHaveBeenCalledExactlyOnceWith({ agent_id: 'agent-a', listen_address: '192.0.2.2', port: 15353, upstream: '192.0.2.53' })
-    expect(nodeApi.saveLatencySettings).not.toHaveBeenCalled()
-    expect(button('正在创建并验证…').disabled).toBe(true)
-    expect(button('取消').disabled).toBe(true)
-    await vi.advanceTimersByTimeAsync(2000)
-    await flushPromises()
-    expect(nodeApi.saveLatencySettings).toHaveBeenCalledExactlyOnceWith(managed)
-  })
-
-  it('托管创建失败保留输入，不启用；已创建但验证失败保留状态', async () => {
-    vi.mocked(nodeApi.createLatencyManagedDns).mockRejectedValueOnce({ response: { data: { message: '端口被占用' } } })
-    await newManagedForm()
-    await click('创建并启用')
-    expect(input('node-latency-upstream').value).toBe('192.0.2.53')
-    expect(document.body.textContent).toContain('端口被占用')
-    vi.mocked(nodeApi.createLatencyManagedDns).mockResolvedValueOnce({ data: { success: true, ...endpoint('failed'), message: '上游返回 Fake-IP' } } as any)
-    await click('创建并启用')
-    expect(document.body.textContent).toContain('上游返回 Fake-IP')
-    expect(button('保存').disabled).toBe(true)
-    expect(nodeApi.saveLatencySettings).not.toHaveBeenCalled()
-  })
-
-  it('ready 后保存失败可直接重试保存，不重复创建', async () => {
-    vi.mocked(nodeApi.createLatencyManagedDns).mockResolvedValueOnce({ data: { success: true, ...endpoint() } } as any)
-    vi.mocked(nodeApi.saveLatencySettings).mockRejectedValueOnce({ response: { data: { message: '保存暂时失败' } } })
-    await newManagedForm()
-    await click('创建并启用')
-    expect(document.body.textContent).toContain('保存暂时失败')
-    expect(document.body.textContent).toContain('可用')
-    await submit()
-    expect(nodeApi.createLatencyManagedDns).toHaveBeenCalledOnce()
-    expect(nodeApi.saveLatencySettings).toHaveBeenCalledTimes(2)
-  })
-
-  it('现有 pending 入口不能保存，刷新到 ready 后仅保存，不发布', async () => {
-    vi.mocked(nodeApi.latencySettings).mockResolvedValue(response(managed))
-    vi.mocked(nodeApi.latencyManagedDns).mockResolvedValue({ data: { success: true, agents: [agent([endpoint('publishing')])] } } as any)
-    await render()
-    await click('测速设置')
-    expect(button('保存').disabled).toBe(true)
-    await submit()
-    expect(nodeApi.saveLatencySettings).not.toHaveBeenCalled()
-    await click('刷新状态')
-    expect(button('保存').disabled).toBe(false)
-    await submit()
-    expect(nodeApi.saveLatencySettings).toHaveBeenCalledExactlyOnceWith(managed)
-    expect(nodeApi.createLatencyManagedDns).not.toHaveBeenCalled()
-  })
-
-  it('显式移除入口需确认；取消确认不发布', async () => {
-    vi.mocked(nodeApi.latencySettings).mockResolvedValue(response(managed))
-    vi.mocked(nodeApi.latencyManagedDns).mockResolvedValue({ data: { success: true, agents: [agent([endpoint()])] } } as any)
-    vi.mocked(confirmDanger).mockResolvedValue(false)
-    await render()
-    await click('测速设置')
-    await click('移除入口')
-    expect(confirmDanger).toHaveBeenCalledOnce()
-    expect(nodeApi.removeLatencyManagedDns).not.toHaveBeenCalled()
-    vi.mocked(confirmDanger).mockResolvedValue(true)
-    vi.mocked(nodeApi.removeLatencyManagedDns).mockRejectedValue({ response: { data: { message: '入口仍被测速设置引用' } } })
-    await click('移除入口')
-    expect(nodeApi.removeLatencyManagedDns).toHaveBeenCalledExactlyOnceWith('agent-a', 'dns-a')
-    expect(document.body.textContent).toContain('入口仍被测速设置引用')
-  })
-
-  it('移除入口后自动跟进到完成，不必手动刷新状态', async () => {
-    vi.useFakeTimers()
-    try {
-      vi.mocked(nodeApi.latencySettings).mockResolvedValue(response(managed))
-      vi.mocked(nodeApi.latencyManagedDns).mockResolvedValue({ data: { success: true, agents: [agent([endpoint()])] } } as any)
-      vi.mocked(confirmDanger).mockResolvedValue(true)
-      vi.mocked(nodeApi.removeLatencyManagedDns).mockResolvedValue({ data: { success: true, ...endpoint('removing') } } as any)
-      vi.mocked(nodeApi.latencyManagedDnsStatus)
-        .mockResolvedValueOnce({ data: { success: true, ...endpoint('removing') } } as any)
-        .mockResolvedValueOnce({ data: { success: true, ...endpoint('removed') } } as any)
-      await render()
-      await click('测速设置')
-      await click('移除入口')
-      expect(document.body.textContent).toContain('正在移除')
-      await vi.advanceTimersByTimeAsync(2000)
-      expect(nodeApi.latencyManagedDnsStatus).toHaveBeenCalledTimes(1)
-      expect(notify.success).not.toHaveBeenCalled()
-      await vi.advanceTimersByTimeAsync(2000)
-      await flushPromises()
-      expect(nodeApi.latencyManagedDnsStatus).toHaveBeenCalledTimes(2)
-      expect(notify.success).toHaveBeenCalledWith('专用 DNS 入口已移除')
-      expect(document.body.textContent).not.toContain('正在移除')
-    } finally { vi.useRealTimers() }
-  })
-
   it('测速禁用设置入口和已打开保存；保存中禁止重复提交和关闭', async () => {
     await render(true)
     expect(button('测速设置').disabled).toBe(true)
@@ -599,14 +276,4 @@ describe('节点库三模式测速 DNS 设置', () => {
     expect(wrapper!.emitted('saved')).toHaveLength(1)
   })
 
-  it('卸载后不再轮询或把创建结果保存为当前 DNS', async () => {
-    await newManagedForm()
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    await click('创建并启用')
-    wrapper!.unmount()
-    wrapper = undefined
-    await vi.advanceTimersByTimeAsync(4000)
-    expect(nodeApi.latencyManagedDnsStatus).not.toHaveBeenCalled()
-    expect(nodeApi.saveLatencySettings).not.toHaveBeenCalled()
-  })
 })

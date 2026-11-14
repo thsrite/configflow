@@ -247,7 +247,7 @@ class AgentManager:
                     if field in existing_agent:
                         updated_agent[field] = existing_agent[field]
                 for field in ('config_revision', 'pushed_at', 'applied_content', 'dns_follow', 'dns_follow_state', 'dns_follow_job', 'rule_sync',
-                              'oxidns_ha', 'oxidns_ha_state', 'oxidns_ha_publication', 'node_test_dns_endpoints',
+                              'oxidns_ha', 'oxidns_ha_state', 'oxidns_ha_publication',
                               'ipv6_verification_settings', 'ipv6_verifications'):
                     if field in existing_agent:
                         updated_agent[field] = deepcopy(existing_agent[field])
@@ -496,10 +496,6 @@ class AgentManager:
             agent = next((item for item in agents if item['id'] == agent_id), None)
             if agent is None:
                 return {'success': False, 'message': 'Agent not found', 'http_status': 404}
-            from .node_test_dns import deployment_conflict
-            if deployment_conflict(agent, deployment_id):
-                return {'success': False, 'message': '托管测速 DNS 正在发布或检查，请等待完成后再发布其他配置',
-                        'http_status': 409}
             from .oxidns_ha_publish import conflict
             pair_conflict = conflict(agent, deployment_id)
             if pair_conflict:

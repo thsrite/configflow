@@ -19,26 +19,11 @@ describe('node latency API identity', () => {
 
   it('saves a DNS mode and checks an unsaved draft through separate endpoints', async () => {
     const post = vi.spyOn(api, 'post').mockResolvedValue({ data: { success: true } })
-    const dns = { mode: 'custom' as const, servers: ['https://dns.example/dns-query'], bootstrap: ['192.0.2.53:15353'], managed: {} }
+    const dns = { mode: 'custom' as const, servers: ['https://dns.example/dns-query'], bootstrap: ['192.0.2.53:15353'] }
     await nodeApi.saveLatencySettings(dns)
     expect(post).toHaveBeenNthCalledWith(1, '/nodes/latency/settings', { dns })
     await nodeApi.checkLatencyDns(dns)
     expect(post).toHaveBeenNthCalledWith(2, '/nodes/latency/dns/check', { dns }, { timeout: 120000 })
-  })
-
-  it('keeps managed creation, state reads, and removal explicit', async () => {
-    const get = vi.spyOn(api, 'get').mockResolvedValue({ data: { success: true } })
-    const post = vi.spyOn(api, 'post').mockResolvedValue({ data: { success: true } })
-    const remove = vi.spyOn(api, 'delete').mockResolvedValue({ data: { success: true } })
-    await nodeApi.latencyManagedDns()
-    expect(get).toHaveBeenCalledWith('/nodes/latency/dns/managed')
-    const draft = { agent_id: 'agent-a', listen_address: '192.0.2.2', port: 15353, upstream: '192.0.2.53' }
-    await nodeApi.createLatencyManagedDns(draft)
-    expect(post).toHaveBeenCalledExactlyOnceWith('/nodes/latency/dns/managed', draft)
-    await nodeApi.latencyManagedDnsStatus('agent /?#', 'dns /?#')
-    expect(get).toHaveBeenLastCalledWith('/nodes/latency/dns/managed/agent%20%2F%3F%23/dns%20%2F%3F%23')
-    await nodeApi.removeLatencyManagedDns('agent /?#', 'dns /?#')
-    expect(remove).toHaveBeenCalledExactlyOnceWith('/nodes/latency/dns/managed/agent%20%2F%3F%23/dns%20%2F%3F%23')
   })
 
   it('posts opaque source keys without reducing them to display names', async () => {
@@ -50,13 +35,6 @@ describe('node latency API identity', () => {
     ]
     expect(await nodeApi.testLatency(keys)).toBe(result)
     expect(post).toHaveBeenCalledWith('/nodes/latency', { keys }, { timeout: 120000 })
-  })
-
-  it('creates from an existing upstream ID without copying its DNS parameters', async () => {
-    const post = vi.spyOn(api, 'post').mockResolvedValue({ data: { success: true } })
-    const draft = { agent_id: 'agent-a', listen_address: '192.0.2.2', port: 15353, upstream_id: 'published-upstream-id' }
-    await nodeApi.createLatencyManagedDns(draft)
-    expect(post).toHaveBeenCalledExactlyOnceWith('/nodes/latency/dns/managed', draft)
   })
 
   it('keeps an empty selection explicit rather than requesting all nodes', async () => {

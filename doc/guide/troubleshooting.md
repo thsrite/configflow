@@ -53,7 +53,7 @@
 | 安装脚本提示核心“校验失败”且日志里有 `Permission denied` | 旧版安装脚本在 `/tmp` 里试运行下载的核心，`/tmp` 以 `noexec` 挂载时会失败。在面板重新生成安装命令即可，新脚本改在 `/usr/local` 下暂存 |
 | Alpine（OpenRC）上卸载同机双 Agent 停在 `rc-update` 报错 | 旧版脚本在 Agent 未加入开机启动时会中途退出。重新生成安装命令后再选卸载 |
 | Alpine（OpenRC）上 Agent 异常退出后不会自己恢复 | 旧版脚本安装的服务没有守护。重新生成安装命令并选“安装或升级”后，Agent 退出 10 秒内会被自动拉起，与 systemd 的行为一致 |
-| 设备上装好了 Agent，Agent 页却一直不出现 | 看首页通知里有没有“Agent 注册被拒绝”，里面写了原因和处理办法；设备上 `journalctl -u configflow-agent`（Alpine 看 `/var/log/configflow-agent.log`）的注册失败那一行也带原因（Agent 1.8.59-go 起）。常见的两种：同一配置空间里另一台 OxiDNS 建了[节点测速托管入口](../manual/nodes.md#oxidns-托管入口)；或设备重装后面板里还留着同名同地址的旧记录，删除旧记录即可 |
+| 设备上装好了 Agent，Agent 页却一直不出现 | 看首页通知里有没有“Agent 注册被拒绝”，里面写了原因和处理办法；设备上 `journalctl -u configflow-agent`（Alpine 看 `/var/log/configflow-agent.log`）的注册失败那一行也带原因（Agent 1.8.59-go 起）。最常见的是设备重装后面板里还留着同名同地址的旧记录，删除旧记录即可 |
 | 更新后节点数量没变 | 是否更新了对应订阅，过滤条件是否排除新节点；设备还可能使用旧配置 |
 | Sub-Store 显示休眠 | 默认按需启动；首次转换等待唤醒即可，不必马上重装 |
 

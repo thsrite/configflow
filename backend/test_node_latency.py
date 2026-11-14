@@ -356,7 +356,7 @@ def test_dns_settings_persist_without_changing_nodes_or_other_settings(repositor
     expected.setdefault('system_config', {})['node_test_dns'] = ['192.0.2.53', '127.0.0.1:5353']
     expected['system_config']['node_test_dns_config'] = {
         'mode': 'custom', 'servers': expected['system_config']['node_test_dns'],
-        'bootstrap': [], 'managed': {}}
+        'bootstrap': []}
     persisted = repository.get_system()
     assert {k: v for k, v in persisted.items() if k != '_revision'} == {
         k: v for k, v in expected.items() if k != '_revision'}

@@ -1,8 +1,0 @@
-{
-  "backend_service": "cf-node-dns-preview-backend",
-  "dns_unchanged": true,
-  "managed_status": "ready",
-  "endpoint": "192.168.0.32:15353",
-  "latency_ms": 1,
-  "worker_method": "proxy_http_v2"
-}

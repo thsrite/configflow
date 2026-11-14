@@ -1,4 +1,4 @@
-"""Global standalone probe DNS settings; provisioning lives in agents.node_test_dns."""
+"""Global standalone probe DNS settings."""
 import ipaddress
 import json
 import os
@@ -9,6 +9,8 @@ from urllib.parse import urlsplit, urlunsplit
 from backend.common.config import get_repository, get_system_config, reset_config_context
 
 CONFIG_KEY = 'node_test_dns_config'
+# Port 443 is not taken over by a gateway's DNS hijack, and an IP needs no bootstrap lookup.
+DIRECT_DOH = ('https://223.5.5.5/dns-query', 'https://1.12.12.12/dns-query')
 DNS_ERROR = '测速 DNS 须为 IPv4[:端口]、https://DoH 或 tls://DoT，最多 4 个；不支持凭据、查询参数或片段'
 BOOTSTRAP_ERROR = '引导 DNS 须为 IPv4 或 IPv4:端口，最多 4 个'
 CHECK_MESSAGES = {
@@ -95,10 +97,10 @@ def _needs_bootstrap(server):
 
 
 def normalize_config(value):
-    if not isinstance(value, dict) or value.get('mode') not in ('system', 'custom', 'managed'):
-        raise ValueError('请选择系统 DNS、OxiDNS 托管或自定义 DNS')
+    if not isinstance(value, dict) or value.get('mode') not in ('system', 'custom'):
+        raise ValueError('请选择系统 DNS 或自定义 DNS')
     mode = value['mode']
-    result = {'mode': mode, 'servers': [], 'bootstrap': [], 'managed': {}}
+    result = {'mode': mode, 'servers': [], 'bootstrap': []}
     if mode == 'custom':
         result['servers'] = normalize_dns_servers(value.get('servers', []))
         result['bootstrap'] = normalize_dns_servers(value.get('bootstrap', []), bootstrap=True)
@@ -106,47 +108,30 @@ def normalize_config(value):
             raise ValueError('自定义 DNS 至少需要一个服务器地址')
         if any(_needs_bootstrap(server) for server in result['servers']) and not result['bootstrap']:
             raise ValueError('域名形式的 DoH / DoT 需要指定引导 DNS（IPv4 或 IPv4:端口）')
-    elif mode == 'managed':
-        binding = value.get('managed')
-        if not isinstance(binding, dict) or any(not isinstance(binding.get(k), str) or not binding[k].strip() or len(binding[k]) > 128 for k in ('agent_id', 'endpoint_id')):
-            raise ValueError('请选择已就绪的 OxiDNS 托管接口')
-        result['managed'] = {k: binding[k] for k in ('agent_id', 'endpoint_id')}
     return result
 
 
 def load_config():
     system = get_system_config().get('system_config', {})
-    if CONFIG_KEY in system:
-        return normalize_config(system[CONFIG_KEY])
-    # Do not adopt manually created listeners or mutate data while reading.
+    saved = system.get(CONFIG_KEY)
+    if isinstance(saved, dict) and saved.get('mode') != 'managed':
+        return normalize_config(saved)
+    # Before node_test_dns_config existed. The removed "OxiDNS 托管" mode is
+    # converted at startup (agents.node_test_dns_cleanup); until then its
+    # address, always mirrored into node_test_dns, is read the same way.
+    # Nothing is rewritten while reading.
     servers = normalize_dns_servers(system.get('node_test_dns', []))
     return normalize_config({'mode': 'custom' if servers else 'system', 'servers': servers})
 
 
-def _manager(manager):
-    if manager is None:
-        from backend.common.agent_manager import get_agent_manager
-        return get_agent_manager()
-    return manager
-
-
 def effective_settings(value=None, *, manager=None):
     config = load_config() if value is None else normalize_config(value)
-    servers = config['servers']
-    if config['mode'] == 'managed':
-        from backend.agents.node_test_dns import resolve
-        servers = [resolve(_manager(manager), config['managed'])]
-    return {'dns_servers': servers, 'dns_bootstrap': config['bootstrap']}
+    return {'dns_servers': config['servers'], 'dns_bootstrap': config['bootstrap']}
 
 
 def describe_settings(value=None, *, manager=None):
     config = load_config() if value is None else normalize_config(value)
-    try:
-        options = effective_settings(config, manager=manager)
-    except ValueError as exc:
-        # A missing device must not prevent switching back to system/custom DNS.
-        return {'dns': config, 'dns_servers': [], 'managed_status': {'status': 'unavailable', 'message': str(exc)}}
-    return {'dns': config, **options}
+    return {'dns': config, **effective_settings(config, manager=manager)}
 
 
 def save_config(value, *, manager=None):
@@ -154,11 +139,6 @@ def save_config(value, *, manager=None):
     effective = effective_settings(config, manager=manager)
 
     def update(system):
-        if config['mode'] == 'managed':
-            from backend.agents.node_test_dns import validate_binding
-            endpoint = validate_binding(system, config['managed'])
-            if [endpoint] != effective['dns_servers']:
-                raise ValueError('托管接口已变更，请刷新后重试')
         target = system.setdefault('system_config', {})
         target[CONFIG_KEY] = config
         target['node_test_dns'] = effective['dns_servers']
