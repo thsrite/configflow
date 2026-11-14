@@ -20,6 +20,7 @@ func StartAPIServer(cfg *Config) {
 	mux.HandleFunc("/api/domain-probe", routes.AuthMiddleware(routesCfg, domainProbeHandler(cfg)))
 	mux.HandleFunc("/api/region-check", routes.AuthMiddleware(routesCfg, regionCheckHandler(cfg)))
 	mux.HandleFunc("/api/region-check/targets", routes.AuthMiddleware(routesCfg, regionTargetsHandler(cfg)))
+	mux.HandleFunc("/api/agent-address", routes.AuthMiddleware(routesCfg, agentAddressHandler(cfg)))
 	mux.HandleFunc(mihomoPanelPrefix, routes.AuthMiddleware(routesCfg, mihomoPanelHandler(cfg)))
 
 	listenAddr := fmt.Sprintf("%s:%d", cfg.AgentHost, cfg.AgentPort)
@@ -49,6 +50,7 @@ func toRoutesConfig(cfg *Config) *routes.Config {
 		AgentHost:               cfg.AgentHost,
 		AgentPort:               cfg.AgentPort,
 		AgentIP:                 cfg.effectiveAgentIP(),
+		AgentIPSource:           cfg.effectiveAgentIP,
 		ServiceType:             cfg.ServiceType,
 		ServiceName:             cfg.ServiceName,
 		ConfigPath:              cfg.ConfigPath,

@@ -514,6 +514,10 @@ export const agentApi = {
     api.put<import('@/types/mihomoIPv6').IPv6VerificationSettingsResult>(`/agents/${encodeURIComponent(id)}/ipv6-readiness/verification-settings`, { profile_id: profileId, ...settings }, { ...profileOptions(profileId), timeout: 60000 }),
   delete: (id: string) => api.delete(`/agents/${id}`),
   restart: (id: string) => api.post(`/agents/${id}/restart`),
+  /** 面板联系这台 Agent 的地址：当前值、设备本机的地址，以及修改会改到哪里 */
+  getAddress: (id: string) => api.get<{ success: boolean; data: AgentAddressInfo }>(`/agents/${encodeURIComponent(id)}/address`, { timeout: 15000 }),
+  setAddress: (id: string, host: string) =>
+    api.put<{ success: boolean; host: string; written: boolean; changed: boolean; message: string }>(`/agents/${encodeURIComponent(id)}/address`, { host }, { timeout: 30000 }),
   getStatus: (id: string) => api.get(`/agents/${id}/status`),
   getLogSources: (id: string, options: { signal?: AbortSignal } = {}) => api.get(`/agents/${encodeURIComponent(id)}/logs/sources`, options),
   getLogs: (id: string, lines: number = 100, target: AgentLogTarget = {}, options: { signal?: AbortSignal } = {}) => {
@@ -811,3 +815,14 @@ export const statsApi = {
 }
 
 export default api
+
+export interface AgentAddressInfo {
+  host: string
+  port: number
+  /** agent：写入面板记录和设备配置；record：只改面板记录；env、ha：不能在这里修改；unknown：当前地址连不上 */
+  mode: 'agent' | 'record' | 'env' | 'ha' | 'unknown'
+  message: string
+  addresses: string[]
+  configured: string
+  reachable: boolean
+}

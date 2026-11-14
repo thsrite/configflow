@@ -307,6 +307,10 @@
                   <ChartLine class="size-4" />
                   系统监控
                 </DropdownMenuItem>
+                <DropdownMenuItem @select="addressAgentId = agent.id">
+                  <Network class="size-4" />
+                  修改地址
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   :disabled="upgradeBusy(agent.id) || deploymentBusy(agent.id) || deployments[agent.id]?.status === 'rollback_failed'"
                   @select="restartAgent(agent)"
@@ -338,6 +342,7 @@
       @ready="settingsLoadingAgentId = null"
       @close="closeAgentSettings"
     />
+    <AgentAddressDialog v-if="addressAgent" :agent="addressAgent" @close="addressAgentId = null" @changed="loadAgents" />
     <DockerAgentUpdateDialog v-if="dockerUpdateAgent" :agent="dockerUpdateAgent" @close="dockerUpdateAgent = null" @refresh="loadAgents" />
     <AgentPushDiff
       v-if="pushDiffAgent"
@@ -882,6 +887,7 @@ import {
   History,
   Loader2,
   MoreHorizontal,
+  Network,
   RefreshCw,
   RotateCw,
   ScrollText,
@@ -939,6 +945,7 @@ import type { Agent } from '@/types'
 import { useProfileStore } from '@/stores/profile'
 import { createDeploymentId, deploymentNeedsNotice, useAgentDeployments, type AgentDeployment } from '@/composables/useAgentDeployments'
 import AgentDeploymentHistory from '@/components/agents/AgentDeploymentHistory.vue'
+import AgentAddressDialog from '@/components/agents/AgentAddressDialog.vue'
 import AgentPushDiff from '@/components/agents/AgentPushDiff.vue'
 import AgentDeploymentStatus from '@/components/agents/AgentDeploymentStatus.vue'
 import AgentFailureDetails from '@/components/agents/AgentFailureDetails.vue'
@@ -980,6 +987,8 @@ function ruleUpdateBlocked(agent: Agent) {
 const { deployments, busy: deploymentBusy, track: trackDeployment, beginSubmission, endSubmission, refresh: refreshDeployment, activate: activateDeployment, retryPublish: retryDeployment, rollback: rollbackDeployment, recover: recoverDeployment, recovering: recoveringDeployments } = useAgentDeployments(() => { void loadAgents() })
 const deploymentHistoryAgentId = ref<string | null>(null)
 const notificationDeploymentId = ref('')
+const addressAgentId = ref<string | null>(null)
+const addressAgent = computed(() => agents.value.find(agent => agent.id === addressAgentId.value) || null)
 const dnsFollowRefs = new Map<string, InstanceType<typeof AgentDNSFollow>>()
 function setDNSFollowRef(id: string, instance: Element | ComponentPublicInstance | null) {
   if (instance) dnsFollowRefs.set(id, instance as InstanceType<typeof AgentDNSFollow>)
@@ -2824,7 +2833,7 @@ const runPending = () => {
 watch(() => router?.currentRoute.value.query.run, run => run === 'push-all' && runPending())
 useSettingLink({
   keys: ['agent', 'profile', 'section', 'deployment'], ready: () => agentsLoaded.value,
-  matches: query => !!queryText(query.agent) && ['deployment', 'rule-sync', 'dns-follow'].includes(queryText(query.section)),
+  matches: query => !!queryText(query.agent) && ['deployment', 'rule-sync', 'dns-follow', 'address'].includes(queryText(query.section)),
   open: async query => {
     const agent = agents.value.find(item => item.id === queryText(query.agent))
     if (!agent) { notify.warning('对应设备不存在或已删除。'); return }
@@ -2840,6 +2849,8 @@ useSettingLink({
     if (query.section === 'deployment') {
       notificationDeploymentId.value = queryText(query.deployment)
       deploymentHistoryAgentId.value = agent.id
+    } else if (query.section === 'address') {
+      addressAgentId.value = agent.id
     } else if (query.section === 'dns-follow') {
       dnsFollowRefs.get(agent.id)?.showSettings()
     } else {

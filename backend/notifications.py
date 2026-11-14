@@ -136,7 +136,7 @@ def record_agent_address(repository, agent, host, label, message):
             'status_label': label, 'title': f'{name} · 地址已从 {agent.get("host")} 变为 {host}',
             'message': str(message)[:MESSAGE_LIMIT], 'impact': '面板仍按旧地址联系这台设备',
             'checked_at': store.now(), 'evidence': str(int(time.time()) // 120),
-            'target': target('/agents', '查看 Agent', agent=agent['id'])})
+            'target': target('/agents', '修改地址', agent=agent['id'], section='address')})
 
 
 def resolve_agent_address(repository, agent_id):

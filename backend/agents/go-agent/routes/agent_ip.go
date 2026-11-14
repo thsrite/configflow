@@ -15,7 +15,7 @@ var detectAgentIPv4s = localip.DetectAll
 // other addresses that need DNS protection. Do not persist detected addresses:
 // DHCP and interface availability can change between publishes.
 func agentLANIPv4s(cfg *Config) ([]net.IP, error) {
-	value := strings.TrimSpace(cfg.AgentIP)
+	value := strings.TrimSpace(cfg.agentIP())
 	var explicit net.IP
 	if value != "" {
 		explicit = net.ParseIP(value)
