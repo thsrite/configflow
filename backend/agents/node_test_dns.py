@@ -75,6 +75,34 @@ def _exclusive(system, agent):
         raise ValueError('托管接口需要独立配置空间，请先将此 OxiDNS 与其他 OxiDNS Agent 分开绑定')
 
 
+def _never_installed(agent, record):
+    """A create that failed before anything was submitted left nothing on the device."""
+    if record.get('status') != 'failed' or record.get('installed') or record.get('operation') != 'create':
+        return False
+    deployment = (agent.get('deployments') or {}).get(record.get('deployment_id'))
+    return not deployment or (deployment.get('status') == 'failed' and not deployment.get('submitted'))
+
+
+def holds_listener(agent):
+    """Whether the Agent's published configuration may contain a managed listener."""
+    return any(record.get('status') != 'removed' and not _never_installed(agent, record)
+               for record in agent.get(FIELD, {}).values())
+
+
+REGISTRATION_BLOCKED = ('这个配置空间里已有一台 OxiDNS 建了节点测速的托管 DNS 入口，它的监听地址只属于那台设备，'
+                        '所以该空间不能再加入第二台 OxiDNS。请先到「节点库 → 测速设置」把测速 DNS 改为系统或自定义 DNS '
+                        '并移除托管入口，或把那台 OxiDNS 绑定到单独的配置空间；处理后新设备会自动注册。')
+
+
+def registration_blocker(system, profile_id, agent_names=()):
+    """Why a new OxiDNS Agent in this profile would be refused, before it is installed."""
+    for agent in system.get('agents', []):
+        if (agent.get('service_type') == 'oxidns' and agent.get('profile_id', 'default') == profile_id
+                and agent.get('name') not in agent_names and holds_listener(agent)):
+            return REGISTRATION_BLOCKED
+    return None
+
+
 def _record(agent, endpoint_id):
     record = agent.get(FIELD, {}).get(endpoint_id)
     if not record:
@@ -426,7 +454,13 @@ def create(manager, payload, *, verify=None):
         _exclusive(system, agent)
         baseline = _baseline(manager, agent)
         spec = _selected_spec(payload, agent, baseline) if 'upstream_id' in payload else _spec(payload)
+        # A failed attempt that never reached the device is dropped by the next
+        # one instead of waiting for a manual delete.
+        forgotten = {key: deepcopy(record) for key, record in agent.get(FIELD, {}).items()
+                     if _can_forget(manager, agent, record)}
         for record in agent.get(FIELD, {}).values():
+            if record['endpoint_id'] in forgotten:
+                continue
             if record['status'] != 'removed' and all(record.get(k) == v for k, v in spec.items()):
                 if record['status'] == 'failed':
                     raise ValueError('相同托管接口创建失败，请先删除该接口记录后重试')
@@ -454,6 +488,9 @@ def create(manager, payload, *, verify=None):
                     raise ValueError('Agent 绑定已变化，请刷新后重试')
                 if _publication(current) != _publication(agent):
                     raise ValueError('已发布配置已变化，请刷新后重新选择上游')
+                for key, stale in forgotten.items():
+                    if current.get(FIELD, {}).get(key) == stale:
+                        current[FIELD][key].update(status='removed', message='未安装的接口记录已删除')
                 current.setdefault(FIELD, {})[endpoint_id] = deepcopy(record)
             manager.repository.update_system_transaction(add)
             result = _public(record)
@@ -656,7 +693,9 @@ def guard_system_change(before, after):
             if record.get('status') != 'removed' and endpoint_id not in (replacement or {}).get(FIELD, {}):
                 raise ValueError('请通过托管 DNS 删除操作移除接口记录')
     for agent in current.values():
-        if any(r.get('status') != 'removed' for r in agent.get(FIELD, {}).values()):
+        # A failed attempt that installed nothing must not keep a second OxiDNS
+        # Agent out of the profile.
+        if holds_listener(agent):
             _exclusive(after, agent)
             _check_agent(agent)
 

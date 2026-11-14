@@ -1,10 +1,16 @@
 """Agent 版本管理"""
 
 # Agent 最新版本号
-LATEST_AGENT_VERSION = "1.8.58-go"
+LATEST_AGENT_VERSION = "1.8.59-go"
 
 # 版本更新日志（可选）
 VERSION_CHANGELOG = {
+    "1.8.59-go": {
+        "date": "2026-11-13",
+        "features": [
+            "注册被面板拒绝时，Agent 日志带上面板给出的原因，不再只有状态码"
+        ]
+    },
     "1.8.58-go": {
         "date": "2026-11-13",
         "features": [

@@ -515,3 +515,83 @@ def test_eligible_existing_candidate_still_requires_real_dns_verification(env):
     assert env.state(created['endpoint_id'])['status'] == 'failed'
     with pytest.raises(ValueError):
         dns.resolve(env.manager, {'agent_id': env.agent_id, 'endpoint_id': created['endpoint_id']})
+
+
+def test_failed_attempt_that_installed_nothing_does_not_keep_a_second_agent_out(env):
+    from backend.agents.manager import AgentDeploymentConflict
+    failed = env.create(port=53); env.drain()
+    assert env.state(failed['endpoint_id'])['status'] == 'failed'
+    system = env.repository.get_system()
+    assert not dns.holds_listener(env.manager.get_agent_by_id(env.agent_id))
+    assert dns.registration_blocker(system, 'default') is None
+    second = env.manager.register_agent({'name': 'Second-DNS', 'host': '192.0.2.3', 'port': 8081, 'service_type': 'oxidns'})
+    assert env.manager.delete_agent(second['id'])
+    # A published listener still excludes it, and says what to do about it.
+    created = env.create(); env.drain()
+    assert env.state(created['endpoint_id'])['status'] == 'ready'
+    with pytest.raises(AgentDeploymentConflict, match='独立配置空间'):
+        env.manager.register_agent({'name': 'Second-DNS', 'host': '192.0.2.3', 'port': 8081, 'service_type': 'oxidns'})
+    system = env.repository.get_system()
+    assert '测速设置' in dns.registration_blocker(system, 'default')
+    assert dns.registration_blocker(system, 'default', ('DNS',)) is None     # reinstalling that same Agent
+    assert dns.registration_blocker(system, 'another-profile') is None
+
+
+def test_next_attempt_replaces_a_failure_that_installed_nothing(env):
+    failed = env.create(port=53); env.drain()
+    assert env.state(failed['endpoint_id'])['status'] == 'failed'
+    # The same request no longer needs a manual delete first.
+    retried = env.create(port=53); env.drain()
+    assert retried['endpoint_id'] != failed['endpoint_id']
+    records = env.manager.get_agent_by_id(env.agent_id)[dns.FIELD]
+    assert records[failed['endpoint_id']]['status'] == 'removed'
+    created = env.create(); env.drain()
+    assert env.state(created['endpoint_id'])['status'] == 'ready'
+    assert [e['endpoint_id'] for e in dns.options(env.manager)['agents'][0]['endpoints']] == [created['endpoint_id']]
+
+
+def test_refused_registration_is_logged_notified_and_expires(env, monkeypatch, caplog):
+    from backend import notifications
+    from backend.routes import agents
+    from backend.test_flow_ui_apis import make_client
+    env.create(); env.drain()
+    monkeypatch.setattr(agents, 'get_agent_manager', lambda: env.manager)
+    client = make_client(env.repository)
+    payload = {'name': 'Second-DNS', 'host': '192.0.2.3', 'port': 8081, 'service_type': 'oxidns'}
+    with caplog.at_level('WARNING'):
+        for _ in range(3):
+            response = client.post('/api/agents/register', json=payload)
+            assert response.status_code == 409 and '独立配置空间' in response.get_json()['message']
+    assert sum('Agent 注册被拒绝' in record.getMessage() for record in caplog.records) == 3
+    listed = [item for item in notifications.snapshot() if item['source'] == notifications.REGISTRATION_SOURCE]
+    assert len(listed) == 1
+    notice = listed[0]
+    assert 'Second-DNS' in notice['title'] and '192.0.2.3' in notice['title']
+    assert '测速设置' in notice['message'] and notice['occurrences'] == 1     # one per minute, not per retry
+    assert notice['target']['path'] == '/agents'
+    # The device stopped retrying (it registered or was uninstalled): the notice goes away.
+    monkeypatch.setattr(notifications, 'REGISTRATION_FRESH_SECONDS', 0)
+    assert not [item for item in notifications.snapshot() if item['source'] == notifications.REGISTRATION_SOURCE]
+    # A reinstalled device without its old credentials is told what to do as well.
+    known = env.manager.get_agent_by_id(env.agent_id)
+    monkeypatch.setattr(notifications, 'REGISTRATION_FRESH_SECONDS', 300)
+    response = client.post('/api/agents/register', json={'name': known['name'], 'host': known['host'],
+                                                         'port': 8081, 'service_type': 'oxidns'})
+    assert response.status_code == 401
+    listed = [item for item in notifications.snapshot() if item['source'] == notifications.REGISTRATION_SOURCE]
+    assert len(listed) == 1 and '删除旧记录' in listed[0]['message']
+
+
+def test_install_command_says_a_second_oxidns_would_be_refused(env, monkeypatch):
+    from backend.routes import agents
+    from backend.test_flow_ui_apis import make_client
+    env.create(); env.drain()
+    monkeypatch.setattr(agents, 'get_agent_manager', lambda: env.manager)
+    client = make_client(env.repository)
+    query = {'server_url': 'https://config.test', 'type': 'oxidns', 'name': 'Second-DNS'}
+    refused = client.get('/api/agents/install-script', query_string=query)
+    assert refused.status_code == 400 and '测速设置' in refused.get_json()['message']
+    assert client.get('/api/agents/install-script', query_string={**query, 'type': 'aio'}).status_code == 400
+    # Reinstalling the Agent that owns the listener, and other services, are unaffected.
+    assert client.get('/api/agents/install-script', query_string={**query, 'name': 'DNS'}).status_code == 200
+    assert client.get('/api/agents/install-script', query_string={**query, 'type': 'mihomo'}).status_code == 200
