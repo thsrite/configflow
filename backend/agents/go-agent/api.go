@@ -48,7 +48,7 @@ func toRoutesConfig(cfg *Config) *routes.Config {
 		AgentName:               cfg.AgentName,
 		AgentHost:               cfg.AgentHost,
 		AgentPort:               cfg.AgentPort,
-		AgentIP:                 cfg.AgentIP,
+		AgentIP:                 cfg.effectiveAgentIP(),
 		ServiceType:             cfg.ServiceType,
 		ServiceName:             cfg.ServiceName,
 		ConfigPath:              cfg.ConfigPath,
