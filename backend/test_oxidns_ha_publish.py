@@ -746,6 +746,22 @@ def test_rule_sync_scopes_are_shared_when_changed_from_either_member(ha_publish,
             assert rule_sync.settings_for(env.manager.get_agent_by_id(agent['id'])) == scopes
 
 
+def test_both_members_report_the_state_of_the_member_that_runs_rule_sync(ha_publish):
+    from backend.agents import rule_sync
+    env = ha_publish
+    env.pair()
+    rule_sync.configure(env.manager, env.secondary['id'], {'library': True, 'rules': False})
+    # Only the leader (the primary) runs the rounds and records a state.
+    rule_sync._update(env.manager, env.primary['id'], state={'status': 'idle', 'message': '已引用的规则没有待同步变化'})
+    first = rule_sync.status(env.manager, env.primary['id'])
+    second = rule_sync.status(env.manager, env.secondary['id'])
+    assert second['settings'] == {'library': True, 'rules': False}
+    assert second['state'] == first['state'] and second['state']['updated_at']
+    assert (second['state']['status'], second['state']['message']) == ('idle', '已引用的规则没有待同步变化')
+    rule_sync.configure(env.manager, env.primary['id'], {'library': False, 'rules': False})
+    assert rule_sync.status(env.manager, env.secondary['id'])['state']['status'] == 'disabled'
+
+
 def test_reconciliation_rests_without_unfinished_pair_work_and_resumes_with_it(ha_publish, monkeypatch):
     from backend.agents import oxidns_ha_publish
     env = ha_publish

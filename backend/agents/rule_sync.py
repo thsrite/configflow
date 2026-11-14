@@ -91,6 +91,20 @@ def pinned_withheld(repository, profile_id, rule_ids):
     return False
 
 
+def _leader(manager, agent):
+    """The member that runs rule sync for a DNS high-availability pair; its state is the pair's state."""
+    if agent.get('service_type') != 'oxidns' or (agent.get('oxidns_ha') or {}).get('enabled') is not True:
+        return agent
+    from . import oxidns_ha_publish as publications
+    try:
+        members = publications.pair(manager, agent['id'])
+    except ValueError:
+        return agent
+    leaders = sorted((item for item in members or [] if any(settings_for(item).values())),
+                     key=lambda item: ((item.get('oxidns_ha') or {}).get('role') != 'primary', item['id']))
+    return leaders[0] if leaders else agent
+
+
 def status(manager, agent_id):
     agent = manager.get_agent_by_id(agent_id, history=False)
     if agent is None:
@@ -98,7 +112,7 @@ def status(manager, agent_id):
     if agent.get('service_type') not in ('mihomo', 'oxidns'):
         raise ValueError('规则自动同步仅支持 Mihomo 和 OxiDNS')
     settings = settings_for(agent)
-    state = (agent.get('rule_sync') or {}).get('state') or {}
+    state = (_leader(manager, agent).get('rule_sync') or {}).get('state') or {}
     if not any(settings.values()):
         state = {'status': 'disabled', 'message': '自动同步已关闭'}
     elif not state:

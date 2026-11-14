@@ -232,4 +232,27 @@ describe('per-Agent automatic rule synchronization controls', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('1.8.30-go')
     expect(api.put).not.toHaveBeenCalled()
   })
+
+  it('refreshes the other member of a high-availability pair when one member saves the shared switches', async () => {
+    const first = mount(AgentRuleSync, { props: { agentId: 'one', highAvailability: true }, attachTo: document.body })
+    const second = mount(AgentRuleSync, { props: { agentId: 'two', highAvailability: true }, attachTo: document.body })
+    const single = mount(AgentRuleSync, { props: { agentId: 'three' }, attachTo: document.body })
+    wrappers.push(first, second, single)
+    await flushPromises()
+    expect(toggle(second, '规则库自动同步').attributes('aria-checked')).toBe('false')
+    vi.mocked(api.get).mockClear()
+    vi.mocked(api.get).mockResolvedValue(response(enabled()))
+    await toggle(first, '规则库自动同步').trigger('click')
+    await flushPromises()
+    // Only the peer rereads; the saving card already has the answer and a single device is not part of the pair.
+    expect(vi.mocked(api.get).mock.calls.map(call => call[0])).toEqual(['/agents/two/rule-sync'])
+    expect(toggle(second, '规则库自动同步').attributes('aria-checked')).toBe('true')
+    expect(toggle(single, '规则库自动同步').attributes('aria-checked')).toBe('false')
+    // An unmounted card no longer listens.
+    second.unmount()
+    vi.mocked(api.get).mockClear()
+    await toggle(first, '规则库自动同步').trigger('click')
+    await flushPromises()
+    expect(api.get).not.toHaveBeenCalled()
+  })
 })
