@@ -701,7 +701,7 @@
                 <ChevronDown class="ml-auto size-3.5 transition-transform duration-200" :class="scriptPanelOpen && 'rotate-180'" />
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <Textarea :model-value="installScript" readonly :rows="15" class="mt-2 max-h-72 bg-background/50 font-mono text-[11.5px]" />
+                <Textarea id="install-script-preview" :model-value="installScript" readonly :rows="15" class="mt-2 max-h-72 bg-background/50 font-mono text-[11.5px]" />
               </CollapsibleContent>
             </Collapsible>
           </section>
@@ -2259,6 +2259,15 @@ watch([installScriptUrl, dockerComposeContent, dockerRunCommand], async (command
   if (!commands.some(Boolean)) return
   await nextTick()
   installCommandSection.value?.scrollIntoView?.({ block: 'start', behavior: 'auto' })
+})
+// The script opens below the dialog's scroll area; bring it into view instead
+// of leaving a chevron that looks like it expanded nothing.
+watch(scriptPanelOpen, async open => {
+  if (!open) return
+  // The collapsible mounts its content a tick after opening.
+  await nextTick()
+  await new Promise(resolve => setTimeout(resolve))
+  if (scriptPanelOpen.value) document.getElementById('install-script-preview')?.scrollIntoView?.({ block: 'nearest', behavior: 'auto' })
 })
 
 // 生成安装脚本

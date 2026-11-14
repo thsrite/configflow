@@ -441,8 +441,12 @@ describe('Shell Mihomo + OxiDNS installation', () => {
     expect(agentApi.generateInstallCommand).toHaveBeenCalledExactlyOnceWith(params)
     expect(generatedCommandUrl()).toBe(`https://config.example.test${downloadPath}`)
     expect(document.body.textContent).toContain('链接有效至')
+    vi.mocked(Element.prototype.scrollIntoView).mockClear()
     await click('查看完整安装脚本')
     expect([...document.querySelectorAll('[aria-label="一键安装命令"] textarea')].map(element => (element as HTMLTextAreaElement).value)).toContain('#!/bin/sh\necho installed')
+    // It opens below the dialog's visible area: scroll it into view.
+    const scrolled = vi.mocked(Element.prototype.scrollIntoView).mock.contexts as Element[]
+    expect(scrolled.map(element => element.id)).toContain('install-script-preview')
   })
 
   it('uses each core’s custom paths and excludes stale single-service lifecycle settings', async () => {
