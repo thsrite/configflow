@@ -165,6 +165,11 @@ describe('reviewable release operation details', () => {
     const withdrawal = operationDetails({ kind: 'dns_guard_replace', summary: '撤销', spec: null, create: [], owned })
     expect(withdrawal.map(g => g.title)).toEqual(['删除旧受管对象'])
     expect(withdrawal[0].note).toContain('关闭强制 DNS')
+    // An incremental plan deletes only what changes and says what stays.
+    const incremental = operationDetails({ kind: 'dns_guard_replace', summary: '更新', spec: {}, create: create.slice(0, 1),
+      owned, delete: owned.slice(1), keep: ['bypass:192.0.2.53/32', 'hijack-udp'] })
+    expect(incremental.find(g => g.title === '删除旧受管对象')!.rows.map(row => row.label)).toEqual(['Netwatch · netwatch'])
+    expect(incremental.find(g => g.title === '保持不变')!.rows.map(row => row.label)).toEqual(['bypass:192.0.2.53/32', 'hijack-udp'])
   })
 })
 
