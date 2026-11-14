@@ -411,3 +411,18 @@ def test_drop_invalid_on_the_lan_port_is_reported_for_fake_ip_with_one_shared_fi
                                           'in-interface': 'bridge', 'out-interface': 'bridge'})
     fixed, _, _ = preview(driver)
     assert fixed['fix_command'] == '' and not fixed['warnings']
+
+
+def test_counting_down_address_lifetimes_do_not_invalidate_a_preview():
+    # RouterOS 7.25.1 reports a PD address's remaining lifetimes, which change every second.
+    session, driver = device()
+    session.rows[fake6.ADDRESSES][0].update({'from-pool': 'ipv6pool', 'dynamic': 'true',
+                                             'valid': '2d23h39m50s', 'preferred': '1d23h39m50s'})
+    _, _, before = preview(driver)
+    session.rows[fake6.ADDRESSES][0].update(valid='2d23h39m47s', preferred='1d23h39m47s')
+    _, _, after = preview(driver)
+    assert before['fingerprint'] == after['fingerprint']
+    # A real address change still invalidates it.
+    session.rows[fake6.ADDRESSES][0]['address'] = 'fdda::2/64'
+    _, _, changed = preview(driver)
+    assert changed['fingerprint'] != before['fingerprint']

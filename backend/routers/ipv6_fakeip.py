@@ -19,9 +19,12 @@ FILTER = '/ipv6/firewall/filter'
 ADDRESS_LISTS = '/ipv6/firewall/address-list'
 PREFIX = 'cf-fakeip6:'
 VERSION = 1
+# 'valid' and 'preferred' are the remaining lifetimes of an address taken from
+# a DHCPv6-PD pool; since RouterOS 7.25.1 they count down every second, so they
+# would make every preview stale before it could be published.
 RUNTIME = {'active', 'inactive', 'immediate-gw', 'belongs-to', 'hw-offloaded', 'debug.fwp-ptr',
            'actual-interface', 'bytes', 'packets', 'uptime', 'last-updated', 'expires-after', 'expires',
-           'valid-lifetime', 'preferred-lifetime'}
+           'valid-lifetime', 'preferred-lifetime', 'valid', 'preferred'}
 
 
 def settings(config):
