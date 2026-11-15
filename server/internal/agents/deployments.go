@@ -71,21 +71,25 @@ func (m *Manager) finishLocked(agentID, deploymentID string) {
 
 // defaultPreparationRunning is _preparation_running: the preparation request
 // and a poll may run in different processes; the file lock dies with its
-// process, an in-memory flag cannot prove that.
-func (m *Manager) defaultPreparationRunning(agentID, deploymentID string) bool {
+// process, an in-memory flag cannot prove that. Opening the lock file and
+// flock failures other than "already locked" are errors, as in Python.
+func (m *Manager) defaultPreparationRunning(agentID, deploymentID string) (bool, error) {
 	m.deploymentMu.Lock()
 	running := m.preparing[[2]string{agentID, deploymentID}]
 	m.deploymentMu.Unlock()
 	if running {
-		return true
+		return true, nil
 	}
 	file, err := m.preparationFile(agentID, deploymentID)
 	if err != nil {
-		return false
+		return false, err
 	}
 	defer file.Close()
 	acquired, err := tryLock(file)
-	return err == nil && !acquired
+	if err != nil {
+		return false, err
+	}
+	return !acquired, nil
 }
 
 // BeginDeployment is begin_deployment(agent_id, deployment_id): persist a
@@ -133,7 +137,7 @@ func (m *Manager) BeginDeployment(ctx context.Context, agentID, deploymentID str
 		}
 		for _, item := range deployments.Values() {
 			task, _ := item.(*jsonx.Object)
-			if !deploymentTerminal[task.Value("status")] {
+			if !deploymentTerminal.has(task.Value("status")) {
 				return jsonx.Obj("success", false, "message", "Agent already has an unfinished deployment",
 					"deployment_id", task.Value("deployment_id"), "status", task.Value("status"), "http_status", jsonx.Int(409)), nil
 			}
@@ -211,7 +215,7 @@ type RecordOptions struct {
 	SkipUnchanged bool
 }
 
-var receiptTerminal = map[any]bool{"succeeded": true, "failed": true, "rolled_back": true, "rollback_failed": true}
+var receiptTerminal = pyStatuses{"succeeded": true, "failed": true, "rolled_back": true, "rollback_failed": true}
 
 type finishedDeployment struct {
 	label string
@@ -234,20 +238,20 @@ func (m *Manager) recordUpdater(agentID, deploymentID string, updates *jsonx.Obj
 		if options.OnlyUnsubmitted && jsonx.Truthy(state.Value("submitted")) {
 			return state.Clone(), nil
 		}
-		if options.UploadReceipt && !receiptTerminal[updates.Value("status")] &&
+		if options.UploadReceipt && !receiptTerminal.has(updates.Value("status")) &&
 			status != "preparing" && status != "uploading" && status != "receiving" {
 			// A POST acceptance snapshot can arrive after a GET has already
 			// observed validation/startup. It is not a fresh worker status.
 			return state.Clone(), nil
 		}
-		if options.ActivationReceipt && !receiptTerminal[updates.Value("status")] && status != "ready" && status != "unknown" {
+		if options.ActivationReceipt && !receiptTerminal.has(updates.Value("status")) && status != "ready" && status != "unknown" {
 			return state.Clone(), nil
 		}
 		if jsonx.Truthy(state.Value("manual_rollback")) && !jsonx.Truthy(updates.Value("manual_rollback")) {
 			// An overlapping publication poll cannot undo a reserved rollback.
 			return state.Clone(), nil
 		}
-		if deploymentTerminal[status] && !jsonx.Equal(updates.GetOr("status", status), status) {
+		if deploymentTerminal.has(status) && !jsonx.Equal(updates.GetOr("status", status), status) {
 			// Never regress a confirmed transaction.
 			return state.Clone(), nil
 		}
@@ -318,12 +322,16 @@ func (m *Manager) recordUpdater(agentID, deploymentID string, updates *jsonx.Obj
 		state.Set("events", AppendEvent(state.Value("events"), jsonx.Str(state.Value("status")), message, "", tokenSecrets(agent)))
 		latest, _ := agent.Value("latest_deployment").(*jsonx.Object)
 		isLatest := jsonx.Equal(latest.Value("deployment_id"), deploymentID)
-		profile, err := m.profileOf(ctx, agent)
-		if err != nil {
-			return nil, err
+		bound := false
+		if state.Value("status") == "succeeded" && isLatest {
+			// default_profile_id() is read only when Python's `and` gets there.
+			profile, err := m.profileOf(ctx, agent)
+			if err != nil {
+				return nil, err
+			}
+			bound = jsonx.Equal(state.Value("profile_id"), profile)
 		}
-		if state.Value("status") == "succeeded" && isLatest && jsonx.Equal(state.Value("profile_id"), profile) &&
-			jsonx.Equal(state.GetOr("service_type", agent.Value("service_type")), agent.Value("service_type")) {
+		if bound && jsonx.Equal(state.GetOr("service_type", agent.Value("service_type")), agent.Value("service_type")) {
 			agent.Set("config_version", state.GetOr("config_version", agent.GetOr("config_version", "0")))
 			// Revisions are diagnostic; only server-prepared complete contents
 			// may establish a baseline after confirmed activation.
@@ -354,6 +362,11 @@ func (m *Manager) recordUpdater(agentID, deploymentID string, updates *jsonx.Obj
 			agent.Set("latest_deployment", state.Clone())
 		}
 		if newStatus, _ := state.Value("status").(string); !jsonx.Equal(state.Value("status"), before) {
+			// `status in _DEPLOYMENT_RESULTS` raises for a list or dict an Agent
+			// answered: the transaction is abandoned and nothing is stored.
+			if err := unhashable(state.Value("status")); err != nil {
+				return nil, err
+			}
 			if _, known := deploymentResults[newStatus]; known {
 				*finished = append(*finished, finishedDeployment{agentLabel(agent), state.Clone()})
 			}
@@ -459,6 +472,11 @@ func (m *Manager) unchangedDeployment(ctx context.Context, record func(ctx conte
 // deployment POST is retried, for up to two seconds. Transport failures are
 // *TransportError.
 func (m *Manager) DeploymentRequest(ctx context.Context, agent *jsonx.Object, method, suffix string, header http.Header, body []byte, timeout *Timeout) (*jsonx.Object, error) {
+	if agent == nil {
+		// The Agent was deleted between the reservation and the request:
+		// agent['host'] on None, not a RequestException.
+		return nil, errors.New("'NoneType' object is not subscriptable")
+	}
 	t := Pair(5, 30)
 	if timeout != nil {
 		t = *timeout
@@ -557,15 +575,15 @@ func (m *Manager) getDeployment(ctx context.Context, agentID, deploymentID strin
 	if !jsonx.Equal(state.Value("profile_id"), profile) {
 		return jsonx.Obj("success", false, "message", "Deployment belongs to a different profile", "http_status", jsonx.Int(409)), nil
 	}
-	if deploymentTerminal[state.Value("status")] {
+	if deploymentTerminal.has(state.Value("status")) {
 		return state, nil
 	}
 	if !jsonx.Equal(state.Value("service_type"), agent.GetOr("service_type", "mihomo")) {
 		return merged(state, "success", false, "http_status", jsonx.Int(409), "message", "Deployment belongs to a different service type"), nil
 	}
 	if !jsonx.Truthy(state.Value("submitted")) {
-		if m.preparationRunning(agentID, deploymentID) {
-			return state, nil
+		if running, err := m.preparationRunning(agentID, deploymentID); err != nil || running {
+			return stateOrError(state, err)
 		}
 		// The POST may finish preparation between our first read and the lock
 		// check. Re-read before classifying an interrupted task.
@@ -573,21 +591,28 @@ func (m *Manager) getDeployment(ctx context.Context, agentID, deploymentID strin
 		if err != nil {
 			return nil, err
 		}
+		if agent == nil {
+			// Deleted meanwhile: agent.get('deployments', {}) on None.
+			return nil, errors.New("'NoneType' object has no attribute 'get'")
+		}
 		if again := taskOf(agent, deploymentID); again != nil {
 			state = again
 		}
-		if deploymentTerminal[state.Value("status")] {
+		if deploymentTerminal.has(state.Value("status")) {
 			return state, nil
 		}
 		if !jsonx.Truthy(state.Value("submitted")) {
-			if m.preparationRunning(agentID, deploymentID) {
-				return state, nil
+			if running, err := m.preparationRunning(agentID, deploymentID); err != nil || running {
+				return stateOrError(state, err)
 			}
 			return m.RecordDeployment(ctx, agentID, deploymentID, jsonx.Obj("success", false, "status", "failed",
 				"message", "Preparation interrupted before upload; current service unchanged"), RecordOptions{OnlyUnsubmitted: true})
 		}
 	}
-	uploadInFlight := m.preparationRunning(agentID, deploymentID)
+	uploadInFlight, err := m.preparationRunning(agentID, deploymentID)
+	if err != nil {
+		return nil, err
+	}
 	pending := func() *jsonx.Object {
 		return merged(state, "message", "Deployment status temporarily unavailable", "pending", true)
 	}
@@ -619,7 +644,13 @@ func (m *Manager) getDeployment(ctx context.Context, agentID, deploymentID strin
 			// A missing journal cannot prove whether the rollback ran.
 			return merged(state, "message", "Rollback journal unavailable; restore Agent records before retrying", "pending", true), nil
 		}
-		if uploadInFlight || m.preparationRunning(agentID, deploymentID) {
+		running := uploadInFlight
+		if !running {
+			if running, err = m.preparationRunning(agentID, deploymentID); err != nil {
+				return nil, err
+			}
+		}
+		if running {
 			return merged(state, "message", "设备正在接收发布，等待确认", "pending", true), nil
 		}
 		return m.RecordDeployment(ctx, agentID, deploymentID, jsonx.Obj("success", false, "status", "failed",
@@ -629,6 +660,13 @@ func (m *Manager) getDeployment(ctx context.Context, agentID, deploymentID strin
 		return pending(), nil
 	}
 	return m.RecordDeployment(ctx, agentID, deploymentID, result, RecordOptions{SkipUnchanged: true})
+}
+
+func stateOrError(state *jsonx.Object, err error) (*jsonx.Object, error) {
+	if err != nil {
+		return nil, err
+	}
+	return state, nil
 }
 
 func httpStatusIs(result *jsonx.Object, status int) bool {

@@ -16,12 +16,12 @@ import (
 // haField is oxidns_ha_publish.FIELD.
 const haField = "oxidns_ha_publication"
 
-var haTerminal = map[any]bool{"succeeded": true, "failed": true, "rollback_failed": true}
+var haTerminal = pyStatuses{"succeeded": true, "failed": true, "rollback_failed": true}
 
 // haActive is oxidns_ha_publish.active(agent).
 func haActive(agent *jsonx.Object) bool {
 	job, _ := agent.Value(haField).(*jsonx.Object)
-	return jsonx.Truthy(job) && !haTerminal[job.Value("status")]
+	return jsonx.Truthy(job) && !haTerminal.has(job.Value("status"))
 }
 
 // haConflict is oxidns_ha_publish.conflict(agent, deployment_id); nil when

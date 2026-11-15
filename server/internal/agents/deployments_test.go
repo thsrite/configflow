@@ -137,10 +137,10 @@ func TestMissingAgentJournalAfterUploadStillFails(t *testing.T) {
 func TestPreparationFinishingDuringPollIsNotMarkedInterrupted(t *testing.T) {
 	e := newEnv(t)
 	e.begin("preparation-race")
-	e.m.preparationRunning = func(string, string) bool {
+	e.m.preparationRunning = func(string, string) (bool, error) {
 		e.record("preparation-race", jsonx.Obj("status", "uploading", "submitted", true))
 		e.finish("preparation-race")
-		return false
+		return false, nil
 	}
 	e.fake.set(always(jsonx.Obj("status", "checking", "success", true), 200))
 	if got := e.poll("preparation-race").Value("status"); got != "checking" {

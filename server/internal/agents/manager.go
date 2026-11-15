@@ -21,6 +21,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
+	"configflow/internal/taskstatus"
 )
 
 var logger = logx.Get("backend.agents.manager")
@@ -51,7 +52,28 @@ func (e *ValueError) Error() string { return e.Message }
 
 var errNothingToSave = errors.New("nothing to save")
 
-var deploymentTerminal = map[any]bool{"succeeded": true, "failed": true, "rolled_back": true}
+// pyStatuses is a tuple of status strings tested with Python's `in`: a value
+// of any other type (a list or dict an Agent answered included) is simply not
+// a member, it never panics like an `any`-keyed map lookup would.
+type pyStatuses map[string]bool
+
+func (s pyStatuses) has(value any) bool {
+	text, ok := value.(string)
+	return ok && s[text]
+}
+
+// unhashable is the TypeError of `value in some_dict` for a list or dict.
+func unhashable(value any) error {
+	switch value.(type) {
+	case []any:
+		return errors.New("unhashable type: 'list'")
+	case *jsonx.Object:
+		return errors.New("unhashable type: 'dict'")
+	}
+	return nil
+}
+
+var deploymentTerminal = pyStatuses{"succeeded": true, "failed": true, "rolled_back": true}
 
 // deploymentResults is _DEPLOYMENT_RESULTS.
 var deploymentResults = map[string]struct {
@@ -95,23 +117,48 @@ func isASCII(s string) bool {
 }
 
 // HeartbeatFresh is heartbeat_fresh(agent, now): the last heartbeat is at
-// most two minutes old. now nil is the current time. Unparsable or missing
-// heartbeats are stale.
+// most two minutes old. now nil is the current time; a given now is Python's
+// naive datetime (its wall clock in the local zone), the only kind callers
+// pass. Unparsable or missing heartbeats are stale.
+//
+// As in Python, a naive heartbeat minus a naive now is the difference of the
+// two wall clocks (a DST change in between is not seen), an aware heartbeat
+// is compared with the current instant, and an aware heartbeat against a
+// given (naive) now is a TypeError, i.e. stale. Both sides have microsecond
+// precision, like datetime.
 func HeartbeatFresh(agent *jsonx.Object, now *time.Time) bool {
 	text, ok := agent.Value("last_heartbeat").(string)
 	if !ok {
 		return false
 	}
-	heartbeat, _, ok := fromISO(text)
+	heartbeat, naive, ok := fromISO(text)
 	if !ok {
 		return false
 	}
-	current := clock()
-	if now != nil {
-		current = *now
+	var elapsed int64 // microseconds
+	if naive {
+		current := clock()
+		if now != nil {
+			current = *now
+		}
+		wall, _ := taskstatus.FromISOFormat(text) // the naive fields, read as UTC
+		elapsed = wallMicros(current.In(localZone)) - wallMicros(wall)
+	} else {
+		if now != nil {
+			return false // can't subtract offset-naive and offset-aware datetimes
+		}
+		elapsed = unixMicros(clock()) - unixMicros(heartbeat)
 	}
-	return current.Sub(heartbeat).Seconds() <= HeartbeatFreshSeconds
+	return elapsed <= HeartbeatFreshSeconds*1_000_000
 }
+
+// wallMicros is the wall clock of t (its own fields, whatever the zone) in
+// microseconds, as naive datetime arithmetic sees it.
+func wallMicros(t time.Time) int64 {
+	return unixMicros(time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.UTC))
+}
+
+func unixMicros(t time.Time) int64 { return t.Unix()*1_000_000 + int64(t.Nanosecond()/1000) }
 
 // OnlineStatus is online_status(agent, now): the stored status, or
 // "offline" once the heartbeat is stale.
@@ -138,7 +185,7 @@ func upgradeBusy(agent *jsonx.Object) bool {
 		return false
 	}
 	object, _ := upgrade.(*jsonx.Object)
-	return !deploymentTerminal[object.Value("status")]
+	return !deploymentTerminal.has(object.Value("status"))
 }
 
 // haEnabled is _oxidns_ha_enabled(agent).
@@ -172,7 +219,7 @@ func unfinishedDeployment(agent *jsonx.Object) bool {
 	deployments, _ := agent.Value("deployments").(*jsonx.Object)
 	for _, task := range deployments.Values() {
 		object, _ := task.(*jsonx.Object)
-		if !deploymentTerminal[object.Value("status")] {
+		if !deploymentTerminal.has(object.Value("status")) {
 			return true
 		}
 	}
@@ -215,7 +262,7 @@ type Manager struct {
 	// _preparation_running).
 	sleep              func(time.Duration)
 	monotonic          func() float64
-	preparationRunning func(agentID, deploymentID string) bool
+	preparationRunning func(agentID, deploymentID string) (bool, error)
 }
 
 // New is AgentManager(repository): it shares the runtime state of the data
