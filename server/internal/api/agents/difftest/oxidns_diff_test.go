@@ -12,6 +12,8 @@ package difftest
 //	rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run Oxidns ./internal/api/agents/difftest/'
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"net"
@@ -145,6 +147,41 @@ func (f *fakeOxidns) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "nan":
 		raw(200, "application/json", []byte(`{"ok": true, "records": [{"id": 1, "created_at_ms": NaN, "elapsed_ms": 0, "questions_json": [], "answers_json": []}], "next_cursor": null}`))
 		return
+	case "truncated":
+		// Content-Length promises more than is sent before the close.
+		conn, buffered, err := w.(http.Hijacker).Hijack()
+		if err == nil {
+			buffered.WriteString("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{\"ok\": true")
+			buffered.Flush()
+			conn.Close()
+		}
+		return
+	case "bigchunked":
+		// No Content-Length: more than 5 MiB in chunks.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		chunk := []byte(strings.Repeat(" ", 64*1024))
+		for i := 0; i < 81; i++ {
+			w.Write(chunk)
+			w.(http.Flusher).Flush()
+		}
+		return
+	case "gzip", "gzipbig":
+		var body bytes.Buffer
+		zw := gzip.NewWriter(&body)
+		if phase == "gzip" {
+			zw.Write([]byte(`{"ok": true, "records": [], "next_cursor": "5:6"}`))
+		} else {
+			zw.Write([]byte(strings.Repeat(" ", 5*1024*1024+1)))
+		}
+		zw.Close()
+		w.Header().Set("Content-Encoding", "gzip")
+		raw(200, "application/json", body.Bytes())
+		return
+	}
+	if phase == "rank404" && strings.HasSuffix(r.URL.Path, "/rankings") {
+		raw(404, "text/plain", []byte("404 page not found"))
+		return
 	}
 	switch strings.TrimPrefix(r.URL.Path, "/api/oxidns/") {
 	case "overview":
@@ -188,7 +225,7 @@ func (f *fakeOxidns) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func oxidnsSeed(t *testing.T, dir string, port, closed int) {
+func oxidnsSeed(t *testing.T, dir string, port, closed, port6 int) {
 	r, err := repo.OpenDefault(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -204,6 +241,15 @@ func oxidnsSeed(t *testing.T, dir string, port, closed int) {
 			agent("oxi-ancient", "1.6.0-go", "oxidns", port), agent("mihomo", "1.8.20-go", "mihomo", port),
 			agent("oxi-gone", "1.8.14-go", "oxidns", closed),
 		})
+		// Scoped IPv6 hosts (A06 review): a decimal zone is reached, an
+		// interface name on a global address fails resolution (glibc).
+		if port6 > 0 {
+			zone := agent("oxi-zone", "1.7.1-go", "oxidns", port6)
+			zone.Set("host", "::1%1")
+			named := agent("oxi-zone-name", "1.7.1-go", "oxidns", port6)
+			named.Set("host", "[::1%lo]")
+			system.Set("agents", append(system.GetList("agents"), zone, named))
+		}
 		return nil, nil
 	})
 	if err != nil {
@@ -290,6 +336,14 @@ func oxidnsRequests() []oxidnsRequest {
 		get("agent BOM", base+"oxi-old/oxidns/queries", "bom"),
 		get("agent invalid utf-8", base+"oxi-old/oxidns/queries", "badutf8"),
 		get("agent NaN time", base+"oxi-old/oxidns/queries", "nan"),
+		get("agent truncated body", base+"oxi-old/oxidns/queries", "truncated"),
+		get("agent big chunked body", base+"oxi-old/oxidns/queries", "bigchunked"),
+		get("agent gzip body", base+"oxi-old/oxidns/queries", "gzip"),
+		get("agent gzip over limit", base+"oxi-old/oxidns/queries", "gzipbig"),
+		get("dash rankings endpoint missing", base+"oxi-dash/oxidns/overview", "rank404", gen...),
+		get("zone clients", base+"oxi-zone/oxidns/clients", "p1"),
+		get("zone queries", base+"oxi-zone/oxidns/queries?qname=%E6%B5%8B+a:b", "p1"),
+		get("zone name queries", base+"oxi-zone-name/oxidns/queries?qname=%E6%B5%8B", "p1"),
 	}
 }
 
@@ -357,13 +411,23 @@ func TestOxidnsDifferentialAgainstFlask(t *testing.T) {
 	closedListener, _ := net.Listen("tcp4", "127.0.0.1:0")
 	closed := closedListener.Addr().(*net.TCPAddr).Port
 	closedListener.Close()
+	port6 := 0
+	if listener6, err := net.Listen("tcp6", "[::1]:0"); err == nil {
+		agentServer6 := httptest.NewUnstartedServer(fake)
+		agentServer6.Listener = listener6
+		agentServer6.Start()
+		defer agentServer6.Close()
+		port6 = listener6.Addr().(*net.TCPAddr).Port
+	} else {
+		t.Logf("no IPv6 loopback, zone cases answer unreachable: %v", err)
+	}
 
 	base := t.TempDir()
 	seedDir, pyDir, goDir := filepath.Join(base, "seed"), filepath.Join(base, "python"), filepath.Join(base, "go")
 	for _, dir := range []string{seedDir, pyDir, goDir} {
 		os.MkdirAll(dir, 0o755)
 	}
-	oxidnsSeed(t, seedDir, port, closed)
+	oxidnsSeed(t, seedDir, port, closed, port6)
 	copyDir(t, seedDir, pyDir)
 	copyDir(t, seedDir, goDir)
 	pyBase, stopPython := startPython(t, pyDir)
