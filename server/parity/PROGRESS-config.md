@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 26 missing, 5 partial, 6 ported. `verified`: 0 (only reviewers set it).
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 26 missing, 5 partial, 5 ported, 1 verified (C01). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -26,7 +26,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 
 | Id | Module | Py lines | Status | Prereqs | Routes |
 |---|---|---|---|---|---|
-| C01 | jsonx, store | 564 | ported | – | – |
+| C01 | jsonx, store | 564 | verified | – | – |
 | C02 | infra helpers | 828 | ported | C01 | – |
 | C03 | repo storage core (config_repository.py part A) | 1576 | ported | C01, C02 | – |
 | C04 | repo public API (config_repository.py part B), config.py | 1373 | ported | C03 | – |
