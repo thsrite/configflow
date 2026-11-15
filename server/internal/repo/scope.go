@@ -152,7 +152,7 @@ type Scope struct {
 	baselines  map[string]baseline
 	request    *RequestInfo
 	// resolved profile ids, valid for (repository, commit count)
-	resolved        map[string]string
+	resolved        map[resolvedKey]string
 	resolvedCommits int64
 }
 
@@ -229,21 +229,35 @@ func (s *Scope) baselineOf(repository *Repository, key string) (*jsonx.Object, e
 	return entry.value, nil
 }
 
-const noExplicitProfile = "\x00"
+// resolvedKey is a key of the resolved_profiles memo: an explicit id, or
+// none (Python: None).
+type resolvedKey struct {
+	explicit bool
+	id       string
+}
 
 // resolvedProfiles is resolved_profiles(): the validated ids of this
 // request, nil inside a transaction (the working copy may have deleted a
 // profile while the commit count has not advanced yet). The caller holds
 // scope.mu.
-func (s *Scope) resolvedProfiles(ctx context.Context, repository *Repository) map[string]string {
+func (s *Scope) resolvedProfiles(ctx context.Context, repository *Repository) map[resolvedKey]string {
 	if repository.InTransaction(ctx) {
 		return nil
 	}
 	s.bind(repository)
 	if commits := repository.CommitCount(); s.resolved == nil || s.resolvedCommits != commits {
-		s.resolved, s.resolvedCommits = map[string]string{}, commits
+		s.resolved, s.resolvedCommits = map[resolvedKey]string{}, commits
 	}
 	return s.resolved
+}
+
+// remember is memo[memo_key] = memo[candidate] = candidate, into the memo
+// taken before the profile was validated: when a commit replaced it in the
+// meantime, the result is not trusted afterwards (as in Python).
+func (s *Scope) remember(memo map[resolvedKey]string, key resolvedKey, profileID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	memo[key], memo[resolvedKey{explicit: true, id: profileID}] = profileID, profileID
 }
 
 // ResolveProfile is profile_context.resolve_profile_id(explicit, fallback):
@@ -268,20 +282,17 @@ func ResolveProfile(ctx context.Context, explicit, fallback *string) (string, er
 	// Reuse what this request already validated. Global requests take the
 	// switchable default profile and calls with a fallback depend on their
 	// argument: neither is remembered.
-	memoKey := ""
-	useMemo := request != nil && fallback == nil && (explicit != nil || profileBound)
-	if useMemo {
-		memoKey = noExplicitProfile
+	var memo map[resolvedKey]string
+	var memoKey resolvedKey
+	if request != nil && fallback == nil && (explicit != nil || profileBound) {
 		if explicit != nil {
-			memoKey = *explicit
+			memoKey = resolvedKey{explicit: true, id: *explicit}
 		}
 		scope.mu.Lock()
-		memo := scope.resolvedProfiles(ctx, repository)
+		memo = scope.resolvedProfiles(ctx, repository)
 		resolved, ok := memo[memoKey]
 		scope.mu.Unlock()
-		if memo == nil {
-			useMemo = false
-		} else if ok {
+		if ok {
 			return resolved, nil
 		}
 	}
@@ -309,12 +320,8 @@ func ResolveProfile(ctx context.Context, explicit, fallback *string) (string, er
 	if _, err := repository.ProfileMetadata(ctx, profileID); err != nil {
 		return "", err
 	}
-	if useMemo {
-		scope.mu.Lock()
-		if memo := scope.resolvedProfiles(ctx, repository); memo != nil {
-			memo[memoKey], memo[profileID] = profileID, profileID
-		}
-		scope.mu.Unlock()
+	if memo != nil {
+		scope.remember(memo, memoKey, profileID)
 	}
 	return profileID, nil
 }

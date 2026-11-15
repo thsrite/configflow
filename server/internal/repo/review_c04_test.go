@@ -110,3 +110,51 @@ func TestSaveConfigWithPublishGuardResolvesBeforeRefusingNil(t *testing.T) {
 	_, err = SaveConfigWithPublishGuard(ctx, nil, "mihomo", "default")
 	wantError(t, err, ErrValidation, "Profile fields and baseline must be objects")
 }
+
+func c04Resolve(ctx context.Context, explicit, fallback *string) []any {
+	id, err := ResolveProfile(ctx, explicit, fallback)
+	if err != nil {
+		return []any{xcErrorClass(err), err.Error()}
+	}
+	return []any{id}
+}
+
+func c04Text(text string) *string { return &text }
+
+// resolve_profile_id's per-request memo keeps "no explicit id" apart from
+// every explicit id, "\x00" included (Python probe in a Flask request
+// without endpoint, ?profile=work).
+func TestResolveProfileMemoKeepsNoneApartFromExplicitIDs(t *testing.T) {
+	r := newRepo(t)
+	must(r.CreateProfile(bg, jsonx.Obj("id", "work", "name", "W"), ""))(t)
+	ctx := WithScope(WithRepository(bg, r))
+	SetRequest(ctx, RequestInfo{QueryProfile: c04Text("work")})
+	wantEqual(t, c04Resolve(ctx, nil, nil), []any{"work"})
+	wantEqual(t, c04Resolve(ctx, c04Text("\x00"), nil), []any{"ProfileValidationError", "Invalid profile id"})
+	wantEqual(t, c04Resolve(ctx, c04Text("default"), nil), []any{"default"})
+	wantEqual(t, c04Resolve(ctx, nil, nil), []any{"work"})
+
+	ctx = WithScope(WithRepository(bg, r))
+	SetRequest(ctx, RequestInfo{})
+	wantEqual(t, c04Resolve(ctx, nil, nil), []any{"default"})
+	wantEqual(t, c04Resolve(ctx, c04Text("\x00"), nil), []any{"ProfileValidationError", "Invalid profile id"})
+	wantEqual(t, c04Resolve(ctx, nil, c04Text("work")), []any{"work"})
+	wantEqual(t, c04Resolve(ctx, c04Text(""), nil), []any{"ProfileValidationError", "Invalid profile id"})
+}
+
+// A commit between taking the memo and storing a result (another request
+// deleting the profile meanwhile) leaves the result untrusted: Python
+// stores into the memo it took, which the next lookup discards.
+func TestResolveProfileResultValidatedBeforeACommitIsNotTrusted(t *testing.T) {
+	r := newRepo(t)
+	must(r.CreateProfile(bg, jsonx.Obj("id", "work", "name", "W"), ""))(t)
+	ctx := WithScope(WithRepository(bg, r))
+	SetRequest(ctx, RequestInfo{})
+	scope := ScopeOf(ctx)
+	scope.mu.Lock()
+	memo := scope.resolvedProfiles(ctx, r)
+	scope.mu.Unlock()
+	noError(t, r.DeleteProfile(bg, "work", ""))
+	scope.remember(memo, resolvedKey{explicit: true, id: "work"}, "work")
+	wantEqual(t, c04Resolve(ctx, c04Text("work"), nil), []any{"ProfileNotFound", "'work'"})
+}
