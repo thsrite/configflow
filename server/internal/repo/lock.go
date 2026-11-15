@@ -6,10 +6,13 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
 )
 
 // Lock settings (ProfileRepository class attributes).
@@ -29,11 +32,70 @@ func LockTimeout() time.Duration {
 	if !ok {
 		return secondsDuration(DefaultLockTimeoutSeconds)
 	}
-	timeout, err := pyFloat(pyStrip(raw))
-	if err != nil || math.IsNaN(timeout) || math.IsInf(timeout, 0) {
+	timeout, ok := pythonFloat(raw)
+	if !ok || math.IsNaN(timeout) || math.IsInf(timeout, 0) {
 		return secondsDuration(DefaultLockTimeoutSeconds)
 	}
 	return secondsDuration(math.Min(MaxLockTimeoutSeconds, math.Max(MinLockTimeoutSeconds, timeout)))
+}
+
+// pythonFloatSyntax is the grammar of CPython's float(str) after the
+// whitespace strip: decimal digits with single underscores between them, an
+// optional fraction and exponent, or inf/infinity/nan (no hexadecimal).
+var pythonFloatSyntax = regexp.MustCompile(`^[+-]?(?:(?:[0-9](?:_?[0-9])*(?:\.(?:[0-9](?:_?[0-9])*)?)?|\.[0-9](?:_?[0-9])*)(?:[eE][+-]?[0-9](?:_?[0-9])*)?|(?i:inf|infinity|nan))$`)
+
+// pythonFloat is float(text) for a str: like CPython's PyFloat_FromString,
+// Unicode white space becomes a space and Unicode decimal digits (full-width,
+// Arabic-Indic, ...) become ASCII digits before ASCII white space is
+// stripped and the number is parsed. ok is false where Python raises
+// ValueError.
+func pythonFloat(text string) (float64, bool) {
+	var ascii strings.Builder
+	for _, r := range text {
+		switch {
+		case r < 127:
+			ascii.WriteRune(r)
+		case pythonUnicodeSpace(r):
+			ascii.WriteByte(' ')
+		default:
+			digit, ok := unicodeDecimal(r)
+			if !ok {
+				return 0, false
+			}
+			ascii.WriteByte(byte('0' + digit))
+		}
+	}
+	number := strings.Trim(ascii.String(), " \t\n\r\v\f")
+	if !pythonFloatSyntax.MatchString(number) {
+		return 0, false
+	}
+	value, err := strconv.ParseFloat(strings.ReplaceAll(number, "_", ""), 64)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0, false
+	}
+	return value, true
+}
+
+// pythonUnicodeSpace is Py_UNICODE_ISSPACE for characters from U+007F up.
+func pythonUnicodeSpace(r rune) bool {
+	switch r {
+	case 0x85, 0xa0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000:
+		return true
+	}
+	return r >= 0x2000 && r <= 0x200a
+}
+
+// unicodeDecimal is Py_UNICODE_TODECIMAL: the value of a character of
+// category Nd. Every Nd run in Unicode is made of whole 0–9 sequences.
+func unicodeDecimal(r rune) (int, bool) {
+	if !unicode.Is(unicode.Nd, r) {
+		return 0, false
+	}
+	start := r
+	for unicode.Is(unicode.Nd, start-1) {
+		start--
+	}
+	return int(r-start) % 10, true
 }
 
 func secondsDuration(seconds float64) time.Duration {

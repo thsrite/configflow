@@ -32,7 +32,9 @@ func applyUpdater(ctx context.Context, current *jsonx.Object, updater Updater) (
 	return current, nil
 }
 
-func randomHex(length int) string {
+// randomHex is uuid.uuid4().hex[:length]. It is a variable so tests can
+// make the generated ids deterministic (Python: a patched uuid.uuid4).
+var randomHex = func(length int) string {
 	raw := make([]byte, (length+1)/2)
 	if _, err := rand.Read(raw); err != nil {
 		panic(err)

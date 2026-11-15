@@ -150,7 +150,8 @@ func (r *Repository) Store() *store.Store { return r.store }
 func (r *Repository) CommitCount() int64 { return r.commitCount.Load() }
 
 // nowISO is _now(): UTC, ISO 8601 with microseconds (omitted when zero), "Z".
-func nowISO() string {
+// It is a variable so tests can fix the time (Python: a patched _now).
+var nowISO = func() string {
 	now := time.Now().UTC()
 	text := now.Format("2006-01-02T15:04:05")
 	if micro := now.Nanosecond() / 1000; micro != 0 {
