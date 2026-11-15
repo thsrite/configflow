@@ -20,14 +20,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"configflow/internal/auth"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 	"configflow/internal/server"
@@ -79,6 +82,46 @@ func seed(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	seedMetrics(t, dir)
+}
+
+// naiveISO is datetime.isoformat() of a local naive time.
+func naiveISO(at time.Time) string {
+	text := at.Format("2006-01-02T15:04:05")
+	if micro := at.Nanosecond() / 1000; micro != 0 {
+		text += fmt.Sprintf(".%06d", micro)
+	}
+	return text
+}
+
+// seedMetrics writes saved monitoring history (A04) for the service start
+// to load: agent-1's JSON Lines file (an expired point, two recent ones in
+// json.dumps spacing and a line cut short), agent-busy's old whole-JSON
+// file to migrate, a deleted Agent's file and a compaction leftover to
+// remove.
+func seedMetrics(t *testing.T, dir string) {
+	metricsDir := filepath.Join(dir, "metrics")
+	if err := os.MkdirAll(metricsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	point := func(at time.Time, cpu, sent int) string {
+		return fmt.Sprintf(`{"timestamp": "%s", "cpu": {"usage_percent": %d.5, "core_count": 4}, "memory": {"used_percent": 40}, "disk": {}, "network": {"bytes_sent": %d, "bytes_recv": 20, "speed_sent": %d, "speed_recv": 2.50}}`,
+			naiveISO(at), cpu, sent, sent/10)
+	}
+	files := map[string]string{
+		"agent-1_metrics.jsonl": point(now.Add(-30*time.Hour), 9, 900) + "\n" + point(now.Add(-3*time.Minute), 10, 1000) + "\n" +
+			point(now.Add(-2*time.Minute).Add(123456*time.Microsecond), 20, 3000) + "\n" + `{"timestamp": "2026-10-2`,
+		"agent-busy_metrics.json": `{"agent_id": "agent-busy", "metrics": [` + point(now.Add(-time.Minute), 5, 50) + `, "skipped", ` +
+			point(now.Add(-26*time.Hour), 6, 60) + `]}`,
+		"gone_metrics.jsonl":   point(now.Add(-time.Minute), 1, 10) + "\n",
+		".agent-1abcdefgh.tmp": "partial",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(metricsDir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func copyDir(t *testing.T, from, to string) {
@@ -87,7 +130,7 @@ func copyDir(t *testing.T, from, to string) {
 	}
 }
 
-func startPython(t *testing.T, dataDir string) string {
+func startPython(t *testing.T, dataDir string) (string, func()) {
 	python := os.Getenv("CONFIGFLOW_DIFF_PYTHON")
 	if python == "" {
 		home, _ := os.UserHomeDir()
@@ -106,13 +149,30 @@ func startPython(t *testing.T, dataDir string) string {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
+	stopped := false
 	t.Cleanup(func() {
-		cmd.Process.Kill()
-		cmd.Wait()
+		if !stopped {
+			cmd.Process.Kill()
+			cmd.Wait()
+		}
 		if t.Failed() {
 			t.Logf("python output:\n%s", output.String())
 		}
 	})
+	// stop is docker stop: SIGTERM, then wait for the final save.
+	stop := func() {
+		stopped = true
+		cmd.Process.Signal(syscall.SIGTERM)
+		done := make(chan error, 1)
+		go func() { done <- cmd.Wait() }()
+		select {
+		case <-done:
+		case <-time.After(60 * time.Second):
+			cmd.Process.Kill()
+			<-done
+			t.Errorf("Flask did not stop on SIGTERM")
+		}
+	}
 	base := "http://127.0.0.1:" + strconv.Itoa(port)
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
@@ -120,16 +180,16 @@ func startPython(t *testing.T, dataDir string) string {
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == 200 {
-				return base
+				return base, stop
 			}
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 	t.Fatalf("Flask did not start:\n%s", output.String())
-	return ""
+	return "", nil
 }
 
-func startGo(t *testing.T, dataDir string) string {
+func startGo(t *testing.T, dataDir string) (string, func()) {
 	t.Setenv("DATA_DIR", dataDir)
 	t.Setenv("AGENT_REGISTRATION_KEY", "")
 	root, err := logx.Setup(logx.Config{Level: logx.Info, File: filepath.Join(dataDir, "app.log")})
@@ -151,7 +211,13 @@ func startGo(t *testing.T, dataDir string) string {
 	}
 	srv := httptest.NewServer(app)
 	t.Cleanup(srv.Close)
-	return srv.URL
+	// main starts the loops once listening and, on SIGTERM, stops the HTTP
+	// server before lifecycle.Stop runs the shutdown hooks.
+	lifecycle.Start(context.Background())
+	return srv.URL, func() {
+		srv.Close()
+		lifecycle.Stop(30 * time.Second)
+	}
 }
 
 type request struct {
@@ -236,23 +302,33 @@ func lookup(value any, path string) any {
 
 func maskJSON(value any, mask []string) any {
 	for _, path := range mask {
-		parts := strings.Split(path, ".")
-		current := value
-		for i, part := range parts {
-			object, ok := current.(*jsonx.Object)
-			if !ok {
-				break
-			}
-			if i == len(parts)-1 {
-				if object.Has(part) {
-					object.Set(part, "<masked>")
-				}
-				break
-			}
-			current = object.Value(part)
-		}
+		maskPath(value, strings.Split(path, "."))
 	}
 	return value
+}
+
+// maskPath masks one dotted path; "*" stands for every item of a list.
+func maskPath(value any, parts []string) {
+	current := value
+	for i, part := range parts {
+		if list, ok := current.([]any); ok && part == "*" {
+			for _, item := range list {
+				maskPath(item, parts[i+1:])
+			}
+			break
+		}
+		object, ok := current.(*jsonx.Object)
+		if !ok {
+			break
+		}
+		if i == len(parts)-1 {
+			if object.Has(part) {
+				object.Set(part, "<masked>")
+			}
+			break
+		}
+		current = object.Value(part)
+	}
 }
 
 func compare(r request, py, gor response) []string {
@@ -282,6 +358,8 @@ func requests() []request {
 	agent := `{"name": "edge", "host": "10.0.0.8", "port": 8080, "service_type": "mihomo", "version": "1.2.3"}`
 	idToken := []string{"id", "token"}
 	metrics := `{"system_metrics": {"cpu": {"usage_percent": 12.5, "core_count": 4}, "memory": {"total": 1024, "used": 512, "available": 512, "used_percent": 50.0}, "collected_at": "2026-08-31T00:00:00Z"}}`
+	metrics2 := `{"system_metrics": {"cpu": {"usage_percent": 33, "core_count": 4}, "disk": {"total": 18446744073709551615, "used": 1, "free": 2, "used_percent": 0.1}, "network": {"bytes_sent": 18446744073709551615, "bytes_recv": 7, "speed_sent": 18446744073709551615, "speed_recv": 3}, "collected_at": "2026-08-31T00:00:01Z"}}`
+	stamps := []string{"data.history.*.timestamp"}
 	return []request{
 		{name: "register new", method: "POST", path: "/api/agents/register", body: agent, contentType: J, mask: idToken,
 			capture: map[string]string{"id": "id", "token": "token"}},
@@ -354,6 +432,35 @@ func requests() []request {
 			headers: map[string]string{"Authorization": "Bearer {token}"}},
 		{name: "heartbeat busy agent", method: "POST", path: "/api/agents/agent-busy/heartbeat", body: `{"version": "1.0.1"}`, contentType: J,
 			headers: map[string]string{"Authorization": "Bearer " + agentToken + "-busy"}},
+		{name: "heartbeat seeded agent metrics", method: "POST", path: "/api/agents/agent-1/heartbeat", body: metrics2, contentType: J,
+			headers: map[string]string{"Authorization": "Bearer " + agentToken}},
+		{name: "heartbeat busy agent metrics", method: "POST", path: "/api/agents/agent-busy/heartbeat", body: metrics, contentType: J,
+			headers: map[string]string{"Authorization": "Bearer " + agentToken + "-busy"}},
+		{name: "metrics latest", method: "GET", path: "/api/agents/agent-1/metrics", admin: true},
+		{name: "metrics latest registered", method: "GET", path: "/api/agents/{id}/metrics", admin: true, mask: []string{"data.agent_id"}},
+		{name: "metrics latest no heartbeat", method: "GET", path: "/api/agents/agent-upgrading/metrics", admin: true},
+		{name: "metrics latest no login", method: "GET", path: "/api/agents/agent-1/metrics"},
+		{name: "metrics latest unknown", method: "GET", path: "/api/agents/missing/metrics", admin: true},
+		{name: "metrics history", method: "GET", path: "/api/agents/agent-1/metrics/history", admin: true, mask: stamps},
+		{name: "metrics history 1h", method: "GET", path: "/api/agents/agent-1/metrics/history?hours=1", admin: true, mask: stamps},
+		{name: "metrics history bad hours", method: "GET", path: "/api/agents/agent-1/metrics/history?hours=abc", admin: true, mask: stamps},
+		{name: "metrics history arabic digit", method: "GET", path: "/api/agents/agent-1/metrics/history?hours=%D9%A3", admin: true, mask: stamps},
+		{name: "metrics history zero", method: "GET", path: "/api/agents/agent-1/metrics/history?hours=0", admin: true, mask: stamps},
+		{name: "metrics history negative", method: "GET", path: "/api/agents/agent-1/metrics/history?hours=-5", admin: true, mask: stamps},
+		{name: "metrics history too many digits", method: "GET", path: "/api/agents/agent-1/metrics/history?hours=" + strings.Repeat("9", 4301), admin: true, mask: stamps},
+		{name: "metrics history date overflow", method: "GET", path: "/api/agents/agent-1/metrics/history?hours=10000000000", admin: true},
+		{name: "metrics history days overflow", method: "GET", path: "/api/agents/agent-1/metrics/history?hours=24000000000", admin: true},
+		{name: "metrics history c int overflow", method: "GET", path: "/api/agents/agent-1/metrics/history?hours=1000000000000", admin: true},
+		{name: "metrics history migrated", method: "GET", path: "/api/agents/agent-busy/metrics/history", admin: true, mask: stamps},
+		{name: "metrics history no login", method: "GET", path: "/api/agents/agent-1/metrics/history"},
+		{name: "metrics history unknown", method: "GET", path: "/api/agents/missing/metrics/history", admin: true},
+		{name: "metrics summary", method: "GET", path: "/api/agents/agent-1/metrics/summary", admin: true},
+		{name: "metrics summary 24h", method: "GET", path: "/api/agents/agent-1/metrics/summary?hours=24", admin: true},
+		{name: "metrics summary migrated", method: "GET", path: "/api/agents/agent-busy/metrics/summary?hours=24", admin: true},
+		{name: "metrics summary empty", method: "GET", path: "/api/agents/agent-upgrading/metrics/summary", admin: true},
+		{name: "metrics summary overflow", method: "GET", path: "/api/agents/agent-1/metrics/summary?hours=-10000000000", admin: true},
+		{name: "metrics summary no login", method: "GET", path: "/api/agents/agent-1/metrics/summary"},
+		{name: "metrics summary unknown", method: "GET", path: "/api/agents/missing/metrics/summary", admin: true},
 		{name: "register duplicate non-ascii bearer", method: "POST", path: "/api/agents/register", body: agent, contentType: J,
 			headers: map[string]string{"Authorization": "Bearer 令牌🔐"}},
 		{name: "register duplicate oversized bearer", method: "POST", path: "/api/agents/register", body: agent, contentType: J,
@@ -458,8 +565,8 @@ func TestDifferentialAgainstFlask(t *testing.T) {
 	seed(t, seedDir)
 	copyDir(t, seedDir, pyDir)
 	copyDir(t, seedDir, goDir)
-	pyBase := startPython(t, pyDir)
-	goBase := startGo(t, goDir)
+	pyBase, stopPython := startPython(t, pyDir)
+	goBase, stopGo := startGo(t, goDir)
 	pyToken, goToken := login(t, pyBase), login(t, goBase)
 	pyValues, goValues := map[string]string{}, map[string]string{}
 	failed := 0
@@ -506,5 +613,84 @@ func TestDifferentialAgainstFlask(t *testing.T) {
 		failed++
 		t.Errorf("DIFF files under DATA_DIR:\n  python %s\n  go     %s", py, gofiles)
 	}
-	t.Logf("%d requests + stored records + DATA_DIR files, %d differences", len(requests()), failed)
+	// docker stop: both save the monitoring history (A04) on the way out.
+	stopPython()
+	stopGo()
+	failed += compareAfterStop(t, pyDir, goDir, pyValues, goValues)
+	t.Logf("%d requests + stored records + DATA_DIR files + files after stop, %d differences", len(requests()), failed)
+}
+
+var timestampField = regexp.MustCompile(`"timestamp": ?"[^"]*"`)
+
+// normalizedFiles is dataFiles with the per-server captured values (Agent
+// IDs) replaced by their placeholder names.
+func normalizedFiles(t *testing.T, dir string, values map[string]string) map[string]string {
+	out := map[string]string{}
+	for _, rel := range dataFiles(t, dir) {
+		name := rel
+		for key, value := range values {
+			if value != "" {
+				name = strings.ReplaceAll(name, value, "{"+key+"}")
+			}
+		}
+		out[name] = rel
+	}
+	return out
+}
+
+// compareAfterStop compares the files under DATA_DIR after a graceful
+// stop: the same names, the metrics files byte for byte except the
+// heartbeat timestamps, and the metrics_history_flush run in task-status.json.
+func compareAfterStop(t *testing.T, pyDir, goDir string, pyValues, goValues map[string]string) int {
+	failed := 0
+	pyFiles, goFiles := normalizedFiles(t, pyDir, pyValues), normalizedFiles(t, goDir, goValues)
+	names := func(files map[string]string) string {
+		var out []string
+		for name := range files {
+			out = append(out, name)
+		}
+		sort.Strings(out)
+		return strings.Join(out, " ")
+	}
+	if names(pyFiles) != names(goFiles) {
+		failed++
+		t.Errorf("DIFF files under DATA_DIR after stop:\n  python %s\n  go     %s", names(pyFiles), names(goFiles))
+	}
+	compared := 0
+	for name, pyRel := range pyFiles {
+		goRel, ok := goFiles[name]
+		if !ok || !strings.HasPrefix(name, "metrics/") {
+			continue
+		}
+		pyData, _ := os.ReadFile(filepath.Join(pyDir, pyRel))
+		goData, _ := os.ReadFile(filepath.Join(goDir, goRel))
+		pyText := timestampField.ReplaceAllString(string(pyData), `"timestamp":"<t>"`)
+		goText := timestampField.ReplaceAllString(string(goData), `"timestamp":"<t>"`)
+		compared++
+		if pyText != goText {
+			failed++
+			t.Errorf("DIFF %s:\n  python %q\n  go     %q", name, pyData, goData)
+		} else {
+			t.Logf("same %s (%d bytes)", name, len(pyData))
+		}
+	}
+	status := func(dir string) any {
+		data, err := os.ReadFile(filepath.Join(dir, "task-status.json"))
+		if err != nil {
+			return err.Error()
+		}
+		value, _ := jsonx.Parse(data)
+		entry, _ := lookup(value, "metrics_history_flush").(*jsonx.Object)
+		out := jsonx.NewObject()
+		for _, key := range []string{"last_status", "last_trigger", "last_error", "run_count", "failure_count", "consecutive_failures"} {
+			out.Set(key, entry.Value(key))
+		}
+		return out
+	}
+	if py, gor := status(pyDir), status(goDir); !jsonx.Equal(py, gor) {
+		failed++
+		t.Errorf("DIFF task-status metrics_history_flush:\n  python %s\n  go     %s", jsonx.Repr(py), jsonx.Repr(gor))
+	}
+	t.Logf("after stop: %d files, %d metrics files compared", len(pyFiles), compared)
+	return failed
 }
