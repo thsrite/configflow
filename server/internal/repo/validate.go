@@ -147,19 +147,23 @@ func sourceKind(value any) string {
 }
 
 // pruneRuleDNS is _prune_rule_dns: drop per-rule OxiDNS DNS entries of rules
-// the profile no longer has.
-func pruneRuleDNS(profile *jsonx.Object) {
+// the profile no longer has. Rule ids and list entries compare like Python
+// set members (a non-string id such as 5 or None keeps an equal entry); an
+// unhashable one is Python's TypeError.
+func pruneRuleDNS(profile *jsonx.Object) error {
 	oxidns, ok := jsonx.AsObject(profile.Value("oxidns"))
 	rules, isList := jsonx.AsList(profile.Value("rule_configs"))
 	if !ok || !isList {
-		return
+		return nil
 	}
 	ids := map[string]bool{}
 	for _, rule := range rules {
 		if object, ok := jsonx.AsObject(rule); ok {
-			if id, ok := object.Value("id").(string); ok {
-				ids[id] = true
+			key, hashable := pyHashKey(object.Value("id"))
+			if !hashable {
+				return unhashable(object.Value("id"))
 			}
+			ids[key] = true
 		}
 	}
 	for _, key := range RuleDNSFields {
@@ -167,7 +171,7 @@ func pruneRuleDNS(profile *jsonx.Object) {
 		case *jsonx.Object:
 			kept := jsonx.NewObject()
 			for identity, item := range value.All() {
-				if ids[identity] {
+				if ids["S"+identity] {
 					kept.Set(identity, item)
 				}
 			}
@@ -175,13 +179,18 @@ func pruneRuleDNS(profile *jsonx.Object) {
 		case []any:
 			kept := []any{}
 			for _, identity := range value {
-				if text, ok := identity.(string); ok && ids[text] {
+				hashKey, hashable := pyHashKey(identity)
+				if !hashable {
+					return unhashable(identity)
+				}
+				if ids[hashKey] {
 					kept = append(kept, identity)
 				}
 			}
 			oxidns.Set(key, kept)
 		}
 	}
+	return nil
 }
 
 // collectResourceRefs is _collect_resource_refs: the resource closure of a

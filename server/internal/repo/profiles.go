@@ -731,8 +731,7 @@ func (r *Repository) ImportProfile(ctx context.Context, profileID string, data *
 		}
 		// Imported rules replace the composition; per-rule DNS of rules it
 		// no longer has would otherwise refuse the whole import.
-		pruneRuleDNS(current)
-		return nil, nil
+		return nil, pruneRuleDNS(current)
 	})
 	return saved, err
 }
