@@ -740,10 +740,10 @@ func (s *Store) BackupTo(destination string) error {
 			}
 			if err != nil {
 				backup.Finish()
-				return err
+				return asBackupError(err)
 			}
 			if !more {
-				return backup.Finish()
+				return asBackupError(backup.Finish())
 			}
 		}
 	})

@@ -92,6 +92,10 @@ var resultCodeSuffix = regexp.MustCompile(` \(\d+\)$`)
 // driver formats its errors as "errstr (code)" or "errstr: errmsg (code)",
 // with " (SQLITE_BUSY)" appended for that code; errstr never contains ": ".
 func sqliteMessage(err error) string {
+	var backup *backupError
+	if errors.As(err, &backup) {
+		return backup.Error()
+	}
 	target, ok := sqliteError(err)
 	if !ok {
 		return err.Error()
@@ -118,6 +122,32 @@ func (e *decodeError) Error() string {
 		b.WriteRune(r)
 	}
 	return "Could not decode to UTF-8 column '" + e.column + "' with text '" + b.String() + "'"
+}
+
+// backupError is a failure of the SQLite backup API. Python reports it
+// from the destination connection, where sqlite3_backup_finish stores the
+// plain sqlite3_errstr text of the code; the driver appends the source
+// connection's sqlite3_errmsg instead, which says nothing about it (often
+// "not an error").
+type backupError struct {
+	cause *sqlite.Error
+}
+
+func (e *backupError) Error() string {
+	message := strings.TrimSuffix(e.cause.Error(), " (SQLITE_BUSY)")
+	message = resultCodeSuffix.ReplaceAllString(message, "")
+	errstr, _, _ := strings.Cut(message, ": ")
+	return errstr
+}
+
+func (e *backupError) Unwrap() error { return e.cause }
+
+// asBackupError wraps a SQLite error from a backup step or finish.
+func asBackupError(err error) error {
+	if target, ok := err.(*sqlite.Error); ok {
+		return &backupError{cause: target}
+	}
+	return err
 }
 
 // checkText fails like Python's row fetch when a TEXT column holds bytes
