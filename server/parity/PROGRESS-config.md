@@ -1084,3 +1084,11 @@ Questions for the maintainer (from this audit):
    `run_count` (hand-edited `task-status.json`) through unchanged where Python converts it with `int()`;
    C15's rows convert it themselves, but the backup, metrics and agent rows still show the string. Fix
    in the C07 review. (The related `taskstatus.Record` / `ParseTime` defects were sent to the C02 reviewer.)
+8. **Shared Python-semantics helpers (after the C02 review, 2026-11-16):** `internal/pystr` (`Lower`,
+   `IsSpace`, `Int`, `Float` on CPython 3.11 tables), `urlx.RequestsPrepareURL`, and `yamlx` built on
+   `internal/pyyaml` (`LoadOptions.KeepNonStringKeys`, `LoadCSafeFirst`). Private copies elsewhere must be
+   switched to them so behaviour cannot drift: `pyLower` copies in `subs`, `substore`, `rules`, `convert`,
+   `agents`, `agents/metrics`; `subs.pyIntStr`; `repo.pythonFloat`; `substore.PrepareURL`; C14's accepted
+   non-string-key case and C12's loose YAML loader (`KeepNonStringKeys`). Each module's reviewer does the
+   switch for its own package (or the next porter touching it), re-runs that package's corpora, and notes
+   it in the section. Before any domain differential, `grep` for remaining copies must come back empty.
