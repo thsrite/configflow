@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -140,7 +141,8 @@ func IsTransportError(err error) bool {
 }
 
 // HTTPClient is the production Client: one connection per request, proxies
-// from the environment like requests (trust_env), per-read timeouts.
+// from the environment like requests 2.31 (trust_env; proxy.go), per-read
+// timeouts.
 type HTTPClient struct{}
 
 type deadlineConn struct {
@@ -174,9 +176,22 @@ var resolveHook func(host string) (string, error)
 // dialled as that address instead of being looked up as a name.
 func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 	dialer := &net.Dialer{Timeout: request.Timeout.Connect}
-	proxy := http.ProxyFromEnvironment
-	if request.NoProxy {
-		proxy = nil
+	prepared := unquoteUnreserved(request.URL)
+	var proxy func(*http.Request) (*url.URL, error)
+	var proxyAuth string
+	if !request.NoProxy {
+		// requests' trust_env proxy choice (proxy.go), not Go's
+		// ProxyFromEnvironment: no automatic loopback bypass.
+		chosen, err := environProxy(prepared)
+		if err != nil {
+			if errors.Is(err, errInvalidURL) || errors.Is(err, errInvalidProxyURL) || errors.Is(err, errInvalidSchema) {
+				return nil, &TransportError{Err: err}
+			}
+			return nil, err
+		}
+		if chosen != nil {
+			proxy, proxyAuth = http.ProxyURL(chosen.URL()), chosen.auth
+		}
 	}
 	transport := &http.Transport{
 		Proxy:             proxy,
@@ -211,7 +226,7 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 	if request.Body != nil {
 		body = bytes.NewReader(request.Body)
 	}
-	req, err := http.NewRequestWithContext(ctx, request.Method, encodeZone(unquoteUnreserved(request.URL)), body)
+	req, err := http.NewRequestWithContext(ctx, request.Method, encodeZone(prepared), body)
 	if err != nil {
 		return nil, &TransportError{Err: err}
 	}
@@ -220,6 +235,9 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 	}
 	for key, values := range request.Header {
 		req.Header[key] = values
+	}
+	if proxyAuth != "" {
+		req.Header.Set("Proxy-Authorization", proxyAuth)
 	}
 	if user := req.URL.User; user != nil {
 		// requests: get_auth_from_url → HTTPBasicAuth (latin-1), only when a
