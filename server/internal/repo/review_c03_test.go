@@ -139,3 +139,74 @@ func TestDataDirExpandUserLikePython(t *testing.T) {
 		t.Fatalf("data dir %q", r.DataDir())
 	}
 }
+
+func c03Increment(t *testing.T, r *Repository, count int) {
+	for range count {
+		_, err := r.UpdateSystemTransaction(bg, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+			settings := system.GetObject("system_config")
+			settings.Set("counter", jsonx.Int(settings.GetInt("counter")+1))
+			return nil, nil
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	}
+}
+
+// test_config_storage_migration.py::test_two_threads_on_one_instance_lose_no_update
+func TestTwoThreadsOnOneInstanceLoseNoUpdate(t *testing.T) {
+	r := newRepo(t)
+	done := make(chan struct{})
+	for range 2 {
+		go func() { c03Increment(t, r, 10); done <- struct{}{} }()
+	}
+	<-done
+	<-done
+	wantEqual(t, must(r.GetSystem(bg))(t).GetObject("system_config").Value("counter"), jsonx.Int(20))
+	wantEqual(t, must(openRepo(t, r.DataDir()).GetSystem(bg))(t).GetObject("system_config").Value("counter"), jsonx.Int(20))
+}
+
+// test_config_storage_migration.py::test_write_from_another_process_is_seen
+// (the other process is the Python repository).
+func TestWriteFromAnotherProcessIsSeen(t *testing.T) {
+	r := newRepo(t)
+	if must(r.GetProfile(bg, "default"))(t).Value("name") == "From another process" {
+		t.Fatal("precondition")
+	}
+	script := filepath.Join(t.TempDir(), "ops.json")
+	noError(t, os.WriteFile(script, []byte(`[{"op":"update_profile","id":"default","updates":{"name":"From another process"}}]`), 0o600))
+	xcPython(t, "run", r.DataDir(), "plain", script)
+	wantEqual(t, must(r.GetProfile(bg, "default"))(t).Value("name"), "From another process")
+}
+
+// test_config_storage_migration.py::test_cache_follows_the_generation and
+// the reopening half of test_restart_is_idempotent (without legacy files).
+func TestCacheFollowsTheGeneration(t *testing.T) {
+	r := newRepo(t)
+	must(r.UpdateProfile(bg, "default", jsonx.Obj("name", "Cached")))(t)
+	loads, validations := r.loads.Load(), r.validations.Load()
+	for range 3 {
+		must(r.GetProfile(bg, "default"))(t)
+		must(r.ExportAll(bg, false))(t)
+	}
+	if r.loads.Load() != loads || r.validations.Load() != validations {
+		t.Fatal("cached generation reloaded")
+	}
+	fingerprint := must(r.Store().Fingerprint())(t)
+	for range 3 {
+		reopened := openRepo(t, r.DataDir())
+		if must(reopened.Store().Fingerprint())(t) != fingerprint {
+			t.Fatal("reopening wrote")
+		}
+	}
+	if len(opSnapshots(t, r, "*")) > 0 {
+		t.Fatal("snapshot taken")
+	}
+	must(openRepo(t, r.DataDir()).UpdateProfile(bg, "default", jsonx.Obj("name", "Elsewhere")))(t)
+	for range 3 {
+		wantEqual(t, must(r.GetProfile(bg, "default"))(t).Value("name"), "Elsewhere")
+	}
+	if r.loads.Load() != loads+1 || r.validations.Load() != validations+1 {
+		t.Fatalf("loads %d validations %d", r.loads.Load()-loads, r.validations.Load()-validations)
+	}
+}
