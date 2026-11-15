@@ -310,7 +310,8 @@ func ClientIP(r *http.Request) string {
 	if r == nil {
 		return "-"
 	}
-	source := r.Header.Get("X-Real-IP")
+	// WSGI hands header values over as latin-1 decoded text (PEP 3333).
+	source := latin1(r.Header.Get("X-Real-IP"))
 	if source == "" {
 		source = remoteAddr(r)
 	}
@@ -318,6 +319,25 @@ func ClientIP(r *http.Request) string {
 		source = "-"
 	}
 	return LogText(source, 64)
+}
+
+// latin1 decodes bytes as ISO-8859-1: every byte is one character.
+func latin1(s string) string {
+	ascii := true
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			ascii = false
+			break
+		}
+	}
+	if ascii {
+		return s
+	}
+	runes := make([]rune, len(s))
+	for i := 0; i < len(s); i++ {
+		runes[i] = rune(s[i])
+	}
+	return string(runes)
 }
 
 // remoteAddr is the peer IP without the port, like Flask's request.remote_addr.

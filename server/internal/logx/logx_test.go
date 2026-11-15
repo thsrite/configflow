@@ -166,3 +166,13 @@ func TestDebugEnabledFromEnv(t *testing.T) {
 		t.Error("default must be INFO")
 	}
 }
+
+// Regression (review C02): Werkzeug reads X-Real-IP as latin-1 text, so
+// UTF-8 bytes are two characters and a raw 0x85 byte (NEL) is not printable.
+func TestClientIPHeaderIsLatin1(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("X-Real-IP", "\xc3\xa9\x85x")
+	if got, want := ClientIP(r), "Ã©?x"; got != want {
+		t.Errorf("ClientIP = %q, want %q", got, want)
+	}
+}

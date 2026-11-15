@@ -95,3 +95,21 @@ func TestConsumeOnlyForAnUnchangedBodySanitizedAgainstCurrentCredentials(t *test
 		t.Error("marker must not alias the caller's slices")
 	}
 }
+
+// Regression (review C02): _plain_json_tree refuses a container nested
+// deeper than 128, an empty list included.
+func TestPlainTreeRefusesDeepEmptyList(t *testing.T) {
+	nest := func(depth int, leaf any) any {
+		v := leaf
+		for i := 1; i < depth; i++ {
+			v = []any{v}
+		}
+		return v
+	}
+	if !PlainTree(nest(128, []any{})) {
+		t.Error("128 levels ending in an empty list are plain")
+	}
+	if PlainTree(nest(129, []any{})) {
+		t.Error("an empty list at depth 129 is not plain")
+	}
+}

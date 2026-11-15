@@ -62,6 +62,10 @@ func plain(value any, depth int, active map[unsafe.Pointer]bool) bool {
 		id = unsafe.Pointer(v)
 		children = v.Values()
 	case []any:
+		// Python checks the depth of every list, empty ones included.
+		if depth > maxDepth {
+			return false
+		}
 		if len(v) == 0 {
 			return true
 		}

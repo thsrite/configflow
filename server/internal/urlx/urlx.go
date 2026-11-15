@@ -11,8 +11,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
+
+	"configflow/internal/pystr"
 )
 
 const (
@@ -248,61 +249,8 @@ func (r splitResult) hostname() string {
 	return hostname
 }
 
-// pyLower is str.lower(): Go's ToLower plus the two full-case-mapping rules
-// Python applies (U+0130 becomes "i" + U+0307, and a capital sigma ending a
-// word becomes the final sigma).
-func pyLower(s string) string {
-	if isASCII(s) {
-		return strings.ToLower(s)
-	}
-	runes := []rune(s)
-	var out strings.Builder
-	for i, r := range runes {
-		switch {
-		case r == 0x130:
-			out.WriteString("i\u0307")
-		case r == 0x3A3:
-			if finalSigma(runes, i) {
-				out.WriteRune(0x3C2)
-			} else {
-				out.WriteRune(0x3C3)
-			}
-		default:
-			out.WriteRune(unicode.ToLower(r))
-		}
-	}
-	return out.String()
-}
-
-// finalSigma is Python's Final_Sigma condition: a cased letter before and none
-// after, ignoring case-ignorable characters in both directions.
-func finalSigma(runes []rune, i int) bool {
-	before := false
-	for j := i - 1; j >= 0; j-- {
-		if isCaseIgnorable(runes[j]) {
-			continue
-		}
-		before = isCased(runes[j])
-		break
-	}
-	if !before {
-		return false
-	}
-	for j := i + 1; j < len(runes); j++ {
-		if isCaseIgnorable(runes[j]) {
-			continue
-		}
-		return !isCased(runes[j])
-	}
-	return true
-}
-
-func isCaseIgnorable(r rune) bool {
-	return unicode.In(r, unicode.Mn, unicode.Me, unicode.Cf, unicode.Lm, unicode.Sk) ||
-		strings.ContainsRune("'.:\u00b7\u2018\u2019\u2024\u2027\ufe13\ufe52\ufe55\uff07\uff0e\uff1a\u0387\u05f4", r)
-}
-
-func isCased(r rune) bool { return unicode.IsUpper(r) || unicode.IsLower(r) || unicode.IsTitle(r) }
+// pyLower is str.lower() (CPython 3.11 tables, full case mapping, Final_Sigma).
+func pyLower(s string) string { return pystr.Lower(s) }
 
 // port is SplitResult.port; hasPort is false for None.
 func (r splitResult) port() (port int, hasPort bool, err error) {
@@ -335,6 +283,10 @@ func checkBracketedHost(hostname string) error {
 			return errors.New("IPvFuture address is invalid")
 		}
 		return nil
+	}
+	// ipaddress refuses an empty scope id and one containing "%".
+	if _, zone, found := strings.Cut(hostname, "%"); found && (zone == "" || strings.Contains(zone, "%")) {
+		return errors.New("Invalid IPv6 address")
 	}
 	addr, err := netip.ParseAddr(hostname)
 	if err != nil {
@@ -480,7 +432,7 @@ func isSensitiveKey(key string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	normalized := nonAlnum.ReplaceAllString(strings.ToLower(decoded), "")
+	normalized := nonAlnum.ReplaceAllString(pystr.Lower(decoded), "")
 	for _, part := range sensitiveKeyParts {
 		if strings.Contains(normalized, part) {
 			return true, nil
@@ -635,11 +587,25 @@ type StatusError interface {
 	HTTPStatus() int
 }
 
+// PythonClassError is an error that knows the Python exception class it
+// stands for (yamlx.Error, rulefetch's fetch errors, ...). SafeExceptionDetails
+// prints that class name instead of the Go type, like type(error).__name__.
+type PythonClassError interface {
+	error
+	PythonClass() string
+}
+
 // SafeExceptionDetails is safe_exception_details: bounded exception metadata
-// without the error's message or URL. The type name is Go's %T without
-// pointer stars ("url.Error"), cleaned and cut to 80 characters like Python's.
+// without the error's message or URL. The type name is the PythonClass() of
+// the first error in the chain that has one, else Go's %T ("*url.Error",
+// cleaned to "url.Error"), cleaned and cut to 80 characters like Python's.
 func SafeExceptionDetails(err error) string {
-	name := exceptionNameChars.ReplaceAllString(fmt.Sprintf("%T", err), "")
+	typeName := fmt.Sprintf("%T", err)
+	var classed PythonClassError
+	if errors.As(err, &classed) {
+		typeName = classed.PythonClass()
+	}
+	name := exceptionNameChars.ReplaceAllString(typeName, "")
 	if len(name) > 80 {
 		name = name[:80]
 	}
