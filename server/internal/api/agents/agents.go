@@ -187,7 +187,11 @@ func doRegister(c *httpx.Ctx, out **jsonx.Object) (*httpx.Response, error) {
 	data.Pop("registration_key")
 
 	host := data.GetOr("host", "")
-	clientIP := c.HeaderDefault("X-Forwarded-For", c.RemoteAddr())
+	// WSGI header values are latin-1 decoded: every byte is one character.
+	clientIP := c.RemoteAddr()
+	if forwarded, ok := c.Header("X-Forwarded-For"); ok {
+		clientIP = latin1(forwarded)
+	}
 	if clientIP != "" && strings.Contains(clientIP, ",") {
 		clientIP = strings.TrimFunc(strings.Split(clientIP, ",")[0], isPySpace)
 	}
@@ -239,6 +243,15 @@ func doRegister(c *httpx.Ctx, out **jsonx.Object) (*httpx.Response, error) {
 	logger.Infof("%s：%s（%s，%s）", label, jsonx.Str(truthyOr(logged.Value("name"), result.Value("id"))),
 		jsonx.Str(logged.GetOr("service_type", "mihomo")), jsonx.Str(logged.GetOr("host", "")))
 	return httpx.JSON(body), nil
+}
+
+// latin1 decodes a header value as WSGI does (ISO-8859-1).
+func latin1(s string) string {
+	runes := make([]rune, len(s))
+	for i := 0; i < len(s); i++ {
+		runes[i] = rune(s[i])
+	}
+	return string(runes)
 }
 
 func truthyOr(value, fallback any) any {
@@ -293,93 +306,124 @@ func ReadJSONBody(c *httpx.Ctx, maxLength int64, invalidMessage string) (any, *h
 		return nil, failure(400, invalidMessage)
 	}
 	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
-	value := c.JSONForce()
-	if value == nil && !isJSONNull(raw) {
+	value, err := c.JSONForceError()
+	if err != nil {
+		// json.loads raises a plain ValueError (not JSONDecodeError) for an
+		// int literal beyond sys.get_int_max_str_digits(): not caught here,
+		// the route answers it as a 500.
+		if strings.HasPrefix(err.Error(), "Exceeds the limit (") {
+			return nil, failure(500, err.Error())
+		}
 		return nil, failure(400, invalidMessage)
 	}
 	return value, nil
 }
 
-func validMetricNumber(field string, value any) bool {
+// errIntTooLarge is the OverflowError of math.isfinite(int) for an int whose
+// float conversion overflows (the route answers it as a 500).
+var errIntTooLarge = errors.New("int too large to convert to float")
+
+// validMetricNumber is _valid_metric_number(field, value). math.isfinite
+// converts an int to float first, so an int beyond the float range is an
+// OverflowError, whatever the field.
+func validMetricNumber(field string, value any) (bool, error) {
 	number, ok := value.(jsonx.Number)
 	if !ok {
-		return false
+		return false, nil
 	}
 	if number.IsFloat() {
 		f := number.Float64()
 		if math.IsInf(f, 0) || math.IsNaN(f) {
-			return false
+			return false, nil
 		}
 		if field == "usage_percent" || field == "used_percent" {
-			return f >= 0 && f <= 100
+			return f >= 0 && f <= 100, nil
 		}
-		return false
+		return false, nil
 	}
 	big, _ := number.BigInt()
+	if f, _ := new(bigFloat).SetInt(big).Float64(); math.IsInf(f, 0) {
+		return false, errIntTooLarge
+	}
 	if field == "usage_percent" || field == "used_percent" {
-		return big.Sign() >= 0 && big.Cmp(jsonxBig(100)) <= 0
+		return big.Sign() >= 0 && big.Cmp(jsonxBig(100)) <= 0, nil
 	}
 	if big.Sign() < 0 {
-		return false
+		return false, nil
 	}
 	if field == "core_count" {
-		return big.Cmp(jsonxBig(65536)) <= 0
+		return big.Cmp(jsonxBig(65536)) <= 0, nil
 	}
 	limit, _ := jsonx.ParseNumber("18446744073709551615")
 	max, _ := limit.BigInt()
-	return big.Cmp(max) <= 0
+	return big.Cmp(max) <= 0, nil
 }
+
+type bigFloat = big.Float
 
 func jsonxBig(n int64) *big.Int { return big.NewInt(n) }
 
-// ValidateSystemMetrics is _validate_system_metrics.
-func ValidateSystemMetrics(value any) bool {
+// metricSections is _METRIC_FIELDS in its dict order (Python stops at the
+// first failing section, so the order decides between False and an error).
+var metricSections = []string{"cpu", "memory", "disk", "network"}
+
+// ValidateSystemMetrics is _validate_system_metrics; the error is an
+// exception Python raises instead of answering False.
+func ValidateSystemMetrics(value any) (bool, error) {
 	metrics, ok := value.(*jsonx.Object)
 	if !ok || metrics == nil {
-		return false
+		return false, nil
 	}
 	for _, key := range metrics.Keys() {
 		if _, known := metricFields[key]; !known && key != "collected_at" {
-			return false
+			return false, nil
 		}
 	}
 	encoded, err := jsonx.Encode(metrics, jsonx.Options{})
 	if err != nil || len(encoded) > 16*1024 {
-		return false
+		return false, nil
 	}
 	if collected, ok := metrics.Get("collected_at"); ok && collected != nil {
 		text, isString := collected.(string)
 		if !isString || len([]rune(text)) > 64 {
-			return false
+			return false, nil
 		}
 	}
-	for section, allowed := range metricFields {
+	for _, section := range metricSections {
+		allowed := metricFields[section]
 		item, ok := metrics.Get(section)
 		if !ok {
 			continue
 		}
 		values, isObject := item.(*jsonx.Object)
 		if !isObject || values == nil {
-			return false
+			return false, nil
+		}
+		// set(values) - allowed_fields first, then the values in order.
+		for _, field := range values.Keys() {
+			if !allowed[field] {
+				return false, nil
+			}
 		}
 		for field, number := range values.All() {
-			if !allowed[field] || !validMetricNumber(field, number) {
-				return false
+			if valid, err := validMetricNumber(field, number); err != nil || !valid {
+				return false, err
 			}
 		}
 	}
-	return true
+	return true, nil
 }
 
-// ValidateHeartbeatPayload is _validate_heartbeat_payload.
-func ValidateHeartbeatPayload(value any) bool {
+// ValidateHeartbeatPayload is _validate_heartbeat_payload; the error is an
+// exception Python raises instead of answering False.
+func ValidateHeartbeatPayload(value any) (bool, error) {
 	payload, ok := value.(*jsonx.Object)
 	if !ok || payload == nil {
-		return false
+		return false, nil
 	}
 	for _, key := range payload.Keys() {
 		if !heartbeatFields[key] {
-			return false
+			return false, nil
 		}
 	}
 	for _, limit := range []struct {
@@ -389,14 +433,14 @@ func ValidateHeartbeatPayload(value any) bool {
 		if item, ok := payload.Get(limit.field); ok {
 			text, isString := item.(string)
 			if !isString || len([]rune(text)) > limit.max {
-				return false
+				return false, nil
 			}
 		}
 	}
 	if metrics, ok := payload.Get("system_metrics"); ok {
 		return ValidateSystemMetrics(metrics)
 	}
-	return true
+	return true, nil
 }
 
 func mihomoFlag(agent *jsonx.Object, field string) bool {
@@ -429,7 +473,9 @@ func heartbeat(c *httpx.Ctx) (*httpx.Response, error) {
 	if errorResponse != nil {
 		return errorResponse, nil
 	}
-	if !ValidateHeartbeatPayload(value) {
+	if valid, err := ValidateHeartbeatPayload(value); err != nil {
+		return nil, err
+	} else if !valid {
 		return failure(400, "Invalid heartbeat data"), nil
 	}
 	data := value.(*jsonx.Object)

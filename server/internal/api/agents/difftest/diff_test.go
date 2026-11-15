@@ -360,7 +360,7 @@ func requests() []request {
 	metrics := `{"system_metrics": {"cpu": {"usage_percent": 12.5, "core_count": 4}, "memory": {"total": 1024, "used": 512, "available": 512, "used_percent": 50.0}, "collected_at": "2026-08-31T00:00:00Z"}}`
 	metrics2 := `{"system_metrics": {"cpu": {"usage_percent": 33, "core_count": 4}, "disk": {"total": 18446744073709551615, "used": 1, "free": 2, "used_percent": 0.1}, "network": {"bytes_sent": 18446744073709551615, "bytes_recv": 7, "speed_sent": 18446744073709551615, "speed_recv": 3}, "collected_at": "2026-08-31T00:00:01Z"}}`
 	stamps := []string{"data.history.*.timestamp"}
-	return []request{
+	return append([]request{
 		{name: "register new", method: "POST", path: "/api/agents/register", body: agent, contentType: J, mask: idToken,
 			capture: map[string]string{"id": "id", "token": "token"}},
 		{name: "register duplicate without token", method: "POST", path: "/api/agents/register", body: agent, contentType: J},
@@ -499,7 +499,66 @@ func requests() []request {
 		{name: "delete", method: "DELETE", path: "/api/agents/{manual}", admin: true},
 		{name: "delete again", method: "DELETE", path: "/api/agents/{manual}", admin: true},
 		{name: "delete seeded", method: "DELETE", path: "/api/agents/agent-1", admin: true},
+	}, reviewRequests()...)
+}
+
+// reviewRequests are the cases added by the A03 review: int() forms of the
+// Docker bridge check, latin-1 X-Forwarded-For values, metric ints beyond the
+// float range (OverflowError) and beyond the int digit limit (ValueError),
+// and the order in which the metric checks fail.
+func reviewRequests() []request {
+	J := "application/json"
+	idToken := []string{"id", "token"}
+	var out []request
+	for i, host := range []string{"172.١٧.0.1", "172.１７.0.1", "172. 17.0.1", "172.1_7.0.1", "172.+17.0.1", "172.017.0.1",
+		"172.16.0.1", "172.32.0.1", "172.17.0", "LOCALHOST", "127.x", "localhost", "172.17 .0.1", "172.0x11.0.1"} {
+		out = append(out, request{name: "register docker form " + host, method: "POST", path: "/api/agents/register", contentType: J, mask: idToken,
+			body: `{"name": "docker-` + strconv.Itoa(i) + `", "host": "` + host + `"}`})
 	}
+	for i, forwarded := range []string{"\xa0203.0.113.7\xa0, 1.2.3.4", "caf\xc3\xa9, x", "\x85198.51.100.1\x85,y", "\xff"} {
+		out = append(out, request{name: "register latin-1 forwarded " + strconv.Itoa(i), method: "POST", path: "/api/agents/register",
+			contentType: J, mask: idToken, body: `{"name": "fwd-` + strconv.Itoa(i) + `"}`,
+			headers: map[string]string{"X-Forwarded-For": unescapeBytes(forwarded)}})
+	}
+	maxFloat := "179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368"
+	halfway := "179769313486231575804128197568503885939002350117941411767545627891801114536396644853619288305177042633935372685103635187590438437370702292699562517687521668833979406288629832876259672468103520237920172119362601898937975098263032931492834697134299320496935997324255116936540444370309403987146642102044149678080"
+	below := "179769313486231575804128197568503885939002350117941411767545627891801114536396644853619288305177042633935372685103635187590438437370702292699562517687521668833979406288629832876259672468103520237920172119362601898937975098263032931492834697134299320496935997324255116936540444370309403987146642102044149678079"
+	for name, metrics := range map[string]string{
+		"huge total":           `{"memory": {"total": 1` + strings.Repeat("0", 400) + `}}`,
+		"huge percent":         `{"cpu": {"usage_percent": -1` + strings.Repeat("0", 400) + `}}`,
+		"max float int":        `{"disk": {"free": ` + maxFloat + `}}`,
+		"halfway int":          `{"disk": {"free": ` + halfway + `}}`,
+		"below halfway int":    `{"disk": {"free": ` + below + `}}`,
+		"2**64":                `{"network": {"bytes_sent": 18446744073709551616}}`,
+		"earlier section bad":  `{"network": {"bytes_sent": 1` + strings.Repeat("0", 400) + `}, "cpu": {"usage_percent": 101}}`,
+		"later section bad":    `{"cpu": {"usage_percent": 101}, "network": {"bytes_sent": 1` + strings.Repeat("0", 400) + `}}`,
+		"bad key after huge":   `{"cpu": {"core_count": 1` + strings.Repeat("0", 400) + `, "bogus": 1}}`,
+		"bad value after huge": `{"cpu": {"core_count": 1` + strings.Repeat("0", 400) + `, "usage_percent": true}}`,
+		"digit limit":          `{"cpu": {"core_count": 1` + strings.Repeat("0", 5000) + `}}`,
+		"digit limit version":  `{"cpu": {}}, "version": 1` + strings.Repeat("0", 4300),
+		"4300 digits":          `{"cpu": {"core_count": 1` + strings.Repeat("0", 4299) + `}}`,
+	} {
+		out = append(out, request{name: "heartbeat metrics " + name, method: "POST", path: "/api/agents/{id}/heartbeat", contentType: J,
+			body: `{"system_metrics": ` + metrics + `}`, headers: map[string]string{"Authorization": "Bearer {token}"}})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
+	return out
+}
+
+// unescapeBytes turns \xNN escapes into raw bytes (header values that are
+// not UTF-8).
+func unescapeBytes(s string) string {
+	var out []byte
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+3 < len(s) && s[i+1] == 'x' {
+			value, _ := strconv.ParseUint(s[i+2:i+4], 16, 8)
+			out = append(out, byte(value))
+			i += 3
+			continue
+		}
+		out = append(out, s[i])
+	}
+	return string(out)
 }
 
 // utf16 is s encoded as UTF-16-LE without a BOM (json.loads detects it).

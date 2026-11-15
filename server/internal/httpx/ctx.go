@@ -301,6 +301,12 @@ func (c *Ctx) JSONObject() *jsonx.Object {
 	return o
 }
 
+// JSONForceError is JSONForce with the decoding error: json.loads(body) for
+// handlers that parse the raw body themselves and must tell its exceptions
+// apart (a SyntaxError is JSONDecodeError; an invalid encoding is
+// UnicodeDecodeError; other errors are other ValueErrors).
+func (c *Ctx) JSONForceError() (any, error) { return c.decodeJSON() }
+
 func (c *Ctx) decodeJSON() (any, error) {
 	if c.jsonDone {
 		return c.jsonValue, c.jsonErr
