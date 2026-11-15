@@ -39,7 +39,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C11 | proxy chains, commented Mihomo editor, listeners, proxy-server DNS | 855 | partial | C10 | – |
 | C12 | converter common, Mihomo node conversion, dialer references, EasyTier | 1196 | ported | C09, C11 | – |
 | C13 | Sub-Store client, runtime, subscription cache, dependencies | 1193 | missing | C12, C10 | – |
-| C14 | remote rule fetch, ruleset content, remote sources, website identity | 1202 | missing | C12, C08 | – |
+| C14 | remote rule fetch, ruleset content, remote sources, website identity | 1202 | ported | C12, C08 | – |
 | C15 | subscription refresh, health, scheduled refresh | 600 | missing | C13, C14, C07 | – |
 | C16 | health check, latency, node DNS, region check, domain probe | 1089 | missing | C12, C13 | – |
 | C17 | provider delivery and responses | 540 | missing | C15 | – |
@@ -281,7 +281,7 @@ Routes: none.
 
 Evidence: `internal/rules` syntax.go, matcher.go, ruleutils.go, pyre_*.go (Python `re` parser + RE2/regexp2), idna.go. `test_rule_matcher_behavior.py` 15/15, `test_rule_matcher_index.py` 18/28 (missing 10 are memory-packing internals `_PackedSourceLines`/`_SourceLinesBuilder` — Python mechanics), `test_rule_syntax.py` 9/24 + corpus.
 
-Missing / deferred: Missing in `rule_utils.py`: `get_rules_dir`, `read_validated_rule_cache`, `write_validated_rule_cache`, `refresh_remote_rule`, `read_rule_source_content`, `save_rule_to_local` (they need rule fetch/ruleset content; port with C14). Deferred tests: `test_rule_syntax.py` 15 cases through `ruleset_content.inspect/validate_domain_content` and rule routes (→ C14/C32); `test_rule_cache_identity.py` 0/7 and `test_remote_rule_cache_edges.py` 0/7 (cache identity/legacy-name cache → C14, route cases → C32/C33).
+Missing / deferred: the repository-backed `rule_utils.py` functions are ported in C14 (`internal/rulefetch/cache.go`); `test_rule_syntax.py`'s 15 ruleset_content cases are ported there (TestRuleSyntaxThroughRulesetContent) and the legacy-cache read side (TestLegacyCacheReadSide). Still deferred: the route cases of `test_rule_cache_identity.py` / `test_remote_rule_cache_edges.py` (→ C32/C33). Line helpers of ruleset_content are exported from `rules/ruleset_lines.go` for rulefetch.
 
 Reviewer notes: Accepted: `\N{name}` and repeat counts > int32 give `*UnsupportedRegexError`; backtracking matches cut off after 1 s count as no match. `rules/compat.go` still holds copies of already-ported helpers: `safeExceptionDetails` returns `exception_type=%T` (Go type name, e.g. `*fs.PathError`) while `urlx.SafeExceptionDetails` exists — switch and check the log text; `Logger` interface instead of `logx`; `ProfileValidationError` instead of `repo.Error` (rules cannot import repo? it can — rules imports only jsonx; check for a cycle via repo→rules first). Remaining compat copies → C14 (ruleset_content), C12 (converters/common), C26 (device policy).
 
@@ -414,25 +414,40 @@ Notes for porter: Also implements the 3 dependency routes of `routes/settings.py
 
 ## C14 — remote rule fetch, ruleset content, remote sources, website identity
 
-**Status: `partial` (porting in progress)** · prereqs: C12, C08 · Go: internal/rulefetch (new), internal/rulefetch/pyyaml
+**Status: `ported`** (not reviewed) · prereqs: C12, C08 · Go: `internal/rulefetch`, `internal/rulefetch/pyyaml`
 
-Files:
-- `backend/utils/rule_fetch.py` (346)
-- `backend/utils/ruleset_content.py` (722)
-- `backend/utils/remote_rule_sources.py` (45)
-- `backend/utils/website_identity.py` (89)
+Files → Go:
+- `backend/utils/ruleset_content.py` (722) → `rulefetch/content.go` (ResultCache, ContentDigest, ClearRuleContentCaches, MetadataError, NormalizeClassicalLines, NormalizeMihomoYAML, NormalizeMihomoRuleset, InspectDomainContent, ValidateDomainContent, RemoteRuleValidationError (+NewRemoteRuleMessage/NewRemoteRuleError; unwraps to repo.ErrValidation), ValidateRemoteRuleContent, ReadRulePayload, AppendRulePayload/AppendRuleLines, RemoveRulePayload, ReadRulePayloadAny/AppendRulePayloadAny for rules.ConnectionDeps), `mrs.go` (_validate_remote_mrs on klauspost zstd). Line helpers `_valid_pattern`, `_classical_line`, `classical_line_error`, `_has_yaml_payload` live in `rules` (exported in `rules/ruleset_lines.go`: rulefetch imports rules); `convert/compat.go` now delegates to `rules.HasYAMLPayload`.
+- PyYAML (needed for marks/tokens/error text) → `rulefetch/pyyaml` (Scan, Compose).
+- `backend/utils/rule_fetch.py` (346) → `rulefetch/fetch.go` (Client{Transport, Local, Sleep}, DefaultClient, Request, RequestRule, RuleFetchSettings, IsInternalRuleURL, GetRuleFetchProxy, RuleRequestProxy, IsGithubURL, GithubDownloadCandidates, RuleFetchError), `transport.go` (Transport interface, HTTPTransport, Response{Content, Read, Close, RaiseForStatus}, FetchError{Class, Transient, Status}, IsTimeout, IsRequestException, PythonClass), `urls.go` (SplitURL = urlsplit, URLJoin = urljoin, ValidateRuleURL, NormalizeRuleFetchProxy).
+- `backend/utils/remote_rule_sources.py` (45) → `sources.go` ResolveRemoteRuleSource.
+- `backend/utils/website_identity.py` (89) → `website.go` (PageMarkers, SiteTitle, CleanText, KnownService, PageIdentity; `Services` = region_check.SERVICES copy, TODO C16).
+- C08's missing `rule_utils.py` functions → `cache.go` (GetRulesDir, RuleCacheReadPath(ctx), ReadValidatedRuleCache, WriteValidatedRuleCache, RefreshRemoteRule (RefreshOptions), ReadRuleSourceContent, SaveRuleToLocal).
+- `rules.PyRegex` substitution API (C12 request): `Sub`, `SubTemplate`, `ParseTemplate`/`Template.Expand`, `Match`, `Groups`, `GroupIndex`, `ErrMatchTimeout`, `TemplateIndexError` (`rules/pyre_sub.go`); `convert.pySub` uses it.
+- Switched: `api/settings/compat.go` normalize_rule_fetch_proxy → rulefetch (urlsplit copy removed). `rules/compat.go` copies stay (rulefetch→rules; rules cannot import rulefetch) and are exported via `ruleset_lines.go`; the corpus exercises them through rulefetch.
 
-Tests: `test_mihomo_yaml_delivery.py` (7), `test_remote_rule_cache.py` (8), `test_remote_ruleset_validation.py` (12), `test_rule_delivery_proxy.py` (3), `test_rule_fetch_fallback.py` (6), `test_rule_fetch_proxy_integration.py` (19), `test_rule_fetch_retries.py` (10), `test_rule_proxy_freshness.py` (3), `test_ruleset_classical_format.py` (15), `test_ruleset_domain_format.py` (13), `test_website_identity.py` (11)
+Tests:
+- Corpora (real Python, synthetic values): `pyyaml/testdata/gen.py` 6065 rows (tokens, nodes, marks, error text) all equal; `rulefetch/testdata/gen.py` 72849 rows (inspect, normalize ×3, validate_remote str/bytes/MRS, read/append/remove payload, validate_domain, website identity, resolve_remote_rule_source, validate_rule_url, normalize proxy, urljoin) all equal except 3 rows of one accepted difference (below); `rules/testdata/gen_sub.py` 9312 rows (sub with template/function, search spans) all equal.
+- Ported: `test_remote_ruleset_validation.py` 12/12, `test_mihomo_yaml_delivery.py` 7/7, `test_ruleset_classical_format.py` 15/15, `test_rule_fetch_retries.py` 10/10 and `test_rule_fetch_fallback.py` 6/6 (fake Transport returning FetchError classes), `test_rule_fetch_proxy_integration.py` 19/19 functions over loopback httptest servers + a test forward proxy (the "untrusted origin behind a trusted HTTPS proxy" variant skipped: httptest servers share one certificate), `test_remote_rule_cache.py` 6/8 (rule_utils halves; route halves and `test_failed_edit_preserves_declaration_and_previous_cache`, `test_invalid_create_does_not_commit_catalog_entry` → C32/C33), `test_ruleset_domain_format.py` 5/13 (inspection parts; MosDNS conversions → C21; route cases → C32/C33/C37), `test_website_identity.py` 4/11 (job/route/region-store cases → C37/C16), C08-deferred `test_rule_syntax.py` 15 cases (content_test.go TestRuleSyntaxThroughRulesetContent), `test_rule_cache_identity.py`/`test_remote_rule_cache_edges.py` legacy read side (TestLegacyCacheReadSide; the rest are routes → C32/C33), `test_local_http.py` deferred rule_fetch cases (local_test.go; the one-worker case has no Go counterpart).
+- Deferred: `test_rule_delivery_proxy.py` 3, `test_rule_proxy_freshness.py` 3 (MosDNS zip / rule-proxy routes → C28).
 
-Routes: none.
+Decisions / differences from Python:
+- Transport failures: `FetchError.Class` and the retry decision follow requests/`_is_transient_disconnect` (TLS EOF, reset/abort/EPIPE, server or proxy closing early, body cut short and chunked EOF retried; certificate, timeout, refused, DNS, HTTP status, decoding and invalid chunk length not); message texts are Go's (requests renders urllib3 objects). RuleFetchError text = diag.FailureText (imports the leaf package `agents/diag`, no cycle). `response.url` = request URL with "/" for an empty path. Requests' headers kept (`User-Agent: python-requests/2.31.0`, `Accept-Encoding: gzip, deflate`); gzip/deflate/zstd decoded. Default trust = Go system roots (requests: certifi); REQUESTS_CA_BUNDLE/CURL_CA_BUNDLE honoured for default verify; environment proxies never used.
+- `read_rule_source_content`: every error except RemoteRuleValidationError and repo errors becomes `RequestException("Rule download failed (<class>)")`.
+- PyYAML RecursionError = nesting limit 490 (Python's depends on the stack depth); `\U` surrogates → U+FFFD.
+- Accepted (corpus allowlist): a flow-style YAML root with a non-string mapping key (`{payload: [...], 1: x}`) cannot be loaded into jsonx: NormalizeMihomoYAML keeps the text with the yamlx error as warning where Python rewrites it. ReadRulePayload falls back to a node-based document for such keys (merge keys not applied in the fallback).
+- website_identity: `_Meta` (HTMLParser) is a regex start-tag/attribute scan; `html.unescape` = Go `html.UnescapeString`; a non-numeric status counts as not 2xx (Python TypeError).
+- MRS: python-zstandard's "unknown frame prefix" for 1–3 trailing bytes after complete frames is emulated (trailingGarbage).
+- `refresh_remote_rule` log uses rulefetch's own safe_exception_details with Python class names. Suggestion for C02: let `urlx.SafeExceptionDetails` honour a `PythonClass() string` interface (it prints Go type names today).
+- PyRegex.Sub/SubTemplate/Match always run on regexp2 (CPython must_advance loop via `\G(?:p)(?!\G)`); a backtracking timeout returns ErrMatchTimeout.
 
-Done (commits):
-- d426421b `rulefetch/pyyaml`: port of PyYAML 6.0.1 pure reader/scanner/parser/composer/resolver (Scan, Compose, marks in code points, MarkedYAMLError text with snippets). Corpus `pyyaml/testdata/gen.py` → 6065 rows equal (tokens, nodes, marks, error text). Decisions: libyaml fast path not reproduced (only used where it equals pure PyYAML; verified marks are code points); RecursionError = nesting limit 490 (`RecursionLimit`); `\U` surrogate → U+FFFD; negative flow level is truthy as in Python.
-- c2ba3f6b `rules.PyRegex`: `Sub` (function), `SubTemplate` (re._parser.parse_template + expand_template; errors `*reError` with template position or `*TemplateIndexError`), `Match` (re.search with spans), `Groups`, `GroupIndex`, `ErrMatchTimeout`. Always runs on regexp2 with CPython's must_advance loop (`\G(?:p)(?!\G)` for the non-empty retry). Reference `rules/testdata/gen_sub.py` → 9312 rows equal. `convert.pySub` now uses it (netPattern deleted); convert+rules tests pass.
+Commits: d426421b (pyyaml), c2ba3f6b (PyRegex sub), d3f50ef7 (content/MRS/sources/website/URLs + corpus), d36e5331 (fetch, transport, cache), edf7ac79 (fake transport tests), e773ef34 (integration), (cache tests), 3b9060e2 (settings switch), 7050d97d (local dispatch, adapters).
 
-Next: export ruleset line helpers from rules (ClassicalLine etc., cycle rulefetch→rules), ruleset_content, remote_rule_sources, website_identity, rule_fetch transport, rule_utils cache functions, tests, corpus.
+Reviewer hints: compare content.go branch by branch with ruleset_content.py (rune indices everywhere marks are used); transport classification (`classifyRequestError`, `classifyBodyError`) against urllib3/requests exception mapping; urls.go urlsplit/urljoin against CPython 3.11; website.go metaContent vs HTMLParser.
 
-Notes for porter: Also completes C08's missing `rule_utils` functions and the deferred rule_syntax/local_http/remote-cache tests; replaces `rules/compat.go` ruleset_content copies and `api/settings/compat.go` (`validate_rule_url`). `rule_fetch` calls `agents.diagnostics.failure_text` (agents) — copy or interface. `website_identity` imports `region_check` (C16): small compat or move order.
+Commands:
+- tests: `rt -- bash -lc 'cd server && gofmt -l internal/rulefetch internal/rules internal/convert; go vet ./internal/rulefetch/... ./internal/rules/... ./internal/convert/... && go test -count=1 ./internal/rulefetch/... ./internal/rules/... ./internal/convert/...'` (last: all ok; `-race` ok)
+- corpora: `rt --back server/internal/rulefetch/testdata/corpus.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rulefetch/testdata/gen.py'`; `rt --back server/internal/rulefetch/pyyaml/testdata -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rulefetch/pyyaml/testdata/gen.py'`; `rt --back server/internal/rules/testdata/sub_reference.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rules/testdata/gen_sub.py'`
 
 ## C15 — subscription refresh, health, scheduled refresh
 
