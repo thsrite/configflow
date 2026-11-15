@@ -11,6 +11,7 @@ import (
 	"errors"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -43,6 +44,11 @@ func RuleCacheReadPath(ctx context.Context, rule *jsonx.Object, library []any) (
 	if err != nil {
 		return "", err
 	}
+	// Python returns an existing current cache before it reads the shared
+	// document (a repository failure then does not matter).
+	if current := filepath.Join(root, rules.RuleCacheFilename(rule)); fileExists(current) {
+		return current, nil
+	}
 	shared, err := r.GetShared(ctx)
 	if err != nil {
 		return "", err
@@ -52,6 +58,11 @@ func RuleCacheReadPath(ctx context.Context, rule *jsonx.Object, library []any) (
 		stored = []any{}
 	}
 	return rules.RuleCacheReadPath(rule, library, stored, root), nil
+}
+
+func fileExists(name string) bool {
+	_, err := os.Stat(name)
+	return err == nil
 }
 
 func contentBytes(content any) []byte {
