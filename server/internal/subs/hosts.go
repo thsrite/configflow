@@ -554,20 +554,26 @@ func queryFilter(query map[string][]string) nameCheck {
 	if include == "" && exclude == "" {
 		return nil
 	}
+	// A pattern only Python can run (isUnsupported) is not applied (domain
+	// decision); a pattern Python rejects drops the whole filter, as there.
 	var keep, drop Matcher
 	if pyStrip(include) != "" {
 		re, err := compileRegex(include)
-		if err != nil {
+		if err != nil && !isUnsupported(err) {
 			return nil
 		}
-		keep = re
+		if err == nil {
+			keep = re
+		}
 	}
 	if pyStrip(exclude) != "" {
 		re, err := compileRegex(exclude)
-		if err != nil {
+		if err != nil && !isUnsupported(err) {
 			return nil
 		}
-		drop = re
+		if err == nil {
+			drop = re
+		}
 	}
 	return func(name string) bool {
 		return (keep == nil || keep.Search(name)) && (drop == nil || !drop.Search(name))
@@ -717,10 +723,12 @@ func computeUsedDomains(main, config *jsonx.Object, inline []InlineProxy, indexO
 		var aggRegex Matcher
 		if pattern != "" {
 			re, err := compileRegex(pattern)
-			if err != nil {
-				continue
+			if err != nil && !isUnsupported(err) {
+				continue // Python: re.error skips the aggregation
 			}
-			aggRegex = re
+			if err == nil {
+				aggRegex = re // an unsupported pattern is not applied
+			}
 		}
 		var checks []nameCheck
 		if aggRegex != nil {

@@ -125,10 +125,11 @@ func digitValue(r rune) (int, bool) {
 	if r < 128 || !unicode.Is(unicode.Nd, r) {
 		return 0, false
 	}
-	// Nd characters come in runs of ten starting at a multiple of ten
-	// relative to the first code point of their block.
+	// Nd characters come in contiguous runs 0..9; adjacent runs (the
+	// mathematical digits U+1D7CE..U+1D7FF are five) start a block at a 0,
+	// so the value is the distance from the block start modulo ten.
 	lo := r
-	for unicode.Is(unicode.Nd, lo-1) && r-lo < 10 {
+	for unicode.Is(unicode.Nd, lo-1) {
 		lo--
 	}
 	return int(r-lo) % 10, true
@@ -378,7 +379,14 @@ func pyIPAddress(s string) (ipInfo, bool) {
 		if hasScope {
 			text += "%" + scope
 		}
-		return ipInfo{text: text, unspecified: a.IsUnspecified(), multicast: b[0] == 0xff, v6: true, loopback: a.IsLoopback()}, true
+		info := ipInfo{text: text, unspecified: a.IsUnspecified(), multicast: b[0] == 0xff, v6: true, loopback: a.IsLoopback()}
+		if a.Is4In6() {
+			// CPython 3.11.17: is_unspecified/is_multicast/is_loopback of an
+			// IPv4-mapped address are those of the IPv4 address.
+			v4 := a.Unmap()
+			info.unspecified, info.multicast, info.loopback = v4.IsUnspecified(), v4.IsMulticast(), v4.IsLoopback()
+		}
+		return info, true
 	}
 	a, err := netip.ParseAddr(s)
 	if err != nil || !a.Is4() {

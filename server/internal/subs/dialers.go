@@ -555,9 +555,9 @@ func AdaptSubscriptionProxies(subscription string, proxies []any, main, record *
 	for _, key := range []string{"proxies", "proxy-groups"} {
 		for _, item := range main.GetList(key) {
 			if o, ok := item.(*jsonx.Object); ok {
-				names[jsonx.Str(getOr(o, "name", nil))] = true
-				if !o.Has("name") {
-					names["None"] = true
+				// Only a string name can equal a (string) dialer target.
+				if name, ok := o.Value("name").(string); ok {
+					names[name] = true
 				}
 			}
 		}
