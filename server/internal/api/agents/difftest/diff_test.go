@@ -118,9 +118,9 @@ func seedMetrics(t *testing.T, dir string) {
 			point(now.Add(-2*time.Minute).Add(123456*time.Microsecond), 20, 3000) + "\n" + `{"timestamp": "2026-10-2`,
 		"agent-busy_metrics.json": `{"agent_id": "agent-busy", "metrics": [` + point(now.Add(-time.Minute), 5, 50) + `, "skipped", ` +
 			point(now.Add(-26*time.Hour), 6, 60) + `]}`,
-		"gone_metrics.jsonl":   point(now.Add(-time.Minute), 1, 10) + "\n",
+		"gone_metrics.jsonl":      point(now.Add(-time.Minute), 1, 10) + "\n",
 		"agent-odd_metrics.jsonl": oddMetrics(now),
-		".agent-1abcdefgh.tmp": "partial",
+		".agent-1abcdefgh.tmp":    "partial",
 	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(metricsDir, name), []byte(content), 0o644); err != nil {

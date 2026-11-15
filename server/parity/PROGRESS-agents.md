@@ -1,6 +1,6 @@
 # PROGRESS — domain `agents`
 
-Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 20 missing, 1 ported (A04), 3 verified (A01, A02, A03). Only reviewers set `verified`.
+Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 20 missing, 4 verified (A01, A02, A03, A04). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.
 
@@ -19,7 +19,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A01 | Agent manager (manager.py part A) | 1642 | verified | HR | C04 | – | internal/agents |
 | A02 | registry support: runtime state, diagnostics, events, versions, messages | 1386 | verified | | C02 | – | internal/agents |
 | A03 | registry routes (register, heartbeat, create/edit/delete) | 432 | verified | | A01, A02, C06 | 5 (5 done) | internal/api/agents |
-| A04 | metrics history and flush | 1163 | ported | | A01, C07 | 3 | internal/agents/metrics (new), api/agents |
+| A04 | metrics history and flush | 1163 | verified | | A01, C07 | 3 | internal/agents/metrics (new), api/agents |
 | A05 | traffic history and traffic store | 967 | missing | | A04, C37¹ | 8 | internal/agents/metrics, api/agents |
 | A06 | OxiDNS monitor, dashboard state, metrics | 1364 | missing | | A01 | 5 | internal/agents/monitor (new), api/agents |
 | A07 | Mihomo panel, OxiDNS cache/rule update/rankings/publication stats | 1316 | missing | | A06, C14 | 9 | internal/agents/monitor, api/agents |
@@ -325,7 +325,7 @@ Accepted limitations: nesting depth — CPython's RecursionError depends on the 
 
 ## A04 — metrics history and flush
 
-**Status: `ported`** (2026-11-15, porter; not reviewed) · prereqs: A01, C07 · Go: internal/agents/metrics (history.go, stats.go, pyvalue.go, flush.go, wire.go), internal/api/agents/metrics.go
+**Status: `verified`** (review 2026-11-15, commits 724a72ff, ce3e7845, c15b0fb8, d35aba60; table under "Review") · prereqs: A01, C07 · Go: internal/agents/metrics (history.go, stats.go, pyvalue.go, flush.go, wire.go), internal/api/agents/metrics.go
 
 Files:
 - `backend/agents/metrics_history.py` (810) — `LEGACY_DIRS` / `adopt_legacy_dirs` not ported (maintainer decision)
@@ -349,12 +349,38 @@ Differential (`api/agents/difftest`, extended): seeded `metrics/` (agent-1 JSONL
 Differences from Python (documented, accepted):
 - State per data dir (`metrics.For(dataDir)`), not per manager object: a second AgentManager for the same repository keeps the memory (Python built a new empty one; only at start in production).
 - Points a heartbeat adds before `Load` runs are kept after the loaded points (Python loaded before serving; Go loads in the init hook, also before listening, so this is only a guard).
-- Shutdown: one `run("shutdown", record_idle=True)` after the HTTP server stopped; Python ran the signal handler's save (record_idle=True) and a second one with record_idle=False (records only if heartbeats arrived in between). Second-Ctrl+C force-quit and "exit without waiting for busy threads" belong to main (#3).
+- Shutdown: superseded by review finding 3 — Go now runs both saves of the signal path (`shutdownSave`). Second-Ctrl+C force-quit and "exit without waiting for busy threads" belong to main (#3).
 - Directory listing order: Go sorted, Python os.listdir order (affects only the order of load warnings/migrations).
 - Temp-file names: `os.CreateTemp(".<id>*.tmp")` (decimal suffix) vs mkstemp's 8 letters; both mode 0600, removed on failure.
 - Temp-dir fallback uses `os.TempDir()` (Python gettempdir() candidates); a non-permission MkdirAll error is logged instead of failing the manager.
 - `parse_time` offset seconds (e.g. `+05:30:15`) are not printed by `tasks.ISO`.
 - Lone surrogates from hand-edited files (Python: UnicodeEncodeError at save) not reproduced.
+
+Review (adversarial, 2026-11-15) — metrics_history.py, metrics_flush.py, routes/agents.py 2007–2099, app.py start/stop, routes/tasks `_metrics_row`/run/interval, task_status.record walked branch by branch against Go. Reference corpus from CPython 3.11.17 on the test server (`testdata/gen_a04_reference.py` → `testdata/a04_reference.json`, asserted by `a04_reference_test.go`): 16 saved JSON Lines files through `_read_file` (iso variants incl. week dates, compact, `,` fractions, 7-digit fractions, hour 24, full-width digits, aware/`Z`; Unicode-space and blank lines; universal newlines; BOM; invalid UTF-8; NaN/Infinity/-0.0/1e400/4300- and 4301-digit ints; duplicate keys and timestamps; truncated last line), 19 old JSON files through `_read_legacy` (non-iterable `metrics` TypeErrors, BOM, UTF-16, invalid UTF-8, syntax errors), 43 summary, 28 traffic-stats and 23 trend cases (bools, strings/None/list/dict values, `in`/index TypeErrors on non-dict sections, huge ints and their float conversions, 3.11 `sum` int→float switch and rounding, NaN/Infinity/-0.0 in max/min, hours windows/zero/negative, today/week on Sunday and Monday, counter resets, backwards and equal times, intervals 0/negative/10**30, far-future points). Findings, all fixed:
+
+| # | Sev | Finding | Fix | Regression test |
+|---|---|---|---|---|
+| 1 | low | traffic stats/trend durations used `time.Duration`, which saturates after 292 years: a saved point dated far ahead (e.g. 9999, 2400) gave other speeds than `timedelta.total_seconds()` | 724a72ff (`secondsBetween`: exact µs difference, correctly rounded division) | `TestReferenceTrafficStats` (year 9999/2400 end), `TestReferenceTrafficTrend` (year 9999) |
+| 2 | low | reading a saved file decoded invalid UTF-8 with `strings.ToValidUTF8` (one U+FFFD per run of bad bytes); Python's `errors='replace'` writes one per maximal subpart, so returned points and compacted files differed (`a\xff\xfeb` → 2, `\xed\xa0\x80` → 3 replacements) | ce3e7845 (`agents.DecodeUTF8Replace`, exported from A02's `pydecode.go`) | `TestReferenceReadSavedLines` ("invalid utf-8 in strings"), difftest agent-odd file compared after stop |
+| 3 | low | shutdown ran one save (record_idle=True); app.py's stop-signal path runs the handler's save (record_idle=True) and, after serve() returns, a second one (record_idle=False). A save that fails at shutdown (full disk, read-only dir) is therefore recorded twice in Python (`run_count`, `failure_count`, `consecutive_failures` +2), Go +1 | c15b0fb8 (`shutdownSave` runs both) | `TestShutdownFailureIsTriedAndRecordedTwiceLikeTheSignalPath`, `TestStartAndStopPathLoadsSavesAndRecords` (success still +1) |
+
+Differential (`api/agents/difftest`, d35aba60): a fourth seeded Agent `agent-odd` with a saved file holding a BOM line, invalid UTF-8, a lone CR break, NaN, a 31-digit int, 1e308 speeds, a string usage 3 h back, a 9999 point, a repeated and an aware timestamp and unreadable lines (compacted at the final save); 10 route cases (history all/1 h, summary 1 h/2 h/6 h = TypeError 500, full-width/spaced/empty/repeated `hours`, latest). **142 requests, 0 differences**, 3 metrics files identical after stop.
+
+Porter's listed differences, decided:
+- Two shutdown saves → finding 3, fixed (Go now runs both; the only remaining difference is which of the two runs saves heartbeats that finished while waitress drained — timing-dependent, not reproducible).
+- Heartbeats before `Load` kept, not replaced: **unobservable** — `repo.LoadConfig` → `agents.Init` → `OnManagerInit(loadOnce)` runs in `main` before `net.Listen`, so no heartbeat can arrive first (Python loaded before `run_http_server` too). Kept as a guard.
+- State per data dir instead of per manager: unobservable — Python rebuilds the manager only when `get_repository()` changes, which happens once at start.
+- Directory listing order (only the order of load warnings/migration writes), temp-file names (transient; both `.<id>…tmp`, mode 0600, removed by the next load), temp-dir fallback candidates, `+HH:MM:SS` offsets in hand-edited task-status, lone surrogates: accepted as listed.
+
+Accepted differences added by the review:
+- `metrics` directory cannot be created for a reason other than permission (path occupied by a file, read-only file system on first start): Python's `MetricsHistory.__init__` raises, so `AgentManager` cannot be built and every Agent route answers 500 until restart; Go logs and reports the error at the next save. Broken data directory only; the repository itself fails first on a read-only data dir.
+- An Agent id starting with `/` (only via an imported backup; registration generates ids): Python's `os.path.join` would put the file outside DATA_DIR/metrics; Go keeps it under the directory. Ids containing `/` elsewhere make `os.CreateTemp` fail with its own text where mkstemp fails with ENOENT.
+- Hand-edited `task-status.json` (non-dict entry, `last_run_at` within an interval of year 9999): Python raises in `_metrics_row`/`next_run_at`, Go treats the entry as empty / prints year 10000. Neither side writes such values.
+- Deep JSON nesting in a saved line (RecursionError aborts Python's load) — jsonx-wide limitation as in A03.
+
+Checks performed (no finding): `_prune`/`add_metrics`/`get_metrics` (deque cap, pending clamp, two `now()` reads, cutoff before prune order), `_cutoff` overflow texts and floor normalisation of negative hours, `_parse_lines` (count of non-blank lines, dedupe only of kept points, aware → TypeError skip), `load` (tmp removal, suffix order, `$` before newline, deleted Agents, legacy + new file, OSError vs ValueError vs uncaught TypeError partial state, migration flush under the lock), `delete_agent_history`/`retain_agents` key sets, `_append` (newline repair, fsync), `_replace` (empty → remove, temp cleanup), `_flush_agents` (compaction ratio, rewrite after failure, empty-points pop, legacy removal, counts), `flush` error text, `describe_os_error`, `metrics_flush.run` (failure order and texts, traffic slot, record_idle), `next_run_at` (first maximal, offsets, `_iso`), `run_due`, loop, `validate_interval`/`interval_seconds`/`set_interval` (`type(value) is int`: floats and bools refused), `_metrics_row`, run-now, the three routes (404/500 texts, non-dict `system_metrics`, `hours` via `int()` incl. full-width/space/sign/empty/repeated/4301 digits).
+
+Commands: reference `rt --back server/internal/agents/metrics/testdata/a04_reference.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/agents/metrics/testdata/gen_a04_reference.py > server/internal/agents/metrics/testdata/a04_reference.json'`. The review ran the tests on a private export of HEAD (A05's uncommitted WIP in `internal/agents/metrics`, `trafficstore`, `api/agents` did not compile at the time): `go vet ./internal/agents/ ./internal/agents/metrics/ ./internal/api/agents/... && go test -count=1 -race ./internal/agents/ ./internal/agents/metrics/... ./internal/api/agents/... ./internal/server/...` all ok; `CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/api/agents/difftest/` 142 requests, 0 differences.
 
 Pitfalls: tests share process-wide hooks/flush state — start with `fresh(t)` (metrics.Reset + agents.ResetRuntime/ResetHooks + Wire). Test seams: `now` (naive clock), `utcNow`, `appendLines`, `replaceFile`, `recordStatus`. `ResetFlushState`/`SetStartedAt`/`WakeIsSet`/`ClearWake` are test helpers. The shared worktree sometimes holds other agents' non-compiling WIP (convert, rules); the commands below patch only the remote copy when needed.
 
