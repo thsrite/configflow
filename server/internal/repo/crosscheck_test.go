@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -542,4 +543,91 @@ func TestCrossCheckInterchange(t *testing.T) {
 	python = xcPython(t, "fingerprint", pyDir, "plain").(*jsonx.Object)
 	wantEqual(t, python.Value("opened"), python.Value("before"))
 	wantEqual(t, python.Value("export"), must(r.ExportAll(bg, false))(t))
+}
+
+// Go and Python exclude each other through flock on .config.lock: a writer
+// on either side waits for the other until CONFIGFLOW_LOCK_TIMEOUT_SECONDS
+// and then fails with Python's message (C03 review).
+func TestCrossCheckLockExcludesPythonAndGo(t *testing.T) {
+	interpreter, repo := os.Getenv("CONFIGFLOW_PY"), os.Getenv("CONFIGFLOW_REPO")
+	if interpreter == "" || repo == "" {
+		t.Skip("CONFIGFLOW_PY and CONFIGFLOW_REPO are not set")
+	}
+	r := newRepo(t)
+	addAgent := func(id string) error {
+		_, err := r.UpdateSystemTransaction(bg, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+			system.Set("agents", append(system.GetList("agents"), jsonx.Obj("id", id, "name", id, "profile_id", "default")))
+			return nil, nil
+		})
+		return err
+	}
+
+	// Python holds the lock: a Go write times out, then waits it out.
+	script := must(filepath.Abs("testdata/repo_crosscheck.py"))(t)
+	holder := exec.Command(interpreter, script, "hold", r.DataDir(), filepath.Join(t.TempDir(), "hold.json"), "plain", "1.5")
+	holder.Env = append(os.Environ(), "CONFIGFLOW_REPO="+repo, "PYTHONDONTWRITEBYTECODE=1")
+	stdout := must(holder.StdoutPipe())(t)
+	noError(t, holder.Start())
+	line := make([]byte, 7)
+	if _, err := io.ReadFull(stdout, line); err != nil || string(line) != "locked\n" {
+		t.Fatalf("holder: %q %v", line, err)
+	}
+	t.Setenv(LockTimeoutEnv, "0.3")
+	wantError(t, addAgent("go-1"), ErrRepository, "Timed out waiting for profile repository lock")
+	t.Setenv(LockTimeoutEnv, "20")
+	noError(t, addAgent("go-2"))
+	noError(t, holder.Wait())
+
+	// Go holds the lock: Python's write times out, then succeeds once released.
+	held, release := make(chan struct{}), make(chan struct{})
+	go func() {
+		_ = withLock(bg, r.lockFile, func(context.Context) error { close(held); <-release; return nil })
+	}()
+	<-held
+	t.Setenv(LockTimeoutEnv, "0.3")
+	result := xcPython(t, "try-write", r.DataDir(), "plain").(*jsonx.Object)
+	wantEqual(t, result, jsonx.Obj("class", "ProfileRepositoryError", "message", "Timed out waiting for profile repository lock"))
+	close(release)
+	t.Setenv(LockTimeoutEnv, "20")
+	wantEqual(t, xcPython(t, "try-write", r.DataDir(), "plain"), jsonx.Obj("ok", true))
+	var ids []string
+	for _, agent := range must(r.GetAgents(bg, true))(t) {
+		ids = append(ids, agent.(*jsonx.Object).GetString("id"))
+	}
+	if strings.Join(ids, ",") != "go-2,py-agent" {
+		t.Fatalf("agents %v", ids)
+	}
+}
+
+// A Python writer that dies before COMMIT (statements executed, transaction
+// open, .config.lock held) leaves the database readable and writable by Go
+// with the previous data (C03 review).
+func TestCrossCheckPythonWriterKilledBeforeCommit(t *testing.T) {
+	interpreter, repo := os.Getenv("CONFIGFLOW_PY"), os.Getenv("CONFIGFLOW_REPO")
+	if interpreter == "" || repo == "" {
+		t.Skip("CONFIGFLOW_PY and CONFIGFLOW_REPO are not set")
+	}
+	r := newRepo(t)
+	before := must(r.ExportAll(bg, false))(t)
+	script := must(filepath.Abs("testdata/repo_crosscheck.py"))(t)
+	crash := exec.Command(interpreter, script, "crash-write", r.DataDir(), filepath.Join(t.TempDir(), "x.json"), "plain")
+	crash.Env = append(os.Environ(), "CONFIGFLOW_REPO="+repo, "PYTHONDONTWRITEBYTECODE=1")
+	output, err := crash.CombinedOutput()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 9 {
+		t.Fatalf("crash-write: %v\n%s", err, output)
+	}
+	reopened := openRepo(t, r.DataDir())
+	wantEqual(t, must(reopened.ExportAll(bg, false))(t), before)
+	wantEqual(t, must(r.ExportAll(bg, false))(t), before)
+	t.Setenv(LockTimeoutEnv, "2")
+	_, err = reopened.UpdateSystemTransaction(bg, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+		system.Set("agents", []any{jsonx.Obj("id", "go", "name", "Go", "profile_id", "default")})
+		return nil, nil
+	})
+	noError(t, err)
+	noError(t, reopened.Store().Check())
+	if len(must(r.GetAgents(bg, true))(t)) != 1 {
+		t.Fatal("write after the crash not visible")
+	}
 }

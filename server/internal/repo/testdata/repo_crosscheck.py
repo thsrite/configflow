@@ -10,6 +10,12 @@ repository root.
                                                  OUT = one record per operation (result or error, and a dump)
     repo_crosscheck.py fingerprint DIR OUT MODE  OUT = store fingerprint before opening, after opening and
                                                  after export_all, and the export
+    repo_crosscheck.py hold DIR OUT MODE SECONDS hold .config.lock (no repository opened) for SECONDS;
+                                                 prints "locked" once it is held
+    repo_crosscheck.py try-write DIR OUT MODE    open DIR and add an Agent in a system transaction;
+                                                 OUT = {"ok": true} or the error class and message
+    repo_crosscheck.py crash-write DIR OUT MODE  the same write, but the process dies (exit 9) right
+                                                 before COMMIT, with every statement executed
 """
 
 import copy
@@ -17,6 +23,7 @@ import json
 import os
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, os.environ['CONFIGFLOW_REPO'])
@@ -185,9 +192,44 @@ def fingerprint(directory, mode):
             'export': exported, 'profiles': repository.list_profiles()}
 
 
+def hold(directory, seconds):
+    """Hold .config.lock the way ProfileRepository._lock does, without opening."""
+    repository = ProfileRepository.__new__(ProfileRepository)
+    lock = Path(directory).resolve() / '.config.lock'
+    with ProfileRepository._lock(repository, lock):
+        print('locked', flush=True)
+        time.sleep(seconds)
+    return {'held': seconds}
+
+
+def try_write(directory, mode):
+    try:
+        repository = open_repository(directory, mode)
+        repository.update_system_transaction(
+            lambda system: system['agents'].append({'id': 'py-agent', 'name': 'Py', 'profile_id': 'default'}))
+        return {'ok': True}
+    except Exception as error:  # the class and message are what is compared
+        return {'class': type(error).__name__, 'message': str(error)}
+
+
+def crash_write(directory, mode):
+    from backend.common.config_store import ConfigStore
+    repository = open_repository(directory, mode)
+    ConfigStore._commit = lambda self, connection: os._exit(9)
+    repository.update_system_transaction(
+        lambda system: system['agents'].append({'id': 'crashed', 'name': 'X', 'profile_id': 'default'}))
+    raise SystemExit('not reached')
+
+
 def main():
     command, directory, output, mode = sys.argv[1:5]
-    if command == 'init':
+    if command == 'crash-write':
+        crash_write(directory, mode)
+    if command == 'hold':
+        result = hold(directory, float(sys.argv[5]))
+    elif command == 'try-write':
+        result = try_write(directory, mode)
+    elif command == 'init':
         repository = open_repository(directory, mode)
         result = {'export': repository.export_all(), 'dump': dump(directory), 'layout': layout(directory),
                   'fingerprint': list(repository._store.fingerprint())}
