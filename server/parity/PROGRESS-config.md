@@ -68,7 +68,7 @@ Routes in config modules: 228 of the 380 rows in routes.tsv.
 
 ## C01 — jsonx, store
 
-**Status: `ported`** · prereqs: – · Go: internal/jsonx, internal/store
+**Status: `verified`** (review 2026-11-15, one round; 0 open findings) · prereqs: – · Go: internal/jsonx, internal/store
 
 Files:
 - `backend/common/config_store.py` (564)
@@ -77,9 +77,31 @@ Tests: `test_config_store.py` (11)
 
 Routes: none.
 
-Evidence: `internal/store` (store.go, conn.go, rows.go, errors.go; 1.5k lines) + `internal/jsonx` (1.6k). All 40 defs of `config_store.py` have counterparts (the exception classes are `store.Err*` kinds, `_fsync_file` is inlined). `test_config_store.py` 11/11 cases ported (`store_test.go`) plus a both-way Python cross-check (`crosscheck_test.go`) and the 634-value jsonx encoder corpus.
+Evidence: `internal/store` (store.go, conn.go, rows.go, errors.go, atime_*.go) + `internal/jsonx`. All 40 defs of `config_store.py` have counterparts (the exception classes are `store.Err*` kinds, `_fsync_file` is inlined). `test_config_store.py` 11/11 cases ported (`store_test.go`) plus a both-way Python cross-check (`crosscheck_test.go`) and the 634-value jsonx encoder corpus.
 
-Reviewer notes: Accepted differences (documented, do not rediscover): jsonx lone-surrogate handling (Go strings cannot hold lone surrogates; see `jsonx/doc.go`); `default=str` / `allow_nan=False` are not provided by the encoders (callers convert first). The store-level C01 cases of `test_config_storage_migration.py` are in C03 (`repo/open_test.go`).
+Review findings (all fixed; regression tests in `store/review_test.go`, `store/backup_linux_test.go`, `store/crosscheck_test.go`):
+1. **medium** — `BackupTo` failures carried the driver's *source*-connection errmsg (`配置数据库访问失败：not an error` for a disk write failure); CPython raises with the destination's errmsg, i.e. `sqlite3_errstr(rc)` (`…：disk I/O error`). Fix 26140751; `TestBackupWriteFailureMessage` (RLIMIT_FSIZE, reference from CPython).
+2. **low** — a TEXT row that is not UTF-8: Python's sqlite3 raises `OperationalError: Could not decode to UTF-8 column '<col>' with text '<one U+FFFD per bad byte>'` (reads → `ConfigStorageError 配置数据库访问失败：…`, `check()` → raw, salvage → None); Go returned StoreCorrupt for values and silently read bad owners/keys. Fix 039f961d (`checkText` in every row scan, `decodeError`); `TestInvalidUTF8TextIsAStorageError` + cross-check scenarios `value-bad-utf8`, `meta-bad-utf8`, `owner-bad-utf8`.
+3. **low (latent)** — `translate`/`untranslated` found a SQLite error through `errors.As` inside an already classified `*store.Error` and reclassified it (Python's `except sqlite3.Error` never sees a StoreError). Fix 039f961d; `TestTranslateKeepsClassifiedErrors`.
+4. **low** — `build_temporary` quick_check failure text is `f'{result}'` (`[('…',), …]`), Go joined rows with `; `. Fix 66da000f; `TestQuickCheckFailureMessage`.
+5. **low** — `preserve_corrupt` no-hard-link fallback: `shutil.copy2` stats the source *after* copying and copies atime+mtime, then the mode; Go set atime to now. Fix 66da000f; `TestCopyFileKeepsTimes`.
+
+Checks performed:
+- Line-by-line walk of every function/branch of `config_store.py` vs Go: SQL text of all statements and the schema, pragmas (`foreign_keys`, `synchronous=EXTRA`, `journal_mode=DELETE`, `application_id`, busy timeout = `sqlite3.connect(timeout)`), `BEGIN`/`BEGIN IMMEDIATE`, rollback paths (`in_transaction`), head/meta validation, `document_rows`/`build_document` consistency rules and messages, `_diff` (incl. cascade, root-order compare), commit cache reuse, `_apply` meta order, temp naming/mode 0600/cleanup, install/fsync, check, salvage, corrupt target, backup (busy retry, O_EXCL 0600), stale temporaries glob semantics; modernc driver source (error formatting, URI open flags, backup API).
+- jsonx vs CPython 3.11 `_json.c` (scanstring, scan_once, match_number, object/array parsing, error positions) and `encoder.py`/C encoder (escaping, float repr rule, separators, sort order), Flask 3.0 `DefaultJSONProvider.response`.
+- New Python reference data: `jsonx/testdata/review_gen.py` → `review.jsonl` (73 cases: exact float ties beyond 800 digits, extreme exponents, astral/BMP sort order, U+2028/2029 and format characters, full-width and other non-ASCII digits, nested duplicate keys, 600-deep and wide documents, error positions after CRLF/astral/deep nesting, 4301-digit ints) — passed without code changes (`TestReviewCorpus`).
+- Store cross-check extended: 7 new tampered-row scenarios (BLOB/integer/bad-UTF-8 values, bad-UTF-8 meta/owner, negative generation, failing trigger) and a commit outcome per scenario; odd document sequences (empty documents/sections/keys, profiles without fields, reordering) compared row by row with Python (`TestCrossCheckPythonOddDocuments`); Go↔Python concurrent writers (busy wait → conflict both ways, short timeout → `database is locked`) and 8 concurrent Go writers (`-race`, 3 runs); permission/directory/read-only failures; paths with URI special characters.
+- Dependent packages re-run after the fixes: `internal/repo`, `internal/api/settings`, `internal/agents` pass.
+
+Accepted differences (reviewer's judgement, documented; not open findings — overrule if needed):
+- Nesting: CPython `json.loads`/`dumps` hit RecursionError at depth 993 (less inside Flask); Go parses up to `jsonx.MaxDepth` 10000 and encodes any depth (`jsonx/doc.go`).
+- jsonx lone surrogates (domain-level known difference).
+- Rows only manual SQL can produce: a `generation` beyond int64 (Python reads it but cannot commit: OverflowError; Go reports StoreCorrupt), non-integer `position` values (Python loads; Go fails with a scan error), a BLOB meta/field value in `Fingerprint` (Python TypeError; Go digests it — test helper only).
+- `DiscardTemporary`/`DiscardStaleTemporaries` ignore unlink errors other than "missing" (Python would raise e.g. PermissionError from cleanup); `copyFile` does not copy xattrs/file flags (copy2 does, best effort).
+- Integers over 4300 digits are not refused by the encoders (unreachable: `Parse` and yamlx refuse them on input, as CPython does).
+- `default=str` / `allow_nan=False` are not provided by the encoders (callers convert first). The store-level C01 cases of `test_config_storage_migration.py` are in C03 (`repo/open_test.go`).
+
+Commands: `rt -- bash -lc 'cd server && CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO=$(cd .. && pwd) go test -count=1 -v ./internal/store/ ./internal/jsonx/'`; regenerate references: `rt --back server/internal/jsonx/testdata/review.jsonl -- bash -lc '~/cf-test/.venv/bin/python server/internal/jsonx/testdata/review_gen.py'`.
 
 ## C02 — infra helpers
 
