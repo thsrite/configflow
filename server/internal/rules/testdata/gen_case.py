@@ -2,7 +2,8 @@
 """Generate sre's IGNORECASE tables and reference matches (CPython 3.11).
 
     PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rules/testdata/gen_case.py \
-        server/internal/rules/pyre_case_table.go server/internal/rules/testdata/icase_reference.json.gz
+        server/internal/rules/pyre_case_table.go server/internal/rules/testdata/icase_reference.json.gz && \
+        gofmt -w server/internal/rules/pyre_case_table.go
 
 pyre_case_table.go: _sre.unicode_tolower / the simple upper case that
 _sre's sre_upper_unicode uses (first code point of str.upper()) for every
