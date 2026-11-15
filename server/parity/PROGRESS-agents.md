@@ -1,6 +1,6 @@
 # PROGRESS — domain `agents`
 
-Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 18 missing, 1 ported (A06), 5 verified (A01, A02, A03, A04, A05). Only reviewers set `verified`.
+Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 18 missing, 0 ported, 6 verified (A01, A02, A03, A04, A05, A06). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.
 
@@ -21,7 +21,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A03 | registry routes (register, heartbeat, create/edit/delete) | 432 | verified | | A01, A02, C06 | 5 (5 done) | internal/api/agents |
 | A04 | metrics history and flush | 1163 | verified | | A01, C07 | 3 | internal/agents/metrics (new), api/agents |
 | A05 | traffic history and traffic store | 967 | verified | | A04, C37¹ | 8 (8 done) | internal/agents/metrics, internal/agents/trafficstore (new), internal/discovery (new, C37's), api/agents |
-| A06 | OxiDNS monitor, dashboard state, metrics | 1364 | ported | | A01 | 5 | internal/agents/monitor (new), api/agents |
+| A06 | OxiDNS monitor, dashboard state, metrics | 1364 | verified | | A01 | 5 | internal/agents/monitor (new), api/agents |
 | A07 | Mihomo panel, OxiDNS cache/rule update/rankings/publication stats | 1316 | missing | | A06, C14 | 9 | internal/agents/monitor, api/agents |
 | A08 | installer script rendering, install command store | 1333 | missing | HR | A02, C02 | – | internal/installer (new) |
 | A09 | Docker HA guide, preflight, enrollment | 1083 | missing | HR | A08, A01 | 2 | internal/installer, api/agents |
@@ -459,7 +459,7 @@ Review commands: `rt --back server/internal/agents/metrics/testdata/a05_referenc
 
 ## A06 — OxiDNS monitor, dashboard state, metrics
 
-**Status: `ported`** (2026-11-15, not reviewed) · prereqs: A01 · Go: `internal/agents/monitor` (new), `internal/api/agents/oxidns.go`
+**Status: `verified`** (review 2026-11-15, commits 84e31b06–f8b84a42 + this PROGRESS commit, table below) · prereqs: A01 · Go: `internal/agents/monitor` (new), `internal/api/agents/oxidns.go`
 
 Files:
 - `backend/agents/oxidns_monitor.py` (727) → `monitor/monitor.go` (MonitorError = `*monitor.Error`, `_agent_origin` = `monitor.AgentOrigin`, exported for A07/A16/A20/A22/A23/routers; `api/agents.MonitorErrorResponse` is the shared JSON error answer)
@@ -491,7 +491,33 @@ Decisions / known differences (for the reviewer):
 - Content-Encoding: requests decodes gzip/deflate; Go's transport only gzip (Agents never compress).
 - ip_address uses netip plus Python's scope-id rules; corpus confirms the 48 forms incl. `::ffff:1.2.3.4` (3.11.17 prints it mapped).
 
-Left: adversarial review (A06 is not HR). Not part of A06: `checkpoint`/`complete` hooks and the ranking-history store/loop (A07).
+Not part of A06: `checkpoint`/`complete` hooks and the ranking-history store/loop (A07).
+
+Review (adversarial, 2026-11-15) — every function and branch of oxidns_monitor.py, oxidns_dashboard_state.py, oxidns_metrics.py, the pure part of oxidns_publication_stats.py and the five routes walked against monitor.go/state.go/metrics.go/pynum.go/pyip.go/publication.go/history.go/oxidns.go, plus the shared `agents.Request` edits. New CPython 3.11.17 references (synthetic values), all asserted by `a06_review_test.go`:
+- `testdata/gen_a06_review.py` → `a06_review.json.gz` (randomised, 18k cases): 2500 metrics texts (Unicode digits/whitespace incl. U+3000/U+001F/U+FEFF edges, all 10 `splitlines` breaks, label escapes `\"` `\\` `\n` and invalid ones, duplicate/alias series with 1 vs 1.0, NaN/Inf/1e400/309-digit/4301-digit values, timestamps), 700 baseline/carried triples (counter resets, huge ints, -0.0, mixed int/float sums beyond the float range), 2500 ip_address strings (random IPv6 compression/embedded IPv4/zones/mutations), 2006 upstream labels through urlsplit, 4800 query/client/dashboard parameter sets, 1500 ranking sections, 1200 clients / 800 queries / 500 query answers and 1200 overview snapshots and 1500 live-ranking answers after `_request` (odd JSON values everywhere: bools, -0.0, 1e308, inf/nan, 2^53, lists/dicts), 2500 mutated dashboard states, 29 raw state files (BOM, UTF-16/32, duplicate keys, 4300/4301 digits, deep nesting), 300 target digests.
+- `testdata/gen_a06_flows.py` → `a06_flows.json.gz`: 400 random overview/reset sequences (2917 steps) on one data dir with a scripted monotonic clock and numbered generations — counters rising/restarting, core/configuration/runtime changes, clock regressions, token and version (incl. ≥ 1.8.55 history status) changes, rankings failing/timing out/changing/answering another recorder: every answer, the Agent calls and the **exact state file bytes** after each step equal Python's.
+
+| # | Sev | Finding | Fix | Regression test |
+|---|---|---|---|---|
+| 1 | low | An Agent registered with a scoped IPv6 host (`fe80::…%eth0`, `::1%1`; `_agent_origin` keeps the scope) was unreachable in Go: `net/url` refuses `%eth0`. requests reaches it: `requote_uri`'s InvalidURL fallback turns every `%` of the URL into `%25` (so the query escapes are double-encoded, as Python sends them), urllib3 hands `fe80::1%eth0` to glibc, which accepts an interface name only for link-local/multicast addresses and a decimal zone ≤ 2^32−1 for any address (`::1%lo` fails resolution). Shared `agents.HTTPClient` (manager calls to bracketed zone hosts had the same defect); A01's `%zz` expectation was wrong and is corrected | 84e31b06 (`unquoteUnreserved` fallback, `encodeZone`, `glibcScopeOK` in the dialer) | `TestRequoteURIFallbackAndZonesLikeRequests`, `TestGlibcScopeRules`, `TestScopedIPv6AgentIsReachedLikeRequests`, `TestScopedAgentHostIsReachedLikePython`, differential `zone *` cases |
+
+Differential extended (806ea210): fake Agent also on `[::1]`; Agents with host `::1%1` (clients, queries with a CJK/`:` query) and `[::1%lo]` (unreachable, no Agent call in either), truncated body (Content-Length > sent, close), > 5 MiB chunked body, gzip body (decoded by both), gzip expanding beyond 5 MiB, Dashboard Agent whose rankings endpoint answers 404 text: **69 requests, 0 differences**. Registry differential after the client change: 234 requests, 0 differences.
+
+Porter's listed differences, decided (all accepted, none observable from a real Agent or the UI):
+- Lone surrogates (jsonx-wide): the Go Agent's encoding/json never emits them and OxiDNS metrics are Rust strings; only a hand-edited state file can hold one (the two such raw-state cases are skipped in `TestReviewStateFiles` with this reason).
+- JSON deeper than Python's recursion limit: Agent answers are encoding/json output of bounded core data; a reset body of ~900–1024 nested levels (≤ 2048 bytes) is 400 INVALID_QUERY in both, only the message differs (Python's threshold depends on its stack depth).
+- Control characters in an Agent token: tokens are `secrets.token_urlsafe(24)` from registration.
+- `Content-Encoding: deflate`: Agents never compress; gzip verified equal in the differential.
+- ip_address via netip + scope rules: 2548 forms equal (corpus + review fuzz).
+
+Checks performed (no finding): `_agent` (falsy agent, service type, version errors), `_agent_origin` (bracket stripping, hostname regex, bool/float/huge ports), `_request` (header latin-1, X-ConfigFlow-Query-Sources only for `queries`, params order/encoding, trust_env, no redirects, status before body, 5 MiB bound incl. chunked/gzip, body read errors, json.loads(bytes) BOM/UTF-16/32/surrogatepass/4300 digits, `success`/`ok` `is False`, unhashable `code`, status mapping, 404 upgrade texts), `_number`/`_text`, all parameter validators, `_display_upstream`/`_public_upstreams` (digests, address lookup), `_overview_snapshot` (all dashboard checks), `_rankings_unavailable` texts, `_ranking_section`, `_kept_rankings` (60 s reuse, 180 s backoff, key, manual, previous answer on timeout, `time.monotonic` regression `0 <=`), `_dashboard_rankings`, `_history_rankings`/`_history_status` (floor arithmetic, A07 store hook), `_dashboard_overview` (order, except mapping, CAS expected/None, statistics publication_count truthiness, fromtimestamp rounding), queries/query/clients, parse_metrics/summaries/baseline/zero/add (exact int/float comparisons, OverflowError paths, sort keys), state validation/read/CAS/locks (64 in-process locks + flock, 5 s, `.lock` file, mkstemp/fsync/replace/dir fsync, temp cleanup), advance/totals/_task, the five routes (bounded reset body, args, Content-Length, is_json, no-store, error JSON), `Request.NoProxy` (`TestNoProxyIgnoresTheEnvironment`, f8b84a42). Time zones/DST: not applicable (A06 uses only UTC timestamps).
+
+Observation for A01 (not an A06 path, A06 sends with NoProxy): with HTTP_PROXY set, Go's `ProxyFromEnvironment` bypasses `localhost`/loopback hosts while requests (trust_env) proxies them unless NO_PROXY says otherwise — only manager calls to a loopback Agent through an environment proxy differ.
+
+Review commands (run on a private detached worktree of HEAD; the shared tree held other agents' WIP):
+- `rt -- bash -lc 'cd server && go vet ./internal/agents/... ./internal/api/agents/... && go test -count=1 -race ./internal/agents/... ./internal/api/agents/... ./internal/server/...'`
+- `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run Oxidns ./internal/api/agents/difftest/'` and separately `-run TestDifferential`
+- corpora: `cd server/internal/agents/monitor && rt --back server/internal/agents/monitor/testdata/a06_review.json.gz -- bash -lc 'PYTHONPATH=../../../.. ~/cf-test/.venv/bin/python testdata/gen_a06_review.py'` (same with `gen_a06_flows.py` / `a06_flows.json.gz`)
 
 ## A07 — Mihomo panel, OxiDNS cache/rule update/rankings/publication stats
 
