@@ -1068,4 +1068,3 @@ func rankingRound(ctx context.Context) {
 
 // rankingStoreFactory is the history.go hook: get_history(data_dir).
 func rankingStoreFactory(dataDir string) RankingHistory { return GetRankingStore(dataDir) }
-
