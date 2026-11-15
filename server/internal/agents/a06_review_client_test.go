@@ -9,10 +9,14 @@ package agents
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -81,4 +85,45 @@ func TestScopedIPv6AgentIsReachedLikeRequests(t *testing.T) {
 	if len(seen) != 1 {
 		t.Fatalf("%v", seen)
 	}
+}
+
+// TestNoProxyIgnoresTheEnvironment: Request.NoProxy is oxidns_monitor's
+// session.trust_env = False; without it the manager's calls use
+// HTTP_PROXY like requests. Run in a child process because
+// http.ProxyFromEnvironment reads the environment once per process.
+func TestNoProxyIgnoresTheEnvironment(t *testing.T) {
+	if os.Getenv("A06_NOPROXY_CHILD") == "1" {
+		noProxyChild(t)
+		return
+	}
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("proxied"))
+	}))
+	defer proxy.Close()
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("direct"))
+	}))
+	defer agent.Close()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestNoProxyIgnoresTheEnvironment$", "-test.count=1")
+	cmd.Env = append(os.Environ(), "A06_NOPROXY_CHILD=1", "HTTP_PROXY="+proxy.URL, "http_proxy="+proxy.URL,
+		"NO_PROXY=", "no_proxy=", "A06_AGENT_PORT="+agent.URL[strings.LastIndex(agent.URL, ":")+1:])
+	output, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(output), "noproxy=direct env=proxied") {
+		t.Fatalf("%v\n%s", err, output)
+	}
+}
+
+func noProxyChild(t *testing.T) {
+	resolveHook = func(host string) (string, error) { return "127.0.0.1", nil }
+	defer func() { resolveHook = nil }()
+	url := "http://agent.test:" + os.Getenv("A06_AGENT_PORT") + "/api/oxidns/overview"
+	var got []string
+	for _, noProxy := range []bool{true, false} {
+		response, err := HTTPClient{}.Do(context.Background(), Request{Method: "GET", URL: url, Timeout: Pair(3, 12), NoProxy: noProxy})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, string(response.Body))
+	}
+	fmt.Printf("noproxy=%s env=%s\n", got[0], got[1])
 }
