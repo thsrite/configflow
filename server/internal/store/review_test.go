@@ -6,7 +6,10 @@ package store
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"configflow/internal/jsonx"
 )
@@ -85,5 +88,50 @@ func TestTranslateKeepsClassifiedErrors(t *testing.T) {
 	}
 	if got := translate(cause); kindOf(got) != ErrStorage || got.Error() != "配置数据库访问失败：no such table: no_such_table" {
 		t.Errorf("translate(raw): %v (%v)", got, kindOf(got))
+	}
+}
+
+// TestQuickCheckFailureMessage: build_temporary formats the failed
+// quick_check result as f'{result}', the repr of the row list.
+func TestQuickCheckFailureMessage(t *testing.T) {
+	cases := map[string][]string{
+		"[]":                 {},
+		"[('ok',), ('ok',)]": {"ok", "ok"},
+		`[("row 1 missing from index it's",), ('*** in database main ***\nPage 3: 例',)]`: {"row 1 missing from index it's", "*** in database main ***\nPage 3: 例"},
+	}
+	for want, rows := range cases {
+		if got := rowsRepr(rows); got != want {
+			t.Errorf("rowsRepr(%q) = %s, want %s", rows, got, want)
+		}
+	}
+}
+
+// TestCopyFileKeepsTimes: the no-hard-link fallback of preserve_corrupt is
+// shutil.copy2, which copies st_atime and st_mtime (nanoseconds) and the
+// permission bits.
+func TestCopyFileKeepsTimes(t *testing.T) {
+	directory := t.TempDir()
+	source := filepath.Join(directory, "source")
+	if err := os.WriteFile(source, []byte("damaged"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	atime := time.Unix(1700000000, 123456789)
+	mtime := time.Unix(1600000000, 987654321)
+	if err := os.Chtimes(source, atime, mtime); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(directory, "target")
+	if err := copyFile(source, target); err != nil {
+		t.Fatal(err)
+	}
+	// Reading the source may itself update its atime (relatime): copy2
+	// copies the atime the source has after the copy.
+	atime = accessTime(must(os.Stat(source))(t))
+	info := must(os.Stat(target))(t)
+	if got := accessTime(info); !got.Equal(atime) {
+		t.Errorf("atime %v, want %v", got, atime)
+	}
+	if !info.ModTime().Equal(mtime) || info.Mode().Perm() != 0o640 {
+		t.Errorf("mtime %v mode %v, want %v 0640", info.ModTime(), info.Mode().Perm(), mtime)
 	}
 }

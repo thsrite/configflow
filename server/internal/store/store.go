@@ -489,9 +489,24 @@ func (s *Store) writeTemporary(temporary string, target *rows, meta *jsonx.Objec
 		return err
 	}
 	if len(result) != 1 || result[0] != "ok" {
-		return newError(ErrStore, "新建数据库未通过完整性检查："+strings.Join(result, "; "))
+		return newError(ErrStore, "新建数据库未通过完整性检查："+rowsRepr(result))
 	}
 	return nil
+}
+
+// rowsRepr is repr(cursor.fetchall()) for one-column text rows:
+// [('a',), ('b',)].
+func rowsRepr(values []string) string {
+	var b strings.Builder
+	b.WriteByte('[')
+	for i, value := range values {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString("(" + jsonx.Repr(value) + ",)")
+	}
+	b.WriteByte(']')
+	return b.String()
 }
 
 // DiscardTemporary removes a file made by BuildTemporary and its journal.
@@ -657,18 +672,16 @@ func (s *Store) PreserveCorrupt(target string) (string, error) {
 	return target, nil
 }
 
-// copyFile is shutil.copy2: contents, permission bits and modification time.
+// copyFile is shutil.copy2: copyfile (contents; a new file gets 0666 minus
+// umask) followed by copystat, which stats the source after the copy and
+// sets access and modification time, then the permission bits.
 func copyFile(source, target string) error {
-	info, err := os.Stat(source)
-	if err != nil {
-		return err
-	}
 	input, err := os.Open(source)
 	if err != nil {
 		return err
 	}
 	defer input.Close()
-	output, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
+	output, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666)
 	if err != nil {
 		return err
 	}
@@ -679,10 +692,14 @@ func copyFile(source, target string) error {
 	if err := output.Close(); err != nil {
 		return err
 	}
-	if err := os.Chmod(target, info.Mode().Perm()); err != nil {
+	info, err := os.Stat(source)
+	if err != nil {
 		return err
 	}
-	return os.Chtimes(target, time.Now(), info.ModTime())
+	if err := os.Chtimes(target, accessTime(info), info.ModTime()); err != nil {
+		return err
+	}
+	return os.Chmod(target, info.Mode().Perm())
 }
 
 // BackupTo writes a consistent copy of the live database to destination
