@@ -229,23 +229,25 @@ func normalize(v any) any {
 	return v
 }
 
-func nativeKeyCheck(key string, duplicate bool) error {
-	if key == "__proto__" || key == "prototype" || key == "constructor" {
-		return errors.New("OxiDNS YAML 字段名必须为安全文本")
+// nativeKeyCheck is NativeLoader.construct_mapping's key check
+// (OxidnsSettingsError messages).
+func nativeKeyCheck(key any, duplicate bool) error {
+	name, ok := key.(string)
+	if !ok || name == "__proto__" || name == "prototype" || name == "constructor" {
+		return &Error{Class: "OxidnsSettingsError", Msg: "OxiDNS YAML 字段名必须为安全文本"}
 	}
 	if duplicate {
-		return errors.New("OxiDNS YAML 包含重复字段")
+		return &Error{Class: "OxidnsSettingsError", Msg: "OxiDNS YAML 包含重复字段"}
 	}
 	return nil
 }
 
-func checkLoad(t *testing.T, name, text string, want loadOutcome, options LoadOptions, exactMessages *int, messages *int) bool {
+// checkLoad compares one load with Python: the value, or the exception class
+// and message exactly, or (for values JSON cannot encode) the matching
+// representability error.
+func checkLoad(t *testing.T, name, text string, want loadOutcome, options LoadOptions, load func(string, LoadOptions) (any, error)) bool {
 	t.Helper()
-	if strings.HasPrefix(text, "\ufeff\ufeff") {
-		// Known difference: PyYAML keeps a second byte order mark as text.
-		return true
-	}
-	got, err := LoadWith(text, options)
+	got, err := load(text, options)
 	switch {
 	case want.Value != nil:
 		if err != nil {
@@ -267,44 +269,43 @@ func checkLoad(t *testing.T, name, text string, want loadOutcome, options LoadOp
 			return false
 		}
 	case want.Special != "":
-		if err == nil {
-			t.Errorf("%s %q: Python gave a value jsonx cannot hold (%s), Go loaded %#v", name, text, want.Special, got)
+		var nonString *NonStringKeyError
+		var unrepresentable *UnrepresentableError
+		switch {
+		case want.Special == "nonstring" && errors.As(err, &nonString):
+		case want.Special == "unsupported" && errors.As(err, &unrepresentable) && unrepresentable.Kind != "recursive":
+		case strings.Contains(want.Special, "recursion") && errors.As(err, &unrepresentable) && unrepresentable.Kind == "recursive":
+		default:
+			t.Errorf("%s %q: Python gave a value jsonx cannot hold (%s), Go: %T, %v", name, text, want.Special, got, err)
 			return false
-		}
-		if want.Special == "nonstring" {
-			var nonString *NonStringKeyError
-			if !errors.As(err, &nonString) {
-				t.Errorf("%s %q: want NonStringKeyError, got %v", name, text, err)
-				return false
-			}
 		}
 	default:
-		if err == nil {
-			t.Errorf("%s %q: Python raised %s, Go loaded %#v", name, text, want.Error, got)
+		var pyErr *Error
+		if !errors.As(err, &pyErr) {
+			t.Errorf("%s %q: Python raised %s: %s\nGo: %T, %v", name, text, want.Error, want.Message, got, err)
 			return false
 		}
-		if want.Error == "ConstructorError" || want.Error == "ComposerError" {
-			*messages++
-			if err.Error() == want.Message {
-				*exactMessages++
-			}
+		if pyErr.Class != want.Error || pyErr.Msg != want.Message {
+			t.Errorf("%s %q:\n got %s: %s\nwant %s: %s", name, text, pyErr.Class, pyErr.Msg, want.Error, want.Message)
+			return false
 		}
 	}
 	return true
 }
 
 func TestLoadMatchesPyYAML(t *testing.T) {
-	safe, native, exact, messages := 0, 0, 0, 0
+	safe, native, total := 0, 0, 0
 	for _, line := range readCorpus(t) {
 		if line.Kind != "load" {
 			continue
 		}
-		if checkLoad(t, "safe_load", line.Text, line.Safe, LoadOptions{}, &exact, &messages) {
+		total++
+		if checkLoad(t, "safe_load", line.Text, line.Safe, LoadOptions{}, LoadWith) {
 			safe++
 		}
-		if checkLoad(t, "native", line.Text, line.Native, LoadOptions{Schema: SchemaNative, Key: nativeKeyCheck}, new(int), new(int)) {
+		if checkLoad(t, "native", line.Text, line.Native, LoadOptions{Schema: SchemaNative, Key: nativeKeyCheck}, LoadWith) {
 			native++
 		}
 	}
-	t.Logf("load cases equal to PyYAML: safe_load %d, NativeLoader %d; Constructor/Composer error messages identical: %d of %d", safe, native, exact, messages)
+	t.Logf("%d texts; equal to PyYAML (value, or exception class and message): safe_load %d, NativeLoader %d", total, safe, native)
 }

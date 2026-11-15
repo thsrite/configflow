@@ -120,6 +120,9 @@ const (
 	tagTimestamp = "tag:yaml.org,2002:timestamp"
 	tagMerge     = "tag:yaml.org,2002:merge"
 	tagValue     = "tag:yaml.org,2002:value"
+	tagSet       = "tag:yaml.org,2002:set"
+	tagOmap      = "tag:yaml.org,2002:omap"
+	tagPairs     = "tag:yaml.org,2002:pairs"
 )
 
 type node struct {

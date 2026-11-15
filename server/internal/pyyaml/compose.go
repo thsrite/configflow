@@ -532,6 +532,7 @@ type composer struct {
 	*parser
 	anchors map[string]*Node
 	depth   int
+	resolve func(value string, implicit [2]bool) string
 }
 
 func composerError(context string, contextMark *Mark, problem string, problemMark Mark) *Error {
@@ -541,13 +542,32 @@ func composerError(context string, contextMark *Mark, problem string, problemMar
 // Compose is yaml.compose(text) (SafeLoader resolver): the single document's
 // root node, or nil for an empty stream.
 func Compose(text string) (root *Node, err error) {
-	s, err := newScanner(text)
+	return ComposeWith(text, ComposeOptions{})
+}
+
+// ComposeOptions tune ComposeWith.
+type ComposeOptions struct {
+	// Name is the stream name in marks; empty means "<unicode string>".
+	Name string
+	// Resolve is the implicit scalar resolver (Resolver.resolve for a
+	// ScalarNode); nil means SafeLoader's, ResolveScalar.
+	Resolve func(value string, implicit [2]bool) string
+}
+
+// ComposeWith is Compose with a stream name and a scalar resolver, as a
+// loader class with its own yaml_implicit_resolvers composes.
+func ComposeWith(text string, opts ComposeOptions) (root *Node, err error) {
+	s, err := newScanner(text, opts.Name)
 	if err != nil {
 		return nil, err
 	}
 	p := &parser{scanner: s}
 	p.state = p.parseStreamStart
-	c := &composer{parser: p, anchors: map[string]*Node{}}
+	resolve := opts.Resolve
+	if resolve == nil {
+		resolve = ResolveScalar
+	}
+	c := &composer{parser: p, anchors: map[string]*Node{}, resolve: resolve}
 	defer recoverScan(&err)
 	c.getEvent()
 	var document *Node
@@ -605,7 +625,7 @@ func (c *composer) composeScalarNode() *Node {
 	e := c.getEvent()
 	tag := e.tag
 	if !e.hasTag || tag == "!" {
-		tag = resolveScalar(e.value, e.implicit)
+		tag = c.resolve(e.value, e.implicit)
 	}
 	node := &Node{Kind: ScalarNode, Tag: tag, Value: e.value, Start: e.start, End: e.end, Style: e.style}
 	if e.hasAnchor {
@@ -667,8 +687,8 @@ var resolvers = []implicitResolver{
 	{"tag:yaml.org,2002:yaml", regexp.MustCompile(`^(?:!|&|\*)$`), "!&*", false},
 }
 
-// resolveScalar is Resolver.resolve(ScalarNode, value, implicit).
-func resolveScalar(value string, implicit [2]bool) string {
+// ResolveScalar is SafeLoader's Resolver.resolve(ScalarNode, value, implicit).
+func ResolveScalar(value string, implicit [2]bool) string {
 	if !implicit[0] {
 		return TagStr
 	}

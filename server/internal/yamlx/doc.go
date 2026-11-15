@@ -15,28 +15,29 @@
 //
 // # Load
 //
-// Load is yaml.safe_load. Syntax is parsed by gopkg.in/yaml.v3 (a libyaml
-// port); typing and construction are PyYAML's own: YAML 1.1 booleans
-// (yes/no/on/off), octal, binary and hex integers, sexagesimal numbers,
-// underscores, timestamps (Timestamp), !!binary, merge keys, "<<" and "="
-// quirks, duplicate keys (the last wins), and PyYAML's constructor error
-// messages with their "in "<unicode string>", line L, column C:" marks.
-// LoadOptions selects NativeLoader's YAML 1.2 style typing
-// (oxidns_native.NativeLoader) and lets the caller veto keys.
+// Load is yaml.safe_load: PyYAML 6.0.1's pure-Python reader, scanner, parser
+// and composer (internal/pyyaml) and a port of its SafeConstructor, so the
+// documents accepted, the values built (YAML 1.1 booleans yes/no/on/off,
+// octal, binary and hex integers, sexagesimal numbers, timestamps as
+// Timestamp, !!binary as []byte, merge keys, "=" keys, duplicate keys with
+// Python dict equality) and the error texts with their marks are PyYAML's.
+// Errors are *Error with the Python exception class. LoadOptions selects
+// NativeLoader's YAML 1.2 style typing (oxidns_native.NativeLoader) and lets
+// the caller check keys. LoadCSafeFirst is the "CSafeLoader, else
+// safe_load" pattern of two callers.
 //
-// # Known differences from PyYAML
+// # What the jsonx model cannot hold
 //
-//   - Syntax errors carry yaml.v3's text, not PyYAML's scanner/parser text;
-//     Error.Syntax is true for them. Which documents are rejected agrees with
-//     PyYAML on the differential corpus, with these exceptions: a second
-//     leading byte order mark (PyYAML keeps it as text) fails here.
-//   - A mapping key that is not a string (`1: a`, `yes: a`, `~: a`) cannot be
-//     held by a jsonx.Object: Load returns *NonStringKeyError.
-//   - !!set, !!omap, !!pairs and !!python/* tags are errors.
-//   - A shared empty list is not recognised as shared (an empty Go slice has
-//     no identity), so PyYAML's anchor for it is not written.
-//   - Strings with lone surrogates cannot exist in Go.
-//   - Only the pure-Python SafeDumper is reproduced. CSafeDumper (libyaml's
-//     emitter, used once, to measure a size in agents/push_diff.py) writes
-//     different text for some inputs; the corpus records how often.
+// After PyYAML would have returned, the value is converted to the jsonx
+// model. Three kinds of Python values have no counterpart and are reported
+// instead, after every PyYAML error: a mapping with a non-string key
+// (*NonStringKeyError, or *Mapping with LoadOptions.KeepNonStringKeys), a
+// collection that contains itself through an alias, and !!set, !!omap,
+// !!pairs (*UnrepresentableError). A shared empty list is not recognised as
+// shared by Dump (an empty Go slice has no identity), so PyYAML's anchor for
+// it is not written. Strings with lone surrogates cannot exist in Go (a \U
+// escape naming one becomes U+FFFD). Python's RecursionError depth is a
+// fixed limit. Only the pure-Python SafeDumper is reproduced. CSafeDumper
+// (libyaml's emitter, used once, to measure a size in agents/push_diff.py)
+// writes different text for some inputs; the corpus records how often.
 package yamlx

@@ -114,7 +114,7 @@ func TestInvalidTextReportsTheSameErrorEveryTime(t *testing.T) {
 		t.Fatal("invalid text was accepted")
 	}
 	var loadErr *Error
-	if !errors.As(first, &loadErr) || !loadErr.Syntax {
+	if !errors.As(first, &loadErr) || !loadErr.IsYAMLError() {
 		t.Errorf("want a syntax *Error, got %T", first)
 	}
 	for i := 0; i < 3; i++ {

@@ -1,8 +1,9 @@
 // Package pyyaml is a port of PyYAML 6.0.1's pure-Python reader, scanner,
 // parser and composer (yaml/reader.py, scanner.py, parser.py, composer.py,
 // resolver.py) for text input: yaml.scan(text) and yaml.compose(text) with
-// the SafeLoader resolver.
+// the SafeLoader resolver (ComposeWith takes another resolver).
 //
+// internal/yamlx constructs Python values from these nodes (yaml.safe_load).
 // backend/utils/ruleset_content.py works on PyYAML's token stream and node
 // tree, slicing the source text by mark indices and showing PyYAML's error
 // text (marks and snippets included) to the user, so the exact tokens, marks,
@@ -92,13 +93,18 @@ type Error struct {
 	// ReaderError fields.
 	Position  int
 	Character rune
+	Name      string
 }
 
 // Error is str(exc).
 func (e *Error) Error() string {
 	if e.Class == "ReaderError" {
-		return fmt.Sprintf("unacceptable character #x%04x: special characters are not allowed\n  in \"<unicode string>\", position %d",
-			e.Character, e.Position)
+		name := e.Name
+		if name == "" {
+			name = defaultName
+		}
+		return fmt.Sprintf("unacceptable character #x%04x: special characters are not allowed\n  in \"%s\", position %d",
+			e.Character, name, e.Position)
 	}
 	var lines []string
 	if e.Context != "" {
@@ -219,23 +225,28 @@ type scanner struct {
 	indents           []int
 	allowSimpleKey    bool
 	possibleSimpleKey map[int]*simpleKey
+
+	name string
 }
 
-const name = "<unicode string>"
+const defaultName = "<unicode string>"
 
 func printable(r rune) bool {
 	return r == 0x09 || r == 0x0A || r == 0x0D || (r >= 0x20 && r <= 0x7E) || r == 0x85 ||
 		(r >= 0xA0 && r <= 0xD7FF) || (r >= 0xE000 && r <= 0xFFFD) || (r >= 0x10000 && r <= 0x10FFFF)
 }
 
-func newScanner(text string) (*scanner, error) {
+func newScanner(text, name string) (*scanner, error) {
+	if name == "" {
+		name = defaultName
+	}
 	runes := []rune(text)
 	for i, r := range runes {
 		if !printable(r) {
-			return nil, &Error{Class: "ReaderError", Position: i, Character: r}
+			return nil, &Error{Class: "ReaderError", Position: i, Character: r, Name: name}
 		}
 	}
-	s := &scanner{buffer: append(runes, 0), indent: -1, allowSimpleKey: true, possibleSimpleKey: map[int]*simpleKey{}}
+	s := &scanner{buffer: append(runes, 0), indent: -1, allowSimpleKey: true, possibleSimpleKey: map[int]*simpleKey{}, name: name}
 	mark := s.mark()
 	s.tokens = append(s.tokens, Token{Kind: TokenStreamStart, Start: mark, End: mark})
 	return s, nil
@@ -273,7 +284,7 @@ func (s *scanner) forward(length int) {
 }
 
 func (s *scanner) mark() Mark {
-	return Mark{Name: name, Index: s.index, Line: s.line, Column: s.column, buffer: s.buffer, pointer: s.pointer}
+	return Mark{Name: s.name, Index: s.index, Line: s.line, Column: s.column, buffer: s.buffer, pointer: s.pointer}
 }
 
 func reprRune(ch rune) string { return jsonx.Repr(string(ch)) }
@@ -1324,7 +1335,7 @@ func (s *scanner) scanLineBreak() string {
 
 // Scan is list(yaml.scan(text)): every token of the stream.
 func Scan(text string) (tokens []Token, err error) {
-	s, err := newScanner(text)
+	s, err := newScanner(text, "")
 	if err != nil {
 		return nil, err
 	}
