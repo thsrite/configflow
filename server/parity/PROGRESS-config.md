@@ -414,7 +414,7 @@ Notes for porter: Also implements the 3 dependency routes of `routes/settings.py
 
 ## C14 — remote rule fetch, ruleset content, remote sources, website identity
 
-**Status: `missing`** · prereqs: C12, C08 · Go: internal/rulefetch (new)
+**Status: `partial` (porting in progress)** · prereqs: C12, C08 · Go: internal/rulefetch (new), internal/rulefetch/pyyaml
 
 Files:
 - `backend/utils/rule_fetch.py` (346)
@@ -426,9 +426,11 @@ Tests: `test_mihomo_yaml_delivery.py` (7), `test_remote_rule_cache.py` (8), `tes
 
 Routes: none.
 
-Evidence: No Go package; no route registered.
+Done (commits):
+- d426421b `rulefetch/pyyaml`: port of PyYAML 6.0.1 pure reader/scanner/parser/composer/resolver (Scan, Compose, marks in code points, MarkedYAMLError text with snippets). Corpus `pyyaml/testdata/gen.py` → 6065 rows equal (tokens, nodes, marks, error text). Decisions: libyaml fast path not reproduced (only used where it equals pure PyYAML; verified marks are code points); RecursionError = nesting limit 490 (`RecursionLimit`); `\U` surrogate → U+FFFD; negative flow level is truthy as in Python.
+- c2ba3f6b `rules.PyRegex`: `Sub` (function), `SubTemplate` (re._parser.parse_template + expand_template; errors `*reError` with template position or `*TemplateIndexError`), `Match` (re.search with spans), `Groups`, `GroupIndex`, `ErrMatchTimeout`. Always runs on regexp2 with CPython's must_advance loop (`\G(?:p)(?!\G)` for the non-empty retry). Reference `rules/testdata/gen_sub.py` → 9312 rows equal. `convert.pySub` now uses it (netPattern deleted); convert+rules tests pass.
 
-Missing / deferred: Everything in the files below.
+Next: export ruleset line helpers from rules (ClassicalLine etc., cycle rulefetch→rules), ruleset_content, remote_rule_sources, website_identity, rule_fetch transport, rule_utils cache functions, tests, corpus.
 
 Notes for porter: Also completes C08's missing `rule_utils` functions and the deferred rule_syntax/local_http/remote-cache tests; replaces `rules/compat.go` ruleset_content copies and `api/settings/compat.go` (`validate_rule_url`). `rule_fetch` calls `agents.diagnostics.failure_text` (agents) — copy or interface. `website_identity` imports `region_check` (C16): small compat or move order.
 
