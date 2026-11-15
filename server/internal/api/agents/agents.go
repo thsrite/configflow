@@ -268,28 +268,10 @@ func authenticatedAgent(c *httpx.Ctx, manager *agents.Manager, agentID string) (
 	if agent == nil {
 		expected, isString = "", true
 	}
-	if !ok || !isString || expected == "" || !constantTimeEqual(provided, expected) {
+	if !ok || !isString || expected == "" || !agents.ConstantTimeASCIIEqual(provided, expected) {
 		return nil, nil
 	}
 	return agent, nil
-}
-
-func constantTimeEqual(provided, expected string) bool {
-	for _, s := range []string{provided, expected} {
-		for i := 0; i < len(s); i++ {
-			if s[i] >= 0x80 {
-				return false
-			}
-		}
-	}
-	if len(provided) != len(expected) {
-		return false
-	}
-	var diff byte
-	for i := 0; i < len(provided); i++ {
-		diff |= provided[i] ^ expected[i]
-	}
-	return diff == 0
 }
 
 // ReadJSONBody is _read_json_body(max_length, invalid_message): the decoded

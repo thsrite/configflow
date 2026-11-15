@@ -469,3 +469,19 @@ func TestAgentRegistrationDoesNotOverwriteSystemAgentsFromProfileSnapshot(t *tes
 		t.Fatalf("ids %v", ids)
 	}
 }
+
+// _constant_time_ascii_equal: hmac.compare_digest of ASCII bytes only.
+func TestConstantTimeASCIIEqual(t *testing.T) {
+	for _, c := range []struct {
+		provided, expected any
+		want               bool
+	}{
+		{"token", "token", true}, {"", "", true}, {"token", "tokeN", false}, {"tok", "token", false},
+		{"令牌", "令牌", false}, {"café", "café", false}, {nil, "token", false}, {"token", nil, false},
+		{jsonx.Int(1), "1", false}, {"1", jsonx.Int(1), false}, {"\x7f", "\x7f", true},
+	} {
+		if got := ConstantTimeASCIIEqual(c.provided, c.expected); got != c.want {
+			t.Errorf("%#v %#v: %v", c.provided, c.expected, got)
+		}
+	}
+}

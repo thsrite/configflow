@@ -483,3 +483,23 @@ func TestAgentDeleteRunsStoreHooksInPythonOrder(t *testing.T) {
 		t.Fatalf("order %v", order)
 	}
 }
+
+// _registration_log_fields on Unicode categories (Zs, Cf, Zl/Zp, C1,
+// private use, code points unassigned in CPython 3.11's Unicode 14), length
+// bounds and number texts; golden from testdata/gen_registration_log_fields.py.
+func TestRegistrationLogFieldsMatchPythonGolden(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "registration_log_fields.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases, err := jsonx.Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, item := range cases.([]any) {
+		c := item.(*jsonx.Object)
+		if got := apiagents.RegistrationLogFields(c.GetObject("input")); !jsonx.Equal(got, c.Value("output")) {
+			t.Errorf("%d: %v → %v, want %v", i, c.GetObject("input").Value("name"), got, c.Value("output"))
+		}
+	}
+}

@@ -73,8 +73,10 @@ func agentLabel(agent *jsonx.Object) string {
 	return logx.LogText(name, 120)
 }
 
-// constantTimeASCIIEqual is _constant_time_ascii_equal.
-func constantTimeASCIIEqual(provided, expected any) bool {
+// ConstantTimeASCIIEqual is _constant_time_ascii_equal (manager.py and
+// routes/agents.py): hmac.compare_digest of the ASCII bytes; non-strings and
+// non-ASCII text are simply unequal.
+func ConstantTimeASCIIEqual(provided, expected any) bool {
 	p, ok1 := provided.(string)
 	e, ok2 := expected.(string)
 	if !ok1 || !ok2 || !isASCII(p) || !isASCII(e) {
@@ -410,7 +412,7 @@ func (m *Manager) RegisterAgent(ctx context.Context, data *jsonx.Object, existin
 		}
 		if existingIndex >= 0 {
 			existing := objectAt(list, existingIndex)
-			if !constantTimeASCIIEqual(existingToken, existing.Value("token")) {
+			if !ConstantTimeASCIIEqual(existingToken, existing.Value("token")) {
 				return nil, &PermissionError{}
 			}
 			if jsonx.Truthy(installationID) && jsonx.Equal(existing.Value("gateway_installation_id"), installationID) &&
