@@ -11,6 +11,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -408,4 +409,114 @@ func TestScopedAgentHostIsReachedLikePython(t *testing.T) {
 	if len(seen) != 2 || seen[0] != "/api/oxidns/clients" {
 		t.Fatalf("%v", seen)
 	}
+}
+
+// TestReviewOverviewFlows replays testdata/gen_a06_flows.py: random
+// sequences of overview GETs and dashboard resets on one data directory
+// (counters rising and restarting, core/configuration/runtime changes,
+// clock regressions, token and version changes, rankings that fail, time
+// out, change or answer for another recorder) with a scripted monotonic
+// clock and numbered generations. Every answer, the Agent calls and the
+// state file bytes after each step must equal Python's.
+func TestReviewOverviewFlows(t *testing.T) {
+	f, err := os.Open("testdata/a06_flows.json.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	r, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := jsonx.Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousRequest, previousClock, previousToken := doRequest, monotonic, tokenHex
+	reuse, backoff := RankingReuseSeconds, RankingBackoffSeconds
+	RankingReuseSeconds, RankingBackoffSeconds = 60, 180
+	t.Cleanup(func() {
+		doRequest, monotonic, tokenHex = previousRequest, previousClock, previousToken
+		RankingReuseSeconds, RankingBackoffSeconds = reuse, backoff
+	})
+	fails := &failures{t: t}
+	total := 0
+	for index, item := range value.(*jsonx.Object).GetList("flows") {
+		flow := item.(*jsonx.Object)
+		ResetRankingsCache()
+		counter := 0
+		tokenHex = func() string {
+			counter++
+			return fmt.Sprintf("%032x", counter)
+		}
+		clock := 1000.0
+		monotonic = func() float64 { return clock }
+		m := &fakeManager{agents: map[string]*jsonx.Object{}, dataDir: t.TempDir()}
+		store := NewStateStore(m.dataDir)
+		outputs := flow.GetList("outputs")
+		for i, s := range flow.GetList("steps") {
+			total++
+			step := s.(*jsonx.Object)
+			want := outputs[i].(*jsonx.Object)
+			clock += step.GetFloat("dt")
+			m.mu.Lock()
+			m.agents["oxi"] = step.GetObject("agent").DeepCopy()
+			m.mu.Unlock()
+			seen := []any{}
+			doRequest = func(_ context.Context, _ Manager, _ *jsonx.Object, endpoint string, params query, minVersion string) (*jsonx.Object, error) {
+				list := []any{}
+				for _, pair := range params {
+					list = append(list, []any{pair[0], pair[1]})
+				}
+				seen = append(seen, jsonx.Obj("endpoint", endpoint, "params", list, "min_version", minVersion))
+				if endpoint == "overview" {
+					return step.GetObject("overview").DeepCopy(), nil
+				}
+				mode := step.GetString("mode")
+				if mode == "core_unreachable" || mode == "agent_unreachable" {
+					return nil, NewError(strings.ToUpper(mode), 0, "")
+				}
+				answer := step.GetObject("rankings").DeepCopy()
+				recorder, _ := params.get("recorder")
+				if recorder == "" {
+					recorder = "r"
+					if recorders := jsonx.Path(step.Value("overview"), "capabilities", "query_recorders").([]any); len(recorders) > 0 {
+						recorder = recorders[0].(string)
+					}
+				}
+				answer.Set("recorder", recorder)
+				return answer, nil
+			}
+			action := step.GetObject("action")
+			var result any
+			var err error
+			if action.GetString("kind") == "overview" {
+				result, err = Overview(ctx, m, "oxi", pairs(action.Value("args")))
+			} else {
+				result, err = ResetDashboard(ctx, m, "oxi", action.GetObject("body").DeepCopy())
+			}
+			if err != nil {
+				result = errorResult(err)
+			}
+			var state any
+			if content, err := os.ReadFile(store.Path("oxi")); err == nil {
+				state = string(content)
+			}
+			got := jsonx.Obj("result", dumpSorted(t, result), "seen", dumpSorted(t, seen), "state", state)
+			expected := jsonx.Obj("result", want.Value("result"), "seen", want.Value("seen"), "state", want.Value("state"))
+			if !jsonx.Equal(got, expected) {
+				fails.add("flow %d step %d %s:\n got  %s\n want %s", index, i, jsonx.Repr(action), jsonx.Repr(got), jsonx.Repr(expected))
+				break
+			}
+		}
+	}
+	fails.done(total)
+	if total < 2000 {
+		t.Fatalf("only %d steps replayed", total)
+	}
+	t.Logf("%d flows, %d steps", len(value.(*jsonx.Object).GetList("flows")), total)
 }
