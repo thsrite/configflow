@@ -7,8 +7,8 @@ package agents
 import (
 	"regexp"
 	"strings"
-	"unicode"
 
+	"configflow/internal/agents/diag"
 	"configflow/internal/jsonx"
 )
 
@@ -17,7 +17,7 @@ var (
 	ruleFailure       = regexp.MustCompile(`^Rule .+: .+\z`)
 	han               = regexp.MustCompile(`[\x{4e00}-\x{9fff}]`)
 	downloadHTTP      = regexp.MustCompile(`^Agent download HTTP (\p{Nd}{3})\z`)
-	recoveryRequired  = regexp.MustCompile(`^deployment [^` + pyWS + `]+ requires (rollback )?recovery\z`)
+	recoveryRequired  = regexp.MustCompile(`^deployment [^` + diag.PyWS + `]+ requires (rollback )?recovery\z`)
 	serviceCommand    = regexp.MustCompile(`^(systemctl|rc-service|rc-update|supervise-daemon) operation failed:`)
 )
 
@@ -84,7 +84,15 @@ func PublicDeploymentMessages(record *jsonx.Object) *jsonx.Object {
 	return result
 }
 
-func pyStrip(text string) string { return strings.TrimFunc(text, unicode.IsSpace) }
+// pyStrip is str.strip(): Python's whitespace includes U+001C–U+001F.
+func pyStrip(text string) string { return diag.PyStrip(text) }
+
+// pyLower is str.lower() for the containment checks against the ASCII
+// _SYSTEM_ERRORS keys: Python lowercases U+0130 to "i̇" (two characters),
+// Go's ToLower to a plain "i".
+func pyLower(text string) string {
+	return strings.ToLower(strings.ReplaceAll(text, "\u0130", "i\u0307"))
+}
 
 // upgradeExplanation is _upgrade_explanation(message).
 func upgradeExplanation(message any) string {
@@ -116,7 +124,7 @@ func upgradeExplanation(message any) string {
 	if recoveryRequired.MatchString(text) {
 		return "之前的配置发布尚未完成恢复，请先到发布记录中处理，再更新 Agent。"
 	}
-	lower := strings.ToLower(text)
+	lower := pyLower(text)
 	for _, pair := range upgradeSystemErrors {
 		if strings.Contains(lower, pair.key) {
 			return pair.value
