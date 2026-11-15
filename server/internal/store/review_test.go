@@ -205,3 +205,37 @@ func TestOpenAndPermissionFailures(t *testing.T) {
 	assertKind(t, "read-only commit", err, ErrStorage, "配置数据库访问失败：attempt to write a readonly database")
 	assertKind(t, "read-only check", readonly.Check(), ErrSQLite, "")
 }
+
+// TestPathsWithURISpecialCharacters: the database is opened through a
+// file: URI (as Path.as_uri() does in Python); characters with a meaning in
+// URIs must reach SQLite as the literal path.
+func TestPathsWithURISpecialCharacters(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "数据 dir #1 ?x=%41&mode=ro;'")
+	if err := os.Mkdir(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, Filename)
+	target := New(path, seconds(1))
+	must(target.Create(sampleDocument(t), nil))(t)
+	entry := must(target.Load())(t)
+	document := entry.Document.Clone()
+	document.Set("written", true)
+	mustCommit(t, target, entry, document, nil)
+	if err := target.Check(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(directory, "backup #2.sqlite3")
+	if err := target.BackupTo(backup); err != nil {
+		t.Fatal(err)
+	}
+	if got := must(New(backup, seconds(1)).Load())(t); !got.Document.Has("written") {
+		t.Error("backup lacks the commit")
+	}
+	entries := must(os.ReadDir(directory))(t)
+	if len(entries) != 2 {
+		t.Errorf("files in the directory: %v", entries)
+	}
+}
