@@ -16,9 +16,9 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 
 | Id | Module | Py lines | Status | HR | Prereqs | Routes | Go package(s) |
 |---|---|---|---|---|---|---|---|
-| A01 | Agent manager (manager.py part A) | 1642 | partial | HR | C04 | – | internal/agents |
+| A01 | Agent manager (manager.py part A) | 1642 | ported | HR | C04 | – | internal/agents |
 | A02 | registry support: runtime state, diagnostics, events, versions, messages | 1386 | ported | | C02 | – | internal/agents |
-| A03 | registry routes (register, heartbeat, create/edit/delete) | 432 | partial | | A01, A02, C06 | 5 (5 done) | internal/api/agents |
+| A03 | registry routes (register, heartbeat, create/edit/delete) | 432 | ported | | A01, A02, C06 | 5 (5 done) | internal/api/agents |
 | A04 | metrics history and flush | 1163 | missing | | A01, C07 | 3 | internal/agents/metrics (new), api/agents |
 | A05 | traffic history and traffic store | 967 | missing | | A04, C37¹ | 8 | internal/agents/metrics, api/agents |
 | A06 | OxiDNS monitor, dashboard state, metrics | 1364 | missing | | A01 | 5 | internal/agents/monitor (new), api/agents |
