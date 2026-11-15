@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -641,5 +642,47 @@ func TestReplacedFileDuringLazyReadIsRetriedOnSameHandle(t *testing.T) {
 	f.clock.advance(DefaultReadRetry)
 	if matcher.Match("new.example") == nil || matcher.Match("old.example") != nil {
 		t.Fatal("content after retry is wrong")
+	}
+}
+
+// Review C09: concurrent handles, config edits, file replacement, eviction
+// and Clear (run with -race).
+func TestConcurrentCacheAccess(t *testing.T) {
+	f := newFixture(t, func(o *MatcherCacheOptions) { o.MaxMatchers = 2; o.CleanupInterval = 0.001 })
+	f.write("domains.list", "DOMAIN,file.example")
+	var wg sync.WaitGroup
+	for worker := 0; worker < 8; worker++ {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			for i := 0; i < 200; i++ {
+				config := clone(f.config)
+				if i%3 == 0 {
+					config.GetList("rule_configs")[0].(*jsonx.Object).Set("value", "edit.example")
+				}
+				matcher := f.matcher(config, []string{"a", "b", "c"}[(worker+i)%3])
+				if matcher.Match("matched.example") == nil && matcher.Match("file.example") == nil {
+					t.Error("neither the inline nor the file content matched")
+					return
+				}
+				switch i % 50 {
+				case 7:
+					f.cache.EvictIdle(f.clock.get() + DefaultIdleSeconds)
+				case 13:
+					f.clock.advance(DefaultReadRetry)
+				case 29:
+					if worker == 0 {
+						f.cache.Clear()
+					}
+				case 41:
+					replacement := f.write(fmt.Sprintf("replacement-%d", worker), "DOMAIN,file.example\n")
+					_ = os.Rename(replacement, filepath.Join(f.root, "domains.list"))
+				}
+			}
+		}(worker)
+	}
+	wg.Wait()
+	if size := f.cache.Size(); size > 2 {
+		t.Fatalf("cache size %d beyond MaxMatchers", size)
 	}
 }
