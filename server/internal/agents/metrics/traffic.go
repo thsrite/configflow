@@ -435,16 +435,28 @@ func SetTrafficNow(fn func() float64) func() {
 
 // ---------- counters with Python int semantics ----------
 
-// pyInt is a Python int that is usually small: int64 until an addition
-// overflows, then a big.Int.
+// pyInt is a Python counter value. Counters are ints (int64 until an
+// addition overflows, then a big.Int), but SQLite turns `up + excluded.up`
+// beyond int64 into a REAL, which Python then reads back as a float: from
+// there on Python arithmetic mixes int and float (int + float is a float,
+// comparisons are exact) and the JSON shows the float's repr.
 type pyInt struct {
-	small int64
-	big   *big.Int
+	small   int64
+	big     *big.Int
+	isFloat bool
+	f       float64
 }
 
 // add is n += v. A big value is never changed in place (copies of a
 // triple share it).
 func (n *pyInt) add(v pyInt) {
+	if n.isFloat || v.isFloat {
+		// int + float: float(int) + float. float(int) is out of range only
+		// for ints beyond 1e308, which counters below 2**62 per report never
+		// reach.
+		*n = pyInt{isFloat: true, f: n.float() + v.float()}
+		return
+	}
 	if n.big == nil && v.big == nil {
 		s := n.small + v.small
 		if (v.small > 0 && s < n.small) || (v.small < 0 && s > n.small) {
@@ -457,6 +469,19 @@ func (n *pyInt) add(v pyInt) {
 	n.big = new(big.Int).Add(n.toBig(), v.toBig())
 }
 
+// float is float(n) (correctly rounded).
+func (n pyInt) float() float64 {
+	if n.isFloat {
+		return n.f
+	}
+	if n.big == nil {
+		f, _ := new(big.Float).SetInt64(n.small).Float64()
+		return f
+	}
+	f, _ := new(big.Float).SetInt(n.big).Float64()
+	return f
+}
+
 func (n pyInt) toBig() *big.Int {
 	if n.big != nil {
 		return new(big.Int).Set(n.big)
@@ -465,13 +490,28 @@ func (n pyInt) toBig() *big.Int {
 }
 
 func (n pyInt) json() jsonx.Number {
+	if n.isFloat {
+		return jsonx.Float(n.f)
+	}
 	if n.big != nil {
 		return jsonx.BigInt(n.big)
 	}
 	return jsonx.Int(n.small)
 }
 
+// exact is the value as an exact big.Float (int or float).
+func (n pyInt) exact() *big.Float {
+	if n.isFloat {
+		return new(big.Float).SetFloat64(n.f)
+	}
+	return new(big.Float).SetInt(n.toBig())
+}
+
+// cmp compares exactly, as Python compares int and float.
 func (n pyInt) cmp(v pyInt) int {
+	if n.isFloat || v.isFloat {
+		return n.exact().Cmp(v.exact())
+	}
 	if n.big == nil && v.big == nil {
 		switch {
 		case n.small < v.small:
@@ -485,15 +525,51 @@ func (n pyInt) cmp(v pyInt) int {
 }
 
 // sqlValue is the value bound to a statement; a Python int beyond int64
-// raised OverflowError when converted to an SQLite INTEGER.
-func (n pyInt) sqlValue() (int64, error) {
+// raised OverflowError when converted to an SQLite INTEGER, a float is
+// bound as a REAL.
+func (n pyInt) sqlValue() (any, error) {
+	if n.isFloat {
+		return n.f, nil
+	}
 	if n.big != nil {
 		if !n.big.IsInt64() {
-			return 0, &OverflowError{Message: "Python int too large to convert to SQLite INTEGER"}
+			return nil, &OverflowError{Message: "Python int too large to convert to SQLite INTEGER"}
 		}
 		return n.big.Int64(), nil
 	}
 	return n.small, nil
+}
+
+// pyIntFromSQL is the Python value sqlite3 returns for a counter column:
+// INTEGER → int, REAL → float. Anything else (only a hand-edited file) made
+// the Python arithmetic fail with TypeError.
+func pyIntFromSQL(value any) (pyInt, error) {
+	switch v := value.(type) {
+	case int64:
+		return pyInt{small: v}, nil
+	case float64:
+		return pyInt{isFloat: true, f: v}, nil
+	}
+	name := "NoneType"
+	switch value.(type) {
+	case string:
+		name = "str"
+	case []byte:
+		name = "bytes"
+	}
+	return pyInt{}, &TypeError{Message: "unsupported operand type(s) for +: 'int' and '" + name + "'"}
+}
+
+func tripleFromSQL(up, down, conns any) (triple, error) {
+	var t triple
+	for i, value := range []any{up, down, conns} {
+		v, err := pyIntFromSQL(value)
+		if err != nil {
+			return t, err
+		}
+		t[i] = v
+	}
+	return t, nil
 }
 
 type triple [3]pyInt
@@ -654,14 +730,25 @@ func (c *trafficConn) commit() error {
 }
 
 // rollback is `if connection.in_transaction: connection.execute('ROLLBACK')`.
+// in_transaction is sqlite3_get_autocommit, which the driver does not
+// expose: SQLite ends a transaction by itself after some errors (SQLITE_FULL,
+// SQLITE_IOERR, SQLITE_NOMEM, ...), and then the ROLLBACK fails with
+// noTransaction — Python would not have run it, so that answer means "not in
+// a transaction" and the original error stands.
 func (c *trafficConn) rollback() error {
 	if !c.inTransaction {
 		return nil
 	}
 	c.inTransaction = false
 	_, err := c.exec("ROLLBACK")
+	if err != nil && err.Error() == noTransaction {
+		return nil
+	}
 	return err
 }
+
+// noTransaction is sqlite3_errmsg of a ROLLBACK outside a transaction.
+const noTransaction = "cannot rollback - no transaction is active"
 
 func (c *trafficConn) close() {
 	c.conn.Close()
@@ -807,27 +894,28 @@ func migrateLegacy(c *trafficConn) error {
 			continue
 		}
 		if _, err := c.exec(migration.statement); err != nil {
-			c.rollbackAlways()
-			return err
+			return c.rollbackAlways(err)
 		}
 		if _, err := c.exec("DROP TABLE " + migration.table); err != nil {
-			c.rollbackAlways()
-			return err
+			return c.rollbackAlways(err)
 		}
 	}
 	if err := c.commit(); err != nil {
-		c.rollbackAlways()
-		return err
+		return c.rollbackAlways(err)
 	}
 	trafficLogger.Info("流量记录已迁移为按链路保存")
 	return nil
 }
 
 // rollbackAlways is the unconditional `connection.execute('ROLLBACK')` of
-// _migrate_legacy and _delete_agents.
-func (c *trafficConn) rollbackAlways() {
+// _migrate_legacy and _delete_agents (`except BaseException: ROLLBACK;
+// raise`): when the ROLLBACK itself fails, its error is the one raised.
+func (c *trafficConn) rollbackAlways(cause error) error {
 	c.inTransaction = false
-	c.exec("ROLLBACK")
+	if _, err := c.exec("ROLLBACK"); err != nil {
+		return err
+	}
+	return cause
 }
 
 func fileExists(path string) bool {
@@ -955,12 +1043,12 @@ func (h *TrafficHistory) save(usage map[usageKey]*triple, targets map[targetKey2
 	return result, nil
 }
 
-func sqlTriple(values *triple) (int64, int64, int64, error) {
-	var out [3]int64
+func sqlTriple(values *triple) (any, any, any, error) {
+	var out [3]any
 	for i, value := range values {
 		v, err := value.sqlValue()
 		if err != nil {
-			return 0, 0, 0, err
+			return nil, nil, nil, err
 		}
 		out[i] = v
 	}
@@ -1064,7 +1152,7 @@ func scalarKey(value any) any {
 
 type targetDayRow struct {
 	source, target, chain string
-	up, down, conns       int64
+	v                     triple
 }
 
 // trimDay is _trim_day(connection, agent_id, day): each device keeps only
@@ -1075,9 +1163,15 @@ func trimDay(c *trafficConn, agentID, day any) (int64, error) {
 	err := c.query("SELECT source, target, chain, up, down, conns FROM traffic_targets WHERE agent_id = ? AND bucket = ? AND span = 86400",
 		[]any{agentID, day}, func(scan *sql.Rows) error {
 			var row targetDayRow
-			if err := scan.Scan(&row.source, &row.target, &row.chain, &row.up, &row.down, &row.conns); err != nil {
+			var up, down, conns any
+			if err := scan.Scan(&row.source, &row.target, &row.chain, &up, &down, &conns); err != nil {
 				return err
 			}
+			v, err := tripleFromSQL(up, down, conns)
+			if err != nil {
+				return err
+			}
+			row.v = v
 			rows = append(rows, row)
 			return nil
 		})
@@ -1096,8 +1190,8 @@ func trimDay(c *trafficConn, agentID, day any) (int64, error) {
 			totals[key] = &pyInt{}
 			order = append(order, key)
 		}
-		totals[key].add(pyInt{small: row.up})
-		totals[key].add(pyInt{small: row.down})
+		totals[key].add(row.v[0])
+		totals[key].add(row.v[1])
 	}
 	sort.SliceStable(order, func(i, j int) bool {
 		if c := totals[order[i]].cmp(*totals[order[j]]); c != 0 {
@@ -1130,7 +1224,7 @@ func trimDay(c *trafficConn, agentID, day any) (int64, error) {
 			merged[key] = &triple{}
 			mergedOrder = append(mergedOrder, key)
 		}
-		merged[key].add(tripleOf(row.up, row.down, row.conns))
+		merged[key].add(row.v)
 	}
 	for _, row := range extra {
 		if _, err := c.exec("DELETE FROM traffic_targets WHERE agent_id = ? AND bucket = ? AND span = 86400 AND source = ? AND target = ? AND chain = ?",
@@ -1173,14 +1267,12 @@ func deleteAgents(c *trafficConn, agentIDs []string) error {
 	for _, agentID := range agentIDs {
 		for _, statement := range []string{"DELETE FROM traffic_usage WHERE agent_id = ?", "DELETE FROM traffic_targets WHERE agent_id = ?"} {
 			if _, err := c.exec(statement, agentID); err != nil {
-				c.rollbackAlways()
-				return err
+				return c.rollbackAlways(err)
 			}
 		}
 	}
 	if err := c.commit(); err != nil {
-		c.rollbackAlways()
-		return err
+		return c.rollbackAlways(err)
 	}
 	return nil
 }
@@ -1304,11 +1396,15 @@ func (h *TrafficHistory) rowsInRange(agentID string, start float64, withTargets 
 	err = c.query("SELECT bucket, span, source, chain, up, down, conns FROM traffic_usage "+
 		"WHERE agent_id = ? AND bucket + span > ?", []any{agentID, int64(start)}, func(rows *sql.Rows) error {
 		var r usageRecord
-		var up, down, conns int64
+		var up, down, conns any
 		if err := rows.Scan(&r.bucket, &r.span, &r.source, &r.chain, &up, &down, &conns); err != nil {
 			return err
 		}
-		r.v = tripleOf(up, down, conns)
+		v, err := tripleFromSQL(up, down, conns)
+		if err != nil {
+			return err
+		}
+		r.v = v
 		usage = append(usage, r)
 		return nil
 	})
@@ -1319,11 +1415,15 @@ func (h *TrafficHistory) rowsInRange(agentID string, start float64, withTargets 
 		err = c.query("SELECT bucket, span, source, target, chain, up, down, conns FROM traffic_targets "+
 			"WHERE agent_id = ? AND bucket + span > ?", []any{agentID, int64(start)}, func(rows *sql.Rows) error {
 			var r targetRecord
-			var up, down, conns int64
+			var up, down, conns any
 			if err := rows.Scan(&r.bucket, &r.span, &r.source, &r.target, &r.chain, &up, &down, &conns); err != nil {
 				return err
 			}
-			r.v = tripleOf(up, down, conns)
+			v, err := tripleFromSQL(up, down, conns)
+			if err != nil {
+				return err
+			}
+			r.v = v
 			targets = append(targets, r)
 			return nil
 		})
