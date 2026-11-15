@@ -14,17 +14,26 @@ package agents
 // heartbeat. Every Manager for the same data directory shares one state.
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
+	"unicode"
+	"unicode/utf16"
+	"unicode/utf8"
 
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
@@ -54,13 +63,13 @@ func timestampOf(value any) float64 {
 	if !ok {
 		return math.Inf(-1)
 	}
-	moment, _, ok := fromISO(text)
+	moment, naive, ok := fromISO(text)
 	if !ok {
 		return math.Inf(-1)
 	}
 	// A registration time ahead of the clock (time zone changed, clock stepped
 	// back) must not outrank every later heartbeat.
-	if ts := pyTimestamp(moment); ts <= nowTimestamp() {
+	if ts := pyTimestampOf(moment, naive); ts <= nowTimestamp() {
 		return ts
 	}
 	return math.Inf(-1)
@@ -199,21 +208,90 @@ func (s *RuntimeState) SetEntry(agentID string, entry RuntimeEntry) {
 	s.mu.Unlock()
 }
 
-func resolvedDir(dataDir string) string {
-	abs, err := filepath.Abs(dataDir)
-	if err != nil {
-		abs = dataDir
+// pyResolve is str(Path(path).resolve()): os.path.realpath(path,
+// strict=False). Symlinks are resolved as far as the path exists; a missing
+// remainder is appended as written ("." dropped, ".." taken lexically).
+func pyResolve(path string) string {
+	resolved, _ := joinRealPath("", path, map[string]*string{})
+	if !filepath.IsAbs(resolved) {
+		if wd, err := os.Getwd(); err == nil {
+			resolved = filepath.Join(wd, resolved)
+		}
 	}
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		return resolved
+	return filepath.Clean(resolved)
+}
+
+// joinRealPath is posixpath._joinrealpath(path, rest, strict=False, seen).
+func joinRealPath(path, rest string, seen map[string]*string) (string, bool) {
+	join := func(a, b string) string {
+		if strings.HasPrefix(b, "/") || a == "" {
+			return b
+		}
+		if strings.HasSuffix(a, "/") {
+			return a + b
+		}
+		return a + "/" + b
 	}
-	return abs
+	if strings.HasPrefix(rest, "/") {
+		rest, path = rest[1:], "/"
+	}
+	for rest != "" {
+		var name string
+		name, rest, _ = strings.Cut(rest, "/")
+		if name == "" || name == "." {
+			continue
+		}
+		if name == ".." {
+			if path != "" {
+				// path, name = posixpath.split(path)
+				i := strings.LastIndex(path, "/") + 1
+				head, tail := path[:i], path[i:]
+				if head != "" && strings.Trim(head, "/") != "" {
+					head = strings.TrimRight(head, "/")
+				}
+				path = head
+				if tail == ".." {
+					path = join(join(path, ".."), "..")
+				}
+			} else {
+				path = ".."
+			}
+			continue
+		}
+		newPath := join(path, name)
+		info, err := os.Lstat(newPath)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			path = newPath
+			continue
+		}
+		if known, ok := seen[newPath]; ok {
+			if known != nil {
+				path = *known
+				continue
+			}
+			return join(newPath, rest), false
+		}
+		seen[newPath] = nil
+		target, err := os.Readlink(newPath)
+		if err != nil {
+			path = newPath
+			continue
+		}
+		var ok bool
+		path, ok = joinRealPath(path, target, seen)
+		if !ok {
+			return join(path, rest), false
+		}
+		resolved := path
+		seen[newPath] = &resolved
+	}
+	return path, true
 }
 
 // RuntimeFor is for_data_dir(data_dir): the process-wide state of a data
 // directory.
 func RuntimeFor(dataDir string) *RuntimeState {
-	key := resolvedDir(dataDir)
+	key := pyResolve(dataDir)
 	statesMu.Lock()
 	defer statesMu.Unlock()
 	state, ok := states[key]
@@ -234,63 +312,221 @@ func ResetRuntime() {
 }
 
 type legacyRow struct {
+	agentID       string
 	heartbeatAt   float64
 	lastHeartbeat string
 	fields        *jsonx.Object
 }
 
+// legacyRows is _legacy_rows(path): the decodable rows of the #369 table,
+// nothing (and a warning) when the database cannot be read.
 func legacyRows(path string) map[string]legacyRow {
-	result := map[string]legacyRow{}
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)")
-	if err == nil {
-		defer db.Close()
-		var rows *sql.Rows
-		rows, err = db.Query("SELECT agent_id, heartbeat_at, last_heartbeat, fields FROM agent_runtime")
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var agentID, heartbeatAt, lastHeartbeat, raw any
-				if err = rows.Scan(&agentID, &heartbeatAt, &lastHeartbeat, &raw); err != nil {
-					break
-				}
-				text, ok := raw.(string)
-				if bytes, isBytes := raw.([]byte); isBytes {
-					text, ok = string(bytes), true
-				}
-				if !ok {
-					continue
-				}
-				parsed, parseErr := jsonx.ParseString(text)
-				if parseErr != nil {
-					continue
-				}
-				id, idOK := agentID.(string)
-				last, lastOK := lastHeartbeat.(string)
-				fields, fieldsOK := parsed.(*jsonx.Object)
-				var at float64
-				atOK := true
-				switch value := heartbeatAt.(type) {
-				case int64:
-					at = float64(value)
-				case float64:
-					at = value
-				default:
-					atOK = false
-				}
-				if idOK && atOK && lastOK && fieldsOK {
-					result[id] = legacyRow{at, last, fields}
-				}
-			}
-			if err == nil {
-				err = rows.Err()
-			}
-		}
-	}
+	rows, err := readLegacyRows(path)
 	if err != nil {
 		runtimeLogger.Warningf("旧版 Agent 心跳状态库无法读取，已忽略：%s", err)
 		return map[string]legacyRow{}
 	}
+	result := make(map[string]legacyRow, len(rows))
+	for _, row := range rows {
+		result[row.agentID] = row
+	}
 	return result
+}
+
+// readLegacyRows reads the rows in Python's dict order (a repeated agent_id
+// keeps its first position and its last value). The error's text is
+// str(sqlite3.Error).
+func readLegacyRows(path string) ([]legacyRow, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(absolute)}).String() + "?_pragma=busy_timeout(5000)"
+	db, err := sql.Open("sqlite", uri)
+	if err != nil {
+		return nil, sqliteFailure(err)
+	}
+	defer db.Close()
+	rows, err := db.Query("SELECT agent_id, heartbeat_at, last_heartbeat, fields FROM agent_runtime")
+	if err != nil {
+		return nil, sqliteFailure(err)
+	}
+	defer rows.Close()
+	// fetchall(): every row is converted before any is used, so one TEXT value
+	// that is not UTF-8 fails the whole read.
+	var raw [][4]any
+	columns := [4]string{"agent_id", "heartbeat_at", "last_heartbeat", "fields"}
+	for rows.Next() {
+		var row [4]any
+		if err := rows.Scan(&row[0], &row[1], &row[2], &row[3]); err != nil {
+			return nil, sqliteFailure(err)
+		}
+		for i, value := range row {
+			if text, ok := value.(string); ok && !utf8.ValidString(text) {
+				return nil, &textDecodeError{column: columns[i], text: text}
+			}
+		}
+		raw = append(raw, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, sqliteFailure(err)
+	}
+	var result []legacyRow
+	index := map[string]int{}
+	for _, row := range raw {
+		fields, ok := legacyFields(row[3])
+		if !ok {
+			continue
+		}
+		id, idOK := row[0].(string)
+		last, lastOK := row[2].(string)
+		var at float64
+		atOK := true
+		switch value := row[1].(type) {
+		case int64:
+			at = float64(value)
+		case float64:
+			at = value
+		default:
+			atOK = false
+		}
+		if !idOK || !atOK || !lastOK {
+			continue
+		}
+		item := legacyRow{id, at, last, fields}
+		if i, seen := index[id]; seen {
+			result[i] = item
+			continue
+		}
+		index[id] = len(result)
+		result = append(result, item)
+	}
+	return result, nil
+}
+
+// legacyFields is json.loads(raw) of the fields column, ok=false where
+// Python raises TypeError/ValueError or the value is not an object.
+func legacyFields(raw any) (*jsonx.Object, bool) {
+	var text string
+	switch value := raw.(type) {
+	case string:
+		text = value
+	case []byte:
+		decoded, ok := decodeJSONBytes(value)
+		if !ok {
+			return nil, false
+		}
+		text = decoded
+	default:
+		return nil, false
+	}
+	parsed, err := jsonx.ParseString(text)
+	if err != nil {
+		return nil, false
+	}
+	fields, ok := parsed.(*jsonx.Object)
+	return fields, ok && fields != nil
+}
+
+// decodeJSONBytes is the bytes branch of json.loads:
+// s.decode(json.detect_encoding(s), 'surrogatepass'). ok=false is a
+// UnicodeDecodeError. Lone surrogates become U+FFFD (they have no UTF-8
+// form; the same holds for every jsonx string).
+func decodeJSONBytes(b []byte) (string, bool) {
+	switch {
+	case bytes.HasPrefix(b, []byte{0, 0, 0xFE, 0xFF}):
+		return decodeUTF32(b[4:], binary.BigEndian)
+	case bytes.HasPrefix(b, []byte{0xFF, 0xFE, 0, 0}):
+		return decodeUTF32(b[4:], binary.LittleEndian)
+	case bytes.HasPrefix(b, []byte{0xFE, 0xFF}):
+		return decodeUTF16(b[2:], binary.BigEndian)
+	case bytes.HasPrefix(b, []byte{0xFF, 0xFE}):
+		return decodeUTF16(b[2:], binary.LittleEndian)
+	case bytes.HasPrefix(b, []byte{0xEF, 0xBB, 0xBF}):
+		b = b[3:]
+	case len(b) >= 4:
+		if b[0] == 0 {
+			if b[1] != 0 {
+				return decodeUTF16(b, binary.BigEndian)
+			}
+			return decodeUTF32(b, binary.BigEndian)
+		}
+		if b[1] == 0 {
+			if b[2] != 0 || b[3] != 0 {
+				return decodeUTF16(b, binary.LittleEndian)
+			}
+			return decodeUTF32(b, binary.LittleEndian)
+		}
+	case len(b) == 2:
+		if b[0] == 0 {
+			return decodeUTF16(b, binary.BigEndian)
+		}
+		if b[1] == 0 {
+			return decodeUTF16(b, binary.LittleEndian)
+		}
+	}
+	if !utf8.Valid(b) {
+		return "", false
+	}
+	return string(b), true
+}
+
+func decodeUTF16(b []byte, order binary.ByteOrder) (string, bool) {
+	if len(b)%2 != 0 {
+		return "", false
+	}
+	units := make([]uint16, len(b)/2)
+	for i := range units {
+		units[i] = order.Uint16(b[2*i:])
+	}
+	return string(utf16.Decode(units)), true
+}
+
+func decodeUTF32(b []byte, order binary.ByteOrder) (string, bool) {
+	if len(b)%4 != 0 {
+		return "", false
+	}
+	var out strings.Builder
+	for i := 0; i < len(b); i += 4 {
+		r := order.Uint32(b[i:])
+		if r > unicode.MaxRune {
+			return "", false
+		}
+		out.WriteRune(rune(r))
+	}
+	return out.String(), true
+}
+
+// textDecodeError is the sqlite3.OperationalError Python's sqlite3 module
+// raises when a TEXT value is not valid UTF-8.
+type textDecodeError struct {
+	column string
+	text   string
+}
+
+func (e *textDecodeError) Error() string {
+	var b strings.Builder
+	for _, r := range e.text {
+		b.WriteRune(r)
+	}
+	return "Could not decode to UTF-8 column '" + e.column + "' with text '" + b.String() + "'"
+}
+
+var sqliteCodeSuffix = regexp.MustCompile(` \(\d+\)$`)
+
+// sqliteFailure gives a driver error the text of str(sqlite3.Error)
+// (sqlite3_errmsg): the driver writes "errstr: errmsg (code)".
+func sqliteFailure(err error) error {
+	var target *sqlite.Error
+	if !errors.As(err, &target) {
+		return err
+	}
+	message := strings.TrimSuffix(target.Error(), " (SQLITE_BUSY)")
+	message = sqliteCodeSuffix.ReplaceAllString(message, "")
+	if _, detail, found := strings.Cut(message, ": "); found {
+		message = detail
+	}
+	return errors.New(message)
 }
 
 func legacyFiles(path string) []string {
@@ -305,25 +541,33 @@ func escapeGlob(path string) string {
 	return replacer.Replace(path)
 }
 
+// removeFiles is _remove(paths): Path.unlink (never rmdir), a missing file
+// is fine, any other failure is logged.
 func removeFiles(paths []string) {
 	for _, path := range paths {
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			runtimeLogger.Warningf("旧版 Agent 心跳状态文件 %s 删除失败：%s", filepath.Base(path), pyOSError(err))
+		if err := syscall.Unlink(path); err != nil && !errors.Is(err, syscall.ENOENT) {
+			runtimeLogger.Warningf("旧版 Agent 心跳状态文件 %s 删除失败：%s", filepath.Base(path), pyOSError(err, path))
 		}
 	}
 }
 
-// pyOSError renders an *os.PathError roughly as Python's OSError str.
-func pyOSError(err error) string {
-	var pathErr *os.PathError
-	if errors.As(err, &pathErr) {
-		return pathErr.Err.Error() + ": '" + pathErr.Path + "'"
+// pyOSError is str(OSError) of a failed call on path:
+// "[Errno 21] Is a directory: '/data/runtime.sqlite3-wal'".
+func pyOSError(err error, path string) string {
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		text := errno.Error()
+		if text != "" {
+			text = strings.ToUpper(text[:1]) + text[1:]
+		}
+		return fmt.Sprintf("[Errno %d] %s: %s", int(errno), text, jsonx.Repr(path))
 	}
 	return err.Error()
 }
 
+// exists is Path.exists(): follows symlinks, so a dangling link is missing.
 func exists(path string) bool {
-	_, err := os.Lstat(path)
+	_, err := os.Stat(path)
 	return err == nil
 }
 
@@ -339,7 +583,7 @@ var removeLegacyFile = removeFiles
 func ImportLegacyDatabase(ctx context.Context, repository *repo.Repository, state *RuntimeState,
 	persist func(ctx context.Context, changes map[string]*jsonx.Object) (map[string]bool, error)) error {
 	path := filepath.Join(repository.DataDir(), LegacyDatabase)
-	key := filepath.Join(resolvedDir(repository.DataDir()), LegacyDatabase)
+	key := pyResolve(path)
 	statesMu.Lock()
 	if legacyChecked[key] {
 		statesMu.Unlock()
@@ -373,8 +617,11 @@ func ImportLegacyDatabase(ctx context.Context, repository *repo.Repository, stat
 	}
 	agents := map[string]*jsonx.Object{}
 	for _, item := range system.GetList("agents") {
+		// Legacy rows have string ids; an Agent without one never matches.
 		if agent, ok := item.(*jsonx.Object); ok {
-			agents[jsonx.Str(agent.Value("id"))] = agent
+			if id, ok := agent.Value("id").(string); ok {
+				agents[id] = agent
+			}
 		}
 	}
 	current := map[string]legacyRow{}
