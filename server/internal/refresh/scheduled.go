@@ -14,6 +14,7 @@ import (
 	"math"
 	"math/big"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -160,6 +161,29 @@ func nowUTC() time.Time {
 // nowISO is task_status.now_iso() on the environment's clock.
 func nowISO() string { return currentEnv().Clock.Now().UTC().Format("2006-01-02T15:04:05Z") }
 
+// tzSuffix is the UTC offset of an ISO time ([+-]HH[[:]MM[[:]SS[.ffffff]]]).
+var tzSuffix = regexp.MustCompile(`^[+-][0-9]{2}(:?[0-9]{2}(:?[0-9]{2}([.,][0-9]+)?)?)?$`)
+
+// parseTime is task_status.parse_time keeping the parsed UTC offset (an
+// aware datetime keeps its tzinfo in Python, and isoformat prints it):
+// taskstatus.ParseTime gives the instant; the offset is the difference to
+// the naive local fields before the offset suffix. Sub-second offsets are
+// cut to seconds.
+func parseTime(value any) (time.Time, bool) {
+	instant, ok := taskstatus.ParseTime(value)
+	if !ok {
+		return time.Time{}, false
+	}
+	text := strings.ReplaceAll(value.(string), "Z", "+00:00")
+	if i := strings.LastIndexAny(text, "+-"); i >= 7 && tzSuffix.MatchString(text[i:]) {
+		if local, ok := taskstatus.FromISOFormat(text[:i]); ok {
+			offset := local.Sub(instant)
+			return instant.In(time.FixedZone("", int(offset/time.Second))), true
+		}
+	}
+	return instant, true
+}
+
 // attributeGet is Python's AttributeError for value.get(...).
 func attributeGet(value any) error {
 	return pyErr("AttributeError", "'%s' object has no attribute 'get'", pyTypeName(value))
@@ -178,9 +202,9 @@ func NextRunAt(entry any, interval jsonx.Number, baseline any, now *time.Time) (
 	if !ok {
 		return nil, attributeGet(entry)
 	}
-	last, ok := taskstatus.ParseTime(object.Value("last_run_at"))
+	last, ok := parseTime(object.Value("last_run_at"))
 	if !ok {
-		last, ok = taskstatus.ParseTime(baseline)
+		last, ok = parseTime(baseline)
 	}
 	if !ok {
 		if now != nil {
