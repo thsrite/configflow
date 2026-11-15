@@ -37,7 +37,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C09 | matcher cache, group candidates, reorder, strategy refs, connection rules | 708 | ported | C08 | – |
 | C10 | manual node parser, subscription hosts/filter/dialers | 1242 | ported | C08 | – |
 | C11 | proxy chains, commented Mihomo editor, listeners, proxy-server DNS | 855 | partial | C10 | – |
-| C12 | converter common, Mihomo node conversion, dialer references, EasyTier | 1196 | partial | C09, C11 | – |
+| C12 | converter common, Mihomo node conversion, dialer references, EasyTier | 1196 | ported | C09, C11 | – |
 | C13 | Sub-Store client, runtime, subscription cache, dependencies | 1193 | missing | C12, C10 | – |
 | C14 | remote rule fetch, ruleset content, remote sources, website identity | 1202 | missing | C12, C08 | – |
 | C15 | subscription refresh, health, scheduled refresh | 600 | missing | C13, C14, C07 | – |
@@ -318,7 +318,7 @@ Reviewer notes: Refusals return Python's failure message and the route answers 4
 
 ## C12 — converter common, Mihomo node conversion, dialer references, EasyTier
 
-**Status: `partial` (code, tests, corpus, compat switch-over done; final -race run pending)** · prereqs: C09, C11 · Go: `internal/convert`
+**Status: `ported`** (not reviewed) · prereqs: C09, C11 · Go: `internal/convert`
 
 Files → Go:
 - `backend/converters/common.py` (118) → `convert/common.go` (`UDPFallback`, `NTPDirect`, `EmittedRules`, `NTPDirectRule`, `AfterMatchComment`, `NetworkAsProtocol`, `HasPortList`, `SetGeneralOption`, `RulesetFormat`, `ParseHostsPairs`); `compat.go` = `_has_yaml_payload` copy (TODO C14)
@@ -334,6 +334,7 @@ Tests (`convert/ported_test.go`, `corpus_test.go`):
 - `test_dialer_provider_scope.py` 3/4 (deferred: `test_provider_membership_cycle_rejected_before_side_effects`, routes → C17/C18/C30/agents)
 - `test_dialer_round2.py` 2/10 (deferred 8 route/generation cases → C17/C18/C30/C33)
 - `test_dialer_review_fixes.py` 1/16 (deferred 15 route cases → C17/C18/C30/C33)
+- Log lines of `convert_node_to_mihomo`: `TestConversionLogLines`.
 - `test_node_conversion_cache.py` 1/12 (`test_rendering_again_does_not_start_sub_store` with a caching fake; the other 11 test sub_store_client's own cache → C13) + `TestNodeConversionsReuse`
 - Differential corpus `convert/testdata/corpus.jsonl.gz`: 37577 Python rows over 33 functions (common, nodes, dialers incl. 2500 random profiles and 2500 emitted configs, EasyTier 1500×3), all equal (results, mutated arguments, intentional error messages; unintended exceptions must be errors).
 
@@ -353,7 +354,9 @@ Decisions / differences from Python:
 - Proxy YAML cache budget uses an approximation of `sys.getsizeof` (only decides caching).
 - Python crashes on malformed input (KeyError/TypeError/AttributeError/StopIteration…) are `*PyError` with Python's class; messages are approximate.
 
-Commits: 520b8bf9 (WIP code), bcfa7ee2 (corpus), a6d1be35 (ported tests), + compat switch-over commit.
+Commits: 520b8bf9 (WIP code), bcfa7ee2 (corpus), a6d1be35 (ported tests), dae8afba (compat switch-over; the deletion of `repo/compat_proxystring.go` landed in 8507a6f4 through the shared index), + final commit (log-line test, status). Last run: vet clean, `go test -race` ok for convert, repo, subs, rules.
+
+Reviewer hints: compare `dialers.go` with `dialer_references.py` (it started as the repo copy, extended); `pySub`/`netPattern`; the yamlx-limit decisions above; `MihomoListenPorts` order.
 
 Commands:
 - tests: `rt -- bash -lc 'cd server && gofmt -l internal/convert; go vet ./internal/convert/... && go test -count=1 ./internal/convert/... ./internal/repo/... ./internal/subs/... ./internal/rules/...'`

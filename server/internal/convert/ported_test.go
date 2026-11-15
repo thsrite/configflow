@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/logx"
 	"configflow/internal/yamlx"
 )
 
@@ -801,5 +802,37 @@ func TestBoolPortIsPortOne(t *testing.T) {
 	used, err := MihomoUsedPorts(jsonx.Obj("port", true, "mixed-port", jsonx.Int(1)))
 	if err != nil || len(used) != 1 || !used[jsonx.Int(1)] {
 		t.Fatal(used, err)
+	}
+}
+
+// The INFO lines convert_node_to_mihomo writes (logger backend.converters.mihomo).
+func TestConversionLogLines(t *testing.T) {
+	var buffer strings.Builder
+	root, err := logx.Setup(logx.Config{Level: logx.Info, Console: &buffer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		root.Close()
+		quiet, _ := logx.Setup(logx.Config{Level: logx.Critical})
+		_ = quiet
+	}()
+	ctx := context.Background()
+	ConvertNodeToMihomo(ctx, jsonx.Obj("name", "节点", "proxy_string", "type: ss"), nil)
+	ConvertNodeToMihomo(ctx, jsonx.Obj("name", jsonx.Int(5), "proxy_string", "ss://a@proxy.example:1"), &fakeConverter{})
+	ConvertNodeToMihomo(ctx, jsonx.Obj("proxy_string", "ss://a@proxy.example:1"), &fakeConverter{})
+	want := []string{
+		" - backend.converters.mihomo - INFO - 节点 '节点' 为 JSON/YAML 格式，本地解析",
+		" - backend.converters.mihomo - INFO - 节点 '5' 为 URI/base64 格式，使用 Sub-Store 的转换结果",
+		" - backend.converters.mihomo - INFO - 节点 '' 为 URI/base64 格式，使用 Sub-Store 的转换结果",
+	}
+	lines := strings.Split(strings.TrimRight(buffer.String(), "\n"), "\n")
+	if len(lines) != len(want) {
+		t.Fatalf("lines %q", lines)
+	}
+	for i, line := range lines {
+		if !strings.HasSuffix(line, want[i]) || len(line) != 23+len(want[i]) {
+			t.Fatalf("line %d %q", i, line)
+		}
 	}
 }
