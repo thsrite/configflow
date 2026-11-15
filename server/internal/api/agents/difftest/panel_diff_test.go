@@ -191,6 +191,19 @@ func panelSeed(t *testing.T, dir string, port, closed int) {
 	_, err = r.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
 		busy := agent("dns-busy", "1.8.36-go", "oxidns", port)
 		busy.Set("oxidns_ha_publication", jsonx.Obj("status", "publishing", "kind", "deploy"))
+		// Review cases: a bad host with a non-latin-1 token (origin checked
+		// first), malformed HA publication records (Python raises).
+		badHost := agent("dns-badhost", "1.8.36-go", "oxidns", port)
+		badHost.Set("host", "bad/host")
+		badHost.Set("token", "\u4ee4\u724c")
+		haText := agent("dns-ha-text", "1.8.36-go", "oxidns", port)
+		haText.Set("oxidns_ha_publication", "x")
+		haList := agent("dns-ha-list", "1.8.36-go", "oxidns", port)
+		haList.Set("oxidns_ha_publication", jsonx.Obj("status", []any{"a"}))
+		haNumber := agent("dns-ha-number", "1.8.36-go", "oxidns", port)
+		haNumber.Set("oxidns_ha_publication", jsonx.Obj("status", 1))
+		haDone := agent("dns-ha-done", "1.8.36-go", "oxidns", port)
+		haDone.Set("oxidns_ha_publication", jsonx.Obj("status", "rollback_failed"))
 		// Below 1.8.55-go: Python's ranking collector never contacts these Agents.
 		system.Set("agents", []any{
 			agent("gw-old", "1.8.14-go", "mihomo", port), agent("gw", "1.8.15-go", "mihomo", port),
@@ -199,6 +212,7 @@ func panelSeed(t *testing.T, dir string, port, closed int) {
 			agent("gw-gone", "1.8.20-go", "mihomo", closed),
 			agent("dns", "1.8.36-go", "oxidns", port), agent("dns35", "1.8.35-go", "oxidns", port),
 			agent("dns29", "1.8.29-go", "oxidns", port), agent("dns30", "1.8.30-go", "oxidns", port), busy,
+			badHost, haText, haList, haNumber, haDone,
 		})
 		config := system.GetObject("system_config")
 		if config == nil {
@@ -344,6 +358,22 @@ func panelRequests() []panelRequest {
 		with("rules old agent", "POST", b+"dns29/oxidns/rules/update", `{}`, J, ""),
 		get("rules mihomo agent", b+"gw/oxidns/rules/update", ""),
 		get("rules missing agent", b+"missing/oxidns/rules/update", ""),
+		// Review (A07) cases
+		get("review cache bad host non-latin-1 token", b+"dns-badhost/oxidns/cache", ""),
+		with("review cache flush bad host", "POST", b+"dns-badhost/oxidns/cache/flush", `{"tags": ["probe"]}`, J, ""),
+		with("review rules HA record text", "POST", b+"dns-ha-text/oxidns/rules/update", `{}`, J, ""),
+		get("review rules HA record text GET", b+"dns-ha-text/oxidns/rules/update", ""),
+		with("review rules HA status list", "POST", b+"dns-ha-list/oxidns/rules/update", `{}`, J, ""),
+		with("review rules HA status number", "POST", b+"dns-ha-number/oxidns/rules/update", `{}`, J, ""),
+		with("review rules HA rollback_failed", "POST", b+"dns-ha-done/oxidns/rules/update", `{}`, J, ""),
+		get("review panel delay timeout 4301 digits", b+"gw/mihomo/proxy/delay?name=HK&timeout="+strings.Repeat("1", 4301), ""),
+		get("review panel delay timeout spaces", b+"gw/mihomo/proxy/delay?name=HK&timeout=%E3%80%80%2B1_000%0B", ""),
+		get("review panel logs Arabic cursor", b+"gw56/mihomo/logs?after=%D9%A1%D9%A2", ""),
+		with("review panel name 513", "DELETE", b+"gw/mihomo/connection?name="+strings.Repeat("%E8%8A%82", 513), "", "", ""),
+		get("review panel name 512", b+"gw/mihomo/proxy/delay?name="+strings.Repeat("%E8%8A%82", 512), ""),
+		with("review panel switch name list", "PUT", b+"gw/mihomo/proxy?name=G", `{"name": ["HK"]}`, J, ""),
+		with("review panel mode list", "PATCH", b+"gw/mihomo/configs", `{"mode": ["rule"]}`, J, ""),
+		get("review panel core update force=0", b+"gw16/mihomo/core/update?force=0", ""),
 	}
 }
 
