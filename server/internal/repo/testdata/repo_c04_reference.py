@@ -41,8 +41,22 @@ def read_json_cases():
     return result
 
 
+def defaults():
+    """config.py defaults and the empty profile of the application's repository."""
+    from backend.common import config as config_module
+    with tempfile.TemporaryDirectory() as directory:
+        repository = ProfileRepository(directory, default_config_factory=config_module.get_default_config,
+                                       initial_config_factory=config_module._get_initial_config)
+        empty = repository._empty_profile('p1', ' Name ')
+        for key in ('created_at', 'updated_at'):
+            empty[key] = '<time>'
+        return {'default_config': config_module.get_default_config(),
+                'initial_config': config_module._get_initial_config(),
+                'empty_profile': empty}
+
+
 def main():
-    result = {'read_json': read_json_cases()}
+    result = {'read_json': read_json_cases(), 'defaults': defaults()}
     Path(sys.argv[1]).write_text(json.dumps(result, ensure_ascii=False, indent=1) + '\n', encoding='utf-8')
 
 

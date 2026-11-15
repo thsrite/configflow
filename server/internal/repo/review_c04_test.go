@@ -17,10 +17,33 @@ import (
 	"configflow/internal/rules"
 )
 
-func c04Reference(t *testing.T, section string) []any {
+func c04ReferenceValue(t *testing.T, section string) any {
 	t.Helper()
 	data := must(os.ReadFile("testdata/repo_c04_reference.json"))(t)
-	return must(jsonx.Parse(data))(t).(*jsonx.Object).GetList(section)
+	return must(jsonx.Parse(data))(t).(*jsonx.Object).Value(section)
+}
+
+func c04Reference(t *testing.T, section string) []any {
+	t.Helper()
+	list, _ := c04ReferenceValue(t, section).([]any)
+	return list
+}
+
+// get_default_config, _get_initial_config and _empty_profile of the
+// application's repository, byte for byte (stored values).
+func TestReferenceConfigDefaults(t *testing.T) {
+	want := c04ReferenceValue(t, "defaults").(*jsonx.Object)
+	r := must(OpenDefault(t.TempDir()))(t)
+	empty := r.emptyProfile("p1", " Name ", "")
+	empty.Set("created_at", "<time>")
+	empty.Set("updated_at", "<time>")
+	for name, got := range map[string]*jsonx.Object{"default_config": GetDefaultConfig(),
+		"initial_config": GetInitialConfig(), "empty_profile": empty} {
+		left, right := must(jsonx.Compact(got))(t), must(jsonx.Compact(want.Value(name)))(t)
+		if string(left) != string(right) {
+			t.Errorf("%s:\n go %s\n py %s", name, left, right)
+		}
+	}
 }
 
 // _read_json (read_profile_json, read_shared_json) decodes in text mode:
