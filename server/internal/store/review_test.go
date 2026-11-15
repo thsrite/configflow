@@ -172,3 +172,36 @@ func TestConcurrentCommitsFromOneBase(t *testing.T) {
 		t.Errorf("wins=%d generation=%d", wins, final.Head.Generation)
 	}
 }
+
+// TestOpenAndPermissionFailures: messages and kinds Python gives for an
+// unreadable file, a directory and a read-only file (CPython 3.11 results).
+func TestOpenAndPermissionFailures(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permissions do not apply to root")
+	}
+	directory := t.TempDir()
+	path := filepath.Join(directory, Filename)
+	must(New(path, seconds(1)).Create(jsonx.Obj("a", 1), nil))(t)
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	unreadable := New(path, seconds(1))
+	_, err := unreadable.Load()
+	assertKind(t, "unreadable load", err, ErrStorage, "配置数据库访问失败：unable to open database file")
+	assertKind(t, "unreadable check", unreadable.Check(), ErrSQLite, "unable to open database file")
+	if unreadable.SalvageMeta() != nil {
+		t.Error("unreadable salvage: want nil")
+	}
+	folder := New(directory, seconds(1))
+	_, err = folder.Load()
+	assertKind(t, "directory load", err, ErrStorage, "配置数据库访问失败：unable to open database file")
+	assertKind(t, "directory check", folder.Check(), ErrSQLite, "unable to open database file")
+	if err := os.Chmod(path, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	readonly := New(path, seconds(1))
+	entry := must(readonly.Load())(t)
+	_, _, err = readonly.Commit(entry, jsonx.Obj("a", 2), nil)
+	assertKind(t, "read-only commit", err, ErrStorage, "配置数据库访问失败：attempt to write a readonly database")
+	assertKind(t, "read-only check", readonly.Check(), ErrSQLite, "")
+}
