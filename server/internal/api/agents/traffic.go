@@ -217,13 +217,8 @@ func setAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	agent, err := manager.SetTrafficHistory(c.Context(), c.Param("agent_id"), enabled)
 	if err != nil {
-		var valueError *agents.ValueError
-		var conflict *agents.DeploymentConflict
-		switch {
-		case errors.As(err, &valueError):
-			return failure(400, valueError.Message), nil
-		case errors.As(err, &conflict):
-			return failure(409, conflict.Message), nil
+		if response := setTrafficHistoryError(err); response != nil {
+			return response, nil
 		}
 		return nil, err
 	}
@@ -240,6 +235,26 @@ func setAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	return httpx.JSON(jsonx.Obj("success", true, "data", state)), nil
+}
+
+// setTrafficHistoryError is the except chain of set_agent_traffic_history:
+// `except ValueError` comes first, and AgentDeploymentConflict is a
+// ValueError, so a conflict (ProfileInUse of the system transaction) answers
+// 400 like every other ValueError — the `except AgentDeploymentConflict` 409
+// branch after it is never reached. Repository validation errors are
+// ValueErrors too; nil leaves the error to the 500 page.
+func setTrafficHistoryError(err error) *httpx.Response {
+	var valueError *agents.ValueError
+	var conflict *agents.DeploymentConflict
+	switch {
+	case errors.As(err, &valueError):
+		return failure(400, valueError.Message)
+	case errors.As(err, &conflict):
+		return failure(400, conflict.Message)
+	case repo.IsValueError(err):
+		return failure(400, err.Error())
+	}
+	return nil
 }
 
 // clearAgentTrafficHistory is clear_agent_traffic_history: delete the
@@ -274,6 +289,11 @@ func setTrafficHistoryRetention(c *httpx.Ctx) (*httpx.Response, error) {
 		var valueError *metrics.ValueError
 		if errors.As(err, &valueError) {
 			return failure(400, valueError.Message), nil
+		}
+		if repo.IsValueError(err) {
+			// `except ValueError` also catches the repository's
+			// ProfileValidationError / ProfileInUse / ProfileExists.
+			return failure(400, err.Error()), nil
 		}
 		return nil, err
 	}
