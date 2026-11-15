@@ -153,14 +153,18 @@ type Transport interface {
 // configured proxy only, TLS verification for the proxy and the origin with
 // the same trust (REQUESTS_CA_BUNDLE / CURL_CA_BUNDLE apply when verify is
 // the default), gzip/deflate/zstd decoding, no redirects, no keep-alive.
-type HTTPTransport struct{}
+type HTTPTransport struct {
+	// Dial replaces the TCP dialer (tests: host overrides); nil dials
+	// with net.Dialer.
+	Dial func(ctx context.Context, network, address string) (net.Conn, error)
+}
 
 type tunnelError struct{ message string }
 
 func (e *tunnelError) Error() string { return e.message }
 
 // Do implements Transport.
-func (HTTPTransport) Do(ctx context.Context, req TransportRequest) (*Response, error) {
+func (h HTTPTransport) Do(ctx context.Context, req TransportRequest) (*Response, error) {
 	tlsConfig := &tls.Config{}
 	if req.Insecure {
 		tlsConfig.InsecureSkipVerify = true
@@ -182,7 +186,8 @@ func (HTTPTransport) Do(ctx context.Context, req TransportRequest) (*Response, e
 	}
 	dialer := &net.Dialer{Timeout: req.ConnectTimeout}
 	transport := &http.Transport{
-		DialContext:        dialer.DialContext,
+		DialContext: dialer.DialContext,
+
 		TLSClientConfig:    tlsConfig,
 		DisableKeepAlives:  true,
 		DisableCompression: true,
@@ -196,6 +201,17 @@ func (HTTPTransport) Do(ctx context.Context, req TransportRequest) (*Response, e
 		},
 		TLSHandshakeTimeout:   req.ConnectTimeout,
 		ResponseHeaderTimeout: req.ReadTimeout,
+	}
+	if h.Dial != nil {
+		dial := h.Dial
+		transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			if req.ConnectTimeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, req.ConnectTimeout)
+				defer cancel()
+			}
+			return dial(ctx, network, address)
+		}
 	}
 	if req.Proxy != "" {
 		proxyURL, err := url.Parse(req.Proxy)
