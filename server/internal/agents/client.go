@@ -8,10 +8,13 @@ package agents
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,7 +80,12 @@ func (r *Response) JSON() (any, error) {
 //
 // Not reproduced: codecs other than the UTF-8, Latin-1, ASCII, UTF-16 and
 // UTF-32 families (e.g. charset=gbk) decode as UTF-8 here; Python decodes
-// them with that codec.
+// them with that codec. Unobservable with ConfigFlow Agents (A01 review):
+// the Go Agent answers application/json without charset (routes/utils.go
+// sendJSON) or text/plain; charset=utf-8 (http.Error), and the Mihomo and
+// OxiDNS answers it relays are UTF-8. Only a foreign server at an Agent's
+// address could declare another charset, and then only the text of a
+// failure diagnostic differs. The standard library has no such codecs.
 func (r *Response) Text() string {
 	if len(r.Body) == 0 {
 		return ""
@@ -139,13 +147,33 @@ func (c *deadlineConn) Write(p []byte) (int, error) {
 	return c.Conn.Write(p)
 }
 
-// Do sends the request.
+// resolveHook, when set (tests only), replaces name resolution for hosts that
+// are not numeric: it returns the address to dial or an error.
+var resolveHook func(host string) (string, error)
+
+// Do sends the request. The URL is treated as requests 2.31 prepares it:
+// percent-escapes of unreserved characters are decoded (requote_uri), a
+// user:password in the authority becomes Basic authentication replacing the
+// Authorization header, and a host in any numeric form glibc's getaddrinfo
+// accepts (inet_aton: "127.1", "0x7f.0.0.1", "2130706433", octal parts) is
+// dialled as that address instead of being looked up as a name.
 func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 	dialer := &net.Dialer{Timeout: request.Timeout.Connect}
 	transport := &http.Transport{
 		Proxy:             http.ProxyFromEnvironment,
 		DisableKeepAlives: true,
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			if host, port, err := net.SplitHostPort(address); err == nil && net.ParseIP(host) == nil {
+				if ip, ok := inetAtonExact(host); ok {
+					address = net.JoinHostPort(ip, port)
+				} else if resolveHook != nil {
+					resolved, err := resolveHook(host)
+					if err != nil {
+						return nil, err
+					}
+					address = net.JoinHostPort(resolved, port)
+				}
+			}
 			conn, err := dialer.DialContext(ctx, network, address)
 			if err != nil {
 				return nil, err
@@ -158,12 +186,27 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 	if request.Body != nil {
 		body = bytes.NewReader(request.Body)
 	}
-	req, err := http.NewRequestWithContext(ctx, request.Method, request.URL, body)
+	req, err := http.NewRequestWithContext(ctx, request.Method, unquoteUnreserved(request.URL), body)
 	if err != nil {
 		return nil, &TransportError{Err: err}
 	}
+	if label := invalidIDNALabel(req.URL.Hostname()); label != "" {
+		return nil, &TransportError{Err: errors.New("Failed to parse: Name '" + label + "' is not a valid IDNA label")}
+	}
 	for key, values := range request.Header {
 		req.Header[key] = values
+	}
+	if user := req.URL.User; user != nil {
+		// requests: get_auth_from_url → HTTPBasicAuth (latin-1), only when a
+		// password is present (unquote(None) fails and leaves no auth).
+		if password, ok := user.Password(); ok {
+			credentials, ok := latin1(user.Username() + ":" + password)
+			if !ok {
+				return nil, errors.New("'latin-1' codec can't encode characters in the URL credentials")
+			}
+			req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString(credentials))
+		}
+		req.URL.User = nil
 	}
 	client := &http.Client{Transport: transport}
 	resp, err := client.Do(req)
@@ -202,4 +245,135 @@ func DefaultClient() Client {
 	clientMu.RLock()
 	defer clientMu.RUnlock()
 	return defaultClient
+}
+
+// unquoteUnreserved is requests.utils.unquote_unreserved as requote_uri uses
+// it: %XX escapes of unreserved characters (letters, digits, "-._~") are
+// decoded; an escape with non-hex alphanumerics leaves the URL as it is
+// (requote_uri's InvalidURL fallback).
+func unquoteUnreserved(uri string) string {
+	if !strings.Contains(uri, "%") {
+		return uri
+	}
+	parts := strings.Split(uri, "%")
+	for i := 1; i < len(parts); i++ {
+		part := parts[i]
+		if len(part) < 2 || !isASCIIAlnum(part[0]) || !isASCIIAlnum(part[1]) {
+			parts[i] = "%" + part
+			continue
+		}
+		value, err := strconv.ParseUint(part[:2], 16, 8)
+		if err != nil {
+			return uri
+		}
+		if c := byte(value); isASCIIAlnum(c) || c == '-' || c == '.' || c == '_' || c == '~' {
+			parts[i] = string(c) + part[2:]
+		} else {
+			parts[i] = "%" + part
+		}
+	}
+	return strings.Join(parts, "")
+}
+
+func isASCIIAlnum(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}
+
+func latin1(s string) ([]byte, bool) {
+	out := make([]byte, 0, len(s))
+	for _, r := range s {
+		if r > 0xff {
+			return nil, false
+		}
+		out = append(out, byte(r))
+	}
+	return out, true
+}
+
+// inetAtonExact is glibc's __inet_aton_exact, the numeric IPv4 forms
+// getaddrinfo accepts: one to four parts, each decimal, octal (leading 0) or
+// hex (0x), the last one filling the remaining bytes; nothing may follow.
+func inetAtonExact(host string) (string, bool) {
+	var parts []uint64
+	i := 0
+	for {
+		if i >= len(host) || host[i] < '0' || host[i] > '9' {
+			return "", false
+		}
+		base, value, digit := uint64(10), uint64(0), false
+		if host[i] == '0' {
+			i++
+			if i < len(host) && (host[i] == 'x' || host[i] == 'X') {
+				base = 16 // "0x" alone has no digit
+				i++
+			} else {
+				base, digit = 8, true
+			}
+		}
+		for ; i < len(host); i++ {
+			c := host[i]
+			var d uint64
+			switch {
+			case c >= '0' && c <= '9':
+				if base == 8 && c >= '8' {
+					return "", false
+				}
+				d = uint64(c - '0')
+			case base == 16 && c >= 'a' && c <= 'f':
+				d = uint64(c-'a') + 10
+			case base == 16 && c >= 'A' && c <= 'F':
+				d = uint64(c-'A') + 10
+			default:
+				goto partDone
+			}
+			value = value*base + d
+			if value > 0xffffffff {
+				return "", false
+			}
+			digit = true
+		}
+	partDone:
+		if !digit {
+			return "", false
+		}
+		if i < len(host) && host[i] == '.' {
+			if len(parts) == 3 || value > 0xff {
+				return "", false
+			}
+			parts = append(parts, value)
+			i++
+			continue
+		}
+		if i != len(host) {
+			return "", false
+		}
+		limits := []uint64{0xffffffff, 0xffffff, 0xffff, 0xff}
+		if value > limits[len(parts)] {
+			return "", false
+		}
+		address := value
+		for n, part := range parts {
+			address |= part << (24 - 8*n)
+		}
+		return net.IPv4(byte(address>>24), byte(address>>16), byte(address>>8), byte(address)).String(), true
+	}
+}
+
+// invalidIDNALabel returns the first non-ASCII label of host that urllib3's
+// strict IDNA 2008 encoding (idna.encode(name.lower(), strict=True,
+// std3_rules=True)) refuses because it holds a compatibility character
+// (full-width and half-width forms, Roman numerals, enclosed alphanumerics,
+// no-break and ideographic spaces), which Go's UTS #46 lookup would instead
+// map to ASCII ("１２７.0.0.1" → "127.0.0.1"). Other IDNA 2008 rules are not
+// checked (no golang.org/x/text): such hosts fail name resolution anyway.
+func invalidIDNALabel(host string) string {
+	for _, label := range strings.Split(host, ".") {
+		for _, r := range label {
+			if r >= 0xff01 && r <= 0xffef || r >= 0x2160 && r <= 0x2188 || r >= 0x2460 && r <= 0x24ff ||
+				r == 0xa0 || r == 0x3000 {
+				return label
+			}
+		}
+	}
+	return ""
 }

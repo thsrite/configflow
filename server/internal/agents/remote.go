@@ -8,6 +8,8 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -40,13 +42,43 @@ func (m *Manager) Call(ctx context.Context, agent *jsonx.Object, method, path st
 }
 
 // jsonBody is requests' json= encoding (json.dumps, ASCII, ", " separators)
-// with its Content-Type.
+// with its Content-Type. Like requests 2.31 (allow_nan=False), NaN and
+// infinities are refused before anything is sent with InvalidJSONError, a
+// RequestException: a *TransportError.
 func jsonBody(value any) (http.Header, []byte, error) {
+	if hasNonFinite(value) {
+		return nil, nil, &TransportError{Err: errors.New("Out of range float values are not JSON compliant")}
+	}
 	body, err := jsonx.Default(value)
 	if err != nil {
 		return nil, nil, err
 	}
 	return http.Header{"Content-Type": {"application/json"}}, body, nil
+}
+
+func hasNonFinite(value any) bool {
+	switch v := value.(type) {
+	case *jsonx.Object:
+		for _, item := range v.Values() {
+			if hasNonFinite(item) {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range v {
+			if hasNonFinite(item) {
+				return true
+			}
+		}
+	case jsonx.Number:
+		if v.IsFloat() {
+			f := v.Float64()
+			return math.IsNaN(f) || math.IsInf(f, 0)
+		}
+	case float64:
+		return math.IsNaN(v) || math.IsInf(v, 0)
+	}
+	return false
 }
 
 // responseJSON is response.json() inside `except RequestException`: a body
@@ -234,6 +266,9 @@ func (m *Manager) simpleCall(ctx context.Context, agentID, method, path string, 
 	var body []byte
 	if payload != nil {
 		if header, body, err = jsonBody(payload); err != nil {
+			if IsTransportError(err) {
+				return connectionError(err), agent, nil
+			}
 			return nil, nil, err
 		}
 	}
