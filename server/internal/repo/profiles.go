@@ -515,7 +515,7 @@ func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID 
 				return err
 			}
 			tombstone = filepath.Join(r.migrationsDir, "deleted-"+profileID+"-"+randomHex(32))
-			if lexists(directory) {
+			if pathExists(directory) {
 				if err := os.Rename(directory, tombstone); err != nil {
 					return err
 				}
@@ -526,7 +526,7 @@ func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID 
 			// The database keeps no old generations: retain the deleted
 			// profile itself (export_profile shape, 0600: it holds credentials).
 			exported = filepath.Join(tombstone, "deleted-profile.json")
-			if lexists(exported) {
+			if pathExists(exported) {
 				exported = filepath.Join(tombstone, "deleted-profile-"+randomHex(32)+".json")
 			}
 			text, err := fileJSON(profile)
@@ -556,7 +556,7 @@ func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID 
 			if exported != "" {
 				os.Remove(exported)
 			}
-			if tombstone != "" && lexists(tombstone) {
+			if tombstone != "" && pathExists(tombstone) {
 				if moved {
 					os.Rename(tombstone, directory)
 				} else {

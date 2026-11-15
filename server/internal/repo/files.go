@@ -166,8 +166,14 @@ func (r *Repository) SharedPath(relativePath string) (string, error) {
 	if relativePath == "" || strings.ContainsRune(relativePath, 0) {
 		return "", validationError("Invalid shared relative path")
 	}
-	root := resolvePath(filepath.Join(r.dataDir, "shared"))
-	candidate := resolvePath(joinPath(root, relativePath))
+	root, err := resolve(filepath.Join(r.dataDir, "shared"))
+	if err != nil {
+		return "", err
+	}
+	candidate, err := resolve(joinPath(root, relativePath))
+	if err != nil {
+		return "", err
+	}
 	if !isRelativeTo(root, r.dataDir) || !isRelativeTo(candidate, root) {
 		return "", validationError("Shared path escapes shared directory")
 	}
@@ -235,8 +241,14 @@ func (r *Repository) ProfileDir(profileID string) (string, error) {
 	if err := ValidateProfileID(profileID); err != nil {
 		return "", err
 	}
-	root := resolvePath(r.profilesDir)
-	candidate := resolvePath(root + "/" + profileID)
+	root, err := resolve(r.profilesDir)
+	if err != nil {
+		return "", err
+	}
+	candidate, err := resolve(root + "/" + profileID)
+	if err != nil {
+		return "", err
+	}
 	if !isRelativeTo(root, r.dataDir) || !isRelativeTo(candidate, root) {
 		return "", validationError("Profile path escapes profile directory")
 	}
@@ -252,7 +264,10 @@ func (r *Repository) ProfilePath(profileID, relativePath string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	candidate := resolvePath(joinPath(root, relativePath))
+	candidate, err := resolve(joinPath(root, relativePath))
+	if err != nil {
+		return "", err
+	}
 	if !isRelativeTo(candidate, root) {
 		return "", validationError("Profile path escapes profile directory")
 	}

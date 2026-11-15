@@ -68,7 +68,7 @@ func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Obje
 		return withLock(ctx, path+".lock", func(context.Context) error {
 			// A previous/orphaned cache also belongs to an existing identity;
 			// importing a new source must not overwrite its custom bytes.
-			if lexists(path) || lexists(path+".bak") {
+			if pathExists(path) || pathExists(path+".bak") {
 				return exists("规则缓存已存在，请使用新的规则 ID")
 			}
 			ownsCache = true

@@ -1,0 +1,122 @@
+package repo
+
+// Regression tests of the C03 review. Expected values come from runs of the
+// Python repository on the test server (CPython 3.11), noted per test.
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"configflow/internal/jsonx"
+)
+
+func c03ProfileWithLink(t *testing.T, target string) (*Repository, string) {
+	t.Helper()
+	r := newRepo(t)
+	must(r.CreateProfile(bg, jsonx.Obj("id", "p2", "name", "P2"), ""))(t)
+	link := filepath.Join(r.ProfilesDir(), "p2")
+	noError(t, os.RemoveAll(link))
+	noError(t, os.Symlink(target, link))
+	return r, link
+}
+
+// Python: delete_profile → profile_dir → Path.resolve() raises
+// RuntimeError("Symlink loop from '<data>/profiles/p2'"); nothing changes.
+func TestDeleteProfileThroughSymlinkLoopFailsLikePython(t *testing.T) {
+	r, link := c03ProfileWithLink(t, "p2")
+	err := r.DeleteProfile(bg, "p2", "")
+	if err == nil || err.Error() != "Symlink loop from "+jsonx.Repr(link) {
+		t.Fatalf("got %v", err)
+	}
+	if _, isRepo := err.(*Error); isRepo {
+		t.Fatal("a symlink loop is not a repository error (Python RuntimeError, HTTP 500)")
+	}
+	if len(must(r.ListProfiles(bg))(t)) != 2 {
+		t.Fatal("profile deleted")
+	}
+	if _, err := r.ProfilePath("p2", "generated/config.yaml"); err == nil {
+		t.Fatal("profile path through a loop")
+	}
+}
+
+// Python: a dangling profile directory link resolves to its (missing)
+// target: a fresh tombstone directory receives deleted-profile.json and the
+// link stays where it is.
+func TestDeleteProfileWithDanglingDirectoryLink(t *testing.T) {
+	r, link := c03ProfileWithLink(t, "gone")
+	noError(t, r.DeleteProfile(bg, "p2", ""))
+	if !lexists(link) || lexists(filepath.Join(r.ProfilesDir(), "gone")) {
+		t.Fatal("link moved or target created")
+	}
+	exported := opGlob(t, filepath.Join(r.MigrationsDir(), "deleted-p2-*", "deleted-profile.json"))
+	if len(exported) != 1 {
+		t.Fatalf("tombstone %v", exported)
+	}
+	if info := must(os.Lstat(filepath.Dir(exported[0])))(t); !info.IsDir() {
+		t.Fatal("tombstone is not a directory")
+	}
+}
+
+// Python: Path.exists() is false for a dangling journal link, so it is not
+// set aside; the database is created next to it.
+func TestDanglingJournalLinkIsNotSetAside(t *testing.T) {
+	directory := t.TempDir()
+	journal := filepath.Join(directory, DatabaseFilename+"-journal")
+	noError(t, os.Symlink("nowhere", journal))
+	openRepo(t, directory)
+	if !lexists(journal) || len(opGlob(t, journal+".orphan-*")) > 0 {
+		t.Fatal("dangling journal link was renamed")
+	}
+}
+
+// Python: '、'.join over a non-string Agent name raises TypeError (HTTP 500)
+// and the profile stays. Go reports the binding as ProfileInUse with the
+// name's str() instead (accepted difference: handled error for a crash).
+func TestDeleteProfileBoundToAgentWithNonStringName(t *testing.T) {
+	r := newRepo(t)
+	must(r.CreateProfile(bg, jsonx.Obj("id", "p2", "name", "P2"), ""))(t)
+	must(r.UpdateSystemTransaction(bg, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+		system.Set("agents", []any{jsonx.Obj("id", "a1", "name", jsonx.Int(5), "profile_id", "p2")})
+		return nil, nil
+	}))(t)
+	err := r.DeleteProfile(bg, "p2", "")
+	wantError(t, err, ErrInUse, "配置「P2」仍被以下 Agent 使用：5")
+	if len(must(r.ListProfiles(bg))(t)) != 2 {
+		t.Fatal("profile deleted")
+	}
+}
+
+// Python: a profile whose mosdns is not an object is refused by the earlier
+// "mosdns 参数必须是对象" check, before the MosDNS rule references are read
+// (see also the "mosdns list with bad dns" reference case).
+func TestNonObjectMosdnsIsRefusedBeforeRuleReferences(t *testing.T) {
+	r := newRepo(t)
+	_, _, err := r.UpdateProfileTransaction(bg, "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+		current.Set("mosdns", []any{"direct_rules"})
+		return nil, nil
+	})
+	wantError(t, err, ErrValidation, "mosdns 参数必须是对象")
+}
+
+// CPython 3.11 posixpath.realpath: a loop stops at the first link seen
+// again, with the rest of the path appended unresolved.
+func TestRealpathSymlinkLoopStopsAtFirstRepeatedLink(t *testing.T) {
+	directory := resolvePath(t.TempDir())
+	noError(t, os.Symlink("b", filepath.Join(directory, "a")))
+	noError(t, os.Symlink("a", filepath.Join(directory, "b")))
+	got, ok := realpath(filepath.Join(directory, "a", "x"))
+	if ok || got != filepath.Join(directory, "a", "x") {
+		t.Fatalf("got %q %v", got, ok)
+	}
+	if _, err := resolve(filepath.Join(directory, "a")); err == nil ||
+		!strings.HasPrefix(err.Error(), "Symlink loop from '") {
+		t.Fatalf("resolve: %v", err)
+	}
+	noError(t, os.Symlink("../"+filepath.Base(directory)+"/c", filepath.Join(directory, "l")))
+	if got := resolvePath(filepath.Join(directory, "l", "..", "d")); got != filepath.Join(directory, "d") {
+		t.Fatalf("dotdot after link: %q", got)
+	}
+}

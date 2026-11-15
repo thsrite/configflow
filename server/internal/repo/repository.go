@@ -100,7 +100,10 @@ func Open(dataDir string, options Options) (*Repository, error) {
 			dataDir = home + dataDir[1:]
 		}
 	}
-	root := resolvePath(dataDir)
+	root, err := resolve(dataDir)
+	if err != nil {
+		return nil, err
+	}
 	r := &Repository{
 		dataDir:       root,
 		profilesDir:   filepath.Join(root, "profiles"),
@@ -117,7 +120,7 @@ func Open(dataDir string, options Options) (*Repository, error) {
 	if err := os.MkdirAll(r.profilesDir, 0o777); err != nil {
 		return nil, err
 	}
-	err := withLock(context.Background(), r.lockFile, r.openLocked)
+	err = withLock(context.Background(), r.lockFile, r.openLocked)
 	if err != nil {
 		return nil, err
 	}
@@ -213,6 +216,13 @@ func lexists(path string) bool {
 	return err == nil
 }
 
+// pathExists is Path.exists(): symbolic links are followed, so a dangling
+// or looping link does not exist.
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 // legacyData names the first pre-SQLite configuration file found in the data
 // directory, or "".
 func (r *Repository) legacyData() string {
@@ -269,7 +279,7 @@ func (r *Repository) openLocked(ctx context.Context) error {
 				"再升级到此版本。数据目录未改动。")
 		}
 		journal := r.dbPath + "-journal"
-		if lexists(journal) {
+		if pathExists(journal) {
 			// Never apply a journal left by another file to a new database.
 			if err := os.Rename(journal, journal+".orphan-"+strconv.FormatInt(time.Now().UnixNano(), 10)); err != nil {
 				return err
@@ -277,7 +287,7 @@ func (r *Repository) openLocked(ctx context.Context) error {
 		}
 		if earlier := r.earlierDatabases(); len(earlier) > 0 {
 			logger.Error(DatabaseFilename + " 不存在，但数据目录里有它以前的副本（" + strings.Join(earlier, "、") +
-				"）；将创建全新的默认配置，请核对并按需从这些副本恢复")
+				"）；将从旧配置文件重新迁移，之后的修改不在迁移结果中，请核对并按需从这些副本恢复")
 		}
 		if err := r.createFreshLocked(); err != nil {
 			return err

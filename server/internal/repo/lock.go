@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 	"unicode"
+
+	"configflow/internal/jsonx"
 )
 
 // Lock settings (ProfileRepository class attributes).
@@ -156,7 +158,10 @@ func withLock(ctx context.Context, path string, fn func(ctx context.Context) err
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
 		return err
 	}
-	key := resolvePath(path)
+	key, err := resolve(path)
+	if err != nil {
+		return err
+	}
 	if holdsLock(ctx, key) {
 		// Python: the RLock is re-entered, then flock on a second descriptor
 		// of the same file waits for this thread itself until the timeout.
@@ -214,45 +219,88 @@ func withLock(ctx context.Context, path string, fn func(ctx context.Context) err
 	return fn(context.WithValue(ctx, heldLocksKey{}, &heldLocks{path: key, parent: held}))
 }
 
-// resolvePath is pathlib.Path.resolve() (non-strict): absolute, symbolic
-// links followed for as long as the path exists, "." and ".." removed after
-// the links before them were followed.
+// resolvePath is pathlib.Path.resolve() (non-strict) without its symlink
+// loop check; see resolve.
 func resolvePath(path string) string {
+	resolved, _ := realpath(path)
+	return resolved
+}
+
+// resolve is pathlib.Path.resolve() of CPython 3.11 (non-strict): absolute,
+// symbolic links followed for as long as the path exists, "." and ".."
+// removed after the links before them were followed. A symlink loop is
+// Python's RuntimeError("Symlink loop from '<path>'").
+func resolve(path string) (string, error) {
+	resolved, _ := realpath(path)
+	if _, err := os.Stat(resolved); errors.Is(err, syscall.ELOOP) {
+		return "", errors.New("Symlink loop from " + jsonx.Repr(resolved))
+	}
+	return resolved, nil
+}
+
+// realpath is posixpath.realpath(path, strict=False) of CPython 3.11 for an
+// absolute path (a relative one is made absolute first): a link seen again
+// while it is being resolved ends the walk at that link, with the rest of
+// the path appended unresolved (ok is then false).
+func realpath(path string) (resolved string, ok bool) {
 	if !filepath.IsAbs(path) {
 		if absolute, err := filepath.Abs(path); err == nil {
 			path = absolute
 		}
 	}
-	return realpath("/", strings.Split(path, "/"), 0)
+	resolved, ok = joinRealpath("/", path, map[string]*string{})
+	return filepath.Clean(resolved), ok
 }
 
-func realpath(current string, parts []string, depth int) string {
-	for index, part := range parts {
-		switch part {
+func joinRealpath(path, rest string, seen map[string]*string) (string, bool) {
+	if strings.HasPrefix(rest, "/") {
+		path, rest = "/", rest[1:]
+	}
+	for rest != "" {
+		var name string
+		name, rest, _ = strings.Cut(rest, "/")
+		switch name {
 		case "", ".":
 			continue
 		case "..":
-			current = filepath.Dir(current)
+			path = filepath.Dir(path)
 			continue
 		}
-		next := filepath.Join(current, part)
-		info, err := os.Lstat(next)
-		if err != nil || info.Mode()&os.ModeSymlink == 0 || depth > 40 {
-			current = next
+		newpath := filepath.Join(path, name)
+		info, err := os.Lstat(newpath)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			path = newpath
 			continue
 		}
-		target, err := os.Readlink(next)
+		if cached, found := seen[newpath]; found {
+			if cached != nil {
+				path = *cached
+				continue
+			}
+			// The symlink is not resolved, so this is a symlink loop.
+			return joinRest(newpath, rest), false
+		}
+		target, err := os.Readlink(newpath)
 		if err != nil {
-			current = next
+			path = newpath
 			continue
 		}
-		rest := append(strings.Split(target, "/"), parts[index+1:]...)
-		if filepath.IsAbs(target) {
-			return realpath("/", rest, depth+1)
+		seen[newpath] = nil
+		resolved, ok := joinRealpath(path, target, seen)
+		if !ok {
+			return joinRest(resolved, rest), false
 		}
-		return realpath(current, rest, depth+1)
+		path = resolved
+		seen[newpath] = &resolved
 	}
-	return current
+	return path, true
+}
+
+func joinRest(path, rest string) string {
+	if rest == "" {
+		return path
+	}
+	return path + "/" + rest
 }
 
 // isRelativeTo is Path.relative_to() succeeding: child is root or below it.
