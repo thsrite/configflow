@@ -621,3 +621,19 @@ Questions for the coordinator/maintainer:
 - `notifications/compat.go` copies of `event_message`/`failure_text`: leaf package or keep copies with a cross-check test? (A02 review)
 - Shell-only test files (`test_agent_shell_output.py`, `test_agent_offline_update.py`): port as Go-driven script tests or leave with the scripts? (A08)
 - `registrable_domain` early export from C37 for A05.
+
+## Coordinator decisions (2026-11-15)
+
+1. `notifications/compat.go` copies of `event_message` / `failure_text`: move them to a small shared leaf
+   package that both `internal/agents` and `internal/notifications` import (no copies, no cycle). Done as
+   part of the A02 review.
+2. Python tests that only exercise shell scripts: port them as Go tests that render the script with the
+   Go code and run it with `sh` on the test server (the same way the Python tests do), in the installer
+   modules (A08–A10).
+3. `registrable_domain`: the porter of A05 adds it to the domain-discovery package (`internal/discovery`
+   or the name C37 will use, built on `subs.ExtractDomain`), with its Python tests; C37 later extends that
+   package instead of re-porting it. Record it in PROGRESS-config C37 as "ported early by A05".
+4. Notifications gate: C07 adds `tasks.Complete()` to the `GET /api/notifications` route gate and
+   `agents.Wire` installs the Agents source unconditionally — done by the A01/A03 test-gap porter now
+   (small, touches `internal/api/notifications` and `internal/agents`), with a test that the route
+   registers once all task slots are provided.
