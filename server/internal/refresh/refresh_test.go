@@ -779,3 +779,30 @@ func TestLoopIsGuardedByTheSchedulerLock(t *testing.T) {
 		t.Fatal(sleeps)
 	}
 }
+
+// test_remote_rule_consumers.py::test_rule_proxy_uses_valid_cache_after_invalid_refresh
+// (the refresh half; the MosDNS rule proxy is C28): an invalid response is
+// rejected, the valid cache kept, and the run recorded as failed with the
+// cache retained and the offending line in the reason.
+func TestInvalidRefreshKeepsTheValidCache(t *testing.T) {
+	f := setup(t, jsonx.Int(86400))
+	rulefetch.WriteValidatedRuleCache(f.ctx, ruleDecl(), []byte("+.valid.example\n"), nil)
+	_, _, err := RefreshRuleSource(f.ctx, ruleDecl(), "schedule", RuleOptions{Fetch: func(string) (any, error) {
+		return []byte("DOMAIN,bad.example"), nil
+	}})
+	var invalid *rulefetch.RemoteRuleValidationError
+	if !errors.As(err, &invalid) {
+		t.Fatal(err)
+	}
+	cached, _ := rulefetch.ReadValidatedRuleCache(f.ctx, ruleDecl(), nil)
+	entry := f.status("rule_source:rule")
+	if string(cached) != "+.valid.example\n" || entry.Value("last_status") != "failed" || entry.Value("cache_retained") != true ||
+		!strings.Contains(entry.GetString("last_error"), "DOMAIN,bad.example") || !jsonx.Truthy(entry.Value("cache_updated_at")) {
+		t.Fatal(string(cached), jsonx.Repr(entry))
+	}
+	// A device read now gets the valid bytes marked stale.
+	content, stale, err := ReadRuleSource(f.ctx, ruleDecl(), RuleOptions{})
+	if err != nil || string(content) != "+.valid.example\n" || stale == nil || !strings.Contains(stale.Error(), "DOMAIN,bad.example") {
+		t.Fatal(content, stale, err)
+	}
+}

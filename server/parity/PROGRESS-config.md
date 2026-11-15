@@ -40,7 +40,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C12 | converter common, Mihomo node conversion, dialer references, EasyTier | 1196 | ported | C09, C11 | – |
 | C13 | Sub-Store client, runtime, subscription cache, dependencies | 1193 | ported | C12, C10 | 3 (3 done) |
 | C14 | remote rule fetch, ruleset content, remote sources, website identity | 1202 | ported | C12, C08 | – |
-| C15 | subscription refresh, health, scheduled refresh | 600 | missing | C13, C14, C07 | – |
+| C15 | subscription refresh, health, scheduled refresh | 600 | ported | C13, C14, C07 | – |
 | C16 | health check, latency, node DNS, region check, domain probe | 1089 | missing | C12, C13 | – |
 | C17 | provider delivery and responses | 540 | missing | C15 | – |
 | C18 | Mihomo config generation, Mihomo base settings | 1275 | missing | C12, C15, C16, C17 | – |
@@ -536,22 +536,46 @@ Commands:
 
 ## C15 — subscription refresh, health, scheduled refresh
 
-**Status: `missing`** · prereqs: C13, C14, C07 · Go: internal/substore (new)
+**Status: `ported`** (not reviewed) · prereqs: C13, C14, C07 · Go: `internal/refresh` (new; not `internal/substore`: the module also drives rule sources through `rulefetch` and registers task rows)
 
-Files:
-- `backend/utils/subscription_refresh.py` (139)
-- `backend/utils/subscription_health.py` (114)
-- `backend/utils/scheduled_refresh.py` (347)
+Files → Go:
+- `backend/utils/subscription_refresh.py` (139) → `interval.go` (`ValidateRefreshInterval(value, label)` → `*IntervalError` (ValueError), `DefaultSourceInterval`/`DefaultProviderInterval`/`MaxInterval`, `DefaultIntervalLabel`), `source.go` (`SourceCacheMetadata`, `isFresh`, `DownloadCachePath`, `RememberSourceDownload`, `DownloadSubscriptionNodes`, `FetchSubscriptionSource(ctx, sub, fetch SourceFetch)` → `*rules.StrategyReferenceError` for interval/manual-mode refusals).
+- `backend/utils/subscription_health.py` (114) → `health.go` (`HealthFile`, `HistorySize`, `UserinfoTimeout`, `UserinfoUserAgent`, `ParseUserinfo` = `substore.ParseUserinfo` (C13's port, reused), `FetchUserinfo` (no production caller in Python; through `Env.HTTP`), `LoadHealth`, `RecordFetch(ctx, id, FetchRecord{OK, Count, FromCache, Traffic})`, `Forget`).
+- `backend/utils/scheduled_refresh.py` (347) → `scheduled.go` (constants, `TaskBusy`, `StaleRuleCache`, `LookupError`, `SubscriptionKey`/`RuleSourceKey`, `IsRunning`/claim/release, `DescribeFailure`, `NextRunAt(entry any, interval jsonx.Number, baseline, now)`, `SubscriptionCacheTime`, `RuleCacheTime`, `IsLibrarySource`, `RefreshSubscription`, `RefreshRuleSource(ctx, rule, trigger, RuleOptions{Config, Fetch, Timeout, AllowStale})`, `ReadRuleSource`, `due`, `run`, `RunRound`, `FindResource`, `RunNow`), `rows.go` (`SubscriptionRows`/`RuleRows` = `routes/tasks._subscription_rows`/`_rule_rows`, `runTask` (run_task's subscription/rule_source branch), `Loop` = start_loop's thread, `Wire`), `pyerr.go` (Python class of an error, requests hierarchy for isinstance, `safe_exception_details`, `int()`), `env.go` (`Env{Clock, FetchSubscription, RuleClient, HTTP, RandomHex, Converter}`, `DefaultEnv`, `SetEnv`).
+- Callers still to come use: `FetchSubscriptionSource` + `SourceCacheMetadata` (C17 provider delivery, C31 aggregations), `DownloadCachePath` (subscription_dialers, C17/C18), `ReadRuleSource` + `DescribeFailure` (C28 MosDNS, C32 rules, A11 deployment bundle), `RefreshRuleSource` + `RuleSourceKey` (C33 rule library), `RefreshSubscription`, `SubscriptionKey`, `LoadHealth`/`RecordFetch`/`Forget`/`HistorySize` (C30 subscriptions, C36 setup_abandon), `ValidateRefreshInterval` (C18 Mihomo provider interval, C34 config route).
 
-Tests: `test_scheduled_tasks.py` (13), `test_subscription_refresh_policy.py` (12)
+Wiring: `refresh.Wire` in `server.wirePackages`: `tasks.SetRows` for `subscription` and `rule_source`, `tasks.SetRunner("subscription"|"rule_source")` (TaskBusy → 409, LookupError → 404, ValueError → 409), `lifecycle.Loop("scheduled-refresh")` (flock `DATA_DIR/.task-scheduler.lock` LOCK_EX|LOCK_NB, held until shutdown; first round after 30 s, then every 30 s; round failures logged `Scheduled refresh round failed`; ≤3 workers; each job in its own repo scope). Task status through `notifications.TaskStatus(ctx, dataDir)` with `Env.Clock`. `internal/tasks.ValidateRefreshInterval` removed; `api/tasks` uses `refresh.ValidateRefreshInterval`. `repo/compat_health.go` keeps its private copy (repo cannot import refresh); `TestValidateRefreshIntervalMatchesTheRepoCopyGolden` checks this package against repo's golden rows.
 
-Routes: none.
+**/api/tasks and GET /api/notifications still cannot register**: missing task slots `router_rule_sync` (routers), `agent` (A16/A17 rule sync + DNS follow rows), `domain_discovery` (C37) (`internal/server/refresh_wire_test.go` logs `tasks.Missing()`).
 
-Evidence: No Go package; no route registered.
+Tests (`internal/refresh/*_test.go`; fakes: `Env.FetchSubscription` for get_subscription_proxies_yaml, a fake `rulefetch.Transport`/`Fetch` for request_rule, fake clock, fake `substore.HTTPClient`):
+- `test_scheduled_tasks.py` 9/13 here: record counts, next_run back-off, failed rule refresh survives reload (rows), failure reasons, rule without valid cache, device reads, run now (route), interval edit (route part), scheduler skips disabled, rule due on first round. Deferred: `test_source_changes_and_deletions_forget_the_previous_history` → C30/C33 (subscription / rule-library PUT, DELETE); the rule-library PUT half of `test_interval_edit_validates_and_rule_source_edits_keep_it` → C33; `test_router_agent_dns_follow_domain_and_backup_rows` → routers/A16/A17/C37 (backup row is C07's); `test_domain_discovery_records_a_skipped_round_with_its_reason` → C37.
+- `test_subscription_refresh_policy.py` 7/12 at fetch_subscription_source / scheduler level (auto delivery reads cache ×2 intervals, manual-only refusal, expired cache served + scheduled refresh, failed refresh keeps nodes, dry previews share the download across a restart, expired download refetched, changed URL in manual mode) + the validator for the invalid-interval cases. Deferred: provider endpoints (`/api/subscriptions/<id>/proxies`, `/api/subscriptions/proxies`, `/api/aggregations/<id>/provider`) → C17/C30/C31; `test_manual_refresh_is_allowed_and_next_poll_uses_new_cache` → C30; `test_publish_preparation_uses_cache_and_stages_no_fake_refresh` and the prepare_subscription_provider halves → C17; `test_mihomo_sync_setting_is_independent_and_applies_to_aggregations` / `test_invalid_mihomo_sync_setting_does_not_save_yaml` → C18/C34; `test_invalid_source_intervals_are_rejected_without_saving` route → C30.
+- Other files: `test_flow_ui_apis.py` `test_parse_userinfo`, `test_fetch_userinfo_skips_non_http`, record_fetch/load_health/forget half of `test_subscription_health_history_and_derived_fields` (routes → C30); `test_subscription_hosts.py` `test_only_downloaded_bodies_carry_hosts_into_the_cache_metadata`, `test_scheduled_download_stores_hosts_next_to_nodes`; refresh half of `test_remote_rule_consumers.py::test_rule_proxy_uses_valid_cache_after_invalid_refresh` (rule proxy → C28). Still for later modules (they call C15 functions through routes): `test_rule_fetch_proxy_routes.py::test_local_refresh_fetches_legacy_entry_without_source_type` (C32), `test_rule_proxy_freshness.py` (C28), `test_mihomo_classical_delivery.py::test_url_source_and_fallback_keep_raw_cache` (C17/C32), `test_proxy_group_regex_exclusion.py::test_provider_refresh_filters_response_without_removing_source_cache` (C17), `test_agent_push_diff_api.py` / `test_agent_content_*` / `test_dynamic_proxy_chains.py` / `test_subscription_dialers.py` cases (agents, C17), `test_profile_scoped_artifacts.py::test_rule_cache_workers_use_shared_rule_sources` (C33), `test_notifications.py` two is_running cases (C07, monkeypatch of is_running).
+- Extra: health file edges (non-object, broken, string/object/int history), userinfo request shape/404/request error, refresh records (fetch failure without cache, success with traffic, download cache), run-now busy/lookup/no-URL, loop lock + sleeps, row key order, stale device read.
+- Corpus `testdata/gen.py` → `corpus.json` (963 rows, CPython 3.11.17): validate_refresh_interval, subscription/rule_interval, 775 next_run_at (offsets incl. week dates, compact, `,` fractions, ±23:59, year 1/9999 overflow, timedelta bound, failures as str/full-width/float/inf/nan/list/huge), _is_fresh, _download_cache_path, 59 describe_failure (every requests class with/without response, SubscriptionFetchError combinations, RuleFetchError, repo/OS/ValueError/StrategyReferenceError/DialerReferenceError), fromtimestamp(st_mtime) rounding, _host, and repository scenarios (record_fetch/forget sequences on fresh/edited/broken files; full subscription + rule rows and `_due` with caches, statuses and rule-cache mtimes). All equal except 18 accepted rows (sub-second UTC offsets; instants equal).
+- Differential `internal/refresh/difftest` (real Flask vs Go on copies of one data dir; fake airport + rule server on loopback, external Sub-Store on a closed loopback port): GET /api/tasks ×3, POST /api/tasks/run ×19 (successes, empty subscription, 403, invalid rule, 503 rule, content source, no URL, gone, malformed bodies), PUT /api/tasks/interval ×12 — **31 requests, 0 differences**; files equal after the run (times masked): task-status.json, subscription_health.json, subscribes/s-ok.json, both subscription-downloads, rule cache + .bak, stored subscriptions/rule_library. Go side: empty fakes for the three missing slots, `metrics.SetStartedAt` (Flask's flush loop is running).
 
-Missing / deferred: Everything in the files below.
+Decisions / differences from Python:
+- `parseTime` keeps the parsed UTC offset (`taskstatus.ParseTime` returns UTC; Python keeps tzinfo, so `next_run_at`/`_iso(due)` print the stored offset, and year-1 local times stay valid). Sub-second offsets are cut to seconds (FixedZone).
+- Python class names come from the error itself (`pythonClass`: own types, repo/store kinds, OS errnos, `PythonClass()`); Go errors without a Python counterpart are named by their Go type in `更新失败（…）` (urlx convention).
+- `SubscriptionResult.Traffic` is an object or nil: a hand-edited non-object `traffic` in a transport cache is dropped (Python passes it on). `cache_updated_at` of a hand-edited non-string `updated_at` is not recorded (taskstatus.Result takes strings).
+- `FetchUserinfo` reads the body (Go client), Python streamed and closed after the headers.
+- A non-string `id`/`url` where Python indexes `sub['id']`/`sub['url']` fails with a TypeError-class error (Python fails later with its own class); missing keys are KeyError like Python.
+- `host()` of a truthy non-string URL is "" (Python AttributeError → 500). The loop's open/lock errors are logged (Python's thread died with a traceback on stderr).
 
-Notes for porter: Provides `tasks.SetRows` for slots `subscription` and `rule_source` (+ runners) — ports `routes/tasks.py::_subscription_rows`/`_rule_rows`. Background loop via `lifecycle.Loop`.
+Findings in other modules (not fixed here; for their reviewers):
+- **C02 `taskstatus.Record`**: `pyInt` reads a string `run_count`/`failure_count`/`consecutive_failures` (hand-edited task-status.json) as 0; Python's `int(entry.get(...) or 0)` converts `"4"` → 4 (and raises on `"x"`). Seen in the differential (seed with string counts: run_count 5 vs 1). `taskstatus.ParseTime` drops the offset (see above; A04's metrics next_run_at has the same display difference).
+- **C07 `tasks.History`**: `pyIntOrZero` keeps a string run_count/failure_count as is; Python `int()`s it. C15's rows re-convert with `pyIntValue` (`historyOf`); the other rows (backup, metrics, agents) still show the string.
+
+Commits: db825e78 (code, wiring), 81b02e4e (tests), 9c15d0a4 (health/route/server tests), d53dd44c (corpus, offsets, run counts), 2157ade9 (differential), + this PROGRESS commit.
+
+Reviewer hints: `DescribeFailure` order and the requests hierarchy (`requestsBases`); `NextRunAt` int()/min/timedelta overflow; `FetchSubscriptionSource` branch order (`cache.get('metadata', {})` AttributeError, `in (None, url)`, interval 0 vs current); `RefreshSubscription`/`RefreshRuleSource` record order and what is recorded on each path; `_due` truthiness (`not sub.get('enabled', True)`) vs rows (`is not False`).
+
+Commands:
+- tests: `rt -- bash -lc 'cd server && go vet ./internal/refresh/... ./internal/tasks/ ./internal/api/tasks/ ./internal/server/ && go test -count=1 -race ./internal/refresh/ ./internal/tasks/ ./internal/api/tasks/ ./internal/server/'`
+- differential: `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/refresh/difftest/'`
+- corpus: `rt --back server/internal/refresh/testdata/corpus.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/refresh/testdata/gen.py'`
 
 ## C16 — health check, latency, node DNS, region check, domain probe
 
