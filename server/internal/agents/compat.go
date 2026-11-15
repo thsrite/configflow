@@ -18,6 +18,13 @@ const haField = "oxidns_ha_publication"
 
 var haTerminal = pyStatuses{"succeeded": true, "failed": true, "rollback_failed": true}
 
+// HAField is oxidns_ha_publish.FIELD (exported for internal/agents/monitor).
+const HAField = haField
+
+// HAActive is oxidns_ha_publish.active(agent) (exported for
+// internal/agents/monitor's rule update).
+func HAActive(agent *jsonx.Object) bool { return haActive(agent) }
+
 // haActive is oxidns_ha_publish.active(agent).
 func haActive(agent *jsonx.Object) bool {
 	job, _ := agent.Value(haField).(*jsonx.Object)

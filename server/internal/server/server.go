@@ -18,6 +18,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/metrics"
+	"configflow/internal/agents/monitor"
 	apiagents "configflow/internal/api/agents"
 	apiauth "configflow/internal/api/auth"
 	apilogs "configflow/internal/api/logs"
@@ -57,6 +58,7 @@ var wirePackages = []func(){
 	agents.Wire,
 	metrics.Wire,
 	metrics.WireTraffic,
+	monitor.Wire,
 	substore.Wire,
 }
 

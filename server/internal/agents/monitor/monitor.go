@@ -657,7 +657,11 @@ func rankingsUnavailable(code string, fields ...any) *jsonx.Object {
 
 // rankingSection is _ranking_section(value, kind) with at most 10 rows.
 func rankingSection(value any, kind string) (*jsonx.Object, error) {
-	const limit = 10
+	return rankingSectionRows(value, kind, 10)
+}
+
+// rankingSectionRows is _ranking_section(value, kind, rows=limit).
+func rankingSectionRows(value any, kind string, limit int) (*jsonx.Object, error) {
 	invalid := NewError("INVALID_RESPONSE", 0, "")
 	section, ok := value.(*jsonx.Object)
 	if !ok || section == nil {

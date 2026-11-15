@@ -49,6 +49,7 @@ func Register(r *httpx.Router) {
 	registerMetrics(r)
 	registerTraffic(r)
 	registerOxidns(r)
+	registerPanel(r)
 }
 
 func failure(status int, message string) *httpx.Response {

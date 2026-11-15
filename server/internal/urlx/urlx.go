@@ -169,6 +169,9 @@ func quote(s, safe string) string {
 	return out.String()
 }
 
+// Quote is urllib.parse.quote(s, safe=safe) of a UTF-8 string.
+func Quote(s, safe string) string { return quote(s, safe) }
+
 // QuotePlus is urllib.parse.quote_plus (safe="").
 func QuotePlus(s string) string {
 	if !strings.Contains(s, " ") {
