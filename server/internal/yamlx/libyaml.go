@@ -217,4 +217,3 @@ func escapeSlashInDoubleQuotes(text string) string {
 	}
 	return out.String()
 }
-

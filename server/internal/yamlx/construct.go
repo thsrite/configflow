@@ -546,7 +546,7 @@ func constructInt(raw string) (any, error) {
 }
 
 // nativeInt is NativeLoader's int constructor:
-// int(s.replace('_', ''), 0 if s.lstrip('-+').startswith(('0x', '0o', '0b')) else 10).
+// int(s.replace('_', ”), 0 if s.lstrip('-+').startswith(('0x', '0o', '0b')) else 10).
 func nativeInt(s string) (any, error) {
 	base := 10
 	trimmed := strings.TrimLeft(s, "-+")

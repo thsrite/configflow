@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/urlx"
 )
 
 // Ported from backend/test_local_http.py. The Python tests that go through
@@ -299,8 +300,32 @@ func TestNormalizePathMatchesRequests(t *testing.T) {
 		"/api/%":          "/api/%25",
 	}
 	for in, want := range cases {
-		if got := normalizePath(in); got != want {
+		if got, err := urlx.RequestsPrepareURL("http://config.test"+in, nil); err != nil || got != "http://config.test"+want {
 			t.Errorf("%q: got %q want %q", in, got, want)
 		}
+	}
+}
+
+// Regression (review C02): the URL is prepared like requests (references in
+// urlx/testdata/review.json): a "%" that is not an escape is dispatched as
+// %25 (Go's url.Parse refused it), the query and host are normalised, the
+// response URL keeps the fragment.
+func TestPreparedURLLikeRequests(t *testing.T) {
+	newFixture(t)
+	for url, want := range map[string]string{
+		"http://config.test/api/a%41%zz":   "http://config.test/api/a%2541%25zz",
+		"http://Config.TEST:080/api/x":     "http://config.test:80/api/x",
+		"http://config.test/api/x?a=b c":   "http://config.test/api/x?a=b%20c",
+		"http://config.test/api/inspect#f": "http://config.test/api/inspect#f",
+	} {
+		response, err := Do(context.Background(), Request{Method: "get", URL: url})
+		if err != nil || response == nil {
+			t.Errorf("%s: %v %v", url, response, err)
+			continue
+		}
+		if response.URL != want {
+			t.Errorf("%s: URL %q, want %q", url, response.URL, want)
+		}
+		response.Body.Close()
 	}
 }

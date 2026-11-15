@@ -159,8 +159,6 @@ func removeDotSegmentsURLLib3(path string) string {
 	return strings.Join(output, "/")
 }
 
-
-
 func isASCIIAlnum(c byte) bool {
 	return c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
@@ -194,7 +192,6 @@ func unquoteUnreserved(uri string) (string, bool) {
 	}
 	return strings.Join(parts, ""), true
 }
-
 
 func asciiLower(s string) string {
 	b := []byte(s)

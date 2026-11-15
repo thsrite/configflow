@@ -160,8 +160,7 @@ func Do(ctx context.Context, r Request) (*Response, error) {
 
 	decodedPath, err := url.PathUnescape(path)
 	if err != nil {
-		cancel()
-		return nil, err
+		decodedPath = path
 	}
 	req := &http.Request{
 		Method:        method,
@@ -231,23 +230,31 @@ type preparedRequest struct {
 
 // prepare is requests.Request(...).prepare() for the parts that matter here.
 func prepare(r Request, method string) (*preparedRequest, error) {
-	parsed, err := url.Parse(r.URL)
+	params := make([][2]string, len(r.Params))
+	for i, p := range r.Params {
+		params[i] = [2]string{p.Key, p.Value}
+	}
+	// requests.Request(...).prepare().url, then urlsplit of it (request_local).
+	full, err := urlx.RequestsPrepareURL(strings.TrimLeft(r.URL, " \t\n\r\v\f"), params)
 	if err != nil {
 		return nil, fmt.Errorf("Invalid URL %s: %w", jsonx.Repr(r.URL), err)
 	}
-	if parsed.Scheme == "" || parsed.Host == "" {
+	split, err := urlx.Split(full)
+	if err != nil {
+		return nil, fmt.Errorf("Invalid URL %s: %w", jsonx.Repr(r.URL), err)
+	}
+	host := split.Netloc
+	if i := strings.LastIndex(host, "@"); i >= 0 {
+		host = host[i+1:]
+	}
+	if split.Scheme == "" {
+		return nil, fmt.Errorf("Invalid URL %s: No scheme supplied. Perhaps you meant https://%s?", jsonx.Repr(r.URL), r.URL)
+	}
+	if host == "" {
 		return nil, fmt.Errorf("Invalid URL %s: No host supplied", jsonx.Repr(r.URL))
 	}
-	path := normalizePath(parsed.EscapedPath())
-	query := parsed.RawQuery
-	if len(r.Params) > 0 {
-		extra := encodeParams(r.Params)
-		if query != "" {
-			query += "&" + extra
-		} else {
-			query = extra
-		}
-	}
+	path, query := split.Path, split.Query
+	parsed := struct{ Scheme, Host string }{split.Scheme, host}
 	prepared := &preparedRequest{scheme: parsed.Scheme, host: parsed.Host, path: path, query: query, header: http.Header{}}
 	for key, values := range r.Headers {
 		for _, v := range values {
@@ -285,11 +292,7 @@ func prepare(r Request, method string) (*preparedRequest, error) {
 	if r.BasicAuth != nil {
 		prepared.header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(r.BasicAuth[0]+":"+r.BasicAuth[1])))
 	}
-	location := url.URL{Scheme: parsed.Scheme, Host: parsed.Host, Path: path, RawQuery: query}
-	prepared.url = location.Scheme + "://" + location.Host + path
-	if query != "" {
-		prepared.url += "?" + query
-	}
+	prepared.url = full
 	return prepared, nil
 }
 
@@ -299,100 +302,6 @@ func encodeParams(params []Param) string {
 		parts[i] = urlx.QuotePlus(p.Key) + "=" + urlx.QuotePlus(p.Value)
 	}
 	return strings.Join(parts, "&")
-}
-
-// normalizePath is what requests does to the path of a URL (checked against
-// requests.Request.prepare): urllib3 upper-cases percent escapes, escapes
-// characters that may not appear raw and removes dot segments (RFC 3986
-// 5.2.4); then requote_uri decodes escaped unreserved characters. The order
-// matters: "%2e%2e" is not a dot segment when the segments are removed.
-func normalizePath(path string) string {
-	var b strings.Builder
-	for i := 0; i < len(path); i++ {
-		c := path[i]
-		switch {
-		case c == '%' && i+2 < len(path) && isHexByte(path[i+1]) && isHexByte(path[i+2]):
-			b.WriteString("%" + strings.ToUpper(path[i+1:i+3]))
-			i += 2
-		case isUnreserved(c) || strings.IndexByte("!$&'()*+,;=:@/", c) >= 0:
-			b.WriteByte(c)
-		default:
-			fmt.Fprintf(&b, "%%%02X", c)
-		}
-	}
-	escaped := removeDotSegments(b.String())
-	var out strings.Builder
-	for i := 0; i < len(escaped); i++ {
-		if escaped[i] == '%' && i+2 < len(escaped) && isHexByte(escaped[i+1]) && isHexByte(escaped[i+2]) {
-			if decoded := unhexByte(escaped[i+1])<<4 | unhexByte(escaped[i+2]); isUnreserved(decoded) {
-				out.WriteByte(decoded)
-				i += 2
-				continue
-			}
-		}
-		out.WriteByte(escaped[i])
-	}
-	return out.String()
-}
-
-func isHexByte(c byte) bool { return strings.IndexByte("0123456789abcdefABCDEF", c) >= 0 }
-
-func unhexByte(c byte) byte {
-	switch {
-	case c >= '0' && c <= '9':
-		return c - '0'
-	case c >= 'a' && c <= 'f':
-		return c - 'a' + 10
-	}
-	return c - 'A' + 10
-}
-
-func isUnreserved(c byte) bool {
-	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '.' || c == '_' || c == '~'
-}
-
-// removeDotSegments is RFC 3986 section 5.2.4 (urllib3's _remove_path_dot_segments).
-func removeDotSegments(path string) string {
-	if !strings.Contains(path, ".") {
-		return path
-	}
-	input := path
-	var output []string
-	pop := func() {
-		if len(output) > 0 {
-			output = output[:len(output)-1]
-		}
-	}
-	for input != "" {
-		switch {
-		case strings.HasPrefix(input, "../"):
-			input = input[3:]
-		case strings.HasPrefix(input, "./"):
-			input = input[2:]
-		case strings.HasPrefix(input, "/./"):
-			input = input[2:]
-		case input == "/.":
-			input = "/"
-		case strings.HasPrefix(input, "/../"):
-			input = input[3:]
-			pop()
-		case input == "/..":
-			input = "/"
-			pop()
-		case input == "." || input == "..":
-			input = ""
-		default:
-			end := strings.IndexByte(input[1:], '/')
-			if end < 0 {
-				end = len(input)
-			} else {
-				end++
-			}
-			output = append(output, input[:end])
-			input = input[end:]
-		}
-	}
-	return strings.Join(output, "")
 }
 
 // responseWriter hands the handler's output to the caller: the status and
