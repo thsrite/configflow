@@ -211,11 +211,11 @@ DELETE	/api/nodes/<node_id>	routes.nodes.handle_node		todo
 PUT	/api/nodes/<node_id>	routes.nodes.handle_node		todo
 POST	/api/nodes/delete	routes.nodes.delete_nodes_with_references		todo
 POST	/api/nodes/delete-preview	routes.nodes.delete_nodes_with_references		todo
-GET	/api/nodes/latency	routes.nodes.node_latency		todo
-POST	/api/nodes/latency	routes.nodes.node_latency		todo
-POST	/api/nodes/latency/dns/check	routes.nodes.node_dns_check		todo
-GET	/api/nodes/latency/settings	routes.nodes.node_latency_settings		todo
-POST	/api/nodes/latency/settings	routes.nodes.node_latency_settings		todo
+GET	/api/nodes/latency	routes.nodes.node_latency	api/nodes	done
+POST	/api/nodes/latency	routes.nodes.node_latency	api/nodes	done
+POST	/api/nodes/latency/dns/check	routes.nodes.node_dns_check	api/nodes	done
+GET	/api/nodes/latency/settings	routes.nodes.node_latency_settings	api/nodes	done
+POST	/api/nodes/latency/settings	routes.nodes.node_latency_settings	api/nodes	done
 POST	/api/nodes/parse-lines	routes.nodes.parse_node_lines		todo
 POST	/api/nodes/reorder	routes.nodes.reorder_nodes		todo
 GET	/api/notifications	routes.notifications.list_notifications	internal/api/notifications	wip

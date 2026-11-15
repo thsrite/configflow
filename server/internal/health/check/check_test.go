@@ -343,3 +343,25 @@ func TestProbeStoreKeepsTheNewest5000Hosts(t *testing.T) {
 		t.Fatal(hosts.Len())
 	}
 }
+
+// test_website_identity.py::test_cache_expiry_and_bound (deferred from C14).
+func TestCacheExpiryAndBound(t *testing.T) {
+	store := NewRegionStore(t.TempDir())
+	now := time.Now()
+	iso := func(t time.Time) string { return t.Format("2006-01-02T15:04:05.000000") }
+	err := store.Update("a", func(data *jsonx.Object) error {
+		websites := data.GetObject("websites")
+		websites.Set("old.test", jsonx.Obj("checked_at", iso(now.AddDate(0, 0, -31))))
+		for i := 0; i < 1001; i++ {
+			websites.Set(jsonx.Int(i).String()+".test", jsonx.Obj("checked_at", iso(now)))
+		}
+		return nil
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	websites := store.Load("a").GetObject("websites")
+	if websites.Len() != 1000 || websites.Has("old.test") || websites.Has("0.test") || !websites.Has("1000.test") {
+		t.Fatal(websites.Len())
+	}
+}
