@@ -236,9 +236,13 @@ if value == '1' and os.environ.get('DELETE_FORWARD_CONFIG_ON_ENABLE') == 'yes':
 
 // newAIOHarness is harness(tmp_path, manager, existing, **options).
 func newAIOHarness(t *testing.T, manager string, existing bool, mutate func(*AIOOptions)) aioHarness {
+	return newAIOHarnessSource(t, manager, existing, ok(aioGenerated(t, mutate)))
+}
+
+// newAIOHarnessSource is harness() with aio.generated patched to return source.
+func newAIOHarnessSource(t *testing.T, manager string, existing bool, source string) aioHarness {
 	tmp := t.TempDir()
 	python := pythonExe(t)
-	source := ok(aioGenerated(t, mutate))
 	if runtime.GOOS == "darwin" {
 		source = strings.ReplaceAll(source, "sed -i ", "sed -i '' ")
 	}
