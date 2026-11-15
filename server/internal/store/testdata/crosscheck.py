@@ -242,6 +242,42 @@ def errors(directory):
     return {'scenarios': {'items': results}}
 
 
+ODD_SEQUENCES = [
+    # documents committed one after another (the first is created); unusual
+    # key orders, empty sections and keys, profiles without fields
+    [{}, {'profiles': {}}, {'system': {}, 'shared': {}, 'profiles': {'p': {}}}, {}],
+    [{'': 1, 'root': {'x': 1}, 'system': {'': '', 'z': 1, 'a': 2},
+      'profiles': {'z': {'': None}, 'a': {'b': 1}, '例🚀': {'k': [1.0, -0.0, 1e16, 5e-324, 2 ** 70, float('nan')]}}},
+     {'system': {'a': 2, 'z': 1, '': ''}, 'profiles': {'a': {'b': 1}, '例🚀': {'k': [1.0]}, 'z': {'': None}},
+      'root': {'x': 1}, '': 1},
+     {'shared': {'k': 'sep\u2028\u2029 nul\x00'}, 'profiles': {'z': {'': None, 'n': 1}},
+      'system': {'z': 1}, 'root': {'x': 1}, '': 1, 'added': True},
+     {'profiles': {'z': {'n': 1, '': None}}, 'shared': {'k': 'sep\u2028\u2029 nul\x00'}, 'system': {'z': 1},
+      'root': {'x': 2}, 'added': True, '': 1},
+     {'schema_version': 5}],
+]
+
+
+def odd(directory):
+    results = []
+    for index, documents in enumerate(ODD_SEQUENCES):
+        path = Path(directory) / f'odd-{index}.sqlite3'
+        target = store(path)
+        steps = []
+        entry = target.create(documents[0], {})
+        for number, document in enumerate(documents):
+            committed = None
+            if number:
+                committed = target.commit(entry, copy.deepcopy(document))
+                entry = committed or entry
+            loaded = target.load()
+            steps.append({'document': dumps(document), 'committed': number == 0 or committed is not None,
+                          'entry': dumps(entry.document), 'loaded': dumps(loaded.document),
+                          'generation': loaded.head.generation, 'size': loaded.size, 'dump': dump(path)})
+        results.append(steps)
+    return {'sequences': results}
+
+
 def race(path, mode, timeout):
     """Concurrent commits with a Go writer (TestCrossCheckPythonConcurrentCommits).
 
@@ -274,7 +310,7 @@ def main():
         race(sys.argv[2], sys.argv[3], float(sys.argv[4]))
         return
     command, target, output = sys.argv[1:4]
-    result = {'create': create, 'dump': dump, 'commit': one_more_commit, 'errors': errors}[command](target)
+    result = {'create': create, 'dump': dump, 'commit': one_more_commit, 'errors': errors, 'odd': odd}[command](target)
     Path(output).write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
 
 

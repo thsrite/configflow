@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -447,4 +448,53 @@ func TestCrossCheckPythonConcurrentCommits(t *testing.T) {
 		expect(t, stdout, "ok 2")
 		run.Wait()
 	})
+}
+
+// TestCrossCheckPythonOddDocuments replays ODD_SEQUENCES of crosscheck.py
+// (empty documents and sections, empty keys, profiles without fields,
+// reordered roots, sections and profiles) with the Go store and compares
+// every step: committed or not, the returned and the reloaded document, the
+// generation, the size and every row (random ids and timestamps masked).
+func TestCrossCheckPythonOddDocuments(t *testing.T) {
+	result := python(t, "odd", t.TempDir())
+	sequences := result.GetList("sequences")
+	if len(sequences) < 2 {
+		t.Fatalf("only %d sequences", len(sequences))
+	}
+	for index, item := range sequences {
+		target := New(filepath.Join(t.TempDir(), Filename), seconds(2))
+		var entry Entry
+		for number, raw := range item.([]any) {
+			step := raw.(*jsonx.Object)
+			name := "sequence " + strconv.Itoa(index) + " step " + strconv.Itoa(number)
+			document := parseObject(t, step.GetString("document"))
+			committed := true
+			if number == 0 {
+				entry = must(target.Create(document, nil))(t)
+			} else {
+				next, ok, err := target.Commit(entry, document, nil)
+				if err != nil {
+					t.Fatalf("%s: %v", name, err)
+				}
+				committed = ok
+				if ok {
+					entry = next
+				}
+			}
+			loaded := must(target.Load())(t)
+			if committed != step.GetBool("committed") {
+				t.Errorf("%s: committed %v, Python %v", name, committed, step.GetBool("committed"))
+			}
+			for what, value := range map[string]*jsonx.Object{"entry": entry.Document, "loaded": loaded.Document} {
+				if got := compact(t, value); got != step.GetString(what) {
+					t.Errorf("%s: %s\n  go %s\n  py %s", name, what, got, step.GetString(what))
+				}
+			}
+			if loaded.Head.Generation != step.GetInt("generation") || loaded.Size != step.GetInt("size") {
+				t.Errorf("%s: generation %d size %d, Python %d %d", name, loaded.Head.Generation, loaded.Size,
+					step.GetInt("generation"), step.GetInt("size"))
+			}
+			sameTables(t, name, goDump(t, target.Path()), step.GetObject("dump"), true)
+		}
+	}
 }
