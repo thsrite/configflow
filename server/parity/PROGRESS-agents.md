@@ -1,6 +1,6 @@
 # PROGRESS — domain `agents`
 
-Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 21 missing, 2 ported (A01, A03), 1 verified (A02). Only reviewers set `verified`.
+Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 20 missing, 3 ported (A01, A03, A04), 1 verified (A02). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.
 
@@ -19,7 +19,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A01 | Agent manager (manager.py part A) | 1642 | ported | HR | C04 | – | internal/agents |
 | A02 | registry support: runtime state, diagnostics, events, versions, messages | 1386 | verified | | C02 | – | internal/agents |
 | A03 | registry routes (register, heartbeat, create/edit/delete) | 432 | ported | | A01, A02, C06 | 5 (5 done) | internal/api/agents |
-| A04 | metrics history and flush | 1163 | missing | | A01, C07 | 3 | internal/agents/metrics (new), api/agents |
+| A04 | metrics history and flush | 1163 | ported | | A01, C07 | 3 | internal/agents/metrics (new), api/agents |
 | A05 | traffic history and traffic store | 967 | missing | | A04, C37¹ | 8 | internal/agents/metrics, api/agents |
 | A06 | OxiDNS monitor, dashboard state, metrics | 1364 | missing | | A01 | 5 | internal/agents/monitor (new), api/agents |
 | A07 | Mihomo panel, OxiDNS cache/rule update/rankings/publication stats | 1316 | missing | | A06, C14 | 9 | internal/agents/monitor, api/agents |
