@@ -1,6 +1,6 @@
 # PROGRESS — domain `agents`
 
-Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 20 missing, 3 ported (A01, A03, A04), 1 verified (A02). Only reviewers set `verified`.
+Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 20 missing, 1 ported (A04), 3 verified (A01, A02, A03). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.
 
@@ -16,9 +16,9 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 
 | Id | Module | Py lines | Status | HR | Prereqs | Routes | Go package(s) |
 |---|---|---|---|---|---|---|---|
-| A01 | Agent manager (manager.py part A) | 1642 | ported | HR | C04 | – | internal/agents |
+| A01 | Agent manager (manager.py part A) | 1642 | verified | HR | C04 | – | internal/agents |
 | A02 | registry support: runtime state, diagnostics, events, versions, messages | 1386 | verified | | C02 | – | internal/agents |
-| A03 | registry routes (register, heartbeat, create/edit/delete) | 432 | ported | | A01, A02, C06 | 5 (5 done) | internal/api/agents |
+| A03 | registry routes (register, heartbeat, create/edit/delete) | 432 | verified | | A01, A02, C06 | 5 (5 done) | internal/api/agents |
 | A04 | metrics history and flush | 1163 | ported | | A01, C07 | 3 | internal/agents/metrics (new), api/agents |
 | A05 | traffic history and traffic store | 967 | missing | | A04, C37¹ | 8 | internal/agents/metrics, api/agents |
 | A06 | OxiDNS monitor, dashboard state, metrics | 1364 | missing | | A01 | 5 | internal/agents/monitor (new), api/agents |
@@ -162,7 +162,7 @@ Config-owned test files (see PROGRESS-config.md) with cases that run only when a
 
 ## A01 — Agent manager (manager.py part A)
 
-**Status: `ported`** (2026-11-15, porter; not reviewed) · HR · prereqs: C04 · Go: internal/agents (manager.go, deployments.go, remote.go, hooks.go, client.go, compat.go; singleton.go is shared with A02)
+**Status: `verified`** (review 2026-11-15, commits 2a2c685c, b8f6129d, 622c22fd; HR: VM lab test still due before the domain is done) · HR · prereqs: C04 · Go: internal/agents (manager.go, deployments.go, remote.go, hooks.go, client.go, compat.go; singleton.go is shared with A02)
 
 Files:
 - `backend/agents/manager.py` (1642) — lines 1–1012 and 1158–1787: `_agent_label`, `_constant_time_ascii_equal`, `heartbeat_fresh`, `online_status`, `is_online`, `is_usable`, `AgentDeploymentConflict`, `_NothingToSave`, `_upgrade_busy`, `_oxidns_ha_enabled`, `_oxidns_ha_busy`, `_dns_follow_busy`; `AgentManager.__init__` … `_cancel_manual_rollback` (registry, heartbeat, preparation, begin/record/unchanged/get/activate/rollback/recover deployment) and `push_config_to_agent` … `region_check` (legacy push, restart, status, logs, uninstall, update, logging config, domain discovery and traffic toggles, probe/return-routing/region/OxiDNS HA Agent calls). Part B (1013–1157: `_remember_deployment_content`, `publish_deployment`, `_publish_deployment`) is A14.
@@ -207,6 +207,26 @@ Pitfalls:
 - Hook defaults (unchanged, intended): `ReceiptMatches` nil → activation of every OxiDNS candidate is refused until A14; `AddMetrics` nil → heartbeat metrics dropped until A04; `PublishDeployment` → `ErrNotPorted`. A04/A05 must keep Python's **per-manager** history state: key it by `m.Repository().DataDir()`.
 - `remote.go` answers 200-non-object JSON in `_agent_json_request` with a `*RemoteError` carrying the AttributeError text; Python raised AttributeError (not RuntimeError). Callers that distinguish the two (A06/A07/C16 routes) must check.
 - Tests in `internal/agents` share process-wide hooks/runtime: every test starts with `newEnv` (resets both).
+
+Review (adversarial, 2026-11-15) — every function of manager.py part A walked against manager.go/deployments.go/remote.go/client.go; reference corpus from CPython 3.11 / requests 2.31 on the test server (`testdata/gen_a01_reference.py` → `testdata/a01_reference.json`: 44 host/port forms against loopback Agents with DNS disabled, json= bodies, 42 record_deployment status cases, 11 DST freshness cases), asserted by `a01_reference_test.go`. Findings, all fixed:
+
+| # | Sev | Finding | Fix | Regression test |
+|---|---|---|---|---|
+| 1 | med | record_deployment: an Agent answering a list/dict `status` (activate/rollback/poll) was stored; Python raises TypeError at `status in _DEPLOYMENT_RESULTS` and stores nothing. Status tuples were `map[any]bool` lookups that panic on list/dict values where Python's `in` is just False (`receipt`, terminal, HA terminal) | 2a2c685c (`pyStatuses.has`, `unhashable`) | `TestReferenceRecordDeploymentStatuses` |
+| 2 | low | heartbeat_fresh: naive heartbeats were compared as instants; Python subtracts naive wall clocks (DST change not seen), truncates now to µs, and an aware heartbeat against a given naive now is a TypeError (stale) | 2a2c685c | `TestReferenceHeartbeatFreshness`, `TestHeartbeatFreshNowNilUsesWallClockAndMicroseconds` |
+| 3 | low | `_preparation_running`: lock-file open/flock errors were swallowed as "not running"; Python raises | 2a2c685c (seam returns `(bool, error)`) | `TestPreparationLockErrorsPropagate` |
+| 4 | low | Agent deleted mid-operation: rollback/recover sent to `http://None:None` and recorded "unknown"; `_get_deployment` re-read kept the old state. Python raises TypeError/AttributeError (500) | 2a2c685c | `TestAgentDeletedDuringRollbackIsAnErrorNotAnUnknownOutcome` |
+| 5 | low | record(): `default_profile_id()` read unconditionally; Python only when status is succeeded and the task is latest | 2a2c685c | existing deployment tests |
+| 6 | low | json= bodies with NaN/Infinity were sent; requests 2.31 raises InvalidJSONError (a RequestException, "Out of range float values are not JSON compliant") before sending | b8f6129d (`jsonBody`, simpleCall → "Connection error: …") | `TestReferenceJSONBodiesRefuseNaN` |
+| 7 | low | URL preparation differed from requests: `%XX` of unreserved chars not decoded (requote_uri), `user:pass@host` did not replace the Bearer header with Basic auth, glibc numeric hosts (`127.1`, `0x7f.0.0.1`, `2130706433`, octal parts) went to DNS, full-width/compatibility hosts (`１２７.0.0.1`) were mapped by Go's UTS46 where urllib3's strict IDNA refuses them | b8f6129d | `TestReferenceAgentURLs`, `TestInetAtonExactLikeGlibc`, `TestUnquoteUnreservedLikeRequests` |
+
+Charset (limitation handed over from A02): decided **unobservable**, documented on `Response.Text`: the Go Agent answers `application/json` without charset (`routes/utils.go`) or `text/plain; charset=utf-8` (`http.Error`), relayed Mihomo/OxiDNS answers are UTF-8; only a foreign server at an Agent address could declare gbk etc., and then only a failure diagnostic text differs. No `golang.org/x/text`.
+
+Checks performed (no finding): register_agent (name/host match, token check, installation conflict, profile/upgrade/deployment, DNS follow and HA locks incl. port/service comparisons with Python `==` on ints/floats/bools, field copy lists, deep copies, ID/token format), get_*/update_agent/rebind/delete (order of checks, messages byte for byte, hooks), update_heartbeat (mark/record race, version-change writes, metrics hook), begin_deployment (regex, HA conflict, DNS follow states, 30-task bound, flock, finish on error, log line), record/_unchanged_deployment (every branch, failure_text/dns_report sanitising, events, latest copy, success/rollback baseline, finished log), _deployment_request (busy retry 21×/2 s, JSON fallbacks, http_status), get/activate/rollback/recover/_restore/_cancel (all status branches and messages), legacy push, restart, status, logs (quote), uninstall, update, logging config, domain discovery/traffic toggles, _agent_json_request and DNS HA calls, ports/hosts matrix.
+
+Accepted limitations: transport error texts are Go's (requests' include object addresses); requests' default headers (User-Agent, Accept-Encoding gzip/deflate), 30-redirect limit and `.netrc` are not reproduced (Agents never redirect or read them); other strict-IDNA 2008 rejections are not checked (no x/text; such names fail resolution anyway); malformed stored Agent records (e.g. a truthy non-dict `latest_upgrade`, non-dict `deployments`) make Python raise where Go treats them as missing — neither side writes such shapes.
+
+Commands: reference `rt --back server/internal/agents/testdata/a01_reference.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/agents/testdata/gen_a01_reference.py > server/internal/agents/testdata/a01_reference.json'`.
 
 ## A02 — registry support
 
@@ -257,7 +277,7 @@ Commands: reference corpus `rt --back server/internal/agents/testdata/a02_refere
 
 ## A03 — registry routes
 
-**Status: `ported`** (2026-11-15, porter; not reviewed) · prereqs: A01, A02, C06 · Go: internal/api/agents (agents.go, agents_test.go, difftest/, testdata/)
+**Status: `verified`** (review 2026-11-15, commit 719cfba5) · prereqs: A01, A02, C06 · Go: internal/api/agents (agents.go, agents_test.go, difftest/, testdata/)
 
 Files:
 - `backend/routes/agents.py` (432) — lines 1–161, 538–727, 953–1033 (see range table)
@@ -287,6 +307,21 @@ Decisions:
 Pitfalls:
 - Endpoint reuse: `httpx.Router` panics when an endpoint name is registered twice with different handlers, so A13 must extend `createAgent`/`handleAgentItem` (one handler per endpoint `agents.handle_agents` / `agents.handle_agent_item`) instead of registering a second GET handler.
 - `_bounded_log_value` relies on `logx.IsPrintable` (CPython 3.11 table); the golden test fails if it drifts.
+
+Review (adversarial, 2026-11-15) — routes walked branch by branch against agents.py lines 1–161, 538–727, 953–1033; 33 cases added to the Flask differential (`reviewRequests`), now **132 requests, 0 differences**. Findings, all fixed in 719cfba5:
+
+| # | Sev | Finding | Regression test |
+|---|---|---|---|
+| 1 | med | heartbeat metric int beyond the float range: Python's `math.isfinite(int)` raises OverflowError → 500 "int too large to convert to float"; Go answered 400 | `TestHeartbeatMetricIntBeyondFloatRangeIsOverflowError`, difftest "heartbeat metrics huge*/halfway/max float" |
+| 2 | low | metric checks ran in random map order and mixed key/value checks; Python stops at the first failing section in `_METRIC_FIELDS` order and checks a section's keys before its values (decides 400 vs 500) | same test, difftest "earlier/later section bad", "bad key/value after huge" |
+| 3 | low | heartbeat body with an int literal over 4300 digits: `json.loads` raises a plain ValueError (not caught) → 500 with its message; Go answered 400 | `TestHeartbeatIntBeyondDigitLimitIsValueError`, difftest "digit limit*" |
+| 4 | low | `X-Forwarded-For` is latin-1 decoded under WSGI (stored host, `strip()` of \xa0/\x85); Go used the raw bytes | `TestRegistrationForwardedForIsLatin1`, difftest "register latin-1 forwarded *" |
+
+Shared change: `httpx.Ctx.JSONForceError()` (json.loads with its error) added for `_read_json_body`.
+
+Checks performed (no finding): Docker bridge `int()` forms (Arabic/full-width digits, spaces, `_`, `+`, leading zeros, hex) via difftest; registration key, installation fields, null/list/str bodies, PermissionError/conflict notifications, log fields; `_authenticated_agent`; `_read_json_body` order (Content-Length, max+1 read, is_json, BOM/UTF-16); reply flags; POST/PUT/DELETE bodies and error texts; delete store hooks.
+
+Accepted limitations: nesting depth — CPython's RecursionError depends on the stack depth (Python 500 for ~1000+ levels, Go parses up to `jsonx.MaxDepth` and answers 400/the type error); lone surrogate escapes (jsonx U+FFFD: Python's `.encode('utf-8')` in the metrics size check would raise); the 500 log line carries the error text instead of a traceback. All three are jsonx/httpx-wide.
 
 ## A04 — metrics history and flush
 
