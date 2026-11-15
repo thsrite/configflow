@@ -162,7 +162,7 @@ Config-owned test files (see PROGRESS-config.md) with cases that run only when a
 
 ## A01 — Agent manager (manager.py part A)
 
-**Status: `partial`** · HR · prereqs: C04 · Go: internal/agents (manager.go, deployments.go, remote.go, hooks.go, singleton.go, compat.go)
+**Status: `ported`** (2026-11-15, porter; not reviewed) · HR · prereqs: C04 · Go: internal/agents (manager.go, deployments.go, remote.go, hooks.go, client.go, compat.go; singleton.go is shared with A02)
 
 Files:
 - `backend/agents/manager.py` (1642) — lines 1–1012 and 1158–1787: `_agent_label`, `_constant_time_ascii_equal`, `heartbeat_fresh`, `online_status`, `is_online`, `is_usable`, `AgentDeploymentConflict`, `_NothingToSave`, `_upgrade_busy`, `_oxidns_ha_enabled`, `_oxidns_ha_busy`, `_dns_follow_busy`; `AgentManager.__init__` … `_cancel_manual_rollback` (registry, heartbeat, preparation, begin/record/unchanged/get/activate/rollback/recover deployment) and `push_config_to_agent` … `region_check` (legacy push, restart, status, logs, uninstall, update, logging config, domain discovery and traffic toggles, probe/return-routing/region/OxiDNS HA Agent calls). Part B (1013–1157: `_remember_deployment_content`, `publish_deployment`, `_publish_deployment`) is A14.
@@ -171,15 +171,42 @@ Tests: `test_agent_deployments.py` (50), `test_agent_deployment_writes.py` (2), 
 
 Routes: none (routes are A03/A14/A15).
 
-Evidence (audit): every part-A def has a Go counterpart (methods on `*Manager`; inner updaters such as `reject_unchecked`, `update_version`, `reserve`, `restore`, `cancel` are closures/helpers in deployments.go/remote.go). `oxidns_ha_publish` pure pieces (`FIELD`, `TERMINAL`, `active`, `conflict`, `summary`, `_aggregate`, non-pair `service_operation`/`deployment`/`activate`) are copies in `compat.go` (`TODO(port)` → A18). Go tests: deployments_test.go 30, registry_test.go 13.
+Commits (porter, 2026-11-15): 3b39c317 (test gaps, logging-config fix, notifications gate, ordered delete hooks), 8507a6f4 (one `ConstantTimeASCIIEqual`), 14cc7e3f (DNS report cases), plus earlier ee00305e/1dd4e700/70bd31df (#20).
 
-Missing:
-- Tests (by name): `test_agent_deployments.py` 22/50 — of the 28 missing, runnable now: none clearly (the upload/late-acceptance cases `test_upload_ready_does_not_mark_version_and_status_survives_restart`, `test_old_agents_fail_closed_without_legacy_upload`, `test_unknown_upload_keeps_queryable_identity`, `test_late_upload_acceptance_does_not_replace_observed_startup`, `test_late_transport_timeout_does_not_replace_observed_checking` call `publish_deployment` → deferred to A14; bundle cases `test_bundle_*`, `test_mosdns_*`, `test_panel_geo_*`, `test_inline_rule_*`, `test_failed_required_download_*`, `test_classical_ip_part_*`, `test_oxidns_names_each_unavailable_ruleset_*`, `test_rule_download_failure_*`, `test_custom_installed_filename_*` → A11; route cases `test_route_client_id_persisted_*`, `test_route_preparation_progress_*`, `test_manual_rollback_route_*` → A14; `test_profile_binding_route_reports_deployment_conflict_as_409` → A03). `test_agent_deployment_writes.py` 0/2 (check: uses the `env` fixture of test_agent_deployments; port with A14 if it publishes). `test_agent_failure_details.py` 6/10 — missing `test_yaml_secret_block_does_not_hide_sibling_diagnostics` (diagnostics, **runnable now**), `test_failure_details_survive_restart_history_and_public_api` (→ A13 list), `test_capability_connection_failure_retains_reason_and_does_not_upload`, `test_preparation_exception_keeps_safe_details_in_http_response_and_history` (→ A14). `test_agent_dns_reports.py` 2/6 (+`TestDNSReportFieldsBoundsAndIncompleteness`) — `test_older_agent_without_dns_report_remains_unknown`, `test_malformed_or_absent_report_does_not_erase_previous_result` **check whether runnable now**; `test_upload_report_reaches_panel_and_persisted_history`, `test_dns_report_is_bounded_filtered_and_redacted_at_each_boundary` → A14. `test_agent_failure_response_states.py` 0/7 — **runnable now** (manager only): `test_legacy_success_http_requires_a_json_object`, `test_legacy_invalid_json_keeps_safe_plain_text_explanation`, `test_confirmed_agent_stage_discards_old_unknown_transport_details`, `test_confirmed_failure_replaces_transport_details_and_retains_on_same_error_poll`, `test_rollback_retry_clears_old_rejection_details_before_request`, `test_deployment_busy_retry_is_unchanged_by_diagnostic_sanitization`; `test_immediate_rejections_are_redacted_like_recorded_history` → A14 (deployment routes). `test_agent_profiles.py` 3/6 — `test_agent_registration_does_not_overwrite_system_agents_from_profile_snapshot` **runnable now**; `test_agent_config_endpoint_uses_bound_profile`, `test_push_config_uses_bound_profile_even_with_other_request_context` → A14. `test_agent_light_reads.py` 1/9 — the rest need list/rule sync/panel/publication (A13, A16, A07, A14); `test_records_without_history_equal_the_full_ones_in_every_other_field`, `test_every_use_of_unread_history_fails`, `test_unread_history_survives_copies_but_is_never_serialized_or_saved` look **runnable now** (repo + manager).
+Tests ported (Go file → Python cases):
+- `failure_states_test.go`: `test_agent_failure_response_states.py` 6/7 (`TestLegacySuccessHTTPRequiresAJSONObject` 2×4, `TestLegacyInvalidJSONKeepsSafePlainTextExplanation`, `TestConfirmedAgentStageDiscardsOldUnknownTransportDetails` ×4, `TestConfirmedFailureReplaces…`, `TestRollbackRetryClearsOldRejectionDetailsBeforeRequest`, `TestDeploymentBusyRetryIsUnchanged…`); `test_agent_deployment_writes.py` 2/2; `test_agent_failure_details.py::test_yaml_secret_block_does_not_hide_sibling_diagnostics`; `test_agent_dns_reports.py::test_dns_report_is_bounded_filtered_and_redacted_at_each_boundary` (both boundaries; manager only, not A14 as planned) and `test_malformed_or_absent_report_does_not_erase_previous_result`.
+- `deployments_test.go` (existing): `test_agent_deployments.py` 22, failure details 6, DNS reports 2 + `TestDNSReportFieldsBoundsAndIncompleteness`. `test_profile_binding_route_reports_deployment_conflict_as_409` is in `api/agents.TestAgentItemUpdateAndDelete` (A03).
+- `registry_test.go`: `test_agent_profiles.py` 4/6 (new: `TestAgentRegistrationDoesNotOverwriteSystemAgentsFromProfileSnapshot`, request scope with `X-ConfigFlow-Profile: alpha` and a cached snapshot); `test_agent_light_reads.py` 4/9 (`TestRecordsWithoutHistoryEqualTheFullOnesInEveryOtherField`, `TestManagerReadsLay…` + `TestManagerListsLay…`, `TestEveryUseOfUnreadHistoryFails` and `TestUnreadHistorySurvivesCopiesButIsNeverSerialized` + `TestUnreadHistoryIsNeverSaved` — Go equivalents, see decisions), `TestConstantTimeASCIIEqual`. The heartbeat half of `test_heartbeat_and_agent_reports_never_copy_the_history` is `api/agents.TestHeartbeatKeepsThePublicationHistory`.
+- `remote_test.go` (new; Python has no tests): status/log sources/logs URL quoting/uninstall/update/logging config/`_agent_json_request`/DNS HA calls, expected values from running manager.py (`testdata/remote_ref.py`, run with `rt -- bash -lc '~/cf-test/.venv/bin/python -I -c "import sys; sys.path.insert(0, \".\"); exec(open(\"server/internal/agents/testdata/remote_ref.py\").read())"'`).
 
-Reviewer notes (spot checks):
-- Hook defaults: `ReceiptMatches` nil → activation of every OxiDNS candidate is refused (fail closed) until A14 registers it; `AddMetrics` nil → heartbeat metrics are dropped until A04; `PublishDeployment` → `ErrNotPorted`. All intended, but the A04/A05 porters must keep Python's **per-manager** state: Python builds `MetricsHistory`/`TrafficHistory` in `AgentManager.__init__` (per repository data dir); Go hooks are process-wide with `m *Manager` passed in — key state by `m.Repository().DataDir`.
-- `DeleteAgent` in Python calls `metrics_history.delete_agent_history` and `traffic_history.delete` inside the manager; Go calls hooks `DeleteMetricsHistory`/`DeleteTrafficHistory` (no-op until A04/A05). Check the warning text `删除 Agent %s 的流量记录失败：%s` is kept by the A05 hook.
-- `_constant_time_ascii_equal` exists twice in Go (`agents.constantTimeASCIIEqual`, `api/agents.constantTimeEqual`): check both reject non-ASCII exactly like `hmac.compare_digest(...encode('ascii'))` and non-strings.
+Deferred (each listed in the named module's section by reference "deferred from A01"):
+- **A11** (bundle): `test_agent_deployments.py` `test_panel_geo_*` (2), `test_bundle_*` (3), `test_inline_rule_*` (2), `test_failed_required_download_*`, `test_mosdns_*` (7), `test_classical_ip_part_*`, `test_oxidns_names_each_unavailable_ruleset_*`, `test_rule_download_failure_*`, `test_custom_installed_filename_*`.
+- **A14** (publish/routes): `test_agent_deployments.py` `test_upload_ready_does_not_mark_version_*`, `test_old_agents_fail_closed_*`, `test_unknown_upload_keeps_queryable_identity`, `test_late_upload_acceptance_*`, `test_route_client_id_persisted_*`, `test_route_preparation_progress_*`, `test_manual_rollback_route_*`; `test_agent_failure_response_states.py::test_immediate_rejections_are_redacted_like_recorded_history` (deployment routes); `test_agent_failure_details.py` `test_capability_connection_failure_*`, `test_preparation_exception_*`; `test_agent_dns_reports.py` `test_upload_report_reaches_panel_*`, `test_older_agent_without_dns_report_remains_unknown` (publish_deployment, then GET list → A13); `test_agent_profiles.py` `test_agent_config_endpoint_uses_bound_profile`, `test_push_config_uses_bound_profile_*`.
+- **A13** (list/detail): `test_agent_failure_details.py::test_failure_details_survive_restart_history_and_public_api`; `test_agent_light_reads.py::test_agent_list_and_detail_still_return_the_publication_records`.
+- **A16**: `test_agent_light_reads.py` `test_idle_rule_sync_rounds_*`, `test_rule_sync_publication_works_from_a_record_without_history`. **A07/A06**: `test_panel_lookups_do_not_copy_the_history_*`. **A05**: the traffic-report half of `test_heartbeat_and_agent_reports_never_copy_the_history`.
+
+Bugs fixed (Python behaviour reproduced): `set_logging_config` — a 200 JSON answer that is not an object raised AttributeError (`'list' object has no attribute 'get'`), and an existing non-dict `logging_config` raised TypeError (`'NoneType' object does not support item assignment` / `list indices must be integers or slices, not str`); Go silently returned the value / replaced the field. `_constant_time_ascii_equal` had two Go copies; now one exported `agents.ConstantTimeASCIIEqual` used by manager and routes.
+
+**Agent delete — per-Agent stores (must not be lost when the owners are ported).** Python always removes these when an Agent is deleted; in Go each is a hook registered by its owner from its wire function (listed in `internal/server` `wirePackages`):
+
+| Python | Go hook | Registered by |
+|---|---|---|
+| `AgentManager.delete_agent` → `metrics_history.delete_agent_history` | `agents.RegisterHooks(Hooks{DeleteMetricsHistory})` | **A04** |
+| `AgentManager.delete_agent` → `traffic_history.delete` (warning `删除 Agent %s 的流量记录失败：%s` is logged by the registry) | `Hooks{DeleteTrafficHistory}` | **A05** |
+| route → `get_traffic_store().delete` | `agents.OnAgentDeleted("traffic_store", fn)` | **A05** |
+| route → `get_probe_store().delete` | `agents.OnAgentDeleted("domain_probe", fn)` | **C16** |
+| route → `get_region_store().delete` | `agents.OnAgentDeleted("region_check", fn)` | **C16** |
+
+`agents.AgentDeletedStores` fixes the run order (traffic_store, domain_probe, region_check, then any other name) whatever the wiring order; a store error answers 500 with its text after the Agent is gone (as Python). `internal/server.TestDeleteAgentClearsEveryPerAgentStoreInAFullyWiredServer` checks all five on `NewApp()` and is **skipped with `TODO(A05, C16, A04)`: the porter of the last of A04/A05/C16 removes the `t.Skip`**. Each of them should also seed its store files for `agent-1` in `api/agents/difftest` (the differential compares the files under `DATA_DIR`, lock files excluded).
+
+Decisions:
+- Light reads: Go's typed jsonx getters cannot raise on `repo.AgentHistoryNotRead` like Python's sentinel (documented on the sentinel); the Go test checks the equivalents: `repo.AgentHistory` refuses it, it is never an object/list to type assertions, every encoder refuses it, copies keep it, saving it fails.
+- `test_agent_profiles` snapshot case: Go transactions always read the committed document, so this passes by construction; kept as a regression test.
+
+Pitfalls:
+- Hook defaults (unchanged, intended): `ReceiptMatches` nil → activation of every OxiDNS candidate is refused until A14; `AddMetrics` nil → heartbeat metrics dropped until A04; `PublishDeployment` → `ErrNotPorted`. A04/A05 must keep Python's **per-manager** history state: key it by `m.Repository().DataDir()`.
+- `remote.go` answers 200-non-object JSON in `_agent_json_request` with a `*RemoteError` carrying the AttributeError text; Python raised AttributeError (not RuntimeError). Callers that distinguish the two (A06/A07/C16 routes) must check.
+- Tests in `internal/agents` share process-wide hooks/runtime: every test starts with `newEnv` (resets both).
 
 ## A02 — registry support
 
@@ -211,27 +238,36 @@ Reviewer notes:
 
 ## A03 — registry routes
 
-**Status: `partial`** · prereqs: A01, A02, C06 · Go: internal/api/agents (agents.go, agents_test.go, difftest/)
+**Status: `ported`** (2026-11-15, porter; not reviewed) · prereqs: A01, A02, C06 · Go: internal/api/agents (agents.go, agents_test.go, difftest/, testdata/)
 
 Files:
 - `backend/routes/agents.py` (432) — lines 1–161, 538–727, 953–1033 (see range table)
 
 Tests: `test_agent_registration_security.py` (10), `test_agent_heartbeat_security.py` (13)
 
-Routes (5, 5 done): `POST /api/agents/register` [done]; `POST /api/agents/<agent_id>/heartbeat` [done]; `POST /api/agents` [done]; `PUT /api/agents/<agent_id>` [done]; `DELETE /api/agents/<agent_id>` [done]. (`GET /api/agents`, `GET /api/agents/<agent_id>` are A13.)
+Routes (5, 5 done): `POST /api/agents/register` [done]; `POST /api/agents/<agent_id>/heartbeat` [done]; `POST /api/agents` [done]; `PUT /api/agents/<agent_id>` [done]; `DELETE /api/agents/<agent_id>` [done]. (`GET /api/agents`, `GET /api/agents/<agent_id>` are A13; `_public_agent` is ported with A13.)
 
-Evidence (audit): Go handlers for all five routes; `_public_agent` is not ported (only used by the GET branches → A13). Difftest against Flask: 52 requests + stored Agent records, 0 differences (`difftest/diff_test.go`). Tests: registration 8/10, heartbeat 5/13 by name (Go merges some: `TestHeartbeatRejectsMalformedJSONAndOversizedBody`, `TestHeartbeatWithoutContentLengthReadsOnlyMaxPlusOneBytes`).
+Commits (porter, 2026-11-15): 3b39c317, 2d49a9e6 (differential), 8507a6f4, f2777e0a; earlier 1dd4e700/277c7c53/70bd31df (#20).
 
-Missing:
-- Tests runnable now: `test_duplicate_registration_attack_is_rejected_after_repository_restart`, `test_heartbeat_rejects_non_ascii_or_malformed_bearer_without_mutating_system`, `test_heartbeat_rejects_malformed_encoding_or_json_without_mutation`, `test_manual_agent_create_does_not_return_token_even_without_auth` (check against `TestManualAgentCreateDoesNotReturnToken`), `test_profile_binding_route_reports_deployment_conflict_as_409` (from test_agent_deployments.py, PUT route).
-- Deferred: `test_agent_list_and_item_never_expose_token`, `test_agent_token_is_redacted_from_ordinary_outputs_and_still_authorizes_heartbeat` (→ A13 GET), `test_authenticated_global_backup_preserves_secrets_for_recovery` (→ C34 export).
+Tests ported (`agents_test.go`):
+- `test_agent_registration_security.py` 9/10: the 8 earlier ones + `TestDuplicateRegistrationAttackIsRejectedAfterRepositoryRestart` (second test server on the same data directory, runtime reset). `test_manager_*` cases are in `internal/agents/registry_test.go`.
+- `test_agent_heartbeat_security.py` 11/13: non-ASCII/malformed bearer is merged into `TestHeartbeatRejectsUnauthorizedWithoutMutatingSystem` (all 9 header forms); malformed JSON / oversized merged into `TestHeartbeatRejectsMalformedJSONAndOversizedBody`; chunked into `TestHeartbeatWithoutContentLengthReadsOnlyMaxPlusOneBytes`; new `TestHeartbeatRejectsMalformedEncodingOrJSONWithoutMutation` (streamed, no Content-Length); `test_manual_agent_create_does_not_return_token_even_without_auth` = `TestManualAgentCreateDoesNotReturnToken`.
+- `test_agent_deployments.py::test_profile_binding_route_reports_deployment_conflict_as_409` in `TestAgentItemUpdateAndDelete`.
+- New (audit): `TestHeartbeatAcceptsBOMAndUTF16Bodies` (json.loads detects them), `TestAgentItemUpdateWithNonObjectBodies`, `TestAgentDeleteRunsStoreHooksInPythonOrder`, `TestRegistrationLogFieldsMatchPythonGolden` (`_registration_log_fields` on Zs/Cf/Zl/Zp/C1/private use/Unicode-15-only code points, length bounds, number texts; golden `testdata/registration_log_fields.json` from `testdata/gen_registration_log_fields.py`, regenerate with `rt --back server/internal/api/agents/testdata -- bash -lc '~/cf-test/.venv/bin/python server/internal/api/agents/testdata/gen_registration_log_fields.py'`), `TestHeartbeatKeepsThePublicationHistory`.
 
-Reviewer notes (spot checks):
-- `register_agent` 500 path: Python logs `错误详情: <traceback>`; Go logs the error text twice. Log-only difference — document or reproduce the traceback-free form deliberately.
-- DELETE: Python always clears `traffic_store`, `domain_probe` and `region_check` stores after deleting; Go runs `OnAgentDeleted` hooks, none registered yet (A05, C16). Until then a delete leaves those files under `DATA_DIR` where Python removes them — visible in a data-level differential.
-- `_bounded_log_value` uses `logx.IsPrintable` for `str.isprintable`; verify on non-ASCII categories (Zs other than space, Cf, unassigned code points, surrogates).
-- 500 bodies use Go error texts where Python uses `str(e)` (repo errors are ported texts; other errors are not).
+Deferred: `test_agent_list_and_item_never_expose_token`, `test_agent_token_is_redacted_from_ordinary_outputs_and_still_authorizes_heartbeat` (→ A13 GET routes; the export part → C34), `test_authenticated_global_backup_preserves_secrets_for_recovery` (→ C34 export). Heartbeat `host` follow (`address_follow.follow/confirmed`) runs through the A15 hooks; registration of gateway installations through the A22 hooks (501 until then; not in the differential).
+
+Bugs fixed: PUT with a JSON string/list body — Python's `'profile_id' in updates` is a substring/membership test, so `"xprofile_idx"` fails with `string indices must be integers, not 'str'` and `["profile_id"]` with `list indices must be integers or slices, not str` (Go answered the `.get` AttributeError for every string/list). The registration-key check is skipped exactly when `installation_profile is None` (Go used "an installation id or token was sent").
+
+Differential (`difftest/diff_test.go`, `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/api/agents/difftest/'`): 74 requests (+21: non-ASCII/CJK/tab/trailing-field bearers on heartbeat and registration, oversized bearer, `\xff` bodies, UTF-8 BOM and UTF-16 heartbeats, NaN metric, registration and PUT 409 for an unfinished deployment, edit/delete 409 for a pending upgrade, string/list/bool PUT bodies), stored Agent records and the file list under `DATA_DIR` (lock files excluded: Flask starts every background loop): **0 differences**.
+
+Decisions:
+- `register_agent` 500 path: Python logs `错误详情: <traceback>`; Go logs the error text on that line (no Python traceback to reproduce). Log-only difference, accepted.
+- 500 bodies use Go error texts where Python uses `str(e)` for non-repository errors (repository errors are ported texts); the differential covers every 500 the routes can produce from request data.
+
+Pitfalls:
 - Endpoint reuse: `httpx.Router` panics when an endpoint name is registered twice with different handlers, so A13 must extend `createAgent`/`handleAgentItem` (one handler per endpoint `agents.handle_agents` / `agents.handle_agent_item`) instead of registering a second GET handler.
+- `_bounded_log_value` relies on `logx.IsPrintable` (CPython 3.11 table); the golden test fails if it drifts.
 
 ## A04 — metrics history and flush
 
