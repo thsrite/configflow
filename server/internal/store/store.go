@@ -179,6 +179,9 @@ func (s *Store) Fingerprint() (Fingerprint, error) {
 			if err := rows.Scan(&key, &value); err != nil {
 				return err
 			}
+			if err := checkText(metaColumns, key, value); err != nil {
+				return err
+			}
 			return row(key, value)
 		})
 		if err != nil {
@@ -191,6 +194,9 @@ func (s *Store) Fingerprint() (Fingerprint, error) {
 			if err := rows.Scan(&scope, &owner, &position); err != nil {
 				return err
 			}
+			if err := checkText(sectionColumns, scope, owner); err != nil {
+				return err
+			}
 			return row(scope, owner, position)
 		})
 		if err != nil {
@@ -201,6 +207,9 @@ func (s *Store) Fingerprint() (Fingerprint, error) {
 			var scope, owner, field, value string
 			var position, revision int64
 			if err := rows.Scan(&scope, &owner, &field, &position, &value, &revision); err != nil {
+				return err
+			}
+			if err := checkText(fieldColumns, scope, owner, field, value); err != nil {
 				return err
 			}
 			return row(scope, owner, field, position, value, revision)

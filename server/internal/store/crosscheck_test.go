@@ -313,6 +313,19 @@ func TestCrossCheckPythonErrors(t *testing.T) {
 			salvaged = compact(t, meta)
 		}
 		compare("salvage", salvaged, nil)
+		// commit_new_root_key in crosscheck.py; last, it may change the file.
+		var committedValue any
+		err = nil
+		if entry, err = target.Load(); err == nil {
+			document := entry.Document.Clone()
+			document.Set("added_by_commit", []any{jsonx.Int(1), "例"})
+			var next Entry
+			var committed bool
+			if next, committed, err = target.Commit(entry, document, nil); err == nil && committed {
+				committedValue = []any{jsonx.Int(next.Head.Generation), compact(t, next.Document), jsonx.Int(next.Size)}
+			}
+		}
+		compare("commit", committedValue, err)
 		if holder != nil {
 			holder.close()
 		}

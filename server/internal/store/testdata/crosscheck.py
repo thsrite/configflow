@@ -174,6 +174,18 @@ SCENARIOS = [
     ('table-missing', ['DROP TABLE fields'], 2.0),
     ('tables-missing', ['DROP TABLE fields', 'DROP TABLE sections'], 2.0),
     ('wal', ['PRAGMA journal_mode=WAL'], 2.0),
+    # Added by the C01 review: row values neither implementation writes.
+    ('value-blob', ["UPDATE fields SET value = CAST('[2]' AS BLOB) WHERE scope = 'shared' AND field = 'nodes'"], 2.0),
+    ('value-integer', ["UPDATE fields SET value = 5 WHERE scope = 'shared' AND field = 'nodes'"], 2.0),
+    ('value-bad-utf8', ["UPDATE fields SET value = CAST(X'5B22FF2041E4B8225D' AS TEXT) "
+                        "WHERE scope = 'shared' AND field = 'nodes'"], 2.0),
+    ('meta-bad-utf8', ["UPDATE meta SET value = CAST(X'22F09F9822' AS TEXT) WHERE key = 'migration'"], 2.0),
+    ('owner-bad-utf8', ['PRAGMA foreign_keys=OFF',
+                        "UPDATE fields SET owner = CAST(X'7AED' AS TEXT) WHERE owner = 'zeta'",
+                        "UPDATE sections SET owner = CAST(X'7AED' AS TEXT) WHERE owner = 'zeta'"], 2.0),
+    ('generation-negative', ["UPDATE meta SET value = '-3' WHERE key = 'generation'"], 2.0),
+    ('fields-trigger-fails', ["CREATE TRIGGER no_writes BEFORE INSERT ON fields BEGIN "
+                              "SELECT RAISE(ABORT, '只读：拒绝写入'); END"], 2.0),
 ]
 
 
@@ -183,6 +195,12 @@ def outcome(call):
     except Exception as error:  # noqa: BLE001 - the point is to record whatever is raised
         return {'type': type(error).__name__, 'message': str(error)}
     return {'type': None, 'message': None, 'value': value}
+
+
+def commit_new_root_key(target):
+    entry = target.load()
+    committed = target.commit(entry, {**entry.document, 'added_by_commit': [1, '例']})
+    return None if committed is None else [committed.head.generation, dumps(committed.document), committed.size]
 
 
 def errors(directory):
@@ -215,6 +233,8 @@ def errors(directory):
             'head': outcome(lambda: list(target.load().head)),
             'check': outcome(target.check),
             'salvage': outcome(lambda: None if target.salvage_meta() is None else dumps(target.salvage_meta())),
+            # last: it may change the file
+            'commit': outcome(lambda: commit_new_root_key(target)),
         })
         if holder is not None:
             holder.execute('ROLLBACK')

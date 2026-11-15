@@ -133,6 +133,13 @@ func (c *Conn) strings1(statement string) ([]string, error) {
 	return values, err
 }
 
+// Text columns in SELECT order, for checkText (position is not text).
+var (
+	metaColumns    = []string{"key", "value"}
+	sectionColumns = []string{"scope", "owner"}
+	fieldColumns   = []string{"scope", "owner", "field", "value"}
+)
+
 // metaRows returns the meta table (or the given keys of it) parsed, in key
 // order.
 func (c *Conn) metaRows(keys ...string) (*jsonx.Object, error) {
@@ -153,6 +160,9 @@ func (c *Conn) metaRows(keys ...string) (*jsonx.Object, error) {
 	err := c.query(statement, args, func(row *sql.Rows) error {
 		var key, text string
 		if err := row.Scan(&key, &text); err != nil {
+			return err
+		}
+		if err := checkText(metaColumns, key, text); err != nil {
 			return err
 		}
 		value, err := jsonx.ParseString(text)
@@ -206,6 +216,9 @@ func (c *Conn) storedRows() (*ordered[sectionKey, int64], *ordered[fieldKey, fie
 		if err := row.Scan(&key.scope, &key.owner, &position); err != nil {
 			return err
 		}
+		if err := checkText(sectionColumns, key.scope, key.owner); err != nil {
+			return err
+		}
 		sections.set(key, position)
 		return nil
 	})
@@ -217,6 +230,9 @@ func (c *Conn) storedRows() (*ordered[sectionKey, int64], *ordered[fieldKey, fie
 		var key fieldKey
 		var field fieldRow
 		if err := row.Scan(&key.scope, &key.owner, &key.field, &field.position, &field.value); err != nil {
+			return err
+		}
+		if err := checkText(fieldColumns, key.scope, key.owner, key.field, field.value); err != nil {
 			return err
 		}
 		fields.set(key, field)
