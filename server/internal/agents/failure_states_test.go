@@ -230,3 +230,74 @@ func TestSupersededHistoryKeepsFingerprintButNotPerFileDigests(t *testing.T) {
 	}
 	e.finish("second")
 }
+
+// test_agent_dns_reports.py::test_dns_report_is_bounded_filtered_and_redacted_at_each_boundary
+func TestDNSReportIsBoundedFilteredAndRedactedAtEachBoundary(t *testing.T) {
+	for _, boundary := range []string{"record", "transport"} {
+		e := newEnv(t)
+		secret := e.agent.GetString("token")
+		checks := []any{
+			jsonx.Obj("name", "dns_"+secret+strings.Repeat(" 名称", 100), "level", "warn",
+				"message", "https://name:password@dns.test/query?token=private-token\n"+secret+strings.Repeat("内容", 2000),
+				"fix", "password=\"private-fix\"\n"+strings.Repeat("修复", 1000), "unexpected", secret),
+			jsonx.Obj("name", "invalid-level", "level", "unknown", "message", secret),
+			"invalid-item",
+		}
+		for i := 0; i < DNSCheckLimit; i++ {
+			checks = append(checks, dnsWarning.DeepCopy())
+		}
+		raw := jsonx.Obj("status", "ready", "success", true, "dns_checked_at", "not-a-timestamp "+secret, "dns_checks", checks)
+		var result *jsonx.Object
+		if boundary == "record" {
+			e.begin("safe-report")
+			result = e.record("safe-report", raw)
+			e.finish("safe-report")
+			if saved := e.stored(e.id()).GetObject("latest_deployment"); !jsonx.Equal(saved.Value("dns_checks"), result.Value("dns_checks")) {
+				t.Fatalf("saved %v", saved.Value("dns_checks"))
+			}
+		} else {
+			e.fake.set(always(raw, 409))
+			result = must[*jsonx.Object](t)(e.m.DeploymentRequest(e.ctx, e.agent, "POST", "deployments/safe-report/activate", nil, nil, nil))
+			if !jsonx.Equal(result.Value("http_status"), 409) {
+				t.Fatalf("http_status %v", result.Value("http_status"))
+			}
+		}
+		list := result.GetList("dns_checks")
+		last := list[len(list)-1].(*jsonx.Object)
+		if len(list) > DNSCheckLimit || last.Value("name") != "DNS 报告完整性" || last.Value("level") != "warn" {
+			t.Fatalf("%s: %d checks, last %v", boundary, len(list), last)
+		}
+		for _, item := range list {
+			for _, key := range item.(*jsonx.Object).Keys() {
+				if key != "name" && key != "level" && key != "message" && key != "fix" {
+					t.Fatalf("%s: key %s", boundary, key)
+				}
+			}
+		}
+		first := list[0].(*jsonx.Object)
+		if len(first.GetString("name")) > DNSNameLimit || len(first.GetString("message")) > DNSMessageLimit || len(first.GetString("fix")) > DNSFixLimit {
+			t.Fatalf("%s: unbounded %v", boundary, first)
+		}
+		if result.Has("dns_checked_at") {
+			t.Fatalf("%s: dns_checked_at kept", boundary)
+		}
+		serialized, _ := jsonx.Default(result)
+		for _, private := range []string{secret, "name:password", "private-token", "private-fix"} {
+			if strings.Contains(string(serialized), private) {
+				t.Fatalf("%s: %q leaked", boundary, private)
+			}
+		}
+	}
+}
+
+// test_agent_dns_reports.py::test_malformed_or_absent_report_does_not_erase_previous_result
+func TestMalformedOrAbsentReportDoesNotErasePreviousResult(t *testing.T) {
+	e := newEnv(t)
+	e.begin("keep-report")
+	e.record("keep-report", jsonx.Obj("status", "ready", "dns_checks", []any{dnsWarning}, "dns_checked_at", checkedAt))
+	result := e.record("keep-report", jsonx.Obj("status", "succeeded", "success", true, "dns_checks", "invalid", "dns_checked_at", "invalid"))
+	e.finish("keep-report")
+	if !jsonx.Equal(result.Value("dns_checks"), []any{dnsWarning}) || result.Value("dns_checked_at") != checkedAt {
+		t.Fatalf("result %v", result)
+	}
+}
