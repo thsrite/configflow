@@ -238,6 +238,10 @@ func (q query) encode() string {
 
 func unreachable() *Error { return NewError("AGENT_UNREACHABLE", 0, "") }
 
+// doRequest is _request (a variable so tests can replace it, like the
+// Python tests' monkeypatch of _request).
+var doRequest = request
+
 // request is _request: GET <origin>/api/oxidns/<endpoint> with the Agent's
 // token, no proxy, no redirects, at most MaxResponseBytes; the answer must
 // be a JSON object without an error.
@@ -551,7 +555,7 @@ func overviewSnapshot(ctx context.Context, m Manager, agent *jsonx.Object, dashb
 	if dashboard {
 		minVersion = MinDashboardAgentVersion
 	}
-	data, err := request(ctx, m, agent, "overview", nil, minVersion)
+	data, err := doRequest(ctx, m, agent, "overview", nil, minVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -824,7 +828,7 @@ func dashboardRankings(ctx context.Context, m Manager, agent *jsonx.Object, para
 	requestParams := append(query{}, params...)
 	requestParams = requestParams.set("since_ms", strconv.FormatInt(since, 10))
 	requestParams = requestParams.set("until_ms", strconv.FormatInt(collected, 10))
-	data, err := request(ctx, m, agent, "rankings", requestParams, MinDashboardAgentVersion)
+	data, err := doRequest(ctx, m, agent, "rankings", requestParams, MinDashboardAgentVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -1426,7 +1430,7 @@ func Queries(ctx context.Context, m Manager, agentID string, args [][2]string) (
 	if err != nil {
 		return nil, err
 	}
-	data, err := request(ctx, m, agent, "queries", params, minVersion)
+	data, err := doRequest(ctx, m, agent, "queries", params, minVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -1467,7 +1471,7 @@ func Query(ctx context.Context, m Manager, agentID, recordID string, args [][2]s
 	if err != nil {
 		return nil, err
 	}
-	data, err := request(ctx, m, agent, "queries/"+recordID, params, MinAgentVersion)
+	data, err := doRequest(ctx, m, agent, "queries/"+recordID, params, MinAgentVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -1545,7 +1549,7 @@ func Clients(ctx context.Context, m Manager, agentID string, args [][2]string) (
 	if err != nil {
 		return nil, err
 	}
-	data, err := request(ctx, m, agent, "clients", params, MinClientsAgentVersion)
+	data, err := doRequest(ctx, m, agent, "clients", params, MinClientsAgentVersion)
 	if err != nil {
 		return nil, err
 	}
