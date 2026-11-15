@@ -129,3 +129,9 @@ func matchesClass(text, extra string) bool {
 func isUnitName(unit string) bool {
 	return unit != "" && matchesClass(unit[:1], "_") && (len(unit) == 1 || matchesClass(unit[1:], "_.@-"))
 }
+
+// PyInt is int(value) (exported for the routes' type=int arguments).
+func PyInt(value any) (*big.Int, error) { return pyInt(value) }
+
+// PyStr is str(value) of an int or str argument.
+func PyStr(value any) string { return pyStr(value) }

@@ -113,3 +113,9 @@ func codePoints(s string) int { return utf8.RuneCountInString(s) }
 
 // replaceOnce is str.replace(old, new, 1).
 func replaceOnce(s, old, replacement string) string { return strings.Replace(s, old, replacement, 1) }
+
+// PyStrip is str.strip() (exported for the routes).
+func PyStrip(text string) string { return pyStrip(text) }
+
+// SplitLines is str.splitlines(keepends=True) (exported for the routes).
+func SplitLines(text string) []string { return splitLines(text) }
