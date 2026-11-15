@@ -269,6 +269,11 @@ func (p *parser) parseNode(block, indentlessSequence bool) *event {
 		e.kind, e.implicit[0] = eventMappingStart, implicit
 		p.state = p.parseBlockMappingFirstKey
 	case e.hasAnchor || e.hasTag:
+		if p.scanner.libyaml {
+			// libyaml: an empty node is implicit only without a tag ("!"
+			// included), so "! " composes to a str.
+			implicit = !e.hasTag
+		}
 		e.kind, e.implicit = eventScalar, [2]bool{implicit, false}
 		p.state = p.popState()
 	default:
@@ -552,6 +557,10 @@ type ComposeOptions struct {
 	// Resolve is the implicit scalar resolver (Resolver.resolve for a
 	// ScalarNode); nil means SafeLoader's, ResolveScalar.
 	Resolve func(value string, implicit [2]bool) string
+	// Libyaml rejects double-quoted escapes of surrogates and of code points
+	// beyond U+10FFFF with a ScannerError, as libyaml (CSafeLoader) does;
+	// PyYAML's pure scanner accepts surrogates.
+	Libyaml bool
 }
 
 // ComposeWith is Compose with a stream name and a scalar resolver, as a
@@ -561,6 +570,7 @@ func ComposeWith(text string, opts ComposeOptions) (root *Node, err error) {
 	if err != nil {
 		return nil, err
 	}
+	s.libyaml = opts.Libyaml
 	p := &parser{scanner: s}
 	p.state = p.parseStreamStart
 	resolve := opts.Resolve

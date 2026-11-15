@@ -227,6 +227,9 @@ type scanner struct {
 	possibleSimpleKey map[int]*simpleKey
 
 	name string
+	// libyaml switches to libyaml's (CSafeLoader's) scanner rules where
+	// they differ from PyYAML's pure scanner (see ComposeOptions.Libyaml).
+	libyaml bool
 }
 
 const defaultName = "<unicode string>"
@@ -277,11 +280,15 @@ func (s *scanner) forward(length int) {
 		if inSet(ch, "\n\u0085  ") || (ch == '\r' && s.peek(0) != '\n') {
 			s.line++
 			s.column = 0
-		} else if ch != '\uFEFF' {
+		} else if ch != '\uFEFF' || s.libyaml {
 			s.column++
 		}
 	}
 }
+
+// inlineSpace is a separating blank inside a line: a space, and with
+// libyaml's rules also a tab.
+func (s *scanner) inlineSpace(ch rune) bool { return ch == ' ' || (s.libyaml && ch == '\t') }
 
 func (s *scanner) mark() Mark {
 	return Mark{Name: s.name, Index: s.index, Line: s.line, Column: s.column, buffer: s.buffer, pointer: s.pointer}
@@ -618,9 +625,20 @@ func (s *scanner) checkPlain() bool {
 func (s *scanner) scanToNextToken() {
 	if s.index == 0 && s.peek(0) == '\uFEFF' {
 		s.forward(1)
+		if s.libyaml {
+			// libyaml's reader drops a leading byte order mark: marks do
+			// not count it.
+			s.index, s.column = 0, 0
+		}
 	}
 	for {
-		for s.peek(0) == ' ' {
+		if s.libyaml && s.column == 0 && s.peek(0) == '\uFEFF' {
+			// libyaml lets a byte order mark start any line.
+			s.forward(1)
+		}
+		// libyaml also skips tabs in flow context and where no simple key
+		// may start (after a scalar, an alias, a tag, a simple key's ":").
+		for s.peek(0) == ' ' || (s.libyaml && s.peek(0) == '\t' && (s.flowLevel != 0 || !s.allowSimpleKey)) {
 			s.forward(1)
 		}
 		if s.peek(0) == '#' {
@@ -678,7 +696,7 @@ func (s *scanner) scanDirectiveName(start Mark) string {
 	value := s.prefix(length)
 	s.forward(length)
 	ch = s.peek(0)
-	if !inSet(ch, "\x00 \r\n\u0085  ") {
+	if !inSet(ch, "\x00 \r\n\u0085  ") && !(s.libyaml && ch == '\t') {
 		s.fail(scannerError("while scanning a directive", &start,
 			"expected alphabetic or numeric character, but found "+reprRune(ch), s.mark()))
 	}
@@ -686,7 +704,7 @@ func (s *scanner) scanDirectiveName(start Mark) string {
 }
 
 func (s *scanner) scanYAMLDirectiveValue(start Mark) (int, int) {
-	for s.peek(0) == ' ' {
+	for s.inlineSpace(s.peek(0)) {
 		s.forward(1)
 	}
 	major := s.scanYAMLDirectiveNumber(start)
@@ -696,7 +714,7 @@ func (s *scanner) scanYAMLDirectiveValue(start Mark) (int, int) {
 	}
 	s.forward(1)
 	minor := s.scanYAMLDirectiveNumber(start)
-	if !inSet(s.peek(0), "\x00 \r\n\u0085  ") {
+	if !inSet(s.peek(0), "\x00 \r\n\u0085  ") && !(s.libyaml && s.peek(0) == '\t') {
 		s.fail(scannerError("while scanning a directive", &start,
 			"expected a digit or ' ', but found "+reprRune(s.peek(0)), s.mark()))
 	}
@@ -725,25 +743,25 @@ func (s *scanner) scanYAMLDirectiveNumber(start Mark) int {
 }
 
 func (s *scanner) scanTagDirectiveValue(start Mark) (string, string) {
-	for s.peek(0) == ' ' {
+	for s.inlineSpace(s.peek(0)) {
 		s.forward(1)
 	}
 	handle := s.scanTagHandle("directive", start)
-	if ch := s.peek(0); ch != ' ' {
+	if ch := s.peek(0); !s.inlineSpace(ch) {
 		s.fail(scannerError("while scanning a directive", &start, "expected ' ', but found "+reprRune(ch), s.mark()))
 	}
-	for s.peek(0) == ' ' {
+	for s.inlineSpace(s.peek(0)) {
 		s.forward(1)
 	}
 	prefix := s.scanTagURI("directive", start)
-	if ch := s.peek(0); !inSet(ch, "\x00 \r\n\u0085  ") {
+	if ch := s.peek(0); !inSet(ch, "\x00 \r\n\u0085  ") && !(s.libyaml && ch == '\t') {
 		s.fail(scannerError("while scanning a directive", &start, "expected ' ', but found "+reprRune(ch), s.mark()))
 	}
 	return handle, prefix
 }
 
 func (s *scanner) scanDirectiveIgnoredLine(start Mark) {
-	for s.peek(0) == ' ' {
+	for s.inlineSpace(s.peek(0)) {
 		s.forward(1)
 	}
 	if s.peek(0) == '#' {
@@ -819,7 +837,7 @@ func (s *scanner) scanTag() Token {
 		}
 		t.Suffix = s.scanTagURI("tag", start)
 	}
-	if ch := s.peek(0); !inSet(ch, "\x00 \r\n\u0085  ") {
+	if ch := s.peek(0); !inSet(ch, "\x00 \r\n\u0085  ") && !(s.libyaml && (ch == '\t' || (ch == ',' && s.flowLevel != 0))) {
 		s.fail(scannerError("while scanning a tag", &start, "expected ' ', but found "+reprRune(ch), s.mark()))
 	}
 	t.End = s.mark()
@@ -923,7 +941,7 @@ func (s *scanner) scanBlockScalarIndicators(start Mark) (int, int) {
 			s.forward(1)
 		}
 	}
-	if ch := s.peek(0); !inSet(ch, "\x00 \r\n\u0085  ") {
+	if ch := s.peek(0); !inSet(ch, "\x00 \r\n\u0085  ") && !(s.libyaml && ch == '\t') {
 		s.fail(scannerError("while scanning a block scalar", &start,
 			"expected chomping or indentation indicators, but found "+reprRune(ch), s.mark()))
 	}
@@ -931,7 +949,7 @@ func (s *scanner) scanBlockScalarIndicators(start Mark) (int, int) {
 }
 
 func (s *scanner) scanBlockScalarIgnoredLine(start Mark) {
-	for s.peek(0) == ' ' {
+	for s.inlineSpace(s.peek(0)) {
 		s.forward(1)
 	}
 	if s.peek(0) == '#' {
@@ -1042,6 +1060,10 @@ func (s *scanner) scanFlowScalarNonSpaces(double bool, start Mark) []string {
 					}
 				}
 				code, _ := strconv.ParseUint(s.prefix(length), 16, 64)
+				if s.libyaml && (code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF)) {
+					s.fail(scannerError("while parsing a quoted scalar", &start,
+						"found invalid Unicode character escape code", s.mark()))
+				}
 				if code > 0x10FFFF {
 					s.fail(&ValueError{"chr() arg not in range(0x110000)"})
 				}
@@ -1124,8 +1146,16 @@ func (s *scanner) scanPlain() Token {
 			if s.flowLevel != 0 {
 				stop += ",[]{}"
 			}
+			if s.libyaml && s.flowLevel != 0 && ch == ':' && inSet(s.peek(length+1), ",?[]{}") && s.peek(length+1) != 0 {
+				s.forward(length)
+				s.fail(scannerError("while scanning a plain scalar", &start, "found unexpected ':'", s.mark()))
+			}
+			ends := ",?[]{}"
+			if s.libyaml {
+				ends = ",[]{}" // libyaml: "?" does not end a plain scalar
+			}
 			if inSet(ch, breakz) || (ch == ':' && inSet(s.peek(length+1), stop)) ||
-				(s.flowLevel != 0 && inSet(ch, ",?[]{}")) {
+				(s.flowLevel != 0 && inSet(ch, ends)) {
 				break
 			}
 			length++
@@ -1139,7 +1169,7 @@ func (s *scanner) scanPlain() Token {
 		s.forward(length)
 		end = s.mark()
 		var ok bool
-		spaces, ok = s.scanPlainSpaces()
+		spaces, ok = s.scanPlainSpaces(indent, start)
 		if !ok || len(spaces) == 0 || s.peek(0) == '#' || (s.flowLevel == 0 && s.column < indent) {
 			break
 		}
@@ -1149,10 +1179,10 @@ func (s *scanner) scanPlain() Token {
 
 // scanPlainSpaces returns ok false where Python returns None (a document
 // separator follows).
-func (s *scanner) scanPlainSpaces() ([]string, bool) {
+func (s *scanner) scanPlainSpaces(indent int, start Mark) ([]string, bool) {
 	var chunks []string
 	length := 0
-	for s.peek(length) == ' ' {
+	for s.peek(length) == ' ' || (s.libyaml && s.peek(length) == '\t') {
 		length++
 	}
 	whitespaces := s.prefix(length)
@@ -1169,8 +1199,11 @@ func (s *scanner) scanPlainSpaces() ([]string, bool) {
 			return nil, false
 		}
 		var breaks []string
-		for inSet(s.peek(0), " \r\n\u0085  ") && s.peek(0) != 0 {
-			if s.peek(0) == ' ' {
+		for (inSet(s.peek(0), " \r\n\u0085  ") || (s.libyaml && s.peek(0) == '\t')) && s.peek(0) != 0 {
+			if s.peek(0) == '\t' && s.column < indent {
+				s.fail(scannerError("while scanning a plain scalar", &start, "found a tab character that violates indentation", s.mark()))
+			}
+			if s.peek(0) == ' ' || s.peek(0) == '\t' {
 				s.forward(1)
 			} else {
 				breaks = append(breaks, s.scanLineBreak())
