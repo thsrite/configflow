@@ -39,6 +39,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"configflow/internal/agents"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/taskstatus"
@@ -339,9 +340,11 @@ func parseLines(lines []string, limit time.Time) ([]point, int) {
 	return points, count
 }
 
-// decodeReplace is bytes.decode('utf-8', errors='replace').
+// decodeReplace is bytes.decode('utf-8', errors='replace'): one U+FFFD per
+// maximal subpart of an ill-formed sequence (strings.ToValidUTF8 would
+// collapse a run of bad bytes into one).
 func decodeReplace(data []byte) string {
-	return strings.ToValidUTF8(string(data), "�")
+	return agents.DecodeUTF8Replace(data)
 }
 
 func (h *History) readFile(agentID string, limit time.Time) ([]point, int, error) {

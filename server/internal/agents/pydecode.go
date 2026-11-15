@@ -232,6 +232,13 @@ func decodeUTF8(b []byte, strict bool) (string, bool) {
 	return out.String(), true
 }
 
+// DecodeUTF8Replace is bytes.decode('utf-8', errors='replace') (also what
+// reading a file opened with encoding='utf-8', errors='replace' yields).
+func DecodeUTF8Replace(b []byte) string {
+	text, _ := decodeUTF8(b, false)
+	return text
+}
+
 // maximalSubpart is the length of the longest prefix of b that starts a
 // well-formed UTF-8 sequence (at least 1), b not starting with one.
 func maximalSubpart(b []byte) int {
