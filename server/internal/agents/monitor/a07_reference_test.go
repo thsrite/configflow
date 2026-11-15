@@ -235,7 +235,7 @@ func TestReferencePanelHelpers(t *testing.T) {
 	ref := loadA07(t)
 	for _, item := range ref.GetList("newer_release") {
 		c := item.([]any)
-		if got := newerRelease(c[0].(string), c[1].(string)); got != c[2].(bool) {
+		if got, err := newerRelease(c[0].(string), c[1].(string)); err != nil || got != c[2].(bool) {
 			t.Errorf("newer_release(%q, %q) = %v", c[0], c[1], got)
 		}
 	}

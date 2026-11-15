@@ -35,7 +35,10 @@ func mihomoPanel(c *httpx.Ctx) (*httpx.Response, error) {
 		body = c.JSONSilent()
 	}
 	return oxidnsMonitorResponse(c, func(m monitor.Manager) (*jsonx.Object, error) {
-		return monitor.PanelCall(c.Context(), m, c.Param("agent_id"), c.Param("resource"), method, c.Args(), body, "")
+		// The core update check fetches version.txt with request_rule, which
+		// reads flask.request.host_url.
+		return monitor.PanelCall(monitor.WithHostURL(c.Context(), c.HostURL()), m, c.Param("agent_id"), c.Param("resource"),
+			method, c.Args(), body, "")
 	})
 }
 

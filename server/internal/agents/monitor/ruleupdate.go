@@ -109,6 +109,24 @@ func currentHARules() HARulesFunc {
 	return haRules
 }
 
+var haTerminal = map[string]bool{"succeeded": true, "failed": true, "rollback_failed": true}
+
+// haActive is oxidns_ha_publish.active(agent) with Python's exceptions: a
+// truthy non-dict publication record is the AttributeError of .get and an
+// unhashable status the TypeError of the set membership test (both 500).
+func haActive(agent *jsonx.Object) (bool, error) {
+	job, err := orDict(agent.Value(agents.HAField))
+	if err != nil || job.Len() == 0 {
+		return false, err
+	}
+	status := job.Value("status")
+	if unhashable(status) {
+		return false, typeErrorUnhashable(status)
+	}
+	text, ok := status.(string)
+	return !ok || !haTerminal[text], nil
+}
+
 // ruleUpdateAgent is oxidns_rule_update._agent.
 func ruleUpdateAgent(ctx context.Context, m Manager, agentID string) (*jsonx.Object, error) {
 	agent, err := m.GetAgentByID(ctx, agentID, false)
@@ -215,7 +233,13 @@ func RuleUpdateCall(ctx context.Context, m Manager, agentID, method string, path
 		return nil, 0, err
 	}
 	paired := ha.Value("enabled") == true
-	if method == "POST" && agents.HAActive(agent) {
+	active := false
+	if method == "POST" {
+		if active, err = haActive(agent); err != nil {
+			return nil, 0, err
+		}
+	}
+	if active {
 		job, err := orDict(agent.Value(agents.HAField))
 		if err != nil {
 			return nil, 0, err

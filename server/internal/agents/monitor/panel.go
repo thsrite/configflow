@@ -12,6 +12,7 @@ package monitor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"regexp"
@@ -496,6 +497,21 @@ var downloadSettings = func(ctx context.Context) (*jsonx.Object, error) {
 	return result, nil
 }
 
+type hostURLKey struct{}
+
+// WithHostURL carries flask.request.host_url to the core update check:
+// request_rule compares the version.txt source and its GitHub mirror with
+// the panel's own origin (a mirror under this panel's /api/ is dispatched
+// in-process and never goes through the download proxy).
+func WithHostURL(ctx context.Context, hostURL string) context.Context {
+	return context.WithValue(ctx, hostURLKey{}, hostURL)
+}
+
+func hostURLOf(ctx context.Context) string {
+	hostURL, _ := ctx.Value(hostURLKey{}).(string)
+	return hostURL
+}
+
 // requestRule is backend.utils.rule_fetch.request_rule (a variable for tests).
 var requestRule = rulefetch.RequestRule
 
@@ -504,7 +520,7 @@ var requestRule = rulefetch.RequestRule
 var latestCoreVersion = func(ctx context.Context, channel string, settings *jsonx.Object) (string, error) {
 	config := jsonx.Obj("system_config", settings.Clone())
 	response, err := requestRule(ctx, CoreVersionURLs[channel], rulefetch.Request{Config: config,
-		ConnectTimeout: 5e9, ReadTimeout: 10e9, Stream: true, MaxBytes: coreVersionMaxBodyBytes})
+		ConnectTimeout: 5e9, ReadTimeout: 10e9, Stream: true, MaxBytes: coreVersionMaxBodyBytes, HostURL: hostURLOf(ctx)})
 	if err != nil {
 		return "", err
 	}
@@ -546,14 +562,14 @@ func checkFailure(err error) string {
 }
 
 // releaseParts is _RELEASE.fullmatch: v?(\d+)\.(\d+)\.(\d+) with Unicode
-// decimal digits.
-func releaseParts(version string) ([]*big.Int, bool) {
+// decimal digits; the parts are the digit texts (ASCII).
+func releaseParts(version string) ([]string, bool) {
 	version = strings.TrimPrefix(version, "v")
 	parts := strings.Split(version, ".")
 	if len(parts) != 3 {
 		return nil, false
 	}
-	out := make([]*big.Int, 3)
+	out := make([]string, 3)
 	for i, part := range parts {
 		if part == "" {
 			return nil, false
@@ -566,39 +582,64 @@ func releaseParts(version string) ([]*big.Int, bool) {
 			}
 			digits.WriteByte(byte('0' + d))
 		}
-		out[i], _ = new(big.Int).SetString(digits.String(), 10)
+		out[i] = digits.String()
 	}
 	return out, true
 }
 
+// releaseInts is tuple(map(int, match.groups())): int() refuses a text of
+// more than 4300 digits (ValueError, not caught by the panel: 500).
+func releaseInts(parts []string) ([]*big.Int, error) {
+	out := make([]*big.Int, len(parts))
+	for i, part := range parts {
+		if len(part) > maxIntDigits {
+			return nil, fmt.Errorf("ValueError: Exceeds the limit (%d digits) for integer string conversion: value has %d digits; use sys.set_int_max_str_digits() to increase the limit", maxIntDigits, len(part))
+		}
+		out[i], _ = new(big.Int).SetString(part, 10)
+	}
+	return out, nil
+}
+
 // newerRelease is _newer_release(current, latest).
-func newerRelease(current, latest string) bool {
-	a, okA := releaseParts(current)
-	b, okB := releaseParts(latest)
+func newerRelease(current, latest string) (bool, error) {
+	partsA, okA := releaseParts(current)
+	partsB, okB := releaseParts(latest)
 	if !okA || !okB {
-		return false
+		return false, nil
+	}
+	a, err := releaseInts(partsA)
+	if err != nil {
+		return false, err
+	}
+	b, err := releaseInts(partsB)
+	if err != nil {
+		return false, err
 	}
 	for i := range a {
 		if c := a[i].Cmp(b[i]); c != 0 {
-			return c > 0
+			return c > 0, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // usable is _usable(cached, current, now, settings).
-func usable(cached *coreCached, current string, now float64, settings *jsonx.Object) bool {
+func usable(cached *coreCached, current string, now float64, settings *jsonx.Object) (bool, error) {
 	if !jsonx.Equal(cached.settings, settings) {
-		return false
+		return false, nil
 	}
 	if cached.err != "" {
-		return now-cached.finishedAt < CoreCheckFailureTTL
+		return now-cached.finishedAt < CoreCheckFailureTTL, nil
 	}
 	ttl := CoreCheckTTL
-	if newerRelease(current, cached.latest) {
+	newer, err := newerRelease(current, cached.latest)
+	if err != nil {
+		return false, err
+	}
+	if newer {
 		ttl = CoreCheckFailureTTL
 	}
-	return now-cached.finishedAt < ttl
+	return now-cached.finishedAt < ttl, nil
 }
 
 // cachedLatest is _cached_latest(channel, current, force): (version,
@@ -610,8 +651,14 @@ func cachedLatest(ctx context.Context, channel, current string, force bool) (str
 		return "", "", err
 	}
 	cached := coreCachedOf(channel)
-	if cached != nil && !force && usable(cached, current, requested, settings) {
-		return cached.latest, cached.err, nil
+	if cached != nil && !force {
+		ok, err := usable(cached, current, requested, settings)
+		if err != nil {
+			return "", "", err
+		}
+		if ok {
+			return cached.latest, cached.err, nil
+		}
 	}
 	lock := coreLocks[channel]
 	// An automatic check with something to show does not wait for another
@@ -624,9 +671,17 @@ func cachedLatest(ctx context.Context, channel, current string, force bool) (str
 	defer lock.Unlock()
 	cached = coreCachedOf(channel)
 	// Fetched by another request after this one started: reuse it.
-	if cached != nil && jsonx.Equal(cached.settings, settings) &&
-		(cached.finishedAt >= requested || !force && usable(cached, current, monotonic(), settings)) {
-		return cached.latest, cached.err, nil
+	if cached != nil && jsonx.Equal(cached.settings, settings) {
+		reuse := cached.finishedAt >= requested
+		if !reuse && !force {
+			var err error
+			if reuse, err = usable(cached, current, monotonic(), settings); err != nil {
+				return "", "", err
+			}
+		}
+		if reuse {
+			return cached.latest, cached.err, nil
+		}
 	}
 	latest, failure := "", ""
 	if version, err := latestCoreVersion(ctx, channel, settings); err != nil {
@@ -664,8 +719,16 @@ func CheckCoreUpdate(ctx context.Context, m Manager, agentID string, force bool)
 	if err != nil {
 		return nil, err
 	}
+	hasUpdate := latest != "" && latest != currentText
+	if hasUpdate {
+		newer, err := newerRelease(currentText, latest)
+		if err != nil {
+			return nil, err
+		}
+		hasUpdate = !newer
+	}
 	data := jsonx.Obj("current", currentText, "channel", channel, "latest", latest,
-		"has_update", latest != "" && latest != currentText && !newerRelease(currentText, latest), "error", failure)
+		"has_update", hasUpdate, "error", failure)
 	if latest != "" {
 		data.Set("release_url", strings.ReplaceAll(coreReleasePages[channel], "{version}", urlx.Quote(latest, "")))
 	}

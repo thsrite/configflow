@@ -1024,13 +1024,13 @@ func CollectRound(ctx context.Context, m RoundManager, store *RankingStore, now 
 func rankingLoop(ctx context.Context) {
 	repository, err := repo.GetRepository(ctx)
 	if err != nil {
-		rankingLogger.Exception("OxiDNS ranking collection round failed", err)
+		threadException(err)
 		return
 	}
 	handle, err := os.OpenFile(filepath.Join(repository.DataDir(), ".oxidns-rankings.lock"),
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
 	if err != nil {
-		rankingLogger.Exception("OxiDNS ranking collection round failed", err)
+		threadException(err)
 		return
 	}
 	defer handle.Close()
@@ -1047,6 +1047,13 @@ func rankingLoop(ctx context.Context) {
 		}
 		rankingRound(ctx)
 	}
+}
+
+// threadException is what Python's thread does when get_repository() or
+// open(lock_path, 'a') raises before the loop: the exception leaves the
+// thread and threading.excepthook prints it to stderr (not to the log).
+var threadException = func(err error) {
+	fmt.Fprintf(os.Stderr, "Exception in thread oxidns-ranking-history:\n%v\n", err)
 }
 
 func rankingRound(ctx context.Context) {

@@ -182,6 +182,13 @@ func CacheCall(ctx context.Context, m Manager, agentID, method string, tags any)
 	if err != nil {
 		return nil, err
 	}
+	// Inside the try block: _agent_origin is evaluated (its MonitorError,
+	// with the monitor's message, re-raised) before the token is encoded
+	// on sending (UnicodeEncodeError → this module's AGENT_UNREACHABLE).
+	origin, err := AgentOrigin(agent)
+	if err != nil {
+		return nil, err
+	}
 	encodedToken, ok := latin1(token)
 	if !ok {
 		return nil, CacheFail("AGENT_UNREACHABLE", 0)
@@ -195,10 +202,6 @@ func CacheCall(ctx context.Context, m Manager, agentID, method string, tags any)
 		if body, err = jsonx.Default(jsonx.Obj("tags", tags)); err != nil {
 			return nil, err
 		}
-	}
-	origin, err := AgentOrigin(agent)
-	if err != nil {
-		return nil, err
 	}
 	response, err := m.Client().Do(ctx, agents.Request{Method: method, URL: origin + path, Header: header, Body: body,
 		Timeout: agents.Pair(3, cacheRequestTimeoutSec), NoProxy: true, NoRedirects: true, MaxBody: CacheMaxResponseBytes})
