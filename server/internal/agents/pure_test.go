@@ -414,22 +414,32 @@ func TestRepositoriesAndLoopsDoNotShareIdleState(t *testing.T) {
 	if _, run := due(t, second, e); !run {
 		t.Fatal("shared between loops")
 	}
-	func() {
-		other := idleEnv(t)
-		otherHead, run, _ := first.Due(e.ctx, other.repo)
-		if !run {
-			t.Fatal("shared between repositories")
-		}
-		first.Done(other.repo, otherHead, true)
-		if first.Len() != 2 {
-			t.Fatal("len")
-		}
-	}()
-	for i := 0; i < 20 && first.Len() != 1; i++ {
+	idleRoundOfAnotherRepository(t, first)
+	// Nothing keeps a discarded repository (and its cached document) alive.
+	for i := 0; i < 100 && first.Len() != 1; i++ {
 		runtime.GC()
 		time.Sleep(10 * time.Millisecond)
 	}
 	if first.Len() != 1 {
-		t.Skip("repository still referenced (open handles); weak cleanup not observable here")
+		t.Fatalf("discarded repository still tracked: len %d", first.Len())
 	}
+	// The fixture's repository is still in use (Python's fixture keeps it).
+	runtime.KeepAlive(e.repo)
+}
+
+// idleRoundOfAnotherRepository records an idle round of a repository that is
+// unreachable once it returns (not inlined, so no stack slot keeps it).
+//
+//go:noinline
+func idleRoundOfAnotherRepository(t *testing.T, rounds *IdleRounds) {
+	other := idleEnv(t)
+	head, run, err := rounds.Due(other.ctx, other.repo)
+	if err != nil || !run {
+		t.Fatal("shared between repositories")
+	}
+	rounds.Done(other.repo, head, true)
+	if rounds.Len() != 2 {
+		t.Fatal("len")
+	}
+	runtime.KeepAlive(other.repo)
 }
