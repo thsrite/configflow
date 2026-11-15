@@ -140,6 +140,7 @@ func compilePyRegex(pattern string, ignoreCase bool) (*PyRegex, error) {
 	if err != nil {
 		return nil, err
 	}
+	foldCase(parsed.nodes, parsed.flags)
 	if source, err := translateRE2(parsed); err == nil {
 		if re, err := regexp.Compile(source); err == nil {
 			return &PyRegex{re: re, pattern: pattern, parsed: parsed}, nil
@@ -160,12 +161,11 @@ func compilePyRegex(pattern string, ignoreCase bool) (*PyRegex, error) {
 	return &PyRegex{net: net, pattern: pattern, parsed: parsed}, nil
 }
 
+// flagLetters spells scoped flags for both engines. IGNORECASE is never
+// spelled: foldCase has already made literals and sets case-explicit.
 func flagLetters(add, del int) string {
 	letters := func(flags int) string {
 		var b strings.Builder
-		if flags&flagIgnoreCase != 0 {
-			b.WriteByte('i')
-		}
 		if flags&flagMultiline != 0 {
 			b.WriteByte('m')
 		}

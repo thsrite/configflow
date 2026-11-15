@@ -152,6 +152,7 @@ type reNode struct {
 	ref      int
 	yes, no  []*reNode
 	hasNo    bool
+	icase    bool // opGroupRef under IGNORECASE (set by foldCase)
 }
 
 type reState struct {

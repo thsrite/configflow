@@ -250,7 +250,12 @@ func (tr *netTranslator) node(n *reNode) error {
 		}
 		tr.b.WriteString(`)`)
 	case opGroupRef:
-		fmt.Fprintf(&tr.b, `(?:\%d)`, n.ref)
+		if n.icase {
+			// GROUPREF_UNI_IGNORE compares simple lowercase forms.
+			fmt.Fprintf(&tr.b, `(?i:\%d)`, n.ref)
+		} else {
+			fmt.Fprintf(&tr.b, `(?:\%d)`, n.ref)
+		}
 	case opGroupRefExists:
 		fmt.Fprintf(&tr.b, `(?(%d)`, n.ref)
 		if err := tr.nodes(n.yes); err != nil {
