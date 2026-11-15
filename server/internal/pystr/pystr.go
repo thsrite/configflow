@@ -1,6 +1,7 @@
 // Package pystr reproduces CPython 3.11 string operations whose result depends
 // on the Unicode database or on CPython's own parsing rules: str.lower(),
-// str.isspace()/strip(), int(str, base) and float(str).
+// str.upper(), str.isspace()/strip(), str.isidentifier(), int(str, base) and
+// float(str).
 //
 // Go's unicode package carries a newer Unicode version than CPython 3.11
 // (Unicode 14.0.0), and str.lower() uses the full case mapping plus the
@@ -91,6 +92,49 @@ func Lower(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// Upper is str.upper(): the full case mapping (U+00DF becomes "SS", U+0390
+// three characters) with CPython 3.11's tables.
+func Upper(s string) string {
+	ascii := true
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			ascii = false
+			break
+		}
+	}
+	if ascii {
+		return strings.ToUpper(s)
+	}
+	var b strings.Builder
+	for _, r := range s {
+		i := sort.Search(len(upperTable), func(i int) bool { return upperTable[i].r >= r })
+		if i < len(upperTable) && upperTable[i].r == r {
+			b.WriteString(upperTable[i].s)
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// IsIdentifier is str.isidentifier(): the first character is XID_Start or
+// "_", the others XID_Continue (Unicode 14.0.0).
+func IsIdentifier(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		if i == 0 {
+			if r != '_' && !inRanges(identStartRanges, r) {
+				return false
+			}
+		} else if !inRanges(identContinueRanges, r) {
+			return false
+		}
+	}
+	return true
 }
 
 func finalSigma(runes []rune, i int) bool {

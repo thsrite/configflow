@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate ../tables.go: the CPython 3.11 (Unicode 14.0.0) character data behind
-str.lower(), str.isspace() and the decimal digits int()/float() accept.
+str.lower(), str.upper(), str.isspace(), str.isidentifier() and the decimal digits
+int()/float() accept.
 
     PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/pystr/testdata/gen_tables.py
 
@@ -34,10 +35,17 @@ def ranges(cps):
     return out
 
 
-lower, space, ignorable, cased, decimal = [], [], [], [], []
+lower, upper, space, ignorable, cased, decimal = [], [], [], [], [], []
+xid_start, xid_continue = [], []
 for cp, c in chars():
     if c.lower() != c and cp != 0x3A3:
         lower.append((cp, c.lower()))
+    if c.upper() != c:
+        upper.append((cp, c.upper()))
+    if c.isidentifier():
+        xid_start.append(cp)
+    if ('a' + c).isidentifier():
+        xid_continue.append(cp)
     if c.isspace():
         space.append(cp)
     if ('AΣ' + c).lower()[1] == 'ς' and ('A' + c + 'Σ').lower()[-1] == 'ς':
@@ -83,6 +91,18 @@ for cp, s in lower:
     lines.append(f'\t{{0x{cp:X}, {go_string(s)}}},')
 lines.append('}')
 lines.append('')
+lines.append('// upperTable maps the code points whose str.upper() differs from themselves to their')
+lines.append('// upper-case text (full case mapping), sorted by code point.')
+lines.append('var upperTable = []struct {')
+lines.append('\tr rune')
+lines.append('\ts string')
+lines.append('}{')
+for cp, s in upper:
+    lines.append(f'\t{{0x{cp:X}, {go_string(s)}}},')
+lines.append('}')
+lines.append('')
+emit_ranges('identStartRanges', 'are the code points c for which c.isidentifier() is true (XID_Start and "_").', xid_start)
+emit_ranges('identContinueRanges', 'are the code points c for which ("a" + c).isidentifier() is true (XID_Continue).', xid_continue)
 emit_ranges('spaceRanges', 'are the code points for which str.isspace() is true.', space)
 emit_ranges('caseIgnorableRanges', 'are the Case_Ignorable code points of the Final_Sigma rule.', ignorable)
 emit_ranges('casedRanges', 'are the cased code points that are not case-ignorable.', cased)
@@ -94,4 +114,4 @@ for lo, hi, d in digit_runs:
 lines.append('}')
 lines.append('')
 Path(__file__).resolve().parent.parent.joinpath('tables.go').write_text('\n'.join(lines), encoding='utf-8')
-print(len(lower), len(space), len(ignorable), len(cased), len(digit_runs))
+print(len(lower), len(upper), len(xid_start), len(xid_continue), len(space), len(ignorable), len(cased), len(digit_runs))
