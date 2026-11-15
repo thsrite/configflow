@@ -37,7 +37,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C09 | matcher cache, group candidates, reorder, strategy refs, connection rules | 708 | ported | C08 | – |
 | C10 | manual node parser, subscription hosts/filter/dialers | 1242 | ported | C08 | – |
 | C11 | proxy chains, commented Mihomo editor, listeners, proxy-server DNS | 855 | partial | C10 | – |
-| C12 | converter common, Mihomo node conversion, dialer references, EasyTier | 1196 | missing | C09, C11 | – |
+| C12 | converter common, Mihomo node conversion, dialer references, EasyTier | 1196 | partial | C09, C11 | – |
 | C13 | Sub-Store client, runtime, subscription cache, dependencies | 1193 | missing | C12, C10 | – |
 | C14 | remote rule fetch, ruleset content, remote sources, website identity | 1202 | missing | C12, C08 | – |
 | C15 | subscription refresh, health, scheduled refresh | 600 | missing | C13, C14, C07 | – |
@@ -296,24 +296,27 @@ Reviewer notes: Refusals return Python's failure message and the route answers 4
 
 ## C12 — converter common, Mihomo node conversion, dialer references, EasyTier
 
-**Status: `missing`** · prereqs: C09, C11 · Go: internal/convert (new)
+**Status: `partial` (porting in progress)** · prereqs: C09, C11 · Go: `internal/convert`
 
 Files:
-- `backend/converters/common.py` (118)
-- `backend/converters/mihomo.py` (259) — node-conversion group (see module notes)
-- `backend/utils/proxy_utils.py` (14)
-- `backend/utils/dialer_references.py` (473)
-- `backend/common/mihomo_easytier.py` (332)
+- `backend/converters/common.py` (118) → `convert/common.go` (+ `compat.go`: `_has_yaml_payload` copy, TODO C14)
+- `backend/converters/mihomo.py` (259) — node-conversion group → `convert/mihomo_nodes.go`
+- `backend/utils/proxy_utils.py` (14) → `mihomo_nodes.go` (`FixProxyFields`)
+- `backend/utils/dialer_references.py` (473) → `convert/dialers.go` (derived from the faithful `repo/compat_dialers.go` copy), `convert/dialers_api.go`
+- `backend/common/mihomo_easytier.py` (332) → `convert/easytier.go`, `convert/ipaddr.go`
 
 Tests: `test_dialer_provider_scope.py` (4), `test_dialer_review_fixes.py` (16), `test_dialer_round2.py` (10), `test_mihomo_easytier.py` (13), `test_node_conversion_cache.py` (12), `test_proxy_yaml_cache.py` (14)
 
 Routes: none.
 
-Evidence: No Go package; no route registered.
+Done: code for every function compiles (`go vet` clean). WIP commit only; tests, corpus and compat switch-over not done yet.
 
-Missing / deferred: Everything in the files below.
+Next: Go tests (port of the pure test cases), differential corpus vs Python, switch `repo/compat_dialers.go` + `repo/compat_proxystring.go` to `convert`, drift test for `subs/compat.go` (subs ↔ dialer_references is a cycle: subs.ValidateProxyChains is used by convert).
 
-Notes for porter: Split of `converters/mihomo.py` (function groups): **this module** = `IndentDumper`, `apply_github_proxy_domain`, `mihomo_used_ports`, `mihomo_listen_ports`, `_cacheable_proxy_yaml`, `_load_proxy_yaml`, `_parse_structured_proxy_string`, `node_conversions`, `convert_node_to_mihomo` (≈260 lines incl. imports); the rest is C18. These are the helpers that rule fetch, Sub-Store, node latency, dialer references, provider delivery, setup and domain discovery import lazily, so porting them first breaks the Python import cycles. Private copies to replace: `subs/compat.go` (dialer_references), `repo/compat_dialers.go`, `repo/compat_proxystring.go` (register via `repo.Hooks.SetStructuredProxyStringParser`), `rules/compat.go` `ruleset_format` (converters/common). Also port `profile_context.append_url_query` (C05) here if a caller needs it. `mihomo_easytier` imports only proxy_server_dns. Most dialer/EasyTier tests render through `generate_mihomo_config`/Surge/Loon: port pure cases here, defer the rest to C18–C20 and list them.
+Decisions so far:
+- `validate_proxy_chains` comes from `subs.ValidateProxyChains` (C11), plus the unhashable `follow_group` TypeError check subs lacks.
+- Sub-Store conversion is injected: `ProxyStringConverter.ConvertProxyString(ctx, s) *jsonx.Object` (nil = None). `node_conversions` is `WithNodeConversions(ctx, *ConversionResults, reuse)`.
+- `provider_proxy_name` needs `re.sub` with groups: pattern validated with `rules.CompilePyRegex`, run on regexp2 (`pySub`).
 
 ## C13 — Sub-Store client, runtime, subscription cache, dependencies
 
