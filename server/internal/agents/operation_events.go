@@ -11,25 +11,21 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"configflow/internal/agents/diag"
 	"configflow/internal/jsonx"
 )
 
 // Limits of operation_events.py.
 const (
 	EventLimit   = 80
-	MessageLimit = 1024
+	MessageLimit = diag.MessageLimit
 )
 
 var statusPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}\z`)
 
 // EventMessage is event_message(value, secrets): download addresses hidden,
 // then FailureText with the 1024-byte limit.
-func EventMessage(value any, secrets []any) string {
-	if text, ok := value.(string); ok {
-		value = urlPattern.ReplaceAllString(text, "[下载地址已隐藏]")
-	}
-	return FailureText(value, secrets, MessageLimit)
-}
+func EventMessage(value any, secrets []any) string { return diag.EventMessage(value, secrets) }
 
 // EventTimeNow is event_time(): the current UTC time with microseconds and "Z".
 func EventTimeNow() string { return formatEventTime(clock()) }
