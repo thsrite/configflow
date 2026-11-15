@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"configflow/internal/agents"
+	"configflow/internal/agents/metrics"
 	"configflow/internal/tasks"
 )
 
@@ -69,8 +70,8 @@ func TestNewAppRegistersImplementedRoutes(t *testing.T) {
 // registers from its wire function; this fails when a fully wired server
 // would delete an Agent and leave any of those files behind.
 func TestDeleteAgentClearsEveryPerAgentStoreInAFullyWiredServer(t *testing.T) {
-	t.Skip("TODO(A05, C16): unskip once A05 (traffic store + traffic history) and C16 (domain probe, region check) " +
-		"register their delete hooks from wirePackages (A04's metrics history hook is wired: metrics.Wire)")
+	t.Skip("TODO(C16): unskip once C16 (domain probe, region check) registers its delete hooks from wirePackages " +
+		"(A04 metrics.Wire and A05 metrics.WireTraffic are wired; see TestNewAppWiresTheTrafficStores)")
 	agents.ResetHooks()
 	t.Cleanup(agents.ResetHooks)
 	NewApp()
@@ -83,6 +84,24 @@ func TestDeleteAgentClearsEveryPerAgentStoreInAFullyWiredServer(t *testing.T) {
 	}
 	if hooks.DeleteTrafficHistory == nil {
 		t.Error("delete_agent: traffic_history.delete (A05) not registered")
+	}
+}
+
+// A05: the full application wires the traffic history (Agent deletion,
+// the save inside 监控历史保存) and the traffic store the DELETE route
+// clears first.
+func TestNewAppWiresTheTrafficStores(t *testing.T) {
+	agents.ResetHooks()
+	t.Cleanup(agents.ResetHooks)
+	NewApp()
+	if names := agents.AgentDeletedHookNames(); len(names) == 0 || names[0] != "traffic_store" {
+		t.Errorf("DELETE /api/agents/<id> store hooks %q, want traffic_store first", names)
+	}
+	if agents.CurrentHooks().DeleteTrafficHistory == nil {
+		t.Error("delete_agent: traffic_history.delete (A05) not registered")
+	}
+	if !metrics.TrafficFlushSet() {
+		t.Error("metrics_flush.run: traffic history save (A05) not registered")
 	}
 }
 

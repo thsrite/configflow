@@ -55,6 +55,7 @@ var wirePackages = []func(){
 	wireCore,
 	agents.Wire,
 	metrics.Wire,
+	metrics.WireTraffic,
 }
 
 func wireCore() {
