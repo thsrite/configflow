@@ -1051,8 +1051,10 @@ func (t *tokenizer) parseFlags(st *reState, char string) (add, del int, global b
 
 // parsedRegex is the result of a successful parse.
 type parsedRegex struct {
-	nodes []*reNode
-	flags int
+	nodes     []*reNode
+	flags     int
+	groups    int            // number of capturing groups (Pattern.groups)
+	groupdict map[string]int // Pattern.groupindex
 }
 
 // parsePyRegex is re._parser.parse(pattern, flags): it returns *reError for
@@ -1096,7 +1098,7 @@ func parsePyRegex(pattern string, flags int) (result *parsedRegex, err error) {
 	if st.checkLookbehind(nodes) {
 		return nil, &reError{Msg: "look-behind requires fixed-width pattern"}
 	}
-	return &parsedRegex{nodes: nodes, flags: st.flags}, nil
+	return &parsedRegex{nodes: nodes, flags: st.flags, groups: st.groups() - 1, groupdict: st.groupdict}, nil
 }
 
 // reWidth is SubPattern.getwidth(): (min, max) match length, saturating.

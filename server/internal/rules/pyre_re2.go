@@ -55,6 +55,8 @@ type PyRegex struct {
 	net     *regexp2.Regexp
 	pattern string
 	warned  atomic.Bool
+	parsed  *parsedRegex
+	sub     subEngines
 }
 
 // Engine names the engine behind the pattern: "re2" or "backtrack"
@@ -140,7 +142,7 @@ func compilePyRegex(pattern string, ignoreCase bool) (*PyRegex, error) {
 	}
 	if source, err := translateRE2(parsed); err == nil {
 		if re, err := regexp.Compile(source); err == nil {
-			return &PyRegex{re: re, pattern: pattern}, nil
+			return &PyRegex{re: re, pattern: pattern, parsed: parsed}, nil
 		}
 		// Too-large repeat counts and similar: let the backtracker try.
 	} else if !errors.Is(err, errFallback) {
@@ -155,7 +157,7 @@ func compilePyRegex(pattern string, ignoreCase bool) (*PyRegex, error) {
 		return nil, &UnsupportedRegexError{Reason: err.Error()}
 	}
 	net.MatchTimeout = BacktrackTimeout
-	return &PyRegex{net: net, pattern: pattern}, nil
+	return &PyRegex{net: net, pattern: pattern, parsed: parsed}, nil
 }
 
 func flagLetters(add, del int) string {

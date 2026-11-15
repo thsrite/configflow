@@ -8,11 +8,7 @@ package convert
 import (
 	"context"
 	"errors"
-	"strconv"
 	"strings"
-	"time"
-
-	"github.com/dlclark/regexp2"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/rules"
@@ -397,108 +393,28 @@ func FilterProviderCandidates(proxies []*jsonx.Object, include, exclude, exclude
 	return selected, nil
 }
 
-// pySub is re.sub(pattern, repl, text) with a function replacement. The
-// pattern is validated with Python's parser (rules.CompilePyRegex) and run
-// on the backtracking engine; repl gets the group texts ("" for a group that
-// did not take part) and may fail with an IndexError.
+// pySub is re.sub(pattern, repl, text) with a function replacement: the
+// pattern is compiled by rules.CompilePyRegex (Python's parser and error
+// texts) and substituted by PyRegex.Sub (CPython's match loop); repl gets
+// the group texts ("" for a group that did not take part) and may fail with
+// an IndexError.
 func pySub(pattern, text string, repl func(groups []string, participated []bool) (string, error)) (string, error) {
-	if _, err := rules.CompilePyRegex(pattern, false); err != nil {
+	re, err := rules.CompilePyRegex(pattern, false)
+	if err != nil {
 		return "", err
 	}
-	re, err := regexp2.Compile(netPattern(pattern), regexp2.None)
-	if err != nil {
+	out, err := re.Sub(text, func(m *rules.Match) (string, error) {
+		texts := make([]string, m.Groups()+1)
+		participated := make([]bool, m.Groups()+1)
+		for i := range texts {
+			texts[i], participated[i] = m.Group(i)
+		}
+		return repl(texts, participated)
+	}, 0)
+	if errors.Is(err, rules.ErrMatchTimeout) {
 		return "", pyError("error", err.Error())
 	}
-	re.MatchTimeout = time.Second
-	var replErr error
-	out, err := re.ReplaceFunc(text, func(m regexp2.Match) string {
-		if replErr != nil {
-			return ""
-		}
-		groups := m.Groups()
-		texts := make([]string, len(groups))
-		participated := make([]bool, len(groups))
-		for i, g := range groups {
-			if len(g.Captures) > 0 {
-				texts[i] = g.String()
-				participated[i] = true
-			}
-		}
-		result, err := repl(texts, participated)
-		if err != nil {
-			replErr = err
-		}
-		return result
-	}, -1, -1)
-	if replErr != nil {
-		return "", replErr
-	}
-	if err != nil {
-		return "", pyError("error", err.Error())
-	}
-	return out, nil
-}
-
-// netPattern rewrites Python's named groups for regexp2, which numbers
-// named groups after the unnamed ones: (?P<name>...) becomes a plain group
-// and (?P=name) a numbered back reference, so group numbers stay Python's.
-// TODO(port): replace pySub with a submatch/replace method of rules.PyRegex
-// (translateNet already does this on the syntax tree).
-func netPattern(pattern string) string {
-	var b strings.Builder
-	names := map[string]int{}
-	count := 0
-	for i := 0; i < len(pattern); i++ {
-		c := pattern[i]
-		switch {
-		case c == '\\' && i+1 < len(pattern):
-			b.WriteString(pattern[i : i+2])
-			i++
-		case c == '[':
-			j := i + 1
-			if j < len(pattern) && pattern[j] == '^' {
-				j++
-			}
-			if j < len(pattern) && pattern[j] == ']' {
-				j++
-			}
-			for j < len(pattern) && pattern[j] != ']' {
-				if pattern[j] == '\\' {
-					j++
-				}
-				j++
-			}
-			if j >= len(pattern) {
-				j = len(pattern) - 1
-			}
-			b.WriteString(pattern[i : j+1])
-			i = j
-		case c == '(' && strings.HasPrefix(pattern[i:], "(?P<"):
-			count++
-			if end := strings.IndexByte(pattern[i:], '>'); end > 0 {
-				names[pattern[i+4:i+end]] = count
-				b.WriteByte('(')
-				i += end
-				continue
-			}
-			b.WriteByte(c)
-		case c == '(' && strings.HasPrefix(pattern[i:], "(?P="):
-			if end := strings.IndexByte(pattern[i:], ')'); end > 0 {
-				if n, ok := names[pattern[i+4:i+end]]; ok {
-					b.WriteString("(?:\\" + strconv.Itoa(n) + ")")
-					i += end
-					continue
-				}
-			}
-			b.WriteByte(c)
-		case c == '(' && !strings.HasPrefix(pattern[i:], "(?"):
-			count++
-			b.WriteByte(c)
-		default:
-			b.WriteByte(c)
-		}
-	}
-	return b.String()
+	return out, err
 }
 
 // expandTarget is re.sub(r'\$(\d+)', repl, target) with repl returning
