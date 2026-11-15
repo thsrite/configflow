@@ -444,16 +444,19 @@ func LoadConfig(ctx context.Context) (*jsonx.Object, error) {
 // of config (nil: the Scope's snapshot from GetConfig), merged against the
 // baseline captured when the profile was read in this Scope.
 func SaveConfig(ctx context.Context, config *jsonx.Object, profileID string) error {
-	_, err := saveConfig(ctx, config, profileID)
+	_, err := saveConfig(ctx, config, profileID, true)
 	return err
 }
 
-func saveConfig(ctx context.Context, config *jsonx.Object, profileID string) (*jsonx.Object, error) {
+// saveConfig is the body of save_config (snapshotDefault: a nil config is
+// the Scope's snapshot) and save_config_with_publish_guard (a nil config is
+// refused by save_profile, after the profile was resolved).
+func saveConfig(ctx context.Context, config *jsonx.Object, profileID string, snapshotDefault bool) (*jsonx.Object, error) {
 	resolvedID, err := ResolveProfileID(ctx, profileID)
 	if err != nil {
 		return nil, err
 	}
-	if config == nil {
+	if config == nil && snapshotDefault {
 		if config, err = GetConfig(ctx, resolvedID); err != nil {
 			return nil, err
 		}
@@ -478,10 +481,7 @@ func saveConfig(ctx context.Context, config *jsonx.Object, profileID string) (*j
 // and return the exact committed version for an optional push:
 // {expected_profile_id, expected_service_type, expected_config_revision}.
 func SaveConfigWithPublishGuard(ctx context.Context, config *jsonx.Object, serviceType, profileID string) (*jsonx.Object, error) {
-	if config == nil {
-		return nil, validationError("Profile fields and baseline must be objects")
-	}
-	saved, err := saveConfig(ctx, config, profileID)
+	saved, err := saveConfig(ctx, config, profileID, false)
 	if err != nil {
 		return nil, err
 	}
