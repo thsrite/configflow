@@ -104,10 +104,17 @@ func pointTime(metric *jsonx.Object) time.Time {
 	return t
 }
 
-// totalSeconds is timedelta.total_seconds().
-func totalSeconds(d time.Duration) float64 {
-	micros := d.Microseconds()
-	return float64(micros) / 1e6
+// secondsBetween is (later - earlier).total_seconds() of two naive
+// datetimes: the exact difference in microseconds divided by 10**6, correctly
+// rounded. time.Duration cannot be used: it saturates after 292 years (a
+// point dated 9999 in a saved file).
+func secondsBetween(later, earlier time.Time) float64 {
+	micros := (later.Unix()-earlier.Unix())*1_000_000 + int64(later.Nanosecond()/1000-earlier.Nanosecond()/1000)
+	if micros < 1<<53 && micros > -(1<<53) {
+		return float64(micros) / 1e6
+	}
+	seconds, _ := new(big.Rat).SetFrac(big.NewInt(micros), big.NewInt(1_000_000)).Float64()
+	return seconds
 }
 
 // GetTrafficStats is get_traffic_stats(agent_id, period): cumulative
@@ -177,7 +184,7 @@ func (h *History) GetTrafficStats(agentID, period string) (*jsonx.Object, error)
 		recvDelta = currentRecv
 	}
 	startTime, endTime := pointTime(first), pointTime(latest)
-	duration := totalSeconds(endTime.Sub(startTime))
+	duration := secondsBetween(endTime, startTime)
 	var avgSent, avgRecv any = jsonx.Int(0), jsonx.Int(0)
 	if duration > 0 {
 		if avgSent, err = pyTrueDivFloat(sentDelta, duration); err != nil {
@@ -216,7 +223,7 @@ func (h *History) GetTrafficTrend(agentID string, hours, intervalMinutes *big.In
 			prevMetric, prevTime, groupStartTime = metric, timestamp, timestamp
 			continue
 		}
-		timeDiff := totalSeconds(timestamp.Sub(groupStartTime))
+		timeDiff := secondsBetween(timestamp, groupStartTime)
 		due, err := pyGreaterEqual(jsonx.Float(timeDiff), intervalSeconds)
 		if err != nil {
 			return nil, err
@@ -257,7 +264,7 @@ func (h *History) GetTrafficTrend(agentID string, hours, intervalMinutes *big.In
 					}
 				}
 			}
-			duration := totalSeconds(timestamp.Sub(prevTime))
+			duration := secondsBetween(timestamp, prevTime)
 			var speedSent, speedRecv any = jsonx.Int(0), jsonx.Int(0)
 			if duration > 0 {
 				if speedSent, err = pyTrueDivFloat(sentDelta, duration); err != nil {
