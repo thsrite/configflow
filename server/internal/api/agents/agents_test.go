@@ -478,7 +478,7 @@ func TestAgentDeleteRunsStoreHooksInPythonOrder(t *testing.T) {
 	if got := strings.Join(agents.AgentDeletedHookNames(), ","); got != "traffic_store,domain_probe,region_check,extra" {
 		t.Fatalf("names %s", got)
 	}
-	h.s.Delete("/api/agents/"+h.id).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", "region store failed"))
+	h.s.Delete("/api/agents/" + h.id).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", "region store failed"))
 	if strings.Join(order, ",") != "traffic_store,domain_probe,region_check" || len(storedAgents(t, h.s)) != 0 {
 		t.Fatalf("order %v", order)
 	}

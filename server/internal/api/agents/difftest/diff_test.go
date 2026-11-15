@@ -62,7 +62,18 @@ func seed(t *testing.T, dir string) {
 		system.GetObject("system_config").Set("server_domain", "http://127.0.0.1:5001")
 		system.Set("agents", []any{jsonx.Obj("id", "agent-1", "name", "diff agent", "token", agentToken,
 			"profile_id", "default", "service_type", "mihomo", "host", "127.0.0.1", "port", 9, "version", "1.0.0",
-			"config_version", "0", "enabled", true)})
+			"config_version", "0", "enabled", true),
+			// An unfinished deployment: the profile binding cannot change (409).
+			jsonx.Obj("id", "agent-busy", "name", "busy agent", "token", agentToken+"-busy",
+				"profile_id", "default", "service_type", "mihomo", "host", "10.9.0.2", "port", 9, "version", "1.0.0",
+				"config_version", "0", "enabled", true,
+				"deployments", jsonx.Obj("binding-request", jsonx.Obj("deployment_id", "binding-request", "status", "preparing",
+					"profile_id", "default", "service_type", "mihomo"))),
+			// An update waiting for confirmation: no edit, no delete (409).
+			jsonx.Obj("id", "agent-upgrading", "name", "upgrading agent", "token", agentToken+"-upgrading",
+				"profile_id", "default", "service_type", "mihomo", "host", "127.0.0.3", "port", 9, "version", "1.0.0",
+				"config_version", "0", "enabled", true, "latest_upgrade", jsonx.Obj("status", "downloading")),
+		})
 		return nil, nil
 	})
 	if err != nil {
@@ -323,6 +334,38 @@ func requests() []request {
 			headers: map[string]string{"Authorization": "Bearer {token}"}},
 		{name: "heartbeat seeded agent", method: "POST", path: "/api/agents/agent-1/heartbeat", body: `{"service_status": "running"}`, contentType: J,
 			headers: map[string]string{"Authorization": "Bearer " + agentToken}},
+		{name: "heartbeat non-ascii bearer", method: "POST", path: "/api/agents/{id}/heartbeat", body: `{"version": "attacker"}`, contentType: J,
+			headers: map[string]string{"Authorization": "Bearer café"}},
+		{name: "heartbeat cjk bearer", method: "POST", path: "/api/agents/{id}/heartbeat", body: `{"version": "attacker"}`, contentType: J,
+			headers: map[string]string{"Authorization": "Bearer 令牌"}},
+		{name: "heartbeat bearer trailing field", method: "POST", path: "/api/agents/{id}/heartbeat", body: `{"version": "attacker"}`, contentType: J,
+			headers: map[string]string{"Authorization": "Bearer {token} extra"}},
+		{name: "heartbeat bearer tab", method: "POST", path: "/api/agents/{id}/heartbeat", body: `{"version": "attacker"}`, contentType: J,
+			headers: map[string]string{"Authorization": "Bearer\t{token}"}},
+		{name: "heartbeat bad encoding", method: "POST", path: "/api/agents/{id}/heartbeat", body: "\xff", contentType: J,
+			headers: map[string]string{"Authorization": "Bearer {token}"}},
+		{name: "heartbeat bad encoding in string", method: "POST", path: "/api/agents/{id}/heartbeat", body: "{\"version\": \"\xff\"}", contentType: J,
+			headers: map[string]string{"Authorization": "Bearer {token}"}},
+		{name: "heartbeat utf-8 bom", method: "POST", path: "/api/agents/{id}/heartbeat", body: "\xef\xbb\xbf{\"version\": \"bom\"}", contentType: J,
+			headers: map[string]string{"Authorization": "Bearer {token}"}},
+		{name: "heartbeat utf-16", method: "POST", path: "/api/agents/{id}/heartbeat", body: utf16(`{"version": "utf16"}`), contentType: J,
+			headers: map[string]string{"Authorization": "Bearer {token}"}},
+		{name: "heartbeat nan metric", method: "POST", path: "/api/agents/{id}/heartbeat", body: `{"system_metrics": {"cpu": {"usage_percent": NaN}}}`, contentType: J,
+			headers: map[string]string{"Authorization": "Bearer {token}"}},
+		{name: "heartbeat busy agent", method: "POST", path: "/api/agents/agent-busy/heartbeat", body: `{"version": "1.0.1"}`, contentType: J,
+			headers: map[string]string{"Authorization": "Bearer " + agentToken + "-busy"}},
+		{name: "register duplicate non-ascii bearer", method: "POST", path: "/api/agents/register", body: agent, contentType: J,
+			headers: map[string]string{"Authorization": "Bearer 令牌🔐"}},
+		{name: "register duplicate oversized bearer", method: "POST", path: "/api/agents/register", body: agent, contentType: J,
+			headers: map[string]string{"Authorization": "Bearer " + strings.Repeat("x", 4097)}},
+		{name: "register bad encoding", method: "POST", path: "/api/agents/register", body: "\xff", contentType: J},
+		{name: "register busy agent other profile", method: "POST", path: "/api/agents/register", contentType: J,
+			body:    `{"name": "busy agent", "host": "10.9.0.2", "port": 9, "profile_id": "other"}`,
+			headers: map[string]string{"Authorization": "Bearer " + agentToken + "-busy"}},
+		{name: "profile binding conflict", method: "PUT", path: "/api/agents/agent-busy", admin: true, body: `{"profile_id": "other"}`, contentType: J},
+		{name: "busy agent rename", method: "PUT", path: "/api/agents/agent-busy", admin: true, body: `{"name": "renamed busy"}`, contentType: J},
+		{name: "upgrading agent edit", method: "PUT", path: "/api/agents/agent-upgrading", admin: true, body: `{"name": "x"}`, contentType: J},
+		{name: "upgrading agent delete", method: "DELETE", path: "/api/agents/agent-upgrading", admin: true},
 		{name: "manual create no login", method: "POST", path: "/api/agents", body: `{"name": "manual", "host": "10.0.0.40"}`, contentType: J},
 		{name: "manual create", method: "POST", path: "/api/agents", admin: true, body: `{"name": "manual", "host": "10.0.0.40"}`, contentType: J,
 			mask: []string{"data.id"}, capture: map[string]string{"manual": "data.id"}},
@@ -338,6 +381,10 @@ func requests() []request {
 		{name: "update null", method: "PUT", path: "/api/agents/{manual}", admin: true, body: `null`, contentType: J},
 		{name: "update list", method: "PUT", path: "/api/agents/{manual}", admin: true, body: `[]`, contentType: J},
 		{name: "update number", method: "PUT", path: "/api/agents/{manual}", admin: true, body: `5`, contentType: J},
+		{name: "update string", method: "PUT", path: "/api/agents/{manual}", admin: true, body: `"plain"`, contentType: J},
+		{name: "update string with profile_id", method: "PUT", path: "/api/agents/{manual}", admin: true, body: `"xprofile_idx"`, contentType: J},
+		{name: "update list with profile_id", method: "PUT", path: "/api/agents/{manual}", admin: true, body: `["profile_id"]`, contentType: J},
+		{name: "update bool", method: "PUT", path: "/api/agents/{manual}", admin: true, body: `true`, contentType: J},
 		{name: "update text/plain", method: "PUT", path: "/api/agents/{manual}", admin: true, body: `{}`, contentType: "text/plain"},
 		{name: "update unknown", method: "PUT", path: "/api/agents/missing", admin: true, body: `{"name": "x"}`, contentType: J},
 		{name: "update no login", method: "PUT", path: "/api/agents/{manual}", body: `{"name": "x"}`, contentType: J},
@@ -346,6 +393,35 @@ func requests() []request {
 		{name: "delete again", method: "DELETE", path: "/api/agents/{manual}", admin: true},
 		{name: "delete seeded", method: "DELETE", path: "/api/agents/agent-1", admin: true},
 	}
+}
+
+// utf16 is s encoded as UTF-16-LE without a BOM (json.loads detects it).
+func utf16(s string) string {
+	var out []byte
+	for _, r := range s {
+		out = append(out, byte(r), byte(r>>8))
+	}
+	return string(out)
+}
+
+// dataFiles lists the files under a data directory, without logs and lock
+// files (the Flask process starts every background loop, each with its own
+// lock file; those belong to the modules that port the loops).
+func dataFiles(t *testing.T, dir string) []string {
+	var files []string
+	filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(dir, path)
+		if strings.HasPrefix(filepath.Base(rel), "app.log") || strings.HasSuffix(rel, ".lock") {
+			return nil
+		}
+		files = append(files, rel)
+		return nil
+	})
+	sort.Strings(files)
+	return files
 }
 
 // finalAgents is the stored Agent list with per-server values masked.
@@ -426,5 +502,9 @@ func TestDifferentialAgainstFlask(t *testing.T) {
 			t.Errorf("DIFF stored key order:\n  python %s\n  go     %s", keys(pyAgents), keys(goAgents))
 		}
 	}
-	t.Logf("%d requests + stored records, %d differences", len(requests()), failed)
+	if py, gofiles := strings.Join(dataFiles(t, pyDir), " "), strings.Join(dataFiles(t, goDir), " "); py != gofiles {
+		failed++
+		t.Errorf("DIFF files under DATA_DIR:\n  python %s\n  go     %s", py, gofiles)
+	}
+	t.Logf("%d requests + stored records + DATA_DIR files, %d differences", len(requests()), failed)
 }
