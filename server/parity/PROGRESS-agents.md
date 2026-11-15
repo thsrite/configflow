@@ -1,6 +1,6 @@
 # PROGRESS — domain `agents`
 
-Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 19 missing, 1 ported (A05), 4 verified (A01, A02, A03, A04). Only reviewers set `verified`.
+Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 18 missing, 2 ported (A05, A06), 4 verified (A01, A02, A03, A04). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.
 
@@ -21,7 +21,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A03 | registry routes (register, heartbeat, create/edit/delete) | 432 | verified | | A01, A02, C06 | 5 (5 done) | internal/api/agents |
 | A04 | metrics history and flush | 1163 | verified | | A01, C07 | 3 | internal/agents/metrics (new), api/agents |
 | A05 | traffic history and traffic store | 967 | ported | | A04, C37¹ | 8 (8 done) | internal/agents/metrics, internal/agents/trafficstore (new), internal/discovery (new, C37's), api/agents |
-| A06 | OxiDNS monitor, dashboard state, metrics | 1364 | missing | | A01 | 5 | internal/agents/monitor (new), api/agents |
+| A06 | OxiDNS monitor, dashboard state, metrics | 1364 | ported | | A01 | 5 | internal/agents/monitor (new), api/agents |
 | A07 | Mihomo panel, OxiDNS cache/rule update/rankings/publication stats | 1316 | missing | | A06, C14 | 9 | internal/agents/monitor, api/agents |
 | A08 | installer script rendering, install command store | 1333 | missing | HR | A02, C02 | – | internal/installer (new) |
 | A09 | Docker HA guide, preflight, enrollment | 1083 | missing | HR | A08, A01 | 2 | internal/installer, api/agents |
@@ -433,19 +433,39 @@ Commands:
 
 ## A06 — OxiDNS monitor, dashboard state, metrics
 
-**Status: `missing`** · prereqs: A01 · Go: internal/agents/monitor (new), api/agents
+**Status: `ported`** (2026-11-15, not reviewed) · prereqs: A01 · Go: `internal/agents/monitor` (new), `internal/api/agents/oxidns.go`
 
 Files:
-- `backend/agents/oxidns_monitor.py` (727)
-- `backend/agents/oxidns_dashboard_state.py` (240)
-- `backend/agents/oxidns_metrics.py` (338)
-- `backend/routes/agents.py` (59) — lines 2186–2198, 2216–2221, 2286–2325
+- `backend/agents/oxidns_monitor.py` (727) → `monitor/monitor.go` (MonitorError = `*monitor.Error`, `_agent_origin` = `monitor.AgentOrigin`, exported for A07/A16/A20/A22/A23/routers; `api/agents.MonitorErrorResponse` is the shared JSON error answer)
+- `backend/agents/oxidns_dashboard_state.py` (240) → `monitor/state.go` (`StateStore`, `ValidateState`, `StateError`, `ErrStateConflict`; 64 in-process semaphores + flock on `<digest>.lock`, both 5 s)
+- `backend/agents/oxidns_metrics.py` (338) → `monitor/metrics.go`; Python number semantics in `pynum.go`, Unicode 14 decimals in generated `pydecimal_table.go` (`testdata/gen_decimal.py`)
+- `backend/routes/agents.py` 2186–2198, 2216–2221, 2286–2325 → `api/agents/oxidns.go` (5 routes, `registerOxidns` in `Register`); routes.tsv rows set `api/agents done`
+- Also ported here (needed by the overview): the pure part of `oxidns_publication_stats.py` — `advance`, `totals`, `_task`, `_new_state`, `PublicationPending` → `monitor/publication.go`. **A07 adds `checkpoint`/`complete` to the same package.**
+- `oxidns_ranking_history` read side is a hook: `monitor.RankingHistory` (`HasAny`, `Query`) installed with `monitor.SetRankingHistory` (A07 registers the real SQLite store). Default: Python's answer when `metrics/oxidns_rankings.sqlite3` is absent (nothing stored), `ErrHistoryNotPorted` (500) when it exists. Constants `HistoryAgentVersion`, `HistoryRanges`, `HistorySlot`, … and `HistorySupported` live in `monitor/history.go` for A07 to reuse.
 
-Tests: `test_oxidns_monitor.py` (24), `test_oxidns_metrics.py` (23), `test_oxidns_dashboard.py` (35)
+Commits: 073ea979 (code), 4c132564 (ported tests), fe9712df (CPython reference corpus), + difftest/PROGRESS commit.
 
-Routes (5): `GET /api/agents/<agent_id>/oxidns/overview`; `POST /api/agents/<agent_id>/oxidns/dashboard/reset`; `GET /api/agents/<agent_id>/oxidns/clients`; `GET /api/agents/<agent_id>/oxidns/queries`; `GET /api/agents/<agent_id>/oxidns/queries/<record_id>`
+Shared edits (small, additive): `agents.Request` gains `NoProxy` / `NoRedirects` / `MaxBody` and `Response.BodyError` (requests' `trust_env=False`, `allow_redirects=False`, `stream=True` + 5 MiB bound; status is checked before the body as in Python), `agents.Manager.Client()`, `agents.DecodeJSONBytes` (json.loads(bytes)); `urlx.Split/SplitResult/Unsplit` export the existing urlsplit port. No loop and no wire function (A06 has no background work; `_rankings_kept` is an in-memory cache with Python's 60 s reuse / 180 s backoff on `time.monotonic`).
 
-Evidence: no Go code. `MonitorError` and `_agent_origin` are imported by A07, A16, A20, A22, A23 and by routers (`routes/routers.py`): export them from this package.
+Tests: `test_oxidns_metrics.py` 23/23 → `metrics_test.go` (test_nontext_input_is_rejected replaced by the Go type + `TestOverviewRejectsNonTextMetrics`); `test_oxidns_monitor.py` 24/24 → `monitor_test.go` (fake `agents.Client` instead of the patched Session) + 2 route tests in `api/agents/oxidns_test.go`; `test_oxidns_dashboard.py` 35/35 → `dashboard_test.go` (`doRequest` replaced like the patched `_request`; the cross-process lock test re-runs the test binary 4×) + reset route test in `oxidns_test.go`. No deferred cases.
+
+Reference corpus: `testdata/gen_a06_reference.py` → `a06_reference.json.gz` (CPython 3.11.17; 122 metrics texts incl. Unicode digits/whitespace/line breaks, 7 baseline sets, 49 upstream labels, 48 ip forms, 29 origins, 69 param cases, 59 state texts, 40 ranking sections, 16 records, 313 fromtimestamp values, 33 Agent answers through `_request`, 1472 advance/totals transitions); `a06_reference_test.go` compares sorted JSON bytes: all equal.
+
+Differential: `difftest/oxidns_diff_test.go` — real Flask and Go both pointed at one loopback fake OxiDNS Agent (answer chosen per phase): 61 requests (success + failure for all 5 routes, Agent 401/302/404/oversize/BOM/invalid UTF-8/NaN/code list, unreachable port), plus the requests the fake Agent received (path, raw query, Authorization, Accept, X-ConfigFlow-Query-Sources), dns-monitor state + lock files (generation masked) and DATA_DIR file list: **0 differences**. Agent versions in the differential stay below 1.8.55 so Python's ranking-history collector never touches the fake Agent.
+
+Commands:
+- `rt -- bash -lc 'cd server && go vet ./internal/agents/monitor/ ./internal/api/agents/... && go test -count=1 ./internal/agents/monitor/ ./internal/api/agents/'`
+- `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run Oxidns ./internal/api/agents/difftest/'` (run separately from the registry differential: lifecycle starts once per process)
+- corpus: `cd server/internal/agents/monitor && rt --back server/internal/agents/monitor/testdata/a06_reference.json.gz -- bash -lc 'PYTHONPATH=../../../.. ~/cf-test/.venv/bin/python testdata/gen_a06_reference.py'`
+
+Decisions / known differences (for the reviewer):
+- Lone surrogates (`"\ud800"` escapes, or UTF-8-encoded surrogates accepted by json.loads' `surrogatepass`) are the jsonx deviation: Go sees U+FFFD / rejects the bytes. Python would answer INVALID_RESPONSE for such a `metrics` text (both do), pass other such strings through, or 500 when re-writing a hand-edited state file. Not producible by the Go Agent (encoding/json never emits them).
+- Agent JSON nested deeper than Python's recursion limit: Python 500 (RecursionError not caught in `_request`), Go parses up to jsonx.MaxDepth. Reset bodies (≤ 2048 bytes, up to ~1024 levels): Python's RecursionError threshold depends on the stack depth, Go accepts — the answer is then INVALID_QUERY with the other message. Not exercised.
+- Token header: sent latin-1 like http.client; a non-latin-1 token is AGENT_UNREACHABLE in both. Control characters in a token: Go's transport refuses (AGENT_UNREACHABLE), http.client sends some of them. Tokens are server-generated.
+- Content-Encoding: requests decodes gzip/deflate; Go's transport only gzip (Agents never compress).
+- ip_address uses netip plus Python's scope-id rules; corpus confirms the 48 forms incl. `::ffff:1.2.3.4` (3.11.17 prints it mapped).
+
+Left: adversarial review (A06 is not HR). Not part of A06: `checkpoint`/`complete` hooks and the ranking-history store/loop (A07).
 
 ## A07 — Mihomo panel, OxiDNS cache/rule update/rankings/publication stats
 
