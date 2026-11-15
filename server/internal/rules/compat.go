@@ -307,15 +307,8 @@ func NormalizeClientRange(raw any) (string, error) {
 	return network.String(), nil
 }
 
-// safeExceptionDetails is url_utils.safe_exception_details for a Go error:
-// bounded metadata without the message.
-// TODO(port): replace with package #1 (utils/url_utils).
-func safeExceptionDetails(err error) string {
-	return fmt.Sprintf("exception_type=%T", err)
-}
-
-// Logger is the part of the application logger the rule engine writes to.
-// TODO(port): replace with package #1 (utils/logger) once it exists.
+// Logger is the part of the application logger the rule engine writes to
+// (*logx.Logger satisfies it; tests may pass their own).
 type Logger interface {
 	Debugf(format string, args ...any)
 	Warningf(format string, args ...any)
@@ -329,8 +322,8 @@ func (nopLogger) Warningf(string, ...any) {}
 func (nopLogger) Errorf(string, ...any)   {}
 
 // ProfileValidationError is common.config_repository.ProfileValidationError:
-// a request the user must fix. Error() is the Chinese message.
-// TODO(port): replace with package #2 (repo).
+// a request the user must fix. Error() is the Chinese message. It stays here
+// because repo imports rules (rules cannot import repo); callers map it.
 type ProfileValidationError struct{ Message string }
 
 func (e *ProfileValidationError) Error() string { return e.Message }

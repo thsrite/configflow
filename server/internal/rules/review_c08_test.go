@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/logx"
 )
 
 // Review C08: references made by CPython 3.11.17 with the production modules
@@ -364,4 +365,45 @@ func TestReviewC08YAMLPayload(t *testing.T) {
 		}
 	}
 	t.Logf("%d YAML documents equal (%d with entries)", compared, nonEmpty)
+}
+
+type pathError struct{}
+
+func (pathError) Error() string       { return "open /secret/x: no such file" }
+func (pathError) PythonClass() string { return "FileNotFoundError" }
+
+// TestReviewC08MatcherLogLines: without an injected logger the matcher logs
+// like rule_matcher's module logger: the load failure with
+// safe_exception_details (Python class name, no message) and the skip warning.
+func TestReviewC08MatcherLogLines(t *testing.T) {
+	var buffer strings.Builder
+	root, err := logx.Setup(logx.Config{Level: logx.Debug, Console: &buffer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		root.Close()
+		_, _ = logx.Setup(logx.Config{Level: logx.Critical})
+	}()
+	configs := []any{jsonx.Obj("id", "s", "itemType", "ruleset", "name", "规则 A", "behavior", "domain")}
+	failing := func(*jsonx.Object, *jsonx.Object) (string, error) { return "", pathError{} }
+	if got := NewRuleConfigMatcher(configs, nil, failing, nil, nil).Match("example.com"); got != nil {
+		t.Fatalf("matched %v", got)
+	}
+	empty := func(*jsonx.Object, *jsonx.Object) (string, error) { return "", nil }
+	NewRuleConfigMatcher([]any{jsonx.Obj("id", "s", "itemType", "ruleset", "name", jsonx.Int(5))}, nil, empty, nil, nil).Match("example.com")
+	want := []string{
+		` - backend.utils.rule_matcher - ERROR - Error processing ruleset "规则 A": exception_type=FileNotFoundError`,
+		` - backend.utils.rule_matcher - WARNING - Skipping ruleset "规则 A": unable to fetch content`,
+		` - backend.utils.rule_matcher - WARNING - Skipping ruleset "5": unable to fetch content`,
+	}
+	lines := strings.Split(strings.TrimSpace(buffer.String()), "\n")
+	if len(lines) != len(want) {
+		t.Fatalf("log lines:\n%s", buffer.String())
+	}
+	for i, line := range lines {
+		if !strings.HasSuffix(line, want[i]) {
+			t.Errorf("line %d = %q, want suffix %q", i, line, want[i])
+		}
+	}
 }

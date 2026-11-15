@@ -7,12 +7,17 @@ import (
 	"sync"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/logx"
+	"configflow/internal/urlx"
 	"configflow/internal/pyyaml"
 )
 
 // Port of backend/utils/rule_matcher.py: rule-line parsing and the indexed
 // matcher the domain discovery and rule IP presence checks run over rule sets
 // with hundreds of thousands of lines.
+
+// matcherLogger is rule_matcher's module logger.
+var matcherLogger Logger = logx.Get("backend.utils.rule_matcher")
 
 // IsValidDomain is is_valid_domain. allowDNSLabels admits underscores and
 // leading/trailing hyphens in labels (rule tests); domain discovery keeps the
@@ -582,7 +587,7 @@ type matcherItem struct {
 // numbers shown in the rule list. indexKey and logger may be nil.
 func NewRuleConfigMatcher(ruleConfigs, ruleLibrary []any, load LoadContent, indexKey IndexKey, logger Logger) *RuleConfigMatcher {
 	if logger == nil {
-		logger = nopLogger{}
+		logger = matcherLogger
 	}
 	m := &RuleConfigMatcher{
 		library: map[string]*jsonx.Object{}, formats: map[int]string{}, load: load,
@@ -722,7 +727,7 @@ func (m *RuleConfigMatcher) rulesetIndex(position int, item, library *jsonx.Obje
 	name := item.GetOr("name", "规则集")
 	content, err := m.load(item, library)
 	if err != nil {
-		m.logger.Errorf("Error processing ruleset \"%s\": %s", jsonx.Str(name), safeExceptionDetails(err))
+		m.logger.Errorf("Error processing ruleset \"%s\": %s", jsonx.Str(name), urlx.SafeExceptionDetails(err))
 		content = ""
 	}
 	if content == "" {

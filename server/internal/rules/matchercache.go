@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/logx"
 )
 
 // Port of backend/utils/domain_matcher_cache.py: bounded, idle-evicted local
@@ -91,7 +92,7 @@ func NewMatcherCache(opt MatcherCacheOptions) *MatcherCache {
 		opt.Clock = func() float64 { return time.Since(processStart).Seconds() }
 	}
 	if opt.Logger == nil {
-		opt.Logger = nopLogger{}
+		opt.Logger = logx.Get("backend.utils.domain_matcher_cache")
 	}
 	if opt.StoredLibrary == nil {
 		opt.StoredLibrary = func() []any { return nil }
@@ -367,7 +368,7 @@ func (c *MatcherCache) newCachedMatcher(config *jsonx.Object, rulesDir string, s
 		cache: c, lastUsed: now, results: map[string]*list.Element{}, order: list.New(), source: source,
 	}
 	cm.matcher = NewRuleConfigMatcher(config.GetList("rule_configs"), config.GetList("rule_library"),
-		source.load, func(item, library *jsonx.Object) (string, bool) { return libraryKey(library) }, c.opt.Logger)
+		source.load, func(item, library *jsonx.Object) (string, bool) { return libraryKey(library) }, nil)
 	return cm
 }
 
