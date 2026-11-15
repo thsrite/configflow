@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/rules"
 )
 
 var sensitiveSystemSettings = map[string]bool{"config_token": true, "rule_proxy_token": true, "retired_rule_proxy_tokens": true}
@@ -449,6 +450,18 @@ func scopeLegacyDialers(source *jsonx.Object) (*jsonx.Object, error) {
 	return profiles, nil
 }
 
+// sanitizeRuleNameOf is rule_utils.sanitize_rule_name for any value: a falsy
+// value is "unnamed", a truthy non-string is Python's TypeError from re.sub.
+func sanitizeRuleNameOf(name any) (string, error) {
+	if text, ok := name.(string); ok {
+		return rules.SanitizeRuleName(text), nil
+	}
+	if !jsonx.Truthy(name) {
+		return "unnamed", nil
+	}
+	return "", helperError(ClassTypeError, "expected string or bytes-like object, got '"+pythonTypeName(name)+"'")
+}
+
 // validateLegacyIndex is _validate_legacy_index (the system index of a
 // schema-2 backup).
 func validateLegacyIndex(system *jsonx.Object) (*objectMap, error) {
@@ -568,20 +581,24 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 		names[kind] = map[string]bool{}
 	}
 	names["subscription_aggregations"] = names["subscriptions"]
-	nameKey := func(kind string, name any) string {
+	// Python keeps the names in sets: sanitized names for the rule library,
+	// the names themselves (any hashable value) for the other kinds.
+	nameKey := func(kind string, name any) (string, error) {
 		if kind == "rule_library" {
-			return "s:" + sanitizeRuleName(name)
+			sanitized, err := sanitizeRuleNameOf(name)
+			return "S" + sanitized, err
 		}
-		if text, ok := name.(string); ok {
-			return "s:" + text
+		key, ok := pyHashKey(name)
+		if !ok {
+			return "", unhashable(name)
 		}
-		return "r:" + jsonx.Repr(name)
+		return key, nil
 	}
-	mergeResource := func(kind string, resource *jsonx.Object, profileID string) string {
+	mergeResource := func(kind string, resource *jsonx.Object, profileID string) (string, error) {
 		oldID := resource.GetString("id")
 		identity := oldID + "\x00" + sortedJSON(resource)
 		if id, ok := identities[kind][identity]; ok {
-			return id
+			return id, nil
 		}
 		if _, taken := catalogs[kind][oldID]; taken {
 			for {
@@ -594,13 +611,16 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 		// Providers and rule libraries are emitted as name-keyed maps.
 		// Nodes keep their names: raw dialer-proxy values refer to them.
 		name := resource.Value("name")
-		key := nameKey(kind, name)
+		key, err := nameKey(kind, name)
+		if err != nil {
+			return "", err
+		}
 		if text, ok := name.(string); ok && kind != "nodes" && text != "" && names[kind][key] {
 			suffix := profileID
 			for index := 1; names[kind][key]; {
 				limit := max(1, 196-len([]rune(suffix)))
 				resource.Set("name", cutRunes(text, limit)+" ("+suffix+")")
-				key = nameKey(kind, resource.Value("name"))
+				key, _ = nameKey(kind, resource.Value("name"))
 				index++
 				suffix = profileID + "-" + strconv.Itoa(index)
 			}
@@ -610,7 +630,7 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 		identities[kind][identity] = id
 		names[kind][key] = true
 		shared.Set(kind, append(shared.GetList(kind), resource))
-		return id
+		return id, nil
 	}
 
 	for profileID, value := range oldProfiles.All() {
@@ -695,7 +715,11 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 						}
 					}
 				}
-				remaps[kind][oldID] = mergeResource(kind, resource, profileID)
+				id, err := mergeResource(kind, resource, profileID)
+				if err != nil {
+					return nil, err
+				}
+				remaps[kind][oldID] = id
 			}
 		}
 		if resourceRemaps != nil {
@@ -733,9 +757,13 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 				}
 				group.Set("proxies", remapped)
 			}
-			if id, ok := group.Value("id").(string); ok {
-				groupIDs[id] = true
+		}
+		for _, group := range groups {
+			key, ok := pyHashKey(group.Value("id"))
+			if !ok {
+				return nil, unhashable(group.Value("id"))
 			}
+			groupIDs[key] = true
 		}
 		// proxies_order is only an ordering hint. Old versions left entries
 		// behind when the referenced group/resource was deleted, and the
@@ -752,14 +780,24 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 					continue
 				}
 				value, isString := item.Value("id").(string)
+				valueKey, hashable := pyHashKey(item.Value("id"))
 				if item.Value("type") == "strategy" {
-					if !isString || !groupIDs[value] || item.Value("id") == group.Value("id") {
+					if !hashable {
+						return nil, unhashable(item.Value("id"))
+					}
+					if !groupIDs[valueKey] || jsonx.Equal(item.Value("id"), group.Value("id")) {
 						continue
 					}
 				} else {
+					if _, ok := pyHashKey(item.Value("type")); !ok {
+						return nil, unhashable(item.Value("type"))
+					}
 					kind := sourceKind(item.Value("type"))
 					if kind == "" {
 						continue
+					}
+					if !hashable {
+						return nil, unhashable(item.Value("id"))
 					}
 					if !(kind == "nodes" && isString && isBuiltinPolicy(value)) {
 						id, ok := remaps[kind][value]
@@ -788,17 +826,18 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 			}
 			profile.Set("rule_configs", ruleConfigs)
 		}
+		// rule_names is a dict keyed by the old names (any hashable value).
 		ruleNames := map[string]any{}
 		for _, item := range old.GetList("rule_library") {
 			entry := item.(*jsonx.Object)
 			if !entry.Has("name") {
 				return nil, helperError(ClassKeyError, "'name'")
 			}
-			name, ok := entry.Value("name").(string)
+			key, ok := pyHashKey(entry.Value("name"))
 			if !ok {
-				continue
+				return nil, unhashable(entry.Value("name"))
 			}
-			ruleNames[name] = catalogs["rule_library"][remaps["rule_library"][entry.GetString("id")]].Value("name")
+			ruleNames[key] = catalogs["rule_library"][remaps["rule_library"][entry.GetString("id")]].Value("name")
 		}
 		rules, err := objectsOf(profile.Value("rule_configs"))
 		if err != nil {
@@ -834,7 +873,9 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 					resource := original.DeepCopy()
 					resource.Update(overrides)
 					resource.Set("id", "migrated_rule_"+jsonx.Str(rule.Value("id")))
-					libraryID = mergeResource("rule_library", resource, profileID)
+					if libraryID, err = mergeResource("rule_library", resource, profileID); err != nil {
+						return nil, err
+					}
 				}
 			} else {
 				resource := jsonx.NewObject()
@@ -855,10 +896,16 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 					sourceType = "content"
 				}
 				resource.SetDefault("source_type", sourceType)
-				libraryID = mergeResource("rule_library", resource, profileID)
+				if libraryID, err = mergeResource("rule_library", resource, profileID); err != nil {
+					return nil, err
+				}
 			}
-			if name, ok := rule.Value("name").(string); ok && name != "" {
-				ruleNames[name] = catalogs["rule_library"][libraryID].Value("name")
+			if name := rule.Value("name"); jsonx.Truthy(name) {
+				key, ok := pyHashKey(name)
+				if !ok {
+					return nil, unhashable(name)
+				}
+				ruleNames[key] = catalogs["rule_library"][libraryID].Value("name")
 			}
 			rule.Set("library_rule_id", libraryID)
 			for _, key := range RuleSourceFields {
@@ -868,11 +915,17 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 		itemTypes := map[string]any{}
 		for _, rule := range rules {
 			if rule.Value("itemType") == "rule" && rule.Value("rule_type") == "RULE-SET" {
-				if name, ok := rule.Value("value").(string); ok {
-					if replacement, found := ruleNames[name]; found {
-						rule.Set("value", replacement)
-					}
+				// rule['value'] = rule_names.get(rule.get('value'), rule.get('value')):
+				// a rule without a value gets "value": null.
+				value := rule.Value("value")
+				key, ok := pyHashKey(value)
+				if !ok {
+					return nil, unhashable(value)
 				}
+				if replacement, found := ruleNames[key]; found {
+					value = replacement
+				}
+				rule.Set("value", value)
 			}
 			if id, ok := rule.Value("id").(string); ok {
 				itemTypes[id] = rule.Value("itemType")
@@ -908,7 +961,14 @@ func (r *Repository) convertImport(source *jsonx.Object, resourceRemaps Resource
 				kept := []any{}
 				for _, entry := range smartGroups {
 					setting, ok := jsonx.AsObject(entry)
-					if id, isString := setting.Value("group_id").(string); ok && isString && groupIDs[id] {
+					if !ok {
+						continue
+					}
+					key, hashable := pyHashKey(setting.Value("group_id"))
+					if !hashable {
+						return nil, unhashable(setting.Value("group_id"))
+					}
+					if groupIDs[key] {
 						kept = append(kept, entry)
 					}
 				}

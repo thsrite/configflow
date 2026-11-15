@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/rules"
 	"configflow/internal/yamlx"
 )
 
@@ -66,9 +67,9 @@ func compatCall(t *testing.T, fn string, input any) (any, error) {
 		}
 		return item, nil
 	case "sanitize_rule_name":
-		return sanitizeRuleName(input), nil
+		return sanitizeRuleNameOf(input)
 	case "rule_cache_filename":
-		return ruleCacheFilename(object), nil
+		return rules.RuleCacheFilename(object), nil
 	}
 	t.Fatalf("unknown golden function %q", fn)
 	return nil, nil

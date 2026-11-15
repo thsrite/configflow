@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/rules"
 )
 
 // GetShared is get_shared(): a copy of the shared section (subscriptions,
@@ -48,7 +49,7 @@ func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Obje
 		return nil, err
 	}
 	ruleID := rule.GetString("id")
-	path, err := r.SharedPath(filepath.Join("rules", ruleCacheFilename(rule)))
+	path, err := r.SharedPath(filepath.Join("rules", rules.RuleCacheFilename(rule)))
 	if err != nil {
 		return nil, err
 	}
