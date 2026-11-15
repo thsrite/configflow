@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"configflow/internal/agents"
+	"configflow/internal/agents/metrics"
 	apiagents "configflow/internal/api/agents"
 	apiauth "configflow/internal/api/auth"
 	apilogs "configflow/internal/api/logs"
@@ -53,6 +54,7 @@ var lateRoutePackages = []func(*httpx.Router){
 var wirePackages = []func(){
 	wireCore,
 	agents.Wire,
+	metrics.Wire,
 }
 
 func wireCore() {
