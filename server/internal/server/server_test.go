@@ -50,6 +50,7 @@ func TestNewAppRegistersImplementedRoutes(t *testing.T) {
 	for _, endpoint := range []string{"auth.auth_status", "auth.login", "auth.verify", "settings.handle_web_port",
 		"settings.handle_rule_fetch_proxy", "settings.handle_server_domain", "settings.handle_config_token",
 		"settings.get_version", "settings.backup_config", "settings.handle_subscription_aggregation",
+		"settings.list_third_party_dependencies", "settings.update_sub_store_dependency", "settings.set_sub_store_mode",
 		"logs.get_logs", "logs.get_log_info", "logs.clear_logs", "stats.get_overview",
 		"notifications.read_notifications"} {
 		if !app.Router.HasEndpoint(endpoint) {
@@ -57,7 +58,7 @@ func TestNewAppRegistersImplementedRoutes(t *testing.T) {
 		}
 	}
 	for _, endpoint := range []string{"tasks.get_tasks", "notifications.list_notifications", "settings.test_backup",
-		"settings.backup_now", "settings.list_third_party_dependencies"} {
+		"settings.backup_now"} {
 		if app.Router.HasEndpoint(endpoint) {
 			t.Errorf("%s must wait for its packages", endpoint)
 		}
