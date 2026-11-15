@@ -169,9 +169,16 @@ func isValidIP(text string) bool {
 	return ok
 }
 
-// subnetOf reports whether n lies inside outer (ipaddress subnet_of).
+// subnetOf reports whether n lies inside outer (ipaddress subnet_of:
+// outer.network_address <= n.network_address and outer.broadcast_address >=
+// n.broadcast_address). IPv6Address.__eq__ also compares scope ids, so equal
+// network addresses with different scopes are not "<=" (broadcast addresses
+// never carry a scope): fe80::/64 is not a subnet of fe80::%eth0/64.
 func (n ipNet) subnetOf(outer ipNet) bool {
-	return n.ver == outer.ver && n.prefix >= outer.prefix && outer.contains(ipAddr{ver: n.ver, v: n.base})
+	if n.ver != outer.ver || n.prefix < outer.prefix || !outer.contains(ipAddr{ver: n.ver, v: n.base}) {
+		return false
+	}
+	return outer.base != n.base || outer.zone == n.zone
 }
 
 // String renders the network like str(ip_network) of CPython 3.11: IPv6 is

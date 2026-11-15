@@ -93,12 +93,14 @@ func compileFilter(value any) (*PyRegex, error) {
 	}
 	re, err := CompilePyRegex(pyStrip(text), false)
 	if err != nil {
-		if IsPyRegexError(err) {
-			return nil, candidateError("正则表达式无效")
+		var unsupported *UnsupportedRegexError
+		if errors.As(err, &unsupported) {
+			// Python accepts and runs this pattern (\N{name}, repeat counts
+			// beyond int32); this engine cannot. Domain-level accepted
+			// difference: the filter is not applied, the request is accepted.
+			return nil, nil
 		}
-		// Python accepts this pattern but RE2 cannot run it (look-around, back
-		// references, ...). Say so instead of silently filtering differently.
-		return nil, candidateError("正则表达式含当前版本暂不支持的语法（环视、反向引用等），请改写")
+		return nil, candidateError("正则表达式无效")
 	}
 	return re, nil
 }
