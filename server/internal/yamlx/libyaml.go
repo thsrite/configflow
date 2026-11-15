@@ -133,6 +133,9 @@ func (v *v3converter) node(n *yaml.Node) *pyyaml.Node {
 		switch {
 		case explicit:
 			out.Tag = longTag(n.Tag)
+		case n.Style&yaml.TaggedStyle != 0 && n.Tag == "!" && n.Value == "" && !quoted:
+			// libyaml's empty node after a tag is not implicit: a str.
+			out.Tag = tagStr
 		case n.Style&yaml.TaggedStyle != 0 && n.Tag == "!":
 			out.Tag = v.resolve(n.Value, [2]bool{true, false})
 		default:

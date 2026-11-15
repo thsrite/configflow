@@ -769,11 +769,11 @@ func constructTimestamp(value string) (any, error) {
 	}
 	if m[9] != "" {
 		offset := atoi(m[10])*3600 + atoi(m[11])*60
-		if offset >= 24*3600 {
-			return nil, valueError("offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24).")
-		}
 		if m[9] == "-" {
 			offset = -offset
+		}
+		if offset >= 24*3600 || offset <= -24*3600 {
+			return nil, valueError("offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24), not " + timedeltaRepr(offset) + ".")
 		}
 		t.HasZone, t.ZoneOffsetSeconds = true, offset
 	} else if m[8] != "" {
@@ -821,6 +821,10 @@ func (v *converter) convert(value any) (any, error) {
 	case *pySet:
 		return nil, &UnrepresentableError{Kind: "set", Msg: "!!set values cannot be held by jsonx values"}
 	case *pyPairs:
+		if len(x.items) == 0 {
+			out = []any{} // an empty list of tuples is an empty list
+			break
+		}
 		return nil, &UnrepresentableError{Kind: x.kind, Msg: "!!" + x.kind + " values cannot be held by jsonx values"}
 	case *pyList:
 		list := make([]any, len(x.items))
@@ -874,6 +878,27 @@ func (v *converter) convert(value any) (any, error) {
 		out = mapping
 	}
 	return out, nil
+}
+
+// timedeltaRepr is repr(datetime.timedelta(seconds=seconds)): days and
+// seconds normalised as Python stores them (seconds in 0..86399).
+func timedeltaRepr(seconds int) string {
+	days := seconds / 86400
+	rest := seconds % 86400
+	if rest < 0 {
+		days, rest = days-1, rest+86400
+	}
+	var parts []string
+	if days != 0 {
+		parts = append(parts, fmt.Sprintf("days=%d", days))
+	}
+	if rest != 0 {
+		parts = append(parts, fmt.Sprintf("seconds=%d", rest))
+	}
+	if len(parts) == 0 {
+		return "datetime.timedelta(0)"
+	}
+	return "datetime.timedelta(" + strings.Join(parts, ", ") + ")"
 }
 
 func keyForRepr(key any) any {
