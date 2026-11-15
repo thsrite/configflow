@@ -69,12 +69,21 @@ func isASCII(s string) bool {
 
 // ipString is str(ip_address(...)) of Python 3.11: dotted IPv4, IPv6 as
 // lower-case hextets with the longest run (first of equals, at least two) of
-// zero hextets compressed, never in dotted form, plus "%scope".
+// zero hextets compressed, IPv4-mapped addresses as ::ffff:a.b.c.d, plus
+// "%scope".
 func ipString(addr netip.Addr, scope string) string {
 	if addr.Is4() {
 		return addr.String()
 	}
 	raw := addr.As16()
+	if addr.Is4In6() {
+		// CPython 3.11.17 prints IPv4-mapped addresses in dotted form.
+		out := "::ffff:" + netip.AddrFrom4([4]byte{raw[12], raw[13], raw[14], raw[15]}).String()
+		if scope != "" {
+			out += "%" + scope
+		}
+		return out
+	}
 	hextets := make([]string, 8)
 	for i := range hextets {
 		hextets[i] = strconv.FormatUint(uint64(raw[2*i])<<8|uint64(raw[2*i+1]), 16)

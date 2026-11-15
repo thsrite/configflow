@@ -114,6 +114,13 @@ func regionOfName(name any) string {
 // or "" (None).
 func RegionOfName(name string) string { return regionOfName(name) }
 
+// RegionOfNameValue is region_of_name for any value: the TypeError of a
+// truthy non-str name.
+func RegionOfNameValue(name any) (code string, err error) {
+	defer catch(&err)
+	return regionOfName(name), nil
+}
+
 // RegionLabel is region_label(code): the Chinese name of a code; an unknown
 // code itself, '未知' for a falsy one.
 func RegionLabel(code any) any {
