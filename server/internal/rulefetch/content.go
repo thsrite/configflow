@@ -18,7 +18,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
-	"configflow/internal/rulefetch/pyyaml"
+	"configflow/internal/pyyaml"
 	"configflow/internal/rules"
 	"configflow/internal/yamlx"
 )

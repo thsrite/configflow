@@ -13,7 +13,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
-	"configflow/internal/rulefetch/pyyaml"
+	"configflow/internal/pyyaml"
 	"configflow/internal/urlx"
 	"configflow/internal/yamlx"
 )

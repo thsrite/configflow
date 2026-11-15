@@ -1,7 +1,7 @@
-"""Reference corpus for internal/rulefetch/pyyaml: PyYAML 6.0.1 pure-Python
+"""Reference corpus for internal/pyyaml: PyYAML 6.0.1 pure-Python
 yaml.scan / yaml.compose results (tokens, nodes, marks, error text).
 
-Run: PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rulefetch/pyyaml/testdata/gen.py
+Run: PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/pyyaml/testdata/gen.py
 Deterministic (seeded); writes corpus.jsonl.gz with gzip mtime 0.
 """
 import gzip, io, json, os, random, sys
