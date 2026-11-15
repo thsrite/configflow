@@ -96,7 +96,7 @@ func readFile(t *testing.T, path string) string {
 	return string(data)
 }
 
-func mustRender(t *testing.T, text string, err error) string {
+func must(t *testing.T, text string, err error) string {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
