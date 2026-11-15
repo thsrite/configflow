@@ -8,16 +8,23 @@ package metrics
 
 import (
 	"net/netip"
+	"sort"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 )
 
 // ipAddressString is str(ipaddress.ip_address(text)) of CPython 3.11; ok
 // is false where ip_address raises ValueError.
 func ipAddressString(text string) (string, bool) {
-	if text == "" || strings.ContainsAny(text, " \t\r\n\v\f/") {
+	// IPv6Address refuses any "/"; the scope id after the first "%" may be
+	// any non-empty text without another "%" (spaces, case and non-ASCII
+	// are kept as they are). The address part is checked by netip, which
+	// refuses whitespace there as Python's hextet/octet parsers do.
+	if text == "" || strings.Contains(text, "/") {
+		return "", false
+	}
+	if _, zone, found := strings.Cut(text, "%"); found && strings.Contains(zone, "%") {
 		return "", false
 	}
 	addr, err := netip.ParseAddr(text)
@@ -25,9 +32,6 @@ func ipAddressString(text string) (string, bool) {
 		return "", false
 	}
 	zone := addr.Zone()
-	if strings.Contains(zone, "%") {
-		return "", false
-	}
 	if addr.Is4() {
 		b := addr.As4()
 		return strconv.Itoa(int(b[0])) + "." + strconv.Itoa(int(b[1])) + "." + strconv.Itoa(int(b[2])) + "." + strconv.Itoa(int(b[3])), true
@@ -91,8 +95,9 @@ func formatIPv6(hi, lo uint64) string {
 	return b.String()
 }
 
-// pyLower is s.lower(): full Unicode lowercasing including U+0130 and the
-// final sigma.
+// pyLower is s.lower() of CPython 3.11: the full lowercase mapping of
+// Unicode 14.0 (pyLowerTable, generated from Python: Go's own tables are
+// newer) and the Final_Sigma rule for U+03A3.
 func pyLower(s string) string {
 	ascii := true
 	for i := 0; i < len(s); i++ {
@@ -107,35 +112,34 @@ func pyLower(s string) string {
 	runes := []rune(s)
 	var b strings.Builder
 	for i, r := range runes {
-		switch r {
-		case 0x130:
-			b.WriteString("i̇")
-		case 0x3a3:
+		if r == 0x3a3 {
 			if finalSigma(runes, i) {
 				b.WriteRune(0x3c2)
 			} else {
 				b.WriteRune(0x3c3)
 			}
-		default:
-			b.WriteRune(unicode.ToLower(r))
+			continue
+		}
+		if lower, ok := pyLowerTable[r]; ok {
+			b.WriteString(lower)
+		} else {
+			b.WriteRune(r)
 		}
 	}
 	return b.String()
 }
 
-func caseIgnorable(r rune) bool {
-	switch r {
-	case '\'', '.', ':', 0xb7, 0x2019, 0x2018, 0x2024, 0x2027, 0xfe13, 0xfe52, 0xfe55, 0xff07, 0xff0e, 0xff1a:
-		return true
-	}
-	return unicode.In(r, unicode.Mn, unicode.Me, unicode.Cf, unicode.Lm, unicode.Sk)
+func inRuneRanges(table [][2]rune, r rune) bool {
+	i := sort.Search(len(table), func(i int) bool { return table[i][1] >= r })
+	return i < len(table) && table[i][0] <= r
 }
 
-func cased(r rune) bool {
-	return unicode.IsUpper(r) || unicode.IsLower(r) || unicode.IsTitle(r)
-}
+func caseIgnorable(r rune) bool { return inRuneRanges(pyCaseIgnorableRanges, r) }
 
-// finalSigma implements the Final_Sigma condition of the Unicode standard.
+// cased is _PyUnicode_IsCased for a character that is not case-ignorable.
+func cased(r rune) bool { return inRuneRanges(pyCasedRanges, r) }
+
+// finalSigma implements handle_capital_sigma of CPython's unicodeobject.c.
 func finalSigma(runes []rune, i int) bool {
 	before := false
 	for j := i - 1; j >= 0; j-- {
