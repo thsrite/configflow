@@ -610,3 +610,36 @@ func TestMissingExpectedFileRetriesInlineFallbackOnExistingHandle(t *testing.T) 
 		t.Fatal("healthy index was rebuilt")
 	}
 }
+
+// test_replaced_file_during_lazy_read_is_retried_on_same_handle: the path is
+// replaced atomically after the handle's fstat-before/read/fstat-after; the
+// old content is served once and the stat of the path schedules the retry.
+func TestReplacedFileDuringLazyReadIsRetriedOnSameHandle(t *testing.T) {
+	f := newFixture(t, nil)
+	path := f.write("domains.list", "DOMAIN,old.example")
+	matcher := f.matcher(f.config, "default")
+	replaced := false
+	testHookAfterRead = func(string) {
+		if !replaced {
+			replaced = true
+			replacement := f.write("replacement", "DOMAIN,new.example")
+			if err := os.Rename(replacement, path); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	t.Cleanup(func() { testHookAfterRead = nil })
+	if matcher.Match("old.example") == nil {
+		t.Fatal("the content read through the old handle was not used")
+	}
+	if matcher.Match("new.example") != nil {
+		t.Fatal("new content matched before the retry")
+	}
+	if !matcher.RetryPending() {
+		t.Fatal("no retry scheduled")
+	}
+	f.clock.advance(DefaultReadRetry)
+	if matcher.Match("new.example") == nil || matcher.Match("old.example") != nil {
+		t.Fatal("content after retry is wrong")
+	}
+}

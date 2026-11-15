@@ -180,6 +180,10 @@ func readTextFile(path string) (content string, before, after *fileStamp, err er
 
 var errUnicode = errors.New("invalid utf-8")
 
+// testHookAfterRead runs between the handle's last fstat and the path stat
+// (tests replace the file there, as Python's test does through _file_stamp).
+var testHookAfterRead func(path string)
+
 func stampsEqual(a, b *fileStamp) bool {
 	if a == nil || b == nil {
 		return a == b
@@ -202,6 +206,9 @@ func (s *localSource) load(item, library *jsonx.Object) (string, error) {
 		s.paths[key] = path
 		content, before, after, err := readTextFile(path)
 		if err == nil {
+			if testHookAfterRead != nil {
+				testHookAfterRead(path)
+			}
 			info, statErr := os.Stat(path)
 			if statErr != nil {
 				err = statErr
