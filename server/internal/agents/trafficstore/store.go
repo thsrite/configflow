@@ -526,21 +526,70 @@ func subscript(container any, key string) (any, error) {
 // addInt is `current + n` for a counter read from a file (int + int, float
 // + int, bool + int as in Python).
 func addInt(current any, n *big.Int) (any, error) {
-	switch v := current.(type) {
+	return pyAdd(current, jsonx.BigInt(n))
+}
+
+// pyNumber is a JSON value as a Python number: bool and int are ints, the
+// rest of the numbers floats; ok is false for any other type.
+func pyNumber(value any) (i *big.Int, f float64, isFloat, ok bool) {
+	switch v := value.(type) {
 	case bool:
-		sum := new(big.Int).Set(n)
 		if v {
-			sum.Add(sum, big.NewInt(1))
+			return big.NewInt(1), 0, false, true
 		}
-		return jsonx.BigInt(sum), nil
+		return new(big.Int), 0, false, true
 	case jsonx.Number:
-		if i, ok := v.BigInt(); ok {
-			return jsonx.BigInt(i.Add(i, n)), nil
+		if n, isInt := v.BigInt(); isInt {
+			return n, 0, false, true
 		}
-		f, _ := new(big.Float).SetInt(n).Float64()
-		return jsonx.Float(v.Float64() + f), nil
+		return nil, v.Float64(), true, true
 	}
-	return nil, &TypeError{Message: "unsupported operand type(s) for +: '" + pyTypeName(current) + "' and 'int'"}
+	return nil, 0, false, false
+}
+
+func intToFloat(i *big.Int) float64 {
+	f, _ := new(big.Float).SetInt(i).Float64()
+	return f
+}
+
+// pyAdd is a + b for numbers read from a file or reported: int + int is an
+// int, anything with a float a float (float(int) correctly rounded). Other
+// types raised TypeError in Python (str + int, None + int, ...; the text of
+// str + str or list + list differs, but the outcome — the report fails — is
+// the same).
+func pyAdd(a, b any) (any, error) {
+	ai, af, aFloat, aOK := pyNumber(a)
+	bi, bf, bFloat, bOK := pyNumber(b)
+	if !aOK || !bOK {
+		return nil, &TypeError{Message: "unsupported operand type(s) for +: '" + pyTypeName(a) + "' and '" + pyTypeName(b) + "'"}
+	}
+	if !aFloat && !bFloat {
+		return jsonx.BigInt(new(big.Int).Add(ai, bi)), nil
+	}
+	if !aFloat {
+		af = intToFloat(ai)
+	}
+	if !bFloat {
+		bf = intToFloat(bi)
+	}
+	return jsonx.Float(af + bf), nil
+}
+
+// pyCompare compares two numbers of pyAdd exactly (int against float as
+// Python does). NaN weights only come from a hand-edited file: they
+// compare equal here, Python's sort order with NaN keys is arbitrary.
+func pyCompare(a, b any) int {
+	exact := func(value any) *big.Float {
+		i, f, isFloat, _ := pyNumber(value)
+		if isFloat {
+			if f != f {
+				return new(big.Float)
+			}
+			return new(big.Float).SetFloat64(f)
+		}
+		return new(big.Float).SetInt(i)
+	}
+	return exact(a).Cmp(exact(b))
 }
 
 func bigOf(value any) *big.Int {
@@ -618,11 +667,12 @@ func (s *Store) AddReport(agentID string, report *jsonx.Object, at *time.Time) (
 	if err != nil {
 		return nil, err
 	}
-	hosts, ok := hostsValue.(*jsonx.Object)
-	if !ok || hosts == nil {
+	hosts, _ := hostsValue.(*jsonx.Object)
+	items, _ := getOr(report, "items", []any{}).([]any)
+	if len(items) > 0 && hosts == nil {
+		// hosts.setdefault(...) runs only for a report with items.
 		return nil, &AttributeError{Message: "'" + pyTypeName(hostsValue) + "' object has no attribute 'setdefault'"}
 	}
-	items, _ := getOr(report, "items", []any{}).([]any)
 	for _, entryValue := range items {
 		item := entryValue.(*jsonx.Object)
 		host := item.GetString("host")
@@ -637,9 +687,13 @@ func (s *Store) AddReport(agentID string, report *jsonx.Object, at *time.Time) (
 			return nil, err
 		}
 		portKey := jsonx.Str(getOr(item, "port", zero))
-		weight := new(big.Int).Add(bigOf(getOr(item, "conns", zero)), bigOf(getOr(item, "fails", zero)))
-		sum, err := addInt(getOr(ports, portKey, zero), weight)
+		// ports.get(port_key, 0) + conns + fails, added left to right (a
+		// float read from the file rounds after each addition).
+		sum, err := addInt(getOr(ports, portKey, zero), bigOf(getOr(item, "conns", zero)))
 		if err != nil {
+			return nil, err
+		}
+		if sum, err = addInt(sum, bigOf(getOr(item, "fails", zero))); err != nil {
 			return nil, err
 		}
 		ports.Set(portKey, sum)
@@ -689,9 +743,27 @@ func (s *Store) AddReport(agentID string, report *jsonx.Object, at *time.Time) (
 			kinds.Set(kind, sum)
 		}
 	}
-	if hosts.Len() > MaxHostsPerDay {
+	// len(hosts): a list or str left by a hand edit has a length too (and
+	// is kept as it is); other values raised TypeError.
+	var count int
+	switch value := hostsValue.(type) {
+	case *jsonx.Object:
+		count = value.Len()
+	case []any:
+		count = len(value)
+	case string:
+		count = utf8.RuneCountInString(value)
+	default:
+		return nil, &TypeError{Message: "object of type '" + pyTypeName(hostsValue) + "' has no len()"}
+	}
+	if count > MaxHostsPerDay && hosts == nil {
+		// sorted(hosts, key=lambda host: _host_weight(hosts[host])) on a
+		// list or str: hosts[host] (or the weight of what it finds) fails.
+		return nil, &TypeError{Message: pyTypeName(hostsValue) + " indices must be integers"}
+	}
+	if count > MaxHostsPerDay {
 		ranked := hosts.Keys()
-		weights := map[string]*big.Int{}
+		weights := map[string]any{}
 		for _, host := range ranked {
 			weight, err := hostWeight(hosts.Value(host))
 			if err != nil {
@@ -700,7 +772,7 @@ func (s *Store) AddReport(agentID string, report *jsonx.Object, at *time.Time) (
 			weights[host] = weight
 		}
 		// sorted(..., reverse=True) is stable: equal weights keep their order.
-		sort.SliceStable(ranked, func(i, j int) bool { return weights[ranked[i]].Cmp(weights[ranked[j]]) > 0 })
+		sort.SliceStable(ranked, func(i, j int) bool { return pyCompare(weights[ranked[i]], weights[ranked[j]]) > 0 })
 		for _, host := range ranked[MaxHostsPerDay:] {
 			hosts.Delete(host)
 			if err := increment(day, "dropped", big.NewInt(1)); err != nil {
@@ -732,8 +804,9 @@ func asSetdefaultTarget(value any) (*jsonx.Object, error) {
 }
 
 // hostWeight is _host_weight(host_entry): connections plus failures over
-// every route.
-func hostWeight(entry any) (*big.Int, error) {
+// every route, sum(stats['conns'] + stats['fails'] for ...) with Python
+// number semantics (a float in a hand-edited file makes the weight a float).
+func hostWeight(entry any) (any, error) {
 	byRoute, err := subscript(entry, "by_route")
 	if err != nil {
 		return nil, err
@@ -742,14 +815,22 @@ func hostWeight(entry any) (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	total := new(big.Int)
+	var total any = zero
 	for _, stats := range routes.Values() {
-		for _, field := range []string{"conns", "fails"} {
-			value, err := subscript(stats, field)
-			if err != nil {
-				return nil, err
-			}
-			total.Add(total, bigOf(value))
+		conns, err := subscript(stats, "conns")
+		if err != nil {
+			return nil, err
+		}
+		fails, err := subscript(stats, "fails")
+		if err != nil {
+			return nil, err
+		}
+		weight, err := pyAdd(conns, fails)
+		if err != nil {
+			return nil, err
+		}
+		if total, err = pyAdd(total, weight); err != nil {
+			return nil, err
 		}
 	}
 	return total, nil
