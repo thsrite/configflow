@@ -14,22 +14,22 @@ import (
 // generate_docker_agent_run. Ports hold Python ints (int, int64, *big.Int);
 // NewDockerOptions fills the Python defaults.
 type DockerOptions struct {
-	ServerURL     string
-	AgentName     string
-	AgentIP       string
-	DataDir       string
-	NetworkMode   string
-	EnableMihomo  bool
-	EnableMosdns  bool
-	MihomoPort    any
-	MosdnsPort    any
-	EnableOxidns  bool
-	OxidnsPort    any
-	EnableDNSHA   bool
-	HAParent      string
-	HASubnet      string
-	HAGateway     string
-	HAHostIDPath  string
+	ServerURL    string
+	AgentName    string
+	AgentIP      string
+	DataDir      string
+	NetworkMode  string
+	EnableMihomo bool
+	EnableMosdns bool
+	MihomoPort   any
+	MosdnsPort   any
+	EnableOxidns bool
+	OxidnsPort   any
+	EnableDNSHA  bool
+	HAParent     string
+	HASubnet     string
+	HAGateway    string
+	HAHostIDPath string
 }
 
 // NewDockerOptions returns the Python defaults.

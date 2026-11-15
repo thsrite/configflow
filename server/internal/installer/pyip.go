@@ -84,9 +84,9 @@ func (n ipv4Network) mask() uint32 {
 	}
 	return ^uint32(0) << (32 - n.prefix)
 }
-func (n ipv4Network) broadcast() uint32       { return n.address | ^n.mask() }
-func (n ipv4Network) contains(v uint32) bool  { return v&n.mask() == n.address }
-func (n ipv4Network) String() string          { return ipv4Text(n.address) + "/" + itoa(n.prefix) }
+func (n ipv4Network) broadcast() uint32      { return n.address | ^n.mask() }
+func (n ipv4Network) contains(v uint32) bool { return v&n.mask() == n.address }
+func (n ipv4Network) String() string         { return ipv4Text(n.address) + "/" + itoa(n.prefix) }
 
 // prefixFromInt is _prefix_from_ip_int: a netmask of leading ones.
 func prefixFromInt(v uint32) (int, bool) {

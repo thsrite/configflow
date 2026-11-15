@@ -14,27 +14,27 @@ import (
 // *Set flags tell an explicit value from the Python default; NewAIOOptions
 // fills the defaults.
 type AIOOptions struct {
-	ServerURL                string
-	AgentName                string
-	AgentIP                  string
-	BinaryDownloadURL        string
-	MihomoAgentPort          any // int or str, as Python receives it
-	OxidnsAgentPort          any
-	MihomoConfigPath         string
-	OxidnsConfigPath         string
-	MihomoServiceUnit        string
-	OxidnsServiceUnit        string
-	MihomoServiceBinary      string
-	OxidnsServiceBinary      string
-	InstallCore              bool
-	NonInteractive           bool
-	VerifiedAgentPath        string
-	InstallationID           string
-	InstallationToken        string
-	ManageIPv4Forwarding     bool
-	ManageTun                bool
-	InstallationDescription  string
-	TunPrepareAssumeEnabled  bool
+	ServerURL               string
+	AgentName               string
+	AgentIP                 string
+	BinaryDownloadURL       string
+	MihomoAgentPort         any // int or str, as Python receives it
+	OxidnsAgentPort         any
+	MihomoConfigPath        string
+	OxidnsConfigPath        string
+	MihomoServiceUnit       string
+	OxidnsServiceUnit       string
+	MihomoServiceBinary     string
+	OxidnsServiceBinary     string
+	InstallCore             bool
+	NonInteractive          bool
+	VerifiedAgentPath       string
+	InstallationID          string
+	InstallationToken       string
+	ManageIPv4Forwarding    bool
+	ManageTun               bool
+	InstallationDescription string
+	TunPrepareAssumeEnabled bool
 }
 
 // DefaultAIODescription is the default installation_description.
