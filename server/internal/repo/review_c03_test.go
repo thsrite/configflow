@@ -120,3 +120,22 @@ func TestRealpathSymlinkLoopStopsAtFirstRepeatedLink(t *testing.T) {
 		t.Fatalf("dotdot after link: %q", got)
 	}
 }
+
+// Path(data_dir).expanduser(): "~" is $HOME, "~name" the user's home, an
+// unknown user is RuntimeError("Could not determine home directory.").
+func TestDataDirExpandUserLikePython(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home+"/")
+	for input, want := range map[string]string{"~": home, "~/a//b": home + "/a/b", "x~": "x~", "~root/d": "/root/d"} {
+		if got := must(expandUser(input))(t); got != want {
+			t.Errorf("%q: %q, want %q", input, got, want)
+		}
+	}
+	if _, err := expandUser("~no-such-user-c03/x"); err == nil || err.Error() != "Could not determine home directory." {
+		t.Fatalf("unknown user: %v", err)
+	}
+	r := must(Open("~/data", Options{}))(t)
+	if r.DataDir() != filepath.Join(resolvePath(home), "data") {
+		t.Fatalf("data dir %q", r.DataDir())
+	}
+}

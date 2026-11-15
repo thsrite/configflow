@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/user"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -95,12 +96,11 @@ type Repository struct {
 // legacy configuration files and no configflow.sqlite3 is refused, and a
 // corrupt database is never rebuilt from config.json.
 func Open(dataDir string, options Options) (*Repository, error) {
-	if dataDir == "~" || strings.HasPrefix(dataDir, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			dataDir = home + dataDir[1:]
-		}
+	expanded, err := expandUser(dataDir)
+	if err != nil {
+		return nil, err
 	}
-	root, err := resolve(dataDir)
+	root, err := resolve(expanded)
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +125,33 @@ func Open(dataDir string, options Options) (*Repository, error) {
 		return nil, err
 	}
 	return r, nil
+}
+
+// expandUser is Path.expanduser() of CPython 3.11: "~" is $HOME (or the
+// password database entry of the current user), "~name" that user's home
+// directory; when it cannot be determined Python raises RuntimeError.
+func expandUser(path string) (string, error) {
+	if !strings.HasPrefix(path, "~") {
+		return path, nil
+	}
+	name, rest, _ := strings.Cut(path[1:], "/")
+	home, found := "", false
+	if name == "" {
+		if value, ok := os.LookupEnv("HOME"); ok {
+			home, found = value, true
+		} else if current, err := user.Current(); err == nil {
+			home, found = current.HomeDir, true
+		}
+	} else if account, err := user.Lookup(name); err == nil {
+		home, found = account.HomeDir, true
+	}
+	if home = strings.TrimRight(home, "/"); home == "" {
+		home = "/"
+	}
+	if !found || strings.HasPrefix(home, "~") {
+		return "", errors.New("Could not determine home directory.")
+	}
+	return filepath.Join(home, rest), nil
 }
 
 // OpenDefault opens the application's repository, as common/config.py's
