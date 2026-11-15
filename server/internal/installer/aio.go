@@ -124,7 +124,7 @@ func GenerateGoAIOInstallScript(o AIOOptions) (string, error) {
 	}
 	var ports []string
 	for _, port := range []any{o.MihomoAgentPort, o.OxidnsAgentPort} {
-		if !asciiDigits(pyStr(port)) {
+		if _, isBool := port.(bool); isBool || !asciiDigits(pyStr(port)) {
 			return "", valueError("Invalid Agent port")
 		}
 		n, err := pyInt(port)

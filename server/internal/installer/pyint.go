@@ -21,6 +21,11 @@ const maxStrDigits = 4300
 // before trailing characters are rejected, as CPython does).
 func pyInt(value any) (*big.Int, error) {
 	switch v := value.(type) {
+	case bool:
+		if v {
+			return big.NewInt(1), nil
+		}
+		return big.NewInt(0), nil
 	case int:
 		return big.NewInt(int64(v)), nil
 	case int64:
@@ -71,6 +76,11 @@ func leadingDigitRun(text string) int {
 // pyStr is str(value) for the same values.
 func pyStr(value any) string {
 	switch v := value.(type) {
+	case bool:
+		if v {
+			return "True"
+		}
+		return "False"
 	case int:
 		return strconv.Itoa(v)
 	case int64:

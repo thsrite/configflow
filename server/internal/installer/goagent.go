@@ -120,7 +120,7 @@ func GenerateGoAgentInstallScript(o GoAgentOptions) (string, error) {
 			o.StopCommand != "" || o.StartCommand != "" || o.StatusCommand != "" {
 			return "", valueError("同时安装核心需要默认配置路径、服务名、核心路径和自动识别服务管理器，不能使用自定义启停命令")
 		}
-		if !asciiDigits(pyStr(agentPort)) {
+		if _, isBool := agentPort.(bool); isBool || !asciiDigits(pyStr(agentPort)) {
 			return "", valueError("Invalid Agent port")
 		}
 		dnsPort := int64(53)
