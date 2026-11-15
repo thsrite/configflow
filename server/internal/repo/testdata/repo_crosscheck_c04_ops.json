@@ -2224,6 +2224,74 @@
   "id": "work"
  },
  {
+  "op": "export_all",
+  "save": "ex"
+ },
+ {
+  "op": "import_all",
+  "data": {
+   "$var": "ex",
+   "patch": [
+    {
+     "path": [
+      "system",
+      "system_config",
+      "rule_proxy_token"
+     ],
+     "set": "imported"
+    },
+    {
+     "path": [
+      "system",
+      "system_config",
+      "retired_rule_proxy_tokens"
+     ],
+     "set": [
+      "old1",
+      "imported",
+      7
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "op": "get_system_settings"
+ },
+ {
+  "op": "import_all",
+  "data": {
+   "$var": "ex",
+   "patch": [
+    {
+     "path": [
+      "system",
+      "system_config",
+      "rule_proxy_token"
+     ],
+     "set": "ct2"
+    },
+    {
+     "path": [
+      "system",
+      "system_config",
+      "config_token"
+     ],
+     "set": "ct2"
+    }
+   ]
+  }
+ },
+ {
+  "op": "get_system_settings"
+ },
+ {
+  "op": "sanitization_tokens"
+ },
+ {
+  "op": "list_profiles"
+ },
+ {
   "op": "export_desensitized"
  },
  {

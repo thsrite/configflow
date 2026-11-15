@@ -62,13 +62,20 @@ func xcPlainAgents(agents []any) []any {
 	return result
 }
 
-func xcSortedTokens(tokens TokenSet) []any {
-	values := make([]string, 0, len(tokens))
+// xcSortedTokens is summary() in repo_crosscheck.py: generated tokens (43
+// characters) differ between the runs and are only counted.
+func xcSortedTokens(tokens TokenSet) *jsonx.Object {
+	values := []string{}
+	generated := 0
 	for token := range tokens {
-		values = append(values, token)
+		if len(token) == 43 {
+			generated++
+		} else {
+			values = append(values, token)
+		}
 	}
 	sort.Strings(values)
-	return jsonx.ListOf(values)
+	return jsonx.Obj("fixed", jsonx.ListOf(values), "generated", jsonx.Int(generated))
 }
 
 // xcExecuteC04 mirrors execute_c04() in repo_crosscheck.py; handled=false

@@ -221,8 +221,12 @@ def execute_c04(repository, op, variables, arg):
             (config_export.sanitize_external_payload, config_export.redact_oxidns_settings,
              router_store.redact_routers, mihomo_easytier.redact_settings) = saved
     if name == 'sanitization_tokens':
-        return {'rule_proxy': sorted(repository.rule_proxy_tokens_for_sanitization()),
-                'agents': sorted(repository.agent_tokens_for_sanitization())}
+        # generated tokens (43 characters) differ between the runs: only counted
+        def summary(tokens):
+            return {'fixed': sorted(token for token in tokens if len(token) != 43),
+                    'generated': sum(1 for token in tokens if len(token) == 43)}
+        return {'rule_proxy': summary(repository.rule_proxy_tokens_for_sanitization()),
+                'agents': summary(repository.agent_tokens_for_sanitization())}
     if name == 'profile_metadata':
         return repository._profile_metadata(op['id'])
     if name == 'write_generated':
