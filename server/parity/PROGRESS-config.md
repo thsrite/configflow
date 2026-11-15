@@ -314,7 +314,7 @@ Reviewer notes: Web listener: 14 Python cases are nginx-specific (reload failure
 
 ## C08 — rule syntax, matcher, rule utils
 
-**Status: `partial`** · prereqs: C02 · Go: internal/rules
+**Status: `ported`, review in progress (2026-11-16)** · prereqs: C02 · Go: internal/rules, internal/rulefetch/cache.go (C08 functions)
 
 Files:
 - `backend/utils/rule_syntax.py` (216)
@@ -330,6 +330,8 @@ Evidence: `internal/rules` syntax.go, matcher.go, ruleutils.go, pyre_*.go (Pytho
 Missing / deferred: the repository-backed `rule_utils.py` functions are ported in C14 (`internal/rulefetch/cache.go`); `test_rule_syntax.py`'s 15 ruleset_content cases are ported there (TestRuleSyntaxThroughRulesetContent) and the legacy-cache read side (TestLegacyCacheReadSide). Still deferred: the route cases of `test_rule_cache_identity.py` / `test_remote_rule_cache_edges.py` (→ C32/C33). Line helpers of ruleset_content are exported from `rules/ruleset_lines.go` for rulefetch.
 
 Reviewer notes: Accepted: `\N{name}` and repeat counts > int32 give `*UnsupportedRegexError`; backtracking matches cut off after 1 s count as no match. `rules/compat.go` still holds copies of already-ported helpers: `safeExceptionDetails` returns `exception_type=%T` (Go type name, e.g. `*fs.PathError`) while `urlx.SafeExceptionDetails` exists — switch and check the log text; `Logger` interface instead of `logx`; `ProfileValidationError` instead of `repo.Error` (rules cannot import repo? it can — rules imports only jsonx; check for a cycle via repo→rules first). Remaining compat copies → C14 (ruleset_content), C12 (converters/common), C26 (device policy).
+
+Review (in progress, 2026-11-16) — fixed so far: group names use `str.isidentifier` (pystr.IsIdentifier, XID tables), `str.upper` full mapping (pystr.Upper) in split_rule_payload/parse_rule_line, regex error repr via jsonx.Repr, ip_address/ip_network ported from CPython (scope ids with spaces), YAML rule sets composed like CSafeLoader (pyyaml `Libyaml` mode; multi-line scalar end marks), matcher/matcher-cache module loggers + urlx.SafeExceptionDetails, rule_cache_read_path existing-cache-first. Commits c19aef3f, a06e7bab, 17bb4d03, fd9a48dc, 44028412, a0fe241c. Item 8 done for `rules` (private str copies removed). Remaining: valid-heavy regex fuzz round, final notes.
 
 ## C09 — matcher cache, group candidates, reorder, strategy refs, connection rules
 
