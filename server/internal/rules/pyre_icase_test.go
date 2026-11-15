@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 	"unicode"
 
 	"configflow/internal/jsonx"
@@ -54,6 +55,11 @@ func matchedRunes(t *testing.T, re *PyRegex, haystack string) map[rune]bool {
 		}
 		return found
 	}
+	// One scan covers a million characters: lift the per-call limit (it
+	// trips under -race), restore it for the other tests.
+	limit := re.net.MatchTimeout
+	re.net.MatchTimeout = 10 * time.Minute
+	defer func() { re.net.MatchTimeout = limit }()
 	m, err := re.net.FindStringMatch(haystack)
 	for m != nil && err == nil {
 		for _, r := range m.String() {
