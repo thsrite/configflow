@@ -25,6 +25,7 @@ import (
 	apistats "configflow/internal/api/stats"
 	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/auth"
+	"configflow/internal/convert"
 	"configflow/internal/httpx"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
@@ -57,6 +58,8 @@ var wirePackages = []func(){
 func wireCore() {
 	notifications.SetSources(notifications.Sources{ListTasks: tasks.ListTasks})
 	repo.RegisterHooks(repo.Hooks{DefaultServerDomain: defaultServerDomain})
+	// Desensitized export of EasyTier settings (repo cannot import convert).
+	repo.RegisterHooks(repo.Hooks{RedactEasytierSettings: convert.RedactEasyTierSettings})
 }
 
 // defaultServerDomain is what load_config stores outside a container:
