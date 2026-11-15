@@ -1,6 +1,6 @@
 # PROGRESS — domain `agents`
 
-Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 20 missing, 4 verified (A01, A02, A03, A04). Only reviewers set `verified`.
+Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 19 missing, 1 ported (A05), 4 verified (A01, A02, A03, A04). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.
 
@@ -20,7 +20,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A02 | registry support: runtime state, diagnostics, events, versions, messages | 1386 | verified | | C02 | – | internal/agents |
 | A03 | registry routes (register, heartbeat, create/edit/delete) | 432 | verified | | A01, A02, C06 | 5 (5 done) | internal/api/agents |
 | A04 | metrics history and flush | 1163 | verified | | A01, C07 | 3 | internal/agents/metrics (new), api/agents |
-| A05 | traffic history and traffic store | 967 | missing | | A04, C37¹ | 8 | internal/agents/metrics, api/agents |
+| A05 | traffic history and traffic store | 967 | ported | | A04, C37¹ | 8 (8 done) | internal/agents/metrics, internal/agents/trafficstore (new), internal/discovery (new, C37's), api/agents |
 | A06 | OxiDNS monitor, dashboard state, metrics | 1364 | missing | | A01 | 5 | internal/agents/monitor (new), api/agents |
 | A07 | Mihomo panel, OxiDNS cache/rule update/rankings/publication stats | 1316 | missing | | A06, C14 | 9 | internal/agents/monitor, api/agents |
 | A08 | installer script rendering, install command store | 1333 | missing | HR | A02, C02 | – | internal/installer (new) |
@@ -197,7 +197,7 @@ Bugs fixed (Python behaviour reproduced): `set_logging_config` — a 200 JSON an
 | route → `get_probe_store().delete` | `agents.OnAgentDeleted("domain_probe", fn)` | **C16** |
 | route → `get_region_store().delete` | `agents.OnAgentDeleted("region_check", fn)` | **C16** |
 
-`agents.AgentDeletedStores` fixes the run order (traffic_store, domain_probe, region_check, then any other name) whatever the wiring order; a store error answers 500 with its text after the Agent is gone (as Python). `internal/server.TestDeleteAgentClearsEveryPerAgentStoreInAFullyWiredServer` checks all five on `NewApp()` and is **skipped with `TODO(A05, C16, A04)`: the porter of the last of A04/A05/C16 removes the `t.Skip`**. Each of them should also seed its store files for `agent-1` in `api/agents/difftest` (the differential compares the files under `DATA_DIR`, lock files excluded).
+`agents.AgentDeletedStores` fixes the run order (traffic_store, domain_probe, region_check, then any other name) whatever the wiring order; a store error answers 500 with its text after the Agent is gone (as Python). `internal/server.TestDeleteAgentClearsEveryPerAgentStoreInAFullyWiredServer` checks all five on `NewApp()` and is **skipped with `TODO(C16)`** (A04 and A05 are wired): C16's porter removes the `t.Skip`. Each of them should also seed its store files for `agent-1` in `api/agents/difftest` (the differential compares the files under `DATA_DIR`, lock files excluded).
 
 Decisions:
 - Light reads: Go's typed jsonx getters cannot raise on `repo.AgentHistoryNotRead` like Python's sentinel (documented on the sentinel); the Go test checks the equivalents: `repo.AgentHistory` refuses it, it is never an object/list to type assertions, every encoder refuses it, copies keep it, saving it fails.
@@ -391,20 +391,45 @@ Commands:
 
 ## A05 — traffic history and traffic store
 
-**Status: `missing`** · prereqs: A04 (shared `metrics/traffic_history.sqlite3` flush), C37 (`registrable_domain` only, see note ¹) · Go: internal/agents/metrics, api/agents
+**Status: `ported`** (2026-11-15, porter; not reviewed) · prereqs: A04, C37 (`registrable_domain`, ported early here) · Go: internal/agents/metrics (traffic.go, traffic_wire.go, traffic_compat.go), internal/agents/trafficstore (new: store.go, stat_*.go), internal/discovery (new; C37's package: discovery.go), internal/api/agents/traffic.go
 
 Files:
-- `backend/agents/traffic_history.py` (504)
-- `backend/agents/traffic_store.py` (265)
-- `backend/routes/agents.py` (198) — lines 728–750, 781–884, 2100–2170
+- `backend/agents/traffic_history.py` (504) → `metrics/traffic.go` (`TrafficHistory`, `CleanTrafficReport`, `RetentionDays`, `SetRetentionDays`, `AgentSupported`, `ChainLayers`; state per data dir: `TrafficFor(dataDir)` / `TrafficForManager(m)` = manager.traffic_history)
+- `backend/agents/traffic_store.py` (265) → `trafficstore` (`CleanReport`, `RouteKey`, `SplitRouteKey`, `Store` with `AddReport`/`LoadStatus`/`StatusOf`/`Load`/`Delete`, `Get(ctx)` = get_traffic_store(); package-level lock and LRU status cache keyed by absolute path, like Python's module globals). Separate package so C37 can import it (discovery must not import metrics).
+- `backend/routes/agents.py` (198) — lines 728–750, 781–884, 2100–2170 → `api/agents/traffic.go` (`registerTraffic`, one line in `Register`)
+- Early from C37: `utils/domain_discovery.registrable_domain` → `discovery.RegistrableDomain` (on `subs.ExtractDomain`, no private suffixes), and `utils/domain_discovery_service.provider_revisions` → `discovery.ProviderRevisions(ctx, profileID)` (needed by the traffic-report answer; includes the parts of `read_settings`, `ruleset_problem`, `_references`/`ruleset_info` and `_served_rule_content` it uses). C37 extends this package.
 
-Tests: `test_traffic_history.py` (13), `test_domain_status_cache.py` (17)
+Routes (8, all `done` in routes.tsv, `api/agents`): `POST /api/agents/<agent_id>/traffic-report`; `POST|GET|PUT|DELETE /api/agents/<agent_id>/traffic-history`; `PUT /api/agents/traffic-history/retention`; `GET /api/agents/<agent_id>/traffic/stats`; `GET /api/agents/<agent_id>/traffic/trend`. The two Agent-token POSTs are public in `internal/auth` already (as routes/auth.py); body limits 256 KiB / 4 MiB via `ReadJSONBody`; Agent auth via `authenticatedAgent` (light read). Errors outside Python's try blocks return the 500 page (traffic report/history routes), stats/trend answer `{'success': False, 'message'}` 500 like Python.
 
-Routes (8): `POST /api/agents/<agent_id>/traffic-report`; `POST|GET|PUT|DELETE /api/agents/<agent_id>/traffic-history`; `PUT /api/agents/traffic-history/retention`; `GET /api/agents/<agent_id>/traffic/stats`; `GET /api/agents/<agent_id>/traffic/trend`
+Commits: 5fb71710 (code, wiring), 473eb166 (tests, reference corpus), 7b6afce5 (differential), + this PROGRESS/routes.tsv commit.
 
-Evidence: no Go code.
+Registered from `metrics.WireTraffic` (one line in `internal/server` `wirePackages`): `agents.RegisterHooks{DeleteTrafficHistory}` (delete_agent → traffic_history.delete), `agents.OnAgentDeleted("traffic_store", …)` (route → get_traffic_store().delete; first in `AgentDeletedStores`), `metrics.SetTrafficFlush(flushTraffic)` (metrics_flush.run: retain_agents + flush(retention_days(system)) → `traffic_rows`; also at shutdown through A04's shutdown run). The traffic history has no loop or task row of its own. `internal/server.TestDeleteAgentClearsEveryPerAgentStoreInAFullyWiredServer` now skips only for C16; new `TestNewAppWiresTheTrafficStores`.
 
-Hooks to provide: `agents.RegisterHooks{DeleteTrafficHistory}`; `agents.OnAgentDeleted("traffic_store", …)` first in order (then C16 registers `domain_probe`, `region_check`). For other domains: `traffic_store` is read by C37 domain discovery (`get_traffic_store`) — C37 may import the A05 package directly or declare an interface (decision 3); agents must not import C37 except `registrable_domain`. Public endpoints (`traffic-report`, `POST traffic-history` are Agent-authenticated): check `internal/auth` gate list against `routes/auth.py`.
+Tests:
+- `test_traffic_history.py` (13): all ported — `metrics/traffic_test.go` (clean report ×2, in-memory + queries, legacy migration, failed flush, compaction/pruning, delete/retain, flush task, delete agent) and `api/agents/traffic_test.go` (switch/reports/heartbeat, unsupported + retention, login enabled, `test_every_agent_token_route_bypasses_the_panel_login` → Go equivalent: every Agent-token route passes the panel login). Extra: traffic failure text `流量记录：…`, retention/choices, agent_supported, unknown/bad payloads, body limit.
+- `test_domain_status_cache.py` (17 defs, 26 cases): `trafficstore/store_test.go` ports 14 defs. Not ported: `test_other_json_stores_keep_close_before_replace_without_digest` (= `jsonstore.TestOtherStoresKeepCloseBeforeReplaceWithoutSignature`), the two Windows-only tests. The two "during atomic write" cases monkeypatched os.replace inside json_store: jsonstore covers the detection; the store tests simulate a write that returns no signature.
+- Deferred to A05 from elsewhere, now ported: `test_domain_discovery.py` (C37's file) `test_clean_report_*` (4 defs, 19 cases), `test_store_merges_reports_and_expires_old_days`, `test_store_caps_hosts_per_day_keeping_heaviest`, `test_registrable_domain_uses_public_suffix_list` (`discovery_test.go`), route cases `test_report_requires_token_and_enabled_switch` (switch via manager; PUT domain-discovery is A24), `test_report_with_login_enabled_rejects_invalid_agent_credentials` (7), `…_retains_switch_and_payload_checks` (2), `…_rejects_unknown_agent`; A01's traffic-report half of `test_heartbeat_and_agent_reports_never_copy_the_history` (`TestTrafficReportKeepsThePublicationHistory`). Still with C37/A24: the other `test_domain_discovery.py` route cases (need `/api/domain-discovery/*` or `PUT …/domain-discovery`).
+- Reference corpus: `metrics/testdata/gen_traffic_reference.py` → `traffic_reference.json` (45 `_target_key` inputs incl. IPv6/scoped/mapped, IDNA, İ/Σ lowering, URL-like; 37 history clean_report cases; 16 store clean_report cases incl. unhashable TypeErrors; fromtimestamp rounding; float floor division; a query scenario with two flushes, every range × aggregate, compaction and pruning) — `traffic_reference_test.go`, all equal.
+- Provider revisions: `api/agents.TestTrafficReportReturnsProviderRevisions` (cache file vs content, regional, after-MATCH and missing rulesets skipped).
+
+Differential (`api/agents/difftest/traffic_test.go`, hooked into diff_test.go with 5 one-line edits: `seedTraffic`, `trafficRequests()`, mask `traffic_history_since` in stored agents, skip `.sqlite3` in the byte compare, `compareTraffic` after stop): seeds 3 Agents (domain discovery / traffic history / oxidns), discovery rulesets + a rule cache file, a saved traffic store file (expired + yesterday), a 1.8.51-go `traffic_history.sqlite3` (legacy tables, a deleted Agent's rows); 80 A05 requests (all 8 routes, success and failure: 401/404/409/400/413/500 pages, schema true, unhashable status, item without rule, legacy reports, retention variants, clear, switch off+clear, Agent delete with both stores). After SIGTERM / lifecycle.Stop: SQLite schema, journal mode and all rows equal; traffic/*.json equal (timestamps masked). Result: **222 requests, 0 differences**.
+
+Differences from Python (documented):
+- State per data dir (`TrafficFor`), not per manager object (as A04).
+- Pending counters keep Python int semantics (int64, big.Int on overflow); a sum beyond int64 fails the save with Python's `Python int too large to convert to SQLite INTEGER`.
+- `provider_revisions`: non-string ruleset names become JSON keys like json.dumps (null/true/numbers) but the TypeError of sort_keys on mixed key types is not reproduced; unhashable (list/dict) ruleset ids (Python TypeError) are compared with == instead. Only hand-edited configs can hit either.
+- Traffic store merge on hand-edited files (non-dict day/hosts/stats): errors are returned (500 page as in Python), texts may differ from Python's exception texts (not visible to clients; only the "Exception on …" log).
+- `host == host.lower()` uses ASCII lowering (non-ASCII hosts never pass is_valid_domain, same outcome).
+- Windows (status cache disabled, close-before-replace) not applicable.
+- Lone surrogates in reports: jsonx limitation (U+FFFD).
+- `metrics/traffic_compat.go`: private copies of `rules` ipaddress (`ip_address` + str) and `str.lower` — TODO(port) if rules exports them.
+
+Pitfalls: tests share process-wide state — reset `metrics.Reset()`, `metrics.ResetTraffic()`, `metrics.SetTrafficFlush(nil)`, `trafficstore.ResetCache()` (see `newTrafficEnv` / `wireTrafficForTest`). Test seams: `SetTrafficNow`, `TrafficHistory.SetBrokenConnect`, `Store.ReadJSON/WriteJSON`, `trafficstore.SetNow/SetCacheLimit/CachedPaths/CachedStatus`, `MaxHostsPerDay` (var). The difftest locates `backend/` at `../../../../..`: a scratch copy needs `backend` linked next to `server`.
+
+Commands:
+- `rt -- bash -lc 'cd server && gofmt -l internal/agents/metrics internal/agents/trafficstore internal/discovery internal/api/agents; go vet ./internal/agents/metrics/ ./internal/agents/trafficstore/ ./internal/discovery/ ./internal/api/agents/... ./internal/server/... && go test -count=1 ./internal/agents/metrics/ ./internal/agents/trafficstore/ ./internal/discovery/ ./internal/api/agents/... ./internal/server/...'` (last run also with `-race`: all ok)
+- `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/api/agents/difftest/'`
+- `rt --back server/internal/agents/metrics/testdata/traffic_reference.json -- bash -lc '~/cf-test/.venv/bin/python -I server/internal/agents/metrics/testdata/gen_traffic_reference.py > server/internal/agents/metrics/testdata/traffic_reference.json'`
 
 ## A06 — OxiDNS monitor, dashboard state, metrics
 

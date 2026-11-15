@@ -68,13 +68,13 @@ POST	/api/agents/<agent_id>/restart	routes.agents.restart_agent	26	todo
 GET	/api/agents/<agent_id>/rule-sync	routes.agents.agent_rule_sync	27	todo
 PUT	/api/agents/<agent_id>/rule-sync	routes.agents.agent_rule_sync	27	todo
 GET	/api/agents/<agent_id>/status	routes.agents.get_agent_status	26	todo
-DELETE	/api/agents/<agent_id>/traffic-history	routes.agents.clear_agent_traffic_history	21	todo
-GET	/api/agents/<agent_id>/traffic-history	routes.agents.get_agent_traffic_history	21	todo
-POST	/api/agents/<agent_id>/traffic-history	routes.agents.agent_traffic_history_report	21	todo
-PUT	/api/agents/<agent_id>/traffic-history	routes.agents.set_agent_traffic_history	21	todo
-POST	/api/agents/<agent_id>/traffic-report	routes.agents.agent_traffic_report	21	todo
-GET	/api/agents/<agent_id>/traffic/stats	routes.agents.get_agent_traffic_stats	21	todo
-GET	/api/agents/<agent_id>/traffic/trend	routes.agents.get_agent_traffic_trend	21	todo
+DELETE	/api/agents/<agent_id>/traffic-history	routes.agents.clear_agent_traffic_history	api/agents	done
+GET	/api/agents/<agent_id>/traffic-history	routes.agents.get_agent_traffic_history	api/agents	done
+POST	/api/agents/<agent_id>/traffic-history	routes.agents.agent_traffic_history_report	api/agents	done
+PUT	/api/agents/<agent_id>/traffic-history	routes.agents.set_agent_traffic_history	api/agents	done
+POST	/api/agents/<agent_id>/traffic-report	routes.agents.agent_traffic_report	api/agents	done
+GET	/api/agents/<agent_id>/traffic/stats	routes.agents.get_agent_traffic_stats	api/agents	done
+GET	/api/agents/<agent_id>/traffic/trend	routes.agents.get_agent_traffic_trend	api/agents	done
 POST	/api/agents/<agent_id>/uninstall	routes.agents.uninstall_agent	26	todo
 POST	/api/agents/<agent_id>/update	routes.agents.update_agent_version	26	todo
 GET	/api/agents/<agent_id>/upgrade	routes.agents.get_agent_upgrade	26	todo
@@ -102,7 +102,7 @@ POST	/api/agents/install-command	routes.agents.create_install_command	22	todo
 GET	/api/agents/install-script	routes.agents.get_install_script	22	todo
 GET	/api/agents/latest-version	routes.agents.get_latest_agent_version	26	todo
 POST	/api/agents/register	routes.agents.register_agent	api/agents	done
-PUT	/api/agents/traffic-history/retention	routes.agents.set_traffic_history_retention	21	todo
+PUT	/api/agents/traffic-history/retention	routes.agents.set_traffic_history_retention	api/agents	done
 GET	/api/aggregations	routes.aggregations.handle_subscription_aggregations		todo
 POST	/api/aggregations	routes.aggregations.handle_subscription_aggregations		todo
 DELETE	/api/aggregations/<agg_id>	routes.aggregations.handle_subscription_aggregation_item		todo
