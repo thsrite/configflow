@@ -290,20 +290,43 @@ Pitfalls:
 
 ## A04 — metrics history and flush
 
-**Status: `missing`** · prereqs: A01, C07 · Go: internal/agents/metrics (new), api/agents
+**Status: `ported`** (2026-11-15, porter; not reviewed) · prereqs: A01, C07 · Go: internal/agents/metrics (history.go, stats.go, pyvalue.go, flush.go, wire.go), internal/api/agents/metrics.go
 
 Files:
-- `backend/agents/metrics_history.py` (810) — `LEGACY_DIRS` handling not ported (maintainer decision)
+- `backend/agents/metrics_history.py` (810) — `LEGACY_DIRS` / `adopt_legacy_dirs` not ported (maintainer decision)
 - `backend/agents/metrics_flush.py` (260)
 - `backend/routes/agents.py` (93) — lines 2007–2099
 
-Tests: `test_agent_metrics_history.py` (25)
+Routes (3, all `done` in routes.tsv): `GET /api/agents/<agent_id>/metrics`, `/metrics/history`, `/metrics/summary`.
 
-Routes (3): `GET /api/agents/<agent_id>/metrics`; `GET /api/agents/<agent_id>/metrics/history`; `GET /api/agents/<agent_id>/metrics/summary`
+Commits: 26d4ea6c (package, routes, tests), c7b02570 (differential), 557df897 (routes.tsv, server wiring test, delete-store test TODO).
 
-Evidence: no Go code.
+Registered from `metrics.Wire` (one line in `internal/server` `wirePackages`): `agents.RegisterHooks{AddMetrics, DeleteMetricsHistory}`; `agents.OnManagerInit(loadOnce)` = `load_history()` at service start (init_agent_manager runs before the server listens, where app.py loaded), once per data dir; `tasks.SetRows(SlotMetrics, Rows)` (`_metrics_row`); `tasks.SetRunner("metrics_history_flush", runNow)` (StartBackground → `Run(ctx,"manual",true)`); `tasks.SetIntervalSetter("metrics_history_flush", SetInterval)`; `lifecycle.Loop("metrics-history-flush", loop)` (30 s tick, woken by SetInterval) and `lifecycle.OnShutdown` → `FlushOnShutdown(ctx, true)` (lifecycle registrations guarded by sync.Once). Status store: `notifications.TaskStatus(ctx, repo data dir)`.
 
-Hooks to provide: `agents.RegisterHooks{AddMetrics, DeleteMetricsHistory}`; `tasks.SetRows(tasks.SlotMetrics, …)` (`routes/tasks._metrics_row`), `tasks.SetRunner("metrics_history_flush", …)` (via `tasks.StartBackground`), `tasks.SetIntervalSetter("metrics_history_flush", metrics_flush.set_interval)`; `lifecycle.Loop` (`metrics_flush.start_loop`), `metrics_flush.load_history` at start, `lifecycle.OnShutdown` (`flush_on_shutdown(record_idle=False)`); Python's signal handlers become the Go shutdown path (document). Task status store via `notifications.TaskStatus`.
+For A05: `metrics.SetTrafficFlush(fn)` is the traffic-history half of `run()` (retain_agents + flush(retention_days(system)) → rows); errors are wrapped as `TrafficHistoryFlushError` (`流量记录：…`); until set, `run()` result has no `traffic_rows`. `History.GetTrafficStats(agentID, period)` and `GetTrafficTrend(agentID, hours, intervalMinutes *big.Int)` are ported here (tested by test_api_shapes) for A05's traffic/stats and traffic/trend routes; route `hours`/`interval_minutes` should use the same `argBigInt` (4300-digit limit) as `api/agents/metrics.go`.
+
+Tests (`test_agent_metrics_history.py`, 25): ported 17 in `history_test.go`/`flush_test.go` (memory window, append-only, compaction atomic, failed append rewrite, truncated line, migration, API shapes, heartbeat+delete, task row run/failure, interval choices, failed record no rerun, import drop, data dir, building manager untouched, startup load (without adoption), compact lines/fresh dicts (tracemalloc half N/A), shutdown save); Go equivalents for 3 (`stop_signal_during_a_shutdown_save` → shutdown save concurrent with a running save; `real_startup_path_saves_on_sigterm` → in-process Init + lifecycle.Start/Stop; `stop_signal_handler` second-signal half N/A); not ported 5 = the 4 LEGACY_DIRS tests + `test_real_startup_path_saves_on_ctrl_c…`/`test_debug_mode_stop…` (Python signal/reloader mechanics; counted in the N/A above). Extra Go tests: non-dict system_metrics AttributeError, describe_os_error texts, undeletable file, `{"metrics": 5}` ends the load, route tests in `api/agents/metrics_test.go` (401/404, hours parsing incl. Arabic digit, `1_0`, 4301 digits → default, overflow texts → 500), `server.TestNewAppWiresTheMetricsHistory`. No deferred cases were recorded for A04.
+
+Reference values: `testdata/probe.py` (timedelta overflow texts, int() digit limit, `in`/index TypeErrors, sum/max/min/NaN) run on the test server, results encoded in the tests.
+
+Differential (`api/agents/difftest`, extended): seeded `metrics/` (agent-1 JSONL with expired/recent/truncated lines, agent-busy legacy JSON to migrate, deleted Agent file, `.tmp` leftover), +27 requests (heartbeats with metrics incl. 2**64-1 values, the three routes: success, 401, 404, hours variants, three overflow 500s), then graceful stop of both (Python SIGTERM, Go lifecycle.Stop) and comparison of file names (Agent ids normalized), metrics files byte for byte (timestamps masked) and the task-status `metrics_history_flush` run. Result: **101 requests, 0 differences**, 2 metrics files identical.
+
+Differences from Python (documented, accepted):
+- State per data dir (`metrics.For(dataDir)`), not per manager object: a second AgentManager for the same repository keeps the memory (Python built a new empty one; only at start in production).
+- Points a heartbeat adds before `Load` runs are kept after the loaded points (Python loaded before serving; Go loads in the init hook, also before listening, so this is only a guard).
+- Shutdown: one `run("shutdown", record_idle=True)` after the HTTP server stopped; Python ran the signal handler's save (record_idle=True) and a second one with record_idle=False (records only if heartbeats arrived in between). Second-Ctrl+C force-quit and "exit without waiting for busy threads" belong to main (#3).
+- Directory listing order: Go sorted, Python os.listdir order (affects only the order of load warnings/migrations).
+- Temp-file names: `os.CreateTemp(".<id>*.tmp")` (decimal suffix) vs mkstemp's 8 letters; both mode 0600, removed on failure.
+- Temp-dir fallback uses `os.TempDir()` (Python gettempdir() candidates); a non-permission MkdirAll error is logged instead of failing the manager.
+- `parse_time` offset seconds (e.g. `+05:30:15`) are not printed by `tasks.ISO`.
+- Lone surrogates from hand-edited files (Python: UnicodeEncodeError at save) not reproduced.
+
+Pitfalls: tests share process-wide hooks/flush state — start with `fresh(t)` (metrics.Reset + agents.ResetRuntime/ResetHooks + Wire). Test seams: `now` (naive clock), `utcNow`, `appendLines`, `replaceFile`, `recordStatus`. `ResetFlushState`/`SetStartedAt`/`WakeIsSet`/`ClearWake` are test helpers. The shared worktree sometimes holds other agents' non-compiling WIP (convert, rules); the commands below patch only the remote copy when needed.
+
+Commands:
+- `rt -- bash -lc 'cd server && gofmt -l internal/agents/metrics; go vet ./internal/agents/... ./internal/api/agents/... ./internal/server/... && go test -count=1 ./internal/agents/... ./internal/api/agents/... ./internal/server/...'` (last run with `-race`: metrics, api/agents, difftest, server ok; `internal/agents` failed only in the untracked `a01_reference_test.go` of the A01 reviewer's WIP)
+- `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/api/agents/difftest/'`
+- `rt -- bash -lc '~/cf-test/.venv/bin/python -I server/internal/agents/metrics/testdata/probe.py'`
 
 ## A05 — traffic history and traffic store
 
