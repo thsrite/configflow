@@ -22,12 +22,14 @@ import (
 	apiagents "configflow/internal/api/agents"
 	apiauth "configflow/internal/api/auth"
 	apilogs "configflow/internal/api/logs"
+	apinodes "configflow/internal/api/nodes"
 	apinotifications "configflow/internal/api/notifications"
 	apisettings "configflow/internal/api/settings"
 	apistats "configflow/internal/api/stats"
 	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/auth"
 	"configflow/internal/convert"
+	"configflow/internal/health"
 	"configflow/internal/httpx"
 	"configflow/internal/notifications"
 	"configflow/internal/refresh"
@@ -40,6 +42,7 @@ import (
 // routePackages are the Register functions of the ported blueprints.
 var routePackages = []func(*httpx.Router){
 	apiauth.Register,
+	apinodes.Register,
 	apiagents.Register,
 	apisettings.Register,
 	apilogs.Register,
@@ -62,6 +65,7 @@ var wirePackages = []func(){
 	monitor.Wire,
 	substore.Wire,
 	refresh.Wire,
+	health.Wire,
 }
 
 func wireCore() {

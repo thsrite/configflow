@@ -71,8 +71,6 @@ func TestNewAppRegistersImplementedRoutes(t *testing.T) {
 // registers from its wire function; this fails when a fully wired server
 // would delete an Agent and leave any of those files behind.
 func TestDeleteAgentClearsEveryPerAgentStoreInAFullyWiredServer(t *testing.T) {
-	t.Skip("TODO(C16): unskip once C16 (domain probe, region check) registers its delete hooks from wirePackages " +
-		"(A04 metrics.Wire and A05 metrics.WireTraffic are wired; see TestNewAppWiresTheTrafficStores)")
 	agents.ResetHooks()
 	t.Cleanup(agents.ResetHooks)
 	NewApp()

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"configflow/internal/health/check"
 	"configflow/internal/jsonx"
 	"configflow/internal/rules"
 )
@@ -19,21 +20,6 @@ var PageMarkers = []struct{ Key, Pattern string }{
 	{"site", `(?is)<meta\b[^>]*(?:property|name)\s*=\s*["']og:site_name["'][^>]*>`},
 	{"description", `(?is)<meta\b[^>]*(?:name|property)\s*=\s*["'](?:description|og:description)["'][^>]*>`},
 	{"challenge", `(?i)cf-chl-|challenge-platform|just a moment|checking your browser|verify you are human|人机验证|安全验证`},
-}
-
-// WebsiteService is the part of region_check.SERVICES known_service reads.
-// TODO(port): replace with C16 (backend/utils/region_check.py SERVICES).
-type WebsiteService struct {
-	ID, Name string
-	Domains  []string
-}
-
-// Services is region_check.SERVICES (id, name, domains) in order.
-var Services = []WebsiteService{
-	{"openai", "ChatGPT", []string{"openai.com", "chatgpt.com", "oaistatic.com", "oaiusercontent.com", "sora.com"}},
-	{"claude", "Claude", []string{"claude.ai", "claude.com", "anthropic.com"}},
-	{"netflix", "Netflix", []string{"netflix.com", "netflix.net", "nflxext.com", "nflximg.com", "nflximg.net", "nflxso.net", "nflxvideo.net"}},
-	{"youtube", "YouTube Premium", []string{"youtube.com", "googlevideo.com", "ytimg.com", "youtu.be", "youtube-nocookie.com"}},
 }
 
 const (
@@ -133,7 +119,7 @@ func metaContent(value string) string {
 // KnownService is known_service(host): the built-in service owning host at
 // a domain boundary, or nil.
 func KnownService(host string) *jsonx.Object {
-	for _, service := range Services {
+	for _, service := range check.Services { // region_check.SERVICES
 		for _, suffix := range service.Domains {
 			if host == suffix || strings.HasSuffix(host, "."+suffix) {
 				name := service.Name
