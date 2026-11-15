@@ -503,3 +503,36 @@ func TestRegistrationLogFieldsMatchPythonGolden(t *testing.T) {
 		}
 	}
 }
+
+// test_agent_light_reads.py::test_heartbeat_and_agent_reports_never_copy_the_history
+// (heartbeat half; which reads the repository serves cannot be counted
+// without Python's monkeypatching, and the traffic-report half is A05's):
+// a heartbeat that changes the version is recorded against the full record,
+// so the stored publication history survives it.
+func TestHeartbeatKeepsThePublicationHistory(t *testing.T) {
+	h := newHeartbeat(t)
+	manager, _ := agents.Get(h.s.Context())
+	_, err := manager.UpdateAgents(h.s.Context(), "", func(_ context.Context, list *[]any) (any, error) {
+		agent := (*list)[0].(*jsonx.Object)
+		deployments := jsonx.NewObject()
+		for _, key := range []string{"release-0", "release-1", "release-2", "release-3", "release-4"} {
+			deployments.Set(key, jsonx.Obj("deployment_id", key, "status", "succeeded"))
+		}
+		agent.Set("deployments", deployments)
+		agent.Set("ipv6_verifications", jsonx.Obj("release-4", jsonx.Obj("status", "ok")))
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(jsonx.Obj("version", "1.8.54-go", "service_status", "running"))).
+		WantStatus(200).Object()
+	h.s.Post(h.path(), httpxtest.Header("Authorization", "Bearer wrong"), httpxtest.JSON(jsonx.NewObject())).WantStatus(401)
+	stored := h.agent(t)
+	persisted := storedAgents(t, h.s)[0].(*jsonx.Object)
+	if stored.Value("version") != "1.8.54-go" || stored.Value("service_status") != "running" || stored.GetObject("deployments").Len() != 5 ||
+		persisted.Value("version") != "1.8.54-go" || persisted.GetObject("deployments").Len() != 5 ||
+		persisted.GetObject("ipv6_verifications").GetObject("release-4").Value("status") != "ok" {
+		t.Fatalf("stored %v", persisted)
+	}
+}
