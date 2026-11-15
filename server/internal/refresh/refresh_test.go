@@ -214,7 +214,9 @@ func (f *fixture) cacheSource(age time.Duration, url string) *jsonx.Object {
 	return f.cache()
 }
 
-func timeoutError() error { return &rulefetch.FetchError{Class: "ConnectTimeout", Message: "https://rules.test?key=private"} }
+func timeoutError() error {
+	return &rulefetch.FetchError{Class: "ConnectTimeout", Message: "https://rules.test?key=private"}
+}
 
 // test_scheduled_tasks.py::test_record_counts_runs_failures_and_skips
 func TestRecordCountsRunsFailuresAndSkips(t *testing.T) {
