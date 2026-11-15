@@ -3,7 +3,6 @@ package rules
 import (
 	"math/big"
 	"math/bits"
-	"net/netip"
 	"strconv"
 	"strings"
 )
@@ -30,30 +29,136 @@ func (a ipAddr) maxPrefix() int {
 	return 128
 }
 
-// parseIPAddress is ipaddress.ip_address(text).
+// parseIPAddress is ipaddress.ip_address(text): CPython 3.11's IPv4Address
+// and IPv6Address string parsers (net/netip differs: it refuses white space
+// and other text in a scope id, which Python keeps verbatim).
 func parseIPAddress(text string) (ipAddr, bool) {
-	if text == "" || strings.ContainsAny(text, " \t\r\n\v\f/") {
+	if strings.Contains(text, "/") {
 		return ipAddr{}, false
 	}
-	addr, err := netip.ParseAddr(text)
-	if err != nil {
+	if v, ok := parseIPv4Int(text); ok {
+		return ipAddr{ver: 4, v: u128{lo: uint64(v)}}, true
+	}
+	addr, zone, found := strings.Cut(text, "%")
+	if found && (zone == "" || strings.Contains(zone, "%")) {
 		return ipAddr{}, false
 	}
-	zone := addr.Zone()
-	if strings.Contains(zone, "%") {
+	v, ok := parseIPv6Int(addr)
+	if !ok {
 		return ipAddr{}, false
 	}
-	if addr.Is4() {
-		b := addr.As4()
-		return ipAddr{ver: 4, v: u128{lo: uint64(b[0])<<24 | uint64(b[1])<<16 | uint64(b[2])<<8 | uint64(b[3])}}, true
+	return ipAddr{ver: 6, v: v, zone: zone}, true
+}
+
+// parseIPv4Int is IPv4Address._ip_int_from_string.
+func parseIPv4Int(text string) (uint32, bool) {
+	if text == "" {
+		return 0, false
 	}
-	b := addr.As16()
-	var hi, lo uint64
-	for i := 0; i < 8; i++ {
-		hi = hi<<8 | uint64(b[i])
-		lo = lo<<8 | uint64(b[8+i])
+	octets := strings.Split(text, ".")
+	if len(octets) != 4 {
+		return 0, false
 	}
-	return ipAddr{ver: 6, v: u128{hi, lo}, zone: zone}, true
+	var value uint32
+	for _, octet := range octets {
+		if !pyIsASCIIDigits(octet) || len(octet) > 3 || (octet != "0" && octet[0] == '0') {
+			return 0, false
+		}
+		n, _ := strconv.Atoi(octet)
+		if n > 255 {
+			return 0, false
+		}
+		value = value<<8 | uint32(n)
+	}
+	return value, true
+}
+
+// parseHextet is IPv6Address._parse_hextet.
+func parseHextet(text string) (uint64, bool) {
+	if text == "" || len(text) > 4 {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(text, 16, 64)
+	if err != nil || strings.ContainsAny(text, "+-_xX") {
+		return 0, false
+	}
+	return n, true
+}
+
+// parseIPv6Int is IPv6Address._ip_int_from_string (without the scope id).
+func parseIPv6Int(text string) (u128, bool) {
+	if text == "" {
+		return u128{}, false
+	}
+	parts := strings.Split(text, ":")
+	if len(parts) < 3 {
+		return u128{}, false
+	}
+	if last := parts[len(parts)-1]; strings.Contains(last, ".") {
+		v4, ok := parseIPv4Int(last)
+		if !ok {
+			return u128{}, false
+		}
+		parts = append(parts[:len(parts)-1], strconv.FormatUint(uint64(v4>>16), 16), strconv.FormatUint(uint64(v4&0xffff), 16))
+	}
+	if len(parts) > 9 {
+		return u128{}, false
+	}
+	skip := -1
+	for i := 1; i < len(parts)-1; i++ {
+		if parts[i] == "" {
+			if skip >= 0 {
+				return u128{}, false
+			}
+			skip = i
+		}
+	}
+	var hi, lo, skipped int
+	if skip >= 0 {
+		hi, lo = skip, len(parts)-skip-1
+		if parts[0] == "" {
+			if hi--; hi != 0 {
+				return u128{}, false
+			}
+		}
+		if parts[len(parts)-1] == "" {
+			if lo--; lo != 0 {
+				return u128{}, false
+			}
+		}
+		skipped = 8 - (hi + lo)
+		if skipped < 1 {
+			return u128{}, false
+		}
+	} else {
+		if len(parts) != 8 || parts[0] == "" || parts[len(parts)-1] == "" {
+			return u128{}, false
+		}
+		hi = len(parts)
+	}
+	var value u128
+	shift := func(bits int, add uint64) {
+		for ; bits > 0; bits -= 16 {
+			value = u128{value.hi<<16 | value.lo>>48, value.lo << 16}
+		}
+		value.lo |= add
+	}
+	for i := 0; i < hi; i++ {
+		h, ok := parseHextet(parts[i])
+		if !ok {
+			return u128{}, false
+		}
+		shift(16, h)
+	}
+	shift(16*skipped, 0)
+	for i := len(parts) - lo; i < len(parts); i++ {
+		h, ok := parseHextet(parts[i])
+		if !ok {
+			return u128{}, false
+		}
+		shift(16, h)
+	}
+	return value, true
 }
 
 // ipNet is an ip_network(..., strict=False) result: host bits are cleared.
