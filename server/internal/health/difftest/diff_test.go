@@ -307,7 +307,7 @@ func TestDifferentialLatencyRoutes(t *testing.T) {
 	a, j, s := `"[\"node\",\"a\"]"`, `"[\"node\",\"j\"]"`, `"[\"subscription\",\"s1\",\"HK 01\"]"`
 	all := results(`{"name": `+a+`, "latency": 120, "first_latency": 300}`, `{"name": `+j+`, "latency": null, "error_code": "timeout", "error": "连接或请求超时"}`,
 		`{"name": `+s+`, "latency": 88, "extra": {"k": [1, 2.50]}, "url": "worker-url", "name2": "中"}`)
-	onlyA := results(`{"name": `+a+`, "latency": 99}`)
+	onlyA := results(`{"name": ` + a + `, "latency": 99}`)
 	check := func(result string) string { return `{"version": 4, "dns_check": ` + result + `}` }
 	no, yes := false, true
 	post := func(name, path, body string, w worker) request {

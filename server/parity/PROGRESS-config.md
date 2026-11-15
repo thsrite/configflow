@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 22 missing, 5 partial, 4 ported, 6 verified (C01, C02, C03, C04, C09, C10). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 21 missing, 5 partial, 5 ported, 6 verified (C01, C02, C03, C04, C09, C10). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -41,7 +41,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C13 | Sub-Store client, runtime, subscription cache, dependencies | 1193 | ported | C12, C10 | 3 (3 done) |
 | C14 | remote rule fetch, ruleset content, remote sources, website identity | 1202 | ported | C12, C08 | – |
 | C15 | subscription refresh, health, scheduled refresh | 600 | ported | C13, C14, C07 | – |
-| C16 | health check, latency, node DNS, region check, domain probe | 1089 | missing | C12, C13 | – |
+| C16 | health check, latency, node DNS, region check, domain probe | 1089 | ported | C12, C13 | 5 (5 done) |
 | C17 | provider delivery and responses | 540 | missing | C15 | – |
 | C18 | Mihomo config generation, Mihomo base settings | 1275 | missing | C12, C15, C16, C17 | – |
 | C19 | Surge converter | 1129 | missing | C18 | – |
@@ -603,24 +603,51 @@ Commands:
 
 ## C16 — health check, latency, node DNS, region check, domain probe
 
-**Status: `missing`** · prereqs: C12, C13 · Go: internal/health (new)
+**Status: `ported`** (not reviewed) · prereqs: C12, C13 · Go: `internal/health/check` (leaf: no repo import), `internal/health`, routes in `internal/api/nodes`
 
-Files:
-- `backend/utils/health_check.py` (82)
-- `backend/utils/node_latency.py` (254)
-- `backend/utils/node_dns.py` (189)
-- `backend/utils/region_check.py` (367)
-- `backend/utils/domain_probe.py` (197)
+Files → Go:
+- `backend/utils/health_check.py` (82) → `check/healthcheck.go`: `ProviderDefaults()`, `GroupDefaults()`, `GroupHealthTypes`/`IsGroupHealthType`, `InitializeGroupHealth`, `InitializeProviderHealth`, `ValidateHealth(values, provider)` (`*check.ValueError`), `ProviderHealthCheck` (missing key → `*check.KeyError`), `UserInfo`.
+- `backend/utils/region_check.py` (367) → `check/region.go`: constants, `ExitRequest`, `GroupTypes`/`NonNodeTypes`/`ExcludedTargets`, `RegionRules`, `RegionOfName`/`RegionOfNameValue`, `RegionLabel`, `Services` (+`ServiceByID`, `Service.Requests()`, `Service.Evaluate(byID)`), `ServiceRequests`, `EvaluateServices`, `ExitInfo`, `PublicServices`, `BlockPattern`, `DomainRequest`, `ClassifyDomainResult`, `SummarizeDomain`, `PickTargets`, `RegionStore` (`NewRegionStore(dir)`, `Update(id, mutate, now)`, `Load`, `Delete`, `Path`), `NaiveISOSeconds`. Python regexes via `rules.CompilePyRegex` (look-behind, Unicode IGNORECASE).
+- `backend/utils/domain_probe.py` (197) → `check/probe.go`: constants, `ControlTargets`, `VerdictOrder`/`VerdictLabels`, `ProbeURL`, `PathHealthy`, `Judge(direct, proxy, JudgeOptions)` (`DefaultJudgeOptions`), `ProbeStore` (`Save`, `Load`, `Delete`), `LatestProbes`, `DomainSuggestion`. `check/num.go` = Python int/float arithmetic (exact int/float comparison, correctly rounded true division, round-half-even); `check/pyerr.go` = `*check.PyError{Class}` for malformed Agent answers / hand-edited files (raised via panic+recover inside each exported function).
+- `backend/utils/node_dns.py` (189) → `health/dns.go`: `ConfigKey`, `DirectDoH`, `DNSError`, `BootstrapError`, `CheckMessages`, `NormalizeDNSServers`, `NormalizeConfig`, `LoadConfig`, `EffectiveSettings(ctx, value)` / `DescribeSettings` (value nil = saved setting, as `None`), `SaveConfig`, `CheckSettings`. `health/ipaddr.go` = `ipaddress.IPv4Address` / `ip_address` / `str()` of Python 3.11.17 (IPv4-mapped printed dotted).
+- `backend/utils/node_latency.py` (254) → `health/latency.go`: constants, `Settings`, `DNSSettings`, `CollectCandidates`, `proxyOf`, `needsSubStore`, `runProbe`/`parseResults`, `LoadResults`, `RunTests(ctx, names, keys)` (nil = None; process-wide TryLock → `*ProbeBusy`; `LockForTest`), `isoUTC`. Errors: `*health.ProbeUnavailable` (503), `*health.ProbeBusy` (409), `*health.ValueError` (400; also the UnicodeDecodeError of non-UTF-8 worker output, CPython message).
+- `health/runner.go`: `Runner`/`Command`/`Result`, `ExecRunner`, `ErrTimeout`, `*OSError`, `Env{LookupEnv, Environ, Runner, Now, ProbeBinary, Converter}`, `DefaultEnv`/`SetEnv`/`CurrentEnv`, `FindProbeBinary`.
+- `health/wire.go`: `GetProbeStore(ctx)` (DATA_DIR/probes), `GetRegionStore(ctx)` (DATA_DIR/regions), `Wire()`.
+- Routes (`routes/nodes.py` latency part, which only wraps C16): `internal/api/nodes/latency.go` `Register` — `GET|POST /api/nodes/latency` (`nodes.node_latency`), `GET|POST /api/nodes/latency/settings`, `POST /api/nodes/latency/dns/check`; registered in `server.routePackages`; routes.tsv rows done. **C30 adds the node CRUD routes as its own file in `api/nodes` and lines to the same `Register`.**
 
-Tests: `test_domain_probe.py` (16), `test_health_check_advanced.py` (4), `test_health_https_defaults.py` (6), `test_health_persistence.py` (2), `test_health_review_r1.py` (8), `test_health_review_re1.py` (10), `test_health_review_re2.py` (8), `test_health_validation.py` (9), `test_node_dns.py` (13), `test_node_latency.py` (25), `test_region_check.py` (19)
+**node-probe interface for #40** (doc comment in `latency.go`): argv `[<binary>]` only; stdin = `json.dumps({url, timeout_ms, dns_servers, dns_bootstrap, unified_delay, nodes}, ensure_ascii=False)` (latency; node `name` = source key) or `json.dumps({"operation": "dns_check", "timeout_ms": 5000, dns_servers, dns_bootstrap})` (ASCII); env = process env + `GOMAXPROCS=2`, `GOMEMLIMIT=128MiB` unless set; timeout ceil(n/20)·timeout_ms/1000+5 s (latency) / 10 s (check), killed on expiry; stdout `{"version": 4, ...}`; exit code 3 = invalid DNS settings; stderr never shown. Binary lookup: `CONFIGFLOW_NODE_PROBE_BIN` alone if set, else `/opt/configflow/node-probe/configflow-node-probe`, `resource.FromEnv().Backend("node-probe/configflow-node-probe")`, PATH. #40 only has to ship the binary there (or set the env var); `health.ExecRunner` runs it, `health.SetEnv` replaces the runner.
 
-Routes: none.
+Wiring: `health.Wire` in `server.wirePackages` registers `agents.OnAgentDeleted("domain_probe")` then `("region_check")` (A01 table). No loops, no task rows (Python has none for C16). `internal/server.TestDeleteAgentClearsEveryPerAgentStoreInAFullyWiredServer` unskipped and passing.
 
-Evidence: No Go package; no route registered.
+Compat switch-over:
+- `rulefetch/website.go`: the `Services` copy (TODO C16) removed; `KnownService` iterates `check.Services`.
+- `rules/idna_export.go` (new file in rules): `rules.IDNAEncode` exports the existing `pyIDNAEncode` (needed by `node_dns._server`).
+- **For the coordinator:** `repo/compat_health.go` `validateHealth` can now call `check.ValidateHealth` (leaf package; repo → health/check → rules/urlx/pystr/jsonstore has no cycle); wrap `*check.ValueError` into repo's helper ValueError. Not done here (repo is verified, not my file). `validateRefreshInterval` there stays (C15's).
 
-Missing / deferred: Everything in the files below.
+Tests:
+- Reference corpus `health/testdata/gen.py` → `corpus.json` (CPython 3.11.17, 790 rows): validate_health group/provider (95×2 incl. 30 URL forms), initialize_*_health, provider_health_check, 77 DNS server forms ×2 (servers/bootstrap), lists, normalize_config, check_settings over 40 worker outputs (address canonicalisation, fake-IP, latency types, error codes, version, exit codes), 11 UTF-8 decode-error messages, `_run_probe` over 20 outputs + 5 exit codes, settings() over 22 env sets, region_of_name (42 incl. Kelvin sign, İ, full-width), region_label, 45 evaluate cases ×3 (service, evaluate_services, exit_info) incl. malformed Agent answers, classify_domain_result (26), summarize, pick_targets (15 incl. malformed), judge (37 incl. big ints, floats, NaN, string delays), probe_url, domain_suggestion, path_healthy, probe/region store file bytes and odd files — **all equal** (`corpus_test.go`).
+- Ported: `test_node_latency.py` 25/25 (`api/nodes/latency_test.go` + `health/latency_internal_test.go` for `_proxy_of`); `test_node_dns.py` 13/13 (`api/nodes/latency_test.go`); `test_region_check.py` 11/19 here (evaluations, service limits, classify, summarize, region_of_name, pick_targets, corrupt stores probe+region; `check/check_test.go`); `test_domain_probe.py` 5/16 functions (judge ×12, missing path, probe_url, store expiry, suggestion); C14-deferred `test_website_identity.py::test_cache_expiry_and_bound`. Extra: 5000-host bound, Wire hook order + files removed, isoUTC.
+- Deferred: `test_region_check.py` `test_probe_entry_injected_only_when_enabled_for_agents` (C18), `test_agent_config_injects_probe_only_with_domain_discovery` (C18 + A14 config_generator), `test_region_settings_validate_port`, `test_region_check_requires_enable`, `test_region_check_builds_matrix_and_domain_verdicts`, `test_route_service_to_policy_creates_ruleset_and_undo`, `test_route_places_ruleset_before_competing_user_rule`, `test_apply_warns_when_an_earlier_rule_still_matches` (C37), traffic-store case of `test_stores_treat_corrupt_files_as_empty` (A05); `test_domain_probe.py` 11 end-to-end cases (fake Agent, jobs, auto rounds, history/undo) → C37; `test_website_identity.py` job/route cases → C37. Health tests: `test_health_check_advanced.py` 4, `test_health_https_defaults.py` 6, `test_health_persistence.py` 2, `test_health_review_r1.py` 8, `test_health_review_re1.py` 10, `test_health_review_re2.py` 8, `test_health_validation.py` 9 all go through generation (`build_provider_health_check`, Mihomo/Surge/Loon → C18/C19/C20), `/api/proxy-groups` (C33), `/api/subscriptions`/`/api/aggregations` (C30/C31), MCP (#39) or repository validation (still `repo/compat_health.go`); validate_health itself is covered by the corpus. Seeding per-Agent `probes/`/`regions/` files in `api/agents/difftest` (A01 suggestion) not done: that package is the agents agents'.
+- Differential `health/difftest` (real Flask vs Go, copies of one data dir, one fake worker script via `CONFIGFLOW_NODE_PROBE_BIN` recording its stdin, Sub-Store on a closed port): 44 requests (all candidates, names/keys, missing/disabled/filtered, URI conversion failure, old worker, exit 3/1, garbage, wrong names, bool latency, invalid UTF-8 → 400, timeout, missing (non-executable) worker, 7 body errors, settings save/invalid/managed/custom/bootstrap, history reset, 10 DNS check cases incl. `{"dns": null}`) — **0 differences**; worker stdin byte-identical per request; `shared/node_latency.json` (tested_at masked) and `system_config` DNS fields equal.
 
-Notes for porter: Replaces `repo/compat_health.go`. `node_latency` needs `convert_node_to_mihomo` (C12). `web_listener` is not here (done in C07).
+Decisions / differences from Python:
+- `validate_health` walks the object's key order; Python walks `allowed & values.keys()` (hash order, randomised per process) — only which message wins when several fields are invalid.
+- `statistics.median` on non-number delays raises TypeError in Go; Python sorts strings and fails only later (or not, when the other path has no delays) — hand-crafted Agent answers only.
+- Crash texts (`*check.PyError`, KeyError, TypeError) are approximate; classes match the corpus.
+- Python's `_run_probe`/`check_settings` raise UnicodeDecodeError from `subprocess.run(text=True)` (400 with the codec message); reproduced with CPython's message (locale assumed UTF-8, as in the image).
+- Python's `ThreadPoolExecutor` conversions → 5 goroutines; log line order is nondeterministic on both sides.
+- `subscription` entries / `nodes` lists that are not dicts/lists (repository-validated) give TypeError-class errors; non-list truthy `nodes` in a cache ignored unless a number (TypeError), as Python's iteration.
+
+Pitfalls: tests share `health.SetEnv` and the process-wide test lock — restore with `t.Cleanup(health.SetEnv(...))`. The shared worktree held another agent's non-compiling `internal/agents/proxy.go` (missing go.sum for x/net/idna) during the differential: run on a private detached worktree of HEAD.
+
+Commits: 8e17b7f9 (code, wiring, routes, rulefetch switch), d0d974e4 (corpus), c7541241 (ported tests), 2c327410 (differential, routes.tsv), + this PROGRESS commit.
+
+Reviewer hints: `encryptedServer` vs `_server` (urlsplit/IDNA/port/`netloc.endswith(':')` order); `parseCheck`/`parseResults` exception order (which errors become ProbeUnavailable vs pass through); `runTests` ordering of `measured`/`stored` (file bytes) and the `same_test` history rule; region evaluators' malformed-input branches; `num.go` comparisons.
+
+Commands:
+- tests: `rt -- bash -lc 'cd server && go vet ./internal/health/... ./internal/api/nodes/ ./internal/server/ ./internal/rulefetch/ && go test -count=1 -race ./internal/health/... ./internal/api/nodes/ ./internal/server/ ./internal/rulefetch/ ./internal/rules/'` (last: all ok)
+- differential: `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/health/difftest/'`
+- corpus: `rt --back server/internal/health/testdata/corpus.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/health/testdata/gen.py'`
 
 ## C17 — provider delivery and responses
 
