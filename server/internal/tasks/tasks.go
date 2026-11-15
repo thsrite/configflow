@@ -4,7 +4,7 @@
 //
 // The rows come from the packages that own the tasks, in Python's order:
 //
-//	SlotSubscriptions  (#13 scheduled_refresh)   SlotRuleSources (#13)
+//	SlotSubscriptions  (C15 internal/refresh)    SlotRuleSources (C15)
 //	SlotRouters        (#37 router rule sync)    SlotAgents      (#20/#27/#28 Agent rule sync, DNS follow)
 //	SlotDomains        (#19 domain discovery)    SlotBackup      (this package, WebDAV)
 //	SlotMetrics        (#21 metrics flush)
@@ -297,19 +297,4 @@ func IntervalSetter(key string) IntervalFunc {
 	mu.Lock()
 	defer mu.Unlock()
 	return intervals[key]
-}
-
-// MaxInterval is subscription_refresh.MAX_INTERVAL.
-const MaxInterval = 604800
-
-// ValidateRefreshInterval is subscription_refresh.validate_refresh_interval
-// (TODO(port): replace with package #13).
-func ValidateRefreshInterval(value any, label string) (int64, error) {
-	n, ok := value.(jsonx.Number)
-	if v, fits := n.Int64(); ok && fits {
-		if v == 0 || (60 <= v && v <= MaxInterval) {
-			return v, nil
-		}
-	}
-	return 0, &Invalid{Message: label + "必须为 0（关闭自动更新）或 60 ~ 604800 秒的整数"}
 }

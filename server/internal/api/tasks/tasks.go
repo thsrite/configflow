@@ -13,6 +13,7 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
+	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
 )
@@ -132,7 +133,7 @@ func setInterval(c *httpx.Ctx) (*httpx.Response, error) {
 	if category != "subscription" && category != "rule_source" {
 		return message(400, "这个任务的间隔不能在这里修改"), nil
 	}
-	interval, err := tasks.ValidateRefreshInterval(body.Value("interval_seconds"), "更新间隔")
+	interval, err := refresh.ValidateRefreshInterval(body.Value("interval_seconds"), "更新间隔")
 	if err != nil {
 		return message(400, err.Error()), nil
 	}

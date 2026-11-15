@@ -30,6 +30,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/httpx"
 	"configflow/internal/notifications"
+	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/substore"
 	"configflow/internal/tasks"
@@ -60,6 +61,7 @@ var wirePackages = []func(){
 	metrics.WireTraffic,
 	monitor.Wire,
 	substore.Wire,
+	refresh.Wire,
 }
 
 func wireCore() {
