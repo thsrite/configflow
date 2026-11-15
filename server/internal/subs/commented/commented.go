@@ -7,8 +7,6 @@
 package commented
 
 import (
-	"math/big"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -456,33 +454,12 @@ func EditListenerTargets(source string, indexes []int, newName *string, expected
 	if len(missing) > 0 {
 		result = strings.Join(missing, lineBreak) + lineBreak + result
 	}
-	got, err := yamlx.SafeLoad(signedRadixForCheck(result))
+	got, err := yamlx.SafeLoad(result)
 	if err != nil || !same(got, expected) {
 		return "", unsupported("the edited text does not load to the expected document")
 	}
 	_ = utf8.RuneError
 	return result, nil
-}
-
-var reSignedRadix = regexp.MustCompile(`!!int '0([xb])-([0-9a-fA-F_]+)'`)
-
-// signedRadixForCheck replaces ruamel's `!!int '0x-1F'` (a negative hex or
-// binary int, which PyYAML reads as int('-1F', 16)) by its decimal value for
-// the reload check only: yamlx does not construct that form. The written
-// text keeps ruamel's form.
-func signedRadixForCheck(text string) string {
-	return reSignedRadix.ReplaceAllStringFunc(text, func(m string) string {
-		parts := reSignedRadix.FindStringSubmatch(m)
-		base := 16
-		if parts[1] == "b" {
-			base = 2
-		}
-		n, ok := new(big.Int).SetString(strings.ReplaceAll(parts[2], "_", ""), base)
-		if !ok {
-			return m
-		}
-		return n.Neg(n).String()
-	})
 }
 
 // same is _same: equality that also compares types (1 != 1.0, True != 1).

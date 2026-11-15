@@ -227,9 +227,9 @@ func hostsFailure(reason string) *jsonx.Object {
 }
 
 // ExtractSubscriptionHosts is extract_subscription_hosts: the validated
-// `hosts` of a subscription body, or nil when it has none. A mapping with
-// non-string keys cannot be represented by the YAML loader and is reported
-// as parse_error (Python reports the entries it can read).
+// `hosts` of a subscription body, or nil when it has none. Keys that are not
+// strings are judged by str(key) (ints and floats, bools as "True"/"False")
+// or as "" (None, dates, bytes), like Python.
 func ExtractSubscriptionHosts(text string) *jsonx.Object {
 	if !strings.Contains(text, "hosts") {
 		return nil
@@ -238,28 +238,37 @@ func ExtractSubscriptionHosts(text string) *jsonx.Object {
 	if !ok {
 		return nil
 	}
-	document, err := yamlx.SafeLoad(block)
+	document, err := yamlx.LoadWith(block, yamlx.LoadOptions{KeepNonStringKeys: true})
 	if err != nil {
 		return hostsFailure("parse_error")
 	}
-	var raw any
-	if doc, ok := document.(*jsonx.Object); ok {
-		raw, _ = doc.Get("hosts")
-	}
+	raw, _ := yamlx.Lookup(document, "hosts")
 	if raw == nil {
 		return nil
 	}
-	hosts, ok := raw.(*jsonx.Object)
-	if !ok {
+	var pairs []yamlx.Pair
+	switch hosts := raw.(type) {
+	case *jsonx.Object:
+		for key, value := range hosts.All() {
+			pairs = append(pairs, yamlx.Pair{Key: key, Value: value})
+		}
+	case *yamlx.Mapping:
+		pairs = hosts.Pairs
+	default:
 		return hostsFailure("not_mapping")
 	}
 	entries := jsonx.NewObject()
 	skipped := []any{}
 	skippedCount := 0
 	index := 0
-	for key, value := range hosts.All() {
+	for _, pair := range pairs {
+		key, value := pair.Key, pair.Value
 		reason := ""
-		name := pyLower(pyStrip(key))
+		name := ""
+		switch key.(type) {
+		case string, jsonx.Number, bool:
+			name = pyLower(pyStrip(jsonx.Str(key)))
+		}
 		switch {
 		case index >= MaxEntries:
 			reason = "over_limit"
@@ -287,7 +296,7 @@ func ExtractSubscriptionHosts(text string) *jsonx.Object {
 		}
 		index++
 	}
-	return jsonx.Obj("entries", entries, "total", jsonx.Int(hosts.Len()),
+	return jsonx.Obj("entries", entries, "total", jsonx.Int(len(pairs)),
 		"skipped_count", jsonx.Int(skippedCount), "skipped", skipped)
 }
 

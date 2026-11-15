@@ -23,17 +23,10 @@ func reviewOut(row corpusRow) (*jsonx.Object, bool) {
 	return nil, false
 }
 
-// yamlxDiffers are inputs on which internal/yamlx (C02) differs from
-// PyYAML: mappings with non-string keys (*yamlx.NonStringKeyError, a
-// domain-level known difference) and a tab before a value, which yaml.v3
-// accepts and PyYAML rejects (reported to C02, coordinator decision 5).
-var yamlxDiffers = map[string]bool{
-	"name:\tx\n": true,
-	"hosts:\n  123: 1.2.3.4\n  b.example.com: 1.2.3.4\n":                                                                            true,
-	"hosts:\n  1.5: 1.2.3.4\n  true: 1.2.3.4\n  ~: 1.2.3.4\n  c.example.com: c2.example.com\n":                                      true,
-	"hosts:\n  a..example.com: 1.2.3.4\n  -a.example.com: 1.2.3.4\n  a-.example.com: 1.2.3.4\n  1.2.3.4: 5.6.7.8\n  1.2: 3.4.5.6\n": true,
-	"proxies:\n- {name: A, dialer-proxy: R}\n1: 2\nproxy-groups:\n- {name: R, proxies: [A]}\n":                                      true,
-}
+// yamlxDiffers are inputs on which internal/yamlx differs from PyYAML. The
+// six C10 rows (non-string hosts/dialer keys, a tab before a value) match
+// since review C02 moved yamlx onto the PyYAML port; keep it empty.
+var yamlxDiffers = map[string]bool{}
 
 func TestReviewC10References(t *testing.T) {
 	rows := loadCorpus(t, "review_c10.jsonl.gz")
@@ -92,8 +85,8 @@ func TestReviewC10References(t *testing.T) {
 		}
 	}
 	t.Logf("%d rows compared, %d unrepresentable in JSON skipped, %d known yamlx differences", compared, unrepresentable, known)
-	if known != 6 {
-		t.Errorf("%d known yamlx rows, want 6 (update yamlxDiffers when yamlx changes)", known)
+	if known != 0 {
+		t.Errorf("%d known yamlx rows, want 0", known)
 	}
 }
 
