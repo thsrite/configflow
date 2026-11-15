@@ -14,6 +14,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
+	"configflow/internal/store"
 	"configflow/internal/subs"
 )
 
@@ -39,6 +40,9 @@ func SetContentSyncInvalidator(fn ContentSyncInvalidator) {
 // isOSError reports whether err is a Python OSError (a failed file
 // operation) rather than a repository error.
 func isOSError(err error) bool {
+	if errors.Is(err, store.ErrStorage) {
+		return true
+	}
 	var pathErr *fs.PathError
 	var linkErr *os.LinkError
 	var errno syscall.Errno
@@ -47,6 +51,10 @@ func isOSError(err error) bool {
 
 // osErrorText is str(OSError) for a raw Go file error.
 func osErrorText(err error) string {
+	var storeErr *store.Error
+	if errors.As(err, &storeErr) {
+		return storeErr.Error()
+	}
 	var pathErr *fs.PathError
 	if errors.As(err, &pathErr) {
 		return pyOSError(pathErr.Err, pathErr.Path)
@@ -140,7 +148,7 @@ func PruneOrphanCaches(ctx context.Context) ([]string, error) {
 		if err != nil {
 			return "", nil, err
 		}
-		shared, err := r.GetShared(ctx)
+		shared, err := getShared(ctx, r)
 		if err != nil {
 			return "", nil, err
 		}
@@ -227,6 +235,9 @@ func notSubscriptable(value any) error {
 	}
 	return pyErr("TypeError", fmt.Sprintf("'%s' object is not subscriptable", typeName(value)))
 }
+
+// getShared is repository.get_shared() (tests replace it).
+var getShared = func(ctx context.Context, r *repo.Repository) (*jsonx.Object, error) { return r.GetShared(ctx) }
 
 // iterate is Python iteration over a JSON value for the subscription list:
 // a list, the keys of a mapping, the characters of a string; None and
