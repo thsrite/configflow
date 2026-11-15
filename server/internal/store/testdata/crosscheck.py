@@ -242,7 +242,37 @@ def errors(directory):
     return {'scenarios': {'items': results}}
 
 
+def race(path, mode, timeout):
+    """Concurrent commits with a Go writer (TestCrossCheckPythonConcurrentCommits).
+
+    mode 'wait': load, print 'loaded', wait for a line on stdin, then commit.
+    mode 'hold': load and commit, printing 'holding' while the write
+    transaction is open (all statements done, COMMIT delayed by 0.6 s).
+    Prints 'ok <generation>' or '<exception type> <message>' at the end.
+    """
+    import time
+    target = ConfigStore(Path(path), lambda: timeout)
+    entry = target.load()
+    if mode == 'hold':
+        def delayed_commit(connection):
+            print('holding', flush=True)
+            time.sleep(0.6)
+            connection.execute('COMMIT')
+        target._commit = delayed_commit
+    print('loaded', flush=True)
+    if mode == 'wait':
+        sys.stdin.readline()
+    try:
+        committed = target.commit(entry, {**entry.document, 'python_commit': mode})
+        print('ok', committed.head.generation, flush=True)
+    except Exception as error:  # noqa: BLE001
+        print(type(error).__name__, error, flush=True)
+
+
 def main():
+    if sys.argv[1] == 'race':
+        race(sys.argv[2], sys.argv[3], float(sys.argv[4]))
+        return
     command, target, output = sys.argv[1:4]
     result = {'create': create, 'dump': dump, 'commit': one_more_commit, 'errors': errors}[command](target)
     Path(output).write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')

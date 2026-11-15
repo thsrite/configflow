@@ -9,6 +9,7 @@ package store
 // the Python side.
 
 import (
+	"bufio"
 	"database/sql"
 	"errors"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -341,4 +343,108 @@ func kindOf(err error) error {
 		return typed.Kind
 	}
 	return nil
+}
+
+// TestCrossCheckPythonConcurrentCommits: a Go and a Python writer commit
+// from the same base at the same time. SQLite's locks work across the two
+// SQLite builds, the second writer waits for the first (busy timeout) and
+// then fails with the conflict, never overwriting; with a short timeout it
+// fails with Python's "database is locked" storage error.
+func TestCrossCheckPythonConcurrentCommits(t *testing.T) {
+	interpreter, repo := os.Getenv("CONFIGFLOW_PY"), os.Getenv("CONFIGFLOW_REPO")
+	if interpreter == "" || repo == "" {
+		t.Skip("CONFIGFLOW_PY and CONFIGFLOW_REPO are not set")
+	}
+	script := must(filepath.Abs("testdata/crosscheck.py"))(t)
+	start := func(t *testing.T, path, mode string, timeout string) (*exec.Cmd, io.WriteCloser, *bufio.Reader) {
+		run := exec.Command(interpreter, script, "race", path, mode, timeout)
+		run.Env = append(os.Environ(), "CONFIGFLOW_REPO="+repo, "PYTHONDONTWRITEBYTECODE=1")
+		run.Stderr = os.Stderr
+		stdin := must(run.StdinPipe())(t)
+		stdout := bufio.NewReader(must(run.StdoutPipe())(t))
+		if err := run.Start(); err != nil {
+			t.Fatal(err)
+		}
+		return run, stdin, stdout
+	}
+	expect := func(t *testing.T, reader *bufio.Reader, want string) string {
+		t.Helper()
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatalf("python: %v (read %q)", err, line)
+		}
+		line = strings.TrimSuffix(line, "\n")
+		if want != "" && line != want {
+			t.Fatalf("python said %q, want %q", line, want)
+		}
+		return line
+	}
+	fresh := func(t *testing.T) *Store {
+		target := newStore(t)
+		must(target.Create(sampleDocument(t), nil))(t)
+		return target
+	}
+
+	t.Run("go first, python waits then conflicts", func(t *testing.T) {
+		target := fresh(t)
+		run, stdin, stdout := start(t, target.Path(), "wait", "5")
+		expect(t, stdout, "loaded")
+		base := must(target.Load())(t)
+		target.BeforeCommit = func() error {
+			stdin.Write([]byte("go\n")) // Python now blocks in BEGIN IMMEDIATE
+			time.Sleep(600 * time.Millisecond)
+			return nil
+		}
+		document := base.Document.Clone()
+		document.Set("go_commit", true)
+		entry := mustCommit(t, target, base, document, nil)
+		if got := expect(t, stdout, ""); got != "StoreConflict 配置数据库在事务外被修改" {
+			t.Errorf("python: %q", got)
+		}
+		run.Wait()
+		final := must(target.Load())(t)
+		if final.Head != entry.Head || !final.Document.Has("go_commit") || final.Document.Has("python_commit") {
+			t.Errorf("final document %s", compact(t, final.Document))
+		}
+	})
+
+	t.Run("python first, go waits then conflicts", func(t *testing.T) {
+		target := fresh(t)
+		base := must(target.Load())(t)
+		run, _, stdout := start(t, target.Path(), "hold", "5")
+		expect(t, stdout, "loaded")
+		expect(t, stdout, "holding")
+		document := base.Document.Clone()
+		document.Set("go_commit", true)
+		target.timeout = seconds(5)
+		_, committed, err := target.Commit(base, document, nil)
+		if !errors.Is(err, ErrConflict) || committed || err.Error() != "配置数据库在事务外被修改" {
+			t.Errorf("Go commit: committed=%v err=%v (%v)", committed, err, kindOf(err))
+		}
+		if got := expect(t, stdout, ""); got != "ok 2" {
+			t.Errorf("python: %q", got)
+		}
+		run.Wait()
+		final := must(target.Load())(t)
+		if final.Head.Generation != 2 || final.Document.Has("go_commit") || !final.Document.Has("python_commit") {
+			t.Errorf("final document %s", compact(t, final.Document))
+		}
+	})
+
+	t.Run("python holds the lock, go times out", func(t *testing.T) {
+		target := fresh(t)
+		base := must(target.Load())(t)
+		run, _, stdout := start(t, target.Path(), "hold", "5")
+		expect(t, stdout, "loaded")
+		expect(t, stdout, "holding")
+		target.timeout = seconds(0.1)
+		document := base.Document.Clone()
+		document.Set("go_commit", true)
+		_, _, err := target.Commit(base, document, nil)
+		if !errors.Is(err, ErrStorage) || err.Error() != "配置数据库访问失败：database is locked" {
+			t.Errorf("Go commit: %v (%v)", err, kindOf(err))
+		}
+		expect(t, stdout, "ok 2")
+		run.Wait()
+	})
 }

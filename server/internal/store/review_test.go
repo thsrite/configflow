@@ -135,3 +135,40 @@ func TestCopyFileKeepsTimes(t *testing.T) {
 		t.Errorf("mtime %v mode %v, want %v 0640", info.ModTime(), info.Mode().Perm(), mtime)
 	}
 }
+
+// TestConcurrentCommitsFromOneBase: of many writers committing from the same
+// base at once (no repository lock), exactly one wins; every other one
+// waits for the write lock and then fails with the conflict.
+func TestConcurrentCommitsFromOneBase(t *testing.T) {
+	target := newStore(t)
+	target.timeout = seconds(10)
+	must(target.Create(sampleDocument(t), nil))(t)
+	base := must(target.Load())(t)
+	const writers = 8
+	results := make(chan error, writers)
+	for i := range writers {
+		go func() {
+			document := base.Document.Clone()
+			document.Set("writer", jsonx.Int(i))
+			_, committed, err := target.Commit(base, document, nil)
+			if err == nil && !committed {
+				err = errors.New("not committed")
+			}
+			results <- err
+		}()
+	}
+	wins := 0
+	for range writers {
+		err := <-results
+		switch {
+		case err == nil:
+			wins++
+		case !errors.Is(err, ErrConflict) || err.Error() != "配置数据库在事务外被修改":
+			t.Errorf("writer: %v (%v)", err, kindOf(err))
+		}
+	}
+	final := must(target.Load())(t)
+	if wins != 1 || final.Head.Generation != 2 || !final.Document.Has("writer") {
+		t.Errorf("wins=%d generation=%d", wins, final.Head.Generation)
+	}
+}
