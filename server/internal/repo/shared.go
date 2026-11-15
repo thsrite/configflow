@@ -53,7 +53,18 @@ func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Obje
 	if err != nil {
 		return nil, err
 	}
-	ownsCache := false
+	ownsCache, preserve := false, false
+	// The cache lock is taken inside the transaction and kept through the
+	// commit and the clean-up (Python: an ExitStack around both).
+	var releaseCache func()
+	defer func() {
+		if ownsCache && !preserve {
+			os.Remove(path)
+		}
+		if releaseCache != nil {
+			releaseCache()
+		}
+	}()
 	err = r.update(ctx, writeOptions{}, func(ctx context.Context, document *jsonx.Object) error {
 		shared := document.GetObject("shared")
 		for _, item := range shared.GetList("rule_library") {
@@ -61,21 +72,20 @@ func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Obje
 				return exists("规则库 ID 已存在，请刷新后重试")
 			}
 		}
-		// The cache lock is released when the transaction body returns
-		// (Python holds it until after the commit); the document lock held
-		// throughout already excludes every other creation, and cache
-		// writers of other code paths only touch files of committed rules.
-		return withLock(ctx, path+".lock", func(context.Context) error {
-			// A previous/orphaned cache also belongs to an existing identity;
-			// importing a new source must not overwrite its custom bytes.
-			if pathExists(path) || pathExists(path+".bak") {
-				return exists("规则缓存已存在，请使用新的规则 ID")
-			}
-			ownsCache = true
-			shared.Set("rule_library", append(append([]any{}, shared.GetList("rule_library")...), rule.DeepCopy()))
-			bumpRevision(shared)
-			return writeAtomic(path, content)
-		})
+		_, release, err := acquireLock(ctx, path+".lock")
+		if err != nil {
+			return err
+		}
+		releaseCache = release
+		// A previous/orphaned cache also belongs to an existing identity;
+		// importing a new source must not overwrite its custom bytes.
+		if pathExists(path) || pathExists(path+".bak") {
+			return exists("规则缓存已存在，请使用新的规则 ID")
+		}
+		ownsCache = true
+		shared.Set("rule_library", append(append([]any{}, shared.GetList("rule_library")...), rule.DeepCopy()))
+		bumpRevision(shared)
+		return writeAtomic(path, content)
 	})
 	if err != nil {
 		if !ownsCache {
@@ -83,8 +93,8 @@ func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Obje
 		}
 		// A failed commit normally rolls back. If the outcome is unknown
 		// (COMMIT reported an error), retain the cache for any possibly
-		// committed source.
-		preserve := true
+		// committed source. Reads need no document lock.
+		preserve = true
 		if current, failure := r.store.Load(); failure == nil {
 			preserve = false
 			for _, item := range current.Document.GetObject("shared").GetList("rule_library") {
@@ -96,9 +106,9 @@ func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Obje
 		if preserve {
 			return nil, &Error{Kind: ErrRuleLibraryCreationUncertain, Message: "规则保存结果待确认，请刷新列表核对，勿重复导入", Cause: err}
 		}
-		os.Remove(path)
 		return nil, err
 	}
+	preserve = true
 	return rule.DeepCopy(), nil
 }
 

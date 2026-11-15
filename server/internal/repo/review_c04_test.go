@@ -7,11 +7,14 @@ package repo
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/rules"
 )
 
 func c04Reference(t *testing.T, section string) []any {
@@ -157,4 +160,50 @@ func TestResolveProfileResultValidatedBeforeACommitIsNotTrusted(t *testing.T) {
 	noError(t, r.DeleteProfile(bg, "work", ""))
 	scope.remember(memo, resolvedKey{explicit: true, id: "work"}, "work")
 	wantEqual(t, c04Resolve(ctx, c04Text("work"), nil), []any{"ProfileNotFound", "'work'"})
+}
+
+// create_rule_library_item keeps the cache lock through the commit and the
+// clean-up (Python: ExitStack around the transaction): the commit hook,
+// which runs after .config.lock is released, still finds it held.
+func TestCreateRuleLibraryItemHoldsCacheLockThroughCommit(t *testing.T) {
+	r := newRepo(t)
+	_, err := r.UpdateSystemTransaction(bg, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+		system.GetObject("backup").Set("auto_backup", true)
+		return nil, nil
+	})
+	noError(t, err)
+	rule := jsonx.Obj("id", "lib9", "name", "L", "source_type", "content")
+	path := must(r.SharedPath(filepath.Join("rules", rules.RuleCacheFilename(rule))))(t)
+	checked := false
+	defer SetHooks(SetHooks(Hooks{ConfigurationCommitted: func(*Repository, *jsonx.Object, *jsonx.Object) {
+		handle := must(os.OpenFile(path+".lock", os.O_RDWR, 0))(t)
+		defer handle.Close()
+		if err := syscall.Flock(int(handle.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); !errors.Is(err, syscall.EWOULDBLOCK) {
+			t.Errorf("cache lock not held after the commit: %v", err)
+		}
+		checked = true
+	}}))
+	must(r.CreateRuleLibraryItem(bg, rule, []byte("DOMAIN,a\n")))(t)
+	if !checked {
+		t.Fatal("commit hook not called")
+	}
+	handle := must(os.OpenFile(path+".lock", os.O_RDWR, 0))(t)
+	defer handle.Close()
+	noError(t, syscall.Flock(int(handle.Fd()), syscall.LOCK_EX|syscall.LOCK_NB))
+}
+
+// A creation whose commit fails removes its cache file and frees the lock.
+func TestCreateRuleLibraryItemFailedCommitRemovesCache(t *testing.T) {
+	r := newRepo(t)
+	rule := jsonx.Obj("id", "lib9", "name", "L", "url", "https://example.test/x", "policy", "DIRECT")
+	path := must(r.SharedPath(filepath.Join("rules", rules.RuleCacheFilename(rule))))(t)
+	if _, err := r.CreateRuleLibraryItem(bg, rule, []byte("x")); err == nil {
+		t.Fatal("a rule source with a policy was accepted")
+	}
+	if pathExists(path) {
+		t.Fatal("cache of the failed creation kept")
+	}
+	handle := must(os.OpenFile(path+".lock", os.O_RDWR, 0))(t)
+	defer handle.Close()
+	noError(t, syscall.Flock(int(handle.Fd()), syscall.LOCK_EX|syscall.LOCK_NB))
 }

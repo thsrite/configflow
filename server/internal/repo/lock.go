@@ -155,41 +155,56 @@ func lockIsContended(err error) bool {
 // it on to everything called inside, so nested reads know .config.lock is
 // held. Waiting stops early when ctx is cancelled.
 func withLock(ctx context.Context, path string, fn func(ctx context.Context) error) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
+	locked, release, err := acquireLock(ctx, path)
+	if err != nil {
 		return err
+	}
+	defer release()
+	return fn(locked)
+}
+
+// acquireLock takes the lock of withLock and returns the context that
+// records it and the function that releases it (call it exactly once). It
+// is for locks held beyond one call, like Python's ExitStack entries.
+func acquireLock(ctx context.Context, path string) (locked context.Context, release func(), err error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
+		return nil, nil, err
 	}
 	key, err := resolve(path)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	if holdsLock(ctx, key) {
 		// Python: the RLock is re-entered, then flock on a second descriptor
 		// of the same file waits for this thread itself until the timeout.
 		select {
 		case <-time.After(LockTimeout()):
-			return repositoryError(lockTimeoutMessage)
+			return nil, nil, repositoryError(lockTimeoutMessage)
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, nil, ctx.Err()
 		}
 	}
 	lock := processLock(key)
 	select {
 	case lock <- struct{}{}:
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, nil, ctx.Err()
 	}
-	defer func() { <-lock }()
-
 	handle, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0o666)
 	if err != nil {
-		return err
+		<-lock
+		return nil, nil, err
 	}
-	defer handle.Close()
+	fail := func(err error) (context.Context, func(), error) {
+		handle.Close()
+		<-lock
+		return nil, nil, err
+	}
 	if info, err := handle.Stat(); err != nil {
-		return err
+		return fail(err)
 	} else if info.Size() == 0 {
 		if _, err := handle.Write([]byte("0")); err != nil {
-			return err
+			return fail(err)
 		}
 	}
 	deadline := time.Now().Add(LockTimeout())
@@ -202,21 +217,25 @@ func withLock(ctx context.Context, path string, fn func(ctx context.Context) err
 			continue
 		}
 		if !lockIsContended(err) {
-			return &os.PathError{Op: "flock", Path: path, Err: err}
+			return fail(&os.PathError{Op: "flock", Path: path, Err: err})
 		}
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
-			return repositoryError(lockTimeoutMessage)
+			return fail(repositoryError(lockTimeoutMessage))
 		}
 		select {
 		case <-time.After(min(LockPollInterval, remaining)):
 		case <-ctx.Done():
-			return ctx.Err()
+			return fail(ctx.Err())
 		}
 	}
-	defer syscall.Flock(int(handle.Fd()), syscall.LOCK_UN)
+	release = func() {
+		syscall.Flock(int(handle.Fd()), syscall.LOCK_UN)
+		handle.Close()
+		<-lock
+	}
 	held, _ := ctx.Value(heldLocksKey{}).(*heldLocks)
-	return fn(context.WithValue(ctx, heldLocksKey{}, &heldLocks{path: key, parent: held}))
+	return context.WithValue(ctx, heldLocksKey{}, &heldLocks{path: key, parent: held}), release, nil
 }
 
 // resolvePath is pathlib.Path.resolve() (non-strict) without its symlink
