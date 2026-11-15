@@ -155,8 +155,9 @@ func isYAMLResponse(text string) bool {
 	if strings.Contains(runePrefix(stripped, 200), "proxies:") || strings.HasPrefix(stripped, "proxies:") {
 		return true
 	}
-	data, err := yamlx.SafeLoad(stripped)
-	if object, ok := data.(*jsonx.Object); err == nil && ok && object.Has("proxies") {
+	// isinstance(data, dict) and 'proxies' in data: other keys may be anything.
+	data, err := yamlx.LoadWith(stripped, yamlx.LoadOptions{KeepNonStringKeys: true})
+	if _, has := yamlx.Lookup(data, "proxies"); err == nil && has {
 		return true
 	}
 	return false
