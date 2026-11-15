@@ -10,6 +10,9 @@
 package taskstatus
 
 import (
+	"fmt"
+	"math"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/pystr"
 )
 
 // Filename is the status file inside the data directory.
@@ -174,20 +178,70 @@ type Result struct {
 	Skipped bool
 }
 
-// pyInt is int(value or 0) for a value read from the file.
-func pyInt(v any) int64 {
+// countError is the Python exception record() raises on a counter it cannot
+// convert (the file is left as it was).
+type countError struct{ class, msg string }
+
+func (e *countError) Error() string       { return e.msg }
+func (e *countError) PythonClass() string { return e.class }
+
+// pyInt is int(value or 0) for a counter read from the file: strings as
+// int(str) (white space, Unicode digits, underscores), floats truncated,
+// big integers kept; Python's TypeError/ValueError/OverflowError otherwise.
+func pyInt(v any) (*big.Int, error) {
 	switch x := v.(type) {
-	case jsonx.Number:
-		if i, ok := x.Int64(); ok {
-			return i
-		}
-		return int64(x.Float64())
+	case nil:
+		return new(big.Int), nil
 	case bool:
 		if x {
-			return 1
+			return big.NewInt(1), nil
 		}
+		return new(big.Int), nil
+	case string:
+		if x == "" {
+			return new(big.Int), nil
+		}
+		n, err := pystr.Int(x, 10)
+		if err != nil {
+			return nil, &countError{"ValueError", err.Error()}
+		}
+		return n, nil
+	case jsonx.Number:
+		if x.IsInt() {
+			n, _ := new(big.Int).SetString(string(x), 10)
+			return n, nil
+		}
+		f := x.Float64()
+		switch {
+		case math.IsInf(f, 0):
+			return nil, &countError{"OverflowError", "cannot convert float infinity to integer"}
+		case math.IsNaN(f):
+			return nil, &countError{"ValueError", "cannot convert float NaN to integer"}
+		}
+		n, _ := big.NewFloat(math.Trunc(f)).Int(nil)
+		return n, nil
+	case []any:
+		if len(x) == 0 {
+			return new(big.Int), nil
+		}
+		return nil, &countError{"TypeError", "int() argument must be a string, a bytes-like object or a real number, not 'list'"}
+	case *jsonx.Object:
+		if x.Len() == 0 {
+			return new(big.Int), nil
+		}
+		return nil, &countError{"TypeError", "int() argument must be a string, a bytes-like object or a real number, not 'dict'"}
 	}
-	return 0
+	return nil, &countError{"TypeError", fmt.Sprintf("int() argument must be a string, a bytes-like object or a real number, not '%T'", v)}
+}
+
+// increment is int(entry.get(key) or 0) + 1 stored back under key.
+func increment(entry *jsonx.Object, key string) error {
+	n, err := pyInt(entry.Value(key))
+	if err != nil {
+		return err
+	}
+	entry.Set(key, jsonx.BigInt(n.Add(n, big.NewInt(1))))
+	return nil
 }
 
 // Record is record(key, ...): append one finished run and return the updated
@@ -234,13 +288,19 @@ func (s *Store) Record(key string, r Result) (*jsonx.Object, error) {
 		entry.Set("last_trigger", trigger)
 		entry.Set("last_error", message)
 		if !r.Skipped {
-			entry.Set("run_count", pyInt(entry.Value("run_count"))+1)
+			if err := increment(entry, "run_count"); err != nil {
+				return err
+			}
 			if r.OK {
 				entry.Set("last_success_at", finished)
 				entry.Set("consecutive_failures", 0)
 			} else {
-				entry.Set("failure_count", pyInt(entry.Value("failure_count"))+1)
-				entry.Set("consecutive_failures", pyInt(entry.Value("consecutive_failures"))+1)
+				if err := increment(entry, "failure_count"); err != nil {
+					return err
+				}
+				if err := increment(entry, "consecutive_failures"); err != nil {
+					return err
+				}
 			}
 		}
 		if r.OK || r.Skipped {

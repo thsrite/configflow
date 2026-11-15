@@ -1,6 +1,7 @@
 package taskstatus
 
 import (
+	"fmt"
 	"time"
 	"unicode/utf8"
 )
@@ -271,8 +272,9 @@ func parseTime(b isoBuffer, start int) (comps [4]int, offsetMicros int64, rv int
 }
 
 // FromISOFormat is datetime.fromisoformat(value) followed by the
-// `tzinfo or UTC` treatment of task_status.parse_time: an aware time.Time, a
-// naive one taken as UTC. ok is false where Python raises ValueError.
+// `tzinfo or UTC` treatment of task_status.parse_time: an aware time.Time in
+// the parsed offset (see pyTimezone), a naive one taken as UTC. ok is false
+// where Python raises ValueError.
 func FromISOFormat(value string) (time.Time, bool) {
 	if len(value) < 7 {
 		return time.Time{}, false
@@ -307,5 +309,30 @@ func FromISOFormat(value string) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	utc := time.Date(year, time.Month(month), day, hour, minute, second, micro*1000, time.UTC)
-	return utc.Add(-time.Duration(offsetMicros) * time.Microsecond), true
+	return utc.Add(-time.Duration(offsetMicros) * time.Microsecond).In(pyTimezone(offsetMicros)), true
+}
+
+// pyTimezone is the tzinfo fromisoformat attaches (datetime.timezone): UTC
+// for a zero offset, else a fixed zone named like timezone.tzname()
+// ("UTC+05:30", "UTC-05:30:15.250000"). time.Location offsets are whole
+// seconds; a sub-second part only shows in the name (the instant is exact).
+func pyTimezone(offsetMicros int64) *time.Location {
+	if offsetMicros == 0 {
+		return time.UTC
+	}
+	sign := '+'
+	rest := offsetMicros
+	if rest < 0 {
+		sign, rest = '-', -rest
+	}
+	hours, minutes := rest/3_600_000_000, rest/60_000_000%60
+	seconds, micros := rest/1_000_000%60, rest%1_000_000
+	name := fmt.Sprintf("UTC%c%02d:%02d", sign, hours, minutes)
+	if seconds != 0 || micros != 0 {
+		name += fmt.Sprintf(":%02d", seconds)
+		if micros != 0 {
+			name += fmt.Sprintf(".%06d", micros)
+		}
+	}
+	return time.FixedZone(name, int(offsetMicros/1_000_000))
 }
