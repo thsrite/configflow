@@ -23,7 +23,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A05 | traffic history and traffic store | 967 | verified | | A04, C37¹ | 8 (8 done) | internal/agents/metrics, internal/agents/trafficstore (new), internal/discovery (new, C37's), api/agents |
 | A06 | OxiDNS monitor, dashboard state, metrics | 1364 | verified | | A01 | 5 | internal/agents/monitor (new), api/agents |
 | A07 | Mihomo panel, OxiDNS cache/rule update/rankings/publication stats | 1316 | verified | | A06, C14 | 9 | internal/agents/monitor, api/agents |
-| A08 | installer script rendering, install command store | 1333 | partial | HR | A02, C02 | 8 (8 done) | internal/installer, internal/api/agents |
+| A08 | installer script rendering, install command store | 1333 | ported | HR | A02, C02 | 8 (8 done) | internal/installer, internal/api/agents |
 | A09 | Docker HA guide, preflight, enrollment | 1083 | missing | HR | A08, A01 | 2 | internal/installer, api/agents |
 | A10 | Docker HA compose variants, installer routes | 1018 | missing | HR | A08, A09 | 9 | internal/installer, api/agents |
 | A11 | deployment bundle, locations, Mihomo resources, generated preview | 1264 | missing | HR | A02, A19, C05, C12, C14, C15, C21, C22, C25 | – | internal/deploy (new) |
@@ -590,7 +590,7 @@ Open findings: none.
 
 ## A08 — installer script rendering, install command store
 
-**Status: `partial`** (code, routes and differentials complete; 7 of 15 Python test files ported, 8 left — see "Left") · HR · prereqs: A02 (`LATEST_AGENT_VERSION`), C02 (resource) · Go: internal/installer (new), internal/api/agents/installer.go
+**Status: `ported`** (code, routes, differentials and all 15 Python test files + installer parts of test_router_split_regression.py ported; not yet reviewed) · HR · prereqs: A02 (`LATEST_AGENT_VERSION`), C02 (resource) · Go: internal/installer (new), internal/api/agents/installer.go
 
 Files:
 - `backend/agents/install_output.py` (45)
@@ -618,7 +618,11 @@ Port log (A08 porter, 2026-11-15/16):
   `test_gateway_core_install.py` → gateway_core_test.go (34 functions; 3 Python type-only params ruled out by Go types: `tun_prepare_assume_enabled=1`, `full_tun='yes'`, duplicate `full_tun=False`; CORE_RELEASES monkeypatch = swapping `CoreReleases`, so these tests are not parallel; 0ef9e89 baselines read from backend/testdata).
   `test_agent_install_dependencies.py` → install_dependencies_test.go (all 21 functions; `isolateDependencies` returns the new env; `installerHarness` reuses newSingleHarness/newAIOHarness/newAIOCoreHarness).
   `test_standalone_forwarding_install.py` → standalone_forwarding_test.go (16 generator/shell functions; `test_forwarding_option_must_be_a_boolean` is a Python type check ruled out by `Forwarding`) + internal/api/agents/installer_forwarding_test.go (5 API functions).
-- Left (next porter, same pattern): `test_core_install_script.py` (49, harness with gzip/tar fixtures + Python stubs), `test_gateway_core_install.py` (34, needs `without_reviewed_installer_deltas`), `test_agent_install_dependencies.py` (21, imports harnesses of A10's `test_aio_agent_core_install.py`/`test_single_agent_core_install.py` — port those harnesses here or with A10), `test_installer_forwarding_context.py` (13), `test_standalone_forwarding_install.py` (21, also imports `test_agent_install_commands` fixtures and regression digests), `test_aio_network_prerequisites.py` (5), `test_shell_ha_prepare.py` (11, uses the single-agent harness and the install-script route), and the installer parts of `test_router_split_regression.py` (`single_service_script_digests` vs `backend/testdata/router_split_regression_0ef9e89.json`; generate the delta tables `_NATIVE_HA_DEPENDENCY_CASES`, `_GATEWAY_DEPENDENCY_CASES`, `_MANUAL_INSTALL_COMMAND`, `_GATEWAY_DEPENDENCY_REWORDS`, `_OPENRC_STOP_RETRY_DELTAS`, `_RESOLVED_STUB_PROMPT_DELTAS`, `_INSTALLER_HARDENING_DELTAS`, `_UNIFIED_CLEANUP` pieces into a JSON golden with a gen script instead of hand-copying). Byte identity of every rendered script is already proven by the matrix, so these ports exercise behaviour only.
+  `test_installer_forwarding_context.py` → forwarding_context_test.go (all 13; the `__file__` monkeypatch is swapping the embedded `installCoresTemplate`). `test_aio_network_prerequisites.py` → aio_network_test.go (all 5; `shellFunction` extracts from the embedded scripts). `test_shell_ha_prepare.py` → shell_ha_prepare_test.go (10) + internal/api/agents/installer_ha_test.go (route case). Installer parts of `test_router_split_regression.py`: `TestSingleServiceScriptsMatchThePreviousRelease` (+ reused by gateway/standalone baselines); its non-installer cases (gateway goal drafts, unmarked Mihomo, router setup) belong to the routers/config modules.
+  Final run 2026-11-16: `go vet` clean; `go test ./internal/installer/` ok (115 s, incl. TestRenderMatrixMatchesPython, TestGeneratorFingerprintMatchesPython), `./internal/api/agents/` ok; differential `installer routes: 295 comparisons equal, 0 differ`.
+  Fixes: none needed — every ported case passed against the Go renderers. Matrix (`TestRenderMatrixMatchesPython`) and Flask differential re-run after the ports (see commands).
+  A10 handoff: harnesses of test_single_agent_core_install.py / test_aio_agent_core_install.py live in core_harness_test.go with their non-route cases; the remaining route cases (client fixture: `test_combined_api_reuses_selected_canonical_installer…`, `test_omitted_and_false_preserve_agent_only_api`, `test_api_rejects_unsupported_combined_settings…`, `test_combined_aio_api_embeds_canonical_core_phase…`, `test_invalid_combined_settings_rejected…`) stay with A10.
+- Left: nothing for A08 (reviewer next). Deferred elsewhere: 4 Docker entrypoint cases of test_agent_transaction_install.py and 4 of test_oxidns_docker_install.py → finish #40; single/AIO core route cases → A10.
 - Pitfalls: the shared tree may not build (another agent's uncommitted x/net/idna import broke internal/api/agents on 2026-11-16) — verify on `git worktree add --detach ~/program/configflow-go-a08 HEAD`. `rt -- … go test ./internal/installer/` takes ~30–50 s (Python stub processes in the AIO harness). Run `gofmt` after regenerating constants_gen.go. The Python reference run `rt -- … pytest backend/test_x.py` printed "no tests ran" from the repo root here; run it from the worktree root with `-p no:cacheprovider` and check the rootdir if it happens again.
 
 ## A09 — Docker HA guide, preflight, enrollment
@@ -652,6 +656,8 @@ Tests: `test_docker_ha_compact.py` (12), `test_docker_ha_compose.py` (13), `test
 Routes (9): `POST /api/agents/core-install-command`; `GET /api/agents/core-install-script`; `GET /api/agents/docker-agent-compose`; `GET /api/agents/docker-agent-run`; `GET /api/agents/download/<filename>`; `GET /api/agents/gateway-network-probe.sh`; `GET /api/agents/i/<token>`; `POST /api/agents/install-command`; `GET /api/agents/install-script`
 
 Evidence: no Go code. Several of these are public (install script, `i/<token>`, download, probe): check the `internal/auth` gate list.
+
+From A08 (2026-11-16): the non-route cases of `test_single_agent_core_install.py` (11 functions) and `test_aio_agent_core_install.py` (10) are ported in internal/installer/core_harness_test.go with the harnesses (`newSingleHarness`, `newAIOCoreHarness`); only their Flask-client route cases remain for A10.
 
 ## A11 — deployment bundle, locations, Mihomo resources, generated preview
 
