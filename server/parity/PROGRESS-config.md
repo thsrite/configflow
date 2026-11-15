@@ -1027,3 +1027,8 @@ Questions for the maintainer (from this audit):
    shared package and building `yamlx.Load*` on it, which would also close C02's open items (`1,000` in
    flow collections, error texts) and the non-string-key limits; if adopted, re-run every yamlx consumer's
    tests and corpora.
+6. **C10 verified with six yamlx-dependent rows** (2026-11-15): confirmed by the coordinator — they are
+   C02's (yamlx) defects, not C10's: non-string mapping keys (`123:`, `1.5:`, `true:`, `~:`) make yamlx fail
+   where PyYAML skips/keeps them, and `name:\tx` (tab before a value) is accepted by yamlx but rejected by
+   PyYAML (new). `subs` lists them in `yamlxDiffers`; when C02 fixes yamlx (see item 5), that test flags
+   the change and the rows must then match Python.
