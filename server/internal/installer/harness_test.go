@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -39,6 +40,7 @@ type runOptions struct {
 	input   string
 	timeout time.Duration
 	dir     string
+	setsid  bool // start_new_session=True: no controlling terminal
 }
 
 func runShell(t *testing.T, shell, script string, o runOptions) runResult {
@@ -56,6 +58,9 @@ func runShell(t *testing.T, shell, script string, o runOptions) runResult {
 		cmd.Env = append(os.Environ(), o.env...)
 	}
 	cmd.Dir = o.dir
+	if o.setsid {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	}
 	cmd.Stdin = strings.NewReader(o.input)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr

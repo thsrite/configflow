@@ -132,7 +132,7 @@ func withoutReviewedInstallerDeltas(t *testing.T, script string, corePath bool) 
 	if corePath {
 		require(t, count(script, "set -eu\n"+d.CoreInstallPath+"for cf_argument do\n") == 1, "core PATH position")
 		script = strings.Replace(script, d.CoreInstallPath, "", 1)
-		embedded := regexp.MustCompile(`\(\nset -- --core [a-z]+\n` + regexp.QuoteMeta(d.CoreAgentFollows)).FindAllString(script, -1)
+		embedded := regexp.MustCompile(`\(\nset -- --core [a-z]+\n`+regexp.QuoteMeta(d.CoreAgentFollows)).FindAllString(script, -1)
 		require(t, len(embedded) == 1, "the embedded core phase must not ask for a separate Agent")
 		script = strings.Replace(script, embedded[0], strings.TrimSuffix(embedded[0], d.CoreAgentFollows), 1)
 	}

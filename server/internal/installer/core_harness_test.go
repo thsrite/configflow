@@ -205,9 +205,9 @@ if '-check-deployments' in args and os.environ.get('PENDING_DEPLOYMENT') == 'yes
 case "$*" in *--property=LoadState*) printf '%s\n' "${CORE_LOAD_STATE:-loaded}" ;; esac
 `
 	mocks := map[string]string{
-		"id":    "printf '0\\n'\n",
-		"uname": `case "$1" in -s) echo Linux ;; *) echo "${TEST_ARCH:-x86_64}" ;; esac` + "\n",
-		"wget":  "echo agent-download >> \"$EVENTS\"\n[ \"${FAIL_AGENT_DOWNLOAD:-}\" != yes ] || exit 47\ncp \"$FAKE_AGENT\" \"$3\"\n",
+		"id":        "printf '0\\n'\n",
+		"uname":     `case "$1" in -s) echo Linux ;; *) echo "${TEST_ARCH:-x86_64}" ;; esac` + "\n",
+		"wget":      "echo agent-download >> \"$EVENTS\"\n[ \"${FAIL_AGENT_DOWNLOAD:-}\" != yes ] || exit 47\ncp \"$FAKE_AGENT\" \"$3\"\n",
 		"systemctl": managerBody, "rc-service": managerBody, "rc-update": managerBody,
 	}
 	if !s.installCore && s.manager == "systemd" {
