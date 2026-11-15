@@ -210,6 +210,14 @@ CONTENTS = [
     'DOMAIN,example.test\nIP-CIDR,bad', '# c\n192.0.2.0/24\n', '192.0.2.8', 'IP-CIDR,192.0.2.8/32,no-resolve,extra',
     'payload:\n  - IP-CIDR,192.0.2.0/24\n', 'payload: [broken', 'ip-cidr,192.0.2.0/24', ' IP-CIDR , 192.0.2.0/24 ',
     'IP-CIDR,192.0.2.0/024', 'IP-CIDR6,2001:db8::/32\r\nIP-CIDR,10.0.0.0/8', 'IP-ASN,1234', 'IP-CIDR,192.0.2.008/32',
+    # test_yaml_payload_append_remains_valid_and_keeps_comments
+    '# Keep this comment\npayload:\n  - "IP-CIDR,192.0.2.1/32,no-resolve"\nother: yes\n',
+    '# Keep this comment\npayload: ["IP-CIDR,192.0.2.1/32,no-resolve"]\n',
+    'payload: ["IP-CIDR,192.0.2.1/32,no-resolve",]\n',
+    '# Keep this comment\npayload: []\n',
+    'payload:\n- "IP-CIDR,192.0.2.1/32,no-resolve"',
+    # test_single_address_append_preserves_content_and_cache
+    '# Keep this comment\nDOMAIN,existing.test', '# Keep this comment\n192.0.2.4/32\n',
 ]
 
 
@@ -218,7 +226,8 @@ def apply_cases():
     for behavior in ('classical', 'ipcidr'):
         for content in CONTENTS:
             for value, rule_type in (('192.0.2.8', 'IP-CIDR'), ('fe80::/64', 'IP-CIDR6'), ('fe80::1', 'IP-CIDR6'),
-                                     ('::ffff:192.0.2.8', 'IP-CIDR'), ('192.0.2.0/25', 'IP-CIDR')):
+                                     ('::ffff:192.0.2.8', 'IP-CIDR'), ('192.0.2.0/25', 'IP-CIDR'),
+                                     ('2001:0db8:0::8', 'IP-CIDR6')):
                 for policy in ('DIRECT', 'PROXY', 'REJECT', None):
                     shared = {'rule_library': [{'id': 'lib', 'name': '规则 lib', 'source_type': 'content',
                                                 'behavior': behavior, 'content': content}]}

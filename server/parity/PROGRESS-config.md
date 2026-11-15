@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 24 missing, 5 partial, 5 ported, 3 verified (C01, C03, C04). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 24 missing, 5 partial, 4 ported, 4 verified (C01, C03, C04, C09). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -34,7 +34,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C06 | HTTP shell, auth, settings routes | 1028 | partial | C05 | 22 (17 done) |
 | C07 | logs, stats, tasks, notifications, web listener | 1393 | partial | C06 | 9 (5 done) |
 | C08 | rule syntax, matcher, rule utils | 1101 | partial | C02 | – |
-| C09 | matcher cache, group candidates, reorder, strategy refs, connection rules | 708 | ported | C08 | – |
+| C09 | matcher cache, group candidates, reorder, strategy refs, connection rules | 708 | verified | C08 | – |
 | C10 | manual node parser, subscription hosts/filter/dialers | 1242 | ported | C08 | – |
 | C11 | proxy chains, commented Mihomo editor, listeners, proxy-server DNS | 855 | partial | C10 | – |
 | C12 | converter common, Mihomo node conversion, dialer references, EasyTier | 1196 | ported | C09, C11 | – |
@@ -309,7 +309,7 @@ Reviewer notes: Accepted: `\N{name}` and repeat counts > int32 give `*Unsupporte
 
 ## C09 — matcher cache, group candidates, reorder, strategy refs, connection rules
 
-**Status: `ported`** · prereqs: C08 · Go: internal/rules
+**Status: `verified`** (review 2026-11-15, one round; 0 open findings) · prereqs: C08 · Go: internal/rules
 
 Files:
 - `backend/utils/domain_matcher_cache.py` (237)
@@ -322,11 +322,31 @@ Tests: `test_connection_ip_rules.py` (8), `test_domain_matcher_cache.py` (17)
 
 Routes: none.
 
-Evidence: `internal/rules` matchercache.go, groups.go, reorder.go, strategy.go, connection.go. All defs matched (`apply_ip`→`ApplyIPRule`, `_destination_network`→`ParseDestination`; `clear_cache` → check `MatcherCache` reset). `test_domain_matcher_cache.py` 16/17, `test_connection_ip_rules.py` 5/8.
+Evidence: `internal/rules` matchercache.go, groups.go, reorder.go, strategy.go, connection.go. All defs matched (`apply_ip`→`ApplyIPRule` = the body of its `append(shared)` closure, `_destination_network`→`ParseDestination`, `clear_cache`→`MatcherCache.Clear`, `_cleanup_idle`/`_evict_idle_locked`/`_schedule_cleanup_locked`/`_signature`/`_LocalSource`/`_CachedMatcher` → same-named private Go code). `test_domain_matcher_cache.py` 17/17 (the review ported `test_replaced_file_during_lazy_read_is_retried_on_same_handle` with a test hook between the handle's last fstat and the path stat), `test_connection_ip_rules.py` 5/8 + the library-level part of 2 more through the reference corpus (below).
 
-Missing / deferred: Deferred: `test_connection_ip_rules.py` 3 cases (`test_single_address_append_preserves_content_and_cache`, `test_yaml_payload_append_remains_valid_and_keeps_comments`, `test_under_lock_changes_cannot_redirect_ip_writes`) need `ConnectionDeps.ReadRulePayload/AppendRulePayload` from C14 and `RulesetInfo` from C37. `test_domain_matcher_cache.py::test_replaced_file_during_lazy_read_is_retried_on_same_handle` not ported — reviewer: port or justify.
+Review findings (all fixed):
+1. **medium** — IGNORECASE (engine shared with C08; hit by every `(?i)` group/subscription filter and by DOMAIN-REGEX, which Python compiles with `re.IGNORECASE`): Go used RE2's/regexp2's Unicode case folding; sre matches a cased literal by simple lowercase (`_sre.unicode_tolower`) plus `re._casefix._EXTRA_CASES` and tests sets with the lowercased character. `(?i)istanbul` did not match `İstanbul`, `(?i)ı`/`(?i)İ` matched only themselves, `(?ai)k` matched the Kelvin sign. Fix 21fe760e: `pyre_icase.go` rewrites literals and sets under IGNORECASE into explicit classes after parsing (tables generated from CPython 3.11.17: `pyre_case_table.go` by `testdata/gen_case.py`; fast exact construction, brute force only as fallback), `flagLetters` no longer emits `i`, back references keep the flag. Regression: `TestICaseLiteralsLikePython` (every cased code point as a literal, Unicode and ASCII mode, both engines), `TestICaseSetsLikePython` (57 sets incl. negation, categories, non-BMP ranges, scoped flags, every code point, both engines), `TestICaseSetFoldIsCheap`.
+2. **low** — `ApplyIPRule`: `subnet_of` ignored IPv6 scope ids; Python's `IPv6Address.__eq__` compares them, so `fe80::/64` is not covered by an existing `IP-CIDR6,fe80::%eth0/64` and is appended. Fix 661e5a7b (`ipNet.subnetOf`); `TestSubnetOfHonoursScopeIDLikePython`, apply references.
+3. **low** — `FilterCandidates` refused patterns only Python can run (`\N{name}`, repeat counts > int32) with a Go-only message ("…环视、反向引用等…", also stale since look-around runs on regexp2); the domain decision is "not applied, accepted like Python". Fix 661e5a7b; `TestFilterCandidatesUnsupportedPatternIsNotApplied`.
+4. **test gap** — `test_replaced_file_during_lazy_read_is_retried_on_same_handle` ported (86157174); concurrent stress test of handles/edits/eviction/Clear/file replacement under `-race` (b3362482).
 
-Reviewer notes: Reviewer: confirm `domain_matcher_cache.clear_cache` has a Go equivalent (no name match).
+New Python references (`testdata/review_c09_gen.py` → `review_c09.json.gz`, `review_c09_test.go`, `review_c09_apply_test.go`): `filter_candidates` 300 cases (İ/ı/ß/ﬃ/Kelvin/ſ/Ω, full-width and Arabic-Indic digits, CJK, emoji, 300-char names, look-around, back references, `\b`, `(?a)`/`(?u)`/`(?x)`, invalid patterns, non-string values, `　`/U+2028 strip), `validate_filters` (types incl. `1`/`1.0`/`True` legacy values, invalid exclude patterns), `lower_group_provider_filters` with 22 odd provider names (quotes, backslash, NUL, DEL, U+3000, ZWSP, bidi, astral, unassigned — the clone path digest is `sha256(repr(key))`), `resolve_new_order` (NFC/NFD, full-width ids, None ids, raw entries, positions), `validate_rule_policies` (all formats, non-string ids/policies), `_destination_network` (54 values × 4 rule types: whitespace, U+3000, `/024`, netmask forms, mapped IPv6 prefixes, multicast/unspecified, zones, non-strings) and `apply_ip` with the repository/discovery stubbed against `ApplyIPRule` + the real `rulefetch` payload port (2 behaviours × 32 contents incl. the YAML payloads of `test_yaml_payload_append_remains_valid_and_keeps_comments` × 6 values × 4 policies).
+
+Checks performed:
+- Line-by-line walk of all five files: matcher cache (signature inputs and snapshot, `_read_key`/`_library_key`, path-change retry, stamp race rules, FileNotFoundError vs other OSError/UnicodeError/validation errors, inline fallback, retry timer, host result LRU and deep copies, registry LRU/eviction/cleanup timer generation, `active`/`last_used`), group candidates (every branch of `filter_candidates`, `managed_members`, `managed_providers`, `render_members`, `validate_filters`, `_embedded`, `_literal_backticks`, `exclusion_filter`, `lower_group_provider_filters` incl. `sources.get(None)` for records without `follow_group`, `validate_candidates`, `merge_group_update` key order), reorder, strategy references (messages via `str()`), connection rules (`ip_rule_targets` `active` = raw `enabled` value, target rules, `normalize_client_range` copy, canonical CIDR text, warnings also for skipped).
+- Existing corpora still pass (27000 match pairs, 16128 regex searches, 1498 validate_candidates, lower cases); dependent packages `subs`, `convert`, `rulefetch`, `repo`, `api/logs` pass after the IGNORECASE change.
+
+Accepted differences (reviewer's judgement, documented; not open findings — overrule if needed):
+- Python crashes (500) that are handled in Go: non-dict list entries, unhashable ids/policies/names (TypeError), missing `name`/`id` keys (KeyError), non-string node names in `filter_candidates`, RecursionError/OverflowError from compiling a filter (Go: `正则表达式无效`).
+- Dict/set keys for library ids, group ids and reorder ids are `jsonx.Repr` strings, not Python hash equality (`1`/`1.0`/`True`); unreachable: stored ids are validated non-empty strings and reorder ids must be strings. Likewise an empty-dict library entry (`source or item`) cannot be referenced by a stored rule set.
+- `LocalMatcher`: a rules directory that does not exist is made absolute without resolving symlinks in its existing prefix (`os.path.realpath` would); only the slot key/paths change, not results.
+- `MatcherCacheOptions.StoredLibrary` is called eagerly and cannot fail; Python reads the repository only when the new cache name is missing, and a repository error there would propagate (empty index + error log, or an exception from `local_matcher`).
+- Unicode database: Go's tables are newer than Python 3.11's Unicode 14.0, so characters assigned later are letters/digits for `\w`/`\d` (and cased if new case pairs exist) in Go; the references skip Python-unassigned code points.
+- The cache clock is process-relative (`time.monotonic` is boot-relative); only differences are used.
+
+Deferred (not open findings) → **C37** (the only caller, `domain_discovery_service.py`, and the agent route): wire one process-wide `MatcherCache` with `RulesDir`, `StoredLibrary` (shared `rule_library`), **`ValidateRemote` = `rulefetch.ValidateRemoteRuleContent(content, rule, nil, "")` (nil accepts every cache file, Python always validates url sources)**, `Clear` on shutdown; port `apply_ip`'s orchestration around `ApplyIPRule` (`before_write`, `get_compat_config(profile_id)`, `update_shared_config_transaction`, `save_rule_to_local` for `Result.Updated`, warnings) and the route-level remainder of `test_single_address_append_preserves_content_and_cache` (cache file, profile unchanged, no discovery history) and `test_under_lock_changes_cannot_redirect_ip_writes`.
+
+Commands: `rt -- bash -lc 'cd server && go vet ./internal/rules/... && go test -count=1 ./internal/rules/...'`; regenerate: `rt --back server/internal/rules/testdata/review_c09.json.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rules/testdata/review_c09_gen.py server/internal/rules/testdata/review_c09.json.gz'`, `rt --back server/internal/rules/pyre_case_table.go --back server/internal/rules/testdata/icase_reference.json.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rules/testdata/gen_case.py server/internal/rules/pyre_case_table.go server/internal/rules/testdata/icase_reference.json.gz'`.
 
 ## C10 — manual node parser, subscription hosts/filter/dialers
 
