@@ -11,8 +11,10 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"math"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -181,7 +183,13 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 		DisableKeepAlives: true,
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 			if host, port, err := net.SplitHostPort(address); err == nil && net.ParseIP(host) == nil {
-				if ip, ok := inetAtonExact(host); ok {
+				if strings.Contains(host, "%") {
+					// getaddrinfo of a scoped IPv6 address (urllib3 hands it
+					// "fe80::1%eth0"): glibc accepts only some zones.
+					if !glibcScopeOK(host) {
+						return nil, &net.DNSError{Err: "Name or service not known", Name: host, IsNotFound: true}
+					}
+				} else if ip, ok := inetAtonExact(host); ok {
 					address = net.JoinHostPort(ip, port)
 				} else if resolveHook != nil {
 					resolved, err := resolveHook(host)
@@ -203,7 +211,7 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 	if request.Body != nil {
 		body = bytes.NewReader(request.Body)
 	}
-	req, err := http.NewRequestWithContext(ctx, request.Method, unquoteUnreserved(request.URL), body)
+	req, err := http.NewRequestWithContext(ctx, request.Method, encodeZone(unquoteUnreserved(request.URL)), body)
 	if err != nil {
 		return nil, &TransportError{Err: err}
 	}
@@ -277,8 +285,11 @@ func DefaultClient() Client {
 
 // unquoteUnreserved is requests.utils.unquote_unreserved as requote_uri uses
 // it: %XX escapes of unreserved characters (letters, digits, "-._~") are
-// decoded; an escape with non-hex alphanumerics leaves the URL as it is
-// (requote_uri's InvalidURL fallback).
+// decoded. An escape of two alphanumerics that are not hex digits makes
+// unquote_unreserved raise InvalidURL, and requote_uri then quotes the URL
+// without "%" among the safe characters: every "%" becomes "%25" (the
+// "%eth0" zone of a scoped IPv6 host, and with it every escape of the
+// query, A06 review).
 func unquoteUnreserved(uri string) string {
 	if !strings.Contains(uri, "%") {
 		return uri
@@ -292,7 +303,7 @@ func unquoteUnreserved(uri string) string {
 		}
 		value, err := strconv.ParseUint(part[:2], 16, 8)
 		if err != nil {
-			return uri
+			return strings.ReplaceAll(uri, "%", "%25")
 		}
 		if c := byte(value); isASCIIAlnum(c) || c == '-' || c == '.' || c == '_' || c == '~' {
 			parts[i] = string(c) + part[2:]
@@ -301,6 +312,59 @@ func unquoteUnreserved(uri string) string {
 		}
 	}
 	return strings.Join(parts, "")
+}
+
+// encodeZone writes the zone of a bracketed IPv6 host the way Go's URL
+// parser reads it ("%25" + zone). urllib3 reads "[fe80::1%25eth0]" and
+// "[fe80::1%dc0]" alike (a zone starting with "%25", other than "%25"
+// itself, loses those three characters; otherwise only the "%").
+func encodeZone(uri string) string {
+	start := strings.Index(uri, "://")
+	if start < 0 {
+		return uri
+	}
+	start += 3
+	end := len(uri)
+	if i := strings.IndexAny(uri[start:], "/?#"); i >= 0 {
+		end = start + i
+	}
+	authority := uri[start:end]
+	open, close := strings.Index(authority, "["), strings.LastIndex(authority, "]")
+	if open < 0 || close < open {
+		return uri
+	}
+	percent := strings.Index(authority[open:close], "%")
+	if percent < 0 {
+		return uri
+	}
+	percent += open
+	zone := authority[percent+1 : close]
+	if strings.HasPrefix(zone, "25") && zone != "25" {
+		return uri
+	}
+	return uri[:start+percent+1] + "25" + uri[start+percent+1:]
+}
+
+// glibcScopeOK is glibc's __inet6_scopeid_pton for getaddrinfo of
+// "address%zone": a link-local (or interface/link-local multicast) address
+// takes an interface name, any address a decimal zone up to 2^32-1; any
+// other zone fails name resolution.
+func glibcScopeOK(host string) bool {
+	address, zone, _ := strings.Cut(host, "%")
+	ip, err := netip.ParseAddr(address)
+	if err != nil || !ip.Is6() || zone == "" {
+		return false
+	}
+	if ip.IsLinkLocalUnicast() || ip.IsInterfaceLocalMulticast() || ip.IsLinkLocalMulticast() {
+		if _, err := net.InterfaceByName(zone); err == nil {
+			return true
+		}
+	}
+	if zone[0] < '0' || zone[0] > '9' {
+		return false
+	}
+	n, err := strconv.ParseUint(zone, 10, 64)
+	return err == nil && n <= math.MaxUint32
 }
 
 func isASCIIAlnum(c byte) bool {

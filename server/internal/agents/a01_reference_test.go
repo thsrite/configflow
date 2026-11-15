@@ -318,7 +318,7 @@ func TestUnquoteUnreservedLikeRequests(t *testing.T) {
 	cases := map[string]string{
 		"http://%31%32%37.0.0.1:1/a": "http://127.0.0.1:1/a",
 		"http://h/a%2Fb%7e%41":       "http://h/a%2Fb~A",
-		"http://h/%zz%41":            "http://h/%zz%41",
+		"http://h/%zz%41":            "http://h/%25zz%2541", // requote_uri fallback (A06 review)
 		"http://h/%4":                "http://h/%4",
 		"http://h/%":                 "http://h/%",
 	}
