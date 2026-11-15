@@ -1,0 +1,61 @@
+package installer
+
+import "strings"
+
+// Port of backend/agents/install_output.py.
+
+// CLIOutputHelpers and InstallOutputHelpers are CLI_OUTPUT_HELPERS and
+// INSTALL_OUTPUT_HELPERS.
+var (
+	CLIOutputHelpers     = cliOutputHelpers
+	InstallOutputHelpers = installOutputHelpers
+)
+
+// WithRootPrivileges is with_root_privileges(script): keep privilege handling
+// in the downloaded file, preserving stdin/args.
+func WithRootPrivileges(script string) string {
+	lines := splitLines(script)
+	split := 1
+	for split < len(lines) && strings.HasPrefix(lines[split], "# ConfigFlow") {
+		split++
+	}
+	if split > len(lines) {
+		split = len(lines)
+	}
+	return strings.Join(lines[:split], "") + `if [ "$(id -u)" -ne 0 ]; then
+    if ! command -v sudo >/dev/null 2>&1; then
+        printf '%s\n' '请使用 root 运行安装脚本，或先安装并配置 sudo。' >&2
+        exit 1
+    fi
+    exec sudo sh "$0" "$@"
+fi
+` + strings.Join(lines[split:], "")
+}
+
+// WithInstallOutput is with_install_output(script). The original body keeps
+// its own errexit and traps in an unconditional subshell.
+func WithInstallOutput(script string) string {
+	lines := splitLines(script)
+	header := ""
+	if len(lines) > 0 {
+		header = lines[0]
+	} else {
+		// lines[0] of an empty script is an IndexError in Python.
+		panic("with_install_output: empty script")
+	}
+	body := strings.Join(lines[1:], "")
+	if len(lines) > 1 && strings.HasPrefix(lines[1], "# ConfigFlow") {
+		header += lines[1]
+		body = strings.Join(lines[2:], "")
+	}
+	return header + "set +e\n" + CLIOutputHelpers + "\n" + InstallOutputHelpers + `
+cf_verbose_options "$@"
+cf_init "安装与维护"
+(
+` + pyRstrip(body) + `
+)
+cf_installer_exit_status=$?
+cf_finish "$cf_installer_exit_status"
+exit "$cf_installer_exit_status"
+`
+}
