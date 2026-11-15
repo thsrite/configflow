@@ -76,6 +76,10 @@ func seed(t *testing.T, dir string) {
 			jsonx.Obj("id", "agent-upgrading", "name", "upgrading agent", "token", agentToken+"-upgrading",
 				"profile_id", "default", "service_type", "mihomo", "host", "127.0.0.3", "port", 9, "version", "1.0.0",
 				"config_version", "0", "enabled", true, "latest_upgrade", jsonx.Obj("status", "downloading")),
+			// Saved history with unusual lines (A04 review): see seedMetrics.
+			jsonx.Obj("id", "agent-odd", "name", "odd agent", "token", agentToken+"-odd",
+				"profile_id", "default", "service_type", "mihomo", "host", "127.0.0.9", "port", 9, "version", "1.0.0",
+				"config_version", "0", "enabled", true),
 		})
 		return nil, nil
 	})
@@ -115,6 +119,7 @@ func seedMetrics(t *testing.T, dir string) {
 		"agent-busy_metrics.json": `{"agent_id": "agent-busy", "metrics": [` + point(now.Add(-time.Minute), 5, 50) + `, "skipped", ` +
 			point(now.Add(-26*time.Hour), 6, 60) + `]}`,
 		"gone_metrics.jsonl":   point(now.Add(-time.Minute), 1, 10) + "\n",
+		"agent-odd_metrics.jsonl": oddMetrics(now),
 		".agent-1abcdefgh.tmp": "partial",
 	}
 	for name, content := range files {
@@ -122,6 +127,30 @@ func seedMetrics(t *testing.T, dir string) {
 			t.Fatal(err)
 		}
 	}
+}
+
+// oddMetrics is agent-odd's saved history (A04 review): a BOM before the
+// first line, invalid UTF-8 inside a string, a lone \r line break, NaN, a
+// huge int, a string usage value three hours back (the 6 h summary is a
+// TypeError, the 1 h one is not), a point dated 9999, a repeated timestamp,
+// an aware timestamp and enough unreadable lines to compact the file at the
+// final save.
+func oddMetrics(now time.Time) string {
+	at := func(d time.Duration) string { return naiveISO(now.Add(d)) }
+	lines := []string{
+		"\xef\xbb\xbf" + `{"timestamp": "` + at(-50*time.Minute) + `", "cpu": {"usage_percent": 9}}`,
+		`{"timestamp": "` + at(-40*time.Minute) + `", "cpu": {"usage_percent": 1}, "n": "a` + "\xff\xfe" + `b\xed\xa0\x80"}`,
+		`{"timestamp": "` + at(-30*time.Minute) + `", "cpu": {"usage_percent": 3}}` + "\r" +
+			`{"timestamp": "` + at(-29*time.Minute) + `", "cpu": {"usage_percent": 4.25}, "memory": {"used_percent": true}}`,
+		`{"timestamp": "` + at(-20*time.Minute) + `", "cpu": {"usage_percent": NaN}, "network": {"bytes_sent": 1` + strings.Repeat("0", 30) + `, "speed_sent": 1e308}}`,
+		`{"timestamp": "` + at(-19*time.Minute) + `", "network": {"speed_sent": 1e308, "speed_recv": -0.0}}`,
+		`{"timestamp": "` + at(-3*time.Hour) + `", "cpu": {"usage_percent": "x"}}`,
+		`{"timestamp": "9999-12-31T23:59:59.999999", "cpu": {"usage_percent": 2}}`,
+		`{"timestamp": "` + at(-40*time.Minute) + `", "cpu": {"usage_percent": 100}}`,
+		`{"timestamp": "` + at(-10*time.Minute) + `+08:00", "cpu": {"usage_percent": 100}}`,
+		"garbage", "[1]", `{"cpu": 1}`, `{"timestamp": 5}`, "\x1c", "\u3000x",
+	}
+	return unescapeBytes(strings.Join(lines, "\n")) + "\n"
 }
 
 func copyDir(t *testing.T, from, to string) {
@@ -542,6 +571,17 @@ func reviewRequests() []request {
 			body: `{"system_metrics": ` + metrics + `}`, headers: map[string]string{"Authorization": "Bearer {token}"}})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
+	// A04 review: agent-odd's unusual saved history (see oddMetrics).
+	for _, item := range []struct{ name, query string }{
+		{"history odd", "/metrics/history"}, {"history odd 1h", "/metrics/history?hours=1"},
+		{"summary odd 1h", "/metrics/summary"}, {"summary odd 2h", "/metrics/summary?hours=2"},
+		{"summary odd 6h", "/metrics/summary?hours=6"}, {"history odd full-width hours", "/metrics/history?hours=%EF%BC%91"},
+		{"history odd spaced hours", "/metrics/history?hours=%20%2B1%20"}, {"history odd empty hours", "/metrics/history?hours="},
+		{"history odd repeated hours", "/metrics/history?hours=1&hours=6"},
+		{"latest odd", "/metrics"},
+	} {
+		out = append(out, request{name: "metrics " + item.name, method: "GET", path: "/api/agents/agent-odd" + item.query, admin: true})
+	}
 	return out
 }
 
