@@ -87,6 +87,7 @@ func seed(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	seedMetrics(t, dir)
+	seedTraffic(t, dir)
 }
 
 // naiveISO is datetime.isoformat() of a local naive time.
@@ -528,7 +529,7 @@ func requests() []request {
 		{name: "delete", method: "DELETE", path: "/api/agents/{manual}", admin: true},
 		{name: "delete again", method: "DELETE", path: "/api/agents/{manual}", admin: true},
 		{name: "delete seeded", method: "DELETE", path: "/api/agents/agent-1", admin: true},
-	}, reviewRequests()...)
+	}, append(reviewRequests(), trafficRequests()...)...)
 }
 
 // reviewRequests are the cases added by the A03 review: int() forms of the
@@ -643,7 +644,7 @@ func finalAgents(t *testing.T, dir string) any {
 	agents := system.GetList("agents")
 	for _, item := range agents {
 		agent := item.(*jsonx.Object)
-		for _, key := range []string{"id", "token", "last_heartbeat", "created_at", "updated_at"} {
+		for _, key := range []string{"id", "token", "last_heartbeat", "created_at", "updated_at", "traffic_history_since"} {
 			if agent.Has(key) {
 				agent.Set(key, "<masked>")
 			}
@@ -716,6 +717,7 @@ func TestDifferentialAgainstFlask(t *testing.T) {
 	stopPython()
 	stopGo()
 	failed += compareAfterStop(t, pyDir, goDir, pyValues, goValues)
+	failed += compareTraffic(t, pyDir, goDir)
 	t.Logf("%d requests + stored records + DATA_DIR files + files after stop, %d differences", len(requests()), failed)
 }
 
@@ -758,7 +760,7 @@ func compareAfterStop(t *testing.T, pyDir, goDir string, pyValues, goValues map[
 	compared := 0
 	for name, pyRel := range pyFiles {
 		goRel, ok := goFiles[name]
-		if !ok || !strings.HasPrefix(name, "metrics/") {
+		if !ok || !strings.HasPrefix(name, "metrics/") || strings.HasSuffix(name, ".sqlite3") {
 			continue
 		}
 		pyData, _ := os.ReadFile(filepath.Join(pyDir, pyRel))
