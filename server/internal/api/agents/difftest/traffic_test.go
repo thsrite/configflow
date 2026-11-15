@@ -32,6 +32,7 @@ const (
 	trafficAgentToken = agentToken + "-traffic"
 	oldAgentToken     = agentToken + "-traffic-old"
 	dnsAgentToken     = agentToken + "-dns"
+	editAgentToken    = agentToken + "-edit"
 )
 
 func seedTraffic(t *testing.T, dir string) {
@@ -49,6 +50,10 @@ func seedTraffic(t *testing.T, dir string) {
 				"profile_id", "other", "service_type", "mihomo", "host", "127.0.0.5", "port", 9, "version", "1.8.50-go",
 				"config_version", "0", "enabled", true, "domain_discovery_enabled", true, "traffic_history_enabled", true,
 				"traffic_history_since", "2026-11-01T00:00:00+00:00"),
+			// A05 review: hand-edited traffic store file (see seedTrafficReview).
+			jsonx.Obj("id", "agent-edit", "name", "edited store agent", "token", editAgentToken,
+				"profile_id", "default", "service_type", "mihomo", "host", "127.0.0.7", "port", 9, "version", "1.8.52-go",
+				"config_version", "0", "enabled", true, "domain_discovery_enabled", true),
 			jsonx.Obj("id", "agent-dns", "name", "dns agent", "token", dnsAgentToken,
 				"profile_id", "default", "service_type", "oxidns", "host", "127.0.0.6", "port", 9, "version", "1.8.52-go",
 				"config_version", "0", "enabled", true, "domain_discovery_enabled", true, "traffic_history_enabled", true)))
@@ -101,6 +106,15 @@ func seedTraffic(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 
+	// A05 review: a hand-edited store file — today's hosts is a list (kept
+	// by a report without items, AttributeError with items), counters are a
+	// float and a bool, the status is a str (AttributeError when the report
+	// has no mihomo_version), an odd day key "zzz" is never pruned.
+	edited := fmt.Sprintf(`{"status": "old", "days": {"%s": {"ip_only_conns": 1.5, "dropped": true, "hosts": []}, "zzz": {}, "%s": {}}}`, day(0), day(-6))
+	if err := os.WriteFile(filepath.Join(dir, "traffic", "agent-edit.json"), []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	// A traffic history from 1.8.51-go (legacy tables) with a deleted Agent.
 	os.MkdirAll(filepath.Join(dir, "metrics"), 0o755)
 	db, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: filepath.Join(dir, "metrics", "traffic_history.sqlite3")}).String())
@@ -119,6 +133,20 @@ func seedTraffic(t *testing.T, dir string) {
 			"('agent-traffic', %d, 3600, '10.0.0.2', 'DIRECT', 'DIRECT', 1, 5, 1), ('agent-traffic', %d, 3600, '', '', '', 0, 3, 0), "+
 			"('agent-traffic', %d, 3600, '10.0.0.3', 'Proxy', 'JP', 2, 20, 2), ('gone', %d, 3600, '10.0.0.9', 'P', 'Q', 1, 1, 1)",
 			hour-3600, hour-3600, hour-3600, hour-9*86400, hour-3600),
+		// A05 review: chain tables already present next to the legacy ones,
+		// with a REAL counter (SQLite turns an int64 overflow of
+		// `up + excluded.up` into a REAL) and a counter near the int64 limit
+		// that the next save overflows.
+		"CREATE TABLE traffic_usage ( agent_id TEXT NOT NULL, bucket INTEGER NOT NULL, span INTEGER NOT NULL, source TEXT NOT NULL, chain TEXT NOT NULL," +
+			" up INTEGER NOT NULL, down INTEGER NOT NULL, conns INTEGER NOT NULL, PRIMARY KEY (agent_id, bucket, span, source, chain)) WITHOUT ROWID",
+		"CREATE TABLE traffic_targets ( agent_id TEXT NOT NULL, bucket INTEGER NOT NULL, span INTEGER NOT NULL, source TEXT NOT NULL, target TEXT NOT NULL," +
+			" chain TEXT NOT NULL, up INTEGER NOT NULL, down INTEGER NOT NULL, conns INTEGER NOT NULL," +
+			" PRIMARY KEY (agent_id, bucket, span, source, target, chain)) WITHOUT ROWID",
+		fmt.Sprintf("INSERT INTO traffic_usage VALUES ('agent-traffic', %d, 3600, '10.0.0.8', 'G' || char(31) || 'N', 1.3835058055282164e19, 3, 1), "+
+			"('agent-traffic', %d, 3600, '10.0.0.8', 'X', 9223372036854775000, 0, 0), ('agent-traffic', %d, 3600, '10.0.0.2', 'Proxy' || char(31) || 'HK', 7, 7, 7)",
+			hour-2*3600, hour, hour-3600),
+		fmt.Sprintf("INSERT INTO traffic_targets VALUES ('agent-traffic', %d, 3600, '10.0.0.8', 'big.example', 'G' || char(31) || 'N', 1.3835058055282164e19, 3, 1)",
+			hour-2*3600),
 		fmt.Sprintf("INSERT INTO targets VALUES ('agent-traffic', %d, 3600, '10.0.0.2', 'example.com', 'HK', 1, 10, 1), "+
 			"('agent-traffic', %d, 3600, '10.0.0.3', 'example.net', 'JP', 2, 20, 2)", hour-3600, hour-3*86400),
 	} {
@@ -160,7 +188,7 @@ func trafficRequests() []request {
 	trendMask := []string{"data.trend.*.timestamp"}
 	statsMask := []string{"data.stats.start_time", "data.stats.end_time"}
 	traffic := "/api/agents/agent-traffic/traffic-history"
-	return []request{
+	return append([]request{
 		// traffic-report (domain discovery)
 		{name: "traffic report no token", method: "POST", path: "/api/agents/agent-traffic/traffic-report", body: report("running", `"v1.19.0"`), contentType: J},
 		{name: "traffic report wrong token", method: "POST", path: "/api/agents/agent-traffic/traffic-report", body: report("running", `"v1.19.0"`), contentType: J, headers: auth("wrong")},
@@ -260,6 +288,39 @@ func trafficRequests() []request {
 		{name: "traffic trend overflow", method: "GET", path: "/api/agents/agent-busy/traffic/trend?hours=10000000000", admin: true},
 		{name: "traffic trend no login", method: "GET", path: "/api/agents/agent-busy/traffic/trend"},
 		{name: "traffic trend unknown", method: "GET", path: "/api/agents/missing/traffic/trend", admin: true},
+	}, trafficReviewRequests(report, history, usage, target, auth)...)
+}
+
+// trafficReviewRequests are the cases added by the A05 review.
+func trafficReviewRequests(report func(string, string, ...string) string, history func(int, string, string) string,
+	usage func(int64, string, string, int) string, target func(int64, string, string, string, int) string,
+	auth func(string) map[string]string) []request {
+	J := "application/json"
+	hour := time.Now().Unix() / 3600 * 3600
+	traffic := "/api/agents/agent-traffic/traffic-history"
+	stateMask := []string{"data.since", "data.start"}
+	edit := "/api/agents/agent-edit/traffic-report"
+	big := fmt.Sprintf(`{"hour": %d, "source": "10.0.0.8", "chain": ["X"], "up": 4611686018427387903, "down": 0, "conns": 0}`, hour)
+	return []request{
+		// REAL counters and an int beyond int64 (stored + pending) in every view.
+		{name: "review traffic history query real", method: "GET", path: traffic, admin: true, mask: stateMask},
+		{name: "review traffic history report big", method: "POST", path: traffic, body: history(2, big, ""), contentType: J, headers: auth(trafficAgentToken)},
+		{name: "review traffic history query big source", method: "GET", path: traffic + "?by=source", admin: true, mask: stateMask},
+		{name: "review traffic history query big destination", method: "GET", path: traffic + "?by=destination&range=7d", admin: true, mask: stateMask},
+		{name: "review traffic history query big chain", method: "GET", path: traffic + "?by=chain&range=30d", admin: true, mask: stateMask},
+		{name: "review traffic history query big outbound", method: "GET", path: traffic + "?by=outbound", admin: true, mask: stateMask},
+		{name: "review traffic history query big group", method: "GET", path: traffic + "?by=group", admin: true, mask: stateMask},
+		// IPv6 scope ids keep spaces and case; Unicode 16 letters are not
+		// lowered by Python 3.11; final sigma.
+		{name: "review traffic history report odd targets", method: "POST", path: traffic, contentType: J, headers: auth(trafficAgentToken),
+			body: history(2, "", target(0, "10.0.0.2", `fe80::1%A B`, `["G"]`, 1)+", "+target(0, "10.0.0.2", `\ua7cb.Example.COM`, `["G"]`, 2)+", "+
+				target(0, "10.0.0.2", `A\u03a3.gr`, `["G"]`, 3)+", "+target(0, "10.0.0.2", `\u2160\u03a3.example.org`, `["G"]`, 4))},
+		{name: "review traffic history query odd targets", method: "GET", path: traffic + "?by=destination", admin: true, mask: stateMask},
+		// Hand-edited traffic store file.
+		{name: "review traffic report edited no items", method: "POST", path: edit, body: report("running", `"v1.19.1"`), contentType: J, headers: auth(editAgentToken)},
+		{name: "review traffic report edited keep version", method: "POST", path: edit, body: report("unreachable", `null`), contentType: J, headers: auth(editAgentToken)},
+		{name: "review traffic report edited items", method: "POST", path: edit, contentType: J, headers: auth(editAgentToken),
+			body: report("running", `"v1.19.1"`, `{"host": "a.example.com", "outlet": "direct", "policy": "P", "rule": "Match"}`)},
 	}
 }
 
