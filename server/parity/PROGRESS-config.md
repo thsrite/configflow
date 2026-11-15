@@ -436,23 +436,14 @@ Commands:
 
 ## C13 — Sub-Store client, runtime, subscription cache, dependencies
 
-**Status: `missing`** · prereqs: C12, C10 · Go: internal/substore (new)
+**Status: `partial` (porting in progress)** · prereqs: C12, C10 · Go: `internal/substore`, routes in `internal/api/settings/dependencies.go`
 
-Files:
-- `backend/utils/sub_store_client.py` (453)
-- `backend/utils/sub_store_runtime.py` (233)
-- `backend/utils/subscription_cache.py` (149)
-- `backend/utils/dependencies.py` (358)
+Files → Go: `sub_store_client.py` → `client.go` (+ `httpclient.go` requests-like client, `omap.go`); `sub_store_runtime.py` → `runtime.go`; `subscription_cache.py` → `cache.go`; `dependencies.py` → `env.go` + `dependencies.go`; `subscription_health.parse_userinfo` (C15's file, needed here) → `userinfo.go`; wiring `wire.go` (`Service`, `Default`, `SetDefault`, `Converter()`, `Wire`).
 
-Tests: `test_dependencies.py` (12), `test_sub_store_no_flow.py` (4), `test_sub_store_runtime.py` (12), `test_subscription_cache_cleanup.py` (4), `test_subscription_fetch_requests.py` (15)
+Done: code (29df3c0c), ported tests (a7d8f03f), route tests (37f1237f). `go test -race ./internal/substore/` ok; `internal/api/settings`, `internal/server`, `internal/convert` ok.
+Left: Python reference corpus for the pure functions; Flask↔Go differential of the 3 routes; final section write-up.
 
-Routes: none.
-
-Evidence: No Go package; no route registered.
-
-Missing / deferred: Everything in the files below.
-
-Notes for porter: Also implements the 3 dependency routes of `routes/settings.py` (C06 missing list) in `internal/api/settings`. `subscription_cache` calls `agents.content_sync.invalidate_content_sync` (agents domain): use a hook/interface. Sub-Store itself is kept (only its HTTP client is ported). Provides nothing to `tasks` yet (that is C15).
+Tasks slot: none (subscription/rule_source rows are `scheduled_refresh` = C15).
 
 ## C14 — remote rule fetch, ruleset content, remote sources, website identity
 
