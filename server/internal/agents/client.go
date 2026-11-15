@@ -46,6 +46,16 @@ type Request struct {
 	Header  http.Header
 	Body    []byte
 	Timeout Timeout
+	// The options of oxidns_monitor's requests.Session (all off for the
+	// manager's calls): NoProxy is trust_env=False (no proxy from the
+	// environment), NoRedirects allow_redirects=False (a 3xx is the
+	// response), MaxBody > 0 stream=True with a size bound: at most
+	// MaxBody+1 bytes of the body are read, and a failure while reading the
+	// body is Response.BodyError instead of an error of Do, so the caller can
+	// look at the status first as requests does before iter_content.
+	NoProxy     bool
+	NoRedirects bool
+	MaxBody     int64
 }
 
 // Response is the Agent's answer.
@@ -53,6 +63,9 @@ type Response struct {
 	StatusCode int
 	Header     http.Header
 	Body       []byte
+	// BodyError is a transport failure while reading the body (only with
+	// Request.MaxBody > 0; Body holds what was read).
+	BodyError error
 }
 
 // JSON is response.json() as requests 2.31 does it: without a charset from
@@ -159,8 +172,12 @@ var resolveHook func(host string) (string, error)
 // dialled as that address instead of being looked up as a name.
 func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 	dialer := &net.Dialer{Timeout: request.Timeout.Connect}
+	proxy := http.ProxyFromEnvironment
+	if request.NoProxy {
+		proxy = nil
+	}
 	transport := &http.Transport{
-		Proxy:             http.ProxyFromEnvironment,
+		Proxy:             proxy,
 		DisableKeepAlives: true,
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 			if host, port, err := net.SplitHostPort(address); err == nil && net.ParseIP(host) == nil {
@@ -209,11 +226,22 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 		req.URL.User = nil
 	}
 	client := &http.Client{Transport: transport}
+	if request.NoRedirects {
+		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, &TransportError{Err: err}
 	}
 	defer resp.Body.Close()
+	if request.MaxBody > 0 {
+		data, err := io.ReadAll(io.LimitReader(resp.Body, request.MaxBody+1))
+		response := &Response{StatusCode: resp.StatusCode, Header: resp.Header, Body: data}
+		if err != nil {
+			response.BodyError = &TransportError{Err: err}
+		}
+		return response, nil
+	}
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, &TransportError{Err: err}

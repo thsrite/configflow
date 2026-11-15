@@ -292,6 +292,11 @@ func (m *Manager) Runtime() *RuntimeState { return m.runtime }
 // SetClient makes this manager use client instead of DefaultClient().
 func (m *Manager) SetClient(client Client) { m.client = client }
 
+// Client is the client this manager sends Agent requests with (its own or
+// DefaultClient()); for packages that build their own Agent URLs
+// (oxidns_monitor's validated origin).
+func (m *Manager) Client() Client { return m.httpClient() }
+
 func (m *Manager) httpClient() Client {
 	if m.client != nil {
 		return m.client

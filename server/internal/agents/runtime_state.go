@@ -428,6 +428,9 @@ func legacyFields(raw any) (*jsonx.Object, bool) {
 	return fields, ok && fields != nil
 }
 
+// DecodeJSONBytes is decodeJSONBytes for other packages.
+func DecodeJSONBytes(b []byte) (string, bool) { return decodeJSONBytes(b) }
+
 // decodeJSONBytes is the bytes branch of json.loads:
 // s.decode(json.detect_encoding(s), 'surrogatepass'). ok=false is a
 // UnicodeDecodeError. Lone surrogates become U+FFFD (they have no UTF-8
