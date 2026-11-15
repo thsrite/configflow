@@ -417,6 +417,9 @@ func xcExecute(t *testing.T, r *Repository, op *jsonx.Object, variables map[stri
 	case "reopen":
 		return nil, nil
 	}
+	if result, err, handled := xcExecuteC04(t, r, op, arg); handled {
+		return result, err
+	}
 	t.Fatalf("unknown operation %s", op.GetString("op"))
 	return nil, nil
 }
@@ -445,7 +448,8 @@ func xcRun(t *testing.T, directory, mode string, operations []any) []any {
 			if errors.Is(err, ErrInUse) {
 				usages = UsagesOf(err)
 			}
-			record.Set("error", jsonx.Obj("class", xcErrorClass(err), "message", err.Error(), "usages", usages))
+			message := strings.ReplaceAll(err.Error(), r.DataDir(), "<dir>")
+			record.Set("error", jsonx.Obj("class", xcErrorClass(err), "message", message, "usages", usages))
 		} else {
 			result = xcNil(result)
 			if name := op.GetString("save"); name != "" {
@@ -463,12 +467,18 @@ func xcRun(t *testing.T, directory, mode string, operations []any) []any {
 // data directory created by Python, and returns the two directories.
 func xcOperations(t *testing.T) (goDir, pyDir string) {
 	t.Helper()
+	return xcOperationsFile(t, "testdata/repo_crosscheck_ops.json")
+}
+
+// xcOperationsFile is xcOperations with another operations file.
+func xcOperationsFile(t *testing.T, file string) (goDir, pyDir string) {
+	t.Helper()
 	seed := t.TempDir()
 	xcPython(t, "init", seed, "plain")
 	goDir, pyDir = t.TempDir(), t.TempDir()
 	xcCopyTree(t, seed, goDir)
 	xcCopyTree(t, seed, pyDir)
-	script := must(filepath.Abs("testdata/repo_crosscheck_ops.json"))(t)
+	script := must(filepath.Abs(file))(t)
 	operations := must(jsonx.Parse(must(os.ReadFile(script))(t)))(t).([]any)
 	python := xcPython(t, "run", pyDir, "plain", script).([]any)
 	golang := xcRun(t, goDir, "plain", operations)
@@ -481,7 +491,11 @@ func xcOperations(t *testing.T) (goDir, pyDir string) {
 	xcSame(t, "layout", xcMaskedLayout(t, golang[last]), xcMaskedLayout(t, python[last]))
 	golang, python = golang[:last], python[:last]
 	// Random values are numbered in order of first appearance over the
-	// whole run, so the records are compared cumulatively.
+	// whole run, so the records are compared cumulatively: the whole run at
+	// once, and step by step only to locate a difference.
+	if xcText(t, golang) == xcText(t, python) {
+		return goDir, pyDir
+	}
 	for index := range golang {
 		g, p := golang[index].(*jsonx.Object), python[index].(*jsonx.Object)
 		label := fmt.Sprintf("step %d (%s)", index, g.GetString("op"))

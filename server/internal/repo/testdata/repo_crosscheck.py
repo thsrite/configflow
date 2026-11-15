@@ -157,11 +157,121 @@ def execute(repository, op, variables):
         return repository.get_profile_agent_bindings(op['id'])
     if name == 'reopen':
         return None
+    result = execute_c04(repository, op, variables, arg)
+    if result is not _UNKNOWN:
+        return result
     raise SystemExit(f'unknown operation {name}')
+
+
+_UNKNOWN = object()
+
+
+def relative(repository, path):
+    return os.path.relpath(path, repository.data_dir)
+
+
+def plain_agents(agents):
+    from backend.common.config_repository import AGENT_HISTORY_NOT_READ
+    return [{key: '<not read>' if value is AGENT_HISTORY_NOT_READ else value for key, value in agent.items()}
+            for agent in agents]
+
+
+def execute_c04(repository, op, variables, arg):
+    """Operations added by the C04 review (public API part B and config.py)."""
+    name = op['op']
+    if name == 'save_router_settings':
+        return repository.save_router_settings(op['id'], arg('expected'), arg('replacement'))
+    if name == 'save_router_publication':
+        from backend.common.config_repository import _MISSING
+        fields = arg('fields') or {}
+        keywords = {key: fields.get(key, _MISSING) for key in
+                    ('manifest', 'dns_guard', 'ipv6_fakeip', 'ipv6_routes', 'ipv6_pd_guard', 'last_release')}
+        return repository.save_router_publication(op['id'], arg('expected'), **keywords)
+    if name == 'import_client_profile':
+        seen = {}
+
+        def build(shared):
+            seen['shared_revision'] = shared.get('_revision')
+            return copy.deepcopy(arg('result'))
+        result = repository.import_client_profile(arg('metadata'), build)
+        return {'result': result, 'seen': seen}
+    if name == 'update_profile_transaction_replace':
+        saved, revision = repository.update_profile_transaction(
+            op['id'], lambda current: copy.deepcopy(arg('replacement')), include_config_revision=True)
+        return {'saved': saved, 'revision': revision}
+    if name == 'get_agents':
+        return plain_agents(repository.get_agents(history=op.get('history', True)))
+    if name == 'get_system_settings':
+        return repository.get_system_settings()
+    if name == 'sanitization_tokens':
+        return {'rule_proxy': sorted(repository.rule_proxy_tokens_for_sanitization()),
+                'agents': sorted(repository.agent_tokens_for_sanitization())}
+    if name == 'profile_metadata':
+        return repository._profile_metadata(op['id'])
+    if name == 'write_generated':
+        return relative(repository, repository.write_generated(op['id'], op['filename'], op['content']))
+    if name == 'write_profile_json':
+        return relative(repository, repository.write_profile_json(op['id'], op['path'], arg('data')))
+    if name == 'write_profile_text':
+        return relative(repository, repository.write_profile_text(op['id'], op['path'], op['content']))
+    if name == 'read_profile_json':
+        return repository.read_profile_json(op['id'], op['path'])
+    if name == 'write_shared_json':
+        return relative(repository, repository.write_shared_json(op['path'], arg('data')))
+    if name == 'write_shared_text':
+        return relative(repository, repository.write_shared_text(op['path'], op['content']))
+    if name == 'read_shared_json':
+        return repository.read_shared_json(op['path'])
+    if name == 'raw_write':
+        path = repository.data_dir / op['path']
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(bytes.fromhex(op['hex']))
+        return None
+    if name == 'read_file':
+        path = repository.data_dir / op['path']
+        return {'text': path.read_text(encoding='utf-8'), 'mode': oct(path.stat().st_mode & 0o777)}
+    # config.py module functions; the main thread's ContextVars are the scope
+    if name == 'cfg_get_config':
+        config = config_module.get_config(op.get('id'))
+        apply_patch(config, op.get('patch'))
+        return copy.deepcopy(config)
+    if name == 'cfg_save_config':
+        return config_module.save_config(arg('config'), op.get('id'))
+    if name == 'cfg_save_with_guard':
+        return config_module.save_config_with_publish_guard(arg('config'), op['service'], op.get('id'))
+    if name == 'cfg_update_config_transaction':
+        return config_module.update_config_transaction(updater(op['patch']), op.get('id'))
+    if name == 'cfg_safe_import_config':
+        return config_module.safe_import_config(arg('data'), op.get('id'))
+    if name == 'cfg_get_shared_config':
+        return config_module.get_shared_config()
+    if name == 'cfg_save_shared_config':
+        return config_module.save_shared_config(arg('config'), arg('baseline'))
+    if name == 'cfg_update_shared_config_transaction':
+        return config_module.update_shared_config_transaction(updater(op['patch']))
+    if name == 'cfg_update_shared_and_config':
+        def profile_update(profile_id, before, after):
+            apply_patch(after, op['profile_patch'])
+        shared, profiles = config_module.update_shared_and_config_transaction(
+            updater(op['shared_patch']), profile_update, op.get('ids'))
+        return {'shared': shared, 'profiles': profiles}
+    if name == 'cfg_get_system_config':
+        return config_module.get_system_config()
+    if name == 'cfg_save_system_config':
+        return config_module.save_system_config(arg('config'), arg('baseline'))
+    if name == 'cfg_reset':
+        return config_module.reset_config_context()
+    if name == 'cfg_resolve':
+        from backend.common.profile_context import resolve_profile_id
+        return resolve_profile_id(op.get('id'), op.get('fallback'))
+    if name == 'cfg_get_resource_config':
+        return config_module.get_resource_config(op['kind'], op.get('resource_id'), op.get('id'))
+    return _UNKNOWN
 
 
 def run(directory, mode, operations):
     repository = open_repository(directory, mode)
+    config_module.set_repository(repository)
     variables = {}
     records = []
     for op in operations:
@@ -169,12 +279,13 @@ def run(directory, mode, operations):
         try:
             if op['op'] == 'reopen':
                 repository = open_repository(directory, mode)
+                config_module.set_repository(repository)
             result = execute(repository, op, variables)
             if 'save' in op:
                 variables[op['save']] = copy.deepcopy(result)
             record['result'] = result
         except Exception as error:  # the class and message are what is compared
-            record['error'] = {'class': type(error).__name__, 'message': str(error),
+            record['error'] = {'class': type(error).__name__, 'message': str(error).replace(str(repository.data_dir), '<dir>'),
                                'usages': getattr(error, 'usages', None)}
         record['dump'] = dump(directory)
         records.append(record)

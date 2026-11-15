@@ -342,9 +342,10 @@ func (r *Repository) ImportClientProfile(ctx context.Context, metadata *jsonx.Ob
 			bumpRevision(shared)
 		}
 		profile = r.emptyProfile(profileID, pyStrip(name), "")
-		fields, err := compatObject(result.GetOr("profile", jsonx.NewObject()))
-		if err != nil {
-			return err
+		profileValue := result.GetOr("profile", jsonx.NewObject())
+		fields, ok := profileValue.(*jsonx.Object)
+		if !ok || fields == nil {
+			return helperError(ClassAttributeError, "'"+pyTypeName(profileValue)+"' object has no attribute 'items'")
 		}
 		for key, value := range fields.All() {
 			if !IsProfileField(key) {
@@ -756,14 +757,32 @@ type RouterPublication struct {
 	LastRelease Optional // last_release (stored as given)
 }
 
+// expectedRouterID is expected_router['id'] of the save_router_* methods:
+// KeyError when missing, TypeError (Python: the set of locked routers) when
+// unhashable. A hashable non-string id matches no record (router ids are
+// strings), so the caller reports the router as changed (isString=false).
+func expectedRouterID(expectedRouter *jsonx.Object) (routerID string, isString bool, err error) {
+	value, ok := expectedRouter.Get("id")
+	if !ok {
+		return "", false, helperError(ClassKeyError, "'id'")
+	}
+	switch typed := value.(type) {
+	case string:
+		return typed, true, nil
+	case *jsonx.Object, []any:
+		return "", false, helperError(ClassTypeError, "unhashable type: '"+pyTypeName(value)+"'")
+	}
+	return "", false, nil
+}
+
 // SaveRouterSettings is save_router_settings(profile_id, expected_router,
 // replacement): commit a router PUT (replacement) or DELETE (nil) while the
 // caller holds this router's job lock. The stored record must still equal
 // expectedRouter.
 func (r *Repository) SaveRouterSettings(ctx context.Context, profileID string, expectedRouter, replacement *jsonx.Object) error {
-	routerID, ok := expectedRouter.Value("id").(string)
-	if !ok {
-		return helperError(ClassKeyError, "'id'")
+	routerID, isString, err := expectedRouterID(expectedRouter)
+	if err != nil {
+		return err
 	}
 	key := routerKey{profileID, routerID}
 	return r.update(ctx, writeOptions{lockedRouters: map[routerKey]bool{key: true}}, func(_ context.Context, document *jsonx.Object) error {
@@ -776,7 +795,7 @@ func (r *Repository) SaveRouterSettings(ctx context.Context, profileID string, e
 			return err
 		}
 		current, found := records.values[key]
-		if !found || !jsonx.Equal(current, expectedRouter) {
+		if !found || !isString || !jsonx.Equal(current, expectedRouter) {
 			return inUse("路由器设置已变化，请刷新后重试")
 		}
 		if replacement != nil && replacement.Value("id") != routerID {
@@ -805,9 +824,9 @@ func (r *Repository) SaveRouterSettings(ctx context.Context, profileID string, e
 // manifest; it cannot delete a router or alter its connection, and
 // unrelated edits made during the device operation are retained.
 func (r *Repository) SaveRouterPublication(ctx context.Context, profileID string, expectedRouter *jsonx.Object, publication RouterPublication) error {
-	routerID, ok := expectedRouter.Value("id").(string)
-	if !ok {
-		return helperError(ClassKeyError, "'id'")
+	routerID, isString, err := expectedRouterID(expectedRouter)
+	if err != nil {
+		return err
 	}
 	key := routerKey{profileID, routerID}
 	options := writeOptions{lockedRouters: map[routerKey]bool{key: true}, policyRouter: &key}
@@ -821,6 +840,9 @@ func (r *Repository) SaveRouterPublication(ctx context.Context, profileID string
 			return err
 		}
 		current := records.values[key]
+		if !isString {
+			current = nil // router ids are strings: no record has this one
+		}
 		if current == nil || fieldsDiffer(current, expectedRouter, RouterConnectionFields) {
 			return inUse("路由器连接已变化，无法保存发布回读记录")
 		}
