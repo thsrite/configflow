@@ -76,3 +76,10 @@ agent; they are not maintained further.
 - Re-run tests of anything marked `verified` before the domain differential.
 - Push `go` after each verified module or domain step. Never touch production; high-risk router/Agent
   behaviour additionally gets a VM lab test after the maintainer agrees.
+
+## Parity standard (confirmed 2026-11-15)
+
+The maintainer considered relaxing the standard to "functional equivalence" and decided to **keep the
+strict Python parity standard** after weighing the risks (judgement calls hiding real bugs, generated
+configs feeding fingerprints and auto-sync, frontend/Agent string matching, rollback to Python). Reviews
+continue to compare behaviour branch by branch against Python as written above.
