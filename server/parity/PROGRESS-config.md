@@ -1056,3 +1056,7 @@ Questions for the maintainer (from this audit):
    where PyYAML skips/keeps them, and `name:\tx` (tab before a value) is accepted by yamlx but rejected by
    PyYAML (new). `subs` lists them in `yamlxDiffers`; when C02 fixes yamlx (see item 5), that test flags
    the change and the rows must then match Python.
+7. **Open item for C07 (found by the C15 porter, 2026-11-15):** `tasks.History` passes a string
+   `run_count` (hand-edited `task-status.json`) through unchanged where Python converts it with `int()`;
+   C15's rows convert it themselves, but the backup, metrics and agent rows still show the string. Fix
+   in the C07 review. (The related `taskstatus.Record` / `ParseTime` defects were sent to the C02 reviewer.)
