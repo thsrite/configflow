@@ -1125,3 +1125,20 @@ func payloadDocument(root *pyyaml.Node) (any, error) {
 	}
 	return document, nil
 }
+
+// ReadRulePayloadAny and AppendRulePayloadAny adapt ReadRulePayload and
+// AppendRulePayload to rules.ConnectionDeps (payload is a *pyyaml.Node or
+// nil).
+func ReadRulePayloadAny(content string) ([]string, any, error) {
+	lines, node, err := ReadRulePayload(content)
+	if node == nil {
+		return lines, nil, err
+	}
+	return lines, node, err
+}
+
+// AppendRulePayloadAny: see ReadRulePayloadAny.
+func AppendRulePayloadAny(content, line string, payload any) string {
+	node, _ := payload.(*pyyaml.Node)
+	return AppendRulePayload(content, line, node)
+}

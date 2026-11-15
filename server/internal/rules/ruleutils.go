@@ -14,11 +14,10 @@ import (
 
 // Port of the pure parts of backend/utils/rule_utils.py: the names of the rule
 // cache files under DATA_DIR/shared/rules/{by-id,by-source,by-name}/ and the
-// read-side path resolution. Fetching, validation and writing through the
-// repository belong to packages #12 and #2: get_rules_dir() is the caller's
-// `rulesDir` argument here, and write_validated_rule_cache,
-// read_validated_rule_cache, refresh_remote_rule, read_rule_source_content and
-// save_rule_to_local are left for them.
+// read-side path resolution. get_rules_dir() is the caller's `rulesDir`
+// argument here; the repository-backed functions (get_rules_dir,
+// read/write_validated_rule_cache, refresh_remote_rule,
+// read_rule_source_content, save_rule_to_local) are in internal/rulefetch.
 
 // SanitizeRuleName is sanitize_rule_name: a file-system safe name without
 // extension.
