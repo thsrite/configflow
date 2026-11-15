@@ -521,7 +521,7 @@ Review commands (run on a private detached worktree of HEAD; the shared tree hel
 
 ## A07 — Mihomo panel, OxiDNS cache/rule update/rankings/publication stats
 
-**Status: `ported`** (porter 2026-11-15, in progress: corpus + differential) · prereqs: A06, C14 · Go: internal/agents/monitor (panel.go, cache.go, ruleupdate.go, rankings.go, publication_hooks.go, wire.go, pydigit_table.go), internal/api/agents/panel.go
+**Status: `ported`** (porter 2026-11-15, not reviewed) · prereqs: A06, C14 · Go: internal/agents/monitor (panel.go, cache.go, ruleupdate.go, rankings.go, publication_hooks.go, wire.go, pydigit_table.go), internal/api/agents/panel.go
 
 Files:
 - `backend/agents/mihomo_panel.py` (375) → `monitor/panel.go` (`PanelCall`, `CheckCoreUpdate`, `PanelRoutes` whitelist, `slim`/`slimProxy`, core-version cache `cachedLatest` with per-channel `TryLock`; seams `requestRule`, `latestCoreVersion`, `downloadSettings`, shared `monotonic`)
@@ -535,7 +535,7 @@ Wiring (`monitor.Wire`, one line in `internal/server` wirePackages): `SetRanking
 
 Shared edits (additive): `urlx.Quote(s, safe)`; `agents.HAField`/`agents.HAActive` exports in `agents/compat.go`; `monitor.rankingSection` → wrapper of new `rankingSectionRows(value, kind, limit)` (rows=ROWS for the history).
 
-Commits: 05f5216c (code), 0d7a130e (panel/cache/rule-update tests), fd24d620 (ranking tests), bafd9209 (publication tests), cc108f97 (route tests).
+Commits: 05f5216c (code), 0d7a130e (panel/cache/rule-update tests), fd24d620 (ranking tests), bafd9209 (publication tests), cc108f97 (route tests), 17406a4b (CPython corpus), 21c7d253 (differentials), 85852810 (gofmt).
 
 Tests: `test_mihomo_panel.py` 30/30 (`panel_test.go`; 2 route cases in `api/agents/panel_test.go`); `test_oxidns_cache.py` 8/8 (5 call-level in `cache_test.go`, 3 route); `test_oxidns_rule_update.py` 11/11 (9 + 2 route); `test_oxidns_ranking_history.py` 21/21 (`rankings_test.go`; random records from Go's PCG — expectations are exact counts of the same records); `test_oxidns_publication_stats.py` 14/14 (`publication_test.go`); deferred A01 case `test_panel_lookups_do_not_copy_the_history_*` → `TestPanelLookupsDoNotCopyTheHistoryButPublicationStatisticsDo`. **Deferred:** `test_oxidns_publication_core.py` (1, skipped unless OXIDNS_TEST_BINARY: real core) → finish/lab; `test_oxidns_publication_deployment.py` (3: `publish_deployment`, `oxidns_env`, `ha_publish`) → A14 (2) and A18 (1). Extra Go tests: Python int()/isdigit rules, non-JSON/oversized/unhashable answers, cache status mapping and KeyError token, HA branches, slot answer validation, non-str version AttributeError in collect_round, complete/checkpoint guards.
 
@@ -545,10 +545,18 @@ Decisions / differences (for the reviewer):
 - `active(agent)` with a truthy non-dict FIELD / unhashable status: Python raises, `agents.HAActive` answers false (registry-wide compat behaviour).
 - SQLite driver error texts are the driver's (only in logs / 500 page).
 
-Left: CPython reference corpus (panel helpers, SQLite bytes/rows), Flask↔Go differential of the 9 routes.
+Reference corpus (`testdata/gen_a07_reference.py` → `a07_reference.json.gz`, CPython 3.11.17, asserted by `a07_reference_test.go`): 169 `mihomo_panel.call` cases (names incl. CJK/emoji/512/513/control chars, log cursors with Unicode digits/superscripts, int() timeouts incl. Arabic/full-width digits/underscores/4301 digits, test URLs, bodies, every whitelisted pair and some outside, 26 Agent answers: empty/whitespace/non-JSON/404/BOM/UTF-16/NaN/1e400/4301-digit/redirect/transport error, slimming of proxies and providers, versions/service/token/host variants), 54 `oxidns_cache.call`, 68 `oxidns_rule_update.call` (each compared with the request that reached the Agent: method, prepared URL, body, Authorization/Accept/Content-Type, timeout, trust_env, redirects, stream), `_newer_release`, version.txt rule, `last_complete_slot_end`, and a ranking scenario of 27 operations (collect with slot splitting and partial slots, add/upsert, query cache, has_any, fetched, maintain with day merge, DAILY_TOP cut, re-merge into an existing day, expiry) with every stored row (rowid), sqlite_master, journal mode and header bytes 18–19: **all equal**. Corpus note: the generator's patched Session.request never reaches http.client, so a non-latin-1 token "succeeds" there; the Go test expects AGENT_UNREACHABLE (what real requests does; confirmed by the differential's A06 counterpart).
+
+Differential (`api/agents/difftest/panel_diff_test.go`): real Flask and Go against one loopback fake Agent (phase per request), rule download proxy seeded as a closed loopback port (the core update check never leaves the host): **112 requests** (success and failure of all 9 routes; auth 401s, HEAD/OPTIONS, 404 NOT_ALLOWED, slimming, Unicode names/digits, Agent 401/302/404/non-JSON/16 MiB+1/NaN/BOM/unhashable code, core update cached/forced/alpha, cache partial flush/[{}] 500/oversize/BOM, rule update tasks/HA busy/old Agents) + the requests the fake Agent received + DATA_DIR files: **0 differences**. `TestRankingCollectorDifferentialAgainstFlask`: both servers' collector loops run their first round (60 s) against one fake OxiDNS Agent (1.8.60-go, plus a 1.8.54-go one that must be skipped): 24 windows each asked once per server, `metrics/oxidns_rankings.sqlite3` rows (rowid), sqlite_master and journal mode **identical** (112 lines). A06's differential re-run after the store was wired: 69 requests, 0 differences.
+
+Known difference found by the corpus: CPython keeps each sqlite3 connection until the cyclic GC collects it, so its `-wal`/`-shm` files exist or not depending on GC timing; Go closes every connection at once (the last close checkpoints and removes them). Data is the same; only transient file presence differs.
+
+Last run: `go vet` + `go test -count=1 -race ./internal/agents/monitor/ ./internal/api/agents/ ./internal/server/ ./internal/agents/` all ok; differentials as above.
 
 Commands:
 - `rt -- bash -lc 'cd server && go vet ./internal/agents/monitor/ ./internal/api/agents/ && go test -count=1 ./internal/agents/monitor/ ./internal/api/agents/ ./internal/server/'`
+- `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run Panel ./internal/api/agents/difftest/'` and, separately (≈70 s), `-run RankingCollector` (lifecycle starts once per process)
+- corpus: `rt --back server/internal/agents/monitor/testdata/a07_reference.json.gz -- bash -lc 'cd server/internal/agents/monitor && PYTHONPATH=../../../.. ~/cf-test/.venv/bin/python testdata/gen_a07_reference.py'`
 - digit table: `rt --back server/internal/agents/monitor/pydigit_table.go -- bash -lc 'cd server/internal/agents/monitor && ~/cf-test/.venv/bin/python testdata/gen_digit.py > pydigit_table.go'`
 
 ## A08 — installer script rendering, install command store
