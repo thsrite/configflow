@@ -22,7 +22,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A04 | metrics history and flush | 1163 | verified | | A01, C07 | 3 | internal/agents/metrics (new), api/agents |
 | A05 | traffic history and traffic store | 967 | verified | | A04, C37¹ | 8 (8 done) | internal/agents/metrics, internal/agents/trafficstore (new), internal/discovery (new, C37's), api/agents |
 | A06 | OxiDNS monitor, dashboard state, metrics | 1364 | verified | | A01 | 5 | internal/agents/monitor (new), api/agents |
-| A07 | Mihomo panel, OxiDNS cache/rule update/rankings/publication stats | 1316 | missing | | A06, C14 | 9 | internal/agents/monitor, api/agents |
+| A07 | Mihomo panel, OxiDNS cache/rule update/rankings/publication stats | 1316 | ported | | A06, C14 | 9 | internal/agents/monitor, api/agents |
 | A08 | installer script rendering, install command store | 1333 | missing | HR | A02, C02 | – | internal/installer (new) |
 | A09 | Docker HA guide, preflight, enrollment | 1083 | missing | HR | A08, A01 | 2 | internal/installer, api/agents |
 | A10 | Docker HA compose variants, installer routes | 1018 | missing | HR | A08, A09 | 9 | internal/installer, api/agents |
@@ -521,23 +521,35 @@ Review commands (run on a private detached worktree of HEAD; the shared tree hel
 
 ## A07 — Mihomo panel, OxiDNS cache/rule update/rankings/publication stats
 
-**Status: `missing`** · prereqs: A06, C14 (`rule_fetch.request_rule` in mihomo_panel) · Go: internal/agents/monitor, api/agents
+**Status: `ported`** (porter 2026-11-15, in progress: corpus + differential) · prereqs: A06, C14 · Go: internal/agents/monitor (panel.go, cache.go, ruleupdate.go, rankings.go, publication_hooks.go, wire.go, pydigit_table.go), internal/api/agents/panel.go
 
 Files:
-- `backend/agents/mihomo_panel.py` (375)
-- `backend/agents/oxidns_cache.py` (134)
-- `backend/agents/oxidns_rule_update.py` (166)
-- `backend/agents/oxidns_ranking_history.py` (402)
-- `backend/agents/oxidns_publication_stats.py` (158)
-- `backend/routes/agents.py` (81) — lines 2199–2215, 2222–2250, 2251–2285
+- `backend/agents/mihomo_panel.py` (375) → `monitor/panel.go` (`PanelCall`, `CheckCoreUpdate`, `PanelRoutes` whitelist, `slim`/`slimProxy`, core-version cache `cachedLatest` with per-channel `TryLock`; seams `requestRule`, `latestCoreVersion`, `downloadSettings`, shared `monotonic`)
+- `backend/agents/oxidns_cache.py` (134) → `monitor/cache.go` (`CacheCall`, `ValidRequestTags`, `CacheFail`, `FlushError{Err, Flushed}` = MonitorError with `flushed`)
+- `backend/agents/oxidns_rule_update.py` (166) → `monitor/ruleupdate.go` (`RuleUpdateCall(ctx, m, id, method, paths)` for A16 too, `SupportsPaths`; HA pair hook `SetHARules` with default `ErrHARulesNotPorted` (500) until A18; `*HABusyError` = rules' ValueError → SERVICE_BUSY 409)
+- `backend/agents/oxidns_ranking_history.py` (402) → `monitor/rankings.go` (`RankingStore` = RankingHistory, `GetRankingStore`, `CollectAgent`, `CollectRound`, `LastCompleteSlotEnd`, loop `rankingLoop`)
+- `backend/agents/oxidns_publication_stats.py` (158): `checkpoint`/`complete` → `monitor/publication_hooks.go` (`Checkpoint`, `Complete`); the pure part was A06's `publication.go`
+- `backend/routes/agents.py` 2199–2215, 2222–2250, 2251–2285 → `api/agents/panel.go` (`registerPanel`, one line in `Register`); routes.tsv 9 rows `api/agents done`
 
-Tests: `test_mihomo_panel.py` (30), `test_oxidns_cache.py` (8), `test_oxidns_rule_update.py` (11), `test_oxidns_ranking_history.py` (21), `test_oxidns_publication_stats.py` (14), `test_oxidns_publication_core.py` (1), `test_oxidns_publication_deployment.py` (3)
+Wiring (`monitor.Wire`, one line in `internal/server` wirePackages): `SetRankingHistory(GetRankingStore)`, `agents.RegisterHooks{PublicationComplete, PublicationCheckpoint}`, `lifecycle.Loop("oxidns-ranking-history")` once per process (flock `DATA_DIR/.oxidns-rankings.lock` LOCK_NB, then a round every 60 s). No task row (Python has none).
 
-Routes (9): `GET|PUT|PATCH|DELETE|POST /api/agents/<agent_id>/mihomo/<path:resource>`; `GET|POST /api/agents/<agent_id>/oxidns/rules/update`; `GET /api/agents/<agent_id>/oxidns/cache`; `POST /api/agents/<agent_id>/oxidns/cache/flush`
+Shared edits (additive): `urlx.Quote(s, safe)`; `agents.HAField`/`agents.HAActive` exports in `agents/compat.go`; `monitor.rankingSection` → wrapper of new `rankingSectionRows(value, kind, limit)` (rows=ROWS for the history).
 
-Evidence: no Go code.
+Commits: 05f5216c (code), 0d7a130e (panel/cache/rule-update tests), fd24d620 (ranking tests), bafd9209 (publication tests), cc108f97 (route tests).
 
-Hooks to provide: `agents.RegisterHooks{PublicationComplete, PublicationCheckpoint}`; `lifecycle.Loop` for `oxidns_ranking_history.start_loop` (app.py starts it in the service process). Needs from A18: `oxidns_ha_publish.FIELD/active` (already in `agents/compat.go`) and `oxidns_ha_publish.rules` (pair rule update) — declare a hook here with an `ErrNotPorted` default for HA pairs; A18 registers it (breaks the rule_sync → rule_update → HA → rule_sync cycle).
+Tests: `test_mihomo_panel.py` 30/30 (`panel_test.go`; 2 route cases in `api/agents/panel_test.go`); `test_oxidns_cache.py` 8/8 (5 call-level in `cache_test.go`, 3 route); `test_oxidns_rule_update.py` 11/11 (9 + 2 route); `test_oxidns_ranking_history.py` 21/21 (`rankings_test.go`; random records from Go's PCG — expectations are exact counts of the same records); `test_oxidns_publication_stats.py` 14/14 (`publication_test.go`); deferred A01 case `test_panel_lookups_do_not_copy_the_history_*` → `TestPanelLookupsDoNotCopyTheHistoryButPublicationStatisticsDo`. **Deferred:** `test_oxidns_publication_core.py` (1, skipped unless OXIDNS_TEST_BINARY: real core) → finish/lab; `test_oxidns_publication_deployment.py` (3: `publish_deployment`, `oxidns_env`, `ha_publish`) → A14 (2) and A18 (1). Extra Go tests: Python int()/isdigit rules, non-JSON/oversized/unhashable answers, cache status mapping and KeyError token, HA branches, slot answer validation, non-str version AttributeError in collect_round, complete/checkpoint guards.
+
+Decisions / differences (for the reviewer):
+- `_latest_core_version` passes no `host_url` (flask.request.host_url) to request_rule: it only matters when the panel itself is served at github.com.
+- Ranking counters are int64 (SUM/upsert overflow to REAL is unreachable: ≤ 10,000 records and ≤ 6.6e8 per row per slot).
+- `active(agent)` with a truthy non-dict FIELD / unhashable status: Python raises, `agents.HAActive` answers false (registry-wide compat behaviour).
+- SQLite driver error texts are the driver's (only in logs / 500 page).
+
+Left: CPython reference corpus (panel helpers, SQLite bytes/rows), Flask↔Go differential of the 9 routes.
+
+Commands:
+- `rt -- bash -lc 'cd server && go vet ./internal/agents/monitor/ ./internal/api/agents/ && go test -count=1 ./internal/agents/monitor/ ./internal/api/agents/ ./internal/server/'`
+- digit table: `rt --back server/internal/agents/monitor/pydigit_table.go -- bash -lc 'cd server/internal/agents/monitor && ~/cf-test/.venv/bin/python testdata/gen_digit.py > pydigit_table.go'`
 
 ## A08 — installer script rendering, install command store
 
