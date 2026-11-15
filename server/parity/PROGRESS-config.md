@@ -38,7 +38,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C10 | manual node parser, subscription hosts/filter/dialers | 1242 | ported | C08 | – |
 | C11 | proxy chains, commented Mihomo editor, listeners, proxy-server DNS | 855 | partial | C10 | – |
 | C12 | converter common, Mihomo node conversion, dialer references, EasyTier | 1196 | ported | C09, C11 | – |
-| C13 | Sub-Store client, runtime, subscription cache, dependencies | 1193 | missing | C12, C10 | – |
+| C13 | Sub-Store client, runtime, subscription cache, dependencies | 1193 | ported | C12, C10 | 3 (3 done) |
 | C14 | remote rule fetch, ruleset content, remote sources, website identity | 1202 | ported | C12, C08 | – |
 | C15 | subscription refresh, health, scheduled refresh | 600 | missing | C13, C14, C07 | – |
 | C16 | health check, latency, node DNS, region check, domain probe | 1089 | missing | C12, C13 | – |
@@ -436,14 +436,48 @@ Commands:
 
 ## C13 — Sub-Store client, runtime, subscription cache, dependencies
 
-**Status: `partial` (porting in progress)** · prereqs: C12, C10 · Go: `internal/substore`, routes in `internal/api/settings/dependencies.go`
+**Status: `ported`** (not reviewed) · prereqs: C12, C10 · Go: `internal/substore`, routes in `internal/api/settings/dependencies.go`
 
-Files → Go: `sub_store_client.py` → `client.go` (+ `httpclient.go` requests-like client, `omap.go`); `sub_store_runtime.py` → `runtime.go`; `subscription_cache.py` → `cache.go`; `dependencies.py` → `env.go` + `dependencies.go`; `subscription_health.parse_userinfo` (C15's file, needed here) → `userinfo.go`; wiring `wire.go` (`Service`, `Default`, `SetDefault`, `Converter()`, `Wire`).
+Files → Go:
+- `backend/utils/sub_store_client.py` (453) → `client.go`: `Client` (`GetSubscriptionProxiesYAML` with `FetchOptions{Refresh, PreferCached}` = coalescing, 300/30/900 s reuse, 128-entry bound, failure cooldown 3 s doubling to 300 s, ≥60 s for direct 403/429; `fetchSubscription` = `_get_subscription_proxies_yaml`; `ConvertProxyString`/`ConvertProxyStringTarget` with the per-bundled-version LRU of 512 = `convert.ProxyStringConverter`), `SubscriptionResult`, `SubscriptionFetchError` (Unwrap = `__cause__` = direct error), `ParseProxiesFromYAML`, `ProxiesToNodes`, `isYAMLResponse`; `httpclient.go` = requests-like client (`RequestsClient`, `Request{Params, JSON, Timeout, Proxy}`, `Response.Text/JSON/RaiseForStatus/HeaderValue`, `RequestError{Class, Status}`, `PrepareURL` = prepare_url + urllib3 2.8 parse_url normalisation + requote_uri, `QuotePath`); `omap.go` (dict order for the bookkeeping).
+- `backend/utils/sub_store_runtime.py` (233) → `runtime.go`: `Runtime` (`Use`, `Maintenance`, `SetMode`, `Tick`, `Status`, `Monitor`, flock `work`/`control` locks, `state.json`, default root `<tempdir>/configflow-sub-store-<sha256(abspath(DATA_DIR))[:12]>`), `GetMode`, `RuntimeUnavailable`, `IdleSeconds`.
+- `backend/utils/subscription_cache.py` (149) → `cache.go`: `CachePath`, `DeleteSubscriptionCache`, `PruneOrphanCaches`, `SaveSubscriptionNodes`, `LoadSubscriptionCache` (returns `(obj, err)`: err only where Python raises outside its try), `SetContentSyncInvalidator` (hook for agents A13 `invalidate_content_sync`; nil default = only logged).
+- `backend/utils/dependencies.py` (358) → `env.go` (`Env{LookupEnv, DataDir, HTTP, Commands, Clock, RandomHex}`, `BuiltinSubStoreURL`, `BaseURL` = `_get_base_url`, `ActiveBundle`, `IsBuiltinAvailable`, `FetchRunningVersion`, `ParseVersion`, `IsNewer`, `CommandRunner`/`ExecRunner`, `Clock`/`SystemClock`) + `dependencies.go` (`Dependencies`: `FetchLatestRelease`, `GetSubStoreStatus`, `ListDependencies`, `StartSubStoreUpdate`, `runUpdate`/`installRelease` with rollback, `GetUpdateState`).
+- `subscription_health.parse_userinfo` (C15's file, needed by the client) → `userinfo.go` `ParseUserinfo`; C15 should use it from here.
+- `wire.go`: `Service{Env, Runtime, Client, Dependencies}`, `NewService`, `Default()`, `SetDefault()`, `Converter()` (pass to `convert.ConvertNodeToMihomo` / `RejectSurgeDialers`), `Wire()`.
 
-Done: code (29df3c0c), ported tests (a7d8f03f), route tests (37f1237f). `go test -race ./internal/substore/` ok; `internal/api/settings`, `internal/server`, `internal/convert` ok.
-Left: Python reference corpus for the pure functions; Flask↔Go differential of the 3 routes; final section write-up.
+Interface for #40 (process control): `substore.CommandRunner.Run(ctx, argv, timeout) (CommandResult{Stdout, Stderr, ReturnCode}, error)`. Python's exact calls go through it: `supervisorctl -c /etc/supervisor/conf.d/supervisord.conf <status|start|stop> sub-store` (timeout 20 s), `… restart sub-store` (60 s), `node --version` (5 s), `node --check <file>` (60 s). Errors must be `*substore.PyError` with Class `FileNotFoundError`/`PermissionError`/`OSError`/`TimeoutExpired` (→ RuntimeUnavailable 「无法管理内置 Sub-Store…」). Default `ExecRunner` (os/exec). #40 installs another by setting `substore.Default().Env.Commands` (or `SetDefault`).
 
-Tasks slot: none (subscription/rule_source rows are `scheduled_refresh` = C15).
+Wiring: `substore.Wire` in `server.wirePackages` registers `lifecycle.Loop("sub-store-idle")` (tick every 5 s, only with the bundle) and a one-shot `lifecycle.Loop("subscription-cache-prune")` (prune_orphan_caches at startup; failure logged by `backend.app` 「清理订阅缓存失败: …」). Routes (in `api/settings.Register`): `GET /api/settings/dependencies`, `POST /api/settings/dependencies/sub-store/update`, `POST /api/settings/dependencies/sub-store/mode` (routes.tsv rows done; `server_test` expects them). Tasks slot: none — subscription/rule_source rows are `scheduled_refresh` (C15).
+
+Tests (`internal/substore/*_test.go`, fake Sub-Store + fake airport on loopback, fake `CommandRunner` driving the fake, fake clock):
+- `test_sub_store_runtime.py` 12/12 (`runtime_test.go`, `client_test.go`; the other-process case re-execs the test binary as the lock holder; the route case in `api/settings/dependencies_test.go`).
+- `test_dependencies.py` 12/12 (+8 port params) (`dependencies_test.go`; `_wait_for_version`/restart are real against the fake Sub-Store instead of patched).
+- `test_subscription_fetch_requests.py` 14/15 (deferred: `test_manual_route_reuses_traffic_without_userinfo_get` → C30 subscriptions route; `requests.Timeout` cases use a refused/closed connection).
+- `test_sub_store_no_flow.py` 3/4 (deferred `test_parse_lines_route_converts_each_line` → C30 nodes route).
+- `test_subscription_cache_cleanup.py` 3/4 at cache level (delete via `DeleteSubscriptionCache`; deferred: the DELETE `/api/subscriptions` route halves and `test_a_subscription_still_in_use_keeps_its_cache` → C30).
+- `test_node_conversion_cache.py` 11/12 here (+ C12's case now through the real client: `TestRenderingAgainDoesNotStartSubStore`); skipped `test_a_value_that_is_not_text_is_passed_through` (Go API takes strings only; ConvertNodeToMihomo never passes anything else).
+- `test_request_exception_redaction.py` 3 sub_store_client cases; `test_subscription_hosts.py::test_hosts_change_invalidates_agent_content_checks_once` (metadata built with `subs.ExtractSubscriptionHosts`).
+- Extra: state.json bytes, command protocol, 20-s start timeout, cache file bytes, legacy/broken caches, prune error paths, release parsing/caching/errors, status card, update failure paths, sweep.
+- Corpus `testdata/gen.py` → `corpus.json` (237 rows: parse_userinfo, parse_version, is_newer, builtin_sub_store_url, _is_yaml_response, parse_proxies_from_yaml, proxies_to_nodes, conversion log line, requests prepare_url, response.text/json) all equal (`corpus_test.go`), except no-charset non-UTF-8 bodies (charset_normalizer guess, skipped).
+- Differential `internal/substore/difftest` (real Flask vs Go, same fake Sub-Store, GitHub via a dead HTTPS_PROXY → ProxyError on both): bundled 16 requests + external 4 requests, 0 differences, stored `sub_store_mode` equal.
+
+Decisions / differences from Python:
+- `convert.ProxyStringConverter` has no error: an invalid `SUB_STORE_BACKEND_API_PORT` makes Python's convert_proxy_string raise ValueError; Go logs and returns nil. A non-object first proxy (0, "", []) is cached by Python, returned as nil and not cached by Go (same ConvertNodeToMihomo outcome).
+- HTTP: Go never sends loopback requests through an environment proxy (requests would unless NO_PROXY); env proxies read once per process (http.ProxyFromEnvironment); IDNA of non-ASCII hosts not done; charset guessing without a charset = BOM else UTF-8; codecs beyond UTF-8/16, Latin-1, ASCII decode as UTF-8; transport error texts are Go's (class + status match).
+- `ParseProxiesFromYAML`: non-list falsy `proxies` ('' / {}) → empty list (Python returns that value); YAML errors use the PyYAML port (`rulefetch/pyyaml`) for class/text. yamlx limits apply to `_is_yaml_response`'s fallback parse (non-string keys → not YAML).
+- Runtime: a non-object state.json or non-number `last_used` counts as empty/0 (Python TypeError); lock polling on wall time; Monitor recovers panics. supervisorctl output decoded with replacement (Python strict).
+- Cache: non-dict `metadata`/`hosts`/`entries` treated as empty in the hosts-change check (Python AttributeError after the write). `ConfigStorageError` (store.ErrStorage) counts as OSError, like Python.
+- Update: the bundle is written after the whole download (Python streams); same end state.
+
+Commits: 29df3c0c (code), a7d8f03f (tests), 37f1237f (route tests), fbc859c4 (interim), a55ccd34 (corpus, URL normalisation, PyYAML errors), + final commit (differential, this section).
+
+Reviewer hints: compare `GetSubscriptionProxiesYAML` dict-order bookkeeping (omap) with the Python dicts; `fetchSubscription` branch order (direct → 403/429 → Sub-Store lease → fallback); `installRelease` rollback; `httpclient.go` PrepareURL vs urllib3 2.8 `parse_url`; runtime lock/state order in `Use`/`Maintenance`/`Tick`.
+
+Commands:
+- tests: `rt -- bash -lc 'cd server && go vet ./internal/substore/... ./internal/api/settings/ ./internal/server/ && go test -count=1 -race ./internal/substore/... ./internal/api/settings/ ./internal/server/ ./internal/convert/'`
+- differential: `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/substore/difftest/'`
+- corpus: `rt --back server/internal/substore/testdata/corpus.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/substore/testdata/gen.py'`
 
 ## C14 — remote rule fetch, ruleset content, remote sources, website identity
 
