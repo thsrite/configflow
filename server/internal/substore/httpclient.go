@@ -13,6 +13,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -286,27 +288,154 @@ type tunnelError struct{ status string }
 
 func (e *tunnelError) Error() string { return "Tunnel connection failed: " + e.status }
 
-// PrepareURL is requests' URL preparation visible on the wire: params
-// appended to the query (urlencode), then requote_uri.
+// PrepareURL is requests' URL preparation (PreparedRequest.prepare_url
+// with urllib3 2.x parse_url): scheme and host lowercased, dot segments
+// removed, invalid characters of path/query/fragment percent-encoded and
+// existing escapes upper-cased, an empty path made "/", params appended to
+// the query (urlencode), then requote_uri. A URL with a colon that does not
+// start with "http" is left as it is (requests skips preparation there).
+// IDNA encoding of non-ASCII hosts is not reproduced.
 func PrepareURL(raw string, params []Param) (string, error) {
+	if strings.Contains(raw, ":") && !strings.HasPrefix(asciiLower(raw), "http") {
+		return raw, nil
+	}
+	if !schemeRE.MatchString(raw) {
+		raw = "//" + raw
+	}
+	m := uriRE.FindStringSubmatchIndex(raw)
+	group := func(i int) (string, bool) {
+		if m[2*i] < 0 {
+			return "", false
+		}
+		return raw[m[2*i]:m[2*i+1]], true
+	}
+	scheme, _ := group(1)
+	authority, hasAuthority := group(2)
+	path, _ := group(3)
+	query, _ := group(4)
+	fragment, _ := group(5)
+	normalize := scheme == "" || asciiLower(scheme) == "http" || asciiLower(scheme) == "https"
+	scheme = asciiLower(scheme)
+	netloc := ""
+	if hasAuthority && authority != "" {
+		auth, hostPort := "", authority
+		if i := strings.LastIndex(authority, "@"); i >= 0 {
+			auth, hostPort = authority[:i], authority[i+1:]
+		}
+		host, port := hostPort, ""
+		if strings.HasPrefix(hostPort, "[") {
+			if i := strings.Index(hostPort, "]"); i >= 0 {
+				host, port = hostPort[:i+1], strings.TrimPrefix(hostPort[i+1:], ":")
+			}
+		} else if i := strings.LastIndex(hostPort, ":"); i >= 0 {
+			host, port = hostPort[:i], hostPort[i+1:]
+		}
+		if auth != "" && normalize {
+			auth = encodeInvalidChars(auth, userinfoChars)
+		}
+		if normalize {
+			host = asciiLower(host)
+		}
+		if auth != "" {
+			netloc = auth + "@"
+		}
+		netloc += host
+		// urllib3 parses the port as an int; requests drops port 0.
+		if n, err := strconv.Atoi(port); err == nil && n > 0 {
+			netloc += ":" + strconv.Itoa(n)
+		} else if err != nil && port != "" {
+			netloc += ":" + port
+		}
+	}
+	if normalize && path != "" {
+		path = encodeInvalidChars(removeDotSegments(path), pathChars)
+	}
+	if normalize && query != "" {
+		query = encodeInvalidChars(query, pathChars+"?")
+	}
+	if normalize && fragment != "" {
+		fragment = encodeInvalidChars(fragment, pathChars+"?")
+	}
+	if path == "" {
+		path = "/"
+	}
 	if len(params) > 0 {
 		encoded := make([]string, len(params))
 		for i, p := range params {
 			encoded[i] = urlx.QuotePlus(p.Key) + "=" + urlx.QuotePlus(p.Value)
 		}
-		fragment := ""
-		base := raw
-		if i := strings.IndexByte(base, '#'); i >= 0 {
-			base, fragment = base[:i], base[i:]
-		}
-		if strings.Contains(base, "?") && !strings.HasSuffix(base, "?") {
-			base += "&" + strings.Join(encoded, "&")
+		if query != "" {
+			query += "&" + strings.Join(encoded, "&")
 		} else {
-			base = strings.TrimSuffix(base, "?") + "?" + strings.Join(encoded, "&")
+			query = strings.Join(encoded, "&")
 		}
-		raw = base + fragment
 	}
-	return requoteURI(raw), nil
+	out := ""
+	if scheme != "" {
+		out = scheme + ":"
+	}
+	if netloc != "" || scheme == "http" || scheme == "https" {
+		out += "//" + netloc
+	}
+	out += path
+	if query != "" {
+		out += "?" + query
+	}
+	if fragment != "" {
+		out += "#" + fragment
+	}
+	return requoteURI(out), nil
+}
+
+var (
+	schemeRE  = regexp.MustCompile(`^(?:[a-zA-Z][a-zA-Z0-9+-]*:|/)`)
+	uriRE     = regexp.MustCompile(`(?s)^(?:([a-zA-Z][a-zA-Z0-9+.-]*):)?(?://([^\\/?#]*))?([^?#]*)(?:\?([^#]*))?(?:#(.*))?$`)
+	percentRE = regexp.MustCompile(`%[a-fA-F0-9]{2}`)
+)
+
+const (
+	userinfoChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-~!$&'()*+,;=:"
+	pathChars     = userinfoChars + "@/"
+)
+
+// encodeInvalidChars is urllib3's _encode_invalid_chars.
+func encodeInvalidChars(component, allowed string) string {
+	count := 0
+	component = percentRE.ReplaceAllStringFunc(component, func(s string) string { count++; return strings.ToUpper(s) })
+	isPercentEncoded := count == strings.Count(component, "%")
+	var b strings.Builder
+	for i := 0; i < len(component); i++ {
+		c := component[i]
+		if (isPercentEncoded && c == '%') || (c < 128 && strings.IndexByte(allowed, c) >= 0) {
+			b.WriteByte(c)
+		} else {
+			b.WriteByte('%')
+			b.WriteByte(hexDigits[c>>4])
+			b.WriteByte(hexDigits[c&15])
+		}
+	}
+	return b.String()
+}
+
+// removeDotSegments is urllib3's _remove_path_dot_segments.
+func removeDotSegments(path string) string {
+	var output []string
+	for _, segment := range strings.Split(path, "/") {
+		switch {
+		case segment == ".":
+		case segment != "..":
+			output = append(output, segment)
+		case len(output) > 0:
+			output = output[:len(output)-1]
+		}
+	}
+	if strings.HasPrefix(path, "/") && (len(output) == 0 || output[0] != "") {
+		output = append([]string{""}, output...)
+	}
+	if strings.HasSuffix(path, "/.") || strings.HasSuffix(path, "/..") {
+		output = append(output, "")
+	}
+	return strings.Join(output, "/")
 }
 
 const hexDigits = "0123456789ABCDEF"

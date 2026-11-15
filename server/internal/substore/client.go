@@ -2,6 +2,7 @@ package substore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/rulefetch/pyyaml"
 	"configflow/internal/urlx"
 	"configflow/internal/yamlx"
 )
@@ -537,14 +539,7 @@ func (c *Client) convertProxyString(ctx context.Context, proxyString, target str
 		clientLog.Warning("节点转换失败: " + err.Error())
 		return nil
 	}
-	proxyType := "unknown"
-	if scheme, _, found := strings.Cut(proxyString, "://"); found {
-		candidate := pyLower(scheme)
-		stripped := strings.NewReplacer("+", "", "-", "", ".", "").Replace(candidate)
-		if pyIsAlnum(stripped) {
-			proxyType = runePrefix(candidate, 32)
-		}
-	}
+	proxyType := proxyTypeOf(proxyString)
 	inputLength := utf8.RuneCountInString(proxyString)
 	clientLog.Info(fmt.Sprintf("节点转换开始: proxy_type=%s input_length=%d", proxyType, inputLength))
 
@@ -583,6 +578,19 @@ func (c *Client) convertProxyString(ctx context.Context, proxyString, target str
 	return converted
 }
 
+// proxyTypeOf is the scheme _convert_proxy_string logs (at most 32
+// characters, "unknown" unless alphanumeric apart from "+", "-", ".").
+func proxyTypeOf(proxyString string) string {
+	if scheme, _, found := strings.Cut(proxyString, "://"); found {
+		candidate := pyLower(scheme)
+		stripped := strings.NewReplacer("+", "", "-", "", ".", "").Replace(candidate)
+		if pyIsAlnum(stripped) {
+			return runePrefix(candidate, 32)
+		}
+	}
+	return "unknown"
+}
+
 // ParseProxiesFromYAML is parse_proxies_from_yaml: the proxies list of
 // Sub-Store's YAML with fix_proxy_fields applied (empty when the document
 // is not a mapping). A YAML error is returned, as are Python's failures on
@@ -591,6 +599,15 @@ func (c *Client) convertProxyString(ctx context.Context, proxyString, target str
 func ParseProxiesFromYAML(text string) ([]any, error) {
 	data, err := yamlx.SafeLoad(text)
 	if err != nil {
+		// PyYAML's exception text and class come from the port of its parser.
+		if _, perr := pyyaml.Compose(text); perr != nil {
+			class := "YAMLError"
+			var marked *pyyaml.Error
+			if errors.As(perr, &marked) {
+				class = marked.Class
+			}
+			return nil, &PyError{Class: class, Message: perr.Error(), Err: perr}
+		}
 		return nil, &PyError{Class: "YAMLError", Message: err.Error(), Err: err}
 	}
 	object, ok := data.(*jsonx.Object)
