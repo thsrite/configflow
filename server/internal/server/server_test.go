@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"configflow/internal/agents"
+	"configflow/internal/tasks"
 )
 
 // test_http_server.py::test_invalid_backend_port_fails_before_starting_server
@@ -68,8 +69,8 @@ func TestNewAppRegistersImplementedRoutes(t *testing.T) {
 // registers from its wire function; this fails when a fully wired server
 // would delete an Agent and leave any of those files behind.
 func TestDeleteAgentClearsEveryPerAgentStoreInAFullyWiredServer(t *testing.T) {
-	t.Skip("TODO(A05, C16, A04): unskip once A05 (traffic store + traffic history), C16 (domain probe, region check) " +
-		"and A04 (metrics history) register their delete hooks from wirePackages")
+	t.Skip("TODO(A05, C16): unskip once A05 (traffic store + traffic history) and C16 (domain probe, region check) " +
+		"register their delete hooks from wirePackages (A04's metrics history hook is wired: metrics.Wire)")
 	agents.ResetHooks()
 	t.Cleanup(agents.ResetHooks)
 	NewApp()
@@ -82,5 +83,22 @@ func TestDeleteAgentClearsEveryPerAgentStoreInAFullyWiredServer(t *testing.T) {
 	}
 	if hooks.DeleteTrafficHistory == nil {
 		t.Error("delete_agent: traffic_history.delete (A05) not registered")
+	}
+}
+
+// A04: the full application wires the metrics history into the registry
+// (heartbeat metrics, Agent deletion) and provides the metrics task row.
+func TestNewAppWiresTheMetricsHistory(t *testing.T) {
+	agents.ResetHooks()
+	t.Cleanup(agents.ResetHooks)
+	NewApp()
+	hooks := agents.CurrentHooks()
+	if hooks.AddMetrics == nil || hooks.DeleteMetricsHistory == nil {
+		t.Fatal("metrics_history hooks not registered")
+	}
+	for _, slot := range tasks.Missing() {
+		if slot == tasks.SlotMetrics {
+			t.Fatal("metrics_history task row not provided")
+		}
 	}
 }

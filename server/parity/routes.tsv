@@ -36,9 +36,9 @@ GET	/api/agents/<agent_id>/logs	routes.agents.get_agent_logs	26	todo
 POST	/api/agents/<agent_id>/logs/clear	routes.agents.clear_agent_log	26	todo
 GET	/api/agents/<agent_id>/logs/sources	routes.agents.get_agent_log_sources	26	todo
 POST	/api/agents/<agent_id>/logs/validate	routes.agents.validate_log_path	26	todo
-GET	/api/agents/<agent_id>/metrics	routes.agents.get_agent_metrics	21	todo
-GET	/api/agents/<agent_id>/metrics/history	routes.agents.get_agent_metrics_history	21	todo
-GET	/api/agents/<agent_id>/metrics/summary	routes.agents.get_agent_metrics_summary	21	todo
+GET	/api/agents/<agent_id>/metrics	routes.agents.get_agent_metrics	api/agents	done
+GET	/api/agents/<agent_id>/metrics/history	routes.agents.get_agent_metrics_history	api/agents	done
+GET	/api/agents/<agent_id>/metrics/summary	routes.agents.get_agent_metrics_summary	api/agents	done
 DELETE	/api/agents/<agent_id>/mihomo/<path:resource>	routes.agents.mihomo_panel	29	todo
 GET	/api/agents/<agent_id>/mihomo/<path:resource>	routes.agents.mihomo_panel	29	todo
 PATCH	/api/agents/<agent_id>/mihomo/<path:resource>	routes.agents.mihomo_panel	29	todo
