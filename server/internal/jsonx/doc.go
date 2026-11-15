@@ -50,6 +50,4 @@
 //   - Equal treats every NaN inside a list or object as the same object
 //     (true for values that came from json.loads, where NaN is a singleton;
 //     Python code that creates its own float('nan') objects differs).
-//   - Repr decides "printable" with Go's Unicode tables, which are newer than
-//     CPython 3.11's (Unicode 14); code points assigned since then differ.
 package jsonx

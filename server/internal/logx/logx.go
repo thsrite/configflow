@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -302,10 +301,7 @@ func LogText(value any, limit int) string {
 }
 
 // IsPrintable is str.isprintable() for one character (Python 3.11, Unicode 14).
-func IsPrintable(r rune) bool {
-	i := sort.Search(len(nonPrintable), func(i int) bool { return nonPrintable[i][1] >= r })
-	return !(i < len(nonPrintable) && nonPrintable[i][0] <= r)
-}
+func IsPrintable(r rune) bool { return jsonx.IsPrintable(r) }
 
 // ClientIP is client_ip(): the request source for operation logs, X-Real-IP
 // (set by nginx) or else the socket address, through LogText with limit 64.
