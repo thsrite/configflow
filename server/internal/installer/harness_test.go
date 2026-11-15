@@ -129,3 +129,11 @@ func pythonExe(t *testing.T) string {
 	t.Skip("python3 is required for the Python stub commands")
 	return ""
 }
+
+// ok returns a rendered value, panicking (failing the test) on an error.
+func ok(text string, err error) string {
+	if err != nil {
+		panic(err)
+	}
+	return text
+}
