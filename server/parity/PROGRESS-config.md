@@ -936,3 +936,9 @@ Questions for the maintainer (from this audit):
 4. Edge differences found in C03 spot checks (dangling symlink `lexists` vs `exists`, non-string agent
    name, non-object `mosdns`) go to the C03 reviewer: match Python's observable behaviour, except that a
    Python crash (500) may become a handled error — document each.
+5. **Two YAML loaders** (noted 2026-11-15 after C14): `internal/yamlx` (yaml.v3 + PyYAML resolver) and
+   `internal/rulefetch/pyyaml` (a port of PyYAML 6.0.1's pure reader/scanner/parser/composer/resolver,
+   needed for PyYAML's exact error texts and marks). The C02 reviewer evaluates moving the PyYAML port to a
+   shared package and building `yamlx.Load*` on it, which would also close C02's open items (`1,000` in
+   flow collections, error texts) and the non-string-key limits; if adopted, re-run every yamlx consumer's
+   tests and corpora.
