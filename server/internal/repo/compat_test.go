@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/yamlx"
 )
 
 // compatCall runs the Go counterpart of one golden function.
@@ -27,7 +28,7 @@ func compatCall(t *testing.T, fn string, input any) (any, error) {
 		return rawDialer(object)
 	case "parse_proxy_string":
 		if parsed := parseStructuredProxyString(input.(string)); parsed != nil {
-			return parsed, nil
+			return goldenDefault(parsed), nil
 		}
 		return nil, nil
 	case "validate_health":
@@ -146,6 +147,30 @@ func TestCompatGolden(t *testing.T) {
 			t.Errorf("no golden cases for %s", fn)
 		}
 	}
+}
+
+// goldenDefault is json.dumps(value, default=lambda o: [str(o)]) of the
+// golden generator for the YAML values jsonx has no JSON form for.
+func goldenDefault(v any) any {
+	switch value := v.(type) {
+	case *jsonx.Object:
+		out := jsonx.NewObject()
+		for k, child := range value.All() {
+			out.Set(k, goldenDefault(child))
+		}
+		return out
+	case []any:
+		out := make([]any, len(value))
+		for i, child := range value {
+			out[i] = goldenDefault(child)
+		}
+		return out
+	case yamlx.Timestamp:
+		return []any{value.String()}
+	case []byte:
+		return []any{"b" + jsonx.Repr(string(value))}
+	}
+	return v
 }
 
 // A YAML timestamp is a datetime in Python: truthy as a type, not a string

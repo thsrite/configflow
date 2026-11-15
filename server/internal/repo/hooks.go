@@ -118,10 +118,9 @@ func currentHooks() Hooks {
 	return hooks
 }
 
-// SetStructuredProxyStringParser installs the mihomo converter's
-// _parse_structured_proxy_string (JSON or YAML node text → proxy object, nil
-// when it needs Sub-Store). Until then a private approximation is used for
-// the raw dialer-proxy checks; see compat_proxystring.go for its limits.
+// SetStructuredProxyStringParser replaces _parse_structured_proxy_string
+// (JSON or YAML node text → proxy object, nil when it needs Sub-Store). The
+// default is convert.InspectStructuredProxyString; tests use the hook.
 func SetStructuredProxyStringParser(parse func(proxyString string) *jsonx.Object) {
 	parseStructuredProxyString = parse
 }

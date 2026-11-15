@@ -9,6 +9,7 @@ package convert
 import (
 	"container/list"
 	"context"
+	"errors"
 	"math/big"
 	"sort"
 	"strings"
@@ -421,8 +422,24 @@ func pyTruthy(v any) bool {
 
 // ParseStructuredProxyString is _parse_structured_proxy_string: a JSON or
 // YAML proxy string with a "type" is parsed locally; nil means Sub-Store has
-// to convert it (URI links, base64).
+// to convert it (URI links, base64). YAML values jsonx cannot hold (non-string
+// keys, recursive containers, !!set) make it nil too; see
+// InspectStructuredProxyString.
 func ParseStructuredProxyString(proxyString string) *jsonx.Object {
+	return parseStructured(proxyString, false)
+}
+
+// InspectStructuredProxyString is _parse_structured_proxy_string for callers
+// that only read fields or re-encode the dict as JSON (raw_dialer, the
+// repository's import rewrite): where yamlx cannot hold the YAML value
+// (non-string keys, self-referencing containers) the loose loader is used,
+// which writes keys the way json.dumps does and stands in a truthy
+// non-string for the rest — what those callers observe in Python.
+func InspectStructuredProxyString(proxyString string) *jsonx.Object {
+	return parseStructured(proxyString, true)
+}
+
+func parseStructured(proxyString string, loose bool) *jsonx.Object {
 	stripped := pyStrip(proxyString)
 	firstLine, _, _ := strings.Cut(stripped, "\n")
 	if strings.Contains(firstLine, "://") {
@@ -444,7 +461,14 @@ func ParseStructuredProxyString(proxyString string) *jsonx.Object {
 			}
 		}
 	}
-	if data, err := loadProxyYAML(stripped); err == nil {
+	data, err := loadProxyYAML(stripped)
+	if err != nil && loose {
+		var nonString *yamlx.NonStringKeyError
+		if errors.As(err, &nonString) || strings.Contains(err.Error(), "recursive") {
+			data, err = loadProxyYAMLLoose(stripped)
+		}
+	}
+	if err == nil {
 		if object, ok := data.(*jsonx.Object); ok && object != nil && pyTruthy(object.Value("type")) {
 			return object
 		}

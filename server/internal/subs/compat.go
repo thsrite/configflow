@@ -1,10 +1,12 @@
 package subs
 
-// TODO(port): replace with the dialer_references port of package #6
-// (mihomo converter). Everything in this file is a private copy of the parts
-// of backend/utils/dialer_references.py that proxy_chains and
-// subscription_dialers call, plus the structured proxy-string parser of
-// converters/mihomo.py (_parse_structured_proxy_string).
+// Private copy of the parts of backend/utils/dialer_references.py that
+// proxy_chains and subscription_dialers call, plus the structured
+// proxy-string parser of converters/mihomo.py (_parse_structured_proxy_string).
+// The real port is internal/convert (C12), which imports this package for
+// validate_proxy_chains, so subs cannot use it (import cycle).
+// compat_drift_test.go runs this copy over convert's Python corpus so the two
+// cannot drift.
 
 import (
 	"strings"
@@ -54,9 +56,35 @@ func parseStructuredProxyString(proxyString string) *jsonx.Object {
 		}
 	}
 	if v, err := yamlx.SafeLoad(stripped); err == nil {
-		if o, ok := v.(*jsonx.Object); ok && jsonx.Truthy(o.Value("type")) {
+		if o, ok := v.(*jsonx.Object); ok && bytesTruthy(o.Value("type")) {
 			return o
 		}
+	}
+	return nil
+}
+
+// bytesTruthy is bool(v) including bytes from !!binary (empty bytes are false).
+func bytesTruthy(v any) bool {
+	if b, ok := v.([]byte); ok {
+		return len(b) > 0
+	}
+	return jsonx.Truthy(v)
+}
+
+// iterValue is `for x in v` over a list field: a str yields its characters,
+// a dict its keys; anything else nothing.
+func iterValue(v any) []any {
+	switch value := v.(type) {
+	case []any:
+		return value
+	case string:
+		out := make([]any, 0, len(value))
+		for _, r := range value {
+			out = append(out, string(r))
+		}
+		return out
+	case *jsonx.Object:
+		return jsonx.ListOf(value.Keys())
 	}
 	return nil
 }
@@ -191,10 +219,10 @@ func groupMembers(group *jsonx.Object) []ref {
 			}
 		}
 	} else {
-		for _, id := range group.GetList("manual_nodes") {
+		for _, id := range iterValue(group.Value("manual_nodes")) {
 			members = append(members, ref{"node", jsonx.Str(id)})
 		}
-		for _, id := range group.GetList("include_groups") {
+		for _, id := range iterValue(group.Value("include_groups")) {
 			members = append(members, ref{"group", jsonx.Str(id)})
 		}
 		if len(members) == 0 {
@@ -203,7 +231,7 @@ func groupMembers(group *jsonx.Object) []ref {
 				if src == "node" {
 					kind = "node"
 				}
-				for _, id := range group.GetList("proxies") {
+				for _, id := range iterValue(group.Value("proxies")) {
 					members = append(members, ref{kind, jsonx.Str(id)})
 				}
 			}

@@ -178,8 +178,9 @@ func urlPath(url string) string {
 
 // RulesetFormat is converters.common.ruleset_format(rule, {'rule_library':
 // library}): the declared format, or the one inferred from the payload or URL
-// ("yaml", "text" or "mrs").
-// TODO(port): replace with package #6 (converters/common).
+// ("yaml", "text" or "mrs"). The port is convert.RulesetFormat (C12), which
+// cannot be used here (convert imports rules); compat_drift_test.go checks
+// this copy against convert's Python corpus.
 func RulesetFormat(rule *jsonx.Object, library []any, sourceURL string) string {
 	var found *jsonx.Object
 	libraryID := rule.Value("library_rule_id")

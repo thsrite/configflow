@@ -294,7 +294,7 @@ Evidence: `internal/subs` parser.go, hosts.go, filter.go, dialers.go, psl.go (+ 
 
 Missing / deferred: Not ported (no caller): `subscription_parser.parse_subscription`, `parse_clash_yaml`. Deferred: the remaining `test_subscription_hosts.py` cases (scheduled download, provider endpoint, preview route, agent content invalidation → C15/C17/C30/agents), `test_subscription_dialers.py` 10 cases (generation/delivery → C17/C18), `test_subscription_regex_filter.py` 2 (provider + save route → C17/C30), `test_node_library_subscription_filter.py` 0/3 (preview routes → C30/C33).
 
-Reviewer notes: Accepted: `\N{name}` regex filter → filter not applied (documented in progress/5-subs.md). Spot-checked `filter.go` vs `subscription_filter.py`: same branches and messages. `subs/compat.go` = dialer_references copy (C12 replaces).
+Reviewer notes: Accepted: `\N{name}` regex filter → filter not applied (documented in progress/5-subs.md). Spot-checked `filter.go` vs `subscription_filter.py`: same branches and messages. `subs/compat.go` = dialer_references copy; it stays (C12's `internal/convert` imports subs for `ValidateProxyChains` → cycle) and `subs/compat_drift_test.go` checks it against convert's Python corpus. C12 fixed two copy defects there: str-valued `manual_nodes`/`include_groups`/`proxies` iterate characters; an empty `!!binary` type is falsy.
 
 ## C11 — proxy chains, commented Mihomo editor, listeners, proxy-server DNS
 
@@ -318,27 +318,46 @@ Reviewer notes: Refusals return Python's failure message and the route answers 4
 
 ## C12 — converter common, Mihomo node conversion, dialer references, EasyTier
 
-**Status: `partial` (porting in progress)** · prereqs: C09, C11 · Go: `internal/convert`
+**Status: `partial` (code, tests, corpus, compat switch-over done; final -race run pending)** · prereqs: C09, C11 · Go: `internal/convert`
 
-Files:
-- `backend/converters/common.py` (118) → `convert/common.go` (+ `compat.go`: `_has_yaml_payload` copy, TODO C14)
-- `backend/converters/mihomo.py` (259) — node-conversion group → `convert/mihomo_nodes.go`
-- `backend/utils/proxy_utils.py` (14) → `mihomo_nodes.go` (`FixProxyFields`)
-- `backend/utils/dialer_references.py` (473) → `convert/dialers.go` (derived from the faithful `repo/compat_dialers.go` copy), `convert/dialers_api.go`
-- `backend/common/mihomo_easytier.py` (332) → `convert/easytier.go`, `convert/ipaddr.go`
+Files → Go:
+- `backend/converters/common.py` (118) → `convert/common.go` (`UDPFallback`, `NTPDirect`, `EmittedRules`, `NTPDirectRule`, `AfterMatchComment`, `NetworkAsProtocol`, `HasPortList`, `SetGeneralOption`, `RulesetFormat`, `ParseHostsPairs`); `compat.go` = `_has_yaml_payload` copy (TODO C14)
+- `backend/converters/mihomo.py` node group → `convert/mihomo_nodes.go`: `IndentDumperOptions` (IndentDumper), `ApplyGithubProxyDomain`, `MihomoUsedPorts`, `MihomoListenPorts`, proxy YAML LRU cache (`loadProxyYAML`), `ParseStructuredProxyString`, `InspectStructuredProxyString` (see decisions), `WithNodeConversions` + `ConversionResults` (node_conversions), `ConvertNodeToMihomo`; region-probe constants
+- `backend/utils/proxy_utils.py` → `FixProxyFields`
+- `backend/utils/dialer_references.py` → `convert/dialers.go` (derived from the old faithful `repo/compat_dialers.go`), `convert/dialers_api.go`: `ValidateShapes`, `ValidateDialers`, `DependencyGraph` (`*Graph`, `Ref{Kind, ID}`, `Ref.IDValue`), `GroupMembers`, `GroupDependencies`, `RawDialer`, `DialerTarget`, `CheckCycles`, `IncomingDialers`, `ResolveDialer`, `OverlayDialer`, `FilterProviderCandidates`, `ProviderProxyName`, `ValidateEmitted` (`EmitOptions`), `RejectSurgeDialers`, `DependencyNodeIDs`
+- `backend/common/mihomo_easytier.py` → `convert/easytier.go` (+ `ipaddr.go`: ipaddress.ip_network/ip_interface/ip_address rules): `NormalizeEasyTierSettings`, `EasyTierSettings`, `EasyTierDefaultSettings`, `EasyTierApplies`, `EasyTierKeepaliveGroupName`, `ApplyEasyTier`, `RedactEasyTierSettings`, `EasyTierFields`, constants
+- `convert/proxyyaml_loose.go`: the yaml.v3-based loose loader moved from `repo/compat_proxystring.go`
 
-Tests: `test_dialer_provider_scope.py` (4), `test_dialer_review_fixes.py` (16), `test_dialer_round2.py` (10), `test_mihomo_easytier.py` (13), `test_node_conversion_cache.py` (12), `test_proxy_yaml_cache.py` (14)
+Tests (`convert/ported_test.go`, `corpus_test.go`):
+- `test_proxy_yaml_cache.py` 14/14 (semantic cases via the corpus rows + a second cached call; special types/aliases/cycles adapted: `!!set`, non-string keys and recursive nodes give nil in Go — yamlx limit; deepcopy-lock test replaced by a lock-free check)
+- `test_mihomo_easytier.py` 11/13 as pure `ApplyEasyTier`/`NormalizeEasyTierSettings` tests (the generate round trip of each → C18); deferred: `test_surge_and_loon_ignore_the_setting` (C19/C20), `test_api_round_trip_rejection_and_desensitized_export` (C34 + export hook)
+- `test_dialer_provider_scope.py` 3/4 (deferred: `test_provider_membership_cycle_rejected_before_side_effects`, routes → C17/C18/C30/agents)
+- `test_dialer_round2.py` 2/10 (deferred 8 route/generation cases → C17/C18/C30/C33)
+- `test_dialer_review_fixes.py` 1/16 (deferred 15 route cases → C17/C18/C30/C33)
+- `test_node_conversion_cache.py` 1/12 (`test_rendering_again_does_not_start_sub_store` with a caching fake; the other 11 test sub_store_client's own cache → C13) + `TestNodeConversionsReuse`
+- Differential corpus `convert/testdata/corpus.jsonl.gz`: 37577 Python rows over 33 functions (common, nodes, dialers incl. 2500 random profiles and 2500 emitted configs, EasyTier 1500×3), all equal (results, mutated arguments, intentional error messages; unintended exceptions must be errors).
 
-Routes: none.
+Compat switch-over:
+- `repo`: switched. `repo/compat_dialers.go` keeps only the shared Python helpers and wraps `convert` (errors → `HelperError` classes); `repo/compat_proxystring.go` deleted (its loader moved to convert); `parseStructuredProxyString` = `convert.InspectStructuredProxyString`; `compat_test.go` golden passes (adapter `goldenDefault` for timestamps/bytes). repo → convert → subs → rules has no cycle.
+- `subs`: cycle (convert needs `subs.ValidateProxyChains`, subs' chains/dialers need dialer refs) → copy kept, `subs/compat_drift_test.go` runs it over convert's corpus (2 copy defects fixed, see C10).
+- `rules/compat.go` `RulesetFormat`: cycle (convert imports rules) → copy kept, `rules/compat_drift_test.go` (294 rows equal).
+- Not done (outside C12's packages): `repo.Hooks.RedactEasytierSettings` can now be `convert.RedactEasyTierSettings` (register in `server.wireCore`, convert cannot import repo).
 
-Done: code for every function compiles (`go vet` clean). WIP commit only; tests, corpus and compat switch-over not done yet.
+Decisions / differences from Python:
+- `validate_proxy_chains` = `subs.ValidateProxyChains` plus the unhashable `follow_group` TypeError subs lacks.
+- Sub-Store is injected: `ProxyStringConverter.ConvertProxyString(ctx, s) *jsonx.Object` (nil = None); `node_conversions` is per-context, not thread-local.
+- `provider_proxy_name` re.sub: validated by `rules.CompilePyRegex`, run on regexp2 with `(?P<n>)`/`(?P=n)` rewritten (`netPattern`); ask C08 for a `PyRegex` replace/submatch API to drop this.
+- YAML values jsonx cannot hold (non-string keys, recursive containers, `!!set`): `ParseStructuredProxyString` → nil (string goes to Sub-Store); `InspectStructuredProxyString` (raw_dialer, repo import rewrite) falls back to the loose loader (keys as json.dumps writes them) — what those Python callers observe.
+- Ports: bools count as ports 1/0 (Python keeps `True`); `MihomoListenPorts` lists listener ports ascending (Python: set order). Equal set members keep the first (`7890.0` hides `7890`), as in Python.
+- Ids that are not strings live in `Ref.ID` as `"\x00"+repr`; `Ref.IDValue()` decodes numbers/None.
+- Proxy YAML cache budget uses an approximation of `sys.getsizeof` (only decides caching).
+- Python crashes on malformed input (KeyError/TypeError/AttributeError/StopIteration…) are `*PyError` with Python's class; messages are approximate.
 
-Next: Go tests (port of the pure test cases), differential corpus vs Python, switch `repo/compat_dialers.go` + `repo/compat_proxystring.go` to `convert`, drift test for `subs/compat.go` (subs ↔ dialer_references is a cycle: subs.ValidateProxyChains is used by convert).
+Commits: 520b8bf9 (WIP code), bcfa7ee2 (corpus), a6d1be35 (ported tests), + compat switch-over commit.
 
-Decisions so far:
-- `validate_proxy_chains` comes from `subs.ValidateProxyChains` (C11), plus the unhashable `follow_group` TypeError check subs lacks.
-- Sub-Store conversion is injected: `ProxyStringConverter.ConvertProxyString(ctx, s) *jsonx.Object` (nil = None). `node_conversions` is `WithNodeConversions(ctx, *ConversionResults, reuse)`.
-- `provider_proxy_name` needs `re.sub` with groups: pattern validated with `rules.CompilePyRegex`, run on regexp2 (`pySub`).
+Commands:
+- tests: `rt -- bash -lc 'cd server && gofmt -l internal/convert; go vet ./internal/convert/... && go test -count=1 ./internal/convert/... ./internal/repo/... ./internal/subs/... ./internal/rules/...'`
+- corpus: `rt --back server/internal/convert/testdata -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/convert/testdata/gen.py'` (deterministic; gzip mtime 0)
 
 ## C13 — Sub-Store client, runtime, subscription cache, dependencies
 
