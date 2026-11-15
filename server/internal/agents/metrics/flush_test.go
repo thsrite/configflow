@@ -482,7 +482,37 @@ func TestStartAndStopPathLoadsSavesAndRecords(t *testing.T) {
 	}
 	wantEqual(t, "saved", saved, []any{jsonx.Obj("usage_percent", 3), jsonx.Obj("usage_percent", 7)})
 	entry, _ := taskstatus.New(dataDir).Get(TaskKey)
-	if entry.Value("last_status") != "success" || entry.Value("last_trigger") != "shutdown" {
+	if entry.Value("last_status") != "success" || entry.Value("last_trigger") != "shutdown" || entry.GetInt("run_count") != 1 {
+		t.Fatal(entry)
+	}
+}
+
+// app.py saved twice on a stop signal (the handler with record_idle=True,
+// then after serve() returned with record_idle=False): a save that keeps
+// failing is recorded twice, a successful one once.
+func TestShutdownFailureIsTriedAndRecordedTwiceLikeTheSignalPath(t *testing.T) {
+	srv, m := tasksApp(t)
+	ctx := srv.Context()
+	heartbeat(t, ctx, m, sample(1))
+	previous, previousReplace := appendLines, replaceFile
+	t.Cleanup(func() { appendLines, replaceFile = previous, previousReplace })
+	full := &os.PathError{Op: "write", Path: "x", Err: syscall.ENOSPC}
+	appendLines = func(string, []string) error { return full }
+	// the second save rewrites the file (the failed append is not trusted)
+	replaceFile = func(string, string) error { return full }
+	shutdownSave(ctx)
+	entry, _ := taskstatus.New(srv.DataDir).Get(TaskKey)
+	if entry.Value("last_status") != "failed" || entry.Value("last_trigger") != "shutdown" ||
+		entry.GetInt("run_count") != 2 || entry.GetInt("failure_count") != 2 || entry.GetInt("consecutive_failures") != 2 {
+		t.Fatal(entry)
+	}
+	if ForManager(m).PendingCount() != 1 {
+		t.Fatal(ForManager(m).PendingCount())
+	}
+	appendLines, replaceFile = previous, previousReplace
+	shutdownSave(ctx)
+	entry, _ = taskstatus.New(srv.DataDir).Get(TaskKey)
+	if entry.Value("last_status") != "success" || entry.GetInt("run_count") != 3 || entry.GetInt("consecutive_failures") != 0 {
 		t.Fatal(entry)
 	}
 }

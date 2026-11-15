@@ -83,12 +83,20 @@ func Wire() {
 	tasks.SetIntervalSetter(TaskKey, SetInterval)
 	lifecycleOnce.Do(func() {
 		lifecycle.Loop("metrics-history-flush", loop)
-		// app.py's stop-signal handler saved with record_idle=True: a stop
-		// always leaves a "shutdown" run in the task list.
-		lifecycle.OnShutdown("metrics-history-flush", func(ctx context.Context) {
-			scope := repo.WithScope(ctx)
-			defer repo.ResetConfigContext(scope)
-			FlushOnShutdown(scope, true)
-		})
+		lifecycle.OnShutdown("metrics-history-flush", shutdownSave)
 	})
+}
+
+// shutdownSave is what a stop signal did in app.py: the signal handler's
+// flush_on_shutdown() (record_idle=True: a stop always leaves a "shutdown"
+// run in the task list), then, after the HTTP server returned, app.py's
+// flush_on_shutdown(record_idle=False), which records again only when it
+// wrote something or failed. A save that fails at shutdown (full disk,
+// read-only directory) is therefore tried and recorded twice, as in Python
+// (run_count, failure_count and consecutive_failures go up by two).
+func shutdownSave(ctx context.Context) {
+	scope := repo.WithScope(ctx)
+	defer repo.ResetConfigContext(scope)
+	FlushOnShutdown(scope, true)
+	FlushOnShutdown(scope, false)
 }
