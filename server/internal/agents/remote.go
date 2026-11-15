@@ -391,18 +391,30 @@ func (m *Manager) SetLoggingConfig(ctx context.Context, agentID string, enabled 
 	if err != nil || agent == nil {
 		return value, err
 	}
-	// The failure objects of simpleCall carry success=False.
-	result, _ := value.(*jsonx.Object)
+	// The failure objects of simpleCall carry success=False; a 200 answer
+	// that is JSON but not an object fails on result.get('success') with
+	// an AttributeError, which Python does not catch.
+	result, isObject := value.(*jsonx.Object)
+	if !isObject {
+		return nil, &RemoteError{Message: "'" + pyTypeName(value) + "' object has no attribute 'get'"}
+	}
 	if jsonx.Truthy(result.Value("success")) {
 		_, err = m.UpdateAgents(ctx, "", func(_ context.Context, agents *[]any) (any, error) {
 			item, _ := findAgent(*agents, agentID)
 			if item == nil {
 				return false, nil
 			}
+			// item.setdefault('logging_config', {})['enabled'] = enabled
+			if !item.Has("logging_config") {
+				item.Set("logging_config", jsonx.NewObject())
+			}
 			config, ok := item.Value("logging_config").(*jsonx.Object)
-			if !ok || !item.Has("logging_config") {
-				config = jsonx.NewObject()
-				item.Set("logging_config", config)
+			if !ok {
+				existing := item.Value("logging_config")
+				if _, isList := existing.([]any); isList {
+					return nil, &RemoteError{Message: "list indices must be integers or slices, not str"}
+				}
+				return nil, &RemoteError{Message: "'" + pyTypeName(existing) + "' object does not support item assignment"}
 			}
 			config.Set("enabled", enabled)
 			return true, nil

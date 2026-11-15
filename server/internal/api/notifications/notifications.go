@@ -2,7 +2,8 @@
 // (blueprint "notifications", prefix /api/notifications).
 //
 // POST /read works on its own. GET (the list) needs every notification
-// source (internal/notifications.Complete: task rows, Agents); Register adds
+// source (internal/notifications.Complete: the task list, Agents) and every
+// task-row slot (tasks.Complete: the list reads all task rows); Register adds
 // it only then, so call Register after the other packages' wiring.
 package notifications
 
@@ -20,11 +21,15 @@ import (
 
 // Register adds the routes available now.
 func Register(r *httpx.Router) {
-	if notifications.Complete() {
+	if ListComplete() {
 		r.GET("/api/notifications", "notifications.list_notifications", auth.Require(listNotifications))
 	}
 	r.POST("/api/notifications/read", "notifications.read_notifications", auth.Require(readNotifications))
 }
+
+// ListComplete reports whether GET /api/notifications can register: every
+// notification source and every task-row slot is provided.
+func ListComplete() bool { return notifications.Complete() && tasks.Complete() }
 
 // RegisterAlways adds both routes regardless of the sources (tests).
 func RegisterAlways(r *httpx.Router) {

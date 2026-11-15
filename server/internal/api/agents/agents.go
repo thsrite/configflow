@@ -176,7 +176,7 @@ func doRegister(c *httpx.Ctx, out **jsonx.Object) (*httpx.Response, error) {
 		installationProfile = profile
 		data.Set("profile_id", profile)
 	}
-	if key := os.Getenv("AGENT_REGISTRATION_KEY"); key != "" && !installing {
+	if key := os.Getenv("AGENT_REGISTRATION_KEY"); key != "" && installationProfile == nil {
 		if !jsonx.Equal(data.GetOr("registration_key", ""), key) {
 			logger.Warning("Agent 注册被拒绝：注册密钥不匹配")
 			return failure(403, "Invalid registration key"), nil
@@ -504,6 +504,28 @@ func createAgent(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.JSON(jsonx.Obj("success", true, "data", result)), nil
 }
 
+// nonObjectUpdateError is the exception update_agent(agent_id, updates)
+// raises for a JSON body that is not an object: `'profile_id' in updates`
+// (a substring or membership test, or not iterable at all), then
+// `updates['profile_id']` when that test is true, else updates.get(...).
+func nonObjectUpdateError(value any) string {
+	switch v := value.(type) {
+	case string:
+		if strings.Contains(v, "profile_id") {
+			return "string indices must be integers, not 'str'"
+		}
+		return httpx.NoAttributeGet(value)
+	case []any:
+		for _, item := range v {
+			if jsonx.Equal(item, "profile_id") {
+				return "list indices must be integers or slices, not str"
+			}
+		}
+		return httpx.NoAttributeGet(value)
+	}
+	return "argument of type '" + httpx.PyTypeName(value) + "' is not iterable"
+}
+
 func handleAgentItem(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
 	agentID := c.Param("agent_id")
@@ -519,12 +541,7 @@ func handleAgentItem(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		data, isObject := value.(*jsonx.Object)
 		if !isObject || data == nil {
-			// 'profile_id' in updates, then updates.get(...)
-			switch value.(type) {
-			case string, []any:
-				return failure(500, httpx.NoAttributeGet(value)), nil
-			}
-			return failure(500, "argument of type '"+httpx.PyTypeName(value)+"' is not iterable"), nil
+			return failure(500, nonObjectUpdateError(value)), nil
 		}
 		ok, err = manager.UpdateAgent(ctx, agentID, data)
 		if err == nil && ok {

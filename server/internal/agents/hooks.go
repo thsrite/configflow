@@ -9,6 +9,7 @@ package agents
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 
 	"configflow/internal/jsonx"
@@ -169,9 +170,23 @@ type namedDelete struct {
 	fn   func(ctx context.Context, agentID string) error
 }
 
+// AgentDeletedStores are the per-Agent stores Python's DELETE
+// /api/agents/<id> route always clears after the registry deleted the
+// Agent, in its order. Each is registered with OnAgentDeleted under this
+// name by the package that owns the store:
+//
+//	traffic_store  get_traffic_store().delete   A05 (traffic history and traffic store)
+//	domain_probe   get_probe_store().delete     C16 (domain probe)
+//	region_check   get_region_store().delete    C16 (region check)
+//
+// The manager-level deletes of delete_agent are Hooks.DeleteMetricsHistory
+// (A04) and Hooks.DeleteTrafficHistory (A05).
+var AgentDeletedStores = []string{"traffic_store", "domain_probe", "region_check"}
+
 // OnAgentDeleted adds a store the DELETE /api/agents/<id> route clears after
-// the registry deleted the Agent. Python's order is traffic_store (#21),
-// domain_probe (#14), region_check (#14); an error answers 500 with its text.
+// the registry deleted the Agent; an error answers 500 with its text. The
+// stores of AgentDeletedStores run first and in that order whatever the
+// order of registration; other names follow in registration order.
 // Registering the same name again replaces the function in place.
 func OnAgentDeleted(name string, fn func(ctx context.Context, agentID string) error) {
 	listMu.Lock()
@@ -185,13 +200,39 @@ func OnAgentDeleted(name string, fn func(ctx context.Context, agentID string) er
 	deleteHooks = append(deleteHooks, namedDelete{name, fn})
 }
 
-// AgentDeletedHooks returns the registered delete functions in order.
-func AgentDeletedHooks() []func(ctx context.Context, agentID string) error {
+func orderedDeleteHooks() []namedDelete {
 	listMu.Lock()
 	defer listMu.Unlock()
-	out := make([]func(ctx context.Context, agentID string) error, len(deleteHooks))
-	for i, item := range deleteHooks {
+	rank := func(name string) int {
+		for i, known := range AgentDeletedStores {
+			if known == name {
+				return i
+			}
+		}
+		return len(AgentDeletedStores)
+	}
+	out := append([]namedDelete{}, deleteHooks...)
+	sort.SliceStable(out, func(i, j int) bool { return rank(out[i].name) < rank(out[j].name) })
+	return out
+}
+
+// AgentDeletedHooks returns the registered delete functions in order.
+func AgentDeletedHooks() []func(ctx context.Context, agentID string) error {
+	hooks := orderedDeleteHooks()
+	out := make([]func(ctx context.Context, agentID string) error, len(hooks))
+	for i, item := range hooks {
 		out[i] = item.fn
+	}
+	return out
+}
+
+// AgentDeletedHookNames returns the names of the registered delete
+// functions in the order AgentDeletedHooks runs them.
+func AgentDeletedHookNames() []string {
+	hooks := orderedDeleteHooks()
+	out := make([]string, len(hooks))
+	for i, item := range hooks {
+		out[i] = item.name
 	}
 	return out
 }

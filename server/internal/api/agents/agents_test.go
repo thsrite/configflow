@@ -7,6 +7,7 @@ package agents_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -382,5 +383,103 @@ func TestAgentItemUpdateAndDelete(t *testing.T) {
 	h.s.Delete("/api/agents/" + h.id).WantStatus(404)
 	if len(storedAgents(t, h.s)) != 0 || len(cleared) != 1 {
 		t.Fatal("delete")
+	}
+}
+
+// test_agent_registration_security.py::test_duplicate_registration_attack_is_rejected_after_repository_restart
+func TestDuplicateRegistrationAttackIsRejectedAfterRepositoryRestart(t *testing.T) {
+	first := newServer(t)
+	created := first.Post("/api/agents/register", httpxtest.JSON(payload())).WantStatus(200).Object()
+	// A new process: a fresh repository on the same data directory, no
+	// heartbeat state in memory, a new manager.
+	agents.ResetRuntime()
+	restarted := httpxtest.New(t, httpxtest.Options{DataDir: first.DataDir, DefaultFactories: true,
+		Register: httpxtest.Routes(apiagents.Register)})
+	before := storedAgents(t, restarted)
+	restarted.Post("/api/agents/register", httpxtest.JSON(payload("port", 9999, "version", "attacker"))).WantStatus(401)
+	legitimate := restarted.Post("/api/agents/register", httpxtest.JSON(payload("port", 9090)),
+		httpxtest.Bearer(created.GetString("token"))).WantStatus(200).Object()
+	if jsonx.Equal(before[0].(*jsonx.Object).Value("port"), 9999) || legitimate.Value("id") != created.Value("id") || legitimate.Has("token") {
+		t.Fatalf("legitimate %v", legitimate)
+	}
+	persisted := storedAgents(t, restarted)[0].(*jsonx.Object)
+	if persisted.Value("token") != created.Value("token") || !jsonx.Equal(persisted.Value("port"), 9090) {
+		t.Fatalf("persisted %v", persisted)
+	}
+}
+
+// test_agent_heartbeat_security.py::test_heartbeat_rejects_malformed_encoding_or_json_without_mutation
+// (streamed without Content-Length, as the Python test does).
+func TestHeartbeatRejectsMalformedEncodingOrJSONWithoutMutation(t *testing.T) {
+	for _, raw := range [][]byte{{0xff}, []byte(`{"version":`)} {
+		h := newHeartbeat(t)
+		before := system(t, h.s)
+		h.s.Post(h.path(), httpxtest.Bearer(h.token), streamBody(bytes.NewReader(raw))).WantStatus(400).
+			WantJSON(jsonx.Obj("success", false, "message", "Invalid heartbeat data"))
+		if !jsonx.Equal(system(t, h.s), before) {
+			t.Fatalf("%q mutated", raw)
+		}
+	}
+}
+
+// json.loads(bytes) detects UTF-16/32 and a UTF-8 BOM: such heartbeats are
+// accepted by Python.
+func TestHeartbeatAcceptsBOMAndUTF16Bodies(t *testing.T) {
+	utf16 := []byte{}
+	for _, r := range `{"version": "utf16"}` {
+		utf16 = append(utf16, byte(r), 0)
+	}
+	for name, raw := range map[string][]byte{"bom": append([]byte{0xEF, 0xBB, 0xBF}, `{"version": "bom"}`...), "utf16": utf16} {
+		h := newHeartbeat(t)
+		h.s.Post(h.path(), httpxtest.Bearer(h.token), streamBody(bytes.NewReader(raw))).WantStatus(200)
+		if h.agent(t).Value("version") != name {
+			t.Fatalf("%s: %v", name, h.agent(t).Value("version"))
+		}
+	}
+}
+
+// update_agent(agent_id, updates) with a body that is not an object fails
+// on its first use of updates, exactly as Python's operators do.
+func TestAgentItemUpdateWithNonObjectBodies(t *testing.T) {
+	h := newHeartbeat(t)
+	for _, c := range []struct {
+		body any
+		want string
+	}{
+		{"plain", "'str' object has no attribute 'get'"},
+		{"xprofile_idx", "string indices must be integers, not 'str'"},
+		{[]any{"other"}, "'list' object has no attribute 'get'"},
+		{[]any{"profile_id"}, "list indices must be integers or slices, not str"},
+		{jsonx.Int(5), "argument of type 'int' is not iterable"},
+		{jsonx.Float(1.5), "argument of type 'float' is not iterable"},
+		{true, "argument of type 'bool' is not iterable"},
+		{nil, "argument of type 'NoneType' is not iterable"},
+	} {
+		h.s.Put("/api/agents/"+h.id, httpxtest.JSON(c.body)).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", c.want))
+	}
+}
+
+// DELETE /api/agents/<id> clears the per-Agent stores after the registry
+// deleted the Agent, in Python's order whatever the order of registration;
+// a failing store answers 500 with its text after the Agent is gone.
+func TestAgentDeleteRunsStoreHooksInPythonOrder(t *testing.T) {
+	h := newHeartbeat(t)
+	var order []string
+	for _, name := range []string{"region_check", "extra", "domain_probe", "traffic_store"} {
+		name := name
+		agents.OnAgentDeleted(name, func(_ context.Context, id string) error {
+			order = append(order, name)
+			if name == "region_check" {
+				return errors.New("region store failed")
+			}
+			return nil
+		})
+	}
+	if got := strings.Join(agents.AgentDeletedHookNames(), ","); got != "traffic_store,domain_probe,region_check,extra" {
+		t.Fatalf("names %s", got)
+	}
+	h.s.Delete("/api/agents/"+h.id).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", "region store failed"))
+	if strings.Join(order, ",") != "traffic_store,domain_probe,region_check" || len(storedAgents(t, h.s)) != 0 {
+		t.Fatalf("order %v", order)
 	}
 }

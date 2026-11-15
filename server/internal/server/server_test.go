@@ -3,6 +3,8 @@ package server
 import (
 	"strings"
 	"testing"
+
+	"configflow/internal/agents"
 )
 
 // test_http_server.py::test_invalid_backend_port_fails_before_starting_server
@@ -57,5 +59,28 @@ func TestNewAppRegistersImplementedRoutes(t *testing.T) {
 		if app.Router.HasEndpoint(endpoint) {
 			t.Errorf("%s must wait for its packages", endpoint)
 		}
+	}
+}
+
+// Python's DELETE /api/agents/<id> always clears the traffic store, the
+// domain probe store and the region check store, and delete_agent clears the
+// metrics and traffic history. In Go each is a hook its owning package
+// registers from its wire function; this fails when a fully wired server
+// would delete an Agent and leave any of those files behind.
+func TestDeleteAgentClearsEveryPerAgentStoreInAFullyWiredServer(t *testing.T) {
+	t.Skip("TODO(A05, C16, A04): unskip once A05 (traffic store + traffic history), C16 (domain probe, region check) " +
+		"and A04 (metrics history) register their delete hooks from wirePackages")
+	agents.ResetHooks()
+	t.Cleanup(agents.ResetHooks)
+	NewApp()
+	if got, want := strings.Join(agents.AgentDeletedHookNames(), ","), strings.Join(agents.AgentDeletedStores, ","); !strings.HasPrefix(got, want) {
+		t.Errorf("DELETE /api/agents/<id> store hooks %q, want %q first", got, want)
+	}
+	hooks := agents.CurrentHooks()
+	if hooks.DeleteMetricsHistory == nil {
+		t.Error("delete_agent: metrics_history.delete_agent_history (A04) not registered")
+	}
+	if hooks.DeleteTrafficHistory == nil {
+		t.Error("delete_agent: traffic_history.delete (A05) not registered")
 	}
 }
