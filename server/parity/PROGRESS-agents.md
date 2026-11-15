@@ -873,3 +873,9 @@ Questions for the coordinator/maintainer:
    `agents.Wire` installs the Agents source unconditionally — done by the A01/A03 test-gap porter now
    (small, touches `internal/api/notifications` and `internal/agents`), with a test that the route
    registers once all task slots are provided.
+5. **Open item for A01 (found by the A06 reviewer, 2026-11-15):** with `HTTP_PROXY`/`HTTPS_PROXY` set,
+   Go's `agents.HTTPClient` bypasses the proxy for localhost/loopback Agents (Go's
+   `ProxyFromEnvironment` rule), while requests 2.31 proxies them unless `NO_PROXY` excludes them. Fix in
+   the shared client with requests' `should_bypass_proxies` semantics plus a regression test and a
+   differential case; assigned to the next agent that touches `agents/client.go` (A07 reviewer). A01 stays
+   `verified` with this item listed; it must be closed before the domain differential.
