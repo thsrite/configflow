@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"configflow/internal/pystr"
 	"errors"
 	"fmt"
 	"strconv"
@@ -299,7 +300,7 @@ func (r *PyRegex) ParseTemplate(template string) (result *Template, err error) {
 			name := s.getuntil(">", "group name")
 			nameLen := len([]rune(name))
 			var index int
-			if pyIsIdentifier(name) {
+			if pystr.IsIdentifier(name) {
 				i, found := r.parsed.groupdict[name]
 				if !found {
 					panic(&TemplateIndexError{fmt.Sprintf("unknown group name %s", pyReprString(name))})
@@ -367,7 +368,7 @@ func (r *PyRegex) ParseTemplate(template string) (result *Template, err error) {
 // underscores between digits and Unicode decimal digits are accepted.
 // Values beyond int64 saturate (they only meet the MAXGROUPS check).
 func pyIntLiteral(text string) (int64, bool) {
-	text = strings.TrimFunc(text, pyIsSpace)
+	text = strings.TrimFunc(text, pystr.IsSpace)
 	negative := false
 	if strings.HasPrefix(text, "+") || strings.HasPrefix(text, "-") {
 		negative = text[0] == '-'

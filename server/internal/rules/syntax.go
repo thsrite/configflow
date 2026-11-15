@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"configflow/internal/pystr"
 	"fmt"
 	"sort"
 	"strconv"
@@ -144,9 +145,9 @@ func CIDRError(value string) string {
 func SplitRulePayload(line string) (kind, payload string, params []string) {
 	fields := strings.Split(line, ",")
 	for i := range fields {
-		fields[i] = pyStrip(fields[i])
+		fields[i] = pystr.Strip(fields[i])
 	}
-	kind = pyUpper(fields[0])
+	kind = pystr.Upper(fields[0])
 	if commaPayloadTypes[kind] {
 		return kind, strings.Join(fields[1:], ","), []string{}
 	}
@@ -459,12 +460,12 @@ func ruleValueError(kindAny, valueAny any, depth int) string {
 		return "规则值必须是单行文本。"
 	}
 	if kind == "MATCH" {
-		if pyStrip(value) == "" {
+		if pystr.Strip(value) == "" {
 			return ""
 		}
 		return "MATCH 不接受规则值。"
 	}
-	if pyStrip(value) == "" {
+	if pystr.Strip(value) == "" {
 		return "规则值为空。"
 	}
 	if strings.Contains(value, ",") && !commaPayloadTypes[kind] {
@@ -491,7 +492,7 @@ func ruleValueError(kindAny, valueAny any, depth int) string {
 			return "ASN 应为非负整数。"
 		}
 	case "NETWORK":
-		if lower := pyLower(value); lower != "tcp" && lower != "udp" {
+		if lower := pystr.Lower(value); lower != "tcp" && lower != "udp" {
 			return "NETWORK 只接受 tcp 或 udp。"
 		}
 	case "AND", "OR", "NOT":

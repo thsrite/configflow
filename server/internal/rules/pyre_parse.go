@@ -1,6 +1,8 @@
 package rules
 
 import (
+	"configflow/internal/jsonx"
+	"configflow/internal/pystr"
 	"fmt"
 	"strconv"
 	"strings"
@@ -265,7 +267,7 @@ func (t *tokenizer) getuntil(terminator, name string) string {
 }
 
 func (t *tokenizer) checkGroupName(name string, offset int) {
-	if !pyIsIdentifier(name) {
+	if !pystr.IsIdentifier(name) {
 		t.fail(fmt.Sprintf("bad character in group name %s", pyReprString(name)), len([]rune(name))+offset)
 	}
 }
@@ -279,34 +281,9 @@ func isASCIILetter(r rune) bool {
 	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z'
 }
 
-// pyReprString is repr(str) for the small error messages that quote text.
-func pyReprString(s string) string {
-	quote := byte('\'')
-	if strings.Contains(s, "'") && !strings.Contains(s, "\"") {
-		quote = '"'
-	}
-	var b strings.Builder
-	b.WriteByte(quote)
-	for _, r := range s {
-		switch {
-		case r == rune(quote) || r == '\\':
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case r == '\n':
-			b.WriteString("\\n")
-		case r == '\r':
-			b.WriteString("\\r")
-		case r == '\t':
-			b.WriteString("\\t")
-		case r < 0x20 || r == 0x7f:
-			fmt.Fprintf(&b, "\\x%02x", r)
-		default:
-			b.WriteRune(r)
-		}
-	}
-	b.WriteByte(quote)
-	return b.String()
-}
+// pyReprString is repr(str) for the error messages that quote text
+// (CPython 3.11's printable table, via jsonx.Repr).
+func pyReprString(s string) string { return jsonx.Repr(s) }
 
 var simpleEscapes = map[string]rune{
 	`\a`: 7, `\b`: 8, `\f`: 12, `\n`: 10, `\r`: 13, `\t`: 9, `\v`: 11, `\\`: '\\',
@@ -857,7 +834,7 @@ func (t *tokenizer) parseGroup(st *reState, verbose bool, nested int, first bool
 		case char == "(":
 			condname := t.getuntil(")", "group name")
 			var condgroup int
-			if pyIsIdentifier(condname) {
+			if pystr.IsIdentifier(condname) {
 				t.checkGroupName(condname, 1)
 				g, ok := st.groupdict[condname]
 				if !ok {

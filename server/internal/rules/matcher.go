@@ -1,13 +1,13 @@
 package rules
 
 import (
+	"configflow/internal/pystr"
 	"iter"
-	"regexp"
 	"strings"
 	"sync"
 
 	"configflow/internal/jsonx"
-	"gopkg.in/yaml.v3"
+	"configflow/internal/pyyaml"
 )
 
 // Port of backend/utils/rule_matcher.py: rule-line parsing and the indexed
@@ -69,18 +69,18 @@ func NormalizeMatchQuery(query string) string {
 // ParseRuleLine is parse_rule_line: the rule type and value of one line in the
 // Clash, MosDNS or list dialects. ok=false is Python's None.
 func ParseRuleLine(line string) (ruleType, ruleValue string, ok bool) {
-	line = pyStrip(line)
+	line = pystr.Strip(line)
 	if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "!") || strings.HasPrefix(line, "//") {
 		return "", "", false
 	}
 	if strings.HasPrefix(line, "-") {
-		line = pyStrip(line[1:])
+		line = pystr.Strip(line[1:])
 		if line == "" {
 			return "", "", false
 		}
 	}
 	if i := strings.IndexByte(line, '#'); i >= 0 {
-		line = pyStrip(line[:i])
+		line = pystr.Strip(line[:i])
 		if line == "" {
 			return "", "", false
 		}
@@ -89,21 +89,21 @@ func ParseRuleLine(line string) (ruleType, ruleValue string, ok bool) {
 
 	// 1. Clash/YAML comma separated.
 	if i := strings.IndexByte(line, ','); i >= 0 {
-		ruleType = pyUpper(pyStrip(line[:i]))
-		ruleValue = pyStrip(line[i+1:])
+		ruleType = pystr.Upper(pystr.Strip(line[:i]))
+		ruleValue = pystr.Strip(line[i+1:])
 		// no-resolve is a parameter, not part of the value; keeping it would
 		// break IP matching and duplicate detection.
-		if strings.HasSuffix(pyLower(ruleValue), ",no-resolve") {
+		if strings.HasSuffix(pystr.Lower(ruleValue), ",no-resolve") {
 			runes := []rune(ruleValue)
-			ruleValue = pyStrip(string(runes[:len(runes)-len(",no-resolve")]))
+			ruleValue = pystr.Strip(string(runes[:len(runes)-len(",no-resolve")]))
 		}
 		return ruleType, ruleValue, true
 	}
 
 	// 2. MosDNS (domain: / full: / keyword: / regexp: / ip:).
 	if i := strings.IndexByte(line, ':'); i >= 0 {
-		prefix := pyLower(pyStrip(line[:i]))
-		value := pyStrip(line[i+1:])
+		prefix := pystr.Lower(pystr.Strip(line[:i]))
+		value := pystr.Strip(line[i+1:])
 		if prefix == "payload" && value == "" {
 			return "", "", false
 		}
@@ -124,11 +124,11 @@ func ParseRuleLine(line string) (ruleType, ruleValue string, ok bool) {
 	// 3. List format.
 	switch {
 	case strings.HasPrefix(line, "+."):
-		return "DOMAIN-SUFFIX", pyStrip(line[2:]), true
+		return "DOMAIN-SUFFIX", pystr.Strip(line[2:]), true
 	case strings.HasPrefix(line, "*."):
-		return "DIRECT-SUBDOMAIN", pyStrip(line[2:]), true
+		return "DIRECT-SUBDOMAIN", pystr.Strip(line[2:]), true
 	case strings.HasPrefix(line, ".") && !strings.HasPrefix(line, ".."):
-		return "SUBDOMAIN-ONLY", pyStrip(line[1:]), true
+		return "SUBDOMAIN-ONLY", pystr.Strip(line[1:]), true
 	}
 
 	// 4. Bare IP or CIDR.
@@ -144,12 +144,12 @@ func ParseRuleLine(line string) (ruleType, ruleValue string, ok bool) {
 
 // MatchDomain is match_domain.
 func MatchDomain(domain, ruleType, ruleValue string) bool {
-	domain = pyLower(domain)
+	domain = pystr.Lower(domain)
 	if ruleType == "DOMAIN-REGEX" {
 		re, err := CompilePyRegex(ruleValue, true)
 		return err == nil && re.Search(domain)
 	}
-	ruleValue = pyLower(ruleValue)
+	ruleValue = pystr.Lower(ruleValue)
 	switch ruleType {
 	case "DOMAIN":
 		return domain == ruleValue
@@ -224,7 +224,7 @@ func iterRulesetLines(content, format string) iter.Seq[rulesetLine] {
 					value = strings.TrimPrefix(raw, "\ufeff")
 				}
 				first = false
-				return yield(rulesetLine{pyStrip(value), pyStrip(raw)})
+				return yield(rulesetLine{pystr.Strip(value), pystr.Strip(raw)})
 			})
 		case "yaml":
 			for _, entry := range yamlPayloadLines(content) {
@@ -240,153 +240,66 @@ func iterRulesetLines(content, format string) iter.Seq[rulesetLine] {
 // string scalars; anything else (not a mapping, duplicate or missing payload,
 // non-string or multi-line entries, YAML errors) yields nothing, exactly like
 // the Python generator.
+//
+// Python composes with CSafeLoader (libyaml): the PyYAML port runs with
+// libyaml's scanner rules (ComposeOptions.Libyaml: tabs, byte order marks,
+// ":" in flow scalars, surrogate escapes) and libyaml's marks, which leave out
+// a byte order mark at the start of the stream (Python's line lookup then
+// runs one character early; that is kept). gopkg.in/yaml.v3 read some
+// documents differently ("%YAML 1.2", "[a,0:]", multi-line scalars).
 func yamlPayloadLines(content string) []rulesetLine {
-	decoder := yaml.NewDecoder(strings.NewReader(content))
-	var doc yaml.Node
-	if err := decoder.Decode(&doc); err != nil {
+	root, err := pyyaml.ComposeWith(content, pyyaml.ComposeOptions{Libyaml: true})
+	if err != nil || root == nil || root.Kind != pyyaml.MappingNode {
 		return nil
 	}
-	var extra yaml.Node
-	if err := decoder.Decode(&extra); err == nil {
-		return nil // PyYAML: "expected a single document in the stream"
-	}
-	if doc.Kind != yaml.DocumentNode || len(doc.Content) != 1 {
-		return nil
-	}
-	root := resolveAlias(doc.Content[0])
-	if root.Kind != yaml.MappingNode {
-		return nil
-	}
-	var payloads []*yaml.Node
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		key := resolveAlias(root.Content[i])
-		if key.Kind == yaml.ScalarNode && key.Value == "payload" {
-			payloads = append(payloads, root.Content[i+1])
+	var payloads []*pyyaml.Node
+	for _, pair := range root.Pairs {
+		if pair[0].Kind == pyyaml.ScalarNode && pair[0].Value == "payload" {
+			payloads = append(payloads, pair[1])
 		}
 	}
-	if len(payloads) != 1 {
+	if len(payloads) != 1 || payloads[0].Kind != pyyaml.SequenceNode {
 		return nil
 	}
-	payload := resolveAlias(payloads[0])
-	if payload.Kind != yaml.SequenceNode {
-		return nil
-	}
-	items := make([]*yaml.Node, len(payload.Content))
-	for i, node := range payload.Content {
-		node = resolveAlias(node)
-		if node.Kind != yaml.ScalarNode || !yamlIsStr(node) || strings.ContainsAny(node.Value, "\n\r") {
+	payload := payloads[0]
+	for _, node := range payload.Items {
+		if node.Kind != pyyaml.ScalarNode || node.Tag != pyyaml.TagStr || strings.ContainsAny(node.Value, "\n\r") {
 			return nil
 		}
-		items[i] = node
 	}
-	flow := payload.Style&yaml.FlowStyle != 0
-	var offsets []int
-	result := make([]rulesetLine, 0, len(items))
-	for _, node := range items {
-		if flow {
-			result = append(result, rulesetLine{pyStrip(node.Value), node.Value})
+	result := make([]rulesetLine, 0, len(payload.Items))
+	var runes []rune
+	for _, node := range payload.Items {
+		if payload.FlowStyle {
+			result = append(result, rulesetLine{pystr.Strip(node.Value), node.Value})
 			continue
 		}
-		if offsets == nil {
-			offsets = yamlLineOffsets(content)
+		if runes == nil {
+			runes = []rune(content)
 		}
-		start := yamlOffset(content, offsets, node.Line, node.Column)
-		from := strings.LastIndexByte(content[:start], '\n') + 1
-		to := len(content)
-		if end := strings.IndexByte(content[start:], '\n'); end >= 0 {
-			to = start + end
+		// start = content.rfind('\n', 0, start_mark.index) + 1
+		// end = content.find('\n', end_mark.index)
+		from := 0
+		for i := min(node.Start.Index, len(runes)) - 1; i >= 0; i-- {
+			if runes[i] == '\n' {
+				from = i + 1
+				break
+			}
 		}
-		result = append(result, rulesetLine{pyStrip(node.Value), pyStrip(content[from:to])})
+		to := len(runes)
+		for i := max(node.End.Index, 0); i < len(runes); i++ {
+			if runes[i] == '\n' {
+				to = i
+				break
+			}
+		}
+		source := ""
+		if from < to {
+			source = string(runes[from:to])
+		}
+		result = append(result, rulesetLine{pystr.Strip(node.Value), pystr.Strip(source)})
 	}
 	return result
-}
-
-func resolveAlias(node *yaml.Node) *yaml.Node {
-	for node.Kind == yaml.AliasNode && node.Alias != nil {
-		node = node.Alias
-	}
-	return node
-}
-
-// yamlLineOffsets returns the byte offset where each YAML line starts, using
-// YAML's line breaks (LF, CR, CRLF, NEL, LS, PS).
-func yamlLineOffsets(content string) []int {
-	offsets := []int{0}
-	for i := 0; i < len(content); {
-		switch c := content[i]; {
-		case c == '\n':
-			i++
-			offsets = append(offsets, i)
-		case c == '\r':
-			i++
-			if i < len(content) && content[i] == '\n' {
-				i++
-			}
-			offsets = append(offsets, i)
-		case c == 0xc2 && i+1 < len(content) && content[i+1] == 0x85:
-			i += 2
-			offsets = append(offsets, i)
-		case c == 0xe2 && i+2 < len(content) && content[i+1] == 0x80 && (content[i+2] == 0xa8 || content[i+2] == 0xa9):
-			i += 3
-			offsets = append(offsets, i)
-		default:
-			i++
-		}
-	}
-	return offsets
-}
-
-func yamlOffset(content string, offsets []int, line, column int) int {
-	if line < 1 || line > len(offsets) {
-		return 0
-	}
-	offset := offsets[line-1]
-	for n := 1; n < column && offset < len(content); n++ {
-		_, size := decodeRune(content[offset:])
-		offset += size
-	}
-	return offset
-}
-
-func decodeRune(s string) (rune, int) {
-	for i, r := range s {
-		if i == 0 {
-			size := len(string(r))
-			if r == 0xfffd && (len(s) == 0 || s[0] != 0xef) {
-				size = 1
-			}
-			return r, size
-		}
-	}
-	return 0, 1
-}
-
-var (
-	yamlBoolRE      = regexp.MustCompile(`^(?:yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF)$`)
-	yamlFloatRE     = regexp.MustCompile(`^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?|\.[0-9][0-9_]*(?:[eE][-+][0-9]+)?|[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$`)
-	yamlIntRE       = regexp.MustCompile(`^(?:[-+]?0b[0-1_]+|[-+]?0[0-7_]+|[-+]?(?:0|[1-9][0-9_]*)|[-+]?0x[0-9a-fA-F_]+|[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+)$`)
-	yamlNullRE      = regexp.MustCompile(`^(?:~|null|Null|NULL|)$`)
-	yamlTimestampRE = regexp.MustCompile(`^(?:[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]|[0-9][0-9][0-9][0-9]-[0-9][0-9]?-[0-9][0-9]?(?:[Tt]|[ \t]+)[0-9][0-9]?:[0-9][0-9]:[0-9][0-9](?:\.[0-9]*)?(?:[ \t]*(?:Z|[-+][0-9][0-9]?(?::[0-9][0-9])?))?)$`)
-)
-
-// yamlIsStr reports whether PyYAML would tag the scalar tag:yaml.org,2002:str.
-// Quoted and block scalars are always strings; plain ones go through PyYAML's
-// implicit resolvers (YAML 1.1: yes/no/on/off are booleans, 0o and 1_000 style
-// numbers, timestamps, "<<", "=", null).
-func yamlIsStr(node *yaml.Node) bool {
-	if node.Style&yaml.TaggedStyle != 0 {
-		return node.Tag == "!!str"
-	}
-	if node.Style&(yaml.DoubleQuotedStyle|yaml.SingleQuotedStyle|yaml.LiteralStyle|yaml.FoldedStyle) != 0 {
-		return true
-	}
-	value := node.Value
-	switch {
-	case yamlNullRE.MatchString(value), yamlBoolRE.MatchString(value), yamlFloatRE.MatchString(value),
-		yamlIntRE.MatchString(value), yamlTimestampRE.MatchString(value), value == "<<", value == "=":
-		return false
-	}
-	return true
 }
 
 // parseRulesetLine is _parse_ruleset_line: provider entries interpreted
@@ -406,7 +319,7 @@ func parseRulesetLine(value, behavior string) (kind, payload string, ok bool) {
 		if !validPattern(value) {
 			return "", "", false
 		}
-		value = pyLower(value)
+		value = pystr.Lower(value)
 		if strings.Contains(value, "*") && !(strings.HasPrefix(value, "*.") && !strings.Contains(value[2:], "*")) {
 			prefix := ""
 			if strings.HasPrefix(value, "+.") {
@@ -437,7 +350,7 @@ func parseRulesetLine(value, behavior string) (kind, payload string, ok bool) {
 	default:
 		return "", "", false
 	}
-	if !strings.Contains(value, ",") && IsRuleType(pyUpper(value)) {
+	if !strings.Contains(value, ",") && IsRuleType(pystr.Upper(value)) {
 		return "", "", false
 	}
 	value, err := classicalLine(value)
@@ -448,16 +361,16 @@ func parseRulesetLine(value, behavior string) (kind, payload string, ok bool) {
 		return "", "", false
 	}
 	head, rest, found := strings.Cut(value, ",")
-	kind = pyUpper(pyStrip(head))
+	kind = pystr.Upper(pystr.Strip(head))
 	if !found {
 		return "", "", false
 	}
 	switch kind {
 	case "DOMAIN-REGEX":
-		return kind, pyStrip(rest), true
+		return kind, pystr.Strip(rest), true
 	case "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "IP-CIDR", "IP-CIDR6":
 		first, _, _ := strings.Cut(rest, ",")
-		return kind, pyStrip(first), true
+		return kind, pystr.Strip(first), true
 	}
 	return "", "", false
 }
@@ -513,13 +426,13 @@ func newRuleIndex(entries iter.Seq[ruleEntry]) *ruleIndex {
 			default:
 				target = index.directSubdomain
 			}
-			key := pyLower(entry.value)
+			key := pystr.Lower(entry.value)
 			if _, seen := target[key]; !seen {
 				target[key] = len(index.lines)
 				index.lines = append(index.lines, entry.line)
 			}
 		case "DOMAIN-KEYWORD":
-			index.patterns = append(index.patterns, domainPattern{position: len(index.lines), keyword: pyLower(entry.value), hasKeyword: true})
+			index.patterns = append(index.patterns, domainPattern{position: len(index.lines), keyword: pystr.Lower(entry.value), hasKeyword: true})
 			index.lines = append(index.lines, entry.line)
 		case "REGEX", "REGEXP", "DOMAIN-REGEX":
 			// match_domain has always lowercased both pattern and query. Mihomo
@@ -529,7 +442,7 @@ func newRuleIndex(entries iter.Seq[ruleEntry]) *ruleIndex {
 			if entry.kind == "DOMAIN-REGEX" {
 				pattern, err = CompilePyRegex(entry.value, true)
 			} else {
-				pattern, err = CompilePyRegex(pyLower(entry.value), false)
+				pattern, err = CompilePyRegex(pystr.Lower(entry.value), false)
 			}
 			if err != nil {
 				if !IsPyRegexError(err) {
@@ -841,7 +754,7 @@ func (m *RuleConfigMatcher) Match(query string) *jsonx.Object {
 	}
 	domain := ""
 	if !isIP {
-		domain = pyLower(query)
+		domain = pystr.Lower(query)
 	}
 	for _, it := range m.items {
 		item := it.item

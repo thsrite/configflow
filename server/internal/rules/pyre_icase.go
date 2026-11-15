@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"configflow/internal/pystr"
 	"sort"
 	"sync"
 	"unicode"
@@ -174,7 +175,7 @@ func categoryHas(cat catKind, r rune, ascii bool) bool {
 		if ascii {
 			is = r == ' ' || r >= '\t' && r <= '\r'
 		} else {
-			is = pyIsSpace(r)
+			is = pystr.IsSpace(r)
 		}
 		return is == (cat == catSpace)
 	}

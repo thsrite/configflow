@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"configflow/internal/pystr"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -339,7 +340,7 @@ func linearMatch(configs []any, contents map[string]string, query string) *jsonx
 				kind, value, ok := parseRulesetLine(line.value, behavior)
 				if ok && MatchQuery(query, kind, value) {
 					name := item.GetOr("name", "规则集")
-					return obj("rule_name", name, "rule_type", "ruleset", "matched_line", pyStrip(line.source),
+					return obj("rule_name", name, "rule_type", "ruleset", "matched_line", pystr.Strip(line.source),
 						"policy", item.GetOr("policy", "DIRECT"), "source", "规则集: "+jsonx.Str(name),
 						"priority", jsonx.Int(priority+1), "rule_id", item.Value("id"), "item_type", "ruleset",
 						"behavior", item.GetOr("behavior", "classical"))

@@ -1,5 +1,7 @@
 package rules
 
+import "configflow/internal/pystr"
+
 // Exported line helpers of backend/utils/ruleset_content.py. The port of
 // that module is internal/rulefetch, which imports rules; the matcher here
 // needs the same helpers, so they live in this package (compat.go) and
@@ -20,10 +22,10 @@ func ClassicalLineError(value string) string { return classicalLineError(value) 
 func HasYAMLPayload(content string) bool { return hasYAMLPayload(content) }
 
 // PyUpper is Python's str.upper().
-func PyUpper(s string) string { return pyUpper(s) }
+func PyUpper(s string) string { return pystr.Upper(s) }
 
 // PyStrip is Python's str.strip() (Unicode whitespace).
-func PyStrip(s string) string { return pyStrip(s) }
+func PyStrip(s string) string { return pystr.Strip(s) }
 
 // PyIsSpace is Python's str.isspace() for one character.
-func PyIsSpace(r rune) bool { return pyIsSpace(r) }
+func PyIsSpace(r rune) bool { return pystr.IsSpace(r) }

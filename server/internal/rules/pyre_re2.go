@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"configflow/internal/pystr"
 	"errors"
 	"fmt"
 	"regexp"
@@ -437,7 +438,7 @@ func notSpaceRanges() string {
 	notSpaceOnce.Do(func() {
 		var spans []span
 		for r := rune(0); r <= 0x3000; r++ {
-			if pyIsSpace(r) {
+			if pystr.IsSpace(r) {
 				spans = append(spans, span{r, r})
 			}
 		}

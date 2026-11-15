@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"configflow/internal/pystr"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -88,10 +89,10 @@ func compileFilter(value any) (*PyRegex, error) {
 		}
 	}
 	text, _ := value.(string)
-	if text == "" || pyStrip(text) == "" {
+	if text == "" || pystr.Strip(text) == "" {
 		return nil, nil
 	}
-	re, err := CompilePyRegex(pyStrip(text), false)
+	re, err := CompilePyRegex(pystr.Strip(text), false)
 	if err != nil {
 		var unsupported *UnsupportedRegexError
 		if errors.As(err, &unsupported) {
@@ -129,7 +130,7 @@ func FilterCandidates(items []any, include, exclude any) ([]any, error) {
 
 func filterValue(group *jsonx.Object, field string) string {
 	if value, ok := group.Value(field).(string); ok {
-		return pyStrip(value)
+		return pystr.Strip(value)
 	}
 	return ""
 }
@@ -317,8 +318,8 @@ func RenderMembers(group, config *jsonx.Object) *jsonx.Object {
 		emitted.Set("use", unique)
 		var filters []string
 		for _, key := range []string{"regex", "aggregation_regex"} {
-			if value, ok := group.Value(key).(string); ok && pyStrip(value) != "" {
-				filters = append(filters, pyStrip(value))
+			if value, ok := group.Value(key).(string); ok && pystr.Strip(value) != "" {
+				filters = append(filters, pystr.Strip(value))
 			}
 		}
 		if len(filters) == 1 {

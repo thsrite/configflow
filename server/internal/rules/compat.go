@@ -5,6 +5,7 @@ package rules
 // copy; the owner replaces it when its package lands.
 
 import (
+	"configflow/internal/pystr"
 	"errors"
 	"fmt"
 	"strings"
@@ -79,7 +80,7 @@ func validClassicalDomain(value string) bool {
 // classicalLine is ruleset_content._classical_line.
 // TODO(port): replace with package #12.
 func classicalLine(value string) (string, error) {
-	stripped := pyStrip(value)
+	stripped := pystr.Strip(value)
 	if stripped == "" || strings.HasPrefix(stripped, "#") || strings.HasPrefix(stripped, "//") || strings.Contains(stripped, ",") {
 		return value, nil
 	}
@@ -127,10 +128,10 @@ func classicalLineError(value string) string {
 // TODO(port): replace with package #12.
 func hasYAMLPayload(content string) bool {
 	probe := strings.TrimPrefix(content, "\ufeff")
-	if strings.HasPrefix(strings.TrimLeftFunc(probe, pyIsSpace), "{") {
+	if strings.HasPrefix(strings.TrimLeftFunc(probe, pystr.IsSpace), "{") {
 		return true
 	}
-	skipSpace := func(s string) string { return strings.TrimLeftFunc(s, pyIsSpace) }
+	skipSpace := func(s string) string { return strings.TrimLeftFunc(s, pystr.IsSpace) }
 	for start := 0; start <= len(probe); {
 		rest := skipSpace(probe[start:])
 		for _, key := range []string{`payload`, `"payload"`, `'payload'`} {
@@ -249,7 +250,7 @@ func NormalizeClientRange(raw any) (string, error) {
 	if !ok {
 		return "", ErrClientRange
 	}
-	parts := strings.Split(pyStrip(text), "/")
+	parts := strings.Split(pystr.Strip(text), "/")
 	if len(parts) > 2 || parts[0] == "" {
 		return "", ErrClientRange
 	}

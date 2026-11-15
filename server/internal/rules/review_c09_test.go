@@ -2,6 +2,7 @@ package rules
 
 import (
 	"compress/gzip"
+	"configflow/internal/pystr"
 	"errors"
 	"io"
 	"os"
@@ -44,7 +45,7 @@ func unsupportedPattern(value any) bool {
 	if !ok {
 		return false
 	}
-	_, err := CompilePyRegex(pyStrip(text), false)
+	_, err := CompilePyRegex(pystr.Strip(text), false)
 	var unsupported *UnsupportedRegexError
 	return errors.As(err, &unsupported)
 }
