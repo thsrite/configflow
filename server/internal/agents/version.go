@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode"
 
+	"configflow/internal/agents/diag"
 	"configflow/internal/jsonx"
 )
 
@@ -86,10 +87,20 @@ func HasUpdate(currentVersion string) bool {
 	return CompareVersions(currentVersion, LatestAgentVersion) < 0
 }
 
-// pyIntText is int(text) for a str: surrounding whitespace, an optional sign,
-// decimal digits (any Unicode Nd) with single underscores between them.
+// maxStrDigits is CPython 3.11's default sys.get_int_max_str_digits(): int()
+// of a longer decimal text raises ValueError.
+const maxStrDigits = 4300
+
+// pyIntText is int(text) for a str: surrounding whitespace, an optional
+// sign, decimal digits (any Unicode Nd) with single underscores between
+// them, at most 4300 digits. CPython rewrites non-ASCII whitespace to spaces
+// first and keeps ASCII characters, so whitespace is " \t\n\v\f\r" or a
+// non-ASCII str.isspace() character (U+001C–U+001F do not count).
 func pyIntText(text string) (*big.Int, bool) {
-	s := strings.TrimFunc(text, unicode.IsSpace)
+	isSpace := func(r rune) bool {
+		return r == ' ' || (r >= '\t' && r <= '\r') || (r >= 127 && diag.IsPySpace(r))
+	}
+	s := strings.TrimFunc(text, isSpace)
 	negative := false
 	if s != "" && (s[0] == '+' || s[0] == '-') {
 		negative = s[0] == '-'
@@ -114,7 +125,7 @@ func pyIntText(text string) (*big.Int, bool) {
 			return nil, false
 		}
 	}
-	if previousUnderscore {
+	if previousUnderscore || digits.Len() > maxStrDigits {
 		return nil, false
 	}
 	value, ok := new(big.Int).SetString(digits.String(), 10)
@@ -127,16 +138,17 @@ func pyIntText(text string) (*big.Int, bool) {
 	return value, true
 }
 
-// digitValue is the decimal value of a Unicode Nd character (every Nd block
-// is a run of ten consecutive code points starting at a multiple-of-16 offset
-// or at its zero).
+// digitValue is the decimal value of a Unicode Nd character. Nd characters
+// come in contiguous runs of complete 0–9 sequences (some runs hold several
+// sequences back to back, such as the mathematical digits U+1D7CE–U+1D7FF),
+// so the value is the distance from the start of the run modulo 10.
 func digitValue(r rune) int {
 	if r >= '0' && r <= '9' {
 		return int(r - '0')
 	}
-	zero := r
-	for zero > 0 && unicode.IsDigit(zero-1) && r-zero < 9 {
-		zero--
+	start := r
+	for start > 0 && unicode.IsDigit(start-1) {
+		start--
 	}
-	return int(r - zero)
+	return int(r-start) % 10
 }
