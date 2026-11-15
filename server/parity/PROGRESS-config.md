@@ -1115,7 +1115,9 @@ Questions for the maintainer (from this audit):
    `IsSpace`, `Int`, `Float` on CPython 3.11 tables), `urlx.RequestsPrepareURL`, and `yamlx` built on
    `internal/pyyaml` (`LoadOptions.KeepNonStringKeys`, `LoadCSafeFirst`). Private copies elsewhere must be
    switched to them so behaviour cannot drift: `pyLower` copies in `subs`, `substore`, `rules`, `convert`,
-   `agents`, `agents/metrics`; `subs.pyIntStr`; `repo.pythonFloat`; `substore.PrepareURL`; C14's accepted
+   `agents`, `agents/metrics`; `subs.pyIntStr`; `repo.pythonFloat`; `substore.PrepareURL`; `repo/compat_health.go` → `health/check.ValidateHealth` (no cycle); C14's accepted
    non-string-key case and C12's loose YAML loader (`KeepNonStringKeys`). Each module's reviewer does the
    switch for its own package (or the next porter touching it), re-runs that package's corpora, and notes
    it in the section. Before any domain differential, `grep` for remaining copies must come back empty.
+9. **`internal/api/nodes`** (created by the C16 porter for the latency routes): C30 adds its node routes
+   to the same package's `Register` instead of creating another one.
