@@ -415,6 +415,192 @@
   "replacement": null
  },
  {
+  "op": "save_router_settings",
+  "id": "work",
+  "expected": {
+   "id": "rt1",
+   "name": "R2",
+   "type": "routeros",
+   "endpoint": "192.0.2.1",
+   "username": "u",
+   "password": "p",
+   "verify_tls": false,
+   "extra": "保留",
+   "ros_policy_state": {
+    "rules": [
+     1
+    ],
+    "note": "中"
+   },
+   "last_release": {
+    "at": 1
+   }
+  },
+  "replacement": {
+   "id": "rt1",
+   "name": "R2",
+   "type": "routeros",
+   "endpoint": "192.0.2.1",
+   "username": "u",
+   "password": "new",
+   "verify_tls": false,
+   "extra": "保留",
+   "ros_policy_state": {
+    "rules": [
+     1
+    ],
+    "note": "中"
+   },
+   "last_release": {
+    "at": 1
+   }
+  }
+ },
+ {
+  "op": "save_router_settings",
+  "id": "work",
+  "expected": {
+   "id": "rt1",
+   "name": "R2",
+   "type": "routeros",
+   "endpoint": "192.0.2.1",
+   "username": "u",
+   "password": "new",
+   "verify_tls": false,
+   "extra": "保留",
+   "ros_policy_state": {
+    "rules": [
+     1
+    ],
+    "note": "中"
+   },
+   "last_release": {
+    "at": 1
+   }
+  },
+  "replacement": {
+   "id": "rt1",
+   "name": "R2",
+   "type": "routeros",
+   "endpoint": "192.0.2.1",
+   "username": "u",
+   "password": "new",
+   "verify_tls": false,
+   "extra": "保留",
+   "last_release": {
+    "at": 1
+   }
+  }
+ },
+ {
+  "op": "save_router_settings",
+  "id": "work",
+  "expected": {
+   "id": "rt1",
+   "name": "R2",
+   "type": "routeros",
+   "endpoint": "192.0.2.1",
+   "username": "u",
+   "password": "new",
+   "verify_tls": false,
+   "extra": "保留",
+   "ros_policy_state": {
+    "rules": [
+     1
+    ],
+    "note": "中"
+   },
+   "last_release": {
+    "at": 1
+   }
+  },
+  "replacement": {
+   "id": "rt1",
+   "name": "renamed",
+   "type": "routeros",
+   "endpoint": "192.0.2.9",
+   "username": "u",
+   "password": "new",
+   "verify_tls": false,
+   "extra": "保留",
+   "ros_policy_state": {
+    "rules": [
+     1
+    ],
+    "note": "中"
+   },
+   "last_release": {
+    "at": 1
+   }
+  }
+ },
+ {
+  "op": "save_router_settings",
+  "id": "work",
+  "expected": {
+   "id": "rt1",
+   "name": "R2",
+   "type": "routeros",
+   "endpoint": "192.0.2.1",
+   "username": "u",
+   "password": "new",
+   "verify_tls": false,
+   "extra": "保留",
+   "ros_policy_state": {
+    "rules": [
+     1
+    ],
+    "note": "中"
+   },
+   "last_release": {
+    "at": 1
+   }
+  },
+  "replacement": {
+   "id": "rt1",
+   "name": "renamed",
+   "type": "routeros",
+   "endpoint": "192.0.2.1",
+   "username": "u",
+   "password": "new",
+   "verify_tls": false,
+   "extra": "保留",
+   "ros_policy_state": {
+    "rules": [
+     1
+    ],
+    "note": "中"
+   },
+   "last_release": {
+    "at": 1
+   }
+  }
+ },
+ {
+  "op": "save_router_settings",
+  "id": "work",
+  "expected": {
+   "id": "rt1",
+   "name": "renamed",
+   "type": "routeros",
+   "endpoint": "192.0.2.1",
+   "username": "u",
+   "password": "new",
+   "verify_tls": false,
+   "extra": "保留",
+   "ros_policy_state": {
+    "rules": [
+     1
+    ],
+    "note": "中"
+   },
+   "last_release": {
+    "at": 1
+   }
+  },
+  "replacement": null
+ },
+ {
   "op": "get_profile",
   "id": "work"
  },
@@ -2036,6 +2222,86 @@
    "_revision": 0
   },
   "id": "work"
+ },
+ {
+  "op": "export_desensitized"
+ },
+ {
+  "op": "update_profile_fields",
+  "id": "work",
+  "fields": {
+   "mihomo": {
+    "custom_config": "secret",
+    "linux_gateway_restore_point": {
+     "yaml": "x"
+    },
+    "easytier": {
+     "enabled": false
+    }
+   },
+   "loon": {
+    "custom_config": "l",
+    "k": 1
+   },
+   "surge": {
+    "custom_config": "s",
+    "smart_groups": []
+   }
+  }
+ },
+ {
+  "op": "update_profile_fields",
+  "id": "default",
+  "fields": {
+   "loon": "not an object"
+  }
+ },
+ {
+  "op": "update_shared_transaction",
+  "patch": [
+   {
+    "path": [
+     "nodes"
+    ],
+    "append": {
+     "id": "n7",
+     "name": "n7",
+     "type": "vless",
+     "server": "z.test",
+     "port": 3,
+     "uuid": "u",
+     "password": "p",
+     "private-key": "k",
+     "proxy_string": "vless://x",
+     "params": {
+      "a": 1
+     }
+    }
+   }
+  ]
+ },
+ {
+  "op": "update_system_transaction",
+  "patch": [
+   {
+    "path": [
+     "system_config",
+     "config_token"
+    ],
+    "set": "ct"
+   },
+   {
+    "path": [
+     "backup"
+    ],
+    "set": {
+     "webdav_password": "x"
+    }
+   }
+  ]
+ },
+ {
+  "op": "export_desensitized"
  },
  {
   "op": "reopen"

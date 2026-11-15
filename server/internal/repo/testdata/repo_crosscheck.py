@@ -203,6 +203,23 @@ def execute_c04(repository, op, variables, arg):
         return plain_agents(repository.get_agents(history=op.get('history', True)))
     if name == 'get_system_settings':
         return repository.get_system_settings()
+    if name == 'export_desensitized':
+        # Marker redaction functions: the structure export_all builds around them is compared.
+        import backend.common.config_export as config_export
+        import backend.common.mihomo_easytier as mihomo_easytier
+        import backend.routers.store as router_store
+        saved = (config_export.sanitize_external_payload, config_export.redact_oxidns_settings,
+                 router_store.redact_routers, mihomo_easytier.redact_settings)
+        config_export.sanitize_external_payload = lambda payload, system_config: {
+            'sanitized': payload, 'system_config': system_config}
+        config_export.redact_oxidns_settings = lambda value: {'redacted_oxidns': value}
+        router_store.redact_routers = lambda value: {'redacted_routers': value}
+        mihomo_easytier.redact_settings = lambda value: {'redacted_easytier': value}
+        try:
+            return repository.export_all(desensitize=True)
+        finally:
+            (config_export.sanitize_external_payload, config_export.redact_oxidns_settings,
+             router_store.redact_routers, mihomo_easytier.redact_settings) = saved
     if name == 'sanitization_tokens':
         return {'rule_proxy': sorted(repository.rule_proxy_tokens_for_sanitization()),
                 'agents': sorted(repository.agent_tokens_for_sanitization())}

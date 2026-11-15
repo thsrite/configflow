@@ -118,6 +118,17 @@ func xcExecuteC04(t *testing.T, r *Repository, op *jsonx.Object, arg func(string
 		}
 	case "get_system_settings":
 		result, err = r.GetSystemSettings(bg)
+	case "export_desensitized":
+		previous := SetHooks(Hooks{
+			SanitizeExternalPayload: func(payload, systemConfig *jsonx.Object) (*jsonx.Object, error) {
+				return jsonx.Obj("sanitized", payload, "system_config", systemConfig), nil
+			},
+			RedactOxidnsSettings:   func(value any) any { return jsonx.Obj("redacted_oxidns", value) },
+			RedactRouters:          func(value any) any { return jsonx.Obj("redacted_routers", value) },
+			RedactEasytierSettings: func(value any) any { return jsonx.Obj("redacted_easytier", value) },
+		})
+		result, err = r.ExportAll(bg, true)
+		SetHooks(previous)
 	case "sanitization_tokens":
 		var ruleProxy, agents TokenSet
 		if ruleProxy, err = r.RuleProxyTokensForSanitization(bg); err == nil {
