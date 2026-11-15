@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 23 missing, 5 partial, 4 ported, 5 verified (C01, C03, C04, C09, C10). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 22 missing, 5 partial, 5 ported, 5 verified (C01, C03, C04, C09, C10). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
