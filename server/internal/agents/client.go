@@ -12,10 +12,8 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"configflow/internal/jsonx"
 )
@@ -54,18 +52,46 @@ type Response struct {
 	Body       []byte
 }
 
-// JSON is response.json(): the decoded body or the json.loads error (its
-// text is Python's message). A UTF-8 BOM is skipped; other encodings fail.
+// JSON is response.json() as requests 2.31 does it: without a charset from
+// the headers, a body longer than 3 bytes is decoded with the guessed UTF
+// codec (a UTF-8 BOM is skipped there); otherwise Text() is parsed, so an
+// application/json body keeps its BOM (and fails) and invalid bytes become
+// U+FFFD. The error text is json.loads' message.
 func (r *Response) JSON() (any, error) {
-	body := bytes.TrimPrefix(r.Body, []byte{0xEF, 0xBB, 0xBF})
-	if !utf8.Valid(body) {
-		return nil, errors.New("invalid utf-8 in Agent response")
+	if _, ok := r.encoding(); !ok && len(r.Body) > 3 {
+		if codec := guessJSONUTF(r.Body); codec != "" {
+			if text, ok := pyDecode(r.Body, codec, true); ok {
+				return jsonx.ParseString(text)
+			}
+		}
 	}
-	return jsonx.Parse(body)
+	return jsonx.ParseString(r.Text())
 }
 
-// Text is response.text for UTF-8 bodies (invalid bytes replaced).
-func (r *Response) Text() string { return strings.ToValidUTF8(string(r.Body), "�") }
+// Text is response.text: the body decoded with the charset of the headers
+// (ISO-8859-1 for a text type without one, utf-8 for application/json),
+// invalid bytes replaced. An unknown codec decodes as UTF-8, as requests
+// falls back to on LookupError. Without any charset requests guesses with
+// charset_normalizer; here a BOM or the NUL pattern of UTF-16/32 decides,
+// otherwise UTF-8 (apparentCodec).
+//
+// Not reproduced: codecs other than the UTF-8, Latin-1, ASCII, UTF-16 and
+// UTF-32 families (e.g. charset=gbk) decode as UTF-8 here; Python decodes
+// them with that codec.
+func (r *Response) Text() string {
+	if len(r.Body) == 0 {
+		return ""
+	}
+	codec := apparentCodec(r.Body)
+	if name, ok := r.encoding(); ok {
+		codec = "utf-8"
+		if known := pyCodec(name); known != "" {
+			codec = known
+		}
+	}
+	text, _ := pyDecode(r.Body, codec, false)
+	return text
+}
 
 // Client sends requests to Agents. Errors are transport failures (the
 // requests.RequestException family); an HTTP error status is a Response.
