@@ -17,7 +17,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | Id | Module | Py lines | Status | HR | Prereqs | Routes | Go package(s) |
 |---|---|---|---|---|---|---|---|
 | A01 | Agent manager (manager.py part A) | 1642 | ported | HR | C04 | – | internal/agents |
-| A02 | registry support: runtime state, diagnostics, events, versions, messages | 1386 | ported | | C02 | – | internal/agents |
+| A02 | registry support: runtime state, diagnostics, events, versions, messages | 1386 | verified | | C02 | – | internal/agents |
 | A03 | registry routes (register, heartbeat, create/edit/delete) | 432 | ported | | A01, A02, C06 | 5 (5 done) | internal/api/agents |
 | A04 | metrics history and flush | 1163 | missing | | A01, C07 | 3 | internal/agents/metrics (new), api/agents |
 | A05 | traffic history and traffic store | 967 | missing | | A04, C37¹ | 8 | internal/agents/metrics, api/agents |
@@ -210,7 +210,7 @@ Pitfalls:
 
 ## A02 — registry support
 
-**Status: `ported`** · prereqs: C02 · Go: internal/agents (runtime_state.go, diagnostics.go, operation_events.go, idle_rounds.go, presence_log.go, version.go, version_changelog.go, messages.go, messages_data.go, singleton.go, pytime.go)
+**Status: `verified`** (review 2026-11-15, commits 4c4d5079–d550ff86, table below) · prereqs: C02 · Go: internal/agents (runtime_state.go, diagnostics.go, operation_events.go, idle_rounds.go, presence_log.go, version.go, version_changelog.go, messages.go, messages_data.go, singleton.go, pytime.go, pydecode.go) + internal/agents/diag (leaf: failure_text, event_message)
 
 Files:
 - `backend/agents/__init__.py` (10)
@@ -228,13 +228,32 @@ Tests: `test_agent_runtime_state.py` (28), `test_operation_events.py` (5), `test
 
 Routes: none.
 
-Evidence (audit): all defs matched (`get_agent_manager`→`Get`, `init_agent_manager`→`Init` + `OnManagerInit`, `for_data_dir`→`RuntimeFor`, `import_legacy_database`→`ImportLegacyDatabase`, `observe`→`ObservePresence`, `_hide_block_secrets`/`_safe_diagnostic_url`/`failure_text`/`dns_report_fields`/`response_failure`, `get_latest_version`/`compare_versions`/`has_update`, message tables generated from Python by `testdata/gen_*.py`). `LatestAgentVersion` = `1.8.61-go`, 80 changelog entries as in Python. Tests: runtime 28/28, operation_events 5/5, idle_rounds 5/5 (GC part of the weak-key case skipped: `pure_test.go:433`), version_sync 7/7 (five `has_update` cases merged into `TestExistingAgentsCanUpdate`). `agents/__init__.py` only re-exports.
+Evidence (audit): all defs matched (`get_agent_manager`→`Get`, `init_agent_manager`→`Init` + `OnManagerInit`, `for_data_dir`→`RuntimeFor`, `import_legacy_database`→`ImportLegacyDatabase`, `observe`→`ObservePresence`, `_hide_block_secrets`/`_safe_diagnostic_url`/`failure_text`/`dns_report_fields`/`response_failure`, `get_latest_version`/`compare_versions`/`has_update`, message tables generated from Python by `testdata/gen_*.py`). `LatestAgentVersion` = `1.8.61-go`, 80 changelog entries as in Python. Tests: runtime 28/28, operation_events 5/5, idle_rounds 5/5 (the weak-key GC part now runs, see review), version_sync 7/7 (five `has_update` cases merged into `TestExistingAgentsCanUpdate`). `agents/__init__.py` only re-exports.
 
 Deferred: `test_deployment_messages.py` 3 route cases (`test_display_copy_keeps_protocol_fields_and_both_failure_causes`, `test_list_history_and_poll_explain_failures_without_changing_saved_record`, `test_publish_preflight_errors_are_chinese_without_starting_a_task`) → A13/A14; `test_agent_upgrade_messages.py` 7 manager/route cases → A15.
 
-Reviewer notes:
-- `internal/notifications/compat.go` still holds copies of `operation_events.event_message`, `MESSAGE_LIMIT` and `diagnostics.failure_text` (TODO(port) → #20). They cannot simply import `internal/agents` (agents imports notifications → cycle). Move the pure helpers to a leaf package both import (e.g. `internal/agents/diag`) or keep the copy with a test that runs both on the same corpus. Decide in the review.
-- Regenerating `version_changelog.go`/`messages_data.go` when Python's `version.py` changes is manual (see `progress/20-agents.md` Commands); the review should add a test that fails when the Python table and the Go table differ (the existing `TestGoAgentVersionMatchesLatestAgentVersion` covers only the version).
+Review (adversarial, 2026-11-15) — every Python function and branch walked against Go; reference corpus from CPython 3.11.17 / requests 2.31 on the test server (`testdata/gen_a02_reference.py` → `testdata/a02_reference.json`, asserted by `a02_reference_test.go`). Findings, all fixed:
+
+| # | Sev | Finding | Fix | Regression test |
+|---|---|---|---|---|
+| 1 | med | `failure_text`: `\b` before secret keys / Bearer/Basic was RE2's ASCII `\b`, Python's is Unicode, so Go redacted `密码password=…`, `ätoken: …`, `éBearer …` (known-difference comment removed) | 4c4d5079 (manual word-boundary check, `diag.replaceAtWordStart`) | `TestReferenceFailureText` |
+| 2 | low | `(?i)` keywords: Python matches `i` with U+0130/U+0131 (`APİ_KEY=`, `apı_key=`, `BASİC`), RE2 not | 4c4d5079 (`[iİı]`) | `TestReferenceFailureText` |
+| 3 | low | decision 1: `notifications/compat.go` copies of `event_message`/`failure_text`/`MESSAGE_LIMIT` | 4c4d5079: leaf package `internal/agents/diag`, used by agents and notifications (no cycle) | notifications tests + `TestReferenceEventMessage` |
+| 4 | med | naive ISO times (`_timestamp`, legacy rows) resolved with `time.Date`, not CPython `local_to_seconds(fold=0)`; aware `.timestamp()` double-rounded; `time.time()` not `_PyTime_AsSecondsDouble`, so `last_heartbeat` µs could differ | 69f408a4 (`localToSeconds`, `pyTimestampOf`, `pyTimeFromNanos`) | `TestReferenceTimestampsAndLocalTimes` (America/New_York gap/fold, Asia/Shanghai LMT 1900, UTC) |
+| 5 | med | legacy `runtime.sqlite3` import: driver error texts (`SQL logic error: … (1)`) instead of `str(sqlite3.Error)`; invalid-UTF-8 TEXT did not fail the read (`Could not decode to UTF-8 column …`); BLOB `fields` not decoded like `json.loads(bytes)` (BOM/UTF-16/32); `os.Remove` removed empty directories (Python `unlink` warns); OSError text not `[Errno N] …: 'path'`; `Lstat` treated a dangling symlink as present (Python `exists()` follows); state/legacy keys not `Path.resolve()` (non-strict realpath); agents keyed with `str(id)` | 916bcd2d | `TestReferenceLegacyRows`, `TestReferenceLegacyFileRemovalLogsPythonOSErrors`, `TestReferencePathResolveLikePathlib`, `TestADanglingRuntimeSqliteSymlinkIsLeftAlone` |
+| 6 | low | `compare_versions` `int()`: whitespace rule (ASCII kept, only non-ASCII `isspace` rewritten: `'\x851'`→1, `'\x1c1'` fails), digit value wrong for back-to-back Nd runs (`𝟘` U+1D7D8 read as 9), no 4300-digit limit | 437991f4 | `TestReferenceCompareVersions` (53 pairs) |
+| 7 | low | upgrade messages: `strip()` missed U+001C–U+001F; `lower()` of U+0130 (`İ/o timeout` matched `i/o timeout` in Go only) | cac421bc | `TestReferenceMessages` |
+| 8 | med | `response_failure` / `Response.text/.json()` (client.go): BOM stripped for `application/json` (requests fails), invalid UTF-8 rejected (requests replaces), `text/plain` without charset not ISO-8859-1, replacement not per maximal subpart, repeated Content-Type not joined | 3df17cfe (`pydecode.go`) | `TestReferenceResponses` (25 responses: text, json, response_failure) |
+| 9 | low | no test tying the generated tables to Python | 1d29659a | `TestVersionTableMatchesPython`, `TestMessageTablesMatchPython` (read `backend/agents/*.py`) |
+| 10 | low | weak-key idle-rounds case always skipped (the fixture repository itself was collected) | d550ff86 | `TestRepositoriesAndLoopsDoNotShareIdleState` runs (5×, -race) |
+
+Checks performed (no finding): `RuntimeState` overlay/mark/record/seed/delete (locks, deep copies, deletion counter, missing-field inheritance; non-dict `system_metrics` is rejected by the route first), `import_legacy_database` order (checked-set before I/O, list after read, nothing applied unless removed, version persist failure), `presence_log` (order, `log_text` limits 120/32), `idle_rounds` (head compare, `0 <= elapsed < 600`), singleton `Get`/`Init`, `event_time` (51 ISO edge texts incl. 3.11 any-separator, week dates, `+24:00`, year 1/9999 overflow), `clean/append/merge_events` (dedupe, 80 limit, statuses, sort stability), `dns_report_fields` (24 payloads), `deployment_message`/`public_*` (shallow copies, event messages), failure_text corpus (~250 cases: ANSI/control chars, PEM without END, YAML blocks with `\r\n`/U+2028/tabs/list items, URL schemes, secret variants, truncation at CJK/emoji boundaries for limits 27–16384). Every Chinese message compared via corpus.
+
+Accepted / not reproduced (no finding for A02; for the coordinator):
+- `Response.Text()` decodes only the UTF-8, Latin-1, ASCII, UTF-16, UTF-32 codec families; another `charset=` (gbk, cp1252, …) decodes as UTF-8 where Python uses that codec, and requests' `charset_normalizer` guess (no charset at all) is approximated by BOM/NUL pattern else UTF-8. Needs `golang.org/x/text` (PORTING rule 6); no ConfigFlow Agent sends such charsets. `client.go` is A01's file: A01 review to confirm.
+- Lone UTF-16 surrogates become U+FFFD (jsonx-wide limitation); Python's set order of equally long secrets is arbitrary (Go: given order); `Path.resolve()` raises on a symlink loop in 3.11 (Go returns the path; such a data dir cannot be opened by the repository); an Agent record without `id` raises KeyError in Python (Go skips it in the legacy import).
+
+Commands: reference corpus `rt --back server/internal/agents/testdata/a02_reference.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/agents/testdata/gen_a02_reference.py > server/internal/agents/testdata/a02_reference.json'`; tests `rt -- bash -lc 'cd server && go vet ./internal/agents/... ./internal/notifications/... && go test -count=1 -race ./internal/agents/... ./internal/notifications/... ./internal/api/agents/...'`.
 
 ## A03 — registry routes
 
