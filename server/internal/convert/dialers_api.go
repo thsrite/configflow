@@ -8,6 +8,7 @@ package convert
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,24 @@ import (
 	"configflow/internal/rules"
 	"configflow/internal/subs"
 )
+
+// IDValue is the id as Python holds it: ids that are not strings are kept
+// in Ref.ID as "\x00" + repr(id) (so that 1, 1.0 and True collide as in a
+// dict); IDValue turns numbers and None back into values (a bool id comes
+// back as 1 or 0).
+func (r Ref) IDValue() any {
+	text, found := strings.CutPrefix(r.ID, "\x00")
+	if !found {
+		return r.ID
+	}
+	if text == "None" {
+		return nil
+	}
+	if n, err := jsonx.ParseNumber(text); err == nil {
+		return n
+	}
+	return text
+}
 
 // Keys lists the graph's keys in insertion order (dict order).
 func (g *Graph) Keys() []Ref { return append([]Ref(nil), g.keys...) }
@@ -113,7 +132,13 @@ func IncomingDialers(profile *jsonx.Object, kind, id string) ([]Ref, error) {
 	if err != nil {
 		return nil, err
 	}
-	var direct []Ref
+	// Ids are hashed only by dict.fromkeys at the end, after
+	// dependency_graph has validated the shapes.
+	type rawRef struct {
+		kind string
+		id   any
+	}
+	var direct []rawRef
 	for _, node := range nodes {
 		if !jsonx.Equal(node.Value("dialer_ref"), want) {
 			continue
@@ -122,11 +147,7 @@ func IncomingDialers(profile *jsonx.Object, kind, id string) ([]Ref, error) {
 		if err != nil {
 			return nil, err
 		}
-		key, err := hashID(value)
-		if err != nil {
-			return nil, err
-		}
-		direct = append(direct, Ref{"node", key})
+		direct = append(direct, rawRef{"node", value})
 	}
 	groups, err := profileList(profile, "proxy_groups")
 	if err != nil {
@@ -174,28 +195,32 @@ func IncomingDialers(profile *jsonx.Object, kind, id string) ([]Ref, error) {
 			if err != nil {
 				return nil, err
 			}
-			key, err := hashID(value)
-			if err != nil {
-				return nil, err
-			}
-			direct = append(direct, Ref{"group", key})
+			direct = append(direct, rawRef{"group", value})
 		}
 	}
 	graph, err := dependencyGraph(profile)
 	if err != nil {
 		return nil, err
 	}
+	var keys []Ref
+	for _, raw := range direct {
+		key, err := hashID(raw.id)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, Ref{raw.kind, key})
+	}
 	for _, key := range graph.keys {
 		for _, child := range graph.children[key] {
 			if child == target {
-				direct = append(direct, key)
+				keys = append(keys, key)
 				break
 			}
 		}
 	}
 	seen := map[Ref]bool{}
 	result := []Ref{}
-	for _, key := range direct {
+	for _, key := range keys {
 		if !seen[key] {
 			seen[key] = true
 			result = append(result, key)
@@ -380,7 +405,7 @@ func pySub(pattern, text string, repl func(groups []string, participated []bool)
 	if _, err := rules.CompilePyRegex(pattern, false); err != nil {
 		return "", err
 	}
-	re, err := regexp2.Compile(pattern, regexp2.None)
+	re, err := regexp2.Compile(netPattern(pattern), regexp2.None)
 	if err != nil {
 		return "", pyError("error", err.Error())
 	}
@@ -412,6 +437,68 @@ func pySub(pattern, text string, repl func(groups []string, participated []bool)
 		return "", pyError("error", err.Error())
 	}
 	return out, nil
+}
+
+// netPattern rewrites Python's named groups for regexp2, which numbers
+// named groups after the unnamed ones: (?P<name>...) becomes a plain group
+// and (?P=name) a numbered back reference, so group numbers stay Python's.
+// TODO(port): replace pySub with a submatch/replace method of rules.PyRegex
+// (translateNet already does this on the syntax tree).
+func netPattern(pattern string) string {
+	var b strings.Builder
+	names := map[string]int{}
+	count := 0
+	for i := 0; i < len(pattern); i++ {
+		c := pattern[i]
+		switch {
+		case c == '\\' && i+1 < len(pattern):
+			b.WriteString(pattern[i : i+2])
+			i++
+		case c == '[':
+			j := i + 1
+			if j < len(pattern) && pattern[j] == '^' {
+				j++
+			}
+			if j < len(pattern) && pattern[j] == ']' {
+				j++
+			}
+			for j < len(pattern) && pattern[j] != ']' {
+				if pattern[j] == '\\' {
+					j++
+				}
+				j++
+			}
+			if j >= len(pattern) {
+				j = len(pattern) - 1
+			}
+			b.WriteString(pattern[i : j+1])
+			i = j
+		case c == '(' && strings.HasPrefix(pattern[i:], "(?P<"):
+			count++
+			if end := strings.IndexByte(pattern[i:], '>'); end > 0 {
+				names[pattern[i+4:i+end]] = count
+				b.WriteByte('(')
+				i += end
+				continue
+			}
+			b.WriteByte(c)
+		case c == '(' && strings.HasPrefix(pattern[i:], "(?P="):
+			if end := strings.IndexByte(pattern[i:], ')'); end > 0 {
+				if n, ok := names[pattern[i+4:i+end]]; ok {
+					b.WriteString("(?:\\" + strconv.Itoa(n) + ")")
+					i += end
+					continue
+				}
+			}
+			b.WriteByte(c)
+		case c == '(' && !strings.HasPrefix(pattern[i:], "(?"):
+			count++
+			b.WriteByte(c)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // expandTarget is re.sub(r'\$(\d+)', repl, target) with repl returning

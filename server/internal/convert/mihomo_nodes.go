@@ -97,21 +97,22 @@ const (
 // InboundPortKeys is _INBOUND_PORT_KEYS.
 var InboundPortKeys = []string{"port", "socks-port", "mixed-port", "redir-port", "tproxy-port"}
 
-// portValue is isinstance(v, int) (bools included, as in Python) as an int64;
-// integers beyond int64 are not ports and are reported as not ok.
-func portValue(v any) (int64, bool) {
+// portValue is isinstance(v, int) as a port key (bools included, as in
+// Python: True is port 1).
+func portValue(v any) (jsonx.Number, bool) {
 	switch value := v.(type) {
 	case bool:
 		if value {
-			return 1, true
+			return jsonx.Int(1), true
 		}
-		return 0, true
+		return jsonx.Int(0), true
 	case jsonx.Number:
 		if value.IsInt() {
-			return value.Int64()
+			n, _ := value.BigInt()
+			return jsonx.BigInt(n), true
 		}
 	}
-	return 0, false
+	return "", false
 }
 
 // hashable is the TypeError a set or dict raises for an unhashable value.
@@ -126,8 +127,9 @@ func hashable(v any) error {
 }
 
 // MihomoUsedPorts is mihomo_used_ports: the inbound ports the configuration
-// already occupies. An unhashable port value is Python's TypeError.
-func MihomoUsedPorts(config *jsonx.Object) (map[int64]bool, error) {
+// already occupies, keyed by their canonical integer text (jsonx.Int(p)).
+// An unhashable port value is Python's TypeError.
+func MihomoUsedPorts(config *jsonx.Object) (map[jsonx.Number]bool, error) {
 	var values []any
 	for _, key := range InboundPortKeys {
 		values = append(values, config.Value(key))
@@ -141,21 +143,61 @@ func MihomoUsedPorts(config *jsonx.Object) (map[int64]bool, error) {
 			values = append(values, item.Value("port"))
 		}
 	}
-	used := map[int64]bool{}
+	// A set keeps the first of equal members (7890.0 hides a later 7890,
+	// True a later 1); only the int members are ports.
+	first := map[string]any{}
+	var order []string
 	for _, v := range values {
 		if err := hashable(v); err != nil {
 			return nil, err
 		}
-		if port, ok := portValue(v); ok {
+		key := setKey(v)
+		if _, ok := first[key]; !ok {
+			first[key] = v
+			order = append(order, key)
+		}
+	}
+	used := map[jsonx.Number]bool{}
+	for _, key := range order {
+		if port, ok := portValue(first[key]); ok {
 			used[port] = true
 		}
 	}
 	return used, nil
 }
 
+// setKey groups values the way Python's == does for set members: numbers by
+// value (1 == 1.0 == True), other values by type and text.
+func setKey(v any) string {
+	switch value := v.(type) {
+	case bool:
+		if value {
+			return "n1"
+		}
+		return "n0"
+	case jsonx.Number:
+		if value.IsInt() {
+			n, _ := value.BigInt()
+			return "n" + n.String()
+		}
+		f := value.Float64()
+		if f == f && f-f == 0 {
+			if b, accuracy := new(big.Float).SetFloat64(f).Int(nil); accuracy == big.Exact {
+				return "n" + b.String()
+			}
+		}
+		return "f" + string(value)
+	case string:
+		return "s" + value
+	case nil:
+		return "none"
+	}
+	return "o" + jsonx.Repr(v)
+}
+
 // PortOwner is one entry of MihomoListenPorts.
 type PortOwner struct {
-	Port  int64
+	Port  jsonx.Number
 	Owner string
 }
 
@@ -163,11 +205,11 @@ type PortOwner struct {
 // ports, listeners and external-controller. Order: inbound keys in key order
 // (a port used twice keeps its first position and the last key, like a dict
 // comprehension), then listener ports in ascending order (Python iterates a
-// set there), then the controller.
+// set there, whose order is not reproduced), then the controller.
 func MihomoListenPorts(config *jsonx.Object) ([]PortOwner, error) {
 	var owners []PortOwner
-	index := map[int64]int{}
-	set := func(port int64, owner string, overwrite bool) {
+	index := map[jsonx.Number]int{}
+	set := func(port jsonx.Number, owner string, overwrite bool) {
 		if i, ok := index[port]; ok {
 			if overwrite {
 				owners[i].Owner = owner
@@ -186,13 +228,13 @@ func MihomoListenPorts(config *jsonx.Object) ([]PortOwner, error) {
 	if err != nil {
 		return nil, err
 	}
-	ports := make([]int64, 0, len(used))
+	ports := make([]jsonx.Number, 0, len(used))
 	for port := range used {
 		if _, ok := index[port]; !ok {
 			ports = append(ports, port)
 		}
 	}
-	sort.Slice(ports, func(i, j int) bool { return ports[i] < ports[j] })
+	sortPorts(ports)
 	for _, port := range ports {
 		set(port, "listeners", false)
 	}
@@ -211,12 +253,19 @@ func MihomoListenPorts(config *jsonx.Object) ([]PortOwner, error) {
 				value.Mul(value, big.NewInt(10))
 				value.Add(value, big.NewInt(int64(d)))
 			}
-			if value.IsInt64() {
-				set(value.Int64(), "external-controller", false)
-			}
+			set(jsonx.BigInt(value), "external-controller", false)
 		}
 	}
 	return owners, nil
+}
+
+// sortPorts sorts integer port keys by value.
+func sortPorts(ports []jsonx.Number) {
+	sort.Slice(ports, func(i, j int) bool {
+		a, _ := ports[i].BigInt()
+		b, _ := ports[j].BigInt()
+		return a.Cmp(b) < 0
+	})
 }
 
 // ---- proxy YAML cache ----
