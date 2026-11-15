@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 22 missing, 5 partial, 5 ported, 5 verified (C01, C03, C04, C09, C10). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 22 missing, 5 partial, 4 ported, 6 verified (C01, C02, C03, C04, C09, C10). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -17,7 +17,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 
 - jsonx: lone UTF-16 surrogates cannot be represented in Go strings (documented in `jsonx/doc.go`); `test_json_response.py::test_surrogate_strings_keep_normalization_before_redaction` depends on it.
 - Regex: `\N{name}` escapes and repeat counts > int32 → `*rules.UnsupportedRegexError` (filters with such patterns are not applied; validation accepts them like Python). Backtracking matches stop after 1 s and count as no match.
-- yamlx: syntax error texts are yaml.v3's; non-string mapping keys → `*NonStringKeyError`; CSafeDumper output (size measurement in `push_diff.py`) not reproduced.
+- yamlx (since review C02 on the PyYAML port, `internal/pyyaml`): values, exception classes and texts are PyYAML's. Values jsonx cannot hold are reported after construction: non-string keys → `*NonStringKeyError` (or `*yamlx.Mapping` with `LoadOptions.KeepNonStringKeys`), recursive aliases and non-empty `!!set`/`!!omap`/`!!pairs` → `*UnrepresentableError`. CSafeDumper output (size measurement in `push_diff.py`) not reproduced.
 - Commented Mihomo YAML editor (`subs/commented`): refuses (400 with Python's message, original text kept) instead of writing different bytes; open categories are listed in C11 and are still being worked on.
 - Web listener: the Go server listens itself and serves the SPA (replaces nginx); nginx-specific behaviour has no counterpart (C07).
 - Not ported by decision (packages.md): legacy pre-SQLite migration, `models/`, `startup.py`, `http_server.py`, `http_queue.py`, `agents/node_test_dns_cleanup.py`, `metrics_history.LEGACY_DIRS`; `subscription_parser.parse_subscription`/`parse_clash_yaml` (no caller). Tests only about those: `test_split_layout_migration.py`, 25 cases of `test_config_storage_migration.py`, `test_http_server.py`, `test_startup.py`, `test_http_queue.py`, `test_node_test_dns_cleanup.py`.
@@ -27,7 +27,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | Id | Module | Py lines | Status | Prereqs | Routes |
 |---|---|---|---|---|---|
 | C01 | jsonx, store | 564 | verified | – | – |
-| C02 | infra helpers | 828 | ported | C01 | – |
+| C02 | infra helpers | 828 | verified | C01 | – |
 | C03 | repo storage core (config_repository.py part A) | 1576 | verified | C01, C02 | – |
 | C04 | repo public API (config_repository.py part B), config.py | 1373 | verified | C03 | – |
 | C05 | profile context, OxiDNS settings normalizer | 497 | partial | C04 | – |
@@ -105,7 +105,7 @@ Commands: `rt -- bash -lc 'cd server && CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/py
 
 ## C02 — infra helpers
 
-**Status: `ported`** · prereqs: C01 · Go: internal/logx, jsonstore, yamlx, localhttp, urlx, taskstatus, resource, utilx, jsonresp, version; httpx/internal.go
+**Status: `verified`** (review 2026-11-15/16, one round; 0 open findings) · prereqs: C01 · Go: internal/logx, jsonstore, yamlx, pyyaml, pystr, localhttp, urlx, taskstatus, resource, utilx, jsonresp, version; httpx/internal.go
 
 Files:
 - `backend/__init__.py` (1)
@@ -128,11 +128,35 @@ Tests: `test_fast_yaml.py` (15), `test_json_response.py` (10), `test_local_http.
 
 Routes: none.
 
-Evidence: Go: `logx`, `jsonstore`, `yamlx`, `localhttp`, `urlx`, `taskstatus`, `resource`, `utilx`, `version`, `jsonresp`, `httpx/internal.go` (internal_call). Every def matched by name or documented rename (`get_logger`→`logx.Get`, `JsonFileStore`→`jsonstore`, `get_resource_path`/`get_backend_resource`→`resource.FromEnv().Backend`, `get_version_info`→`version.Info`, `jsonify_external`→`jsonresp.External`/`httpx.External`). Tests: `test_json_response.py` 7/10, `test_local_http.py` 1/10 by name but the file header in `localhttp_test.go` says the local_http behaviour is ported against a plain handler; `test_fast_yaml.py` is about the libyaml verification cache that has no Go counterpart, its observable behaviour is in `yamlx_test.go` + the 1374-value corpus.
+Evidence: every def matched by name or documented rename (`get_logger`→`logx.Get`, `JsonFileStore`→`jsonstore`, `get_resource_path`/`get_backend_resource`→`resource.FromEnv().Backend`, `get_version_info`→`version.Info`, `jsonify_external`→`jsonresp.External`/`httpx.External`, `is_internal_call`→`httpx.Ctx.IsInternalCall`). Tests: `test_json_response.py` 7/10 (surrogate normalisation: jsonx surrogate limit; two Flask JSON-provider hook tests: Python mechanics), `test_local_http.py` behaviour against a plain handler (`localhttp_test.go`, incl. `TestSlowLocalResponseReportsTimeoutAndReleasesTheStream` — the reviewer note is closed), `test_fast_yaml.py` is the libyaml verification cache (no Go counterpart; `SafeLoad` always gives PyYAML's result, which is what the cache guarantees), `test_safe_url_queries.py` 4/11 + corpus.
 
-Missing / deferred: Deferred test cases (run them when the named module exists): `test_local_http.py` cases through rule_fetch (redirect policy, server_domain host compare, `test_real_rule_url_check_works_with_one_http_worker`) → C14; `test_safe_url_queries.py` 7 cases through generation/installers (`append_url_query`, Mihomo/Surge/MosDNS URL round-trips → C18/C19/C28; `test_generated_go_installer_does_not_print_binary_download_url` → agents domain); `test_operation_logs.py` is mostly agents/routers (assigned here only for the logger part).
+**YAML decision (coordinator decision 5): `yamlx.Load*` now run on the PyYAML port.** `rulefetch/pyyaml` moved to `internal/pyyaml` (f9d7eafd; `ComposeWith` adds a stream name and a resolver for NativeLoader). `yamlx/construct.go` ports BaseConstructor/SafeConstructor and NativeLoader.construct_mapping on its nodes (8c432221): dispatch by tag alone (scalar tags on collections reach `construct_scalar`; `=` keys), collections as generators run in rounds like `construct_document` (decides which error wins), `flatten_mapping` mutating shared nodes, Python dict key equality (1/1.0/true, `.nan` singleton, aware datetimes by instant), Python exception classes (`*yamlx.Error{Class}`: ConstructorError/ScannerError/…, ValueError from `int()`/`float()`/dates, KeyError for `!!bool maybe`, IndexError for `!!int ""` — yaml.v3-based code panicked there —, TypeError, AttributeError, RecursionError). Evidence: yamlx load corpus 1591 texts × {safe_load, NativeLoader}: **all equal, now compared strictly** (value, or exception class and message; before only 'some error' was checked and 0 messages were required); new `review.jsonl` 735 texts × {safe_load, NativeLoader, CSafeLoader-first}: 735/735/733 (+2 accepted, below); pyyaml corpus 6065 rows; consumers' corpora unchanged and green: subs C10 (1905 rows, the six `yamlxDiffers` rows now compared and equal, list empty), C11 commented editor, C12 convert, C13 substore, C14 rulefetch (72849 rows), repo, rules. yaml.v3 remains only behind `LoadCSafeFirst` (the "CSafeLoader, else safe_load" pattern of `subscription_dialers._load` and `push_diff._load_yaml`): yaml.v3 nodes → pyyaml nodes → same constructor, any failure → PyYAML. Non-string keys: `LoadOptions.KeepNonStringKeys` returns `*yamlx.Mapping` (Pairs with typed keys) with `yamlx.Lookup`/`IsMapping`; without it `*NonStringKeyError` (only where Python's dict cannot be a jsonx.Object). Callers switched: `subs.ExtractSubscriptionHosts` (str(key) rule), `subs.ExtractSubscriptionDialers` (CSafe-first, non-string keys dropped — only string keys are read), `substore.isYAMLResponse`; the editor reload check no longer rewrites ruamel's `!!int '0x-1F'`. `Dump` unchanged (corpus still byte-identical).
 
-Reviewer notes: Open item from the subs follow-up (coordinator, 2026-11-15): **yamlx cannot parse `1,000` inside a flow collection, nor ruamel's `!!int '0x-1F'` (negative hex/binary)**; `internal/subs` works around the latter only in its reload check. This module cannot become `verified` until fixed or accepted by the maintainer. Known limits already documented in PORTING.md: non-string mapping keys → `*NonStringKeyError`; YAML syntax error texts are yaml.v3's, not PyYAML's; CSafeDumper output not reproduced. `test_json_response.py` missing: surrogate normalisation before redaction (jsonx surrogate limit), and two Flask JSON-provider hook tests (Python mechanics). Reviewer: `utils/local_http.py::_check_read_timeout` / slow-response timeout case has no named Go test — check `localhttp_test.go`.
+Review findings (all fixed; regression tests named):
+1. **medium** — yamlx (yaml.v3 based): `1,000` in flow collections, `!!int '0x-1F'`, non-string keys, `name:\tx` accepted, yaml.v3 error texts, `!!binary` (padding stops input, run positions in UnicodeEncodeError), `!!bool maybe` → false (Python KeyError), `!!int ""`/`!!float ""` → **Go panic**, `!!float abc` → 0, `!!int "١٢"`/`"0x 1f"`/`0o17` refused, wrong constructor messages for tags on other node kinds, depth-first error order, timestamp errors in the wrong order and without the timedelta. Fix 8c432221, fa67e510; `TestLoadMatchesPyYAML` (strict), `TestReviewC02References`.
+2. **low** — non-string YAML keys in `subs` hosts/dialers and `substore._is_yaml_response` (C10 rows). Fix ad577e64, 0cb26856; `TestReviewC10References` (yamlxDiffers empty), `TestIsYAMLResponseWithNonStringKeys`.
+3. **low** — `jsonx.Repr` (C01) and `logx.IsPrintable` decided printability with Go's newer Unicode tables in Repr; the CPython 3.11 table moved to jsonx and both use it (commit 9780c272, which also finishes the table move that cc108f97 picked up from the shared index). `TestReprUsesCPythonPrintableTable`.
+4. **low** — new `internal/pystr` (Python 3.11 / Unicode 14 tables: `Lower` with full mapping + Final_Sigma, `IsSpace`, `Decimal`, `Int(s, base)` incl. base 0/prefixes/underscores/4300-digit limit/messages, `Float`); 612 int, 74 float, 443 lower references (`pystr/testdata/ref.json`, `TestMatchesCPython`).
+5. **low** — `urlx`: hostname lower-casing used Go tables and a partial case-ignorable/cased approximation (`ⒶΣ.test` → σ instead of ς; Unicode 15/16 capitals lowered); `[fe80::1%a%b]` accepted (ipaddress refuses). Fix 9fa5af44 (`pystr.Lower`, scope-id check); `urlx.TestReviewC02References`. Also: `SafeExceptionDetails` prints `PythonClass()` of the first error in the chain that has one (`TestSafeExceptionDetailsUsesPythonClass`; `yamlx.Error` has it).
+6. **low** — `logx.ClientIP`: X-Real-IP was read as UTF-8; WSGI gives latin-1 text (`"\xc3\xa9\x85"` → `Ã©?`). Fix 9fa5af44; `TestClientIPHeaderIsLatin1`.
+7. **low** — `jsonresp.PlainTree`: an empty list deeper than 128 counted as plain (Python checks the depth first). Fix 9fa5af44; `TestPlainTreeRefusesDeepEmptyList`.
+8. **low** — `localhttp.Do`: URLs went through Go's `url.Parse` (a stray `%` failed the request; mixed escapes kept; query not encoded; host case/port kept; fragment dropped from the response URL). Now `urlx.RequestsPrepareURL` (copy of C13's verified requests/urllib3 port) + `urlsplit`. Fix 79282840; `TestPreparedURLLikeRequests`, requests references in `urlx/testdata/review.json`.
+9. **low** (reported by the C15 port) — `taskstatus.Record`: hand-edited counters `"4"` read as 0; Python `int(x or 0)` → 5 (also `" 7 "`, `"０３"`, `"١٢"`, `"1_0"`, floats truncated, big ints kept; `"x"`/`"1.5"`/`[1]`/inf/nan raise and leave the file). Fix d7547ad6; `TestReviewRecordCountersLikePython` (168 Python references).
+10. **low** (reported by the C15 port) — `taskstatus.ParseTime`/`FromISOFormat` returned UTC and dropped the offset; now the time is in the parsed zone, named like `timezone.tzname()` (`UTC+08:00`; zero offset and naive → `time.UTC`). Callers re-tested: refresh (+difftest), agents, agents/metrics, api/stats, notifications (their own offset reconstruction keeps working and could now be dropped). Fix d7547ad6; `TestReviewParseTimeKeepsOffset`.
+
+Checks performed: walk of every function/branch of logger.py, json_store.py (text-mode read: invalid UTF-8/BOM → None like jsonx.Parse; write bytes/verify path), fast_yaml.py, local_http.py, url_utils.py (urlsplit/_check_bracketed_netloc/_checknetloc/parse_qsl/urlencode/unquote per ASCII run), task_status.py, resource.py, utils.py (`str(s).lower()` — no non-ASCII letter lowers to t/r/u/e), json_response.py, version.py, internal_call.py; PyYAML 6.0.1 constructor.py read from the test server's venv; new Python references listed above; full test run of every consumer (command below).
+
+Accepted differences (reviewer's judgement; not open findings):
+- YAML: values jsonx cannot hold are errors after construction (non-string keys without KeepNonStringKeys, recursive aliases, non-empty `!!set`/`!!omap`/`!!pairs`); e.g. `parse_yaml_object` with an `1:` key gives nil where Python returns a dict with an int key. Ints over 4300 digits from hex/binary YAML load (Python too) but jsonx encoders do not refuse them (json.dumps does). RecursionError depth is a fixed limit (pyyaml 490 nested collections, 490 `=` levels). `LoadCSafeFirst`: yaml.v3 is not libyaml — an empty node tagged `!` is str in libyaml, null here (yaml.v3 drops the tag); only reachable in dialers/push_diff with that exact shape.
+- Callers that catch only `yaml.YAMLError` in Python crash (500) on ValueError/KeyError from constructors; Go callers treat every `*yamlx.Error` as a parse failure (classes are available via `IsYAMLError()`/`PythonClass()`).
+- taskstatus: a sub-second UTC offset cannot be a `time.Location` offset (instant and zone name exact, wall clock off by the fraction); `Result.Trigger == ""` means the default "schedule" (Python's `trigger=''` would store ''; no Python caller passes '').
+- `LoadBytes` (unused) decodes UTF-16 without Python's error texts. `resource` resolves under one root instead of `__file__`/`_MEIPASS` (deployment layout); logx.ClientIP takes the first X-Real-IP header (WSGI servers join duplicates differently).
+
+Notes for other modules (not C02 findings): `pyLower`/`isCased` copies in subs, substore, rules, convert, agents use Go tables (same defect class as finding 5) — switch to `pystr.Lower`; `subs` `pyIntStr`/`repo` `pythonFloat` can switch to `pystr.Int`/`Float` (Unicode-15 digits differ); C14's accepted flow-root non-string-key case and C12's loose loader can now use `KeepNonStringKeys`; `substore.PrepareURL` can switch to `urlx.RequestsPrepareURL`; `substore.ParseProxiesFromYAML` no longer needs to re-compose for the PyYAML class/text.
+
+Commits: 9780c272, f9d7eafd, 8c432221, d7547ad6, fa67e510, ad577e64, 0cb26856, 9fa5af44, 79282840 (+ this PROGRESS update).
+
+Commands: `rt -- bash -lc 'cd server && go vet ./internal/... 2>&1 | head; go test -count=1 ./internal/yamlx/... ./internal/pyyaml/... ./internal/pystr/... ./internal/jsonx/... ./internal/logx/... ./internal/jsonstore/... ./internal/urlx/... ./internal/taskstatus/... ./internal/localhttp/... ./internal/jsonresp/... ./internal/subs/... ./internal/convert/... ./internal/rulefetch/... ./internal/repo/... ./internal/rules/... ./internal/substore/... ./internal/refresh/... ./internal/agents/... ./internal/api/... ./internal/notifications/... ./internal/httpx/...'`. Regenerate references (each with `rt --back <file> -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python <gen>'`): `server/internal/yamlx/testdata/gen_review.py` → `review.jsonl`; `server/internal/pystr/testdata/gen_tables.py` → `../tables.go`, `gen_ref.py` → `ref.json`; `server/internal/urlx/testdata/gen_review.py` → `review.json`; `server/internal/taskstatus/testdata/gen_review.py` → `review.json`.
 
 ## C03 — repo storage core (config_repository.py part A)
 
@@ -499,7 +523,7 @@ Commands:
 
 ## C14 — remote rule fetch, ruleset content, remote sources, website identity
 
-**Status: `ported`** (not reviewed) · prereqs: C12, C08 · Go: `internal/rulefetch`, `internal/rulefetch/pyyaml`
+**Status: `ported`** (not reviewed) · prereqs: C12, C08 · Go: `internal/rulefetch`, `internal/pyyaml` (moved from `rulefetch/pyyaml` by review C02)
 
 Files → Go:
 - `backend/utils/ruleset_content.py` (722) → `rulefetch/content.go` (ResultCache, ContentDigest, ClearRuleContentCaches, MetadataError, NormalizeClassicalLines, NormalizeMihomoYAML, NormalizeMihomoRuleset, InspectDomainContent, ValidateDomainContent, RemoteRuleValidationError (+NewRemoteRuleMessage/NewRemoteRuleError; unwraps to repo.ErrValidation), ValidateRemoteRuleContent, ReadRulePayload, AppendRulePayload/AppendRuleLines, RemoveRulePayload, ReadRulePayloadAny/AppendRulePayloadAny for rules.ConnectionDeps), `mrs.go` (_validate_remote_mrs on klauspost zstd). Line helpers `_valid_pattern`, `_classical_line`, `classical_line_error`, `_has_yaml_payload` live in `rules` (exported in `rules/ruleset_lines.go`: rulefetch imports rules); `convert/compat.go` now delegates to `rules.HasYAMLPayload`.
@@ -532,7 +556,7 @@ Reviewer hints: compare content.go branch by branch with ruleset_content.py (run
 
 Commands:
 - tests: `rt -- bash -lc 'cd server && gofmt -l internal/rulefetch internal/rules internal/convert; go vet ./internal/rulefetch/... ./internal/rules/... ./internal/convert/... && go test -count=1 ./internal/rulefetch/... ./internal/rules/... ./internal/convert/...'` (last: all ok; `-race` ok)
-- corpora: `rt --back server/internal/rulefetch/testdata/corpus.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rulefetch/testdata/gen.py'`; `rt --back server/internal/rulefetch/pyyaml/testdata -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rulefetch/pyyaml/testdata/gen.py'`; `rt --back server/internal/rules/testdata/sub_reference.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rules/testdata/gen_sub.py'`
+- corpora: `rt --back server/internal/rulefetch/testdata/corpus.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rulefetch/testdata/gen.py'`; `rt --back server/internal/pyyaml/testdata -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/pyyaml/testdata/gen.py'`; `rt --back server/internal/rules/testdata/sub_reference.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rules/testdata/gen_sub.py'`
 
 ## C15 — subscription refresh, health, scheduled refresh
 
@@ -1015,7 +1039,7 @@ Porting order (one fresh porter per module; each updates its section and commits
 
 Review order (one fresh reviewer per module, alongside the porter):
 1. Now (status `ported`): **C01**, **C03** (also switch `repo/compat_rules.go` to `internal/rules`), **C04**, **C09**, **C10**.
-2. **C02** after the yamlx open item (`1,000` in flow collections, `!!int '0x-1F'`) is fixed or accepted.
+2. ~~C02~~ verified 2026-11-16 (yamlx on the PyYAML port).
 3. **C08** after C14 has added the missing `rule_utils` functions (also switch `rules/compat.go` copies of `urlx`/`logx`/`repo` helpers).
 4. **C11** after the maintainer decides on the commented-editor open items (1)–(3).
 5. **C06** after C13 and C35 added their settings routes (add `internal/redact` tests); **C07** after every `tasks` slot exists (C15, C37, agents, routers).

@@ -126,22 +126,27 @@ is shared and must never be mutated: `DeepCopy()` first. Errors are `*store.Erro
 is Python's `str(exc)`.
 
 **Infra (package #1)** — each has a package doc; read it before use.
-- `internal/yamlx`: PyYAML-compatible YAML on the jsonx model. `Load`/`SafeLoad(text)` is
-  `yaml.safe_load` (YAML 1.1 typing: `yes/no/on/off`, octal, sexagesimal, timestamps → `yamlx.Timestamp`);
-  `LoadWith(text, LoadOptions{Schema: SchemaNative, Key, Name})` is `oxidns_native.NativeLoader`.
+- `internal/yamlx`: PyYAML 6.0.1 on the jsonx model (parser `internal/pyyaml`, constructor port).
+  `Load`/`SafeLoad(text)` is `yaml.safe_load` (values, `*yamlx.Error{Class}` with PyYAML's text);
+  `LoadWith(text, LoadOptions{Schema: SchemaNative, Key, Name, KeepNonStringKeys})` (NativeLoader via
+  `Key`; `KeepNonStringKeys` gives `*yamlx.Mapping` for dicts with int/bool/None keys, see `Lookup`);
+  `LoadCSafeFirst` is "CSafeLoader, else safe_load". Values jsonx cannot hold: `*NonStringKeyError`,
+  `*UnrepresentableError` (recursive aliases, `!!set`/`!!omap`/`!!pairs`).
   `Dump(v, DumpOptions{AllowUnicode, SortKeys, FlowStyle, Indent, Width, IndentSequences, ExplicitStart,
   ExplicitEnd, NoAliases, OnMarked})` is a port of PyYAML's pure-Python emitter, byte-identical for the
   option sets used in the backend (11 sets × 1374 corpus values). Presets: `SafeDump` (`yaml.safe_dump(v)`,
   sorted), `SafeDumpUnicode` (`allow_unicode=True, sort_keys=False`), `IndentDump` (`IndentDumper`).
   `FlowList`, `FlowMap`, `*SharedString` (anchor/alias), `Marked` + `OnMarked` (for `push_diff`).
-  Known limits: a non-string mapping key gives `*NonStringKeyError`; syntax error texts are yaml.v3's;
   CSafeDumper output (used once in `push_diff.py` to measure size) is not reproduced.
 - `internal/logx`: `Setup(Config)`, `Get(name)` with `Debug/Info/Warning/Error/Critical` and `…f`
   variants, `Exception(msg, err)`, `LogText(value, limit)` (Python `log_text`, default limit 120),
   `ClientIP(req)`. **Use the Python module path as the logger name** (`backend.routes.agents`): the log
   line format `2026-11-14 12:34:56,789 - name - LEVEL - msg` is what the log page shows.
 - `internal/jsonstore`: one JSON file per id under a directory, atomic writes (`utils/json_store.py`).
-- `internal/urlx`: `SafeURLForLog`, `SafeExceptionDetails(err)`, `Unquote`, `UnquotePlus`, `QuotePlus`.
+- `internal/urlx`: `SafeURLForLog`, `SafeExceptionDetails(err)` (uses `PythonClass()` when an error has
+  it), `Unquote`, `UnquotePlus`, `QuotePlus`, `Split`, `RequestsPrepareURL`.
+- `internal/pystr`: CPython 3.11 string rules on Unicode 14 tables: `Lower` (str.lower), `IsSpace`, `Strip`,
+  `Decimal`, `Int(s, base)` (int()), `Float(s)` (float()). Use these instead of Go's unicode tables.
 - `internal/taskstatus`: `DATA_DIR/task-status.json` store; `Record`, `Get`, `Load`, `Forget`, `NowISO`,
   `ParseTime`, `FromISOFormat` (CPython `datetime.fromisoformat` semantics); `OnRecord` hook.
 - `internal/localhttp`: in-process dispatch of requests addressed to this server (`utils/local_http.py`):
