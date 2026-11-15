@@ -1,0 +1,760 @@
+{
+ "heartbeat_fresh": [
+  {
+   "fresh": false,
+   "heartbeat": "2026-03-08T01:59:00",
+   "now": "2026-03-08T03:00:30"
+  },
+  {
+   "fresh": true,
+   "heartbeat": "2026-11-01T01:59:00",
+   "now": "2026-11-01T01:00:30"
+  },
+  {
+   "fresh": true,
+   "heartbeat": "2026-11-01T01:30:00",
+   "now": "2026-11-01T01:31:59.999999"
+  },
+  {
+   "fresh": false,
+   "heartbeat": "2026-11-01T01:30:00",
+   "now": "2026-11-01T01:32:00.000001"
+  },
+  {
+   "fresh": true,
+   "heartbeat": "2026-11-01T01:30:00",
+   "now": "2026-11-01T01:32:00"
+  },
+  {
+   "fresh": false,
+   "heartbeat": "2026-11-01T01:30:00+00:00",
+   "now": "2026-11-01T01:31:00"
+  },
+  {
+   "fresh": false,
+   "heartbeat": "2026-11-01T01:30:00Z",
+   "now": "2026-11-01T01:31:00"
+  },
+  {
+   "fresh": true,
+   "heartbeat": "2026-11-01",
+   "now": "2026-11-01T00:01:00"
+  },
+  {
+   "fresh": true,
+   "heartbeat": "2026-11-01T01:30:00.5",
+   "now": "2026-11-01T01:32:00.5"
+  },
+  {
+   "fresh": true,
+   "heartbeat": "0001-01-01T00:00:00",
+   "now": "0001-01-01T00:02:00"
+  },
+  {
+   "fresh": true,
+   "heartbeat": "9999-12-31T23:59:59",
+   "now": "0001-01-01T00:00:00"
+  }
+ ],
+ "json_bodies": {
+  "inf": {
+   "message": "Out of range float values are not JSON compliant",
+   "request_exception": "InvalidJSONError"
+  },
+  "nan": {
+   "message": "Out of range float values are not JSON compliant",
+   "request_exception": "InvalidJSONError"
+  },
+  "ok": {
+   "body": "{\"x\": 1.5, \"y\": \"\\u4e2d\"}",
+   "content_type": "application/json",
+   "result": {
+    "seen": true,
+    "success": true
+   }
+  }
+ },
+ "port_placeholder": "PORT",
+ "record_statuses": [
+  {
+   "error": "TypeError: unhashable type: 'list'",
+   "options": {},
+   "saved_status": "uploading",
+   "status": [
+    "x"
+   ],
+   "stored": "uploading"
+  },
+  {
+   "error": "TypeError: unhashable type: 'dict'",
+   "options": {},
+   "saved_status": "uploading",
+   "status": {
+    "a": 1
+   },
+   "stored": "uploading"
+  },
+  {
+   "options": {},
+   "result_status": 5,
+   "saved_status": 5,
+   "status": 5,
+   "stored": "uploading"
+  },
+  {
+   "options": {},
+   "result_status": null,
+   "saved_status": null,
+   "status": null,
+   "stored": "uploading"
+  },
+  {
+   "options": {},
+   "result_status": true,
+   "saved_status": true,
+   "status": true,
+   "stored": "uploading"
+  },
+  {
+   "options": {},
+   "result_status": "succeeded",
+   "saved_status": "succeeded",
+   "status": "succeeded",
+   "stored": "uploading"
+  },
+  {
+   "options": {},
+   "result_status": "weird",
+   "saved_status": "weird",
+   "status": "weird",
+   "stored": "uploading"
+  },
+  {
+   "options": {
+    "activation_receipt": true
+   },
+   "result_status": "uploading",
+   "saved_status": "uploading",
+   "status": [
+    "x"
+   ],
+   "stored": "uploading"
+  },
+  {
+   "options": {
+    "activation_receipt": true
+   },
+   "result_status": "uploading",
+   "saved_status": "uploading",
+   "status": {
+    "a": 1
+   },
+   "stored": "uploading"
+  },
+  {
+   "options": {
+    "activation_receipt": true
+   },
+   "result_status": "uploading",
+   "saved_status": "uploading",
+   "status": 5,
+   "stored": "uploading"
+  },
+  {
+   "options": {
+    "activation_receipt": true
+   },
+   "result_status": "uploading",
+   "saved_status": "uploading",
+   "status": null,
+   "stored": "uploading"
+  },
+  {
+   "options": {
+    "activation_receipt": true
+   },
+   "result_status": "uploading",
+   "saved_status": "uploading",
+   "status": true,
+   "stored": "uploading"
+  },
+  {
+   "options": {
+    "activation_receipt": true
+   },
+   "result_status": "succeeded",
+   "saved_status": "succeeded",
+   "status": "succeeded",
+   "stored": "uploading"
+  },
+  {
+   "options": {
+    "activation_receipt": true
+   },
+   "result_status": "uploading",
+   "saved_status": "uploading",
+   "status": "weird",
+   "stored": "uploading"
+  },
+  {
+   "error": "TypeError: unhashable type: 'list'",
+   "options": {
+    "upload_receipt": true
+   },
+   "saved_status": "uploading",
+   "status": [
+    "x"
+   ],
+   "stored": "uploading"
+  },
+  {
+   "error": "TypeError: unhashable type: 'dict'",
+   "options": {
+    "upload_receipt": true
+   },
+   "saved_status": "uploading",
+   "status": {
+    "a": 1
+   },
+   "stored": "uploading"
+  },
+  {
+   "options": {
+    "upload_receipt": true
+   },
+   "result_status": 5,
+   "saved_status": 5,
+   "status": 5,
+   "stored": "uploading"
+  },
+  {
+   "options": {
+    "upload_receipt": true
+   },
+   "result_status": null,
+   "saved_status": null,
+   "status": null,
+   "stored": "uploading"
+  },
+  {
+   "options": {
+    "upload_receipt": true
+   },
+   "result_status": true,
+   "saved_status": true,
+   "status": true,
+   "stored": "uploading"
+  },
+  {
+   "options": {
+    "upload_receipt": true
+   },
+   "result_status": "succeeded",
+   "saved_status": "succeeded",
+   "status": "succeeded",
+   "stored": "uploading"
+  },
+  {
+   "options": {
+    "upload_receipt": true
+   },
+   "result_status": "weird",
+   "saved_status": "weird",
+   "status": "weird",
+   "stored": "uploading"
+  },
+  {
+   "error": "TypeError: unhashable type: 'list'",
+   "options": {},
+   "saved_status": "ready",
+   "status": [
+    "x"
+   ],
+   "stored": "ready"
+  },
+  {
+   "error": "TypeError: unhashable type: 'dict'",
+   "options": {},
+   "saved_status": "ready",
+   "status": {
+    "a": 1
+   },
+   "stored": "ready"
+  },
+  {
+   "options": {},
+   "result_status": 5,
+   "saved_status": 5,
+   "status": 5,
+   "stored": "ready"
+  },
+  {
+   "options": {},
+   "result_status": null,
+   "saved_status": null,
+   "status": null,
+   "stored": "ready"
+  },
+  {
+   "options": {},
+   "result_status": true,
+   "saved_status": true,
+   "status": true,
+   "stored": "ready"
+  },
+  {
+   "options": {},
+   "result_status": "succeeded",
+   "saved_status": "succeeded",
+   "status": "succeeded",
+   "stored": "ready"
+  },
+  {
+   "options": {},
+   "result_status": "weird",
+   "saved_status": "weird",
+   "status": "weird",
+   "stored": "ready"
+  },
+  {
+   "error": "TypeError: unhashable type: 'list'",
+   "options": {
+    "activation_receipt": true
+   },
+   "saved_status": "ready",
+   "status": [
+    "x"
+   ],
+   "stored": "ready"
+  },
+  {
+   "error": "TypeError: unhashable type: 'dict'",
+   "options": {
+    "activation_receipt": true
+   },
+   "saved_status": "ready",
+   "status": {
+    "a": 1
+   },
+   "stored": "ready"
+  },
+  {
+   "options": {
+    "activation_receipt": true
+   },
+   "result_status": 5,
+   "saved_status": 5,
+   "status": 5,
+   "stored": "ready"
+  },
+  {
+   "options": {
+    "activation_receipt": true
+   },
+   "result_status": null,
+   "saved_status": null,
+   "status": null,
+   "stored": "ready"
+  },
+  {
+   "options": {
+    "activation_receipt": true
+   },
+   "result_status": true,
+   "saved_status": true,
+   "status": true,
+   "stored": "ready"
+  },
+  {
+   "options": {
+    "activation_receipt": true
+   },
+   "result_status": "succeeded",
+   "saved_status": "succeeded",
+   "status": "succeeded",
+   "stored": "ready"
+  },
+  {
+   "options": {
+    "activation_receipt": true
+   },
+   "result_status": "weird",
+   "saved_status": "weird",
+   "status": "weird",
+   "stored": "ready"
+  },
+  {
+   "options": {
+    "upload_receipt": true
+   },
+   "result_status": "ready",
+   "saved_status": "ready",
+   "status": [
+    "x"
+   ],
+   "stored": "ready"
+  },
+  {
+   "options": {
+    "upload_receipt": true
+   },
+   "result_status": "ready",
+   "saved_status": "ready",
+   "status": {
+    "a": 1
+   },
+   "stored": "ready"
+  },
+  {
+   "options": {
+    "upload_receipt": true
+   },
+   "result_status": "ready",
+   "saved_status": "ready",
+   "status": 5,
+   "stored": "ready"
+  },
+  {
+   "options": {
+    "upload_receipt": true
+   },
+   "result_status": "ready",
+   "saved_status": "ready",
+   "status": null,
+   "stored": "ready"
+  },
+  {
+   "options": {
+    "upload_receipt": true
+   },
+   "result_status": "ready",
+   "saved_status": "ready",
+   "status": true,
+   "stored": "ready"
+  },
+  {
+   "options": {
+    "upload_receipt": true
+   },
+   "result_status": "succeeded",
+   "saved_status": "succeeded",
+   "status": "succeeded",
+   "stored": "ready"
+  },
+  {
+   "options": {
+    "upload_receipt": true
+   },
+   "result_status": "ready",
+   "saved_status": "ready",
+   "status": "weird",
+   "stored": "ready"
+  }
+ ],
+ "urls": [
+  {
+   "host": "127.0.0.1",
+   "outcome": "ok",
+   "port": "int",
+   "request": {
+    "authorization": "Bearer z8gImDuRo8UWlpsXi7bm2wj6YLZ7WvtG",
+    "host": "127.0.0.1:PORT",
+    "method": "GET",
+    "path": "/api/status"
+   }
+  },
+  {
+   "host": "localhost",
+   "outcome": "ok",
+   "port": "int",
+   "request": {
+    "authorization": "Bearer mScdTUMOmjBa09YEl6O_Q-Uo3Md188yq",
+    "host": "localhost:PORT",
+    "method": "GET",
+    "path": "/api/status"
+   }
+  },
+  {
+   "host": "LOCALHOST",
+   "outcome": "ok",
+   "port": "int",
+   "request": {
+    "authorization": "Bearer 6FeEQdiIuLEnpPPbj5m5wE1N1rks1h2R",
+    "host": "localhost:PORT",
+    "method": "GET",
+    "path": "/api/status"
+   }
+  },
+  {
+   "host": "127.0.0.1.",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "::1",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "[::1]",
+   "outcome": "ok",
+   "port": "int",
+   "request": {
+    "authorization": "Bearer dfSmp632L6QEtjzN6ec3vSmns9x4XHrY",
+    "host": "[::1]:PORT",
+    "method": "GET",
+    "path": "/api/status"
+   }
+  },
+  {
+   "host": "127.1",
+   "outcome": "ok",
+   "port": "int",
+   "request": {
+    "authorization": "Bearer xRp8TrrrMIMA-aL9enyx2OmNutBco7pv",
+    "host": "127.1:PORT",
+    "method": "GET",
+    "path": "/api/status"
+   }
+  },
+  {
+   "host": "0x7f.0.0.1",
+   "outcome": "ok",
+   "port": "int",
+   "request": {
+    "authorization": "Bearer YfpdrCDCk9HVnB6iovxDwOWBEwbjeyDC",
+    "host": "0x7f.0.0.1:PORT",
+    "method": "GET",
+    "path": "/api/status"
+   }
+  },
+  {
+   "host": "2130706433",
+   "outcome": "ok",
+   "port": "int",
+   "request": {
+    "authorization": "Bearer ISr5p1-t3aPf_BNWABae111KhvRJe6fi",
+    "host": "2130706433:PORT",
+    "method": "GET",
+    "path": "/api/status"
+   }
+  },
+  {
+   "host": "127.0.0.1/x",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "127.0.0.1?q=1",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "127.0.0.1#frag",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "user@127.0.0.1",
+   "outcome": "ok",
+   "port": "int",
+   "request": {
+    "authorization": "Bearer zGC-dcva3Uz5WUUhX6ej_pl0CKa2PozU",
+    "host": "127.0.0.1:PORT",
+    "method": "GET",
+    "path": "/api/status"
+   }
+  },
+  {
+   "host": "user:p%40ss@127.0.0.1",
+   "outcome": "ok",
+   "port": "int",
+   "request": {
+    "authorization": "Basic dXNlcjpwQHNz",
+    "host": "127.0.0.1:PORT",
+    "method": "GET",
+    "path": "/api/status"
+   }
+  },
+  {
+   "host": "127.0.0.1 ",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": " 127.0.0.1",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "127.0.0.1\t",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "127.0.0.1\n",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "local host",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "１２７.0.0.1",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "127.0.0.1:1",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "%31%32%37.0.0.1",
+   "outcome": "ok",
+   "port": "int",
+   "request": {
+    "authorization": "Bearer moQ8ISqBxd0gukhdyVq00NoBO8j4-Vi6",
+    "host": "127.0.0.1:PORT",
+    "method": "GET",
+    "path": "/api/status"
+   }
+  },
+  {
+   "host": "localhost.",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "xn--",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "127.0.0.256",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "[127.0.0.1]",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "Localhost",
+   "outcome": "ok",
+   "port": "int",
+   "request": {
+    "authorization": "Bearer zDheEPFdlc7bJs8YFhyyP409o5pItmGD",
+    "host": "localhost:PORT",
+    "method": "GET",
+    "path": "/api/status"
+   }
+  },
+  {
+   "host": "host_name",
+   "outcome": "connection_error",
+   "port": "int"
+  },
+  {
+   "host": "127.0.0.1",
+   "outcome": "ok",
+   "port": "str",
+   "request": {
+    "authorization": "Bearer WdDUjc6QT4oGiYCsQavZhnAiTjzercqs",
+    "host": "127.0.0.1:PORT",
+    "method": "GET",
+    "path": "/api/status"
+   }
+  },
+  {
+   "host": "127.0.0.1",
+   "outcome": "connection_error",
+   "port": "float"
+  },
+  {
+   "host": "127.0.0.1",
+   "outcome": "connection_error",
+   "port": "space_before"
+  },
+  {
+   "host": "127.0.0.1",
+   "outcome": "connection_error",
+   "port": "space_after"
+  },
+  {
+   "host": "127.0.0.1",
+   "outcome": "connection_error",
+   "port": "plus"
+  },
+  {
+   "host": "127.0.0.1",
+   "outcome": "ok",
+   "port": "zero_pad",
+   "request": {
+    "authorization": "Bearer tpie8x1vtOYedhQhhdZRkb1TBl4DYkOH",
+    "host": "127.0.0.1:PORT",
+    "method": "GET",
+    "path": "/api/status"
+   }
+  },
+  {
+   "host": "127.0.0.1",
+   "outcome": "connection_error",
+   "port": "fullwidth"
+  },
+  {
+   "host": "127.0.0.1",
+   "outcome": "ok",
+   "port": "slash",
+   "request": {
+    "authorization": "Bearer UEStIyZsGby8PwPP5tWaxuDt66h0aFrY",
+    "host": "127.0.0.1:PORT",
+    "method": "GET",
+    "path": "/x/api/status"
+   }
+  },
+  {
+   "host": "127.0.0.1",
+   "outcome": "connection_error",
+   "port": "true"
+  },
+  {
+   "host": "127.0.0.1",
+   "outcome": "connection_error",
+   "port": "none"
+  },
+  {
+   "host": "127.0.0.1",
+   "outcome": "connection_error",
+   "port": "empty"
+  },
+  {
+   "host": "127.0.0.1",
+   "outcome": "connection_error",
+   "port": "big"
+  },
+  {
+   "host": "127.0.0.1",
+   "outcome": "connection_error",
+   "port": "underscore"
+  },
+  {
+   "host": "::1",
+   "outcome": "connection_error",
+   "port": "str"
+  },
+  {
+   "host": "localhost",
+   "outcome": "connection_error",
+   "port": "float"
+  }
+ ]
+}
