@@ -1,0 +1,53 @@
+package settings
+
+import (
+	"configflow/internal/httpx"
+	"configflow/internal/jsonx"
+	"configflow/internal/substore"
+)
+
+// listThirdPartyDependencies is GET /api/settings/dependencies: version,
+// latest release and update state of the bundled Sub-Store.
+func listThirdPartyDependencies(c *httpx.Ctx) (*httpx.Response, error) {
+	refresh, _ := c.Arg("refresh")
+	force := refresh == "1" || refresh == "true"
+	dependencies, err := substore.Default().Dependencies.ListDependencies(c.Context(), force)
+	if err != nil {
+		return nil, err
+	}
+	return httpx.JSON(jsonx.Obj("dependencies", dependencies)), nil
+}
+
+// updateSubStoreDependency is POST /api/settings/dependencies/sub-store/update:
+// the online update runs in the background; progress is polled through the
+// dependency list.
+func updateSubStoreDependency(c *httpx.Ctx) (*httpx.Response, error) {
+	ok, message := substore.Default().Dependencies.StartSubStoreUpdate(c.Context())
+	if ok {
+		appLogger.Info("Sub-Store 在线更新：" + message)
+		return httpx.JSONStatus(202, jsonx.Obj("success", true, "message", message)), nil
+	}
+	appLogger.Warning("Sub-Store 在线更新：" + message)
+	return httpx.JSONStatus(409, jsonx.Obj("success", false, "message", message)), nil
+}
+
+// setSubStoreMode is POST /api/settings/dependencies/sub-store/mode.
+func setSubStoreMode(c *httpx.Ctx) (*httpx.Response, error) {
+	data, ok := c.JSONSilent().(*jsonx.Object)
+	mode, _ := data.Value("mode").(string)
+	if !ok || data == nil || (mode != "on_demand" && mode != "always") {
+		return failure(400, "请选择按需启动或常驻运行"), nil
+	}
+	if err := substore.Default().Runtime.SetMode(c.Context(), mode); err != nil {
+		if substore.IsRuntimeUnavailable(err) {
+			return failure(409, err.Error()), nil
+		}
+		return nil, err
+	}
+	label := "按需启动"
+	if mode == "always" {
+		label = "常驻运行"
+	}
+	appLogger.Info("Sub-Store 运行模式已切换为" + label)
+	return httpx.JSON(jsonx.Obj("success", true, "mode", mode)), nil
+}

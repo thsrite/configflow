@@ -1,12 +1,12 @@
 // Package settings holds the routes of backend/routes/settings.py
 // (blueprint "settings", prefix /api) that do not wait for another package:
 // web port, rule download proxy, server domain, config token, version,
-// WebDAV backup settings and the subscription aggregation switch.
+// WebDAV backup settings, the subscription aggregation switch, and the
+// third-party dependency routes (GET /api/settings/dependencies, Sub-Store
+// update and mode; internal/substore, C13).
 //
 // Not registered yet (they need other packages): POST /api/backup/test and
-// POST /api/backup/now (WebDAV client and upload_backup, package #17),
-// GET /api/settings/dependencies and the Sub-Store update/mode routes
-// (dependencies and sub_store_runtime, package #13).
+// POST /api/backup/now (WebDAV client and upload_backup, package #17).
 package settings
 
 import (
@@ -45,6 +45,9 @@ func Register(r *httpx.Router) {
 	r.GET("/api/version", "settings.get_version", getVersion)
 	r.Handle([]string{"GET", "POST"}, "/api/backup/config", "settings.backup_config", auth.Require(backupConfig))
 	r.Handle([]string{"GET", "POST"}, "/api/settings/subscription-aggregation", "settings.handle_subscription_aggregation", auth.Require(handleSubscriptionAggregation))
+	r.GET("/api/settings/dependencies", "settings.list_third_party_dependencies", auth.Require(listThirdPartyDependencies))
+	r.POST("/api/settings/dependencies/sub-store/update", "settings.update_sub_store_dependency", auth.Require(updateSubStoreDependency))
+	r.POST("/api/settings/dependencies/sub-store/mode", "settings.set_sub_store_mode", auth.Require(setSubStoreMode))
 }
 
 func failure(status int, message string) *httpx.Response {

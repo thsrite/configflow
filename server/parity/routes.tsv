@@ -342,9 +342,9 @@ PUT	/api/rules/policy	routes.rules.set_rule_policy		todo
 POST	/api/rules/reorder	routes.rules.reorder_rules		todo
 GET	/api/server-domain	routes.settings.handle_server_domain	internal/api/settings	done
 POST	/api/server-domain	routes.settings.handle_server_domain	internal/api/settings	done
-GET	/api/settings/dependencies	routes.settings.list_third_party_dependencies		todo
-POST	/api/settings/dependencies/sub-store/mode	routes.settings.set_sub_store_mode		todo
-POST	/api/settings/dependencies/sub-store/update	routes.settings.update_sub_store_dependency		todo
+GET	/api/settings/dependencies	routes.settings.list_third_party_dependencies	internal/api/settings	done
+POST	/api/settings/dependencies/sub-store/mode	routes.settings.set_sub_store_mode	internal/api/settings	done
+POST	/api/settings/dependencies/sub-store/update	routes.settings.update_sub_store_dependency	internal/api/settings	done
 GET	/api/settings/rule-fetch-proxy	routes.settings.handle_rule_fetch_proxy	internal/api/settings	done
 POST	/api/settings/rule-fetch-proxy	routes.settings.handle_rule_fetch_proxy	internal/api/settings	done
 GET	/api/settings/subscription-aggregation	routes.settings.handle_subscription_aggregation	internal/api/settings	done

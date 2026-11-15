@@ -30,6 +30,7 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
+	"configflow/internal/substore"
 	"configflow/internal/tasks"
 	"configflow/internal/utilx"
 )
@@ -56,6 +57,7 @@ var wirePackages = []func(){
 	agents.Wire,
 	metrics.Wire,
 	metrics.WireTraffic,
+	substore.Wire,
 }
 
 func wireCore() {
