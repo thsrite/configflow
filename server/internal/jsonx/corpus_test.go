@@ -40,7 +40,12 @@ type corpusCase struct {
 
 func loadCorpus(t *testing.T) []corpusCase {
 	t.Helper()
-	file, err := os.Open("testdata/corpus.jsonl")
+	return loadCorpusFile(t, "testdata/corpus.jsonl")
+}
+
+func loadCorpusFile(t *testing.T, path string) []corpusCase {
+	t.Helper()
+	file, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,89 +83,7 @@ func TestCorpusEncoders(t *testing.T) {
 			continue
 		}
 		count++
-		value, err := ParseString(item.Input)
-		if err != nil {
-			t.Errorf("%s: Parse(%q): %v", item.Name, clip(item.Input), err)
-			continue
-		}
-		check := func(what string, want *string, options Options, suffix string) {
-			if want == nil {
-				return
-			}
-			got, err := Encode(value, options)
-			if err != nil {
-				t.Errorf("%s: %s: %v", item.Name, what, err)
-			} else if string(got)+suffix != *want {
-				t.Errorf("%s: %s of %q\n got %q\nwant %q", item.Name, what, clip(item.Input), clip(string(got)), clip(*want))
-			}
-		}
-		check("compact", item.Compact, Options{Compact: true}, "")
-		check("indent2", item.Indent2, Options{Indent: 2}, "")
-		check("sorted", item.Sorted, Options{SortKeys: true, Compact: true}, "")
-		check("sorted_spaced", item.SortedSpaced, Options{SortKeys: true}, "")
-		if !item.Lone { // \ud800 cannot be reproduced; see the package comment
-			check("response", item.Response, Options{EnsureASCII: true, SortKeys: true, Compact: true}, "\n")
-			check("default", item.Default, Options{EnsureASCII: true}, "")
-			check("indent1", item.Indent1, Options{EnsureASCII: true, SortKeys: true, Compact: true, Indent: 1}, "")
-			if item.Repr != nil && Repr(value) != *item.Repr {
-				t.Errorf("%s: Repr\n got %q\nwant %q", item.Name, clip(Repr(value)), clip(*item.Repr))
-			}
-			if item.Str != nil && Str(value) != *item.Str {
-				t.Errorf("%s: Str\n got %q\nwant %q", item.Name, clip(Str(value)), clip(*item.Str))
-			}
-		}
-		if item.Truthy != nil && Truthy(value) != *item.Truthy {
-			t.Errorf("%s: Truthy = %v, want %v", item.Name, Truthy(value), *item.Truthy)
-		}
-
-		// The named encoders are the same option sets.
-		named := []struct {
-			encode func(any) ([]byte, error)
-			want   *string
-		}{{Compact, item.Compact}, {Indent2, item.Indent2}, {Sorted, item.Sorted}}
-		if !item.Lone {
-			named = append(named, struct {
-				encode func(any) ([]byte, error)
-				want   *string
-			}{Response, item.Response}, struct {
-				encode func(any) ([]byte, error)
-				want   *string
-			}{Default, item.Default})
-		}
-		for i, pair := range named {
-			if pair.want == nil {
-				continue
-			}
-			if got, err := pair.encode(value); err != nil || string(got) != *pair.want {
-				t.Errorf("%s: named encoder %d differs from CPython (%v)", item.Name, i, err)
-			}
-		}
-
-		// Round trips: what was written reads back as the same value and
-		// is written the same again, from every layout.
-		compact, err := Compact(value)
-		if err != nil {
-			continue
-		}
-		for _, options := range []Options{{Compact: true}, {Indent: 2}, {EnsureASCII: true}, {SortKeys: true}} {
-			text, _ := Encode(value, options)
-			again, err := Parse(text)
-			if err != nil {
-				t.Errorf("%s: reparse %+v: %v", item.Name, options, err)
-				continue
-			}
-			if !options.SortKeys {
-				if second, _ := Compact(again); string(second) != string(compact) {
-					t.Errorf("%s: round trip through %+v changed the value", item.Name, options)
-				}
-			}
-			if string(compact) != "NaN" && !Equal(value, again) {
-				t.Errorf("%s: round trip through %+v is not Equal", item.Name, options)
-			}
-		}
-		if copied, _ := Compact(DeepCopy(value)); string(copied) != string(compact) {
-			t.Errorf("%s: DeepCopy changed the value", item.Name)
-		}
+		checkValueCase(t, item)
 	}
 	if count < 500 {
 		t.Fatalf("only %d value cases in the corpus", count)
@@ -176,18 +99,7 @@ func TestCorpusErrors(t *testing.T) {
 			continue
 		}
 		count++
-		value, err := ParseString(item.Input)
-		if err == nil {
-			text, _ := Compact(value)
-			t.Errorf("Parse(%q) = %s, CPython: %s", clip(item.Input), clip(string(text)), item.Error)
-			continue
-		}
-		if err.Error() != item.Error {
-			t.Errorf("Parse(%q)\n got %s\nwant %s", clip(item.Input), err, item.Error)
-		}
-		if _, ok := err.(*SyntaxError); ok != (item.Type == "JSONDecodeError") {
-			t.Errorf("Parse(%q): error type %T, CPython %s", clip(item.Input), err, item.Type)
-		}
+		checkErrorCase(t, item)
 	}
 	if count < 500 {
 		t.Fatalf("only %d error cases in the corpus", count)
@@ -255,4 +167,109 @@ func TestCorpusEqual(t *testing.T) {
 		return
 	}
 	t.Fatal("no equality matrix in the corpus")
+}
+
+// checkValueCase runs every check of TestCorpusEncoders on one value case.
+func checkValueCase(t *testing.T, item corpusCase) {
+	t.Helper()
+	value, err := ParseString(item.Input)
+	if err != nil {
+		t.Errorf("%s: Parse(%q): %v", item.Name, clip(item.Input), err)
+		return
+	}
+	check := func(what string, want *string, options Options, suffix string) {
+		if want == nil {
+			return
+		}
+		got, err := Encode(value, options)
+		if err != nil {
+			t.Errorf("%s: %s: %v", item.Name, what, err)
+		} else if string(got)+suffix != *want {
+			t.Errorf("%s: %s of %q\n got %q\nwant %q", item.Name, what, clip(item.Input), clip(string(got)), clip(*want))
+		}
+	}
+	check("compact", item.Compact, Options{Compact: true}, "")
+	check("indent2", item.Indent2, Options{Indent: 2}, "")
+	check("sorted", item.Sorted, Options{SortKeys: true, Compact: true}, "")
+	check("sorted_spaced", item.SortedSpaced, Options{SortKeys: true}, "")
+	if !item.Lone { // \ud800 cannot be reproduced; see the package comment
+		check("response", item.Response, Options{EnsureASCII: true, SortKeys: true, Compact: true}, "\n")
+		check("default", item.Default, Options{EnsureASCII: true}, "")
+		check("indent1", item.Indent1, Options{EnsureASCII: true, SortKeys: true, Compact: true, Indent: 1}, "")
+		if item.Repr != nil && Repr(value) != *item.Repr {
+			t.Errorf("%s: Repr\n got %q\nwant %q", item.Name, clip(Repr(value)), clip(*item.Repr))
+		}
+		if item.Str != nil && Str(value) != *item.Str {
+			t.Errorf("%s: Str\n got %q\nwant %q", item.Name, clip(Str(value)), clip(*item.Str))
+		}
+	}
+	if item.Truthy != nil && Truthy(value) != *item.Truthy {
+		t.Errorf("%s: Truthy = %v, want %v", item.Name, Truthy(value), *item.Truthy)
+	}
+
+	// The named encoders are the same option sets.
+	named := []struct {
+		encode func(any) ([]byte, error)
+		want   *string
+	}{{Compact, item.Compact}, {Indent2, item.Indent2}, {Sorted, item.Sorted}}
+	if !item.Lone {
+		named = append(named, struct {
+			encode func(any) ([]byte, error)
+			want   *string
+		}{Response, item.Response}, struct {
+			encode func(any) ([]byte, error)
+			want   *string
+		}{Default, item.Default})
+	}
+	for i, pair := range named {
+		if pair.want == nil {
+			continue
+		}
+		if got, err := pair.encode(value); err != nil || string(got) != *pair.want {
+			t.Errorf("%s: named encoder %d differs from CPython (%v)", item.Name, i, err)
+		}
+	}
+
+	// Round trips: what was written reads back as the same value and
+	// is written the same again, from every layout.
+	compact, err := Compact(value)
+	if err != nil {
+		return
+	}
+	for _, options := range []Options{{Compact: true}, {Indent: 2}, {EnsureASCII: true}, {SortKeys: true}} {
+		text, _ := Encode(value, options)
+		again, err := Parse(text)
+		if err != nil {
+			t.Errorf("%s: reparse %+v: %v", item.Name, options, err)
+			continue
+		}
+		if !options.SortKeys {
+			if second, _ := Compact(again); string(second) != string(compact) {
+				t.Errorf("%s: round trip through %+v changed the value", item.Name, options)
+			}
+		}
+		if string(compact) != "NaN" && !Equal(value, again) {
+			t.Errorf("%s: round trip through %+v is not Equal", item.Name, options)
+		}
+	}
+	if copied, _ := Compact(DeepCopy(value)); string(copied) != string(compact) {
+		t.Errorf("%s: DeepCopy changed the value", item.Name)
+	}
+}
+
+// checkErrorCase runs the checks of TestCorpusErrors on one error case.
+func checkErrorCase(t *testing.T, item corpusCase) {
+	t.Helper()
+	value, err := ParseString(item.Input)
+	if err == nil {
+		text, _ := Compact(value)
+		t.Errorf("Parse(%q) = %s, CPython: %s", clip(item.Input), clip(string(text)), item.Error)
+		return
+	}
+	if err.Error() != item.Error {
+		t.Errorf("Parse(%q)\n got %s\nwant %s", clip(item.Input), err, item.Error)
+	}
+	if _, ok := err.(*SyntaxError); ok != (item.Type == "JSONDecodeError") {
+		t.Errorf("Parse(%q): error type %T, CPython %s", clip(item.Input), err, item.Type)
+	}
 }
