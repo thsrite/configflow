@@ -199,10 +199,11 @@ func (s *Snapshot) Validate(proxies any, forceChains bool, providerName *string)
 	if err := ValidateProxyShapes(proxies); err != nil {
 		return err
 	}
-	main, err := s.Main()
+	mainValue, err := jsonx.Parse([]byte(s.MainJSON))
 	if err != nil {
 		return err
 	}
+	main, isObject := mainValue.(*jsonx.Object)
 	list := proxies.([]any)
 	var names []any
 	for _, p := range list {
@@ -213,6 +214,12 @@ func (s *Snapshot) Validate(proxies any, forceChains bool, providerName *string)
 		if containsEqual(s.ChainNames, name) {
 			return dialerErr("Provider 节点名称与代理链出口冲突")
 		}
+	}
+	if !isObject {
+		if providerName != nil {
+			return attributeError(mainValue, "get")
+		}
+		return typeError("'" + pyTypeName(mainValue) + "' object is not a mapping")
 	}
 	definitions, _ := main.GetOr("proxy-providers", jsonx.NewObject()).(*jsonx.Object)
 	if providerName != nil && definitions.Has(*providerName) {
