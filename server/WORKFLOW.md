@@ -154,6 +154,34 @@ copies `rulefetch/urls.go` (SplitURL/URLJoin, used across rulefetch + its corpus
 `subs/proxyserverdns.go` urlSplitHost. Lines (non-test, urlx+reqproxy+weburl+agents+substore+
 rulefetch+localhttp+health+installer+convert+provider+redact+httpx): 59602 → 58285.
 
+**N2 review (adversarial, 2026-11-16) — PAUSED, not verified, findings open.** All code is
+uncommitted in the shared worktree (shared-tree build passes; tests not all green). Findings:
+(F1, high) credentials with characters net/url refuses in userinfo (`^ | { } space`, non-ASCII) made
+subscription/rule/proxy URLs that requests fetched fail with InvalidURL — fix: `weburl.Parse`
+percent-encodes userinfo first, `ParseProxy` uses `Parse`; (F2, medium) `Prepare` turned `%2F` into
+`/` when the path also held non-ASCII — fix: keep `RawPath`, escape only invalid bytes;
+(F3, medium) `SafeForLog` leaked password digits for `u:12%2F34@h` (also in Python) — fix: cut userinfo
+before decoding; (F4, medium) `appendURLQuery` (url.Parse) failed config generation for a rule name with
+a stray `%` — fix: plain string split, unbalanced-bracket server_domain still refused. Emulation removed:
+NFKC-delimiter host check (`ErrAmbiguousHost`), `decodeUnreserved`, host lower-casing and port-zero
+stripping in `Prepare`, maximal-subpart U+FFFD (`strings.ToValidUTF8`), username-only proxy-auth drop;
+stray `%` handling moved into `Parse`; `rulefetch/urls.go` SplitURL/URLJoin/urlparse (≈400 lines) replaced
+by `weburl.Prepare`/`ResolveReference`; `subs` urlSplitHost and splitURL replaced by `weburl.Parse`.
+Uncommitted files: weburl/{weburl,logsafe,weburl_test}.go; convert/{mihomo_generate_py,mihomo_nodes,
+review_c12_test}.go; subs/{hosts,proxyserverdns}.go; refresh/rows.go; rulefetch/{urls,fetch,corpus_test,
+recorded_test,review_c14_test}.go + new urls_compare_test.go, review_n2_test.go, and ONE hunk in
+rulefetch/website.go (SplitURL→weburl.Parse at final_host; the file also holds the rules S-pass's
+uncommitted hunks — commit only my hunk, e.g. via a temporary index); substore/review_n2_test.go (new);
+localhttp/localhttp_test.go; httpx/review_a08_test.go; installer/{docker_ha_corpus,fuzz,matrix}_test.go.
+Green on the test server: weburl, convert, substore, localhttp, httpx, mosdns, installer.
+Stopped at (still failing): rulefetch TestCorpus (8 urljoin rows: RFC 3986 vs urljoin for `http:g`,
+`..;x`, `//[v1.x]` + 2 NFKC rows → add to `urlAccepted`), rulefetch TestFetchDifferentialAgainstRequests
+(not yet inspected — likely requested-URL bytes after dropping decodeUnreserved), subs TestReviewC10References
+rows 1015–1018 (`sni=%ff%fe`: one U+FFFD per run now → accept or keep per-byte replacement);
+subs TestFilterCorpus/TestValidateRegexFilter and rulefetch inspect_domain_content \x1c–\x1e rows come
+from the other agents' uncommitted rules S-pass, not N2. Next: fix those, rerun all consumers in a private
+worktree on HEAD + these files, commit, then record "verified" here.
+
 ## Idiomatic Go (2026-11-16, maintainer: "用 go 原生库")
 
 PORTING rules 1–4 now say: port features, not code; typed structs; acceptance at the external boundary
