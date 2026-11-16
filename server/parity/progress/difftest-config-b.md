@@ -701,3 +701,19 @@ request_variants=6426 named_matrix_cases=3320（S480 F2387 B453），H去重217�
 ```
 
 继续G12/G13及其余业务/长流程；未做最终全量。
+
+## 批次 39：G12三方草稿、重命名和标准插件恢复
+
+- 44请求，默认/scoped：template→editor native+baseline；无变化保留中文备注原文字节；手改cache和未知插件/字段与模板worker/TTL独立合并，保留false/0/null；同时修改worker的冲突默认current与显式template resolution分别验证精确冲突路径/choice，更新baseline后重预览不重复变更。
+- tag-only重命名remote_dns自动改goto，显式重命名cache且修改size会改明确executor引用；合成认证凭据保持精确。另验自定义username文本含旧tag时400并指出位置，而不是猜测改写。标准cache删除后断开自有边、停用并暂存参数；standard_add恢复原size和开关；错型/重复/未知intent及无效resolutions均400。
+- 每次只编辑草稿时Python前提比较完整数据库必须等于最初快照；只有显式save才提交。设备DNS策略的中文/emoji备注往返无损。save/read/原始导出保留native与secret-bearing baseline；desensitize导出清空native/baseline/附件，沿用SHA ETag、全DB与文件比较。
+
+```text
+.63 run.py --groups oxidns-editor-roundtrips
+current go-unimplemented=44 design_errors=[] seconds=4.64
+cumulative compared=1472 go-unimplemented=4928 dependency=28 different=41 O12-separate=1
+request_variants=6470 named_matrix_cases=3320（S480 F2387 B453），H去重217，G去重15
+43 self-checks + end-to-end wrong-Go-response check OK
+```
+
+Go相关editor路由仍未接通。G13及更多helper错误分支、聚合/域名发现/setup等继续，未做最终全量。
