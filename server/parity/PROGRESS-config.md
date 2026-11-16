@@ -1426,7 +1426,7 @@ Progress: (updated at each milestone)
 
 ## C27 — rule DNS actions
 
-**Status: in progress** (author port, 2026-11-17) · prereqs: C26 verified · Go: `internal/oxidns`
+**Status: `ported`** (author port, final .32 checks passed, 2026-11-17; independent review pending) · prereqs: C26 verified · Go: `internal/oxidns`
 
 Files:
 - `backend/common/rule_dns.py` (885)
@@ -1440,7 +1440,7 @@ Scope / implementation plan:
 - Buildable step 1: typed rule-page state and upstream candidates; public profile-agent filtering, choice parsing, ruleset hydration and explicit-route/read-entry APIs. Free-form upstream/settings documents remain yaml.Node, JSON views use typed structs and encoding/json.
 - Buildable step 2: ApplyRuleDNS returns a replacement settings draft plus warnings; it never mutates before/after profiles. C32 installs the returned settings under its transaction only after success. Strict native refusal is a Go RoutingLockedError with typed usage metadata; lenient mode preserves native YAML and returns the existing Chinese warning. Existing common routing owns all rebuilding/parking/resource reconciliation.
 - Buildable step 3: synthetic real-Python public-entry reference corpus includes read models, template/native writes, group reorder/follow drift, enable/disable/delete/value/reorder changes, linked/stale upstreams, locked/malformed drafts and final generated YAML. Add boundary assertions on both inputs and generated configurations; compare proddiff public generators on .32, with coverage regressions 0.
-- Iteration on .63; final gofmt, vet, oxidns race, ordinary full suite and proddiff on .32. Commit each compiling step and end with git rebase go, clean worktree, no push. Final status will be ported (independent reviewer follows).
+- Iteration on .63; final gofmt, vet, oxidns race, ordinary full suite and proddiff on .32 all passed. Each compiling step was committed. Final status is ported; an independent reviewer follows.
 
 Cross-domain contracts:
 - The existing classical-IP hook stays the one installed by ippresence; unknown content remains conservative. No private rule_ip_presence copy.
@@ -1481,11 +1481,18 @@ Python test-file → boundary coverage (function counts; parameterized ids expan
 | `test_rule_dns.py` | 33 | Existing native action normalization/generation/helper boundaries plus C27 state/default/unsupported/disabled/follow drift, malformed reads/cleanup, catalog links, hydration, assignment vocabulary/error order, pin retention and strict/lenient lock cases. Typed RoutingLockedError replaces the Python exception hierarchy. |
 | `test_rule_dns_policy_groups.py` | 7 | Shared native RenderMembers remains the sole membership implementation; C27 synthetic group matrix covers manual/proxy/REJECT, explicit order, strategies-first, source compatibility, follow-group source, non-manual groups, disabled/missing source, buckets/exclusions and follow updates. |
 
-C32 integration: construct **complete resolved snapshots after the rule/group changes**, pass only explicitly supplied dns fields as ordered DNSAssignment entries, call ApplyRuleDNS under its existing transaction, abort on error, and install Settings only if Changed. Persist the caller's other edits and warnings in that same transaction; never save the returned draft before the conflict check. C29 uses InvalidateFollow on complete-form replacement. No runtime behavior from those routes is claimed until their modules wire these APIs.
+C32 integration: construct **complete resolved snapshots after the rule/group changes**, pass only explicitly supplied dns fields as ordered DNSAssignment entries, call ApplyRuleDNS under its existing transaction, abort on error, and install Settings only if Changed. Persist the caller's other edits and warnings in that same transaction; never save the returned draft before the conflict check. C29 uses InvalidateFollow on complete-form replacement. ProfileFromJSON is the native JSON snapshot entry; NewProfile/ToJSONX remain the existing adapter to the old repository. ToJSON returns settings JSON bytes suitable for json.RawMessage. Engine.InUse has the unchanged JSON name oxidns_in_use. No runtime behavior from those routes is claimed until their modules wire these APIs.
 
 Reference command: `RT_HOST=sunbroke@192.168.0.63 rt --back server/internal/oxidns/testdata/c27_public.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/oxidns/testdata/c27_gen.py'`.
 
-Remaining: rebase current go; final .32 gofmt, vet, full oxidns race, whole ordinary suite and proddiff generator coverage gate (coverage_regressions=0); then mark ported, commit and final clean rebase. Independent C27 review follows; C32/C33 route tests and optional core tests remain separate owners/gates.
+Final verification on native .32 (tested integration base **e6c87cc1**):
+- Required command: `rt -- bash -lc 'cd server && test -z "$(gofmt -l .)" && go vet ./... && go test -race -count=1 ./internal/oxidns/ && go test -count=1 ./... && cd .. && server/scripts/proddiff.sh'` (wrapped with uptime/log capture to `/tmp/c27-final.log`) → **exit 0**. Formatting had no output; vet passed.
+- Oxidns race **340.910s**, default timeout, no race warnings. Ordinary full suite passed: oxidns **89.184s**, installer **155.837s**; final lines `ok configflow/internal/weburl 0.007s`, `ok configflow/internal/yamlx 0.774s`, `? configflow/tools/proddiff/generator [no test files]`.
+- Proddiff generator mode: OxiDNS config, agent OxiDNS config, custom files and downloads each had **2 successes / 2 compared / 0 both-error**. Overall 2060 cases / 282 compared, four self-checks PASS, **coverage_regressions=0**, 5 existing unique baseline differences (agents:value 3, config:value 2), **baseline: new=0 stale=0**. No baseline/coverage exception was added. Existing missing HTTP generators and 20 Python/20 Go connection-failed cases are not claimed as successful comparisons. Synthetic C27 writes additionally compare all 148 final generated configurations, without depending on the snapshot using rule actions.
+- Uptime start `17:52:35 up 2:51, 3 users, load average: 1.64, 4.28, 5.23`; end `18:01:53 up 3:00, 4 users, load average: 16.34, 8.97, 6.76`.
+- Final polish only renamed the Go view field to InUse (wire JSON tag unchanged) and documented Error/Unwrap. Follow-up `rt -- bash -lc 'cd server && test -z "$(gofmt -l .)" && go vet ./... && go test -race -count=1 -run "^TestRuleDNS" ./internal/oxidns/'` → exit 0, **16.902s**. All 282 references / 148 generated results and the ordered-assignment/input/comment checks still pass.
+
+No implementation remains in C27; no dependency, Python emulation, new jsonx/pystr/urlx import, route registration or repository write was added. Go APIs deliberately return replacement drafts/references rather than mutating caller objects; callers install those results as documented. Module source/test features are retained; optional core execution and route/transaction/auth behavior remain with the owners above. Branch **go-port-c27**; rebased onto current local go, clean committed hand-back, no push or production access. Independent review is pending; this author does not mark verified.
 
 ## C28 — MosDNS archive and routes
 

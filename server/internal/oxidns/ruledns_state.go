@@ -36,7 +36,7 @@ type RuleDNSEngine struct {
 	PolicyRoutes     map[string]*string `json:"policy_routes"`
 	PreferIPv4       bool               `json:"prefer_ipv4"`
 	LocalProbeActive bool               `json:"local_probe_active"`
-	OxidnsInUse      bool               `json:"oxidns_in_use"`
+	InUse            bool               `json:"oxidns_in_use"`
 	Warnings         []string           `json:"warnings"`
 	Agents           []RuleDNSAgent     `json:"agents"`
 }
@@ -424,12 +424,12 @@ func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 	}
 	engine := RuleDNSEngine{Mode: str(orDefault(settings, "config_mode", S("template"))), Editable: view.Editable, Reason: view.Reason,
 		DefaultForward: str(orDefault(settings, "default_forward", S("forward_remote"))), PolicyRoutes: map[string]*string{}, PreferIPv4: !same(get(settings, "prefer_ipv4"), B(false)),
-		OxidnsInUse: native, Warnings: []string{}, Agents: []RuleDNSAgent{}}
+		InUse: native, Warnings: []string{}, Agents: []RuleDNSAgent{}}
 	for name, route := range routes {
 		engine.PolicyRoutes[name] = nullableRoute(route)
 	}
 	for _, key := range append(append([]string{}, Selectors...), ruleDNSFields...) {
-		engine.OxidnsInUse = engine.OxidnsInUse || truthy(get(stored, key))
+		engine.InUse = engine.InUse || truthy(get(stored, key))
 	}
 	var steps []*Node
 	for _, plugin := range items(get(view.Document, "plugins")) {
@@ -455,7 +455,7 @@ func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 			sync = options.SyncSettings(agent)
 		}
 		engine.Agents = append(engine.Agents, RuleDNSAgent{str(get(agent, "id")), str(orDefault(agent, "name", get(agent, "id"))), str(get(agent, "service_type")), sync})
-		engine.OxidnsInUse = engine.OxidnsInUse || isOneOf(get(agent, "service_type"), "oxidns")
+		engine.InUse = engine.InUse || isOneOf(get(agent, "service_type"), "oxidns")
 	}
 	candidates, err := viewUpstreams(settings, view, agents)
 	if err != nil {

@@ -38,7 +38,10 @@ type RoutingLockedError struct {
 	Usages []RoutingUsage
 }
 
+// Error returns the user-visible conflict reason.
 func (e *RoutingLockedError) Error() string { return e.Reason }
+
+// Unwrap lets callers recognize a routing conflict with errors.Is.
 func (e *RoutingLockedError) Unwrap() error { return ErrRoutingLocked }
 
 func routingLocked(reason string) error {
