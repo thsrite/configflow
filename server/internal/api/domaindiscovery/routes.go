@@ -2,7 +2,6 @@
 package domaindiscovery
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -41,60 +40,10 @@ func payload(c *httpx.Ctx) (map[string]json.RawMessage, error) {
 	if len(raw) == 0 || json.Unmarshal(raw, &out) == nil {
 		return out, nil
 	}
-	var value any
-	if json.Unmarshal(raw, &value) != nil {
+	if !discovery.JSONOptionEnabled(raw) {
 		return nil, nil
 	}
-	switch v := value.(type) {
-	case bool:
-		if !v {
-			return nil, nil
-		}
-	case string:
-		if v == "" {
-			return nil, nil
-		}
-	case float64:
-		if v == 0 {
-			return nil, nil
-		}
-	case []any:
-		if len(v) == 0 {
-			return nil, nil
-		}
-	}
 	return nil, errors.New("request payload must be a JSON object")
-}
-
-// emptyJSON recognizes empty values at the legacy HTTP option boundary.
-// It operates on JSON tokens, never on language-specific runtime objects.
-func emptyJSON(raw json.RawMessage) bool {
-	if len(raw) == 0 {
-		return true
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	var value any
-	if decoder.Decode(&value) != nil {
-		return false
-	}
-	switch v := value.(type) {
-	case nil:
-		return true
-	case bool:
-		return !v
-	case string:
-		return v == ""
-	case json.Number:
-		number, _ := v.Float64()
-		return number == 0
-	case []any:
-		return len(v) == 0
-	case map[string]any:
-		return len(v) == 0
-	default:
-		return false
-	}
 }
 
 func text(m map[string]json.RawMessage, key string) string {
@@ -133,21 +82,7 @@ func settings(c *httpx.Ctx) (*httpx.Response, error) {
 	return response(200, v, e)
 }
 func updateSettings(c *httpx.Ctx) (*httpx.Response, error) {
-	raw := body(c)
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw, &fields) == nil && fields != nil {
-		for _, key := range []string{"direct_ruleset", "proxy_ruleset"} {
-			if value, exists := fields[key]; exists && emptyJSON(value) {
-				fields[key] = json.RawMessage("null")
-			}
-		}
-		encoded, err := json.Marshal(fields)
-		if err != nil {
-			return nil, err
-		}
-		raw = encoded
-	}
-	v, e := discovery.UpdateSettings(context.WithoutCancel(c.Context()), c.ProfileID, raw)
+	v, e := discovery.UpdateSettings(context.WithoutCancel(c.Context()), c.ProfileID, body(c))
 	return response(200, v, e)
 }
 func initRulesets(c *httpx.Ctx) (*httpx.Response, error) {
@@ -156,7 +91,7 @@ func initRulesets(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	var targets []string
-	if v, ok := p["targets"]; ok && !emptyJSON(v) {
+	if v, ok := p["targets"]; ok && discovery.JSONOptionEnabled(v) {
 		if json.Unmarshal(v, &targets) != nil {
 			return nil, repo.NewValidationError(msgTargets)
 		}
@@ -255,10 +190,10 @@ func checkRegion(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	services := true
 	if raw, ok := p["services"]; ok {
-		services = !emptyJSON(raw)
+		services = discovery.JSONOptionEnabled(raw)
 	}
 	vs := values(p, "domains")
-	if v, ok := p["domains"]; ok && !emptyJSON(v) && vs == nil {
+	if v, ok := p["domains"]; ok && discovery.JSONOptionEnabled(v) && vs == nil {
 		return nil, repo.NewValidationError(msgDomains)
 	}
 	j, e := discovery.StartRegion(context.WithoutCancel(c.Context()), c.ProfileID, services, vs)

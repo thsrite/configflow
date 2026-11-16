@@ -48,8 +48,10 @@ func UpdateSettings(ctx context.Context, id string, payload json.RawMessage) (ma
 			continue
 		}
 		var value *string
-		if err := json.Unmarshal(v, &value); err != nil {
-			return nil, invalid(msgRuleset)
+		if JSONOptionEnabled(v) {
+			if err := json.Unmarshal(v, &value); err != nil {
+				return nil, invalid(msgRuleset)
+			}
 		}
 		if value != nil && *value == "" {
 			value = nil

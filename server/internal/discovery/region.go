@@ -65,7 +65,7 @@ type RegionResult struct {
 // UnmarshalJSON decodes the known fields while retaining the original data.
 func (v *RegionResult) UnmarshalJSON(b []byte) error {
 	type plain RegionResult
-	var p plain
+	p := plain{Markers: map[string]json.RawMessage{}}
 	if err := json.Unmarshal(b, &p); err != nil {
 		return err
 	}
@@ -83,6 +83,99 @@ type regionRecord struct {
 	Services json.RawMessage            `json:"services"`
 	Domains  map[string]json.RawMessage `json:"domains"`
 	Websites map[string]WebsitePage     `json:"websites"`
+}
+
+type targetInfo struct {
+	RegionTarget
+	Exit  json.RawMessage `json:"exit"`
+	Error *string         `json:"error"`
+}
+type domainVerdict struct {
+	Verdict    string   `json:"verdict"`
+	Restricted []string `json:"restricted"`
+	Usable     []string `json:"usable"`
+}
+type regionDomain struct {
+	domainVerdict
+	CheckedAt   string                     `json:"checked_at"`
+	URL         string                     `json:"url"`
+	Targets     map[string]json.RawMessage `json:"targets"`
+	TargetInfos []targetInfo               `json:"target_infos"`
+}
+
+func evaluateRegion(targets []RegionTarget, raw map[string][]RegionResult, plan []ProbeTarget, services bool, failures []JobError, at string) (regionRecord, error) {
+	out := regionRecord{Domains: map[string]json.RawMessage{}}
+	infos := []targetInfo{}
+	matrix := map[string]json.RawMessage{}
+	names := []string{}
+	for _, target := range targets {
+		names = append(names, target.Name)
+		info := targetInfo{RegionTarget: target}
+		rows := raw[target.Name]
+		if len(rows) > 0 {
+			exit, err := exitInfo(rows)
+			if err != nil {
+				return out, err
+			}
+			info.Exit = exit
+			if services {
+				value, err := serviceMatrix(rows)
+				if err != nil {
+					return out, err
+				}
+				matrix[target.Name] = value
+			}
+		}
+		for _, failure := range failures {
+			if failure.Target == target.Name {
+				info.Error = ptr(failure.Message)
+				break
+			}
+		}
+		infos = append(infos, info)
+	}
+	if services {
+		b, err := json.Marshal(struct {
+			CheckedAt string                     `json:"checked_at"`
+			Targets   []targetInfo               `json:"targets"`
+			Matrix    map[string]json.RawMessage `json:"matrix"`
+		}{at, infos, matrix})
+		if err != nil {
+			return out, err
+		}
+		out.Services = b
+	}
+	for i, host := range plan {
+		per := map[string]json.RawMessage{}
+		for _, name := range names {
+			rows := raw[name]
+			if len(rows) == 0 {
+				continue
+			}
+			var result *RegionResult
+			for j := range rows {
+				if rows[j].ID == fmt.Sprintf("domain-%d", i) {
+					result = &rows[j]
+					break
+				}
+			}
+			value, err := classifyRegion(result, host.URL)
+			if err != nil {
+				return out, err
+			}
+			per[name] = value
+		}
+		verdict, err := summarizeRegion(names, per)
+		if err != nil {
+			return out, err
+		}
+		b, err := json.Marshal(regionDomain{verdict, at, host.URL, per, infos})
+		if err != nil {
+			return out, err
+		}
+		out.Domains[host.Host] = b
+	}
+	return out, nil
 }
 
 func regionPlan(list Listing, values []string) []ProbeTarget {

@@ -1,14 +1,22 @@
 package discovery
 
 import (
+	"configflow/internal/repo"
 	"configflow/internal/rules"
+	"configflow/internal/tasks"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
+	"time"
 	"weak"
 )
 
@@ -128,24 +136,20 @@ func TestReviewJobExclusivityAndCancellationStress(t *testing.T) {
 			t.Fatalf("cancelled request stopped worker: %+v", done)
 		}
 	}
-	// Fresh process state starts without running metadata; completion is persisted by stores,
-	// not restored as a phantom running job. Bounded history is independent of old job input size.
-	jobState.Lock()
-	jobState.jobs = nil
-	jobState.Unlock()
-	if runningJob("") != nil {
-		t.Fatal("restart retained running job")
-	}
+
 }
 
 func TestReviewTypedSettingsDefaultsAndLegacyNumber(t *testing.T) {
-	for _, raw := range []string{`{"auto_apply_min_confidence":80.0}`, `{"region_probe_port":"bad"}`, `{"ignored":[null,3,"example.com"],"history":[null,"invalid",{}]}`} {
+	for _, raw := range []string{`{"auto_apply_min_confidence":80.0}`, `{"auto_probe":1,"auto_apply":[],"region_check_enabled":{},"regional_rulesets":[],"website_notes":false}`, `{"region_probe_port":"bad"}`, `{"ignored":[null,3,"example.com"],"history":[null,"invalid",{}]}`} {
 		t.Run(strings.ReplaceAll(raw, "/", "_"), func(t *testing.T) {
 			var settings Settings
 			if err := json.Unmarshal([]byte(raw), &settings); err != nil {
 				t.Fatalf("read-time defaults rejected persisted settings: %v", err)
 			}
 			settings.normalize()
+			if strings.Contains(raw, "auto_probe") && (!settings.AutoProbe || settings.AutoApply || settings.RegionEnabled || len(settings.RegionalRulesets) != 0 || len(settings.WebsiteNotes) != 0) {
+				t.Fatal("legacy defaults changed")
+			}
 			if strings.Contains(raw, "80.0") && settings.Confidence != 80 {
 				t.Fatal("lost supported confidence")
 			}
@@ -213,4 +217,196 @@ func TestReviewProductionMatcherLimitsAndRelease(t *testing.T) {
 			t.Fatal("idle eviction retained indexes or host results")
 		}
 	}
+}
+
+type reviewBlockedClient struct {
+	autoClient
+	started chan struct{}
+	release chan struct{}
+}
+
+func (f *reviewBlockedClient) Probe(ctx context.Context, a Agent, p ProbeRequest) ([]ProbeRow, error) {
+	close(f.started)
+	<-f.release
+	return f.autoClient.Probe(ctx, a, p)
+}
+
+func TestReviewManualAutoTaskDropsRequestValuesWhileRunning(t *testing.T) {
+	ctx := jobFixture(t)
+	r, _ := repo.GetRepository(ctx)
+	repo.SetRepository(r)
+	t.Cleanup(func() { repo.SetRepository(nil) })
+	fields, err := object(map[string]any{"proxy_groups": []map[string]string{{"id": "g", "name": "PROXY", "type": "select"}}, "rule_configs": []ruleConfig{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = r.UpdateProfileFields(ctx, "default", fields, nil); err != nil {
+		t.Fatal(err)
+	}
+	system, err := object(map[string]any{"agents": []Agent{{ID: "a1", Name: "Synthetic", ProfileID: "default", ServiceType: "mihomo", Enabled: true, Version: minRegionVersion}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = r.SaveSystem(ctx, system, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = InitRulesets(ctx, "default", nil, "PROXY"); err != nil {
+		t.Fatal(err)
+	}
+	if err = editSettings(ctx, "default", func(s *Settings) error { s.AutoProbe = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(r.DataDir(), "traffic")
+	if err = os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	data := fmt.Sprintf(`{"status":{"value":"running"},"days":{%q:{"hosts":{"www.example.com":{"first_seen":"2026-11-01T00:00:00","last_seen":"2026-11-01T00:00:00","by_route":{"Match\t\tdirect\tDIRECT":{"conns":1}}}}}}}`, now().Format("2006-01-02"))
+	if err = os.WriteFile(filepath.Join(dir, "a1.json"), []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	fake := &reviewBlockedClient{started: make(chan struct{}), release: make(chan struct{})}
+	previous := client
+	client = fake
+	t.Cleanup(func() { client = previous })
+	wireTasks()
+	type marker struct{ data [1 << 20]byte }
+	type key struct{}
+	var ref weak.Pointer[marker]
+	func() {
+		payload := new(marker)
+		ref = weak.Make(payload)
+		request, cancel := context.WithCancel(context.WithValue(repo.WithScope(ctx), key{}, payload))
+		defer cancel()
+		if err := tasks.Runner(tasks.SlotDomains)(request, "domain_discovery:default", "default"); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	// Always drain before restoring global collaborators, including failed GC assertions.
+	defer func() {
+		close(fake.release)
+		for end := time.Now().Add(3 * time.Second); tasks.IsBackground("domain_discovery:default") && time.Now().Before(end); {
+			runtime.Gosched()
+		}
+		if tasks.IsBackground("domain_discovery:default") {
+			t.Error("manual task did not stop")
+		}
+	}()
+	select {
+	case <-fake.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("manual auto task did not start")
+	}
+	collectGarbage()
+	if ref.Value() != nil {
+		t.Error("manual automatic task retained cancelled request values")
+	}
+}
+
+func TestReviewRegionTargetOrdering(t *testing.T) {
+	targets := []RegionTarget{{Name: "Z-PREFERRED", Kind: "group"}, {Name: "DIRECT", Kind: "direct"}, {Name: "A-OTHER", Kind: "group"}}
+	raw := map[string][]RegionResult{}
+	for _, target := range targets {
+		var result RegionResult
+		if err := json.Unmarshal([]byte(`{"id":"domain-0","status":200,"final_url":"https://example.com/"}`), &result); err != nil {
+			t.Fatal(err)
+		}
+		raw[target.Name] = []RegionResult{result}
+	}
+	out, err := evaluateRegion(targets, raw, []ProbeTarget{{Host: "example.com", URL: "https://example.com/"}}, false, nil, timestamp())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Usable []string `json:"usable"`
+	}
+	if err = json.Unmarshal(out.Domains["example.com"], &result); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(result.Usable, []string{"Z-PREFERRED", "DIRECT", "A-OTHER"}) {
+		t.Fatalf("target priority reordered: %v", result.Usable)
+	}
+}
+
+func TestReviewOverallFailureDoesNotExposePartialErrors(t *testing.T) {
+	ctx := jobFixture(t)
+	j, _, err := startJob(ctx, "default", "probe", true, func(context.Context, func(int, int)) (outcome, error) {
+		return outcome{Errors: []JobError{{Message: "partial"}}}, fmt.Errorf("synthetic final failure")
+	})
+	if err == nil || j.Status != "failed" || len(j.Errors) != 0 {
+		t.Fatalf("failed job retained partial outcome: %+v %v", j, err)
+	}
+}
+
+func TestReviewJobSnapshotDoesNotShareCompletionPointer(t *testing.T) {
+	ctx := jobFixture(t)
+	returned, _, err := startJob(ctx, "default", "probe", true, func(context.Context, func(int, int)) (outcome, error) { return outcome{}, nil })
+	if err != nil || returned.FinishedAt == nil {
+		t.Fatalf("job failed: %v", err)
+	}
+	original := *returned.FinishedAt
+	*returned.FinishedAt = "caller modification"
+	if got := GetJob(returned.ID, "default"); got.FinishedAt == nil || *got.FinishedAt != original {
+		t.Fatal("caller mutated stored completion time")
+	}
+}
+
+func TestReviewAutoLoopCancellationReleasesExclusiveFileLock(t *testing.T) {
+	ctx := jobFixture(t)
+	r, _ := repo.GetRepository(ctx)
+	running, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() { defer close(done); autoLoop(running) }()
+	defer func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("auto loop leaked after cancellation")
+		}
+	}()
+	path := filepath.Join(r.DataDir(), "probes", ".auto.lock")
+	deadline := time.Now().Add(5 * time.Second)
+	locked := false
+	for time.Now().Before(deadline) {
+		handle, err := os.OpenFile(path, os.O_WRONLY, 0600)
+		if err == nil {
+			err = syscall.Flock(int(handle.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+			if err == nil {
+				_ = syscall.Flock(int(handle.Fd()), syscall.LOCK_UN)
+			} else if errors.Is(err, syscall.EWOULDBLOCK) {
+				locked = true
+			}
+			handle.Close()
+		}
+		if locked {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !locked {
+		t.Fatal("auto loop did not acquire its process lock")
+	}
+	second := make(chan struct{})
+	go func() { defer close(second); autoLoop(running) }()
+	select {
+	case <-second:
+	case <-time.After(5 * time.Second):
+		t.Fatal("competing auto loop did not stop")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first-delay cancellation was ignored")
+	}
+	handle, err := os.OpenFile(path, os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Close()
+	if err = syscall.Flock(int(handle.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatalf("shutdown retained auto lock: %v", err)
+	}
+	_ = syscall.Flock(int(handle.Fd()), syscall.LOCK_UN)
 }

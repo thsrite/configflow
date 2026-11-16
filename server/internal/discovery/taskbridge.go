@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/repo"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
 )
@@ -12,6 +13,7 @@ import (
 func wireTasks() {
 	tasks.SetRows(tasks.SlotDomains, domainRows)
 	tasks.SetRunner(tasks.SlotDomains, func(ctx context.Context, key, resource string) error {
+		ctx = context.WithoutCancel(ctx)
 		c, err := loadConfig(ctx, resource)
 		if err != nil {
 			return err
@@ -19,7 +21,12 @@ func wireTasks() {
 		if !c.Settings.AutoProbe {
 			return &tasks.Invalid{Message: msgAutoDisabled}
 		}
-		return tasks.StartBackground(ctx, key, func(ctx context.Context) error { _, err := RunAutoTask(ctx, resource, "manual"); return err })
+		r, err := repo.GetRepository(ctx)
+		if err != nil {
+			return err
+		}
+		worker := repo.WithRepository(context.Background(), r)
+		return tasks.StartBackground(worker, key, func(ctx context.Context) error { _, err := RunAutoTask(ctx, resource, "manual"); return err })
 	})
 }
 func domainRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, error) {

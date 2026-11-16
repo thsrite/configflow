@@ -499,93 +499,65 @@ func regionRequests(services bool, plan []ProbeTarget) ([]PageRequest, error) {
 	err := decode(requests, &out)
 	return out, err
 }
-func evaluateRegion(targets []RegionTarget, raw map[string][]RegionResult, plan []ProbeTarget, services bool, errors []JobError, at string) (regionRecord, error) {
-	out := regionRecord{Domains: map[string]json.RawMessage{}}
-	infos := []map[string]any{}
-	matrix := map[string]json.RawMessage{}
-	for _, t := range targets {
-		rows := raw[t.Name]
-		var exit any
-		var failure *string
-		if len(rows) > 0 {
-			v, err := legacy(rows)
-			if err != nil {
-				return out, err
-			}
-			ex, err := check.ExitInfo(v.([]any))
-			if err != nil {
-				return out, err
-			}
-			b, _ := jsonx.Compact(ex)
-			exit = json.RawMessage(b)
-			if services {
-				m, err := check.EvaluateServices(v.([]any))
-				if err != nil {
-					return out, err
-				}
-				b, _ := jsonx.Compact(m)
-				matrix[t.Name] = json.RawMessage(b)
-			}
-		}
-		for _, e := range errors {
-			if e.Target == t.Name {
-				failure = ptr(e.Message)
-				break
-			}
-		}
-		infos = append(infos, map[string]any{"name": t.Name, "kind": t.Kind, "region_hint": t.RegionHint, "exit": exit, "error": failure})
+func exitInfo(rows []RegionResult) (json.RawMessage, error) {
+	v, err := legacy(rows)
+	if err != nil {
+		return nil, err
 	}
-	if services {
-		b, err := json.Marshal(map[string]any{"checked_at": at, "targets": infos, "matrix": matrix})
-		if err != nil {
-			return out, err
-		}
-		out.Services = b
+	result, err := check.ExitInfo(v.([]any))
+	if err != nil {
+		return nil, err
 	}
-	for i, h := range plan {
-		per := jsonx.NewObject()
-		for _, name := range sortedKeys(raw) {
-			rows := raw[name]
-			if len(rows) == 0 {
-				continue
-			}
-			var result any
-			for _, r := range rows {
-				if r.ID == fmt.Sprintf("domain-%d", i) {
-					var err error
-					result, err = legacy(r)
-					if err != nil {
-						return out, err
-					}
-					break
-				}
-			}
-			v, err := check.ClassifyDomainResult(result, h.URL)
-			if err != nil {
-				return out, err
-			}
-			per.Set(name, v)
-		}
-		s, err := check.SummarizeDomain(per)
-		if err != nil {
-			return out, err
-		}
-		s.Set("checked_at", at)
-		s.Set("url", h.URL)
-		s.Set("targets", per)
-		iv, err := legacy(infos)
-		if err != nil {
-			return out, err
-		}
-		s.Set("target_infos", iv)
-		b, err := jsonx.Compact(s)
-		if err != nil {
-			return out, err
-		}
-		out.Domains[h.Host] = json.RawMessage(b)
-	}
-	return out, nil
+	b, err := jsonx.Compact(result)
+	return json.RawMessage(b), err
 }
+func serviceMatrix(rows []RegionResult) (json.RawMessage, error) {
+	v, err := legacy(rows)
+	if err != nil {
+		return nil, err
+	}
+	result, err := check.EvaluateServices(v.([]any))
+	if err != nil {
+		return nil, err
+	}
+	b, err := jsonx.Compact(result)
+	return json.RawMessage(b), err
+}
+func classifyRegion(result *RegionResult, url string) (json.RawMessage, error) {
+	var value any
+	var err error
+	if result != nil {
+		value, err = legacy(result)
+		if err != nil {
+			return nil, err
+		}
+	}
+	classified, err := check.ClassifyDomainResult(value, url)
+	if err != nil {
+		return nil, err
+	}
+	b, err := jsonx.Compact(classified)
+	return json.RawMessage(b), err
+}
+func summarizeRegion(names []string, per map[string]json.RawMessage) (domainVerdict, error) {
+	legacyValues := jsonx.NewObject()
+	for _, name := range names {
+		if raw, ok := per[name]; ok {
+			value, err := jsonx.Parse(raw)
+			if err != nil {
+				return domainVerdict{}, err
+			}
+			legacyValues.Set(name, value)
+		}
+	}
+	result, err := check.SummarizeDomain(legacyValues)
+	var out domainVerdict
+	if err == nil {
+		err = decode(result, &out)
+	}
+	return out, err
+}
+
 func serviceDomains(id string) ([]string, bool) { s, ok := check.ServiceByID(id); return s.Domains, ok }
 func websiteMarkers() map[string]string {
 	out := map[string]string{}

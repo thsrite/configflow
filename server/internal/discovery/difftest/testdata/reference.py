@@ -27,6 +27,8 @@ if sys.argv[1] == 'seed':
             {'id': 'fallback', 'itemType': 'rule', 'rule_type': 'MATCH', 'value': '', 'policy': 'DIRECT', 'enabled': True},
         ],
         'domain_discovery': {'direct_ruleset': 'd1', 'proxy_ruleset': 'p1', 'auto_apply_min_confidence': 80.0,
+                             'auto_probe': 1, 'auto_apply': [], 'region_check_enabled': {},
+                             'regional_rulesets': [], 'website_notes': False,
                              'region_probe_port': 'bad', 'ignored': [None, 7], 'history': [None, 'invalid', {}]},
         'mihomo': {'custom_config': 'mixed-port: 18001\nlisteners:\n  - name: custom\n    type: http\n    port: 18002\n'},
     })

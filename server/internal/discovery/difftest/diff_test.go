@@ -243,17 +243,29 @@ func TestHTTPAndStorageParity(t *testing.T) {
 	}
 	var mu sync.Mutex
 	calls := []map[string]any{}
+	var hold chan struct{}
+	ready := make(chan struct{}, 2)
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == "GET" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "targets": []any{map[string]any{"name": "DIRECT", "type": "Direct"}, map[string]any{"name": "PROXY", "type": "Selector"}}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "targets": []any{map[string]any{"name": "DIRECT", "type": "Direct"}, map[string]any{"name": "PROXY", "type": "Selector"}, map[string]any{"name": "Z-PREFERRED", "type": "Selector"}, map[string]any{"name": "A-OTHER", "type": "Selector"}}})
 			return
 		}
 		var p map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&p)
 		mu.Lock()
 		calls = append(calls, p)
+		release := hold
 		mu.Unlock()
+		if r.URL.Path == "/api/domain-probe" && release != nil {
+			for _, target := range p["targets"].([]any) {
+				if target.(map[string]any)["host"] == "hold.example.net" {
+					ready <- struct{}{}
+					<-release
+					break
+				}
+			}
+		}
 		results := []any{}
 		if r.URL.Path == "/api/domain-probe" {
 			for i, target := range p["targets"].([]any) {
@@ -270,7 +282,11 @@ func TestHTTPAndStorageParity(t *testing.T) {
 		} else {
 			for _, request := range p["requests"].([]any) {
 				rr := request.(map[string]any)
-				results = append(results, map[string]any{"id": rr["id"], "status": 200, "final_url": rr["url"], "markers": map[string]string{"title": "Synthetic Example", "loc": "US", "ip": "192.0.2.1"}})
+				entry := map[string]any{"id": rr["id"], "status": 200, "final_url": rr["url"]}
+				if !strings.Contains(fmt.Sprint(rr["url"]), "nomarkers.example.net") {
+					entry["markers"] = map[string]string{"title": "Synthetic Example", "loc": "US", "ip": "192.0.2.1"}
+				}
+				results = append(results, entry)
 			}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "results": results})
@@ -311,7 +327,7 @@ func TestHTTPAndStorageParity(t *testing.T) {
 		{"POST", "probe?profile_id=other", `{"domains":["example.com"]}`}, {"POST", "region/check?profile_id=other", `{"services":true}`}, {"POST", "website/identify?profile_id=other", `{"domains":["example.com"]}`}, {"POST", "probe", `{"domains":[]}`}, {"POST", "probe", `{"domains":["example.com"]}`}, {"GET", "domains?view=all", ""},
 		{"POST", "apply", `{"items":[{"value":"null-type.example.net","target":"direct","rule_type":null}]}`}, {"POST", "apply", `{"items":[]}`}, {"POST", "apply", `{"items":[null]}`}, {"POST", "apply", `{"items":[{"value":"192.0.2.1","target":"direct"}]}`}, {"POST", "apply", `{"items":[{"value":"EXAMPLE.COM","target":"proxy"},{"value":"www.example.com","rule_type":"DOMAIN","target":"proxy"},{"value":"exists.example.net","target":"direct"},{"value":"new.example.net","rule_type":"DOMAIN","target":"direct"}]}`}, {"GET", "history", ""}, {"GET", "domains", ""}, {"POST", "apply", `{"items":[{"value":"example.com","target":"proxy"}]}`},
 		{"POST", "undo", `{"value":"bad host","target":"proxy"}`}, {"POST", "undo", `{"value":"example.com","target":"proxy"}`}, {"POST", "undo", `{"value":"missing.example.net","target":"proxy"}`},
-		{"POST", "region/check", `{"services":[]}`}, {"POST", "region/check", `{"services":{}}`}, {"POST", "region/check", `{"services":0.0}`}, {"POST", "region/check", `{"services":false,"domains":false}`}, {"POST", "region/check", `{"services":false,"domains":0}`}, {"POST", "region/check", `{"services":false,"domains":""}`}, {"POST", "region/check", `{"services":false}`}, {"POST", "region/check", `{"services":false,"domains":["example.com"]}`}, {"POST", "region/check", `{"services":true}`}, {"GET", "region", ""}, {"POST", "region/route", `{"kind":"other"}`}, {"POST", "region/route", `{"kind":"service","value":"missing","policy":"Region"}`}, {"POST", "region/route", `{"kind":"domain","value":"example.com","policy":"missing"}`}, {"POST", "region/route", `{"kind":"domain","value":"example.com","policy":"Region"}`}, {"POST", "undo", `{"value":"example.com","target":"policy:Region"}`},
+		{"POST", "region/check", `{"services":[]}`}, {"POST", "region/check", `{"services":{}}`}, {"POST", "region/check", `{"services":0.0}`}, {"POST", "region/check", `{"services":false,"domains":false}`}, {"POST", "region/check", `{"services":false,"domains":0}`}, {"POST", "region/check", `{"services":false,"domains":""}`}, {"POST", "region/check", `{"services":false}`}, {"POST", "region/check", `{"services":false,"domains":["example.com"]}`}, {"POST", "region/check", `{"services":false,"domains":["nomarkers.example.net"]}`}, {"POST", "region/check", `{"services":true}`}, {"GET", "region", ""}, {"POST", "region/route", `{"kind":"other"}`}, {"POST", "region/route", `{"kind":"service","value":"missing","policy":"Region"}`}, {"POST", "region/route", `{"kind":"domain","value":"example.com","policy":"missing"}`}, {"POST", "region/route", `{"kind":"domain","value":"example.com","policy":"Region"}`}, {"POST", "undo", `{"value":"example.com","target":"policy:Region"}`},
 		{"POST", "apply", `{"items":[{"value":"pending.example.org","target":"proxy"}]}`},
 		{"POST", "rulesets/init", `{"targets":false,"proxy_policy":"PROXY"}`}, {"POST", "rulesets/init", `{"targets":{},"proxy_policy":"PROXY"}`}, {"POST", "rulesets/init", `{"targets":["other"]}`}, {"POST", "rulesets/init", `{"proxy_policy":"missing"}`}, {"POST", "rulesets/init", `{"proxy_policy":"PROXY"}`}, {"POST", "rulesets/init", `{"targets":["direct"]}`},
 		{"PUT", "settings", `{"direct_ruleset":false,"proxy_ruleset":0}`}, {"PUT", "settings", `{"direct_ruleset":{},"proxy_ruleset":[]}`},
@@ -356,6 +372,57 @@ func TestHTTPAndStorageParity(t *testing.T) {
 			equal(t, "response", remap(pv, pyIDs), remap(gv, goIDs))
 		})
 	}
+	// Start both jobs without waiting, then compare same-profile and cross-profile conflicts.
+	for _, base := range []string{py, goServer.URL} {
+		status, _ := call(t, base, "PUT", "/api/domain-discovery/settings", `{"direct_ruleset":"d1","proxy_ruleset":"p1"}`)
+		if status != 200 {
+			t.Fatal("restore probe prerequisites")
+		}
+	}
+	release := make(chan struct{})
+	mu.Lock()
+	hold = release
+	mu.Unlock()
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	pc, pj := call(t, py, "POST", "/api/domain-discovery/probe", `{"domains":["hold.example.net"]}`)
+	gc, gj := call(t, goServer.URL, "POST", "/api/domain-discovery/probe", `{"domains":["hold.example.net"]}`)
+	if pc != 202 || gc != 202 {
+		t.Fatalf("blocked jobs: %d %d", pc, gc)
+	}
+	for range 2 {
+		select {
+		case <-ready:
+		case <-time.After(3 * time.Second):
+			t.Fatal("Agent requests did not reach barrier")
+		}
+	}
+	for _, q := range []request{{"POST", "region/check", `{"services":true}`}, {"POST", "probe?profile_id=other", `{"domains":["example.com"]}`}} {
+		pc, pv := call(t, py, q.method, "/api/domain-discovery/"+q.path, q.body)
+		gc, gv := call(t, goServer.URL, q.method, "/api/domain-discovery/"+q.path, q.body)
+		if pc != 409 || gc != 409 {
+			t.Fatalf("busy response: %d %d", pc, gc)
+		}
+		equal(t, "busy isolation", pv, gv)
+	}
+	for _, server := range []struct {
+		base string
+		job  any
+	}{{py, pj}, {goServer.URL, gj}} {
+		id := server.job.(map[string]any)["job"].(map[string]any)["id"].(string)
+		status, _ := call(t, server.base, "GET", "/api/domain-discovery/probe/"+id+"?profile_id=other", "")
+		if status != 404 {
+			t.Fatalf("cross-profile polling returned %d", status)
+		}
+	}
+	close(release)
+	equal(t, "finished blocked jobs", waitJob(t, py, pj, ""), waitJob(t, goServer.URL, gj, ""))
+
 	for _, path := range []string{"settings", "agents", "domains", "history", "region", "probe/missing"} {
 		pc, pv := call(t, py, "GET", "/api/domain-discovery/"+path+"?profile_id=missing", "")
 		gc, gv := call(t, goServer.URL, "GET", "/api/domain-discovery/"+path+"?profile_id=missing", "")

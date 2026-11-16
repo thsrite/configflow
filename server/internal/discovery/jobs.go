@@ -60,6 +60,9 @@ func cloneJob(j *Job) *Job {
 		return nil
 	}
 	v := *j
+	if j.FinishedAt != nil {
+		v.FinishedAt = ptr(*j.FinishedAt)
+	}
 	v.Errors = append([]JobError{}, j.Errors...)
 	return &v
 }
@@ -134,7 +137,6 @@ func startJob(ctx context.Context, profile, kind string, wait bool, run func(con
 		var out outcome
 		defer func() {
 			if p := recover(); p != nil {
-				logger.Errorf("Domain discovery %s job failed: %v", kind, p)
 				err = fmt.Errorf("discovery job failed: %v", p)
 			}
 			jobState.Lock()
@@ -145,6 +147,7 @@ func startJob(ctx context.Context, profile, kind string, wait bool, run func(con
 				j.Errors = []JobError{}
 			}
 			if err != nil {
+				j.Errors = []JobError{}
 				j.Status = "failed"
 				var pe *ProbeError
 				if errors.As(err, &pe) {

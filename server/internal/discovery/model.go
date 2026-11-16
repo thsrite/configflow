@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 )
@@ -35,7 +36,7 @@ func (s *Settings) UnmarshalJSON(b []byte) error {
 	for k, v := range fields {
 		remaining[k] = v
 	}
-	for _, key := range []string{"ignored", "history", "auto_apply_min_confidence", "region_probe_port"} {
+	for _, key := range []string{"ignored", "history", "auto_apply_min_confidence", "region_probe_port", "auto_probe", "auto_apply", "region_check_enabled", "regional_rulesets", "website_notes", "direct_ruleset", "proxy_ruleset"} {
 		delete(remaining, key)
 	}
 	known, err := json.Marshal(remaining)
@@ -44,6 +45,24 @@ func (s *Settings) UnmarshalJSON(b []byte) error {
 	}
 	if err := json.Unmarshal(known, &p); err != nil {
 		return err
+	}
+	p.AutoProbe = JSONOptionEnabled(fields["auto_probe"])
+	p.AutoApply = JSONOptionEnabled(fields["auto_apply"])
+	p.RegionEnabled = JSONOptionEnabled(fields["region_check_enabled"])
+	for key, destination := range map[string]**string{"direct_ruleset": &p.DirectRuleset, "proxy_ruleset": &p.ProxyRuleset} {
+		if JSONOptionEnabled(fields[key]) {
+			if err := json.Unmarshal(fields[key], destination); err != nil {
+				return err
+			}
+		}
+	}
+	for key, destination := range map[string]*map[string]string{"regional_rulesets": &p.RegionalRulesets, "website_notes": &p.WebsiteNotes} {
+		raw := fields[key]
+		if len(raw) > 0 && bytes.TrimSpace(raw)[0] == '{' {
+			if err := json.Unmarshal(raw, destination); err != nil {
+				return err
+			}
+		}
 	}
 	var ignored, history []json.RawMessage
 	_ = json.Unmarshal(fields["ignored"], &ignored)
