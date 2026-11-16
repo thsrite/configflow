@@ -18,6 +18,20 @@ in this review.
 
 No other functional differences found. No unresolved functional findings.
 
+The sensitive log is Python `surge.py:1082` (`Group ... final line`) and the
+corresponding old Go group-conversion log. It is emitted at **DEBUG** when a
+successfully rendered group has subscription/aggregation policy paths during
+Surge config generation. Fields include the effective base URL, profile ID,
+subscription/aggregation IDs and endpoint paths, include/exclude filter queries,
+and the URL-encoded `config_token` when nonempty; the line also includes member
+names, test URL, interval and smart priority. Without a policy-path it still
+contains member names/test options, but no config token from this code. Python
+`logger.py` and `app.py` default to INFO, so this specific line is suppressed at
+the default level; `LOG_LEVEL=DEBUG` enables it for both the file and console
+handlers. Python was not changed and production logs were not accessed. The
+coordinator received these trigger/field details separately to assess impact.
+
+
 ## Branch coverage at the boundary
 
 `proddiff.sh` succeeded on `.32` before editing: Surge and Loon each generated 2
@@ -61,7 +75,7 @@ converters; existing helper-only replays remain additional checks.
 | Both subscriptions: ordered lines, unsupported/failed nodes skipped, Surge separate-section WireGuard omitted, dialer rejection | 4 successful subscriptions per client | `subscription-*`, `skip-failing-node`, `reject-subscription-dialer` |
 | Both validations: unknown policy, chain/dialer topology, malformed top-level fields; unwired Sub-Store | valid data | `unknown-policy`, `rejected-topology-*`, `malformed-*`; existing `TestSurgeLoonFailClosedWithoutSubStore` and full recorded/random corpora |
 | Surge `get_proxy_group_nodes`: enabled subscription candidates, include/exclude, manual names, ordered dedup | no production caller | Existing `surge_loon_ported_test.go` exclusion tests and random/recorded helper corpus |
-| Surge `get_aggregation_nodes` | no caller anywhere in backend; definition only, no tests | Unused helper intentionally omitted. Actual aggregation export uses policy-path; no reachable feature is missing. Reported to the coordinator with the no-caller evidence. |
+| Surge `get_aggregation_nodes` | no caller anywhere in backend; definition only, no tests | Unused helper intentionally omitted. Actual aggregation export uses policy-path; no reachable feature is missing. Coordinator explicitly agreed after checking the no-caller evidence. |
 
 Python test-file mappings remain in C19/C20's PROGRESS sections: recorded calls
 from 17 files, hand-ported export/filter/fallback cases, and explicit route/import
@@ -111,3 +125,15 @@ mount --bind "$snapshot" "$snapshot"
 mount -o remount,bind,ro "$snapshot"
 PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/convert/testdata/review_clients_gen.py --snapshot-coverage "$snapshot"'\'''
 ```
+
+## Acceptance before integration
+
+All commands in the final `.32` shell completed with exit 0: gofmt listed no
+files, vet passed, convert race passed in 57.529 s, and the full Go suite passed
+(convert 17.335 s; final package lines were weburl 0.005 s, yamlx 0.635 s,
+proddiff generator no test files). Production differential ended with
+`self-check: status=PASS json-leaf=PASS yaml-leaf=PASS text-line=PASS` and
+`baseline: new=0 stale=0`; no coverage regressions, 5 unrelated existing global
+baseline differences. Surge/Loon each had 2 successful main configs and 4
+successful subscriptions. The branch will be rebased onto the updated `go` and
+these checks repeated because shared rule helpers changed during this run.

@@ -44,8 +44,8 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C16 | health check, latency, node DNS, region check, domain probe | 1089 | verified | C12, C13 | 5 (5 done) |
 | C17 | provider delivery and responses | 540 | verified | C15 | – |
 | C18 | Mihomo config generation, Mihomo base settings | 1275 | ported | C12, C15, C16, C17 | – |
-| C19 | Surge converter | 1129 | ported | C18 | – |
-| C20 | Loon converter | 764 | ported | C19 | – |
+| C19 | Surge converter | 1129 | verified | C18 | – |
+| C20 | Loon converter | 764 | verified | C19 | – |
 | C21 | MosDNS converter | 1261 | verified | C14 | – |
 | C22 | OxiDNS converter, native loader, references, match targets | 913 | ported | C05, C21 | – |
 | C23 | OxiDNS validation and constraints | 1542 | ported | C22 | – |
@@ -963,11 +963,11 @@ Commands:
 
 ## C19 — Surge converter
 
-**Status: `ported`** (adversarial review in progress) · prereqs: C18 · Go: `internal/convert` (`surge.go`, shared `clients.go`)
+**Status: `verified`** (independent functional review 2026-11-17; no open functional findings) · prereqs: C18 · Go: `internal/convert` (`surge.go`, shared `clients.go`)
 
 Files → Go:
 - `backend/converters/surge.py` (1129) → `convert/surge.go`: `GenerateSurgeConfig(ctx, config, baseURL)` (= generate_surge_config), `ConvertNodeToSurge(node) (line, wireguard, err)` ("" = None), `ConvertProxyGroupToSurge(group, config, baseURL, smartGroups)`, `ConvertProxiesToSurgeText(proxies, toNodes)` (toNodes = `substore.ProxiesToNodes`, passed by the caller because substore imports convert), `GetProxyGroupNodes`, `SurgeDefaultGeneral`, `SurgeBuiltinPolicies`; `split_rules_and_rulesets` is C18's identical `splitRulesAndRulesets`.
-- `convert/clients.go` (shared with C20; renamed from `clients_py.go` during review): `pyDict` (hashable-key dict), `joinAny` (str.join TypeError), `pyLen`, `strIn`, `nextMatch`, `hasPortListAny` / `networkAsProtocolAny` / `rulesetFormatAny` (C12's common helpers for values of any type; a non-string truthy `source_url` is detected with two sentinel URLs → AttributeError 'decode' exactly when urlsplit would see it), `validateRulePolicies` (unhashable policy → TypeError before `rules.ValidateRulePolicies`), `parseCustomSections` (dict semantics: repeated section keeps first position, last text), `configAPIPath` (repo's copy; repo imports convert), `resolveProxyString` (parse_uri_list step), `clientConverter` (Sub-Store from `MihomoEnv.Converter`; unwired → `*HookMissingError` raised only when a URI node string needs converting).
+- `convert/clients.go` (shared with C20; renamed from `clients_py.go` during review): `pyDict` (hashable-key dict), `joinAny` (str.join TypeError), `strIn`, `nextMatch`, `hasPortListAny` / `networkAsProtocolAny` / `rulesetFormatAny` (C12's common helpers for values of any type; a non-string truthy `source_url` is detected with two sentinel URLs → AttributeError 'decode' exactly when urlsplit would see it), `validateRulePolicies` (unhashable policy → TypeError before `rules.ValidateRulePolicies`), `parseCustomSections` (dict semantics: repeated section keeps first position, last text), `configAPIPath` (repo's copy; repo imports convert), `resolveProxyString` (parse_uri_list step), `clientConverter` (Sub-Store from `MihomoEnv.Converter`; unwired → `*HookMissingError` raised only when a URI node string needs converting).
 
 Collaborators: only Sub-Store `convert_proxy_string` (via `reject_surge_dialers` → `convert_node_to_mihomo`), taken from C18's `MihomoEnv` (`mihomoenv.Wire`). No new hooks; no other domain is called. `generate_aggregation_provider` is only used by the dead `get_aggregation_nodes` (below).
 
@@ -977,13 +977,15 @@ Tests:
 - Hand-ported (`surge_loon_ported_test.go`): `test_snell_shadow_tls.py` export 2/6 (`test_surge_export_snell_*`), `test_surge_loon_group_exclusion.py` 5/5, `test_udp_fallback.py` Surge/Loon halves (disabled MATCH, Surge FINAL/native fallback, Surge base wins, Loon after-MATCH, Loon custom General, Loon port list, NTP first, NTP off ×2); Go-side: Sub-Store unwired fails closed only for URI node strings, `*_text` skip failing nodes / dialer-proxy error.
 - Deferred: `test_snell_shadow_tls.py` 3 import cases + `test_surge_round_trip_keeps_shadow_tls` → C35 (`config_importer.parse_client_config`; the export half of the round trip is in the replay). Route/agent halves of the replayed files (config/generate/subscription/aggregation endpoints, agent publishing) → C30/C31/C34/agents.
 
-Not ported (needs a decision): `surge.get_aggregation_nodes` — no caller anywhere in `backend/` (grep), no test; it would need C31's `generate_aggregation_provider`. `get_proxy_group_nodes` (also no production caller) is ported because a test uses it.
+Not ported (coordinator confirmed during review): `surge.get_aggregation_nodes` is dead code: `rg -n get_aggregation_nodes backend` returns only its definition at `backend/converters/surge.py:15`, no test or production caller. Actual aggregation export is implemented through policy-path. Under the no-caller rule it is not a missing feature. `get_proxy_group_nodes` (also no production caller) is ported because a test uses it.
 
-Decisions / differences from Python: none known in the corpus or replay. Debug log lines with Python sets print them in insertion order (as C18). Values jsonx cannot hold (non-string YAML keys in node strings) follow C10/C12's accepted differences.
+Decisions / differences from Python: generated config semantics unchanged; sensitive Surge DEBUG line intentionally omitted (Python logging bug fixed). Native strings/regexp use Go Unicode behavior under PORTING's accepted CPython-only Unicode differences; all retained references/production configs match. Debug set lines use insertion order. Non-string YAML keys follow C10/C12's accepted differences. Full branch matrix: `parity/review-c19-c20.md`.
+
+Structural debt **→ S-convert, waiting for N8 design** (coordinator explicitly excluded from this functional review): `clients.go` `pyDict`, `truthy/or2/eq`, dynamic string/list guards, `rulesetFormatAny` sentinel and `validateRulePolicies` malformed-key pre-scan; `surge.go` dynamic generate/node/group/subscription adapters and `key` probes, using `dictGet/dictItem/iterate/fstr/must/raise/catch` from the shared legacy convert layer. Public APIs must be redesigned together, not piecemeal.
 
 Commits: 4f09d3d1 (code), f350a047 (corpus), 84ffae21 (replay + ported tests), + this PROGRESS commit.
 
-Reviewer hints: evaluation order of crash points (Python evaluates f-string debug arguments even at INFO: `len(nodes)`; dict-comprehension key before value; hash at store); `followedGroupView` (`url`/`interval` keys present as None → "None" in url-test lines); `rulesetFormatAny` sentinel trick; `resolveProxyString` (any exception inside the try → None; raw objects copied without `_raw_object`); `convertNodeToSurge` join of non-str `server`; `validateRulePolicies` pre-scan.
+Review notes: followed-group missing `url`/`interval` keys retain the existing null rendering; parse errors are skipped; raw objects keep the outer name. Pure `len`/unused node-map probes were removed; the remaining malformed-value rejection guards await S-convert (see debt above).
 
 Commands:
 - tests: `rt -- bash -lc 'cd server && gofmt -l internal/convert; go vet ./internal/convert/... && go test -count=1 ./internal/convert/...'` (last run, detached worktree at HEAD 84ffae21: ok 7.2 s; `-race -run "Surge|Loon"` ok)
@@ -992,7 +994,7 @@ Commands:
 
 ## C20 — Loon converter
 
-**Status: `ported`** (adversarial review in progress) · prereqs: C19 · Go: `internal/convert` (`loon.go`, shared `clients.go`)
+**Status: `verified`** (independent functional review 2026-11-17; no open functional findings) · prereqs: C19 · Go: `internal/convert` (`loon.go`, shared `clients.go`)
 
 Files → Go:
 - `backend/converters/loon.py` (764) → `convert/loon.go`: `GenerateLoonConfig(ctx, config, baseURL)`, `ConvertNodeToLoon(node) (line, err)` ("" = None), `ConvertProxyGroupToLoon(group, members)`, `ConvertProxiesToLoonText(proxies, toNodes)`, `BuildLoonRules` (= `_build_rules`), `SanitizeLoonName` (= `_sanitize_name`), constants `LoonDefaultGeneral`, `LoonBuiltinPolicies`, `LoonRuleTypes`, `LoonVmessCiphers`, `LoonDefaultTestURL`; private `effectiveLoonGroup`, `loonGroupSources`, `loonGroupMemberRefs`, `nameAllocator`, `resolveLoonNode`, `_quote/_value/_bool/_first/_transport_opts/_tls_opts/_shadow_tls_opts` ports.
@@ -1000,19 +1002,20 @@ Files → Go:
 
 Collaborators, tests, commands: shared with C19 (same corpus, replay and ported test files; see C19). Loon-specific hand-ported: `test_loon_generation.py` 5/10 (`test_unsupported_transports_are_skipped`, `test_default_general_keeps_fake_ip_range_in_tun`, `test_logical_rules_with_unsupported_subrules_are_commented`, `test_node_formats_follow_loon_docs`, policy half of `test_loon_rejects_unknown_policy_and_chains`; the chain half tests C12's `reject_surge_dialers`); `test_surge_loon_group_exclusion.py` Loon cases 2/2; `test_udp_fallback.py` Loon halves. Every generator call of `test_loon_generation.py` (12) is in the replay. Deferred: `test_loon_public_url_requires_token`, `test_loon_url_names_config_after_profile`, `test_custom_loon_config_round_trip` (routes → C34), `test_subscription_serves_loon_nodes` (route → C30; its `convert_proxies_to_loon_text` call is replayed), generation half of `test_loon_config_sections` replayed, its repository setup is C04's.
 
-Decisions / differences from Python: none known.
+Decisions / differences from Python: no generated config semantic differences. Struct keys fix remote-cache collisions; strings/regexp follow the same accepted Go Unicode classes as C19. Structural debt **→ S-convert, waiting for N8 design**: `loon.go` dynamic generate/node/group/subscription wrappers, `key` probes for cipher/strategy/IDs, `must/raise/catch`, and shared `clients.go` maps/guards/sentinel/policy pre-scan. Coordinator confirmed these are excluded from this functional review; exact functions and shared dependencies are listed in `parity/review-c19-c20.md`.
 
 Commits: same as C19.
 
-Review C19/C20 (2026-11-16, independent reviewer):
+Review C19/C20 (2026-11-17, independent reviewer):
 - Medium: Loon remote cache concatenated `(kind, resource ID, exclusion)` with `\x01`; an ID/exclusion containing that delimiter aliases another source. Fixed with a Go struct map key; `review_clients_test.go::TestLoonRemoteCacheKeepsSourceAndExclusionSeparate` checks both remote lines and group references.
 - High: Surge DEBUG logging exposed the complete generated group line, including subscription URLs and `config_token`. Removed content from that log; `TestSurgeDebugLogOmitsSubscriptionURLsAndTokens` verifies the DEBUG path without leaking either. This fixes a Python logging bug; generated config semantics are unchanged.
 - Local native cleanup: strings.TrimSpace/ToLower/ToUpper, strconv.Itoa, regexp RE2 with Unicode decimal/space classes; removed emulated len and unused nodesByID exception probe; renamed shared helpers to clients.go. Full convert suite on `.63` passed (6.535 s).
 - Scope confirmed by coordinator: this review closes functional findings; package-wide dynamic types and raised/caught Python errors are structural debt **→ S-convert, waiting for N8 design**. No public API rewrite in this review.
-- Baseline `.32`: `rt -- server/scripts/proddiff.sh` exit 0, `baseline: new=0 stale=0`; 2 Surge + 2 Loon configs and 4 subscriptions per client succeeded. Source-branch coverage still needs explicit synthetic checks.
-- Review commits: `e41186ff` (cache fix), `03a97167` (native local cleanup + sensitive log fix).
+- Baseline `.32`: `rt -- server/scripts/proddiff.sh` exit 0, `baseline: new=0 stale=0`; 2 Surge + 2 Loon configs and 4 subscriptions per client succeeded. Production source trace proved the snapshot misses custom sections, follow mode, HTTP/WS transport and ShadowTLS; synthetic references cover those branches (matrix linked below).
+- Review commits: `e41186ff` (cache fix), `03a97167` (native local cleanup + sensitive log fix), `d46ebb21` (306 independent boundary references + branch matrix).
 - Added independent `testdata/review_clients_gen.py` → `review_clients.jsonl.gz`, public-boundary regression `TestClientReviewBoundaryReferences`: **306 rows, 16 expected rejections, 0 differences** on `.63`. Full source walk / production trace / boundary matrix / remaining S-convert functions: `parity/review-c19-c20.md`. Deliberately restoring delimiter concatenation made the direct regression fail; original fixed file restored.
-- Next: final `.32` gofmt/vet/race/full suite/proddiff, record results and verification status, rebase `go`.
+- Authoritative `.32` acceptance exit 0: `gofmt -l internal/ tools/` clean; `go vet ./...` PASS; `go test -race -count=1 -timeout=30m ./internal/convert/` → `ok configflow/internal/convert 57.529s`; `go test -count=1 ./...` all packages passed (convert 17.335s; final lines `ok configflow/internal/weburl 0.005s`, `ok configflow/internal/yamlx 0.635s`, generator `[no test files]`); `server/scripts/proddiff.sh` → four self-checks PASS, `coverage_regressions=0`, `new=0`, `stale=0`, `baseline: new=0 stale=0`. Surge/Loon each 2 main + 4 subscription success outputs; 5 existing global baseline differences remain unrelated.
+- Next: rebase onto current `go` (which gained shared rule helper changes during testing), then repeat authoritative checks on the integrated tree; no push.
 
 ## C21 — MosDNS converter
 
