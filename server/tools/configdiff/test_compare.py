@@ -17,6 +17,16 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_background_receipt_requires_exact_result_and_count(self):
+        from task_lifecycle import receipt_errors
+        value = {'run_count': 2, 'last_status': 'failed', 'last_trigger': 'manual', 'last_error': 'synthetic failure',
+                 'consecutive_failures': 2, 'failure_count': 2}
+        self.assertEqual(receipt_errors(value, count=2, status='failed', error='synthetic failure'), [])
+        for field, wrong in [('run_count', 1), ('last_status', 'success'), ('last_trigger', 'schedule'),
+                             ('last_error', ''), ('failure_count', 1), ('consecutive_failures', 0)]:
+            changed = {**value, field: wrong}
+            self.assertTrue(receipt_errors(changed, count=2, status='failed', error='synthetic failure'))
+
     def test_partial_and_no_body_responses(self):
         a = Reply(206, {'content-type': 'application/json', 'content-range': 'bytes 0-3/20'}, b'{"a"')
         self.assertEqual(response_diffs(a, copy.deepcopy(a)), [])

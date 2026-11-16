@@ -1,11 +1,15 @@
 """Task listing and interval/run validation through public HTTP and SQLite."""
 import copy
 import re
+import threading
+import time
 
 from compare import database, timestamp
 from harness import Pair, DesignError, json_body
 from cases.config_backup import message
 from cases.subscriptions import SUB, put_file, require
+from task_lifecycle import Completion, row
+from sources import Source
 
 LIBRARY = [{'id': 'library-url', 'name': 'URL规则🧪', 'source_type': 'url', 'url': 'http://rules.example/feed',
             'behavior': 'domain', 'enabled': True, 'update_interval': 0},
@@ -129,3 +133,86 @@ def backoff_rows(binary, recorder):
 
 
 GROUPS = {'tasks-intervals': interval, 'tasks-run-validation': run_validation, 'tasks-backoff-rows': backoff_rows}
+
+
+def asynchronous(binary, recorder):
+    from cases.webdav import receipt_policy
+    for key, case, status, error in [('webdav_backup', 'S90', 'failed', '请填写完整的 WebDAV 配置'),
+                                      ('metrics_history_flush', 'S05', 'success', '')]:
+        with Pair(binary, recorder, options={'agents': []}) as pair:
+            original = database(pair.dirs[0])
+            for count in (1, 2):
+                def capture(replies, policy):
+                    receipt_policy(pair, policy)
+                    return []
+                def check(reply):
+                    require(database(pair.dirs[0]) == original, 'manual background task does not rewrite configuration rows')
+                pair.request('R227-' + case, 'POST /api/tasks/run', body=json_body({'key': key}),
+                             expect=202, writes=True, interaction=Completion(pair, key, count=count, status=status, error=error),
+                             capture=capture, check=check, variant='final-receipt-run-' + str(count))
+
+
+def source_busy(binary, recorder):
+    from subscriptions import configure, capture_ids, capture_notice, cached, validate_ids
+    for kind, resource, case, content in [('subscription', 'sub-a', 'S01', None),
+                                           ('rule_source', 'library-url', 'S02', b'+.example.com\n')]:
+        with Source() as source:
+            if content is not None:
+                source.body = content
+            gate = threading.Event()
+            source.before_reply = lambda _path: gate.wait(20)
+            opts = options()
+            opts['shared']['subscriptions'][0]['url'] = source.url + '/feed'
+            opts['shared']['rule_library'][0]['url'] = source.url + '/feed'
+            try:
+                with Pair(binary, recorder, options=opts) as pair:
+                    key = kind + ':' + resource
+                    if kind == 'subscription':
+                        configure(pair, source.url + '/feed')
+                        for name in ('shared/subscription_health.json', 'shared/subscription_health.json.bak'):
+                            pair.policy.times.add('files.' + name + '.content.sub-a.history[1].at')
+                    before = database(pair.dirs[0])
+                    class Started:
+                        observations = [None, None]
+
+                        def before(self, index):
+                            self.previous = len(source.requests)
+
+                        def after(self, index, reply):
+                            deadline = time.monotonic() + 2
+                            while len(source.requests) == self.previous and time.monotonic() < deadline:
+                                time.sleep(.01)
+                            self.observations[index] = {'requests': copy.deepcopy(source.requests[self.previous:]),
+                                                        'row': row(pair, index, key) if index == 0 or pair.route_available('GET /api/tasks') else None}
+                            if not pair.route_available('GET /api/tasks'):
+                                self.observations[index].pop('row')
+                            if index == 0:
+                                require(len(source.requests) == self.previous + 1, 'accepted task reaches exactly one blocked source request')
+                                require(row(pair, index, key).get('running') is True, 'public task row shows blocked worker running')
+
+                        def compare(self, policy):
+                            from compare import differences
+                            return differences(*self.observations, 'task.start', policy)
+                    pair.request('R227-' + case, 'POST /api/tasks/run', body=json_body({'key': key}),
+                                 expect=202, interaction=Started(), variant='blocked-source-accept')
+                    def check(reply):
+                        require(database(pair.dirs[0]) == before, 'scheduled refresh keeps shared configuration unchanged')
+                        first = source.requests[0]
+                        require(first['method'] == 'GET' and first['path'] == '/feed' and not first['authorization'],
+                                'Python source protocol is unauthenticated GET of exact path')
+                        if kind == 'subscription':
+                            validate_ids(pair.dirs[0])
+                            require(cached(pair.dirs[0])['count'] == 1, 'async subscription final raw cache contains downloaded node')
+                    def capture(replies, policy):
+                        return capture_ids(pair)(replies, policy) + capture_notice(pair)(replies, policy) if kind == 'subscription' else []
+                    pair.request('R227-F12', 'POST /api/tasks/run', body=json_body({'key': key}), expect=409,
+                                 writes=True, interaction=Completion(pair, key, gate=gate, source=source), capture=capture,
+                                 check=check, variant=kind + '-busy-final')
+                    pair.request('R227-' + case, 'POST /api/tasks/run', body=json_body({'key': key}), expect=202,
+                                 writes=True, interaction=Completion(pair, key, count=2), capture=capture,
+                                 variant=kind + '-repeat-after-release')
+            finally:
+                gate.set()
+
+
+GROUPS.update({'tasks-asynchronous': asynchronous, 'tasks-source-busy': source_busy})

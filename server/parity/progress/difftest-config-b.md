@@ -430,3 +430,19 @@ request_variants=5284 named_matrix_cases=2860（S340 F2168 B352），H去重167
 ```
 
 202后台执行、busy释放/重复运行、真实fake任务、Agent/router任务行及interval并发继续；当前不算tasks整体通过，未做最终全量。
+
+## 批次 23：tasks 202后的最终回执与占用释放
+
+- 10请求：未配置WebDAV依然202，随后精确失败消息、计数和manual回执落盘，重复请求再次202并失败；无Agent监控保存202后success，再次运行计数递增。配置SQL全行不变，回执及全部普通文件照常比较。
+- 订阅和URL规则各用真实loopback源屏障：先202并在公开tasks行确认running，再同key409；两端都收到busy响应后才放行源，等最终回执和running=false，再202重复运行证明锁释放。完整source方法/路径/鉴权/UA与每端请求数比较，busy不得额外拉取；订阅只写原始cache，不把manual任务误当成SQL节点导入。
+- 新增回执反例自检：计数、结果、trigger、错误、失败次数和连续失败数任一改错均失败，共37项。任务完成屏障不靠固定sleep把202当完成；Go将来若先接通POST而GET仍缺失，不把缺GET误计POST差异，用后续重复POST独立验证锁释放。Go当前未接通，10项均只计真实Python有效参考，不计通过。
+
+```text
+.63 run.py --groups tasks-asynchronous,tasks-source-busy
+current go-unimplemented=10 design_errors=[] seconds=7.61
+cumulative compared=1455 go-unimplemented=3769 dependency=28 different=41 O12-separate=1
+request_variants=5294 named_matrix_cases=2865（S344 F2169 B352），H去重167
+37 self-checks + end-to-end wrong-Go-response check OK
+```
+
+tasks的domain/DNS/router任务及配置化WebDAV任务仍待fake；断连后继续执行另列待做。T18仅完成这里列出的子序列，未宣称整个跨域任务协议通过，未做最终全量。
