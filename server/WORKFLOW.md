@@ -139,7 +139,7 @@ module and every review from now on also **deletes code that only existed for st
 
 PORTING rules 1–4 now say: port features, not code; typed structs; acceptance at the external boundary
 (HTTP differential, generated outputs, stored data, Agent protocol), function-level replay of Python
-internals no longer required; size budget ≤ 1.2× the module's Python lines. Consequences:
+internals no longer required; size budget target ≤ 1.2×, hard limit 1.5× the module's Python lines. Consequences:
 - New modules (and modules still in progress) follow the new rules immediately.
 - Already written code is slimmed in **S passes**, one per package group, done together with the
   matching N swap where one exists (e.g. S for `subs` + N7 YAML). An S pass rewrites the package the Go

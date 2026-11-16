@@ -112,7 +112,7 @@ files once). After `cf-test`, use `rt --no-sync`.
 
 - **Size gate (2026-11-16):** on every hand-back, measure Go non-test lines of the touched packages
   yourself (`find <pkgs> -name '*.go' ! -name '*_test.go' | xargs cat | wc -l`) against the module's Python
-  lines; over 1.2× without a convincing reason → send it back. Also grep the diff for Python-shaped code
+  lines; over 1.5× → send it back (target 1.2×). Also grep the diff for Python-shaped code
   (`any` parameters mirroring Python, `PyError`/emulated exceptions, new `jsonx`/`pystr`/`urlx` uses,
   private helper copies). Track the whole-tree total after each push; target at the end ≈ 100–130k lines.
 
