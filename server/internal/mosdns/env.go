@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"sync"
 
+	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
@@ -65,7 +66,12 @@ func (e *Env) fetchRemoteContent(ctx context.Context, url string, config *jsonx.
 
 // pythonClass is type(err).__name__ for the errors this module sees.
 // Plain Go errors count as ValueError (rulefetch's convention).
-func pythonClass(err error) string { return rulefetch.PythonClass(err) }
+func pythonClass(err error) string {
+	if class := convert.PyErrorClass(err); class != "" {
+		return class
+	}
+	return rulefetch.PythonClass(err)
+}
 
 var valueErrorClasses = map[string]bool{
 	"ValueError": true, "UnicodeDecodeError": true, "UnicodeEncodeError": true, "UnicodeError": true,

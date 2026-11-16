@@ -475,7 +475,7 @@ func ruleProxyBody(ctx context.Context, request RuleProxyRequest, deps ruleProxy
 		if fetchErr != nil {
 			if isRequestException(fetchErr) {
 				routeLogger.Warningf("在线规则更新失败，保留设备现有规则: %s %s",
-					urlx.SafeURLForLog(originalURL), safeExceptionDetails(fetchErr))
+					weburl.SafeForLog(originalURL), safeExceptionDetails(fetchErr))
 				// Runtime downloaders treat HTTP 200 as a successful refresh;
 				// the shared cache could silently roll devices back.
 				return &RuleProxyResponse{Status: 502, NoStore: true, JSON: jsonx.Obj("success", false,
