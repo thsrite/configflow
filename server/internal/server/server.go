@@ -37,6 +37,7 @@ import (
 	"configflow/internal/notifications"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
+	"configflow/internal/routers"
 	"configflow/internal/substore"
 	"configflow/internal/tasks"
 	"configflow/internal/utilx"
@@ -72,6 +73,7 @@ var wirePackages = []func(){
 	health.Wire,
 	mihomoenv.Wire,
 	ippresence.Wire, // routers R02: convert.MihomoHooks.IsFullTun, oxidns classical_ip_lines
+	routers.Wire,    // routers R01: repo.Hooks.RedactRouters
 }
 
 func wireCore() {
