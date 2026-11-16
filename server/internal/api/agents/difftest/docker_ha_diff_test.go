@@ -1,0 +1,628 @@
+package difftest
+
+// Flask↔Go differential of the Docker HA routes (A09):
+// POST /api/agents/docker-oxidns-ha-guide (check / inspect / verify /
+// generate new and migrate, body limits and malformed bodies, profile
+// header) and POST /api/agents/docker-oxidns-ha-enroll/<session_id>
+// (issue, replay, refusals, expiry, renewal, changed identity, takeover,
+// hand-edited installation records). Random values (session id, token,
+// owner hash, expiry) are captured per side and replaced by placeholders;
+// the installation records under DATA_DIR and the Agent records are
+// compared after the requests.
+//
+//	rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run DockerHA ./internal/api/agents/difftest/'
+
+import (
+	"encoding/base64"
+	"fmt"
+	"math"
+	"math/big"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+
+	"configflow/internal/jsonx"
+)
+
+var (
+	sessionPattern = regexp.MustCompile(`docker-oxidns-ha-enroll/([0-9a-f]{32})`)
+	tokenPattern   = regexp.MustCompile(`\\"token\\": \\"([A-Za-z0-9_-]{43})\\"`)
+	ownerPattern   = regexp.MustCompile(`cf_owner=([0-9a-f]{64})`)
+)
+
+type haSide struct {
+	base, token, dir string
+	session, secret  string // the capability of the main installation
+	agentID          string
+}
+
+// normalizeHA replaces this side's random values in an answer body.
+func normalizeHA(body []byte) ([]byte, map[string]string) {
+	text := string(body)
+	found := map[string]string{}
+	if m := sessionPattern.FindStringSubmatch(text); m != nil {
+		found["session"] = m[1]
+		text = strings.ReplaceAll(text, m[1], "<session>")
+	}
+	if m := tokenPattern.FindStringSubmatch(text); m != nil {
+		found["token"] = m[1]
+		text = strings.ReplaceAll(text, m[1], "<token>")
+	}
+	if m := ownerPattern.FindStringSubmatch(text); m != nil {
+		found["owner"] = m[1]
+		text = strings.ReplaceAll(text, m[1], "<owner>")
+	}
+	return []byte(text), found
+}
+
+func haBlock(fields map[string][2]string) string {
+	order := []string{"kernel", "docker_endpoint", "docker_version", "daemon_os", "daemon_platform", "daemon_security",
+		"compose", "ipv4", "udp53", "tcp53", "nesting", "machine_fingerprint"}
+	defaults := map[string][2]string{"kernel": {"0", "Linux"}, "docker_endpoint": {"0", "local-unix"},
+		"docker_version": {"0", `{"client":"29.9.2","server":"29.9.2"}`}, "daemon_os": {"0", "linux"},
+		"daemon_platform": {"0", `{"os":"Arch Linux","kernel":"6.18.3"}`}, "daemon_security": {"0", `["name=seccomp"]`},
+		"compose": {"0", "2.30.3"}, "ipv4": {"0", "2: eth0 inet 192.168.10.20/24 scope global eth0\n"},
+		"udp53": {"0", ""}, "tcp53": {"0", ""}, "nesting": {"0", "none"}, "machine_fingerprint": {"0", strings.Repeat("a", 64)}}
+	lines := []string{"CONFIGFLOW_DOCKER_HA_PREFLIGHT_V1_BEGIN"}
+	for _, key := range order {
+		v := defaults[key]
+		if f, ok := fields[key]; ok {
+			v = f
+		}
+		lines = append(lines, "CFHA1\t"+key+"\t"+v[0]+"\t"+base64.StdEncoding.EncodeToString([]byte(v[1])))
+	}
+	return strings.Join(append(lines, "CONFIGFLOW_DOCKER_HA_PREFLIGHT_V1_END"), "\n") + "\n"
+}
+
+func jsonText(v any) string {
+	data, err := jsonx.Default(v)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
+}
+
+func haNewBody(pairs ...any) *jsonx.Object {
+	body := jsonx.Obj("server_url", "https://panel.example", "agent_name", "new-dns", "agent_ip", "192.168.50.20",
+		"data_dir", "/srv/oxidns", "oxidns_port", 8082, "network_mode", "host", "ha_host_id_path", "/srv/host-id")
+	body.Update(jsonx.Obj(pairs...))
+	return body
+}
+
+const haGuide = "/api/agents/docker-oxidns-ha-guide"
+
+func guideReq(name string, body any, extra ...func(*request)) request {
+	r := request{name: name, method: "POST", path: haGuide, admin: true, contentType: "application/json"}
+	switch b := body.(type) {
+	case string:
+		r.body = b
+	default:
+		r.body = jsonText(b)
+	}
+	for _, f := range extra {
+		f(&r)
+	}
+	return r
+}
+
+func haReadOnlyRequests() []request {
+	block := haBlock(nil)
+	var out []request
+	out = append(out,
+		guideReq("guide no login", jsonx.Obj("action", "inspect"), func(r *request) { r.admin = false }),
+		guideReq("guide empty body", ""),
+		guideReq("guide not json", "{bad"),
+		guideReq("guide list", "[]"),
+		guideReq("guide string", `"x"`),
+		guideReq("guide null", "null"),
+		guideReq("guide bom", "\ufeff{\"action\": \"inspect\"}"),
+		guideReq("guide utf-16", utf16(`{"action": "inspect"}`)),
+		guideReq("guide invalid utf-8", "{\"action\": \"inspect\", \"x\": \"\xff\"}"),
+		guideReq("guide deep", strings.Repeat("[", 5000)+strings.Repeat("]", 5000)),
+		guideReq("guide digit limit", `{"action": "inspect", "n": `+strings.Repeat("9", 4301)+`}`),
+		guideReq("guide digit limit large", `{"action": "check", "n": `+strings.Repeat("9", 20000)+`}`),
+		guideReq("guide 16k inspect", jsonx.Obj("action", "inspect", "padding", strings.Repeat("x", 17000))),
+		guideReq("guide 16k exact", `{"action": "inspect", "p": "`+strings.Repeat("x", 16384-30)+`"}`),
+		guideReq("guide 16k garbage", strings.Repeat("x", 17000)),
+		guideReq("guide 16k list", "["+strings.Repeat(`"x",`, 4000)+`"x"]`),
+		guideReq("guide 128k check", jsonx.Obj("action", "check", "output", strings.Repeat("x", 129*1024))),
+		guideReq("guide 100k check", jsonx.Obj("action", "check", "output", strings.Repeat("terminal notes\n", 6000)+block)),
+		guideReq("guide 100k check no action", jsonx.Obj("output", strings.Repeat("x", 100000))),
+		guideReq("guide no content type", jsonx.Obj("action", "inspect"), func(r *request) { r.contentType = "" }),
+		guideReq("guide text content type", jsonx.Obj("action", "inspect"), func(r *request) { r.contentType = "text/plain" }),
+	)
+	checks := []struct {
+		name   string
+		output any
+		mode   any
+	}{
+		{"pass", block, "host"}, {"pass macvlan", block, "macvlan"}, {"default mode", block, nil}, {"bridge", block, "bridge"},
+		{"mode null", block, jsonx.Obj()}, {"legacy", "old legacy text", "host"}, {"number", 5, "host"}, {"missing", nil, "host"},
+		{"oversize", strings.Repeat("例", 32769), "host"}, {"crlf", strings.ReplaceAll(block, "\n", "\r\n"), "host"},
+		{"markdown", strings.ReplaceAll(block, "\n", "\\\n"), "host"},
+		{"busy port", haBlock(map[string][2]string{"udp53": {"0", "UNCONN 0 0 127.0.0.53%lo:53 0.0.0.0:*"}}), "host"},
+		{"busy port macvlan", haBlock(map[string][2]string{"udp53": {"0", "UNCONN 0 0 127.0.0.53%lo:53 0.0.0.0:*"}}), "macvlan"},
+		{"desktop", haBlock(map[string][2]string{"daemon_platform": {"0", `{"os":"Docker Desktop","kernel":"linuxkit"}`}}), "host"},
+		{"unicode iface", haBlock(map[string][2]string{"ipv4": {"0", "2: 网卡<x> inet 10.0.0.2/8 scope global\n"}}), "host"},
+		{"compose digits", haBlock(map[string][2]string{"compose": {"0", "2." + strings.Repeat("9", 4301) + ".0"}}), "host"},
+		{"truncated", block[:len(block)/2], "host"}, {"emoji", "\U0001f600" + block, "macvlan"},
+		{"lone surrogate escape", nil, "host"},
+	}
+	for _, c := range checks {
+		body := jsonx.Obj("action", "check")
+		if c.output != nil {
+			body.Set("output", c.output)
+		}
+		if c.mode != nil {
+			if o, ok := c.mode.(*jsonx.Object); ok && o.Len() == 0 {
+				body.Set("network_mode", nil)
+			} else {
+				body.Set("network_mode", c.mode)
+			}
+		}
+		out = append(out, guideReq("check "+c.name, body))
+	}
+	for _, name := range []any{"", "existing", "x;echo bad", 0, 1, nil, []any{}, "a.b_c-1", strings.Repeat("a", 129)} {
+		out = append(out, guideReq(fmt.Sprintf("inspect %.20v", name), jsonx.Obj("action", "inspect", "container_name", name)))
+	}
+	for _, vip := range []any{"192.168.10.8", "127.0.0.1", "0.0.0.0", "::1", nil, 3232238088, true, false, 1.5, "01.2.3.4", "255.255.255.255"} {
+		out = append(out, guideReq(fmt.Sprintf("verify %v", vip), jsonx.Obj("action", "verify", "vip", vip)))
+	}
+	out = append(out, guideReq("verify missing", jsonx.Obj("action", "verify")))
+	for _, action := range []any{"bogus", nil, 1, "CHECK"} {
+		out = append(out, guideReq(fmt.Sprintf("action %v", action), jsonx.Obj("action", action)))
+	}
+	// Generation refusals (no capability is issued before a refusal).
+	for _, change := range [][]any{
+		{"server_url", "http://user:pw@x.test"}, {"server_url", "ftp://x"}, {"server_url", "http://[bad"}, {"server_url", 5},
+		{"agent_ip", "127.0.0.1"}, {"agent_ip", ""}, {"agent_ip", nil}, {"data_dir", "relative"}, {"data_dir", "/a/../b"},
+		{"ha_host_id_path", "/a:b"}, {"oxidns_port", true}, {"oxidns_port", "8082"}, {"oxidns_port", 80}, {"image", "bad image"},
+		{"create_host_identity", "true"}, {"install_method", "other"}, {"mode", "x"}, {"agent_name", "bad name"},
+		{"agent_name", 5}, {"network_mode", "bridge"}, {"network_mode", "macvlan"}, {"network_mode", "macvlan", "ha_parent", "eth0", "ha_subnet", "192.168.50.0/24", "ha_parent", 5},
+		{"network_mode", "macvlan", "ha_parent", "eth0", "ha_subnet", "x"}, {"mode", "migrate", "install_method", "compose"},
+		{"agent_ip", 3232248340, "network_mode", "macvlan", "ha_parent", "eth0", "ha_subnet", "192.168.50.0/24"},
+	} {
+		out = append(out, guideReq(fmt.Sprintf("generate refused %v", change), haNewBody(change...)))
+	}
+	// Migration (deterministic: no capability).
+	migrate := haNewBody("mode", "migrate", "container_name", "original-oxidns", "existing_agent_name", "original-dns",
+		"ha_data_dir", "/srv/cf/new-ha", "backup_dir", "/srv/cf/backup",
+		"agent_mount", jsonx.Obj("type", "bind", "source", "/srv/cf/old-agent"), "core_mount", jsonx.Obj("type", "volume", "source", "old_core"))
+	out = append(out,
+		guideReq("migrate", migrate),
+		guideReq("migrate macvlan", withPairs(migrate, "network_mode", "macvlan", "ha_parent", "eth0", "ha_subnet", "192.168.50.0/24", "ha_gateway", "192.168.50.1")),
+		guideReq("migrate identity", withPairs(migrate, "create_host_identity", true)),
+		guideReq("migrate overlapping", withPairs(migrate, "backup_dir", "/srv/cf/new-ha/b")),
+		guideReq("migrate same mounts", withPairs(migrate, "core_mount", jsonx.Obj("type", "bind", "source", "/srv/cf/old-agent"))),
+		guideReq("migrate bad name", withPairs(migrate, "existing_agent_name", "bad name")),
+		guideReq("migrate dollar url", withPairs(migrate, "server_url", "https://panel.example/$X")),
+	)
+	return out
+}
+
+func withPairs(o *jsonx.Object, pairs ...any) *jsonx.Object {
+	out := o.DeepCopy()
+	out.Update(jsonx.Obj(pairs...))
+	return out
+}
+
+func compareHA(t *testing.T, name string, py, gor response, same, failed *int, mask ...string) {
+	t.Helper()
+	pyNorm, gorNorm := py, gor
+	pyNorm.body, _ = normalizeHA(py.body)
+	gorNorm.body, _ = normalizeHA(gor.body)
+	if diffs := compareInstaller(pyNorm, gorNorm, append([]string{"enrollment_expires_at"}, mask...)); len(diffs) > 0 {
+		*failed++
+		t.Errorf("DIFF %s:\n  %s", name, strings.Join(diffs, "\n  "))
+	} else {
+		*same++
+		t.Logf("same %-60.60s → %d %d bytes", name, py.status, len(py.body))
+	}
+}
+
+// installationFiles lists DATA_DIR/docker-ha-installations with random
+// values replaced: session files are named after their Agent name, index
+// files keep their (deterministic) name and point at that label. Records of
+// the Compose methods (pending A10: Go refuses before issuing) are left out.
+func installationFiles(t *testing.T, dir string) map[string]string {
+	root := filepath.Join(dir, "docker-ha-installations")
+	out := map[string]string{}
+	info, err := os.Stat(root)
+	if err != nil {
+		return out
+	}
+	out["."] = info.Mode().Perm().String()
+	entries, _ := os.ReadDir(root)
+	labels := map[string]string{}
+	for _, entry := range entries {
+		if index, found := strings.CutSuffix(entry.Name(), ".index"); found {
+			data, _ := os.ReadFile(filepath.Join(root, entry.Name()))
+			labels[strings.TrimSpace(string(data))] = "<session of " + index[:12] + ">"
+		}
+	}
+	for _, entry := range entries {
+		if session, found := strings.CutSuffix(entry.Name(), ".json"); found {
+			if _, ok := labels[session]; ok {
+				continue
+			}
+			data, _ := os.ReadFile(filepath.Join(root, entry.Name()))
+			label := "<unreferenced unreadable session>"
+			if value, err := jsonx.Parse(data); err == nil {
+				if o, ok := value.(*jsonx.Object); ok {
+					label = "<session " + jsonx.Str(o.Value("name")) + ">"
+				}
+			}
+			labels[session] = label
+		}
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		data, _ := os.ReadFile(filepath.Join(root, name))
+		text := string(data)
+		if label, ok := labels[strings.TrimSpace(text)]; ok {
+			text = strings.Replace(text, strings.TrimSpace(text), label, 1)
+		}
+		if session, found := strings.CutSuffix(name, ".json"); found {
+			name = labels[session] + ".json"
+			if value, err := jsonx.Parse(data); err == nil {
+				if o, ok := value.(*jsonx.Object); ok {
+					for _, key := range []string{"id", "token", "token_hash", "expires"} {
+						if o.Has(key) {
+							o.Set(key, "<masked>")
+						}
+					}
+					text = jsonText(o)
+				}
+			}
+		}
+		if strings.Contains(text, `"name": "compose`) || pendingIndex(root, text) {
+			continue
+		}
+		fi, _ := entry.Info()
+		out[name] = fi.Mode().Perm().String() + " " + text
+	}
+	return out
+}
+
+func TestDockerHADifferentialAgainstFlask(t *testing.T) {
+	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
+		t.Skip("set CONFIGFLOW_DIFF=1 on the test server")
+	}
+	base := t.TempDir()
+	seedDir, pyDir, goDir := filepath.Join(base, "seed"), filepath.Join(base, "python"), filepath.Join(base, "go")
+	for _, dir := range []string{seedDir, pyDir, goDir} {
+		os.MkdirAll(dir, 0o755)
+	}
+	seed(t, seedDir)
+	copyDir(t, seedDir, pyDir)
+	copyDir(t, seedDir, goDir)
+	pyBase, stopPython := startPython(t, pyDir)
+	defer stopPython()
+	goBase, stopGo := startGo(t, goDir)
+	defer stopGo()
+	py := &haSide{base: pyBase, token: login(t, pyBase), dir: pyDir}
+	gs := &haSide{base: goBase, token: login(t, goBase), dir: goDir}
+	same, failed, pending := 0, 0, 0
+	both := func(r request, values ...map[string]string) (response, response) {
+		pv, gv := map[string]string{}, map[string]string{}
+		if len(values) == 2 {
+			pv, gv = values[0], values[1]
+		}
+		return send(t, py.base, r, py.token, pv), send(t, gs.base, r, gs.token, gv)
+	}
+	check := func(r request, mask ...string) (response, response) {
+		p, g := both(r)
+		compareHA(t, r.name, p, g, &same, &failed, mask...)
+		return p, g
+	}
+
+	for _, r := range haReadOnlyRequests() {
+		check(r)
+	}
+	// A lone surrogate escape: Python's json.loads keeps it, jsonx decodes U+FFFD
+	// (jsonx-wide limitation); only logged.
+	{
+		p, g := both(guideReq("check lone surrogate", `{"action": "check", "output": "\ud800"}`))
+		t.Logf("lone surrogate: python %d %.120s | go %d %.120s", p.status, p.body, g.status, g.body)
+	}
+	if files := installationFiles(t, pyDir); len(files) != 0 {
+		t.Errorf("python issued a capability for refused or read-only requests: %v", files)
+	}
+	if files := installationFiles(t, goDir); len(files) != 0 {
+		t.Errorf("go issued a capability for refused or read-only requests: %v", files)
+	}
+
+	// New installations: the capability is issued and the answer carries it.
+	issue := func(name string, body *jsonx.Object, extra ...func(*request)) (map[string]string, map[string]string) {
+		p, g := check(guideReq(name, body, extra...))
+		_, pf := normalizeHA(p.body)
+		_, gf := normalizeHA(g.body)
+		return pf, gf
+	}
+	pf, gf := issue("generate script host", haNewBody())
+	py.session, py.secret, gs.session, gs.secret = pf["session"], pf["token"], gf["session"], gf["token"]
+	if py.session == "" || gs.session == "" || py.secret == "" || gs.secret == "" {
+		t.Fatalf("no capability: python %v go %v", pf, gf)
+	}
+	pf2, gf2 := issue("generate script host again", haNewBody())
+	if pf2["session"] != py.session || gf2["session"] != gs.session || pf2["token"] != py.secret || gf2["token"] != gs.secret {
+		t.Errorf("regeneration changed the capability: python %v→%v go %v→%v", pf, pf2, gf, gf2)
+	}
+	issue("generate script host action key", haNewBody("action", "generate"))
+	issue("generate macvlan", haNewBody("network_mode", "macvlan", "ha_parent", "eth0", "ha_subnet", "192.168.50.0/24", "ha_gateway", "192.168.50.1"))
+	issue("generate identity", haNewBody("create_host_identity", true, "agent_name", "id-dns"))
+	issue("generate odd url", haNewBody("server_url", "https://panel.example/it's/$(id)/", "agent_name", "odd-dns"))
+	issue("generate int agent ip", haNewBody("agent_ip", 3232248340, "agent_name", "int-dns"))
+	issue("generate extra fields", haNewBody("agent_name", "extra-dns", "extra", jsonx.Obj("nested", []any{1, 2.5, nil, "例"}), "ha_gateway", 0))
+	issue("generate other profile header", haNewBody("agent_name", "other-dns"), func(r *request) { r.headers = map[string]string{"X-ConfigFlow-Profile": "other"} })
+	issue("generate other profile query", haNewBody("agent_name", "query-dns"), func(r *request) { r.path += "?profile=other" })
+	check(guideReq("generate bad profile header", haNewBody("agent_name", "bad-profile"), func(r *request) { r.headers = map[string]string{"X-ConfigFlow-Profile": "bad id!"} }))
+	check(guideReq("generate missing profile header", haNewBody("agent_name", "missing-profile"), func(r *request) { r.headers = map[string]string{"X-ConfigFlow-Profile": "missing"} }))
+	check(guideReq("generate empty profile header", haNewBody("agent_name", "empty-profile"), func(r *request) { r.headers = map[string]string{"X-ConfigFlow-Profile": ""} }))
+	for _, method := range []string{"compose", "compose_direct", "compose_compact"} {
+		p, g := both(guideReq("generate "+method, haNewBody("install_method", method, "agent_name", method)))
+		if g.status == 500 && p.status == 200 {
+			pending++
+			t.Logf("pending A10: %s (python 200, go 500 until the Compose variants are ported)", method)
+			continue
+		}
+		compareHA(t, "generate "+method, p, g, &same, &failed)
+	}
+
+	// Enrollment refusals.
+	enroll := func(name, session, token, body string, extra ...func(*request)) request {
+		r := request{name: name, method: "POST", path: "/api/agents/docker-oxidns-ha-enroll/" + session, body: body, contentType: "application/json"}
+		if token != "" {
+			r.headers = map[string]string{"Authorization": token}
+		}
+		for _, f := range extra {
+			f(&r)
+		}
+		return r
+	}
+	values := []map[string]string{{"session": py.session, "secret": py.secret}, {"session": gs.session, "secret": gs.secret}}
+	checkV := func(r request, mask ...string) (response, response) {
+		p, g := both(r, values...)
+		compareHA(t, r.name, p, g, &same, &failed, mask...)
+		return p, g
+	}
+	for _, r := range []request{
+		enroll("enroll no auth", "{session}", "", "{}"),
+		enroll("enroll basic auth", "{session}", "Basic eDp5", "{}"),
+		enroll("enroll short token", "{session}", "Bearer abc", "{}"),
+		enroll("enroll wrong token", "{session}", "Bearer "+strings.Repeat("x", 43), "{}"),
+		enroll("enroll token with space", "{session}", "Bearer {secret} x", "{}"),
+		enroll("enroll bad session", "ABC", "Bearer {secret}", "{}"),
+		enroll("enroll upper session", strings.Repeat("A", 32), "Bearer {secret}", "{}"),
+		enroll("enroll unknown session", strings.Repeat("e", 32), "Bearer {secret}", "{}"),
+		enroll("enroll body fields", "{session}", "Bearer {secret}", `{"host": "192.168.50.99"}`),
+		enroll("enroll body list", "{session}", "Bearer {secret}", `[]`),
+		enroll("enroll body empty", "{session}", "Bearer {secret}", ``),
+		enroll("enroll body garbage", "{session}", "Bearer {secret}", `{bad`),
+		enroll("enroll body oversize", "{session}", "Bearer {secret}", strings.Repeat("x", 17000)),
+		enroll("enroll body oversize json", "{session}", "Bearer {secret}", `{"x": "`+strings.Repeat("x", 17000)+`"}`),
+		enroll("enroll body null", "{session}", "Bearer {secret}", `null`),
+		enroll("enroll no content type", "{session}", "Bearer {secret}", `{"a": 1}`, func(r *request) { r.contentType = "" }),
+		enroll("enroll get", "{session}", "Bearer {secret}", ``, func(r *request) { r.method = "GET" }),
+	} {
+		checkV(r)
+	}
+	// Success and replay of a lost answer.
+	p, g := checkV(enroll("enroll ok", "{session}", "Bearer {secret}", "{}"), "agent_id", "token")
+	pyIdentity, _ := jsonx.Parse(p.body)
+	goIdentity, _ := jsonx.Parse(g.body)
+	p2, g2 := checkV(enroll("enroll replay", "{session}", "Bearer {secret}", "{}"), "agent_id", "token")
+	if string(p2.body) != string(p.body) || string(g2.body) != string(g.body) {
+		t.Errorf("replay differs: python %s / %s go %s / %s", p.body, p2.body, g.body, g2.body)
+	}
+	py.agentID = pyIdentity.(*jsonx.Object).GetString("agent_id")
+	gs.agentID = goIdentity.(*jsonx.Object).GetString("agent_id")
+	agentValues := []map[string]string{{"session": py.session, "secret": py.secret, "agent": py.agentID}, {"session": gs.session, "secret": gs.secret, "agent": gs.agentID}}
+	// Changed identity: the Agent's port is edited.
+	{
+		r := request{name: "edit agent port", method: "PUT", path: "/api/agents/{agent}", admin: true, contentType: "application/json", body: `{"port": 12345}`}
+		p, g := both(r, agentValues...)
+		compareHA(t, r.name, p, g, &same, &failed, "agent.id", "agent.token", "agent.created_at", "agent.docker_ha_installation_id", "agent.updated_at")
+		checkV(enroll("enroll changed identity", "{session}", "Bearer {secret}", "{}"))
+		r.name, r.body = "restore agent port", `{"port": 8082}`
+		p, g = both(r, agentValues...)
+		compareHA(t, r.name, p, g, &same, &failed, "agent.id", "agent.token", "agent.created_at", "agent.docker_ha_installation_id", "agent.updated_at")
+		checkV(enroll("enroll restored identity", "{session}", "Bearer {secret}", "{}"), "agent_id", "token")
+	}
+	// Expiry and renewal keep the installation.
+	editSession := func(side *haSide, session string, edit func(*jsonx.Object) string) {
+		path := filepath.Join(side.dir, "docker-ha-installations", session+".json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		value, _ := jsonx.Parse(data)
+		if err := os.WriteFile(path, []byte(edit(value.(*jsonx.Object))), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	expire := func(o *jsonx.Object) string {
+		o.Set("expires", jsonx.Float(float64(time.Now().UnixNano())/1e9-1))
+		return jsonText(o)
+	}
+	editSession(py, py.session, expire)
+	editSession(gs, gs.session, expire)
+	checkV(enroll("enroll expired", "{session}", "Bearer {secret}", "{}"))
+	pf3, gf3 := issue("generate after expiry", haNewBody())
+	if pf3["session"] != py.session || gf3["session"] != gs.session || pf3["token"] == py.secret || gf3["token"] == gs.secret {
+		t.Errorf("renewal: python %v go %v", pf3, gf3)
+	}
+	checkV(enroll("enroll old token after renewal", "{session}", "Bearer {secret}", "{}"))
+	renewed := []map[string]string{{"session": py.session, "secret": pf3["token"]}, {"session": gs.session, "secret": gf3["token"]}}
+	{
+		p, g := both(enroll("enroll renewed", "{session}", "Bearer {secret}", "{}"), renewed...)
+		compareHA(t, "enroll renewed", p, g, &same, &failed, "agent_id", "token")
+		if string(p.body) != string(p2.body) || string(g.body) != string(g2.body) {
+			t.Errorf("renewed enrollment returns another identity")
+		}
+	}
+	// Changed settings: another installation that collides with the first Agent.
+	pc, gc := issue("generate changed data dir", haNewBody("data_dir", "/different/data"))
+	changed := []map[string]string{{"session": pc["session"], "secret": pc["token"]}, {"session": gc["session"], "secret": gc["token"]}}
+	{
+		p, g := both(enroll("enroll changed settings", "{session}", "Bearer {secret}", "{}"), changed...)
+		compareHA(t, "enroll changed settings", p, g, &same, &failed)
+	}
+	// Takeover of a registered device is refused.
+	{
+		r := request{name: "register taken", method: "POST", path: "/api/agents/register", contentType: "application/json",
+			body: `{"name": "taken-dns-oxidns", "host": "192.168.50.30", "port": 8082, "service_type": "oxidns", "deployment_method": "docker"}`}
+		p, g := both(r)
+		compareHA(t, r.name, p, g, &same, &failed, "id", "token")
+		pt, gt := issue("generate taken", haNewBody("agent_name", "taken-dns", "agent_ip", "192.168.50.30"))
+		taken := []map[string]string{{"session": pt["session"], "secret": pt["token"]}, {"session": gt["session"], "secret": gt["token"]}}
+		p, g = both(enroll("enroll takeover", "{session}", "Bearer {secret}", "{}"), taken...)
+		compareHA(t, "enroll takeover", p, g, &same, &failed)
+	}
+	// Other-profile installation enrolls into its profile.
+	po, gol := issue("generate other profile again", haNewBody("agent_name", "other-dns"), func(r *request) { r.headers = map[string]string{"X-ConfigFlow-Profile": "other"} })
+	{
+		other := []map[string]string{{"session": po["session"], "secret": po["token"]}, {"session": gol["session"], "secret": gol["token"]}}
+		p, g := both(enroll("enroll other profile", "{session}", "Bearer {secret}", "{}"), other...)
+		compareHA(t, "enroll other profile", p, g, &same, &failed, "agent_id", "token")
+	}
+
+	// Hand-edited installation records (one installation per case).
+	handEdits := []struct {
+		name string
+		edit func(*jsonx.Object) string
+	}{
+		{"invalid json", func(*jsonx.Object) string { return "{bad" }},
+		{"list json", func(*jsonx.Object) string { return "[]" }},
+		{"invalid utf-8", func(*jsonx.Object) string { return "{\"x\": \"\xff\"}" }},
+		{"no expires", func(o *jsonx.Object) string { o.Delete("expires"); return jsonText(o) }},
+		{"string expires", func(o *jsonx.Object) string { o.Set("expires", "soon"); return jsonText(o) }},
+		{"nan expires", func(o *jsonx.Object) string { o.Set("expires", jsonx.Float(nanValue())); return jsonText(o) }},
+		{"huge expires", func(o *jsonx.Object) string { o.Set("expires", jsonx.BigInt(bigPow(10, 30))); return jsonText(o) }},
+		{"bool expires", func(o *jsonx.Object) string { o.Set("expires", true); return jsonText(o) }},
+		{"no token hash", func(o *jsonx.Object) string { o.Delete("token_hash"); return jsonText(o) }},
+		{"int token hash", func(o *jsonx.Object) string { o.Set("token_hash", 5); return jsonText(o) }},
+		{"non-ascii token hash", func(o *jsonx.Object) string { o.Set("token_hash", "é"); return jsonText(o) }},
+		{"bad profile", func(o *jsonx.Object) string { o.Set("profile_id", "bad id!"); return jsonText(o) }},
+		{"int profile", func(o *jsonx.Object) string { o.Set("profile_id", 5); return jsonText(o) }},
+		{"missing profile", func(o *jsonx.Object) string { o.Set("profile_id", "gone"); return jsonText(o) }},
+		{"no name", func(o *jsonx.Object) string { o.Delete("name"); return jsonText(o) }},
+		{"float port", func(o *jsonx.Object) string { o.Set("port", 8082.0); return jsonText(o) }},
+	}
+	for i, h := range handEdits {
+		name := fmt.Sprintf("hand-%d", i)
+		pi, gi := issue("generate "+name, haNewBody("agent_name", name))
+		editSession(py, pi["session"], h.edit)
+		editSession(gs, gi["session"], h.edit)
+		hv := []map[string]string{{"session": pi["session"], "secret": pi["token"]}, {"session": gi["session"], "secret": gi["token"]}}
+		p, g := both(enroll("enroll "+h.name, "{session}", "Bearer {secret}", "{}"), hv...)
+		compareHA(t, "enroll "+h.name, p, g, &same, &failed, "agent_id", "token")
+		p, g = both(guideReq("reissue "+h.name, haNewBody("agent_name", name)))
+		compareHA(t, "reissue "+h.name, p, g, &same, &failed)
+	}
+	// Index records: wrong content, invalid UTF-8, a missing session file.
+	indexEdits := map[string]func(side *haSide, index, session string){
+		"index garbage": func(_ *haSide, index, _ string) { os.WriteFile(index, []byte("not-a-session"), 0o600) },
+		"index utf-8":   func(_ *haSide, index, _ string) { os.WriteFile(index, []byte("\xff\xfe"), 0o600) },
+		"index newline": func(_ *haSide, index, session string) { os.WriteFile(index, []byte(session+"\n"), 0o600) },
+		"index missing session": func(side *haSide, _, session string) {
+			os.Remove(filepath.Join(side.dir, "docker-ha-installations", session+".json"))
+		},
+	}
+	names := make([]string, 0, len(indexEdits))
+	for name := range indexEdits {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for i, name := range names {
+		agentName := fmt.Sprintf("index-%d", i)
+		pi, gi := issue("generate "+agentName, haNewBody("agent_name", agentName))
+		for _, pair := range []struct {
+			side    *haSide
+			session string
+		}{{py, pi["session"]}, {gs, gi["session"]}} {
+			index := findIndex(t, pair.side.dir, pair.session)
+			indexEdits[name](pair.side, index, pair.session)
+		}
+		p, g := both(guideReq("reissue "+name, haNewBody("agent_name", agentName)))
+		compareHA(t, "reissue "+name, p, g, &same, &failed)
+	}
+
+	// Stored state: installation records and Agents.
+	pyFiles, goFiles := installationFiles(t, pyDir), installationFiles(t, goDir)
+	var keys []string
+	for k := range pyFiles {
+		keys = append(keys, k)
+	}
+	for k := range goFiles {
+		if _, ok := pyFiles[k]; !ok {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if pyFiles[k] != goFiles[k] {
+			failed++
+			t.Errorf("installation file %s:\n  python %.300q\n  go     %.300q", k, pyFiles[k], goFiles[k])
+		}
+	}
+	t.Logf("installation files compared: %d", len(keys))
+	stopPython()
+	stopGo()
+	pyAgents, goAgents := finalAgents(t, pyDir), finalAgents(t, goDir)
+	for _, list := range []any{pyAgents, goAgents} {
+		for _, item := range list.([]any) {
+			if o := item.(*jsonx.Object); o.Has("docker_ha_installation_id") {
+				o.Set("docker_ha_installation_id", "<masked>")
+			}
+		}
+	}
+	if !jsonx.Equal(pyAgents, goAgents) {
+		failed++
+		t.Errorf("stored agents differ:\npython %s\ngo     %s", jsonx.Repr(pyAgents), jsonx.Repr(goAgents))
+	}
+	t.Logf("docker HA routes: %d comparisons equal, %d differ, %d pending (A10)", same, failed, pending)
+}
+
+func findIndex(t *testing.T, dir, session string) string {
+	root := filepath.Join(dir, "docker-ha-installations")
+	entries, _ := os.ReadDir(root)
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".index") {
+			data, _ := os.ReadFile(filepath.Join(root, entry.Name()))
+			if string(data) == session {
+				return filepath.Join(root, entry.Name())
+			}
+		}
+	}
+	t.Fatalf("no index for %s in %s", session, dir)
+	return ""
+}
+
+func nanValue() float64 { return math.NaN() }
+
+func bigPow(base, exponent int64) *big.Int {
+	return new(big.Int).Exp(big.NewInt(base), big.NewInt(exponent), nil)
+}
+
+// pendingIndex reports whether an index file points at a Compose-method
+// installation (pending A10).
+func pendingIndex(root, text string) bool {
+	label, found := strings.CutPrefix(text, "<session of ")
+	if !found {
+		return false
+	}
+	entries, _ := os.ReadDir(root)
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), strings.TrimSuffix(label, ">")) && strings.HasSuffix(entry.Name(), ".index") {
+			data, _ := os.ReadFile(filepath.Join(root, entry.Name()))
+			session, _ := os.ReadFile(filepath.Join(root, strings.TrimSpace(string(data))+".json"))
+			return strings.Contains(string(session), `"name": "compose`)
+		}
+	}
+	return false
+}
