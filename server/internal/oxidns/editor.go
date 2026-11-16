@@ -319,7 +319,7 @@ func (m *merger) mergePlugins(base, current, proposed *Node, path []string) *Nod
 		}
 		order = append(order[:position], append([]string{tag}, order[position:]...)...)
 	}
-	result := L()
+	result := presentation(L(), current)
 	for _, tag := range order {
 		result.Content = append(result.Content, merged[tag])
 	}
@@ -336,10 +336,12 @@ func (m *merger) merge(base, current, proposed *Node, path []string) *Node {
 		if previous == nil {
 			previous = M()
 		}
-		result := M()
+		result := shallow(current)
 		for _, key := range orderedKeys(current, proposed, previous) {
 			if value := m.merge(get(previous, key), get(current, key), get(proposed, key), with(path, key)); value != nil {
 				set(result, key, value)
+			} else {
+				del(result, key)
 			}
 		}
 		return result
@@ -354,7 +356,7 @@ func (m *merger) merge(base, current, proposed *Node, path []string) *Node {
 		}
 	}
 	if same(current, base) {
-		return clone(proposed)
+		return presentation(clone(proposed), current)
 	}
 	location := pointer(path)
 	choice := m.choice(location)
@@ -497,7 +499,11 @@ func PreviewTemplate(settings, proposedInputs *Node, p *Profile, baseURL string,
 	case isStr(baseText) && strings.TrimSpace(baseText.Value) != "":
 		base, err = LoadNativeYAML(baseText.Value, "模板基线")
 	case isMap(baseText):
-		base, err = LoadNativeYAML(dump(baseText), "模板基线")
+		var text string
+		text, err = dump(baseText)
+		if err == nil {
+			base, err = LoadNativeYAML(text, "模板基线")
+		}
 	default:
 		_, _, base, err = renderTemplate(withFiles(previousInputs), p, baseURL)
 	}
@@ -519,7 +525,9 @@ func PreviewTemplate(settings, proposedInputs *Node, p *Profile, baseURL string,
 	set(result, "template_settings", TemplateInputs(nextTemplate, p))
 	set(result, "template_base_config", S(nextText))
 	if !same(document, merged) {
-		set(result, "native_config", S(dump(merged)))
+		if err := setNativeConfig(result, merged); err != nil {
+			return Preview{}, err
+		}
 	}
 	expanded, err := NativeDocument(result, false, nil)
 	if err != nil {

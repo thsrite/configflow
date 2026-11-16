@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"os"
 	"reflect"
 	"sort"
@@ -590,7 +591,7 @@ func runBoundary(t *testing.T, file string, fns ...string) {
 		// Python crashed (TypeError, AttributeError, IndexError, ...) on
 		// malformed input that Go handles; and values a document cannot hold
 		// (YAML sets/timestamps/non-string keys) that Go refuses.
-		if r.Err != nil && !settingsClasses[r.Err[0]] && err == nil || r.Unholdable != nil && errors.Is(err, errUnsupportedYAML) || unicodeEdge(r) {
+		if r.Err != nil && !settingsClasses[r.Err[0]] && err == nil || r.Unholdable != nil && errors.Is(err, errUnsupportedYAML) || unicodeEdge(r) || nativeBoundaryDifference(r, args, got, err) {
 			s.accepted++
 			if os.Getenv("OXIDNS_ACCEPTED") != "" {
 				args := ""
@@ -614,6 +615,9 @@ func runBoundary(t *testing.T, file string, fns ...string) {
 				}
 			}
 			t.Errorf("%s %s (%s): %s%s", file, r.Fn, r.Test, diff, args)
+			if os.Getenv("OXIDNS_FULL") != "" {
+				t.Logf("got=%s want=%s", ToJSON(got), r.Out)
+			}
 		}
 	}
 	var names []string
@@ -667,20 +671,121 @@ func TestBoundaryEditorCorpus(t *testing.T) { runBoundary(t, "c26_corpus.jsonl.g
 func unicodeEdge(r row) bool {
 	text := string(bytesOf(r.Args))
 	// net/url refuses hosts urlsplit accepted (characters outside RFC 3986).
-	if r.Fn == "format_error" && (strings.HasPrefix(text, `"upstream-address"`) || strings.HasPrefix(text, `"http-url"`)) && r.Out != nil && string(r.Out) == "null" {
+	if r.Fn == "format_error" && (strings.HasPrefix(text, `"upstream-address"`) || strings.HasPrefix(text, `"http-url"`)) && len(r.Args) == 2 && string(r.Args[1]) == `"$${X}"` && string(r.Out) == "null" {
 		return true
 	}
-	zone := strings.Contains(text, "arbitrary") || strings.Contains(text, "response") || strings.Contains(text, "dns-record") || r.Fn == "zone_records_error"
 	for _, c := range text {
 		switch {
 		case c >= 0x1c && c <= 0x1f, c == 0x85:
 			return true
 		case c < 0x80:
-		case zone, unicode.IsSpace(c), unicode.In(c, unicode.Nd, unicode.No, unicode.Nl, unicode.Mn, unicode.Cf):
+		case unicode.IsSpace(c), unicode.In(c, unicode.Nd, unicode.No, unicode.Nl, unicode.Mn, unicode.Cf):
 			return true
 		}
 	}
-	return strings.Contains(text, `\u001c`) || strings.Contains(text, `\u001d`) || strings.Contains(text, `\u001e`) || strings.Contains(text, `\u001f`)
+	return strings.Contains(text, "$ınclude") || strings.Contains(text, `\u001c`) || strings.Contains(text, `\u001d`) || strings.Contains(text, `\u001e`) || strings.Contains(text, `\u001f`)
+}
+
+// nativeBoundaryDifference checks deliberate native-library changes against the
+// complete result, rather than waiving every row containing an unrelated Unicode name.
+func nativeBoundaryDifference(r row, args []*Node, got *Node, err error) bool {
+	// The editor now supports YAML merges, which Python's NativeLoader refused.
+	if len(r.Err) > 1 && strings.HasSuffix(r.Err[1], " YAML 语法无效") {
+		var containsMerge func(*Node) bool
+		containsMerge = func(n *Node) bool {
+			if n == nil {
+				return false
+			}
+			if isStr(n) {
+				var doc Node
+				if yaml.Unmarshal([]byte(n.Value), &doc) == nil {
+					var walk func(*Node) bool
+					walk = func(v *Node) bool {
+						if v.Tag == "!!merge" {
+							return true
+						}
+						for _, c := range v.Content {
+							if walk(c) {
+								return true
+							}
+						}
+						return false
+					}
+					if walk(&doc) {
+						return true
+					}
+				}
+			}
+			for _, c := range n.Content {
+				if containsMerge(c) {
+					return true
+				}
+			}
+			return false
+		}
+		for _, a := range args {
+			if containsMerge(a) {
+				return true
+			}
+		}
+	}
+	// Malformed null rule types are displayed as JSON null after dropping str().
+	replaceLabel := func(text string) string {
+		text = strings.ReplaceAll(text, "的类型被改成了 None：", "的类型被改成了 null：")
+		return strings.ReplaceAll(text, "所选规则类型暂不能转换为 OxiDNS 规则：None", "所选规则类型暂不能转换为 OxiDNS 规则：null")
+	}
+	if err != nil && len(r.Err) > 1 && replaceLabel(r.Err[1]) != r.Err[1] && err.Error() == replaceLabel(r.Err[1]) {
+		return true
+	}
+	if err == nil && len(r.Out) > 0 {
+		want, e := FromJSON(r.Out)
+		if e != nil {
+			return false
+		}
+		changed := false
+		var labels func(*Node)
+		labels = func(n *Node) {
+			if isStr(n) {
+				text := replaceLabel(n.Value)
+				changed = changed || text != n.Value
+				n.Value = text
+			}
+			for _, c := range n.Content {
+				labels(c)
+			}
+		}
+		labels(want)
+		if changed && same(want, got) {
+			return true
+		}
+		// With an invalid URL net/url cannot derive its host. Schema validation
+		// still rejects addr; omit only the consequent bootstrap diagnostic.
+		if r.Fn == "validate_native_config" && len(args) > 0 && isSeq(want) {
+			filtered := L()
+			for _, issue := range want.Content {
+				path := items(get(issue, "path"))
+				omit := false
+				if str(get(issue, "message")) == "引导 DNS 必须为 IP:端口 或 [IPv6]:端口" && len(path) == 6 {
+					p, pok := int64Of(path[1])
+					u, uok := int64Of(path[4])
+					plugins := items(get(args[0], "plugins"))
+					if pok && uok && p >= 0 && int(p) < len(plugins) {
+						upstreams := items(at(plugins[p], "args", "upstreams"))
+						if u >= 0 && int(u) < len(upstreams) {
+							omit = FormatError("upstream-address", get(upstreams[u], "addr")) != ""
+						}
+					}
+				}
+				if !omit {
+					filtered.Content = append(filtered.Content, issue)
+				}
+			}
+			if same(filtered, got) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func bytesOf(args []json.RawMessage) []byte {

@@ -69,11 +69,9 @@ func refersTo(value *Node, tag string) bool {
 	case isStr(value):
 		return mentions(value.Value, tag)
 	case isMap(value):
-		for i := 1; i < len(value.Content); i += 2 {
-			if refersTo(value.Content[i], tag) {
-				return true
-			}
-		}
+		found := false
+		pairs(value, func(_ string, v *Node) bool { found = refersTo(v, tag); return !found })
+		return found
 	case isSeq(value):
 		for _, item := range value.Content {
 			if refersTo(item, tag) {
@@ -366,7 +364,7 @@ func ipSuffix(entries []*Node, defaultForward string, probe bool) []*Node {
 
 // ownedGroup: a generated provider only this sequence_main entry uses.
 func ownedGroup(document *Node, args []*Node, plugins []*Node, entry *Node, tag string) bool {
-	if !groupTagRE.MatchString(tag) || len(entry.Content) != 4 || !has(entry, "matches") || !has(entry, "exec") {
+	if !groupTagRE.MatchString(tag) || mapSize(entry) != 2 || !has(entry, "matches") || !has(entry, "exec") {
 		return false
 	}
 	if len(positions(args, tag)) != 1 || refersTo(withoutPlugins(document), tag) {
@@ -383,7 +381,7 @@ func ownedGroup(document *Node, args []*Node, plugins []*Node, entry *Node, tag 
 func uniqueAtoms(part string, provider *Node, c *ruleCatalog) bool {
 	args := get(provider, "args")
 	allowed := map[string]string{"domain": "exps", "ip": "ips"}[part]
-	if !isMap(args) || len(args.Content) == 0 {
+	if !isMap(args) || mapSize(args) == 0 {
 		return false
 	}
 	ok := true
@@ -603,7 +601,7 @@ func (p *Profile) recognize(document, settings *Node, claim bool, catalog func()
 				actions[g.route] = action
 			}
 			allowed := map[string]string{"domain": "exps", "ip": "ips"}[part]
-			if !isMap(g.args) || len(g.args.Content) == 0 || len(g.entry.Content) != 4 || !has(g.entry, "matches") {
+			if !isMap(g.args) || mapSize(g.args) == 0 || mapSize(g.entry) != 2 || !has(g.entry, "matches") {
 				recognized = false
 				continue
 			}
@@ -1010,11 +1008,15 @@ func MigrateDomainOnlyRouting(document, settings *Node, p *Profile, baseURL stri
 	}
 	rendered, values, err := ApplyRouting(document, settings, p, M(), baseURL, RoutingOptions{BeforeConfig: p})
 	if err == nil {
-		set(values, "native_config", S(dump(rendered)))
+		if err = setNativeConfig(values, rendered); err != nil {
+			return nil, nil, err
+		}
 		var ctx *commonContext
 		if ctx, err = newContext(rendered, values); err == nil {
 			if err = finishRuleUpdates(ctx, M("direct_rulesets", L()), p, baseURL); err == nil {
-				set(values, "native_config", S(dump(rendered)))
+				if err = setNativeConfig(values, rendered); err != nil {
+					return nil, nil, err
+				}
 				return rendered, values, nil
 			}
 		}
@@ -1266,9 +1268,7 @@ func ResourceReaders(document *Node) []string {
 				out = append(out, v.Value)
 			}
 		case isMap(v):
-			for i := 1; i < len(v.Content); i += 2 {
-				walk(v.Content[i])
-			}
+			pairs(v, func(_ string, child *Node) bool { walk(child); return true })
 		case isSeq(v):
 			for _, item := range v.Content {
 				walk(item)
@@ -1384,7 +1384,7 @@ func ownHelpers(document *Node, routes []string, actions *Node, entries []*Node)
 	}
 	var outside []*Node
 	for _, plugin := range list.Content {
-		if helperTagRE.MatchString(pyStr(get(plugin, "tag"))) {
+		if helperTagRE.MatchString(displayValue(get(plugin, "tag"))) {
 			continue
 		}
 		if equal(get(plugin, "tag"), S("sequence_main")) && isSeq(get(plugin, "args")) {
@@ -1450,7 +1450,7 @@ func ownHelpers(document *Node, routes []string, actions *Node, entries []*Node)
 	}
 	var result []*Node
 	for _, plugin := range list.Content {
-		tag := pyStr(get(plugin, "tag"))
+		tag := displayValue(get(plugin, "tag"))
 		if wanted[tag] != nil {
 			result = append(result, clone(wanted[tag]))
 		} else if !helperTagRE.MatchString(tag) || kept[tag] {
@@ -1755,7 +1755,7 @@ func takeOver(values *Node, current *routingState, changes *Node, known map[stri
 	}
 	if notices != nil {
 		for _, t := range moved {
-			*notices = append(*notices, "规则「"+pyStr(ruleName(known[t.identity]))+"」的 DNS 处理已从「"+routeLabel(t.before)+"」改为「"+routeLabel(t.after)+"」")
+			*notices = append(*notices, "规则「"+displayValue(ruleName(known[t.identity]))+"」的 DNS 处理已从「"+routeLabel(t.before)+"」改为「"+routeLabel(t.after)+"」")
 		}
 	}
 	return nil

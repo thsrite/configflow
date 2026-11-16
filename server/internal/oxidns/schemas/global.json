@@ -1,0 +1,780 @@
+{
+  "version": "1.6.1",
+  "source": {
+    "repository": "https://github.com/svenshi/oxidns",
+    "commit": "bd183f69348aa9c78c3b92bddbce28651d2bf66e",
+    "audited_at": "2026-10-16",
+    "documentation": [
+      "https://oxidns.org/configuration/global/",
+      "https://oxidns.org/plugin-reference/executor/resolution/",
+      "https://oxidns.org/plugin-reference/server/datagram-stream/",
+      "https://oxidns.org/plugin-reference/server/encrypted-http/"
+    ],
+    "rust": [
+      "src/config/types.rs",
+      "src/plugin/executor/forward/config.rs",
+      "src/plugin/executor/forward/selection.rs",
+      "src/infra/network/upstream/config.rs",
+      "src/infra/system.rs",
+      "src/plugin/server/udp.rs",
+      "src/plugin/server/tcp.rs",
+      "src/plugin/server/quic.rs",
+      "src/plugin/server/http/mod.rs"
+    ]
+  },
+  "global": {
+    "type": "object",
+    "properties": {
+      "include": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "runtime": {
+        "type": "object",
+        "properties": {
+          "worker_threads": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 18446744073709551615
+          }
+        },
+        "additionalProperties": true
+      },
+      "api": {
+        "type": "object",
+        "properties": {
+          "http": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "socket-address"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "listen": {
+                    "type": "string",
+                    "format": "socket-address"
+                  },
+                  "ssl": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "cert": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "key": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "client_ca": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "require_client_cert": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  "auth": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "basic"
+                        ]
+                      },
+                      "username": {
+                        "type": "string",
+                        "format": "non-empty-string"
+                      },
+                      "password": {
+                        "type": "string",
+                        "format": "non-empty-string"
+                      }
+                    },
+                    "additionalProperties": true,
+                    "required": [
+                      "type",
+                      "username",
+                      "password"
+                    ]
+                  },
+                  "cors": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "allowed_origins": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  "webui": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "root": {
+                        "type": "string",
+                        "format": "non-empty-string"
+                      },
+                      "index": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "non-empty-string"
+                      }
+                    },
+                    "additionalProperties": true,
+                    "required": [
+                      "root"
+                    ]
+                  }
+                },
+                "additionalProperties": true,
+                "required": [
+                  "listen"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "log": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "string"
+          },
+          "file": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rotation": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "never"
+                    ]
+                  }
+                },
+                "additionalProperties": true
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "minutely",
+                      "hourly",
+                      "daily",
+                      "weekly"
+                    ]
+                  },
+                  "max_files": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 18446744073709551615
+                  }
+                },
+                "additionalProperties": true,
+                "required": [
+                  "type"
+                ]
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "network": {
+        "type": "object",
+        "properties": {
+          "outbound": {
+            "type": "object",
+            "properties": {
+              "default": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "profiles": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "resolver": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "nameservers": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "addr": {
+                                    "type": "string",
+                                    "format": "upstream-address"
+                                  },
+                                  "dial_addr": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "format": "ip"
+                                  }
+                                },
+                                "additionalProperties": false,
+                                "required": [
+                                  "addr"
+                                ]
+                              },
+                              "minItems": 1
+                            },
+                            "ip_version": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "enum": [
+                                4,
+                                6,
+                                null
+                              ]
+                            },
+                            "timeout": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "duration"
+                            },
+                            "proxy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "enum": [
+                                "none",
+                                "profile",
+                                null
+                              ]
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "nameservers"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "proxy": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "socks5": {
+                              "type": "string",
+                              "format": "socks5"
+                            }
+                          },
+                          "additionalProperties": true,
+                          "required": [
+                            "socks5"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "plugins": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "tag": {
+              "type": "string",
+              "format": "non-empty-string"
+            },
+            "type": {
+              "type": "string",
+              "format": "non-empty-string"
+            },
+            "args": {}
+          },
+          "additionalProperties": true,
+          "required": [
+            "tag",
+            "type"
+          ]
+        }
+      }
+    },
+    "additionalProperties": true
+  },
+  "plugins": {
+    "udp_server": {
+      "type": "object",
+      "properties": {
+        "listen": {
+          "type": "string",
+          "format": "socket-address"
+        },
+        "entry": {
+          "type": "string",
+          "format": "non-empty-string"
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "listen",
+        "entry"
+      ],
+      "x-kind": "server"
+    },
+    "tcp_server": {
+      "type": "object",
+      "properties": {
+        "listen": {
+          "type": "string",
+          "format": "socket-address"
+        },
+        "entry": {
+          "type": "string",
+          "format": "non-empty-string"
+        },
+        "cert": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "idle_timeout": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "duration"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "listen",
+        "entry"
+      ],
+      "x-kind": "server"
+    },
+    "quic_server": {
+      "type": "object",
+      "properties": {
+        "listen": {
+          "type": "string",
+          "format": "socket-address"
+        },
+        "entry": {
+          "type": "string",
+          "format": "non-empty-string"
+        },
+        "cert": {
+          "type": "string",
+          "format": "non-empty-string"
+        },
+        "key": {
+          "type": "string",
+          "format": "non-empty-string"
+        },
+        "idle_timeout": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "duration"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "listen",
+        "entry",
+        "cert",
+        "key"
+      ],
+      "x-kind": "server"
+    },
+    "http_server": {
+      "type": "object",
+      "properties": {
+        "listen": {
+          "type": "string",
+          "format": "socket-address"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "format": "non-empty-string"
+              },
+              "exec": {
+                "type": "string",
+                "format": "non-empty-string"
+              },
+              "json_api": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "path",
+              "exec"
+            ]
+          }
+        },
+        "src_ip_header": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cert": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "idle_timeout": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "duration"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enable_http3": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "listen",
+        "entries"
+      ],
+      "x-kind": "server"
+    },
+    "forward": {
+      "type": "object",
+      "properties": {
+        "concurrent": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "response_selection": {
+          "type": "string",
+          "enum": [
+            "fastest",
+            "balanced",
+            "prefer_positive",
+            "consensus"
+          ]
+        },
+        "upstreams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "tag": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "addr": {
+                "type": "string",
+                "format": "upstream-address"
+              },
+              "outbound": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "non-empty-string"
+              },
+              "dial_addr": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "ip"
+              },
+              "port": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 65535
+              },
+              "bootstrap": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "bootstrap_version": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "enum": [
+                  4,
+                  6,
+                  null
+                ]
+              },
+              "socks5": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "socks5"
+              },
+              "idle_timeout": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "duration"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 18446744073709551615
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "max_conns": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1,
+                "maximum": 4096
+              },
+              "min_conns": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 4096
+              },
+              "insecure_skip_verify": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "timeout": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "duration"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 18446744073709551615
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "enable_pipeline": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "enable_http3": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "so_mark": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "bind_to_device": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "addr"
+            ]
+          },
+          "minItems": 1
+        },
+        "short_circuit": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "upstreams"
+      ],
+      "x-kind": "executor"
+    }
+  },
+  "conditions": [
+    {
+      "scope": "global",
+      "rule": "api_tls_auth_webui_network",
+      "implementation": "backend/common/oxidns_global_constraints.py"
+    },
+    {
+      "scope": "http_server",
+      "rule": "http_path_and_tls",
+      "implementation": "backend/common/oxidns_global_constraints.py"
+    },
+    {
+      "scope": "tcp_server",
+      "rule": "tls_pair",
+      "implementation": "backend/common/oxidns_global_constraints.py"
+    },
+    {
+      "scope": "forward",
+      "rule": "upstream_pool_bootstrap_and_outbound",
+      "implementation": "backend/common/oxidns_global_constraints.py"
+    }
+  ]
+}

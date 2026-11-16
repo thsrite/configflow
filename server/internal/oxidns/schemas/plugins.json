@@ -1,0 +1,2709 @@
+{
+  "version": "1.6.1",
+  "source": {
+    "repository": "https://github.com/svenshi/oxidns",
+    "commit": "bd183f69348aa9c78c3b92bddbce28651d2bf66e",
+    "documentation": "https://oxidns.org/plugin-reference/overview/",
+    "checkedAt": "2026-10-16"
+  },
+  "plugins": {
+    "sequence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "matches": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "exec": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "minItems": 1,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/control-flow/#sequence"
+    },
+    "fallback": {
+      "type": "object",
+      "properties": {
+        "primary": {
+          "type": "string",
+          "format": "plugin-tag"
+        },
+        "secondary": {
+          "type": "string",
+          "format": "plugin-tag"
+        },
+        "threshold": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "always_standby": {
+          "type": "boolean"
+        },
+        "short_circuit": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "primary",
+        "secondary"
+      ],
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/control-flow/#fallback"
+    },
+    "cache": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "size": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "lazy_cache_ttl": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "dump_file": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dump_interval": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "short_circuit": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "cache_negative": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "max_negative_ttl": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "negative_ttl_without_soa": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "max_positive_ttl": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "min_positive_ttl": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "ecs_in_key": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true,
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/resolution/#cache"
+    },
+    "hosts": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "short_circuit": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true,
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/resolution/#hosts"
+    },
+    "arbitrary": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "short_circuit": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true,
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/resolution/#arbitrary"
+    },
+    "redirect": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true,
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/resolution/#redirect"
+    },
+    "response": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "rcode": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "dns-base-rcode"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 15
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "dns-record"
+          }
+        },
+        "authorities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "dns-record"
+          }
+        },
+        "additionals": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "dns-record"
+          }
+        },
+        "authoritative": {
+          "type": "boolean"
+        },
+        "authentic_data": {
+          "type": "boolean"
+        },
+        "short_circuit": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true,
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/resolution/#response"
+    },
+    "client_ip_from_ecs": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/resolution/#client_ip_from_ecs"
+    },
+    "ecs_handler": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "forward": {
+          "type": "boolean"
+        },
+        "send": {
+          "type": "boolean"
+        },
+        "preset": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mask4": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 32
+        },
+        "mask6": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 128
+        }
+      },
+      "additionalProperties": true,
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/resolution/#ecs_handler"
+    },
+    "forward_edns0opt": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "codes": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 65535
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/resolution/#forward_edns0opt"
+    },
+    "ttl": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "fix": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "min": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "max": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 4294967295
+            }
+          },
+          "additionalProperties": true
+        }
+      ],
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/response/#ttl"
+    },
+    "ip_selector": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "selection_mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "first_success",
+            "best_within_budget",
+            "background",
+            null
+          ]
+        },
+        "outbound": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "socks5": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "socks5"
+        },
+        "probe_methods": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "probe_stagger": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "probe_timeout": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "max_wait": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "top_n": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "reorder_only": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "dnssec_policy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "reorder_only",
+            "skip",
+            null
+          ]
+        },
+        "max_parallel_probes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "cache": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "enabled": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "size": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "ttl": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "failure_ttl": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/response/#ip_selector"
+    },
+    "prefer_ipv4": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "probe_executor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "plugin-tag"
+        },
+        "cache": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "cache_ttl": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        }
+      },
+      "additionalProperties": true,
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/response/#prefer_ipv4"
+    },
+    "prefer_ipv6": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "probe_executor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "plugin-tag"
+        },
+        "cache": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "cache_ttl": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        }
+      },
+      "additionalProperties": true,
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/response/#prefer_ipv6"
+    },
+    "black_hole": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "ips": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "short_circuit": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": true
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/response/#black_hole"
+    },
+    "drop_resp": {
+      "type": [
+        "null",
+        "object",
+        "array",
+        "string",
+        "number",
+        "boolean",
+        "null"
+      ],
+      "x-ignored-args": true,
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/response/#drop_resp"
+    },
+    "reload": {
+      "type": [
+        "null",
+        "object",
+        "array",
+        "string",
+        "number",
+        "boolean",
+        "null"
+      ],
+      "x-ignored-args": true,
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/maintenance/#reload"
+    },
+    "has_resp": {
+      "type": [
+        "null",
+        "object",
+        "array",
+        "string",
+        "number",
+        "boolean",
+        "null"
+      ],
+      "x-ignored-args": true,
+      "x-args-optional": true,
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/response/#has_resp"
+    },
+    "has_wanted_ans": {
+      "type": [
+        "null",
+        "object",
+        "array",
+        "string",
+        "number",
+        "boolean",
+        "null"
+      ],
+      "x-ignored-args": true,
+      "x-args-optional": true,
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/response/#has_wanted_ans"
+    },
+    "_true": {
+      "type": [
+        "null",
+        "object",
+        "array",
+        "string",
+        "number",
+        "boolean",
+        "null"
+      ],
+      "x-ignored-args": true,
+      "x-args-optional": true,
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/composition/#_true"
+    },
+    "_false": {
+      "type": [
+        "null",
+        "object",
+        "array",
+        "string",
+        "number",
+        "boolean",
+        "null"
+      ],
+      "x-ignored-args": true,
+      "x-args-optional": true,
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/composition/#_false"
+    },
+    "reverse_lookup": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "size": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "handle_ptr": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "ttl": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "additionalProperties": true,
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/response/#reverse_lookup"
+    },
+    "query_summary": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "msg": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "additionalProperties": true
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/observability/#query_summary"
+    },
+    "metrics_collector": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "additionalProperties": true
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/observability/#metrics_collector"
+    },
+    "debug_print": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "msg": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "additionalProperties": true
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/observability/#debug_print"
+    },
+    "sleep": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "duration": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        }
+      },
+      "additionalProperties": true,
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/observability/#sleep"
+    },
+    "query_recorder": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "queue_size": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "batch_size": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "flush_interval_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "memory_tail": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "retention_days": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "cleanup_interval_hours": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "reader_concurrency": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "path"
+      ],
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/observability/#query_recorder"
+    },
+    "learn_domain": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "format": "plugin-tag"
+        },
+        "phase": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "before",
+            "after",
+            null
+          ]
+        },
+        "questions": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "first",
+            "all",
+            null
+          ]
+        },
+        "qtypes": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string",
+            "format": "dns-qtype"
+          },
+          "minItems": 1
+        },
+        "success_only": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "answer_required": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "rule_kind": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "full",
+            "domain",
+            null
+          ]
+        },
+        "async": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "error_mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "continue",
+            "stop",
+            "fail",
+            null
+          ]
+        },
+        "timeout": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider"
+      ],
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/observability/#learn_domain"
+    },
+    "http_request": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "format": "http-method"
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "phase": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "before",
+            "after",
+            null
+          ]
+        },
+        "async": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "timeout": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error_mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "continue",
+            "stop",
+            "fail",
+            null
+          ]
+        },
+        "headers": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "query_params": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "body": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "json": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "form": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "content_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "max_redirects": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "queue_size": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "outbound": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "socks5": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "socks5"
+        },
+        "insecure_skip_verify": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "method",
+        "url"
+      ],
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/integrations/#http_request"
+    },
+    "script": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "args": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeout": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "duration"
+        },
+        "error_mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "continue",
+            "stop",
+            "fail",
+            null
+          ]
+        },
+        "max_output_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "command"
+      ],
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/integrations/#script"
+    },
+    "ipset": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "set_name4": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "set_name6": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mask4": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 32
+        },
+        "mask6": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 128
+        }
+      },
+      "additionalProperties": true,
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/integrations/#ipset"
+    },
+    "nftset": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "table_family4": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "table_family6": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "table_name4": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "table_name6": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "set_name4": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "set_name6": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mask4": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 255
+        },
+        "mask6": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 255
+        },
+        "ipv4": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "table_family": {
+              "type": "string",
+              "enum": [
+                "ip",
+                "ip6",
+                "inet"
+              ]
+            },
+            "table_name": {
+              "type": "string",
+              "minLength": 1,
+              "format": "nonempty-string"
+            },
+            "set_name": {
+              "type": "string",
+              "minLength": 1,
+              "format": "nonempty-string"
+            },
+            "mask": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 32
+            }
+          },
+          "additionalProperties": true,
+          "required": [
+            "table_family",
+            "table_name",
+            "set_name"
+          ]
+        },
+        "ipv6": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "table_family": {
+              "type": "string",
+              "enum": [
+                "ip",
+                "ip6",
+                "inet"
+              ]
+            },
+            "table_name": {
+              "type": "string",
+              "minLength": 1,
+              "format": "nonempty-string"
+            },
+            "set_name": {
+              "type": "string",
+              "minLength": 1,
+              "format": "nonempty-string"
+            },
+            "mask": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 128
+            }
+          },
+          "additionalProperties": true,
+          "required": [
+            "table_family",
+            "table_name",
+            "set_name"
+          ]
+        }
+      },
+      "additionalProperties": true,
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/integrations/#nftset"
+    },
+    "ros_address_list": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "password": {
+          "type": "string",
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "connect_timeout": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "send_timeout": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "receive_timeout": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "tls": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "server_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "ca": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "insecure": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "async": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "wait_timeout": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "duration"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 18446744073709551615
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "queue_capacity": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "comment_prefix": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "persistent": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "ips": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "files": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "format": "nonempty-string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "min_ttl": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "max_ttl": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "fixed_ttl": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "cleanup_on_shutdown": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "address_list4": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "address_list6": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "address",
+        "username",
+        "password"
+      ],
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/integrations/#ros_address_list"
+    },
+    "ros_route": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "password": {
+          "type": "string",
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "connect_timeout": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "send_timeout": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "receive_timeout": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "tls": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "server_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "ca": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "insecure": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "async": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "wait_timeout": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "duration"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 18446744073709551615
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "queue_capacity": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "comment_prefix": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "persistent": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "ips": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "files": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "format": "nonempty-string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "min_ttl": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "max_ttl": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "fixed_ttl": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "cleanup_on_shutdown": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "routing_table": {
+          "type": "string",
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "gateway4": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "gateway6": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "distance": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 255
+        },
+        "conntrack_guard": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "address",
+        "username",
+        "password",
+        "routing_table"
+      ],
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/integrations/#ros_route"
+    },
+    "upgrade": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "repository": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "asset": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bundle": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "auto",
+            "full",
+            "standard",
+            "minimal",
+            null
+          ]
+        },
+        "github_token": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cache_dir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "backup_dir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "webui_dir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "skip_webui": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "no_restart": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "allow_prerelease": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "force": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "cleanup": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "timeout": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "outbound": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "socks5": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "socks5"
+        },
+        "insecure_skip_verify": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "x-args-optional": true,
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/maintenance/#upgrade"
+    },
+    "download": {
+      "type": "object",
+      "properties": {
+        "timeout": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "duration"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 18446744073709551615
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outbound": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "socks5": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "socks5"
+        },
+        "insecure_skip_verify": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "startup_if_missing": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "downloads": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "format": "http-url"
+              },
+              "dir": {
+                "type": "string",
+                "minLength": 1,
+                "format": "nonempty-string"
+              },
+              "filename": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "url",
+              "dir"
+            ]
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "downloads"
+      ],
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/maintenance/#download"
+    },
+    "reload_provider": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ],
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/maintenance/#reload_provider"
+    },
+    "cron": {
+      "type": "object",
+      "properties": {
+        "timezone": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "jobs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "format": "nonempty-string"
+              },
+              "schedule": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "interval": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "executors": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "format": "nonempty-string"
+                },
+                "minItems": 1
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "name",
+              "executors"
+            ]
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "jobs"
+      ],
+      "x-kind": "executor",
+      "x-documentation": "https://oxidns.org/plugin-reference/executor/maintenance/#cron"
+    },
+    "qname": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ],
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/request/#qname"
+    },
+    "cname": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ],
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/response/#cname"
+    },
+    "client_ip": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ],
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/request/#client_ip"
+    },
+    "ptr_ip": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ],
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/request/#ptr_ip"
+    },
+    "resp_ip": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ],
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/response/#resp_ip"
+    },
+    "question": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ],
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/request/#question"
+    },
+    "mark": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ],
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/context/#mark"
+    },
+    "env": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ],
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/context/#env"
+    },
+    "random": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ],
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/context/#random"
+    },
+    "any_match": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ],
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/composition/#any_match"
+    },
+    "qtype": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65535
+              }
+            ]
+          }
+        }
+      ],
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/request/#qtype"
+    },
+    "qclass": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65535
+              }
+            ]
+          }
+        }
+      ],
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/request/#qclass"
+    },
+    "rcode": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65535
+              }
+            ]
+          }
+        }
+      ],
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/response/#rcode"
+    },
+    "string_exp": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ],
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/composition/#string_exp"
+    },
+    "time": {
+      "type": "object",
+      "properties": {
+        "timezone": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "timezone"
+        },
+        "periods": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "end": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "weekdays": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 7
+                    }
+                  ]
+                },
+                "minItems": 1
+              },
+              "monthdays": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 31
+                },
+                "minItems": 1
+              }
+            },
+            "additionalProperties": true
+          },
+          "minItems": 1,
+          "maxItems": 64
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "periods"
+      ],
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/context/#time"
+    },
+    "rate_limiter": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "qps": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "burst": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "mask4": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 32
+        },
+        "mask6": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 128
+        }
+      },
+      "additionalProperties": true,
+      "x-args-optional": true,
+      "x-kind": "matcher",
+      "x-documentation": "https://oxidns.org/plugin-reference/matcher/context/#rate_limiter"
+    },
+    "domain_set": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "exps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true,
+      "x-args-optional": true,
+      "x-kind": "provider",
+      "x-documentation": "https://oxidns.org/plugin-reference/provider/domain/#domain_set"
+    },
+    "ip_set": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "ips": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true,
+      "x-args-optional": true,
+      "x-kind": "provider",
+      "x-documentation": "https://oxidns.org/plugin-reference/provider/ip/#ip_set"
+    },
+    "adguard_rule": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true,
+      "x-args-optional": true,
+      "x-kind": "provider",
+      "x-documentation": "https://oxidns.org/plugin-reference/provider/domain/#adguard_rule"
+    },
+    "geosite": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "selectors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "file"
+      ],
+      "x-kind": "provider",
+      "x-documentation": "https://oxidns.org/plugin-reference/provider/domain/#geosite"
+    },
+    "geoip": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "selectors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "file"
+      ],
+      "x-kind": "provider",
+      "x-documentation": "https://oxidns.org/plugin-reference/provider/ip/#geoip"
+    },
+    "dynamic_domain_set": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "format": "nonempty-string"
+        },
+        "bootstrap_rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "queue_size": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "batch_size": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "flush_interval_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "x-kind": "provider",
+      "x-documentation": "https://oxidns.org/plugin-reference/provider/domain/#dynamic_domain_set"
+    }
+  }
+}

@@ -12,11 +12,9 @@ import (
 // Zone text checks of the arbitrary/response plugins: the subset of
 // dnspython 2.7 (zone tokenizer, names, TTLs, text RDATA of the types OxiDNS
 // reads in text form) that oxidns_plugin_constraints used. Parsing failures
-// unwind with panic(zoneFail{}) and become one generic message.
+// accumulate one parser error and become one generic validation message.
 
-type zoneFail struct{}
-
-func zfail() { panic(zoneFail{}) }
+type zoneParser struct{ invalid bool }
 
 const (
 	tkEOF = iota
@@ -38,7 +36,7 @@ func (t ztoken) end() bool { return t.kind == tkEOL || t.kind == tkEOF }
 func isDigit(c rune) bool { return c >= '0' && c <= '9' }
 
 // unescape is Token.unescape (\DDD and \X); bytes gives the escaped bytes.
-func (t ztoken) unescape() []byte {
+func (t ztoken) unescape(p *zoneParser) []byte {
 	if !t.escape {
 		return []byte(t.value)
 	}
@@ -48,16 +46,19 @@ func (t ztoken) unescape() []byte {
 		c := r[i]
 		if c == '\\' {
 			if i++; i >= len(r) {
-				zfail()
+				p.invalid = true
+				return nil
 			}
 			c = r[i]
 			if isDigit(c) {
 				if i+2 >= len(r) || !isDigit(r[i+1]) || !isDigit(r[i+2]) {
-					zfail()
+					p.invalid = true
+					return nil
 				}
 				code := int(c-'0')*100 + int(r[i+1]-'0')*10 + int(r[i+2]-'0')
 				if code > 255 {
-					zfail()
+					p.invalid = true
+					return nil
 				}
 				out = append(out, byte(code))
 				i += 2
@@ -70,6 +71,7 @@ func (t ztoken) unescape() []byte {
 }
 
 type tokenizer struct {
+	zone      *zoneParser
 	in        []rune
 	pos       int
 	back      []rune
@@ -113,6 +115,9 @@ func (t *tokenizer) delimiter(c rune) bool {
 
 // get is Tokenizer.get(want_leading).
 func (t *tokenizer) get(leading bool) ztoken {
+	if t.zone.invalid {
+		return ztoken{kind: tkEOF}
+	}
 	if u := t.token; u != nil {
 		t.token = nil
 		if u.kind != tkSpace || leading {
@@ -128,7 +133,8 @@ func (t *tokenizer) get(leading bool) ztoken {
 		c := t.char()
 		if c == -1 || t.delimiter(c) {
 			if c == -1 && t.quoting {
-				zfail()
+				t.zone.invalid = true
+				return ztoken{kind: tkEOF}
 			}
 			if b.Len() == 0 && kind != tkQuoted {
 				switch c {
@@ -138,7 +144,8 @@ func (t *tokenizer) get(leading bool) ztoken {
 					continue
 				case ')':
 					if t.multiline <= 0 {
-						zfail()
+						t.zone.invalid = true
+						return ztoken{kind: tkEOF}
 					}
 					t.multiline--
 					t.skip()
@@ -158,7 +165,8 @@ func (t *tokenizer) get(leading bool) ztoken {
 					}
 					if c == -1 {
 						if t.multiline > 0 {
-							zfail()
+							t.zone.invalid = true
+							return ztoken{kind: tkEOF}
 						}
 						return ztoken{kind: tkEOF}
 					}
@@ -177,19 +185,22 @@ func (t *tokenizer) get(leading bool) ztoken {
 			}
 			break
 		} else if t.quoting && c == '\n' {
-			zfail()
+			t.zone.invalid = true
+			return ztoken{kind: tkEOF}
 		} else if c == '\\' {
 			b.WriteRune(c)
 			escape = true
 			if c = t.char(); c == -1 || c == '\n' && !t.quoting {
-				zfail()
+				t.zone.invalid = true
+				return ztoken{kind: tkEOF}
 			}
 		}
 		b.WriteRune(c)
 	}
 	if b.Len() == 0 && kind != tkQuoted {
 		if t.multiline > 0 {
-			zfail()
+			t.zone.invalid = true
+			return ztoken{kind: tkEOF}
 		}
 		kind = tkEOF
 	}
@@ -198,41 +209,50 @@ func (t *tokenizer) get(leading bool) ztoken {
 
 func (t *tokenizer) unget(tok ztoken) {
 	if t.token != nil {
-		zfail()
+		t.zone.invalid = true
+		return
 	}
 	t.token = &tok
 }
 
 func (t *tokenizer) uint(maximum int64) {
+	p := t.zone
 	tok := t.get(false)
-	text := string(tok.unescape())
+	text := string(tok.unescape(p))
 	if _, ok := boundedUint(text, big.NewInt(maximum), false); tok.kind != tkIdent || !ok {
-		zfail()
+		p.invalid = true
+		return
 	}
 }
 
 func (t *tokenizer) str() string {
+	p := t.zone
 	tok := t.get(false)
 	if tok.kind != tkIdent && tok.kind != tkQuoted {
-		zfail()
+		p.invalid = true
+		return ""
 	}
-	return string(tok.unescape())
+	return string(tok.unescape(p))
 }
 
 func (t *tokenizer) name(origin *dnsName) {
+	p := t.zone
 	tok := t.get(false)
 	if tok.kind != tkIdent {
-		zfail()
+		p.invalid = true
+		return
 	}
-	nameFromText(tok.value, origin)
+	p.nameFromText(tok.value, origin)
 }
 
 // dnsName is a name in wire labels; absolute when it ends with the root.
 type dnsName struct{ labels [][]byte }
 
-func (n *dnsName) absolute() bool { return len(n.labels) > 0 && len(n.labels[len(n.labels)-1]) == 0 }
+func (n *dnsName) absolute() bool {
+	return n != nil && len(n.labels) > 0 && len(n.labels[len(n.labels)-1]) == 0
+}
 
-func dnsNewName(labels [][]byte, origin *dnsName) *dnsName {
+func (p *zoneParser) dnsNewName(labels [][]byte, origin *dnsName) *dnsName {
 	if (len(labels) == 0 || len(labels[len(labels)-1]) != 0) && origin != nil {
 		labels = append(labels, origin.labels...)
 	}
@@ -240,31 +260,33 @@ func dnsNewName(labels [][]byte, origin *dnsName) *dnsName {
 	for i, l := range labels {
 		total += len(l) + 1
 		if len(l) > 63 {
-			zfail()
+			p.invalid = true
+			return nil
 		}
 		if empty < 0 && len(l) == 0 {
 			empty = i
 		}
 	}
 	if total > 255 || empty >= 0 && empty != len(labels)-1 {
-		zfail()
+		p.invalid = true
+		return nil
 	}
 	return &dnsName{labels}
 }
 
-var idna2003 = idna.New(idna.MapForLookup(), idna.Transitional(true), idna.StrictDomainName(false))
+var idna2003 = idna.New(idna.MapForLookup(), idna.Transitional(true), idna.StrictDomainName(false), idna.BidiRule())
 
 // nameFromText is dns.name.from_text: escapes, "@", IDNA for non-ASCII labels.
-func nameFromText(text string, origin *dnsName) *dnsName {
+func (p *zoneParser) nameFromText(text string, origin *dnsName) *dnsName {
 	if text == "@" {
 		text = ""
 	}
 	if text == "" {
-		return dnsNewName(nil, origin)
+		return p.dnsNewName(nil, origin)
 	}
 	isDot := func(c rune) bool { return c == '.' || c == 0x3002 || c == 0xff0e || c == 0xff61 }
 	if r := []rune(text); len(r) == 1 && isDot(r[0]) {
-		return dnsNewName([][]byte{{}}, nil)
+		return p.dnsNewName([][]byte{{}}, nil)
 	}
 	ascii := strings.IndexFunc(text, func(r rune) bool { return r >= 0x80 }) < 0
 	var labels [][]byte
@@ -281,7 +303,8 @@ func nameFromText(text string, origin *dnsName) *dnsName {
 		} else {
 			encoded, err := idna2003.ToASCII(string(label))
 			if err != nil {
-				zfail()
+				p.invalid = true
+				return
 			}
 			labels = append(labels, []byte(encoded))
 		}
@@ -293,7 +316,8 @@ func nameFromText(text string, origin *dnsName) *dnsName {
 		switch {
 		case c == '\\':
 			if i+1 >= len(r) {
-				zfail()
+				p.invalid = true
+				return nil
 			}
 			if !isDigit(r[i+1]) {
 				label = append(label, r[i+1])
@@ -301,17 +325,20 @@ func nameFromText(text string, origin *dnsName) *dnsName {
 				continue
 			}
 			if i+3 >= len(r) || !isDigit(r[i+2]) || !isDigit(r[i+3]) {
-				zfail()
+				p.invalid = true
+				return nil
 			}
 			code := int(r[i+1]-'0')*100 + int(r[i+2]-'0')*10 + int(r[i+3]-'0')
 			if ascii && code > 255 {
-				zfail()
+				p.invalid = true
+				return nil
 			}
 			label = append(label, rune(code))
 			i += 3
 		case (ascii && c == '.') || (!ascii && isDot(c)):
 			if len(label) == 0 {
-				zfail()
+				p.invalid = true
+				return nil
 			}
 			flush()
 		default:
@@ -323,14 +350,15 @@ func nameFromText(text string, origin *dnsName) *dnsName {
 	} else {
 		labels = append(labels, []byte{})
 	}
-	return dnsNewName(labels, origin)
+	return p.dnsNewName(labels, origin)
 }
 
 // ttlFromText is dns.ttl.from_text: seconds or 1w2d3h4m5s, at most 2^32-1.
-func ttlFromText(text string) *big.Int {
+func (p *zoneParser) ttlFromText(text string) *big.Int {
 	total := new(big.Int)
 	if text == "" {
-		zfail()
+		p.invalid = true
+		return new(big.Int)
 	}
 	if strings.Trim(text, "0123456789") == "" {
 		total.SetString(text, 10)
@@ -344,31 +372,36 @@ func ttlFromText(text string) *big.Int {
 			}
 			unit := map[rune]int64{'w': 604800, 'd': 86400, 'h': 3600, 'm': 60, 's': 1}[c|0x20]
 			if !digit || unit == 0 {
-				zfail()
+				p.invalid = true
+				return new(big.Int)
 			}
 			total.Add(total, current.Mul(current, big.NewInt(unit)))
 			current, digit = new(big.Int), false
 		}
 		if current.Sign() != 0 {
-			zfail()
+			p.invalid = true
+			return new(big.Int)
 		}
 	}
 	if total.Cmp(big.NewInt(4294967295)) > 0 {
-		zfail()
+		p.invalid = true
+		return new(big.Int)
 	}
 	return total
 }
 
-func ipv4Text(text string) []byte {
+func (p *zoneParser) ipv4Text(text string) []byte {
 	parts := strings.Split(text, ".")
 	if len(parts) != 4 {
-		zfail()
+		p.invalid = true
+		return nil
 	}
 	out := make([]byte, 4)
 	for i, part := range parts {
 		v, err := strconv.Atoi(part)
 		if part == "" || strings.Trim(part, "0123456789") != "" || len(part) > 3 || len(part) > 1 && part[0] == '0' || err != nil || v > 255 {
-			zfail()
+			p.invalid = true
+			return nil
 		}
 		out[i] = byte(v)
 	}
@@ -381,17 +414,21 @@ var (
 )
 
 // ipv6Text is dns.ipv6.inet_aton (validity).
-func ipv6Text(text string) {
+func (p *zoneParser) ipv6Text(text string) {
 	switch {
 	case text == "",
 		strings.HasSuffix(text, ":") && !strings.HasSuffix(text, "::"),
 		strings.HasPrefix(text, ":") && !strings.HasPrefix(text, "::"):
-		zfail()
+		p.invalid = true
+		return
 	case text == "::":
 		text = "0::"
 	}
 	if m := v6Tail.FindStringSubmatch(text); m != nil {
-		b := ipv4Text(m[2])
+		b := p.ipv4Text(m[2])
+		if p.invalid {
+			return
+		}
 		text = m[1] + ":" + strconv.FormatUint(uint64(b[0])<<8|uint64(b[1]), 16) + ":" + strconv.FormatUint(uint64(b[2])<<8|uint64(b[3]), 16)
 	}
 	if strings.HasPrefix(text, "::") {
@@ -401,44 +438,50 @@ func ipv6Text(text string) {
 	}
 	chunks := strings.Split(text, ":")
 	if len(chunks) > 8 {
-		zfail()
+		p.invalid = true
+		return
 	}
 	empty := false
 	for _, c := range chunks {
 		if c == "" {
 			if empty {
-				zfail()
+				p.invalid = true
+				return
 			}
 			empty = true
 		} else if len(c) > 4 || !v6Hex.MatchString(c) {
-			zfail()
+			p.invalid = true
+			return
 		}
 	}
 	if len(chunks) < 8 && !empty {
-		zfail()
+		p.invalid = true
+		return
 	}
 }
 
 // rdataFromText is dns.rdata.from_text(IN, type, text, origin) (validity).
-func rdataFromText(rdtype, text string, origin *dnsName) {
-	t := &tokenizer{in: []rune(text)}
+func (p *zoneParser) rdataFromText(rdtype, text string, origin *dnsName) {
+	t := &tokenizer{zone: p, in: []rune(text)}
 	first := t.get(false)
 	if rdtype == "MINFO" || first.kind == tkIdent && first.value == `\#` {
-		zfail() // GenericRdata text form; the caller handles RFC 3597 itself
+		p.invalid = true
+		return // GenericRdata text form; the caller handles RFC 3597 itself
 	}
 	t.unget(first)
 	ident := func() string {
 		tok := t.get(false)
 		if tok.kind != tkIdent {
-			zfail()
+			p.invalid = true
+			return ""
 		}
-		return string(tok.unescape())
+		return string(tok.unescape(p))
 	}
 	switch rdtype {
 	case "A":
-		ipv4Text(ident())
+		p.ipv4Text(ident())
 	case "AAAA":
-		ipv6Text(ident())
+		p.ipv6Text(ident())
 	case "CNAME", "NS", "PTR", "DNAME":
 		t.name(origin)
 	case "MX", "RT", "AFSDB":
@@ -450,19 +493,22 @@ func rdataFromText(rdtype, text string, origin *dnsName) {
 	case "HINFO":
 		for i := 0; i < 2; i++ {
 			if len(t.str()) > 255 {
-				zfail()
+				p.invalid = true
+				return
 			}
 		}
 	case "TXT", "SPF":
 		count := 0
 		for tok := t.get(false); !tok.end(); tok = t.get(false) {
-			if len(tok.unescape()) > 255 {
-				zfail()
+			if len(tok.unescape(p)) > 255 {
+				p.invalid = true
+				return
 			}
 			count++
 		}
 		if count == 0 {
-			zfail()
+			p.invalid = true
+			return
 		}
 		return
 	case "SOA":
@@ -472,9 +518,10 @@ func rdataFromText(rdtype, text string, origin *dnsName) {
 		for i := 0; i < 4; i++ {
 			tok := t.get(false)
 			if tok.kind != tkIdent {
-				zfail()
+				p.invalid = true
+				return
 			}
-			ttlFromText(string(tok.unescape()))
+			p.ttlFromText(string(tok.unescape(p)))
 		}
 	case "SRV":
 		t.uint(65535)
@@ -486,7 +533,8 @@ func rdataFromText(rdtype, text string, origin *dnsName) {
 		t.uint(65535)
 		for i := 0; i < 3; i++ {
 			if len(t.str()) > 255 {
-				zfail()
+				p.invalid = true
+				return
 			}
 		}
 		t.name(origin)
@@ -495,13 +543,16 @@ func rdataFromText(rdtype, text string, origin *dnsName) {
 		tag := t.str()
 		t.str()
 		if tag == "" || len(tag) > 255 || strings.Trim(tag, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") != "" {
-			zfail()
+			p.invalid = true
+			return
 		}
 	default:
-		zfail()
+		p.invalid = true
+		return
 	}
 	if !t.get(false).end() {
-		zfail()
+		p.invalid = true
+		return
 	}
 }
 
@@ -535,15 +586,13 @@ func zoneRecordsError(raw *Node, single bool) (message string) {
 	if single {
 		source = strings.NewReplacer("{qname}", "configflow-placeholder.invalid.", "{qclass}", "CH").Replace(text)
 	}
+	p := &zoneParser{}
 	defer func() {
-		if r := recover(); r != nil {
-			if _, ok := r.(zoneFail); !ok {
-				panic(r)
-			}
+		if p.invalid {
 			message = zoneMessage
 		}
 	}()
-	t := &tokenizer{in: []rune(source)}
+	t := &tokenizer{zone: p, in: []rune(source)}
 	var origin, owner *dnsName
 	class, ttl := "IN", big.NewInt(3600)
 	records := new(big.Int)
@@ -571,13 +620,13 @@ func zoneRecordsError(raw *Node, single bool) (message string) {
 		if strings.HasPrefix(values[0], "$") {
 			switch directive := strings.ToUpper(values[0]); {
 			case directive == "$ORIGIN" && len(values) == 2:
-				origin = nameFromText(values[1], origin)
+				origin = p.nameFromText(values[1], origin)
 				if !origin.absolute() {
 					return "$ORIGIN 必须能解析为绝对域名"
 				}
 				owner = nil
 			case directive == "$TTL" && len(values) == 2:
-				ttl = ttlFromText(values[1])
+				ttl = p.ttlFromText(values[1])
 			case directive == "$INCLUDE":
 				if len(values) != 2 && len(values) != 3 {
 					return "$INCLUDE 需要文件路径和可选 origin"
@@ -623,7 +672,7 @@ func zoneRecordsError(raw *Node, single bool) (message string) {
 			if tokens[0].kind == tkQuoted {
 				return "DNS 记录的域名不能放在引号内"
 			}
-			owner = nameFromText(values[0], origin)
+			owner = p.nameFromText(values[0], origin)
 			offset = 1
 		}
 		if owner == nil {
@@ -644,7 +693,7 @@ func zoneRecordsError(raw *Node, single bool) (message string) {
 			if DNSCodeValid("qclass", S(candidate)) && !digits {
 				klass = candidate
 			} else {
-				recordTTL = ttlFromText(values[offset])
+				recordTTL = p.ttlFromText(values[offset])
 			}
 		}
 		if rtype == "" {
@@ -690,7 +739,7 @@ func zoneRecordsError(raw *Node, single bool) (message string) {
 				if position >= len(data) {
 					return "DNS 记录的 RDATA 参数不足"
 				}
-				if !nameFromText(data[position], origin).absolute() {
+				if !p.nameFromText(data[position], origin).absolute() {
 					return "RDATA 中的相对域名需要 $ORIGIN；否则必须以 . 结尾"
 				}
 			}
@@ -708,7 +757,7 @@ func zoneRecordsError(raw *Node, single bool) (message string) {
 					encoded[i] = `"` + tok.value + `"`
 				}
 			}
-			rdataFromText(parsed, strings.Join(encoded, " "), origin)
+			p.rdataFromText(parsed, strings.Join(encoded, " "), origin)
 		}
 		class, ttl = klass, recordTTL
 		records.Add(records, big.NewInt(1))

@@ -128,18 +128,58 @@ func parseYAML(text string, syntax error) (*Node, error) {
 		b.queue = b.queue[1:]
 		err = b.fill(src, dst)
 	}
+	for _, pair := range b.aliasCopies {
+		pair[1].Content = pair[0].Content
+	}
+	if err == nil {
+		err = validateMerges(out, map[*Node]bool{})
+	}
 	return out, err
 }
 
+func validateMerges(n *Node, active map[*Node]bool) error {
+	if active[n] {
+		return nil
+	} // loadNative reports recursive aliases with its normal limit.
+	active[n] = true
+	for i, child := range n.Content {
+		if isMap(n) && i%2 == 0 && child.Tag == "!!merge" {
+			v := n.Content[i+1]
+			if !isMap(v) && !isSeq(v) {
+				return fail(messageMergeSources)
+			}
+			for _, source := range items(v) {
+				if !isMap(source) {
+					return fail(messageMergeSources)
+				}
+			}
+		}
+		if err := validateMerges(child, active); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type builder struct {
-	memo   map[*Node]*Node
-	queue  [][2]*Node
-	syntax error
+	memo        map[*Node]*Node
+	queue       [][2]*Node
+	syntax      error
+	aliasCopies [][2]*Node
 }
 
 func (b *builder) node(src *Node) (*Node, error) {
-	for src.Kind == yaml.AliasNode {
-		src = src.Alias
+	if src.Kind == yaml.AliasNode {
+		value, err := b.node(src.Alias)
+		if err != nil {
+			return nil, err
+		}
+		if src.HeadComment != "" || src.LineComment != "" || src.FootComment != "" {
+			copy := presentation(value, src)
+			b.aliasCopies = append(b.aliasCopies, [2]*Node{value, copy})
+			return copy, nil
+		}
+		return value, nil
 	}
 	if out, ok := b.memo[src]; ok {
 		return out, nil
@@ -167,6 +207,10 @@ func (b *builder) node(src *Node) (*Node, error) {
 	default:
 		return nil, b.syntax
 	}
+	out.Style, out.HeadComment, out.LineComment, out.FootComment = src.Style&^yaml.TaggedStyle, src.HeadComment, src.LineComment, src.FootComment
+	if out.Kind == yaml.ScalarNode && out.Tag != tagStr {
+		out.Style = 0
+	}
 	b.memo[src] = out
 	return out, nil
 }
@@ -189,7 +233,7 @@ func (b *builder) fill(src, dst *Node) error {
 		if err != nil {
 			return err
 		}
-		if !isStr(key) || key.Value == "__proto__" || key.Value == "prototype" || key.Value == "constructor" {
+		if (!isStr(key) && key.Tag != "!!merge") || key.Value == "__proto__" || key.Value == "prototype" || key.Value == "constructor" {
 			return fail("OxiDNS YAML 字段名必须为安全文本")
 		}
 		if seen[key.Value] {
@@ -200,7 +244,7 @@ func (b *builder) fill(src, dst *Node) error {
 		if err != nil {
 			return err
 		}
-		dst.Content = append(dst.Content, S(key.Value), value)
+		dst.Content = append(dst.Content, key, value)
 	}
 	return nil
 }
@@ -221,12 +265,16 @@ func resolveScalar(src *Node, explicit bool) (string, string, error) {
 				tag = tagInt
 			case nativeFloat.MatchString(value):
 				tag = tagFloat
-			case value == "<<" || value == "=":
+			case value == "<<" && src.Tag == "!!merge":
+				return "!!merge", value, nil
+			case value == "=":
 				return "", "", errMalformed
 			}
 		}
 	}
 	switch tag {
+	case "!!merge":
+		return "!!merge", value, nil
 	case tagStr, "!":
 		return tagStr, value, nil
 	case tagNull:

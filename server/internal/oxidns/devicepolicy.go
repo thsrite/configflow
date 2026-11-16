@@ -79,15 +79,15 @@ func NormalizePolicies(value *Node) (*Node, error) {
 
 func keyNodes(m *Node) []*Node {
 	var out []*Node
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		out = append(out, m.Content[i])
+	for _, key := range keys(m) {
+		out = append(out, S(key))
 	}
 	return out
 }
 
 // Revision is the sha256 of the settings as sorted compact JSON.
 func Revision(settings *Node) string {
-	sum := sha256.Sum256(sortedJSON(settings))
+	sum := sha256.Sum256(canonicalJSON(settings))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -144,12 +144,10 @@ func refuse(reason string, fix ...string) error {
 	return fail(reason + "，无法安全插入设备策略；" + f + "。")
 }
 
-func pyStr(n *Node) string {
-	if isNone(n) {
-		return "None"
-	}
-	if isBool(n) {
-		return map[string]string{"true": "True", "false": "False"}[n.Value]
+// valueText formats resource identities and labels with native scalar values.
+func displayValue(n *Node) string {
+	if n == nil {
+		return "<nil>"
 	}
 	if n.Kind == yaml.ScalarNode {
 		return n.Value
@@ -180,7 +178,7 @@ func checkMain(document *Node, plugins map[string]*Node) error {
 		return refuse("找不到主处理链 sequence_main")
 	}
 	if !equal(get(main, "type"), S("sequence")) {
-		return refuse("主处理链 sequence_main 的类型是 " + pyStr(get(main, "type")) + "，不是 sequence")
+		return refuse("主处理链 sequence_main 的类型是 " + displayValue(get(main, "type")) + "，不是 sequence")
 	}
 	args := get(main, "args")
 	if !isSeq(args) || len(args.Content) == 0 {
@@ -196,7 +194,7 @@ func checkMain(document *Node, plugins map[string]*Node) error {
 		text := str(get(last, "exec"))
 		if has(last, "matches") {
 			text += "（带匹配条件）"
-		} else if len(last.Content) > 2 {
+		} else if mapSize(last) > 1 {
 			text += "（带其他字段）"
 		}
 		return refuse("主处理链 sequence_main 的最后一步是「" + text + "」，设备策略要求最后一步是不带条件的 goto china_dns 或 goto proxy_dns_seq")
@@ -206,7 +204,7 @@ func checkMain(document *Node, plugins map[string]*Node) error {
 	case forward == nil:
 		return refuse("找不到本地上游 forward_local，直连设备没有可用的上游")
 	case !equal(get(forward, "type"), S("forward")):
-		return refuse("本地上游 forward_local 的类型是 " + pyStr(get(forward, "type")) + "，不是 forward")
+		return refuse("本地上游 forward_local 的类型是 " + displayValue(get(forward, "type")) + "，不是 forward")
 	case !isMap(get(forward, "args")) || !truthy(get(get(forward, "args"), "upstreams")):
 		return refuse("本地上游 forward_local 没有配置上游地址")
 	}
@@ -652,7 +650,9 @@ func ApplyPolicies(settings *Node, p *Profile, rows *Node, baseURL string) (*Nod
 	if document, err = PatchDocument(document, previous, rows, p); err != nil {
 		return nil, err
 	}
-	set(current, "native_config", S(dump(document)))
+	if err := setNativeConfig(current, document); err != nil {
+		return nil, err
+	}
 	set(current, "device_policies", rows)
 	if template := get(current, "template_settings"); isMap(template) {
 		set(template, "device_policies", clone(rows))

@@ -19,9 +19,9 @@ var (
 	dnsRuleTypes      = []string{"DOMAIN-SUFFIX", "DOMAIN", "DOMAIN-KEYWORD", "DOMAIN-REGEX", "IP-CIDR", "IP-CIDR6"}
 )
 
-// TagFor is _tag: prefix + 16 hex digits of sha256(str(identity)).
+// TagFor is _tag: prefix + 16 hex digits of sha256 of the resource identity.
 func TagFor(prefix string, identity *Node) string {
-	sum := sha256.Sum256([]byte(pyStr(identity)))
+	sum := sha256.Sum256([]byte(displayValue(identity)))
 	return prefix + "_" + hex.EncodeToString(sum[:])[:16]
 }
 
@@ -140,13 +140,13 @@ func UnavailableRulesets(p *Profile, paths []string) []string {
 		if !has(item, "behavior") {
 			behavior = S("domain")
 		}
-		switch label := pyStr(name); {
+		switch label := displayValue(name); {
 		case !truthyOr(item, "enabled"):
 			lines = append(lines, "「"+label+"」已停用：请在规则管理中重新启用")
 		case !truthyOr(item, "library_enabled"):
 			lines = append(lines, "「"+label+"」的规则来源已停用：请在规则库中重新启用")
 		case !containsString(rulesetParts(behavior), m[2]):
-			lines = append(lines, "「"+label+"」的类型被改成了 "+pyStr(behavior)+"：请改回原来的类型")
+			lines = append(lines, "「"+label+"」的类型被改成了 "+displayValue(behavior)+"：请改回原来的类型")
 		default:
 			lines = append(lines, "「"+label+"」没有下载地址：请检查规则来源")
 		}
@@ -255,7 +255,7 @@ func rulesetDownloads(settings *Node, p *Profile, baseURL string) ([]RulesetDown
 		}
 		name := "规则集"
 		if n := get(item, "name"); truthy(n) {
-			name = pyStr(n)
+			name = displayValue(n)
 		}
 		for _, part := range parts {
 			proxied, err := p.ruleProxyURL(effective, link, part)
@@ -274,7 +274,7 @@ func rulesetDownloads(settings *Node, p *Profile, baseURL string) ([]RulesetDown
 					continue
 				}
 			}
-			downloads = append(downloads, RulesetDownload{"AdGuard DNS 规则", pyStr(url), path, nil})
+			downloads = append(downloads, RulesetDownload{"AdGuard DNS 规则", displayValue(url), path, nil})
 		}
 	}
 	return downloads, nil
@@ -433,10 +433,10 @@ func (p *Profile) routingGroups(settings *Node, legacy legacyMode, candidates []
 			kind, value := get(item, "rule_type"), get(item, "value")
 			kindText, valueText := "", ""
 			if has(item, "rule_type") {
-				kindText = pyStr(kind)
+				kindText = displayValue(kind)
 			}
 			if has(item, "value") {
-				valueText = pyStr(value)
+				valueText = displayValue(value)
 			}
 			part := "domain"
 			if kindText == "IP-CIDR" || kindText == "IP-CIDR6" {
@@ -562,13 +562,13 @@ func generate(s *Node, p *Profile, baseURL string) (string, error) {
 		if _, err := RequireValidDocument(document); err != nil {
 			return "", err
 		}
-		return dump(document), nil
+		return dump(deliveryNode(document))
 	}
 	result, err := templateDocument(s, p, baseURL)
 	if err != nil {
 		return "", err
 	}
-	return dump(result), nil
+	return dump(deliveryNode(result))
 }
 
 func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {

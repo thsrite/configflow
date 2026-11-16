@@ -2,6 +2,7 @@ package oxidns
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"net/netip"
@@ -923,7 +924,7 @@ func ValidatePluginFormat(name string, value *Node) string {
 	case "domain-expression":
 		return domainError(value, false)
 	}
-	panic("Unsupported plugin validation format: " + name)
+	return fmt.Sprintf(messageUnsupportedFormat, name)
 }
 
 var (

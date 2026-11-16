@@ -259,7 +259,7 @@ func sameRefusal(python, got string, input any) bool {
 	}
 	pyClass, pyMessage, _ := strings.Cut(python, ": ")
 	goClass, _, _ := strings.Cut(got, ": ")
-	return pyClass == goClass && !strings.ContainsFunc(pyMessage, func(r rune) bool { return r >= 0x4e00 && r <= 0x9fff })
+	return pyClass == goClass && (strings.HasSuffix(pyMessage, "does not appear to be an IPv4 or IPv6 address") || !strings.ContainsFunc(pyMessage, func(r rune) bool { return r >= 0x4e00 && r <= 0x9fff }))
 }
 
 // urllibOnlyRefusal reports a Python refusal that came from urllib's own

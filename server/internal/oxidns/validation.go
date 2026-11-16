@@ -1,6 +1,7 @@
 package oxidns
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -16,11 +17,10 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/netipx"
-	"configflow/internal/resource"
 	"configflow/internal/weburl"
 )
 
-// Validation follows the pinned OxiDNS 1.6.1 schema in backend/schemas/oxidns.
+// Validation follows the pinned OxiDNS 1.6.1 schema embedded in schemas/ (checked against backend/schemas/oxidns).
 // It never changes the document; the Agent runs the core's own check before
 // activation.
 
@@ -103,6 +103,12 @@ func values(m map[string]*Schema) []*Schema {
 	return out
 }
 
+//go:embed schemas/*.json
+var schemaFS embed.FS
+
+// Embedded schemas are validated at process startup, before requests can arrive.
+func init() { schemas() }
+
 var catalog struct {
 	once    sync.Once
 	global  *Schema
@@ -111,7 +117,7 @@ var catalog struct {
 }
 
 func schemaFile(name string, out any) {
-	data, err := os.ReadFile(resource.FromEnv().Backend("schemas/oxidns/" + name))
+	data, err := schemaFS.ReadFile("schemas/" + name)
 	if err == nil {
 		err = json.Unmarshal(data, out)
 	}
@@ -356,7 +362,7 @@ func FormatError(name string, value *Node) string {
 		}
 		return "DNS 类型/类别/响应码无效或超出允许范围"
 	}
-	panic("Unsupported OxiDNS schema format: " + name)
+	return fmt.Sprintf(messageUnsupportedFormat, name)
 }
 
 // tzPath is CPython's zoneinfo TZPATH (PYTHONTZPATH overrides it).
@@ -413,7 +419,7 @@ func isType(value *Node, kind string) bool {
 func numberText(n json.Number) string {
 	if strings.ContainsAny(string(n), ".eE") {
 		f, _ := n.Float64()
-		return pyFloat(f)
+		return strconv.FormatFloat(f, 'g', -1, 64)
 	}
 	return string(n)
 }
@@ -633,6 +639,9 @@ func RequireValidDocument(document *Node) ([]Issue, error) {
 // ValidateExpandedDocument maps issues of an expanded document back to the
 // file and plugin index that declared them, and type-checks include globals.
 func ValidateExpandedDocument(document *Node, sources *Sources) []Issue {
+	if sources == nil {
+		sources = &Sources{}
+	}
 	issues := ValidateNativeConfig(document)
 	for i := range issues {
 		item := &issues[i]

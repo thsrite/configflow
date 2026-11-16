@@ -56,7 +56,7 @@ func chainReason(tag string) string {
 
 // EntryKey is the 12 hex digits naming one pinned upstream copy.
 func EntryKey(upstream *Node, source string) string {
-	sum := sha256.Sum256(sortedJSON(M("source", source, "upstream", upstream)))
+	sum := sha256.Sum256(canonicalJSON(M("source", source, "upstream", upstream)))
 	return hex.EncodeToString(sum[:])[:12]
 }
 
@@ -96,12 +96,12 @@ func NormalizeAction(value *Node, parked bool) (*Node, error) {
 		return nil, fail("规则 DNS 处理无效：" + strings.Join(allowed, "、"))
 	}
 	if kind.Value != "upstream" {
-		if len(value.Content) != 2 {
+		if mapSize(value) != 1 {
 			return nil, fail("规则 DNS 处理「" + RouteLabels[kind.Value] + "」不能包含其他参数")
 		}
 		return M("action", kind.Value), nil
 	}
-	if len(value.Content) != 6 || !has(value, "source") || !has(value, "upstream") || !isOneOf(get(value, "source"), UpstreamSources...) {
+	if mapSize(value) != 3 || !has(value, "source") || !has(value, "upstream") || !isOneOf(get(value, "source"), UpstreamSources...) {
 		return nil, fail("指定上游需要 source（local、remote 或 fallback）和 upstream")
 	}
 	upstream := get(value, "upstream")
@@ -279,7 +279,7 @@ func pinnedChain(key string, plugins map[string]*Node) (*Node, []string) {
 		args = nil
 	}
 	upstreams := get(args, "upstreams")
-	if !isMap(args) || len(args.Content) != 2 || !has(args, "upstreams") || !isSeq(upstreams) || len(upstreams.Content) != 1 ||
+	if !isMap(args) || mapSize(args) != 1 || !has(args, "upstreams") || !isSeq(upstreams) || len(upstreams.Content) != 1 ||
 		!isMap(upstreams.Content[0]) || strings.TrimSpace(str(get(upstreams.Content[0], "addr"))) == "" {
 		return nil, nil
 	}

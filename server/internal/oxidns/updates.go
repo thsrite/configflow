@@ -38,7 +38,9 @@ func ReconcileNativeWithdrawals(before, candidate, originalSettings, settings *N
 			return document, nil
 		}
 		v := shallow(values)
-		set(v, "native_config", S(dump(document)))
+		if err := setNativeConfig(v, document); err != nil {
+			return nil, err
+		}
 		return NativeDocument(v, false, nil)
 	}
 	previous, err := expand(before, originalSettings)
@@ -200,8 +202,8 @@ func prepareRuleUpdate(c *commonContext, changes *Node, p *Profile, baseURL stri
 			}
 			refs := make([]string, 2)
 			for i, step := range steps.Content {
-				if isMap(step) && len(step.Content) == 2 && has(step, "exec") {
-					refs[i] = pyStr(get(step, "exec"))
+				if isMap(step) && mapSize(step) == 1 && has(step, "exec") {
+					refs[i] = displayValue(get(step, "exec"))
 				}
 			}
 			if strings.HasPrefix(refs[0], "$") && strings.HasPrefix(refs[1], "$") &&
@@ -525,7 +527,7 @@ func (p *Profile) proxyIdentity() (map[string]bool, string, bool) {
 	}
 	endpoint := "/api/mosdns/rule-proxy"
 	if id := p.get("profile_id"); truthy(id) {
-		endpoint = "/api/profiles/" + pyStr(id) + "/mosdns/rule-proxy"
+		endpoint = "/api/profiles/" + displayValue(id) + "/mosdns/rule-proxy"
 	}
 	return tokens, endpoint, true
 }
@@ -687,7 +689,9 @@ func RebaseNativeRuleSources(before, after *Profile) (bool, error) {
 		changed = true
 	}
 	if changed {
-		set(settings, "native_config", S(dump(withDownloads(document, output))))
+		if err := setNativeConfig(settings, withDownloads(document, output)); err != nil {
+			return false, err
+		}
 	}
 	return changed, nil
 }
@@ -708,7 +712,9 @@ func PrepareNativeRuleUpdates(document, settings *Node, p *Profile, baseURL stri
 		}
 	}
 	rendered, current := clone(document), clone(settings)
-	set(current, "native_config", S(dump(rendered)))
+	if err := setNativeConfig(current, rendered); err != nil {
+		return nil, err
+	}
 	c, err := newContext(rendered, current)
 	if err != nil {
 		return nil, err

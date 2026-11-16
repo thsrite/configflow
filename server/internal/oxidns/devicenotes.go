@@ -18,7 +18,7 @@ func NormalizeName(value *Node) (string, error) {
 
 // NormalizeNotes validates device_notes (address → name), in order.
 func NormalizeNotes(value *Node) (*Node, error) {
-	if !isMap(value) || len(value.Content)/2 > MaxNotes {
+	if !isMap(value) || mapSize(value) > MaxNotes {
 		return nil, fail(fmt.Sprintf("设备备注必须为对象，最多 %d 条。", MaxNotes))
 	}
 	result := M()

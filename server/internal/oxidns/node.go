@@ -7,7 +7,6 @@ import (
 	"io"
 	"math"
 	"math/big"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -65,7 +64,9 @@ func truthy(n *Node) bool {
 	switch {
 	case isNone(n):
 		return false
-	case n.Kind == yaml.MappingNode || n.Kind == yaml.SequenceNode:
+	case n.Kind == yaml.MappingNode:
+		return mapSize(n) > 0
+	case n.Kind == yaml.SequenceNode:
 		return len(n.Content) > 0
 	case n.Tag == tagBool:
 		return n.Value == "true"
@@ -113,24 +114,36 @@ func get(n *Node, key string) *Node {
 		return nil
 	}
 	for i := 0; i+1 < len(n.Content); i += 2 {
-		if n.Content[i].Value == key {
+		if n.Content[i].Tag != "!!merge" && n.Content[i].Value == key {
 			return n.Content[i+1]
+		}
+	}
+	for _, source := range mergeSources(n) {
+		if value := get(source, key); value != nil {
+			return value
 		}
 	}
 	return nil
 }
 
-func has(n *Node, key string) bool {
+// mergeSources keeps YAML merge precedence: the first mapping in a sequence wins.
+func mergeSources(n *Node) []*Node {
 	if !isMap(n) {
-		return false
+		return nil
 	}
 	for i := 0; i+1 < len(n.Content); i += 2 {
-		if n.Content[i].Value == key {
-			return true
+		if n.Content[i].Tag == "!!merge" {
+			v := n.Content[i+1]
+			if isMap(v) {
+				return []*Node{v}
+			}
+			return items(v)
 		}
 	}
-	return false
+	return nil
 }
+
+func has(n *Node, key string) bool { return get(n, key) != nil }
 
 // at follows a path of mapping keys.
 func at(n *Node, keys ...string) *Node {
@@ -140,11 +153,24 @@ func at(n *Node, keys ...string) *Node {
 	return n
 }
 
+// presentation retains user annotations when an editor replaces a value.
+func presentation(value, previous *Node) *Node {
+	if value == nil || previous == nil || previous.Style == 0 && previous.HeadComment == "" && previous.LineComment == "" && previous.FootComment == "" {
+		return value
+	}
+	v := *value
+	v.HeadComment, v.LineComment, v.FootComment = previous.HeadComment, previous.LineComment, previous.FootComment
+	if v.Kind == previous.Kind && v.Tag == previous.Tag {
+		v.Style = previous.Style
+	}
+	return &v
+}
+
 // set replaces the value of key or appends the pair.
 func set(m *Node, key string, value *Node) {
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		if m.Content[i].Value == key {
-			m.Content[i+1] = value
+			m.Content[i+1] = presentation(value, m.Content[i+1])
 			return
 		}
 	}
@@ -162,6 +188,12 @@ func setDefault(m *Node, key string, value *Node) *Node {
 
 // del removes key and returns its value (dict.pop).
 func del(m *Node, key string) *Node {
+	// Materialize merges before deletion so an inherited value cannot reappear.
+	if len(mergeSources(m)) > 0 {
+		flat := M()
+		pairs(m, func(k string, v *Node) bool { set(flat, k, v); return true })
+		m.Content = flat.Content
+	}
 	if !isMap(m) {
 		return nil
 	}
@@ -175,24 +207,48 @@ func del(m *Node, key string) *Node {
 	return nil
 }
 
+func mapSize(m *Node) int { return len(keys(m)) }
+
 func keys(m *Node) []string {
 	if !isMap(m) {
 		return nil
 	}
-	out := make([]string, 0, len(m.Content)/2)
+	var out []string
+	seen := map[string]bool{}
+	add := func(k string) {
+		if !seen[k] {
+			out = append(out, k)
+			seen[k] = true
+		}
+	}
+	for _, source := range mergeSources(m) {
+		for _, k := range keys(source) {
+			add(k)
+		}
+	}
 	for i := 0; i+1 < len(m.Content); i += 2 {
-		out = append(out, m.Content[i].Value)
+		if m.Content[i].Tag != "!!merge" {
+			add(m.Content[i].Value)
+		}
 	}
 	return out
 }
 
-// pairs calls f for every key/value of a mapping; f returns false to stop.
+// pairs visits effective mapping values, including inherited YAML merge keys.
 func pairs(m *Node, f func(key string, value *Node) bool) {
 	if !isMap(m) {
 		return
 	}
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		if !f(m.Content[i].Value, m.Content[i+1]) {
+	if len(mergeSources(m)) == 0 {
+		for i := 0; i+1 < len(m.Content); i += 2 {
+			if !f(m.Content[i].Value, m.Content[i+1]) {
+				return
+			}
+		}
+		return
+	}
+	for _, k := range keys(m) {
+		if !f(k, get(m, k)) {
 			return
 		}
 	}
@@ -287,7 +343,7 @@ func val(v any) *Node {
 	case []any:
 		return L(x...)
 	}
-	panic(fmt.Sprintf("oxidns: no node for %T", v))
+	return &Node{Kind: yaml.ScalarNode, Tag: tagUnsupported, Value: fmt.Sprintf("unsupported Go value %T", v)}
 }
 
 // clone is copy.deepcopy: shared nodes stay shared inside the copy.
@@ -300,7 +356,9 @@ func cloneMemo(n *Node, memo map[*Node]*Node) *Node {
 	if c, ok := memo[n]; ok {
 		return c
 	}
-	c := &Node{Kind: n.Kind, Tag: n.Tag, Value: n.Value}
+	c := new(Node)
+	*c = *n
+	c.Anchor = ""
 	memo[n] = c
 	if n.Content != nil {
 		c.Content = make([]*Node, len(n.Content))
@@ -331,12 +389,12 @@ func equal(a, b *Node) bool {
 	}
 	switch a.Kind {
 	case yaml.MappingNode:
-		if len(a.Content) != len(b.Content) {
+		if len(keys(a)) != len(keys(b)) {
 			return false
 		}
-		for i := 0; i+1 < len(a.Content); i += 2 {
-			other := get(b, a.Content[i].Value)
-			if other == nil || !equal(a.Content[i+1], other) {
+		for _, key := range keys(a) {
+			other := get(b, key)
+			if other == nil || !equal(get(a, key), other) {
 				return false
 			}
 		}
@@ -371,11 +429,11 @@ func same(a, b *Node) bool {
 	}
 	switch a.Kind {
 	case yaml.MappingNode:
-		if len(a.Content) != len(b.Content) {
+		if len(keys(a)) != len(keys(b)) {
 			return false
 		}
-		for i := 0; i+1 < len(a.Content); i += 2 {
-			if !has(b, a.Content[i].Value) || !same(a.Content[i+1], get(b, a.Content[i].Value)) {
+		for _, key := range keys(a) {
+			if !has(b, key) || !same(get(a, key), get(b, key)) {
 				return false
 			}
 		}
@@ -493,37 +551,60 @@ func decodeJSON(dec *json.Decoder) (*Node, error) {
 // MarshalJSON encodes a node as JSON (mappings keep their order).
 func ToJSON(n *Node) []byte {
 	var b bytes.Buffer
-	writeJSON(&b, n, false)
+	writeJSON(&b, n)
 	return b.Bytes()
 }
 
-// sortedJSON is json.dumps(sort_keys=True, ensure_ascii=False, separators=(',', ':')).
-func sortedJSON(n *Node) []byte {
+// canonicalJSON uses encoding/json's deterministic mapping-key order. Number
+// spellings retain their YAML scalar kind, so 1 and 1.0 produce different tokens.
+func canonicalJSON(n *Node) []byte {
+	var native func(*Node) any
+	native = func(n *Node) any {
+		switch {
+		case n == nil || isTag(n, tagNull):
+			return nil
+		case isMap(n):
+			m := map[string]any{}
+			pairs(n, func(k string, v *Node) bool { m[k] = native(v); return true })
+			return m
+		case isSeq(n):
+			values := make([]any, len(n.Content))
+			for i, v := range n.Content {
+				values[i] = native(v)
+			}
+			return values
+		case isBool(n):
+			return n.Value == "true"
+		case isInt(n), isTag(n, tagFloat):
+			if json.Valid([]byte(n.Value)) {
+				return json.Number(n.Value)
+			}
+			return n.Value
+		default:
+			return n.Value
+		}
+	}
 	var b bytes.Buffer
-	writeJSON(&b, n, true)
-	return b.Bytes()
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(native(n)) // only JSON numbers, strings, booleans and containers above
+	return bytes.TrimSuffix(b.Bytes(), []byte("\n"))
 }
 
-func writeJSON(b *bytes.Buffer, n *Node, sorted bool) {
+func writeJSON(b *bytes.Buffer, n *Node) {
 	switch {
 	case n == nil || isTag(n, tagNull):
 		b.WriteString("null")
 	case n.Kind == yaml.MappingNode:
-		order := make([]int, 0, len(n.Content)/2)
-		for i := 0; i+1 < len(n.Content); i += 2 {
-			order = append(order, i)
-		}
-		if sorted {
-			sort.SliceStable(order, func(x, y int) bool { return n.Content[order[x]].Value < n.Content[order[y]].Value })
-		}
+		order := keys(n)
 		b.WriteByte('{')
-		for j, i := range order {
+		for j, key := range order {
 			if j > 0 {
 				b.WriteByte(',')
 			}
-			writeString(b, n.Content[i].Value)
+			writeString(b, key)
 			b.WriteByte(':')
-			writeJSON(b, n.Content[i+1], sorted)
+			writeJSON(b, get(n, key))
 		}
 		b.WriteByte('}')
 	case n.Kind == yaml.SequenceNode:
@@ -532,38 +613,16 @@ func writeJSON(b *bytes.Buffer, n *Node, sorted bool) {
 			if i > 0 {
 				b.WriteByte(',')
 			}
-			writeJSON(b, c, sorted)
+			writeJSON(b, c)
 		}
 		b.WriteByte(']')
 	case n.Tag == tagInt || n.Tag == tagBool:
 		b.WriteString(n.Value)
 	case n.Tag == tagFloat:
-		f, _ := strconv.ParseFloat(n.Value, 64)
-		b.WriteString(pyFloat(f))
+		b.WriteString(n.Value)
 	default:
 		writeString(b, n.Value)
 	}
-}
-
-// pyFloat is Python's float repr (also what json.dumps writes).
-func pyFloat(f float64) string {
-	if math.IsInf(f, 0) || math.IsNaN(f) {
-		return map[bool]string{true: "Infinity", false: "-Infinity"}[f > 0]
-	}
-	abs := math.Abs(f)
-	if abs != 0 && (abs < 1e-4 || abs >= 1e16) {
-		text := strconv.FormatFloat(f, 'e', -1, 64)
-		mant, exp, _ := strings.Cut(text, "e")
-		if len(exp) == 3 && exp[1] == '0' {
-			exp = exp[:1] + exp[2:]
-		}
-		return mant + "e" + exp
-	}
-	text := strconv.FormatFloat(f, 'f', -1, 64)
-	if !strings.Contains(text, ".") {
-		text += ".0"
-	}
-	return text
 }
 
 func writeString(b *bytes.Buffer, s string) {
@@ -572,28 +631,57 @@ func writeString(b *bytes.Buffer, s string) {
 	enc.SetEscapeHTML(false)
 	enc.Encode(s)
 	data := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
-	// Python keeps U+2028/9 literal and writes \b and \f short.
-	for _, r := range [][2]string{{`\u2028`, "\u2028"}, {`\u2029`, "\u2029"}, {`\u0008`, `\b`}, {`\u000c`, `\f`}} {
-		data = bytes.ReplaceAll(data, []byte(r[0]), []byte(r[1]))
-	}
 	b.Write(data)
+}
+
+// deliveryNode expands merges for consumers that do not interpret YAML merge
+// keys. Editor drafts retain their presentation; generated configurations carry
+// only the effective keys and values, just as the Python generator did.
+func deliveryNode(n *Node) *Node {
+	if n == nil {
+		return nil
+	}
+	out := *n
+	out.Anchor = ""
+	if isMap(n) {
+		out.Content = nil
+		pairs(n, func(k string, v *Node) bool { out.Content = append(out.Content, S(k), deliveryNode(v)); return true })
+	} else if isSeq(n) {
+		out.Content = make([]*Node, len(n.Content))
+		for i, v := range n.Content {
+			out.Content[i] = deliveryNode(v)
+		}
+	}
+	return &out
 }
 
 // ---- YAML ----
 
 // dump is yaml.safe_dump(allow_unicode=True, sort_keys=False): block style,
 // two-space indentation, no anchors (shared nodes are written out).
-func dump(n *Node) string {
+func dump(n *Node) (string, error) {
 	var b bytes.Buffer
 	enc := yaml.NewEncoder(&b)
 	enc.SetIndent(2)
 	if err := enc.Encode(n); err != nil {
-		panic(err)
+		return "", fmt.Errorf("encode OxiDNS YAML: %w", err)
 	}
-	enc.Close()
-	return b.String()
+	if err := enc.Close(); err != nil {
+		return "", fmt.Errorf("close OxiDNS YAML: %w", err)
+	}
+	return b.String(), nil
 }
 
 func containsRune(s string, r rune) bool { return strings.ContainsRune(s, r) }
 
 func trimSpace(s string) string { return strings.TrimSpace(s) }
+
+// setNativeConfig serializes a draft before changing its stored text.
+func setNativeConfig(settings, document *Node) error {
+	text, err := dump(document)
+	if err != nil {
+		return err
+	}
+	set(settings, "native_config", S(text))
+	return nil
+}

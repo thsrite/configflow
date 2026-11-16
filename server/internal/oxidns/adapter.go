@@ -140,6 +140,10 @@ func safeLoad(text string) (*Node, bool, error) {
 	} else if err != nil {
 		return nil, false, nil
 	}
+	var extra yaml.Node
+	if err := dec.Decode(&extra); err != io.EOF {
+		return nil, false, nil
+	}
 	if len(doc.Content) == 0 {
 		return Null(), true, nil
 	}
@@ -156,7 +160,7 @@ func safeLoad(text string) (*Node, bool, error) {
 			return out, nil
 		}
 		memo[n] = nil
-		out := &Node{Kind: n.Kind, Tag: n.ShortTag(), Value: n.Value}
+		out := &Node{Kind: n.Kind, Tag: n.ShortTag(), Value: n.Value, Style: n.Style, HeadComment: n.HeadComment, LineComment: n.LineComment, FootComment: n.FootComment}
 		switch n.Kind {
 		case yaml.ScalarNode:
 			switch out.Tag {

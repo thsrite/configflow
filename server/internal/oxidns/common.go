@@ -426,7 +426,9 @@ func (c *commonContext) expanded() (*Node, error) {
 		return c.doc, nil
 	}
 	settings := shallow(c.settings)
-	set(settings, "native_config", S(dump(c.doc)))
+	if err := setNativeConfig(settings, c.doc); err != nil {
+		return nil, err
+	}
 	return NativeDocument(settings, false, nil)
 }
 
@@ -819,7 +821,7 @@ func (c *commonContext) mainControl(field string) (*Node, Capability, int) {
 				continue
 			}
 			for _, m := range matchList(item) {
-				if strings.HasPrefix(pyStr(m), "qtype ") {
+				if strings.HasPrefix(displayValue(m), "qtype ") {
 					possible = append(possible, i)
 					break
 				}
@@ -831,7 +833,7 @@ func (c *commonContext) mainControl(field string) (*Node, Capability, int) {
 		if len(possible) == 1 {
 			item := sequence.Content[possible[0]]
 			matches := get(item, "matches")
-			if len(item.Content) == 4 && has(item, "matches") && isSeq(matches) && len(matches.Content) == 1 &&
+			if mapSize(item) == 2 && has(item, "matches") && isSeq(matches) && len(matches.Content) == 1 &&
 				isStr(matches.Content[0]) && qtypeList.MatchString(matches.Content[0].Value) {
 				codes := L()
 				for _, code := range strings.Fields(matches.Content[0].Value)[1:] {
@@ -851,7 +853,7 @@ func (c *commonContext) mainControl(field string) (*Node, Capability, int) {
 		if !has(item, "exec") {
 			exec = S("")
 		}
-		if isMap(item) && strings.HasPrefix(pyStr(exec), prefix) {
+		if isMap(item) && strings.HasPrefix(displayValue(exec), prefix) {
 			possible = append(possible, i)
 		}
 	}
@@ -907,7 +909,7 @@ func (c *commonContext) dynamicState() (bool, string, Capability) {
 	var matches []*Node
 	for _, item := range list.Content {
 		for _, m := range matchList(item) {
-			if isMap(item) && strings.Contains(pyStr(m), "$dynamic_domains") {
+			if isMap(item) && strings.Contains(displayValue(m), "$dynamic_domains") {
 				matches = append(matches, item)
 				break
 			}
@@ -1096,7 +1098,10 @@ func readCommon(document, settings *Node, p *Profile) (CommonView, error) {
 		}
 		text := ""
 		if ok {
-			text = dump(upstreams)
+			text, err = dump(upstreams)
+			if err != nil {
+				return CommonView{}, err
+			}
 		}
 		set(values, name+"_dns", S(text))
 		caps[name+"_dns"] = cap
@@ -1154,7 +1159,7 @@ func readCommon(document, settings *Node, p *Profile) (CommonView, error) {
 	remote := c.sequence("remote_dns")
 	var ttlItems []*Node
 	for _, item := range items(remote) {
-		if exec := get(item, "exec"); isMap(item) && strings.HasPrefix(pyStr(orEmpty(item, "exec")), "ttl ") {
+		if exec := get(item, "exec"); isMap(item) && strings.HasPrefix(displayValue(orEmpty(item, "exec")), "ttl ") {
 			ttlItems = append(ttlItems, item)
 			_ = exec
 		}
@@ -1749,7 +1754,9 @@ func (c *commonContext) patchRuleUpdate(changes *Node, p *Profile, baseURL strin
 	defaults := at(defaultSettingsNode, "rule_update", "args")
 	if isTrue(enable) && job == nil {
 		source := shallow(c.settings)
-		set(source, "native_config", S(dump(c.doc)))
+		if err := setNativeConfig(source, c.doc); err != nil {
+			return err
+		}
 		downloads, err := p.resourceDownloads(c.doc, source, baseURL, nil)
 		if err != nil {
 			return err
@@ -1847,7 +1854,7 @@ func (c *commonContext) patchResources(changes *Node, p *Profile, baseURL string
 				for i, item := range main.Content {
 					first := ""
 					if m := get(item, "matches"); truthy(m) {
-						first = pyStr(items(m)[0])
+						first = displayValue(items(m)[0])
 						if isStr(m) {
 							first = string([]rune(m.Value)[0])
 						}
@@ -1979,7 +1986,7 @@ func (c *commonContext) patchResources(changes *Node, p *Profile, baseURL string
 			if !contains(main, adguardCall) {
 				index := max(0, len(main.Content)-1)
 				for i, item := range main.Content {
-					if exec := pyStr(orEmpty(item, "exec")); strings.HasPrefix(exec, "goto ") || strings.HasPrefix(exec, "jump ") {
+					if exec := displayValue(orEmpty(item, "exec")); strings.HasPrefix(exec, "goto ") || strings.HasPrefix(exec, "jump ") {
 						index = i
 						break
 					}
@@ -2120,7 +2127,9 @@ func ApplyCommonSettings(settings, changes *Node, p *Profile, baseURL string) (A
 		return Applied{}, err
 	}
 	if !same(document, before) {
-		set(current, "native_config", S(dump(document)))
+		if err := setNativeConfig(current, document); err != nil {
+			return Applied{}, err
+		}
 	}
 	if _, err := NormalizeSettings(current, false); err != nil {
 		return Applied{}, err
@@ -2203,7 +2212,7 @@ func (c *commonContext) applyCommon(changes *Node, p *Profile, baseURL string) e
 		c.byTag = map[string]*Node{}
 		for _, item := range items(get(c.doc, "plugins")) {
 			if isMap(item) {
-				c.byTag[pyStr(get(item, "tag"))] = item
+				c.byTag[displayValue(get(item, "tag"))] = item
 			}
 		}
 	}
@@ -2274,7 +2283,7 @@ func (c *commonContext) patchField(field string, value *Node) error {
 		list := c.sequence("remote_dns")
 		index := -1
 		for i, item := range list.Content {
-			if strings.HasPrefix(pyStr(orEmpty(item, "exec")), "ttl ") {
+			if strings.HasPrefix(displayValue(orEmpty(item, "exec")), "ttl ") {
 				index = i
 				break
 			}
