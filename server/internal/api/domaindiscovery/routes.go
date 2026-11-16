@@ -34,10 +34,35 @@ func body(c *httpx.Ctx) json.RawMessage {
 	}
 	return v
 }
-func payload(c *httpx.Ctx) map[string]json.RawMessage {
+func payload(c *httpx.Ctx) (map[string]json.RawMessage, error) {
+	raw := body(c)
 	var out map[string]json.RawMessage
-	_ = json.Unmarshal(body(c), &out)
-	return out
+	if len(raw) == 0 || json.Unmarshal(raw, &out) == nil {
+		return out, nil
+	}
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return nil, nil
+	}
+	switch v := value.(type) {
+	case bool:
+		if !v {
+			return nil, nil
+		}
+	case string:
+		if v == "" {
+			return nil, nil
+		}
+	case float64:
+		if v == 0 {
+			return nil, nil
+		}
+	case []any:
+		if len(v) == 0 {
+			return nil, nil
+		}
+	}
+	return nil, errors.New("request payload must be a JSON object")
 }
 func text(m map[string]json.RawMessage, key string) string {
 	var out string
@@ -79,7 +104,10 @@ func updateSettings(c *httpx.Ctx) (*httpx.Response, error) {
 	return response(200, v, e)
 }
 func initRulesets(c *httpx.Ctx) (*httpx.Response, error) {
-	p := payload(c)
+	p, err := payload(c)
+	if err != nil {
+		return nil, err
+	}
 	var targets []string
 	if v, ok := p["targets"]; ok && string(v) != "null" {
 		if json.Unmarshal(v, &targets) != nil {
@@ -104,7 +132,11 @@ func agents(c *httpx.Ctx) (*httpx.Response, error) {
 }
 func apply(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := context.WithoutCancel(c.Context())
-	entries, e := discovery.ParseApplyItems(payload(c)["items"])
+	p, err := payload(c)
+	if err != nil {
+		return nil, err
+	}
+	entries, e := discovery.ParseApplyItems(p["items"])
 	if e != nil {
 		return nil, e
 	}
@@ -116,7 +148,10 @@ func apply(c *httpx.Ctx) (*httpx.Response, error) {
 	return response(200, v, e)
 }
 func undo(c *httpx.Ctx) (*httpx.Response, error) {
-	p := payload(c)
+	p, err := payload(c)
+	if err != nil {
+		return nil, err
+	}
 	v, e := discovery.UndoDomain(context.WithoutCancel(c.Context()), c.ProfileID, text(p, "value"), text(p, "target"))
 	return response(200, map[string]any{"removed": v}, e)
 }
@@ -125,7 +160,11 @@ func history(c *httpx.Ctx) (*httpx.Response, error) {
 	return response(200, map[string]any{"items": v}, e)
 }
 func ignore(c *httpx.Ctx) (*httpx.Response, error) {
-	v, e := discovery.UpdateIgnored(context.WithoutCancel(c.Context()), c.ProfileID, values(payload(c), "values"), c.Request.Method == "POST")
+	p, err := payload(c)
+	if err != nil {
+		return nil, err
+	}
+	v, e := discovery.UpdateIgnored(context.WithoutCancel(c.Context()), c.ProfileID, values(p, "values"), c.Request.Method == "POST")
 	return response(200, map[string]any{"ignored": v}, e)
 }
 func jobResponse(c *httpx.Ctx, j *discovery.Job, err error) (*httpx.Response, error) {
@@ -144,7 +183,11 @@ func jobResponse(c *httpx.Ctx, j *discovery.Job, err error) (*httpx.Response, er
 	return response(202, map[string]any{"job": j}, err)
 }
 func probe(c *httpx.Ctx) (*httpx.Response, error) {
-	j, e := discovery.StartProbe(context.WithoutCancel(c.Context()), c.ProfileID, values(payload(c), "domains"))
+	p, err := payload(c)
+	if err != nil {
+		return nil, err
+	}
+	j, e := discovery.StartProbe(context.WithoutCancel(c.Context()), c.ProfileID, values(p, "domains"))
 	return jobResponse(c, j, e)
 }
 func getProbe(c *httpx.Ctx) (*httpx.Response, error) {
@@ -159,7 +202,10 @@ func region(c *httpx.Ctx) (*httpx.Response, error) {
 	return response(200, v, e)
 }
 func checkRegion(c *httpx.Ctx) (*httpx.Response, error) {
-	p := payload(c)
+	p, err := payload(c)
+	if err != nil {
+		return nil, err
+	}
 	services := true
 	if raw, ok := p["services"]; ok {
 		services = string(raw) != "false" && string(raw) != "null" && string(raw) != "0" && string(raw) != "\"\""
@@ -172,12 +218,16 @@ func checkRegion(c *httpx.Ctx) (*httpx.Response, error) {
 	return jobResponse(c, j, e)
 }
 func routeRegion(c *httpx.Ctx) (*httpx.Response, error) {
-	p := payload(c)
+	p, err := payload(c)
+	if err != nil {
+		return nil, err
+	}
 	v, e := discovery.RouteToPolicy(context.WithoutCancel(c.Context()), c.ProfileID, text(p, "kind"), text(p, "value"), text(p, "policy"))
 	return response(200, v, e)
 }
 func website(c *httpx.Ctx) (*httpx.Response, error) {
-	j, e := discovery.StartWebsite(context.WithoutCancel(c.Context()), c.ProfileID, values(payload(c), "domains"))
+	p, _ := payload(c)
+	j, e := discovery.StartWebsite(context.WithoutCancel(c.Context()), c.ProfileID, values(p, "domains"))
 	return jobResponse(c, j, e)
 }
 func note(c *httpx.Ctx) (*httpx.Response, error) {

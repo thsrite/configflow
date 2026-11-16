@@ -12,6 +12,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/trafficstore"
+	"configflow/internal/convert"
 	"configflow/internal/health"
 	"configflow/internal/health/check"
 	"configflow/internal/jsonx"
@@ -19,6 +20,7 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
+	"gopkg.in/yaml.v3"
 )
 
 func decode(v any, out any) error {
@@ -233,7 +235,13 @@ func profileAgents(ctx context.Context, id string) ([]Agent, error) {
 	out := []Agent{}
 	for _, v := range all {
 		var a Agent
-		if err := decode(v, &a); err != nil {
+		view := jsonx.NewObject()
+		for _, key := range []string{"id", "name", "profile_id", "service_type", "domain_discovery_enabled", "version", "last_heartbeat"} {
+			if field, ok := v.Get(key); ok {
+				view.Set(key, field)
+			}
+		}
+		if err := decode(view, &a); err != nil {
 			return nil, err
 		}
 		if a.ProfileID == "" {
@@ -592,4 +600,26 @@ func listProfiles(ctx context.Context) ([]profile, error) {
 	var out []profile
 	err = decode(v, &out)
 	return out, err
+}
+
+func customPorts(text string) (map[int]bool, error) {
+	out := map[int]bool{}
+	var parsed map[string]any
+	if yaml.Unmarshal([]byte(text), &parsed) != nil || parsed == nil {
+		return out, nil
+	}
+	v, err := object(parsed)
+	if err != nil {
+		return out, err
+	}
+	ports, err := convert.MihomoUsedPorts(v)
+	if err != nil {
+		return out, err
+	}
+	for n := range ports {
+		if v, ok := n.Int64(); ok {
+			out[int(v)] = true
+		}
+	}
+	return out, nil
 }

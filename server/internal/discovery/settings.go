@@ -12,7 +12,6 @@ import (
 
 	"configflow/internal/repo"
 	"configflow/internal/rules"
-	"gopkg.in/yaml.v3"
 )
 
 // SettingsPayload returns the selected rulesets and valid candidates.
@@ -94,7 +93,11 @@ func UpdateSettings(ctx context.Context, id string, payload json.RawMessage) (ma
 		if json.Unmarshal(v, &n) != nil || n < 1024 || n > 65535 {
 			return nil, invalid(msgPort)
 		}
-		if customPorts(c.Mihomo.Custom)[n] {
+		used, err := customPorts(c.Mihomo.Custom)
+		if err != nil {
+			return nil, err
+		}
+		if used[n] {
 			return nil, invalid(fmt.Sprintf(msgPortUsed, n))
 		}
 		s.RegionPort = n
@@ -124,33 +127,6 @@ func UpdateSettings(ctx context.Context, id string, payload json.RawMessage) (ma
 		return nil, err
 	}
 	return SettingsPayload(ctx, id)
-}
-func customPorts(text string) map[int]bool {
-	out := map[int]bool{}
-	var doc struct {
-		Port      int `yaml:"port"`
-		Socks     int `yaml:"socks-port"`
-		Redir     int `yaml:"redir-port"`
-		TProxy    int `yaml:"tproxy-port"`
-		Mixed     int `yaml:"mixed-port"`
-		Listeners []struct {
-			Port int `yaml:"port"`
-		} `yaml:"listeners"`
-	}
-	if yaml.Unmarshal([]byte(text), &doc) != nil {
-		return out
-	}
-	for _, p := range []int{doc.Port, doc.Socks, doc.Redir, doc.TProxy, doc.Mixed} {
-		if p > 0 {
-			out[p] = true
-		}
-	}
-	for _, l := range doc.Listeners {
-		if l.Port > 0 {
-			out[l.Port] = true
-		}
-	}
-	return out
 }
 func uniqueID(prefix string) string {
 	var b [16]byte

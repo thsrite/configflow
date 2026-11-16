@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"math"
@@ -48,16 +49,92 @@ type collectionStatus struct {
 	MihomoVersion string  `json:"mihomo_version"`
 }
 type traffic struct {
-	Status collectionStatus `json:"status"`
-	Days   map[string]struct {
-		IPOnly int64 `json:"ip_only_conns"`
-		Hosts  map[string]struct {
-			First  string           `json:"first_seen"`
-			Last   string           `json:"last_seen"`
-			Ports  map[string]int64 `json:"ports"`
-			Routes map[string]Stats `json:"by_route"`
-		} `json:"hosts"`
-	} `json:"days"`
+	Status   collectionStatus      `json:"status"`
+	Days     map[string]trafficDay `json:"days"`
+	dayOrder []string
+}
+type trafficDay struct {
+	IPOnly    int64                  `json:"ip_only_conns"`
+	Hosts     map[string]trafficHost `json:"hosts"`
+	hostOrder []string
+}
+type trafficHost struct {
+	First                 string           `json:"first_seen"`
+	Last                  string           `json:"last_seen"`
+	Ports                 map[string]int64 `json:"ports"`
+	Routes                map[string]Stats `json:"by_route"`
+	portOrder, routeOrder []string
+}
+
+// Object key order is used only to break ties in stable traffic rankings.
+func fieldOrder(raw json.RawMessage) []string {
+	d := json.NewDecoder(bytes.NewReader(raw))
+	if token, err := d.Token(); err != nil || token != json.Delim('{') {
+		return nil
+	}
+	out := []string{}
+	for d.More() {
+		key, err := d.Token()
+		if err != nil {
+			return nil
+		}
+		var value json.RawMessage
+		if d.Decode(&value) != nil {
+			return nil
+		}
+		out = append(out, key.(string))
+	}
+	return out
+}
+func (t *traffic) UnmarshalJSON(b []byte) error {
+	type plain traffic
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*t = traffic(p)
+	var raw struct {
+		Days json.RawMessage `json:"days"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	t.dayOrder = fieldOrder(raw.Days)
+	return nil
+}
+func (t *trafficDay) UnmarshalJSON(b []byte) error {
+	type plain trafficDay
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*t = trafficDay(p)
+	var raw struct {
+		Hosts json.RawMessage `json:"hosts"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	t.hostOrder = fieldOrder(raw.Hosts)
+	return nil
+}
+func (t *trafficHost) UnmarshalJSON(b []byte) error {
+	type plain trafficHost
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*t = trafficHost(p)
+	var raw struct {
+		Ports  json.RawMessage `json:"ports"`
+		Routes json.RawMessage `json:"by_route"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	t.portOrder = fieldOrder(raw.Ports)
+	t.routeOrder = fieldOrder(raw.Routes)
+	return nil
 }
 
 // AgentStatus exposes collection status without registry credentials.
@@ -103,7 +180,8 @@ type Host struct {
 	Failing     bool     `json:"failing"`
 	Ignored     bool     `json:"ignored"`
 	Pending     *Match   `json:"pending_rule"`
-	Probe       *Probe   `json:"probe,omitempty"`
+	Probe       *Probe   `json:"probe"`
+	portOrder   []string
 	ports       map[string]int64
 }
 
@@ -191,10 +269,11 @@ func ignored(domain, host string, values []string) bool {
 }
 
 type group struct {
-	domain *Domain
-	hosts  map[string]*Host
-	routes map[string]*RouteStats
-	agents map[string]bool
+	hostOrder, routeOrder []string
+	domain                *Domain
+	hosts                 map[string]*Host
+	routes                map[string]*RouteStats
+	agents                map[string]bool
 }
 
 func summarize(reports []struct {
@@ -204,6 +283,7 @@ func summarize(reports []struct {
 	out := Listing{Agents: []AgentStatus{}, Items: []*Domain{}, MinAgentVersion: minAgentVersion, MinProbeVersion: minProbeVersion}
 	oldest := now().AddDate(0, 0, -max(days, 1)+1).Format("2006-01-02")
 	groups := map[string]*group{}
+	domainOrder := []string{}
 	var hostConns, ipOnly int64
 	for _, r := range reports {
 		a, data := r.agent, r.data
@@ -211,20 +291,21 @@ func summarize(reports []struct {
 		if agentID != "" && a.ID != agentID {
 			continue
 		}
-		days := sortedKeys(data.Days)
+		days := data.dayOrder
 		for _, day := range days {
 			bucket := data.Days[day]
 			if day < oldest {
 				continue
 			}
 			ipOnly += bucket.IPOnly
-			for _, name := range sortedKeys(bucket.Hosts) {
+			for _, name := range bucket.hostOrder {
 				entry := bucket.Hosts[name]
 				domain := RegistrableDomain(name)
 				g := groups[domain]
 				if g == nil {
 					g = &group{domain: &Domain{Domain: domain, Tags: []string{}, Routes: []*RouteStats{}, Hosts: []*Host{}, Agents: []string{}}, hosts: map[string]*Host{}, routes: map[string]*RouteStats{}, agents: map[string]bool{}}
 					groups[domain] = g
+					domainOrder = append(domainOrder, domain)
 				}
 				label := a.Name
 				if label == "" {
@@ -235,16 +316,20 @@ func summarize(reports []struct {
 				if h == nil {
 					h = &Host{Host: name, First: entry.First, Last: entry.Last, AgentIDs: []string{}, ports: map[string]int64{}}
 					g.hosts[name] = h
+					g.hostOrder = append(g.hostOrder, name)
 				}
 				if !contains(h.AgentIDs, a.ID) {
 					h.AgentIDs = append(h.AgentIDs, a.ID)
 				}
-				for port, n := range entry.Ports {
-					h.ports[port] += n
+				for _, port := range entry.portOrder {
+					if _, ok := h.ports[port]; !ok {
+						h.portOrder = append(h.portOrder, port)
+					}
+					h.ports[port] += entry.Ports[port]
 				}
 				h.First = min(h.First, entry.First)
 				h.Last = max(h.Last, entry.Last)
-				for _, key := range sortedKeys(entry.Routes) {
+				for _, key := range entry.routeOrder {
 					s := entry.Routes[key]
 					parts := strings.SplitN(key, "\t", 4)
 					if len(parts) != 4 {
@@ -254,6 +339,7 @@ func summarize(reports []struct {
 					if rs == nil {
 						rs = &RouteStats{Rule: parts[0], RulePayload: parts[1], Outlet: parts[2], Policy: parts[3]}
 						g.routes[key] = rs
+						g.routeOrder = append(g.routeOrder, key)
 					}
 					h.Stats.add(s)
 					rs.Stats.add(s)
@@ -269,15 +355,15 @@ func summarize(reports []struct {
 			}
 		}
 	}
-	for _, name := range sortedKeys(groups) {
+	for _, name := range domainOrder {
 		g := groups[name]
 		d := g.domain
 		uncovered, pending, allIgnored, failing := 0, 0, true, false
-		for _, host := range sortedKeys(g.hosts) {
+		for _, host := range g.hostOrder {
 			h := g.hosts[host]
 			h.Port = 443
 			weight := int64(-1)
-			for _, p := range sortedKeys(h.ports) {
+			for _, p := range h.portOrder {
 				if h.ports[p] > weight {
 					weight = h.ports[p]
 					if n, err := strconv.Atoi(p); err == nil {
@@ -312,6 +398,12 @@ func summarize(reports []struct {
 			}
 			return a.Conns > b.Conns
 		})
+		for _, h := range d.Hosts {
+			if h.Uncovered && !h.Ignored && h.Pending != nil {
+				d.Pending = h.Pending
+				break
+			}
+		}
 		if uncovered > 0 {
 			if pending == uncovered {
 				d.Tags = append(d.Tags, "pending")
@@ -339,8 +431,8 @@ func summarize(reports []struct {
 		if !keep {
 			continue
 		}
-		for _, r := range g.routes {
-			d.Routes = append(d.Routes, r)
+		for _, key := range g.routeOrder {
+			d.Routes = append(d.Routes, g.routes[key])
 		}
 		sort.SliceStable(d.Routes, func(i, j int) bool { return d.Routes[i].Conns+d.Routes[i].Fails > d.Routes[j].Conns+d.Routes[j].Fails })
 		for a := range g.agents {

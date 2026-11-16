@@ -31,7 +31,7 @@ type RegionRequest struct {
 type PageRequest struct {
 	ID      string                     `json:"id"`
 	URL     string                     `json:"url"`
-	Markers map[string]string          `json:"markers"`
+	Markers map[string]string          `json:"markers,omitempty"`
 	Extra   map[string]json.RawMessage `json:"-"`
 }
 

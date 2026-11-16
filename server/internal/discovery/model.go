@@ -7,19 +7,36 @@ import (
 
 // Settings is the persisted discovery configuration of a profile.
 type Settings struct {
-	DirectRuleset    *string           `json:"direct_ruleset"`
-	ProxyRuleset     *string           `json:"proxy_ruleset"`
-	Ignored          []string          `json:"ignored"`
-	AutoProbe        bool              `json:"auto_probe"`
-	AutoApply        bool              `json:"auto_apply"`
-	Confidence       int               `json:"auto_apply_min_confidence"`
-	History          []HistoryEntry    `json:"history"`
-	RegionEnabled    bool              `json:"region_check_enabled"`
-	RegionPort       int               `json:"region_probe_port"`
-	RegionalRulesets map[string]string `json:"regional_rulesets"`
-	WebsiteNotes     map[string]string `json:"website_notes"`
+	Extra            map[string]json.RawMessage `json:"-"`
+	DirectRuleset    *string                    `json:"direct_ruleset"`
+	ProxyRuleset     *string                    `json:"proxy_ruleset"`
+	Ignored          []string                   `json:"ignored"`
+	AutoProbe        bool                       `json:"auto_probe"`
+	AutoApply        bool                       `json:"auto_apply"`
+	Confidence       int                        `json:"auto_apply_min_confidence"`
+	History          []HistoryEntry             `json:"history"`
+	RegionEnabled    bool                       `json:"region_check_enabled"`
+	RegionPort       int                        `json:"region_probe_port"`
+	RegionalRulesets map[string]string          `json:"regional_rulesets"`
+	WebsiteNotes     map[string]string          `json:"website_notes"`
 }
 
+// UnmarshalJSON reads persisted settings while retaining future fields.
+func (s *Settings) UnmarshalJSON(b []byte) error {
+	type plain Settings
+	p := plain(defaultSettings())
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*s = Settings(p)
+	return capture(b, &s.Extra, "direct_ruleset", "proxy_ruleset", "ignored", "auto_probe", "auto_apply", "auto_apply_min_confidence", "history", "region_check_enabled", "region_probe_port", "regional_rulesets", "website_notes")
+}
+
+// MarshalJSON retains fields unknown to this server version.
+func (s Settings) MarshalJSON() ([]byte, error) {
+	type plain Settings
+	return preserve(plain(s), s.Extra)
+}
 func defaultSettings() Settings {
 	return Settings{Ignored: []string{}, Confidence: 90, History: []HistoryEntry{}, RegionPort: 17999, RegionalRulesets: map[string]string{}, WebsiteNotes: map[string]string{}}
 }
@@ -46,15 +63,58 @@ func (s *Settings) normalize() {
 
 // HistoryEntry records an adopted rule and its most recent recheck.
 type HistoryEntry struct {
-	Value      string   `json:"value"`
-	RuleType   string   `json:"rule_type"`
-	Target     string   `json:"target"`
-	RulesetID  string   `json:"ruleset_id"`
-	Source     string   `json:"source"`
-	AppliedAt  string   `json:"applied_at"`
-	Verdict    *string  `json:"verdict"`
-	Confidence *int     `json:"confidence"`
-	Recheck    *Recheck `json:"recheck"`
+	original      json.RawMessage
+	previousKnown map[string]json.RawMessage
+	Value         string   `json:"value"`
+	RuleType      string   `json:"rule_type"`
+	Target        string   `json:"target"`
+	RulesetID     string   `json:"ruleset_id"`
+	Source        string   `json:"source"`
+	AppliedAt     string   `json:"applied_at"`
+	Verdict       *string  `json:"verdict"`
+	Confidence    *int     `json:"confidence"`
+	Recheck       *Recheck `json:"recheck"`
+}
+
+// UnmarshalJSON retains a historical entry without filling absent legacy fields.
+func (h *HistoryEntry) UnmarshalJSON(b []byte) error {
+	type plain HistoryEntry
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*h = HistoryEntry(p)
+	h.original = append(json.RawMessage(nil), b...)
+	known, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(known, &h.previousKnown)
+}
+
+// MarshalJSON retains future fields and updates only changed known fields.
+func (h HistoryEntry) MarshalJSON() ([]byte, error) {
+	type plain HistoryEntry
+	known, err := json.Marshal(plain(h))
+	if err != nil {
+		return nil, err
+	}
+	if h.original == nil {
+		return known, nil
+	}
+	var fields, current map[string]json.RawMessage
+	if err = json.Unmarshal(h.original, &fields); err != nil {
+		return nil, err
+	}
+	if err = json.Unmarshal(known, &current); err != nil {
+		return nil, err
+	}
+	for k, v := range current {
+		if string(v) != string(h.previousKnown[k]) {
+			fields[k] = v
+		}
+	}
+	return json.Marshal(fields)
 }
 
 // Recheck is the retained outcome of an automatic recheck.
