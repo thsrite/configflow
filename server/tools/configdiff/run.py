@@ -138,6 +138,8 @@ def main():
     groups.update(subscription_hosts)
     from cases.oxidns_controls import GROUPS as oxidns_controls
     groups.update(oxidns_controls)
+    from cases.oxidns_assets import GROUPS as oxidns_assets
+    groups.update(oxidns_assets)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

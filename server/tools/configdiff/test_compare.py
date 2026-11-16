@@ -17,6 +17,24 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_managed_zip_assets_keep_bytes_and_exact_member_closure(self):
+        from assets import zip_assets, raw_asset_diffs
+        def archive(items):
+            target = io.BytesIO()
+            with zipfile.ZipFile(target, 'w') as output:
+                for name, content in items:
+                    output.writestr(name, content)
+            return target.getvalue()
+        original = [('config.yaml', b'plugins: []\n'), ('rules/native.txt', b'# original\r\ndomain:example.com\r\n'),
+                    ('data/opaque.bin', b'\x00\xff\x01')]
+        left = zip_assets(archive(original))
+        self.assertEqual(raw_asset_diffs(left, zip_assets(archive(original)), Policy()), [])
+        for changed in (original[:1] + [('rules/native.txt', original[1][1].replace(b'\r\n', b'\n'))] + original[2:],
+                        original[:2], original + [('extra', b'unexpected')]):
+            self.assertTrue(raw_asset_diffs(left, zip_assets(archive(changed)), Policy()))
+        with self.assertRaises(ValueError):
+            zip_assets(archive(original + [original[1]]))
+
     def test_original_response_and_rule_cache_keep_exact_newline_bytes(self):
         left = Reply(200, {'content-type': 'text/plain; charset=utf-8'}, b'# synthetic\r\nexample.com\n')
         right = Reply(200, dict(left.headers), b'# synthetic\nexample.com\n')

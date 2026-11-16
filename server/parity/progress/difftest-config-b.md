@@ -684,3 +684,20 @@ request_variants=6383 named_matrix_cases=3320（S480 F2387 B453），H去重217�
 ```
 
 继续原生附件/草稿编辑/交付图及其他剩余清单，未做最终全量。
+
+## 批次 38：G10原生include、附件原文与运行文件隔离
+
+- 43请求：native文本/base64、template自定义provider、三层include和合法父路径、API TLS/WebUI/opaque binary资源闭包、cache/query/learned运行文件，默认/scoped均preview+完整ZIP+artifact。include按shared→first→middle→last展开，只导入插件，保留主runtime=3，附加文件原文留在包内。
+- 新增managed-assets原始字节比较器，ZIP附件和artifact解包的附件均逐字节比较，config.yaml仍由生成结构比较器比较；CRLF、中文、尾空格、NUL/无效UTF-8都不能被文本归一化吞掉。故意CRLF改LF、删成员、加成员、重复成员均被自检拦住，比较器自检共43项。
+- 公共preview可200但缺资源/运行输出与附件冲突的完整ZIP必须400；state/cache.dump、queries.db、learned.txt无法声明成可部署附件。生成前外部准备的运行文件保持原样，不能进入ZIP/artifact或被生成覆盖。
+- TLS/opaque资源仅证明路径闭包和打包原文，使用合成占位内容；没有启动核心、TLS握手或声称opaque数据是可加载的核心数据库。Go相关路由仍未接通。
+
+```text
+.63 run.py --groups oxidns-managed-assets,oxidns-asset-guards
+current go-unimplemented=43 design_errors=[] seconds=18.52
+cumulative compared=1472 go-unimplemented=4884 dependency=28 different=41 O12-separate=1
+request_variants=6426 named_matrix_cases=3320（S480 F2387 B453），H去重217，G去重14
+43 self-checks + end-to-end wrong-Go-response check OK
+```
+
+继续G12/G13及其余业务/长流程；未做最终全量。
