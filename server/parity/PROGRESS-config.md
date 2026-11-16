@@ -1426,7 +1426,7 @@ Progress: (updated at each milestone)
 
 ## C27 — rule DNS actions
 
-**Status: `missing`** · prereqs: C26 · Go: internal/oxidns (new)
+**Status: in progress** (author port, 2026-11-17) · prereqs: C26 verified · Go: `internal/oxidns`
 
 Files:
 - `backend/common/rule_dns.py` (885)
@@ -1435,11 +1435,19 @@ Tests: `converters/test_oxidns.py` (43), `test_oxidns_common_routing.py` (54), `
 
 Routes: none.
 
-Evidence: No Go package; no route registered.
+Scope / implementation plan:
+- Read the complete 885-line Python module and all nine listed test files (2,964 lines). Existing C22/C25/S code already implements generation, pinned helper recognition, policy-group defaults and classical-content lookup. Extend it; no second implementation or Python exception/value shim.
+- Buildable step 1: typed rule-page state and upstream candidates; public profile-agent filtering, choice parsing, ruleset hydration and explicit-route/read-entry APIs. Free-form upstream/settings documents remain yaml.Node, JSON views use typed structs and encoding/json.
+- Buildable step 2: ApplyRuleDNS returns a replacement settings draft plus warnings; it never mutates before/after profiles. C32 installs the returned settings under its transaction only after success. Strict native refusal is a Go RoutingLockedError with typed usage metadata; lenient mode preserves native YAML and returns the existing Chinese warning. Existing common routing owns all rebuilding/parking/resource reconciliation.
+- Buildable step 3: synthetic real-Python public-entry reference corpus includes read models, template/native writes, group reorder/follow drift, enable/disable/delete/value/reorder changes, linked/stale upstreams, locked/malformed drafts and final generated YAML. Add boundary assertions on both inputs and generated configurations; compare proddiff public generators on .32, with coverage regressions 0.
+- Iteration on .63; final gofmt, vet, oxidns race, ordinary full suite and proddiff on .32. Commit each compiling step and end with git rebase go, clean worktree, no push. Final status will be ported (independent reviewer follows).
 
-Missing / deferred: Everything in the files below.
+Cross-domain contracts:
+- The existing classical-IP hook stays the one installed by ippresence; unknown content remains conservative. No private rule_ip_presence copy.
+- A16 is missing. The read model decodes the saved library/rules booleans from agent.rule_sync.settings into a typed SyncSettings; read options allow an agent settings adapter when A16 supplies its own type. No workers, HTTP or repository calls are introduced.
+- C27 has no routes or repository writes. C32 owns HTTP/auth/transaction/cancellation semantics and converts choice/setting errors to 400 and RoutingLockedError to 409 with usages. C29 owns invalidate-follow at whole-settings replacement; group writers also call the same C27 update API.
 
-Notes for porter: **Cross-domain:** `rule_dns` calls `agents.rule_sync.settings_for` (agents) and `common.rule_ip_presence.classical_ip_lines` (routers): compat copies or interface. **Started by C22**: constants, `entry_key`, `route_key`, `route_exec`, `normalize_action`, `_enabled`, `upstream_chain`, `helper_plugins`, `convertible`, `has_ip_part` in `internal/oxidns/ruledns.go` (`classical_ip_lines` stub in `pending.go`).
+Public API signatures and Python-test-file coverage will be filled with each compiling step below. Remaining: implement steps 1–3 and final checks.
 
 ## C28 — MosDNS archive and routes
 
