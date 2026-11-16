@@ -231,3 +231,37 @@ func TestRenderMatrixMatchesPython(t *testing.T) {
 	}
 	t.Logf("matrix: %d cases, %d rendered, %d refused", len(cases), rendered, refused)
 }
+
+// TestWriteShellcheckSample writes the Go renderings of the cases
+// testdata/shellcheck_sample.py picks (INSTALLER_SAMPLE_DIR/go/<source>-<id>.sh)
+// for the shellcheck comparison of the A08 review.
+func TestWriteShellcheckSample(t *testing.T) {
+	dir := os.Getenv("INSTALLER_SAMPLE_DIR")
+	if dir == "" {
+		t.Skip("set INSTALLER_SAMPLE_DIR")
+	}
+	shell := map[string]bool{"go_agent": true, "aio": true, "gateway": true, "core": true, "run": true, "with_install_output": true}
+	if err := os.MkdirAll(dir+"/go", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name string, records []*jsonx.Object, step int) {
+		var picked []*jsonx.Object
+		for _, r := range records {
+			if r.GetBool("ok") && shell[r.GetString("fn")] {
+				picked = append(picked, r)
+			}
+		}
+		for i := 0; i < len(picked); i += step {
+			r := picked[i]
+			out, err := renderCase(r.GetString("fn"), kwargs{r.GetObject("kwargs")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(fmt.Sprintf("%s/go/%s-%d.sh", dir, name, r.GetInt("id")), []byte(out), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	write("matrix", readJSONLines(t, "testdata/matrix.jsonl"), 4)
+	write("fuzz", readGzipJSONLines(t, "testdata/fuzz.jsonl.gz"), 40)
+}

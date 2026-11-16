@@ -54,6 +54,11 @@ func AgentsStaticDir() string {
 // binaries served by agents.download_agent_binary.
 func LocalAgentChecksums() (map[string]string, error) {
 	directory := AgentsStaticDir()
+	if value, set := os.LookupEnv("AGENTS_STATIC_DIR"); set && value == "" {
+		// Path('') is '.', which exists (os.path.exists('') in the download
+		// route is False, hence AgentsStaticDir's default there).
+		directory = "."
+	}
 	checksums := map[string]string{}
 	for _, arch := range []string{"linux-amd64", "linux-arm64"} {
 		binary := filepath.Join(directory, "configflow-agent-"+arch)
@@ -85,7 +90,7 @@ func httpURL(value, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if (parsed.scheme != "http" && parsed.scheme != "https") || !parsed.hasHostname() || parsed.hasCredentials() || parsed.fragment != "" {
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || hasCredentials(parsed) || parsed.Fragment != "" {
 		return "", valueError(name + " must be an HTTP(S) URL without credentials or fragment")
 	}
 	return strings.TrimRight(value, "/"), nil
@@ -159,7 +164,7 @@ func GenerateGatewayInstallScript(o GatewayOptions) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if a.scheme != b.scheme || a.netloc != b.netloc {
+		if a.Scheme != b.Scheme || a.Netloc != b.Netloc {
 			return "", valueError("Enrollment endpoint must use the ConfigFlow server origin")
 		}
 	}

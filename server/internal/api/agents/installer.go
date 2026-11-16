@@ -11,6 +11,7 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/installer"
 	"configflow/internal/jsonx"
+	"configflow/internal/pystr"
 	"configflow/internal/repo"
 	"configflow/internal/utilx"
 )
@@ -174,10 +175,8 @@ func installCommandParams(payload any) (mapParams, error) {
 	return params, nil
 }
 
-// pyLowerText is str.lower() for the agent type: U+0130 becomes "i̇".
-func pyLowerText(text string) string {
-	return strings.ToLower(strings.ReplaceAll(text, "İ", "i̇"))
-}
+// pyLowerText is str.lower() (CPython 3.11 full case mapping).
+func pyLowerText(text string) string { return pystr.Lower(text) }
 
 func valueErrorResponse(err error) *httpx.Response {
 	return failure(400, err.Error())

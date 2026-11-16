@@ -8,6 +8,8 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -99,8 +101,9 @@ func (c *Ctx) ArgList(name string) []string {
 }
 
 // queryPairs is Werkzeug's query parsing: "&"-separated pairs, "+" is a
-// space, percent escapes decoded (invalid UTF-8 replaced), empty pairs
-// skipped, a pair without "=" has an empty value.
+// space, percent escapes decoded (the bytes of invalid UTF-8 re-quoted as
+// %XX, errors="werkzeug.url_quote"), empty pairs skipped, a pair without "="
+// has an empty value.
 func (c *Ctx) queryPairs() [][2]string {
 	if c.query == nil {
 		c.query = ParseQuery(c.Request.URL.RawQuery)
@@ -116,7 +119,7 @@ func ParseQuery(raw string) [][2]string {
 			continue
 		}
 		key, value, _ := strings.Cut(piece, "=")
-		pairs = append(pairs, [2]string{urlx.UnquotePlus(key), urlx.UnquotePlus(value)})
+		pairs = append(pairs, [2]string{urlx.UnquotePlusURLQuote(key), urlx.UnquotePlusURLQuote(value)})
 	}
 	return pairs
 }
@@ -200,17 +203,68 @@ func (c *Ctx) Scheme() string {
 	return "http"
 }
 
-// Host is request.host (the Host header).
-func (c *Ctx) Host() string { return c.Request.Host }
+// werkzeugHost is werkzeug.sansio.utils._host_re (re.ASCII | re.IGNORECASE |
+// re.VERBOSE), matched in full.
+var werkzeugHost = regexp.MustCompile(`^(?:[a-zA-Z0-9.-]+|\[[a-fA-F0-9]*:[a-fA-F0-9.:]+\])(?::[0-9]+)?$`)
+
+// Host is request.host, Werkzeug 3.1's get_host: the Host header without the
+// scheme's default port (":80" / ":443"), or "" when its characters are not
+// valid for a host.
+func (c *Ctx) Host() string {
+	host := c.Request.Host
+	if host == "" {
+		return ""
+	}
+	if c.Scheme() == "https" {
+		host = strings.TrimSuffix(host, ":443")
+	} else {
+		host = strings.TrimSuffix(host, ":80")
+	}
+	if !werkzeugHost.MatchString(host) {
+		return ""
+	}
+	return host
+}
+
+// currentURL is get_current_url(scheme, host) + root: uri_to_iri lower-cases
+// the host name and writes the port as a number (dropped when 0). Not
+// reproduced, as Python raises there (a 500): a port above 65535, an invalid
+// bracketed IPv6 address, and IDNA decoding of "xn--" labels (kept as is).
+func currentURL(scheme, host, root string) string {
+	netloc := ""
+	if host != "" {
+		name, port := host, ""
+		if strings.HasPrefix(host, "[") {
+			end := strings.IndexByte(host, ']')
+			name, port = host[1:end], strings.TrimPrefix(host[end+1:], ":")
+		} else {
+			name, port, _ = strings.Cut(host, ":")
+		}
+		netloc = strings.ToLower(name) // ASCII only (validated above)
+		if strings.Contains(netloc, ":") {
+			netloc = "[" + netloc + "]"
+		}
+		if port != "" {
+			if n, err := strconv.Atoi(port); err == nil && n <= 65535 {
+				if n != 0 {
+					netloc += ":" + strconv.Itoa(n)
+				}
+			} else {
+				netloc += ":" + port
+			}
+		}
+	}
+	return scheme + "://" + netloc + root + "/"
+}
 
 // HostURL is request.host_url ("http://host/").
-func (c *Ctx) HostURL() string { return c.Scheme() + "://" + c.Host() + "/" }
+func (c *Ctx) HostURL() string { return currentURL(c.Scheme(), c.Host(), "") }
 
 // URLRoot is request.url_root: HostURL plus the script root of an in-process
 // dispatch (localhttp).
 func (c *Ctx) URLRoot() string {
 	root := strings.TrimRight(localhttp.ScriptRoot(c.Request.Context()), "/")
-	return c.Scheme() + "://" + c.Host() + root + "/"
+	return currentURL(c.Scheme(), c.Host(), root)
 }
 
 // ContentLength is request.content_length (ok false when unknown).

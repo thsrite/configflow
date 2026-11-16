@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
 )
 
@@ -85,6 +86,46 @@ func Unquote(s string) string {
 // UnquotePlus is urllib.parse.unquote_plus.
 func UnquotePlus(s string) string {
 	return Unquote(strings.ReplaceAll(s, "+", " "))
+}
+
+// UnquotePlusURLQuote is unquote(s.replace("+", " "), errors="werkzeug.url_quote"),
+// how Werkzeug 3 decodes query names and values (request.args): the bytes of
+// every maximal invalid UTF-8 subpart are re-quoted as upper-case %XX
+// instead of becoming U+FFFD.
+func UnquotePlusURLQuote(s string) string {
+	s = strings.ReplaceAll(s, "+", " ")
+	if !strings.Contains(s, "%") {
+		return s
+	}
+	var raw []byte
+	for i := 0; i < len(s); i++ {
+		if s[i] == '%' && i+2 < len(s) && isHex(s[i+1]) && isHex(s[i+2]) {
+			raw = append(raw, unhex(s[i+1])<<4|unhex(s[i+2]))
+			i += 2
+			continue
+		}
+		raw = append(raw, s[i])
+	}
+	if utf8.Valid(raw) {
+		return string(raw)
+	}
+	var out strings.Builder
+	for i := 0; i < len(raw); {
+		r, size := utf8.DecodeRune(raw[i:])
+		if r != utf8.RuneError || size > 1 {
+			out.Write(raw[i : i+size])
+			i += size
+			continue
+		}
+		n := invalidSubpartLength(raw[i:])
+		for _, c := range raw[i : i+n] {
+			out.WriteByte('%')
+			out.WriteByte(uppercaseHex[c>>4])
+			out.WriteByte(uppercaseHex[c&15])
+		}
+		i += n
+	}
+	return out.String()
 }
 
 func isHex(c byte) bool { return strings.IndexByte(hexDigits, c) >= 0 }
@@ -284,13 +325,15 @@ func checkBracketedHost(hostname string) error {
 		}
 		return nil
 	}
-	// ipaddress refuses an empty scope id and one containing "%".
+	// ipaddress.ip_address: IPv4Address, then IPv6Address (which refuses an
+	// empty scope id and one containing "%"), else its ValueError text.
+	notAddress := fmt.Errorf("%s does not appear to be an IPv4 or IPv6 address", jsonx.Repr(hostname))
 	if _, zone, found := strings.Cut(hostname, "%"); found && (zone == "" || strings.Contains(zone, "%")) {
-		return errors.New("Invalid IPv6 address")
+		return notAddress
 	}
 	addr, err := netip.ParseAddr(hostname)
 	if err != nil {
-		return err
+		return notAddress
 	}
 	if addr.Is4() {
 		return errors.New("An IPv4 address cannot be in brackets")

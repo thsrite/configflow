@@ -1,24 +1,19 @@
 package installer
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
-	"unicode"
 
-	"configflow/internal/agents/diag"
-	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
+	"configflow/internal/pystr"
 )
 
-// maxStrDigits is CPython 3.11's default sys.get_int_max_str_digits().
-const maxStrDigits = 4300
-
 // pyInt is int(value) for the values the generators receive: Go integers,
-// *big.Int and str. A str follows int(str): the ValueError texts are
-// CPython's, including the digit limit (checked on the leading run of digits
-// before trailing characters are rejected, as CPython does).
+// *big.Int and str. A str follows int(str) (shared pystr port: CPython 3.11
+// Unicode digits and white space, the 4300 digit limit, ValueError texts with
+// the %.200R repr).
 func pyInt(value any) (*big.Int, error) {
 	switch v := value.(type) {
 	case bool:
@@ -33,44 +28,17 @@ func pyInt(value any) (*big.Int, error) {
 	case *big.Int:
 		return new(big.Int).Set(v), nil
 	case string:
-		if digits := leadingDigitRun(v); digits > maxStrDigits {
-			return nil, valueError(fmt.Sprintf("Exceeds the limit (%d digits) for integer string conversion: value has %d digits; use sys.set_int_max_str_digits() to increase the limit", maxStrDigits, digits))
-		}
-		n, ok := httpx.PyParseInt(v)
-		if !ok {
-			return nil, valueError("invalid literal for int() with base 10: " + jsonx.Repr(v))
+		n, err := pystr.Int(v, 10)
+		if err != nil {
+			var pyErr *pystr.ValueError
+			if errors.As(err, &pyErr) {
+				return nil, valueError(pyErr.Msg)
+			}
+			return nil, err
 		}
 		return n, nil
 	}
 	panic(fmt.Sprintf("pyInt: unsupported %T", value))
-}
-
-// leadingDigitRun counts the digits CPython scans before the limit check:
-// after whitespace and a sign, digits with single underscores between them.
-func leadingDigitRun(text string) int {
-	s := strings.TrimLeftFunc(text, func(r rune) bool {
-		return r == ' ' || (r >= '\t' && r <= '\r') || (r >= 127 && diag.IsPySpace(r))
-	})
-	if s != "" && (s[0] == '+' || s[0] == '-') {
-		s = s[1:]
-	}
-	digits, previous := 0, rune(0)
-	for _, r := range s {
-		if r == '_' {
-			if previous == '_' {
-				return 0
-			}
-		} else if unicode.IsDigit(r) {
-			digits++
-		} else {
-			break
-		}
-		previous = r
-	}
-	if previous == '_' {
-		return 0
-	}
-	return digits
 }
 
 // pyStr is str(value) for the same values.

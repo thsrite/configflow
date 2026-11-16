@@ -87,8 +87,15 @@ func (c *storeConn) close() {
 func (s *Store) open(ctx context.Context) (*storeConn, error) {
 	path := s.DatabasePath()
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	// Path.mkdir(mode=0o700, parents=True, exist_ok=True): missing parents get
+	// the default mode, only the directory itself 0700.
+	if err := os.MkdirAll(filepath.Dir(dir), 0o777); err != nil {
 		return nil, err
+	}
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		if info, statErr := os.Stat(dir); statErr != nil || !info.IsDir() {
+			return nil, err
+		}
 	}
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return nil, err

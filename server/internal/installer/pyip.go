@@ -3,11 +3,7 @@ package installer
 import (
 	"errors"
 	"strings"
-
-	"configflow/internal/jsonx"
 )
-
-func reprText(s string) string { return jsonx.Repr(s) }
 
 var errAddress = errors.New("invalid IPv4 address")
 

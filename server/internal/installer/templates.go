@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/agents/diag"
+	"configflow/internal/pystr"
 )
 
 // scriptFiles is backend/agents/scripts/*.sh (copied; see TestScriptsMatchBackend).
@@ -90,10 +91,10 @@ func substitute(text string, values map[string]string) string {
 }
 
 // pyRstrip is str.rstrip() without arguments.
-func pyRstrip(text string) string { return strings.TrimRightFunc(text, diag.IsPySpace) }
+func pyRstrip(text string) string { return strings.TrimRightFunc(text, pystr.IsSpace) }
 
 // pyStrip is str.strip() without arguments.
-func pyStrip(text string) string { return diag.PyStrip(text) }
+func pyStrip(text string) string { return pystr.Strip(text) }
 
 // splitLines is str.splitlines(keepends=True).
 func splitLines(text string) []string { return diag.SplitLinesKeepEnds(text) }
