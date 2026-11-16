@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 13 missing, 3 partial, 9 ported, 12 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13, C14, C15, C16). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 13 missing, 3 partial, 7 ported, 14 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13, C14, C15, C16, C17, C21). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -42,11 +42,11 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C14 | remote rule fetch, ruleset content, remote sources, website identity | 1202 | verified | C12, C08 | – |
 | C15 | subscription refresh, health, scheduled refresh | 600 | verified | C13, C14, C07 | – |
 | C16 | health check, latency, node DNS, region check, domain probe | 1089 | verified | C12, C13 | 5 (5 done) |
-| C17 | provider delivery and responses | 540 | ported | C15 | – |
+| C17 | provider delivery and responses | 540 | verified | C15 | – |
 | C18 | Mihomo config generation, Mihomo base settings | 1275 | ported | C12, C15, C16, C17 | – |
 | C19 | Surge converter | 1129 | ported | C18 | – |
 | C20 | Loon converter | 764 | ported | C19 | – |
-| C21 | MosDNS converter | 1261 | ported | C14 | – |
+| C21 | MosDNS converter | 1261 | verified | C14 | – |
 | C22 | OxiDNS converter, native loader, references, match targets | 913 | ported | C05, C21 | – |
 | C23 | OxiDNS validation and constraints | 1542 | ported | C22 | – |
 | C24 | OxiDNS common settings | 1175 | ported | C23 | – |
@@ -847,7 +847,7 @@ Commands (review):
 
 ## C17 — provider delivery and responses
 
-**Status: `ported`** (not reviewed) · prereqs: C15 · Go: `internal/provider` (new)
+**Status: `verified`** (review 2026-11-16: 4532957f, 00af00ee; see "Review C17") · prereqs: C15 · Go: `internal/provider` (new)
 
 Files → Go:
 - `backend/utils/provider_delivery.py` (424) → `delivery.go`: `Snapshot` (= DeliverySnapshot: `Capture`, `Main` = json.loads(main_json), `HasChains`, `Adapt`, `Validate(proxies, forceChains, providerName *string)`, `ProviderName(sub['name'])`), `AdaptDelivered` (+ `dialerRecord` = subscription_dialers.dialer_record(sub) with its cache / download-cache reads), `ValidateProxyShapes`, `loadProviderProxies` (= `_load_provider_proxies`), `ParseProviderProxies`, `PrepareSubscriptionProvider` (`PrepareOptions{Fetch, AllowTransportFallback, SourcePath, SourcePrepared}`), `ValidateRenderedBundle`, `CommitCacheUpdates`, `PrepareProviderBundle` (`BundleOptions{Requested, RenderAll, AllowTransportFallback, Prepared, SubscriptionFetch, Progress}`; per-(id,url) single-flight fetch like the Python futures), `CommitProviderBundle`. Result dicts are `*Rendered{Name, HasName, Content, CacheUpdates []CacheUpdate{SubID, Nodes, Metadata}, AggregationID, URL, LocalPath, Extra}`. `errors.go`: `*provider.Error{Class, Message}` (re-wrapped StrategyReferenceError / DialerReferenceError / ListenerReferenceError with `_provider_contexts` and `provider_field`; `errors.As` finds the convert/subs/rules types), `providerContext`, `shapeError`, `providerSourceError` (field lookup on `pyyaml.Compose` + `flattenMapping`, last duplicate key wins), `yamlCause` (the yaml.YAMLError as `*pyyaml.Error`: compose errors re-composed with marks; ConstructorError parsed back from str(exc)).
@@ -881,6 +881,40 @@ Reviewer hints: `prepareSubscriptionProvider` try/except boundary (which errors 
 Commands:
 - tests: `rt -- bash -lc 'cd server && gofmt -l internal/provider; go vet ./internal/provider/ && go test -count=1 -race ./internal/provider/'` (last: ok, 38.6 s)
 - corpus: `rt --back server/internal/provider/testdata/corpus.json.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/provider/testdata/gen.py'`
+
+### Review C17 (adversarial, 2026-11-16)
+
+Every function and branch of `provider_delivery.py` and `provider_response.py` walked against `delivery.go`, `errors.go`, `response.go`, `hooks.go` (try/except boundary of prepare, `update` only after validation, render condition order and the `active` rescan, single shared fetch per (id, url) incl. `prepared` futures, `_provider_context` dedup key, `_provider_source_error` field lookup and marks, `serve_provider` timer vs pool queueing, copies, last-good write/read).
+
+| # | Sev | Finding | Fix | Regression test |
+|---|---|---|---|---|
+| 1 | high | PORTING 4b: `PrepareSubscriptionProvider`, `PrepareProviderBundle` (shared per-subscription fetches, download-cache writes), `CommitCacheUpdates`, `CommitProviderBundle` used the caller's context; a route passing `c.Context()` (C30 refresh/proxies routes, A14 push) would turn a client disconnect into a transport fallback, a different answer or a half-committed bundle. Python's request thread finishes | all four run on `context.WithoutCancel(ctx)` (repo scope kept) — 4532957f | `TestReviewBundleAndCommitFinishWhenTheRequestIsCancelled` |
+| 2 | low | `x['key']` on a str/list item (hand-made main/config) said `'str' object is not subscriptable`; CPython 3.11: `string indices must be integers, not 'str'` / `list indices must be integers or slices, not str` | `subscriptError` — 4532957f | `TestReviewValidateSubscriptTexts` (texts from `testdata/review_c17_ref.py`) |
+| 3 | low | eager evaluation where Python is lazy: `source.get('url')` of the provider's own definition checked before the loop (Python: only for other definitions); `resource['id']` of `requested` read before the catalog scan (Python: per item); the `prepared` future key used the raw id/url while the fetches look it up with `str()` (non-string ids never shared) | 4532957f | replay + `TestReviewValidateSubscriptTexts` case 1 |
+| 4 | low | decision 10: `flattenMapping` private copy of yamlx's flatten | `yamlx.FlattenMapping` exported, copy removed — 00af00ee | corpus + replay |
+| 5 | test | timing flake of `TestAggregationFallsBackToCommittedArtifactBeforeFirstServe` (decision 14): the render released at the end of the test kept running and wrote `providers/served/…` while `t.TempDir` was being removed ("directory not empty" under load); the 0.2 s budget only bounds the fallback from below | `newServeFixture` registers a cleanup (runs first) that waits until no flight is left; nothing the tests check was weakened — 4532957f | the response tests ×15 with `-race` while every CPU of the test server was busy: ok |
+
+Accepted differences (re-checked, unchanged): provider YAML with values jsonx cannot hold (`!!set`/`!!omap`/`!!pairs`, recursive aliases) is a non-YAML load error in Go (transport fallback in prepare) where Python loads it and raises a shape error — never produced by Sub-Store/airport YAML; non-string provider `url` → TypeError when sources are collected; non-string sub ids passed to fetchers as `str()`; a render body that is not UTF-8 is stored as last good unchanged (Python's `get_data(as_text=True)` would raise; every provider render is text). The C12 `ValidateEmitted` allowlist row of the corpus is gone (`knownDifference` empty; fixed in C12's review).
+
+Checks performed (no finding): `capture` (generator order, `enabled` default, frozenset of names), `has_chains` (short-circuit order, `override` truthiness, AttributeErrors), `validate` (shape errors first, chain-exit overlap, same-URL payload aliasing, `{**main, 'proxies': …}` key position), `adapt_delivered` (`getattr(main_json)`, falsy id), `dialer_record` reads (metadata `dialers`, download cache only for a URL, read errors → None), `validate_proxy_shapes` (field tuples, `.strip()` = `pystr.Strip`), `_load_provider_proxies` (YAMLError vs other, root/proxies errors, label/owner), prepare (source_prepared vs refresh policy, which errors become transport errors, `StrategyReferenceError` re-raise, cache fallback, `allow_transport_fallback` only without chains, `failure_text` of the transport error, `convert_node_to_mihomo` truthiness), `validate_rendered_bundle` (monotonic activation, unverified-fallback error, by-URL payload sharing, `require_providers`), bundle (requested catalog/definition injection with deep copies, `opaque` nodes, render condition order, `active` rescan in `rendered` insertion order, `local_path` KeyError, progress texts and `force`), commit (last update per sub id wins at the first position, artifacts after caches), `ServeProvider` (key fields incl. `format or ''`, digest only as identity, fallback only without `format`, the timer covers pool queueing like `future.result(timeout)`, no last good → wait, UnicodeDecodeError propagates, `text/yaml; charset=utf-8` + `X-ConfigFlow-Provider: last-good`, `%d` seconds, last good written only for a 200 `text/yaml` render, per-waiter copies incl. Content-Disposition, Content-Length recomputed, render on `WithoutCancel`), `RequestedFilters` (presence vs value, `format` check before regex validation, 400 messages).
+
+Record & replay (new): `testdata/c17_record.py` (pytest plugin) records every top-level call of `validate_proxy_shapes`, `parse_provider_proxies`, `DeliverySnapshot.capture/.has_chains/.validate`, `validate_rendered_bundle`, `prepare_subscription_provider`, `prepare_provider_bundle`, `commit_provider_bundle`, `commit_cache_updates` during the full suite (12552 passed under the recorder), with the collaborators' answers: A11 `preparation_context`/`source_error` (by arguments), every fetch (label/id/url → result or exception; aggregation fetches run on worker threads and are compared as a multiset), Sub-Store conversions, `generate_aggregation_provider` answers (test doubles included) with the fetches they made, uuid4 node ids of prepare, the subscription/download caches before the call and the files after commits, and the call's wall-clock window (timestamps inside it and cache `updated_at` masked on both sides). `recorded_test.go` `TestRecordedPythonTests`: **1262 distinct calls from 712 tests in 42 files, 0 differences** (bundle 762, capture 196, parse 94, validate 72, commit_updates 58, commit_bundle 55, has_chains 15, prepare_sub 7, rendered_bundle 2); 1 call skipped (a `SimpleNamespace` snapshot in `test_subscription_refresh_policy.py`, hand-ported). A test's fake aggregation provider without `cache_updates` (`test_proxy_chains.py`) and tests that replace `commit_cache_updates` are handled explicitly in the harness.
+
+Coverage map (Python tests touching C17):
+- `test_provider_response.py` 9: hand-ported 8 (`response_test.go`); `test_aggregation_endpoint_falls_back_when_generation_is_slow` → C31 (route).
+- `test_provider_filter_isolation.py` 4: hand-ported 4.
+- `test_provider_error_locations.py` 14: replay (34 calls, real A11 texts) + hand-ported 13; `test_publication_entrypoints_preserve_subscription_and_aggregation_hierarchy` → C30/C31/A14 (routes).
+- Replay of their C17 calls (route/generation halves stay with C18/C30/C31): `test_dialer_provider_content.py` 73, `test_dialer_rendered_bundle.py` 114, `test_dialer_activation_shadow.py` 123, `test_dialer_standalone_activation.py` 101, `test_dialer_combined_export.py` 113, `test_dialer_delivery_snapshot.py` 67, `test_dialer_delivery_staging.py` 7 (+ hand-ported half), `test_dialer_review_fixes.py` 34, `test_dialer_round2.py` 36, `test_dialer_proxy.py` 28, `test_dialer_provider_scope.py` 13, `test_dynamic_proxy_chains.py` 37, `test_proxy_chains.py` 22, `test_group_exclusion_generation.py` 18, `test_proxy_group_regex_exclusion.py` 22, `test_subscription_dialers.py` 6, `test_subscription_hosts.py` 8, `test_subscription_refresh_policy.py` 30 (+ hand-ported), `test_subscription_regex_filter.py` 1 (+ hand-ported).
+- Replay of the bundle/commit calls of `test_agent_content_api.py` 30, `test_agent_content_preparation.py` 21, `test_agent_first_push_sync.py` 31, `test_agent_push_diff_api.py` 21, `test_generated_preview.py` 48, `test_setup_flow.py` 100, `test_split_layout_migration.py` 47 and 16 more files (profile, security, import, router split, service domain, …); their own subjects belong to A11/A12/A14/C34/C36.
+
+Notes for C30/C31 (routes): call `RequestedFilters` before fetching; `ServeProvider` only after auth/existence checks, with the render closure capturing `c` (the render gets a `WithoutCancel` context — pass it on); every other preparation/commit path is now cancellation-safe by itself. Their differentials must cover `X-ConfigFlow-Provider: last-good` + `text/yaml; charset=utf-8` after `ResponseSeconds`, Content-Disposition copied per waiter, `?format=surge|loon` never falling back, the `regex`/`exclude_regex` 400 texts, the last good file written only for a 200 `text/yaml`, and the aggregation fallback to `providers/<id>.yaml`. C31 registers `SetAggregationProvider` (fail-closed default checked by `TestDefaultHooksFailClosedAndPassThrough`); A11 registers `SetLocations` and should reproduce the A11 texts recorded in the replay rows (`locations`).
+
+Open findings: none.
+
+Commands (review):
+- tests: `rt -- bash -lc 'cd server && go vet ./internal/provider/ ./internal/mosdns/ && go test -count=1 ./internal/provider/ ./internal/mosdns/ ./internal/convert/... ./internal/substore/...'` (+ `-race`: ok, provider 62.5 s)
+- record & replay: `rt --back server/internal/provider/testdata/recorded.jsonl.gz -- bash -lc 'rm -rf /tmp/c17rec; C17_RECORD_DIR=/tmp/c17rec PYTHONPATH=.:server/internal/provider/testdata ~/cf-test/.venv/bin/python -m pytest backend -q -n 8 --dist=worksteal -p c17_record -p no:cacheprovider; PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/provider/testdata/c17_record.py merge /tmp/c17rec'` (~2.5 min)
+- references: `rt -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/provider/testdata/review_c17_ref.py'`
 
 ## C18 — Mihomo config generation, Mihomo base settings
 
@@ -972,7 +1006,7 @@ Commits: same as C19.
 
 ## C21 — MosDNS converter
 
-**Status: `ported`** (not reviewed) · prereqs: C14 · Go: `internal/mosdns` (new)
+**Status: `verified`** (review 2026-11-16: a499fc3c; see "Review C21") · prereqs: C14 · Go: `internal/mosdns` (new)
 
 Files → Go:
 - `backend/converters/mosdns.py` (1261) → `mosdns/content.go` (`ConvertRuleContentForMosDNS(content, part...)` — no part = Python None; `DomainPatternForMosDNS` (ok=false = None); `ParseClashRuleValue`; `RulesetParts`; `EmptyRulePart`; `PartDomain`/`PartIP`/`RuleParts`; `DNSRuleTypes`), `upstreams.go` (`ParseDNSUpstreams(any)`), `layout.go` (`SplitRulesAndRulesets`, `RulesetFiles` (= `_ruleset_files`), `BuildRuleProxyURL` (= `_build_rule_proxy_url`; part/sourceID `any`, nil = None), `ParseCustomMatches` (= `_parse_custom_matches`), private tag map / single-rule groups / layout), `generate.go` (`GenerateMosDNSConfig`, `GetMosDNSRulesetDownloads`, `GetMosDNSCustomFiles`, `UnsupportedYAMLError`; YAML via `yamlx.IndentDump` = `yaml.dump(Dumper=IndentDumper, allow_unicode=True, default_flow_style=False, sort_keys=False, indent=2)`, the only dump call), `py.go` (Python semantics: raise/catch into `*convert.PyError{Class, Message}`, dict hashing with 1 == 1.0 == True and "unhashable type" errors, `in` on list/str/dict, `list + list` / `str + str` TypeErrors, `int()`, `'\n'.join` TypeError, deepcopy with memo so aliased upstream mappings keep their YAML anchor in the fallback copy).
@@ -992,7 +1026,7 @@ Python test files (rule 4 coverage):
 - Other files whose converter calls are replayed (their own subject belongs elsewhere): test_converter_review_regressions, test_mosdns_rule_fields, test_mosdns_regex_delivery, test_domain_wildcard_delivery/inputs, test_mosdns_archive, test_remote_rule_consumers (`_ruleset_files`), test_profile_generation, test_profile_scoped_artifacts, test_safe_url_queries, test_dns_watchdog_config/core, test_client_fixed_ip, test_agent_deployments, test_agent_deployment_downloads, test_mihomo_classical_delivery, converters/test_oxidns and the OxiDNS/router/agent files listed by the recorder.
 
 Decisions / differences from Python:
-- YAML that the jsonx model cannot hold (non-string keys, `!!set`/`!!omap`/`!!pairs`, recursive aliases): a custom_config with such values that would reach the output (top-level or outside log/api/plugins/servers/data_providers), or upstream mappings with non-string keys, → `*UnsupportedYAMLError` (Python dumps them with yaml.Dumper); raised only after every error Python would raise first. An unrepresentable custom_config is refused even when Python would drop that part (e.g. `plugins: !!set {a}`). In `convert_rule_content_for_mosdns` and `parse_dns_upstreams` such a document is treated like a YAML parse failure (text / line format) where Python would use it. Corpus: 492 rows, all on inputs flagged `unholdable` by Python; the replay has none.
+- *(Porter's original decision — narrowed in Review C21: only unholdable values that reach the output are refused, non-string-key mappings are dumped.)* YAML that the jsonx model cannot hold (non-string keys, `!!set`/`!!omap`/`!!pairs`, recursive aliases): a custom_config with such values that would reach the output (top-level or outside log/api/plugins/servers/data_providers), or upstream mappings with non-string keys, → `*UnsupportedYAMLError` (Python dumps them with yaml.Dumper); raised only after every error Python would raise first. An unrepresentable custom_config is refused even when Python would drop that part (e.g. `plugins: !!set {a}`). In `convert_rule_content_for_mosdns` and `parse_dns_upstreams` such a document is treated like a YAML parse failure (text / line format) where Python would use it. Corpus: 492 rows, all on inputs flagged `unholdable` by Python; the replay has none.
 - Python set iteration order (only in the `!!set` payload case above) is not reproduced.
 
 Commits: 74424f5e (code), 8a88fbec (corpus), 32784c24 (replay, refusal test), + this PROGRESS commit.
@@ -1005,6 +1039,27 @@ Commands:
 - tests: `rt -- bash -lc 'cd server && gofmt -l internal/mosdns; go vet ./internal/mosdns/ ./internal/convert/ && go test -count=1 ./internal/mosdns/'` (last: ok 2.2 s; `-race` ok 16.6 s)
 - corpus: `rt --back server/internal/mosdns/testdata/corpus.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/mosdns/testdata/gen.py'` (deterministic, 6000 per kind, ~30 s)
 - recorded replay: `rt --back server/internal/mosdns/testdata/recorded.jsonl.gz -- bash -lc 'rm -rf /tmp/c21rec; C21_RECORD_DIR=/tmp/c21rec PYTHONPATH=.:server/internal/mosdns/testdata ~/cf-test/.venv/bin/python -m pytest backend -q -n 6 --dist=worksteal -p c21_record -p no:cacheprovider; PYTHONPATH=.:server/internal/mosdns/testdata ~/cf-test/.venv/bin/python server/internal/mosdns/testdata/c21_record.py merge /tmp/c21rec'` (~3 min)
+
+### Review C21 (adversarial, 2026-11-16)
+
+Python `converters/mosdns.py` walked against `content.go`, `upstreams.go`, `layout.go`, `generate.go`, `py.go` and `convert/exports_mosdns.go`, following the porter's hints (`singleRuleGroups` short-circuit order, source-tuple hashing, eager `tagDefault`, upstream fall-through, `dumpInterval` OverflowError, anchor identity through the fallback deepcopy). The existing replay (5436 calls, 0 differences) and corpus (47072 rows) were re-run after every change.
+
+| # | Sev | Finding | Fix | Regression test |
+|---|---|---|---|---|
+| 1 | medium | The accepted difference "refuse `custom_config` with unholdable YAML even in sections Python drops" was observable for plausible inputs: a `!!set`/`!!omap`/`!!pairs` value or a recursive alias inside `log`, `api`, `plugins`, `servers` or `data_providers` (replaced or dropped by Python), or as a non-dict root (Python uses the defaults), made Go refuse the whole configuration | yamlx `LoadOptions.KeepUnrepresentable` (opt-in) puts `*yamlx.Unrepresentable` in place of such values; MosDNS refuses only those that reach the output (`checkDumpable`) — a499fc3c | `TestReviewUnholdableYAMLOutsideTheOutputMatchesPython` (Python outputs in `testdata/review_c21_ref.json`, from `review_c21_ref.py`) |
+| 2 | medium | Mappings with keys that are not strings (`1: y`, `null:`, `1.5:`, `!!binary` keys) in upstream definitions or in `custom_config` parts that reach the output were refused although yamlx's dumper writes them exactly like PyYAML (`pairMapping`); a custom root with such keys was refused too | the root is kept as `*yamlx.Mapping` with Python's key order (`log`/`api`/`plugins` first, `servers`/`data_providers` dropped, deleted and appended keys as in the dict), nested mappings are dumped — a499fc3c | same test (`generate:` and `generate-nolog:` rows) + corpus: 158 upstream rows and 130 generate rows formerly "accepted" are now equal |
+| 3 | medium | (found while fixing 2) the fallback forwarder's deepcopy did not copy `*yamlx.Mapping` upstreams, so a non-string-key upstream used by both forwarders would be dumped as `&id001`/`*id001` where Python's `deepcopy` gives two plain copies | `deepCopy` copies `*yamlx.Mapping` with the memo — a499fc3c | corpus (25 generate rows) |
+| 4 | low | `convert_rule_content_for_mosdns` read a whole YAML document as text when anything in it was unholdable (Python uses `payload` and skips non-str items); `parse_dns_upstreams` likewise fell back to the line format | same placeholder load; only a `payload` that is itself a `!!set` is still read as text — a499fc3c | review references (`convert:`/`upstreams:` rows) |
+
+Accepted differences (after the fixes): values jsonx cannot hold that **reach the output** (e.g. `extra: !!set {a}` or `r: &r [*r]` at a kept top-level key, such a value inside an upstream mapping) → `*UnsupportedYAMLError`, raised after every Python error (Python dumps them with `yaml.Dumper`); a `payload` that is itself a `!!set` (iterated by Python in hash order, not reproducible) is read as text. Corpus: **45 accepted rows** (was 492): 25 generate refusals + 20 `!!set` payload conversions; `rows_test.go` now accepts output differences only for `convert` rows — every other unholdable row must be refused or equal. Replay: 0 accepted.
+
+Checks performed (no finding): `_normalize_ruleset_id`, execution order (`known` set, falsy ids), tag map (builtin + reserved single-rule tags, `_ip` suffix space for classical, `_2` counters), single-rule groups (adjacency, `ident not in selected` after the item checks, `kind in dict` hashing), layout source tuples, `_ruleset_files`/local paths/IP tags, rule-proxy URLs (`profile_api_path`, `/api` prefix, query order url/source_id/part/token, token type check), `empty_rule_part`, `domain_pattern_for_mosdns` (all wildcard forms, `re.escape`), content conversion (BOM, MosDNS-format sniffing of 20 lines, YAML payload detection, native prefixes, Clash comma rules incl. DOMAIN-REGEX commas, list IP/CIDR via `ip_network(strict=False)`), `parse_dns_upstreams` (strip, list/dict/str items, line format with indentation/`-`/`#`, `bootstrap`/`enable_pipeline`, a bare second part), generation (custom base, log/api toggles, cache fields and `int()` edges, hosts, forwarders, sequences, custom matches head/tail, `listen_address` written twice → anchor, key order), downloads and custom files. Rule 4b: the module does no I/O and gets no request context. Decision 8: no private copies left (`pystr`, `convert.PySplitlines`/`PyReEscape`/`AppendURLQuery`).
+
+Coverage map: the porter's list above stands (replay of every C21 call in 92 files; `test_native_oxidns_domain_edges` → C29/A11), checked against the recorder's file list. Consumers re-tested after the yamlx/mosdns changes: `internal/oxidns` (C22–C24; on a private worktree of HEAD because the shared tree held C24's unfinished work), `convert`, `substore` (+ difftest), `yamlx`, `provider`.
+
+Open findings: none.
+
+Commands (review): the porter's, plus `rt --back server/internal/mosdns/testdata/review_c21_ref.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/mosdns/testdata/review_c21_ref.py > server/internal/mosdns/testdata/review_c21_ref.json'`; `C21_SHOW_ACCEPTED=1` logs the accepted corpus rows. Last run: `ok configflow/internal/mosdns` (3.6 s; `-race` 18.0 s), corpus "45 accepted, 0 differ", replay "0 differ".
 
 ## C22 — OxiDNS converter, native loader, references, match targets
 
@@ -1462,7 +1517,7 @@ Questions for the maintainer (from this audit):
     (use `yamlx` `KeepNonStringKeys`); C12 `convert.ValidateEmitted` raises a different error than Python
     for a non-dict provider definition. C17's corpus allowlists these two rows; remove the allowlist when
     fixed. Also `provider.flattenMapping` is a private copy of an unexported `yamlx` helper — export it
-    from `yamlx` and switch (item 8).
+    from `yamlx` and switch (item 8). **Done in review C17**: both allowlist rows are gone, `yamlx.FlattenMapping` is used.
 11. **Leftovers from the C12 review (2026-11-16):** (a) `convert.InspectStructuredProxyString` keeps the
     yaml.v3 loose loader only as a fallback for node strings with a recursive alias (needed by repo's
     verified `TestCompatProxyStringTimestamp`); removing it needs a `yamlx` option for recursive aliases
@@ -1479,7 +1534,7 @@ Questions for the maintainer (from this audit):
     (A07's port moved there; `agents/proxy.go` is a shim). Every package that makes requests-style calls
     uses it; `reqproxy.ForRedirect` should also replace Go's redirect proxy rules in `agents.HTTPClient`
     (A01 follow-up for the next agent touching `agents/client.go`). C17 review: check the timing flake in
-    `TestAggregationFallsBackToCommittedArtifactBeforeFirstServe` (0.2 s budget, failed once under load).
+    `TestAggregationFallsBackToCommittedArtifactBeforeFirstServe` (0.2 s budget, failed once under load) — done in review C17 (a background render raced the temp-dir cleanup; the fixture now drains flights).
 15. **Open items for C06 (httpx), found by the A10 porter (2026-11-16):** `httpx.File` differs from
     Werkzeug 3.1 `send_file` on conditional/range requests: 304 should keep `Content-Disposition` and drop
     `Last-Modified`; Range is evaluated before the 304 check; `If-Range: W/"tag"` matches; a failed
