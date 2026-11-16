@@ -498,3 +498,21 @@ request_variants=5719 named_matrix_cases=3218（S448 F2341 B429），H去重192
 ```
 
 Go相关路由尚未接通，123项均只计有效Python参考。5719是请求/序列变体数量，不是5697设计条目已完成；R/H/G/T等仍有未实现项。DNS/native联动、compose、匹配/重复扫描、local缓存入口及其他业务文件继续，未做最终全量。
+
+## 批次 27：规则DNS template/native写入与选择清理
+
+- 53新增变体：template和由Python生成的有效native配置都逐一写direct/proxy/follow/default/refused/nxdomain/nodata/blackhole，读回精确state/route；IP规则明确unsupported，skip只略过该成员。200条接受，201条在事务前拒绝；缺/空routes、错型choice、未知rule、混合不可转换项全库/revision不变。
+- 删除ordinary rule清理全部selector/follow/action/parked，native同时重建正文；MosDNS ordinary/ruleset选择也在同一事务清理。已用于MosDNS或显式OxiDNS处理的规则不能改不支持类型，显式dns=default可原子清路由并改类型。
+- 无法安全管理的native图严格DNS写409且无落盘；非严格policy写仍保存并给warning，native原文保留；不可解析native草稿不阻止删rule且保留坏草稿。删除native固定相同Host，生成基址不因两端loopback端口而产生假差异。
+
+```text
+.63 run.py --groups rule-dns-choices,rule-dns-selectors-types,rule-dns-native-locked
+current go-unimplemented=53 design_errors=[] seconds=12.41
+.63 run.py --groups rule-dns-selectors-types（固定Host后）
+current go-unimplemented=10 design_errors=[] seconds=5.95
+cumulative compared=1455 go-unimplemented=4247 dependency=28 different=41 O12-separate=1
+request_variants=5772 named_matrix_cases=3240（S455 F2351 B434），H去重192
+38 self-checks + end-to-end wrong-Go-response check OK
+```
+
+Go尚未接通，未计比较通过。指定上游catalog/Agent绑定、disabled parked/native严格更多分支和DNS跟随组变更仍待补；未做最终全量。
