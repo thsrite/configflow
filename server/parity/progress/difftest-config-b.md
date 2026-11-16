@@ -768,3 +768,20 @@ request_variants=6697 named_matrix_cases=3455（S526 F2442 B487），H去重227�
 ```
 
 继续adopt/undo/初始化、实际Agent报告与job、G13及其他未完成项；未做最终全量。
+
+## 批次 43：域名采纳/撤销、容量和历史
+
+- 41个真实Flask↔Go请求全部通过：DOMAIN-SUFFIX direct、DOMAIN proxy、重复/已覆盖跳过、punycode、500条上限、1000历史淘汰最旧记录、manual/auto/中文legacy来源读取；undo两个目标和不存在值，保留原注释/其他行。每次缓存原文字节必须等于提交的library.content；other空间完整行不变。
+- 缺items/空/501/非对象项、IP/中文原文/非法type/target、未配置可写库、undo非法值/目标均精确分支，失败前后Python全库不变并与Go全库/文件比较。H060–063/H065新增5个编号。
+- 容量fixture首次暴露Linux单个argv上限；harness现把seed选项写独立临时JSON文件，seed脚本兼容原有JSON参数。真实1000条history fixture证明该通道可用，不改业务入口或DATA_DIR比较范围。
+- `applied_at`为秒级，普通连续写入之间等到两端前次完成之后的下一秒，避免时间戳平局在不同进程形成不同排序。混合direct/proxy单列，固定Python hash seed=0且不排序结果，HTTP added与DB history原始顺序都比较通过。未固定seed首轮出现过相反顺序，Python源码的set遍历导致跨hash环境不稳定；findings新增明确oracle限制，其他hash环境的顺序保证仍部分覆盖，不列Go回归。
+
+```text
+.63 run.py --groups discovery-adopt-undo,discovery-write-guards,discovery-mixed-order
+current compared=41 design_errors=[] seconds=25.57
+cumulative compared=1604 go-unimplemented=5063 dependency=28 different=42 O12-separate=1
+request_variants=6738 named_matrix_cases=3480（S535 F2451 B494），H去重232，G去重15
+44 self-checks + end-to-end wrong-Go-response check OK
+```
+
+默认规则库写前改变的CAS竞争、规则库初始化、实际Agent报告/job及G13等继续，未做最终全量。

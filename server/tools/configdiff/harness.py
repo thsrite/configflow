@@ -150,8 +150,12 @@ class Pair:
             install(self.root, PYTHON, self.options['probe_case'])
         seed = self.root / 'seed'
         seed.mkdir()
+        options_path = self.root / 'seed-options.json'
+        # Large history/capacity fixtures exceed Linux's single-argument limit.
+        # JSON on disk also preserves escaped Unicode without OS argv encoding.
+        options_path.write_text(json.dumps(self.options, ensure_ascii=True), encoding='utf-8')
         result = subprocess.run([PYTHON, str(Path(__file__).with_name('seed.py')), str(seed),
-                                 json_body(self.options)], cwd=ROOT,
+                                 '--options-file', str(options_path)], cwd=ROOT,
                                 env=self.environment(seed, 0), capture_output=True, text=True)
         if result.returncode:
             self.temp.cleanup()

@@ -142,4 +142,5 @@ def create(directory, options):
 
 
 if __name__ == '__main__':
-    create(Path(sys.argv[1]), json.loads(sys.argv[2]))
+    options_json = Path(sys.argv[3]).read_text() if sys.argv[2] == '--options-file' else sys.argv[2]
+    create(Path(sys.argv[1]), json.loads(options_json))

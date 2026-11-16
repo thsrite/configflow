@@ -17,7 +17,7 @@ RT_HOST=sunbroke@192.168.0.63 rt \
 
 `testdata/results.json` 记录合成用例的编号、具体变体、路由、状态和差异。按批次重跑替换旧结果，其他批次保留。`difftest-config-findings.md` 自动列两侧值，全部来自合成夹具；每次提交的真实覆盖与未完成项在 `parity/progress/difftest-config-b.md`。
 
-夹具通过 **Python backup importer** 建库后复制到两端，不使用生产快照；初始模板也用 Python 默认空配置而非仓库演示资源。默认关闭自动 WebDAV 备份，启用源必须 interval=0 或提供新鲜缓存；启动器核对这一约定。生产 app/main、后台循环、启动缓存清理保留，超过 30 秒的场景须单独列 fake/后台预期。
+夹具通过 **Python backup importer** 建库后复制到两端，不使用生产快照；初始模板也用 Python 默认空配置而非仓库演示资源。默认关闭自动 WebDAV 备份，seed中的启用源必须 interval=0；启动器严格核对，新鲜缓存不绕过检查。需要可刷新源的用例在启动后通过公开订阅/任务接口开启间隔，并观察真实刷新时机。生产 app/main、后台循环、启动缓存清理保留，超过 30 秒的场景须单独列 fake/后台预期。大容量seed选项通过临时JSON文件交给独立Python初始化进程，避免Linux单个命令行参数上限；该选项文件不进入两侧DATA_DIR。
 
 比较包含 status、明确列出的响应头和完整 JSON/YAML/文本/归档结构。Allow、Access-Control-Allow-Methods/Headers、Vary 仅排序其 HTTP token 列表（保留重复/缺项）；Werkzeug HTML 错误页按 O6 比 status 和非 JSON。动态值必须先校验格式、时间窗/格式或 JWT claims，再建单射对应，不能整树 mask。仅逐端点明确 CPython 异常尾文可变化，中文前缀和所有其他字段继续比较。
 

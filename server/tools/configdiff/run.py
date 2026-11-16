@@ -32,6 +32,15 @@ def render_findings(results):
         lines.append('')
     if not any(r['state'] in ('different', 'O12-separate') for r in results):
         lines += ['当前已执行用例未发现差异；不代表尚未实现或未运行的条目通过。', '']
+    if any(r.get('group') == 'discovery-mixed-order' for r in results):
+        lines += ['## Oracle 限制：混合目标采纳的顺序', '',
+                  '路由：`POST /api/domain-discovery/apply`；用例：R046-S03；类型：Python 集合遍历顺序不稳定。', '',
+                  '未固定 hash seed 的首轮合成请求中，Python added.target 为 `[proxy, direct]`，Go 为 `[direct, proxy]`，'
+                  '同一批 history 顺序也不同；每个目标的内容一致。Python 来源为 '
+                  '`backend/utils/domain_discovery_service.py:567` 的 target 集合遍历。', '',
+                  '当前独立用例固定 `PYTHONHASHSEED=0`，保留原始 HTTP 数组与数据库 history 顺序比较；'
+                  '该环境下实际比较通过。其他 Python hash 环境下的顺序不作通过保证，留作部分覆盖/审查项，'
+                  '没有对数组排序以吞掉差异。普通多次写入之间等待下一秒，避免秒级时间戳产生不同的排序平局。', '']
     return '\n'.join(lines)
 
 
@@ -148,6 +157,8 @@ def main():
     groups.update(aggregation_providers)
     from cases.domain_discovery import GROUPS as domain_discovery
     groups.update(domain_discovery)
+    from cases.discovery_writes import GROUPS as discovery_writes
+    groups.update(discovery_writes)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:
