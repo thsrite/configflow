@@ -3,8 +3,9 @@
 Branch: `go-review-c22c26`, starting at `go` / `dc3453c2`.
 Decision: the Python files assigned to all five modules were covered by the
 S-oxidns source/branch review. This audit makes that scope explicit, checks the
-current call sites and adds fresh strict boundary references. Final checks are
-pending; no new runtime defect has been found.
+current call sites and adds fresh strict boundary references. All requested .32
+checks passed. All five modules are verified in their assigned library scope;
+no new runtime defect or open library finding remains.
 
 Evidence commits on the integration branch: `672fc0d0` (S-oxidns adversarial
 fixes/reference corpus), `0164424d` (Chinese diagnostic constants), `da0aa993`
@@ -70,7 +71,8 @@ DATA_DIR. `review_c22c26.jsonl.gz` has 94 rows (26 rejections): 7 native loads,
 7 native validations, 41 watchdog cases, 10 common read/apply, 22 policy
 read/apply, 6 conflict previews and 1 native-open case. `TestC22C26ReviewReferences`
 checks structural results, Chinese errors and every argument's post-state,
-including rejected calls; it has no accepted-difference waiver. It supplements
+including rejected calls; input strings (including native YAML) compare byte
+for byte, without YAML canonicalization. It has no accepted-difference waiver. It supplements
 the S source review rather than claiming branch completeness from 94 examples.
 
 ## Explicit ownership boundaries
@@ -105,8 +107,21 @@ the S source review rather than claiming branch completeness from 94 examples.
 Fresh synthetic references:
 `rt --back server/internal/oxidns/testdata/review_c22c26.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/oxidns/testdata/review_c22c26_gen.py'`
 
-Targeted first run: 94 references, `ok configflow/internal/oxidns 0.201s`.
-Final .32 gate (pending):
+Targeted first run: 94 references, `ok configflow/internal/oxidns 0.201s`;
+complete post-state checks: `0.160s`. After strengthening input text comparison
+to exact strings, gofmt/vet and the targeted race test passed (`1.976s`).
+This last change only strengthens the test assertion; no runtime code changed.
+
+Final .32 gate (exit 0, shell also captured uptime and `/tmp/c22c26-final.log`):
 `rt -- bash -lc 'cd server && gofmt -l . && go vet ./... && go test -race -count=1 ./internal/oxidns/ ./internal/api/... && go test -count=1 ./... && cd .. && server/scripts/proddiff.sh'`
 
+- gofmt had no output (the shell additionally asserted an empty listing); vet passed.
+- Target race: `ok configflow/internal/oxidns 298.543s`, `ok configflow/internal/api/agents 15.466s`, `ok configflow/internal/api/domaindiscovery 1.434s`, all other API packages passed (last `ok configflow/internal/api/tasks 1.314s`).
+- Ordinary full suite: `ok configflow/internal/oxidns 98.168s`, `ok configflow/internal/installer 156.057s`; final lines `ok configflow/internal/weburl 0.015s`, `ok configflow/internal/yamlx 1.200s`, `? configflow/tools/proddiff/generator [no test files]`.
+- Proddiff: all four self-checks PASS, 2060 cases / 236 compared, 5 existing unique baseline differences (`agents:value` 3, `config:value` 2), coverage regressions 0, `baseline: new=0 stale=0`. OxiDNS public config, agent config, files and downloads each had 2 successful comparisons. The existing 20 Python and 20 Go connection-failed cases are reported by the harness, not treated here as successful comparisons; no new baseline or coverage exception was added.
+- Start uptime `16:42:49 up 1:41, 2 users, load average: 0.88, 3.66, 7.16`; end `16:50:57 up 1:49, 3 users, load average: 5.24, 6.88, 7.16`.
+- Final exact-input assertion check: `rt -- bash -lc 'cd server && test -z "$(gofmt -l .)" && go vet ./internal/oxidns/ && go test -race -count=1 -run "^TestC22C26ReviewReferences$" ./internal/oxidns/'` → exit 0, `ok configflow/internal/oxidns 1.976s`.
+- Final integration base `869db198`: only HANDOFF and the routers differential matrix changed after the tested base `b498951c`. Runtime, dependency and prior tests remain identical; the only local test change after the main gate is the stronger assertion, verified by the targeted race check above.
+
 No new dependency, Python emulation, runtime behavior change or production access.
+No pushes. C29/C31 and Agent runtime gates retain their original owners/statuses.

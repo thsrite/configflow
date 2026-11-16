@@ -2,9 +2,9 @@ package oxidns
 
 import "testing"
 
-// These freshly generated Python public-boundary references supplement the
-// S-oxidns audit. No accepted-difference waiver is used: values, Chinese errors
-// and each argument after the call must agree, including rejection paths.
+// TestC22C26ReviewReferences compares freshly generated Python public-boundary
+// references without accepted-difference waivers. Outputs compare structurally;
+// each input's post-state retains exact strings, including native YAML text.
 func TestC22C26ReviewReferences(t *testing.T) {
 	functions := map[string]bool{}
 	for _, name := range []string{"load_native_yaml", "validate_native_config", "ensure_local_dns_watchdog", "apply_common_settings", "read_common_settings", "apply_policies", "read_policies", "prepare_editor", "preview_template"} {
@@ -32,7 +32,7 @@ func TestC22C26ReviewReferences(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if difference := firstDifference(canon(args[i], false), canon(want, false), "argument"); difference != "" {
+				if difference := firstDifference(args[i], want, "argument"); difference != "" {
 					t.Fatalf("argument %d: %s", i, difference)
 				}
 			}
