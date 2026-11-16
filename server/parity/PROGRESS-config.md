@@ -1218,3 +1218,5 @@ Questions for the maintainer (from this audit):
     matches Python for bracketed non-IP hosts (`https://[github.com]/`); switch when that `urlx` fix lands.
     (c) `repo`'s `TestWriteWaitsForReleasedFileLock` showed a data race in test code once under `-race`
     (goroutine vs deferred close); fix in the next repo touch.
+12. **`converters/surge.py::get_aggregation_nodes`** has no caller in `backend/` and no test: not ported,
+    under the maintainer's rule for code without callers (2026-11-16).
