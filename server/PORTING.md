@@ -51,33 +51,31 @@ server/
 
 ## Rules for every work package
 
-1. **Port behaviour, not style.** Read the Python module and its tests fully before writing. Keep
-   function boundaries and names recognisable (`snake_case` → `CamelCase`), so a reviewer can put the
-   two files side by side. Keep the Chinese user-facing messages byte-identical.
-2. **Dynamic documents.** Configuration documents are `jsonx` values, not typed structs: Python
-   `dict` → `*jsonx.Object` (insertion-ordered), `list` → `[]any`, `str` → `string`,
-   `int`/`float` → `jsonx.Number` (holds the text Python would re-emit: ints keep every digit, floats
-   are `repr()` text, so `1.50` read from a file is `1.5` afterwards, exactly as in Python), `bool`,
-   `None` → `nil`. Unknown fields must survive a read-modify-write untouched. Use typed structs only
-   for values that never reach storage or the wire as free-form JSON.
-3. **Stored bytes must match Python.** Anything written to `configflow.sqlite3` or to files under
-   `DATA_DIR` must be byte-identical to what Python writes for the same value (key order, separators,
-   escaping, number text, trailing newline). Use the `jsonx` encoders; never `encoding/json` for
-   stored data.
-4. **Acceptance = equivalence with real Python, proven mainly by recording and differentials** (changed
-   2026-11-16, maintainer's decision). For each module:
-   - **Record & replay**: run the whole Python test suite on the test server with a pytest plugin that
-     records every call of the module's public functions (inputs, the collaborators' answers, outputs or
-     exception class + message) — pattern `internal/convert/testdata/c18_record.py` +
-     `mihomo_recorded_test.go` — and replay all recorded calls in Go with 0 differences.
-   - **Random corpus** generated with real Python for edge inputs the suite does not reach.
-   - **Flask↔Go HTTP differential** for every route of the module (success and failure; compare status,
-     headers, body, and the data written to `configflow.sqlite3` and `DATA_DIR` files).
-   - **Hand-port a Python test only when those three cannot cover it** (concurrency, timing, file locks,
-     processes, signals, monkeypatched internals with no observable equivalent, shell-script scenarios).
-   - In the module's PROGRESS section, list **every Python test file of the module and how each is
-     covered** (replay / corpus / differential / hand-ported / deferred to module X / not applicable + why),
-     so a reviewer can check that nothing is uncovered. Already hand-ported tests stay.
+1. **Port features, not code** (2026-11-16, maintainer: idiomatic Go is the goal). Read the Python module
+   and its tests to understand *what* it does, then design it the Go way: your own types, function
+   boundaries and names; no `any` parameters or emulated Python dynamic typing to mirror Python call
+   shapes. Chinese user-facing messages stay byte-identical. **Size budget:** Go non-test lines of a
+   module ≤ 1.2× the module's Python lines; report the numbers in the hand-back and justify any excess.
+2. **Types.** Prefer typed Go structs. Where a stored document may contain fields the code does not know,
+   keep them (e.g. an `Extra map[string]json.RawMessage` / ordered remainder) so read-modify-write loses
+   nothing. Use `jsonx` only for genuinely free-form documents (user-edited config fragments).
+3. **Stored data must stay compatible.** Data written by Python (`configflow.sqlite3`, files under
+   `DATA_DIR`) must load in Go, and Go must write data the frontend and Agents read correctly. Byte-level
+   identity with Python's formatting is not required.
+4. **Acceptance = same external behaviour, proven at the boundary** (changed 2026-11-16). Required per
+   module:
+   - **Flask↔Go HTTP differential** for every route (success and failure): status, JSON fields/values
+     (structural), Chinese messages, and the data written to `configflow.sqlite3`/`DATA_DIR` afterwards
+     (compared after parsing).
+   - **Generated outputs** (Mihomo/Surge/Loon/MosDNS/OxiDNS configs, router scripts, install scripts,
+     Agent payloads) compared structurally against Python for a corpus of realistic and edge inputs,
+     driven through the public entry points (not internal helpers).
+   - **Agent protocol and background tasks**: same requests/responses and same effects.
+   - Hand-written Go unit tests for the module's own logic where useful.
+   Function-level record & replay of Python internals is **no longer required**. Existing replay tests
+   may be kept while they pass; when code is restructured, replace them by boundary tests instead of
+   bending the Go code to Python's call shapes. In the module's PROGRESS section, list every Python test
+   file and which boundary test covers its behaviour (or why none is needed).
 4b. **Request cancellation must not abort work Python would finish.** In Flask a request thread runs to
    completion even if the browser disconnects. In Go, `c.Context()` is cancelled when the client goes away.
    Pass `context.WithoutCancel(ctx)` (keeping the repo Scope) to anything that writes state, takes

@@ -134,3 +134,18 @@ reproduces Python's failure modes on malformed input (type checks raising emulat
 exception texts) and private per-package copies of shared helpers. Under functional parity, every swap
 module and every review from now on also **deletes code that only existed for strict parity** and
 **merges private helper copies into one shared package**, and reports lines before/after.
+
+## Idiomatic Go (2026-11-16, maintainer: "用 go 原生库")
+
+PORTING rules 1–4 now say: port features, not code; typed structs; acceptance at the external boundary
+(HTTP differential, generated outputs, stored data, Agent protocol), function-level replay of Python
+internals no longer required; size budget ≤ 1.2× the module's Python lines. Consequences:
+- New modules (and modules still in progress) follow the new rules immediately.
+- Already written code is slimmed in **S passes**, one per package group, done together with the
+  matching N swap where one exists (e.g. S for `subs` + N7 YAML). An S pass rewrites the package the Go
+  way, replaces function-level replay tests by boundary tests, merges duplicated helpers, and reports
+  lines before/after. A module verified earlier stays verified only if its boundary tests pass after the
+  S pass; the S pass gets its own adversarial review (checks: no lost feature, boundary tests cover every
+  Python test file's behaviour, size budget).
+- Reviewers of new modules check the size budget and reject Python-shaped code (`any` parameters for
+  Python call shapes, emulated exceptions, private copies of shared helpers).
