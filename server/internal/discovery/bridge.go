@@ -179,6 +179,7 @@ type Match struct {
 	Extra    map[string]json.RawMessage `json:"-"`
 }
 
+// UnmarshalJSON decodes the known fields while retaining the original data.
 func (v *Match) UnmarshalJSON(b []byte) error {
 	type plain Match
 	var p plain
@@ -188,6 +189,8 @@ func (v *Match) UnmarshalJSON(b []byte) error {
 	*v = Match(p)
 	return capture(b, &v.Extra, "rule_id", "priority", "rule_name", "policy")
 }
+
+// MarshalJSON preserves fields owned by other features or newer versions.
 func (v Match) MarshalJSON() ([]byte, error) { type plain Match; return preserve(plain(v), v.Extra) }
 func localMatcher(ctx context.Context, id string) (func(string) *Match, error) {
 	c, err := repo.GetConfig(ctx, id)
@@ -387,6 +390,7 @@ func ProviderRevisions(ctx context.Context, id string) (*jsonx.Object, error) {
 
 type managerClient struct{}
 
+// Probe sends a bounded domain-probe request through the Agent manager.
 func (managerClient) Probe(ctx context.Context, a Agent, p ProbeRequest) ([]ProbeRow, error) {
 	m, err := agents.Get(ctx)
 	if err != nil {
@@ -408,6 +412,8 @@ func (managerClient) Probe(ctx context.Context, a Agent, p ProbeRequest) ([]Prob
 	err = decode(res.Value("results"), &rows)
 	return rows, err
 }
+
+// Targets reads the available region-check paths from the Agent.
 func (managerClient) Targets(ctx context.Context, a Agent) ([]AvailableTarget, error) {
 	m, err := agents.Get(ctx)
 	if err != nil {
@@ -425,6 +431,8 @@ func (managerClient) Targets(ctx context.Context, a Agent) ([]AvailableTarget, e
 	err = decode(res, &out)
 	return out, err
 }
+
+// Region sends a bounded page-check batch through the Agent manager.
 func (managerClient) Region(ctx context.Context, a Agent, p RegionRequest) ([]RegionResult, error) {
 	m, err := agents.Get(ctx)
 	if err != nil {

@@ -142,9 +142,7 @@ func normalized(v any, key string) any {
 		}
 		return out
 	case string:
-		if generated.MatchString(x) {
-			return "<generated-id>"
-		}
+
 		if key == "checked_at" || key == "applied_at" || key == "started_at" || key == "finished_at" || key == "updated_at" {
 			return "<time>"
 		}
@@ -317,6 +315,7 @@ func TestHTTPAndStorageParity(t *testing.T) {
 		{"POST", "apply", `{"items":[{"value":"pending.example.org","target":"proxy"}]}`},
 		{"POST", "rulesets/init", `{"targets":["other"]}`}, {"POST", "rulesets/init", `{"proxy_policy":"missing"}`}, {"POST", "rulesets/init", `{"proxy_policy":"PROXY"}`}, {"POST", "rulesets/init", `{"targets":["direct"]}`},
 	}
+	pyIDs, goIDs := map[string]string{}, map[string]string{}
 	for i, q := range rs {
 		t.Run(fmt.Sprintf("%02d_%s_%s", i, q.method, q.path), func(t *testing.T) {
 			path := "/api/domain-discovery/" + q.path
@@ -346,11 +345,14 @@ func TestHTTPAndStorageParity(t *testing.T) {
 			right := append([]map[string]any{}, calls[middle:]...)
 			mu.Unlock()
 			equal(t, "Agent requests", nativeJSON(t, left), nativeJSON(t, right))
-			equal(t, "response", pv, gv)
 			if q.method != "GET" {
 				_, ps := call(t, py, "GET", "/__state", "")
-				equal(t, "storage", ps, state(t, r, goDir))
+				gs := state(t, r, goDir)
+				pyIDs = identities(ps)
+				goIDs = identities(gs)
+				equal(t, "storage", remap(ps, pyIDs), remap(gs, goIDs))
 			}
+			equal(t, "response", remap(pv, pyIDs), remap(gv, goIDs))
 		})
 	}
 	for _, path := range []string{"settings", "agents", "domains", "history", "region", "probe/missing"} {
@@ -380,4 +382,47 @@ func nativeJSON(t *testing.T, v any) any {
 		t.Fatal(e)
 	}
 	return out
+}
+
+// Canonicalize generated identities by persisted library name and reference
+// position, preserving relationships so cross-target writes cannot be masked.
+func identities(v any) map[string]string {
+	out := map[string]string{}
+	s := v.(map[string]any)
+	for _, entry := range s["library"].([]any) {
+		item := entry.(map[string]any)
+		id, _ := item["id"].(string)
+		if generated.MatchString(id) {
+			out[id] = "<library:" + item["name"].(string) + ">"
+		}
+	}
+	for i, entry := range s["profile"].(map[string]any)["rule_configs"].([]any) {
+		item := entry.(map[string]any)
+		id, _ := item["id"].(string)
+		if generated.MatchString(id) {
+			out[id] = fmt.Sprintf("<reference:%d>", i)
+		}
+	}
+	return out
+}
+func remap(v any, ids map[string]string) any {
+	switch x := v.(type) {
+	case string:
+		if id, ok := ids[x]; ok {
+			return id
+		}
+	case map[string]any:
+		out := map[string]any{}
+		for k, v := range x {
+			out[k] = remap(v, ids)
+		}
+		return out
+	case []any:
+		out := make([]any, len(x))
+		for i, v := range x {
+			out[i] = remap(v, ids)
+		}
+		return out
+	}
+	return v
 }

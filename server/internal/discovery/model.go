@@ -136,6 +136,7 @@ type libraryItem struct {
 	Extra           map[string]json.RawMessage `json:"-"`
 }
 
+// UnmarshalJSON decodes the known fields while retaining the original data.
 func (v *libraryItem) UnmarshalJSON(b []byte) error {
 	type plain libraryItem
 	p := plain{SourceType: "url", Behavior: "classical"}
@@ -147,6 +148,8 @@ func (v *libraryItem) UnmarshalJSON(b []byte) error {
 	v.originalContent = v.Content
 	return capture(b, &v.Extra, "id", "name", "source_type", "behavior", "content")
 }
+
+// MarshalJSON preserves fields owned by other features or newer versions.
 func (v libraryItem) MarshalJSON() ([]byte, error) {
 	if v.original != nil {
 		var fields map[string]json.RawMessage
@@ -178,6 +181,7 @@ type ruleConfig struct {
 	Extra     map[string]json.RawMessage `json:"-"`
 }
 
+// UnmarshalJSON decodes the known fields while retaining the original data.
 func (v *ruleConfig) UnmarshalJSON(b []byte) error {
 	type plain ruleConfig
 	p := plain{Enabled: true}
@@ -188,6 +192,8 @@ func (v *ruleConfig) UnmarshalJSON(b []byte) error {
 	v.original = append(json.RawMessage(nil), b...)
 	return capture(b, &v.Extra, "id", "itemType", "rule_type", "value", "library_rule_id", "policy", "enabled")
 }
+
+// MarshalJSON preserves fields owned by other features or newer versions.
 func (v ruleConfig) MarshalJSON() ([]byte, error) {
 	if v.original != nil {
 		return v.original, nil

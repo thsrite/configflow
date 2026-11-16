@@ -86,6 +86,8 @@ func fieldOrder(raw json.RawMessage) []string {
 	}
 	return out
 }
+
+// UnmarshalJSON decodes the known fields while retaining the original data.
 func (t *traffic) UnmarshalJSON(b []byte) error {
 	type plain traffic
 	var p plain
@@ -102,6 +104,8 @@ func (t *traffic) UnmarshalJSON(b []byte) error {
 	t.dayOrder = fieldOrder(raw.Days)
 	return nil
 }
+
+// UnmarshalJSON decodes the known fields while retaining the original data.
 func (t *trafficDay) UnmarshalJSON(b []byte) error {
 	type plain trafficDay
 	var p plain
@@ -118,6 +122,8 @@ func (t *trafficDay) UnmarshalJSON(b []byte) error {
 	t.hostOrder = fieldOrder(raw.Hosts)
 	return nil
 }
+
+// UnmarshalJSON decodes the known fields while retaining the original data.
 func (t *trafficHost) UnmarshalJSON(b []byte) error {
 	type plain trafficHost
 	var p plain
@@ -226,6 +232,7 @@ type WebsitePage struct {
 	Extra     map[string]json.RawMessage `json:"-"`
 }
 
+// UnmarshalJSON decodes the known fields while retaining the original data.
 func (v *WebsitePage) UnmarshalJSON(b []byte) error {
 	type plain WebsitePage
 	var p plain
@@ -235,6 +242,8 @@ func (v *WebsitePage) UnmarshalJSON(b []byte) error {
 	*v = WebsitePage(p)
 	return capture(b, &v.Extra, "host", "checked_at", "name", "reason")
 }
+
+// MarshalJSON preserves fields owned by other features or newer versions.
 func (v WebsitePage) MarshalJSON() ([]byte, error) {
 	type plain WebsitePage
 	return preserve(plain(v), v.Extra)

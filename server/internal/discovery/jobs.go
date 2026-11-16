@@ -15,11 +15,13 @@ var logger = logx.Get("backend.utils.domain_discovery_service")
 // ProbeError is a user-facing failure to run a discovery operation.
 type ProbeError struct{ Message string }
 
+// Error returns the user-facing failure message.
 func (e *ProbeError) Error() string { return e.Message }
 
 // Busy identifies the exclusive job preventing another start.
 type Busy struct{ JobID string }
 
+// Error returns the user-facing failure message.
 func (e *Busy) Error() string { return msgBusy }
 
 // Job is bounded polling metadata. Probe payloads are never retained here.

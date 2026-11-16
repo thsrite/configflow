@@ -62,7 +62,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C34 | generate, config and profile routes, config export | 1443 | missing | C18, C19, C20, C28, C29, C31, C33 | 59 (0 done) |
 | C35 | config importer, WebDAV backup | 1375 | missing | C04, C06 | – |
 | C36 | setup flow | 1372 | missing | C34, C35 | 5 (0 done) |
-| C37 | domain discovery | 1658 | missing | C14, C16 | 17 (0 done) |
+| C37 | domain discovery | 1658 | ported | C14, C16 | 17 (17 done) |
 
 Routes in config modules: 228 of the 380 rows in routes.tsv.
 
@@ -1660,8 +1660,8 @@ Memory model:
 Lifecycle/O3: lifecycle.Loop(domain-discovery-auto), existing tasks providers/StartBackground for run-now, same probes/.auto.lock across processes, cancellable waits (120s first delay, 600s interval), fresh/reset Scope per profile. HTTP mutations detach cancellation before any reads/writes; probe jobs also start from a fresh repository-only context. Existing Manager I/O timeouts bound device calls. Exclusivity/job polling remain process-local, while the auto scheduler has flock, matching Python. Manual workers are not newly added to a global shutdown/drain framework; that policy remains O3's shared responsibility.
 
 Boundary evidence (.63):
-- `server/scripts/proddiff.sh`: all six GET templates in C37 compare with **zero C37 differences**; missing probe job uses framework's synthetic missing parameter (no custom parameter patch needed). Whole-run gate still reported Agent metrics/history window drift outside C37; recheck on .32 at final hand-back. Never changed the baseline or accessed live production/devices.
-- `internal/discovery/difftest/TestHTTPAndStorageParity`: **65** sequential synthetic HTTP requests + six missing-profile GET cases; real Flask and Go on copied SQLite directories, same loopback fake Agent. Every write compares stored rule_library, rule_configs, domain_discovery, cache contents and per-Agent probes/regions. Every Agent request payload is compared. Covers all 17 routes with success/failure, async completion/user failure, partial website batches, domain/classical dedupe, Chinese validation, unknown profile, shadow warnings, region results, history/evidence/undo. Generic malformed-object 500 pages retained using plain Go errors.
+- `server/scripts/proddiff.sh`: all six GET templates in C37 compare with **zero C37 differences**; missing probe job uses framework's synthetic missing parameter (no custom parameter patch needed). The .63 whole-run gate reported Agent metrics/history window drift outside C37; the required .32 final run passed with new=0 (no baseline changes). Never changed the baseline or accessed live production/devices.
+- `internal/discovery/difftest/TestHTTPAndStorageParity`: **65** sequential synthetic HTTP requests + six missing-profile GET cases; real Flask and Go on copied SQLite directories, same loopback fake Agent. Every write compares stored rule_library, rule_configs, domain_discovery, cache contents and per-Agent probes/regions. Every Agent request payload is compared; generated IDs are mapped by persisted library name/reference position so relationships and cross-target isolation remain checked. Covers all 17 routes with success/failure, async completion/user failure, partial website batches, domain/classical dedupe, Chinese validation, unknown profile, shadow warnings, region results, history/evidence/undo. Generic malformed-object 500 pages retained using plain Go errors.
 - `api/domaindiscovery/routes_test.go`: all 17 routes reject anonymous callers; cancelled HTTP mutations still commit; unknown settings/history fields survive.
 - `discovery/lifecycle_test.go`: fresh worker Scope, request cancellation, cross-profile exclusivity/privacy, status progress/errors/failure/panic, immutable metadata, 21-job bound, weak-pointer release, auto disabled/skipped receipts, passive-failure adoption threshold, recent-probe skip, 30-day recheck and no-result recheck recorded only once.
 
@@ -1672,12 +1672,14 @@ Python coverage map (no wholesale unit-test translation):
 
 Differences: JSON whitespace/native errors follow functional parity. Mixed-target added/skipped/history ordering follows first target occurrence instead of Python's randomized set order; differential sorts only those value+target collections. Stable traffic ranking/port ties preserve source object order via encoding/json.Decoder (GET proddiff passes without normalization). Go also preserves unknown discovery settings/history fields which Python read_settings/history updates could discard (data-loss fix). No deliberate feature omission.
 
-Commits: e6aeaf0c (native operations/jobs), 0f56b0b8 (17 routes, automatic loop/tasks), boundary/GC fixes in this commit. Final .32 checks and latest-go rebase pending below.
+Commits: c86867d4 (native operations/jobs), 2950c6e4 (17 routes, automatic loop/tasks), f9b6c376 (boundary/GC fixes; IDs after latest-go rebase). All .32 checks below passed; final documentation/test-identity commit completes the hand-back.
 
 Commands:
 - `.63`: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go vet ./... && CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/discovery/... ./internal/api/domaindiscovery/'` — all pass.
 - `.63` GET regression: `RT_HOST=sunbroke@192.168.0.63 rt -- server/scripts/proddiff.sh` — C37 zero differences; unrelated metrics window drift described above.
-- `.32` final: pending.
+- `.32` final: `rt -- bash -lc 'cd server && gofmt -l internal/ tools/ && go vet ./... && go test -race -count=1 -timeout=30m ./internal/discovery/ ./internal/api/... && go test -count=1 ./... && CONFIGFLOW_DIFF=1 go test -count=1 ./internal/discovery/difftest/'` — exit 0. gofmt/vet silent; race tail: discovery 2.197s, api/domaindiscovery 1.634s, api/tasks 1.613s (all API packages pass); full-suite tail: weburl 0.034s, yamlx 0.655s, tools/proddiff/generator no test files; enabled Flask differential 1.461s.
+- `.32` final ID-relationship assertion: `rt --back server/internal/discovery -- bash -lc 'cd server && gofmt -w internal/discovery/ && gofmt -l internal/ tools/ && go vet ./... && CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/discovery/difftest/ | tail -8'` — explicit PASS, differential 2.874s. No production-code changes after the full suite (comments/test identity assertions only).
+- `.32` production snapshot: `rt -- bash -lc 'server/scripts/proddiff.sh >/tmp/c37-final-proddiff.log 2>&1; result=$?; ...print redacted summary.json and NEW counts...; exit $result'` (script itself unmodified) — exit 0, report `run-f56lyylk`: cases=2060, compared=236, new=0, stale=0, coverage_regressions=0, self_check=PASS. All six C37 GET templates covered; saved inputs remain only in the framework private directory on the server.
 
 ## Next steps (coordinator; at most 2 config agents at a time: one porter + one reviewer)
 

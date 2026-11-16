@@ -35,6 +35,7 @@ type PageRequest struct {
 	Extra   map[string]json.RawMessage `json:"-"`
 }
 
+// UnmarshalJSON decodes the known fields while retaining the original data.
 func (v *PageRequest) UnmarshalJSON(b []byte) error {
 	type plain PageRequest
 	var p plain
@@ -44,6 +45,8 @@ func (v *PageRequest) UnmarshalJSON(b []byte) error {
 	*v = PageRequest(p)
 	return capture(b, &v.Extra, "id", "url", "markers")
 }
+
+// MarshalJSON preserves fields owned by other features or newer versions.
 func (v PageRequest) MarshalJSON() ([]byte, error) {
 	type plain PageRequest
 	return preserve(plain(v), v.Extra)
@@ -59,6 +62,7 @@ type RegionResult struct {
 	Extra    map[string]json.RawMessage `json:"-"`
 }
 
+// UnmarshalJSON decodes the known fields while retaining the original data.
 func (v *RegionResult) UnmarshalJSON(b []byte) error {
 	type plain RegionResult
 	var p plain
@@ -68,6 +72,8 @@ func (v *RegionResult) UnmarshalJSON(b []byte) error {
 	*v = RegionResult(p)
 	return capture(b, &v.Extra, "id", "status", "error", "final_url", "markers")
 }
+
+// MarshalJSON preserves fields owned by other features or newer versions.
 func (v RegionResult) MarshalJSON() ([]byte, error) {
 	type plain RegionResult
 	return preserve(plain(v), v.Extra)
