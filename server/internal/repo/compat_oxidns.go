@@ -1,7 +1,7 @@
 // TODO(port): replace with package #11 oxidns editor, rule DNS
 // (backend/common/oxidns_device_policy.py::normalize_client_range, backend/common/rule_dns.py::normalize_action,
 // hydrate_ruleset), package #15 resource routes A (backend/common/device_notes.py::normalize_notes) and
-// package #38 clients (backend/common/client_fixed_ip.py::validate_bindings, backend/routers/lan_clients.py).
+// package #38 clients (client_fixed_ip.validate_bindings now delegates to internal/routerdoc).
 // These packages import repo, so the replacements have to live in a package repo can import.
 
 package repo
@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/routerdoc"
 )
 
 func oxidnsError(message string) error { return helperError(ClassOxidnsSettings, message) }
@@ -140,110 +141,14 @@ func normalizeNotes(value any) (*jsonx.Object, error) {
 	return result, nil
 }
 
-// ---- routers/lan_clients.py ----
-
-// lanIPv4 is ipv4(): canonical IPv4 host text, or "" for anything else.
-func lanIPv4(value any) string {
-	text := ""
-	if jsonx.Truthy(value) {
-		text = jsonx.Str(value)
-	}
-	address, err := netip.ParseAddr(pyStrip(text))
-	if err != nil || !address.Is4() {
-		return ""
-	}
-	return address.String()
-}
-
-var canonicalMAC = regexp.MustCompile(`^[0-9A-F]{2}(?::[0-9A-F]{2}){5}$`)
-
-// normalizeMAC is normalize_mac for the ASCII forms: AA:BB:CC:DD:EE:FF, or
-// "". (Python's int(part, 16) also takes a sign, surrounding whitespace and
-// non-ASCII digits in a part; those are not reproduced. A value equal to
-// its own normalisation, which is all validateBindings asks, never has them.)
-func normalizeMAC(value any) string {
-	text := ""
-	if jsonx.Truthy(value) {
-		text = jsonx.Str(value)
-	}
-	parts := strings.Split(strings.ReplaceAll(strings.ToUpper(pyStrip(text)), "-", ":"), ":")
-	if len(parts) != 6 {
-		return ""
-	}
-	for i, part := range parts {
-		if len(part) != 1 && len(part) != 2 {
-			return ""
-		}
-		number, err := strconv.ParseUint(part, 16, 8)
-		if err != nil {
-			return ""
-		}
-		parts[i] = strings.ToUpper(strconv.FormatUint(number, 16))
-		if len(parts[i]) == 1 {
-			parts[i] = "0" + parts[i]
-		}
-	}
-	return strings.Join(parts, ":")
-}
-
 // ---- client_fixed_ip.py ----
 
-var (
-	bindingFields = map[string]bool{"router_id": true, "vendor": true, "id": true, "ip": true, "mac": true,
-		"comment": true, "server": true, "interface": true, "gateway": true}
-	bindingRequired = []string{"router_id", "vendor", "id", "ip", "mac", "comment"}
-)
-
-// validateBindings is validate_bindings.
+// validateBindings is validate_bindings (internal/routerdoc holds the check).
 func validateBindings(value any) error {
-	object, ok := value.(*jsonx.Object)
-	if !ok || object == nil || object.Len() > 2048 {
-		return oxidnsError("客户端固定 IP 记录必须为对象，最多 2048 条。")
-	}
-	for ip, item := range object.All() {
-		if !validBinding(ip, item) {
-			return oxidnsError("客户端固定 IP 记录缺少有效 IP、MAC、路由器或归属标记。")
-		}
+	if message := routerdoc.ValidateBindings(value); message != "" {
+		return oxidnsError(message)
 	}
 	return nil
-}
-
-func validBinding(ip string, item any) bool {
-	binding, ok := item.(*jsonx.Object)
-	if !ok || binding == nil {
-		return false
-	}
-	for key := range binding.All() {
-		if !bindingFields[key] {
-			return false
-		}
-	}
-	for _, key := range bindingRequired {
-		if !binding.Has(key) {
-			return false
-		}
-	}
-	if lanIPv4(ip) == "" || !jsonx.Equal(binding.Value("ip"), ip) {
-		return false
-	}
-	if vendor, _ := binding.Value("vendor").(string); vendor != "routeros" && vendor != "ikuai" {
-		return false
-	}
-	for _, v := range binding.All() {
-		text, ok := v.(string)
-		if !ok || utf8.RuneCountInString(text) > 512 {
-			return false
-		}
-		for _, r := range text {
-			if r < 32 {
-				return false
-			}
-		}
-	}
-	mac := binding.GetString("mac")
-	return binding.GetString("router_id") != "" && binding.GetString("id") != "" &&
-		canonicalMAC.MatchString(mac) && normalizeMAC(mac) == mac &&
-		strings.HasPrefix(binding.GetString("comment"), "cf-client:")
 }
 
 // ---- rule_dns.py ----
