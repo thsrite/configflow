@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 17 missing, 4 partial, 8 ported, 8 verified (C01, C02, C03, C04, C08, C09, C10, C12). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 17 missing, 4 partial, 7 ported, 9 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -38,7 +38,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C10 | manual node parser, subscription hosts/filter/dialers | 1242 | verified | C08 | – |
 | C11 | proxy chains, commented Mihomo editor, listeners, proxy-server DNS | 855 | partial | C10 | – |
 | C12 | converter common, Mihomo node conversion, dialer references, EasyTier | 1196 | verified | C09, C11 | – |
-| C13 | Sub-Store client, runtime, subscription cache, dependencies | 1193 | ported | C12, C10 | 3 (3 done) |
+| C13 | Sub-Store client, runtime, subscription cache, dependencies | 1193 | verified | C12, C10 | 3 (3 done) |
 | C14 | remote rule fetch, ruleset content, remote sources, website identity | 1202 | ported | C12, C08 | – |
 | C15 | subscription refresh, health, scheduled refresh | 600 | ported | C13, C14, C07 | – |
 | C16 | health check, latency, node DNS, region check, domain probe | 1089 | ported | C12, C13 | 5 (5 done) |
@@ -507,7 +507,7 @@ Commands:
 
 ## C13 — Sub-Store client, runtime, subscription cache, dependencies
 
-**Status: `ported`** (not reviewed) · prereqs: C12, C10 · Go: `internal/substore`, routes in `internal/api/settings/dependencies.go`
+**Status: `verified`** (review 2026-11-16, commits ca7a8933, d376585f, 7a570675, 13f50871; table below) · prereqs: C12, C10 · Go: `internal/substore`, routes in `internal/api/settings/dependencies.go`
 
 Files → Go:
 - `backend/utils/sub_store_client.py` (453) → `client.go`: `Client` (`GetSubscriptionProxiesYAML` with `FetchOptions{Refresh, PreferCached}` = coalescing, 300/30/900 s reuse, 128-entry bound, failure cooldown 3 s doubling to 300 s, ≥60 s for direct 403/429; `fetchSubscription` = `_get_subscription_proxies_yaml`; `ConvertProxyString`/`ConvertProxyStringTarget` with the per-bundled-version LRU of 512 = `convert.ProxyStringConverter`), `SubscriptionResult`, `SubscriptionFetchError` (Unwrap = `__cause__` = direct error), `ParseProxiesFromYAML`, `ProxiesToNodes`, `isYAMLResponse`; `httpclient.go` = requests-like client (`RequestsClient`, `Request{Params, JSON, Timeout, Proxy}`, `Response.Text/JSON/RaiseForStatus/HeaderValue`, `RequestError{Class, Status}`, `PrepareURL` = prepare_url + urllib3 2.8 parse_url normalisation + requote_uri, `QuotePath`); `omap.go` (dict order for the bookkeeping).
@@ -533,7 +533,7 @@ Tests (`internal/substore/*_test.go`, fake Sub-Store + fake airport on loopback,
 - Corpus `testdata/gen.py` → `corpus.json` (237 rows: parse_userinfo, parse_version, is_newer, builtin_sub_store_url, _is_yaml_response, parse_proxies_from_yaml, proxies_to_nodes, conversion log line, requests prepare_url, response.text/json) all equal (`corpus_test.go`), except no-charset non-UTF-8 bodies (charset_normalizer guess, skipped).
 - Differential `internal/substore/difftest` (real Flask vs Go, same fake Sub-Store, GitHub via a dead HTTPS_PROXY → ProxyError on both): bundled 16 requests + external 4 requests, 0 differences, stored `sub_store_mode` equal.
 
-Decisions / differences from Python:
+Decisions / differences from Python (porter; see the review below for what changed):
 - `convert.ProxyStringConverter` has no error: an invalid `SUB_STORE_BACKEND_API_PORT` makes Python's convert_proxy_string raise ValueError; Go logs and returns nil. A non-object first proxy (0, "", []) is cached by Python, returned as nil and not cached by Go (same ConvertNodeToMihomo outcome).
 - HTTP: Go never sends loopback requests through an environment proxy (requests would unless NO_PROXY); env proxies read once per process (http.ProxyFromEnvironment); IDNA of non-ASCII hosts not done; charset guessing without a charset = BOM else UTF-8; codecs beyond UTF-8/16, Latin-1, ASCII decode as UTF-8; transport error texts are Go's (class + status match).
 - `ParseProxiesFromYAML`: non-list falsy `proxies` ('' / {}) → empty list (Python returns that value); YAML errors use the PyYAML port (`rulefetch/pyyaml`) for class/text. yamlx limits apply to `_is_yaml_response`'s fallback parse (non-string keys → not YAML).
@@ -549,6 +549,50 @@ Commands:
 - tests: `rt -- bash -lc 'cd server && go vet ./internal/substore/... ./internal/api/settings/ ./internal/server/ && go test -count=1 -race ./internal/substore/... ./internal/api/settings/ ./internal/server/ ./internal/convert/'`
 - differential: `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/substore/difftest/'`
 - corpus: `rt --back server/internal/substore/testdata/corpus.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/substore/testdata/gen.py'`
+
+### Review C13 (adversarial, 2026-11-16)
+
+Every function of `sub_store_client.py`, `sub_store_runtime.py`, `subscription_cache.py`, `dependencies.py`, `parse_userinfo` and the three routes walked branch by branch against `client.go`, `httpclient.go`, `runtime.go`, `cache.go`, `env.go`, `dependencies.go`, `userinfo.go`, `wire.go`, `api/settings/dependencies.go`.
+
+| # | Sev | Finding | Fix | Regression test |
+|---|---|---|---|---|
+| 1 | high | Environment proxies: Go used `http.ProxyFromEnvironment` (loopback bypass, ALL_PROXY ignored, read once); requests (`trust_env`, not disabled anywhere in C13) sends the loopback Sub-Store requests through `HTTP_PROXY` unless `NO_PROXY` names them, rereads the environment per request; `proxies=` (rule download proxy) was parsed with `url.Parse` and its credentials sent UTF-8/not at all | shared `internal/reqproxy` (A07's requests port moved out of `agents/proxy.go`, which now binds it to `os.environ`); `RequestsClient` uses `FromEnvironment` / `FromValue`, Proxy-Authorization latin-1 with CONNECT (https) or the request (http) — ca7a8933 | `TestReviewLoopbackSubStoreGoesThroughEnvironmentProxy`, `reqproxy.TestReferenceEnvironmentProxies` (994 requests cases), difftest `TestDifferentialReviewLoopbackProxy` |
+| 2 | medium | Redirect hops kept the first hop's proxy decision; requests' `rebuild_proxies` keeps the proxies merged for the first URL and adds the hop scheme's proxy when the hop is not bypassed | `reqproxy.ForRedirect`, per-hop transport — 13f50871 | `TestReviewRedirectProxyLikeRequests` (checked with real requests) |
+| 3 | high | A cancelled request context (browser gone) aborted the shared download/command: waiters got the error and a failure cooldown was recorded; Python's thread finished the request | `RequestsClient.Do` and `ExecRunner.Run` use `context.WithoutCancel` — ca7a8933 | `TestReviewCancelledRequestContextFinishesTheFetch` |
+| 4 | medium | Decision 10: `ParseProxiesFromYAML` failed on mappings with int/bool/None keys | `yamlx` `KeepNonStringKeys`; root `*yamlx.Mapping` read with `Lookup`; proxies' mappings become objects with json.dumps key text (the cache form); C17 allowlist row removed — ca7a8933 | review corpus `parse_proxies_from_yaml`/`proxies_to_nodes` rows, provider `TestCorpus` |
+| 5 | low | `_is_yaml_response` false for documents PyYAML loads but jsonx cannot hold (recursive alias, `!!set`) | root mapping keys read from `pyyaml.Compose` on `UnrepresentableError` — ca7a8933 | review corpus `is_yaml_response` |
+| 6 | medium | Malformed `state.json` (JSON that is not an object; `last_used` a string/null/list/huge int) was treated as empty and healed; Python fails: TypeError in `_write`, AttributeError at `state.get` (status → 500, mode switch → 500 after saving the mode), TypeError/OverflowError at `now - last_used` | `read()` returns the JSON value; `write`/`stateGet`/`floatMinus` raise Python's errors — ca7a8933 | `TestReviewRuntimeMalformedState` (32 states × tick/status/use vs Python incl. commands issued and file after), difftest `TestDifferentialReviewMalformedState` |
+| 7 | low | `_save_mode`: `reset_config_context()` ran after a failed transaction; missing `system_config` was AttributeError instead of KeyError | reset only after success — ca7a8933 | (code path; route tests) |
+| 8 | low | supervisorctl/node output decoded with replacement and raw newlines; Python `text=True` is strict UTF-8 (UnicodeDecodeError, not RuntimeUnavailable) with universal newlines | `ExecRunner` strict decoding + newline translation; `_command` maps only OSError/TimeoutExpired — ca7a8933 | `TestReviewCommandOutputIsStrictUTF8` |
+| 9 | low | `Content-Type` parameters: first `charset` won; requests' dict keeps the last | last wins, Python strip/lower — ca7a8933 | `TestReviewCharsetLastWins`, review corpus `response_text` |
+| 10 | low | Hosts starting with `*`/`.` connected (ConnectionError) where requests raises InvalidURL "URL has an invalid label." | `checkURL` — ca7a8933 | `TestReviewHostLabelIsInvalidURL` |
+| 11 | low | `os.makedirs` failure texts (cache dir, runtime dir): MkdirAll named another path / errno | `pyMakedirs` — ca7a8933 | `TestReviewMakedirsErrorTexts` |
+| 12 | low | A falsy first proxy from Sub-Store (`proxies: [0, …]`) was not remembered (Python caches it; Sub-Store asked again each time) | an empty object stands in (every caller only tests truthiness) — ca7a8933 | `TestReviewFalsyConversionIsRemembered` |
+| 13 | medium | A panic in the update goroutine would crash the server (Python's thread records the failure) | recover in `installRelease` (→ its `except Exception` path) and `runUpdate` — ca7a8933 | `TestReviewUpdatePanicIsAFailure` |
+| 14 | low | `TooManyRedirects` lacked the 31st redirect's status (`safe_exception_details` shows `status=302`) | `CheckRedirect` sets it — 7a570675 | `TestReviewTooManyRedirectsCarriesStatus` (checked with real requests: 31 requests, status=302) |
+| 15 | low | flock EINTR returned OSError (Python retries, PEP 475) | retry — ca7a8933 | – |
+
+Decision 8 done here: `substore` uses `pystr.Lower/IsSpace/Strip/Int` (its `pyLower`, digit and int() copies removed) and `urlx.RequestsPrepareURL` / `urlx.Quote` (its `PrepareURL` copy removed; `PrepareURL` is now a wrapper taking `[]Param`). Kept private: `pyIsAlnum`/`isPyWord` (pystr has no isalnum table; Go's Unicode 15 vs CPython's 14 only matters for the conversion log's scheme and userinfo keys), `safeExceptionDetails` (Python inspects only the exception itself; `urlx.SafeExceptionDetails` walks `Unwrap`, which would add the direct error's status to `SubscriptionFetchError`).
+
+Porter's listed differences, decided: no env proxy for loopback / env read once → fixed (#1); no IDNA → accepted (net/http dials the IDNA form; only invalid labels differ, as A01); UTF-8 fallback decoding (other codecs, charset_normalizer) → accepted (no `golang.org/x/text`, as A02); Go transport error texts → accepted (only class and status are ever shown, via `safe_exception_details`); malformed state treated as empty → fixed (#6); download written whole → accepted (Python's partial file is removed on every failure path; same end state); supervisorctl replacement decoding → fixed (#8).
+
+Accepted differences (reviewer):
+- `convert_proxy_string` with an invalid `SUB_STORE_BACKEND_API_PORT` raises ValueError in Python (generation/parse-lines fail); Go logs and returns no node — `convert.ProxyStringConverter` (C12, also implemented by the Surge/Loon work) has no error; misconfiguration only.
+- Non-list `proxies` values: a mapping/falsy value returns `[]` (Python returns the value itself; `{0: a}` would then be indexed by callers); values yamlx cannot hold (`!!set`, recursive aliases) inside proxies are a YAMLError-class error (Python fails later with AttributeError); `!!binary`/date keys inside a proxy are a TypeError at parse time (Python keeps them until json.dumps refuses them when the cache is written); `{1: a, '1': b}` merges to one key (Python's json.dumps would write the key twice — reading back gives the same).
+- `isYAMLResponse` fallback ignores `<<` merge keys at the root of an unrepresentable document.
+- Content-Type with a bare `charset` parameter (no `=`): Python raises AttributeError in `resp.text`; Go ignores the parameter. requests' `guess_json_utf` for BOM-less UTF-16/32 JSON bodies not reproduced.
+- Non-dict `metadata`/`hosts` in a hand-edited cache: Python raises AttributeError after writing the new cache; Go treats them as empty.
+- `prune_orphan_caches` returns names sorted (Python: directory order; the return value is unused).
+- Runtime root uses `filepath.Abs` (collapses a leading `//`, which `os.path.abspath` keeps): only the temp directory name differs.
+- TLS verification with system roots (requests: certifi / `REQUESTS_CA_BUNDLE`), `.netrc` not read (as A01).
+
+Checks performed (no finding): direct-first logic (`#` fragments, http(s) only via Unicode lower, `clash.meta` UA, YAML check order, `x-powered-by` lower, userinfo from the same response, `traffic or` ≡ `is None` since parse_userinfo never returns `{}`), 403/429 short cut (no Sub-Store), temp names and quoting, `#noFlow`, content passing (`""` included), download URL/target/`noFlow` param, delete on every path incl. failed create, `direct_attempted` conversion-failure error, fallback direct fetch; coalescing (cleanup order, retention 600 s, reuse 300/30/900, `>=` edges, never bypassing in-flight or failures, eviction of completed entries only, untracked owners, failure count cap 8, cooldown 3·2ⁿ⁻¹ ≤ 300, ≥60 s for 403/429 from the direct error, failure purge ≥ 3600 s, success clears failures); node conversion cache (version None/"", LRU 512, deep copies, version re-check); `parse_userinfo` (regex scanning, Unicode `\w`/`\s`, float → int, OverflowError); runtime (lock files/modes/timeouts 45/90/0, state merge order and bytes, `_ensure_running` 20 s/0.2 s loop and failure write, use/maintenance finally replacing errors, set_mode order, tick branches, status table, monitor 5 s, `start_monitor` only with the bundle); cache (paths, `.lock` removal, prune exception set and messages, save order, count/updated_at, previous count log with Python `==`, hosts change log); dependencies (builtin URL validation, version parsing/comparison, VERSION decoding, active bundle choice, running version JSON shapes, release parsing order/errors/notes slicing/digest, 30-min cache keeping the last good release, status dict order, restart/wait/rollback paths and messages, update lock/state); routes (args, 202/409, 400 body, RuntimeUnavailable → 409, other errors 500).
+
+Reference tests added: `testdata/gen_review.py` → `review_reference.json` (CPython 3.11, requests 2.31, PyYAML 6.0.1): 43 userinfo headers (units, signs, Arabic digits, NaN/inf texts, 300/400-digit values, NBSP/U+2028, latin-1), 20 YAML-detection texts, 30 subscription bodies × parse/nodes (non-string keys, merges, base64, JSON, vless fields, multi-document, dates), 14 charset headers, 128 runtime rows (32 malformed `state.json` × tick/status/use), 11 reuse/cooldown clock scenarios, in-flight waiters with mixed flags — asserted by `review_c13_test.go`; `review_c13_fix_test.go` for the HTTP/exec/cache fixes. Differential: +2 tests (loopback environment proxy 3 requests; malformed state.json 3 × 4 requests): **20 (porter) + 3 + 12 = 35 requests, 0 differences**.
+
+Open findings: none.
+
+Commands (review): `rt -- bash -lc 'cd server && go vet ./internal/substore/... ./internal/api/settings/ && go test -count=1 ./internal/substore/... ./internal/api/settings/ ./internal/provider/ ./internal/convert/... ./internal/refresh/... ./internal/server/'` (+ `-race`, + `./internal/reqproxy/ ./internal/agents/...` for the shared proxy code); `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/substore/difftest/'`; reference: `rt --back server/internal/substore/testdata/review_reference.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/substore/testdata/gen_review.py'`.
 
 ## C14 — remote rule fetch, ruleset content, remote sources, website identity
 
@@ -704,7 +748,7 @@ Decisions / differences from Python:
 - `flattenMapping` is a private copy of yamlx's unexported `constructor.flatten` (TODO: switch when C02 exports it).
 
 Findings in other modules (not fixed here):
-- **C13 `substore.ParseProxiesFromYAML`**: mappings with non-string keys (`proxies: [{1: a, name: A}]`, `1: a` at the root) fail (yamlx NonStringKeyError); Python returns them (key `1`). Corpus allowlist `knownDifference`.
+- **C13 `substore.ParseProxiesFromYAML`**: mappings with non-string keys (`proxies: [{1: a, name: A}]`, `1: a` at the root) fail (yamlx NonStringKeyError); Python returns them (key `1`). Corpus allowlist `knownDifference`. **Fixed in review C13 (ca7a8933); allowlist row removed.**
 - **C12 `convert.ValidateEmitted`**: with a non-dict provider definition (`proxy-providers: {F: 1}`) and an active chain, Go raises AttributeError where Python first reports the dangling `dialer-proxy` (DialerReferenceError). Hand-made invalid main only; allowlisted.
 
 Commits: cb386206 (code), 2e9a7dfe (corpus, response tests), 430f79bc (ported tests), + this PROGRESS commit.
