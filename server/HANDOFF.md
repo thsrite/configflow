@@ -107,3 +107,36 @@ files once). After `cf-test`, use `rt --no-sync`.
   gofmt or debug files behind.
 - Event-driven is enough: hand-backs and completions wake the coordinator. A recurring cron is only a
   fallback for resuming agents after a usage-limit reset (session-only, expires after 7 days).
+
+## Coordinator habits (keep them)
+
+- After each hand-back, re-run the module's tests and differentials yourself on a throwaway detached
+  worktree of HEAD (others' uncommitted work often breaks the shared tree):
+  `git worktree add -q --detach ~/program/configflow-go-verify HEAD && cd ~/program/configflow-go-verify &&
+  rt -- bash -lc 'cd server && go vet ./... && go test -count=1 ./...'`, then `rt clean`,
+  `git worktree remove --force …` **and** `rm -rf ~/program/configflow-go-verify` (macOS leaves `.DS_Store`),
+  `git worktree prune`.
+- After a module changes shared packages (httpx, urlx, yamlx, pystr, repo, agents client), run the whole
+  project (`go test ./...`), not just the module.
+- Recount the PROGRESS header from the module table after status changes (porters often leave it stale).
+- `git push origin go` sometimes fails on the network: retry (`for i in 1 2 3; do git push -q origin go && break; sleep 5; done`).
+- The git index is shared by all agents: commit with explicit paths only (`git commit -- <paths>`); check
+  `git diff --cached --stat` first. Agents have accidentally committed each other's staged files three times.
+- Usage limit: about 6–7 agent runs per 5-hour window with 4 agents in parallel. When agents fail with the
+  limit, resume each with `SendMessage` after the reset time (the user usually says "继续"); the session
+  cron fallback has not been reliable.
+- All agents `model: "opus"`; briefs forbid sub-agents and background jobs; reviewers set `verified` only
+  with zero open findings; the coordinator only confirms by re-running.
+
+## Non-rewrite items still open (2026-11-16)
+
+- Upstream PRs from 2026-11-14 that were open when last checked: #573 (install script preview scroll),
+  #574 (Agent address follow), #575 (draft, stacked on #574: write-back + 修改地址 dialog). Check their
+  state before touching them.
+- DNS01 (192.168.0.11) still has `/opt/configflow-agent/config-oxidns.json.bak-before-ip-change-20261114`;
+  delete only after the maintainer confirms.
+- VM lab tests proposed by reviewers, all waiting for the maintainer's go-ahead: installers (A08 plan),
+  Agent web update/rollback and address follow on real DHCP renumbering (A15 plan), Docker HA (A09/A10),
+  and later publish/HA/router modules.
+- Decided not to fix in Python (being retired): trailing-newline `re.match` validation bugs — fixed in Go only
+  (PROGRESS-agents decision 6).
