@@ -734,3 +734,20 @@ request_variants=6527 named_matrix_cases=3369（S497 F2407 B465），H去重217�
 ```
 
 继续聚合交付/预览与域名发现等剩余路由；未做最终全量。
+
+## 批次 41：聚合provider、preview和真实源刷新
+
+- 53请求，默认/scoped(other与冲突default header)的YAML、Surge、Loon、include/exclude regex、空集合、Unicode、手动节点与订阅同名去重；验证实际节点行数，Surge/Loon使用可输出的SS fixture，不能把空文本200当转换成功。
+- 非法过滤分别到达不支持YAML筛选与文本regex编译两条分支；未认证401、missing404、disabled403、缓存拨号图错误400、provider目标路径为目录500。preview核对实际生成文件后的nodes/count，空/缺失/非法图/磁盘失败分别验证。
+- 真正Source HTTP首次拉取、403旧缓存降级、HEAD首次拉取均有精确请求次数断言。HEAD body为空但source cache及profile provider文件已生成；preview也覆盖403降级。定时源间隔通过已接通的公开订阅PUT在启动后开启，7个前置请求实际Flask↔Go通过；没有绕开X08默认fixture不启可刷新源约定。
+- 当前URL来源信息完备的cache不在交付请求按时间刷新；403降级用缺URL来源信息的旧cache，确实触发网络请求。全部缓存/回执/health/文件原文与DB比较保留，不将源失败吞成未发生IO。Go聚合交付仍未接通。
+
+```text
+.63 run.py --groups aggregation-provider-formats,aggregation-provider-refresh
+current compared=7 go-unimplemented=46 design_errors=[] seconds=49.30
+cumulative compared=1479 go-unimplemented=5031 dependency=28 different=41 O12-separate=1
+request_variants=6580 named_matrix_cases=3405（S509 F2422 B474），H去重217，G去重15
+44 self-checks + end-to-end wrong-Go-response check OK
+```
+
+聚合慢源多源完成次序、不能从公共边界单独触达的读取配置异常等仍待补齐/可达性审计；域名发现等继续。未做最终全量。

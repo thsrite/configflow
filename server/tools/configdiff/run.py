@@ -144,6 +144,8 @@ def main():
     groups.update(oxidns_editor)
     from cases.aggregations import GROUPS as aggregations
     groups.update(aggregations)
+    from cases.aggregation_providers import GROUPS as aggregation_providers
+    groups.update(aggregation_providers)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:
