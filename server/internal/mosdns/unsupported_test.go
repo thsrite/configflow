@@ -7,10 +7,11 @@ import (
 	"configflow/internal/jsonx"
 )
 
-// Custom base YAML that jsonx cannot hold is refused (Python would dump it
-// with yaml.Dumper), but only after every error Python raises first.
+// Custom base YAML values that jsonx cannot hold and that reach the output
+// are refused (Python would dump them with yaml.Dumper), but only after every
+// error Python raises first.
 func TestUnholdableCustomConfigIsRefusedAfterPythonErrors(t *testing.T) {
-	for _, text := range []string{"{1: x, extra: y}", "extra: {1: x}", "s: !!set {a}", "r: &r [*r]"} {
+	for _, text := range []string{"s: !!set {a}", "r: &r [*r]", "{1: x, extra: !!omap [{a: 1}]}"} {
 		config := jsonx.Obj("mosdns", jsonx.Obj("custom_config", text))
 		_, err := GenerateMosDNSConfig(config, "")
 		var u *UnsupportedYAMLError

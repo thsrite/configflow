@@ -799,10 +799,13 @@ func constructTimestamp(value string) (any, error) {
 }
 
 // converter turns the constructed Python values into the jsonx model.
+// placeholder: unrepresentable values become *Unrepresentable values
+// (LoadOptions.KeepUnrepresentable) instead of failing the load.
 type converter struct {
-	keep   bool
-	done   map[any]any
-	active map[any]bool
+	keep        bool
+	placeholder bool
+	done        map[any]any
+	active      map[any]bool
 }
 
 func (v *converter) convert(value any) (any, error) {
@@ -814,7 +817,7 @@ func (v *converter) convert(value any) (any, error) {
 		return value, nil
 	}
 	if v.active[value] {
-		return nil, &UnrepresentableError{Kind: "recursive", Msg: "the document has a recursive alias (a collection that contains itself); jsonx values cannot hold it"}
+		return v.unrepresentable(&UnrepresentableError{Kind: "recursive", Msg: "the document has a recursive alias (a collection that contains itself); jsonx values cannot hold it"})
 	}
 	if out, ok := v.done[value]; ok {
 		return out, nil
@@ -824,13 +827,13 @@ func (v *converter) convert(value any) (any, error) {
 	var out any
 	switch x := value.(type) {
 	case *pySet:
-		return nil, &UnrepresentableError{Kind: "set", Msg: "!!set values cannot be held by jsonx values"}
+		return v.unrepresentable(&UnrepresentableError{Kind: "set", Msg: "!!set values cannot be held by jsonx values"})
 	case *pyPairs:
 		if len(x.items) == 0 {
 			out = []any{} // an empty list of tuples is an empty list
 			break
 		}
-		return nil, &UnrepresentableError{Kind: x.kind, Msg: "!!" + x.kind + " values cannot be held by jsonx values"}
+		return v.unrepresentable(&UnrepresentableError{Kind: x.kind, Msg: "!!" + x.kind + " values cannot be held by jsonx values"})
 	case *pyList:
 		list := make([]any, len(x.items))
 		v.done[value] = list
@@ -883,6 +886,13 @@ func (v *converter) convert(value any) (any, error) {
 		out = mapping
 	}
 	return out, nil
+}
+
+func (v *converter) unrepresentable(err *UnrepresentableError) (any, error) {
+	if v.placeholder {
+		return &Unrepresentable{Kind: err.Kind, Msg: err.Msg}, nil
+	}
+	return nil, err
 }
 
 // timedeltaRepr is repr(datetime.timedelta(seconds=seconds)): days and

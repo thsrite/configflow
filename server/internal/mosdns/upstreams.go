@@ -17,7 +17,8 @@ import (
 //	223.5.5.5
 //
 // The items are the loaded YAML values themselves (*jsonx.Object, or
-// *yamlx.Mapping for a mapping with non-string keys). The error is Python's
+// *yamlx.Mapping for a mapping with non-string keys; values jsonx cannot
+// hold are *yamlx.Unrepresentable inside them). The error is Python's
 // AttributeError for a truthy value that is not a string.
 func ParseDNSUpstreams(dnsConfig any) (out []any, err error) {
 	defer catch(&err)
@@ -32,7 +33,7 @@ func parseDNSUpstreams(dnsConfig any) []any {
 
 	upstreams := []any{}
 	// Every exception inside Python's try falls back to the line format.
-	if parsed, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true}); err == nil {
+	if parsed, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true}); err == nil {
 		switch x := parsed.(type) {
 		case []any:
 			for _, entry := range x {

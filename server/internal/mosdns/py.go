@@ -388,6 +388,21 @@ func deepCopy(v any, memo map[unsafe.Pointer]any) any {
 			clone[i] = deepCopy(value, memo)
 		}
 		return clone
+	case *yamlx.Mapping:
+		// A dict with keys that are not strings is copied like any dict, so
+		// the copy is not an alias of the original in the dump.
+		if x == nil {
+			return x
+		}
+		if done, ok := memo[unsafe.Pointer(x)]; ok {
+			return done
+		}
+		clone := &yamlx.Mapping{Pairs: make([]yamlx.Pair, len(x.Pairs))}
+		memo[unsafe.Pointer(x)] = clone
+		for i, pair := range x.Pairs {
+			clone.Pairs[i] = yamlx.Pair{Key: pair.Key, Value: deepCopy(pair.Value, memo)}
+		}
+		return clone
 	case []byte:
 		return x
 	}

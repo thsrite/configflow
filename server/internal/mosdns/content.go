@@ -179,10 +179,16 @@ func ConvertRuleContentForMosDNS(content string, part ...string) (out string, er
 
 	var ruleLines []any
 	if isYAMLFormat {
-		data, loadErr := yamlx.LoadWith(content, yamlx.LoadOptions{KeepNonStringKeys: true})
+		// Values jsonx cannot hold elsewhere in the document do not matter;
+		// a payload that is itself one (a !!set, iterated in hash order by
+		// Python) is read as text like a YAML failure.
+		data, loadErr := yamlx.LoadWith(content, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true})
 		payload, present := any(nil), false
 		if loadErr == nil && yamlx.IsMapping(data) {
 			payload, present = yamlx.Lookup(data, "payload")
+			if _, unholdable := payload.(*yamlx.Unrepresentable); unholdable {
+				payload, present = nil, false
+			}
 		}
 		if present {
 			if truthy(payload) {

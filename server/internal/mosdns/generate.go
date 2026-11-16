@@ -11,12 +11,13 @@ import (
 )
 
 // UnsupportedYAMLError reports a custom MosDNS base configuration
-// (mosdns.custom_config) or an upstream definition whose loaded YAML the
-// jsonx model cannot hold but that Python would copy into the generated
-// configuration: mappings with non-string keys, collections that contain
-// themselves through an alias, !!set/!!omap/!!pairs. Python writes such
-// values with yaml.Dumper; the Go server refuses instead of writing other
-// bytes.
+// (mosdns.custom_config) or an upstream definition with a loaded YAML value
+// the jsonx model cannot hold that Python would copy into the generated
+// configuration: a collection that contains itself through an alias, or a
+// !!set/!!omap/!!pairs value. Python writes such values with yaml.Dumper;
+// the Go server refuses instead of writing other bytes. Values only in
+// sections Python drops do not matter; mappings with keys that are not
+// strings are written like PyYAML.
 type UnsupportedYAMLError struct{ Msg string }
 
 func (e *UnsupportedYAMLError) Error() string { return e.Msg }
@@ -143,7 +144,7 @@ func GenerateMosDNSConfig(config *jsonx.Object, baseURL string) (out string, err
 	return text, nil
 }
 
-func generateDocument(config *jsonx.Object, baseURL string) *jsonx.Object {
+func generateDocument(config *jsonx.Object, baseURL string) any {
 	_, ruleSets := splitRulesAndRulesets(config)
 	sets := buildRulesetMap(ruleSets, true)
 	order := rulesetExecutionOrder(config, ruleSets)
@@ -165,11 +166,12 @@ func generateDocument(config *jsonx.Object, baseURL string) *jsonx.Object {
 
 	customConfig := get(settings, "custom_config", "")
 	var base *jsonx.Object
-	var unsupported error // raised at the end: Python's own errors come first
+	var root *yamlx.Mapping // a custom root with keys that are not strings
 	if truthy(customConfig) && strip(customConfig) != "" {
-		base, unsupported = loadCustomConfig(customConfig.(string))
+		base, root = loadCustomConfig(customConfig.(string))
 	}
-	if base == nil || base.Len() == 0 {
+	if base == nil || (base.Len() == 0 && root == nil) {
+		root = nil
 		base = jsonx.Obj("api", jsonx.Obj("http", "0.0.0.0:8338"), "plugins", []any{})
 	}
 	if !base.Has("plugins") {
@@ -448,6 +450,9 @@ func generateDocument(config *jsonx.Object, baseURL string) *jsonx.Object {
 	plugins = append(plugins, jsonx.Obj("type", "tcp_server", "args", jsonx.Obj("entry", "sequence_main", "listen", listen)))
 	base.Set("plugins", plugins)
 
+	if root != nil {
+		return orderedMapping(root, base)
+	}
 	ordered := jsonx.NewObject()
 	for _, k := range []string{"log", "api", "plugins"} {
 		if v, ok := base.Get(k); ok {
@@ -459,10 +464,45 @@ func generateDocument(config *jsonx.Object, baseURL string) *jsonx.Object {
 			ordered.Set(k, v)
 		}
 	}
-	if unsupported != nil {
-		raise(unsupported)
-	}
 	return ordered
+}
+
+// orderedMapping is the ordered_config of a custom root that has keys other
+// than strings: base holds its string keys after the log/api/plugins
+// updates. Python's mosdns_config keeps the original key order (deleted keys
+// gone, new keys appended); ordered_config puts log, api and plugins first
+// and drops servers and data_providers.
+func orderedMapping(root *yamlx.Mapping, base *jsonx.Object) *yamlx.Mapping {
+	var pairs []yamlx.Pair
+	original := map[string]bool{}
+	for _, p := range root.Pairs {
+		if k, ok := p.Key.(string); ok {
+			original[k] = true
+			if v, present := base.Get(k); present {
+				pairs = append(pairs, yamlx.Pair{Key: k, Value: v})
+			}
+			continue
+		}
+		pairs = append(pairs, p)
+	}
+	for k, v := range base.All() {
+		if !original[k] {
+			pairs = append(pairs, yamlx.Pair{Key: k, Value: v})
+		}
+	}
+	out := &yamlx.Mapping{}
+	for _, k := range []string{"log", "api", "plugins"} {
+		if v, ok := base.Get(k); ok {
+			out.Pairs = append(out.Pairs, yamlx.Pair{Key: k, Value: v})
+		}
+	}
+	for _, p := range pairs {
+		if k, ok := p.Key.(string); ok && (k == "log" || k == "api" || k == "plugins" || k == "servers" || k == "data_providers") {
+			continue
+		}
+		out.Pairs = append(out.Pairs, p)
+	}
+	return out
 }
 
 // tagDefault is ruleset_tag_map.get(id, rule_set.get('name') or
@@ -502,32 +542,50 @@ func dumpInterval(value any) (n jsonx.Number) {
 }
 
 // loadCustomConfig is the custom base configuration: yaml.safe_load, a
-// non-mapping or a YAML error giving the defaults (nil). A document jsonx
-// cannot hold returns nil and an *UnsupportedYAMLError for the caller to
-// raise once the rest of the generation succeeded.
-func loadCustomConfig(text string) (*jsonx.Object, error) {
-	value, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true})
+// non-mapping or a YAML error giving the defaults (nil). Values jsonx cannot
+// hold are kept as *yamlx.Unrepresentable: Python drops
+// log/api/plugins/servers/data_providers, so only those that reach the
+// output are refused (checkDumpable). A root with keys that are not strings
+// is also returned as root; base then holds its string keys.
+func loadCustomConfig(text string) (*jsonx.Object, *yamlx.Mapping) {
+	value, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true})
 	if err != nil {
-		if _, ok := err.(*yamlx.UnrepresentableError); ok {
-			return nil, &UnsupportedYAMLError{Msg: "MosDNS custom_config: " + err.Error()}
-		}
 		return nil, nil
 	}
 	switch x := value.(type) {
 	case *jsonx.Object:
 		return x, nil
 	case *yamlx.Mapping:
-		return nil, &UnsupportedYAMLError{Msg: "MosDNS custom_config: mapping keys must be strings"}
+		base := jsonx.NewObject()
+		for _, p := range x.Pairs {
+			if k, ok := p.Key.(string); ok {
+				base.Set(k, p.Value)
+			}
+		}
+		return base, x
 	}
+	// Not a dict (a !!set, !!omap or recursive list root included): defaults.
 	return nil, nil
 }
 
-// checkDumpable rejects values Python's yaml.Dumper would write but yamlx
-// cannot hold (*yamlx.Mapping from non-string keys).
+// checkDumpable rejects values Python's yaml.Dumper would write but jsonx
+// cannot hold (*yamlx.Unrepresentable: !!set, !!omap/!!pairs, recursive
+// aliases). Mappings with keys that are not strings (*yamlx.Mapping) are
+// dumped like PyYAML.
 func checkDumpable(v any, seen map[unsafe.Pointer]bool) error {
 	switch x := v.(type) {
+	case *yamlx.Unrepresentable:
+		return &UnsupportedYAMLError{Msg: "MosDNS configuration: " + x.Msg}
 	case *yamlx.Mapping:
-		return &UnsupportedYAMLError{Msg: "MosDNS configuration: mapping keys must be strings"}
+		if x == nil || seen[unsafe.Pointer(x)] {
+			return nil
+		}
+		seen[unsafe.Pointer(x)] = true
+		for _, p := range x.Pairs {
+			if err := checkDumpable(p.Value, seen); err != nil {
+				return err
+			}
+		}
 	case *jsonx.Object:
 		if x == nil || seen[unsafe.Pointer(x)] {
 			return nil

@@ -40,6 +40,12 @@ type LoadOptions struct {
 	// (`1: a`, `yes: a`, `~: a`) as *Mapping, keys and order as PyYAML builds
 	// them. Without it such a document gives *NonStringKeyError.
 	KeepNonStringKeys bool
+	// KeepUnrepresentable puts an *Unrepresentable in place of each value
+	// jsonx cannot hold (a recursive alias at the point it refers back,
+	// !!set, non-empty !!omap/!!pairs) instead of failing with
+	// *UnrepresentableError, so callers can tell whether such a value reaches
+	// their output (Python would keep and later use or drop it).
+	KeepUnrepresentable bool
 }
 
 // Error is a Python exception raised while loading: Error() is str(exc) and
@@ -92,6 +98,13 @@ type UnrepresentableError struct {
 }
 
 func (e *UnrepresentableError) Error() string { return e.Msg }
+
+// Unrepresentable stands for a value jsonx cannot hold
+// (LoadOptions.KeepUnrepresentable); Kind and Msg as in UnrepresentableError.
+type Unrepresentable struct {
+	Kind string
+	Msg  string
+}
 
 // Mapping is a mapping with at least one key that is not a string, as PyYAML
 // builds it (LoadOptions.KeepNonStringKeys): keys are string, jsonx.Number,
@@ -257,7 +270,7 @@ func constructRoot(root *pyyaml.Node, opts LoadOptions) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	v := &converter{keep: opts.KeepNonStringKeys, done: map[any]any{}, active: map[any]bool{}}
+	v := &converter{keep: opts.KeepNonStringKeys, placeholder: opts.KeepUnrepresentable, done: map[any]any{}, active: map[any]bool{}}
 	return v.convert(value)
 }
 

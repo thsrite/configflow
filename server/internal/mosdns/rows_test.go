@@ -220,7 +220,10 @@ func compareRow(entry *jsonx.Object) (msg string, accepted, supported bool) {
 	want, _ := entry.Get("out")
 	got, want2 := compact(out), compact(want)
 	if got != want2 {
-		if entry.GetBool("unholdable") {
+		// Only a !!set payload (iterated in hash order by Python) may give a
+		// different conversion; every other unholdable value is refused or
+		// matches.
+		if entry.GetBool("unholdable") && fn == "convert" {
 			return "", true, true
 		}
 		return fmt.Sprintf("output differs:\n got %s\nwant %s", got, want2), false, true
@@ -240,6 +243,9 @@ func TestCorpus(t *testing.T) {
 			unsupported++
 		case acc:
 			accepted++
+			if os.Getenv("C21_SHOW_ACCEPTED") != "" && accepted <= 400 {
+				t.Logf("accepted row %d %s %s", i, entry.GetString("fn"), compact(entry.GetList("args")))
+			}
 		case msg != "":
 			failures++
 			if failures <= 25 {
