@@ -56,6 +56,8 @@ def main():
     groups.update(admin_auth)
     from cases.settings import GROUPS as settings
     groups.update(settings)
+    from cases.webdav import GROUPS as webdav
+    groups.update(webdav)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

@@ -205,7 +205,8 @@ class Pair:
         return any(method == m and canonical(path) == canonical(p) for m, p in self.registered)
 
     def request(self, case_id, route, path=None, *, method=None, body=None, auth='admin', headers=None,
-                variant='', expect=None, check=None, writes=False, files=True, policy=None, capture=None):
+                variant='', expect=None, check=None, writes=False, files=True, policy=None, capture=None,
+                interaction=None, bodies=None):
         nominal_method, nominal_path = route.split(' ', 1)
         method, path = method or nominal_method, path or nominal_path
         policy = policy or self.policy
@@ -222,7 +223,11 @@ class Pair:
             credential = self.tokens[index] if auth == 'admin' else (auth[index] if isinstance(auth, (list, tuple)) else auth)
             if credential:
                 local_headers['Authorization'] = credential if credential.startswith('Bearer ') else 'Bearer ' + credential
-            replies.append(send(base, method, path, body, local_headers))
+            if interaction:
+                interaction.before(index)
+            replies.append(send(base, method, path, bodies[index] if bodies is not None else body, local_headers))
+            if interaction:
+                interaction.after(index, replies[-1])
         policy.end = time.time()
         reference = replies[0]
         if expect is not None and reference.status not in (expect if isinstance(expect, tuple) else (expect,)):
@@ -241,7 +246,10 @@ class Pair:
                                      python_status=reference.status, go_status=None)
             return replies
         captured = capture(replies, policy) if capture else []
-        diffs = list(captured or []) + response_diffs(*replies, policy, method=method)
+        diffs = list(captured or [])
+        if interaction:
+            diffs += interaction.compare(policy)
+        diffs += response_diffs(*replies, policy, method=method)
         if writes:
             diffs += database_diffs(*self.dirs, policy)
             if files:

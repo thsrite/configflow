@@ -8,6 +8,8 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from types import SimpleNamespace
+import time
 
 from compare import (Policy, differences, structure, response_diffs,
                      database_diffs, file_diffs)
@@ -119,6 +121,30 @@ class Comparators(unittest.TestCase):
         self.assertTrue(differences({'at': '1990-01-01T00:00:00Z'},
                                     {'at': '1990-01-01T00:00:00Z'}, policy=policy))
         self.assertTrue(differences({'at': 'nonsense'}, {'at': 'nonsense'}, policy=policy))
+
+    def test_duration_is_bounded_and_keeps_other_fields(self):
+        policy = Policy(durations={'body.ms'}, start=100, end=102)
+        self.assertEqual(differences({'ms': 1}, {'ms': 39}, policy=policy), [])
+        for value in (-1, 5000, True, '10'):
+            self.assertTrue(differences({'ms': 1}, {'ms': value}, policy=policy))
+        self.assertTrue(differences({'ms': 1, 'ok': True}, {'ms': 9, 'ok': False}, policy=policy))
+
+    def test_dav_transcript_and_upload_mutation(self):
+        from cases.webdav import Exchange
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = [Path(tmp, n) for n in ('python', 'go')]
+            for d in dirs:
+                d.mkdir()
+            exchange = Exchange(None, SimpleNamespace(dirs=dirs, tz='UTC'))
+            value = {'requests': [{'method': 'HEAD', 'authorization': 'Basic synthetic',
+                                   'path': '/backup/fixed.json', 'body': {'profile': {'rules': ['DIRECT']}}}],
+                     'objects': {'/backup/fixed.json': {'profile': {'rules': ['DIRECT']}}}}
+            exchange.observations = [copy.deepcopy(value), copy.deepcopy(value)]
+            self.assertEqual(exchange.compare(Policy()), [])
+            for field, broken in [('method', 'DELETE'), ('authorization', ''), ('body', {'profile': {}})]:
+                exchange.observations[1] = copy.deepcopy(value)
+                exchange.observations[1]['requests'][0][field] = broken
+                self.assertTrue(exchange.compare(Policy()))
 
 
 if __name__ == '__main__':

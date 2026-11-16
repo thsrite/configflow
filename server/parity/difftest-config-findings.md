@@ -4,6 +4,16 @@
 
 Go 尚未实现单独计数，不列为业务失败。以下待协调人派移植 agent，不能用基线吞掉。
 
+## T16 / enable-immediate-final
+
+路由：`POST /api/backup/config`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `dav.objects./backup/config_backup_20261116_182006_864787.json` | missing-in-go | {'schema_version': 5, 'system': {'system_config': {'server_domain': 'http://panel.example', 'github_proxy_domain': '', 'rule_fetch_proxy': '', 'retired_rule_proxy_tokens': ['synthetic-retired-proxy/token+9876543210'], 'rule_proxy_token': 'synthetic-current-proxy/token+0123456789', 'config_token': ''}, 'backup': {'auto_backup': True, 'webdav_url': 'http://127.0.0.1:45777', 'webdav_username': 'synthetic-dav-user', 'webdav_password': 'synthetic-dav-password', 'webdav_path': '/backup/', 'keep_latest': 0, 'keep_daily': 0}, 'agents': [{'id': 'agent-synthetic', 'name': '合成 Agent 🧪', 'token': 'synthetic-agent/token+01234567890123456789', 'profile_id' | None |
+| `dav.requests` | length | 3 | 0 |
+| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'webdav_backup': {'last_run_at': '2026-11-16T18:20:06Z', 'last_finished_at': '2026-11-16T18:20:06Z', 'last_status': 'success', 'last_duration_ms': 25, 'last_trigger': 'event', 'last_error': '', 'run_count': 1, 'last_success_at': '2026-11-16T18:20:06Z', 'consecutive_failures': 0}}} | None |
+
 ## X08 / retired-node-test-dns-migration
 
 路由：`startup`；状态：O12-separate

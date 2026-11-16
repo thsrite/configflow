@@ -27,6 +27,7 @@ class Difference:
 @dataclass
 class Policy:
     times: set = field(default_factory=set)
+    durations: set = field(default_factory=set)
     # Only separately diagnosed CPython exception messages may use this exact path.
     internal_errors: dict = field(default_factory=dict)
     start: float = 0
@@ -60,6 +61,11 @@ def timestamp(value, policy):
 
 def differences(left, right, path='body', policy=None):
     policy = policy or Policy()
+    if path in policy.durations:
+        maximum = max(0, (policy.end - policy.start + 2) * 1000)
+        if any(type(v) is not int or not 0 <= v <= maximum for v in (left, right)):
+            return [Difference(path, 'invalid-duration', left, right)]
+        return []
     if path in policy.internal_errors:
         if type(left) is not str or type(right) is not str or not left or not right:
             return [Difference(path, 'invalid-internal-error', left, right)]
