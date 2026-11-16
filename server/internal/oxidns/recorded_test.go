@@ -19,3 +19,12 @@ func TestRecordedPythonTests(t *testing.T) {
 		return strings.TrimPrefix(entry.GetString("test"), "backend/")
 	})
 }
+
+// TestCorpus replays the random corpus generated with real Python
+// (testdata/gen.py): malformed settings of every field, profiles through
+// generate/downloads/custom_files, hosts files, upstream texts, native YAML
+// edge cases, attachments, includes, documents, references, rule DNS parts,
+// client ranges, schema formats.
+func TestCorpus(t *testing.T) {
+	replay(t, "testdata/corpus.jsonl.gz", nil)
+}

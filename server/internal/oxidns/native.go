@@ -1,7 +1,6 @@
 package oxidns
 
 import (
-	"encoding/base64"
 	"math"
 	"path"
 	"regexp"
@@ -144,8 +143,6 @@ func ManagedFiles(value any) (files []ManagedFile, err error) {
 	return managedFiles(value), nil
 }
 
-var base64Pattern = regexp.MustCompile(`^[A-Za-z0-9+/]*={0,2}$`)
-
 func managedFiles(value any) []ManagedFile {
 	list, ok := value.([]any)
 	if !ok || len(list) > MaxAdditionalFiles {
@@ -206,32 +203,76 @@ func managedFiles(value any) []ManagedFile {
 }
 
 // b64decodeValidate is base64.b64decode(text, validate=True) of CPython
-// 3.11: only the standard alphabet with at most two trailing "=", then
-// binascii.a2b_base64 in non-strict mode (a "=" right after a complete
-// group is skipped, trailing bits are ignored).
+// 3.11: binascii.a2b_base64(text, strict_mode=True) on the ASCII text. No
+// leading "=", only alphabet characters, no data after padding started; a
+// "=" right after a complete group is skipped, a complete pad sequence ends
+// the input (anything after it is an error), trailing bits are ignored, and
+// an unfinished group at the end is an error.
 func b64decodeValidate(text string) ([]byte, bool) {
-	if !base64Pattern.MatchString(text) {
+	if len(text) > 0 && text[0] == '=' {
 		return nil, false
 	}
-	data := strings.TrimRight(text, "=")
-	pads := len(text) - len(data)
-	switch len(data) % 4 {
-	case 1:
-		return nil, false
-	case 2:
-		if pads < 2 {
+	var out []byte
+	quad, pads, left := 0, 0, byte(0)
+	paddingStarted := false
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		if c == '=' {
+			paddingStarted = true
+			if quad >= 2 {
+				pads++
+				if quad+pads >= 4 {
+					if i+1 < len(text) {
+						return nil, false
+					}
+					return out, true
+				}
+			}
+			continue
+		}
+		v := base64Value(c)
+		if v < 0 || paddingStarted {
 			return nil, false
 		}
-	case 3:
-		if pads < 1 {
-			return nil, false
+		pads = 0
+		value := byte(v)
+		switch quad {
+		case 0:
+			left = value
+		case 1:
+			out = append(out, left<<2|value>>4)
+			left = value & 0x0f
+		case 2:
+			out = append(out, left<<4|value>>2)
+			left = value & 0x03
+		case 3:
+			out = append(out, left<<6|value)
 		}
+		quad = (quad + 1) % 4
 	}
-	decoded, err := base64.RawStdEncoding.DecodeString(data)
-	if err != nil {
+	if quad != 0 {
 		return nil, false
 	}
-	return decoded, true
+	if out == nil {
+		out = []byte{}
+	}
+	return out, true
+}
+
+func base64Value(c byte) int {
+	switch {
+	case c >= 'A' && c <= 'Z':
+		return int(c - 'A')
+	case c >= 'a' && c <= 'z':
+		return int(c-'a') + 26
+	case c >= '0' && c <= '9':
+		return int(c-'0') + 52
+	case c == '+':
+		return 62
+	case c == '/':
+		return 63
+	}
+	return -1
 }
 
 // NativeSources is the include metadata native_document reports through its

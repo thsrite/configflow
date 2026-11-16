@@ -117,6 +117,12 @@ func containerHas(container any, identity any) bool {
 		hashable(identity)
 		text, ok := identity.(string)
 		return ok && x.Has(text)
+	case string:
+		text, ok := identity.(string)
+		if !ok {
+			raise(pyErr("TypeError", "'in <string>' requires string as left operand, not "+typeName(identity)))
+		}
+		return strings.Contains(x, text)
 	}
 	raise(pyErr("TypeError", "argument of type '"+typeName(container)+"' is not iterable"))
 	return false
