@@ -38,13 +38,20 @@ server/
    `DATA_DIR` must be byte-identical to what Python writes for the same value (key order, separators,
    escaping, number text, trailing newline). Use the `jsonx` encoders; never `encoding/json` for
    stored data.
-4. **Tests are the acceptance criterion.** For every Python test file listed for your package,
-   port the cases to Go tests with the same inputs and expected outputs (table-driven where the
-   Python is parametrized). Keep the test names traceable (`test_foo_bar` → `TestFooBar`). Tests that
-   only exercise Python mechanics (monkeypatched internals, import-time behaviour) may be replaced by
-   an equivalent Go test of the same observable behaviour; say so in the hand-back. Golden files:
-   reuse `backend/testdata/*`; when a Python test builds its expectation in code, generate a golden
-   by running the Python once and commit it under `server/testdata/<package>/`.
+4. **Acceptance = equivalence with real Python, proven mainly by recording and differentials** (changed
+   2026-11-16, maintainer's decision). For each module:
+   - **Record & replay**: run the whole Python test suite on the test server with a pytest plugin that
+     records every call of the module's public functions (inputs, the collaborators' answers, outputs or
+     exception class + message) — pattern `internal/convert/testdata/c18_record.py` +
+     `mihomo_recorded_test.go` — and replay all recorded calls in Go with 0 differences.
+   - **Random corpus** generated with real Python for edge inputs the suite does not reach.
+   - **Flask↔Go HTTP differential** for every route of the module (success and failure; compare status,
+     headers, body, and the data written to `configflow.sqlite3` and `DATA_DIR` files).
+   - **Hand-port a Python test only when those three cannot cover it** (concurrency, timing, file locks,
+     processes, signals, monkeypatched internals with no observable equivalent, shell-script scenarios).
+   - In the module's PROGRESS section, list **every Python test file of the module and how each is
+     covered** (replay / corpus / differential / hand-ported / deferred to module X / not applicable + why),
+     so a reviewer can check that nothing is uncovered. Already hand-ported tests stay.
 5. **Device and network I/O goes through interfaces** declared in your package (HTTP client,
    clock, command runner), so tests use fakes instead of patching globals. No test may contact a
    real host; never run anything against production addresses.

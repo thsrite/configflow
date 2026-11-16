@@ -83,3 +83,10 @@ The maintainer considered relaxing the standard to "functional equivalence" and 
 strict Python parity standard** after weighing the risks (judgement calls hiding real bugs, generated
 configs feeding fingerprints and auto-sync, frontend/Agent string matching, rollback to Python). Reviews
 continue to compare behaviour branch by branch against Python as written above.
+
+## Test coverage policy (2026-11-16)
+
+Python tests are no longer translated one by one by default. Equivalence is proven by recording the whole
+Python test suite and replaying the recorded calls in Go, plus random corpora and Flask↔Go differentials;
+only behaviour those cannot observe is hand-ported (rule 4 in PORTING.md). Every module's PROGRESS section
+maps each Python test file to how it is covered. Reviewers check that mapping as part of step 3.
