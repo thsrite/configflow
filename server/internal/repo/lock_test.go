@@ -55,12 +55,16 @@ func TestWriteWaitsForReleasedFileLock(t *testing.T) {
 	handle := must(os.OpenFile(filepath.Join(r.DataDir(), ".config.lock"), os.O_RDWR, 0))(t)
 	defer handle.Close()
 	noError(t, syscall.Flock(int(handle.Fd()), syscall.LOCK_EX))
+	fd := int(handle.Fd())
+	released := make(chan struct{})
 	go func() {
+		defer close(released)
 		time.Sleep(200 * time.Millisecond)
-		syscall.Flock(int(handle.Fd()), syscall.LOCK_UN)
+		syscall.Flock(fd, syscall.LOCK_UN)
 	}()
 	started := time.Now()
 	must(r.UpdateProfile(bg, "default", jsonx.Obj("name", "waited")))(t)
+	<-released // the deferred Close must not race with the unlocking goroutine
 	if waited := time.Since(started); waited < 150*time.Millisecond {
 		t.Fatalf("did not wait: %v", waited)
 	}
