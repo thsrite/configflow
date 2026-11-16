@@ -3,6 +3,7 @@ package routers
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -56,5 +57,29 @@ func TestLayoutRepackQueuesNewEntriesOnce(t *testing.T) {
 	deletes := p.Cleanup("pa")
 	if len(deletes) != 4 || deletes[0].Name != "cf_pa_2" || deletes[3].Name != "cf_pa_5" {
 		t.Fatalf("cleanup %+v", deletes)
+	}
+}
+
+// Layout errors (Python reference on the test server for the first; Python's
+// _minimum never returns for an entry too long for an empty group, so the
+// second message is its format string with Go's terminating count).
+func TestLayoutErrors(t *testing.T) {
+	taken := map[int]bool{}
+	for n := 1; n <= maxGroupIndex; n++ {
+		taken[n] = true
+	}
+	got := layout("nat", nil, []string{"192.0.2.0/24"}, taken, nil)
+	if got.err != "iKuai IP 分组编号 cf_nat_1…cf_nat_9999 已用尽" || len(got.final) != 0 {
+		t.Fatalf("exhausted: %+v", got)
+	}
+	long := "203.0.113.0/24"
+	got = layout("pa", nil, []string{long}, nil, map[string]string{long: strings.Repeat("长", GroupMaxBytes/6)})
+	if got.err != "iKuai IP 分组条目「203.0.113.0/24」过长，无法写入" || len(got.final) != 0 {
+		t.Fatalf("too long: %+v", got)
+	}
+	// Python's name regex lets "$" match before a trailing newline; Go never
+	// takes such a name for one of ours (it is the user's group).
+	if _, _, ok := GroupNameRole("cf_pa_1\n"); ok {
+		t.Fatal(`"cf_pa_1\n" parsed as a ConfigFlow group name`)
 	}
 }

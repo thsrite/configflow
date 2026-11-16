@@ -6,9 +6,9 @@ package routers
 
 import (
 	"encoding/json"
+	"maps"
 	"net/netip"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -630,7 +630,7 @@ func PreservesSources(rows []Row, sources, destinations []netip.Prefix, iface st
 		if action != "accept" {
 			return false
 		}
-		if !row.set("chain") || slices.ContainsFunc(sortedKeys(row), func(k string) bool { return !slices.Contains(exemptionFields, k) }) ||
+		if !row.set("chain") || slices.ContainsFunc(slices.Sorted(maps.Keys(row)), func(k string) bool { return !slices.Contains(exemptionFields, k) }) ||
 			row.flag("invalid", "dynamic") || egressMatch != matchYes || listMatch != matchYes {
 			continue
 		}
@@ -676,15 +676,6 @@ func PreservesSources(rows []Row, sources, destinations []netip.Prefix, iface st
 		}
 	}
 	return true
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // ClientSourceNetworks is the gateway's /24 without the network, broadcast
@@ -826,7 +817,7 @@ func PlannedBypassConflicts(expansions []BypassExpansion, state *RouterState, ga
 	virtual := &RouterState{NatContext: &ctx, AddressSets: state.AddressSets}
 	ix := NewRouteEgressIndex(&ctx)
 	out := []string{}
-	for _, cidr := range sortedKeys(targets) {
+	for _, cidr := range slices.Sorted(maps.Keys(targets)) {
 		switch AssessBypass(cidr, gateway, virtual, ix).Status {
 		case "synced", "adoptable", "not_required":
 		default:

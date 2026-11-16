@@ -5,6 +5,7 @@ package routers
 // list sync is R07.
 
 import (
+	"maps"
 	"slices"
 	"strings"
 )
@@ -79,7 +80,7 @@ func InspectNATListRule(rows []Row, others []ListRef) NATListRule {
 	row := rows[found[0]]
 	id := row.text(".id")
 	var changed []string
-	for _, key := range sortedKeys(row) {
+	for _, key := range slices.Sorted(maps.Keys(row)) {
 		if !slices.Contains(natListRuleFields, key) {
 			changed = append(changed, key)
 		}
@@ -109,13 +110,11 @@ func InspectNATListRule(rows []Row, others []ListRef) NATListRule {
 	for _, other := range rows[:found[0]] {
 		// Not even a return ahead of it: only rules that let packets through.
 		chain, set := other["chain"]
-		action, _ := other.str("action")
+		action, isStr := other.str("action")
 		if other.enabled() && (!set || chain == nil || chain == "srcnat" || chain == "") &&
-			!(isStr(other["action"]) && slices.Contains([]string{"accept", "log", "passthrough"}, action)) {
+			!(isStr && slices.Contains([]string{"accept", "log", "passthrough"}, action)) {
 			return NATListRule{Problem: "ConfigFlow 的 NAT 免转换规则 " + id + " 位于源 NAT 转换规则 " + other.text(".id") + " 之后，请移到最前或删除后重新预览"}
 		}
 	}
 	return NATListRule{Rule: row, OutInterface: egress}
 }
-
-func isStr(v any) bool { _, ok := v.(string); return ok }

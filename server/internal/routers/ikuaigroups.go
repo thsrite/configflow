@@ -92,7 +92,7 @@ func GroupDigest(values []string) string {
 	for _, v := range values {
 		keys[CanonAddress(v)] = true
 	}
-	sum := sha1.Sum([]byte(strings.Join(sortedKeys(keys), "\n")))
+	sum := sha1.Sum([]byte(strings.Join(slices.Sorted(maps.Keys(keys)), "\n")))
 	return hex.EncodeToString(sum[:])[:16]
 }
 
@@ -1223,7 +1223,7 @@ func VerifyGroups(check GroupStageCheck, state *RouterState) error {
 		byName[g.Name] = append(byName[g.Name], g)
 	}
 	// In plan order: role (pa, pm, nat), then group number.
-	names := sortedKeys(check.Groups)
+	names := slices.Sorted(maps.Keys(check.Groups))
 	slices.SortStableFunc(names, func(a, b string) int {
 		ra, ia, _ := GroupNameRole(a)
 		rb, ib, _ := GroupNameRole(b)
