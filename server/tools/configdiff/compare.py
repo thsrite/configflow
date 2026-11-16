@@ -31,6 +31,7 @@ class Policy:
     times: set = field(default_factory=set)
     durations: set = field(default_factory=set)
     epochs: dict = field(default_factory=dict)
+    future_times: dict = field(default_factory=dict)
     tz: str = 'UTC'
     # Only separately diagnosed CPython exception messages may use this exact path.
     internal_errors: dict = field(default_factory=dict)
@@ -51,14 +52,14 @@ class Policy:
         self.identities[left], self.reverse[right] = right, left
 
 
-def timestamp(value, policy):
+def timestamp(value, policy, offset=0):
     if not isinstance(value, str):
         return False
     try:
         parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=ZoneInfo(policy.tz))
-        return policy.start - 2 <= parsed.timestamp() <= policy.end + 2
+        return policy.start + offset - 2 <= parsed.timestamp() <= policy.end + offset + 2
     except (ValueError, OverflowError):
         return False
 
@@ -82,8 +83,9 @@ def differences(left, right, path='body', policy=None):
         if not left.startswith(prefix) or not right.startswith(prefix):
             return [Difference(path, 'internal-error-prefix', left, right)]
         return []
-    if path in policy.times:
-        if not timestamp(left, policy) or not timestamp(right, policy):
+    if path in policy.times or path in policy.future_times:
+        offset = policy.future_times.get(path, 0)
+        if not timestamp(left, policy, offset) or not timestamp(right, policy, offset):
             return [Difference(path, 'invalid-time-window', left, right)]
         # Format and zone remain observable; only independently sampled value varies.
         def shape(value):

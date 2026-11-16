@@ -414,3 +414,19 @@ request_variants=5246 named_matrix_cases=2834（S335 F2154 B345），H去重167
 ```
 
 继续剩余鉴权环境、provider拓扑/G配方、tasks和其他业务文件；仍有明确未覆盖项，不是最终全量交回。
+
+## 批次 22：tasks 同步列表、间隔及run参数拒绝
+
+- 38请求，当前tasks三路由尚未接通，均保留有效Python前提和自动激活。订阅/URL规则/内容规则间隔、604800实际最大值及原2592000拒绝、监控保存四档间隔，验证实际SQL字段；内容规则虽能改间隔却不列为可运行URL任务，返回task=null。
+- run参数、未知category、空resource、缺对象、domain profile非法/不存在、未启用自动探测、无URL/content源、metrics带冒号均核对精确中文或id消息，覆盖O6 F90/F91。固定第三次失败回执先设3600秒间隔，GET必须产生固定1200秒重试deadline；固定fixture时间没有被窗口掩盖。
+- 系统metrics下一次运行是启动/执行基线+当前间隔，增加精确路径的future_times偏移窗口；只允许这个确定间隔，不扩大所有时间窗口。Python前提也验证ISO秒格式/对应间隔，新增错误deadline篡改自检，共36项。
+
+```text
+.63 run.py --groups tasks-intervals,tasks-run-validation,tasks-backoff-rows
+current go-unimplemented=38 design_errors=[] seconds=6.06
+cumulative compared=1455 go-unimplemented=3759 dependency=28 different=41 O12-separate=1
+request_variants=5284 named_matrix_cases=2860（S340 F2168 B352），H去重167
+36 self-checks + end-to-end wrong-Go-response check OK
+```
+
+202后台执行、busy释放/重复运行、真实fake任务、Agent/router任务行及interval并发继续；当前不算tasks整体通过，未做最终全量。

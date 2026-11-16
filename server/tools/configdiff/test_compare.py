@@ -305,6 +305,15 @@ class Comparators(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     observer.parse(changed, policy)
 
+    def test_future_task_deadline_is_bounded_by_exact_interval(self):
+        from datetime import datetime, timezone
+        policy = Policy(start=1760000000, end=1760000001, future_times={'body.next': 1800})
+        value = datetime.fromtimestamp(1760001800, timezone.utc).isoformat().replace('+00:00', 'Z')
+        self.assertEqual(differences({'next': value}, {'next': value}, 'body', policy), [])
+        wrong = datetime.fromtimestamp(1760003600, timezone.utc).isoformat().replace('+00:00', 'Z')
+        self.assertTrue(differences({'next': value}, {'next': wrong}, 'body', policy))
+        self.assertTrue(differences({'next': wrong}, {'next': wrong}, 'body', policy))
+
     def test_generated_file_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:
             dirs = [Path(tmp, n) for n in ('python', 'go')]

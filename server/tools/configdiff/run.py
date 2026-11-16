@@ -106,6 +106,8 @@ def main():
     groups.update(provider_lifecycle)
     from cases.merged_provider import GROUPS as merged_provider
     groups.update(merged_provider)
+    from cases.tasks import GROUPS as tasks
+    groups.update(tasks)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:
