@@ -247,7 +247,7 @@ Commands:
 
 Files: `backend/routers/routeros_nat.py` (509), `backend/routers/ikuai_groups.py` (684), `backend/routers/report.py` (306); plus `routeros_nat_list.py` `COMMENT/SRC_LIST/DST_LIST`, `references`, `candidate`, `inspect_rule` (58 lines, R07's file) because `assess_bypass` always needs the list-rule inspection (R07 reuses `InspectNATListRule`, `NATListRefs`, `IsNATListCandidate`).
 
-Commits: see "Commits" line at the end of this section.
+Commits: **23c3f48c** (port, corpus, tests, this section).
 
 Go layout (no jsonx, no `any` parameters mirroring Python):
 - `rosnat.go` — `Row` (one decoded RouterOS REST row, `map[string]any`), `NatContext` (typed lists; nil = could not be read; JSON = Python keys for R12's fingerprint evidence), `NatAssessment{Status, Detail, RuleIDs}`, `RouteEgressIndex` (`NewRouteEgressIndex`, `GatewayEgress`; caches the static index, gateway egress, parsed NAT address lists and the list rule per read), `Egress(cidr, gateway, ctx, policyRouting, ix)` (Python `_egress`, used by R08/R12), `AssessNAT`, `AssessBypass`, `PreservesSources(rows, sources, destinations, iface, ctx, addressSets, accepted, cache)`, `ClientSourceNetworks`, `BypassExpansion` + `PlannedBypassConflicts` (R12 passes its `nat_update` ops with `add_dst`). `RouterState` gained `NatContext`, `PolicyNATRetiring` (NAT ids the R08 policy plan removes; Python read them from `ros_policy_plan.ops[].owned`) and `IkuaiGroups`.
@@ -283,8 +283,6 @@ Commands (private detached worktree `~/program/configflow-go-r03`, the shared tr
 - tests: `rt -- bash -lc 'cd server && gofmt -l internal/routers internal/netipx; go vet ./... && go test -count=1 ./internal/routers/... ./internal/netipx/ ./internal/repo/ ./internal/notifications/ ./internal/server/'`
 
 Pitfalls: decoded rows hold JSON numbers as float64 (iKuai ids, ref_count): use `intValue`/`valText`; `Row` is a map, so slice identity (not `==`) tells reads apart for the list-rule cache.
-
-Commits: (filled below)
 
 ## R04 — RouterOS REST driver, batch writes
 
