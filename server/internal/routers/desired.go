@@ -1,347 +1,257 @@
 package routers
 
 import (
-	"context"
+	"encoding/json"
 	"errors"
 	"net/netip"
 	"sort"
 	"strings"
 
-	"configflow/internal/convert"
-	"configflow/internal/jsonx"
+	"gopkg.in/yaml.v3"
+
 	"configflow/internal/mosdns"
 	"configflow/internal/netipx"
-	"configflow/internal/pystr"
-	"configflow/internal/yamlx"
 )
 
-// Port of backend/routers/desired.py: what the upstream router should
-// contain for the side-gateway setup (proxy CIDRs = the Mihomo fake-ip range
-// plus the public IP-CIDR entries of the rule sets selected on the router).
+// The desired router state: proxy CIDRs are the Mihomo fake-ip range plus
+// the public IPv4 networks of the rule sets explicitly selected on the
+// router (typically Telegram, whose clients connect by IP). Their public
+// IPv6 networks are listed separately (only RouterOS routes them). Rule sets
+// are never inferred from policies.
 
-// DefaultFakeIPRange is DEFAULT_FAKE_IP_RANGE.
+// DefaultFakeIPRange is Mihomo's default fake-ip range.
 const DefaultFakeIPRange = "198.18.0.1/16"
 
-// BuiltinNonProxy is BUILTIN_NON_PROXY.
-var BuiltinNonProxy = map[string]bool{"DIRECT": true, "REJECT": true, "REJECT-DROP": true, "PASS": true, "COMPATIBLE": true}
+// BuiltinNonProxy are the built-in policies that never proxy.
+var BuiltinNonProxy = []string{"DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"}
 
-// RuleSourceIssue is rule_source_issue(item, library_rule, require_library):
-// "" when the rule set may be used, else why not. A nil item is None.
-func RuleSourceIssue(item, libraryRule *jsonx.Object, requireLibrary bool) string {
-	if item == nil {
+// RuleSet is a profile rule_configs entry of itemType "ruleset". Raw is the
+// whole entry for content loaders.
+type RuleSet struct {
+	ID             string          `json:"id"`
+	ItemType       string          `json:"itemType"`
+	Name           string          `json:"name"`
+	Policy         string          `json:"policy"`
+	Enabled        *bool           `json:"enabled"`
+	LibraryEnabled *bool           `json:"library_enabled"`
+	LibraryRuleID  string          `json:"library_rule_id"`
+	Raw            json.RawMessage `json:"-"`
+}
+
+// LibraryRule is a shared rule-library entry.
+type LibraryRule struct {
+	ID      string          `json:"id"`
+	Enabled *bool           `json:"enabled"`
+	Raw     json.RawMessage `json:"-"`
+}
+
+// RuleSourceIssue says why a selected rule set cannot be used ("" when it
+// can). item nil: the rule set no longer exists.
+func RuleSourceIssue(item *RuleSet, library *LibraryRule, requireLibrary bool) string {
+	switch {
+	case item == nil:
 		return "所选规则集已不存在"
-	}
-	if isFalse(item.Value("enabled")) {
+	case item.Enabled != nil && !*item.Enabled:
 		return "规则集在策略规则中已停用"
-	}
-	if (jsonx.Truthy(item.Value("library_rule_id")) || requireLibrary) && libraryRule == nil {
+	case (item.LibraryRuleID != "" || requireLibrary) && library == nil:
 		return "共享规则库条目已不存在"
-	}
-	if isFalse(item.Value("library_enabled")) || (libraryRule != nil && isFalse(libraryRule.Value("enabled"))) {
+	case item.LibraryEnabled != nil && !*item.LibraryEnabled, library != nil && library.Enabled != nil && !*library.Enabled:
 		return "共享规则库条目已停用"
 	}
 	return ""
 }
 
-func defaultFakeIP() netip.Prefix {
-	n, _ := netipx.ParseNetwork4(DefaultFakeIPRange, false)
-	return n
+// FakeIPNetwork is the fake-ip network of the Mihomo base config
+// (dns.fake-ip-range of the custom YAML), 198.18.0.0/16 by default.
+func FakeIPNetwork(customConfig string) netip.Prefix {
+	fallback, _ := netipx.ParseNetwork4(DefaultFakeIPRange, false)
+	var doc struct {
+		DNS map[string]any `yaml:"dns"`
+	}
+	if yaml.Unmarshal([]byte(customConfig), &doc) != nil {
+		return fallback
+	}
+	value, _ := doc.DNS["fake-ip-range"].(string)
+	if network, ok := netipx.ParseNetwork4(value, false); ok {
+		return network
+	}
+	return fallback
 }
 
-// FakeIPNetwork is fake_ip_network(config): the fake-ip network of the
-// Mihomo base config (default 198.18.0.0/16). Errors are the Python
-// exceptions a malformed profile raises (AttributeError, RecursionError
-// from yaml), or *yamlx.UnrepresentableError for a document Python loads
-// but jsonx cannot hold (then the answer is unknown).
-func FakeIPNetwork(config *jsonx.Object) (netip.Prefix, error) {
-	mihomo := config.Value("mihomo")
-	if !jsonx.Truthy(mihomo) {
-		mihomo = jsonx.NewObject()
-	}
-	customRaw, err := getOf(mihomo, "custom_config")
-	if err != nil {
-		return netip.Prefix{}, err
-	}
-	custom := ""
-	if jsonx.Truthy(customRaw) {
-		text, ok := customRaw.(string)
-		if !ok {
-			return netip.Prefix{}, pyErr("AttributeError", "'"+typeName(customRaw)+"' object has no attribute 'strip'")
-		}
-		custom = pystr.Strip(text)
-	}
-	value := ""
-	if custom != "" {
-		parsed, err := yamlx.LoadWith(custom, yamlx.LoadOptions{KeepNonStringKeys: true})
-		if err != nil {
-			var yerr *yamlx.Error
-			if errors.As(err, &yerr) && yerr.IsYAMLError() {
-				parsed = nil
-			} else {
-				return netip.Prefix{}, err
-			}
-		}
-		if dns, ok := yamlx.Lookup(parsed, "dns"); ok && yamlx.IsMapping(dns) {
-			if raw, ok := yamlx.Lookup(dns, "fake-ip-range"); ok && jsonx.Truthy(raw) {
-				// str(value): only a str can form a network.
-				if text, ok := raw.(string); ok {
-					value = text
-				} else {
-					value = "\x00"
-				}
-			}
-		}
-	}
-	if value == "" {
-		return defaultFakeIP(), nil
-	}
-	network, ok := netipx.ParseNetwork4(value, false)
-	if !ok {
-		return defaultFakeIP(), nil
-	}
-	return network, nil
+// ProxyCIDR is a collapsed network and the sources inside it.
+type ProxyCIDR struct {
+	CIDR    string   `json:"cidr"`
+	Sources []string `json:"sources"`
 }
 
-// directOnlyGroups is _direct_only_groups(config): the set of names of
-// strategy groups that can only resolve to DIRECT/REJECT.
-func directOnlyGroups(config *jsonx.Object) (*pySet, error) {
-	names := newPySet()
-	groups, err := iterOr(config.Value("proxy_groups"))
-	if err != nil {
-		return nil, err
+// MergeSources collapses source networks of one family; each result lists
+// (sorted) every source name inside it.
+func MergeSources(sources map[netip.Prefix][]string) []ProxyCIDR {
+	networks := make([]netip.Prefix, 0, len(sources))
+	for n := range sources {
+		networks = append(networks, n)
 	}
-	for _, raw := range groups {
-		group, ok := raw.(*jsonx.Object)
-		if !ok || group == nil {
-			continue
-		}
-		nodes, err := iterOr(group.Value("manual_nodes"))
-		if err != nil {
-			return nil, err
-		}
-		other := false
-		for _, key := range []string{"include_groups", "subscriptions", "aggregations", "regex", "follow_group"} {
-			if jsonx.Truthy(group.Value(key)) {
-				other = true
-				break
-			}
-		}
-		allBuiltin := true
-		for _, node := range nodes {
-			if !BuiltinNonProxy[jsonx.Str(node)] {
-				allBuiltin = false
-				break
-			}
-		}
-		if len(nodes) > 0 && !other && allBuiltin {
-			if err := names.add(group.Value("name")); err != nil {
-				return nil, err
-			}
-		}
-	}
-	return names, nil
-}
-
-// publicNetworks is _public_networks(lines): the public IPv4 and IPv6
-// networks of converted IP lines.
-func publicNetworks(lines string) (v4, v6 []netip.Prefix) {
-	for _, raw := range convert.PySplitlines(lines) {
-		value := pystr.Strip(raw)
-		if value == "" || strings.HasPrefix(value, "#") {
-			continue
-		}
-		network, ok := netipx.ParseNetwork(value, false)
-		if !ok {
-			continue
-		}
-		if network.Bits() > 0 && netipx.IsGlobal(network) {
-			if network.Addr().Is4() {
-				v4 = append(v4, network)
-			} else {
-				v6 = append(v6, network)
-			}
-		}
-	}
-	return v4, v6
-}
-
-// Sources is the {network: [source names]} dict merge_sources takes
-// (insertion-ordered; equal networks are one key, like Python's).
-type Sources struct {
-	order []netip.Prefix
-	names map[netip.Prefix][]string
-}
-
-// NewSources returns an empty Sources.
-func NewSources() *Sources { return &Sources{names: map[netip.Prefix][]string{}} }
-
-// Set is sources[network] = names.
-func (s *Sources) Set(network netip.Prefix, names []string) {
-	if _, ok := s.names[network]; !ok {
-		s.order = append(s.order, network)
-	}
-	s.names[network] = names
-}
-
-// Add is sources.setdefault(network, []).append(name).
-func (s *Sources) Add(network netip.Prefix, name string) {
-	if _, ok := s.names[network]; !ok {
-		s.order = append(s.order, network)
-	}
-	s.names[network] = append(s.names[network], name)
-}
-
-// Len is len(sources).
-func (s *Sources) Len() int { return len(s.order) }
-
-// MergeSources is merge_sources(sources): the collapsed networks (one
-// address family), each listing every source name inside it (sorted).
-func MergeSources(sources *Sources) ([]any, error) {
-	out := []any{}
-	if sources == nil || sources.Len() == 0 {
-		return out, nil
-	}
-	collapsed, err := netipx.Collapse(sources.order)
-	if err != nil {
-		return nil, pyErr("TypeError", err.Error())
-	}
-	starts := make([]netip.Addr, len(collapsed))
-	for i, network := range collapsed {
-		starts[i] = network.Addr()
-	}
+	collapsed, _ := netipx.Collapse(networks)
+	out := make([]ProxyCIDR, len(collapsed))
 	labels := make([]map[string]bool, len(collapsed))
-	for i := range labels {
-		labels[i] = map[string]bool{}
+	for i, n := range collapsed {
+		out[i].CIDR, labels[i] = n.String(), map[string]bool{}
 	}
-	for _, original := range sources.order {
-		value := original.Addr()
-		index := sort.Search(len(starts), func(i int) bool { return value.Less(starts[i]) }) - 1
-		if index < 0 {
-			index = len(labels) - 1 // Python's labels[-1]
-		}
-		for _, name := range sources.names[original] {
-			labels[index][name] = true
+	// Collapsed networks are disjoint and cover every source: each source lies
+	// in the last one starting at or before it.
+	for n, names := range sources {
+		i := sort.Search(len(collapsed), func(i int) bool { return n.Addr().Less(collapsed[i].Addr()) }) - 1
+		for _, name := range names {
+			labels[i][name] = true
 		}
 	}
-	for i, network := range collapsed {
-		names := make([]string, 0, len(labels[i]))
+	for i := range out {
+		out[i].Sources = make([]string, 0, len(labels[i]))
 		for name := range labels[i] {
-			names = append(names, name)
+			out[i].Sources = append(out[i].Sources, name)
 		}
-		sort.Strings(names)
-		out = append(out, jsonx.Obj("cidr", network.String(), "sources", anyStrings(names)))
+		sort.Strings(out[i].Sources)
 	}
-	return out, nil
+	return out
 }
 
-// ContentLoader is compute_desired's content_loader(rule_item,
-// library_rule): rule set text. libraryRule nil is None. An error is an
-// exception the loader raised (counted as "no local cache"), except
-// *PendingError, which is returned to the caller.
-type ContentLoader func(item, libraryRule *jsonx.Object) (string, error)
-
-// RulesetContent is routes.rules.get_ruleset_content(item, library_rule,
-// allow_network=False, config_data=config) (C32, to be exported from a
-// non-API package). Until then it fails closed.
-var RulesetContent = func(ctx context.Context, item, libraryRule, config *jsonx.Object) (string, error) {
-	return "", pending("C32", "routes.rules.get_ruleset_content")
+// Desired is what the upstream router should contain. DNS, when set, is
+// the DHCP DNS target (added by the inspection).
+type Desired struct {
+	FakeIPRange      string      `json:"fake_ip_range"`
+	ProxyGateway     string      `json:"proxy_gateway"`
+	ProxyCIDRs       []ProxyCIDR `json:"proxy_cidrs"`
+	IPv6CIDRs        []ProxyCIDR `json:"ipv6_cidrs"`
+	Warnings         []string    `json:"warnings"`
+	BlockingWarnings []string    `json:"blocking_warnings"`
+	*DNSSettings
 }
 
-// hashedObjects is {key: item} built with Python dict semantics.
-func hashedObjects(list any, keep func(*jsonx.Object) bool) (map[string]*jsonx.Object, error) {
-	items, err := iterOr(list)
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]*jsonx.Object{}
-	for _, raw := range items {
-		item, ok := raw.(*jsonx.Object)
-		if !ok || item == nil || !keep(item) {
+// ContentLoader returns a rule set's text (library nil: not from the shared
+// library). An error counts as "no local cache", except ErrNotPorted.
+type ContentLoader func(item RuleSet, library *LibraryRule) (string, error)
+
+// RulesetContent is the default content loader: the rule set's local cache
+// or inline content, never the network (routes.rules.get_ruleset_content,
+// C32). Fails closed until C32 provides it.
+var RulesetContent = func(profile json.RawMessage, item RuleSet, library *LibraryRule) (string, error) {
+	return "", ErrNotPorted
+}
+
+type desiredProfile struct {
+	Mihomo struct {
+		CustomConfig string `json:"custom_config"`
+	} `json:"mihomo"`
+	ProxyGroups []json.RawMessage `json:"proxy_groups"`
+	RuleConfigs []json.RawMessage `json:"rule_configs"`
+	RuleLibrary []json.RawMessage `json:"rule_library"`
+}
+
+type proxyGroup struct {
+	Name        string            `json:"name"`
+	ManualNodes []string          `json:"manual_nodes"`
+	Sources     []json.RawMessage `json:"-"`
+}
+
+// directOnlyGroups are strategy groups that can only resolve to built-in
+// non-proxy policies.
+func directOnlyGroups(groups []json.RawMessage) map[string]bool {
+	names := map[string]bool{}
+	for _, raw := range groups {
+		var g proxyGroup
+		var other map[string]json.RawMessage
+		if json.Unmarshal(raw, &g) != nil || json.Unmarshal(raw, &other) != nil || len(g.ManualNodes) == 0 {
 			continue
 		}
-		key, err := hashKey(item.Value("id"))
-		if err != nil {
-			return nil, err
+		direct := true
+		for _, key := range []string{"include_groups", "subscriptions", "aggregations", "regex", "follow_group"} {
+			direct = direct && !truthy(other[key])
 		}
-		out[key] = item
+		for _, node := range g.ManualNodes {
+			direct = direct && contains(BuiltinNonProxy, node)
+		}
+		if direct {
+			names[g.Name] = true
+		}
 	}
-	return out, nil
+	return names
 }
 
-// ComputeDesired is compute_desired(config, proxy_gateway, ip_rule_sets,
-// content_loader). loader nil is the default (local caches/inline content,
-// RulesetContent). proxyGateway "" is None/empty.
-func ComputeDesired(ctx context.Context, config *jsonx.Object, proxyGateway string, ipRuleSets []any, loader ContentLoader) (*jsonx.Object, error) {
+func contains(list []string, s string) bool {
+	for _, item := range list {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
+
+// ComputeDesired builds the desired state for a profile (its stored JSON),
+// the proxy gateway ("" when no Mihomo Agent is linked) and the static-route
+// rule sets selected on the router. loader nil uses RulesetContent.
+func ComputeDesired(profile json.RawMessage, gateway string, ruleSets []string, loader ContentLoader) (*Desired, error) {
+	var doc desiredProfile
+	if err := json.Unmarshal(profile, &doc); err != nil {
+		return nil, err
+	}
 	if loader == nil {
-		loader = func(item, libraryRule *jsonx.Object) (string, error) {
-			return RulesetContent(ctx, item, libraryRule, config)
+		loader = func(item RuleSet, library *LibraryRule) (string, error) {
+			return RulesetContent(profile, item, library)
 		}
 	}
-	warnings, blocking := []any{}, []any{}
+	d := &Desired{ProxyGateway: gateway, Warnings: []string{}, BlockingWarnings: []string{}}
 	incomplete := func(message string) {
-		warnings = append(warnings, message)
-		blocking = append(blocking, message)
+		d.Warnings = append(d.Warnings, message)
+		d.BlockingWarnings = append(d.BlockingWarnings, message)
 	}
-	sources, sources6 := NewSources(), NewSources()
-	fakeIP, err := FakeIPNetwork(config)
-	if err != nil {
-		return nil, err
-	}
-	sources.Set(fakeIP, []string{"fake-ip"})
-	directGroups, err := directOnlyGroups(config)
-	if err != nil {
-		return nil, err
-	}
-	library, err := hashedObjects(config.Value("rule_library"), func(*jsonx.Object) bool { return true })
-	if err != nil {
-		return nil, err
-	}
-	rulesets, err := hashedObjects(config.Value("rule_configs"), func(item *jsonx.Object) bool {
-		return jsonx.Equal(item.Value("itemType"), "ruleset")
-	})
-	if err != nil {
-		return nil, err
-	}
-	for _, ruleID := range ipRuleSets {
-		key, err := hashKey(ruleID)
-		if err != nil {
-			return nil, err
+	fakeIP := FakeIPNetwork(strings.TrimSpace(doc.Mihomo.CustomConfig))
+	d.FakeIPRange = fakeIP.String()
+	sources := map[netip.Prefix][]string{fakeIP: {"fake-ip"}}
+	sources6 := map[netip.Prefix][]string{}
+	direct := directOnlyGroups(doc.ProxyGroups)
+	library := map[string]*LibraryRule{}
+	for _, raw := range doc.RuleLibrary {
+		rule := &LibraryRule{Raw: raw}
+		if json.Unmarshal(raw, rule) == nil {
+			library[rule.ID] = rule
 		}
-		item := rulesets[key]
+	}
+	rulesets := map[string]*RuleSet{}
+	for _, raw := range doc.RuleConfigs {
+		item := &RuleSet{Raw: raw}
+		if json.Unmarshal(raw, item) == nil && item.ItemType == "ruleset" {
+			rulesets[item.ID] = item
+		}
+	}
+	for _, id := range ruleSets {
+		item := rulesets[id]
 		if item == nil {
-			incomplete("所选规则集 " + jsonx.Str(ruleID) + " 已不存在，已忽略")
+			incomplete("所选规则集 " + id + " 已不存在，已忽略")
 			continue
 		}
-		nameValue := item.Value("name")
-		if !jsonx.Truthy(nameValue) {
-			nameValue = item.Value("id")
+		name := item.Name
+		if name == "" {
+			name = item.ID
 		}
-		if !jsonx.Truthy(nameValue) {
-			nameValue = "规则集"
+		if name == "" {
+			name = "规则集"
 		}
-		name := jsonx.Str(nameValue)
-		libraryKey, err := hashKey(item.Value("library_rule_id"))
-		if err != nil {
-			return nil, err
+		var lib *LibraryRule
+		if item.LibraryRuleID != "" {
+			lib = library[item.LibraryRuleID]
 		}
-		libraryRule := library[libraryKey]
-		if issue := RuleSourceIssue(item, libraryRule, false); issue != "" {
+		if issue := RuleSourceIssue(item, lib, false); issue != "" {
 			incomplete("规则集「" + name + "」：" + issue + "，未计入；取消对应路由选择后可预览撤回")
 			continue
 		}
-		policy := orEmptyStr(item.Value("policy"))
-		inDirect, _ := directGroups.has(policy)
-		if BuiltinNonProxy[policy] || inDirect {
-			warnings = append(warnings, "规则集「"+name+"」的策略是 "+policy+"（不走代理），仍按勾选计入，请确认")
+		if contains(BuiltinNonProxy, item.Policy) || direct[item.Policy] {
+			d.Warnings = append(d.Warnings, "规则集「"+name+"」的策略是 "+item.Policy+"（不走代理），仍按勾选计入，请确认")
 		}
-		content, err := loader(item, libraryRule)
-		if err != nil {
-			if IsPending(err) {
-				return nil, err
-			}
-			content = ""
+		content, err := loader(*item, lib)
+		if errors.Is(err, ErrNotPorted) {
+			return nil, err
 		}
-		if content == "" {
+		if err != nil || content == "" {
 			incomplete("规则集「" + name + "」没有本地缓存，未计入其中的 IP 段")
 			continue
 		}
@@ -349,25 +259,22 @@ func ComputeDesired(ctx context.Context, config *jsonx.Object, proxyGateway stri
 		if err != nil {
 			return nil, err
 		}
-		v4, v6 := publicNetworks(lines)
-		for _, network := range v4 {
-			sources.Add(network, name)
-		}
-		for _, network := range v6 {
-			sources6.Add(network, name)
+		for _, line := range strings.Split(lines, "\n") {
+			line = strings.TrimSpace(line)
+			network, ok := netipx.ParseNetwork(line, false)
+			if line == "" || strings.HasPrefix(line, "#") || !ok || network.Bits() == 0 || !netipx.IsGlobal(network) {
+				continue
+			}
+			if network.Addr().Is4() {
+				sources[network] = append(sources[network], name)
+			} else {
+				sources6[network] = append(sources6[network], name)
+			}
 		}
 	}
-	proxyCIDRs, err := MergeSources(sources)
-	if err != nil {
-		return nil, err
-	}
-	if proxyGateway == "" {
+	d.ProxyCIDRs, d.IPv6CIDRs = MergeSources(sources), MergeSources(sources6)
+	if gateway == "" {
 		incomplete("未关联 mihomo Agent，无法确定代理路由的下一跳")
 	}
-	ipv6CIDRs, err := MergeSources(sources6)
-	if err != nil {
-		return nil, err
-	}
-	return jsonx.Obj("fake_ip_range", fakeIP.String(), "proxy_gateway", proxyGateway, "proxy_cidrs", proxyCIDRs,
-		"ipv6_cidrs", ipv6CIDRs, "warnings", warnings, "blocking_warnings", blocking), nil
+	return d, nil
 }

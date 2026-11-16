@@ -1,37 +1,37 @@
 package routers
 
 import (
+	"maps"
 	"strings"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/netipx"
 )
 
-// ComparableValues is ros_values.comparable_values(path, row): equivalent
-// RouterOS wire representations, scoped to known resource fields (a shallow
-// copy; the row is not changed).
-func ComparableValues(path string, row *jsonx.Object) *jsonx.Object {
-	result := row.Clone()
+// ComparableValues returns a copy of a RouterOS row (decoded REST JSON)
+// with equivalent wire forms made equal: fib/passthrough flags as
+// "true"/"false", and an /ip/route gateway "1.2.3.4@main" as "1.2.3.4".
+// Unknown fields, interface gateways and other tables stay as they are.
+func ComparableValues(path string, row map[string]any) map[string]any {
+	result := maps.Clone(row)
 	if result == nil {
-		result = jsonx.NewObject()
+		result = map[string]any{}
 	}
 	field := map[string]string{"/routing/table": "fib", "/ip/firewall/mangle": "passthrough"}[path]
-	if field != "" {
-		if value, ok := result.Get(field); ok {
-			text, isText := value.(string)
-			if isTrue(value) || (isText && (text == "true" || text == "yes")) || (field == "fib" && isText && text == "") {
-				result.Set(field, "true")
-			} else if isFalse(value) || (isText && (text == "false" || text == "no")) {
-				result.Set(field, "false")
+	if value, ok := result[field]; ok && field != "" {
+		switch value {
+		case true, "true", "yes":
+			result[field] = "true"
+		case false, "false", "no":
+			result[field] = "false"
+		case "":
+			if field == "fib" { // fib is a presence flag
+				result[field] = "true"
 			}
 		}
 	}
-	if path == "/ip/route" {
-		if gateway, ok := result.Value("gateway").(string); ok {
-			gateway = strings.TrimSuffix(gateway, "@main")
-			if address, ok := netipx.ParseAddr4(gateway); ok {
-				result.Set("gateway", address.String())
-			}
+	if gateway, ok := result["gateway"].(string); ok && path == "/ip/route" {
+		if a, ok := netipx.ParseAddr4(strings.TrimSuffix(gateway, "@main")); ok {
+			result["gateway"] = a.String()
 		}
 	}
 	return result

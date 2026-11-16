@@ -1,77 +1,52 @@
 package routerdoc
 
 import (
+	"encoding/json"
 	"strings"
 	"unicode/utf8"
-
-	"configflow/internal/jsonx"
 )
 
-// BindingFields is client_fixed_ip.BINDING_FIELDS.
-var BindingFields = []string{"router_id", "vendor", "id", "ip", "mac", "comment", "server", "interface", "gateway"}
-
-var bindingRequired = []string{"router_id", "vendor", "id", "ip", "mac", "comment"}
-
-// Messages of client_fixed_ip.validate_bindings (an OxidnsSettingsError).
+// Messages of an invalid profile client_fixed_ips document.
 const (
 	BindingsShapeMessage   = "客户端固定 IP 记录必须为对象，最多 2048 条。"
 	BindingsInvalidMessage = "客户端固定 IP 记录缺少有效 IP、MAC、路由器或归属标记。"
 )
 
-// ValidateBindings is client_fixed_ip.validate_bindings(value): "" when
-// valid, else the message of the OxidnsSettingsError Python raises (the
-// caller wraps it in its own error type).
-func ValidateBindings(value any) string {
-	object, ok := value.(*jsonx.Object)
-	if !ok || object == nil || object.Len() > 2048 {
+var bindingFields = map[string]bool{"router_id": true, "vendor": true, "id": true, "ip": true, "mac": true,
+	"comment": true, "server": true, "interface": true, "gateway": true}
+
+// ValidateBindings checks a stored client_fixed_ips document (JSON object
+// IPv4 -> binding): "" when valid, else the message for the user.
+func ValidateBindings(document []byte) string {
+	var bindings map[string]json.RawMessage
+	if json.Unmarshal(document, &bindings) != nil || bindings == nil || len(bindings) > 2048 {
 		return BindingsShapeMessage
 	}
-	for ip, item := range object.All() {
-		if !validBinding(ip, item) {
+	for ip, raw := range bindings {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) != nil || fields == nil || IPv4(ip) == "" {
+			return BindingsInvalidMessage
+		}
+		values := map[string]string{}
+		for key, v := range fields {
+			var s string
+			if !bindingFields[key] || len(v) == 0 || v[0] != '"' || json.Unmarshal(v, &s) != nil || utf8.RuneCountInString(s) > 512 ||
+				strings.ContainsFunc(s, func(r rune) bool { return r < 32 }) {
+				return BindingsInvalidMessage
+			}
+			values[key] = s
+		}
+		for _, key := range []string{"router_id", "vendor", "id", "ip", "mac", "comment"} {
+			if _, ok := values[key]; !ok {
+				return BindingsInvalidMessage
+			}
+		}
+		mac := values["mac"]
+		if values["ip"] != ip || (values["vendor"] != "routeros" && values["vendor"] != "ikuai") ||
+			values["router_id"] == "" || values["id"] == "" || NormalizeMAC(mac) == "" || NormalizeMAC(mac) != mac ||
+			!strings.HasPrefix(values["comment"], "cf-client:") {
 			return BindingsInvalidMessage
 		}
 	}
 	return ""
-}
-
-func validBinding(ip string, item any) bool {
-	binding, ok := item.(*jsonx.Object)
-	if !ok || binding == nil {
-		return false
-	}
-	for key := range binding.All() {
-		known := false
-		for _, field := range BindingFields {
-			known = known || key == field
-		}
-		if !known {
-			return false
-		}
-	}
-	for _, key := range bindingRequired {
-		if !binding.Has(key) {
-			return false
-		}
-	}
-	if IPv4(ip) == "" || !jsonx.Equal(binding.Value("ip"), ip) {
-		return false
-	}
-	if vendor, _ := binding.Value("vendor").(string); vendor != "routeros" && vendor != "ikuai" {
-		return false
-	}
-	for _, v := range binding.All() {
-		text, ok := v.(string)
-		if !ok || utf8.RuneCountInString(text) > 512 {
-			return false
-		}
-		for _, r := range text {
-			if r < 32 {
-				return false
-			}
-		}
-	}
-	mac := binding.GetString("mac")
-	return binding.GetString("router_id") != "" && binding.GetString("id") != "" &&
-		NormalizeMAC(mac) != "" && NormalizeMAC(mac) == mac &&
-		strings.HasPrefix(binding.GetString("comment"), "cf-client:")
 }

@@ -1,170 +1,131 @@
+// Package routerdoc holds router helpers that packages below internal/routers
+// (repo, agents) need: LAN client sightings read live from a main router and
+// the check of stored client fixed-IP bindings. Leaf package.
 package routerdoc
 
 import (
-	"fmt"
+	"encoding/json"
 	"net/netip"
+	"strconv"
 	"strings"
-	"unicode/utf8"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/netipx"
-	"configflow/internal/pystr"
 )
 
-// Port of backend/routers/lan_clients.py: vendor-neutral LAN client
-// sightings read live from a main router (see the Python module doc for the
-// meaning of presence and basis).
-
-// Rank is RANK.
+// Presence values, strongest first: online (seen just now), recent (known,
+// unconfirmed), offline (evidence it is gone), unknown.
 var Rank = map[string]int{"online": 3, "recent": 2, "offline": 1, "unknown": 0}
 
-// SourceOrder is SOURCE_ORDER.
+// SourceOrder is the order sources are reported in.
 var SourceOrder = []string{"arp", "lease", "online"}
 
-// Sighting is the Sighting dataclass. LastSeen nil is None.
+// Sighting is one router's view of a LAN address. Basis says which evidence
+// decided the presence (arp, lease, probe, terminal, stale, absent, router,
+// outside).
 type Sighting struct {
 	IP       string
 	MAC      string
 	Hostname string
-	Sources  map[string]bool // 'arp' | 'lease' | 'online'
-	Presence string          // default "unknown"
+	Sources  map[string]bool
+	Presence string
 	Basis    string
-	LastSeen *int64
+	LastSeen *int64 // seconds since the last DHCP contact
 	RouterID string
-	FixedIP  *jsonx.Object // nil is None
+	FixedIP  json.RawMessage // the client's fixed-IP binding, when it has one
 }
 
-// NewSighting is Sighting(ip) with the dataclass defaults.
+// NewSighting is an address with no evidence yet.
 func NewSighting(ip string) *Sighting {
 	return &Sighting{IP: ip, Sources: map[string]bool{}, Presence: "unknown"}
 }
 
-// Public is Sighting.public().
-func (s *Sighting) Public() *jsonx.Object {
-	sources := []any{}
-	for _, item := range SourceOrder {
-		if s.Sources[item] {
-			sources = append(sources, item)
+// SightingView is a sighting as the UI sees it.
+type SightingView struct {
+	MAC      string          `json:"mac"`
+	Hostname string          `json:"hostname"`
+	Sources  []string        `json:"sources"`
+	Presence string          `json:"presence"`
+	Basis    string          `json:"basis"`
+	LastSeen *int64          `json:"last_seen"`
+	RouterID string          `json:"router_id"`
+	FixedIP  json.RawMessage `json:"fixed_ip,omitempty"`
+}
+
+// View is the sighting as returned to the UI.
+func (s *Sighting) View() SightingView {
+	v := SightingView{MAC: s.MAC, Hostname: s.Hostname, Sources: []string{}, Presence: s.Presence, Basis: s.Basis,
+		LastSeen: s.LastSeen, RouterID: s.RouterID, FixedIP: s.FixedIP}
+	for _, source := range SourceOrder {
+		if s.Sources[source] {
+			v.Sources = append(v.Sources, source)
 		}
 	}
-	var lastSeen any
-	if s.LastSeen != nil {
-		lastSeen = *s.LastSeen
-	}
-	out := jsonx.Obj("mac", s.MAC, "hostname", s.Hostname, "sources", sources, "presence", s.Presence,
-		"basis", s.Basis, "last_seen", lastSeen, "router_id", s.RouterID)
-	if s.FixedIP != nil {
-		out.Set("fixed_ip", s.FixedIP)
-	}
-	return out
+	return v
 }
 
-// Reading is the Reading dataclass (Sightings keyed by IPv4 text, in the
-// order SightingOrder lists them).
+// Reading is one router's LAN client table.
 type Reading struct {
-	Sightings     map[string]*Sighting
-	SightingOrder []string
-	Own           map[string]bool
-	LAN           []netip.Prefix // a set of IPv4Network: unique values
-	Complete      bool
-	Notes         []string
+	Sightings map[string]*Sighting // by IPv4
+	Own       map[string]bool      // the router's own addresses
+	LAN       []netip.Prefix       // subnets whose clients were scanned
+	Complete  bool                 // false: a missing address proves nothing
+	Notes     []string
 }
 
-// NewReading is Reading() with the dataclass defaults.
+// NewReading is an empty, complete reading.
 func NewReading() *Reading {
 	return &Reading{Sightings: map[string]*Sighting{}, Own: map[string]bool{}, Complete: true}
 }
 
-// Covers is Reading.covers(ip): whether absence from this reading is
-// evidence that ip is gone. The error is IPv4Address's ValueError.
-func (r *Reading) Covers(ip string) (bool, error) {
+// Covers reports whether absence from this reading is evidence that ip
+// is gone (false for an invalid address).
+func (r *Reading) Covers(ip string) bool {
 	address, ok := netipx.ParseAddr4(ip)
-	if !ok {
-		return false, &ValueError{Message: "invalid IPv4 address: " + jsonx.Repr(ip)}
-	}
-	if !r.Complete {
-		return false, nil
+	if !ok || !r.Complete {
+		return false
 	}
 	for _, network := range r.LAN {
 		if network.Contains(address) {
-			return true, nil
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
-// ValueError is a Python ValueError raised by a helper here (its text is
-// not Python's).
-type ValueError struct{ Message string }
-
-func (e *ValueError) Error() string { return e.Message }
-
-// PythonClass is "AddressValueError" (a ValueError subclass).
-func (e *ValueError) PythonClass() string { return "AddressValueError" }
-
-func pyStr(value any) string {
-	if !jsonx.Truthy(value) {
-		return ""
+// IPv4 is the canonical IPv4 host text, or "" for anything else.
+func IPv4(value string) string {
+	if a, ok := netipx.ParseAddr4(strings.TrimSpace(value)); ok {
+		return a.String()
 	}
-	return jsonx.Str(value)
+	return ""
 }
 
-// IPv4 is ipv4(value): canonical IPv4 host text, or "" for anything else.
-func IPv4(value any) string {
-	address, ok := netipx.ParseAddr4(pystr.Strip(pyStr(value)))
-	if !ok {
-		return ""
-	}
-	return address.String()
-}
-
-// NormalizeMAC is normalize_mac(value): AA:BB:CC:DD:EE:FF, or "". Like
-// Python it upper-cases with the full Unicode mapping (U+FB00 "ﬀ" becomes
-// "FF") and parses each part with int(part, 16) (non-ASCII decimal digits,
-// a sign, surrounding white space).
-func NormalizeMAC(value any) string {
-	text := strings.ReplaceAll(pystr.Upper(pystr.Strip(pyStr(value))), "-", ":")
-	parts := strings.Split(text, ":")
+// NormalizeMAC returns AA:BB:CC:DD:EE:FF for a MAC written with ':' or '-'
+// and one- or two-digit parts, or "".
+func NormalizeMAC(value string) string {
+	parts := strings.Split(strings.ReplaceAll(strings.ToUpper(strings.TrimSpace(value)), "-", ":"), ":")
 	if len(parts) != 6 {
 		return ""
 	}
-	for _, part := range parts {
-		if n := utf8.RuneCountInString(part); n != 1 && n != 2 {
-			return ""
-		}
-	}
-	out := make([]string, 6)
 	for i, part := range parts {
-		number, err := pystr.Int(part, 16)
-		if err != nil {
+		n, err := strconv.ParseUint(strings.TrimSpace(part), 16, 8)
+		if err != nil || len(part) < 1 || len(part) > 2 {
 			return ""
 		}
-		out[i] = fmt.Sprintf("%02X", number)
+		parts[i] = strings.ToUpper(strconv.FormatUint(n|0x100, 16)[1:])
 	}
-	return strings.Join(out, ":")
+	return strings.Join(parts, ":")
 }
 
-// Better is better(current, candidate): the merged sighting of one address;
-// the stronger presence decides. The error is the KeyError Python raises for
-// a presence outside Rank.
-func Better(current, candidate *Sighting) (*Sighting, error) {
+// Better merges two sightings of one address: the stronger presence wins
+// and keeps what the weaker one adds.
+func Better(current, candidate *Sighting) *Sighting {
 	if current == nil {
-		return candidate, nil
-	}
-	candidateRank, ok := Rank[candidate.Presence]
-	if !ok {
-		return nil, &KeyError{Key: candidate.Presence}
-	}
-	currentRank, ok := Rank[current.Presence]
-	if !ok {
-		return nil, &KeyError{Key: current.Presence}
+		return candidate
 	}
 	strong, weak := current, candidate
-	if candidateRank > currentRank {
+	if Rank[candidate.Presence] > Rank[current.Presence] {
 		strong, weak = candidate, current
-	}
-	if strong.Sources == nil {
-		strong.Sources = map[string]bool{}
 	}
 	for source := range weak.Sources {
 		strong.Sources[source] = true
@@ -178,13 +139,5 @@ func Better(current, candidate *Sighting) (*Sighting, error) {
 	if strong.LastSeen == nil {
 		strong.LastSeen = weak.LastSeen
 	}
-	return strong, nil
+	return strong
 }
-
-// KeyError is Python's KeyError for a missing str key.
-type KeyError struct{ Key string }
-
-func (e *KeyError) Error() string { return jsonx.Repr(e.Key) }
-
-// PythonClass is "KeyError".
-func (e *KeyError) PythonClass() string { return "KeyError" }

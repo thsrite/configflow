@@ -145,7 +145,11 @@ func normalizeNotes(value any) (*jsonx.Object, error) {
 
 // validateBindings is validate_bindings (internal/routerdoc holds the check).
 func validateBindings(value any) error {
-	if message := routerdoc.ValidateBindings(value); message != "" {
+	document, err := jsonx.Compact(value)
+	if err != nil {
+		return oxidnsError(routerdoc.BindingsShapeMessage)
+	}
+	if message := routerdoc.ValidateBindings(document); message != "" {
 		return oxidnsError(message)
 	}
 	return nil
