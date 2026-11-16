@@ -258,7 +258,7 @@ class Pair:
             local_headers = {'X-ConfigFlow-Profile': self.default_profile}
             local_headers.update(headers or {})
             local_headers = {k: v for k, v in local_headers.items() if v is not None}
-            if body is not None:
+            if body is not None or bodies is not None:
                 local_headers.setdefault('Content-Type', 'application/json')
             credential = self.tokens[index] if auth == 'admin' else (auth[index] if isinstance(auth, (list, tuple)) else auth)
             if credential:

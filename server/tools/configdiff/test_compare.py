@@ -17,6 +17,22 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_partial_and_no_body_responses(self):
+        a = Reply(206, {'content-type': 'application/json', 'content-range': 'bytes 0-3/20'}, b'{"a"')
+        self.assertEqual(response_diffs(a, copy.deepcopy(a)), [])
+        b = copy.deepcopy(a)
+        b.body = b'{"b"'
+        self.assertTrue(response_diffs(a, b))
+        b = copy.deepcopy(a)
+        b.headers['content-range'] = 'bytes 1-4/20'
+        self.assertTrue(response_diffs(a, b))
+        for status in (204, 304):
+            a = Reply(status, {'content-type': 'application/json'}, b'')
+            self.assertEqual(response_diffs(a, copy.deepcopy(a)), [])
+            b = copy.deepcopy(a)
+            b.body = b'wrong'
+            self.assertTrue(response_diffs(a, b))
+
     def test_http_status_and_headers_mutations(self):
         reply = Reply(200, {'content-type': 'application/json', 'etag': '"fixed"'}, b'{"success":true}')
         self.assertEqual(response_diffs(reply, copy.deepcopy(reply)), [])
@@ -97,6 +113,26 @@ class Comparators(unittest.TestCase):
             with sqlite3.connect(dirs[1] / 'configflow.sqlite3') as db:
                 db.execute('UPDATE fields SET value=?, revision=2', ('[{"policy":"DIRECT"}]',))
             self.assertTrue(database_diffs(*dirs, Policy()))
+
+    def test_import_snapshot_must_contain_previous_rows(self):
+        from compare import database
+        from snapshots import snapshot_errors
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            backup = root / 'migrations/synthetic/import'
+            backup.mkdir(parents=True)
+            with sqlite3.connect(backup / 'configflow.sqlite3') as db:
+                db.executescript('CREATE TABLE meta(key,value); CREATE TABLE sections(scope,owner,position); '
+                                 'CREATE TABLE fields(scope,owner,field,position,value,revision);')
+                db.execute('INSERT INTO meta VALUES (?,?)', ('generation', '1'))
+                db.execute('INSERT INTO fields VALUES (?,?,?,?,?,?)',
+                           ('profile', 'default', 'rule_configs', 0, '[{"policy":"DIRECT"}]', 1))
+            before = database(backup)
+            self.assertEqual(snapshot_errors(root, before, set()), [])
+            with sqlite3.connect(backup / 'configflow.sqlite3') as db:
+                db.execute('UPDATE fields SET revision=2')
+            self.assertTrue(snapshot_errors(root, before, set()))
+            self.assertTrue(snapshot_errors(root, before, {backup / 'configflow.sqlite3'}))
 
     def test_generated_file_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:

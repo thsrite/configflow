@@ -216,6 +216,16 @@ def response_diffs(left, right, policy=None, *, method='GET', filename='', proje
     # O6: Werkzeug HTML internals are not a user-facing byte contract.
     if method == 'HEAD':
         return out
+    if left.status == right.status and left.status in (204, 304):
+        for label, response in (('python', left), ('go', right)):
+            if response.body:
+                out.append(Difference('body', 'nonempty-' + str(response.status) + '-' + label,
+                                      len(response.body), None))
+        return out
+    if left.status == right.status == 206:
+        # A byte range can be an incomplete JSON/YAML/ZIP document. Compare the
+        # actual fragment, with Content-Range already checked above.
+        return out + differences(left.body, right.body, 'body.range-bytes', policy)
     ct_left, ct_right = left.headers.get('content-type', ''), right.headers.get('content-type', '')
     if left.status >= 400 and 'json' not in ct_left and 'json' not in ct_right:
         return out

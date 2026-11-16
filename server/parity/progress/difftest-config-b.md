@@ -269,3 +269,20 @@ request_variants=4401 named_matrix_cases=2571（S250 F2070 B251），H去重70
 ```
 
 当前这些 OxiDNS 路由仍未接通，以上是有效 Python 用例与自动激活的 Go 对照，不能计作比较通过。编辑器成功形态、native/global/plugin 全量校验与其他 H/G/T 继续，未做最终全量。
+
+## 批次 14：config export/import/reset、T28 和恢复快照
+
+- 125请求：原始/脱敏导出、真实206四字节片段/416/条件头；当前schema/原版/schema2/空集合/Unicode/未知字段/两profile共享资源导入，重启后公开export读回；非对象、坏JSON、26个仓库H项、真实SQLite拒写；重复全库reset与忽略坏body。五种路由器已发布ownership分别阻止import/reset，均409精确中文，未接触任何设备。
+- 每次成功import/reset验证新增且仅一个SQLite快照，其逻辑行必须逐字段等于本端请求前全库（包括meta/revisions/positions）。然后跨实现比较所有快照、目录、文件与当前全库。增加快照revision篡改/缺快照自检；206片段与204/304空body自检，总23项。
+- T28启用/关闭登录 × 缺能力/碰撞/自带有效能力：retired合并去重，当前rule-proxy到参数400、退役能力401（含碰撞时旧config_token仍必须拒绝）、config-token不得嵌入新/旧能力。依赖尚未接通的import实际改了Python库时，后续已注册路由标go-unimplemented-dependency，不能制造状态不同的假差异。
+- 清单oracle补充：有效当前schema能力会保留，缺失/碰撞/reset才生成新值；BytesIO导出没有自动ETag/Last-Modified，If-None-Match:*与If-Modified-Since未来值实测仍200。保留O6原结论与编号，明确修正。
+
+```text
+.63 run.py --groups config-export,config-import,config-import-guards,config-capability-lifecycle,config-reset,config-protected-router-import
+current go-unimplemented=97 go-unimplemented-dependency=28 design_errors=[] seconds=34.69
+cumulative compared=1299 go-unimplemented=3192 dependency=28 different=6 O12-separate=1
+request_variants=4526 named_matrix_cases=2598（S260 F2078 B260），H去重96
+23 self-checks + end-to-end wrong-Go-response check OK
+```
+
+当前本批待Go接通，未计比较通过。T28生成器内嵌/包manifest能力、并发router锁、旧格式资源冲突重命名及部分repo OS异常继续；不是完整T28或仓库H验收。继续custom config、共享资源和其他业务文件。

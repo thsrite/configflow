@@ -88,6 +88,8 @@ def main():
     groups.update(pulls)
     from cases.oxidns import GROUPS as oxidns
     groups.update(oxidns)
+    from cases.config_backup import GROUPS as config_backup
+    groups.update(config_backup)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:
