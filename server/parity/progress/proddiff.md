@@ -1,52 +1,51 @@
 # Production snapshot differential
 
-Task: test-only, offline production-data acceptance framework. No business changes, no subagents,
-no push. Source snapshot stays on the test server; all reports/commits contain schema only.
-Design and command documentation: [tool README](../../tools/proddiff/README.md).
+Scope: offline, snapshot-only acceptance framework. No business changes, subagents, production
+access or push. Documentation: [tool README](../../tools/proddiff/README.md).
 
-Done:
-- Initial runner commit 16c0292f (rebased from af90c23d/493df48c): real cmd/configflow build, isolated
-  user/net/mount namespace, read-only snapshot mount/hash guard, separate disposable data copies,
-  existing environment-account login, actual registered-route manifest, automatic mutation self-check.
-- Hardened startup equivalence with metrics_flush.load_history; removed false history differences.
-- Build-tagged ephemeral Go overlays suppress lifecycle loops; named Flask starters suppressed.
-  PID namespace kills descendants. All real values stay in private server reports.
-- Explicit read-only POST inventory; entity enumeration includes routers.items, saved deployments,
-  previews, sessions and SQLite installer capabilities. Installer output uses saved Agent parameters.
-- Exact normalization list; structural JSON/YAML/ZIP and text comparison; schema-only baseline and
-  coverage inventory. Missing Go routes are counted, previously compared route removals fail.
-- Eight synthetic comparator/enumeration tests passed; full server go vet passed on test server.
+Original runner: 16c0292f / f31b9ff7 / 48567672. Acceptance follow-up worker commit e49d8306.
+Go cmd/configflow uses test-tagged temporary overlays solely for loop suppression/route export.
+Source is read-only mounted and hashed, all workers run in the same loopback-only namespace,
+all data copies are disposable, auth uses existing env-account login. Real values stay only in
+private test-server reports. Python 10 named background starters, Go 5 loops disabled.
 
-Current remote result (integration Go source plus framework overlays):
-156 GET templates: 50 compared, 106 unimplemented. 205 selected method/templates: 51 compared,
-154 unimplemented. 2040 cases enumerated, 224 compared, 30 have no saved path parameter.
-Python 10 named starters and Go 5 registered loops disabled. Both sides 20 connection-failure
-responses, no transport timeout. Self-check PASS. Baseline: agents/value 3, config/value 2,
-routers 0 compared differences (unimplemented). new=0, stale=0, coverage_regressions=0.
-Source content unchanged; disposable copies deleted. Unrecoverable in-memory/device records are
-explicit missing-parameter error cases; unimplemented outputs are not claimed as verified.
+Follow-up complete implementation:
+- Direct Go command tools/proddiff/generator reads copies via repo and invokes public generator APIs;
+  paired Python worker uses the same selectors/options. Separate generator copies avoid HTTP side effects.
+- Five main config generators; six attachment/download metadata generators; three subscription formats;
+  four Agent service variants. Mihomo preflight disabled equally; provider Fetch fails offline equally
+  and the business implementation renders saved node caches. No generated caches/config are committed.
+- Automatic HTTP ownership when the corresponding method/template is registered; subscription requests
+  include all three formats. Zero-instance and missing implementations remain explicit.
+- Four mandatory mutations: HTTP status, deeply nested JSON leaf, real Go YAML leaf, real Go text line.
+- coverage.txt keeps generator/success markers; generator-coverage.json records all counts and success
+  floors. Losing even one formerly successful output fails. Added takeover/floor/mutation regressions.
+- Developer documentation moved from doc/testing to tools/proddiff/README.md.
 
-Open findings: three Agent log/logging failure message differences and two runtime log-line
-value differences; exact schema paths in proddiff-baseline.txt. No business fixes attempted.
+Current coverage (all generated outputs compared successfully):
+- Main Mihomo, Surge, Loon, MosDNS, OxiDNS: 2 each.
+- MosDNS files/downloads, OxiDNS files/downloads, Mihomo providers/rules: 2 each.
+- Subscription Mihomo/Surge/Loon: 4 each.
+- Agent Mihomo 1, OxiDNS 2; Agent MosDNS/Surge 0 (no saved instances).
+- Total 37 direct outputs, zero generator differences or errors.
+- Missing Go generators: router scripts (1 input), full Agent deployment bundle/final-device render
+  (3 inputs), aggregation provider (0 inputs). Do not count these as passed.
+- HTTP: 156 GET (50 compared/106 missing), 205 selected templates (51 compared/154 missing),
+  2060 cases enumerated, 224 compared; 30 no-snapshot-parameter error cases.
+- Existing unique baseline: agents/value 3, config/value 2; routers 0 verified differences because
+  script generation is missing. new=0, stale=0, coverage_regressions=0. Both sides 20 offline HTTP
+  connection failures. Four self-checks PASS. No new business issues.
 
 Commands:
 - `rt -- server/scripts/proddiff.sh`
-- `rt --back server/parity/proddiff-baseline.txt --back server/parity/proddiff-coverage.txt -- server/scripts/proddiff.sh --record-baseline`
-- `rt -- bash -lc '~/cf-test/.venv/bin/python -m unittest discover -s server/tools/proddiff -p "test_*.py" -v && cd server && test -z "$(gofmt -l tools/proddiff)" && go vet ./...'`
+- `rt -- bash -lc '~/cf-test/.venv/bin/python -m unittest discover -s server/tools/proddiff -p "test_*.py" -v && server/scripts/proddiff.sh && cd server && test -z "$(gofmt -l tools/proddiff)" && go vet ./...'`
+- Explicit coverage refresh:
+  `rt --back server/parity/proddiff-baseline.txt --back server/parity/proddiff-coverage.txt --back server/parity/proddiff-generator-coverage.json -- server/scripts/proddiff.sh --record-baseline`
 
-Hardening: invalid JSON/YAML/ZIP cannot silently pass; ZIP text members keep text semantics;
-normalization preserves type/structure changes; processes stop before temporary copies are removed.
-
-Complete: rebased onto local go HEAD `6e59ce26e6966be9277833edc7f56ab2e3583a22`.
-Framework commits: 16c0292f (runner), f31b9ff7 (baseline/coverage), current commit (hardening).
-Final command, exit 0:
-`rt -- bash -lc '~/cf-test/.venv/bin/python -m unittest discover -s server/tools/proddiff -p "test_*.py" -v && server/scripts/proddiff.sh && cd server && test -z "$(gofmt -l tools/proddiff)" && go vet ./...'`
-Tail: `Ran 8 tests ... OK`; `self-check: PASS (mutated Go status detected)`;
-`baseline: new=0 stale=0`. Full counts match the table above, coverage_regressions=0.
-Only framework/scripts/parity/doc files differ from go; no business changes. No push.
-
-Acceptance follow-up in progress: add direct public-generator workers before HTTP coverage,
-strengthen automatic JSON/YAML/text mutation checks, move developer documentation into tool README.
-No business code changes. Remote workers compile and vet clean; full run now compares 37 successful
-generator outputs with no new differences. Four automatic mutations pass. Next: finalize HTTP ownership
-coverage, record generator coverage floors, document counts, rerun both required gates and rebase.
+The test server reboot interrupted two commands; they were re-run after connectivity recovered.
+Validation complete, both required commands exit 0. Final tail:
+`Ran 12 tests ... OK`
+`self-check: status=PASS json-leaf=PASS yaml-leaf=PASS text-line=PASS`
+`baseline: new=0 stale=0` (coverage_regressions=0; source hash unchanged, all copies removed).
+No business code changes; baseline remains exactly the original five value entries.
+Rebase target: local go HEAD 6e59ce26e6966be9277833edc7f56ab2e3583a22. No push.

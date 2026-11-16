@@ -103,6 +103,19 @@ class ComparatorTests(unittest.TestCase):
         self.assertEqual('http', coverage['GENERATOR mihomo']['mode'])
         self.assertFalse(any(job['kind'] == 'mihomo' for job in jobs))
 
+    def test_successful_output_floor_survives_http_takeover(self):
+        from generators import successful_output_regressions
+        previous = {'GENERATOR mihomo': {'success': 2, 'mode': 'generator'}}
+        self.assertEqual(set(), successful_output_regressions(previous, {'GENERATOR mihomo': {'success': 2, 'mode': 'http'}}))
+        self.assertEqual({'GENERATOR mihomo successful-output-count'}, successful_output_regressions(previous, {'GENERATOR mihomo': {'success': 1}}))
+
+    def test_http_subscription_takeover_requests_all_formats(self):
+        doc = {'system': {'agents': []}, 'shared': {'subscriptions': [{'id': 'sub-a'}]},
+               'profiles': {'one': {'routers': {'items': []}}}}
+        cases = list(pd.cases([['GET', '/api/profiles/<profile_id>/subscriptions/<sub_id>/proxies']], doc, Path('/nonexistent')))
+        self.assertEqual(3, len(cases))
+        self.assertEqual({'mihomo', 'surge', 'loon'}, {pd.urllib.parse.parse_qs(pd.urllib.parse.urlsplit(case[2]).query)['format'][0] for case in cases})
+
 
 if __name__ == '__main__':
     unittest.main()

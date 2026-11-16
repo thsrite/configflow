@@ -1,0 +1,165 @@
+{
+  "GENERATOR mihomo": {
+    "mode": "generator",
+    "route": "GET /api/config/<profile_id>/mihomo",
+    "cases": 2,
+    "success": 2,
+    "both-error": 0,
+    "compared": 2
+  },
+  "GENERATOR surge": {
+    "mode": "generator",
+    "route": "GET /api/config/<profile_id>/surge",
+    "cases": 2,
+    "success": 2,
+    "both-error": 0,
+    "compared": 2
+  },
+  "GENERATOR loon": {
+    "mode": "generator",
+    "route": "GET /api/config/<profile_id>/loon",
+    "cases": 2,
+    "success": 2,
+    "both-error": 0,
+    "compared": 2
+  },
+  "GENERATOR mosdns": {
+    "mode": "generator",
+    "route": "GET /api/config/<profile_id>/mosdns",
+    "cases": 2,
+    "success": 2,
+    "both-error": 0,
+    "compared": 2
+  },
+  "GENERATOR oxidns": {
+    "mode": "generator",
+    "route": "GET /api/config/<profile_id>/oxidns",
+    "cases": 2,
+    "success": 2,
+    "both-error": 0,
+    "compared": 2
+  },
+  "GENERATOR mosdns-files": {
+    "mode": "generator",
+    "route": null,
+    "cases": 2,
+    "success": 2,
+    "both-error": 0,
+    "compared": 2
+  },
+  "GENERATOR mosdns-downloads": {
+    "mode": "generator",
+    "route": null,
+    "cases": 2,
+    "success": 2,
+    "both-error": 0,
+    "compared": 2
+  },
+  "GENERATOR oxidns-files": {
+    "mode": "generator",
+    "route": null,
+    "cases": 2,
+    "success": 2,
+    "both-error": 0,
+    "compared": 2
+  },
+  "GENERATOR oxidns-downloads": {
+    "mode": "generator",
+    "route": null,
+    "cases": 2,
+    "success": 2,
+    "both-error": 0,
+    "compared": 2
+  },
+  "GENERATOR mihomo-providers": {
+    "mode": "generator",
+    "route": null,
+    "cases": 2,
+    "success": 2,
+    "both-error": 0,
+    "compared": 2
+  },
+  "GENERATOR mihomo-rules": {
+    "mode": "generator",
+    "route": null,
+    "cases": 2,
+    "success": 2,
+    "both-error": 0,
+    "compared": 2
+  },
+  "GENERATOR subscription-mihomo": {
+    "mode": "generator",
+    "route": "GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies",
+    "cases": 4,
+    "success": 4,
+    "both-error": 0,
+    "compared": 4
+  },
+  "GENERATOR subscription-surge": {
+    "mode": "generator",
+    "route": "GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies",
+    "cases": 4,
+    "success": 4,
+    "both-error": 0,
+    "compared": 4
+  },
+  "GENERATOR subscription-loon": {
+    "mode": "generator",
+    "route": "GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies",
+    "cases": 4,
+    "success": 4,
+    "both-error": 0,
+    "compared": 4
+  },
+  "GENERATOR agent-mihomo": {
+    "mode": "generator",
+    "route": "GET /api/agents/<agent_id>/config",
+    "cases": 1,
+    "success": 1,
+    "both-error": 0,
+    "compared": 1
+  },
+  "GENERATOR agent-mosdns": {
+    "mode": "generator",
+    "route": "GET /api/agents/<agent_id>/config",
+    "cases": 0,
+    "success": 0,
+    "both-error": 0
+  },
+  "GENERATOR agent-oxidns": {
+    "mode": "generator",
+    "route": "GET /api/agents/<agent_id>/config",
+    "cases": 2,
+    "success": 2,
+    "both-error": 0,
+    "compared": 2
+  },
+  "GENERATOR agent-surge": {
+    "mode": "generator",
+    "route": "GET /api/agents/<agent_id>/config",
+    "cases": 0,
+    "success": 0,
+    "both-error": 0
+  },
+  "GENERATOR router-script": {
+    "mode": "Go 尚未实现",
+    "route": "POST /api/routers/<router_id>/plan",
+    "cases": 1,
+    "success": 0,
+    "reason": "No public Go router plan/script exporter exists."
+  },
+  "GENERATOR aggregation-provider": {
+    "mode": "Go 尚未实现",
+    "route": "GET /api/aggregations/<agg_id>/provider",
+    "cases": 0,
+    "success": 0,
+    "reason": "Go aggregation-provider hook still has its missing implementation."
+  },
+  "GENERATOR agent-deployment-bundle": {
+    "mode": "Go 尚未实现",
+    "route": "POST /api/agents/<agent_id>/generate-config",
+    "cases": 3,
+    "success": 0,
+    "reason": "No public Go deployment-bundle/final-device-render generator exists."
+  }
+}

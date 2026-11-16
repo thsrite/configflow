@@ -24,7 +24,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 import yaml
-from generators import INVENTORY, run_workers, self_check
+from generators import run_workers, self_check, successful_output_regressions
 
 ROOT = Path.cwd()
 PARITY = ROOT / 'server/parity'
@@ -357,6 +357,7 @@ def main():
             real = send(15002, 'GET', '/api/auth/status', tokens[1])
             counts = collections.Counter()
             coverage, failures = {}, collections.Counter()
+            http_successes = collections.defaultdict(set)
             all_cases = list(cases(rows, doc, copies[0]))
             def compare(case):
                 method, route, path, body, no_data = case
@@ -382,21 +383,26 @@ def main():
                             generator_samples.setdefault('yaml', right)
                         if 'text/plain' in right[1] and ('/config/' in route or '/generate/' in route or route.endswith('/install-script')):
                             generator_samples.setdefault('text', right)
-                    for name, metadata in INVENTORY.items():
-                        row = generator_coverage['GENERATOR ' + name]
-                        if row['mode'] != 'http' or metadata[2] != key:
+                    for generator_key, row in generator_coverage.items():
+                        name = generator_key.removeprefix('GENERATOR ')
+                        if row['mode'] != 'http' or row['route'] != key:
                             continue
                         if name.startswith('subscription-'):
                             selected_format = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query).get('format', ['mihomo'])[0]
                             if name != 'subscription-' + selected_format:
                                 continue
-                        if name.startswith('agent-'):
+                        if name in ('agent-mihomo', 'agent-mosdns', 'agent-oxidns', 'agent-surge'):
                             agent_id = urllib.parse.unquote(urllib.parse.urlsplit(path).path.split('/')[3])
                             agent = next((a for a in doc['system'].get('agents', []) if str(a.get('id')) == agent_id), {})
                             if name != 'agent-' + agent.get('service_type', 'mihomo'):
                                 continue
                         row['compared'] = row.get('compared', 0) + 1
-                        row['success'] += int(200 <= left[0] < 300 and 200 <= right[0] < 300)
+                        if 200 <= left[0] < 300 and 200 <= right[0] < 300:
+                            identity = urllib.parse.urlsplit(path).path
+                            if name.startswith('subscription-'):
+                                identity += '?' + urllib.parse.parse_qs(urllib.parse.urlsplit(path).query).get('profile_id', [''])[0]
+                            http_successes[generator_key].add(identity)
+                            row['success'] = len(http_successes[generator_key])
                     for label, reply in (('python', left), ('go', right)):
                         if reply[0] == 0 or re.search(rb'ConnectionError|Network is unreachable|No route to host|Connection refused|Failed to establish|connect: network|dial tcp|timed out', reply[2], re.I):
                             failures[label + '-connection-failed'] += 1
@@ -431,6 +437,11 @@ def main():
                 coverage_path.write_text('# Previously compared route templates; removals fail the gate.\n' + '\n'.join(sorted(current_coverage)) + '\n')
                 previous_coverage = current_coverage
             lost_coverage = previous_coverage - current_coverage
+            generator_floor_path = PARITY / 'proddiff-generator-coverage.json'
+            if record:
+                generator_floor_path.write_text(json.dumps(generator_coverage, ensure_ascii=False, indent=2) + '\n')
+            generator_floors = json.loads(generator_floor_path.read_text())
+            lost_coverage.update(successful_output_regressions(generator_floors, generator_coverage))
             unique_counts = collections.Counter()
             for route, field, kind in found:
                 domain = 'agents' if '/agents' in route or route.startswith('GENERATOR agent-') else 'routers' if '/routers' in route or route.startswith('GENERATOR router-') else 'config'

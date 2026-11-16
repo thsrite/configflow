@@ -1,4 +1,36 @@
 # Previously compared route templates; removals fail the gate.
+GENERATOR agent-mihomo
+GENERATOR agent-mihomo success
+GENERATOR agent-oxidns
+GENERATOR agent-oxidns success
+GENERATOR loon
+GENERATOR loon success
+GENERATOR mihomo
+GENERATOR mihomo success
+GENERATOR mihomo-providers
+GENERATOR mihomo-providers success
+GENERATOR mihomo-rules
+GENERATOR mihomo-rules success
+GENERATOR mosdns
+GENERATOR mosdns success
+GENERATOR mosdns-downloads
+GENERATOR mosdns-downloads success
+GENERATOR mosdns-files
+GENERATOR mosdns-files success
+GENERATOR oxidns
+GENERATOR oxidns success
+GENERATOR oxidns-downloads
+GENERATOR oxidns-downloads success
+GENERATOR oxidns-files
+GENERATOR oxidns-files success
+GENERATOR subscription-loon
+GENERATOR subscription-loon success
+GENERATOR subscription-mihomo
+GENERATOR subscription-mihomo success
+GENERATOR subscription-surge
+GENERATOR subscription-surge success
+GENERATOR surge
+GENERATOR surge success
 GET /api/agents/<agent_id>/address
 GET /api/agents/<agent_id>/config/logging
 GET /api/agents/<agent_id>/logs

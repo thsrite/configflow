@@ -1,9 +1,7 @@
 """Generator inventory, isolated worker orchestration, and four mandatory mutations."""
-import collections
 import copy
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 
@@ -29,9 +27,9 @@ INVENTORY = {
     'agent-surge': ('agent', 'text', 'GET /api/agents/<agent_id>/config'),
 }
 MISSING = {
-    'router-script': 'No public Go router plan/script exporter exists.',
-    'aggregation-provider': 'Go aggregation-provider hook still has its missing implementation.',
-    'agent-deployment-bundle': 'No public Go deployment-bundle/final-device-render generator exists.',
+    'router-script': ('POST /api/routers/<router_id>/plan', 'No public Go router plan/script exporter exists.'),
+    'aggregation-provider': ('GET /api/aggregations/<agg_id>/provider', 'Go aggregation-provider hook still has its missing implementation.'),
+    'agent-deployment-bundle': ('POST /api/agents/<agent_id>/generate-config', 'No public Go deployment-bundle/final-device-render generator exists.'),
 }
 
 
@@ -41,7 +39,7 @@ def inventory(doc, implemented):
     default_profile = doc['system'].get('system_config', {}).get('default_profile_id') or 'default'
     for kind, (selector, output_format, route) in INVENTORY.items():
         mode = 'http' if route and tuple(route.split(' ', 1)) in implemented else 'generator'
-        row = coverage['GENERATOR ' + kind] = {'mode': mode, 'cases': 0, 'success': 0, 'both-error': 0}
+        row = coverage['GENERATOR ' + kind] = {'mode': mode, 'route': route, 'cases': 0, 'success': 0, 'both-error': 0}
         for profile_id, profile in profiles.items():
             config = dict(doc['shared'], **profile)
             if selector == 'profile':
@@ -63,8 +61,9 @@ def inventory(doc, implemented):
         'aggregation-provider': sum(len(dict(doc['shared'], **profile).get('aggregations', [])) for profile in profiles.values()),
         'agent-deployment-bundle': len(agents),
     }
-    for kind, reason in MISSING.items():
-        coverage['GENERATOR ' + kind] = {'mode': 'Go 尚未实现', 'cases': missing_counts[kind], 'reason': reason}
+    for kind, (route, reason) in MISSING.items():
+        mode = 'http' if tuple(route.split(' ', 1)) in implemented else 'Go 尚未实现'
+        coverage['GENERATOR ' + kind] = {'mode': mode, 'route': route, 'cases': missing_counts[kind], 'success': 0, 'reason': reason}
     return jobs, coverage
 
 
@@ -113,6 +112,12 @@ def run_workers(snapshot, copies_parent, report, binary, doc, implemented, compa
             found.add((key, field, kind))
         samples.setdefault(job['format'], b)
     return found, coverage, samples
+
+
+def successful_output_regressions(expected, current):
+    """Keep a real output from silently becoming an agreed rejection."""
+    return {key + ' successful-output-count' for key, previous in expected.items()
+            if current.get(key, {}).get('success', 0) < previous.get('success', 0)}
 
 
 def self_check(real_status, samples, compare):
