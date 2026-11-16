@@ -280,6 +280,13 @@ func RulesetFormat(rule, config *jsonx.Object, sourceURL string) (string, error)
 	}
 	text, ok := url.(string)
 	if !ok {
+		// urlsplit is lru_cache'd: an unhashable list/dict fails hashing
+		// (TypeError, which callers such as rule_ip_presence catch) before
+		// the str coercion (AttributeError) does.
+		switch url.(type) {
+		case []any, *jsonx.Object:
+			return "", pyError("TypeError", "unhashable type: '"+pyTypeName(url)+"'")
+		}
 		return "", attributeError(url, "decode")
 	}
 	parts, err := urlsplit(text)

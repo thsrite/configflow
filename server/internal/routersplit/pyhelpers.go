@@ -56,7 +56,7 @@ func truthy(v any) bool {
 		return value != nil && value.Len() > 0
 	case []byte:
 		return len(value) > 0
-	case yamlx.Timestamp:
+	case yamlx.Timestamp, *yamlx.Unrepresentable:
 		return true
 	}
 	return jsonx.Truthy(v)

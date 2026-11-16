@@ -146,3 +146,9 @@ func rowRepository(t *testing.T, rules *jsonx.Object) (context.Context, string) 
 	}
 	return ctx, ""
 }
+
+// TestEdgeCorpus replays the classical_ip_lines rows of the hand-picked edge
+// corpus (routersplit/testdata/gen_r02_edge.py, review R02): legacy-name
+// cache path with malformed library entries, by-id caches, library_rule_id
+// shapes, url/source_type shapes, Unicode contents and invalid UTF-8.
+func TestEdgeCorpus(t *testing.T) { replay(t, "../routersplit/testdata/r02_edge.jsonl.gz") }

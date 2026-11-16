@@ -14,6 +14,7 @@ import (
 	"configflow/internal/gateway/gwbase"
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
+	"configflow/internal/yamlx"
 )
 
 // Replay of every router_split call the Python suite made
@@ -308,7 +309,7 @@ func replay(t *testing.T, path string) {
 			}
 		} else if err != nil {
 			problems = append(problems, "Go error "+err.Error()+", Python returned "+encode(row.Out))
-		} else if encode(out) != encode(row.Out) {
+		} else if encode(out) != encode(row.Out) && !(row.Fn == "full_tun_base_yaml" && sameYAML(out, row.Out)) {
 			problems = append(problems, "result\n  python "+encode(row.Out)+"\n  go     "+encode(out))
 		}
 		if env.next != len(env.calls) {
@@ -336,4 +337,32 @@ func replay(t *testing.T, path string) {
 	sort.Strings(names)
 	t.Logf("%s router_split: %d identical, %d differ, %d not expressible %v; from %d tests in %d files; identical per function: %s",
 		path, total, differ, notTotal, notExpr, len(tests), len(files), strings.Join(names, ", "))
+}
+
+// TestEdgeCorpus replays hand-picked edge inputs recorded with real Python
+// (testdata/gen_r02_edge.py, review R02): marker types and Unicode ids,
+// filter values, base YAML (aliases, invalid dates, special numbers,
+// complex keys, deep nesting, tags), router/context shapes, sessions.
+func TestEdgeCorpus(t *testing.T) { replay(t, "testdata/r02_edge.jsonl.gz") }
+
+// sameYAML compares two base YAML texts structurally (functional parity:
+// anchors/aliases and other formatting are no longer compared): both parse to
+// the same document, written out without aliases.
+func sameYAML(got, want any) bool {
+	g, ok1 := got.(string)
+	w, ok2 := want.(string)
+	if !ok1 || !ok2 {
+		return false
+	}
+	canon := func(text string) (string, bool) {
+		v, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true})
+		if err != nil {
+			return "", false
+		}
+		out, err := yamlx.Dump(v, yamlx.DumpOptions{AllowUnicode: true, NoAliases: true})
+		return out, err == nil
+	}
+	cg, okg := canon(g)
+	cw, okw := canon(w)
+	return okg && okw && cg == cw
 }

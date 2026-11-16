@@ -522,7 +522,12 @@ func baseDocument(config any) (any, error) {
 		// yaml.safe_load treats anything else as a file object.
 		return nil, attributeError(value, "read")
 	}
-	document, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true})
+	// Values jsonx cannot hold (a recursive alias, !!set, !!omap/!!pairs)
+	// become *yamlx.Unrepresentable placeholders: Python loads them, and only
+	// the TUN shape and filters are read from this document (a placeholder
+	// is never a dict, never True, never "any:53", and truthy — an empty
+	// !!set filter value would be falsy in Python, the one case not told apart).
+	document, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true})
 	if err != nil {
 		if e, ok := err.(*yamlx.Error); ok && (e.IsYAMLError() || e.Class == "RecursionError") {
 			return nil, nil
