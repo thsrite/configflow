@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 21 missing, 4 partial, 5 ported, 7 verified (C01, C02, C03, C04, C08, C09, C10). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 20 missing, 4 partial, 6 ported, 7 verified (C01, C02, C03, C04, C08, C09, C10). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -42,7 +42,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C14 | remote rule fetch, ruleset content, remote sources, website identity | 1202 | ported | C12, C08 | – |
 | C15 | subscription refresh, health, scheduled refresh | 600 | ported | C13, C14, C07 | – |
 | C16 | health check, latency, node DNS, region check, domain probe | 1089 | ported | C12, C13 | 5 (5 done) |
-| C17 | provider delivery and responses | 540 | missing | C15 | – |
+| C17 | provider delivery and responses | 540 | ported | C15 | – |
 | C18 | Mihomo config generation, Mihomo base settings | 1275 | missing | C12, C15, C16, C17 | – |
 | C19 | Surge converter | 1129 | missing | C18 | – |
 | C20 | Loon converter | 764 | missing | C19 | – |
@@ -675,21 +675,40 @@ Commands:
 
 ## C17 — provider delivery and responses
 
-**Status: `missing`** · prereqs: C15 · Go: internal/provider (new)
+**Status: `ported`** (not reviewed) · prereqs: C15 · Go: `internal/provider` (new)
 
-Files:
-- `backend/utils/provider_delivery.py` (424)
-- `backend/utils/provider_response.py` (116)
+Files → Go:
+- `backend/utils/provider_delivery.py` (424) → `delivery.go`: `Snapshot` (= DeliverySnapshot: `Capture`, `Main` = json.loads(main_json), `HasChains`, `Adapt`, `Validate(proxies, forceChains, providerName *string)`, `ProviderName(sub['name'])`), `AdaptDelivered` (+ `dialerRecord` = subscription_dialers.dialer_record(sub) with its cache / download-cache reads), `ValidateProxyShapes`, `loadProviderProxies` (= `_load_provider_proxies`), `ParseProviderProxies`, `PrepareSubscriptionProvider` (`PrepareOptions{Fetch, AllowTransportFallback, SourcePath, SourcePrepared}`), `ValidateRenderedBundle`, `CommitCacheUpdates`, `PrepareProviderBundle` (`BundleOptions{Requested, RenderAll, AllowTransportFallback, Prepared, SubscriptionFetch, Progress}`; per-(id,url) single-flight fetch like the Python futures), `CommitProviderBundle`. Result dicts are `*Rendered{Name, HasName, Content, CacheUpdates []CacheUpdate{SubID, Nodes, Metadata}, AggregationID, URL, LocalPath, Extra}`. `errors.go`: `*provider.Error{Class, Message}` (re-wrapped StrategyReferenceError / DialerReferenceError / ListenerReferenceError with `_provider_contexts` and `provider_field`; `errors.As` finds the convert/subs/rules types), `providerContext`, `shapeError`, `providerSourceError` (field lookup on `pyyaml.Compose` + `flattenMapping`, last duplicate key wins), `yamlCause` (the yaml.YAMLError as `*pyyaml.Error`: compose errors re-composed with marks; ConstructorError parsed back from str(exc)).
+- `backend/utils/provider_response.py` (116) → `response.go`: `ServeProvider(c, kind, itemID, profileID, configData, render Render)` (single flight keyed by kind/profile/item/format/regex/exclude_regex/sha256 of sorted config JSON; pool of `PoolWorkers`=8; `ResponseSeconds`=12 (`SetResponseSeconds` for tests); only no-`format` requests fall back; a 200 `text/yaml` render is written to `providers/served/<kind>-<id>.yaml`; last good → aggregation artifact `providers/<id>.yaml`; fallback answer `text/yaml; charset=utf-8` + `X-ConfigFlow-Provider: last-good`, read with read_text's universal newlines; every waiter gets a copy of status/headers/body; warning logged on `backend.utils.provider_response`), `RequestedFilters(c)` (`*rules.CandidateValidationError` → 400).
 
-Tests: `test_dialer_provider_content.py` (3), `test_provider_error_locations.py` (14), `test_provider_filter_isolation.py` (1), `test_provider_response.py` (9)
+Interfaces for other modules (decision 3):
+- **provided by A11 (agents)**: `provider.SetLocations(Locations)` — `PreparationContext(message, name, path, kind string) string` = str(deployment_locations.preparation_context(...)) (name/path already `str(x) if x else ''`), `SourceError(message, text, line, column *int, cause *pyyaml.Error, sourceLabel) string` = str(source_error(...)) (cause nil = None; ReaderError has empty fields). Default `PassthroughLocations` returns the message unchanged (texts lack location/excerpt, error classes and decisions unchanged). `diagnostics.failure_text` = `agents/diag.FailureText` (leaf, already shared).
+- **provided by C31**: `provider.SetAggregationProvider(fn)` — `generate_aggregation_provider(agg, config=, main_config=main, persist=False, subscription_fetch=fetch, source_prepared=True)` returning `*Rendered` (counts in `Extra`). Default fails closed with `ErrAggregationProviderMissing`.
+- `Env{Fetch (sub_store_client.get_subscription_proxies_yaml), SubscriptionFetch / AggregationFetch (the two route-module names Python tests patch), Converter, NodeID}`; `SetEnv`, `SequentialNodeIDs`.
+- Routes: none (the provider endpoints are C30/C31: they call `RequestedFilters`, `ServeProvider` with a render closure capturing `c`, `Capture`, `ParseProviderProxies`, `PrepareProviderBundle`, `CommitProviderBundle`; A14/A22 call `PrepareProviderBundle`/`CommitProviderBundle`/`CommitCacheUpdates`). So no Flask↔Go differential here; the routes' differential (headers incl. Content-Disposition, Content-Type, last-good marker) belongs to C30/C31.
 
-Routes: none.
+Tests (`internal/provider`):
+- Corpus `testdata/gen.py` → `corpus.json.gz` (CPython, synthetic values, fake A11 on both sides + 'real' A11 texts recorded for the A11 porter): 1581 rows — validate_proxy_shapes 32, parse_provider_proxies 224 (YAML errors incl. constructor errors, merges, duplicate keys, secrets, flow/block, CRLF), DeliverySnapshot capture/has_chains/validate 135 rows × 151 calls, validate_rendered_bundle 15, prepare_subscription_provider 745 scenarios (fresh repo, seeded caches/download caches, fake fetchers, fixed clocks, sequential node ids; result, fetch calls and files after), prepare_provider_bundle + commit_provider_bundle 430 scenarios (requested/render_all/fallback/prepared, aggregation fake, progress messages, arguments not mutated, files written). **All equal** except 2 accepted rows of other modules (below).
+- Ported: `test_provider_response.py` 8/9 (`response_test.go`; the immediate-render test checks no flight is left; deferred `test_aggregation_endpoint_falls_back_when_generation_is_slow` → C31), `test_provider_filter_isolation.py` 4/4, `test_provider_error_locations.py` 13/14 against the fake A11 (what C17 passes: field, line/column, label, owner, path; secrets/excerpt redaction is A11's — corpus 'real' texts; deferred `test_publication_entrypoints_preserve_subscription_and_aggregation_hierarchy` → C30/C31/A14), `test_dialer_provider_content.py` 1/3 (`test_empty_provider_is_valid`; the two route/push cases → C30/C31/A14), `test_subscription_refresh_policy.py` `test_publish_preparation_uses_cache_and_stages_no_fake_refresh`, `test_dry_previews_share_download_across_restart_without_changing_validated_nodes` (prepare halves), `test_subscription_regex_filter.py::test_provider_delivers_filtered_proxies_but_caches_raw_nodes`, provider half of `test_dialer_delivery_staging.py::test_no_chain_direct_subscription_preserves_duplicate_legacy_names`, extra: headers copied / last-good newline translation, RequestedFilters cases, default hooks.
+- Still deferred (need generation C18 or routes C30/C31/A14): `test_proxy_chains.py`, `test_dynamic_proxy_chains.py`, `test_group_exclusion_generation.py`, `test_subscription_dialers.py` provider cases (their `main` comes from generate_mihomo_config — scenario shapes are covered by the corpus), `test_dialer_*` route cases listed under C12, `test_subscription_refresh_policy.py` endpoint cases, `test_agent_content_*` / `test_agent_push_diff_api.py` / `test_generated_preview.py` (patch commit_provider_bundle; A14).
 
-Evidence: No Go package; no route registered.
+Decisions / differences from Python:
+- Provider YAML is loaded with `yamlx` `KeepNonStringKeys` (dicts with int keys are dicts). Values yamlx cannot hold (recursive aliases, `!!set`/`!!omap`/`!!pairs`) give a non-YAML error (Python loads them, then a shape error) — treated like other non-YAML load errors (transport fallback in prepare).
+- `ServeProvider`'s render gets `context.WithoutCancel(request ctx)` (same repo scope as the request; Python's pool thread had fresh config ContextVars but re-read the same request). A panic in render becomes an error (500), as an exception in the future did.
+- Non-string provider `url` in a definition → TypeError-class error when sources are collected (Python fails later, only if materialized). Non-string sub ids/urls passed to fetchers as `str()`.
+- `flattenMapping` is a private copy of yamlx's unexported `constructor.flatten` (TODO: switch when C02 exports it).
 
-Missing / deferred: Everything in the files below.
+Findings in other modules (not fixed here):
+- **C13 `substore.ParseProxiesFromYAML`**: mappings with non-string keys (`proxies: [{1: a, name: A}]`, `1: a` at the root) fail (yamlx NonStringKeyError); Python returns them (key `1`). Corpus allowlist `knownDifference`.
+- **C12 `convert.ValidateEmitted`**: with a non-dict provider definition (`proxy-providers: {F: 1}`) and an active chain, Go raises AttributeError where Python first reports the dangling `dialer-proxy` (DialerReferenceError). Hand-made invalid main only; allowlisted.
 
-Notes for porter: `provider_delivery` lazily imports `routes.aggregations.generate_aggregation_provider` / `get_subscription_proxies_yaml` and `routes.subscriptions.get_subscription_proxies_yaml` (logic living in route files, C30/C31) and `agents.deployment_locations`/`agents.diagnostics`. Port the provider-YAML builders of those route files as package functions here or define interfaces that C30/C31 fill; say which in this section.
+Commits: cb386206 (code), 2e9a7dfe (corpus, response tests), 430f79bc (ported tests), + this PROGRESS commit.
+
+Reviewer hints: `prepareSubscriptionProvider` try/except boundary (which errors become transport errors; `update` only after validation); `PrepareProviderBundle` render condition order and the `active` rescan; `providerContext` dedup key; `parseMarkedError` for ConstructorError marks; `ServeProvider` timer vs queueing in the 8-slot pool.
+
+Commands:
+- tests: `rt -- bash -lc 'cd server && gofmt -l internal/provider; go vet ./internal/provider/ && go test -count=1 -race ./internal/provider/'` (last: ok, 38.6 s)
+- corpus: `rt --back server/internal/provider/testdata/corpus.json.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/provider/testdata/gen.py'`
 
 ## C18 — Mihomo config generation, Mihomo base settings
 
