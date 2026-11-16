@@ -6,13 +6,13 @@ package agents
 
 import (
 	"math/big"
-	"unicode"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/metrics"
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
+	"configflow/internal/pystr"
 )
 
 func registerMetrics(r *httpx.Router) {
@@ -21,28 +21,22 @@ func registerMetrics(r *httpx.Router) {
 	r.GET("/api/agents/<agent_id>/metrics/summary", "agents.get_agent_metrics_summary", auth.Require(getAgentMetricsSummary))
 }
 
-// maxStrDigits is sys.get_int_max_str_digits(): int() of a longer decimal
-// string raises ValueError (so request.args.get(type=int) gives the default).
-const maxStrDigits = 4300
-
 // argBigInt is request.args.get(name, type=int, default=def) with ints of
-// any size.
+// any size: Werkzeug's int(value), CPython 3.11's int() of a str (its
+// Unicode 14 digits and white space, underscores, the 4300 digit limit),
+// the default for its ValueError.
 func argBigInt(c *httpx.Ctx, name string, def int64) *big.Int {
 	text, ok := c.Arg(name)
 	if !ok {
 		return big.NewInt(def)
 	}
-	value, ok := httpx.PyParseInt(text)
-	if !ok {
-		return big.NewInt(def)
-	}
-	digits := 0
-	for _, r := range text {
-		if unicode.IsDigit(r) {
-			digits++
-		}
-	}
-	if digits > maxStrDigits {
+	return pyArgInt(text, def)
+}
+
+// pyArgInt is `int(text)`, def on ValueError.
+func pyArgInt(text string, def int64) *big.Int {
+	value, err := pystr.Int(text, 10)
+	if err != nil {
 		return big.NewInt(def)
 	}
 	return value

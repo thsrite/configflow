@@ -1,0 +1,1885 @@
+{
+ "now": 1794791592.951481,
+ "encode_errors": {
+  "Bearer 密钥": "'latin-1' codec can't encode characters in position 7-8: ordinal not in range(256)",
+  "Bearer 密x": "'latin-1' codec can't encode character '\\u5bc6' in position 7: ordinal not in range(256)",
+  "Bearer tö😀": "'latin-1' codec can't encode character '\\U0001f600' in position 9: ordinal not in range(256)",
+  "Bearer a密钥b密": "'latin-1' codec can't encode characters in position 8-9: ordinal not in range(256)"
+ },
+ "starts": {
+  "malformed previous, HA active": "ValueError: DNS 主备正在同步，请等待两台发布完成后升级",
+  "malformed previous": "AttributeError: 'str' object has no attribute 'get'"
+ },
+ "poll": [
+  {
+   "name": "string",
+   "record": "abc",
+   "agent": {},
+   "error": "ValueError: dictionary update sequence element #0 has length 1; 2 is required",
+   "stored": "abc"
+  },
+  {
+   "name": "one char",
+   "record": "a",
+   "agent": {},
+   "error": "ValueError: dictionary update sequence element #0 has length 1; 2 is required",
+   "stored": "a"
+  },
+  {
+   "name": "int",
+   "record": 5,
+   "agent": {},
+   "error": "TypeError: 'int' object is not iterable",
+   "stored": 5
+  },
+  {
+   "name": "float",
+   "record": 1.5,
+   "agent": {},
+   "error": "TypeError: 'float' object is not iterable",
+   "stored": 1.5
+  },
+  {
+   "name": "true",
+   "record": true,
+   "agent": {},
+   "error": "TypeError: 'bool' object is not iterable",
+   "stored": true
+  },
+  {
+   "name": "list of int",
+   "record": [
+    1
+   ],
+   "agent": {},
+   "error": "TypeError: cannot convert dictionary update sequence element #0 to a sequence",
+   "stored": [
+    1
+   ]
+  },
+  {
+   "name": "list of none",
+   "record": [
+    null
+   ],
+   "agent": {},
+   "error": "TypeError: cannot convert dictionary update sequence element #0 to a sequence",
+   "stored": [
+    null
+   ]
+  },
+  {
+   "name": "list of two-char string",
+   "record": [
+    "ab"
+   ],
+   "agent": {},
+   "error": "KeyError: 'status'",
+   "stored": [
+    "ab"
+   ]
+  },
+  {
+   "name": "list of three-char string",
+   "record": [
+    "abc"
+   ],
+   "agent": {},
+   "error": "ValueError: dictionary update sequence element #0 has length 3; 2 is required",
+   "stored": [
+    "abc"
+   ]
+  },
+  {
+   "name": "list of astral pair",
+   "record": [
+    "😀x"
+   ],
+   "agent": {},
+   "error": "KeyError: 'status'",
+   "stored": [
+    "😀x"
+   ]
+  },
+  {
+   "name": "list of short pair",
+   "record": [
+    [
+     "a"
+    ]
+   ],
+   "agent": {},
+   "error": "ValueError: dictionary update sequence element #0 has length 1; 2 is required",
+   "stored": [
+    [
+     "a"
+    ]
+   ]
+  },
+  {
+   "name": "second element bad",
+   "record": [
+    [
+     "status",
+     "succeeded"
+    ],
+    [
+     "x"
+    ]
+   ],
+   "agent": {},
+   "error": "ValueError: dictionary update sequence element #1 has length 1; 2 is required",
+   "stored": [
+    [
+     "status",
+     "succeeded"
+    ],
+    [
+     "x"
+    ]
+   ]
+  },
+  {
+   "name": "pair terminal",
+   "record": [
+    [
+     "status",
+     "succeeded"
+    ]
+   ],
+   "agent": {},
+   "result": {
+    "status": "succeeded"
+   },
+   "stored": [
+    [
+     "status",
+     "succeeded"
+    ]
+   ]
+  },
+  {
+   "name": "pair duplicate",
+   "record": [
+    [
+     "status",
+     "queued"
+    ],
+    [
+     "x",
+     1
+    ],
+    [
+     "status",
+     "failed"
+    ]
+   ],
+   "agent": {},
+   "result": {
+    "status": "failed",
+    "x": 1
+   },
+   "stored": [
+    [
+     "status",
+     "queued"
+    ],
+    [
+     "x",
+     1
+    ],
+    [
+     "status",
+     "failed"
+    ]
+   ]
+  },
+  {
+   "name": "pair unhashable key",
+   "record": [
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ],
+   "agent": {},
+   "error": "TypeError: unhashable type: 'list'",
+   "stored": [
+    [
+     [
+      1
+     ],
+     2
+    ]
+   ]
+  },
+  {
+   "name": "pair dict key",
+   "record": [
+    [
+     {},
+     2
+    ]
+   ],
+   "agent": {},
+   "error": "TypeError: unhashable type: 'dict'",
+   "stored": [
+    [
+     {},
+     2
+    ]
+   ]
+  },
+  {
+   "name": "dict element",
+   "record": [
+    {
+     "status": 1,
+     "failed": 2
+    }
+   ],
+   "agent": {},
+   "result": {
+    "status": "failed"
+   },
+   "stored": [
+    {
+     "status": 1,
+     "failed": 2
+    }
+   ]
+  },
+  {
+   "name": "dict element short",
+   "record": [
+    {
+     "status": 1
+    }
+   ],
+   "agent": {},
+   "error": "ValueError: dictionary update sequence element #0 has length 1; 2 is required",
+   "stored": [
+    {
+     "status": 1
+    }
+   ]
+  },
+  {
+   "name": "pairs not terminal",
+   "record": [
+    [
+     "status",
+     "queued"
+    ],
+    [
+     "protocol",
+     9
+    ],
+    [
+     "update_id",
+     "j"
+    ],
+    [
+     "started_at",
+     1794791592.951481
+    ]
+   ],
+   "agent": {},
+   "result": {
+    "status": "queued",
+    "protocol": 9,
+    "update_id": "j",
+    "started_at": 1794791592.951481
+   },
+   "stored": [
+    [
+     "status",
+     "queued"
+    ],
+    [
+     "protocol",
+     9
+    ],
+    [
+     "update_id",
+     "j"
+    ],
+    [
+     "started_at",
+     1794791592.951481
+    ]
+   ]
+  },
+  {
+   "name": "unhashable status",
+   "record": {
+    "status": [
+     "x"
+    ]
+   },
+   "agent": {},
+   "error": "TypeError: unhashable type: 'list'",
+   "stored": {
+    "status": [
+     "x"
+    ]
+   }
+  },
+  {
+   "name": "terminal without id",
+   "record": {
+    "status": "succeeded"
+   },
+   "agent": {},
+   "result": {
+    "status": "succeeded"
+   },
+   "stored": {
+    "status": "succeeded"
+   }
+  },
+  {
+   "name": "missing protocol",
+   "record": {
+    "status": "queued"
+   },
+   "agent": {},
+   "error": "KeyError: 'protocol'",
+   "stored": {
+    "status": "queued"
+   }
+  },
+  {
+   "name": "protocol true is 1",
+   "record": {
+    "update_id": "j",
+    "status": "failed",
+    "protocol": true,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志",
+    "events": [
+     {
+      "at": "2026-11-16T01:13:12.951751Z",
+      "status": "failed",
+      "message": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+     }
+    ],
+    "updated_at": 1794791592.9517868
+   },
+   "agent": {
+    "version": "1.0",
+    "last_heartbeat": "2026-11-16T00:00:00"
+   },
+   "result": {
+    "update_id": "j",
+    "status": "failed",
+    "protocol": true,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "failed",
+    "protocol": true,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+   }
+  },
+  {
+   "name": "protocol 2.0",
+   "record": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2.0,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   },
+   "agent": {},
+   "result": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2.0,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2.0,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   }
+  },
+  {
+   "name": "protocol 3",
+   "record": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 3,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   },
+   "agent": {},
+   "result": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 3,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 3,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   }
+  },
+  {
+   "name": "started_at str",
+   "record": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": "x",
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   },
+   "agent": {},
+   "error": "TypeError: can only concatenate str (not \"int\") to str",
+   "stored": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": "x",
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   }
+  },
+  {
+   "name": "started_at list",
+   "record": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": [
+     1
+    ],
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   },
+   "agent": {},
+   "error": "TypeError: can only concatenate list (not \"int\") to list",
+   "stored": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": [
+     1
+    ],
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   }
+  },
+  {
+   "name": "started_at none",
+   "record": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": null,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   },
+   "agent": {},
+   "error": "TypeError: unsupported operand type(s) for +: 'NoneType' and 'int'",
+   "stored": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": null,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   }
+  },
+  {
+   "name": "started_at dict",
+   "record": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": {},
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   },
+   "agent": {},
+   "error": "TypeError: unsupported operand type(s) for +: 'dict' and 'int'",
+   "stored": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": {},
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   }
+  },
+  {
+   "name": "started_at missing",
+   "record": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   },
+   "agent": {},
+   "error": "KeyError: 'started_at'",
+   "stored": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   }
+  },
+  {
+   "name": "started_at huge",
+   "record": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": 10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   },
+   "agent": {},
+   "result": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": 10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": 10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   }
+  },
+  {
+   "name": "started_at negative huge",
+   "record": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": -10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志",
+    "events": [
+     {
+      "at": "2026-11-16T01:13:12.951994Z",
+      "status": "unknown",
+      "message": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+     }
+    ],
+    "updated_at": 1794791592.952024
+   },
+   "agent": {
+    "version": "9"
+   },
+   "result": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": -10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": -10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+   }
+  },
+  {
+   "name": "started_at true",
+   "record": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": true,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志",
+    "events": [
+     {
+      "at": "2026-11-16T01:13:12.952067Z",
+      "status": "unknown",
+      "message": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+     }
+    ],
+    "updated_at": 1794791592.9520857
+   },
+   "agent": {
+    "version": "9"
+   },
+   "result": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": true,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": true,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+   }
+  },
+  {
+   "name": "deadline old heartbeat",
+   "record": {
+    "update_id": "j",
+    "status": "failed",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志",
+    "events": [
+     {
+      "at": "2026-11-16T01:13:12.952123Z",
+      "status": "failed",
+      "message": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+     }
+    ],
+    "updated_at": 1794791592.9521465
+   },
+   "agent": {
+    "last_heartbeat": "2000-01-01T00:00:00"
+   },
+   "result": {
+    "update_id": "j",
+    "status": "failed",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "failed",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+   }
+  },
+  {
+   "name": "deadline fresh heartbeat",
+   "record": {
+    "update_id": "j",
+    "status": "failed",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志",
+    "events": [
+     {
+      "at": "2026-11-16T01:13:12.952229Z",
+      "status": "failed",
+      "message": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+     }
+    ],
+    "updated_at": 1794791592.952256
+   },
+   "agent": {
+    "last_heartbeat": "2099-01-01T00:00:00"
+   },
+   "result": {
+    "update_id": "j",
+    "status": "failed",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "failed",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+   }
+  },
+  {
+   "name": "deadline heartbeat year 1",
+   "record": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志",
+    "events": [
+     {
+      "at": "2026-11-16T01:13:12.952323Z",
+      "status": "unknown",
+      "message": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+     }
+    ],
+    "updated_at": 1794791592.9523413
+   },
+   "agent": {
+    "last_heartbeat": "0001-01-01T00:00:00"
+   },
+   "result": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+   }
+  },
+  {
+   "name": "deadline heartbeat year 1 day 2",
+   "record": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志",
+    "events": [
+     {
+      "at": "2026-11-16T01:13:12.952369Z",
+      "status": "unknown",
+      "message": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+     }
+    ],
+    "updated_at": 1794791592.9523842
+   },
+   "agent": {
+    "last_heartbeat": "0001-01-02T12:00:00"
+   },
+   "result": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+   }
+  },
+  {
+   "name": "deadline heartbeat aware",
+   "record": {
+    "update_id": "j",
+    "status": "failed",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志",
+    "events": [
+     {
+      "at": "2026-11-16T01:13:12.952417Z",
+      "status": "failed",
+      "message": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+     }
+    ],
+    "updated_at": 1794791592.952447
+   },
+   "agent": {
+    "last_heartbeat": "2099-01-01T00:00:00+08:00"
+   },
+   "result": {
+    "update_id": "j",
+    "status": "failed",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "failed",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+   }
+  },
+  {
+   "name": "deadline heartbeat none",
+   "record": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   },
+   "agent": {
+    "last_heartbeat": null
+   },
+   "error": "TypeError: fromisoformat: argument must be str",
+   "stored": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   }
+  },
+  {
+   "name": "deadline heartbeat bad",
+   "record": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志",
+    "events": [
+     {
+      "at": "2026-11-16T01:13:12.952522Z",
+      "status": "unknown",
+      "message": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+     }
+    ],
+    "updated_at": 1794791592.9525404
+   },
+   "agent": {
+    "last_heartbeat": "yesterday"
+   },
+   "result": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+   }
+  },
+  {
+   "name": "deadline other version",
+   "record": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志",
+    "events": [
+     {
+      "at": "2026-11-16T01:13:12.952566Z",
+      "status": "unknown",
+      "message": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+     }
+    ],
+    "updated_at": 1794791592.9525814
+   },
+   "agent": {
+    "version": "1.5",
+    "last_heartbeat": "2099-01-01T00:00:00"
+   },
+   "result": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "unknown",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+   }
+  },
+  {
+   "name": "deadline already unknown",
+   "record": {
+    "update_id": "j",
+    "status": "failed",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志",
+    "events": [
+     {
+      "at": "2026-11-16T01:13:12.952718Z",
+      "status": "failed",
+      "message": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+     }
+    ],
+    "updated_at": 1794791592.9527404
+   },
+   "agent": {
+    "last_heartbeat": "2000-01-01T00:00:00"
+   },
+   "result": {
+    "update_id": "j",
+    "status": "failed",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "failed",
+    "protocol": 2,
+    "started_at": 0,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+   }
+  },
+  {
+   "name": "previous version missing",
+   "record": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": 0,
+    "target_version": "2.0"
+   },
+   "agent": {},
+   "error": "KeyError: 'previous_version'",
+   "stored": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": 0,
+    "target_version": "2.0"
+   }
+  },
+  {
+   "name": "recovery str",
+   "record": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "recovery_reported_at": "x"
+   },
+   "agent": {},
+   "error": "TypeError: '>' not supported between instances of 'float' and 'str'",
+   "stored": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "recovery_reported_at": "x"
+   }
+  },
+  {
+   "name": "recovery list",
+   "record": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "recovery_reported_at": [
+     1
+    ]
+   },
+   "agent": {},
+   "error": "TypeError: '>' not supported between instances of 'float' and 'list'",
+   "stored": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "recovery_reported_at": [
+     1
+    ]
+   }
+  },
+  {
+   "name": "recovery heartbeat later",
+   "record": {
+    "update_id": "j",
+    "status": "rolled_back",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "recovery_reported_at": 1,
+    "events": [
+     {
+      "at": "2026-11-16T01:13:12.952841Z",
+      "status": "rolled_back"
+     }
+    ],
+    "updated_at": 1794791592.9528503
+   },
+   "agent": {},
+   "result": {
+    "update_id": "j",
+    "status": "rolled_back",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "recovery_reported_at": 1
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "rolled_back",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "recovery_reported_at": 1
+   }
+  },
+  {
+   "name": "recovery heartbeat year 1",
+   "record": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "recovery_reported_at": 1
+   },
+   "agent": {
+    "last_heartbeat": "0001-01-01T00:00:00"
+   },
+   "result": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "recovery_reported_at": 1
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "recovery_reported_at": 1
+   }
+  },
+  {
+   "name": "recovery heartbeat none",
+   "record": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "recovery_reported_at": 1
+   },
+   "agent": {
+    "last_heartbeat": null
+   },
+   "error": "TypeError: fromisoformat: argument must be str",
+   "stored": {
+    "update_id": "j",
+    "status": "queued",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "recovery_reported_at": 1
+   }
+  },
+  {
+   "name": "recovery other owner",
+   "record": {
+    "update_id": "j",
+    "status": "rolled_back",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "recovery_reported_at": 1,
+    "events": [
+     {
+      "at": "2026-11-16T01:13:12.952916Z",
+      "status": "rolled_back"
+     }
+    ],
+    "updated_at": 1794791592.952923
+   },
+   "agent": {},
+   "result": {
+    "update_id": "j",
+    "status": "rolled_back",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "recovery_reported_at": 1
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "rolled_back",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0",
+    "recovery_reported_at": 1
+   }
+  },
+  {
+   "name": "rollback_failed is polled",
+   "record": {
+    "update_id": "j",
+    "status": "rollback_failed",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   },
+   "agent": {},
+   "result": {
+    "update_id": "j",
+    "status": "rollback_failed",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   },
+   "stored": {
+    "update_id": "j",
+    "status": "rollback_failed",
+    "protocol": 2,
+    "started_at": 1794792592.951481,
+    "previous_version": "1.0",
+    "target_version": "2.0"
+   }
+  }
+ ],
+ "iso": {
+  "UTC": [
+   {
+    "value": "0001-01-01T00:00:00",
+    "error": "ValueError"
+   },
+   {
+    "value": "0001-01-01T23:59:59",
+    "error": "ValueError"
+   },
+   {
+    "value": "0001-01-02T00:00:00",
+    "timestamp": -62135510400.0
+   },
+   {
+    "value": "0001-01-02T23:59:59",
+    "timestamp": -62135424001.0
+   },
+   {
+    "value": "0001-01-03T00:00:00",
+    "timestamp": -62135424000.0
+   },
+   {
+    "value": "9999-12-30T23:59:59",
+    "timestamp": 253402214399.0
+   },
+   {
+    "value": "9999-12-31T00:00:00",
+    "timestamp": 253402214400.0
+   },
+   {
+    "value": "9999-12-31T15:59:59",
+    "timestamp": 253402271999.0
+   },
+   {
+    "value": "9999-12-31T16:00:00",
+    "timestamp": 253402272000.0
+   },
+   {
+    "value": "9999-12-31T23:59:59",
+    "timestamp": 253402300799.0
+   },
+   {
+    "value": "0001-01-01T00:00:00+00:00",
+    "timestamp": -62135596800.0
+   },
+   {
+    "value": "9999-12-31T23:59:59-12:00",
+    "timestamp": 253402343999.0
+   },
+   {
+    "value": "2026-03-08T02:30:00",
+    "timestamp": 1772937000.0
+   },
+   {
+    "value": "2026-11-01T01:30:00",
+    "timestamp": 1793496600.0
+   },
+   {
+    "value": "1900-01-01T00:00:00",
+    "timestamp": -2208988800.0
+   },
+   {
+    "value": "2026-11-16",
+    "timestamp": 1794787200.0
+   },
+   {
+    "value": "0001-01-01",
+    "error": "ValueError"
+   },
+   {
+    "value": "9999-12-31",
+    "timestamp": 253402214400.0
+   },
+   {
+    "value": "x",
+    "error": "ValueError"
+   },
+   {
+    "value": "",
+    "error": "ValueError"
+   }
+  ],
+  "Asia/Shanghai": [
+   {
+    "value": "0001-01-01T00:00:00",
+    "error": "ValueError"
+   },
+   {
+    "value": "0001-01-01T23:59:59",
+    "error": "ValueError"
+   },
+   {
+    "value": "0001-01-02T00:00:00",
+    "timestamp": -62135539543.0
+   },
+   {
+    "value": "0001-01-02T23:59:59",
+    "timestamp": -62135453144.0
+   },
+   {
+    "value": "0001-01-03T00:00:00",
+    "timestamp": -62135453143.0
+   },
+   {
+    "value": "9999-12-30T23:59:59",
+    "timestamp": 253402185599.0
+   },
+   {
+    "value": "9999-12-31T00:00:00",
+    "timestamp": 253402185600.0
+   },
+   {
+    "value": "9999-12-31T15:59:59",
+    "timestamp": 253402243199.0
+   },
+   {
+    "value": "9999-12-31T16:00:00",
+    "error": "ValueError"
+   },
+   {
+    "value": "9999-12-31T23:59:59",
+    "error": "ValueError"
+   },
+   {
+    "value": "0001-01-01T00:00:00+00:00",
+    "timestamp": -62135596800.0
+   },
+   {
+    "value": "9999-12-31T23:59:59-12:00",
+    "timestamp": 253402343999.0
+   },
+   {
+    "value": "2026-03-08T02:30:00",
+    "timestamp": 1772908200.0
+   },
+   {
+    "value": "2026-11-01T01:30:00",
+    "timestamp": 1793467800.0
+   },
+   {
+    "value": "1900-01-01T00:00:00",
+    "timestamp": -2209017943.0
+   },
+   {
+    "value": "2026-11-16",
+    "timestamp": 1794758400.0
+   },
+   {
+    "value": "0001-01-01",
+    "error": "ValueError"
+   },
+   {
+    "value": "9999-12-31",
+    "timestamp": 253402185600.0
+   },
+   {
+    "value": "x",
+    "error": "ValueError"
+   },
+   {
+    "value": "",
+    "error": "ValueError"
+   }
+  ],
+  "America/New_York": [
+   {
+    "value": "0001-01-01T00:00:00",
+    "error": "ValueError"
+   },
+   {
+    "value": "0001-01-01T23:59:59",
+    "error": "ValueError"
+   },
+   {
+    "value": "0001-01-02T00:00:00",
+    "timestamp": -62135492638.0
+   },
+   {
+    "value": "0001-01-02T23:59:59",
+    "timestamp": -62135406239.0
+   },
+   {
+    "value": "0001-01-03T00:00:00",
+    "timestamp": -62135406238.0
+   },
+   {
+    "value": "9999-12-30T23:59:59",
+    "timestamp": 253402232399.0
+   },
+   {
+    "value": "9999-12-31T00:00:00",
+    "timestamp": 253402232400.0
+   },
+   {
+    "value": "9999-12-31T15:59:59",
+    "timestamp": 253402289999.0
+   },
+   {
+    "value": "9999-12-31T16:00:00",
+    "timestamp": 253402290000.0
+   },
+   {
+    "value": "9999-12-31T23:59:59",
+    "timestamp": 253402318799.0
+   },
+   {
+    "value": "0001-01-01T00:00:00+00:00",
+    "timestamp": -62135596800.0
+   },
+   {
+    "value": "9999-12-31T23:59:59-12:00",
+    "timestamp": 253402343999.0
+   },
+   {
+    "value": "2026-03-08T02:30:00",
+    "timestamp": 1772955000.0
+   },
+   {
+    "value": "2026-11-01T01:30:00",
+    "timestamp": 1793511000.0
+   },
+   {
+    "value": "1900-01-01T00:00:00",
+    "timestamp": -2208970800.0
+   },
+   {
+    "value": "2026-11-16",
+    "timestamp": 1794805200.0
+   },
+   {
+    "value": "0001-01-01",
+    "error": "ValueError"
+   },
+   {
+    "value": "9999-12-31",
+    "timestamp": 253402232400.0
+   },
+   {
+    "value": "x",
+    "error": "ValueError"
+   },
+   {
+    "value": "",
+    "error": "ValueError"
+   }
+  ],
+  "Pacific/Kiritimati": [
+   {
+    "value": "0001-01-01T00:00:00",
+    "error": "ValueError"
+   },
+   {
+    "value": "0001-01-01T23:59:59",
+    "error": "ValueError"
+   },
+   {
+    "value": "0001-01-02T00:00:00",
+    "timestamp": -62135472640.0
+   },
+   {
+    "value": "0001-01-02T23:59:59",
+    "timestamp": -62135386241.0
+   },
+   {
+    "value": "0001-01-03T00:00:00",
+    "timestamp": -62135386240.0
+   },
+   {
+    "value": "9999-12-30T23:59:59",
+    "timestamp": 253402163999.0
+   },
+   {
+    "value": "9999-12-31T00:00:00",
+    "timestamp": 253402164000.0
+   },
+   {
+    "value": "9999-12-31T15:59:59",
+    "error": "ValueError"
+   },
+   {
+    "value": "9999-12-31T16:00:00",
+    "error": "ValueError"
+   },
+   {
+    "value": "9999-12-31T23:59:59",
+    "error": "ValueError"
+   },
+   {
+    "value": "0001-01-01T00:00:00+00:00",
+    "timestamp": -62135596800.0
+   },
+   {
+    "value": "9999-12-31T23:59:59-12:00",
+    "timestamp": 253402343999.0
+   },
+   {
+    "value": "2026-03-08T02:30:00",
+    "timestamp": 1772886600.0
+   },
+   {
+    "value": "2026-11-01T01:30:00",
+    "timestamp": 1793446200.0
+   },
+   {
+    "value": "1900-01-01T00:00:00",
+    "timestamp": -2208951040.0
+   },
+   {
+    "value": "2026-11-16",
+    "timestamp": 1794736800.0
+   },
+   {
+    "value": "0001-01-01",
+    "error": "ValueError"
+   },
+   {
+    "value": "9999-12-31",
+    "timestamp": 253402164000.0
+   },
+   {
+    "value": "x",
+    "error": "ValueError"
+   },
+   {
+    "value": "",
+    "error": "ValueError"
+   }
+  ],
+  "Etc/GMT+12": [
+   {
+    "value": "0001-01-01T00:00:00",
+    "error": "ValueError"
+   },
+   {
+    "value": "0001-01-01T23:59:59",
+    "error": "ValueError"
+   },
+   {
+    "value": "0001-01-02T00:00:00",
+    "timestamp": -62135467200.0
+   },
+   {
+    "value": "0001-01-02T23:59:59",
+    "timestamp": -62135380801.0
+   },
+   {
+    "value": "0001-01-03T00:00:00",
+    "timestamp": -62135380800.0
+   },
+   {
+    "value": "9999-12-30T23:59:59",
+    "timestamp": 253402257599.0
+   },
+   {
+    "value": "9999-12-31T00:00:00",
+    "timestamp": 253402257600.0
+   },
+   {
+    "value": "9999-12-31T15:59:59",
+    "timestamp": 253402315199.0
+   },
+   {
+    "value": "9999-12-31T16:00:00",
+    "timestamp": 253402315200.0
+   },
+   {
+    "value": "9999-12-31T23:59:59",
+    "timestamp": 253402343999.0
+   },
+   {
+    "value": "0001-01-01T00:00:00+00:00",
+    "timestamp": -62135596800.0
+   },
+   {
+    "value": "9999-12-31T23:59:59-12:00",
+    "timestamp": 253402343999.0
+   },
+   {
+    "value": "2026-03-08T02:30:00",
+    "timestamp": 1772980200.0
+   },
+   {
+    "value": "2026-11-01T01:30:00",
+    "timestamp": 1793539800.0
+   },
+   {
+    "value": "1900-01-01T00:00:00",
+    "timestamp": -2208945600.0
+   },
+   {
+    "value": "2026-11-16",
+    "timestamp": 1794830400.0
+   },
+   {
+    "value": "0001-01-01",
+    "error": "ValueError"
+   },
+   {
+    "value": "9999-12-31",
+    "timestamp": 253402257600.0
+   },
+   {
+    "value": "x",
+    "error": "ValueError"
+   },
+   {
+    "value": "",
+    "error": "ValueError"
+   }
+  ]
+ },
+ "headers": {
+  "latin1": {
+   "request": {
+    "error": "ChunkedEncodingError",
+    "authorization": "4265617265722074f66b"
+   },
+   "reaches": {
+    "result": false,
+    "authorization": "4265617265722074f66b"
+   },
+   "ask": {
+    "result": [
+     null,
+     {}
+    ],
+    "authorization": "4265617265722074f66b"
+   }
+  },
+  "cjk": {
+   "request": {
+    "error": "UnicodeEncodeError",
+    "authorization": null
+   },
+   "reaches": {
+    "error": "UnicodeEncodeError",
+    "authorization": null
+   },
+   "ask": {
+    "error": "UnicodeEncodeError",
+    "authorization": null
+   }
+  },
+  "nel": {
+   "request": {
+    "error": "ChunkedEncodingError",
+    "authorization": "42656172657220746f6b85"
+   },
+   "reaches": {
+    "result": false,
+    "authorization": "42656172657220746f6b85"
+   },
+   "ask": {
+    "result": [
+     null,
+     {}
+    ],
+    "authorization": "42656172657220746f6b85"
+   }
+  },
+  "none": {
+   "request": {
+    "error": "TypeError",
+    "authorization": null
+   },
+   "reaches": {
+    "result": false,
+    "authorization": "426561726572204e6f6e65"
+   },
+   "ask": {
+    "result": [
+     null,
+     {}
+    ],
+    "authorization": "426561726572204e6f6e65"
+   }
+  },
+  "int": {
+   "request": {
+    "error": "TypeError",
+    "authorization": null
+   },
+   "reaches": {
+    "result": false,
+    "authorization": "4265617265722037"
+   },
+   "ask": {
+    "result": [
+     null,
+     {}
+    ],
+    "authorization": "4265617265722037"
+   }
+  },
+  "newline": {
+   "request": {
+    "error": "InvalidHeader",
+    "authorization": null
+   },
+   "reaches": {
+    "result": false,
+    "authorization": null
+   },
+   "ask": {
+    "result": [
+     null,
+     {}
+    ],
+    "authorization": null
+   }
+  }
+ },
+ "lines": [
+  {
+   "value": "50",
+   "lines": "50"
+  },
+  {
+   "value": " 7 ",
+   "lines": "7"
+  },
+  {
+   "value": "+5",
+   "lines": "5"
+  },
+  {
+   "value": "-5",
+   "lines": "-5"
+  },
+  {
+   "value": "1_0",
+   "lines": "10"
+  },
+  {
+   "value": "1__0",
+   "lines": "100"
+  },
+  {
+   "value": "_1",
+   "lines": "100"
+  },
+  {
+   "value": "١٢",
+   "lines": "12"
+  },
+  {
+   "value": "１２",
+   "lines": "12"
+  },
+  {
+   "value": "𝟙",
+   "lines": "1"
+  },
+  {
+   "value": "𑽑",
+   "lines": "100"
+  },
+  {
+   "value": "𞓱",
+   "lines": "100"
+  },
+  {
+   "value": "𑥐",
+   "lines": "0"
+  },
+  {
+   "value": " 5",
+   "lines": "5"
+  },
+  {
+   "value": "5 ",
+   "lines": "5"
+  },
+  {
+   "value": "\u001c5",
+   "lines": "100"
+  },
+  {
+   "value": "5",
+   "lines": "5"
+  },
+  {
+   "value": "0x10",
+   "lines": "100"
+  },
+  {
+   "value": "1e3",
+   "lines": "100"
+  },
+  {
+   "value": "",
+   "lines": "100"
+  },
+  {
+   "value": " ",
+   "lines": "100"
+  },
+  {
+   "value": "1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+   "lines": "1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"
+  },
+  {
+   "value": "11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+   "lines": "100"
+  },
+  {
+   "value": "١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١١",
+   "lines": "100"
+  },
+  {
+   "value": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "lines": "100"
+  }
+ ],
+ "paths": {
+  "directory without search permission": {
+   "error": "PermissionError"
+  },
+  "below a directory without search permission": {
+   "error": "PermissionError"
+  }
+ },
+ "arithmetic": {
+  "str_plus": "TypeError: can only concatenate str (not \"int\") to str",
+  "list_plus": "TypeError: can only concatenate list (not \"int\") to list",
+  "none_plus": "TypeError: unsupported operand type(s) for +: 'NoneType' and 'int'",
+  "dict_plus": "TypeError: unsupported operand type(s) for +: 'dict' and 'int'",
+  "float_gt_str": "TypeError: '>' not supported between instances of 'float' and 'str'",
+  "float_gt_list": "TypeError: '>' not supported between instances of 'float' and 'list'",
+  "float_gt_dict": "TypeError: '>' not supported between instances of 'float' and 'dict'"
+ }
+}

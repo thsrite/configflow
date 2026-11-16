@@ -29,8 +29,10 @@ var Arches = []string{"linux-amd64", "linux-arm64", "linux-armv7"}
 
 // ArtifactDirectory is artifact_directory(): $AGENTS_STATIC_DIR (default
 // /opt/configflow/static/agents) when it exists, else backend/static/agents
-// next to the program.
-func ArtifactDirectory() string {
+// next to the program. Like Path.exists() of Python 3.11, a stat failure
+// other than "missing" (ENOENT, ENOTDIR, EBADF, ELOOP), e.g. EACCES below a
+// directory without search permission, is an error.
+func ArtifactDirectory() (string, error) {
 	configured, ok := os.LookupEnv("AGENTS_STATIC_DIR")
 	if !ok {
 		configured = "/opt/configflow/static/agents"
@@ -38,10 +40,40 @@ func ArtifactDirectory() string {
 	if configured == "" {
 		configured = "." // Path('')
 	}
-	if _, err := os.Stat(configured); err == nil {
-		return configured
+	exists, err := pathExists(configured)
+	if err != nil {
+		return "", err
 	}
-	return resource.FromEnv().Backend("static/agents")
+	if exists {
+		return configured, nil
+	}
+	return resource.FromEnv().Backend("static/agents"), nil
+}
+
+// ignoredStatError is pathlib's _ignore_error: the errors Path.exists() and
+// Path.is_file() of Python 3.11 read as "no such file"; every other OSError
+// is raised. An embedded NUL (ValueError in Python, EINVAL here) is also
+// "no such file".
+func ignoredStatError(err error) bool {
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		switch errno {
+		case syscall.ENOENT, syscall.ENOTDIR, syscall.EBADF, syscall.ELOOP, syscall.EINVAL:
+			return true
+		}
+	}
+	return false
+}
+
+// pathExists is Path.exists() (symlinks followed).
+func pathExists(path string) (bool, error) {
+	if _, err := os.Stat(path); err != nil {
+		if ignoredStatError(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // joinPath is Path(directory) / name without cleaning ".." (as pathlib).
@@ -181,11 +213,17 @@ func readArtifact(path string, expected signature) (*ArtifactInfo, error) {
 	return &ArtifactInfo{SHA256: hex.EncodeToString(digest.Sum(nil)), Size: size}, nil
 }
 
-// isFile is Path.is_file(): a regular file (symlinks followed), false on
-// any error.
-func isFile(path string) bool {
+// isFile is Path.is_file() of Python 3.11: a regular file (symlinks
+// followed); "missing" errors are false, other stat errors are raised.
+func isFile(path string) (bool, error) {
 	info, err := os.Stat(path)
-	return err == nil && info.Mode().IsRegular()
+	if err != nil {
+		if ignoredStatError(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return info.Mode().IsRegular(), nil
 }
 
 // artifactMetadata is _artifact_metadata(path) (POSIX: the digest cache is
@@ -198,7 +236,11 @@ func artifactMetadata(path string) (*ArtifactInfo, error) {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 	for attempt := 0; attempt < 2; attempt++ {
-		if !isFile(path) {
+		regular, err := isFile(path)
+		if err != nil {
+			return nil, err
+		}
+		if !regular {
 			cachePop(key)
 			return nil, nil
 		}
@@ -244,8 +286,12 @@ func artifactMetadata(path string) (*ArtifactInfo, error) {
 // the OSError Python raises (unreadable file, ErrArtifactChanged).
 func Artifacts() (*jsonx.Object, error) {
 	result := jsonx.NewObject()
-	directory := ArtifactDirectory()
 	for _, arch := range Arches {
+		// artifact_directory() is evaluated for every architecture.
+		directory, err := ArtifactDirectory()
+		if err != nil {
+			return nil, err
+		}
 		metadata, err := artifactMetadata(joinPath(directory, "configflow-agent-"+arch))
 		if err != nil {
 			return nil, err

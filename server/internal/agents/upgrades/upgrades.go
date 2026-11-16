@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
 
 	"configflow/internal/agents"
@@ -92,9 +93,13 @@ func request(ctx context.Context, m *agents.Manager, agent *jsonx.Object, method
 		body = encoded
 		header.Set("Content-Type", "application/json")
 	}
+	// Latin1Headers: http.client sends header values as latin-1; a token it
+	// cannot encode is a UnicodeEncodeError (a ValueError, not a
+	// RequestException).
 	response, err := m.Client().Do(ctx, agents.Request{Method: method, URL: agents.AgentURL(agent, path), Header: header,
-		Body: body, Timeout: agents.Seconds(5), NoProxy: true})
-	if err != nil && !agents.IsTransportError(err) {
+		Body: body, Timeout: agents.Seconds(5), NoProxy: true, Latin1Headers: true})
+	var call *agents.CallError
+	if err != nil && !agents.IsTransportError(err) && !errors.As(err, &call) {
 		err = &agents.TransportError{Err: err}
 	}
 	return response, err
@@ -250,7 +255,8 @@ func Start(ctx context.Context, m *agents.Manager, agentID string) (*jsonx.Objec
 	cannotConnect := valueError("无法连接 Agent 并确认更新能力")
 	infoResponse, err := request(ctx, m, agent, "GET", "/api/upgrade-info", nil)
 	if err != nil {
-		if requestFailed(err) {
+		// except (requests.RequestException, ValueError)
+		if requestFailed(err) || IsValueError(err) {
 			return nil, cannotConnect
 		}
 		return nil, err
@@ -324,10 +330,6 @@ func Start(ctx context.Context, m *agents.Manager, agentID string) (*jsonx.Objec
 	state.Set("events", agents.AppendEvent([]any{}, "queued", message, "", nil))
 	updateID := state.Value("update_id")
 
-	previousUpgrade, err := orDict(agent.Value("latest_upgrade"))
-	if err != nil {
-		return nil, err
-	}
 	_, err = m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
 		current, err := findAgent(*list, agentID)
 		if err != nil {
@@ -341,6 +343,10 @@ func Start(ctx context.Context, m *agents.Manager, agentID string) (*jsonx.Objec
 			return nil, valueError("DNS 主备正在同步，请等待两台发布完成后升级")
 		}
 		previous, err := orDict(current.Value("latest_upgrade"))
+		if err != nil {
+			return nil, err
+		}
+		previousUpgrade, err := orDict(agent.Value("latest_upgrade"))
 		if err != nil {
 			return nil, err
 		}
@@ -424,9 +430,10 @@ func Start(ctx context.Context, m *agents.Manager, agentID string) (*jsonx.Objec
 		"message", "Agent "+target+" 更新请求已送达，等待设备处理"), true)
 }
 
-// number is a stored number as a float (int, float or bool), TypeError
-// otherwise.
-func number(value any, other string) (float64, error) {
+// number is a stored number as a float (int, float or bool) for
+// `value + 600` (op "+") or `confirmed > value` (op ">"), with Python's
+// TypeError texts otherwise.
+func number(value any, op string) (float64, error) {
 	switch v := value.(type) {
 	case jsonx.Number:
 		return v.Float64(), nil
@@ -436,7 +443,15 @@ func number(value any, other string) (float64, error) {
 		}
 		return 0, nil
 	}
-	return 0, typeError("unsupported operand type(s) for " + other + ": '" + typeName(value) + "' and 'int'")
+	if op == ">" {
+		return 0, typeError("'>' not supported between instances of 'float' and '" + typeName(value) + "'")
+	}
+	switch value.(type) {
+	case string, []any:
+		name := typeName(value)
+		return 0, typeError("can only concatenate " + name + " (not \"int\") to " + name)
+	}
+	return 0, typeError("unsupported operand type(s) for +: '" + typeName(value) + "' and 'int'")
 }
 
 // heartbeatTimestamp is datetime.fromisoformat(agent.get('last_heartbeat',
@@ -462,11 +477,11 @@ func Poll(ctx context.Context, m *agents.Manager, agentID string) (*jsonx.Object
 	if agent == nil || agent.Len() == 0 || !jsonx.Truthy(agent.Value("latest_upgrade")) {
 		return nil, valueError("No upgrade recorded")
 	}
-	stored, ok := agent.Value("latest_upgrade").(*jsonx.Object)
-	if !ok {
-		return nil, typeError("cannot convert dictionary update sequence element #0 to a sequence")
+	copied, err := pyDict(agent.Value("latest_upgrade"))
+	if err != nil {
+		return nil, err
 	}
-	state := stored.DeepCopy()
+	state := copied.DeepCopy()
 	status, err := item(state, "status")
 	if err != nil {
 		return nil, err

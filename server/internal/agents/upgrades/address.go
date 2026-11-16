@@ -199,6 +199,17 @@ func agentRequest(agent *jsonx.Object, host string) (string, http.Header, error)
 	return "http://" + host + ":" + jsonx.Str(port), http.Header{"Authorization": {"Bearer " + jsonx.Str(token)}}, nil
 }
 
+// encodingFailure is the UnicodeEncodeError of a token http.client cannot
+// send as latin-1: not a RequestException, so it leaves _reaches/_ask (a
+// logged failure in _follow, a 500 in describe/change).
+func encodingFailure(err error) error {
+	var call *agents.CallError
+	if errors.As(err, &call) {
+		return err
+	}
+	return nil
+}
+
 // reaches is _reaches(agent, host): only the Agent holding this record's
 // token answers this authenticated endpoint. requests.get with the
 // environment's proxies (trust_env).
@@ -211,9 +222,9 @@ func reaches(m *agents.Manager, agent *jsonx.Object, host string) (bool, error) 
 		return false, err
 	}
 	response, err := m.Client().Do(context.Background(), agents.Request{Method: "GET", URL: base + "/api/capabilities",
-		Header: header, Timeout: agents.Seconds(VerifyTimeout)})
+		Header: header, Timeout: agents.Seconds(VerifyTimeout), Latin1Headers: true})
 	if err != nil {
-		return false, nil // every transport failure is a RequestException here
+		return false, encodingFailure(err) // every other failure is a RequestException here
 	}
 	return response.StatusCode == 200, nil
 }
@@ -237,8 +248,11 @@ func ask(m *agents.Manager, agent *jsonx.Object, host, method string, body *json
 		header.Set("Content-Type", "application/json")
 	}
 	response, err := m.Client().Do(context.Background(), agents.Request{Method: method, URL: base + "/api/agent-address",
-		Header: header, Body: payload, Timeout: agents.Seconds(VerifyTimeout)})
+		Header: header, Body: payload, Timeout: agents.Seconds(VerifyTimeout), Latin1Headers: true})
 	if err != nil {
+		if failure := encodingFailure(err); failure != nil {
+			return 0, nil, failure
+		}
 		return 0, jsonx.NewObject(), nil
 	}
 	data, err := response.JSON()

@@ -9,6 +9,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"strconv"
@@ -24,21 +25,86 @@ func AgentURL(agent *jsonx.Object, path string) string {
 
 // Call sends one request to the Agent with its Bearer token: path is the
 // part after host:port ("/api/status"); body nil sends none. Errors are
-// *TransportError.
+// *TransportError or *CallError.
+//
+// Like the Python callers, a record without host, port or token is a
+// KeyError and a token that latin-1 cannot encode a UnicodeEncodeError
+// (http.client sends header values as latin-1); both are *CallError, not
+// *TransportError, so the routes report them as Python does (an uncaught
+// exception) instead of as a connection failure.
 func (m *Manager) Call(ctx context.Context, agent *jsonx.Object, method, path string, header http.Header, body []byte, timeout Timeout) (*Response, error) {
+	if err := agentKeys(agent); err != nil {
+		return nil, err
+	}
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+jsonx.Str(agent.Value("token")))
 	for key, values := range header {
 		h[http.CanonicalHeaderKey(key)] = values
 	}
-	response, err := m.httpClient().Do(ctx, Request{Method: method, URL: AgentURL(agent, path), Header: h, Body: body, Timeout: timeout})
+	response, err := m.httpClient().Do(ctx, Request{Method: method, URL: AgentURL(agent, path), Header: h, Body: body, Timeout: timeout,
+		Latin1Headers: true})
 	if err != nil {
-		if !IsTransportError(err) {
+		var call *CallError
+		if !IsTransportError(err) && !errors.As(err, &call) {
 			err = &TransportError{Err: err}
 		}
 		return nil, err
 	}
 	return response, nil
+}
+
+// CallError is a Python exception raised while a request to an Agent is
+// prepared (KeyError of a missing record field, UnicodeEncodeError of the
+// token); Error() is str(exc).
+type CallError struct {
+	Class   string
+	Message string
+}
+
+func (e *CallError) Error() string { return e.Message }
+
+// PythonClass is the exception's class name.
+func (e *CallError) PythonClass() string { return e.Class }
+
+// agentKeys is the KeyError of f"http://{agent['host']}:{agent['port']}..."
+// and of f'Bearer {agent["token"]}', in that order.
+func agentKeys(agent *jsonx.Object) error {
+	for _, key := range []string{"host", "port", "token"} {
+		if !agent.Has(key) {
+			return &CallError{Class: "KeyError", Message: "'" + key + "'"}
+		}
+	}
+	return nil
+}
+
+// EncodeHeaderLatin1 is value.encode('latin-1') as http.client does for a
+// header value: the bytes as a Go string, or a *CallError with CPython's
+// UnicodeEncodeError text for the first run of characters above U+00FF.
+func EncodeHeaderLatin1(value string) (string, error) {
+	runes := []rune(value)
+	out := make([]byte, 0, len(value))
+	for i, r := range runes {
+		if r <= 0xff {
+			out = append(out, byte(r))
+			continue
+		}
+		end := i + 1
+		for end < len(runes) && runes[end] > 0xff {
+			end++
+		}
+		const reason = ": ordinal not in range(256)"
+		if end == i+1 {
+			escaped := fmt.Sprintf("\\u%04x", r)
+			if r > 0xffff {
+				escaped = fmt.Sprintf("\\U%08x", r)
+			}
+			return "", &CallError{Class: "UnicodeEncodeError", Message: "'latin-1' codec can't encode character '" + escaped +
+				"' in position " + strconv.Itoa(i) + reason}
+		}
+		return "", &CallError{Class: "UnicodeEncodeError", Message: "'latin-1' codec can't encode characters in position " +
+			strconv.Itoa(i) + "-" + strconv.Itoa(end-1) + reason}
+	}
+	return string(out), nil
 }
 
 // jsonBody is requests' json= encoding (json.dumps, ASCII, ", " separators)
@@ -232,6 +298,9 @@ func (m *Manager) restartAgentService(ctx context.Context, agentID string) (*jso
 		return jsonx.Obj("success", false, "message", "Agent update is in progress"), nil
 	}
 	response, err := m.Call(ctx, agent, "POST", "/api/restart", nil, nil, Seconds(10))
+	if err != nil && !IsTransportError(err) {
+		return nil, err
+	}
 	if err != nil {
 		return jsonx.Obj("success", false, "message", "Unable to connect to Agent",
 			"error_details", FailureText(err.Error(), tokenSecrets(agent), 0)), nil
@@ -262,6 +331,9 @@ func (m *Manager) simpleCall(ctx context.Context, agentID, method, path string, 
 	if agent == nil {
 		return agentNotFound(), nil, nil
 	}
+	if err := agentKeys(agent); err != nil {
+		return nil, nil, err
+	}
 	var header http.Header
 	var body []byte
 	if payload != nil {
@@ -273,6 +345,9 @@ func (m *Manager) simpleCall(ctx context.Context, agentID, method, path string, 
 		}
 	}
 	response, err := m.Call(ctx, agent, method, path, header, body, timeout)
+	if err != nil && !IsTransportError(err) {
+		return nil, nil, err
+	}
 	if err != nil {
 		return connectionError(err), agent, nil
 	}
@@ -371,6 +446,9 @@ func (m *Manager) uninstallAgent(ctx context.Context, agentID string) (*jsonx.Ob
 		return jsonx.Obj("success", false, "message", "Agent update is in progress"), nil
 	}
 	response, err := m.Call(ctx, agent, "POST", "/api/uninstall", nil, nil, Seconds(10))
+	if err != nil && !IsTransportError(err) {
+		return nil, err
+	}
 	if err != nil {
 		return connectionError(err), nil
 	}

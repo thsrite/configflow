@@ -59,6 +59,12 @@ type Request struct {
 	NoProxy     bool
 	NoRedirects bool
 	MaxBody     int64
+	// Latin1Headers sends header values as http.client does: after the URL
+	// is prepared, a value with CR or LF is requests' InvalidHeader (a
+	// *TransportError), then each value is encoded as latin-1 (U+0080–U+00FF
+	// as single bytes); a character above U+00FF is a UnicodeEncodeError
+	// (*CallError, not a RequestException) and nothing is sent.
+	Latin1Headers bool
 }
 
 // Response is the Agent's answer.
@@ -234,6 +240,20 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 		return nil, &TransportError{Err: errors.New("Failed to parse: Name '" + label + "' is not a valid IDNA label")}
 	}
 	for key, values := range request.Header {
+		if request.Latin1Headers {
+			encoded := make([]string, len(values))
+			for i, value := range values {
+				if strings.ContainsAny(value, "\r\n") {
+					return nil, &TransportError{Err: errors.New("Invalid leading whitespace, reserved character(s), or return character(s) in header value: " + jsonx.Repr(value))}
+				}
+				text, err := EncodeHeaderLatin1(value)
+				if err != nil {
+					return nil, err
+				}
+				encoded[i] = text
+			}
+			values = encoded
+		}
 		req.Header[key] = values
 	}
 	if proxyAuth != "" {

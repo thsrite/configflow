@@ -2,6 +2,7 @@ package upgrades
 
 import (
 	"errors"
+	"strconv"
 
 	"configflow/internal/agents"
 	"configflow/internal/jsonx"
@@ -34,7 +35,11 @@ func noAttribute(value any, name string) error {
 func IsValueError(err error) bool {
 	var py *PyError
 	if errors.As(err, &py) {
-		return py.Class == "ValueError"
+		return py.Class == "ValueError" || py.Class == "UnicodeEncodeError"
+	}
+	var call *agents.CallError
+	if errors.As(err, &call) {
+		return call.Class == "UnicodeEncodeError"
 	}
 	var conflict *agents.DeploymentConflict
 	var value *agents.ValueError
@@ -47,6 +52,10 @@ func ErrorClass(err error) string {
 	var py *PyError
 	if errors.As(err, &py) {
 		return py.Class
+	}
+	var call *agents.CallError
+	if errors.As(err, &call) {
+		return call.Class
 	}
 	if IsValueError(err) {
 		return "ValueError"
@@ -188,4 +197,63 @@ func findAgent(list []any, agentID string) (*jsonx.Object, error) {
 		}
 	}
 	return nil, &PyError{Class: "StopIteration", Message: ""}
+}
+
+// pyDict is dict(value) for the truthy stored upgrade record poll copies: a
+// dict is copied; a list is read as key/value pairs (two-element lists,
+// two-character strings, two-key dicts); anything else raises Python's
+// ValueError or TypeError. Pairs with a non-string key give a TypeError
+// here: Python builds the dict, but every later step of poll on it fails
+// (KeyError on 'status', or jsonify cannot sort mixed keys; both 500).
+func pyDict(value any) (*jsonx.Object, error) {
+	switch v := value.(type) {
+	case *jsonx.Object:
+		return v.Clone(), nil
+	case string:
+		// Every element of a str is a one-character str.
+		return nil, valueError("dictionary update sequence element #0 has length 1; 2 is required")
+	case []any:
+		out := jsonx.NewObject()
+		var nonString error
+		for i, element := range v {
+			var pair []any
+			switch e := element.(type) {
+			case []any:
+				pair = e
+			case string:
+				for _, r := range e {
+					pair = append(pair, string(r))
+				}
+			case *jsonx.Object:
+				if e == nil {
+					return nil, typeError("cannot convert dictionary update sequence element #" + strconv.Itoa(i) + " to a sequence")
+				}
+				for _, key := range e.Keys() {
+					pair = append(pair, key)
+				}
+			default:
+				return nil, typeError("cannot convert dictionary update sequence element #" + strconv.Itoa(i) + " to a sequence")
+			}
+			if len(pair) != 2 {
+				return nil, valueError("dictionary update sequence element #" + strconv.Itoa(i) + " has length " +
+					strconv.Itoa(len(pair)) + "; 2 is required")
+			}
+			if unhashable(pair[0]) {
+				return nil, typeError("unhashable type: '" + typeName(pair[0]) + "'")
+			}
+			key, ok := pair[0].(string)
+			if !ok {
+				if nonString == nil {
+					nonString = typeError("upgrade record with a non-string key " + jsonx.Repr(pair[0]))
+				}
+				continue
+			}
+			out.Set(key, pair[1])
+		}
+		if nonString != nil {
+			return nil, nonString
+		}
+		return out, nil
+	}
+	return nil, typeError("'" + typeName(value) + "' object is not iterable")
 }
