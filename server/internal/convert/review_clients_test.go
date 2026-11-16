@@ -66,3 +66,18 @@ func TestSurgeDebugLogOmitsSubscriptionURLsAndTokens(t *testing.T) {
 		t.Fatal("group generation was not exercised with debug logging")
 	}
 }
+
+// Expected results come from the Python public config/subscription entry
+// points. Cases target source branches absent from the production snapshot.
+func TestClientReviewBoundaryReferences(t *testing.T) {
+	withFakeSubStore(t)
+	rows := loadJSONLines(t, "testdata/review_clients.jsonl.gz")
+	for _, entry := range rows {
+		t.Run(entry.GetString("case")+"/"+entry.GetString("fn"), func(t *testing.T) {
+			if msg := runSurgeLoonRow(t, rowOf(entry)); msg != "" {
+				t.Fatal(msg)
+			}
+		})
+	}
+	t.Logf("%d Python-derived config/subscription boundaries", len(rows))
+}

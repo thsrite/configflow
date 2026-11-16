@@ -963,7 +963,7 @@ Commands:
 
 ## C19 — Surge converter
 
-**Status: `ported`** (not reviewed) · prereqs: C18 · Go: `internal/convert` (`surge.go`, shared `clients.go`)
+**Status: `ported`** (adversarial review in progress) · prereqs: C18 · Go: `internal/convert` (`surge.go`, shared `clients.go`)
 
 Files → Go:
 - `backend/converters/surge.py` (1129) → `convert/surge.go`: `GenerateSurgeConfig(ctx, config, baseURL)` (= generate_surge_config), `ConvertNodeToSurge(node) (line, wireguard, err)` ("" = None), `ConvertProxyGroupToSurge(group, config, baseURL, smartGroups)`, `ConvertProxiesToSurgeText(proxies, toNodes)` (toNodes = `substore.ProxiesToNodes`, passed by the caller because substore imports convert), `GetProxyGroupNodes`, `SurgeDefaultGeneral`, `SurgeBuiltinPolicies`; `split_rules_and_rulesets` is C18's identical `splitRulesAndRulesets`.
@@ -1010,7 +1010,9 @@ Review C19/C20 (2026-11-16, independent reviewer):
 - Local native cleanup: strings.TrimSpace/ToLower/ToUpper, strconv.Itoa, regexp RE2 with Unicode decimal/space classes; removed emulated len and unused nodesByID exception probe; renamed shared helpers to clients.go. Full convert suite on `.63` passed (6.535 s).
 - Scope confirmed by coordinator: this review closes functional findings; package-wide dynamic types and raised/caught Python errors are structural debt **→ S-convert, waiting for N8 design**. No public API rewrite in this review.
 - Baseline `.32`: `rt -- server/scripts/proddiff.sh` exit 0, `baseline: new=0 stale=0`; 2 Surge + 2 Loon configs and 4 subscriptions per client succeeded. Source-branch coverage still needs explicit synthetic checks.
-- Next: local native-library cleanup, Python-derived boundary corpus/coverage matrix, final `.32` checks, rebase `go`.
+- Review commits: `e41186ff` (cache fix), `03a97167` (native local cleanup + sensitive log fix).
+- Added independent `testdata/review_clients_gen.py` → `review_clients.jsonl.gz`, public-boundary regression `TestClientReviewBoundaryReferences`: **306 rows, 16 expected rejections, 0 differences** on `.63`. Full source walk / production trace / boundary matrix / remaining S-convert functions: `parity/review-c19-c20.md`. Deliberately restoring delimiter concatenation made the direct regression fail; original fixed file restored.
+- Next: final `.32` gofmt/vet/race/full suite/proddiff, record results and verification status, rebase `go`.
 
 ## C21 — MosDNS converter
 
