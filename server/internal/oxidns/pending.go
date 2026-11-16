@@ -21,40 +21,22 @@ var prepareEditor = func(settings, config any, baseURL string) *jsonx.Object {
 	return nil
 }
 
-// readRouting is oxidns_common_routing.read_routing(document, settings,
-// config) (C25): {"values", "capabilities"} of the routing controls.
-var readRouting = func(document, settings *jsonx.Object, config any) *jsonx.Object {
-	pending("C25", "oxidns_common_routing.read_routing")
-	return nil
-}
-
-// ownedChains is oxidns_common_routing.owned_chains(document) (C25):
-// {chain tag: action} of the pinned upstream chains of rule DNS.
-var ownedChains = func(document *jsonx.Object) *jsonx.Object {
-	pending("C25", "oxidns_common_routing.owned_chains")
-	return nil
-}
-
-// applyRouting is oxidns_common_routing.apply_routing(document, settings,
-// config, changes, base_url) (C25): the edited copies of document and
-// settings.
-var applyRouting = func(document, settings *jsonx.Object, config any, changes *jsonx.Object, baseURL string) (*jsonx.Object, *jsonx.Object) {
-	pending("C25", "oxidns_common_routing.apply_routing")
-	return nil, nil
-}
-
-// resourceDownloads is oxidns_common_routing.resource_downloads(document,
-// settings, config, base_url) (C25).
-var resourceDownloads = func(document, settings *jsonx.Object, config any, baseURL string) []any {
-	pending("C25", "oxidns_common_routing.resource_downloads")
-	return nil
-}
-
-// refreshRuleHelpers is oxidns_common_routing.refresh_rule_helpers(document)
-// (C25): rebuilds the owned pinned upstream chains in place.
-var refreshRuleHelpers = func(document *jsonx.Object) {
-	pending("C25", "oxidns_common_routing.refresh_rule_helpers")
-}
+// The C25 collaborators of C24 (oxidns_common_routing, ported in
+// routing.go). They stay variables so the C24 replay can answer them with
+// Python's recorded results.
+var (
+	readRouting = func(document, settings *jsonx.Object, config any) *jsonx.Object {
+		return readRoutingImpl(document, settings, config)
+	}
+	ownedChains  = ownedChainsImpl
+	applyRouting = func(document, settings *jsonx.Object, config any, changes *jsonx.Object, baseURL string) (*jsonx.Object, *jsonx.Object) {
+		return applyRoutingImpl(document, settings, config, changes, baseURL, nil, false, nil)
+	}
+	resourceDownloads = func(document, settings *jsonx.Object, config any, baseURL string) []any {
+		return resourceDownloadsImpl(document, settings, config, baseURL, nil)
+	}
+	refreshRuleHelpers = refreshRuleHelpersImpl
+)
 
 // prepareRuleUpdate is oxidns_common_updates.prepare_rule_update(ctx,
 // changes, config, base_url) (C26). The early return for unrelated changes
@@ -88,14 +70,6 @@ func ruleUpdateRelevant(changes *jsonx.Object) bool {
 
 // classicalIPLines (rule_ip_presence.classical_ip_lines) moved to
 // hooks_routers.go: a hook registered by routers R02 (internal/ippresence).
-
-// migrateDomainOnlyRouting is
-// oxidns_common_routing.migrate_domain_only_routing(document, settings,
-// config, base_url) (C25).
-func migrateDomainOnlyRouting(document, settings, config *jsonx.Object, baseURL string) (*jsonx.Object, *jsonx.Object) {
-	pending("C25", "oxidns_common_routing.migrate_domain_only_routing")
-	return nil, nil
-}
 
 // prepareNativeRuleUpdates is
 // oxidns_common_updates.prepare_native_rule_updates(document, settings,
