@@ -214,6 +214,8 @@ reuse them. Size budgets were dropped the same day: line counts are reported for
 
 ## Division of work (maintainer, 2026-11-16)
 
+> Who does what (HR ports, Opus limit, quota fallback) is superseded by "Fixed assignment by risk" at the end.
+
 - **Codex (Paseo, `codex/gpt-6.1-sol`, thinking `high`, mode `full-access`)** does most work: ports,
   S passes, native swaps, Python reference corpora, Flask↔Go differentials, and adversarial reviews of
   non-HR modules (by a different Codex agent than the author). Each Codex agent gets its own Paseo worktree
@@ -226,9 +228,8 @@ reuse them. Size budgets were dropped the same day: line counts are reported for
   adversarial review of HR modules (routers writing to devices R04, R05, R07–R12, R14; agents
   publish/rule sync/DNS follow/HA), concurrency/state problems, and escalation when Codex fails the same
   problem twice. At most 1 Opus agent at a time.
-- **When Claude quota is exhausted:** nothing blocks. HR modules get a Codex review first and may be merged
-  into `go` marked `verified (codex)`; the Opus review is queued in PROGRESS ("Opus review pending") and
-  done when quota returns. `go` is not production; the switch additionally requires the PVE lab test.
+- ~~**When Claude quota is exhausted:** HR modules get a Codex review first … `verified (codex)` …~~
+  **Superseded** by "Fixed assignment by risk" (last section): Opus tasks wait for quota instead. `go` is not production; the switch additionally requires the PVE lab test.
 - **Coordinator** (dispatch, verify on a detached worktree via `rt`, emulation gate, fast-forward + push
   `go`): this Claude session; if Claude quota is out, Codex agents finish their task and stop with their
   branch ready; the coordinator merges when back. A fresh coordinator session starts from `HANDOFF.md`.
@@ -298,24 +299,22 @@ the Go code.
 
 Even with all of this, the guarantee is "no difference on known paths and on the real data", not "no bugs".
 
-## Opus by quota window (maintainer, 2026-11-16, refines "Division of work")
+## Fixed assignment by risk (maintainer, 2026-11-16; supersedes the quota-based rules in "Division of work")
 
-Claude quota is short only within a 5-hour window, not overall. When a window has quota, the important work
-goes to Opus (max 2 Opus agents at a time, no nested sub-agents); Codex keeps the bulk work.
+Who does a task depends only on its risk, never on remaining quota (quota cannot be observed and would make
+the level of scrutiny depend on timing).
 
-**Opus queue (taken in this order whenever a window has quota):**
-1. HR reviews of anything merged as `verified (codex)` / "Opus review pending" (first: R04 RouterOS driver).
-2. Structural designs that block others: N7 (YAML → yaml.v3) and N8 (remove jsonx) — still gated on the
-   production-data differential for *implementation*, but the designs can be written now.
-3. Coverage-matrix reviews of the black-box difftests (config domain first).
-4. **HR module ports by Opus** instead of Codex where the window allows: R05 iKuai and the remaining
-   device-writing routers modules (R07–R12, R14), agents publish / rule sync / DNS follow / DNS HA / Linux
-   gateway. If Opus has no quota when such a module is next, Codex ports it and Opus reviews it later.
-   An HR module ported by Opus is reviewed by a **different** agent: a fresh Opus session if the window
-   allows, otherwise Codex first + "Opus review pending" (a fresh Opus later). Never the author.
-5. Opus spot reviews (1–2 non-HR modules per domain) and review of large refactors of core engines
-   (S-rules, S-oxidns) after they merge.
-
-When the window runs out, running Opus agents stop with committed work and their PROGRESS file (no
-half-finished hand-offs); the coordinator resumes them in the next window. Nothing waits on Opus: Codex
-continues with non-HR work meanwhile.
+- **Always Opus:** structural designs (N7, N8, new packages/interfaces); **ports of HR modules** (R05,
+  R07–R12, R14; agents publish / rule sync / DNS follow / DNS HA / Linux gateway / installers / upgrade);
+  **reviews of HR modules** by a different, fresh Opus session than the author (R04 included, although
+  Codex ported it); coverage-matrix reviews of the black-box difftests; spot reviews (1–2 non-HR modules
+  per domain); reviews of core-engine refactors (S-rules, S-oxidns, later S passes); escalations.
+- **Always Codex:** everything else — non-HR ports, S passes and native swaps per Opus design, difftests,
+  non-HR reviews (never the author), the production-data differential.
+- **Quota only sets the schedule.** Opus tasks wait in the Opus queue until a window has quota; they are
+  never handed to Codex instead, and there is no `verified (codex)` / "Opus review pending" state any more.
+  Meanwhile Codex keeps working on non-HR tasks. Max 2 Opus agents at a time, no nested sub-agents.
+- **Opus queue order:** whatever blocks other work first (N7/N8 designs, matrix review of the next domain),
+  then R04 HR review, then HR ports in dependency order, then spot/refactor reviews.
+- When a window runs out mid-task, Opus agents stop with committed work + PROGRESS file (no half-finished
+  hand-offs) and are resumed in the next window.
