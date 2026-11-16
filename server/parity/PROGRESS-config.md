@@ -1454,7 +1454,15 @@ Step 1 implemented in `ruledns_state.go` (typed JSON engine/rule/Agent/upstream 
 - `HydrateRuleset(item, library *Node, profileID string) *Node` returns a copy; C32 assigns the returned reference. It clears old library source fields, retains rule-owned fields/unknown metadata and uses a profile content URL for inline sources.
 - `.63`: gofmt, `go vet ./internal/oxidns` and `go test -count=1 -run "^TestReviewNativeRevision$" ./internal/oxidns` passed (`0.006s`). No new dependency or jsonx import.
 
-Remaining: step 2 write API, fresh Python boundary/generation corpus and test-file map, then final .32 gates. No runtime behavior from C32 routes is claimed until that module wires these APIs into its transactions.
+Step 2 implemented in `ruledns_apply.go`:
+- `ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options RuleDNSApplyOptions) (RuleDNSUpdate, error)`. Assignment has RuleID/Choice strings; slice order is retained, duplicate IDs use the last choice. Options has BaseURL and Lenient (false = strict). Result has Settings *Node, Warnings []string and Changed bool. Both profiles remain unchanged on success/failure; C32 writes the returned Settings to its transaction's after profile only when Changed. Other rule/group changes remain the caller's responsibility.
+- `CheckDNSChoice(choice string) error`; invalid choices and ordinary assignment failures are *SettingsError (use IsSettingsError → HTTP 400). Locked native rewrites return *RoutingLockedError (errors.Is(err, ErrRoutingLocked)); Reason/Error and typed Usages `{kind:oxidns, code:oxidns_routing_custom, target:sequence_main, reason}` → HTTP 409. Lenient mode preserves native text, prunes removed-rule metadata and returns the existing Chinese warning.
+- `InvalidateFollow(p *Profile, settings *Node) (*Node, error)` returns a copy, clearing intent only when an active rule's actual replacement route changed. C29 uses this before whole-object replacement.
+- `Convertible(item *Node) bool`, `HasIPPart(item *Node, p *Profile) bool`, `RuleDNSMetadataFields() []string` are C32-facing helpers. The metadata fields include parked data; the older routing-only RuleDNSFields slice deliberately does not. RouteLabels/Selectors/RouteKey/NormalizeAction remain shared with existing generation.
+- Strict/lenient writes reuse ApplyRouting, compare newly introduced validator errors, keep old legacy issues editable, and preserve native YAML comments on edits. Missing/malformed stored actions read as default and are dropped on the next relevant write.
+- `.63` compile/vet/hash regression check passed (`0.006s`); public-boundary behavioral verification follows in step 3.
+
+Remaining: fresh Python boundary/generation corpus and test-file map, then final .32 gates. No runtime behavior from C32 routes is claimed until that module wires these APIs into its transactions.
 
 ## C28 — MosDNS archive and routes
 

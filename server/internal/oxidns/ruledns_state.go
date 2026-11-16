@@ -431,7 +431,13 @@ func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 	for _, key := range append(append([]string{}, Selectors...), ruleDNSFields...) {
 		engine.OxidnsInUse = engine.OxidnsInUse || truthy(get(stored, key))
 	}
-	steps := items(get(pluginMap(view.Document)["sequence_main"], "args"))
+	var steps []*Node
+	for _, plugin := range items(get(view.Document, "plugins")) {
+		if isMap(plugin) && isOneOf(get(plugin, "tag"), "sequence_main") {
+			steps = items(get(plugin, "args"))
+			break
+		}
+	}
 	if native {
 		engine.PreferIPv4 = false
 		for _, step := range steps {
