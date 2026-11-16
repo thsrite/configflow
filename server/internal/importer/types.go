@@ -13,7 +13,7 @@ import (
 type Proxy struct {
 	Name    string
 	Type    string
-	Server  string
+	Server  json.RawMessage
 	Port    json.RawMessage
 	Options map[string]json.RawMessage
 }
@@ -67,7 +67,7 @@ type Node struct {
 	ID       string                     `json:"id"`
 	Name     string                     `json:"name"`
 	Type     string                     `json:"type"`
-	Server   string                     `json:"server"`
+	Server   json.RawMessage            `json:"server"`
 	Port     json.RawMessage            `json:"port"`
 	Params   map[string]json.RawMessage `json:"params"`
 	Enabled  bool                       `json:"enabled"`

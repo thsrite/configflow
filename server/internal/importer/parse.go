@@ -92,22 +92,108 @@ func parseRule(line string, w *warnings) *Rule {
 	}
 	return &Rule{Type: kind, Value: strings.TrimSpace(parts[1]), Policy: unquote(tail[0]), NoResolve: noResolve}
 }
-func field(node *yaml.Node, key string) *yaml.Node {
-	if node == nil {
+
+type yamlEntry struct{ key, value *yaml.Node }
+
+func dereference(node *yaml.Node) *yaml.Node {
+	for node != nil && node.Kind == yaml.AliasNode {
+		node = node.Alias
+	}
+	return node
+}
+func mappingEntries(node *yaml.Node) []yamlEntry {
+	node = dereference(node)
+	if node == nil || node.Kind != yaml.MappingNode {
 		return nil
 	}
-	if node.Kind == yaml.AliasNode {
-		return field(node.Alias, key)
-	}
-	if node.Kind != yaml.MappingNode {
-		return nil
+	out := []yamlEntry{}
+	indices := map[string]int{}
+	add := func(entry yamlEntry) {
+		key := entry.key.Value
+		if i, exists := indices[key]; exists {
+			out[i] = entry
+		} else {
+			indices[key] = len(out)
+			out = append(out, entry)
+		}
 	}
 	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == key {
-			return node.Content[i+1]
+		if node.Content[i].Tag != "!!merge" {
+			continue
+		}
+		value := dereference(node.Content[i+1])
+		if value.Kind == yaml.SequenceNode {
+			for j := len(value.Content) - 1; j >= 0; j-- {
+				for _, entry := range mappingEntries(value.Content[j]) {
+					add(entry)
+				}
+			}
+		} else {
+			for _, entry := range mappingEntries(value) {
+				add(entry)
+			}
+		}
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Tag != "!!merge" {
+			add(yamlEntry{node.Content[i], node.Content[i+1]})
+		}
+	}
+	return out
+}
+func field(node *yaml.Node, key string) *yaml.Node {
+	for _, entry := range mappingEntries(node) {
+		if entry.key.Value == key {
+			return entry.value
 		}
 	}
 	return nil
+}
+func expandedNode(node *yaml.Node) *yaml.Node {
+	node = dereference(node)
+	if node == nil {
+		return nil
+	}
+	out := *node
+	out.Anchor = ""
+	out.Alias = nil
+	out.Content = nil
+	if node.Kind == yaml.MappingNode {
+		for _, entry := range mappingEntries(node) {
+			out.Content = append(out.Content, expandedNode(entry.key), expandedNode(entry.value))
+		}
+	} else {
+		for _, child := range node.Content {
+			out.Content = append(out.Content, expandedNode(child))
+		}
+	}
+	return &out
+}
+func nodeInteger(node *yaml.Node) *int {
+	node = dereference(node)
+	if node != nil && node.Tag == "!!int" {
+		var value int
+		if node.Decode(&value) == nil {
+			return &value
+		}
+	}
+	return integer(scalar(node))
+}
+func missingScalar(node *yaml.Node) bool {
+	node = dereference(node)
+	if node == nil || node.Tag == "!!null" || scalar(node) == "" {
+		return true
+	}
+	if node.Tag == "!!bool" {
+		return !nodeBool(node)
+	}
+	if node.Tag == "!!int" || node.Tag == "!!float" {
+		var value float64
+		if node.Decode(&value) == nil && value == 0 {
+			return true
+		}
+	}
+	return false
 }
 func scalar(node *yaml.Node) string {
 	if node == nil {
@@ -188,8 +274,9 @@ func parseMihomo(content string, plan *Plan) error {
 		return fmt.Errorf(msgYAML, err)
 	}
 	for _, node := range sequence(field(root, "proxies")) {
+		node = dereference(node)
 		name, kind := scalar(field(node, "name")), scalar(field(node, "type"))
-		if node.Kind != yaml.MappingNode || name == "" || kind == "" {
+		if node.Kind != yaml.MappingNode || missingScalar(field(node, "name")) || missingScalar(field(node, "type")) {
 			plan.warnings.add(msgInvalidNode, name)
 			continue
 		}
@@ -203,7 +290,14 @@ func parseMihomo(content string, plan *Plan) error {
 			continue
 		}
 		proxy := Proxy{Name: name, Type: kind, Options: map[string]json.RawMessage{}}
-		proxy.Server = scalar(field(node, "server"))
+		proxy.Server = jsonValue("")
+		if server := field(node, "server"); server != nil {
+			raw, err := nodeJSON(server)
+			if err != nil {
+				return err
+			}
+			proxy.Server = raw
+		}
 		proxy.Port = jsonValue(0)
 		if port := field(node, "port"); port != nil {
 			raw, err := nodeJSON(port)
@@ -212,12 +306,12 @@ func parseMihomo(content string, plan *Plan) error {
 			}
 			proxy.Port = raw
 		}
-		for i := 0; i+1 < len(node.Content); i += 2 {
-			key := node.Content[i].Value
+		for _, entry := range mappingEntries(node) {
+			key := entry.key.Value
 			if key == "name" || key == "type" || key == "server" || key == "port" {
 				continue
 			}
-			raw, err := nodeJSON(node.Content[i+1])
+			raw, err := nodeJSON(entry.value)
 			if err != nil {
 				return err
 			}
@@ -226,8 +320,8 @@ func parseMihomo(content string, plan *Plan) error {
 		plan.Proxies = append(plan.Proxies, proxy)
 	}
 	if providers := field(root, "proxy-providers"); providers != nil && providers.Kind == yaml.MappingNode {
-		for i := 0; i+1 < len(providers.Content); i += 2 {
-			name, node := providers.Content[i].Value, providers.Content[i+1]
+		for _, entry := range mappingEntries(providers) {
+			name, node := entry.key.Value, dereference(entry.value)
 			if node.Kind != yaml.MappingNode || scalar(field(node, "type")) != "http" || scalar(field(node, "url")) == "" {
 				plan.warnings.add(msgHTTPProviders, name)
 				continue
@@ -236,8 +330,8 @@ func parseMihomo(content string, plan *Plan) error {
 		}
 	}
 	if providers := field(root, "rule-providers"); providers != nil && providers.Kind == yaml.MappingNode {
-		for i := 0; i+1 < len(providers.Content); i += 2 {
-			name, node := providers.Content[i].Value, providers.Content[i+1]
+		for _, entry := range mappingEntries(providers) {
+			name, node := entry.key.Value, dereference(entry.value)
 			if node.Kind != yaml.MappingNode {
 				continue
 			}
@@ -257,6 +351,7 @@ func parseMihomo(content string, plan *Plan) error {
 		}
 	}
 	for _, node := range sequence(field(root, "proxy-groups")) {
+		node = dereference(node)
 		name := scalar(field(node, "name"))
 		if node.Kind != yaml.MappingNode || name == "" {
 			continue
@@ -267,7 +362,7 @@ func parseMihomo(content string, plan *Plan) error {
 			continue
 		}
 		all := nodeBool(field(node, "include-all"))
-		group := Group{Name: name, Type: kind, Members: nodeStrings(field(node, "proxies")), Providers: nodeStrings(field(node, "use")), Filter: scalar(field(node, "filter")), IncludeAllProxies: all || nodeBool(field(node, "include-all-proxies")), IncludeAllProviders: all || nodeBool(field(node, "include-all-providers")), URL: scalar(field(node, "url")), Interval: integer(scalar(field(node, "interval"))), Extra: map[string]json.RawMessage{}}
+		group := Group{Name: name, Type: kind, Members: nodeStrings(field(node, "proxies")), Providers: nodeStrings(field(node, "use")), Filter: scalar(field(node, "filter")), IncludeAllProxies: all || nodeBool(field(node, "include-all-proxies")), IncludeAllProviders: all || nodeBool(field(node, "include-all-providers")), URL: scalar(field(node, "url")), Interval: nodeInteger(field(node, "interval")), Extra: map[string]json.RawMessage{}}
 		for _, key := range groupPassthrough {
 			if value := field(node, key); value != nil {
 				raw, err := nodeJSON(value)
@@ -297,9 +392,9 @@ func parseMihomo(content string, plan *Plan) error {
 	}
 	custom := *root
 	custom.Content = nil
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		if !generatedKeys[root.Content[i].Value] {
-			custom.Content = append(custom.Content, root.Content[i], root.Content[i+1])
+	for _, entry := range mappingEntries(root) {
+		if !generatedKeys[entry.key.Value] {
+			custom.Content = append(custom.Content, expandedNode(entry.key), expandedNode(entry.value))
 		}
 	}
 	if len(custom.Content) > 0 {

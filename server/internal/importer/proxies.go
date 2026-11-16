@@ -7,7 +7,7 @@ import (
 )
 
 func newProxy(name, kind, server string, port int) Proxy {
-	return Proxy{Name: name, Type: kind, Server: server, Port: jsonValue(port), Options: map[string]json.RawMessage{}}
+	return Proxy{Name: name, Type: kind, Server: jsonValue(server), Port: jsonValue(port), Options: map[string]json.RawMessage{}}
 }
 func tlsOptions(proxy *Proxy, options map[string]string, sniKey string, loon bool) {
 	sni := first(options["sni"], options["peer"], options["tls-name"], options["obfs-host-sni"])

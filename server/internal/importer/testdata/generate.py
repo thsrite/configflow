@@ -151,6 +151,31 @@ https://rules.example/a.list,policy=Pool,tag=Same
 https://rules.example/b.list,policy=Pool,tag=Same
 ''', catalog={})
 
+add('yaml-anchors-merges', 'mihomo', """
+base: &base {type: http, server: example.com, port: 80, extra-option: {future: true}}
+proxies:
+- &node {<<: *base, name: Anchored}
+- *node
+proxy-providers:
+  Feed: &feed {type: http, url: https://feed.example/sub}
+  Other: *feed
+proxy-groups:
+- &group {name: Pool, type: url-test, interval: 0x12, include-all: true}
+- *group
+rules: ['MATCH,Pool']
+custom-copy: *base
+""", catalog={})
+add('yaml-unusual-scalars', 'mihomo', """
+proxies:
+- {name: NumberServer, type: http, server: 123, port: '443', password: p}
+- {name: NullPort, type: http, port: null}
+- {name: false, type: http}
+- {name: ZeroType, type: 0}
+proxy-groups: [{name: Pool, type: select, include-all: true}]
+rules: ['MATCH,Pool']
+""", catalog={})
+add('bom-valid', 'surge', '\ufeff[Proxy]\nNode=http,example.com,80\n[Rule]\nFINAL,DIRECT', catalog={})
+
 output = Path(__file__).with_name('corpus.jsonl')
 with output.open('w') as stream:
     for row in rows:
