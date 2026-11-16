@@ -24,6 +24,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 import yaml
+from generators import INVENTORY, run_workers, self_check
 
 ROOT = Path.cwd()
 PARITY = ROOT / 'server/parity'
@@ -252,7 +253,11 @@ def cases(rows, doc, data):
                         body.update(settings=config.get('linux_gateway', {}))
                     elif route.endswith('/preview-regex'):
                         body.update(source='subscription', source_id=next(iter(ids(config.get('subscriptions', []))), ''), regex='.*')
-                if route.endswith('/file') or mapping.get('action') == 'file':
+                if '/subscriptions/' in route and route.endswith('/proxies'):
+                    for output_format in ('mihomo', 'surge', 'loon'):
+                        variant = dict(query, format=output_format)
+                        yield method, route, path + '?' + urllib.parse.urlencode(variant), body, no_data
+                elif route.endswith('/file') or mapping.get('action') == 'file':
                     for filename in preview_files.get(mapping.get('preview_id'), ['config.yaml']):
                         variant = dict(query, path=filename)
                         yield method, route, path + '?' + urllib.parse.urlencode(variant), body, no_data
@@ -346,13 +351,11 @@ def main():
                     raise RuntimeError('test login failed')
                 tokens.append(json.loads(login[2])['token'])
             implemented = set(tuple(line.split('\t')) for line in (report / 'go-routes.tsv').read_text().splitlines())
-            # Mutate an actual Go response and pass it through the real comparator.
+            found, generator_coverage, generator_samples = run_workers(
+                snapshot, Path(temporary), report, Path(os.environ['PRODDIFF_GENERATOR']),
+                doc, implemented, response_diffs)
             real = send(15002, 'GET', '/api/auth/status', tokens[1])
-            broken = (real[0] + 1, real[1], real[2])
-            if ('status', 'value') not in response_diffs(real, broken, '/api/auth/status', rules):
-                raise RuntimeError('self-check failed')
-            print('self-check: PASS (mutated Go status detected)', flush=True)
-            found, counts = set(), collections.Counter()
+            counts = collections.Counter()
             coverage, failures = {}, collections.Counter()
             all_cases = list(cases(rows, doc, copies[0]))
             def compare(case):
@@ -374,6 +377,26 @@ def main():
                                                 'python': [left[0], left[1], left[2].decode('utf-8', errors='replace')],
                                                 'go': [right[0], right[1], right[2].decode('utf-8', errors='replace')]}, ensure_ascii=False) + '\n')
                     counts['compared'] += 1
+                    if 200 <= right[0] < 300:
+                        if 'yaml' in right[1]:
+                            generator_samples.setdefault('yaml', right)
+                        if 'text/plain' in right[1] and ('/config/' in route or '/generate/' in route or route.endswith('/install-script')):
+                            generator_samples.setdefault('text', right)
+                    for name, metadata in INVENTORY.items():
+                        row = generator_coverage['GENERATOR ' + name]
+                        if row['mode'] != 'http' or metadata[2] != key:
+                            continue
+                        if name.startswith('subscription-'):
+                            selected_format = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query).get('format', ['mihomo'])[0]
+                            if name != 'subscription-' + selected_format:
+                                continue
+                        if name.startswith('agent-'):
+                            agent_id = urllib.parse.unquote(urllib.parse.urlsplit(path).path.split('/')[3])
+                            agent = next((a for a in doc['system'].get('agents', []) if str(a.get('id')) == agent_id), {})
+                            if name != 'agent-' + agent.get('service_type', 'mihomo'):
+                                continue
+                        row['compared'] = row.get('compared', 0) + 1
+                        row['success'] += int(200 <= left[0] < 300 and 200 <= right[0] < 300)
                     for label, reply in (('python', left), ('go', right)):
                         if reply[0] == 0 or re.search(rb'ConnectionError|Network is unreachable|No route to host|Connection refused|Failed to establish|connect: network|dial tcp|timed out', reply[2], re.I):
                             failures[label + '-connection-failed'] += 1
@@ -381,8 +404,11 @@ def main():
                         failures['both-transport-failure' if left[0] == right[0] == 0 else 'one-sided-transport-failure'] += 1
                     for field, kind in response_diffs(left, right, route, rules):
                         found.add((key, field, kind))
-                        domain = 'agents' if '/agents' in route else 'routers' if '/routers' in route else 'config'
+                        domain = 'agents' if '/agents' in route or route.startswith('GENERATOR agent-') else 'routers' if '/routers' in route or route.startswith('GENERATOR router-') else 'config'
                         counts[domain + ':' + kind] += 1
+            checks = self_check(real, generator_samples, response_diffs)
+            print('self-check: ' + ' '.join(name + '=PASS' for name in checks), flush=True)
+            coverage.update(generator_coverage)
             baseline_path = PARITY / 'proddiff-baseline.txt'
             baseline = set()
             for line in baseline_path.read_text().splitlines():
@@ -398,7 +424,8 @@ def main():
                 baseline = found
             new, stale = found - baseline, baseline - found
             coverage_path = PARITY / 'proddiff-coverage.txt'
-            current_coverage = {key for key, row in coverage.items() if row['compared']}
+            current_coverage = {key for key, row in coverage.items() if row.get('compared')}
+            current_coverage.update(key + ' success' for key, row in generator_coverage.items() if row.get('success'))
             previous_coverage = {line for line in coverage_path.read_text().splitlines() if line and not line.startswith('#')}
             if record:
                 coverage_path.write_text('# Previously compared route templates; removals fail the gate.\n' + '\n'.join(sorted(current_coverage)) + '\n')
@@ -406,17 +433,18 @@ def main():
             lost_coverage = previous_coverage - current_coverage
             unique_counts = collections.Counter()
             for route, field, kind in found:
-                domain = 'agents' if '/agents' in route else 'routers' if '/routers' in route else 'config'
+                domain = 'agents' if '/agents' in route or route.startswith('GENERATOR agent-') else 'routers' if '/routers' in route or route.startswith('GENERATOR router-') else 'config'
                 unique_counts[domain + ':' + kind] += 1
-            summary = {'GET_routes_compared': sum(key.startswith('GET ') and row['compared'] > 0 for key, row in coverage.items()),
-                       'GET_Go_not_implemented': sum(key.startswith('GET ') and row['Go 尚未实现'] > 0 for key, row in coverage.items()),
+            summary = {'GET_routes_compared': sum(key.startswith('GET ') and row.get('compared', 0) > 0 for key, row in coverage.items()),
+                       'GET_Go_not_implemented': sum(key.startswith('GET ') and row.get('Go 尚未实现', 0) > 0 for key, row in coverage.items()),
                        'python_disabled_background': len((report / 'python-loops.txt').read_text().splitlines()),
                        'go_disabled_background': len((report / 'go-routes.tsv.loops').read_text().splitlines()),
                        'unique_differences_by_domain_type': dict(sorted(unique_counts.items())),
-                       'no_snapshot_parameter_cases': sum(row['no-snapshot-parameter'] for row in coverage.values()),
+                       'no_snapshot_parameter_cases': sum(row.get('no-snapshot-parameter', 0) for row in coverage.values()),
                        'GET_routes_total': sum(row[0] == 'GET' for row in rows),
-                       'routes_total': len(coverage), 'routes_compared': sum(row['compared'] > 0 for row in coverage.values()),
-                       'Go_not_implemented': sum(row['Go 尚未实现'] > 0 for row in coverage.values()),
+                       'routes_total': sum(not key.startswith('GENERATOR ') for key in coverage), 'routes_compared': sum(row.get('compared', 0) > 0 for key, row in coverage.items() if not key.startswith('GENERATOR ')),
+                       'Go_not_implemented': sum(row.get('Go 尚未实现', 0) > 0 for row in coverage.values()),
+                       'generators': generator_coverage, 'self_checks': checks,
                        'cases': len(all_cases), 'counts': dict(counts), 'connection_failures': dict(failures),
                        'coverage_regressions': len(lost_coverage), 'unique_differences': len(found), 'new': len(new), 'stale': len(stale), 'self_check': 'PASS'}
             (report / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2))

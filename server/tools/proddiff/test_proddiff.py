@@ -4,6 +4,8 @@ import io
 import zipfile
 from pathlib import Path
 import unittest
+import sys
+sys.path.insert(0, str(Path(__file__).parent))
 
 spec = importlib.util.spec_from_file_location('proddiff', Path(__file__).with_name('run.py'))
 pd = importlib.util.module_from_spec(spec)
@@ -75,6 +77,31 @@ class ComparatorTests(unittest.TestCase):
         self.assertEqual(10, len(result))
         self.assertEqual(1, sum(case[-1] for case in result))
         self.assertTrue(any('/router-a/' in case[2] for case in result))
+
+    def test_four_mandatory_mutations(self):
+        from generators import self_check
+        samples = {'yaml': (200, 'text/yaml', b'dns:\n  upstreams:\n  - port: 53\n'),
+                   'text': (200, 'text/plain', b'[General]\nloglevel=info\n')}
+        checks = self_check((200, 'application/json', b'{}'), samples, pd.response_diffs)
+        self.assertEqual({'status', 'json-leaf', 'yaml-leaf', 'text-line'}, set(checks))
+        self.assertTrue(all(result == 'PASS' for result in checks.values()))
+        with self.assertRaises(RuntimeError):
+            self_check((200, 'application/json', b'{}'), samples, lambda *args: [])
+
+    def test_generator_inventory_and_http_takeover(self):
+        from generators import inventory
+        doc = {'system': {'system_config': {'default_profile_id': 'one'},
+                          'agents': [{'id': 'agent-a', 'service_type': 'mihomo'}]},
+               'shared': {'subscriptions': [{'id': 'sub-a'}]},
+               'profiles': {'one': {'routers': {'items': []}}, 'two': {'routers': {'items': []}}}}
+        jobs, coverage = inventory(doc, set())
+        self.assertEqual(2, coverage['GENERATOR mihomo']['cases'])
+        self.assertEqual(2, coverage['GENERATOR subscription-loon']['cases'])
+        self.assertEqual(1, coverage['GENERATOR agent-mihomo']['cases'])
+        self.assertEqual(list(range(len(jobs))), [job['index'] for job in jobs])
+        jobs, coverage = inventory(doc, {('GET', '/api/config/<profile_id>/mihomo')})
+        self.assertEqual('http', coverage['GENERATOR mihomo']['mode'])
+        self.assertFalse(any(job['kind'] == 'mihomo' for job in jobs))
 
 
 if __name__ == '__main__':

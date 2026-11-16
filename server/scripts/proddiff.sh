@@ -21,7 +21,7 @@ build=$(mktemp -d)
 trap 'rm -rf "$build"' EXIT
 "$python" "$root/server/tools/proddiff/build.py" "$root" "$build"
 gofmt -w "$build/main.go" "$build/lifecycle.go"
-(cd "$root/server" && go build -tags configflow_proddiff -overlay "$build/overlay.json" -o "$build/configflow" ./cmd/configflow)
+(cd "$root/server" && go build -tags configflow_proddiff -overlay "$build/overlay.json" -o "$build/configflow" ./cmd/configflow && go build -o "$build/generator" ./tools/proddiff/generator)
 # Mount namespace makes the source itself read-only, including to descendants.
 unshare --user --map-root-user --net --mount --pid --fork --kill-child --mount-proc bash -c '
  set -euo pipefail
@@ -31,5 +31,6 @@ unshare --user --map-root-user --net --mount --pid --fork --kill-child --mount-p
  mount -o remount,bind,ro "$1"
  cd "$2"
  export PYTHONPATH="$2" PYTHONDONTWRITEBYTECODE=1
+ export PRODDIFF_GENERATOR="$(dirname "$4")/generator"
  exec "$3" server/tools/proddiff/run.py "$1" "$4" "${@:5}"
 ' proddiff "$snapshot" "$root" "$python" "$build/configflow" "$@"

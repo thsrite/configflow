@@ -2,7 +2,7 @@
 
 Task: test-only, offline production-data acceptance framework. No business changes, no subagents,
 no push. Source snapshot stays on the test server; all reports/commits contain schema only.
-Design and command documentation: [doc/testing/go-proddiff.md](../../../doc/testing/go-proddiff.md).
+Design and command documentation: [tool README](../../tools/proddiff/README.md).
 
 Done:
 - Initial runner commit 16c0292f (rebased from af90c23d/493df48c): real cmd/configflow build, isolated
@@ -44,3 +44,9 @@ Final command, exit 0:
 Tail: `Ran 8 tests ... OK`; `self-check: PASS (mutated Go status detected)`;
 `baseline: new=0 stale=0`. Full counts match the table above, coverage_regressions=0.
 Only framework/scripts/parity/doc files differ from go; no business changes. No push.
+
+Acceptance follow-up in progress: add direct public-generator workers before HTTP coverage,
+strengthen automatic JSON/YAML/text mutation checks, move developer documentation into tool README.
+No business code changes. Remote workers compile and vet clean; full run now compares 37 successful
+generator outputs with no new differences. Four automatic mutations pass. Next: finalize HTTP ownership
+coverage, record generator coverage floors, document counts, rerun both required gates and rebase.
