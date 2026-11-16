@@ -362,10 +362,8 @@ func loadCustomConfig(custom any) *jsonx.Object {
 	if err != nil {
 		var yerr *yamlx.Error
 		if errors.As(err, &yerr) && yerr.IsYAMLError() {
-			mihomoLog.Error("mihomo.custom_config YAML 解析失败，本次生成被中止，" +
-				"/data/config.yaml 未被覆盖。原因: " + yerr.Error() + " " +
-				"（常见原因：nameserver-policy / fake-ip-filter 等 mapping 段缩进错乱，" +
-				"请到 UI → Mihomo 基础配置 → 修正后重新保存并重新生成。）")
+			// Parser errors contain excerpts of user YAML, including credentials.
+			// Return the diagnostic to the caller without duplicating it in logs.
 			raise(&CustomConfigYAMLError{"mihomo.custom_config YAML 解析失败: " + yerr.Error()})
 		}
 		raise(err)
@@ -373,8 +371,6 @@ func loadCustomConfig(custom any) *jsonx.Object {
 	obj, ok := value.(*jsonx.Object)
 	if !ok {
 		name := typeName(value)
-		mihomoLog.Error("mihomo.custom_config 解析成功但不是 mapping（得到 " + name + "），" +
-			"本次生成被中止，/data/config.yaml 未被覆盖。")
 		raise(&CustomConfigYAMLError{"mihomo.custom_config 不是 mapping，得到 " + name})
 	}
 	return obj
@@ -1016,11 +1012,13 @@ func mihomoRulesetURL(config *jsonx.Object, ruleSet, ruleLibrary any, effectiveB
 // sourceURLText passes original_url to ruleset_format, which only reads it
 // as text (a non-string is treated like Python's checks on it would).
 func sourceURLText(v any) string {
+	// Empty legacy URL values defer to the rule's own URL. Stringifying a
+	// false/zero/empty container would turn it into a nonempty override.
+	if !jsonx.Truthy(v) {
+		return ""
+	}
 	if s, ok := v.(string); ok {
 		return s
-	}
-	if v == nil {
-		return ""
 	}
 	return fstr(v)
 }

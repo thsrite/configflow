@@ -918,7 +918,7 @@ Commands (review):
 
 ## C18 — Mihomo config generation, Mihomo base settings
 
-**Status: `ported`** (not reviewed) · prereqs: C12, C15, C16, C17 · Go: `internal/convert` (+ `internal/convert/mihomoenv`)
+**Status: `ported`** (independent adversarial review in progress) · prereqs: C12, C15, C16, C17 · Go: `internal/convert` (+ `internal/convert/mihomoenv`)
 
 Files → Go:
 - `backend/converters/mihomo.py` generation group → `convert/mihomo_generate.go`: `CustomConfigYAMLError`, `ValidateIPv6Flags`, `DefaultMihomoTemplate`, `SplitRulesAndRulesets`, `DefaultHealthCheckURL`, `BuildProviderHealthCheck` (structured `health_check` via `health/check.ProviderHealthCheck`), `LogicRuleTypes`, `ApplyNoResolveToLogicRule`, `NormalizeFindProcessMode`, `ParseMosdnsCustomHosts`, `SyncMosdnsHosts`, `InjectRegionProbe`, `GenerateOptions`, `GenerateMihomoConfig` (= generate_mihomo_config; YAML via `yamlx.IndentDump`), `GenerateMihomoDocument` (= `yaml.safe_load(generate_mihomo_config(...))`, used by many callers); `convert/mihomo_downloads.go`: `Download`, `GetMihomoProviderDownloads`, `GetMihomoRulesetDownloads`; `convert/mihomo_generate_py.go`: Python-semantics helpers (raise/catch panics → returned errors, `dictGet`/`dictItem`/`iterate`, ordered sets, `appendURLQuery` = profile_context.append_url_query, `pyIntOf`).
@@ -960,6 +960,13 @@ Commands:
 - corpus: `rt --back server/internal/convert/testdata/mihomo_corpus.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/convert/testdata/gen_mihomo.py 6000'` (deterministic seed; ~20 s)
 - recorded replay: `rt --back server/internal/convert/testdata/mihomo_recorded.jsonl.gz -- bash -lc 'rm -rf /tmp/c18rec; C18_RECORD_DIR=/tmp/c18rec PYTHONPATH=.:server/internal/convert/testdata ~/cf-test/.venv/bin/python -m pytest backend -q -n 6 --dist=worksteal -p c18_record -p no:cacheprovider; PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/convert/testdata/c18_record.py merge /tmp/c18rec'` (~3 min)
 - last run (HEAD bcaa6e83, clean detached worktree): `go vet` clean; `go test -count=1 ./internal/convert/... ./internal/server/ ./internal/provider/` ok; `-race` ok for convert.
+
+Review C18 (2026-11-17, independent reviewer; branch `go-review-c18`):
+- High: custom YAML parse errors were copied verbatim into ERROR logs, including source excerpts with secrets/subscription URLs. Python has the same bug (`mihomo.py` parse-error logger). Removed duplicate logging; callers still receive the same `CustomConfigYAMLError` diagnostic and generation aborts. Synthetic controller-secret and token-URL fixtures failed before the fix.
+- Medium: `sourceURLText` stringified false/zero/empty legacy library URLs into nonempty format overrides. Python falls back to the rule's URL. Fixed empty-value coalescing; both generated rule-provider format/path and ruleset download extension now match. Python on `.63` confirmed all six null/empty/false/zero/container variants resolve `/fallback.yaml` as YAML. Four non-string variants failed in Go before the fix.
+- Baseline `.32` proddiff exit 0: self checks PASS, coverage_regressions=0, new=0/stale=0; main Mihomo 2 successes, Agent Mihomo 1, subscription Mihomo 4, downloads 2 per kind.
+- Structural Python types/errors remain **→ S-convert, waiting for N8 design**, per the coordinator's explicit scope. Public APIs and invalid-input acceptance/rejection stay unchanged.
+- Next: finish independent synthetic boundary corpus and production source coverage, local native strings cleanup, final `.32` acceptance, mark verified only with no open functional findings, rebase `go`, no push. Detailed report: `parity/review-c18.md`.
 
 ## C19 — Surge converter
 
