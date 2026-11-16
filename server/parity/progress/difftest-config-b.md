@@ -341,3 +341,21 @@ request_variants=5166 named_matrix_cases=2779（S315 F2137 B327），H去重167
 ```
 
 继续本文件实际fetch/Sub-Store/provider/单飞/缓存回落和其他文件；以上不是subscriptions全覆盖，未做最终全量。
+
+## 批次 18：手动订阅 fetch 和 Sub-Store 请求协议
+
+- 15请求，10比较通过、5差异。真实回环上游：preview仍写cache/health/task但SQL不导入；非preview导入、同名不替换已有节点、正则后空集合但原始缓存不空、userinfo正文同请求；rendered YAML直用；Sub-Store本地已下载正文转换；URL fragment跳过直连，转换失败后direct fallback。缓存原始ID格式/唯一性、时间、SQLite与全文件都比较。
+- fake Sub-Store严格校验POST `/api/subs` payload（name/url/#noFlow/noFlow/local/content）、GET `/download/<temp>/ClashMeta?noFlow=true`、DELETE `/api/sub/<temp>`及实际源/转换/清理顺序。临时名称先证明格式与三处一致，再替换这三个指定字段；结束时fake内存中不得残留临时订阅。上游UA、请求次数也比较。增加漏DELETE/错误正文/noFlow、cache身份、通知evidence、单边SQL提交等篡改自检，共29项。
+- 新增R218-F11：数组body使Python500且无网络/写入，Go200并发上游请求、导入2节点及写cache/health/task/新generation。比较器现在把“旧Python commit对应新Go commit”作为普通业务差异报告，禁止重绑身份；之前会抛双射断言，已以单边commit自检修正。
+- R218-F12坏缓存节点+已有全局节点、F13真实SQLite拒写：Python500 JSON“订阅操作失败”，Go500 HTML。S03 stale cache回落与F09无cache的HTTP403，以及F12，均再现T27同类缺notifications.json。不是五种独立根因，findings按五个具体用例保留。
+- O6允许内部英文异常措辞变化：仅固定fake403场景把可选`status=403`内部尾字段规范化；异常类型、整个中文前后缀、错误HTTP状态和其他内容仍严格比较，错误500/中文篡改自检必报。未掩码整个错误对象。通知evidence必须对应本端真实task的run_count/last_run_at/status，未凭空映射时间串。
+
+```text
+.63 run.py --groups subscription-fetch-direct,subscription-fetch-failures,subscription-fetch-substore
+current compared=10 different=5 design_errors=[] seconds=22.04
+cumulative compared=1418 go-unimplemented=3721 dependency=28 different=13 O12-separate=1
+request_variants=5181 named_matrix_cases=2794（S321 F2143 B330），H去重167
+29 self-checks + end-to-end wrong-Go-response check OK
+```
+
+继续provider下载、真实HTTP HEAD副作用、单飞/30秒复用/取消，以及其他业务文件。当前并非整个5181个设计用例完成，也未做最终全量。

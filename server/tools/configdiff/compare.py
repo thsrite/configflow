@@ -254,9 +254,21 @@ def database(directory):
 
 def database_diffs(left, right, policy):
     a, b = database(left), database(right)
+    out = []
     if 'commit_id' in a['meta'] and 'commit_id' in b['meta']:
-        policy.bind(a['meta']['commit_id'], b['meta']['commit_id'], r'[0-9a-f]{32}', 'commit-id')
-    return differences(a, b, 'db', policy)
+        aid, bid = a['meta']['commit_id'], b['meta']['commit_id']
+        pattern = r'[0-9a-f]{32}'
+        if not all(isinstance(value, str) and re.fullmatch(pattern, value) for value in (aid, bid)):
+            out.append(Difference('db.meta.commit_id', 'invalid-commit-identity', aid, bid))
+        elif aid in policy.identities and policy.identities[aid] != bid:
+            # A rejected Python request can leave its commit unchanged while
+            # Go mistakenly commits. Report it; never rebind or abort the run.
+            out.append(Difference('db.meta.commit_id', 'unstable-Go-commit', policy.identities[aid], bid))
+        elif bid in policy.reverse and policy.reverse[bid] != aid:
+            out.append(Difference('db.meta.commit_id', 'reused-Go-commit', aid, bid))
+        else:
+            policy.bind(aid, bid, pattern, 'commit-id')
+    return out + differences(a, b, 'db', policy)
 
 
 # Logs/lock files are compared in X07/T26, not silently included with runtime noise.

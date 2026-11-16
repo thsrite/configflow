@@ -98,6 +98,8 @@ def main():
     groups.update(client_import)
     from cases.subscriptions import GROUPS as subscriptions
     groups.update(subscriptions)
+    from cases.subscription_fetch import GROUPS as subscription_fetch
+    groups.update(subscription_fetch)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

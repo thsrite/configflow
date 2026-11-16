@@ -159,6 +159,80 @@ class Comparators(unittest.TestCase):
                 with self.assertRaises(DesignError):
                     check(pair, 'other', 'mihomo')(b)
 
+    def test_subscription_exchange_and_cached_identity_mutation(self):
+        from subscriptions import Exchange, capture_ids
+        source = SimpleNamespace(requests=[])
+        observer = Exchange(None, source)
+        observer.transcripts = [[{'method': 'GET', 'path': '/feed', 'user_agent': 'clash.meta'}]] * 2
+        self.assertEqual(observer.compare(Policy()), [])
+        observer.transcripts[1] = []
+        self.assertTrue(observer.compare(Policy()))
+        observer.transcripts[1] = [{'method': 'GET', 'path': '/feed', 'user_agent': 'wrong'}]
+        self.assertTrue(observer.compare(Policy()))
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = [Path(tmp, n) for n in ('python', 'go')]
+            for root, ids in zip(dirs, [('node_12345678', 'node_12345679'), ('node_abcdef01', 'node_abcdef02')]):
+                cache = root / 'shared/subscribes'
+                cache.mkdir(parents=True)
+                (cache / 'sub-a.json').write_text(json.dumps({'nodes': [{'id': value} for value in ids]}))
+            pair = SimpleNamespace(dirs=dirs)
+            self.assertEqual(capture_ids(pair)([], Policy()), [])
+            target = dirs[1] / 'shared/subscribes/sub-a.json'
+            target.write_text(json.dumps({'nodes': [{'id': 'node_abcdef01'}, {'id': 'node_abcdef01'}]}))
+            self.assertTrue(capture_ids(pair)([], Policy()))
+            target.write_text(json.dumps({'nodes': [{'id': 'broken-id'}, {'id': 'node_abcdef02'}]}))
+            self.assertTrue(capture_ids(pair)([], Policy()))
+
+    def test_database_unilateral_commit_reports_difference(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = [Path(tmp, n) for n in ('python', 'go')]
+            for root in dirs:
+                root.mkdir()
+                with sqlite3.connect(root / 'configflow.sqlite3') as db:
+                    db.executescript('CREATE TABLE meta(key,value); CREATE TABLE sections(scope,owner,position); '
+                                     'CREATE TABLE fields(scope,owner,field,position,value,revision);')
+                    db.execute('INSERT INTO meta VALUES (?,?)', ('commit_id', json.dumps('a' * 32)))
+            policy = Policy()
+            self.assertEqual(database_diffs(*dirs, policy), [])
+            with sqlite3.connect(dirs[1] / 'configflow.sqlite3') as db:
+                db.execute('UPDATE meta SET value=?', (json.dumps('b' * 32),))
+            self.assertTrue(any(d.kind == 'unstable-Go-commit' for d in database_diffs(*dirs, policy)))
+
+    def test_blocked_exception_details_preserve_chinese_and_wrong_status(self):
+        from subscriptions import blocked_error_projection as project
+        a = {'message': '从订阅URL获取失败: request_failed (exception_type=SubscriptionFetchError)，且本地无缓存数据'}
+        b = {'message': '从订阅URL获取失败: request_failed (exception_type=SubscriptionFetchError status=403)，且本地无缓存数据'}
+        self.assertEqual(project(a, 0), project(b, 1))
+        self.assertNotEqual(project(a, 0), project({'message': b['message'].replace('且本地无缓存数据', 'wrong')}, 1))
+        self.assertNotEqual(project(a, 0), project({'message': b['message'].replace('403', '500')}, 1))
+
+    def test_task_notification_evidence_uses_real_receipt(self):
+        from subscriptions import notice_errors
+        task = {'run_count': 1, 'last_run_at': '2026-01-01T00:00:00Z', 'last_status': 'failed', 'consecutive_failures': 1}
+        item = {'evidence': '1:2026-01-01T00:00:00Z:failed', 'checked_at': task['last_run_at'],
+                'last_seen_at': task['last_run_at'], 'failure_count': 1}
+        self.assertEqual(notice_errors(item, task), [])
+        for field, bad in [('evidence', '2:2026-01-01T00:00:00Z:failed'), ('failure_count', 0),
+                           ('checked_at', '2025-01-01T00:00:00Z'), ('last_seen_at', 'wrong')]:
+            changed = copy.deepcopy(item)
+            changed[field] = bad
+            self.assertTrue(notice_errors(changed, task))
+
+    def test_substore_protocol_cleanup_and_local_payload_mutation(self):
+        from substore import normalized, ProtocolError
+        name = '_cf_tmp_sub-a_12345678'
+        records = [{'method': 'POST', 'path': '/api/subs', 'body': {'name': name, 'url': 'http://source.example/feed#noFlow', 'noFlow': True, 'source': 'local', 'content': 'opaque-body'}},
+                   {'method': 'GET', 'path': '/download/' + name + '/ClashMeta?noFlow=true', 'body': None},
+                   {'method': 'DELETE', 'path': '/api/sub/' + name, 'body': None}]
+        self.assertEqual(len(normalized(records, 'http://source.example/feed', 'opaque-body')), 3)
+        with self.assertRaises(ProtocolError):
+            normalized(records[:-1], 'http://source.example/feed', 'opaque-body')
+        for key, bad in [('noFlow', False), ('content', 'wrong-body'), ('url', 'http://other.example')]:
+            changed = copy.deepcopy(records)
+            changed[0]['body'][key] = bad
+            with self.assertRaises(ProtocolError):
+                normalized(changed, 'http://source.example/feed', 'opaque-body')
+
     def test_generated_file_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:
             dirs = [Path(tmp, n) for n in ('python', 'go')]

@@ -65,6 +65,63 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `db.fields.system//system_config.value.server_domain` | value | 'http://panel.example' | '�' |
 | `db.meta.generation` | value | 4 | 5 |
 
+## R218-F09 /
+
+路由：`POST /api/subscriptions/<sub_id>/fetch`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:subscription:sub-a': {'source': 'task', 'title': '订阅甲🧪 · 订阅更新', 'message': '上游返回 HTTP 403', 'impact': '没有可用缓存', 'status_label': '执行失败', 'severity': 'error', 'profile_id': None, 'scope': 'shared', 'profile_name': None, 'target': {'path': '/subscriptions', 'query': {'subscription': 'sub-a', 'section': 'settings'}, 'label': '检查订阅设置'}, 'checked_at': '2026-11-16T20:00:33Z', 'failure_count': 1, 'id': 'task:subscription:sub-a', 'state': 'pending', 'read': False, 'version': '2026-11-16T20:00:33.408234+00:00', 'first_seen_at': '2026-11-16T20:00:33.408234+00:00', 'last_seen_at': '2026-11-16T20:00:33Z', 'occurre | None |
+
+## R218-F11 /
+
+路由：`POST /api/subscriptions/<sub_id>/fetch`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `subscription.source.requests` | length | 0 | 1 |
+| `status` | value | 500 | 200 |
+| `headers.content-type` | value | 'text/html; charset=utf-8' | 'application/json' |
+| `body` | type | ['<!doctype html>', '<html lang=en>', '<title>500 Internal Server Error</title>', '<h1>Internal Server Error</h1>', '<p>The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.</p>'] | {'added': 2, 'cached_count': 2, 'cached_updated_at': '2026-11-16T20:00:36.335498+00:00', 'count': 2, 'fetch_error': None, 'from_cache': False, 'nodes': [{'id': 'node_8b611873', 'name': '甲🧪', 'params': {}, 'port': 1080, 'server': '192.0.2.1', 'subscription_id': 'sub-a', 'subscription_name': '订阅甲🧪', 'type': 'socks5'}, {'id': 'node_69421a7e', 'name': '乙', 'params': {}, 'port': 1081, 'server': '192.0.2.2', 'subscription_id': 'sub-a', 'subscription_name': '订阅甲🧪', 'type': 'socks5'}], 'success': True, 'total_count': 2} |
+| `db.meta.commit_id` | unstable-Go-commit | 'bf0f3d5bba1b4138b54f4c2681e86b16' | 'f0bcfd2b2e5147e98c04e9211db29ade' |
+| `db.fields.shared//_revision.revision` | value | 2 | 5 |
+| `db.fields.shared//_revision.value` | value | 1 | 2 |
+| `db.fields.shared//nodes.revision` | value | 1 | 5 |
+| `db.fields.shared//nodes.value` | length | 0 | 2 |
+| `db.meta.commit_id` | value | 'bf0f3d5bba1b4138b54f4c2681e86b16' | 'f0bcfd2b2e5147e98c04e9211db29ade' |
+| `db.meta.generation` | value | 4 | 5 |
+| `files.shared/subscribes/sub-a.json` | extra-in-go | None | {'mode': 384, 'content': {'subscription_id': 'sub-a', 'updated_at': '2026-11-16T20:00:36.335498+00:00', 'count': 2, 'nodes': [{'name': '甲🧪', 'type': 'socks5', 'server': '192.0.2.1', 'port': 1080, 'params': {}, 'subscription_id': 'sub-a', 'subscription_name': '订阅甲🧪', 'id': 'node_8b611873'}, {'name': '乙', 'type': 'socks5', 'server': '192.0.2.2', 'port': 1081, 'params': {}, 'subscription_id': 'sub-a', 'subscription_name': '订阅甲🧪', 'id': 'node_69421a7e'}], 'metadata': {'subscription_name': '订阅甲🧪', 'url': 'http://127.0.0.1:44232/feed', 'fetched_at': '2026-11-16T20:00:36.335498+00:00'}}} |
+| `files.shared/subscription-downloads/5352ec5879f2278d3776fd605c8aaea7065863f9c849f0370ca96f0c254bf31a.json` | extra-in-go | None | {'mode': 384, 'content': {'text': 'proxies:\n  - {name: 甲🧪, type: socks5, server: 192.0.2.1, port: 1080}\n  - {name: 乙, type: socks5, server: 192.0.2.2, port: 1081}\n', 'fetched_at': '2026-11-16T20:00:36.335498+00:00', 'traffic': None}} |
+| `files.shared/subscription_health.json` | extra-in-go | None | {'mode': 384, 'content': {'sub-a': {'history': [{'at': '2026-11-16T20:00:36.357250Z', 'status': 'ok', 'count': 2}]}}} |
+| `files.task-status.json` | extra-in-go | None | {'mode': 384, 'content': {'subscription:sub-a': {'last_run_at': '2026-11-16T20:00:36Z', 'last_finished_at': '2026-11-16T20:00:36Z', 'last_status': 'success', 'last_duration_ms': 32, 'last_trigger': 'manual', 'last_error': '', 'run_count': 1, 'last_success_at': '2026-11-16T20:00:36Z', 'consecutive_failures': 0, 'cache_updated_at': '2026-11-16T20:00:36.335498+00:00'}}} |
+
+## R218-F12 /
+
+路由：`POST /api/subscriptions/<sub_id>/fetch`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `headers.content-type` | value | 'application/json' | 'text/html; charset=utf-8' |
+| `body` | type | {'message': '订阅操作失败', 'success': False} | ['<!doctype html>', '<html lang=en>', '<title>500 Internal Server Error</title>', '<h1>Internal Server Error</h1>', '<p>The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.</p>'] |
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:subscription:sub-a': {'source': 'task', 'title': '订阅甲🧪 · 订阅更新', 'message': '上游返回 HTTP 403', 'impact': '仍使用上一次有效缓存（2026-01-01T00:00:00Z）', 'status_label': '执行失败', 'severity': 'warning', 'profile_id': None, 'scope': 'shared', 'profile_name': None, 'target': {'path': '/subscriptions', 'query': {'subscription': 'sub-a', 'section': 'settings'}, 'label': '检查订阅设置'}, 'checked_at': '2026-11-16T20:00:34Z', 'failure_count': 1, 'id': 'task:subscription:sub-a', 'state': 'pending', 'read': False, 'version': '2026-11-16T20:00:34.877185+00:00', 'first_seen_at': '2026-11-16T20:00:34.877185+00:00', 'last_seen_at': '202 | None |
+
+## R218-F13 /
+
+路由：`POST /api/subscriptions/<sub_id>/fetch`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `headers.content-type` | value | 'application/json' | 'text/html; charset=utf-8' |
+| `body` | type | {'message': '订阅操作失败', 'success': False} | ['<!doctype html>', '<html lang=en>', '<title>500 Internal Server Error</title>', '<h1>Internal Server Error</h1>', '<p>The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.</p>'] |
+
+## R218-S03 /
+
+路由：`POST /api/subscriptions/<sub_id>/fetch`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:subscription:sub-a': {'source': 'task', 'title': '订阅甲🧪 · 订阅更新', 'message': '上游返回 HTTP 403', 'impact': '仍使用上一次有效缓存（2026-01-01T00:00:00Z）', 'status_label': '执行失败', 'severity': 'warning', 'profile_id': None, 'scope': 'shared', 'profile_name': None, 'target': {'path': '/subscriptions', 'query': {'subscription': 'sub-a', 'section': 'settings'}, 'label': '检查订阅设置'}, 'checked_at': '2026-11-16T20:00:31Z', 'failure_count': 1, 'id': 'task:subscription:sub-a', 'state': 'pending', 'read': False, 'version': '2026-11-16T20:00:31.940542+00:00', 'first_seen_at': '2026-11-16T20:00:31.940542+00:00', 'last_seen_at': '202 | None |
+
 ## R223-F12 /
 
 路由：`POST /api/subscriptions/reorder`；状态：different
