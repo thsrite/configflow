@@ -39,8 +39,11 @@ design, HR reviews, concurrency problems and escalations (max 1 Opus agent). Coo
 dispatch, verify (detached worktree + `rt`, emulation gate), fast-forward `go`, push.
 
 **Running Codex agents (Paseo, project prj_b0033e1859522497):** check with `mcp__paseo__list_agents` /
-`get_agent_status`; their finish notifications went to the old coordinator session, so poll their status
-once when you take over, then rely on notifications for agents you start yourself.
+`get_agent_status`; their finish notifications go to the session that last prompted them (the old coordinator). On takeover,
+first `get_agent_status` each one; then re-attach: `send_agent_prompt` to each still-running agent with
+`notifyOnFinish: true` and a harmless steer ("协调会话已更换，任务不变，继续做，完成后照常报告。") so its finish
+notification comes to you. Agents already idle: read their final message (`get_agent_activity`) and handle
+the hand-back. If no notification arrives within ~3 h, check status once more.
 | agentId | task | workspace / branch |
 |---|---|---|
 | 954058ca-002e-424d-b246-6447e66a3c3b | N2 review finish (uncommitted fixes in the shared worktree) | wks_b5cc6440618e29f7, `~/program/configflow-go` (branch `go`) |
