@@ -175,6 +175,8 @@ def main():
     groups.update(discovery_website)
     from cases.delivery_graph import GROUPS as delivery_graph
     groups.update(delivery_graph)
+    from cases.discovery_branches import GROUPS as discovery_branches
+    groups.update(discovery_branches)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

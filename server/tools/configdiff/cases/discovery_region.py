@@ -17,6 +17,7 @@ from cases.subscriptions import require
 def region(binary, recorder):
     for case, services, domains, scenario in [('R054-S01', True, [], 'success'),
             ('R054-S02', False, ['example.com'], 'success'),
+            ('R054-B02', False, ['xn--fiqs8s.example'], 'success'),
             ('R054-B01', True, ['x' + str(i) + '.example' for i in range(10)], 'success'),
             ('R054-B03', False, ['example.com'], 'partial')]:
         def responder(request, index):
@@ -28,7 +29,7 @@ def region(binary, recorder):
             opts['profile']['domain_discovery']['region_check_enabled'] = True
             with Pair(binary, recorder, options=opts) as pair:
                 pair.policy = profile_policy(pair)
-                variant = scenario + '/' + ('services' if services else 'domains') + '/' + str(len(domains))
+                variant = case + '/' + scenario + '/' + ('services' if services else 'domains') + '/' + str(len(domains))
                 heartbeat(pair, variant=variant)
                 pair.policy.times.add('files.regions/agent-synthetic.json.content.services.checked_at')
                 pair.policy.times.add('body.result.checked_at')

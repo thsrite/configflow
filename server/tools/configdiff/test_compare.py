@@ -34,6 +34,10 @@ class Comparators(unittest.TestCase):
         job = {'id': 'a' * 32, 'kind': 'probe', 'status': 'running', 'total': 19, 'done': 0,
                'errors': [], 'message': '', 'started_at': '1970-01-01T00:01:40', 'finished_at': None}
         self.assertEqual(job_errors({'success': True, 'job': job}, policy, 'probe', 19), [])
+        terminal = {**job, 'status': 'done', 'done': 19, 'finished_at': '1970-01-01T00:01:41'}
+        self.assertEqual(job_errors({'success': True, 'job': terminal}, policy, 'probe', 19, terminal=True), [])
+        self.assertTrue(job_errors({'success': True, 'job': {**terminal, 'finished_at': '1970-01-01T00:01:39'}},
+                                   policy, 'probe', 19, terminal=True))
         for patch in ({'total': 18}, {'total': True}, {'done': -1}, {'done': 1}, {'id': 'bad'}, {'errors': [{}]},
                       {'status': 'done'}, {'finished_at': '1970-01-01T00:01:41'}, {'unexpected': 0}):
             self.assertTrue(job_errors({'success': True, 'job': {**job, **patch}}, policy, 'probe', 19))

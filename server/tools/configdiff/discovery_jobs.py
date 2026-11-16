@@ -11,6 +11,11 @@ from harness import DesignError, send
 FIELDS = {'id', 'kind', 'status', 'total', 'done', 'errors', 'message', 'started_at', 'finished_at'}
 
 
+def instant(text, policy):
+    value = datetime.fromisoformat(text.replace('Z', '+00:00'))
+    return value.replace(tzinfo=ZoneInfo(policy.tz)).timestamp() if value.tzinfo is None else value.timestamp()
+
+
 def preflight_errors(value, policy, kind, message):
     if not isinstance(value, dict) or value.get('success') is not True or not isinstance(value.get('job'), dict):
         return ['missing success/job object']
@@ -34,10 +39,7 @@ def preflight_errors(value, policy, kind, message):
         if not timestamp(job.get('finished_at'), policy):
             errors.append('job finish window')
         elif timestamp(job.get('started_at'), policy):
-            def instant(text):
-                value = datetime.fromisoformat(text.replace('Z', '+00:00'))
-                return value.replace(tzinfo=ZoneInfo(policy.tz)).timestamp() if value.tzinfo is None else value.timestamp()
-            if instant(job['finished_at']) < instant(job['started_at']):
+            if instant(job['finished_at'], policy) < instant(job['started_at'], policy):
                 errors.append('finish precedes start')
         if job.get('message') != message:
             errors.append('wrong exact preflight message')

@@ -4,7 +4,7 @@ import re
 import time
 
 from compare import Difference, differences, database_diffs, file_diffs, timestamp
-from discovery_jobs import FIELDS
+from discovery_jobs import FIELDS, instant
 from harness import DesignError, send
 
 
@@ -29,6 +29,8 @@ def job_errors(value, policy, kind, total, *, terminal=False):
     if terminal:
         if job.get('status') not in ('done', 'failed') or not timestamp(job.get('finished_at'), policy):
             out.append('missing terminal state/time')
+        elif timestamp(job.get('started_at'), policy) and instant(job['finished_at'], policy) < instant(job['started_at'], policy):
+            out.append('finish precedes start')
     elif job.get('status') != 'running' or job.get('done') != 0 or job.get('errors') != [] or job.get('message') != '' or job.get('finished_at') is not None:
         out.append('gate-closed job must remain running without results/errors')
     return out
@@ -113,13 +115,14 @@ class Running:
     def finish(self, expected_calls, *, errors=0, status='done', variant=''):
         for agent in self.agents:
             agent.release.set()
-        final = [None, None]
+        final, statuses = [None, None], [None, None]
         for index in range(2):
             deadline = time.monotonic() + 10
             while time.monotonic() < deadline:
                 reply = self.poll(index)
                 value = self.decode(reply)
                 final[index] = value
+                statuses[index] = reply.status
                 job = value.get('job') if isinstance(value, dict) else None
                 if isinstance(job, dict):
                     if self.previous[index] is not None:
@@ -153,6 +156,5 @@ class Running:
         diffs += database_diffs(*self.pair.dirs, policy) + file_diffs(*self.pair.dirs, policy)
         path = {'probe': 'probe', 'region': 'region/check', 'website': 'website/identify'}[self.kind]
         self.pair.recorder.record('T20', variant, 'POST /api/domain-discovery/' + path,
-                                  'T20', 'different' if diffs else 'compared', diffs, python_status=200,
-                                  go_status=200 if isinstance(final[1], dict) and final[1].get('success') else None)
+                                  'T20', 'different' if diffs else 'compared', diffs, python_status=statuses[0], go_status=statuses[1])
         return final

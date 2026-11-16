@@ -923,3 +923,19 @@ request_variants=7044 named_matrix_cases=3554（S560 F2479 B515），H去重240�
 ```
 
 继续discovery命名helper/多Agent/断连/自动化及其余R/H/T；未做最终全量。
+
+## 批次 52：域名发现命名helper与终态时间顺序
+
+- 新增21请求实际通过：H057–059/H066–070/H073–074/H076–077逐分支独立公开请求（12个新增H编号；H070细分4种输入），包含2000忽略容量、31网站容量、真实heartbeat但无报告、异步前置失败、region11域名及无服务/域名；另补R054-B02 punycode成功的完整Agent请求/任务/regions文件序列。
+- 通用成功任务比较器现在拒绝finished_at早于started_at，即使两者都落在允许窗口；已有自检加入故意倒序终态。T20最终poll状态码记录实际HTTP值，未从success字段推定。预检共用同一时区解析，不改变字段格式要求。
+- 重跑region与四种预检job全流程；新增punycode最初与普通单域名variant重名，现统一包含R编号，inventory重复键检查已通过。没有新增业务差异。
+
+```text
+.63 run.py --groups discovery-named-branches,discovery-agent-region,discovery-job-preflight
+current compared=59 design_errors=[] seconds=30.84
+cumulative compared=1876 go-unimplemented=5093 dependency=28 different=67 O12-separate=1
+request_variants=7065 named_matrix_cases=3555（S560 F2479 B516），H去重252，G去重16
+49 self-checks + end-to-end wrong-Go-response check OK
+```
+
+H064共享规则库在读取后被改的竞态、H072同步自动job失败仍待独立到达；多Agent/断连/自动化及其余R/H/T继续，未做最终全量。
