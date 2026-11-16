@@ -112,6 +112,14 @@ consumer with structural comparison (functional parity). Planned order (cheapest
 | N6 | `rules` Python-`re` shims (icase tables, `re.sub` templates, `\N{}`) | `regexp` (RE2), `regexp2` for lookaround/backrefs (same as Mihomo's own filters) | – |
 | N7 | `pyyaml` + `yamlx` loader/dumper, `subs/commented` editor | `gopkg.in/yaml.v3` (Node API keeps comments; Mihomo itself uses yaml.v3) | `yamlx` facade API |
 | N8 | `jsonx` Python encoding (repr floats, ensure_ascii, separators) | `encoding/json`-style output | ordered `*jsonx.Object` type (unknown fields and key order survive) |
+| N9 | Python exception emulation: `PyError`/class-name/message types in `health/check/pyerr.go`, `refresh/pyerr.go`, `routersplit/pyhelpers.go`, `rulefetch/pyerrors.go`, `subs/pyconv.go`, `substore/pystr.go` | plain Go errors | Chinese messages and HTTP status codes |
+| N10 | per-package Python value glue: `convert/pyhelpers.go`, `mosdns/py.go`, `oxidns/py.go`, `oxidns/pyre_c23.go`, `routers/pyhelpers.go`, `httpx/pyconv.go`, `installer/py*.go`, `agents/metrics/pyvalue.go`, `agents/monitor/py*.go`, `agents/metrics/traffic_compat.go`, `repo/pyvalue.go`, `rules/pystr.go`, `rulefetch/pystr.go`, `rules/ipaddr.go` (do together with N3) | plain Go, `strconv`, `net/netip` | what a feature needs (e.g. JSON number int/float handling) |
+| N11 | other stdlib ports: IDNA (`rules/idna.go`, `oxidns/idna2003.go`), `rulefetch/pyhtml.go` (html.unescape/HTMLParser), `agents/pydecode.go` (requests text decoding), `agents/pytime.go` (Python time formatting) | `golang.org/x/net/idna`, `html.UnescapeString` / `golang.org/x/net/html`, UTF-8 + `golang.org/x/text`, `time.Format` | API time formats the frontend shows/parses |
+| N6+ | `rules/pyre_parse.go` (port of CPython's sre parser) + `pyre_case_table.go`, `pyre_icase.go`, `pyre_net.go`, `pyre_sub.go` | `regexp` / `regexp2` directly, small syntax shim (`(?P<name>`, `(?P=name)`) only | – |
+
+The inventory above came from a name/comment sweep (2026-11-16) and may miss unmarked emulation. Every
+swap agent sweeps its consumers again, every adversarial review checks "no Python emulation where a Go
+library does the job", and the `finish` domain greps for leftovers before the switch.
 
 Consequences accepted by the maintainer: YAML 1.1 implicit types (`yes/no/on/off`, `NO`, sexagesimal,
 `0777`) follow yaml.v3 (= Mihomo's own reading); generated config bytes and stored JSON formatting
