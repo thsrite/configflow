@@ -505,3 +505,16 @@ func TestFetchWithNullCacheNodes(t *testing.T) {
 	w.call("POST", "/api/subscriptions/s/fetch", `{"preview":true}`, true)
 	w.call("POST", "/api/subscriptions/s/fetch", `{}`, true)
 }
+
+func TestUTF8BOMRequestBodies(t *testing.T) {
+	w := newWorld(t, seedGraph(t, "none", false, true), nil)
+	w.control.Offline = true
+	w.call("POST", "/api/nodes", "\ufeff"+`{"id":"bom","name":"BOM"}`, true)
+	w.call("PUT", "/api/nodes/bom", "\ufeff"+`{"name":"Updated BOM"}`, true)
+	w.call("POST", "/api/nodes/reorder", "\ufeff"+`{"ids":["bom"]}`, true)
+	w.call("POST", "/api/nodes/parse-lines", "\ufeff"+`{"lines":[]}`, true)
+	w.call("PUT", "/api/subscriptions/s", "\ufeff"+`{"name":"Feed","url":"https://feed.example/s"}`, true)
+	w.call("POST", "/api/subscriptions/reorder", "\ufeff"+`{"ids":["s"]}`, true)
+	w.call("POST", "/api/subscriptions/s/fetch", "\ufeff"+`{"preview":true}`, true)
+	w.call("POST", "/api/subscriptions/s/fetch", "\ufeffnull", true)
+}

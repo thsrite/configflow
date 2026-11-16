@@ -8,6 +8,7 @@
 - 中：旧缓存 `nodes` 是对象而非数组时，缓存预览及订阅列表均返回 500（Python 200）。只在两个只读摘要入口忽略非数组 nodes，继续读取 count/updated_at；provider 渲染仍严格解码，不能静默发布空数据。新增 non-list 缓存差分，修复前稳定失败、修复后通过。
 - 中：非对象的非空 `/fetch` 请求体被当成空对象执行，发生未请求的下载/节点导入（Python 写入前拒绝）；两个 reorder 入口把同类输入报为 404 而不是 500。现在在下载和写事务前拒绝，保留原有 500 响应类别及订阅中文错误，Go 使用自己的英文对象校验提示。新增 12 个 Flask 差分请求，比较状态和全部持久化结果，只归一化该类 Python 内部英文异常。
 - 中：离线拉取回退到 `nodes: null` 的旧缓存时，adapter 将 nil slice 编成 null 后断言为数组，触发请求 panic/500；Python 返回空节点数组/200。现在在 adapter 边界保留空数组；新增 preview/import 两个差分，覆盖响应和 revision，修复前稳定复现 panic。
+- 中：UTF-8 BOM 请求体通过公共 JSON 解析后，C30 再次解码原始字节时未剥除 BOM，导致有效对象被当成非对象。节点/订阅的原生解码入口及可选请求体检测现在统一去掉 UTF-8 BOM；新增 8 个 CRUD/reorder/parse/fetch 差分请求通过。
 - 新增 23 个 Flask↔Go URL 边界请求，覆盖大小写、空值、重复参数、百分号编码、路径穿越、尾斜杠、额外参数和显式 profile 优先级，全部一致。重复 token 取首值，额外无关参数被忽略，与 Flask 一致。
 - 补过期 JWT、畸形 Bearer、退休 token 与 config token 碰撞、token 轮换、错误响应一致及日志不含凭据检查。
 - `TestEveryGlobalRouteRequiresJWT` 对 25 个全局 method/path 逐一带有效 URL token、不给 JWT，Flask/Go 均返回 401；包括保留的 5 个 C16 延迟方法。profile alias 的 token-only 成功/失败另测，覆盖全部 26 个注册方法。
@@ -38,3 +39,29 @@ RT_HOST=sunbroke@192.168.0.63 rt --back server/internal/api/subscriptions/securi
 - flight key 是 kind/profile/resource/format/filter/config 摘要，不存请求 token；鉴权发生在 cache/flight 访问前。
 
 剩余：全量 .32 验收、proddiff、rebase 和最终报告。
+
+## 最终验收命令（.32）
+
+全部通过 `rt` 运行；测试输出日志只保留在测试服务器 `/tmp/review-c30-*.log`。
+
+```sh
+rt -- bash -lc 'set -e
+cd server
+gofmt -l internal/ tools/ design/ > /tmp/review-c30-format.log
+cat /tmp/review-c30-format.log
+test ! -s /tmp/review-c30-format.log
+go vet ./... > /tmp/review-c30-vet.log 2>&1
+cat /tmp/review-c30-vet.log
+go test -race -count=1 ./internal/api/subscriptions/... ./internal/api/nodes/... ./internal/auth/... > /tmp/review-c30-race.log 2>&1
+tail -6 /tmp/review-c30-race.log
+go test -count=1 ./... > /tmp/review-c30-suite.log 2>&1
+tail -8 /tmp/review-c30-suite.log
+CONFIGFLOW_DIFF=1 go test -count=1 ./internal/api/subscriptions/... ./internal/api/nodes/... > /tmp/review-c30-diff.log 2>&1
+tail -6 /tmp/review-c30-diff.log
+cd ..
+server/scripts/proddiff.sh > /tmp/review-c30-proddiff.log 2>&1
+rg "^self-check:|^baseline:" /tmp/review-c30-proddiff.log
+rg -o "\"coverage_regressions\": [0-9]+|\"new\": [0-9]+|\"stale\": [0-9]+" /tmp/review-c30-proddiff.log'
+```
+
+最终一轮须包含 BOM 修复。上轮格式/vet/race/全量套件和 C30 差分通过（88.401s），但 proddiff 首次出现 5 个新差异，均属于 `GET /api/agents/<agent_id>/metrics/summary` 的 `data_points` 和四个 `avg`，无 C30 差异。未更改 baseline/normalize；将复跑确认是否为独立请求时钟窗口差异。

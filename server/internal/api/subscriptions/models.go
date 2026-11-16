@@ -40,7 +40,7 @@ func readBody(c *httpx.Ctx) (object, error) {
 		return nil, err
 	}
 	var value object
-	if err := json.Unmarshal(data, &value); err != nil {
+	if err := json.Unmarshal(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")), &value); err != nil {
 		return nil, nil
 	}
 	return value, nil
@@ -58,7 +58,7 @@ func readOptionalBody(c *httpx.Ctx) (object, error) {
 		return nil, err
 	}
 	var compact bytes.Buffer
-	if err := json.Compact(&compact, data); err != nil {
+	if err := json.Compact(&compact, bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))); err != nil {
 		return nil, err
 	}
 	if nonempty(compact.Bytes()) {

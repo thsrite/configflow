@@ -60,7 +60,7 @@ func readObject(c *httpx.Ctx, silent bool) (record, error) {
 		return nil, err
 	}
 	var object record
-	if json.Unmarshal(data, &object) != nil {
+	if json.Unmarshal(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")), &object) != nil {
 		return nil, nil
 	}
 	return object, nil
@@ -221,7 +221,7 @@ func reorderNodes(c *httpx.Ctx) (*httpx.Response, error) {
 			return nil, err
 		}
 		var compact bytes.Buffer
-		if err := json.Compact(&compact, data); err != nil {
+		if err := json.Compact(&compact, bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))); err != nil {
 			return nil, err
 		}
 		if nonempty(compact.Bytes()) {
