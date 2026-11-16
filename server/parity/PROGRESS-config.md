@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 19 missing, 4 partial, 6 ported, 8 verified (C01, C02, C03, C04, C08, C09, C10, C12). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 17 missing, 4 partial, 8 ported, 8 verified (C01, C02, C03, C04, C08, C09, C10, C12). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -44,8 +44,8 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C16 | health check, latency, node DNS, region check, domain probe | 1089 | ported | C12, C13 | 5 (5 done) |
 | C17 | provider delivery and responses | 540 | ported | C15 | – |
 | C18 | Mihomo config generation, Mihomo base settings | 1275 | ported | C12, C15, C16, C17 | – |
-| C19 | Surge converter | 1129 | missing | C18 | – |
-| C20 | Loon converter | 764 | missing | C19 | – |
+| C19 | Surge converter | 1129 | ported | C18 | – |
+| C20 | Loon converter | 764 | ported | C19 | – |
 | C21 | MosDNS converter | 1261 | missing | C14 | – |
 | C22 | OxiDNS converter, native loader, references, match targets | 913 | missing | C05, C21 | – |
 | C23 | OxiDNS validation and constraints | 1542 | missing | C22 | – |
@@ -762,37 +762,46 @@ Commands:
 
 ## C19 — Surge converter
 
-**Status: `missing`** · prereqs: C18 · Go: internal/convert (new)
+**Status: `ported`** (not reviewed) · prereqs: C18 · Go: `internal/convert` (`surge.go`, shared `clients_py.go`)
 
-Files:
-- `backend/converters/surge.py` (1129)
+Files → Go:
+- `backend/converters/surge.py` (1129) → `convert/surge.go`: `GenerateSurgeConfig(ctx, config, baseURL)` (= generate_surge_config), `ConvertNodeToSurge(node) (line, wireguard, err)` ("" = None), `ConvertProxyGroupToSurge(group, config, baseURL, smartGroups)`, `ConvertProxiesToSurgeText(proxies, toNodes)` (toNodes = `substore.ProxiesToNodes`, passed by the caller because substore imports convert), `GetProxyGroupNodes`, `SurgeDefaultGeneral`, `SurgeBuiltinPolicies`; `split_rules_and_rulesets` is C18's identical `splitRulesAndRulesets`.
+- `convert/clients_py.go` (shared with C20): `pyDict` (hashable-key dict), `joinAny` (str.join TypeError), `pyLen`, `strIn`, `nextMatch`, `hasPortListAny` / `networkAsProtocolAny` / `rulesetFormatAny` (C12's common helpers for values of any type; a non-string truthy `source_url` is detected with two sentinel URLs → AttributeError 'decode' exactly when urlsplit would see it), `validateRulePolicies` (unhashable policy → TypeError before `rules.ValidateRulePolicies`), `parseCustomSections` (dict semantics: repeated section keeps first position, last text), `configAPIPath` (repo's copy; repo imports convert), `resolveProxyString` (parse_uri_list step), `clientConverter` (Sub-Store from `MihomoEnv.Converter`; unwired → `*HookMissingError` raised only when a URI node string needs converting).
 
-Tests: `test_snell_shadow_tls.py` (6)
+Collaborators: only Sub-Store `convert_proxy_string` (via `reject_surge_dialers` → `convert_node_to_mihomo`), taken from C18's `MihomoEnv` (`mihomoenv.Wire`). No new hooks; no other domain is called. `generate_aggregation_provider` is only used by the dead `get_aggregation_nodes` (below).
 
-Routes: none.
+Tests:
+- Corpus `testdata/gen_surge_loon.py` (imports `gen_mihomo` for profiles and its fakes) → `surge_loon_corpus.jsonl.gz`, `surge_loon_corpus_test.go` (shared with C20): 6008 profiles each through `generate_surge_config` and `generate_loon_config` (every node type and params shape both read, structured JSON/YAML/YAML-list/flow node strings, URI strings of every scheme incl. tuic/anytls/wireguard/socks5/http/snell that parse_uri_list drops, WireGuard sections, smart groups, custom configs with repeated/odd sections and CRLF, UDP fallback/NTP, Loon-only rule types, blackmatrix7 rule sets, dialers/chains (rejected), 12 % of profiles with malformed values at random places), 6000 nodes each through `convert_node_to_surge`/`convert_node_to_loon`, 2000 proxy lists each through the `*_text` functions, 1662 groups through `convert_proxy_group_to_surge`/`_loon`, 1667 `get_proxy_group_nodes`, 1662 `_build_rules`, 28 `_sanitize_name`. **34697 rows, 0 differences**; 2676 Surge + 2477 Loon configurations byte-identical, the rest equal errors (class + message; crash classes TypeError/KeyError/AttributeError by class) and equal mutated profiles.
+- **Recorded replay** (`testdata/c19_record.py`, pytest plugin, → `surge_loon_recorded.jsonl.gz`; `surge_loon_recorded_test.go`): every top-level call of the ten converter functions during the full backend suite (12552 passed under the recorder) with the Sub-Store answers: **128 distinct calls from 92 tests in 17 files, 0 differences, 0 unsupported** (surge 65, loon 36, node_surge 3, node_loon 6, proxies_surge 7, proxies_loon 5, group_surge 4, group_nodes 1, build_rules 1). Files: test_client_fixed_ip, test_config_import, test_converter_review_regressions, test_dialer_proxy, test_dialer_round2, test_generated_preview, test_health_https_defaults, test_loon_generation, test_mihomo_easytier, test_profile_generation, test_proxy_chains, test_proxy_group_regex_exclusion, test_qa_integrity, test_safe_url_queries, test_snell_shadow_tls, test_surge_loon_group_exclusion, test_udp_fallback.
+- Hand-ported (`surge_loon_ported_test.go`): `test_snell_shadow_tls.py` export 2/6 (`test_surge_export_snell_*`), `test_surge_loon_group_exclusion.py` 5/5, `test_udp_fallback.py` Surge/Loon halves (disabled MATCH, Surge FINAL/native fallback, Surge base wins, Loon after-MATCH, Loon custom General, Loon port list, NTP first, NTP off ×2); Go-side: Sub-Store unwired fails closed only for URI node strings, `*_text` skip failing nodes / dialer-proxy error.
+- Deferred: `test_snell_shadow_tls.py` 3 import cases + `test_surge_round_trip_keeps_shadow_tls` → C35 (`config_importer.parse_client_config`; the export half of the round trip is in the replay). Route/agent halves of the replayed files (config/generate/subscription/aggregation endpoints, agent publishing) → C30/C31/C34/agents.
 
-Evidence: No Go package; no route registered.
+Not ported (needs a decision): `surge.get_aggregation_nodes` — no caller anywhere in `backend/` (grep), no test; it would need C31's `generate_aggregation_provider`. `get_proxy_group_nodes` (also no production caller) is ported because a test uses it.
 
-Missing / deferred: Everything in the files below.
+Decisions / differences from Python: none known in the corpus or replay. Debug log lines with Python sets print them in insertion order (as C18). Values jsonx cannot hold (non-string YAML keys in node strings) follow C10/C12's accepted differences.
 
-Notes for porter: `surge.py` imports `routes.aggregations.generate_aggregation_provider` (C31) — use the C17 decision. Manual node strings keep `subs.ParseURIList` (follow-up after parity: switch Surge/Loon to Sub-Store).
+Commits: 4f09d3d1 (code), f350a047 (corpus), 84ffae21 (replay + ported tests), + this PROGRESS commit.
+
+Reviewer hints: evaluation order of crash points (Python evaluates f-string debug arguments even at INFO: `len(nodes)`; dict-comprehension key before value; hash at store); `followedGroupView` (`url`/`interval` keys present as None → "None" in url-test lines); `rulesetFormatAny` sentinel trick; `resolveProxyString` (any exception inside the try → None; raw objects copied without `_raw_object`); `convertNodeToSurge` join of non-str `server`; `validateRulePolicies` pre-scan.
+
+Commands:
+- tests: `rt -- bash -lc 'cd server && gofmt -l internal/convert; go vet ./internal/convert/... && go test -count=1 ./internal/convert/...'` (last run, detached worktree at HEAD 84ffae21: ok 7.2 s; `-race -run "Surge|Loon"` ok)
+- corpus: `rt --back server/internal/convert/testdata/surge_loon_corpus.jsonl.gz -- bash -lc 'PYTHONPATH=.:server/internal/convert/testdata ~/cf-test/.venv/bin/python server/internal/convert/testdata/gen_surge_loon.py 6000'` (deterministic; ~30 s)
+- recorded replay: `rt --back server/internal/convert/testdata/surge_loon_recorded.jsonl.gz -- bash -lc 'rm -rf /tmp/c19rec; C19_RECORD_DIR=/tmp/c19rec PYTHONPATH=.:server/internal/convert/testdata ~/cf-test/.venv/bin/python -m pytest backend -q -n 6 --dist=worksteal -p c19_record -p no:cacheprovider; PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/convert/testdata/c19_record.py merge /tmp/c19rec'` (~3 min)
 
 ## C20 — Loon converter
 
-**Status: `missing`** · prereqs: C19 · Go: internal/convert (new)
+**Status: `ported`** (not reviewed) · prereqs: C19 · Go: `internal/convert` (`loon.go`, shared `clients_py.go`)
 
-Files:
-- `backend/converters/loon.py` (764)
+Files → Go:
+- `backend/converters/loon.py` (764) → `convert/loon.go`: `GenerateLoonConfig(ctx, config, baseURL)`, `ConvertNodeToLoon(node) (line, err)` ("" = None), `ConvertProxyGroupToLoon(group, members)`, `ConvertProxiesToLoonText(proxies, toNodes)`, `BuildLoonRules` (= `_build_rules`), `SanitizeLoonName` (= `_sanitize_name`), constants `LoonDefaultGeneral`, `LoonBuiltinPolicies`, `LoonRuleTypes`, `LoonVmessCiphers`, `LoonDefaultTestURL`; private `effectiveLoonGroup`, `loonGroupSources`, `loonGroupMemberRefs`, `nameAllocator`, `resolveLoonNode`, `_quote/_value/_bool/_first/_transport_opts/_tls_opts/_shadow_tls_opts` ports.
+- The group-pruning loop iterates in insertion order where Python iterates a set: the result is the greatest fixed point either way; only the order of the debug lines differs.
 
-Tests: `test_loon_generation.py` (10), `test_surge_loon_group_exclusion.py` (5), `test_udp_fallback.py` (15)
+Collaborators, tests, commands: shared with C19 (same corpus, replay and ported test files; see C19). Loon-specific hand-ported: `test_loon_generation.py` 5/10 (`test_unsupported_transports_are_skipped`, `test_default_general_keeps_fake_ip_range_in_tun`, `test_logical_rules_with_unsupported_subrules_are_commented`, `test_node_formats_follow_loon_docs`, policy half of `test_loon_rejects_unknown_policy_and_chains`; the chain half tests C12's `reject_surge_dialers`); `test_surge_loon_group_exclusion.py` Loon cases 2/2; `test_udp_fallback.py` Loon halves. Every generator call of `test_loon_generation.py` (12) is in the replay. Deferred: `test_loon_public_url_requires_token`, `test_loon_url_names_config_after_profile`, `test_custom_loon_config_round_trip` (routes → C34), `test_subscription_serves_loon_nodes` (route → C30; its `convert_proxies_to_loon_text` call is replayed), generation half of `test_loon_config_sections` replayed, its repository setup is C04's.
 
-Routes: none.
+Decisions / differences from Python: none known.
 
-Evidence: No Go package; no route registered.
-
-Missing / deferred: Everything in the files below.
-
-Notes for porter: Loon shares helpers with Surge; port after C19.
+Commits: same as C19.
 
 ## C21 — MosDNS converter
 
