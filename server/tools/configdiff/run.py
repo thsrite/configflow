@@ -183,6 +183,8 @@ def main():
     groups.update(discovery_disconnect)
     from cases.discovery_auto import GROUPS as discovery_auto
     groups.update(discovery_auto)
+    from cases.discovery_auto_quiet import GROUPS as discovery_auto_quiet
+    groups.update(discovery_auto_quiet)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

@@ -80,6 +80,7 @@ class Comparators(unittest.TestCase):
             self.assertTrue(progress_errors(previous, current))
         trace = probe_calls(['x' + str(i) + '.example' for i in range(19)])
         self.assertEqual([len(call['body']['targets']) for call in trace], [20, 3])
+        self.assertTrue(differences([], trace, 'auto.quiet.rpc'))
         for mutate in (lambda t: t[0]['body'].update(attempts=1), lambda t: t[1]['body']['targets'].pop(),
                        lambda t: t[0].update(authorization='wrong'), lambda t: t[0].update(path='/wrong')):
             wrong = copy.deepcopy(trace)

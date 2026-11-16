@@ -989,3 +989,22 @@ request_variants=7112 named_matrix_cases=3558（S561 F2479 B518），H去重253�
 ```
 
 T21仍待忽略/已覆盖/3天重探/30天复检/人工apply竞争；还需website跨空间busy、真实Agent超时、H064以及剩余R/H/T，未做最终全量。
+
+## 批次 56：T21安静轮次、3/30天边界与人工采纳重叠
+
+- 47新增请求/序列：18条incoming前置实际比较通过；24条task入口尚未接通、5条依赖。六类安静轮次：ignored、已覆盖、新鲜probe、3天减1小时probe、30天减1小时history、最近一次recheck在30天减1小时。Python必须零Agent请求、全DB（含generation/commit）不变、原probe字节不变，同时任务成功回执且锁释放。
+- 3天加1小时重新经真实fake Agent探测并采纳；30天加1小时复检proxy历史，原applied_at保持固定旧值，只更新recheck，准确记录both_ok/直连可访问/建议移除，未自动undo。边界两侧相隔2小时，不用宽泛4天/31天样例冒充准确阈值。
+- 自动探测的RPC挂起期间，经公开apply采纳manual.example.net，再undo旧undo.example；放行后自动加入example.com。两条应留history（manual/auto）、两个目标规则及已撤销项准确保留，不恢复过期配置，也不丢人工写入。这里只证明后台自动任务与人工操作重叠，不代替T03同时SQL写入/CAS竞争。
+- 首个真实80阈值启动/同key409分别补上R227-S03/B01编号。共享GET tasks动态时间/600秒deadline比较供全部自动化场景未来接通后使用；固定旧probe/history日期不mask。quiet的意外RPC有故意错误自检，50项通过。
+- 上述完整自动化仍是Python参考前提已证明，Go任务入口未接通；没有把这些序列记成Go实现通过，没有新业务差异。
+
+```text
+.63 run.py --groups discovery-automatic-thresholds,discovery-automatic-quiet,discovery-automatic-aging
+current compared=27 go-unimplemented=40 dependency=9 design_errors=[] seconds=25.62
+cumulative compared=1921 go-unimplemented=5133 dependency=37 different=67 O12-separate=1
+request_variants=7159 named_matrix_cases=3560（S562 F2479 B519），H去重253，G去重16
+.63 python -m unittest discover -s server/tools/configdiff -p test_compare.py
+Ran 50 tests in 0.775s; OK
+```
+
+继续website跨空间busy、真实Agent超时、H064、P边界及其余R/H/T；未做最终全量。
