@@ -39,9 +39,10 @@ def validate_ids(directory):
 
 
 class Exchange:
-    def __init__(self, pair, source, expected=1):
+    def __init__(self, pair, source, expected=1, unordered=False):
         self.pair, self.source, self.expected = pair, source, expected
         self.transcripts = [None, None]
+        self.unordered = unordered
 
     def before(self, index):
         self.source.requests.clear()
@@ -52,7 +53,10 @@ class Exchange:
             raise DesignError('Python source request count does not demonstrate intended path: ' + repr(self.transcripts[0]))
 
     def compare(self, policy):
-        return differences(*self.transcripts, 'subscription.source.requests', policy)
+        transcripts = self.transcripts
+        if self.unordered:
+            transcripts = [sorted(rows, key=lambda item: json.dumps(item, sort_keys=True)) for rows in transcripts]
+        return differences(*transcripts, 'subscription.source.requests', policy)
 
 
 def capture_ids(pair):
@@ -106,7 +110,7 @@ def notice_errors(item, task):
     return out
 
 
-def capture_notice(pair):
+def capture_notice(pair, key='subscription:sub-a'):
     def capture(replies, policy):
         out, evidence = [], []
         for index, directory in enumerate(pair.dirs):
@@ -115,11 +119,11 @@ def capture_notice(pair):
                 evidence.append(None)
                 continue  # The complete file comparator reports its absence.
             items = json.loads(path.read_text()).get('items', {})
-            item = items.get('task:subscription:sub-a')
+            item = items.get('task:' + key)
             if item is None:
                 evidence.append(None)
                 continue
-            task = json.loads((directory / 'task-status.json').read_text())['subscription:sub-a']
+            task = json.loads((directory / 'task-status.json').read_text())[key]
             errors = notice_errors(item, task)
             if index == 0 and errors:
                 raise DesignError('Python notification does not describe its actual task receipt')

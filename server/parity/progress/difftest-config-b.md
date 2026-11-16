@@ -463,3 +463,21 @@ request_variants=5470 named_matrix_cases=2980（S379 F2228 B373），H去重192
 ```
 
 无新差异；全部176项是已验证Python前提且等待Go接通，不计比较通过。未做最终全量。
+
+## 批次 25：共享规则库、草稿CAS、匿名正文和缓存/连通性
+
+- 126新增变体（CAS变体每端实际2客户端）：content text/YAML/空/中文、URL text和MRS envelope原始二进制、剥离无关来源及derived字段、创建/改名/改内容/改URL/删除的数据库与全文件；保留update_interval；不存在/重复ID/错型/无效来源/下载失败。MRS这里仅验证此HTTP路由的压缩信封与原字节保存，不宣称目的核心trie解码。
+- draft完整声明SHA revision按Python规范独立计算；精确版本写入正文及stable cache，旧版本409，非content拒绝，字段集合/错型全覆盖；两个相同revision且相同新正文的并发请求，恰好200+409，最终SQL/cache再次比较。usage_count跨两独立profile；匿名默认/URL profile正文均原始UTF-8+CRLF字节比较，空正文和URL源错误独立。
+- 检查接口返回修复建议与errors而不写库；classical手写内容不被自动改写。库重排忽略旧展示字段，公共引用阻止删除。proxy_domains trim/清空/特殊字符与错误对象按真实Python行为。
+- fake源扩展HEAD、按路径响应与302，test-single精确200才available，bulk HEAD按<400且失败自动禁用；content跳过、空库、全成功保留偏好。批量cache混合源、旧有效cache在403时保留且enabled不变，manual task/notification最终文件完整比较。仅异步results按唯一id排序、并发source交互按完整请求记录排序，缺项/重复/改结果/HEAD改GET有自检，38项。
+- 回归6个已有subscription-fetch-direct，证实共用fake GET与观察器保持比较通过；无新业务差异。Go规则库相关路由尚未接通，126新增项全部只计有效Python参考，未来自动比较。
+
+```text
+.63 run.py --groups library-crud,library-drafts,library-check-content,library-public-content,library-remote,library-proxy-domains,library-reorder,library-network-checks,library-cache,library-concurrent-draft,subscription-fetch-direct
+current go-unimplemented=126 compared=6 design_errors=[] seconds=33.79
+cumulative compared=1455 go-unimplemented=4071 dependency=28 different=41 O12-separate=1
+request_variants=5596 named_matrix_cases=3100（S414 F2281 B405），H去重192
+38 self-checks + end-to-end wrong-Go-response check OK
+```
+
+规则库native跨profile重建/磁盘失败与不确定提交/下载期间CAS等分支仍待补，其他业务文件继续，未做最终全量。

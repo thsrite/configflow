@@ -11,6 +11,7 @@ class Source:
         self.requests, self.body = [], body
         self.status = 200
         self.headers = {'Content-Type': 'text/yaml; charset=utf-8'}
+        self.responses = {}
         self.before_reply = lambda _path: None
         owner = self
         class Handler(BaseHTTPRequestHandler):
@@ -18,16 +19,24 @@ class Source:
                 pass
 
             def do_GET(self):
+                self.respond()
+
+            def do_HEAD(self):
+                self.respond(head=True)
+
+            def respond(self, head=False):
                 owner.requests.append({'method': self.command, 'path': self.path,
                                        'authorization': self.headers.get('Authorization', ''),
                                        'user_agent': self.headers.get('User-Agent', '')})
                 owner.before_reply(self.path)
-                self.send_response(owner.status)
-                for key, value in owner.headers.items():
+                status, body, headers = owner.responses.get(self.path, (owner.status, owner.body, owner.headers))
+                self.send_response(status)
+                for key, value in headers.items():
                     self.send_header(key, value)
-                self.send_header('Content-Length', str(len(owner.body)))
+                self.send_header('Content-Length', str(len(body)))
                 self.end_headers()
-                self.wfile.write(owner.body)
+                if not head:
+                    self.wfile.write(body)
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         self.url = 'http://127.0.0.1:' + str(self.server.server_port)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)

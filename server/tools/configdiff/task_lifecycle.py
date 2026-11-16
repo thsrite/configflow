@@ -19,6 +19,8 @@ def configure(pair, key):
     for field in ('last_run_at', 'last_finished_at', 'last_success_at', 'cache_updated_at'):
         pair.policy.times.add(prefix + field)
     pair.policy.durations.add(prefix + 'last_duration_ms')
+    for field in ('version', 'first_seen_at', 'checked_at', 'last_seen_at'):
+        pair.policy.times.add('files.notifications.json.content.items.task:' + key + '.' + field)
 
 
 def row(pair, index, key):

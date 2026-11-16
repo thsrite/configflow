@@ -110,6 +110,8 @@ def main():
     groups.update(tasks)
     from cases.groups import GROUPS as managed_groups
     groups.update(managed_groups)
+    from cases.rule_library import GROUPS as rule_library
+    groups.update(rule_library)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

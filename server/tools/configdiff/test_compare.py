@@ -17,6 +17,23 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_rule_results_align_by_id_without_hiding_loss_or_wrong_result(self):
+        from rule_library import by_id
+        value = {'results': [{'id': 'b', 'success': True}, {'id': 'a', 'success': False}], 'failed_count': 1}
+        reordered = {**value, 'results': list(reversed(value['results']))}
+        self.assertEqual(differences(by_id(value), by_id(reordered)), [])
+        for rows in ([{'id': 'b', 'success': True}], [{'id': 'b', 'success': True}] * 2,
+                     [{'id': 'b', 'success': True}, {'id': 'a', 'success': True}]):
+            self.assertTrue(differences(by_id(value), by_id({**value, 'results': rows})))
+        from subscriptions import Exchange
+        observer = Exchange(None, None, unordered=True)
+        first = {'method': 'HEAD', 'path': '/a', 'user_agent': 'synthetic'}
+        second = {'method': 'HEAD', 'path': '/b', 'user_agent': 'synthetic'}
+        observer.transcripts = [[first, second], [second, first]]
+        self.assertEqual(observer.compare(Policy()), [])
+        observer.transcripts[1] = [second, {**first, 'method': 'GET'}]
+        self.assertTrue(observer.compare(Policy()))
+
     def test_background_receipt_requires_exact_result_and_count(self):
         from task_lifecycle import receipt_errors
         value = {'run_count': 2, 'last_status': 'failed', 'last_trigger': 'manual', 'last_error': 'synthetic failure',
