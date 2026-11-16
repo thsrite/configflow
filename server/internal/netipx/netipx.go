@@ -209,7 +209,7 @@ func Collapse(networks []netip.Prefix) ([]netip.Prefix, error) {
 		start := n.Addr()
 		next := last.Next()
 		if next.IsValid() && start.Compare(next) > 0 {
-			out = append(out, summarize(first, last)...)
+			out = append(out, Summarize(first, last)...)
 			first, last = start, Broadcast(n)
 			continue
 		}
@@ -217,11 +217,11 @@ func Collapse(networks []netip.Prefix) ([]netip.Prefix, error) {
 			last = end
 		}
 	}
-	return append(out, summarize(first, last)...), nil
+	return append(out, Summarize(first, last)...), nil
 }
 
 // summarize is summarize_address_range(first, last).
-func summarize(first, last netip.Addr) []netip.Prefix {
+func Summarize(first, last netip.Addr) []netip.Prefix {
 	var out []netip.Prefix
 	width := first.BitLen()
 	for {

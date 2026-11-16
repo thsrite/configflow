@@ -133,6 +133,13 @@ type RouterState struct {
 	RetiredPolicyRoutes []*PolicyRouteEntry `json:"retired_policy_routes"`
 	// Routes the router actually forwards with (iKuai 当前路由表); nil when unknown.
 	ActiveRoutes []*RouteEntry `json:"active_routes"`
+	// RouterOS NAT/forwarding evidence; nil keeps the legacy coverage check
+	// (empty Rules means there are no source-NAT rules).
+	NatContext *NatContext `json:"nat_context"`
+	// NAT rule ids the RouterOS policy-routing plan (R08) removes.
+	PolicyNATRetiring []string `json:"-"`
+	// iKuai only: IP groups with ConfigFlow ownership and the rules using them.
+	IkuaiGroups *GroupState `json:"-"`
 }
 
 // Driver talks to one router.

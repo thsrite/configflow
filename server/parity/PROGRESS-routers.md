@@ -1,6 +1,6 @@
 # PROGRESS — domain `routers`
 
-Domain `routers` (WORKFLOW.md): router core, iKuai, RouterOS core/policy, router DNS/IPv6, router publish/rule sync, clients/split (old packages #32–#38). **52 Python files, 17574 lines, 17 modules** (equal to the `routers` totals in `FILES.md`) — 15 missing, 0 partial, 0 ported, 2 verified (R01, R02). Only reviewers set `verified`.
+Domain `routers` (WORKFLOW.md): router core, iKuai, RouterOS core/policy, router DNS/IPv6, router publish/rule sync, clients/split (old packages #32–#38). **52 Python files, 17574 lines, 17 modules** (equal to the `routers` totals in `FILES.md`) — 14 missing, 0 partial, 1 ported (R03), 2 verified (R01, R02). Only reviewers set `verified`.
 
 Planning audit: 2026-11-16, worktree `configflow-go`, branch `go` at 7b1b90b5 (plus uncommitted work of the C24/C25 agent in `internal/oxidns`). The Go tree was searched directly (`grep -ri 'routeros|ikuai|router_split|routers_of|router' server/internal`): **no package ports any routers file**; `internal/server` wires no routers package. What exists is listed under "Go code that already touches this domain" below; nothing from the old `progress/` files covers #32–#38.
 
@@ -39,7 +39,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 |---|---|---|---|---|---|---|---|
 | R01 | router models, store, DHCP DNS, desired state | 969 | verified | HR | C04, C05, C21, C32¹ | – | internal/routers, internal/routerdoc, internal/netipx |
 | R02 | router split (full TUN marker), rule IP presence | 381 | verified | HR | C04, C12, C14, C18, C21; C36² | – | internal/routersplit, internal/gateway/gwbase, internal/ippresence |
-| R03 | RouterOS NAT assessment, iKuai IP groups, drift report | 1499 | missing | HR | R01 | – | internal/routers |
+| R03 | RouterOS NAT assessment, iKuai IP groups, drift report | 1499 | ported | HR | R01 | – | internal/routers |
 | R04 | RouterOS REST driver, batch writes | 1415 | missing | HR | R01, R03; shared requests client³ | – | internal/routers |
 | R05 | iKuai driver | 1179 | missing | HR | R01, R03; shared requests client³ | – | internal/routers |
 | R06 | device route editor (RouterOS/iKuai static routes) | 684 | missing | HR | R04, R05 | – | internal/routers |
@@ -243,16 +243,48 @@ Commands:
 
 ## R03 — RouterOS NAT assessment, iKuai IP groups, drift report
 
-**Status: `missing`** · HR · prereqs: R01 · Go: internal/routers
+**Status: `ported`** (2026-11-16, not reviewed) · HR · prereqs: R01 · Go: internal/routers (+ `netipx.Summarize` exported)
 
-Files:
-- `backend/routers/routeros_nat.py` (509), `backend/routers/ikuai_groups.py` (684), `backend/routers/report.py` (306)
+Files: `backend/routers/routeros_nat.py` (509), `backend/routers/ikuai_groups.py` (684), `backend/routers/report.py` (306); plus `routeros_nat_list.py` `COMMENT/SRC_LIST/DST_LIST`, `references`, `candidate`, `inspect_rule` (58 lines, R07's file) because `assess_bypass` always needs the list-rule inspection (R07 reuses `InspectNATListRule`, `NATListRefs`, `IsNATListCandidate`).
 
-Tests: `test_ikuai_groups.py` (40), `test_ikuai_groups_invariants.py` (4; plan/release halves → R12), `test_routeros_nat.py` (25), `test_router_route_index.py` (5), `test_routeros_static_selection.py` (16)
+Commits: see "Commits" line at the end of this section.
 
-Routes: none.
+Go layout (no jsonx, no `any` parameters mirroring Python):
+- `rosnat.go` — `Row` (one decoded RouterOS REST row, `map[string]any`), `NatContext` (typed lists; nil = could not be read; JSON = Python keys for R12's fingerprint evidence), `NatAssessment{Status, Detail, RuleIDs}`, `RouteEgressIndex` (`NewRouteEgressIndex`, `GatewayEgress`; caches the static index, gateway egress, parsed NAT address lists and the list rule per read), `Egress(cidr, gateway, ctx, policyRouting, ix)` (Python `_egress`, used by R08/R12), `AssessNAT`, `AssessBypass`, `PreservesSources(rows, sources, destinations, iface, ctx, addressSets, accepted, cache)`, `ClientSourceNetworks`, `BypassExpansion` + `PlannedBypassConflicts` (R12 passes its `nat_update` ops with `add_dst`). `RouterState` gained `NatContext`, `PolicyNATRetiring` (NAT ids the R08 policy plan removes; Python read them from `ros_policy_plan.ops[].owned`) and `IkuaiGroups`.
+- `natlist.go` — `InspectNATListRule(rows, others []ListRef) NATListRule{Rule, Problem, OutInterface}`, constants `NATListComment/NATSrcList/NATDstList/PathNAT/PathMangle`.
+- `ikuaigroups.go` — names (`GroupName`, `GroupNameRole`), `CanonAddress`, `GroupDigest`, `GroupForm`/`GroupEntry`, `GroupPayload`, `EntryPayload`, `GroupBytes`; readback `GroupFromRow`, `GroupsFromRows` (= group_from_row + mark_owners), `ReadGroupRules` (read_rules + adopt) → `GroupState{Groups, Rules (read order), Rule(key)}`, `ResolveGroup`, `ClassifyRef` (`RefOwned/RefStale/RefForeign`), `ForeignRefs`, `HiddenRefs`; planning `GroupPlanner` (`NewGroupPlanner(state, &warnings, &blockers)` — shares the plan's lists like Python; `Family`, `NeedsRewrite`, `DroppedForeign`, `Migration`, `Refs`, `ReferencedValues`, `Cleanup`, `Check`, `MigrationWarning`; exported maps `Finals/Contents/Rewritten/DeletedRules/StageChecks`, `RouteRules`), `GroupOp` (kind-specific JSON keys like Python's dicts), `GroupRuleCheck`, `GroupStageCheck`, `GroupSpan`, `NATTarget`, `GroupReportSection`, `VerifyGroups`.
+- `report.go` — `Networks` (Python `_networks`), `SupernetIndex`, `BuildReport(desired, state) (*Report, error)` with typed sections (`RoutesReport`, `NatReport`, `DNSReport`, `GroupReport`, summary map, in_sync). Later sections (R08 policy routing, R09 DNS guard, R10/R11 IPv6) come in through `ReportParts` (collaborator variable, returns none until those modules set it; Python adds them only when `desired` has `ros_policy`/`dns_guard` or the state holds IPv6 plans, which nothing in Go sets yet): each `ReportPart` gives its key + section, statuses for the summary, its in-sync verdict and the route ids it removes from `routes.extra` (policy migrations). Called before the NAT items, as Python builds the policy plan before `_nat_items` (R08 sets `PolicyNATRetiring` there).
 
-Notes for porter: `RouteEgressIndex`, `assess_bypass`, `assess_nat`, `_egress`, `_selector_matches`, `client_source_networks`, `planned_bypass_conflicts`, `preserves_sources`; `GroupPlanner`, `canon`, `span`, `nat_target`, `verify`; `build_report`, `_networks`. `report` lazily calls ros_policy (R08), dns_guard (R09), IPv6 modules (R10/R11) → collaborator variables. The report and plan **fingerprints** are hashes over these structures: key order and number text must match Python byte for byte (they gate every publish).
+Decisions:
+- Group request sizes: the layout keeps Python's measure (spaced separators, non-ASCII as `\uXXXX`) through `wireLen` + two constants (124 bytes of an empty edit request with a 10-digit ID, 27 per entry incl. separator), so groups split exactly where Python split them. It is an upper bound of what `encoding/json` sends **with `SetEscapeHTML(false)`** — R05 must encode iKuai requests that way (`TestGroupBytesBoundsTheRequest`).
+- `VerifyGroups` checks groups in plan order (role pa, pm, nat; group number), as Python iterated the check dict.
+- Fingerprints (R12) hash `sort_keys` JSON computed by the same Go process at preview and apply; `NatContext` JSON keys equal Python's.
+
+Python quirk reproduced (finding for the maintainer, not changed): when `layout` repacks a fragmented family, new CIDRs that the first pass already put into an existing group are queued twice (`sequence = slot values + pending`), so the repacked group holds them twice (Python: 5 groups × 10 + 1 new → `cf_pa_1` with 52 entries). The next release removes the duplicate ("整理重复条目"). Go does the same for parity; a fix would be `sequence = slot values + pending[position:]`.
+
+Not chased (functional parity; RouterOS REST and iKuai send strings/numbers): Python `str()` of non-string row values (None → "None", True → "True" in ids/texts; Go treats them as empty, `rosTrue` accepts a JSON true); Python `str.isspace`/`strip` vs `unicode.IsSpace`/`strings.TrimSpace` (U+001C–U+001F); `int()` forms of `distance` beyond `strconv` (underscores, full-width digits); a truthy non-string literal address (Python `IPv4Network(5)`) → Go "undecidable"; the `$`-before-newline match of Python's group-name regex; IPv4-mapped IPv6 text in `CanonAddress`; an entry too long for any request makes Python's `_minimum` loop forever (unreachable: CIDRs and iKuai notes are short) — Go stops counting and reports the blocker; `planned_bypass_conflicts` with an op id not in the rules (Python StopIteration → 500; R12 builds the ops from the same rows) — Go skips it; `GroupRuleCheck.ID` is omitted when empty (Python `"id": None` for a new NAT rule; R12 compares checks in-process).
+
+Acceptance (boundary): `TestR03Corpus` (`r03_corpus_test.go`, `testdata/gen_r03.py` → `r03_corpus.jsonl.gz`, real Python on the test server, synthetic values) — **18959 rows, 0 differ**: assess_nat 3000 and assess_bypass 3000 (60 % plausible RouterOS reads: proxy route with immediate-gw, connected LAN, WAN masquerade by interface or list, exemptions by address/list, the cf list rule; the rest random: missing chain/action, unreadable lists, mangle actions/jumps, routing rules, VRFs, interface lists with include/all-*, broken address lists, invalid gateway/CIDR; retiring ids), planned 701, preserves 2000, inspect_rule 1500, client_sources 256 (every host of a /24), report 2500 (RouterOS with NAT context, iKuai policy mode with IP groups, static/legacy coverage, retired policy rules, DHCP DNS error/disabled, 300-CIDR batches), ikuai_read 1283 (group/rule readback: dup names, lost markers → adoption, ref_count, odd rows), ikuai_plan 1800 (GroupPlanner scripts as plan.py drives them: families up to 33000 CIDRs → "需要 17 个" blocker, fragmented families → repack, frozen/shared groups, hidden refs, notes incl. CJK/emoji/controls, rewrites/deleted rules, cleanup warnings, checks, migration warning), verify 1283, payload/group_bytes 600, span 400, canon 18, digest 300, networks 318. Every Chinese message is compared byte for byte. Mutation checks: dropping the repack, or the first client address, makes the corpus fail.
+Unit tests (`r03_test.go`): group size bound vs `encoding/json`, iKuai encoding, `addressExclude` partition, list-rule cache per read, `ReportParts` (summary, in_sync, extra retirement, JSON key), `NATTarget` order.
+
+Python test files → coverage:
+- `test_routeros_nat.py` (25): NAT statuses/details of every case (interface lists and negation, legacy all-* groups, unknown egress, connected-gateway egress, missing policy/interface evidence, mangle actions, chainless rules, NAT jumps, uniform/shadowed routes, exact route with disabled backup) → corpus assess_nat/assess_bypass/report; the driver's context reading (bytes/packets dropped, which tables are read) → R04; plans, release checks and fingerprint invalidation (`test_safe_evidence_changes…`, `test_nat_traffic_counters…`, `test_release_*`) → R12.
+- `test_routeros_static_selection.py` (16): report route items (table preference, competing/shadowed routes, policy-named routes not extra) → corpus report (RouteEntry active/distance shapes); RouterOS row parsing → R04; release verification/plans → R12.
+- `test_router_route_index.py` (5): report batch and NAT report over 1000 routes, no state mutation → corpus report (300-CIDR rows; Go parses each route once in `NewStaticRouteIndex`/`NewRouteEgressIndex`, assessment never writes state); `_verify` after live route changes → R12.
+- `test_ikuai_groups.py` (40): layout (2000-entry cap, byte split of long CIDRs/ranges, touching only changed groups, readback spelling, repack, >16 groups), ownership marker, notes in size and payload, shared/frozen groups, hidden refs, lost markers, unmarked hints, nat target choice, references by gid → corpus ikuai_plan/ikuai_read/payload/verify/report; device writes, rollbacks and release flows → R05/R12.
+- `test_ikuai_groups_invariants.py` (4): previous-release plans/writes → R12; `test_routeros_state_has_no_ikuai_groups` → R04.
+
+Size (wc -l, non-test, informational): rosnat 857, natlist 121, ikuaigroups 1287, report 460 = **2725** Go lines for 1557 Python lines (1499 + 58 of routeros_nat_list.py).
+
+Left for others: R04 fills `NatContext`; R05 builds `GroupState` (`GroupsFromRows`, `ReadGroupRules`), sends `GroupPayload`/`EntryPayload` encoded with `ikuaiEncode` and `SetEscapeHTML(false)`; R07 uses `InspectNATListRule`; R08 sets `PolicyNATRetiring` and `ReportParts`; R09–R11 add their `ReportParts`; R12 uses `GroupPlanner`, `PlannedBypassConflicts`, `Egress`, `VerifyGroups`.
+
+Commands (private detached worktree `~/program/configflow-go-r03`, the shared tree's build was broken by others' go.sum work):
+- corpus (~2 min): `rt --back server/internal/routers/testdata/r03_corpus.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/routers/testdata/gen_r03.py server/internal/routers/testdata/r03_corpus.jsonl.gz'`
+- tests: `rt -- bash -lc 'cd server && gofmt -l internal/routers internal/netipx; go vet ./... && go test -count=1 ./internal/routers/... ./internal/netipx/ ./internal/repo/ ./internal/notifications/ ./internal/server/'`
+
+Pitfalls: decoded rows hold JSON numbers as float64 (iKuai ids, ref_count): use `intValue`/`valText`; `Row` is a map, so slice identity (not `==`) tells reads apart for the list-rule cache.
+
+Commits: (filled below)
 
 ## R04 — RouterOS REST driver, batch writes
 
