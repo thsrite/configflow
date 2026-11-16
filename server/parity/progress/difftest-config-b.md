@@ -481,3 +481,20 @@ request_variants=5596 named_matrix_cases=3100（S414 F2281 B405），H去重192
 ```
 
 规则库native跨profile重建/磁盘失败与不确定提交/下载期间CAS等分支仍待补，其他业务文件继续，未做最终全量。
+
+## 批次 26：profile规则、规则集、批量操作与并发ID
+
+- 123新增变体：普通DOMAIN/IP-CIDR/MATCH（UDP fallback与ntp_direct）、规则库引用strip、中文IDNA/emoji remark/逗号regex；默认与显式profile创建/读取，空列表。错类型/空值/坏域名CIDR/缺或错library/MATCH错值/重复ID均独立请求，写后数据库与文件继续比较。
+- 部分PUT、规则值/policy更新、dns=default、空remark和不可更改路径ID；旧无效值的无关字段仍可编辑。专用rule-sets强制itemType，普通规则ID不能借此更新/删除；不存在和重复删除按真实404。
+- batch逐行验证，第二行无效全库不动；ID分配跳过已有rule_1，两个真实并发客户端均成功且分别得到rule_2/rule_3，SQL行/文件与全部响应再比较，未用客户端完成先后作为非确定对应关系。
+- group_name trim、清空、8193中文字符、缺/错成员及不存在成员原子拒绝；bulk policy保留省略label、显式清空label，不改未选成员，201条仍接受。新旧reorder仅改顺序；重复ID400、整数未知ID404、不可hash列表ID500分别验证，未错误统一成400。
+
+```text
+.63 run.py --groups rules-create,rules-update,rules-sets,rules-batch,rules-labels-policy,rules-reorder,rules-concurrent-batch
+current go-unimplemented=123 design_errors=[] seconds=14.31
+cumulative compared=1455 go-unimplemented=4194 dependency=28 different=41 O12-separate=1
+request_variants=5719 named_matrix_cases=3218（S448 F2341 B429），H去重192
+38 self-checks + end-to-end wrong-Go-response check OK
+```
+
+Go相关路由尚未接通，123项均只计有效Python参考。5719是请求/序列变体数量，不是5697设计条目已完成；R/H/G/T等仍有未实现项。DNS/native联动、compose、匹配/重复扫描、local缓存入口及其他业务文件继续，未做最终全量。
