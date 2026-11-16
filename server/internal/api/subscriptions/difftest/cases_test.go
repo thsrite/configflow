@@ -460,3 +460,12 @@ func TestMissingAggregationDependencyFailsClosed(t *testing.T) {
 		}
 	}
 }
+
+func TestMalformedManagementBodies(t *testing.T) {
+	w := newWorld(t, seedGraph(t, "none", false, true), nil)
+	for _, path := range []string{"/api/nodes/reorder", "/api/subscriptions/reorder", "/api/subscriptions/s/fetch"} {
+		for _, body := range []string{`[1]`, `"invalid"`, `true`, `1`} {
+			w.call("POST", path, body, true)
+		}
+	}
+}

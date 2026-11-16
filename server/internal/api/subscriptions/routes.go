@@ -185,9 +185,9 @@ func (e *reorderError) Error() string {
 }
 func reorderSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := context.WithoutCancel(c.Context())
-	body, err := readBody(c)
+	body, err := readOptionalBody(c)
 	if err != nil {
-		return nil, err
+		return httpx.Message(500, false, msgOperationFailed), nil
 	}
 	if body == nil {
 		body = object{}
@@ -312,7 +312,7 @@ func fetchSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 	if sub == nil {
 		return httpx.Message(404, false, "Subscription not found"), nil
 	}
-	body, err := readBody(c)
+	body, err := readOptionalBody(c)
 	if err != nil {
 		return nil, err
 	}

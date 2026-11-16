@@ -2,7 +2,9 @@
 package subscriptions
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -42,6 +44,27 @@ func readBody(c *httpx.Ctx) (object, error) {
 		return nil, nil
 	}
 	return value, nil
+}
+
+// readOptionalBody accepts the empty legacy payloads used by optional-body
+// endpoints, but never turns a populated non-object into a write request.
+func readOptionalBody(c *httpx.Ctx) (object, error) {
+	body, err := readBody(c)
+	if err != nil || body != nil {
+		return body, err
+	}
+	data, err := c.Data()
+	if err != nil {
+		return nil, err
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, data); err != nil {
+		return nil, err
+	}
+	if nonempty(compact.Bytes()) {
+		return nil, errors.New("request body must be a JSON object")
+	}
+	return object{}, nil
 }
 
 type cache struct {

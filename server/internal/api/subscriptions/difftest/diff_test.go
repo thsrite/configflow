@@ -299,6 +299,11 @@ var dispositionTime = regexp.MustCompile(`_[0-9]{8}_[0-9]{6}\.yaml`)
 func normalize(value any) any {
 	switch v := value.(type) {
 	case string:
+		// Malformed optional request bodies retain status and rejection, while
+		// Go reports its own diagnostic instead of Python attribute errors.
+		if v == "request body must be a JSON object" || regexp.MustCompile(`^'(?:list|str|bool|int|float)' object has no attribute 'get'$`).MatchString(v) {
+			return "<invalid-object-body>"
+		}
 		// Only English/native exception identity is unstable; Chinese text stays exact.
 		v = regexp.MustCompile(`request_failed \([^)]*\)`).ReplaceAllString(v, "request_failed (<native-transport-error>)")
 		if strings.HasPrefix(v, "更新失败（") && strings.HasSuffix(v, "）") {

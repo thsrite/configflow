@@ -1,6 +1,7 @@
 package nodes
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -215,6 +216,17 @@ func reorderNodes(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	if body == nil {
+		data, err := c.Data()
+		if err != nil {
+			return nil, err
+		}
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, data); err != nil {
+			return nil, err
+		}
+		if nonempty(compact.Bytes()) {
+			return httpx.Message(500, false, "request body must be a JSON object"), nil
+		}
 		body = record{}
 	}
 	order, _, err := reorderNodesStored(context.WithoutCancel(c.Context()), body)
