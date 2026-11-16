@@ -70,9 +70,24 @@ def create(directory, options):
     elif location == 'tasks':
         document['shared']['subscriptions'] = [{'id': 'sub-synthetic', 'name': payload,
             'url': 'http://source.example/sub', 'enabled': True, 'interval': 0}]
+    document['shared'].update(options.get('shared', {}))
+    for field, value in options.get('profile', {}).items():
+        if isinstance(value, dict) and isinstance(profile.get(field), dict):
+            profile[field].update(value)
+        else:
+            profile[field] = value
     repository.import_all(document)
     if 'other' not in document['profiles']:
         repository.create_profile({'id': 'other', 'name': '空间乙🧪'})
+    if options.get('other_profile'):
+        def update_other(value):
+            for key, item in options['other_profile'].items():
+                if isinstance(item, dict) and isinstance(value.get(key), dict):
+                    value[key].update(item)
+                else:
+                    value[key] = item
+            return value
+        repository.update_profile_transaction('other', update_other)
     default = repository.default_profile_id()
     def system(value):
         value['system_config'].update(server_domain='http://panel.example',

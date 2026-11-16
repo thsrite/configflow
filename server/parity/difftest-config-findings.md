@@ -10,9 +10,17 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
-| `dav.objects./backup/config_backup_20261116_182006_864787.json` | missing-in-go | {'schema_version': 5, 'system': {'system_config': {'server_domain': 'http://panel.example', 'github_proxy_domain': '', 'rule_fetch_proxy': '', 'retired_rule_proxy_tokens': ['synthetic-retired-proxy/token+9876543210'], 'rule_proxy_token': 'synthetic-current-proxy/token+0123456789', 'config_token': ''}, 'backup': {'auto_backup': True, 'webdav_url': 'http://127.0.0.1:45777', 'webdav_username': 'synthetic-dav-user', 'webdav_password': 'synthetic-dav-password', 'webdav_path': '/backup/', 'keep_latest': 0, 'keep_daily': 0}, 'agents': [{'id': 'agent-synthetic', 'name': '合成 Agent 🧪', 'token': 'synthetic-agent/token+01234567890123456789', 'profile_id' | None |
+| `dav.objects./backup/config_backup_20261116_182225_821400.json` | missing-in-go | {'schema_version': 5, 'system': {'system_config': {'server_domain': 'http://panel.example', 'github_proxy_domain': '', 'rule_fetch_proxy': '', 'retired_rule_proxy_tokens': ['synthetic-retired-proxy/token+9876543210'], 'rule_proxy_token': 'synthetic-current-proxy/token+0123456789', 'config_token': ''}, 'backup': {'auto_backup': True, 'webdav_url': 'http://127.0.0.1:43336', 'webdav_username': 'synthetic-dav-user', 'webdav_password': 'synthetic-dav-password', 'webdav_path': '/backup/', 'keep_latest': 0, 'keep_daily': 0}, 'agents': [{'id': 'agent-synthetic', 'name': '合成 Agent 🧪', 'token': 'synthetic-agent/token+01234567890123456789', 'profile_id' | None |
 | `dav.requests` | length | 3 | 0 |
-| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'webdav_backup': {'last_run_at': '2026-11-16T18:20:06Z', 'last_finished_at': '2026-11-16T18:20:06Z', 'last_status': 'success', 'last_duration_ms': 25, 'last_trigger': 'event', 'last_error': '', 'run_count': 1, 'last_success_at': '2026-11-16T18:20:06Z', 'consecutive_failures': 0}}} | None |
+| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'webdav_backup': {'last_run_at': '2026-11-16T18:22:25Z', 'last_finished_at': '2026-11-16T18:22:25Z', 'last_status': 'success', 'last_duration_ms': 12, 'last_trigger': 'event', 'last_error': '', 'run_count': 1, 'last_success_at': '2026-11-16T18:22:25Z', 'consecutive_failures': 0}}} | None |
+
+## R103-F14 / 
+
+路由：`POST /api/nodes/reorder`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `status` | value | 500 | 404 |
 
 ## X08 / retired-node-test-dns-migration
 
@@ -32,4 +40,4 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `db.fields.system//system_config.value.node_test_dns_config.servers` | length | 1 | 2 |
 | `db.fields.system//system_config.value.node_test_dns_config.servers[0]` | value | 'https://dns.example/dns-query' | '192.0.2.53:15353' |
 | `db.meta.generation` | value | 6 | 4 |
-| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'notice:node-test-dns-managed-removed': {'source': 'notice', 'scope': 'system', 'severity': 'warning', 'status_label': '已自动调整', 'title': '节点测速 DNS 已自动调整', 'message': '节点测速的「OxiDNS 托管」模式已移除。测速 DNS 已改为自定义：https://dns.example/dns-query。原专用入口 192.0.2.53:15353 已从 OxiDNS 配置中去掉，「合成 Agent 🧪」上的监听在下一次发布 OxiDNS 后关闭。', 'impact': '', 'checked_at': '2026-11-16T18:08:41.246814+00:00', 'target': {'path': '/nodes', 'query': {}, 'label': '查看测速设置'}, 'id': 'notice:node-test-dns-managed-removed', 'state': 'pending', 'read': False, 'version': '2026-11-16T18:08:41.246865+00:00', 'first_seen_at': '2026-11-16T18:08:41.246865+00:00' | None |
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'notice:node-test-dns-managed-removed': {'source': 'notice', 'scope': 'system', 'severity': 'warning', 'status_label': '已自动调整', 'title': '节点测速 DNS 已自动调整', 'message': '节点测速的「OxiDNS 托管」模式已移除。测速 DNS 已改为自定义：https://dns.example/dns-query。原专用入口 192.0.2.53:15353 已从 OxiDNS 配置中去掉，「合成 Agent 🧪」上的监听在下一次发布 OxiDNS 后关闭。', 'impact': '', 'checked_at': '2026-11-16T18:21:12.517498+00:00', 'target': {'path': '/nodes', 'query': {}, 'label': '查看测速设置'}, 'id': 'notice:node-test-dns-managed-removed', 'state': 'pending', 'read': False, 'version': '2026-11-16T18:21:12.517541+00:00', 'first_seen_at': '2026-11-16T18:21:12.517541+00:00' | None |

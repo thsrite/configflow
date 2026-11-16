@@ -58,6 +58,10 @@ def main():
     groups.update(settings)
     from cases.webdav import GROUPS as webdav
     groups.update(webdav)
+    from cases.mosdns import GROUPS as mosdns
+    groups.update(mosdns)
+    from cases.nodes import GROUPS as nodes
+    groups.update(nodes)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

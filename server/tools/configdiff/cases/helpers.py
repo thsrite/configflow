@@ -13,6 +13,14 @@ def exception_policy(pair, prefix=''):
     return policy
 
 
+def profile_policy(pair):
+    policy = copy.deepcopy(pair.policy)
+    for profile in ('default', 'other'):
+        for field in ('created_at', 'updated_at'):
+            policy.times.add(f'db.fields.profile/{profile}/{field}.value')
+    return policy
+
+
 @contextmanager
 def deny_writes(pair):
     """SQLite rejects actual field/meta writes; existing read handles still work."""
