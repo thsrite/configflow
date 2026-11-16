@@ -46,8 +46,9 @@ func TestC05ReviewSettingsReferences(t *testing.T) {
 }
 
 func TestC05ReviewDefaultsAndNormalizationAreIndependent(t *testing.T) {
-	want := DefaultSettings()
-	encoded, err := jsonx.Compact(repo.GetDefaultOxidnsSettings())
+	want := clone(DefaultSettings())
+	repositoryDefaults := repo.GetDefaultOxidnsSettings()
+	encoded, err := jsonx.Compact(repositoryDefaults)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,8 +67,8 @@ func TestC05ReviewDefaultsAndNormalizationAreIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	set(at(first, "api", "ssl"), "extra", L("changed"))
-	set(get(first, "unknown"), "list", L("changed"))
+	at(first, "api", "ssl", "extra").Content[0].Value = "changed"
+	at(first, "unknown", "list").Content[0].Value = "changed"
 	if difference := firstDifference(input, before, "input"); difference != "" {
 		t.Fatal(difference)
 	}
@@ -80,6 +81,7 @@ func TestC05ReviewDefaultsAndNormalizationAreIndependent(t *testing.T) {
 	}
 	mutated := DefaultSettings()
 	set(get(mutated, "api"), "username", S("changed"))
+	repositoryDefaults.GetObject("api").Set("username", "changed")
 	if difference := firstDifference(DefaultSettings(), want, "defaults"); difference != "" {
 		t.Fatal(difference)
 	}

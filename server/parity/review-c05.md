@@ -3,7 +3,8 @@
 范围：`backend/common/profile_context.py`、`backend/common/oxidns_settings.py`，对照
 `repo/scope.go`、`repo/defaults.go`、`httpx/app.go` 的 profile middleware、
 `oxidns/settings.go`、`convert.AppendURLQuery`。未改公开 API。结构改造按协调者约定留给
-N8 设计后的 S 轮次。当前为检查点报告；最终 `.32` 全量验收待补。
+N8 设计约束下的 S 轮次。**状态 verified，未关闭功能问题 0。** 最终 `.32` 验收通过。
+分支 `go-review-c05`；功能/语料提交 `b5b70b3d`，生产覆盖提交 `56b14c21`，其后为最终验收提交。
 
 ## 问题及修复
 
@@ -26,6 +27,9 @@ N8 设计后的 S 轮次。当前为检查点报告；最终 `.32` 全量验收�
 两份独立编写的生成器直接调用 Python 公共函数/真实 hook，不从 Go 推导期望。
 HTTP view 仅观察解析结果；真正执行配置空间 middleware、JWT gate、配置 token helper、
 repository、response hook。业务 provider handler 属于 C30，本复核不声称重审其转换逻辑。
+“全局 provider 路径”指未带 profile 的路由；C05 的三个 provider endpoint 例外仍会解析
+query/default 空间，同时 JWT gate 继续要求登录。它与 nodes 等真正的全局 metadata
+请求不同。最终 rebase 已纳入 C30，其真实 `TestGlobalGateAndProfileToken` 也随全仓测试通过。
 
 - `httpx/testdata/review_c05_gen.py`：1427 条，含 1320 次完整请求、30 次全局分类、32 次
   直接解析、5 次 path builder、40 次 URL appending。比较状态码、JSON 字段/值、profile
@@ -94,14 +98,14 @@ rt --back server/parity/review-c05-production.coverage.json -- bash -lc 'snapsho
 - scope/normalizer 无日志；配置拉取日志记录固定 service、校验过的 profile、状态、来源和
   有界清理的 UA，不记录 URL query/config token。正常 profile 校验错误由 HTTP handler
   返回，不落入带 source diagnostic 的内部错误日志。未发现此次范围的敏感日志泄露。
-- **→ S-convert / S-repo / S-httpx，等 N8 设计**：`mihomo_generate_py.go` 的
+- **→ S-convert / S-repo / S-httpx，按 [N7/N8 设计](../design/n7-n8.md) 进入后续轮次**：`mihomo_generate_py.go` 的
   `appendURLQuery`/`fstr`/`raise`/`catch` 与公开动态参数；`repo/defaults.go` 的 jsonx
   factories、`scope.go` compat snapshots、`compat_oxidns.go` 的 `normalizeAction`
   私有动态适配与 `normalizeClientRange` 的 `pyStrip` 边界。地址算法已委托 `clientrange`。
   `httpx/app.go` C05 middleware 自身是 Go context/指针/字符串，其他 query/response 动态
   兼容层属于 S-httpx/C06。未做需要 N8 设计的共享包拆分。
 
-## 命令与输出（检查点）
+## 命令与输出
 
 `.63` 生成新语料（`rt --back` 仅带回合成语料和静态行号）：
 
@@ -132,4 +136,68 @@ oxidns `2.236s`、convert `0.005s`）。未扩大任何 comparator waiver。
 
 初始 `.32` `rt -- server/scripts/proddiff.sh`：exit 0，status/json-leaf/yaml-leaf/text-line
 自检 PASS，`new=0 stale=0 coverage_regressions=0`，保留 5 个既有全局差异。
-最终全量及 rebase 状态待补。
+
+最终 `.32` 全量命令（exit 0；gofmt/vet 无输出）：
+
+```sh
+rt -- bash -lc 'set -euo pipefail
+cd server
+format_paths=$(gofmt -l internal/ tools/)
+if [[ -n "$format_paths" ]]; then
+  echo "$format_paths"
+  exit 1
+fi
+go vet ./...
+go test -race -count=1 -timeout=30m ./internal/repo/ ./internal/httpx/ ./internal/auth/ ./internal/oxidns/ ./internal/convert/
+go test -count=1 ./...
+cd ..
+server/scripts/proddiff.sh'
+```
+
+Race 输出：
+
+```text
+ok configflow/internal/repo       20.424s
+ok configflow/internal/httpx      16.615s
+ok configflow/internal/auth        1.519s
+ok configflow/internal/oxidns    423.003s
+ok configflow/internal/convert    56.388s
+```
+
+最终 rebase 到 `go` 的 `e6c87cc1` 纳入 C30、C37 和 N7/N8 设计后，再次在 `.32` 执行上述
+命令中的 gofmt/vet、`go test -count=1 ./...`、`server/scripts/proddiff.sh`，全部 exit 0。
+这几次合并未改动五个 C05 race 包的实现；没有重复 423 秒的 race。
+全仓输出包括 C30 的实际 provider gate 测试以及 C37 的新测试；最后几行：
+
+```text
+ok configflow/internal/utilx         0.008s
+ok configflow/internal/version       0.003s
+ok configflow/internal/weblistener   0.005s
+ok configflow/internal/weburl        0.004s
+ok configflow/internal/yamlx         0.595s
+?  configflow/tools/proddiff/generator [no test files]
+self-check: status=PASS json-leaf=PASS yaml-leaf=PASS text-line=PASS
+coverage_regressions=0 unique_differences=5 new=0 stale=0 self_check=PASS
+baseline: new=0 stale=0
+```
+
+Proddiff 共 65 个 GET 模板、66 个 method/path 模板、282 次 HTTP 比较；5 个既有全局差异
+（agents 3、config 2）未增加/失效。OxiDNS main、Agent main、files、downloads 各 2 次成功；
+scoped subscription Mihomo/Surge/Loon 现在由 C30 的真实 HTTP provider 各比较 4 次成功。
+其余未实现模块仍按框架明确列出，不把缺少 C31 aggregation provider 的覆盖算作成功。
+未改 proddiff baseline、normalization 或覆盖标准。
+
+最后加强默认值/未知字段拷贝的断言：期望先独立复制，直接修改返回值的嵌套标量，并修改
+repository factory 的首个结果，避免共享引用让断言一起变化。`.32` mutation 把
+`DefaultSettings` 改成直接返回全局 Node 时，测试以
+`defaults.api.username go="changed" py=""` 失败；finally 恢复源码后重新执行
+gofmt/vet 和所有 `TestC05Review`：
+
+```text
+settings source restored
+ok configflow/internal/httpx   1.140s
+ok configflow/internal/oxidns  3.976s
+ok configflow/internal/convert 0.006s
+```
+
+最后仅提交测试断言与本报告/PROGRESS；执行 `git rebase go`，工作区干净，不推送。
