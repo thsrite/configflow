@@ -825,7 +825,38 @@ def gen_base_settings(count):
         record('controller_scope', [host], lambda: mbs.controller_scope(host))
 
 
+class FakeAgents:
+    def __init__(self, bindings, agents, fail):
+        self.bindings, self.agents, self.fail = bindings, agents, fail
+
+    def get_profile_agent_bindings(self, profile_id):
+        if self.fail:
+            raise RuntimeError('no profile')
+        return {'agents': [{'id': i} for i in self.bindings]}
+
+    def get_agent_by_id(self, agent_id):
+        return deepcopy(self.agents.get(agent_id))
+
+
+def gen_agent_context(count):
+    hosts = ['192.168.1.2', '192.168.1.3', '', None]
+    for _ in range(count):
+        agents = {}
+        for i in range(R.randint(0, 5)):
+            agent = {'id': f'a{i}'}
+            for key, values in (('name', ['Box', '', None, '盒子']), ('host', hosts), ('port', [8080, 9090, '8080', None, 8080.0, True]),
+                                ('service_type', ['mihomo', 'oxidns', '', None]), ('deployment_method', ['docker', 'binary', None])):
+                if R.random() < 0.8:
+                    agent[key] = R.choice(values)
+            agents[f'a{i}'] = agent
+        bindings = [k for k in agents if R.random() < 0.8] + (['gone'] if R.random() < 0.2 else [])
+        fail = R.random() < 0.05
+        source = FakeAgents(bindings, agents, fail)
+        record('agent_context', [bindings, agents, fail], lambda: list(mbs.agent_context(source, source, 'p')))
+
+
 def main():
+    gen_agent_context(300)
     gen_fixed()
     ok = gen_profiles()
     gen_helpers()

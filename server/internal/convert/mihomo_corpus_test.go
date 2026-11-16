@@ -373,6 +373,16 @@ func runHelperRow(t *testing.T, row mihomoRow) string {
 		if ok {
 			got = []any{host, jsonx.Int(port)}
 		}
+	case "agent_context":
+		bindings := args[0].([]any)
+		agents := args[1].(*jsonx.Object)
+		source := fakeAgentSource{bindings: bindings, agents: agents, fail: args[2] == true}
+		reserved, order, hosts := convert.AgentContext(source, "p")
+		ports := jsonx.NewObject()
+		for _, port := range order {
+			ports.Set(strconv.Itoa(port), reserved[port])
+		}
+		got = []any{ports, hosts}
 	case "controller_scope":
 		got = convert.ControllerScope(args[0].(string))
 	default:
@@ -433,4 +443,25 @@ func TestMihomoCorpus(t *testing.T) {
 	if failures > 0 {
 		t.Errorf("%d of %d rows differ", failures, len(rows))
 	}
+}
+
+type fakeAgentSource struct {
+	bindings []any
+	agents   *jsonx.Object
+	fail     bool
+}
+
+func (f fakeAgentSource) ProfileAgentIDs(string) ([]any, error) {
+	if f.fail {
+		return nil, errors.New("no profile")
+	}
+	return f.bindings, nil
+}
+
+func (f fakeAgentSource) AgentByID(id any) *jsonx.Object {
+	agent, _ := f.agents.Value(id.(string)).(*jsonx.Object)
+	if agent == nil {
+		return nil
+	}
+	return agent.DeepCopy()
 }
