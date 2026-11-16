@@ -12,6 +12,11 @@ asked in; the maintainer reads Chinese.
   runs the command there and returns its exit code. `rt --back <path>` copies a file back. Python for
   reference outputs on the server: `~/cf-test/.venv/bin/python` (run with `PYTHONPATH=.` from the repo root).
 - Only light work locally: editing, git, reading files, grep, scripts that finish in seconds.
+- **Two test servers** (same setup: Arch, Go, `~/cf-test/.venv` Python 3.11, prod snapshot for proddiff):
+  `192.168.0.32` (default for `rt`) and `192.168.0.63` (WSL2, 16 cores; select it with
+  `RT_HOST=sunbroke@192.168.0.63 rt -- …`). Your brief says which one to use; if it says nothing, use .32.
+  Run full `-race` (`go test -race ./...`) only once at the end; while iterating use `-race` only on the
+  packages you changed.
 - **Never run `rt clean` in `~/program/configflow-go`** (the shared worktree); only inside your own
   private worktree right before deleting it.
 - **Never touch production**: no SSH or HTTP to 192.168.0.105 (NAS panel), routers, DNS hosts

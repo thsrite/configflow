@@ -149,6 +149,9 @@ Brief template (adapt the package part; the agents already know the rest from PO
 
 ## Verification commands (run from the worktree; never on the Mac)
 
+Test servers: `.32` (porters, default) and `.63` (WSL2, port 2222 via `~/.ssh/config`; reviewers and the
+coordinator's merge verification: `RT_HOST=sunbroke@192.168.0.63 rt -- …`).
+
 ```
 rt -- bash -lc 'cd server && gofmt -l internal/<pkg>; go vet ./internal/<pkg>/... && go test -count=1 ./internal/<pkg>/...'
 # Python cross-checks that are env-gated:
