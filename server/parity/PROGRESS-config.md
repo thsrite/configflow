@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 14 missing, 3 partial, 9 ported, 11 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13, C14, C15). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 14 missing, 3 partial, 8 ported, 12 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13, C14, C15, C16). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -41,7 +41,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C13 | Sub-Store client, runtime, subscription cache, dependencies | 1193 | verified | C12, C10 | 3 (3 done) |
 | C14 | remote rule fetch, ruleset content, remote sources, website identity | 1202 | verified | C12, C08 | – |
 | C15 | subscription refresh, health, scheduled refresh | 600 | verified | C13, C14, C07 | – |
-| C16 | health check, latency, node DNS, region check, domain probe | 1089 | ported | C12, C13 | 5 (5 done) |
+| C16 | health check, latency, node DNS, region check, domain probe | 1089 | verified | C12, C13 | 5 (5 done) |
 | C17 | provider delivery and responses | 540 | ported | C15 | – |
 | C18 | Mihomo config generation, Mihomo base settings | 1275 | ported | C12, C15, C16, C17 | – |
 | C19 | Surge converter | 1129 | ported | C18 | – |
@@ -762,7 +762,7 @@ Commands (review):
 
 ## C16 — health check, latency, node DNS, region check, domain probe
 
-**Status: `ported`** (not reviewed) · prereqs: C12, C13 · Go: `internal/health/check` (leaf: no repo import), `internal/health`, routes in `internal/api/nodes`
+**Status: `verified`** (review 2026-11-16, commit b579c790; see "Review C16") · prereqs: C12, C13 · Go: `internal/health/check` (leaf: no repo import), `internal/health`, routes in `internal/api/nodes`
 
 Files → Go:
 - `backend/utils/health_check.py` (82) → `check/healthcheck.go`: `ProviderDefaults()`, `GroupDefaults()`, `GroupHealthTypes`/`IsGroupHealthType`, `InitializeGroupHealth`, `InitializeProviderHealth`, `ValidateHealth(values, provider)` (`*check.ValueError`), `ProviderHealthCheck` (missing key → `*check.KeyError`), `UserInfo`.
@@ -781,7 +781,7 @@ Wiring: `health.Wire` in `server.wirePackages` registers `agents.OnAgentDeleted(
 Compat switch-over:
 - `rulefetch/website.go`: the `Services` copy (TODO C16) removed; `KnownService` iterates `check.Services`.
 - `rules/idna_export.go` (new file in rules): `rules.IDNAEncode` exports the existing `pyIDNAEncode` (needed by `node_dns._server`).
-- **For the coordinator:** `repo/compat_health.go` `validateHealth` can now call `check.ValidateHealth` (leaf package; repo → health/check → rules/urlx/pystr/jsonstore has no cycle); wrap `*check.ValueError` into repo's helper ValueError. Not done here (repo is verified, not my file). `validateRefreshInterval` there stays (C15's).
+- `repo/compat_health.go` `validateHealth` now calls `check.ValidateHealth` (done in review C16, b579c790). `validateRefreshInterval` there stays (C15's; refresh imports repo).
 
 Tests:
 - Reference corpus `health/testdata/gen.py` → `corpus.json` (CPython 3.11.17, 790 rows): validate_health group/provider (95×2 incl. 30 URL forms), initialize_*_health, provider_health_check, 77 DNS server forms ×2 (servers/bootstrap), lists, normalize_config, check_settings over 40 worker outputs (address canonicalisation, fake-IP, latency types, error codes, version, exit codes), 11 UTF-8 decode-error messages, `_run_probe` over 20 outputs + 5 exit codes, settings() over 22 env sets, region_of_name (42 incl. Kelvin sign, İ, full-width), region_label, 45 evaluate cases ×3 (service, evaluate_services, exit_info) incl. malformed Agent answers, classify_domain_result (26), summarize, pick_targets (15 incl. malformed), judge (37 incl. big ints, floats, NaN, string delays), probe_url, domain_suggestion, path_healthy, probe/region store file bytes and odd files — **all equal** (`corpus_test.go`).
@@ -807,6 +807,43 @@ Commands:
 - tests: `rt -- bash -lc 'cd server && go vet ./internal/health/... ./internal/api/nodes/ ./internal/server/ ./internal/rulefetch/ && go test -count=1 -race ./internal/health/... ./internal/api/nodes/ ./internal/server/ ./internal/rulefetch/ ./internal/rules/'` (last: all ok)
 - differential: `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/health/difftest/'`
 - corpus: `rt --back server/internal/health/testdata/corpus.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/health/testdata/gen.py'`
+
+### Review C16 (adversarial, 2026-11-16)
+
+Every function and branch of `health_check.py`, `node_latency.py`, `node_dns.py`, `region_check.py`, `domain_probe.py` and the latency routes of `routes/nodes.py` walked against `check/healthcheck.go`, `check/region.go`, `check/probe.go`, `check/num.go`, `check/pyerr.go`, `latency.go`, `dns.go`, `ipaddr.go`, `runner.go`, `wire.go`, `api/nodes/latency.go`; the Agent delete hooks against `routes/agents.py`.
+
+| # | Sev | Finding | Fix | Regression test |
+|---|---|---|---|---|
+| 1 | high | A cancelled request context (browser gone during a 20-node test or a DNS check) killed the worker (`ExecRunner` treated `ctx.Done()` as a timeout → 503 "执行超时") and could drop the stored results / the saved DNS setting (repository locks fail under a cancelled context); Python's request thread finishes the subprocess and stores everything (cf. C13 finding 3) | `ExecRunner.Run` ignores the context (only the timeout kills); `RunTests`, `CheckSettings`, `SaveConfig` run on `context.WithoutCancel` — b579c790 | `TestReviewCancelledRequestFinishesTheLatencyTest` (real worker script, request cancelled mid-run, 3 rounds, history stored) |
+| 2 | medium | Agent delete hooks: `os.remove` is unlink(2) — a directory where `probes/<id>.json` / `regions/<id>.json` should be fails with `IsADirectoryError` and DELETE /api/agents/<id> answers 500 `[Errno 21] Is a directory: '<path>'`; Go's `os.Remove` silently removed an empty directory and reported Go's `remove …: directory not empty` for a full one | `jsonstore.Remove` = unlink with EINTR retry (shared C02 helper; also fixes A05's traffic store), hooks return Python's OSError text — b579c790 | `TestReviewStoreDeleteOfADirectoryFailsLikeOSRemove` (texts checked against CPython 3.11 on the test server) |
+| 3 | low | Crash texts: `"string indices must be integers"` (3.11 adds `, not 'str'`), `[url, *web.get('redirects')]` of a non-iterable (`Value after * must be an iterable, not NoneType`) | b579c790 | review corpus rows `pick bad`, `evaluate` |
+| 4 | low | Decision 8: `repo/compat_health.go` kept its own validate_health / urlsplit copy | `validateHealth` delegates to `check.ValidateHealth` (ValueError → repo helper ValueError); the private urlsplit, bracket, port and key tables removed; repo's verified tests and golden rows pass unchanged — b579c790 | `internal/repo` suite, replay of 1640 recorded `validate_health` calls |
+
+Accepted differences (reviewer; the porter's list above stands after re-checking): `validate_health` walks the object's key order (Python's set order is randomised per process: only which message wins with several invalid fields); `statistics.median` over non-number delays is a TypeError in Go (the Agent's probe answer is `[]int` by schema — `go-agent/domain_probe.go`); `domain_suggestion` compares only numbers/strings (lists are ordered in Python; hand-edited probe files only); Python crash texts in `*check.PyError` that render objects remain approximate (classes equal — replay compares text too and found only #3). Not reproduced: a worker that leaves a grandchild holding stdout (Go waits for the pipe, as Python's normal path does). Region/probe store write failures carry Go error texts — only C37 routes can show them (note for C37).
+
+Checks performed (no finding): health defaults/initializers (setdefault order, `tolerance` for url-test, legacy `health_check_url` truthiness), every validate_health branch (bool/int types, big ints, URL whitespace/C0, urlsplit errors incl. bracketed hosts, port 0/65536, credentials incl. `@` with empty user, fragment, expected-status grammar/bounds/order); node DNS (`_ipv4_server` partition/strip/ASCII decimal port/53 dropped/leading zeros, `_server` length in code points, `?#\`, IDNA 2003 ASCII fast path and label lengths, IPv4-only literals, label regex, `%` escapes, `netloc.endswith(':')`, tls path, default ports, urlunsplit), normalize/load/effective/describe/save (managed mode → legacy list, node_test_dns mirror, reset after save); `settings()` (strip, urlsplit, truthy credentials, `.port`, `int()` forms, unified delay lower), candidate keys (`["node",id]`, ensure_ascii False, `is not False`, setdefault first wins), `_proxy_of` exception → None, `_needs_sub_store`, probe binary order (env alone when set, isfile + X_OK), payload bytes (`ensure_ascii=False` for latency, ASCII for the check), 8 MiB bound, budget `ceil(n/20)·t/1000+5`, GOMAXPROCS/GOMEMLIMIT defaults, return code 3 / non-zero (incl. signals), strict UTF-8 of stdout then stderr, result validation order (version → ProbeUnavailable passes through; any Value/Type/KeyError → invalid), `run_tests` order (lock → candidates → names/keys → 20 → identities → same-name check → 5 conversions → settings → binary → conversions → probe → stamp → same_test history → filter → save) and the response shape; region evaluators (markers/None handling, Netflix region from path, statuses all-403/404, YouTube CN), `evaluate_services` by-id hashing (1 == True), `exit_info`, classify (451, block marker with 200/403, region-page redirect only when the original path is not one, `status < 500`), summarize, `pick_targets` (stable preferred-first sort, 4 groups, alive default, 8 regions in rule order), RegionStore (setdefaults, 30-day wall-clock bound, `>=` string compare, newest 1000 websites), ProbeStore (prune `<` bound, 5000 cap with stable reverse sort, load prunes without writing), `latest_probes`, `judge` (exact int/float comparisons, `round` half-even, overflow/zero-division paths), `probe_url`, routes (names/keys validation, 409/503/400 mapping, `dns: null` = saved setting for the check, None → ValueError for save), Wire hook order (traffic → probe → region).
+
+Record & replay: `testdata/c16_record.py` over the whole Python suite (12552 passed) records 34 public functions with the worker call (`_probe_binary` result, argv, stdin text, timeout, GOMAXPROCS/GOMEMLIMIT, answer), the environment and system_config fields read, Sub-Store conversions, store files before/after and the frozen naive clock; `recorded_test.go` replays **2280 distinct calls from 60 test files with 0 differences** (outputs, error class + text, worker stdin bytes/argv/timeout/env, store file bytes). Review corpus `testdata/gen_review_c16.py` → `review_c16.jsonl.gz`, **1017 rows, 0 differences** (`TestReviewCorpus`): 58 health URL forms ×2, int/status/shape edges; 85 DNS server forms through `_server` and `_ipv4_server` (brackets, IDNA/ß/☃/İ/Kelvin, 63/64-char labels, 253/254 names, `%` escapes, ports); 31 env sets for `settings()`; 38 worker outputs for `_run_probe` (versions 4.0/True/"4", latencies 2⁶⁴/1.0/True/0/"1", duplicate/extra/missing/non-string names, NaN, BOM, `-0`) + 4 return codes; 31 DNS-check outputs (latency `-0`/True/2⁷⁰, scoped/mapped/duplicate IPv6, 198.18/15 edges, error codes) + 2 return codes; 39 region names (full-width, NBSP/ideographic space, ſ, İ, Türkiye, emoji); classify statuses/URLs/shapes; 6 target sets for `pick_targets`; 14 result sets ×2 (evaluate/exit); 15 rate stats; 20 judge pairs ×5 options (half-even rounding, 10⁴⁰⁰, bools, float totals, no_path); suggestions; store bounds (exactly 30 days, 5003 tied hosts, bad entries, 1010 websites).
+
+Coverage map (Python tests of C16):
+- `test_node_latency.py` 25: hand-ported 25/25 + replay (215 calls) + differential.
+- `test_node_dns.py` 13: hand-ported 13/13 + replay (134) + differential.
+- `test_region_check.py` 19: 11 hand-ported + replay (53: evaluators, classify, stores); 8 deferred to C18/A14/C37/A05 as listed above.
+- `test_domain_probe.py` 16: 5 functions hand-ported + replay (68: judge, stores, suggestion, probe_url); 11 end-to-end cases → C37.
+- `test_website_identity.py` (C16 store part): replay (15); job/route cases → C37.
+- Health tests `test_health_check_advanced.py` (6 calls), `test_health_https_defaults.py` (2), `test_health_persistence.py` (6), `test_health_review_r1.py` (30), `test_health_review_re1.py` (15), `test_health_review_re2.py` (36), `test_health_validation.py` (29), `test_proxy_group_batch_health.py` (33), `test_qa_integrity.py` (32): their validate_health/initialize/provider_health_check calls replayed; generation/route halves stay with C18/C19/C20/C30/C31/C33/#39.
+- `test_flow_ui_apis.py` (11), `test_node_test_dns_cleanup.py` (7: load_config/normalize calls; the cleanup itself is not ported by decision), `test_domain_discovery.py` (25), `test_oxidns_ip_probe.py` (35), `test_dialer_round2.py` (1107 validate_health calls) and 40 more files: C16 calls replayed.
+- Not recorded (integration over repository + worker): `run_tests`, `collect_candidates`, `load_results`, `save_config` — covered by the hand-ported tests and the differential (44 requests, worker stdin byte-identical, `node_latency.json` and system_config compared).
+
+Differential: unchanged (44 requests, 0 differences); the directory-at-store-path case of finding 2 is the agents DELETE route's (A01 differential, noted for the agents domain).
+
+Open findings: none.
+
+Commands (review):
+- tests: `rt -- bash -lc 'cd server && go vet ./internal/health/... ./internal/api/nodes/ ./internal/repo/ ./internal/jsonstore/ && go test -count=1 ./internal/health/... ./internal/api/nodes/ ./internal/repo/... ./internal/jsonstore/... ./internal/agents/trafficstore/... ./internal/server/'` (+ `-race`)
+- differential: `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/health/difftest/'`
+- record & replay: `rt --back server/internal/health/testdata/c16_recorded.jsonl.gz -- bash -lc 'rm -rf /tmp/c16rec && C16_RECORD_DIR=/tmp/c16rec PYTHONPATH=.:server/internal/health/testdata ~/cf-test/.venv/bin/python -m pytest backend -q -n 10 --dist=worksteal -p c16_record -p no:cacheprovider && PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/health/testdata/c16_record.py merge /tmp/c16rec'`
+- review corpus: `rt --back server/internal/health/testdata/review_c16.jsonl.gz -- bash -lc 'PYTHONPATH=.:server/internal/health/testdata ~/cf-test/.venv/bin/python server/internal/health/testdata/gen_review_c16.py'`
 
 ## C17 — provider delivery and responses
 
@@ -1392,7 +1429,7 @@ Questions for the maintainer (from this audit):
    `IsSpace`, `Int`, `Float` on CPython 3.11 tables), `urlx.RequestsPrepareURL`, and `yamlx` built on
    `internal/pyyaml` (`LoadOptions.KeepNonStringKeys`, `LoadCSafeFirst`). Private copies elsewhere must be
    switched to them so behaviour cannot drift: `pyLower` copies in `subs`, `substore`, `rules`, `convert`,
-   `agents`, `agents/metrics`; `subs.pyIntStr`; `repo.pythonFloat`; `substore.PrepareURL`; `repo/compat_health.go` → `health/check.ValidateHealth` (no cycle); C14's accepted
+   `agents`, `agents/metrics`; `subs.pyIntStr`; `repo.pythonFloat`; `substore.PrepareURL`; `repo/compat_health.go` → `health/check.ValidateHealth` (no cycle; done in review C16); C14's accepted
    non-string-key case and C12's loose YAML loader (`KeepNonStringKeys`). Each module's reviewer does the
    switch for its own package (or the next porter touching it), re-runs that package's corpora, and notes
    it in the section. Before any domain differential, `grep` for remaining copies must come back empty.
