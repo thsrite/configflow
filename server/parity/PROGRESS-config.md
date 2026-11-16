@@ -1646,7 +1646,7 @@ Notes for porter: **Cross-domain heavy:** setup flow uses `linux_gateway`, `gate
 
 ## C37 — domain discovery
 
-**Status: `missing`** · prereqs: C14, C16 · Go: internal/discovery, internal/api/domaindiscovery (new)
+**Status: `partial`** · prereqs: C14, C16 · Go: internal/discovery, internal/api/domaindiscovery (new)
 
 Files:
 - `backend/utils/domain_discovery.py` (175)
@@ -1664,6 +1664,9 @@ Evidence: `internal/discovery` exists with two functions **ported early by A05**
 Missing / deferred: Everything else in the files below. When porting `read_settings`/`ruleset_info` fully, make `ProviderRevisions` use them (same behaviour). Already ported by A05 from `test_domain_discovery.py`: `test_clean_report_*`, `test_store_merges_reports_and_expires_old_days`, `test_store_caps_hosts_per_day_keeping_heaviest`, `test_registrable_domain_uses_public_suffix_list`, `test_report_requires_token_and_enabled_switch`, `test_report_with_login_enabled_rejects_invalid_agent_credentials`, `…_retains_switch_and_payload_checks`, `…_rejects_unknown_agent` (do not port again). The traffic store is `internal/agents/trafficstore` (`Get`, `Load`, `LoadStatus`/`StatusOf`, `SplitRouteKey`); `internal/discovery` may import it but must never import `internal/agents/metrics` (which imports discovery).
 
 Notes for porter: Provides `tasks.SetRows(domain_discovery)` (ports `routes/tasks.py::_domain_rows`) and `ConnectionDeps.RulesetInfo` for rules. Calls `agents.traffic_store`, `agents.version.compare_versions`, agent manager (agents domain). `subs.ExtractDomain` (tldextract) is ready.
+
+Port in progress (go-port-c37): native settings, aggregation, rule adoption/undo, probe/region/website jobs compile on .63. Legacy Python-emulation helpers removed; existing jsonx APIs isolated in bridge.go. Next: route registration, auto loop/task rows, boundary differential, final .32 checks. No sub-agents, no pushes.
+
 ## Next steps (coordinator; at most 2 config agents at a time: one porter + one reviewer)
 
 Porting order (one fresh porter per module; each updates its section and commits):
