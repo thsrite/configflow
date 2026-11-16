@@ -376,3 +376,22 @@ request_variants=5224 named_matrix_cases=2823（S331 F2151 B341），H去重167
 ```
 
 继续12秒last-good回退/后台收尾、并发单飞/格式隔离、merged provider和引用图错误；未做最终全量。
+
+## 批次 20：T06 真实12秒回退、后台完成和20并发客户端
+
+- 5个序列记录（其中2个准备PUT）；并发子例实际每端20个HTTP客户端，逐个比较全部响应，不把第一个响应当整批。使用公开`CONFIGFLOW_HTTP_THREADS=32`允许20请求在fake屏障处同时等待，生产生命周期及所有后台钩子保留。两端均只一次source GET、一条health历史，同一实现内20个响应body相同；全库/所有文件继续比较。
+- 12秒计时器未替换：已有last-good时在11.0–13.8秒窗口返回旧完整字节与`X-ConfigFlow-Provider:last-good`，随后放行上游，观察fresh served文件和cache，确认备份及全部普通文件连续150ms稳定、无临时文件后再比较；下一次poll无额外source请求且返回新内容。
+- 整个生命周期只剩已知注释遗漏（3个序列实例），未发现单飞/回退时限/后台收尾的新根因。曾捕获的emoji原文检查、`.yaml.bak`文本解析、原子写入过渡态均为测试端假差异，已分别改为YAML语义、YAML备份解析及外部可见收尾屏障并重跑；不掩盖最终残留临时文件或缺备份。
+- 增加最后一个并发响应故意改401、少一个响应、回退超时/未完成/重复source请求、YAML备份语义与改节点自检，共34项。served备份中的已知注释也独立观察，不因YAML解析而漏掉。
+
+```text
+.63 run.py --groups provider-last-good-lifecycle
+current compared=1 different=2 design_errors=[] seconds=27.71
+.63 run.py --groups provider-concurrent-clients
+current compared=1 different=1 design_errors=[] seconds=5.67
+cumulative compared=1448 go-unimplemented=3721 dependency=28 different=31 O12-separate=1
+request_variants=5229 named_matrix_cases=2823（S331 F2151 B341），H去重167
+34 self-checks + end-to-end wrong-Go-response check OK
+```
+
+T06还需无last-good时等待、Surge/Loon不回退；T07键隔离、T05断连仍提交及其他业务文件继续。当前5229是记录变体数，20客户端批次另明确标`http_clients_per_backend=20`，不是把该批只发一次HTTP。未做最终全量。

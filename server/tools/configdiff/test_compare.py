@@ -259,6 +259,38 @@ class Comparators(unittest.TestCase):
             b.headers[key] = 'unexpected'
             self.assertTrue(response_diffs(a, b))
 
+    def test_provider_fallback_elapsed_and_background_mutation(self):
+        from provider_lifecycle import Fallback
+        observer = object.__new__(Fallback)
+        record = {'elapsed_valid': True, 'elapsed': 12.0, 'requests': [{'path': '/feed'}],
+                  'fresh_after_release': True, 'quiescent_after_release': True, 'served_comments': ['# Source: fresh']}
+        observer.observed = [record, copy.deepcopy(record)]
+        self.assertEqual(observer.compare(Policy()), [])
+        observer.observed[1]['elapsed_valid'] = False
+        observer.observed[1]['elapsed'] = 14.0
+        self.assertTrue(observer.compare(Policy()))
+        observer.observed[1] = copy.deepcopy(record)
+        observer.observed[1]['fresh_after_release'] = False
+        self.assertTrue(observer.compare(Policy()))
+        observer.observed[1] = copy.deepcopy(record)
+        observer.observed[1]['requests'].append({'path': '/feed'})
+        self.assertTrue(observer.compare(Policy()))
+
+    def test_yaml_backup_compares_structure_and_changed_nodes(self):
+        a = b'proxies:\n - {name: "\\U0001F9EA", type: socks5, port: 1080}\n'
+        b = 'proxies:\n  - name: 🧪\n    type: socks5\n    port: 1080\n'.encode()
+        self.assertEqual(structure(a, filename='sub.yaml.bak'), structure(b, filename='sub.yaml.bak'))
+        self.assertTrue(differences(structure(a, filename='sub.yaml.bak'), structure(b.replace(b'1080', b'1081'), filename='sub.yaml.bak')))
+
+    def test_all_concurrent_provider_responses_are_compared(self):
+        from provider_lifecycle import response_batch_diffs
+        a = [Reply(200, {'content-type': 'text/yaml'}, b'proxies: []') for _ in range(20)]
+        b = copy.deepcopy(a)
+        self.assertEqual(response_batch_diffs(a, b, Policy()), [])
+        b[19].status = 401
+        self.assertTrue(any(d.path == 'provider.client[19].status' for d in response_batch_diffs(a, b, Policy())))
+        self.assertTrue(response_batch_diffs(a, b[:-1], Policy()))
+
     def test_generated_file_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:
             dirs = [Path(tmp, n) for n in ('python', 'go')]

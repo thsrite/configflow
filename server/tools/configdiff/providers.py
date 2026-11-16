@@ -85,15 +85,21 @@ class Metadata:
             policy.bind(*names, r'inline; filename="proxies_sub-a_[0-9]{8}_[0-9]{6}\.yaml"', 'provider-filename')
         out += differences(*body_comments, 'provider.comments', policy)
         if self.served:
-            metadata = []
-            for index, directory in enumerate(self.pair.dirs):
-                path = directory / f'profiles/{self.profile}/providers/served/subscription-sub-a.yaml'
-                try:
-                    metadata.append(comments(path.read_bytes(), policy))
-                except (OSError, ValueError) as error:
-                    if index == 0:
-                        raise DesignError('Python served provider lost metadata') from error
-                    observed = [line for line in path.read_text(errors='replace').splitlines() if line.startswith('#')] if path.exists() else None
-                    metadata.append({'invalid': str(error), 'comments': observed})
-            out += differences(*metadata, 'provider.served-file.comments', policy)
+            for suffix in ('', '.bak'):
+                paths = [directory / f'profiles/{self.profile}/providers/served/subscription-sub-a.yaml{suffix}' for directory in self.pair.dirs]
+                if not any(path.exists() for path in paths):
+                    continue
+                metadata = []
+                for index, path in enumerate(paths):
+                    if index == 0 and suffix == '.bak' and not path.exists():
+                        metadata.append(None)
+                        continue  # An extra Go backup is a difference, not a bad Python fixture.
+                    try:
+                        metadata.append(comments(path.read_bytes(), policy))
+                    except (OSError, ValueError) as error:
+                        if index == 0:
+                            raise DesignError('Python served provider lost metadata') from error
+                        observed = [line for line in path.read_text(errors='replace').splitlines() if line.startswith('#')] if path.exists() else None
+                        metadata.append({'invalid': str(error), 'comments': observed})
+                out += differences(*metadata, 'provider.served-file' + suffix + '.comments', policy)
         return out

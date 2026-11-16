@@ -139,7 +139,7 @@ def structure(body, content_type='', filename=''):
                 raise ValueError('non-file tar member')
             return {m.name: {'mode': m.mode, 'archive_directory': True} if m.isdir() else
                     {'mode': m.mode, 'content': structure(archive.extractfile(m).read(), '', m.name)} for m in members}
-    if 'yaml' in content_type or filename.endswith(('.yaml', '.yml')):
+    if 'yaml' in content_type or filename.endswith(('.yaml', '.yml', '.yaml.bak', '.yml.bak')):
         return yaml.safe_load(body)
     if filename in ('surge.conf', 'loon.lcf') or filename.endswith(('/generated/config.conf', '/generated/loon.lcf')):
         return ini_structure(body.decode('utf-8'))

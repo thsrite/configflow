@@ -148,6 +148,35 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `provider.comments` | length | 6 | 0 |
 | `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 订阅甲🧪', '# ID: sub-a', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 2', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
 
+## T06 / 12-second-last-good-and-background-finish
+
+路由：`GET /api/subscriptions/<sub_id>/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `provider.fallback.served_comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 订阅甲🧪', '# ID: sub-a', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 2', '# Source: from Sub-Store (cache updated)'] | {'invalid': 'expected exactly one Generated comment', 'observed': []} |
+
+## T06 / 20-clients-one-flight
+
+路由：`GET /api/subscriptions/<sub_id>/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `provider.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `provider.comments` | length | 6 | 0 |
+| `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 订阅甲🧪', '# ID: sub-a', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 2', '# Source: from Sub-Store (cache updated)'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
+
+## T06 / next-poll-is-fresh
+
+路由：`GET /api/subscriptions/<sub_id>/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `provider.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `provider.comments` | length | 6 | 0 |
+| `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 订阅甲🧪', '# ID: sub-a', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 2', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
+| `provider.served-file.bak.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 订阅甲🧪', '# ID: sub-a', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 2', '# Source: from Sub-Store (cache updated)'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
+
 ## T16 / enable-immediate-final
 
 路由：`POST /api/backup/config`；状态：different
