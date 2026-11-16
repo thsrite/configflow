@@ -1531,13 +1531,15 @@ Files:
 
 Tests: `test_dialer_activation_shadow.py` (3), `test_dialer_combined_export.py` (9), `test_dialer_delivery_snapshot.py` (3), `test_dialer_delivery_staging.py` (5), `test_dialer_proxy.py` (23), `test_dialer_standalone_activation.py` (4), `test_node_deletion.py` (9), `test_subscription_cache_preview.py` (4)
 
-Routes (26, 0 done):
+Routes (26, 26 registered; acceptance in progress):
 
 `GET /api/nodes`; `POST /api/nodes`; `DELETE /api/nodes/<node_id>`; `PUT /api/nodes/<node_id>`; `POST /api/nodes/delete`; `POST /api/nodes/delete-preview`; `GET /api/nodes/latency`; `POST /api/nodes/latency`; `POST /api/nodes/latency/dns/check`; `GET /api/nodes/latency/settings`; `POST /api/nodes/latency/settings`; `POST /api/nodes/parse-lines`; `POST /api/nodes/reorder`; `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies`; `GET /api/subscriptions`; `POST /api/subscriptions`; `GET /api/subscriptions/<resource_id>/health-impact`; `DELETE /api/subscriptions/<sub_id>`; `PUT /api/subscriptions/<sub_id>`; `POST /api/subscriptions/<sub_id>/fetch`; `GET /api/subscriptions/<sub_id>/nodes`; `GET /api/subscriptions/<sub_id>/proxies`; `GET /api/subscriptions/health`; `GET /api/subscriptions/proxies`; `POST /api/subscriptions/reorder`; `GET /api/subscriptions/test`
 
 Evidence: node CRUD, reorder, line parsing and reviewed deletion implemented in `internal/api/nodes`; `nodes.Wire` installs `PlanNodeDeletion`. Existing C16 latency routes retained. Node package tests and vet pass on .63.
 
-In progress: subscription management/provider routes and Flask↔Go boundary tests. Next: finish subscriptions, differential security/storage/dialer cases, proddiff, final .32 checks.
+Done: `fbb7e26e` nodes. Subscription CRUD/cache preview/fetch/health/reorder and provider exports now registered, with native JSON/YAML and legacy-package calls confined to adapter.go. Security test verifies global JWT gate and profile token success/failure; .63 package vet/test pass.
+
+In progress: Flask↔Go differential security/storage/dialer cases. Next: differential, proddiff, final .32 checks.
 
 Commands: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go vet ./internal/api/nodes/... && go test -count=1 ./internal/api/nodes/...'` → `ok configflow/internal/api/nodes 5.420s`.
 

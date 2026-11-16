@@ -205,19 +205,19 @@ GET	/api/mosdns/rule-proxy	routes.mosdns.mosdns_rule_proxy	api/mosdns	done
 GET	/api/mosdns/rulesets	routes.mosdns.handle_mosdns_rulesets	api/mosdns	done
 POST	/api/mosdns/rulesets	routes.mosdns.handle_mosdns_rulesets	api/mosdns	done
 POST	/api/mosdns/settings	routes.mosdns.save_mosdns_settings	api/mosdns	done
-GET	/api/nodes	routes.nodes.handle_nodes		todo
-POST	/api/nodes	routes.nodes.handle_nodes		todo
-DELETE	/api/nodes/<node_id>	routes.nodes.handle_node		todo
-PUT	/api/nodes/<node_id>	routes.nodes.handle_node		todo
-POST	/api/nodes/delete	routes.nodes.delete_nodes_with_references		todo
-POST	/api/nodes/delete-preview	routes.nodes.delete_nodes_with_references		todo
+GET	/api/nodes	routes.nodes.handle_nodes	api/nodes	done
+POST	/api/nodes	routes.nodes.handle_nodes	api/nodes	done
+DELETE	/api/nodes/<node_id>	routes.nodes.handle_node	api/nodes	done
+PUT	/api/nodes/<node_id>	routes.nodes.handle_node	api/nodes	done
+POST	/api/nodes/delete	routes.nodes.delete_nodes_with_references	api/nodes	done
+POST	/api/nodes/delete-preview	routes.nodes.delete_nodes_with_references	api/nodes	done
 GET	/api/nodes/latency	routes.nodes.node_latency	api/nodes	done
 POST	/api/nodes/latency	routes.nodes.node_latency	api/nodes	done
 POST	/api/nodes/latency/dns/check	routes.nodes.node_dns_check	api/nodes	done
 GET	/api/nodes/latency/settings	routes.nodes.node_latency_settings	api/nodes	done
 POST	/api/nodes/latency/settings	routes.nodes.node_latency_settings	api/nodes	done
-POST	/api/nodes/parse-lines	routes.nodes.parse_node_lines		todo
-POST	/api/nodes/reorder	routes.nodes.reorder_nodes		todo
+POST	/api/nodes/parse-lines	routes.nodes.parse_node_lines	api/nodes	done
+POST	/api/nodes/reorder	routes.nodes.reorder_nodes	api/nodes	done
 GET	/api/notifications	routes.notifications.list_notifications	internal/api/notifications	wip
 POST	/api/notifications/read	routes.notifications.read_notifications	internal/api/notifications	done
 POST	/api/oxidns/common-settings	routes.oxidns.read_oxidns_common_settings		todo
@@ -278,7 +278,7 @@ GET	/api/profiles/<profile_id>/rule-library/content/<rule_id>	routes.profiles.pr
 GET	/api/profiles/<profile_id>/rules	routes.profiles.profile_rules		todo
 POST	/api/profiles/<profile_id>/rules	routes.profiles.profile_rules		todo
 GET	/api/profiles/<profile_id>/rules/local/<name>	routes.profiles.profile_local_rule		todo
-GET	/api/profiles/<profile_id>/subscriptions/<sub_id>/proxies	routes.profiles.profile_subscription_proxies		todo
+GET	/api/profiles/<profile_id>/subscriptions/<sub_id>/proxies	routes.profiles.profile_subscription_proxies	api/subscriptions	done
 POST	/api/profiles/import-client	routes.profiles.import_client_profile		todo
 GET	/api/proxy-groups	routes.proxy_groups.handle_proxy_groups		todo
 POST	/api/proxy-groups	routes.proxy_groups.handle_proxy_groups		todo
@@ -357,18 +357,18 @@ GET	/api/setup/<session_id>	routes.setup.setup_session		todo
 PATCH	/api/setup/<session_id>	routes.setup.setup_session		todo
 POST	/api/setup/<session_id>/<operation>	routes.setup.setup_action		todo
 GET	/api/stats/overview	routes.stats.get_overview	internal/api/stats	done
-GET	/api/subscriptions	routes.subscriptions.handle_subscriptions		todo
-POST	/api/subscriptions	routes.subscriptions.handle_subscriptions		todo
-GET	/api/subscriptions/<resource_id>/health-impact	routes.subscriptions.health_impact		todo
-DELETE	/api/subscriptions/<sub_id>	routes.subscriptions.handle_subscription		todo
-PUT	/api/subscriptions/<sub_id>	routes.subscriptions.handle_subscription		todo
-POST	/api/subscriptions/<sub_id>/fetch	routes.subscriptions.fetch_subscription		todo
-GET	/api/subscriptions/<sub_id>/nodes	routes.subscriptions.get_subscription_nodes		todo
-GET	/api/subscriptions/<sub_id>/proxies	routes.subscriptions.get_subscription_proxies		todo
-GET	/api/subscriptions/health	routes.subscriptions.subscriptions_health		todo
-GET	/api/subscriptions/proxies	routes.subscriptions.get_all_subscription_proxies		todo
-POST	/api/subscriptions/reorder	routes.subscriptions.reorder_subscriptions		todo
-GET	/api/subscriptions/test	routes.subscriptions.test_subscription_route		todo
+GET	/api/subscriptions	routes.subscriptions.handle_subscriptions	api/subscriptions	done
+POST	/api/subscriptions	routes.subscriptions.handle_subscriptions	api/subscriptions	done
+GET	/api/subscriptions/<resource_id>/health-impact	routes.subscriptions.health_impact	api/subscriptions	done
+DELETE	/api/subscriptions/<sub_id>	routes.subscriptions.handle_subscription	api/subscriptions	done
+PUT	/api/subscriptions/<sub_id>	routes.subscriptions.handle_subscription	api/subscriptions	done
+POST	/api/subscriptions/<sub_id>/fetch	routes.subscriptions.fetch_subscription	api/subscriptions	done
+GET	/api/subscriptions/<sub_id>/nodes	routes.subscriptions.get_subscription_nodes	api/subscriptions	done
+GET	/api/subscriptions/<sub_id>/proxies	routes.subscriptions.get_subscription_proxies	api/subscriptions	done
+GET	/api/subscriptions/health	routes.subscriptions.subscriptions_health	api/subscriptions	done
+GET	/api/subscriptions/proxies	routes.subscriptions.get_all_subscription_proxies	api/subscriptions	done
+POST	/api/subscriptions/reorder	routes.subscriptions.reorder_subscriptions	api/subscriptions	done
+GET	/api/subscriptions/test	routes.subscriptions.test_subscription_route	api/subscriptions	done
 GET	/api/tasks	routes.tasks.get_tasks	internal/api/tasks	wip
 PUT	/api/tasks/interval	routes.tasks.set_interval	internal/api/tasks	wip
 POST	/api/tasks/run	routes.tasks.run_task	internal/api/tasks	wip

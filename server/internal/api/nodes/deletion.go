@@ -55,7 +55,7 @@ func intersects(values []string, ids map[string]bool) bool {
 	return false
 }
 func builtin(name string) bool {
-	return name == "DIRECT" || name == "REJECT" || name == "REJECT-DROP" || name == "PASS" || name == "COMPATIBLE"
+	return name == "DIRECT" || name == "REJECT"
 }
 
 func planDeletion(document record, nodeIDs []string, profileNodes map[string][]string, dialers map[string]string) (*deletionPreview, record, error) {

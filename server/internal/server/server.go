@@ -29,6 +29,7 @@ import (
 	apinotifications "configflow/internal/api/notifications"
 	apisettings "configflow/internal/api/settings"
 	apistats "configflow/internal/api/stats"
+ apisubscriptions "configflow/internal/api/subscriptions"
 	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/auth"
 	"configflow/internal/convert"
@@ -50,6 +51,7 @@ import (
 var routePackages = []func(*httpx.Router){
 	apiauth.Register,
 	apinodes.Register,
+	apisubscriptions.Register,
 	apiagents.Register,
 	apisettings.Register,
 	apilogs.Register,
