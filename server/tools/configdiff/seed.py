@@ -93,6 +93,8 @@ def create(directory, options):
                 'endpoint': endpoint, 'profile_id': default, 'status': 'installed', 'plugins': [], 'installed': True}}
             value['system_config']['node_test_dns_config'] = {
                 'mode': 'custom', 'servers': [endpoint, 'https://dns.example/dns-query'], 'bootstrap': []}
+        value['backup'].update(options.get('backup', {}))
+        value['system_config'].update(options.get('system_config', {}))
         return value
     repository.update_system_transaction(system)
     if options.get('redaction'):

@@ -54,6 +54,8 @@ def main():
     groups.update(redaction)
     from cases.admin_auth import GROUPS as admin_auth
     groups.update(admin_auth)
+    from cases.settings import GROUPS as settings
+    groups.update(settings)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

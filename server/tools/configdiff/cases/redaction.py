@@ -125,6 +125,9 @@ def other_blueprints(binary, recorder):
         policy.bind(*[str(d / 'app.log') for d in pair.dirs], r'/tmp/configdiff-[^/]+/(python|go)/app\.log', 'test-log-path')
         pair.request('X01', 'GET /api/logs/tail', '/api/logs/tail?lines=1',
                      variant='logs/fixed-line', expect=200, check=assert_redacted, policy=policy)
+    with Pair(binary, recorder, options={'redaction': payload}) as pair:
+        pair.request('X01', 'GET /api/profiles/<profile_id>/export', '/api/profiles/default/export',
+                     variant='profile-export', expect=200, check=assert_redacted)
 
 
 GROUPS = {'redaction-blueprints': blueprint_text, 'redaction-depth': depth_keys,
