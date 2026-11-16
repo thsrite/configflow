@@ -1,12 +1,15 @@
 package subscriptions_test
 
 import (
-	"configflow/internal/logx"
 	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"configflow/internal/auth"
+	"configflow/internal/logx"
 
 	"configflow/internal/api/subscriptions"
 	"configflow/internal/convert/mihomoenv"
@@ -53,11 +56,47 @@ func TestGlobalGateAndProfileToken(t *testing.T) {
 	}
 	srv.Get(prefix, srv.Login()).WantStatus(200)
 	srv.Get("/api/profiles/default/subscriptions/missing/proxies?token=synthetic-pull-token").WantStatus(404)
+	// A valid JWT cannot turn a current/retired internal capability into a
+	// public credential, even when legacy storage makes the tokens equal.
+	admin := srv.Login()
+	for _, token := range []string{"synthetic-internal-token", "synthetic-retired-token"} {
+		srv.Get(prefix+"?token="+token, admin).WantStatus(401)
+	}
+	expired, err := auth.EncodeHS256(jsonx.Obj("username", "admin", "exp", time.Now().Add(-time.Hour).Unix()), auth.Current().SecretKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Get(prefix, httpxtest.Bearer(expired)).WantStatus(401)
+	srv.Get(prefix+"?token=synthetic-pull-token", httpxtest.Bearer(expired)).WantStatus(200)
+	for _, header := range []string{"bearer ignored", "Bearer  ignored", "Bearer ignored extra"} {
+		srv.Get(prefix, httpxtest.Header("Authorization", header)).WantStatus(401)
+	}
+	for _, path := range []string{prefix, "/api/profiles/default/subscriptions/missing/proxies"} {
+		res := srv.Get(path + "?token=synthetic-other-profile-token").WantStatus(401)
+		res.WantJSON(jsonx.Obj("message", "Invalid or missing authentication", "success", false))
+	}
+	_, err = srv.Repo.UpdateSystemTransaction(srv.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+		system.GetObject("system_config").Set("config_token", "synthetic-retired-token")
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Get(prefix + "?token=synthetic-retired-token").WantStatus(401)
+	srv.Get(prefix + "?token=synthetic-pull-token").WantStatus(401)
+	_, err = srv.Repo.UpdateSystemTransaction(srv.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+		system.GetObject("system_config").Set("config_token", "synthetic-rotated-token")
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Get(prefix + "?token=synthetic-rotated-token").WantStatus(200)
 	logs, err := os.ReadFile(logFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, token := range []string{"synthetic-pull-token", "synthetic-internal-token", "synthetic-retired-token"} {
+	for _, token := range []string{"synthetic-pull-token", "synthetic-internal-token", "synthetic-retired-token", "synthetic-rotated-token", expired} {
 		if strings.Contains(string(logs), token) {
 			t.Fatal("provider log exposed token")
 		}

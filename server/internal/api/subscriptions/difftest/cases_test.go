@@ -399,3 +399,30 @@ func TestDeletionWarnsOnEmptySources(t *testing.T) {
 	}
 	w.call("POST", "/api/nodes/delete", `{"ids":["remove","keep"],"confirmation":"`+plan.Body.(map[string]any)["confirmation"].(string)+`"}`, true)
 }
+
+// These cases derive from Flask's JWT allowlist and MultiDict credential lookup.
+func TestAdversarialProviderURLs(t *testing.T) {
+	w := newWorld(t, seedGraph(t, "none", false, true), map[string]string{"s": "proxies: [{name: Remote, type: http, server: example.com, port: 80}]"})
+	prefix := "/api/profiles/default/subscriptions/s/proxies"
+	for _, query := range []string{
+		"", "?token=", "?TOKEN=c30-pull", "?token=C30-pull", "?token=c30-pull%00",
+		"?token=c30-pull+", "?token=%256330-pull", "?token=wrong&token=c30-pull",
+		"?token=&token=c30-pull", "?token=c30-pull&token=wrong", "?token=c30-pull&extra=unused",
+		"?%74oken=%6330-pull", "?token=c30-pull&profile=missing", "?token=c30-pull&profile_id=missing",
+	} {
+		w.call("GET", prefix+query, "", false)
+	}
+	for _, path := range []string{
+		"/api/%73ubscriptions/s/proxies?token=c30-pull",
+		"/api/subscriptions/s/%70roxies?token=c30-pull",
+		"/api/profiles/%64efault/subscriptions/s/proxies?token=c30-pull",
+		"/api/profiles/default/subscriptions/%73/proxies?token=c30-pull",
+		"/api/profiles/default/subscriptions/s/%70roxies?token=c30-pull",
+		"/api/profiles/default/subscriptions/s%2f..%2fs/proxies?token=c30-pull",
+		"/api/profiles/default/subscriptions/../s/proxies?token=c30-pull",
+		"/api/profiles/default/subscriptions/s/proxies/?token=c30-pull",
+		"/api/profiles/default/subscriptions/missing/proxies?token=wrong",
+	} {
+		w.call("GET", path, "", false)
+	}
+}

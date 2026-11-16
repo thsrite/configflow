@@ -10,6 +10,8 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"math/big"
 	"os"
@@ -258,13 +260,15 @@ func ValidateTokenOrJWT(c *httpx.Ctx, config *jsonx.Object) (ValidateResult, err
 	if !IsTokenWithinLength(urlToken) {
 		urlToken = ""
 	}
-	internal := map[string]bool{}
+	internalMatch := 0
 	for _, token := range append([]any{ruleProxyToken}, retired...) {
 		if text, ok := token.(string); ok && text != "" {
-			internal[text] = true
+			// Compare fixed-size digests so credential contents and lengths do not
+			// short-circuit secret comparisons. Check every retired capability.
+			internalMatch |= equalCredential(bearer, text) | equalCredential(urlToken, text)
 		}
 	}
-	if (hasBearer && internal[bearer]) || internal[urlToken] {
+	if internalMatch != 0 {
 		return ValidateResult{Message: invalidOrMissingMsg}, nil
 	}
 	if !IsAuthEnabled() && !jsonx.Truthy(configToken) {
@@ -279,10 +283,17 @@ func ValidateTokenOrJWT(c *httpx.Ctx, config *jsonx.Object) (ValidateResult, err
 			return ValidateResult{Valid: true}, nil
 		}
 	}
-	if urlToken != "" && jsonx.Equal(urlToken, configToken) {
+	if expected, ok := configToken.(string); ok && urlToken != "" && equalCredential(urlToken, expected) == 1 {
 		return ValidateResult{Valid: true}, nil
 	}
 	return ValidateResult{Message: invalidOrMissingMsg}, nil
+}
+
+// equalCredential compares secrets without leaking their matching prefix or length.
+func equalCredential(candidate, expected string) int {
+	a := sha256.Sum256([]byte(candidate))
+	b := sha256.Sum256([]byte(expected))
+	return subtle.ConstantTimeCompare(a[:], b[:])
 }
 
 var publicExactPaths = map[string]bool{
