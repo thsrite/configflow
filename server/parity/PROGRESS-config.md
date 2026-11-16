@@ -1703,7 +1703,7 @@ Notes for porter: Own routes: `routes/config.py` (24), `routes/generate.py` (12)
 
 ## C35 — config importer, WebDAV backup
 
-**Status: `missing`** · prereqs: C04, C06 · Go: internal/importer, internal/webdav (new)
+**Status: `partial`** · prereqs: C04, C06 · Go: internal/importer, internal/webdav (new)
 
 Files:
 - `backend/utils/config_importer.py` (1148)
@@ -1713,9 +1713,13 @@ Tests: `test_config_import.py` (7), `test_webdav_auto_backup.py` (24)
 
 Routes: none.
 
-Evidence: No Go package; no route registered.
+Evidence: `internal/webdav` implements native HTTP HEAD/MKCOL/PUT/PROPFIND/DELETE, retention, safe errors, task receipts, and a debounced single worker. Its repository adapter supplies ConfigurationCommitted; production/API wiring follows next. Loopback transport, retention, coalescing, slow upload, runtime-field suppression and post-commit failure isolation tests pass with scoped race on .63.
 
-Missing / deferred: Everything in the files below.
+In progress: native typed importer, backup API wiring and Flask↔Go/JSON-structure differentials. Next: finish importer; register backup routes and hook; complete synthetic import corpus and fake WebDAV boundary cases; final .32 full/vet/race/proddiff; rebase go, clean, no push.
+
+Implementation contract: importer is pure Parse → Plan → Build (typed shared additions/profile/summary, protocol extras as json.RawMessage, custom YAML as yaml.Node). WebDAV uses net/http + encoding/xml, no new dependency. Worker owns one pending Source and deadline, snapshots after debounce outside commit locks, serializes uploads, and detaches request cancellation; failed upload/cleanup never rolls back a commit. Service errors omit remote URL/body/credentials.
+
+Commands: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go vet ./internal/webdav/... && go test -race -count=1 ./internal/webdav/...'`.
 
 Notes for porter: Fills `repo.Hooks.ConfigurationCommitted` (auto backup) and the two `/api/backup/*` routes of `routes/settings.py` (C06 missing list). `config_importer` (client config import: Clash/Surge/…) has no backend imports — self-contained, can start early.
 
