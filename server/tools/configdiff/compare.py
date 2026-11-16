@@ -15,6 +15,7 @@ import sqlite3
 import tarfile
 import zipfile
 import yaml
+from zoneinfo import ZoneInfo
 
 
 @dataclass
@@ -30,6 +31,7 @@ class Policy:
     times: set = field(default_factory=set)
     durations: set = field(default_factory=set)
     epochs: dict = field(default_factory=dict)
+    tz: str = 'UTC'
     # Only separately diagnosed CPython exception messages may use this exact path.
     internal_errors: dict = field(default_factory=dict)
     start: float = 0
@@ -55,7 +57,7 @@ def timestamp(value, policy):
     try:
         parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
         if parsed.tzinfo is None:
-            parsed = parsed.astimezone()
+            parsed = parsed.replace(tzinfo=ZoneInfo(policy.tz))
         return policy.start - 2 <= parsed.timestamp() <= policy.end + 2
     except (ValueError, OverflowError):
         return False

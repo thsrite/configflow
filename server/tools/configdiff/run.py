@@ -74,6 +74,12 @@ def main():
     groups.update(profiles)
     from cases.profile_guards import GROUPS as profile_guards
     groups.update(profile_guards)
+    from cases.logs import GROUPS as logs
+    groups.update(logs)
+    from cases.notifications import GROUPS as notifications
+    groups.update(notifications)
+    from cases.stats import GROUPS as stats
+    groups.update(stats)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

@@ -191,3 +191,24 @@ request_variants=2624 named_matrix_cases=2213（S139 F1941 B133），H去重17
 ```
 
 尚缺profiles的client import、所有clone引用/恢复快照细节、删除router busy、legacy隐式Agent/HA busy/并发；导入全库及token生命周期另批。其余路由/H/G/T继续，未做最终全量。
+
+## 批次 10：logs.py、notifications.py、stats.py
+
+- logs 51请求全部比较通过：UTC/Asia-Shanghai固定10006行，大小写搜索/等级、非正数全量/10000上限/默认、Unicode数字/+号/下划线/巨整数、中文/坏UTF8忽略、非法正则、真实清空后逐端读文件验证、缺文件、目录代替文件的I/O错误、同一隔离CWD里的fallback。不能把通用文件比较排除app.log当日志清空证明，专门比较实际字节。
+- 比较器修正：无时区字符串按Pair设置的TZ解释，而非测试机宿主TZ；创建/修改时间仍验证窗口和格式，固定fixture mtime仍精确比较。新增时区mutation自检，共18项。
+- notifications 20请求：13个read/参数/版本场景比较通过，7个GET场景待接通。覆盖2000/2001项、键1024/1025、值100/101、未知/旧版本、已读后新版本不得被旧确认清除；目录文件I/O和坏task counter造成ValueError→503。生产通知来源的失败回执差异仍保留T27，不用合成通知fixture冒充生产钩子通过。
+- stats 12请求全部比较通过：首次、30分钟节流不改原文件（逐端前后读）、超过间隔追加、48保留、空计数、坏时间、坏历史恢复、文件不能替换仍成功、坏历史计数→500且观察可能已写入的历史。不预设所有500都不写文件。
+
+```text
+.63 run.py --groups logs-fixed,logs-fallback
+current compared=51 different=0 design_errors=[] seconds=5.26
+.63 run.py --groups notifications-validation,notifications-versions
+current compared=13 go-unimplemented=7 design_errors=[] seconds=5.87
+.63 run.py --groups stats-history
+current compared=12 different=0 design_errors=[] seconds=9.79
+cumulative compared=1225 go-unimplemented=1478 different=3 O12-separate=1
+request_variants=2707 named_matrix_cases=2263（S155 F1955 B153），H去重17
+18 self-checks + end-to-end wrong-Go-response check OK
+```
+
+未完成：日志真实事件序列/10MiB轮转、stat权限分支、notifications完整生产来源；stats P3–6和并发。后续继续config/shared/provider/client-import/OxiDNS/helper和长流程；当前不是最终全量验收。

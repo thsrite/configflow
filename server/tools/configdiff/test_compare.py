@@ -238,6 +238,11 @@ class Comparators(unittest.TestCase):
                 db.execute('UPDATE fields SET value=?', ('[{"name":"changed"}]',))
             self.assertTrue(file_diffs(*roots, Policy()))
 
+    def test_naive_timestamp_uses_selected_server_timezone(self):
+        policy = Policy(times={'body.at'}, start=1767225600, end=1767225605, tz='Asia/Shanghai')
+        self.assertEqual(differences({'at': '2026-01-01T08:00:00'}, {'at': '2026-01-01T08:00:01'}, policy=policy), [])
+        self.assertTrue(differences({'at': '2026-01-01T00:00:00'}, {'at': '2026-01-01T08:00:01'}, policy=policy))
+
 
 if __name__ == '__main__':
     unittest.main()

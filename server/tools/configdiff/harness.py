@@ -102,7 +102,7 @@ class Pair:
         self.root = Path(self.temp.name)
         self.dirs = [self.root / name for name in ('python', 'go')]
         self.processes, self.handles, self.bases, self.tokens = [], [], [], []
-        self.policy = Policy(start=time.time())
+        self.policy = Policy(start=time.time(), tz=self.tz)
         self.registered = set()
         self.declared = declared_states()
         self.unimplemented_mutations = set()
@@ -167,7 +167,8 @@ class Pair:
             command = [PYTHON, '-m', 'backend.app'] if index == 0 else [self.binary]
             handle = open(self.root / f'{index}.log', 'wb')
             self.handles.append(handle)
-            process = subprocess.Popen(command, env=self.environment(directory, port), cwd=ROOT,
+            process = subprocess.Popen(command, env=self.environment(directory, port),
+                                       cwd=self.root if self.options.get('isolated_cwd') else ROOT,
                                        stdout=handle, stderr=handle, start_new_session=True)
             self.processes.append(process)
             base = f'http://127.0.0.1:{port}'
