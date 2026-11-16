@@ -886,3 +886,20 @@ request_variants=6916 named_matrix_cases=3548（S557 F2478 B513），H去重240�
 ```
 
 继续website、多Agent/超时/断连/自动化、G13及其余路由/helper；未做最终全量。
+
+## 批次 50：网站识别真实流量前置与页面结果
+
+- 51请求全部实际比较通过。真实heartbeat/traffic-report先产生记录，面板经fake Agent的POST /api/region-check访问主域、www及采集子域，逐字段核对target/8000ms/marker描述与候选去重。PSL已识别的example.com/org取api子域，未知后缀的30个保留.example host按原样输入；所有真实网络仅loopback。
+- 1/2/30域名、punycode、同profile busy、最终GET done；og:site_name优先、HTML实体/属性/description、登录与Powered by标题噪声、中文emoji及200码点截断，精确合成名称断言。challenge/无名称与RPC404都留下准确errors；首个RPC失败后下一域名仍成功，个别缺最近采集记录跳过而非整批拒绝。
+- regions.websites只按真实采集host缓存，www成功候选保留正确host；final_url只保存hostname，不含合成private查询值。完整任务/DB/files依然严格比较，没有用单次202冒充完成。
+- 夹具修正已重跑：未知.test不按根域归组；最初两个meta/1场景重名触发inventory重复键检查，现variant包含R编号。不把夹具错误计业务失败。
+
+```text
+.63 run.py --groups discovery-agent-website
+current compared=51 design_errors=[] seconds=20.99
+cumulative compared=1822 go-unimplemented=5063 dependency=28 different=53 O12-separate=1
+request_variants=6967 named_matrix_cases=3554（S560 F2479 B515），H去重240，G去重15
+48 self-checks + end-to-end wrong-Go-response check OK
+```
+
+T19/T20仍有多Agent、3 hosts、跨空间website busy、真实超时/断连；T21自动化及G13/其余路由helper继续，未做最终全量。

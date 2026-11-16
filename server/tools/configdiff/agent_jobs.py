@@ -151,7 +151,8 @@ class Running:
             diffs.append(Difference('agent.transport', 'fake-errors', [], self.agents[1].errors))
         diffs += differences(final[0], final[1], 'job.final', policy)
         diffs += database_diffs(*self.pair.dirs, policy) + file_diffs(*self.pair.dirs, policy)
-        self.pair.recorder.record('T20', variant, 'POST /api/domain-discovery/' + ('probe' if self.kind == 'probe' else 'region/check'),
+        path = {'probe': 'probe', 'region': 'region/check', 'website': 'website/identify'}[self.kind]
+        self.pair.recorder.record('T20', variant, 'POST /api/domain-discovery/' + path,
                                   'T20', 'different' if diffs else 'compared', diffs, python_status=200,
                                   go_status=200 if isinstance(final[1], dict) and final[1].get('success') else None)
         return final
