@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/pystr"
 	"configflow/internal/rules"
 	"configflow/internal/subs"
 )
@@ -46,15 +47,48 @@ func (g *Graph) Children(key Ref) ([]Ref, bool) {
 func (g *Graph) Has(key Ref) bool { return g.has(key) }
 
 // validateProxyChains is proxy_chains.validate_proxy_chains (owned by C11,
-// subs.ValidateProxyChains). Python's `follow_group in chains` raises
-// TypeError for an unhashable follow_group, which subs does not check; that
-// is reproduced here first. Callers have passed validate_shapes.
+// subs.ValidateProxyChains). Python's first loop runs `group.get(
+// 'follow_group') in chains` over the groups by id, which raises TypeError
+// for an unhashable follow_group; subs does not check that, so the loop is
+// walked here up to the first group that raises either way. Callers have
+// passed validate_shapes (ids are strings).
 func validateProxyChains(profile *jsonx.Object) error {
-	groups, _ := profile.GetOr("proxy_groups", []any{}).([]any)
-	for _, item := range groups {
-		if group, ok := item.(*jsonx.Object); ok {
-			if err := hashable(group.Value("follow_group")); err != nil {
-				return err
+	list, _ := profile.GetOr("proxy_groups", []any{}).([]any)
+	groups := newObjectMap()
+	for _, item := range list {
+		if group, ok := item.(*jsonx.Object); ok && group != nil {
+			groups.set(group.GetString("id"), group)
+		}
+	}
+	chains := map[string]bool{}
+	for _, id := range groups.keys {
+		if jsonx.Equal(groups.values[id].Value("type"), "chain") {
+			chains[id] = true
+		}
+	}
+walk:
+	for _, id := range groups.keys {
+		group := groups.values[id]
+		follow := group.Value("follow_group")
+		if err := hashable(follow); err != nil {
+			return err
+		}
+		if text, ok := follow.(string); ok && chains[text] {
+			break
+		}
+		if len(chains) > 0 && compatEnabled(group) && !jsonx.Equal(group.Value("type"), "chain") {
+			members, err := groupMembers(group)
+			if err != nil {
+				break
+			}
+			for _, member := range members {
+				if member.Kind != "group" {
+					continue
+				}
+				target := groups.values[member.ID]
+				if target == nil || !compatEnabled(target) {
+					break walk
+				}
 			}
 		}
 	}
@@ -227,7 +261,7 @@ func IncomingDialers(profile *jsonx.Object, kind, id string) ([]Ref, error) {
 
 // ResolveDialer is resolve_dialer: the name of the node's dialer_ref target
 // (nil when the node has none). A dangling reference is Python's
-// StopIteration.
+// StopIteration; ref['id'] is read per candidate, as the generator does.
 func ResolveDialer(profile, node *jsonx.Object) (any, error) {
 	ref := node.Value("dialer_ref")
 	if ref == nil {
@@ -241,16 +275,16 @@ func ResolveDialer(profile, node *jsonx.Object) (any, error) {
 	if jsonx.Equal(kind, "node") {
 		key = "nodes"
 	}
-	id, err := compatItem(ref, "id")
-	if err != nil {
-		return nil, err
-	}
 	targets, err := compatList(profile.GetOr(key, []any{}))
 	if err != nil {
 		return nil, err
 	}
 	for _, item := range targets {
 		target, err := compatObject(item)
+		if err != nil {
+			return nil, err
+		}
+		id, err := compatItem(ref, "id")
 		if err != nil {
 			return nil, err
 		}
@@ -305,12 +339,39 @@ func splitText(value any, sep string) ([]string, error) {
 	return strings.Split(text, sep), nil
 }
 
+// regexCrash is the Python class of a compile error that is not re.error
+// (RecursionError, OverflowError for a repeat count >= MAXREPEAT); "" for
+// re.error and patterns only this implementation cannot run.
+func regexCrash(err error) string {
+	switch err.Error() {
+	case "the repetition number is too large":
+		return "OverflowError"
+	case "maximum recursion depth exceeded":
+		return "RecursionError"
+	}
+	return ""
+}
+
+// compileFilter is re.compile(value) inside filter_provider_candidates'
+// `except re.error`. A pattern only this implementation cannot run (\N{...},
+// repeat counts beyond int32) is refused with the same message (domain
+// decision: such patterns are not applied).
+func compileFilter(value string) (*rules.PyRegex, error) {
+	re, err := rules.CompilePyRegex(value, false)
+	if err == nil {
+		return re, nil
+	}
+	if class := regexCrash(err); class != "" {
+		return nil, pyError(class, err.Error())
+	}
+	return nil, dialerError("Provider 正则过滤无效或不受支持")
+}
+
 // FilterProviderCandidates is filter_provider_candidates(proxies, include,
 // exclude, exclude_type): match original names, preserving Mihomo's
 // backtick filter ordering. The arguments are the values Python receives
 // (normally strings; "" is the default).
 func FilterProviderCandidates(proxies []*jsonx.Object, include, exclude, excludeType any) ([]*jsonx.Object, error) {
-	invalid := func() ([]*jsonx.Object, error) { return nil, dialerError("Provider 正则过滤无效或不受支持") }
 	excludeParts, err := splitText(exclude, "`")
 	if err != nil {
 		return nil, err
@@ -320,9 +381,9 @@ func FilterProviderCandidates(proxies []*jsonx.Object, include, exclude, exclude
 		if value == "" {
 			continue
 		}
-		re, err := rules.CompilePyRegex(value, false)
+		re, err := compileFilter(value)
 		if err != nil {
-			return invalid()
+			return nil, err
 		}
 		exclusions = append(exclusions, re)
 	}
@@ -331,9 +392,9 @@ func FilterProviderCandidates(proxies []*jsonx.Object, include, exclude, exclude
 		return nil, err
 	}
 	for _, value := range includeParts {
-		re, err := rules.CompilePyRegex(value, false)
+		re, err := compileFilter(value)
 		if err != nil {
-			return invalid()
+			return nil, err
 		}
 		filters = append(filters, re)
 	}
@@ -344,7 +405,7 @@ func FilterProviderCandidates(proxies []*jsonx.Object, include, exclude, exclude
 	excludedTypes := map[string]bool{}
 	for _, value := range typeParts {
 		if value != "" {
-			excludedTypes[pyLower(value)] = true
+			excludedTypes[pystr.Lower(value)] = true
 		}
 	}
 	selected := []*jsonx.Object{}
@@ -360,7 +421,7 @@ func FilterProviderCandidates(proxies []*jsonx.Object, include, exclude, exclude
 			if !ok {
 				return nil, attributeError(typeValue, "lower")
 			}
-			if excludedTypes[pyLower(typeText)] {
+			if excludedTypes[pystr.Lower(typeText)] {
 				continue
 			}
 			key, err := hashID(nameValue)
@@ -393,30 +454,6 @@ func FilterProviderCandidates(proxies []*jsonx.Object, include, exclude, exclude
 	return selected, nil
 }
 
-// pySub is re.sub(pattern, repl, text) with a function replacement: the
-// pattern is compiled by rules.CompilePyRegex (Python's parser and error
-// texts) and substituted by PyRegex.Sub (CPython's match loop); repl gets
-// the group texts ("" for a group that did not take part) and may fail with
-// an IndexError.
-func pySub(pattern, text string, repl func(groups []string, participated []bool) (string, error)) (string, error) {
-	re, err := rules.CompilePyRegex(pattern, false)
-	if err != nil {
-		return "", err
-	}
-	out, err := re.Sub(text, func(m *rules.Match) (string, error) {
-		texts := make([]string, m.Groups()+1)
-		participated := make([]bool, m.Groups()+1)
-		for i := range texts {
-			texts[i], participated[i] = m.Group(i)
-		}
-		return repl(texts, participated)
-	}, 0)
-	if errors.Is(err, rules.ErrMatchTimeout) {
-		return "", pyError("error", err.Error())
-	}
-	return out, err
-}
-
 // expandTarget is re.sub(r'\$(\d+)', repl, target) with repl returning
 // match.group(int(part[1])) or the empty string.
 func expandTarget(target string, groups []string) (string, error) {
@@ -429,8 +466,8 @@ func expandTarget(target string, groups []string) (string, error) {
 		}
 		j, number, overflow := i+1, 0, false
 		for j < len(runes) {
-			d, ok := decimalValue(runes[j])
-			if !ok {
+			d := pystr.Decimal(runes[j])
+			if d < 0 {
 				break
 			}
 			if number > 1<<40 {
@@ -453,6 +490,22 @@ func expandTarget(target string, groups []string) (string, error) {
 	return b.String(), nil
 }
 
+// pyFirstItem is value[0] for a truthy value: a list's first item, a str's
+// first character, KeyError for a dict, TypeError for anything else.
+func pyFirstItem(value any) (any, error) {
+	switch v := value.(type) {
+	case []any:
+		return v[0], nil
+	case string:
+		for _, r := range v {
+			return string(r), nil
+		}
+	case *jsonx.Object:
+		return nil, pyError("KeyError", "0")
+	}
+	return nil, pyError("TypeError", "'"+pyTypeName(value)+"' object is not subscriptable")
+}
+
 // ProviderProxyName is provider_proxy_name: project the native name
 // overrides emitted by the chain compiler onto an original provider name.
 func ProviderProxyName(proxy, override *jsonx.Object) (string, error) {
@@ -461,13 +514,13 @@ func ProviderProxyName(proxy, override *jsonx.Object) (string, error) {
 		return "", err
 	}
 	rulesValue := override.GetOr("proxy-name", []any{})
-	ruleList, err := compatList(rulesValue)
-	if err != nil {
-		return "", err
-	}
-	name, ok := nameValue.(string)
-	if jsonx.Truthy(rulesValue) && len(ruleList) > 0 {
-		targetValue, err := compatItem(ruleList[0], "target")
+	name, isName := nameValue.(string)
+	if jsonx.Truthy(rulesValue) {
+		first, err := pyFirstItem(rulesValue)
+		if err != nil {
+			return "", err
+		}
+		targetValue, err := compatItem(first, "target")
 		if err != nil {
 			return "", err
 		}
@@ -475,12 +528,16 @@ func ProviderProxyName(proxy, override *jsonx.Object) (string, error) {
 		if !isText {
 			return "", attributeError(targetValue, "rsplit")
 		}
-		if !ok {
+		if !isName {
 			return "", attributeError(nameValue, "startswith")
 		}
 		if strings.HasPrefix(name, pyRsplitFirst(target, "_", 2)+"_") {
 			return "", dialerError("Provider 原始节点名称与代理链私有排序标记冲突")
 		}
+	}
+	ruleList, err := compatList(override.GetOr("proxy-name", []any{}))
+	if err != nil {
+		return "", err
 	}
 	invalid := dialerError("Provider 名称转换规则无效")
 	for _, ruleValue := range ruleList {
@@ -492,11 +549,19 @@ func ProviderProxyName(proxy, override *jsonx.Object) (string, error) {
 		if !isText {
 			return "", pyError("TypeError", "first argument must be string or compiled pattern")
 		}
-		if !ok {
+		// re.sub compiles the pattern before it looks at the string.
+		re, err := rules.CompilePyRegex(pattern, false)
+		if err != nil {
+			if class := regexCrash(err); class != "" {
+				return "", pyError(class, err.Error())
+			}
+			return "", invalid
+		}
+		if !isName {
 			return "", pyError("TypeError", "expected string or bytes-like object, got '"+pyTypeName(nameValue)+"'")
 		}
 		rule := ruleValue.(*jsonx.Object)
-		name, err = pySub(pattern, name, func(groups []string, _ []bool) (string, error) {
+		name, err = re.Sub(name, func(m *rules.Match) (string, error) {
 			targetValue, err := compatItem(rule, "target")
 			if err != nil {
 				return "", err
@@ -505,14 +570,14 @@ func ProviderProxyName(proxy, override *jsonx.Object) (string, error) {
 			if !isText {
 				return "", pyError("TypeError", "expected string or bytes-like object, got '"+pyTypeName(targetValue)+"'")
 			}
-			return expandTarget(target, groups)
-		})
-		if err != nil {
-			if rules.IsPyRegexError(err) || PyErrorClass(err) == "IndexError" || PyErrorClass(err) == "error" {
-				return "", invalid
+			groups := make([]string, m.Groups()+1)
+			for i := range groups {
+				groups[i], _ = m.Group(i)
 			}
-			var unsupported *rules.UnsupportedRegexError
-			if errors.As(err, &unsupported) {
+			return expandTarget(target, groups)
+		}, 0)
+		if err != nil {
+			if errors.Is(err, rules.ErrMatchTimeout) || PyErrorClass(err) == "IndexError" {
 				return "", invalid
 			}
 			return "", err
@@ -521,8 +586,13 @@ func ProviderProxyName(proxy, override *jsonx.Object) (string, error) {
 	prefix, suffix := override.GetOr("additional-prefix", ""), override.GetOr("additional-suffix", "")
 	prefixText, ok1 := prefix.(string)
 	suffixText, ok2 := suffix.(string)
-	if !ok1 || !ok2 {
-		return "", pyError("TypeError", "can only concatenate str (not \""+pyTypeName(prefix)+"\") to str")
+	switch {
+	case !ok1:
+		return "", pyError("TypeError", "unsupported operand type(s) for +: '"+pyTypeName(prefix)+"' and '"+pyTypeName(nameValue)+"'")
+	case !isName:
+		return "", pyError("TypeError", "can only concatenate str (not \""+pyTypeName(nameValue)+"\") to str")
+	case !ok2:
+		return "", pyError("TypeError", "can only concatenate str (not \""+pyTypeName(suffix)+"\") to str")
 	}
 	return prefixText + name + suffixText, nil
 }
@@ -572,7 +642,9 @@ var builtinNames = []string{"DIRECT", "REJECT", "REJECT-DROP", "PASS", "PASS-RUL
 
 // ValidateEmitted is validate_emitted: the dialer topology of a generated
 // Mihomo document (with provider payloads when known) has no dangling
-// names, duplicates, cycles or empty dialer groups.
+// names, duplicates, cycles or empty dialer groups. Values are read in
+// Python's order, so a malformed provider definition or payload entry raises
+// where Python first touches it.
 func ValidateEmitted(config *jsonx.Object, opts EmitOptions) error {
 	proxiesValue, groupsValue := config.GetOr("proxies", []any{}), config.GetOr("proxy-groups", []any{})
 	proxyList, ok1 := proxiesValue.([]any)
@@ -580,55 +652,73 @@ func ValidateEmitted(config *jsonx.Object, opts EmitOptions) error {
 	if !ok1 || !ok2 {
 		return pyError("TypeError", "can only concatenate list to list")
 	}
-	objects, err := objectsOf(append(append([]any{}, proxyList...), groupList...))
-	if err != nil {
-		return err
+	all := append(append([]any{}, proxyList...), groupList...)
+	definitionsValue := config.GetOr("proxy-providers", jsonx.NewObject())
+	definitions, definitionsOK := definitionsValue.(*jsonx.Object)
+	if definitions == nil {
+		definitionsOK = false
 	}
-	definitions, err := compatObject(config.GetOr("proxy-providers", jsonx.NewObject()))
-	if err != nil {
-		return err
-	}
+	definitionsError := func(method string) error { return attributeError(definitionsValue, method) }
 	payloads := opts.ProviderProxies
 	if payloads == nil {
 		payloads = jsonx.NewObject()
 	}
+
 	active := opts.ForceChains
-	for _, obj := range objects {
-		if !active && obj.Value("dialer-proxy") != nil {
-			active = true
-		}
-	}
-	for _, value := range definitions.Values() {
+	for _, item := range all {
 		if active {
 			break
 		}
-		definition, err := compatObject(value)
+		obj, err := compatObject(item)
 		if err != nil {
 			return err
 		}
-		override, err := compatObject(definition.GetOr("override", jsonx.NewObject()))
-		if err != nil {
-			return err
-		}
-		active = jsonx.Truthy(override.Value("dialer-proxy"))
+		active = obj.Value("dialer-proxy") != nil
 	}
-	for _, value := range payloads.Values() {
-		if active {
-			break
+	if !active {
+		if !definitionsOK {
+			return definitionsError("values")
 		}
-		list, err := objectsOf(value)
-		if err != nil {
-			return err
-		}
-		for _, p := range list {
-			if p.Value("dialer-proxy") != nil {
-				active = true
+		for _, value := range definitions.Values() {
+			definition, err := compatObject(value)
+			if err != nil {
+				return err
+			}
+			override, err := compatObject(definition.GetOr("override", jsonx.NewObject()))
+			if err != nil {
+				return err
+			}
+			if active = jsonx.Truthy(override.Value("dialer-proxy")); active {
 				break
 			}
 		}
 	}
 	if !active {
+	payloadScan:
+		for _, value := range payloads.Values() {
+			list, err := compatList(value)
+			if err != nil {
+				return err
+			}
+			for _, item := range list {
+				p, err := compatObject(item)
+				if err != nil {
+					return err
+				}
+				if p.Value("dialer-proxy") != nil {
+					active = true
+					break payloadScan
+				}
+			}
+		}
+	}
+	if !active {
 		return nil
+	}
+
+	objects, err := objectsOf(all)
+	if err != nil {
+		return err
 	}
 	builtins := map[Ref]bool{}
 	for _, name := range builtinNames {
@@ -659,37 +749,49 @@ func ValidateEmitted(config *jsonx.Object, opts EmitOptions) error {
 	for key := range builtins {
 		available[key] = true
 	}
+	if !definitionsOK {
+		return definitionsError("items")
+	}
 	graph := newRefGraph()
 	candidates := map[string][]*jsonx.Object{}
 	for _, name := range definitions.Keys() {
-		definition, err := compatObject(definitions.Value(name))
-		if err != nil {
-			return err
-		}
+		definitionValue := definitions.Value(name)
 		if !payloads.Has(name) {
 			if opts.RequireProviders {
 				return dialerError("拨号拓扑缺少已验证的 Provider 内容")
 			}
 			continue
 		}
-		proxies, err := objectsOf(payloads.Value(name))
+		payload, err := compatList(payloads.Value(name))
 		if err != nil {
 			return err
 		}
-		rawNames := map[Ref]bool{}
-		for _, p := range proxies {
+		rawNames := make([]any, 0, len(payload))
+		for _, p := range payload {
 			value, err := compatItem(p, "name")
 			if err != nil {
 				return err
 			}
+			rawNames = append(rawNames, value)
+		}
+		seenNames := map[Ref]bool{}
+		for _, value := range rawNames {
 			key, err := nameKey(value)
 			if err != nil {
 				return err
 			}
-			if rawNames[key] {
+			if seenNames[key] {
 				return dialerError("Provider 节点名称重复")
 			}
-			rawNames[key] = true
+			seenNames[key] = true
+		}
+		definition, err := compatObject(definitionValue)
+		if err != nil {
+			return err
+		}
+		proxies, err := objectsOf(payload)
+		if err != nil {
+			return err
 		}
 		proxies, err = FilterProviderCandidates(proxies, definition.GetOr("filter", ""),
 			definition.GetOr("exclude-filter", ""), definition.GetOr("exclude-type", ""))
@@ -900,22 +1002,31 @@ func ValidateEmitted(config *jsonx.Object, opts EmitOptions) error {
 }
 
 // RejectSurgeDialers is reject_surge_dialers(profile, client): Surge and
-// Loon cannot express proxy chains or dialer-proxy.
+// Loon cannot express proxy chains or dialer-proxy. Groups and nodes are
+// read one at a time, as Python's any() and loop do.
 func RejectSurgeDialers(ctx context.Context, profile *jsonx.Object, client string, converter ProxyStringConverter) error {
-	groups, err := profileList(profile, "proxy_groups")
+	groups, err := compatList(profile.GetOr("proxy_groups", []any{}))
 	if err != nil {
 		return err
 	}
-	for _, g := range groups {
+	for _, item := range groups {
+		g, err := compatObject(item)
+		if err != nil {
+			return err
+		}
 		if jsonx.Equal(g.Value("type"), "chain") && compatEnabled(g) {
 			return dialerError(client + " 暂不支持代理链，请使用 Mihomo 或禁用代理链")
 		}
 	}
-	nodes, err := profileList(profile, "nodes")
+	nodes, err := compatList(profile.GetOr("nodes", []any{}))
 	if err != nil {
 		return err
 	}
-	for _, node := range nodes {
+	for _, item := range nodes {
+		node, err := compatObject(item)
+		if err != nil {
+			return err
+		}
 		if !compatEnabled(node) {
 			continue
 		}

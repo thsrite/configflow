@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/pystr"
 	"configflow/internal/subs"
 )
 
@@ -38,7 +39,7 @@ var (
 var (
 	easytierPeerSchemes = []string{"tcp", "udp", "ws", "wss", "wg", "quic", "faketcp", "txt", "srv", "http", "https"}
 	easytierHostname    = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,62})$`)
-	easytierKeepURL     = regexp.MustCompile(`^https?://[^\t\n\x0b\f\r\x1c-\x1f \x85\p{Z}]+$`)
+	easytierKeepURL     = mustPyRegex(`^https?://\S+$`, false)
 )
 
 // EasyTierField is one (key, kind) of FIELDS. Kinds: text, secret, bool,
@@ -93,7 +94,7 @@ func cleanText(value any, label string, required bool, limit int) (string, error
 	if !ok {
 		return "", easytierError(label + " 必须是文本")
 	}
-	text = pyStrip(text)
+	text = pystr.Strip(text)
 	if required && text == "" {
 		return "", easytierError("请填写" + label)
 	}
@@ -152,7 +153,7 @@ func ipv4Network(value, label string) (string, error) {
 
 func peerURI(value, label string) (string, error) {
 	scheme, rest, found := strings.Cut(value, "://")
-	if !found || !contains(easytierPeerSchemes, pyLower(scheme)) || rest == "" {
+	if !found || !contains(easytierPeerSchemes, pystr.Lower(scheme)) || rest == "" {
 		return "", easytierError(label + "「" + value + "」格式不对，应类似 tcp://203.0.113.10:11010（支持 " +
 			strings.Join(easytierPeerSchemes[:7], ", ") + " 等）")
 	}
@@ -304,7 +305,7 @@ func NormalizeEasyTierSettings(value any) (*jsonx.Object, error) {
 	} else if n, _ := number.BigInt(); n.Cmp(big.NewInt(10)) < 0 || n.Cmp(big.NewInt(86400)) > 0 {
 		return nil, easytierError("保活检测间隔需为 10 ~ 86400 秒的整数")
 	}
-	if url != "" && !easytierKeepURL.MatchString(url) {
+	if url != "" && !easytierKeepURL.Search(url) {
 		return nil, easytierError("保活检测地址应为 http:// 或 https:// 开头的网址")
 	}
 	if keepEnabled && url == "" {

@@ -280,33 +280,7 @@ func knownDifference(kind string, input any) string {
 			return "non-string keys in ParseProxiesFromYAML"
 		}
 	}
-	if kind == "snapshot" {
-		// convert.ValidateEmitted (C12) raises AttributeError for a
-		// non-dict provider definition before Python's dangling dialer-proxy
-		// DialerReferenceError (only for a hand-made invalid main).
-		if jsonx.Equal(asObject(input).GetObject("main").Value("proxy-providers"), jsonx.Obj("F", jsonx.Int(1))) &&
-			chainProfile(asObject(input).GetObject("profile")) {
-			return "C12 ValidateEmitted order on a non-dict provider definition"
-		}
-	}
 	return ""
-}
-
-// chainProfile: one enabled chain group with a hashable name.
-func chainProfile(profile *jsonx.Object) bool {
-	groups := profile.GetList("proxy_groups")
-	if len(groups) != 1 {
-		return false
-	}
-	g, ok := groups[0].(*jsonx.Object)
-	if !ok || g.Has("enabled") {
-		return false
-	}
-	switch g.Value("name").(type) {
-	case string, jsonx.Number:
-		return true
-	}
-	return false
 }
 
 func snapshotRow(in *jsonx.Object) *jsonx.Object {

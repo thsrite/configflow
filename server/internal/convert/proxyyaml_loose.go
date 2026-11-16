@@ -24,9 +24,11 @@ const yamlOpaque = "<recursive>"
 // yamlNodeBudget bounds alias expansion (a "billion laughs" document).
 const yamlNodeBudget = 1 << 20
 
-// loadProxyYAMLLoose is yaml.safe_load(text) into jsonx values for the
-// values yamlx cannot hold (moved from repo/compat_proxystring.go, where it
-// was cross-checked against Python): mapping keys become the strings
+// loadProxyYAMLLoose is yaml.safe_load(text) into jsonx values for a
+// document with a recursive alias, which yamlx (and jsonx) cannot hold; it is
+// used only by InspectStructuredProxyString for that case (moved from
+// repo/compat_proxystring.go, where it was cross-checked against Python;
+// every other document goes through yamlx). Mapping keys become the strings
 // json.dumps writes for them (1 -> "1", true -> "true", null -> "null"), and
 // timestamps, !!binary and self-referencing containers become a one-element
 // list (truthy, not a string). Known gaps: keys 1 and "1" collide, Python's

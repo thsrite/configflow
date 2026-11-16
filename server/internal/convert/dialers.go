@@ -6,15 +6,17 @@ package convert
 // AttributeError) are *PyError values.
 
 import (
+	"math/big"
 	"sort"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/pystr"
 )
 
 // nonBlankString is isinstance(v, str) and v.strip().
 func nonBlankString(v any) bool {
 	text, ok := v.(string)
-	return ok && pyStrip(text) != ""
+	return ok && pystr.Strip(text) != ""
 }
 
 // compatEnabled is obj.get('enabled', True) as a condition.
@@ -576,8 +578,20 @@ func groupMembers(group *jsonx.Object) ([]Ref, error) {
 	return members, nil
 }
 
-// idSet is a set of ids with sorted() iteration.
-type idSet map[string]bool
+// idSet is a set of ids (hashed key -> the first id value) with sorted()
+// iteration.
+type idSet map[string]any
+
+func (s idSet) add(id any) error {
+	key, err := hashID(id)
+	if err != nil {
+		return err
+	}
+	if _, ok := s[key]; !ok {
+		s[key] = id
+	}
+	return nil
+}
 
 func (s idSet) update(value any) error {
 	list, err := compatList(value)
@@ -585,22 +599,82 @@ func (s idSet) update(value any) error {
 		return err
 	}
 	for _, id := range list {
-		key, err := hashID(id)
-		if err != nil {
+		if err := s.add(id); err != nil {
 			return err
 		}
-		s[key] = true
 	}
 	return nil
 }
 
-func (s idSet) sorted() []string {
-	result := make([]string, 0, len(s))
-	for id := range s {
-		result = append(result, id)
+// sorted is sorted(ids) as hashed keys: strings in code point order,
+// numbers (bools included) by value; comparing a str with a number, or None
+// with anything, is Python's TypeError.
+func (s idSet) sorted() ([]string, error) {
+	keys := make([]string, 0, len(s))
+	kinds := map[string]bool{}
+	for key, id := range s {
+		keys = append(keys, key)
+		switch id.(type) {
+		case string:
+			kinds["str"] = true
+		case bool, jsonx.Number:
+			kinds["number"] = true
+		default:
+			kinds[pyTypeName(id)] = true
+		}
 	}
-	sort.Strings(result)
-	return result
+	if len(keys) < 2 {
+		return keys, nil
+	}
+	if len(kinds) > 1 || kinds["NoneType"] {
+		names := make([]string, 0, len(kinds))
+		for kind := range kinds {
+			if kind == "number" {
+				kind = "int"
+			}
+			names = append(names, kind)
+		}
+		sort.Strings(names)
+		if len(names) == 1 {
+			names = append(names, names[0])
+		}
+		return nil, pyError("TypeError", "'<' not supported between instances of '"+names[0]+"' and '"+names[1]+"'")
+	}
+	if kinds["number"] {
+		sort.Slice(keys, func(i, j int) bool { return pyNumberLess(s[keys[i]], s[keys[j]]) })
+		return keys, nil
+	}
+	sort.Strings(keys)
+	return keys, nil
+}
+
+// pyNumberLess is a < b for Python numbers (bools are 0 and 1).
+func pyNumberLess(a, b any) bool {
+	toRat := func(v any) *big.Rat {
+		switch value := v.(type) {
+		case bool:
+			if value {
+				return big.NewRat(1, 1)
+			}
+			return new(big.Rat)
+		case jsonx.Number:
+			if value.IsInt() {
+				n, _ := value.BigInt()
+				return new(big.Rat).SetInt(n)
+			}
+			if r := new(big.Rat); r.SetFloat64(value.Float64()) != nil {
+				return r
+			}
+		}
+		return nil
+	}
+	x, y := toRat(a), toRat(b)
+	if x == nil || y == nil {
+		fa, _ := jsonx.AsFloat(a)
+		fb, _ := jsonx.AsFloat(b)
+		return fa < fb
+	}
+	return x.Cmp(y) < 0
 }
 
 // groupDependencies is group_dependencies: logical sources include
@@ -647,11 +721,9 @@ func groupDependencies(profile, group *jsonx.Object) ([]Ref, error) {
 			if err != nil {
 				return nil, err
 			}
-			key, err := hashID(id)
-			if err != nil {
+			if err := pass.ids.add(id); err != nil {
 				return nil, err
 			}
-			pass.ids[key] = true
 		}
 	}
 	use, err := compatList(group.GetOr("use", []any{}))
@@ -661,6 +733,7 @@ func groupDependencies(profile, group *jsonx.Object) ([]Ref, error) {
 	sources := []struct{ Kind, key string }{{"subscription", "subscriptions"}, {"aggregation", "subscription_aggregations"}}
 	for _, name := range use {
 		var matches []Ref
+		var matchIDs []any
 		for _, source := range sources {
 			items, err := compatList(profile.GetOr(source.key, []any{}))
 			if err != nil {
@@ -678,20 +751,20 @@ func groupDependencies(profile, group *jsonx.Object) ([]Ref, error) {
 				if err != nil {
 					return nil, err
 				}
-				key, err := hashID(id)
-				if err != nil {
-					return nil, err
-				}
-				matches = append(matches, Ref{source.Kind, key})
+				// The tuple is hashed only when its id is added to the set.
+				matches = append(matches, Ref{source.Kind, ""})
+				matchIDs = append(matchIDs, id)
 			}
 		}
 		if len(matches) != 1 {
 			return nil, dialerError("策略组 use 引用不存在或名称不唯一")
 		}
+		target := aggregations
 		if matches[0].Kind == "subscription" {
-			subscriptions[matches[0].ID] = true
-		} else {
-			aggregations[matches[0].ID] = true
+			target = subscriptions
+		}
+		if err := target.add(matchIDs[0]); err != nil {
+			return nil, err
 		}
 	}
 	for _, pass := range []struct {
@@ -703,7 +776,11 @@ func groupDependencies(profile, group *jsonx.Object) ([]Ref, error) {
 		if err != nil {
 			return nil, err
 		}
-		for _, id := range pass.ids.sorted() {
+		ids, err := pass.ids.sorted()
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range ids {
 			obj := catalog.values[id]
 			if obj == nil || !compatEnabled(obj) {
 				return nil, dialerError("拨号策略组来源不存在或未启用")
@@ -755,7 +832,7 @@ func dialerTarget(profile, node *jsonx.Object) (*Ref, error) {
 		return nil, nil
 	}
 	name, ok := value.(string)
-	if !ok || pyStrip(name) == "" {
+	if !ok || pystr.Strip(name) == "" {
 		return nil, dialerError("原始 dialer-proxy 必须是非空名称")
 	}
 	if name == "DIRECT" || name == "REJECT" {

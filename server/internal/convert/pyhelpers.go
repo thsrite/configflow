@@ -1,7 +1,7 @@
 package convert
 
-// Small Python built-ins the converters rely on (private copies; urlx, rules
-// and subs keep their own unexported versions).
+// Small Python built-ins the converters rely on. String rules (lower, strip,
+// isspace, decimal digits) come from internal/pystr.
 
 import (
 	"errors"
@@ -9,18 +9,10 @@ import (
 	"net/netip"
 	"regexp"
 	"strings"
-	"unicode"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/pystr"
 )
-
-// pyIsSpace is str.isspace() for one character.
-func pyIsSpace(r rune) bool {
-	return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
-}
-
-// pyStrip is str.strip().
-func pyStrip(s string) string { return strings.TrimFunc(s, pyIsSpace) }
 
 // pyStripChars is str.strip(chars).
 func pyStripChars(s, chars string) string {
@@ -36,79 +28,6 @@ func isASCII(s string) bool {
 	return true
 }
 
-// pyLower is str.lower(): Go's ToLower plus the two full-case-mapping rules
-// Python applies (U+0130 becomes "i" + U+0307, a capital sigma ending a word
-// becomes the final sigma).
-func pyLower(s string) string {
-	if isASCII(s) {
-		return strings.ToLower(s)
-	}
-	runes := []rune(s)
-	var out strings.Builder
-	for i, r := range runes {
-		switch {
-		case r == 0x130:
-			out.WriteString("i̇")
-		case r == 0x3A3:
-			if finalSigma(runes, i) {
-				out.WriteRune(0x3C2)
-			} else {
-				out.WriteRune(0x3C3)
-			}
-		default:
-			out.WriteRune(unicode.ToLower(r))
-		}
-	}
-	return out.String()
-}
-
-func finalSigma(runes []rune, i int) bool {
-	before := false
-	for j := i - 1; j >= 0; j-- {
-		if isCaseIgnorable(runes[j]) {
-			continue
-		}
-		before = isCased(runes[j])
-		break
-	}
-	if !before {
-		return false
-	}
-	for j := i + 1; j < len(runes); j++ {
-		if isCaseIgnorable(runes[j]) {
-			continue
-		}
-		return !isCased(runes[j])
-	}
-	return true
-}
-
-func isCaseIgnorable(r rune) bool {
-	return unicode.In(r, unicode.Mn, unicode.Me, unicode.Cf, unicode.Lm, unicode.Sk) ||
-		strings.ContainsRune("'.:·‘’․‧︓﹒﹕＇．：·״", r)
-}
-
-func isCased(r rune) bool { return unicode.IsUpper(r) || unicode.IsLower(r) || unicode.IsTitle(r) }
-
-// decimalValue is the value of a Unicode decimal digit (category Nd), as
-// int() reads it; ok is false for anything else.
-func decimalValue(r rune) (int, bool) {
-	if r >= '0' && r <= '9' {
-		return int(r - '0'), true
-	}
-	for _, rg := range unicode.Nd.R16 {
-		if rune(rg.Lo) <= r && r <= rune(rg.Hi) {
-			return int(r-rune(rg.Lo)) % 10, true
-		}
-	}
-	for _, rg := range unicode.Nd.R32 {
-		if rune(rg.Lo) <= r && r <= rune(rg.Hi) {
-			return int(r-rune(rg.Lo)) % 10, true
-		}
-	}
-	return 0, false
-}
-
 // pyIsDigit is str.isdigit(): decimal digits plus other digits (superscripts,
 // circled digits) whose numeric type is Digit.
 func pyIsDigit(s string) bool {
@@ -116,18 +35,15 @@ func pyIsDigit(s string) bool {
 		return false
 	}
 	for _, r := range s {
-		if unicode.Is(unicode.Nd, r) {
-			continue
+		if pystr.Decimal(r) < 0 && !isDigitProperty(r) {
+			return false
 		}
-		if unicode.Is(unicode.No, r) && isDigitProperty(r) {
-			continue
-		}
-		return false
 	}
 	return true
 }
 
-// isDigitProperty reports the No characters with Numeric_Type=Digit.
+// isDigitProperty reports the characters with Numeric_Type=Digit (all of
+// category No in Unicode 14.0.0).
 func isDigitProperty(r rune) bool {
 	switch {
 	case r == 0xB2 || r == 0xB3 || r == 0xB9:
@@ -219,7 +135,7 @@ func (r splitResult) hostname() string {
 		return ""
 	}
 	name, zone, found := strings.Cut(hostname, "%")
-	hostname = pyLower(name)
+	hostname = pystr.Lower(name)
 	if found {
 		hostname += "%" + zone
 	}

@@ -10,6 +10,7 @@ import (
 	"container/list"
 	"context"
 	"errors"
+	"math"
 	"math/big"
 	"sort"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/pystr"
 	"configflow/internal/yamlx"
 )
 
@@ -64,7 +66,7 @@ func ApplyGithubProxyDomain(url string, config *jsonx.Object) (string, error) {
 	}
 	proxyURL := ""
 	if configured, ok := system.GetOr("github_proxy_domain", "").(string); ok {
-		proxyURL = pyStrip(configured)
+		proxyURL = pystr.Strip(configured)
 	}
 	if proxyURL == "" {
 		return url, nil
@@ -99,7 +101,7 @@ const (
 var InboundPortKeys = []string{"port", "socks-port", "mixed-port", "redir-port", "tproxy-port"}
 
 // portValue is isinstance(v, int) as a port key (bools included, as in
-// Python: True is port 1).
+// Python: True is port 1); the result is the canonical integer text.
 func portValue(v any) (jsonx.Number, bool) {
 	switch value := v.(type) {
 	case bool:
@@ -127,42 +129,50 @@ func hashable(v any) error {
 	return nil
 }
 
-// MihomoUsedPorts is mihomo_used_ports: the inbound ports the configuration
-// already occupies, keyed by their canonical integer text (jsonx.Int(p)).
-// An unhashable port value is Python's TypeError.
-func MihomoUsedPorts(config *jsonx.Object) (map[jsonx.Number]bool, error) {
-	var values []any
+// usedPorts is mihomo_used_ports: the inbound ports the configuration
+// already occupies, as Python holds them (True stays a bool) and in the
+// iteration order of the resulting CPython set (see pySet).
+func usedPorts(config *jsonx.Object) ([]any, error) {
+	used := newPySet()
 	for _, key := range InboundPortKeys {
-		values = append(values, config.Value(key))
+		if err := used.add(config.Value(key)); err != nil {
+			return nil, err
+		}
 	}
 	if listeners, ok := config.Value("listeners").([]any); ok {
+		ports := newPySet()
 		for _, v := range listeners {
 			item, ok := v.(*jsonx.Object)
 			if !ok || item == nil || jsonx.Equal(item.Value("name"), RegionProbeListener) {
 				continue
 			}
-			values = append(values, item.Value("port"))
+			if err := ports.add(item.Value("port")); err != nil {
+				return nil, err
+			}
+		}
+		used.update(ports)
+	}
+	ints := newPySet()
+	for _, v := range used.members() {
+		if _, ok := portValue(v); ok {
+			_ = ints.add(v)
 		}
 	}
-	// A set keeps the first of equal members (7890.0 hides a later 7890,
-	// True a later 1); only the int members are ports.
-	first := map[string]any{}
-	var order []string
-	for _, v := range values {
-		if err := hashable(v); err != nil {
-			return nil, err
-		}
-		key := setKey(v)
-		if _, ok := first[key]; !ok {
-			first[key] = v
-			order = append(order, key)
-		}
+	return ints.members(), nil
+}
+
+// MihomoUsedPorts is mihomo_used_ports: the inbound ports the configuration
+// already occupies, keyed by their canonical integer text (jsonx.Int(p)).
+// An unhashable port value is Python's TypeError.
+func MihomoUsedPorts(config *jsonx.Object) (map[jsonx.Number]bool, error) {
+	values, err := usedPorts(config)
+	if err != nil {
+		return nil, err
 	}
 	used := map[jsonx.Number]bool{}
-	for _, key := range order {
-		if port, ok := portValue(first[key]); ok {
-			used[port] = true
-		}
+	for _, v := range values {
+		port, _ := portValue(v)
+		used[port] = true
 	}
 	return used, nil
 }
@@ -198,19 +208,24 @@ func setKey(v any) string {
 
 // PortOwner is one entry of MihomoListenPorts.
 type PortOwner struct {
-	Port  jsonx.Number
+	// Port is the canonical integer text of the key.
+	Port jsonx.Number
+	// Value is the key as Python holds it (a bool for `port: true`), for
+	// messages: f'{port}' writes True.
+	Value any
 	Owner string
 }
 
 // MihomoListenPorts is mihomo_listen_ports: {port: setting} for the inbound
-// ports, listeners and external-controller. Order: inbound keys in key order
-// (a port used twice keeps its first position and the last key, like a dict
-// comprehension), then listener ports in ascending order (Python iterates a
-// set there, whose order is not reproduced), then the controller.
+// ports, listeners and external-controller, in Python's dict order: inbound
+// keys in key order (a port used twice keeps its first position and key
+// object and gets the last setting), then the listener ports in the
+// iteration order of mihomo_used_ports' set, then the controller.
 func MihomoListenPorts(config *jsonx.Object) ([]PortOwner, error) {
 	var owners []PortOwner
 	index := map[jsonx.Number]int{}
-	set := func(port jsonx.Number, owner string, overwrite bool) {
+	set := func(value any, owner string, overwrite bool) {
+		port, _ := portValue(value)
 		if i, ok := index[port]; ok {
 			if overwrite {
 				owners[i].Owner = owner
@@ -218,26 +233,19 @@ func MihomoListenPorts(config *jsonx.Object) ([]PortOwner, error) {
 			return
 		}
 		index[port] = len(owners)
-		owners = append(owners, PortOwner{port, owner})
+		owners = append(owners, PortOwner{port, value, owner})
 	}
 	for _, key := range InboundPortKeys {
-		if port, ok := portValue(config.Value(key)); ok {
-			set(port, key, true)
+		if v := config.Value(key); isPort(v) {
+			set(v, key, true)
 		}
 	}
-	used, err := MihomoUsedPorts(config)
+	used, err := usedPorts(config)
 	if err != nil {
 		return nil, err
 	}
-	ports := make([]jsonx.Number, 0, len(used))
-	for port := range used {
-		if _, ok := index[port]; !ok {
-			ports = append(ports, port)
-		}
-	}
-	sortPorts(ports)
-	for _, port := range ports {
-		set(port, "listeners", false)
+	for _, v := range used {
+		set(v, "listeners", false)
 	}
 	if controller, ok := config.Value("external-controller").(string); ok {
 		text := controller
@@ -245,19 +253,19 @@ func MihomoListenPorts(config *jsonx.Object) ([]PortOwner, error) {
 			text = controller[i+1:]
 		}
 		if pyIsDigit(text) {
-			value := new(big.Int)
-			for _, r := range text {
-				d, ok := decimalValue(r)
-				if !ok {
-					return nil, pyError("ValueError", "invalid literal for int() with base 10: "+jsonx.Repr(text))
-				}
-				value.Mul(value, big.NewInt(10))
-				value.Add(value, big.NewInt(int64(d)))
+			value, err := pystr.Int(text, 10)
+			if err != nil {
+				return nil, pyError("ValueError", err.Error())
 			}
 			set(jsonx.BigInt(value), "external-controller", false)
 		}
 	}
 	return owners, nil
+}
+
+func isPort(v any) bool {
+	_, ok := portValue(v)
+	return ok
 }
 
 // sortPorts sorts integer port keys by value.
@@ -267,6 +275,265 @@ func sortPorts(ports []jsonx.Number) {
 		b, _ := ports[j].BigInt()
 		return a.Cmp(b) < 0
 	})
+}
+
+// ---- CPython 3.11 set iteration order (Objects/setobject.c) ----
+
+// pySet reproduces the slot layout of a CPython set so that iterating it
+// gives Python's order: open addressing with LINEAR_PROBES linear probes,
+// then perturbed probing, resized when fill*5 >= mask*3. Numbers and bools
+// use CPython's hashes. Members whose hash Python randomises per process or
+// derives from an address (str, None, NaN) count towards the fill and the
+// resizes but take no slot, so ints are placed as Python places them unless
+// such a member happened to take an int's slot first.
+type pySet struct {
+	table    []pySetEntry
+	fill     int
+	phantoms map[string]bool
+}
+
+type pySetEntry struct {
+	key  any
+	hash uint64
+	full bool
+}
+
+const (
+	pySetMinSize      = 8
+	pySetLinearProbes = 9
+	pySetPerturbShift = 5
+	pyHashBits        = 61
+	pyHashModulus     = uint64(1)<<pyHashBits - 1
+	pyHashInf         = 314159
+)
+
+func newPySet() *pySet {
+	return &pySet{table: make([]pySetEntry, pySetMinSize), phantoms: map[string]bool{}}
+}
+
+func (s *pySet) mask() uint64 { return uint64(len(s.table) - 1) }
+
+// add is set.add(v); an unhashable v is Python's TypeError.
+func (s *pySet) add(v any) error {
+	if err := hashable(v); err != nil {
+		return err
+	}
+	hash, known := pyHash(v)
+	if !known {
+		key := setKey(v)
+		if s.phantoms[key] {
+			return nil
+		}
+		s.phantoms[key] = true
+		s.grow()
+		return nil
+	}
+	s.addEntry(v, hash)
+	return nil
+}
+
+func (s *pySet) addEntry(v any, hash uint64) {
+	mask := s.mask()
+	i := hash & mask
+	perturb := hash
+	key := setKey(v)
+	for {
+		probes := 0
+		if i+pySetLinearProbes <= mask {
+			probes = pySetLinearProbes
+		}
+		for j := i; ; j++ {
+			entry := &s.table[j]
+			if !entry.full {
+				entry.key, entry.hash, entry.full = v, hash, true
+				s.grow()
+				return
+			}
+			if entry.hash == hash && setKey(entry.key) == key {
+				return
+			}
+			if probes == 0 {
+				break
+			}
+			probes--
+		}
+		perturb >>= pySetPerturbShift
+		i = (i*5 + 1 + perturb) & mask
+	}
+}
+
+// used is the number of members, phantoms included.
+func (s *pySet) used() int {
+	n := len(s.phantoms)
+	for _, e := range s.table {
+		if e.full {
+			n++
+		}
+	}
+	return n
+}
+
+// grow counts one new member and resizes like set_add_entry.
+func (s *pySet) grow() {
+	s.fill++
+	if uint64(s.fill)*5 < s.mask()*3 {
+		return
+	}
+	used := s.used()
+	if used > 50000 {
+		s.resize(used * 2)
+	} else {
+		s.resize(used * 4)
+	}
+}
+
+// resize is set_table_resize: the smallest power of two above minused,
+// members reinserted in slot order.
+func (s *pySet) resize(minused int) {
+	size := pySetMinSize
+	for size <= minused {
+		size <<= 1
+	}
+	old := s.table
+	s.table = make([]pySetEntry, size)
+	s.fill = len(s.phantoms)
+	for _, e := range old {
+		if e.full {
+			s.insertClean(e)
+			s.fill++
+		}
+	}
+}
+
+func (s *pySet) insertClean(e pySetEntry) {
+	mask := s.mask()
+	i := e.hash & mask
+	perturb := e.hash
+	for {
+		if !s.table[i].full {
+			s.table[i] = e
+			return
+		}
+		if i+pySetLinearProbes <= mask {
+			for j := uint64(1); j <= pySetLinearProbes; j++ {
+				if !s.table[i+j].full {
+					s.table[i+j] = e
+					return
+				}
+			}
+		}
+		perturb >>= pySetPerturbShift
+		i = (i*5 + 1 + perturb) & mask
+	}
+}
+
+// update is set |= other (set_merge with normal insertions: the target is
+// never empty here).
+func (s *pySet) update(other *pySet) {
+	otherUsed := other.used()
+	if otherUsed == 0 {
+		return
+	}
+	if uint64(s.fill+otherUsed)*5 >= s.mask()*3 {
+		s.resize((s.used() + otherUsed) * 2)
+	}
+	for key := range other.phantoms {
+		if !s.phantoms[key] {
+			s.phantoms[key] = true
+			s.grow()
+		}
+	}
+	for _, e := range other.table {
+		if e.full {
+			s.addEntry(e.key, e.hash)
+		}
+	}
+}
+
+// members lists the slotted members in iteration order.
+func (s *pySet) members() []any {
+	var out []any
+	for _, e := range s.table {
+		if e.full {
+			out = append(out, e.key)
+		}
+	}
+	return out
+}
+
+// pyHash is hash(v) for bools, ints and floats (as size_t); known is false
+// for values whose hash differs between processes.
+func pyHash(v any) (hash uint64, known bool) {
+	switch value := v.(type) {
+	case bool:
+		if value {
+			return 1, true
+		}
+		return 0, true
+	case jsonx.Number:
+		if value.IsInt() {
+			n, _ := value.BigInt()
+			return pyIntHash(n), true
+		}
+		f := value.Float64()
+		if f != f {
+			return 0, false
+		}
+		return pyFloatHash(f), true
+	}
+	return 0, false
+}
+
+func pyIntHash(n *big.Int) uint64 {
+	x := new(big.Int).Abs(n)
+	x.Mod(x, new(big.Int).SetUint64(pyHashModulus))
+	h := int64(x.Uint64())
+	if n.Sign() < 0 {
+		h = -h
+	}
+	if h == -1 {
+		h = -2
+	}
+	return uint64(h)
+}
+
+// pyFloatHash is _Py_HashDouble for a finite or infinite v.
+func pyFloatHash(v float64) uint64 {
+	if math.IsInf(v, 0) {
+		if v > 0 {
+			return pyHashInf
+		}
+		inf := int64(pyHashInf)
+		return uint64(-inf)
+	}
+	m, e := math.Frexp(v)
+	sign := int64(1)
+	if m < 0 {
+		sign, m = -1, -m
+	}
+	var x uint64
+	for m != 0 {
+		x = ((x << 28) & pyHashModulus) | x>>(pyHashBits-28)
+		m *= 268435456.0
+		e -= 28
+		y := uint64(m)
+		m -= float64(y)
+		x += y
+		if x >= pyHashModulus {
+			x -= pyHashModulus
+		}
+	}
+	if e >= 0 {
+		e %= pyHashBits
+	} else {
+		e = pyHashBits - 1 - ((-1 - e) % pyHashBits)
+	}
+	x = ((x << uint(e)) & pyHashModulus) | x>>uint(pyHashBits-e)
+	x = uint64(int64(x) * sign)
+	if x == ^uint64(0) {
+		x = ^uint64(1)
+	}
+	return x
 }
 
 // ---- proxy YAML cache ----
@@ -283,8 +550,11 @@ var (
 	proxyYAMLOrder = list.New() // front = least recently used; values are *proxyYAMLEntry
 	proxyYAMLIndex = map[string]*list.Element{}
 
-	// safeLoad is yaml.safe_load (a variable so tests can count calls).
-	safeLoad = yamlx.SafeLoad
+	// safeLoad is yaml.safe_load (a variable so tests can count calls);
+	// a mapping with keys other than strings is a *yamlx.Mapping.
+	safeLoad = func(text string) (any, error) {
+		return yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true})
+	}
 )
 
 type proxyYAMLEntry struct {
@@ -381,9 +651,17 @@ func cacheableProxyYAML(data any) bool {
 
 // loadProxyYAML is _load_proxy_yaml: yaml.safe_load with a bounded LRU
 // cache of ordinary proxy dicts. Cached results are private deep copies.
+// Mappings with keys other than strings (`1: a`, `yes: a`) are never cached
+// (as in Python) and come back with the keys as json.dumps writes them, the
+// closest a jsonx object gets to Python's dict (see stringKeys).
 func loadProxyYAML(text string) (any, error) {
 	if len(text) > proxyYAMLMaxInputBytes {
-		return safeLoad(text)
+		data, err := safeLoad(text)
+		if err != nil {
+			return nil, err
+		}
+		data, _ = stringKeys(data)
+		return data, nil
 	}
 	proxyYAMLMu.Lock()
 	if element, ok := proxyYAMLIndex[text]; ok {
@@ -397,8 +675,9 @@ func loadProxyYAML(text string) (any, error) {
 		proxyYAMLMu.Unlock()
 		return nil, err
 	}
+	data, converted := stringKeys(data)
 	object, ok := data.(*jsonx.Object)
-	if !ok || object == nil || !pyTruthy(object.Value("type")) || !cacheableProxyYAML(object) {
+	if converted || !ok || object == nil || !pyTruthy(object.Value("type")) || !cacheableProxyYAML(object) {
 		proxyYAMLMu.Unlock()
 		return data, nil
 	}
@@ -412,6 +691,118 @@ func loadProxyYAML(text string) (any, error) {
 	return object.DeepCopy(), nil
 }
 
+// stringKeys replaces every *yamlx.Mapping (a dict with a key that is not a
+// string) in a loaded value by a jsonx object whose keys are the text
+// json.dumps writes for them (1 -> "1", 1.5 -> "1.5", true -> "true", null ->
+// "null"); converted reports whether there was one. Without one the value is
+// returned as loaded (shared alias containers stay shared).
+func stringKeys(value any) (result any, converted bool) {
+	if !containsMapping(value, map[any]bool{}) {
+		return value, false
+	}
+	return rebuildStringKeys(value, map[any]any{}), true
+}
+
+// containerID identifies a loaded container (aliases share it).
+func containerID(value any) (any, bool) {
+	switch v := value.(type) {
+	case *jsonx.Object:
+		return v, v != nil
+	case *yamlx.Mapping:
+		return v, v != nil
+	case []any:
+		if len(v) > 0 {
+			return &v[0], true
+		}
+	}
+	return nil, false
+}
+
+func containsMapping(value any, seen map[any]bool) bool {
+	id, ok := containerID(value)
+	if !ok {
+		return false
+	}
+	if seen[id] {
+		return false
+	}
+	seen[id] = true
+	switch v := value.(type) {
+	case *yamlx.Mapping:
+		return true
+	case *jsonx.Object:
+		for _, child := range v.All() {
+			if containsMapping(child, seen) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range v {
+			if containsMapping(child, seen) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func rebuildStringKeys(value any, memo map[any]any) any {
+	id, ok := containerID(value)
+	if !ok {
+		return value
+	}
+	if done, ok := memo[id]; ok {
+		return done
+	}
+	switch v := value.(type) {
+	case *yamlx.Mapping:
+		out := jsonx.NewObject()
+		memo[id] = out
+		for _, pair := range v.Pairs {
+			out.Set(jsonKeyText(pair.Key), rebuildStringKeys(pair.Value, memo))
+		}
+		return out
+	case *jsonx.Object:
+		out := jsonx.NewObject()
+		memo[id] = out
+		for key, child := range v.All() {
+			out.Set(key, rebuildStringKeys(child, memo))
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		memo[id] = out
+		for i, child := range v {
+			out[i] = rebuildStringKeys(child, memo)
+		}
+		return out
+	}
+	return value
+}
+
+// jsonKeyText is the text json.dumps writes for a dict key. bytes and dates
+// (which json.dumps refuses) use str().
+func jsonKeyText(key any) string {
+	switch k := key.(type) {
+	case string:
+		return k
+	case nil:
+		return "null"
+	case bool:
+		if k {
+			return "true"
+		}
+		return "false"
+	case jsonx.Number:
+		return string(k)
+	case yamlx.Timestamp:
+		return k.String()
+	case []byte:
+		return jsonx.Repr(string(k))
+	}
+	return jsonx.Str(key)
+}
+
 // pyTruthy is bool(v), including the YAML-only values (bytes from !!binary).
 func pyTruthy(v any) bool {
 	if b, ok := v.([]byte); ok {
@@ -422,30 +813,29 @@ func pyTruthy(v any) bool {
 
 // ParseStructuredProxyString is _parse_structured_proxy_string: a JSON or
 // YAML proxy string with a "type" is parsed locally; nil means Sub-Store has
-// to convert it (URI links, base64). YAML values jsonx cannot hold (non-string
-// keys, recursive containers, !!set) make it nil too; see
-// InspectStructuredProxyString.
+// to convert it (URI links, base64). Keys that are not strings are written
+// as json.dumps writes them (see loadProxyYAML); a YAML document jsonx cannot
+// hold at all (a recursive alias, a non-empty !!set/!!omap/!!pairs) is nil.
 func ParseStructuredProxyString(proxyString string) *jsonx.Object {
 	return parseStructured(proxyString, false)
 }
 
 // InspectStructuredProxyString is _parse_structured_proxy_string for callers
-// that only read fields or re-encode the dict as JSON (raw_dialer, the
-// repository's import rewrite): where yamlx cannot hold the YAML value
-// (non-string keys, self-referencing containers) the loose loader is used,
-// which writes keys the way json.dumps does and stands in a truthy
-// non-string for the rest — what those callers observe in Python.
+// that only read fields (raw_dialer, provider delivery, the repository's
+// import rewrite): a YAML document with a recursive alias, which Python
+// parses but jsonx cannot hold, is read by the loose loader instead, which
+// stands in a truthy one-element list for the recursive container.
 func InspectStructuredProxyString(proxyString string) *jsonx.Object {
 	return parseStructured(proxyString, true)
 }
 
 func parseStructured(proxyString string, loose bool) *jsonx.Object {
-	stripped := pyStrip(proxyString)
+	stripped := pystr.Strip(proxyString)
 	firstLine, _, _ := strings.Cut(stripped, "\n")
 	if strings.Contains(firstLine, "://") {
 		before, _, _ := strings.Cut(stripped, "://")
 		if !strings.HasSuffix(before, ":") {
-			first := pyStrip(firstLine)
+			first := pystr.Strip(firstLine)
 			if !strings.HasSuffix(first, ":") && strings.Contains(first, "://") {
 				scheme, _, _ := strings.Cut(first, "://")
 				if !strings.Contains(scheme, " ") && !strings.Contains(scheme, ":") {
@@ -462,11 +852,9 @@ func parseStructured(proxyString string, loose bool) *jsonx.Object {
 		}
 	}
 	data, err := loadProxyYAML(stripped)
-	if err != nil && loose {
-		var nonString *yamlx.NonStringKeyError
-		if errors.As(err, &nonString) || strings.Contains(err.Error(), "recursive") {
-			data, err = loadProxyYAMLLoose(stripped)
-		}
+	var unrepresentable *yamlx.UnrepresentableError
+	if err != nil && loose && errors.As(err, &unrepresentable) && unrepresentable.Kind == "recursive" {
+		data, err = loadProxyYAMLLoose(stripped)
 	}
 	if err == nil {
 		if object, ok := data.(*jsonx.Object); ok && object != nil && pyTruthy(object.Value("type")) {
@@ -588,7 +976,7 @@ func ConvertNodeToMihomo(ctx context.Context, node *jsonx.Object, converter Prox
 	if !ok {
 		return nil, attributeError(rawType, "lower")
 	}
-	nodeType := pyLower(typeText)
+	nodeType := pystr.Lower(typeText)
 	if nodeType == "" {
 		return nil, nil
 	}
@@ -600,10 +988,21 @@ func ConvertNodeToMihomo(ctx context.Context, node *jsonx.Object, converter Prox
 			base.Set(key, value)
 		}
 	case []any:
-		// dict.update accepts an iterable of key/value pairs.
+		// dict.update accepts an iterable of key/value pairs: any sequence of
+		// length 2 (a two-character string, a dict with two keys). A key that
+		// is not a string is written as json.dumps writes it (stringKeys).
 		for i, item := range params {
-			pair, ok := item.([]any)
-			if !ok {
+			var pair []any
+			switch element := item.(type) {
+			case []any:
+				pair = element
+			case string:
+				for _, r := range element {
+					pair = append(pair, string(r))
+				}
+			case *jsonx.Object:
+				pair = jsonx.ListOf(element.Keys())
+			default:
 				return nil, pyError("TypeError", "cannot convert dictionary update sequence element #"+
 					jsonx.Str(jsonx.Int(i))+" to a sequence")
 			}
@@ -611,14 +1010,10 @@ func ConvertNodeToMihomo(ctx context.Context, node *jsonx.Object, converter Prox
 				return nil, pyError("ValueError", "dictionary update sequence element #"+jsonx.Str(jsonx.Int(i))+
 					" has length "+jsonx.Str(jsonx.Int(len(pair)))+"; 2 is required")
 			}
-			key, ok := pair[0].(string)
-			if !ok {
-				if err := hashable(pair[0]); err != nil {
-					return nil, err
-				}
-				return nil, pyError("TypeError", "non-string key")
+			if err := hashable(pair[0]); err != nil {
+				return nil, err
 			}
-			base.Set(key, pair[1])
+			base.Set(jsonKeyText(pair[0]), pair[1])
 		}
 	case string:
 		if params != "" {

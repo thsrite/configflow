@@ -4,10 +4,11 @@ package convert
 // client configuration generators.
 
 import (
-	"regexp"
 	"strings"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/pystr"
+	"configflow/internal/rules"
 )
 
 // UDPFallbackPolicies are the values udp_fallback accepts.
@@ -19,15 +20,20 @@ var LogicTypes = []string{"AND", "OR", "NOT"}
 // PortRuleTypes are the rule types that take a port.
 var PortRuleTypes = []string{"DST-PORT", "SRC-PORT", "IN-PORT"}
 
-// pySpaceRE is Python's \s for str patterns (str.isspace characters).
-const pySpaceRE = `[\t\n\x0b\f\r\x1c-\x1f \x85\p{Z}]`
-
-// Both patterns only use RE2-compatible syntax; (?i) matches Python's
-// re.IGNORECASE for these ASCII words (the [^()] class has no letters).
-var (
-	networkCondition = regexp.MustCompile(`(?i)\(` + pySpaceRE + `*NETWORK` + pySpaceRE + `*,` + pySpaceRE + `*(tcp|udp)` + pySpaceRE + `*\)`)
-	portCondition    = regexp.MustCompile(`(?i)\(` + pySpaceRE + `*(?:DST|DEST|SRC|IN)-PORT` + pySpaceRE + `*,` + pySpaceRE + `*([^()]*)\)`)
+// The patterns run on rules.CompilePyRegex: with re.IGNORECASE Python also
+// matches "ı" for I and "ſ" for S (IN-PORT, DST-PORT), which RE2 does not.
+const (
+	networkConditionPattern = `\(\s*NETWORK\s*,\s*(tcp|udp)\s*\)`
+	portConditionPattern    = `\(\s*(?:DST|DEST|SRC|IN)-PORT\s*,\s*([^()]*)\)`
 )
+
+func mustPyRegex(pattern string, ignoreCase bool) *rules.PyRegex {
+	re, err := rules.CompilePyRegex(pattern, ignoreCase)
+	if err != nil {
+		panic(err)
+	}
+	return re
+}
 
 // AfterMatchNote is AFTER_MATCH_NOTE.
 const AfterMatchNote = "仅 Mihomo 生效（位于 MATCH 之后，只匹配节点不支持 UDP 而跳过的连接），已忽略"
@@ -156,41 +162,30 @@ func AfterMatchComment(item *jsonx.Object) string {
 // transport with PROTOCOL,TCP/UDP instead of NETWORK.
 func NetworkAsProtocol(ruleType, value string) (string, string) {
 	if ruleType == "NETWORK" {
-		return "PROTOCOL", pyUpper(pyStrip(value))
+		return "PROTOCOL", pystr.Upper(pystr.Strip(value))
 	}
 	if contains(LogicTypes, ruleType) {
-		return ruleType, networkCondition.ReplaceAllStringFunc(value, func(m string) string {
-			sub := networkCondition.FindStringSubmatch(m)
-			return "(PROTOCOL," + strings.ToUpper(sub[1]) + ")"
-		})
+		out, err := mustPyRegex(networkConditionPattern, true).Sub(value, func(m *rules.Match) (string, error) {
+			group, _ := m.Group(1)
+			return "(PROTOCOL," + pystr.Upper(group) + ")", nil
+		}, 0)
+		if err != nil { // only a match timeout, which these patterns cannot reach
+			return ruleType, value
+		}
+		return ruleType, out
 	}
 	return ruleType, value
 }
 
-// pyUpper is str.upper() (Go's ToUpper; the full-case expansions Python
-// applies, such as ß -> SS, are reproduced for the common ones).
-func pyUpper(s string) string {
-	if isASCII(s) {
-		return strings.ToUpper(s)
-	}
-	var b strings.Builder
-	for _, r := range s {
-		if exp, ok := upperSpecial[r]; ok {
-			b.WriteString(exp)
-			continue
-		}
-		b.WriteString(strings.ToUpper(string(r)))
-	}
-	return b.String()
-}
-
-// upperSpecial holds Unicode SpecialCasing.txt unconditional upper mappings
-// that expand to several characters.
-var upperSpecial = map[rune]string{
-	0x00DF: "SS", 0x0149: "ʼN", 0x01F0: "J̌", 0x0390: "Ϊ́", 0x03B0: "Ϋ́",
-	0x0587: "ԵՒ", 0x1E96: "H̱", 0x1E97: "T̈", 0x1E98: "W̊", 0x1E99: "Y̊",
-	0x1E9A: "Aʾ", 0xFB00: "FF", 0xFB01: "FI", 0xFB02: "FL", 0xFB03: "FFI", 0xFB04: "FFL", 0xFB05: "ST",
-	0xFB06: "ST",
+// findAllGroup1 is pattern.findall(value) for a pattern with one group.
+func findAllGroup1(re *rules.PyRegex, value string) []string {
+	var found []string
+	_, _ = re.Sub(value, func(m *rules.Match) (string, error) {
+		group, _ := m.Group(1)
+		found = append(found, group)
+		return "", nil
+	}, 0)
+	return found
 }
 
 // HasPortList is has_port_list: Surge and Loon take one port, range or
@@ -201,9 +196,7 @@ func HasPortList(ruleType, value string) bool {
 	case contains(PortRuleTypes, ruleType):
 		values = []string{value}
 	case contains(LogicTypes, ruleType):
-		for _, m := range portCondition.FindAllStringSubmatch(value, -1) {
-			values = append(values, m[1])
-		}
+		values = findAllGroup1(mustPyRegex(portConditionPattern, true), value)
 	default:
 		return false
 	}
@@ -218,11 +211,22 @@ func HasPortList(ruleType, value string) bool {
 // SetGeneralOption is set_general_option: add "key = value" to a [General]
 // section unless it already sets the key.
 func SetGeneralOption(section, key, value string) string {
-	pattern := regexp.MustCompile(`(?m)^` + pySpaceRE + `*` + regexp.QuoteMeta(key) + pySpaceRE + `*=`)
-	if pattern.MatchString(section) {
+	if mustPyRegex(`(?m)^\s*`+pyReEscape(key)+`\s*=`, false).Search(section) {
 		return section
 	}
-	return strings.TrimRightFunc(section, pyIsSpace) + "\n" + key + " = " + value
+	return strings.TrimRightFunc(section, pystr.IsSpace) + "\n" + key + " = " + value
+}
+
+// pyReEscape is re.escape (Python 3.7+).
+func pyReEscape(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r < 128 && strings.ContainsRune("()[]{}?*+-|^$\\.&~# \t\n\r\v\f", r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // RulesetFormat is ruleset_format: prefer the declared format; infer
@@ -282,7 +286,7 @@ func RulesetFormat(rule, config *jsonx.Object, sourceURL string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	path := pyLower(parts.path)
+	path := pystr.Lower(parts.path)
 	if strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml") {
 		return "yaml", nil
 	}
@@ -307,7 +311,7 @@ func ParseHostsPairs(text string) []HostsPair {
 	var pairs []HostsPair
 	for _, line := range pySplitlines(text) {
 		before, _, _ := strings.Cut(line, "#")
-		fields := strings.FieldsFunc(before, pyIsSpace)
+		fields := strings.FieldsFunc(before, pystr.IsSpace)
 		if len(fields) < 2 {
 			continue
 		}
