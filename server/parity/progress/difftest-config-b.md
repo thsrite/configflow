@@ -250,3 +250,22 @@ request_variants=3295 named_matrix_cases=2503（S234 F2032 B237），H去重17
 ```
 
 仍缺生成器远程规则/缓存/取消、可见provider URL的转发头与HTTP1.0无Host、完整G配方、P3–6业务隔离、GET条件下载和ETag跨请求语义；Surge/Loon复杂语法以已生成的合法文本为范围，不声称通用INI解析器。下一批OxiDNS规范化/编辑器、其他业务文件和H继续。
+
+## 批次 13：OxiDNS settings/CAS 与逐字段规范化
+
+- settings 两种路由的强/弱/star/无头/stale/多值 If-Match、原生/模板草稿、精确 JSON SHA-256 ETag、publish_guard 对实际 SQLite revision、跨实现 Python ETag 写入及同时写入的 200/409。ETag 不掩码；新增错误 SHA 与错误 revision 自检，共21项。
+- editor 七端点的请求外壳与 H369 空变化；H502–554 可经 HTTP 到达的规范化错误逐项，30个整数项各9种错误拼写、布尔/数组/插件分节/相对路径/API/TLS/动态学习/ROS 参数。每份只改目标字段，核对 Python 精确错误消息，避免错误分支被前置校验遮挡。
+- 30个整数项 × min/max × 两别名 =120个独立进程/数据目录用例，验证真正接受上下界。远端4线程只并行隔离 fixture，不派 agent；端口分配和 Recorder 加锁。
+- 保留 O6 原 verdict，在清单末尾明确记录源代码/实测修正：空changes、HEAD handler、POST下载条件头、无显式profile的legacy MosDNS、不可经JSON达到的H508等，不把不可达项冒充已测。
+
+```text
+.63 run.py --groups oxidns-settings,oxidns-wrappers,oxidns-normalization-guards,oxidns-concurrent-etag
+current go-unimplemented=986 design_errors=[] seconds=20.45
+.63 run.py --groups oxidns-integer-boundaries
+current go-unimplemented=120 design_errors=[] seconds=35.55
+cumulative compared=1299 go-unimplemented=3095 different=6 O12-separate=1
+request_variants=4401 named_matrix_cases=2571（S250 F2070 B251），H去重70
+21 self-checks + end-to-end wrong-Go-response check OK
+```
+
+当前这些 OxiDNS 路由仍未接通，以上是有效 Python 用例与自动激活的 Go 对照，不能计作比较通过。编辑器成功形态、native/global/plugin 全量校验与其他 H/G/T 继续，未做最终全量。

@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import threading
 import urllib.error
 import urllib.request
 
@@ -23,6 +24,7 @@ from inventory import declared_states
 ROOT = Path(__file__).resolve().parents[3]
 USERNAME, PASSWORD, SECRET = 'diff-admin', 'diff-password', 'synthetic-shared-jwt-secret'
 PYTHON = os.environ.get('CONFIGFLOW_DIFF_PYTHON', str(Path.home() / 'cf-test/.venv/bin/python'))
+_port_guard, _used_ports = threading.Lock(), set()
 
 
 @dataclass
@@ -36,9 +38,15 @@ class Reply:
 
 
 def free_port():
-    with socket.socket() as sock:
-        sock.bind(('127.0.0.1', 0))
-        return sock.getsockname()[1]
+    with _port_guard:
+        for _ in range(128):
+            with socket.socket() as sock:
+                sock.bind(('127.0.0.1', 0))
+                port = sock.getsockname()[1]
+            if port not in _used_ports:
+                _used_ports.add(port)
+                return port
+    raise DesignError('could not allocate a distinct loopback port')
 
 
 def send(base, method, path, body=None, headers=None, timeout=30):
@@ -68,6 +76,7 @@ class DesignError(AssertionError):
 class Recorder:
     def __init__(self):
         self.results = []
+        self.guard = threading.Lock()
 
     def record(self, case_id, variant, route, category, state, diffs=(), **extra):
         def evidence(value):
@@ -83,11 +92,13 @@ class Recorder:
             if isinstance(value, (list, tuple)):
                 return [evidence(v) for v in value]
             return value
-        self.results.append({'case': case_id, 'variant': variant, 'route': route,
+        result = {'case': case_id, 'variant': variant, 'route': route,
                              'category': category, 'state': state,
-                             'differences': [evidence(asdict(d)) for d in diffs], **extra})
-        print(json.dumps({'case': case_id, 'variant': variant, 'state': state,
-                          'diffs': len(diffs)}, ensure_ascii=False), flush=True)
+                             'differences': [evidence(asdict(d)) for d in diffs], **extra}
+        with self.guard:
+            self.results.append(result)
+            print(json.dumps({'case': case_id, 'variant': variant, 'state': state,
+                              'diffs': len(diffs)}, ensure_ascii=False), flush=True)
 
 
 class Pair:

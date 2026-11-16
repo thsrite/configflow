@@ -59,12 +59,15 @@ class Comparators(unittest.TestCase):
                                     structure(b'[Rule]\nDOMAIN,example.com,REJECT\n')))
 
     def test_archive_and_binary_mutations(self):
-        def zipped(content):
+        def zipped(content, directory=False):
             buffer = io.BytesIO()
             with zipfile.ZipFile(buffer, 'w') as archive:
                 archive.writestr('rules.txt', content)
+                if directory:
+                    archive.writestr('empty/', '')
             return structure(buffer.getvalue())
         self.assertTrue(differences(zipped('DOMAIN,example.com,DIRECT'), zipped('DOMAIN,example.com,REJECT')))
+        self.assertTrue(differences(zipped('same'), zipped('same', directory=True)))
         def tarred(content):
             buffer = io.BytesIO()
             with tarfile.open(fileobj=buffer, mode='w:gz') as archive:
@@ -265,6 +268,34 @@ class Comparators(unittest.TestCase):
             broken = copy.deepcopy(right)
             broken.headers[header] = value
             self.assertTrue(capture_headers([left, broken], Policy(start=policy.start, end=policy.end)))
+
+    def test_oxidns_etag_and_committed_guard_mutation(self):
+        import hashlib
+        from oxidns import etag, capture
+        value = {'n': 9007199254740993, 'b': 1.25, 'a': '🧪'}
+        literal = '{"a":"🧪","b":1.25,"n":9007199254740993}'
+        self.assertEqual(etag(value), '"' + hashlib.sha256(literal.encode()).hexdigest() + '"')
+        self.assertNotEqual(etag(value), etag({**value, 'b': 2.0}))
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = [Path(tmp, n) for n in ('python', 'go')]
+            for directory in dirs:
+                directory.mkdir()
+                with sqlite3.connect(directory / 'configflow.sqlite3') as db:
+                    db.executescript('CREATE TABLE meta(key,value); CREATE TABLE sections(scope,owner,position); '
+                                     'CREATE TABLE fields(scope,owner,field,position,value,revision);')
+                    for scope, owner, field, item in [('profile', 'default', 'oxidns', value),
+                                                     ('profile', 'default', '_revision', 2), ('shared', '', '_revision', 3)]:
+                        db.execute('INSERT INTO fields VALUES (?,?,?,?,?,?)', (scope, owner, field, 0, json.dumps(item), 1))
+            guard = {'expected_profile_id': 'default', 'expected_service_type': 'oxidns', 'expected_config_revision': 5}
+            left = Reply(200, {'etag': etag(value)}, json.dumps({'publish_guard': guard}).encode())
+            right = copy.deepcopy(left)
+            observer = capture(SimpleNamespace(dirs=dirs))
+            self.assertEqual(observer([left, right], Policy()), [])
+            right.headers['etag'] = '"' + '0' * 64 + '"'
+            self.assertTrue(observer([left, right], Policy()))
+            right = copy.deepcopy(left)
+            right.body = json.dumps({'publish_guard': {**guard, 'expected_config_revision': 4}}).encode()
+            self.assertTrue(observer([left, right], Policy()))
 
 
 if __name__ == '__main__':

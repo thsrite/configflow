@@ -86,6 +86,8 @@ def main():
     groups.update(generate)
     from cases.pulls import GROUPS as pulls
     groups.update(pulls)
+    from cases.oxidns import GROUPS as oxidns
+    groups.update(oxidns)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:
