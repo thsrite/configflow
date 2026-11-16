@@ -147,7 +147,7 @@ def public_content(binary, recorder):
                 def check(reply):
                     if status == 200:
                         require(reply.body == next(rule for rule in library(pair) if rule['id'] == ident)['content'].encode(), 'public content returns exact original UTF-8 and newline bytes')
-                pair.request(f'R{rid:03}-' + case, route, root + '/' + ident, auth='', expect=status, writes=True, check=check)
+                pair.request(f'R{rid:03}-' + case, route, root + '/' + ident, auth='', expect=status, writes=True, check=check, raw_body=True)
 
 
 def remote(binary, recorder):

@@ -586,3 +586,20 @@ request_variants=5970 named_matrix_cases=3320（S480 F2387 B453），H去重217�
 ```
 
 G07–G16和其他helper、业务路由、长流程继续，未做最终全量。
+
+## 批次 32：G07规则源格式、G09 DNS转换与原始正文比较
+
+- 69新增变体：G09 Clash text/YAML、List和原生MosDNS各mixed/domain/ip，核对精确full/domain/keyword/regexp、IPv4/6和正则中逗号/DIRECT/no-resolve不误裁；空IP部分必须为`# no ip rules`。此公开rule-proxy已接通，13项实际Flask↔Go比较通过。
+- G07合法domain/ipcidr/classical与text/yaml、domain/ipcidr MRS声明的五服务preview，普通文本/YAML的两DNS完整ZIP；原始cache已准备且fake证明没有再下载。MRS交付回调两类型均422（实际Go比较通过），启用domain MRS的MosDNS ZIP500/OxiDNS ZIP400且明确不支持MRS，不能把preview200误报为DNS二进制支持。
+- MRS合成输入只覆盖Python验证的压缩信封与opaque body保存，尚未证明目的Mihomo核心trie能加载；这项仍部分覆盖，需要合法真实核心生成的MRS fixture/目的核心验收。其他请求均为合成text/YAML，不访问外网。
+- 发现通用文本结构比较会抹掉原文CRLF差异，已收紧原文合同：匿名library/local成功正文启用精确字节比较，`shared/rules/**/*.list`及备份作为raw source bytes比较；生成器YAML/INI/归档结构仍按约定语义比较。新增CRLF→LF故意错误自检，42项；回归相关42个已有原文请求，不改变其未实现状态。
+
+```text
+.63 run.py --groups generator-dns-conversion,generator-ruleset-formats,library-public-content,rule-local-content,rule-local-remote
+current compared=15 go-unimplemented=96 design_errors=[] seconds=35.41
+cumulative compared=1470 go-unimplemented=4499 dependency=28 different=41 O12-separate=1
+request_variants=6039 named_matrix_cases=3320（S480 F2387 B453），H去重217，G去重8
+42 self-checks + end-to-end wrong-Go-response check OK
+```
+
+本批除上述15个rule-proxy请求外，生成/原文路由仍Go未接通。原文比较收紧尚未对所有旧组全量重跑，留待最终.32全量验证；未做最终交回。

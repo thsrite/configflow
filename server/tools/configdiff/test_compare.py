@@ -17,6 +17,19 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_original_response_and_rule_cache_keep_exact_newline_bytes(self):
+        left = Reply(200, {'content-type': 'text/plain; charset=utf-8'}, b'# synthetic\r\nexample.com\n')
+        right = Reply(200, dict(left.headers), b'# synthetic\nexample.com\n')
+        self.assertEqual(response_diffs(left, right), [])
+        self.assertTrue(response_diffs(left, right, raw_body=True))
+        self.assertEqual(response_diffs(left, copy.deepcopy(left), raw_body=True), [])
+        with tempfile.TemporaryDirectory() as temporary:
+            dirs = [Path(temporary, name) for name in ('python', 'go')]
+            for directory, value in zip(dirs, (left.body, right.body)):
+                path = directory / 'shared/rules/by-id/synthetic.list'
+                path.parent.mkdir(parents=True)
+                path.write_bytes(value)
+            self.assertTrue(file_diffs(*dirs, Policy()))
     def test_node_substore_protocol_requires_uri_query_and_cleanup(self):
         from substore import normalized_node, ProtocolError
         from urllib.parse import quote

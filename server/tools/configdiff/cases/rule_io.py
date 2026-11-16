@@ -31,14 +31,14 @@ def local_content(binary, recorder):
         with Pair(binary, recorder, options=options()) as pair:
             path = prefix + quote(DOMAIN['name'], safe='')
             for case in ('S02', 'S01', 'B01'):
-                pair.request(f'R{rid:03}-' + case, route, path, auth='', expect=200, writes=True,
+                pair.request(f'R{rid:03}-' + case, route, path, auth='', expect=200, writes=True, raw_body=True,
                              check=lambda r: require(r.body == DOMAIN['content'].encode() and (pair.dirs[0] / cache_name(DOMAIN)).read_bytes() == r.body,
                                                      'handwritten source creates then serves its exact raw cached bytes'))
             for directory in pair.dirs:
                 old = directory / 'shared/rules/legacy.list'
                 old.parent.mkdir(parents=True, exist_ok=True)
                 old.write_bytes(b'# old source\nlegacy.example\n')
-            pair.request(f'R{rid:03}-S05', route, prefix + 'legacy', auth='', expect=200, writes=True,
+            pair.request(f'R{rid:03}-S05', route, prefix + 'legacy', auth='', expect=200, writes=True, raw_body=True,
                          check=lambda r: require(r.body == b'# old source\nlegacy.example\n', 'unambiguous legacy cache is served even without catalog entry'))
             pair.request(f'R{rid:03}-F01', route, prefix + 'missing', auth='', expect=404, writes=True)
             pair.request(f'R{rid:03}-B02', route, prefix + quote('..\\outside', safe=''), auth='', expect=404, writes=True)
@@ -51,7 +51,7 @@ def local_content(binary, recorder):
                     require(expected in reply.body if case == 'S06' else reply.body == expected, 'target normalization or invalid UTF-8 passthrough matches intended branch')
                     require((pair.dirs[0] / cache_name(declaration)).read_bytes() == original, 'delivery transformation never overwrites raw cache')
                 pair.request(f'R{rid:03}-' + case, route, prefix + quote(DOMAIN['name'], safe='') + '?target=mihomo',
-                             auth='', expect=200, writes=True, check=check)
+                             auth='', expect=200, writes=True, check=check, raw_body=True)
         with Pair(binary, recorder, options=options()) as pair:
             for directory in pair.dirs:
                 (directory / cache_name(DOMAIN)).mkdir(parents=True)
@@ -84,7 +84,7 @@ def local_remote(binary, recorder):
                     pair.request(f'R{rid:03}-' + case, route, prefix + quote(declaration['name'], safe=''), auth='',
                                  expect=422 if scenario == 'invalid' else 502 if scenario == 'http-failure' else 200, writes=True,
                                  interaction=Exchange(pair, source, expected=0 if scenario in ('cached', 'stale') else 1), check=check,
-                                 capture=capture_notice(pair, key), variant=scenario)
+                                 capture=capture_notice(pair, key), variant=scenario, raw_body=True)
 
 
 def matching(binary, recorder):

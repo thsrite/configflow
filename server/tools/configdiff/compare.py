@@ -211,7 +211,7 @@ HEADERS = ('content-type', 'content-disposition', 'cache-control', 'etag', 'x-co
            'last-modified', 'accept-ranges', 'content-range', 'referrer-policy', 'x-content-type-options')
 
 
-def response_diffs(left, right, policy=None, *, method='GET', filename='', projection=None):
+def response_diffs(left, right, policy=None, *, method='GET', filename='', projection=None, raw_body=False):
     policy = policy or Policy()
     out = differences(left.status, right.status, 'status', policy)
     for key in HEADERS:
@@ -239,6 +239,8 @@ def response_diffs(left, right, policy=None, *, method='GET', filename='', proje
     ct_left, ct_right = left.headers.get('content-type', ''), right.headers.get('content-type', '')
     if left.status >= 400 and 'json' not in ct_left and 'json' not in ct_right:
         return out
+    if raw_body and 200 <= left.status < 300 and 200 <= right.status < 300:
+        return out + differences(left.body, right.body, 'body.original-bytes', policy)
     try:
         a, b = structure(left.body, ct_left, filename), structure(right.body, ct_right, filename)
         if projection:
@@ -296,7 +298,12 @@ def files(directory):
         elif path.is_file() and not RUNTIME_FILES.search(relative):
             raw = path.read_bytes()
             try:
-                content = database(path.parent) if path.name == 'configflow.sqlite3' else structure(raw, '', relative)
+                if relative.startswith('shared/rules/') and relative.endswith(('.list', '.list.bak')):
+                    # These are original source bytes, not generated text. CRLF,
+                    # trailing newlines and invalid UTF-8 belong to the cache.
+                    content = raw
+                else:
+                    content = database(path.parent) if path.name == 'configflow.sqlite3' else structure(raw, '', relative)
             except (ValueError, UnicodeError, AssertionError, sqlite3.Error, yaml.YAMLError, zipfile.BadZipFile, tarfile.TarError):
                 # A deliberately damaged cache/backup is still observable data.
                 # Preserve its complete raw bytes, do not drop or repair it.
