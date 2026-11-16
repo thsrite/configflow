@@ -311,6 +311,8 @@ goes to Opus (max 2 Opus agents at a time, no nested sub-agents); Codex keeps th
 4. **HR module ports by Opus** instead of Codex where the window allows: R05 iKuai and the remaining
    device-writing routers modules (R07–R12, R14), agents publish / rule sync / DNS follow / DNS HA / Linux
    gateway. If Opus has no quota when such a module is next, Codex ports it and Opus reviews it later.
+   An HR module ported by Opus is reviewed by a **different** agent: a fresh Opus session if the window
+   allows, otherwise Codex first + "Opus review pending" (a fresh Opus later). Never the author.
 5. Opus spot reviews (1–2 non-HR modules per domain) and review of large refactors of core engines
    (S-rules, S-oxidns) after they merge.
 
