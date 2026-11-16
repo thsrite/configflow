@@ -243,3 +243,20 @@ func TestReviewUpdatePanicIsAFailure(t *testing.T) {
 		t.Fatalf("state %s", jsonx.Repr(state))
 	}
 }
+
+// TestReviewTooManyRedirectsCarriesStatus: requests' TooManyRedirects has
+// the 31st redirect response, so safe_exception_details shows its status.
+func TestReviewTooManyRedirectsCarriesStatus(t *testing.T) {
+	withEnviron(t)
+	hops := 0
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hops++
+		http.Redirect(w, r, srv.URL+"/hop", http.StatusFound)
+	}))
+	defer srv.Close()
+	_, err := RequestsClient{}.Do(context.Background(), &Request{Method: "GET", URL: srv.URL, Timeout: Seconds(5)})
+	if pythonClass(err) != "TooManyRedirects" || safeExceptionDetails(err) != "exception_type=TooManyRedirects status=302" || hops != 31 {
+		t.Fatalf("%v %s hops=%d", err, safeExceptionDetails(err), hops)
+	}
+}

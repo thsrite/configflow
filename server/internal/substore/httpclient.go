@@ -436,9 +436,14 @@ func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, erro
 		},
 	}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+	client := &http.Client{Transport: transport, CheckRedirect: func(next *http.Request, via []*http.Request) error {
 		if len(via) > 30 {
-			return &RequestError{Class: "TooManyRedirects", Message: "Exceeded 30 redirects."}
+			// requests raises with response= the 31st redirect response.
+			status := 0
+			if next.Response != nil {
+				status = next.Response.StatusCode
+			}
+			return &RequestError{Class: "TooManyRedirects", Message: "Exceeded 30 redirects.", Status: status}
 		}
 		return nil
 	}}
