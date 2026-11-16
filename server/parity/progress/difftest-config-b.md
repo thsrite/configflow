@@ -717,3 +717,20 @@ request_variants=6470 named_matrix_cases=3320（S480 F2387 B453），H去重217�
 ```
 
 Go相关editor路由仍未接通。G13及更多helper错误分支、聚合/域名发现/setup等继续，未做最终全量。
+
+## 批次 40：聚合CRUD、用途、计数与排序
+
+- 57请求覆盖R001–R006/R009/R010：列表空/旧统计，生成agg_8hex身份与默认health、订阅/手动/混合/空源、Unicode，PUT整对象替换且路径ID优先/统计清除；不存在读/改404、删除幂等、引用自1/2空间阻止删除409、缺引用/非法health400、SQLite写失败500。
+- cache-only count覆盖真实nodes、旧count-only、空、同名不去重、停用手动节点剔除、坏count触发500。排序支持top/bottom/旧对象只取顺序；重复/错型/未知ID404、数组body500，旧对象中的坏引用和名字不会被写回。
+- 真实HTTP确认并修正R002-F09/F13 oracle：此创建链未校验空/重复名称或存储regex，因此200保存；清单保留编号并注明Python来源，不人为要求Go400。
+- 新增agg身份比较的坏格式/重复使用自检，Go复用ID记录差异而非设计错误；共44项自检。其他HTTP/全DB/revision/文件严格比较照常。Go聚合路由仍未接通。
+
+```text
+.63 run.py --groups aggregation-crud,aggregation-validation,aggregation-count-order
+current go-unimplemented=57 design_errors=[]
+cumulative compared=1472 go-unimplemented=4985 dependency=28 different=41 O12-separate=1
+request_variants=6527 named_matrix_cases=3369（S497 F2407 B465），H去重217，G去重15
+44 self-checks + end-to-end wrong-Go-response check OK
+```
+
+继续聚合交付/预览与域名发现等剩余路由；未做最终全量。

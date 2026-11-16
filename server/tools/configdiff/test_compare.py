@@ -17,6 +17,18 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_aggregation_created_ids_reject_bad_shape_and_reuse(self):
+        from cases.aggregations import created
+        def reply(value):
+            return Reply(200, {}, json.dumps({'data': {'id': value}}).encode())
+        capture = created(None)
+        policy = Policy()
+        self.assertEqual(capture([reply('agg_01234567'), reply('agg_abcdef01')], policy), [])
+        self.assertEqual(policy.identities['agg_01234567'], 'agg_abcdef01')
+        for wrong in ('bad-id', 'agg_ABCDEF01', None):
+            self.assertTrue(capture([reply('agg_01234567'), reply(wrong)], Policy()))
+        self.assertTrue(capture([reply('agg_76543210'), reply('agg_abcdef01')], policy))
+
     def test_managed_zip_assets_keep_bytes_and_exact_member_closure(self):
         from assets import zip_assets, raw_asset_diffs
         def archive(items):
