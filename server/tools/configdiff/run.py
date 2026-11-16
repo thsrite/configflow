@@ -94,6 +94,8 @@ def main():
     groups.update(custom_config)
     from cases.mihomo_guards import GROUPS as mihomo_guards
     groups.update(mihomo_guards)
+    from cases.client_import import GROUPS as client_import
+    groups.update(client_import)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

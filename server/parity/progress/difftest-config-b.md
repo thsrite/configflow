@@ -305,3 +305,21 @@ request_variants=5014 named_matrix_cases=2686（S284 F2096 B306），H去重152
 ```
 
 首轮合法形态中respect-rules缺前提产生DesignError，已补前提并完整替换该组结果；没有列为业务差异。当前本批Go仍未接通。继续四种客户端导入和其他业务文件，未做最终全量。
+
+## 批次 16：四种客户端导入
+
+- 41请求：Mihomo/Surge/Loon/Shadowrocket各dry-run+持久导入+重启export读回。dry-run全库和所有文件严格不变；持久导入核对一个节点/组/规则、名称、每类随机ID格式与唯一性；未来Go接通后ID双射贯穿响应和数据库引用，时间只开放已知metadata字段。
+- R155外壳校验全部、重复profile ID、中文/64KiB内容及不支持节点warning。H268–282共15个解析分支实际HTTP逐项触发：警告分支同时带有效规则，避免被“无实体”后置拒绝遮挡；错误消息或warnings中的具体原因必须出现。完整响应继续比较，不掩盖整个warnings数组。
+- F18原“默认订阅不存在409”与Python不符：build_import先过滤不存在ID，仍201。保留原编号并在清单errata说明，测试实际导入后行和文件；未虚构409。
+
+```text
+.63 run.py --groups client-import-syntax,client-import-validation,client-import-warnings
+current go-unimplemented=41 design_errors=[] seconds=11.48
+.63 run.py --groups client-import-syntax（补充随机ID自检断言）
+current go-unimplemented=12 design_errors=[] seconds=8.52
+cumulative compared=1299 go-unimplemented=3721 dependency=28 different=6 O12-separate=1
+request_variants=5055 named_matrix_cases=2708（S292 F2107 B309），H去重167
+24 self-checks + end-to-end wrong-Go-response check OK
+```
+
+客户端复杂provider/规则库复用、各协议参数完整形态随G导入配方继续，当前四种基本语法不是整个导入器全部形态验收。继续subscriptions文件的有效业务/缓存/失败/副作用，尚未最终全量。

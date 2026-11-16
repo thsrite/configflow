@@ -1922,3 +1922,5 @@ Totals after review: 5570 original entries + 112 per-route cases + 15 cross-cutt
 
 - **T28/R028-S90 的轮换条件**：当前 schema 备份带有有效且不等于 config_token 的 rule_proxy_token 时，`_ensure_rule_proxy_token` 保留它；不是每次 import 无条件轮换。缺少能力、与 config_token 相等或 reset 默认配置时生成新值。`_apply_import` 合并旧能力/retired 并去重。Step B 分别测试三种 import 与重复 reset，来源 [config_repository.py:1695](../../backend/common/config_repository.py#L1695)、[config_repository.py:1767](../../backend/common/config_repository.py#L1767)。
 - **R027-B90 的内存导出条件语义**：BytesIO send_file 没有自动 ETag/Last-Modified；GET Range→206/416，但 If-None-Match:* 与未来 If-Modified-Since 均200。保留原 B90 编号，按实测头存在性和语义验证，不虚造304。
+- **R155-F18**：不存在的 default_subscription_ids 在 `build_import` 开头被过滤，实测有效客户端配置仍201；不是409。保留编号作为防回归的原预期更正，验证过滤后导入和全库/文件。来源 [config_importer.py:946](../../backend/utils/config_importer.py#L946)。
+- **无显式 profile URL 的 P3 槽**：custom-config 五编辑器同 legacy MosDNS 一样没有 `/api/profiles/<id>/custom-config/...` 别名，P3（URL覆盖query/header）不可应用；保留原槽并标 N/A，P4–6仍需测试。不能拿一个不存在URL的404充作URL选择成功。
