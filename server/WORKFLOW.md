@@ -127,3 +127,10 @@ change once at the switch (Agents get one push; tell the maintainer before switc
 Unicode edge cases follow Go. Functional checks that must still hold after every swap: the domain
 replays/corpora/differentials with structural comparison, existing `configflow.sqlite3` loads and
 round-trips without loss.
+
+Size check (2026-11-16): Go non-test code is ~150k lines for roughly half of the 86k-line Python
+backend. About 25k lines are Python-emulation layers (table above); much of the rest is code that
+reproduces Python's failure modes on malformed input (type checks raising emulated TypeError/KeyError,
+exception texts) and private per-package copies of shared helpers. Under functional parity, every swap
+module and every review from now on also **deletes code that only existed for strict parity** and
+**merges private helper copies into one shared package**, and reports lines before/after.
