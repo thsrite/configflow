@@ -1,6 +1,7 @@
 package importer
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -23,7 +24,12 @@ func nodeSignature(node Node) json.RawMessage {
 }
 func sameNode(a, b Node) bool {
 	var left, right any
-	if json.Unmarshal(nodeSignature(a), &left) != nil || json.Unmarshal(nodeSignature(b), &right) != nil {
+	decode := func(node Node, value *any) error {
+		decoder := json.NewDecoder(bytes.NewReader(nodeSignature(node)))
+		decoder.UseNumber()
+		return decoder.Decode(value)
+	}
+	if decode(a, &left) != nil || decode(b, &right) != nil {
 		return false
 	}
 	return reflect.DeepEqual(left, right)

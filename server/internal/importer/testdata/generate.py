@@ -182,6 +182,12 @@ for name, options in (
 ):
     add('snell-' + name, 'surge', '[Proxy]\nNode=snell,example.com,443,psk=p,' + options + '\n[Rule]\nFINAL,DIRECT', catalog={})
 
+for value in (9007199254740992, 9007199254740993):
+    add('lossless-node-signature-' + str(value), 'mihomo',
+        'proxies: [{name: Large, type: http, server: example.com, port: 80, opaque: ' + str(value) + '}]\n',
+        catalog={'nodes': [{'id': 'existing', 'name': 'Large', 'type': 'http', 'server': 'example.com', 'port': 80,
+                            'params': {'opaque': 9007199254740992}, 'enabled': True}]})
+
 output = Path(__file__).with_name('corpus.jsonl')
 with output.open('w') as stream:
     for row in rows:
