@@ -109,3 +109,17 @@ func TestA15ReviewCallRaisesLikePython(t *testing.T) {
 		return e.m.SetLoggingConfig(e.ctx, id, jsonx.Float(math.NaN()))
 	})
 }
+
+// TestA15ReviewRuntimeTimestampYearRange: runtime_state._timestamp catches
+// the same ValueError (-inf), e.g. a naive registration time on 0001-01-01.
+func TestA15ReviewRuntimeTimestampYearRange(t *testing.T) {
+	previous := localZone
+	t.Cleanup(func() { localZone = previous })
+	localZone = time.UTC
+	if got := timestampOf("0001-01-01T12:00:00"); !math.IsInf(got, -1) {
+		t.Fatalf("_timestamp = %v, Python -inf", got)
+	}
+	if got := timestampOf("0001-01-02T00:00:00"); math.IsInf(got, -1) {
+		t.Fatalf("_timestamp = %v, Python a time", got)
+	}
+}

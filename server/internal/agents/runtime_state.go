@@ -63,13 +63,15 @@ func timestampOf(value any) float64 {
 	if !ok {
 		return math.Inf(-1)
 	}
-	moment, naive, ok := fromISO(text)
+	// ISOTimestamp: also the ValueError of a naive time whose resolution
+	// needs a local time outside the years 1–9999 (A15 review).
+	ts, ok := ISOTimestamp(text)
 	if !ok {
 		return math.Inf(-1)
 	}
 	// A registration time ahead of the clock (time zone changed, clock stepped
 	// back) must not outrank every later heartbeat.
-	if ts := pyTimestampOf(moment, naive); ts <= nowTimestamp() {
+	if ts <= nowTimestamp() {
 		return ts
 	}
 	return math.Inf(-1)
