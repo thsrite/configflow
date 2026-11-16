@@ -17,7 +17,7 @@ type PyError struct{ Class, Message string }
 
 func (e *PyError) Error() string { return e.Message }
 
-// PythonClass is the Python exception class (urlx convention).
+// PythonClass is the Python exception class (weburl.ClassError convention).
 func (e *PyError) PythonClass() string { return e.Class }
 
 func raise(class, message string) { panic(&PyError{class, message}) }

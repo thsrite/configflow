@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -27,7 +28,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/jsonx"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // Versions, limits and timings of oxidns_monitor.py.
@@ -231,7 +232,7 @@ func (q query) set(key, value string) query {
 func (q query) encode() string {
 	parts := make([]string, len(q))
 	for i, pair := range q {
-		parts[i] = urlx.QuotePlus(pair[0]) + "=" + urlx.QuotePlus(pair[1])
+		parts[i] = url.QueryEscape(pair[0]) + "=" + url.QueryEscape(pair[1])
 	}
 	return strings.Join(parts, "&")
 }
@@ -467,18 +468,28 @@ func displayUpstream(value any) string {
 		return ""
 	}
 	if strings.Contains(s, "://") {
-		parsed, err := urlx.Split(s)
+		// The label drops credentials: they are cut before parsing, so
+		// any user name net/url would refuse does not matter.
+		scheme, rest, _ := strings.Cut(s, "://")
+		authority, tail := rest, ""
+		if i := strings.IndexAny(rest, "/?#"); i >= 0 {
+			authority, tail = rest[:i], rest[i:]
+		}
+		if i := strings.LastIndex(authority, "@"); i >= 0 {
+			authority = authority[i+1:]
+		}
+		parsed, err := weburl.Parse(scheme + "://" + authority + tail)
 		if err != nil {
 			return "上游服务器"
 		}
-		host := parsed.Hostname()
+		host := weburl.Hostname(parsed)
 		if host == "" {
 			return "上游服务器"
 		}
 		if strings.Contains(host, ":") {
 			host = "[" + host + "]"
 		}
-		port, hasPort, err := parsed.Port()
+		port, hasPort, err := weburl.Port(parsed)
 		if err != nil {
 			return "上游服务器"
 		}
@@ -486,7 +497,7 @@ func displayUpstream(value any) string {
 		if hasPort {
 			netloc += ":" + strconv.Itoa(port)
 		}
-		return urlx.Unsplit(parsed.Scheme, netloc, parsed.Path, "", "")
+		return parsed.Scheme + "://" + netloc + weburl.RawPath(parsed)
 	}
 	s, _, _ = strings.Cut(s, "?")
 	if i := strings.LastIndex(s, "@"); i >= 0 {

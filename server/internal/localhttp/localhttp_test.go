@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // Ported from backend/test_local_http.py. The Python tests that go through
@@ -277,13 +277,14 @@ func TestWithoutRegisteredAppNothingIsDispatched(t *testing.T) {
 	}
 }
 
-// Expected values are requests.Request("GET", "http://config.test" + path).prepare().url.
+// Expected values are what requests sent, up to escapes a server reads alike
+// (an escaped dot or a lower-case escape is kept).
 func TestNormalizePathMatchesRequests(t *testing.T) {
 	cases := map[string]string{
 		"/%61pi/x":        "/api/x",
-		"/api/%2e%2e/e":   "/api/../e",
+		"/api/%2e%2e/e":   "/api/%2e%2e/e",
 		"/api/a/../b":     "/api/b",
-		"/api/%e4%be%8b":  "/api/%E4%BE%8B",
+		"/api/%e4%be%8b":  "/api/%e4%be%8b",
 		"/api/%7euser":    "/api/~user",
 		"/api/a b":        "/api/a%20b",
 		"/api/a%2Fb":      "/api/a%2Fb",
@@ -293,27 +294,31 @@ func TestNormalizePathMatchesRequests(t *testing.T) {
 		"/api/./b":        "/api/b",
 		"/api/x//y":       "/api/x//y",
 		"/../a":           "/a",
-		"/api/%2E/b":      "/api/./b",
+		"/api/%2E/b":      "/api/%2E/b",
 		"/api/a;b":        "/api/a;b",
 		"/api/a|b":        "/api/a%7Cb",
 		"/api/%zz":        "/api/%25zz",
 		"/api/%":          "/api/%25",
 	}
 	for in, want := range cases {
-		if got, err := urlx.RequestsPrepareURL("http://config.test"+in, nil); err != nil || got != "http://config.test"+want {
+		if u, err := weburl.Prepare("http://config.test"+in, nil); err != nil || u.String() != "http://config.test"+want {
+			got := ""
+			if u != nil {
+				got = u.String()
+			}
 			t.Errorf("%q: got %q want %q", in, got, want)
 		}
 	}
 }
 
 // Regression (review C02): the URL is prepared like requests (references in
-// urlx/testdata/review.json): a "%" that is not an escape is dispatched as
+// requests 2.31): a "%" that is not an escape is dispatched as
 // %25 (Go's url.Parse refused it), the query and host are normalised, the
 // response URL keeps the fragment.
 func TestPreparedURLLikeRequests(t *testing.T) {
 	newFixture(t)
 	for url, want := range map[string]string{
-		"http://config.test/api/a%41%zz":   "http://config.test/api/a%2541%25zz",
+		"http://config.test/api/a%41%zz":   "http://config.test/api/aA%25zz",
 		"http://Config.TEST:080/api/x":     "http://config.test:80/api/x",
 		"http://config.test/api/x?a=b c":   "http://config.test/api/x?a=b%20c",
 		"http://config.test/api/inspect#f": "http://config.test/api/inspect#f",

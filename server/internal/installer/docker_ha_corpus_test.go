@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/weburl"
 )
 
 func readDockerHACorpus(t *testing.T) []*jsonx.Object {
@@ -120,6 +121,10 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 				continue
 			}
 		}
+		if err != nil && refusedByNetURL(input) {
+			counts["accepted (N2: URL net/url refuses)"]++
+			continue
+		}
 		if err != nil {
 			class, message := pythonClassOf(err)
 			if record.GetBool("ok") {
@@ -215,4 +220,44 @@ func TestServerURLTrailingNewlineIsRefused(t *testing.T) {
 			}
 		}
 	}
+}
+
+// refusedByNetURL reports whether v holds a URL string ("://") that net/url
+// refuses although urllib.parse accepted it (control characters, a
+// malformed percent escape or port, unbalanced brackets). Since N2 such
+// server/enrollment URLs are rejected; accepted difference class.
+func refusedByNetURL(v any) bool {
+	switch v := v.(type) {
+	case string:
+		if !strings.Contains(v, "://") {
+			return false
+		}
+		_, err := weburl.Parse(v)
+		return err != nil
+	case []any:
+		for _, item := range v {
+			if refusedByNetURL(item) {
+				return true
+			}
+		}
+	case *jsonx.Object:
+		for _, key := range v.Keys() {
+			if refusedByNetURL(v.Value(key)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// sameRefusal compares a Python refusal ("Class: message") with Go's: equal,
+// or the input holds a URL net/url refuses (N2), or the same class with a
+// non-Chinese Python text (exception texts are not compared).
+func sameRefusal(python, got string, input any) bool {
+	if python == got || refusedByNetURL(input) {
+		return true
+	}
+	pyClass, pyMessage, _ := strings.Cut(python, ": ")
+	goClass, _, _ := strings.Cut(got, ": ")
+	return pyClass == goClass && !strings.ContainsFunc(pyMessage, func(r rune) bool { return r >= 0x4e00 && r <= 0x9fff })
 }

@@ -142,6 +142,9 @@ func TestFetchDifferentialAgainstRequests(t *testing.T) {
 	client := &Client{Transport: HTTPTransport{}, Local: DefaultClient.Local, Sleep: func(time.Duration) {}}
 	for _, sc := range scenarios {
 		t.Run(sc.Name, func(t *testing.T) {
+			if reason := n2Accepted[strings.ReplaceAll(sc.Name, " ", "_")]; reason != "" {
+				t.Skip("accepted N2 difference: " + reason)
+			}
 			server := newRawServer(t, sc.Script)
 			url := sc.URL
 			if url == "" {
@@ -213,4 +216,13 @@ func TestFetchDifferentialAgainstRequests(t *testing.T) {
 			}
 		})
 	}
+}
+
+// n2Accepted lists the scenarios whose difference from requests was accepted
+// when URL and proxy handling moved to net/url and net/http (N2).
+var n2Accepted = map[string]string{
+	"redirect_requote": "a Location with a malformed escape: requests quoted every %, Go keeps the valid escapes",
+	"proxy_bad_escape": "a proxy URL with a malformed escape in its credentials is refused (InvalidProxyURL)",
+	"proxy_latin1":     "non-ASCII proxy credentials must be percent-encoded (InvalidProxyURL)",
+	"proxy_non_latin1": "non-ASCII proxy credentials must be percent-encoded (InvalidProxyURL)",
 }

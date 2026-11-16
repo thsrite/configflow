@@ -13,6 +13,7 @@ package redact
 
 import (
 	"context"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -20,7 +21,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // Redacted is the replacement text.
@@ -129,7 +130,7 @@ func ContainsEncodedSecret(value string, secrets Secrets) bool {
 		if containsAny(current, secrets) {
 			return true
 		}
-		for _, decode := range [...]func(string) string{urlx.Unquote, urlx.UnquotePlus} {
+		for _, decode := range [...]func(string) string{weburl.Unquote, weburl.UnquotePlus} {
 			if steps >= maxSteps {
 				break
 			}
@@ -281,14 +282,9 @@ func (s *sanitizer) str(value string) string {
 	return value
 }
 
-// quote is urllib.parse.quote(s, safe="").
-func quote(s string) string {
-	return strings.ReplaceAll(urlx.QuotePlus(s), "+", "%20")
-}
-
 func variants(secret string) []string {
 	result := []string{secret}
-	for _, variant := range []string{quote(secret), urlx.QuotePlus(secret)} {
+	for _, variant := range []string{weburl.Quote(secret), url.QueryEscape(secret)} {
 		if !slices.Contains(result, variant) {
 			result = append(result, variant)
 		}

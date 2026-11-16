@@ -1,15 +1,15 @@
 package rules
 
 import (
-	"configflow/internal/pystr"
 	"iter"
 	"strings"
 	"sync"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/pystr"
 	"configflow/internal/pyyaml"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // Port of backend/utils/rule_matcher.py: rule-line parsing and the indexed
@@ -727,7 +727,7 @@ func (m *RuleConfigMatcher) rulesetIndex(position int, item, library *jsonx.Obje
 	name := item.GetOr("name", "规则集")
 	content, err := m.load(item, library)
 	if err != nil {
-		m.logger.Errorf("Error processing ruleset \"%s\": %s", jsonx.Str(name), urlx.SafeExceptionDetails(err))
+		m.logger.Errorf("Error processing ruleset \"%s\": %s", jsonx.Str(name), weburl.SafeErrorDetails(err))
 		content = ""
 	}
 	if content == "" {

@@ -19,6 +19,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/pystr"
+	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
 )
 
@@ -55,7 +56,7 @@ var githubDomains = map[string]bool{
 // ApplyGithubProxyDomain is apply_github_proxy_domain: prefix a GitHub URL
 // with system_config.github_proxy_domain ("proxy/original"). Errors are the
 // exceptions Python raises (a system_config that is not an object, a URL
-// urlsplit refuses).
+// that cannot be parsed).
 func ApplyGithubProxyDomain(url string, config *jsonx.Object) (string, error) {
 	if url == "" || config == nil || config.Len() == 0 {
 		return url, nil
@@ -71,11 +72,14 @@ func ApplyGithubProxyDomain(url string, config *jsonx.Object) (string, error) {
 	if proxyURL == "" {
 		return url, nil
 	}
-	parts, err := urlsplit(url)
+	parts, err := weburl.Parse(url)
 	if err != nil {
-		return "", err
+		if errors.Is(err, weburl.ErrAmbiguousHost) || strings.ContainsAny(url, "[]") && !strings.Contains(url, "[v") {
+			return "", pyError("ValueError", err.Error()) // a broken IPv6 literal or a spoofable host
+		}
+		return url, nil // not a usable URL, so not a GitHub one
 	}
-	if host := parts.hostname(); host == "" || !githubDomains[host] {
+	if host := weburl.Hostname(parts); host == "" || !githubDomains[host] {
 		return url, nil
 	}
 	if !strings.HasPrefix(proxyURL, "http://") && !strings.HasPrefix(proxyURL, "https://") {

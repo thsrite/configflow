@@ -9,7 +9,7 @@ import (
 	"configflow/internal/jsonstore"
 	"configflow/internal/jsonx"
 	"configflow/internal/rules"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // Region check (backend/utils/region_check.py): the Agent only fetches pages
@@ -250,11 +250,11 @@ func splitPath(url any) string {
 	if !ok {
 		raise("AttributeError", "'"+TypeName(url)+"' object has no attribute 'decode'")
 	}
-	parts, err := urlx.Split(text)
+	parts, err := weburl.Parse(text)
 	if err != nil {
 		raise("ValueError", err.Error())
 	}
-	return parts.Path
+	return weburl.RawPath(parts)
 }
 
 func netflixRegionOf(result any) any {

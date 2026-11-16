@@ -5,15 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"regexp"
 	"strconv"
-	"strings"
 	"syscall"
 
 	"configflow/internal/pyyaml"
 	"configflow/internal/repo"
 	"configflow/internal/store"
-	"configflow/internal/urlx"
 )
 
 // pythonClassOf is type(err).__name__ for the errors C14's code paths can
@@ -139,51 +136,3 @@ func basicAuthHeader(user, password string) (string, error) {
 	}
 	return "Basic " + base64.StdEncoding.EncodeToString(latin1Bytes(user+":"+password)), nil
 }
-
-// urlBasicAuth is get_auth_from_url(prepared URL) as prepare_auth uses it:
-// unquoted user and password, ok false when neither is given or the URL has
-// no password (unquote(None) is a TypeError there, giving two empty strings).
-func urlBasicAuth(prepared string) (string, string, bool) {
-	parsed, err := urlparse(prepared, "")
-	if err != nil {
-		return "", "", false
-	}
-	user, hasUser, password, hasPassword := parsed.userinfo()
-	if !hasUser || !hasPassword {
-		return "", "", false
-	}
-	user, password = urlx.Unquote(user), urlx.Unquote(password)
-	if user == "" && password == "" {
-		return "", "", false
-	}
-	return user, password, true
-}
-
-// proxyCredentialsError is the UnicodeEncodeError proxy_headers raises for
-// credentials of the proxy URL that latin-1 cannot encode (decoded as
-// urllib3 re-encodes them: literally when any "%" is not an escape).
-func proxyCredentialsError(proxy string) error {
-	authority := proxy
-	if _, rest, ok := strings.Cut(authority, "://"); ok {
-		authority = rest
-	}
-	if i := strings.IndexAny(authority, "/?#"); i >= 0 {
-		authority = authority[:i]
-	}
-	auth := ""
-	if i := strings.LastIndex(authority, "@"); i >= 0 {
-		auth = authority[:i]
-	}
-	user, password, _ := strings.Cut(auth, ":")
-	if strings.Count(auth, "%") == len(percentEscape.FindAllString(auth, -1)) {
-		user, password = urlx.Unquote(user), urlx.Unquote(password)
-	}
-	for _, part := range []string{user, password} {
-		if message := latin1EncodeError(part); message != "" {
-			return &pyOSError{class: "UnicodeEncodeError", message: message}
-		}
-	}
-	return &pyOSError{class: "UnicodeEncodeError", message: "'latin-1' codec can't encode the proxy credentials"}
-}
-
-var percentEscape = regexp.MustCompile(`%[0-9A-Fa-f]{2}`)

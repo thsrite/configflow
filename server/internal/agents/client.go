@@ -174,29 +174,23 @@ func (c *deadlineConn) Write(p []byte) (int, error) {
 // are not numeric: it returns the address to dial or an error.
 var resolveHook func(host string) (string, error)
 
-// Do sends the request. The URL is treated as requests 2.31 prepares it:
-// percent-escapes of unreserved characters are decoded (requote_uri), a
-// user:password in the authority becomes Basic authentication replacing the
-// Authorization header, and a host in any numeric form glibc's getaddrinfo
-// accepts (inet_aton: "127.1", "0x7f.0.0.1", "2130706433", octal parts) is
-// dialled as that address instead of being looked up as a name.
+// Do sends the request. A user:password in the authority becomes Basic
+// authentication replacing the Authorization header, and a host in any
+// numeric form glibc's getaddrinfo accepts (inet_aton: "127.1",
+// "0x7f.0.0.1", "2130706433", octal parts) is dialled as that address
+// instead of being looked up as a name.
 func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 	dialer := &net.Dialer{Timeout: request.Timeout.Connect}
-	prepared := unquoteUnreserved(request.URL)
 	var proxy func(*http.Request) (*url.URL, error)
-	var proxyAuth string
 	if !request.NoProxy {
-		// requests' trust_env proxy choice (proxy.go), not Go's
+		// The environment proxy of every hop (proxy.go), not Go's
 		// ProxyFromEnvironment: no automatic loopback bypass.
-		chosen, err := environProxy(prepared)
-		if err != nil {
-			if errors.Is(err, errInvalidURL) || errors.Is(err, errInvalidProxyURL) || errors.Is(err, errInvalidSchema) {
+		proxy = func(r *http.Request) (*url.URL, error) {
+			chosen, err := environProxy(r.URL)
+			if err != nil {
 				return nil, &TransportError{Err: err}
 			}
-			return nil, err
-		}
-		if chosen != nil {
-			proxy, proxyAuth = http.ProxyURL(chosen.URL()), chosen.Auth
+			return chosen, nil
 		}
 	}
 	transport := &http.Transport{
@@ -232,7 +226,7 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 	if request.Body != nil {
 		body = bytes.NewReader(request.Body)
 	}
-	req, err := http.NewRequestWithContext(ctx, request.Method, encodeZone(prepared), body)
+	req, err := http.NewRequestWithContext(ctx, request.Method, encodeZone(request.URL), body)
 	if err != nil {
 		return nil, &TransportError{Err: err}
 	}
@@ -255,9 +249,6 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 			values = encoded
 		}
 		req.Header[key] = values
-	}
-	if proxyAuth != "" {
-		req.Header.Set("Proxy-Authorization", proxyAuth)
 	}
 	if user := req.URL.User; user != nil {
 		// requests: get_auth_from_url → HTTPBasicAuth (latin-1), only when a
@@ -321,37 +312,6 @@ func DefaultClient() Client {
 	return defaultClient
 }
 
-// unquoteUnreserved is requests.utils.unquote_unreserved as requote_uri uses
-// it: %XX escapes of unreserved characters (letters, digits, "-._~") are
-// decoded. An escape of two alphanumerics that are not hex digits makes
-// unquote_unreserved raise InvalidURL, and requote_uri then quotes the URL
-// without "%" among the safe characters: every "%" becomes "%25" (the
-// "%eth0" zone of a scoped IPv6 host, and with it every escape of the
-// query, A06 review).
-func unquoteUnreserved(uri string) string {
-	if !strings.Contains(uri, "%") {
-		return uri
-	}
-	parts := strings.Split(uri, "%")
-	for i := 1; i < len(parts); i++ {
-		part := parts[i]
-		if len(part) < 2 || !isASCIIAlnum(part[0]) || !isASCIIAlnum(part[1]) {
-			parts[i] = "%" + part
-			continue
-		}
-		value, err := strconv.ParseUint(part[:2], 16, 8)
-		if err != nil {
-			return strings.ReplaceAll(uri, "%", "%25")
-		}
-		if c := byte(value); isASCIIAlnum(c) || c == '-' || c == '.' || c == '_' || c == '~' {
-			parts[i] = string(c) + part[2:]
-		} else {
-			parts[i] = "%" + part
-		}
-	}
-	return strings.Join(parts, "")
-}
-
 // encodeZone writes the zone of a bracketed IPv6 host the way Go's URL
 // parser reads it ("%25" + zone). urllib3 reads "[fe80::1%25eth0]" and
 // "[fe80::1%dc0]" alike (a zone starting with "%25", other than "%25"
@@ -403,10 +363,6 @@ func glibcScopeOK(host string) bool {
 	}
 	n, err := strconv.ParseUint(zone, 10, 64)
 	return err == nil && n <= math.MaxUint32
-}
-
-func isASCIIAlnum(c byte) bool {
-	return c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
 func latin1(s string) ([]byte, bool) {

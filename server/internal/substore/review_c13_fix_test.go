@@ -97,8 +97,9 @@ func TestReviewLoopbackSubStoreGoesThroughEnvironmentProxy(t *testing.T) {
 
 	withEnviron(t, "HTTP_PROXY=socks5://127.0.0.1:1")
 	_, err = RequestsClient{}.Do(context.Background(), &Request{Method: "GET", URL: target, Timeout: Seconds(5)})
-	if pythonClass(err) != "InvalidSchema" {
-		t.Fatalf("socks proxy without PySocks: %v (%s)", err, pythonClass(err))
+	if pythonClass(err) != "ProxyError" {
+		// SOCKS proxies are used since N2 (requests needed PySocks).
+		t.Fatalf("unreachable socks proxy: %v (%s)", err, pythonClass(err))
 	}
 	withEnviron(t, "HTTP_PROXY=http://")
 	_, err = RequestsClient{}.Do(context.Background(), &Request{Method: "GET", URL: target, Timeout: Seconds(5)})
@@ -261,11 +262,10 @@ func TestReviewTooManyRedirectsCarriesStatus(t *testing.T) {
 	}
 }
 
-// TestReviewRedirectProxyLikeRequests: the environment proxies merged for
-// the first URL stay for every redirect hop (a hop to a NO_PROXY host still
-// goes through the proxy), and a hop away from a bypassed first URL picks up
-// the proxy (requests 2.31 rebuild_proxies, checked with real requests).
-func TestReviewRedirectProxyLikeRequests(t *testing.T) {
+// TestRedirectHopsChooseTheirOwnProxy: every redirect hop gets the
+// environment proxy of its own URL (since N2; requests kept the first URL's
+// proxy for a hop to a NO_PROXY host), with the proxy's credentials.
+func TestRedirectHopsChooseTheirOwnProxy(t *testing.T) {
 	var mu sync.Mutex
 	var seen []string
 	record := func(s string) {
@@ -295,19 +295,19 @@ func TestReviewRedirectProxyLikeRequests(t *testing.T) {
 	defer proxy.Close()
 	proxyURL, _ := url.Parse(proxy.URL)
 	cases := []struct {
-		noProxy, first string
-		want           []string
+		noProxy, first, text string
+		want                 []string
 	}{
-		{"localhost", "http://127.0.0.1:9/sub", []string{"proxy http://127.0.0.1:9/sub auth=Basic dTpw",
-			"proxy http://localhost:" + port + "/next auth=Basic dTpw"}},
-		{"127.0.0.1", direct.URL + "/sub", []string{"direct /sub auth=",
+		{"localhost", "http://127.0.0.1:9/sub", "direct", []string{"proxy http://127.0.0.1:9/sub auth=Basic dTpw",
+			"direct /next auth="}},
+		{"127.0.0.1", direct.URL + "/sub", "via-proxy", []string{"direct /sub auth=",
 			"proxy http://localhost:" + port + "/next auth=Basic dTpw"}},
 	}
 	for _, c := range cases {
 		seen = nil
 		withEnviron(t, "HTTP_PROXY=http://u:p@"+proxyURL.Host, "NO_PROXY="+c.noProxy)
 		resp, err := RequestsClient{}.Do(context.Background(), &Request{Method: "GET", URL: c.first, Timeout: Seconds(5)})
-		if err != nil || resp.Text() != "via-proxy" {
+		if err != nil || resp.Text() != c.text {
 			t.Fatalf("%s: %v %+v", c.noProxy, err, resp)
 		}
 		if !jsonx.Equal(jsonx.ListOf(seen), jsonx.ListOf(c.want)) {

@@ -10,7 +10,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
 )
 
@@ -529,7 +529,7 @@ func providerSources(main, config *jsonx.Object) []providerSource {
 			continue
 		}
 		rawPath, rawQuery := splitURL(url)
-		path := urlx.Unquote(rawPath)
+		path := weburl.Unquote(rawPath)
 		_, query := ParseQS(rawQuery)
 		if strings.Contains(path, "/subscriptions/") {
 			ident := path[strings.LastIndex(path, "/subscriptions/")+len("/subscriptions/"):]

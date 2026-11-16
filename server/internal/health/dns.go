@@ -16,7 +16,7 @@ import (
 	"configflow/internal/pystr"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // ConfigKey is node_dns.CONFIG_KEY.
@@ -93,26 +93,6 @@ var (
 	invalidChars = "?#\\"
 )
 
-// badPercentEscape is re.search(r'%(?![0-9a-fA-F]{2})', path).
-func badPercentEscape(path string) bool {
-	for i := 0; i < len(path); i++ {
-		if path[i] != '%' {
-			continue
-		}
-		if i+2 >= len(path) {
-			return true
-		}
-		if !isHex(path[i+1]) || !isHex(path[i+2]) {
-			return true
-		}
-	}
-	return false
-}
-
-func isHex(c byte) bool {
-	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
-}
-
 // server is _server(value).
 func server(value any) (string, error) {
 	text, ok := value.(string)
@@ -138,15 +118,14 @@ func encryptedServer(text string) (string, bool) {
 			return "", false
 		}
 	}
-	parsed, err := urlx.Split(text)
+	parsed, err := weburl.Parse(text)
 	if err != nil {
 		return "", false
 	}
-	_, hasUser, _, hasPassword := userInfo(parsed.Netloc)
-	if (parsed.Scheme != "https" && parsed.Scheme != "tls") || parsed.Hostname() == "" || hasUser || hasPassword {
+	if (parsed.Scheme != "https" && parsed.Scheme != "tls") || parsed.Hostname() == "" || parsed.User != nil {
 		return "", false
 	}
-	encoded, ok := rules.IDNAEncode(parsed.Hostname())
+	encoded, ok := rules.IDNAEncode(weburl.Hostname(parsed))
 	if !ok {
 		return "", false
 	}
@@ -165,14 +144,12 @@ func encryptedServer(text string) (string, bool) {
 			}
 		}
 	}
-	if badPercentEscape(parsed.Path) {
+	rawPath := weburl.RawPath(parsed)
+	port, hasPort, err := weburl.Port(parsed)
+	if err != nil || (hasPort && port < 1) || strings.HasSuffix(parsed.Host, ":") {
 		return "", false
 	}
-	port, hasPort, err := parsed.Port()
-	if err != nil || (hasPort && (port < 1 || port > 65535)) || strings.HasSuffix(parsed.Netloc, ":") {
-		return "", false
-	}
-	if parsed.Scheme == "tls" && parsed.Path != "" {
+	if parsed.Scheme == "tls" && rawPath != "" {
 		return "", false
 	}
 	defaultPort := 853
@@ -185,22 +162,12 @@ func encryptedServer(text string) (string, bool) {
 	}
 	path := ""
 	if parsed.Scheme == "https" {
-		path = parsed.Path
+		path = rawPath
 		if path == "" {
 			path = "/dns-query"
 		}
 	}
-	return urlx.Unsplit(parsed.Scheme, authority, path, "", ""), true
-}
-
-// userInfo is SplitResult.username / .password of a netloc.
-func userInfo(netloc string) (username string, hasUsername bool, password string, hasPassword bool) {
-	at := strings.LastIndex(netloc, "@")
-	if at < 0 {
-		return "", false, "", false
-	}
-	username, password, hasPassword = strings.Cut(netloc[:at], ":")
-	return username, true, password, hasPassword
+	return parsed.Scheme + "://" + authority + path, true
 }
 
 // NormalizeDNSServers is normalize_dns_servers(value, bootstrap=…): at most
@@ -245,11 +212,11 @@ func needsBootstrap(server string) bool {
 	if !strings.Contains(server, "://") {
 		return false
 	}
-	parsed, err := urlx.Split(server)
+	parsed, err := weburl.Parse(server)
 	if err != nil {
 		return true
 	}
-	_, ok := parseIPv4(parsed.Hostname())
+	_, ok := parseIPv4(weburl.Hostname(parsed))
 	return !ok
 }
 

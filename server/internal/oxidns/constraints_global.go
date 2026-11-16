@@ -1,12 +1,13 @@
 package oxidns
 
 import (
+	"net"
 	"strings"
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // Port of backend/common/oxidns_global_constraints.py (module C23):
@@ -49,11 +50,26 @@ func globalEndpoint(value any) (string, string) {
 	if !strings.Contains(text, "//") {
 		raw = "udp://" + text
 	}
-	parts, err := urlx.Split(raw)
+	parts, err := weburl.Parse(raw)
 	if err != nil {
-		return "", ""
+		// An address net/url refuses (e.g. a space in the host) is reported
+		// as invalid elsewhere; its host still decides the bootstrap check.
+		scheme, rest, _ := strings.Cut(raw, "://")
+		if strings.ContainsAny(rest, "[]") {
+			return "", "" // urlsplit refuses broken IPv6 brackets too
+		}
+		if i := strings.IndexAny(rest, "/?#"); i >= 0 {
+			rest = rest[:i]
+		}
+		if i := strings.LastIndex(rest, "@"); i >= 0 {
+			rest = rest[i+1:]
+		}
+		if host, _, splitErr := net.SplitHostPort(rest); splitErr == nil {
+			rest = host
+		}
+		return strings.ToLower(scheme), strings.ToLower(rest)
 	}
-	return pystr.Lower(parts.Scheme), parts.Hostname()
+	return parts.Scheme, weburl.Hostname(parts)
 }
 
 func literalIP(value string) bool {

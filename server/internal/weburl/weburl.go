@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // Parse is url.Parse after the clean-up browsers (and Python's urlsplit) do
@@ -21,11 +22,66 @@ func Parse(raw string) (*url.URL, error) {
 	if strings.ContainsAny(raw, "\t\r\n") {
 		raw = strings.NewReplacer("\t", "", "\r", "", "\n", "").Replace(raw)
 	}
-	return url.Parse(raw)
+	u, err := url.Parse(escapeZone(raw))
+	if err != nil {
+		return nil, err
+	}
+	if strings.Contains(u.Host, "[") != strings.Contains(u.Host, "]") {
+		return nil, errors.New("invalid IPv6 URL")
+	}
+	if !strings.Contains(u.Host, "[") && strings.Count(u.Host, ":") > 1 {
+		return nil, errors.New("an IPv6 host must be in brackets")
+	}
+	password, _ := u.User.Password()
+	if strings.ContainsAny(u.Host+u.User.Username()+password, nfkcDelimiters) {
+		return nil, ErrAmbiguousHost
+	}
+	return u, nil
 }
 
-// Hostname is u.Hostname() lower-cased.
-func Hostname(u *url.URL) string { return strings.ToLower(u.Hostname()) }
+// escapeZone writes the zone of a bracketed IPv6 host typed as
+// "[fe80::1%eth0]" the way net/url reads it ("%25eth0").
+func escapeZone(raw string) string {
+	start := strings.Index(raw, "://")
+	if start < 0 {
+		return raw
+	}
+	start += 3
+	end := len(raw)
+	if i := strings.IndexAny(raw[start:], "/?#"); i >= 0 {
+		end = start + i
+	}
+	open, close := strings.LastIndex(raw[start:end], "["), strings.LastIndex(raw[start:end], "]")
+	if open < 0 || close < open {
+		return raw
+	}
+	percent := strings.Index(raw[start+open:start+close], "%")
+	if percent < 0 || strings.HasPrefix(raw[start+open+percent:], "%25") {
+		return raw
+	}
+	at := start + open + percent + 1
+	return raw[:at] + "25" + raw[at:]
+}
+
+// ErrAmbiguousHost is Parse's error for a host or user name holding a
+// character that normalises to a URL delimiter (see nfkcDelimiters).
+var ErrAmbiguousHost = errors.New("URL authority contains characters that normalise to URL delimiters")
+
+// nfkcDelimiters are the characters whose NFKC form contains one of
+// "/?#@:" (full-width slash, ...): a host holding one could be read as a
+// different host after IDNA normalisation, so such URLs are refused.
+const nfkcDelimiters = "／？＃＠：﹕﹖﹟﹫︓︖℀℁℅℆⁇⁈⁉⩴"
+
+// Hostname is u.Hostname() with ASCII letters lower-cased (non-ASCII names
+// are left to IDNA, so "İ" never folds into an ASCII host name).
+func Hostname(u *url.URL) string {
+	return strings.Map(func(r rune) rune {
+		if r >= 'A' && r <= 'Z' {
+			return r + 'a' - 'A'
+		}
+		return r
+	}, u.Hostname())
+}
 
 // Port is the explicit port of u: ok is false without one, err is set for a
 // port above 65535 (url.Parse already refuses non-digits).
@@ -78,7 +134,52 @@ func Unquote(s string) string {
 		}
 		b.WriteByte(s[i])
 	}
-	return strings.ToValidUTF8(b.String(), "�")
+	decoded := b.String()
+	if utf8.ValidString(decoded) {
+		return decoded
+	}
+	// Each maximal invalid subpart (a cut-off sequence counts once) becomes
+	// one U+FFFD, the usual UTF-8 decoder rule.
+	var out strings.Builder
+	for i := 0; i < len(decoded); {
+		r, size := utf8.DecodeRuneInString(decoded[i:])
+		if r != utf8.RuneError || size > 1 {
+			out.WriteString(decoded[i : i+size])
+			i += size
+			continue
+		}
+		out.WriteRune(utf8.RuneError)
+		i += invalidSubpart(decoded[i:])
+	}
+	return out.String()
+}
+
+// invalidSubpart is the length of the invalid UTF-8 sequence at the start of
+// s: a valid lead byte and the continuation bytes that still fit it.
+func invalidSubpart(s string) int {
+	lo, hi, need := byte(0x80), byte(0xBF), 0
+	switch c := s[0]; {
+	case c >= 0xC2 && c <= 0xDF:
+		need = 1
+	case c == 0xE0:
+		need, lo = 2, 0xA0
+	case c == 0xED:
+		need, hi = 2, 0x9F
+	case c >= 0xE1 && c <= 0xEF:
+		need = 2
+	case c == 0xF0:
+		need, lo = 3, 0x90
+	case c == 0xF4:
+		need, hi = 3, 0x8F
+	case c >= 0xF1 && c <= 0xF3:
+		need = 3
+	}
+	n := 1
+	for n <= need && n < len(s) && s[n] >= lo && s[n] <= hi {
+		lo, hi = 0x80, 0xBF
+		n++
+	}
+	return n
 }
 
 // UnquotePlus is Unquote after "+" → " " (form encoding).
@@ -209,6 +310,9 @@ func ParseProxy(value string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Hostname() == "" {
 		return nil, ErrInvalidProxy
+	}
+	if _, ok := u.User.Password(); !ok || u.User.Username() == "" {
+		u.User = nil // no Proxy-Authorization without a user name and password
 	}
 	switch u.Scheme {
 	case "http", "https", "socks5", "socks5h":

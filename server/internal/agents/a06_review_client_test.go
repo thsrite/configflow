@@ -20,22 +20,19 @@ import (
 	"testing"
 )
 
-func TestRequoteURIFallbackAndZonesLikeRequests(t *testing.T) {
+func TestScopedIPv6ZonesAreWrittenForGo(t *testing.T) {
+	// A zone after a bare "%" (how users and requests write it) is written
+	// as "%25" + zone for Go's URL parser; an existing "%25" form is kept.
 	cases := map[string]string{
-		// Outputs of requests 2.31 Request.prepare() / requote_uri on CPython 3.11.
 		"http://[fe80::1%eth0]:8082/api/oxidns/overview": "http://[fe80::1%25eth0]:8082/api/oxidns/overview",
 		"http://[fe80::1%25eth0]:8082/x":                 "http://[fe80::1%25eth0]:8082/x",
-		"http://[fe80::1%lo]:1/q?qname=%E6%B8%AC+a%3Ab":  "http://[fe80::1%25lo]:1/q?qname=%25E6%25B8%25AC+a%253Ab",
+		"http://[fe80::1%lo]:1/q?qname=%E6%B8%AC+a%3Ab":  "http://[fe80::1%25lo]:1/q?qname=%E6%B8%AC+a%3Ab",
 		"http://[::1%1]:1/q?qname=%E6%B8%AC":             "http://[::1%251]:1/q?qname=%E6%B8%AC",
 		"http://[::1%01]:1/x":                            "http://[::1%2501]:1/x",
-		"http://[::1%4294967295]:1/x":                    "http://[::1B94967295]:1/x",
-		"http://127.0.0.1:1/a%zz?b=%41":                  "http://127.0.0.1:1/a%25zz?b=%2541",
 		"http://[fe80::1%dc0]:1/x":                       "http://[fe80::1%25dc0]:1/x",
 	}
 	for in, want := range cases {
-		// The second form is what Go's parser needs for the same zone
-		// ("%25" + zone); requests' text has the zone after a bare "%".
-		if got := encodeZone(unquoteUnreserved(in)); got != want {
+		if got := encodeZone(in); got != want {
 			t.Errorf("%q: %q, want %q", in, got, want)
 		}
 	}

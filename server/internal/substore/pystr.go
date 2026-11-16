@@ -38,7 +38,7 @@ type pythonClasser interface{ PythonClass() string }
 type statusCarrier interface{ HTTPStatus() int }
 
 // pythonClass is type(err).__name__ for errors of this package; other Go
-// errors are reported by their Go type name like urlx.SafeExceptionDetails.
+// errors are reported by their Go type name like weburl.SafeErrorDetails.
 func pythonClass(err error) string {
 	if c, ok := err.(pythonClasser); ok {
 		return c.PythonClass()

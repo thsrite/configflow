@@ -9,6 +9,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
 	"configflow/internal/rules"
+	"configflow/internal/weburl"
 )
 
 // UDPFallbackPolicies are the values udp_fallback accepts.
@@ -289,11 +290,11 @@ func RulesetFormat(rule, config *jsonx.Object, sourceURL string) (string, error)
 		}
 		return "", attributeError(url, "decode")
 	}
-	parts, err := urlsplit(text)
+	parts, err := weburl.Parse(text)
 	if err != nil {
-		return "", err
+		return "", pyError("ValueError", err.Error())
 	}
-	path := pystr.Lower(parts.path)
+	path := pystr.Lower(weburl.RawPath(parts))
 	if strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml") {
 		return "yaml", nil
 	}

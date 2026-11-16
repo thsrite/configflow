@@ -35,7 +35,7 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // maxDepth is the nesting limit of callbacks (`depth >= 8` in Python).
@@ -228,34 +228,24 @@ type preparedRequest struct {
 	body                           []byte
 }
 
-// prepare is requests.Request(...).prepare() for the parts that matter here.
+// prepare builds the request the in-process handler sees (URL as weburl.Prepare
+// normalises it, headers, body).
 func prepare(r Request, method string) (*preparedRequest, error) {
 	params := make([][2]string, len(r.Params))
 	for i, p := range r.Params {
 		params[i] = [2]string{p.Key, p.Value}
 	}
-	// requests.Request(...).prepare().url, then urlsplit of it (request_local).
-	full, err := urlx.RequestsPrepareURL(strings.TrimLeft(r.URL, " \t\n\r\v\f"), params)
+	u, err := weburl.Prepare(strings.TrimLeft(r.URL, " \t\n\r\v\f"), params)
 	if err != nil {
 		return nil, fmt.Errorf("Invalid URL %s: %w", jsonx.Repr(r.URL), err)
 	}
-	split, err := urlx.Split(full)
-	if err != nil {
-		return nil, fmt.Errorf("Invalid URL %s: %w", jsonx.Repr(r.URL), err)
-	}
-	host := split.Netloc
-	if i := strings.LastIndex(host, "@"); i >= 0 {
-		host = host[i+1:]
-	}
-	if split.Scheme == "" {
+	if u.Scheme == "" {
 		return nil, fmt.Errorf("Invalid URL %s: No scheme supplied. Perhaps you meant https://%s?", jsonx.Repr(r.URL), r.URL)
 	}
-	if host == "" {
+	if u.Host == "" {
 		return nil, fmt.Errorf("Invalid URL %s: No host supplied", jsonx.Repr(r.URL))
 	}
-	path, query := split.Path, split.Query
-	parsed := struct{ Scheme, Host string }{split.Scheme, host}
-	prepared := &preparedRequest{scheme: parsed.Scheme, host: parsed.Host, path: path, query: query, header: http.Header{}}
+	prepared := &preparedRequest{scheme: u.Scheme, host: u.Host, path: u.EscapedPath(), query: u.RawQuery, header: http.Header{}}
 	for key, values := range r.Headers {
 		for _, v := range values {
 			prepared.header.Add(key, v)
@@ -292,14 +282,14 @@ func prepare(r Request, method string) (*preparedRequest, error) {
 	if r.BasicAuth != nil {
 		prepared.header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(r.BasicAuth[0]+":"+r.BasicAuth[1])))
 	}
-	prepared.url = full
+	prepared.url = u.String()
 	return prepared, nil
 }
 
 func encodeParams(params []Param) string {
 	parts := make([]string, len(params))
 	for i, p := range params {
-		parts[i] = urlx.QuotePlus(p.Key) + "=" + urlx.QuotePlus(p.Value)
+		parts[i] = url.QueryEscape(p.Key) + "=" + url.QueryEscape(p.Value)
 	}
 	return strings.Join(parts, "&")
 }

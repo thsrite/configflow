@@ -8,7 +8,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
 )
 
@@ -934,16 +934,6 @@ func isServerURL(server string) bool {
 	return rest != "" && !strings.ContainsFunc(rest, pystr.IsSpace)
 }
 
-// urlHasCredentials reports whether SplitResult.username or .password is truthy.
-func urlHasCredentials(r urlx.SplitResult) bool {
-	i := strings.LastIndexByte(r.Netloc, '@')
-	if i < 0 {
-		return false
-	}
-	username, password, _ := strings.Cut(r.Netloc[:i], ":")
-	return username != "" || password != ""
-}
-
 // A10's generators (docker_ha_compact.generate_compact,
 // docker_ha_compose_direct.generate_direct, docker_ha_compose.generate_bundle).
 var (
@@ -1011,11 +1001,11 @@ func GenerateGuide(value any, enrollment *Enrollment) (*jsonx.Object, error) {
 	if !isString || !isServerURL(server) {
 		return nil, valueError("请填写完整的 ConfigFlow HTTP(S) 地址")
 	}
-	parsed, err := urlx.Split(server)
+	parsed, err := weburl.Parse(server)
 	if err != nil {
 		return nil, valueError(err.Error())
 	}
-	if urlHasCredentials(parsed) || parsed.Query != "" || parsed.Fragment != "" || parsed.Hostname() == "" {
+	if weburl.HasCredentials(parsed) || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Hostname() == "" {
 		return nil, valueError("ConfigFlow 地址不能包含登录凭据、查询参数或片段")
 	}
 	server = strings.TrimRight(server, "/")

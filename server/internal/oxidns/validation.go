@@ -13,7 +13,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
 	"configflow/internal/resource"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // Port of backend/common/oxidns_validation.py (module C23): schemas,
@@ -393,7 +393,7 @@ func upstreamURLValid(name string, value any) bool {
 	if !strings.Contains(text, "//") && name != "http-url" {
 		raw = "udp://" + text
 	}
-	parts, err := urlx.Split(raw)
+	parts, err := weburl.Parse(raw)
 	if err != nil {
 		return false
 	}
@@ -404,7 +404,7 @@ func upstreamURLValid(name string, value any) bool {
 	if parts.Hostname() == "" || !strIn(parts.Scheme, schemes...) {
 		return false
 	}
-	if _, _, err := parts.Port(); err != nil {
+	if _, _, err := weburl.Port(parts); err != nil {
 		return false
 	}
 	return true

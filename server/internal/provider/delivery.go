@@ -13,7 +13,7 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/subs"
 	"configflow/internal/substore"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
 )
 
@@ -1213,11 +1213,11 @@ func findByID(itemsValue any, id string) (*jsonx.Object, error) {
 	return nil, &pyError{"StopIteration", ""}
 }
 
-// urlPath is unquote(urlsplit(url).path).
+// urlPath is the percent-decoded path of url.
 func urlPath(url string) (string, error) {
-	parts, err := urlx.Split(url)
+	parts, err := weburl.Parse(url)
 	if err != nil {
 		return "", &pyError{"ValueError", err.Error()}
 	}
-	return urlx.Unquote(parts.Path), nil
+	return parts.Path, nil
 }

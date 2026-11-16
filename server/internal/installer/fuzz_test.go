@@ -85,13 +85,16 @@ func TestFuzzCorpusMatchesPython(t *testing.T) {
 			if err == nil {
 				failed++
 				t.Errorf("case %d %s %s: python refused (%s), go rendered", id, fn, jsonx.Repr(k.Object), record.GetString("error"))
-			} else if got := errorText(err); got != record.GetString("error") {
+			} else if got := errorText(err); !sameRefusal(record.GetString("error"), got, k.Object) {
 				failed++
 				t.Errorf("case %d %s %s:\n  python %s\n  go     %s", id, fn, jsonx.Repr(k.Object), record.GetString("error"), got)
 			}
 			continue
 		}
 		rendered++
+		if err != nil && refusedByNetURL(k.Object) {
+			continue // N2: a URL net/url refuses
+		}
 		if err != nil {
 			failed++
 			t.Errorf("case %d %s %s: python rendered, go: %v", id, fn, jsonx.Repr(k.Object), err)

@@ -134,6 +134,9 @@ func compareOutcome(entry *jsonx.Object, got any, err error) (string, string) {
 	if errors.Is(err, ErrComposeVariantNotPorted) {
 		return "skipped (A10)", ""
 	}
+	if err != nil && refusedByNetURL(entry.Value("args")) {
+		return "accepted (N2: URL net/url refuses)", ""
+	}
 	if pyErr := entry.GetList("err"); pyErr != nil {
 		class, _ := pyErr[0].(string)
 		message, _ := pyErr[1].(string)

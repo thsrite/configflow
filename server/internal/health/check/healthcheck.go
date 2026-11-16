@@ -18,7 +18,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // ValueError is the ValueError validate_health raises; Error() is str(exc).
@@ -184,30 +184,19 @@ func validateField(key string, value any) error {
 	return nil
 }
 
-// validProbeURL is the urlsplit condition of validate_health.
+// validProbeURL is the URL condition of validate_health: http(s), a host,
+// no credentials or fragment, a port in 1..65535.
 func validProbeURL(text string) bool {
-	parsed, err := urlx.Split(text)
+	parsed, err := weburl.Parse(text)
 	if err != nil {
 		return false
 	}
-	port, hasPort, err := parsed.Port()
+	port, hasPort, err := weburl.Port(parsed)
 	if err != nil {
 		return false
 	}
-	_, hasUser, _, hasPassword := UserInfo(parsed.Netloc)
 	return (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Hostname() != "" &&
-		!hasUser && !hasPassword && parsed.Fragment == "" && (!hasPort || (1 <= port && port <= 65535))
-}
-
-// UserInfo is SplitResult.username / .password of a netloc: each with
-// whether it is not None.
-func UserInfo(netloc string) (username string, hasUsername bool, password string, hasPassword bool) {
-	at := strings.LastIndex(netloc, "@")
-	if at < 0 {
-		return "", false, "", false
-	}
-	username, password, hasPassword = strings.Cut(netloc[:at], ":")
-	return username, true, password, hasPassword
+		parsed.User == nil && parsed.Fragment == "" && (!hasPort || port >= 1)
 }
 
 // ProviderHealthCheck is provider_health_check(source): the validated

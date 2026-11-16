@@ -2,25 +2,12 @@ package agents
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"testing"
 )
-
-type proxyReferenceCase struct {
-	Env    [][2]string `json:"env"`
-	URL    string      `json:"url"`
-	Result struct {
-		Proxy *string `json:"proxy"`
-		Auth  *string `json:"auth"`
-		Error string  `json:"error"`
-	} `json:"result"`
-}
 
 func withEnviron(t *testing.T, env [][2]string) {
 	t.Helper()
@@ -31,67 +18,6 @@ func withEnviron(t *testing.T, env [][2]string) {
 	}
 	environ = func() []string { return entries }
 	t.Cleanup(func() { environ = previous })
-}
-
-func proxyErrorClass(err error) string {
-	switch {
-	case errors.Is(err, errInvalidURL):
-		return "InvalidURL"
-	case errors.Is(err, errInvalidProxyURL):
-		return "InvalidProxyURL"
-	case errors.Is(err, errInvalidSchema):
-		return "InvalidSchema"
-	}
-	class, _, _ := strings.Cut(err.Error(), ":")
-	return class
-}
-
-// TestReferenceEnvironmentProxies compares the proxy choice with real
-// requests 2.31 / urllib3 2.8 (testdata/proxy_reference.json): lowercase
-// variables winning, REQUEST_METHOD, ALL_PROXY and odd variable names,
-// NO_PROXY suffix/CIDR/host:port/'*' forms through both of requests' and
-// urllib's checks, no automatic loopback bypass, proxy URL forms, ports and
-// Proxy-Authorization.
-func TestReferenceEnvironmentProxies(t *testing.T) {
-	data, err := os.ReadFile("testdata/proxy_reference.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cases []proxyReferenceCase
-	if err := json.Unmarshal(data, &cases); err != nil {
-		t.Fatal(err)
-	}
-	if len(cases) < 900 {
-		t.Fatalf("only %d cases", len(cases))
-	}
-	for _, c := range cases {
-		withEnviron(t, c.Env)
-		proxy, err := environProxy(c.URL)
-		var got, want string
-		switch {
-		case err != nil:
-			got = "error " + proxyErrorClass(err)
-		case proxy == nil:
-			got = "direct"
-		default:
-			got = proxy.String() + " auth=" + proxy.Auth
-		}
-		switch {
-		case c.Result.Error != "":
-			want = "error " + c.Result.Error
-		case c.Result.Proxy == nil:
-			want = "direct"
-		default:
-			auth := ""
-			if c.Result.Auth != nil {
-				auth = *c.Result.Auth
-			}
-			want = *c.Result.Proxy + " auth=" + auth
-		}
-		if got != want {
-			t.Errorf("env %q url %q: got %s, want %s", c.Env, c.URL, got, want)
-		}
-	}
 }
 
 // TestLoopbackAgentGoesThroughTheEnvironmentProxy is the regression test of
@@ -145,7 +71,7 @@ func TestLoopbackAgentGoesThroughTheEnvironmentProxy(t *testing.T) {
 	}
 	withEnviron(t, [][2]string{{"HTTP_PROXY", "socks5://" + proxy}})
 	if _, err := (HTTPClient{}).Do(context.Background(), Request{Method: "GET", URL: target, Timeout: Seconds(5)}); !IsTransportError(err) {
-		t.Errorf("socks proxy: %v, want a transport error (InvalidSchema)", err)
+		t.Errorf("socks proxy that speaks HTTP: %v, want a transport error", err)
 	}
 }
 

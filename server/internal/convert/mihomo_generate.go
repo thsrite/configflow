@@ -12,7 +12,7 @@ import (
 	"configflow/internal/pystr"
 	"configflow/internal/rules"
 	"configflow/internal/subs"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
 )
 
@@ -671,7 +671,7 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 	interval := jsonx.Int(mustValue(env.ProviderInterval(mihomoObject)))
 	mihomoLog.Debug("开始生成订阅 proxy-providers，使用本地接口")
 	if debug {
-		mihomoLog.Debug("Server domain: " + urlx.SafeURLForLog(effectiveBaseURL))
+		mihomoLog.Debug("Server domain: " + weburl.SafeForLog(effectiveBaseURL))
 		if jsonx.Truthy(configToken) {
 			mihomoLog.Debug("Config token: 已配置")
 		} else {
@@ -687,7 +687,7 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 				subURL = appendURLQuery(subURL, [][2]any{{"token", configToken}})
 			}
 			if debug {
-				mihomoLog.Debug("订阅 '" + fstr(dictItem(sub, "name")) + "' 使用本地接口: " + urlx.SafeURLForLog(subURL))
+				mihomoLog.Debug("订阅 '" + fstr(dictItem(sub, "name")) + "' 使用本地接口: " + weburl.SafeForLog(subURL))
 			}
 			name := providerKey(dictItem(sub, "name"))
 			proxyProviders.Set(name, jsonx.Obj(

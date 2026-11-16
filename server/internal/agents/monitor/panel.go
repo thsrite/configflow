@@ -25,7 +25,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // Versions and limits of mihomo_panel.py.
@@ -730,7 +730,7 @@ func CheckCoreUpdate(ctx context.Context, m Manager, agentID string, force bool)
 	data := jsonx.Obj("current", currentText, "channel", channel, "latest", latest,
 		"has_update", hasUpdate, "error", failure)
 	if latest != "" {
-		data.Set("release_url", strings.ReplaceAll(coreReleasePages[channel], "{version}", urlx.Quote(latest, "")))
+		data.Set("release_url", strings.ReplaceAll(coreReleasePages[channel], "{version}", weburl.Quote(latest)))
 	}
 	return jsonx.Obj("success", true, "data", data), nil
 }
@@ -762,7 +762,7 @@ func PanelCall(ctx context.Context, m Manager, agentID, resource, method string,
 			if err != nil {
 				return nil, err
 			}
-			path = strings.ReplaceAll(path, "{"+key+"}", urlx.Quote(name, ""))
+			path = strings.ReplaceAll(path, "{"+key+"}", weburl.Quote(name))
 		}
 	}
 	params, err := panelQuery(resource, args)

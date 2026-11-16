@@ -6,13 +6,14 @@
 package diag
 
 import (
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // Limits (UTF-8 bytes): diagnostics.DETAIL_LIMIT and
@@ -163,7 +164,7 @@ func FailureText(value any, secrets []any, limit int) string {
 	})
 	for _, secret := range names {
 		// {secret, quote(secret, safe=''), quote_plus(secret)}
-		for _, variant := range []string{secret, strings.ReplaceAll(urlx.QuotePlus(secret), "+", "%20"), urlx.QuotePlus(secret)} {
+		for _, variant := range []string{secret, strings.ReplaceAll(url.QueryEscape(secret), "+", "%20"), url.QueryEscape(secret)} {
 			text = strings.ReplaceAll(text, variant, "[REDACTED]")
 		}
 	}
@@ -196,7 +197,7 @@ func safeDiagnosticURL(match string) string {
 	scheme, _, _ := strings.Cut(match, ":")
 	switch strings.ToLower(scheme) {
 	case "http", "https", "tcp", "udp", "tls", "quic", "h3":
-		return urlx.SafeURLForLog(match)
+		return weburl.SafeForLog(match)
 	}
 	return "[REDACTED URL]"
 }

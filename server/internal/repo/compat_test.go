@@ -9,10 +9,12 @@ package repo
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/rules"
+	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
 )
 
@@ -117,6 +119,9 @@ func TestCompatGolden(t *testing.T) {
 			t.Errorf("%s modified its input %s", label, brief)
 		}
 		if !record.GetBool("raised") {
+			if err != nil && refusedByNetURL(input) {
+				continue // accepted N2 difference: a URL net/url refuses
+			}
 			if err != nil {
 				t.Errorf("%s: input %s: unexpected error %v", label, brief, err)
 				continue
@@ -212,4 +217,32 @@ func TestCompatProxyStringOverride(t *testing.T) {
 	if err != nil || value != "via" {
 		t.Fatalf("got %v, %v", value, err)
 	}
+}
+
+// refusedByNetURL reports whether v holds a URL string ("://") that net/url
+// refuses although urllib.parse accepted it (control characters, an
+// IPvFuture literal, a percent-encoded host, ...); since N2 such URLs are
+// rejected.
+func refusedByNetURL(v any) bool {
+	switch v := v.(type) {
+	case string:
+		if !strings.Contains(v, "://") {
+			return false
+		}
+		_, err := weburl.Parse(v)
+		return err != nil
+	case []any:
+		for _, item := range v {
+			if refusedByNetURL(item) {
+				return true
+			}
+		}
+	case *jsonx.Object:
+		for _, key := range v.Keys() {
+			if refusedByNetURL(v.Value(key)) {
+				return true
+			}
+		}
+	}
+	return false
 }

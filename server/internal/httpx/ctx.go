@@ -16,7 +16,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/localhttp"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // Ctx is one request: Flask's request object plus flask.g.
@@ -119,7 +119,7 @@ func ParseQuery(raw string) [][2]string {
 			continue
 		}
 		key, value, _ := strings.Cut(piece, "=")
-		pairs = append(pairs, [2]string{urlx.UnquotePlusURLQuote(key), urlx.UnquotePlusURLQuote(value)})
+		pairs = append(pairs, [2]string{weburl.UnquotePlus(key), weburl.UnquotePlus(value)})
 	}
 	return pairs
 }

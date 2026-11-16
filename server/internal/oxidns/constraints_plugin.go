@@ -9,7 +9,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // Port of backend/common/oxidns_plugin_constraints.py (module C23):
@@ -1002,8 +1002,8 @@ func collectPluginIssues(plugin any, index any) []any {
 		}
 		if url, ok := get(args, "url", nil).(string); ok && !deferredText(url) {
 			valid := false
-			if parsed, err := urlx.Split(url); err == nil {
-				valid = strIn(pystr.Lower(parsed.Scheme), "http", "https") && parsed.Hostname() != ""
+			if parsed, err := weburl.Parse(url); err == nil {
+				valid = strIn(parsed.Scheme, "http", "https") && parsed.Hostname() != ""
 			}
 			if !valid {
 				constraint([]any{"url"}, "需要有效的 HTTP / HTTPS URL", "url")
@@ -1052,11 +1052,11 @@ func collectPluginIssues(plugin any, index any) []any {
 			}
 			filename := strOf(get(entry, "filename", nil))
 			if filename == "" {
-				parsed, err := urlx.Split(strOf(get(entry, "url", nil)))
+				parsed, err := weburl.Parse(strOf(get(entry, "url", nil)))
 				if err != nil {
 					continue
 				}
-				p := parsed.Path
+				p := weburl.RawPath(parsed)
 				filename = pystr.Strip(p[strings.LastIndexByte(p, '/')+1:])
 			}
 			if filename == "" {

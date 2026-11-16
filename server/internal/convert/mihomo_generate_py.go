@@ -6,7 +6,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
 )
 
@@ -237,39 +237,59 @@ func (s *orderedSet) remove(v any) {
 
 func (s *orderedSet) repr() string { return pySetRepr(s.keys, s.values) }
 
-// appendURLQuery is profile_context.append_url_query(url, params): the query
-// is parsed with parse_qsl(keep_blank_values=True), the params appended and
-// everything encoded with urlencode(doseq=True, quote_via=quote).
+// appendURLQuery is profile_context.append_url_query(url, params): the
+// existing query pairs (blank values kept) and the params, each name and
+// value percent-encoded (a list value repeats the name).
 func appendURLQuery(url string, params [][2]any) string {
-	parts := mustValue(urlx.Split(url))
+	parts := mustValue(weburl.Parse(url))
 	var items []string
-	if parts.Query != "" {
-		for _, nameValue := range strings.Split(parts.Query, "&") {
+	if parts.RawQuery != "" {
+		for _, nameValue := range strings.Split(parts.RawQuery, "&") {
 			if nameValue == "" {
 				continue
 			}
 			name, value, _ := strings.Cut(nameValue, "=")
-			items = append(items, urlx.Quote(urlx.UnquotePlus(name), "")+"="+urlx.Quote(urlx.UnquotePlus(value), ""))
+			items = append(items, weburl.Quote(weburl.UnquotePlus(name))+"="+weburl.Quote(weburl.UnquotePlus(value)))
 		}
 	}
 	for _, p := range params {
-		k := urlx.Quote(fstr(p[0]), "")
+		k := weburl.Quote(fstr(p[0]))
 		switch v := p[1].(type) {
 		case string:
-			items = append(items, k+"="+urlx.Quote(v, ""))
+			items = append(items, k+"="+weburl.Quote(v))
 		case []any:
 			for _, elt := range v {
-				items = append(items, k+"="+urlx.Quote(fstr(elt), ""))
+				items = append(items, k+"="+weburl.Quote(fstr(elt)))
 			}
 		case *jsonx.Object:
 			for _, elt := range v.Keys() {
-				items = append(items, k+"="+urlx.Quote(elt, ""))
+				items = append(items, k+"="+weburl.Quote(elt))
 			}
 		default:
-			items = append(items, k+"="+urlx.Quote(fstr(v), ""))
+			items = append(items, k+"="+weburl.Quote(fstr(v)))
 		}
 	}
-	return urlx.Unsplit(parts.Scheme, parts.Netloc, parts.Path, strings.Join(items, "&"), parts.Fragment)
+	// The URL is rebuilt as written (u.String() would percent-encode a
+	// Unicode or space path that the clients accept as it is).
+	out := ""
+	if parts.Scheme != "" {
+		out = parts.Scheme + ":"
+	}
+	if parts.Host != "" || parts.User != nil {
+		out += "//"
+		if parts.User != nil {
+			out += parts.User.String() + "@"
+		}
+		out += parts.Host
+	}
+	out += weburl.RawPath(parts)
+	if len(items) > 0 {
+		out += "?" + strings.Join(items, "&")
+	}
+	if parts.Fragment != "" {
+		out += "#" + parts.EscapedFragment()
+	}
+	return out
 }
 
 // pyIntOf is int(v) for the values a profile can hold.

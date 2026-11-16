@@ -7,7 +7,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
 )
 
@@ -597,7 +597,7 @@ func checkAccess(document *jsonx.Object, changed func([]string) bool) {
 	if changed(urlPath) && url != missing {
 		valid := false
 		if text, ok := url.(string); ok {
-			if parts, err := urlx.Split(text); err == nil {
+			if parts, err := weburl.Parse(text); err == nil {
 				valid = (parts.Scheme == "http" || parts.Scheme == "https") && parts.Hostname() != ""
 			}
 		}

@@ -129,7 +129,7 @@ var storeClasses = []struct {
 // pythonClass is type(err).__name__. Only err itself decides (Python reads
 // the class of the exception object, never of its __cause__). Go errors
 // without a Python counterpart are named by their Go type, like
-// urlx.SafeExceptionDetails.
+// weburl.SafeErrorDetails.
 func pythonClass(err error) string {
 	switch e := err.(type) {
 	case *convert.PyError:

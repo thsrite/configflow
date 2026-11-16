@@ -11,7 +11,7 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // errPy stands for any Python exception that the Python callers swallow or
@@ -337,8 +337,8 @@ func ParseQS(query string) (keys []string, values map[string][]string) {
 		if !ok || value == "" {
 			continue
 		}
-		name = urlx.UnquotePlus(name)
-		value = urlx.UnquotePlus(value)
+		name = weburl.UnquotePlus(name)
+		value = weburl.UnquotePlus(value)
 		if _, seen := values[name]; !seen {
 			keys = append(keys, name)
 		}

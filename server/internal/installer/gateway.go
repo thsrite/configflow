@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"configflow/internal/resource"
+	"configflow/internal/weburl"
 )
 
 // Port of backend/agents/gateway_install_script.py: the pinned, opt-in
@@ -86,11 +87,8 @@ func httpURL(value, name string) (string, error) {
 	if hasControl(value) {
 		return "", valueError(name + " must be an HTTP(S) URL")
 	}
-	parsed, err := pyURLSplit(value)
-	if err != nil {
-		return "", err
-	}
-	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || hasCredentials(parsed) || parsed.Fragment != "" {
+	parsed, err := weburl.Parse(value)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || weburl.HasCredentials(parsed) || parsed.Fragment != "" {
 		return "", valueError(name + " must be an HTTP(S) URL without credentials or fragment")
 	}
 	return strings.TrimRight(value, "/"), nil
@@ -156,15 +154,15 @@ func GenerateGatewayInstallScript(o GatewayOptions) (string, error) {
 		if enrollmentURL, err = httpURL(enrollmentURL, "enrollment_url"); err != nil {
 			return "", err
 		}
-		a, err := pyURLSplit(enrollmentURL)
+		a, err := weburl.Parse(enrollmentURL)
 		if err != nil {
-			return "", err
+			return "", valueError(err.Error())
 		}
-		b, err := pyURLSplit(serverURL)
+		b, err := weburl.Parse(serverURL)
 		if err != nil {
-			return "", err
+			return "", valueError(err.Error())
 		}
-		if a.Scheme != b.Scheme || a.Netloc != b.Netloc {
+		if a.Scheme != b.Scheme || a.User.String() != b.User.String() || a.Host != b.Host {
 			return "", valueError("Enrollment endpoint must use the ConfigFlow server origin")
 		}
 	}

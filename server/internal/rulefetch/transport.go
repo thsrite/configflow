@@ -22,8 +22,7 @@ import (
 	"time"
 
 	"configflow/internal/pystr"
-	"configflow/internal/reqproxy"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // FetchError is a requests.RequestException raised by a rule download:
@@ -205,24 +204,19 @@ func latin1Text(raw string) string {
 	return string(runes)
 }
 
-// Do implements Transport: one request as requests 2.31 sends it (URL
-// prepared by requests, its default headers, the proxy chosen by
-// proxies={'http': p, 'https': p} through internal/reqproxy with urllib3's
-// Proxy-Authorization rules, header values decoded as ISO-8859-1).
+// Do implements Transport: one request with requests' default headers, the
+// URL normalised by weburl.Prepare, the configured proxy (if any) for every
+// scheme, header values decoded as ISO-8859-1.
 func (h HTTPTransport) Do(ctx context.Context, req TransportRequest) (*Response, error) {
-	prepared, err := urlx.RequestsPrepareURL(req.URL, nil)
+	preparedURL, err := weburl.Prepare(req.URL, nil)
 	if err != nil {
 		return nil, &FetchError{Class: "InvalidURL", Message: err.Error(), Err: err}
 	}
-	var chosen *reqproxy.Proxy
+	prepared := preparedURL.String()
+	var chosen *url.URL
 	if req.Proxy != "" {
-		if chosen, err = reqproxy.FromValue(req.Proxy); err != nil {
-			class, _, _ := strings.Cut(err.Error(), ":")
-			if class == "UnicodeEncodeError" {
-				// _basic_auth_str raises outside requests' hierarchy.
-				return nil, proxyCredentialsError(req.Proxy)
-			}
-			return nil, &FetchError{Class: class, Message: err.Error(), Err: err}
+		if chosen, err = weburl.ParseProxy(req.Proxy); err != nil {
+			return nil, &FetchError{Class: "InvalidProxyURL", Message: err.Error(), Err: err}
 		}
 	}
 	tlsConfig := &tls.Config{}
@@ -279,17 +273,11 @@ func (h HTTPTransport) Do(ctx context.Context, req TransportRequest) (*Response,
 	httpReq.Header.Set("Accept-Encoding", "gzip, deflate")
 	httpReq.Header.Set("Accept", "*/*")
 	if chosen != nil {
-		transport.Proxy = http.ProxyURL(chosen.URL())
-		if chosen.Auth != "" {
-			// urllib3 sends the proxy headers with CONNECT for https targets
-			// and with the request itself for http targets.
-			transport.ProxyConnectHeader = http.Header{"Proxy-Authorization": {chosen.Auth}}
-			if httpReq.URL.Scheme == "http" {
-				httpReq.Header.Set("Proxy-Authorization", chosen.Auth)
-			}
-		}
+		// Go sends the proxy URL's credentials as Proxy-Authorization (with
+		// CONNECT for https targets, with the request for http targets).
+		transport.Proxy = http.ProxyURL(chosen)
 	}
-	if user, password, ok := urlBasicAuth(prepared); ok {
+	if user, password, ok := urlBasicAuth(preparedURL); ok {
 		// PreparedRequest.prepare_auth: credentials of the URL, latin-1.
 		header, err := basicAuthHeader(user, password)
 		if err != nil {
@@ -738,4 +726,17 @@ func classifyBodyError(err error) error {
 		return &FetchError{Class: "ChunkedEncodingError", Message: "Response ended prematurely: " + message, Transient: true, Err: err}
 	}
 	return &FetchError{Class: "ConnectionError", Message: message, Err: err}
+}
+
+// urlBasicAuth is the user and password of the URL's userinfo; ok is false
+// without a password or when both are empty.
+func urlBasicAuth(u *url.URL) (string, string, bool) {
+	if u.User == nil {
+		return "", "", false
+	}
+	password, hasPassword := u.User.Password()
+	if !hasPassword || u.User.Username() == "" && password == "" {
+		return "", "", false
+	}
+	return u.User.Username(), password, true
 }

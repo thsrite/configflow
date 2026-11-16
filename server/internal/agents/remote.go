@@ -12,10 +12,10 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/urlx"
 )
 
 // AgentURL is f"http://{agent['host']}:{agent['port']}{path}".
@@ -399,7 +399,7 @@ func (m *Manager) GetAgentLogs(ctx context.Context, agentID string, lines any, l
 
 // quote is urllib.parse.quote(value) (safe='/').
 func quote(value string) string {
-	plus := urlx.QuotePlus(value)
+	plus := url.QueryEscape(value)
 	// quote_plus encodes "/" and " "; quote keeps "/" and writes %20.
 	out := make([]byte, 0, len(plus))
 	for i := 0; i < len(plus); i++ {

@@ -14,7 +14,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/pyyaml"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
 )
 
@@ -439,7 +439,7 @@ func (c *Client) fetchSubscription(ctx context.Context, subID, url, target strin
 	if err != nil {
 		return nil, err
 	}
-	clientLog.Info("Sub-Store base URL: " + urlx.SafeURLForLog(base))
+	clientLog.Info("Sub-Store base URL: " + weburl.SafeForLog(base))
 	// A prefix and a random suffix: no clash with the user's subscriptions
 	// nor with concurrent requests for the same subscription.
 	tempName := "_cf_tmp_" + subID + "_" + c.env.RandomHex()
@@ -448,7 +448,7 @@ func (c *Client) fetchSubscription(ctx context.Context, subID, url, target strin
 		c.createSubscription(ctx, base, tempName, url, rawText)
 		defer c.deleteSubscription(ctx, base, tempName)
 		downloadURL := base + "/download/" + QuotePath(tempName) + "/" + target
-		clientLog.Info("Sub-Store 下载: " + urlx.SafeURLForLog(downloadURL))
+		clientLog.Info("Sub-Store 下载: " + weburl.SafeForLog(downloadURL))
 		resp, err := c.get(ctx, downloadURL, nil, []Param{{"noFlow", "true"}}, 30)
 		if err != nil {
 			return err

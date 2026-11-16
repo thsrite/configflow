@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -22,8 +21,7 @@ import (
 	"configflow/internal/logx"
 	"configflow/internal/pystr"
 	"configflow/internal/repo"
-	"configflow/internal/reqproxy"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 var logger = logx.Get("backend.utils.rule_fetch")
@@ -419,7 +417,7 @@ func latin1Bytes(text string) []byte {
 // Session.resolve_redirects(yield_requests=True) first: the Location text is
 // decoded as UTF-8 (UnicodeDecodeError), the body is read with
 // ChunkedEncodingError / ContentDecodingError ignored, and the target is
-// parsed (urlparse's ValueError; its port, when NO_PROXY is set). Every other
+// parsed (urlparse's ValueError). Every other
 // response is read with failures raised.
 func readUnstreamed(response *Response, httpsProxy bool) error {
 	location, hasLocation := response.HeaderValue("Location")
@@ -456,34 +454,8 @@ func readUnstreamed(response *Response, httpsProxy bool) error {
 			target = from.Scheme + ":" + target
 		}
 	}
-	parsed, err := urlparse(target, "")
-	if err != nil {
-		return err
-	}
-	if parsed.Netloc == "" {
-		return nil
-	}
-	hostname := parsed.Hostname()
-	if noProxy := envFirst("no_proxy", "NO_PROXY"); noProxy != "" && hostname != "" {
-		// rebuild_proxies → should_bypass_proxies reads the port of a hop
-		// whose host is not an IPv4 address.
-		if _, ipv4 := reqproxy.InetAtonExact(hostname); !ipv4 {
-			if _, _, err := parsed.Port(); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// envFirst is os.environ.get(a) or os.environ.get(b).
-func envFirst(names ...string) string {
-	for _, name := range names {
-		if value := os.Getenv(name); value != "" {
-			return value
-		}
-	}
-	return ""
+	_, err := urlparse(target, "")
+	return err
 }
 
 func localError(err error) error {
@@ -543,7 +515,7 @@ func (c *Client) requestWithRetries(ctx context.Context, url string, r *Request,
 			return nil, err
 		}
 		logger.Infof("规则下载连接中断（%s），%d 秒后重试第 %d 次：%s", fetch.Class,
-			int(retryDelays[attempt]/time.Second), attempt+1, urlx.SafeURLForLog(url))
+			int(retryDelays[attempt]/time.Second), attempt+1, weburl.SafeForLog(url))
 		c.Sleep(retryDelays[attempt])
 	}
 }
@@ -574,7 +546,7 @@ func (c *Client) RequestRule(ctx context.Context, url string, r Request) (*Respo
 		}
 		attempts = append(attempts, Attempt{candidate.Label, err})
 		if index+1 < len(candidates) {
-			logger.Warningf("规则下载失败（%s），改用%s：%s", PythonClass(err), candidates[index+1].Label, urlx.SafeURLForLog(url))
+			logger.Warningf("规则下载失败（%s），改用%s：%s", PythonClass(err), candidates[index+1].Label, weburl.SafeForLog(url))
 			continue
 		}
 		if len(attempts) == 1 {
@@ -587,10 +559,10 @@ func (c *Client) RequestRule(ctx context.Context, url string, r Request) (*Respo
 			parsed, _ := SplitURL(source.URL, "")
 			user, hasUser, password, hasPassword := parsed.userinfo()
 			if hasUser && user != "" {
-				secrets = append(secrets, urlx.Unquote(user))
+				secrets = append(secrets, weburl.Unquote(user))
 			}
 			if hasPassword && password != "" {
-				secrets = append(secrets, urlx.Unquote(password))
+				secrets = append(secrets, weburl.Unquote(password))
 			}
 		}
 		return nil, newRuleFetchError(attempts, secrets)

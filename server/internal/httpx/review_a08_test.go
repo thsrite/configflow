@@ -8,16 +8,16 @@ import (
 	"configflow/internal/httpx/httpxtest"
 )
 
-// TestQueryInvalidUTF8IsRequotedLikeWerkzeug: Werkzeug 3 decodes request.args
-// with errors="werkzeug.url_quote", so invalid UTF-8 escapes come back as
-// upper-case %XX, not U+FFFD (found by the A08 review's installer fuzz).
-// Expectations from Werkzeug's Request(environ).args on the test server.
-func TestQueryInvalidUTF8IsRequotedLikeWerkzeug(t *testing.T) {
+// TestQueryInvalidUTF8BecomesReplacementCharacter: query names and values
+// are percent-decoded (with "+" as space); invalid UTF-8 becomes U+FFFD
+// per maximal invalid sequence (Werkzeug re-quoted it as %XX; accepted N2
+// difference, garbage input only)
+// and a "%" that starts no escape stays as it is.
+func TestQueryInvalidUTF8BecomesReplacementCharacter(t *testing.T) {
 	cases := map[string][][2]string{
-		"a=%c0%af&b=%e4%b8&c=%FE+x&d=%e4%b8%ad%ff": {{"a", "%C0%AF"}, {"b", "%E4%B8"}, {"c", "%FE x"}, {"d", "中%FF"}},
-		"%ff=1&k%e4=%e4a":                          {{"%FF", "1"}, {"k%E4", "%E4a"}},
-		"x=%e0%80%41&y=%ed%a0%80&z=%f4%90%80%80":   {{"x", "%E0%80A"}, {"y", "%ED%A0%80"}, {"z", "%F4%90%80%80"}},
-		"q=%zz%e4&r=%%ff":                          {{"q", "%zz%E4"}, {"r", "%%FF"}},
+		"a=%c0%af&b=%e4%b8&c=%FE+x&d=%e4%b8%ad%ff": {{"a", "\uFFFD\uFFFD"}, {"b", "\uFFFD"}, {"c", "\uFFFD x"}, {"d", "中\uFFFD"}},
+		"%ff=1&k%e4=%e4a":                          {{"\uFFFD", "1"}, {"k\uFFFD", "\uFFFDa"}},
+		"q=%zz%e4&r=%%ff&s=%41+%2B":                {{"q", "%zz\uFFFD"}, {"r", "%\uFFFD"}, {"s", "A +"}},
 	}
 	for raw, want := range cases {
 		got := httpx.ParseQuery(raw)

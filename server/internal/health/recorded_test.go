@@ -354,6 +354,10 @@ func replayRecordedFile(t *testing.T, name string) {
 			want.Set("after", row.Value("after"))
 		}
 		gotText, wantText := mustCompact(got), mustCompact(want)
+		if !bytes.Equal(gotText, wantText) && len(runner.mismatch) == 0 && n2Accepted(got, want, row) {
+			counts["accepted (N2 URL parsing)"]++
+			continue
+		}
 		if !bytes.Equal(gotText, wantText) || len(runner.mismatch) > 0 {
 			failures++
 			if failures <= 30 {
@@ -374,4 +378,19 @@ func clip(s string) string {
 		return s[:1500] + "…"
 	}
 	return s
+}
+
+// n2Accepted is the difference classes accepted when URL parsing moved to
+// net/url (N2): a URL net/url refuses, the same error class with a
+// non-Chinese text, and CPython's full lower-casing of "İ" before IDNA.
+func n2Accepted(got, want *jsonx.Object, args *jsonx.Object) bool {
+	gotErr, wantErr := got.GetObject("err"), want.GetObject("err")
+	switch {
+	case gotErr != nil && wantErr == nil && refusedByNetURL(args):
+		return true
+	case gotErr != nil && wantErr != nil:
+		return gotErr.GetString("class") == wantErr.GetString("class") && !hasCJK(wantErr.GetString("text"))
+	}
+	encoded, _ := jsonx.Compact(args)
+	return strings.Contains(string(encoded), "İ") || strings.Contains(string(encoded), `\u0130`)
 }

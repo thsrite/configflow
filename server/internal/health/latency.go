@@ -14,7 +14,7 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/subs"
 	"configflow/internal/substore"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // Node latency (backend/utils/node_latency.py): real proxy latency through
@@ -70,15 +70,14 @@ func Settings(ctx context.Context) (*jsonx.Object, error) {
 	env := currentEnv
 	invalid := &ProbeUnavailable{"节点测速设置无效，请检查测试地址及超时（500–10000 毫秒）"}
 	url := pystr.Strip(env.getenv("CONFIGFLOW_NODE_TEST_URL", "https://www.gstatic.com/generate_204"))
-	parsed, err := urlx.Split(url)
+	parsed, err := weburl.Parse(url)
 	if err != nil {
 		return nil, invalid
 	}
-	username, _, password, _ := userInfo(parsed.Netloc)
-	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || username != "" || password != "" {
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || weburl.HasCredentials(parsed) {
 		return nil, invalid
 	}
-	if _, _, err := parsed.Port(); err != nil {
+	if _, _, err := weburl.Port(parsed); err != nil {
 		return nil, invalid
 	}
 	timeout, err := pystr.Int(env.getenv("CONFIGFLOW_NODE_TEST_TIMEOUT_MS", "5000"), 10)

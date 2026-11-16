@@ -98,3 +98,16 @@ func TestUnquoteIsLenient(t *testing.T) {
 		t.Error(got)
 	}
 }
+
+func TestParseZone(t *testing.T) {
+	for in, want := range map[string]string{
+		"udp://[fe80::1%eth0]:53":   "fe80::1%eth0",
+		"udp://[fe80::1%25eth0]:53": "fe80::1%eth0",
+		"udp://[::1]:53":            "::1",
+	} {
+		u, err := Parse(in)
+		if err != nil || u.Hostname() != want {
+			t.Errorf("%q: %v %v, want %q", in, u, err, want)
+		}
+	}
+}

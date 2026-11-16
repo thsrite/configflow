@@ -19,8 +19,7 @@ import (
 	"unicode/utf16"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/reqproxy"
-	"configflow/internal/urlx"
+	"configflow/internal/weburl"
 )
 
 // environ is os.environ, read on every request like requests does (a
@@ -277,14 +276,11 @@ type HTTPClient interface {
 	Do(ctx context.Context, req *Request) (*Response, error)
 }
 
-// RequestsClient is the production HTTPClient, shaped after requests 2.31:
-// default headers (python-requests User-Agent unless given, gzip/deflate),
-// up to 30 redirects, proxies from the environment unless an explicit
-// proxy is given, per-read timeouts, requote_uri on the URL.
-//
-// Not reproduced: urllib3's URL normalisation beyond requote_uri (host
-// lowercasing, IDNA), and Go never sends loopback requests through an
-// environment proxy where requests would (unless NO_PROXY lists them).
+// RequestsClient is the production HTTPClient, shaped after the requests
+// library the Python panel used: default headers (python-requests User-Agent
+// unless given, gzip/deflate), up to 30 redirects, the proxy from the
+// environment (weburl.FromEnvironment, per hop) unless an explicit proxy is
+// given, per-read timeouts, the URL normalised by weburl.Prepare.
 type RequestsClient struct{}
 
 type deadlineConn struct {
@@ -310,18 +306,27 @@ type tunnelError struct{ status string }
 
 func (e *tunnelError) Error() string { return "Tunnel connection failed: " + e.status }
 
-// PrepareURL is requests' URL preparation (urlx.RequestsPrepareURL) with
-// params= appended to the query.
+// PrepareURL is the URL requested for raw plus params (weburl.Prepare). A
+// URL with a colon that does not start with "http" is left as it is, so
+// checkURL reports it as having no connection adapter; an unparsable URL is
+// returned unchanged with the error.
 func PrepareURL(raw string, params []Param) (string, error) {
+	if strings.Contains(raw, ":") && !strings.HasPrefix(asciiLower(raw), "http") {
+		return raw, nil
+	}
 	pairs := make([][2]string, len(params))
 	for i, p := range params {
 		pairs[i] = [2]string{p.Key, p.Value}
 	}
-	return urlx.RequestsPrepareURL(raw, pairs)
+	u, err := weburl.Prepare(raw, pairs)
+	if err != nil {
+		return raw, err
+	}
+	return u.String(), nil
 }
 
-// QuotePath is urllib.parse.quote(s, safe="").
-func QuotePath(s string) string { return urlx.Quote(s, "") }
+// QuotePath percent-encodes s as one path segment.
+func QuotePath(s string) string { return weburl.Quote(s) }
 
 // checkURL raises what requests raises before sending: a URL with a colon
 // that does not start with "http" has no connection adapter
@@ -357,12 +362,16 @@ func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, erro
 	// asked has gone: a cancelled request context must not abort a fetch
 	// whose result (or failure cooldown) other callers share.
 	ctx = context.WithoutCancel(ctx)
-	prepared, _ := PrepareURL(strings.TrimLeftFunc(request.URL, pyIsSpace), request.Params)
+	prepared, prepareErr := PrepareURL(strings.TrimLeftFunc(request.URL, pyIsSpace), request.Params)
 	if err := checkURL(prepared); err != nil {
 		return nil, err
 	}
+	if prepareErr != nil {
+		return nil, &RequestError{Class: "InvalidURL", Message: prepareErr.Error(), Err: prepareErr}
+	}
+	target, _ := url.Parse(prepared)
 	// The proxy is chosen for the first URL before anything is sent.
-	if _, err := chooseProxy(request.Proxy, prepared); err != nil {
+	if _, err := chooseProxy(request.Proxy, target); err != nil {
 		return nil, err
 	}
 	var body io.Reader
@@ -391,68 +400,33 @@ func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, erro
 	}
 	viaProxy, connected := false, false
 	dialer := &net.Dialer{Timeout: request.Timeout.Connect}
-	newTransport := func(chosen *reqproxy.Proxy) *http.Transport {
-		transport := &http.Transport{
-			DisableKeepAlives:  true,
-			DisableCompression: false,
-			DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-				conn, err := dialer.DialContext(ctx, network, address)
-				if err != nil {
-					return nil, err
-				}
-				connected = true
-				return &deadlineConn{Conn: conn, timeout: request.Timeout.Read}, nil
-			},
-			TLSHandshakeTimeout: request.Timeout.Connect,
-			OnProxyConnectResponse: func(_ context.Context, _ *url.URL, _ *http.Request, res *http.Response) error {
-				if res.StatusCode != 200 {
-					return &tunnelError{res.Status}
-				}
-				return nil
-			},
-		}
-		if chosen != nil {
-			transport.Proxy = http.ProxyURL(chosen.URL())
-			if chosen.Auth != "" {
-				// urllib3 sends proxy_headers with CONNECT for https targets.
-				transport.ProxyConnectHeader = http.Header{"Proxy-Authorization": {chosen.Auth}}
+	transport := &http.Transport{
+		// Every redirect hop gets the proxy of its own URL; Go sends the
+		// proxy URL's credentials as Proxy-Authorization.
+		Proxy: func(r *http.Request) (*url.URL, error) {
+			proxy, err := chooseProxy(request.Proxy, r.URL)
+			viaProxy = proxy != nil
+			return proxy, err
+		},
+		DisableKeepAlives:  true,
+		DisableCompression: false,
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			conn, err := dialer.DialContext(ctx, network, address)
+			if err != nil {
+				return nil, err
 			}
-		}
-		return transport
+			connected = true
+			return &deadlineConn{Conn: conn, timeout: request.Timeout.Read}, nil
+		},
+		TLSHandshakeTimeout: request.Timeout.Connect,
+		OnProxyConnectResponse: func(_ context.Context, _ *url.URL, _ *http.Request, res *http.Response) error {
+			if res.StatusCode != 200 {
+				return &tunnelError{res.Status}
+			}
+			return nil
+		},
 	}
-	var transports []*http.Transport
-	defer func() {
-		for _, t := range transports {
-			t.CloseIdleConnections()
-		}
-	}()
-	// Redirect hops get requests' rebuild_proxies choice (reqproxy.ForRedirect)
-	// and the Proxy-Authorization of that proxy.
-	hops := 0
-	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		hops++
-		var chosen *reqproxy.Proxy
-		var err error
-		if hops == 1 || request.Proxy != "" {
-			chosen, err = chooseProxy(request.Proxy, r.URL.String())
-		} else if chosen, err = reqproxy.ForRedirect(environ(), prepared, r.URL.String()); err != nil {
-			class, _, _ := strings.Cut(err.Error(), ":")
-			err = &RequestError{Class: class, Message: err.Error(), Err: err}
-		}
-		if err != nil {
-			return nil, err
-		}
-		viaProxy = chosen != nil
-		r = r.Clone(r.Context())
-		r.Header.Del("Proxy-Authorization")
-		if chosen != nil && chosen.Auth != "" && r.URL.Scheme == "http" {
-			// ... and with the request itself for http targets.
-			r.Header.Set("Proxy-Authorization", chosen.Auth)
-		}
-		t := newTransport(chosen)
-		transports = append(transports, t)
-		return t.RoundTrip(r)
-	})
+	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: func(next *http.Request, via []*http.Request) error {
 		if len(via) > 30 {
 			// requests raises with response= the 31st redirect response.
@@ -481,26 +455,20 @@ func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, erro
 		URL: resp.Request.URL.String(), Body: data}, nil
 }
 
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
-
-// chooseProxy is requests' proxy for a URL: proxies= when given (it wins
-// over the environment), else the environment (trust_env) without Go's
-// automatic loopback bypass. nil = direct.
-func chooseProxy(explicit, rawURL string) (*reqproxy.Proxy, error) {
-	var chosen *reqproxy.Proxy
+// chooseProxy is the proxy for target: the explicit one when given (it wins
+// over the environment), else the environment's. nil = direct.
+func chooseProxy(explicit string, target *url.URL) (*url.URL, error) {
+	var proxy *url.URL
 	var err error
 	if explicit != "" {
-		chosen, err = reqproxy.FromValue(explicit)
+		proxy, err = weburl.ParseProxy(explicit)
 	} else {
-		chosen, err = reqproxy.FromEnvironment(environ(), rawURL)
+		proxy, err = weburl.FromEnvironment(environ(), target)
 	}
 	if err != nil {
-		class, _, _ := strings.Cut(err.Error(), ":")
-		return nil, &RequestError{Class: class, Message: err.Error(), Err: err}
+		return nil, &RequestError{Class: "InvalidProxyURL", Message: err.Error(), Err: err}
 	}
-	return chosen, nil
+	return proxy, nil
 }
 
 func isTimeout(err error) bool {
