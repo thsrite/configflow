@@ -15,7 +15,7 @@ import time
 import urllib.error
 import urllib.request
 
-from compare import Policy, Difference, response_diffs, database_diffs, file_diffs
+from compare import Policy, Difference, response_diffs, database_diffs, file_diffs, database, files as stored_files
 from inventory import declared_states
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -90,6 +90,7 @@ class Pair:
         self.policy = Policy(start=time.time())
         self.registered = set()
         self.declared = declared_states()
+        self.unimplemented_mutations = set()
 
     def environment(self, directory, port):
         env = dict(os.environ)
@@ -215,11 +216,13 @@ class Pair:
 
     def request(self, case_id, route, path=None, *, method=None, body=None, auth='admin', headers=None,
                 variant='', expect=None, check=None, writes=False, files=True, policy=None, capture=None,
-                interaction=None, bodies=None, paths=None):
+                interaction=None, bodies=None, paths=None, projection=None):
         nominal_method, nominal_path = route.split(' ', 1)
         method, path = method or nominal_method, path or nominal_path
         policy = policy or self.policy
-        available = self.route_available(route)
+        registered = self.route_available(route)
+        available = registered and not self.unimplemented_mutations
+        before_reference = (database(self.dirs[0]), stored_files(self.dirs[0])) if writes and not available else None
         replies = []
         for index, base in enumerate(self.bases):
             if index == 1 and not available:
@@ -248,7 +251,13 @@ class Pair:
         category = re.search(r'-(S|F|B)\d+', case_id)
         category = category[1] if category else case_id.split('-')[0]
         if not available:
-            if self.declared.get((nominal_method, nominal_path)) == 'done':
+            if before_reference is not None and before_reference != (database(self.dirs[0]), stored_files(self.dirs[0])):
+                self.unimplemented_mutations.add(route)
+            if registered:
+                self.recorder.record(case_id, variant, route, category, 'go-unimplemented-dependency',
+                                     python_status=reference.status, go_status=None,
+                                     blocked_by=sorted(self.unimplemented_mutations))
+            elif self.declared.get((nominal_method, nominal_path)) == 'done':
                 self.recorder.record(case_id, variant, route, category, 'different',
                                      [Difference('route.registration', 'declared-done-but-unregistered', True, False)],
                                      python_status=reference.status, go_status=None)
@@ -260,7 +269,7 @@ class Pair:
         diffs = list(captured or [])
         if interaction:
             diffs += interaction.compare(policy)
-        diffs += response_diffs(*replies, policy, method=method)
+        diffs += response_diffs(*replies, policy, method=method, projection=projection)
         if writes:
             diffs += database_diffs(*self.dirs, policy)
             if files:

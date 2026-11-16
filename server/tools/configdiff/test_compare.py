@@ -158,6 +158,49 @@ class Comparators(unittest.TestCase):
             exchange.inputs[1] = []
             self.assertTrue(exchange.compare(Policy()))
 
+    def test_artifact_verified_digest_and_content_mutation(self):
+        import hashlib
+        from artifacts import validate, ArtifactError
+        with tempfile.TemporaryDirectory() as tmp:
+            def fixture(name, content):
+                folder = Path(tmp, name, '.generated-previews', 'a' * 32)
+                folder.mkdir(parents=True, exist_ok=True)
+                digest = hashlib.sha256(content).hexdigest()
+                manifest = {'agent_id': 'manual', 'deployment_id': 'b' * 32, 'profile_id': 'default',
+                    'service_type': 'mihomo', 'config_path': 'config.yaml', 'files': [
+                        {'path': 'config.yaml', 'role': 'config', 'size': len(content), 'sha256': digest}]}
+                output = io.BytesIO()
+                with tarfile.open(fileobj=output, mode='w:gz') as tar:
+                    for path, value in [('manifest.json', json.dumps(manifest).encode()), ('files/config.yaml', content)]:
+                        member = tarfile.TarInfo(path)
+                        member.size, member.mode = len(value), 0o600
+                        tar.addfile(member, io.BytesIO(value))
+                archive = output.getvalue()
+                record = {'id': 'a' * 32, 'deployment_id': 'b' * 32, 'expires_at': 3700, 'agent_id': 'manual',
+                    'profile_id': 'default', 'service_type': 'mihomo', 'bundle_meta': {'manifest': manifest,
+                        'sha256': hashlib.sha256(archive).hexdigest(), 'config_version': digest[:8]}}
+                (folder / 'record.json').write_text(json.dumps(record))
+                (folder / 'bundle.tar.gz').write_bytes(archive)
+                return Path(tmp, name), folder
+            left, _ = fixture('left', b'port: 8080\n')
+            right, folder = fixture('right', b'port: 8080\n')
+            self.assertEqual(differences(validate(left, 'a'*32, 100, 100)['projection'],
+                                        validate(right, 'a'*32, 100, 100)['projection']), [])
+            fixture('right', b'port: 8081\n')
+            self.assertTrue(differences(validate(left, 'a'*32, 100, 100)['projection'],
+                                       validate(right, 'a'*32, 100, 100)['projection']))
+            record = json.loads((folder / 'record.json').read_text())
+            record['bundle_meta']['sha256'] = '0' * 64
+            (folder / 'record.json').write_text(json.dumps(record))
+            with self.assertRaises(ArtifactError):
+                validate(right, 'a'*32, 100, 100)
+
+    def test_epoch_window_mutation(self):
+        policy = Policy(start=100, end=105, epochs={'body.expires_at': 3600})
+        self.assertEqual(differences({'expires_at': 3700}, {'expires_at': 3705}, policy=policy), [])
+        for invalid in (1, 3800, True, '3700'):
+            self.assertTrue(differences({'expires_at': 3700}, {'expires_at': invalid}, policy=policy))
+
 
 if __name__ == '__main__':
     unittest.main()

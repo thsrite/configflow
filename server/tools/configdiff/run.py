@@ -64,6 +64,8 @@ def main():
     groups.update(nodes)
     from cases.probes import GROUPS as probes
     groups.update(probes)
+    from cases.artifact import GROUPS as artifact
+    groups.update(artifact)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

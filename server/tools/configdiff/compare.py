@@ -28,6 +28,7 @@ class Difference:
 class Policy:
     times: set = field(default_factory=set)
     durations: set = field(default_factory=set)
+    epochs: dict = field(default_factory=dict)
     # Only separately diagnosed CPython exception messages may use this exact path.
     internal_errors: dict = field(default_factory=dict)
     start: float = 0
@@ -61,6 +62,11 @@ def timestamp(value, policy):
 
 def differences(left, right, path='body', policy=None):
     policy = policy or Policy()
+    if path in policy.epochs:
+        offset = policy.epochs[path]
+        if any(type(v) is not int or not policy.start + offset - 2 <= v <= policy.end + offset + 2 for v in (left, right)):
+            return [Difference(path, 'invalid-epoch-window', left, right)]
+        return []
     if path in policy.durations:
         maximum = max(0, (policy.end - policy.start + 2) * 1000)
         if any(type(v) is not int or not 0 <= v <= maximum for v in (left, right)):
@@ -139,7 +145,7 @@ HEADERS = ('content-type', 'content-disposition', 'cache-control', 'etag', 'x-co
            'last-modified', 'accept-ranges', 'content-range', 'referrer-policy', 'x-content-type-options')
 
 
-def response_diffs(left, right, policy=None, *, method='GET', filename=''):
+def response_diffs(left, right, policy=None, *, method='GET', filename='', projection=None):
     policy = policy or Policy()
     out = differences(left.status, right.status, 'status', policy)
     for key in HEADERS:
@@ -159,6 +165,8 @@ def response_diffs(left, right, policy=None, *, method='GET', filename=''):
         return out
     try:
         a, b = structure(left.body, ct_left, filename), structure(right.body, ct_right, filename)
+        if projection:
+            a, b = projection(a, 0), projection(b, 1)
     except (ValueError, UnicodeError, yaml.YAMLError, zipfile.BadZipFile, tarfile.TarError) as error:
         return out + [Difference('body', 'parse-error', type(error).__name__, '')]
     out.extend(differences(a, b, 'body', policy))
