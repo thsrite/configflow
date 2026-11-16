@@ -1723,7 +1723,7 @@ Boundary coverage and Python test mapping:
 
 Scoped validation on .63: importer vet/race `ok configflow/internal/importer 1.659s`; webdav vet/race `ok configflow/internal/webdav 1.721s`; `CONFIGFLOW_DIFF=1` race differential `ok configflow/internal/webdav/difftest 13.946s`; settings scoped race previously passed (5.263s). Early .32 proddiff: GET routes 65, cases 2060, `coverage_regressions=0`, `new=0`, `stale=0` (5 existing unique differences).
 
-Commits before final acceptance: `ed13691f` core/worker; `45a044f8` typed importer; `decafb67` production hook/settings routes; `cb09668e` aliases/storage boundary; `90866647` Snell corpus/round trip; `cb0c641e` DAV boundary/lifecycle. Next: final .32 gofmt/vet/scoped race/full/differential/proddiff; rebase go; clean; no push.
+Commits before final acceptance: `ed13691f` core/worker; `45a044f8` typed importer; `decafb67` production hook/settings routes; `cb09668e` aliases/storage boundary; `90866647` Snell corpus/round trip; `cb0c641e` DAV boundary/lifecycle. Final .32 gofmt/vet and scoped race pass. Initial full run exposed only stale server.TestNewAppRegistersImplementedRoutes assertions that these two newly implemented routes must be absent. The test now requires both endpoints; scoped server vet/race passes (`ok configflow/internal/server 1.039s`). Full suite/differential/proddiff rerun follows; rebase go; clean; no push.
 
 ## C36 — setup flow
 
