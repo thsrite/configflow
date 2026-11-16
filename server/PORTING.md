@@ -56,9 +56,12 @@ server/
    boundaries and names; no `any` parameters or emulated Python dynamic typing to mirror Python call
    shapes. Chinese user-facing messages stay byte-identical. **Size budget:** Go non-test lines of a
    module ≤ 1.2× the module's Python lines; report the numbers in the hand-back and justify any excess.
-2. **Types.** Prefer typed Go structs. Where a stored document may contain fields the code does not know,
-   keep them (e.g. an `Extra map[string]json.RawMessage` / ordered remainder) so read-modify-write loses
-   nothing. Use `jsonx` only for genuinely free-form documents (user-edited config fragments).
+2. **Types: Go-native only.** Use typed Go structs with `encoding/json` tags. Fields of a stored
+   document the code does not know are kept with native means (e.g. an `Extra map[string]json.RawMessage`
+   captured by a custom `UnmarshalJSON`/`MarshalJSON`), so read-modify-write loses nothing. Free-form
+   user-edited YAML (custom Mihomo/MosDNS fragments) is held as `*yaml.Node` from `gopkg.in/yaml.v3`
+   (keeps order and comments); free-form JSON as `json.RawMessage`. Do not use `jsonx` in new code; it is
+   removed in the S passes (N8).
 3. **Stored data must stay compatible.** Data written by Python (`configflow.sqlite3`, files under
    `DATA_DIR`) must load in Go, and Go must write data the frontend and Agents read correctly. Byte-level
    identity with Python's formatting is not required.
