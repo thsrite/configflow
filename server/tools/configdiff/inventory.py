@@ -49,3 +49,18 @@ def missing_profile_rows():
                 raise ValueError('profile failure pair must have exactly two IDs')
             out.append((row[1], row[2], int(ids[1])))
     return out
+
+
+def selector_rows():
+    """Only boundary IDs explicitly assigned to P3–P6 in the reviewed table."""
+    out = []
+    for line in MATRIX.read_text().splitlines():
+        row = re.match(r'^\| \*\*(R\d{3})\*\* `([^`]+)`', line)
+        if not row:
+            continue
+        for first, last, pfirst, plast in re.findall(r'\*\*B(\d+)(?:–(\d+))?\*\* P(\d+)(?:–(\d+))?', line):
+            first, last, pfirst, plast = int(first), int(last or first), int(pfirst), int(plast or pfirst)
+            if last - first != plast - pfirst or not 3 <= pfirst <= plast <= 6:
+                raise ValueError('matrix P3–P6 boundary range changed')
+            out.append((row[1], row[2], list(zip(range(first, last + 1), range(pfirst, plast + 1)))))
+    return out

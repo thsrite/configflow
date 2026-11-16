@@ -185,6 +185,8 @@ def main():
     groups.update(discovery_auto)
     from cases.discovery_auto_quiet import GROUPS as discovery_auto_quiet
     groups.update(discovery_auto_quiet)
+    from cases.profile_reads import GROUPS as profile_reads
+    groups.update(profile_reads)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

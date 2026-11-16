@@ -17,6 +17,16 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_selector_defaults_are_semantic_but_editable_text_and_types_are_preserved(self):
+        from cases.profile_reads import project
+        parse = project('GET /api/custom-config/mihomo')
+        left = {'config': '# keep\r\nmixed-port: 19999\n', 'default_config': 'a: 1\nb: false\n'}
+        right = {**left, 'default_config': 'b: false\na:    1\n'}
+        self.assertEqual(differences(parse(left, 0), parse(right, 1)), [])
+        for patch in ({'config': 'mixed-port: 19999\n'}, {'config': left['config'].replace('\r\n', '\n')},
+                      {'default_config': 'a: 2\nb: false\n'}, {'default_config': None}):
+            self.assertTrue(differences(parse(left, 0), parse({**right, **patch}, 1)))
+
     def test_unwired_runtime_job_skips_go_but_wired_wrong_final_job_is_detected(self):
         import threading
         from datetime import datetime, timezone

@@ -1008,3 +1008,22 @@ Ran 50 tests in 0.775s; OK
 ```
 
 继续website跨空间busy、真实Agent超时、H064、P边界及其余R/H/T；未做最终全量。
+
+## 批次 57：GET入口P3–P6与不同空间的实际内容
+
+- 新增137个读取变体，54实际比较通过、83入口尚未接通；新增101个原清单B编号。inventory仅从已审表中提取明确P3–P6编号，检查范围一一对应；不创造编号来填覆盖数。统计/dependencies等需专用观察的入口不借此覆盖。
+- 逐入口验证X-ConfigFlow-Profile：URL覆盖query/header、query profile覆盖profile_id、header生效、无selector稳定默认。清单明确无URL profile的P3按query覆盖header测试，显式URL始终优先；原编号/数量不变。
+- 另一空间有不同Mihomo原文、策略组、MATCH规则、ignored列表；不仅查头，完整响应参与差分。Mihomo原文、discovery ignored和Agent绑定列表另作独立准确值检查。Agent列表只验证持久绑定归属，未用种DB冒充在线/heartbeat状态。
+- 每次源端读取全DB/revision/commit必须不变，生成读取允许的文件副作用仍按完整文件比较。设置/列表/拉取使用真实有效空配置；动态业务对象模板明确用不存在ID检查选择器，此P覆盖不替代各路由独立的成功/对象失败业务fixture，也没有全表发坏JSON。
+- custom-config只有生成的default_config按YAML/INI语义比较，用户编辑config原文字节继续严格；保留字段类型，不把null当空文本。新增默认模板变化/编辑注释或CRLF丢失/类型错误故意自检，51项通过，无新业务差异。
+
+```text
+.63 run.py --groups profile-read-selectors
+current compared=54 go-unimplemented=83 design_errors=[] seconds=53.98
+cumulative compared=1975 go-unimplemented=5216 dependency=37 different=67 O12-separate=1
+request_variants=7296 named_matrix_cases=3661（S562 F2479 B620），H去重253，G去重16
+.63 python -m unittest discover -s server/tools/configdiff -p test_compare.py
+Ran 51 tests; OK
+```
+
+继续写入入口P边界、custom-config业务用例、website跨空间busy/真实Agent超时、H064与其余R/H/T；未做最终全量。
