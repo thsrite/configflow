@@ -202,7 +202,7 @@ files once). After `cf-test`, use `rt --no-sync`.
   state before touching them.
 - DNS01 (192.168.0.11) still has `/opt/configflow-agent/config-oxidns.json.bak-before-ip-change-20261114`;
   delete only after the maintainer confirms.
-- VM lab tests proposed by reviewers, all waiting for the maintainer's go-ahead: installers (A08 plan),
+- **VM lab tests approved by the maintainer on 2026-11-16** (batches L1–L6, Opus, WORKFLOW.md "VM lab tests"); originally proposed: installers (A08 plan),
   Agent web update/rollback and address follow on real DHCP renumbering (A15 plan), Docker HA (A09/A10),
   and later publish/HA/router modules.
 - Decided not to fix in Python (being retired): trailing-newline `re.match` validation bugs — fixed in Go only

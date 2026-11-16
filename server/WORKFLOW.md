@@ -340,6 +340,7 @@ risk" (blockers first). Every item is done by an Opus agent that did not author 
 | O12 | Behaviour-change ledger: every place Go intentionally differs from Python (fixed Python bugs, dropped features, format changes) collected from all PROGRESS files and checked for user-visible impact → release notes | before the switch |
 | O13 | Feature-completeness final audit: `routes.tsv`, background tasks, every frontend API call, settings keys vs Go — by an Opus that ported nothing | before the switch |
 | O14 | Switch and release plan: the maintainer's production cutover (checks, data compatibility, Agents' one full re-publish and how to verify it, stop-loss without Python rollback), **and the public release for other users of thsrite/configflow** (legacy-data refusal path, Docker image/arch/tzdata, upgrade notes), plus the lab test plan (needs the maintainer's go-ahead to run) | when O13 is clean |
+| O16 | VM lab batches L1–L6 (section "VM lab tests" below) | each batch's trigger |
 | O15 | Architecture overview for future contributors (`server/ARCHITECTURE.md`): packages, data flow, background tasks, how to add a route/generator | before the switch |
 
 The maintainer is only asked for decisions that are theirs: lab test go-ahead, switch timing, user-visible
@@ -350,3 +351,27 @@ behaviour changes from O12, and anything touching production.
 No agent works directly in the shared worktree `~/program/configflow-go` / on `go` any more: it blocks
 fast-forward merges whenever another branch touches the same files (S-oxidns vs the N2 finish, 2026-11-16).
 Every agent gets its own Paseo worktree branch off `go`; only the coordinator moves `go`.
+
+## VM lab tests — approved by the maintainer (2026-11-16)
+
+The maintainer approved running the HR lab tests on the PVE lab without asking per test. Executed by **Opus**
+(added to the Opus list as **O16**; PVE .6 also hosts production guests, so this is not Codex work), after
+each batch's modules are ported and verified, in this order:
+
+| Batch | Covers | Needs |
+|---|---|---|
+| L1 | A08–A10 installers (Debian 12/systemd + Alpine 3.24/OpenRC guests, Docker host/bridge/macvlan, Compose bundle/direct/compact, stale links), A15 web upgrade/rollback, legacy protocol-1 update, address follow on a real DHCP renumbering — plans in PROGRESS-agents A08/A09/A10/A15 | now (Go serves those routes) |
+| L2 | A01+A14 publish / activate / rollback / recover; A11 bundle on real guests | A14 ported + verified |
+| L3 | A16 rule sync, A17 DNS follow, A18 DNS HA (keepalived VIP pair) | those modules verified |
+| L4 | A19–A22 Linux gateway modes, A23 IPv6 readiness against a lab RouterOS | those modules verified |
+| L5 | routers R04/R05/R07–R14 against a lab RouterOS CHR and a lab iKuai VM (publish, policy routing, return routing, DNS, IPv6) | those modules verified |
+| L6 | O10 24 h soak (RSS/CPU/goroutines/fds with the prod snapshot imported and devices repointed to lab guests) and the O14 switch rehearsal | before the switch |
+
+Safety rules for every batch (from the lab notes in memory and earlier labs):
+- PVE .6 only, isolated bridge `cfgt` (10.97.0.0/24, nft `inet cfgt` drops lab→private LANs); new guests only,
+  recorded in an owner file under `/root/cf-gwip-lab/` before they are started; **never touch** VM 101
+  (ros-chr), VM 107 (oxidns), CT 105 (mihomo) or any guest not recorded as a lab guest by this work.
+- If the prod snapshot is imported into a lab panel, repoint or disable every router, Agent, backup and
+  subscription before anything can publish; the lab panel must not reach production devices.
+- Each batch ends with a short report in `server/parity/lab/L<n>.md` (what ran, results, defects → tasks)
+  and the guests are destroyed afterwards unless the next batch reuses them.
