@@ -135,5 +135,37 @@ proddiff generator no test files). Production differential ended with
 `self-check: status=PASS json-leaf=PASS yaml-leaf=PASS text-line=PASS` and
 `baseline: new=0 stale=0`; no coverage regressions, 5 unrelated existing global
 baseline differences. Surge/Loon each had 2 successful main configs and 4
-successful subscriptions. The branch will be rebased onto the updated `go` and
-these checks repeated because shared rule helpers changed during this run.
+successful subscriptions. The checks were repeated after rebasing onto the updated `go`, because shared
+rule helpers changed during the first run.
+
+## Final integrated acceptance
+
+The same `.32` command sequence passed again after the shared rule changes were
+integrated: gofmt listed no files; `go vet ./...` passed; convert race passed in
+**62.514 s**; the full suite passed (convert **19.667 s**, installer **174.985 s**).
+Final full-suite lines:
+
+```text
+ok  configflow/internal/weburl  0.005s
+ok  configflow/internal/yamlx  0.821s
+?   configflow/tools/proddiff/generator  [no test files]
+```
+
+Production differential final lines:
+
+```text
+self-check: status=PASS json-leaf=PASS yaml-leaf=PASS text-line=PASS
+baseline: new=0 stale=0
+```
+
+The intervening JSON summary reports `coverage_regressions=0`, `new=0`,
+`stale=0`, with 5 pre-existing unrelated global differences. Surge and Loon each
+succeeded on 2 main configs and 4 subscriptions. No output-semantic differences,
+public API changes or new dependencies. Functional review is **verified**; only
+the explicitly assigned S-convert structural debt remains.
+
+Added artifacts: `review_clients_test.go` (83 lines),
+`testdata/review_clients_gen.py` (273 lines), `review_clients.jsonl.gz` (306
+reference rows; 16 expected rejections). `clients_py.go` was renamed to
+`clients.go` and reduced from 387 to 366 lines. Snapshot trace failures now
+suppress exception text so private values cannot escape through a traceback.

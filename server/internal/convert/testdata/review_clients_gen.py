@@ -264,6 +264,10 @@ def synthetic():
 
 if __name__ == '__main__':
     if len(sys.argv) == 3 and sys.argv[1] == '--snapshot-coverage':
-        snapshot_coverage(Path(sys.argv[2]))
+        try:
+            snapshot_coverage(Path(sys.argv[2]))
+        except Exception:
+            # Snapshot exception messages may contain private values.
+            raise SystemExit('snapshot coverage failed (details suppressed)') from None
     else:
         synthetic()
