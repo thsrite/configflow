@@ -52,6 +52,12 @@ server/
    - In the module's PROGRESS section, list **every Python test file of the module and how each is
      covered** (replay / corpus / differential / hand-ported / deferred to module X / not applicable + why),
      so a reviewer can check that nothing is uncovered. Already hand-ported tests stay.
+4b. **Request cancellation must not abort work Python would finish.** In Flask a request thread runs to
+   completion even if the browser disconnects. In Go, `c.Context()` is cancelled when the client goes away.
+   Pass `context.WithoutCancel(ctx)` (keeping the repo Scope) to anything that writes state, takes
+   repository locks, runs shared/coalesced downloads, spawns workers or records task status; only use the
+   cancellable context where Python itself has a timeout. Reviewers check this for every handler (found as
+   a high-severity defect in C13, C15 and C16).
 5. **Device and network I/O goes through interfaces** declared in your package (HTTP client,
    clock, command runner), so tests use fakes instead of patching globals. No test may contact a
    real host; never run anything against production addresses.
