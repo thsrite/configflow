@@ -147,9 +147,24 @@ func filter(sub object, nodes []object) ([]object, error) {
 	return nativeObjects(subs.FilterSubscriptionItems(o, v.([]any)))
 }
 func loadCache(ctx context.Context, id string) (*cache, error) {
+	return readCache(ctx, id, false)
+}
+
+// loadCacheSummary tolerates legacy non-array nodes only for read-only cache
+// metadata/preview routes. Publication continues to use strict decoding.
+func loadCacheSummary(ctx context.Context, id string) (*cache, error) {
+	return readCache(ctx, id, true)
+}
+func readCache(ctx context.Context, id string, summary bool) (*cache, error) {
 	v, err := substore.LoadSubscriptionCache(ctx, id)
 	if err != nil || v == nil {
 		return nil, err
+	}
+	if summary {
+		if _, ok := v.Value("nodes").([]any); !ok {
+			v = v.DeepCopy()
+			v.Delete("nodes")
+		}
 	}
 	var out cache
 	err = native(v, &out)

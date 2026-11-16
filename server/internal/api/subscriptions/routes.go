@@ -49,7 +49,7 @@ func handleSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 			if len(entry.History) > 0 {
 				sub["last_fetch"] = entry.History[len(entry.History)-1]
 			}
-			cached, err := loadCache(ctx, sub.text("id"))
+			cached, err := loadCacheSummary(ctx, sub.text("id"))
 			if err != nil {
 				return nil, err
 			}
@@ -269,7 +269,7 @@ func subscriptionNodes(c *httpx.Ctx) (*httpx.Response, error) {
 		return httpx.Message(404, false, "Subscription not found"), nil
 	}
 	if source, _ := c.Arg("source"); source == "cache" {
-		cached, err := loadCache(c.Context(), id)
+		cached, err := loadCacheSummary(c.Context(), id)
 		if err != nil {
 			return nil, err
 		}

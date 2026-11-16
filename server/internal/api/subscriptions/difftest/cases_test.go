@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/provider"
 	"configflow/internal/repo"
 	"configflow/internal/substore"
 )
@@ -106,6 +107,7 @@ func TestFetchPreviewAndImport(t *testing.T) {
 			w.call("GET", "/api/subscriptions/health", "", true)
 			w.call("GET", "/api/subscriptions/s/nodes?source=cache", "", true)
 			w.call("GET", "/api/subscriptions/s/nodes", "", true)
+			w.call("GET", "/api/subscriptions", "", true)
 		})
 	}
 }
@@ -221,7 +223,7 @@ func TestCombinedCrossFeedAndStaging(t *testing.T) {
 }
 
 func TestCachePreviewNeverRefreshes(t *testing.T) {
-	for _, state := range []string{"legacy", "matching", "different-url", "empty", "invalid", "filtered", "missing"} {
+	for _, state := range []string{"legacy", "matching", "different-url", "empty", "invalid", "filtered", "non-list", "missing"} {
 		t.Run(state, func(t *testing.T) {
 			setup := func(ctx context.Context, r *repo.Repository) {
 				_, err := r.SaveShared(ctx, jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "s", "name", "Feed", "url", "https://feed.example/s", "interval", 0, "regex_filter", "^HK")}, "nodes", []any{jsonx.Obj("id", "imported", "name", "HK imported", "subscription_id", "s")}), nil)
@@ -235,6 +237,9 @@ func TestCachePreviewNeverRefreshes(t *testing.T) {
 				}
 				if state == "invalid" {
 					list = nil
+				}
+				if state == "non-list" {
+					list = jsonx.Obj("legacy", true)
 				}
 				if state == "filtered" {
 					list = []any{jsonx.Obj("id", "jp", "name", "JP cached")}
@@ -259,6 +264,7 @@ func TestCachePreviewNeverRefreshes(t *testing.T) {
 				t.Fatal("cache preview changed stored data")
 			}
 			w.call("GET", "/api/subscriptions/s/nodes", "", true)
+			w.call("GET", "/api/subscriptions", "", true)
 		})
 	}
 }
@@ -424,5 +430,33 @@ func TestAdversarialProviderURLs(t *testing.T) {
 		"/api/profiles/default/subscriptions/missing/proxies?token=wrong",
 	} {
 		w.call("GET", path, "", false)
+	}
+}
+
+// C31 is deliberately absent: an activated graph requiring an aggregation
+// must reject the complete delivery before any cache or served artifact changes.
+func TestMissingAggregationDependencyFailsClosed(t *testing.T) {
+	defer provider.SetAggregationProvider(nil)()
+	setup := func(ctx context.Context, r *repo.Repository) {
+		seedGraph(t, "managed", false, true)(ctx, r)
+		_, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
+			shared.GetList("subscriptions")[0].(*jsonx.Object).Set("interval", jsonx.Int(0))
+			shared.Set("subscription_aggregations", []any{jsonx.Obj("id", "agg", "name", "Agg", "nodes", []any{"relay"}, "subscriptions", []any{})})
+			return nil, nil
+		})
+		must(t, err)
+		_, _, err = r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
+			p.GetList("proxy_groups")[0].(*jsonx.Object).Set("aggregations", []any{"agg"})
+			return nil, nil
+		})
+		must(t, err)
+	}
+	w := newWorld(t, setup, nil)
+	before := normalize(snapshot(t, w.srv))
+	for _, path := range []string{"/api/subscriptions/s/proxies", "/api/subscriptions/proxies"} {
+		w.srv.Get(path, w.srv.Login()).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", "获取订阅代理列表失败"))
+		if !reflect.DeepEqual(before, normalize(snapshot(t, w.srv))) {
+			t.Fatal("missing aggregation dependency changed stored data")
+		}
 	}
 }
