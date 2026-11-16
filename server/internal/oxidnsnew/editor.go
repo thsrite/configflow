@@ -139,7 +139,7 @@ func renderTemplate(settings *Node, p *Profile, baseURL string) (*Node, string, 
 	if err != nil {
 		return nil, "", nil, err
 	}
-	document, err := LoadNativeYAML(text, "")
+	document, err := LoadNativeYAML(text, NativeLabel)
 	return template, text, document, err
 }
 
@@ -164,7 +164,7 @@ func PrepareEditor(settings *Node, p *Profile, baseURL string) (*Node, error) {
 		return nil, err
 	}
 	if old := get(current, "native_config"); strings.TrimSpace(old.Value) != "" && !has(current, "legacy_native_config") {
-		previous, err := loadNative(old, "")
+		previous, err := loadNative(old, NativeLabel)
 		if err != nil || !same(previous, document) {
 			set(current, "legacy_native_config", old)
 		}
@@ -508,7 +508,7 @@ func PreviewTemplate(settings, proposedInputs *Node, p *Profile, baseURL string,
 	if err != nil {
 		return Preview{}, err
 	}
-	document, err := loadNative(get(current, "native_config"), "")
+	document, err := loadNative(get(current, "native_config"), NativeLabel)
 	if err != nil {
 		return Preview{}, err
 	}

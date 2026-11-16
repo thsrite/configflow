@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Reading and editing the recognizable routing part of a native document.
@@ -625,7 +626,11 @@ func (p *Profile) recognize(document, settings *Node, claim bool, catalog func()
 					if len(owners) != 1 {
 						recognized = false
 						if len(owners) == 0 && isStr(value) {
-							orphans = append(orphans, [2]string{key, value.Value})
+							text := value.Value
+							if key == "files" {
+								text = strings.TrimPrefix(text, "./")
+							}
+							orphans = append(orphans, [2]string{key, text})
 						}
 						continue
 					}
@@ -987,7 +992,7 @@ func MigrateDomainOnlyRouting(document, settings *Node, p *Profile, baseURL stri
 	source := M()
 	if text := get(settings, "native_config"); strings.TrimSpace(str(text)) != "" {
 		var err error
-		if source, err = loadNative(text, ""); err != nil {
+		if source, err = loadNative(text, NativeLabel); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -1045,7 +1050,7 @@ func (p *Profile) usesRule(document *Node, identity string) bool {
 // RemoveRule returns native settings without a rule that is about to be
 // deleted, or nil when the draft does not use it.
 func RemoveRule(settings *Node, p *Profile, identity, baseURL string) (*Node, error) {
-	document, err := loadNative(get(settings, "native_config"), "")
+	document, err := loadNative(get(settings, "native_config"), NativeLabel)
 	if err != nil {
 		return nil, err
 	}
@@ -1081,7 +1086,7 @@ func RemoveRule(settings *Node, p *Profile, identity, baseURL string) (*Node, er
 		return nil, nil
 	}
 	if result != nil {
-		after, err := loadNative(get(result, "native_config"), "")
+		after, err := loadNative(get(result, "native_config"), NativeLabel)
 		if err != nil {
 			return nil, err
 		}
@@ -1285,8 +1290,8 @@ func globMatch(name, pattern string) bool {
 	var b strings.Builder
 	b.WriteString(`(?s)\A`)
 	for i := 0; i < len(pattern); {
-		c := pattern[i]
-		i++
+		c, width := utf8.DecodeRuneInString(pattern[i:])
+		i += width
 		switch c {
 		case '*':
 			for i < len(pattern) && pattern[i] == '*' {

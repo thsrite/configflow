@@ -47,9 +47,6 @@ const tagUnsupported = "!unsupported"
 func LoadNativeYAML(text string, label string) (*Node, error) { return loadNative(S(text), label) }
 
 func loadNative(text *Node, label string) (*Node, error) {
-	if label == "" {
-		label = "完整配置"
-	}
 	if !isStr(text) || len(text.Value) > MaxNativeBytes {
 		return nil, fail(fmt.Sprintf("OxiDNS %s必须为不超过 2 MiB 的 YAML 文本", label))
 	}
@@ -112,6 +109,9 @@ func parseYAML(text string, syntax error) (*Node, error) {
 	}
 	var extra yaml.Node
 	if err := dec.Decode(&extra); err != io.EOF {
+		return nil, syntax
+	}
+	if duplicateAnchor(&doc, map[string]bool{}) {
 		return nil, syntax
 	}
 	root := &doc
@@ -354,10 +354,7 @@ func ManagedFiles(value *Node) ([]File, error) {
 		}
 		data := []byte(content.Value)
 		if encoding == "base64" {
-			if strings.ContainsAny(content.Value, "\r\n") {
-				return nil, fail("附加文件 Base64 内容无效")
-			}
-			if data, err = base64.StdEncoding.DecodeString(content.Value); err != nil {
+			if data, err = decodeBase64(content.Value); err != nil {
 				return nil, fail("附加文件 Base64 内容无效")
 			}
 		}
@@ -484,7 +481,7 @@ func NativeDocument(settings *Node, validate bool, sources *Sources) (*Node, err
 	if !has(settings, "native_config") {
 		text = S("")
 	}
-	document, err := loadNative(text, "")
+	document, err := loadNative(text, NativeLabel)
 	if err != nil {
 		return nil, err
 	}
@@ -698,7 +695,7 @@ func referencedPaths(document *Node) (map[string]bool, error) {
 func ValidateResourceFiles(document *Node, paths []string) error {
 	normalized := map[string]bool{}
 	for _, p := range paths {
-		n, err := safePath(p, "")
+		n, err := safePath(p, PathLabel)
 		if err != nil {
 			return err
 		}
@@ -742,4 +739,58 @@ func ValidateResourceFiles(document *Node, paths []string) error {
 		}
 	}
 	return nil
+}
+
+// NativeLabel names the main native configuration in messages; PathLabel is
+// safe_relative_path's default label.
+const (
+	NativeLabel = "完整配置"
+	PathLabel   = "文件路径"
+)
+
+// decodeBase64 is strict standard base64: only alphabet characters, then the
+// padding a partial final quantum needs; '=' after a complete quantum is
+// ignored (as the panel always accepted).
+func decodeBase64(text string) ([]byte, error) {
+	core := strings.TrimRight(text, "=")
+	padding := len(text) - len(core)
+	if core == "" && padding > 0 {
+		return nil, errors.New("invalid base64 padding")
+	}
+	switch len(core) % 4 {
+	case 1:
+		return nil, errors.New("invalid base64 length")
+	case 2:
+		if padding != 2 {
+			return nil, errors.New("invalid base64 padding")
+		}
+	case 3:
+		if padding != 1 {
+			return nil, errors.New("invalid base64 padding")
+		}
+	}
+	if strings.ContainsAny(core, "=\r\n") {
+		return nil, errors.New("invalid base64 data")
+	}
+	return base64.RawStdEncoding.DecodeString(core)
+}
+
+// duplicateAnchor: an anchor name defined twice (PyYAML refuses that; yaml.v3
+// lets the later one win).
+func duplicateAnchor(n *Node, seen map[string]bool) bool {
+	if n == nil || n.Kind == yaml.AliasNode {
+		return false
+	}
+	if n.Anchor != "" {
+		if seen[n.Anchor] {
+			return true
+		}
+		seen[n.Anchor] = true
+	}
+	for _, child := range n.Content {
+		if duplicateAnchor(child, seen) {
+			return true
+		}
+	}
+	return false
 }

@@ -567,13 +567,15 @@ func pyFloat(f float64) string {
 }
 
 func writeString(b *bytes.Buffer, s string) {
-	data, _ := json.Marshal(s)
-	// Python keeps <, >, & and U+2028/9 literal with ensure_ascii=False.
-	data = bytes.ReplaceAll(data, []byte(`<`), []byte("<"))
-	data = bytes.ReplaceAll(data, []byte(`>`), []byte(">"))
-	data = bytes.ReplaceAll(data, []byte(`&`), []byte("&"))
-	data = bytes.ReplaceAll(data, []byte(` `), []byte(" "))
-	data = bytes.ReplaceAll(data, []byte(` `), []byte(" "))
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.Encode(s)
+	data := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
+	// Python keeps U+2028/9 literal and writes \b and \f short.
+	for _, r := range [][2]string{{`\u2028`, "\u2028"}, {`\u2029`, "\u2029"}, {`\u0008`, `\b`}, {`\u000c`, `\f`}} {
+		data = bytes.ReplaceAll(data, []byte(r[0]), []byte(r[1]))
+	}
 	b.Write(data)
 }
 

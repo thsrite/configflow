@@ -80,9 +80,6 @@ func merge(defaults, value *Node) *Node {
 // SafeRelativePath is safe_relative_path: the normalized relative path
 // inside the managed directory ("./" removed).
 func SafeRelativePath(value *Node, label string) (string, error) {
-	if label == "" {
-		label = "文件路径"
-	}
 	text := str(value)
 	if !isStr(value) || text == "" || strings.ContainsRune(text, '\\') || hasControl(text) {
 		return "", fail(label + "无效")
@@ -205,7 +202,7 @@ var httpURL = regexp.MustCompile(`^https?://`)
 // validateNative false only checks the native YAML is safe (stored drafts
 // may be incomplete).
 func NormalizeSettings(value *Node, validateNative bool) (*Node, error) {
-	if value == nil {
+	if isNone(value) {
 		value = M()
 	}
 	if !isMap(value) {
@@ -233,7 +230,7 @@ func NormalizeSettings(value *Node, validateNative bool) (*Node, error) {
 		if validateNative {
 			_, err = NativeDocument(s, true, nil)
 		} else {
-			_, err = loadNative(get(s, "native_config"), "")
+			_, err = loadNative(get(s, "native_config"), NativeLabel)
 		}
 		if err != nil {
 			return nil, err
@@ -390,7 +387,7 @@ func checkTemplate(s *Node) error {
 		if err := checkInt(args, "memory_tail", 0, intLimit); err != nil {
 			return err
 		}
-		if p, err := SafeRelativePath(get(args, "path"), ""); err != nil {
+		if p, err := SafeRelativePath(get(args, "path"), PathLabel); err != nil {
 			return err
 		} else if !strings.HasPrefix(p, "state/") {
 			return fail("查询记录请放在 state/ 下，避免部署覆盖运行数据")
@@ -425,7 +422,7 @@ func checkTemplate(s *Node) error {
 			return fail("动态域名集路由或学习设置无效")
 		}
 		args := get(dynamic, "args")
-		if p, err := SafeRelativePath(get(args, "path"), ""); err != nil {
+		if p, err := SafeRelativePath(get(args, "path"), PathLabel); err != nil {
 			return err
 		} else if !strings.HasPrefix(p, "state/") {
 			return fail("动态规则请放在 state/ 下，避免部署覆盖运行数据")

@@ -489,7 +489,7 @@ func (c *commonContext) callState(tag string, chains []string) (bool, Capability
 		for _, r := range refs {
 			called = called || r.Tag == tag
 		}
-		return called, capability(false, ReferenceReason(refs, ""), tag)
+		return called, capability(false, ReferenceReason(refs, DefaultReferencePrefix), tag)
 	}
 	partial := false
 	for _, n := range counts {
@@ -927,7 +927,7 @@ func (c *commonContext) dynamicState() (bool, string, Capability) {
 		for _, r := range extra {
 			called = called || r.Tag == "dynamic_domains"
 		}
-		return called, "", capability(false, ReferenceReason(extra, ""), "dynamic_domains")
+		return called, "", capability(false, ReferenceReason(extra, DefaultReferencePrefix), "dynamic_domains")
 	}
 	references := 0
 	for _, plugin := range c.plugins.Content {
@@ -1055,7 +1055,7 @@ func (c *commonContext) adguardState() (bool, Capability) {
 		for _, r := range refs {
 			called = called || r.Tag != ""
 		}
-		return called, capability(false, ReferenceReason(refs, ""), "adguard_rules")
+		return called, capability(false, ReferenceReason(refs, DefaultReferencePrefix), "adguard_rules")
 	}
 	return enabled, capability(true, "", "adguard_rules")
 }
@@ -1303,7 +1303,7 @@ func ReadCommonSettings(settings *Node, p *Profile, baseURL string) (CommonView,
 	if err != nil {
 		return CommonView{}, err
 	}
-	document, err := loadNative(get(prepared, "native_config"), "")
+	document, err := loadNative(get(prepared, "native_config"), NativeLabel)
 	if err != nil {
 		return CommonView{}, err
 	}
@@ -1886,7 +1886,7 @@ func (c *commonContext) patchResources(changes *Node, p *Profile, baseURL string
 		if strings.TrimSpace(content) == "" && referenced["rules/custom_hosts.txt"] {
 			set(c.settings, "custom_hosts", previous)
 		} else {
-			set(c.settings, "custom_hosts", orNull(get(changes, "custom_hosts")))
+			set(c.settings, "custom_hosts", S(content))
 		}
 	}
 	changed := false
@@ -2076,7 +2076,7 @@ func ApplyCommonSettings(settings, changes *Node, p *Profile, baseURL string) (A
 	if err != nil {
 		return Applied{}, err
 	}
-	document, err := loadNative(get(current, "native_config"), "")
+	document, err := loadNative(get(current, "native_config"), NativeLabel)
 	if err != nil {
 		return Applied{}, err
 	}

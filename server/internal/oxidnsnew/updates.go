@@ -379,7 +379,7 @@ func stopPipeline(c *commonContext, refreshOnly bool) error {
 	}
 	if targets["rules_download"] {
 		// Keep the options of withdrawn entries apart from the empty plugin.
-		original, err := loadNative(get(c.settings, "native_config"), "")
+		original, err := loadNative(get(c.settings, "native_config"), NativeLabel)
 		if err != nil {
 			return err
 		}
@@ -649,7 +649,7 @@ func RebaseNativeRuleSources(before, after *Profile) (bool, error) {
 	if !isMap(settings) || !equal(get(settings, "config_mode"), S("native")) {
 		return false, nil
 	}
-	document, err := loadNative(orDefault(settings, "native_config", S("")), "")
+	document, err := loadNative(orDefault(settings, "native_config", S("")), NativeLabel)
 	if err != nil {
 		return false, nil
 	}

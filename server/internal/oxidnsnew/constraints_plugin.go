@@ -1,6 +1,7 @@
 package oxidns
 
 import (
+	"errors"
 	"math"
 	"math/big"
 	"net/netip"
@@ -44,7 +45,7 @@ func plainUint(raw string, maximum *big.Int) (*big.Int, bool) {
 	return boundedUint(raw, maximum, false)
 }
 
-var durationUnit = regexp.MustCompile(`(?i)^([0-9]+)\s*(ms|s|m|h|d)?$`)
+var durationUnit = regexp.MustCompile(`(?i)^(\p{Nd}+)` + spaces + `*(ms|s|m|h|d)?$`)
 
 // durationSeconds is _duration; ok false for invalid.
 func durationSeconds(value *Node) (float64, bool) {
@@ -66,7 +67,10 @@ func durationSeconds(value *Node) (float64, bool) {
 	if !ok {
 		return 0, false
 	}
-	unit := map[string]float64{"ms": .001, "s": 1, "m": 60, "h": 3600, "d": 86400, "": 1}[strings.ToLower(m[2])]
+	unit, known := map[string]float64{"ms": .001, "s": 1, "m": 60, "h": 3600, "d": 86400, "": 1}[strings.ToLower(m[2])]
+	if !known {
+		return 0, false // a case-folded unit such as "ſ"
+	}
 	f, _ := new(big.Float).SetInt(n).Float64()
 	return f * unit, true
 }
@@ -88,7 +92,8 @@ func regexError(raw string) string {
 			return ""
 		}
 	}
-	if _, err := rules.CompilePyRegex(raw, false); err != nil && rules.IsPyRegexError(err) {
+	var unsupported *rules.UnsupportedRegexError
+	if _, err := rules.CompilePyRegex(raw, false); err != nil && !errors.As(err, &unsupported) {
 		return "正则表达式语法无效"
 	}
 	return ""
@@ -151,9 +156,9 @@ func replaceWord(s, name, value string) string {
 }
 
 var (
-	monthDay = regexp.MustCompile(`^(?:L(?:-[0-9]+)?|LW|[0-9]+W)$`)
+	monthDay = regexp.MustCompile(`^(?:L(?:-\p{Nd}+)?|LW|\p{Nd}+W)$`)
 	weekDay  = regexp.MustCompile(`^[0-7](?:L|#[1-5])$`)
-	numbers  = regexp.MustCompile(`[0-9]+`)
+	numbers  = regexp.MustCompile(`\p{Nd}+`)
 	months   = strings.Fields("JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC")
 	weekdays = strings.Fields("SUN MON TUE WED THU FRI SAT")
 )
@@ -246,7 +251,7 @@ func cronError(value *Node) string {
 var (
 	runtimeZone = regexp.MustCompile(`(?im)^\s*\$(?:INCLUDE|GENERATE)\b`)
 	placeholder = regexp.MustCompile(`\$\{([^}]*)\}`)
-	timeOfDay   = regexp.MustCompile(`^(?:[01][0-9]|2[0-3]):[0-5][0-9]$`)
+	timeOfDay   = regexp.MustCompile(`^(?:[01]\p{Nd}|2[0-3]):[0-5]\p{Nd}$`)
 	tcpProbe    = regexp.MustCompile(`^tcp:([0-9]+)$`)
 )
 
@@ -922,7 +927,7 @@ func ValidatePluginFormat(name string, value *Node) string {
 }
 
 var (
-	urlChars    = regexp.MustCompile(`[/?:#\s]`)
+	urlChars    = regexp.MustCompile(`[/?:#]|` + spaces)
 	domainChars = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 )
 

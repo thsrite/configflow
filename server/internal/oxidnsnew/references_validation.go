@@ -2,9 +2,12 @@ package oxidns
 
 import (
 	"errors"
+	"math/big"
 	"strconv"
 	"strings"
 	"unicode"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Plugin references and quick-setup expressions, audited against the
@@ -509,6 +512,6 @@ func collectReferenceIssues(document *Node, graph *depGraph) []Issue {
 }
 
 func uintNode(digits string) *Node {
-	v, _ := boundedUint(digits, u64, true)
-	return I(v.Int64())
+	v, _ := new(big.Int).SetString(strings.TrimPrefix(digits, "+"), 10)
+	return &Node{Kind: yaml.ScalarNode, Tag: tagInt, Value: v.String()}
 }

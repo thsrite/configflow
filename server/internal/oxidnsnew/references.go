@@ -88,9 +88,6 @@ func ReferenceLocations(document *Node, tags []string, dynamic bool) []Reference
 
 // ReferenceReason explains references (the first four distinct locations).
 func ReferenceReason(references []Reference, prefix string) string {
-	if prefix == "" {
-		prefix = DefaultReferencePrefix
-	}
 	var locations []string
 	for i, item := range references {
 		if item.Reason == envReason {

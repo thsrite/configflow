@@ -478,7 +478,7 @@ func InspectEntries(document *Node, plugins map[string]*Node, order []string, p 
 		}
 		entries := serverEntries(plugin)
 		if entries == nil {
-			return report, refuse("监听入口 " + str(get(plugin, "tag")) + "（" + listen + "）的 entry 无法读取")
+			return report, refuse("监听入口 " + str(get(plugin, "tag")) + "（" + listen + "） 的 entry 无法读取")
 		}
 		allMain := true
 		for _, e := range entries {
@@ -645,7 +645,7 @@ func ReadPolicies(settings *Node, p *Profile) (PolicyView, error) {
 	current, err := PrepareEditor(settings, p, "")
 	if err == nil {
 		var doc *Node
-		if doc, err = loadNative(get(current, "native_config"), ""); err == nil {
+		if doc, err = loadNative(get(current, "native_config"), NativeLabel); err == nil {
 			var report EntryReport
 			if _, report, err = patchPolicies(doc, rows, rows, p); err == nil {
 				view.Editable, view.SideEntries = true, report.Side
@@ -678,7 +678,7 @@ func ApplyPolicies(settings *Node, p *Profile, rows *Node, baseURL string) (*Nod
 	if err != nil {
 		return nil, err
 	}
-	document, err := loadNative(get(current, "native_config"), "")
+	document, err := loadNative(get(current, "native_config"), NativeLabel)
 	if err != nil {
 		return nil, err
 	}

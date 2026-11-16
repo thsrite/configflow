@@ -154,6 +154,9 @@ func pluginKind(kind string) string {
 	return ""
 }
 
+// spaces matches one Unicode whitespace character (regexp's \s is ASCII).
+const spaces = `[\s\x{1c}-\x{1f}\x{85}\p{Z}]`
+
 var digitsRE = regexp.MustCompile(`^\+?[0-9]+$`)
 
 // boundedUint is _uint of the validation modules: decimal text (optional
@@ -267,7 +270,7 @@ func endpointValid(value *Node, listen, socks bool) bool {
 func isPySpace(s string) bool { return strings.IndexFunc(s, unicode.IsSpace) >= 0 }
 
 var (
-	durationRE      = regexp.MustCompile(`(?i)^([0-9]+)\s*(ms|s|m|h|d)?$`)
+	durationRE      = regexp.MustCompile(`(?i)^([0-9]+)` + spaces + `*(ms|s|m|h|d)?$`)
 	tokenRE         = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 	upstreamSchemes = []string{"udp", "tcp", "tls", "quic", "doq", "https", "doh", "h3", "tcp+pipeline", "tls+pipeline"}
 )

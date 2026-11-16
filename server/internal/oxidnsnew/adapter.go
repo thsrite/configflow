@@ -3,13 +3,16 @@ package oxidns
 import (
 	"context"
 	"errors"
+	"io"
+	"math"
+	"math/big"
+	"strconv"
 	"strings"
 	"sync"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/mosdns"
 	"configflow/internal/rules"
-	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
 )
@@ -125,15 +128,77 @@ func convertJSONX(v any) (*Node, error) {
 	return nil, errUnsupportedYAML
 }
 
-// safeLoad is yaml.safe_load (PyYAML rules) of a template text field; ok
-// false on a YAML syntax error.
+// safeLoad reads a template text field (custom_config, DNS upstream lists)
+// with yaml.v3's own resolution; ok false on a YAML syntax error. Aliases
+// become shared nodes; timestamps and binary values keep their tags, so they
+// are written back as they were read.
 func safeLoad(text string) (*Node, bool, error) {
-	v, err := yamlx.SafeLoad(text)
-	if err != nil {
+	dec := yaml.NewDecoder(strings.NewReader(text))
+	var doc yaml.Node
+	if err := dec.Decode(&doc); err == io.EOF {
+		return Null(), true, nil
+	} else if err != nil {
 		return nil, false, nil
 	}
-	n, err := convertJSONX(v)
-	return n, true, err
+	if len(doc.Content) == 0 {
+		return Null(), true, nil
+	}
+	memo := map[*Node]*Node{}
+	var convert func(n *Node) (*Node, error)
+	convert = func(n *Node) (*Node, error) {
+		for n.Kind == yaml.AliasNode {
+			n = n.Alias
+		}
+		if out, ok := memo[n]; ok {
+			if out == nil {
+				return nil, errUnsupportedYAML // recursive alias
+			}
+			return out, nil
+		}
+		memo[n] = nil
+		out := &Node{Kind: n.Kind, Tag: n.ShortTag(), Value: n.Value}
+		switch n.Kind {
+		case yaml.ScalarNode:
+			switch out.Tag {
+			case tagInt:
+				v, ok := new(big.Int).SetString(strings.ReplaceAll(n.Value, "_", ""), 0)
+				if !ok {
+					out.Tag = tagStr
+				} else {
+					out.Value = v.String()
+				}
+			case tagFloat:
+				f, err := strconv.ParseFloat(strings.ReplaceAll(n.Value, "_", ""), 64)
+				if err != nil || math.IsInf(f, 0) || math.IsNaN(f) {
+					return nil, errUnsupportedYAML
+				}
+				out.Value = Float(f).Value
+			case tagBool:
+				out.Value = strconv.FormatBool(strings.EqualFold(n.Value, "true"))
+			case tagNull:
+				out.Value = "null"
+			}
+		case yaml.MappingNode, yaml.SequenceNode:
+			for _, child := range n.Content {
+				c, err := convert(child)
+				if err != nil {
+					return nil, err
+				}
+				out.Content = append(out.Content, c)
+			}
+			if n.Kind == yaml.MappingNode {
+				for i := 0; i < len(out.Content); i += 2 {
+					if out.Content[i].Kind != yaml.ScalarNode {
+						return nil, errUnsupportedYAML
+					}
+				}
+			}
+		}
+		memo[n] = out
+		return out, nil
+	}
+	root, err := convert(doc.Content[0])
+	return root, true, err
 }
 
 // splitRules is split_rules_and_rulesets: legacy rules and rule sets.
