@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 14 missing, 3 partial, 8 ported, 12 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13, C14, C15, C16). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 13 missing, 3 partial, 9 ported, 12 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13, C14, C15, C16). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -49,7 +49,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C21 | MosDNS converter | 1261 | ported | C14 | – |
 | C22 | OxiDNS converter, native loader, references, match targets | 913 | ported | C05, C21 | – |
 | C23 | OxiDNS validation and constraints | 1542 | ported | C22 | – |
-| C24 | OxiDNS common settings | 1175 | missing | C23 | – |
+| C24 | OxiDNS common settings | 1175 | ported | C23 | – |
 | C25 | OxiDNS common routing, DNS watchdog | 1286 | missing | C24 | – |
 | C26 | OxiDNS common updates, device policy, editor | 1189 | missing | C25 | – |
 | C27 | rule DNS actions | 885 | missing | C26 | – |
@@ -1093,18 +1093,40 @@ Commands:
 
 ## C24 — OxiDNS common settings
 
-**Status: `missing`** · prereqs: C23 · Go: internal/oxidns (new)
+**Status: `ported`** (not reviewed) · prereqs: C23 · Go: `internal/oxidns`
 
-Files:
-- `backend/common/oxidns_common.py` (1175)
+Files → Go (`server/internal/oxidns/`):
+- `backend/common/oxidns_common.py` (1175) → `common.go` (`ReadCommonSettings`, `ApplyCommonSettings`, `CommonFields()`, `_read` = `readCommon`, `_DIRECT`/`_API`/`COMMON_FIELDS` tables built from `DefaultSettings()` in Python's dict order, `_fallback_state`/`_prepare_fallback`/`_finish_fallback`, `_main_control`, `_dynamic_state`, `_cron_job`, `_resources`, `_adguard_state`, every `_patch_*`, `_validate_value`, `_default_args`) + `common_context.go` (`_Context` = `commonContext` with `allowed`/`ensure`/`park`/`park_plugin`/`call_state`/`toggle_call`/`resource_paths`…, `TagTypes` = `_TAG_TYPES`; Python list/dict glue: `inList`, `listRemove` (identity-or-equality like `list.remove`), `pyIter`, `pyContains`, `setItem`, `popKey`, `setDefault`).
+- Early parts of later modules (no further dependencies): `common_routing.go` (C25: `Selectors`, `RuleDNSFields`, `RoutingFields` = `ROUTING_FIELDS`, `_references`, `replace_download_entries`), `editor.go` (C26: `_same` = `sameValue`, `_MISSING` = `missingValue`), `pending.go`: `_relevant` (`ruleUpdateRelevant`, early return of prepare/finish_rule_updates).
+- **Collaborators of later modules are now package variables in `pending.go`** (default: `PendingError`): `prepareEditor` (C26; was a func, C23 uses it), `readRouting`, `ownedChains`, `applyRouting`, `resourceDownloads`, `refreshRuleHelpers` (C25), `prepareRuleUpdate`, `finishRuleUpdates` (C26; take `*commonContext`). Their porters assign the real functions (keep the variables or adapt `c24_test.go`'s `installCollaborators`). Until then every production read/apply is pending (all go through `prepare_editor` and `read_routing`).
+- YAML aliases: Python mutates lists in place; Go slices are values. Every in-place list mutation inside the document goes through `commonContext.replaceList`, which rebinds every other holder of the same list (same backing array and length) — so aliased sequences/plugins lists behave like Python's shared list. Dicts are shared pointers as in Python.
 
-Tests: `test_oxidns_feature_lifecycle.py` (8)
+Verification:
+- **Record & replay** `testdata/c24_record.py` → `c24_recorded.jsonl.gz`, `c24_test.go` `TestC24Recorded`: every top-level `read_common_settings`/`apply_common_settings` of the full suite (12552 passed) with the answers of the C25/C26 collaborators recorded per call (sequence + sha256 of the arguments, so Go must ask the same questions in the same order; in-place collaborators also record the state they leave: document incl. alias paths, settings, tag map, parked dict). **822 distinct calls from 397 tests in 20 files: 822 identical, 0 differ, 0 pending, 0 unsupported** (read 280, apply 542).
+- **Random corpus** `testdata/gen_c24.py` → `c24_corpus.jsonl.gz`, `TestC24Corpus`: 1600 template drafts with random common inputs, ~80 % mutated natively (renamed/retyped/duplicated/removed plugins with and without `renamed_plugins`, custom/partial feature calls, non-dict args, include + additional files, `${ENV}` references, API shapes incl. bearer auth/webui/str, TTL/qtype/prefer_ipv4/metrics variants incl. 10**20 numbers, fallback graphs and parked plugins, dynamic domains/learners, Hosts/AdGuard files, cron jobs, YAML-aliased args, Unicode, huge ints, junk `_common_disabled`), then read + 1–2 applies with editable fields (typed values) and random fields (malformed values, unknown fields, non-dict changes): **3746 rows (read 1600, apply 2146; 782 OxidnsSettingsError), 0 differ**. Go statement coverage of `common*.go` from both: 94–100 % for every function except Python-crash glue for odd types.
+- C22/C23 unchanged: `TestRecordedPythonTests` 0 differ, 1054 pending (C25 448, C26 605, routers 1); `TestCorpus` 0 differ, 65 pending; `TestC23Recorded` 0 differ, 422 pending (C26); `TestC23Corpus` 0 differ.
 
-Routes: none.
+Python test files (rule 4 coverage; rows from the replay):
+- `test_oxidns_feature_lifecycle.py` (8 functions, 21 ids): replay — 68 calls, identical.
+- Also replayed (C24 calls only; their own subjects belong to C25/C26/C29/agents): test_oxidns_common 98, test_oxidns_common_lifecycle 65, test_oxidns_fallback_lifecycle 58, test_oxidns_resource_lifecycle 75, test_oxidns_native_apply 125, test_oxidns_native_restore 113, test_oxidns_native_cleanup 42, test_oxidns_hosts_cleanup 33, test_oxidns_match_targets 42, test_gateway_onboarding 27, test_oxidns_withdrawn_downloads 21, test_oxidns_download_aliases 19, test_oxidns_common_api 12, test_profile_rule_routes 8, test_rule_sync_projection 6, test_oxidns_common_routing 4, test_oxidns_device_policy 3, test_oxidns_domain_only_native 2, test_oxidns_settings_routes 1. Nothing hand-ported (no concurrency/timing/process behaviour in this module).
 
-Evidence: No Go package; no route registered.
+Routes: none (the `/api/…/oxidns/common` routes are C29's). PORTING rule 4b (request cancellation) not applicable: no context, no I/O.
 
-Missing / deferred: Everything in the files below.
+Decisions / differences from Python:
+- Collaborator stubs instead of `compat` copies: C24 cannot answer anything in production until C25 (`read_routing`, …) and C26 (`prepare_editor`) land; the replay proves C24's own logic with Python's answers.
+- `relinkList` cannot tell aliased *empty* lists apart (Go zero-length slices have no identity): an empty list shared through a YAML anchor and then grown in place is grown only at the edited holder (no case in replay/corpus).
+- Aware YAML timestamps compare by fields in `sameValue` (Python compares instants); timestamps never reach C24 rows (recorder marks them unsupported; none in suite).
+
+Pitfalls: replay harness only — the recorded "after" state of in-place collaborators loses YAML aliasing unless restored from the alias paths (`restoreDocument`); first run without it gave 10 false differences in `test_oxidns_download_aliases.py`. `C24_RECORD_ARGS=1` stores full collaborator arguments in the rows so a hash mismatch prints the first differing bytes (debug only; do not commit such a file).
+
+Commits: f8ce1808 (code), 0009eaff (record & replay), 58fad245 (corpus), + this PROGRESS commit.
+
+Left for later porters: C25 assigns `readRouting`, `ownedChains`, `applyRouting`, `resourceDownloads`, `refreshRuleHelpers` (and extends `common_routing.go`); C26 assigns `prepareEditor`, `prepareRuleUpdate`, `finishRuleUpdates` (they get `*commonContext`; use its methods) and extends `editor.go`. After each, `TestC24Recorded`/`TestC24Corpus` must still pass; once all are real, also run the rows with the real functions (drop `installCollaborators`) — the recorded outputs are Python's end-to-end results. Reviewer: walk `toggleCall` position/disabled bookkeeping, `patchResources` (urls list shared with `changes`), `patchAPI` parked-holder paths, evaluation order of Python's eager defaults.
+
+Commands:
+- tests: `rt -- bash -lc 'cd server && gofmt -l internal/oxidns; go vet ./internal/oxidns/ && go test -count=1 ./internal/oxidns/'` (last: ok 36 s)
+- C24 replay: `rt --back server/internal/oxidns/testdata/c24_recorded.jsonl.gz -- bash -lc 'rm -rf /tmp/c24rec; C24_RECORD_DIR=/tmp/c24rec PYTHONPATH=.:server/internal/oxidns/testdata ~/cf-test/.venv/bin/python -m pytest backend -q -n 6 --dist=worksteal -p c24_record -p no:cacheprovider; PYTHONPATH=.:server/internal/oxidns/testdata ~/cf-test/.venv/bin/python server/internal/oxidns/testdata/c24_record.py merge /tmp/c24rec'` (~3 min; check 822 rows locally)
+- C24 corpus: `rt --back server/internal/oxidns/testdata/c24_corpus.jsonl.gz -- bash -lc 'PYTHONPATH=.:server/internal/oxidns/testdata ~/cf-test/.venv/bin/python -W ignore server/internal/oxidns/testdata/gen_c24.py'` (deterministic, ~70 s, 3746 rows)
 
 ## C25 — OxiDNS common routing, DNS watchdog
 
