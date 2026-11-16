@@ -136,6 +136,11 @@ func initialize(sub object) error {
 	return native(o, &sub)
 }
 func filter(sub object, nodes []object) ([]object, error) {
+	// Optional cache nodes decode to a nil slice. Keep an empty JSON array
+	// when crossing the storage adapter so the legacy API receives a list.
+	if nodes == nil {
+		nodes = []object{}
+	}
 	o, err := legacyObject(sub)
 	if err != nil {
 		return nil, err

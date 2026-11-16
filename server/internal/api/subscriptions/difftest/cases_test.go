@@ -494,3 +494,14 @@ func TestEveryGlobalRouteRequiresJWT(t *testing.T) {
 		}
 	}
 }
+
+func TestFetchWithNullCacheNodes(t *testing.T) {
+	w := newWorld(t, func(ctx context.Context, r *repo.Repository) {
+		seedGraph(t, "none", false, false)(ctx, r)
+		_, err := substore.SaveSubscriptionNodes(ctx, "s", nil, nil)
+		must(t, err)
+	}, nil)
+	w.control.Offline = true
+	w.call("POST", "/api/subscriptions/s/fetch", `{"preview":true}`, true)
+	w.call("POST", "/api/subscriptions/s/fetch", `{}`, true)
+}

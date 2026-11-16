@@ -67,3 +67,4 @@ A11 must register the hook, remove this helper and rerun this suite (also record
 - `subscriptions/security_test.go`：过期 JWT、畸形 Bearer、退休能力与公共 token 碰撞、轮换、统一 401，以及日志/响应头/正文/served 文件无请求凭据。
 - `TestMalformedManagementBodies`：数组、字符串、布尔、数字作为 fetch/reorder 请求体时必须在下载/写入前拒绝；比较 12 个请求的响应和持久化，Python 内部英文对象异常归一化。
 - `TestEveryGlobalRouteRequiresJWT`：25 个全局 method/path 即使带正确 URL token 也必须 401；与 profile alias 的 token-only 成功/失败合计覆盖全部 26 个注册方法的鉴权边界。
+- `TestFetchWithNullCacheNodes`：离线 + null 节点缓存的 preview/import 必须返回空数组而非 panic，比较完整状态及 revision。
