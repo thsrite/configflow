@@ -257,3 +257,43 @@ reuse them. Size budgets were dropped the same day: line counts are reported for
   involved, (c) one line per attempt already made and why it failed, (d) the branch/commit to start from.
   No transcript dump. The Opus result goes back to Codex as a design/fix note, or Opus commits the fix
   itself if it is small.
+
+## Independent acceptance (maintainer, 2026-11-16)
+
+Agent-written unit tests share the author's understanding, and Codex reviewing Codex shares blind spots.
+Acceptance therefore rests on checks whose expected values come from Python and whose authors did not write
+the Go code.
+
+1. **Domain differential, black-box.** Per domain, a **fresh Codex agent that does not port in that domain**
+   writes the Flask↔Go differential (pattern: `internal/httpx/difftest`). Its brief forbids reading
+   `server/internal/**` implementation code (it may use only the difftest harness and the public server
+   entry); cases are derived from the Python source, `parity/routes.tsv` and the frontend API calls.
+   Its commits may only touch difftest/testdata paths (coordinator checks the diff).
+   - **Step A — coverage matrix first:** `server/parity/difftest-<domain>.md`, one row per route: success
+     case(s), failure cases (auth, validation, missing/empty values, conflicting writes), edge cases, and what
+     is compared after writes (DB rows, generated files, Agent pushes). **Opus reviews the matrix against the
+     Python source** (cheap; finds missed branches, background-task triggers, permissions) before any test
+     code is written.
+   - **Step B — tests:** implemented to the reviewed matrix; another non-porting Codex agent reviews the test
+     code, mainly for comparisons that can never fail (over-broad normalisation, ignored fields, swallowed
+     errors).
+   - **Mechanical gate (coordinator):** every route in `routes.tsv` has ≥1 success and ≥1 failure case, or a
+     written reason; a differential that never reported a difference on purpose-broken input is suspect
+     (run once with a deliberately wrong Go response).
+   - Differences found go back to the **porting** agent; the test agent never edits Go code.
+2. **Production-data differential.** A copy of the production `configflow.sqlite3` (+ data dir) is loaded
+   into Python and Go on the test server; every generated output (Mihomo/Surge/Loon/OxiDNS/router configs,
+   subscription outputs, Agent payloads) and every GET API response is compared structurally. The snapshot
+   stays on the test server (`~/cf-prod-snapshot/`, mode 700), is never committed, and nothing from it
+   (hostnames, IPs, tokens, airport domains) goes into commits, PRs, briefs or reports — differences are
+   reported by path/key only. Copying is read-only from the NAS; production is never written to.
+3. **Coordinator verification adds `-race`** (`go test -race -count=1 ./...`) for every merge, and parsers
+   (YAML, subscriptions, rules, node strings) get Go fuzz targets seeded from the Python test corpora; the
+   coordinator runs each fuzz target for 60 s at verification.
+4. **Opus spot review:** per domain 1–2 non-HR modules picked by the coordinator (prefer the largest or most
+   stateful). A finding that is a *class* of error (not a one-off) triggers a sweep of that class across the
+   whole domain by Codex.
+5. **Lab end-to-end before the switch** (unchanged, needs the maintainer's go-ahead): real Agents,
+   RouterOS/iKuai, HA on PVE VMs, Go and Python side by side for a period.
+
+Even with all of this, the guarantee is "no difference on known paths and on the real data", not "no bugs".

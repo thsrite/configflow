@@ -53,13 +53,13 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 Worktrees of the branch agents: `~/.paseo/worktrees/302rx1dg/<branch>`.
 
 **When one finishes:** create a detached worktree of its branch (or of `go` after fast-forward), run
-`rt -- bash -lc 'cd server && gofmt -l internal/; go vet ./... && go test -count=1 ./...'`, grep the diff
+`rt -- bash -lc 'cd server && gofmt -l internal/; go vet ./... && go test -race -count=1 ./...'`, grep the diff
 for Python emulation, then fast-forward `go` (`git merge --ff-only <branch>` in `~/program/configflow-go`
 when its tree is clean, otherwise rebase the branch again) and push. R04 then needs an HR review (Opus, or
 Codex first + "Opus review pending" if Claude quota is out).
 
 **Queue:** Opus designs for N7 (YAML → yaml.v3 behind yamlx) and N8 (remove jsonx), then S passes of
-convert/subs/agents/repo per design; R05 iKuai driver; C27 after S-oxidns review; Flask↔Go differentials.
+convert/subs/agents/repo per design; R05 iKuai driver; C27 after S-oxidns review; **independent acceptance** (WORKFLOW.md last section): production-data differential harness (first; needs a read-only snapshot copy from the NAS onto the test server), then per domain black-box difftest — coverage matrix → Opus matrix review → tests → non-porting Codex review; Opus spot review of 1–2 non-HR modules per domain; fuzz targets for parsers.
 Claude subagents of the old session (S-rules, S-oxidns, N2 review, R04 Claude porters) are finished/paused —
 don't resume them; their work continues in the Codex agents above.
 
@@ -166,7 +166,7 @@ files once). After `cf-test`, use `rt --no-sync`.
 - After each hand-back, re-run the module's tests and differentials yourself on a throwaway detached
   worktree of HEAD (others' uncommitted work often breaks the shared tree):
   `git worktree add -q --detach ~/program/configflow-go-verify HEAD && cd ~/program/configflow-go-verify &&
-  rt -- bash -lc 'cd server && go vet ./... && go test -count=1 ./...'`, then `rt clean`,
+  rt -- bash -lc 'cd server && go vet ./... && go test -race -count=1 ./...'`, then `rt clean`,
   `git worktree remove --force …` **and** `rm -rf ~/program/configflow-go-verify` (macOS leaves `.DS_Store`),
   `git worktree prune`.
 - After a module changes shared packages (httpx, urlx, yamlx, pystr, repo, agents client), run the whole
