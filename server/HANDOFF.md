@@ -110,12 +110,10 @@ files once). After `cf-test`, use `rt --no-sync`.
 
 ## Coordinator habits (keep them)
 
-- **Size gate (2026-11-16):** on every hand-back, measure Go non-test lines of the touched packages
-  yourself (`find <pkgs> -name '*.go' ! -name '*_test.go' | xargs cat | wc -l`) against the module's Python
-  lines; over 1.5× → send it back (target 1.2×). Also grep the diff for Python-shaped code
-  (`any` parameters mirroring Python, `PyError`/emulated exceptions, new `jsonx`/`pystr`/`urlx` uses,
-  private helper copies). Track the whole-tree total after each push; target at the end ≈ 100–130k lines.
-
+- **Emulation gate (2026-11-16):** on every hand-back, grep the diff for Python emulation (ports of
+  CPython/PyYAML/requests/stdlib behaviour, `PyError`/emulated exception texts, `any` parameters mirroring
+  Python call shapes, new `jsonx`/`pystr`/`urlx` uses, private helper copies) → send back. No size budget
+  (maintainer: line limits are meaningless); line counts are for information only.
 - After each hand-back, re-run the module's tests and differentials yourself on a throwaway detached
   worktree of HEAD (others' uncommitted work often breaks the shared tree):
   `git worktree add -q --detach ~/program/configflow-go-verify HEAD && cd ~/program/configflow-go-verify &&

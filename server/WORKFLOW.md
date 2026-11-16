@@ -139,15 +139,15 @@ module and every review from now on also **deletes code that only existed for st
 
 PORTING rules 1–4 now say: port features, not code; typed structs; acceptance at the external boundary
 (HTTP differential, generated outputs, stored data, Agent protocol), function-level replay of Python
-internals no longer required; size budget target ≤ 1.2×, hard limit 1.5× the module's Python lines. Consequences:
+internals no longer required; no size budget (removed 2026-11-16) — the hard rule is no Python emulation. Consequences:
 - New modules (and modules still in progress) follow the new rules immediately.
 - Already written code is slimmed in **S passes**, one per package group, done together with the
   matching N swap where one exists (e.g. S for `subs` + N7 YAML). An S pass rewrites the package the Go
   way, replaces function-level replay tests by boundary tests, merges duplicated helpers, and reports
   lines before/after. A module verified earlier stays verified only if its boundary tests pass after the
   S pass; the S pass gets its own adversarial review (checks: no lost feature, boundary tests cover every
-  Python test file's behaviour, size budget).
-- Reviewers of new modules check the size budget and reject Python-shaped code (`any` parameters for
+  Python test file's behaviour, no Python emulation left).
+- Reviewers of new modules reject Python-shaped code (`any` parameters for
   Python call shapes, emulated exceptions, private copies of shared helpers).
 
 Note for N7 (from review R01, 2026-11-16): every reader of the same user YAML must agree. `yaml.v3`
@@ -155,5 +155,5 @@ rejects duplicate mapping keys and multi-document input differently from the PyY
 range reader once used yaml.v3 directly while the Mihomo generator used yamlx, so a duplicate key made
 them disagree (fake-ip traffic routed past the gateway). When N7 swaps yamlx to yaml.v3, decide duplicate
 keys / multi-document handling once in the yamlx facade and keep all readers on it.
-Note (R01 size, coordinator 2026-11-16): R01's budget counts the 67 validator lines it took over from
-dns_guard/ipv6_pd_guard/client_fixed_ip (1494 / 1036 = 1.44×); R09/R11/R17 budgets shrink accordingly.
+Note (2026-11-16): R01 also ports 67 validator lines of dns_guard/ipv6_pd_guard/client_fixed_ip; R09/R11/R17
+reuse them. Size budgets were dropped the same day: line counts are reported for information only.

@@ -54,9 +54,11 @@ server/
 1. **Port features, not code** (2026-11-16, maintainer: idiomatic Go is the goal). Read the Python module
    and its tests to understand *what* it does, then design it the Go way: your own types, function
    boundaries and names; no `any` parameters or emulated Python dynamic typing to mirror Python call
-   shapes. Chinese user-facing messages stay byte-identical. **Size budget:** Go non-test lines of a
-   module: target ≤ 1.2× the module's Python lines, hard limit 1.5× (typed structs cost some lines);
-   report the numbers in the hand-back; above 1.5× the module goes back.
+   shapes. Chinese user-facing messages stay byte-identical. **No size budget** (maintainer, 2026-11-16: line counts are
+   meaningless as a limit). The hard rule is: **no Python emulation** — no ports of CPython/PyYAML/
+   requests/stdlib behaviour, no emulated Python exceptions or texts, no `any` parameters mirroring Python
+   call shapes, no private copies of shared helpers. Write clear Go; never shorten code or drop comments
+   to hit a number.
 2. **Types: Go-native only.** Use typed Go structs with `encoding/json` tags. Fields of a stored
    document the code does not know are kept with native means (e.g. an `Extra map[string]json.RawMessage`
    captured by a custom `UnmarshalJSON`/`MarshalJSON`), so read-modify-write loses nothing. Free-form
