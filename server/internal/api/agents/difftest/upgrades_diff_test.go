@@ -541,6 +541,9 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 	fake, port, closed := startFakeOps(t, lan)
 	t.Setenv("AGENTS_STATIC_DIR", artifactsDir(t))
 	upgrades.ResetArtifactCache()
+	// The Go server runs in this process: forget the follow attempts and
+	// pending notices of an earlier test (Python starts a fresh process).
+	upgrades.ResetAddressState()
 	for _, name := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"} {
 		t.Setenv(name, "")
 		os.Unsetenv(name)
@@ -659,6 +662,9 @@ func TestUpgradesProxyDifferentialAgainstFlask(t *testing.T) {
 	proxyURL := "http://" + proxyListener.Addr().String()
 	t.Setenv("AGENTS_STATIC_DIR", artifactsDir(t))
 	upgrades.ResetArtifactCache()
+	// The Go server runs in this process: forget the follow attempts and
+	// pending notices of an earlier test (Python starts a fresh process).
+	upgrades.ResetAddressState()
 	for _, name := range []string{"HTTP_PROXY", "http_proxy"} {
 		t.Setenv(name, proxyURL)
 	}

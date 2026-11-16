@@ -1,6 +1,6 @@
 # PROGRESS — domain `agents`
 
-Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 15 missing, 0 partial, 2 ported (A08, A15), 7 verified (A01, A02, A03, A04, A05, A06, A07). Only reviewers set `verified`.
+Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 15 missing, 0 partial, 1 ported (A08), 8 verified (A01, A02, A03, A04, A05, A06, A07, A15). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.
 
@@ -30,7 +30,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A12 | push diff | 1465 | missing | | A11 | – | internal/deploy |
 | A13 | content sync, Agent list/detail, push-diff routes | 584 | missing | | A12, A15 | 4 | internal/deploy, api/agents |
 | A14 | publishing: transactional content, push-config, deployments, receipts | 1002 | missing | HR | A11, A13, C13, C17, C18, C19, C20, C22, C23 | 9 | internal/deploy, api/agents |
-| A15 | upgrades, Agent operations, address follow | 745 | ported | HR | A01, A02 | 15 (15 done) | internal/agents/upgrades (new), api/agents |
+| A15 | upgrades, Agent operations, address follow | 745 | verified | HR | A01, A02 | 15 (15 done) | internal/agents/upgrades (new), api/agents |
 | A16 | Agent rule sync, projection, snapshot | 1371 | missing | HR | A07, A14, C25, C27 | 2 | internal/agents/rulesync (new), api/agents |
 | A17 | DNS follow | 760 | missing | HR | A14, C26 | 4 | internal/agents/dnsfollow (new), api/agents |
 | A18 | DNS HA (keepalived pair, handoff, pair publication) | 1529 | missing | HR | A16, A17, C26, routers (`routers/store.py`) | 4 | internal/agents/dnsha (new), api/agents |
@@ -723,7 +723,7 @@ Hooks to provide: `agents.RegisterHooks{PublishDeployment (the non-pair _publish
 
 ## A15 — upgrades, Agent operations, address follow
 
-**Status: `ported`** (porter 2026-11-16, commits d8f4df19, 3d341e9c, + the commit carrying this section; HR: VM lab test of web update/rollback due before the domain is done) · prereqs: A01, A02 · Go: internal/agents/upgrades (new), internal/api/agents/upgrades.go
+**Status: `verified`** (adversarial review 2026-11-16: 4769f418, 009f4997, be064848, 7dd36632 + the commit carrying this review block; porter: d8f4df19, 3d341e9c, c1df7eec; HR: VM lab test below due before the domain is done) · prereqs: A01, A02 · Go: internal/agents/upgrades (new), internal/api/agents/upgrades.go
 
 Files:
 - `backend/agents/upgrades.py` (310) → `upgrades/upgrades.go` (`Start`, `Poll`, `ReportLegacy`, `save`, `request`), `upgrades/artifacts.go` (`Arches`, `ArtifactDirectory`, `Artifacts`, digest cache; **A13 uses `upgrades.Artifacts()` for `upgrade_available`, A10 `ArtifactDirectory()` for the download route**)
@@ -756,6 +756,36 @@ Commands:
 - `rt -- bash -lc 'cd server && go vet ./internal/agents/... ./internal/api/agents/... ./internal/server/ && go test -count=1 -race ./internal/agents/... ./internal/api/agents/... ./internal/server/'` — all ok
 - `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run UpgradesDifferential ./internal/api/agents/difftest/'` and separately `-run UpgradesProxyDifferential`
 - corpus: `rt --back server/internal/agents/upgrades/testdata/a15_reference.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/agents/upgrades/testdata/gen_a15_reference.py > server/internal/agents/upgrades/testdata/a15_reference.json'`
+
+Review (adversarial, 2026-11-16) — every function and branch of upgrades.py, address_follow.py, the A15 routes of routes/agents.py and the manager methods they call (restart/status/logs/sources/clear/validate/logging/uninstall) walked against Go; new references from real CPython 3.11 / requests 2.31 / Werkzeug on the test server (`upgrades/testdata/gen_a15_review.py` → `a15_review.json`: 50 poll records, 20 ISO times × 5 zones, Bearer bytes of 6 tokens × 3 call sites, 25 `lines` values, pathlib permission errors, CPython error texts). Findings, all fixed:
+
+| # | Sev | Finding | Fix | Regression test |
+|---|---|---|---|---|
+| 1 | low | porter's difference "non-dict upgrade record → 500" — observable: poll's `dict(latest_upgrade)` raises ValueError for a str (404 with its text), TypeError for int/float/bool, and reads a list as key/value pairs (`[["status","succeeded"]]` answers 200; bad elements ValueError/TypeError by index) | 4769f418 (`pyDict`) | `TestReviewPollReference` (19 malformed records), difftest "review upgrade string/pairs/int record" |
+| 2 | low | Bearer header was sent as UTF-8: http.client sends latin-1 (`tök` → byte 0xF6) and raises UnicodeEncodeError (a ValueError, not a RequestException) for characters above U+00FF: start answers 409 "无法连接…", poll falls to the deadline, `_follow` only logs (Go reported "连不上新地址" + notification), describe/change and the operation routes raise (500 / 500 JSON with the codec text) | 4769f418 (`Request.Latin1Headers`, `agents.EncodeHeaderLatin1`, `CallError`) | `TestReviewLatin1Tokens` (raw header bytes vs Python), `TestA15ReviewCallRaisesLikePython`, difftest "review * latin-1/cjk token" |
+| 3 | low | operation routes on a record without host/port/token: Python KeyError → 500 `{"message": "'host'"}` before any request (also before requests' NaN InvalidJSONError); Go called `http://None:…` and answered "Connection error" | 4769f418 (`agentKeys` in `Call`/`simpleCall`, non-transport errors propagate in restart/uninstall/simpleCall) | `TestA15ReviewCallRaisesLikePython`, difftest "review * without host" |
+| 4 | low | `Path.exists()`/`is_file()` (Python 3.11) raise stat errors other than ENOENT/ENOTDIR/EBADF/ELOOP; with an unsearchable artifact directory Python answers 500, Go said "更新文件未准备就绪" (409) | 4769f418 (`ignoredStatError`, `ArtifactDirectory() (string, error)`, called per arch like Python) | `TestReviewArtifactStatErrorsAreRaised` |
+| 5 | low | `datetime.fromisoformat(naive).timestamp()` raises ValueError when CPython's `local_to_seconds` needs a local time outside years 1–9999 (first day of year 1 in every zone; last hours of 9999 east of UTC, e.g. Asia/Shanghai from 9999-12-31T16:00): poll's recovery/deadline checks then skip the heartbeat; Go compared a timestamp (9999 heartbeats → "更新未生效" instead of "unknown"). Same in `runtime_state._timestamp` (A02 code, -inf) | 4769f418 (`ISOTimestamp` range replay), be064848 (`timestampOf`) | `TestA15ReviewISOTimestampYearRange`, `TestA15ReviewRuntimeTimestampYearRange` |
+| 6 | low | start read the snapshot's previous record before the reservation; Python reads it inside `reserve()` after the DNS HA check (busy pair + malformed record: 409 HA message, Go 500) | 4769f418 | `TestReviewStartReadsPreviousRecordInsideReservation` |
+| 7 | low | decision 8: `lines` used `httpx.PyParseInt` (Go Unicode tables: Kawi/Nag Mundari digits of Unicode 15 accepted, Python 3.11 refuses → 100) — `argBigInt` (shared with A04/A05) now `pystr.Int` | 4769f418 (`pyArgInt`) | `TestA15ReviewArgIntLikeWerkzeug`, difftest "review logs Unicode 15 digit / zeros over digit limit" |
+| 8 | cosmetic | TypeError texts of `started_at + 600` / `confirmed > recovery_reported_at` (log of the 500) | 4769f418 | `TestReviewPollReference` ("started_at str/list/none/dict", "recovery str/list") |
+
+Porter's differences, decided: Go transport texts — accepted (A01 limitation; only inside "Connection error: …"/`error_details`). `.oxidns-ha-publications/<sha256>/lock` files of restart/uninstall — accepted for now, A18 must create them in `service_operation` and then drop the exclusion in `upgrades_diff_test.go`. Non-dict record — fixed (finding 1). Windows digest-cache branch — accepted (server never runs on Windows).
+
+Accepted differences (reviewer): a list-of-pairs record with a non-string key is a TypeError at `dict()` (Python builds the dict, but every later step fails: KeyError on 'status' or jsonify cannot sort mixed keys — 500 either way, only the log line differs). `~/.netrc` entries (requests with trust_env replaces the Bearer header with Basic auth for `_reaches`/`_ask`/manager calls) are not read: the image has no .netrc. Redirects of Agent answers follow Go's rules (requests 30 hops, auth stripping on host change in both). Shared-code changes made here: `agents.Call` (KeyError/latin-1, used by A01/A14/A18 paths too: an unencodable token now fails before sending, as in Python), `HTTPClient.Do` `Latin1Headers`, `api/agents.argBigInt` (A04/A05 routes now use pystr).
+
+Checks performed: state machine of start/poll/_save/report_legacy (terminal sets, only_queued, ownership, agent_updated_at ordering, event merge, rollback_failed polled, deadline 600 s with heartbeat-after rule, protocol 1/2/True/2.0/3), arch selection (unknown/missing/non-string arch, legacy needs all three, stuck `queued` reservation after KeyError like Python), artifacts (stat-keyed cache, ELF magic, size limit, change detection, per-arch directory), 4096 B report limit and token-or-JWT on the status route, every operation route's body handling (difftest), address follow (Usable corpus 49 + IPv6/zone/bridge/full-width via difftest, same-name records, HA notify-only with HA_STEPS, retry window per (host, member), confirmed_host, describe/change in modes agent/env/record/docker/404/unknown/ha, rejects 400/502, notifications and resolution), CPython error texts. Differentials re-run: `UpgradesDifferential` 130 requests (98 + 32 review cases), 0 differences; `UpgradesProxyDifferential` 6, 0; registry `TestDifferentialAgainstFlask` 234, 0.
+
+Pitfall (difftest): the Go server runs in the test process, so the follow attempts of one differential survived into the next (retry window → no follow in the proxy case when both ran in one `go test`); both tests now call `upgrades.ResetAddressState()`.
+
+Open findings: none.
+
+VM lab test (HR, after the maintainer agrees; PVE lab only): (1) web update of a shell Agent (systemd and OpenRC) from the previous release to the current artifacts: start → poll through downloading/verifying/replacing/restarting → succeeded with version + migration_ready; (2) forced failure (corrupt artifact SHA, migration failure) → rolled_back / rollback_failed and the lock released, retry works; (3) legacy protocol-1 Agent (no /api/upgrade-info) update + report; (4) Docker Agent refused; (5) Agent unreachable mid-update → checking/unknown → recovers on heartbeat after the 600 s deadline; (6) address follow on a real renumbering (DHCP change of the Agent VM): heartbeat with new address → verified with the token → record updated, notice shown, confirmed_host written back; an HA member renumbered → notify only with the steps; the 修改地址 dialog in agent mode (writes agent_ip) and record mode.
+
+Review commands (private detached worktree of HEAD because the shared tree did not build — others' convert WIP):
+- `rt -- bash -lc 'cd server && go vet ./internal/agents/... ./internal/api/agents/... ./internal/server/ && go test -count=1 -race ./internal/agents/... ./internal/api/agents/... ./internal/server/'`
+- `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run "UpgradesDifferential|UpgradesProxyDifferential|TestDifferentialAgainstFlask" ./internal/api/agents/difftest/'`
+- references: `rt --back server/internal/agents/upgrades/testdata/a15_review.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/agents/upgrades/testdata/gen_a15_review.py > server/internal/agents/upgrades/testdata/a15_review.json'`
 
 ## A16 — Agent rule sync, projection, snapshot
 
