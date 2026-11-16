@@ -1427,3 +1427,11 @@ Questions for the maintainer (from this audit):
     `If-Match` is 412; `Range: bytes = 1 - 2` (spaces) is accepted; Range on an empty file is ignored;
     multi-range or malformed Range is 416; ETag mtime rounding differs. Affects every send_file route; fix in
     the C06 review and remove the "known httpx differences" from the A10 download differential.
+16. **No runtime reads from `backend/` (2026-11-16):** the Go server must run without the Python tree.
+    Every data file the Python code reads at runtime (`backend/schemas/oxidns/*.json`, templates, scripts,
+    `config_template.json`, …) is embedded with `go:embed` from a copy under `server/`, guarded by a test
+    that fails when the copy drifts from `backend/` (pattern: `repo.TestConfigTemplateMatchesBackend`,
+    `installer.TestScriptsMatchBackend`). C22/C23 currently read the OxiDNS schemas through the resource
+    root: the C22/C23 reviewer switches them to an embedded copy. Finish (#40): the image must contain
+    tzdata (`/usr/share/zoneinfo`), because OxiDNS timezone validation follows the host's zoneinfo like the
+    Python server.
