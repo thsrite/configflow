@@ -387,3 +387,14 @@ func attributeError(v any, attribute string) error {
 }
 
 func typeError(message string) error { return &pyError{"TypeError", message} }
+
+// subscriptError is CPython 3.11's TypeError for v['key'] on a non-dict.
+func subscriptError(v any) error {
+	switch v.(type) {
+	case string:
+		return typeError("string indices must be integers, not 'str'")
+	case []any:
+		return typeError("list indices must be integers or slices, not str")
+	}
+	return typeError("'" + pyTypeName(v) + "' object is not subscriptable")
+}

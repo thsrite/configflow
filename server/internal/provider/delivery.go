@@ -224,15 +224,16 @@ func (s *Snapshot) Validate(proxies any, forceChains bool, providerName *string)
 	definitions, _ := main.GetOr("proxy-providers", jsonx.NewObject()).(*jsonx.Object)
 	if providerName != nil && definitions.Has(*providerName) {
 		sourceValue := definitions.GetOr(*providerName, jsonx.NewObject())
-		source, ok := sourceValue.(*jsonx.Object)
-		if !ok {
-			return attributeError(sourceValue, "get")
-		}
 		payloads := jsonx.NewObject()
 		for name, value := range definitions.All() {
 			if name == *providerName {
 				payloads.Set(name, list)
 				continue
+			}
+			// source.get('url') is only evaluated for the other definitions.
+			source, ok := sourceValue.(*jsonx.Object)
+			if !ok {
+				return attributeError(sourceValue, "get")
 			}
 			if !jsonx.Truthy(source.Value("url")) {
 				continue
@@ -259,7 +260,7 @@ func (s *Snapshot) Validate(proxies any, forceChains bool, providerName *string)
 	for _, item := range mainProxies {
 		p, ok := item.(*jsonx.Object)
 		if !ok {
-			return typeError("'" + pyTypeName(item) + "' object is not subscriptable")
+			return subscriptError(item)
 		}
 		name, present := p.Get("name")
 		if !present {
@@ -431,6 +432,9 @@ type PrepareOptions struct {
 // snapshot, ...): prepare without publishing node caches, retaining the
 // subscription's name on failure. The result's CacheUpdates are staged.
 func PrepareSubscriptionProvider(ctx context.Context, sub, config *jsonx.Object, snapshot *Snapshot, opts PrepareOptions) (*Rendered, error) {
+	// PORTING rule 4b: Python finishes the fetch and validation after the
+	// client went away; only the fetches' own timeouts end them.
+	ctx = context.WithoutCancel(ctx)
 	opts.SourcePath = orEmpty(opts.SourcePath)
 	result, err := prepareSubscriptionProvider(ctx, sub, snapshot, opts)
 	if err != nil && isStrategyReference(err) {
@@ -712,6 +716,7 @@ func ValidateRenderedBundle(snapshot *Snapshot, providers []*Rendered) (bool, er
 
 // CommitCacheUpdates is commit_cache_updates(updates).
 func CommitCacheUpdates(ctx context.Context, updates []CacheUpdate) error {
+	ctx = context.WithoutCancel(ctx) // PORTING rule 4b: never commit half a bundle.
 	for _, u := range updates {
 		if _, err := substore.SaveSubscriptionNodes(ctx, u.SubID, u.Nodes, u.Metadata); err != nil {
 			return err
@@ -751,6 +756,9 @@ type fetchFlight struct {
 // capture once, render each original source once, validate all copies,
 // never commit. config and main are not modified.
 func PrepareProviderBundle(ctx context.Context, config, main *jsonx.Object, opts BundleOptions) ([]*Rendered, error) {
+	// PORTING rule 4b: the shared per-subscription fetches and the bundle
+	// validation run to completion like Python's request thread.
+	ctx = context.WithoutCancel(ctx)
 	env := currentEnv()
 	var requestedName any
 	hasRequested := opts.Requested != nil
@@ -769,17 +777,18 @@ func PrepareProviderBundle(ctx context.Context, config, main *jsonx.Object, opts
 		if err != nil {
 			return nil, err
 		}
-		resourceID, err := requiredKey(resource, "id")
-		if err != nil {
-			return nil, err
-		}
 		found := false
 		for _, item := range items {
 			o, ok := item.(*jsonx.Object)
 			if !ok {
-				return nil, typeError("'" + pyTypeName(item) + "' object is not subscriptable")
+				return nil, subscriptError(item)
 			}
 			id, err := requiredKey(o, "id")
+			if err != nil {
+				return nil, err
+			}
+			// resource['id'] is evaluated per item (any() over a generator).
+			resourceID, err := requiredKey(resource, "id")
 			if err != nil {
 				return nil, err
 			}
@@ -805,7 +814,7 @@ func PrepareProviderBundle(ctx context.Context, config, main *jsonx.Object, opts
 		for _, item := range subscriptions {
 			sub, ok := item.(*jsonx.Object)
 			if !ok {
-				return nil, typeError("'" + pyTypeName(item) + "' object is not subscriptable")
+				return nil, subscriptError(item)
 			}
 			name, err := requiredKey(sub, "name")
 			if err != nil {
@@ -821,7 +830,8 @@ func PrepareProviderBundle(ctx context.Context, config, main *jsonx.Object, opts
 			}
 			done := make(chan struct{})
 			close(done)
-			fetchResults[fetchKey(id, sub.Value("url"))] = &fetchFlight{done: done,
+			// The fetches look the key up with the str() of id and url.
+			fetchResults[fetchKey(idText(id), idText(sub.Value("url")))] = &fetchFlight{done: done,
 				result: &substore.SubscriptionResult{Text: prepared[nameText].Content, Source: "prepared_yaml"}}
 		}
 	}
@@ -1034,7 +1044,7 @@ func PrepareProviderBundle(ctx context.Context, config, main *jsonx.Object, opts
 		for _, item := range aggregations {
 			a, ok := item.(*jsonx.Object)
 			if !ok {
-				return nil, typeError("'" + pyTypeName(item) + "' object is not subscriptable")
+				return nil, subscriptError(item)
 			}
 			id, err := requiredKey(a, "id")
 			if err != nil {
@@ -1132,6 +1142,7 @@ func PrepareProviderBundle(ctx context.Context, config, main *jsonx.Object, opts
 // CommitProviderBundle is commit_provider_bundle(profile_id, bundle): only
 // call after the complete exact bundle passed validation.
 func CommitProviderBundle(ctx context.Context, profileID string, bundle []*Rendered) error {
+	ctx = context.WithoutCancel(ctx) // PORTING rule 4b: never commit half a bundle.
 	var order []string
 	updates := map[string]CacheUpdate{}
 	var artifactOrder []string
@@ -1189,7 +1200,7 @@ func findByID(itemsValue any, id string) (*jsonx.Object, error) {
 	for _, item := range items {
 		o, ok := item.(*jsonx.Object)
 		if !ok {
-			return nil, typeError("'" + pyTypeName(item) + "' object is not subscriptable")
+			return nil, subscriptError(item)
 		}
 		value, err := requiredKey(o, "id")
 		if err != nil {

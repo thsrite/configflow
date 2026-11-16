@@ -50,6 +50,12 @@ func newServeFixture(t *testing.T, seconds float64) *serveFixture {
 		}
 	}
 	t.Cleanup(SetResponseSeconds(seconds))
+	// Registered last, so it runs first: a render still running in the
+	// background (released by the test just before it returned) must finish
+	// writing its last good file before the repository's temp directory is
+	// removed — otherwise the cleanup races the write and the test flakes
+	// under load ("directory not empty").
+	t.Cleanup(func() { waitFor(t, func() bool { return flightCount() == 0 }) })
 	return f
 }
 
