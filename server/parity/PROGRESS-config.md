@@ -53,7 +53,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C25 | OxiDNS common routing, DNS watchdog | 1286 | ported | C24 | – |
 | C26 | OxiDNS common updates, device policy, editor | 1189 | ported | C25 | – |
 | C27 | rule DNS actions | 885 | missing | C26 | – |
-| C28 | MosDNS archive and routes | 838 | missing | C21, C15 | 15 (0 done) |
+| C28 | MosDNS archive and routes | 838 | ported | C21, C15 | 15 (15 done) |
 | C29 | OxiDNS native apply, archive, routes | 739 | missing | C27, C28 | 18 (0 done) |
 | C30 | subscription and node routes, node deletion | 994 | missing | C17, C16, C19, C20 | 26 (0 done) |
 | C31 | aggregation routes, device notes | 722 | missing | C30, C26 | 11 (0 done) |
@@ -1282,23 +1282,36 @@ Notes for porter: **Cross-domain:** `rule_dns` calls `agents.rule_sync.settings_
 
 ## C28 — MosDNS archive and routes
 
-**Status: `missing`** · prereqs: C21, C15 · Go: internal/mosdns, internal/api/mosdns (new)
+**Status: `ported`** (2026-11-16, under the idiomatic-Go / boundary-acceptance rules) · prereqs: C21, C15 · Go: `internal/mosdns` (`archive.go`, `ruleproxy.go`), `internal/api/mosdns` (routes)
 
-Files:
-- `backend/utils/mosdns_archive.py` (244)
-- `backend/routes/mosdns.py` (594)
+Files → Go:
+- `backend/utils/mosdns_archive.py` (244) → `mosdns/archive.go`: `BuildMosDNSZip(ctx, snapshot *jsonx.Object, yamlContent string, []Download, []File, ArchiveOptions{BaseURL, SkipReferenceValidation})` → ZIP bytes or `*ArchiveError` (= MosdnsArchiveError; OxiDNS archive C29 uses the same type), `ArchivePath(string)`, `Download`/`File` + `DecodeList[T]` (converter lists → typed), `MaxWorkers`/`MaxFiles`/`MaxTotalBytes`. Callback resolution reads a typed `snapshot` (profile_id, system_config, rule_configs, rule_library) decoded from the compat config; remote sources go through `rulefetch.ResolveRemoteRuleSource`, `convert.RulesetFormat`, `refresh.ReadRuleSource`; zip via `archive/zip`.
+- `backend/routes/mosdns.py` (594) → `mosdns/ruleproxy.go` (`RuleProxy(ctx, RuleProxyRequest)` → `RuleProxyResponse{Status, Text|JSON, NoStore, Stale}`; `fetchRemote` = `_fetch_remote_content`; `authorized` = `_require_rule_proxy_auth`; `localContent` = `_local_content_rule`) and `api/mosdns/mosdns.go` (7 editor routes table-driven, `POST /api/mosdns/settings` in one `UpdateProfileTransaction`, cache normalization `normalizeCache`, rule proxy + profile wrapper). Routes registered in `server.routePackages`; the two rule-proxy paths stay public (already in `auth` gate).
+- Not ported: `_load_cached_rule_content_for_url` — no caller in `backend/` (only `test_rule_cache_identity.py` calls it directly); its behaviour (find the validated cache of a URL) is what `refresh.ReadRuleSource` does for the live paths.
 
-Tests: `test_converter_review_regressions.py` (7), `test_domain_wildcard_delivery.py` (3), `test_mosdns_archive.py` (15), `test_mosdns_regex_delivery.py` (2), `test_mosdns_rule_fields.py` (5), `test_remote_rule_consumers.py` (16)
+Rule 4b: handlers and `RuleProxy`/`BuildMosDNSZip` run on `context.WithoutCancel` (cache writes, task records, archive workers).
 
-Routes (15, 0 done):
+Acceptance (boundary):
+- **Flask↔Go differential** `internal/mosdns/difftest` (real Flask + Go app on copies of one data dir, loopback fake rule server): all 15 routes, 50 requests — GET/POST of the 6 editor routes (success, unknown rule 409→500 JSON, text body 415→500, non-object body, broken JSON, null bodies, odd cache values), `POST /api/mosdns/settings` (success, `?profile=`, non-object 400, missing rule 409, unknown profile 404), rule proxy (inline via rule-proxy token / config token / JWT on the profile path, declared remote → cache + task status, cached read, classical `part=ip`, invalid content 422, MRS 422, undeclared 503 → 502, changed source 422, no/wrong token 401, no url / bad part / ftp 400, unknown profile 404). Compared: status, JSON (structural), text bodies, Cache-Control/X-ConfigFlow-Rule-Cache, then the stored `mosdns` settings, rule cache files and task-status.json (times masked): **50 requests, 4 data items, 0 differences**.
+- **Archive outputs**: `archive_test.go` `TestArchiveMatchesRecordedPythonBuilds` rebuilds every `build_mosdns_zip` call of the whole Python suite (recorded by `testdata/c28_record.py` → `c28_recorded.jsonl.gz`, 12552 passed under the recorder) from the same snapshot, rule caches, task status and download answers: entries (names, order, bytes), Chinese failure messages and rule caches written afterwards — **86 builds, 0 differ** (the racy cancellation test excluded; covered by a hand test). The other recorded rows (proxy/auth/fetch internals) are kept in the file but not replayed (function-level replay no longer required).
+- Hand tests: bounded parallel downloads (peak = 8), a failed download returns without waiting for in-flight ones, size/file budgets (file budget checked before any download), unsafe/conflicting paths, missing references, label sanitization. `-race` clean.
 
-`GET /api/mosdns/api-settings`; `POST /api/mosdns/api-settings`; `GET /api/mosdns/cache-settings`; `POST /api/mosdns/cache-settings`; `GET /api/mosdns/custom-matches`; `POST /api/mosdns/custom-matches`; `GET /api/mosdns/dns-servers`; `POST /api/mosdns/dns-servers`; `GET /api/mosdns/log-settings`; `POST /api/mosdns/log-settings`; `GET /api/mosdns/rule-proxy`; `GET /api/mosdns/rulesets`; `POST /api/mosdns/rulesets`; `POST /api/mosdns/settings`; `GET /api/profiles/<profile_id>/mosdns/rule-proxy`
+Differences from Python (functional parity; not chased): ZIP bytes (Go deflate, extended timestamps; entries/contents equal); Python-internal exception texts in 500 JSON bodies of the editor routes for a JSON body that is not an object (`'list' object has no attribute 'get'` → `request body is not a JSON object`, same status); hand-edited non-string/non-bool values in the snapshot (e.g. numeric rule ids) make the archive/proxy refuse (decode error) where Python compared them loosely; `config.yaml` mappings with non-string keys are refused by the reference check; `cache_dump_file` that is a list/dict is stored as its JSON text (Python: repr); integer settings beyond int64 fall back to the default.
 
-Evidence: No Go package; no route registered.
+Python test files → coverage:
+- `test_mosdns_archive.py` (15): archive outputs via the recorded builds (all cases incl. transport/cache/wrong-profile/unsafe paths/references/conflicts); parallelism, cancellation, budgets also hand-ported; the generate-route cases (`/api/profiles/<id>/generate/mosdns`) → C34.
+- `test_converter_review_regressions.py` (7), `test_mosdns_regex_delivery.py` (2), `test_mosdns_rule_fields.py` (5), `test_domain_wildcard_delivery.py` (3): archive halves via recorded builds; rule-proxy conversions = C21 converter (verified) + differential (inline, classical, part); generate halves → C34.
+- `test_remote_rule_consumers.py` (16): archive cases via recorded builds; rule-proxy cases (invalid content 422, cache after invalid refresh, MRS, non-UTF-8) via differential; Agent/bundle cases → A11.
+- Also touching C28: `test_security_regressions.py` rule-proxy auth (token, retired token, JWT, malformed bearer, oversized token, URL validation) → differential (token/JWT/401/400) + `rulefetch` (C14) for URL/redirect/size rules; `test_rule_proxy_freshness.py`, `test_rule_fetch_proxy_routes.py`, `test_profile_rule_routes.py`, `test_editor_transactions.py`, `test_save_publish_guard.py` (mosdns parts) → differential; `test_rule_cache_identity.py::_load_cached_rule_content_for_url` → not ported (no caller).
 
-Missing / deferred: Everything in the files below.
+Size: Python 838 lines; Go non-test 1156 (archive.go 568, ruleproxy.go 311, api 277) = 1.38×. Reasons: explicit worker scheduler, Go error returns, URL origin comparison and typed snapshot decoding; the seven near-identical Python editor routes are already one table-driven handler.
 
-Notes for porter: `mosdns_archive` imports `routes.mosdns._fetch_remote_content` and `scheduled_refresh` (C15). Rule-proxy endpoint is public with config token/JWT — covers deferred `test_security_regressions.py` cases.
+Commits: b6f5f77a (first port), ae4c5bbe (replay harness, superseded), the reshape commit (idiomatic Go, boundary tests, weburl), + this commit.
+
+Commands:
+- tests: `rt -- bash -lc 'cd server && go vet ./internal/mosdns/... ./internal/api/mosdns/ && go test -count=1 -race ./internal/mosdns/... ./internal/server/'`
+- differential: `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/mosdns/difftest/'`
+- re-record archive builds (~4 min): `rt --back server/internal/mosdns/testdata/c28_recorded.jsonl.gz -- bash -lc 'rm -rf /tmp/c28rec; C28_RECORD_DIR=/tmp/c28rec PYTHONPATH=.:server/internal/mosdns/testdata ~/cf-test/.venv/bin/python -m pytest backend -q -n 8 --dist=worksteal -p c28_record -p no:cacheprovider; PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/mosdns/testdata/c28_record.py merge /tmp/c28rec'` (merge must run in the same `rt` call: a later sync deletes the untracked file on the server)
 
 ## C29 — OxiDNS native apply, archive, routes
 

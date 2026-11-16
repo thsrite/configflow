@@ -76,16 +76,6 @@ func fetchRemote(ctx context.Context, rawURL string, config *jsonx.Object, hostU
 	return content, nil
 }
 
-// proxyConfig is what the rule proxy reads from the request's profile.
-type proxyConfig struct {
-	snapshot
-	SystemConfig struct {
-		ServerDomain   string `json:"server_domain"`
-		ConfigToken    string `json:"config_token"`
-		RuleProxyToken string `json:"rule_proxy_token"`
-	} `json:"system_config"`
-}
-
 // AuthRequest is the credential part of a rule-proxy request.
 type AuthRequest struct {
 	Internal      bool   // in-process MCP call (authenticated at /mcp)
@@ -97,7 +87,7 @@ type AuthRequest struct {
 // retired rule-proxy token, or the current rule-proxy or config token in
 // the query. internalTokens are the persisted current and retired
 // rule-proxy tokens.
-func authorized(cfg proxyConfig, request AuthRequest, internalTokens repo.TokenSet) (bool, error) {
+func authorized(cfg snapshot, request AuthRequest, internalTokens repo.TokenSet) (bool, error) {
 	if request.Internal {
 		return true, nil
 	}
@@ -129,7 +119,7 @@ func authorized(cfg proxyConfig, request AuthRequest, internalTokens repo.TokenS
 
 // localContent returns the content of this profile's selected inline
 // library source the URL points at (no self-HTTP).
-func localContent(raw string, cfg proxyConfig, hostURL string) (string, bool, error) {
+func localContent(raw string, cfg snapshot, hostURL string) (string, bool, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		return "", false, err
@@ -231,7 +221,7 @@ func ruleProxy(ctx context.Context, request RuleProxyRequest) (*RuleProxyRespons
 	if err != nil {
 		return nil, err
 	}
-	var cfg proxyConfig
+	var cfg snapshot
 	if err := viaJSON(config, &cfg); err != nil {
 		return nil, err
 	}

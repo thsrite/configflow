@@ -191,20 +191,20 @@ POST	/api/generate/surge/preview	routes.generate.preview_surge		todo
 POST	/api/logs/clear	routes.logs.clear_logs	internal/api/logs	done
 GET	/api/logs/info	routes.logs.get_log_info	internal/api/logs	done
 GET	/api/logs/tail	routes.logs.get_logs	internal/api/logs	done
-GET	/api/mosdns/api-settings	routes.mosdns.handle_mosdns_api_settings		todo
-POST	/api/mosdns/api-settings	routes.mosdns.handle_mosdns_api_settings		todo
-GET	/api/mosdns/cache-settings	routes.mosdns.handle_mosdns_cache_settings		todo
-POST	/api/mosdns/cache-settings	routes.mosdns.handle_mosdns_cache_settings		todo
-GET	/api/mosdns/custom-matches	routes.mosdns.handle_mosdns_custom_matches		todo
-POST	/api/mosdns/custom-matches	routes.mosdns.handle_mosdns_custom_matches		todo
-GET	/api/mosdns/dns-servers	routes.mosdns.handle_mosdns_dns_servers		todo
-POST	/api/mosdns/dns-servers	routes.mosdns.handle_mosdns_dns_servers		todo
-GET	/api/mosdns/log-settings	routes.mosdns.handle_mosdns_log_settings		todo
-POST	/api/mosdns/log-settings	routes.mosdns.handle_mosdns_log_settings		todo
-GET	/api/mosdns/rule-proxy	routes.mosdns.mosdns_rule_proxy		todo
-GET	/api/mosdns/rulesets	routes.mosdns.handle_mosdns_rulesets		todo
-POST	/api/mosdns/rulesets	routes.mosdns.handle_mosdns_rulesets		todo
-POST	/api/mosdns/settings	routes.mosdns.save_mosdns_settings		todo
+GET	/api/mosdns/api-settings	routes.mosdns.handle_mosdns_api_settings	api/mosdns	done
+POST	/api/mosdns/api-settings	routes.mosdns.handle_mosdns_api_settings	api/mosdns	done
+GET	/api/mosdns/cache-settings	routes.mosdns.handle_mosdns_cache_settings	api/mosdns	done
+POST	/api/mosdns/cache-settings	routes.mosdns.handle_mosdns_cache_settings	api/mosdns	done
+GET	/api/mosdns/custom-matches	routes.mosdns.handle_mosdns_custom_matches	api/mosdns	done
+POST	/api/mosdns/custom-matches	routes.mosdns.handle_mosdns_custom_matches	api/mosdns	done
+GET	/api/mosdns/dns-servers	routes.mosdns.handle_mosdns_dns_servers	api/mosdns	done
+POST	/api/mosdns/dns-servers	routes.mosdns.handle_mosdns_dns_servers	api/mosdns	done
+GET	/api/mosdns/log-settings	routes.mosdns.handle_mosdns_log_settings	api/mosdns	done
+POST	/api/mosdns/log-settings	routes.mosdns.handle_mosdns_log_settings	api/mosdns	done
+GET	/api/mosdns/rule-proxy	routes.mosdns.mosdns_rule_proxy	api/mosdns	done
+GET	/api/mosdns/rulesets	routes.mosdns.handle_mosdns_rulesets	api/mosdns	done
+POST	/api/mosdns/rulesets	routes.mosdns.handle_mosdns_rulesets	api/mosdns	done
+POST	/api/mosdns/settings	routes.mosdns.save_mosdns_settings	api/mosdns	done
 GET	/api/nodes	routes.nodes.handle_nodes		todo
 POST	/api/nodes	routes.nodes.handle_nodes		todo
 DELETE	/api/nodes/<node_id>	routes.nodes.handle_node		todo
@@ -262,7 +262,7 @@ POST	/api/profiles/<profile_id>/generate/surge/preview	routes.profiles.profile_p
 POST	/api/profiles/<profile_id>/import	routes.profiles.import_profile		todo
 GET	/api/profiles/<profile_id>/linux-gateway/rules/<path:rule_id>	routes.linux_gateway.linux_gateway_rule_provider		todo
 GET	/api/profiles/<profile_id>/linux-gateway/source/<path:rule_id>	routes.linux_gateway.linux_gateway_source_provider		todo
-GET	/api/profiles/<profile_id>/mosdns/rule-proxy	routes.profiles.profile_mosdns_rule_proxy		todo
+GET	/api/profiles/<profile_id>/mosdns/rule-proxy	routes.profiles.profile_mosdns_rule_proxy	api/mosdns	done
 POST	/api/profiles/<profile_id>/oxidns/common-settings	routes.profiles.profile_read_oxidns_common_settings		todo
 POST	/api/profiles/<profile_id>/oxidns/common-settings/apply	routes.profiles.profile_apply_oxidns_common_settings		todo
 POST	/api/profiles/<profile_id>/oxidns/editor	routes.profiles.profile_prepare_oxidns_editor		todo

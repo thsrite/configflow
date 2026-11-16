@@ -174,7 +174,7 @@ func TestArchiveMatchesRecordedPythonBuilds(t *testing.T) {
 		}
 		saved := fetchRemoteFn
 		fetchRemoteFn = recorded.fetch
-		downloads, err := DownloadsOf(args[2].([]any))
+		downloads, err := DecodeList[Download](args[2].([]any))
 		if err != nil {
 			t.Fatalf("%s: downloads %v", name, err)
 		}
@@ -185,7 +185,7 @@ func TestArchiveMatchesRecordedPythonBuilds(t *testing.T) {
 			if !ok {
 				content = []byte(object.GetString("content"))
 			}
-			custom = append(custom, File{Path: object.GetString("path"), Content: content})
+			custom = append(custom, File{Path: object.GetString("path"), Content: string(content)})
 		}
 		data, err := BuildMosDNSZip(ctx, args[0].(*jsonx.Object), args[1].(string), downloads, custom,
 			ArchiveOptions{BaseURL: args[4].(string), SkipReferenceValidation: args[5] == false})
@@ -370,12 +370,12 @@ func TestArchiveBudgets(t *testing.T) {
 func TestArchivePathsAndReferences(t *testing.T) {
 	ctx, _ := testRepo(t, jsonx.NewObject())
 	for _, path := range []string{"../escape", "/absolute", "./rules/../../escape", "rules\\escape", "config.yaml", "a//b", "\x01"} {
-		if _, err := BuildMosDNSZip(ctx, remoteSnapshot(), "plugins: []", nil, []File{{path, []byte("x")}}, ArchiveOptions{}); err == nil {
+		if _, err := BuildMosDNSZip(ctx, remoteSnapshot(), "plugins: []", nil, []File{{path, "x"}}, ArchiveOptions{}); err == nil {
 			t.Errorf("%q accepted", path)
 		}
 	}
 	_, err := BuildMosDNSZip(ctx, remoteSnapshot(), "plugins: []", nil, []File{
-		{"./rules/same.txt", []byte("domain:a.test")}, {"rules/same.txt", []byte("domain:b.test")}}, ArchiveOptions{})
+		{"./rules/same.txt", "domain:a.test"}, {"rules/same.txt", "domain:b.test"}}, ArchiveOptions{})
 	if err == nil || err.Error() != "生成配置包含内容冲突的文件路径" {
 		t.Errorf("conflict: %v", err)
 	}

@@ -4,7 +4,6 @@
 package mosdns
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,84 +24,127 @@ func Register(r *httpx.Router) {
 	for _, s := range sections {
 		r.Handle([]string{"GET", "POST"}, "/api/mosdns/"+s.path, "mosdns."+s.endpoint, auth.Require(s.handle))
 	}
-	r.Handle([]string{"GET", "POST"}, "/api/mosdns/cache-settings", "mosdns.handle_mosdns_cache_settings", auth.Require(cacheSettings))
 	// Public: the rule proxy checks its own token or JWT.
 	r.GET("/api/mosdns/rule-proxy", "mosdns.mosdns_rule_proxy", ruleProxy)
 	r.GET("/api/profiles/<profile_id>/mosdns/rule-proxy", "profiles.profile_mosdns_rule_proxy", ruleProxy)
 }
 
-// field is a stored setting, its request/response name and its default
-// (JSON text).
+// field is a stored setting, its name in the request/response and its
+// default (JSON).
 type field struct{ key, name, def string }
 
-// section is one legacy editor route: GET returns its fields, POST stores
-// them in the profile.
+// section is one editor route: GET returns its fields, POST stores them.
 type section struct {
 	path, endpoint string
 	fields         []field
+	cache          bool // cache-settings: normalized, answers a publish guard
 }
 
 var sections = []section{
 	{"rulesets", "handle_mosdns_rulesets", []field{{"direct_rulesets", "direct_rulesets", "[]"},
-		{"proxy_rulesets", "proxy_rulesets", "[]"}, {"direct_rules", "direct_rules", "[]"}, {"proxy_rules", "proxy_rules", "[]"}}},
+		{"proxy_rulesets", "proxy_rulesets", "[]"}, {"direct_rules", "direct_rules", "[]"}, {"proxy_rules", "proxy_rules", "[]"}}, false},
 	{"custom-matches", "handle_mosdns_custom_matches", []field{{"custom_matches", "custom_matches", "[]"},
-		{"custom_match_position", "position", `"tail"`}}},
+		{"custom_match_position", "position", `"tail"`}}, false},
 	{"dns-servers", "handle_mosdns_dns_servers", []field{{"local_dns", "local_dns", `""`}, {"remote_dns", "remote_dns", `""`},
 		{"fallback_dns", "fallback_dns", `""`}, {"default_forward", "default_forward", `"forward_remote"`},
-		{"custom_hosts", "custom_hosts", `""`}}},
+		{"custom_hosts", "custom_hosts", `""`}}, false},
 	{"log-settings", "handle_mosdns_log_settings", []field{{"log_enabled", "log_enabled", "true"},
-		{"log_level", "log_level", `"info"`}, {"log_file", "log_file", `""`}}},
+		{"log_level", "log_level", `"info"`}, {"log_file", "log_file", `""`}}, false},
 	{"api-settings", "handle_mosdns_api_settings", []field{{"api_enabled", "api_enabled", "true"},
-		{"api_address", "api_address", `":8080"`}}},
+		{"api_address", "api_address", `":8080"`}}, false},
+	{"cache-settings", "handle_mosdns_cache_settings", []field{{"cache_enabled", "cache_enabled", "true"},
+		{"cache_size", "cache_size", "10240"}, {"cache_lazy_ttl", "cache_lazy_ttl", "21600"},
+		{"cache_dump_enabled", "cache_dump_enabled", "true"}, {"cache_dump_file", "cache_dump_file", `"./cache.dump"`},
+		{"cache_dump_interval", "cache_dump_interval", "300"}}, true},
 }
 
-// baseDefaults seed a profile without MosDNS settings (with the route's
+// baseDefaults seed a profile without MosDNS settings (plus the route's
 // own fields).
-var baseDefaults = []field{{"direct_rulesets", "", "[]"}, {"proxy_rulesets", "", "[]"}, {"direct_rules", "", "[]"},
-	{"proxy_rules", "", "[]"}, {"local_dns", "", `""`}, {"remote_dns", "", `""`}, {"fallback_dns", "", `""`},
-	{"default_forward", "", `"forward_remote"`}, {"custom_hosts", "", `""`}, {"custom_config", "", `""`}}
-
-var cacheFields = []field{{"cache_enabled", "", "true"}, {"cache_size", "", "10240"}, {"cache_lazy_ttl", "", "21600"},
-	{"cache_dump_enabled", "", "true"}, {"cache_dump_file", "", `"./cache.dump"`}, {"cache_dump_interval", "", "300"}}
+var baseDefaults = append(append([]field{}, sections[0].fields...), field{"local_dns", "", `""`}, field{"remote_dns", "", `""`},
+	field{"fallback_dns", "", `""`}, field{"default_forward", "", `"forward_remote"`}, field{"custom_hosts", "", `""`},
+	field{"custom_config", "", `""`})
 
 func value(raw string) any {
 	v, _ := jsonx.Parse([]byte(raw))
 	return v
 }
 
-// loadSection returns the request's profile view and its MosDNS settings,
-// created with the defaults when missing.
-func loadSection(ctx context.Context, extra []field) (*jsonx.Object, *jsonx.Object, error) {
-	config, err := repo.GetConfig(ctx, "")
+// body is the request's JSON object; empty for a falsy body when
+// allowEmpty (`request.json or {}`).
+func body(c *httpx.Ctx, allowEmpty bool) (map[string]json.RawMessage, error) {
+	parsed, err := c.JSON()
 	if err != nil {
-		return nil, nil, err
-	}
-	if !config.Has("mosdns") {
-		settings := jsonx.NewObject()
-		for _, f := range append(append([]field{}, baseDefaults...), extra...) {
-			settings.Set(f.key, value(f.def))
-		}
-		config.Set("mosdns", settings)
-	}
-	settings, ok := config.Value("mosdns").(*jsonx.Object)
-	if !ok || settings == nil {
-		return nil, nil, errors.New("mosdns settings are not an object")
-	}
-	return config, settings, nil
-}
-
-// body is the request's JSON object (Flask request.json): a non-JSON body
-// or a non-object fails.
-func body(c *httpx.Ctx) (map[string]json.RawMessage, error) {
-	if _, err := c.JSON(); err != nil {
 		return nil, err
+	}
+	if allowEmpty && !jsonx.Truthy(parsed) {
+		return map[string]json.RawMessage{}, nil
 	}
 	data, _ := c.Data()
 	var out map[string]json.RawMessage
-	if err := json.Unmarshal(data, &out); err != nil || out == nil {
+	if json.Unmarshal(data, &out) != nil || out == nil {
 		return nil, errors.New("request body is not a JSON object")
 	}
 	return out, nil
+}
+
+func (s section) handle(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := context.WithoutCancel(c.Context())
+	config, err := repo.GetConfig(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	if !config.Has("mosdns") {
+		defaults := jsonx.NewObject()
+		for _, f := range append(append([]field{}, baseDefaults...), s.fields...) {
+			defaults.Set(f.key, value(f.def))
+		}
+		config.Set("mosdns", defaults)
+	}
+	settings, ok := config.Value("mosdns").(*jsonx.Object)
+	if !ok || settings == nil {
+		return nil, errors.New("mosdns settings are not an object")
+	}
+	for _, f := range s.fields {
+		if s.cache && !settings.Has(f.key) { // older configurations lack them
+			settings.Set(f.key, value(f.def))
+		}
+	}
+	if c.Request.Method == "GET" {
+		out := jsonx.NewObject()
+		for _, f := range s.fields {
+			def := value(f.def)
+			if f.key == "api_address" { // legacy field name
+				def = settings.GetOr("api_addr", def)
+			}
+			out.Set(f.name, settings.GetOr(f.key, def))
+		}
+		return httpx.JSON(out), nil
+	}
+	if c.Request.Method != "POST" {
+		return nil, nil // HEAD: Flask's view returns None (500)
+	}
+	data, err := body(c, s.cache)
+	if err != nil {
+		return httpx.Message(500, false, err.Error()), nil
+	}
+	if s.cache {
+		normalizeCache(settings, data)
+		guard, err := repo.SaveConfigWithPublishGuard(ctx, config, "mosdns", "")
+		if err != nil {
+			return httpx.Message(500, false, err.Error()), nil
+		}
+		return httpx.JSON(jsonx.Obj("success", true, "publish_guard", guard)), nil
+	}
+	for _, f := range s.fields {
+		settings.Set(f.key, fromBody(data, f.name, f.def))
+	}
+	if s.path == "api-settings" {
+		settings.Delete("api_addr")
+	}
+	if err := repo.SaveConfig(ctx, config, ""); err != nil {
+		return httpx.Message(500, false, err.Error()), nil
+	}
+	return httpx.JSON(jsonx.Obj("success", true)), nil
 }
 
 func fromBody(data map[string]json.RawMessage, name, def string) any {
@@ -112,85 +154,8 @@ func fromBody(data map[string]json.RawMessage, name, def string) any {
 	return value(def)
 }
 
-// failed is the 500 JSON answer of the editor routes.
-func failed(err error) *httpx.Response { return httpx.Message(500, false, err.Error()) }
-
-func (s section) handle(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := context.WithoutCancel(c.Context())
-	config, settings, err := loadSection(ctx, s.fields)
-	if err != nil {
-		return nil, err
-	}
-	if c.Request.Method == "GET" {
-		out := jsonx.NewObject()
-		for _, f := range s.fields {
-			def := value(f.def)
-			if f.key == "api_address" { // legacy field name api_addr
-				def = settings.GetOr("api_addr", def)
-			}
-			out.Set(f.name, settings.GetOr(f.key, def))
-		}
-		return httpx.JSON(out), nil
-	}
-	data, err := body(c)
-	if err != nil {
-		return failed(err), nil
-	}
-	for _, f := range s.fields {
-		settings.Set(f.key, fromBody(data, f.name, f.def))
-	}
-	settings.Delete("api_addr")
-	if err := repo.SaveConfig(ctx, config, ""); err != nil {
-		return failed(err), nil
-	}
-	return httpx.JSON(jsonx.Obj("success", true)), nil
-}
-
-func cacheSettings(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := context.WithoutCancel(c.Context())
-	config, settings, err := loadSection(ctx, cacheFields)
-	if err != nil {
-		return nil, err
-	}
-	for _, f := range cacheFields { // older configurations lack them
-		if !settings.Has(f.key) {
-			settings.Set(f.key, value(f.def))
-		}
-	}
-	if c.Request.Method == "GET" {
-		out := jsonx.NewObject()
-		for _, f := range cacheFields {
-			out.Set(f.key, settings.Value(f.key))
-		}
-		return httpx.JSON(out), nil
-	}
-	data, err := cacheBody(c)
-	if err != nil {
-		return failed(err), nil
-	}
-	normalizeCache(settings, data)
-	guard, err := repo.SaveConfigWithPublishGuard(ctx, config, "mosdns", "")
-	if err != nil {
-		return failed(err), nil
-	}
-	return httpx.JSON(jsonx.Obj("success", true, "publish_guard", guard)), nil
-}
-
-// cacheBody is `request.json or {}`.
-func cacheBody(c *httpx.Ctx) (map[string]json.RawMessage, error) {
-	if _, err := c.JSON(); err != nil {
-		return nil, err
-	}
-	data, _ := c.Data()
-	switch trimmed := string(bytes.TrimSpace(data)); trimmed {
-	case "null", "false", "0", `""`, "[]", "{}":
-		return map[string]json.RawMessage{}, nil
-	}
-	return body(c)
-}
-
 // normalizeCache stores the cache fields of a save, normalized the same
-// way for whole-editor and legacy saves.
+// way for whole-editor and cache-only saves.
 func normalizeCache(settings *jsonx.Object, data map[string]json.RawMessage) {
 	interval := intOf(data["cache_dump_interval"], 300)
 	if interval <= 0 {
@@ -198,42 +163,32 @@ func normalizeCache(settings *jsonx.Object, data map[string]json.RawMessage) {
 	}
 	dumpFile := "./cache.dump"
 	if raw, ok := data["cache_dump_file"]; ok && string(raw) != "null" {
-		if err := json.Unmarshal(raw, &dumpFile); err != nil {
-			dumpFile = textOf(raw)
+		if json.Unmarshal(raw, &dumpFile) != nil {
+			dumpFile = string(raw)
 		}
 	}
-	settings.Set("cache_enabled", truthy(data["cache_enabled"], true))
-	settings.Set("cache_dump_enabled", truthy(data["cache_dump_enabled"], true))
+	settings.Set("cache_enabled", truthy(data["cache_enabled"]))
+	settings.Set("cache_dump_enabled", truthy(data["cache_dump_enabled"]))
 	settings.Set("cache_size", jsonx.Int(intOf(data["cache_size"], 10240)))
 	settings.Set("cache_lazy_ttl", jsonx.Int(intOf(data["cache_lazy_ttl"], 21600)))
 	settings.Set("cache_dump_interval", jsonx.Int(interval))
 	settings.Set("cache_dump_file", dumpFile)
 }
 
-// truthy is the truth value of a JSON value (def when absent).
-func truthy(raw json.RawMessage, def bool) bool {
+// truthy is the truth value of a JSON value (true when absent).
+func truthy(raw json.RawMessage) bool {
 	if raw == nil {
-		return def
-	}
-	switch text := strings.TrimSpace(string(raw)); text {
-	case "null", "false", `""`, "[]", "{}":
-		return false
-	default:
-		if f, err := strconv.ParseFloat(text, 64); err == nil {
-			return f != 0
-		}
 		return true
 	}
+	v, _ := jsonx.Parse(raw)
+	return jsonx.Truthy(v)
 }
 
 // intOf is an integer setting: a number (truncated), a boolean or a
-// numeric string; anything else is the default.
+// decimal string; anything else is the default.
 func intOf(raw json.RawMessage, def int64) int64 {
-	if raw == nil {
-		return def
-	}
 	var v any
-	if err := json.Unmarshal(raw, &v); err != nil {
+	if raw == nil || json.Unmarshal(raw, &v) != nil {
 		return def
 	}
 	switch x := v.(type) {
@@ -243,13 +198,12 @@ func intOf(raw json.RawMessage, def int64) int64 {
 		}
 		return 0
 	case float64:
-		if math.IsNaN(x) || math.Abs(x) >= 1<<63 {
-			return def
-		}
-		if n, err := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64); err == nil {
+		if n, err := strconv.ParseInt(string(raw), 10, 64); err == nil {
 			return n
 		}
-		return int64(x)
+		if math.Abs(x) < 1<<63 {
+			return int64(x)
+		}
 	case string:
 		if n, err := strconv.ParseInt(strings.ReplaceAll(strings.TrimSpace(x), "_", ""), 10, 64); err == nil {
 			return n
@@ -258,29 +212,12 @@ func intOf(raw json.RawMessage, def int64) int64 {
 	return def
 }
 
-func textOf(raw json.RawMessage) string {
-	switch string(raw) {
-	case "true":
-		return "True"
-	case "false":
-		return "False"
-	}
-	return string(raw)
-}
-
 func saveSettings(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := context.WithoutCancel(c.Context())
 	var data map[string]json.RawMessage
 	if raw, err := c.Data(); err != nil || !c.IsJSON() || json.Unmarshal(raw, &data) != nil || data == nil {
 		return nil, repo.NewValidationError("MosDNS 设置必须是 JSON 对象")
 	}
-	draft := []field{{"custom_config", "custom_config", `""`}, {"direct_rulesets", "direct_rulesets", "[]"},
-		{"proxy_rulesets", "proxy_rulesets", "[]"}, {"direct_rules", "direct_rules", "[]"}, {"proxy_rules", "proxy_rules", "[]"},
-		{"custom_matches", "custom_matches", "[]"}, {"custom_match_position", "custom_match_position", `"tail"`},
-		{"local_dns", "local_dns", `""`}, {"remote_dns", "remote_dns", `""`}, {"fallback_dns", "fallback_dns", `""`},
-		{"default_forward", "default_forward", `"forward_remote"`}, {"custom_hosts", "custom_hosts", `""`},
-		{"log_enabled", "log_enabled", "true"}, {"log_level", "log_level", `"info"`}, {"log_file", "log_file", `""`},
-		{"api_enabled", "api_enabled", "true"}, {"api_address", "api_address", `":8080"`}}
 	profileID, err := repo.ResolveProfileID(ctx, "")
 	if err != nil {
 		return nil, err
@@ -289,7 +226,7 @@ func saveSettings(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	// One transaction for the whole editor draft.
+	// The whole editor draft in one transaction.
 	_, revision, err := r.UpdateProfileTransaction(ctx, profileID, func(_ context.Context, profile *jsonx.Object) (*jsonx.Object, error) {
 		settings, ok := profile.Value("mosdns").(*jsonx.Object)
 		if !ok || settings == nil {
@@ -299,8 +236,11 @@ func saveSettings(c *httpx.Ctx) (*httpx.Response, error) {
 			settings = jsonx.NewObject()
 			profile.Set("mosdns", settings)
 		}
-		for _, f := range draft {
-			settings.Set(f.key, fromBody(data, f.name, f.def))
+		settings.Set("custom_config", fromBody(data, "custom_config", `""`))
+		for _, s := range sections[:5] {
+			for _, f := range s.fields {
+				settings.Set(f.key, fromBody(data, f.key, f.def))
+			}
 		}
 		normalizeCache(settings, data)
 		settings.Delete("api_addr")
@@ -321,15 +261,13 @@ func ruleProxy(c *httpx.Ctx) (*httpx.Response, error) {
 		URL:  c.ArgDefault("url", ""), Part: c.ArgDefault("part", ""), SourceID: c.ArgDefault("source_id", ""),
 		HostURL: c.HostURL(),
 	})
-	var response *httpx.Response
+	response := httpx.Text(result.Status, result.Text)
 	if result.JSON != nil {
 		object := jsonx.NewObject()
 		for key, v := range result.JSON {
 			object.Set(key, v)
 		}
 		response = httpx.JSONStatus(result.Status, object)
-	} else {
-		response = httpx.Text(result.Status, result.Text)
 	}
 	if result.NoStore {
 		response.NoStore()

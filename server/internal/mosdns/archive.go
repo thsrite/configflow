@@ -24,7 +24,8 @@ import (
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
-	"configflow/internal/yamlx"
+
+	"gopkg.in/yaml.v3"
 )
 
 var archiveLogger = logx.Get("backend.utils.mosdns_archive")
@@ -57,30 +58,14 @@ type Download struct {
 
 // File is a file stored as is (GetMosDNSCustomFiles, OxiDNS attachments).
 type File struct {
-	Path    string
-	Content []byte
+	Path    string `json:"path"`
+	Content string `json:"content"`
 }
 
-// DownloadsOf converts the converter's download list.
-func DownloadsOf(list []any) ([]Download, error) {
-	var out []Download
+// DecodeList converts a converter result list (downloads, custom files).
+func DecodeList[T any](list []any) ([]T, error) {
+	var out []T
 	return out, viaJSON(list, &out)
-}
-
-// FilesOf converts the converter's custom file list ({path, content}).
-func FilesOf(list []any) ([]File, error) {
-	var raw []struct {
-		Path    string `json:"path"`
-		Content string `json:"content"`
-	}
-	if err := viaJSON(list, &raw); err != nil {
-		return nil, err
-	}
-	out := make([]File, len(raw))
-	for i, f := range raw {
-		out[i] = File{Path: f.Path, Content: []byte(f.Content)}
-	}
-	return out, nil
 }
 
 func viaJSON(value any, target any) error {
@@ -146,7 +131,9 @@ func label(name string) string {
 type snapshot struct {
 	ProfileID    string `json:"profile_id"`
 	SystemConfig struct {
-		ServerDomain string `json:"server_domain"`
+		ServerDomain   string `json:"server_domain"`
+		ConfigToken    string `json:"config_token"`
+		RuleProxyToken string `json:"rule_proxy_token"`
 	} `json:"system_config"`
 	RuleConfigs []struct {
 		LibraryRuleID  string `json:"library_rule_id"`
@@ -393,7 +380,7 @@ func BuildMosDNSZip(ctx context.Context, config *jsonx.Object, yamlContent strin
 		return nil, err
 	}
 	for _, file := range custom {
-		if err := add(file.Path, file.Content); err != nil {
+		if err := add(file.Path, []byte(file.Content)); err != nil {
 			return nil, err
 		}
 	}
@@ -528,39 +515,22 @@ func decodeText(content []byte) (string, error) {
 // checkReferences verifies that config.yaml is a mapping with a plugin
 // list and (unless skipped) that every plugin's args.files entry is packed.
 func checkReferences(yamlContent string, files map[string][]byte, skip bool) error {
-	document, err := yamlx.LoadWith(yamlContent, yamlx.LoadOptions{KeepNonStringKeys: true})
-	if err != nil {
+	var document any
+	if err := yaml.Unmarshal([]byte(yamlContent), &document); err != nil {
 		return err
 	}
-	var plugins any = []any{}
-	switch d := document.(type) {
-	case *jsonx.Object:
-		plugins = d.GetOr("plugins", plugins)
-	case *yamlx.Mapping:
-		if value, ok := d.Get("plugins"); ok {
-			plugins = value
-		}
-	default:
+	root, ok := document.(map[string]any)
+	plugins, isList := root["plugins"].([]any)
+	if !ok || !isList && root["plugins"] != nil {
 		return archiveErr("MosDNS 配置格式无效")
 	}
-	list, ok := plugins.([]any)
-	if !ok {
-		return archiveErr("MosDNS 配置格式无效")
-	}
-	if skip {
-		return nil
-	}
-	for _, plugin := range list {
-		object, ok := plugin.(*jsonx.Object)
-		if !ok {
-			return archiveErr("MosDNS 配置格式无效")
+	for _, plugin := range plugins {
+		if skip {
+			break
 		}
-		args, ok := object.Value("args").(*jsonx.Object)
-		if !ok {
-			continue
-		}
-		references, ok := args.GetOr("files", []any{}).([]any)
-		if !ok {
+		args, _ := plugin.(map[string]any)["args"].(map[string]any)
+		references, isList := args["files"].([]any)
+		if !isList && args["files"] != nil {
 			return archiveErr("MosDNS 文件引用必须为列表")
 		}
 		for _, reference := range references {
