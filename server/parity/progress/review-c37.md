@@ -99,4 +99,26 @@ baseline: new=0 stale=0
 ```
 Full race discovery 8.172s, API 1.819s. Production baseline unchanged: agents:value 3,
 config:value 2; no discovery differences. Zero open C37 findings, status verified.
-C30 advanced go during the run; rebase and focused integration recheck pending.
+C30 advanced go during the run; rebase onto f45e0cce completed and focused integration recheck passed.
+
+Post-rebase .32 exact commands (exit 0):
+```sh
+rt -- bash -lc 'cd server && { test -z "$(gofmt -l internal/ tools/ cmd/)" && go vet ./... && go test -count=1 ./internal/api/nodes/ ./internal/api/subscriptions/... ./internal/server/ ./internal/discovery/... ./internal/api/domaindiscovery/ && CONFIGFLOW_DIFF=1 go test -count=1 ./internal/discovery/difftest/; } > /tmp/c37-post-rebase.log 2>&1; result=$?; tail -n 12 /tmp/c37-post-rebase.log; exit "$result"'
+rt -- server/scripts/proddiff.sh
+```
+Final lines:
+```text
+ok configflow/internal/server 0.011s
+ok configflow/internal/discovery 0.607s
+ok configflow/internal/discovery/difftest 0.005s
+ok configflow/internal/api/domaindiscovery 0.035s
+ok configflow/internal/discovery/difftest 1.780s
+self-check: status=PASS json-leaf=PASS yaml-leaf=PASS text-line=PASS
+GET_routes_compared=65 cases=2060 compared=282 coverage_regressions=0 new=0 stale=0
+baseline: new=0 stale=0
+```
+The nine new GET templates belong to C30; discovery's six remain enforced. Existing five baseline
+keys unchanged (agents:value 3, config:value 2), no discovery baseline entry. Final rebase onto
+6a29590d adds only O6 review documentation; no executable source change after these checks.
+Rebased fix commits: c524c1b7 (defaults/memory), f4d99211 (context/region/metadata), ccf7c627
+(comparator). All acceptance steps complete; zero open findings, verified. Worktree clean; no push.

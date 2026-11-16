@@ -1726,7 +1726,7 @@ Commands:
 File inventory (lines; before hand-back documentation commit): existing discovery.go 310 → 45; discovery_test.go 24 retained. Added under discovery/: auto.go 277, bridge.go 633, jobs.go 183, lifecycle_test.go 293, messages.go 60, model.go 339, probe.go 237, region.go 333, settings.go 307, summary.go 575, taskbridge.go 59, website.go 145, write.go 384, difftest/diff_test.go 428, difftest/testdata/reference.py 67. Added api/domaindiscovery/: routes.go 236, messages.go 4, routes_test.go 70. Server wiring imports/registry lines and 17 routes.tsv rows updated. No backend/frontend/doc UI changes, generated corpora, dependencies, pushes or sub-agents.
 
 
-Independent adversarial review (go-review-c37; fixes e4eb76c8, 361174cc, f6a61e52):
+Independent adversarial review (go-review-c37; fixes c524c1b7, f4d99211, ccf7c627):
 - **medium**: null note silently removed annotations; explicit null apply rule type was defaulted.
   Both now return the Flask validation failure without changing stored state.
 - **medium**: legacy numeric confidence, invalid stored port, mixed history/ignore entries and
@@ -1762,7 +1762,12 @@ Final .32 acceptance at integration 77df305c + review f6a61e52:
   coverage_regressions=0, new=0, stale=0, all four self-checks PASS; existing baseline five keys
   (agents:value=3, config:value=2), no C37 differences and no baseline edits.
 - Integration advanced with independent C30 changes during final race; rebase and focused
-  integration/proddiff recheck follow, without repeating the full race suite.
+  integration/proddiff recheck passed, without repeating the full race suite.
+- Post-rebase f45e0cce: gofmt silent, vet and focused node/subscription/server/discovery tests pass;
+  enabled Flask differential 1.780s. proddiff now 65 GET templates/282 comparisons, no new/stale
+  baseline or coverage regressions, four self-checks PASS; all six C37 GET templates enforced.
+- Final rebase onto 6a29590d adds only parity/difftest-config.md review documentation. Clean worktree,
+  no push. Exact commands and final output recorded in parity/progress/review-c37.md.
 
 
 ## Next steps (coordinator; at most 2 config agents at a time: one porter + one reviewer)
