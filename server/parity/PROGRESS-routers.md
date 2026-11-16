@@ -1,6 +1,6 @@
 # PROGRESS — domain `routers`
 
-Domain `routers` (WORKFLOW.md): router core, iKuai, RouterOS core/policy, router DNS/IPv6, router publish/rule sync, clients/split (old packages #32–#38). **52 Python files, 17574 lines, 17 modules** (equal to the `routers` totals in `FILES.md`) — 16 missing, 0 partial, 0 ported, 1 verified (R02). Only reviewers set `verified`.
+Domain `routers` (WORKFLOW.md): router core, iKuai, RouterOS core/policy, router DNS/IPv6, router publish/rule sync, clients/split (old packages #32–#38). **52 Python files, 17574 lines, 17 modules** (equal to the `routers` totals in `FILES.md`) — 15 missing, 0 partial, 1 ported (R01), 1 verified (R02). Only reviewers set `verified`.
 
 Planning audit: 2026-11-16, worktree `configflow-go`, branch `go` at 7b1b90b5 (plus uncommitted work of the C24/C25 agent in `internal/oxidns`). The Go tree was searched directly (`grep -ri 'routeros|ikuai|router_split|routers_of|router' server/internal`): **no package ports any routers file**; `internal/server` wires no routers package. What exists is listed under "Go code that already touches this domain" below; nothing from the old `progress/` files covers #32–#38.
 
@@ -37,7 +37,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 
 | Id | Module | Py lines | Status | HR | Prereqs | Routes | Go package(s) |
 |---|---|---|---|---|---|---|---|
-| R01 | router models, store, DHCP DNS, desired state | 969 | missing | HR | C04, C05, C21, C32¹ | – | internal/routers, internal/routerdoc |
+| R01 | router models, store, DHCP DNS, desired state | 969 | ported | HR | C04, C05, C21, C32¹ | – | internal/routers, internal/routerdoc, internal/netipx |
 | R02 | router split (full TUN marker), rule IP presence | 381 | verified | HR | C04, C12, C14, C18, C21; C36² | – | internal/routersplit, internal/gateway/gwbase, internal/ippresence |
 | R03 | RouterOS NAT assessment, iKuai IP groups, drift report | 1499 | missing | HR | R01 | – | internal/routers |
 | R04 | RouterOS REST driver, batch writes | 1415 | missing | HR | R01, R03; shared requests client³ | – | internal/routers |
@@ -134,20 +134,46 @@ None of it is a port of a routers file; listed so porters replace or use it inst
 
 ## R01 — router models, store, DHCP DNS, desired state
 
-**Status: `missing` (porting in progress, see "Port log" below)** · HR · prereqs: C04, C05, C21 (ready), C32¹ · Go: internal/routers, internal/routerdoc, internal/netipx
-
-Port log (interim, 2026-11-16): code committed — 650c8c65 routerdoc (+ repo/notifications switched), 37f783f3 routers core, 5f89caeb switch to net/netip (pyip dropped, thin `internal/netipx`; corpus 29742 rows 0 differ). Next: record plugin `internal/routers/testdata/routers_record.py` (written, not yet run), Go replay, corpus, routerfake skeleton.
+**Status: `ported`** (2026-11-16, not reviewed) · HR · prereqs: C04, C05, C21 (ready), C32¹ · Go: internal/routers, internal/routerdoc, internal/netipx
 
 Files:
-- `backend/routers/__init__.py` (1), `base.py` (371), `ros_values.py` (27), `lan_clients.py` (93, → routerdoc), `dhcp_dns.py` (158), `store.py` (156), `desired.py` (163)
+- `backend/routers/__init__.py` (1), `base.py` (371), `ros_values.py` (27), `lan_clients.py` (93, → routerdoc), `dhcp_dns.py` (158), `store.py` (156), `desired.py` (163); plus the settings validators of `dns_guard.normalize_settings` (R09) and `ipv6_pd_guard.normalize_settings/settings_of` (R11), ported here because `store.normalize/public_view` always call them, and the check of `client_fixed_ip.validate_bindings` (R17) for `repo`.
 
-Tests: `test_routers.py` (16; drivers/report/API cases replay as R03–R05/R15 land), `test_router_cidr_index.py` (8; NAT/policy halves → R03/R08), `test_router_source_activation.py` (3; policy half → R08), `test_router_dhcp_dns.py` (13; plan/release halves → R12)
+Commits: 5440b75f/650c8c65/37f783f3/5f89caeb (first, Python-shaped port; superseded), **755f1a9d** (reshaped Go-native per PORTING rules 1–4 of 3df6bf38/e028fc25; the current code), eadb78a4 + this section (PROGRESS).
 
-Routes: none.
+Go layout (`internal/routers`, no jsonx, no `any` parameters):
+- `model.go` — `RouterError{Kind: KindRouter|KindConflict|KindRollback}` + `AsRouterError`, `ValidationError` (400 + message), `ErrNotPorted`; `RouterInfo`, `RouteEntry` (`NewRoute`), `PolicyRouteEntry`, `NatBypassEntry`, `DhcpDnsEntry`, `DhcpDnsState`, `RouterState` (only the fields R01 uses; later modules add theirs), `Driver` interface (Python `RouterDriver`; vendor defaults are added by R04/R05), `IsManaged`, `ManagedComment`, policy constants, `PolicyRouteOK`, `PolicyRoute`, `RetirePolicyRoutes`, `StaleRoutes`, `StaleRouteWarning`. JSON tags = Python field names (as_dict is `json.Marshal`).
+- `staticindex.go` — `NewStaticRouteIndex(routes).Select(cidr, gateway)` → `StaticRouteSelection{Candidates, Selected, Covered, Conflict}`, `StaticRouteCandidates`. The interval sweep picks, per boundary, the most specific preferred network directly (Python used a heap; same result).
+- `router.go` — `Router` (typed record; `Extra map[string]json.RawMessage` keeps last_probe/last_release/*_state and any unknown field; `UnmarshalJSON` applies Python's reader defaults verify_tls=true, rule_sync_interval=60), `State(key)`, `StaticRuleSets()`, `View()` → `RouterView` (= public_view), `DNSGuard`/`DefaultDNSGuard`/`NormalizeDNSGuard`, `PDGuard`/`NormalizePDGuard`, `Normalize(body, existing)` (request body bytes → record, every Chinese message and check order of store.normalize), `NewRouterID` (var, tests), `RedactRouters(document) ([]byte, error)`.
+- `dhcpdns.go` — `DNSAgent`/`AgentHA` (typed Agent view), `DNSSettings` (`dns_agent_id/dns_server/dns_error/dns_ha`), `DNSAgentSettings`, `DNSHASettings`, `MatchingNetworks`, `BuildDNSReport(dns, gateway, state)` → `DNSReport`, `DNSCheck`, `CheckedDNSTarget`, `VerifyDNS`.
+- `desired.go` — `RuleSet`, `LibraryRule`, `RuleSourceIssue`, `FakeIPNetwork(customConfig)` (yaml.v3), `MergeSources(map[netip.Prefix][]string)`, `Desired` (embeds `*DNSSettings`, set later by the inspection), `ContentLoader`, `RulesetContent` (C32 collaborator, returns `ErrNotPorted` until C32 exports `get_ruleset_content`; `ComputeDesired` returns that error instead of reporting "no cache"), `ComputeDesired(profile JSON, gateway, ruleSets, loader)`.
+- `rosvalues.go` — `ComparableValues(path, row map[string]any)` (row = decoded RouterOS REST JSON; R04 may type it).
+- `wire.go` — `Wire()` registers `repo.Hooks.RedactRouters` (adapter converts repo's jsonx value at the boundary); listed in `server.wirePackages` (37f783f3).
+- `internal/routerdoc` (leaf: `Sighting`/`View`, `Reading`/`Covers`, `Better`, `Rank`, `SourceOrder`, `IPv4`, `NormalizeMAC`, `ValidateBindings(document) string` + messages). `repo/compat_oxidns.go::validateBindings` calls it (jsonx → JSON at the boundary). `notifications.RoutersOf` stays its own 4-line jsonx helper (decision 3 switch reverted: routerdoc no longer uses jsonx; notifications moves to typed records in its S pass).
+- `internal/netipx` (leaf, on `net/netip`, shared with later modules): `ParseAddr4`, `ParseNetwork(text, strict)` (bare host, leading-zero prefix, IPv4 netmask/hostmask like ip_network), `ParseNetwork4`, `Broadcast`, `ComparePrefix`/`SortPrefixes`, `IsPrivate`/`IsGlobal` (CPython 3.11.17 tables incl. exception blocks), `Collapse` (collapse_addresses). The `pyip` port of Python `ipaddress` was dropped (maintainer: Go-native libraries).
 
-Evidence: no Go code (compat copies only: `notifications.RoutersOf`, `repo` lan_clients/bindings — replace them).
+Size (budget 1.2 × 969 = 1163): Go non-test lines routers 1596 + routerdoc 195 = **1791 (code-only 1471 vs Python code-only 779)**, before the reshape 2135 + pyip ~1400; `internal/netipx` 245 counted separately (shared helpers net/netip lacks). Excess is mostly explicit JSON types the UI/stored data need (`Router`, `RouterView`, `DNSAgent`, `DNSReport`, `Desired`, `RuleSet`, ~200 lines) and strict per-field type validation of the untyped request body that Python gets from `type(x) is bool`; a reviewer may push further (e.g. derive `RouterView` from `Router`).
 
-Notes for porter: `base.py` dataclasses (`RouterState`, `RouteEntry`, `NatBypassEntry`, `DhcpDnsState`, `RouterInfo`, …), `RouterError`/`RouterConflictError`/`RouterRollbackError`, `StaticRouteIndex`/`SupernetIndex` CIDR indexes (bisect/heap; corpus against Python `ipaddress`), `as_dict`, `managed_comment`/`is_managed`, `retire_policy_routes`. `store.normalize` validation messages, `redact_routers` → registers `repo.Hooks.RedactRouters`; `public_view`, `EDITABLE_FIELDS`, `RouterValidationError` are used by C36. `store` lazily needs `dns_guard.DEFAULTS/normalize_settings` (R09) and IPv6 settings (R10/R11) → collaborator variables. `desired.fake_ip_network`, `merge_sources`, `rule_source_issue`, `compute_desired` (content loader = C32 collaborator; MosDNS IP part conversion is ready). `lan_clients.ipv4`/`normalize_mac` must follow Python `int(part, 16)` exactly (full-width digits, signs, whitespace — the repo copy does not). Build the domain's **record plugin** (`internal/routers/testdata/routers_record.py`, see "Testing approach") here; later modules extend its function list.
+Acceptance (boundary, PORTING rule 4): `TestR01Corpus` (`r01_corpus_test.go`, `testdata/gen_r01.py` → `r01_corpus.jsonl.gz`, real Python on the test server, synthetic values only): **9964 rows, 0 differ** — normalize 2500 (create/update payloads with odd types, guards, policy/static overlap, state-owned type/endpoint changes, URL forms), stored-record round trip 800, public_view 800, redact_routers 60, compute_desired 600 (fake-ip YAML forms, disabled/library sources, non-proxy policies, public/private v4/v6 networks), dns_agent_settings 400, dns_ha_settings 400, build_dns_report 1500, verify_dns 1341, static-route select 1500, comparable_values 36, normalize_mac/ipv4/validate_bindings 27. `internal/netipx` `TestCorpus` 29742 rows vs CPython ipaddress, 0 differ. `wire_test.go` (redact hook). `repo`, `notifications`, `server` tests pass.
+
+"No longer chased" (counted as equal, PORTING functional parity): a list/dict sent for a text field (name/type/endpoint/username/agent ids) is stored as JSON text in Go, Python stored its `str()` repr (27 rows); Python-internal exception texts; IPv6 scope ids in networks (Python keeps `%zone`, netipx rejects); full-width digits / signs inside MAC parts (`int(part, 16)`), Unicode case mapping in MACs; urlparse corner cases (Go `net/url` rejects a few hosts urlparse accepts, e.g. with spaces); non-string rule ids/names in profiles (skipped).
+
+Python test files → coverage:
+- `test_routers.py`: desired/store/redaction cases → `TestR01Corpus` (compute_desired, normalize, public_view, redact); driver probe/state cases → R04/R05; report cases → R03; API cases → R15 HTTP differential.
+- `test_router_cidr_index.py`: merge_sources/compute_desired → `TestR01Corpus` compute_desired + netipx collapse corpus; NAT/policy halves → R03/R08/R12.
+- `test_router_source_activation.py`: compute_desired activation → `TestR01Corpus`; policy half → R08.
+- `test_router_dhcp_dns.py`: settings/report → `TestR01Corpus` (dns_* and build_dns_report/verify_dns); plan/release/API halves → R12/R15.
+
+Dropped by the rule changes (decided by the maintainer, not left undone): the function-level record plugin (`routers_record.py`, written and run once over the full suite: 45085 distinct calls, plugin-induced failures fixed, then removed — function-level replay is no longer required); the loopback `routerfake` (R01 has no routes; the R15 HTTP differential builds it).
+
+Left for others: C32 must export `get_ruleset_content` and assign `routers.RulesetContent`. R09/R11 reuse `NormalizeDNSGuard`/`NormalizePDGuard`. R04/R05 add driver defaults and type RouterOS rows.
+
+Commands (shared tree did not build because of mosdns/urlx work in progress; verified on a private detached worktree at 5f89caeb + these files):
+- corpus: `rt --back server/internal/routers/testdata/r01_corpus.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/routers/testdata/gen_r01.py server/internal/routers/testdata/r01_corpus.jsonl.gz'`
+- netipx corpus: `rt --back server/internal/netipx/testdata/corpus.jsonl.gz -- bash -lc '~/cf-test/.venv/bin/python server/internal/netipx/testdata/gen_corpus.py server/internal/netipx/testdata/corpus.jsonl.gz'`
+- tests: `rt -- bash -lc 'cd server && go vet ./internal/routers/ ./internal/routerdoc/ ./internal/netipx/ && go test -count=1 ./internal/netipx/ ./internal/routers/ ./internal/routerdoc/ ./internal/repo/ ./internal/notifications/ ./internal/server/'`
+
+Pitfalls: `json.Unmarshal` into a Go string accepts `null` — use `jsonString` (strict) for values Python checks with `isinstance(str)`; the shared git index may hold other agents' staged deletions — always `git commit -- <paths>`.
 
 ## R02 — router split (full TUN marker), rule IP presence
 
