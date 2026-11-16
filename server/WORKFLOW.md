@@ -149,3 +149,11 @@ internals no longer required; size budget target ≤ 1.2×, hard limit 1.5× the
   Python test file's behaviour, size budget).
 - Reviewers of new modules check the size budget and reject Python-shaped code (`any` parameters for
   Python call shapes, emulated exceptions, private copies of shared helpers).
+
+Note for N7 (from review R01, 2026-11-16): every reader of the same user YAML must agree. `yaml.v3`
+rejects duplicate mapping keys and multi-document input differently from the PyYAML port; R01's fake-ip
+range reader once used yaml.v3 directly while the Mihomo generator used yamlx, so a duplicate key made
+them disagree (fake-ip traffic routed past the gateway). When N7 swaps yamlx to yaml.v3, decide duplicate
+keys / multi-document handling once in the yamlx facade and keep all readers on it.
+Note (R01 size, coordinator 2026-11-16): R01's budget counts the 67 validator lines it took over from
+dns_guard/ipv6_pd_guard/client_fixed_ip (1494 / 1036 = 1.44×); R09/R11/R17 budgets shrink accordingly.
