@@ -128,20 +128,71 @@ def structure(body, content_type='', filename=''):
         with zipfile.ZipFile(io.BytesIO(body)) as archive:
             if len(set(archive.namelist())) != len(archive.namelist()):
                 raise ValueError('duplicate ZIP member')
-            return {n: structure(archive.read(n), '', n) for n in archive.namelist() if not n.endswith('/')}
+            return {n: {'archive_directory': True} if n.endswith('/') else structure(archive.read(n), '', n)
+                    for n in archive.namelist()}
     if body.startswith(b'\x1f\x8b') and filename.endswith(('.tar.gz', '.tgz')):
         with tarfile.open(fileobj=io.BytesIO(body)) as archive:
             members = archive.getmembers()
+            if len({m.name for m in members}) != len(members):
+                raise ValueError('duplicate tar member')
             if any(not m.isfile() and not m.isdir() for m in members):
                 raise ValueError('non-file tar member')
-            return {m.name: {'mode': m.mode, 'content': structure(archive.extractfile(m).read(), '', m.name)}
-                    for m in members if m.isfile()}
+            return {m.name: {'mode': m.mode, 'archive_directory': True} if m.isdir() else
+                    {'mode': m.mode, 'content': structure(archive.extractfile(m).read(), '', m.name)} for m in members}
     if 'yaml' in content_type or filename.endswith(('.yaml', '.yml')):
         return yaml.safe_load(body)
+    if filename in ('surge.conf', 'loon.lcf') or filename.endswith(('/generated/config.conf', '/generated/loon.lcf')):
+        return ini_structure(body.decode('utf-8'))
     try:
         return body.decode('utf-8').replace('\r\n', '\n').replace('\r', '\n').splitlines()
     except UnicodeError:
         return body
+
+
+def ini_structure(text):
+    """Known generated Surge/Loon text, preserving section and rule order."""
+    def fields(value):
+        parts, start, quoted, escaped = [], 0, False, False
+        for i, char in enumerate(value):
+            if escaped:
+                escaped = False
+            elif char == '\\':
+                escaped = True
+            elif char == '"':
+                quoted = not quoted
+            elif char == ',' and not quoted:
+                parts.append(value[start:i].strip())
+                start = i + 1
+        parts.append(value[start:].strip())
+        def token(value):
+            if value.startswith('"') and value.endswith('"'):
+                try:
+                    return json.loads(value)
+                except ValueError:
+                    pass
+            return value
+        return [token(v) for v in parts]
+    result = {'preamble': [], 'sections': []}
+    entries = result['preamble']
+    section = ''
+    for raw in text.replace('\r\n', '\n').replace('\r', '\n').splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith('[') and line.endswith(']'):
+            section = line[1:-1].strip()
+            item = {'name': section, 'entries': []}
+            result['sections'].append(item)
+            entries = item['entries']
+        elif line.startswith(('#', ';', '//')):
+            # Keep directives and comments, including user-visible metadata.
+            entries.append({'comment': line})
+        elif '=' in line and section.lower() not in ('rule', 'rules', 'script'):
+            key, value = line.split('=', 1)
+            entries.append({'key_fields': fields(key.strip()), 'values': fields(value)})
+        else:
+            entries.append({'values': fields(line)})
+    return result
 
 
 HEADERS = ('content-type', 'content-disposition', 'cache-control', 'etag', 'x-configflow-profile',

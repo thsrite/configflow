@@ -228,3 +228,25 @@ request_variants=2809 named_matrix_cases=2263（S155 F1955 B153），H去重17
 ```
 
 X04仍缺OxiDNS范围型各字段、setup step、domain days、其余非silent handler；未声称整个X04已完成。接着推进config生成/拉取和其他业务文件。
+
+## 批次 12：generate.py 与所有 config 拉取认证环境
+
+- 生成接口：默认/显式profile五种服务的结构化preview、下载S01–S03、空资源、Unicode节点/组、特殊base_url、坏JSON/数组、POST Range/If-None-Match。YAML逐结构；Surge/Loon解析section/key/逗号字段，保留section/entry/rule/comment顺序，不按整段文本掩盖变化。新增INI换策略/换规则顺序与header长度/格式/时间window篡改自检，共20项。
+- 下载验证每侧实际Content-Length与body相符、ETag quoting、Last-Modified时间窗；动态opaque header仅验证后映射，存在性及其他头仍精确比较，派生文件内容/权限仍比较。
+- **B90参考前提更正**：generate下载路由仅POST，实测带Range和If-None-Match:*仍200完整下载。不能把GET send_file的206/304直接写成这几条POST的期望。真正GET条件下载在export/artifact批次继续；不把POST200冒充206成功。
+- D1–D7三环境从2条Mihomo扩至全部11条拉取（含Loon filename alias），330变体待接通；9个管理X03对照比较通过。native OxiDNS、特殊Unicode query token/拉取日志不泄漏、相等8192/8193 token、Loon三类filename清洗/UTF-8转义、X03拉取/rule-proxy伪头也编码。
+- 内部伪头在rule-proxy三认证环境9例比较通过。其他新生成/拉取用例当前未接通，不算比较通过。公开Host固定panel.example以验证默认host来源，不让两端监听端口制造假差异。
+
+```text
+.63 run.py --groups auth-environments
+current go-unimplemented=330 compared=9 design_errors=[] seconds=6.76
+.63 run.py --groups generate-previews,generate-downloads,generate-unicode,config-pull-credentials,internal-header-pulls,config-loon-names
+current go-unimplemented=197 compared=9 design_errors=[] seconds=50.56
+.63 补跑 generate-downloads,generate-unicode,config-pull-credentials（含POST条件头与日志验证）
+current go-unimplemented=139 design_errors=[] seconds=35.56
+cumulative compared=1299 go-unimplemented=1989 different=6 O12-separate=1
+request_variants=3295 named_matrix_cases=2503（S234 F2032 B237），H去重17
+20 self-checks + end-to-end wrong-Go-response check OK
+```
+
+仍缺生成器远程规则/缓存/取消、可见provider URL的转发头与HTTP1.0无Host、完整G配方、P3–6业务隔离、GET条件下载和ETag跨请求语义；Surge/Loon复杂语法以已生成的合法文本为范围，不声称通用INI解析器。下一批OxiDNS规范化/编辑器、其他业务文件和H继续。

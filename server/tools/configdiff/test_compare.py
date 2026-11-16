@@ -243,6 +243,29 @@ class Comparators(unittest.TestCase):
         self.assertEqual(differences({'at': '2026-01-01T08:00:00'}, {'at': '2026-01-01T08:00:01'}, policy=policy), [])
         self.assertTrue(differences({'at': '2026-01-01T00:00:00'}, {'at': '2026-01-01T08:00:01'}, policy=policy))
 
+    def test_generated_ini_fields_and_order_mutation(self):
+        a = b'[Proxy]\nnode = socks5, 192.0.2.1, 1080\n[Rule]\nDOMAIN,example.com,DIRECT\nFINAL,REJECT\n'
+        b = b'[Proxy]\n node=socks5,192.0.2.1,1080\n\n[Rule]\n DOMAIN, example.com, DIRECT\nFINAL, REJECT\n'
+        self.assertEqual(structure(a, filename='surge.conf'), structure(b, filename='surge.conf'))
+        changed = b.replace(b'DIRECT', b'REJECT')
+        self.assertTrue(differences(structure(a, filename='surge.conf'), structure(changed, filename='surge.conf')))
+        changed = b.replace(b'DOMAIN, example.com, DIRECT\nFINAL, REJECT', b'FINAL, REJECT\nDOMAIN, example.com, DIRECT')
+        self.assertTrue(differences(structure(a, filename='loon.lcf'), structure(changed, filename='loon.lcf')))
+
+    def test_download_headers_describe_actual_bytes(self):
+        from downloads import capture_headers
+        from email.utils import formatdate
+        policy = Policy(start=1767225600, end=1767225601)
+        left = Reply(200, {'etag': '"left"', 'last-modified': formatdate(policy.start, usegmt=True), 'content-length': '3'}, b'abc')
+        right = copy.deepcopy(left)
+        right.headers['etag'] = '"right"'
+        self.assertEqual(capture_headers([left, right], policy), [])
+        for header, value in [('content-length', '4'), ('etag', 'unquoted'),
+                               ('last-modified', 'Wed, 01 Jan 2020 00:00:00 GMT')]:
+            broken = copy.deepcopy(right)
+            broken.headers[header] = value
+            self.assertTrue(capture_headers([left, broken], Policy(start=policy.start, end=policy.end)))
+
 
 if __name__ == '__main__':
     unittest.main()

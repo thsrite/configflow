@@ -82,6 +82,10 @@ def main():
     groups.update(stats)
     from cases.json_boundary import GROUPS as json_boundary
     groups.update(json_boundary)
+    from cases.generate import GROUPS as generate
+    groups.update(generate)
+    from cases.pulls import GROUPS as pulls
+    groups.update(pulls)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

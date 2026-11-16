@@ -232,7 +232,7 @@ class Pair:
 
     def request(self, case_id, route, path=None, *, method=None, body=None, auth='admin', headers=None,
                 variant='', expect=None, check=None, writes=False, files=True, policy=None, capture=None,
-                interaction=None, bodies=None, paths=None, projection=None):
+                interaction=None, bodies=None, paths=None, projection=None, filename=''):
         nominal_method, nominal_path = route.split(' ', 1)
         method, path = method or nominal_method, path or nominal_path
         policy = policy or self.policy
@@ -285,7 +285,7 @@ class Pair:
         diffs = list(captured or [])
         if interaction:
             diffs += interaction.compare(policy)
-        diffs += response_diffs(*replies, policy, method=method, projection=projection)
+        diffs += response_diffs(*replies, policy, method=method, projection=projection, filename=filename)
         if writes:
             diffs += database_diffs(*self.dirs, policy)
             if files:

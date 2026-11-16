@@ -1,5 +1,6 @@
 """O6 first: X01/X02/X03/X08, three auth environments and T29."""
 import json
+import re
 import time
 from urllib.parse import quote
 
@@ -11,6 +12,20 @@ from seed import CURRENT, RETIRED, AGENT, PULL
 from inventory import routes
 
 MATRIX = routes()
+PULL_ROUTES = [(route, rid) for route, rid in MATRIX.items()
+               if re.fullmatch(r'GET /api/config/(?:<profile_id>/)?(?:mihomo|surge|loon|mosdns|oxidns)(?:/<filename>)?', route)]
+
+
+def pull_path(route, profile='default'):
+    return route.split(' ', 1)[1].replace('<profile_id>', profile).replace('<filename>', 'synthetic.lcf')
+
+
+def pull_filename(route):
+    if '/surge' in route:
+        return 'surge.conf'
+    if '/loon' in route:
+        return 'loon.lcf'
+    return 'config.yaml'
 
 # Each representative uses the matrix's real method/template, even if the
 # current Go manifest has not wired it. Missing business objects are separate
@@ -93,9 +108,8 @@ def jwt_compatibility(binary, recorder):
 def auth_environments(binary, recorder):
     for mode in ('login', 'token', 'open'):
         with Pair(binary, recorder, mode=mode) as pair:
-            for route, rid in [('GET /api/config/mihomo', 'R030'),
-                               ('GET /api/config/<profile_id>/mihomo', 'R023')]:
-                path = route.split(' ', 1)[1].replace('<profile_id>', pair.default_profile)
+            for route, rid in PULL_ROUTES:
+                path = pull_path(route, pair.default_profile)
                 expired = jwt.encode({'username': USERNAME, 'exp': 1}, SECRET, algorithm='HS256')
                 requests = [('', '', 1), ('?token=wrong-synthetic', '', 2), ('', expired, 3),
                             ('?token=' + quote(CURRENT, safe=''), '', 4),
@@ -103,13 +117,17 @@ def auth_environments(binary, recorder):
                             ('', 'Bearer  malformed', 6), ('?token=' + 'x' * 8193, '', 7)]
                 for query, auth, number in requests:
                     pair.request(f'{rid}-F{number:02}', route, path + query, auth=auth,
+                                 headers={'Host': 'panel.example'}, writes=True, filename=pull_filename(route),
                                  variant=mode + '/D' + str(number), expect=200 if mode == 'open' and number not in (4, 5) else 401)
-                pair.request(rid + ('-S01' if mode == 'login' else '-S02' if mode == 'token' else '-S03'), route, path + '?token=' + PULL if mode == 'token' else path,
-                             auth='admin' if mode == 'login' else '', variant=mode + '/authorized', expect=200)
+                suffix = ('S03' if mode == 'login' else 'S04' if mode == 'token' else 'S01') if '/oxidns' in route else ('S01' if mode == 'login' else 'S02' if mode == 'token' else 'S03')
+                pair.request(rid + '-' + suffix, route, path + '?token=' + PULL if mode == 'token' else path,
+                             auth='admin' if mode == 'login' else '', variant=mode + '/authorized', expect=200,
+                             headers={'Host': 'panel.example'}, writes=True, filename=pull_filename(route))
                 for credential in (CURRENT, RETIRED):
                     pair.request('D8', route, path + '?token=' + quote(credential, safe=''),
                                  headers={'X-ConfigFlow-Internal': 'synthetic-spoof'},
-                                 auth='admin' if mode == 'login' else '', variant=mode + '/internal-with-admin/' + ('current' if credential == CURRENT else 'retired'), expect=401)
+                                 auth='admin' if mode == 'login' else '', variant=mode + '/internal-with-admin/' + ('current' if credential == CURRENT else 'retired'), expect=401,
+                                 writes=True)
             for internal in ('', 'synthetic-guess', 'x' * 8193):
                 pair.request('X03', 'GET /api/server-domain', auth='',
                              headers={'X-ConfigFlow-Internal': internal}, variant=mode + '/spoof-' + str(len(internal)),
