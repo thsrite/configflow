@@ -1164,3 +1164,9 @@ Questions for the maintainer (from this audit):
    it in the section. Before any domain differential, `grep` for remaining copies must come back empty.
 9. **`internal/api/nodes`** (created by the C16 porter for the latency routes): C30 adds its node routes
    to the same package's `Register` instead of creating another one.
+10. **Defects found by the C17 porter in other modules (2026-11-16)** — fix in those modules' reviews:
+    C13 `substore.ParseProxiesFromYAML` rejects mappings with non-string keys where Python accepts them
+    (use `yamlx` `KeepNonStringKeys`); C12 `convert.ValidateEmitted` raises a different error than Python
+    for a non-dict provider definition. C17's corpus allowlists these two rows; remove the allowlist when
+    fixed. Also `provider.flattenMapping` is a private copy of an unexported `yamlx` helper — export it
+    from `yamlx` and switch (item 8).
