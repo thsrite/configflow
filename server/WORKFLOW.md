@@ -344,3 +344,9 @@ risk" (blockers first). Every item is done by an Opus agent that did not author 
 
 The maintainer is only asked for decisions that are theirs: lab test go-ahead, switch timing, user-visible
 behaviour changes from O12, and anything touching production.
+
+## Branch per agent, always (2026-11-16)
+
+No agent works directly in the shared worktree `~/program/configflow-go` / on `go` any more: it blocks
+fast-forward merges whenever another branch touches the same files (S-oxidns vs the N2 finish, 2026-11-16).
+Every agent gets its own Paseo worktree branch off `go`; only the coordinator moves `go`.
