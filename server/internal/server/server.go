@@ -23,6 +23,7 @@ import (
 	apiagents "configflow/internal/api/agents"
 	apiauth "configflow/internal/api/auth"
 	apilogs "configflow/internal/api/logs"
+	apimosdns "configflow/internal/api/mosdns"
 	apinodes "configflow/internal/api/nodes"
 	apinotifications "configflow/internal/api/notifications"
 	apisettings "configflow/internal/api/settings"
@@ -51,6 +52,7 @@ var routePackages = []func(*httpx.Router){
 	apisettings.Register,
 	apilogs.Register,
 	apistats.Register,
+	apimosdns.Register,
 }
 
 // lateRoutePackages register after everything else is wired.
