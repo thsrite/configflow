@@ -25,6 +25,52 @@ Read this first when you pick up the Go rewrite in a new session. It is written 
 - Production (NAS panel, routers, DNS hosts) is never touched. High-risk (HR) packages get code and tests
   only; lab tests on PVE VMs happen after the maintainer agrees.
 
+## Current state (2026-11-16 night — read this first)
+
+Rules changed a lot on 2026-11-16; the authoritative versions are the top block of `PORTING.md`, `AGENT-BRIEF.md`
+and the last sections of `WORKFLOW.md` ("Native-library swap", "Idiomatic Go", "Switch checklist",
+"Division of work"). In short: Python is retired; idiomatic Go; Go-native types/libraries; acceptance at the
+boundary; **no size budget; the hard rule is no Python emulation**; Python bugs are fixed in Go; one full
+re-publish at the switch is accepted.
+
+**Division of work:** Codex via Paseo (`codex/gpt-6.1-sol`, thinking `high`, mode `full-access`) does most work
+in its own Paseo worktree branched off local `go` (ends with `git rebase go`); Claude Opus does all structural
+design, HR reviews, concurrency problems and escalations (max 1 Opus agent). Coordinator = a Claude session:
+dispatch, verify (detached worktree + `rt`, emulation gate), fast-forward `go`, push.
+
+**Running Codex agents (Paseo, project prj_b0033e1859522497):** check with `mcp__paseo__list_agents` /
+`get_agent_status`; their finish notifications went to the old coordinator session, so poll their status
+once when you take over, then rely on notifications for agents you start yourself.
+| agentId | task | workspace / branch |
+|---|---|---|
+| 954058ca-002e-424d-b246-6447e66a3c3b | N2 review finish (uncommitted fixes in the shared worktree) | wks_b5cc6440618e29f7, `~/program/configflow-go` (branch `go`) |
+| 245ed359-780e-49cd-b5df-7fb79c356bf6 | S-rules adversarial review | wks_d2891b3794d213be, branch `go-review-srules` |
+| c5332a35-f886-4d2d-90e2-f48496728a68 | S-oxidns adversarial review (first: non-ASCII zone rows) | wks_b086971f263e9706, branch `go-review-soxidns` |
+| 5ced41c3-a748-42b3-8aa9-9350ae2be0ef | R04 RouterOS driver port (on `internal/devhttp`) | wks_1b9579c1f761857d, branch `go-port-r04` |
+Worktrees of the branch agents: `~/.paseo/worktrees/302rx1dg/<branch>`.
+
+**When one finishes:** create a detached worktree of its branch (or of `go` after fast-forward), run
+`rt -- bash -lc 'cd server && gofmt -l internal/; go vet ./... && go test -count=1 ./...'`, grep the diff
+for Python emulation, then fast-forward `go` (`git merge --ff-only <branch>` in `~/program/configflow-go`
+when its tree is clean, otherwise rebase the branch again) and push. R04 then needs an HR review (Opus, or
+Codex first + "Opus review pending" if Claude quota is out).
+
+**Queue:** Opus designs for N7 (YAML → yaml.v3 behind yamlx) and N8 (remove jsonx), then S passes of
+convert/subs/agents/repo per design; R05 iKuai driver; C27 after S-oxidns review; Flask↔Go differentials.
+Claude subagents of the old session (S-rules, S-oxidns, N2 review, R04 Claude porters) are finished/paused —
+don't resume them; their work continues in the Codex agents above.
+
+**Decision pending from the maintainer:** proposed 3 additions — (1) a Go style section in the `go` branch's
+root `AGENTS.md` (naming, `%w` errors, no panics, ctx first, doc comments, table tests, Chinese messages as
+constants, `logx`, gofmt/vet); (2) a fixed design-doc template (interface contract, state transitions,
+buildable steps, acceptance) for Opus designs, and no handoff of half-finished uncommitted code; (3)
+escalation packet when Codex fails 2–3 rounds: failing output + file paths + one-line list of failed
+attempts, to a fresh Opus session. Ask before applying.
+
+**Other:** the 2-hourly fallback cron was deleted (pause). An older coordinator session ("configflow-40")
+was told not to resume anything. Last pushed `go`: 39d01b51 (later local commits: 73d39c55 AGENT-BRIEF,
+bd0c9735 + e62eb5c7 division of work, this HANDOFF update).
+
 ## Where things are
 
 | File | What |
