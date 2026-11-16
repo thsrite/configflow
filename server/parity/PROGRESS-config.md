@@ -1079,6 +1079,8 @@ Commands (review): the porter's, plus `rt --back server/internal/mosdns/testdata
 
 **Status: `ported`** (not reviewed; paths that need C25/C26 return `PendingError`; C23 replaced its stubs 2026-11-16) · prereqs: C05, C21 · Go: `internal/oxidns` (new)
 
+**Coverage audit, 2026-11-17 (final checks pending):** 由 S-oxidns 复核覆盖：`672fc0d0`、`0164424d`、`da0aa993`，协调复验/合并 `dc3453c2`。范围为 converter/native/references/match_targets 的生成、资源/附件、include/限额、引用/目标各分支；当前边界选择 13,245 条录制、41,217 条随机参考。逐文件依据和 HTTP 排除边界见 [review-c22c26.md](review-c22c26.md)。下文为历史移植记录，旧 pending/stub/representation 描述已由 S 重写替换；旧语料总数不代表现行测试行数。
+
 Files → Go (`server/internal/oxidns/`):
 - `backend/converters/oxidns.py` (490) → `converter.go`: `GenerateOxidnsConfig` (YAML via `yamlx.SafeDumpUnicode` = `yaml.safe_dump(allow_unicode=True, sort_keys=False)`), `GetOxidnsRulesetDownloads`, `GetOxidnsCustomFiles`, `UnavailableRulesets`, `RulesetParts` (= `ruleset_parts`), `RoutingGroups(config, settings, Legacy{None,All,ContentAware}, items, itemsGiven)` (= `_routing_groups`), `HostsFileContent`, `Forward`, `FallbackUpstreams`, `Items`, `Base`, `TagFor` (= `_tag`), `RulePath`, `LocalDNSDefaults`/`RemoteDNSDefaults`; `_selected` is the lazy `selected(..., yield)` (errors keep Python's generator order).
 - `backend/common/oxidns_native.py` (264) → `native.go`: `LoadNativeYAML(text, label)` (yamlx `SchemaNative` + `Key` hook = `NativeLoader.construct_mapping`; Python's default label `DefaultNativeLabel`), `ManagedFiles` (→ `[]ManagedFile{Path, Content []byte}`, `.Object()` = Python dict), `NativeDocument(settings, validate, *NativeSources)` (`sources` → `NativeSources{Plugins, Includes}`), `ResourceReferences`, `RelativeResource` (nil = None), `ValidateResourceFiles`, `Tag` (= `TAG`), limits `Max*`.
@@ -1122,6 +1124,8 @@ Commands:
 
 **Status: `ported`** (not reviewed) · prereqs: C22 · Go: `internal/oxidns`
 
+**Coverage audit, 2026-11-17 (final checks pending):** 由 S-oxidns 复核覆盖：`672fc0d0`、`0164424d`、`da0aa993`，协调复验/合并 `dc3453c2`。范围为 validation/plugin/global/reference constraints 的 schema、格式/跨字段约束、引用图各分支，含 zone/IDN、中文错误；当前选择 1,330 条录制、21,700 条随机参考，global/reference 私有 helper 通过完整 validator 和 ReadMatchTargets 执行。逐文件依据见 [review-c22c26.md](review-c22c26.md)。下文为历史移植记录，旧 stubs/Unicode 表/schema 外部加载等已由 S 重写替换。
+
 Files → Go (`server/internal/oxidns/`):
 - `backend/common/oxidns_validation.py` (310) → `validation.go` (C22 had ported `schemas`, `validate_schema`, `format_error`, `format_path`, `OxidnsValidationError`): now `ValidateNativeConfig`, `RequireValidDocument`, `ValidateExpandedDocument(document, sources-dict)` (internal `validateExpandedDocument(*jsonx.Object, *NativeSources)` for `native_document`), `ValidateSettings(settings, config, baseURL)` (calls `prepareEditor`, **pending C26**), `format_error` `timezone` (`zoneinfo.go`) and `dns-record`/`domain-expression` (→ `validatePluginFormat`).
 - `backend/common/oxidns_plugin_constraints.py` (676) → `constraints_plugin.go` (`CollectPluginIssues`, `ValidatePluginFormat`, `_tokens`/`_uint`/`_duration`/`_regex_error`/`_domain_error`/`_cron_error`/`_adguard_error`) + `zone.go` (`_zone_records_error`) + `dnstext.go` (the dnspython 2.7.0 subset it needs: zone tokenizer, `dns.name.from_text`/`from_unicode`, `dns.ttl.from_text`, `dns.ipv4`/`dns.ipv6.inet_aton`, `dns.rdata.from_text` for A AAAA CNAME(+aliases) NS PTR DNAME MX RT AFSDB RP HINFO TXT/SPF(+AVC/RESINFO) SOA SRV NAPTR CAA; MINFO has no dnspython class → GenericRdata → always invalid in text form, as in Python) + `idna2003.go` (`encodings.idna.ToASCII`: nameprep on `ucd_3_2_0`, NFKC as CPython computes it, punycode).
@@ -1164,6 +1168,8 @@ Commands:
 
 **Status: `ported`** (not reviewed) · prereqs: C23 · Go: `internal/oxidns`
 
+**Coverage audit, 2026-11-17 (final checks pending):** 由 S-oxidns 复核覆盖：`672fc0d0`、`0164424d`、`da0aa993`，协调复验/合并 `dc3453c2`。范围为 oxidns_common.py 的 ownership/capability、toggle/park/restore、fallback/API/TLS/cache/dynamic/资源/更新各分支。822 条录制、3,746 条随机参考均使用真实 C25/C26 协作函数。逐文件依据见 [review-c22c26.md](review-c22c26.md)。下文为历史移植记录；旧协作 stub/切片别名模型已不存在，不能把旧 replay 的替身结果当作当前执行方式。
+
 Files → Go (`server/internal/oxidns/`):
 - `backend/common/oxidns_common.py` (1175) → `common.go` (`ReadCommonSettings`, `ApplyCommonSettings`, `CommonFields()`, `_read` = `readCommon`, `_DIRECT`/`_API`/`COMMON_FIELDS` tables built from `DefaultSettings()` in Python's dict order, `_fallback_state`/`_prepare_fallback`/`_finish_fallback`, `_main_control`, `_dynamic_state`, `_cron_job`, `_resources`, `_adguard_state`, every `_patch_*`, `_validate_value`, `_default_args`) + `common_context.go` (`_Context` = `commonContext` with `allowed`/`ensure`/`park`/`park_plugin`/`call_state`/`toggle_call`/`resource_paths`…, `TagTypes` = `_TAG_TYPES`; Python list/dict glue: `inList`, `listRemove` (identity-or-equality like `list.remove`), `pyIter`, `pyContains`, `setItem`, `popKey`, `setDefault`).
 - Early parts of later modules (no further dependencies): `common_routing.go` (C25: `Selectors`, `RuleDNSFields`, `RoutingFields` = `ROUTING_FIELDS`, `_references`, `replace_download_entries`), `editor.go` (C26: `_same` = `sameValue`, `_MISSING` = `missingValue`), `pending.go`: `_relevant` (`ruleUpdateRelevant`, early return of prepare/finish_rule_updates).
@@ -1200,6 +1206,8 @@ Commands:
 ## C25 — OxiDNS common routing, DNS watchdog
 
 **Status: `ported`** (not reviewed) · prereqs: C24 · Go: `internal/oxidns`
+
+**Coverage audit, 2026-11-17 (final checks pending):** 由 S-oxidns 复核覆盖：`672fc0d0`、`0164424d`、`da0aa993`，协调复验/合并 `dc3453c2`。范围为 common_routing 的识别、迁移、ownership/follow/资源协调，以及 dns_watchdog 的纯变换全部分支。当前选择 3,525 条录制、13,404 条随机参考；本轮补充 41 条真实 Python watchdog 参考。此模块没有后台循环；Agent 注入、probe/restart 归 A01/A14/A16 及独立 Go Agent，未随 C25 标为复核。逐文件依据见 [review-c22c26.md](review-c22c26.md)。下文为历史移植记录；旧 pending/fnmatch Python 模拟已由 S 重写替换。
 
 Files → Go (`server/internal/oxidns/`):
 - `backend/common/oxidns_common_routing.py` (1192) → `routing.go` (+ C24's early `common_routing.go`: `Selectors`, `RoutingFields`, `replace_download_entries`; `_references` is now an exact rune scanner instead of a regex per call, plus `_words`/`_Mentions` = `mentions`). Exported: `ReadRouting`, `ApplyRouting(…, ApplyRoutingOptions{BeforeConfig, Notices})`, `MigrateDomainOnlyRouting` (returns the argument objects themselves when nothing is migrated, as Python), `RemoveRule`, `PlaceRoutingGroups`, `ReloadReferences`, `ResourceDownloads`, `ResourceReaders`, `ResourceIsRead`, `OwnedChains`, `RefreshRuleHelpers`, `PrefixEnd` (device policy C26). Internal: `_analyze` = `analyzeRouting` (state struct `routingState`; `full` false = Python's early-return dicts without groups/records), `_recognize`, `_catalog` = `buildCatalog`, `_observed_legacy_groups`, `_aliased_custom_state`, `_apply_aliased_custom`, `_validate_selections`, `_take_over`, `_settle`, `_own_helpers`, `_sync_updates`, `_uses_rule`, `_normalize_custom_matches`.
@@ -1240,6 +1248,8 @@ Commands:
 ## C26 — OxiDNS common updates, device policy, editor
 
 **Status: `ported`** (not reviewed) · prereqs: C25 · Go: `internal/oxidns`
+
+**Coverage audit, 2026-11-17 (final checks pending):** 由 S-oxidns 复核覆盖：`672fc0d0`、`0164424d`、`da0aa993`，协调复验/合并 `dc3453c2`。范围为 updates/device_policy/editor 的 withdrawal/rebase/pipeline、hook/侧监听/增改撤销、迁移/三方冲突合并全部分支；当前选择 3,072 条录制、4,551 条随机参考，另有 6,304 份存储往返及公开编辑器/revision 回归。本轮补查 ApplyPolicies 返回草稿、同步模板元数据、失败不改输入；它不写数据库。C29/C31/agents 的 HTTP、持久化和并发入口未一并标为复核。逐文件依据见 [review-c22c26.md](review-c22c26.md)。下文为历史移植记录，旧 jsonx/协作 stub/size budget 描述已由 S 重写替换。
 
 Files → Go (`server/internal/oxidns/`):
 - `backend/common/oxidns_common_updates.py` (465) → `updates.go`: `ReconcileNativeWithdrawals`, `RebaseNativeRuleSources`, `PrepareNativeRuleUpdates`, `FinishRuleUpdates` (fresh-context wrapper); internal `prepareRuleUpdateImpl`, `finishRuleUpdatesImpl`, `stopPipeline` (= `_stop_pipeline`, for C29 native apply), `removeEmptyReload`, `managedJobs`, `externalReferences`, `updateProviders` (= `_providers`), `restorePipeline`, `downloadPath` (= `_path`), `refreshSteps`/`downloadOnlySteps` (= `_REFRESH`/`_DOWNLOAD_ONLY`), `proxyIdentityOf`, `rulesetSources`, `generatedSource` (net/url), `refreshManagedRuleURLs`, `withDownloads`, `managedDownloads`.
