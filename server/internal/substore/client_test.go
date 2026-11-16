@@ -440,7 +440,7 @@ func TestClientHoldsLeaseUntilCleanupEvenOnFailure(t *testing.T) {
 			if err := rt.lock("work", true, 0, func() error { return nil }); err != nil {
 				t.Fatalf("lease kept after cleanup: %v", err)
 			}
-			if rt.read().Value("last_used") == nil {
+			if stateOf(rt).Value("last_used") == nil {
 				t.Fatal("idle time not recorded")
 			}
 		})

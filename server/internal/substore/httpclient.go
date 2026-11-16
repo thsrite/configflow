@@ -13,15 +13,28 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"regexp"
-	"strconv"
+	"os"
 	"strings"
 	"time"
 	"unicode/utf16"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/reqproxy"
 	"configflow/internal/urlx"
 )
+
+// environ is os.environ, read on every request like requests does (a
+// variable for tests).
+var environ = os.Environ
+
+func isASCIIText(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
 
 // Timeout is a requests timeout: Connect for establishing the connection,
 // Read for every socket read (and write) afterwards.
@@ -92,16 +105,25 @@ func (r *Response) encoding() (string, bool) {
 	}
 	parts := strings.Split(contentType, ";")
 	mediaType := strings.TrimSpace(parts[0])
+	// _parse_content_type_header: a dict of the parameters, so the last
+	// charset wins.
+	charset, hasCharset := "", false
 	for _, param := range parts[1:] {
-		param = strings.TrimSpace(param)
+		param = pyStrip(param)
 		if param == "" {
 			continue
 		}
-		key, value, _ := strings.Cut(param, "=")
-		key = strings.ToLower(strings.Trim(strings.TrimSpace(key), `'" `))
-		if key == "charset" {
-			return strings.Trim(strings.TrimSpace(value), `'" `), true
+		key, value, found := strings.Cut(param, "=")
+		if !found {
+			continue // value True: not a charset text
 		}
+		key = pyLower(strings.Trim(key, `"' `))
+		if key == "charset" {
+			charset, hasCharset = strings.Trim(strings.Trim(value, `"' `), `'"`), true
+		}
+	}
+	if hasCharset {
+		return charset, true
 	}
 	if strings.Contains(mediaType, "text") {
 		return "ISO-8859-1", true
@@ -288,224 +310,18 @@ type tunnelError struct{ status string }
 
 func (e *tunnelError) Error() string { return "Tunnel connection failed: " + e.status }
 
-// PrepareURL is requests' URL preparation (PreparedRequest.prepare_url
-// with urllib3 2.x parse_url): scheme and host lowercased, dot segments
-// removed, invalid characters of path/query/fragment percent-encoded and
-// existing escapes upper-cased, an empty path made "/", params appended to
-// the query (urlencode), then requote_uri. A URL with a colon that does not
-// start with "http" is left as it is (requests skips preparation there).
-// IDNA encoding of non-ASCII hosts is not reproduced.
+// PrepareURL is requests' URL preparation (urlx.RequestsPrepareURL) with
+// params= appended to the query.
 func PrepareURL(raw string, params []Param) (string, error) {
-	if strings.Contains(raw, ":") && !strings.HasPrefix(asciiLower(raw), "http") {
-		return raw, nil
+	pairs := make([][2]string, len(params))
+	for i, p := range params {
+		pairs[i] = [2]string{p.Key, p.Value}
 	}
-	if !schemeRE.MatchString(raw) {
-		raw = "//" + raw
-	}
-	m := uriRE.FindStringSubmatchIndex(raw)
-	group := func(i int) (string, bool) {
-		if m[2*i] < 0 {
-			return "", false
-		}
-		return raw[m[2*i]:m[2*i+1]], true
-	}
-	scheme, _ := group(1)
-	authority, hasAuthority := group(2)
-	path, _ := group(3)
-	query, _ := group(4)
-	fragment, _ := group(5)
-	normalize := scheme == "" || asciiLower(scheme) == "http" || asciiLower(scheme) == "https"
-	scheme = asciiLower(scheme)
-	netloc := ""
-	if hasAuthority && authority != "" {
-		auth, hostPort := "", authority
-		if i := strings.LastIndex(authority, "@"); i >= 0 {
-			auth, hostPort = authority[:i], authority[i+1:]
-		}
-		host, port := hostPort, ""
-		if strings.HasPrefix(hostPort, "[") {
-			if i := strings.Index(hostPort, "]"); i >= 0 {
-				host, port = hostPort[:i+1], strings.TrimPrefix(hostPort[i+1:], ":")
-			}
-		} else if i := strings.LastIndex(hostPort, ":"); i >= 0 {
-			host, port = hostPort[:i], hostPort[i+1:]
-		}
-		if auth != "" && normalize {
-			auth = encodeInvalidChars(auth, userinfoChars)
-		}
-		if normalize {
-			host = asciiLower(host)
-		}
-		if auth != "" {
-			netloc = auth + "@"
-		}
-		netloc += host
-		// urllib3 parses the port as an int; requests drops port 0.
-		if n, err := strconv.Atoi(port); err == nil && n > 0 {
-			netloc += ":" + strconv.Itoa(n)
-		} else if err != nil && port != "" {
-			netloc += ":" + port
-		}
-	}
-	if normalize && path != "" {
-		path = encodeInvalidChars(removeDotSegments(path), pathChars)
-	}
-	if normalize && query != "" {
-		query = encodeInvalidChars(query, pathChars+"?")
-	}
-	if normalize && fragment != "" {
-		fragment = encodeInvalidChars(fragment, pathChars+"?")
-	}
-	if path == "" {
-		path = "/"
-	}
-	if len(params) > 0 {
-		encoded := make([]string, len(params))
-		for i, p := range params {
-			encoded[i] = urlx.QuotePlus(p.Key) + "=" + urlx.QuotePlus(p.Value)
-		}
-		if query != "" {
-			query += "&" + strings.Join(encoded, "&")
-		} else {
-			query = strings.Join(encoded, "&")
-		}
-	}
-	out := ""
-	if scheme != "" {
-		out = scheme + ":"
-	}
-	if netloc != "" || scheme == "http" || scheme == "https" {
-		out += "//" + netloc
-	}
-	out += path
-	if query != "" {
-		out += "?" + query
-	}
-	if fragment != "" {
-		out += "#" + fragment
-	}
-	return requoteURI(out), nil
-}
-
-var (
-	schemeRE  = regexp.MustCompile(`^(?:[a-zA-Z][a-zA-Z0-9+-]*:|/)`)
-	uriRE     = regexp.MustCompile(`(?s)^(?:([a-zA-Z][a-zA-Z0-9+.-]*):)?(?://([^\\/?#]*))?([^?#]*)(?:\?([^#]*))?(?:#(.*))?$`)
-	percentRE = regexp.MustCompile(`%[a-fA-F0-9]{2}`)
-)
-
-const (
-	userinfoChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-~!$&'()*+,;=:"
-	pathChars     = userinfoChars + "@/"
-)
-
-// encodeInvalidChars is urllib3's _encode_invalid_chars.
-func encodeInvalidChars(component, allowed string) string {
-	count := 0
-	component = percentRE.ReplaceAllStringFunc(component, func(s string) string { count++; return strings.ToUpper(s) })
-	isPercentEncoded := count == strings.Count(component, "%")
-	var b strings.Builder
-	for i := 0; i < len(component); i++ {
-		c := component[i]
-		if (isPercentEncoded && c == '%') || (c < 128 && strings.IndexByte(allowed, c) >= 0) {
-			b.WriteByte(c)
-		} else {
-			b.WriteByte('%')
-			b.WriteByte(hexDigits[c>>4])
-			b.WriteByte(hexDigits[c&15])
-		}
-	}
-	return b.String()
-}
-
-// removeDotSegments is urllib3's _remove_path_dot_segments.
-func removeDotSegments(path string) string {
-	var output []string
-	for _, segment := range strings.Split(path, "/") {
-		switch {
-		case segment == ".":
-		case segment != "..":
-			output = append(output, segment)
-		case len(output) > 0:
-			output = output[:len(output)-1]
-		}
-	}
-	if strings.HasPrefix(path, "/") && (len(output) == 0 || output[0] != "") {
-		output = append([]string{""}, output...)
-	}
-	if strings.HasSuffix(path, "/.") || strings.HasSuffix(path, "/..") {
-		output = append(output, "")
-	}
-	return strings.Join(output, "/")
-}
-
-const hexDigits = "0123456789ABCDEF"
-
-func isHex(c byte) bool {
-	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
-}
-
-func isASCIIAlnum(c byte) bool {
-	return c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
-}
-
-// requoteURI is requests.utils.requote_uri.
-func requoteURI(uri string) string {
-	if unquoted, ok := unquoteUnreserved(uri); ok {
-		return quoteSafe(unquoted, "!#$%&'()*+,/:;=?@[]~")
-	}
-	return quoteSafe(uri, "!#$&'()*+,/:;=?@[]~")
-}
-
-// unquoteUnreserved is requests.utils.unquote_unreserved (false: InvalidURL).
-func unquoteUnreserved(uri string) (string, bool) {
-	parts := strings.Split(uri, "%")
-	for i := 1; i < len(parts); i++ {
-		h := parts[i]
-		if len(h) >= 2 && isASCIIAlnum(h[0]) && isASCIIAlnum(h[1]) {
-			if !isHex(h[0]) || !isHex(h[1]) {
-				return "", false
-			}
-			c := unhex(h[0])<<4 | unhex(h[1])
-			if isASCIIAlnum(c) || strings.IndexByte("-._~", c) >= 0 {
-				parts[i] = string(rune(c)) + h[2:]
-			} else {
-				parts[i] = "%" + h
-			}
-		} else {
-			parts[i] = "%" + h
-		}
-	}
-	return strings.Join(parts, ""), true
-}
-
-func unhex(c byte) byte {
-	switch {
-	case c >= '0' && c <= '9':
-		return c - '0'
-	case c >= 'a' && c <= 'f':
-		return c - 'a' + 10
-	}
-	return c - 'A' + 10
-}
-
-// quoteSafe is urllib.parse.quote(s, safe) on the UTF-8 bytes.
-func quoteSafe(s, safe string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if isASCIIAlnum(c) || strings.IndexByte("_.-~", c) >= 0 || strings.IndexByte(safe, c) >= 0 {
-			b.WriteByte(c)
-		} else {
-			b.WriteByte('%')
-			b.WriteByte(hexDigits[c>>4])
-			b.WriteByte(hexDigits[c&15])
-		}
-	}
-	return b.String()
+	return urlx.RequestsPrepareURL(raw, pairs)
 }
 
 // QuotePath is urllib.parse.quote(s, safe="").
-func QuotePath(s string) string { return quoteSafe(s, "") }
+func QuotePath(s string) string { return urlx.Quote(s, "") }
 
 // checkURL raises what requests raises before sending: a URL with a colon
 // that does not start with "http" has no connection adapter
@@ -513,7 +329,7 @@ func QuotePath(s string) string { return quoteSafe(s, "") }
 // scheme InvalidSchema.
 func checkURL(raw string) error {
 	noAdapter := &RequestError{Class: "InvalidSchema", Message: fmt.Sprintf("No connection adapters were found for %s", jsonx.Repr(raw))}
-	if strings.Contains(raw, ":") && !strings.HasPrefix(asciiLower(raw), "http") {
+	if strings.Contains(raw, ":") && !strings.HasPrefix(pyLower(raw), "http") {
 		return noAdapter
 	}
 	parsed, err := url.Parse(raw)
@@ -526,6 +342,9 @@ func checkURL(raw string) error {
 	if parsed.Host == "" || parsed.Hostname() == "" {
 		return &RequestError{Class: "InvalidURL", Message: fmt.Sprintf("Invalid URL %s: No host supplied", jsonx.Repr(raw))}
 	}
+	if host := parsed.Hostname(); isASCIIText(host) && (strings.HasPrefix(host, "*") || strings.HasPrefix(host, ".")) {
+		return &RequestError{Class: "InvalidURL", Message: "URL has an invalid label."}
+	}
 	if scheme := asciiLower(parsed.Scheme); scheme != "http" && scheme != "https" {
 		return noAdapter
 	}
@@ -534,9 +353,26 @@ func checkURL(raw string) error {
 
 // Do implements HTTPClient.
 func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, error) {
+	// Python's worker thread finishes a request even when the browser that
+	// asked has gone: a cancelled request context must not abort a fetch
+	// whose result (or failure cooldown) other callers share.
+	ctx = context.WithoutCancel(ctx)
 	prepared, _ := PrepareURL(strings.TrimLeftFunc(request.URL, pyIsSpace), request.Params)
 	if err := checkURL(prepared); err != nil {
 		return nil, err
+	}
+	// requests' proxy choice: proxies= when given, else the environment
+	// (trust_env) without Go's automatic loopback bypass.
+	var chosen *reqproxy.Proxy
+	var proxyErr error
+	if request.Proxy != "" {
+		chosen, proxyErr = reqproxy.FromValue(request.Proxy)
+	} else {
+		chosen, proxyErr = reqproxy.FromEnvironment(environ(), prepared)
+	}
+	if proxyErr != nil {
+		class, _, _ := strings.Cut(proxyErr.Error(), ":")
+		return nil, &RequestError{Class: class, Message: proxyErr.Error(), Err: proxyErr}
 	}
 	var body io.Reader
 	var payload []byte
@@ -562,31 +398,25 @@ func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, erro
 	for key, values := range request.Header {
 		req.Header[http.CanonicalHeaderKey(key)] = values
 	}
-	viaProxy := false
-	proxyFunc := func(r *http.Request) (*url.URL, error) {
-		var proxy *url.URL
-		if request.Proxy != "" {
-			parsed, err := url.Parse(request.Proxy)
-			if err != nil {
-				return nil, err
+	viaProxy := chosen != nil
+	var proxyFunc func(*http.Request) (*url.URL, error)
+	var connectHeader http.Header
+	if chosen != nil {
+		proxyFunc = http.ProxyURL(chosen.URL())
+		if chosen.Auth != "" {
+			// urllib3 sends proxy_headers with CONNECT for https targets and
+			// with the request itself for http targets.
+			connectHeader = http.Header{"Proxy-Authorization": {chosen.Auth}}
+			if req.URL.Scheme == "http" {
+				req.Header.Set("Proxy-Authorization", chosen.Auth)
 			}
-			proxy = parsed
-		} else {
-			parsed, err := http.ProxyFromEnvironment(r)
-			if err != nil {
-				return nil, err
-			}
-			proxy = parsed
 		}
-		if proxy != nil {
-			viaProxy = true
-		}
-		return proxy, nil
 	}
 	connected := false
 	dialer := &net.Dialer{Timeout: request.Timeout.Connect}
 	transport := &http.Transport{
 		Proxy:              proxyFunc,
+		ProxyConnectHeader: connectHeader,
 		DisableKeepAlives:  true,
 		DisableCompression: false,
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {

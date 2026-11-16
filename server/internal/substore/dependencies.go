@@ -398,7 +398,17 @@ func (d *Dependencies) downloadBundle(ctx context.Context, release *jsonx.Object
 // released here).
 func (d *Dependencies) runUpdate(ctx context.Context, release *jsonx.Object) {
 	defer d.updateLock.Unlock()
-	if err := d.runtime.Maintenance(ctx, func() error { return d.installRelease(ctx, release) }); err != nil {
+	err := func() (err error) {
+		// A panic must not take the server down: Python's thread caught the
+		// exception and recorded the failure.
+		defer func() {
+			if p := recover(); p != nil {
+				err = pyErr("Exception", fmt.Sprint(p))
+			}
+		}()
+		return d.runtime.Maintenance(ctx, func() error { return d.installRelease(ctx, release) })
+	}()
+	if err != nil {
 		depsLog.Warning("Sub-Store 更新等待失败: " + safeExceptionDetails(err))
 		d.setState("failed", "Sub-Store 正忙或服务不可用，请稍后重试")
 	}
@@ -496,9 +506,20 @@ func (d *Dependencies) installRelease(ctx context.Context, release *jsonx.Object
 	if err != nil {
 		return err
 	}
-	err = func() error {
-		if err := os.MkdirAll(runtimeDir, 0o777); err != nil {
-			return osError(err, runtimeDir)
+	err = func() (err error) {
+		defer func() {
+			// An unexpected failure takes the `except Exception` path below.
+			if p := recover(); p != nil {
+				err = pyErr("Exception", fmt.Sprint(p))
+			}
+		}()
+		if err := pyMakedirs(runtimeDir); err != nil {
+			path := runtimeDir
+			var pathErr *fs.PathError
+			if errors.As(err, &pathErr) {
+				path = pathErr.Path
+			}
+			return osError(err, path)
 		}
 		d.setState("running", "正在下载 Sub-Store "+target+"…")
 		if err := d.downloadBundle(ctx, release, tmpBundle); err != nil {

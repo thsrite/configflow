@@ -245,7 +245,7 @@ func TestUpdateSuccessWritesRuntimeBundle(t *testing.T) {
 		t.Fatalf("restarts %d", dh.commands.restarts)
 	}
 	dh.unlocked(t)
-	if lifecycle := dh.service.Runtime.read(); lifecycle.GetString("state") != "running" {
+	if lifecycle := stateOf(dh.service.Runtime); lifecycle.GetString("state") != "running" {
 		t.Fatalf("runtime state %s", jsonx.Repr(lifecycle))
 	}
 	check := dh.commands.calls[len(dh.commands.calls)-2]

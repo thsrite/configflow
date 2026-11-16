@@ -64,15 +64,23 @@ func saveMode(ctx context.Context, mode string) error {
 		return err
 	}
 	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		settings, ok := system.Value("system_config").(*jsonx.Object)
+		value, present := system.Get("system_config")
+		if !present {
+			return nil, pyErr("KeyError", "'system_config'")
+		}
+		settings, ok := value.(*jsonx.Object)
 		if !ok {
-			return nil, attributeError(system.Value("system_config"), "update")
+			return nil, attributeError(value, "update")
 		}
 		settings.Set("sub_store_mode", mode)
 		return nil, nil
 	})
+	if err != nil {
+		return err
+	}
+	// reset_config_context() runs only after a successful transaction.
 	repo.ResetConfigContext(ctx)
-	return err
+	return nil
 }
 
 // Runtime is SubStoreRuntime: the lifecycle of the bundled Sub-Store.
@@ -185,6 +193,9 @@ func (r *Runtime) lock(name string, exclusive bool, timeout float64, fn func() e
 		if err == nil {
 			break
 		}
+		if errors.Is(err, syscall.EINTR) {
+			continue // PEP 475: fcntl.flock retries an interrupted call
+		}
 		if !errors.Is(err, syscall.EWOULDBLOCK) {
 			return osError(err, path)
 		}
@@ -197,25 +208,38 @@ func (r *Runtime) lock(name string, exclusive bool, timeout float64, fn func() e
 	return fn()
 }
 
-// read is _read: state.json, or an empty state when it cannot be read or is
-// not JSON (a JSON value that is not an object also counts as empty; only
-// this module writes the file).
-func (r *Runtime) read() *jsonx.Object {
+// read is _read: the JSON value of state.json, or an empty state when it
+// cannot be read or is not JSON (OSError, ValueError). A value that is not
+// an object is returned as it is: Python then fails where it uses it
+// (TypeError in _write, AttributeError at state.get), and so does Go.
+func (r *Runtime) read() any {
 	data, err := os.ReadFile(pyJoin(r.Root(), "state.json"))
 	if err != nil || utf8DecodeError(data) != "" {
 		return jsonx.NewObject()
 	}
 	value, err := jsonx.Parse(data)
-	if object, ok := value.(*jsonx.Object); err == nil && ok {
-		return object
+	if err != nil {
+		return jsonx.NewObject()
 	}
-	return jsonx.NewObject()
+	return value
+}
+
+// stateGet is state.get(key, fallback) on what read returned.
+func stateGet(state any, key string, fallback any) (any, error) {
+	object, ok := state.(*jsonx.Object)
+	if !ok {
+		return nil, attributeError(state, "get")
+	}
+	return object.GetOr(key, fallback), nil
 }
 
 // write is _write(**changes): merge and replace state.json atomically
 // (callers hold the control lock). Pairs are key, value.
 func (r *Runtime) write(pairs ...any) error {
-	state := r.read()
+	state, ok := r.read().(*jsonx.Object)
+	if !ok {
+		return pyErr("TypeError", fmt.Sprintf("'%s' object is not a mapping", typeName(r.read())))
+	}
 	for i := 0; i+1 < len(pairs); i += 2 {
 		state.Set(pairs[i].(string), pairs[i+1])
 	}
@@ -246,7 +270,8 @@ func (r *Runtime) runCommand(ctx context.Context, action string) (string, error)
 		20*time.Second)
 	if err != nil {
 		var py *PyError
-		if errors.As(err, &py) && (py.Class == "TimeoutExpired" || strings.HasSuffix(py.Class, "Error")) {
+		if errors.As(err, &py) && (py.Class == "TimeoutExpired" ||
+			(strings.HasSuffix(py.Class, "Error") && py.Class != "UnicodeDecodeError")) {
 			return "", unavailable("无法管理内置 Sub-Store，请检查容器服务状态")
 		}
 		return "", err
@@ -423,7 +448,7 @@ func (r *Runtime) Tick(ctx context.Context) error {
 			}
 			state := r.read()
 			now := r.env.Clock.Monotonic()
-			if state.Len() == 0 {
+			if !jsonx.Truthy(state) {
 				// Also handles upgrades from the former autostart image.
 				status, err := r.runCommand(ctx, "status")
 				if err != nil {
@@ -435,7 +460,22 @@ func (r *Runtime) Tick(ctx context.Context) error {
 				}
 				return r.write("state", current, "last_used", jsonx.Float(now))
 			}
-			if !jsonx.Equal(state.Value("state"), "sleeping") && now-lastUsed(state) >= r.IdleSeconds {
+			current, err := stateGet(state, "state", nil)
+			if err != nil {
+				return err
+			}
+			if jsonx.Equal(current, "sleeping") {
+				return nil
+			}
+			used, err := stateGet(state, "last_used", jsonx.Int(0))
+			if err != nil {
+				return err
+			}
+			elapsed, err := floatMinus(now, used)
+			if err != nil {
+				return err
+			}
+			if elapsed >= r.IdleSeconds {
 				status, err := r.runCommand(ctx, "status")
 				if err != nil {
 					return err
@@ -447,7 +487,7 @@ func (r *Runtime) Tick(ctx context.Context) error {
 				}
 				// Retain a startup/update failure for the UI and retry.
 				current := "sleeping"
-				if jsonx.Truthy(state.Value("error")) {
+				if failure, _ := stateGet(state, "error", nil); jsonx.Truthy(failure) {
 					current = "failed"
 				}
 				return r.write("state", current)
@@ -465,27 +505,38 @@ func (r *Runtime) Tick(ctx context.Context) error {
 	return err
 }
 
-// lastUsed is state.get('last_used', 0) as a number (a value that is not a
-// number counts as 0; only this module writes it).
-func lastUsed(state *jsonx.Object) float64 {
-	if n, ok := state.Value("last_used").(jsonx.Number); ok {
-		return n.Float64()
+// floatMinus is `now - value` for a float now and a JSON value: numbers
+// (and bools) subtract, a huge int is OverflowError, anything else
+// TypeError, as in Python.
+func floatMinus(now float64, value any) (float64, error) {
+	switch v := value.(type) {
+	case bool:
+		if v {
+			return now - 1, nil
+		}
+		return now, nil
+	case jsonx.Number:
+		f := v.Float64()
+		if v.IsInt() && math.IsInf(f, 0) {
+			return 0, pyErr("OverflowError", "int too large to convert to float")
+		}
+		return now - f, nil
 	}
-	if b, ok := state.Value("last_used").(bool); ok && b {
-		return 1
-	}
-	return 0
+	return 0, pyErr("TypeError", fmt.Sprintf("unsupported operand type(s) for -: 'float' and '%s'", typeName(value)))
 }
 
 // Status is status(running): what the dependency page shows. Observing
 // never starts Sub-Store or extends its idle time.
 func (r *Runtime) Status(ctx context.Context, running bool) (*jsonx.Object, error) {
 	managed := r.env.IsBuiltinAvailable()
-	state := jsonx.NewObject()
+	var state any = jsonx.NewObject()
 	if managed {
 		state = r.read()
 	}
-	current := state.Value("state")
+	current, err := stateGet(state, "state", nil)
+	if err != nil {
+		return nil, err
+	}
 	if !jsonx.Equal(current, "updating") {
 		if running {
 			current = "running"
@@ -518,7 +569,7 @@ func (r *Runtime) Status(ctx context.Context, running bool) (*jsonx.Object, erro
 	}
 	var errorText any = ""
 	if jsonx.Equal(current, "failed") {
-		errorText = state.GetOr("error", "")
+		errorText, _ = stateGet(state, "error", "")
 	}
 	return jsonx.Obj("managed", managed, "mode", mode, "state", current, "idle_seconds", idle, "error", errorText), nil
 }

@@ -272,14 +272,6 @@ func TestCorpus(t *testing.T) {
 
 // knownDifference names accepted differences (documented in PROGRESS C17).
 func knownDifference(kind string, input any) string {
-	if kind == "parse" {
-		text := asObject(input).GetString("text")
-		// substore.ParseProxiesFromYAML (C13) cannot load mappings with
-		// non-string keys (yamlx limit); Python returns them with int keys.
-		if text == "proxies:\n  - 1: a\n    name: A\n" || text == "1: a\nproxies: []\n" {
-			return "non-string keys in ParseProxiesFromYAML"
-		}
-	}
 	return ""
 }
 

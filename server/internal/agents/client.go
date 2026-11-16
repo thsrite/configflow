@@ -196,7 +196,7 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 			return nil, err
 		}
 		if chosen != nil {
-			proxy, proxyAuth = http.ProxyURL(chosen.URL()), chosen.auth
+			proxy, proxyAuth = http.ProxyURL(chosen.URL()), chosen.Auth
 		}
 	}
 	transport := &http.Transport{

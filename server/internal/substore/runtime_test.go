@@ -115,13 +115,13 @@ func TestPollingNeverStartsOrExtendsIdleTime(t *testing.T) {
 		t.Fatal("polling started Sub-Store")
 	}
 	rt.Use(ctx, func() error { return nil })
-	completed := rt.read().Value("last_used")
+	completed := stateOf(rt).Value("last_used")
 	for i := 0; i < 5; i++ {
 		if must[*jsonx.Object](t)(rt.Status(ctx, true)).GetString("state") != "running" {
 			t.Fatal("not running")
 		}
 	}
-	if !jsonx.Equal(rt.read().Value("last_used"), completed) {
+	if !jsonx.Equal(stateOf(rt).Value("last_used"), completed) {
 		t.Fatal("polling extended the idle time")
 	}
 	rt.Tick(ctx)
@@ -154,7 +154,7 @@ func TestIdleTimeBeginsAfterFailedTaskFinishes(t *testing.T) {
 	if !h.store.running() {
 		t.Fatal("stopped right after the failed task")
 	}
-	if SystemClock.Monotonic()-lastUsed(rt.read()) >= 1 {
+	if SystemClock.Monotonic()-lastUsed(stateOf(rt)) >= 1 {
 		t.Fatal("idle time not counted from completion")
 	}
 }
@@ -510,7 +510,7 @@ func TestStartTimesOutWhenNeverReady(t *testing.T) {
 	if !IsRuntimeUnavailable(err) || err.Error() != "Sub-Store 启动后未就绪，请稍后重试或检查容器日志" {
 		t.Fatalf("err %v", err)
 	}
-	state := rt.read()
+	state := stateOf(rt)
 	if state.GetString("state") != "failed" || state.GetString("error") != err.Error() {
 		t.Fatalf("state %s", jsonx.Repr(state))
 	}

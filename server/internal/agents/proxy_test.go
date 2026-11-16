@@ -74,7 +74,7 @@ func TestReferenceEnvironmentProxies(t *testing.T) {
 		case proxy == nil:
 			got = "direct"
 		default:
-			got = proxy.String() + " auth=" + proxy.auth
+			got = proxy.String() + " auth=" + proxy.Auth
 		}
 		switch {
 		case c.Result.Error != "":

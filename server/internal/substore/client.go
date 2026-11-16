@@ -160,6 +160,19 @@ func isYAMLResponse(text string) bool {
 	if _, has := yamlx.Lookup(data, "proxies"); err == nil && has {
 		return true
 	}
+	var unrepresentable *yamlx.UnrepresentableError
+	if errors.As(err, &unrepresentable) {
+		// PyYAML loaded it (a recursive alias, !!set …): only the root
+		// mapping's keys matter here.
+		if root, cerr := pyyaml.Compose(stripped); cerr == nil && root != nil && root.Kind == pyyaml.MappingNode &&
+			root.Tag == pyyaml.TagMap {
+			for _, pair := range root.Pairs {
+				if pair[0].Kind == pyyaml.ScalarNode && pair[0].Tag == pyyaml.TagStr && pair[0].Value == "proxies" {
+					return true
+				}
+			}
+		}
+	}
 	return false
 }
 
@@ -381,7 +394,7 @@ func (c *Client) fetchSubscription(ctx context.Context, subID, url, target strin
 	var rawText *string
 	var traffic *jsonx.Object
 	var directErr error
-	lowered := asciiLower(url)
+	lowered := pyLower(url)
 	directAttempted := !strings.Contains(url, "#") &&
 		(strings.HasPrefix(lowered, "http://") || strings.HasPrefix(lowered, "https://"))
 	if directAttempted {
@@ -400,7 +413,7 @@ func (c *Client) fetchSubscription(ctx context.Context, subID, url, target strin
 			traffic = parsed
 			if isYAMLResponse(text) && target == "ClashMeta" {
 				source := "direct_yaml"
-				if strings.Contains(asciiLower(resp.HeaderValue("x-powered-by")), "sub-store") {
+				if strings.Contains(pyLower(resp.HeaderValue("x-powered-by")), "sub-store") {
 					source = "rendered_yaml"
 				}
 				return NewSubscriptionResult(text, source, traffic, "", c.env.Clock), nil
@@ -566,7 +579,14 @@ func (c *Client) convertProxyString(ctx context.Context, proxyString, target str
 		}
 		if len(proxies) > 0 {
 			clientLog.Info(fmt.Sprintf("节点转换成功: proxy_type=%s input_length=%d", proxyType, inputLength))
-			converted, _ = proxies[0].(*jsonx.Object)
+			var ok bool
+			if converted, ok = proxies[0].(*jsonx.Object); !ok {
+				// Only a falsy item (0, "", [], None) gets past
+				// fix_proxy_fields. Python returns and remembers it; every
+				// caller only tests its truthiness, so an empty object
+				// stands in for it (also remembered).
+				converted = jsonx.NewObject()
+			}
 			return nil
 		}
 		clientLog.Warning(fmt.Sprintf("节点转换结果为空: proxy_type=%s input_length=%d", proxyType, inputLength))
@@ -598,7 +618,8 @@ func proxyTypeOf(proxyString string) string {
 // a proxies value that is not a list (None, numbers: TypeError; a
 // non-empty string or mapping: AttributeError of fix_proxy_fields).
 func ParseProxiesFromYAML(text string) ([]any, error) {
-	data, err := yamlx.SafeLoad(text)
+	// Mappings with int/bool/None keys are dicts in Python too.
+	data, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true})
 	if err != nil {
 		// PyYAML's exception text and class come from the port of its parser.
 		if _, perr := pyyaml.Compose(text); perr != nil {
@@ -611,19 +632,33 @@ func ParseProxiesFromYAML(text string) ([]any, error) {
 		}
 		return nil, &PyError{Class: "YAMLError", Message: err.Error(), Err: err}
 	}
-	object, ok := data.(*jsonx.Object)
-	if !ok {
+	if !yamlx.IsMapping(data) {
 		return []any{}, nil
 	}
-	value := object.GetOr("proxies", []any{})
+	value, present := yamlx.Lookup(data, "proxies")
+	if !present {
+		value = []any{}
+	}
 	switch proxies := value.(type) {
 	case []any:
-		for _, proxy := range proxies {
+		for i, proxy := range proxies {
+			proxy, err := jsonKeys(proxy)
+			if err != nil {
+				return nil, err
+			}
+			proxies[i] = proxy
 			if err := fixProxy(proxy); err != nil {
 				return nil, err
 			}
 		}
 		return proxies, nil
+	case *yamlx.Mapping:
+		for _, pair := range proxies.Pairs {
+			if err := fixProxy(pair.Key); err != nil {
+				return nil, err
+			}
+		}
+		return []any{}, nil
 	case string:
 		if proxies == "" {
 			return []any{}, nil
@@ -638,6 +673,62 @@ func ParseProxiesFromYAML(text string) ([]any, error) {
 		return []any{}, nil
 	}
 	return nil, pyErr("TypeError", fmt.Sprintf("'%s' object is not iterable", typeName(value)))
+}
+
+// jsonKeys turns the mappings with non-string keys inside a proxy into
+// objects whose keys read as json.dumps writes them (1 → "1", True →
+// "true", None → "null", 1.5 → "1.5"): the form every node takes in the
+// subscription cache. Binary and date keys, which json.dumps refuses, are
+// a TypeError here.
+func jsonKeys(value any) (any, error) {
+	switch v := value.(type) {
+	case *yamlx.Mapping:
+		object := jsonx.NewObject()
+		for _, pair := range v.Pairs {
+			var key string
+			switch k := pair.Key.(type) {
+			case string:
+				key = k
+			case jsonx.Number:
+				key = k.String()
+			case bool:
+				key = "false"
+				if k {
+					key = "true"
+				}
+			case nil:
+				key = "null"
+			default:
+				return nil, pyErr("TypeError", fmt.Sprintf("keys must be str, int, float, bool or None, not %T", k))
+			}
+			item, err := jsonKeys(pair.Value)
+			if err != nil {
+				return nil, err
+			}
+			object.Set(key, item)
+		}
+		return object, nil
+	case *jsonx.Object:
+		for _, key := range v.Keys() {
+			item := v.Value(key)
+			converted, err := jsonKeys(item)
+			if err != nil {
+				return nil, err
+			}
+			if _, replaced := item.(*yamlx.Mapping); replaced {
+				v.Set(key, converted)
+			}
+		}
+	case []any:
+		for i, item := range v {
+			converted, err := jsonKeys(item)
+			if err != nil {
+				return nil, err
+			}
+			v[i] = converted
+		}
+	}
+	return value, nil
 }
 
 // fixProxy is fix_proxy_fields on one list item (falsy items are skipped,

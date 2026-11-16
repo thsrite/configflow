@@ -82,7 +82,8 @@ type ExecRunner struct{}
 
 // Run implements CommandRunner.
 func (ExecRunner) Run(ctx context.Context, argv []string, timeout time.Duration) (CommandResult, error) {
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	// subprocess.run is not interrupted when the HTTP client goes away.
+	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
 	var stdout, stderr bytes.Buffer
@@ -92,17 +93,28 @@ func (ExecRunner) Run(ctx context.Context, argv []string, timeout time.Duration)
 		return CommandResult{}, pyErr("TimeoutExpired", fmt.Sprintf("Command %s timed out after %s seconds",
 			jsonx.Repr(pyArgv(argv)), formatSeconds(timeout)))
 	}
-	result := CommandResult{Stdout: decodeUTF8Replace(stdout.Bytes()), Stderr: decodeUTF8Replace(stderr.Bytes())}
 	if err != nil {
-		if exit, ok := err.(*exec.ExitError); ok {
-			result.ReturnCode = exit.ExitCode()
-			return result, nil
+		if _, ok := err.(*exec.ExitError); !ok {
+			if e, ok := err.(*exec.Error); ok {
+				return CommandResult{}, &PyError{Class: "FileNotFoundError", Err: err,
+					Message: fmt.Sprintf("[Errno 2] No such file or directory: %s", jsonx.Repr(e.Name))}
+			}
+			return CommandResult{}, osError(err, argv[0])
 		}
-		if e, ok := err.(*exec.Error); ok {
-			return CommandResult{}, &PyError{Class: "FileNotFoundError", Err: err,
-				Message: fmt.Sprintf("[Errno 2] No such file or directory: %s", jsonx.Repr(e.Name))}
+	}
+	// text=True: strict UTF-8 (stdout first) with universal newlines.
+	var result CommandResult
+	for _, stream := range []struct {
+		data []byte
+		into *string
+	}{{stdout.Bytes(), &result.Stdout}, {stderr.Bytes(), &result.Stderr}} {
+		if message := utf8DecodeError(stream.data); message != "" {
+			return CommandResult{}, pyErr("UnicodeDecodeError", message)
 		}
-		return CommandResult{}, osError(err, argv[0])
+		*stream.into = strings.ReplaceAll(strings.ReplaceAll(string(stream.data), "\r\n", "\n"), "\r", "\n")
+	}
+	if exit, ok := err.(*exec.ExitError); ok {
+		result.ReturnCode = exit.ExitCode()
 	}
 	return result, nil
 }

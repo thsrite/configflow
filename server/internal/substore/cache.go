@@ -77,10 +77,41 @@ func ensureCacheDir(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(dir, 0o777); err != nil {
+	if err := pyMakedirs(dir); err != nil {
 		cacheLog.Warning("创建订阅缓存目录失败: " + osErrorText(err))
 	}
 	return dir, nil
+}
+
+// pyMakedirs is os.makedirs(name, exist_ok=True): missing parents first
+// (their FileExistsError ignored), then mkdir(name); the error names the
+// directory whose mkdir failed, as Python's does.
+func pyMakedirs(name string) error {
+	head, tail := filepath.Split(name)
+	if tail == "" {
+		head, tail = filepath.Split(strings.TrimRight(head, "/"))
+	}
+	head = strings.TrimRight(head, "/")
+	if head == "" && strings.HasPrefix(name, "/") {
+		head = "/"
+	}
+	if head != "" && tail != "" {
+		if _, err := os.Stat(head); err != nil {
+			if err := pyMakedirs(head); err != nil && !errors.Is(err, fs.ErrExist) {
+				return err
+			}
+			if tail == "." {
+				return nil
+			}
+		}
+	}
+	if err := os.Mkdir(name, 0o777); err != nil {
+		if info, serr := os.Stat(name); serr == nil && info.IsDir() {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // cacheName is _cache_name: "<id>.json" with "/" and "\" made safe.

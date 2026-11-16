@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/pystr"
 )
 
 // PyError is a Python exception raised by the ported code where Python
@@ -70,13 +71,11 @@ func safeExceptionDetails(err error) string {
 	return details
 }
 
-// pyIsSpace is str.isspace for one character.
-func pyIsSpace(r rune) bool {
-	return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
-}
+// pyIsSpace is str.isspace for one character (shared pystr tables).
+func pyIsSpace(r rune) bool { return pystr.IsSpace(r) }
 
 // pyStrip is str.strip().
-func pyStrip(s string) string { return strings.TrimFunc(s, pyIsSpace) }
+func pyStrip(s string) string { return pystr.Strip(s) }
 
 // pyFields is str.split() without arguments.
 func pyFields(s string) []string { return strings.FieldsFunc(s, pyIsSpace) }
@@ -97,66 +96,8 @@ func pyIsAlnum(s string) bool {
 // isPyWord is a character of Python's Unicode \w.
 func isPyWord(r rune) bool { return r == '_' || unicode.IsLetter(r) || unicode.IsNumber(r) }
 
-// pyLower is str.lower(): full case mapping (U+0130, final sigma) where it
-// differs from Go's simple mapping.
-func pyLower(s string) string {
-	ascii := true
-	for i := 0; i < len(s); i++ {
-		if s[i] >= 0x80 {
-			ascii = false
-			break
-		}
-	}
-	if ascii {
-		return strings.ToLower(s)
-	}
-	runes := []rune(s)
-	var b strings.Builder
-	for i, r := range runes {
-		switch r {
-		case 0x130:
-			b.WriteString("i̇")
-		case 'Σ':
-			if finalSigma(runes, i) {
-				b.WriteRune('ς')
-			} else {
-				b.WriteRune('σ')
-			}
-		default:
-			b.WriteRune(unicode.ToLower(r))
-		}
-	}
-	return b.String()
-}
-
-func isCased(r rune) bool { return unicode.IsUpper(r) || unicode.IsLower(r) || unicode.IsTitle(r) }
-
-func isCaseIgnorable(r rune) bool {
-	return unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) || unicode.Is(unicode.Cf, r) ||
-		unicode.Is(unicode.Lm, r) || unicode.Is(unicode.Sk, r) || r == '\'' || r == '.' || r == ':' ||
-		r == '^' || r == '`' || r == 0xb7 || r == 0x2019
-}
-
-func finalSigma(runes []rune, i int) bool {
-	before := false
-	for j := i - 1; j >= 0; j-- {
-		if isCaseIgnorable(runes[j]) {
-			continue
-		}
-		before = isCased(runes[j])
-		break
-	}
-	if !before {
-		return false
-	}
-	for j := i + 1; j < len(runes); j++ {
-		if isCaseIgnorable(runes[j]) {
-			continue
-		}
-		return !isCased(runes[j])
-	}
-	return true
-}
+// pyLower is str.lower() (shared pystr tables).
+func pyLower(s string) string { return pystr.Lower(s) }
 
 // asciiLower lowers ASCII letters only (enough wherever the result is only
 // compared with ASCII text: no other character lowers to ASCII).
@@ -201,78 +142,10 @@ func runePrefix(s string, n int) string {
 	return s
 }
 
-// digitValue returns the decimal value of a Unicode Nd character: Nd
-// characters come in runs of ten (0–9), contiguous runs back to back.
-func digitValue(r rune) (int, bool) {
-	if r >= '0' && r <= '9' {
-		return int(r - '0'), true
-	}
-	if r < 128 || !unicode.Is(unicode.Nd, r) {
-		return 0, false
-	}
-	lo := r
-	for unicode.Is(unicode.Nd, lo-1) {
-		lo--
-	}
-	return int(r-lo) % 10, true
-}
-
-// pyInt is int(s) for a str: sign, ASCII whitespace around (non-ASCII
-// whitespace counts as a space, \x1c–\x1f do not), single underscores
-// between digits, any Unicode decimal digits, at most 4300 digits.
+// pyInt is int(s) for a str (pystr.Int, base 10).
 func pyInt(s string) (*big.Int, bool) {
-	var b strings.Builder
-	for _, r := range s {
-		switch {
-		case r < 128:
-			b.WriteRune(r)
-		case pyIsSpace(r):
-			b.WriteByte(' ')
-		default:
-			v, ok := digitValue(r)
-			if !ok {
-				return nil, false
-			}
-			b.WriteByte(byte('0' + v))
-		}
-	}
-	t := strings.Trim(b.String(), " \t\n\v\f\r")
-	neg := false
-	if t != "" && (t[0] == '+' || t[0] == '-') {
-		neg = t[0] == '-'
-		t = t[1:]
-	}
-	if t == "" {
-		return nil, false
-	}
-	digits := make([]byte, 0, len(t))
-	prevUnderscore := true
-	for i := 0; i < len(t); i++ {
-		c := t[i]
-		switch {
-		case c == '_':
-			if prevUnderscore {
-				return nil, false
-			}
-			prevUnderscore = true
-		case c >= '0' && c <= '9':
-			digits = append(digits, c)
-			prevUnderscore = false
-		default:
-			return nil, false
-		}
-	}
-	if prevUnderscore || len(digits) > 4300 {
-		return nil, false
-	}
-	n, ok := new(big.Int).SetString(string(digits), 10)
-	if !ok {
-		return nil, false
-	}
-	if neg {
-		n.Neg(n)
-	}
-	return n, true
+	n, err := pystr.Int(s, 10)
+	return n, err == nil
 }
 
 // pyOSError is str(OSError) for a failed file operation on path.
