@@ -14,6 +14,8 @@ package difftest
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"net"
 	"net/http"
@@ -23,6 +25,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -194,7 +197,11 @@ func fakeSubStore(t *testing.T) *httptest.Server {
 	return srv
 }
 
-func run(t *testing.T, env map[string]string, requests []request) {
+func run(t *testing.T, env map[string]string, requests []request) { runWith(t, env, nil, requests) }
+
+// runWith is run with prepare(pyDir, goDir) called after seeding, before the
+// servers start.
+func runWith(t *testing.T, env map[string]string, prepare func(pyDir, goDir string), requests []request) {
 	for k, v := range env {
 		t.Setenv(k, v)
 	}
@@ -210,6 +217,9 @@ func run(t *testing.T, env map[string]string, requests []request) {
 	seed(t, seedDir)
 	copyDir(t, seedDir, pyDir)
 	copyDir(t, seedDir, goDir)
+	if prepare != nil {
+		prepare(pyDir, goDir)
+	}
 	pyBase := startPython(t, pyDir, pyEnv)
 	goBase := startGo(t, goDir)
 	pyToken, goToken := login(t, pyBase), login(t, goBase)
@@ -306,4 +316,92 @@ func TestDifferentialExternalSubStore(t *testing.T) {
 			{name: "mode bad", method: "POST", path: mode, body: `{}`},
 			{name: "update without bundle", method: "POST", path: "/api/settings/dependencies/sub-store/update"},
 		})
+}
+
+// runtimeRoot is SubStoreRuntime.root for a data directory (tempfile.gettempdir() is /tmp
+// on the test server unless TMPDIR is set).
+func runtimeRoot(dataDir string) string {
+	tmp := os.Getenv("TMPDIR")
+	if tmp == "" {
+		tmp = "/tmp"
+	}
+	abs, _ := filepath.Abs(dataDir)
+	sum := sha256.Sum256([]byte(abs))
+	return filepath.Join(tmp, "configflow-sub-store-"+hex.EncodeToString(sum[:])[:12])
+}
+
+// recordingProxy answers every proxied request as a Sub-Store of another
+// version, so a response shows which way the request went.
+func recordingProxy(t *testing.T) (*httptest.Server, *int32) {
+	var seen int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.RequestURI, "http://") {
+			atomic.AddInt32(&seen, 1)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"status":"success","data":{"backend":"Node","version":"2.99.0"}}`)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &seen
+}
+
+// TestDifferentialReviewLoopbackProxy (review C13): with HTTP_PROXY set and no NO_PROXY,
+// requests sends the loopback Sub-Store requests through the proxy; both servers must
+// report the proxy's answer.
+func TestDifferentialReviewLoopbackProxy(t *testing.T) {
+	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
+		t.Skip("set CONFIGFLOW_DIFF=1 on the test server")
+	}
+	fake := fakeSubStore(t)
+	proxy, seen := recordingProxy(t)
+	bundle := t.TempDir()
+	os.WriteFile(filepath.Join(bundle, substore.SubStoreAsset), []byte("bundle"), 0o644)
+	os.WriteFile(filepath.Join(bundle, "VERSION"), []byte("2.40.0\n"), 0o644)
+	port := fake.URL[strings.LastIndex(fake.URL, ":")+1:]
+	mode := "/api/settings/dependencies/sub-store/mode"
+	runWith(t, map[string]string{"SUB_STORE_BUILTIN_DIR": bundle, "SUB_STORE_BACKEND_API_PORT": port,
+		"HTTPS_PROXY": closedProxy(t), "HTTP_PROXY": proxy.URL, "NO_PROXY": "", "no_proxy": "", "SUB_STORE_URL": ""},
+		nil, []request{
+			{name: "list via proxy", method: "GET", path: "/api/settings/dependencies", contains: `2.99.0`},
+			{name: "mode always via proxy", method: "POST", path: mode, body: `{"mode": "always"}`},
+			{name: "update via proxy", method: "POST", path: "/api/settings/dependencies/sub-store/update"},
+		})
+	if atomic.LoadInt32(seen) < 4 {
+		t.Errorf("proxy saw %d requests", atomic.LoadInt32(seen))
+	}
+}
+
+// TestDifferentialReviewMalformedState (review C13): a state.json that is not an object
+// makes Python fail (AttributeError in status, TypeError in _write): 500 on both, the
+// mode saved before the failing write on both.
+func TestDifferentialReviewMalformedState(t *testing.T) {
+	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
+		t.Skip("set CONFIGFLOW_DIFF=1 on the test server")
+	}
+	fake := fakeSubStore(t)
+	bundle := t.TempDir()
+	os.WriteFile(filepath.Join(bundle, substore.SubStoreAsset), []byte("bundle"), 0o644)
+	os.WriteFile(filepath.Join(bundle, "VERSION"), []byte("2.40.0\n"), 0o644)
+	port := fake.URL[strings.LastIndex(fake.URL, ":")+1:]
+	proxy := closedProxy(t)
+	mode := "/api/settings/dependencies/sub-store/mode"
+	for _, state := range []string{`[1]`, `0`, `{"state": "running", "last_used": "x"}`} {
+		t.Run(state, func(t *testing.T) {
+			runWith(t, map[string]string{"SUB_STORE_BUILTIN_DIR": bundle, "SUB_STORE_BACKEND_API_PORT": port,
+				"HTTPS_PROXY": proxy, "HTTP_PROXY": proxy, "NO_PROXY": "127.0.0.1,localhost", "SUB_STORE_URL": ""},
+				func(pyDir, goDir string) {
+					for _, dir := range []string{pyDir, goDir} {
+						root := runtimeRoot(dir)
+						os.MkdirAll(root, 0o700)
+						os.WriteFile(filepath.Join(root, "state.json"), []byte(state), 0o644)
+						t.Cleanup(func() { os.RemoveAll(root) })
+					}
+				}, []request{
+					{name: "list", method: "GET", path: "/api/settings/dependencies"},
+					{name: "mode on_demand", method: "POST", path: mode, body: `{"mode": "on_demand"}`},
+					{name: "mode always", method: "POST", path: mode, body: `{"mode": "always"}`},
+					{name: "list again", method: "GET", path: "/api/settings/dependencies"},
+				})
+		})
+	}
 }
