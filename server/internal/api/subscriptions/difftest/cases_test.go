@@ -469,3 +469,28 @@ func TestMalformedManagementBodies(t *testing.T) {
 		}
 	}
 }
+
+func TestEveryGlobalRouteRequiresJWT(t *testing.T) {
+	w := newWorld(t, seedGraph(t, "none", false, true), nil)
+	tests := []struct{ method, path string }{
+		{"GET", "/api/nodes"}, {"POST", "/api/nodes"},
+		{"PUT", "/api/nodes/relay"}, {"DELETE", "/api/nodes/relay"},
+		{"POST", "/api/nodes/delete"}, {"POST", "/api/nodes/delete-preview"},
+		{"POST", "/api/nodes/parse-lines"}, {"POST", "/api/nodes/reorder"},
+		{"GET", "/api/nodes/latency"}, {"POST", "/api/nodes/latency"},
+		{"GET", "/api/nodes/latency/settings"}, {"POST", "/api/nodes/latency/settings"},
+		{"POST", "/api/nodes/latency/dns/check"},
+		{"GET", "/api/subscriptions"}, {"POST", "/api/subscriptions"},
+		{"PUT", "/api/subscriptions/s"}, {"DELETE", "/api/subscriptions/s"},
+		{"POST", "/api/subscriptions/reorder"}, {"GET", "/api/subscriptions/health"},
+		{"GET", "/api/subscriptions/s/health-impact"}, {"GET", "/api/subscriptions/s/nodes"},
+		{"POST", "/api/subscriptions/s/fetch"}, {"GET", "/api/subscriptions/test"},
+		{"GET", "/api/subscriptions/proxies"}, {"GET", "/api/subscriptions/s/proxies"},
+	}
+	for _, tt := range tests {
+		got := w.call(tt.method, tt.path+"?token=c30-pull", "", false)
+		if got.Status != 401 {
+			t.Fatalf("%s %s accepted URL capability without JWT", tt.method, tt.path)
+		}
+	}
+}

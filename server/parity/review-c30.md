@@ -9,6 +9,7 @@
 - 中：非对象的非空 `/fetch` 请求体被当成空对象执行，发生未请求的下载/节点导入（Python 写入前拒绝）；两个 reorder 入口把同类输入报为 404 而不是 500。现在在下载和写事务前拒绝，保留原有 500 响应类别及订阅中文错误，Go 使用自己的英文对象校验提示。新增 12 个 Flask 差分请求，比较状态和全部持久化结果，只归一化该类 Python 内部英文异常。
 - 新增 23 个 Flask↔Go URL 边界请求，覆盖大小写、空值、重复参数、百分号编码、路径穿越、尾斜杠、额外参数和显式 profile 优先级，全部一致。重复 token 取首值，额外无关参数被忽略，与 Flask 一致。
 - 补过期 JWT、畸形 Bearer、退休 token 与 config token 碰撞、token 轮换、错误响应一致及日志不含凭据检查。
+- `TestEveryGlobalRouteRequiresJWT` 对 25 个全局 method/path 逐一带有效 URL token、不给 JWT，Flask/Go 均返回 401；包括保留的 5 个 C16 延迟方法。profile alias 的 token-only 成功/失败另测，覆盖全部 26 个注册方法。
 
 ## 已完成检查
 
