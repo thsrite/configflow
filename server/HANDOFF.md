@@ -58,8 +58,18 @@ for Python emulation, then fast-forward `go` (`git merge --ff-only <branch>` in 
 when its tree is clean, otherwise rebase the branch again) and push. R04 then needs an HR review (Opus, or
 Codex first + "Opus review pending" if Claude quota is out).
 
-**Queue:** Opus designs for N7 (YAML → yaml.v3 behind yamlx) and N8 (remove jsonx), then S passes of
-convert/subs/agents/repo per design; R05 iKuai driver; C27 after S-oxidns review; **independent acceptance** (WORKFLOW.md last section): production-data differential harness (first; needs a read-only snapshot copy from the NAS onto the test server), then per domain black-box difftest — coverage matrix → Opus matrix review → tests → non-porting Codex review; Opus spot review of 1–2 non-HR modules per domain; fuzz targets for parsers.
+**Queue (reordered 2026-11-16 by the maintainer: boundary oracle first):**
+1. **Production-data differential harness** — next free slot, before anything else; once it exists it is a
+   merge gate for every change (WORKFLOW.md "Independent acceptance" 2). Needs a read-only snapshot copy
+   from the NAS onto the test server.
+2. **Black-box difftest for the config domain** (coverage matrix → Opus matrix review → tests → non-porting
+   Codex review), to protect the refactors that follow.
+3. Allowed meanwhile (do not touch accepted code): new module ports (R05 iKuai, C27 after S-oxidns review,
+   other `missing` modules whose prerequisites are verified) and reviews.
+4. **Blocked until 1 exists:** N7 (YAML → yaml.v3 behind yamlx) and N8 (remove jsonx) Opus designs and their
+   implementation, S passes of convert/subs/agents/repo, and any other large refactor of accepted code.
+5. S-rules and S-oxidns (already running) merge normally, then get re-checked with the production-data
+   differential as soon as it exists.
 Claude subagents of the old session (S-rules, S-oxidns, N2 review, R04 Claude porters) are finished/paused —
 don't resume them; their work continues in the Codex agents above.
 
