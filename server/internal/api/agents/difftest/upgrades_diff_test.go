@@ -142,6 +142,17 @@ func (f *fakeOpsAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		send(200, jsonx.Obj("success", true))
 	case path == "/api/agent-address":
+		switch {
+		case phase == "env":
+			send(200, jsonx.Obj("success", true, "configured", "192.0.2.9", "addresses", []any{f.lan}, "writable", false))
+			return
+		case phase == "addrreject400" && r.Method == "POST":
+			send(400, jsonx.Obj("success", false, "message", "地址格式不对"))
+			return
+		case phase == "addrreject500" && r.Method == "POST":
+			send(500, jsonx.Obj("success", false))
+			return
+		}
 		if token == "Bearer tok-addr-old" {
 			raw(404, "404 page not found")
 			return
@@ -165,6 +176,8 @@ func (f *fakeOpsAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			send(200, jsonx.Obj("agent_id", "someone-else", "deployment_method", "shell", "architecture", "linux-amd64"))
 		case phase == "infolist":
 			send(200, []any{1})
+		case phase == "noarch":
+			send(200, jsonx.Obj("agent_id", strings.TrimPrefix(token, "Bearer tok-"), "deployment_method", "shell"))
 		case phase == "done":
 			send(200, jsonx.Obj("agent_id", strings.TrimPrefix(token, "Bearer tok-"), "version", agents.GetLatestVersion(), "migration_ready", true))
 		default:
@@ -214,7 +227,7 @@ func lanAddress(t *testing.T) string {
 	return ""
 }
 
-func upgradesSeed(t *testing.T, dir string, port, closed int) {
+func upgradesSeed(t *testing.T, dir string, port, closed int, lan string) {
 	r, err := repo.OpenDefault(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -243,9 +256,32 @@ func upgradesSeed(t *testing.T, dir string, port, closed int) {
 		addrHA.Set("oxidns_ha", jsonx.Obj("enabled", true, "vip", "192.0.2.54"))
 		addrOld := agent("addr-old", "oxidns", port)
 		addrOld.Set("deployment_method", "docker")
+		// Review A15: tokens http.client sends as latin-1 / cannot encode, a
+		// record without host, malformed upgrade records, same-name records.
+		latin := agent("op-latin", "mihomo", port)
+		latin.Set("token", "t\u00f6k")
+		cjk := agent("op-cjk", "mihomo", port)
+		cjk.Set("token", "\u5bc6\u94a5")
+		noHost := agent("op-nohost", "mihomo", port)
+		noHost.Delete("host")
+		badRecord := agent("op-badrec", "mihomo", port)
+		badRecord.Set("latest_upgrade", "abc")
+		pairs := agent("op-pairs", "mihomo", port)
+		pairs.Set("latest_upgrade", []any{[]any{"status", "succeeded"}, []any{"target_version", "9.9.9-go"}, "ok"})
+		intRecord := agent("op-intrec", "mihomo", port)
+		intRecord.Set("latest_upgrade", 5)
+		twinA, twinB := agent("twin-a", "oxidns", port), agent("twin-b", "oxidns", port)
+		twinA.Set("name", "twin")
+		twinB.Set("name", "twin")
+		twinB.Set("host", lan)
+		ftwinA, ftwinB := agent("ftwin-a", "oxidns", port), agent("ftwin-b", "oxidns", port)
+		ftwinA.Set("name", "ftwin")
+		ftwinB.Set("name", "ftwin")
+		ftwinB.Set("host", lan)
 		system.Set("agents", []any{agent("op-1", "mihomo", port), agent("op-2", "mihomo", port), docker, busy, upgrading,
 			failed, legacy, agent("op-gone", "mihomo", closed), agent("op-uninstall", "mihomo", port),
-			agent("follow", "oxidns", port), ha, agent("addr", "oxidns", port), addrHA, addrOld})
+			agent("follow", "oxidns", port), ha, agent("addr", "oxidns", port), addrHA, addrOld,
+			latin, cjk, noHost, badRecord, pairs, intRecord, agent("op-noarch", "mihomo", port), twinA, twinB, ftwinA, ftwinB})
 		config := system.GetObject("system_config")
 		if config == nil {
 			config = jsonx.NewObject()
@@ -370,6 +406,33 @@ func upgradesRequests(lan string) []upgradesRequest {
 		{request{name: "report", method: "POST", path: b + "op-upgrading/upgrade/report", headers: agentAuth("tok-op-upgrading"), mask: upgradeMask,
 			body: `{"update_id": "` + strings.Repeat("b", 32) + `", "status": "rolling_back", "error": {"detail": "systemctl operation failed", "token": "tok-op-upgrading"}}`, contentType: J}, "", 0},
 		masked(get("upgrade poll rolling back", b+"op-upgrading/upgrade", "legacy"), upgradeMask...),
+		// review A15
+		get("review logs Unicode 15 digit", b+"op-1/logs?lines=%F0%91%BD%91", ""),
+		get("review logs zeros over digit limit", b+"op-1/logs?lines="+strings.Repeat("0", 4301), ""),
+		post("review restart latin-1 token", b+"op-latin/restart", "", "", ""),
+		get("review logs latin-1 token", b+"op-latin/logs?lines=3", ""),
+		post("review restart cjk token", b+"op-cjk/restart", "", "", ""),
+		get("review logs cjk token", b+"op-cjk/logs", ""),
+		post("review log clear cjk token", b+"op-cjk/logs/clear", `{"log_path": "/x"}`, J, ""),
+		post("review uninstall cjk token", b+"op-cjk/uninstall", "", "", ""),
+		post("review update cjk token", b+"op-cjk/update", "", "", ""),
+		get("review address describe cjk token", b+"op-cjk/address", ""),
+		post("review restart without host", b+"op-nohost/restart", "", "", ""),
+		get("review logs without host", b+"op-nohost/logs", ""),
+		post("review logging NaN without host", b+"op-nohost/config/logging", `{"enabled": NaN}`, J, ""),
+		post("review update without host", b+"op-nohost/update", "", "", ""),
+		get("review upgrade string record", b+"op-badrec/upgrade", ""),
+		get("review upgrade pairs record", b+"op-pairs/upgrade", ""),
+		get("review upgrade int record", b+"op-intrec/upgrade", ""),
+		masked(post("review update info without architecture", b+"op-noarch/update", "", "", "noarch"), upgradeMask...),
+		masked(post("review update again after stuck reservation", b+"op-noarch/update", "", "", ""), upgradeMask...),
+		get("review address describe env", b+"addr/address", "env"),
+		{request{name: "review address env", method: "PUT", path: b + "addr/address", admin: true, body: `{"host": "` + lan + `"}`, contentType: J}, "env", 0},
+		{request{name: "review address device rejects 400", method: "PUT", path: b + "addr/address", admin: true, body: `{"host": "` + lan + `"}`, contentType: J}, "addrreject400", 0},
+		{request{name: "review address device rejects 500", method: "PUT", path: b + "addr/address", admin: true, body: `{"host": "` + lan + `"}`, contentType: J}, "addrreject500", 0},
+		{request{name: "review address same-name record", method: "PUT", path: b + "twin-a/address", admin: true, body: `{"host": "` + lan + `"}`, contentType: J}, "", 0},
+		{request{name: "review address host list", method: "PUT", path: b + "addr/address", admin: true, body: `{"host": ["` + lan + `"]}`, contentType: J}, "", 0},
+		{request{name: "review address full-width", method: "PUT", path: b + "addr/address", admin: true, body: `{"host": "\uff11\uff10.0.0.1"}`, contentType: J}, "", 0},
 		// address
 		get("address describe", b+"addr/address", ""),
 		get("address describe HA", b+"addr-ha/address", ""),
@@ -394,6 +457,12 @@ func upgradesRequests(lan string) []upgradesRequest {
 			body: `{"version": "1.1.0-go", "host": "` + lan + `"}`, contentType: J}, "", 1500 * time.Millisecond},
 		{request{name: "follow docker bridge", method: "POST", path: b + "op-2/heartbeat", headers: agentAuth("tok-op-2"),
 			body: `{"version": "1.1.0-go", "host": "172.17.0.2"}`, contentType: J}, "", 0},
+		{request{name: "review follow retry window", method: "POST", path: b + "op-2/heartbeat", headers: agentAuth("tok-op-2"),
+			body: `{"version": "1.1.0-go", "host": "` + lan + `"}`, contentType: J}, "", 1500 * time.Millisecond},
+		{request{name: "review follow same-name record", method: "POST", path: b + "ftwin-a/heartbeat", headers: agentAuth("tok-ftwin-a"),
+			body: `{"version": "1.1.0-go", "host": "` + lan + `"}`, contentType: J}, "", 1500 * time.Millisecond},
+		{request{name: "review follow IPv6 address", method: "POST", path: b + "ftwin-a/heartbeat", headers: agentAuth("tok-ftwin-a"),
+			body: `{"version": "1.1.0-go", "host": "fe80::1%eth0"}`, contentType: J}, "", 0},
 	}
 }
 
@@ -475,7 +544,7 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 	for _, dir := range []string{seedDir, pyDir, goDir} {
 		os.MkdirAll(dir, 0o755)
 	}
-	upgradesSeed(t, seedDir, port, closed)
+	upgradesSeed(t, seedDir, port, closed, lan)
 	copyDir(t, seedDir, pyDir)
 	copyDir(t, seedDir, goDir)
 	pyBase, stopPython := startPython(t, pyDir)
@@ -596,7 +665,7 @@ func TestUpgradesProxyDifferentialAgainstFlask(t *testing.T) {
 	for _, dir := range []string{seedDir, pyDir, goDir} {
 		os.MkdirAll(dir, 0o755)
 	}
-	upgradesSeed(t, seedDir, port, closed)
+	upgradesSeed(t, seedDir, port, closed, lan)
 	copyDir(t, seedDir, pyDir)
 	copyDir(t, seedDir, goDir)
 	pyBase, stopPython := startPython(t, pyDir)
