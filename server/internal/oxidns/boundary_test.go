@@ -593,7 +593,12 @@ func runBoundary(t *testing.T, file string, fns ...string) {
 		if r.Err != nil && !settingsClasses[r.Err[0]] && err == nil || r.Unholdable != nil && errors.Is(err, errUnsupportedYAML) || unicodeEdge(r) {
 			s.accepted++
 			if os.Getenv("OXIDNS_ACCEPTED") != "" {
-				t.Logf("accepted %s %s: %s", file, r.Fn, diff)
+				args := ""
+				if os.Getenv("OXIDNS_ARGS") != "" {
+					data, _ := json.Marshal(r.Args)
+					args = " args=" + string(data)
+				}
+				t.Logf("accepted %s %s: %s%s", file, r.Fn, diff, args)
 			}
 			continue
 		}
