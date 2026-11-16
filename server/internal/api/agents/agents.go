@@ -52,6 +52,7 @@ func Register(r *httpx.Router) {
 	registerPanel(r)
 	registerInstaller(r)
 	registerUpgrades(r)
+	registerDockerHA(r)
 }
 
 func failure(status int, message string) *httpx.Response {
