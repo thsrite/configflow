@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 15 missing, 3 partial, 9 ported, 10 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13, C14). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 15 missing, 3 partial, 8 ported, 11 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13, C14, C15). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -40,7 +40,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C12 | converter common, Mihomo node conversion, dialer references, EasyTier | 1196 | verified | C09, C11 | – |
 | C13 | Sub-Store client, runtime, subscription cache, dependencies | 1193 | verified | C12, C10 | 3 (3 done) |
 | C14 | remote rule fetch, ruleset content, remote sources, website identity | 1202 | verified | C12, C08 | – |
-| C15 | subscription refresh, health, scheduled refresh | 600 | ported | C13, C14, C07 | – |
+| C15 | subscription refresh, health, scheduled refresh | 600 | verified | C13, C14, C07 | – |
 | C16 | health check, latency, node DNS, region check, domain probe | 1089 | ported | C12, C13 | 5 (5 done) |
 | C17 | provider delivery and responses | 540 | ported | C15 | – |
 | C18 | Mihomo config generation, Mihomo base settings | 1275 | ported | C12, C15, C16, C17 | – |
@@ -682,7 +682,7 @@ Commands (review):
 
 ## C15 — subscription refresh, health, scheduled refresh
 
-**Status: `ported`** (not reviewed) · prereqs: C13, C14, C07 · Go: `internal/refresh` (new; not `internal/substore`: the module also drives rule sources through `rulefetch` and registers task rows)
+**Status: `verified`** (review 2026-11-16, commit 9a85b5c2; see "Review C15") · prereqs: C13, C14, C07 · Go: `internal/refresh` (new; not `internal/substore`: the module also drives rule sources through `rulefetch` and registers task rows)
 
 Files → Go:
 - `backend/utils/subscription_refresh.py` (139) → `interval.go` (`ValidateRefreshInterval(value, label)` → `*IntervalError` (ValueError), `DefaultSourceInterval`/`DefaultProviderInterval`/`MaxInterval`, `DefaultIntervalLabel`), `source.go` (`SourceCacheMetadata`, `isFresh`, `DownloadCachePath`, `RememberSourceDownload`, `DownloadSubscriptionNodes`, `FetchSubscriptionSource(ctx, sub, fetch SourceFetch)` → `*rules.StrategyReferenceError` for interval/manual-mode refusals).
@@ -721,6 +721,43 @@ Reviewer hints: `DescribeFailure` order and the requests hierarchy (`requestsBas
 Commands:
 - tests: `rt -- bash -lc 'cd server && go vet ./internal/refresh/... ./internal/tasks/ ./internal/api/tasks/ ./internal/server/ && go test -count=1 -race ./internal/refresh/ ./internal/tasks/ ./internal/api/tasks/ ./internal/server/'`
 - differential: `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/refresh/difftest/'`
+- corpus: `rt --back server/internal/refresh/testdata/corpus.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/refresh/testdata/gen.py'`
+
+### Review C15 (adversarial, 2026-11-16)
+
+Every function and branch of `subscription_refresh.py`, `subscription_health.py`, `scheduled_refresh.py` and `routes/tasks.py` `_history`/`_host`/`_subscription_rows`/`_rule_rows`/`run_task` (subscription, rule_source)/`set_interval` walked against `interval.go`, `source.go`, `health.go`, `scheduled.go`, `rows.go`, `pyerr.go`, `env.go` and `api/tasks`.
+
+| # | Sev | Finding | Fix | Regression test |
+|---|---|---|---|---|
+| 1 | high | A cancelled request context (browser gone during a manual refresh, a provider delivery or a rule read) aborted shared work: repository locks taken with a cancelled context fail (at random when uncontended, `select`), so the download cache, the nodes, the health record or the task receipt were dropped after a successful download; Python's request thread always finishes (cf. C13 finding 3) | `RefreshSubscription`, `FetchSubscriptionSource`, `DownloadSubscriptionNodes`, `RememberSourceDownload`, `RefreshRuleSource`, `ReadRuleSource`, `RecordFetch`, `Forget`, `LoadHealth` run on `context.WithoutCancel` (`detached`) — 9a85b5c2 | `TestReviewCancelledRequestContextFinishesTheRefresh` (fails without the fix: `context canceled`) |
+| 2 | low | `next_run_at` back-off: `consecutive_failures` below int64 min (hand-edited `task-status.json`) wrapped through `big.Int.Int64()` into a positive exponent (`-18446744073709551611` → 4800 s instead of 300 s) | exponent from the sign / ≥ 11 test without `Int64()` — 9a85b5c2 | corpus `next_run_at` rows (±2⁶⁴, ±2⁶³, `'-18446744073709551611'`, `'٣'`, `-1e19`), differential `subscription:s-future` / `rule_source:r-future` next_run_at compared unmasked |
+| 3 | low | `timedelta(seconds=…)` bound checked on `|seconds|`; Python floors into days, so `-999999999·86400-1` overflows with `days=-1000000000; …` (Go reported "date value out of range") | bound on floored days — 9a85b5c2 | corpus intervals `-999999999·86400`, `-999999999·86400-1`, `-10³⁰` |
+| 4 | low | `is_library_source` / `find_resource` validated every `rule_library`/`subscriptions` item before searching; Python's `next()` stops at the first match (a non-object item after it does not fail) | `nextObject` — 9a85b5c2 | `TestReviewNextStopsAtTheFirstMatch` |
+| 5 | low | `node.setdefault('id', f"node_{uuid4()…}")` draws a uuid for every node; Go only for nodes without an id (visible to recorded uuid sequences only) | always drawn — 9a85b5c2 | replay of `download_subscription_nodes` / `refresh_subscription` with the recorded uuids |
+| 6 | low | Decision 8: `fetch_userinfo` lowered with `strings.ToLower` | `pystr.Lower` — 9a85b5c2 | (no ASCII-visible difference) |
+
+Accepted differences (reviewer, in addition to the porter's list above, which stands): the porter's list re-checked — offsets kept by `parseTime` (sub-second offsets cut; instants equal), non-object `traffic` of a hand-edited transport cache dropped, `FetchUserinfo` reading the body (no production caller), TypeError-class errors for non-string `id`/`url`, `host()` of a truthy non-string URL — all hand-edited/unreachable inputs. A panic inside a refresh is recovered by `run` without a task receipt (Python records any Exception; a Go panic is a Go bug). `api/tasks.setInterval` (C07's file) skips non-object list items where Python raises AttributeError (unreachable: repository-validated lists) — noted for C07.
+
+Checks performed (no finding): `validate_refresh_interval` (type is int, bool, big ints, label); `source_cache_metadata` (key order, sources `cache`/`prepared_yaml`, hosts then dialers); `_is_fresh` (Z/offset/naive, future, exact interval boundary, microsecond arithmetic); `_download_cache_path`; `remember_source_download` (stored keys/order, fetched_at default from the clock); `download_subscription_nodes` (order id → url → fetch → remember → parse → empty ValueError → nodes → `sub['name']` KeyError only with nodes → metadata → save); `fetch_subscription_source` branch order (interval validation → StrategyReferenceError, `cache and metadata.get('url') not in (None, url)`, AttributeError for non-dict metadata, usable/current, manual-mode message with `sub.get("name", sub["id"])`, validate_shapes, truthy conversions, safe_dump sort_keys, download cache errors swallowed exactly for OSError/repository/JSON errors, fetch → remember); health (`load_health` swallow set, `list(history or [])[-23:]` for str/dict/None/false/1.5, `int(count or 0)` for str/float/NaN/inf/dict, `if traffic`, `_save_health` logging, `forget` only on non-null); scheduler (TICK/FIRST_DELAY 30 s, flock LOCK_EX|LOCK_NB on `.task-scheduler.lock` held until shutdown, silent return when locked, ≤ 3 workers, claims before running, release in finally, per-job repo scope, `run_now` claim → TaskBusy, background on a detached context); `describe_failure` order and the requests hierarchy (ConnectTimeout → Timeout first, SSLError before ConnectionError, `type(error) is ValueError`); `next_run_at` (`not interval` first, entry AttributeError, `parse_time(last) or parse_time(baseline)`, `int()` of every count form, `min(interval, retry)`); `subscription_cache_time` (`or {}`, nodes truthiness before metadata); `rule_cache_time` (ValueError/OSError swallowed, isfile following symlinks, half-even microsecond rounding of st_mtime); `_due` (`not sub.get('enabled', True)` vs rows' `is not False`, KeyError for a missing id, `due <= now`); rows (field order, history `int()`s, rule `cache_updated_at` fallback, `_host` via urlsplit port); `run_task` mapping (TaskBusy/LookupError strip/ValueError incl. ProfileValidationError → 409/404/409, others 500).
+
+Record & replay: `testdata/c15_record.py` (pytest plugin over the whole Python suite: 12552 passed) records 21 public functions with the files they read and wrote (`subscribes/<id>.json`, the transport cache, `subscription_health.json`, `task-status.json`), the collaborators' answers (`get_subscription_proxies_yaml`, the `fetch=` callable, `convert_proxy_string`, uuid4) and a frozen clock; `recorded_test.go` replays them on a fresh repository each: **3150 distinct calls from 78 test files, 3145 replayed with 0 differences** (outputs, error class + text, file bytes after the call); 5 skipped because the test monkeypatched one of that call's own collaborators (e.g. `save_subscription_nodes` → lambda).
+
+Coverage map (Python tests of C15):
+- `test_scheduled_tasks.py` 13: hand-ported 9 (see porter's list) + replay (113 calls) + differential; deferred as listed above (C30/C33/routers/A16/A17/C37).
+- `test_subscription_refresh_policy.py` 12: hand-ported 7 + replay (91 calls: `fetch_subscription_source`, `download_subscription_nodes`, `_is_fresh`, …); route halves deferred to C17/C18/C30/C31/C34 as listed.
+- `test_flow_ui_apis.py` C15 cases: hand-ported + replay (66 calls incl. `record_fetch`/`forget`/`parse_userinfo`).
+- `test_subscription_hosts.py` 2 C15 cases: hand-ported + replay (37 calls of `source_cache_metadata`/`download_subscription_nodes`).
+- `test_notifications.py` (118 calls), `test_remote_rule_consumers.py` (41), `test_rule_proxy_freshness.py` (146), `test_subscription_cache_preview.py` (83), `test_subscription_fetch_requests.py` (6), `test_proxy_group_regex_exclusion.py` (70), `test_mihomo_classical_delivery.py` (37), `test_rule_fetch_proxy_routes.py` (19), `test_profile_scoped_artifacts.py` (19), `test_agent_push_diff_api.py` (36), `test_agent_content_*` (106), `test_dynamic_proxy_chains.py` (81), `test_subscription_dialers.py` (1): C15 calls replayed; their route/generation behaviour stays with the modules listed above.
+- Not recorded (integration functions over the rule fetcher): `refresh_rule_source`, `read_rule_source`, `run_round`, `run_now`, `_due`, rows — covered by the hand-ported tests, the corpus scenarios (rows, `_due`, rule-cache mtimes) and the differential (rule runs: success, invalid, 503, content source).
+
+Corpus additions (`testdata/gen.py`, now 1210 rows, all equal): back-off counts beyond int64, negative timedelta bounds, health scenario `health review` (23/24-item histories, null/false/1.5/emoji histories, NaN/inf/-1e300/` 7 `/`٧`/`7.0`/dict counts, Unicode ids). Differential: + `s-future`/`r-future` (exact next_run_at), **31 requests, 0 differences**, files equal.
+
+Open findings: none.
+
+Commands (review):
+- tests: `rt -- bash -lc 'cd server && go vet ./internal/refresh/... && go test -count=1 ./internal/refresh/... ./internal/tasks/... ./internal/api/tasks/... ./internal/server/'`
+- differential: `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/refresh/difftest/'`
+- record & replay: `rt -- bash -lc 'rm -rf /tmp/c15rec && C15_RECORD_DIR=/tmp/c15rec PYTHONPATH=.:server/internal/refresh/testdata ~/cf-test/.venv/bin/python -m pytest backend -q -n 10 --dist=worksteal -p c15_record -p no:cacheprovider'`, then `rt --back server/internal/refresh/testdata/c15_recorded.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/refresh/testdata/c15_record.py merge /tmp/c15rec'`
 - corpus: `rt --back server/internal/refresh/testdata/corpus.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/refresh/testdata/gen.py'`
 
 ## C16 — health check, latency, node DNS, region check, domain probe
