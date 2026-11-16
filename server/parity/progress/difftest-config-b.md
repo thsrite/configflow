@@ -817,3 +817,19 @@ request_variants=6785 named_matrix_cases=3507（S549 F2453 B505），H去重234�
 ```
 
 T20尚未完成：这里是Agent→面板的上报和读取，面板→fake Agent的probe/website/region请求、批次/错误/超时、job进度及自动化仍待后续；G13和其余helper/路由继续，未做最终全量。
+
+## 批次 46：异步预检任务与严格生命周期比较
+
+- 新增33个实际Flask↔Go请求全部通过：probe无Agent/缺默认代理、region未开启/无Agent均202后失败；完整最终job对象、准确中文message、0进度/空errors、先后时间、同ID稳定、跨profile404、重启后404与不存在ID。另覆盖probe空/错型/IP/中文/101项、region10域名上限/无服务无域名、website30上限/无Agent/有真实heartbeat但无近期报告。
+- 202可能已经完成，也可能仍running。只有在独立验证该预检状态的全部9字段、时间及错误内容后，才投影最初响应的status/message/finished_at三个时序字段；终态仍完整比较，不掩盖错误数组。新增故意错误自检，46项通过；一般成功/部分失败任务不用这个限定为零进度的比较器。
+- **修正批次44判断**：不要求随机hex ID满足UUID4版本位；这不是额外业务约定。仍验证资源前缀、lowercase hex/带横线UUID形状、唯一性与缓存/引用关系。重跑15条初始化后，9条规则引用ID的有/无横线形态差异仍保留，未改Go。
+
+```text
+.63 run.py --groups discovery-init,discovery-init-guards,discovery-job-preflight,discovery-job-guards
+current compared=39 different=9 design_errors=[] seconds=34.77
+cumulative compared=1675 go-unimplemented=5063 dependency=28 different=51 O12-separate=1
+request_variants=6818 named_matrix_cases=3526（S550 F2469 B507），H去重234，G去重15
+46 self-checks + end-to-end wrong-Go-response check OK
+```
+
+预检不等于fake Agent成功流程：实际出站协议、busy/进度/部分失败、region/website、自动化继续；未做最终全量。

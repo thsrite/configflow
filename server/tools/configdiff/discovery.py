@@ -1,6 +1,5 @@
 """Validate discovery-created UUID identities and their derived cache paths."""
 import re
-import uuid
 
 from compare import Difference, database
 from composition import cache_name
@@ -13,8 +12,8 @@ def allocation_ids(libraries, rules):
         for row in rows:
             ident = row.get('id') if isinstance(row, dict) else None
             pattern = r'lib_[a-f0-9]{32}' if kind == 'lib' else r'ruleset_[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}'
-            if not isinstance(ident, str) or not re.fullmatch(pattern, ident) or uuid.UUID(ident.split('_', 1)[1]).version != 4:
-                raise ValueError('discovery allocation needs its resource prefix and lowercase UUID4')
+            if not isinstance(ident, str) or not re.fullmatch(pattern, ident):
+                raise ValueError('discovery allocation needs its resource prefix and lowercase hex/UUID shape')
             result.append((kind, ident))
     if len({ident for _, ident in result}) != len(result):
         raise ValueError('duplicate discovery allocation')
@@ -68,4 +67,4 @@ class Allocations:
                         policy.bind(*paths, r'shared/rules/by-id/[a-f0-9]{64}\.list(?:\.bak)?', 'discovery-cache')
             return []
         except (AssertionError, ValueError, KeyError, TypeError) as error:
-            return [Difference('discovery.allocations', 'invalid-Go-allocation', '<UUID4 resource IDs and derived paths>', str(error))]
+            return [Difference('discovery.allocations', 'invalid-Go-allocation', '<resource-prefixed hex/UUID IDs and derived paths>', str(error))]

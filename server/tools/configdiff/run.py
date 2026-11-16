@@ -163,6 +163,8 @@ def main():
     groups.update(discovery_init)
     from cases.discovery_reads import GROUPS as discovery_reads
     groups.update(discovery_reads)
+    from cases.discovery_jobs import GROUPS as discovery_jobs
+    groups.update(discovery_jobs)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

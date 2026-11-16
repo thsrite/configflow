@@ -17,12 +17,36 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
-    def test_discovery_allocations_require_distinct_lowercase_uuid4_ids(self):
+    def test_async_preflight_checks_errors_before_normalizing_phase_fields(self):
+        from discovery_jobs import preflight_errors, acceptance_view
+        policy = Policy(start=100, end=104)
+        started, finished = '1970-01-01T00:01:40', '1970-01-01T00:01:41'
+        value = {'success': True, 'job': {'id': '0' * 32, 'kind': 'probe', 'status': 'running', 'done': 0, 'total': 0,
+                 'message': '', 'errors': [], 'started_at': started, 'finished_at': None}}
+        failure = copy.deepcopy(value)
+        failure['job'].update(status='failed', message='synthetic failure', finished_at=finished)
+        self.assertEqual(preflight_errors(value, policy, 'probe', 'synthetic failure'), [])
+        self.assertEqual(preflight_errors(failure, policy, 'probe', 'synthetic failure'), [])
+        self.assertEqual(acceptance_view(value, True), acceptance_view(failure, True))
+        for key, wrong in [('id', 'bad'), ('kind', 'region'), ('done', True), ('total', -1), ('done', 1), ('status', 'done'),
+                           ('errors', {}), ('message', 'wrong'), ('finished_at', finished), ('started_at', '2099-01-01T00:00:00')]:
+            changed = copy.deepcopy(value)
+            changed['job'][key] = wrong
+            self.assertTrue(preflight_errors(changed, policy, 'probe', 'synthetic failure'))
+            self.assertEqual(acceptance_view(changed, False), changed)
+        for key, wrong in [('message', 'wrong'), ('finished_at', None), ('finished_at', '1970-01-01T00:01:39')]:
+            changed = copy.deepcopy(failure)
+            changed['job'][key] = wrong
+            self.assertTrue(preflight_errors(changed, policy, 'probe', 'synthetic failure'))
+            self.assertTrue(differences(failure, changed))
+
+    def test_discovery_allocations_require_distinct_lowercase_uuid_shapes(self):
         from discovery import allocation_ids
         library = {'id': 'lib_123456781234423482341234567890ab'}
         rule = {'id': 'ruleset_12345678-1234-4234-8234-1234567890ab'}
         self.assertEqual(len(allocation_ids([library], [rule])), 2)
-        for bad in ('lib_0123456789ab', 'lib_' + '0' * 32, library['id'].upper(), None):
+        self.assertEqual(len(allocation_ids([{'id': 'lib_' + '0' * 32}], [rule])), 2)
+        for bad in ('lib_0123456789ab', 'lib_' + 'g' * 32, library['id'].upper(), None):
             with self.assertRaises(ValueError):
                 allocation_ids([{'id': bad}], [rule])
         with self.assertRaises(ValueError):

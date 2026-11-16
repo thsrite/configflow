@@ -298,25 +298,25 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
-| `discovery.allocations` | invalid-Go-allocation | '<UUID4 resource IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase UUID4' |
-| `body.candidates[2].id` | value | 'lib_5aa352d1d67940aa936f36c92b2c25ca' | 'lib_49bf05dbd0fa2e6f699dd85e5590f06d' |
-| `body.candidates[3].id` | value | 'lib_436a13afa6464312b440ba5573b1b50c' | 'lib_41f2ccd3a9f56d706bfde1d18587683a' |
-| `body.direct.id` | value | 'lib_5aa352d1d67940aa936f36c92b2c25ca' | 'lib_49bf05dbd0fa2e6f699dd85e5590f06d' |
-| `body.direct.references[0].id` | value | 'ruleset_e57997e6-357b-421a-b77b-5fae817ad03b' | 'ruleset_9851b81c012173de6b7d627e3080b326' |
-| `body.proxy.id` | value | 'lib_436a13afa6464312b440ba5573b1b50c' | 'lib_41f2ccd3a9f56d706bfde1d18587683a' |
-| `body.proxy.references[0].id` | value | 'ruleset_50fcc790-dcd0-4b45-9d0a-d3e03aee673d' | 'ruleset_2160a868260049b9a20a932d18ded1b4' |
-| `db.fields.profile/default/domain_discovery.value.direct_ruleset` | value | 'lib_5aa352d1d67940aa936f36c92b2c25ca' | 'lib_49bf05dbd0fa2e6f699dd85e5590f06d' |
-| `db.fields.profile/default/domain_discovery.value.proxy_ruleset` | value | 'lib_436a13afa6464312b440ba5573b1b50c' | 'lib_41f2ccd3a9f56d706bfde1d18587683a' |
-| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_e57997e6-357b-421a-b77b-5fae817ad03b' | 'ruleset_9851b81c012173de6b7d627e3080b326' |
-| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_5aa352d1d67940aa936f36c92b2c25ca' | 'lib_49bf05dbd0fa2e6f699dd85e5590f06d' |
-| `db.fields.profile/default/rule_configs.value[3].id` | value | 'ruleset_50fcc790-dcd0-4b45-9d0a-d3e03aee673d' | 'ruleset_2160a868260049b9a20a932d18ded1b4' |
-| `db.fields.profile/default/rule_configs.value[3].library_rule_id` | value | 'lib_436a13afa6464312b440ba5573b1b50c' | 'lib_41f2ccd3a9f56d706bfde1d18587683a' |
-| `db.fields.shared//rule_library.value[4].id` | value | 'lib_5aa352d1d67940aa936f36c92b2c25ca' | 'lib_49bf05dbd0fa2e6f699dd85e5590f06d' |
-| `db.fields.shared//rule_library.value[5].id` | value | 'lib_436a13afa6464312b440ba5573b1b50c' | 'lib_41f2ccd3a9f56d706bfde1d18587683a' |
-| `files.shared/rules/by-id/3bc5dfdd2e4e865e32bfece26231275bf3ca506563ea9da71c5abcc5743118cf.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
-| `files.shared/rules/by-id/7b29183fc516a7d3929f2f476bf4e384319d136ed62bf8daeb550ea32b42d888.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
-| `files.shared/rules/by-id/c19dd82aa4d127189806fd875244b1cc3c44e795f5d9d9fe772e08bb396984a6.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
-| `files.shared/rules/by-id/e58f99001adf902c2d445a7c92daffa31eb9802e57002a2985ec4abc2ba6fa10.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
+| `discovery.allocations` | invalid-Go-allocation | '<resource-prefixed hex/UUID IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase hex/UUID shape' |
+| `body.candidates[2].id` | value | 'lib_4b44ceb89b6e4de3ba048722edbaacd1' | 'lib_8ec278683639a7768bf5d591fa208e60' |
+| `body.candidates[3].id` | value | 'lib_2c3c9df504c14667b074ec2a80ea12af' | 'lib_349c8bc05ed94c8cbfe7a1f706bb2527' |
+| `body.direct.id` | value | 'lib_4b44ceb89b6e4de3ba048722edbaacd1' | 'lib_8ec278683639a7768bf5d591fa208e60' |
+| `body.direct.references[0].id` | value | 'ruleset_c8a1c8aa-0740-4764-ac2c-f5f69304fead' | 'ruleset_8e90b0a49257287b586320c93db03caa' |
+| `body.proxy.id` | value | 'lib_2c3c9df504c14667b074ec2a80ea12af' | 'lib_349c8bc05ed94c8cbfe7a1f706bb2527' |
+| `body.proxy.references[0].id` | value | 'ruleset_8cdc9e63-753c-48fb-8d2c-a67b54e3091c' | 'ruleset_23f4bc76ac5915fcce27d0ec715ba707' |
+| `db.fields.profile/default/domain_discovery.value.direct_ruleset` | value | 'lib_4b44ceb89b6e4de3ba048722edbaacd1' | 'lib_8ec278683639a7768bf5d591fa208e60' |
+| `db.fields.profile/default/domain_discovery.value.proxy_ruleset` | value | 'lib_2c3c9df504c14667b074ec2a80ea12af' | 'lib_349c8bc05ed94c8cbfe7a1f706bb2527' |
+| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_c8a1c8aa-0740-4764-ac2c-f5f69304fead' | 'ruleset_8e90b0a49257287b586320c93db03caa' |
+| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_4b44ceb89b6e4de3ba048722edbaacd1' | 'lib_8ec278683639a7768bf5d591fa208e60' |
+| `db.fields.profile/default/rule_configs.value[3].id` | value | 'ruleset_8cdc9e63-753c-48fb-8d2c-a67b54e3091c' | 'ruleset_23f4bc76ac5915fcce27d0ec715ba707' |
+| `db.fields.profile/default/rule_configs.value[3].library_rule_id` | value | 'lib_2c3c9df504c14667b074ec2a80ea12af' | 'lib_349c8bc05ed94c8cbfe7a1f706bb2527' |
+| `db.fields.shared//rule_library.value[4].id` | value | 'lib_4b44ceb89b6e4de3ba048722edbaacd1' | 'lib_8ec278683639a7768bf5d591fa208e60' |
+| `db.fields.shared//rule_library.value[5].id` | value | 'lib_2c3c9df504c14667b074ec2a80ea12af' | 'lib_349c8bc05ed94c8cbfe7a1f706bb2527' |
+| `files.shared/rules/by-id/173f373d387f9d7b1e62c80867c96a5efb2a62af991745bb41e2fae04532b33c.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
+| `files.shared/rules/by-id/bc7f21e23dd863e88c7cf1d697c33228e6e20d37637986605db055b8189da82f.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `files.shared/rules/by-id/d4725338ac477ff6a5ba5e4064d94bd54273d0b40e45ed131a397cb0312fe633.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `files.shared/rules/by-id/f1a0620b589e03db8ca2948f4e14526ce99951a1e56189996902ac76fb19a346.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
 
 ## R056-B02 / before-MATCH/0
 
@@ -324,25 +324,25 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
-| `discovery.allocations` | invalid-Go-allocation | '<UUID4 resource IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase UUID4' |
-| `body.candidates[2].id` | value | 'lib_e334621084264d18b3978f657b8f607e' | 'lib_6a2c2856998d96c8f915da7b2b98c5a5' |
-| `body.candidates[3].id` | value | 'lib_56ab7636cd48425f81479eb5fa336f74' | 'lib_6baa35a4e291e8748fcff9a5fecd5916' |
-| `body.direct.id` | value | 'lib_e334621084264d18b3978f657b8f607e' | 'lib_6a2c2856998d96c8f915da7b2b98c5a5' |
-| `body.direct.references[0].id` | value | 'ruleset_508da043-7044-44c2-9e37-639fd20def78' | 'ruleset_c9df200c2a37a5c3bac9904a44acacda' |
-| `body.proxy.id` | value | 'lib_56ab7636cd48425f81479eb5fa336f74' | 'lib_6baa35a4e291e8748fcff9a5fecd5916' |
-| `body.proxy.references[0].id` | value | 'ruleset_7c2dd642-20b6-4ba5-91d3-a35a1fc42edd' | 'ruleset_290756db8968440d9cd90f34dba52530' |
-| `db.fields.profile/default/domain_discovery.value.direct_ruleset` | value | 'lib_e334621084264d18b3978f657b8f607e' | 'lib_6a2c2856998d96c8f915da7b2b98c5a5' |
-| `db.fields.profile/default/domain_discovery.value.proxy_ruleset` | value | 'lib_56ab7636cd48425f81479eb5fa336f74' | 'lib_6baa35a4e291e8748fcff9a5fecd5916' |
-| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_508da043-7044-44c2-9e37-639fd20def78' | 'ruleset_c9df200c2a37a5c3bac9904a44acacda' |
-| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_e334621084264d18b3978f657b8f607e' | 'lib_6a2c2856998d96c8f915da7b2b98c5a5' |
-| `db.fields.profile/default/rule_configs.value[3].id` | value | 'ruleset_7c2dd642-20b6-4ba5-91d3-a35a1fc42edd' | 'ruleset_290756db8968440d9cd90f34dba52530' |
-| `db.fields.profile/default/rule_configs.value[3].library_rule_id` | value | 'lib_56ab7636cd48425f81479eb5fa336f74' | 'lib_6baa35a4e291e8748fcff9a5fecd5916' |
-| `db.fields.shared//rule_library.value[4].id` | value | 'lib_e334621084264d18b3978f657b8f607e' | 'lib_6a2c2856998d96c8f915da7b2b98c5a5' |
-| `db.fields.shared//rule_library.value[5].id` | value | 'lib_56ab7636cd48425f81479eb5fa336f74' | 'lib_6baa35a4e291e8748fcff9a5fecd5916' |
-| `files.shared/rules/by-id/1be768fa23474dcb1032e4d563cfb1d14a1194071c32e377b8cbc5bffb74543c.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
-| `files.shared/rules/by-id/53c422707e3af0d2ca08f2a239d9b5fc9645a3b2327bc08f744e176773039371.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
-| `files.shared/rules/by-id/c57c2c26b194c7f0b44c201a4ab85a89f5a53e095f33d0295ecf04f9a239f1a8.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
-| `files.shared/rules/by-id/e38ad2d89819b5df55884239ef02c6f4da0e81e061e70342e2ac27cb08cb7618.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
+| `discovery.allocations` | invalid-Go-allocation | '<resource-prefixed hex/UUID IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase hex/UUID shape' |
+| `body.candidates[2].id` | value | 'lib_23ddef54f9244b5aafd92ec90c753838' | 'lib_030e0da737082710a6be9d144ac733c2' |
+| `body.candidates[3].id` | value | 'lib_2db72f03c7864cceb6179c667147a044' | 'lib_6f1f6928087fff96d81bd4b825512ce6' |
+| `body.direct.id` | value | 'lib_23ddef54f9244b5aafd92ec90c753838' | 'lib_030e0da737082710a6be9d144ac733c2' |
+| `body.direct.references[0].id` | value | 'ruleset_5dbd3ceb-31da-458d-b9f6-9f04e553d8b8' | 'ruleset_67b5facbba9c94244392540e4cf0b99c' |
+| `body.proxy.id` | value | 'lib_2db72f03c7864cceb6179c667147a044' | 'lib_6f1f6928087fff96d81bd4b825512ce6' |
+| `body.proxy.references[0].id` | value | 'ruleset_b4264d83-11ac-4500-b3dc-5af44c1839dc' | 'ruleset_37bdc358133549daafd5a6e1af2c5a38' |
+| `db.fields.profile/default/domain_discovery.value.direct_ruleset` | value | 'lib_23ddef54f9244b5aafd92ec90c753838' | 'lib_030e0da737082710a6be9d144ac733c2' |
+| `db.fields.profile/default/domain_discovery.value.proxy_ruleset` | value | 'lib_2db72f03c7864cceb6179c667147a044' | 'lib_6f1f6928087fff96d81bd4b825512ce6' |
+| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_5dbd3ceb-31da-458d-b9f6-9f04e553d8b8' | 'ruleset_67b5facbba9c94244392540e4cf0b99c' |
+| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_23ddef54f9244b5aafd92ec90c753838' | 'lib_030e0da737082710a6be9d144ac733c2' |
+| `db.fields.profile/default/rule_configs.value[3].id` | value | 'ruleset_b4264d83-11ac-4500-b3dc-5af44c1839dc' | 'ruleset_37bdc358133549daafd5a6e1af2c5a38' |
+| `db.fields.profile/default/rule_configs.value[3].library_rule_id` | value | 'lib_2db72f03c7864cceb6179c667147a044' | 'lib_6f1f6928087fff96d81bd4b825512ce6' |
+| `db.fields.shared//rule_library.value[4].id` | value | 'lib_23ddef54f9244b5aafd92ec90c753838' | 'lib_030e0da737082710a6be9d144ac733c2' |
+| `db.fields.shared//rule_library.value[5].id` | value | 'lib_2db72f03c7864cceb6179c667147a044' | 'lib_6f1f6928087fff96d81bd4b825512ce6' |
+| `files.shared/rules/by-id/2cb5e8f4993c3006df713046966d3b576ff5e579ae042cb441ffa4530b7545a5.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
+| `files.shared/rules/by-id/82e48bdfe208fcd77cc4bb228e7545fcd083accaca971d31025a914cf4e93aeb.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
+| `files.shared/rules/by-id/9888fcefb389aad534c71d1110e7335f7be6e2355d3f3823a7268372da4f25e6.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `files.shared/rules/by-id/a116be254d76a24174e30577c159e1898e23189905021fc51f1ee3d45e5f6907.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
 
 ## R056-S01 / direct/0
 
@@ -350,16 +350,16 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
-| `discovery.allocations` | invalid-Go-allocation | '<UUID4 resource IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase UUID4' |
-| `body.candidates[2].id` | value | 'lib_dc768a12c7b4459db65182d1be89e218' | 'lib_e358e6f353f4a643304be31bfd345c75' |
-| `body.direct.id` | value | 'lib_dc768a12c7b4459db65182d1be89e218' | 'lib_e358e6f353f4a643304be31bfd345c75' |
-| `body.direct.references[0].id` | value | 'ruleset_f885866f-655e-4464-ad86-6e965e4dfeb0' | 'ruleset_1d2e42a7ad1c6419b8e1a26c41733b67' |
-| `db.fields.profile/default/domain_discovery.value.direct_ruleset` | value | 'lib_dc768a12c7b4459db65182d1be89e218' | 'lib_e358e6f353f4a643304be31bfd345c75' |
-| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_f885866f-655e-4464-ad86-6e965e4dfeb0' | 'ruleset_1d2e42a7ad1c6419b8e1a26c41733b67' |
-| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_dc768a12c7b4459db65182d1be89e218' | 'lib_e358e6f353f4a643304be31bfd345c75' |
-| `db.fields.shared//rule_library.value[4].id` | value | 'lib_dc768a12c7b4459db65182d1be89e218' | 'lib_e358e6f353f4a643304be31bfd345c75' |
-| `files.shared/rules/by-id/4422093ea2a905025720cede5a2ccf6fded3f01d0545f9e8de83cf5a0db9f783.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
-| `files.shared/rules/by-id/9ded588dc6191bc5c64b7a34ee1178592cc171106ec945d377ca35cb28e63abc.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `discovery.allocations` | invalid-Go-allocation | '<resource-prefixed hex/UUID IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase hex/UUID shape' |
+| `body.candidates[2].id` | value | 'lib_393868e7ebff42a5b9f9c1d68e6db3ec' | 'lib_3c97d82ab60d489f2a9ea261ad8c6464' |
+| `body.direct.id` | value | 'lib_393868e7ebff42a5b9f9c1d68e6db3ec' | 'lib_3c97d82ab60d489f2a9ea261ad8c6464' |
+| `body.direct.references[0].id` | value | 'ruleset_1d61582c-c6bd-4d32-87d0-52f9457425ba' | 'ruleset_4b97d38c11eb4d0988978f4dda446f03' |
+| `db.fields.profile/default/domain_discovery.value.direct_ruleset` | value | 'lib_393868e7ebff42a5b9f9c1d68e6db3ec' | 'lib_3c97d82ab60d489f2a9ea261ad8c6464' |
+| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_1d61582c-c6bd-4d32-87d0-52f9457425ba' | 'ruleset_4b97d38c11eb4d0988978f4dda446f03' |
+| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_393868e7ebff42a5b9f9c1d68e6db3ec' | 'lib_3c97d82ab60d489f2a9ea261ad8c6464' |
+| `db.fields.shared//rule_library.value[4].id` | value | 'lib_393868e7ebff42a5b9f9c1d68e6db3ec' | 'lib_3c97d82ab60d489f2a9ea261ad8c6464' |
+| `files.shared/rules/by-id/17530d5511f0649401fe26af46aa524ae46b7913e6ad6a34d2e279572582caf1.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
+| `files.shared/rules/by-id/eb534899a432665209a9e97c49131a0887502196b50d7cfe4c12adfab8ecf4b9.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
 
 ## R056-S01 / duplicate-targets/0
 
@@ -367,22 +367,22 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
-| `discovery.allocations` | invalid-Go-allocation | '<UUID4 resource IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase UUID4' |
-| `body.candidates[2].id` | value | 'lib_5f3c4e6146f448aa946f058a5a70efc5' | 'lib_bbababd60216bbbb84466da5afe48b87' |
-| `body.candidates[3].id` | value | 'lib_1cb47eaa54f547f488712472d13e9d84' | 'lib_9d07f8c60ba0ab8c65c98ef48c51558a' |
-| `body.direct.id` | value | 'lib_1cb47eaa54f547f488712472d13e9d84' | 'lib_9d07f8c60ba0ab8c65c98ef48c51558a' |
-| `body.direct.references[0].id` | value | 'ruleset_489a50eb-0989-45eb-a7dc-a2740bfdcc43' | 'ruleset_879f2809ea50963abf0e1487c595eec7' |
-| `body.direct.references[1].id` | value | 'ruleset_91e63e3d-5fd6-4533-b249-9a5fb548e64f' | 'ruleset_5a2785f8f4454fe6643f3a76f7b6eca5' |
-| `db.fields.profile/default/domain_discovery.value.direct_ruleset` | value | 'lib_1cb47eaa54f547f488712472d13e9d84' | 'lib_9d07f8c60ba0ab8c65c98ef48c51558a' |
-| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_489a50eb-0989-45eb-a7dc-a2740bfdcc43' | 'ruleset_879f2809ea50963abf0e1487c595eec7' |
-| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_1cb47eaa54f547f488712472d13e9d84' | 'lib_9d07f8c60ba0ab8c65c98ef48c51558a' |
-| `db.fields.profile/default/rule_configs.value[3].id` | value | 'ruleset_91e63e3d-5fd6-4533-b249-9a5fb548e64f' | 'ruleset_5a2785f8f4454fe6643f3a76f7b6eca5' |
-| `db.fields.profile/default/rule_configs.value[3].library_rule_id` | value | 'lib_1cb47eaa54f547f488712472d13e9d84' | 'lib_9d07f8c60ba0ab8c65c98ef48c51558a' |
-| `db.fields.shared//rule_library.value[4].id` | value | 'lib_5f3c4e6146f448aa946f058a5a70efc5' | 'lib_bbababd60216bbbb84466da5afe48b87' |
-| `db.fields.shared//rule_library.value[5].id` | value | 'lib_1cb47eaa54f547f488712472d13e9d84' | 'lib_9d07f8c60ba0ab8c65c98ef48c51558a' |
-| `files.shared/rules/by-id/46102e10bf37e43166e32a5257484a97646ba95bcec3fab834f33298460c7648.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
-| `files.shared/rules/by-id/46102e10bf37e43166e32a5257484a97646ba95bcec3fab834f33298460c7648.list.bak` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
-| `files.shared/rules/by-id/d3214c44c9ed5c8149a56e781c97e3c9e156f7cee409fdc0db7f8cc1bd00d30b.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
+| `discovery.allocations` | invalid-Go-allocation | '<resource-prefixed hex/UUID IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase hex/UUID shape' |
+| `body.candidates[2].id` | value | 'lib_86016a98d6a8439bae160bcfba22093e' | 'lib_890a22b1fdfc466f85bd0fd8efa37d65' |
+| `body.candidates[3].id` | value | 'lib_67b0c20da15648ed812b0ce5025bd38f' | 'lib_14342484029dfac60bbc74381bc35aa3' |
+| `body.direct.id` | value | 'lib_67b0c20da15648ed812b0ce5025bd38f' | 'lib_14342484029dfac60bbc74381bc35aa3' |
+| `body.direct.references[0].id` | value | 'ruleset_2621d32b-3b33-470c-b8b7-30f227fd6a19' | 'ruleset_9f4832012346499279abf5da5ea8fb3e' |
+| `body.direct.references[1].id` | value | 'ruleset_e692b4c2-3074-4513-8c7b-5dd80e59749b' | 'ruleset_70c8a594cff57a8dc435eedf90ba403e' |
+| `db.fields.profile/default/domain_discovery.value.direct_ruleset` | value | 'lib_67b0c20da15648ed812b0ce5025bd38f' | 'lib_14342484029dfac60bbc74381bc35aa3' |
+| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_2621d32b-3b33-470c-b8b7-30f227fd6a19' | 'ruleset_9f4832012346499279abf5da5ea8fb3e' |
+| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_67b0c20da15648ed812b0ce5025bd38f' | 'lib_14342484029dfac60bbc74381bc35aa3' |
+| `db.fields.profile/default/rule_configs.value[3].id` | value | 'ruleset_e692b4c2-3074-4513-8c7b-5dd80e59749b' | 'ruleset_70c8a594cff57a8dc435eedf90ba403e' |
+| `db.fields.profile/default/rule_configs.value[3].library_rule_id` | value | 'lib_67b0c20da15648ed812b0ce5025bd38f' | 'lib_14342484029dfac60bbc74381bc35aa3' |
+| `db.fields.shared//rule_library.value[4].id` | value | 'lib_86016a98d6a8439bae160bcfba22093e' | 'lib_890a22b1fdfc466f85bd0fd8efa37d65' |
+| `db.fields.shared//rule_library.value[5].id` | value | 'lib_67b0c20da15648ed812b0ce5025bd38f' | 'lib_14342484029dfac60bbc74381bc35aa3' |
+| `files.shared/rules/by-id/403f9e7cb875aa59e74441df6d9b82c63e771ff49a2724b25812622df4aa7119.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
+| `files.shared/rules/by-id/689913c60b5d133d5f2be262f2ab325e30d8ba3b4b1405dd9e7a852b5b7c46b5.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `files.shared/rules/by-id/689913c60b5d133d5f2be262f2ab325e30d8ba3b4b1405dd9e7a852b5b7c46b5.list.bak` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
 
 ## R056-S02 / proxy/0
 
@@ -390,16 +390,16 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
-| `discovery.allocations` | invalid-Go-allocation | '<UUID4 resource IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase UUID4' |
-| `body.candidates[2].id` | value | 'lib_662fa7c642aa4b04b677882ddfca5f96' | 'lib_3086b06e562a3f23f585957dcd15b149' |
-| `body.proxy.id` | value | 'lib_662fa7c642aa4b04b677882ddfca5f96' | 'lib_3086b06e562a3f23f585957dcd15b149' |
-| `body.proxy.references[0].id` | value | 'ruleset_92b829c3-2734-4e21-a217-2152a0020a64' | 'ruleset_1a77518fe86399a9d2f074462f730669' |
-| `db.fields.profile/default/domain_discovery.value.proxy_ruleset` | value | 'lib_662fa7c642aa4b04b677882ddfca5f96' | 'lib_3086b06e562a3f23f585957dcd15b149' |
-| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_92b829c3-2734-4e21-a217-2152a0020a64' | 'ruleset_1a77518fe86399a9d2f074462f730669' |
-| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_662fa7c642aa4b04b677882ddfca5f96' | 'lib_3086b06e562a3f23f585957dcd15b149' |
-| `db.fields.shared//rule_library.value[4].id` | value | 'lib_662fa7c642aa4b04b677882ddfca5f96' | 'lib_3086b06e562a3f23f585957dcd15b149' |
-| `files.shared/rules/by-id/6f0aee8a67aa7ddd7f0149da6e49d32bdbc848fb0d02765166308cff01efda4d.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
-| `files.shared/rules/by-id/87d624d2168afc5db6f7640697562d7e57fb987f178a839941782ccb155f2373.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
+| `discovery.allocations` | invalid-Go-allocation | '<resource-prefixed hex/UUID IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase hex/UUID shape' |
+| `body.candidates[2].id` | value | 'lib_f526f52f3ecf469c9a370cf8bc119967' | 'lib_47e39833bf2e119d504956fb5d9a44f5' |
+| `body.proxy.id` | value | 'lib_f526f52f3ecf469c9a370cf8bc119967' | 'lib_47e39833bf2e119d504956fb5d9a44f5' |
+| `body.proxy.references[0].id` | value | 'ruleset_a22f9353-1cb6-4aa5-95a0-78e749006d40' | 'ruleset_0367704c3c9b95f765825bec9ba860f1' |
+| `db.fields.profile/default/domain_discovery.value.proxy_ruleset` | value | 'lib_f526f52f3ecf469c9a370cf8bc119967' | 'lib_47e39833bf2e119d504956fb5d9a44f5' |
+| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_a22f9353-1cb6-4aa5-95a0-78e749006d40' | 'ruleset_0367704c3c9b95f765825bec9ba860f1' |
+| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_f526f52f3ecf469c9a370cf8bc119967' | 'lib_47e39833bf2e119d504956fb5d9a44f5' |
+| `db.fields.shared//rule_library.value[4].id` | value | 'lib_f526f52f3ecf469c9a370cf8bc119967' | 'lib_47e39833bf2e119d504956fb5d9a44f5' |
+| `files.shared/rules/by-id/c30223f9ec56f761b9ad6e5ba70e5c9a170b269fd4b218ff81ea86d78fe29c9b.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `files.shared/rules/by-id/cf6edf5f81623607783e4e503b40b3b71e69ed62e0d460de9a91394d06c16d7c.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
 
 ## R056-S03 / both/0
 
@@ -407,25 +407,25 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
-| `discovery.allocations` | invalid-Go-allocation | '<UUID4 resource IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase UUID4' |
-| `body.candidates[2].id` | value | 'lib_1d9f8dcf5e2541e88dcb39cbb23a5440' | 'lib_ccdc6df30cf3eac1b19b96c9482a30da' |
-| `body.candidates[3].id` | value | 'lib_a9812dc5ff3e481bb8c4583a523c2e7f' | 'lib_0840745fcf752750083a6083f7b0d662' |
-| `body.direct.id` | value | 'lib_1d9f8dcf5e2541e88dcb39cbb23a5440' | 'lib_ccdc6df30cf3eac1b19b96c9482a30da' |
-| `body.direct.references[0].id` | value | 'ruleset_95b173e6-7a71-46e4-a9e2-81644df59eb3' | 'ruleset_0fe410780cc5347ee0cd9339928035e0' |
-| `body.proxy.id` | value | 'lib_a9812dc5ff3e481bb8c4583a523c2e7f' | 'lib_0840745fcf752750083a6083f7b0d662' |
-| `body.proxy.references[0].id` | value | 'ruleset_74b38ae5-5dce-4a2a-b091-ba1b44b68543' | 'ruleset_4d7c1bd4d736dd06d602f7a35189a93a' |
-| `db.fields.profile/default/domain_discovery.value.direct_ruleset` | value | 'lib_1d9f8dcf5e2541e88dcb39cbb23a5440' | 'lib_ccdc6df30cf3eac1b19b96c9482a30da' |
-| `db.fields.profile/default/domain_discovery.value.proxy_ruleset` | value | 'lib_a9812dc5ff3e481bb8c4583a523c2e7f' | 'lib_0840745fcf752750083a6083f7b0d662' |
-| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_95b173e6-7a71-46e4-a9e2-81644df59eb3' | 'ruleset_0fe410780cc5347ee0cd9339928035e0' |
-| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_1d9f8dcf5e2541e88dcb39cbb23a5440' | 'lib_ccdc6df30cf3eac1b19b96c9482a30da' |
-| `db.fields.profile/default/rule_configs.value[3].id` | value | 'ruleset_74b38ae5-5dce-4a2a-b091-ba1b44b68543' | 'ruleset_4d7c1bd4d736dd06d602f7a35189a93a' |
-| `db.fields.profile/default/rule_configs.value[3].library_rule_id` | value | 'lib_a9812dc5ff3e481bb8c4583a523c2e7f' | 'lib_0840745fcf752750083a6083f7b0d662' |
-| `db.fields.shared//rule_library.value[4].id` | value | 'lib_1d9f8dcf5e2541e88dcb39cbb23a5440' | 'lib_ccdc6df30cf3eac1b19b96c9482a30da' |
-| `db.fields.shared//rule_library.value[5].id` | value | 'lib_a9812dc5ff3e481bb8c4583a523c2e7f' | 'lib_0840745fcf752750083a6083f7b0d662' |
-| `files.shared/rules/by-id/23fcd1045c4256dbc1620bc1ebd5f593175c3e17606df9e5fd51b24a55317b56.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
-| `files.shared/rules/by-id/39dbe170cd649e6d7074ef1f95ff29c9b2e962cbc98b3065b55c7498cf683bf3.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
-| `files.shared/rules/by-id/9c11db3ab5448124a132a3118722471568098a89914ffbf09c17ac70966a0a84.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
-| `files.shared/rules/by-id/adfcd6afc4c556063fc08d1864b97cfd7bec5ee74dea411a4edc47c58f09c1c5.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `discovery.allocations` | invalid-Go-allocation | '<resource-prefixed hex/UUID IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase hex/UUID shape' |
+| `body.candidates[2].id` | value | 'lib_8a7c195e866d4849aaeb2254949cbd66' | 'lib_39c61bc837d1703646a4dcba1f75cb3d' |
+| `body.candidates[3].id` | value | 'lib_75886159342349c7ad10b6956b2ec2d8' | 'lib_87c1774a0ec9c129482f2276c0968a90' |
+| `body.direct.id` | value | 'lib_8a7c195e866d4849aaeb2254949cbd66' | 'lib_39c61bc837d1703646a4dcba1f75cb3d' |
+| `body.direct.references[0].id` | value | 'ruleset_24a09805-a297-40a5-97d8-265454326367' | 'ruleset_dde066f6dc1d41c093d28728dc45e60c' |
+| `body.proxy.id` | value | 'lib_75886159342349c7ad10b6956b2ec2d8' | 'lib_87c1774a0ec9c129482f2276c0968a90' |
+| `body.proxy.references[0].id` | value | 'ruleset_44b8a3a2-a3fd-480f-994c-1813bf6765df' | 'ruleset_541869c14e6e4ca5bf1ed007f1c0f45e' |
+| `db.fields.profile/default/domain_discovery.value.direct_ruleset` | value | 'lib_8a7c195e866d4849aaeb2254949cbd66' | 'lib_39c61bc837d1703646a4dcba1f75cb3d' |
+| `db.fields.profile/default/domain_discovery.value.proxy_ruleset` | value | 'lib_75886159342349c7ad10b6956b2ec2d8' | 'lib_87c1774a0ec9c129482f2276c0968a90' |
+| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_24a09805-a297-40a5-97d8-265454326367' | 'ruleset_dde066f6dc1d41c093d28728dc45e60c' |
+| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_8a7c195e866d4849aaeb2254949cbd66' | 'lib_39c61bc837d1703646a4dcba1f75cb3d' |
+| `db.fields.profile/default/rule_configs.value[3].id` | value | 'ruleset_44b8a3a2-a3fd-480f-994c-1813bf6765df' | 'ruleset_541869c14e6e4ca5bf1ed007f1c0f45e' |
+| `db.fields.profile/default/rule_configs.value[3].library_rule_id` | value | 'lib_75886159342349c7ad10b6956b2ec2d8' | 'lib_87c1774a0ec9c129482f2276c0968a90' |
+| `db.fields.shared//rule_library.value[4].id` | value | 'lib_8a7c195e866d4849aaeb2254949cbd66' | 'lib_39c61bc837d1703646a4dcba1f75cb3d' |
+| `db.fields.shared//rule_library.value[5].id` | value | 'lib_75886159342349c7ad10b6956b2ec2d8' | 'lib_87c1774a0ec9c129482f2276c0968a90' |
+| `files.shared/rules/by-id/1eebe5211f4319363312c14a0960bbbbce57ba4aa1a34393c264c4c54d34ed40.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
+| `files.shared/rules/by-id/bb8a6af072ad45790998b5eb1d4a622b7b21b46f13e7c3aaa2f74554307d81d3.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `files.shared/rules/by-id/ec88ddd450423a871f056598cf6cf2e514c059c8cde055d76f00a387f393c3cf.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `files.shared/rules/by-id/f3a2d828cde37a2ab3944bf8238e58b7acfef1d668c893f4ca42215eb48913eb.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
 
 ## R056-S03 / empty-means-both/0
 
@@ -433,25 +433,25 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
-| `discovery.allocations` | invalid-Go-allocation | '<UUID4 resource IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase UUID4' |
-| `body.candidates[2].id` | value | 'lib_5ca37213da604b679e9fc45df10942f1' | 'lib_4383b1046441e3c40fd23741e137a5f2' |
-| `body.candidates[3].id` | value | 'lib_cf03c715b64743638eb393d15a793a49' | 'lib_baba8eed504048afe4a708455c360711' |
-| `body.direct.id` | value | 'lib_5ca37213da604b679e9fc45df10942f1' | 'lib_4383b1046441e3c40fd23741e137a5f2' |
-| `body.direct.references[0].id` | value | 'ruleset_ec32517d-bae8-4ebb-9705-e873d2a0a174' | 'ruleset_8d0699fc5c69b2107ba5c2fcaebe1266' |
-| `body.proxy.id` | value | 'lib_cf03c715b64743638eb393d15a793a49' | 'lib_baba8eed504048afe4a708455c360711' |
-| `body.proxy.references[0].id` | value | 'ruleset_8bd8030f-190e-4046-8a2f-2115b0c25b65' | 'ruleset_30f487c61cfc00633e55b1c526ccba30' |
-| `db.fields.profile/default/domain_discovery.value.direct_ruleset` | value | 'lib_5ca37213da604b679e9fc45df10942f1' | 'lib_4383b1046441e3c40fd23741e137a5f2' |
-| `db.fields.profile/default/domain_discovery.value.proxy_ruleset` | value | 'lib_cf03c715b64743638eb393d15a793a49' | 'lib_baba8eed504048afe4a708455c360711' |
-| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_ec32517d-bae8-4ebb-9705-e873d2a0a174' | 'ruleset_8d0699fc5c69b2107ba5c2fcaebe1266' |
-| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_5ca37213da604b679e9fc45df10942f1' | 'lib_4383b1046441e3c40fd23741e137a5f2' |
-| `db.fields.profile/default/rule_configs.value[3].id` | value | 'ruleset_8bd8030f-190e-4046-8a2f-2115b0c25b65' | 'ruleset_30f487c61cfc00633e55b1c526ccba30' |
-| `db.fields.profile/default/rule_configs.value[3].library_rule_id` | value | 'lib_cf03c715b64743638eb393d15a793a49' | 'lib_baba8eed504048afe4a708455c360711' |
-| `db.fields.shared//rule_library.value[4].id` | value | 'lib_5ca37213da604b679e9fc45df10942f1' | 'lib_4383b1046441e3c40fd23741e137a5f2' |
-| `db.fields.shared//rule_library.value[5].id` | value | 'lib_cf03c715b64743638eb393d15a793a49' | 'lib_baba8eed504048afe4a708455c360711' |
-| `files.shared/rules/by-id/14f237422c1dc386bb0aeeea1b1857d416af192afff73f916a099c35a856d496.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
-| `files.shared/rules/by-id/8fdf6f7b710a71597771a1170cbe2798da0a02731f9e353934569c18c7d4c951.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
-| `files.shared/rules/by-id/ca3896807218aae4b3a2559354660197042e365b269e2e5da9dd2694c1c49dd6.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
-| `files.shared/rules/by-id/daef94a3dfd5ac61cb43c512de046965f29fecf23292a5528274fdef90680ba8.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `discovery.allocations` | invalid-Go-allocation | '<resource-prefixed hex/UUID IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase hex/UUID shape' |
+| `body.candidates[2].id` | value | 'lib_4c04f2e865f84e7aa1891494e802420b' | 'lib_06807196e599340b92f395970c706dfc' |
+| `body.candidates[3].id` | value | 'lib_d5214a184d674a17a6779218975d04a5' | 'lib_d3cc09997a916a530250ac500955ca08' |
+| `body.direct.id` | value | 'lib_4c04f2e865f84e7aa1891494e802420b' | 'lib_06807196e599340b92f395970c706dfc' |
+| `body.direct.references[0].id` | value | 'ruleset_c21768e6-13ed-40ee-a6bd-6301ca10b52f' | 'ruleset_0b1e8f127f3d14ceb9211fd6fe680cd7' |
+| `body.proxy.id` | value | 'lib_d5214a184d674a17a6779218975d04a5' | 'lib_d3cc09997a916a530250ac500955ca08' |
+| `body.proxy.references[0].id` | value | 'ruleset_865842f0-8980-46f5-975a-a40fd095c874' | 'ruleset_c823482726bbf85ea00fd6d680d154c0' |
+| `db.fields.profile/default/domain_discovery.value.direct_ruleset` | value | 'lib_4c04f2e865f84e7aa1891494e802420b' | 'lib_06807196e599340b92f395970c706dfc' |
+| `db.fields.profile/default/domain_discovery.value.proxy_ruleset` | value | 'lib_d5214a184d674a17a6779218975d04a5' | 'lib_d3cc09997a916a530250ac500955ca08' |
+| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_c21768e6-13ed-40ee-a6bd-6301ca10b52f' | 'ruleset_0b1e8f127f3d14ceb9211fd6fe680cd7' |
+| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_4c04f2e865f84e7aa1891494e802420b' | 'lib_06807196e599340b92f395970c706dfc' |
+| `db.fields.profile/default/rule_configs.value[3].id` | value | 'ruleset_865842f0-8980-46f5-975a-a40fd095c874' | 'ruleset_c823482726bbf85ea00fd6d680d154c0' |
+| `db.fields.profile/default/rule_configs.value[3].library_rule_id` | value | 'lib_d5214a184d674a17a6779218975d04a5' | 'lib_d3cc09997a916a530250ac500955ca08' |
+| `db.fields.shared//rule_library.value[4].id` | value | 'lib_4c04f2e865f84e7aa1891494e802420b' | 'lib_06807196e599340b92f395970c706dfc' |
+| `db.fields.shared//rule_library.value[5].id` | value | 'lib_d5214a184d674a17a6779218975d04a5' | 'lib_d3cc09997a916a530250ac500955ca08' |
+| `files.shared/rules/by-id/2c525c709c10def0b9f6c657d76505b7be2fcba85775682e221a364f7938e83f.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `files.shared/rules/by-id/3a3da226a53450bc74bbfe9d515bf30f68d36f505a2c965b79ff0075fc7a125a.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
+| `files.shared/rules/by-id/457ac963528d7a04aaddcaeb6780107ae381c152dd9bec3fb7c11c0363943d8e.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `files.shared/rules/by-id/728a48d5c29337626713f44c76014a856470a94ef1ab9a5d18f287531b465074.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
 
 ## R056-S04 / repeat/0
 
@@ -459,16 +459,16 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
-| `discovery.allocations` | invalid-Go-allocation | '<UUID4 resource IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase UUID4' |
-| `body.candidates[2].id` | value | 'lib_826960dd38bf445fa24cba3be25b9110' | 'lib_16e19e9374a46039371cf29d04af8455' |
-| `body.direct.id` | value | 'lib_826960dd38bf445fa24cba3be25b9110' | 'lib_16e19e9374a46039371cf29d04af8455' |
-| `body.direct.references[0].id` | value | 'ruleset_7dec4325-fe55-4f3e-87d8-2cb538a40d9f' | 'ruleset_b14b46d3b83e8c4f27b78167805c3b5f' |
-| `db.fields.profile/default/domain_discovery.value.direct_ruleset` | value | 'lib_826960dd38bf445fa24cba3be25b9110' | 'lib_16e19e9374a46039371cf29d04af8455' |
-| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_7dec4325-fe55-4f3e-87d8-2cb538a40d9f' | 'ruleset_b14b46d3b83e8c4f27b78167805c3b5f' |
-| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_826960dd38bf445fa24cba3be25b9110' | 'lib_16e19e9374a46039371cf29d04af8455' |
-| `db.fields.shared//rule_library.value[4].id` | value | 'lib_826960dd38bf445fa24cba3be25b9110' | 'lib_16e19e9374a46039371cf29d04af8455' |
-| `files.shared/rules/by-id/0dd742e1c8a34d8e37ef59966a5d63f9c3b7f48ece2fd772bfdf47fed7c7513c.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
-| `files.shared/rules/by-id/a3f8794faea4d5e2e9e04de6f3e7e4d0c3a01bb5f14840fe3c9d21ea3dc1cbc8.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
+| `discovery.allocations` | invalid-Go-allocation | '<resource-prefixed hex/UUID IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase hex/UUID shape' |
+| `body.candidates[2].id` | value | 'lib_fcd17d387b57476bb9256c41ac3d0807' | 'lib_4bb7274e2b6c62d9745d6f4d1cc349f9' |
+| `body.direct.id` | value | 'lib_fcd17d387b57476bb9256c41ac3d0807' | 'lib_4bb7274e2b6c62d9745d6f4d1cc349f9' |
+| `body.direct.references[0].id` | value | 'ruleset_69ad8f5e-2641-4094-aec3-8e61b308748d' | 'ruleset_5c685f9cd148b8900d3a7077b7dae109' |
+| `db.fields.profile/default/domain_discovery.value.direct_ruleset` | value | 'lib_fcd17d387b57476bb9256c41ac3d0807' | 'lib_4bb7274e2b6c62d9745d6f4d1cc349f9' |
+| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_69ad8f5e-2641-4094-aec3-8e61b308748d' | 'ruleset_5c685f9cd148b8900d3a7077b7dae109' |
+| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_fcd17d387b57476bb9256c41ac3d0807' | 'lib_4bb7274e2b6c62d9745d6f4d1cc349f9' |
+| `db.fields.shared//rule_library.value[4].id` | value | 'lib_fcd17d387b57476bb9256c41ac3d0807' | 'lib_4bb7274e2b6c62d9745d6f4d1cc349f9' |
+| `files.shared/rules/by-id/c2f6385b6f69d4957af1c1d2c22c1fc49d3ab4a2849f09a7c615c6206add8431.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
+| `files.shared/rules/by-id/fa9f00f5b4738264769989ad4dbea90afe7130282783559e51005cb39338daf6.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
 
 ## R056-S04 / repeat/1
 
@@ -476,22 +476,22 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
-| `discovery.allocations` | invalid-Go-allocation | '<UUID4 resource IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase UUID4' |
-| `body.candidates[2].id` | value | 'lib_826960dd38bf445fa24cba3be25b9110' | 'lib_16e19e9374a46039371cf29d04af8455' |
-| `body.candidates[3].id` | value | 'lib_06aa4c23040f4213b657635ef9b99370' | 'lib_168cf097989e2190d21f6dc6dca51709' |
-| `body.direct.id` | value | 'lib_06aa4c23040f4213b657635ef9b99370' | 'lib_168cf097989e2190d21f6dc6dca51709' |
-| `body.direct.references[0].id` | value | 'ruleset_9e6c3d07-6503-4ffb-b271-2d161e762e24' | 'ruleset_5915ce9c750bbdb2375f443491424671' |
-| `db.fields.profile/default/domain_discovery.value.direct_ruleset` | value | 'lib_06aa4c23040f4213b657635ef9b99370' | 'lib_168cf097989e2190d21f6dc6dca51709' |
-| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_7dec4325-fe55-4f3e-87d8-2cb538a40d9f' | 'ruleset_b14b46d3b83e8c4f27b78167805c3b5f' |
-| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_826960dd38bf445fa24cba3be25b9110' | 'lib_16e19e9374a46039371cf29d04af8455' |
-| `db.fields.profile/default/rule_configs.value[3].id` | value | 'ruleset_9e6c3d07-6503-4ffb-b271-2d161e762e24' | 'ruleset_5915ce9c750bbdb2375f443491424671' |
-| `db.fields.profile/default/rule_configs.value[3].library_rule_id` | value | 'lib_06aa4c23040f4213b657635ef9b99370' | 'lib_168cf097989e2190d21f6dc6dca51709' |
-| `db.fields.shared//rule_library.value[4].id` | value | 'lib_826960dd38bf445fa24cba3be25b9110' | 'lib_16e19e9374a46039371cf29d04af8455' |
-| `db.fields.shared//rule_library.value[5].id` | value | 'lib_06aa4c23040f4213b657635ef9b99370' | 'lib_168cf097989e2190d21f6dc6dca51709' |
-| `files.shared/rules/by-id/0dd742e1c8a34d8e37ef59966a5d63f9c3b7f48ece2fd772bfdf47fed7c7513c.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
-| `files.shared/rules/by-id/391ead2ddfb37b44efdd972a50ec9627a438743896363e423b3a202ea46276e6.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
-| `files.shared/rules/by-id/a3f8794faea4d5e2e9e04de6f3e7e4d0c3a01bb5f14840fe3c9d21ea3dc1cbc8.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
-| `files.shared/rules/by-id/fbd449be309f3cf3c3ef9e560151bd28d777b1d2e0daba2a5498f83f623f08d7.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `discovery.allocations` | invalid-Go-allocation | '<resource-prefixed hex/UUID IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase hex/UUID shape' |
+| `body.candidates[2].id` | value | 'lib_fcd17d387b57476bb9256c41ac3d0807' | 'lib_4bb7274e2b6c62d9745d6f4d1cc349f9' |
+| `body.candidates[3].id` | value | 'lib_c50996cad8084245aa12e09f94f74722' | 'lib_b27e7df4b6f01d242c5188e9d8e9b8cc' |
+| `body.direct.id` | value | 'lib_c50996cad8084245aa12e09f94f74722' | 'lib_b27e7df4b6f01d242c5188e9d8e9b8cc' |
+| `body.direct.references[0].id` | value | 'ruleset_11beb6ce-16b3-46da-8e8c-15eee1e8436e' | 'ruleset_7e10bee88b764b4bf706f8ea5c122ee8' |
+| `db.fields.profile/default/domain_discovery.value.direct_ruleset` | value | 'lib_c50996cad8084245aa12e09f94f74722' | 'lib_b27e7df4b6f01d242c5188e9d8e9b8cc' |
+| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_69ad8f5e-2641-4094-aec3-8e61b308748d' | 'ruleset_5c685f9cd148b8900d3a7077b7dae109' |
+| `db.fields.profile/default/rule_configs.value[2].library_rule_id` | value | 'lib_fcd17d387b57476bb9256c41ac3d0807' | 'lib_4bb7274e2b6c62d9745d6f4d1cc349f9' |
+| `db.fields.profile/default/rule_configs.value[3].id` | value | 'ruleset_11beb6ce-16b3-46da-8e8c-15eee1e8436e' | 'ruleset_7e10bee88b764b4bf706f8ea5c122ee8' |
+| `db.fields.profile/default/rule_configs.value[3].library_rule_id` | value | 'lib_c50996cad8084245aa12e09f94f74722' | 'lib_b27e7df4b6f01d242c5188e9d8e9b8cc' |
+| `db.fields.shared//rule_library.value[4].id` | value | 'lib_fcd17d387b57476bb9256c41ac3d0807' | 'lib_4bb7274e2b6c62d9745d6f4d1cc349f9' |
+| `db.fields.shared//rule_library.value[5].id` | value | 'lib_c50996cad8084245aa12e09f94f74722' | 'lib_b27e7df4b6f01d242c5188e9d8e9b8cc' |
+| `files.shared/rules/by-id/0dc4601611f346fa76c4c26ad1fb6791365bf4c38aa77ef122e68495099081dd.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `files.shared/rules/by-id/37a8e402160173f8427e66098c562e055cae5659a6aa2fb7204a8917d66402a9.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
+| `files.shared/rules/by-id/c2f6385b6f69d4957af1c1d2c22c1fc49d3ab4a2849f09a7c615c6206add8431.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
+| `files.shared/rules/by-id/fa9f00f5b4738264769989ad4dbea90afe7130282783559e51005cb39338daf6.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
 
 ## X04 / POST /api/nodes/parse-lines/content-type/bom
 
