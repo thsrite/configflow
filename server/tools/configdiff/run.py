@@ -66,6 +66,10 @@ def main():
     groups.update(probes)
     from cases.artifact import GROUPS as artifact
     groups.update(artifact)
+    from cases.scheduler import GROUPS as scheduler
+    groups.update(scheduler)
+    from cases.http_shell import GROUPS as http_shell
+    groups.update(http_shell)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:
@@ -74,6 +78,8 @@ def main():
     started = time.time()
     with tempfile.TemporaryDirectory(prefix='configdiff-build-') as temporary:
         binary = args.binary or build(ROOT, Path(temporary))
+        from mutation import verify_harness
+        verify_harness(binary)
         for group in requested:
             print('GROUP ' + group, flush=True)
             first_result = len(recorder.results)
@@ -101,6 +107,7 @@ def main():
     combined.sort(key=lambda r: (r['route'], r['case'], r['variant']))
     current_counts = Counter(r['state'] for r in recorder.results)
     summary = {'groups': requested, 'current': dict(current_counts),
+               'end_to_end_mutation_check': True,
                'cumulative': dict(Counter(r['state'] for r in combined)),
                'categories': dict(Counter(r['category'] for r in combined)),
                'named_matrix_cases': len({r['case'] for r in combined if r['case'].startswith('R')}),

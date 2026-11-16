@@ -2,6 +2,8 @@
 from contextlib import contextmanager
 from dataclasses import dataclass, asdict
 import json
+import hashlib
+import math
 import os
 from pathlib import Path
 import re
@@ -68,9 +70,22 @@ class Recorder:
         self.results = []
 
     def record(self, case_id, variant, route, category, state, diffs=(), **extra):
+        def evidence(value):
+            if isinstance(value, float) and not math.isfinite(value):
+                return {'nonfinite_number': 'NaN' if math.isnan(value) else 'Infinity' if value > 0 else '-Infinity'}
+            if isinstance(value, str) and any(0xD800 <= ord(c) <= 0xDFFF for c in value):
+                return {'surrogate_string_codepoints': [ord(c) for c in value]}
+            if isinstance(value, bytes):
+                return {'bytes_length': len(value), 'bytes_sha256': hashlib.sha256(value).hexdigest(),
+                        'bytes_prefix_hex': value[:256].hex()}
+            if isinstance(value, dict):
+                return {k: evidence(v) for k, v in value.items()}
+            if isinstance(value, (list, tuple)):
+                return [evidence(v) for v in value]
+            return value
         self.results.append({'case': case_id, 'variant': variant, 'route': route,
                              'category': category, 'state': state,
-                             'differences': [asdict(d) for d in diffs], **extra})
+                             'differences': [evidence(asdict(d)) for d in diffs], **extra})
         print(json.dumps({'case': case_id, 'variant': variant, 'state': state,
                           'diffs': len(diffs)}, ensure_ascii=False), flush=True)
 

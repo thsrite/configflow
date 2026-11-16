@@ -201,6 +201,28 @@ class Comparators(unittest.TestCase):
         for invalid in (1, 3800, True, '3700'):
             self.assertTrue(differences({'expires_at': 3700}, {'expires_at': invalid}, policy=policy))
 
+    def test_damaged_file_and_binary_evidence_mutation(self):
+        from harness import Recorder
+        from compare import Difference
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = [Path(tmp, n) for n in ('python', 'go')]
+            for d in dirs:
+                d.mkdir()
+                (d / 'damaged.json.bak').write_bytes(b'{invalid\xff')
+            self.assertEqual(file_diffs(*dirs, Policy()), [])
+            (dirs[1] / 'damaged.json.bak').write_bytes(b'{invalid\xfe')
+            diffs = file_diffs(*dirs, Policy())
+            self.assertTrue(diffs)
+            recorder = Recorder()
+            recorder.record('self-check', '', 'files', 'self-check', 'different', diffs)
+            self.assertIn('bytes_sha256', json.dumps(recorder.results, allow_nan=False))
+        self.assertEqual(differences(float('nan'), float('nan')), [])
+        self.assertTrue(differences(float('nan'), 1.0))
+        recorder = Recorder()
+        recorder.record('self-check', '', 'body', 'self-check', 'different',
+                        [Difference('body', 'value', '\ud800', float('nan'))])
+        json.dumps(recorder.results, ensure_ascii=False, allow_nan=False).encode('utf-8')
+
 
 if __name__ == '__main__':
     unittest.main()

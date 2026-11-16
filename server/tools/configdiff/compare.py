@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import hashlib
 import io
 import json
+import math
 from pathlib import Path
 import re
 import sqlite3
@@ -113,11 +114,13 @@ def differences(left, right, path='body', policy=None):
         for index, (a, b) in enumerate(zip(left, right)):
             out.extend(differences(a, b, f'{path}[{index}]', policy))
         return out
+    if isinstance(left, float) and math.isnan(left) and math.isnan(right):
+        return []
     return [] if left == right else [Difference(path, 'value', left, right)]
 
 
 def structure(body, content_type='', filename=''):
-    if 'json' in content_type or filename.endswith('.json'):
+    if 'json' in content_type or filename.endswith(('.json', '.json.bak')):
         return json.loads(body)
     if body.startswith(b'PK\x03\x04'):
         with zipfile.ZipFile(io.BytesIO(body)) as archive:
@@ -206,8 +209,14 @@ def files(directory):
         if path.is_symlink():
             out[relative] = {'symlink': str(path.readlink())}
         elif path.is_file() and not RUNTIME_FILES.search(relative):
-            out[relative] = {'mode': path.stat().st_mode & 0o777,
-                             'content': structure(path.read_bytes(), '', relative)}
+            raw = path.read_bytes()
+            try:
+                content = structure(raw, '', relative)
+            except (ValueError, UnicodeError, yaml.YAMLError, zipfile.BadZipFile, tarfile.TarError):
+                # A deliberately damaged cache/backup is still observable data.
+                # Preserve its complete raw bytes, do not drop or repair it.
+                content = {'invalid_structured_file_bytes': raw}
+            out[relative] = {'mode': path.stat().st_mode & 0o777, 'content': content}
     return out
 
 

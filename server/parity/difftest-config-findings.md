@@ -22,6 +22,14 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `status` | value | 500 | 404 |
 
+## T27 / real-tick/due-and-backoff
+
+路由：`startup`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:subscription:backoff': {'source': 'task', 'title': '合成-backoff · 订阅更新', 'message': '任务未完成，请查看任务详情。', 'impact': '', 'status_label': '执行失败', 'severity': 'error', 'profile_id': None, 'scope': 'shared', 'profile_name': None, 'target': {'path': '/subscriptions', 'query': {'subscription': 'backoff', 'section': 'settings'}, 'label': '检查订阅设置'}, 'checked_at': '2026-11-16T18:30:49Z', 'failure_count': 3, 'id': 'task:subscription:backoff', 'state': 'pending', 'read': False, 'version': '2026-11-16T18:39:38.869388+00:00', 'first_seen_at': '2026-11-16T18:39:38.869388+00:00', 'last_seen_at': '2026-11-16T18:30:49Z', ' | None |
+
 ## X08 / retired-node-test-dns-migration
 
 路由：`startup`；状态：O12-separate
