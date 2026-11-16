@@ -134,7 +134,9 @@ None of it is a port of a routers file; listed so porters replace or use it inst
 
 ## R01 — router models, store, DHCP DNS, desired state
 
-**Status: `missing`** · HR · prereqs: C04, C05, C21 (ready), C32¹ · Go: internal/routers, internal/routerdoc
+**Status: `missing` (porting in progress, see "Port log" below)** · HR · prereqs: C04, C05, C21 (ready), C32¹ · Go: internal/routers, internal/routerdoc, internal/netipx
+
+Port log (interim, 2026-11-16): code committed — 650c8c65 routerdoc (+ repo/notifications switched), 37f783f3 routers core, 5f89caeb switch to net/netip (pyip dropped, thin `internal/netipx`; corpus 29742 rows 0 differ). Next: record plugin `internal/routers/testdata/routers_record.py` (written, not yet run), Go replay, corpus, routerfake skeleton.
 
 Files:
 - `backend/routers/__init__.py` (1), `base.py` (371), `ros_values.py` (27), `lan_clients.py` (93, → routerdoc), `dhcp_dns.py` (158), `store.py` (156), `desired.py` (163)
