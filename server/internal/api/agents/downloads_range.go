@@ -3,55 +3,65 @@ package agents
 // download_agent_binary calls flask.send_file inside `try: … except
 // Exception`, so the RequestedRangeNotSatisfiable that Werkzeug 3.1's
 // make_conditional raises for an unusable Range header becomes the view's
-// 500 JSON answer instead of a 416 page. werkzeugRangeRefused decides when
-// that happens (Response._process_range_request with
-// _is_range_request_processable, parse_range_header, Range.range_for_length
-// and the If-Range branch of is_resource_modified).
+// 500 JSON answer instead of a 416 page; so does an OverflowError from
+// parse_date. werkzeugConditionalError decides when that happens
+// (Response.make_conditional, _process_range_request with
+// _is_range_request_processable, parse_range_header, Range.range_for_length,
+// is_resource_modified, parse_date = email.utils.parsedate_to_datetime).
 
 import (
+	"math/big"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
-	"time"
+
+	"configflow/internal/pystr"
 )
 
 // werkzeugRangeNotSatisfiable is str(RequestedRangeNotSatisfiable()).
 const werkzeugRangeNotSatisfiable = "416 Requested Range Not Satisfiable: The server cannot provide the requested range."
 
+// pyLatinSpace is Python's \s (str.isspace) over the Latin-1 range: WSGI
+// decodes header values as Latin-1, so U+001C–U+001F, U+0085 and U+00A0
+// are white space for str.strip/split and re's \s there.
+const pyLatinSpace = `[\t\n\x0b\f\r \x1c-\x1f\x{85}\x{a0}]`
+
 var (
 	werkzeugPlainInt = regexp.MustCompile(`\A-?[0-9]+\z`)
-	werkzeugETag     = regexp.MustCompile(`\A([Ww]/)?(?:"(.*?)"|(.*?))(?:\s*,\s*|$)`)
+	werkzeugETag     = regexp.MustCompile(`\A([Ww]/)?(?:"(.*?)"|(.*?))(?:` + pyLatinSpace + `*,` + pyLatinSpace + `*|$)`)
 )
 
 type werkzeugRange struct {
-	begin int64
-	end   *int64
+	begin *big.Int
+	end   *big.Int // nil: open-ended
 }
 
-// parseRangeHeader is werkzeug.http.parse_range_header (units, ranges).
+// parseRangeHeader is werkzeug.http.parse_range_header (units, ranges) for
+// a Latin-1 decoded value; bounds are Python ints (no overflow).
 func parseRangeHeader(value string) (string, []werkzeugRange, bool) {
 	if value == "" || !strings.Contains(value, "=") {
 		return "", nil, false
 	}
 	units, spec, _ := strings.Cut(value, "=")
-	units = strings.ToLower(strings.TrimSpace(units))
-	plainInt := func(text string) (int64, bool) {
+	units = pystr.Lower(pystr.Strip(units))
+	plainInt := func(text string) (*big.Int, bool) {
+		text = pystr.Strip(text)
 		if !werkzeugPlainInt.MatchString(text) {
-			return 0, false
+			return nil, false
 		}
-		n, err := strconv.ParseInt(text, 10, 64)
-		return n, err == nil
+		n, ok := new(big.Int).SetString(text, 10)
+		return n, ok
 	}
 	var ranges []werkzeugRange
-	lastEnd := int64(0)
+	lastEnd := big.NewInt(0)
+	minusOne := big.NewInt(-1)
 	for _, item := range strings.Split(spec, ",") {
-		item = strings.TrimSpace(item)
+		item = pystr.Strip(item)
 		if !strings.Contains(item, "-") {
 			return "", nil, false
 		}
 		if strings.HasPrefix(item, "-") {
-			if lastEnd < 0 {
+			if lastEnd.Sign() < 0 {
 				return "", nil, false
 			}
 			begin, ok := plainInt(item)
@@ -59,29 +69,29 @@ func parseRangeHeader(value string) (string, []werkzeugRange, bool) {
 				return "", nil, false
 			}
 			ranges = append(ranges, werkzeugRange{begin, nil})
-			lastEnd = -1
+			lastEnd = minusOne
 			continue
 		}
 		beginText, endText, _ := strings.Cut(item, "-")
-		begin, ok := plainInt(strings.TrimSpace(beginText))
-		if !ok || begin < lastEnd || lastEnd < 0 {
+		begin, ok := plainInt(beginText)
+		if !ok || begin.Cmp(lastEnd) < 0 || lastEnd.Sign() < 0 {
 			return "", nil, false
 		}
-		endText = strings.TrimSpace(endText)
+		endText = pystr.Strip(endText)
 		if endText == "" {
 			ranges = append(ranges, werkzeugRange{begin, nil})
-			lastEnd = -1
+			lastEnd = minusOne
 			continue
 		}
 		end, ok := plainInt(endText)
 		if !ok {
 			return "", nil, false
 		}
-		end++
-		if begin >= end {
+		end.Add(end, big.NewInt(1))
+		if begin.Cmp(end) >= 0 {
 			return "", nil, false
 		}
-		ranges = append(ranges, werkzeugRange{begin, &end})
+		ranges = append(ranges, werkzeugRange{begin, end})
 		lastEnd = end
 	}
 	return units, ranges, true
@@ -92,22 +102,21 @@ func rangeSatisfiable(units string, ranges []werkzeugRange, length int64) bool {
 	if units != "bytes" || len(ranges) != 1 {
 		return false
 	}
-	start := ranges[0].begin
-	var end int64
-	if ranges[0].end == nil {
-		end = length
-		if start < 0 {
-			start += length
+	size := big.NewInt(length)
+	start := new(big.Int).Set(ranges[0].begin)
+	end := ranges[0].end
+	if end == nil {
+		end = size
+		if start.Sign() < 0 {
+			start.Add(start, size)
 		}
-	} else {
-		end = *ranges[0].end
 	}
-	return start < end && 0 <= start && start < length
+	return start.Cmp(end) < 0 && start.Sign() >= 0 && start.Cmp(size) < 0
 }
 
 // unquoteETag is werkzeug.http.unquote_etag (tag only).
 func unquoteETag(value string) string {
-	value = strings.TrimSpace(value)
+	value = pystr.Strip(value)
 	if strings.HasPrefix(value, "W/") || strings.HasPrefix(value, "w/") {
 		value = value[2:]
 	}
@@ -188,35 +197,51 @@ func parseETags(value string) werkzeugETags {
 	return tags
 }
 
-func parseHTTPDate(value string) (time.Time, bool) {
-	if value == "" {
-		return time.Time{}, false
+// resourceModified is werkzeug's is_resource_modified(environ, etag, None,
+// last_modified, ignore_if_range) for header values already Latin-1
+// decoded. problem is the text of an exception parse_date lets through
+// (OverflowError), which the view turns into its 500 answer.
+func resourceModified(req *http.Request, etag, lastModified string, ignoreIfRange bool) (modified bool, problem string) {
+	header := func(name string) (string, bool) {
+		values, present := req.Header[name]
+		if !present {
+			return "", false
+		}
+		return latin1(strings.Join(values, ",")), true
 	}
-	t, err := http.ParseTime(value)
-	return t, err == nil
-}
-
-// resourceModifiedForRange is is_resource_modified(environ, etag, None,
-// last_modified, ignore_if_range=False) for a request with a Range header.
-func resourceModifiedForRange(req *http.Request, etag, lastModified string) bool {
 	unmodified := false
-	modified, hasModified := parseHTTPDate(lastModified)
-	ifRange := req.Header.Get("If-Range")
-	var ifRangeDate time.Time
+	lastInstant, hasLast, problem := werkzeugParseDate(lastModified, true)
+	if problem != "" {
+		return false, problem
+	}
+	var ifRangeInstant int64
 	hasIfRangeDate, hasIfRangeETag := false, false
 	ifRangeETag := ""
-	if ifRange != "" {
-		if d, ok := parseHTTPDate(ifRange); ok {
-			ifRangeDate, hasIfRangeDate = d, true
-		} else {
-			ifRangeETag, hasIfRangeETag = unquoteETag(ifRange), true
+	_, rangePresent := req.Header["Range"]
+	if !ignoreIfRange && rangePresent {
+		// parse_if_range_header
+		if value, _ := header("If-Range"); value != "" {
+			instant, isDate, problem := werkzeugParseDate(value, true)
+			if problem != "" {
+				return false, problem
+			}
+			if isDate {
+				ifRangeInstant, hasIfRangeDate = instant, true
+			} else {
+				ifRangeETag, hasIfRangeETag = unquoteETag(value), true
+			}
 		}
 	}
-	since, hasSince := ifRangeDate, hasIfRangeDate
+	since, hasSince := ifRangeInstant, hasIfRangeDate
 	if !hasIfRangeDate {
-		since, hasSince = parseHTTPDate(req.Header.Get("If-Modified-Since"))
+		value, present := header("If-Modified-Since")
+		instant, ok, problem := werkzeugParseDate(value, present)
+		if problem != "" {
+			return false, problem
+		}
+		since, hasSince = instant, ok
 	}
-	if hasSince && hasModified && !modified.After(since) {
+	if hasSince && hasLast && lastInstant <= since {
 		unmodified = true
 	}
 	if etag != "" {
@@ -224,30 +249,53 @@ func resourceModifiedForRange(req *http.Request, etag, lastModified string) bool
 		if hasIfRangeETag {
 			unmodified = parseETags(ifRangeETag).contains(tag)
 		} else {
-			if noneMatch := parseETags(req.Header.Get("If-None-Match")); !noneMatch.empty() {
+			noneMatchValue, _ := header("If-None-Match")
+			if noneMatch := parseETags(noneMatchValue); !noneMatch.empty() {
 				unmodified = noneMatch.containsWeak(tag)
 			}
-			if match := parseETags(req.Header.Get("If-Match")); !match.empty() {
+			matchValue, _ := header("If-Match")
+			if match := parseETags(matchValue); !match.empty() {
 				unmodified = !match.isStrong(tag)
 			}
 		}
 	}
-	return !unmodified
+	return !unmodified, ""
 }
 
-// werkzeugRangeRefused reports whether make_conditional(accept_ranges=True,
-// complete_length=size) raises RequestedRangeNotSatisfiable.
-func werkzeugRangeRefused(req *http.Request, size int64, etag, lastModified string) bool {
-	if (req.Method != "GET" && req.Method != "HEAD") || size == 0 {
-		return false
+// werkzeugConditionalError is the str() of the exception Werkzeug's
+// make_conditional(environ, accept_ranges=True, complete_length=size)
+// raises inside flask.send_file, or "" when it raises nothing:
+// RequestedRangeNotSatisfiable for a Range that cannot be parsed or
+// satisfied, or an OverflowError of parse_date for an absurd If-Range /
+// If-Modified-Since date.
+func werkzeugConditionalError(req *http.Request, size int64, etag, lastModified string) string {
+	if req.Method != "GET" && req.Method != "HEAD" {
+		return ""
 	}
-	values, present := req.Header["Range"]
-	if !present {
-		return false
+	is206 := false
+	// _process_range_request: `complete_length and
+	// _is_range_request_processable(environ)`.
+	if size != 0 {
+		processable := true
+		if _, present := req.Header["If-Range"]; present {
+			modified, problem := resourceModified(req, etag, lastModified, false)
+			if problem != "" {
+				return problem
+			}
+			processable = !modified
+		}
+		if values, present := req.Header["Range"]; processable && present {
+			units, ranges, ok := parseRangeHeader(latin1(strings.Join(values, ",")))
+			if !ok || !rangeSatisfiable(units, ranges, size) {
+				return werkzeugRangeNotSatisfiable
+			}
+			is206 = true
+		}
 	}
-	if _, ok := req.Header["If-Range"]; ok && resourceModifiedForRange(req, etag, lastModified) {
-		return false
+	if !is206 {
+		if _, problem := resourceModified(req, etag, lastModified, true); problem != "" {
+			return problem
+		}
 	}
-	units, ranges, ok := parseRangeHeader(strings.Join(values, ","))
-	return !ok || !rangeSatisfiable(units, ranges, size)
+	return ""
 }

@@ -244,6 +244,50 @@ func TestDownloadDifferentialAgainstFlask(t *testing.T) {
 		get("range with old if-range date", "configflow-agent-linux-amd64", "Range", "bytes=80000-", "If-Range", "Sun, 01 Nov 2026 12:30:14 GMT"),
 		{name: "head amd64", method: "HEAD", path: "/api/agents/download/configflow-agent-linux-amd64"},
 		{name: "post", method: "POST", path: "/api/agents/download/configflow-agent-linux-amd64"},
+		// A10 review: traversal and encoding attempts (Werkzeug decodes the
+		// path before routing; <filename> never matches "/").
+		get("review dotdot", ".."),
+		get("review dot", "."),
+		get("review encoded dotdot", "%2e%2e"),
+		get("review encoded dotdot slash", "%2e%2e%2fconfigflow-agent-linux-amd64"),
+		get("review dotdot slash", "../configflow-agent-linux-amd64"),
+		get("review double encoded slash", "..%252Fconfigflow-agent-linux-amd64"),
+		get("review backslash", "..%5Cconfigflow-agent-linux-amd64"),
+		get("review encoded allowed name", "%63onfigflow-agent-linux-amd%364"),
+		get("review encoded dash", "configflow%2Dagent%2dlinux-arm64"),
+		get("review absolute", "%2Fetc%2Fpasswd"),
+		get("review empty", ""),
+		get("review query", "configflow-agent-linux-amd64?x=1&filename=configflow-agent-linux-386"),
+		get("review semicolon", "configflow-agent-linux-amd64;x"),
+		get("review unicode", "configflow-agent-linux-%E4%BE%8B"),
+		get("review invalid utf8", "configflow-agent-linux-%FF"),
+		get("review space", "configflow-agent-linux-amd64%20"),
+		get("review long", strings.Repeat("a", 4000)),
+		{name: "review no trailing segment", method: "GET", path: "/api/agents/download"},
+		{name: "review options", method: "OPTIONS", path: "/api/agents/download/configflow-agent-linux-amd64"},
+		// A10 review: conditional headers Werkzeug's make_conditional turns
+		// into exceptions (→ the view's 500) or accepts where Go did not.
+		get("review if-modified-since overflow", "configflow-agent-linux-amd64", "If-Modified-Since", "01 Nov 99999999999 12:30:15 GMT"),
+		get("review if-modified-since c long overflow", "configflow-agent-linux-amd64", "If-Modified-Since", "01 Nov 99999999999999999999 12:30:15 GMT"),
+		get("review if-modified-since offset overflow", "configflow-agent-linux-amd64", "If-Modified-Since", "01 Nov 2026 12:30:15 +3000000000000"),
+		get("review if-range overflow", "configflow-agent-linux-amd64", "Range", "bytes=0-3", "If-Range", "01 Nov 99999999999 12:30:15 GMT"),
+		get("review if-range date without weekday", "configflow-agent-linux-amd64", "Range", "bytes=80000-", "If-Range", "01 Nov 2026 12:30:15 +0000"),
+		get("review range begin beyond int64", "configflow-agent-linux-amd64", "Range", "bytes=99999999999999999999-"),
+		func() downloadRequest {
+			r := get("review range end beyond int64", "configflow-agent-linux-amd64", "Range", "bytes=0-99999999999999999999")
+			r.httpx = "httpx range parsing (int64) differs from Werkzeug for huge bounds"
+			return r
+		}(),
+		func() downloadRequest {
+			r := get("review range latin-1 nbsp", "configflow-agent-linux-amd64", "Range", "bytes=0-9\xa0")
+			r.httpx = "httpx does not strip Latin-1 white space in Range"
+			return r
+		}(),
+		func() downloadRequest {
+			r := get("review if-range date without weekday satisfiable", "configflow-agent-linux-amd64", "Range", "bytes=0-3", "If-Range", "01 Nov 2026 12:30:15 +0000")
+			r.httpx = "httpx parses dates with http.ParseTime, Werkzeug with email.utils"
+			return r
+		}(),
 	}
 	// "{etag}" is the file's ETag from Flask's first answer (Werkzeug:
 	// mtime-size-adler32(path)); both sides must honour it.
