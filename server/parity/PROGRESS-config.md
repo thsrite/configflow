@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 12 missing, 3 partial, 8 ported, 14 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13, C14, C15, C16, C17, C21). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 11 missing, 3 partial, 9 ported, 14 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13, C14, C15, C16, C17, C21). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -51,7 +51,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C23 | OxiDNS validation and constraints | 1542 | ported | C22 | – |
 | C24 | OxiDNS common settings | 1175 | ported | C23 | – |
 | C25 | OxiDNS common routing, DNS watchdog | 1286 | ported | C24 | – |
-| C26 | OxiDNS common updates, device policy, editor | 1189 | missing | C25 | – |
+| C26 | OxiDNS common updates, device policy, editor | 1189 | ported | C25 | – |
 | C27 | rule DNS actions | 885 | missing | C26 | – |
 | C28 | MosDNS archive and routes | 838 | missing | C21, C15 | 15 (0 done) |
 | C29 | OxiDNS native apply, archive, routes | 739 | missing | C27, C28 | 18 (0 done) |
@@ -1225,22 +1225,43 @@ Commands:
 
 ## C26 — OxiDNS common updates, device policy, editor
 
-**Status: `missing`** · prereqs: C25 · Go: internal/oxidns (new)
+**Status: `ported`** (not reviewed) · prereqs: C25 · Go: `internal/oxidns`
 
-Files:
-- `backend/common/oxidns_common_updates.py` (465)
-- `backend/common/oxidns_device_policy.py` (386)
-- `backend/common/oxidns_editor.py` (338)
+Files → Go (`server/internal/oxidns/`):
+- `backend/common/oxidns_common_updates.py` (465) → `updates.go`: `ReconcileNativeWithdrawals`, `RebaseNativeRuleSources`, `PrepareNativeRuleUpdates`, `FinishRuleUpdates` (fresh-context wrapper); internal `prepareRuleUpdateImpl`, `finishRuleUpdatesImpl`, `stopPipeline` (= `_stop_pipeline`, for C29 native apply), `removeEmptyReload`, `managedJobs`, `externalReferences`, `updateProviders` (= `_providers`), `restorePipeline`, `downloadPath` (= `_path`), `refreshSteps`/`downloadOnlySteps` (= `_REFRESH`/`_DOWNLOAD_ONLY`), `proxyIdentityOf`, `rulesetSources`, `generatedSource` (net/url), `refreshManagedRuleURLs`, `withDownloads`, `managedDownloads`.
+- `backend/common/oxidns_device_policy.py` (386) → `devicepolicy.go` (C22 had `NormalizeClientRange`/`NormalizePolicies`): `PolicyTag`, `DirectTag`, `Revision`, `PatchDocument(document, previous, rows, config)`, `InspectEntries`, `NewEntryContext` (typed `EntryContext`, `.Object()` = Python dict with sorted sets), `ReadPolicies`, `ApplyPolicies`; internal `policyPlugin`, `checkMain`, `listenPort`, `serverEntries`, `reach`, `legacyNodeTest`, `patchPolicies` (= `_patch`).
+- `backend/common/oxidns_editor.py` (338) → `editor.go` (C24 had `_same`, `_MISSING`): `PrepareEditor`, `PreviewTemplate`, `TemplateInputs`; internal `prepareEditorImpl`, `renderTemplate` (= `_template`), `restoreParked`, `parkInactive`, `ruleIDs`, `mergeValues` (= `_merge`), `mergePlugins`, `changesOf`, `union`, `keepReferencedContent`, `pointer`, `label`, `pluginMap`.
+- Early part of C31: `backend/common/device_notes.py` read side → `devicenotes.go` (`NormalizeName`, `NormalizeNotes`, `StoredNames`, `MaxNotes`); read_policies needs `stored_names`. C31 adds the writers to this file.
+- `pending.go`: no stubs left. `prepareEditor`, `prepareRuleUpdate`, `finishRuleUpdates` stay package variables (assigned in `init`, a direct initializer is an initialization cycle) because the C24/C25 replays answer them with recorded results.
 
-Tests: `test_oxidns_common.py` (36), `test_oxidns_common_lifecycle.py` (21), `test_oxidns_device_policy.py` (15), `test_oxidns_device_policy_core.py` (2), `test_oxidns_device_policy_side_entries.py` (15), `test_oxidns_editor.py` (30), `test_oxidns_fallback_lifecycle.py` (14), `test_oxidns_resource_lifecycle.py` (16), `test_oxidns_service_domain.py` (6)
+Verification (all on the test server, clean detached worktree at df3c8f6d):
+- **C22–C25 replays, pending → 0:** `TestRecordedPythonTests` 607 C26-pending → **0 pending, 0 differ** (29539 rows; native `generate` 1630, incl. prepare_native_rule_updates + device-policy patch_document); `TestCorpus` 33 → **0 pending, 0 differ** (105 accepted as before); `TestC23Recorded` 422 (validate_settings → prepare_editor) → **0 pending, 0 differ**; `TestC24*`/`TestC25*` unchanged 0 differ (they keep recorded C26 answers).
+- **Record & replay** `testdata/c26_record.py` → `c26_recorded.jsonl.gz`, `c26_test.go` `TestC26Recorded`: top-level calls of every C26 entry point during the full suite (12552 passed), run end to end in Go (no collaborators). Context functions (prepare_rule_update, finish_rule_updates, _stop_pipeline) are rebuilt from the recorded `_Context` state (by_tag, parked live/copy, included tags) and the state after the call is compared. **4048 calls from 1229 tests in 53 files: 4048 identical, 0 differ** (prepare_editor 1766, prepare_native_rule_updates 583, finish_rule_updates 482, prepare_rule_update 481, read_policies 207, reconcile_native_withdrawals 193, stored_names 157, apply_policies 86, revision 34, preview_template 26, inspect_entries 10, _merge 7, _stop_pipeline 6, patch_document 4, template_inputs 3, rebase_native_rule_sources 3).
+- **Random corpus** `testdata/gen_c26.py` → `c26_corpus.jsonl.gz`, `TestC26Corpus`: public entry points with random device-policy rows (hosts/CIDRs/IPv6/mapped/invalid/duplicates, names, modes), native drafts with node-test/side/client-port/env/http_server listeners, broken sequence_main/forward_local, includes, duplicate tags, foreign hooks, hand-edited owned chains; template inputs + hand-edited documents through prepare_editor/preview_template with random resolutions; ruleset sources (absolute/relative, base URLs, profiles, retired tokens) through prepare_native_rule_updates, rebase_native_rule_sources, apply_common_settings. **4882 rows (1795 errors, ~40 distinct Chinese messages), 0 differ.**
 
-Routes: none.
+Python test files (rule 4 coverage):
+- `test_oxidns_common.py` (36), `test_oxidns_common_lifecycle.py` (21), `test_oxidns_fallback_lifecycle.py` (14), `test_oxidns_resource_lifecycle.py` (16), `test_oxidns_service_domain.py` (6), `test_oxidns_editor.py` (30), `test_oxidns_device_policy.py` (15), `test_oxidns_device_policy_side_entries.py` (15): replay — every C26 call of these files is in `c26_recorded.jsonl.gz` (identical); their C24/C25/C22 calls are in those modules' replays. Their route cases (`/api/oxidns/common-settings*`, `/api/profiles/<id>/oxidns/editor|template-preview|settings|render`, `/api/client-devices`, agent DNS policy routes) → **deferred to C29/C31/agents** (route owners' Flask↔Go differential).
+- `test_oxidns_device_policy_core.py` (2): real OxiDNS core (skipped without `OXIDNS_TEST_BINARY`); its inputs are apply_policies + generate_oxidns_config, both replayed — not applicable otherwise.
+- Nothing hand-ported (no concurrency/timing/process behaviour).
 
-Evidence: No Go package; no route registered.
+Routes: none (routes calling C26 belong to C29 `routes/oxidns.py`, C31 `client_devices`, C32/C33 `rule_library` (rebase), agents/routers (`read_policies`, `revision`)). Rule 4b not applicable (no context, no I/O).
 
-Missing / deferred: Everything in the files below.
+Decisions / differences from Python:
+- **Representation (rules changed mid-module, 2026-11-16):** C26 is written on the package's existing jsonx/commonContext model, because its functions edit in place the same native documents and `_Context` that C24/C25 hold (prepare/finish_rule_updates are C24 collaborators). Typed structs / yaml.Node would need the whole package converted — left to the oxidns S pass. New C26 code uses `net/url`, `net/netip`, `strconv`, `strings` (no new urlx/pystr use).
+- **Size:** Python 1189 lines (+ ~40 of device_notes) → Go ~2280 non-test lines (updates.go 905, devicepolicy.go +700, editor.go +623, devicenotes.go 83, pending.go −28) ≈ 1.9×, **over the 1.2× budget**: jsonx type assertions and Python-shaped error glue of the existing package; to be slimmed in the S pass.
+- No longer chased (functional parity): `_generated_source` uses `net/url` — URLs Go cannot parse (or with bad `%` escapes in the query) count as manual overrides (conservative: not rebased); `_listen_port`/`_endpoint`/`node_test_dns` parsing are ASCII/`netip` (Python's Unicode digits and whitespace not chased); TypeError texts on malformed values. None occur in replay or corpus.
+- `EntryContext` is a typed struct (Python returns a dict with sets); the replay compares `.Object()` with sets sorted.
 
-Notes for porter: Replaces `repo/compat_oxidns.go` (device notes, client range, bindings, `normalize_action`) partly and `rules/compat.go` device-policy copies. **Started by C22**: `normalize_client_range`/`normalize_policies` in `internal/oxidns/devicepolicy.go`; `prepare_native_rule_updates`/`patch_document` stubs in `pending.go` (section C22 "Left").
+Pitfalls: HEAD at df3c8f6d does not build `internal/mosdns` (C28's ae4c5bbe references `weburl` from an uncommitted file); verification used a private worktree with `internal/mosdns` from 8aa0595b. The shared tree's other uncommitted edits (urlx removal in `convert`/`oxidns/constraints*`) make `TestCorpus` (append_url_query error texts) and one `TestC23Corpus` row differ — not C26 code.
+
+Commits: 5c223f6b (code), df3c8f6d (record & replay + corpus), + this PROGRESS commit.
+
+Left: review. For C29: use `stopPipeline`, `downloadPath`, `refreshSteps`, `downloadOnlySteps`, `reconcileNativeWithdrawals`, `PrepareEditor`, `PreviewTemplate`; C31: extend `devicenotes.go`, use `ApplyPolicies`/`ReadPolicies`/`Revision`; rule_library (C33): `RebaseNativeRuleSources`. `repo/compat_oxidns.go` (`normalizeClientRange`, `normalizeName`, `normalizeNotes`) and `rules/compat.go` device-policy copies can switch to `oxidns.NormalizeClientRange`/`NormalizeName`/`NormalizeNotes` if no import cycle (oxidns imports repo, so **repo cannot import oxidns** — repo keeps its copy).
+
+Commands:
+- tests: `rt -- bash -lc 'cd server && gofmt -l internal/oxidns; go vet ./internal/oxidns/ && go test -count=1 ./internal/oxidns/'` (last on clean tree: ok 77.8 s)
+- C26 replay: `rt --back server/internal/oxidns/testdata/c26_recorded.jsonl.gz -- bash -lc 'rm -rf /tmp/c26rec; C26_RECORD_DIR=/tmp/c26rec PYTHONPATH=.:server/internal/oxidns/testdata ~/cf-test/.venv/bin/python -m pytest backend -q -n 6 --dist=worksteal -p c26_record -p no:cacheprovider; PYTHONPATH=.:server/internal/oxidns/testdata ~/cf-test/.venv/bin/python server/internal/oxidns/testdata/c26_record.py merge /tmp/c26rec'` (~6 min, 4048 rows)
+- C26 corpus: `rt --back server/internal/oxidns/testdata/c26_corpus.jsonl.gz -- bash -lc 'PYTHONPATH=.:server/internal/oxidns/testdata ~/cf-test/.venv/bin/python -W ignore server/internal/oxidns/testdata/gen_c26.py'` (~1 min, 4882 rows)
 
 ## C27 — rule DNS actions
 
