@@ -551,3 +551,22 @@ request_variants=5857 named_matrix_cases=3320（S480 F2387 B453），H去重192
 ```
 
 Go相关路由仍未接通，未计通过。大规模扫描取消客户端/日志协议、更多matcher/helper和生成器G形态继续，未做最终全量。
+
+## 批次 30：G01–G05节点入口、客户端协议及组形态
+
+- 76新增变体：G01结构化/JSON/YAML三入口×Mihomo/Surge/Loon，外层名称覆盖内层；G03 Surge 13协议（含WireGuard/wg、tuic/token与v5、TLS/WS/Snell obfs）；G04 Loon 12协议（含SSR、WG双栈/DNS/keepalive、TLS/WS）。所有preview完整文本结构及SQL/文件继续比较，不只检查200。
+- G05六种组×三客户端，含manual/include的精确顺序、健康参数、follow与chain；Mihomo可生成chain，Surge/Loon明确400含代理链消息。这里是HTTP生成合同，未宣称真实目标内核已经接受或设备已生效。
+- G02七种URI和base64列表×三客户端。fake Sub-Store核对每个完整create/download/delete循环、随机临时名称格式与唯一性、固定noFlow声明、完整URI query和值、清理无泄露；循环数量也保留比较。新增错query/漏DELETE/错清理目标反例，共41项自检。
+- Python生成链有两层：Mihomo/预检使用fake扁平结果，而Surge/Loon最终节点仍走本地parse_uri_list；因此Surge SSR/hysteria、Loon hysteria、两者raw base64列表按Python省略协议处理，不能强行要求渲染fake返回的SS。SSR输入使用完整base64 padding，避免把坏fixture当目标不支持。已回归旧subscription-fetch-substore两项仍比较通过。
+
+```text
+.63 run.py --groups generator-node-inputs,generator-client-protocols,generator-group-shapes
+current go-unimplemented=52 design_errors=[] seconds=51.39
+.63 run.py --groups generator-uri-inputs,subscription-fetch-substore
+current go-unimplemented=24 compared=2 design_errors=[] seconds=40.76
+cumulative compared=1455 go-unimplemented=4408 dependency=28 different=41 O12-separate=1
+request_variants=5933 named_matrix_cases=3320（S480 F2387 B453），H去重192，G去重5
+41 self-checks + end-to-end wrong-Go-response check OK
+```
+
+全部新增generator路由当前Go未接通，未计比较通过。G06–G16及各族更多交叉分支继续，未做最终全量。

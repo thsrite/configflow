@@ -17,6 +17,18 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_node_substore_protocol_requires_uri_query_and_cleanup(self):
+        from substore import normalized_node, ProtocolError
+        from urllib.parse import quote
+        name, content = '_cf_tmp_node_convert_01234567', 'ss://synthetic@example.com#中文🧪+%'
+        records = [{'method': 'POST', 'path': '/api/subs', 'body': {'name': name, 'url': 'https://example.com#noFlow', 'noFlow': True}},
+                   {'method': 'GET', 'path': '/download/' + name + '/ClashMeta?content=' + quote(content, safe=''), 'body': None},
+                   {'method': 'DELETE', 'path': '/api/sub/' + name, 'body': None}]
+        self.assertEqual(len(normalized_node(records, content)), 3)
+        for changed in (records[:2], [records[0], {**records[1], 'path': '/download/' + name + '/ClashMeta?content=wrong'}, records[2]],
+                        [records[0], records[1], {**records[2], 'path': '/api/sub/wrong'}]):
+            with self.assertRaises(ProtocolError):
+                normalized_node(changed, content)
     def test_elapsed_milliseconds_are_finite_bounded_and_two_decimal_places(self):
         policy = Policy(start=100, end=101, elapsed_ms={'body.elapsed_time'})
         self.assertEqual(differences({'elapsed_time': 1.23}, {'elapsed_time': 900}, policy=policy), [])

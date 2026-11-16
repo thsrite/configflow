@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import re
 import threading
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import quote, unquote, urlsplit, parse_qs
 
 from compare import Difference, differences
 from harness import DesignError
@@ -13,6 +13,56 @@ from sources import FEED
 
 class ProtocolError(ValueError):
     pass
+
+
+def normalized_node(records, content):
+    if not records or len(records) % 3:
+        raise ProtocolError('node conversion requires complete create/download/delete cycles')
+    out, names = [], set()
+    for offset in range(0, len(records), 3):
+        create, download, delete = records[offset:offset + 3]
+        name = (create.get('body') or {}).get('name')
+        if not isinstance(name, str) or not re.fullmatch(r'_cf_tmp_node_convert_[0-9a-f]{8}', name) or name in names:
+            raise ProtocolError('node temporary name format/reuse is invalid')
+        names.add(name)
+        target = urlsplit(download.get('path', ''))
+        if (create != {'method': 'POST', 'path': '/api/subs', 'body': {'name': name, 'url': 'https://example.com#noFlow', 'noFlow': True}}
+                or download.get('method') != 'GET' or download.get('body') is not None
+                or target.scheme or target.netloc or target.fragment
+                or target.path != '/download/' + name + '/ClashMeta'
+                or parse_qs(target.query, keep_blank_values=True) != {'content': [content]}
+                or delete != {'method': 'DELETE', 'path': '/api/sub/' + name, 'body': None}):
+            raise ProtocolError('node conversion methods/path/URI query/create body/cleanup are invalid')
+        cycle = copy.deepcopy([create, download, delete])
+        cycle[0]['body']['name'] = '<validated-node-temp>'
+        cycle[1]['path'] = '/download/<validated-node-temp>/ClashMeta?content=' + quote(content, safe='')
+        cycle[2]['path'] = '/api/sub/<validated-node-temp>'
+        out.extend(cycle)
+    return out
+
+
+class NodeExchange:
+    def __init__(self, store, content):
+        self.store, self.content, self.transcripts = store, content, [None, None]
+
+    def before(self, index):
+        self.store.requests.clear()
+        self.store.events.clear()
+
+    def after(self, index, reply):
+        errors, records = [], copy.deepcopy(self.store.requests)
+        try:
+            records = normalized_node(records, self.content)
+        except ProtocolError as error:
+            errors.append(str(error))
+        if self.store.created:
+            errors.append('node temporary subscription leaked')
+        self.transcripts[index] = {'requests': records, 'errors': errors}
+        if index == 0 and errors:
+            raise DesignError('Python node conversion did not follow public Sub-Store protocol: ' + repr(errors))
+
+    def compare(self, policy):
+        return differences(*self.transcripts, 'substore.node', policy)
 
 
 class SubStore:

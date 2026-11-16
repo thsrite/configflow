@@ -120,6 +120,8 @@ def main():
     groups.update(compose)
     from cases.rule_io import GROUPS as rule_io
     groups.update(rule_io)
+    from cases.generator_shapes import GROUPS as generator_shapes
+    groups.update(generator_shapes)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:
