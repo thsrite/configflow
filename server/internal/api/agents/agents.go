@@ -51,6 +51,7 @@ func Register(r *httpx.Router) {
 	registerOxidns(r)
 	registerPanel(r)
 	registerInstaller(r)
+	registerUpgrades(r)
 }
 
 func failure(status int, message string) *httpx.Response {

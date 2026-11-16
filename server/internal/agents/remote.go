@@ -341,10 +341,12 @@ func quote(value string) string {
 	return string(out)
 }
 
-// ClearAgentLog is clear_agent_log(agent_id, log_path, source).
-func (m *Manager) ClearAgentLog(ctx context.Context, agentID, logPath, source string) (any, error) {
+// ClearAgentLog is clear_agent_log(agent_id, log_path, source): any JSON
+// values, as the route passes them from the request body (a truthy source
+// wins).
+func (m *Manager) ClearAgentLog(ctx context.Context, agentID string, logPath, source any) (any, error) {
 	payload := jsonx.Obj("log_path", logPath)
-	if source != "" {
+	if jsonx.Truthy(source) {
 		payload = jsonx.Obj("source", source)
 	}
 	value, _, err := m.simpleCall(ctx, agentID, "POST", "/api/logs/clear", payload, Seconds(5), nil)
@@ -407,8 +409,9 @@ func (m *Manager) UpdateAgentVersion(ctx context.Context, agentID, newVersion, b
 	}, false)
 }
 
-// ValidateAgentLogPath is validate_agent_log_path(agent_id, log_path).
-func (m *Manager) ValidateAgentLogPath(ctx context.Context, agentID, logPath string) (any, error) {
+// ValidateAgentLogPath is validate_agent_log_path(agent_id, log_path)
+// (log_path any JSON value from the request body).
+func (m *Manager) ValidateAgentLogPath(ctx context.Context, agentID string, logPath any) (any, error) {
 	value, _, err := m.simpleCall(ctx, agentID, "POST", "/api/logs/validate", jsonx.Obj("path", logPath), Seconds(5), nil)
 	return value, err
 }
@@ -420,8 +423,9 @@ func (m *Manager) GetLoggingConfig(ctx context.Context, agentID string) (any, er
 }
 
 // SetLoggingConfig is set_logging_config(agent_id, enabled): a successful
-// answer is recorded as logging_config.enabled.
-func (m *Manager) SetLoggingConfig(ctx context.Context, agentID string, enabled bool) (any, error) {
+// answer is recorded as logging_config.enabled. enabled is any JSON value
+// (the route passes data.get('enabled', True) unchecked).
+func (m *Manager) SetLoggingConfig(ctx context.Context, agentID string, enabled any) (any, error) {
 	value, agent, err := m.simpleCall(ctx, agentID, "POST", "/api/config/logging", jsonx.Obj("enabled", enabled), Seconds(5), nil)
 	if err != nil || agent == nil {
 		return value, err
