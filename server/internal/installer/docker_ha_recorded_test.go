@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -101,6 +103,32 @@ func recordedDifference(a, b string) string {
 	return fmt.Sprintf("at byte %d: python …%q… go …%q…", i, a[lo:min(len(a), i+80)], b[lo:min(len(b), i+80)])
 }
 
+// digestRecordedBundle replaces got's compose_bundle.content_base64 by
+// content_sha256 (sha256 of the zip bytes, moved to the end like the Python
+// post-processing in gen_review_a10.py) when the recorded answer stores the
+// digest instead of the archive.
+func digestRecordedBundle(recorded, got any) any {
+	want, isObject := recorded.(*jsonx.Object)
+	if !isObject || !want.GetObject("compose_bundle").Has("content_sha256") {
+		return got
+	}
+	answer, isObject := got.(*jsonx.Object)
+	if !isObject || !answer.GetObject("compose_bundle").Has("content_base64") {
+		return got
+	}
+	answer = answer.Clone()
+	bundle := answer.GetObject("compose_bundle").Clone()
+	raw, err := base64.StdEncoding.DecodeString(bundle.GetString("content_base64"))
+	if err != nil {
+		return got
+	}
+	sum := sha256.Sum256(raw)
+	bundle.Delete("content_base64")
+	bundle.Set("content_sha256", hex.EncodeToString(sum[:]))
+	answer.Set("compose_bundle", bundle)
+	return answer
+}
+
 // compareOutcome compares a Go answer/error with the recorded 'out'/'err'.
 func compareOutcome(entry *jsonx.Object, got any, err error) (string, string) {
 	if errors.Is(err, ErrComposeVariantNotPorted) {
@@ -139,7 +167,7 @@ func compareOutcome(entry *jsonx.Object, got any, err error) (string, string) {
 	if err != nil {
 		return "answer", fmt.Sprintf("python answered, go error %T %v", err, err)
 	}
-	want, have := canonical(entry.Value("out")), canonical(got)
+	want, have := canonical(entry.Value("out")), canonical(digestRecordedBundle(entry.Value("out"), got))
 	if want != have {
 		return "answer", recordedDifference(want, have)
 	}
@@ -174,6 +202,10 @@ func replayRecorded(t *testing.T, entry *jsonx.Object) (string, string) {
 			return "unsupported enrollment", ""
 		}
 		got, err := GenerateGuide(args[0], enrollment)
+		// Deliberate fix (decision 6): an Agent name with one trailing "\n".
+		if request, isObject := args[0].(*jsonx.Object); isObject && entry.Has("out") && deliberateAgentNameFix(request, err) {
+			return "deliberate (agent_name + \"\\n\")", ""
+		}
 		return compareOutcome(entry, got, err)
 	case "identity_command":
 		got, err := IdentityCommand(args[0])
