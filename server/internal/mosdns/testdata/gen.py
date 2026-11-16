@@ -38,7 +38,7 @@ import yaml
 
 from backend.converters import mosdns as m
 
-COUNT = int(sys.argv[1]) if len(sys.argv) > 1 else 6000
+COUNT = int(sys.argv[1]) if __name__ == '__main__' and len(sys.argv) > 1 else 6000
 R = random.Random(20261116)
 OUT = []
 
