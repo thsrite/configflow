@@ -50,12 +50,9 @@ func digestOf(t *testing.T, v any) string {
 	return hex.EncodeToString(sum[:])[:24]
 }
 
-// pythonClassOf tells how the routes treat err: "value" (ValueError, 400),
-// "other" (500), "a10" (Compose variant not ported yet).
+// pythonClassOf tells how the routes treat err: "value" (ValueError, 400)
+// or "other" (500).
 func pythonClassOf(err error) (string, string) {
-	if errors.Is(err, ErrComposeVariantNotPorted) {
-		return "a10", ""
-	}
 	var ve *ValueError
 	var ee *EnrollmentError
 	switch {
@@ -108,6 +105,13 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 				t.Errorf("case %s (%s %.300s): "+format, append([]any{id, record.GetString("kind"), jsonx.Repr(input)}, args...)...)
 			}
 		}
+		if request, _ := input.Value("request").(*jsonx.Object); err != nil && request != nil && deliberateAgentNameFix(request, err, "agent_name", "existing_agent_name") {
+			// Decision 6: one trailing "\n" in an Agent name is refused in Go.
+			if !(record.GetBool("ok") == false && record.GetObject("error").GetString("message") == invalidAgentNameMessage) {
+				counts["deliberate (agent name trailing newline)"]++
+				continue
+			}
+		}
 		if err != nil && deliberateServerURLFix(input, err) {
 			// Deliberate fix of a Python validation bug (A09 decision): one
 			// trailing "\n" in server_url is refused in Go.
@@ -118,10 +122,6 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 		}
 		if err != nil {
 			class, message := pythonClassOf(err)
-			if class == "a10" {
-				counts["skipped (A10)"]++
-				continue
-			}
 			if record.GetBool("ok") {
 				fail("python answered, go error %v", err)
 				continue

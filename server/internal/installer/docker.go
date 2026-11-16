@@ -41,10 +41,13 @@ func NewDockerOptions(serverURL string) DockerOptions {
 	}
 }
 
-// ValidateAgentName is validate_agent_name: re.match(r'^[a-zA-Z0-9_-]+$'),
-// so one trailing newline passes.
+// ValidateAgentName is validate_agent_name with re.fullmatch semantics.
+// Deliberate fix of a Python validation bug (coordinator decision 6,
+// 2026-11-16): Python's re.match(r'^[a-zA-Z0-9_-]+$') lets one trailing
+// "\n" through into the Docker snippets; Go refuses it with the same error
+// as any other invalid name.
 func ValidateAgentName(name string) error {
-	if !matchesClass(strings.TrimSuffix(name, "\n"), "_-") {
+	if !matchesClass(name, "_-") {
 		return valueError("Invalid agent name: only alphanumeric characters, hyphens, and underscores are allowed.")
 	}
 	return nil

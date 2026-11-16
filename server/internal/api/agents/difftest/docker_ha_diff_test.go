@@ -8,7 +8,8 @@ package difftest
 // hand-edited installation records). Random values (session id, token,
 // owner hash, expiry) are captured per side and replaced by placeholders;
 // the installation records under DATA_DIR and the Agent records are
-// compared after the requests.
+// compared after the requests. The Compose methods (A10) are compared in
+// docker_ha_compose_diff_test.go.
 //
 //	rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run DockerHA ./internal/api/agents/difftest/'
 
@@ -226,8 +227,7 @@ func compareHA(t *testing.T, name string, py, gor response, same, failed *int, m
 
 // installationFiles lists DATA_DIR/docker-ha-installations with random
 // values replaced: session files are named after their Agent name, index
-// files keep their (deterministic) name and point at that label. Records of
-// the Compose methods (pending A10: Go refuses before issuing) are left out.
+// files keep their (deterministic) name and point at that label.
 func installationFiles(t *testing.T, dir string) map[string]string {
 	root := filepath.Join(dir, "docker-ha-installations")
 	out := map[string]string{}
@@ -279,9 +279,6 @@ func installationFiles(t *testing.T, dir string) map[string]string {
 				}
 			}
 		}
-		if strings.Contains(text, `"name": "compose`) || pendingIndex(root, text) {
-			continue
-		}
 		fi, _ := entry.Info()
 		out[name] = fi.Mode().Perm().String() + " " + text
 	}
@@ -306,7 +303,7 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 	defer stopGo()
 	py := &haSide{base: pyBase, token: login(t, pyBase), dir: pyDir}
 	gs := &haSide{base: goBase, token: login(t, goBase), dir: goDir}
-	same, failed, pending := 0, 0, 0
+	same, failed := 0, 0
 	both := func(r request, values ...map[string]string) (response, response) {
 		pv, gv := map[string]string{}, map[string]string{}
 		if len(values) == 2 {
@@ -380,14 +377,20 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 	check(guideReq("generate bad profile header", haNewBody("agent_name", "bad-profile"), func(r *request) { r.headers = map[string]string{"X-ConfigFlow-Profile": "bad id!"} }))
 	check(guideReq("generate missing profile header", haNewBody("agent_name", "missing-profile"), func(r *request) { r.headers = map[string]string{"X-ConfigFlow-Profile": "missing"} }))
 	check(guideReq("generate empty profile header", haNewBody("agent_name", "empty-profile"), func(r *request) { r.headers = map[string]string{"X-ConfigFlow-Profile": ""} }))
-	for _, method := range []string{"compose", "compose_direct", "compose_compact"} {
-		p, g := both(guideReq("generate "+method, haNewBody("install_method", method, "agent_name", method)))
-		if g.status == 500 && p.status == 200 {
-			pending++
-			t.Logf("pending A10: %s (python 200, go 500 until the Compose variants are ported)", method)
-			continue
+	// Compose methods (A10): each side's answer against the Go generators
+	// given that side's capability (docker_ha_compose_diff_test.go).
+	for _, body := range composeBodies() {
+		name := "generate " + body.GetString("install_method") + " " + body.GetString("agent_name")
+		for attempt := 0; attempt < 2; attempt++ { // the second request re-issues the same capability
+			p, g := both(guideReq(name, body))
+			if diffs := append(compareComposeAnswer("python", body, p), compareComposeAnswer("go", body, g)...); len(diffs) > 0 {
+				failed++
+				t.Errorf("DIFF %s:\n  %s", name, strings.Join(diffs, "\n  "))
+			} else {
+				same++
+				t.Logf("same %-60.60s → %d %d bytes", name, p.status, len(p.body))
+			}
 		}
-		compareHA(t, "generate "+method, p, g, &same, &failed)
 	}
 
 	// Enrollment refusals.
@@ -616,7 +619,7 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 		failed++
 		t.Errorf("stored agents differ:\npython %s\ngo     %s", jsonx.Repr(pyAgents), jsonx.Repr(goAgents))
 	}
-	t.Logf("docker HA routes: %d comparisons equal, %d differ, %d pending (A10)", same, failed, pending)
+	t.Logf("docker HA routes: %d comparisons equal, %d differ", same, failed)
 }
 
 func findIndex(t *testing.T, dir, session string) string {
@@ -638,22 +641,4 @@ func nanValue() float64 { return math.NaN() }
 
 func bigPow(base, exponent int64) *big.Int {
 	return new(big.Int).Exp(big.NewInt(base), big.NewInt(exponent), nil)
-}
-
-// pendingIndex reports whether an index file points at a Compose-method
-// installation (pending A10).
-func pendingIndex(root, text string) bool {
-	label, found := strings.CutPrefix(text, "<session of ")
-	if !found {
-		return false
-	}
-	entries, _ := os.ReadDir(root)
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), strings.TrimSuffix(label, ">")) && strings.HasSuffix(entry.Name(), ".index") {
-			data, _ := os.ReadFile(filepath.Join(root, entry.Name()))
-			session, _ := os.ReadFile(filepath.Join(root, strings.TrimSpace(string(data))+".json"))
-			return strings.Contains(string(session), `"name": "compose`)
-		}
-	}
-	return false
 }

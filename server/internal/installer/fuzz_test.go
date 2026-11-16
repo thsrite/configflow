@@ -54,7 +54,7 @@ func TestFuzzCorpusMatchesPython(t *testing.T) {
 	}
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64<<20), 64<<20)
-	total, rendered, refused, failed := 0, 0, 0, 0
+	total, rendered, refused, failed, deliberate := 0, 0, 0, 0, 0
 	for scanner.Scan() {
 		value, err := jsonx.Parse(scanner.Bytes())
 		if err != nil {
@@ -74,6 +74,10 @@ func TestFuzzCorpusMatchesPython(t *testing.T) {
 			return renderCase(fn, k)
 		}()
 		if failed > 40 {
+			continue
+		}
+		if err != nil && deliberateAgentNameFix(k.Object, err) {
+			deliberate++ // decision 6: one trailing "\n" in agent_name is refused in Go
 			continue
 		}
 		if !record.GetBool("ok") {
@@ -102,5 +106,5 @@ func TestFuzzCorpusMatchesPython(t *testing.T) {
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("fuzz corpus: %d cases, %d rendered, %d refused, %d differ", total, rendered, refused, failed)
+	t.Logf("fuzz corpus: %d cases, %d rendered, %d refused, %d differ, %d deliberate (decision 6)", total, rendered, refused, failed, deliberate)
 }

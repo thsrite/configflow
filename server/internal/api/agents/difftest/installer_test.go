@@ -382,6 +382,17 @@ func TestInstallerDifferentialAgainstFlask(t *testing.T) {
 
 	for _, r := range installerRequests() {
 		py, gor := both(r)
+		if strings.HasSuffix(r.name, " name newline") {
+			// Coordinator decision 6: Python's validate_agent_name lets one
+			// trailing "\n" through; Go refuses it like any invalid name.
+			if py.status == 200 && gor.status == 400 && strings.Contains(string(gor.body), "Invalid agent name: only alphanumeric characters") {
+				t.Logf("deliberate difference (decision 6): %s — python 200, go 400", r.name)
+			} else {
+				failed++
+				t.Errorf("deliberate difference changed: %s python %d go %d %.200s", r.name, py.status, gor.status, gor.body)
+			}
+			continue
+		}
 		check(r.name, py, gor)
 	}
 	scripts := map[string][2]string{}

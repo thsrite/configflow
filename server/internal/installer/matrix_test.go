@@ -199,12 +199,16 @@ func TestRenderMatrixMatchesPython(t *testing.T) {
 			full[id] = record.GetString("output")
 		}
 	}
-	rendered, refused := 0, 0
+	rendered, refused, deliberate := 0, 0, 0
 	for _, record := range cases {
 		id := record.GetInt("id")
 		fn := record.GetString("fn")
 		k := kwargs{record.GetObject("kwargs")}
 		output, err := renderCase(fn, k)
+		if err != nil && deliberateAgentNameFix(k.Object, err) {
+			deliberate++ // decision 6: one trailing "\n" in agent_name is refused in Go
+			continue
+		}
 		if !record.GetBool("ok") {
 			refused++
 			if err == nil {
@@ -229,7 +233,7 @@ func TestRenderMatrixMatchesPython(t *testing.T) {
 			t.Errorf("case %d %s %s: output differs %s", id, fn, jsonx.Repr(k.Object), detail)
 		}
 	}
-	t.Logf("matrix: %d cases, %d rendered, %d refused", len(cases), rendered, refused)
+	t.Logf("matrix: %d cases, %d rendered, %d refused, %d deliberate (decision 6)", len(cases), rendered, refused, deliberate)
 }
 
 // TestWriteShellcheckSample writes the Go renderings of the cases

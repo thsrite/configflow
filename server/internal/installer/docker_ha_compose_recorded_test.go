@@ -67,6 +67,11 @@ func replayGenerator(row *jsonx.Object, digestBundle bool) (string, string) {
 	default:
 		return "unknown", "unknown function " + fn
 	}
+	if err != nil && deliberateAgentNameFix(params, err) {
+		if pyErr := row.GetList("err"); pyErr == nil || pyErr[1] != invalidAgentNameMessage {
+			return "deliberate (decision 6)", ""
+		}
+	}
 	if pyErr := row.GetList("err"); pyErr != nil {
 		if err == nil {
 			return "differ", fmt.Sprintf("python %v %q, go answered", pyErr[0], pyErr[1])
