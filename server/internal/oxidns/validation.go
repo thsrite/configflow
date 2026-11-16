@@ -16,13 +16,11 @@ import (
 	"configflow/internal/urlx"
 )
 
-// The schema-driven core of backend/common/oxidns_validation.py (module
-// C23): schemas, validate_schema, format_error and their helpers, and
-// OxidnsValidationError. The template converter (C22) validates the live
-// download options with it. C23 adds validate_native_config,
-// require_valid_document, validate_expanded_document and validate_settings
-// here and completes format_error (timezone, dns-record,
-// domain-expression).
+// Port of backend/common/oxidns_validation.py (module C23): schemas,
+// validate_schema, format_error and their helpers, OxidnsValidationError
+// (C22 ported these first: the template converter validates the live
+// download options with them), validate_native_config,
+// require_valid_document, validate_expanded_document and validate_settings.
 
 // MaxIssues is MAX_ISSUES.
 const MaxIssues = 200
@@ -352,14 +350,17 @@ func formatError(name string, value any) string {
 		}
 		return "HTTP 方法须为有效的 token"
 	case "timezone":
-		pending("C23", "oxidns_validation.format_error(timezone)")
+		if text, ok := value.(string); ok && zoneInfoValid(pystr.Strip(text)) {
+			return ""
+		}
+		return "时区须为有效 IANA 时区，例如 Asia/Shanghai"
 	case "plugin-tag":
 		if text, ok := value.(string); ok && validPluginTag(text) {
 			return ""
 		}
 		return "需要有效的 1–64 位插件标识"
 	case "dns-record", "domain-expression":
-		pending("C23", "oxidns_plugin_constraints.validate_plugin_format")
+		return validatePluginFormat(name, value)
 	}
 	if strings.HasPrefix(name, "dns-") {
 		if dnsCodeValid(name, value) {
@@ -692,4 +693,208 @@ func listContains(list []any, value any) bool {
 		}
 	}
 	return false
+}
+
+// pluginEntrySchema is validate_native_config's schema of one plugin entry.
+var pluginEntrySchema = jsonx.Obj("type", "object", "required", []any{"tag", "type"}, "properties", jsonx.Obj(
+	"tag", jsonx.Obj("type", "string", "format", "plugin-tag"),
+	"type", jsonx.Obj("type", "string", "minLength", jsonx.Int(1)),
+	"args", jsonx.NewObject()))
+
+// ValidateNativeConfig is validate_native_config(document): every issue of
+// a native document (global schema, plugin schemas, plugin/global
+// constraints, references), errors first, de-duplicated, at most MaxIssues.
+func ValidateNativeConfig(document any) (issues []any, err error) {
+	defer catch(&err)
+	return validateNativeConfig(document), nil
+}
+
+func validateNativeConfig(document any) []any {
+	loadSchemas()
+	globalSchema, catalog := schemaGlobal, schemaPlugins
+	issues := validateSchema(document, globalSchema, []any{})
+	if !isDict(document) {
+		return issues
+	}
+	var plugins []any
+	if list, ok := get(document, "plugins", []any{}).([]any); ok {
+		plugins = list
+	}
+	for index, plugin := range plugins {
+		path := []any{"plugins", jsonx.Int(index)}
+		issues = append(issues, validateSchema(plugin, pluginEntrySchema, path)...)
+		if !isDict(plugin) {
+			continue
+		}
+		var schema any
+		if kind, ok := get(plugin, "type", nil).(string); ok {
+			schema = catalog.Value(kind)
+		}
+		if schema == nil {
+			issues = append(issues, issue(appendPath(path, "type"), "插件未在当前校验目录中，发布时需由目标核心确认支持", "unknown-plugin", "warning"))
+			continue
+		}
+		if !has(plugin, "args") && !truthy(get(schema, "x-args-optional", nil)) {
+			issues = append(issues, issue(appendPath(path, "args"), "缺少插件必填参数", "required", "error"))
+		} else if has(plugin, "args") {
+			issues = append(issues, validateSchema(item(plugin, "args"), asObject(schema), appendPath(path, "args"))...)
+		}
+		issues = append(issues, collectPluginIssues(plugin, jsonx.Int(index))...)
+	}
+	issues = append(issues, collectGlobalIssues(document)...)
+	issues = append(issues, collectReferenceIssues(document, catalog, nil, nil)...)
+	result := []any{}
+	seen := map[string]bool{}
+	for _, entry := range errorsFirstAll(issues) {
+		object := asObject(entry)
+		object.SetDefault("severity", "error")
+		key, _ := jsonx.Encode([]any{item(object, "path"), item(object, "message"), item(object, "severity")}, jsonx.Options{Compact: true})
+		if !seen[string(key)] {
+			result = append(result, entry)
+			seen[string(key)] = true
+		}
+		if len(result) == MaxIssues {
+			break
+		}
+	}
+	return result
+}
+
+// errorsFirstAll is sorted(issues, key=severity != 'error') without the
+// truncation.
+func errorsFirstAll(issues []any) []any {
+	sorted := append([]any{}, issues...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return get(sorted[i], "severity", "error") == "error" && get(sorted[j], "severity", "error") != "error"
+	})
+	return sorted
+}
+
+// RequireValidDocument is require_valid_document(document): the issues, or
+// an OxidnsValidationError when one of them is an error.
+func RequireValidDocument(document any) (issues []any, err error) {
+	defer catch(&err)
+	return requireValidDocument(document), nil
+}
+
+func requireValidDocument(document any) []any {
+	issues := validateNativeConfig(document)
+	for _, entry := range issues {
+		if get(entry, "severity", nil) == "error" {
+			raise(validationError(issues))
+		}
+	}
+	return issues
+}
+
+// ValidateExpandedDocument is validate_expanded_document(document,
+// sources) with sources as Python's dict ({'plugins': [{source, index}],
+// 'includes': [[name, globals], ...]}): issues carry their source file and
+// the path inside it; included globals are type-checked too.
+func ValidateExpandedDocument(document any, sources any) (issues []any, err error) {
+	defer catch(&err)
+	return validateExpandedSources(document, sources), nil
+}
+
+// validateExpandedDocument is validate_expanded_document for the metadata
+// of nativeDocument.
+func validateExpandedDocument(document *jsonx.Object, sources *NativeSources) []any {
+	return validateExpandedSources(document, sources.Object())
+}
+
+func validateExpandedSources(document any, sources any) []any {
+	issues := validateNativeConfig(document)
+	for _, entry := range issues {
+		object := asObject(entry)
+		object.Set("source", "config.yaml")
+		path := asList(item(object, "path"))
+		if len(path) > 1 && path[0] == "plugins" && isInt(path[1]) {
+			origins := get(sources, "plugins", []any{})
+			origin := pyIndex(origins, path[1].(jsonx.Number))
+			object.Set("source", item(origin, "source"))
+			object.Set("path", append([]any{"plugins", item(origin, "index")}, path[2:]...))
+		}
+	}
+	loadSchemas()
+	for _, include := range iterate(get(sources, "includes", []any{})) {
+		pair := iterate(include)
+		if len(pair) != 2 {
+			if len(pair) > 2 {
+				raise(pyErr("ValueError", "too many values to unpack (expected 2)"))
+			}
+			raise(pyErr("ValueError", "not enough values to unpack (expected 2, got "+itoa(len(pair))+")"))
+		}
+		for _, entry := range validateSchema(pair[1], schemaGlobal, []any{}) {
+			copied := asObject(entry).Clone()
+			copied.Set("source", pair[0])
+			issues = append(issues, copied)
+		}
+	}
+	return errorsFirst(issues)
+}
+
+// pyIndex is sequence[i] for a list and an int index (IndexError, negative
+// indexes from the end).
+func pyIndex(sequence any, index jsonx.Number) any {
+	list, ok := sequence.([]any)
+	if !ok {
+		raise(pyErr("TypeError", "'"+typeName(sequence)+"' object is not subscriptable"))
+	}
+	i, exact := index.Int64()
+	if exact && i < 0 {
+		i += int64(len(list))
+	}
+	if !exact || i < 0 || i >= int64(len(list)) {
+		raise(pyErr("IndexError", "list index out of range"))
+	}
+	return list[i]
+}
+
+// ValidateSettings is validate_settings(settings, config, base_url):
+// non-persistent editor diagnostics with the publication rules ({valid,
+// issues, schema_version, core_check_required}). config nil is None.
+func ValidateSettings(settings any, config any, baseURL string) (result *jsonx.Object, err error) {
+	defer catch(&err)
+	return validateSettings(settings, config, baseURL), nil
+}
+
+func validateSettings(settings any, config any, baseURL string) *jsonx.Object {
+	var issues []any
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				x, ok := r.(raised)
+				if !ok {
+					panic(r)
+				}
+				e, ok := AsError(x.err)
+				if !ok {
+					panic(r)
+				}
+				if e.Class == ClassValidation {
+					issues = asList(copyValue(e.Issues))
+					return
+				}
+				if e.HasIssues {
+					issues = e.Issues
+					return
+				}
+				issues = []any{jsonx.Obj("path", []any{}, "message", e.Error(), "code", "structure", "severity", "error", "source", "config.yaml")}
+			}
+		}()
+		if !truthy(config) {
+			config = jsonx.NewObject()
+		}
+		draft := prepareEditor(settings, config, baseURL)
+		sources := &NativeSources{}
+		document := nativeDocument(draft, false, sources)
+		issues = validateExpandedDocument(document, sources)
+	}()
+	valid := true
+	for _, entry := range issues {
+		if item(entry, "severity") == "error" {
+			valid = false
+		}
+	}
+	return jsonx.Obj("valid", valid, "issues", issues, "schema_version", "1.6.1", "core_check_required", true)
 }

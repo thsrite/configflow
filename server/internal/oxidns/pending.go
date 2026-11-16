@@ -8,24 +8,10 @@ import "configflow/internal/jsonx"
 // deletes it here, then re-runs this package's replay
 // (testdata/recorded.jsonl.gz), whose pending rows must drop to zero.
 
-// validateExpandedDocument is oxidns_validation.validate_expanded_document
-// (C23).
-func validateExpandedDocument(document *jsonx.Object, sources *NativeSources) []any {
-	pending("C23", "oxidns_validation.validate_expanded_document")
-	return nil
-}
-
-// requireValidDocument is oxidns_validation.require_valid_document (C23).
-func requireValidDocument(document any) []any {
-	pending("C23", "oxidns_validation.require_valid_document")
-	return nil
-}
-
-// collectReferenceIssues is
-// oxidns_reference_validation.collect_reference_issues(document, catalog,
-// dependency_graph=graph) (C23); graph receives tag -> referenced tags.
-func collectReferenceIssues(document any, catalog *jsonx.Object, graph map[string][]string, order *[]string) []any {
-	pending("C23", "oxidns_reference_validation.collect_reference_issues")
+// prepareEditor is oxidns_editor.prepare_editor(settings, config,
+// base_url) (C26).
+func prepareEditor(settings, config any, baseURL string) any {
+	pending("C26", "oxidns_editor.prepare_editor")
 	return nil
 }
 
