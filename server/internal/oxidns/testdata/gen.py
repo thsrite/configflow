@@ -532,8 +532,11 @@ def profile():
 # ---- generators -------------------------------------------------------------
 
 def gen_settings():
-    for _ in range(n(4000)):
-        value = settings_value() if maybe(0.97) else pick(None, 5, 'x', [])
+    for index in range(n(6000)):
+        if index % 3 == 0:
+            value = valid_settings(['r1', 'r2', 's1'])
+        else:
+            value = settings_value() if maybe(0.97) else pick(None, 5, 'x', [])
         validate = maybe(0.6)
         row('normalize', [value, validate], lambda: st.normalize_oxidns_settings(value, validate_native_arguments=validate))
     for _ in range(n(800)):
