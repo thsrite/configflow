@@ -903,3 +903,23 @@ request_variants=6967 named_matrix_cases=3554（S560 F2479 B515），H去重240�
 ```
 
 T19/T20仍有多Agent、3 hosts、跨空间website busy、真实超时/断连；T21自动化及G13/其余路由helper继续，未做最终全量。
+
+## 批次 51：G13订阅交付图、原始缓存与同名来源
+
+- 77新增请求：33实际比较通过、14条已知缺少Provider注释记录、30生成入口Go尚未实现。两个源的机场内Relay命名空间/跨源策略组、精确filter选Relay、过滤掉Relay后从raw cache复制inline、两源hosts、fresh/expired/interval=0均验证。当前URL匹配的完整缓存三种年龄均零源HTTP请求，原始nodes/未过滤Relay/hosts/provenance保持原文数据不变。
+- 四类输出：Mihomo main、Surge main、Loon main以及各自Provider；另验证冻结artifact完整文件。Surge/Loon含dialer的源明确400拒绝，不静默删掉dialer；不带dialer的另一源200。两端Provider先于未接通的预览运行，避免把可比较Provider隐藏在依赖skip后。
+- 同名不同定义/相同定义的无chain legacy来源均保留两条；激活chain后merged Provider400。**普通main preview与manual artifact仍200，只引用HTTP Provider URL，并不在这里提前做merged Provider碰撞验证**。已按Python实际入口分开断言，没有把假设的400硬塞给Go。
+- 扩展metadata校验为精确subscription ID，原默认sub-a不变；sub-b错误ID/过期时间故意自检通过，49项。补齐G13后G01–G16都有实际请求，不能据此声称其余R/H/T已完成。
+- 新增14差异记录全部为旧类：12单源+2merged的Go响应/served文件缺少注释，正文节点/引用、DB、源请求和其他文件无新差异。未改Go。夹具修正了单IP hosts输出应为scalar、Surge main以资源URL而非源名称呈现、错写merged路径等前提，重跑后design_errors为空。
+
+```text
+.63 run.py --groups delivery-graph
+current compared=32 different=12 go-unimplemented=24 design_errors=[] seconds=11.02
+.63 run.py --groups delivery-graph-collisions
+current compared=1 different=2 go-unimplemented=6 design_errors=[] seconds=4.96
+cumulative compared=1855 go-unimplemented=5093 dependency=28 different=67 O12-separate=1
+request_variants=7044 named_matrix_cases=3554（S560 F2479 B515），H去重240，G去重16
+49 self-checks + end-to-end wrong-Go-response check OK
+```
+
+继续discovery命名helper/多Agent/断连/自动化及其余R/H/T；未做最终全量。

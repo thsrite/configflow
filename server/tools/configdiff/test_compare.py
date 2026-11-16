@@ -17,6 +17,16 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_provider_attachment_identity_is_specific_to_its_subscription(self):
+        from providers import filename
+        policy = Policy(start=1767225600, end=1767225601)
+        reply = Reply(200, {'content-disposition': 'inline; filename="proxies_sub-b_20260101_000000.yaml"'}, b'')
+        self.assertEqual(filename(reply, policy, 'sub-b'), reply.headers['content-disposition'])
+        with self.assertRaises(ValueError):
+            filename(reply, policy)
+        with self.assertRaises(ValueError):
+            filename(Reply(200, {'content-disposition': 'inline; filename="proxies_sub-b_20250101_000000.yaml"'}, b''), policy, 'sub-b')
+
     def test_running_jobs_reject_invalid_progress_and_protocol_mutations(self):
         from agent_jobs import job_errors, progress_errors
         from agent_fake import probe_calls

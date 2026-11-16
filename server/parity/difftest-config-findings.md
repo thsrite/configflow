@@ -81,6 +81,126 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `provider.comments` | length | 6 | 0 |
 | `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 订阅甲🧪', '# ID: sub-a', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 2', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
 
+## G13 / expired/all/mihomo/sub-a
+
+路由：`GET /api/subscriptions/<sub_id>/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `provider.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `provider.comments` | length | 6 | 0 |
+| `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 来源甲🧪', '# ID: sub-a', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 3', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
+
+## G13 / expired/all/mihomo/sub-b
+
+路由：`GET /api/subscriptions/<sub_id>/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `provider.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `provider.comments` | length | 6 | 0 |
+| `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 来源乙🧪', '# ID: sub-b', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 1', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
+
+## G13 / expired/filtered/mihomo/sub-a
+
+路由：`GET /api/subscriptions/<sub_id>/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `provider.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `provider.comments` | length | 6 | 0 |
+| `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 来源甲🧪', '# ID: sub-a', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 2', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
+
+## G13 / expired/filtered/mihomo/sub-b
+
+路由：`GET /api/subscriptions/<sub_id>/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `provider.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `provider.comments` | length | 6 | 0 |
+| `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 来源乙🧪', '# ID: sub-b', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 1', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
+
+## G13 / fresh/all/mihomo/sub-a
+
+路由：`GET /api/subscriptions/<sub_id>/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `provider.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `provider.comments` | length | 6 | 0 |
+| `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 来源甲🧪', '# ID: sub-a', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 3', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
+
+## G13 / fresh/all/mihomo/sub-b
+
+路由：`GET /api/subscriptions/<sub_id>/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `provider.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `provider.comments` | length | 6 | 0 |
+| `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 来源乙🧪', '# ID: sub-b', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 1', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
+
+## G13 / fresh/filtered/mihomo/sub-a
+
+路由：`GET /api/subscriptions/<sub_id>/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `provider.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `provider.comments` | length | 6 | 0 |
+| `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 来源甲🧪', '# ID: sub-a', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 2', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
+
+## G13 / fresh/filtered/mihomo/sub-b
+
+路由：`GET /api/subscriptions/<sub_id>/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `provider.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `provider.comments` | length | 6 | 0 |
+| `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 来源乙🧪', '# ID: sub-b', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 1', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
+
+## G13 / interval-zero/all/mihomo/sub-a
+
+路由：`GET /api/subscriptions/<sub_id>/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `provider.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `provider.comments` | length | 6 | 0 |
+| `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 来源甲🧪', '# ID: sub-a', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 3', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
+
+## G13 / interval-zero/all/mihomo/sub-b
+
+路由：`GET /api/subscriptions/<sub_id>/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `provider.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `provider.comments` | length | 6 | 0 |
+| `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 来源乙🧪', '# ID: sub-b', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 1', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
+
+## G13 / interval-zero/filtered/mihomo/sub-a
+
+路由：`GET /api/subscriptions/<sub_id>/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `provider.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `provider.comments` | length | 6 | 0 |
+| `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 来源甲🧪', '# ID: sub-a', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 2', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
+
+## G13 / interval-zero/filtered/mihomo/sub-b
+
+路由：`GET /api/subscriptions/<sub_id>/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `provider.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `provider.comments` | length | 6 | 0 |
+| `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 来源乙🧪', '# ID: sub-b', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 1', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
+
 ## R220-B03 / ?format=unknown
 
 路由：`GET /api/subscriptions/<sub_id>/proxies`；状态：different
@@ -176,6 +296,24 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `provider.comments` | length | 6 | 0 |
 | `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 订阅甲🧪', '# ID: sub-a', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 2', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
 | `provider.served-file.bak.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 订阅甲🧪', '# ID: sub-a', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 2', '# Source: from Sub-Store (cache updated)'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
+
+## G13 / same-name-different-definition/merged
+
+路由：`GET /api/subscriptions/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `merged.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `merged.comments` | length | 8 | 0 |
+
+## G13 / same-name-identical/merged
+
+路由：`GET /api/subscriptions/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `merged.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `merged.comments` | length | 8 | 0 |
 
 ## R222-B02 / none
 

@@ -29,9 +29,9 @@ def comments(raw, policy):
     return result
 
 
-def filename(reply, policy):
+def filename(reply, policy, subscription_id='sub-a'):
     value = reply.headers.get('content-disposition', '')
-    match = re.fullmatch(r'inline; filename="proxies_sub-a_([0-9]{8}_[0-9]{6})\.yaml"', value)
+    match = re.fullmatch(r'inline; filename="proxies_' + re.escape(subscription_id) + r'_([0-9]{8}_[0-9]{6})\.yaml"', value)
     if not match:
         raise ValueError('provider filename shape or subscription identity')
     stamp = datetime.strptime(match[1], '%Y%m%d_%H%M%S').replace(tzinfo=ZoneInfo(policy.tz)).timestamp()
@@ -41,19 +41,20 @@ def filename(reply, policy):
 
 
 class Metadata:
-    def __init__(self, pair, *, profile='default', method='GET', yaml=True, served=True):
+    def __init__(self, pair, *, profile='default', method='GET', yaml=True, served=True, subscription_id='sub-a'):
         self.pair, self.profile, self.method, self.yaml, self.served = pair, profile, method, yaml, served
+        self.subscription_id = subscription_id
 
     def reference(self, reply):
         self.pair.policy.end = time.time()
         if not self.yaml:
             return
         try:
-            filename(reply, self.pair.policy)
+            filename(reply, self.pair.policy, self.subscription_id)
             if self.method != 'HEAD':
                 comments(reply.body, self.pair.policy)
             if self.served:
-                path = self.pair.dirs[0] / f'profiles/{self.profile}/providers/served/subscription-sub-a.yaml'
+                path = self.pair.dirs[0] / f'profiles/{self.profile}/providers/served/subscription-{self.subscription_id}.yaml'
                 comments(path.read_bytes(), self.pair.policy)
         except (ValueError, OSError) as error:
             raise DesignError('Python provider metadata fixture: ' + str(error)) from error
@@ -69,7 +70,7 @@ class Metadata:
                 body_comments.append(None)
                 continue
             try:
-                names.append(filename(reply, policy))
+                names.append(filename(reply, policy, self.subscription_id))
                 body_comments.append(comments(reply.body, policy) if self.method != 'HEAD' else [])
             except ValueError as error:
                 if index == 0:
@@ -82,11 +83,11 @@ class Metadata:
                 out.append(Difference('provider.metadata', 'invalid-Go-metadata', '<valid>',
                                       {'error': str(error), 'comments': observed}))
         if all(isinstance(value, str) for value in names):
-            policy.bind(*names, r'inline; filename="proxies_sub-a_[0-9]{8}_[0-9]{6}\.yaml"', 'provider-filename')
+            policy.bind(*names, r'inline; filename="proxies_' + re.escape(self.subscription_id) + r'_[0-9]{8}_[0-9]{6}\.yaml"', 'provider-filename')
         out += differences(*body_comments, 'provider.comments', policy)
         if self.served:
             for suffix in ('', '.bak'):
-                paths = [directory / f'profiles/{self.profile}/providers/served/subscription-sub-a.yaml{suffix}' for directory in self.pair.dirs]
+                paths = [directory / f'profiles/{self.profile}/providers/served/subscription-{self.subscription_id}.yaml{suffix}' for directory in self.pair.dirs]
                 if not any(path.exists() for path in paths):
                     continue
                 metadata = []
