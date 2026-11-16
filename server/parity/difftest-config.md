@@ -1924,3 +1924,5 @@ Totals after review: 5570 original entries + 112 per-route cases + 15 cross-cutt
 - **R027-B90 的内存导出条件语义**：BytesIO send_file 没有自动 ETag/Last-Modified；GET Range→206/416，但 If-None-Match:* 与未来 If-Modified-Since 均200。保留原 B90 编号，按实测头存在性和语义验证，不虚造304。
 - **R155-F18**：不存在的 default_subscription_ids 在 `build_import` 开头被过滤，实测有效客户端配置仍201；不是409。保留编号作为防回归的原预期更正，验证过滤后导入和全库/文件。来源 [config_importer.py:946](../../backend/utils/config_importer.py#L946)。
 - **无显式 profile URL 的 P3 槽**：custom-config 五编辑器同 legacy MosDNS 一样没有 `/api/profiles/<id>/custom-config/...` 别名，P3（URL覆盖query/header）不可应用；保留原槽并标 N/A，P4–6仍需测试。不能拿一个不存在URL的404充作URL选择成功。
+- **R214-B03 / R226-B01 间隔上限**：本基准 `MAX_INTERVAL=604800`，2592000 被拒绝400；不能当合法最大值。Step B 分别覆盖604800接受/604801拒绝以及原2592000拒绝。来源 [subscription_refresh.py:11](../../backend/utils/subscription_refresh.py#L11)。
+- **R217-F17/F19 的可达性**：PUT在校验name/url之后强制 `new_data['id']=sub_id`，因此body的重复id不能制造重复资源；少name/url先400，少id由路径补回，其他可选字段删除本身也不触发引用409。这两个泛化槽未找到满足前置条件的HTTP配方，标部分覆盖/N/A，不能重复F09/F11或虚造repo409。来源 [subscriptions.py:136](../../backend/routes/subscriptions.py#L136)。

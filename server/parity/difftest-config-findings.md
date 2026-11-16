@@ -65,6 +65,23 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `db.fields.system//system_config.value.server_domain` | value | 'http://panel.example' | '�' |
 | `db.meta.generation` | value | 4 | 5 |
 
+## R223-F12 /
+
+路由：`POST /api/subscriptions/reorder`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `status` | value | 500 | 404 |
+| `body.message` | value | '订阅操作失败' | "以下订阅 id 不存在: ['subscriptions 必须是对象数组']" |
+
+## R217-S02 /
+
+路由：`PUT /api/subscriptions/<sub_id>`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `db.fields.shared//subscriptions.revision` | value | 2 | 5 |
+
 ## T27 / real-tick/due-and-backoff
 
 路由：`startup`；状态：different

@@ -323,3 +323,21 @@ request_variants=5055 named_matrix_cases=2708（S292 F2107 B309），H去重167
 ```
 
 客户端复杂provider/规则库复用、各协议参数完整形态随G导入配方继续，当前四种基本语法不是整个导入器全部形态验收。继续subscriptions文件的有效业务/缓存/失败/副作用，尚未最终全量。
+
+## 批次 17：subscriptions CRUD、缓存视图和清理
+
+- 111请求，109比较通过、2差异：创建/替换/多行URL/健康默认/派生字段剥离、54个独立进程拒绝输入与正则语法、缓存raw/筛选计数/旧count-only/无metadata/URL不匹配/空nodes、健康历史、改URL清task/相同URL保留task、删除cache/health/task且保留其他项、三种引用保护及用途、旧/新重排。每次比较全库行和所有普通文件；不只GET回显。无真实上游请求。
+- **新增差异 R217-S02**：同一URL、完全相同订阅对象PUT，Python shared/subscriptions行revision保留2，Go变5；HTTP和行value相同。fixture本身是全新Pair，task/health/cache写在外部文件，不曾改SQL，下一次真正URL变化后版本重新一致，未产生后续假差异。
+- **新增差异 R223-F12**：reorder body `[1]`，Python500“订阅操作失败”，Go404“以下订阅 id 不存在: ['subscriptions 必须是对象数组']”。状态和消息保留于findings，未改Go。
+- 清单更正：interval上限为604800，原2592000应拒绝；PUT路径强制ID，F17“重复body ID”和F19泛化“删字段仍引用409”未找到可达HTTP输入，不把前置400冒充repo409。
+
+```text
+.63 run.py --groups subscriptions-crud,subscriptions-validation,subscriptions-caches,subscriptions-cleanup,subscriptions-references,subscriptions-reorder
+current compared=108 different=2 design_errors=[] seconds=30.52
+补跑 subscriptions-crud（含604800正例）：compared=18 design_errors=[] seconds=4.47
+cumulative compared=1408 go-unimplemented=3721 dependency=28 different=8 O12-separate=1
+request_variants=5166 named_matrix_cases=2779（S315 F2137 B327），H去重167
+24 self-checks + end-to-end wrong-Go-response check OK
+```
+
+继续本文件实际fetch/Sub-Store/provider/单飞/缓存回落和其他文件；以上不是subscriptions全覆盖，未做最终全量。
