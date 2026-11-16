@@ -218,10 +218,14 @@ reuse them. Size budgets were dropped the same day: line counts are reported for
   S passes, native swaps, Python reference corpora, Flask↔Go differentials, and adversarial reviews of
   non-HR modules (by a different Codex agent than the author). Each Codex agent gets its own Paseo worktree
   branched off local `go` and ends with `git rebase go`; shared rules in `server/AGENT-BRIEF.md`.
-- **Claude Opus** only for: adversarial review of HR modules (routers writing to devices R04, R05,
-  R07–R12, R14; agents publish/rule sync/DNS follow/HA), big structural designs (N7 YAML, N8 jsonx),
-  concurrency/state problems, and escalation when Codex fails the same problem twice. At most 1 Opus
-  agent at a time.
+- **Claude Opus** for: **all structural design** — before Codex implements any native swap, S pass of a
+  package, new package or cross-package interface (types, package boundaries, public API, hooks, how
+  stored data/unknown fields are held, background tasks/wiring), Opus writes a short design section in
+  PROGRESS/WORKFLOW and commits it; Codex then implements to that design and may not change it without
+  asking. Single-module ports that only follow existing patterns need no separate design. Also Opus:
+  adversarial review of HR modules (routers writing to devices R04, R05, R07–R12, R14; agents
+  publish/rule sync/DNS follow/HA), concurrency/state problems, and escalation when Codex fails the same
+  problem twice. At most 1 Opus agent at a time.
 - **When Claude quota is exhausted:** nothing blocks. HR modules get a Codex review first and may be merged
   into `go` marked `verified (codex)`; the Opus review is queued in PROGRESS ("Opus review pending") and
   done when quota returns. `go` is not production; the switch additionally requires the PVE lab test.
