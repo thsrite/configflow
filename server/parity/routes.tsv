@@ -86,7 +86,7 @@ GET	/api/agents/docker-agent-compose	routes.agents.get_docker_agent_compose	inte
 GET	/api/agents/docker-agent-run	routes.agents.get_docker_agent_run	internal/api/agents	done
 POST	/api/agents/docker-oxidns-ha-enroll/<session_id>	routes.docker_ha_installation.docker_oxidns_ha_enroll	internal/api/agents	done
 POST	/api/agents/docker-oxidns-ha-guide	routes.docker_ha_installation.docker_oxidns_ha_guide	internal/api/agents	done
-GET	/api/agents/download/<filename>	routes.agents.download_agent_binary	22	todo
+GET	/api/agents/download/<filename>	routes.agents.download_agent_binary	internal/api/agents	done
 GET	/api/agents/gateway-forwarding	routes.linux_gateway_agents.agent_gateway_forwarding	30	todo
 POST	/api/agents/gateway-forwarding	routes.linux_gateway_agents.agent_gateway_forwarding	30	todo
 GET	/api/agents/gateway-installations	routes.gateway_installations.gateway_installations	30	todo
