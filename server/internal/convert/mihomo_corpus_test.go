@@ -163,7 +163,10 @@ func pythonClass(err error) string {
 		yerr     *yamlx.Error
 		hook     *convert.HookMissingError
 	)
+	var replayed *replayedError
 	switch {
+	case errors.As(err, &replayed):
+		return replayed.class
 	case errors.As(err, &custom):
 		return "CustomConfigYAMLError"
 	case errors.As(err, &dialer):
