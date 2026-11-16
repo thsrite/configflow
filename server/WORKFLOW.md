@@ -297,3 +297,23 @@ the Go code.
    RouterOS/iKuai, HA on PVE VMs, Go and Python side by side for a period.
 
 Even with all of this, the guarantee is "no difference on known paths and on the real data", not "no bugs".
+
+## Opus by quota window (maintainer, 2026-11-16, refines "Division of work")
+
+Claude quota is short only within a 5-hour window, not overall. When a window has quota, the important work
+goes to Opus (max 2 Opus agents at a time, no nested sub-agents); Codex keeps the bulk work.
+
+**Opus queue (taken in this order whenever a window has quota):**
+1. HR reviews of anything merged as `verified (codex)` / "Opus review pending" (first: R04 RouterOS driver).
+2. Structural designs that block others: N7 (YAML → yaml.v3) and N8 (remove jsonx) — still gated on the
+   production-data differential for *implementation*, but the designs can be written now.
+3. Coverage-matrix reviews of the black-box difftests (config domain first).
+4. **HR module ports by Opus** instead of Codex where the window allows: R05 iKuai and the remaining
+   device-writing routers modules (R07–R12, R14), agents publish / rule sync / DNS follow / DNS HA / Linux
+   gateway. If Opus has no quota when such a module is next, Codex ports it and Opus reviews it later.
+5. Opus spot reviews (1–2 non-HR modules per domain) and review of large refactors of core engines
+   (S-rules, S-oxidns) after they merge.
+
+When the window runs out, running Opus agents stop with committed work and their PROGRESS file (no
+half-finished hand-offs); the coordinator resumes them in the next window. Nothing waits on Opus: Codex
+continues with non-HR work meanwhile.

@@ -69,6 +69,8 @@ Codex first + "Opus review pending" if Claude quota is out).
    other `missing` modules whose prerequisites are verified) and reviews.
 4. **Blocked until 1 exists:** N7 (YAML → yaml.v3 behind yamlx) and N8 (remove jsonx) Opus designs and their
    implementation, S passes of convert/subs/agents/repo, and any other large refactor of accepted code.
+**Opus queue per quota window:** see WORKFLOW.md "Opus by quota window" (HR reviews first — R04 —, then
+N7/N8 designs, coverage-matrix reviews, HR module ports, spot reviews). Max 2 Opus agents.
 5. S-rules and S-oxidns (already running) merge normally, then get re-checked with the production-data
    differential as soon as it exists.
 Claude subagents of the old session (S-rules, S-oxidns, N2 review, R04 Claude porters) are finished/paused —
