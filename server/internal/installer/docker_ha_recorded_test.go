@@ -25,7 +25,19 @@ import (
 // time.time() values, random bytes, datetime.now() and Agent list; the answer
 // or exception, the files afterwards and the Agent list afterwards must match.
 func TestDockerHARecordedCallsMatchPython(t *testing.T) {
-	file, err := os.Open("testdata/docker_ha_recorded.jsonl.gz")
+	replayRecordFile(t, "testdata/docker_ha_recorded.jsonl.gz")
+}
+
+// TestDockerHAReviewCorpusMatchesPython replays testdata/docker_ha_review.jsonl.gz
+// (testdata/gen_review_a09.py, the A09 review's CPython references for inputs
+// the suite does not reach: shell metacharacters in every free-text guide value,
+// damaged preflight outputs, hand-edited enrollment files and Agent lists).
+func TestDockerHAReviewCorpusMatchesPython(t *testing.T) {
+	replayRecordFile(t, "testdata/docker_ha_review.jsonl.gz")
+}
+
+func replayRecordFile(t *testing.T, name string) {
+	file, err := os.Open(name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,6 +150,18 @@ func replayRecorded(t *testing.T, entry *jsonx.Object) (string, string) {
 	args := entry.GetList("args")
 	switch entry.GetString("fn") {
 	case "generate_guide":
+		if request, isObject := args[0].(*jsonx.Object); isObject {
+			// Deliberate fix (coordinator decision 6): a server_url with one
+			// trailing "\n" passes Python's re.match(r'^https?://[^\s]+$').
+			if server, isString := request.GetOr("server_url", nil).(string); isString && strings.HasSuffix(server, "\n") && isServerURL(strings.TrimSuffix(server, "\n")) {
+				_, err := GenerateGuide(args[0], nil)
+				var ve *ValueError
+				if errors.As(err, &ve) && ve.Message == "请填写完整的 ConfigFlow HTTP(S) 地址" {
+					return "deliberate (server_url + \"\\n\")", ""
+				}
+				return "deliberate", fmt.Sprintf("server_url %q: go %v", server, err)
+			}
+		}
 		var enrollment *Enrollment
 		if e, isObject := args[1].(*jsonx.Object); isObject {
 			url, urlOK := e.GetOr("url", nil).(string)
@@ -244,6 +268,24 @@ func writeTree(t *testing.T, root string, tree *jsonx.Object) {
 	if tree == nil {
 		return
 	}
+	if item := tree.GetList(""); item != nil {
+		// root itself is not a directory
+		if err := os.MkdirAll(filepath.Dir(root), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if item[0] == "link" {
+			if err := os.Symlink(item[2].(string), root); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+		data, _ := hex.DecodeString(item[2].(string))
+		mode, _ := jsonx.AsInt(item[1])
+		if err := os.WriteFile(root, data, os.FileMode(mode)); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -288,10 +330,21 @@ func writeTree(t *testing.T, root string, tree *jsonx.Object) {
 
 // readTree is a09_record._tree for the Go side.
 func readTree(root string) any {
-	if _, err := os.Lstat(root); err != nil {
+	info, err := os.Lstat(root)
+	if err != nil {
 		return nil
 	}
 	out := jsonx.NewObject()
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, _ := os.Readlink(root)
+		out.Set("", []any{"link", jsonx.Int(int64(info.Mode().Perm())), target})
+		return out
+	}
+	if !info.IsDir() {
+		data, _ := os.ReadFile(root)
+		out.Set("", []any{"file", jsonx.Int(int64(info.Mode().Perm())), hex.EncodeToString(data)})
+		return out
+	}
 	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil || path == root {
 			return nil
@@ -381,6 +434,17 @@ func replayIO(t *testing.T, entry *jsonx.Object) (string, string) {
 			return "unsupported", ""
 		}
 		capability, err := IssueEnrollment(dataDir, body, profileID)
+		// Accepted difference: a hand-edited, unexpired session whose token is
+		// not a string is echoed by Python; Go refuses it (500).
+		if out, isObject := entry.Value("out").(*jsonx.Object); isObject {
+			if _, isString := out.GetOr("token", nil).(string); !isString {
+				var te *TypeError
+				if errors.As(err, &te) {
+					return "accepted (non-str session token)", clock.problem
+				}
+				return "accepted", fmt.Sprintf("non-str token: go %v", err)
+			}
+		}
 		var got any
 		if capability != nil {
 			got = jsonx.Obj("url", capability.URL, "token", capability.Token, "expires_at", capability.ExpiresAt)

@@ -162,6 +162,26 @@ func compareWithNow(value any, now float64, operator string) (int, error) {
 	return x.Cmp(big.NewFloat(now)), nil
 }
 
+// sessionPaths is root / (id + '.json') and its with_suffix('.tmp') for the
+// id stored in a session file (normally the 32 hex digits of its name, but a
+// hand-edited file may hold anything): an absolute id replaces root, a name
+// that is only ".json" has no suffix (".json.tmp"), and an embedded NUL is
+// the ValueError os.open raises.
+func sessionPaths(root, id string) (string, string, error) {
+	if strings.ContainsRune(id, 0) {
+		return "", "", valueError("embedded null byte")
+	}
+	path := root + "/" + id + ".json"
+	if strings.HasPrefix(id, "/") {
+		path = id + ".json"
+	}
+	temp := strings.TrimSuffix(path, ".json") + ".tmp"
+	if name := path[strings.LastIndex(path, "/")+1:]; name == ".json" {
+		temp = path + ".tmp"
+	}
+	return path, temp, nil
+}
+
 // IssueEnrollment is issue(repository, body, profile_id). Call only after
 // guide input validation and administrator authentication.
 func IssueEnrollment(dataDir string, body *jsonx.Object, profileID string) (*Enrollment, error) {
@@ -233,19 +253,27 @@ func IssueEnrollment(dataDir string, body *jsonx.Object, profileID string) (*Enr
 		if err != nil {
 			return nil, enrollmentError(enrollmentUnreadable, 409)
 		}
-		var isObject bool
-		if session, isObject = loaded.(*jsonx.Object); !isObject {
-			return nil, typeError("'" + pyTypeName(loaded) + "' object has no attribute 'get'")
+		// A session file holding JSON null is "no session" (session is None):
+		// a new one is created and the index keeps pointing at the old id.
+		if loaded != nil {
+			var isObject bool
+			if session, isObject = loaded.(*jsonx.Object); !isObject {
+				return nil, typeError("'" + pyTypeName(loaded) + "' object has no attribute 'get'")
+			}
 		}
 	}
 	if session == nil {
+		id := uuid4Hex()
 		name, err := haString(body.GetOr("agent_name", "agent"))
 		if err != nil {
 			return nil, err
 		}
-		session = jsonx.Obj("id", uuid4Hex(), "profile_id", profileID,
-			"name", name+"-oxidns",
-			"host", body.Value("agent_ip"), "port", body.GetOr("oxidns_port", jsonx.Int(8082)))
+		host, present := body.Get("agent_ip")
+		if !present {
+			return nil, typeError("KeyError: 'agent_ip'")
+		}
+		session = jsonx.Obj("id", id, "profile_id", profileID, "name", name+"-oxidns",
+			"host", host, "port", body.GetOr("oxidns_port", jsonx.Int(8082)))
 	}
 	cmp, err := compareWithNow(session.GetOr("expires", jsonx.Int(0)), enrollmentNow(), "<=")
 	if err != nil {
@@ -261,8 +289,10 @@ func IssueEnrollment(dataDir string, body *jsonx.Object, profileID string) (*Enr
 		if !isString {
 			return nil, typeError("unsupported operand type(s) for +: '" + pyTypeName(session.GetOr("id", nil)) + "' and 'str'")
 		}
-		path := filepath.Join(root, id+".json")
-		temp := strings.TrimSuffix(path, ".json") + ".tmp"
+		path, temp, err := sessionPaths(root, id)
+		if err != nil {
+			return nil, err
+		}
 		data, err := jsonx.Default(session)
 		if err != nil {
 			return nil, err
@@ -364,11 +394,12 @@ func Enroll(ctx context.Context, dataDir string, manager AgentUpdater, sessionID
 		}
 		return value, nil
 	}
+	now := enrollmentNow() // time.time() is evaluated before session['expires']
 	expires, err := item("expires")
 	if err != nil {
 		return nil, err
 	}
-	cmp, err := compareWithNow(expires, enrollmentNow(), ">=")
+	cmp, err := compareWithNow(expires, now, ">=")
 	if err != nil {
 		return nil, err
 	}

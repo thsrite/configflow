@@ -86,6 +86,12 @@ def _tree(root):
     out = {}
     if not os.path.lexists(root):
         return None
+    if os.path.islink(root) or not os.path.isdir(root):
+        st = os.lstat(root)
+        if stat.S_ISLNK(st.st_mode):
+            return {'': ['link', stat.S_IMODE(st.st_mode), os.readlink(root)]}
+        with open(root, 'rb') as fh:
+            return {'': ['file', stat.S_IMODE(st.st_mode), fh.read().hex()]}
     for directory, dirs, files in os.walk(root):
         for name in sorted(dirs + files):
             path = os.path.join(directory, name)
