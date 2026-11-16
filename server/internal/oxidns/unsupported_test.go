@@ -38,14 +38,13 @@ func TestUnsupportedYAMLRefusal(t *testing.T) {
 	}
 }
 
-// Pending functions are reported, never answered.
+// Native validation and the editor are real since C23/C26.
 func TestPendingNativeValidation(t *testing.T) {
-	// C23 made native validation real; the editor (C26) is still pending.
 	if _, err := NormalizeSettings(jsonx.Obj("config_mode", "native", "native_config", "plugins: []"), NormalizeOptions{}); err != nil {
 		t.Fatalf("native normalization: %v", err)
 	}
-	if _, err := ValidateSettings(jsonx.Obj("config_mode", "native"), nil, ""); !IsPending(err) {
-		t.Fatalf("want PendingError, got %v", err)
+	if result, err := ValidateSettings(jsonx.Obj("config_mode", "native"), nil, ""); err != nil || result == nil {
+		t.Fatalf("validate_settings: %v %v", result, err)
 	}
 	settings, err := NormalizeSettings(jsonx.Obj("config_mode", "native", "native_config", "plugins: []"),
 		NormalizeOptions{SkipNativeArguments: true})

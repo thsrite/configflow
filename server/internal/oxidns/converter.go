@@ -698,8 +698,7 @@ func fallbackUpstreams(text string) []any {
 // GenerateOxidnsConfig is generate_oxidns_config(config_data, base_url):
 // the OxiDNS configuration YAML (yaml.safe_dump(allow_unicode=True,
 // sort_keys=False)) pushed to the DNS servers. Errors: *Error, Python's
-// crashes (*convert.PyError), *UnsupportedYAMLError, *PendingError (native
-// mode and device policies until C23/C26 land).
+// crashes (*convert.PyError), *UnsupportedYAMLError.
 func GenerateOxidnsConfig(config *jsonx.Object, baseURL string) (text string, err error) {
 	defer catch(&err)
 	return generateConfig(config, baseURL), nil
@@ -1073,7 +1072,7 @@ func generateConfig(config *jsonx.Object, baseURL string) string {
 	}
 	result.Set("plugins", plugins)
 	if policies := s.GetList("device_policies"); len(policies) > 0 {
-		result = patchDocument(result, []any{}, policies)
+		result = patchDocument(result, []any{}, policies, nil)
 	}
 	return dump(result)
 }
