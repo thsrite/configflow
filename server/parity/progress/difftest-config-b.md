@@ -212,3 +212,19 @@ request_variants=2707 named_matrix_cases=2263（S155 F1955 B153），H去重17
 ```
 
 未完成：日志真实事件序列/10MiB轮转、stat权限分支、notifications完整生产来源；stats P3–6和并发。后续继续config/shared/provider/client-import/OxiDNS/helper和长流程；当前不是最终全量验收。
+
+## 批次 11：X04 JSON 文法/数字/Content-Type
+
+- 102请求：login忽略字段中的NaN/Infinity/大整数/孤立代理项、重复key最后覆盖、charset/merge-patch/BOM/空body/plain；server-domain/config-token 字符串校验接受的JSON spellings；backup三个端点 strict-int 与 tasks/interval 的float/exponent/bool/string/越64位/NaN；silent解析入口的Content-Type/BOM。
+- 有可能产生两端不同写入的每份输入用全新Pair/seed，避免一个错误提交造成后续generation差异。非写入login每份JWT单独验证claims/签名再对应。
+- **新增三项实际差异**：X04 new_domain/literal/`"\\ud800"` 与 token/literal/`"\\ud800"`：Python SQLite UTF-8拒绝，500且未写；Go替换为U+FFFD，200并写入。X04 POST /api/nodes/parse-lines/content-type/bom：Python200空results，Go400“lines必须是字符串数组”。均保留实际status/body/DB值于findings，未改Go。
+
+```text
+.63 run.py --groups json-decoder,json-settings-intervals,json-silent-content-types
+current compared=65 different=3 go-unimplemented=34 design_errors=[] seconds=35.52
+cumulative compared=1290 go-unimplemented=1512 different=6 O12-separate=1
+request_variants=2809 named_matrix_cases=2263（S155 F1955 B153），H去重17
+18 self-checks + end-to-end wrong-Go-response check OK
+```
+
+X04仍缺OxiDNS范围型各字段、setup step、domain days、其余非silent handler；未声称整个X04已完成。接着推进config生成/拉取和其他业务文件。

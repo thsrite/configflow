@@ -14,6 +14,33 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `dav.requests` | length | 3 | 0 |
 | `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'webdav_backup': {'last_run_at': '2026-11-16T18:22:25Z', 'last_finished_at': '2026-11-16T18:22:25Z', 'last_status': 'success', 'last_duration_ms': 12, 'last_trigger': 'event', 'last_error': '', 'run_count': 1, 'last_success_at': '2026-11-16T18:22:25Z', 'consecutive_failures': 0}}} | None |
 
+## X04 / token/literal/"\ud800"
+
+路由：`POST /api/config-token`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `status` | value | 500 | 200 |
+| `body.config_token` | extra-in-go | None | '�' |
+| `body.message` | missing-in-go | "'utf-8' codec can't encode character '\\ud800' in position 238: surrogates not allowed" | None |
+| `body.success` | value | False | True |
+| `db.fields.system//_revision.revision` | value | 4 | 5 |
+| `db.fields.system//_revision.value` | value | 2 | 3 |
+| `db.fields.system//system_config.revision` | value | 4 | 5 |
+| `db.fields.system//system_config.value.config_token` | value | '' | '�' |
+| `db.meta.generation` | value | 4 | 5 |
+
+## X04 / POST /api/nodes/parse-lines/content-type/bom
+
+路由：`POST /api/nodes/parse-lines`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `status` | value | 200 | 400 |
+| `body.message` | extra-in-go | None | 'lines 必须是字符串数组' |
+| `body.results` | missing-in-go | [] | None |
+| `body.success` | value | True | False |
+
 ## R103-F14 /
 
 路由：`POST /api/nodes/reorder`；状态：different
@@ -21,6 +48,22 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `status` | value | 500 | 404 |
+
+## X04 / new_domain/literal/"\ud800"
+
+路由：`POST /api/server-domain`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `status` | value | 500 | 200 |
+| `body.message` | missing-in-go | "'utf-8' codec can't encode character '\\ud800' in position 18: surrogates not allowed" | None |
+| `body.server_domain` | extra-in-go | None | '�' |
+| `body.success` | value | False | True |
+| `db.fields.system//_revision.revision` | value | 4 | 5 |
+| `db.fields.system//_revision.value` | value | 2 | 3 |
+| `db.fields.system//system_config.revision` | value | 4 | 5 |
+| `db.fields.system//system_config.value.server_domain` | value | 'http://panel.example' | '�' |
+| `db.meta.generation` | value | 4 | 5 |
 
 ## T27 / real-tick/due-and-backoff
 

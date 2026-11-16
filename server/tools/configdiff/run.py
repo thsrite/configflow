@@ -80,6 +80,8 @@ def main():
     groups.update(notifications)
     from cases.stats import GROUPS as stats
     groups.update(stats)
+    from cases.json_boundary import GROUPS as json_boundary
+    groups.update(json_boundary)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:
