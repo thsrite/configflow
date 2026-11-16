@@ -652,3 +652,19 @@ request_variants=6157 named_matrix_cases=3320（S480 F2387 B453），H去重217�
 ```
 
 继续未完成的生成器与业务分支，未做最终全量。
+
+## 批次 36：G16订阅hosts、DNS策略和artifact报告
+
+- 13场景26个preview/artifact请求：无hosts、域名映射、双栈IP映射、手写hosts优先、只匹配显示名不匹配server、环、DNS关闭、缺proxy nameserver、已有DNS策略冲突、whitelist覆盖、双源冲突、已知旧/新内核。比较生成hosts/policy/filter、完整subscription_hosts报告及artifact全部成员/源快照/manifest，沿用故意出错自检过的artifact比较器。
+- 域名映射经过自己的DNS listener，并将真实目标加入fake-ip-filter；IP映射无需proxy DNS策略。未知版本不凭seed.version判老；旧/新版本通过真正Agent Bearer认证的traffic-report公开上报，2个请求实际Flask↔Go比较通过，随后报告精确列出旧内核、保留最低版本说明。
+- 核心版本前置上报在config R路由外，runner仅明确允许G16引用这一条已在routes.tsv声明的协议路由；未放开任意未知路由或改变config路由总数。上报JSON行文件中的status.at验证后才按实际请求时间比较；其他字段及文件完整比较。
+
+```text
+.63 run.py --groups subscription-hosts-reports
+current compared=2 go-unimplemented=26 design_errors=[] seconds=15.04
+cumulative compared=1472 go-unimplemented=4643 dependency=28 different=41 O12-separate=1
+request_variants=6185 named_matrix_cases=3320（S480 F2387 B453），H去重217，G去重12
+42 self-checks + end-to-end wrong-Go-response check OK
+```
+
+Go生成器尚未接通；这些用例未计为Go通过。继续G10–G13及其余业务/长流程，未做最终全量。

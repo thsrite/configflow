@@ -134,6 +134,8 @@ def main():
     groups.update(generator_urls)
     from cases.backup_shapes import GROUPS as backup_shapes
     groups.update(backup_shapes)
+    from cases.subscription_hosts import GROUPS as subscription_hosts
+    groups.update(subscription_hosts)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:
@@ -158,7 +160,11 @@ def main():
     for r in recorder.results:
         if r['case'].startswith('R') and matrix_cases.get(r['case']) != r['route']:
             errors.append({'group': 'inventory', 'error': 'case ID does not name its matrix route: ' + r['case']})
-        if r['route'] != 'startup' and r['route'] not in matrix:
+        # G16 needs the Agent's authenticated public core-version report to
+        # distinguish old from unknown cores. This is a protocol prerequisite,
+        # not a new config-domain route or a catch-all for misspelled routes.
+        auxiliary = r['case'] == 'G16' and r['route'] == 'POST /api/agents/<agent_id>/traffic-report'
+        if r['route'] != 'startup' and r['route'] not in matrix and not auxiliary:
             errors.append({'group': 'inventory', 'error': 'case names unknown route: ' + r['route']})
     previous = json.loads(args.output.read_text()).get('results', []) if args.output.exists() else []
     # Rerunning one group replaces its earlier verdicts, preserving other batches.
