@@ -274,6 +274,9 @@ func upgradesSeed(t *testing.T, dir string, port, closed int, lan string) {
 		twinA.Set("name", "twin")
 		twinB.Set("name", "twin")
 		twinB.Set("host", lan)
+		v6Scoped, v6Loop := agent("addr-v6", "oxidns", port), agent("addr-v6loop", "oxidns", port)
+		v6Scoped.Set("host", "fe80::1%eth0")
+		v6Loop.Set("host", "::1")
 		ftwinA, ftwinB := agent("ftwin-a", "oxidns", port), agent("ftwin-b", "oxidns", port)
 		ftwinA.Set("name", "ftwin")
 		ftwinB.Set("name", "ftwin")
@@ -281,7 +284,7 @@ func upgradesSeed(t *testing.T, dir string, port, closed int, lan string) {
 		system.Set("agents", []any{agent("op-1", "mihomo", port), agent("op-2", "mihomo", port), docker, busy, upgrading,
 			failed, legacy, agent("op-gone", "mihomo", closed), agent("op-uninstall", "mihomo", port),
 			agent("follow", "oxidns", port), ha, agent("addr", "oxidns", port), addrHA, addrOld,
-			latin, cjk, noHost, badRecord, pairs, intRecord, agent("op-noarch", "mihomo", port), twinA, twinB, ftwinA, ftwinB})
+			latin, cjk, noHost, badRecord, pairs, intRecord, agent("op-noarch", "mihomo", port), twinA, twinB, ftwinA, ftwinB, v6Scoped, v6Loop})
 		config := system.GetObject("system_config")
 		if config == nil {
 			config = jsonx.NewObject()
@@ -427,6 +430,9 @@ func upgradesRequests(lan string) []upgradesRequest {
 		masked(post("review update info without architecture", b+"op-noarch/update", "", "", "noarch"), upgradeMask...),
 		masked(post("review update again after stuck reservation", b+"op-noarch/update", "", "", ""), upgradeMask...),
 		get("review address describe env", b+"addr/address", "env"),
+		get("review address describe scoped IPv6 host", b+"addr-v6/address", ""),
+		get("review address describe unbracketed ::1", b+"addr-v6loop/address", ""),
+		{request{name: "review address change from IPv6 host", method: "PUT", path: b + "addr-v6loop/address", admin: true, body: `{"host": "` + lan + `"}`, contentType: J}, "", 0},
 		{request{name: "review address env", method: "PUT", path: b + "addr/address", admin: true, body: `{"host": "` + lan + `"}`, contentType: J}, "env", 0},
 		{request{name: "review address device rejects 400", method: "PUT", path: b + "addr/address", admin: true, body: `{"host": "` + lan + `"}`, contentType: J}, "addrreject400", 0},
 		{request{name: "review address device rejects 500", method: "PUT", path: b + "addr/address", admin: true, body: `{"host": "` + lan + `"}`, contentType: J}, "addrreject500", 0},
