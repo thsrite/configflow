@@ -10,6 +10,7 @@ import re
 import shutil
 import signal
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -162,6 +163,20 @@ class Pair:
             raise DesignError('Python seed failed: ' + result.stderr[-5000:])
         for directory in self.dirs:
             shutil.copytree(seed, directory)
+        for ident, ports in self.options.get('agent_port_pairs', {}).items():
+            if len(ports) != 2 or len(set(ports)) != 2 or any(type(p) is not int or not 1 <= p <= 65535 for p in ports):
+                raise DesignError('fake Agent requires two distinct allocated ports')
+            for backend, directory in enumerate(self.dirs):
+                with sqlite3.connect(directory / 'configflow.sqlite3') as db:
+                    row = db.execute("SELECT value FROM fields WHERE scope='system' AND owner='' AND field='agents'").fetchone()
+                    agents = json.loads(row[0])
+                    matches = [i for i, agent in enumerate(agents) if agent['id'] == ident]
+                    if len(matches) != 1:
+                        raise DesignError('fake Agent must match one seeded Agent')
+                    position = matches[0]
+                    agents[position]['port'] = ports[backend]
+                    db.execute("UPDATE fields SET value=? WHERE scope='system' AND owner='' AND field='agents'", (json.dumps(agents),))
+                self.policy.allocated_ports[f'db.fields.system//agents.value[{position}].port'] = tuple(ports)
         document = json.loads((seed / 'configdiff-seed.json').read_text())
         if document['system']['backup'].get('auto_backup') is not False:
             raise DesignError('default fixture must disable auto_backup')

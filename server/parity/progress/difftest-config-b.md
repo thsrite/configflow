@@ -833,3 +833,20 @@ request_variants=6818 named_matrix_cases=3526（S550 F2469 B507），H去重234�
 ```
 
 预检不等于fake Agent成功流程：实际出站协议、busy/进度/部分失败、region/website、自动化继续；未做最终全量。
+
+## 批次 47：真实出站Agent协议、busy与失败批次
+
+- 41个实际Flask↔Go请求全部通过。两端各提供独立的127.0.0.1 HTTP fake Agent；先真实heartbeat，再POST probe。fake首请求保持未响应时验证202、GET running 0/N、同profile busy保留job、异profile busy隐藏job及region/probe共用锁（含H071）。随后释放并轮询终态。
+- 独立预期逐字段检查POST /api/domain-probe、Bearer合成token、Content-Type、DIRECT/代理🧪路径、attempts=3、timeout_ms=5000；每批18目标+百度/gtestatic两个对照，1/19/100域名和重复域名。对照不落盘，manual probe不自动采纳。失败直连+成功代理的固定统计须得到needs_proxy/85。
+- 首批分别404/500/坏JSON/success=false/返回项不足，任务最终done且errors保留、下一批仍成功落盘。最终job/完整DB/每个文件/原始请求序列均比较，未使用固定相等的stub比较器。
+- 两端分配端口只在精确DB Agent.port路径验证各自预先分配的整数；不mask其他数字或URL。新增端口错值/错型/错路径自检以及progress/ID/terminal变动/协议字段破坏自检，48项通过。首个fixture尝试读取未存储的history键已改为允许默认空值，未记为业务差异。
+
+```text
+.63 run.py --groups discovery-agent-probe
+current compared=41 design_errors=[] seconds=17.38
+cumulative compared=1716 go-unimplemented=5063 dependency=28 different=51 O12-separate=1
+request_variants=6859 named_matrix_cases=3534（S552 F2473 B509），H去重235，G去重15
+48 self-checks + end-to-end wrong-Go-response check OK
+```
+
+T19/T20仍部分覆盖：目前一个Agent、probe；多Agent/3 hosts选择、断连、真实超时、region/website与自动化待续。未做最终全量。

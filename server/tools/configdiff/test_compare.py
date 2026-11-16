@@ -17,6 +17,35 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_running_jobs_reject_invalid_progress_and_protocol_mutations(self):
+        from agent_jobs import job_errors, progress_errors
+        from agent_fake import probe_calls
+        policy = Policy(start=100, end=104)
+        job = {'id': 'a' * 32, 'kind': 'probe', 'status': 'running', 'total': 19, 'done': 0,
+               'errors': [], 'message': '', 'started_at': '1970-01-01T00:01:40', 'finished_at': None}
+        self.assertEqual(job_errors({'success': True, 'job': job}, policy, 'probe', 19), [])
+        for patch in ({'total': 18}, {'total': True}, {'done': -1}, {'done': 1}, {'id': 'bad'}, {'errors': [{}]},
+                      {'status': 'done'}, {'finished_at': '1970-01-01T00:01:41'}, {'unexpected': 0}):
+            self.assertTrue(job_errors({'success': True, 'job': {**job, **patch}}, policy, 'probe', 19))
+        for previous, current in [({**job, 'done': 2}, {**job, 'done': 1}), (job, {**job, 'total': 18}),
+                (job, {**job, 'id': 'b' * 32}), ({**job, 'status': 'done'}, {**job, 'status': 'done', 'errors': [{}]})]:
+            self.assertTrue(progress_errors(previous, current))
+        trace = probe_calls(['x' + str(i) + '.example' for i in range(19)])
+        self.assertEqual([len(call['body']['targets']) for call in trace], [20, 3])
+        for mutate in (lambda t: t[0]['body'].update(attempts=1), lambda t: t[1]['body']['targets'].pop(),
+                       lambda t: t[0].update(authorization='wrong'), lambda t: t[0].update(path='/wrong')):
+            wrong = copy.deepcopy(trace)
+            mutate(wrong)
+            self.assertTrue(differences(trace, wrong, 'agent.requests'))
+
+    def test_loopback_port_mapping_checks_exact_assignment_and_path(self):
+        path = 'db.fields.system//agents.value[0].port'
+        policy = Policy(allocated_ports={path: (12340, 12341)})
+        self.assertEqual(differences(12340, 12341, path, policy), [])
+        for left, right in [(12340, 12342), (12342, 12341), (True, 12341), (12340, 65536)]:
+            self.assertTrue(differences(left, right, path, policy))
+        self.assertTrue(differences(12340, 12341, path + '-other', policy))
+
     def test_async_preflight_checks_errors_before_normalizing_phase_fields(self):
         from discovery_jobs import preflight_errors, acceptance_view
         policy = Policy(start=100, end=104)

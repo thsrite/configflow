@@ -40,6 +40,9 @@ class Policy:
     end: float = float('inf')
     identities: dict = field(default_factory=dict)
     reverse: dict = field(default_factory=dict)
+    # Independently allocated loopback fixture endpoints, at exact DB paths.
+    # Values are checked against their assigned port, never globally ignored.
+    allocated_ports: dict = field(default_factory=dict)
 
     def bind(self, left, right, pattern, label):
         if not isinstance(left, str) or not isinstance(right, str):
@@ -67,6 +70,11 @@ def timestamp(value, policy, offset=0):
 
 def differences(left, right, path='body', policy=None):
     policy = policy or Policy()
+    if path in policy.allocated_ports:
+        expected = policy.allocated_ports[path]
+        if any(type(value) is not int or not 1 <= value <= 65535 for value in (left, right)) or (left, right) != expected:
+            return [Difference(path, 'wrong-allocated-fixture-port', left, right)]
+        return []
     if path in policy.elapsed_ms:
         maximum = max(0, (policy.end - policy.start + 2) * 1000)
         if any(type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= maximum
