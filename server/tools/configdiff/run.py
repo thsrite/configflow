@@ -116,6 +116,8 @@ def main():
     groups.update(profile_rules)
     from cases.rule_dns import GROUPS as rule_dns
     groups.update(rule_dns)
+    from cases.compose import GROUPS as compose
+    groups.update(compose)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

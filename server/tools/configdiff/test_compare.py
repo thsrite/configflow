@@ -17,6 +17,36 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_composition_ids_require_prefix_shape_uniqueness_and_derived_cache(self):
+        from composition import identities, capture, cache_name
+        good = {'data': {'library': {'id': 'lib_0123456789ab'},
+                         'rules': [{'id': 'ruleset_abcdef012345', 'itemType': 'ruleset'}]}}
+        self.assertEqual(len(identities(good)), 2)
+        for value in ({'data': {'rules': [] , 'library': {'id': 'bad'}}},
+                      {'data': {'rules': [{'id': 'rule_0123456789ab'}, {'id': 'rule_0123456789ab'}]}},
+                      {'data': {'rules': [{'id': 'rule_ABCDEF012345'}]}}, {'data': {'rules': None}}):
+            with self.assertRaises(ValueError):
+                identities(value)
+        with tempfile.TemporaryDirectory() as temporary:
+            import hashlib
+            dirs = [Path(temporary, 'python'), Path(temporary, 'go')]
+            other = copy.deepcopy(good)
+            other['data']['library']['id'] = 'lib_abcdef012345'
+            other['data']['rules'][0]['id'] = 'ruleset_0123456789ab'
+            for directory, value in zip(dirs, (good, other)):
+                path = directory / 'shared/rules/by-id' / (hashlib.sha256(value['data']['library']['id'].encode()).hexdigest() + '.list')
+                path.parent.mkdir(parents=True)
+                path.write_text('+.example.com\n')
+            policy = Policy()
+            replies = [Reply(200, {}, json.dumps(value).encode()) for value in (good, other)]
+            self.assertEqual(capture(SimpleNamespace(dirs=dirs))(replies, policy), [])
+            self.assertEqual(file_diffs(*dirs, policy), [])
+            next(dirs[1].rglob('*.list')).write_text('+.wrong.example\n')
+            self.assertTrue(file_diffs(*dirs, policy))
+        remote = {'id': 'lib_0123456789ab', 'source_type': 'url', 'url': 'http://source.example/中文', 'behavior': 'domain', 'format': 'text'}
+        self.assertTrue(cache_name(remote).startswith('shared/rules/by-source/'))
+        self.assertNotEqual(cache_name(remote), cache_name({**remote, 'url': remote['url'] + '/changed'}))
+
     def test_rule_results_align_by_id_without_hiding_loss_or_wrong_result(self):
         from rule_library import by_id
         value = {'results': [{'id': 'b', 'success': True}, {'id': 'a', 'success': False}], 'failed_count': 1}

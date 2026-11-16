@@ -516,3 +516,20 @@ request_variants=5772 named_matrix_cases=3240（S455 F2351 B434），H去重192
 ```
 
 Go尚未接通，未计比较通过。指定上游catalog/Agent绑定、disabled parked/native严格更多分支和DNS跟随组变更仍待补；未做最终全量。
+
+## 批次 28：compose跨共享库/profile原子写入
+
+- 33请求：values domain/IP/逗号regex、引用库、新内容库和fake URL库、top/bottom、中文组名；200行/50库恰好接受，重复paste去重且已有value跳过。校验所有生成ID的资源前缀+12位hex且唯一，才建立单射；新库cache路径由已验证声明独立算SHA，只对应正确的by-id/by-source路径，内容/错路径继续严格比较。
+- 非对象、policy/position/text/行数/逐行field_errors/全注释/不支持DNS、库数量/重复/错型/kind/新库对象与空名/无来源/同名/不存在policy或library/已引用library、下载失败逐项核对；失败前后完整数据库完全相同。native DNS拒绝时，新建shared库及profile同时回滚。
+- 真实文件路径故障：把by-id目标目录置为合成普通文件，验证DB提交仍成功且精确warning为`规则集已保存，但本地缓存失败，发布时会重新获取`；不把post-commit缓存失败误作整笔回滚。全部普通文件继续比较，没有忽略故障夹具。
+- 新增组合ID/derived cache自检：错前缀/大写/重复ID/错结果形态拒绝，正确不同ID的相同内容可对应，故意改Go缓存正文仍失败；URL声明改变必须改变cache路径。39项自检。
+
+```text
+.63 run.py --groups rules-compose-success,rules-compose-reject,rules-compose-remote
+current go-unimplemented=33 design_errors=[] seconds=15.84
+cumulative compared=1455 go-unimplemented=4280 dependency=28 different=41 O12-separate=1
+request_variants=5805 named_matrix_cases=3272（S461 F2372 B439），H去重192
+39 self-checks + end-to-end wrong-Go-response check OK
+```
+
+Go尚未接通，未计通过。native成功compose更多形态和helper/G配方仍需推进，未做最终全量。
