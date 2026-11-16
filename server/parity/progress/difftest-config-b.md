@@ -446,3 +446,20 @@ request_variants=5294 named_matrix_cases=2865（S344 F2169 B352），H去重167
 ```
 
 tasks的domain/DNS/router任务及配置化WebDAV任务仍待fake；断连后继续执行另列待做。T18仅完成这里列出的子序列，未宣称整个跨域任务协议通过，未做最终全量。
+
+## 批次 24：策略组来源、健康检查、预览、引用与listener
+
+- 176请求，当前相关Go路由均未接通。默认与显式profile入口都实际创建manual/subscription/aggregation/include/follow/chain六类来源；url-test/fallback/load-balance默认健康字段、chain清除普通字段、中文emoji、列表空/非空。精确SQL存储与HTTP返回一致；无测试端健康默认注入。
+- PUT部分合并、select转url-test默认初始化、delete_fields、改chain；同名/改ID/不存在/错引用/同时赋值删除拒绝。batch-health仅改选中URL，其余字段不动，一个未知ID整批行/revision不变。重排新旧格式仅改顺序，不采纳展示字段；坏body[1]真实Python500。
+- preview从固定cache与已导入节点组合，验证中文、反引号桶顺序、单独exclude、聚合、按源去重与默认按名去重；坏源/错型/坏正则均独立用例。include/follow/rule/chain引用均阻止删除或禁用，完整事务不落盘；改名同步rule.policy和listener.proxy，删除只解除固定策略，注释与listener.rule保留。
+- H225–229/H231/H233–239/H242–247共19个去重helper，另H248–253共6个坏listener草稿分支，各用PUT/DELETE触发并证明无行/revision变化；对应R159-F16/R158-F12也有独立编号。保留未改旧错型filter的兼容写入。H230/H232有前置形状guard，未虚计覆盖；其他拓扑/DNS/helper和selector边界继续。
+
+```text
+.63 run.py --groups groups-create,groups-reject,groups-update,groups-batch-health,groups-reorder,groups-preview,groups-references,groups-candidate-guards,groups-listener-guards
+current go-unimplemented=176 design_errors=[] seconds=32.2
+cumulative compared=1455 go-unimplemented=3945 dependency=28 different=41 O12-separate=1
+request_variants=5470 named_matrix_cases=2980（S379 F2228 B373），H去重192
+37 self-checks + end-to-end wrong-Go-response check OK
+```
+
+无新差异；全部176项是已验证Python前提且等待Go接通，不计比较通过。未做最终全量。
