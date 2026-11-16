@@ -5,6 +5,7 @@ package routers
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -16,9 +17,12 @@ import (
 type ErrorKind int
 
 const (
-	KindRouter   ErrorKind = iota // a router request failed
-	KindConflict                  // the device changed; a fresh preview is required
-	KindRollback                  // a partial write could not be fully undone
+	KindRouter           ErrorKind = iota // a router request failed
+	KindConflict                          // the device changed; a fresh preview is required
+	KindRollback                          // a partial write could not be fully undone
+	KindUncertainWrite                    // a write may have committed but its result is unknown
+	KindMissingResource                   // the requested RouterOS resource is unavailable
+	KindPingNotPermitted                  // RouterOS account lacks the test policy
 )
 
 // RouterError is a failure whose message is safe to show to users (use errors.As).
@@ -146,11 +150,11 @@ type RouterState struct {
 type Driver interface {
 	Vendor() string
 	SupportsWrite() bool // false: stages are exported as a script
-	Probe() (*RouterInfo, error)
-	ReadState() (*RouterState, error)
-	ReadDHCPDNS() (*DhcpDnsState, error) // only when a DNS Agent is selected
+	Probe(ctx context.Context) (*RouterInfo, error)
+	ReadState(ctx context.Context) (*RouterState, error)
+	ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) // only when a DNS Agent is selected
 	// Apply applies one release operation and returns the one that undoes it.
-	Apply(op json.RawMessage) (json.RawMessage, error)
+	Apply(ctx context.Context, op json.RawMessage) (json.RawMessage, error)
 	RenderScript(ops []json.RawMessage) (string, error)
 	Close()
 }
