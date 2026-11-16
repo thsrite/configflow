@@ -2,51 +2,78 @@ package rules
 
 import (
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dlclark/regexp2"
 )
 
-// These are CPython 3.11 re boundary results for marks and connector
-// punctuation. Python's \w is alphanumeric plus underscore, while the
-// backtracking engine's built-in \b uses its own broader word categories.
-func TestReviewUnicodeWordBoundaries(t *testing.T) {
-	cases := []struct {
-		pattern, text string
-		want          bool
+// Engine-native anchors and boundaries are intentional: the backend uses the
+// same Go regex libraries as Mihomo rather than reproducing CPython's edges.
+func TestNativeRegexAnchorsAndBoundaries(t *testing.T) {
+	tests := []struct {
+		pattern   string
+		backtrack bool
 	}{
-		{`a\b`, "a\u0301", true}, // combining acute is not Python \w
-		{`a\B`, "a\u0301", false},
-		{`\ba`, "\u0301a", true}, // the mark before a is not Python \w
-		{`a\b`, "a\u203f", true}, // undertie (Pc) is not Python \w
-		{`a\b`, "a_", false},     // underscore is Python \w
-		{`(?a)a\b`, "a界", true},  // ASCII mode has ASCII word chars
-		{`(?a)a\B`, "a界", false},
-		{`\B`, "", false}, // CPython 3.11 does not match it on empty text
+		{`a\b`, false}, {`a\B`, false}, {`\ba`, false}, {`\B`, false},
+		{`(?i)\b(?:hk|jp|sg)\b`, false}, {`\bUS\b`, false},
+		{`HK$`, false}, {`(?m)HK$`, false},
+		{`(?=a)a\b`, true}, {`(?=a)a\B`, true}, {`(?=)\B`, true},
+		{`(?=HK)HK$`, true}, {`(?m)(?=HK)HK$`, true},
 	}
-	for _, tc := range cases {
-		re, err := CompilePyRegex(tc.pattern, false)
-		if err != nil {
-			t.Fatalf("CompilePyRegex(%q): %v", tc.pattern, err)
-		}
-		if got := re.Search(tc.text); got != tc.want {
-			t.Errorf("Search(%q, %q) = %v; CPython wants %v", tc.pattern, tc.text, got, tc.want)
-		}
+	texts := []string{"", "a", "a\u0301", "\u0301a", "a\u203f", "a_", "a界", "HK", "HK\n", "HK\r\n", "HK\nnext", "香港HK", "🇭🇰 HK 01", "美国 US 2x"}
+	for _, tt := range tests {
+		t.Run(tt.pattern, func(t *testing.T) {
+			re, err := CompilePyRegex(tt.pattern, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (re.re2 == nil) != tt.backtrack {
+				t.Fatalf("backtracking = %v, want %v", re.re2 == nil, tt.backtrack)
+			}
+			nativeBT := regexp2.MustCompile(tt.pattern, regexp2.None)
+			var nativeRE2 *regexp.Regexp
+			if !tt.backtrack {
+				nativeRE2 = regexp.MustCompile(tt.pattern)
+			}
+			for _, text := range texts {
+				want, err := nativeBT.MatchString(text)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if nativeRE2 != nil {
+					want = nativeRE2.MatchString(text)
+				}
+				if got := re.Search(text); got != want {
+					t.Errorf("Search(%q) = %v, native engine = %v", text, got, want)
+				}
+				nativeMatch, err := nativeBT.FindStringMatch(text)
+				if err != nil {
+					t.Fatal(err)
+				}
+				match, err := re.Match(text)
+				if err != nil || (match != nil) != (nativeMatch != nil) {
+					t.Errorf("Match(%q) = %v, %v; native match = %v", text, match, err, nativeMatch)
+				}
+			}
+		})
 	}
 }
 
-func TestReviewSubNegativeCount(t *testing.T) {
+func TestSubRejectsNegativeCount(t *testing.T) {
 	re, err := CompilePyRegex("a", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, count := range []int{-2, -1} {
-		got, err := re.Sub("aba", func(*Match) (string, error) { return "X", nil }, count)
-		if err != nil {
-			t.Fatalf("Sub count %d: %v", count, err)
-		}
-		if got != "aba" {
-			t.Errorf("Sub count %d = %q; CPython leaves it unchanged", count, got)
+		_, err := re.Sub("aba", func(*Match) (string, error) {
+			t.Fatal("callback called for invalid count")
+			return "", nil
+		}, count)
+		if !errors.Is(err, ErrNegativeSubCount) {
+			t.Errorf("Sub count %d error = %v, want ErrNegativeSubCount", count, err)
 		}
 	}
 }
@@ -73,25 +100,6 @@ func TestReviewNamedGroupCaptures(t *testing.T) {
 		got, ok := match.NamedGroup(name)
 		if !ok || got != want {
 			t.Errorf("NamedGroup(%q) = %q, %v; want %q", name, got, ok, want)
-		}
-	}
-}
-
-func TestReviewDollarMatchesBeforeOneFinalNewline(t *testing.T) {
-	for _, pattern := range []string{`HK$`, `(?m)HK$`} {
-		re, err := CompilePyRegex(pattern, false)
-		if err != nil {
-			t.Fatalf("CompilePyRegex(%q): %v", pattern, err)
-		}
-		for _, tc := range []struct {
-			text string
-			want bool
-		}{
-			{"HK", true}, {"HK\n", true}, {"HK\r\n", false}, {"HK\nnext", pattern == `(?m)HK$`},
-		} {
-			if got := re.Search(tc.text); got != tc.want {
-				t.Errorf("Search(%q, %q) = %v; CPython wants %v", pattern, tc.text, got, tc.want)
-			}
 		}
 	}
 }

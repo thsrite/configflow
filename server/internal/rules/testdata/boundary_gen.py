@@ -9,6 +9,9 @@ Run from the repository root on the test server (synthetic values only):
 
 One JSON object per line. Kinds:
 
+Go-native word boundaries are exercised in regex_review_test.go. This corpus
+keeps Python expectations for filters without those boundary constructs.
+
     search   re.search(pattern, name[, IGNORECASE]) for node filters, DOMAIN-REGEX
              values and the patterns other packages compile (compiled? + hits)
     sub      pattern.sub(lambda m: '<' + m.group(0).upper() + '>', text)
@@ -49,7 +52,7 @@ NAMES = [
 PATTERNS = [
     '香港|HK|Hong Kong', '(?i)hk|hong ?kong|香港', '(?i)^(?!.*(过期|剩余|到期|官网|重置)).*$', '^(?!.*(过期|剩余|流量)).*$',
     '日本|JP|Japan|东京|大阪', '(?i)(sg|singapore|新加坡)', r'\d+', r'0\d', r'\d{2}', r'[0-9]{2}', r'\w+\s\d+', r'^\W',
-    r'(?i)\bhk\b', r'\bUS\b', '美国|US|United States', r'(?i)x(\d+(\.\d+)?)', r'[一-龥]+', r'^[一-鿿]',
+    '美国|US|United States', r'(?i)x(\d+(\.\d+)?)', r'[一-龥]+', r'^[一-鿿]',
     r'(?P<region>香港|日本)\s*(?P<num>\d+)', r'(香港|日本)\s*\1', r'(?<=香港 )\d+', r'(?<!IPLC)\s01$', r'\|',
     r'\[0\.5x\]', r'(?i)netflix|nf|奈飞', r'(?i)gpt|openai', '^🇭🇰', '🇯🇵|🇺🇸', r'[ＡＢＣＨＫ]', r'(?i)ｈｋ', '０',
     r'\s{2,}', r'^.{0,5}$', r'.*', '', r'(?x) 香港 | 日本  # comment', r'(?s).+', r'(?m)^HK', r'\Ahk', r'01\Z', r'01$',
@@ -57,7 +60,7 @@ PATTERNS = [
     r'(?>HK)\d', r'HK\d++', r'\x48K', r'香港', r'\N{DIGIT ONE}', r'[[:digit:]]', r'(?a)\w+', r'(?a)\d',
     r'(?u)\d', r'\D+', r'\S+\s\S+', r'(?i)TÜRKIYE', r'(?i)россия', r'ελλάδα', r'(?:x|×)\d', r'[①-⑩]', r'⁰¹',
     '^(?!.*(过期|剩余|官网)).*$', r'\d+x', r'(?P<name>香港|日本)\s*(?P<num>\d+)',
-    '香港|日本|新加坡|台湾', r'(?i)\b(?:hk|jp|sg)\b', r'a\b', r'a\B', r'(?a)\b\d+x\b',
+    '香港|日本|新加坡|台湾',
 ]
 
 for pattern in PATTERNS:

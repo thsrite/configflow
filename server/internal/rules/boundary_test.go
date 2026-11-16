@@ -16,6 +16,8 @@ import (
 // emoji, full-width, mixed scripts), node filters, DOMAIN-REGEX values,
 // rule values of every type, rule lines, queries and host names. Every
 // outcome must match, except the accepted classes of differences_test.go.
+// Native word-boundary/anchor behavior is tested in regex_review_test.go;
+// this fixture contains no CPython word-boundary search/Sub expectations.
 
 type boundaryRecord struct {
 	Kind     string          `json:"kind"`

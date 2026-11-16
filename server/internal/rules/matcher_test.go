@@ -753,7 +753,7 @@ func TestInvalidationWithoutReuseOnlyReloadsSelectedItem(t *testing.T) {
 }
 
 func splitLinesRef(parts []string, sep string, trailing bool) []string {
-	// str.splitlines() of sep.join(parts) (+ trailing sep): every separator
+	// Joining rule-file lines (+ trailing separator): every delimiter
 	// ends a line and a final separator does not start an empty one.
 	var out []string
 	out = append(out, parts...)
@@ -764,8 +764,8 @@ func splitLinesRef(parts []string, sep string, trailing bool) []string {
 	return out
 }
 
-func TestStreamedLinesPreserveSplitlinesAndOriginalMatch(t *testing.T) {
-	for _, sep := range []string{"\n", "\r", "\r\n", "\v", "\f", "\x1c", "\x1d", "\x1e", "\u0085", "\u2028", "\u2029"} {
+func TestStreamedLinesPreserveOriginalMatch(t *testing.T) {
+	for _, sep := range []string{"\n", "\r", "\r\n"} {
 		for _, trailing := range []bool{false, true} {
 			parts := []string{"", "  full:Example.com  ", "# comment", "+.second.example", ""}
 			content := strings.Join(parts, sep)
@@ -787,9 +787,9 @@ func TestStreamedLinesPreserveSplitlinesAndOriginalMatch(t *testing.T) {
 	}
 }
 
-func TestStreamedEmptyAndMixedNewlinesMatchSplitlines(t *testing.T) {
+func TestStreamedEmptyAndMixedNewlines(t *testing.T) {
 	for content, want := range map[string][]string{
-		"": nil, "one": {"one"}, "\r\r\n": {"", ""}, "one\r\ntwo\n\rthree\vfour\u2028": {"one", "two", "", "three", "four"},
+		"": nil, "one": {"one"}, "\r\r\n": {"", ""}, "one\r\ntwo\n\rthree\vfour\u2028": {"one", "two", "", "three\vfour\u2028"},
 	} {
 		got := slices.Collect(lines(content))
 		if fmt.Sprintf("%q", got) != fmt.Sprintf("%q", want) {
@@ -798,7 +798,7 @@ func TestStreamedEmptyAndMixedNewlinesMatchSplitlines(t *testing.T) {
 	}
 	for _, separator := range []string{"\v", "\f", "\x1c", "\x1d", "\x1e", "\u0085", "\u2028", "\u2029"} {
 		got := slices.Collect(lines("first" + separator + "second"))
-		if fmt.Sprintf("%q", got) != fmt.Sprintf("%q", []string{"first", "second"}) {
+		if fmt.Sprintf("%q", got) != fmt.Sprintf("%q", []string{"first" + separator + "second"}) {
 			t.Errorf("separator %q: got %q", separator, got)
 		}
 	}

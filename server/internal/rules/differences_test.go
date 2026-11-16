@@ -10,6 +10,9 @@ import (
 // Accepted differences from the recorded Python results (functional parity,
 // see the S-rules section of server/parity/PROGRESS-config.md). Each
 // predicate names one class; the corpus tests skip or tolerate exactly these.
+// Native \b/\B, $ and rule-file line endings have no skip predicates:
+// regex_review_test.go and matcher_test.go assert their Go-native behavior,
+// and CPython boundary expectations were removed from the corpus generators.
 
 // scopedNetwork: an IPv6 scope id inside a network ("fe80::%eth0/64");
 // Python keeps it, net/netip refuses zones in prefixes.

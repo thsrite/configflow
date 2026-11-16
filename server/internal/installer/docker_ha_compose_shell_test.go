@@ -143,10 +143,16 @@ func (o *composeOrigin) count() int {
 	return len(o.calls)
 }
 
-func (o *composeOrigin) setStatus(status int) {
+func (o *composeOrigin) setResponse(status int, location string) {
 	o.mu.Lock()
-	o.status = status
-	o.mu.Unlock()
+	defer o.mu.Unlock()
+	o.status, o.location = status, location
+}
+
+func (o *composeOrigin) recordedCalls() []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return append([]string(nil), o.calls...)
 }
 
 // composeBootstrapFiles is bootstrap_files(tmp_path, cap).
@@ -203,8 +209,9 @@ func TestBundleBootstrapFirstEnrollmentThenExpiredOfflineRestart(t *testing.T) {
 	if first.code != 0 || !strings.Contains(first.stdout, "ENTRYPOINT_ALLOWED") || strings.Contains(first.stdout+first.stderr, composeTestToken) {
 		t.Fatalf("first: %+v", first)
 	}
-	if want := "POST /api/agents/docker-oxidns-ha-enroll/" + strings.Repeat("a", 32) + " Bearer " + composeTestToken + " {}"; len(origin.calls) != 1 || origin.calls[0] != want {
-		t.Fatalf("calls %q", origin.calls)
+	calls := origin.recordedCalls()
+	if want := "POST /api/agents/docker-oxidns-ha-enroll/" + strings.Repeat("a", 32) + " Bearer " + composeTestToken + " {}"; len(calls) != 1 || calls[0] != want {
+		t.Fatalf("calls %q", calls)
 	}
 	config := composeReadJSON(t, filepath.Join(data, "config-oxidns.json"))
 	if len(config) != 2 || config["agent_id"] != "agent_"+strings.Repeat("a", 32) || config["token"] != strings.Repeat("z", 32) {
@@ -216,7 +223,7 @@ func TestBundleBootstrapFirstEnrollmentThenExpiredOfflineRestart(t *testing.T) {
 	config["service_type"], config["server_url"], config["config_version"] = "oxidns", "http://panel.example", "42"
 	updated, _ := json.Marshal(config)
 	os.WriteFile(filepath.Join(data, "config-oxidns.json"), updated, 0o600)
-	origin.setStatus(401)
+	origin.setResponse(401, "")
 	settings := composeReadJSON(t, filepath.Join(files, "enrollment.json"))
 	settings["token"] = "expired"
 	raw, _ := json.Marshal(settings)
@@ -224,7 +231,7 @@ func TestBundleBootstrapFirstEnrollmentThenExpiredOfflineRestart(t *testing.T) {
 	if second := composeExecuteBootstrap(t, files, data, setup); second.code != 0 || origin.count() != 1 {
 		t.Fatalf("second: %+v calls %d", second, origin.count())
 	}
-	origin.setStatus(500) // the origin "gone": a saved identity must not contact it
+	origin.setResponse(500, "") // the origin "gone": a saved identity must not contact it
 	if third := composeExecuteBootstrap(t, files, data, setup); third.code != 0 || origin.count() != 1 {
 		t.Fatalf("third: %+v", third)
 	}
@@ -240,7 +247,7 @@ func TestBundleBootstrapExpiredFirstAttemptStaysStoppedAndRetries(t *testing.T) 
 	dir := t.TempDir()
 	origin := newComposeOrigin(t)
 	files, data, setup := composeBootstrapFiles(t, dir, composeCapability(origin.url))
-	origin.setStatus(401)
+	origin.setResponse(401, "")
 	failed := composeExecuteBootstrap(t, files, data, setup)
 	if failed.code == 0 || strings.Contains(failed.stdout, "ENTRYPOINT_ALLOWED") {
 		t.Fatalf("%+v", failed)
@@ -248,7 +255,7 @@ func TestBundleBootstrapExpiredFirstAttemptStaysStoppedAndRetries(t *testing.T) 
 	if _, err := os.Stat(filepath.Join(data, "config-oxidns.json")); err == nil {
 		t.Fatal("identity written")
 	}
-	origin.setStatus(200)
+	origin.setResponse(200, "")
 	if ok := composeExecuteBootstrap(t, files, data, setup); ok.code != 0 || origin.count() != 2 {
 		t.Fatalf("%+v %d", ok, origin.count())
 	}
@@ -333,7 +340,7 @@ func TestBundleBootstrapNeverRedirectsScopedBearer(t *testing.T) {
 	for _, status := range []int{302, 307} {
 		dir := t.TempDir()
 		target, source := newComposeOrigin(t), newComposeOrigin(t)
-		source.status, source.location = status, composeCapability(target.url).URL
+		source.setResponse(status, composeCapability(target.url).URL)
 		files, data, setup := composeBootstrapFiles(t, dir, composeCapability(source.url))
 		r := composeExecuteBootstrap(t, files, data, setup)
 		if r.code == 0 || strings.Contains(r.stdout, "ENTRYPOINT_ALLOWED") || source.count() != 1 || target.count() != 0 ||
