@@ -729,34 +729,10 @@ func nativeBoundaryDifference(r row, args []*Node, got *Node, err error) bool {
 			}
 		}
 	}
-	// Malformed null rule types are displayed as JSON null after dropping str().
-	replaceLabel := func(text string) string {
-		text = strings.ReplaceAll(text, "的类型被改成了 None：", "的类型被改成了 null：")
-		return strings.ReplaceAll(text, "所选规则类型暂不能转换为 OxiDNS 规则：None", "所选规则类型暂不能转换为 OxiDNS 规则：null")
-	}
-	if err != nil && len(r.Err) > 1 && replaceLabel(r.Err[1]) != r.Err[1] && err.Error() == replaceLabel(r.Err[1]) {
-		return true
-	}
 	if err == nil && len(r.Out) > 0 {
 		want, e := FromJSON(r.Out)
 		if e != nil {
 			return false
-		}
-		changed := false
-		var labels func(*Node)
-		labels = func(n *Node) {
-			if isStr(n) {
-				text := replaceLabel(n.Value)
-				changed = changed || text != n.Value
-				n.Value = text
-			}
-			for _, c := range n.Content {
-				labels(c)
-			}
-		}
-		labels(want)
-		if changed && same(want, got) {
-			return true
 		}
 		// With an invalid URL net/url cannot derive its host. Schema validation
 		// still rejects addr; omit only the consequent bootstrap diagnostic.

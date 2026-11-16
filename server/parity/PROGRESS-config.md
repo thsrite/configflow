@@ -1323,7 +1323,7 @@ Findings and fixes (no unresolved functional finding after package verification)
 Formatting-helper confirmation/removal:
 - Agent `managedPaths` → `backupDeployment` includes old manifest paths; `replaceDeployment` removes Backups absent from `fresh` except persistent Mihomo Geo assets (`backend/agents/go-agent/routes/deployment.go`). Renamed OxiDNS rule/AdGuard resources are therefore removed on the next successful publish, with backups available to rollback.
 - `revision()` consumers were traced in policy_workspace, client_devices, routes/agents, routes/routers and ros_policy. It is a freshly computed editor/publication conflict token; ros_policy’s `source_revision` is only an inspect-result field (no persistence consumer). No current Go consumer recomputes it; only oxidns exports it. Native canonical JSON is deterministic, preserves big integers and distinguishes int/float/bool/string/null; tests check reordered mappings keep a token, changed values invalidate it, clones keep it, and string-upstream EntryKey bytes stay stable. A pre-switch browser token can conflict once and reload; one full republish remains the agreed switch action.
-- Malformed null rule-type labels now say `null` rather than `None`; only that exact text substitution is accepted. Unsupported *internal* validator-format names return an error message rather than raising Python RuntimeError. These account for new accepted corpus rows, alongside newly supported native merges; ordinary supported inputs keep their results.
+- Existing Chinese null-type diagnostics are complete message constants (including the literal word None); native identity/hash formatting does not change them. Unsupported *internal* validator-format names return a rejection message rather than raising Python RuntimeError. These and newly supported native merges account for additional accepted corpus rows; ordinary supported inputs keep their results.
 
 Coverage / feature walk:
 - Rechecked Python `converters/oxidns`, `oxidns_native`, `oxidns_references`, `oxidns_match_targets` against converter/native/reference/target APIs, including include sources, attachments, resources and active-rule selection.
@@ -1340,7 +1340,7 @@ Verification so far:
 - `rt -- bash -lc 'cd server && go test -run "^$" -fuzz=FuzzNativeYAMLRoundTrip -fuzztime=10s -parallel=2 ./internal/oxidns && go test -run "^$" -fuzz=FuzzZoneValidation -fuzztime=10s -parallel=2 ./internal/oxidns'`: both PASS (40,916 and 105,945 executions). Coordinator can extend each to the required 60s gate.
 - Reference regeneration: `rt --back server/internal/oxidns/testdata/review_s.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/oxidns/testdata/review_s_gen.py'`.
 
-Next: commit these fixes; `git rebase go`; rerun the requested exact full vet/test command on the final branch; record final commits/results and mark verified only then. Worktree must be clean at hand-back.
+Integration: fixes committed as 9483781b after `git rebase go` onto 5f5d728c. The exact full command passed after rebase (oxidns 67.377s, final weburl 0.007s / yamlx 0.732s). Final follow-up keeps complete Chinese null-type diagnostics in message constants and removes their comparison waiver; targeted generation/review tests passed (11.368s). Next: commit this follow-up, rerun the exact full suite on the final code, record the final result and mark verified. Worktree must be clean at hand-back.
 
 ## S-rules — slimming pass of `internal/rules` (C08 + C09)
 

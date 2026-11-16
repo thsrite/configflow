@@ -146,7 +146,11 @@ func UnavailableRulesets(p *Profile, paths []string) []string {
 		case !truthyOr(item, "library_enabled"):
 			lines = append(lines, "「"+label+"」的规则来源已停用：请在规则库中重新启用")
 		case !containsString(rulesetParts(behavior), m[2]):
-			lines = append(lines, "「"+label+"」的类型被改成了 "+displayValue(behavior)+"：请改回原来的类型")
+			if isNone(behavior) {
+				lines = append(lines, fmt.Sprintf(messageNullRulesetType, label))
+			} else {
+				lines = append(lines, "「"+label+"」的类型被改成了 "+displayValue(behavior)+"：请改回原来的类型")
+			}
 		default:
 			lines = append(lines, "「"+label+"」没有下载地址：请检查规则来源")
 		}
@@ -446,6 +450,9 @@ func (p *Profile) routingGroups(settings *Node, legacy legacyMode, candidates []
 				continue
 			}
 			if !isStr(kind) && has(item, "rule_type") || !containsString(dnsRuleTypes, kindText) {
+				if isNone(kind) && has(item, "rule_type") {
+					return nil, fail(messageNullRuleType)
+				}
 				return nil, fail("所选规则类型暂不能转换为 OxiDNS 规则：" + kindText)
 			}
 			converted, err := convertRule(kindText+","+valueText, part)

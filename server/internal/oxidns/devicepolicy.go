@@ -178,6 +178,9 @@ func checkMain(document *Node, plugins map[string]*Node) error {
 		return refuse("找不到主处理链 sequence_main")
 	}
 	if !equal(get(main, "type"), S("sequence")) {
+		if isNone(get(main, "type")) {
+			return refuse(messageNullMainType)
+		}
 		return refuse("主处理链 sequence_main 的类型是 " + displayValue(get(main, "type")) + "，不是 sequence")
 	}
 	args := get(main, "args")
@@ -204,6 +207,9 @@ func checkMain(document *Node, plugins map[string]*Node) error {
 	case forward == nil:
 		return refuse("找不到本地上游 forward_local，直连设备没有可用的上游")
 	case !equal(get(forward, "type"), S("forward")):
+		if isNone(get(forward, "type")) {
+			return refuse(messageNullForwardType)
+		}
 		return refuse("本地上游 forward_local 的类型是 " + displayValue(get(forward, "type")) + "，不是 forward")
 	case !isMap(get(forward, "args")) || !truthy(get(get(forward, "args"), "upstreams")):
 		return refuse("本地上游 forward_local 没有配置上游地址")
