@@ -215,6 +215,8 @@ reuse them. Size budgets were dropped the same day: line counts are reported for
 
 ## Switch checklist (collected while porting; do these when Go replaces Python in production)
 
+- Frontend: delete the unused `generateDockerCompose` / `generateDockerRun` helpers in `frontend/src/api/index.ts` (they call `/agents/docker-compose` / `/agents/docker-run`, which never existed; the UI uses `docker-agent-compose/run`). Found by the agents difftest matrix, 2026-11-17.
+
 - One full publish to every Agent and router right after the switch (generated config bytes, OxiDNS
   resource tags and device-policy revision hashes change once; accepted by the maintainer 2026-11-16).
 - Stale resource files under old names: removed by the Agent/deployment cleanup, or cleaned once.
