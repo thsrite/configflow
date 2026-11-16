@@ -91,7 +91,23 @@ func TestGlobalGateAndProfileToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv.Get(prefix + "?token=synthetic-rotated-token").WantStatus(200)
+	res := srv.Get(prefix + "?token=synthetic-rotated-token").WantStatus(200)
+	served, err := os.ReadFile(filepath.Join(srv.DataDir, "profiles", "default", "providers", "served", "subscription-s.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []string{"synthetic-rotated-token", expired} {
+		if strings.Contains(res.Text(), token) || strings.Contains(string(served), token) {
+			t.Fatal("provider body/artifact exposed request credential")
+		}
+		for _, values := range res.Header {
+			for _, value := range values {
+				if strings.Contains(value, token) {
+					t.Fatal("provider header exposed request credential")
+				}
+			}
+		}
+	}
 	logs, err := os.ReadFile(logFile)
 	if err != nil {
 		t.Fatal(err)

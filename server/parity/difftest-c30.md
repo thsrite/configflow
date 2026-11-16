@@ -57,3 +57,11 @@ individual matching 400 diagnostic envelopes: owning-provider label, file, sourc
 excerpt. It compares the base validation message (including its prefix and field path), status, success
 and all stored effects. Cases emit a `DEFERRED A11` line individually; no whole test is skipped.
 A11 must register the hook, remove this helper and rerun this suite (also recorded in PROGRESS-agents).
+
+## C30 独立复核补充
+
+- `TestAdversarialProviderURLs`：23 个请求覆盖大小写、空 token、重复参数首值、编码/双编码、路径穿越、尾斜杠、无关 query 及显式 profile 优先级；Flask 响应和存储差分一致。
+- `TestCachePreviewNeverRefreshes/non-list`：非数组旧缓存只读预览和列表不报 500，重复调用无写入。
+- `TestMissingAggregationDependencyFailsClosed`：Go 缺省 C31 hook 的失败关闭合同（特意不与已实现 C31 的 Python 比较），single/combined 激活图均 500 且完整状态不变。
+- `nodes/review_test.go`：删除 DB 提交失败完整回滚、并发引用写使确认失效、取消请求仍完成；在 race 下运行。
+- `subscriptions/security_test.go`：过期 JWT、畸形 Bearer、退休能力与公共 token 碰撞、轮换、统一 401，以及日志/响应头/正文/served 文件无请求凭据。
