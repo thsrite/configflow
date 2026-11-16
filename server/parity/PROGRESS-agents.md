@@ -1,6 +1,6 @@
 # PROGRESS — domain `agents`
 
-Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 14 missing, 0 partial, 1 ported (A09), 9 verified (A01, A02, A03, A04, A05, A06, A07, A08, A15). Only reviewers set `verified`.
+Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 14 missing, 0 partial, 0 ported, 10 verified (A01, A02, A03, A04, A05, A06, A07, A08, A09, A15). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.
 
@@ -24,7 +24,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A06 | OxiDNS monitor, dashboard state, metrics | 1364 | verified | | A01 | 5 | internal/agents/monitor (new), api/agents |
 | A07 | Mihomo panel, OxiDNS cache/rule update/rankings/publication stats | 1316 | verified | | A06, C14 | 9 | internal/agents/monitor, api/agents |
 | A08 | installer script rendering, install command store | 1333 | verified | HR | A02, C02 | 8 (8 done) | internal/installer, internal/api/agents |
-| A09 | Docker HA guide, preflight, enrollment | 1083 | ported | HR | A08, A01 | 2 (2 done) | internal/installer, api/agents |
+| A09 | Docker HA guide, preflight, enrollment | 1083 | verified | HR | A08, A01 | 2 (2 done) | internal/installer, api/agents |
 | A10 | Docker HA compose variants, installer routes | 1018 | missing | HR | A08, A09 | 9 | internal/installer, api/agents |
 | A11 | deployment bundle, locations, Mihomo resources, generated preview | 1264 | missing | HR | A02, A19, C05, C12, C14, C15, C21, C22, C25 | – | internal/deploy (new) |
 | A12 | push diff | 1465 | missing | | A11 | – | internal/deploy |
@@ -656,7 +656,7 @@ Open findings: none.
 
 ## A09 — Docker HA guide, preflight, enrollment
 
-**Status: `ported`** (code, routes, all 3 Python test files, reference corpus and Flask differential; not yet reviewed) · HR · prereqs: A08, A01, C05 · Go: internal/installer (`docker_ha_guide.go`, `docker_ha_preflight.go`, `docker_ha_enrollment.go`), internal/api/agents/docker_ha.go (+1 line in `Register`)
+**Status: `verified`** (review 2026-11-16, commits 2b9a0c88, 5a17282e, f43a0525, a379e23a + this PROGRESS commit; see "Review" below; HR: VM lab test still due after the maintainer agrees) · HR · prereqs: A08, A01, C05 · Go: internal/installer (`docker_ha_guide.go`, `docker_ha_preflight.go`, `docker_ha_enrollment.go`), internal/api/agents/docker_ha.go (+1 line in `Register`)
 
 Files:
 - `backend/agents/docker_ha_guide.py` (475)
@@ -682,6 +682,33 @@ Port log (A09 porter, 2026-11-16):
 - Shared-code requests: `internal/pystr` should export `IsDigit` (private table `pyIsDigitExtra` here, also copies in subs/convert/monitor) and a strict-UTF-8 decode-error text (`pyUTF8DecodeError` copied from repo/files.go). No edits to A08's files.
 - Pitfall: the shared git index can hold another agent's staged files — commit with `git commit -- <paths>` (one of my commits swept them in and was redone as b274a618; their files were left staged).
 - Left: review; A10 wiring of the three Compose generators; A18 case above; HR lab test with A08–A10.
+
+Review (adversarial, 2026-11-16) — docker_ha_guide.py, docker_ha_preflight.py, docker_ha_enrollment.py and routes/docker_ha_installation.py walked branch by branch against docker_ha_{guide,preflight,enrollment}.go and api/agents/docker_ha.go (validation order and every Chinese text, network modes, int/bool/non-str values through ipaddress/re, paths/normpath/commonpath, quoting of every generated word, preflight parser incl. regex backtracking, base64, splitlines, Unicode \\d/\\s, digit limit, enrollment locking, renewal, compare_digest, every rejection path, the route's body limits and exception mapping). Findings (all fixed):
+
+| # | Sev | Finding | Fix | Regression test |
+|---|---|---|---|---|
+| 1 | low | issue(): a session file holding JSON `null` is `session is None` in Python → a new session is created (index keeps the old id), 200; Go answered a TypeError (500) | f43a0525 | `TestReviewIssueNullSessionStartsANewSession`, review corpus |
+| 2 | low | issue(): missing `agent_ip` is `body['agent_ip']` KeyError in Python; Go stored host None (unreachable through the guide, which validates agent_ip first) | f43a0525 | `TestReviewIssueWithoutAgentIPIsAKeyError` |
+| 3 | low | issue(): hand-edited session `id` follows pathlib (absolute id replaces root, name `.json` → `.json.tmp`, no lexical `..` cleaning) and an embedded NUL is os.open's ValueError (400 "embedded null byte"); Go used filepath.Join and answered 500 | f43a0525 | `TestReviewSessionPathsFollowPathlib`, review corpus |
+| 4 | info | enroll(): time.time() is read before `session['expires']` (only the order of clock reads; no visible effect) | f43a0525 | review corpus (clock replay) |
+
+Shared-code requests done: `pystr.IsDigit` (str.isdigit table generated from CPython by `pystr/testdata/gen_tables.py`; `isdigit` references in ref.json) replaces A09's `pyIsDigitExtra`; `pystr.UTF8DecodeError` (moved from repo/files.go, 330 `decode` references in ref.json) used by repo and installer (5a17282e). **For their owners:** private str.isdigit copies remain in `subs/pyconv.go` (uses Go's Unicode 15 `unicode.IsDigit` and misses U+1369–1371, U+19DA, U+24EA…: real divergences), `convert/pyhelpers.go`, `agents/monitor/panel.go`; UTF-8 decode-error copies in `substore/pystr.go` and `pyyaml/scanner.go` — switch them to `pystr`.
+
+Checks performed:
+- **Record & replay** (PORTING rule 4): `testdata/a09_record.py` records every call of generate_guide / identity_command / inspection_command / parse_report / collector_script / bootstrap_command / issue / enroll during the whole Python suite (12552 passed) incl. DATA_DIR files before/after with modes, time.time(), os.urandom draws, datetime.now() and the Agent list handed to `_update_agents`; `TestDockerHARecordedCallsMatchPython` replays all 331 calls (fake clock/randomness/manager, rebuilt DATA_DIR): **0 differ** (6 skipped: test monkeypatched bootstrap_command — covered by the hand-ported shell scenarios; the 129 Compose-method guide calls now compare against A10's generators, 0 differ).
+- **Review corpus** `testdata/gen_review_a09.py` → `docker_ha_review.jsonl.gz`, 5169 CPython references replayed by `TestDockerHAReviewCorpusMatchesPython`: 2800 guide calls (1840 answered) with shell metacharacters, quotes, backslashes, `$(…)`, heredoc markers, C0/U+2028/BOM/emoji in every free-text value (paths, server URL, image, mounts, names, enrollment URL/token), verify/inspect with random text; 2000 damaged preflight outputs; 207 issue + 162 enroll calls over hand-edited index/session files (every JSON type per field, invalid UTF-8, directories/files in place of each other) and Agent lists (non-dict entries, 8082 vs 8082.0 vs True, conflicts, manager errors): **0 differ** (2 deliberate trailing-"\\n" server URLs, 12 accepted non-str tokens). `bash -n` of all 4433 generated scripts in the corpus: all parse.
+- **Differential**: added Authorization spellings (lower-case scheme, double space, trailing tab/space — accepted by both as OWS —, padded 44-char and latin-1 tokens, trailing slash, longer session id, profile header on enroll): 209 equal, 0 differ before A10 wired its generators.
+- Coverage map: test_docker_ha_guide.py 19 = 18 hand-ported + 1 deferred to A18 (now also listed there); test_docker_ha_preflight.py 32 = 29 + 3 API; test_docker_ha_enrollment.py 7 = 7; all three additionally replayed through the recording. Confirmed.
+
+Accepted differences (with reason): (a) server_url with one trailing "\\n" refused (coordinator decision 6); (b) jsonx-wide: lone surrogate escapes (U+FFFD; the `"\\ud800"` check output is Python 400 / Go 200 unknown report), JSON nested beyond CPython's recursion limit inside a preflight field (Python treats it as unparsable); (c) a hand-edited, unexpired session whose `token` is not a string: Python echoes it into a broken install command (200), Go answers 500 — server-side corrupted data only, and the `Enrollment.Token` type is shared with A10.
+
+Open findings: none for A09. **Note for A10/coordinator:** at a379e23a (A10's commit ec17cd14 wired the generators) the committed `TestDockerHADifferentialAgainstFlask` shows 3 DIFFs for the Compose methods because it compares bodies containing per-side random capabilities; A10's uncommitted rework of that test (`composeBodies`/`compareComposeAnswer`, docker_ha_compose_diff_test.go) addresses it.
+
+Python behaviour mirrored, for the maintainer: `existing_agent_name` / `agent_name` still go through `validate_agent_name`'s `re.match(...$)` (trailing "\\n" accepted) — the decision-6 follow-up for A08 is still open and would change A09's migrate/new output for such names too.
+
+VM lab test (PVE lab, never production; with A08/A10): Docker guests (Debian 12 + Alpine 3.24, rootful Docker, Compose ≥ 2.30): run the preflight collector and paste the output (pass/warning paths, a busy port 53, macvlan); new install script host mode and macvlan (with gateway / without), with enrollment: Agent registers once, heartbeats, re-run of the same command resumes without a second Agent, a changed command is refused, an expired capability is renewed by regenerating; identity command with an existing file refuses; migration of a single OxiDNS container (bind + named volume) and the rollback script; verify command against the VIP; enrollment with registration locked.
+
+Review commands (private detached worktree of HEAD; the shared tree held A10's WIP): `rt -- bash -lc 'cd server && go vet ./internal/installer/ ./internal/api/agents/ && go test -count=1 ./internal/installer/ ./internal/api/agents/ ./internal/pystr/... ./internal/repo/... && CONFIGFLOW_DIFF=1 go test -count=1 -v -run DockerHA ./internal/api/agents/difftest/'`; re-record: `rt -- bash -lc 'rm -rf /tmp/a09rec && A09_RECORD_DIR=/tmp/a09rec PYTHONPATH=.:server/internal/installer/testdata ~/cf-test/.venv/bin/python -m pytest -p a09_record backend -q -n auto --dist=worksteal -p no:cacheprovider; PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/installer/testdata/a09_record.py merge /tmp/a09rec'` then `rt --no-sync --back server/internal/installer/testdata/docker_ha_recorded.jsonl.gz -- true`; review corpus: `rt --back server/internal/installer/testdata/docker_ha_review.jsonl.gz -- bash -lc 'PYTHONPATH=.:server/internal/installer/testdata ~/cf-test/.venv/bin/python server/internal/installer/testdata/gen_review_a09.py 2000'`. Pitfall: a failed difftest run left its Flask child holding the rt lock (kill it, see A08).
 
 ## A10 — Docker HA compose variants, installer routes
 
@@ -872,6 +899,8 @@ Files:
 - `backend/agents/oxidns_ha_handoff.py` (167)
 - `backend/agents/oxidns_ha_publish.py` (676)
 - `backend/routes/agents.py` (61) — lines 192–215, 1233–1269
+
+Deferred from A09: `test_docker_ha_guide.py::test_live_environment_requires_admin_and_never_exposes_extra_payload` (`oxidns-ha-environment` route).
 
 Tests: `test_oxidns_ha.py` (37), `test_oxidns_ha_publish.py` (28), `test_oxidns_ha_docker.py` (9), `test_oxidns_ha_unchanged.py` (6), `test_oxidns_vip_handoff.py` (13), `test_oxidns_ha_identity.py` (8), `test_oxidns_ha_compact_identity.py` (7), `test_oxidns_ha_guards.py` (3)
 
