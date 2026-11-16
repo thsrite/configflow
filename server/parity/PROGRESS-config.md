@@ -1530,9 +1530,9 @@ Routes (26/26 registered; 5 C16 latency methods retained):
 
 `GET /api/nodes`; `POST /api/nodes`; `DELETE /api/nodes/<node_id>`; `PUT /api/nodes/<node_id>`; `POST /api/nodes/delete`; `POST /api/nodes/delete-preview`; `GET /api/nodes/latency`; `POST /api/nodes/latency`; `POST /api/nodes/latency/dns/check`; `GET /api/nodes/latency/settings`; `POST /api/nodes/latency/settings`; `POST /api/nodes/parse-lines`; `POST /api/nodes/reorder`; `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies`; `GET /api/subscriptions`; `POST /api/subscriptions`; `GET /api/subscriptions/<resource_id>/health-impact`; `DELETE /api/subscriptions/<sub_id>`; `PUT /api/subscriptions/<sub_id>`; `POST /api/subscriptions/<sub_id>/fetch`; `GET /api/subscriptions/<sub_id>/nodes`; `GET /api/subscriptions/<sub_id>/proxies`; `GET /api/subscriptions/health`; `GET /api/subscriptions/proxies`; `POST /api/subscriptions/reorder`; `GET /api/subscriptions/test`
 
-Done: `fbb7e26e` implements node CRUD/parse/reorder/reviewed deletion and `nodes.Wire` → `repo.Hooks.PlanNodeDeletion`; `e5aeb11d` implements subscription management/cache preview/refresh/health/reorder and single/combined provider exports. This step adds Flask↔Go boundary acceptance and fixes found by it (URI conversion-record initialization/reuse, legacy health count adapter, semantic comparison of unaffected group JSON).
+Done: `bf499d37` implements node CRUD/parse/reorder/reviewed deletion and `nodes.Wire` → `repo.Hooks.PlanNodeDeletion`; `f19ee585` implements subscription management/cache preview/refresh/health/reorder and single/combined provider exports. `b063069d` adds Flask↔Go boundary acceptance and fixes found by it (URI conversion-record initialization/reuse, legacy health count adapter, semantic comparison of unaffected group JSON).
 
-Acceptance: `internal/api/subscriptions/difftest` compares each HTTP response and the complete exported SQLite document plus every JSON/YAML data file after each request. Route matrix and detailed mapping: `parity/difftest-c30.md`. Current .63 vet/package/differential run passes (`nodes 6.560s`, `subscriptions 0.206s`, `subscriptions/difftest 67.854s`). .32 proddiff passes: `coverage_regressions=0`, `new=0`, `stale=0`, all self-checks PASS; 9 newly compared GET templates added to proddiff-coverage. Final .32 full/race/vet run is next.
+Acceptance: `internal/api/subscriptions/difftest` compares each HTTP response and the complete exported SQLite document plus every JSON/YAML data file after each request. Route matrix and detailed mapping: `parity/difftest-c30.md`. Current .63 vet/package/differential run passes (`nodes 6.560s`, `subscriptions 0.206s`, `subscriptions/difftest 67.854s`). .32 proddiff passes: `coverage_regressions=0`, `new=0`, `stale=0`, all self-checks PASS; 9 newly compared GET templates added to proddiff-coverage. Final .32 checks passed after the code rebase: gofmt has no output, whole-tree vet/full test suite pass, scoped race pass; C30 differential 59.159s, C16 differential 13.418s, C30 differential under race 73.305s. Final rebase brought only coordinator HANDOFF documentation; no code changed.
 
 | Python tests | Boundary coverage / remaining owner |
 |---|---|
@@ -1555,7 +1555,11 @@ Decisions/differences:
 Commands:
 - Iteration: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go vet ./internal/api/nodes/... ./internal/api/subscriptions/... && CONFIGFLOW_DIFF=1 go test -count=1 ./internal/api/nodes/... ./internal/api/subscriptions/...'`.
 - Proddiff: `rt -- server/scripts/proddiff.sh` → `baseline: new=0 stale=0`; no production access, only the read-only snapshot under isolated network namespace.
-- Next: final .32 gofmt/vet/scoped race/full suite/differentials/proddiff, rebase onto current local go, clean worktree, no push.
+- Final .32: `rt -- bash -lc 'cd server && gofmt -l internal/ tools/ && go vet ./... && go test -race -count=1 ./internal/api/nodes/... ./internal/api/subscriptions/... && go test -count=1 ./... && CONFIGFLOW_DIFF=1 go test -count=1 ./internal/api/subscriptions/difftest/ ./internal/health/difftest/'` (executed as one fail-fast shell with logs/tails; exact invocation and output in `parity/C30-HANDOFF.md`).
+- Boundary race: `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/api/subscriptions/difftest/'` → `ok configflow/internal/api/subscriptions/difftest 73.305s`.
+- Complete: rebased onto local `go`, no push. Full hand-back, line counts and final output: `parity/C30-HANDOFF.md`.
+
+Cross-module boundary remaining: a chain graph requiring aggregation materialization still needs C31 to install `provider.SetAggregationProvider`; aggregation/main-preview/proxy-group/Agent-push consumers are owned by C31/C34/C33/A14 respectively. This does not add a C30 fallback or bypass final validation.
 
 ## C31 — aggregation routes, device notes
 
