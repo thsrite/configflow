@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 17 missing, 4 partial, 7 ported, 9 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 16 missing, 4 partial, 8 ported, 9 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -46,7 +46,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C18 | Mihomo config generation, Mihomo base settings | 1275 | ported | C12, C15, C16, C17 | – |
 | C19 | Surge converter | 1129 | ported | C18 | – |
 | C20 | Loon converter | 764 | ported | C19 | – |
-| C21 | MosDNS converter | 1261 | missing | C14 | – |
+| C21 | MosDNS converter | 1261 | ported | C14 | – |
 | C22 | OxiDNS converter, native loader, references, match targets | 913 | missing | C05, C21 | – |
 | C23 | OxiDNS validation and constraints | 1542 | missing | C22 | – |
 | C24 | OxiDNS common settings | 1175 | missing | C23 | – |
@@ -849,20 +849,39 @@ Commits: same as C19.
 
 ## C21 — MosDNS converter
 
-**Status: `missing`** · prereqs: C14 · Go: internal/mosdns (new)
+**Status: `ported`** (not reviewed) · prereqs: C14 · Go: `internal/mosdns` (new)
 
-Files:
-- `backend/converters/mosdns.py` (1261)
+Files → Go:
+- `backend/converters/mosdns.py` (1261) → `mosdns/content.go` (`ConvertRuleContentForMosDNS(content, part...)` — no part = Python None; `DomainPatternForMosDNS` (ok=false = None); `ParseClashRuleValue`; `RulesetParts`; `EmptyRulePart`; `PartDomain`/`PartIP`/`RuleParts`; `DNSRuleTypes`), `upstreams.go` (`ParseDNSUpstreams(any)`), `layout.go` (`SplitRulesAndRulesets`, `RulesetFiles` (= `_ruleset_files`), `BuildRuleProxyURL` (= `_build_rule_proxy_url`; part/sourceID `any`, nil = None), `ParseCustomMatches` (= `_parse_custom_matches`), private tag map / single-rule groups / layout), `generate.go` (`GenerateMosDNSConfig`, `GetMosDNSRulesetDownloads`, `GetMosDNSCustomFiles`, `UnsupportedYAMLError`; YAML via `yamlx.IndentDump` = `yaml.dump(Dumper=IndentDumper, allow_unicode=True, default_flow_style=False, sort_keys=False, indent=2)`, the only dump call), `py.go` (Python semantics: raise/catch into `*convert.PyError{Class, Message}`, dict hashing with 1 == 1.0 == True and "unhashable type" errors, `in` on list/str/dict, `list + list` / `str + str` TypeErrors, `int()`, `'\n'.join` TypeError, deepcopy with memo so aliased upstream mappings keep their YAML anchor in the fallback copy).
+- Shared helpers used (no private copies): `pystr` (Strip/Lower/Upper/IsSpace/Int), `yamlx` (`LoadWith{KeepNonStringKeys}`, `Lookup`, `IndentDump`), `rules.ValidPattern`/`HasYAMLPayload`, `convert.ParseHostsPairs`. New exports in `convert/exports_mosdns.go` (wrappers only, no behaviour change): `AppendURLQuery` (urlsplit error → ValueError PyError), `PySplitlines`, `PyReEscape`, `IsIPNetwork` (= ip_network(strict=False) acceptance).
+- Not ported: `_sanitize_rule_value_for_tag` — no caller in `backend/` (grep), no test (maintainer's rule for code without callers, decision 12).
+- For C22 (oxidns imports): `DNSRuleTypes`, `BuildRuleProxyURL`, `ParseCustomMatches`, `RulesetParts`, `ConvertRuleContentForMosDNS`, `ParseDNSUpstreams`, `SplitRulesAndRulesets` are exported with Python's crash semantics as errors.
 
-Tests: `converters/test_mosdns.py` (16), `test_domain_wildcard_oxidns_edges.py` (2)
+Verification:
+- **Random corpus** `testdata/gen.py` → `corpus.jsonl.gz`, `rows_test.go` `TestCorpus`: 6005 profiles (fixed + random; 70 % well-formed, 30 % "wild" with malformed values at random places) each through generate / downloads / custom_files / split, 3986 `_ruleset_files` + 3986 `_build_rule_proxy_url`, 6000 rule contents (Clash/list/native/YAML block+flow, CRLF/\r/\v/U+2028/U+0085 separators, BOM, Unicode case (ß, İ, ı), wildcard patterns, IPv4/IPv6/netmask/zone/invalid CIDRs, scalar/dict/binary/date payloads, aliases) × parts None/domain/ip/""/other, 73 domain patterns, 1500 classical lines, 6000 upstream definitions (YAML list/map/strings, line format with bootstrap/enable_pipeline, indentation, comments, aliases, non-string keys, malformed), 1500 custom-match lists, ruleset parts. Settings covered: rule sets of every behavior incl. duplicates, name collisions with builtin/single-rule tags, `ruleset_` ids, shared libraries, relative/absolute/malformed URLs, server_domain/base URL/profile_id, token (missing/empty/non-str), single rules of every type (adjacent grouping), direct/proxy id lists (list/str/dict/None), custom matches head/tail, custom_config (anchors, timestamps, binary, big ints, inf/nan, non-mapping roots, invalid YAML, servers/data_providers), log/api toggles, all cache fields incl. int() edge values, local/remote/fallback DNS, hosts, default_forward, listen_address (dict/list → anchor). **47072 rows, 0 differences**; 492 rows accepted (see differences).
+- **Recorded replay** `testdata/c21_record.py` (pytest plugin) → `recorded.jsonl.gz`, `recorded_test.go` `TestRecordedPythonTests`: every top-level call of generate_mosdns_config, get_mosdns_ruleset_downloads, get_mosdns_custom_files, convert_rule_content_for_mosdns, domain_pattern_for_mosdns, parse_clash_rule_value, parse_dns_upstreams, _build_rule_proxy_url, _ruleset_files, split_rules_and_rulesets, _parse_custom_matches, _ruleset_parts during the full backend suite (12552 passed under the recorder): **5436 distinct calls from 1432 tests in 92 files, 0 differences, 0 unsupported, 0 accepted** (proxy_url 2824, split 1088, domain_pattern 569, convert 416, parse_clash 285, downloads 76, generate 74, custom_files 47, upstreams 45, custom_matches 8, ruleset_parts 3, ruleset_files 1). Callers covered include converters/oxidns, OxiDNS common routing/updates, deployment bundle, rule DNS, router desired state, MosDNS archive/routes.
+- Hand-written Go test (`unsupported_test.go`): the documented refusal and that Python's own errors still come first.
 
-Routes: none.
+Python test files (rule 4 coverage):
+- `converters/test_mosdns.py` (16): replay — all three classes (MosdnsCacheConfigTest, MosdnsRuleConversionTest, MosdnsIpRuleConfigTest) recorded (32 calls); the tests only assert on these outputs.
+- `test_domain_wildcard_oxidns_edges.py` (2): `test_domain_edges_match_page_and_dns_conversion` — converter half replayed (39 calls); `inspect_domain_content` half is C14's, `RuleConfigMatcher` half C08's, `convert_mosdns_rules` half → agents A11 (deployment bundle). `test_native_oxidns_domain_edges` → C29/A11 (runs the native OxiDNS harness).
+- `test_ruleset_domain_format.py` MosDNS conversions (deferred here by C14): replay — `test_domain_prefix_errors_preserve_text_and_valid_patterns_keep_scope` and `test_connection_add_saves_correct_domain_syntax_and_preserves_payload` conversions recorded; their route/bundle halves stay with C32/C33/C37/A11.
+- Other files whose converter calls are replayed (their own subject belongs elsewhere): test_converter_review_regressions, test_mosdns_rule_fields, test_mosdns_regex_delivery, test_domain_wildcard_delivery/inputs, test_mosdns_archive, test_remote_rule_consumers (`_ruleset_files`), test_profile_generation, test_profile_scoped_artifacts, test_safe_url_queries, test_dns_watchdog_config/core, test_client_fixed_ip, test_agent_deployments, test_agent_deployment_downloads, test_mihomo_classical_delivery, converters/test_oxidns and the OxiDNS/router/agent files listed by the recorder.
 
-Evidence: No Go package; no route registered.
+Decisions / differences from Python:
+- YAML that the jsonx model cannot hold (non-string keys, `!!set`/`!!omap`/`!!pairs`, recursive aliases): a custom_config with such values that would reach the output (top-level or outside log/api/plugins/servers/data_providers), or upstream mappings with non-string keys, → `*UnsupportedYAMLError` (Python dumps them with yaml.Dumper); raised only after every error Python would raise first. An unrepresentable custom_config is refused even when Python would drop that part (e.g. `plugins: !!set {a}`). In `convert_rule_content_for_mosdns` and `parse_dns_upstreams` such a document is treated like a YAML parse failure (text / line format) where Python would use it. Corpus: 492 rows, all on inputs flagged `unholdable` by Python; the replay has none.
+- Python set iteration order (only in the `!!set` payload case above) is not reproduced.
 
-Missing / deferred: Everything in the files below.
+Commits: 74424f5e (code), 8a88fbec (corpus), 32784c24 (replay, refusal test), + this PROGRESS commit.
 
-Notes for porter: `converters/oxidns.py` imports this converter, so it comes before the OxiDNS cluster.
+Left: nothing for the port. C22 builds on the exports above; C28 (archive/routes) and A11 (deployment bundle) call `ConvertRuleContentForMosDNS`, `RuleParts`, `EmptyRulePart`, `ParseClashRuleValue`, `DomainPatternForMosDNS`.
+
+Reviewer hints: `singleRuleGroups` (short-circuit order before `ident not in selected`, `kind in dict` hashes kind), `rulesetLayout` source-tuple hashing, eager default in `tagDefault`, `parseDNSUpstreams` fall-through cases, `dumpInterval` (OverflowError not caught), identity of `listen_address` (written twice → anchor) and of aliased upstream mappings through the fallback deepcopy.
+
+Commands:
+- tests: `rt -- bash -lc 'cd server && gofmt -l internal/mosdns; go vet ./internal/mosdns/ ./internal/convert/ && go test -count=1 ./internal/mosdns/'` (last: ok 2.2 s; `-race` ok 16.6 s)
+- corpus: `rt --back server/internal/mosdns/testdata/corpus.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/mosdns/testdata/gen.py'` (deterministic, 6000 per kind, ~30 s)
+- recorded replay: `rt --back server/internal/mosdns/testdata/recorded.jsonl.gz -- bash -lc 'rm -rf /tmp/c21rec; C21_RECORD_DIR=/tmp/c21rec PYTHONPATH=.:server/internal/mosdns/testdata ~/cf-test/.venv/bin/python -m pytest backend -q -n 6 --dist=worksteal -p c21_record -p no:cacheprovider; PYTHONPATH=.:server/internal/mosdns/testdata ~/cf-test/.venv/bin/python server/internal/mosdns/testdata/c21_record.py merge /tmp/c21rec'` (~3 min)
 
 ## C22 — OxiDNS converter, native loader, references, match targets
 
