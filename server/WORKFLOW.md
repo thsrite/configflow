@@ -211,3 +211,20 @@ reuse them. Size budgets were dropped the same day: line counts are reported for
   resource tags and device-policy revision hashes change once; accepted by the maintainer 2026-11-16).
 - Stale resource files under old names: removed by the Agent/deployment cleanup, or cleaned once.
 - Tell the maintainer before the switch that Agents will receive one push.
+
+## Division of work (maintainer, 2026-11-16)
+
+- **Codex (Paseo, `codex/gpt-6.1-sol`, thinking `high`, mode `full-access`)** does most work: ports,
+  S passes, native swaps, Python reference corpora, Flask↔Go differentials, and adversarial reviews of
+  non-HR modules (by a different Codex agent than the author). Each Codex agent gets its own Paseo worktree
+  branched off local `go` and ends with `git rebase go`; shared rules in `server/AGENT-BRIEF.md`.
+- **Claude Opus** only for: adversarial review of HR modules (routers writing to devices R04, R05,
+  R07–R12, R14; agents publish/rule sync/DNS follow/HA), big structural designs (N7 YAML, N8 jsonx),
+  concurrency/state problems, and escalation when Codex fails the same problem twice. At most 1 Opus
+  agent at a time.
+- **When Claude quota is exhausted:** nothing blocks. HR modules get a Codex review first and may be merged
+  into `go` marked `verified (codex)`; the Opus review is queued in PROGRESS ("Opus review pending") and
+  done when quota returns. `go` is not production; the switch additionally requires the PVE lab test.
+- **Coordinator** (dispatch, verify on a detached worktree via `rt`, emulation gate, fast-forward + push
+  `go`): this Claude session; if Claude quota is out, Codex agents finish their task and stop with their
+  branch ready; the coordinator merges when back. A fresh coordinator session starts from `HANDOFF.md`.
