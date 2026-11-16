@@ -1426,7 +1426,7 @@ Questions for the maintainer (from this audit):
     `Last-Modified`; Range is evaluated before the 304 check; `If-Range: W/"tag"` matches; a failed
     `If-Match` is 412; `Range: bytes = 1 - 2` (spaces) is accepted; Range on an empty file is ignored;
     multi-range or malformed Range is 416; ETag mtime rounding differs. Affects every send_file route; fix in
-    the C06 review and remove the "known httpx differences" from the A10 download differential.
+    the C06 review and remove the "known httpx differences" from the A10 download differential. Added by the A10 review (2026-11-16): httpx's Range parsing uses int64 (`bytes=0-99999999999999999999` is 206 in Werkzeug), does not strip Latin-1 white space (U+00A0/U+0085) around Range items, and parses If-Range/If-Modified-Since with `http.ParseTime` instead of `email.utils.parsedate_to_datetime` (no weekday, numeric zones, RFC 850/asctime variants); the A10 route's own 500 decision now follows Werkzeug (`internal/api/agents/downloads_date.go`, `werkzeugConditionalError` — reusable for httpx).
 16. **No runtime reads from `backend/` (2026-11-16):** the Go server must run without the Python tree.
     Every data file the Python code reads at runtime (`backend/schemas/oxidns/*.json`, templates, scripts,
     `config_template.json`, …) is embedded with `go:embed` from a copy under `server/`, guarded by a test
