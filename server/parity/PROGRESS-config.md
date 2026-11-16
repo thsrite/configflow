@@ -1279,7 +1279,7 @@ Commands:
 
 ## S-oxidns — slimming pass of `internal/oxidns` (C22–C26 + early C27/C29/C31 pieces)
 
-**Status: review fixes complete; final rebase/full-suite verification pending** (2026-11-16). Goal: idiomatic Go, every feature kept; no line budget (Python in scope ≈ 6.1k: converters/oxidns, oxidns_native, _validation, _reference_validation, _references, _plugin_constraints, _global_constraints, _match_targets, _common, _common_routing, _common_updates, _device_policy, _editor, dns_watchdog; plus oxidns_settings 289 and the early rule_dns / device_notes / native_apply pieces). Before: 25.9k non-test lines (17.3k code + 8.6k Unicode tables).
+**Status: verified (Codex package review; zero open findings)** (2026-11-16). Goal: idiomatic Go, every feature kept; no line budget (Python in scope ≈ 6.1k: converters/oxidns, oxidns_native, _validation, _reference_validation, _references, _plugin_constraints, _global_constraints, _match_targets, _common, _common_routing, _common_updates, _device_policy, _editor, dns_watchdog; plus oxidns_settings 289 and the early rule_dns / device_notes / native_apply pieces). Before: 25.9k non-test lines (17.3k code + 8.6k Unicode tables).
 
 Plan (design, committed before the rewrite):
 - **Build beside, then swap.** The new code is written in `internal/oxidnsnew` (package `oxidns`), tested at the boundary against the existing Python-recorded rows; when complete, the old package is deleted and the new one moved to `internal/oxidns` in one commit (consumer: only `internal/ippresence` → `SetClassicalIPLines`). Every commit builds.
@@ -1308,7 +1308,7 @@ Commands:
 - details: `OXIDNS_ARGS=1 OXIDNS_SHOW=5 OXIDNS_FN=apply_routing go test -run TestBoundaryRoutingCorpus ./internal/oxidns/`
 - regenerating rows: the C22–C26 recorder/generator commands above (scripts unchanged in testdata/).
 
-### Review S-oxidns (adversarial, 2026-11-16) — fixes complete, final integration verification pending
+### Review S-oxidns (adversarial, 2026-11-16) — verified (Codex), zero open findings
 
 Scope: resumed the paused review (6d4babb9) in `go-review-soxidns`; C22–C26 and the existing early C27/C29/C31 pieces only. No production access, no pushes. All Python reference generation, tests, vet and fuzzing run through `rt` on 192.168.0.32. The independent domain/production-snapshot differential and HR/lab acceptance remain coordinator work under WORKFLOW, not a claim of this package review.
 
@@ -1332,7 +1332,7 @@ Coverage / feature walk:
 - `oxidns_common_updates`, `oxidns_device_policy`, `oxidns_editor` → resource withdrawal/rebase, editor conflict merge, conservative device hooks and side listeners. Existing settings and early rule_dns/device_notes pieces retain the original S scope; later C27/C29/C31 APIs remain their owners’ work.
 - C22–C26 Python test-file→boundary-file mapping above remains intact. `rg 'oxidns\.' server/internal` confirms ippresence is the only implementation consumer of this package; its real-hook test and all consumers pass in the full suite. Storage test still round-trips 6,304 Python-written documents.
 - New `testdata/review_s_gen.py` → `review_s.jsonl.gz`: 354 fresh real-Python rows, including 13 complete realistic profiles (synthetic upstreams only): caches/dump/recorder, fallback, IDN Hosts, custom YAML merges, routing aggregation, AdGuard, dynamic learning/IP selection, pinned upstream and scheduled ruleset downloads. 320 zone rows + 13 generated configs + 13 custom-file outputs + 8 URLs. One deliberately refused `$${X}` placeholder; all other results structurally match.
-- Full boundary totals before the last 10 reference rows: **106,170 identical, 0 differ, 786 accepted**. Acceptance inventory was inspected by class, including all original 484 rows; new exceptions are the explicit changes above, never a CJK-name waiver. Fuzz targets seed zone validation from the Python corpus and exercise native YAML read/write type preservation.
+- All converter/validation/common/routing/editor recorded and corpus boundary tests pass with **zero unclassified differences**. The acceptance inventory was inspected by class, including all original 484 rows; additional exceptions are only supported native merges and non-panicking internal format diagnostics described above, never a CJK-name or Chinese-message waiver. Fuzz targets seed zone validation from the Python corpus and exercise native YAML read/write type preservation.
 
 Verification so far:
 - `rt -- bash -lc 'cd server && go vet ./... && go test -count=1 ./...'` (wrapped only to retain a /tmp log): all packages passed, final lines `ok configflow/internal/weburl 0.005s`, `ok configflow/internal/yamlx 0.686s`.
@@ -1340,7 +1340,14 @@ Verification so far:
 - `rt -- bash -lc 'cd server && go test -run "^$" -fuzz=FuzzNativeYAMLRoundTrip -fuzztime=10s -parallel=2 ./internal/oxidns && go test -run "^$" -fuzz=FuzzZoneValidation -fuzztime=10s -parallel=2 ./internal/oxidns'`: both PASS (40,916 and 105,945 executions). Coordinator can extend each to the required 60s gate.
 - Reference regeneration: `rt --back server/internal/oxidns/testdata/review_s.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/oxidns/testdata/review_s_gen.py'`.
 
-Integration: fixes committed as 9483781b after `git rebase go` onto 5f5d728c. The exact full command passed after rebase (oxidns 67.377s, final weburl 0.007s / yamlx 0.732s). Final follow-up keeps complete Chinese null-type diagnostics in message constants and removes their comparison waiver; targeted generation/review tests passed (11.368s). Next: commit this follow-up, rerun the exact full suite on the final code, record the final result and mark verified. Worktree must be clean at hand-back.
+Final integration / commits:
+- Branch `go-review-soxidns`, rebased onto local `go` at **229f2abe**. Final code commits: **41cbd981** (review fixes, references/fuzz targets/catalogs/docs), **03ee34e9** (preserve complete Chinese null-type messages; remove their waiver). Earlier intermediate ids were rewritten by rebase. The final upstream increments changed only HANDOFF/WORKFLOW scheduling instructions; the tested Go code, dependencies and tests are identical (confirmed with git diff).
+- Final required command: `rt -- bash -lc 'cd server && go vet ./... && go test -count=1 ./...'` → exit 0; relevant/final output: `ok configflow/internal/installer 160.185s`, `ok configflow/internal/ippresence 22.203s`, `ok configflow/internal/oxidns 72.956s`, `ok configflow/internal/weburl 0.018s`, `ok configflow/internal/yamlx 1.360s`.
+- Final formatting command: `rt -- bash -lc 'cd server && gofmt -l internal/oxidns internal/weburl internal/installer/docker_ha_corpus_test.go'` → exit 0, no output.
+- Fresh reference replay: 320 zone + 13 generated configurations + 13 custom-file results + 7 URL results identical; only the intentionally refused `$${X}` URL is accepted as the documented difference. 6,304 stored-document round trips remain green.
+- Lines after review: production Go **14,271**, Go tests **1,273**, plus **3,616** lines of embedded unchanged catalog JSON. No production access or pushes. No open finding or unfinished implementation in this package review; independent domain/production-snapshot, coordinator race/60s fuzz and HR/lab gates remain as assigned in WORKFLOW.
+- This final verification-note commit changes only this progress file. All work is committed and the worktree is clean at hand-back.
+
 
 ## S-rules — slimming pass of `internal/rules` (C08 + C09)
 
