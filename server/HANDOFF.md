@@ -67,6 +67,10 @@ Codex first + "Opus review pending" if Claude quota is out).
    Codex review), to protect the refactors that follow.
 3. Allowed meanwhile (do not touch accepted code): new module ports (R05 iKuai, C27 after S-oxidns review,
    other `missing` modules whose prerequisites are verified) and reviews.
+3b. **Known emulation debt for the S passes** (found at the N2 merge, 2026-11-16): `internal/provider`
+   (`pyError` type with Python exception classes in errors.go/delivery.go/response.go — N2 added two more
+   `ValueError` uses in delivery.go) and `internal/convert` (mihomo_generate.go, exports_mosdns.go). The S pass
+   of those packages removes them (plain Go errors with the Chinese messages the API returns).
 4. **Blocked until 1 exists:** N7 (YAML → yaml.v3 behind yamlx) and N8 (remove jsonx) Opus designs and their
    implementation, S passes of convert/subs/agents/repo, and any other large refactor of accepted code.
 **Opus task list O1–O15 with triggers:** WORKFLOW.md "Complete Opus task list" — start each on its trigger without asking.
