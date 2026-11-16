@@ -395,3 +395,22 @@ request_variants=5229 named_matrix_cases=2823（S331 F2151 B341），H去重167
 ```
 
 T06还需无last-good时等待、Surge/Loon不回退；T07键隔离、T05断连仍提交及其他业务文件继续。当前5229是记录变体数，20客户端批次另明确标`http_clients_per_backend=20`，不是把该批只发一次HTTP。未做最终全量。
+
+## 批次 21：merged subscription provider
+
+- 17请求，7比较通过、10差异：多个来源合并、禁用跳过、空启用集合、同名同/不同定义但无拓扑的200、严格拓扑下跨feed冲突400、坏dialer400、HTTP403旧缓存回落、非法provider片段禁止降级、真实HEAD拉取/写cache以及两种TZ。HEAD合并缓存按实际转换结果保存，不错误套用manual fetch的随机node ID前提；完整行/文件比较仍开启。
+- merged注释新增独立验证：主Generated、Subscriptions/Total Proxies，以及每个已知订阅名/节点数/本地更新时间；仅证明为该条生成时间的后缀可对应，名称、计数及其他内容严格比较。35项自检含改订阅节点数/总数/时间的反例。
+- 9个实例仍是Go省略注释的已知根因。**新差异 R222-F11**：两端均400且均拒绝用旧cache掩盖非法源；Python消息保留`订阅「订阅甲🧪」准备失败：`、内容来源、行列和原始合成错误行，Go只保留内部`Provider 代理必须是含非空 name 的对象\n字段：proxies[0]`。完整合成结果见findings。
+- Python参考前提修正：无chain/dialer时同名甚至不同定义可以200；F09/B01需以合法dialer激活严格名称校验，已分别验证成功/失败形态并记清单errata。未把前置guard或错误fixture计业务失败。
+
+```text
+.63 run.py --groups merged-provider-data,merged-provider-remote,merged-provider-timezone
+current compared=7 different=9 design_errors=[] seconds=16.28（加入额外合法形态前）
+.63 run.py --groups merged-provider-data
+current compared=3 different=6 design_errors=[] seconds=10.59
+cumulative compared=1455 go-unimplemented=3721 dependency=28 different=41 O12-separate=1
+request_variants=5246 named_matrix_cases=2834（S335 F2154 B345），H去重167
+35 self-checks + end-to-end wrong-Go-response check OK
+```
+
+继续剩余鉴权环境、provider拓扑/G配方、tasks和其他业务文件；仍有明确未覆盖项，不是最终全量交回。

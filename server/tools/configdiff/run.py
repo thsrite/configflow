@@ -104,6 +104,8 @@ def main():
     groups.update(subscription_providers)
     from cases.provider_lifecycle import GROUPS as provider_lifecycle
     groups.update(provider_lifecycle)
+    from cases.merged_provider import GROUPS as merged_provider
+    groups.update(merged_provider)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

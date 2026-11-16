@@ -177,6 +177,95 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `provider.served-file.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 订阅甲🧪', '# ID: sub-a', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 2', '# Source: from local cache'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
 | `provider.served-file.bak.comments` | type | ['# ConfigFlow Subscription Proxies', '# Subscription: 订阅甲🧪', '# ID: sub-a', '# Generated: 0000-00-00T00:00:00.000000Z', '# Proxies: 2', '# Source: from Sub-Store (cache updated)'] | {'invalid': 'expected exactly one Generated comment', 'comments': []} |
 
+## R222-B02 / none
+
+路由：`GET /api/subscriptions/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `merged.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `merged.comments` | length | 6 | 0 |
+
+## R222-B90 / Asia/Shanghai
+
+路由：`GET /api/subscriptions/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `merged.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `merged.comments` | length | 7 | 0 |
+
+## R222-B90 / UTC
+
+路由：`GET /api/subscriptions/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `merged.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `merged.comments` | length | 7 | 0 |
+
+## R222-F11 / invalid-source-no-fallback
+
+路由：`GET /api/subscriptions/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `body.message` | value | '订阅「订阅甲🧪」准备失败：Provider 代理必须是含非空 name 的对象\n字段：proxies[0]\n内容来源：本次订阅返回的内容\n位置：第 1 行，第 11 列\n出错内容：proxies: [bad]' | 'Provider 代理必须是含非空 name 的对象\n字段：proxies[0]' |
+
+## R222-S01 / different-definitions-no-chain
+
+路由：`GET /api/subscriptions/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `merged.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `merged.comments` | length | 8 | 0 |
+
+## R222-S01 / identical-crossfeed
+
+路由：`GET /api/subscriptions/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `merged.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `merged.comments` | length | 8 | 0 |
+
+## R222-S01 / two
+
+路由：`GET /api/subscriptions/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `merged.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `merged.comments` | length | 8 | 0 |
+
+## R222-S02 / disabled
+
+路由：`GET /api/subscriptions/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `merged.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `merged.comments` | length | 7 | 0 |
+
+## R222-S03 / http403-cache-fallback
+
+路由：`GET /api/subscriptions/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `merged.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `merged.comments` | length | 7 | 0 |
+
+## R222-S04 / none
+
+路由：`GET /api/subscriptions/proxies`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `merged.metadata` | invalid-Go-metadata | '<valid>' | {'error': 'expected exactly one Generated comment', 'comments': []} |
+| `merged.comments` | length | 6 | 0 |
+
 ## T16 / enable-immediate-final
 
 路由：`POST /api/backup/config`；状态：different

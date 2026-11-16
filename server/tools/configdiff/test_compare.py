@@ -291,6 +291,20 @@ class Comparators(unittest.TestCase):
         self.assertTrue(any(d.path == 'provider.client[19].status' for d in response_batch_diffs(a, b, Policy())))
         self.assertTrue(response_batch_diffs(a, b[:-1], Policy()))
 
+    def test_merged_provider_detail_metadata_mutation(self):
+        from datetime import datetime, timezone
+        from providers import MergedMetadata
+        policy = Policy(start=1760000000, end=1760000001)
+        stamp = datetime.fromtimestamp(policy.start, timezone.utc).replace(tzinfo=None).isoformat()
+        raw = ('# Generated: ' + stamp + 'Z\n# Subscriptions: 1\n# Total Proxies: 2\n#   - synthetic: 2 proxies (updated: ' + stamp + ')\nproxies: []').encode()
+        observer = MergedMetadata(None, [('synthetic', 2)])
+        observer.parse(raw, policy)
+        for old, new in [(b'synthetic: 2', b'synthetic: 3'), (b'Total Proxies: 2', b'Total Proxies: 3'), (b'updated: 2025', b'updated: 1990')]:
+            changed = raw.replace(old, new)
+            if changed != raw:
+                with self.assertRaises(ValueError):
+                    observer.parse(changed, policy)
+
     def test_generated_file_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:
             dirs = [Path(tmp, n) for n in ('python', 'go')]

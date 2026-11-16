@@ -103,3 +103,67 @@ class Metadata:
                         metadata.append({'invalid': str(error), 'comments': observed})
                 out += differences(*metadata, 'provider.served-file' + suffix + '.comments', policy)
         return out
+
+
+class MergedMetadata:
+    def __init__(self, pair, details, *, method='GET'):
+        self.pair, self.details, self.method = pair, details, method
+
+    def parse(self, raw, policy):
+        result = comments(raw, policy)
+        for name, count in self.details:
+            prefix = f'#   - {name}: {count} proxies (updated: '
+            found = [index for index, line in enumerate(result) if line.startswith(prefix) and line.endswith(')')]
+            if len(found) != 1:
+                raise ValueError('merged subscription detail name/count missing or duplicated')
+            index = found[0]
+            value = result[index][len(prefix):-1]
+            if not timestamp(value, policy):
+                raise ValueError('merged detail update is not current local wall time')
+            result[index] = prefix + re.sub(r'\d', '0', value) + ')'
+        if '# Subscriptions: ' + str(len(self.details)) not in result:
+            raise ValueError('merged subscription count comment')
+        if '# Total Proxies: ' + str(sum(count for _, count in self.details)) not in result:
+            raise ValueError('merged proxy count comment')
+        return result
+
+    def name(self, reply, policy):
+        value = reply.headers.get('content-disposition', '')
+        match = re.fullmatch(r'inline; filename="proxies_([0-9]{8}_[0-9]{6})\.yaml"', value)
+        if not match:
+            raise ValueError('merged provider filename shape')
+        stamp = datetime.strptime(match[1], '%Y%m%d_%H%M%S').replace(tzinfo=ZoneInfo(policy.tz)).timestamp()
+        if not policy.start - 2 <= stamp <= policy.end + 2:
+            raise ValueError('merged filename time window')
+        return value
+
+    def reference(self, reply):
+        self.pair.policy.end = time.time()
+        try:
+            self.name(reply, self.pair.policy)
+            if self.method != 'HEAD':
+                self.parse(reply.body, self.pair.policy)
+        except ValueError as error:
+            raise DesignError('Python merged metadata fixture: ' + str(error)) from error
+
+    def capture(self, replies, policy):
+        out, names, metadata = capture_ids(self.pair)(replies, policy), [], []
+        for index, reply in enumerate(replies):
+            if reply.status != 200:
+                names.append(None)
+                metadata.append(None)
+                continue
+            try:
+                names.append(self.name(reply, policy))
+                metadata.append(self.parse(reply.body, policy) if self.method != 'HEAD' else [])
+            except ValueError as error:
+                if index == 0:
+                    raise DesignError('Python merged metadata changed: ' + str(error)) from error
+                if len(names) <= index:
+                    names.append(None)
+                observed = [line for line in reply.body.decode('utf-8', errors='replace').splitlines() if line.startswith('#')]
+                metadata.append(observed)
+                out.append(Difference('merged.metadata', 'invalid-Go-metadata', '<valid>', {'error': str(error), 'comments': observed}))
+        if all(isinstance(value, str) for value in names):
+            policy.bind(*names, r'inline; filename="proxies_[0-9]{8}_[0-9]{6}\.yaml"', 'merged-provider-filename')
+        return out + differences(*metadata, 'merged.comments', policy)
