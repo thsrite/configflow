@@ -149,38 +149,46 @@ URLs net/url refuses that urllib accepted (control chars, malformed `%` escapes 
 compared by class only; requests' all-`%` requoting when one escape is malformed and other byte-level
 quoting; redirect hops pick their own proxy (requests kept the first URL's); SOCKS proxies now work;
 invalid UTF-8 in query values becomes U+FFFD (Werkzeug re-quoted); upstream labels for odd inputs;
-CPython full case-folding (`İ`, final sigma). Not done here (left to S passes): the private urlsplit
-copies `rulefetch/urls.go` (SplitURL/URLJoin, used across rulefetch + its corpus) and
-`subs/proxyserverdns.go` urlSplitHost. Lines (non-test, urlx+reqproxy+weburl+agents+substore+
+CPython full case-folding (`İ`, final sigma). The adversarial review below replaced the remaining
+private urlsplit copies in `rulefetch/urls.go` (SplitURL/URLJoin) and `subs/proxyserverdns.go`
+(urlSplitHost). Lines (non-test, urlx+reqproxy+weburl+agents+substore+
 rulefetch+localhttp+health+installer+convert+provider+redact+httpx): 59602 → 58285.
 
-**N2 review (adversarial, 2026-11-16) — PAUSED, not verified, findings open.** All code is
-uncommitted in the shared worktree (shared-tree build passes; tests not all green). Findings:
-(F1, high) credentials with characters net/url refuses in userinfo (`^ | { } space`, non-ASCII) made
-subscription/rule/proxy URLs that requests fetched fail with InvalidURL — fix: `weburl.Parse`
-percent-encodes userinfo first, `ParseProxy` uses `Parse`; (F2, medium) `Prepare` turned `%2F` into
-`/` when the path also held non-ASCII — fix: keep `RawPath`, escape only invalid bytes;
-(F3, medium) `SafeForLog` leaked password digits for `u:12%2F34@h` (also in Python) — fix: cut userinfo
-before decoding; (F4, medium) `appendURLQuery` (url.Parse) failed config generation for a rule name with
-a stray `%` — fix: plain string split, unbalanced-bracket server_domain still refused. Emulation removed:
-NFKC-delimiter host check (`ErrAmbiguousHost`), `decodeUnreserved`, host lower-casing and port-zero
-stripping in `Prepare`, maximal-subpart U+FFFD (`strings.ToValidUTF8`), username-only proxy-auth drop;
-stray `%` handling moved into `Parse`; `rulefetch/urls.go` SplitURL/URLJoin/urlparse (≈400 lines) replaced
-by `weburl.Prepare`/`ResolveReference`; `subs` urlSplitHost and splitURL replaced by `weburl.Parse`.
-Uncommitted files: weburl/{weburl,logsafe,weburl_test}.go; convert/{mihomo_generate_py,mihomo_nodes,
-review_c12_test}.go; subs/{hosts,proxyserverdns}.go; refresh/rows.go; rulefetch/{urls,fetch,corpus_test,
-recorded_test,review_c14_test}.go + new urls_compare_test.go, review_n2_test.go, and ONE hunk in
-rulefetch/website.go (SplitURL→weburl.Parse at final_host; the file also holds the rules S-pass's
-uncommitted hunks — commit only my hunk, e.g. via a temporary index); substore/review_n2_test.go (new);
-localhttp/localhttp_test.go; httpx/review_a08_test.go; installer/{docker_ha_corpus,fuzz,matrix}_test.go.
-Green on the test server: weburl, convert, substore, localhttp, httpx, mosdns, installer.
-Stopped at (still failing): rulefetch TestCorpus (8 urljoin rows: RFC 3986 vs urljoin for `http:g`,
-`..;x`, `//[v1.x]` + 2 NFKC rows → add to `urlAccepted`), rulefetch TestFetchDifferentialAgainstRequests
-(not yet inspected — likely requested-URL bytes after dropping decodeUnreserved), subs TestReviewC10References
-rows 1015–1018 (`sni=%ff%fe`: one U+FFFD per run now → accept or keep per-byte replacement);
-subs TestFilterCorpus/TestValidateRegexFilter and rulefetch inspect_domain_content \x1c–\x1e rows come
-from the other agents' uncommitted rules S-pass, not N2. Next: fix those, rerun all consumers in a private
-worktree on HEAD + these files, commit, then record "verified" here.
+**N2 review (adversarial, 2026-11-16) — VERIFIED; zero open functional findings.** Commits:
+`288394c5` (N2 changes) and `87e47955` (installer test-fixture race found during coordinator verification).
+F1–F4 are fixed: userinfo bytes rejected by `net/url` are escaped before parsing; `%2F` stays in
+`RawPath` alongside non-ASCII; log redaction cuts userinfo before decoding; rule query appending no
+longer parses a rule name as a URL. The URL/proxy Python emulation was removed, including SplitURL,
+URLJoin and `urlSplitHost`; `agents/client.go` now uses UTF-8 Basic auth and the Go resolver instead of
+Latin-1 and glibc `inet_aton` emulation. Scoped IPv6 Agent hosts remain supported.
+
+Accepted differences are narrow and checked at consumer boundaries:
+
+- The RFC 3986 `urljoin` references `http:g`, `..;x` and `//[v1.x]/p` occur only in the synthetic
+  URL conformance table in `rulefetch/testdata/gen.py`; the real rule-fetch redirect fixtures contain
+  none of them. IPvFuture is not a requestable host. These rows are classified in `urlAccepted`.
+- `url_requote` keeps valid unreserved escapes such as `%7e` in the request target instead of decoding
+  them. The loopback server receives the equivalent target and returns HTTP 200 with the same body;
+  the comparator decodes only letters, digits, `-`, `_` and `~`, never dot or reserved escapes.
+- NFKC delimiter authorities are accepted as Go-native URL parsing differences in synthetic inputs;
+  they cannot form a valid urllib request. `refresh.host` also accepts its two explicitly invalid,
+  non-requestable inputs (`http://host.test:abc/`, `http://%41.test/`) returning an empty Go host.
+- Invalid DNS percent escapes remain rejected at the DNS configuration boundary. Invalid UTF-8 SNI
+  uses `strings.ToValidUTF8`; no valid hostname depends on per-byte replacement.
+- URL host case is compared case-insensitively for requests preparation. Local API dispatch checks the
+  decoded path, so an escaped unreserved `/api/` prefix still reaches the same local endpoint.
+
+Verification was isolated from other agents' uncommitted files: detached worktree at `229f2abe` plus
+N2-owned files ran `rt -- bash -lc 'cd server && go vet ./... && go test -count=1 ./...'` with exit 0;
+final lines were `ok configflow/internal/weburl 0.010s` and `ok configflow/internal/yamlx 1.546s`.
+`go test -race -count=1 ./...` was rerun after the test-server restart: installer passed after the
+fixture setter was mutex-protected; all packages passed except `internal/oxidns`, whose recorded editor
+test exceeded Go's default 10-minute timeout. A focused
+`rt -- bash -lc 'cd server && go test -race -count=1 -timeout=20m ./internal/oxidns'` passed with
+`ok configflow/internal/oxidns 794.000s`. The race suite's remaining packages all passed in the full run.
+The private worktree was cleaned with `rt clean` and removed. The shared worktree still has other
+agents' uncommitted changes in `rulefetch/website.go` (Unicode whitespace hunk), `subs/ported_test.go`
+and `parity/PROGRESS-config.md`; these were left untouched and unstaged.
 
 ## Idiomatic Go (2026-11-16, maintainer: "用 go 原生库")
 
