@@ -163,6 +163,9 @@ func presentation(value, previous *Node) *Node {
 	if v.Kind == previous.Kind && v.Tag == previous.Tag {
 		v.Style = previous.Style
 	}
+	if isStr(&v) {
+		v.Style = stringStyle(v.Value, v.Style)
+	}
 	return &v
 }
 
@@ -273,7 +276,20 @@ func mapOr(n *Node) *Node {
 
 // S, I, B, Null and Num build scalars; M and L build containers from Go
 // literals (see val).
-func S(s string) *Node { return &Node{Kind: yaml.ScalarNode, Tag: tagStr, Value: s} }
+func S(s string) *Node {
+	return &Node{Kind: yaml.ScalarNode, Tag: tagStr, Value: s, Style: stringStyle(s, 0)}
+}
+
+// stringStyle avoids yaml.v3's block emitter consuming the first value newline
+// as the block-header newline. YAML also normalizes CR/NEL in physical scalar
+// lines. Quoted output preserves these values and Unicode line separators;
+// ordinary strings retain their literal/folded presentation.
+func stringStyle(value string, style yaml.Style) yaml.Style {
+	if strings.HasPrefix(value, "\n") || strings.ContainsAny(value, "\r\u0085\u2028\u2029") {
+		return (style & yaml.TaggedStyle) | yaml.DoubleQuotedStyle
+	}
+	return style
+}
 func I(i int64) *Node {
 	return &Node{Kind: yaml.ScalarNode, Tag: tagInt, Value: strconv.FormatInt(i, 10)}
 }

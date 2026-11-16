@@ -278,3 +278,55 @@ func TestReviewGeneratedMergesAreExplicit(t *testing.T) {
 		t.Fatalf("generated merge content lost: %v\n%s", err, text)
 	}
 }
+
+func TestReviewLeadingBlankBlockScalar(t *testing.T) {
+	tests := []struct{ name, text, want string }{
+		{"fuzz regression", "A: |\n \n 行", "\n行"},
+		{"ASCII", "A: |-\n\n  text", "\ntext"},
+		{"multiple blanks", "A: |+\n\n\n  行\n\n", "\n\n行\n\n"},
+		{"explicit indentation", "A: |2-\n  \n  行", "\n行"},
+		{"space content", "A: |2-\n   \n  行", " \n行"},
+		{"folded", "A: >-\n\n  行\n  次", "\n行 次"},
+		{"non-leading blank", "A: |-\n  行\n\n  次", "行\n\n次"},
+		{"four-byte rune", "A: |-\n\n  😀", "\n😀"},
+		{"escaped carriage return", "A: \"行\\r次\"", "行\r次"},
+		{"escaped NEL", "A: \"行\\N次\"", "行\u0085次"},
+		{"leading line separator", "A: |-\n  \u2028  行", "\u2028行"},
+		{"leading paragraph separator", "A: |-\n  \u2029  行", "\u2029行"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			doc, err := LoadNativeYAML(test.text, NativeLabel)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if get(doc, "A").Value != test.want {
+				t.Fatalf("unexpected input value: %q", get(doc, "A").Value)
+			}
+			encoded, err := dump(doc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			actual, err := LoadNativeYAML(encoded, NativeLabel)
+			if err != nil || !same(doc, actual) {
+				t.Fatalf("block scalar changed: %v before=%q encoded=%q", err, test.want, encoded)
+			}
+			// Also cover template YAML and programmatically constructed/replaced values.
+			template, ok, err := safeLoad(test.text)
+			if !ok || err != nil {
+				t.Fatalf("template parse: %v", err)
+			}
+			if round, err := LoadNativeYAML(reviewDump(t, template), NativeLabel); err != nil || !same(round, doc) {
+				t.Fatalf("template round trip: %v", err)
+			}
+			value := M("A", test.want)
+			if round, err := LoadNativeYAML(reviewDump(t, value), NativeLabel); err != nil || !same(round, doc) {
+				t.Fatalf("constructed round trip: %v", err)
+			}
+			set(doc, "A", S("\n替换"))
+			if round, err := LoadNativeYAML(reviewDump(t, doc), NativeLabel); err != nil || str(get(round, "A")) != "\n替换" {
+				t.Fatalf("replacement round trip: %v", err)
+			}
+		})
+	}
+}

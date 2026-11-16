@@ -198,6 +198,9 @@ func safeLoad(text string) (*Node, bool, error) {
 				}
 			}
 		}
+		if isStr(out) {
+			out.Style = stringStyle(out.Value, out.Style)
+		}
 		memo[n] = out
 		return out, nil
 	}

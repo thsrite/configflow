@@ -210,6 +210,8 @@ func (b *builder) node(src *Node) (*Node, error) {
 	out.Style, out.HeadComment, out.LineComment, out.FootComment = src.Style&^yaml.TaggedStyle, src.HeadComment, src.LineComment, src.FootComment
 	if out.Kind == yaml.ScalarNode && out.Tag != tagStr {
 		out.Style = 0
+	} else if isStr(out) {
+		out.Style = stringStyle(out.Value, out.Style)
 	}
 	b.memo[src] = out
 	return out, nil

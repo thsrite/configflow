@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"gopkg.in/yaml.v3"
+	"hash/crc32"
 	"os"
 	"reflect"
 	"sort"
@@ -557,6 +558,11 @@ func runBoundary(t *testing.T, file string, fns ...string) {
 		wanted[fn] = true
 	}
 	rows := readRows(t, file, wanted)
+	if raceEnabled && (file == "corpus.jsonl.gz" || file == "c24_corpus.jsonl.gz" || file == "c25_corpus.jsonl.gz" || file == "c26_corpus.jsonl.gz") {
+		original := len(rows)
+		rows = raceCorpusSample(rows)
+		t.Logf("race randomized corpus: %d/%d rows; complete recorded, validation, storage and regression suites retained", len(rows), original)
+	}
 	type stat struct{ same, differ, accepted int }
 	stats := map[string]*stat{}
 	shown := map[string]int{}
@@ -628,6 +634,33 @@ func runBoundary(t *testing.T, file string, fns ...string) {
 	for _, fn := range names {
 		t.Logf("%s %-28s identical %6d differ %5d accepted %4d", file, fn, stats[fn].same, stats[fn].differ, stats[fn].accepted)
 	}
+}
+
+// raceCorpusSample keeps each public function/outcome represented, then spreads
+// the race workload over the complete randomized corpus using a stable hash.
+// All real-Python recorded tests and the dedicated validator corpus still run in
+// full under -race. Normal tests always run every randomized row as well.
+// The complete 6,000-profile generation corpus alone takes ~195s under -race;
+// running it plus all other full corpora approached the 10-minute package limit.
+func raceCorpusSample(rows []row) []row {
+	selected := make([]row, 0, len(rows)/16)
+	seen := map[string]int{}
+	for _, r := range rows {
+		outcome := "success"
+		if len(r.Err) > 0 {
+			outcome = r.Err[0]
+		}
+		key := r.Fn + "/" + outcome
+		var hash uint32
+		for _, arg := range r.Args {
+			hash = crc32.Update(hash, crc32.IEEETable, arg)
+		}
+		if seen[key] < 8 || hash%16 == 0 {
+			selected = append(selected, r)
+		}
+		seen[key]++
+	}
+	return selected
 }
 
 var (

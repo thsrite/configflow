@@ -1279,7 +1279,7 @@ Commands:
 
 ## S-oxidns — slimming pass of `internal/oxidns` (C22–C26 + early C27/C29/C31 pieces)
 
-**Status: verified (Codex package review; zero open findings)** (2026-11-16). Goal: idiomatic Go, every feature kept; no line budget (Python in scope ≈ 6.1k: converters/oxidns, oxidns_native, _validation, _reference_validation, _references, _plugin_constraints, _global_constraints, _match_targets, _common, _common_routing, _common_updates, _device_policy, _editor, dns_watchdog; plus oxidns_settings 289 and the early rule_dns / device_notes / native_apply pieces). Before: 25.9k non-test lines (17.3k code + 8.6k Unicode tables).
+**Status: review returned — block-scalar fix and race/fuzz verification in progress** (2026-11-16). Goal: idiomatic Go, every feature kept; no line budget (Python in scope ≈ 6.1k: converters/oxidns, oxidns_native, _validation, _reference_validation, _references, _plugin_constraints, _global_constraints, _match_targets, _common, _common_routing, _common_updates, _device_policy, _editor, dns_watchdog; plus oxidns_settings 289 and the early rule_dns / device_notes / native_apply pieces). Before: 25.9k non-test lines (17.3k code + 8.6k Unicode tables).
 
 Plan (design, committed before the rewrite):
 - **Build beside, then swap.** The new code is written in `internal/oxidnsnew` (package `oxidns`), tested at the boundary against the existing Python-recorded rows; when complete, the old package is deleted and the new one moved to `internal/oxidns` in one commit (consumer: only `internal/ippresence` → `SetClassicalIPLines`). Every commit builds.
@@ -1308,7 +1308,7 @@ Commands:
 - details: `OXIDNS_ARGS=1 OXIDNS_SHOW=5 OXIDNS_FN=apply_routing go test -run TestBoundaryRoutingCorpus ./internal/oxidns/`
 - regenerating rows: the C22–C26 recorder/generator commands above (scripts unchanged in testdata/).
 
-### Review S-oxidns (adversarial, 2026-11-16) — verified (Codex), zero open findings
+### Review S-oxidns (adversarial, 2026-11-16) — returned for fuzz/race follow-up
 
 Scope: resumed the paused review (6d4babb9) in `go-review-soxidns`; C22–C26 and the existing early C27/C29/C31 pieces only. No production access, no pushes. All Python reference generation, tests, vet and fuzzing run through `rt` on 192.168.0.32. The independent domain/production-snapshot differential and HR/lab acceptance remain coordinator work under WORKFLOW, not a claim of this package review.
 
@@ -1348,6 +1348,14 @@ Final integration / commits:
 - Lines after review: production Go **14,271**, Go tests **1,273**, plus **3,616** lines of embedded unchanged catalog JSON. No production access or pushes. No open finding or unfinished implementation in this package review; independent domain/production-snapshot, coordinator race/60s fuzz and HR/lab gates remain as assigned in WORKFLOW.
 - This final verification-note commit changes only this progress file. All work is committed and the worktree is clean at hand-back.
 
+
+#### Coordinator return — block-scalar and race follow-up (in progress)
+
+The previous verification was rejected: a 12s coordinator fuzz run found `A: |\n \n 行`, and the full package under -race hit its default 600s limit under load. Status is reopened until the requested follow-up checks pass.
+- Reproduced after the test-server reboot (31 GiB): value `"\n行"` became `"行"`; yaml.v3 emits the value's first break as its block-header break. Fix normalizes only leading-newline and CR/NEL/Unicode-separator string styles to double quotes; ordinary literal/folded styles remain unchanged. This is applied to native/template loading, constructed strings and replacements without adding an encode-time traversal. Regression seed is `testdata/fuzz/FuzzNativeYAMLRoundTrip/leading_blank_unicode`; table tests cover literal/folded, indentation, blank/space-only lines, ASCII/CJK/emoji, CR/NEL/LS/PS and all string construction paths. The original regression and the complete normal package suite passed (125.905s), including all twelve new table cases.
+- Unfiltered race baseline after reboot timed out at 600.528s in editor replay. Generation replay took 85.07s, randomized generation 194.97s, common replay 41.49s and randomized common settings 129.10s. CPU profile: ~70% race/TSAN instrumentation, stack runnable in JSON decoding (not a blocked lock). Logs/profile: `/tmp/oxidns-race-before.log` / `.cpu` on the test server. No timeout increase.
+- Race-only sampling added for the four expensive randomized corpora: first eight rows per function/expected outcome, plus a deterministic 1/16 hash sample from the entire file. Recorded Python test-suite rows, full validator corpus, storage, new regression/fuzz seeds and all normal non-race corpus runs remain complete. Need to measure final default-timeout whole-server race pass.
+- Remaining: targeted/block regression, complete normal oxidns corpus, gofmt/vet, whole-server `go test -race -count=1 ./...`, each fuzz target for >=120s, commit, final `git rebase go`, clean worktree. Reboot connection failures are infrastructure interruptions and were retried; no local tests.
 
 ## S-rules — slimming pass of `internal/rules` (C08 + C09)
 
