@@ -1,43 +1,17 @@
-// TODO(port): replace with package #17 (backend/utils/webdav_backup.py::RETENTION_LIMITS,
-// retention_settings). rule_fetch.normalize_rule_fetch_proxy is rulefetch.NormalizeRuleFetchProxy (C14).
+// Legacy Unicode trimming remains for older settings routes.
 
 package settings
 
 import (
 	"unicode"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/rulefetch"
+	"configflow/internal/webdav"
 )
 
-// RetentionLimits is webdav_backup.RETENTION_LIMITS, in its key order.
+// Retention fields keep the API's stable validation order.
 var retentionKeys = []string{"keep_latest", "keep_daily"}
-var retentionLimits = map[string]int64{"keep_latest": 1000, "keep_daily": 3650}
-
-const (
-	defaultKeepLatest = 30
-	defaultKeepDaily  = 30
-)
-
-// retentionSettings is webdav_backup.retention_settings: the saved values,
-// or the defaults for missing or invalid ones (not ints in range).
-func retentionSettings(settings *jsonx.Object) (any, any) {
-	values := []any{}
-	for _, item := range []struct {
-		key      string
-		fallback int64
-	}{{"keep_latest", defaultKeepLatest}, {"keep_daily", defaultKeepDaily}} {
-		value, present := settings.Get(item.key)
-		n, isNumber := value.(jsonx.Number)
-		v, fits := n.Int64()
-		if present && isNumber && fits && v >= 0 && v <= retentionLimits[item.key] {
-			values = append(values, value)
-		} else {
-			values = append(values, jsonx.Int(item.fallback))
-		}
-	}
-	return values[0], values[1]
-}
+var retentionLimits = map[string]int64{"keep_latest": webdav.MaxKeepLatest, "keep_daily": webdav.MaxKeepDaily}
 
 func pyIsSpace(r rune) bool {
 	switch r {

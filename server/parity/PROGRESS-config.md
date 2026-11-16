@@ -31,7 +31,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C03 | repo storage core (config_repository.py part A) | 1576 | verified | C01, C02 | – |
 | C04 | repo public API (config_repository.py part B), config.py | 1373 | verified | C03 | – |
 | C05 | profile context, OxiDNS settings normalizer | 497 | ported | C04 | – |
-| C06 | HTTP shell, auth, settings routes | 1028 | partial | C05 | 22 (17 done) |
+| C06 | HTTP shell, auth, settings routes | 1028 | partial | C05 | 22 (22 done) |
 | C07 | logs, stats, tasks, notifications, web listener | 1393 | partial | C06 | 9 (5 done) |
 | C08 | rule syntax, matcher, rule utils | 1101 | verified | C02 | – |
 | C09 | matcher cache, group candidates, reorder, strategy refs, connection rules | 708 | verified | C08 | – |
@@ -276,13 +276,13 @@ Files:
 
 Tests: `test_bearer_auth.py` (8), `test_login_messages.py` (3), `test_request_exception_redaction.py` (9), `test_rule_fetch_proxy_settings.py` (7), `test_security_regressions.py` (31)
 
-Routes (22, 17 done):
+Routes (22, 22 done):
 
-`POST /api/auth/login` [done]; `GET /api/auth/status` [done]; `GET /api/auth/verify` [done]; `GET /api/backup/config` [done]; `POST /api/backup/config` [done]; `POST /api/backup/now`; `POST /api/backup/test`; `DELETE /api/config-token` [done]; `GET /api/config-token` [done]; `POST /api/config-token` [done]; `GET /api/server-domain` [done]; `POST /api/server-domain` [done]; `GET /api/settings/dependencies`; `POST /api/settings/dependencies/sub-store/mode`; `POST /api/settings/dependencies/sub-store/update`; `GET /api/settings/rule-fetch-proxy` [done]; `POST /api/settings/rule-fetch-proxy` [done]; `GET /api/settings/subscription-aggregation` [done]; `POST /api/settings/subscription-aggregation` [done]; `GET /api/settings/web-port` [done]; `POST /api/settings/web-port` [done]; `GET /api/version` [done]
+`POST /api/auth/login` [done]; `GET /api/auth/status` [done]; `GET /api/auth/verify` [done]; `GET /api/backup/config` [done]; `POST /api/backup/config` [done]; `POST /api/backup/now` [done C35]; `POST /api/backup/test` [done C35]; `DELETE /api/config-token` [done]; `GET /api/config-token` [done]; `POST /api/config-token` [done]; `GET /api/server-domain` [done]; `POST /api/server-domain` [done]; `GET /api/settings/dependencies` [done C13]; `POST /api/settings/dependencies/sub-store/mode` [done C13]; `POST /api/settings/dependencies/sub-store/update` [done C13]; `GET /api/settings/rule-fetch-proxy` [done]; `POST /api/settings/rule-fetch-proxy` [done]; `GET /api/settings/subscription-aggregation` [done]; `POST /api/settings/subscription-aggregation` [done]; `GET /api/settings/web-port` [done]; `POST /api/settings/web-port` [done]; `GET /api/version` [done]
 
-Evidence: Go: `httpx` (router, ctx, responses, sanitize, edge/SPA, CORS), `httpxtest`, `auth` (auth.go, jwt.go), `server`, `lifecycle`, `cmd/configflow` (`validate_required_env_vars` → `printNoAuthBanner`), `api/auth` (3/3 routes), `api/settings` (14/19 routes), `redact`. Verified earlier against Flask with 82 requests (`httpx/difftest`). Tests: `test_login_messages.py` 3/3, `test_bearer_auth.py` 4/8 (missing 4 are MCP → finish), `test_rule_fetch_proxy_settings.py` 5/7, `test_security_regressions.py` 5/31, `test_request_exception_redaction.py` 0/9.
+Evidence: Go: `httpx` (router, ctx, responses, sanitize, edge/SPA, CORS), `httpxtest`, `auth` (auth.go, jwt.go), `server`, `lifecycle`, `cmd/configflow` (`validate_required_env_vars` → `printNoAuthBanner`), `api/auth` (3/3 routes), `api/settings` (19/19 routes), `redact`. Verified earlier against Flask with 82 requests (`httpx/difftest`). Tests: `test_login_messages.py` 3/3, `test_bearer_auth.py` 4/8 (missing 4 are MCP → finish), `test_rule_fetch_proxy_settings.py` 5/7, `test_security_regressions.py` 5/31, `test_request_exception_redaction.py` 0/9.
 
-Missing / deferred: Missing routes (in `routes/settings.py`): `POST /api/backup/now`, `POST /api/backup/test` (WebDAV → port with C35); `GET /api/settings/dependencies`, `POST /api/settings/dependencies/sub-store/mode`, `POST /api/settings/dependencies/sub-store/update` (→ port with C13). Deferred tests: `test_security_regressions.py` 26 cases are config-pull/rule-proxy/provider endpoints (→ C28 rule proxy, C30/C31 providers, C34 `/api/config/*`); `test_request_exception_redaction.py` 9 cases go through Sub-Store/rules/subscriptions/aggregations/mosdns routes (→ C13, C30, C31, C32, C28); `test_rule_fetch_proxy_settings.py` 2 cases (save failure echo, full backup vs shared export → C34). `app.py::start_agent_rule_sync` and the agents/routers loops are wired by those domains. `internal/redact` (421 lines) has **no tests** of its own.
+Missing / deferred: No missing routes: WebDAV test/now implemented with C35; dependency routes already implemented with C13. C35 also replaces the retention compat copy with webdav.RetentionValue and detaches backup/config writes from request cancellation. Deferred tests: `test_security_regressions.py` 26 cases are config-pull/rule-proxy/provider endpoints (→ C28 rule proxy, C30/C31 providers, C34 `/api/config/*`); `test_request_exception_redaction.py` 9 cases go through Sub-Store/rules/subscriptions/aggregations/mosdns routes (→ C13, C30, C31, C32, C28); `test_rule_fetch_proxy_settings.py` 2 cases (save failure echo, full backup vs shared export → C34). `app.py::start_agent_rule_sync` and the agents/routers loops are wired by those domains. `internal/redact` (421 lines) has **no tests** of its own.
 
 Reviewer notes: Reviewer: add direct tests for `internal/redact` (variants/URL-encoded forms, `RedactSecretsInText`, `StoredSecretFinder`) against Python `config_export` helpers. Public endpoint list lives in `internal/auth` (`gate`): check it against `routes/auth.py::setup_before_request` once all route packages exist. `api/settings/compat.go` holds `rule_fetch.validate_rule_url` (switch with C14).
 
@@ -1717,7 +1717,9 @@ Evidence: `internal/webdav` implements native HTTP HEAD/MKCOL/PUT/PROPFIND/DELET
 
 Done: `6ea8cd17` WebDAV core/worker. Native importer Parse/Build now passes 84 synthetic public-entry Python structure comparisons across all four clients, protocol/TLS/transport/WireGuard options, reuse/collisions, warnings, invalid formats, custom sections and rule ordering. Build preserves both shared input and reusable Plan.
 
-In progress: backup API wiring (implemented and scoped race passing, next commit) and Flask↔Go WebDAV HTTP boundary differential. Next: commit/register backup routes and hook; extend YAML alias/merge input coverage; complete fake WebDAV boundary cases; final .32 full/vet/race/proddiff; rebase go, clean, no push.
+Done: backup/test and backup/now registered in api/settings; production webdav.Wire installs ConfigurationCommitted. Settings POST/config writes use context.WithoutCancel. C06 route accounting updated (all 22 methods registered). Native API loopback test verifies full export, masked password, nested directories, invalid requests and credential-free HTTP 403 responses/logs.
+
+In progress: Flask↔Go WebDAV HTTP boundary differential. Next: commit/register backup routes and hook; extend YAML alias/merge input coverage; complete fake WebDAV boundary cases; final .32 full/vet/race/proddiff; rebase go, clean, no push.
 
 Implementation contract: importer is pure Parse → Plan → Build (typed shared additions/profile/summary, protocol extras as json.RawMessage, custom YAML as yaml.Node). WebDAV uses net/http + encoding/xml, no new dependency. Worker owns one pending Source and deadline, snapshots after debounce outside commit locks, serializes uploads, and detaches request cancellation; failed upload/cleanup never rolls back a commit. Service errors omit remote URL/body/credentials.
 
@@ -1726,6 +1728,8 @@ Commands: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go vet ./i
 Notes for porter: Fills `repo.Hooks.ConfigurationCommitted` (auto backup) and the two `/api/backup/*` routes of `routes/settings.py` (C06 missing list). `config_importer` (client config import: Clash/Surge/…) has no backend imports — self-contained, can start early.
 
 Importer validation: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go vet ./internal/importer/... && go test -count=1 -v ./internal/importer/'` → `84 synthetic public parse/build cases`, `ok configflow/internal/importer 0.021s`.
+
+API/scoped race: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go vet ./internal/api/settings/... && go test -race -count=1 ./internal/api/settings/... ./internal/webdav/...'` → settings 5.263s, webdav 1.513s.
 
 ## C36 — setup flow
 

@@ -45,6 +45,7 @@ import (
 	"configflow/internal/substore"
 	"configflow/internal/tasks"
 	"configflow/internal/utilx"
+	"configflow/internal/webdav"
 )
 
 // routePackages are the Register functions of the ported blueprints.
@@ -70,6 +71,7 @@ var lateRoutePackages = []func(*httpx.Router){
 // providers).
 var wirePackages = []func(){
 	wireCore,
+	webdav.Wire,
 	apinodes.Wire,
 	agents.Wire,
 	metrics.Wire,

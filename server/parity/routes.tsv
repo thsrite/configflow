@@ -118,8 +118,8 @@ GET	/api/auth/status	routes.auth.auth_status	internal/api/auth	done
 GET	/api/auth/verify	routes.auth.verify	internal/api/auth	done
 GET	/api/backup/config	routes.settings.backup_config	internal/api/settings	done
 POST	/api/backup/config	routes.settings.backup_config	internal/api/settings	done
-POST	/api/backup/now	routes.settings.backup_now		todo
-POST	/api/backup/test	routes.settings.test_backup		todo
+POST	/api/backup/now	routes.settings.backup_now	api/settings	done
+POST	/api/backup/test	routes.settings.test_backup	api/settings	done
 GET	/api/client-devices	routes.client_devices.client_devices		todo
 PUT	/api/client-devices	routes.client_devices.client_devices		todo
 GET	/api/client-devices/discovery	routes.client_devices.client_device_discovery		todo

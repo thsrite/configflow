@@ -5,11 +5,11 @@
 // third-party dependency routes (GET /api/settings/dependencies, Sub-Store
 // update and mode; internal/substore, C13).
 //
-// Not registered yet (they need other packages): POST /api/backup/test and
-// POST /api/backup/now (WebDAV client and upload_backup, package #17).
+// The WebDAV client, retention and post-commit backup worker live in internal/webdav.
 package settings
 
 import (
+	"context"
 	"errors"
 	"os"
 	"strings"
@@ -38,6 +38,8 @@ func SetWebListener(m *weblistener.Manager) { webListener.Store(m) }
 
 // Register adds the settings routes available now.
 func Register(r *httpx.Router) {
+	r.POST("/api/backup/test", "settings.test_backup", auth.Require(testBackup))
+	r.POST("/api/backup/now", "settings.backup_now", auth.Require(backupNow))
 	r.Handle([]string{"GET", "POST"}, "/api/settings/web-port", "settings.handle_web_port", auth.Require(handleWebPort))
 	r.Handle([]string{"GET", "POST"}, "/api/settings/rule-fetch-proxy", "settings.handle_rule_fetch_proxy", auth.Require(handleRuleFetchProxy))
 	r.Handle([]string{"GET", "POST"}, "/api/server-domain", "settings.handle_server_domain", auth.Require(handleServerDomain))
@@ -348,7 +350,8 @@ func badRetention(data *jsonx.Object) bool {
 }
 
 func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
-	config, err := repo.GetSystemConfig(c.Context())
+	ctx := context.WithoutCancel(c.Context())
+	config, err := repo.GetSystemConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +389,7 @@ func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
 			}
 			backup.Set(key, value)
 		}
-		if err := repo.SaveSystemConfig(c.Context(), config, nil); err != nil {
+		if err := repo.SaveSystemConfig(ctx, config, nil); err != nil {
 			return nil, err
 		}
 		summary := strings.Join(changed, "、")
