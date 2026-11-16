@@ -1030,3 +1030,12 @@ Questions for the coordinator/maintainer:
    **Closed (A07 review, 2026-11-16, ce75e46a):** `agents/proxy.go` (requests 2.31 / urllib3 2.8 proxy
    choice), 994 reference cases, loopback regression test, client-level differential against real requests
    (no ported route sends trust_env requests yet; details in A01's section).
+6. **Deliberate fixes of a Python validation bug (maintainer, 2026-11-16):** three Python checks use
+   `re.match(r'^…$')`, whose `$` accepts one trailing "\n": the Agent name in `install_script.py`
+   (`validate_agent_name`, A08), the server URL in `docker_ha_guide.py` (A09), and the EasyTier URL in
+   `common/mihomo_easytier.py` (C12). The Python version will not be fixed (it is being retired); **the Go
+   version rejects such input** (`fullmatch` semantics, same error text as any other invalid value). These
+   are the only accepted behaviour differences of this kind: corpora/differentials mark exactly the rows
+   with a single trailing "\n" as expected differences, with a regression test. A09: done by its porter.
+   A08 (verified) and C12 (verified): small follow-up by the next agent touching `internal/installer` /
+   `internal/convert` easytier code; the modules stay verified with this listed.

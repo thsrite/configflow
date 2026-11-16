@@ -1220,3 +1220,6 @@ Questions for the maintainer (from this audit):
     (goroutine vs deferred close); fix in the next repo touch.
 12. **`converters/surge.py::get_aggregation_nodes`** has no caller in `backend/` and no test: not ported,
     under the maintainer's rule for code without callers (2026-11-16).
+13. **EasyTier URL check (C12)**: deliberate fix of a Python validation bug — see PROGRESS-agents.md
+    "Coordinator decisions" item 6. The Go version rejects a URL with a single trailing "\n"; follow-up by
+    the next agent touching `convert/easytier.go`.
