@@ -25,7 +25,7 @@ var TagTypes = map[string]string{
 	"adguard_block": "black_hole", "custom_hosts": "hosts",
 	"server_udp": "udp_server", "server_tcp": "tcp_server",
 	"rules_download": "download", "rules_reload": "reload_provider",
-	"rules_cron": "cron",
+	"rules_cron":     "cron",
 	"query_recorder": "query_recorder", "ip_selector": "ip_selector",
 	"ros_address_list": "ros_address_list", "ros_route": "ros_route",
 }
