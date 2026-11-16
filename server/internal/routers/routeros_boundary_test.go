@@ -744,6 +744,8 @@ func r04ReviewCases(base, dhcp routerfake.State) []boundaryCase {
 	return []boundaryCase{
 		{name: "review_batch_delete_rollback_changed_route_message", action: "restore_many",
 			state: routerfake.State{Tables: map[string][]routerfake.Row{"/ip/route": changedTable}}, undos: deleteUndos(changed)},
+		{name: "review_single_delete_rollback_changed_route_message", action: "restore_many",
+			state: routerfake.State{Tables: map[string][]routerfake.Row{"/ip/route": changedTable[1:2]}}, undos: deleteUndos(changed[1:2])},
 		{name: "review_batch_delete_rollback_dynamic_route_message", action: "restore_many",
 			state: routerfake.State{Tables: map[string][]routerfake.Row{"/ip/route": dynamicTable}}, undos: deleteUndos(dynamic)},
 		{name: "review_batch_recreate_rollback_conflict_message", action: "restore_many",

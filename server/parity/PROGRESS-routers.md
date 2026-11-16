@@ -1,6 +1,6 @@
 # PROGRESS — domain `routers`
 
-Domain `routers` (WORKFLOW.md): router core, iKuai, RouterOS core/policy, router DNS/IPv6, router publish/rule sync, clients/split (old packages #32–#38). **52 Python files, 17574 lines, 17 modules** (equal to the `routers` totals in `FILES.md`) — 13 missing, 0 partial, 1 ported (R04), 3 verified (R01, R02, R03). Only reviewers set `verified`.
+Domain `routers` (WORKFLOW.md): router core, iKuai, RouterOS core/policy, router DNS/IPv6, router publish/rule sync, clients/split (old packages #32–#38). **52 Python files, 17574 lines, 17 modules** (equal to the `routers` totals in `FILES.md`) — 13 missing, 0 partial, 0 ported, 4 verified (R01, R02, R03, R04). Only reviewers set `verified`.
 
 Planning audit: 2026-11-16, worktree `configflow-go`, branch `go` at 7b1b90b5 (plus uncommitted work of the C24/C25 agent in `internal/oxidns`). The Go tree was searched directly (`grep -ri 'routeros|ikuai|router_split|routers_of|router' server/internal`): **no package ports any routers file**; `internal/server` wires no routers package. What exists is listed under "Go code that already touches this domain" below; nothing from the old `progress/` files covers #32–#38.
 
@@ -40,7 +40,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R01 | router models, store, DHCP DNS, desired state | 969 | verified | HR | C04, C05, C21, C32¹ | – | internal/routers, internal/routerdoc, internal/netipx |
 | R02 | router split (full TUN marker), rule IP presence | 381 | verified | HR | C04, C12, C14, C18, C21; C36² | – | internal/routersplit, internal/gateway/gwbase, internal/ippresence |
 | R03 | RouterOS NAT assessment, iKuai IP groups, drift report | 1499 | verified | HR | R01 | – | internal/routers |
-| R04 | RouterOS REST driver, batch writes | 1415 | ported | HR | R01, R03; shared requests client³ | – | internal/routers |
+| R04 | RouterOS REST driver, batch writes | 1415 | verified | HR | R01, R03; shared requests client³ | – | internal/routers |
 | R05 | iKuai driver | 1179 | missing | HR | R01, R03; shared requests client³ | – | internal/routers |
 | R06 | device route editor (RouterOS/iKuai static routes) | 684 | missing | HR | R04, R05 | – | internal/routers |
 | R07 | RouterOS NAT address lists, address-list sync, test helpers | 1422 | missing | HR | R03, R04 | – | internal/routers, internal/routers/routerfake |
@@ -294,7 +294,9 @@ Pitfalls: decoded rows hold JSON numbers as float64 (iKuai ids, ref_count): read
 
 ## R04 — RouterOS REST driver, batch writes
 
-**Status: `ported`** · HR · prereqs: R01, R03 · Go: internal/routers, internal/devhttp
+**Status: `verified`** (O4 HR review, 2026-11-17, `parity/review-r04.md`; zero open findings; L5 lab items listed there) · HR · prereqs: R01, R03 · Go: internal/routers, internal/devhttp
+
+O4 review summary: 10 findings, all fixed with tests — High: F1 extra reported IDs in a route console batch panicked and left routes unrecorded (Python IndexError, same class as the NAT fix below), F3 cancellation could abandon an accepted batch or the rollback (rule 4b; `Apply`/`RestoreMany` now run to completion, `ApplyMany` stops only between proven batches); Medium: F2 rollback message texts/prefix, F7 `maps.Equal` panic on array values and composite values collapsing in ownership snapshots, F9 `dhcp_dns_update` without `expected` wrote without proof; Low: F4 batched cleanup after a failed add batch, F5 dynamic NAT message, F6 stop-on-failure marked removed routes skipped, F8 (Python bug) rollback re-creation ignored the 32 KiB script limit, F10 idiomatic clean-ups. Requirements on R07/R08–R12/R14/R15 and the nine L5 lab items are in the review file. Tests added: `r04_review_test.go`, `r04ReviewCases` in the boundary corpus (Python-compared), `TestOnlyIdempotentRequestsAreRetried` in devhttp; routerfake gained the `PatchCreated` fault.
 
 - `internal/devhttp` is the shared device HTTP client (coordinator decision: no requests emulation; net/http + small shared helper, reused by R05): `New(Config{VerifyTLS, BasicAuth, Username, Password, Cookies})`, `(*Client).Do(ctx, method, url, body any, timeout) (*Response{Status, Header, Body}, error)`, `Response.JSON`, `DecodeJSON` (UseNumber, exactly one value), `EncodeJSON` (compact, non-ASCII as \uXXXX like json.dumps, no HTML escaping), `*Error{Class}` + `ClassOf(err)` + `Timeout()`, `Close()`. No proxy (`trust_env=False`), redirects not followed, keep-alive, timeout = connect timeout + per-read watchdog (no total limit). Basic auth uses Latin-1 when possible and UTF-8 otherwise. Failure classes were measured on the test server with requests 2.31/urllib3 2.8 and replayed by `devhttp_test.go`: refused/DNS/closed/garbage → ConnectionError, dial timeout → ConnectTimeout, header wait/TLS handshake stall → ReadTimeout, TLS failures → SSLError, short body → ChunkedEncodingError, stalled body → ConnectionError. Note: Go may retry an idempotent GET once on a reused connection the device closed.
 - `RouterOS` implements R01 `Driver` over `internal/devhttp`: context-aware probe, ping, route/NAT readback, DHCP DNS evidence/read/update, typed operation/undo records, guarded REST writes, ownership checks, verification and compensation. Cancelled writes still attempt compensation with an uncancelled context. Later R07–R11 kinds use `RegisterRouterOSHandler` until their owning modules register.
