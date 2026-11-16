@@ -132,6 +132,8 @@ def main():
     groups.update(generator_dns)
     from cases.generator_urls import GROUPS as generator_urls
     groups.update(generator_urls)
+    from cases.backup_shapes import GROUPS as backup_shapes
+    groups.update(backup_shapes)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

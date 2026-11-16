@@ -636,3 +636,19 @@ request_variants=6145 named_matrix_cases=3320（S480 F2387 B453），H去重217�
 ```
 
 本批生成preview仍Go未接通；无新业务差异。继续备份及其余生成器/业务/长流程，未做最终全量。
+
+## 批次 35：G14三种备份格式完整恢复往返
+
+- 12请求，当前schema、原版单配置、schema2多profile均通过公开import → 重启 → export → 将公开原始导出再次import → 重启 → export。不是启动时pre-SQLite迁移。
+- 每种包含真实共享节点（合成凭据）、订阅、内联规则库、profile本地策略及MosDNS选择；多profile的不同资源ID和本地引用都精确保留。原始custom_config及两类能力不可丢失，shared表不重复资源。严格HTTP、数据库行/字段/revision、恢复前快照和文件比较沿用已自检比较器。
+- 比较每轮导出完整正文，而非只验证success；Python前提额外验证当前schema、精确profile/resource闭包、所有引用及源正文。Go相关import/export仍未接通。
+
+```text
+.63 run.py --groups backup-format-roundtrips
+current go-unimplemented=12 design_errors=[] seconds=8.85
+cumulative compared=1470 go-unimplemented=4617 dependency=28 different=41 O12-separate=1
+request_variants=6157 named_matrix_cases=3320（S480 F2387 B453），H去重217，G去重11
+42 self-checks + end-to-end wrong-Go-response check OK
+```
+
+继续未完成的生成器与业务分支，未做最终全量。
