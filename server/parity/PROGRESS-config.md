@@ -1362,3 +1362,9 @@ Questions for the maintainer (from this audit):
     uses it; `reqproxy.ForRedirect` should also replace Go's redirect proxy rules in `agents.HTTPClient`
     (A01 follow-up for the next agent touching `agents/client.go`). C17 review: check the timing flake in
     `TestAggregationFallsBackToCommittedArtifactBeforeFirstServe` (0.2 s budget, failed once under load).
+15. **Open items for C06 (httpx), found by the A10 porter (2026-11-16):** `httpx.File` differs from
+    Werkzeug 3.1 `send_file` on conditional/range requests: 304 should keep `Content-Disposition` and drop
+    `Last-Modified`; Range is evaluated before the 304 check; `If-Range: W/"tag"` matches; a failed
+    `If-Match` is 412; `Range: bytes = 1 - 2` (spaces) is accepted; Range on an empty file is ignored;
+    multi-range or malformed Range is 416; ETag mtime rounding differs. Affects every send_file route; fix in
+    the C06 review and remove the "known httpx differences" from the A10 download differential.
