@@ -8,10 +8,6 @@ import (
 	"configflow/internal/netipx"
 )
 
-// Selecting a DNS Agent opts into replacing the DNS servers of the unique
-// enabled DHCP network that contains the proxy gateway. No DHCP network is
-// ever created.
-
 // DNSAgent is what DHCP DNS needs to know about an Agent record.
 type DNSAgent struct {
 	ID          string   `json:"id"`
@@ -59,8 +55,7 @@ func clientIPv4(host string) string {
 	return a.String()
 }
 
-// DNSAgentSettings is the DHCP DNS target for a single OxiDNS Agent (agent
-// nil when the selected Agent does not exist).
+// DNSAgentSettings is the DHCP DNS target for a single OxiDNS Agent (nil: gone).
 func DNSAgentSettings(agentID string, agent *DNSAgent) DNSSettings {
 	s := DNSSettings{AgentID: agentID}
 	switch {
@@ -79,9 +74,8 @@ func DNSAgentSettings(agentID string, agent *DNSAgent) DNSSettings {
 	return s
 }
 
-// DNSHASettings is the DHCP DNS target of an OxiDNS pair sharing a virtual
-// IP (used while the agent's HA is enabled). One member being offline does
-// not block publishing.
+// DNSHASettings is the DHCP DNS target of an OxiDNS pair sharing a virtual IP
+// (while HA is enabled); one member being offline does not block publishing.
 func DNSHASettings(agentID string, agent, peer *DNSAgent) DNSSettings {
 	s := DNSSettings{AgentID: agentID}
 	ha := agent.HA
@@ -114,7 +108,8 @@ func DNSHASettings(agentID string, agent, peer *DNSAgent) DNSSettings {
 	return s
 }
 
-// MatchingNetworks are the enabled DHCP networks containing the gateway.
+// MatchingNetworks are the enabled DHCP networks containing the gateway (the
+// unique one gets the selected DNS; none is ever created).
 func MatchingNetworks(state *DhcpDnsState, gateway string) ([]*DhcpDnsEntry, error) {
 	address, ok := netipx.ParseAddr4(gateway)
 	if !ok {
@@ -164,17 +159,14 @@ type DNSReport struct {
 	Blockers  []string        `json:"blockers"`
 }
 
-// BuildDNSReport compares the DHCP DNS readback (nil: not readable) with the
-// selected DNS target.
+// BuildDNSReport compares the DHCP DNS readback (nil: not readable) with the selected DNS target.
 func BuildDNSReport(dns DNSSettings, gateway string, state *DhcpDnsState) DNSReport {
 	report := DNSReport{Status: "disabled", TargetDNS: dns.Server, Items: []DNSReportItem{}, Blockers: []string{},
 		Message: "未选择 DHCP DNS 服务器，本次保留现有 DHCP DNS 配置。"}
 	if dns.AgentID == "" {
 		return report
 	}
-	report.Status = "unknown"
-	failure := dns.Error
-	var matches []*DhcpDnsEntry
+	failure, matches := dns.Error, []*DhcpDnsEntry{}
 	switch {
 	case failure != "":
 	case dns.Server == "":
@@ -185,37 +177,31 @@ func BuildDNSReport(dns DNSSettings, gateway string, state *DhcpDnsState) DNSRep
 		var err error
 		if matches, err = MatchingNetworks(state, gateway); err != nil {
 			failure = err.Error()
+		} else if len(matches) == 0 {
+			failure = "未找到包含所选 mihomo 网关的已启用 DHCP 网段，不会自动创建 DHCP 配置"
+		} else if len(matches) > 1 {
+			failure = "多个已启用 DHCP 网段包含所选 mihomo 网关，无法确定唯一 DNS 下发范围"
+		} else {
+			failure = strings.Join(matches[0].Blockers, "；")
 		}
 	}
-	if failure == "" && len(matches) == 0 {
-		failure = "未找到包含所选 mihomo 网关的已启用 DHCP 网段，不会自动创建 DHCP 配置"
-	} else if failure == "" && len(matches) > 1 {
-		failure = "多个已启用 DHCP 网段包含所选 mihomo 网关，无法确定唯一 DNS 下发范围"
-	} else if failure == "" && len(matches[0].Blockers) > 0 {
-		failure = strings.Join(matches[0].Blockers, "；")
-	}
+	report.Status, report.Message = "unknown", failure
 	for _, e := range matches {
 		item := DNSReportItem{ID: e.ID, Network: e.Network, CurrentDNS: append([]string{}, e.DNS...),
 			DesiredDNS: []string{dns.Server}, Status: "unknown", Detail: failure}
 		if failure == "" {
-			item.Status = "pending"
-			if slices.Equal(e.DNS, item.DesiredDNS) && e.DNSExplicit {
-				item.Status = "synced"
-			}
+			report.Status, report.Message = "pending", "将替换该 DHCP 网段的 DNS 列表；客户端续租或重新连接后获取新 DNS。"
 			if !e.DNSExplicit {
 				item.Detail = "DNS 槽位仍含自动/未指定值，将明确设置为所选服务器"
+			} else if slices.Equal(e.DNS, item.DesiredDNS) {
+				report.Status, report.Message = "synced", "该 DHCP 网段的 DNS 已与所选服务器一致。"
 			}
+			item.Status = report.Status
 		}
 		report.Items = append(report.Items, item)
 	}
 	if failure != "" {
-		report.Message, report.Blockers = failure, []string{failure}
-		return report
-	}
-	report.Status = report.Items[0].Status
-	report.Message = "将替换该 DHCP 网段的 DNS 列表；客户端续租或重新连接后获取新 DNS。"
-	if report.Status == "synced" {
-		report.Message = "该 DHCP 网段的 DNS 已与所选服务器一致。"
+		report.Blockers = []string{failure}
 	}
 	return report
 }

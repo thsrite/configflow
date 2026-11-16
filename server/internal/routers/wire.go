@@ -12,20 +12,14 @@ func Wire() {
 	repo.RegisterHooks(repo.Hooks{RedactRouters: redactHook})
 }
 
-// redactHook adapts RedactRouters to repo's jsonx document (repo keeps jsonx
-// until its S pass).
+// redactHook adapts RedactRouters to repo's jsonx document (until repo's S pass).
 func redactHook(routers any) any {
-	document, err := jsonx.Compact(routers)
-	if err != nil {
-		return routers
+	if document, err := jsonx.Compact(routers); err == nil {
+		if redacted, err := RedactRouters(document); err == nil {
+			if value, err := jsonx.Parse(redacted); err == nil {
+				return value
+			}
+		}
 	}
-	redacted, err := RedactRouters(document)
-	if err != nil {
-		return routers
-	}
-	value, err := jsonx.Parse(redacted)
-	if err != nil {
-		return routers
-	}
-	return value
+	return routers
 }

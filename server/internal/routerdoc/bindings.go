@@ -2,6 +2,7 @@ package routerdoc
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -12,8 +13,7 @@ const (
 	BindingsInvalidMessage = "客户端固定 IP 记录缺少有效 IP、MAC、路由器或归属标记。"
 )
 
-var bindingFields = map[string]bool{"router_id": true, "vendor": true, "id": true, "ip": true, "mac": true,
-	"comment": true, "server": true, "interface": true, "gateway": true}
+var bindingFields = []string{"router_id", "vendor", "id", "ip", "mac", "comment", "server", "interface", "gateway"}
 
 // ValidateBindings checks a stored client_fixed_ips document (JSON object
 // IPv4 -> binding): "" when valid, else the message for the user.
@@ -23,28 +23,23 @@ func ValidateBindings(document []byte) string {
 		return BindingsShapeMessage
 	}
 	for ip, raw := range bindings {
-		var fields map[string]json.RawMessage
-		if json.Unmarshal(raw, &fields) != nil || fields == nil || IPv4(ip) == "" {
+		var b map[string]*string // every value a string, at most 512 characters, no control characters
+		if json.Unmarshal(raw, &b) != nil || b == nil || IPv4(ip) == "" {
 			return BindingsInvalidMessage
 		}
-		values := map[string]string{}
-		for key, v := range fields {
-			var s string
-			if !bindingFields[key] || len(v) == 0 || v[0] != '"' || json.Unmarshal(v, &s) != nil || utf8.RuneCountInString(s) > 512 ||
-				strings.ContainsFunc(s, func(r rune) bool { return r < 32 }) {
-				return BindingsInvalidMessage
-			}
-			values[key] = s
-		}
-		for _, key := range []string{"router_id", "vendor", "id", "ip", "mac", "comment"} {
-			if _, ok := values[key]; !ok {
+		for key, v := range b {
+			if !slices.Contains(bindingFields, key) || v == nil || utf8.RuneCountInString(*v) > 512 ||
+				strings.ContainsFunc(*v, func(r rune) bool { return r < 32 }) {
 				return BindingsInvalidMessage
 			}
 		}
-		mac := values["mac"]
-		if values["ip"] != ip || (values["vendor"] != "routeros" && values["vendor"] != "ikuai") ||
-			values["router_id"] == "" || values["id"] == "" || NormalizeMAC(mac) == "" || NormalizeMAC(mac) != mac ||
-			!strings.HasPrefix(values["comment"], "cf-client:") {
+		for _, key := range bindingFields[:6] { // required
+			if b[key] == nil {
+				return BindingsInvalidMessage
+			}
+		}
+		if mac := *b["mac"]; *b["ip"] != ip || *b["vendor"] != "routeros" && *b["vendor"] != "ikuai" || *b["router_id"] == "" ||
+			*b["id"] == "" || NormalizeMAC(mac) == "" || NormalizeMAC(mac) != mac || !strings.HasPrefix(*b["comment"], "cf-client:") {
 			return BindingsInvalidMessage
 		}
 	}

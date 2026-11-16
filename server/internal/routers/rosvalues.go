@@ -18,15 +18,11 @@ func ComparableValues(path string, row map[string]any) map[string]any {
 	}
 	field := map[string]string{"/routing/table": "fib", "/ip/firewall/mangle": "passthrough"}[path]
 	if value, ok := result[field]; ok && field != "" {
-		switch value {
-		case true, "true", "yes":
+		switch { // fib is a presence flag: "" means set
+		case value == true || value == "true" || value == "yes" || field == "fib" && value == "":
 			result[field] = "true"
-		case false, "false", "no":
+		case value == false || value == "false" || value == "no":
 			result[field] = "false"
-		case "":
-			if field == "fib" { // fib is a presence flag
-				result[field] = "true"
-			}
 		}
 	}
 	if gateway, ok := result["gateway"].(string); ok && path == "/ip/route" {

@@ -52,6 +52,10 @@ func TestR01Corpus(t *testing.T) {
 			}
 		case row.Err == nil && gotErr == nil:
 			ok = sameJSON(t, got, row.Out)
+			if !ok && row.Fn == "stored" && readerDefaults(t, got, row.Out) {
+				ok = true
+				internal["stored: absent setting written with the reader default"]++
+			}
 			if !ok && row.Fn == "normalize" && reprField(t, got, row.Out) {
 				ok = true
 				internal["normalize: list/dict text field (Python repr)"]++
@@ -82,6 +86,24 @@ func reprField(t *testing.T, got any, want json.RawMessage) bool {
 		if text, _ := b[key].(string); text != "" && (text[0] == '[' || text[0] == '{') {
 			delete(a, key)
 			delete(b, key)
+		}
+	}
+	return reflect.DeepEqual(a, b)
+}
+
+// readerDefaults reports whether got equals want once the settings want
+// lacks are dropped from got, each holding the default every reader applies
+// to an absent setting (records stored before the setting existed).
+func readerDefaults(t *testing.T, got any, want json.RawMessage) bool {
+	var a, b map[string]any
+	data, _ := json.Marshal(got)
+	_ = json.Unmarshal(data, &a)
+	_ = json.Unmarshal(want, &b)
+	defaults := map[string]any{"manage_return_routing": false, "auto_rule_sync": false, "rule_sync_interval": 60.0,
+		"ros_policy_rule_sets": nil}
+	for key, value := range defaults {
+		if _, present := b[key]; !present && reflect.DeepEqual(a[key], value) {
+			delete(a, key)
 		}
 	}
 	return reflect.DeepEqual(a, b)

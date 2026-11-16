@@ -1,23 +1,19 @@
 package routers
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/netip"
+	"slices"
 	"sort"
 	"strings"
 
-	"gopkg.in/yaml.v3"
-
 	"configflow/internal/mosdns"
 	"configflow/internal/netipx"
+	"configflow/internal/yamlx"
 )
-
-// The desired router state: proxy CIDRs are the Mihomo fake-ip range plus
-// the public IPv4 networks of the rule sets explicitly selected on the
-// router (typically Telegram, whose clients connect by IP). Their public
-// IPv6 networks are listed separately (only RouterOS routes them). Rule sets
-// are never inferred from policies.
 
 // DefaultFakeIPRange is Mihomo's default fake-ip range.
 const DefaultFakeIPRange = "198.18.0.1/16"
@@ -25,8 +21,7 @@ const DefaultFakeIPRange = "198.18.0.1/16"
 // BuiltinNonProxy are the built-in policies that never proxy.
 var BuiltinNonProxy = []string{"DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"}
 
-// RuleSet is a profile rule_configs entry of itemType "ruleset". Raw is the
-// whole entry for content loaders.
+// RuleSet is a profile rule_configs entry of itemType "ruleset". Raw is the whole entry for content loaders.
 type RuleSet struct {
 	ID             string          `json:"id"`
 	ItemType       string          `json:"itemType"`
@@ -62,20 +57,19 @@ func RuleSourceIssue(item *RuleSet, library *LibraryRule, requireLibrary bool) s
 }
 
 // FakeIPNetwork is the fake-ip network of the Mihomo base config
-// (dns.fake-ip-range of the custom YAML), 198.18.0.0/16 by default.
+// (dns.fake-ip-range of the custom YAML), 198.18.0.0/16 by default. The YAML
+// is read through yamlx like the Mihomo generator reads it, so the router
+// routes the range Mihomo uses (duplicate keys: the last wins).
 func FakeIPNetwork(customConfig string) netip.Prefix {
-	fallback, _ := netipx.ParseNetwork4(DefaultFakeIPRange, false)
-	var doc struct {
-		DNS map[string]any `yaml:"dns"`
-	}
-	if yaml.Unmarshal([]byte(customConfig), &doc) != nil {
-		return fallback
-	}
-	value, _ := doc.DNS["fake-ip-range"].(string)
-	if network, ok := netipx.ParseNetwork4(value, false); ok {
+	doc, err := yamlx.LoadWith(customConfig, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true})
+	dns, _ := yamlx.Lookup(doc, "dns")
+	value, _ := yamlx.Lookup(dns, "fake-ip-range")
+	text, _ := value.(string)
+	if network, ok := netipx.ParseNetwork4(text, false); ok && err == nil {
 		return network
 	}
-	return fallback
+	network, _ := netipx.ParseNetwork4(DefaultFakeIPRange, false)
+	return network
 }
 
 // ProxyCIDR is a collapsed network and the sources inside it.
@@ -84,39 +78,30 @@ type ProxyCIDR struct {
 	Sources []string `json:"sources"`
 }
 
-// MergeSources collapses source networks of one family; each result lists
-// (sorted) every source name inside it.
+// MergeSources collapses source networks of one family; each result lists (sorted) every source name inside it.
 func MergeSources(sources map[netip.Prefix][]string) []ProxyCIDR {
-	networks := make([]netip.Prefix, 0, len(sources))
-	for n := range sources {
-		networks = append(networks, n)
-	}
-	collapsed, _ := netipx.Collapse(networks)
+	collapsed, _ := netipx.Collapse(slices.Collect(maps.Keys(sources)))
 	out := make([]ProxyCIDR, len(collapsed))
-	labels := make([]map[string]bool, len(collapsed))
 	for i, n := range collapsed {
-		out[i].CIDR, labels[i] = n.String(), map[string]bool{}
+		out[i] = ProxyCIDR{CIDR: n.String(), Sources: []string{}}
 	}
 	// Collapsed networks are disjoint and cover every source: each source lies
 	// in the last one starting at or before it.
-	for n, names := range sources {
-		i := sort.Search(len(collapsed), func(i int) bool { return n.Addr().Less(collapsed[i].Addr()) }) - 1
-		for _, name := range names {
-			labels[i][name] = true
-		}
+	for source, names := range sources {
+		i := sort.Search(len(collapsed), func(i int) bool { return source.Addr().Less(collapsed[i].Addr()) }) - 1
+		out[i].Sources = append(out[i].Sources, names...)
 	}
 	for i := range out {
-		out[i].Sources = make([]string, 0, len(labels[i]))
-		for name := range labels[i] {
-			out[i].Sources = append(out[i].Sources, name)
-		}
-		sort.Strings(out[i].Sources)
+		slices.Sort(out[i].Sources)
+		out[i].Sources = slices.Compact(out[i].Sources)
 	}
 	return out
 }
 
-// Desired is what the upstream router should contain. DNS, when set, is
-// the DHCP DNS target (added by the inspection).
+// Desired is what the upstream router should contain: proxy CIDRs are the
+// fake-ip range plus the public IPv4 networks of the rule sets selected on
+// the router (never inferred from policies); their public IPv6 networks are
+// listed apart. DNSSettings is added by the inspection.
 type Desired struct {
 	FakeIPRange      string      `json:"fake_ip_range"`
 	ProxyGateway     string      `json:"proxy_gateway"`
@@ -131,9 +116,8 @@ type Desired struct {
 // library). An error counts as "no local cache", except ErrNotPorted.
 type ContentLoader func(item RuleSet, library *LibraryRule) (string, error)
 
-// RulesetContent is the default content loader: the rule set's local cache
-// or inline content, never the network (routes.rules.get_ruleset_content,
-// C32). Fails closed until C32 provides it.
+// RulesetContent is the default loader: local cache or inline content, never
+// the network (C32 get_ruleset_content; fails closed until C32 sets it).
 var RulesetContent = func(profile json.RawMessage, item RuleSet, library *LibraryRule) (string, error) {
 	return "", ErrNotPorted
 }
@@ -147,48 +131,28 @@ type desiredProfile struct {
 	RuleLibrary []json.RawMessage `json:"rule_library"`
 }
 
-type proxyGroup struct {
-	Name        string            `json:"name"`
-	ManualNodes []string          `json:"manual_nodes"`
-	Sources     []json.RawMessage `json:"-"`
-}
-
-// directOnlyGroups are strategy groups that can only resolve to built-in
-// non-proxy policies.
+// directOnlyGroups are strategy groups that can only resolve to built-in non-proxy policies.
 func directOnlyGroups(groups []json.RawMessage) map[string]bool {
 	names := map[string]bool{}
 	for _, raw := range groups {
-		var g proxyGroup
-		var other map[string]json.RawMessage
-		if json.Unmarshal(raw, &g) != nil || json.Unmarshal(raw, &other) != nil || len(g.ManualNodes) == 0 {
-			continue
-		}
-		direct := true
+		var g map[string]json.RawMessage
+		var nodes []string
+		direct := json.Unmarshal(raw, &g) == nil && json.Unmarshal(g["manual_nodes"], &nodes) == nil && len(nodes) > 0
 		for _, key := range []string{"include_groups", "subscriptions", "aggregations", "regex", "follow_group"} {
-			direct = direct && !truthy(other[key])
+			direct = direct && !truthy(g[key])
 		}
-		for _, node := range g.ManualNodes {
-			direct = direct && contains(BuiltinNonProxy, node)
+		for _, node := range nodes {
+			direct = direct && slices.Contains(BuiltinNonProxy, node)
 		}
-		if direct {
-			names[g.Name] = true
+		if name, ok := jsonString(g["name"]); direct && ok {
+			names[name] = true
 		}
 	}
 	return names
 }
 
-func contains(list []string, s string) bool {
-	for _, item := range list {
-		if item == s {
-			return true
-		}
-	}
-	return false
-}
-
-// ComputeDesired builds the desired state for a profile (its stored JSON),
-// the proxy gateway ("" when no Mihomo Agent is linked) and the static-route
-// rule sets selected on the router. loader nil uses RulesetContent.
+// ComputeDesired builds the desired state for a profile (stored JSON), the
+// proxy gateway ("" when unlinked) and the router's static-route rule sets.
 func ComputeDesired(profile json.RawMessage, gateway string, ruleSets []string, loader ContentLoader) (*Desired, error) {
 	var doc desiredProfile
 	if err := json.Unmarshal(profile, &doc); err != nil {
@@ -229,13 +193,7 @@ func ComputeDesired(profile json.RawMessage, gateway string, ruleSets []string, 
 			incomplete("所选规则集 " + id + " 已不存在，已忽略")
 			continue
 		}
-		name := item.Name
-		if name == "" {
-			name = item.ID
-		}
-		if name == "" {
-			name = "规则集"
-		}
+		name := cmp.Or(item.Name, item.ID, "规则集")
 		var lib *LibraryRule
 		if item.LibraryRuleID != "" {
 			lib = library[item.LibraryRuleID]
@@ -244,7 +202,7 @@ func ComputeDesired(profile json.RawMessage, gateway string, ruleSets []string, 
 			incomplete("规则集「" + name + "」：" + issue + "，未计入；取消对应路由选择后可预览撤回")
 			continue
 		}
-		if contains(BuiltinNonProxy, item.Policy) || direct[item.Policy] {
+		if slices.Contains(BuiltinNonProxy, item.Policy) || direct[item.Policy] {
 			d.Warnings = append(d.Warnings, "规则集「"+name+"」的策略是 "+item.Policy+"（不走代理），仍按勾选计入，请确认")
 		}
 		content, err := loader(*item, lib)
@@ -260,9 +218,8 @@ func ComputeDesired(profile json.RawMessage, gateway string, ruleSets []string, 
 			return nil, err
 		}
 		for _, line := range strings.Split(lines, "\n") {
-			line = strings.TrimSpace(line)
-			network, ok := netipx.ParseNetwork(line, false)
-			if line == "" || strings.HasPrefix(line, "#") || !ok || network.Bits() == 0 || !netipx.IsGlobal(network) {
+			network, ok := netipx.ParseNetwork(strings.TrimSpace(line), false)
+			if !ok || network.Bits() == 0 || !netipx.IsGlobal(network) { // also blank and # lines
 				continue
 			}
 			if network.Addr().Is4() {

@@ -1,16 +1,13 @@
-// Package routers is the upstream-router integration (backend/routers):
-// router records, desired state, drift report, release. Modules land one at
-// a time (server/parity/PROGRESS-routers.md); R01 holds the shared model,
-// router records (store), DHCP DNS and the desired-state computation.
-//
-// Model fields keep the JSON names Python used (reports and fingerprints
-// carry them). For optional lists a nil slice is "not reported" (Python
-// None) and an empty non-nil slice is "reported empty".
+// Package routers is the upstream-router integration: router records,
+// desired state, drift report, release. JSON names are the stored/API ones;
+// for optional lists nil is "not reported" and empty is "reported empty".
 package routers
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -24,7 +21,7 @@ const (
 	KindRollback                  // a partial write could not be fully undone
 )
 
-// RouterError is a failure whose message is safe to show to users.
+// RouterError is a failure whose message is safe to show to users (use errors.As).
 type RouterError struct {
 	Kind    ErrorKind
 	Message string
@@ -34,13 +31,6 @@ func (e *RouterError) Error() string { return e.Message }
 
 func routerError(message string) error { return &RouterError{Message: message} }
 
-// AsRouterError reports whether err is (wraps) a RouterError.
-func AsRouterError(err error) (*RouterError, bool) {
-	var r *RouterError
-	ok := errors.As(err, &r)
-	return r, ok
-}
-
 // ValidationError is an invalid router setting (HTTP 400 with the message).
 type ValidationError struct{ Message string }
 
@@ -48,8 +38,7 @@ func (e *ValidationError) Error() string { return e.Message }
 
 func invalid(message string) error { return &ValidationError{Message: message} }
 
-// ErrNotPorted is returned where a feature of a module that is not ported
-// yet is needed; it never stands for a result.
+// ErrNotPorted: a feature of a module not ported yet is needed (never a result).
 var ErrNotPorted = errors.New("routers: depends on a module that is not ported yet")
 
 // ManagedPrefix marks generated objects ("cf", "cf-…", "cf:…").
@@ -71,9 +60,7 @@ type RouterInfo struct {
 	Capabilities []string `json:"capabilities"`
 }
 
-// RouteEntry is a static route. Active and Distance are nil when the
-// driver has no runtime evidence. Table is "main" unless the device says
-// otherwise.
+// RouteEntry is a static route; Active/Distance are nil without runtime evidence.
 type RouteEntry struct {
 	ID       string `json:"id"`
 	Dst      string `json:"dst"`
@@ -115,7 +102,8 @@ type NatBypassEntry struct {
 	Attributes json.RawMessage `json:"attributes"` // vendor matchers
 }
 
-// DhcpDnsEntry is one DHCP network's DNS setting.
+// DhcpDnsEntry is one DHCP network's DNS setting. Python defaulted Enabled
+// and DNSExplicit to true: drivers set both explicitly.
 type DhcpDnsEntry struct {
 	ID         string          `json:"id"`
 	Network    string          `json:"network"`
@@ -133,9 +121,7 @@ type DhcpDnsState struct {
 	Evidence json.RawMessage `json:"evidence"`
 }
 
-// RouterState is one readback of the device. Later modules add the fields
-// they own (NAT context, address lists, policy/IPv6/DNS-guard plans, iKuai
-// groups).
+// RouterState is one readback of the device (later modules add their fields).
 type RouterState struct {
 	Routes      []*RouteEntry       `json:"routes"`
 	NatBypass   []*NatBypassEntry   `json:"nat_bypass"`
@@ -168,21 +154,16 @@ func IsManaged(comment string) bool {
 	return text == ManagedPrefix || strings.HasPrefix(text, ManagedPrefix+":") || strings.HasPrefix(text, ManagedPrefix+"-")
 }
 
-// ManagedComment tags a comment as managed, keeping the user's text:
-// "tg" -> "cf-tg".
+// ManagedComment tags a comment as managed, keeping the user's text: "tg" -> "cf-tg".
 func ManagedComment(comment string) string {
 	text := strings.TrimSpace(comment)
-	switch {
-	case IsManaged(text):
-		return text
-	case text != "":
-		return ManagedPrefix + "-" + text
+	if text == "" || IsManaged(text) {
+		return cmp.Or(text, ManagedPrefix)
 	}
-	return ManagedPrefix
+	return ManagedPrefix + "-" + text
 }
 
-// PolicyRouteOK: enabled, any protocol, every source except the gateway,
-// next hop the gateway, highest priority.
+// PolicyRouteOK: enabled, any protocol, every source except the gateway, next hop the gateway, highest priority.
 func PolicyRouteOK(e *PolicyRouteEntry, gateway string) bool {
 	return e.Enabled && gateway != "" && e.Gateway == gateway && len(e.Src) == 1 && e.Src[0] == gateway &&
 		e.SrcInvert && !e.DstInvert && e.Protocol == "any" && e.Priority != nil && *e.Priority == PolicyPriority
@@ -204,34 +185,23 @@ func RetirePolicyRoutes(state *RouterState) {
 	if state.PolicyRoutes == nil {
 		return
 	}
-	retired := []*PolicyRouteEntry{}
-	for _, e := range state.PolicyRoutes {
-		if e.Comment == PolicyAutoComment || e.Comment == PolicyManualComment {
-			retired = append(retired, e)
-		}
-	}
-	state.RetiredPolicyRoutes, state.PolicyRoutes = retired, nil
+	state.RetiredPolicyRoutes = slices.DeleteFunc(slices.Clone(state.PolicyRoutes), func(e *PolicyRouteEntry) bool {
+		return e.Comment != PolicyAutoComment && e.Comment != PolicyManualComment
+	})
+	state.PolicyRoutes = nil
 }
 
 // StaleRoutes are active routes to the gateway that no configured static
 // route explains (iKuai keeps kernel routes after edits).
 func StaleRoutes(state *RouterState, gateway string) []*RouteEntry {
-	out := []*RouteEntry{}
 	if gateway == "" || state.ActiveRoutes == nil {
-		return out
+		return []*RouteEntry{}
 	}
-	configured := map[string]bool{}
-	for _, r := range state.Routes {
-		if r.Enabled && r.Gateway == gateway {
-			configured[r.Dst] = true
-		}
-	}
-	for _, r := range state.ActiveRoutes {
-		if r.Gateway == gateway && !configured[r.Dst] {
-			out = append(out, r)
-		}
-	}
-	return out
+	return slices.DeleteFunc(slices.Clone(state.ActiveRoutes), func(a *RouteEntry) bool {
+		return a.Gateway != gateway || slices.ContainsFunc(state.Routes, func(r *RouteEntry) bool {
+			return r.Enabled && r.Gateway == gateway && r.Dst == a.Dst
+		})
+	})
 }
 
 // StaleRouteWarning explains StaleRoutes to the user.

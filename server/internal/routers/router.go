@@ -2,9 +2,11 @@ package routers
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"slices"
 	"strconv"
@@ -40,16 +42,13 @@ type PDGuard struct {
 	Enabled bool `json:"enabled"`
 }
 
-// Router is one stored router (profile routers.items[]). Fields this
-// package does not know (and the device state written by later modules) are
-// kept in Extra and written back unchanged.
-type Router struct {
+// RouterSettings are the stored settings the UI also sees.
+type RouterSettings struct {
 	ID                  string    `json:"id"`
 	Name                string    `json:"name"`
 	Type                string    `json:"type"`
 	Endpoint            string    `json:"endpoint"`
 	Username            string    `json:"username"`
-	Password            string    `json:"password"`
 	VerifyTLS           bool      `json:"verify_tls"`
 	ProxyGatewayAgentID string    `json:"proxy_gateway_agent_id"`
 	DNSAgentID          string    `json:"dns_agent_id"`
@@ -60,37 +59,30 @@ type Router struct {
 	RuleSyncInterval    int       `json:"rule_sync_interval"`
 	DNSGuard            *DNSGuard `json:"dns_guard,omitempty"`
 	IPv6PDGuard         *PDGuard  `json:"ipv6_pd_guard,omitempty"`
-
-	// Extra holds every other stored field: last_probe, last_release,
-	// ros_policy_state, dns_guard_state, ipv6_*_state, …
-	Extra map[string]json.RawMessage `json:"-"`
 }
 
-var routerFields = func() map[string]bool {
-	m := map[string]bool{"id": true, "password": true}
-	for _, f := range EditableFields {
-		m[f] = true
-	}
-	return m
-}()
+// Router is one stored router (profile routers.items[]). Every other stored
+// field (last_probe, last_release, ros_policy_state, dns_guard_state,
+// ipv6_*_state, unknown ones) is kept in Extra and written back unchanged.
+type Router struct {
+	RouterSettings
+	Password string                     `json:"password"`
+	Extra    map[string]json.RawMessage `json:"-"`
+}
 
 // UnmarshalJSON reads a stored record; absent settings take the defaults
 // the Python reader used (verify_tls on, 60-minute interval).
 func (r *Router) UnmarshalJSON(data []byte) error {
 	type plain Router
-	p := plain{VerifyTLS: true, RuleSyncInterval: 60}
+	p := plain{RouterSettings: RouterSettings{VerifyTLS: true, RuleSyncInterval: 60}}
 	if err := json.Unmarshal(data, &p); err != nil {
 		return err
 	}
-	var all map[string]json.RawMessage
-	if err := json.Unmarshal(data, &all); err != nil {
+	if err := json.Unmarshal(data, &p.Extra); err != nil {
 		return err
 	}
-	p.Extra = map[string]json.RawMessage{}
-	for k, v := range all {
-		if !routerFields[k] {
-			p.Extra[k] = v
-		}
+	for _, key := range append([]string{"id", "password"}, EditableFields...) {
+		delete(p.Extra, key)
 	}
 	*r = Router(p)
 	return nil
@@ -104,13 +96,10 @@ func (r Router) MarshalJSON() ([]byte, error) {
 		return known, err
 	}
 	extra, err := json.Marshal(r.Extra)
-	if err != nil {
-		return nil, err
-	}
-	return append(append(known[:len(known)-1], ','), extra[1:]...), nil
+	return append(append(known[:len(known)-1], ','), extra[1:]...), err
 }
 
-// State is a stored device-state field (Extra), nil when absent or null.
+// State is a stored device-state field (Extra), nil when absent or falsy.
 func (r *Router) State(key string) json.RawMessage {
 	if v := r.Extra[key]; truthy(v) {
 		return v
@@ -132,47 +121,34 @@ func (r *Router) StaticRuleSets() []string {
 
 // RouterView is a router as the UI sees it (never the password).
 type RouterView struct {
-	ID                  string          `json:"id"`
-	Name                string          `json:"name"`
-	Type                string          `json:"type"`
-	Endpoint            string          `json:"endpoint"`
-	Username            string          `json:"username"`
-	VerifyTLS           bool            `json:"verify_tls"`
-	ProxyGatewayAgentID string          `json:"proxy_gateway_agent_id"`
-	DNSAgentID          string          `json:"dns_agent_id"`
-	IPRuleSets          []string        `json:"ip_rule_sets"`
-	ManageReturnRouting bool            `json:"manage_return_routing"`
-	RosPolicyRuleSets   []string        `json:"ros_policy_rule_sets"`
-	AutoRuleSync        bool            `json:"auto_rule_sync"`
-	RuleSyncInterval    int             `json:"rule_sync_interval"`
-	DNSGuard            DNSGuard        `json:"dns_guard"`
-	IPv6PDGuard         PDGuard         `json:"ipv6_pd_guard"`
-	LastProbe           json.RawMessage `json:"last_probe"`
-	LastRelease         json.RawMessage `json:"last_release"`
-	HasPassword         bool            `json:"has_password"`
+	RouterSettings
+	LastProbe   json.RawMessage `json:"last_probe"`
+	LastRelease json.RawMessage `json:"last_release"`
+	HasPassword bool            `json:"has_password"`
 }
 
-// View is the router as returned to the UI.
+// View is the router as returned to the UI; absent guards show their defaults.
 func (r *Router) View() RouterView {
-	guard := DefaultDNSGuard()
-	if r.DNSGuard != nil {
-		guard = *r.DNSGuard
+	v := RouterView{RouterSettings: r.RouterSettings, LastProbe: r.Extra["last_probe"],
+		LastRelease: r.Extra["last_release"], HasPassword: r.Password != ""}
+	v.IPRuleSets, v.RosPolicyRuleSets = r.StaticRuleSets(), append([]string{}, r.RosPolicyRuleSets...)
+	if v.DNSGuard == nil {
+		guard := DefaultDNSGuard()
+		v.DNSGuard = &guard
 	}
-	var pd PDGuard
-	if r.IPv6PDGuard != nil {
-		pd = *r.IPv6PDGuard
+	if v.IPv6PDGuard == nil {
+		v.IPv6PDGuard = &PDGuard{}
 	}
-	return RouterView{ID: r.ID, Name: r.Name, Type: r.Type, Endpoint: r.Endpoint, Username: r.Username,
-		VerifyTLS: r.VerifyTLS, ProxyGatewayAgentID: r.ProxyGatewayAgentID, DNSAgentID: r.DNSAgentID,
-		IPRuleSets: r.StaticRuleSets(), ManageReturnRouting: r.ManageReturnRouting,
-		RosPolicyRuleSets: append([]string{}, r.RosPolicyRuleSets...), AutoRuleSync: r.AutoRuleSync,
-		RuleSyncInterval: r.RuleSyncInterval, DNSGuard: guard, IPv6PDGuard: pd,
-		LastProbe: r.Extra["last_probe"], LastRelease: r.Extra["last_release"], HasPassword: r.Password != ""}
+	return v
 }
 
-// truthy is JSON truthiness: not null/false/0/""/[]/{}.
+// truthy is JSON truthiness: not absent/null/false/0/""/[]/{}.
 func truthy(raw json.RawMessage) bool {
-	switch s := string(bytes.TrimSpace(raw)); s {
+	var compact bytes.Buffer
+	if json.Compact(&compact, raw) != nil {
+		return false
+	}
+	switch s := compact.String(); s {
 	case "", "null", "false", `""`, "[]", "{}":
 		return false
 	default:
@@ -181,14 +157,10 @@ func truthy(raw json.RawMessage) bool {
 	}
 }
 
-// text is the setting as text: strings as they are, other scalars in their
-// JSON form, empty for falsy values.
+// text is Python str(value or ""): strings as they are, other values in their JSON
+// form (True for true), "" for falsy values.
 func text(raw json.RawMessage) string {
-	if !truthy(raw) {
-		return ""
-	}
-	var s string
-	if json.Unmarshal(raw, &s) == nil {
+	if s, ok := jsonString(raw); ok || !truthy(raw) {
 		return s
 	}
 	if string(raw) == "true" {
@@ -199,45 +171,40 @@ func text(raw json.RawMessage) string {
 
 // jsonString decodes a JSON string (null and other types are not strings).
 func jsonString(raw json.RawMessage) (string, bool) {
-	var s string
-	raw = bytes.TrimSpace(raw)
-	return s, len(raw) > 0 && raw[0] == '"' && json.Unmarshal(raw, &s) == nil
+	var s *string
+	if json.Unmarshal(raw, &s) != nil || s == nil {
+		return "", false
+	}
+	return *s, true
 }
 
-// idList decodes a list of non-empty rule-set ids (falsy means none).
+// idList decodes a list of non-empty rule-set ids, de-duplicated (falsy means none).
 func idList(raw json.RawMessage) ([]string, bool) {
-	if !truthy(raw) {
-		return []string{}, true
-	}
-	var items []json.RawMessage
-	if json.Unmarshal(raw, &items) != nil {
+	var items []*string
+	if truthy(raw) && json.Unmarshal(raw, &items) != nil || slices.Contains(items, nil) {
 		return nil, false
 	}
 	out := []string{}
 	for _, item := range items {
-		s, ok := jsonString(item)
-		if !ok || s == "" {
+		if *item == "" {
 			return nil, false
-		}
-		if !slices.Contains(out, s) {
-			out = append(out, s)
+		} else if !slices.Contains(out, *item) {
+			out = append(out, *item)
 		}
 	}
 	return out, true
 }
 
-func isBool(raw json.RawMessage) (bool, bool) {
-	switch string(bytes.TrimSpace(raw)) {
-	case "true":
-		return true, true
-	case "false":
-		return false, true
+// boolField is fields[key] when it is a JSON bool, fallback when absent.
+func boolField(fields map[string]json.RawMessage, key string, fallback bool) (bool, bool) {
+	v, present := fields[key]
+	if !present {
+		return fallback, true
 	}
-	return false, false
+	return string(v) == "true", string(v) == "true" || string(v) == "false"
 }
 
-// NormalizeDNSGuard validates the forced-DNS setting; raw nil means never
-// enabled.
+// NormalizeDNSGuard validates the forced-DNS setting; raw nil or null means never enabled.
 func NormalizeDNSGuard(raw json.RawMessage, routerType, dnsAgentID string) (DNSGuard, error) {
 	guard := DefaultDNSGuard()
 	if raw == nil || string(raw) == "null" {
@@ -247,48 +214,36 @@ func NormalizeDNSGuard(raw json.RawMessage, routerType, dnsAgentID string) (DNSG
 	if json.Unmarshal(raw, &fields) != nil || fields == nil {
 		return guard, invalid("强制 DNS 设置格式无效")
 	}
-	for k := range fields {
-		if k != "enabled" && k != "block_dot" && k != "failover" && k != "bypass" {
+	for key := range fields {
+		if !slices.Contains([]string{"enabled", "block_dot", "failover", "bypass"}, key) {
 			return guard, invalid("强制 DNS 设置格式无效")
 		}
 	}
 	for key, dst := range map[string]*bool{"enabled": &guard.Enabled, "block_dot": &guard.BlockDoT, "failover": &guard.Failover} {
-		if v, ok := fields[key]; ok {
-			b, ok := isBool(v)
-			if !ok {
-				return guard, invalid("强制 DNS 的开关必须为布尔值")
-			}
-			*dst = b
+		var ok bool
+		if *dst, ok = boolField(fields, key, *dst); !ok {
+			return guard, invalid("强制 DNS 的开关必须为布尔值")
 		}
 	}
-	var bypass []json.RawMessage
-	if v, ok := fields["bypass"]; ok && (json.Unmarshal(v, &bypass) != nil || bypass == nil) {
+	var items []*string
+	if v, ok := fields["bypass"]; ok && (json.Unmarshal(v, &items) != nil || items == nil || slices.Contains(items, nil)) {
 		return guard, invalid("放行设备必须是 IPv4 地址或网段列表")
 	}
-	var items []string
-	for _, v := range bypass {
-		s, ok := jsonString(v)
-		if !ok {
-			return guard, invalid("放行设备必须是 IPv4 地址或网段列表")
-		}
-		items = append(items, s)
-	}
 	for _, item := range items {
-		network, ok := netipx.ParseNetwork4(strings.TrimSpace(item), false)
+		network, ok := netipx.ParseNetwork4(strings.TrimSpace(*item), false)
 		if !ok {
-			return guard, invalid("放行设备「" + item + "」不是有效的 IPv4 地址或网段")
+			return guard, invalid("放行设备「" + *item + "」不是有效的 IPv4 地址或网段")
 		}
 		if text := network.String(); !slices.Contains(guard.Bypass, text) {
 			guard.Bypass = append(guard.Bypass, text)
 		}
 	}
-	if len(items) > 64 {
+	switch {
+	case len(items) > 64:
 		return guard, invalid("放行设备最多 64 项")
-	}
-	if guard.Enabled && routerType != "routeros" {
+	case guard.Enabled && routerType != "routeros":
 		return guard, invalid("强制局域网 DNS 走 OxiDNS 仅支持 RouterOS")
-	}
-	if guard.Enabled && dnsAgentID == "" {
+	case guard.Enabled && dnsAgentID == "":
 		return guard, invalid("请先选择 DHCP DNS 服务器（OxiDNS Agent），强制 DNS 使用同一台设备")
 	}
 	return guard, nil
@@ -302,12 +257,10 @@ func NormalizePDGuard(raw json.RawMessage, routerType string) (PDGuard, error) {
 	}
 	var fields map[string]json.RawMessage
 	ok := json.Unmarshal(raw, &fields) == nil && fields != nil
-	for k, v := range fields {
-		b, isB := isBool(v)
-		ok = ok && k == "enabled" && isB
-		guard.Enabled = b
+	if ok {
+		guard.Enabled, ok = boolField(fields, "enabled", false)
 	}
-	if !ok {
+	if !ok || len(fields) > 1 || len(fields) == 1 && fields["enabled"] == nil {
 		return guard, invalid("IPv6 前缀变化保护的开关必须为布尔值")
 	}
 	if guard.Enabled && routerType != "routeros" {
@@ -324,150 +277,91 @@ var NewRouterID = func() string {
 }
 
 // Normalize validates a create (existing nil) or update request body and
-// returns the record to store. An empty password keeps the stored one.
-// Errors are *ValidationError with the message for the user.
+// returns the record to store, with Python's checks in Python's order. An
+// empty password keeps the stored one. Errors are *ValidationError.
 func Normalize(body []byte, existing *Router) (*Router, error) {
 	var payload map[string]json.RawMessage
 	if json.Unmarshal(body, &payload) != nil || payload == nil {
 		return nil, invalid("路由器参数必须是对象")
 	}
-	r := &Router{VerifyTLS: true, RuleSyncInterval: 60, Extra: map[string]json.RawMessage{}}
+	// m is the merged record: the stored settings (ip_rule_sets without the
+	// policy selections), then the edited fields of the payload.
+	r, m := &Router{Extra: map[string]json.RawMessage{}}, map[string]json.RawMessage{}
 	if existing != nil {
-		copied := *existing
-		r = &copied
-		r.IPRuleSets = existing.StaticRuleSets()
+		*r = *existing
+		data, _ := json.Marshal(existing.RouterSettings)
+		_ = json.Unmarshal(data, &m)
+		m["ip_rule_sets"], _ = json.Marshal(existing.StaticRuleSets())
 	}
-	set := func(key string, apply func(json.RawMessage)) {
+	for _, key := range EditableFields {
 		if v, ok := payload[key]; ok {
-			apply(v)
+			m[key] = v
 		}
 	}
-	set("name", func(v json.RawMessage) { r.Name = text(v) })
-	set("type", func(v json.RawMessage) { r.Type = text(v) })
-	set("endpoint", func(v json.RawMessage) { r.Endpoint = text(v) })
-	set("username", func(v json.RawMessage) { r.Username = text(v) })
-	set("verify_tls", func(v json.RawMessage) { r.VerifyTLS = string(bytes.TrimSpace(v)) != "false" })
-	set("proxy_gateway_agent_id", func(v json.RawMessage) { r.ProxyGatewayAgentID = text(v) })
-	set("dns_agent_id", func(v json.RawMessage) { r.DNSAgentID = text(v) })
-	if v, ok := payload["password"]; ok {
-		var s string
-		if json.Unmarshal(v, &s) == nil && s != "" {
-			r.Password = s
-		}
+	if s, ok := jsonString(payload["password"]); ok && s != "" {
+		r.Password = s
 	}
-	r.Name, r.Username = strings.TrimSpace(r.Name), strings.TrimSpace(r.Username)
-	r.Endpoint = strings.TrimRight(strings.TrimSpace(r.Endpoint), "/")
-
-	if v, ok := payload["manage_return_routing"]; ok {
-		b, ok := isBool(v)
-		if !ok {
-			return nil, invalid("自动配置回流必须为布尔值")
-		}
-		r.ManageReturnRouting = b
+	r.Name, r.Type, r.Username = strings.TrimSpace(text(m["name"])), text(m["type"]), strings.TrimSpace(text(m["username"]))
+	r.Endpoint = strings.TrimRight(strings.TrimSpace(text(m["endpoint"])), "/")
+	r.VerifyTLS = string(m["verify_tls"]) != "false"
+	r.ProxyGatewayAgentID, r.DNSAgentID = text(m["proxy_gateway_agent_id"]), text(m["dns_agent_id"])
+	manageOK, autoOK, idsOK, policyOK := false, false, false, false
+	r.ManageReturnRouting, manageOK = boolField(m, "manage_return_routing", false)
+	r.AutoRuleSync, autoOK = boolField(m, "auto_rule_sync", false)
+	r.RuleSyncInterval = 60
+	if v, present := m["rule_sync_interval"]; present {
+		r.RuleSyncInterval, _ = strconv.Atoi(string(v)) // not an integer: 0, rejected below
 	}
-	if v, ok := payload["auto_rule_sync"]; ok {
-		b, ok := isBool(v)
-		if !ok {
-			return nil, invalid("远程规则自动同步仅支持 RouterOS，开关必须为布尔值")
-		}
-		r.AutoRuleSync = b
-	}
-	if r.AutoRuleSync && r.Type != "routeros" {
-		return nil, invalid("远程规则自动同步仅支持 RouterOS，开关必须为布尔值")
-	}
-	if v, ok := payload["rule_sync_interval"]; ok {
-		n, err := strconv.Atoi(string(bytes.TrimSpace(v)))
-		if err != nil || !slices.Contains(RuleSyncIntervals, n) {
-			return nil, invalid("请选择有效的规则检查间隔")
-		}
-		r.RuleSyncInterval = n
-	}
-	if v, ok := payload["ip_rule_sets"]; ok {
-		if r.IPRuleSets, ok = idList(v); !ok {
-			return nil, invalid("IP 路由规则集必须是规则集 ID 列表")
-		}
-	}
-	if v, ok := payload["ros_policy_rule_sets"]; ok {
-		if r.RosPolicyRuleSets, ok = idList(v); !ok {
-			return nil, invalid("策略路由规则集必须是规则集 ID 列表")
-		}
-	}
-	if r.IPRuleSets == nil {
-		r.IPRuleSets = []string{}
-	}
-	if r.RosPolicyRuleSets == nil {
-		r.RosPolicyRuleSets = []string{}
-	}
-	if len(r.RosPolicyRuleSets) > 0 && r.Type != "routeros" {
-		return nil, invalid("按来源策略路由仅支持 RouterOS")
-	}
-	for _, id := range r.RosPolicyRuleSets {
-		if slices.Contains(r.IPRuleSets, id) {
-			return nil, invalid("同一规则集只能选择静态路由或策略路由中的一种方式")
-		}
-	}
+	r.IPRuleSets, idsOK = idList(m["ip_rule_sets"])
+	r.RosPolicyRuleSets, policyOK = idList(m["ros_policy_rule_sets"])
+	guardRaw, guardSet := m["dns_guard"]
+	guard, guardErr := NormalizeDNSGuard(guardRaw, r.Type, r.DNSAgentID)
+	pdRaw, pdSet := m["ipv6_pd_guard"]
+	pd, pdErr := NormalizePDGuard(pdRaw, r.Type)
+	// Objects a feature still owns on the device pin the type and endpoint.
 	moved := existing != nil && (r.Type != existing.Type || r.Endpoint != existing.Endpoint)
-	owns := func(state string) bool { return moved && existing.State(state) != nil }
-	if owns("ros_policy_state") {
-		return nil, invalid("请先清空策略路由选择并发布撤销，再修改路由器类型或管理地址")
+	owned := func(state string) bool { return moved && existing.State(state) != nil }
+	for _, check := range []struct {
+		failed  bool
+		message string
+	}{
+		{!manageOK, "自动配置回流必须为布尔值"},
+		{!autoOK || r.AutoRuleSync && r.Type != "routeros", "远程规则自动同步仅支持 RouterOS，开关必须为布尔值"},
+		{!slices.Contains(RuleSyncIntervals, r.RuleSyncInterval), "请选择有效的规则检查间隔"},
+		{!idsOK, "IP 路由规则集必须是规则集 ID 列表"},
+		{!policyOK, "策略路由规则集必须是规则集 ID 列表"},
+		{len(r.RosPolicyRuleSets) > 0 && r.Type != "routeros", "按来源策略路由仅支持 RouterOS"},
+		{slices.ContainsFunc(r.RosPolicyRuleSets, func(id string) bool { return slices.Contains(r.IPRuleSets, id) }),
+			"同一规则集只能选择静态路由或策略路由中的一种方式"},
+		{owned("ros_policy_state"), "请先清空策略路由选择并发布撤销，再修改路由器类型或管理地址"},
+		{guardErr != nil, fmt.Sprint(guardErr)},
+		{owned("dns_guard_state"), "请先关闭强制 DNS 并发布撤销，再修改路由器类型或管理地址"},
+		{pdErr != nil, fmt.Sprint(pdErr)},
+		{owned("ipv6_pd_guard_state"), "请先关闭 IPv6 前缀变化保护并发布撤回，再修改路由器类型或管理地址"},
+		{owned("ipv6_fakeip_state"), "请先关闭 IPv6 Fake-IP 并发布撤销，再修改路由器类型或管理地址"},
+		{owned("ipv6_routes_state"), "请先撤回 IPv6 规则集路由并发布，再修改路由器类型或管理地址"},
+		{r.Name == "", "请填写名称"},
+		{!slices.Contains(RouterTypes, r.Type), "路由器类型只支持 iKuai 4.x 或 RouterOS"},
+		{!validEndpoint(r.Endpoint), "管理地址格式应为 http(s)://主机[:端口]"},
+		{r.Username == "", "请填写用户名"},
+		{r.Password == "", "请填写密码"},
+	} {
+		if check.failed {
+			return nil, invalid(check.message)
+		}
 	}
-	guardRaw, guardSet := payload["dns_guard"]
-	if !guardSet && r.DNSGuard != nil {
-		guardRaw, _ = json.Marshal(r.DNSGuard)
-	}
-	guard, err := NormalizeDNSGuard(guardRaw, r.Type, r.DNSAgentID)
-	if err != nil {
-		return nil, err
-	}
-	if guard.Enabled || guardSet || r.DNSGuard != nil {
+	r.DNSGuard, r.IPv6PDGuard = nil, nil
+	if guard.Enabled || guardSet {
 		r.DNSGuard = &guard
 	}
-	if owns("dns_guard_state") {
-		return nil, invalid("请先关闭强制 DNS 并发布撤销，再修改路由器类型或管理地址")
-	}
-	pdRaw, pdSet := payload["ipv6_pd_guard"]
-	if !pdSet && r.IPv6PDGuard != nil {
-		pdRaw, _ = json.Marshal(r.IPv6PDGuard)
-	}
-	pd, err := NormalizePDGuard(pdRaw, r.Type)
-	if err != nil {
-		return nil, err
-	}
-	if pd.Enabled || pdSet || r.IPv6PDGuard != nil {
+	if pd.Enabled || pdSet {
 		r.IPv6PDGuard = &pd
 	}
-	for _, check := range [][2]string{
-		{"ipv6_pd_guard_state", "请先关闭 IPv6 前缀变化保护并发布撤回，再修改路由器类型或管理地址"},
-		{"ipv6_fakeip_state", "请先关闭 IPv6 Fake-IP 并发布撤销，再修改路由器类型或管理地址"},
-		{"ipv6_routes_state", "请先撤回 IPv6 规则集路由并发布，再修改路由器类型或管理地址"},
-	} {
-		if owns(check[0]) {
-			return nil, invalid(check[1])
-		}
-	}
-	if r.Name == "" {
-		return nil, invalid("请填写名称")
-	}
-	if !slices.Contains(RouterTypes, r.Type) {
-		return nil, invalid("路由器类型只支持 iKuai 4.x 或 RouterOS")
-	}
-	if !validEndpoint(r.Endpoint) {
-		return nil, invalid("管理地址格式应为 http(s)://主机[:端口]")
-	}
-	if r.Username == "" {
-		return nil, invalid("请填写用户名")
-	}
-	if r.Password == "" {
-		return nil, invalid("请填写密码")
-	}
-	if r.ID == "" {
-		r.ID = NewRouterID()
-	}
+	r.ID = cmp.Or(r.ID, NewRouterID())
 	return r, nil
 }
 
-// validEndpoint: http(s)://host[:port] with an optional trailing slash or
-// ;params.
+// validEndpoint: http(s)://host[:port] with an optional trailing slash or ;params.
 func validEndpoint(endpoint string) bool {
 	u, err := url.Parse(endpoint)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.Opaque != "" {
@@ -481,10 +375,10 @@ func validEndpoint(endpoint string) bool {
 // credentials, management endpoints and device state are removed.
 func RedactRouters(document []byte) ([]byte, error) {
 	var routers map[string]json.RawMessage
+	var raw []json.RawMessage
 	if json.Unmarshal(document, &routers) != nil || routers == nil {
 		return document, nil
 	}
-	var raw []json.RawMessage
 	_ = json.Unmarshal(routers["items"], &raw)
 	items := []map[string]json.RawMessage{}
 	for _, entry := range raw {

@@ -224,6 +224,40 @@ for doc in [{'192.168.0.10': good}, {'192.168.0.10': {**good, 'vendor': 'x'}}, {
             {'192.168.0.10': {k: v for k, v in good.items() if k != 'comment'}}, [], {}, {'192.168.0.10': {**good, 'comment': 'x\n'}}]:
     emit('validate_bindings', doc, lambda: validate_bindings(doc))
 
+# ---- review R01 (2026-11-16): boundary edges ------------------------------------------------------
+# custom_config YAML forms: the Mihomo generator reads them with PyYAML (duplicate keys: last wins).
+for text in ['dns:\n  fake-ip-range: 28.0.0.1/8\n  fake-ip-range: 29.0.0.1/8\n',
+             'dns:\n  fake-ip-range: 28.0.0.1/8\nmode: rule\nmode: global\n',
+             'dns:\n  enable: true\ndns:\n  fake-ip-range: 28.0.0.1/8\n',
+             'dns:\n  fake-ip-range: 28.0.0.1/8\n---\na: 1\n', 'dns:\n  fake-ip-range: 28.0.0.1/8\n1: x\n',
+             'dns:\n  fake-ip-range: 28.0.0.1/8\nx: !!set {a, b}\n', 'base: &b\n  fake-ip-range: 28.0.0.1/8\ndns:\n  <<: *b\n',
+             'dns:\n\tfake-ip-range: 28.0.0.1/8\n', 'dns:\n  fake-ip-range: 1\n', 'dns:\n  fake-ip-range: "28.0.0.1/8"\n',
+             'dns:\n  fake-ip-range: 28.0.0.1/8\nyes: 1\n', '  \n', 'dns: null\n']:
+    profile = {'mihomo': {'custom_config': text}, 'rule_configs': [], 'rule_library': [],
+               'proxy_groups': [1, None, {'name': 'D', 'manual_nodes': ['DIRECT']}]}
+    emit('compute_desired', {'profile': profile, 'gateway': '192.168.1.4', 'rule_sets': [], 'contents': {}},
+         lambda: desired_mod.compute_desired(profile, '192.168.1.4', [], content_loader=lambda item, _lib: ''))
+# Records written before auto_rule_sync/rule_sync_interval/ros_policy_rule_sets/manage_return_routing existed.
+OLD = {'id': 'router_old', 'name': 'R', 'type': 'routeros', 'endpoint': 'http://192.168.88.1', 'username': 'admin',
+       'password': 'pw', 'verify_tls': False, 'proxy_gateway_agent_id': 'a', 'dns_agent_id': '', 'ip_rule_sets': ['r1'],
+       'last_probe': {'ok': True}}
+emit('public_view', OLD, lambda: public_view(OLD))
+emit('stored', OLD, lambda: OLD)
+for p in [{}, {'auto_rule_sync': True}, {'rule_sync_interval': 6e1}, {'ros_policy_rule_sets': ['r1']},
+          {'dns_guard': {'bypass': ['10.0.0.1', None]}}, {'ipv6_pd_guard': {'enabled': True, 'x': 1}},
+          {'dns_guard': {'enabled': True, 'x': 1, 'block_dot': 'no'}}, {'type': 'ikuai'}, {'password': None}]:
+    emit('normalize', {'payload': p, 'existing': OLD}, lambda: normalize(p, OLD))
+guarded = {**OLD, 'dns_agent_id': 'dns-a', 'dns_guard': {'enabled': True, 'block_dot': False, 'failover': True,
+                                                         'bypass': ['10.0.0.0/8']}, 'dns_guard_state': {'x': 1},
+           'ipv6_pd_guard': {'enabled': True}, 'ros_policy_state': {'y': 1}}
+for p in [{'type': 'ikuai'}, {'endpoint': 'http://192.168.88.2'}, {'dns_agent_id': ''}, {'dns_guard': None},
+          {'name': 'R2'}, {'ipv6_pd_guard': None, 'dns_guard': {'enabled': False}}]:
+    emit('normalize', {'payload': p, 'existing': guarded}, lambda: normalize(p, guarded))
+for doc in [{'192.168.0.10': {**good, 'server': None}}, {'192.168.0.10': {**good, 'comment': 'cf-client:' + 'x' * 502}},
+            {'192.168.0.10': {**good, 'comment': 'cf-client:' + 'x' * 503}}, {'192.168.0.10': 1}, None,
+            {f'10.0.{i // 256}.{i % 256}': 1 for i in range(2049)}]:
+    emit('validate_bindings', doc, lambda: validate_bindings(doc))
+
 with open(sys.argv[1], 'wb') as raw, gzip.GzipFile(fileobj=raw, mode='wb', mtime=0) as fh:
     fh.write(''.join(json.dumps(r, ensure_ascii=False) + '\n' for r in rows).encode())
 counts = {}

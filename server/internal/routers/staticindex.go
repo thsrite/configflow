@@ -2,6 +2,7 @@ package routers
 
 import (
 	"net/netip"
+	"slices"
 	"sort"
 
 	"configflow/internal/netipx"
@@ -18,22 +19,13 @@ type StaticRouteSelection struct {
 	Conflict   bool
 }
 
-// preferredRoutes keeps the routes that may forward: active ones, those at
-// the best distance, and those without evidence.
+func isTrue(b *bool) bool { return b != nil && *b }
+
+// preferredRoutes keeps the routes that may forward: active ones, those at the
+// best distance (of active, else live routes), live ones without evidence.
 func preferredRoutes(routes []*RouteEntry) []*RouteEntry {
-	var live, active []*RouteEntry
-	for _, r := range routes {
-		if r.Active == nil || *r.Active {
-			live = append(live, r)
-			if r.Active != nil {
-				active = append(active, r)
-			}
-		}
-	}
-	if len(live) == 0 {
-		return nil
-	}
-	pool := active
+	live := slices.DeleteFunc(slices.Clone(routes), func(r *RouteEntry) bool { return r.Active != nil && !*r.Active })
+	pool := slices.DeleteFunc(slices.Clone(live), func(r *RouteEntry) bool { return r.Active == nil })
 	if len(pool) == 0 {
 		pool = live
 	}
@@ -45,40 +37,32 @@ func preferredRoutes(routes []*RouteEntry) []*RouteEntry {
 	}
 	var out []*RouteEntry
 	for _, r := range routes {
-		isActive := r.Active != nil && *r.Active
-		if isActive || (r.Distance != nil && best != nil && *r.Distance <= *best) ||
-			((r.Active == nil || *r.Active) && (r.Distance == nil || best == nil)) {
+		if len(live) > 0 && (isTrue(r.Active) || r.Distance != nil && best != nil && *r.Distance <= *best ||
+			(r.Active == nil || *r.Active) && (r.Distance == nil || best == nil)) {
 			out = append(out, r)
 		}
 	}
 	return out
 }
 
-// StaticRouteIndex holds one readback's main-table routes, grouped by
-// network and sorted, so each lookup only visits possible subnets. Build one
-// per readback; never reuse it across reads or writes.
+// StaticRouteIndex holds one readback's enabled main-table routes by network;
+// build one per readback, never reuse it across reads or writes.
 type StaticRouteIndex struct {
 	groups    map[netip.Prefix][]*RouteEntry
 	preferred map[netip.Prefix][]*RouteEntry
 	sorted    map[bool][]netip.Prefix // by Is4, sorted by (address, prefix length)
 }
 
-// NewStaticRouteIndex indexes the enabled main-table routes.
 func NewStaticRouteIndex(routes []*RouteEntry) *StaticRouteIndex {
 	ix := &StaticRouteIndex{groups: map[netip.Prefix][]*RouteEntry{}, preferred: map[netip.Prefix][]*RouteEntry{},
 		sorted: map[bool][]netip.Prefix{}}
 	for _, r := range routes {
-		if r.Table != "main" || !r.Enabled {
-			continue
+		if network, ok := netipx.ParseNetwork(r.Dst, false); ok && r.Table == "main" && r.Enabled {
+			if ix.groups[network] == nil {
+				ix.sorted[network.Addr().Is4()] = append(ix.sorted[network.Addr().Is4()], network)
+			}
+			ix.groups[network] = append(ix.groups[network], r)
 		}
-		network, ok := netipx.ParseNetwork(r.Dst, false)
-		if !ok {
-			continue
-		}
-		if ix.groups[network] == nil {
-			ix.sorted[network.Addr().Is4()] = append(ix.sorted[network.Addr().Is4()], network)
-		}
-		ix.groups[network] = append(ix.groups[network], r)
 	}
 	for network, group := range ix.groups {
 		ix.preferred[network] = preferredRoutes(group)
@@ -89,34 +73,15 @@ func NewStaticRouteIndex(routes []*RouteEntry) *StaticRouteIndex {
 	return ix
 }
 
-// edge is an interval boundary: an address, or one past the family's last
-// address (end).
-type edge struct {
-	end  bool
-	addr netip.Addr
-}
-
-func after(a netip.Addr) edge {
-	if next := a.Next(); next.IsValid() {
-		return edge{addr: next}
-	}
-	return edge{end: true}
-}
-
-func (a edge) less(b edge) bool { return !a.end && (b.end || a.addr.Less(b.addr)) }
-
 func firstManaged(routes []*RouteEntry) *RouteEntry {
-	for _, r := range routes {
-		if IsManaged(r.Comment) {
-			return r
-		}
+	if i := slices.IndexFunc(routes, func(r *RouteEntry) bool { return IsManaged(r.Comment) }); i >= 0 {
+		return routes[i]
 	}
 	return routes[0]
 }
 
-// Select is the forwarding evidence for cidr through gateway. An invalid
-// cidr is a ValidationError-free programming error: callers pass desired
-// CIDRs, so false is returned in ok.
+// Select is the forwarding evidence for cidr through gateway; ok is false
+// for an invalid cidr (callers pass desired CIDRs).
 func (ix *StaticRouteIndex) Select(cidr, gateway string) (sel StaticRouteSelection, ok bool) {
 	target, ok := netipx.ParseNetwork(cidr, false)
 	if !ok {
@@ -126,111 +91,80 @@ func (ix *StaticRouteIndex) Select(cidr, gateway string) (sel StaticRouteSelecti
 	list := ix.sorted[low.Is4()]
 	from := sort.Search(len(list), func(i int) bool { return !list[i].Addr().Less(low) })
 	to := sort.Search(len(list), func(i int) bool { return high.Less(list[i].Addr()) })
-	var networks []netip.Prefix
+	var networks []netip.Prefix // subnets of target with routes
 	evidence := false
 	for _, n := range list[from:to] {
-		if n.Bits() < target.Bits() {
-			continue
-		}
-		networks = append(networks, n)
-		for _, r := range ix.groups[n] {
-			evidence = evidence || r.Active != nil || r.Distance != nil
+		if n.Bits() >= target.Bits() {
+			networks = append(networks, n)
+			for _, r := range ix.groups[n] {
+				evidence = evidence || r.Active != nil || r.Distance != nil
+			}
 		}
 	}
 	if !evidence {
 		// Legacy drivers: only the exact route with the right gateway counts.
-		var good []*RouteEntry
-		for _, r := range ix.groups[target] {
-			if gateway != "" && r.Gateway == gateway {
-				good = append(good, r)
-			}
-		}
+		good := slices.DeleteFunc(slices.Clone(ix.groups[target]), func(r *RouteEntry) bool {
+			return gateway == "" || r.Gateway != gateway
+		})
 		if len(good) > 0 {
 			sel = StaticRouteSelection{Candidates: []*RouteEntry{firstManaged(good)}, Selected: good, Covered: true}
 		}
 		return sel, true
 	}
 
-	// Sweep the target range; at each boundary the most specific preferred
-	// network covering it forwards.
-	var intervals []netip.Prefix
-	edges := map[edge]bool{{addr: low}: true, after(high): true}
+	// Sweep the target range: between consecutive boundaries (network starts
+	// and the address after each network) the most specific preferred network
+	// covering the boundary forwards.
+	networks = slices.DeleteFunc(networks, func(n netip.Prefix) bool { return len(ix.preferred[n]) == 0 })
+	points := []netip.Addr{low}
 	for _, n := range networks {
-		if len(ix.preferred[n]) > 0 {
-			intervals = append(intervals, n)
-			edges[edge{addr: n.Addr()}] = true
-			edges[after(netipx.Broadcast(n))] = true
+		points = append(points, n.Addr())
+		if next := netipx.Broadcast(n).Next(); next.IsValid() && !high.Less(next) {
+			points = append(points, next)
 		}
 	}
-	points := make([]edge, 0, len(edges))
-	for e := range edges {
-		points = append(points, e)
-	}
-	sort.Slice(points, func(i, j int) bool { return points[i].less(points[j]) })
+	slices.SortFunc(points, netip.Addr.Compare)
 	var chosen []netip.Prefix
-	picked := map[netip.Prefix]bool{}
 	sel.Covered = true
-	for _, point := range points[:len(points)-1] {
-		// The most specific preferred network covering this point forwards it.
+	for _, point := range slices.Compact(points) {
 		var best netip.Prefix
-		for _, n := range intervals {
-			if !point.end && n.Contains(point.addr) && (!best.IsValid() || n.Bits() > best.Bits()) {
+		for _, n := range networks {
+			if n.Contains(point) && (!best.IsValid() || n.Bits() > best.Bits()) {
 				best = n
 			}
 		}
 		if !best.IsValid() {
 			sel.Covered = false
-		} else if !picked[best] {
-			picked[best] = true
+		} else if !slices.Contains(chosen, best) {
 			chosen = append(chosen, best)
 		}
 	}
 	for _, n := range chosen {
 		sel.Selected = append(sel.Selected, ix.preferred[n]...)
 	}
-	for _, r := range sel.Selected {
-		if gateway == "" || r.Gateway != gateway {
-			sel.Conflict = true
-		}
-	}
+	sel.Conflict = slices.ContainsFunc(sel.Selected, func(r *RouteEntry) bool { return gateway == "" || r.Gateway != gateway })
 	if !sel.Covered || sel.Conflict {
 		return sel, true
 	}
 	// Own the effective exact anchor, or the full more-specific cover.
-	ownership := [][]*RouteEntry{}
-	anchors := ix.preferred[target]
-	anchorOK := len(anchors) > 0
-	for _, r := range anchors {
-		anchorOK = anchorOK && r.Gateway == gateway
-	}
-	if anchorOK {
-		ownership = append(ownership, anchors)
-	} else {
+	ownership := [][]*RouteEntry{ix.preferred[target]}
+	if len(ownership[0]) == 0 || slices.ContainsFunc(ownership[0], func(r *RouteEntry) bool { return r.Gateway != gateway }) {
+		ownership = ownership[:0]
 		for _, n := range chosen {
 			ownership = append(ownership, ix.preferred[n])
 		}
 	}
 	for _, group := range ownership {
-		var live []*RouteEntry
-		for _, r := range group {
-			if r.Active != nil && *r.Active {
-				live = append(live, r)
-			}
-		}
+		live := slices.DeleteFunc(slices.Clone(group), func(r *RouteEntry) bool { return !isTrue(r.Active) })
 		if len(live) == 0 {
-			for _, r := range group {
-				if r.Active == nil {
-					live = append(live, r)
-				}
-			}
+			live = slices.DeleteFunc(slices.Clone(group), func(r *RouteEntry) bool { return r.Active != nil })
 		}
 		sel.Candidates = append(sel.Candidates, firstManaged(live))
 	}
 	return sel, true
 }
 
-// StaticRouteCandidates is the complete ownership proof for one lookup;
-// empty when coverage is incomplete or unsafe.
+// StaticRouteCandidates is the complete ownership proof for one lookup; empty when coverage is incomplete or unsafe.
 func StaticRouteCandidates(routes []*RouteEntry, cidr, gateway string) []*RouteEntry {
 	sel, _ := NewStaticRouteIndex(routes).Select(cidr, gateway)
 	return sel.Candidates
