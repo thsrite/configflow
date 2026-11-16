@@ -10,6 +10,7 @@ import (
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/jsonx"
 	"configflow/internal/refresh"
+	"configflow/internal/rules"
 )
 
 // Hand-ported Python tests that the recorded replay (mihomo_recorded_test.go)
@@ -277,5 +278,38 @@ func TestGenerateMihomoDocumentLoadsTheGeneratedText(t *testing.T) {
 	a.GetObject("dns").Set("enable", false)
 	if b.GetObject("dns").Value("enable") != true {
 		t.Fatal("template values are shared")
+	}
+}
+
+// test_dynamic_proxy_chains.py::test_native_override_cycle_is_not_hidden_by_original_provider_graph
+func TestNativeOverrideCycleIsNotHiddenByOriginalProviderGraph(t *testing.T) {
+	main := jsonx.Obj("proxies", []any{},
+		"proxy-groups", []any{jsonx.Obj("name", "Entry", "type", "select", "use", []any{"Private"})},
+		"proxy-providers", jsonx.Obj("Private", jsonx.Obj("override", jsonx.Obj("additional-prefix", "private::", "dialer-proxy", "Entry"))))
+	err := convert.ValidateEmitted(main, convert.EmitOptions{
+		ProviderProxies:  jsonx.Obj("Private", []any{jsonx.Obj("name", "remote", "type", "http")}),
+		RequireProviders: true,
+	})
+	var dialer *convert.DialerReferenceError
+	if !errors.As(err, &dialer) || !strings.Contains(err.Error(), "循环") {
+		t.Fatalf("want a cycle DialerReferenceError, got %v", err)
+	}
+}
+
+// test_group_exclusion_generation.py::test_candidate_filter_preserves_records_order_and_empty_include
+func TestCandidateFilterPreservesRecordsOrderAndEmptyInclude(t *testing.T) {
+	nodes := []any{jsonx.Obj("name", "US-new", "params", jsonx.Obj("password", "unchanged")), jsonx.Obj("name", "US-expired"),
+		jsonx.Obj("name", "HK-new")}
+	got, err := rules.FilterCandidates(nodes, nil, "expired")
+	if err != nil || len(got) != 2 || got[0] != nodes[0] || got[1] != nodes[2] {
+		t.Fatalf("exclude: %v %v", got, err)
+	}
+	got, err = rules.FilterCandidates(nodes, "^US", "expired")
+	if err != nil || len(got) != 1 || got[0] != nodes[0] {
+		t.Fatalf("include+exclude: %v %v", got, err)
+	}
+	var candidate *rules.CandidateValidationError
+	if _, err := rules.FilterCandidates(nodes, nil, "["); !errors.As(err, &candidate) {
+		t.Fatalf("invalid exclude: %v", err)
 	}
 }
