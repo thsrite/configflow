@@ -175,6 +175,12 @@ proxy-groups: [{name: Pool, type: select, include-all: true}]
 rules: ['MATCH,Pool']
 """, catalog={})
 add('bom-valid', 'surge', '\ufeff[Proxy]\nNode=http,example.com,80\n[Rule]\nFINAL,DIRECT', catalog={})
+for name, options in (
+    ('shadow-tls-v5', 'version=5, reuse=true, shadow-tls-password=shadow, shadow-tls-sni=tls.example.com, shadow-tls-version=3'),
+    ('shadow-tls-default', 'version=4, shadow-tls-password=shadow, shadow-tls-sni=tls.example.com'),
+    ('plain-obfs', 'version=4, obfs=http, obfs-host=cdn.example.com'),
+):
+    add('snell-' + name, 'surge', '[Proxy]\nNode=snell,example.com,443,psk=p,' + options + '\n[Rule]\nFINAL,DIRECT', catalog={})
 
 output = Path(__file__).with_name('corpus.jsonl')
 with output.open('w') as stream:

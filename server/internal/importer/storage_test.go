@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"configflow/internal/convert"
 	"configflow/internal/importer"
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
@@ -25,6 +26,37 @@ func repositoryObject(t *testing.T, value any) *jsonx.Object {
 		t.Fatal(err)
 	}
 	return parsed.(*jsonx.Object)
+}
+
+func TestSnellShadowTLSRoundTripThroughSurgeExporter(t *testing.T) {
+	line := "Node = snell, example.com, 443, psk=p, version=5, reuse=true, shadow-tls-password=shadow, shadow-tls-sni=tls.example.com, shadow-tls-version=3"
+	plan, err := importer.Parse("surge", "[Proxy]\n"+line+"\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Proxies) != 1 {
+		t.Fatal("node missing")
+	}
+	proxy := plan.Proxies[0]
+	fields := map[string]json.RawMessage{}
+	for key, value := range proxy.Options {
+		fields[key] = value
+	}
+	fields["name"], _ = json.Marshal(proxy.Name)
+	fields["type"], _ = json.Marshal(proxy.Type)
+	fields["server"] = proxy.Server
+	fields["port"] = proxy.Port
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, _, err := convert.ConvertNodeToSurge(jsonx.Obj("name", proxy.Name, "proxy_string", string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual != line {
+		t.Fatalf("round trip: %s", actual)
+	}
 }
 func TestNativeImportsCommitThroughRepositoryAndPreserveExistingFields(t *testing.T) {
 	file, err := os.Open("testdata/corpus.jsonl")
