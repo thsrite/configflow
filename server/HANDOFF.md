@@ -50,6 +50,7 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | 245ed359-780e-49cd-b5df-7fb79c356bf6 | S-rules adversarial review | wks_d2891b3794d213be, branch `go-review-srules` |
 | c5332a35-f886-4d2d-90e2-f48496728a68 | S-oxidns adversarial review (first: non-ASCII zone rows) | wks_b086971f263e9706, branch `go-review-soxidns` |
 | 5ced41c3-a748-42b3-8aa9-9350ae2be0ef | R04 RouterOS driver port (on `internal/devhttp`) | wks_1b9579c1f761857d, branch `go-port-r04` |
+| 48fb0e89-9128-4cc3-8c65-c1eaac084f03 | Production-data differential harness (queue item 1; snapshot on test server `~/cf-prod-snapshot/20261116/`, copied read-only 2026-11-16) | wks_66a1e12807e372cb, branch `go-proddiff` |
 Worktrees of the branch agents: `~/.paseo/worktrees/302rx1dg/<branch>`.
 
 **When one finishes:** create a detached worktree of its branch (or of `go` after fast-forward), run
