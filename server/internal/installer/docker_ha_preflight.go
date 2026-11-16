@@ -291,10 +291,14 @@ func pySplitLines(text string) []string {
 
 // b64decodeValidate is base64.b64decode(s, validate=True) of a str already
 // matching [A-Za-z0-9+/]*={0,2} (CPython 3.11 binascii.a2b_base64, not
-// strict mode): pads before the third character of a quad are ignored,
-// decoding stops at the pad that completes a quad, leftover bits are dropped.
+// strict mode): leading padding is refused, pads before the third character
+// of a quad are ignored, the pad that completes a quad must be the last
+// character, leftover bits are dropped.
 func b64decodeValidate(s string) ([]byte, bool) {
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	if strings.HasPrefix(s, "=") {
+		return nil, false // "Leading padding not allowed" (CPython 3.11.17)
+	}
 	out := make([]byte, 0, len(s)*3/4)
 	quadPos, pads := 0, 0
 	var left byte
@@ -304,7 +308,8 @@ func b64decodeValidate(s string) ([]byte, bool) {
 			if quadPos >= 2 {
 				pads++
 				if quadPos+pads >= 4 {
-					return out, true
+					// "Excess data after padding" (CPython 3.11.17, also outside strict mode)
+					return out, i+1 == len(s)
 				}
 			}
 			continue
