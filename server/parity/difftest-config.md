@@ -1932,3 +1932,7 @@ Totals after review: 5570 original entries + 112 per-route cases + 15 cross-cutt
 ### Step B 聚合创建 oracle 更正
 
 `backend/routes/aggregations.py:347–362` 只检查对象、初始化health、分配ID并提交；`backend/common/config_repository.py:2465–2469` 校验资源引用，没有名称和聚合正则校验。真实HTTP的空名、重复名、`regex_filter="["` 均200并原样保存。R002-F09/F13保留原编号并测试此实际行为，不能人为要求Go返回400；健康检查/缺失引用仍400。
+
+### Step B 域名输入与 OxiDNS 预览边界
+
+域名发现的 `clean_domain`（`backend/utils/domain_discovery_service.py:526`）使用严格ASCII主机名校验：原始中文域名返回400，已转punycode的IDNA名称可用；R046/R049/R050的中文边界分别验证这两种形式。普通 OxiDNS preview（`backend/routes/generate.py:303–316`）会将内部规则能力URL脱敏；G15应读完整ZIP的 `config.yaml` 来验证地址/token，不能把preview中的 `[REDACTED]` 当成下载URL。MosDNS的下载URL只在内部准备阶段存在，仍待外部可观察性审计。

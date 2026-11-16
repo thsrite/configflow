@@ -24,7 +24,7 @@ def create(directory, options):
         document['shared'][key] = []
     for profile in document['profiles'].values():
         profile.update(rule_configs=[], proxy_groups=[], routers={'items': []},
-                       domain_discovery={'auto_probe_enabled': False})
+                       domain_discovery={'auto_probe': False, 'auto_apply': False})
         profile['mihomo'] = {'custom_config': 'dns:\n  enable: true\n  enhanced-mode: fake-ip\n  fake-ip-range: 198.18.0.1/16\n'}
     location = options.get('x01_location')
     payload = options.get('x01_payload', '')

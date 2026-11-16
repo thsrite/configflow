@@ -1,13 +1,16 @@
 """G15: output URL origin, profile paths and capability-token selection."""
 import copy
+import io
+import zipfile
 import re
 import json
 import sqlite3
 import uuid
 from urllib.parse import parse_qs, urlsplit
 
-from harness import Pair, json_body
-from seed import PULL
+from harness import Pair, json_body, DesignError
+from downloads import capture_headers, validate_headers
+from seed import CURRENT, PULL
 from sources import Source
 from subscriptions import Exchange
 from cases.rule_io import write_cache
@@ -57,8 +60,8 @@ def matrix(binary, recorder):
                     for explicit in (False, True):
                         for forwarded in (False, True):
                             for scoped in (False, True):
-                                for service in ('mihomo', 'surge', 'loon'):
-                                    route = 'POST /api/' + ('profiles/<profile_id>/' if scoped else '') + 'generate/' + service + '/preview'
+                                for service in ('mihomo', 'surge', 'loon', 'oxidns'):
+                                    route = 'POST /api/' + ('profiles/<profile_id>/' if scoped else '') + 'generate/' + service + ('' if service == 'oxidns' else '/preview')
                                     path = route.split(' ', 1)[1].replace('<profile_id>', 'other')
                                     body = {'base_url': 'https://body.example:18443/base%20space'} if explicit else {}
                                     headers = {'Host': 'request.example:18080', 'X-ConfigFlow-Profile': 'default'}
@@ -66,10 +69,21 @@ def matrix(binary, recorder):
                                         headers.update({'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': 'forward.example:18443'})
                                     profile_id = 'other' if scoped else 'default'
                                     def check(reply):
-                                        urls = output_urls(reply.json()['content'])
+                                        if service == 'oxidns':
+                                            with zipfile.ZipFile(io.BytesIO(reply.body)) as archive:
+                                                content = archive.read('config.yaml').decode()
+                                            errors = validate_headers(reply, pair.policy.start, pair.policy.end)
+                                            if errors:
+                                                raise DesignError('Python OxiDNS address archive headers: ' + repr(errors))
+                                        else:
+                                            content = reply.json()['content']
+                                        urls = output_urls(content)
                                         require(bool(urls), 'generated output really contains API source addresses')
-                                        require(any('/subscriptions/sub-a/proxies' in url for url in urls), 'client output includes actual subscription provider URL')
-                                        require(any('/rules/local/' in url or '/rule-library/content/' in url for url in urls), 'client output includes actual local rule delivery URL')
+                                        if service == 'oxidns':
+                                            require(any('/mosdns/rule-proxy' in url for url in urls), 'native downloader exposes the actual authenticated DNS callback')
+                                        else:
+                                            require(any('/subscriptions/sub-a/proxies' in url for url in urls), 'client output includes actual subscription provider URL')
+                                            require(any('/rules/local/' in url or '/rule-library/content/' in url for url in urls), 'client output includes actual local rule delivery URL')
                                         for url in urls:
                                             parsed = urlsplit(url)
                                             if '/api/config/' in parsed.path:
@@ -81,12 +95,17 @@ def matrix(binary, recorder):
                                             elif explicit:
                                                 require(parsed.netloc == 'body.example:18443', 'explicit base origin is preserved when no stored origin: ' + repr((service, url)))
                                             query = parse_qs(parsed.query)
-                                            if '/subscriptions/' in parsed.path or '/api/config/' in parsed.path:
+                                            if '/mosdns/rule-proxy' in parsed.path:
+                                                require(query.get('token') == [CURRENT], 'DNS downloader carries the rule capability, never config_token or JWT')
+                                            elif '/subscriptions/' in parsed.path or '/api/config/' in parsed.path:
                                                 require(query.get('token', []) == ([PULL] if capability else []), 'client delivery URL embeds configured pull token only when present')
                                             elif '/rules/local/' in parsed.path or '/rule-library/content/' in parsed.path:
                                                 require('token' not in query, 'anonymous local rule URL contains neither capability nor administrator JWT')
                                     pair.request('G15', route, path, body=json_body(body), headers=headers, expect=200, writes=True,
-                                                 projection=project(service), check=check, interaction=Exchange(pair, source, expected=0),
+                                                 projection=None if service == 'oxidns' else project(service), check=check,
+                                                 capture=capture_headers if service == 'oxidns' else None,
+                                                 filename='oxidns-config.zip' if service == 'oxidns' else '',
+                                                 interaction=Exchange(pair, source, expected=0),
                                                  variant=f'stored-{stored}/token-{capability}/base-{explicit}/forward-{forwarded}/{profile_id}/{service}')
 
 GROUPS = {'generator-url-capabilities': matrix}

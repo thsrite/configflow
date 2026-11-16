@@ -393,6 +393,14 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `status` | value | 500 | 404 |
 | `body.message` | value | '订阅操作失败' | "以下订阅 id 不存在: ['subscriptions 必须是对象数组']" |
 
+## R058-B03 / stored-legacy-extension
+
+路由：`PUT /api/domain-discovery/settings`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `db.fields.profile/default/domain_discovery.value.synthetic_legacy_extension` | extra-in-go | None | {'flag': False, 'values': []} |
+
 ## R217-S02 /
 
 路由：`PUT /api/subscriptions/<sub_id>`；状态：different

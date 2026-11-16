@@ -672,7 +672,7 @@ Go生成器尚未接通；这些用例未计为Go通过。继续G10–G13及其�
 ## 批次 37：G11 OxiDNS通用控件输出
 
 - 198请求，11控件×关闭/合法defaults/自定义×默认/scoped×草稿render/保存settings/已保存preview。覆盖主缓存和探测缓存、API、log、query recorder、IP selector、动态域名及学习、AdGuard、ROS地址表、ROS路由、rule_update。
-- 核对主缓存short_circuit=true与探测缓存false、lazy TTL=0必须省略、dump放state、API基础认证/TLS资源路径和生成正文里的合成凭据、日志rotation、学习插件独立开关、RouterOS TLS/async布尔及规则download→reload→cron执行引用。保存的SHA ETag、publish guard、完整DB及文件沿用既有严格比较；生成配置不脱敏。
+- 核对主缓存short_circuit=true与探测缓存false、lazy TTL=0必须省略、dump放state、API基础认证/TLS资源路径和生成正文里的合成凭据、日志rotation、学习插件独立开关、RouterOS TLS/async布尔及规则download→reload→cron执行引用。保存的SHA ETag、publish guard、完整DB及文件沿用既有严格比较；本批验证的合成API/ROS凭据在render/preview中保留，内部规则能力URL另由G15使用真实ZIP配置验证。
 - 这是生成形态验收，不启动DNS核心、不会连接RouterOS或执行cron；不存在将预览当成运行时功能通过的情况。Go相关路由全未接通。
 
 ```text
@@ -751,3 +751,20 @@ request_variants=6580 named_matrix_cases=3405（S509 F2422 B474），H去重217�
 ```
 
 聚合慢源多源完成次序、不能从公共边界单独触达的读取配置异常等仍待补齐/可达性审计；域名发现等继续。未做最终全量。
+
+## 批次 42：域名发现设置/忽略/备注与OxiDNS真实下载地址
+
+- 85个域名发现请求：默认/已选择library与用途、失效引用、auto开关/80/90/95及float90.0、端口边界/占用/错型、false/0/空容器等falsy值清默认库、非法目标与类型；ignore去重/删除幂等/2000容量、原始中文400与punycode200；备注修剪/修改/删除、200字符Unicode与2000已有项可更新。H045–051/H054–056逐分支到达，10个新增H编号。
+- 修正测试seed中无效的auto_probe_enabled为实际auto_probe=false/auto_apply=false，并为ignore/note写后的profile.updated_at加入已有时间窗口比较。先前31条fixture/时间噪声已重跑消除；未提交为业务发现。其余旧组的seed变化留待最终全量重跑。
+- 新增**真实差异1项**：R058-B03 / stored-legacy-extension，Python200后删除已存储domain_discovery.synthetic_legacy_extension，Go200仍保留该对象；其他响应/DB行一致，合成值仅flag=false和空列表。已写findings，未改Go。84条实际比较通过。
+- G15新增OxiDNS的32个地址/能力组合，读真实ZIP config.yaml，精确验证rule_proxy_token而不是config_token/JWT；完整ZIP含源规则，与fake零外网请求/DB/文件比较。普通preview会把能力URL替换成[REDACTED]，不能用它验私有URL。本轮G15共128请求仍Go未接通；MosDNS中间下载URL依然部分覆盖，待可观察性审计。
+
+```text
+.63 run.py --groups discovery-settings,discovery-ignored,discovery-notes,generator-url-capabilities
+current compared=84 different=1 go-unimplemented=128 design_errors=[] seconds=50.15
+cumulative compared=1563 go-unimplemented=5063 dependency=28 different=42 O12-separate=1
+request_variants=6697 named_matrix_cases=3455（S526 F2442 B487），H去重227，G去重15
+44 self-checks + end-to-end wrong-Go-response check OK
+```
+
+继续adopt/undo/初始化、实际Agent报告与job、G13及其他未完成项；未做最终全量。

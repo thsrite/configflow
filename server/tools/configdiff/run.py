@@ -146,6 +146,8 @@ def main():
     groups.update(aggregations)
     from cases.aggregation_providers import GROUPS as aggregation_providers
     groups.update(aggregation_providers)
+    from cases.domain_discovery import GROUPS as domain_discovery
+    groups.update(domain_discovery)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:
