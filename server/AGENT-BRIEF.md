@@ -43,6 +43,13 @@ semantics of generated configs and of what is written to routers. Python bugs ar
 Acceptance is at the external boundary: Flask↔Go HTTP differentials, generated outputs compared
 structurally against real Python, storage round trips, loopback fakes for devices.
 
+## Style, hand-off, escalation
+
+Follow the Go style section of the root `AGENTS.md` ("Go 后端（`server/`）代码风格"). Never stop with
+uncommitted or non-compiling code: commit what compiles, revert the rest, write the remaining steps into your
+PROGRESS file. If you fail the same problem 2–3 rounds, stop and report an escalation packet: failing command
++ trimmed output, file paths, one line per attempt and why it failed, branch/commit (WORKFLOW.md, last section).
+
 ## Reporting
 
 At the end (and when your context gets long) update your PROGRESS section: status, commits, decisions,

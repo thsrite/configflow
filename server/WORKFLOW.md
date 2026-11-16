@@ -232,3 +232,28 @@ reuse them. Size budgets were dropped the same day: line counts are reported for
 - **Coordinator** (dispatch, verify on a detached worktree via `rt`, emulation gate, fast-forward + push
   `go`): this Claude session; if Claude quota is out, Codex agents finish their task and stop with their
   branch ready; the coordinator merges when back. A fresh coordinator session starts from `HANDOFF.md`.
+
+## Design docs, hand-offs and escalation (maintainer, 2026-11-16)
+
+- **Go style:** all Go code follows the "Go 后端（`server/`）代码风格" section of the root `AGENTS.md`
+  (naming, `%w` errors, no panics, ctx first, doc comments, table tests, Chinese messages as constants in
+  `messages.go`, `logx`, gofmt/vet). Reviewers check it; violations in new code are findings.
+- **Opus design template** (every structural design, committed as a section of PROGRESS/WORKFLOW or
+  `server/design/<topic>.md`):
+  1. *Scope* — what the design covers and what it explicitly leaves out.
+  2. *Interface contract* — Go types, package boundaries, exported functions/methods with signatures,
+     error values, which package owns which data; how unknown stored fields are kept.
+  3. *State and concurrency* — state transitions (table or list), who mutates what, locks/goroutines,
+     cancellation behaviour (PORTING rule 4b).
+  4. *Buildable steps* — an ordered list where every step compiles and passes `go test ./...` on its own,
+     so Codex can commit after each.
+  5. *Acceptance* — boundary checks that prove it (routes/differential, generated outputs, stored data,
+     Agent protocol), and which Python behaviour is intentionally not kept.
+- **No half-finished hand-offs:** an agent (Opus or Codex) never hands over uncommitted or non-compiling
+  code. Before stopping it commits what compiles (or reverts what doesn't) and records the remaining steps
+  in its PROGRESS file. The coordinator rejects a hand-back with a dirty tree.
+- **Escalation packet:** when Codex fails the same problem 2–3 rounds, stop it and give a **fresh** Opus
+  session only: (a) the failing command and its output (trimmed to the relevant part), (b) the file paths
+  involved, (c) one line per attempt already made and why it failed, (d) the branch/commit to start from.
+  No transcript dump. The Opus result goes back to Codex as a design/fix note, or Opus commits the fix
+  itself if it is small.

@@ -63,12 +63,12 @@ convert/subs/agents/repo per design; R05 iKuai driver; C27 after S-oxidns review
 Claude subagents of the old session (S-rules, S-oxidns, N2 review, R04 Claude porters) are finished/paused —
 don't resume them; their work continues in the Codex agents above.
 
-**Decision pending from the maintainer:** proposed 3 additions — (1) a Go style section in the `go` branch's
+**Decided 2026-11-16 (maintainer accepted all 3):** additions — (1) a Go style section in the `go` branch's
 root `AGENTS.md` (naming, `%w` errors, no panics, ctx first, doc comments, table tests, Chinese messages as
 constants, `logx`, gofmt/vet); (2) a fixed design-doc template (interface contract, state transitions,
 buildable steps, acceptance) for Opus designs, and no handoff of half-finished uncommitted code; (3)
 escalation packet when Codex fails 2–3 rounds: failing output + file paths + one-line list of failed
-attempts, to a fresh Opus session. Ask before applying.
+attempts, to a fresh Opus session. Applied: root `AGENTS.md` style section, WORKFLOW.md last section, AGENT-BRIEF.md pointer.
 
 **Other:** the 2-hourly fallback cron was deleted (pause). An older coordinator session ("configflow-40")
 was told not to resume anything. Last pushed `go`: 39d01b51 (later local commits: 73d39c55 AGENT-BRIEF,
