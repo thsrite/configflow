@@ -230,7 +230,6 @@ type IkuaiGroup struct {
 	Comment string // the marker: first entry's comment
 	Values  []string
 	Entries []GroupEntry
-	Type    any
 	Refs    int // iKuai's ref_count
 	Role    string
 	Index   int
@@ -256,10 +255,7 @@ func intValue(v any) (int64, bool) {
 // GroupFromRow reads a decoded route_object row.
 func GroupFromRow(row Row) *IkuaiGroup {
 	g := &IkuaiGroup{Name: row.text("group_name"), GID: row.text("group_id"), Values: []string{},
-		Entries: []GroupEntry{}, Type: row["type"], Users: []GroupUser{}}
-	if !row.has("type") {
-		g.Type = 0.0
-	}
+		Entries: []GroupEntry{}, Users: []GroupUser{}}
 	if id, ok := intValue(row["id"]); ok {
 		g.ID = &id
 	}
@@ -277,7 +273,7 @@ func GroupFromRow(row Row) *IkuaiGroup {
 		g.Comment = entries[0].text("comment")
 	}
 	for _, e := range entries {
-		if present(e["ip"]) {
+		if e.set("ip") {
 			g.Entries = append(g.Entries, GroupEntry{IP: e.text("ip"), Comment: e.text("comment")})
 			g.Values = append(g.Values, e.text("ip"))
 		}

@@ -89,7 +89,7 @@ func InspectNATListRule(rows []Row, others []ListRef) NATListRule {
 		fine bool
 	}{{"chain", row.is("chain", "srcnat")}, {"action", row.is("action", "accept")},
 		{"src-address-list", row.is("src-address-list", NATSrcList)}, {"dst-address-list", row.is("dst-address-list", NATDstList)},
-		{"log", !rosTrue(row["log"]) && !present(row["log-prefix"])}} {
+		{"log", !row.flag("log") && !row.set("log-prefix")}} {
 		if !c.fine {
 			changed = append(changed, c.key)
 		}

@@ -52,29 +52,14 @@ var (
 		"out-interface", "out-interface-list"}
 )
 
-// present is the truthiness of a decoded JSON value (absent, null, false, 0,
-// "" and empty lists/objects are not set).
-func present(v any) bool {
-	switch v := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return v
-	case string:
-		return v != ""
-	case float64:
-		return v != 0
-	case []any:
-		return len(v) > 0
-	case map[string]any:
-		return len(v) > 0
-	}
-	return true
-}
+// Row values are decoded device data: RouterOS REST sends every value as a
+// string ("" or absent when unset, flags "true"/"false" or "yes"/"no");
+// iKuai sends numbers for ids and counters.
 
-// valText is a decoded JSON string or number as text ("" for anything else).
-func valText(v any) string {
-	switch v := v.(type) {
+// text is the field as text: a string, or a JSON number (iKuai ids); "" for
+// anything else.
+func (r Row) text(key string) string {
+	switch v := r[key].(type) {
 	case string:
 		return v
 	case float64:
@@ -85,24 +70,40 @@ func valText(v any) string {
 	return ""
 }
 
-// rosTrue is a RouterOS yes/true flag.
-func rosTrue(v any) bool {
-	if b, ok := v.(bool); ok {
-		return b
-	}
-	t := strings.ToLower(valText(v))
-	return t == "true" || t == "yes" || t == "1"
-}
+// set: the field holds a value.
+func (r Row) set(key string) bool { return r.text(key) != "" }
 
-func (r Row) enabled() bool                 { return !rosTrue(r["disabled"]) }
-func (r Row) text(key string) string        { return valText(r[key]) }
 func (r Row) is(key, value string) bool     { s, ok := r[key].(string); return ok && s == value }
 func (r Row) has(key string) bool           { _, ok := r[key]; return ok }
 func (r Row) str(key string) (string, bool) { s, ok := r[key].(string); return s, ok }
 
-// flag: any of keys is a RouterOS yes/true flag.
+// flag: any of keys is a RouterOS true/yes flag (a JSON true counts too).
 func (r Row) flag(keys ...string) bool {
-	return slices.ContainsFunc(keys, func(k string) bool { return rosTrue(r[k]) })
+	return slices.ContainsFunc(keys, func(key string) bool {
+		switch v := r[key].(type) {
+		case bool:
+			return v
+		case string:
+			return strings.EqualFold(v, "true") || strings.EqualFold(v, "yes") || v == "1"
+		}
+		return false
+	})
+}
+
+func (r Row) enabled() bool { return !r.flag("disabled") }
+
+// number is an integer field (RouterOS: decimal text; nil when absent or not a number).
+func (r Row) number(key string) *int64 {
+	if s, ok := r.str(key); ok {
+		if n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err == nil {
+			return &n
+		}
+		return nil
+	}
+	if n, ok := intValue(r[key]); ok {
+		return &n
+	}
+	return nil
 }
 
 // id is the row's .id as text.
@@ -113,8 +114,8 @@ func rowsOK(rows []Row) bool {
 }
 
 // rosInterface accepts a single interface name, not an address, list or recursive gateway.
-func rosInterface(v any) string {
-	value := strings.TrimSpace(valText(v))
+func rosInterface(value string) string {
+	value = strings.TrimSpace(value)
 	if value == "" || strings.ContainsAny(value, ",;%/@") {
 		return ""
 	}
@@ -155,7 +156,7 @@ func NewRouteEgressIndex(ctx *NatContext) *RouteEgressIndex {
 		return ix
 	}
 	for _, row := range ctx.Routes {
-		if table := row["routing-table"]; present(table) && table != "main" {
+		if table := row.text("routing-table"); table != "" && table != "main" {
 			continue
 		}
 		network, ok := netipx.ParseNetwork4(row.text("dst-address"), false)
@@ -179,14 +180,14 @@ func (ix *RouteEgressIndex) selectRoutes(cidr, gateway string) StaticRouteSelect
 			key := strconv.Itoa(i)
 			e := NewRoute(key, m.network.String(), m.row.text("gateway"), m.row.enabled(), "")
 			if m.row.has("active") {
-				e.Active = new(rosTrue(m.row["active"]))
+				e.Active = new(m.row.flag("active"))
 			} else if m.row.has("inactive") {
-				e.Active = new(!rosTrue(m.row["inactive"]))
+				e.Active = new(!m.row.flag("inactive"))
 			}
 			if m.row.flag("inactive", "invalid") {
 				e.Active = new(false)
 			}
-			e.Distance = rosInt(m.row["distance"])
+			e.Distance = m.row.number("distance")
 			entries[i] = e
 			ix.raw[key] = m.row
 		}
@@ -194,25 +195,6 @@ func (ix *RouteEgressIndex) selectRoutes(cidr, gateway string) StaticRouteSelect
 	}
 	sel, _ := ix.static.Select(cidr, gateway)
 	return sel
-}
-
-// rosInt is int(value) for a RouterOS number (nil when it is not one).
-func rosInt(v any) *int64 {
-	switch v := v.(type) {
-	case string:
-		if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil {
-			return &n
-		}
-	case float64:
-		return new(int64(v))
-	case bool:
-		n := int64(0)
-		if v {
-			n = 1
-		}
-		return &n
-	}
-	return nil
 }
 
 // GatewayEgress is the interface of the one active connected route to nextHop.
@@ -249,9 +231,9 @@ func gatewayEgress(nextHop netip.Addr, main []mainRoute) egress {
 		return egress{problem: "旁路下一跳存在多条或更细的路由，无法可靠推断新增路由的出口"}
 	}
 	row := main[selected[0]].row
-	iface, immediate := rosInterface(row["gateway"]), ""
-	if present(row["immediate-gw"]) {
-		immediate = rosInterface(row["immediate-gw"])
+	iface, immediate := rosInterface(row.text("gateway")), ""
+	if row.set("immediate-gw") {
+		immediate = rosInterface(row.text("immediate-gw"))
 	} else {
 		immediate = iface
 	}
@@ -395,7 +377,7 @@ func listContains(name, iface string, ctx *NatContext) match {
 		return matchUnsure
 	}
 	if slices.ContainsFunc(members, func(r Row) bool {
-		return r.enabled() && (!present(r["list"]) || !present(r["interface"]))
+		return r.enabled() && (!r.set("list") || !r.set("interface"))
 	}) {
 		return matchUnsure
 	}
@@ -405,7 +387,7 @@ func listContains(name, iface string, ctx *NatContext) match {
 			matching = append(matching, r)
 		}
 	}
-	if len(matching) != 1 || present(matching[0]["include"]) || present(matching[0]["exclude"]) {
+	if len(matching) != 1 || matching[0].set("include") || matching[0].set("exclude") {
 		return matchUnsure
 	}
 	if slices.ContainsFunc(members, func(r Row) bool {
@@ -420,8 +402,8 @@ func listContains(name, iface string, ctx *NatContext) match {
 
 // selectorMatches evaluates an out-interface(-list) selector against the
 // egress interface ("" when unknown).
-func selectorMatches(value any, iface string, ctx *NatContext, isList bool) match {
-	text := strings.TrimSpace(valText(value))
+func selectorMatches(value, iface string, ctx *NatContext, isList bool) match {
+	text := strings.TrimSpace(value)
 	if text == "" {
 		return matchYes
 	}
@@ -457,7 +439,7 @@ func AssessNAT(cidr, gateway string, state *RouterState, policyRouting bool, ix 
 	if !rowsOK(ctx.Rules) {
 		return NatAssessment{Status: "unknown", Detail: "无法读取完整 NAT 规则，无法确认是否需要免 NAT"}
 	}
-	if slices.ContainsFunc(ctx.Rules, func(r Row) bool { return r.enabled() && !present(r["chain"]) }) {
+	if slices.ContainsFunc(ctx.Rules, func(r Row) bool { return r.enabled() && !r.set("chain") }) {
 		return NatAssessment{Status: "unknown", Detail: "启用的 NAT 规则缺少链信息，无法排除源地址转换"}
 	}
 	var candidates []Row
@@ -473,7 +455,7 @@ func AssessNAT(cidr, gateway string, state *RouterState, policyRouting bool, ix 
 	var unknown []string
 	possible := false
 	for _, r := range candidates {
-		if present(r["out-interface"]) || present(r["out-interface-list"]) {
+		if r.set("out-interface") || r.set("out-interface-list") {
 			if !evaluated {
 				iface, problem = Egress(cidr, gateway, ctx, policyRouting, ix)
 				evaluated = true
@@ -484,8 +466,8 @@ func AssessNAT(cidr, gateway string, state *RouterState, policyRouting bool, ix 
 			}
 			// Matchers of one rule are conjunctive: a definite mismatch
 			// excludes the rule even when the other selector is undecidable.
-			a := selectorMatches(r["out-interface"], iface, ctx, false)
-			b := selectorMatches(r["out-interface-list"], iface, ctx, true)
+			a := selectorMatches(r.text("out-interface"), iface, ctx, false)
+			b := selectorMatches(r.text("out-interface-list"), iface, ctx, true)
 			if a == matchNo || b == matchNo {
 				continue
 			}
@@ -538,13 +520,12 @@ func parseAddressList(values []string) *addressList {
 // addressHits intersects a packet range with a row's literal and list
 // selectors of field (both must match); ok false when undecidable.
 func addressHits(row Row, field string, target netip.Prefix, sets map[string][]string, cache map[string]*addressList) (hits []netip.Prefix, ok bool) {
-	literal, valid := netip.MustParsePrefix("0.0.0.0/0"), true
-	if v := row[field]; present(v) {
-		s, _ := v.(string)
-		literal, valid = netipx.ParseNetwork4(s, false)
-	}
-	if !valid {
-		return nil, false
+	literal := netip.MustParsePrefix("0.0.0.0/0")
+	if row.set(field) {
+		var valid bool
+		if literal, valid = netipx.ParseNetwork4(row.text(field), false); !valid {
+			return nil, false
+		}
 	}
 	if !target.Overlaps(literal) {
 		return []netip.Prefix{}, true
@@ -552,11 +533,10 @@ func addressHits(row Row, field string, target netip.Prefix, sets map[string][]s
 	if !subnetOf(target, literal) {
 		target = literal
 	}
-	name := row[field+"-list"]
-	if !present(name) {
+	if !row.set(field + "-list") {
 		return []netip.Prefix{target}, true
 	}
-	listName, isStr := name.(string)
+	listName, isStr := row.str(field + "-list")
 	values, known := sets[listName]
 	if !isStr || strings.HasPrefix(listName, "!") || !known {
 		return nil, false
@@ -627,8 +607,8 @@ func PreservesSources(rows []Row, sources, destinations []netip.Prefix, iface st
 		if chain, set := row["chain"]; !row.enabled() || set && chain != nil && chain != "srcnat" {
 			continue
 		}
-		egressMatch := selectorMatches(row["out-interface"], iface, ctx, false)
-		listMatch := selectorMatches(row["out-interface-list"], iface, ctx, true)
+		egressMatch := selectorMatches(row.text("out-interface"), iface, ctx, false)
+		listMatch := selectorMatches(row.text("out-interface-list"), iface, ctx, true)
 		if egressMatch == matchNo || listMatch == matchNo {
 			continue
 		}
@@ -650,7 +630,7 @@ func PreservesSources(rows []Row, sources, destinations []netip.Prefix, iface st
 		if action != "accept" {
 			return false
 		}
-		if !present(row["chain"]) || slices.ContainsFunc(sortedKeys(row), func(k string) bool { return !slices.Contains(exemptionFields, k) }) ||
+		if !row.set("chain") || slices.ContainsFunc(sortedKeys(row), func(k string) bool { return !slices.Contains(exemptionFields, k) }) ||
 			row.flag("invalid", "dynamic") || egressMatch != matchYes || listMatch != matchYes {
 			continue
 		}
@@ -734,7 +714,7 @@ func AssessBypass(cidr, gateway string, state *RouterState, ix *RouteEgressIndex
 	}
 	rows := ctx.Rules
 	iface := ""
-	if slices.ContainsFunc(rows, func(r Row) bool { return present(r["out-interface"]) || present(r["out-interface-list"]) }) {
+	if slices.ContainsFunc(rows, func(r Row) bool { return r.set("out-interface") || r.set("out-interface-list") }) {
 		iface, _ = Egress(cidr, gateway, ctx, false, ix)
 	}
 	gw, ok1 := netipx.ParseAddr4(gateway)
@@ -778,7 +758,7 @@ func AssessBypass(cidr, gateway string, state *RouterState, ix *RouteEgressIndex
 			continue
 		}
 		selectors := r
-		if present(r["dst-address"]) {
+		if r.set("dst-address") {
 			// A literal target with a narrower list still restricts this target.
 			selectors = Row{}
 			for k, v := range r {

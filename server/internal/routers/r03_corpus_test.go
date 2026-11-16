@@ -46,6 +46,9 @@ func TestR03Corpus(t *testing.T) {
 			}
 			row.Out = row.OutFixed
 		}
+		if row.Fn == "ikuai_read" {
+			row.Out = withoutGroupType(t, row.Out)
+		}
 		if !sameJSON(t, got, row.Out) {
 			differ++
 			if differ <= 15 {
@@ -112,7 +115,7 @@ func texts(list []netip.Prefix) []string {
 
 func groupView(g *IkuaiGroup) map[string]any {
 	return map[string]any{"id": g.ID, "gid": g.GID, "name": g.Name, "comment": g.Comment, "values": g.Values,
-		"entries": g.Entries, "type": g.Type, "refs": g.Refs, "role": g.Role, "index": g.Index, "users": g.Users,
+		"entries": g.Entries, "refs": g.Refs, "role": g.Role, "index": g.Index, "users": g.Users,
 		"dup": g.Dup, "adopted": g.Adopted}
 }
 
@@ -318,4 +321,22 @@ func decodeInto(t *testing.T, raw json.RawMessage, v any) {
 	if err := json.Unmarshal(raw, v); err != nil {
 		t.Fatalf("decode %s: %v", raw, err)
 	}
+}
+
+// withoutGroupType drops each group's "type" from a Python ikuai_read result:
+// group_from_row copied it, but nothing ever read it, so Go does not keep it.
+func withoutGroupType(t *testing.T, raw json.RawMessage) json.RawMessage {
+	var out struct {
+		Groups []map[string]any `json:"groups"`
+		Rules  any              `json:"rules"`
+	}
+	decodeInto(t, raw, &out)
+	for _, g := range out.Groups {
+		delete(g, "type")
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
