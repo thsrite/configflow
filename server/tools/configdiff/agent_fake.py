@@ -10,8 +10,8 @@ CONTROLS = [{'host': 'www.baidu.com', 'url': 'https://www.baidu.com/'},
             {'host': 'www.gstatic.com', 'url': 'https://www.gstatic.com/generate_204'}]
 
 
-def probe_calls(hosts, proxy='代理🧪'):
-    return [{'method': 'POST', 'path': '/api/domain-probe', 'authorization': 'Bearer ' + AGENT,
+def probe_calls(hosts, proxy='代理🧪', token=AGENT):
+    return [{'method': 'POST', 'path': '/api/domain-probe', 'authorization': 'Bearer ' + token,
              'content_type': 'application/json', 'body': {'targets': CONTROLS + [
                  {'host': host, 'url': 'https://' + host + '/'} for host in hosts[start:start + 18]],
                  'paths': ['DIRECT', proxy], 'attempts': 3, 'timeout_ms': 5000}}

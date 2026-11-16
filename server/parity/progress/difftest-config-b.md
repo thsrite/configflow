@@ -939,3 +939,19 @@ request_variants=7065 named_matrix_cases=3555（S560 F2479 B516），H去重252�
 ```
 
 H064共享规则库在读取后被改的竞态、H072同步自动job失败仍待独立到达；多Agent/断连/自动化及其余R/H/T继续，未做最终全量。
+
+## 批次 53：多Agent、主域最多3 hosts与故障隔离
+
+- 14新增请求全部实际比较通过。两台Agent各向两端发送真实heartbeat/traffic-report，共4个具体host，流量10/8/6/1；输入example.com只选择前三个，a/c交给采集它们的第一Agent，b交给第二Agent，d不进入任何RPC/结果文件。
+- 每台Agent在两端均有独立loopback端口、独立token；逐设备保留请求顺序，严格比较其Bearer、18+2协议字段与目标，而不是给所有Agent共用一个不能辨认身份的fake。Python跨Agent迭代来自set，跨设备调用先后不排序冒充业务顺序保证；每个被标识设备的序列/次数及全局0/3→3/3均验证。
+- 第二Agent500后，最终job done/errors保留该Agent错误；第一Agent的probes文件完整保留，失败Agent不产生probe结果。DB/两个traffic文件/probe文件及R052 running完整比较。已用不同token重跑，无新差异。
+
+```text
+.63 run.py --groups discovery-multiple-agents
+current compared=14 design_errors=[] seconds=6.78
+cumulative compared=1890 go-unimplemented=5093 dependency=28 different=67 O12-separate=1
+request_variants=7079 named_matrix_cases=3556（S561 F2479 B516），H去重252，G去重16
+49 self-checks + end-to-end wrong-Go-response check OK
+```
+
+继续断连、并发poll、跨空间website busy、真实超时与T21自动化及剩余清单；未做最终全量。
