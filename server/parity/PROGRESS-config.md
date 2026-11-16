@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 20 missing, 4 partial, 6 ported, 7 verified (C01, C02, C03, C04, C08, C09, C10). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 19 missing, 4 partial, 6 ported, 8 verified (C01, C02, C03, C04, C08, C09, C10, C12). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -37,7 +37,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C09 | matcher cache, group candidates, reorder, strategy refs, connection rules | 708 | verified | C08 | – |
 | C10 | manual node parser, subscription hosts/filter/dialers | 1242 | verified | C08 | – |
 | C11 | proxy chains, commented Mihomo editor, listeners, proxy-server DNS | 855 | partial | C10 | – |
-| C12 | converter common, Mihomo node conversion, dialer references, EasyTier | 1196 | ported | C09, C11 | – |
+| C12 | converter common, Mihomo node conversion, dialer references, EasyTier | 1196 | verified | C09, C11 | – |
 | C13 | Sub-Store client, runtime, subscription cache, dependencies | 1193 | ported | C12, C10 | 3 (3 done) |
 | C14 | remote rule fetch, ruleset content, remote sources, website identity | 1202 | ported | C12, C08 | – |
 | C15 | subscription refresh, health, scheduled refresh | 600 | ported | C13, C14, C07 | – |
@@ -456,49 +456,54 @@ Reviewer notes: Refusals return Python's failure message and the route answers 4
 
 ## C12 — converter common, Mihomo node conversion, dialer references, EasyTier
 
-**Status: `ported`** (not reviewed) · prereqs: C09, C11 · Go: `internal/convert`
+**Status: `verified`** (review 2026-11-16, one round; 0 open findings — commits a2ea3673, e5fc9df7, 64a981fa) · prereqs: C09, C11 · Go: `internal/convert`
 
 Files → Go:
-- `backend/converters/common.py` (118) → `convert/common.go` (`UDPFallback`, `NTPDirect`, `EmittedRules`, `NTPDirectRule`, `AfterMatchComment`, `NetworkAsProtocol`, `HasPortList`, `SetGeneralOption`, `RulesetFormat`, `ParseHostsPairs`); `compat.go` = `_has_yaml_payload` copy (TODO C14)
-- `backend/converters/mihomo.py` node group → `convert/mihomo_nodes.go`: `IndentDumperOptions` (IndentDumper), `ApplyGithubProxyDomain`, `MihomoUsedPorts`, `MihomoListenPorts`, proxy YAML LRU cache (`loadProxyYAML`), `ParseStructuredProxyString`, `InspectStructuredProxyString` (see decisions), `WithNodeConversions` + `ConversionResults` (node_conversions), `ConvertNodeToMihomo`; region-probe constants
+- `backend/converters/common.py` (118) → `convert/common.go` (`UDPFallback`, `NTPDirect`, `EmittedRules`, `NTPDirectRule`, `AfterMatchComment`, `NetworkAsProtocol`, `HasPortList`, `SetGeneralOption`, `RulesetFormat`, `ParseHostsPairs`); `compat.go` = `_has_yaml_payload` via `rules.HasYAMLPayload`
+- `backend/converters/mihomo.py` node group → `convert/mihomo_nodes.go`: `IndentDumperOptions`, `ApplyGithubProxyDomain`, `MihomoUsedPorts`, `MihomoListenPorts` (+ `pySet`, CPython set order), proxy YAML LRU cache (`loadProxyYAML`, `stringKeys`), `ParseStructuredProxyString`, `InspectStructuredProxyString`, `WithNodeConversions` + `ConversionResults`, `ConvertNodeToMihomo`; region-probe constants
 - `backend/utils/proxy_utils.py` → `FixProxyFields`
-- `backend/utils/dialer_references.py` → `convert/dialers.go` (derived from the old faithful `repo/compat_dialers.go`), `convert/dialers_api.go`: `ValidateShapes`, `ValidateDialers`, `DependencyGraph` (`*Graph`, `Ref{Kind, ID}`, `Ref.IDValue`), `GroupMembers`, `GroupDependencies`, `RawDialer`, `DialerTarget`, `CheckCycles`, `IncomingDialers`, `ResolveDialer`, `OverlayDialer`, `FilterProviderCandidates`, `ProviderProxyName`, `ValidateEmitted` (`EmitOptions`), `RejectSurgeDialers`, `DependencyNodeIDs`
-- `backend/common/mihomo_easytier.py` → `convert/easytier.go` (+ `ipaddr.go`: ipaddress.ip_network/ip_interface/ip_address rules): `NormalizeEasyTierSettings`, `EasyTierSettings`, `EasyTierDefaultSettings`, `EasyTierApplies`, `EasyTierKeepaliveGroupName`, `ApplyEasyTier`, `RedactEasyTierSettings`, `EasyTierFields`, constants
-- `convert/proxyyaml_loose.go`: the yaml.v3-based loose loader moved from `repo/compat_proxystring.go`
+- `backend/utils/dialer_references.py` → `convert/dialers.go`, `convert/dialers_api.go` (`ValidateShapes`, `ValidateDialers`, `DependencyGraph`, `GroupMembers`, `GroupDependencies`, `RawDialer`, `DialerTarget`, `CheckCycles`, `IncomingDialers`, `ResolveDialer`, `OverlayDialer`, `FilterProviderCandidates`, `ProviderProxyName`, `ValidateEmitted`, `RejectSurgeDialers`, `DependencyNodeIDs`)
+- `backend/common/mihomo_easytier.py` → `convert/easytier.go` (+ `ipaddr.go`)
+- `convert/proxyyaml_loose.go`: yaml.v3 loader, now only the fallback of `InspectStructuredProxyString` for a document with a recursive alias (see accepted differences)
 
-Tests (`convert/ported_test.go`, `corpus_test.go`):
-- `test_proxy_yaml_cache.py` 14/14 (semantic cases via the corpus rows + a second cached call; special types/aliases/cycles adapted: `!!set`, non-string keys and recursive nodes give nil in Go — yamlx limit; deepcopy-lock test replaced by a lock-free check)
-- `test_mihomo_easytier.py` 11/13 as pure `ApplyEasyTier`/`NormalizeEasyTierSettings` tests (the generate round trip of each → C18); deferred: `test_surge_and_loon_ignore_the_setting` (C19/C20), `test_api_round_trip_rejection_and_desensitized_export` (C34 + export hook)
-- `test_dialer_provider_scope.py` 3/4 (deferred: `test_provider_membership_cycle_rejected_before_side_effects`, routes → C17/C18/C30/agents)
-- `test_dialer_round2.py` 2/10 (deferred 8 route/generation cases → C17/C18/C30/C33)
-- `test_dialer_review_fixes.py` 1/16 (deferred 15 route cases → C17/C18/C30/C33)
-- Log lines of `convert_node_to_mihomo`: `TestConversionLogLines`.
-- `test_node_conversion_cache.py` 1/12 (`test_rendering_again_does_not_start_sub_store` with a caching fake; the other 11 test sub_store_client's own cache → C13) + `TestNodeConversionsReuse`
-- Differential corpus `convert/testdata/corpus.jsonl.gz`: 37577 Python rows over 33 functions (common, nodes, dialers incl. 2500 random profiles and 2500 emitted configs, EasyTier 1500×3), all equal (results, mutated arguments, intentional error messages; unintended exceptions must be errors).
+Tests: `ported_test.go` (porter: `test_proxy_yaml_cache.py` 14/14, `test_mihomo_easytier.py` 11/13, `test_dialer_provider_scope.py` 3/4, `test_dialer_round2.py` 2/10, `test_dialer_review_fixes.py` 1/16, `test_node_conversion_cache.py` 1/12 + log lines; deferred cases listed with C17/C18/C19/C20/C30/C33/C34), `corpus_test.go` (37577 Python rows), `review_c12_test.go` (2130 review rows + exception messages of the porter corpus).
 
-Compat switch-over:
-- `repo`: switched. `repo/compat_dialers.go` keeps only the shared Python helpers and wraps `convert` (errors → `HelperError` classes); `repo/compat_proxystring.go` deleted (its loader moved to convert); `parseStructuredProxyString` = `convert.InspectStructuredProxyString`; `compat_test.go` golden passes (adapter `goldenDefault` for timestamps/bytes). repo → convert → subs → rules has no cycle.
-- `subs`: cycle (convert needs `subs.ValidateProxyChains`, subs' chains/dialers need dialer refs) → copy kept, `subs/compat_drift_test.go` runs it over convert's corpus (2 copy defects fixed, see C10).
-- `rules/compat.go` `RulesetFormat`: cycle (convert imports rules) → copy kept, `rules/compat_drift_test.go` (294 rows equal).
-- Not done (outside C12's packages): `repo.Hooks.RedactEasytierSettings` can now be `convert.RedactEasyTierSettings` (register in `server.wireCore`, convert cannot import repo).
+Review findings (all fixed; regression rows in `testdata/review_c12.jsonl.gz` → `TestReviewC12References`, unless noted):
+1. **medium** — `MihomoListenPorts` listed listener ports ascending; Python's dict follows the CPython set order of `mihomo_used_ports` (setup_flow names the *first* conflicting port). Now `pySet` reproduces setobject.c (hashes of int/bool/float, linear probes, perturbation, resizes, `set_merge`): 1191 of 1200 rows (600 random documents × used/listen ports) give Python's exact order; the rest are the accepted None-slot cases below. a2ea3673.
+2. **medium** — `port: true` became port `1` in `MihomoListenPorts`; Python keeps `True` (setup message `使用端口 True`). `PortOwner.Value` holds the key as Python does (first key object kept). a2ea3673.
+3. **low** — `has_port_list`/`network_as_protocol` ran on RE2: Python's `re.IGNORECASE` also matches `ı` for I and `ſ` for S (`(ıN-PORT,80/443)` is a port list in Python). Now `rules.CompilePyRegex` (+ `Sub` for findall); `str.upper` used a partial SpecialCasing table (`ᾳ`, `ᾀ`, `ﬓ` wrong) → `pystr.Upper`. a2ea3673.
+4. **low** — external-controller port: `isdigit`/`int()` on Go's Unicode 15 tables accepted Kawi/Nag Mundari digits that Python 3.11 refuses; now `pystr.Decimal` + `pystr.Int` (also the 4300-digit limit). a2ea3673.
+5. **low** — `convert_node_to_mihomo` structured `params` lists: Python's `dict.update` takes any length-2 sequence (`"ab"`, a two-key dict) and keys that are not strings; Go raised TypeError. a2ea3673.
+6. **low** — `group_dependencies` `sorted(ids)` sorted non-string ids as `"\x00"+repr` text (`10` before `9`) and never raised for mixed str/int; now numeric order and Python's TypeError. The `use` match tuple is hashed only when added, as in Python. a2ea3673.
+7. **low** — `validate_proxy_chains`: the unhashable-`follow_group` TypeError was raised before every other check; Python raises it in its first loop over groups-by-id (an earlier group's DialerReferenceError wins; a group replaced by a later duplicate id is never checked). a2ea3673.
+8. **low** — `filter_provider_candidates`/`provider_proxy_name`: OverflowError/RecursionError of `re.compile` became DialerReferenceError; `re.sub` compiles before it checks the name type; a non-string name with no rules returned `""` instead of TypeError; `rules[0]` of a dict is KeyError(0); `\d` in the `$n` expansion used Unicode 15 digits. a2ea3673.
+9. **low** — `resolve_dialer` read `ref['id']` before iterating (KeyError instead of StopIteration for an empty list); `reject_surge_dialers` and `validate_emitted` validated whole lists up front where Python's `any()`/loops stop early — a later malformed group/node/provider definition/payload entry raised AttributeError/TypeError before Python's DialerReferenceError (this is coordinator item 10's C17 row; its allowlist entry in `provider/corpus_test.go` is removed and the row now matches). a2ea3673.
+10. **low** — crash messages: `obj['k']` on a str/list said `'str' object is not subscriptable`; Python says `string indices must be integers, not 'str'` / `list indices must be integers or slices, not str`. Now every unintended exception of both corpora carries Python's text (`TestCorpusExceptionMessages`). e5fc9df7.
+11. **low** — YAML node strings with keys that are not strings (`1: a`, `yes: x`, `~: y`) were not parsed locally (`ParseStructuredProxyString` nil → Sub-Store; `health` `needs_sub_store` true); Python parses them. Now `yamlx` `KeepNonStringKeys` (coordinator item 8) and the keys are stored as json.dumps writes them (accepted difference below); such results bypass the cache as in Python. The ported cache test helper bypassed the real loader; fixed (64a981fa).
 
-Decisions / differences from Python:
-- `validate_proxy_chains` = `subs.ValidateProxyChains` plus the unhashable `follow_group` TypeError subs lacks.
-- Sub-Store is injected: `ProxyStringConverter.ConvertProxyString(ctx, s) *jsonx.Object` (nil = None); `node_conversions` is per-context, not thread-local.
-- `provider_proxy_name` re.sub: validated by `rules.CompilePyRegex`, run on regexp2 with `(?P<n>)`/`(?P=n)` rewritten (`netPattern`); ask C08 for a `PyRegex` replace/submatch API to drop this.
-- YAML values jsonx cannot hold (non-string keys, recursive containers, `!!set`): `ParseStructuredProxyString` → nil (string goes to Sub-Store); `InspectStructuredProxyString` (raw_dialer, repo import rewrite) falls back to the loose loader (keys as json.dumps writes them) — what those Python callers observe.
-- Ports: bools count as ports 1/0 (Python keeps `True`); `MihomoListenPorts` lists listener ports ascending (Python: set order). Equal set members keep the first (`7890.0` hides `7890`), as in Python.
-- Ids that are not strings live in `Ref.ID` as `"\x00"+repr`; `Ref.IDValue()` decodes numbers/None.
-- Proxy YAML cache budget uses an approximation of `sys.getsizeof` (only decides caching).
-- Python crashes on malformed input (KeyError/TypeError/AttributeError/StopIteration…) are `*PyError` with Python's class; messages are approximate.
+Coordinator items: **8** — `convert` uses `pystr` (`Lower`, `Upper`, `Strip`, `IsSpace`, `Decimal`, `Int`) and `rules.CompilePyRegex`; the private `pyLower`/`pyIsSpace`/`decimalValue`/Go-table helpers are gone; the loose YAML loader is replaced by `yamlx` `KeepNonStringKeys` except for documents with a recursive alias (no `yamlx` counterpart; deleting it needs a yamlx option such as a recursion placeholder — owner C02). The private `urlsplit` copy stays until the bracketed-host fix of `urlx` that is uncommitted in the shared tree lands (`urlx.Split` at HEAD reports netip's text for `https://[github.com]/`; with the fix, switch `pyhelpers.urlsplit` to it). **10** — `ValidateEmitted` fixed (finding 9); C17's allowlist row removed.
 
-Commits: 520b8bf9 (WIP code), bcfa7ee2 (corpus), a6d1be35 (ported tests), dae8afba (compat switch-over; the deletion of `repo/compat_proxystring.go` landed in 8507a6f4 through the shared index), + final commit (log-line test, status). Last run: vet clean, `go test -race` ok for convert, repo, subs, rules.
+Accepted differences (reviewer's judgement, documented; overrule if needed):
+- **None in the port set**: `hash(None)` is the address of `None`, so its slot in `mihomo_used_ports`' intermediate set depends on the interpreter binary (reference build `…dd`, python:3.11-slim `…36`; the ASLR-randomised bits decide its probe sequence after a collision). `pySet` counts None (and str members, whose hash is randomised per process) for resizes but gives them no slot; the order differs from a given Python build only when None displaced an int (9 of 1200 random-document rows on the reference build; same members).
+- **Keys that are not strings** in proxy YAML / `params` pairs are stored as json.dumps text (`1` → `"1"`, `true` → `"true"`, `null` → `"null"`): jsonx objects have string keys. Generated YAML writes `'1': a` where Python writes `1: a`; keys that only differ by type (`1` and `"1"`) collapse.
+- **Recursive aliases and non-empty `!!set`/`!!omap`/`!!pairs`** in a node string: not parsed locally (`ParseStructuredProxyString` nil → Sub-Store), the domain's yamlx/jsonx limit. `InspectStructuredProxyString` (raw_dialer, provider delivery, repo import rewrite) reads recursive documents with the loose loader, as before.
+- **Regex**: `\N{name}` and repeat counts beyond int32 in provider filters/name rules are refused with the Provider message (`…无效或不受支持`); a 1 s backtracking timeout in a name rule is `Provider 名称转换规则无效` (domain regex decision).
+- **Ids that are not strings** live in `Ref.ID` as `"\x00"+repr`; not observable (graph membership/cycles, `incoming_dialers` only for truthiness, `dependency_node_ids` against string node ids); `Ref.IDValue()` turns them back (a bool id comes back as 1/0).
+- **Proxy YAML cache budget** approximates `sys.getsizeof`; it only decides whether a result is cached (results are equal either way).
+- Python crashes on values the code does not check are `*PyError` with Python's class and, for every corpus row, Python's message; other crash texts may differ.
 
-Reviewer hints: compare `dialers.go` with `dialer_references.py` (it started as the repo copy, extended); `pySub`/`netPattern`; the yamlx-limit decisions above; `MihomoListenPorts` order.
+Checks performed:
+- Line-by-line walk of all five Python files against Go: every branch, short-circuit order of `any()`/generators/comprehensions, dict/set hashing points, exception classes and messages, Chinese messages, defaults and key order (common.py, node group of mihomo.py incl. the YAML cache and `node_conversions`, proxy_utils, dialer_references incl. `validate_proxy_chains`' interaction, mihomo_easytier incl. `ipaddress` rules for networks/netmasks/hostmasks/interfaces/scope ids).
+- New Python references (`testdata/review_c12_gen.py`, 2130 rows): IGNORECASE ı/İ/ſ/K, Unicode spaces (U+2028, U+3000, \x1c–\x1f, U+180E, U+200B) and SpecialCasing in common.py; hosts pairs with zones, mapped/embedded IPv4, full-width/mathematical digits; `ruleset_format` URLs (İ, Kelvin, NFKC netloc, brackets); GitHub proxy hosts (İ, trailing dot, userinfo, brackets, ℀); port documents (bools, floats, 10**30, full-width/Arabic-Indic/Kawi/circled digits, 600 random documents for order); 76 node strings (non-string keys, recursion, !!set/!!binary/timestamps, aliases into reality-opts, YAML 1.1 ints/floats, JSON NaN/1e400/duplicates/surrogates, URIs vs `key: value`, BOM, NEL/U+2028, multi-document, tabs, merge keys, tags) through parse/convert/raw_dialer; 32 structured nodes (`İPSEC`, Kelvin, ẞ, Σ, every `params` shape); 17 dialer profiles (3000-deep include chain, 500-group cycle, self-include, mixed/numeric/str id sorting, unhashable follow_group order, raw dialer names/YAML/recursion, Unicode names, aggregation ids, unhashable `use` ids); lazy `resolve_dialer`/`reject_surge_dialers`/`validate_emitted`; filter/provider-name edge patterns and targets; 97 EasyTier settings (code point limits with emoji, every netmask form, IPv6/zone, mtu/routing-mark bounds and types, scheme case/Kelvin, URL whitespace, TLD dots) and 23 `apply_easytier` documents (core versions incl. full-width, non-list proxies/groups/rules, nameserver-policy shapes, dialer targets). Reference generated twice with different PYTHONHASHSEED: only the TypeError text of a mixed-type sort varies (class compared).
+- Sub-Store converter end to end: `substore` `TestRenderingAgainDoesNotStartSubStore` drives `convert.ConvertNodeToMihomo` through the real client (passes).
+- Runs on the test server: `go vet`, `go test -count=1` of convert, subs, repo, rules, provider, substore, health; `-race` of convert, subs, rules, provider, substore (repo's `TestWriteWaitsForReleasedFileLock` showed an intermittent data race inside `repo/lock_test.go`'s own goroutine/defer — not C12 code; passes on rerun).
+
+Not done here (outside C12's packages): register `convert.RedactEasyTierSettings` as `repo.Hooks.RedactEasytierSettings` in the server wiring; `subs/compat.go` dialer copy and `rules/compat.go` `RulesetFormat` copy stay (import cycles; drift tests run them over the corpus).
 
 Commands:
-- tests: `rt -- bash -lc 'cd server && gofmt -l internal/convert; go vet ./internal/convert/... && go test -count=1 ./internal/convert/... ./internal/repo/... ./internal/subs/... ./internal/rules/...'`
-- corpus: `rt --back server/internal/convert/testdata -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/convert/testdata/gen.py'` (deterministic; gzip mtime 0)
+- tests: `rt -- bash -lc 'cd server && go vet ./internal/convert/... && go test -count=1 ./internal/convert/... ./internal/subs/... ./internal/repo/... ./internal/rules/... ./internal/provider/... ./internal/substore/...'`
+- porter corpus: `rt --back server/internal/convert/testdata -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/convert/testdata/gen.py'`
+- review references: `rt --back server/internal/convert/testdata/review_c12.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/convert/testdata/review_c12_gen.py'`
 
 ## C13 — Sub-Store client, runtime, subscription cache, dependencies
 
