@@ -619,3 +619,20 @@ request_variants=6049 named_matrix_cases=3320（S480 F2387 B453），H去重217�
 ```
 
 Go相关preview仍未接通，未计通过。G10–G16、Agent目标及其他未完成项继续，未做最终全量。
+
+## 批次 34：G15客户端地址与能力矩阵
+
+- 96请求：Mihomo/Surge/Loon各覆盖server_domain有/无、config_token有/无、base_url显式/省略、转发头有/无、default/other路径。显式other路径与冲突default header证明路径优先；比较完整主机、带前缀路径、query和生成正文，未掩码URL。
+- 订阅provider/policy-path及Surge managed-config仅按配置携带pull token；匿名规则URL不带管理员JWT或其他能力。Mihomo规则走rules/local，Surge/Loon内联规则走rule-library/content。使用真实原始节点缓存及内联规则，fake源断言零外网下载。
+- 原生启动会自动补齐空server_domain。未设域名的fixture在两边启动后以外部SQLite事务清空该字段，并改变generation/commit使公开读取失效旧缓存；没有修改生产入口或循环。数据库其他行和revision照常比较，不能通过后续归一化隐藏启动差异。
+- **G15仍部分覆盖**：DNS preview YAML只含本地文件引用，下载地址在交付准备中形成；不能以preview200声称验证了DNS下载URL。MosDNS/OxiDNS URL及rule_proxy_token待fake Agent交付序列。
+
+```text
+.63 run.py --groups generator-url-capabilities
+current go-unimplemented=96 design_errors=[] seconds=6.45
+cumulative compared=1470 go-unimplemented=4605 dependency=28 different=41 O12-separate=1
+request_variants=6145 named_matrix_cases=3320（S480 F2387 B453），H去重217，G去重10
+42 self-checks + end-to-end wrong-Go-response check OK
+```
+
+本批生成preview仍Go未接通；无新业务差异。继续备份及其余生成器/业务/长流程，未做最终全量。

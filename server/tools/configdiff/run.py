@@ -130,6 +130,8 @@ def main():
     groups.update(ruleset_shapes)
     from cases.generator_dns import GROUPS as generator_dns
     groups.update(generator_dns)
+    from cases.generator_urls import GROUPS as generator_urls
+    groups.update(generator_urls)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:
