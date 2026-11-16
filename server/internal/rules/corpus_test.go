@@ -75,8 +75,7 @@ func TestCorpusMatch(t *testing.T) {
 	pairs, skipped := 0, 0
 	for n, record := range corpus(t)["match"] {
 		contents := record.GetObject("contents")
-		if pythonOnlyLineBreak(compact(t, record.Value("contents"))) || pythonOnlyLineBreak(compact(t, record.Value("library"))) ||
-			scopedNetwork(compact(t, record.Value("configs"))) {
+		if scopedNetwork(compact(t, record.Value("configs"))) {
 			skipped++
 			continue
 		}
@@ -101,7 +100,7 @@ func TestCorpusMatch(t *testing.T) {
 				compact(t, got), compact(t, want), compact(t, record.Value("configs")), compact(t, contents))
 		}
 	}
-	t.Logf("%d (rule list, query) pairs equal, %d rule lists skipped (Python-only line breaks, scoped networks)", pairs, skipped)
+	t.Logf("%d (rule list, query) pairs equal, %d rule lists skipped (scoped networks)", pairs, skipped)
 	if pairs < 20000 {
 		t.Errorf("only %d pairs compared", pairs)
 	}
@@ -213,7 +212,7 @@ func TestCorpusRegex(t *testing.T) {
 		texts, expected := record.GetList("texts"), record.GetList("searches")
 		for i, text := range texts {
 			searches++
-			if re.Search(text.(string)) != expected[i].(bool) && !emptyNonBoundary(pattern, text.(string)) {
+			if re.Search(text.(string)) != expected[i].(bool) {
 				t.Errorf("re.search(%q, %q, ignore=%v) = %v, want %v", pattern, text, ignore, !expected[i].(bool), expected[i])
 			}
 		}

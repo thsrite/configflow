@@ -80,8 +80,8 @@ func compileFilter(value any) (*Regex, error) {
 	re, err := CompilePyRegex(strings.TrimSpace(text), false)
 	if err != nil {
 		if !IsPyRegexError(err) {
-			// A valid pattern the engines cannot run (\N{name}, huge repeat
-			// counts): accepted, the filter is not applied.
+			// A valid pattern the engines cannot run (\N{name}) is accepted
+			// as a no-op. Oversized repeats are rejected by CompilePyRegex.
 			return nil, nil
 		}
 		return nil, candidateError("正则表达式无效")

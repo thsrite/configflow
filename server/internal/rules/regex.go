@@ -22,8 +22,8 @@ import (
 // filters, renaming rules) are written in Python's re syntax. They run on
 // Go's engines: RE2 (package regexp) whenever it can express the pattern,
 // otherwise regexp2, the backtracking engine Mihomo itself uses for its
-// filters (look-around, back references, atomic groups, conditionals, a
-// Unicode word boundary, repeat counts above RE2's limit of 1000).
+// filters (look-around, back references, atomic groups, conditionals, word
+// boundaries, repeat counts above RE2's limit of 1000).
 //
 // A small syntax shim (translate) rewrites the Python spellings the engines
 // spell differently; it does not validate. Whether a pattern is valid is
@@ -230,6 +230,9 @@ func (r *Regex) Sub(text string, repl func(*Match) (string, error), count int) (
 	if err != nil {
 		return "", err
 	}
+	if count < 0 { // CPython treats a negative maxcount as zero substitutions.
+		return text, nil
+	}
 	runes := []rune(text)
 	var out strings.Builder
 	last, pos := 0, 0
@@ -297,7 +300,8 @@ func (t *translation) source(ignoreCase bool) string {
 //   - every group is a plain capture; names live in a Go map, so Unicode
 //     names work on both engines; (?P=name) and \N become \k<N>;
 //   - \d \w \s and their negations are Python's Unicode classes (ASCII under
-//     (?a)), also inside [...]; \Z is \z; {,n} is {0,n};
+//     (?a)), also inside [...]; \b/\B use the same classes and run on regexp2;
+//     \Z is \z; {,n} is {0,n};
 //   - (?x) whitespace and comments are dropped; possessive x*+ is (?>x*);
 //   - inside [...] every ASCII punctuation is escaped ([[:alpha:]] is a
 //     literal set in Python).
@@ -381,7 +385,11 @@ func (w *walker) sequence(first bool) {
 				continue
 			}
 			w.write(`\{`)
-		case '.', '^', '$':
+		case '$':
+			// Python's $ also matches immediately before one final newline;
+			// Go's RE2 $ matches only at end of text unless multiline is set.
+			w.write(`(?:$|\n\z)`)
+		case '.', '^':
 			w.write(string(c))
 		default:
 			w.write(w.literal(c))
@@ -479,11 +487,11 @@ func (w *walker) escape() {
 	c := w.src[w.pos]
 	w.pos++
 	switch c {
-	case 'A', 'b', 'B':
+	case 'A':
 		w.write(`\` + string(c))
-		if c != 'A' && !w.ascii {
-			w.t.backtrack = true // RE2's \b only knows ASCII word characters
-		}
+	case 'b', 'B':
+		w.t.backtrack = true // both engines' word-boundary classes differ from Python's
+		w.write(w.wordBoundary(c == 'B'))
 	case 'Z':
 		w.write(`\z`)
 	case 'd', 'D', 's', 'S', 'w', 'W':
@@ -704,6 +712,19 @@ func (w *walker) category(c rune) string {
 		spans = complement(spans)
 	}
 	return w.spell(spans)
+}
+
+// wordBoundary expands Python's \b / \B using the same \w class as the
+// syntax shim. regexp2's built-in boundary treats combining marks and
+// connector punctuation as word characters, unlike Python's re. ASCII mode
+// uses the ASCII class. Python 3.11 also does not match \B in an empty string;
+// the final guard preserves that pre-3.14 behavior.
+func (w *walker) wordBoundary(nonBoundary bool) string {
+	word := "[" + w.category('w') + "]"
+	if !nonBoundary {
+		return "(?:(?<=" + word + ")(?!" + word + ")|(?<!" + word + ")(?=" + word + "))"
+	}
+	return "(?:(?<=" + word + ")(?=" + word + ")|(?<!" + word + ")(?!" + word + "))(?:(?=[\\s\\S])|(?<=[\\s\\S]))"
 }
 
 func (w *walker) set() {

@@ -43,6 +43,7 @@ NAMES = [
     'Ελλάδα 01', 'العربية 01', '香港 01 - 游戏', '香港 Netflix 解锁', 'HK 01 x2', 'HK 01 ×0.1', 'ChatGPT 美国',
     'DIRECT', 'REJECT', 'Auto 自动选择', '♻️ 自动选择', '🚀 节点选择', 'node.example.test:443', '',
     '新加坡⁰¹', '台湾 ① 号', 'HK01-备用', '香港 01 (v6)', 'IPv6 香港', 'Emoji 😀 only', 'tab\tname',
+    'Hong Kong 2x', '香港 ０１x', '日本东京 01 x2', '🇸🇬 新加坡 03 | IPLC', 'a\u0301', '\u0301a', 'a\u203f',
 ]
 
 PATTERNS = [
@@ -55,6 +56,8 @@ PATTERNS = [
     r'(?i)[a-z]+', r'[^\x00-\x7f]', r'\p{Han}', r'[\d-z]', r'(?<=\d+)x', r'a{2,1}', r'(', r'[a-', r'**', r'(?P<n>a)(?P=n)',
     r'(?>HK)\d', r'HK\d++', r'\x48K', r'香港', r'\N{DIGIT ONE}', r'[[:digit:]]', r'(?a)\w+', r'(?a)\d',
     r'(?u)\d', r'\D+', r'\S+\s\S+', r'(?i)TÜRKIYE', r'(?i)россия', r'ελλάδα', r'(?:x|×)\d', r'[①-⑩]', r'⁰¹',
+    '^(?!.*(过期|剩余|官网)).*$', r'\d+x', r'(?P<name>香港|日本)\s*(?P<num>\d+)',
+    '香港|日本|新加坡|台湾', r'(?i)\b(?:hk|jp|sg)\b', r'a\b', r'a\B', r'(?a)\b\d+x\b',
 ]
 
 for pattern in PATTERNS:
@@ -73,7 +76,8 @@ for pattern in PATTERNS:
             emit(kind='sub', pattern=pattern, outputs=[
                 compiled.sub(lambda m: '<' + m.group(0).upper() + '>', name) for name in NAMES])
 
-INCLUDES = [None, '', '香港|HK', '(?i)hk', r'\d', '(?i)^(?!.*(过期|剩余)).*$', '(', 5]
+INCLUDES = [None, '', '香港|HK', '(?i)hk', r'\d', r'\d+x', '香港|日本|新加坡|台湾',
+            '(?i)^(?!.*(过期|剩余|官网)).*$', '(', 5]
 EXCLUDES = [None, '', '过期|剩余|到期|官网', r'(?i)x\d', '[', '0\\d']
 nodes = [{'name': name} for name in NAMES]
 for include in INCLUDES:

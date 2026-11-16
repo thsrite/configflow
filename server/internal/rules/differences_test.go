@@ -11,12 +11,6 @@ import (
 // see the S-rules section of server/parity/PROGRESS-config.md). Each
 // predicate names one class; the corpus tests skip or tolerate exactly these.
 
-// pythonOnlyLineBreak: Python's str.splitlines also breaks rule files at
-// \v \f \x1c-\x1e \x85 U+2028 U+2029; Go splits at \n, \r\n and \r only.
-func pythonOnlyLineBreak(text string) bool {
-	return strings.ContainsAny(text, "\v\f\x1c\x1d\x1e\u0085  ")
-}
-
 // scopedNetwork: an IPv6 scope id inside a network ("fe80::%eth0/64");
 // Python keeps it, net/netip refuses zones in prefixes.
 func scopedNetwork(text string) bool {
@@ -55,12 +49,6 @@ func pythonIteratesNonList(group *jsonx.Object) bool {
 		}
 	}
 	return false
-}
-
-// emptyNonBoundary: Python's \B never matches in an empty string; regexp2's
-// does (an empty string has no word boundary).
-func emptyNonBoundary(pattern, subject string) bool {
-	return subject == "" && strings.Contains(pattern, `\B`)
 }
 
 // idna2003Only: host names only the IDNA 2003 codec accepts: an ASCII label

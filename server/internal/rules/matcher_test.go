@@ -765,7 +765,7 @@ func splitLinesRef(parts []string, sep string, trailing bool) []string {
 }
 
 func TestStreamedLinesPreserveSplitlinesAndOriginalMatch(t *testing.T) {
-	for _, sep := range []string{"\n", "\r", "\r\n"} {
+	for _, sep := range []string{"\n", "\r", "\r\n", "\v", "\f", "\x1c", "\x1d", "\x1e", "\u0085", "\u2028", "\u2029"} {
 		for _, trailing := range []bool{false, true} {
 			parts := []string{"", "  full:Example.com  ", "# comment", "+.second.example", ""}
 			content := strings.Join(parts, sep)
@@ -789,11 +789,17 @@ func TestStreamedLinesPreserveSplitlinesAndOriginalMatch(t *testing.T) {
 
 func TestStreamedEmptyAndMixedNewlinesMatchSplitlines(t *testing.T) {
 	for content, want := range map[string][]string{
-		"": nil, "one": {"one"}, "\r\r\n": {"", ""}, "one\r\ntwo\n\rthree\vfour\u2028": {"one", "two", "", "three\vfour\u2028"},
+		"": nil, "one": {"one"}, "\r\r\n": {"", ""}, "one\r\ntwo\n\rthree\vfour\u2028": {"one", "two", "", "three", "four"},
 	} {
 		got := slices.Collect(lines(content))
 		if fmt.Sprintf("%q", got) != fmt.Sprintf("%q", want) {
 			t.Errorf("%q: got %q want %q", content, got, want)
+		}
+	}
+	for _, separator := range []string{"\v", "\f", "\x1c", "\x1d", "\x1e", "\u0085", "\u2028", "\u2029"} {
+		got := slices.Collect(lines("first" + separator + "second"))
+		if fmt.Sprintf("%q", got) != fmt.Sprintf("%q", []string{"first", "second"}) {
+			t.Errorf("separator %q: got %q", separator, got)
 		}
 	}
 }

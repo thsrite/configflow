@@ -4,12 +4,13 @@ package convert
 // client configuration generators.
 
 import (
+	"errors"
 	"strings"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
 	"configflow/internal/rules"
-	"configflow/internal/weburl"
+	"configflow/internal/rulesetfmt"
 )
 
 // UDPFallbackPolicies are the values udp_fallback accepts.
@@ -237,71 +238,28 @@ func RulesetFormat(rule, config *jsonx.Object, sourceURL string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	library := jsonx.NewObject()
-	libraryID := rule.Value("library_rule_id")
-	for _, v := range items {
-		item, err := asObject(v)
-		if err != nil {
-			return "", err
-		}
-		var match bool
-		if jsonx.Truthy(libraryID) {
-			match = jsonx.Equal(item.Value("id"), libraryID)
-		} else {
-			match = jsonx.Equal(item.Value("name"), rule.Value("name"))
-		}
-		if match {
-			library = item
-			break
-		}
+	format, err := rulesetfmt.Format(rule, items, sourceURL)
+	if err == nil {
+		return format, nil
 	}
-	for _, source := range []*jsonx.Object{library, rule} {
-		if declared := source.Value("format"); contains([]string{"yaml", "text", "mrs"}, declared) {
-			return declared.(string), nil
-		}
+	var libraryEntry *rulesetfmt.LibraryEntryTypeError
+	if errors.As(err, &libraryEntry) {
+		return "", attributeError(libraryEntry.Value, "get")
 	}
-	source := library
-	if library.Len() == 0 {
-		source = rule
-	}
-	if jsonx.Equal(source.Value("source_type"), "content") {
-		if content, ok := source.GetOr("content", "").(string); ok && hasYAMLPayload(content) {
-			return "yaml", nil
-		}
-		return "text", nil
-	}
-	var url any = ""
-	switch {
-	case jsonx.Truthy(library.Value("url")):
-		url = library.Value("url")
-	case sourceURL != "":
-		url = sourceURL
-	case jsonx.Truthy(rule.Value("url")):
-		url = rule.Value("url")
-	}
-	text, ok := url.(string)
-	if !ok {
-		// urlsplit is lru_cache'd: an unhashable list/dict fails hashing
-		// (TypeError, which callers such as rule_ip_presence catch) before
-		// the str coercion (AttributeError) does.
-		switch url.(type) {
+	var urlType *rulesetfmt.URLTypeError
+	if errors.As(err, &urlType) {
+		switch urlType.Value.(type) {
 		case []any, *jsonx.Object:
-			return "", pyError("TypeError", "unhashable type: '"+pyTypeName(url)+"'")
+			return "", pyError("TypeError", "unhashable type: '"+pyTypeName(urlType.Value)+"'")
+		default:
+			return "", attributeError(urlType.Value, "decode")
 		}
-		return "", attributeError(url, "decode")
 	}
-	parts, err := weburl.Parse(text)
-	if err != nil {
-		return "", pyError("ValueError", err.Error())
+	var urlParse *rulesetfmt.URLParseError
+	if errors.As(err, &urlParse) {
+		return "", pyError("ValueError", urlParse.Err.Error())
 	}
-	path := pystr.Lower(weburl.RawPath(parts))
-	if strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml") {
-		return "yaml", nil
-	}
-	if strings.HasSuffix(path, ".mrs") {
-		return "mrs", nil
-	}
-	return "text", nil
+	return "", err
 }
 
 // HostsPair is one (domain, address) row of ParseHostsPairs.

@@ -5,11 +5,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/netip"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 
+	"configflow/internal/clientrange"
 	"configflow/internal/netipx"
 
 	"gopkg.in/yaml.v3"
@@ -27,8 +27,6 @@ var (
 	policyHook   = M("exec", "jump "+PolicyTag)
 	directPlugin = M("tag", DirectTag, "type", "sequence", "args", L(
 		M("exec", "$forward_local"), M("matches", L("!has_resp"), "exec", "reject 3"), M("exec", "accept")))
-	clientAddress = regexp.MustCompile(`^[0-9a-fA-F:.]+$`)
-	prefixDigits  = regexp.MustCompile(`^[0-9]{1,3}$`)
 )
 
 const clientRangeError = "请输入有效的客户端 IPv4、IPv6 或 CIDR 网段，例如 192.168.50.0/24。"
@@ -36,45 +34,14 @@ const clientRangeError = "请输入有效的客户端 IPv4、IPv6 或 CIDR 网�
 // NormalizeClientRange canonicalizes a client host or CIDR (IPv4-mapped
 // peers become IPv4; a host prefix becomes the address).
 func NormalizeClientRange(raw *Node) (string, error) {
-	invalid := fail(clientRangeError)
 	if !isStr(raw) {
-		return "", invalid
+		return "", fail(clientRangeError)
 	}
-	parts := strings.Split(strings.TrimSpace(raw.Value), "/")
-	if len(parts) > 2 || !clientAddress.MatchString(parts[0]) {
-		return "", invalid
+	value, ok := clientrange.Normalize(raw.Value)
+	if !ok {
+		return "", fail(clientRangeError)
 	}
-	address, err := netip.ParseAddr(parts[0])
-	if err != nil {
-		return "", invalid
-	}
-	prefix := address.BitLen()
-	if len(parts) == 2 {
-		if !prefixDigits.MatchString(parts[1]) {
-			return "", invalid
-		}
-		prefix, _ = strconv.Atoi(parts[1])
-	}
-	if prefix > address.BitLen() {
-		return "", invalid
-	}
-	if address.Is4In6() {
-		if prefix < 96 {
-			return "", invalid
-		}
-		address, prefix = address.Unmap(), prefix-96
-	}
-	network := netip.PrefixFrom(address, prefix).Masked()
-	if network.Addr().IsMulticast() && netipx.Broadcast(network).IsMulticast() {
-		return "", invalid
-	}
-	if prefix == address.BitLen() {
-		if address.IsUnspecified() {
-			return "", invalid
-		}
-		return address.String(), nil
-	}
-	return network.String(), nil
+	return value, nil
 }
 
 // NormalizePolicies validates device policy rows ({ip, name, mode}).

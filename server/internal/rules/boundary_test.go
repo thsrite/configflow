@@ -47,6 +47,7 @@ var boundaryNames = []string{
 	"Ελλάδα 01", "العربية 01", "香港 01 - 游戏", "香港 Netflix 解锁", "HK 01 x2", "HK 01 ×0.1", "ChatGPT 美国",
 	"DIRECT", "REJECT", "Auto 自动选择", "♻️ 自动选择", "🚀 节点选择", "node.example.test:443", "",
 	"新加坡⁰¹", "台湾 ① 号", "HK01-备用", "香港 01 (v6)", "IPv6 香港", "Emoji 😀 only", "tab\tname",
+	"Hong Kong 2x", "香港 ０１x", "日本东京 01 x2", "🇸🇬 新加坡 03 | IPLC", "a\u0301", "\u0301a", "a\u203f",
 }
 
 func loadBoundary(t *testing.T) []boundaryRecord {

@@ -1,22 +1,18 @@
 package rules
 
-// Helpers owned by modules that import this package (rulefetch for rule-set
-// content, convert for ruleset_format, oxidns for client ranges). The
-// matcher and the connection rules need them too, and an import the other
-// way round would be a cycle, so the implementation lives here: rulefetch
-// and mosdns call these; convert.RulesetFormat and
-// oxidns.NormalizeClientRange are still their own copies (to be switched to
-// these in their S passes).
+// Helpers shared with rulefetch and mosdns. Rule-set format inference and
+// client-range normalization live in cycle-free leaf packages so converters,
+// OxiDNS and this package all use one implementation.
 
 import (
 	"errors"
-	"net/netip"
-	"net/url"
 	"strconv"
 	"strings"
 	"unicode"
 
+	"configflow/internal/clientrange"
 	"configflow/internal/jsonx"
+	"configflow/internal/rulesetfmt"
 )
 
 // ProfileValidationError is a request the user must fix; Error() is the
@@ -128,19 +124,7 @@ func ClassicalLineError(value string) string {
 // HasYAMLPayload reports content that looks like a YAML rule set: a flow
 // mapping, or a line starting with a (quoted) payload key.
 func HasYAMLPayload(content string) bool {
-	probe := strings.TrimPrefix(content, "\ufeff")
-	if strings.HasPrefix(strings.TrimLeftFunc(probe, unicode.IsSpace), "{") {
-		return true
-	}
-	for _, line := range strings.Split(probe, "\n") {
-		rest := strings.TrimLeftFunc(line, unicode.IsSpace)
-		for _, key := range []string{`payload`, `"payload"`, `'payload'`} {
-			if after, ok := strings.CutPrefix(rest, key); ok && strings.HasPrefix(strings.TrimLeftFunc(after, unicode.IsSpace), ":") {
-				return true
-			}
-		}
-	}
-	return false
+	return rulesetfmt.HasYAMLPayload(content)
 }
 
 // RulesetFormat is the format of a rule set reference ("yaml", "text" or
@@ -148,49 +132,7 @@ func HasYAMLPayload(content string) bool {
 // path. library is the rule_library list; sourceURL overrides the rule's
 // URL when the library entry has none.
 func RulesetFormat(rule *jsonx.Object, library []any, sourceURL string) string {
-	found := jsonx.NewObject()
-	libraryID := rule.GetString("library_rule_id")
-	for _, entry := range library {
-		item, ok := entry.(*jsonx.Object)
-		if ok && (libraryID != "" && item.GetString("id") == libraryID || libraryID == "" && jsonx.Equal(item.Value("name"), rule.Value("name"))) {
-			found = item
-			break
-		}
-	}
-	for _, source := range []*jsonx.Object{found, rule} {
-		switch declared := source.GetString("format"); declared {
-		case "yaml", "text", "mrs":
-			return declared
-		}
-	}
-	source := found
-	if found.Len() == 0 {
-		source = rule
-	}
-	if source.GetString("source_type") == "content" {
-		if HasYAMLPayload(source.GetString("content")) {
-			return "yaml"
-		}
-		return "text"
-	}
-	address := found.GetString("url")
-	if address == "" {
-		address = sourceURL
-	}
-	if address == "" {
-		address = rule.GetString("url")
-	}
-	path := address
-	if parsed, err := url.Parse(address); err == nil {
-		path = parsed.Path + parsed.Opaque
-	}
-	switch path = strings.ToLower(path); {
-	case strings.HasSuffix(path, ".yaml"), strings.HasSuffix(path, ".yml"):
-		return "yaml"
-	case strings.HasSuffix(path, ".mrs"):
-		return "mrs"
-	}
-	return "text"
+	return rulesetfmt.FormatSkippingInvalidEntries(rule, library, sourceURL)
 }
 
 // ErrClientRange: not a usable client address or range.
@@ -200,48 +142,9 @@ var ErrClientRange = errors.New("请输入有效的客户端 IPv4、IPv6 或 CID
 // (IPv4-mapped peers as IPv4; host bits cleared; a full-length prefix as the
 // bare address). Multicast networks and the unspecified address are refused.
 func NormalizeClientRange(raw string) (string, error) {
-	addressText, prefixText, hasPrefix := strings.Cut(strings.TrimSpace(raw), "/")
-	if addressText == "" || strings.Trim(addressText, "0123456789abcdefABCDEF:.") != "" || strings.Contains(prefixText, "/") {
+	value, ok := clientrange.Normalize(raw)
+	if !ok {
 		return "", ErrClientRange
 	}
-	address, err := netip.ParseAddr(addressText)
-	if err != nil {
-		return "", ErrClientRange
-	}
-	prefix := address.BitLen()
-	if hasPrefix {
-		if len(prefixText) > 3 || !asciiDigits(prefixText) {
-			return "", ErrClientRange
-		}
-		prefix, _ = strconv.Atoi(prefixText)
-	}
-	if prefix > address.BitLen() {
-		return "", ErrClientRange
-	}
-	if address.Is4In6() { // OxiDNS sees IPv4-mapped peers as the IPv4 client
-		if prefix < 96 {
-			return "", ErrClientRange
-		}
-		address, prefix = address.Unmap(), prefix-96
-	}
-	network := netip.PrefixFrom(address, prefix).Masked()
-	if network.Addr().IsMulticast() && lastAddress(network).IsMulticast() {
-		return "", ErrClientRange
-	}
-	if prefix == address.BitLen() {
-		if address.IsUnspecified() {
-			return "", ErrClientRange
-		}
-		return address.String(), nil
-	}
-	return network.String(), nil
-}
-
-func lastAddress(network netip.Prefix) netip.Addr {
-	bytes := network.Addr().AsSlice()
-	for bit := network.Bits(); bit < len(bytes)*8; bit++ {
-		bytes[bit/8] |= 0x80 >> (bit % 8)
-	}
-	last, _ := netip.AddrFromSlice(bytes)
-	return last
+	return value, nil
 }

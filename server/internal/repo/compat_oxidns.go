@@ -7,12 +7,11 @@
 package repo
 
 import (
-	"net/netip"
-	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"configflow/internal/clientrange"
 	"configflow/internal/jsonx"
 	"configflow/internal/routerdoc"
 )
@@ -21,22 +20,7 @@ func oxidnsError(message string) error { return helperError(ClassOxidnsSettings,
 
 // ---- oxidns_device_policy.py ----
 
-var (
-	clientAddressPattern = regexp.MustCompile(`^[0-9a-fA-F:.]+$`)
-	clientPrefixPattern  = regexp.MustCompile(`^[0-9]{1,3}$`)
-)
-
 const clientRangeMessage = "请输入有效的客户端 IPv4、IPv6 或 CIDR 网段，例如 192.168.50.0/24。"
-
-// pyIPAddress is ipaddress.ip_address(text) for text made of hex digits,
-// colons and dots (no scope id).
-func pyIPAddress(text string) (netip.Addr, bool) {
-	address, err := netip.ParseAddr(text)
-	if err != nil {
-		return netip.Addr{}, false
-	}
-	return address, true
-}
 
 // normalizeClientRange is normalize_client_range: hosts and CIDRs in
 // canonical text, IPv4-mapped peers as IPv4.
@@ -46,53 +30,11 @@ func normalizeClientRange(raw any) (string, error) {
 	if !ok {
 		return "", invalid
 	}
-	parts := strings.Split(pyStrip(text), "/")
-	if len(parts) > 2 || !clientAddressPattern.MatchString(parts[0]) {
-		return "", invalid
-	}
-	address, ok := pyIPAddress(parts[0])
+	value, ok := clientrange.Normalize(pyStrip(text))
 	if !ok {
 		return "", invalid
 	}
-	prefix := address.BitLen()
-	if len(parts) == 2 {
-		if !clientPrefixPattern.MatchString(parts[1]) {
-			return "", invalid
-		}
-		prefix, _ = strconv.Atoi(parts[1])
-	}
-	if prefix > address.BitLen() {
-		return "", invalid
-	}
-	// OxiDNS sees IPv4-mapped peers as the same IPv4 client.
-	if address.Is4In6() {
-		if prefix < 96 {
-			return "", invalid
-		}
-		address, prefix = address.Unmap(), prefix-96
-	}
-	network := netip.PrefixFrom(address, prefix).Masked()
-	first := network.Addr()
-	if first.IsMulticast() && lastAddress(network).IsMulticast() {
-		return "", invalid
-	}
-	if prefix == address.BitLen() {
-		if address.IsUnspecified() {
-			return "", invalid
-		}
-		return address.String(), nil
-	}
-	return first.String() + "/" + strconv.Itoa(prefix), nil
-}
-
-// lastAddress is network.broadcast_address.
-func lastAddress(network netip.Prefix) netip.Addr {
-	bytes := network.Addr().AsSlice()
-	for bit := network.Bits(); bit < len(bytes)*8; bit++ {
-		bytes[bit/8] |= 1 << (7 - bit%8)
-	}
-	address, _ := netip.AddrFromSlice(bytes)
-	return address
+	return value, nil
 }
 
 // ---- device_notes.py ----

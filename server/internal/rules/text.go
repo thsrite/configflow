@@ -4,6 +4,7 @@ import (
 	"iter"
 	"net/netip"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/net/idna"
 
@@ -84,11 +85,18 @@ func IPAddressVersion(text string) int {
 	return 6
 }
 
-// lines yields the lines of a text file (\n, \r\n or \r line ends).
+// lines yields lines split at the Unicode boundaries recognized by Python
+// str.splitlines, including \v, \f, NEL and Unicode line separators.
 func lines(content string) iter.Seq[string] {
 	return func(yield func(string) bool) {
 		for content != "" {
-			end := strings.IndexAny(content, "\r\n")
+			end, separatorSize := -1, 0
+			for offset, r := range content {
+				if isLineBreak(r) {
+					end, separatorSize = offset, utf8.RuneLen(r)
+					break
+				}
+			}
 			if end < 0 {
 				yield(content)
 				return
@@ -97,11 +105,15 @@ func lines(content string) iter.Seq[string] {
 				return
 			}
 			if strings.HasPrefix(content[end:], "\r\n") {
-				end++
+				separatorSize = 2
 			}
-			content = content[end+1:]
+			content = content[end+separatorSize:]
 		}
 	}
+}
+
+func isLineBreak(r rune) bool {
+	return strings.ContainsRune("\n\r\v\f\x1c\x1d\x1e\u0085\u2028\u2029", r)
 }
 
 // closestMatch is the candidate most similar to word (Ratcliff/Obershelp:
