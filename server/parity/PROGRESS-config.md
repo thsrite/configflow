@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 16 missing, 4 partial, 8 ported, 9 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 15 missing, 3 partial, 10 ported, 9 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -30,7 +30,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C02 | infra helpers | 828 | verified | C01 | – |
 | C03 | repo storage core (config_repository.py part A) | 1576 | verified | C01, C02 | – |
 | C04 | repo public API (config_repository.py part B), config.py | 1373 | verified | C03 | – |
-| C05 | profile context, OxiDNS settings normalizer | 497 | partial | C04 | – |
+| C05 | profile context, OxiDNS settings normalizer | 497 | ported | C04 | – |
 | C06 | HTTP shell, auth, settings routes | 1028 | partial | C05 | 22 (17 done) |
 | C07 | logs, stats, tasks, notifications, web listener | 1393 | partial | C06 | 9 (5 done) |
 | C08 | rule syntax, matcher, rule utils | 1101 | verified | C02 | – |
@@ -47,7 +47,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C19 | Surge converter | 1129 | ported | C18 | – |
 | C20 | Loon converter | 764 | ported | C19 | – |
 | C21 | MosDNS converter | 1261 | ported | C14 | – |
-| C22 | OxiDNS converter, native loader, references, match targets | 913 | missing | C05, C21 | – |
+| C22 | OxiDNS converter, native loader, references, match targets | 913 | ported | C05, C21 | – |
 | C23 | OxiDNS validation and constraints | 1542 | missing | C22 | – |
 | C24 | OxiDNS common settings | 1175 | missing | C23 | – |
 | C25 | OxiDNS common routing, DNS watchdog | 1286 | missing | C24 | – |
@@ -247,21 +247,20 @@ Commands: `rt -- bash -lc 'cd server && go vet ./internal/repo/... && CONFIGFLOW
 
 ## C05 — profile context, OxiDNS settings normalizer
 
-**Status: `partial`** · prereqs: C04 · Go: internal/repo (scope.go, defaults.go), internal/httpx (app.go profileContext); normalizer: internal/oxidns (new)
+**Status: `ported`** (not reviewed; native-mode validation pending C23) · prereqs: C04 · Go: internal/repo (scope.go, defaults.go), internal/httpx (app.go profileContext), `internal/oxidns/settings.go` (normalizer), `convert.AppendURLQuery`
 
-Files:
-- `backend/common/profile_context.py` (208)
-- `backend/common/oxidns_settings.py` (289)
+Files → Go:
+- `backend/common/profile_context.py` (208): `profile_api_path`, `config_api_path`, `_is_global_request`, `resolve_profile_id` → `repo/scope.go`; `install_profile_context` → `httpx/app.go::profileContext` + `logConfigPull`; `append_url_query(url, params)` → **`convert.AppendURLQuery(url, [][2]any)`** (already exported by C21 in `convert/exports_mosdns.go`; reused, no copy; a Mapping is passed as its items in order; error = urlsplit's ValueError as `*convert.PyError`).
+- `backend/common/oxidns_settings.py` (289) → `internal/oxidns/settings.go`: `OxidnsSettingsError` → `*oxidns.Error{Class: "OxidnsSettingsError"}` (`errors.go`; subclasses `OxidnsReferenceError`/`OxidnsValidationError` are the same type with another Class; `Issues`/`HasIssues` = `exc.issues`; `IsSettingsError`, `AsError`, `IsValueError`); `BLOCK_QTYPES_EXEC(S)` → `BlockQtypesExec(s)`; `get_default_oxidns_settings` → `repo.GetDefaultOxidnsSettings` (= `oxidns.DefaultSettings`); `_merge` → `Merge(defaults, value *jsonx.Object)`; `safe_relative_path(value, label)` → `SafeRelativePath(value any, label string)` (label used as given; Python's default is `DefaultPathLabel`); `_normalize_rule_dns` → `normalizeRuleDNS`; **`normalize_oxidns_settings(value, validate_native_arguments=…)` → `NormalizeSettings(value any, NormalizeOptions{SkipNativeArguments bool}) (*jsonx.Object, error)`** (nil = None; returns a new object; errors `*oxidns.Error`, `*convert.PyError` for Python crashes, `*oxidns.PendingError` while a later module is missing — see the doc comment).
+- Lazy imports of the normalizer, ported in the same package as the real functions (not copies): `rule_dns.normalize_action`/`ROUTE_LABELS` → `oxidns/ruledns.go` (`NormalizeAction`, `RouteLabels`), `oxidns_device_policy.normalize_policies`/`normalize_client_range` → `oxidns/devicepolicy.go` (`NormalizePolicies`, `NormalizeClientRange`), `oxidns_native.managed_files/native_document/load_native_yaml` → `oxidns/native.go` (C22).
 
-Tests: none of its own (covered through the tests of the modules that use it).
+Verification (shared with C22, same files): recorded replay `normalize` 1442 calls (1417 identical, 25 pending C23), `append_url_query` 217 identical; `_merge`/`safe_relative_path` are only called inside other recorded calls in the suite (covered there) and directly in the corpus. Corpus: `normalize` 6000 rows (every field valid/invalid, ints incl. bool/float/str/2³¹/10²⁰, sections non-dict, args non-dict, custom matches, block_qtypes, cache dump paths, recorder/dynamic `state/` paths, AdGuard, RouterOS TLS/TTL/route, cron, rule actions/parked/follow, device policies, attachments, native drafts with/without argument validation), `safe_relative_path` 800, `merge` 600, `append_url_query` 800 (Mapping/list params, list/None/dict/int values, broken IPv6 URL): 0 differences. Commands: see C22.
 
-Routes: none.
+Python test files (rule 4): none of its own. Covered through the replay of every suite call (normalize is reached from 100 test files, among them `test_oxidns_settings_routes.py`, `test_oxidns_editor.py`, `test_rule_dns.py`, `test_oxidns_native.py`, `converters/test_oxidns.py`, `test_gateway_onboarding.py`, `test_oxidns_resource_lifecycle.py`, `test_oxidns_fallback_lifecycle.py`, `test_oxidns_domain_only_native.py`).
 
-Evidence: `profile_context.py`: `profile_api_path`, `config_api_path`, `_is_global_request`, `resolve_profile_id` → `repo/scope.go`; `install_profile_context` → `httpx/app.go::profileContext` + `logConfigPull`. `oxidns_settings.py`: only `get_default_oxidns_settings` → `repo/defaults.go::GetDefaultOxidnsSettings`.
+Left / pending: native mode with `validate_native_arguments=True` needs `validate_expanded_document` (C23) — `PendingError` until then (25 replay rows). `repo/compat_oxidns.go` still holds repo's private copies of `normalize_action`/`normalize_client_range` (repo cannot import `internal/oxidns`, which imports repo for the defaults); the real functions now live in `oxidns`. Switching repo needs those functions in a leaf package repo can import (decision for C26/C27 or the C05 reviewer).
 
-Missing / deferred: Missing: `profile_context.append_url_query` (used by converters and routes: port with C12/C18); `oxidns_settings.OxidnsSettingsError`, `_merge`, `safe_relative_path`, `_normalize_rule_dns`, `normalize_oxidns_settings` (174 lines; lazily imports `rule_dns.normalize_action`, `oxidns_device_policy.normalize_policies`, `oxidns_native.managed_files/native_document/load_native_yaml`). Private copies of `normalize_action`/`normalize_client_range`/notes in `repo/compat_oxidns.go`. No dedicated Python test file; covered by OxiDNS tests (`test_oxidns_*`, `converters/test_oxidns.py`).
-
-Reviewer notes: Port the normalizer together with C22 (it needs `oxidns_native`) and finish it when C26/C27 land; until then C05 stays `partial`. Python callers of the missing functions span 15 files (converters, routes/config, routes/oxidns, routes/rules, agents deployment_bundle, linux_gateway, gateway_onboarding).
+Reviewer notes: check short-circuit order in the template checks (dynamic route before learn, AdGuard content before urls), `integer()` bounds with big ints/bools/floats, `str.split()`/`strip()` on Unicode whitespace (pystr), `len()` in code points, `list(dict.fromkeys(...))` ordering, `set(row) - {...}` for device policies, `'\x7f'` removal before strip.
 
 ## C06 — HTTP shell, auth, settings routes
 
@@ -885,24 +884,46 @@ Commands:
 
 ## C22 — OxiDNS converter, native loader, references, match targets
 
-**Status: `missing`** · prereqs: C05, C21 · Go: internal/oxidns (new)
+**Status: `ported`** (not reviewed; paths that need C23/C25/C26 return `PendingError`) · prereqs: C05, C21 · Go: `internal/oxidns` (new)
 
-Files:
-- `backend/converters/oxidns.py` (490)
-- `backend/common/oxidns_native.py` (264)
-- `backend/common/oxidns_references.py` (64)
-- `backend/common/oxidns_match_targets.py` (61)
-- `backend/native_test_helpers.py` (34)
+Files → Go (`server/internal/oxidns/`):
+- `backend/converters/oxidns.py` (490) → `converter.go`: `GenerateOxidnsConfig` (YAML via `yamlx.SafeDumpUnicode` = `yaml.safe_dump(allow_unicode=True, sort_keys=False)`), `GetOxidnsRulesetDownloads`, `GetOxidnsCustomFiles`, `UnavailableRulesets`, `RulesetParts` (= `ruleset_parts`), `RoutingGroups(config, settings, Legacy{None,All,ContentAware}, items, itemsGiven)` (= `_routing_groups`), `HostsFileContent`, `Forward`, `FallbackUpstreams`, `Items`, `Base`, `TagFor` (= `_tag`), `RulePath`, `LocalDNSDefaults`/`RemoteDNSDefaults`; `_selected` is the lazy `selected(..., yield)` (errors keep Python's generator order).
+- `backend/common/oxidns_native.py` (264) → `native.go`: `LoadNativeYAML(text, label)` (yamlx `SchemaNative` + `Key` hook = `NativeLoader.construct_mapping`; Python's default label `DefaultNativeLabel`), `ManagedFiles` (→ `[]ManagedFile{Path, Content []byte}`, `.Object()` = Python dict), `NativeDocument(settings, validate, *NativeSources)` (`sources` → `NativeSources{Plugins, Includes}`), `ResourceReferences`, `RelativeResource` (nil = None), `ValidateResourceFiles`, `Tag` (= `TAG`), limits `Max*`.
+- `backend/common/oxidns_references.py` (64) → `references.go`: `ReferenceLocations(document, tags, dynamic)` (tag patterns through `rules.CompilePyRegex`, `re.escape` = `convert.PyReEscape`), `ReferenceReason(references, prefix)` (default `DefaultReferencePrefix`), `NewReferenceError` (= `OxidnsReferenceError`, `Error.References`).
+- `backend/common/oxidns_match_targets.py` (61) → `matchtargets.go`: `ReadMatchTargets` (all calls pending: needs `collect_reference_issues`, C23).
+- `backend/native_test_helpers.py` (34): test helper of the real-binary Mihomo tests (socket polling); no production code — not applicable.
+- Ported early because C05/C22 call them (real functions in the shared package; their modules add the rest to the same files): `rule_dns.py` (C27) → `ruledns.go`: constants (`Actions`, `ListRoutes`, `InlineExec`, `RouteLabels`, `RealWrappers`, prefixes, `BlackholePlugin`), `EntryKey`, `RouteKey`, `RouteExec`, `NormalizeAction`, `_enabled`, `upstream_chain`, `HelperPlugins`, `Convertible`, `has_ip_part`. `oxidns_device_policy.py` (C26) → `devicepolicy.go`: `NormalizeClientRange`, `NormalizePolicies`. `oxidns_validation.py` (C23) → `validation.go`: `Schemas()` (reads `backend/schemas/oxidns/*.json` under `resource.FromEnv()`, once), `ValidateSchema`, `FormatError` (all formats except `timezone`, `dns-record`, `domain-expression` → pending), `FormatPath`, `MaxIssues`, `OxidnsValidationError` (`validationError`), `_endpoint`, `_uint`, `dns_code_valid`, `_is_type`. Needed because template generation validates the live download options (`timeout`/`outbound`/`socks5`) with `validate_schema`.
+- `pending.go`: stubs raising `*PendingError` for `validate_expanded_document`, `require_valid_document`, `collect_reference_issues` (C23), `migrate_domain_only_routing` (C25), `prepare_native_rule_updates`, `patch_document` (C26), `rule_ip_presence.classical_ip_lines` (routers domain; provide through a hook, decision 3). **Each later porter replaces its stub, deletes it from pending.go and re-runs this package's replay; the pending rows must turn into identical rows.**
+- Shared helpers used (no private copies): `mosdns` exports (`SplitRulesAndRulesets`, `BuildRuleProxyURL`, `ParseCustomMatches`, `RulesetParts`, `ConvertRuleContentForMosDNS`, `ParseDNSUpstreams`, `DNSRuleTypes`, `UnsupportedYAMLError` (type alias)), `convert` (`PySplitlines`, `PyReEscape`, `IsIPNetwork`, `AppendURLQuery`, new wrapper file `convert/exports_oxidns.go`: `ParseIPAddress` = `ipaddress.ip_address`), `pystr`, `urlx.Split` (upstream/http-url formats), `yamlx`, `rules.CompilePyRegex`, `resource`. Package-local Python glue (`py.go`: raise/catch, get/item/truthy/str, memo deepcopy that keeps YAML aliases) follows the `mosdns`/`convert` pattern.
 
-Tests: `test_classical_native.py` (1), `test_domain_wildcard_mihomo_native.py` (1), `test_mihomo_yaml_native.py` (1), `test_oxidns_domain_only_core.py` (6), `test_oxidns_match_targets.py` (10), `test_oxidns_native.py` (18)
+Verification:
+- **Recorded replay** `testdata/c22_record.py` (pytest plugin) → `recorded.jsonl.gz`, `recorded_test.go` `TestRecordedPythonTests`: every top-level call of the C05/C22 functions above plus the early-ported `normalize_action`, `route_key`, `route_exec`, `entry_key`, `helper_plugins`, `normalize_client_range`, `normalize_policies`, `validate_schema` (schema objects recorded as `{"$schema": path}` into `schemas()`), `format_error`, and `OxidnsReferenceError(...)` construction, during the full backend suite (12551 passed; 1 unrelated failure `test_docker_ha_compact.py::test_concurrent_first_starts_share_identity_and_enroll_once`): **29539 distinct calls from 2522 tests in 100 files: 27140 identical, 0 differ, 0 not expressible, 0 unsupported; 2399 pending** (validate_expanded_document 1605, collect_reference_issues 762 = every read_match_targets, patch_document 22, plugin formats 7, timezone 2, classical_ip_lines 1). Identical per function: routing_groups 6807, reference_locations 6331, validate_schema 3475, normalize_client_range 2125, items 1580, ruleset_parts 1498, normalize 1417, load_native_yaml 1067, generate 992, resource_references 491, native_document 278, append_url_query 217, validate_resource_files 108, helper_plugins 90, base 81, relative_resource 78, rule_path 68, normalize_policies 67, custom_files 51, downloads 40, entry_key 38, forward 36, route_exec 33, normalize_action 31, reference_reason 30, route_key 25, unavailable_rulesets 19, reference_error 17, format_error 16, managed_files 14, tag 14, hosts 4, fallback 2. (Most downloads/custom_files/generate rows of the suite are native profiles → pending C23.)
+- **Random corpus** `testdata/gen.py` → `corpus.jsonl.gz`, `TestCorpus`: 60870 rows, synthetic values only: 6000 profiles × generate/downloads/custom_files (half "valid" profiles toggling every feature: cache/dump/probe, API auth/TLS/WebUI, log file, recorder, IP selector, dynamic set with learn direct/proxy, AdGuard content/URLs, RouterOS address list/route with empty gateways, rule update with valid/invalid timeout/outbound/socks5, custom matches head/tail, hosts, custom_config with aliases/timestamps/binary/runtime/plugins/duplicate tags, upstream texts in every format, rule actions incl. pinned upstreams; half malformed), routing_groups (legacy False/True), items/base, unavailable_rulesets, 1500 hosts files (all Python line separators, comments, legacy aliases, Unicode digits, scoped IPv6), 1442 upstream texts × forward/fallback, 2500 native YAML texts (YAML 1.1 vs 1.2 scalars, 0x/0o/0b/underscores, .inf/.nan, unsafe/duplicate/non-string keys, aliases, recursive aliases, !!set/!!binary/!!timestamp/!!omap, depth 30–200, 50000-node limit, alias blow-up, >2 MiB), 3500 attachment lists (paths, reserved names, conflicts, encodings, 2000 random base64 strings), 2000 include trees (nesting, cycles, `..`, missing, non-UTF-8, globals, sources on/off), 1500 documents × resource_references/validate_resource_files, references/reasons/reference errors, rule DNS parts, 1500 client ranges, policies, tags, 2000 download-option schema checks, 3000 format_error rows: **0 differences**, 105 accepted (Unsupported on rows Python marks unholdable), 159 pending (C23 native validation, C26 patch_document).
+- Hand-written (`unsupported_test.go`): the documented refusal and that Python's errors still come first; pending is reported, never answered.
 
-Routes: none.
+Python test files (rule 4 coverage):
+- `test_oxidns_native.py` (18): replay — 109 calls from 69 test ids (load_native_yaml, native_document, managed_files, resource files, normalize); rows needing native validation are pending C23.
+- `test_oxidns_match_targets.py` (10): replay — 475 calls from 16 test ids; `read_match_targets` rows all pending C23 (`collect_reference_issues`), the rest identical. **Deferred to C23** for the match-target results.
+- `test_oxidns_domain_only_core.py` (6): not runnable here — skipped without `OXIDNS_TEST_BINARY` (real OxiDNS core); its inputs are `generate_oxidns_config`, which is replayed. Not applicable until a core binary is available (then record it like the rest).
+- `test_classical_native.py` (1), `test_domain_wildcard_mihomo_native.py` (1), `test_mihomo_yaml_native.py` (1): real Mihomo binary tests (skipped without `MIHOMO_BINARY`), only linked to C22 through `native_test_helpers.py`; not applicable (Mihomo side belongs to C14/C18).
+- `converters/test_oxidns.py` (43, listed under C27): replay — 254 calls from 131 test ids, identical except native/device-policy rows pending C23/C26.
+- Other files whose C22 calls are replayed: the 100 files listed by the recorder (OxiDNS common/routing/editor/lifecycle/HA/archive/apply/validation/rule DNS/agents deployment/gateway/router files).
 
-Evidence: No Go package; no route registered.
+Decisions / differences from Python:
+- YAML the jsonx model cannot hold (`custom_config` or upstream texts with non-string keys, `!!set`/`!!omap`/`!!pairs`, recursive aliases) that would reach the output → `*UnsupportedYAMLError` (= `mosdns.UnsupportedYAMLError`): a top-level non-string-key `custom_config` and unrepresentable values are refused when loaded, nested non-string-key mappings just before dumping (so Python's earlier errors come first). Corpus: 105 accepted rows, replay none.
+- `LoadNativeYAML`: sets/tuples/recursive aliases are reported with the message Python gives when its traversal reaches them; when the same document would first hit another limit in Python's pre-order walk, the message can differ (no case in replay or corpus).
+- `ReadMatchTargets` and every native generation path are pending until C23/C25/C26.
 
-Missing / deferred: Everything in the files below.
+Commits: 924f37da (code + replay), 9c9e2310 (corpus, base64/str-membership fixes), 29c7a74d (refusal/pending tests), + this PROGRESS commit.
 
-Notes for porter: OxiDNS cluster C22–C27 + C29 is one strongly connected component in Python (lazy imports in both directions between converters/oxidns, oxidns_common, _routing, _updates, editor, native_apply, device_policy, rule_dns, oxidns_settings). Plan it as one Go package `internal/oxidns`; each module adds its files there. Finish C05's normalizer here. `test_fast_yaml.py` native-loader cases already pass via `yamlx.LoadWith(SchemaNative)`.
+Left: nothing else for C22 itself. For later porters: C23 replaces `validateExpandedDocument`, `requireValidDocument`, `collectReferenceIssues`, the `timezone` and `dns-record`/`domain-expression` formats in `validation.go` (keep `ValidateSchema`/`FormatError` as they are verified by 3475 + 2000 rows); C25 `migrateDomainOnlyRouting`; C26 `prepareNativeRuleUpdates`, `patchDocument` (and the rest of `devicepolicy.go`); C27 the rest of `ruledns.go`; routers `classicalIPLines` via a hook. Re-run `TestRecordedPythonTests`/`TestCorpus` after each (the recorded file already has Python's answers for the pending rows; re-record only if Python changed).
+
+Reviewer hints: `selected` membership (`in` on list/dict/str selectors, unhashable identities), aggregation in `routingGroups` (`setdefault(...).extend`), key positions of `runtime`/`log`/`api`/`plugins` in the result (pop vs replace), slice/object identity before dumping (no accidental aliases: every list is freshly allocated), `purePosixPath` (WebUI index, download dir/filename), strict `b64decodeValidate` (CPython 3.11 `a2b_base64(strict_mode=True)`), `durationValid` (re.I `ſ`), `endpoint`, `hostsFileContent` (line endings kept, `rstrip('\r\n')` only).
+
+Commands:
+- tests: `rt -- bash -lc 'cd server && gofmt -l internal/oxidns; go vet ./internal/oxidns/ ./internal/convert/ && go test -count=1 ./internal/oxidns/'` (last: ok 19.2 s; `-race` ok 137 s)
+- corpus: `rt --back server/internal/oxidns/testdata/corpus.jsonl.gz -- bash -lc 'PYTHONPATH=.:server/internal/oxidns/testdata ~/cf-test/.venv/bin/python server/internal/oxidns/testdata/gen.py'` (deterministic, ~40 s; optional scale argument)
+- recorded replay: `rt --back server/internal/oxidns/testdata/recorded.jsonl.gz -- bash -lc 'rm -rf /tmp/c22rec; C22_RECORD_DIR=/tmp/c22rec PYTHONPATH=.:server/internal/oxidns/testdata ~/cf-test/.venv/bin/python -m pytest backend -q -n 6 --dist=worksteal -p c22_record -p no:cacheprovider; PYTHONPATH=.:server/internal/oxidns/testdata ~/cf-test/.venv/bin/python server/internal/oxidns/testdata/c22_record.py merge /tmp/c22rec'` (~3.5 min)
 
 ## C23 — OxiDNS validation and constraints
 
@@ -922,7 +943,7 @@ Evidence: No Go package; no route registered.
 
 Missing / deferred: Everything in the files below.
 
-Notes for porter: Pure validation; good candidate for a Python-generated corpus (inputs → error text).
+Notes for porter: Pure validation; good candidate for a Python-generated corpus (inputs → error text). **Started by C22** (`internal/oxidns/validation.go`: `Schemas`, `ValidateSchema`, `FormatError` except timezone/dns-record/domain-expression, `FormatPath`, `OxidnsValidationError`) and stubs in `pending.go` to replace — see section C22 "Left".
 
 ## C24 — OxiDNS common settings
 
@@ -974,7 +995,7 @@ Evidence: No Go package; no route registered.
 
 Missing / deferred: Everything in the files below.
 
-Notes for porter: Replaces `repo/compat_oxidns.go` (device notes, client range, bindings, `normalize_action`) partly and `rules/compat.go` device-policy copies.
+Notes for porter: Replaces `repo/compat_oxidns.go` (device notes, client range, bindings, `normalize_action`) partly and `rules/compat.go` device-policy copies. **Started by C22**: `normalize_client_range`/`normalize_policies` in `internal/oxidns/devicepolicy.go`; `prepare_native_rule_updates`/`patch_document` stubs in `pending.go` (section C22 "Left").
 
 ## C27 — rule DNS actions
 
@@ -991,7 +1012,7 @@ Evidence: No Go package; no route registered.
 
 Missing / deferred: Everything in the files below.
 
-Notes for porter: **Cross-domain:** `rule_dns` calls `agents.rule_sync.settings_for` (agents) and `common.rule_ip_presence.classical_ip_lines` (routers): compat copies or interface.
+Notes for porter: **Cross-domain:** `rule_dns` calls `agents.rule_sync.settings_for` (agents) and `common.rule_ip_presence.classical_ip_lines` (routers): compat copies or interface. **Started by C22**: constants, `entry_key`, `route_key`, `route_exec`, `normalize_action`, `_enabled`, `upstream_chain`, `helper_plugins`, `convertible`, `has_ip_part` in `internal/oxidns/ruledns.go` (`classical_ip_lines` stub in `pending.go`).
 
 ## C28 — MosDNS archive and routes
 
