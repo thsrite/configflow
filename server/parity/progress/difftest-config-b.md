@@ -850,3 +850,22 @@ request_variants=6859 named_matrix_cases=3534（S552 F2473 B509），H去重235�
 ```
 
 T19/T20仍部分覆盖：目前一个Agent、probe；多Agent/3 hosts选择、断连、真实超时、region/website与自动化待续。未做最终全量。
+
+## 批次 48：区域检测Agent请求序列与目标列表错误
+
+- 30请求全部实际比较通过。先GET /api/region-check/targets，再POST /api/region-check；Bearer/方法/路径/完整请求描述（URL、headers、markers）、target、timeout_ms=8000逐字段验证。按Python协议定义生成预期请求描述，不读Go；fake固定返回合成HTTP观察值，不代替面板做结果判定。
+- DIRECT/优先代理组/首个存活香港节点共3目标；GLOBAL、内部检测组、重复地区及离线节点排除。services开/关、10域名与12请求分段；HTTP451、目标内单页error、整个代理target失败后其他target继续。终态errors、regions完整文件/DB与R053公开摘要全部比较。
+- 404不支持/409缺检测入口/坏JSON/success=false/500目标列表，分别202后failed且精确中文message、零进度、无结果写入；H075有独立实际请求。错误fixture初次误写404 feature名称，已按Python公开结果修正重跑，不列业务差异。
+- 更正上批文字：对照目标为百度与**gstatic**。T20仍没有调用真实公网，这里比较的是面板→fake Agent协议与面板判定。
+
+```text
+.63 run.py --groups discovery-agent-region,discovery-region-target-errors
+current compared=28 design_errors=[] seconds=15.82
+.63 run.py --groups discovery-region-target-errors（补H075）
+current compared=10 design_errors=[] seconds=11.91
+cumulative compared=1746 go-unimplemented=5063 dependency=28 different=51 O12-separate=1
+request_variants=6889 named_matrix_cases=3540（S555 F2474 B511），H去重236，G去重15
+48 self-checks + end-to-end wrong-Go-response check OK
+```
+
+继续website/区域采纳/自动化、多Agent及超时/断连；未做最终全量。

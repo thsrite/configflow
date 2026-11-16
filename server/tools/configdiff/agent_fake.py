@@ -40,7 +40,7 @@ def probe_result(request, scenario='success'):
 
 
 class Agent:
-    def __init__(self, responder=None):
+    def __init__(self, responder=None, *, gate_index=0):
         self.responder = responder or (lambda request, index: probe_result(request))
         self.lock = threading.Lock()
         self.calls, self.errors = [], []
@@ -63,11 +63,12 @@ class Agent:
                 with owner.lock:
                     index = len(owner.calls)
                     owner.calls.append(request)
-                owner.seen.set()
-                # Hold only the first outbound call, so running and busy states
+                # Hold the selected outbound call, so running and busy states
                 # are observable. Always bounded even when a server is broken.
-                if index == 0 and not owner.release.wait(20):
-                    owner.errors.append('fake gate expired before explicit release')
+                if index == gate_index:
+                    owner.seen.set()
+                    if not owner.release.wait(20):
+                        owner.errors.append('fake gate expired before explicit release')
                 status, value = owner.responder(request, index)
                 content = value if isinstance(value, bytes) else json.dumps(value, ensure_ascii=False).encode()
                 self.send_response(status)
