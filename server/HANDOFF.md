@@ -51,6 +51,10 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | c5332a35-f886-4d2d-90e2-f48496728a68 | S-oxidns adversarial review (first: non-ASCII zone rows) | wks_b086971f263e9706, branch `go-review-soxidns` |
 | 5ced41c3-a748-42b3-8aa9-9350ae2be0ef | R04 RouterOS driver port (on `internal/devhttp`) | wks_1b9579c1f761857d, branch `go-port-r04` |
 | 48fb0e89-9128-4cc3-8c65-c1eaac084f03 | Production-data differential harness (queue item 1; snapshot on test server `~/cf-prod-snapshot/20261116/`, copied read-only 2026-11-16) | wks_66a1e12807e372cb, branch `go-proddiff` |
+| 19338c67-c336-40c7-98a9-b4532a66af68 | C19/C20 Surge/Loon adversarial review | wks_0d8cd06808daac1f, branch `go-review-c19c20` |
+| 3112fbeb-e43a-4d16-ad1a-bc88670b1099 | C37 domain discovery port | wks_0dcc037efd16c502, branch `go-port-c37` |
+| e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
+State 2026-11-16 evening: N2 and proddiff merged; 954058ca (N2) and 48fb0e89 (proddiff) finished. R04 (5ced41c3) handed back → coordinator verification, then merge as `ported`; Opus HR review (O4) next window. S-rules (245ed359) rebasing onto go after N2; S-oxidns (c5332a35) fixing a fuzz-found YAML block-scalar bug + slow -race test.
 Worktrees of the branch agents: `~/.paseo/worktrees/302rx1dg/<branch>`.
 
 **When one finishes:** create a detached worktree of its branch (or of `go` after fast-forward), run
