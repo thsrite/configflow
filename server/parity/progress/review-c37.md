@@ -82,3 +82,21 @@ Integration differential follow-up:
   This is a comparator correction, with no additional production behavior change.
 - .32 repeated enabled differential: `CONFIGFLOW_DIFF=1 go test -count=5 ./internal/discovery/difftest/`
   passes, 9.464s. .63 comparator regression with race passes, 1.019s.
+
+Final .32 checks at 77df305c + f6a61e52 (exit 0):
+```sh
+rt -- bash -lc 'cd server && { test -z "$(gofmt -l internal/ tools/ cmd/)" && echo GOFMT_PASS && go vet ./... && echo VET_PASS && go test -race -count=1 ./... && echo FULL_RACE_PASS && CONFIGFLOW_DIFF=1 go test ./internal/discovery/difftest/ && echo FLASK_DIFF_PASS; } > /tmp/c37-final-checks.log 2>&1; result=$?; tail -n 12 /tmp/c37-final-checks.log; exit "$result"'
+rt -- server/scripts/proddiff.sh
+```
+Final lines:
+```text
+FULL_RACE_PASS
+ok configflow/internal/discovery/difftest 1.980s
+FLASK_DIFF_PASS
+self-check: status=PASS json-leaf=PASS yaml-leaf=PASS text-line=PASS
+GET_routes_compared=56 cases=2060 compared=236 coverage_regressions=0 new=0 stale=0
+baseline: new=0 stale=0
+```
+Full race discovery 8.172s, API 1.819s. Production baseline unchanged: agents:value 3,
+config:value 2; no discovery differences. Zero open C37 findings, status verified.
+C30 advanced go during the run; rebase and focused integration recheck pending.

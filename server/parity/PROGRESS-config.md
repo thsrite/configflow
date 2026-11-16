@@ -62,7 +62,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C34 | generate, config and profile routes, config export | 1443 | missing | C18, C19, C20, C28, C29, C31, C33 | 59 (0 done) |
 | C35 | config importer, WebDAV backup | 1375 | missing | C04, C06 | – |
 | C36 | setup flow | 1372 | missing | C34, C35 | 5 (0 done) |
-| C37 | domain discovery | 1658 | ported | C14, C16 | 17 (17 done) |
+| C37 | domain discovery | 1658 | verified | C14, C16 | 17 (17 done) |
 
 Routes in config modules: 228 of the 380 rows in routes.tsv.
 
@@ -1687,7 +1687,7 @@ Notes for porter: **Cross-domain heavy:** setup flow uses `linux_gateway`, `gate
 
 ## C37 — domain discovery
 
-**Status: `ported`** (go-port-c37; awaiting independent review) · prereqs: C14, C16 · Go: `internal/discovery`, `internal/api/domaindiscovery`
+**Status: `verified`** (independent review 2026-11-17; 0 open findings) · prereqs: C14, C16 · Go: `internal/discovery`, `internal/api/domaindiscovery`
 
 Scope: all of `backend/utils/domain_discovery.py` (175), `domain_discovery_service.py` (1309), `routes/domain_discovery.py` (174). All **17/17 routes registered** and routes.tsv marked done, including settings, domains/status, apply/undo/history/ignore, probe polling, region checks/routing, website identification/notes. Server changes are imports plus routePackages/wirePackages only.
 
@@ -1724,6 +1724,45 @@ Commands:
 - `.32` final production snapshot (after rebase): `rt -- server/scripts/proddiff.sh` — exit 0. Final output: `self-check: status=PASS json-leaf=PASS yaml-leaf=PASS text-line=PASS`; `cases=2060`, `compared=236`, `coverage_regressions=0`, `new=0`, `stale=0`, `self_check=PASS`; `baseline: new=0 stale=0`. All six C37 GET templates covered. Existing five baseline keys remain; no baseline edits. Saved inputs stay in the framework's private server directory.
 
 File inventory (lines; before hand-back documentation commit): existing discovery.go 310 → 45; discovery_test.go 24 retained. Added under discovery/: auto.go 277, bridge.go 633, jobs.go 183, lifecycle_test.go 293, messages.go 60, model.go 339, probe.go 237, region.go 333, settings.go 307, summary.go 575, taskbridge.go 59, website.go 145, write.go 384, difftest/diff_test.go 428, difftest/testdata/reference.py 67. Added api/domaindiscovery/: routes.go 236, messages.go 4, routes_test.go 70. Server wiring imports/registry lines and 17 routes.tsv rows updated. No backend/frontend/doc UI changes, generated corpora, dependencies, pushes or sub-agents.
+
+
+Independent adversarial review (go-review-c37; fixes e4eb76c8, 361174cc, f6a61e52):
+- **medium**: null note silently removed annotations; explicit null apply rule type was defaulted.
+  Both now return the Flask validation failure without changing stored state.
+- **medium**: legacy numeric confidence, invalid stored port, mixed history/ignore entries and
+  empty JSON options caused rejected settings or different request defaults. Native JSON decoding
+  now applies the documented field defaults; differential covers these persisted/request shapes.
+- **medium**: metadata slice length hid an additional retained job; tail pointers are now cleared.
+  Manual task runner also retained request values; worker contexts now carry only the repository.
+- **medium**: region aggregation sorted target names instead of preserving Agent preference, and
+  omitted Agent marker maps became null. Typed region aggregation preserves order and empty defaults.
+- **low**: idle matcher expiry could wait another sweep; cleanup timer honors the earliest deadline.
+- **low**: failed jobs exposed partial error metadata; completion polling shared its mutable timestamp
+  pointer. Failure metadata and returned snapshots now match the Flask/immutable ownership contract.
+- **test reliability**: Flask applies target groups from a set; comparator now normalizes only explicit
+  apply/history lists (same-time groups), preserving distinct chronology and all ordered region arrays.
+
+Review scope/evidence: every branch of the three Python source files, all 17 routes' success,
+validation/auth/missing-profile paths; 78 sequential Flask requests + six missing-profile requests +
+live same/cross-profile conflicts and isolated polling, with Agent protocol and persisted side effects.
+Fresh-process restart sees no phantom jobs and retains probes. Cancellation/exclusivity stress (60
+rounds), automatic-loop cancellation/flock release, weak-pointer tests of 80 job results and 8 rounds
+of 80 Agents × 150 hosts all pass scoped race. Production cache options are asserted at 4/1024/300s;
+60 profiles × 1400 host lookups prove caps and collection of evicted/expired objects. Referenced rule
+indexes scale with rule input within four matcher slots; no absolute byte ceiling is claimed.
+Only bridge.go/taskbridge.go import jsonx in production discovery code; region orchestration is native.
+Six GET templates are now enforced in proddiff-coverage.txt. Detailed 17-route matrix and execution
+record: parity/progress/review-c37.md.
+
+Final .32 acceptance at integration 77df305c + review f6a61e52:
+- gofmt (internal/tools/cmd) silent; go vet ./... passes.
+- go test -race -count=1 ./... passes; discovery 8.172s, API 1.819s, rules passes.
+- CONFIGFLOW_DIFF=1 go test ./internal/discovery/difftest/ passes, 1.980s.
+- rt -- server/scripts/proddiff.sh passes: 56 GET templates, 2060 cases/236 comparisons,
+  coverage_regressions=0, new=0, stale=0, all four self-checks PASS; existing baseline five keys
+  (agents:value=3, config:value=2), no C37 differences and no baseline edits.
+- Integration advanced with independent C30 changes during final race; rebase and focused
+  integration/proddiff recheck follow, without repeating the full race suite.
 
 
 ## Next steps (coordinator; at most 2 config agents at a time: one porter + one reviewer)
