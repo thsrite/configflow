@@ -51,6 +51,9 @@ func ParseApplyItems(raw json.RawMessage) ([]ApplyEntry, error) {
 		if json.Unmarshal(item, &fields) != nil || fields == nil {
 			return nil, invalid(msgItemObject)
 		}
+		if raw, present := fields["rule_type"]; present && string(raw) == "null" {
+			return nil, invalid(msgItem)
+		}
 		e := ApplyEntry{RuleType: "DOMAIN-SUFFIX"}
 		if json.Unmarshal(item, &e) != nil {
 			return nil, invalid(msgItem)

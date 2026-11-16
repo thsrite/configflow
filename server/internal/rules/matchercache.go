@@ -439,7 +439,17 @@ func (c *MatcherCache) evictIdleLocked(now float64) {
 func (c *MatcherCache) scheduleCleanupLocked() {
 	if c.order.Len() > 0 && c.timer == nil {
 		generation := c.generation
-		c.timer = time.AfterFunc(time.Duration(c.opt.CleanupInterval*float64(time.Second)), func() { c.cleanupIdle(generation) })
+		// A periodic sweep alone can retain an idle matcher for one extra full
+		// interval. Wake no later than the earliest inactive expiry deadline.
+		delay := c.opt.CleanupInterval
+		now := c.opt.Clock()
+		for e := c.order.Front(); e != nil; e = e.Next() {
+			m := e.Value.(*cacheEntry).matcher
+			if m.active == 0 {
+				delay = min(delay, max(0, c.opt.IdleSeconds-(now-m.lastUsed)))
+			}
+		}
+		c.timer = time.AfterFunc(time.Duration(delay*float64(time.Second)), func() { c.cleanupIdle(generation) })
 	}
 }
 

@@ -111,7 +111,9 @@ func startJob(ctx context.Context, profile, kind string, wait bool, run func(con
 		}
 	}
 	if len(finished) > 20 {
-		finished = finished[len(finished)-20:]
+		copy(finished, finished[len(finished)-20:])
+		clear(finished[20:])
+		finished = finished[:20]
 	}
 	jobState.jobs = append(finished, j)
 	initial := cloneJob(j)

@@ -62,6 +62,12 @@ GET /api/auth/status
 GET /api/auth/verify
 GET /api/backup/config
 GET /api/config-token
+GET /api/domain-discovery/agents
+GET /api/domain-discovery/domains
+GET /api/domain-discovery/history
+GET /api/domain-discovery/probe/<job_id>
+GET /api/domain-discovery/region
+GET /api/domain-discovery/settings
 GET /api/logs/info
 GET /api/logs/tail
 GET /api/mosdns/api-settings

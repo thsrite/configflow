@@ -686,3 +686,20 @@ func TestConcurrentCacheAccess(t *testing.T) {
 		t.Fatalf("cache size %d beyond MaxMatchers", size)
 	}
 }
+
+func TestReviewCleanupHonorsIdleDeadlineWithLongSweepInterval(t *testing.T) {
+	f := newFixture(t, func(o *MatcherCacheOptions) {
+		start := time.Now()
+		o.Clock = func() float64 { return time.Since(start).Seconds() }
+		o.IdleSeconds = 0.025
+		o.CleanupInterval = 60
+	})
+	f.matcher(f.config, "default").Match("matched.example")
+	deadline := time.Now().Add(2 * time.Second)
+	for f.cache.Size() != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if f.cache.Size() != 0 {
+		t.Fatal("idle expiry waited for the next full cleanup interval")
+	}
+}

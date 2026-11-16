@@ -283,10 +283,12 @@ func SaveWebsiteNote(ctx context.Context, id string, payload json.RawMessage) (m
 	if json.Unmarshal(payload, &fields) != nil || fields == nil {
 		return nil, invalid(msgObject)
 	}
-	var domain, note string
-	if json.Unmarshal(fields["domain"], &domain) != nil || json.Unmarshal(fields["note"], &note) != nil {
+	var domain string
+	var noteValue *string
+	if json.Unmarshal(fields["domain"], &domain) != nil || json.Unmarshal(fields["note"], &noteValue) != nil || noteValue == nil {
 		return nil, invalid(msgNote)
 	}
+	note := *noteValue
 	domain = CleanDomain(domain)
 	if domain == "" || utf8.RuneCountInString(note) > 200 {
 		return nil, invalid(msgNote)

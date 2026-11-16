@@ -25,9 +25,55 @@ type Settings struct {
 func (s *Settings) UnmarshalJSON(b []byte) error {
 	type plain Settings
 	p := plain(defaultSettings())
-	if err := json.Unmarshal(b, &p); err != nil {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(b, &fields); err != nil {
 		return err
 	}
+	// Saved lists are tolerant at the storage boundary: malformed members do
+	// not make the whole discovery screen unreadable. HTTP writes stay strict.
+	remaining := make(map[string]json.RawMessage, len(fields))
+	for k, v := range fields {
+		remaining[k] = v
+	}
+	for _, key := range []string{"ignored", "history", "auto_apply_min_confidence", "region_probe_port"} {
+		delete(remaining, key)
+	}
+	known, err := json.Marshal(remaining)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(known, &p); err != nil {
+		return err
+	}
+	var ignored, history []json.RawMessage
+	_ = json.Unmarshal(fields["ignored"], &ignored)
+	for _, raw := range ignored {
+		var value *string
+		if json.Unmarshal(raw, &value) == nil && value != nil {
+			p.Ignored = append(p.Ignored, *value)
+		}
+	}
+	_ = json.Unmarshal(fields["history"], &history)
+	for _, raw := range history {
+		var object map[string]json.RawMessage
+		if json.Unmarshal(raw, &object) != nil || object == nil {
+			continue
+		}
+		var entry HistoryEntry
+		if err := json.Unmarshal(raw, &entry); err != nil {
+			return err
+		}
+		p.History = append(p.History, entry)
+	}
+	var confidence float64
+	if json.Unmarshal(fields["auto_apply_min_confidence"], &confidence) == nil && (confidence == 80 || confidence == 90 || confidence == 95) {
+		p.Confidence = int(confidence)
+	}
+	var port int
+	if json.Unmarshal(fields["region_probe_port"], &port) == nil && port >= 1024 && port <= 65535 {
+		p.RegionPort = port
+	}
+
 	*s = Settings(p)
 	return capture(b, &s.Extra, "direct_ruleset", "proxy_ruleset", "ignored", "auto_probe", "auto_apply", "auto_apply_min_confidence", "history", "region_check_enabled", "region_probe_port", "regional_rulesets", "website_notes")
 }

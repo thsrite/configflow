@@ -147,27 +147,31 @@ var matcherCache *rules.MatcherCache
 
 func cache() *rules.MatcherCache {
 	matcherOnce.Do(func() {
-		matcherCache = rules.NewMatcherCache(rules.MatcherCacheOptions{
-			RulesDir: func() string { return filepath.Join(repo.DataDir(), "shared", "rules") },
-			StoredLibrary: func() []any {
-				r, err := repo.GetRepository(context.Background())
-				if err != nil {
-					return nil
-				}
-				o, err := r.GetShared(context.Background())
-				if err != nil {
-					return nil
-				}
-				return o.GetList("rule_library")
-			},
-			ValidateRemote: func(content string, rule *jsonx.Object) error {
-				return rulefetch.ValidateRemoteRuleContent(content, rule, nil, "")
-			},
-			MaxMatchers: 4, MaxHostResults: 1024, IdleSeconds: 300,
-		})
+		matcherCache = rules.NewMatcherCache(matcherOptions())
 		lifecycle.OnShutdown("domain-discovery-cache", func(context.Context) { matcherCache.Clear() })
 	})
 	return matcherCache
+}
+
+func matcherOptions() rules.MatcherCacheOptions {
+	return rules.MatcherCacheOptions{
+		RulesDir: func() string { return filepath.Join(repo.DataDir(), "shared", "rules") },
+		StoredLibrary: func() []any {
+			r, err := repo.GetRepository(context.Background())
+			if err != nil {
+				return nil
+			}
+			o, err := r.GetShared(context.Background())
+			if err != nil {
+				return nil
+			}
+			return o.GetList("rule_library")
+		},
+		ValidateRemote: func(content string, rule *jsonx.Object) error {
+			return rulefetch.ValidateRemoteRuleContent(content, rule, nil, "")
+		},
+		MaxMatchers: 4, MaxHostResults: 1024, IdleSeconds: 300,
+	}
 }
 
 // Match is the public rule-match metadata attached to discovered hosts.
