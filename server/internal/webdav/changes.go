@@ -1,6 +1,7 @@
 package webdav
 
 import (
+	"bytes"
 	"encoding/json"
 	"reflect"
 )
@@ -24,7 +25,12 @@ var agentRuntimeFields = map[string]bool{
 
 func equalJSON(a, b json.RawMessage) bool {
 	var left, right any
-	if json.Unmarshal(a, &left) != nil || json.Unmarshal(b, &right) != nil {
+	decode := func(data []byte, value *any) error {
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.UseNumber()
+		return decoder.Decode(value)
+	}
+	if decode(a, &left) != nil || decode(b, &right) != nil {
 		return false
 	}
 	return reflect.DeepEqual(left, right)

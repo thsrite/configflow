@@ -33,6 +33,16 @@ func SetDefault(next *Service) func() {
 	return func() { service.Store(previous) }
 }
 
+// Snapshot is a fresh complete document and its settings. The private repository
+// association lets background receipts/notifications use their originating store;
+// no request context is retained.
+type Snapshot struct {
+	Document   json.RawMessage
+	Settings   Settings
+	DataDir    string
+	repository *repo.Repository
+}
+
 type repositorySource struct{ repository *repo.Repository }
 
 func (s repositorySource) Snapshot(ctx context.Context) (Snapshot, error) {
@@ -52,7 +62,7 @@ func (s repositorySource) Snapshot(ctx context.Context) (Snapshot, error) {
 	if err := json.Unmarshal(backup, &settings); err != nil {
 		return Snapshot{}, err
 	}
-	return Snapshot{Document: data, Settings: settings, DataDir: s.repository.DataDir()}, nil
+	return Snapshot{Document: data, Settings: settings, DataDir: s.repository.DataDir(), repository: s.repository}, nil
 }
 
 // Capture exports the complete configuration for a manual backup.
@@ -67,6 +77,9 @@ func Capture(ctx context.Context) (Snapshot, error) {
 // Run records one manual or automatic upload in the shared task receipt store.
 func Run(ctx context.Context, snapshot Snapshot, automatic bool) (Result, error) {
 	ctx = context.WithoutCancel(ctx)
+	if snapshot.repository != nil {
+		ctx = repo.WithRepository(ctx, snapshot.repository)
+	}
 	s := Default()
 	started := s.Now()
 	clock := time.Now()
@@ -84,6 +97,7 @@ func Run(ctx context.Context, snapshot Snapshot, automatic bool) (Result, error)
 		}
 	}
 	store := notifications.TaskStatus(ctx, snapshot.DataDir)
+	store.Now = s.Now
 	_, recordErr := store.Record("webdav_backup", taskstatus.Result{OK: err == nil, StartedAt: started.UTC().Format("2006-01-02T15:04:05Z"), Trigger: trigger, DurationMs: float64(time.Since(clock).Milliseconds()), Error: detail})
 	if err != nil {
 		return Result{}, err
@@ -129,3 +143,7 @@ func registerHook(worker *Worker) {
 		}
 	}})
 }
+
+// WaitIdle waits for automatic backups and their receipt/notification callbacks.
+// Cancelling ctx stops only this wait, never a committed backup's I/O.
+func WaitIdle(ctx context.Context) error { return automaticWorker.WaitIdle(ctx) }

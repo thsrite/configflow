@@ -2,17 +2,9 @@ package webdav
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 	"time"
 )
-
-// Snapshot is a fresh, complete committed document and its backup settings.
-type Snapshot struct {
-	Document json.RawMessage
-	Settings Settings
-	DataDir  string
-}
 
 // Source loads a snapshot after the debounce period, outside repository locks.
 type Source interface {

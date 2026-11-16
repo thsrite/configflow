@@ -1703,35 +1703,27 @@ Notes for porter: Own routes: `routes/config.py` (24), `routes/generate.py` (12)
 
 ## C35 — config importer, WebDAV backup
 
-**Status: `partial`** · prereqs: C04, C06 · Go: internal/importer, internal/webdav (new)
+**Status: `partial`** · prereqs: C04, C06 · Go: internal/importer, internal/webdav, internal/api/settings
 
-Files:
-- `backend/utils/config_importer.py` (1148)
-- `backend/utils/webdav_backup.py` (227)
+Files: `backend/utils/config_importer.py` (1148), `backend/utils/webdav_backup.py` (227); backup handlers from `backend/routes/settings.py`.
 
-Tests: `test_config_import.py` (7), `test_webdav_auto_backup.py` (24)
+Routes: `POST /api/backup/now`, `POST /api/backup/test` [done; C06 accounting now 22/22]. No new GET routes; existing production coverage file needs no additions.
 
-Routes: none.
+Implementation:
+- Pure typed importer `Parse → Plan → Build`: Mihomo/Clash, Surge, Loon, Shadowrocket; resource reuse/collisions, protocol/TLS/transport/WireGuard/ShadowTLS options, providers, group/rule ordering, warnings and custom settings. Protocol extras use json.RawMessage; free-form settings use yaml.Node. Native alias/merge expansion avoids dangling anchors after generated sections are removed. Existing shared data is never rewritten by Build.
+- WebDAV uses net/http + encoding/xml; no dependency added. Full exports are encoded in memory, eliminating temporary-file cleanup paths. HEAD/MKCOL/PUT/PROPFIND/DELETE, recursive directories, timestamped filenames and latest+daily retention are implemented. Cleanup failures preserve successful uploads.
+- `webdav.Wire` installs `repo.Hooks.ConfigurationCommitted`. One lazy worker, one pending repository reference, one debounce deadline (1s), fresh snapshot outside repository locks, serialized uploads. Slow uploads do not block saves; intervening commits coalesce. Disable before snapshot cancels pending upload; failure never retries without a new commit or rolls back saved data. Shutdown drops pending work and waits for current timed I/O. Request/wait cancellation does not cancel committed backup I/O (PORTING 4b).
+- Manual/automatic task receipts and failure notifications retain the originating repository. Connection/password handling is confined to request construction; safe errors omit URL, username, password and remote body. Directory paths in diagnostics/logs redact known credentials. Existing backup/config response contract (including masked password) is preserved. Native default transport refuses cross-origin redirects.
 
-Evidence: `internal/webdav` implements native HTTP HEAD/MKCOL/PUT/PROPFIND/DELETE, retention, safe errors, task receipts, and a debounced single worker. Its repository adapter supplies ConfigurationCommitted; production/API wiring follows next. Loopback transport, retention, coalescing, slow upload, runtime-field suppression and post-commit failure isolation tests pass with scoped race on .63.
+Boundary coverage and Python test mapping:
+- `test_config_import.py` (7): `importer.TestSyntheticPythonImportCorpus` compares Python's public parse/build results structurally across **90 synthetic cases**, including four original client fixtures, all supported protocols, invalid formats, reuse/collisions, YAML aliases/merges and custom settings. `TestNativeImportsCommitThroughRepositoryAndPreserveExistingFields` commits all four clients through C04, verifies unknown stored fields survive, and verifies complete rollback on invalid imports. The HTTP dry-run/commit case `test_import_route_dry_run_and_commit` remains **deferred → C34**, owner of `/api/profiles/import-client`; no import HTTP route is in C35 scope.
+- `test_snell_shadow_tls.py` deferred C19 import cases: three synthetic corpus rows plus `TestSnellShadowTLSRoundTripThroughSurgeExporter` through the real Go exporter; closed.
+- `test_webdav_auto_backup.py` (24 definitions): `webdav/difftest` invokes real Flask and Go HTTP boundaries against separate authenticated loopback DAV fakes. Config/test/now successes and validation/JWT/remote failures compare status, complete JSON body, full exported storage, JSON sidecars (receipts/notifications) and remote directories/files/upload counts after every request. Includes masked credentials, partial config, recursive mkdir, retention/default fallback, post-commit auto success/failure, coalescing and pending disable. Unit tests cover boundary-invisible timing: slow upload, disabled/read/failed commits, agent runtime suppression vs add/edit/delete/config, snapshot failure/no retry/restart, lock release and shutdown/wait cancellation. Retention helper cases cover same-second ordering, daily windows, zero retention and foreign names. CPython thread-start mocking has no Go equivalent; native lazy-goroutine lifecycle/restart is tested. Serialization failures are rejected before PUT; no temporary file exists to leak.
+- Normalizations are limited to independent fake URLs, nondeterministic receipt clocks/durations, Python exception-class labels around retained HTTP codes, YAML formatting, and one malformed boolean node-name warning (`False` → native `false`). Chinese message prefixes, status/success, all data/side effects are compared. yaml.v3 parser diagnostics and duplicate-key rejection replace PyYAML internal syntax diagnostics; no exception/stdlib emulation was added.
 
-Done: `6ea8cd17` WebDAV core/worker. Native importer Parse/Build now passes 90 synthetic public-entry Python structure comparisons across all four clients, protocol/TLS/transport/WireGuard options, reuse/collisions, warnings, invalid formats, custom sections and rule ordering. Build preserves both shared input and reusable Plan.
+Scoped validation on .63: importer vet/race `ok configflow/internal/importer 1.766s`; webdav vet/race `ok configflow/internal/webdav 1.721s`; `CONFIGFLOW_DIFF=1` race differential `ok configflow/internal/webdav/difftest 13.946s`; settings scoped race previously passed (5.263s). Early .32 proddiff: GET routes 65, cases 2060, `coverage_regressions=0`, `new=0`, `stale=0` (5 existing unique differences).
 
-Done: backup/test and backup/now registered in api/settings; production webdav.Wire installs ConfigurationCommitted. Settings POST/config writes use context.WithoutCancel. C06 route accounting updated (all 22 methods registered). Native API loopback test verifies full export, masked password, nested directories, invalid requests and credential-free HTTP 403 responses/logs.
-
-Done: YAML aliases/merges are expanded with native yaml.Node traversal; removed sections cannot leave dangling anchors. Four original client fixtures also commit through repo.ImportClientProfile, preserve opaque existing fields, and prove invalid imports leave the complete document unchanged. Importer scoped vet/race on .63: `ok configflow/internal/importer 1.766s`.
-
-In progress: Flask↔Go WebDAV differential passes with task receipts/notifications, remote files and persisted state compared. Final worker lifecycle checks and .32 full/vet/race/proddiff remain; rebase go, clean, no push.
-
-Implementation contract: importer is pure Parse → Plan → Build (typed shared additions/profile/summary, protocol extras as json.RawMessage, custom YAML as yaml.Node). WebDAV uses net/http + encoding/xml, no new dependency. Worker owns one pending Source and deadline, snapshots after debounce outside commit locks, serializes uploads, and detaches request cancellation; failed upload/cleanup never rolls back a commit. Service errors omit remote URL/body/credentials.
-
-Commands: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go vet ./internal/webdav/... && go test -race -count=1 ./internal/webdav/...'`.
-
-Notes for porter: Fills `repo.Hooks.ConfigurationCommitted` (auto backup) and the two `/api/backup/*` routes of `routes/settings.py` (C06 missing list). `config_importer` (client config import: Clash/Surge/…) has no backend imports — self-contained, can start early.
-
-Importer validation: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go vet ./internal/importer/... && go test -count=1 -v ./internal/importer/'` → `90 synthetic public parse/build cases`; latest race including real repository import/rollback: `ok configflow/internal/importer 1.766s`. Native diagnostic differences: yaml.v3 syntax errors/duplicate-key rejection replace PyYAML internals; the malformed boolean node name prints `false` instead of `False` in one warning (that exact fixture warning alone is normalized). Valid import outputs are compared structurally, including YAML custom settings.
-
-API/scoped race: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go vet ./internal/api/settings/... && go test -race -count=1 ./internal/api/settings/... ./internal/webdav/...'` → settings 5.263s, webdav 1.513s.
+Commits before final acceptance: `6ea8cd17` core/worker; `c52005ca` typed importer; `b4abba67` production hook/settings routes; `909876a6` aliases/storage boundary; `6876a1af` Snell corpus/round trip. Next: final .32 gofmt/vet/scoped race/full/differential/proddiff; rebase go; clean; no push.
 
 ## C36 — setup flow
 
