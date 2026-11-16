@@ -24,7 +24,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A06 | OxiDNS monitor, dashboard state, metrics | 1364 | verified | | A01 | 5 | internal/agents/monitor (new), api/agents |
 | A07 | Mihomo panel, OxiDNS cache/rule update/rankings/publication stats | 1316 | verified | | A06, C14 | 9 | internal/agents/monitor, api/agents |
 | A08 | installer script rendering, install command store | 1333 | verified | HR | A02, C02 | 8 (8 done) | internal/installer, internal/api/agents |
-| A09 | Docker HA guide, preflight, enrollment | 1083 | missing | HR | A08, A01 | 2 | internal/installer, api/agents |
+| A09 | Docker HA guide, preflight, enrollment | 1083 | ported | HR | A08, A01 | 2 (2 done) | internal/installer, api/agents |
 | A10 | Docker HA compose variants, installer routes | 1018 | missing | HR | A08, A09 | 9 | internal/installer, api/agents |
 | A11 | deployment bundle, locations, Mihomo resources, generated preview | 1264 | missing | HR | A02, A19, C05, C12, C14, C15, C21, C22, C25 | – | internal/deploy (new) |
 | A12 | push diff | 1465 | missing | | A11 | – | internal/deploy |
@@ -656,7 +656,7 @@ Open findings: none.
 
 ## A09 — Docker HA guide, preflight, enrollment
 
-**Status: `missing`** · HR · prereqs: A08, A01, C05 (`resolve_profile_id`, ported) · Go: internal/installer, api/agents
+**Status: `ported`** (code, routes, all 3 Python test files, reference corpus and Flask differential; not yet reviewed) · HR · prereqs: A08, A01, C05 · Go: internal/installer (`docker_ha_guide.go`, `docker_ha_preflight.go`, `docker_ha_enrollment.go`), internal/api/agents/docker_ha.go (+1 line in `Register`)
 
 Files:
 - `backend/agents/docker_ha_guide.py` (475)
@@ -666,9 +666,22 @@ Files:
 
 Tests: `test_docker_ha_guide.py` (19), `test_docker_ha_preflight.py` (32), `test_docker_ha_enrollment.py` (7)
 
-Routes (2): `POST /api/agents/docker-oxidns-ha-enroll/<session_id>` (Bearer, public in auth gate — check); `POST /api/agents/docker-oxidns-ha-guide`
+Routes (2, both `done` in routes.tsv): `POST /api/agents/docker-oxidns-ha-guide` (auth), `POST /api/agents/docker-oxidns-ha-enroll/<session_id>` (public, Bearer capability; gate and token-redaction whitelist entries already existed).
 
-Evidence: no Go code. `docker_ha_guide` lazily imports the A10 compose modules: same Go package, port A09 and A10 back to back (A09 may stub the three generators until A10).
+Port log (A09 porter, 2026-11-16):
+- Commits: bdddd04e (port + routes), 864ca8c1 (corpus; base64 fixes), 748f5fa6 (guide/preflight tests), 93f568d9 (route tests, routes.tsv), 651a62e2 (Flask differential), b274a618 (deliberate server_url fix).
+- Go API: `GenerateGuide(request any, *Enrollment)`, `ParsePreflightReport(output, mode any)`, `CollectorScript()`, `IdentityCommand`, `InspectionCommand`, `IssueEnrollment(dataDir, body, profileID)`, `Enroll(ctx, dataDir, AgentUpdater, sessionID, token, present)`, `BootstrapCommand`; errors `*ValueError` (400), `*EnrollmentError{Status}`, `*TypeError` (= any other Python exception → 500 page). `guideCompose(params)` = `yaml.safe_load(generate_docker_agent_compose(**params))` with Python's handling of non-string JSON values (ints accepted by ipaddress for agent_ip/ha_gateway, TypeError for non-str agent_name/ha_parent, everything else an invalid address); A10 reuses it.
+- **A10 hook:** `generateCompact`, `generateDirect`, `generateBundle` (package vars in docker_ha_guide.go, nil until A10) — until then the three Compose methods return `ErrComposeVariantNotPorted` (500). A10 assigns them, then the corpus rows counted "skipped (A10)" (241) and the 3 "pending A10" differential requests must match; remove those skips.
+- Tests ported: test_docker_ha_guide.py → installer/docker_ha_guide_test.go (18 functions; shell scenarios with bash and the same Python fake docker; `bootstrapCommand` var = the monkeypatch); `test_live_environment_requires_admin_and_never_exposes_extra_payload` is the `oxidns-ha-environment` route → **deferred to A18**. test_docker_ha_preflight.py → installer/docker_ha_preflight_test.go (29 functions, collector run with bash + stub docker/ip/ss/systemd-detect-virt, /proc/net fixtures) + api/agents/docker_ha_test.go (3 API functions). test_docker_ha_enrollment.py → api/agents/docker_ha_test.go (all 7). Extra: `TestPreflightCollectorMatchesPython` (embedded collector == Python source), `TestServerURLTrailingNewlineIsRefused`.
+- Reference corpus: `testdata/gen_docker_ha.py` → `testdata/docker_ha.jsonl.gz` (3279 cases: guide over read-only steps, new host/macvlan ± enrollment, migrate bind/volume, every field with boundary/malformed/non-string values, 400 seeded random combinations — guide answers stored as per-key digests; preflight over all test-file outputs plus realistic/damaged ones: CRLF, markdown backslashes, Unicode line breaks, BOM, truncation, duplicates, ss/proc variants, digit limits, 700 random; base64 padding cases). `TestDockerHACorpusMatchesPython`: 1809 answered + 1043 refused + 180 base64 equal, 6 deliberate, 241 skipped (A10), **0 differ**.
+- Flask differential `TestDockerHADifferentialAgainstFlask` (difftest/docker_ha_diff_test.go): **200 comparisons equal, 0 differ, 3 pending (A10)** — body limits/malformed bodies, check/inspect/verify, generate refusals, migrate, new installs (session/token/owner replaced per side), profile header/query, enroll refusals/success/replay/changed identity/expiry/renewal/takeover/other profile, 16 hand-edited session records, 4 index-record edits; installation files (names, masked contents, modes; 61) and stored Agents equal.
+- Commands: `rt -- bash -lc 'cd server && go vet ./internal/installer/ ./internal/api/agents/ && go test -count=1 ./internal/installer/ ./internal/api/agents/ ./internal/server/'` (2026-11-16: all ok, installer 127 s); differential `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run DockerHA ./internal/api/agents/difftest/'`; corpus `rt --back server/internal/installer/testdata/docker_ha.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/installer/testdata/gen_docker_ha.py | gzip -9n > server/internal/installer/testdata/docker_ha.jsonl.gz'`.
+- Decisions: **deliberate fix of a Python validation bug** (maintainer, 2026-11-16): Python validates server_url with `re.match(r'^https?://[^\s]+$')`, whose `$` lets one trailing "\n" into the guide/compose; Go behaves like `re.fullmatch` and answers the usual `请填写完整的 ConfigFlow HTTP(S) 地址` (400). Corpus rows with such input are counted "deliberate" (6), the differential checks python 200 / go 400 explicitly, regression test `TestServerURLTrailingNewlineIsRefused`.
+- Accepted / known differences (for the reviewer): a lone-surrogate escape in `output` (`"\ud800"`) — Python 400 `检查输出包含无效文本编码`, Go 200 unknown report (jsonx decodes U+FFFD; jsonx-wide limitation; the Go function treats invalid UTF-8 as that case); a hand-edited session file whose `token` is not a string → Go TypeError (Python would echo it). TypeError/KeyError texts are log-only.
+- Python quirks reproduced: CPython 3.11.17 `b64decode(validate=True)` (leading padding refused, "Excess data after padding" also outside strict mode, pads at quad positions 0/1 ignored), posixpath.normpath/commonpath (`//a` kept), str.isdigit table (`pyIsDigitExtra`), `\d`/`\s` Unicode in the ip-address regex, int() digit limit in the Compose version (400 with its text), Path.exists stat-error rule, UnicodeDecodeError text of an unreadable index file (400).
+- Shared-code requests: `internal/pystr` should export `IsDigit` (private table `pyIsDigitExtra` here, also copies in subs/convert/monitor) and a strict-UTF-8 decode-error text (`pyUTF8DecodeError` copied from repo/files.go). No edits to A08's files.
+- Pitfall: the shared git index can hold another agent's staged files — commit with `git commit -- <paths>` (one of my commits swept them in and was redone as b274a618; their files were left staged).
+- Left: review; A10 wiring of the three Compose generators; A18 case above; HR lab test with A08–A10.
 
 ## A10 — Docker HA compose variants, installer routes
 
