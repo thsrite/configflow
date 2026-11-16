@@ -57,6 +57,12 @@ func compatList(v any) ([]any, error) {
 func compatItem(v any, key string) (any, error) {
 	obj, ok := v.(*jsonx.Object)
 	if !ok || obj == nil {
+		switch v.(type) {
+		case string:
+			return nil, pyError("TypeError", "string indices must be integers, not 'str'")
+		case []any:
+			return nil, pyError("TypeError", "list indices must be integers or slices, not str")
+		}
 		return nil, pyError("TypeError", "'"+pyTypeName(v)+"' object is not subscriptable")
 	}
 	value, present := obj.Get(key)

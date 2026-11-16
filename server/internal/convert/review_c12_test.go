@@ -215,6 +215,8 @@ func TestReviewC12References(t *testing.T) {
 				fail("want %s(%q), got %s(%q)", row.errClass, row.errMsg, got, err.Error())
 			case intentional(got) && err.Error() != row.errMsg:
 				fail("want message %q, got %q", row.errMsg, err.Error())
+			case err.Error() != row.errMsg:
+				fail("want message %q, got %q", row.errMsg, err.Error())
 			}
 		} else {
 			if err != nil {
@@ -244,4 +246,22 @@ func TestReviewC12References(t *testing.T) {
 		}
 	}
 	t.Logf("%d rows, %d known differences, %d failures", len(rows), known, failures)
+}
+
+// TestCorpusExceptionMessages: the unintended Python exceptions of the
+// porter's corpus carry Python's message too (TestCorpus compares classes).
+func TestCorpusExceptionMessages(t *testing.T) {
+	failures := 0
+	for i, row := range loadCorpus(t) {
+		if row.errClass == "" || intentional(row.errClass) {
+			continue
+		}
+		_, _, err := runCorpusRow(row)
+		if err != nil && err.Error() != row.errMsg {
+			failures++
+			if failures <= 20 {
+				t.Errorf("row %d %s: message %q, Python %q", i, row.fn, err.Error(), row.errMsg)
+			}
+		}
+	}
 }
