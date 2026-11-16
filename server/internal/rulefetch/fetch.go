@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -19,7 +20,9 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/localhttp"
 	"configflow/internal/logx"
+	"configflow/internal/pystr"
 	"configflow/internal/repo"
+	"configflow/internal/reqproxy"
 	"configflow/internal/urlx"
 )
 
@@ -78,50 +81,78 @@ type origin struct {
 	port         int
 }
 
-func originOf(u URL) origin {
-	port, has, _ := u.Port()
+// originOf is _origin(parsed): (scheme, hostname, port or the default
+// port); a malformed port is SplitResult.port's ValueError.
+func originOf(u URL) (origin, error) {
+	port, has, err := u.Port()
+	if err != nil {
+		return origin{}, err
+	}
 	if !has || port == 0 {
 		port = 80
 		if u.Scheme == "https" {
 			port = 443
 		}
 	}
-	return origin{u.Scheme, u.Hostname(), port}
+	return origin{u.Scheme, u.Hostname(), port}, nil
 }
 
 // internalRuleBase is _internal_rule_base: the server origin whose API the
-// URL addresses (server_domain, then the current request's host URL).
-func internalRuleBase(url string, config *jsonx.Object, hostURL string) (URL, bool) {
+// URL addresses (server_domain, then the current request's host URL). The
+// error is the ValueError urlsplit or SplitResult.port raise in Python (an
+// unparsable URL or base, a malformed port); it propagates to the caller.
+func internalRuleBase(url string, config *jsonx.Object, hostURL string) (URL, bool, error) {
 	settings := RuleFetchSettings(config)
 	parsed, err := SplitURL(url, "")
 	if err != nil {
-		return URL{}, false
+		return URL{}, false, err
 	}
 	bases := []any{settings.GetOr("server_domain", "")}
 	if hostURL != "" {
 		bases = append(bases, hostURL)
 	}
 	for _, value := range bases {
-		base, _ := value.(string)
-		if !jsonx.Truthy(value) || base == "" {
+		base, isText := value.(string)
+		if !jsonx.Truthy(value) || !isText {
+			// A non-string server_domain is a TypeError in Python (never stored:
+			// settings validation keeps it a string).
 			continue
 		}
 		o, err := SplitURL(base, "")
-		if err != nil || originOf(parsed) != originOf(o) {
+		if err != nil {
+			return URL{}, false, err
+		}
+		left, err := originOf(parsed)
+		if err != nil {
+			return URL{}, false, err
+		}
+		right, err := originOf(o)
+		if err != nil {
+			return URL{}, false, err
+		}
+		if left != right {
 			continue
 		}
 		prefix := strings.TrimRight(o.Path, "/") + "/api/"
 		if strings.HasPrefix(parsed.Path, prefix) {
-			return o, true
+			return o, true, nil
 		}
 	}
-	return URL{}, false
+	return URL{}, false, nil
 }
 
-// IsInternalRuleURL is is_internal_rule_url: requests to ConfigFlow itself
-// stay away from the download proxy.
+// IsInternalRuleURLChecked is is_internal_rule_url: requests to ConfigFlow
+// itself stay away from the download proxy. The error is Python's ValueError
+// for a URL (or server base) urlsplit cannot parse or with a malformed port.
+func IsInternalRuleURLChecked(url string, config *jsonx.Object, hostURL string) (bool, error) {
+	_, ok, err := internalRuleBase(url, config, hostURL)
+	return ok, err
+}
+
+// IsInternalRuleURL is IsInternalRuleURLChecked for URLs that already passed
+// ValidateRuleURL (false when Python would raise).
 func IsInternalRuleURL(url string, config *jsonx.Object, hostURL string) bool {
-	_, ok := internalRuleBase(url, config, hostURL)
+	ok, _ := IsInternalRuleURLChecked(url, config, hostURL)
 	return ok
 }
 
@@ -130,13 +161,22 @@ func GetRuleFetchProxy(config *jsonx.Object) (string, error) {
 	return NormalizeRuleFetchProxy(RuleFetchSettings(config).GetOr("rule_fetch_proxy", ""))
 }
 
-// RuleRequestProxy is rule_request_options(url, config)['proxies'][scheme]:
+// RuleRequestProxyChecked is rule_request_options(url, config)['proxies'][scheme]:
 // "" (direct) for internal URLs, otherwise the configured proxy.
-func RuleRequestProxy(url string, config *jsonx.Object, hostURL string) (string, error) {
-	if IsInternalRuleURL(url, config, hostURL) {
+func RuleRequestProxyChecked(url string, config *jsonx.Object, hostURL string) (string, error) {
+	internal, err := IsInternalRuleURLChecked(url, config, hostURL)
+	if err != nil {
+		return "", err
+	}
+	if internal {
 		return "", nil
 	}
 	return GetRuleFetchProxy(config)
+}
+
+// RuleRequestProxy is RuleRequestProxyChecked.
+func RuleRequestProxy(url string, config *jsonx.Object, hostURL string) (string, error) {
+	return RuleRequestProxyChecked(url, config, hostURL)
 }
 
 // GithubHosts is GITHUB_HOSTS.
@@ -164,7 +204,11 @@ type Candidate struct{ Label, URL string }
 // then the configured GitHub mirror for GitHub URLs. A URL already carrying
 // exactly that mirror prefix is unwrapped first.
 func GithubDownloadCandidates(url string, config *jsonx.Object, hostURL string) ([]Candidate, error) {
-	if IsInternalRuleURL(url, config, hostURL) {
+	internal, err := IsInternalRuleURLChecked(url, config, hostURL)
+	if err != nil {
+		return nil, err
+	}
+	if internal {
 		return []Candidate{{"原始地址", url}}, nil
 	}
 	mirror, isText := RuleFetchSettings(config).GetOr("github_proxy_domain", "").(string)
@@ -255,7 +299,10 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *Request, config
 		if err != nil {
 			return nil, err
 		}
-		base, internal := internalRuleBase(current, config, r.HostURL)
+		base, internal, err := internalRuleBase(current, config, r.HostURL)
+		if err != nil {
+			return nil, err
+		}
 		proxy, err := RuleRequestProxy(current, config, r.HostURL)
 		if err != nil {
 			return nil, err
@@ -279,6 +326,20 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *Request, config
 			if err != nil {
 				return nil, err
 			}
+			if !r.Stream {
+				// requests.get/head without stream=True: Session.send reads the
+				// body. On the plain path a redirect first goes through
+				// resolve_redirects (yield_requests=True); _RuleSession (HTTPS
+				// proxy) never resolves redirects.
+				httpsProxy := false
+				if p, err := SplitURL(proxy, ""); err == nil && p.Scheme == "https" {
+					httpsProxy = true
+				}
+				if err := readUnstreamed(response, httpsProxy); err != nil {
+					response.Close()
+					return nil, err
+				}
+			}
 		}
 		if !redirectStatuses[response.StatusCode] {
 			if !r.Stream && r.MaxBytes == 0 {
@@ -290,7 +351,7 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *Request, config
 		}
 		next, err := func() (string, error) {
 			defer response.Close()
-			location := response.Header.Get("Location")
+			location, _ := response.HeaderValue("Location")
 			if location == "" {
 				return "", errors.New("Redirect without Location")
 			}
@@ -302,8 +363,24 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *Request, config
 			if err != nil {
 				return "", err
 			}
-			if internal && (originOf(parsed) != originOf(targetParts) || !IsInternalRuleURL(target, config, r.HostURL)) {
-				return "", errors.New("Internal API redirect leaves its origin")
+			if internal {
+				left, err := originOf(parsed)
+				if err != nil {
+					return "", err
+				}
+				right, err := originOf(targetParts)
+				if err != nil {
+					return "", err
+				}
+				targetInternal := false
+				if left == right {
+					if targetInternal, err = IsInternalRuleURLChecked(target, config, r.HostURL); err != nil {
+						return "", err
+					}
+				}
+				if !targetInternal {
+					return "", errors.New("Internal API redirect leaves its origin")
+				}
 			}
 			if hop == maxRedirects {
 				return "", errors.New("Too many redirects")
@@ -316,6 +393,97 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *Request, config
 		current = next
 	}
 	return nil, errors.New("Too many redirects")
+}
+
+// pyUnicodeDecodeError is the UnicodeDecodeError requests raises for a
+// Location header that is not UTF-8 (get_redirect_target re-encodes the
+// ISO-8859-1 header text and decodes it as UTF-8); not a RequestException.
+type pyUnicodeDecodeError struct{ message string }
+
+func (e *pyUnicodeDecodeError) Error() string       { return e.message }
+func (e *pyUnicodeDecodeError) PythonClass() string { return "UnicodeDecodeError" }
+
+// latin1Bytes reverses latin1Text (header text back to its bytes).
+func latin1Bytes(text string) []byte {
+	out := make([]byte, 0, len(text))
+	for _, r := range text {
+		out = append(out, byte(r))
+	}
+	return out
+}
+
+// readUnstreamed is what requests does with a response before returning it
+// when stream is not set. Through an HTTPS proxy (_RuleSession, whose
+// resolve_redirects yields nothing) the body is read and any failure raised.
+// On the plain path a redirect status with a Location field goes through
+// Session.resolve_redirects(yield_requests=True) first: the Location text is
+// decoded as UTF-8 (UnicodeDecodeError), the body is read with
+// ChunkedEncodingError / ContentDecodingError ignored, and the target is
+// parsed (urlparse's ValueError; its port, when NO_PROXY is set). Every other
+// response is read with failures raised.
+func readUnstreamed(response *Response, httpsProxy bool) error {
+	location, hasLocation := response.HeaderValue("Location")
+	if httpsProxy || !redirectStatuses[response.StatusCode] || !hasLocation {
+		_, err := response.Content()
+		return err
+	}
+	raw := latin1Bytes(location)
+	if message := pystr.UTF8DecodeError(raw); message != "" {
+		return &pyUnicodeDecodeError{message}
+	}
+	target := string(raw)
+	if target == "" {
+		_, err := response.Content()
+		return err
+	}
+	if _, err := response.Content(); err != nil {
+		// ChunkedEncodingError and ContentDecodingError are caught there,
+		// but a Content-Length body cut short is raised again when
+		// Session.send reads the content (urllib3 enforces the length);
+		// a chunked body cut short reads as empty then.
+		var fetch *FetchError
+		chunked := strings.EqualFold(response.Header.Get("Transfer-Encoding"), "chunked")
+		swallowed := errors.As(err, &fetch) && (fetch.Class == "ContentDecodingError" ||
+			(fetch.Class == "ChunkedEncodingError" && (!fetch.Transient || chunked)))
+		if !swallowed {
+			return err
+		}
+		response.content, response.consumed = nil, true
+		response.Body = io.NopCloser(bytes.NewReader(nil))
+	}
+	if strings.HasPrefix(target, "//") {
+		if from, err := SplitURL(response.URL, ""); err == nil {
+			target = from.Scheme + ":" + target
+		}
+	}
+	parsed, err := urlparse(target, "")
+	if err != nil {
+		return err
+	}
+	if parsed.Netloc == "" {
+		return nil
+	}
+	hostname := parsed.Hostname()
+	if noProxy := envFirst("no_proxy", "NO_PROXY"); noProxy != "" && hostname != "" {
+		// rebuild_proxies → should_bypass_proxies reads the port of a hop
+		// whose host is not an IPv4 address.
+		if _, ipv4 := reqproxy.InetAtonExact(hostname); !ipv4 {
+			if _, _, err := parsed.Port(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// envFirst is os.environ.get(a) or os.environ.get(b).
+func envFirst(names ...string) string {
+	for _, name := range names {
+		if value := os.Getenv(name); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func localError(err error) error {

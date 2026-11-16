@@ -12,7 +12,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"configflow/internal/convert"
@@ -134,17 +133,6 @@ func WriteValidatedRuleCache(ctx context.Context, rule *jsonx.Object, content an
 	return filename, nil
 }
 
-// safeExceptionDetails is url_utils.safe_exception_details with this
-// package's Python class names.
-func safeExceptionDetails(err error) string {
-	details := "exception_type=" + PythonClass(err)
-	var fetch *FetchError
-	if errors.As(err, &fetch) && fetch.Status != 0 {
-		details += " status=" + strconv.Itoa(fetch.Status)
-	}
-	return details
-}
-
 // RefreshOptions are refresh_remote_rule's keyword arguments.
 type RefreshOptions struct {
 	// Timeout is timeout= (10 s when 0).
@@ -248,7 +236,9 @@ func ReadRuleSourceContent(ctx context.Context, rule *jsonx.Object, client *Clie
 		return content, nil
 	}
 	var remote *RemoteRuleValidationError
-	if errors.As(err, &remote) || errors.Is(err, repo.ErrRepository) {
+	if errors.As(err, &remote) || !(IsRequestException(err) || isValueError(err)) {
+		// RemoteRuleValidationError is re-raised; anything that is neither a
+		// RequestException nor a ValueError (storage errors) propagates.
 		return nil, err
 	}
 	// Never expose proxy credentials through transport error messages.

@@ -1,0 +1,3703 @@
+[
+ {
+  "name": "gzip truncated",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMjMNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoo=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMjMNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoo=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMjMNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoo=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "677a697020626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip truncated stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMjMNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoo=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMjMNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoo=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMjMNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoo=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "677a697020626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip header only",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNQ0KDQofiwgAhA==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNQ0KDQofiwgAhA==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNQ0KDQofiwgAhA==",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": ""
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip header only stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNQ0KDQofiwgAhA==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNQ0KDQofiwgAhA==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNQ0KDQofiwgAhA==",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": ""
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip trailing garbage",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMzcNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAABnYXJiYWdlIQ==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMzcNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAABnYXJiYWdlIQ==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMzcNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAABnYXJiYWdlIQ==",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "677a697020626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip trailing garbage stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMzcNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAABnYXJiYWdlIQ==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMzcNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAABnYXJiYWdlIQ==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMzcNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAABnYXJiYWdlIQ==",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "677a697020626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip two members",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNTYNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAAfiwgAhHT6agL/UyhOTc7PSwEAKFYMVQcAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNTYNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAAfiwgAhHT6agL/UyhOTc7PSwEAKFYMVQcAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNTYNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAAfiwgAhHT6agL/UyhOTc7PSwEAKFYMVQcAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "677a697020626f6479207365636f6e64"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip two members stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNTYNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAAfiwgAhHT6agL/UyhOTc7PSwEAKFYMVQcAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNTYNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAAfiwgAhHT6agL/UyhOTc7PSwEAKFYMVQcAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNTYNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAAfiwgAhHT6agL/UyhOTc7PSwEAKFYMVQcAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "677a697020626f6479207365636f6e64"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip bad crc",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAAAAAAAkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAAAAAAAkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAAAAAAAkAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: gzip, but failed to decode it.', error('Error -3 while decompressing data: incorrect data check'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip bad crc stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAAAAAAAkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAAAAAAAkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAAAAAAAkAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: gzip, but failed to decode it.', error('Error -3 while decompressing data: incorrect data check'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip bad second crc",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNTINCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAAfiwgAhHT6agL/KynPBwAAAAAAAwAAAA==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNTINCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAAfiwgAhHT6agL/KynPBwAAAAAAAwAAAA==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNTINCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAAfiwgAhHT6agL/KynPBwAAAAAAAwAAAA==",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "677a697020626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip bad second crc stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNTINCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAAfiwgAhHT6agL/KynPBwAAAAAAAwAAAA==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNTINCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAAfiwgAhHT6agL/KynPBwAAAAAAAwAAAA==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogNTINCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAAfiwgAhHT6agL/KynPBwAAAAAAAwAAAA==",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "677a697020626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip empty",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMA0KDQo=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMA0KDQo=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMA0KDQo=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": ""
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip empty stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMA0KDQo=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMA0KDQo=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMA0KDQo=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": ""
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip upper",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBHWklQDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBHWklQDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBHWklQDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "677a697020626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip upper stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBHWklQDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBHWklQDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBHWklQDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "677a697020626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip spaced",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiAgZ3ppcA0KQ29udGVudC1MZW5ndGg6IDI5DQoNCh+LCACEdPpqAv9Lr8osUEjKT6kEAMaKus0JAAAA",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiAgZ3ppcA0KQ29udGVudC1MZW5ndGg6IDI5DQoNCh+LCACEdPpqAv9Lr8osUEjKT6kEAMaKus0JAAAA",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiAgZ3ppcA0KQ29udGVudC1MZW5ndGg6IDI5DQoNCh+LCACEdPpqAv9Lr8osUEjKT6kEAMaKus0JAAAA",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "677a697020626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip spaced stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiAgZ3ppcA0KQ29udGVudC1MZW5ndGg6IDI5DQoNCh+LCACEdPpqAv9Lr8osUEjKT6kEAMaKus0JAAAA",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiAgZ3ppcA0KQ29udGVudC1MZW5ndGg6IDI5DQoNCh+LCACEdPpqAv9Lr8osUEjKT6kEAMaKus0JAAAA",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiAgZ3ppcA0KQ29udGVudC1MZW5ndGg6IDI5DQoNCh+LCACEdPpqAv9Lr8osUEjKT6kEAMaKus0JAAAA",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "677a697020626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "x-gzip",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB4LWd6aXANCkNvbnRlbnQtTGVuZ3RoOiAyOQ0KDQofiwgAhHT6agL/S6/KLFBIyk+pBADGirrNCQAAAA==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB4LWd6aXANCkNvbnRlbnQtTGVuZ3RoOiAyOQ0KDQofiwgAhHT6agL/S6/KLFBIyk+pBADGirrNCQAAAA==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB4LWd6aXANCkNvbnRlbnQtTGVuZ3RoOiAyOQ0KDQofiwgAhHT6agL/S6/KLFBIyk+pBADGirrNCQAAAA==",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "677a697020626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "x-gzip stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB4LWd6aXANCkNvbnRlbnQtTGVuZ3RoOiAyOQ0KDQofiwgAhHT6agL/S6/KLFBIyk+pBADGirrNCQAAAA==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB4LWd6aXANCkNvbnRlbnQtTGVuZ3RoOiAyOQ0KDQofiwgAhHT6agL/S6/KLFBIyk+pBADGirrNCQAAAA==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB4LWd6aXANCkNvbnRlbnQtTGVuZ3RoOiAyOQ0KDQofiwgAhHT6agL/S6/KLFBIyk+pBADGirrNCQAAAA==",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "677a697020626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "zstd left alone",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB6c3RkDQpDb250ZW50LUxlbmd0aDogNw0KDQootS/9cmF3",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB6c3RkDQpDb250ZW50LUxlbmd0aDogNw0KDQootS/9cmF3",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB6c3RkDQpDb250ZW50LUxlbmd0aDogNw0KDQootS/9cmF3",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "28b52ffd726177"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "zstd left alone stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB6c3RkDQpDb250ZW50LUxlbmd0aDogNw0KDQootS/9cmF3",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB6c3RkDQpDb250ZW50LUxlbmd0aDogNw0KDQootS/9cmF3",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB6c3RkDQpDb250ZW50LUxlbmd0aDogNw0KDQootS/9cmF3",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "28b52ffd726177"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "br left alone",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBicg0KQ29udGVudC1MZW5ndGg6IDcNCg0KYnJvdGxpPw==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBicg0KQ29udGVudC1MZW5ndGg6IDcNCg0KYnJvdGxpPw==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBicg0KQ29udGVudC1MZW5ndGg6IDcNCg0KYnJvdGxpPw==",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "62726f746c693f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "br left alone stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBicg0KQ29udGVudC1MZW5ndGg6IDcNCg0KYnJvdGxpPw==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBicg0KQ29udGVudC1MZW5ndGg6IDcNCg0KYnJvdGxpPw==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBicg0KQ29udGVudC1MZW5ndGg6IDcNCg0KYnJvdGxpPw==",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "62726f746c693f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "identity",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBpZGVudGl0eQ0KQ29udGVudC1MZW5ndGg6IDUNCg0KcGxhaW4=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBpZGVudGl0eQ0KQ29udGVudC1MZW5ndGg6IDUNCg0KcGxhaW4=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBpZGVudGl0eQ0KQ29udGVudC1MZW5ndGg6IDUNCg0KcGxhaW4=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "706c61696e"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "identity stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBpZGVudGl0eQ0KQ29udGVudC1MZW5ndGg6IDUNCg0KcGxhaW4=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBpZGVudGl0eQ0KQ29udGVudC1MZW5ndGg6IDUNCg0KcGxhaW4=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBpZGVudGl0eQ0KQ29udGVudC1MZW5ndGg6IDUNCg0KcGxhaW4=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "706c61696e"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip then zstd",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLCB6c3RkDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLCB6c3RkDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLCB6c3RkDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: gzip, zstd, but failed to decode it.', error('Error -3 while decompressing data: invalid block type'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip then zstd stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLCB6c3RkDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLCB6c3RkDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLCB6c3RkDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: gzip, zstd, but failed to decode it.', error('Error -3 while decompressing data: invalid block type'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "zstd then gzip",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB6c3RkLCBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB6c3RkLCBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB6c3RkLCBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: zstd, gzip, but failed to decode it.', error('Error -3 while decompressing data: invalid block type'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "zstd then gzip stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB6c3RkLCBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB6c3RkLCBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiB6c3RkLCBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: zstd, gzip, but failed to decode it.', error('Error -3 while decompressing data: invalid block type'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "deflate, gzip",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlLCBnemlwDQpDb250ZW50LUxlbmd0aDogMzgNCg0KH4sIAIR0+moC/6uYs/rUSZ8gj1P+K1kYBKcwNwAAPMCAHBEAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlLCBnemlwDQpDb250ZW50LUxlbmd0aDogMzgNCg0KH4sIAIR0+moC/6uYs/rUSZ8gj1P+K1kYBKcwNwAAPMCAHBEAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlLCBnemlwDQpDb250ZW50LUxlbmd0aDogMzgNCg0KH4sIAIR0+moC/6uYs/rUSZ8gj1P+K1kYBKcwNwAAPMCAHBEAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "7a6c696220626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "deflate, gzip stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlLCBnemlwDQpDb250ZW50LUxlbmd0aDogMzgNCg0KH4sIAIR0+moC/6uYs/rUSZ8gj1P+K1kYBKcwNwAAPMCAHBEAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlLCBnemlwDQpDb250ZW50LUxlbmd0aDogMzgNCg0KH4sIAIR0+moC/6uYs/rUSZ8gj1P+K1kYBKcwNwAAPMCAHBEAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlLCBnemlwDQpDb250ZW50LUxlbmd0aDogMzgNCg0KH4sIAIR0+moC/6uYs/rUSZ8gj1P+K1kYBKcwNwAAPMCAHBEAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "7a6c696220626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip,",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLA0KQ29udGVudC1MZW5ndGg6IDI5DQoNCh+LCACEdPpqAv9Lr8osUEjKT6kEAMaKus0JAAAA",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLA0KQ29udGVudC1MZW5ndGg6IDI5DQoNCh+LCACEdPpqAv9Lr8osUEjKT6kEAMaKus0JAAAA",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLA0KQ29udGVudC1MZW5ndGg6IDI5DQoNCh+LCACEdPpqAv9Lr8osUEjKT6kEAMaKus0JAAAA",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: gzip,, but failed to decode it.', error('Error -3 while decompressing data: invalid block type'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip, stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLA0KQ29udGVudC1MZW5ndGg6IDI5DQoNCh+LCACEdPpqAv9Lr8osUEjKT6kEAMaKus0JAAAA",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLA0KQ29udGVudC1MZW5ndGg6IDI5DQoNCh+LCACEdPpqAv9Lr8osUEjKT6kEAMaKus0JAAAA",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLA0KQ29udGVudC1MZW5ndGg6IDI5DQoNCh+LCACEdPpqAv9Lr8osUEjKT6kEAMaKus0JAAAA",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: gzip,, but failed to decode it.', error('Error -3 while decompressing data: invalid block type'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "six codings",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLCBnemlwLCBnemlwLCBnemlwLCBnemlwLCBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLCBnemlwLCBnemlwLCBnemlwLCBnemlwLCBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLCBnemlwLCBnemlwLCBnemlwLCBnemlwLCBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "Too many content encodings in the chain: 6 > 5"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "six codings stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLCBnemlwLCBnemlwLCBnemlwLCBnemlwLCBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLCBnemlwLCBnemlwLCBnemlwLCBnemlwLCBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwLCBnemlwLCBnemlwLCBnemlwLCBnemlwLCBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "Too many content encodings in the chain: 6 > 5"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "deflate zlib",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeJyryslMUkjKT6kEABGUA4A=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeJyryslMUkjKT6kEABGUA4A=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeJyryslMUkjKT6kEABGUA4A=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "7a6c696220626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "deflate zlib stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeJyryslMUkjKT6kEABGUA4A=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeJyryslMUkjKT6kEABGUA4A=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeJyryslMUkjKT6kEABGUA4A=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "7a6c696220626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "deflate truncated",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTINCg0KeJyryslMUkjKT6kE",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTINCg0KeJyryslMUkjKT6kE",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTINCg0KeJyryslMUkjKT6kE",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "7a6c696220626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "deflate truncated stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTINCg0KeJyryslMUkjKT6kE",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTINCg0KeJyryslMUkjKT6kE",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTINCg0KeJyryslMUkjKT6kE",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "7a6c696220626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "deflate bad adler",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeJyryslMUkjKT6kEAAAAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeJyryslMUkjKT6kEAAAAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeJyryslMUkjKT6kEAAAAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: deflate, but failed to decode it.', error('Error -3 while decompressing data: invalid stored block lengths'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "deflate bad adler stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeJyryslMUkjKT6kEAAAAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeJyryslMUkjKT6kEAAAAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeJyryslMUkjKT6kEAAAAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: deflate, but failed to decode it.', error('Error -3 while decompressing data: invalid stored block lengths'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "deflate trailing",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMjUNCg0KeJyryslMUkjKT6kEABGUA4B0cmFpbGluZw==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMjUNCg0KeJyryslMUkjKT6kEABGUA4B0cmFpbGluZw==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMjUNCg0KeJyryslMUkjKT6kEABGUA4B0cmFpbGluZw==",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "7a6c696220626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "deflate trailing stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMjUNCg0KeJyryslMUkjKT6kEABGUA4B0cmFpbGluZw==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMjUNCg0KeJyryslMUkjKT6kEABGUA4B0cmFpbGluZw==",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMjUNCg0KeJyryslMUkjKT6kEABGUA4B0cmFpbGluZw==",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "7a6c696220626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "deflate garbage",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTgNCg0Kbm90IGRlZmxhdGUgYXQgYWxs",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTgNCg0Kbm90IGRlZmxhdGUgYXQgYWxs",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTgNCg0Kbm90IGRlZmxhdGUgYXQgYWxs",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: deflate, but failed to decode it.', error('Error -3 while decompressing data: invalid block type'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "deflate garbage stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTgNCg0Kbm90IGRlZmxhdGUgYXQgYWxs",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTgNCg0Kbm90IGRlZmxhdGUgYXQgYWxs",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTgNCg0Kbm90IGRlZmxhdGUgYXQgYWxs",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: deflate, but failed to decode it.', error('Error -3 while decompressing data: invalid block type'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "deflate one byte",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMQ0KDQp4",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMQ0KDQp4",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMQ0KDQp4",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": ""
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "deflate one byte stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMQ0KDQp4",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMQ0KDQp4",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMQ0KDQp4",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": ""
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "deflate fdict",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeLuryslMUkjKT6kEABGUA4A=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeLuryslMUkjKT6kEABGUA4A=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeLuryslMUkjKT6kEABGUA4A=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: deflate, but failed to decode it.', error('Error -3 while decompressing data: invalid stored block lengths'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "deflate fdict stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeLuryslMUkjKT6kEABGUA4A=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeLuryslMUkjKT6kEABGUA4A=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogMTcNCg0KeLuryslMUkjKT6kEABGUA4A=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: deflate, but failed to decode it.', error('Error -3 while decompressing data: invalid stored block lengths'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "two content-encoding fields",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUVuY29kaW5nOiB6c3RkDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUVuY29kaW5nOiB6c3RkDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUVuY29kaW5nOiB6c3RkDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: gzip, zstd, but failed to decode it.', error('Error -3 while decompressing data: invalid block type'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "two content-encoding fields stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUVuY29kaW5nOiB6c3RkDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUVuY29kaW5nOiB6c3RkDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   },
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUVuY29kaW5nOiB6c3RkDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: gzip, zstd, but failed to decode it.', error('Error -3 while decompressing data: invalid block type'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "plain",
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "head",
+  "opts": {
+   "method": "head"
+  },
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": ""
+   }
+  },
+  "seen": [
+   {
+    "line": "HEAD /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "utf8 location",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMzAxIE1vdmVkDQpMb2NhdGlvbjogL8OpdMOpP3E95LitDQpDb250ZW50LUxlbmd0aDogMA0KDQo=",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/%C3%83%C2%A9t%C3%83%C2%A9?q=%C3%A4%C2%B8%C2%AD",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /%C3%83%C2%A9t%C3%83%C2%A9?q=%C3%A4%C2%B8%C2%AD HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "latin1 location",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMzAyIEZvdW5kDQpMb2NhdGlvbjogL2NhZukNCkNvbnRlbnQtTGVuZ3RoOiAwDQoNCg==",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "UnicodeDecodeError",
+    "text": "'utf-8' codec can't decode byte 0xe9 in position 4: unexpected end of data"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "latin1 location stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMzAyIEZvdW5kDQpMb2NhdGlvbjogL2NhZukNCkNvbnRlbnQtTGVuZ3RoOiAwDQoNCg==",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/caf%C3%A9",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /caf%C3%A9 HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "no location",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ValueError",
+    "text": "Redirect without Location"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "empty location",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: \r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ValueError",
+    "text": "Redirect without Location"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "two locations",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /a\r\nLocation: /b\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/a,%20/b",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /a,%20/b HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "redirect body cut",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /next\r\nContent-Length: 100\r\n\r\nshort",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "redirect body cut stream",
+  "opts": {
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /next\r\nContent-Length: 100\r\n\r\nshort",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/next",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /next HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "redirect body stalls",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /next\r\nContent-Length: 100\r\n\r\nshort",
+    "then": "hang"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ConnectionError",
+    "text": "HTTPConnectionPool(host='127.0.0.1', port={PORT}): Read timed out."
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "redirect bad chunk",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /next\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/next",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /next HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "redirect bad gzip",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /next\r\nContent-Encoding: gzip\r\nContent-Length: 4\r\n\r\nnope",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/next",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /next HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "redirect chunked cut",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /next\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nsh",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /next\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nsh",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /next\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nsh",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 500,
+    "reason": "Unscripted",
+    "url": "http://127.0.0.1:{PORT}/next",
+    "body": ""
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /next HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /next HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /next HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "redirect body cut https proxy path",
+  "opts": {
+   "max_bytes": 1000,
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /next\r\nContent-Length: 100\r\n\r\nshort",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/next",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /next HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "no location body cut",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nContent-Length: 100\r\n\r\nshort",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 302 Found\r\nContent-Length: 100\r\n\r\nshort",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 302 Found\r\nContent-Length: 100\r\n\r\nshort",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ChunkedEncodingError",
+    "text": "('Connection broken: IncompleteRead(5 bytes read, 95 more expected)', IncompleteRead(5 bytes read, 95 more expected))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "body cut",
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ChunkedEncodingError",
+    "text": "('Connection broken: IncompleteRead(5 bytes read, 95 more expected)', IncompleteRead(5 bytes read, 95 more expected))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "body cut then ok",
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "reset",
+  "script": [
+   {
+    "raw": "",
+    "then": "reset"
+   },
+   {
+    "raw": "",
+    "then": "reset"
+   },
+   {
+    "raw": "",
+    "then": "reset"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ConnectionError",
+    "text": "('Connection aborted.', ConnectionResetError(104, 'Connection reset by peer'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "closed before response",
+  "script": [
+   {
+    "raw": "",
+    "then": "close"
+   },
+   {
+    "raw": "",
+    "then": "close"
+   },
+   {
+    "raw": "",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ConnectionError",
+    "text": "('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "bad chunk length",
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ChunkedEncodingError",
+    "text": "(\"Connection broken: InvalidChunkLength(got length b'zz\\\\r\\\\n', 0 bytes read)\", InvalidChunkLength(got length b'zz\\r\\n', 0 bytes read))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "chunked cut",
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ChunkedEncodingError",
+    "text": "('Connection broken: IncompleteRead(3 bytes read, 2 more expected)', IncompleteRead(3 bytes read, 2 more expected))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "bad gzip",
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: 4\r\n\r\nnope",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: 4\r\n\r\nnope",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: 4\r\n\r\nnope",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ContentDecodingError",
+    "text": "('Received response with content-encoding: gzip, but failed to decode it.', error('Error -3 while decompressing data: incorrect header check'))"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "gzip",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBnemlwDQpDb250ZW50LUxlbmd0aDogMjkNCg0KH4sIAIR0+moC/0uvyixQSMpPqQQAxoq6zQkAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "677a697020626f6479"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "raw deflate",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMjAwIE9LDQpDb250ZW50LUVuY29kaW5nOiBkZWZsYXRlDQpDb250ZW50LUxlbmd0aDogOQ0KDQpLTEoGAAAAAAA=",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "616263"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "not found",
+  "script": [
+   {
+    "raw": "HTTP/1.1 404 Not Found\r\nContent-Length: 3\r\n\r\nnah",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 404,
+    "reason": "Not Found",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "6e6168"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "not found bounded",
+  "opts": {
+   "max_bytes": 100,
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "HTTP/1.1 404 Not Found\r\nContent-Length: 3\r\n\r\nnah",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "HTTPError",
+    "text": "404 Client Error: Not Found for url: http://127.0.0.1:{PORT}/rules.list"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "odd reason",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgNTAzIFNw6WNpYWwgcmVhc29uDQpDb250ZW50LUxlbmd0aDogMA0KDQo=",
+    "then": "close"
+   }
+  ],
+  "opts": {
+   "max_bytes": 10,
+   "stream": true
+  },
+  "result": {
+   "err": {
+    "class": "HTTPError",
+    "text": "503 Server Error: Spécial reason for url: http://127.0.0.1:{PORT}/rules.list"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "too large",
+  "opts": {
+   "max_bytes": 3,
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ValueError",
+    "text": "Resource exceeds deployment file size limit"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "exact size",
+  "opts": {
+   "max_bytes": 5,
+   "stream": true
+  },
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "too many redirects",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /r0\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /r1\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /r2\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /r3\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /r4\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ValueError",
+    "text": "Too many redirects"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /r0 HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /r1 HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /r2 HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "max redirects 0",
+  "opts": {
+   "max_redirects": 0
+  },
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /r\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ValueError",
+    "text": "Too many redirects"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "redirect 303",
+  "script": [
+   {
+    "raw": "HTTP/1.1 303 See Other\r\nLocation: /see\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/see",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /see HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "redirect relative",
+  "url": "http://127.0.0.1:{PORT}/a/b/c?x=1",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: ../d?y=2\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: ?z\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/a/d?z",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /a/b/c?x=1 HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /a/d?y=2 HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /a/d?z HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "redirect scheme relative",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: //127.0.0.1:{PORT}/s\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/s",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /s HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "redirect requote",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /a b\"c<d>|e^f`g{h}%7Ei%41%zz\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/a%20b%22c%3Cd%3E%7Ce%5Ef%60g%7Bh%7D%257Ei%2541%25zz",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /a%20b%22c%3Cd%3E%7Ce%5Ef%60g%7Bh%7D%257Ei%2541%25zz HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "redirect bad port",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:99999/x\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ValueError",
+    "text": "Invalid HTTP/HTTPS URL"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "redirect bad ipv6",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: http://[::1/x\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ValueError",
+    "text": "Invalid IPv6 URL"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "redirect ftp",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: ftp://127.0.0.1/x\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ValueError",
+    "text": "Invalid HTTP/HTTPS URL"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "redirect fragment",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /frag#part\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/frag#part",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   },
+   {
+    "line": "GET /frag HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "redirect fullwidth",
+  "script": [
+   {
+    "raw": "b64:SFRUUC8xLjEgMzAyIEZvdW5kDQpMb2NhdGlvbjogaHR0cDovL2HvvI9iL3gNCkNvbnRlbnQtTGVuZ3RoOiAwDQoNCg==",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ValueError",
+    "text": "netloc 'a／b' contains invalid characters under NFKC normalization"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "url requote",
+  "url": "http://127.0.0.1:{PORT}/p a\"t%7eh?q=a b&r=%zz",
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/p%20a%22t~h?q=a%20b&r=%25zz",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /p%20a%22t~h?q=a%20b&r=%25zz HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "url empty path",
+  "url": "http://127.0.0.1:{PORT}",
+  "script": [
+   {
+    "raw": "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   }
+  ],
+  "opts": {
+   "max_bytes": 10,
+   "stream": true
+  },
+  "result": {
+   "err": {
+    "class": "HTTPError",
+    "text": "404 Client Error: Not Found for url: http://127.0.0.1:{PORT}/"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET / HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "url userinfo",
+  "url": "http://us%40er:p%3Ass@127.0.0.1:{PORT}/u",
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://us%40er:p%3Ass@127.0.0.1:{PORT}/u",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /u HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*",
+    "authorization": "Basic dXNAZXI6cDpzcw=="
+   }
+  ]
+ },
+ {
+  "name": "proxy auth",
+  "url": "http://rules.test/list",
+  "proxy": "http://user:pa%20ss@127.0.0.1:{PORT}",
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://rules.test/list",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET http://rules.test/list HTTP/1.1",
+    "host": "rules.test",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*",
+    "proxy-authorization": "Basic dXNlcjpwYSBzcw=="
+   }
+  ]
+ },
+ {
+  "name": "proxy user only",
+  "url": "http://rules.test/list",
+  "proxy": "http://user@127.0.0.1:{PORT}",
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://rules.test/list",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET http://rules.test/list HTTP/1.1",
+    "host": "rules.test",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "proxy empty user",
+  "url": "http://rules.test/list",
+  "proxy": "http://:pw@127.0.0.1:{PORT}",
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://rules.test/list",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET http://rules.test/list HTTP/1.1",
+    "host": "rules.test",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "proxy bad escape",
+  "url": "http://rules.test/list",
+  "proxy": "http://u%zz:p%41@127.0.0.1:{PORT}",
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://rules.test/list",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET http://rules.test/list HTTP/1.1",
+    "host": "rules.test",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*",
+    "proxy-authorization": "Basic dSV6ejpwJTQx"
+   }
+  ]
+ },
+ {
+  "name": "proxy latin1",
+  "url": "http://rules.test/list",
+  "proxy": "http://usér:päss@127.0.0.1:{PORT}",
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://rules.test/list",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET http://rules.test/list HTTP/1.1",
+    "host": "rules.test",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*",
+    "proxy-authorization": "Basic dXPpcjpw5HNz"
+   }
+  ]
+ },
+ {
+  "name": "proxy non latin1",
+  "url": "http://rules.test/list",
+  "proxy": "http://中:pw@127.0.0.1:{PORT}",
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "UnicodeEncodeError",
+    "text": "'latin-1' codec can't encode character '\\u4e2d' in position 0: ordinal not in range(256)"
+   }
+  },
+  "seen": []
+ },
+ {
+  "name": "proxy redirect",
+  "url": "http://rules.test/a",
+  "proxy": "http://u:p@127.0.0.1:{PORT}",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: http://other.test/b\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   },
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://other.test/b",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET http://rules.test/a HTTP/1.1",
+    "host": "rules.test",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*",
+    "proxy-authorization": "Basic dTpw"
+   },
+   {
+    "line": "GET http://other.test/b HTTP/1.1",
+    "host": "other.test",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*",
+    "proxy-authorization": "Basic dTpw"
+   }
+  ]
+ },
+ {
+  "name": "proxy 407",
+  "url": "http://rules.test/a",
+  "proxy": "http://127.0.0.1:{PORT}",
+  "script": [
+   {
+    "raw": "HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 407,
+    "reason": "Proxy Authentication Required",
+    "url": "http://rules.test/a",
+    "body": ""
+   }
+  },
+  "seen": [
+   {
+    "line": "GET http://rules.test/a HTTP/1.1",
+    "host": "rules.test",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "proxy refused",
+  "url": "http://rules.test/a",
+  "proxy": "http://127.0.0.1:1",
+  "script": [],
+  "result": {
+   "err": {
+    "class": "ProxyError",
+    "text": "HTTPConnectionPool(host='127.0.0.1', port=1): Max retries exceeded with url: http://rules.test/a (Caused by ProxyError('Unable to connect to proxy', NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=1): Failed to establish a new connection: [Errno 111] Connection refused\")))"
+   }
+  },
+  "seen": []
+ },
+ {
+  "name": "refused",
+  "url": "http://127.0.0.1:1/x",
+  "script": [],
+  "result": {
+   "err": {
+    "class": "ConnectionError",
+    "text": "HTTPConnectionPool(host='127.0.0.1', port=1): Max retries exceeded with url: /x (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=1): Failed to establish a new connection: [Errno 111] Connection refused\"))"
+   }
+  },
+  "seen": []
+ },
+ {
+  "name": "invalid proxy setting",
+  "url": "http://rules.test/a",
+  "proxy": "http://127.0.0.1:{PORT}/path",
+  "script": [],
+  "result": {
+   "err": {
+    "class": "ValueError",
+    "text": "规则下载代理必须是 HTTP 或 HTTPS 地址，不能包含路径、查询参数或片段"
+   }
+  },
+  "seen": []
+ },
+ {
+  "name": "internal url without app",
+  "url": "http://127.0.0.1:{PORT}/api/rules",
+  "server_domain": "http://127.0.0.1:{PORT}",
+  "proxy": "http://127.0.0.1:1",
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/api/rules",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /api/rules HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "internal redirect leaves",
+  "url": "http://127.0.0.1:{PORT}/api/rules",
+  "server_domain": "http://127.0.0.1:{PORT}",
+  "script": [
+   {
+    "raw": "HTTP/1.1 302 Found\r\nLocation: /elsewhere\r\nContent-Length: 0\r\n\r\n",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "err": {
+    "class": "ValueError",
+    "text": "Internal API redirect leaves its origin"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /api/rules HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "missing ca bundle http",
+  "opts": {
+   "verify": "/nonexistent/ca.pem"
+  },
+  "script": [
+   {
+    "raw": "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+    "then": "close"
+   }
+  ],
+  "result": {
+   "ok": {
+    "status": 200,
+    "reason": "OK",
+    "url": "http://127.0.0.1:{PORT}/rules.list",
+    "body": "68656c6c6f"
+   }
+  },
+  "seen": [
+   {
+    "line": "GET /rules.list HTTP/1.1",
+    "host": "127.0.0.1:{PORT}",
+    "user-agent": "python-requests/2.31.0",
+    "accept-encoding": "gzip, deflate",
+    "accept": "*/*"
+   }
+  ]
+ },
+ {
+  "name": "missing ca bundle https",
+  "url": "https://127.0.0.1:{PORT}/x",
+  "opts": {
+   "verify": "/nonexistent/ca.pem"
+  },
+  "script": [],
+  "result": {
+   "err": {
+    "class": "OSError",
+    "text": "Could not find a suitable TLS CA certificate bundle, invalid path: /nonexistent/ca.pem"
+   }
+  },
+  "seen": []
+ },
+ {
+  "name": "missing ca bundle https proxy",
+  "url": "http://rules.test/a",
+  "proxy": "https://127.0.0.1:{PORT}",
+  "opts": {
+   "verify": "/nonexistent/ca.pem"
+  },
+  "script": [],
+  "result": {
+   "err": {
+    "class": "FileNotFoundError",
+    "text": "[Errno 2] No such file or directory"
+   }
+  },
+  "seen": []
+ }
+]

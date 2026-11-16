@@ -1,6 +1,7 @@
 package rulefetch
 
 import (
+	"bufio"
 	"bytes"
 	"compress/flate"
 	"compress/gzip"
@@ -20,7 +21,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
+	"configflow/internal/pystr"
+	"configflow/internal/reqproxy"
+	"configflow/internal/urlx"
 )
 
 // FetchError is a requests.RequestException raised by a rule download:
@@ -64,12 +67,11 @@ func IsRequestException(err error) bool {
 	return errors.As(err, &f) || errors.As(err, &r)
 }
 
-// PythonClass is type(err).__name__ for errors of this package; plain
-// errors are ValueError.
+// PythonClass is type(err).__name__ for the errors of this package and the
+// repository errors it passes on; plain errors are ValueError.
 func PythonClass(err error) string {
-	var classed interface{ PythonClass() string }
-	if errors.As(err, &classed) {
-		return classed.PythonClass()
+	if class := pythonClassOf(err); class != "" {
+		return class
 	}
 	return "ValueError"
 }
@@ -120,6 +122,16 @@ func (r *Response) Close() {
 	}
 }
 
+// HeaderValue is response.headers.get(name): repeated fields joined with
+// ", " (urllib3's HTTPHeaderDict); ok is false when the field is absent.
+func (r *Response) HeaderValue(name string) (string, bool) {
+	values := r.Header.Values(name)
+	if len(values) == 0 {
+		return "", false
+	}
+	return strings.Join(values, ", "), true
+}
+
 // Read reads the decoded body (iter_content), classifying failures.
 func (r *Response) Read(p []byte) (int, error) {
 	n, err := r.Body.Read(p)
@@ -152,7 +164,7 @@ type Transport interface {
 // HTTPTransport is the network transport: requests' default headers, the
 // configured proxy only, TLS verification for the proxy and the origin with
 // the same trust (REQUESTS_CA_BUNDLE / CURL_CA_BUNDLE apply when verify is
-// the default), gzip/deflate/zstd decoding, no redirects, no keep-alive.
+// the default), gzip/deflate decoding as urllib3 does, no redirects, no keep-alive.
 type HTTPTransport struct {
 	// Dial replaces the TCP dialer (tests: host overrides); nil dials
 	// with net.Dialer.
@@ -163,25 +175,71 @@ type tunnelError struct{ message string }
 
 func (e *tunnelError) Error() string { return e.message }
 
-// Do implements Transport.
+// pyOSError is an error raised outside requests' exception hierarchy (a
+// missing CA bundle, unencodable proxy credentials): not a
+// RequestException, so neither retried nor answered by the GitHub mirror.
+type pyOSError struct{ class, message string }
+
+func (e *pyOSError) Error() string       { return e.message }
+func (e *pyOSError) PythonClass() string { return e.class }
+
+// verifyBundle is the verify value requests ends up with: verify=<path>, else
+// REQUESTS_CA_BUNDLE or CURL_CA_BUNDLE (merge_environment_settings), "" for
+// the default trust.
+func verifyBundle(req TransportRequest) string {
+	if req.CABundle != "" {
+		return req.CABundle
+	}
+	if bundle := os.Getenv("REQUESTS_CA_BUNDLE"); bundle != "" {
+		return bundle
+	}
+	return os.Getenv("CURL_CA_BUNDLE")
+}
+
+// latin1Text is how http.client decodes header bytes (ISO-8859-1).
+func latin1Text(raw string) string {
+	runes := make([]rune, len(raw))
+	for i := 0; i < len(raw); i++ {
+		runes[i] = rune(raw[i])
+	}
+	return string(runes)
+}
+
+// Do implements Transport: one request as requests 2.31 sends it (URL
+// prepared by requests, its default headers, the proxy chosen by
+// proxies={'http': p, 'https': p} through internal/reqproxy with urllib3's
+// Proxy-Authorization rules, header values decoded as ISO-8859-1).
 func (h HTTPTransport) Do(ctx context.Context, req TransportRequest) (*Response, error) {
+	prepared, err := urlx.RequestsPrepareURL(req.URL, nil)
+	if err != nil {
+		return nil, &FetchError{Class: "InvalidURL", Message: err.Error(), Err: err}
+	}
+	var chosen *reqproxy.Proxy
+	if req.Proxy != "" {
+		if chosen, err = reqproxy.FromValue(req.Proxy); err != nil {
+			class, _, _ := strings.Cut(err.Error(), ":")
+			if class == "UnicodeEncodeError" {
+				// _basic_auth_str raises outside requests' hierarchy.
+				return nil, proxyCredentialsError(req.Proxy)
+			}
+			return nil, &FetchError{Class: class, Message: err.Error(), Err: err}
+		}
+	}
 	tlsConfig := &tls.Config{}
 	if req.Insecure {
 		tlsConfig.InsecureSkipVerify = true
-	} else {
-		bundle := req.CABundle
-		if bundle == "" {
-			bundle = os.Getenv("REQUESTS_CA_BUNDLE")
-			if bundle == "" {
-				bundle = os.Getenv("CURL_CA_BUNDLE")
-			}
-		}
-		if bundle != "" {
-			pool, err := loadBundle(bundle)
-			if err != nil {
-				return nil, &FetchError{Class: "SSLError", Message: err.Error(), Err: err}
-			}
-			tlsConfig.RootCAs = pool
+	} else if bundle := verifyBundle(req); bundle != "" {
+		_, statErr := os.Stat(bundle)
+		switch {
+		case statErr != nil && chosen != nil && chosen.Scheme == "https":
+			// _request_with_https_proxy: ssl.create_default_context(cafile=...)
+			return nil, &pyOSError{class: "FileNotFoundError", message: "[Errno 2] No such file or directory"}
+		case statErr != nil && strings.HasPrefix(strings.ToLower(prepared), "https"):
+			// HTTPAdapter.cert_verify (https URLs only).
+			return nil, &pyOSError{class: "OSError",
+				message: "Could not find a suitable TLS CA certificate bundle, invalid path: " + bundle}
+		case statErr == nil:
+			tlsConfig.RootCAs = loadBundle(bundle)
 		}
 	}
 	dialer := &net.Dialer{Timeout: req.ConnectTimeout}
@@ -213,22 +271,36 @@ func (h HTTPTransport) Do(ctx context.Context, req TransportRequest) (*Response,
 			return dial(ctx, network, address)
 		}
 	}
-	if req.Proxy != "" {
-		proxyURL, err := url.Parse(req.Proxy)
-		if err != nil {
-			return nil, &FetchError{Class: "InvalidURL", Message: err.Error(), Err: err}
-		}
-		transport.Proxy = http.ProxyURL(proxyURL)
-	}
-	httpReq, err := http.NewRequestWithContext(ctx, req.Method, req.URL, nil)
+	httpReq, err := http.NewRequestWithContext(ctx, req.Method, prepared, nil)
 	if err != nil {
 		return nil, &FetchError{Class: "InvalidURL", Message: err.Error(), Err: err}
 	}
 	httpReq.Header.Set("User-Agent", "python-requests/2.31.0")
 	httpReq.Header.Set("Accept-Encoding", "gzip, deflate")
 	httpReq.Header.Set("Accept", "*/*")
-	res, err := (&http.Client{Transport: transport,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Do(httpReq)
+	if chosen != nil {
+		transport.Proxy = http.ProxyURL(chosen.URL())
+		if chosen.Auth != "" {
+			// urllib3 sends the proxy headers with CONNECT for https targets
+			// and with the request itself for http targets.
+			transport.ProxyConnectHeader = http.Header{"Proxy-Authorization": {chosen.Auth}}
+			if httpReq.URL.Scheme == "http" {
+				httpReq.Header.Set("Proxy-Authorization", chosen.Auth)
+			}
+		}
+	}
+	if user, password, ok := urlBasicAuth(prepared); ok {
+		// PreparedRequest.prepare_auth: credentials of the URL, latin-1.
+		header, err := basicAuthHeader(user, password)
+		if err != nil {
+			return nil, err
+		}
+		httpReq.Header.Set("Authorization", header)
+	}
+	// RoundTrip, not http.Client: the client parses a redirect's Location
+	// with Go's URL rules before any redirect policy runs, and requests
+	// leaves that to the caller (request_rule).
+	res, err := transport.RoundTrip(httpReq)
 	if err != nil {
 		return nil, classifyRequestError(err, req.Proxy != "")
 	}
@@ -240,26 +312,28 @@ func (h HTTPTransport) Do(ctx context.Context, req TransportRequest) (*Response,
 	if req.ReadTimeout > 0 {
 		body = &timeoutBody{ReadCloser: body, timeout: req.ReadTimeout}
 	}
-	_, reason, _ := strings.Cut(res.Status, " ")
-	return &Response{StatusCode: res.StatusCode, Reason: reason, Header: res.Header, URL: prepareURL(req.URL), Body: body}, nil
-}
-
-// prepareURL is the part of requests' URL preparation visible in messages:
-// an empty path becomes "/".
-func prepareURL(raw string) string {
-	parsed, err := SplitURL(raw, "")
-	if err != nil || parsed.Path != "" {
-		return raw
+	header := make(http.Header, len(res.Header)+1)
+	if len(res.TransferEncoding) > 0 {
+		// net/http moves the field out of Header; requests keeps it.
+		header["Transfer-Encoding"] = []string{strings.Join(res.TransferEncoding, ", ")}
 	}
-	parsed.Path = "/"
-	return parsed.String()
+	for key, values := range res.Header {
+		decoded := make([]string, len(values))
+		for i, value := range values {
+			decoded[i] = latin1Text(value)
+		}
+		header[key] = decoded
+	}
+	_, reason, _ := strings.Cut(res.Status, " ")
+	return &Response{StatusCode: res.StatusCode, Reason: latin1Text(reason), Header: header, URL: prepared, Body: body}, nil
 }
 
-func loadBundle(bundle string) (*x509.CertPool, error) {
+// loadBundle reads a CA file or every file of a CA directory (capath).
+func loadBundle(bundle string) *x509.CertPool {
 	pool := x509.NewCertPool()
 	info, err := os.Stat(bundle)
 	if err != nil {
-		return nil, fmt.Errorf("Could not find a suitable TLS CA certificate bundle, invalid path: %s", bundle)
+		return pool
 	}
 	files := []string{bundle}
 	if info.IsDir() {
@@ -274,7 +348,7 @@ func loadBundle(bundle string) (*x509.CertPool, error) {
 			pool.AppendCertsFromPEM(data)
 		}
 	}
-	return pool, nil
+	return pool
 }
 
 // timeoutBody applies the read timeout to each body read, like urllib3's
@@ -307,86 +381,291 @@ func (b *timeoutBody) Read(p []byte) (int, error) {
 
 var errBodyTimeout = errors.New("Read timed out.")
 
-// decodeBody applies Content-Encoding (urllib3: gzip, deflate, zstd; other
-// encodings are left as they are), last encoding first.
+// decodeBody applies Content-Encoding the way urllib3 2.8 (without brotli
+// and zstd support, as installed) does: "gzip", "x-gzip" or "deflate" alone,
+// or a comma list naming at least one of them, which then decodes every
+// listed coding last first (gzip for gzip/x-gzip, deflate for anything else,
+// more than five codings a DecodeError); any other value is left encoded.
 func decodeBody(res *http.Response) (io.ReadCloser, error) {
-	var encodings []string
-	for _, value := range res.Header.Values("Content-Encoding") {
-		for _, part := range strings.Split(value, ",") {
-			if part = strings.ToLower(strings.TrimSpace(part)); part != "" {
-				encodings = append(encodings, part)
-			}
-		}
-	}
-	if len(encodings) == 0 || res.Request.Method == "HEAD" {
+	if res.Request.Method == "HEAD" {
 		return res.Body, nil
 	}
-	var reader io.Reader = res.Body
-	for i := len(encodings) - 1; i >= 0; i-- {
-		var err error
-		switch encodings[i] {
-		case "gzip", "x-gzip":
-			reader, err = gzip.NewReader(reader)
-		case "deflate":
-			reader = &deflateReader{source: reader}
-		case "zstd":
-			var d *zstd.Decoder
-			d, err = zstd.NewReader(reader)
-			reader = d
+	values := res.Header.Values("Content-Encoding")
+	if len(values) == 0 {
+		return res.Body, nil
+	}
+	encoding := pystr.Lower(latin1Text(strings.Join(values, ", ")))
+	known := map[string]bool{"gzip": true, "x-gzip": true, "deflate": true}
+	var codings []string
+	switch {
+	case known[encoding]:
+		codings = []string{encoding}
+	case strings.Contains(encoding, ","):
+		any := false
+		for _, part := range strings.Split(encoding, ",") {
+			part = pystr.Strip(part)
+			codings = append(codings, part)
+			any = any || known[part]
 		}
-		if err != nil {
-			return nil, decodingError(err)
+		if !any {
+			return res.Body, nil
+		}
+	default:
+		return res.Body, nil
+	}
+	var reader io.Reader = taggedSource{res.Body}
+	if len(codings) > 5 {
+		reader = failingReader{fmt.Errorf("Too many content encodings in the chain: %d > 5", len(codings))}
+	} else {
+		for i := len(codings) - 1; i >= 0; i-- {
+			if codings[i] == "gzip" || codings[i] == "x-gzip" {
+				reader = &pyGzipReader{source: bufio.NewReader(reader)}
+			} else {
+				reader = &pyDeflateReader{source: reader}
+			}
 		}
 	}
 	return &decodedBody{Reader: reader, closer: res.Body}, nil
 }
+
+// sourceError marks a failure of the raw body (a transport error), as
+// opposed to a failure of a decoder.
+type sourceError struct{ err error }
+
+func (e *sourceError) Error() string { return e.err.Error() }
+func (e *sourceError) Unwrap() error { return e.err }
+
+type taggedSource struct{ r io.Reader }
+
+func (t taggedSource) Read(p []byte) (int, error) {
+	n, err := t.r.Read(p)
+	if err != nil && err != io.EOF {
+		err = &sourceError{err}
+	}
+	return n, err
+}
+
+type failingReader struct{ err error }
+
+func (f failingReader) Read([]byte) (int, error) { return 0, f.err }
 
 type decodedBody struct {
 	io.Reader
 	closer io.Closer
 }
 
+// Read passes transport failures on unchanged (classifyBodyError decides
+// their class) and turns decoder failures into ContentDecodingError.
 func (d *decodedBody) Read(p []byte) (int, error) {
 	n, err := d.Reader.Read(p)
-	if err != nil && err != io.EOF && !isTransportError(err) {
-		return n, decodingError(err)
+	if err == nil || err == io.EOF {
+		return n, err
 	}
-	return n, err
+	var source *sourceError
+	if errors.As(err, &source) {
+		return n, source.err
+	}
+	return n, decodingError(err)
 }
 
 func (d *decodedBody) Close() error { return d.closer.Close() }
 
-// deflateReader is urllib3's DeflateDecoder: zlib first, raw deflate if
-// that fails on the first bytes.
-type deflateReader struct {
-	source io.Reader
-	reader io.Reader
+// truncatedStream reports a decoder that ran out of input inside its stream:
+// zlib.decompressobj returns what it has and flush() does not complain, so
+// urllib3 ends the body there without an error.
+func truncatedStream(err error) bool { return errors.Is(err, io.ErrUnexpectedEOF) }
+
+// drain reads the rest of the raw body (urllib3 keeps reading after a
+// decoder swallowed its data), reporting only transport failures.
+func drain(source io.Reader) error {
+	_, err := io.Copy(io.Discard, source)
+	return err
 }
 
-func (d *deflateReader) Read(p []byte) (int, error) {
+// pyGzipReader is urllib3's GzipDecoder: the first member must decode;
+// further members are decoded while they are valid, and an invalid one (or
+// any garbage after the first member) swallows the rest of the data. The
+// output of a later member is held back until the member ends (up to 64 KiB):
+// its partial output is lost with the zlib.error that swallows it.
+type pyGzipReader struct {
+	source  *bufio.Reader
+	reader  *gzip.Reader
+	members int
+	pending []byte
+	held    []byte
+	done    bool
+}
+
+const gzipHoldLimit = 64 * 1024
+
+// gzipHeaderError checks the header bytes zlib has seen so far (magic,
+// method, reserved flags) the way inflate reports them as soon as they
+// arrive; a shorter but valid prefix is not an error yet.
+func gzipHeaderError(head []byte) error {
+	switch {
+	case len(head) > 0 && head[0] != 0x1f, len(head) > 1 && head[1] != 0x8b:
+		return errors.New("Error -3 while decompressing data: incorrect header check")
+	case len(head) > 2 && head[2] != 8:
+		return errors.New("Error -3 while decompressing data: unknown compression method")
+	case len(head) > 3 && head[3]&0xe0 != 0:
+		return errors.New("Error -3 while decompressing data: unknown header flags set")
+	}
+	return nil
+}
+
+func (g *pyGzipReader) Read(p []byte) (int, error) {
+	for {
+		if len(g.pending) > 0 {
+			n := copy(p, g.pending)
+			g.pending = g.pending[n:]
+			return n, nil
+		}
+		if g.done {
+			return 0, io.EOF
+		}
+		if g.reader == nil {
+			if err := g.open(); err != nil || g.done {
+				return 0, err
+			}
+		}
+		buffer := p
+		if g.members > 0 {
+			buffer = make([]byte, 32*1024)
+		}
+		n, err := g.reader.Read(buffer)
+		if g.members > 0 {
+			g.held = append(g.held, buffer[:n]...)
+			n = 0
+			if len(g.held) >= gzipHoldLimit {
+				g.pending, g.held = g.held, nil
+			}
+		}
+		switch {
+		case err == nil:
+			if n > 0 {
+				return n, nil
+			}
+			continue
+		case err == io.EOF:
+			g.reader, g.members = nil, g.members+1
+			g.pending, g.held = append(g.pending, g.held...), nil
+		case isSourceError(err):
+			return n, err
+		case truncatedStream(err):
+			g.done = true
+			g.pending, g.held = append(g.pending, g.held...), nil
+		case g.members > 0:
+			g.done, g.held = true, nil
+			if drainErr := drain(g.source); drainErr != nil {
+				return n, drainErr
+			}
+		default:
+			return n, err
+		}
+		if n > 0 {
+			return n, nil
+		}
+	}
+}
+
+// open starts the next member (done when the data ends or is swallowed).
+func (g *pyGzipReader) open() error {
+	head, err := g.source.Peek(4)
+	if err != nil && err != io.EOF {
+		return err
+	}
+	if len(head) == 0 {
+		g.done = true
+		return nil
+	}
+	if headerErr := gzipHeaderError(head); headerErr != nil {
+		g.done = true
+		if g.members == 0 {
+			return headerErr
+		}
+		return drain(g.source)
+	}
+	reader, err := gzip.NewReader(g.source)
+	if err != nil {
+		g.done = true
+		switch {
+		case isSourceError(err):
+			return err
+		case truncatedStream(err) || err == io.EOF:
+			return nil
+		case g.members > 0:
+			return drain(g.source)
+		}
+		return err
+	}
+	reader.Multistream(false)
+	g.reader = reader
+	return nil
+}
+
+func isSourceError(err error) bool {
+	var source *sourceError
+	return errors.As(err, &source)
+}
+
+// pyDeflateReader is urllib3's DeflateDecoder: a zlib stream, or raw
+// deflate when the data is not a zlib stream; a truncated stream ends the
+// body, data after the end of the stream is ignored.
+type pyDeflateReader struct {
+	source io.Reader
+	reader io.Reader
+	done   bool
+}
+
+func (d *pyDeflateReader) Read(p []byte) (int, error) {
+	if d.done {
+		return 0, io.EOF
+	}
 	if d.reader == nil {
 		head := make([]byte, 2)
-		n, _ := io.ReadFull(d.source, head)
-		combined := io.MultiReader(bytes.NewReader(head[:n]), d.source)
-		if z, err := zlib.NewReader(io.MultiReader(bytes.NewReader(head[:n]))); err == nil {
-			z.Close()
-			d.reader, _ = zlib.NewReader(combined)
+		n, err := io.ReadFull(d.source, head)
+		if err != nil && isSourceError(err) {
+			return 0, err
+		}
+		if n == 0 {
+			d.done = true
+			return 0, io.EOF
+		}
+		if n < 2 {
+			d.done = true // one byte: zlib waits for more
+			return 0, io.EOF
+		}
+		combined := io.MultiReader(bytes.NewReader(head), d.source)
+		cmf, flg := head[0], head[1]
+		if cmf&0x0f == 8 && cmf>>4 <= 7 && (uint(cmf)<<8|uint(flg))%31 == 0 && flg&0x20 == 0 {
+			z, err := zlib.NewReader(combined)
+			if err != nil {
+				return 0, err
+			}
+			d.reader = z
 		} else {
+			// Not a zlib stream (or one needing a preset dictionary):
+			// zlib.error, then raw deflate.
 			d.reader = flate.NewReader(combined)
 		}
 	}
-	return d.reader.Read(p)
+	n, err := d.reader.Read(p)
+	switch {
+	case err == io.EOF:
+		d.done = true
+		if drainErr := drain(d.source); drainErr != nil {
+			return n, drainErr
+		}
+	case err != nil && !isSourceError(err) && truncatedStream(err):
+		d.done = true
+		return n, io.EOF
+	}
+	return n, err
 }
 
 func decodingError(err error) error {
 	return &FetchError{Class: "ContentDecodingError",
 		Message: fmt.Sprintf("('Received response with content-encoding: gzip, but failed to decode it.', %v)", err), Err: err}
-}
-
-func isTransportError(err error) bool {
-	var op *net.OpError
-	return errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &op) || errors.Is(err, errBodyTimeout) ||
-		errors.Is(err, syscall.ECONNRESET)
 }
 
 func isDisconnectErrno(err error) bool {
