@@ -1,118 +1,104 @@
 package rules
 
 import (
+	"errors"
+	"io"
 	"iter"
+	"net/netip"
+	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
+	"gopkg.in/yaml.v3"
+
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
-	"configflow/internal/pystr"
-	"configflow/internal/pyyaml"
 	"configflow/internal/weburl"
 )
 
-// Port of backend/utils/rule_matcher.py: rule-line parsing and the indexed
-// matcher the domain discovery and rule IP presence checks run over rule sets
+// Rule-line parsing and the indexed matcher (backend/utils/rule_matcher.py)
+// that domain discovery and the rule IP presence checks run over rule sets
 // with hundreds of thousands of lines.
 
-// matcherLogger is rule_matcher's module logger.
-var matcherLogger Logger = logx.Get("backend.utils.rule_matcher")
-
-// IsValidDomain is is_valid_domain. allowDNSLabels admits underscores and
-// leading/trailing hyphens in labels (rule tests); domain discovery keeps the
-// strict hostname form.
-func IsValidDomain(query string, allowDNSLabels bool) bool {
-	if query == "" || len(query) > 253 || !isASCII(query) {
-		// Non-ASCII text can never satisfy either label pattern.
-		return false
-	}
-	if strings.Contains(query, ".") {
-		allDigits := true
-		for _, part := range strings.Split(query, ".") {
-			if !pyIsASCIIDigits(part) {
-				allDigits = false
-				break
-			}
-		}
-		if allDigits {
-			// Invalid dotted IPs must not re-enter discovery as hostnames after
-			// ip_address rejects them; ordinary numeric labels like 3com remain valid.
-			return false
-		}
-	}
-	for _, label := range strings.Split(query, ".") {
-		if allowDNSLabels {
-			if len(label) < 1 || len(label) > 63 {
-				return false
-			}
-			for i := 0; i < len(label); i++ {
-				c := label[i]
-				if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_' || c == '-') {
-					return false
-				}
-			}
-		} else if !validDNSLabel(label) {
-			return false
-		}
-	}
-	return true
+// Logger is the part of the application logger the matcher writes to
+// (*logx.Logger satisfies it; tests may pass their own).
+type Logger interface {
+	Debugf(format string, args ...any)
+	Warningf(format string, args ...any)
+	Errorf(format string, args ...any)
 }
 
-// IsValidIP is is_valid_ip.
-func IsValidIP(query string) bool { return isValidIP(query) }
+var matcherLogger Logger = logx.Get("backend.utils.rule_matcher")
+
+var (
+	strictHost = regexp.MustCompile(`^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$`)
+	dnsName    = regexp.MustCompile(`^[a-zA-Z0-9_\-]{1,63}(?:\.[a-zA-Z0-9_\-]{1,63})*$`)
+)
+
+// IsValidDomain reports a valid host name. allowDNSLabels admits
+// underscores and leading/trailing hyphens in labels (rule tests); domain
+// discovery keeps the strict host name form.
+func IsValidDomain(query string, allowDNSLabels bool) bool {
+	if query == "" || len(query) > 253 {
+		return false
+	}
+	// A malformed dotted IP must not re-enter discovery as a host name;
+	// numeric labels such as 3com stay valid.
+	if strings.Contains(query, ".") && !slices.ContainsFunc(strings.Split(query, "."), func(p string) bool { return !asciiDigits(p) }) {
+		return false
+	}
+	if allowDNSLabels {
+		return dnsName.MatchString(query)
+	}
+	return strictHost.MatchString(query)
+}
 
 // NormalizeMatchQuery ignores one DNS root dot without turning a dotted IP
 // input into an address.
 func NormalizeMatchQuery(query string) string {
-	if strings.HasSuffix(query, ".") && !isValidIP(query[:len(query)-1]) {
-		return query[:len(query)-1]
+	if trimmed, ok := strings.CutSuffix(query, "."); ok && !IsValidIP(trimmed) {
+		return trimmed
 	}
 	return query
 }
 
-// ParseRuleLine is parse_rule_line: the rule type and value of one line in the
-// Clash, MosDNS or list dialects. ok=false is Python's None.
+// ParseRuleLine reads the rule type and value of one line in the Clash,
+// MosDNS or plain list dialects; ok is false for comments and blank lines.
 func ParseRuleLine(line string) (ruleType, ruleValue string, ok bool) {
-	line = pystr.Strip(line)
+	line = strings.TrimSpace(line)
 	if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "!") || strings.HasPrefix(line, "//") {
 		return "", "", false
 	}
-	if strings.HasPrefix(line, "-") {
-		line = pystr.Strip(line[1:])
-		if line == "" {
+	if rest, isItem := strings.CutPrefix(line, "-"); isItem { // a YAML list item
+		if line = strings.TrimSpace(rest); line == "" {
 			return "", "", false
 		}
 	}
-	if i := strings.IndexByte(line, '#'); i >= 0 {
-		line = pystr.Strip(line[:i])
-		if line == "" {
+	if before, _, comment := strings.Cut(line, "#"); comment {
+		if line = strings.TrimSpace(before); line == "" {
 			return "", "", false
 		}
 	}
-	line = pyStripChars(line, `'"`)
+	line = strings.Trim(line, `'"`)
 
-	// 1. Clash/YAML comma separated.
-	if i := strings.IndexByte(line, ','); i >= 0 {
-		ruleType = pystr.Upper(pystr.Strip(line[:i]))
-		ruleValue = pystr.Strip(line[i+1:])
-		// no-resolve is a parameter, not part of the value; keeping it would
-		// break IP matching and duplicate detection.
-		if strings.HasSuffix(pystr.Lower(ruleValue), ",no-resolve") {
-			runes := []rune(ruleValue)
-			ruleValue = pystr.Strip(string(runes[:len(runes)-len(",no-resolve")]))
+	// 1. Clash/YAML: TYPE,value[,no-resolve]. no-resolve is a parameter; kept
+	// in the value it would break IP matching and duplicate detection.
+	if head, value, found := strings.Cut(line, ","); found {
+		value = strings.TrimSpace(value)
+		if strings.HasSuffix(strings.ToLower(value), ",no-resolve") {
+			value = strings.TrimSpace(value[:len(value)-len(",no-resolve")])
 		}
-		return ruleType, ruleValue, true
+		return strings.ToUpper(strings.TrimSpace(head)), value, true
 	}
-
-	// 2. MosDNS (domain: / full: / keyword: / regexp: / ip:).
-	if i := strings.IndexByte(line, ':'); i >= 0 {
-		prefix := pystr.Lower(pystr.Strip(line[:i]))
-		value := pystr.Strip(line[i+1:])
-		if prefix == "payload" && value == "" {
-			return "", "", false
-		}
-		switch prefix {
+	// 2. MosDNS: domain: / full: / keyword: / regexp: / ip:
+	if head, value, found := strings.Cut(line, ":"); found {
+		value = strings.TrimSpace(value)
+		switch strings.ToLower(strings.TrimSpace(head)) {
+		case "payload": // the header line of a YAML rule set
+			if value == "" {
+				return "", "", false
+			}
 		case "domain":
 			return "DOMAIN-SUFFIX", value, true
 		case "full":
@@ -125,36 +111,34 @@ func ParseRuleLine(line string) (ruleType, ruleValue string, ok bool) {
 			return "IP", value, true
 		}
 	}
-
-	// 3. List format.
+	// 3. Lists: +.example.com / *.example.com / .example.com
 	switch {
 	case strings.HasPrefix(line, "+."):
-		return "DOMAIN-SUFFIX", pystr.Strip(line[2:]), true
+		return "DOMAIN-SUFFIX", strings.TrimSpace(line[2:]), true
 	case strings.HasPrefix(line, "*."):
-		return "DIRECT-SUBDOMAIN", pystr.Strip(line[2:]), true
+		return "DIRECT-SUBDOMAIN", strings.TrimSpace(line[2:]), true
 	case strings.HasPrefix(line, ".") && !strings.HasPrefix(line, ".."):
-		return "SUBDOMAIN-ONLY", pystr.Strip(line[1:]), true
+		return "SUBDOMAIN-ONLY", strings.TrimSpace(line[1:]), true
 	}
-
-	// 4. Bare IP or CIDR.
-	if _, ok := parseIPAddress(line); ok {
+	// 4. A bare IP or CIDR, 5. otherwise an exact domain.
+	if IsValidIP(line) {
 		return "IP", line, true
 	}
-	if _, ok := parseIPNetwork(line); ok {
+	if _, ok := parseNetwork(line); ok {
 		return "IP-CIDR", line, true
 	}
-	// 5. Exact domain.
 	return "DOMAIN", line, true
 }
 
-// MatchDomain is match_domain.
+// MatchDomain matches a domain against one domain rule. DOMAIN-REGEX ignores
+// case like Mihomo; REGEX/REGEXP (MosDNS) run on the lowercased pattern.
 func MatchDomain(domain, ruleType, ruleValue string) bool {
-	domain = pystr.Lower(domain)
+	domain = strings.ToLower(domain)
 	if ruleType == "DOMAIN-REGEX" {
 		re, err := CompilePyRegex(ruleValue, true)
 		return err == nil && re.Search(domain)
 	}
-	ruleValue = pystr.Lower(ruleValue)
+	ruleValue = strings.ToLower(ruleValue)
 	switch ruleType {
 	case "DOMAIN":
 		return domain == ruleValue
@@ -163,16 +147,10 @@ func MatchDomain(domain, ruleType, ruleValue string) bool {
 	case "DOMAIN-KEYWORD":
 		return strings.Contains(domain, ruleValue)
 	case "SUBDOMAIN-ONLY":
-		if ruleValue == "" || !strings.HasSuffix(domain, "."+ruleValue) {
-			return false
-		}
-		return domain != ruleValue
+		return ruleValue != "" && strings.HasSuffix(domain, "."+ruleValue)
 	case "DIRECT-SUBDOMAIN":
-		if ruleValue == "" || !strings.HasSuffix(domain, "."+ruleValue) {
-			return false
-		}
-		prefix := domain[:len(domain)-(len(ruleValue)+1)]
-		return prefix != "" && !strings.Contains(prefix, ".")
+		prefix, found := strings.CutSuffix(domain, "."+ruleValue)
+		return ruleValue != "" && found && prefix != "" && !strings.Contains(prefix, ".")
 	case "REGEX", "REGEXP":
 		re, err := CompilePyRegex(ruleValue, false)
 		return err == nil && re.Search(domain)
@@ -180,57 +158,52 @@ func MatchDomain(domain, ruleType, ruleValue string) bool {
 	return false
 }
 
-// MatchIP is match_ip.
+// MatchIP matches an IP address against an IP, IP-CIDR or IP-CIDR6 rule.
 func MatchIP(ipText, ruleType, ruleValue string) bool {
-	ip, ok := parseIPAddress(ipText)
-	if !ok {
-		return false
-	}
-	return matchParsedIP(ip, ruleType, ruleValue)
+	ip, ok := parseAddr(ipText)
+	return ok && matchAddr(ip, ruleType, ruleValue)
 }
 
-func matchParsedIP(ip ipAddr, ruleType, ruleValue string) bool {
+func matchAddr(ip netip.Addr, ruleType, ruleValue string) bool {
 	switch ruleType {
 	case "IP-CIDR", "IP-CIDR6":
-		network, ok := parseIPNetwork(ruleValue)
-		return ok && network.contains(ip)
+		network, ok := parseNetwork(ruleValue)
+		return ok && network.Contains(ip.WithZone(""))
 	case "IP":
-		other, ok := parseIPAddress(ruleValue)
+		other, ok := parseAddr(ruleValue)
 		return ok && other == ip
 	}
 	return false
 }
 
-// MatchQuery is match_query: classify the query as IP or domain, then match.
+// MatchQuery classifies the query as IP or domain, then matches one rule.
 func MatchQuery(query, ruleType, ruleValue string) bool {
 	query = NormalizeMatchQuery(query)
-	if isValidIP(query) {
+	if IsValidIP(query) {
 		return MatchIP(query, ruleType, ruleValue)
 	}
-	if IsValidDomain(query, true) {
-		return MatchDomain(query, ruleType, ruleValue)
-	}
-	return false
+	return IsValidDomain(query, true) && MatchDomain(query, ruleType, ruleValue)
 }
 
 // rulesetLine is one decoded provider entry and its original display line.
 type rulesetLine struct{ value, source string }
 
-// iterRulesetLines is _iter_ruleset_lines: decoded rules and original display
-// lines for a "text" or "yaml" provider body.
-func iterRulesetLines(content, format string) iter.Seq[rulesetLine] {
+// rulesetLines yields the entries of a "text" or "yaml" provider body.
+func rulesetLines(content, format string) iter.Seq[rulesetLine] {
 	return func(yield func(rulesetLine) bool) {
 		switch format {
 		case "text":
 			first := true
-			iterRuleLines(content, func(raw string) bool {
+			for raw := range lines(content) {
 				value := raw
 				if first {
 					value = strings.TrimPrefix(raw, "\ufeff")
 				}
 				first = false
-				return yield(rulesetLine{pystr.Strip(value), pystr.Strip(raw)})
-			})
+				if !yield(rulesetLine{strings.TrimSpace(value), strings.TrimSpace(raw)}) {
+					return
+				}
+			}
 		case "yaml":
 			for _, entry := range yamlPayloadLines(content) {
 				if !yield(entry) {
@@ -241,309 +214,268 @@ func iterRulesetLines(content, format string) iter.Seq[rulesetLine] {
 	}
 }
 
-// yamlPayloadLines decodes the single top-level `payload:` sequence of plain
-// string scalars; anything else (not a mapping, duplicate or missing payload,
-// non-string or multi-line entries, YAML errors) yields nothing, exactly like
-// the Python generator.
-//
-// Python composes with CSafeLoader (libyaml): the PyYAML port runs with
-// libyaml's scanner rules (ComposeOptions.Libyaml: tabs, byte order marks,
-// ":" in flow scalars, surrogate escapes) and libyaml's marks, which leave out
-// a byte order mark at the start of the stream (Python's line lookup then
-// runs one character early; that is kept). gopkg.in/yaml.v3 read some
-// documents differently ("%YAML 1.2", "[a,0:]", multi-line scalars).
+// yamlPayloadLines reads the single top-level `payload:` sequence of
+// one-line string scalars. Anything else (not one mapping document, a
+// missing or repeated payload key, other entries) yields nothing. A block
+// entry is shown as its source line, a flow entry as its value.
 func yamlPayloadLines(content string) []rulesetLine {
-	root, err := pyyaml.ComposeWith(content, pyyaml.ComposeOptions{Libyaml: true})
-	if err != nil || root == nil || root.Kind != pyyaml.MappingNode {
+	decoder := yaml.NewDecoder(strings.NewReader(content))
+	var doc, extra yaml.Node
+	if decoder.Decode(&doc) != nil || !errors.Is(decoder.Decode(&extra), io.EOF) ||
+		len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
 		return nil
 	}
-	var payloads []*pyyaml.Node
-	for _, pair := range root.Pairs {
-		if pair[0].Kind == pyyaml.ScalarNode && pair[0].Value == "payload" {
-			payloads = append(payloads, pair[1])
+	var payload *yaml.Node
+	root := doc.Content[0]
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Kind == yaml.ScalarNode && root.Content[i].Value == "payload" {
+			if payload != nil {
+				return nil
+			}
+			payload = root.Content[i+1]
 		}
 	}
-	if len(payloads) != 1 || payloads[0].Kind != pyyaml.SequenceNode {
+	if payload == nil || payload.Kind != yaml.SequenceNode {
 		return nil
 	}
-	payload := payloads[0]
-	for _, node := range payload.Items {
-		if node.Kind != pyyaml.ScalarNode || node.Tag != pyyaml.TagStr || strings.ContainsAny(node.Value, "\n\r") {
+	for _, node := range payload.Content {
+		if node.Kind != yaml.ScalarNode || node.ShortTag() != "!!str" || strings.ContainsAny(node.Value, "\n\r") {
 			return nil
 		}
 	}
-	result := make([]rulesetLine, 0, len(payload.Items))
-	var runes []rune
-	for _, node := range payload.Items {
-		if payload.FlowStyle {
-			result = append(result, rulesetLine{pystr.Strip(node.Value), node.Value})
-			continue
+	sourceLines := strings.Split(content, "\n")
+	result := make([]rulesetLine, 0, len(payload.Content))
+	for _, node := range payload.Content {
+		source := node.Value
+		if payload.Style&yaml.FlowStyle == 0 && node.Line >= 1 && node.Line <= len(sourceLines) {
+			source = strings.TrimSpace(sourceLines[node.Line-1])
 		}
-		if runes == nil {
-			runes = []rune(content)
-		}
-		// start = content.rfind('\n', 0, start_mark.index) + 1
-		// end = content.find('\n', end_mark.index)
-		from := 0
-		for i := min(node.Start.Index, len(runes)) - 1; i >= 0; i-- {
-			if runes[i] == '\n' {
-				from = i + 1
-				break
-			}
-		}
-		to := len(runes)
-		for i := max(node.End.Index, 0); i < len(runes); i++ {
-			if runes[i] == '\n' {
-				to = i
-				break
-			}
-		}
-		source := ""
-		if from < to {
-			source = string(runes[from:to])
-		}
-		result = append(result, rulesetLine{pystr.Strip(node.Value), pystr.Strip(source)})
+		result = append(result, rulesetLine{strings.TrimSpace(node.Value), source})
 	}
 	return result
 }
 
-// parseRulesetLine is _parse_ruleset_line: provider entries interpreted
-// according to the selected Mihomo behavior. Cross-format fallbacks of
-// ParseRuleLine must not create routing hits.
+// parseRulesetLine interprets a provider entry by the rule set's Mihomo
+// behavior. ParseRuleLine's cross-dialect fallbacks must not create routing
+// hits here.
 func parseRulesetLine(value, behavior string) (kind, payload string, ok bool) {
 	if value == "" || strings.HasPrefix(value, "#") || strings.HasPrefix(value, "//") || strings.HasPrefix(value, "!") {
 		return "", "", false
 	}
 	switch behavior {
 	case "ipcidr":
-		if CIDRError(value) != "" {
-			return "", "", false
-		}
-		return "IP-CIDR", value, true
+		return "IP-CIDR", value, CIDRError(value) == ""
 	case "domain":
-		if !validPattern(value) {
-			return "", "", false
-		}
-		value = pystr.Lower(value)
-		if strings.Contains(value, "*") && !(strings.HasPrefix(value, "*.") && !strings.Contains(value[2:], "*")) {
-			prefix := ""
-			if strings.HasPrefix(value, "+.") {
-				prefix, value = `(?:[^.]+\.)*`, value[2:]
-			} else if strings.HasPrefix(value, ".") {
-				prefix, value = `(?:[^.]+\.)+`, value[1:]
-			}
-			parts := strings.Split(value, ".")
-			for i, part := range parts {
-				if part == "*" {
-					parts[i] = `[^.]+`
-				} else {
-					parts[i] = pyReEscape(part)
-				}
-			}
-			return "DOMAIN-REGEX", "^" + prefix + strings.Join(parts, `\.`) + "$", true
-		}
-		switch {
-		case strings.HasPrefix(value, "+."):
-			return "DOMAIN-SUFFIX", value[2:], true
-		case strings.HasPrefix(value, "*."):
-			return "DIRECT-SUBDOMAIN", value[2:], true
-		case strings.HasPrefix(value, "."):
-			return "SUBDOMAIN-ONLY", value[1:], true
-		}
-		return "DOMAIN", value, true
+		return domainPattern(value)
 	case "classical":
 	default:
 		return "", "", false
 	}
-	if !strings.Contains(value, ",") && IsRuleType(pystr.Upper(value)) {
+	if !strings.Contains(value, ",") && IsRuleType(strings.ToUpper(value)) {
 		return "", "", false
 	}
-	value, err := classicalLine(value)
-	if err != nil {
-		return "", "", false
-	}
-	if classicalLineError(value) != "" {
+	value, err := ClassicalLine(value)
+	if err != nil || ClassicalLineError(value) != "" {
 		return "", "", false
 	}
 	head, rest, found := strings.Cut(value, ",")
-	kind = pystr.Upper(pystr.Strip(head))
-	if !found {
+	kind = strings.ToUpper(strings.TrimSpace(head))
+	switch {
+	case !found:
 		return "", "", false
-	}
-	switch kind {
-	case "DOMAIN-REGEX":
-		return kind, pystr.Strip(rest), true
-	case "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "IP-CIDR", "IP-CIDR6":
+	case kind == "DOMAIN-REGEX":
+		return kind, strings.TrimSpace(rest), true
+	case kind == "DOMAIN", kind == "DOMAIN-SUFFIX", kind == "DOMAIN-KEYWORD", kind == "IP-CIDR", kind == "IP-CIDR6":
 		first, _, _ := strings.Cut(rest, ",")
-		return kind, pystr.Strip(first), true
+		return kind, strings.TrimSpace(first), true
 	}
 	return "", "", false
 }
 
-// ruleEntry is one parsed provider entry handed to newRuleIndex.
-type ruleEntry struct{ kind, value, line string }
-
-type domainPattern struct {
-	position   int
-	keyword    string
-	hasKeyword bool
-	pattern    *PyRegex
+// domainPattern reads one entry of a domain-behavior rule set; wildcards
+// other than a leading "*." become a regex.
+func domainPattern(value string) (kind, payload string, ok bool) {
+	if !ValidPattern(value) {
+		return "", "", false
+	}
+	value = strings.ToLower(value)
+	if strings.Contains(value, "*") && !(strings.HasPrefix(value, "*.") && !strings.Contains(value[2:], "*")) {
+		prefix := ""
+		if rest, found := strings.CutPrefix(value, "+."); found {
+			prefix, value = `(?:[^.]+\.)*`, rest
+		} else if rest, found := strings.CutPrefix(value, "."); found {
+			prefix, value = `(?:[^.]+\.)+`, rest
+		}
+		parts := strings.Split(value, ".")
+		for i, part := range parts {
+			if part == "*" {
+				parts[i] = `[^.]+`
+			} else {
+				parts[i] = regexp.QuoteMeta(part)
+			}
+		}
+		return "DOMAIN-REGEX", "^" + prefix + strings.Join(parts, `\.`) + "$", true
+	}
+	for _, p := range []struct{ prefix, kind string }{{"+.", "DOMAIN-SUFFIX"}, {"*.", "DIRECT-SUBDOMAIN"}, {".", "SUBDOMAIN-ONLY"}} {
+		if rest, found := strings.CutPrefix(value, p.prefix); found {
+			return p.kind, rest, true
+		}
+	}
+	return "DOMAIN", value, true
 }
 
-// ruleIndex indexes common rule types while retaining the first matching
-// source line. Dictionaries hold an index into one source-line slice; retained
-// entries stay in source order, so skipping duplicates and unsupported rules
-// cannot change the earliest match.
+// ruleIndex holds the entries of one rule set by kind. Every map stores the
+// position of the entry's source line; entries keep their source order, so
+// skipping duplicates and unsupported rules cannot change the earliest hit.
 type ruleIndex struct {
 	exact, suffix, subdomain, directSubdomain map[string]int
-	patterns                                  []domainPattern
-	ips                                       map[ipAddr]int
-	networks                                  [2]networkSet
+	patterns                                  []indexedPattern // keywords and regexes, in order
+	ips                                       map[netip.Addr]int
+	networks                                  map[netip.Prefix]int
+	prefixLengths                             [2][]int // present prefix lengths per family
 	lines                                     []string
-	// Unsupported counts DOMAIN-REGEX/REGEX entries Python compiles but the
-	// Go engine cannot run; they never match here.
-	unsupported int
 }
 
-type networkSet struct {
-	prefixes []int
-	byPrefix map[int]map[u128]int
+type indexedPattern struct {
+	position int
+	keyword  string
+	regex    *Regex
 }
+
+// ruleEntry is one parsed provider entry and its display line.
+type ruleEntry struct{ kind, value, line string }
 
 func newRuleIndex(entries iter.Seq[ruleEntry]) *ruleIndex {
 	index := &ruleIndex{
 		exact: map[string]int{}, suffix: map[string]int{}, subdomain: map[string]int{}, directSubdomain: map[string]int{},
-		ips: map[ipAddr]int{},
+		ips: map[netip.Addr]int{}, networks: map[netip.Prefix]int{},
 	}
-	index.networks[0].byPrefix = map[int]map[u128]int{}
-	index.networks[1].byPrefix = map[int]map[u128]int{}
+	add := func(line string) int {
+		index.lines = append(index.lines, line)
+		return len(index.lines) - 1
+	}
+	addFirst := func(target map[string]int, key, line string) {
+		if _, seen := target[key]; !seen {
+			target[key] = add(line)
+		}
+	}
 	for entry := range entries {
-		switch entry.kind {
-		case "DOMAIN", "DOMAIN-SUFFIX", "SUBDOMAIN-ONLY", "DIRECT-SUBDOMAIN":
-			var target map[string]int
-			switch entry.kind {
-			case "DOMAIN":
-				target = index.exact
-			case "DOMAIN-SUFFIX":
-				target = index.suffix
-			case "SUBDOMAIN-ONLY":
-				target = index.subdomain
-			default:
-				target = index.directSubdomain
-			}
-			key := pystr.Lower(entry.value)
-			if _, seen := target[key]; !seen {
-				target[key] = len(index.lines)
-				index.lines = append(index.lines, entry.line)
-			}
+		kind, value, line := entry.kind, entry.value, entry.line
+		switch kind {
+		case "DOMAIN":
+			addFirst(index.exact, strings.ToLower(value), line)
+		case "DOMAIN-SUFFIX":
+			addFirst(index.suffix, strings.ToLower(value), line)
+		case "SUBDOMAIN-ONLY":
+			addFirst(index.subdomain, strings.ToLower(value), line)
+		case "DIRECT-SUBDOMAIN":
+			addFirst(index.directSubdomain, strings.ToLower(value), line)
 		case "DOMAIN-KEYWORD":
-			index.patterns = append(index.patterns, domainPattern{position: len(index.lines), keyword: pystr.Lower(entry.value), hasKeyword: true})
-			index.lines = append(index.lines, entry.line)
+			index.patterns = append(index.patterns, indexedPattern{position: add(line), keyword: strings.ToLower(value)})
 		case "REGEX", "REGEXP", "DOMAIN-REGEX":
-			// match_domain has always lowercased both pattern and query. Mihomo
-			// DOMAIN-REGEX ignores case without rewriting escapes.
-			var pattern *PyRegex
+			// MosDNS regexes have always run lowercased; DOMAIN-REGEX ignores
+			// case without rewriting escapes, like Mihomo.
+			var re *Regex
 			var err error
-			if entry.kind == "DOMAIN-REGEX" {
-				pattern, err = CompilePyRegex(entry.value, true)
+			if kind == "DOMAIN-REGEX" {
+				re, err = CompilePyRegex(value, true)
 			} else {
-				pattern, err = CompilePyRegex(pystr.Lower(entry.value), false)
+				re, err = CompilePyRegex(strings.ToLower(value), false)
 			}
-			if err != nil {
-				if !IsPyRegexError(err) {
-					index.unsupported++
-				}
-				continue
+			if err == nil {
+				index.patterns = append(index.patterns, indexedPattern{position: add(line), regex: re})
 			}
-			index.patterns = append(index.patterns, domainPattern{position: len(index.lines), pattern: pattern})
-			index.lines = append(index.lines, entry.line)
 		case "IP":
-			ip, ok := parseIPAddress(entry.value)
-			if !ok {
-				continue
-			}
-			if _, seen := index.ips[ip]; !seen {
-				index.ips[ip] = len(index.lines)
-				index.lines = append(index.lines, entry.line)
+			if ip, ok := parseAddr(value); ok {
+				if _, seen := index.ips[ip]; !seen {
+					index.ips[ip] = add(line)
+				}
 			}
 		case "IP-CIDR", "IP-CIDR6":
-			network, ok := parseIPNetwork(entry.value)
+			network, ok := parseNetwork(value)
 			if !ok {
 				continue
 			}
-			set := &index.networks[network.ver/6]
-			byNetwork, exists := set.byPrefix[network.prefix]
-			if !exists {
-				byNetwork = map[u128]int{}
-				set.byPrefix[network.prefix] = byNetwork
-				set.prefixes = append(set.prefixes, network.prefix)
-			}
-			if _, seen := byNetwork[network.base]; !seen {
-				byNetwork[network.base] = len(index.lines)
-				index.lines = append(index.lines, entry.line)
+			if _, seen := index.networks[network]; !seen {
+				index.networks[network] = add(line)
+				family := &index.prefixLengths[family(network.Addr())]
+				if !slices.Contains(*family, network.Bits()) {
+					*family = append(*family, network.Bits())
+				}
 			}
 		}
 	}
 	return index
 }
 
-func earlier(current int, hasCurrent bool, candidate int, hasCandidate bool) (int, bool) {
-	if hasCandidate && (!hasCurrent || candidate < current) {
-		return candidate, true
+// family is 0 for IPv4, 1 for IPv6.
+func family(addr netip.Addr) int {
+	if addr.Is4() {
+		return 0
 	}
-	return current, hasCurrent
+	return 1
 }
 
-// matchDomain is _RuleIndex.match_domain; the domain is already lowercase.
+// earliest keeps the smaller of two line positions (-1 = none).
+func earliest(best int, candidate int, found bool) int {
+	if found && (best < 0 || candidate < best) {
+		return candidate
+	}
+	return best
+}
+
+func (index *ruleIndex) line(position int) (string, bool) {
+	if position < 0 {
+		return "", false
+	}
+	return index.lines[position], true
+}
+
+// matchDomain returns the earliest line hitting a lowercase domain.
 func (index *ruleIndex) matchDomain(domain string) (string, bool) {
-	best, ok := index.exact[domain]
-	suffix := domain
-	isSubdomain := false
-	for suffix != "" {
-		candidate, found := index.suffix[suffix]
-		best, ok = earlier(best, ok, candidate, found)
-		if isSubdomain {
-			candidate, found = index.subdomain[suffix]
-			best, ok = earlier(best, ok, candidate, found)
+	position, found := index.exact[domain]
+	best := earliest(-1, position, found)
+	for suffix, sub := domain, false; suffix != ""; sub = true {
+		position, found = index.suffix[suffix]
+		best = earliest(best, position, found)
+		if sub {
+			position, found = index.subdomain[suffix]
+			best = earliest(best, position, found)
 		}
-		dot := strings.IndexByte(suffix, '.')
-		if dot < 0 {
+		_, rest, more := strings.Cut(suffix, ".")
+		if !more {
 			break
 		}
-		suffix = suffix[dot+1:]
-		isSubdomain = true
+		suffix = rest
 	}
-	if dot := strings.IndexByte(domain, '.'); dot >= 0 {
-		candidate, found := index.directSubdomain[domain[dot+1:]]
-		best, ok = earlier(best, ok, candidate, found)
+	if _, parent, more := strings.Cut(domain, "."); more {
+		position, found = index.directSubdomain[parent]
+		best = earliest(best, position, found)
 	}
 	for _, p := range index.patterns {
-		if ok && p.position >= best {
+		if best >= 0 && p.position >= best {
 			break
 		}
-		if (p.hasKeyword && strings.Contains(domain, p.keyword)) || (p.pattern != nil && p.pattern.Search(domain)) {
-			best, ok = p.position, true
+		if p.regex == nil && strings.Contains(domain, p.keyword) || p.regex != nil && p.regex.Search(domain) {
+			best = p.position
 			break
 		}
 	}
-	if !ok {
-		return "", false
-	}
-	return index.lines[best], true
+	return index.line(best)
 }
 
-// matchIP is _RuleIndex.match_ip.
-func (index *ruleIndex) matchIP(ip ipAddr) (string, bool) {
-	best, ok := index.ips[ip]
-	set := &index.networks[ip.ver/6]
-	for _, prefix := range set.prefixes {
-		candidate, found := set.byPrefix[prefix][ip.v.and(maskFor(ip.ver, prefix))]
-		best, ok = earlier(best, ok, candidate, found)
+// matchIP returns the earliest line hitting an address: one lookup per
+// prefix length present (at most 33 for IPv4, 129 for IPv6).
+func (index *ruleIndex) matchIP(ip netip.Addr) (string, bool) {
+	position, found := index.ips[ip]
+	best := earliest(-1, position, found)
+	bare := ip.WithZone("")
+	for _, bits := range index.prefixLengths[family(ip)] {
+		network, _ := bare.Prefix(bits)
+		position, found = index.networks[network]
+		best = earliest(best, position, found)
 	}
-	if !ok {
-		return "", false
-	}
-	return index.lines[best], true
+	return index.line(best)
 }
 
 // LoadContent returns the text of a rule set: the reference item and its
@@ -551,15 +483,14 @@ func (index *ruleIndex) matchIP(ip ipAddr) (string, bool) {
 type LoadContent func(item, library *jsonx.Object) (string, error)
 
 // IndexKey opts a loader into index reuse across references that share one
-// library entry. ok=false (Python's None) keeps a per-item index.
+// library entry; ok=false keeps a per-item index.
 type IndexKey func(item, library *jsonx.Object) (key string, ok bool)
 
 type indexSlot struct {
-	source    string
-	hasSource bool
-	index     int
-	behavior  string
-	format    string
+	source   string // IndexKey's key, or "" with the item position
+	position int
+	behavior string
+	format   string
 }
 
 // RuleConfigMatcher matches a domain or IP against rule_configs in order and
@@ -578,13 +509,12 @@ type RuleConfigMatcher struct {
 }
 
 type matcherItem struct {
-	index int
-	item  *jsonx.Object
+	position int // 1-based over all rules, disabled ones included (the rule list's row numbers)
+	item     *jsonx.Object
 }
 
-// NewRuleConfigMatcher builds a matcher. ruleConfigs and ruleLibrary hold
-// *jsonx.Object entries; numbering counts disabled rules too, like the row
-// numbers shown in the rule list. indexKey and logger may be nil.
+// NewRuleConfigMatcher builds a matcher over rule_configs and rule_library
+// (lists of objects). indexKey and logger may be nil.
 func NewRuleConfigMatcher(ruleConfigs, ruleLibrary []any, load LoadContent, indexKey IndexKey, logger Logger) *RuleConfigMatcher {
 	if logger == nil {
 		logger = matcherLogger
@@ -593,115 +523,83 @@ func NewRuleConfigMatcher(ruleConfigs, ruleLibrary []any, load LoadContent, inde
 		library: map[string]*jsonx.Object{}, formats: map[int]string{}, load: load,
 		indexKey: indexKey, logger: logger, indexes: map[indexSlot]*ruleIndex{},
 	}
-	for position, entry := range ruleConfigs {
-		item, ok := entry.(*jsonx.Object)
-		if !ok {
-			continue
-		}
-		if enabled(item, "enabled") && enabled(item, "library_enabled") {
-			m.items = append(m.items, matcherItem{position + 1, item})
-		}
-	}
-	for _, entry := range ruleLibrary {
-		if item, ok := entry.(*jsonx.Object); ok {
-			if id, _ := item.Value("id").(string); id != "" {
-				m.library[id] = item
+	for i, entry := range ruleConfigs {
+		if item, ok := entry.(*jsonx.Object); ok && enabled(item) {
+			m.items = append(m.items, matcherItem{i + 1, item})
+			if itemType(item) == "ruleset" {
+				// The format the converter emits: a declared text provider
+				// does not gain YAML rules because its body has a payload.
+				m.formats[i+1] = RulesetFormat(item, ruleLibrary, "")
 			}
 		}
 	}
-	for _, it := range m.items {
-		if itemType(it.item) == "ruleset" {
-			m.formats[it.index] = RulesetFormat(it.item, ruleLibrary, "")
+	for _, entry := range ruleLibrary {
+		if item, ok := entry.(*jsonx.Object); ok && item.GetString("id") != "" {
+			m.library[item.GetString("id")] = item
 		}
 	}
 	return m
 }
 
-// enabled is item.get(key, True) used as a truth value.
-func enabled(item *jsonx.Object, key string) bool {
-	value, ok := item.Get(key)
-	return !ok || jsonx.Truthy(value)
+// enabled: rules and their library entries are on unless switched off.
+func enabled(item *jsonx.Object) bool {
+	return jsonx.Truthy(item.GetOr("enabled", true)) && jsonx.Truthy(item.GetOr("library_enabled", true))
 }
 
 func itemType(item *jsonx.Object) string {
-	if value, ok := item.Get("itemType"); ok {
-		text, _ := value.(string)
-		return text
-	}
-	return "rule"
+	kind, _ := item.GetOr("itemType", "rule").(string)
+	return kind
 }
 
 func (m *RuleConfigMatcher) libraryOf(item *jsonx.Object) *jsonx.Object {
-	id, _ := item.GetOr("library_rule_id", "").(string)
-	return m.library[id]
+	return m.library[item.GetString("library_rule_id")]
 }
 
-func rulesetBehavior(item, library *jsonx.Object) any {
+// rulesetBehavior is the reference's behavior, else the library entry's,
+// else "domain".
+func rulesetBehavior(item, library *jsonx.Object) string {
 	if value, ok := item.Get("behavior"); ok {
-		return value
+		text, _ := value.(string)
+		return text
 	}
 	if library != nil {
 		if value, ok := library.Get("behavior"); ok {
-			return value
+			text, _ := value.(string)
+			return text
 		}
 	}
 	return "domain"
 }
 
-func behaviorText(value any) string {
-	if text, ok := value.(string); ok {
-		return text
-	}
-	return "\x00" + jsonx.Repr(value)
-}
-
 func (m *RuleConfigMatcher) slot(position int, item, library *jsonx.Object) indexSlot {
-	slot := indexSlot{index: position, behavior: behaviorText(rulesetBehavior(item, library)), format: m.formats[position]}
+	slot := indexSlot{position: position, behavior: rulesetBehavior(item, library), format: m.formats[position]}
 	if m.indexKey != nil {
 		if key, ok := m.indexKey(item, library); ok {
-			slot.source, slot.hasSource, slot.index = key, true, 0
+			slot.source, slot.position = key, 0
 		}
 	}
 	return slot
 }
 
 // InvalidateRulesets discards the indexes of the selected references,
-// including every reference sharing the same source; it returns how many
-// indexes were dropped. Callers own retry policy and cached host results.
-func (m *RuleConfigMatcher) InvalidateRulesets(predicate func(item, library *jsonx.Object) bool) int {
+// including every reference sharing the same source, and returns how many
+// were dropped. Callers own retry policy and cached host results.
+func (m *RuleConfigMatcher) InvalidateRulesets(selected func(item, library *jsonx.Object) bool) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	keys := map[indexSlot]struct{}{}
+	dropped := 0
 	for _, it := range m.items {
 		if itemType(it.item) != "ruleset" {
 			continue
 		}
 		library := m.libraryOf(it.item)
-		if predicate(it.item, library) {
-			keys[m.slot(it.index, it.item, library)] = struct{}{}
-		}
-	}
-	dropped := 0
-	for key := range keys {
-		if _, ok := m.indexes[key]; ok {
-			delete(m.indexes, key)
+		slot := m.slot(it.position, it.item, library)
+		if _, built := m.indexes[slot]; built && selected(it.item, library) {
+			delete(m.indexes, slot)
 			dropped++
 		}
 	}
 	return dropped
-}
-
-// UnsupportedRegexCount is the number of regular-expression entries in the
-// built indexes that Python's re accepts but the Go engine cannot run (see
-// UnsupportedRegexError); such entries never match.
-func (m *RuleConfigMatcher) UnsupportedRegexCount() int {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	total := 0
-	for _, index := range m.indexes {
-		total += index.unsupported
-	}
-	return total
 }
 
 // IndexCount is the number of built rule-set indexes (diagnostics and tests).
@@ -724,22 +622,19 @@ func (m *RuleConfigMatcher) rulesetIndex(position int, item, library *jsonx.Obje
 	if index = m.indexes[slot]; index != nil {
 		return index
 	}
-	name := item.GetOr("name", "规则集")
+	name := jsonx.Str(item.GetOr("name", "规则集"))
 	content, err := m.load(item, library)
 	if err != nil {
-		m.logger.Errorf("Error processing ruleset \"%s\": %s", jsonx.Str(name), weburl.SafeErrorDetails(err))
+		m.logger.Errorf("Error processing ruleset \"%s\": %s", name, weburl.SafeErrorDetails(err))
 		content = ""
 	}
 	if content == "" {
-		m.logger.Warningf("Skipping ruleset \"%s\": unable to fetch content", jsonx.Str(name))
+		m.logger.Warningf("Skipping ruleset \"%s\": unable to fetch content", name)
 	}
-	behavior, _ := rulesetBehavior(item, library).(string)
-	format := m.formats[position]
-	// Publish only the complete immutable index to concurrent readers.
+	// Readers only ever see a complete index.
 	index = newRuleIndex(func(yield func(ruleEntry) bool) {
-		for line := range iterRulesetLines(content, format) {
-			kind, value, ok := parseRulesetLine(line.value, behavior)
-			if ok && !yield(ruleEntry{kind, value, line.source}) {
+		for line := range rulesetLines(content, slot.format) {
+			if kind, value, ok := parseRulesetLine(line.value, slot.behavior); ok && !yield(ruleEntry{kind, value, line.source}) {
 				return
 			}
 		}
@@ -749,28 +644,24 @@ func (m *RuleConfigMatcher) rulesetIndex(position int, item, library *jsonx.Obje
 }
 
 // Match returns the first rule or rule set that hits the query (a domain or
-// an IP), or nil. The result mirrors the Python dict: rule_name, rule_type,
-// matched_line, policy, source, priority, rule_id, item_type, behavior.
+// an IP), or nil: rule_name, rule_type, matched_line, policy, source,
+// priority, rule_id, item_type, behavior.
 func (m *RuleConfigMatcher) Match(query string) *jsonx.Object {
 	query = NormalizeMatchQuery(query)
-	ip, isIP := parseIPAddress(query)
+	ip, isIP := parseAddr(query)
 	if !isIP && !IsValidDomain(query, true) {
 		return nil
 	}
-	domain := ""
-	if !isIP {
-		domain = pystr.Lower(query)
-	}
+	domain := strings.ToLower(query)
 	for _, it := range m.items {
 		item := it.item
 		policy := item.GetOr("policy", "DIRECT")
 		switch itemType(item) {
 		case "rule":
-			ruleType := item.GetString("rule_type")
-			ruleValue := item.GetString("value")
-			var matched bool
+			ruleType, ruleValue := item.GetString("rule_type"), item.GetString("value")
+			matched := false
 			if isIP {
-				matched = matchParsedIP(ip, ruleType, ruleValue)
+				matched = matchAddr(ip, ruleType, ruleValue)
 			} else {
 				matched = MatchDomain(domain, ruleType, ruleValue)
 			}
@@ -778,14 +669,14 @@ func (m *RuleConfigMatcher) Match(query string) *jsonx.Object {
 				return jsonx.Obj(
 					"rule_name", ruleType+" 规则", "rule_type", "rule",
 					"matched_line", ruleType+","+ruleValue, "policy", policy,
-					"source", "直接配置的规则", "priority", jsonx.Int(it.index),
+					"source", "直接配置的规则", "priority", jsonx.Int(it.position),
 					"rule_id", item.Value("id"), "item_type", "rule", "behavior", "classical",
 				)
 			}
 		case "ruleset":
 			name := item.GetOr("name", "规则集")
 			library := m.libraryOf(item)
-			index := m.rulesetIndex(it.index, item, library)
+			index := m.rulesetIndex(it.position, item, library)
 			var line string
 			var found bool
 			if isIP {
@@ -797,7 +688,7 @@ func (m *RuleConfigMatcher) Match(query string) *jsonx.Object {
 				return jsonx.Obj(
 					"rule_name", name, "rule_type", "ruleset", "matched_line", line,
 					"policy", policy, "source", "规则集: "+jsonx.Str(name),
-					"priority", jsonx.Int(it.index), "rule_id", item.Value("id"),
+					"priority", jsonx.Int(it.position), "rule_id", item.Value("id"),
 					"item_type", "ruleset", "behavior", rulesetBehavior(item, library),
 				)
 			}

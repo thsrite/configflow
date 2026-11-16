@@ -1,0 +1,89 @@
+package rules
+
+import (
+	"strings"
+	"unicode"
+
+	"configflow/internal/jsonx"
+)
+
+// Accepted differences from the recorded Python results (functional parity,
+// see the S-rules section of server/parity/PROGRESS-config.md). Each
+// predicate names one class; the corpus tests skip or tolerate exactly these.
+
+// pythonOnlyLineBreak: Python's str.splitlines also breaks rule files at
+// \v \f \x1c-\x1e \x85 U+2028 U+2029; Go splits at \n, \r\n and \r only.
+func pythonOnlyLineBreak(text string) bool {
+	return strings.ContainsAny(text, "\v\f\x1c\x1d\x1e\u0085  ")
+}
+
+// scopedNetwork: an IPv6 scope id inside a network ("fe80::%eth0/64");
+// Python keeps it, net/netip refuses zones in prefixes.
+func scopedNetwork(text string) bool {
+	return strings.Contains(text, "%")
+}
+
+// turkishI: Python's IGNORECASE folds İ/ı to i (and ſ to s); RE2 folds
+// ſ but not İ/ı, regexp2 (Match, Sub, look-around patterns) none of them.
+func turkishI(text string) bool {
+	return strings.ContainsAny(text, "İıſ")
+}
+
+// regexMoreLenient: patterns Python's re rejects but the Go engines run
+// (variable-width look-behind, a class escape as range end, flags not at the
+// start or turned on and off, "(?)", an anchor repeated, "\N" without a
+// name). Never the other way round: a pattern Python accepts must compile.
+func regexMoreLenient(pythonRejects bool, goErr error) bool {
+	return pythonRejects && (goErr == nil || !IsPyRegexError(goErr))
+}
+
+// hugeRepeat: repeat counts between 2^31 and 2^32-2 are valid in Python;
+// the Go engines stop at int32 (ErrRepeatTooLarge).
+func hugeRepeat(pattern string) bool {
+	return strings.Contains(pattern, "4294967294")
+}
+
+// pythonIteratesNonList: Python iterates a string's characters or a dict's
+// keys when a group's source field is not a list; Go reads only lists
+// (write validation rejects the rest with the same message either way).
+func pythonIteratesNonList(group *jsonx.Object) bool {
+	for _, field := range []string{"manual_nodes", "subscriptions", "aggregations", "include_groups", "proxies", "proxies_order"} {
+		if value, ok := group.Get(field); ok && value != nil {
+			if _, isList := value.([]any); !isList {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// emptyNonBoundary: Python's \B never matches in an empty string; regexp2's
+// does (an empty string has no word boundary).
+func emptyNonBoundary(pattern, subject string) bool {
+	return subject == "" && strings.Contains(pattern, `\B`)
+}
+
+// idna2003Only: host names only the IDNA 2003 codec accepts: an ASCII label
+// with a fake "xn--" prefix, a label starting with a combining mark.
+func idna2003Only(name string) bool {
+	if strings.Contains(strings.ToLower(name), "xn--") {
+		return true
+	}
+	for _, label := range strings.FieldsFunc(name, func(r rune) bool { return r == '.' }) {
+		if r := []rune(label)[0]; unicode.In(r, unicode.Mn, unicode.Mc, unicode.Me) {
+			return true
+		}
+	}
+	return false
+}
+
+// specialUpper: characters whose upper case is several characters in
+// Python ('ß'.upper() == 'SS'); Go's strings.ToUpper keeps them.
+func specialUpper(text string) bool {
+	for _, r := range text {
+		if unicode.IsLower(r) && unicode.ToUpper(r) == r || r >= 0x1f80 && r <= 0x1fff {
+			return true
+		}
+	}
+	return false
+}

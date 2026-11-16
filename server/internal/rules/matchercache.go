@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -17,10 +16,10 @@ import (
 	"configflow/internal/logx"
 )
 
-// Port of backend/utils/domain_matcher_cache.py: bounded, idle-evicted local
-// rule indexes. Never caches Agent or traffic status.
+// Bounded, idle-evicted local rule indexes (backend/utils/domain_matcher_cache.py)
+// for domain discovery. Never caches Agent or traffic status.
 
-// Defaults of the Python module constants.
+// Defaults of the cache limits.
 const (
 	DefaultMaxMatchers     = 4
 	DefaultMaxHostResults  = 10000
@@ -32,15 +31,15 @@ const (
 // MatcherCacheOptions wires the cache to its environment. Every field except
 // RulesDir is optional.
 type MatcherCacheOptions struct {
-	// RulesDir is get_rules_dir(): DATA_DIR/shared/rules.
+	// RulesDir is the shared rule cache directory (DATA_DIR/shared/rules).
 	RulesDir func() string
 	// StoredLibrary returns the current shared rule_library from the
-	// repository (rule_cache_read_path consults it for legacy cache names).
+	// repository (RuleCacheReadPath consults it for legacy cache names).
 	StoredLibrary func() []any
-	// ValidateRemote is validate_remote_rule_content for url sources; an
-	// error marks the cache file unusable. nil accepts every content.
+	// ValidateRemote checks a url source's cache file against its
+	// declaration; an error marks the file unusable. nil accepts everything.
 	ValidateRemote func(content string, rule *jsonx.Object) error
-	// Clock is time.monotonic() in seconds. nil uses the process clock.
+	// Clock is a monotonic clock in seconds. nil uses the process clock.
 	Clock  func() float64
 	Logger Logger
 
@@ -100,15 +99,17 @@ func NewMatcherCache(opt MatcherCacheOptions) *MatcherCache {
 	return &MatcherCache{opt: opt, order: list.New(), slots: map[cacheSlot]*list.Element{}}
 }
 
-// readKey is _read_key: ('library', id) or the individual item.
+// readKey names what a load read: a library entry, or the individual item.
 type readKey struct {
 	library string
 	item    *jsonx.Object
 }
 
+// libraryKey opts into a shared index only when loading is wholly decided
+// by the library entry (a missing name falls back to the item's name).
 func libraryKey(library *jsonx.Object) (string, bool) {
-	if library != nil && jsonx.Truthy(library.Value("id")) && jsonx.Truthy(library.Value("name")) {
-		return jsonx.Repr(library.Value("id")), true
+	if library != nil && library.GetString("id") != "" && library.GetString("name") != "" {
+		return library.GetString("id"), true
 	}
 	return "", false
 }
@@ -145,9 +146,8 @@ func (s *localSource) retry(item, library *jsonx.Object) {
 	}
 }
 
-// readTextFile reads like Python's open(path, 'r', encoding='utf-8'): strict
-// UTF-8 and universal newlines. It returns stamps taken before and after the
-// read from the open handle.
+// readTextFile reads a UTF-8 text file and returns stamps of the open
+// handle taken before and after the read.
 func readTextFile(path string) (content string, before, after *fileStamp, err error) {
 	handle, err := os.Open(path)
 	if err != nil {
@@ -171,18 +171,13 @@ func readTextFile(path string) (content string, before, after *fileStamp, err er
 	if !utf8.Valid(data) {
 		return "", nil, nil, errUnicode
 	}
-	text := string(data)
-	if strings.Contains(text, "\r") {
-		text = strings.ReplaceAll(text, "\r\n", "\n")
-		text = strings.ReplaceAll(text, "\r", "\n")
-	}
-	return text, before, after, nil
+	return string(data), before, after, nil
 }
 
 var errUnicode = errors.New("invalid utf-8")
 
 // testHookAfterRead runs between the handle's last fstat and the path stat
-// (tests replace the file there, as Python's test does through _file_stamp).
+// (tests replace the file there).
 var testHookAfterRead func(path string)
 
 func stampsEqual(a, b *fileStamp) bool {
@@ -197,8 +192,7 @@ func (s *localSource) load(item, library *jsonx.Object) (string, error) {
 	if library != nil {
 		source = library
 	}
-	name := jsonx.Truthy(nameOf(library, item))
-	if name {
+	if nameOf(library, item) != "" {
 		path := RuleCacheReadPath(source, s.library, s.cache.opt.StoredLibrary(), s.rulesDir)
 		key := readKeyOf(item, library)
 		if previous, ok := s.paths[key]; ok && previous != path {
@@ -249,14 +243,12 @@ func (s *localSource) load(item, library *jsonx.Object) (string, error) {
 	return "", nil
 }
 
-// nameOf is (library_rule or {}).get('name') or item.get('name').
-func nameOf(library, item *jsonx.Object) any {
-	if library != nil {
-		if name := library.Value("name"); jsonx.Truthy(name) {
-			return name
-		}
+// nameOf is the library entry's name, else the item's.
+func nameOf(library, item *jsonx.Object) string {
+	if library != nil && library.GetString("name") != "" {
+		return library.GetString("name")
 	}
-	return item.Value("name")
+	return item.GetString("name")
 }
 
 // CachedMatcher is a RuleConfigMatcher with a bounded host result cache and
@@ -279,7 +271,7 @@ type hostResult struct {
 	result *jsonx.Object
 }
 
-// Match is CachedMatcher.match: the first hit for host, cached per host (also
+// Match is the first hit for host, cached per host (also
 // negative results). The returned object is a private copy.
 func (m *CachedMatcher) Match(host string) *jsonx.Object {
 	cache := m.cache
@@ -372,7 +364,7 @@ func (c *MatcherCache) newCachedMatcher(config *jsonx.Object, rulesDir string, s
 	return cm
 }
 
-// signature is _signature: a digest of everything the matcher depends on
+// signature is a digest of everything the matcher depends on
 // (rules, referenced library entries, cache file stamps) plus the stamps and
 // resolved paths the lazy loader will use.
 func (c *MatcherCache) signature(config *jsonx.Object, rulesDir string) ([32]byte, map[string]*fileStamp, map[readKey]string) {
@@ -380,7 +372,7 @@ func (c *MatcherCache) signature(config *jsonx.Object, rulesDir string) ([32]byt
 	library := map[string]*jsonx.Object{}
 	for _, entry := range config.GetList("rule_library") {
 		if item, ok := entry.(*jsonx.Object); ok {
-			library[jsonx.Repr(item.Value("id"))] = item
+			library[item.GetString("id")] = item
 		}
 	}
 	cacheLibrary := config.GetList("cache_library")
@@ -393,16 +385,16 @@ func (c *MatcherCache) signature(config *jsonx.Object, rulesDir string) ([32]byt
 	paths := map[readKey]string{}
 	for _, entry := range rules {
 		item, ok := entry.(*jsonx.Object)
-		if !ok || item.Value("itemType") != "ruleset" || !enabled(item, "enabled") || !enabled(item, "library_enabled") {
+		if !ok || item.Value("itemType") != "ruleset" || !enabled(item) {
 			continue
 		}
-		source := library[jsonx.Repr(item.Value("library_rule_id"))]
+		source := library[item.GetString("library_rule_id")]
 		if source != nil {
 			referenced = append(referenced, source)
 		} else {
 			referenced = append(referenced, nil)
 		}
-		if !jsonx.Truthy(nameOf(source, item)) {
+		if nameOf(source, item) == "" {
 			continue
 		}
 		target := item
@@ -497,7 +489,7 @@ func (c *MatcherCache) EvictIdle(now float64) {
 	c.evictIdleLocked(now)
 }
 
-// LocalMatcher is local_matcher(config, profile_id): the matcher for a
+// LocalMatcher is the matcher for a
 // profile's rules, reused while rules, referenced library entries and cache
 // file stamps are unchanged. config is a profile document merged with the
 // shared one (rule_configs, rule_library).
@@ -514,7 +506,7 @@ func (c *MatcherCache) LocalMatcher(config *jsonx.Object, profileID string) *Cac
 	referenced := map[string]struct{}{}
 	for _, entry := range rules {
 		if item, ok := entry.(*jsonx.Object); ok && item.Value("itemType") == "ruleset" {
-			referenced[jsonx.Repr(item.Value("library_rule_id"))] = struct{}{}
+			referenced[item.GetString("library_rule_id")] = struct{}{}
 		}
 	}
 	snapshot := jsonx.NewObject()
@@ -525,7 +517,7 @@ func (c *MatcherCache) LocalMatcher(config *jsonx.Object, profileID string) *Cac
 		if !ok {
 			continue
 		}
-		if _, hit := referenced[jsonx.Repr(item.Value("id"))]; hit {
+		if _, hit := referenced[item.GetString("id")]; hit {
 			kept = append(kept, item.DeepCopy())
 		}
 		// Only names/IDs are needed to disambiguate old caches.

@@ -10,7 +10,7 @@ import (
 // package #12 and are listed in the hand-back; the rule_syntax and
 // classical_line_error ones are here.
 
-type kv struct{ kind, value any }
+type kv struct{ kind, value string }
 
 func TestKnownValidRuleValuesAndGoRegexFeatures(t *testing.T) {
 	cases := []kv{
@@ -37,7 +37,7 @@ func TestKnownValidRuleValuesAndGoRegexFeatures(t *testing.T) {
 		{"NOT", "((DOMAIN,example.test))"}, {"MATCH", ""},
 	}
 	for _, c := range cases {
-		if !IsRuleType(c.kind.(string)) {
+		if !IsRuleType(c.kind) {
 			t.Errorf("%v not in RULE_TYPES", c.kind)
 		}
 		if got := RuleValueError(c.kind, c.value); got != "" {
@@ -48,7 +48,7 @@ func TestKnownValidRuleValuesAndGoRegexFeatures(t *testing.T) {
 
 func TestRuleValueErrorsAreExplicit(t *testing.T) {
 	cases := []kv{
-		{"DOMAIN-SHUFFIX", "example.test"}, {"FUTURE-TYPE", "x"}, {"", "x"}, {nil, "x"},
+		{"DOMAIN-SHUFFIX", "example.test"}, {"FUTURE-TYPE", "x"}, {"", "x"},
 		{"DOMAIN", ""}, {"DOMAIN", "999.999.999.999"}, {"DOMAIN-SUFFIX", "192.0.2.1"},
 		{"DOMAIN", "-bad.test"}, {"DOMAIN", "bad..test"}, {"DOMAIN", "bad.test\nOTHER"},
 		{"IP-CIDR", "192.0.2.1"}, {"IP-CIDR", "192.0.2.0/33"},
@@ -76,9 +76,6 @@ func TestUnknownRuleTypeSuggestsTheClosestName(t *testing.T) {
 	if got := RuleValueError("DOMAIN-SHUFFIX", "x"); got != "未知规则类型 DOMAIN-SHUFFIX。是否要填写 DOMAIN-SUFFIX？" {
 		t.Errorf("got %q", got)
 	}
-	if got := RuleValueError(nil, "x"); got != "未知规则类型 None。" {
-		t.Errorf("got %q", got)
-	}
 }
 
 func TestRuleParserMatchesClassicalPayloadCommaRules(t *testing.T) {
@@ -92,7 +89,7 @@ func TestRuleParserMatchesClassicalPayloadCommaRules(t *testing.T) {
 	check("DOMAIN,example.test,DIRECT,no-resolve", "DOMAIN", "example.test", "DIRECT", "no-resolve")
 	check("DOMAIN-REGEX,^a{1,3}$,DIRECT", "DOMAIN-REGEX", "^a{1,3}$,DIRECT")
 	check("PROCESS-PATH-REGEX,/apps/(a,b)", "PROCESS-PATH-REGEX", "/apps/(a,b)")
-	if classicalLineError("DOMAIN,example.test,DIRECT,no-resolve") != "" {
+	if ClassicalLineError("DOMAIN,example.test,DIRECT,no-resolve") != "" {
 		t.Error("classical parameters rejected")
 	}
 }
@@ -124,7 +121,7 @@ func TestBareClassicalIPAndPrefixErrors(t *testing.T) {
 	// From test_bare_prefixes_with_leading_zeroes... and test_classical_malformed_bare_ip:
 	// the delivery-side rewrite must refuse these lines.
 	for _, source := range []string{"192.0.2.0/024", "2001:db8::/032", "0.0.0.0/00", "192.0.2.1/33", "999.999.999.999", ":::/64", "2001:db8::/129"} {
-		if _, err := classicalLine(source); err == nil {
+		if _, err := ClassicalLine(source); err == nil {
 			t.Errorf("_classical_line(%q) rewrote an invalid line", source)
 		}
 	}
@@ -141,7 +138,7 @@ func TestNativeValidVerboseAndCommentRegexesAreLeftToTheCore(t *testing.T) {
 			t.Errorf("rule_value_error(DOMAIN-REGEX, %q) = %q", expression, got)
 		}
 		line := "DOMAIN-REGEX," + expression
-		if got := classicalLineError(line); got != "" {
+		if got := ClassicalLineError(line); got != "" {
 			t.Errorf("classical_line_error(%q) = %q", line, got)
 		}
 	}
@@ -160,7 +157,7 @@ func TestNonRegexRuleValuesCannotInjectExtraConfigFields(t *testing.T) {
 
 func TestClassicalExistingParameterFieldsRemainAccepted(t *testing.T) {
 	for _, line := range []string{"DOMAIN-KEYWORD,foo,DIRECT", "DST-PORT,80,no-resolve"} {
-		if got := classicalLineError(line); got != "" {
+		if got := ClassicalLineError(line); got != "" {
 			t.Errorf("classical_line_error(%q) = %q", line, got)
 		}
 	}
@@ -181,12 +178,12 @@ func TestClassicalSafeBareRewrites(t *testing.T) {
 		"192.0.2.1": "IP-CIDR,192.0.2.1/32,no-resolve", "2001:db8::1": "IP-CIDR6,2001:db8::1/128,no-resolve",
 		"192.0.2.0/24": "IP-CIDR,192.0.2.0/24,no-resolve",
 	} {
-		if got, err := classicalLine(source); err != nil || got != want {
+		if got, err := ClassicalLine(source); err != nil || got != want {
 			t.Errorf("_classical_line(%q) = %q, %v; want %q", source, got, err, want)
 		}
 	}
 	for _, source := range []string{".example.test", "*.example.test", "full:example.test", "domain:example.test", "ip:192.0.2.0/24"} {
-		if _, err := classicalLine(source); err == nil {
+		if _, err := ClassicalLine(source); err == nil {
 			t.Errorf("_classical_line(%q) should keep ambiguous syntax", source)
 		}
 	}

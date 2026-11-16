@@ -12,15 +12,13 @@ import (
 	"configflow/internal/jsonx"
 )
 
-// Port of the pure parts of backend/utils/rule_utils.py: the names of the rule
-// cache files under DATA_DIR/shared/rules/{by-id,by-source,by-name}/ and the
-// read-side path resolution. get_rules_dir() is the caller's `rulesDir`
-// argument here; the repository-backed functions (get_rules_dir,
-// read/write_validated_rule_cache, refresh_remote_rule,
-// read_rule_source_content, save_rule_to_local) are in internal/rulefetch.
+// Rule cache file names under DATA_DIR/shared/rules/{by-id,by-source,by-name}/
+// (backend/utils/rule_utils.py) and the read-side path resolution. The names
+// must stay those Python wrote, so existing caches are found. Fetching and
+// writing caches is in internal/rulefetch.
 
-// SanitizeRuleName is sanitize_rule_name: a file-system safe name without
-// extension.
+// SanitizeRuleName is a file-system safe file name (without extension) for
+// a rule name; legacy caches were named by it.
 func SanitizeRuleName(name string) string {
 	if name == "" {
 		return "unnamed"
@@ -51,7 +49,7 @@ func sha256Hex(text string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// RuleCacheFilename is rule_cache_filename: the stable, resource-identity
+// RuleCacheFilename is the stable, resource-identity
 // based cache file name relative to the rules directory.
 func RuleCacheFilename(rule *jsonx.Object) string {
 	identity := rule.Value("library_rule_id")
@@ -75,6 +73,7 @@ func RuleCacheFilename(rule *jsonx.Object) string {
 		if !jsonx.Truthy(format) {
 			format = ""
 		}
+		// The JSON text (json.dumps spacing, non-ASCII kept) is part of the name.
 		encoded, _ := jsonx.Encode([]any{text, rule.Value("url"), rule.GetOr("behavior", "domain"), format}, jsonx.Options{})
 		text = string(encoded)
 	}
@@ -86,9 +85,9 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// RuleCacheReadPath is rule_cache_read_path: new caches first, retaining
+// RuleCacheReadPath is the cache file to read: new caches first, retaining
 // unambiguous legacy caches offline. library is the library to disambiguate
-// legacy names against (nil means "use stored", like Python's None); stored is
+// legacy names against (nil: use stored); stored is
 // the current shared rule_library from the repository.
 func RuleCacheReadPath(rule *jsonx.Object, library, stored []any, rulesDir string) string {
 	path := filepath.Join(rulesDir, RuleCacheFilename(rule))
@@ -149,7 +148,7 @@ func RuleCacheReadPath(rule *jsonx.Object, library, stored []any, rulesDir strin
 	return path
 }
 
-// TouchUnchangedCache is _touch_unchanged_cache: when the file and its .bak
+// TouchUnchangedCache: when the file and its .bak
 // copy already hold exactly content, only the modification time moves (the
 // cache refresh time shown in the UI) and true is returned.
 func TouchUnchangedCache(path string, content []byte) bool {

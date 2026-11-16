@@ -56,8 +56,8 @@ func TestLookaroundFiltersRunOnTheBacktrackingEngine(t *testing.T) {
 		t.Fatalf("kept %v, %v", kept, err)
 	}
 	re, _ := CompilePyRegex("^(?!.*(过期|剩余|流量)).*$", false)
-	if re.Engine() != "backtrack" {
-		t.Fatalf("engine = %s", re.Engine())
+	if re.re2 != nil {
+		t.Fatal("look-ahead must run on regexp2")
 	}
 	if err := ValidateFilters(obj("exclude_regex", "^(?!US)"), nil); err != nil {
 		t.Fatal(err)
@@ -69,10 +69,11 @@ func TestBacktrackingTimeoutIsNoMatchWithOneWarning(t *testing.T) {
 	BacktrackTimeout = 50 * time.Millisecond
 	defer func() { BacktrackTimeout = old }()
 	logger := &countingLogger{}
-	SetRegexLogger(logger)
-	defer SetRegexLogger(nil)
+	oldLogger := regexLogger
+	regexLogger = logger
+	defer func() { regexLogger = oldLogger }()
 	re, err := CompilePyRegex(`^(?:a|aa)+(?!x)$`, false)
-	if err != nil || re.Engine() != "backtrack" {
+	if err != nil || re.re2 != nil {
 		t.Fatalf("compile: %v", err)
 	}
 	subject := strings.Repeat("a", 60) + "b"

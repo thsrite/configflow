@@ -24,14 +24,14 @@ func collection() []any {
 }
 
 func TestReorderByIDsMovesSelectedItemsToTheTopInGivenOrder(t *testing.T) {
-	ordered, missing := ReorderByIDs(collection(), seq("c", "a"), "top")
+	ordered, missing := ReorderByIDs(collection(), []string{"c", "a"}, "top")
 	if len(missing) != 0 || compact(t, jsonx.ListOf([]any{ordered[0].(*jsonx.Object).Value("id"), ordered[1].(*jsonx.Object).Value("id"), ordered[2].(*jsonx.Object).Value("id")})) != `["c","a","b"]` || ordered[3] != "stray" {
 		t.Fatalf("ordered %s missing %v", compact(t, ordered), missing)
 	}
 }
 
 func TestReorderByIDsBottomKeepsTheRestInRelativeOrder(t *testing.T) {
-	ordered, _ := ReorderByIDs(collection(), seq("a"), "bottom")
+	ordered, _ := ReorderByIDs(collection(), []string{"a"}, "bottom")
 	if got := compact(t, ordered); got != `[{"id":"b","name":"B"},{"id":"c","name":"C"},"stray",{"id":"a","name":"A"}]` {
 		t.Fatalf("ordered %s", got)
 	}
@@ -39,7 +39,7 @@ func TestReorderByIDsBottomKeepsTheRestInRelativeOrder(t *testing.T) {
 
 func TestReorderByIDsRejectsUnknownIDsAndLeavesTheCollectionAlone(t *testing.T) {
 	items := collection()
-	ordered, missing := ReorderByIDs(items, seq("a", "agg_missing"), "top")
+	ordered, missing := ReorderByIDs(items, []string{"a", "agg_missing"}, "top")
 	if len(missing) != 1 || missing[0] != "agg_missing" || &ordered[0] != &items[0] {
 		t.Fatalf("missing %v", missing)
 	}

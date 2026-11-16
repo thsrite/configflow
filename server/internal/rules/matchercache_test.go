@@ -450,7 +450,7 @@ func matcherIndexFor(m *CachedMatcher, libraryID string) *ruleIndex {
 	m.matcher.mu.RLock()
 	defer m.matcher.mu.RUnlock()
 	for slot, index := range m.matcher.indexes {
-		if slot.source == jsonx.Repr(libraryID) {
+		if slot.source == libraryID {
 			return index
 		}
 	}

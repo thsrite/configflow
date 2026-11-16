@@ -6,11 +6,11 @@ import (
 	"configflow/internal/jsonx"
 )
 
-// Port of backend/utils/strategy_references.py: validate rule policies against
-// the policies a converter actually emits.
+// Rule policies are checked against the policies a converter actually emits
+// (backend/utils/strategy_references.py).
 
 // StrategyReferenceError means an enabled rule targets a policy absent from
-// the generated configuration. Error() is the Chinese message of Python.
+// the generated configuration. Error() is the Chinese message.
 type StrategyReferenceError struct{ Message string }
 
 func (e *StrategyReferenceError) Error() string { return e.Message }
@@ -25,11 +25,11 @@ var builtinPolicies = map[string][]string{
 	"loon": {"DIRECT", "REJECT", "REJECT-DROP", "REJECT-IMG", "REJECT-DICT", "REJECT-ARRAY"},
 }
 
-// ValidateRulePolicies is validate_rule_policies: every enabled rule or rule
+// ValidateRulePolicies: every enabled rule or rule
 // set (rule_configs of config) must target an available policy name or a
 // built-in of the format ("mihomo", "surge" or "loon"). It returns
-// *StrategyReferenceError for the first offender. An unknown format panics
-// like Python's KeyError.
+// *StrategyReferenceError for the first offender. An unknown format is a
+// programming error and panics.
 func ValidateRulePolicies(config *jsonx.Object, availableNames []string, format string) error {
 	builtins, ok := builtinPolicies[format]
 	if !ok {
@@ -51,7 +51,7 @@ func ValidateRulePolicies(config *jsonx.Object, availableNames []string, format 
 		if !ok {
 			continue
 		}
-		if !enabled(rule, "enabled") || !enabled(rule, "library_enabled") {
+		if !enabled(rule) {
 			continue
 		}
 		kind, _ := rule.Value("itemType").(string)

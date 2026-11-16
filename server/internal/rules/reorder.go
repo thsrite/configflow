@@ -2,41 +2,39 @@ package rules
 
 import "configflow/internal/jsonx"
 
-// Port of backend/utils/reorder.py: collection ordering by id. The old
+// Collections are reordered by id (backend/utils/reorder.py). The old
 // endpoints accepted the full object array and wrote back display data; ids
 // let the server reorder stored data instead.
 
 // ReorderByIDs moves the items named by ids, in that order, to one end of the
-// collection and keeps the rest in their relative order. Unknown ids are
-// returned in missing and the collection comes back unchanged.
-func ReorderByIDs(items []any, ids []any, position string) (ordered []any, missing []any) {
+// collection ("top" or "bottom") and keeps the rest in their relative order.
+// Unknown ids are returned in missing and the collection comes back unchanged.
+func ReorderByIDs(items []any, ids []string, position string) (ordered []any, missing []string) {
 	byID := map[string]any{}
-	hash := func(v any) string { return jsonx.Repr(v) }
 	for _, item := range items {
 		if object, ok := item.(*jsonx.Object); ok {
-			byID[hash(object.Value("id"))] = item // dict comprehension: the last item wins
+			if id, isText := object.Value("id").(string); isText {
+				byID[id] = item // a duplicate id: the last item wins
+			}
 		}
 	}
+	selected := map[string]bool{}
+	moved := make([]any, 0, len(ids))
 	for _, id := range ids {
-		if _, ok := byID[hash(id)]; !ok {
+		item, ok := byID[id]
+		if !ok {
 			missing = append(missing, id)
 		}
+		selected[id] = true
+		moved = append(moved, item)
 	}
 	if len(missing) > 0 {
 		return items, missing
 	}
-	selected := map[string]struct{}{}
-	for _, id := range ids {
-		selected[hash(id)] = struct{}{}
-	}
-	moved := make([]any, 0, len(ids))
-	for _, id := range ids {
-		moved = append(moved, byID[hash(id)])
-	}
 	var rest []any
 	for _, item := range items {
 		if object, ok := item.(*jsonx.Object); ok {
-			if _, hit := selected[hash(object.Value("id"))]; hit {
+			if id, isText := object.Value("id").(string); isText && selected[id] {
 				continue
 			}
 		}
@@ -48,46 +46,40 @@ func ReorderByIDs(items []any, ids []any, position string) (ordered []any, missi
 	return append(rest, moved...), nil
 }
 
-// ResolveNewOrder reorders by the ids of existing items; a legacy object array
-// only supplies the order and never overwrites resource definitions. The
-// second result lists errors (messages) or unknown ids; non-empty means the
-// collection was left unchanged. body is the request JSON object.
-func ResolveNewOrder(current []any, body *jsonx.Object, objectKey string) ([]any, []any) {
-	idsValue, hasIDs := body.Get("ids")
-	if !hasIDs || idsValue == nil {
+// ResolveNewOrder reorders by the ids in the request body ("ids", or the ids
+// of a legacy object array under objectKey, which only supplies the order and
+// never overwrites resource definitions). The second result lists error
+// messages or unknown ids; non-empty means the collection is unchanged.
+func ResolveNewOrder(current []any, body *jsonx.Object, objectKey string) ([]any, []string) {
+	idsValue := body.Value("ids")
+	if idsValue == nil {
 		list, isList := body.Value(objectKey).([]any)
-		valid := isList
-		if isList {
-			for _, item := range list {
-				if _, ok := item.(*jsonx.Object); !ok {
-					valid = false
-					break
-				}
-			}
-		}
-		if !valid {
-			return current, []any{objectKey + " 必须是对象数组"}
-		}
 		ids := make([]any, len(list))
 		for i, item := range list {
-			ids[i] = item.(*jsonx.Object).Value("id")
+			object, ok := item.(*jsonx.Object)
+			if !ok {
+				isList = false
+				break
+			}
+			ids[i] = object.Value("id")
+		}
+		if !isList {
+			return current, []string{objectKey + " 必须是对象数组"}
 		}
 		idsValue = ids
 	}
-	ids, ok := idsValue.([]any)
+	values, ok := idsValue.([]any)
 	if !ok {
-		return current, []any{"ids 必须是数组"}
+		return current, []string{"ids 必须是数组"}
 	}
-	seen := map[string]struct{}{}
-	for _, id := range ids {
-		text, isStr := id.(string)
-		if !isStr {
-			return current, []any{"id 必须是互不重复的字符串"}
+	ids := make([]string, len(values))
+	seen := map[string]bool{}
+	for i, value := range values {
+		id, isText := value.(string)
+		if !isText || seen[id] {
+			return current, []string{"id 必须是互不重复的字符串"}
 		}
-		if _, dup := seen[text]; dup {
-			return current, []any{"id 必须是互不重复的字符串"}
-		}
-		seen[text] = struct{}{}
+		ids[i], seen[id] = id, true
 	}
 	position, _ := body.GetOr("position", "top").(string)
 	return ReorderByIDs(current, ids, position)

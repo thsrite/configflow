@@ -1,7 +1,7 @@
 package rules
 
 import (
-	"configflow/internal/pystr"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -11,7 +11,7 @@ import (
 	"configflow/internal/jsonx"
 )
 
-// Port of backend/utils/group_candidates.py: managed proxy-group membership
+// Managed proxy-group membership (backend/utils/group_candidates.py)
 // shared by write validation and Mihomo rendering. Engine-native
 // use/include-all are deliberately not managed sources. Legacy empty records
 // remain readable; new writes must have a consumed source.
@@ -32,7 +32,8 @@ func IsCandidateValidationError(err error) bool {
 	return errors.As(err, &target)
 }
 
-// SourceFields, HealthFields and FilterFields are the module constants.
+// SourceFields decide a group's members; HealthFields may be deleted by an
+// update; FilterFields hold name filters.
 var (
 	SourceFields = []string{"manual_nodes", "subscriptions", "aggregations", "include_groups",
 		"follow_group", "source", "proxies", "proxies_order"}
@@ -49,27 +50,11 @@ func contains(list []string, value string) bool {
 	return false
 }
 
-// iterate is Python iteration over a JSON value: a list yields its items, a
-// string its characters, an object its keys. Other types (which make Python
-// raise TypeError) yield nothing.
+// iterate is the items of a JSON list; other values have none (write
+// validation rejects them).
 func iterate(value any) []any {
-	switch v := value.(type) {
-	case []any:
-		return v
-	case string:
-		var out []any
-		for _, r := range v {
-			out = append(out, string(r))
-		}
-		return out
-	case *jsonx.Object:
-		var out []any
-		for _, key := range v.Keys() {
-			out = append(out, key)
-		}
-		return out
-	}
-	return nil
+	list, _ := value.([]any)
+	return list
 }
 
 func containsEqual(list []any, value any) bool {
@@ -81,24 +66,22 @@ func containsEqual(list []any, value any) bool {
 	return false
 }
 
-// compileFilter compiles one user filter for filter_candidates.
-func compileFilter(value any) (*PyRegex, error) {
+// compileFilter compiles one user name filter (a string or JSON null).
+func compileFilter(value any) (*Regex, error) {
 	if value != nil {
 		if _, ok := value.(string); !ok {
 			return nil, candidateError("正则筛选必须是字符串或 null")
 		}
 	}
 	text, _ := value.(string)
-	if text == "" || pystr.Strip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return nil, nil
 	}
-	re, err := CompilePyRegex(pystr.Strip(text), false)
+	re, err := CompilePyRegex(strings.TrimSpace(text), false)
 	if err != nil {
-		var unsupported *UnsupportedRegexError
-		if errors.As(err, &unsupported) {
-			// Python accepts and runs this pattern (\N{name}, repeat counts
-			// beyond int32); this engine cannot. Domain-level accepted
-			// difference: the filter is not applied, the request is accepted.
+		if !IsPyRegexError(err) {
+			// A valid pattern the engines cannot run (\N{name}, huge repeat
+			// counts): accepted, the filter is not applied.
 			return nil, nil
 		}
 		return nil, candidateError("正则表达式无效")
@@ -130,7 +113,7 @@ func FilterCandidates(items []any, include, exclude any) ([]any, error) {
 
 func filterValue(group *jsonx.Object, field string) string {
 	if value, ok := group.Value(field).(string); ok {
-		return pystr.Strip(value)
+		return strings.TrimSpace(value)
 	}
 	return ""
 }
@@ -216,7 +199,7 @@ func ManagedProviders(group, config *jsonx.Object) []ProviderSelection {
 	var aggregations []*jsonx.Object
 	for _, id := range aggregationIDs {
 		for _, item := range objects(config.Value("subscription_aggregations")) {
-			if jsonx.Equal(item.Value("id"), id) && enabled(item, "enabled") {
+			if jsonx.Equal(item.Value("id"), id) && on(item) {
 				aggregations = append(aggregations, item)
 			}
 		}
@@ -278,7 +261,7 @@ func RenderMembers(group, config *jsonx.Object) *jsonx.Object {
 	}
 	var aggItems []*jsonx.Object
 	for _, item := range objects(config.Value("subscription_aggregations")) {
-		if containsEqual(aggregations, item.Value("id")) && enabled(item, "enabled") {
+		if containsEqual(aggregations, item.Value("id")) && on(item) {
 			aggItems = append(aggItems, item)
 		}
 	}
@@ -318,8 +301,8 @@ func RenderMembers(group, config *jsonx.Object) *jsonx.Object {
 		emitted.Set("use", unique)
 		var filters []string
 		for _, key := range []string{"regex", "aggregation_regex"} {
-			if value, ok := group.Value(key).(string); ok && pystr.Strip(value) != "" {
-				filters = append(filters, pystr.Strip(value))
+			if value, ok := group.Value(key).(string); ok && strings.TrimSpace(value) != "" {
+				filters = append(filters, strings.TrimSpace(value))
 			}
 		}
 		if len(filters) == 1 {
@@ -335,25 +318,14 @@ func RenderMembers(group, config *jsonx.Object) *jsonx.Object {
 	return emitted
 }
 
-func pyTypeName(value any) string {
-	switch v := value.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case string:
-		return "str"
-	case jsonx.Number:
-		if v.IsInt() {
-			return "int"
-		}
-		return "float"
-	case []any:
-		return "list"
-	case *jsonx.Object:
-		return "dict"
-	}
-	return fmt.Sprintf("%T", value)
+// on: a resource is enabled unless switched off.
+func on(item *jsonx.Object) bool { return jsonx.Truthy(item.GetOr("enabled", true)) }
+
+// sameJSON compares two JSON values strictly (1, 1.0 and true differ).
+func sameJSON(a, b any) bool {
+	encodedA, errA := jsonx.Compact(a)
+	encodedB, errB := jsonx.Compact(b)
+	return errA == nil && errB == nil && bytes.Equal(encodedA, encodedB)
 }
 
 // ValidateFilters checks the four filter fields of a group. original, when
@@ -363,14 +335,13 @@ func ValidateFilters(group, original *jsonx.Object) error {
 		if value := group.Value(field); value != nil {
 			if _, ok := value.(string); !ok {
 				// Unchanged legacy values are allowed only for final merged records.
-				if original == nil || !original.Has(field) || pyTypeName(original.Value(field)) != pyTypeName(value) ||
-					!jsonx.Equal(original.Value(field), value) {
+				if original == nil || !original.Has(field) || !sameJSON(original.Value(field), value) {
 					return candidateError("%s 必须是字符串或 null", field)
 				}
 			}
 		}
 		if (field == "exclude_regex" || field == "aggregation_exclude_regex") && filterValue(group, field) != "" {
-			if _, err := parsePyRegex(filterValue(group, field), 0); err != nil && IsPyRegexError(err) {
+			if _, err := CompilePyRegex(filterValue(group, field), false); IsPyRegexError(err) {
 				return candidateError("%s 正则表达式无效", field)
 			}
 		}
@@ -378,7 +349,7 @@ func ValidateFilters(group, original *jsonx.Object) error {
 	return nil
 }
 
-// embedded is _embedded: a user pattern as one group that keeps its meaning
+// embedded is a user pattern as one group that keeps its meaning
 // inside a larger one. Leading global flags such as (?i) become scoped flags;
 // the group does not capture, so the user's own group numbers stay the same.
 func embedded(pattern string) string {
@@ -408,7 +379,7 @@ func embedded(pattern string) string {
 	return "(?:" + pattern + ")"
 }
 
-// literalBackticks is _literal_backticks: backticks separate Mihomo filters;
+// literalBackticks: backticks separate Mihomo filters;
 // in an exclusion they are name characters. A run of backslashes before a
 // backtick keeps an even number of them and the backtick becomes \x60.
 func literalBackticks(pattern string) string {
@@ -479,7 +450,7 @@ func LowerGroupProviderFilters(config, main *jsonx.Object) {
 	}
 	sources := map[string]*jsonx.Object{}
 	for _, group := range objects(config.Value("proxy_groups")) {
-		sources[jsonx.Repr(group.Value("id"))] = group
+		sources[group.GetString("id")] = group
 	}
 	clones := map[cloneKey]string{}
 	for _, record := range objects(config.Value("proxy_groups")) {
@@ -488,7 +459,7 @@ func LowerGroupProviderFilters(config, main *jsonx.Object) {
 			continue
 		}
 		source := record
-		if found, ok := sources[jsonx.Repr(record.Value("follow_group"))]; ok {
+		if found, ok := sources[record.GetString("follow_group")]; ok {
 			source = found
 		}
 		if filterValue(source, "exclude_regex") == "" && filterValue(source, "aggregation_exclude_regex") == "" {
@@ -563,6 +534,8 @@ func LowerGroupProviderFilters(config, main *jsonx.Object) {
 				occupied[name] = struct{}{}
 				original, _ := providers.Value(item.name).(*jsonx.Object)
 				provider := original.DeepCopy()
+				// The provider path is the one existing configs use: a digest of
+				// the key's text ('name', 'include', 'exclude').
 				sum := sha256.Sum256([]byte("(" + jsonx.Repr(key.original) + ", " + jsonx.Repr(key.include) + ", " + jsonx.Repr(key.exclude) + ")"))
 				provider.Set("path", "./providers/group_filter_"+hex.EncodeToString(sum[:])[:20]+".yaml")
 				if providerInclude != "" {
@@ -609,7 +582,7 @@ func ValidateCandidates(group, profile, shared, original *jsonx.Object) error {
 	if jsonx.Truthy(follow) {
 		source = nil
 		for _, item := range objects(catalog.Value("proxy_groups")) {
-			if jsonx.Equal(item.Value("id"), follow) && enabled(item, "enabled") {
+			if jsonx.Equal(item.Value("id"), follow) && on(item) {
 				source = item
 				break
 			}
@@ -633,7 +606,7 @@ func ValidateCandidates(group, profile, shared, original *jsonx.Object) error {
 		}
 		available := map[string]struct{}{}
 		for _, item := range objects(catalog.Value(c.kind)) {
-			if enabled(item, "enabled") {
+			if on(item) {
 				if id, ok := item.Value("id").(string); ok {
 					available[id] = struct{}{}
 				}

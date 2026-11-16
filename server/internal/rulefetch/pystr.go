@@ -6,7 +6,7 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/rules"
+	"configflow/internal/pystr"
 )
 
 // Python str helpers on code points.
@@ -51,8 +51,8 @@ func splitLines(text string, keepends bool) []string {
 	return lines
 }
 
-func pyStrip(s string) string  { return rules.PyStrip(s) }
-func pyLstrip(s string) string { return strings.TrimLeftFunc(s, rules.PyIsSpace) }
+func pyStrip(s string) string  { return pystr.Strip(s) }
+func pyLstrip(s string) string { return strings.TrimLeftFunc(s, pystr.IsSpace) }
 func runeLen(s string) int     { return utf8.RuneCountInString(s) }
 
 func hasAnyPrefix(s string, prefixes ...string) bool {

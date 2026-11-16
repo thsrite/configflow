@@ -17,6 +17,7 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
+	"configflow/internal/pystr"
 	"configflow/internal/pyyaml"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
@@ -518,7 +519,7 @@ func InspectDomainContent(contentValue, behavior, ruleFormat any) (*jsonx.Object
 			}
 			continue
 		}
-		if behavior == "classical" && (strings.Contains(value, ",") || rules.IsRuleType(rules.PyUpper(stripped))) {
+		if behavior == "classical" && (strings.Contains(value, ",") || rules.IsRuleType(pystr.Upper(stripped))) {
 			if message := rules.ClassicalLineError(stripped); message != "" {
 				errorsList = append(errorsList, problemObject(e.line, &value, message))
 			}
@@ -889,7 +890,7 @@ func validateRemoteContent(content any, rule *jsonx.Object, behavior, selected a
 		switch {
 		case behavior == "ipcidr":
 			message = rules.CIDRError(value)
-		case behavior == "classical" && (strings.Contains(value, ",") || rules.IsRuleType(rules.PyUpper(value))):
+		case behavior == "classical" && (strings.Contains(value, ",") || rules.IsRuleType(pystr.Upper(value))):
 			message = rules.ClassicalLineError(value)
 		default:
 			if _, err := classicalOrDomain(behavior, value); err != nil {

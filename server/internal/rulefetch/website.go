@@ -9,6 +9,7 @@ import (
 
 	"configflow/internal/health/check"
 	"configflow/internal/jsonx"
+	"configflow/internal/pystr"
 	"configflow/internal/rules"
 )
 
@@ -33,14 +34,16 @@ var (
 	tagPattern = regexp.MustCompile(`<[^>]*>`)
 )
 
+func dropMatch(*rules.Match) (string, error) { return "", nil }
+
 // SiteTitle is site_title: drop page names and "Powered by" signatures.
 func SiteTitle(title string) string {
 	cleaned, previous, first := title, "", true
 	for first || cleaned != previous {
 		first = false
 		previous = cleaned
-		cleaned, _ = titleTail.SubTemplate(cleaned, "", 0)
-		cleaned, _ = titleHead.SubTemplate(cleaned, "", 0)
+		cleaned, _ = titleTail.Sub(cleaned, dropMatch, 0)
+		cleaned, _ = titleHead.Sub(cleaned, dropMatch, 0)
 	}
 	if stripped := pyStrip(cleaned); stripped != "" {
 		return stripped
@@ -55,7 +58,7 @@ func CleanText(value string, limit int) string {
 	var b strings.Builder
 	space := false
 	for _, r := range text {
-		if rules.PyIsSpace(r) {
+		if pystr.IsSpace(r) {
 			if !space {
 				b.WriteByte(' ')
 			}

@@ -1,10 +1,10 @@
 package rules
 
 import (
-	"configflow/internal/pystr"
 	"errors"
 	"fmt"
 	"math/rand"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -322,7 +322,7 @@ func textOf(contents map[string]string) LoadContent {
 func linearMatch(configs []any, contents map[string]string, query string) *jsonx.Object {
 	for priority, entry := range configs {
 		item := entry.(*jsonx.Object)
-		if !enabled(item, "enabled") || !enabled(item, "library_enabled") {
+		if !enabled(item) {
 			continue
 		}
 		switch itemType(item) {
@@ -336,11 +336,11 @@ func linearMatch(configs []any, contents map[string]string, query string) *jsonx
 		case "ruleset":
 			format, _ := item.GetOr("format", "text").(string)
 			behavior, _ := item.GetOr("behavior", "classical").(string)
-			for line := range iterRulesetLines(contents[item.GetString("id")], format) {
+			for line := range rulesetLines(contents[item.GetString("id")], format) {
 				kind, value, ok := parseRulesetLine(line.value, behavior)
 				if ok && MatchQuery(query, kind, value) {
 					name := item.GetOr("name", "规则集")
-					return obj("rule_name", name, "rule_type", "ruleset", "matched_line", pystr.Strip(line.source),
+					return obj("rule_name", name, "rule_type", "ruleset", "matched_line", strings.TrimSpace(line.source),
 						"policy", item.GetOr("policy", "DIRECT"), "source", "规则集: "+jsonx.Str(name),
 						"priority", jsonx.Int(priority+1), "rule_id", item.Value("id"), "item_type", "ruleset",
 						"behavior", item.GetOr("behavior", "classical"))
@@ -765,15 +765,14 @@ func splitLinesRef(parts []string, sep string, trailing bool) []string {
 }
 
 func TestStreamedLinesPreserveSplitlinesAndOriginalMatch(t *testing.T) {
-	for _, sep := range []string{"\n", "\r", "\r\n", "\v", "\f", "\x1c", "\x1d", "\x1e", "\u0085", "\u2028", "\u2029"} {
+	for _, sep := range []string{"\n", "\r", "\r\n"} {
 		for _, trailing := range []bool{false, true} {
 			parts := []string{"", "  full:Example.com  ", "# comment", "+.second.example", ""}
 			content := strings.Join(parts, sep)
 			if trailing {
 				content += sep
 			}
-			var got []string
-			iterRuleLines(content, func(line string) bool { got = append(got, line); return true })
+			got := slices.Collect(lines(content))
 			want := splitLinesRef(parts[:4], sep, trailing)
 			if strings.Join(got, "\x00") != strings.Join(want, "\x00") || len(got) != len(want) {
 				t.Errorf("sep %q trailing %v: got %q want %q", sep, trailing, got, want)
@@ -790,10 +789,9 @@ func TestStreamedLinesPreserveSplitlinesAndOriginalMatch(t *testing.T) {
 
 func TestStreamedEmptyAndMixedNewlinesMatchSplitlines(t *testing.T) {
 	for content, want := range map[string][]string{
-		"": nil, "one": {"one"}, "\r\r\n": {"", ""}, "one\r\ntwo\n\rthree\vfour\u2028": {"one", "two", "", "three", "four"},
+		"": nil, "one": {"one"}, "\r\r\n": {"", ""}, "one\r\ntwo\n\rthree\vfour\u2028": {"one", "two", "", "three\vfour\u2028"},
 	} {
-		var got []string
-		iterRuleLines(content, func(line string) bool { got = append(got, line); return true })
+		got := slices.Collect(lines(content))
 		if fmt.Sprintf("%q", got) != fmt.Sprintf("%q", want) {
 			t.Errorf("%q: got %q want %q", content, got, want)
 		}

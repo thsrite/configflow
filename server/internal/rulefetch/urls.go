@@ -371,7 +371,7 @@ func ValidateRuleURL(url string) (URL, error) {
 		return parsed, ErrInvalidURL
 	}
 	for _, r := range parsed.Netloc {
-		if rules.PyIsSpace(r) {
+		if pystr.IsSpace(r) {
 			return parsed, ErrInvalidURL
 		}
 	}

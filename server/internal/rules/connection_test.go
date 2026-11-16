@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -32,9 +33,7 @@ func connectionDeps() ConnectionDeps {
 			return nil
 		},
 		ReadRulePayload: func(content string) ([]string, any, error) {
-			var lines []string
-			iterRuleLines(content, func(line string) bool { lines = append(lines, line); return true })
-			return lines, nil, nil
+			return slices.Collect(lines(content)), nil, nil
 		},
 		AppendRulePayload: func(content, line string, _ any) string {
 			separator := "\n"
@@ -53,7 +52,7 @@ func connectionSetup(behavior, content string, policy any) (config, shared *json
 	return
 }
 
-func apply(t *testing.T, config, shared *jsonx.Object, value any, ruleType, target string) (*IPRuleResult, error) {
+func apply(t *testing.T, config, shared *jsonx.Object, value string, ruleType, target string) (*IPRuleResult, error) {
 	t.Helper()
 	destination, err := ParseDestination(value, ruleType)
 	if err != nil {
@@ -137,12 +136,12 @@ func TestSubnetIsCanonicalizedAndOnlyFullCoverageIsSkipped(t *testing.T) {
 
 func TestInvalidIPRequestsDoNotChangeRules(t *testing.T) {
 	for _, c := range []struct {
-		value    any
+		value    string
 		ruleType string
 	}{
 		{"new.test", "IP-CIDR"}, {"192.0.2.8/33", "IP-CIDR"}, {"192.0.2.8\nMATCH,DIRECT", "IP-CIDR"},
 		{"192.0.2.8", "IP-CIDR6"}, {"2001:db8::8", "IP-CIDR"}, {"fe80::1%eth0", "IP-CIDR6"},
-		{nil, "IP-CIDR"}, {"224.0.0.1", "IP-CIDR"}, {"0.0.0.0", "IP-CIDR"},
+		{"", "IP-CIDR"}, {"224.0.0.1", "IP-CIDR"}, {"0.0.0.0", "IP-CIDR"},
 	} {
 		_, err := ParseDestination(c.value, c.ruleType)
 		var invalid *ProfileValidationError
@@ -207,7 +206,7 @@ func TestNormalizeClientRange(t *testing.T) {
 			t.Errorf("NormalizeClientRange(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
-	for _, in := range []any{"", "x", "192.0.2.8/33", "224.0.0.1", "0.0.0.0", "::", "::ffff:0:0/64", "fe80::1%eth0", "1.2.3.4/1/2", nil, 5, "192.0.2.8/1000"} {
+	for _, in := range []string{"", "x", "192.0.2.8/33", "224.0.0.1", "0.0.0.0", "::", "::ffff:0:0/64", "fe80::1%eth0", "1.2.3.4/1/2", "192.0.2.8/1000"} {
 		if _, err := NormalizeClientRange(in); err == nil {
 			t.Errorf("NormalizeClientRange(%v) accepted", in)
 		}

@@ -64,7 +64,8 @@ func TestValidateRegexFilter(t *testing.T) {
 	if ValidateRegexFilter("(") == "" || ValidateRegexFilter(jsonx.Int(123)) == "" {
 		t.Fatal("invalid values must be reported")
 	}
-	if got := ValidateRegexFilter("("); got != "节点筛选正则无效: missing ), unterminated subpattern at position 0" {
+	// The detail after the Chinese prefix is the regex engine's error text.
+	if got := ValidateRegexFilter("("); !strings.HasPrefix(got, "节点筛选正则无效: ") {
 		t.Fatal(got)
 	}
 }

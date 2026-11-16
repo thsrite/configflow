@@ -1,30 +1,30 @@
 package rules
 
 import (
+	"net/netip"
+
 	"configflow/internal/jsonx"
 )
 
-// Port of backend/utils/connection_rules.py: append a connection destination
-// (or its selected subnet) to a shared IP rule set. The repository
-// transactions and the cache write (save_rule_to_local) stay with the caller:
-// ApplyIPRule is the body of apply_ip's `append(shared)` closure, to be run
-// inside update_shared_config_transaction, and the caller then refreshes the
-// cache of Result.Updated.
+// A connection destination (or its selected subnet) is appended to a shared
+// IP rule set (backend/utils/connection_rules.py). The repository
+// transaction and the cache write stay with the caller: ApplyIPRule runs
+// inside the shared-config write transaction, and the caller then refreshes
+// the caches of Result.Updated.
 
 // ConnectionDeps are the pieces of other packages the connection rules call.
 type ConnectionDeps struct {
-	// RulesetInfo is domain_discovery_service.ruleset_info(config, id): an
-	// object with id, name, behavior and references (each with enabled,
-	// after_match and policy). Package #19.
+	// RulesetInfo describes a rule set of config: an object with id, name,
+	// behavior and references (each with enabled, after_match and policy).
 	RulesetInfo func(config *jsonx.Object, rulesetID string) *jsonx.Object
-	// ReadRulePayload is ruleset_content.read_rule_payload: the entries of a
-	// rule set plus an opaque handle for a lossless append. Package #12.
+	// ReadRulePayload returns the entries of a rule set plus an opaque
+	// handle for a lossless append.
 	ReadRulePayload func(content string) (lines []string, payload any, err error)
-	// AppendRulePayload is ruleset_content.append_rule_payload. Package #12.
+	// AppendRulePayload appends one entry to rule set content.
 	AppendRulePayload func(content, line string, payload any) string
 }
 
-// IPRuleTargets is ip_rule_targets: the editable content rule sets that can
+// IPRuleTargets lists the editable content rule sets that can
 // take IP rules, with the targets ("direct", "proxy") their current policy
 // allows. Entries are objects with id, name, behavior, problem, active and
 // targets.
@@ -82,29 +82,28 @@ func IPRuleTargets(config *jsonx.Object, deps ConnectionDeps) []*jsonx.Object {
 }
 
 // Destination is a validated connection target network.
-type Destination struct{ network ipNet }
+type Destination struct{ network netip.Prefix }
 
-// String is str(ip_network): the canonical CIDR text.
+// String is the canonical CIDR text.
 func (d *Destination) String() string { return d.network.String() }
 
 // IsIPv4 reports the address family.
-func (d *Destination) IsIPv4() bool { return d.network.ver == 4 }
+func (d *Destination) IsIPv4() bool { return d.network.Addr().Is4() }
 
-// ParseDestination is _destination_network: the value normalised as a client
-// range, whose family must agree with the rule type (IP-CIDR for IPv4,
-// IP-CIDR6 for IPv6).
-func ParseDestination(value any, ruleType string) (*Destination, error) {
+// ParseDestination reads the value as a client address or range whose family
+// must agree with the rule type (IP-CIDR for IPv4, IP-CIDR6 for IPv6).
+func ParseDestination(value string, ruleType string) (*Destination, error) {
 	invalid := &ProfileValidationError{Message: "请选择有效的目标 IP 或网段，IPv4 使用 IP-CIDR，IPv6 使用 IP-CIDR6。"}
 	text, err := NormalizeClientRange(value)
 	if err != nil {
 		return nil, invalid
 	}
-	network, ok := parseIPNetwork(text)
+	network, ok := parseNetwork(text)
 	if !ok {
 		return nil, invalid
 	}
 	want := "IP-CIDR"
-	if network.ver == 6 {
+	if network.Addr().Is6() {
 		want = "IP-CIDR6"
 	}
 	if ruleType != want {
@@ -113,7 +112,7 @@ func ParseDestination(value any, ruleType string) (*Destination, error) {
 	return &Destination{network}, nil
 }
 
-// IPRuleResult is what apply_ip reports: Added and Skipped entries, the
+// IPRuleResult is what an IP rule request reports: Added and Skipped entries, the
 // warnings, and the library items whose content changed (their cache files
 // must be refreshed by the caller).
 type IPRuleResult struct {
@@ -122,7 +121,7 @@ type IPRuleResult struct {
 	Updated        []*jsonx.Object
 }
 
-// ApplyIPRule runs apply_ip's append(shared) closure. config is the bound
+// ApplyIPRule appends the destination to the rule set. config is the bound
 // profile's compatibility config, whose rule_library is replaced by the
 // shared one; shared is the shared document, modified in place. Binding,
 // format and current policy are checked here again, under the caller's write
@@ -171,11 +170,12 @@ func ApplyIPRule(deps ConnectionDeps, config, shared *jsonx.Object, rulesetID, t
 		if !ok || (kind != "IP" && kind != "IP-CIDR" && kind != "IP-CIDR6") {
 			continue
 		}
-		network, ok := parseIPNetwork(value)
+		network, ok := parseNetwork(value)
 		if !ok {
 			continue
 		}
-		if destination.network.subnetOf(network) {
+		if covered := destination.network; network.Addr().Is4() == covered.Addr().Is4() &&
+			covered.Bits() >= network.Bits() && network.Contains(covered.Addr()) {
 			result.Skipped = append(result.Skipped, jsonx.Obj("value", destination.String(), "target", target, "reason", "exists"))
 			return result, nil
 		}

@@ -152,6 +152,10 @@ func stripKeyMarks(v any) any {
 func reviewKnown(t *testing.T, row corpusRow) string {
 	text := compactText(t, row.args)
 	switch {
+	case row.fn == "has_port_list" && strings.ContainsAny(text, "İıſ"):
+		// IGNORECASE: Python folds İ/ı/ſ to i/s, the regexp2 engine keeps
+		// them apart (rules: accepted difference turkishI).
+		return "Turkish i under IGNORECASE"
 	case (row.fn == "parse_structured_proxy_string" || row.fn == "convert_node_to_mihomo") &&
 		(strings.Contains(text, "&a [*a]") || strings.Contains(text, "!!set")):
 		// A recursive alias or a !!set cannot be held in jsonx (domain

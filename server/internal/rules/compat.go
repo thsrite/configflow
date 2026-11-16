@@ -1,56 +1,60 @@
 package rules
 
-// Helpers that belong to packages not ported yet (see server/PORTING.md,
-// "Helpers from a package that is not ported yet"). Each is a minimal private
-// copy; the owner replaces it when its package lands.
+// Helpers owned by modules that import this package (rulefetch for rule-set
+// content, convert for ruleset_format, oxidns for client ranges). The
+// matcher and the connection rules need them too, and an import the other
+// way round would be a cycle, so the implementation lives here: rulefetch
+// and mosdns call these; convert.RulesetFormat and
+// oxidns.NormalizeClientRange are still their own copies (to be switched to
+// these in their S passes).
 
 import (
-	"configflow/internal/pystr"
 	"errors"
-	"fmt"
+	"net/netip"
+	"net/url"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"configflow/internal/jsonx"
 )
 
-// ErrClassicalLine is the ValueError of ruleset_content._classical_line.
+// ProfileValidationError is a request the user must fix; Error() is the
+// Chinese message. (repo has its own; rules cannot import repo.)
+type ProfileValidationError struct{ Message string }
+
+func (e *ProfileValidationError) Error() string { return e.Message }
+
+// ErrClassicalLine: a line of a classical rule set whose meaning is unclear.
 var ErrClassicalLine = errors.New("无法确定此行的 Classical 语义，已保留原文；请改为明确的规则类型和值。")
 
-// TODO(port): replace with package #12 (backend/utils/ruleset_content.py).
-func validPattern(value string) bool {
-	if value == "" {
+// ValidPattern reports a domain pattern of a domain rule set: word
+// characters, dots and the wildcards "*" (a whole label) and "+." (a leading
+// any-depth suffix); IPs and networks are not patterns.
+func ValidPattern(value string) bool {
+	if value == "" || value == "." {
 		return false
 	}
 	for _, r := range value {
-		if !pyWordRune(r) && r != '.' && r != '*' && r != '+' && r != '-' {
+		if !unicode.IsLetter(r) && !unicode.IsNumber(r) && !strings.ContainsRune("_.*+-", r) {
 			return false
 		}
 	}
-	var hostname string
+	hostname := strings.TrimLeft(value, ".")
 	if strings.HasPrefix(value, "+.") || strings.HasPrefix(value, "*.") {
 		hostname = value[2:]
-	} else {
-		hostname = strings.TrimLeft(value, ".")
 	}
-	if LooksLikeIP(hostname) {
-		return false
-	}
-	if _, ok := parseIPAddress(value); ok {
+	if LooksLikeIP(hostname) || IsValidIP(value) {
 		return false
 	}
 	if value == "*" {
 		return true
 	}
 	parts := strings.Split(value, ".")
-	for _, part := range parts[1:] {
-		if part == "" {
+	for index, part := range parts {
+		if index > 0 && part == "" {
 			return false
 		}
-	}
-	if value == "." {
-		return false
-	}
-	for index, part := range parts {
 		if strings.Contains(part, "+") && !(index == 0 && part == "+" && len(parts) > 1) {
 			return false
 		}
@@ -61,43 +65,40 @@ func validPattern(value string) bool {
 	return true
 }
 
-// TODO(port): replace with package #12.
 func validClassicalDomain(value string) bool {
-	if len(value) > 253 || !validPattern(value) {
+	if len(value) > 253 || !ValidPattern(value) || asciiDigits(value[strings.LastIndex(value, ".")+1:]) {
 		return false
 	}
-	if i := strings.LastIndex(value, "."); pyIsASCIIDigits(value[i+1:]) {
-		return false
-	}
-	for _, part := range strings.Split(value, ".") {
-		if !validDNSLabel(part) {
+	for _, label := range strings.Split(value, ".") {
+		if !validDNSLabel(label) {
 			return false
 		}
 	}
 	return true
 }
 
-// classicalLine is ruleset_content._classical_line.
-// TODO(port): replace with package #12.
-func classicalLine(value string) (string, error) {
-	stripped := pystr.Strip(value)
+// ClassicalLine gives a bare entry of a classical rule set its explicit form
+// (+.suffix → DOMAIN-SUFFIX, an IP or CIDR → IP-CIDR/IP-CIDR6 with
+// no-resolve, a host → DOMAIN); explicit, blank and comment lines are kept.
+func ClassicalLine(value string) (string, error) {
+	stripped := strings.TrimSpace(value)
 	if stripped == "" || strings.HasPrefix(stripped, "#") || strings.HasPrefix(stripped, "//") || strings.Contains(stripped, ",") {
 		return value, nil
 	}
-	if strings.HasPrefix(stripped, "+.") && validClassicalDomain(stripped[2:]) {
-		return "DOMAIN-SUFFIX," + stripped[2:], nil
+	if suffix, ok := strings.CutPrefix(stripped, "+."); ok && validClassicalDomain(suffix) {
+		return "DOMAIN-SUFFIX," + suffix, nil
 	}
 	if !strings.Contains(stripped, "%") && !(strings.Contains(stripped, "/") && CIDRError(stripped) != "") {
-		if network, ok := parseIPNetwork(stripped); ok {
-			prefix := "IP-CIDR"
-			if network.ver == 6 {
-				prefix = "IP-CIDR6"
+		if network, ok := parseNetwork(stripped); ok {
+			kind := "IP-CIDR"
+			if network.Addr().Is6() {
+				kind = "IP-CIDR6"
 			}
 			address := stripped
 			if !strings.Contains(stripped, "/") {
-				address = fmt.Sprintf("%s/%d", stripped, ipAddr{ver: network.ver}.maxPrefix())
+				address += "/" + strconv.Itoa(network.Addr().BitLen())
 			}
-			return prefix + "," + address + ",no-resolve", nil
+			return kind + "," + address + ",no-resolve", nil
 		}
 	}
 	if validClassicalDomain(stripped) {
@@ -106,12 +107,12 @@ func classicalLine(value string) (string, error) {
 	return "", ErrClassicalLine
 }
 
-// classicalLineError is ruleset_content.classical_line_error ("" for None).
-// TODO(port): replace with package #12.
-func classicalLineError(value string) string {
+// ClassicalLineError is the message for an explicit classical rule line
+// that a rule set cannot hold; "" when valid.
+func ClassicalLineError(value string) string {
 	kind, payload, params := SplitRulePayload(value)
 	if kind == "MATCH" || kind == "RULE-SET" || kind == "SUB-RULE" {
-		return fmt.Sprintf("Classical 规则集不支持 %s；请放在策略规则中。", kind)
+		return "Classical 规则集不支持 " + kind + "；请放在策略规则中。"
 	}
 	if err := ruleValueError(kind, payload, 0); err != "" {
 		return err
@@ -124,88 +125,40 @@ func classicalLineError(value string) string {
 	return ""
 }
 
-// hasYAMLPayload is ruleset_content._has_yaml_payload.
-// TODO(port): replace with package #12.
-func hasYAMLPayload(content string) bool {
+// HasYAMLPayload reports content that looks like a YAML rule set: a flow
+// mapping, or a line starting with a (quoted) payload key.
+func HasYAMLPayload(content string) bool {
 	probe := strings.TrimPrefix(content, "\ufeff")
-	if strings.HasPrefix(strings.TrimLeftFunc(probe, pystr.IsSpace), "{") {
+	if strings.HasPrefix(strings.TrimLeftFunc(probe, unicode.IsSpace), "{") {
 		return true
 	}
-	skipSpace := func(s string) string { return strings.TrimLeftFunc(s, pystr.IsSpace) }
-	for start := 0; start <= len(probe); {
-		rest := skipSpace(probe[start:])
+	for _, line := range strings.Split(probe, "\n") {
+		rest := strings.TrimLeftFunc(line, unicode.IsSpace)
 		for _, key := range []string{`payload`, `"payload"`, `'payload'`} {
-			if strings.HasPrefix(rest, key) && strings.HasPrefix(skipSpace(rest[len(key):]), ":") {
+			if after, ok := strings.CutPrefix(rest, key); ok && strings.HasPrefix(strings.TrimLeftFunc(after, unicode.IsSpace), ":") {
 				return true
 			}
 		}
-		next := strings.IndexByte(probe[start:], '\n')
-		if next < 0 {
-			break
-		}
-		start += next + 1
 	}
 	return false
 }
 
-// urlPath is urlsplit(url).path.
-func urlPath(url string) string {
-	if i := strings.IndexByte(url, '#'); i >= 0 {
-		url = url[:i]
-	}
-	if i := strings.IndexByte(url, '?'); i >= 0 {
-		url = url[:i]
-	}
-	if i := strings.IndexByte(url, ':'); i > 0 {
-		scheme := url[:i]
-		valid := scheme[0] >= 'A' && (scheme[0] <= 'Z' || scheme[0] >= 'a' && scheme[0] <= 'z')
-		for j := 1; valid && j < len(scheme); j++ {
-			c := scheme[j]
-			valid = c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '+' || c == '-' || c == '.'
-		}
-		if valid {
-			url = url[i+1:]
-		}
-	}
-	if strings.HasPrefix(url, "//") {
-		rest := url[2:]
-		if i := strings.IndexByte(rest, '/'); i >= 0 {
-			return rest[i:]
-		}
-		return ""
-	}
-	return url
-}
-
-// RulesetFormat is converters.common.ruleset_format(rule, {'rule_library':
-// library}): the declared format, or the one inferred from the payload or URL
-// ("yaml", "text" or "mrs"). The port is convert.RulesetFormat (C12), which
-// cannot be used here (convert imports rules); compat_drift_test.go checks
-// this copy against convert's Python corpus.
+// RulesetFormat is the format of a rule set reference ("yaml", "text" or
+// "mrs"): the declared one, else inferred from inline content or the URL
+// path. library is the rule_library list; sourceURL overrides the rule's
+// URL when the library entry has none.
 func RulesetFormat(rule *jsonx.Object, library []any, sourceURL string) string {
-	var found *jsonx.Object
-	libraryID := rule.Value("library_rule_id")
+	found := jsonx.NewObject()
+	libraryID := rule.GetString("library_rule_id")
 	for _, entry := range library {
 		item, ok := entry.(*jsonx.Object)
-		if !ok {
-			continue
-		}
-		var match bool
-		if jsonx.Truthy(libraryID) {
-			match = jsonx.Equal(item.Value("id"), libraryID)
-		} else {
-			match = jsonx.Equal(item.Value("name"), rule.Value("name"))
-		}
-		if match {
+		if ok && (libraryID != "" && item.GetString("id") == libraryID || libraryID == "" && jsonx.Equal(item.Value("name"), rule.Value("name"))) {
 			found = item
 			break
 		}
 	}
-	if found == nil {
-		found = jsonx.NewObject()
-	}
 	for _, source := range []*jsonx.Object{found, rule} {
-		switch declared, _ := source.Value("format").(string); declared {
+		switch declared := source.GetString("format"); declared {
 		case "yaml", "text", "mrs":
 			return declared
 		}
@@ -214,116 +167,81 @@ func RulesetFormat(rule *jsonx.Object, library []any, sourceURL string) string {
 	if found.Len() == 0 {
 		source = rule
 	}
-	if kind, _ := source.Value("source_type").(string); kind == "content" {
-		if content, ok := source.Value("content").(string); ok && hasYAMLPayload(content) {
+	if source.GetString("source_type") == "content" {
+		if HasYAMLPayload(source.GetString("content")) {
 			return "yaml"
 		}
 		return "text"
 	}
-	url := ""
-	if text, ok := found.Value("url").(string); ok && text != "" {
-		url = text
-	} else if sourceURL != "" {
-		url = sourceURL
-	} else if text, ok := rule.Value("url").(string); ok {
-		url = text
+	address := found.GetString("url")
+	if address == "" {
+		address = sourceURL
 	}
-	path := strings.ToLower(urlPath(url))
-	if strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml") {
+	if address == "" {
+		address = rule.GetString("url")
+	}
+	path := address
+	if parsed, err := url.Parse(address); err == nil {
+		path = parsed.Path + parsed.Opaque
+	}
+	switch path = strings.ToLower(path); {
+	case strings.HasSuffix(path, ".yaml"), strings.HasSuffix(path, ".yml"):
 		return "yaml"
-	}
-	if strings.HasSuffix(path, ".mrs") {
+	case strings.HasSuffix(path, ".mrs"):
 		return "mrs"
 	}
 	return "text"
 }
 
-// ErrClientRange is OxidnsSettingsError for a bad client address or range.
-// TODO(port): replace with package #11 / #2 (common/oxidns_device_policy).
+// ErrClientRange: not a usable client address or range.
 var ErrClientRange = errors.New("请输入有效的客户端 IPv4、IPv6 或 CIDR 网段，例如 192.168.50.0/24。")
 
-// NormalizeClientRange is oxidns_device_policy.normalize_client_range: it
-// canonicalises hosts and CIDRs, including IPv4-mapped peers and host prefixes.
-// TODO(port): replace with package #11.
-func NormalizeClientRange(raw any) (string, error) {
-	text, ok := raw.(string)
-	if !ok {
+// NormalizeClientRange is a client host or CIDR in canonical text
+// (IPv4-mapped peers as IPv4; host bits cleared; a full-length prefix as the
+// bare address). Multicast networks and the unspecified address are refused.
+func NormalizeClientRange(raw string) (string, error) {
+	addressText, prefixText, hasPrefix := strings.Cut(strings.TrimSpace(raw), "/")
+	if addressText == "" || strings.Trim(addressText, "0123456789abcdefABCDEF:.") != "" || strings.Contains(prefixText, "/") {
 		return "", ErrClientRange
 	}
-	parts := strings.Split(pystr.Strip(text), "/")
-	if len(parts) > 2 || parts[0] == "" {
+	address, err := netip.ParseAddr(addressText)
+	if err != nil {
 		return "", ErrClientRange
 	}
-	for _, c := range []byte(parts[0]) {
-		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F' || c == ':' || c == '.') {
+	prefix := address.BitLen()
+	if hasPrefix {
+		if len(prefixText) > 3 || !asciiDigits(prefixText) {
 			return "", ErrClientRange
 		}
+		prefix, _ = strconv.Atoi(prefixText)
 	}
-	address, ok := parseIPAddress(parts[0])
-	if !ok {
+	if prefix > address.BitLen() {
 		return "", ErrClientRange
 	}
-	prefix := address.maxPrefix()
-	if len(parts) == 2 {
-		if l := len(parts[1]); l < 1 || l > 3 || !pyIsASCIIDigits(parts[1]) {
-			return "", ErrClientRange
-		}
-		prefix = 0
-		for _, c := range parts[1] {
-			prefix = prefix*10 + int(c-'0')
-		}
-	}
-	if prefix > address.maxPrefix() {
-		return "", ErrClientRange
-	}
-	if address.ver == 6 && address.v.hi == 0 && address.v.lo>>32 == 0xffff {
+	if address.Is4In6() { // OxiDNS sees IPv4-mapped peers as the IPv4 client
 		if prefix < 96 {
 			return "", ErrClientRange
 		}
-		address = ipAddr{ver: 4, v: u128{lo: address.v.lo & 0xffffffff}}
-		prefix -= 96
+		address, prefix = address.Unmap(), prefix-96
 	}
-	network, _ := parseIPNetwork(fmt.Sprintf("%s/%d", formatIP(address.ver, address.v), prefix))
-	mask := maskFor(network.ver, network.prefix)
-	broadcast := u128{network.base.hi | ^mask.hi, network.base.lo | ^mask.lo}
-	if network.ver == 4 {
-		broadcast.lo &= 0xffffffff
-	}
-	isMulticast := func(v u128) bool {
-		if network.ver == 4 {
-			return v.lo>>28 == 0xe
-		}
-		return v.hi>>56 == 0xff
-	}
-	if isMulticast(network.base) && isMulticast(broadcast) {
+	network := netip.PrefixFrom(address, prefix).Masked()
+	if network.Addr().IsMulticast() && lastAddress(network).IsMulticast() {
 		return "", ErrClientRange
 	}
-	if prefix == address.maxPrefix() {
-		if address.v == (u128{}) {
+	if prefix == address.BitLen() {
+		if address.IsUnspecified() {
 			return "", ErrClientRange
 		}
-		return formatIP(address.ver, address.v), nil
+		return address.String(), nil
 	}
 	return network.String(), nil
 }
 
-// Logger is the part of the application logger the rule engine writes to
-// (*logx.Logger satisfies it; tests may pass their own).
-type Logger interface {
-	Debugf(format string, args ...any)
-	Warningf(format string, args ...any)
-	Errorf(format string, args ...any)
+func lastAddress(network netip.Prefix) netip.Addr {
+	bytes := network.Addr().AsSlice()
+	for bit := network.Bits(); bit < len(bytes)*8; bit++ {
+		bytes[bit/8] |= 0x80 >> (bit % 8)
+	}
+	last, _ := netip.AddrFromSlice(bytes)
+	return last
 }
-
-type nopLogger struct{}
-
-func (nopLogger) Debugf(string, ...any)   {}
-func (nopLogger) Warningf(string, ...any) {}
-func (nopLogger) Errorf(string, ...any)   {}
-
-// ProfileValidationError is common.config_repository.ProfileValidationError:
-// a request the user must fix. Error() is the Chinese message. It stays here
-// because repo imports rules (rules cannot import repo); callers map it.
-type ProfileValidationError struct{ Message string }
-
-func (e *ProfileValidationError) Error() string { return e.Message }
