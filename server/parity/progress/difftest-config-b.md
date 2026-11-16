@@ -286,3 +286,22 @@ request_variants=4526 named_matrix_cases=2598（S260 F2078 B260），H去重96
 ```
 
 当前本批待Go接通，未计比较通过。T28生成器内嵌/包manifest能力、并发router锁、旧格式资源冲突重命名及部分repo OS异常继续；不是完整T28或仓库H验收。继续custom config、共享资源和其他业务文件。
+
+## 批次 15：五种 custom config、Mihomo 基础表单与 EasyTier
+
+- 488请求：五编辑器默认/保存/清空/64KiB/中文、Surge部分字段合并与null、MosDNS坏YAML允许保存、OxiDNS独立extension不覆盖native、坏JSON/数组/SQLite拒写，以及query/header/default选择和其他profile不变。
+- Mihomo/EasyTier拒绝项逐字段展开：基础布尔/整数范围/枚举/文本列表、IPv6、fake-IP/sniffer/controller/DNS循环/Agent保留端口；EasyTier每个text/secret/bool/int/list字段、长值与列表数量、网络/URI/地址/keepalive/启用组合。325拒绝变体逐端验证精确中文及Python DB/文件全不变，覆盖56个新增H编号。
+- 72个基础表单合法形态：布尔两值、整数min/max、全部枚举（含YAML on/off兼容）、空列表/null、仅本机controller空密码；respect-rules=true同时提供合法proxy-server-nameserver前提，不把前置拒绝当成功。所有成功保存的publish_guard独立核对实际profile+shared revision；增加错profile/service/revision篡改自检，共24项。
+- custom editor没有显式profile URL，矩阵的P3槽不适用；P4–6按各行原编号验证。H289内部LinuxGatewayError被H290同一catch转换，H319内部ValueError被H320捕获，单HTTP不能分别观测；未把相同响应重复宣称覆盖。EasyTier生成期H341–343另随G配方继续。
+
+```text
+.63 run.py --groups custom-config-basic,custom-config-selectors,custom-config-failures,mihomo-base-guards,mihomo-easytier-guards
+current go-unimplemented=416 design_errors=[]（该五组最终记录；合法形态另组）
+.63 run.py --groups mihomo-base-accepted
+current go-unimplemented=72 design_errors=[] seconds=4.66
+cumulative compared=1299 go-unimplemented=3680 dependency=28 different=6 O12-separate=1
+request_variants=5014 named_matrix_cases=2686（S284 F2096 B306），H去重152
+24 self-checks + end-to-end wrong-Go-response check OK
+```
+
+首轮合法形态中respect-rules缺前提产生DesignError，已补前提并完整替换该组结果；没有列为业务差异。当前本批Go仍未接通。继续四种客户端导入和其他业务文件，未做最终全量。

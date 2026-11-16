@@ -90,6 +90,10 @@ def main():
     groups.update(oxidns)
     from cases.config_backup import GROUPS as config_backup
     groups.update(config_backup)
+    from cases.custom_config import GROUPS as custom_config
+    groups.update(custom_config)
+    from cases.mihomo_guards import GROUPS as mihomo_guards
+    groups.update(mihomo_guards)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

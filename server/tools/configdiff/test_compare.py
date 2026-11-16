@@ -134,6 +134,31 @@ class Comparators(unittest.TestCase):
             self.assertTrue(snapshot_errors(root, before, set()))
             self.assertTrue(snapshot_errors(root, before, {backup / 'configflow.sqlite3'}))
 
+    def test_publish_guard_uses_profile_and_shared_revisions(self):
+        from publish import capture, check
+        from harness import DesignError
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = [Path(tmp, n) for n in ('python', 'go')]
+            for root in dirs:
+                root.mkdir()
+                with sqlite3.connect(root / 'configflow.sqlite3') as db:
+                    db.executescript('CREATE TABLE meta(key,value); CREATE TABLE sections(scope,owner,position); '
+                                     'CREATE TABLE fields(scope,owner,field,position,value,revision);')
+                    for scope, owner, value in [('profile', 'other', 7), ('shared', '', 3)]:
+                        db.execute('INSERT INTO fields VALUES (?,?,?,?,?,?)', (scope, owner, '_revision', 0, str(value), 1))
+            pair = SimpleNamespace(dirs=dirs)
+            correct = {'publish_guard': {'expected_profile_id': 'other', 'expected_service_type': 'mihomo', 'expected_config_revision': 10}}
+            a = Reply(200, {}, json.dumps(correct).encode())
+            check(pair, 'other', 'mihomo')(a)
+            self.assertEqual(capture(pair, 'other', 'mihomo')([a, copy.deepcopy(a)], Policy()), [])
+            for key, bad in [('expected_profile_id', 'default'), ('expected_service_type', 'surge'), ('expected_config_revision', 7)]:
+                changed = copy.deepcopy(correct)
+                changed['publish_guard'][key] = bad
+                b = Reply(200, {}, json.dumps(changed).encode())
+                self.assertTrue(capture(pair, 'other', 'mihomo')([a, b], Policy()))
+                with self.assertRaises(DesignError):
+                    check(pair, 'other', 'mihomo')(b)
+
     def test_generated_file_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:
             dirs = [Path(tmp, n) for n in ('python', 'go')]
