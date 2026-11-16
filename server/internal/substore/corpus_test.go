@@ -7,6 +7,7 @@ package substore
 // requests' URL preparation and response decoding.
 
 import (
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,7 +16,6 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/weburl"
 )
 
 type corpusRow struct {
@@ -112,7 +112,8 @@ func TestPythonCorpus(t *testing.T) {
 			got, err = PrepareURL(in[0].(string), params)
 			if row.hasOut && err == nil {
 				// The requested URL is compared after normalisation a server
-				// does anyway (N2): escapes decoded, an empty port dropped.
+				// does anyway (N2): escapes decoded, an empty port dropped,
+				// and DNS host names are case-insensitive.
 				if text, isText := row.output.(string); isText && sameRequestedURL(got.(string), text) {
 					got = text
 				}
@@ -169,8 +170,8 @@ func TestPythonCorpus(t *testing.T) {
 	t.Logf("%d rows %v", len(rows), counts)
 }
 
-// sameRequestedURL reports whether two prepared URLs address the same
-// resource: equal after percent-decoding, with an empty ":" port dropped.
+// sameRequestedURL compares only server-equivalent details: unreserved
+// escapes, DNS host case, and an empty ":" port.
 func sameRequestedURL(a, b string) bool {
 	canonical := func(s string) string {
 		u, err := url.Parse(s)
@@ -178,7 +179,58 @@ func sameRequestedURL(a, b string) bool {
 			return s
 		}
 		u.Host = strings.TrimSuffix(u.Host, ":")
-		return weburl.Unquote(u.String())
+		if hostname := u.Hostname(); hostname != "" {
+			if address, zone, scoped := strings.Cut(hostname, "%"); scoped {
+				hostname = strings.ToLower(address) + "%" + zone
+			} else {
+				hostname = strings.ToLower(hostname)
+			}
+			if port := u.Port(); port != "" {
+				u.Host = net.JoinHostPort(hostname, port)
+			} else if strings.Contains(hostname, ":") {
+				u.Host = "[" + hostname + "]"
+			} else {
+				u.Host = hostname
+			}
+		}
+		return decodeURLUnreserved(u.String())
 	}
 	return canonical(a) == canonical(b)
+}
+
+func decodeURLUnreserved(s string) string {
+	var out strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '%' && i+2 < len(s) {
+			hi, okHi := fromHex(s[i+1])
+			lo, okLo := fromHex(s[i+2])
+			if okHi && okLo {
+				b := hi<<4 | lo
+				if b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || strings.ContainsRune("-_~", rune(b)) {
+					out.WriteByte(b)
+					i += 2
+					continue
+				}
+				out.WriteByte('%')
+				out.WriteString(strings.ToUpper(s[i+1 : i+3]))
+				i += 2
+				continue
+			}
+		}
+		out.WriteByte(s[i])
+	}
+	return out.String()
+}
+
+func fromHex(b byte) (byte, bool) {
+	switch {
+	case b >= '0' && b <= '9':
+		return b - '0', true
+	case b >= 'a' && b <= 'f':
+		return b - 'a' + 10, true
+	case b >= 'A' && b <= 'F':
+		return b - 'A' + 10, true
+	default:
+		return 0, false
+	}
 }

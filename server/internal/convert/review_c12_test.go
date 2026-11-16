@@ -152,6 +152,10 @@ func stripKeyMarks(v any) any {
 func reviewKnown(t *testing.T, row corpusRow) string {
 	text := compactText(t, row.args)
 	switch {
+	case (row.fn == "ruleset_format" || row.fn == "apply_github_proxy_domain") && hasNFKCDelimiterAuthority(row.args):
+		// CPython urllib refuses NFKC URL delimiters in an authority; net/url
+		// accepts them. These review rows are synthetic invalid rule URLs.
+		return "N2 NFKC delimiter authority"
 	case row.fn == "has_port_list" && strings.ContainsAny(text, "İıſ"):
 		// IGNORECASE: Python folds İ/ı/ſ to i/s, the regexp2 engine keeps
 		// them apart (rules: accepted difference turkishI).
@@ -166,6 +170,35 @@ func reviewKnown(t *testing.T, row corpusRow) string {
 		return "unsupported regex"
 	}
 	return ""
+}
+
+func hasNFKCDelimiterAuthority(v any) bool {
+	switch v := v.(type) {
+	case string:
+		i := strings.Index(v, "://")
+		if i < 0 {
+			return false
+		}
+		start := i + 3
+		end := len(v)
+		if n := strings.IndexAny(v[start:], "/?#"); n >= 0 {
+			end = start + n
+		}
+		return strings.ContainsAny(v[start:end], "／？＃＠：﹕﹖﹟﹫︓︖℀℁℅℆⁇⁈⁉⩴")
+	case []any:
+		for _, item := range v {
+			if hasNFKCDelimiterAuthority(item) {
+				return true
+			}
+		}
+	case *jsonx.Object:
+		for _, key := range v.Keys() {
+			if hasNFKCDelimiterAuthority(v.Value(key)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // noneSlotOrder: a port-order row whose result has the same members as
@@ -269,6 +302,21 @@ func TestCorpusExceptionMessages(t *testing.T) {
 			if failures <= 20 {
 				t.Errorf("row %d %s: message %q, Python %q", i, row.fn, err.Error(), row.errMsg)
 			}
+		}
+	}
+}
+
+// Regression (review N2): a rule library name holding "%" or Chinese still
+// becomes a local rule URL (url.Parse refused the stray "%" and config
+// generation failed).
+func TestReviewN2AppendURLQueryKeepsRuleName(t *testing.T) {
+	for in, want := range map[string]string{
+		"/api/profiles/p/rules/local/50%":       "/api/profiles/p/rules/local/50%?target=mihomo",
+		"/api/rules/local/国外 规则":                "/api/rules/local/国外 规则?target=mihomo",
+		"https://cf.example/api/x?a=b c&d#frag": "https://cf.example/api/x?a=b%20c&d=&target=mihomo#frag",
+	} {
+		if got := appendURLQuery(in, [][2]any{{"target", "mihomo"}}); got != want {
+			t.Errorf("%q: %q, want %q", in, got, want)
 		}
 	}
 }

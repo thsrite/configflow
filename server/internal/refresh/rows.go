@@ -17,8 +17,8 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
-	"configflow/internal/rulefetch"
 	"configflow/internal/tasks"
+	"configflow/internal/weburl"
 )
 
 // isNotFalse is `value is not False`.
@@ -50,11 +50,11 @@ func historyOf(entry any) (*jsonx.Object, error) {
 // the address does not parse.
 func host(url any) string {
 	text, _ := orDefault(url, "").(string)
-	parts, err := rulefetch.SplitURL(text, "")
+	parts, err := weburl.Parse(text)
 	if err != nil {
 		return ""
 	}
-	return parts.Hostname()
+	return weburl.Hostname(parts)
 }
 
 func sharedOf(ctx context.Context) (*jsonx.Object, error) {

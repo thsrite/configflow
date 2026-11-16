@@ -74,8 +74,8 @@ func ApplyGithubProxyDomain(url string, config *jsonx.Object) (string, error) {
 	}
 	parts, err := weburl.Parse(url)
 	if err != nil {
-		if errors.Is(err, weburl.ErrAmbiguousHost) || strings.ContainsAny(url, "[]") && !strings.Contains(url, "[v") {
-			return "", pyError("ValueError", err.Error()) // a broken IPv6 literal or a spoofable host
+		if strings.ContainsAny(url, "[]") && !strings.Contains(url, "[v") {
+			return "", pyError("ValueError", err.Error()) // a broken IPv6 literal
 		}
 		return url, nil // not a usable URL, so not a GitHub one
 	}

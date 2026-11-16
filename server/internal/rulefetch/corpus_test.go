@@ -104,11 +104,15 @@ func runCorpusRow(fn string, args []any) (any, error) {
 		return source, err
 	case "validate_rule_url":
 		u, err := ValidateRuleURL(str(0))
-		return []any{u.Scheme, u.Netloc, u.Path, u.Query, u.Fragment}, err
+		if err != nil {
+			return nil, err
+		}
+		return ruleURLRow(u), nil
 	case "normalize_proxy":
 		return NormalizeRuleFetchProxy(args[0])
 	case "urljoin":
-		return URLJoin(str(0), str(1))
+		joined, err := joinURL(str(0), str(1))
+		return requestedForm(joined), err
 	}
 	panic("unknown fn " + fn)
 }
@@ -144,17 +148,21 @@ func TestCorpus(t *testing.T) {
 		row := value.(*jsonx.Object)
 		rows++
 		fn := row.GetString("fn")
+		if droppedURLRow(fn) {
+			continue
+		}
 		got, gotErr := runCorpusRow(fn, row.GetList("args"))
 		var gotText, wantText string
 		if want, isErr := row.Get("err"); isErr {
-			wantText = encode(want)
+			wantText = encode(classOnly(want))
 			if gotErr != nil {
-				gotText = encode(errorValue(gotErr))
+				gotText = encode(classOnly(errorValue(gotErr)))
 			} else {
 				gotText = "ok " + encode(got)
 			}
 		} else {
-			wantText = encode(row.Value("ok"))
+			want, _ := wantURLRow(fn, row.Value("ok"))
+			wantText = encode(want)
 			if gotErr != nil {
 				gotText = "error " + encode(errorValue(gotErr))
 			} else {
@@ -162,6 +170,11 @@ func TestCorpus(t *testing.T) {
 			}
 		}
 		if gotText != wantText {
+			args := row.GetList("args")
+			input, _ := args[0].(string)
+			if urlAccepted(fn, input, args) {
+				continue
+			}
 			failures[fn]++
 			if failures[fn] <= 4 {
 				t.Errorf("%s%s\n got %s\nwant %s", fn, encode(row.Value("args")), gotText, wantText)

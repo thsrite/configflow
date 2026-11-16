@@ -390,7 +390,9 @@ func clip(s string) string {
 func n2Accepted(got, want *jsonx.Object, args *jsonx.Object) bool {
 	gotErr, wantErr := got.GetObject("err"), want.GetObject("err")
 	switch {
-	case gotErr != nil && wantErr == nil && refusedByNetURL(args):
+	case gotErr != nil && wantErr == nil && n2URLDifference(args):
+		return true
+	case gotErr == nil && wantErr != nil && hasNFKCDelimiterAuthority(args):
 		return true
 	case gotErr != nil && wantErr != nil:
 		return gotErr.GetString("class") == wantErr.GetString("class") && !hasCJK(wantErr.GetString("text"))

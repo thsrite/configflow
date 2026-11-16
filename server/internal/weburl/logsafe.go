@@ -125,6 +125,14 @@ func safeURL(value string, depth int) (string, error) {
 	if value == "" || hasControl(value) || badEscape(value) {
 		return "", errUnsafe
 	}
+	// The user information is cut before anything is decoded: an encoded
+	// "/", "?" or "#" in a password would otherwise end the authority early
+	// and leave the rest of the password in the port or path.
+	if start, end, ok := authority(value); ok {
+		if at := strings.LastIndex(value[start:end], "@"); at >= 0 {
+			value = value[:start] + value[start+at+1:]
+		}
+	}
 	decoded, err := decodeLayers(value, false)
 	if err != nil {
 		return "", err

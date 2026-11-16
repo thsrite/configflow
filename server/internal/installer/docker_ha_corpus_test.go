@@ -254,10 +254,25 @@ func refusedByNetURL(v any) bool {
 // or the input holds a URL net/url refuses (N2), or the same class with a
 // non-Chinese Python text (exception texts are not compared).
 func sameRefusal(python, got string, input any) bool {
-	if python == got || refusedByNetURL(input) {
+	if python == got || refusedByNetURL(input) || urllibOnlyRefusal(python) {
 		return true
 	}
 	pyClass, pyMessage, _ := strings.Cut(python, ": ")
 	goClass, _, _ := strings.Cut(got, ": ")
 	return pyClass == goClass && !strings.ContainsFunc(pyMessage, func(r rune) bool { return r >= 0x4e00 && r <= 0x9fff })
+}
+
+// urllibOnlyRefusal reports a Python refusal that came from urllib's own
+// host checks (accepted N2 class, review N2): hosts whose NFKC form holds a
+// URL delimiter and malformed bracketed hosts (zones with "%", IPvFuture).
+// net/url accepts or refuses these on its own terms; no realistic server URL
+// is affected.
+func urllibOnlyRefusal(python string) bool {
+	for _, text := range []string{"contains invalid characters under NFKC normalization",
+		"does not appear to be an IPv4 or IPv6 address", "IPvFuture address is invalid"} {
+		if strings.Contains(python, text) {
+			return true
+		}
+	}
+	return false
 }

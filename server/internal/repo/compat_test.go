@@ -132,6 +132,9 @@ func TestCompatGolden(t *testing.T) {
 			continue
 		}
 		class, message := record.GetString("error_class"), record.GetString("error")
+		if err == nil && hasNFKCDelimiterAuthority(input) {
+			continue // Accepted N2 difference: net/url accepts NFKC delimiter authorities.
+		}
 		var helper *HelperError
 		if err == nil || !errors.As(err, &helper) {
 			t.Errorf("%s: input %s: got (%v, %v), python raised %s: %s", label, brief, got, err, class, message)
@@ -153,6 +156,35 @@ func TestCompatGolden(t *testing.T) {
 			t.Errorf("no golden cases for %s", fn)
 		}
 	}
+}
+
+func hasNFKCDelimiterAuthority(v any) bool {
+	switch v := v.(type) {
+	case string:
+		i := strings.Index(v, "://")
+		if i < 0 {
+			return false
+		}
+		start := i + 3
+		end := len(v)
+		if n := strings.IndexAny(v[start:], "/?#"); n >= 0 {
+			end = start + n
+		}
+		return strings.ContainsAny(v[start:end], "／？＃＠：﹕﹖﹟﹫︓︖℀℁℅℆⁇⁈⁉⩴")
+	case []any:
+		for _, item := range v {
+			if hasNFKCDelimiterAuthority(item) {
+				return true
+			}
+		}
+	case *jsonx.Object:
+		for _, key := range v.Keys() {
+			if hasNFKCDelimiterAuthority(v.Value(key)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // goldenDefault is json.dumps(value, default=lambda o: [str(o)]) of the

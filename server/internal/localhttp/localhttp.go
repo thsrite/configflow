@@ -143,7 +143,7 @@ func Do(ctx context.Context, r Request) (*Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !strings.HasPrefix(prepared.path, r.Prefix+"/api/") {
+	if !strings.HasPrefix(prepared.dispatchPath, r.Prefix+"/api/") {
 		// Requests normalises dot segments while preparing a URL: recheck the
 		// API boundary after that normalisation rather than dispatch outside it.
 		return nil, nil
@@ -223,9 +223,9 @@ func Do(ctx context.Context, r Request) (*Response, error) {
 }
 
 type preparedRequest struct {
-	scheme, host, path, query, url string
-	header                         http.Header
-	body                           []byte
+	scheme, host, path, dispatchPath, query, url string
+	header                                       http.Header
+	body                                         []byte
 }
 
 // prepare builds the request the in-process handler sees (URL as weburl.Prepare
@@ -245,7 +245,7 @@ func prepare(r Request, method string) (*preparedRequest, error) {
 	if u.Host == "" {
 		return nil, fmt.Errorf("Invalid URL %s: No host supplied", jsonx.Repr(r.URL))
 	}
-	prepared := &preparedRequest{scheme: u.Scheme, host: u.Host, path: u.EscapedPath(), query: u.RawQuery, header: http.Header{}}
+	prepared := &preparedRequest{scheme: u.Scheme, host: u.Host, path: u.EscapedPath(), dispatchPath: u.Path, query: u.RawQuery, header: http.Header{}}
 	for key, values := range r.Headers {
 		for _, v := range values {
 			prepared.header.Add(key, v)

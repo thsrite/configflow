@@ -9,6 +9,7 @@ import (
 	"context"
 	"math/big"
 	"net/netip"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -111,6 +112,11 @@ func server(value any) (string, error) {
 
 func encryptedServer(text string) (string, bool) {
 	if len([]rune(text)) > 2048 || strings.ContainsAny(text, invalidChars) {
+		return "", false
+	}
+	// urllib accepts stray percent signs in a URL path, but node_dns._server
+	// rejects malformed percent escapes before accepting a DoH endpoint.
+	if _, err := url.Parse(text); err != nil {
 		return "", false
 	}
 	for _, r := range text {

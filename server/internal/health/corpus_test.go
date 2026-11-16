@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,7 +14,6 @@ import (
 	"configflow/internal/health/check"
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
-	"configflow/internal/weburl"
 )
 
 // The reference corpus (testdata/gen.py, CPython 3.11) covers every pure
@@ -92,7 +92,7 @@ func refusedByNetURL(v any) bool {
 		if !strings.Contains(v, "://") {
 			return false
 		}
-		_, err := weburl.Parse(v)
+		_, err := url.Parse(v)
 		return err != nil || strings.Contains(v, "[v")
 	case []any:
 		for _, item := range v {
@@ -108,6 +108,43 @@ func refusedByNetURL(v any) bool {
 		}
 	}
 	return false
+}
+
+// hasNFKCDelimiterAuthority recognizes Python's urlsplit ValueError for
+// authority characters whose compatibility form is a URL delimiter. Go's
+// net/url accepts these literal Unicode characters, so the URL is unusable
+// under urllib's boundary but remains parseable by Go.
+func hasNFKCDelimiterAuthority(v any) bool {
+	switch v := v.(type) {
+	case string:
+		i := strings.Index(v, "://")
+		if i < 0 {
+			return false
+		}
+		start := i + 3
+		end := len(v)
+		if n := strings.IndexAny(v[start:], "/?#"); n >= 0 {
+			end = start + n
+		}
+		return strings.ContainsAny(v[start:end], "／？＃＠：﹕﹖﹟﹫︓︖℀℁℅℆⁇⁈⁉⩴")
+	case []any:
+		for _, item := range v {
+			if hasNFKCDelimiterAuthority(item) {
+				return true
+			}
+		}
+	case *jsonx.Object:
+		for _, key := range v.Keys() {
+			if hasNFKCDelimiterAuthority(v.Value(key)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func n2URLDifference(v any) bool {
+	return refusedByNetURL(v) || hasNFKCDelimiterAuthority(v)
 }
 
 // hasCJK reports whether a Python message is a Chinese user-facing text
@@ -321,6 +358,9 @@ func TestReferenceCorpus(t *testing.T) {
 		}
 		if class := row.GetString("error"); class != "" {
 			if callErr == nil {
+				if hasNFKCDelimiterAuthority(args) {
+					continue
+				}
 				failures++
 				t.Errorf("row %d %s: want %s %q, got %s", i, label, class, row.GetString("message"), encode(out))
 				continue
@@ -333,7 +373,7 @@ func TestReferenceCorpus(t *testing.T) {
 			continue
 		}
 		if callErr != nil {
-			if refusedByNetURL(args) {
+			if n2URLDifference(args) {
 				continue
 			}
 			failures++

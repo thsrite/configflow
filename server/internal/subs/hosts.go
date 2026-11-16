@@ -456,41 +456,6 @@ type providerSource struct {
 	query    map[string][]string
 }
 
-// splitURL returns path and query of urllib.parse.urlsplit(url).
-func splitURL(url string) (path, query string) {
-	url = strings.TrimLeft(url, whatwgTrim)
-	url = strings.NewReplacer("\t", "", "\r", "", "\n", "").Replace(url)
-	if i := strings.IndexByte(url, ':'); i > 0 {
-		ok := isASCIILetter(url[0])
-		for j := 0; j < i && ok; j++ {
-			c := url[j]
-			ok = isASCIILetter(c) || c >= '0' && c <= '9' || c == '+' || c == '-' || c == '.'
-		}
-		if ok {
-			url = url[i+1:]
-		}
-	}
-	if strings.HasPrefix(url, "//") {
-		rest := url[2:]
-		if j := strings.IndexAny(rest, "/?#"); j >= 0 {
-			url = rest[j:]
-		} else {
-			url = ""
-		}
-	}
-	if i := strings.IndexByte(url, '#'); i >= 0 {
-		url = url[:i]
-	}
-	if i := strings.IndexByte(url, '?'); i >= 0 {
-		return url[:i], url[i+1:]
-	}
-	return url, ""
-}
-
-const whatwgTrim = "\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\x0c\r\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f "
-
-func isASCIILetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
-
 // listField is `config.get(key, [])` for a list of items.
 func listField(o *jsonx.Object, key string) []any {
 	l, _ := o.Value(key).([]any)
@@ -528,9 +493,12 @@ func providerSources(main, config *jsonx.Object) []providerSource {
 		if !ok {
 			continue
 		}
-		rawPath, rawQuery := splitURL(url)
-		path := weburl.Unquote(rawPath)
-		_, query := ParseQS(rawQuery)
+		u, err := weburl.Parse(url)
+		if err != nil {
+			continue // not a URL the panel generated
+		}
+		path := u.Path
+		_, query := ParseQS(u.RawQuery)
 		if strings.Contains(path, "/subscriptions/") {
 			ident := path[strings.LastIndex(path, "/subscriptions/")+len("/subscriptions/"):]
 			ident, _, _ = strings.Cut(ident, "/")

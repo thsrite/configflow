@@ -237,6 +237,9 @@ func TestExternalNonAPIAndNormalizedEscapeUseTheNetwork(t *testing.T) {
 	if response, err := Do(context.Background(), Request{Method: "get", URL: "http://config.test/api/a/../inspect"}); err != nil || response == nil {
 		t.Errorf("a normalised path inside /api/ is local: %v %v", response, err)
 	}
+	if response, err := Do(context.Background(), Request{Method: "get", URL: "http://config.test/%61pi/inspect"}); err != nil || response == nil {
+		t.Errorf("an escaped unreserved API path is local after server path decoding: %v %v", response, err)
+	}
 	if _, err := Do(context.Background(), Request{Method: "get", URL: "not a url"}); err == nil {
 		t.Error("an invalid URL must fail like requests does")
 	}
@@ -277,15 +280,15 @@ func TestWithoutRegisteredAppNothingIsDispatched(t *testing.T) {
 	}
 }
 
-// Expected values are what requests sent, up to escapes a server reads alike
-// (an escaped dot or a lower-case escape is kept).
-func TestNormalizePathMatchesRequests(t *testing.T) {
+// Expected values are Go's escaped request paths; unreserved escapes remain
+// escaped. Local dispatch separately checks the path after server decoding.
+func TestNormalizePathPreservesGoEscapes(t *testing.T) {
 	cases := map[string]string{
-		"/%61pi/x":        "/api/x",
+		"/%61pi/x":        "/%61pi/x",
 		"/api/%2e%2e/e":   "/api/%2e%2e/e",
 		"/api/a/../b":     "/api/b",
 		"/api/%e4%be%8b":  "/api/%e4%be%8b",
-		"/api/%7euser":    "/api/~user",
+		"/api/%7euser":    "/api/%7euser",
 		"/api/a b":        "/api/a%20b",
 		"/api/a%2Fb":      "/api/a%2Fb",
 		"/api/a/b/../../": "/api/",
@@ -311,15 +314,13 @@ func TestNormalizePathMatchesRequests(t *testing.T) {
 	}
 }
 
-// Regression (review C02): the URL is prepared like requests (references in
-// requests 2.31): a "%" that is not an escape is dispatched as
-// %25 (Go's url.Parse refused it), the query and host are normalised, the
-// response URL keeps the fragment.
+// Regression (review C02): a "%" that is not an escape is dispatched as %25
+// (Go's url.Parse refused it), the query is made valid, the response URL
+// keeps the fragment. Escapes stay as written (review N2).
 func TestPreparedURLLikeRequests(t *testing.T) {
 	newFixture(t)
 	for url, want := range map[string]string{
-		"http://config.test/api/a%41%zz":   "http://config.test/api/aA%25zz",
-		"http://Config.TEST:080/api/x":     "http://config.test:80/api/x",
+		"http://config.test/api/a%41%zz":   "http://config.test/api/a%41%25zz",
 		"http://config.test/api/x?a=b c":   "http://config.test/api/x?a=b%20c",
 		"http://config.test/api/inspect#f": "http://config.test/api/inspect#f",
 	} {

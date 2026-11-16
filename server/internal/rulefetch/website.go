@@ -11,6 +11,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/pystr"
 	"configflow/internal/rules"
+	"configflow/internal/weburl"
 )
 
 // PageMarkers is PAGE_MARKERS (Go RE2 expressions the Agent runs; each
@@ -141,8 +142,8 @@ func PageIdentity(result *jsonx.Object, host string, checkedAt any) *jsonx.Objec
 	identity.Set("description", metaContent(stringValue(markers.Value("description"))))
 	finalHost := host
 	if finalURL, ok := result.Value("final_url").(string); ok {
-		if parsed, err := SplitURL(finalURL, ""); err == nil && parsed.Hostname() != "" {
-			finalHost = parsed.Hostname()
+		if parsed, err := weburl.Parse(finalURL); err == nil && weburl.Hostname(parsed) != "" {
+			finalHost = weburl.Hostname(parsed)
 		}
 	}
 	identity.Set("final_host", finalHost)

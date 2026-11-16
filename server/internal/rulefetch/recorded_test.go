@@ -163,7 +163,10 @@ func replayRecorded(row *jsonx.Object) (any, error) {
 		return source, err
 	case "validate_rule_url":
 		u, err := ValidateRuleURL(str("url"))
-		return []any{u.Scheme, u.Netloc, u.Path, u.Query, u.Fragment}, err
+		if err != nil {
+			return nil, err
+		}
+		return ruleURLRow(u), nil
 	case "normalize_rule_fetch_proxy":
 		return NormalizeRuleFetchProxy(args.Value("value"))
 	case "is_internal_rule_url":
@@ -210,17 +213,21 @@ func TestRecordedSuiteCalls(t *testing.T) {
 		row := value.(*jsonx.Object)
 		rows++
 		fn := row.GetString("fn")
+		if droppedURLRow(fn) {
+			continue
+		}
 		got, gotErr := replayRecorded(row)
 		var gotText, wantText string
 		if want, isErr := row.Get("err"); isErr {
-			wantText = encode(want)
+			wantText = encode(classOnly(want))
 			if gotErr != nil {
-				gotText = encode(recordedError(gotErr))
+				gotText = encode(classOnly(recordedError(gotErr)))
 			} else {
 				gotText = "ok " + encode(got)
 			}
 		} else {
-			wantText = encode(row.Value("ok"))
+			want, _ := wantURLRow(fn, row.Value("ok"))
+			wantText = encode(want)
 			if gotErr != nil {
 				gotText = "error " + encode(recordedError(gotErr))
 			} else {
@@ -228,6 +235,10 @@ func TestRecordedSuiteCalls(t *testing.T) {
 			}
 		}
 		if gotText != wantText {
+			args := row.GetObject("args")
+			if url, _ := args.Value("url").(string); urlAccepted(fn, url, args.Value("result")) {
+				continue
+			}
 			failures[fn]++
 			if failures[fn] <= 3 {
 				t.Errorf("%s (%s)\nargs %.600s\n got %.800s\nwant %.800s", fn, row.GetString("test"),

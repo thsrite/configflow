@@ -8,7 +8,6 @@ package agents
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"errors"
 	"io"
 	"math"
@@ -174,11 +173,9 @@ func (c *deadlineConn) Write(p []byte) (int, error) {
 // are not numeric: it returns the address to dial or an error.
 var resolveHook func(host string) (string, error)
 
-// Do sends the request. A user:password in the authority becomes Basic
-// authentication replacing the Authorization header, and a host in any
-// numeric form glibc's getaddrinfo accepts (inet_aton: "127.1",
-// "0x7f.0.0.1", "2130706433", octal parts) is dialled as that address
-// instead of being looked up as a name.
+// Do sends the request. A user:password in the authority becomes UTF-8
+// Basic authentication, replacing the Authorization header. Host parsing
+// and name resolution use Go's standard URL and network libraries.
 func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 	dialer := &net.Dialer{Timeout: request.Timeout.Connect}
 	var proxy func(*http.Request) (*url.URL, error)
@@ -204,8 +201,6 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 					if !glibcScopeOK(host) {
 						return nil, &net.DNSError{Err: "Name or service not known", Name: host, IsNotFound: true}
 					}
-				} else if ip, ok := inetAtonExact(host); ok {
-					address = net.JoinHostPort(ip, port)
 				} else if resolveHook != nil {
 					resolved, err := resolveHook(host)
 					if err != nil {
@@ -251,14 +246,9 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 		req.Header[key] = values
 	}
 	if user := req.URL.User; user != nil {
-		// requests: get_auth_from_url → HTTPBasicAuth (latin-1), only when a
-		// password is present (unquote(None) fails and leaves no auth).
+		// URL user information is sent as Go's UTF-8 Basic authentication.
 		if password, ok := user.Password(); ok {
-			credentials, ok := latin1(user.Username() + ":" + password)
-			if !ok {
-				return nil, errors.New("'latin-1' codec can't encode characters in the URL credentials")
-			}
-			req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString(credentials))
+			req.SetBasicAuth(user.Username(), password)
 		}
 		req.URL.User = nil
 	}
@@ -363,86 +353,6 @@ func glibcScopeOK(host string) bool {
 	}
 	n, err := strconv.ParseUint(zone, 10, 64)
 	return err == nil && n <= math.MaxUint32
-}
-
-func latin1(s string) ([]byte, bool) {
-	out := make([]byte, 0, len(s))
-	for _, r := range s {
-		if r > 0xff {
-			return nil, false
-		}
-		out = append(out, byte(r))
-	}
-	return out, true
-}
-
-// inetAtonExact is glibc's __inet_aton_exact, the numeric IPv4 forms
-// getaddrinfo accepts: one to four parts, each decimal, octal (leading 0) or
-// hex (0x), the last one filling the remaining bytes; nothing may follow.
-func inetAtonExact(host string) (string, bool) {
-	var parts []uint64
-	i := 0
-	for {
-		if i >= len(host) || host[i] < '0' || host[i] > '9' {
-			return "", false
-		}
-		base, value, digit := uint64(10), uint64(0), false
-		if host[i] == '0' {
-			i++
-			if i < len(host) && (host[i] == 'x' || host[i] == 'X') {
-				base = 16 // "0x" alone has no digit
-				i++
-			} else {
-				base, digit = 8, true
-			}
-		}
-		for ; i < len(host); i++ {
-			c := host[i]
-			var d uint64
-			switch {
-			case c >= '0' && c <= '9':
-				if base == 8 && c >= '8' {
-					return "", false
-				}
-				d = uint64(c - '0')
-			case base == 16 && c >= 'a' && c <= 'f':
-				d = uint64(c-'a') + 10
-			case base == 16 && c >= 'A' && c <= 'F':
-				d = uint64(c-'A') + 10
-			default:
-				goto partDone
-			}
-			value = value*base + d
-			if value > 0xffffffff {
-				return "", false
-			}
-			digit = true
-		}
-	partDone:
-		if !digit {
-			return "", false
-		}
-		if i < len(host) && host[i] == '.' {
-			if len(parts) == 3 || value > 0xff {
-				return "", false
-			}
-			parts = append(parts, value)
-			i++
-			continue
-		}
-		if i != len(host) {
-			return "", false
-		}
-		limits := []uint64{0xffffffff, 0xffffff, 0xffff, 0xff}
-		if value > limits[len(parts)] {
-			return "", false
-		}
-		address := value
-		for n, part := range parts {
-			address |= part << (24 - 8*n)
-		}
-		return net.IPv4(byte(address>>24), byte(address>>16), byte(address>>8), byte(address)).String(), true
-	}
 }
 
 // invalidIDNALabel returns the first non-ASCII label of host that urllib3's

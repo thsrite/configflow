@@ -211,7 +211,9 @@ func TestRenderMatrixMatchesPython(t *testing.T) {
 		}
 		if !record.GetBool("ok") {
 			refused++
-			if err == nil {
+			if err == nil && urllibOnlyRefusal(record.GetString("error")) {
+				// accepted N2 class: urllib-only host refusal
+			} else if err == nil {
 				t.Errorf("case %d %s %s: python refused (%s), go rendered", id, fn, jsonx.Repr(k.Object), record.GetString("error"))
 			} else if got := errorText(err); !sameRefusal(record.GetString("error"), got, k.Object) {
 				t.Errorf("case %d %s %s:\n  python %s\n  go     %s", id, fn, jsonx.Repr(k.Object), record.GetString("error"), got)

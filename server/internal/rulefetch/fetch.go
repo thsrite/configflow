@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 	"time"
 
@@ -80,9 +81,9 @@ type origin struct {
 }
 
 // originOf is _origin(parsed): (scheme, hostname, port or the default
-// port); a malformed port is SplitResult.port's ValueError.
-func originOf(u URL) (origin, error) {
-	port, has, err := u.Port()
+// port); a port above 65535 is an error.
+func originOf(u *url.URL) (origin, error) {
+	port, has, err := weburl.Port(u)
 	if err != nil {
 		return origin{}, err
 	}
@@ -92,19 +93,16 @@ func originOf(u URL) (origin, error) {
 			port = 443
 		}
 	}
-	return origin{u.Scheme, u.Hostname(), port}, nil
+	return origin{u.Scheme, weburl.Hostname(u), port}, nil
 }
 
 // internalRuleBase is _internal_rule_base: the server origin whose API the
 // URL addresses (server_domain, then the current request's host URL). The
-// error is the ValueError urlsplit or SplitResult.port raise in Python (an
-// unparsable URL or base, a malformed port); it propagates to the caller.
-func internalRuleBase(url string, config *jsonx.Object, hostURL string) (URL, bool, error) {
+// error is for an unparsable URL or base or a malformed port; it propagates
+// to the caller.
+func internalRuleBase(rawURL string, config *jsonx.Object, hostURL string) (*url.URL, bool, error) {
 	settings := RuleFetchSettings(config)
-	parsed, err := SplitURL(url, "")
-	if err != nil {
-		return URL{}, false, err
-	}
+	var parsed *url.URL
 	bases := []any{settings.GetOr("server_domain", "")}
 	if hostURL != "" {
 		bases = append(bases, hostURL)
@@ -116,27 +114,34 @@ func internalRuleBase(url string, config *jsonx.Object, hostURL string) (URL, bo
 			// settings validation keeps it a string).
 			continue
 		}
-		o, err := SplitURL(base, "")
+		if parsed == nil {
+			// Parsed only when there is a base to compare with.
+			var err error
+			if parsed, err = parseRuleURL(rawURL); err != nil {
+				return nil, false, err
+			}
+		}
+		o, err := parseRuleURL(base)
 		if err != nil {
-			return URL{}, false, err
+			return nil, false, err
 		}
 		left, err := originOf(parsed)
 		if err != nil {
-			return URL{}, false, err
+			return nil, false, err
 		}
 		right, err := originOf(o)
 		if err != nil {
-			return URL{}, false, err
+			return nil, false, err
 		}
 		if left != right {
 			continue
 		}
-		prefix := strings.TrimRight(o.Path, "/") + "/api/"
-		if strings.HasPrefix(parsed.Path, prefix) {
+		prefix := strings.TrimRight(weburl.RawPath(o), "/") + "/api/"
+		if strings.HasPrefix(weburl.RawPath(parsed), prefix) {
 			return o, true, nil
 		}
 	}
-	return URL{}, false, nil
+	return nil, false, nil
 }
 
 // IsInternalRuleURLChecked is is_internal_rule_url: requests to ConfigFlow
@@ -182,11 +187,11 @@ var GithubHosts = []string{"github.com", "raw.githubusercontent.com", "gist.gith
 
 // IsGithubURL is is_github_url.
 func IsGithubURL(url string) bool {
-	parsed, err := SplitURL(url, "")
+	parsed, err := weburl.Parse(url)
 	if err != nil {
 		return false
 	}
-	host := parsed.Hostname()
+	host := weburl.Hostname(parsed)
 	for _, h := range GithubHosts {
 		if host == h {
 			return true
@@ -308,7 +313,7 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *Request, config
 		var response *Response
 		if internal && c.Local != nil {
 			local, err := c.Local(ctx, localhttp.Request{Method: method, URL: current,
-				Prefix: strings.TrimRight(base.Path, "/"), Stream: r.Stream || r.MaxBytes > 0, ReadTimeout: r.ReadTimeout})
+				Prefix: strings.TrimRight(weburl.RawPath(base), "/"), Stream: r.Stream || r.MaxBytes > 0, ReadTimeout: r.ReadTimeout})
 			if err != nil {
 				return nil, localError(err)
 			}
@@ -330,7 +335,7 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *Request, config
 				// resolve_redirects (yield_requests=True); _RuleSession (HTTPS
 				// proxy) never resolves redirects.
 				httpsProxy := false
-				if p, err := SplitURL(proxy, ""); err == nil && p.Scheme == "https" {
+				if p, err := weburl.Parse(proxy); err == nil && p.Scheme == "https" {
 					httpsProxy = true
 				}
 				if err := readUnstreamed(response, httpsProxy); err != nil {
@@ -353,7 +358,7 @@ func (c *Client) requestOnce(ctx context.Context, url string, r *Request, config
 			if location == "" {
 				return "", errors.New("Redirect without Location")
 			}
-			target, err := URLJoin(current, location)
+			target, err := joinURL(current, location)
 			if err != nil {
 				return "", err
 			}
@@ -450,11 +455,11 @@ func readUnstreamed(response *Response, httpsProxy bool) error {
 		response.Body = io.NopCloser(bytes.NewReader(nil))
 	}
 	if strings.HasPrefix(target, "//") {
-		if from, err := SplitURL(response.URL, ""); err == nil {
+		if from, err := weburl.Parse(response.URL); err == nil {
 			target = from.Scheme + ":" + target
 		}
 	}
-	_, err := urlparse(target, "")
+	_, err := weburl.Prepare(target, nil)
 	return err
 }
 
@@ -556,13 +561,15 @@ func (c *Client) RequestRule(ctx context.Context, url string, r Request) (*Respo
 		// userinfo there too, not just the outer URL's host.
 		var secrets []string
 		for _, source := range candidates {
-			parsed, _ := SplitURL(source.URL, "")
-			user, hasUser, password, hasPassword := parsed.userinfo()
-			if hasUser && user != "" {
-				secrets = append(secrets, weburl.Unquote(user))
+			parsed, err := parseRuleURL(source.URL)
+			if err != nil || parsed.User == nil {
+				continue
 			}
-			if hasPassword && password != "" {
-				secrets = append(secrets, weburl.Unquote(password))
+			if user := parsed.User.Username(); user != "" {
+				secrets = append(secrets, user)
+			}
+			if password, _ := parsed.User.Password(); password != "" {
+				secrets = append(secrets, password)
 			}
 		}
 		return nil, newRuleFetchError(attempts, secrets)

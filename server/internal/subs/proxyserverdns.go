@@ -5,10 +5,10 @@ import (
 	"math/big"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/weburl"
 )
 
 // Constants of proxy_server_dns.
@@ -173,70 +173,18 @@ func ListenerAddress(listen any) (string, string) {
 	return fmt.Sprintf("udp://%s:%d", info.text, pn), ""
 }
 
-type splitParts struct {
-	scheme, hostname string
-	port             int
-	portErr          bool
-	badNetloc        bool
-}
-
-// urlSplitHost is the part of urllib.parse.urlsplit the nameserver check
-// uses: scheme, hostname and port of `text`.
-func urlSplitHost(text string) splitParts {
-	text = strings.TrimLeft(text, whatwgTrim)
-	text = strings.NewReplacer("\t", "", "\r", "", "\n", "").Replace(text)
-	var p splitParts
-	if i := strings.IndexByte(text, ':'); i > 0 {
-		ok := isASCIILetter(text[0])
-		for j := 0; j < i && ok; j++ {
-			c := text[j]
-			ok = isASCIILetter(c) || c >= '0' && c <= '9' || c == '+' || c == '-' || c == '.'
-		}
-		if ok {
-			p.scheme = strings.ToLower(text[:i])
-			text = text[i+1:]
-		}
+// nameserverAddr is the scheme, host name and port (0 = none) of a DNS
+// server URL; ok is false when it does not parse or the port is invalid.
+func nameserverAddr(text string) (scheme, host string, port int, ok bool) {
+	u, err := weburl.Parse(text)
+	if err != nil {
+		return "", "", 0, false
 	}
-	netloc := ""
-	if strings.HasPrefix(text, "//") {
-		rest := text[2:]
-		end := len(rest)
-		if j := strings.IndexAny(rest, "/?#"); j >= 0 {
-			end = j
-		}
-		netloc = rest[:end]
+	port, _, err = weburl.Port(u)
+	if err != nil {
+		return "", "", 0, false
 	}
-	if (strings.Contains(netloc, "[") && !strings.Contains(netloc, "]")) || (strings.Contains(netloc, "]") && !strings.Contains(netloc, "[")) {
-		p.badNetloc = true
-		return p
-	}
-	hostinfo := netloc
-	if i := strings.LastIndex(netloc, "@"); i >= 0 {
-		hostinfo = netloc[i+1:]
-	}
-	var host, port string
-	if _, bracketed, ok := strings.Cut(hostinfo, "["); ok {
-		host, port, _ = strings.Cut(bracketed, "]")
-		_, port, _ = strings.Cut(port, ":")
-	} else {
-		host, port, _ = strings.Cut(hostinfo, ":")
-	}
-	p.hostname = strings.ToLower(host)
-	if port != "" {
-		allDigits := true
-		for i := 0; i < len(port); i++ {
-			if port[i] < '0' || port[i] > '9' {
-				allDigits = false
-			}
-		}
-		n, err := strconv.Atoi(port)
-		if !allDigits || err != nil || n > 65535 {
-			p.portErr = true
-		} else {
-			p.port = n
-		}
-	}
-	return p
+	return strings.ToLower(u.Scheme), weburl.Hostname(u), port, true
 }
 
 func isUnspecifiedListen(listen string) bool {
@@ -257,7 +205,7 @@ func pointsToListener(values []any, listen string) bool {
 	if address == "" || len(values) == 0 {
 		return false
 	}
-	expected := urlSplitHost(address)
+	_, expectedHost, expectedPort, _ := nameserverAddr(address)
 	unspecified := isUnspecifiedListen(listen)
 	for _, v := range values {
 		s, ok := v.(string)
@@ -268,25 +216,24 @@ func pointsToListener(values []any, listen string) bool {
 		if !strings.Contains(s, "://") {
 			text = "udp://" + text
 		}
-		parts := urlSplitHost(text)
-		if parts.badNetloc || parts.portErr {
+		scheme, host, port, ok := nameserverAddr(text)
+		if !ok {
 			return false
 		}
-		port := parts.port
 		if port == 0 {
 			port = 53
 		}
-		if (parts.scheme != "udp" && parts.scheme != "tcp") || port != expected.port {
+		if (scheme != "udp" && scheme != "tcp") || port != expectedPort {
 			return false
 		}
-		if parts.hostname == expected.hostname || (expected.hostname == "127.0.0.1" && parts.hostname == "localhost") {
+		if host == expectedHost || (expectedHost == "127.0.0.1" && host == "localhost") {
 			continue
 		}
 		if unspecified {
-			if parts.hostname == "localhost" {
+			if host == "localhost" {
 				continue
 			}
-			if info, ok := pyIPAddress(parts.hostname); ok && info.loopback {
+			if info, ok := pyIPAddress(host); ok && info.loopback {
 				continue
 			}
 		}

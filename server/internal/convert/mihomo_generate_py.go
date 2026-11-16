@@ -239,18 +239,27 @@ func (s *orderedSet) repr() string { return pySetRepr(s.keys, s.values) }
 
 // appendURLQuery is profile_context.append_url_query(url, params): the
 // existing query pairs (blank values kept) and the params, each name and
-// value percent-encoded (a list value repeats the name).
+// value percent-encoded (a list value repeats the name). The rest of the URL
+// is kept as written: the URLs are the panel's own (a rule name may hold
+// "%" or Chinese), so nothing else needs parsing. A server domain whose host
+// has unbalanced IPv6 brackets ("https://[fd00::1") is refused instead of
+// producing URLs no client can use.
 func appendURLQuery(url string, params [][2]any) string {
-	parts := mustValue(weburl.Parse(url))
-	var items []string
-	if parts.RawQuery != "" {
-		for _, nameValue := range strings.Split(parts.RawQuery, "&") {
-			if nameValue == "" {
-				continue
-			}
-			name, value, _ := strings.Cut(nameValue, "=")
-			items = append(items, weburl.Quote(weburl.UnquotePlus(name))+"="+weburl.Quote(weburl.UnquotePlus(value)))
+	rest, fragment, _ := strings.Cut(url, "#")
+	base, query, _ := strings.Cut(rest, "?")
+	if _, after, found := strings.Cut(base, "//"); found {
+		authority, _, _ := strings.Cut(after, "/")
+		if strings.Contains(authority, "[") != strings.Contains(authority, "]") {
+			raise(pyError("ValueError", "Invalid IPv6 URL"))
 		}
+	}
+	var items []string
+	for _, nameValue := range strings.Split(query, "&") {
+		if nameValue == "" {
+			continue
+		}
+		name, value, _ := strings.Cut(nameValue, "=")
+		items = append(items, weburl.Quote(weburl.UnquotePlus(name))+"="+weburl.Quote(weburl.UnquotePlus(value)))
 	}
 	for _, p := range params {
 		k := weburl.Quote(fstr(p[0]))
@@ -269,25 +278,12 @@ func appendURLQuery(url string, params [][2]any) string {
 			items = append(items, k+"="+weburl.Quote(fstr(v)))
 		}
 	}
-	// The URL is rebuilt as written (u.String() would percent-encode a
-	// Unicode or space path that the clients accept as it is).
-	out := ""
-	if parts.Scheme != "" {
-		out = parts.Scheme + ":"
-	}
-	if parts.Host != "" || parts.User != nil {
-		out += "//"
-		if parts.User != nil {
-			out += parts.User.String() + "@"
-		}
-		out += parts.Host
-	}
-	out += weburl.RawPath(parts)
+	out := base
 	if len(items) > 0 {
 		out += "?" + strings.Join(items, "&")
 	}
-	if parts.Fragment != "" {
-		out += "#" + parts.EscapedFragment()
+	if fragment != "" {
+		out += "#" + fragment
 	}
 	return out
 }

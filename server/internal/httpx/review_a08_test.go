@@ -9,13 +9,13 @@ import (
 )
 
 // TestQueryInvalidUTF8BecomesReplacementCharacter: query names and values
-// are percent-decoded (with "+" as space); invalid UTF-8 becomes U+FFFD
-// per maximal invalid sequence (Werkzeug re-quoted it as %XX; accepted N2
-// difference, garbage input only)
-// and a "%" that starts no escape stays as it is.
+// are percent-decoded (with "+" as space); each run of invalid UTF-8
+// becomes one U+FFFD (strings.ToValidUTF8; Werkzeug re-quoted it as %XX;
+// accepted N2 difference, garbage input only) and a "%" that starts no
+// escape stays as it is.
 func TestQueryInvalidUTF8BecomesReplacementCharacter(t *testing.T) {
 	cases := map[string][][2]string{
-		"a=%c0%af&b=%e4%b8&c=%FE+x&d=%e4%b8%ad%ff": {{"a", "\uFFFD\uFFFD"}, {"b", "\uFFFD"}, {"c", "\uFFFD x"}, {"d", "中\uFFFD"}},
+		"a=%c0%af&b=%e4%b8&c=%FE+x&d=%e4%b8%ad%ff": {{"a", "\uFFFD"}, {"b", "\uFFFD"}, {"c", "\uFFFD x"}, {"d", "中\uFFFD"}},
 		"%ff=1&k%e4=%e4a":                          {{"\uFFFD", "1"}, {"k\uFFFD", "\uFFFDa"}},
 		"q=%zz%e4&r=%%ff&s=%41+%2B":                {{"q", "%zz\uFFFD"}, {"r", "%\uFFFD"}, {"s", "A +"}},
 	}
