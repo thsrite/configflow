@@ -230,4 +230,22 @@ Before the fixes (`.63`, new tests added to the ported code):
 --- FAIL: …/review_batch_readback_mismatch_cleans_up_in_batch  (per-route GET/DELETE vs batched remove)
 ```
 
-After the fixes: see the final authoritative run in PROGRESS-routers.md (R04).
+After the fixes, final authoritative run on `.32` (rebased on `go` e6c87cc1):
+
+```
+gofmt -l internal/ tools/                                   (no output)
+go vet ./...                                                ok
+go test -race -count=1 ./internal/routers/ ./internal/devhttp/
+  ok  configflow/internal/routers  78.870s
+  ok  configflow/internal/devhttp  3.481s
+go test -count=1 ./...                                      exit 0
+  ?   configflow/tools/proddiff/generator  [no test files]
+server/scripts/proddiff.sh
+  self-check: status=PASS json-leaf=PASS yaml-leaf=PASS text-line=PASS
+  baseline: new=0 stale=0                                   exit 0
+```
+
+The first proddiff run reported five NEW value differences in
+`GET /api/agents/<agent_id>/metrics/summary` (averages) and exited 1; a re-run
+on this branch and a run on plain `go` both gave `new=0`. It is a time-window
+flake of the agents metrics summary, unrelated to routers.
