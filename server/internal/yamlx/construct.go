@@ -359,6 +359,11 @@ func (c *constructor) scalar(n *pyyaml.Node, depth int) (string, error) {
 	return n.Value, nil
 }
 
+// FlattenMapping is SafeConstructor.flatten_mapping on a composed mapping
+// node (merge keys resolved, "=" keys retagged), mutating it like Python.
+// Errors are PyYAML's ConstructorErrors.
+func FlattenMapping(n *pyyaml.Node) error { return (&constructor{}).flatten(n) }
+
 // flatten is SafeConstructor.flatten_mapping, mutating the node like Python.
 func (c *constructor) flatten(n *pyyaml.Node) error {
 	var merge [][2]*pyyaml.Node

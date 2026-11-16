@@ -256,7 +256,7 @@ func nodeAt(text string, field []any) (*pyyaml.Mark, bool) {
 		var next *pyyaml.Node
 		switch {
 		case node != nil && node.Kind == pyyaml.MappingNode && isString(item):
-			if err := flattenMapping(node); err != nil {
+			if err := yamlx.FlattenMapping(node); err != nil {
 				return nil, false
 			}
 			key := item.(string)
@@ -284,60 +284,6 @@ func nodeAt(text string, field []any) (*pyyaml.Mark, bool) {
 
 func isString(v any) bool { _, ok := v.(string); return ok }
 func isInt(v any) bool    { _, ok := v.(int); return ok }
-
-const (
-	tagMerge = "tag:yaml.org,2002:merge"
-	tagValue = "tag:yaml.org,2002:value"
-)
-
-// flattenMapping is SafeConstructor.flatten_mapping on a composed node,
-// mutating it like Python. Its errors are ConstructorErrors (swallowed by
-// the only caller, as Python's `except yaml.YAMLError`).
-// TODO(port): yamlx has the same function unexported (constructor.flatten);
-// switch to an exported one when C02 provides it.
-func flattenMapping(n *pyyaml.Node) error {
-	var merge [][2]*pyyaml.Node
-	index := 0
-	for index < len(n.Pairs) {
-		keyNode, valueNode := n.Pairs[index][0], n.Pairs[index][1]
-		switch keyNode.Tag {
-		case tagMerge:
-			n.Pairs = append(n.Pairs[:index:index], n.Pairs[index+1:]...)
-			switch valueNode.Kind {
-			case pyyaml.MappingNode:
-				if err := flattenMapping(valueNode); err != nil {
-					return err
-				}
-				merge = append(merge, valueNode.Pairs...)
-			case pyyaml.SequenceNode:
-				var submerge [][][2]*pyyaml.Node
-				for _, sub := range valueNode.Items {
-					if sub.Kind != pyyaml.MappingNode {
-						return errors.New("ConstructorError: expected a mapping for merging")
-					}
-					if err := flattenMapping(sub); err != nil {
-						return err
-					}
-					submerge = append(submerge, sub.Pairs)
-				}
-				for i := len(submerge) - 1; i >= 0; i-- {
-					merge = append(merge, submerge[i]...)
-				}
-			default:
-				return errors.New("ConstructorError: expected a mapping or list of mappings for merging")
-			}
-		case tagValue:
-			keyNode.Tag = "tag:yaml.org,2002:str"
-			index++
-		default:
-			index++
-		}
-	}
-	if len(merge) > 0 {
-		n.Pairs = append(merge, n.Pairs...)
-	}
-	return nil
-}
 
 // providerSourceError is _provider_source_error(exc, text, source_label):
 // resolve a known field only on failure; never guess a node's line number.
