@@ -33,5 +33,10 @@
     "route": "/api/agents/<agent_id>/traffic-history",
     "path": "data.start",
     "reason": "Query default start is computed from each request wall clock; persisted traffic content is still compared."
+  },
+  {
+    "route": "/api/subscriptions/test",
+    "path": "timestamp",
+    "reason": "Subscription diagnostic endpoint returns the independent request wall clock; message and success are still compared."
   }
 ]

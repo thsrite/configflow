@@ -274,7 +274,7 @@ func subscriptionNodes(c *httpx.Ctx) (*httpx.Response, error) {
 			return nil, err
 		}
 		available := cached != nil && cached.Nodes != nil
-		if cached != nil && cached.Metadata.text("url") != "" && cached.Metadata.text("url") != sub.text("url") {
+		if cached != nil && !cacheURLMatches(cached.Metadata, sub.text("url")) {
 			available = false
 		}
 		list := []object{}
@@ -361,4 +361,16 @@ func testRoute(c *httpx.Ctx) (*httpx.Response, error) {
 		Message   string `json:"message"`
 		Timestamp string `json:"timestamp"`
 	}{true, "Subscription route is working!", time.Now().Format("2006-01-02T15:04:05.000000")}), nil
+}
+
+func cacheURLMatches(metadata object, url string) bool {
+	raw, exists := metadata["url"]
+	if !exists || string(raw) == "null" {
+		return true
+	}
+	var stored string
+	if json.Unmarshal(raw, &stored) != nil {
+		return false
+	}
+	return stored == url
 }

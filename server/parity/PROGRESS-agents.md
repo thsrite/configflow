@@ -811,6 +811,8 @@ Routes: none.
 
 Evidence: no Go code. Provides for config: `deployment_locations` (`preparation_context`, `source_error`, `DeploymentPreparationError`) used by C17 `provider_delivery`, and `_pack` used by C34 `routes/generate.py` — register through interfaces declared in C17/C34 (decision 3). `generated_preview` uses `rule_sync_store._write/bundle_files` (A14): put `rule_sync_store` before it in the same package or port A11 and A14's store file together.
 
+C30 dependency (maintainer decision, 2026-11-17): after registering `provider.SetLocations`, rerun `CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/api/subscriptions/difftest/`. Remove only `deferA11Locations` once the owning-artifact/source-location envelope matches. Annotated cases are the invalid-provider 400 branches of `TestProviderDeliveryGraphs`, `TestCombinedCrossFeedAndStaging` (bad-second and topology failures), and alternate-format/transport failures that carry provider preparation context. C30 continues comparing status, success, base validation message/field path and persisted state; only the A11 diagnostic envelope is deferred. No C30 compat implementation is added.
+
 ## A12 — push diff
 
 **Status: `missing`** · prereqs: A11 · Go: internal/deploy

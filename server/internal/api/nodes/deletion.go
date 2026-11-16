@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -156,7 +157,10 @@ func planDeletion(document record, nodeIDs []string, profileNodes map[string][]s
 				group.put("proxies_order", order)
 			}
 			after, _ := json.Marshal(group)
-			if bytes.Equal(before, after) {
+			var originalValue, updatedValue any
+			_ = json.Unmarshal(before, &originalValue)
+			_ = json.Unmarshal(after, &updatedValue)
+			if reflect.DeepEqual(originalValue, updatedValue) {
 				continue
 			}
 			var original record

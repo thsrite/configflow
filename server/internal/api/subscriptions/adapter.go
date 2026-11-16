@@ -467,12 +467,12 @@ func (d *delivery) serve(c *httpx.Ctx, id string, render provider.Render) (*http
 	return provider.ServeProvider(c, "subscription", id, d.profileID, d.config, render)
 }
 func recordFetch(ctx context.Context, id string, ok, fromCache bool, count int) error {
-	_, err := refresh.RecordFetch(ctx, id, refresh.FetchRecord{OK: ok, FromCache: fromCache, Count: count})
+	_, err := refresh.RecordFetch(ctx, id, refresh.FetchRecord{OK: ok, FromCache: fromCache, Count: jsonx.Int(int64(count))})
 	return err
 }
 
 func materializeContext(ctx context.Context) context.Context {
-	return convert.WithNodeConversions(ctx, new(convert.ConversionResults), false)
+	return convert.WithNodeConversions(ctx, convert.NewConversionResults(), true)
 }
 
 func logProviderFailure(err error) {

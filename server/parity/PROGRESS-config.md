@@ -55,7 +55,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C27 | rule DNS actions | 885 | missing | C26 | – |
 | C28 | MosDNS archive and routes | 838 | verified | C21, C15 | 15 (15 done) |
 | C29 | OxiDNS native apply, archive, routes | 739 | missing | C27, C28 | 18 (0 done) |
-| C30 | subscription and node routes, node deletion | 994 | missing | C17, C16, C19, C20 | 26 (0 done) |
+| C30 | subscription and node routes, node deletion | 994 | ported | C17, C16, C19, C20 | 26 (26 done) |
 | C31 | aggregation routes, device notes | 722 | missing | C30, C26 | 11 (0 done) |
 | C32 | rule routes | 1107 | missing | C09, C14, C27 | 21 (0 done) |
 | C33 | rule library and proxy group routes | 976 | missing | C32 | 25 (0 done) |
@@ -1522,30 +1522,40 @@ Notes for porter: Also registers the 9 `/api/profiles/<id>/oxidns/*` wrapper rou
 
 ## C30 — subscription and node routes, node deletion
 
-**Status: `partial`** · prereqs: C17, C16, C19, C20 · Go: internal/api/subscriptions, api/nodes (new)
+**Status: `ported`** · prereqs: C17, C16, C19, C20 · Go: internal/api/subscriptions, internal/api/nodes
 
-Files:
-- `backend/routes/subscriptions.py` (696)
-- `backend/routes/nodes.py` (213)
-- `backend/common/node_deletion.py` (85)
+Files: `backend/routes/subscriptions.py` (696), `backend/routes/nodes.py` (213), `backend/common/node_deletion.py` (85).
 
-Tests: `test_dialer_activation_shadow.py` (3), `test_dialer_combined_export.py` (9), `test_dialer_delivery_snapshot.py` (3), `test_dialer_delivery_staging.py` (5), `test_dialer_proxy.py` (23), `test_dialer_standalone_activation.py` (4), `test_node_deletion.py` (9), `test_subscription_cache_preview.py` (4)
-
-Routes (26, 26 registered; acceptance in progress):
+Routes (26/26 registered; 5 C16 latency methods retained):
 
 `GET /api/nodes`; `POST /api/nodes`; `DELETE /api/nodes/<node_id>`; `PUT /api/nodes/<node_id>`; `POST /api/nodes/delete`; `POST /api/nodes/delete-preview`; `GET /api/nodes/latency`; `POST /api/nodes/latency`; `POST /api/nodes/latency/dns/check`; `GET /api/nodes/latency/settings`; `POST /api/nodes/latency/settings`; `POST /api/nodes/parse-lines`; `POST /api/nodes/reorder`; `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies`; `GET /api/subscriptions`; `POST /api/subscriptions`; `GET /api/subscriptions/<resource_id>/health-impact`; `DELETE /api/subscriptions/<sub_id>`; `PUT /api/subscriptions/<sub_id>`; `POST /api/subscriptions/<sub_id>/fetch`; `GET /api/subscriptions/<sub_id>/nodes`; `GET /api/subscriptions/<sub_id>/proxies`; `GET /api/subscriptions/health`; `GET /api/subscriptions/proxies`; `POST /api/subscriptions/reorder`; `GET /api/subscriptions/test`
 
-Evidence: node CRUD, reorder, line parsing and reviewed deletion implemented in `internal/api/nodes`; `nodes.Wire` installs `PlanNodeDeletion`. Existing C16 latency routes retained. Node package tests and vet pass on .63.
+Done: `fbb7e26e` implements node CRUD/parse/reorder/reviewed deletion and `nodes.Wire` → `repo.Hooks.PlanNodeDeletion`; `e5aeb11d` implements subscription management/cache preview/refresh/health/reorder and single/combined provider exports. This step adds Flask↔Go boundary acceptance and fixes found by it (URI conversion-record initialization/reuse, legacy health count adapter, semantic comparison of unaffected group JSON).
 
-Done: `fbb7e26e` nodes. Subscription CRUD/cache preview/fetch/health/reorder and provider exports now registered, with native JSON/YAML and legacy-package calls confined to adapter.go. Security test verifies global JWT gate and profile token success/failure; .63 package vet/test pass.
+Acceptance: `internal/api/subscriptions/difftest` compares each HTTP response and the complete exported SQLite document plus every JSON/YAML data file after each request. Route matrix and detailed mapping: `parity/difftest-c30.md`. Current .63 vet/package/differential run passes (`nodes 6.560s`, `subscriptions 0.206s`, `subscriptions/difftest 67.854s`). .32 proddiff passes: `coverage_regressions=0`, `new=0`, `stale=0`, all self-checks PASS; 9 newly compared GET templates added to proddiff-coverage. Final .32 full/race/vet run is next.
 
-In progress: Flask↔Go differential security/storage/dialer cases. Next: differential, proddiff, final .32 checks.
+| Python tests | Boundary coverage / remaining owner |
+|---|---|
+| test_dialer_activation_shadow.py (3) | TestProviderDeliveryGraphs, existing C17 snapshot validation; generate/download/push consumers belong to C34/A14. |
+| test_dialer_combined_export.py (9) | TestCombinedCrossFeedAndStaging, combined graph cases, profile isolation and concurrent snapshot cases. |
+| test_dialer_delivery_snapshot.py (3) | single graph cases and TestDeliverySnapshotSurvivesConcurrentProfileChange; Agent payloads belong to A14. |
+| test_dialer_delivery_staging.py (5) | final cross-feed graph/staged-cache comparison plus existing C17 missing-feed/late-activation tests; push consumer belongs to A14. |
+| test_dialer_proxy.py (23) | node CRUD/reference guards/reorder, reviewed deletion and alternate formats; proxy-group/aggregation/generate entry points belong to C33/C31/C34. |
+| test_dialer_standalone_activation.py (4) | URI graph/fallback/format/snapshot cases; aggregation/main-preview counterparts belong to C31/C34. |
+| test_node_deletion.py (9) | reviewed deletion, all blockers, stale/unrelated writes, empty sources, unaffected groups; repository commit-failure rollback already covered by repo/TestFailedDatabaseCommitKeepsPreviousData. |
+| test_subscription_cache_preview.py (4) | TestCachePreviewNeverRefreshes (7 states, repeated read-only calls), imported/missing/auth cases. |
 
-Commands: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go vet ./internal/api/nodes/... && go test -count=1 ./internal/api/nodes/...'` → `ok configflow/internal/api/nodes 5.420s`.
+Decisions/differences:
+- Native encoding/json and yaml.v3; unknown stored fields retained as json.RawMessage. Production jsonx usage is confined to adapter.go; no new pystr/urlx or dependencies.
+- Auth is unchanged: global paths require JWT at the gate; explicit profile provider aliases accept token/JWT in the handler. Correct/wrong/missing/internal/retired token boundaries and token-free logs are tested.
+- All writes/shared downloads detach request cancellation. Main graph is captured before fetch; URI conversion is materialized once and reused; provider caches/artifacts are committed only after final graph validation.
+- Existing confirmation protocol preserved exactly (sorted UTF-8 JSON with comma/colon spaces, SHA-256). Byte formatting/comments of YAML are not preserved; parsed content is compared. Native regex/transport diagnostic identities are normalized, keeping Chinese validation text unchanged. `/api/subscriptions/test` wall clock is narrowly normalized in proddiff.
+- Deferred → A11, explicitly approved by maintainer: provider.SetLocations remains unregistered. `deferA11Locations` logs only individually matching 400 owning-artifact/source-location envelopes as DEFERRED A11; status, success, base validation message/prefix and field paths, and all stored effects remain compared. A11 must register the hook, remove this helper and rerun the C30 differential. This dependency is also recorded in PROGRESS-agents A11; no compat implementation added.
 
-Decisions: auth.go unchanged; global subscription provider paths require JWT at the gate, profile aliases authenticate token/JWT in the handler. Legacy documents are adapted only in adapter.go; native JSON retains unknown resource fields. Confirmation retains the existing sorted UTF-8 JSON/SHA-256 protocol.
-
-Notes for porter: Registers `/api/profiles/<id>/subscriptions/<sub_id>/proxies` too. Fills `repo.Hooks.PlanNodeDeletion`. Subscription provider endpoints are public (token) — deferred security cases.
+Commands:
+- Iteration: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go vet ./internal/api/nodes/... ./internal/api/subscriptions/... && CONFIGFLOW_DIFF=1 go test -count=1 ./internal/api/nodes/... ./internal/api/subscriptions/...'`.
+- Proddiff: `rt -- server/scripts/proddiff.sh` → `baseline: new=0 stale=0`; no production access, only the read-only snapshot under isolated network namespace.
+- Next: final .32 gofmt/vet/scoped race/full suite/differentials/proddiff, rebase onto current local go, clean worktree, no push.
 
 ## C31 — aggregation routes, device notes
 

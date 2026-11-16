@@ -1,7 +1,11 @@
 package subscriptions_test
 
 import (
+	"configflow/internal/logx"
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"configflow/internal/api/subscriptions"
@@ -13,9 +17,15 @@ import (
 
 func TestGlobalGateAndProfileToken(t *testing.T) {
 	mihomoenv.Wire()
+	logFile := filepath.Join(t.TempDir(), "provider.log")
+	logger, err := logx.Setup(logx.Config{File: logFile, Level: logx.Debug})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { logger.Close() })
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(subscriptions.Register)})
 	ctx := srv.Context()
-	_, err := srv.Repo.SaveShared(ctx, jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "s", "name", "Feed", "url", "https://feed.example/sub", "interval", 0)}), nil)
+	_, err = srv.Repo.SaveShared(ctx, jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "s", "name", "Feed", "url", "https://feed.example/sub", "interval", 0)}), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,4 +53,13 @@ func TestGlobalGateAndProfileToken(t *testing.T) {
 	}
 	srv.Get(prefix, srv.Login()).WantStatus(200)
 	srv.Get("/api/profiles/default/subscriptions/missing/proxies?token=synthetic-pull-token").WantStatus(404)
+	logs, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []string{"synthetic-pull-token", "synthetic-internal-token", "synthetic-retired-token"} {
+		if strings.Contains(string(logs), token) {
+			t.Fatal("provider log exposed token")
+		}
+	}
 }

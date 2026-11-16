@@ -1,7 +1,4 @@
-// Package nodes holds the routes of backend/routes/nodes.py. Ported so far:
-// the node latency routes (C16: /api/nodes/latency, /latency/settings,
-// /latency/dns/check). The node CRUD routes are C30's, which adds its own
-// file and lines to Register.
+// Package nodes serves shared node management, reviewed deletion and node probes.
 package nodes
 
 import (
@@ -14,7 +11,7 @@ import (
 	"configflow/internal/repo"
 )
 
-// Register declares the nodes blueprint routes ported so far.
+// Register declares the nodes blueprint routes.
 func Register(r *httpx.Router) {
 	registerCRUD(r)
 	r.Handle([]string{"GET", "POST"}, "/api/nodes/latency", "nodes.node_latency", auth.Require(nodeLatency))

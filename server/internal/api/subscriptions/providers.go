@@ -42,7 +42,7 @@ func providerResponse(proxies []object, id string) (*httpx.Response, error) {
 		name += id + "_"
 	}
 	name += time.Now().Format("20060102_150405") + ".yaml"
-	return httpx.Bytes(200, "text/yaml; charset=utf-8", []byte(text)).WithHeader("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, name)), nil
+	return httpx.Bytes(200, "text/yaml; charset=utf-8; charset=utf-8", []byte(text)).WithHeader("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, name)), nil
 }
 func providerFailure(err error) (*httpx.Response, error) {
 	if referenceError(err) {
@@ -165,7 +165,7 @@ func subscriptionProxies(c *httpx.Ctx) (*httpx.Response, error) {
 			if err != nil {
 				return providerFailure(err)
 			}
-			return httpx.Bytes(200, "text/yaml; charset=utf-8", []byte(content)), nil
+			return httpx.Bytes(200, "text/yaml; charset=utf-8; charset=utf-8", []byte(content)), nil
 		}
 		return delivery.renderSingle(ctx, sub, format, filters)
 	})
