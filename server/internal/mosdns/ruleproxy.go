@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
+	"configflow/internal/store"
 	"configflow/internal/weburl"
 )
 
@@ -32,8 +34,11 @@ var MaxRuleProxyBytes int64 = 5 * 1024 * 1024
 // RequestRule downloads a rule source (tests replace it).
 var RequestRule = rulefetch.RequestRule
 
-// errSizeLimit is a client error (400) of the rule proxy.
-var errSizeLimit = errors.New("Remote response exceeds size limit")
+// Client errors (400) of the rule proxy's download.
+var (
+	errSizeLimit     = errors.New("Remote response exceeds size limit")
+	errContentLength = errors.New("invalid Content-Length")
+)
 
 // fetchRemoteFn is fetchRemote (tests replace it).
 var fetchRemoteFn fetchFunc = fetchRemote
@@ -60,7 +65,7 @@ func fetchRemote(ctx context.Context, rawURL string, config *jsonx.Object, hostU
 	if length, ok := response.HeaderValue("Content-Length"); ok && length != "" {
 		n, err := strconv.ParseInt(strings.TrimSpace(length), 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("invalid Content-Length %q", length)
+			return nil, errContentLength
 		}
 		if n > MaxRuleProxyBytes {
 			return nil, errSizeLimit
@@ -91,7 +96,7 @@ func authorized(cfg snapshot, request AuthRequest, internalTokens repo.TokenSet)
 	if request.Internal {
 		return true, nil
 	}
-	current := cfg.SystemConfig.RuleProxyToken
+	current := cfg.SystemConfig.RuleProxyToken.str()
 	retired := func(token string) bool { return token != current && internalTokens.Has(token) }
 	bearer, _ := auth.ParseBearerToken(request.Authorization, request.Authorization != "")
 	if retired(bearer) {
@@ -113,45 +118,48 @@ func authorized(cfg snapshot, request AuthRequest, internalTokens repo.TokenSet)
 	if retired(token) {
 		return false, nil
 	}
-	config := cfg.SystemConfig.ConfigToken
+	config := cfg.SystemConfig.ConfigToken.str()
 	return current != "" && token == current || config != "" && token == config, nil
 }
 
 // localContent returns the content of this profile's selected inline
-// library source the URL points at (no self-HTTP).
-func localContent(raw string, cfg snapshot, hostURL string) (string, bool, error) {
+// library source the URL points at (no self-HTTP). A URL Go cannot parse
+// is not local; the remote URL check rejects it.
+func localContent(raw string, cfg snapshot, hostURL string) (string, bool) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return "", false, err
+		return "", false
 	}
-	base := strings.TrimSpace(cfg.SystemConfig.ServerDomain)
+	base := strings.TrimSpace(cfg.SystemConfig.ServerDomain.str())
 	if base == "" {
 		base = strings.TrimRight(hostURL, "/")
 	}
 	origin, err := url.Parse(base)
 	if err != nil {
-		return "", false, err
+		origin = &url.URL{}
 	}
-	if (parsed.Scheme != "" || parsed.Host != "") && (parsed.Scheme != origin.Scheme || parsed.Host != origin.Host) {
-		return "", false, nil
+	// Python compares scheme and netloc (user info included).
+	if (parsed.Scheme != "" || parsed.Host != "" || parsed.User != nil) && (parsed.Scheme != origin.Scheme ||
+		parsed.Host != origin.Host || parsed.User.String() != origin.User.String()) {
+		return "", false
 	}
 	if parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", false, nil
+		return "", false
 	}
 	prefix := ""
-	if cfg.ProfileID != "" {
-		prefix = "/api/profiles/" + cfg.ProfileID
+	if cfg.ProfileID.value != "" {
+		prefix = "/api/profiles/" + cfg.ProfileID.value
 	}
 	for _, rule := range cfg.RuleLibrary {
-		if rule.SourceType != "content" || !cfg.selected(rule.ID) {
+		if !rule.SourceType.is("content") || !cfg.selected(rule.ID) {
 			continue
 		}
-		path := prefix + "/rule-library/content/" + rule.ID
+		path := prefix + "/rule-library/content/" + rule.ID.value
 		if parsed.Path == path || parsed.Path == strings.TrimRight(origin.Path, "/")+path {
-			return rule.Content, true, nil
+			return rule.Content.str(), true
 		}
 	}
-	return "", false, nil
+	return "", false
 }
 
 // RuleProxyRequest is a rule-proxy request.
@@ -199,21 +207,25 @@ func RuleProxy(ctx context.Context, request RuleProxyRequest) *RuleProxyResponse
 	return failure(500, "Failed to process rule proxy request")
 }
 
-// isBadRequest: invalid URLs, oversized or undecodable responses and
-// rejected repository values are the client's fault.
+// isBadRequest reports a failure the request caused (400): an invalid or
+// refused URL, an oversized or undecodable response, a rejected value.
+// Storage, file-system and download (502) failures are not.
 func isBadRequest(err error) bool {
-	if repo.IsValueError(err) {
-		return true
-	}
 	var repoErr *repo.Error
-	if errors.As(err, &repoErr) || rulefetch.IsRequestException(err) {
+	var storeErr *store.Error
+	var pathErr *fs.PathError
+	switch {
+	case repo.IsValueError(err), errors.Is(err, errSizeLimit), errors.Is(err, errContentLength),
+		errors.Is(err, errNotUTF8), errors.Is(err, rulefetch.ErrInvalidURL):
+		return true
+	case errors.As(err, &repoErr), errors.As(err, &storeErr), errors.As(err, &pathErr), rulefetch.IsRequestException(err):
 		return false
 	}
-	switch rulefetch.PythonClass(err) {
-	case "ValueError", "UnicodeDecodeError":
-		return true
-	}
-	return false
+	// TODO(N9): rulefetch reports URL syntax, redirect and size refusals as
+	// untyped errors (its "ValueError"); other packages' errors still carry
+	// Python class names.
+	class := rulefetch.PythonClass(err)
+	return class == "ValueError" || class == "UnicodeDecodeError"
 }
 
 func ruleProxy(ctx context.Context, request RuleProxyRequest) (*RuleProxyResponse, error) {
@@ -244,10 +256,7 @@ func ruleProxy(ctx context.Context, request RuleProxyRequest) (*RuleProxyRespons
 	if request.Part != "" && request.Part != PartDomain && request.Part != PartIP {
 		return failure(400, "Invalid part parameter"), nil
 	}
-	content, found, err := localContent(request.URL, cfg, request.HostURL)
-	if err != nil {
-		return nil, err
-	}
+	content, found := localContent(request.URL, cfg, request.HostURL)
 	stale := false
 	if !found {
 		// Normal hostname routing, including Fake-IP networks and the

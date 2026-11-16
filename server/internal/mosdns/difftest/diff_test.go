@@ -28,6 +28,7 @@ import (
 
 	"configflow/internal/auth"
 	"configflow/internal/jsonx"
+	"configflow/internal/localhttp"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 	"configflow/internal/server"
@@ -40,6 +41,7 @@ const (
 	secret   = "diff-shared-jwt-secret"
 	domain   = "http://127.0.0.1:5001"
 	cfgToken = "diff-config-token"
+	retired  = "diff-retired-rule-token"
 )
 
 func freePort(t *testing.T) int {
@@ -79,6 +81,7 @@ func seed(t *testing.T, dir, base string) {
 	if _, err := r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
 		system.GetObject("system_config").Set("server_domain", domain)
 		system.GetObject("system_config").Set("config_token", cfgToken)
+		system.GetObject("system_config").Set("retired_rule_proxy_tokens", []any{retired})
 		return nil, nil
 	}); err != nil {
 		t.Fatal(err)
@@ -89,6 +92,7 @@ func seed(t *testing.T, dir, base string) {
 		jsonx.Obj("id", "classical", "name", "Classical", "source_type", "url", "url", base+"/classical.txt", "behavior", "classical", "format", "text"),
 		jsonx.Obj("id", "bad", "name", "Bad", "source_type", "url", "url", base+"/bad.txt", "behavior", "domain", "format", "text"),
 		jsonx.Obj("id", "binary", "name", "Binary", "source_type", "url", "url", base+"/list.mrs", "behavior", "domain", "format", "mrs"),
+		jsonx.Obj("id", "inline-off", "name", "InlineOff", "source_type", "content", "content", "+.off.test", "behavior", "domain", "format", "text"),
 	}
 	if _, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
 		shared.Set("rule_library", append(shared.GetList("rule_library"), library...))
@@ -102,6 +106,12 @@ func seed(t *testing.T, dir, base string) {
 			configs = append(configs, jsonx.Obj("id", "sel-"+id, "itemType", "ruleset", "library_rule_id", id,
 				"policy", "DIRECT", "enabled", true))
 		}
+		// Hand-edited values: enabled null (Python: not selected) and a
+		// numeric library_rule_id on another rule.
+		configs = append(configs, jsonx.Obj("id", "sel-inline-off", "itemType", "ruleset", "library_rule_id", "inline-off",
+			"policy", "DIRECT", "enabled", nil),
+			jsonx.Obj("id", "odd", "itemType", "rule", "rule_type", "DOMAIN", "value", "odd.test", "policy", "DIRECT",
+				"library_rule_id", jsonx.Int(7), "enabled", "yes"))
 		profile.Set("rule_configs", configs)
 		return nil, nil
 	}); err != nil {
@@ -169,6 +179,10 @@ func startGo(t *testing.T, dataDir string) string {
 	t.Cleanup(func() { repo.SetRepository(nil) })
 	t.Cleanup(substore.SetDefault(substore.NewService(substore.NewEnv())))
 	app := server.NewApp()
+	// main registers the in-process dispatch of the server's own API
+	// (callback URLs of the rule proxy).
+	app.RegisterLocal()
+	t.Cleanup(func() { localhttp.Register(nil) })
 	if _, err := repo.LoadConfig(repo.WithScope(context.Background())); err != nil {
 		t.Fatal(err)
 	}
@@ -192,6 +206,8 @@ func login(t *testing.T, base string) string {
 type request struct {
 	name, method, path, body, contentType string
 	anonymous                             bool
+	header                                string // Authorization of an anonymous request
+	deferred                              string // module whose missing route the Go answer depends on
 }
 
 type answer struct {
@@ -216,6 +232,8 @@ func send(t *testing.T, base, token string, r request) answer {
 	}
 	if !r.anonymous {
 		req.Header.Set("Authorization", token)
+	} else if r.header != "" {
+		req.Header.Set("Authorization", r.header)
 	}
 	resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
 	if err != nil {
@@ -224,7 +242,7 @@ func send(t *testing.T, base, token string, r request) answer {
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
 	out := answer{Status: resp.StatusCode, Headers: map[string]string{}}
-	for _, key := range []string{"Cache-Control", "X-ConfigFlow-Rule-Cache"} {
+	for _, key := range []string{"Cache-Control", "X-ConfigFlow-Rule-Cache", "Content-Type"} {
 		out.Headers[key] = resp.Header.Get(key)
 	}
 	if strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json") {
@@ -269,7 +287,9 @@ func written(t *testing.T, dir string) map[string]any {
 	}
 	data, _ := jsonx.Compact(profile.Value("mosdns"))
 	var settings any
-	json.Unmarshal(data, &settings)
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber() // integers of any size compare exactly
+	decoder.Decode(&settings)
 	out["profile.mosdns"] = settings
 	var status any
 	if data, err := os.ReadFile(filepath.Join(dir, "task-status.json")); err == nil {
@@ -352,6 +372,8 @@ func TestDifferentialMosDNSRoutes(t *testing.T) {
 		request{name: "post cache-settings", method: "POST", path: "/api/mosdns/cache-settings", body: `{"cache_size": "128", "cache_lazy_ttl": 60.9, "cache_dump_interval": -5, "cache_dump_file": null, "cache_enabled": 0}`},
 		request{name: "post cache-settings null", method: "POST", path: "/api/mosdns/cache-settings", body: `null`},
 		request{name: "post cache-settings bad ints", method: "POST", path: "/api/mosdns/cache-settings", body: `{"cache_size": "x", "cache_lazy_ttl": [1], "cache_dump_interval": true, "cache_dump_file": "/tmp/c.dump"}`},
+		request{name: "post cache-settings big ints", method: "POST", path: "/api/mosdns/cache-settings", body: `{"cache_size": 100000000000000000000, "cache_lazy_ttl": 1e30, "cache_dump_interval": " 1_000 ", "cache_dump_file": "x.dump"}`},
+		request{name: "get cache-settings big ints", method: "GET", path: "/api/mosdns/cache-settings"},
 		request{name: "post cache-settings list", method: "POST", path: "/api/mosdns/cache-settings", body: `[1]`},
 		request{name: "post cache-settings text", method: "POST", path: "/api/mosdns/cache-settings", body: `x`, contentType: "text/plain"},
 		request{name: "post settings", method: "POST", path: "/api/mosdns/settings", body: `{"custom_config": "plugins: []", "direct_rulesets": ["sel-classical"], "local_dns": "119.29.29.29", "cache_size": 256, "api_address": ":8338", "unknown": 1}`},
@@ -380,6 +402,20 @@ func TestDifferentialMosDNSRoutes(t *testing.T) {
 		proxy("proxy no url", rp, q("token", token), true),
 		proxy("proxy bad part", rp, q("url", inlineURL, "token", token, "part", "both"), true),
 		proxy("proxy ftp", rp, q("url", "ftp://127.0.0.1/rules", "token", token), true),
+		withHeader(proxy("proxy retired bearer", rp, q("url", inlineURL, "token", token), true), "Bearer "+retired),
+		proxy("proxy retired url token", rp, q("url", inlineURL, "token", retired), true),
+		withHeader(proxy("proxy bad bearer + token", rp, q("url", inlineURL, "token", token), true), "Bearer not-a-jwt"),
+		withHeader(proxy("proxy basic header", rp, q("url", inlineURL), true), "Basic YTpi"),
+		withHeader(proxy("proxy rule token as bearer", rp, q("url", inlineURL), true), "Bearer "+token),
+		withHeader(proxy("proxy empty bearer", rp, q("url", inlineURL, "token", cfgToken), true), "Bearer "),
+		proxy("proxy long token", rp, q("url", inlineURL, "token", strings.Repeat("a", 5000)), true),
+		proxy("proxy malformed url", rp, q("url", "http://a b/x", "token", token), true),
+		proxy("proxy bad escape url", rp, q("url", "http://127.0.0.1:1/a%zz", "token", token), true),
+		proxy("proxy relative url", rp, q("url", "/api/profiles/default/rule-library/content/inline", "token", token), true),
+		// Python serves these through an in-process call of
+		// /api/profiles/<id>/rule-library/content/<id> (C33, not ported yet).
+		deferTo("C33", proxy("proxy userinfo inline", rp, q("url", "http://u@127.0.0.1:5001/api/profiles/default/rule-library/content/inline", "token", token), true)),
+		deferTo("C33", proxy("proxy inline disabled by null", rp, q("url", domain+"/api/profiles/default/rule-library/content/inline-off", "token", token), true)),
 		proxy("proxy unknown profile", "/api/profiles/nope/mosdns/rule-proxy", q("url", inlineURL, "token", token), true),
 	)
 	failed := 0
@@ -394,7 +430,9 @@ func TestDifferentialMosDNSRoutes(t *testing.T) {
 				pm["message"], gm["message"] = "<python exception>", "<python exception>"
 			}
 		}
-		if !reflect.DeepEqual(p, g) {
+		if !reflect.DeepEqual(p, g) && r.deferred != "" && g.Status == 502 {
+			t.Logf("deferred %-28s → python %d, go %d (route of %s missing)", r.name, p.Status, g.Status, r.deferred)
+		} else if !reflect.DeepEqual(p, g) {
 			failed++
 			t.Errorf("DIFF %s %s %s:\n  python %+v\n  go     %+v", r.name, r.method, r.path, p, g)
 		} else {
@@ -408,8 +446,16 @@ func TestDifferentialMosDNSRoutes(t *testing.T) {
 			t.Errorf("DIFF data %s:\n  python %v\n  go     %v", name, pyFiles[name], goFiles[name])
 		}
 	}
+	if failed > 0 {
+		goLog, _ := os.ReadFile(filepath.Join(goDir, "app.log"))
+		t.Logf("go log:\n%s", goLog)
+	}
 	t.Logf("%d requests, %d data items, %d differences", len(requests), len(mergeKeys(pyFiles, goFiles)), failed)
 }
+
+func deferTo(module string, r request) request { r.deferred = module; return r }
+
+func withHeader(r request, header string) request { r.header = header; return r }
 
 func jsonText(v any) string { s, _ := v.(string); return s }
 

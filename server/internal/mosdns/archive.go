@@ -127,34 +127,78 @@ func label(name string) string {
 }
 
 // snapshot is the part of the profile snapshot the callbacks resolve
-// against.
+// against. Hand-edited values of another JSON type are kept and compared
+// like Python compares them (a number never equals a string).
 type snapshot struct {
-	ProfileID    string `json:"profile_id"`
+	ProfileID    text `json:"profile_id"`
 	SystemConfig struct {
-		ServerDomain   string `json:"server_domain"`
-		ConfigToken    string `json:"config_token"`
-		RuleProxyToken string `json:"rule_proxy_token"`
+		ServerDomain   text `json:"server_domain"`
+		ConfigToken    text `json:"config_token"`
+		RuleProxyToken text `json:"rule_proxy_token"`
 	} `json:"system_config"`
 	RuleConfigs []struct {
-		LibraryRuleID  string `json:"library_rule_id"`
-		Enabled        *bool  `json:"enabled"`
-		LibraryEnabled *bool  `json:"library_enabled"`
+		LibraryRuleID  text  `json:"library_rule_id"`
+		Enabled        truth `json:"enabled"`
+		LibraryEnabled truth `json:"library_enabled"`
 	} `json:"rule_configs"`
 	RuleLibrary []struct {
-		ID         string `json:"id"`
-		Name       string `json:"name"`
-		SourceType string `json:"source_type"`
-		URL        string `json:"url"`
-		Content    string `json:"content"`
+		ID         text `json:"id"`
+		Name       text `json:"name"`
+		SourceType text `json:"source_type"`
+		URL        text `json:"url"`
+		Content    text `json:"content"`
 	} `json:"rule_library"`
+}
+
+// text is a snapshot value: a string (isString) or the JSON text of any
+// other value; missing and null are the zero value.
+type text struct {
+	value    string
+	isString bool
+}
+
+func (t *text) UnmarshalJSON(data []byte) error {
+	if json.Unmarshal(data, &t.value) == nil {
+		t.isString = true
+	} else if string(data) != "null" {
+		t.value = string(data)
+	}
+	return nil
+}
+
+func (t text) is(s string) bool { return t.isString && t.value == s }
+
+// str is the string value ("" for other types).
+func (t text) str() string {
+	if t.isString {
+		return t.value
+	}
+	return ""
+}
+
+// truth is a flag that defaults to true when missing and otherwise follows
+// Python truthiness (null, 0, "" and empty containers are false).
+type truth struct{ off bool }
+
+func (t *truth) UnmarshalJSON(data []byte) error {
+	var v any
+	json.Unmarshal(data, &v)
+	switch x := v.(type) {
+	case []any:
+		t.off = len(x) == 0
+	case map[string]any:
+		t.off = len(x) == 0
+	default:
+		t.off = v == nil || v == false || v == 0.0 || v == ""
+	}
+	return nil
 }
 
 // selected reports whether a library rule is used by an enabled rule
 // configuration of the profile.
-func (s *snapshot) selected(id string) bool {
+func (s *snapshot) selected(id text) bool {
 	for _, rule := range s.RuleConfigs {
-		if rule.LibraryRuleID == id && (rule.Enabled == nil || *rule.Enabled) &&
-			(rule.LibraryEnabled == nil || *rule.LibraryEnabled) {
+		if rule.LibraryRuleID == id && !rule.Enabled.off && !rule.LibraryEnabled.off {
 			return true
 		}
 	}
@@ -206,7 +250,7 @@ func (s *snapshot) localPath(ctx context.Context, raw, baseURL string) (string, 
 		if err != nil {
 			return "", false, err
 		}
-		for _, base := range []string{s.SystemConfig.ServerDomain, baseURL} {
+		for _, base := range []string{s.SystemConfig.ServerDomain.str(), baseURL} {
 			if base == "" {
 				continue
 			}
@@ -224,7 +268,7 @@ func (s *snapshot) localPath(ctx context.Context, raw, baseURL string) (string, 
 			}
 		}
 	}
-	profileID := s.ProfileID
+	profileID := s.ProfileID.value
 	if profileID == "" {
 		if profileID, err = repo.GetDefaultProfileID(ctx); err != nil {
 			return "", false, err
@@ -297,13 +341,13 @@ func (s *snapshot) resolve(ctx context.Context, config *jsonx.Object, raw, baseU
 		return source{}, nil, archiveErr("无法识别规则回调")
 	}
 	for _, rule := range s.RuleLibrary {
-		if !s.selected(rule.ID) || !(byID && rule.ID == libraryID || byName && rule.Name == name) {
+		if !s.selected(rule.ID) || !(byID && rule.ID.is(libraryID) || byName && rule.Name.is(name)) {
 			continue
 		}
-		if rule.SourceType == "content" {
-			return source{inline: true, content: rule.Content}, nil, nil
+		if rule.SourceType.is("content") {
+			return source{inline: true, content: rule.Content.str()}, nil, nil
 		}
-		return s.resolve(ctx, config, rule.URL, baseURL, depth+1, rule.ID)
+		return s.resolve(ctx, config, rule.URL.str(), baseURL, depth+1, rule.ID.value)
 	}
 	return source{}, nil, archiveErr("规则不在当前配置快照中")
 }
@@ -322,7 +366,11 @@ func detail(err error) string {
 // safeDetails describes an error without its text (which could hold URLs
 // or credentials): the error class and an HTTP status.
 func safeDetails(err error) string {
-	details := "exception_type=" + rulefetch.PythonClass(err)
+	class := rulefetch.PythonClass(err) // shown to users: Python's names
+	if errors.Is(err, errNotUTF8) {
+		class = "UnicodeDecodeError"
+	}
+	details := "exception_type=" + class
 	var fetch *rulefetch.FetchError
 	var ruleFetch *rulefetch.RuleFetchError
 	if errors.As(err, &fetch) && fetch.Status != 0 && !errors.As(err, &ruleFetch) {
@@ -503,11 +551,14 @@ func fetchSource(ctx context.Context, fetch fetchFunc, config *jsonx.Object, src
 
 const mrsMessage = "OxiDNS/MosDNS 不支持 MRS 二进制规则，请使用该订阅的 Text 或 YAML 版本。"
 
+// errNotUTF8 is rule content that is not UTF-8.
+var errNotUTF8 = errors.New("rule content is not valid UTF-8")
+
 // decodeText decodes UTF-8 (a leading BOM is dropped).
 func decodeText(content []byte) (string, error) {
 	content = bytes.TrimPrefix(content, []byte("\xef\xbb\xbf"))
 	if !utf8.Valid(content) {
-		return "", &rulefetch.FetchError{Class: "UnicodeDecodeError", Message: "rule content is not valid UTF-8"}
+		return "", errNotUTF8
 	}
 	return string(content), nil
 }
@@ -519,18 +570,22 @@ func checkReferences(yamlContent string, files map[string][]byte, skip bool) err
 	if err := yaml.Unmarshal([]byte(yamlContent), &document); err != nil {
 		return err
 	}
-	root, ok := document.(map[string]any)
-	plugins, isList := root["plugins"].([]any)
-	if !ok || !isList && root["plugins"] != nil {
+	value, present, isMap := lookup(document, "plugins")
+	plugins, isList := value.([]any)
+	if !isMap || present && !isList {
 		return archiveErr("MosDNS 配置格式无效")
 	}
 	for _, plugin := range plugins {
 		if skip {
 			break
 		}
-		args, _ := plugin.(map[string]any)["args"].(map[string]any)
-		references, isList := args["files"].([]any)
-		if !isList && args["files"] != nil {
+		args, _, isMap := lookup(plugin, "args")
+		if !isMap {
+			return errors.New("MosDNS plugin is not a mapping")
+		}
+		value, present, _ := lookup(args, "files")
+		references, isList := value.([]any)
+		if present && !isList {
 			return archiveErr("MosDNS 文件引用必须为列表")
 		}
 		for _, reference := range references {
@@ -545,6 +600,20 @@ func checkReferences(yamlContent string, files map[string][]byte, skip bool) err
 		}
 	}
 	return nil
+}
+
+// lookup reads key of a YAML mapping (yaml.v3 decodes a mapping with
+// non-string keys as map[any]any).
+func lookup(node any, key string) (value any, present, isMap bool) {
+	switch m := node.(type) {
+	case map[string]any:
+		value, present = m[key]
+		return value, present, true
+	case map[any]any:
+		value, present = m[key]
+		return value, present, true
+	}
+	return nil, false, false
 }
 
 func writeZip(order []string, files map[string][]byte) ([]byte, error) {

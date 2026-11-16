@@ -4,10 +4,12 @@
 package mosdns
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"math"
+	"math/big"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -158,8 +160,8 @@ func fromBody(data map[string]json.RawMessage, name, def string) any {
 // way for whole-editor and cache-only saves.
 func normalizeCache(settings *jsonx.Object, data map[string]json.RawMessage) {
 	interval := intOf(data["cache_dump_interval"], 300)
-	if interval <= 0 {
-		interval = 300
+	if interval.Sign() <= 0 {
+		interval = big.NewInt(300)
 	}
 	dumpFile := "./cache.dump"
 	if raw, ok := data["cache_dump_file"]; ok && string(raw) != "null" {
@@ -169,9 +171,9 @@ func normalizeCache(settings *jsonx.Object, data map[string]json.RawMessage) {
 	}
 	settings.Set("cache_enabled", truthy(data["cache_enabled"]))
 	settings.Set("cache_dump_enabled", truthy(data["cache_dump_enabled"]))
-	settings.Set("cache_size", jsonx.Int(intOf(data["cache_size"], 10240)))
-	settings.Set("cache_lazy_ttl", jsonx.Int(intOf(data["cache_lazy_ttl"], 21600)))
-	settings.Set("cache_dump_interval", jsonx.Int(interval))
+	settings.Set("cache_size", jsonx.BigInt(intOf(data["cache_size"], 10240)))
+	settings.Set("cache_lazy_ttl", jsonx.BigInt(intOf(data["cache_lazy_ttl"], 21600)))
+	settings.Set("cache_dump_interval", jsonx.BigInt(interval))
 	settings.Set("cache_dump_file", dumpFile)
 }
 
@@ -184,32 +186,38 @@ func truthy(raw json.RawMessage) bool {
 	return jsonx.Truthy(v)
 }
 
-// intOf is an integer setting: a number (truncated), a boolean or a
-// decimal string; anything else is the default.
-func intOf(raw json.RawMessage, def int64) int64 {
+var integerText = regexp.MustCompile(`^[+-]?[0-9]+(_[0-9]+)*$`)
+
+// intOf is an integer setting (any size): a number (truncated), a boolean
+// or a decimal string; anything else is the default.
+func intOf(raw json.RawMessage, def int64) *big.Int {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
 	var v any
-	if raw == nil || json.Unmarshal(raw, &v) != nil {
-		return def
+	if raw == nil || decoder.Decode(&v) != nil {
+		return big.NewInt(def)
 	}
 	switch x := v.(type) {
 	case bool:
 		if x {
-			return 1
+			return big.NewInt(1)
 		}
-		return 0
-	case float64:
-		if n, err := strconv.ParseInt(string(raw), 10, 64); err == nil {
+		return big.NewInt(0)
+	case json.Number:
+		if n, ok := new(big.Int).SetString(string(x), 10); ok {
 			return n
 		}
-		if math.Abs(x) < 1<<63 {
-			return int64(x)
+		if f, err := strconv.ParseFloat(string(x), 64); err == nil {
+			n, _ := big.NewFloat(f).Int(nil)
+			return n
 		}
 	case string:
-		if n, err := strconv.ParseInt(strings.ReplaceAll(strings.TrimSpace(x), "_", ""), 10, 64); err == nil {
+		if text := strings.TrimSpace(x); integerText.MatchString(text) {
+			n, _ := new(big.Int).SetString(strings.ReplaceAll(text, "_", ""), 10)
 			return n
 		}
 	}
-	return def
+	return big.NewInt(def)
 }
 
 func saveSettings(c *httpx.Ctx) (*httpx.Response, error) {
