@@ -33,6 +33,7 @@ import (
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/health"
 	"configflow/internal/httpx"
+	"configflow/internal/ippresence"
 	"configflow/internal/notifications"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
@@ -70,6 +71,7 @@ var wirePackages = []func(){
 	refresh.Wire,
 	health.Wire,
 	mihomoenv.Wire,
+	ippresence.Wire, // routers R02: convert.MihomoHooks.IsFullTun, oxidns classical_ip_lines
 }
 
 func wireCore() {

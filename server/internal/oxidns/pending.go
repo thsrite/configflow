@@ -86,14 +86,8 @@ func ruleUpdateRelevant(changes *jsonx.Object) bool {
 	return false
 }
 
-// classicalIPLines is rule_ip_presence.classical_ip_lines(item, config)
-// (routers domain; to be provided through a hook, coordinator decision 3):
-// true/false for a classical set with known content, nil (None)
-// otherwise.
-func classicalIPLines(item any, config any) any {
-	pending("routers", "rule_ip_presence.classical_ip_lines")
-	return nil
-}
+// classicalIPLines (rule_ip_presence.classical_ip_lines) moved to
+// hooks_routers.go: a hook registered by routers R02 (internal/ippresence).
 
 // migrateDomainOnlyRouting is
 // oxidns_common_routing.migrate_domain_only_routing(document, settings,
