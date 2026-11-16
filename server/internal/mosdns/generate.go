@@ -165,8 +165,9 @@ func generateDocument(config *jsonx.Object, baseURL string) *jsonx.Object {
 
 	customConfig := get(settings, "custom_config", "")
 	var base *jsonx.Object
+	var unsupported error // raised at the end: Python's own errors come first
 	if truthy(customConfig) && strip(customConfig) != "" {
-		base = loadCustomConfig(customConfig.(string))
+		base, unsupported = loadCustomConfig(customConfig.(string))
 	}
 	if base == nil || base.Len() == 0 {
 		base = jsonx.Obj("api", jsonx.Obj("http", "0.0.0.0:8338"), "plugins", []any{})
@@ -458,6 +459,9 @@ func generateDocument(config *jsonx.Object, baseURL string) *jsonx.Object {
 			ordered.Set(k, v)
 		}
 	}
+	if unsupported != nil {
+		raise(unsupported)
+	}
 	return ordered
 }
 
@@ -498,22 +502,24 @@ func dumpInterval(value any) (n jsonx.Number) {
 }
 
 // loadCustomConfig is the custom base configuration: yaml.safe_load, a
-// non-mapping or a YAML error giving the defaults (nil).
-func loadCustomConfig(text string) *jsonx.Object {
+// non-mapping or a YAML error giving the defaults (nil). A document jsonx
+// cannot hold returns nil and an *UnsupportedYAMLError for the caller to
+// raise once the rest of the generation succeeded.
+func loadCustomConfig(text string) (*jsonx.Object, error) {
 	value, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true})
 	if err != nil {
 		if _, ok := err.(*yamlx.UnrepresentableError); ok {
-			raise(&UnsupportedYAMLError{Msg: "MosDNS custom_config: " + err.Error()})
+			return nil, &UnsupportedYAMLError{Msg: "MosDNS custom_config: " + err.Error()}
 		}
-		return nil
+		return nil, nil
 	}
 	switch x := value.(type) {
 	case *jsonx.Object:
-		return x
+		return x, nil
 	case *yamlx.Mapping:
-		raise(&UnsupportedYAMLError{Msg: "MosDNS custom_config: mapping keys must be strings"})
+		return nil, &UnsupportedYAMLError{Msg: "MosDNS custom_config: mapping keys must be strings"}
 	}
-	return nil
+	return nil, nil
 }
 
 // checkDumpable rejects values Python's yaml.Dumper would write but yamlx
