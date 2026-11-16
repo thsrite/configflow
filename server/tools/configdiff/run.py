@@ -70,6 +70,10 @@ def main():
     groups.update(scheduler)
     from cases.http_shell import GROUPS as http_shell
     groups.update(http_shell)
+    from cases.profiles import GROUPS as profiles
+    groups.update(profiles)
+    from cases.profile_guards import GROUPS as profile_guards
+    groups.update(profile_guards)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

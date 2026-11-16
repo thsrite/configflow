@@ -211,8 +211,8 @@ def files(directory):
         elif path.is_file() and not RUNTIME_FILES.search(relative):
             raw = path.read_bytes()
             try:
-                content = structure(raw, '', relative)
-            except (ValueError, UnicodeError, yaml.YAMLError, zipfile.BadZipFile, tarfile.TarError):
+                content = database(path.parent) if path.name == 'configflow.sqlite3' else structure(raw, '', relative)
+            except (ValueError, UnicodeError, AssertionError, sqlite3.Error, yaml.YAMLError, zipfile.BadZipFile, tarfile.TarError):
                 # A deliberately damaged cache/backup is still observable data.
                 # Preserve its complete raw bytes, do not drop or repair it.
                 content = {'invalid_structured_file_bytes': raw}

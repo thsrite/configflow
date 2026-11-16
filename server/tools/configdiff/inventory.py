@@ -37,3 +37,15 @@ def declared_states():
     return {(method, path): status for line in (ROOT / 'server/parity/routes.tsv').read_text().splitlines()
             if line and not line.startswith('#')
             for method, path, _handler, _package, status in [line.split('\t')]}
+
+
+def missing_profile_rows():
+    out = []
+    for line in MATRIX.read_text().splitlines():
+        row = re.match(r'^\| \*\*(R\d{3})\*\* `([^`]+)`', line)
+        ids = re.search(r'\*\*F(\d+)–(\d+)\*\* P1–2', line)
+        if row and ids:
+            if int(ids[2]) - int(ids[1]) != 1:
+                raise ValueError('profile failure pair must have exactly two IDs')
+            out.append((row[1], row[2], int(ids[1])))
+    return out

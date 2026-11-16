@@ -99,6 +99,10 @@ def create(directory, options):
         value['agents'] = [{'id': 'agent-synthetic', 'name': '合成 Agent 🧪', 'token': AGENT,
                             'profile_id': default, 'service_type': 'mihomo', 'host': '127.0.0.1',
                             'port': 9, 'enabled': True, 'version': '1.8.60-go', 'deployment_method': 'shell'}]
+        if 'agents' in options:
+            value['agents'] = options['agents']
+        elif options.get('agent_updates'):
+            value['agents'][0].update(options['agent_updates'])
         if location == 'settings':
             from urllib.parse import quote
             value['system_config']['server_domain'] = 'http://panel.example/?token=' + quote(CURRENT, safe='')

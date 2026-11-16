@@ -223,6 +223,21 @@ class Comparators(unittest.TestCase):
                         [Difference('body', 'value', '\ud800', float('nan'))])
         json.dumps(recorder.results, ensure_ascii=False, allow_nan=False).encode('utf-8')
 
+    def test_nested_database_backup_row_mutation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            roots = [Path(tmp, n) for n in ('python', 'go')]
+            for root in roots:
+                folder = root / 'migrations/fixed/import'
+                folder.mkdir(parents=True)
+                with sqlite3.connect(folder / 'configflow.sqlite3') as db:
+                    db.executescript('CREATE TABLE meta(key,value); CREATE TABLE sections(scope,owner,position); '
+                                     'CREATE TABLE fields(scope,owner,field,position,value,revision);')
+                    db.execute('INSERT INTO fields VALUES (?,?,?,?,?,?)', ('shared', '', 'nodes', 0, '[{"name":"original"}]', 1))
+            self.assertEqual(file_diffs(*roots, Policy()), [])
+            with sqlite3.connect(roots[1] / 'migrations/fixed/import/configflow.sqlite3') as db:
+                db.execute('UPDATE fields SET value=?', ('[{"name":"changed"}]',))
+            self.assertTrue(file_diffs(*roots, Policy()))
+
 
 if __name__ == '__main__':
     unittest.main()
