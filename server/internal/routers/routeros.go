@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net/netip"
 	"net/url"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -74,7 +74,9 @@ type BatchDriver interface {
 	RestoreMany(context.Context, []json.RawMessage, bool) []string
 }
 
-// RouterOS is a RouterOS 7 REST device driver.
+// RouterOS is a RouterOS 7 REST device driver. One release or read uses a
+// driver from one goroutine at a time (ReadState and the policy/DNS guard
+// manifests are per-driver state); only Ping may run concurrently.
 type RouterOS struct {
 	endpoint string
 	client   DeviceHTTP
@@ -691,6 +693,13 @@ func rosTruthy(value any) bool {
 
 func comparable(key string, value any) string {
 	text := rosText(value)
+	switch value.(type) {
+	case []any, map[string]any:
+		// RouterOS sends strings; anything else must still compare by value,
+		// never collapse to "" (ownership snapshots rely on it).
+		data, _ := json.Marshal(value)
+		text = string(data)
+	}
 	if key == "dns-none" && text == "" {
 		return "false"
 	}
@@ -858,7 +867,7 @@ func (d *RouterOS) filterPolicyMangle(state *NatContext) error {
 			continue
 		}
 		for _, row := range state.Mangle {
-			if row.id() == entry.ID && maps.Equal(configROSRow(row), configROSRow(entry.Config)) {
+			if row.id() == entry.ID && sameRow(configROSRow(row), configROSRow(entry.Config)) {
 				proven[entry.ID] = true
 				break
 			}
@@ -943,7 +952,12 @@ type rosOperation struct {
 }
 
 // Apply applies one RouterOS release operation and returns its compensation.
+// Once started it runs to the end even if ctx is cancelled (PORTING rule 4b):
+// a write abandoned between the request and its read-back would leave a
+// change on the router that no undo record covers. Every device request
+// still has its own timeout.
 func (d *RouterOS) Apply(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+	ctx = context.WithoutCancel(ctx)
 	var head struct {
 		Kind string `json:"kind"`
 	}
@@ -1047,8 +1061,10 @@ func (d *RouterOS) applyDHCPDNSUpdate(ctx context.Context, op rosOperation) (ROS
 	if err != nil {
 		return ROSUndo{}, err
 	}
+	// The plan always records the previewed attributes; without them there is
+	// nothing to prove the network unchanged, so the write is refused.
 	expected, present := decodeRow(op.Expected)
-	if present && !maps.Equal(entry.AttributesRow(), expected) {
+	if !present || !sameRow(entry.AttributesRow(), expected) {
 		return ROSUndo{}, routerError(messageDHCPDNSDrift)
 	}
 	return d.transaction(ctx, []ROSChange{{Method: "PATCH", Path: rosDHCPNetworks, ID: entry.ID,
@@ -1061,8 +1077,11 @@ func (d *RouterOS) applyNATUpdate(ctx context.Context, op rosOperation) (ROSUndo
 		return ROSUndo{}, err
 	}
 	original := payload(rosNAT, row)
+	if original == nil {
+		return ROSUndo{}, payloadError(rosNAT, row)
+	}
 	expected, present := decodeRow(op.Expected)
-	if present && !maps.Equal(original, expected) {
+	if present && !sameRow(original, expected) {
 		return ROSUndo{}, routerError(messageNATRuleDrift)
 	}
 	if !row.is("chain", "srcnat") || !row.is("action", "accept") {
@@ -1126,22 +1145,7 @@ func (d *RouterOS) applyNATAdd(ctx context.Context, op rosOperation) (ROSUndo, e
 }
 
 func collapseRouterNetworks(values []string) ([]string, error) {
-	networks := []netip.Prefix{}
-	for _, value := range values {
-		text := strings.TrimSpace(value)
-		if startText, endText, hasRange := strings.Cut(text, "-"); hasRange {
-			start, okStart := netipx.ParseAddr4(strings.TrimSpace(startText))
-			end, okEnd := netipx.ParseAddr4(strings.TrimSpace(endText))
-			if okStart && okEnd && start.Compare(end) <= 0 {
-				networks = append(networks, netipx.Summarize(start, end)...)
-			}
-			continue
-		}
-		if network, ok := netipx.ParseNetwork4(text, false); ok {
-			networks = append(networks, network)
-		}
-	}
-	collapsed, err := netipx.Collapse(networks)
+	collapsed, err := netipx.Collapse(Networks(values))
 	if err != nil {
 		return nil, err
 	}
@@ -1276,6 +1280,15 @@ func payload(path string, row Row) Row {
 	return out
 }
 
+// payloadError is why payload refused row: RouterOS-generated rows (and
+// invalid IPv6 ND entries) are never taken over, changed or removed.
+func payloadError(path string, row Row) error {
+	if path == "/ipv6/nd" && !rosTruthy(row["dynamic"]) && rosTruthy(row["invalid"]) {
+		return routerError(messageInvalidIPv6ND)
+	}
+	return routerError(messageROSDynamicObject)
+}
+
 func stringSet(values ...string) map[string]bool {
 	set := make(map[string]bool, len(values))
 	for _, value := range values {
@@ -1338,6 +1351,9 @@ func (d *RouterOS) perform(ctx context.Context, change ROSChange, undo *[]ROSCha
 			current = findRow(rows, change.ID)
 		}
 		if current != nil {
+			if payload(path, current) == nil {
+				return rosCheck{}, payloadError(path, current)
+			}
 			if !rowsEqual(d.ownershipSnapshot(path, current), change.Expected) {
 				return rosCheck{}, routerError(messageRollbackChanged)
 			}
@@ -1441,10 +1457,7 @@ func (d *RouterOS) perform(ctx context.Context, change ROSChange, undo *[]ROSCha
 	}
 	original := payload(path, row)
 	if original == nil {
-		if path == "/ipv6/nd" && !rosTruthy(row["dynamic"]) && rosTruthy(row["invalid"]) {
-			return rosCheck{}, routerError(messageInvalidIPv6ND)
-		}
-		return rosCheck{}, routerError(messageROSDynamicObject)
+		return rosCheck{}, payloadError(path, row)
 	}
 	snapshot := d.ownershipSnapshot(path, row)
 	unchanged, unchangedSet := decodeRow(change.Unchanged)
@@ -1453,7 +1466,7 @@ func (d *RouterOS) perform(ctx context.Context, change ROSChange, undo *[]ROSCha
 	}
 	expected, expectedSet := decodeRow(change.Expected)
 	if expectedSet && !maps.Equal(snapshot, expected) {
-		return rosCheck{}, routerError(messageRollbackChanged)
+		return rosCheck{}, routerError(messageChangedDuringWrite)
 	}
 	if restoring && !expectedSet {
 		return rosCheck{}, routerError(messageRollbackSnapshot)
@@ -1579,6 +1592,12 @@ func marshalRow(row Row) json.RawMessage {
 	return data
 }
 
+// sameRow compares two decoded device rows. Values may be JSON arrays or
+// objects, which maps.Equal cannot compare without panicking.
+func sameRow(left, right Row) bool {
+	return len(left) == len(right) && reflect.DeepEqual(map[string]any(left), map[string]any(right))
+}
+
 func rowsEqual(left Row, raw json.RawMessage) bool {
 	right, present := decodeRow(raw)
 	return present && maps.Equal(left, right)
@@ -1614,33 +1633,7 @@ func (d *RouterOS) verifyChange(ctx context.Context, check rosCheck) error {
 		}
 		row = findRow(rows, check.ID)
 	}
-	if check.Absent {
-		if row != nil {
-			return routerError(messageReadbackDeletePresent)
-		}
-		return nil
-	}
-	if row == nil {
-		return routerError(messageReadbackMissingWrite)
-	}
-	keys := make([]string, 0, len(check.Values))
-	for key := range check.Values {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	for _, key := range keys {
-		value := check.Values[key]
-		if key == "place-before" {
-			target := rosText(value)
-			idx, targetIdx := indexOfRow(rows, check.ID), indexOfRow(rows, target)
-			if targetIdx < 0 || idx < 0 || idx >= targetIdx {
-				return routerError(messageReadbackNATOrder)
-			}
-		} else if comparable(key, row[key]) != comparable(key, value) {
-			return routerError(fmt.Sprintf(messageReadbackMismatch, check.ID, key))
-		}
-	}
-	return nil
+	return checkWritten(check, row, rows)
 }
 
 func (d *RouterOS) restore(ctx context.Context, changes []ROSChange) (ROSUndo, error) {

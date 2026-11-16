@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -183,4 +184,58 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
+}
+
+// TestOnlyIdempotentRequestsAreRetried (O4 review): a device that reads a
+// request on a reused keep-alive connection and closes it without answering
+// may have executed it. Go's transport retries such a request only when it is
+// a GET; a write (POST /execute, PUT, PATCH, DELETE) must reach the device
+// exactly once and surface as a ConnectionError (an uncertain write).
+func TestOnlyIdempotentRequestsAreRetried(t *testing.T) {
+	for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+		t.Run(method, func(t *testing.T) {
+			var mu sync.Mutex
+			seen := 0
+			addr := serve(t, func(conn net.Conn) {
+				defer conn.Close()
+				r := bufio.NewReader(conn)
+				for {
+					req, err := http.ReadRequest(r)
+					if err != nil {
+						return
+					}
+					_, _ = io.Copy(io.Discard, req.Body)
+					mu.Lock()
+					seen++
+					n := seen
+					mu.Unlock()
+					if n == 2 {
+						return // read the request, then drop the connection unanswered
+					}
+					conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}"))
+				}
+			})
+			c := New(Config{})
+			defer c.Close()
+			if _, err := c.Do(context.Background(), "GET", "http://"+addr+"/rest/system/resource", nil, time.Second); err != nil {
+				t.Fatal(err)
+			}
+			var body any
+			if method != "GET" && method != "DELETE" {
+				body = map[string]any{"script": ":put 1"}
+			}
+			_, err := c.Do(context.Background(), method, "http://"+addr+"/rest/execute", body, time.Second)
+			mu.Lock()
+			defer mu.Unlock()
+			if method == "GET" {
+				if err != nil || seen != 3 {
+					t.Fatalf("GET: err=%v seen=%d, want one transparent retry", err, seen)
+				}
+				return
+			}
+			if err == nil || ClassOf(err) != ConnectionError || seen != 2 {
+				t.Fatalf("%s: err=%v seen=%d, want a ConnectionError and no second delivery", method, err, seen)
+			}
+		})
+	}
 }

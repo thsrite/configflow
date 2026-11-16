@@ -48,6 +48,9 @@ type Fault struct {
 	ExtraRows    map[string][]Row `json:"extra_rows,omitempty"`
 	LoseReply    bool             `json:"lose_reply,omitempty"`
 	AfterCommit  bool             `json:"after_commit,omitempty"`
+	// PatchCreated changes fields of the row an /execute add created, by the
+	// add's index, as a device that normalizes or flags a new row would.
+	PatchCreated map[int]Row `json:"patch_created,omitempty"`
 }
 
 // State is the fake device state and request log.
@@ -378,6 +381,14 @@ func (f *Fake) execute(body any, fault *Fault) (Row, bool) {
 		if err != nil {
 			output = append(output, fmt.Sprintf("cf-err:%d:%s", index, err.Error()))
 			break
+		}
+		if fault != nil && fault.PatchCreated[index] != nil {
+			rows := f.tables[collection]
+			if at := rowIndex(rows, text(created[".id"])); at >= 0 {
+				for key, value := range fault.PatchCreated[index] {
+					rows[at][key] = value
+				}
+			}
 		}
 		output = append(output, fmt.Sprintf("cf-id:%d:%s", index, text(created[".id"])))
 		if writeFault != nil && writeFault.AfterCommit && writeFault.LoseReply {

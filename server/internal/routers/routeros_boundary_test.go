@@ -655,8 +655,121 @@ func r04Cases() []boundaryCase {
 			Faults: []routerfake.Fault{{Method: "PUT", Path: "/ip/route", LoseReply: true, AfterCommit: true}}},
 			op: map[string]any{"kind": "route_add", "cidr": "45.99.0.0/24", "gateway": "192.0.2.4", "comment": "cf-uncertain"}},
 	}
+	cases = append(cases, r04ReviewCases(base, dhcp)...)
 	for _, level := range []string{"network", "server", "lease", "matcher"} {
 		cases = append(cases, boundaryCase{name: "read_dhcp_option6_" + level, action: "read_dhcp_dns", state: makeDHCPOptionState(level)})
 	}
 	return cases
+}
+
+// routeSnapshot is the driver's ownership snapshot of a plain static route
+// (RouterOS defaults overlaid with the row's writable fields).
+func routeSnapshot(row routerfake.Row) map[string]any {
+	out := map[string]any{"disabled": "false", "comment": "", "routing-table": "main", "distance": "1",
+		"scope": "30", "target-scope": "10", "check-gateway": "none", "pref-src": "",
+		"suppress-hw-offload": "false", "blackhole": "false", "vrf-interface": ""}
+	for key, value := range row {
+		if !strings.HasPrefix(key, ".") && key != "dynamic" {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+func routeUndo(method string, row routerfake.Row, extra map[string]any) map[string]any {
+	change := map[string]any{"method": method, "path": "/ip/route", "id": row[".id"], "expected": routeSnapshot(row)}
+	for key, value := range extra {
+		change[key] = value
+	}
+	return map[string]any{"kind": "ros_restore", "changes": []any{change}}
+}
+
+// r04ReviewCases are the O4 review's Python-compared cases (server/parity/review-r04.md).
+func r04ReviewCases(base, dhcp routerfake.State) []boundaryCase {
+	routes := func(count int, first int) []routerfake.Row {
+		rows := make([]routerfake.Row, count)
+		for i := range rows {
+			rows[i] = routerfake.Row{".id": fmt.Sprintf("*%X", first+i), "dst-address": fmt.Sprintf("45.30.%d.0/24", i),
+				"gateway": "192.0.2.1", "routing-table": "main", "comment": "cf-sync", "disabled": "false"}
+		}
+		return rows
+	}
+	deleteUndos := func(rows []routerfake.Row) []map[string]any {
+		undos := make([]map[string]any, len(rows))
+		for i, row := range rows {
+			undos[i] = routeUndo("DELETE", row, nil)
+		}
+		return undos
+	}
+
+	// F2: batch rollback messages carry the "RouterOS 回滚未完成：" prefix.
+	changed := routes(4, 0x31)
+	changedTable := cloneFakeRows(changed)
+	changedTable[1]["comment"] = "edited-by-user"
+	dynamic := routes(4, 0x41)
+	dynamicTable := cloneFakeRows(dynamic)
+	dynamicTable[2]["dynamic"] = "true"
+	removed := routes(4, 0x51)
+	restoreUndos := make([]map[string]any, len(removed))
+	for i, row := range removed {
+		values := map[string]any{}
+		for key, value := range row {
+			if key != ".id" {
+				values[key] = value
+			}
+		}
+		restoreUndos[i] = routeUndo("RESTORE", row, map[string]any{"values": values, "known_ids": []string{row[".id"].(string)}})
+	}
+	foreign := routerfake.Row{".id": "*5F", "dst-address": "45.30.1.0/24", "gateway": "192.0.2.77",
+		"routing-table": "main", "comment": "manual", "disabled": "false"}
+	presentDynamic := routes(1, 0x61)[0]
+	presentDynamicTable := cloneFakeRows([]routerfake.Row{presentDynamic})
+	presentDynamicTable[0]["dynamic"] = "true"
+	presentDynamicValues := map[string]any{"dst-address": presentDynamic["dst-address"], "gateway": "192.0.2.1",
+		"routing-table": "main", "comment": "cf-sync", "disabled": "false"}
+
+	// F5: a dynamic NAT rule is refused as dynamic, not as preview drift.
+	dynamicNAT := routerfake.State{Tables: map[string][]routerfake.Row{"/ip/firewall/nat": {
+		{".id": "*D", "chain": "srcnat", "action": "accept", "comment": "manual", "disabled": "false", "dynamic": "true"},
+	}}}
+
+	addOps := make([]map[string]any, 5)
+	for i := range addOps {
+		addOps[i] = map[string]any{"kind": "route_add", "cidr": fmt.Sprintf("45.31.%d.0/24", i),
+			"gateway": "192.0.2.4", "comment": "cf-sync"}
+	}
+	dhcpNoExpected := map[string]any{"kind": "dhcp_dns_update", "id": "*A", "dns": []string{"192.0.2.53"},
+		"scope": map[string]any{"id": "*A", "network": "192.0.2.0/24", "gateway": "192.0.2.2"}}
+
+	return []boundaryCase{
+		{name: "review_batch_delete_rollback_changed_route_message", action: "restore_many",
+			state: routerfake.State{Tables: map[string][]routerfake.Row{"/ip/route": changedTable}}, undos: deleteUndos(changed)},
+		{name: "review_batch_delete_rollback_dynamic_route_message", action: "restore_many",
+			state: routerfake.State{Tables: map[string][]routerfake.Row{"/ip/route": dynamicTable}}, undos: deleteUndos(dynamic)},
+		{name: "review_batch_recreate_rollback_conflict_message", action: "restore_many",
+			state: routerfake.State{Tables: map[string][]routerfake.Row{"/ip/route": {foreign}}}, undos: restoreUndos},
+		{name: "review_restore_present_dynamic_route_message", action: "restore_many",
+			state: routerfake.State{Tables: map[string][]routerfake.Row{"/ip/route": presentDynamicTable}},
+			undos: []map[string]any{routeUndo("RESTORE", presentDynamic, map[string]any{"values": presentDynamicValues})}},
+		{name: "review_nat_update_dynamic_rule_message", action: "apply", state: dynamicNAT, op: map[string]any{
+			"kind": "nat_update", "id": "*D", "add_dst": []string{"45.32.0.0/24"}, "comment": "cf-policy",
+			"expected": map[string]any{"chain": "srcnat", "action": "accept", "comment": "manual", "disabled": "false"}}},
+		{name: "review_dhcp_missing_expected_rejected_before_write", action: "apply", state: dhcp, op: dhcpNoExpected},
+		// F4: a batch whose first add reads back changed is cleaned up with the
+		// same batched remove Python uses, not one REST round trip per route.
+		{name: "review_batch_readback_mismatch_cleans_up_in_batch", action: "apply_many", ops: addOps,
+			state: routerfake.State{Tables: base.Tables, Faults: []routerfake.Fault{{Method: "POST", Path: "/execute",
+				AfterCommit: true, PatchCreated: map[int]routerfake.Row{0: {"comment": "normalized-by-device"}}}}}},
+	}
+}
+
+func cloneFakeRows(rows []routerfake.Row) []routerfake.Row {
+	out := make([]routerfake.Row, len(rows))
+	for i, row := range rows {
+		out[i] = routerfake.Row{}
+		for key, value := range row {
+			out[i][key] = value
+		}
+	}
+	return out
 }

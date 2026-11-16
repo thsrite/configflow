@@ -54,6 +54,7 @@ const (
 	messageNATSourceInvalid      = "RouterOS NAT 源地址范围无法识别"
 	messageUnsupportedOperation  = "不支持的操作 %s"
 	messageRollbackChanged       = "回滚对象已发生外部变化，保留现有配置"
+	messageChangedDuringWrite    = "对象在操作期间发生外部变化，保留现有配置"
 	messageRollbackRouteConflict = "回滚期间已有其他程序新增同网段路由，保留现有配置"
 	messageRollbackNATOrder      = "原 NAT 规则位置已变化，无法安全恢复顺序"
 	messageRollbackUnreadable    = "回滚对象无法完整回读，保留现有配置"
