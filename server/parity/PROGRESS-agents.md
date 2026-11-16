@@ -1,6 +1,6 @@
 # PROGRESS — domain `agents`
 
-Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 16 missing, 0 partial, 1 ported (A08), 7 verified (A01, A02, A03, A04, A05, A06, A07). Only reviewers set `verified`.
+Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 15 missing, 0 partial, 2 ported (A08, A15), 7 verified (A01, A02, A03, A04, A05, A06, A07). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.
 
@@ -30,7 +30,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A12 | push diff | 1465 | missing | | A11 | – | internal/deploy |
 | A13 | content sync, Agent list/detail, push-diff routes | 584 | missing | | A12, A15 | 4 | internal/deploy, api/agents |
 | A14 | publishing: transactional content, push-config, deployments, receipts | 1002 | missing | HR | A11, A13, C13, C17, C18, C19, C20, C22, C23 | 9 | internal/deploy, api/agents |
-| A15 | upgrades, Agent operations, address follow | 745 | missing | HR | A01, A02 | 15 | internal/agents/upgrades (new), api/agents |
+| A15 | upgrades, Agent operations, address follow | 745 | ported | HR | A01, A02 | 15 (15 done) | internal/agents/upgrades (new), api/agents |
 | A16 | Agent rule sync, projection, snapshot | 1371 | missing | HR | A07, A14, C25, C27 | 2 | internal/agents/rulesync (new), api/agents |
 | A17 | DNS follow | 760 | missing | HR | A14, C26 | 4 | internal/agents/dnsfollow (new), api/agents |
 | A18 | DNS HA (keepalived pair, handoff, pair publication) | 1529 | missing | HR | A16, A17, C26, routers (`routers/store.py`) | 4 | internal/agents/dnsha (new), api/agents |
@@ -723,20 +723,39 @@ Hooks to provide: `agents.RegisterHooks{PublishDeployment (the non-pair _publish
 
 ## A15 — upgrades, Agent operations, address follow
 
-**Status: `missing`** · HR (upgrade/uninstall/restart of the Agent) · prereqs: A01, A02 · Go: internal/agents/upgrades (new), api/agents
+**Status: `ported`** (porter 2026-11-16, commits d8f4df19, 3d341e9c, + the commit carrying this section; HR: VM lab test of web update/rollback due before the domain is done) · prereqs: A01, A02 · Go: internal/agents/upgrades (new), internal/api/agents/upgrades.go
 
 Files:
-- `backend/agents/upgrades.py` (310)
-- `backend/agents/address_follow.py` (221)
-- `backend/routes/agents.py` (214) — lines 1034–1049, 1050–1232, 2171–2185
+- `backend/agents/upgrades.py` (310) → `upgrades/upgrades.go` (`Start`, `Poll`, `ReportLegacy`, `save`, `request`), `upgrades/artifacts.go` (`Arches`, `ArtifactDirectory`, `Artifacts`, digest cache; **A13 uses `upgrades.Artifacts()` for `upgrade_available`, A10 `ArtifactDirectory()` for the download route**)
+- `backend/agents/address_follow.py` (221) → `upgrades/address.go` (`Usable`, `Follow`, `Confirmed`, `Describe`, `Change`, constants `HASteps`/`HAEdit`/`EnvEdit`/`RouterHint`, `RetrySeconds`)
+- `backend/routes/agents.py` (214) — lines 1034–1049, 1050–1232, 2171–2185 → `api/agents/upgrades.go` (`registerUpgrades`, one line in `Register`); routes.tsv 15 rows `api/agents done`
+- Python errors are `*upgrades.PyError{Class, Message}`; `IsValueError` also accepts `agents.DeploymentConflict`/`agents.ValueError`/repo ValueErrors (Python `except ValueError` catches AgentDeploymentConflict); `ErrorClass` for the report route's `(ValueError, TypeError, AttributeError)` → 400.
+- Small exports added to `internal/agents` (`upgrade_support.go`: `AgentLabel`, `UpgradeBusy`, `NowTimestamp`, `ISOTimestamp`). A01's `ClearAgentLog(logPath, source any)`, `ValidateAgentLogPath(logPath any)`, `SetLoggingConfig(enabled any)` now take any JSON value (the routes pass request-body values unchecked; a truthy non-string `source` is sent as is).
 
-Tests: `test_agent_upgrades.py` (12), `test_agent_upgrade_auth.py` (11), `test_agent_artifacts.py` (17), `test_agent_address_follow.py` (23); deferred from A02 (`test_agent_upgrade_messages.py` 7 cases)
+Hooks/loops: `upgrades.Wire` (in `internal/server` `wirePackages`) registers `agents.Hooks{AddressFollow, AddressConfirmed}`. The follow check runs in a goroutine with `context.Background()` (Python daemon thread); attempts/pending-notice state are package globals like the module globals (`ResetAddressState` for tests). No loop.
 
-Routes (15): `GET|PUT /api/agents/<agent_id>/address`; `POST …/restart`; `GET …/status`; `GET …/logs`; `GET …/logs/sources`; `POST …/logs/clear`; `POST …/logs/validate`; `GET|POST …/config/logging`; `POST …/uninstall`; `POST …/update`; `GET …/upgrade`; `POST …/upgrade/report`; `GET /api/agents/latest-version`
+Tests ported:
+- `test_agent_upgrades.py` 12/12 → `upgrades/upgrades_test.go` (`requestHook` replaces `_request`, `SetArtifactsForTest`).
+- `test_agent_artifacts.py` 16/17 → `upgrades/artifacts_test.go` (Path.open/readinto interception = `openHook`/`readHook`). Not ported: `test_windows_streams_without_reusing_or_storing_digest_cache` (os.name == 'nt' branch; the Go server does not run on Windows).
+- `test_agent_address_follow.py` 23/23 → `api/agents/address_test.go` (21, inline thread + `SetReachesForTest`/`SetAskForTest`) and `upgrades/address_test.go` (`_reaches`/`_ask` against loopback fake Agents instead of monkeypatched requests).
+- `test_agent_upgrade_auth.py` 9/11 defs → `api/agents/upgrades_test.go` (`newUpgradeApp` = `authenticated_app`, login enabled). Deferred to **A10**: `test_agent_binary_download_does_not_require_admin_jwt` (3), `test_public_download_keeps_filename_allowlist`, and the download half of `test_admin_starts_upgrade_and_both_agent_protocols_can_download`; to **A13**: GET `/api/agents` / `/api/agents/<id>` parts of `test_admin_can_still_read_agents_and_upgrade_status` and of `test_upgrade_exemptions_do_not_open_agent_administration` (`GET ""`, `GET /{id}`); to **A14**: push-config parts of the exemptions and of `test_reregister_preserves_upgrade_record_and_pending_operation_lock`. `authenticated_app` for A18/A20: copy `newUpgradeApp` (it lives in the external test package).
+- Deferred from A02, `test_agent_upgrade_messages.py` 7 route cases: 5 ported (`TestRejectedUpdate…`, `TestLiveRollbackFailure…`, `TestLegacyMigrationFailure…`, `TestMissingAgentAndUpdateRecordErrors…`, progress + own-read part of `test_list_detail_and_status_localize…` ×3 as `TestStatusLocalizesOldRecordsWithoutRewritingThem`); list/detail part → **A13**.
+- New: `TestReportBodyLimitAndMalformedReports`, `TestLatestVersionRoute`, `TestReferenceUsable` (49 inputs from real `address_follow.usable`, `testdata/a15_reference.json`; the same corpus records CPython's TypeError/AttributeError texts used by the routes).
 
-Evidence: no Go code (manager methods for restart/status/logs/uninstall/update/logging exist in A01).
+Differential (`difftest/upgrades_diff_test.go`): `TestUpgradesDifferentialAgainstFlask` — 98 requests over all 15 routes (success and failure each: unknown Agent, unauthenticated, busy update, unreachable Agent, Agent 500/404/non-JSON/list/string/null answers, odd request bodies, Unicode/huge `lines`, full update → poll → succeeded, legacy protocol, rejection, report variants, address describe/change/HA/docker, heartbeat follow adopted / HA member reported / token refused / bridge address ignored), fake Agent on 127.0.0.1 and on this host's LAN address (same port) so both servers follow the same way; compared bodies, Agent requests, stored Agents, notifications.json, DATA_DIR files: **0 differences**. `TestUpgradesProxyDifferentialAgainstFlask` (coordinator decision 5): HTTP_PROXY → loopback recording proxy; logs/sources/restart/address check/follow go through it, upgrades `_request` (trust_env=False) does not: **0 differences**. Registry differential re-run: 234 requests, 0 differences.
 
-Hooks to provide: `agents.RegisterHooks{AddressFollow, AddressConfirmed}` (address_follow; HA members only notify). `upgrade/report` is Agent-authenticated (check auth gate). `test_agent_upgrade_auth.py` also builds the `authenticated_app` fixture used by A18/A20 tests — port its helper first.
+Differences / accepted (for the reviewer):
+- Transport error texts in `Connection error: …` / `error_details` are Go's (A01's accepted limitation); masked in three difftest cases.
+- `.oxidns-ha-publications/<hash>/lock` files that Python's `oxidns_ha_publish.service_operation` creates on restart/uninstall are A18's (the default service operation has no pair lock); excluded from the difftest file list.
+- `poll` on a truthy non-dict `latest_upgrade`: Python's `dict(x)` raises ValueError (str → 404 with that text) or TypeError; Go answers a TypeError (500). Malformed record only.
+- Windows digest-cache branch not ported (see tests).
+
+Pitfalls: `Usable` ignores loopback, so a follow test needs a non-loopback local address (the difftest binds the fake Agent on the host's LAN IP; it skips if none). `upgrades` tests share globals: `ResetArtifactCache`, `ResetAddressState`, restore functions of the `Set…ForTest` seams. The difftest fake Agent tells requests and Go apart by User-Agent to echo each server's own update id.
+
+Commands:
+- `rt -- bash -lc 'cd server && go vet ./internal/agents/... ./internal/api/agents/... ./internal/server/ && go test -count=1 -race ./internal/agents/... ./internal/api/agents/... ./internal/server/'` — all ok
+- `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run UpgradesDifferential ./internal/api/agents/difftest/'` and separately `-run UpgradesProxyDifferential`
+- corpus: `rt --back server/internal/agents/upgrades/testdata/a15_reference.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/agents/upgrades/testdata/gen_a15_reference.py > server/internal/agents/upgrades/testdata/a15_reference.json'`
 
 ## A16 — Agent rule sync, projection, snapshot
 
