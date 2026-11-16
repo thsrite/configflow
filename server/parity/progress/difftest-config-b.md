@@ -603,3 +603,19 @@ request_variants=6039 named_matrix_cases=3320（S480 F2387 B453），H去重217�
 ```
 
 本批除上述15个rule-proxy请求外，生成/原文路由仍Go未接通。原文比较收紧尚未对所有旧组全量重跑，留待最终.32全量验证；未做最终交回。
+
+## 批次 33：G08 Mihomo DNS与EasyTier公开订阅输出
+
+- 10请求：顶层/dns.ipv6均分别true/false并核对精确布尔类型，hosts、proxy-server-nameserver保留。EasyTier subscription/agent/all三scope×keepalive开关，公开订阅输出只在subscription/all加入outbound；agent-only不泄入订阅规则。
+- 核对network-secret在生成配置中保留、MagicDNS policy、overlay CIDR和域名规则必须排在普通规则之前；keepalive仅开启时生成fallback组，URL/interval精确。另有全局disabled省略与dialer-proxy指向降低后的公开代理链名称。
+- 本批仅证明公开subscription目标的scope行为；for_agent=true版本门禁/真正Agent推送仍待fake Agent序列，不能把agent-only在订阅中省略当成Agent目标成功下发。没有实际加入虚拟网或发keepalive网络请求。
+
+```text
+.63 run.py --groups generator-mihomo-dns,generator-easytier
+current go-unimplemented=10 design_errors=[] seconds=12.17
+cumulative compared=1470 go-unimplemented=4509 dependency=28 different=41 O12-separate=1
+request_variants=6049 named_matrix_cases=3320（S480 F2387 B453），H去重217，G去重9
+42 self-checks + end-to-end wrong-Go-response check OK
+```
+
+Go相关preview仍未接通，未计通过。G10–G16、Agent目标及其他未完成项继续，未做最终全量。
