@@ -55,7 +55,8 @@ const (
 	enrollmentExpired    = "安装凭据无效或已过期，请重新生成安装命令。"
 )
 
-func randomBytes(n int) []byte {
+// randomBytes is os.urandom(n) (uuid4, token_urlsafe), replaceable in tests.
+var randomBytes = func(n int) []byte {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
 		panic("installer: no randomness: " + err.Error())
