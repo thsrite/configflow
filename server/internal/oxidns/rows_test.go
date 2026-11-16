@@ -447,7 +447,7 @@ func callRow(fn string, args []any) (out any, err error, ok bool) {
 		out, err = FormatError(name, arg(1))
 		return out, err, true
 	}
-	return nil, nil, false
+	return callRowC23(fn, args)
 }
 
 // rowResult classifies one row.
