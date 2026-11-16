@@ -111,7 +111,11 @@ func TestSyntheticPythonImportCorpus(t *testing.T) {
 				if err == nil {
 					t.Fatalf("expected rejection: %s", row.Error)
 				}
-				if !strings.HasPrefix(row.Error, "YAML 解析失败：") && err.Error() != row.Error {
+				if strings.HasPrefix(row.Error, "YAML 解析失败：") {
+					if !strings.HasPrefix(err.Error(), "YAML 解析失败：") {
+						t.Fatalf("missing YAML error prefix: %v", err)
+					}
+				} else if err.Error() != row.Error {
 					t.Fatalf("error expected=%s actual=%s", row.Error, err)
 				}
 				return
