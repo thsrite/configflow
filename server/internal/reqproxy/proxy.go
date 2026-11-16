@@ -314,21 +314,54 @@ func FromEnvironment(environ []string, prepared string) (*Proxy, error) {
 	if shouldBypassProxies(pairs, prepared) {
 		return nil, nil
 	}
-	proxies := getproxiesEnvironment(pairs)
-	scheme, hostname, _, ok := urlHost(prepared)
-	var keys []string
-	if ok {
-		keys = []string{scheme + "://" + hostname, scheme, "all://" + hostname, "all"}
-	} else {
-		keys = []string{scheme, "all"}
-	}
-	value := ""
-	for _, key := range keys {
-		if v, found := proxies[key]; found {
-			value = v
-			break
+	return proxyFor(selectProxy(getproxiesEnvironment(pairs), prepared))
+}
+
+// ForRedirect is the proxy of a redirect hop to hop of a request first sent
+// to original (no proxies= given): Session.request merged the environment
+// proxies of the original URL once (none when it was bypassed), and
+// rebuild_proxies → resolve_proxies adds the hop scheme's environment proxy
+// with setdefault only when the hop itself is not bypassed. So a hop to a
+// NO_PROXY host still uses the proxy chosen for a proxied original, and a
+// hop away from a bypassed original picks up the scheme's proxy.
+func ForRedirect(environ []string, original, hop string) (*Proxy, error) {
+	pairs := envPairs(environ)
+	proxies := map[string]string{}
+	if !shouldBypassProxies(pairs, original) {
+		for key, value := range getproxiesEnvironment(pairs) {
+			proxies[key] = value
 		}
 	}
+	if !shouldBypassProxies(pairs, hop) {
+		env := getproxiesEnvironment(pairs)
+		scheme, _, _, _ := urlHost(hop)
+		value, ok := env[scheme]
+		if !ok {
+			value = env["all"]
+		}
+		if _, present := proxies[scheme]; value != "" && !present {
+			proxies[scheme] = value
+		}
+	}
+	return proxyFor(selectProxy(proxies, hop))
+}
+
+// selectProxy is requests.utils.select_proxy(url, proxies).
+func selectProxy(proxies map[string]string, prepared string) string {
+	scheme, hostname, _, ok := urlHost(prepared)
+	keys := []string{scheme, "all"}
+	if ok {
+		keys = []string{scheme + "://" + hostname, scheme, "all://" + hostname, "all"}
+	}
+	for _, key := range keys {
+		if v, found := proxies[key]; found {
+			return v
+		}
+	}
+	return ""
+}
+
+func proxyFor(value string) (*Proxy, error) {
 	if value == "" {
 		return nil, nil
 	}

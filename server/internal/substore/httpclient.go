@@ -361,18 +361,9 @@ func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, erro
 	if err := checkURL(prepared); err != nil {
 		return nil, err
 	}
-	// requests' proxy choice: proxies= when given, else the environment
-	// (trust_env) without Go's automatic loopback bypass.
-	var chosen *reqproxy.Proxy
-	var proxyErr error
-	if request.Proxy != "" {
-		chosen, proxyErr = reqproxy.FromValue(request.Proxy)
-	} else {
-		chosen, proxyErr = reqproxy.FromEnvironment(environ(), prepared)
-	}
-	if proxyErr != nil {
-		class, _, _ := strings.Cut(proxyErr.Error(), ":")
-		return nil, &RequestError{Class: class, Message: proxyErr.Error(), Err: proxyErr}
+	// The proxy is chosen for the first URL before anything is sent.
+	if _, err := chooseProxy(request.Proxy, prepared); err != nil {
+		return nil, err
 	}
 	var body io.Reader
 	var payload []byte
@@ -398,44 +389,70 @@ func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, erro
 	for key, values := range request.Header {
 		req.Header[http.CanonicalHeaderKey(key)] = values
 	}
-	viaProxy := chosen != nil
-	var proxyFunc func(*http.Request) (*url.URL, error)
-	var connectHeader http.Header
-	if chosen != nil {
-		proxyFunc = http.ProxyURL(chosen.URL())
-		if chosen.Auth != "" {
-			// urllib3 sends proxy_headers with CONNECT for https targets and
-			// with the request itself for http targets.
-			connectHeader = http.Header{"Proxy-Authorization": {chosen.Auth}}
-			if req.URL.Scheme == "http" {
-				req.Header.Set("Proxy-Authorization", chosen.Auth)
+	viaProxy, connected := false, false
+	dialer := &net.Dialer{Timeout: request.Timeout.Connect}
+	newTransport := func(chosen *reqproxy.Proxy) *http.Transport {
+		transport := &http.Transport{
+			DisableKeepAlives:  true,
+			DisableCompression: false,
+			DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+				conn, err := dialer.DialContext(ctx, network, address)
+				if err != nil {
+					return nil, err
+				}
+				connected = true
+				return &deadlineConn{Conn: conn, timeout: request.Timeout.Read}, nil
+			},
+			TLSHandshakeTimeout: request.Timeout.Connect,
+			OnProxyConnectResponse: func(_ context.Context, _ *url.URL, _ *http.Request, res *http.Response) error {
+				if res.StatusCode != 200 {
+					return &tunnelError{res.Status}
+				}
+				return nil
+			},
+		}
+		if chosen != nil {
+			transport.Proxy = http.ProxyURL(chosen.URL())
+			if chosen.Auth != "" {
+				// urllib3 sends proxy_headers with CONNECT for https targets.
+				transport.ProxyConnectHeader = http.Header{"Proxy-Authorization": {chosen.Auth}}
 			}
 		}
+		return transport
 	}
-	connected := false
-	dialer := &net.Dialer{Timeout: request.Timeout.Connect}
-	transport := &http.Transport{
-		Proxy:              proxyFunc,
-		ProxyConnectHeader: connectHeader,
-		DisableKeepAlives:  true,
-		DisableCompression: false,
-		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-			conn, err := dialer.DialContext(ctx, network, address)
-			if err != nil {
-				return nil, err
-			}
-			connected = true
-			return &deadlineConn{Conn: conn, timeout: request.Timeout.Read}, nil
-		},
-		TLSHandshakeTimeout: request.Timeout.Connect,
-		OnProxyConnectResponse: func(_ context.Context, _ *url.URL, _ *http.Request, res *http.Response) error {
-			if res.StatusCode != 200 {
-				return &tunnelError{res.Status}
-			}
-			return nil
-		},
-	}
-	defer transport.CloseIdleConnections()
+	var transports []*http.Transport
+	defer func() {
+		for _, t := range transports {
+			t.CloseIdleConnections()
+		}
+	}()
+	// Redirect hops get requests' rebuild_proxies choice (reqproxy.ForRedirect)
+	// and the Proxy-Authorization of that proxy.
+	hops := 0
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		hops++
+		var chosen *reqproxy.Proxy
+		var err error
+		if hops == 1 || request.Proxy != "" {
+			chosen, err = chooseProxy(request.Proxy, r.URL.String())
+		} else if chosen, err = reqproxy.ForRedirect(environ(), prepared, r.URL.String()); err != nil {
+			class, _, _ := strings.Cut(err.Error(), ":")
+			err = &RequestError{Class: class, Message: err.Error(), Err: err}
+		}
+		if err != nil {
+			return nil, err
+		}
+		viaProxy = chosen != nil
+		r = r.Clone(r.Context())
+		r.Header.Del("Proxy-Authorization")
+		if chosen != nil && chosen.Auth != "" && r.URL.Scheme == "http" {
+			// ... and with the request itself for http targets.
+			r.Header.Set("Proxy-Authorization", chosen.Auth)
+		}
+		t := newTransport(chosen)
+		transports = append(transports, t)
+		return t.RoundTrip(r)
+	})
 	client := &http.Client{Transport: transport, CheckRedirect: func(next *http.Request, via []*http.Request) error {
 		if len(via) > 30 {
 			// requests raises with response= the 31st redirect response.
@@ -462,6 +479,28 @@ func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, erro
 	_, reason, _ := strings.Cut(resp.Status, " ")
 	return &Response{StatusCode: resp.StatusCode, Reason: reason, Header: resp.Header,
 		URL: resp.Request.URL.String(), Body: data}, nil
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// chooseProxy is requests' proxy for a URL: proxies= when given (it wins
+// over the environment), else the environment (trust_env) without Go's
+// automatic loopback bypass. nil = direct.
+func chooseProxy(explicit, rawURL string) (*reqproxy.Proxy, error) {
+	var chosen *reqproxy.Proxy
+	var err error
+	if explicit != "" {
+		chosen, err = reqproxy.FromValue(explicit)
+	} else {
+		chosen, err = reqproxy.FromEnvironment(environ(), rawURL)
+	}
+	if err != nil {
+		class, _, _ := strings.Cut(err.Error(), ":")
+		return nil, &RequestError{Class: class, Message: err.Error(), Err: err}
+	}
+	return chosen, nil
 }
 
 func isTimeout(err error) bool {

@@ -260,3 +260,58 @@ func TestReviewTooManyRedirectsCarriesStatus(t *testing.T) {
 		t.Fatalf("%v %s hops=%d", err, safeExceptionDetails(err), hops)
 	}
 }
+
+// TestReviewRedirectProxyLikeRequests: the environment proxies merged for
+// the first URL stay for every redirect hop (a hop to a NO_PROXY host still
+// goes through the proxy), and a hop away from a bypassed first URL picks up
+// the proxy (requests 2.31 rebuild_proxies, checked with real requests).
+func TestReviewRedirectProxyLikeRequests(t *testing.T) {
+	var mu sync.Mutex
+	var seen []string
+	record := func(s string) {
+		mu.Lock()
+		seen = append(seen, s)
+		mu.Unlock()
+	}
+	var direct *httptest.Server
+	direct = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		record("direct " + r.RequestURI + " auth=" + r.Header.Get("Proxy-Authorization"))
+		if r.URL.Path == "/sub" {
+			http.Redirect(w, r, "http://localhost:"+direct.URL[strings.LastIndex(direct.URL, ":")+1:]+"/next", http.StatusFound)
+			return
+		}
+		io.WriteString(w, "direct")
+	}))
+	defer direct.Close()
+	port := direct.URL[strings.LastIndex(direct.URL, ":")+1:]
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		record("proxy " + r.RequestURI + " auth=" + r.Header.Get("Proxy-Authorization"))
+		if strings.HasSuffix(r.URL.Path, "/sub") {
+			http.Redirect(w, r, "http://localhost:"+port+"/next", http.StatusFound)
+			return
+		}
+		io.WriteString(w, "via-proxy")
+	}))
+	defer proxy.Close()
+	proxyURL, _ := url.Parse(proxy.URL)
+	cases := []struct {
+		noProxy, first string
+		want           []string
+	}{
+		{"localhost", "http://127.0.0.1:9/sub", []string{"proxy http://127.0.0.1:9/sub auth=Basic dTpw",
+			"proxy http://localhost:" + port + "/next auth=Basic dTpw"}},
+		{"127.0.0.1", direct.URL + "/sub", []string{"direct /sub auth=",
+			"proxy http://localhost:" + port + "/next auth=Basic dTpw"}},
+	}
+	for _, c := range cases {
+		seen = nil
+		withEnviron(t, "HTTP_PROXY=http://u:p@"+proxyURL.Host, "NO_PROXY="+c.noProxy)
+		resp, err := RequestsClient{}.Do(context.Background(), &Request{Method: "GET", URL: c.first, Timeout: Seconds(5)})
+		if err != nil || resp.Text() != "via-proxy" {
+			t.Fatalf("%s: %v %+v", c.noProxy, err, resp)
+		}
+		if !jsonx.Equal(jsonx.ListOf(seen), jsonx.ListOf(c.want)) {
+			t.Errorf("%s: saw %q, want %q", c.noProxy, seen, c.want)
+		}
+	}
+}
