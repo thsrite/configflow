@@ -2,11 +2,12 @@ package routerdoc
 
 import (
 	"fmt"
+	"net/netip"
 	"strings"
 	"unicode/utf8"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/pyip"
+	"configflow/internal/netipx"
 	"configflow/internal/pystr"
 )
 
@@ -64,7 +65,7 @@ type Reading struct {
 	Sightings     map[string]*Sighting
 	SightingOrder []string
 	Own           map[string]bool
-	LAN           []pyip.Network // a set of IPv4Network: unique values
+	LAN           []netip.Prefix // a set of IPv4Network: unique values
 	Complete      bool
 	Notes         []string
 }
@@ -77,9 +78,9 @@ func NewReading() *Reading {
 // Covers is Reading.covers(ip): whether absence from this reading is
 // evidence that ip is gone. The error is IPv4Address's ValueError.
 func (r *Reading) Covers(ip string) (bool, error) {
-	address, ok := pyip.ParseIPv4Address(ip)
+	address, ok := netipx.ParseAddr4(ip)
 	if !ok {
-		return false, &ValueError{Message: addressValueError(ip)}
+		return false, &ValueError{Message: "invalid IPv4 address: " + jsonx.Repr(ip)}
 	}
 	if !r.Complete {
 		return false, nil
@@ -92,61 +93,14 @@ func (r *Reading) Covers(ip string) (bool, error) {
 	return false, nil
 }
 
-// ValueError is a Python ValueError raised by a helper here.
+// ValueError is a Python ValueError raised by a helper here (its text is
+// not Python's).
 type ValueError struct{ Message string }
 
 func (e *ValueError) Error() string { return e.Message }
 
 // PythonClass is "AddressValueError" (a ValueError subclass).
 func (e *ValueError) PythonClass() string { return "AddressValueError" }
-
-// addressValueError is the AddressValueError text of IPv4Address(text).
-func addressValueError(text string) string {
-	if text == "" {
-		return "Address cannot be empty"
-	}
-	if strings.Contains(text, "/") {
-		return "Unexpected '/' in " + jsonx.Repr(text)
-	}
-	octets := strings.Split(text, ".")
-	if len(octets) != 4 {
-		return "Expected 4 octets in " + jsonx.Repr(text)
-	}
-	for _, octet := range octets {
-		msg := octetError(octet)
-		if msg != "" {
-			return msg + " in " + jsonx.Repr(text)
-		}
-	}
-	return "invalid address " + jsonx.Repr(text)
-}
-
-func octetError(octet string) string {
-	if octet == "" {
-		return "Empty octet not permitted"
-	}
-	digits := true
-	for i := 0; i < len(octet); i++ {
-		if octet[i] < '0' || octet[i] > '9' {
-			digits = false
-		}
-	}
-	if !digits {
-		return "Only decimal digits permitted in " + jsonx.Repr(octet)
-	}
-	if len(octet) > 3 {
-		return "At most 3 characters permitted in " + jsonx.Repr(octet)
-	}
-	if octet != "0" && octet[0] == '0' {
-		return "Leading zeros are not permitted in " + jsonx.Repr(octet)
-	}
-	var n int
-	fmt.Sscanf(octet, "%d", &n)
-	if n > 255 {
-		return fmt.Sprintf("Octet %d (> 255) not permitted", n)
-	}
-	return ""
-}
 
 func pyStr(value any) string {
 	if !jsonx.Truthy(value) {
@@ -157,7 +111,7 @@ func pyStr(value any) string {
 
 // IPv4 is ipv4(value): canonical IPv4 host text, or "" for anything else.
 func IPv4(value any) string {
-	address, ok := pyip.ParseIPv4Address(pystr.Strip(pyStr(value)))
+	address, ok := netipx.ParseAddr4(pystr.Strip(pyStr(value)))
 	if !ok {
 		return ""
 	}

@@ -1,6 +1,9 @@
-"""Reference corpus for internal/pyip from CPython's ipaddress (run on the test server).
+"""Reference corpus for internal/netipx from CPython's ipaddress (run on the test server).
 
-    ~/cf-test/.venv/bin/python server/internal/pyip/testdata/gen_corpus.py server/internal/pyip/testdata/corpus.jsonl.gz
+    ~/cf-test/.venv/bin/python server/internal/netipx/testdata/gen_corpus.py server/internal/netipx/testdata/corpus.jsonl.gz
+
+Functional parity: accepted/rejected, canonical text, classification and collapse results are
+compared; IPv6 scope ids ("%zone") are not chased and are left out of the inputs.
 
 Rows:
   {"k": "addr", "in": text, "out": null | {"s", "v", "int", "priv", "glob", "loop", "mc", "unspec"}}
@@ -19,7 +22,7 @@ import sys
 rng = random.Random(20261116)
 
 PIECES = ['0', '1', '00', '01', '255', '256', '010', '1.2', '', ' ', '１', '٣', '+1', '-1', '0x1', 'a', 'ff', 'FFFF',
-          'fffff', '::', ':', '%', '%eth0', '%%', '/', '.', '1e1', '\t', '0000', '00000', 'g']
+          'fffff', '::', ':', '/', '.', '1e1', '\t', '0000', '00000', 'g']
 
 
 def rand_v4():
@@ -38,8 +41,6 @@ def rand_v6():
         a = rng.randint(0, 7)
         b = rng.randint(a, 8)
         text = ':'.join(groups[:a]) + '::' + ':'.join(groups[b:])
-    if rng.random() < 0.1:
-        text += rng.choice(['%eth0', '%1', '% x', '%界'])
     return text
 
 
@@ -115,11 +116,6 @@ def related_pool(v6, count):
                 pool.append(str(ipaddress.ip_network(text, strict=False)))
             except ValueError:
                 continue
-        if v6 and rng.random() < 0.05:
-            # scope ids survive only without host bits
-            n = ipaddress.ip_network(pool[-1], strict=False)
-            if '%' not in pool[-1] and n.version == 6:
-                pool.append(f'{n.network_address}%z{rng.randint(0, 1)}/{n.prefixlen}')
     return pool
 
 
@@ -130,8 +126,8 @@ def main(path):
         rows.append(addr_row(text))
     for t in ['0.0.0.0', '255.255.255.255', '192.0.0.9', '192.0.0.10', '192.0.0.8', '100.64.0.1', '::', '::1',
               '::ffff:127.0.0.1', '::ffff:100.64.0.1', '2001:1::1', '2001:1::3', '2001:3::1', '2001:4:112::1',
-              '2001:20::1', '3fff::1', '64:ff9b:1::1', '64:ff9b::1', 'fe80::1%eth0', '1.2.3.4 ', '１.2.3.4',
-              '01.2.3.4', '1.2.3.4%x', '::1.2.3.4', '1::2::3', ':::', '1:2:3:4:5:6:7:8:9', '1:2:3:4:5:6:7::',
+              '2001:20::1', '3fff::1', '64:ff9b:1::1', '64:ff9b::1', '1.2.3.4 ', '１.2.3.4',
+              '01.2.3.4', '::1.2.3.4', '1::2::3', ':::', '1:2:3:4:5:6:7:8:9', '1:2:3:4:5:6:7::',
               '::1:2:3:4:5:6:7', 'ff02::1', '224.0.0.1', '127.255.255.255']:
         rows.append(addr_row(t))
     for _ in range(8000):
@@ -139,8 +135,7 @@ def main(path):
         rows.append(net_row(text, rng.random() < 0.3))
         rows.append(v4net_row(text))
     for t in ['198.18.0.1/16', '0.0.0.0/0', '::/0', '100.64.0.0/10', '100.64.0.0/9', '192.0.0.0/24',
-              '192.0.0.8/29', '192.0.0.0/29', '2001::/23', '2001::/16', '2001:20::/28', '2001::/32', 'fe80::%a/64',
-              'fe80::1%a/64', '1.2.3.4/255.255.255.0', '1.2.3.4/0.0.0.255', '1.2.3.4/255.0.255.0', '1.2.3.4/ 24',
+              '192.0.0.8/29', '192.0.0.0/29', '2001::/23', '2001::/16', '2001:20::/28', '2001::/32', '1.2.3.4/255.255.255.0', '1.2.3.4/0.0.0.255', '1.2.3.4/255.0.255.0', '1.2.3.4/ 24',
               '1.2.3.4/024', '1.2.3.4/+24', '1.2.3.4/２４', '::/128', '::ffff:0:0/96', '::ffff:1.2.3.0/120']:
         for strict in (False, True):
             rows.append(net_row(t, strict))

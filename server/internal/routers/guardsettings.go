@@ -4,7 +4,7 @@ import (
 	"strconv"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/pyip"
+	"configflow/internal/netipx"
 	"configflow/internal/pystr"
 )
 
@@ -79,7 +79,7 @@ func NormalizeDNSGuardSettings(value any, routerType, dnsAgentID string) (*jsonx
 	}
 	var networks []string
 	for _, item := range bypass {
-		network, ok := pyip.ParseIPv4Network(pystr.Strip(item.(string)), false)
+		network, ok := netipx.ParseNetwork4(pystr.Strip(item.(string)), false)
 		if !ok {
 			return fail("放行设备「" + item.(string) + "」不是有效的 IPv4 地址或网段")
 		}

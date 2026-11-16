@@ -3,13 +3,14 @@ package routers
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"sort"
 	"strings"
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/mosdns"
-	"configflow/internal/pyip"
+	"configflow/internal/netipx"
 	"configflow/internal/pystr"
 	"configflow/internal/yamlx"
 )
@@ -42,8 +43,8 @@ func RuleSourceIssue(item, libraryRule *jsonx.Object, requireLibrary bool) strin
 	return ""
 }
 
-func defaultFakeIP() pyip.Network {
-	n, _ := pyip.ParseIPv4Network(DefaultFakeIPRange, false)
+func defaultFakeIP() netip.Prefix {
+	n, _ := netipx.ParseNetwork4(DefaultFakeIPRange, false)
 	return n
 }
 
@@ -52,20 +53,20 @@ func defaultFakeIP() pyip.Network {
 // exceptions a malformed profile raises (AttributeError, RecursionError
 // from yaml), or *yamlx.UnrepresentableError for a document Python loads
 // but jsonx cannot hold (then the answer is unknown).
-func FakeIPNetwork(config *jsonx.Object) (pyip.Network, error) {
+func FakeIPNetwork(config *jsonx.Object) (netip.Prefix, error) {
 	mihomo := config.Value("mihomo")
 	if !jsonx.Truthy(mihomo) {
 		mihomo = jsonx.NewObject()
 	}
 	customRaw, err := getOf(mihomo, "custom_config")
 	if err != nil {
-		return pyip.Network{}, err
+		return netip.Prefix{}, err
 	}
 	custom := ""
 	if jsonx.Truthy(customRaw) {
 		text, ok := customRaw.(string)
 		if !ok {
-			return pyip.Network{}, pyErr("AttributeError", "'"+typeName(customRaw)+"' object has no attribute 'strip'")
+			return netip.Prefix{}, pyErr("AttributeError", "'"+typeName(customRaw)+"' object has no attribute 'strip'")
 		}
 		custom = pystr.Strip(text)
 	}
@@ -77,7 +78,7 @@ func FakeIPNetwork(config *jsonx.Object) (pyip.Network, error) {
 			if errors.As(err, &yerr) && yerr.IsYAMLError() {
 				parsed = nil
 			} else {
-				return pyip.Network{}, err
+				return netip.Prefix{}, err
 			}
 		}
 		if dns, ok := yamlx.Lookup(parsed, "dns"); ok && yamlx.IsMapping(dns) {
@@ -94,7 +95,7 @@ func FakeIPNetwork(config *jsonx.Object) (pyip.Network, error) {
 	if value == "" {
 		return defaultFakeIP(), nil
 	}
-	network, ok := pyip.ParseIPv4Network(value, false)
+	network, ok := netipx.ParseNetwork4(value, false)
 	if !ok {
 		return defaultFakeIP(), nil
 	}
@@ -143,18 +144,18 @@ func directOnlyGroups(config *jsonx.Object) (*pySet, error) {
 
 // publicNetworks is _public_networks(lines): the public IPv4 and IPv6
 // networks of converted IP lines.
-func publicNetworks(lines string) (v4, v6 []pyip.Network) {
+func publicNetworks(lines string) (v4, v6 []netip.Prefix) {
 	for _, raw := range convert.PySplitlines(lines) {
 		value := pystr.Strip(raw)
 		if value == "" || strings.HasPrefix(value, "#") {
 			continue
 		}
-		network, ok := pyip.ParseNetwork(value, false)
+		network, ok := netipx.ParseNetwork(value, false)
 		if !ok {
 			continue
 		}
-		if network.Prefix() > 0 && network.IsGlobal() {
-			if network.Version() == 4 {
+		if network.Bits() > 0 && netipx.IsGlobal(network) {
+			if network.Addr().Is4() {
 				v4 = append(v4, network)
 			} else {
 				v6 = append(v6, network)
@@ -167,15 +168,15 @@ func publicNetworks(lines string) (v4, v6 []pyip.Network) {
 // Sources is the {network: [source names]} dict merge_sources takes
 // (insertion-ordered; equal networks are one key, like Python's).
 type Sources struct {
-	order []pyip.Network
-	names map[pyip.Network][]string
+	order []netip.Prefix
+	names map[netip.Prefix][]string
 }
 
 // NewSources returns an empty Sources.
-func NewSources() *Sources { return &Sources{names: map[pyip.Network][]string{}} }
+func NewSources() *Sources { return &Sources{names: map[netip.Prefix][]string{}} }
 
 // Set is sources[network] = names.
-func (s *Sources) Set(network pyip.Network, names []string) {
+func (s *Sources) Set(network netip.Prefix, names []string) {
 	if _, ok := s.names[network]; !ok {
 		s.order = append(s.order, network)
 	}
@@ -183,7 +184,7 @@ func (s *Sources) Set(network pyip.Network, names []string) {
 }
 
 // Add is sources.setdefault(network, []).append(name).
-func (s *Sources) Add(network pyip.Network, name string) {
+func (s *Sources) Add(network netip.Prefix, name string) {
 	if _, ok := s.names[network]; !ok {
 		s.order = append(s.order, network)
 	}
@@ -200,21 +201,20 @@ func MergeSources(sources *Sources) ([]any, error) {
 	if sources == nil || sources.Len() == 0 {
 		return out, nil
 	}
-	collapsed, err := pyip.CollapseAddresses(sources.order)
+	collapsed, err := netipx.Collapse(sources.order)
 	if err != nil {
-		return nil, err
+		return nil, pyErr("TypeError", err.Error())
 	}
-	pyip.SortNetworks(collapsed)
-	starts := make([]pyip.U128, len(collapsed))
+	starts := make([]netip.Addr, len(collapsed))
 	for i, network := range collapsed {
-		starts[i] = network.NetworkAddress().Int()
+		starts[i] = network.Addr()
 	}
 	labels := make([]map[string]bool, len(collapsed))
 	for i := range labels {
 		labels[i] = map[string]bool{}
 	}
 	for _, original := range sources.order {
-		value := original.NetworkAddress().Int()
+		value := original.Addr()
 		index := sort.Search(len(starts), func(i int) bool { return value.Less(starts[i]) }) - 1
 		if index < 0 {
 			index = len(labels) - 1 // Python's labels[-1]

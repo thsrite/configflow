@@ -4,7 +4,7 @@
 // backend/routers/lan_clients.py and the check of
 // common/client_fixed_ip.validate_bindings.
 //
-// Leaf package: jsonx, pystr, pyip only.
+// Leaf package: jsonx, pystr, netipx only.
 package routerdoc
 
 import (

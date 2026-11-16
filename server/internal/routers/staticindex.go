@@ -4,7 +4,9 @@ import (
 	"container/heap"
 	"sort"
 
-	"configflow/internal/pyip"
+	"net/netip"
+
+	"configflow/internal/netipx"
 )
 
 // preferredRoutes is _preferred_routes(routes).
@@ -52,17 +54,17 @@ func preferredRoutes(routes []*RouteEntry) []*RouteEntry {
 type StaticRouteIndex struct {
 	// Exact is index.exact: every main-table route by its dst text.
 	Exact      map[string][]*RouteEntry
-	groups     map[pyip.Network][]*RouteEntry
-	groupOrder []pyip.Network
-	preferred  map[pyip.Network][]*RouteEntry
-	networks   map[int][]pyip.Network
-	starts     map[int][]pyip.U128
+	groups     map[netip.Prefix][]*RouteEntry
+	groupOrder []netip.Prefix
+	preferred  map[netip.Prefix][]*RouteEntry
+	networks   map[int][]netip.Prefix
+	starts     map[int][]netip.Addr
 }
 
 // NewStaticRouteIndex is StaticRouteIndex(routes).
 func NewStaticRouteIndex(routes []*RouteEntry) *StaticRouteIndex {
-	ix := &StaticRouteIndex{Exact: map[string][]*RouteEntry{}, groups: map[pyip.Network][]*RouteEntry{},
-		preferred: map[pyip.Network][]*RouteEntry{}, networks: map[int][]pyip.Network{}, starts: map[int][]pyip.U128{}}
+	ix := &StaticRouteIndex{Exact: map[string][]*RouteEntry{}, groups: map[netip.Prefix][]*RouteEntry{},
+		preferred: map[netip.Prefix][]*RouteEntry{}, networks: map[int][]netip.Prefix{}, starts: map[int][]netip.Addr{}}
 	for _, route := range routes {
 		if route.Table != "main" {
 			continue
@@ -71,7 +73,7 @@ func NewStaticRouteIndex(routes []*RouteEntry) *StaticRouteIndex {
 		if !route.Enabled {
 			continue
 		}
-		network, ok := pyip.ParseNetwork(route.Dst, false)
+		network, ok := netipx.ParseNetwork(route.Dst, false)
 		if !ok {
 			continue
 		}
@@ -84,60 +86,65 @@ func NewStaticRouteIndex(routes []*RouteEntry) *StaticRouteIndex {
 		ix.preferred[network] = preferredRoutes(ix.groups[network])
 	}
 	for _, version := range []int{4, 6} {
-		var list []pyip.Network
+		var list []netip.Prefix
 		for _, network := range ix.groupOrder {
-			if network.Version() == version {
+			if versionOf(network) == version {
 				list = append(list, network)
 			}
 		}
 		// sorted(key=(int(network_address), prefixlen)): a consistent order, stable.
-		sort.SliceStable(list, func(i, j int) bool {
-			a, b := list[i].NetworkAddress().Int(), list[j].NetworkAddress().Int()
-			if a != b {
-				return a.Less(b)
-			}
-			return list[i].Prefix() < list[j].Prefix()
-		})
+		netipx.SortPrefixes(list)
 		ix.networks[version] = list
-		starts := make([]pyip.U128, len(list))
+		starts := make([]netip.Addr, len(list))
 		for i, network := range list {
-			starts[i] = network.NetworkAddress().Int()
+			starts[i] = network.Addr()
 		}
 		ix.starts[version] = starts
 	}
 	return ix
 }
 
-// wide is an integer up to 2**128 (broadcast_address + 1).
-type wide struct {
-	over bool // the value is 2**128
-	v    pyip.U128
+func versionOf(p netip.Prefix) int {
+	if p.Addr().Is4() {
+		return 4
+	}
+	return 6
 }
 
-func wideOf(v pyip.U128) wide { return wide{v: v} }
+// wide is an address or the value one past the last address of the family
+// (broadcast_address + 1).
+type wide struct {
+	over bool
+	v    netip.Addr
+}
 
-func widePlus1(v pyip.U128) wide {
-	next, overflow := v.Add1()
-	return wide{over: overflow, v: next}
+func wideOf(v netip.Addr) wide { return wide{v: v} }
+
+func widePlus1(v netip.Addr) wide {
+	next := v.Next()
+	if !next.IsValid() {
+		return wide{over: true}
+	}
+	return wide{v: next}
 }
 
 func (a wide) less(b wide) bool {
-	if a.over != b.over {
-		return b.over
+	if a.over || b.over {
+		return !a.over && b.over
 	}
 	return a.v.Less(b.v)
 }
 
 type interval struct {
-	start, end pyip.U128
-	network    pyip.Network
+	start, end netip.Addr
+	network    netip.Prefix
 }
 
 type heapItem struct {
 	negPrefix int
-	end       pyip.U128
+	end       netip.Addr
 	cursor    int
-	network   pyip.Network
+	network   netip.Prefix
 }
 
 type routeHeap []heapItem
@@ -165,18 +172,18 @@ func (h *routeHeap) Pop() any {
 // Select is StaticRouteIndex.select(cidr, gateway). The error is
 // ip_network's ValueError for an invalid cidr.
 func (ix *StaticRouteIndex) Select(cidr, gateway string) (*StaticRouteSelection, error) {
-	target, ok := pyip.ParseNetwork(cidr, false)
+	target, ok := netipx.ParseNetwork(cidr, false)
 	if !ok {
-		return nil, pyErr("ValueError", pyip.NetworkError(cidr))
+		return nil, pyErr("ValueError", "invalid network: "+cidr)
 	}
-	starts := ix.starts[target.Version()]
-	low := target.NetworkAddress().Int()
-	high := target.BroadcastAddress().Int()
+	starts := ix.starts[versionOf(target)]
+	low := target.Addr()
+	high := netipx.Broadcast(target)
 	left := sort.Search(len(starts), func(i int) bool { return !starts[i].Less(low) })
 	right := sort.Search(len(starts), func(i int) bool { return high.Less(starts[i]) })
-	var networks []pyip.Network
-	for _, network := range ix.networks[target.Version()][left:right] {
-		if network.Prefix() >= target.Prefix() {
+	var networks []netip.Prefix
+	for _, network := range ix.networks[versionOf(target)][left:right] {
+		if network.Bits() >= target.Bits() {
 			networks = append(networks, network)
 		}
 	}
@@ -221,8 +228,8 @@ func (ix *StaticRouteIndex) Select(cidr, gateway string) (*StaticRouteSelection,
 		return result, nil
 	}
 
-	var preferredOrder []pyip.Network
-	preferred := map[pyip.Network][]*RouteEntry{}
+	var preferredOrder []netip.Prefix
+	preferred := map[netip.Prefix][]*RouteEntry{}
 	for _, network := range networks {
 		if group := ix.preferred[network]; len(group) > 0 {
 			if _, seen := preferred[network]; !seen {
@@ -234,7 +241,7 @@ func (ix *StaticRouteIndex) Select(cidr, gateway string) (*StaticRouteSelection,
 	boundaries := map[wide]bool{wideOf(low): true, widePlus1(high): true}
 	var intervals []interval
 	for _, network := range preferredOrder {
-		start, end := network.NetworkAddress().Int(), network.BroadcastAddress().Int()
+		start, end := network.Addr(), netipx.Broadcast(network)
 		boundaries[wideOf(start)] = true
 		boundaries[widePlus1(end)] = true
 		intervals = append(intervals, interval{start, end, network})
@@ -244,15 +251,15 @@ func (ix *StaticRouteIndex) Select(cidr, gateway string) (*StaticRouteSelection,
 		sorted = append(sorted, b)
 	}
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].less(sorted[j]) })
-	var selectedOrder []pyip.Network
-	selectedGroups := map[pyip.Network][]*RouteEntry{}
+	var selectedOrder []netip.Prefix
+	selectedGroups := map[netip.Prefix][]*RouteEntry{}
 	result.Covered = true
 	active := &routeHeap{}
 	cursor := 0
 	for _, start := range sorted[:len(sorted)-1] {
 		for cursor < len(intervals) && !start.less(wideOf(intervals[cursor].start)) {
 			item := intervals[cursor]
-			heap.Push(active, heapItem{-item.network.Prefix(), item.end, cursor, item.network})
+			heap.Push(active, heapItem{-item.network.Bits(), item.end, cursor, item.network})
 			cursor++
 		}
 		for active.Len() > 0 && wideOf((*active)[0].end).less(start) {

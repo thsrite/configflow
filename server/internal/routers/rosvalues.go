@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/pyip"
+	"configflow/internal/netipx"
 )
 
 // ComparableValues is ros_values.comparable_values(path, row): equivalent
@@ -29,7 +29,7 @@ func ComparableValues(path string, row *jsonx.Object) *jsonx.Object {
 	if path == "/ip/route" {
 		if gateway, ok := result.Value("gateway").(string); ok {
 			gateway = strings.TrimSuffix(gateway, "@main")
-			if address, ok := pyip.ParseIPv4Address(gateway); ok {
+			if address, ok := netipx.ParseAddr4(gateway); ok {
 				result.Set("gateway", address.String())
 			}
 		}

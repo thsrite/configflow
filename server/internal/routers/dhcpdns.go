@@ -2,18 +2,19 @@ package routers
 
 import (
 	"math/big"
+	"net/netip"
 	"strings"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/pyip"
+	"configflow/internal/netipx"
 )
 
 // Port of backend/routers/dhcp_dns.py: DHCP DNS scope and drift shared by
 // both router drivers.
 
 // clientReachable is the rule shared by dns_agent_settings and _client_ipv4.
-func clientReachable(address pyip.Addr) bool {
-	return !(address.IsUnspecified() || address.IsLoopback() || address.IsMulticast() || address.Int().Lo == 0xffffffff)
+func clientReachable(address netip.Addr) bool {
+	return !(address.IsUnspecified() || address.IsLoopback() || address.IsMulticast() || address == netip.AddrFrom4([4]byte{255, 255, 255, 255}))
 }
 
 // DNSAgentSettings is dns_agent_settings(agent_id, agent).
@@ -31,9 +32,9 @@ func DNSAgentSettings(agentID string, agent *jsonx.Object) *jsonx.Object {
 		settings.Set("dns_error", "所选 DNS Agent 离线，无法下发 DHCP DNS")
 	default:
 		host, ok := agent.Value("host").(string)
-		var address pyip.Addr
+		var address netip.Addr
 		if ok {
-			address, ok = pyip.ParseIPv4Address(host)
+			address, ok = netipx.ParseAddr4(host)
 		}
 		if ok && clientReachable(address) {
 			settings.Set("dns_server", address.String())
@@ -50,7 +51,7 @@ func clientIPv4(value any) string {
 	if !ok {
 		return ""
 	}
-	address, ok := pyip.ParseIPv4Address(text)
+	address, ok := netipx.ParseAddr4(text)
 	if !ok || !clientReachable(address) {
 		return ""
 	}
@@ -105,7 +106,10 @@ func DNSHASettings(agentID string, agent, peer *jsonx.Object) (*jsonx.Object, er
 			return !jsonx.Equal(a, b), err
 		},
 		func() (bool, error) { v, err := get(haRaw, "peer_id"); return !jsonx.Equal(v, peer.Value("id")), err },
-		func() (bool, error) { v, err := get(peerHARaw, "peer_id"); return !jsonx.Equal(v, agent.Value("id")), err },
+		func() (bool, error) {
+			v, err := get(peerHARaw, "peer_id")
+			return !jsonx.Equal(v, agent.Value("id")), err
+		},
 		func() (bool, error) {
 			a, err := get(peerHARaw, "vip")
 			if err != nil {
@@ -172,23 +176,26 @@ func DNSHASettings(agentID string, agent, peer *jsonx.Object) (*jsonx.Object, er
 
 // ipv4Of is IPv4Address(value) for any value: an int in range, or str(value)
 // parsed; ok false where Python raises ValueError/TypeError.
-func ipv4Of(value any) (pyip.Addr, bool) {
+func ipv4Of(value any) (netip.Addr, bool) {
+	fromInt := func(n uint64) (netip.Addr, bool) {
+		return netip.AddrFrom4([4]byte{byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}), true
+	}
 	switch v := value.(type) {
 	case bool:
 		if v {
-			return pyip.IPv4FromInt(1)
+			return fromInt(1)
 		}
-		return pyip.IPv4FromInt(0)
+		return fromInt(0)
 	case jsonx.Number:
 		if v.IsInt() {
 			n, _ := v.BigInt()
 			if n.Sign() < 0 || n.Cmp(big.NewInt(0xffffffff)) > 0 {
-				return pyip.Addr{}, false
+				return netip.Addr{}, false
 			}
-			return pyip.IPv4FromInt(n.Uint64())
+			return fromInt(n.Uint64())
 		}
 	}
-	return pyip.ParseIPv4Address(jsonx.Str(value))
+	return netipx.ParseAddr4(jsonx.Str(value))
 }
 
 // MatchingNetworks is matching_networks(state, gateway): the enabled DHCP
@@ -208,7 +215,7 @@ func MatchingNetworks(state *DhcpDnsState, gateway any) ([]*DhcpDnsEntry, error)
 			return nil, NewRouterError("DHCP 配置缺少唯一标识，无法安全下发 DNS")
 		}
 		seen[entry.ID] = true
-		network, ok := pyip.ParseIPv4Network(entry.Network, false)
+		network, ok := netipx.ParseNetwork4(entry.Network, false)
 		if !ok {
 			detail := strings.Join(entry.Blockers, "；")
 			message := "DHCP 配置包含无法识别的网段，无法安全确定 DNS 下发范围"

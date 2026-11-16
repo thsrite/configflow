@@ -35,7 +35,7 @@ func typeName(v any) string {
 	return "object"
 }
 
-// orEmpty is `v or ''` followed by str(): "" for falsy values.
+// orEmpty is `v or ”` followed by str(): "" for falsy values.
 func orEmptyStr(v any) string {
 	if !jsonx.Truthy(v) {
 		return ""
