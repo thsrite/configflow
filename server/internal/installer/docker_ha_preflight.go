@@ -1,7 +1,6 @@
 package installer
 
 import (
-	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -442,31 +441,6 @@ func preflightJSON(item preflightValue, object bool) any {
 	return nil
 }
 
-// pyIsDigitExtra lists the characters for which str.isdigit() is true and
-// str.isdecimal() false (CPython 3.11, Unicode 14.0.0).
-// TODO(port): replace with a pystr.IsDigit once internal/pystr exports one.
-var pyIsDigitExtra = [][2]rune{{0xb2, 0xb3}, {0xb9, 0xb9}, {0x1369, 0x1371}, {0x19da, 0x19da}, {0x2070, 0x2070},
-	{0x2074, 0x2079}, {0x2080, 0x2089}, {0x2460, 0x2468}, {0x2474, 0x247c}, {0x2488, 0x2490}, {0x24ea, 0x24ea},
-	{0x24f5, 0x24fd}, {0x24ff, 0x24ff}, {0x2776, 0x277e}, {0x2780, 0x2788}, {0x278a, 0x2792}, {0x10a40, 0x10a43},
-	{0x10e60, 0x10e68}, {0x11052, 0x1105a}, {0x1f100, 0x1f10a}}
-
-// pyIsDigit is str.isdigit().
-func pyIsDigit(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, r := range s {
-		if pystr.Decimal(r) >= 0 {
-			continue
-		}
-		i := sort.Search(len(pyIsDigitExtra), func(i int) bool { return pyIsDigitExtra[i][1] >= r })
-		if i == len(pyIsDigitExtra) || pyIsDigitExtra[i][0] > r {
-			return false
-		}
-	}
-	return true
-}
-
 // pyFields is str.split() without arguments.
 func pyFields(s string) []string { return strings.FieldsFunc(s, pystr.IsSpace) }
 
@@ -542,7 +516,7 @@ func preflightPortCheck(values map[string]preflightValue, proto, mode string) *j
 			if len(columns) > 0 && (columns[0] == "udp" || columns[0] == "tcp") {
 				columns = columns[1:]
 			}
-			if len(columns) != 5 || columns[0] != state || !pyIsDigit(columns[1]) || !pyIsDigit(columns[2]) || !strings.HasSuffix(columns[3], ":53") {
+			if len(columns) != 5 || columns[0] != state || !pystr.IsDigit(columns[1]) || !pystr.IsDigit(columns[2]) || !strings.HasSuffix(columns[3], ":53") {
 				return preflightCheck(ident, label, "unknown", "无法识别 ss 的监听输出，尚未确认端口状态。", "重新运行页面提供的命令，不要手工改写检查项。")
 			}
 		}

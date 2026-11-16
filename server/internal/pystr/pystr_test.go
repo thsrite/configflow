@@ -1,6 +1,7 @@
 package pystr
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"math"
 	"math/big"
@@ -11,10 +12,12 @@ import (
 )
 
 type reference struct {
-	Lower [][2]string `json:"lower"`
-	Strip [][2]string `json:"strip"`
-	Int   [][4]any    `json:"int"`
-	Float [][3]any    `json:"float"`
+	Lower   [][2]string `json:"lower"`
+	Strip   [][2]string `json:"strip"`
+	IsDigit [][2]any    `json:"isdigit"`
+	Decode  [][2]string `json:"decode"`
+	Int     [][4]any    `json:"int"`
+	Float   [][3]any    `json:"float"`
 }
 
 func loadReference(t *testing.T) reference {
@@ -63,6 +66,20 @@ func TestMatchesCPython(t *testing.T) {
 			t.Errorf("Strip(%q) = %q, want %q", row[0], got, row[1])
 		}
 	}
+	for _, row := range ref.IsDigit {
+		if got := IsDigit(row[0].(string)); got != row[1].(bool) {
+			t.Errorf("IsDigit(%q) = %v, want %v", row[0], got, row[1])
+		}
+	}
+	for _, row := range ref.Decode {
+		data, err := hex.DecodeString(row[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := UTF8DecodeError(data); got != row[1] {
+			t.Errorf("UTF8DecodeError(%x) = %q, want %q", data, got, row[1])
+		}
+	}
 	for _, row := range ref.Int {
 		text, base := row[0].(string), int(row[1].(float64))
 		got, err := Int(text, base)
@@ -83,5 +100,6 @@ func TestMatchesCPython(t *testing.T) {
 			t.Errorf("float(%q) = %v, %v; want error %q", text, got, err, row[2])
 		}
 	}
-	t.Logf("%d lower, %d strip, %d int, %d float references", len(ref.Lower), len(ref.Strip), len(ref.Int), len(ref.Float))
+	t.Logf("%d lower, %d strip, %d isdigit, %d decode, %d int, %d float references", len(ref.Lower), len(ref.Strip),
+		len(ref.IsDigit), len(ref.Decode), len(ref.Int), len(ref.Float))
 }

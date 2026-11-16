@@ -34,6 +34,24 @@ func IsSpace(r rune) bool {
 	return inRanges(spaceRanges, r)
 }
 
+// IsDigit is str.isdigit(): s is not empty and every character has a digit
+// value (Numeric_Type Digit or Decimal in Unicode 14.0.0: decimal digits plus
+// superscripts, circled digits and the like; not U+00BD or Unicode 15 digits).
+func IsDigit(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			continue
+		}
+		if r < 128 || !inRanges(digitRanges, r) {
+			return false
+		}
+	}
+	return true
+}
+
 // Strip is str.strip() without arguments.
 func Strip(s string) string { return strings.TrimFunc(s, IsSpace) }
 

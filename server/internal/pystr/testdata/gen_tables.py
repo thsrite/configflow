@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate ../tables.go: the CPython 3.11 (Unicode 14.0.0) character data behind
-str.lower(), str.upper(), str.isspace(), str.isidentifier() and the decimal digits
-int()/float() accept.
+str.lower(), str.upper(), str.isspace(), str.isidentifier(), str.isdigit() and the
+decimal digits int()/float() accept.
 
     PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/pystr/testdata/gen_tables.py
 
@@ -35,7 +35,7 @@ def ranges(cps):
     return out
 
 
-lower, upper, space, ignorable, cased, decimal = [], [], [], [], [], []
+lower, upper, space, ignorable, cased, decimal, digit = [], [], [], [], [], [], []
 xid_start, xid_continue = [], []
 for cp, c in chars():
     if c.lower() != c and cp != 0x3A3:
@@ -48,6 +48,8 @@ for cp, c in chars():
         xid_continue.append(cp)
     if c.isspace():
         space.append(cp)
+    if c.isdigit():
+        digit.append(cp)
     if ('AΣ' + c).lower()[1] == 'ς' and ('A' + c + 'Σ').lower()[-1] == 'ς':
         ignorable.append(cp)
     elif (c + 'Σ').lower()[-1] == 'ς':
@@ -104,6 +106,7 @@ lines.append('')
 emit_ranges('identStartRanges', 'are the code points c for which c.isidentifier() is true (XID_Start and "_").', xid_start)
 emit_ranges('identContinueRanges', 'are the code points c for which ("a" + c).isidentifier() is true (XID_Continue).', xid_continue)
 emit_ranges('spaceRanges', 'are the code points for which str.isspace() is true.', space)
+emit_ranges('digitRanges', 'are the code points for which str.isdigit() is true.', digit)
 emit_ranges('caseIgnorableRanges', 'are the Case_Ignorable code points of the Final_Sigma rule.', ignorable)
 emit_ranges('casedRanges', 'are the cased code points that are not case-ignorable.', cased)
 lines.append('// decimalRuns are runs of consecutive decimal digits (Py_UNICODE_TODECIMAL):')
@@ -114,4 +117,4 @@ for lo, hi, d in digit_runs:
 lines.append('}')
 lines.append('')
 Path(__file__).resolve().parent.parent.joinpath('tables.go').write_text('\n'.join(lines), encoding='utf-8')
-print(len(lower), len(upper), len(xid_start), len(xid_continue), len(space), len(ignorable), len(cased), len(digit_runs))
+print(len(lower), len(upper), len(xid_start), len(xid_continue), len(space), len(digit), len(ignorable), len(cased), len(digit_runs))

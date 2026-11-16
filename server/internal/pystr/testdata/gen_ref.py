@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Generate ref.json: CPython 3.11 results of str.lower(), str.strip(), int(s, base) and
-float(s) on edge inputs (synthetic values only).
+"""Generate ref.json: CPython 3.11 results of str.lower(), str.strip(), str.isdigit(),
+int(s, base) and float(s), and the UnicodeDecodeError text of bytes.decode('utf-8'), on
+edge inputs (synthetic values only).
 
     PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/pystr/testdata/gen_ref.py
 """
@@ -37,8 +38,36 @@ FLOAT_TEXTS = ['0', '1', '1.5', '-1.5', '+1.5', '.5', '5.', '.', '', ' ', '1e5',
                '\x1c1', '١.٥', '０.５', '𝟙e𝟚', '1e400', '-1e400', '1e-400', '0x1p3', '0x10', '1,5', '1 5', '++1', '+-1', '--1',
                '1.5.5', '١', 'é', '1é', ' 1', '\U00011F51', 'x' * 300, '.inf', '.nan', '1e3_0', '0_0.0_0', '1.0e-0_1', 'i_nf']
 
+ISDIGIT = ['', '0', '123', '١٢٣', '０１', '²', '¹²³', '½', 'Ⅻ', '①', '⑴', '⒈', '⓪', '⓵', '❶', '➀', '➊', '፩', '᧚',
+           '\U00010A40', '\U00010E60', '\U00011052', '\U0001F100', '\U0001F10A', '\U0001F10B', '\U00011F50', '\U0001E4F0',
+           '\U0001FBF0', '1a', ' 1', '1 ', '-1', '1.0', '٣x', '⁰', '⁴', '₀', '₉', '⁲', '𝟎', '\U0001D7CE']
+for cp in list(range(0x80, 0x3000)) + list(range(0x10000, 0x20000, 7)):
+    if 0xD800 <= cp <= 0xDFFF:
+        continue
+    if chr(cp).isdigit() or chr(cp).isdecimal() or chr(cp).isnumeric():
+        ISDIGIT.append(chr(cp))
+
+DECODE = [b'', b'abc', b'\x80', b'a\x80b', b'\xc0\x80', b'\xc1\xbf', b'\xc2', b'\xc2a', b'\xc2\x80', b'\xe0\x80\x80',
+          b'\xe0\xa0', b'\xe0\xa0a', b'\xe0\xa0\x80', b'\xed\xa0\x80', b'\xed\x9f\xbf', b'\xef\xbf', b'\xf0\x80\x80\x80',
+          b'\xf0\x90', b'\xf0\x90\x80', b'\xf0\x90\x80a', b'\xf4\x90\x80\x80', b'\xf4\x8f\xbf\xbf', b'\xf5\x80',
+          b'\xff', b'\xfe\xff', b'ok\xe4\xb8', b'ok\xe4\xb8\xad\xe4', b'\xe4\xb8\xadx\xb8']
+for _ in range(300):
+    DECODE.append(bytes(R.choice([R.randrange(0x20, 0x7F), R.randrange(0x80, 0x100), 0xE4, 0xB8, 0xF0, 0x90, 0xED, 0xA0])
+                        for _ in range(R.randrange(1, 9))))
+
+
+def decode_error(data):
+    try:
+        data.decode('utf-8')
+    except UnicodeDecodeError as exc:
+        return str(exc)
+    return ''
+
+
 out = {'lower': [[s, s.lower()] for s in LOWER],
        'strip': [[s, s.strip()] for s in STRIP],
+       'isdigit': [[s, s.isdigit()] for s in ISDIGIT],
+       'decode': [[d.hex(), decode_error(d)] for d in DECODE],
        'int': [], 'float': []}
 for text in INT_TEXTS:
     for base in BASES:
