@@ -355,3 +355,13 @@ func bigString(v u128) string {
 	number.Or(number, new(big.Int).SetUint64(v.lo))
 	return number.String()
 }
+
+// IPAddressVersion is ipaddress.ip_address(text).version: 4 or 6, 0 when
+// ip_address raises ValueError.
+func IPAddressVersion(text string) int {
+	a, ok := parseIPAddress(text)
+	if !ok {
+		return 0
+	}
+	return a.ver
+}

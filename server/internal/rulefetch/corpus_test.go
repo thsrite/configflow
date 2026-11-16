@@ -161,9 +161,6 @@ func TestCorpus(t *testing.T) {
 				gotText = encode(got)
 			}
 		}
-		if gotText != wantText && acceptedDifference(fn, row.GetList("args")) {
-			continue
-		}
 		if gotText != wantText {
 			failures[fn]++
 			if failures[fn] <= 4 {
@@ -180,13 +177,4 @@ func TestCorpus(t *testing.T) {
 	if rows < 10000 {
 		t.Fatalf("only %d rows", rows)
 	}
-}
-
-// acceptedDifference lists documented differences: a flow-style YAML root
-// with a mapping key that is not a string cannot be loaded into jsonx and
-// re-dumped (yamlx limit), so the Mihomo layout normalization keeps the
-// original text with a warning where Python rewrites it.
-func acceptedDifference(fn string, args []any) bool {
-	content, _ := args[0].(string)
-	return (fn == "normalize_yaml" || fn == "normalize_ruleset") && content == "{payload: [a.com], 1: x}"
 }

@@ -211,6 +211,11 @@ func (r *representer) represent(v any) *node {
 			return scalar(tagNull, "null")
 		}
 		return r.mapping(x.Object, true, unsafe.Pointer(x.Object), 0, 'm')
+	case *Mapping:
+		if x == nil {
+			return scalar(tagNull, "null")
+		}
+		return r.pairMapping(x)
 	case []any:
 		return r.sequence(x, false, 'l')
 	case FlowList:
@@ -297,6 +302,31 @@ func (r *representer) mapping(o *jsonx.Object, forced bool, ptr unsafe.Pointer, 
 		all = append(all, nk, nv)
 	}
 	n.flow = r.flowFor(forced, all...)
+	return n
+}
+
+// pairMapping represents a loaded *Mapping (a dict with keys that are not
+// strings, LoadOptions.KeepNonStringKeys): each key by its own type, in
+// insertion order. sort_keys would sort mixed key types, a TypeError in
+// Python, so SortKeys refuses it.
+func (r *representer) pairMapping(m *Mapping) *node {
+	if r.opts.SortKeys {
+		panic(representError{"cannot sort a mapping with keys that are not strings"})
+	}
+	key := idKey{ptr: unsafe.Pointer(m), kind: 'p'}
+	if n, ok := r.seen[key]; ok && !r.opts.NoAliases {
+		return n
+	}
+	n := &node{kind: mappingNode, tag: tagMap}
+	r.seen[key] = n
+	var all []*node
+	for _, pair := range m.Pairs {
+		nk := r.represent(pair.Key)
+		nv := r.represent(pair.Value)
+		n.pairs = append(n.pairs, [2]*node{nk, nv})
+		all = append(all, nk, nv)
+	}
+	n.flow = r.flowFor(false, all...)
 	return n
 }
 

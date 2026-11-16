@@ -295,7 +295,7 @@ func normalizeMihomoYAML(content string) (string, error) {
 	var rendered, prefix string
 	var start, end int
 	if root.FlowStyle {
-		document, err := yamlx.SafeLoad(content)
+		document, err := yamlx.LoadWith(content, yamlx.LoadOptions{KeepNonStringKeys: true})
 		if err != nil {
 			return "", yamlFailure{err}
 		}
@@ -922,22 +922,27 @@ func ReadRulePayload(content string) ([]string, *pyyaml.Node, error) {
 		return lines, nil, nil
 	}
 	invalid := validationError("规则集的 payload 格式无法读取，请先在规则仓库检查内容。")
-	node, err := pyyaml.Compose(content)
-	if err != nil {
-		return nil, nil, invalid
+	// yaml.safe_load first: only YAMLError, ValueError, StopIteration and
+	// AttributeError are turned into the message; the constructors' KeyError,
+	// IndexError, TypeError and RecursionError propagate as in Python.
+	document, err := yamlx.LoadWith(content, yamlx.LoadOptions{KeepNonStringKeys: true})
+	var loadErr *yamlx.Error
+	if errors.As(err, &loadErr) && !loadErr.IsYAMLError() && loadErr.Class != "ValueError" && loadErr.Class != "AttributeError" {
+		return nil, nil, err
 	}
-	document, err := yamlx.SafeLoad(content)
-	var nonString *yamlx.NonStringKeyError
-	if errors.As(err, &nonString) {
+	node, composeErr := pyyaml.Compose(content)
+	var unrepresentable *yamlx.UnrepresentableError
+	if errors.As(err, &unrepresentable) && composeErr == nil {
+		// PyYAML loaded it (a set or a self-referencing list elsewhere in the
+		// document); read the payload from the nodes.
 		document, err = payloadDocument(node)
 	}
-	if err != nil {
+	if err != nil || composeErr != nil {
 		return nil, nil, invalid
 	}
-	object, isObject := document.(*jsonx.Object)
-	payloadValue, _ := object.Get("payload")
+	payloadValue, _ := yamlx.Lookup(document, "payload")
 	items, isList := payloadValue.([]any)
-	if !isObject || !isList || node == nil || node.Kind != pyyaml.MappingNode {
+	if !yamlx.IsMapping(document) || !isList || node == nil || node.Kind != pyyaml.MappingNode {
 		return nil, nil, invalid
 	}
 	var key, payload *pyyaml.Node
@@ -1095,11 +1100,12 @@ func indexRune(runes []rune, ch rune, start int) int {
 	return -1
 }
 
-// payloadDocument stands in for yaml.safe_load when the document has a
-// mapping key jsonx cannot hold (`1: x`): a mapping root yields an object
-// with the last "payload" entry, whose sequence items are their scalar text
-// when tagged str (other items are kept as nil, failing the str check).
-// Merge keys are not applied here.
+// payloadDocument stands in for yaml.safe_load when PyYAML loads a value the
+// jsonx model cannot hold (a !!set or a list containing itself, outside the
+// payload): a mapping root yields an object with the last direct "payload"
+// entry, whose sequence items are their scalar text when tagged str (other
+// items are kept as nil, failing the str check). A payload that only comes
+// from a merge key has no direct key, which read_rule_payload refuses anyway.
 func payloadDocument(root *pyyaml.Node) (any, error) {
 	if root == nil || root.Kind != pyyaml.MappingNode {
 		return nil, errors.New("not a mapping")

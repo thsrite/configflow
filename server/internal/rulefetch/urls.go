@@ -2,11 +2,12 @@ package rulefetch
 
 import (
 	"errors"
-	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"configflow/internal/jsonx"
+	"configflow/internal/pystr"
 	"configflow/internal/rules"
 )
 
@@ -16,7 +17,6 @@ type URL struct {
 }
 
 var errInvalidIPv6 = errors.New("Invalid IPv6 URL")
-var errNetloc = errors.New("netloc contains invalid characters under NFKC normalization")
 
 const urlSchemeChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+-."
 
@@ -56,8 +56,10 @@ func SplitURL(url, defaultScheme string) (URL, error) {
 		if open != closed {
 			return result, errInvalidIPv6
 		}
-		if open && closed && !validBracketedNetloc(result.Netloc) {
-			return result, errors.New("Invalid IPv6 URL")
+		if open && closed {
+			if err := checkBracketedNetloc(result.Netloc); err != nil {
+				return result, err
+			}
 		}
 	}
 	if before, after, found := strings.Cut(url, "#"); found {
@@ -68,7 +70,7 @@ func SplitURL(url, defaultScheme string) (URL, error) {
 	}
 	result.Path = url
 	if !validNetloc(result.Netloc) {
-		return result, errNetloc
+		return result, errors.New("netloc '" + result.Netloc + "' contains invalid characters under NFKC normalization")
 	}
 	return result, nil
 }
@@ -77,36 +79,47 @@ func isASCIILetter(c byte) bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && 
 
 var ipvFuture = regexp.MustCompile(`^v[a-fA-F0-9]+\..+$`)
 
-func validBracketedNetloc(netloc string) bool {
+// checkBracketedNetloc is urllib.parse._check_bracketed_netloc (3.11.4+):
+// nothing before "[", nothing but ":port" after "]", and the bracketed host
+// an IPvFuture or an IPv6 address.
+func checkBracketedNetloc(netloc string) error {
 	hostinfo := netloc
 	if at := strings.LastIndex(hostinfo, "@"); at >= 0 {
 		hostinfo = hostinfo[at+1:]
 	}
 	before, bracketed, found := strings.Cut(hostinfo, "[")
-	if !found {
-		hostname, _, _ := strings.Cut(hostinfo, ":")
-		return validBracketedHost(hostname)
+	var hostname string
+	if found {
+		if before != "" {
+			return errInvalidIPv6
+		}
+		var port string
+		hostname, port, _ = strings.Cut(bracketed, "]")
+		if port != "" && !strings.HasPrefix(port, ":") {
+			return errInvalidIPv6
+		}
+	} else {
+		hostname, _, _ = strings.Cut(hostinfo, ":")
 	}
-	if before != "" {
-		return false
-	}
-	hostname, port, _ := strings.Cut(bracketed, "]")
-	if port != "" && !strings.HasPrefix(port, ":") {
-		return false
-	}
-	return validBracketedHost(hostname)
+	return checkBracketedHost(hostname)
 }
 
-func validBracketedHost(host string) bool {
+// checkBracketedHost is urllib.parse._check_bracketed_host.
+func checkBracketedHost(host string) error {
 	if strings.HasPrefix(host, "v") {
-		return ipvFuture.MatchString(host) && !strings.Contains(host, "\n")
+		// re.match(r"\Av[a-fA-F0-9]+\..+\Z", host): "." matches no newline.
+		if !ipvFuture.MatchString(host) || strings.Contains(host, "\n") {
+			return errors.New("IPvFuture address is invalid")
+		}
+		return nil
 	}
-	address, zone, scoped := strings.Cut(host, "%")
-	if scoped && (zone == "" || strings.Contains(zone, "%")) {
-		return false
+	switch rules.IPAddressVersion(host) {
+	case 4:
+		return errors.New("An IPv4 address cannot be in brackets")
+	case 6:
+		return nil
 	}
-	parsed, err := netip.ParseAddr(address)
-	return err == nil && parsed.Is6()
+	return errors.New(jsonx.Repr(host) + " does not appear to be an IPv4 or IPv6 address")
 }
 
 func validNetloc(netloc string) bool {
@@ -142,9 +155,9 @@ func (u URL) Hostname() string {
 	}
 	name, zone, found := strings.Cut(hostname, "%")
 	if found {
-		return strings.ToLower(name) + "%" + zone
+		return pystr.Lower(name) + "%" + zone
 	}
-	return strings.ToLower(name)
+	return pystr.Lower(name)
 }
 
 // Port is SplitResult.port: the number, whether there is one, and the
@@ -156,7 +169,7 @@ func (u URL) Port() (int, bool, error) {
 	}
 	for i := 0; i < len(port); i++ {
 		if port[i] < '0' || port[i] > '9' {
-			return 0, false, errors.New("Port could not be cast to integer value as " + quoteRepr(port))
+			return 0, false, errors.New("Port could not be cast to integer value as " + jsonx.Repr(port))
 		}
 	}
 	digits := strings.TrimLeft(port, "0")
@@ -169,8 +182,6 @@ func (u URL) Port() (int, bool, error) {
 	}
 	return value, true, nil
 }
-
-func quoteRepr(s string) string { return "'" + s + "'" }
 
 // userinfo returns SplitResult.username / password ("" and false for None).
 func (u URL) userinfo() (user string, hasUser bool, password string, hasPassword bool) {
