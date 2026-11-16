@@ -92,14 +92,7 @@ def _world():
         default = repository.default_profile_id()
     except Exception as exc:
         raise Unsupported(f'world: {type(exc).__name__}')
-    files = {}
-    rules = os.path.join(root, 'shared', 'rules')
-    if os.path.isdir(rules):
-        for name in sorted(os.listdir(rules)):
-            path = os.path.join(rules, name)
-            if os.path.isfile(path) and '.tmp' not in name and not name.endswith('.lock'):
-                with open(path, 'rb') as fh:
-                    files['rules/' + name] = conv(fh.read())
+    files = _walk_rules(root)
     status = None
     try:
         with open(os.path.join(root, 'task-status.json'), encoding='utf-8') as fh:
@@ -112,15 +105,19 @@ def _world():
 
 def _rule_files():
     from backend.common.config import get_repository
-    root = get_repository().data_dir
+    return _walk_rules(get_repository().data_dir)
+
+
+def _walk_rules(root):
     files = {}
     rules = os.path.join(root, 'shared', 'rules')
-    if os.path.isdir(rules):
-        for name in sorted(os.listdir(rules)):
-            path = os.path.join(rules, name)
-            if os.path.isfile(path) and '.tmp' not in name and not name.endswith('.lock'):
-                with open(path, 'rb') as fh:
-                    files['rules/' + name] = conv(fh.read())
+    for dirpath, _dirs, names in os.walk(rules):
+        for name in sorted(names):
+            if '.tmp' in name or name.endswith('.lock'):
+                continue
+            path = os.path.join(dirpath, name)
+            with open(path, 'rb') as fh:
+                files['rules/' + os.path.relpath(path, rules).replace(os.sep, '/')] = conv(fh.read())
     return files
 
 

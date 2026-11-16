@@ -1,12 +1,17 @@
 package mosdns
 
-// Port of backend/utils/mosdns_archive.py: materialize complete MosDNS
-// downloads without HTTP calls back to ConfigFlow.
+// MosDNS ZIP archive (backend/utils/mosdns_archive.py): every rule file is
+// materialized from the captured profile snapshot without HTTP calls back
+// to ConfigFlow; each remote source is fetched once, at most MaxWorkers at
+// a time.
 
 import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -24,110 +29,162 @@ import (
 
 var archiveLogger = logx.Get("backend.utils.mosdns_archive")
 
-// MaxWorkers is MAX_WORKERS: concurrent source downloads of one archive.
+// MaxWorkers is the number of concurrent source downloads of one archive.
 const MaxWorkers = 8
 
-// MaxFiles and MaxTotalBytes are MAX_FILES and MAX_TOTAL_BYTES (variables so
-// tests can lower them like Python's monkeypatch).
+// Archive limits (variables so tests can lower them).
 var (
 	MaxFiles      = 4096
 	MaxTotalBytes = 256 * 1024 * 1024
 )
 
-// ArchiveError is MosdnsArchiveError (a ValueError): a safe, user-facing
-// error that contains no source URL or credentials. OxidnsArchiveError is the
-// same class.
+// ArchiveError is a safe, user-facing archive failure (MosdnsArchiveError,
+// also used for OxiDNS archives): it never contains a source URL or
+// credentials.
 type ArchiveError struct{ Message string }
 
 func (e *ArchiveError) Error() string { return e.Message }
 
-// PythonClass is type(exc).__name__.
-func (e *ArchiveError) PythonClass() string { return "MosdnsArchiveError" }
+func archiveErr(message string) error { return &ArchiveError{Message: message} }
 
-func archiveError(message string) error { return &ArchiveError{Message: message} }
-
-// ArchivePath is _path(value): a safe relative file path inside the
-// archive, or *ArchiveError.
-func ArchivePath(value any) (out string, err error) {
-	defer catch(&err)
-	return archivePath(value), nil
+// Download is one rule file to materialize (an entry of
+// GetMosDNSRulesetDownloads).
+type Download struct {
+	URL       string `json:"url"`
+	Name      string `json:"name"`
+	LocalPath string `json:"local_path"`
 }
 
-func archivePath(value any) string {
-	text, ok := value.(string)
-	if !ok || text == "" || strings.Contains(text, "\\") || hasControl(text) {
-		raise(archiveError("规则文件路径无效"))
+// File is a file stored as is (GetMosDNSCustomFiles, OxiDNS attachments).
+type File struct {
+	Path    string
+	Content []byte
+}
+
+// DownloadsOf converts the converter's download list.
+func DownloadsOf(list []any) ([]Download, error) {
+	var out []Download
+	return out, viaJSON(list, &out)
+}
+
+// FilesOf converts the converter's custom file list ({path, content}).
+func FilesOf(list []any) ([]File, error) {
+	var raw []struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
 	}
-	for strings.HasPrefix(text, "./") {
-		text = text[2:]
+	if err := viaJSON(list, &raw); err != nil {
+		return nil, err
 	}
-	if strings.HasPrefix(text, "/") {
-		raise(archiveError("规则文件必须使用安全的相对路径"))
+	out := make([]File, len(raw))
+	for i, f := range raw {
+		out[i] = File{Path: f.Path, Content: []byte(f.Content)}
 	}
-	for _, part := range strings.Split(text, "/") {
+	return out, nil
+}
+
+func viaJSON(value any, target any) error {
+	data, err := jsonx.Compact(value)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, target)
+}
+
+// ArchiveOptions are the options of BuildMosDNSZip.
+type ArchiveOptions struct {
+	BaseURL string
+	// SkipReferenceValidation skips the check that every `files` entry of
+	// the config is packed (the OxiDNS archive).
+	SkipReferenceValidation bool
+}
+
+// ArchivePath validates a path inside the archive: relative, no empty,
+// "." or ".." parts, no backslash or control character ("./" prefixes are
+// dropped).
+func ArchivePath(value string) (string, error) {
+	if value == "" || strings.Contains(value, "\\") || strings.IndexFunc(value, func(r rune) bool { return r < 32 }) >= 0 {
+		return "", archiveErr("规则文件路径无效")
+	}
+	for strings.HasPrefix(value, "./") {
+		value = value[2:]
+	}
+	if strings.HasPrefix(value, "/") {
+		return "", archiveErr("规则文件必须使用安全的相对路径")
+	}
+	for _, part := range strings.Split(value, "/") {
 		if part == "" || part == "." || part == ".." {
-			raise(archiveError("规则文件必须使用安全的相对路径"))
+			return "", archiveErr("规则文件必须使用安全的相对路径")
 		}
 	}
-	// PurePosixPath(text).as_posix() is text itself for every path that
-	// passed the checks (no empty, "." or ".." parts, not absolute).
-	return text
+	return value, nil
 }
 
-func hasControl(s string) bool {
-	for _, r := range s {
-		if r < 32 {
+// label is a rule name safe for errors and logs.
+func label(name string) string {
+	if name == "" {
+		name = "未命名规则"
+	}
+	lower := strings.ToLower(name)
+	if strings.Contains(name, "://") || strings.Contains(lower, "token=") || strings.Contains(lower, "password=") ||
+		strings.Contains(lower, "secret=") {
+		return "未命名规则"
+	}
+	var b strings.Builder
+	count := 0
+	for _, r := range name {
+		if r >= 32 && r != 127 && count < 160 {
+			b.WriteRune(r)
+			count++
+		}
+	}
+	return b.String()
+}
+
+// snapshot is the part of the profile snapshot the callbacks resolve
+// against.
+type snapshot struct {
+	ProfileID    string `json:"profile_id"`
+	SystemConfig struct {
+		ServerDomain string `json:"server_domain"`
+	} `json:"system_config"`
+	RuleConfigs []struct {
+		LibraryRuleID  string `json:"library_rule_id"`
+		Enabled        *bool  `json:"enabled"`
+		LibraryEnabled *bool  `json:"library_enabled"`
+	} `json:"rule_configs"`
+	RuleLibrary []struct {
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		SourceType string `json:"source_type"`
+		URL        string `json:"url"`
+		Content    string `json:"content"`
+	} `json:"rule_library"`
+}
+
+// selected reports whether a library rule is used by an enabled rule
+// configuration of the profile.
+func (s *snapshot) selected(id string) bool {
+	for _, rule := range s.RuleConfigs {
+		if rule.LibraryRuleID == id && (rule.Enabled == nil || *rule.Enabled) &&
+			(rule.LibraryEnabled == nil || *rule.LibraryEnabled) {
 			return true
 		}
 	}
 	return false
 }
 
-// archiveLabel is _label(item): the rule's name without pasted URLs,
-// credential expressions or control characters, at most 160 characters.
-func archiveLabel(item any) string {
-	name := get(item, "name", nil)
-	if !truthy(name) {
-		name = "未命名规则"
-	}
-	text := str(name)
-	lower := strings.ToLower(text)
-	if strings.Contains(text, "://") || strings.Contains(lower, "token=") || strings.Contains(lower, "password=") ||
-		strings.Contains(lower, "secret=") {
-		return "未命名规则"
-	}
-	var b strings.Builder
-	count := 0
-	for _, r := range text {
-		if r < 32 || r == 127 {
-			continue
-		}
-		if count == 160 {
-			break
-		}
-		b.WriteRune(r)
-		count++
-	}
-	return b.String()
+type origin struct {
+	scheme, host string
+	port         int
 }
 
-// splitURL is urlsplit(value) on net/url: a non-string or a URL net/url
-// refuses raises (Python fails on non-strings too).
-func splitURL(value any) *url.URL {
-	text, ok := value.(string)
-	if !ok {
-		raise(attributeError(value, "decode"))
-	}
-	return parseURL(text)
-}
-
-// originOf is (scheme, hostname, port or the scheme's default).
-func originOf(u *url.URL) [3]string {
+func originOf(u *url.URL) (origin, error) {
 	port := 0
 	if text := u.Port(); text != "" {
 		n, err := strconv.Atoi(text)
 		if err != nil || n > 65535 {
-			raise(pyErr("ValueError", "Port out of range 0-65535"))
+			return origin{}, fmt.Errorf("invalid port %q", text)
 		}
 		port = n
 	}
@@ -137,493 +194,389 @@ func originOf(u *url.URL) [3]string {
 			port = 443
 		}
 	}
-	return [3]string{u.Scheme, strings.ToLower(u.Hostname()), strconv.Itoa(port)}
+	return origin{u.Scheme, strings.ToLower(u.Hostname()), port}, nil
 }
 
-// unquote is urllib's unquote on net/url (the text itself when it holds an
-// invalid escape).
-func unquote(text string) string {
-	if out, err := url.PathUnescape(text); err == nil {
+func unescape(path string) string {
+	if out, err := url.PathUnescape(path); err == nil {
 		return out
 	}
-	return text
+	return path
 }
 
-// localPath is _local_path(url, config, base_url): the local API suffix
-// only for this captured profile and origin, ok=false for None.
-func localPath(ctx context.Context, rawURL string, config *jsonx.Object, baseURL string) (string, bool) {
-	parsed := splitURL(rawURL)
-	system := get(config, "system_config", jsonx.NewObject())
-	bases := []any{get(system, "server_domain", ""), baseURL}
+// localPath returns the API suffix of a callback to this ConfigFlow for
+// the captured profile (found=false for any other URL).
+func (s *snapshot) localPath(ctx context.Context, raw, baseURL string) (string, bool, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", false, err
+	}
 	var paths []string
-	if parsed.Scheme == "" && parsed.Host == "" && parsed.User == nil {
-		paths = append(paths, unquote(parsed.EscapedPath()))
+	if parsed.Scheme == "" && parsed.Host == "" {
+		paths = append(paths, unescape(parsed.EscapedPath()))
 	} else {
-		origin := originOf(parsed)
-		for _, base := range bases {
-			if !truthy(base) {
+		from, err := originOf(parsed)
+		if err != nil {
+			return "", false, err
+		}
+		for _, base := range []string{s.SystemConfig.ServerDomain, baseURL} {
+			if base == "" {
 				continue
 			}
-			candidate := splitURL(base)
-			expected := originOf(candidate)
+			candidate, err := url.Parse(base)
+			if err != nil {
+				return "", false, err
+			}
+			expected, err := originOf(candidate)
+			if err != nil {
+				return "", false, err
+			}
 			prefix := strings.TrimRight(candidate.EscapedPath(), "/")
-			path := parsed.EscapedPath()
-			if origin == expected && strings.HasPrefix(path, prefix+"/") {
-				paths = append(paths, unquote(path[len(prefix):]))
+			if path := parsed.EscapedPath(); from == expected && strings.HasPrefix(path, prefix+"/") {
+				paths = append(paths, unescape(path[len(prefix):]))
 			}
 		}
 	}
-	profileID := get(config, "profile_id", nil)
-	if !truthy(profileID) {
-		id, err := repo.GetDefaultProfileID(ctx)
-		if err != nil {
-			raise(err)
+	profileID := s.ProfileID
+	if profileID == "" {
+		if profileID, err = repo.GetDefaultProfileID(ctx); err != nil {
+			return "", false, err
 		}
-		profileID = id
 	}
 	for _, path := range paths {
-		if strings.HasPrefix(path, "/api/profiles/") {
-			prefix := "/api/profiles/" + str(profileID) + "/"
+		switch {
+		case strings.HasPrefix(path, "/api/profiles/"):
+			prefix := "/api/profiles/" + profileID + "/"
 			if !strings.HasPrefix(path, prefix) {
-				raise(archiveError("规则回调引用了其他配置"))
+				return "", false, archiveErr("规则回调引用了其他配置")
 			}
-			return "/" + path[len(prefix):], true
-		}
-		if strings.HasPrefix(path, "/api/") {
-			return path[4:], true
-		}
-		if strings.HasPrefix(path, "/mosdns/") || strings.HasPrefix(path, "/rules/local/") ||
-			strings.HasPrefix(path, "/rule-library/content/") {
-			return path, true
+			return "/" + path[len(prefix):], true, nil
+		case strings.HasPrefix(path, "/api/"):
+			return path[4:], true, nil
+		case strings.HasPrefix(path, "/mosdns/"), strings.HasPrefix(path, "/rules/local/"),
+			strings.HasPrefix(path, "/rule-library/content/"):
+			return path, true, nil
 		}
 	}
-	return "", false
+	return "", false, nil
 }
 
-// archiveSource is the key of _source: ('remote', url, identity) or
-// ('inline', content).
-type archiveSource struct {
+// source is where a rule file's bytes come from: an inline library rule or
+// a remote URL with its declared identity.
+type source struct {
 	inline   bool
-	value    any // remote: the URL (string); inline: the content
-	identity any // remote: the declared id or the source_id (nil: None)
-	hash     string
+	content  string
+	url      string
+	identity string
 }
 
-func (s archiveSource) key() string {
-	if s.inline {
-		return "inline\x00" + hashKey(s.value)
-	}
-	return "remote\x00" + hashKey(s.value) + "\x00" + hashKey(s.identity)
-}
-
-// sourceIDText is the source_id argument resolve_remote_rule_source sees:
-// `if source_id:` then str(source_id); "" stands for a falsy value.
-func sourceIDText(sourceID any) string {
-	if !truthy(sourceID) {
-		return ""
-	}
-	return str(sourceID)
-}
-
-// archiveSourceOf is _source(url, config, base_url, depth, source_id):
-// callbacks resolved to inline text or a remote source plus the conversion
-// parts (nil = None) applied in order.
-func archiveSourceOf(ctx context.Context, rawURL any, config *jsonx.Object, baseURL string, depth int, sourceID any) (archiveSource, []any) {
+// resolve follows callbacks to their source and returns the conversion
+// parts to apply in order ("" = the default conversion).
+func (s *snapshot) resolve(ctx context.Context, config *jsonx.Object, raw, baseURL string, depth int, sourceID string) (source, []string, error) {
 	if depth > 3 {
-		raise(archiveError("规则回调存在循环引用"))
+		return source{}, nil, archiveErr("规则回调存在循环引用")
 	}
-	text, ok := rawURL.(string)
-	if !ok || text == "" {
-		raise(archiveError("规则缺少下载地址"))
+	if raw == "" {
+		return source{}, nil, archiveErr("规则缺少下载地址")
 	}
-	local, found := localPath(ctx, text, config, baseURL)
+	local, found, err := s.localPath(ctx, raw, baseURL)
+	if err != nil {
+		return source{}, nil, err
+	}
 	if !found {
-		source, err := rulefetch.ResolveRemoteRuleSource(text, config, sourceIDText(sourceID))
+		declared, err := rulefetch.ResolveRemoteRuleSource(raw, config, sourceID)
 		if err != nil {
-			raise(err)
+			return source{}, nil, err
 		}
-		var identity any
-		if source != nil {
-			identity = source.Value("id")
+		identity := sourceID
+		if declared != nil && jsonx.Truthy(declared.Value("id")) {
+			identity = jsonx.Str(declared.Value("id"))
 		}
-		if !truthy(identity) {
-			identity = sourceID
-		}
-		return archiveSource{value: text, identity: identity}, nil
+		return source{url: raw, identity: identity}, nil, nil
 	}
 	if local == "/mosdns/rule-proxy" {
-		query, _ := url.ParseQuery(splitURL(text).RawQuery)
-		original := query.Get("url")
-		var part any
-		if value := query.Get("part"); value != "" {
-			part = value
+		parsed, _ := url.Parse(raw)
+		query := parsed.Query()
+		part := query.Get("part")
+		if part != "" && part != PartDomain && part != PartIP {
+			return source{}, nil, archiveErr("规则转换类型无效")
 		}
-		if part != nil && !inList(part.(string), RuleParts) {
-			raise(archiveError("规则转换类型无效"))
-		}
-		var nestedID any
-		if value := query.Get("source_id"); value != "" {
-			nestedID = value
-		}
-		key, conversions := archiveSourceOf(ctx, original, config, baseURL, depth+1, nestedID)
-		return key, append(conversions, part)
+		src, parts, err := s.resolve(ctx, config, query.Get("url"), baseURL, depth+1, query.Get("source_id"))
+		return src, append(parts, part), err
 	}
-	var libraryID, name *string
-	if rest, ok := strings.CutPrefix(local, "/rule-library/content/"); ok {
-		libraryID = &rest
+	libraryID, byID := strings.CutPrefix(local, "/rule-library/content/")
+	name, byName := strings.CutPrefix(local, "/rules/local/")
+	if !byID && !byName {
+		return source{}, nil, archiveErr("无法识别规则回调")
 	}
-	if rest, ok := strings.CutPrefix(local, "/rules/local/"); ok {
-		name = &rest
-	}
-	if libraryID == nil && name == nil {
-		raise(archiveError("无法识别规则回调"))
-	}
-	selected := selectedLibraryIDs(config)
-	for _, rule := range iterate(get(config, "rule_library", []any{})) {
-		if !selected.has(get(rule, "id", nil)) {
+	for _, rule := range s.RuleLibrary {
+		if !s.selected(rule.ID) || !(byID && rule.ID == libraryID || byName && rule.Name == name) {
 			continue
 		}
-		if (libraryID != nil && jsonx.Equal(get(rule, "id", nil), *libraryID)) ||
-			(name != nil && jsonx.Equal(get(rule, "name", nil), *name)) {
-			if jsonx.Equal(get(rule, "source_type", nil), "content") {
-				return archiveSource{inline: true, value: get(rule, "content", "")}, nil
-			}
-			return archiveSourceOf(ctx, get(rule, "url", ""), config, baseURL, depth+1, get(rule, "id", nil))
+		if rule.SourceType == "content" {
+			return source{inline: true, content: rule.Content}, nil, nil
 		}
+		return s.resolve(ctx, config, rule.URL, baseURL, depth+1, rule.ID)
 	}
-	raise(archiveError("规则不在当前配置快照中"))
-	return archiveSource{}, nil
+	return source{}, nil, archiveErr("规则不在当前配置快照中")
 }
 
-// selectedLibraryIDs is {rule.get('library_rule_id') for rule in
-// config.get('rule_configs', []) if rule.get('enabled', True) and
-// rule.get('library_enabled', True)}.
-func selectedLibraryIDs(config any) pySet {
-	selected := pySet{}
-	for _, rule := range iterate(get(config, "rule_configs", []any{})) {
-		if truthy(get(rule, "enabled", true)) && truthy(get(rule, "library_enabled", true)) {
-			selected[hashKey(get(rule, "library_rule_id", nil))] = true
-		}
-	}
-	return selected
-}
-
-// ArchiveOptions are the keyword arguments of build_mosdns_zip.
-type ArchiveOptions struct {
-	// BaseURL is base_url (default '').
-	BaseURL string
-	// SkipReferenceValidation is validate_references=False (the OxiDNS
-	// archive); the zero value validates like Python's default.
-	SkipReferenceValidation bool
-}
-
-// isArchiveDetailError is isinstance(exc, (MosdnsArchiveError,
-// RemoteRuleValidationError)).
-func isArchiveDetailError(err error) bool {
-	switch err.(type) {
-	case *ArchiveError, *rulefetch.RemoteRuleValidationError:
-		return true
-	}
-	return false
-}
-
-func archiveDetail(err error) string {
-	if isArchiveDetailError(err) {
+// detail is the user-visible part of a wrapped failure: the message of
+// safe errors, otherwise only the error class (and HTTP status).
+func detail(err error) string {
+	var archive *ArchiveError
+	var remote *rulefetch.RemoteRuleValidationError
+	if errors.As(err, &archive) || errors.As(err, &remote) {
 		return err.Error()
 	}
-	return safeExceptionDetails(err)
+	return safeDetails(err)
 }
 
-type archiveUse struct {
-	item        any
-	path        string
-	conversions []any
+// safeDetails describes an error without its text (which could hold URLs
+// or credentials): the error class and an HTTP status.
+func safeDetails(err error) string {
+	details := "exception_type=" + rulefetch.PythonClass(err)
+	var fetch *rulefetch.FetchError
+	var ruleFetch *rulefetch.RuleFetchError
+	if errors.As(err, &fetch) && fetch.Status != 0 && !errors.As(err, &ruleFetch) {
+		details += " status=" + strconv.Itoa(fetch.Status)
+	}
+	return details
 }
 
-type archiveFetchResult struct {
-	key     string
-	content any
+type use struct {
+	name, path string
+	parts      []string
+}
+
+type fetched struct {
+	key     source
+	content string
 	err     error
 }
 
-// BuildMosDNSZip is build_mosdns_zip(config, yaml_content, downloads,
-// custom_files, base_url=, validate_references=): fetch each original URL
-// once (at most MaxWorkers at a time), convert each part, then create the
-// ZIP. downloads and customFiles are lists of objects (as Python iterates
-// them; other items fail like Python). The result is the ZIP bytes;
-// failures are *ArchiveError or the error Python lets through.
-func BuildMosDNSZip(ctx context.Context, config *jsonx.Object, yamlContent string, downloads, customFiles []any, opts ArchiveOptions) (out []byte, err error) {
-	defer catch(&err)
+// BuildMosDNSZip packs config.yaml, the custom files and every download
+// into a ZIP. config is the profile snapshot (it is not modified).
+func BuildMosDNSZip(ctx context.Context, config *jsonx.Object, yamlContent string, downloads []Download, custom []File, opts ArchiveOptions) ([]byte, error) {
 	// Downloads, cache writes and task records finish even when the caller
-	// goes away, as Python's worker threads do.
+	// goes away.
 	ctx = context.WithoutCancel(ctx)
-	// Workers must never select a default profile or read a changed setting.
-	config = jsonx.DeepCopy(config).(*jsonx.Object)
+	config = config.DeepCopy()
+	var snap snapshot
+	if err := viaJSON(config, &snap); err != nil {
+		return nil, err
+	}
 	files := map[string][]byte{}
-	var fileOrder []string
-	inOrder := map[string]bool{}
+	var order []string
 	total := 0
-	maxFiles, maxTotal := MaxFiles, MaxTotalBytes
-
-	add := func(path any, content any) {
-		name := archivePath(path)
-		var value []byte
-		switch c := content.(type) {
-		case string:
-			value = []byte(c)
-		case []byte:
-			value = c
-		default:
-			raise(archiveError("规则文件缺少内容"))
-		}
-		if existing, present := files[name]; present {
-			// Separate routing entries may consume the same library file.
-			if name != "config.yaml" && bytes.Equal(existing, value) {
-				return
-			}
-			raise(archiveError("生成配置包含内容冲突的文件路径"))
-		}
-		total += len(value)
-		if len(files) >= maxFiles || total > maxTotal {
-			raise(archiveError("生成配置超过打包大小限制"))
-		}
-		files[name] = value
-	}
-
-	add("config.yaml", yamlContent)
-	for _, item := range customFiles {
-		add(get(item, "path", nil), get(item, "content", nil))
-	}
-	for name := range files {
-		inOrder[name] = true
-	}
-	fileOrder = append(fileOrder, "config.yaml")
-	for _, item := range customFiles {
-		// dict.fromkeys(files): insertion order of the paths added above.
-		name := archivePath(get(item, "path", nil))
-		if !contains2(fileOrder, name) {
-			fileOrder = append(fileOrder, name)
-		}
-	}
-
-	sources := map[string][]archiveUse{}
-	keys := map[string]archiveSource{}
-	var sourceOrder []string
-	for _, item := range downloads {
-		var (
-			path        string
-			source      archiveSource
-			conversions []any
-		)
-		prepareErr := func() (err error) {
-			defer catch(&err)
-			path = archivePath(get(item, "local_path", nil))
-			source, conversions = archiveSourceOf(ctx, get(item, "url", nil), config, opts.BaseURL, 0, nil)
-			return nil
-		}()
-		if prepareErr != nil {
-			raise(archiveError("规则“" + archiveLabel(item) + "”准备失败：" + archiveDetail(prepareErr)))
-		}
-		if !inOrder[path] {
-			inOrder[path] = true
-			fileOrder = append(fileOrder, path)
-		}
-		if len(fileOrder) > maxFiles {
-			raise(archiveError("生成配置超过打包文件数量限制"))
-		}
-		key := source.key()
-		if _, present := sources[key]; !present {
-			sourceOrder = append(sourceOrder, key)
-			keys[key] = source
-		}
-		sources[key] = append(sources[key], archiveUse{item: item, path: path, conversions: conversions})
-	}
-
-	fetch := func(key string) (any, error) {
-		source := keys[key]
-		if source.inline {
-			return source.value, nil
-		}
-		label := func() string { return archiveLabel(sources[key][0].item) }
-		content, err := fetchArchiveSource(ctx, source, config, label)
+	add := func(path string, content []byte) error {
+		path, err := ArchivePath(path)
 		if err != nil {
-			return nil, archiveError("规则“" + label() + "”下载失败：" + archiveDetail(err))
+			return err
 		}
-		return content, nil
+		if existing, ok := files[path]; ok {
+			// Separate routing entries may consume the same library file.
+			if path != "config.yaml" && bytes.Equal(existing, content) {
+				return nil
+			}
+			return archiveErr("生成配置包含内容冲突的文件路径")
+		}
+		total += len(content)
+		if len(files) >= MaxFiles || total > MaxTotalBytes {
+			return archiveErr("生成配置超过打包大小限制")
+		}
+		files[path] = content
+		order = append(order, path)
+		return nil
+	}
+	if err := add("config.yaml", []byte(yamlContent)); err != nil {
+		return nil, err
+	}
+	for _, file := range custom {
+		if err := add(file.Path, file.Content); err != nil {
+			return nil, err
+		}
 	}
 
-	results := make(chan archiveFetchResult, len(sourceOrder))
+	// Entry order: config.yaml, custom files, downloads as declared.
+	planned := map[string]bool{}
+	for _, path := range order {
+		planned[path] = true
+	}
+	uses := map[source][]use{}
+	var sources []source
+	for _, d := range downloads {
+		path, err := ArchivePath(d.LocalPath)
+		var src source
+		var parts []string
+		if err == nil {
+			src, parts, err = snap.resolve(ctx, config, d.URL, opts.BaseURL, 0, "")
+		}
+		if err != nil {
+			return nil, archiveErr("规则“" + label(d.Name) + "”准备失败：" + detail(err))
+		}
+		if !planned[path] {
+			planned[path] = true
+			order = append(order, path)
+			if len(planned) > MaxFiles {
+				return nil, archiveErr("生成配置超过打包文件数量限制")
+			}
+		}
+		if _, seen := uses[src]; !seen {
+			sources = append(sources, src)
+		}
+		uses[src] = append(uses[src], use{name: d.Name, path: path, parts: parts})
+	}
+	entries := order
+	order = nil
+
+	// A failure returns at once; at most MaxWorkers downloads stay in
+	// flight (bounded timeouts) and their results are dropped.
+	fetch := fetchRemoteFn
+	results := make(chan fetched, len(sources))
 	next, pending := 0, 0
 	schedule := func() {
-		for pending < MaxWorkers && next < len(sourceOrder) {
-			key := sourceOrder[next]
-			next++
-			pending++
+		for ; pending < MaxWorkers && next < len(sources); next, pending = next+1, pending+1 {
+			src := sources[next]
 			go func() {
-				var result archiveFetchResult
-				result.key = key
-				defer func() {
-					if r := recover(); r != nil {
-						if p, ok := r.(raised); ok {
-							result.err = p.err
-						} else {
-							result.err = pyErr("Exception", "worker panic")
-						}
-					}
-					results <- result
-				}()
-				result.content, result.err = fetch(key)
+				content, err := fetchSource(ctx, fetch, config, src, label(uses[src][0].name))
+				results <- fetched{src, content, err}
 			}()
 		}
 	}
-	// A failure returns at once: at most MaxWorkers downloads remain in
-	// flight with bounded timeouts; their results are discarded (Python's
-	// shutdown(wait=False, cancel_futures=True)).
 	schedule()
-	for pending > 0 {
+	for ; pending > 0; pending-- {
 		result := <-results
-		pending--
 		if result.err != nil {
-			raise(result.err)
+			return nil, result.err
 		}
-		for _, use := range sources[result.key] {
-			convertErr := func() (err error) {
-				defer catch(&err)
-				content := result.content
-				for _, part := range use.conversions {
-					content = convertForArchive(content, part)
+		for _, u := range uses[result.key] {
+			content := result.content
+			var err error
+			for _, part := range u.parts {
+				if part == "" {
+					content, err = ConvertRuleContentForMosDNS(content)
+				} else {
+					content, err = ConvertRuleContentForMosDNS(content, part)
 				}
-				add(use.path, content)
-				return nil
-			}()
-			if convertErr != nil {
-				raise(archiveError("规则“" + archiveLabel(use.item) + "”转换失败：" + archiveDetail(convertErr)))
+				if err != nil {
+					break
+				}
+			}
+			if err == nil {
+				err = add(u.path, []byte(content))
+			}
+			if err != nil {
+				return nil, archiveErr("规则“" + label(u.name) + "”转换失败：" + detail(err))
 			}
 		}
 		schedule()
 	}
-
-	document, loadErr := yamlx.LoadWith(yamlContent, yamlx.LoadOptions{KeepNonStringKeys: true})
-	if loadErr != nil {
-		raise(loadErr)
-	}
-	if !isDict(document) {
-		raise(archiveError("MosDNS 配置格式无效"))
-	}
-	plugins := get(document, "plugins", []any{})
-	pluginList, isList := plugins.([]any)
-	if !isList {
-		raise(archiveError("MosDNS 配置格式无效"))
-	}
-	if !opts.SkipReferenceValidation {
-		for _, plugin := range pluginList {
-			args := get(plugin, "args", nil)
-			if !truthy(args) {
-				args = jsonx.NewObject()
-			}
-			if !isDict(args) {
-				continue
-			}
-			references, isRefList := get(args, "files", []any{}).([]any)
-			if !isRefList {
-				raise(archiveError("MosDNS 文件引用必须为列表"))
-			}
-			for _, reference := range references {
-				if _, present := files[archivePath(reference)]; !present {
-					raise(archiveError("MosDNS 配置引用了未打包的规则文件"))
-				}
-			}
-		}
-	}
-	return writeZip(fileOrder, files)
-}
-
-func contains2(list []string, s string) bool {
-	for _, item := range list {
-		if item == s {
-			return true
-		}
-	}
-	return false
-}
-
-func isDict(v any) bool {
-	switch x := v.(type) {
-	case *jsonx.Object:
-		return x != nil
-	case *yamlx.Mapping:
-		return true
-	}
-	return false
-}
-
-// convertForArchive is convert_rule_content_for_mosdns(content, part) on
-// what a fetch returned (str, or bytes from a replaced fetch).
-func convertForArchive(content any, part any) any {
-	text, ok := content.(string)
-	if !ok {
-		if _, isBytes := content.([]byte); isBytes {
-			raise(pyErr("TypeError", "a bytes-like object is required, not 'str'"))
-		}
-		raise(attributeError(content, "removeprefix"))
-	}
-	var out string
-	var err error
-	if part == nil {
-		out, err = ConvertRuleContentForMosDNS(text)
-	} else {
-		out, err = ConvertRuleContentForMosDNS(text, part.(string))
-	}
-	if err != nil {
-		raise(err)
-	}
-	return out
-}
-
-// fetchArchiveSource is the remote branch of build_mosdns_zip's fetch:
-// rule-proxy's bounded transport and cache fallback on the captured
-// snapshot (no request context: no host URL).
-func fetchArchiveSource(ctx context.Context, source archiveSource, config *jsonx.Object, label func() string) (out any, err error) {
-	defer catch(&err)
-	sourceURL := source.value.(string)
-	declared, err := rulefetch.ResolveRemoteRuleSource(sourceURL, config, sourceIDText(source.identity))
-	if err != nil {
+	if err := checkReferences(yamlContent, files, opts.SkipReferenceValidation); err != nil {
 		return nil, err
 	}
-	if declared == nil {
-		return currentEnv().fetchRemoteContent(ctx, sourceURL, config, false, "")
-	}
-	format, err := convert.RulesetFormat(declared, config, "")
-	if err != nil {
-		return nil, err
-	}
-	if format == "mrs" {
-		return nil, rulefetch.NewRemoteRuleMessage("OxiDNS/MosDNS 不支持 MRS 二进制规则，请使用该订阅的 Text 或 YAML 版本。")
-	}
-	content, staleErr, err := refresh.ReadRuleSource(ctx, declared, refresh.RuleOptions{Config: config,
-		Fetch: func(fetchURL string) (any, error) {
-			return currentEnv().fetchRemoteContent(ctx, fetchURL, config, true, "")
-		}})
-	if err != nil {
-		return nil, err
-	}
-	if staleErr != nil {
-		archiveLogger.Warningf("MosDNS ZIP 规则“%s”更新失败，使用上一次有效缓存：%s", label(), refresh.DescribeFailure(staleErr))
-	}
-	return decodeUTF8Sig(content)
+	return writeZip(entries, files)
 }
 
-// decodeUTF8Sig is bytes.decode('utf-8-sig') (UnicodeDecodeError).
-func decodeUTF8Sig(content []byte) (string, error) {
+// fetchSource returns a source's text: inline content, the remote
+// declaration's validated cache or download, or an undeclared URL.
+func fetchSource(ctx context.Context, fetch fetchFunc, config *jsonx.Object, src source, name string) (string, error) {
+	if src.inline {
+		return src.content, nil
+	}
+	text, err := func() (string, error) {
+		declared, err := rulefetch.ResolveRemoteRuleSource(src.url, config, src.identity)
+		if err != nil {
+			return "", err
+		}
+		if declared == nil {
+			content, err := fetch(ctx, src.url, config, "")
+			return strings.ToValidUTF8(string(content), "�"), err
+		}
+		if format, err := convert.RulesetFormat(declared, config, ""); err != nil {
+			return "", err
+		} else if format == "mrs" {
+			return "", rulefetch.NewRemoteRuleMessage(mrsMessage)
+		}
+		content, stale, err := refresh.ReadRuleSource(ctx, declared, refresh.RuleOptions{Config: config,
+			Fetch: func(url string) (any, error) { return fetch(ctx, url, config, "") }})
+		if err != nil {
+			return "", err
+		}
+		if stale != nil {
+			archiveLogger.Warningf("MosDNS ZIP 规则“%s”更新失败，使用上一次有效缓存：%s", name, refresh.DescribeFailure(stale))
+		}
+		return decodeText(content)
+	}()
+	if err != nil {
+		return "", archiveErr("规则“" + name + "”下载失败：" + detail(err))
+	}
+	return text, nil
+}
+
+const mrsMessage = "OxiDNS/MosDNS 不支持 MRS 二进制规则，请使用该订阅的 Text 或 YAML 版本。"
+
+// decodeText decodes UTF-8 (a leading BOM is dropped).
+func decodeText(content []byte) (string, error) {
 	content = bytes.TrimPrefix(content, []byte("\xef\xbb\xbf"))
 	if !utf8.Valid(content) {
-		return "", pyErr("UnicodeDecodeError", "'utf-8' codec can't decode the rule content")
+		return "", &rulefetch.FetchError{Class: "UnicodeDecodeError", Message: "rule content is not valid UTF-8"}
 	}
 	return string(content), nil
 }
 
-// writeZip writes the archive like zipfile.ZipFile(..., ZIP_DEFLATED) with
-// writestr: deflated entries, mode 0600, the local time of writing.
+// checkReferences verifies that config.yaml is a mapping with a plugin
+// list and (unless skipped) that every plugin's args.files entry is packed.
+func checkReferences(yamlContent string, files map[string][]byte, skip bool) error {
+	document, err := yamlx.LoadWith(yamlContent, yamlx.LoadOptions{KeepNonStringKeys: true})
+	if err != nil {
+		return err
+	}
+	var plugins any = []any{}
+	switch d := document.(type) {
+	case *jsonx.Object:
+		plugins = d.GetOr("plugins", plugins)
+	case *yamlx.Mapping:
+		if value, ok := d.Get("plugins"); ok {
+			plugins = value
+		}
+	default:
+		return archiveErr("MosDNS 配置格式无效")
+	}
+	list, ok := plugins.([]any)
+	if !ok {
+		return archiveErr("MosDNS 配置格式无效")
+	}
+	if skip {
+		return nil
+	}
+	for _, plugin := range list {
+		object, ok := plugin.(*jsonx.Object)
+		if !ok {
+			return archiveErr("MosDNS 配置格式无效")
+		}
+		args, ok := object.Value("args").(*jsonx.Object)
+		if !ok {
+			continue
+		}
+		references, ok := args.GetOr("files", []any{}).([]any)
+		if !ok {
+			return archiveErr("MosDNS 文件引用必须为列表")
+		}
+		for _, reference := range references {
+			text, _ := reference.(string)
+			path, err := ArchivePath(text)
+			if err != nil {
+				return err
+			}
+			if _, packed := files[path]; !packed {
+				return archiveErr("MosDNS 配置引用了未打包的规则文件")
+			}
+		}
+	}
+	return nil
+}
+
 func writeZip(order []string, files map[string][]byte) ([]byte, error) {
 	var buffer bytes.Buffer
 	archive := zip.NewWriter(&buffer)
@@ -632,10 +585,10 @@ func writeZip(order []string, files map[string][]byte) ([]byte, error) {
 		header := &zip.FileHeader{Name: name, Method: zip.Deflate, Modified: now}
 		header.SetMode(0o600)
 		writer, err := archive.CreateHeader(header)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			_, err = writer.Write(files[name])
 		}
-		if _, err := writer.Write(files[name]); err != nil {
+		if err != nil {
 			return nil, err
 		}
 	}
