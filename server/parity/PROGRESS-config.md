@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 13 missing, 3 partial, 7 ported, 14 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13, C14, C15, C16, C17, C21). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 12 missing, 3 partial, 8 ported, 14 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13, C14, C15, C16, C17, C21). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -50,7 +50,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C22 | OxiDNS converter, native loader, references, match targets | 913 | ported | C05, C21 | – |
 | C23 | OxiDNS validation and constraints | 1542 | ported | C22 | – |
 | C24 | OxiDNS common settings | 1175 | ported | C23 | – |
-| C25 | OxiDNS common routing, DNS watchdog | 1286 | missing | C24 | – |
+| C25 | OxiDNS common routing, DNS watchdog | 1286 | ported | C24 | – |
 | C26 | OxiDNS common updates, device policy, editor | 1189 | missing | C25 | – |
 | C27 | rule DNS actions | 885 | missing | C26 | – |
 | C28 | MosDNS archive and routes | 838 | missing | C21, C15 | 15 (0 done) |
@@ -1185,21 +1185,43 @@ Commands:
 
 ## C25 — OxiDNS common routing, DNS watchdog
 
-**Status: `missing`** · prereqs: C24 · Go: internal/oxidns (new)
+**Status: `ported`** (not reviewed) · prereqs: C24 · Go: `internal/oxidns`
 
-Files:
-- `backend/common/oxidns_common_routing.py` (1192)
-- `backend/common/dns_watchdog.py` (94)
+Files → Go (`server/internal/oxidns/`):
+- `backend/common/oxidns_common_routing.py` (1192) → `routing.go` (+ C24's early `common_routing.go`: `Selectors`, `RoutingFields`, `replace_download_entries`; `_references` is now an exact rune scanner instead of a regex per call, plus `_words`/`_Mentions` = `mentions`). Exported: `ReadRouting`, `ApplyRouting(…, ApplyRoutingOptions{BeforeConfig, Notices})`, `MigrateDomainOnlyRouting` (returns the argument objects themselves when nothing is migrated, as Python), `RemoveRule`, `PlaceRoutingGroups`, `ReloadReferences`, `ResourceDownloads`, `ResourceReaders`, `ResourceIsRead`, `OwnedChains`, `RefreshRuleHelpers`, `PrefixEnd` (device policy C26). Internal: `_analyze` = `analyzeRouting` (state struct `routingState`; `full` false = Python's early-return dicts without groups/records), `_recognize`, `_catalog` = `buildCatalog`, `_observed_legacy_groups`, `_aliased_custom_state`, `_apply_aliased_custom`, `_validate_selections`, `_take_over`, `_settle`, `_own_helpers`, `_sync_updates`, `_uses_rule`, `_normalize_custom_matches`.
+- `backend/common/dns_watchdog.py` (94) → `watchdog.go`: `EnsureLocalDNSWatchdog` (errors `*convert.PyError{Class: "ValueError"}`), `WatchdogName`, `WatchdogRule()`. Rule is the one the Go Agent checks (`backend/agents/go-agent/routes/dns_watchdog.go`: exec `reject 3`, single match `qname full:configflow-watchdog.invalid`). For agents (deployment_bundle, rule_sync).
+- Early parts of other modules: `ruledns_routing.go` (C27 `rule_dns.py`: `Invalid` = `invalidRoute`, `GROUP_TAG_RE` (Unicode `\d`), `chain_features`, `_pinned`, `_source`, `parse_exec`, `pinned_action`, `default_route`, `probe_needed`, `policy_dns_routes` (uses `rules.RenderMembers`), `follow_route`, `NON_PROXY_POLICIES`); `nativeapply.go` (C29: `_MANAGED`, `_WRAPPERS`, `_rename`); `fnmatch.go` (CPython 3.11 `fnmatch.fnmatchcase`: `translate` ported literally incl. range chunks/empty-range removal, classes read like sre_parse).
+- `pending.go`: C24's `readRouting`, `ownedChains`, `applyRouting`, `resourceDownloads`, `refreshRuleHelpers` variables now default to the real functions (kept as variables for the C24 replay); C22's `migrateDomainOnlyRouting` stub removed. `migrate_domain_only_routing` calls C26 `finishRuleUpdates` (still pending in production until C26).
 
-Tests: `test_dns_watchdog_config.py` (8), `test_dns_watchdog_core.py` (1)
+Verification:
+- **Record & replay** `testdata/c25_record.py` (pytest plugin, reuses c24_record's collaborator wrapper) → `c25_recorded.jsonl.gz`, `c25_test.go` `TestC25Recorded`: every top-level call of read_routing, apply_routing (kwargs before_config/notices), migrate_domain_only_routing (+ returned-object identity), remove_rule, resource_downloads, resource_readers, resource_is_read, owned_chains, refresh_rule_helpers, `_prefix_end`, `_references`, ensure_local_dns_watchdog during the full suite (12552 passed). Rows also carry: YAML alias paths of the arguments (restored in Go), the arguments after the call when changed in place (checked), the C26 collaborators' answers (strict queue: prepare_editor 6, prepare_rule_update 6, finish_rule_updates 12) and classical_ip_lines answers by argument hash (477, via `SetClassicalIPLines`). **15376 distinct calls from 1033 tests in 48 files: 15376 identical, 0 differ, 0 pending, 0 unsupported** (_references 11817, read_routing 984, resource_downloads 701, migrate 613, owned_chains 563, apply_routing 246, resource_readers 122, resource_is_read 117, watchdog 107, refresh 63, _prefix_end 34, remove_rule 9).
+- **Random corpus** `testdata/gen_c25.py` → `c25_corpus.jsonl.gz`, `TestC25Corpus`: **18333 rows, 0 differ** — 1500 routing graphs (random rule spaces: every DNS rule type + unconvertible, domain/ipcidr/classical sets with content/URL, disabled/duplicate/non-string ids, Unicode, policies + proxy groups incl. follow chains; templates with selections, rule actions, custom matches, dynamic domains, rule updates via prepare_editor; then mutations: legacy IP groups with/without probe, hand-edited pinned chains/blackhole, renamed/shared/extended providers, reordered/broken sequence_main, YAML aliases, includes, managed renames with renamed_plugins, parked/follow state, odd download entries + glob readers) × read / 2841 apply (random changes, before configs, notices) / migrate / remove_rule / downloads / owned_chains / refresh; 600 default_forward-only cases on locked IP routing; 2000 watchdog documents (all server kinds, `${ENV}` entries, ambiguous tags, wrapper name collisions, aliases); 4000 glob patterns (resource_is_read); 3000 `_references` tags (Unicode digits/marks, `$`); 1929 `_prefix_end`. Errors exercised: OxidnsSettingsError 1706, ValueError 1640, AttributeError 126, TypeError 10, KeyError 3. Go statement coverage from both: ≥ 88 % for every C25 function except Python-crash glue and `mentions.positions`' non-word branch (29 %); exported wrappers are thin `catch` shells.
+- C22/C23/C24 re-run: `TestRecordedPythonTests` 0 differ, pending 1054 → **607** (C25 0; C26: prepare_native_rule_updates 583, patch_document 22, finish_rule_updates 2 — rows that stopped at C25 now run until C26; routers rows identical since d60bd076 registers the real hook in tests); `TestCorpus` 0 differ, pending 65 → **33** (C26 only); `TestC23Recorded` 0 differ (422 pending C26); `TestC23Corpus`, `TestC24Recorded` (822), `TestC24Corpus` (3746) 0 differ.
 
-Routes: none.
+Python test files (rule 4 coverage):
+- `test_dns_watchdog_config.py` (8): replay (ensure_local_dns_watchdog rows of this file, identical) + corpus.
+- `test_dns_watchdog_core.py` (1): real OxiDNS/MosDNS core test (skipped without a core binary); its input is ensure_local_dns_watchdog, replayed — not applicable otherwise.
+- `test_oxidns_common_routing.py` (54): replay (all its C25 calls, identical).
+- Also replayed (C25 calls only): the other 45 files the recorder lists (OxiDNS common/lifecycle/editor/native apply/restore/cleanup/device policy/rule DNS/rule sync projection/deployment bundle/gateway onboarding/rules routes…). Nothing hand-ported (no concurrency/timing/process behaviour).
 
-Evidence: No Go package; no route registered.
+Routes: none (`remove_rule` is used by `routes/rules.py`, C32). Rule 4b not applicable (no context, no I/O).
 
-Missing / deferred: Everything in the files below.
+Decisions / differences from Python:
+- `capabilities` key order: Python builds it from a frozenset (hash-seed dependent); Go uses a fixed order (SELECTORS, RULE_DNS_FIELDS, aggregate_rules, default_forward, custom_matches, custom_match_position). Only reaches jsonify (sorted). Replay compares it order-insensitively.
+- `fnmatch` "bad character range" (`re.error`) is raised with class `error` but a shorter message (no case in suite/corpus; translate removes empty ranges).
+- `place_routing_groups`' `old` groups: Go takes tag/provider type/args (`PlaceRoutingGroups` reads them from objects); recognized groups with `Invalid` routes never reach it (they lock rebuilding first).
+- For the agents porter: `rule_sync_projection.py` uses `_analyze` and `_references`; `references`/`analyzeRouting` are unexported — export them when porting it (state struct is `routingState`).
 
-Notes for porter: `dns_watchdog` is also used by agents (deployment_bundle, rule_sync): export `EnsureLocalDNSWatchdog` etc.
+Pitfalls: corpus generation must run with `--back` in its own `rt` call (check row count locally). The C25 replay installs `SetClassicalIPLines` per row and restores the previous hook (the routers' test hook).
+
+Commits: bf844578 (code), 041cdcba (record & replay), 02d766d2 (corpus), + this PROGRESS commit.
+
+Left: nothing for C25 itself. C26 replaces `prepareEditor`/`prepareRuleUpdate`/`finishRuleUpdates`; then re-run C22–C25 replays (C25 rows that consume recorded C26 answers stay valid). Reviewer: `_recognize` branch order (early returns vs. full state), `_settle` follow/parked bookkeeping, `_own_helpers` keep-closure and insertion index, `_sync_updates` known paths + readers, `pinnedChain` shape checks (bool vs int via `sameValue`), `policyDNSRoutes` recursion/memo.
+
+Commands:
+- tests: `rt -- bash -lc 'cd server && gofmt -l internal/oxidns; go vet ./internal/oxidns/ && go test -count=1 ./internal/oxidns/'` (last: ok 41.6 s)
+- C25 replay: `rt --back server/internal/oxidns/testdata/c25_recorded.jsonl.gz -- bash -lc 'rm -rf /tmp/c25rec; C25_RECORD_DIR=/tmp/c25rec PYTHONPATH=.:server/internal/oxidns/testdata ~/cf-test/.venv/bin/python -m pytest backend -q -n 6 --dist=worksteal -p c25_record -p no:cacheprovider; PYTHONPATH=.:server/internal/oxidns/testdata ~/cf-test/.venv/bin/python server/internal/oxidns/testdata/c25_record.py merge /tmp/c25rec'` (~3.5 min; 15376 rows)
+- C25 corpus: `rt --back server/internal/oxidns/testdata/c25_corpus.jsonl.gz -- bash -lc 'PYTHONPATH=.:server/internal/oxidns/testdata ~/cf-test/.venv/bin/python -W ignore server/internal/oxidns/testdata/gen_c25.py'` (~2 min, 18333 rows; Python's set order can vary the row set slightly between runs)
 
 ## C26 — OxiDNS common updates, device policy, editor
 
