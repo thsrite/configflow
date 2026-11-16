@@ -122,6 +122,10 @@ def main():
     groups.update(rule_io)
     from cases.generator_shapes import GROUPS as generator_shapes
     groups.update(generator_shapes)
+    from cases.generator_rules import GROUPS as generator_rules
+    groups.update(generator_rules)
+    from cases.rule_syntax import GROUPS as rule_syntax
+    groups.update(rule_syntax)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

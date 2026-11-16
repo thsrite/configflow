@@ -570,3 +570,19 @@ request_variants=5933 named_matrix_cases=3320（S480 F2387 B453），H去重192�
 ```
 
 全部新增generator路由当前Go未接通，未计比较通过。G06–G16及各族更多交叉分支继续，未做最终全量。
+
+## 批次 31：G06完整规则词表与K46错误分支
+
+- G06三份公开preview（Mihomo/Surge/Loon），每份包含全部37种Python RULE_TYPES，提供合法域名/IDNA、双栈CIDR、端口与UID/DSCP范围、逻辑嵌套、regex逗号负载、provider/sub-rule引用和MATCH UDP/NTP参数。词表从允许的Python源AST读取，仅检查配方没有漏掉新类型；没有读取或调用Go业务。Mihomo逐类型确认都在输出，其他客户端保留其映射/忽略注释及规则顺序，再完整结构比较；这是3个请求，不虚计为111个请求。
+- 34个HTTP错误输入到达25个K46 helper分支（H918–943，除H921），通过R183的同一normalize_rule_config调用链校验精确消息，失败后全库/revision不变。包含真实escaped lone surrogate触发IDNA UnicodeError、IPv4/6缺prefix、前导零prefix/zone、范围组数/长度/逆序、regex过深RecursionError、logic深度34、正负不配平、NOT双子项、MATCH/SUB-RULE禁嵌、换行与错型等。
+- H921的空/非文本CIDR在该REST调用链先被单行文本/空值guard拦截，没有伪造为已到达；仍留待其他允许的公共驱动或标不可达审计。所有新增路由仍Go未接通。
+
+```text
+.63 run.py --groups generator-rule-types,rule-syntax-guards
+current go-unimplemented=37 design_errors=[] seconds=6.69
+cumulative compared=1455 go-unimplemented=4445 dependency=28 different=41 O12-separate=1
+request_variants=5970 named_matrix_cases=3320（S480 F2387 B453），H去重217，G去重6
+41 self-checks + end-to-end wrong-Go-response check OK
+```
+
+G07–G16和其他helper、业务路由、长流程继续，未做最终全量。
