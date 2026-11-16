@@ -2,6 +2,7 @@ package convert
 
 import (
 	"fmt"
+	"net/netip"
 	"strings"
 
 	"configflow/internal/jsonx"
@@ -242,8 +243,8 @@ func (s *orderedSet) repr() string { return pySetRepr(s.keys, s.values) }
 // value percent-encoded (a list value repeats the name). The rest of the URL
 // is kept as written: the URLs are the panel's own (a rule name may hold
 // "%" or Chinese), so nothing else needs parsing. A server domain whose host
-// has unbalanced IPv6 brackets ("https://[fd00::1") is refused instead of
-// producing URLs no client can use.
+// has an invalid bracketed IPv6 host is refused instead of producing URLs no
+// client can use. Only the authority is inspected: a rule path is not a URL.
 func appendURLQuery(url string, params [][2]any) string {
 	rest, fragment, _ := strings.Cut(url, "#")
 	base, query, _ := strings.Cut(rest, "?")
@@ -251,6 +252,23 @@ func appendURLQuery(url string, params [][2]any) string {
 		authority, _, _ := strings.Cut(after, "/")
 		if strings.Contains(authority, "[") != strings.Contains(authority, "]") {
 			raise(pyError("ValueError", "Invalid IPv6 URL"))
+		}
+		host := authority
+		if at := strings.LastIndexByte(host, '@'); at >= 0 {
+			host = host[at+1:]
+		}
+		if start := strings.IndexByte(host, '['); start >= 0 {
+			literal, _, _ := strings.Cut(host[start+1:], "]")
+			// net/url handles escaped IPv6 zone IDs; netip also ensures that
+			// a bracketed IPv4 address or arbitrary name cannot become a URL.
+			parsed, err := weburl.Parse("http://[" + literal + "]")
+			if err != nil {
+				raise(pyError("ValueError", "Invalid IPv6 URL"))
+			}
+			address, err := netip.ParseAddr(parsed.Hostname())
+			if err != nil || !address.Is6() {
+				raise(pyError("ValueError", "Invalid IPv6 URL"))
+			}
 		}
 	}
 	var items []string
