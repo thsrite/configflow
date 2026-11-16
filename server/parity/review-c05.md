@@ -53,6 +53,35 @@ repository、response hook。业务 provider handler 属于 C30，本复核不�
 
 两份 `review_c05.coverage.json` 仅记录静态源码函数/行号；行命中用于补漏，不代替结构比较。
 
+## 生产快照覆盖核对
+
+基线与最终验收使用 `server/scripts/proddiff.sh` 的完整框架；另外用
+`httpx/testdata/review_c05_snapshot.py` 补充 C05 的静态分支 trace。这个辅助程序复用真实
+route registration、profile hooks、auth gate 和 Python normalizer，在 `.32` 的只读
+snapshot mount、仅 loopback namespace 中复制出临时 DATA_DIR；不启动后台任务，
+不导出 response、配置或异常文本。它不是对 proddiff 全部请求的 trace。
+
+[导出的静态结果](review-c05-production.coverage.json)：两个保存的 OxiDNS profile 均为
+native，分别通过严格和草稿 normalize；global nodes、query rules、query settings、scoped
+settings、scoped OxiDNS config 各 2 次请求全部 HTTP 200。
+
+生产生成/proddiff 覆盖 saved native 成功、真实 rule-DNS、URL appending、显式/路径空间、
+全局分类与 profile_id query。辅助 trace 显示 `checkTemplate` 对应的 Python template
+校验完全未进入；`integer` 无命中。proddiff 的请求使用 JWT，query 固定为 profile_id，
+因此没有覆盖无 JWT provider、profile/header 的优先级、fallback、无效/空/缺失空间、
+所有拒绝分支，也不可能用两份保存文档覆盖完整 template 类型/条件空间。
+这些缺口由前述合成矩阵补齐，不以生产“零新差异”代替边界验收。
+
+辅助 trace 命令（`.32`，仅取回静态 schema）：
+
+```sh
+rt --back server/parity/review-c05-production.coverage.json -- bash -lc 'snapshot_path="$HOME/cf-prod-snapshot/20261116/data"; unshare --user --map-root-user --net --mount --pid --fork --kill-child --mount-proc bash -c '\''set -euo pipefail; ip link set lo up; mount --bind "$1" "$1"; mount -o remount,bind,ro "$1"; PYTHONPATH="$PWD" ~/cf-test/.venv/bin/python server/internal/httpx/testdata/review_c05_snapshot.py "$1"'\'' c05-snapshot "$snapshot_path"'
+```
+
+最后输出的 counts：`saved-mode-native=2`、`normalize-False-ok=2`、`normalize-True-ok=2`、
+`global-nodes-200=2`、`query-rules-200=2`、`query-settings-200=2`、`scoped-settings-200=2`、
+`scoped-config-200=2`；exit 0。
+
 ## 接受差异、缓存/日志、结构债
 
 - 按协调者明确决定，不实现 IPvFuture；即使 Python 的 urlsplit 接受，方括号内也必须是
@@ -85,6 +114,22 @@ RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go test -count=1 -run
 最后几行：`ok configflow/internal/httpx 1.296s`、`ok configflow/internal/oxidns 2.213s`、
 `ok configflow/internal/convert 0.005s`；vet 无输出，exit 0。
 
+`.63` 包级完整测试：
+
+```sh
+RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go test -count=1 -timeout=30m ./internal/repo/ ./internal/httpx/ ./internal/auth/ ./internal/oxidns/ ./internal/convert/'
+```
+
+输出：repo `22.730s`、httpx `4.196s`、auth `0.897s`、oxidns `42.741s`、convert `7.135s`，
+全部 `ok`，exit 0。
+
+`.63` mutation 验证（仅修改远端临时副本，finally 恢复源码）：删除新 netip 校验时，
+`TestC05ReviewAppendURLQueryBracketedHosts` 的 name/IPv4/IPvFuture 用例按预期失败；
+把 unscoped provider endpoint 塞进 JWT 白名单时，
+`TestC05ReviewProfileHTTPReferences/subscriptions.get_subscription_proxies` 多条用例以
+`status 200, want 401` 失败。源码恢复后，全部 C05 新用例再次通过（httpx `1.166s`、
+oxidns `2.236s`、convert `0.005s`）。未扩大任何 comparator waiver。
+
 初始 `.32` `rt -- server/scripts/proddiff.sh`：exit 0，status/json-leaf/yaml-leaf/text-line
 自检 PASS，`new=0 stale=0 coverage_regressions=0`，保留 5 个既有全局差异。
-最终全量、生产覆盖说明、mutation 检查及 rebase 状态待补。
+最终全量及 rebase 状态待补。
