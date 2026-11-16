@@ -131,18 +131,19 @@ func DescribeFailure(err error) string {
 
 // timedelta(seconds=…) bound and the datetime range.
 var (
-	maxTimedeltaSeconds = big.NewInt(999999999*86400 + 86399)
-	minDatetimeSeconds  = time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
-	maxDatetimeSeconds  = time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC).Unix()
+	maxTimedeltaDays   = big.NewInt(999999999)
+	minDatetimeSeconds = time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+	maxDatetimeSeconds = time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC).Unix()
 )
 
 // addSeconds is `t + timedelta(seconds=delay)` for an aware datetime, with
 // Python's OverflowErrors (timedelta magnitude, result outside years
 // 1–9999 in t's own offset).
 func addSeconds(t time.Time, delay *big.Int) (time.Time, error) {
-	if new(big.Int).Abs(delay).Cmp(maxTimedeltaSeconds) > 0 {
-		return time.Time{}, pyErr("OverflowError", "days=%s; must have magnitude <= 999999999",
-			new(big.Int).Div(delay, big.NewInt(86400)).String())
+	// timedelta(seconds=s) floors s / 86400 into days (|days| <= 999999999).
+	days := new(big.Int).Div(delay, big.NewInt(86400)) // Euclidean = floor for a positive divisor
+	if new(big.Int).Abs(days).Cmp(maxTimedeltaDays) > 0 {
+		return time.Time{}, pyErr("OverflowError", "days=%s; must have magnitude <= 999999999", days.String())
 	}
 	seconds := delay.Int64()
 	_, offset := t.Zone()
@@ -219,9 +220,13 @@ func NextRunAt(entry any, interval jsonx.Number, baseline any, now *time.Time) (
 		if err != nil {
 			return nil, err
 		}
-		exponent := int64(10)
-		if failures.Cmp(big.NewInt(11)) < 0 {
-			exponent = max(1, failures.Int64()) - 1
+		// max(1, failures) - 1, capped at 10 (failures may be any int).
+		exponent := int64(0)
+		switch {
+		case failures.Cmp(big.NewInt(11)) >= 0:
+			exponent = 10
+		case failures.Sign() > 0:
+			exponent = failures.Int64() - 1
 		}
 		retry := big.NewInt(RetrySeconds << exponent)
 		if retry.Cmp(delay) < 0 {
@@ -335,22 +340,40 @@ func IsLibrarySource(ctx context.Context, rule *jsonx.Object) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	library, err := objectsOf(shared.GetOr("rule_library", []any{}))
-	if err != nil {
+	stored, err := nextObject(shared.GetOr("rule_library", []any{}), func(item *jsonx.Object) bool {
+		return jsonx.Equal(item.Value("id"), rule.Value("id"))
+	})
+	if err != nil || stored == nil {
 		return false, err
 	}
-	for _, stored := range library {
-		if !jsonx.Equal(stored.Value("id"), rule.Value("id")) {
-			continue
+	for _, key := range []string{"url", "behavior", "format", "source_type"} {
+		if !jsonx.Equal(stored.Value(key), rule.Value(key)) {
+			return false, nil
 		}
-		for _, key := range []string{"url", "behavior", "format", "source_type"} {
-			if !jsonx.Equal(stored.Value(key), rule.Value(key)) {
-				return false, nil
-			}
-		}
-		return true, nil
 	}
-	return false, nil
+	return true, nil
+}
+
+// nextObject is `next((item for item in value if match(item)), None)`
+// where match calls item.get: items are visited in order and the search
+// stops at the first match, so an item that is not an object fails only
+// when it is reached (AttributeError), like objectsOf otherwise.
+func nextObject(value any, match func(*jsonx.Object) bool) (*jsonx.Object, error) {
+	list, ok := value.([]any)
+	if !ok {
+		_, err := objectsOf(value)
+		return nil, err
+	}
+	for _, item := range list {
+		object, ok := item.(*jsonx.Object)
+		if !ok {
+			return nil, attributeGet(item)
+		}
+		if match(object) {
+			return object, nil
+		}
+	}
+	return nil, nil
 }
 
 // objectsOf iterates a list of objects read with .get(key, []); an item
@@ -417,6 +440,7 @@ func elapsedMs(start float64) float64 { return (currentEnv().Clock.Monotonic() -
 // result, cache). A failure keeps the previous nodes and is returned after
 // it was recorded and logged.
 func RefreshSubscription(ctx context.Context, sub *jsonx.Object, trigger string) ([]any, *substore.SubscriptionResult, *jsonx.Object, error) {
+	ctx = detached(ctx)
 	id, err := requiredString(sub, "id")
 	if err != nil {
 		return nil, nil, nil, err
@@ -496,6 +520,7 @@ func ruleCacheTimeText(ctx context.Context, rule *jsonx.Object) (string, error) 
 // when validated previous bytes were served (AllowStale); a failure is
 // recorded (and logged for scheduled runs) and returned.
 func RefreshRuleSource(ctx context.Context, rule *jsonx.Object, trigger string, opts RuleOptions) ([]byte, error, error) {
+	ctx = detached(ctx)
 	id, present := rule.Get("id")
 	if !present {
 		return nil, nil, pyErr("KeyError", "'id'")
@@ -554,6 +579,7 @@ func RefreshRuleSource(ctx context.Context, rule *jsonx.Object, trigger string, 
 // without a valid cache yet is downloaded now. Declarations outside the
 // library have no task and still refresh on each read.
 func ReadRuleSource(ctx context.Context, rule *jsonx.Object, opts RuleOptions) ([]byte, error, error) {
+	ctx = detached(ctx)
 	opts.AllowStale = true
 	library, err := IsLibrarySource(ctx, rule)
 	if err != nil {
@@ -743,20 +769,19 @@ func FindResource(ctx context.Context, kind, resourceID string) (*jsonx.Object, 
 	if kind == "subscription" {
 		list = "subscriptions"
 	}
-	items, err := objectsOf(shared.GetOr(list, []any{}))
+	item, err := nextObject(shared.GetOr(list, []any{}), func(item *jsonx.Object) bool {
+		return jsonx.Equal(item.Value("id"), resourceID)
+	})
 	if err != nil {
 		return nil, err
 	}
-	for _, item := range items {
-		if !jsonx.Equal(item.Value("id"), resourceID) {
-			continue
-		}
-		if !jsonx.Truthy(item.Value("url")) || !isURLSource(item) {
-			return nil, pyErr("ValueError", "这个来源没有订阅地址，不需要更新")
-		}
-		return item, nil
+	if item == nil {
+		return nil, &LookupError{Message: "任务对应的来源已不存在，请刷新后重试"}
 	}
-	return nil, &LookupError{Message: "任务对应的来源已不存在，请刷新后重试"}
+	if !jsonx.Truthy(item.Value("url")) || !isURLSource(item) {
+		return nil, pyErr("ValueError", "这个来源没有订阅地址，不需要更新")
+	}
+	return item, nil
 }
 
 // RunNow is run_now(kind, resource_id): start one refresh in the

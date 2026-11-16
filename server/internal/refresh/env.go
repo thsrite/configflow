@@ -83,3 +83,9 @@ func SetEnv(e *Env) (restore func()) {
 		envMu.Unlock()
 	}
 }
+
+// detached is the context of work a request starts but does not own: a
+// request whose client went away (cancelled context) still finishes the
+// download and every record, like Python's request thread, which is never
+// interrupted. Values (repository, scope, held locks) are kept.
+func detached(ctx context.Context) context.Context { return context.WithoutCancel(ctx) }

@@ -16,6 +16,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/pystr"
 	"configflow/internal/repo"
 	"configflow/internal/substore"
 )
@@ -58,7 +59,7 @@ func ParseUserinfo(header string) (*jsonx.Object, error) { return substore.Parse
 // too (requests streamed it and closed without reading).
 func FetchUserinfo(ctx context.Context, url any) (*jsonx.Object, error) {
 	text, ok := url.(string)
-	lower := strings.ToLower(text)
+	lower := pystr.Lower(text)
 	if !ok || !(strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")) {
 		return nil, nil
 	}
@@ -81,6 +82,7 @@ func FetchUserinfo(ctx context.Context, url any) (*jsonx.Object, error) {
 // LoadHealth is load_health(): the stored records, {} when the file is
 // missing, unreadable or not an object.
 func LoadHealth(ctx context.Context) (*jsonx.Object, error) {
+	ctx = detached(ctx)
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
@@ -146,6 +148,7 @@ func pyList(value any) ([]any, error) {
 // update the traffic. It returns the subscription's latest health entry
 // ({} without an id).
 func RecordFetch(ctx context.Context, subID string, rec FetchRecord) (*jsonx.Object, error) {
+	ctx = detached(ctx)
 	if subID == "" {
 		return jsonx.NewObject(), nil
 	}
@@ -191,6 +194,7 @@ func RecordFetch(ctx context.Context, subID string, rec FetchRecord) (*jsonx.Obj
 // Forget is forget(sub_id): drop the subscription's records (saved only
 // when there was a non-null entry).
 func Forget(ctx context.Context, subID string) error {
+	ctx = detached(ctx)
 	data, err := LoadHealth(ctx)
 	if err != nil {
 		return err

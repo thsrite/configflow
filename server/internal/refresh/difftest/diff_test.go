@@ -113,11 +113,16 @@ func seed(t *testing.T, dir, base string) {
 			jsonx.Obj("id", "s-blocked", "name", "Blocked", "url", base+"/blocked", "enabled", true, "interval", jsonx.Int(3600)),
 			jsonx.Obj("id", "s-off", "name", "Off", "url", base+"/sub?off", "enabled", false),
 			jsonx.Obj("id", "s-nourl", "name", "No URL", "url", ""),
+			// Review C15: fixed receipts far in the future (never due),
+			// with failure counts beyond int64; next_run_at compared unmasked.
+			jsonx.Obj("id", "s-future", "name", "Future", "url", base+"/sub?future", "enabled", true, "interval", jsonx.Int(86400)),
 		))
 		shared.Set("rule_library", append(shared.GetList("rule_library"),
 			jsonx.Obj("id", "r-ok", "name", "Good", "source_type", "url", "url", base+"/list.txt", "behavior", "domain", "format", "text"),
 			jsonx.Obj("id", "r-bad", "name", "Bad", "source_type", "url", "url", base+"/bad.txt", "behavior", "domain", "format", "text"),
 			jsonx.Obj("id", "r-down", "name", "Down", "source_type", "url", "url", base+"/down.txt", "behavior", "domain",
+				"format", "text", "update_interval", jsonx.Int(3600)),
+			jsonx.Obj("id", "r-future", "name", "Future", "source_type", "url", "url", base+"/list.txt?future", "behavior", "domain",
 				"format", "text", "update_interval", jsonx.Int(3600)),
 			jsonx.Obj("id", "r-content", "name", "Inline", "source_type", "content", "content", "+.a.test", "behavior", "domain", "format", "text"),
 		))
@@ -138,6 +143,12 @@ func seed(t *testing.T, dir, base string) {
 	// task_status.record int()s them — a C02 finding, see PROGRESS C15.)
 	statuses.Set("subscription:s-blocked", jsonx.Obj("last_run_at", "2026-10-31T08:00:00+08:00", "last_status", "failed",
 		"consecutive_failures", jsonx.Int(2), "run_count", jsonx.Int(4), "failure_count", jsonx.Int(2)))
+	huge, _ := jsonx.ParseNumber("-18446744073709551611")
+	statuses.Set("subscription:s-future", jsonx.Obj("last_run_at", "2099-01-01T00:00:00+05:30", "last_status", "failed",
+		"consecutive_failures", huge, "run_count", jsonx.Int(3), "failure_count", jsonx.Int(3)))
+	big, _ := jsonx.ParseNumber("18446744073709551617")
+	statuses.Set("rule_source:r-future", jsonx.Obj("last_run_at", "2099-01-01T00:00:00-03:00", "last_status", "failed",
+		"consecutive_failures", big, "run_count", jsonx.Int(1), "failure_count", jsonx.Int(1)))
 	data, _ := jsonx.Compact(statuses)
 	os.WriteFile(filepath.Join(dir, "task-status.json"), data, 0o644)
 }
@@ -461,6 +472,25 @@ func TestDifferentialTaskRoutes(t *testing.T) {
 			t.Errorf("DIFF %s %s %s:\n  python %d %s\n  go     %d %s", r.name, r.method, r.path, ps, pm, gs, gm)
 		} else {
 			t.Logf("same %-28s %s %s → %d", r.name, r.method, r.path, ps)
+		}
+	}
+	// Review C15: the fixed future receipts give exact next_run_at values.
+	_, pyList, _ := send(t, pyBase, pyToken, request{name: "list fixed", method: "GET", path: "/api/tasks"})
+	_, goList, _ := send(t, goBase, goToken, request{name: "list fixed", method: "GET", path: "/api/tasks"})
+	nextRun := func(list any, key string) any {
+		for _, row := range list.(*jsonx.Object).GetList("tasks") {
+			if row.(*jsonx.Object).Value("key") == key {
+				return row.(*jsonx.Object).Value("next_run_at")
+			}
+		}
+		return "<missing>"
+	}
+	for key, want := range map[string]string{"subscription:s-future": "2099-01-01T00:05:00+05:30",
+		"rule_source:r-future": "2099-01-01T01:00:00-03:00"} {
+		p, g := nextRun(pyList, key), nextRun(goList, key)
+		if p != want || g != want {
+			failed++
+			t.Errorf("DIFF next_run_at %s: python %v, go %v, want %s", key, p, g, want)
 		}
 	}
 	pyFiles, goFiles := files(t, pyDir), files(t, goDir)

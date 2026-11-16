@@ -96,6 +96,7 @@ func DownloadCachePath(url string) string {
 // the downloaded text with its time and traffic in the transport cache and
 // return the result with its fetched_at fixed.
 func RememberSourceDownload(ctx context.Context, sub *jsonx.Object, result *substore.SubscriptionResult) (*substore.SubscriptionResult, error) {
+	ctx = detached(ctx)
 	result = newResult(result.Text, result.Source, result.Traffic, result.FetchedAt)
 	url, err := requiredString(sub, "url")
 	if err != nil {
@@ -125,6 +126,7 @@ func errNoNodes() error {
 // parse and store a subscription; it returns (nodes, result, cache). A
 // failure returns before anything is stored, so the previous nodes stay.
 func DownloadSubscriptionNodes(ctx context.Context, sub *jsonx.Object) ([]any, *substore.SubscriptionResult, *jsonx.Object, error) {
+	ctx = detached(ctx)
 	id, err := requiredString(sub, "id")
 	if err != nil {
 		return nil, nil, nil, err
@@ -161,8 +163,10 @@ func DownloadSubscriptionNodes(ctx context.Context, sub *jsonx.Object) ([]any, *
 		node := item.(*jsonx.Object)
 		node.Set("subscription_id", id)
 		node.Set("subscription_name", name)
+		// setdefault's default is evaluated for every node (uuid4 each time).
+		generated := "node_" + e.RandomHex()
 		if !node.Has("id") {
-			node.Set("id", "node_"+e.RandomHex())
+			node.Set("id", generated)
 		}
 	}
 	metadata, err := SourceCacheMetadata(sub, result)
@@ -201,6 +205,7 @@ func cacheMetadataURL(cache *jsonx.Object) (any, error) {
 // Returned cached content still goes through each consumer's filtering and
 // validation; a poll never rewrites a timestamp.
 func FetchSubscriptionSource(ctx context.Context, sub *jsonx.Object, fetch SourceFetch) (*substore.SubscriptionResult, error) {
+	ctx = detached(ctx)
 	interval, err := ValidateRefreshInterval(sub.GetOr("interval", jsonx.Int(DefaultSourceInterval)), "")
 	if err != nil {
 		return nil, &rules.StrategyReferenceError{Message: err.Error()}

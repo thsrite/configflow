@@ -626,6 +626,117 @@
 "fn": "next_run_at",
 "input": {
 "entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
 "last_run_at": "2026-10-24T08:00:00+08:00",
 "last_status": "success",
 "consecutive_failures": 3
@@ -954,6 +1065,117 @@
 "baseline": null
 },
 "output": "2026-10-24T08:06:40+08:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T08:00:00+08:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T08:00:00+08:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T08:00:00+08:00"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T08:00:00+08:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T08:00:00+08:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T08:00:00+08:00"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T08:00:00+08:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T08:00:00+08:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T08:00:00+08:00"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
 },
 {
 "fn": "next_run_at",
@@ -1292,6 +1514,117 @@
 "fn": "next_run_at",
 "input": {
 "entry": {
+"last_run_at": "2026-10-24T00:00:00.123456",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00.123456",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00.123456"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00.123456",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00.123456",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00.123456"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00.123456",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00.123456",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00.123456"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
 "last_run_at": "2026-03-29T01:30:00+01:00",
 "last_status": "success",
 "consecutive_failures": 3
@@ -1625,6 +1958,117 @@
 "fn": "next_run_at",
 "input": {
 "entry": {
+"last_run_at": "2026-03-29T01:30:00+01:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-03-29T01:30:00+01:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-03-29T01:30:00+01:00"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-03-29T01:30:00+01:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-03-29T01:30:00+01:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-03-29T01:30:00+01:00"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-03-29T01:30:00+01:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-03-29T01:30:00+01:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-03-29T01:30:00+01:00"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
 "last_run_at": "9999-12-31T23:00:00+00:00",
 "last_status": "success",
 "consecutive_failures": 3
@@ -1953,6 +2397,117 @@
 "baseline": null
 },
 "output": "9999-12-31T23:06:40+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "9999-12-31T23:00:00+00:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "9999-12-31T23:00:00+00:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "9999-12-31T23:00:00+00:00"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "9999-12-31T23:00:00+00:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "9999-12-31T23:00:00+00:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "9999-12-31T23:00:00+00:00"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "9999-12-31T23:00:00+00:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "9999-12-31T23:00:00+00:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "9999-12-31T23:00:00+00:00"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
 },
 {
 "fn": "next_run_at",
@@ -2291,6 +2846,117 @@
 "fn": "next_run_at",
 "input": {
 "entry": {
+"last_run_at": "0001-01-01T00:30:00+01:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:30:00+01:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:30:00+01:00"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:30:00+01:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:30:00+01:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:30:00+01:00"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:30:00+01:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:30:00+01:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:30:00+01:00"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
 "last_run_at": "0001-01-01T00:00:00Z",
 "last_status": "success",
 "consecutive_failures": 3
@@ -2619,6 +3285,117 @@
 "baseline": null
 },
 "output": "0001-01-01T00:06:40+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:00:00Z",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:00:00Z"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:00:00Z",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:00:00Z"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:00:00Z",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "0001-01-01T00:00:00Z"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
 },
 {
 "fn": "next_run_at",
@@ -2957,6 +3734,117 @@
 "fn": "next_run_at",
 "input": {
 "entry": {
+"last_run_at": "2026-10-24",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
 "last_run_at": "2026-W43-1T12:00",
 "last_status": "success",
 "consecutive_failures": 3
@@ -3290,6 +4178,117 @@
 "fn": "next_run_at",
 "input": {
 "entry": {
+"last_run_at": "2026-W43-1T12:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
 "last_run_at": "bad",
 "last_status": "success",
 "consecutive_failures": 3
@@ -3615,6 +4614,117 @@
 "last_run_at": "bad"
 },
 "interval": 400,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "bad",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "bad",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "bad"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "bad",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "bad",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "bad"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "bad",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "bad",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "bad"
+},
+"interval": -1000000000000000000000000000000,
 "baseline": null
 },
 "output": "2026-11-01T00:00:00+00:00"
@@ -3956,6 +5066,117 @@
 "fn": "next_run_at",
 "input": {
 "entry": {
+"last_run_at": "",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": ""
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": ""
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": ""
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
 "last_run_at": null,
 "last_status": "success",
 "consecutive_failures": 3
@@ -4281,6 +5502,117 @@
 "last_run_at": null
 },
 "interval": 400,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": null,
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": null,
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": null
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": null,
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": null,
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": null
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": null,
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": null,
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": null
+},
+"interval": -1000000000000000000000000000000,
 "baseline": null
 },
 "output": "2026-11-01T00:00:00+00:00"
@@ -4622,6 +5954,117 @@
 "fn": "next_run_at",
 "input": {
 "entry": {
+"last_run_at": 5,
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": 5,
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": 5
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": 5,
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": 5,
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": 5
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": 5,
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": 5,
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": 5
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
 "last_run_at": "２０２６-10-24T00:00:00",
 "last_status": "success",
 "consecutive_failures": 3
@@ -4947,6 +6390,117 @@
 "last_run_at": "２０２６-10-24T00:00:00"
 },
 "interval": 400,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "２０２６-10-24T00:00:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "２０２６-10-24T00:00:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "２０２６-10-24T00:00:00"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "２０２６-10-24T00:00:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "２０２６-10-24T00:00:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "２０２６-10-24T00:00:00"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "２０２６-10-24T00:00:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "２０２６-10-24T00:00:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "２０２６-10-24T00:00:00"
+},
+"interval": -1000000000000000000000000000000,
 "baseline": null
 },
 "output": "2026-11-01T00:00:00+00:00"
@@ -5288,6 +6842,117 @@
 "fn": "next_run_at",
 "input": {
 "entry": {
+"last_run_at": "2026-10-24T00:00:00-05:30",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00-05:30",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00-05:30"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00-05:30",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00-05:30",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00-05:30"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00-05:30",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00-05:30",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00-05:30"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
 "last_run_at": "2026-10-24T00:00:00ZZ",
 "last_status": "success",
 "consecutive_failures": 3
@@ -5613,6 +7278,117 @@
 "last_run_at": "2026-10-24T00:00:00ZZ"
 },
 "interval": 400,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00ZZ",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00ZZ",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00ZZ"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00ZZ",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00ZZ",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00ZZ"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00ZZ",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00ZZ",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-11-01T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00ZZ"
+},
+"interval": -1000000000000000000000000000000,
 "baseline": null
 },
 "output": "2026-11-01T00:00:00+00:00"
@@ -5954,6 +7730,117 @@
 "fn": "next_run_at",
 "input": {
 "entry": {
+"last_run_at": "2026-W43-1T12:00+02:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00+02:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00+02:00"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00+02:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00+02:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00+02:00"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00+02:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00+02:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00+02:00"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
 "last_run_at": "2026-W43-1T12:00",
 "last_status": "success",
 "consecutive_failures": 3
@@ -6282,6 +8169,117 @@
 "baseline": null
 },
 "output": "2026-10-19T12:06:40+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-W43-1T12:00"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
 },
 {
 "fn": "next_run_at",
@@ -6620,6 +8618,117 @@
 "fn": "next_run_at",
 "input": {
 "entry": {
+"last_run_at": "2026-10-24T00:00:00+05:30:15",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00+05:30:15",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00+05:30:15"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00+05:30:15",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00+05:30:15",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00+05:30:15"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00+05:30:15",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00+05:30:15",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00+05:30:15"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
 "last_run_at": "20261024T000000+0530",
 "last_status": "success",
 "consecutive_failures": 3
@@ -6948,6 +9057,117 @@
 "baseline": null
 },
 "output": "2026-10-24T00:06:40+05:30"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "20261024T000000+0530",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "20261024T000000+0530",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "20261024T000000+0530"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "20261024T000000+0530",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "20261024T000000+0530",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "20261024T000000+0530"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "20261024T000000+0530",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "20261024T000000+0530",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "20261024T000000+0530"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
 },
 {
 "fn": "next_run_at",
@@ -7286,6 +9506,117 @@
 "fn": "next_run_at",
 "input": {
 "entry": {
+"last_run_at": "2026-10-24T00:00:00,5-01:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00,5-01:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00,5-01:00"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00,5-01:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00,5-01:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00,5-01:00"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00,5-01:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00,5-01:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00,5-01:00"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
 "last_run_at": "2026-10-24T00:00-0100",
 "last_status": "success",
 "consecutive_failures": 3
@@ -7614,6 +9945,117 @@
 "baseline": null
 },
 "output": "2026-10-24T00:06:40-01:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00-0100",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00-0100",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00-0100"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00-0100",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00-0100",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00-0100"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00-0100",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00-0100",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00-0100"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
 },
 {
 "fn": "next_run_at",
@@ -7952,6 +10394,117 @@
 "fn": "next_run_at",
 "input": {
 "entry": {
+"last_run_at": "2026-10-24 00:00:00+14:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24 00:00:00+14:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24 00:00:00+14:00"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24 00:00:00+14:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24 00:00:00+14:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24 00:00:00+14:00"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24 00:00:00+14:00",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24 00:00:00+14:00",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24 00:00:00+14:00"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
 "last_run_at": "2026-10-24T00:00:00.5+05:30:15.25",
 "last_status": "success",
 "consecutive_failures": 3
@@ -8285,6 +10838,117 @@
 "fn": "next_run_at",
 "input": {
 "entry": {
+"last_run_at": "2026-10-24T00:00:00.5+05:30:15.25",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00.5+05:30:15.25",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00.5+05:30:15.25"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00.5+05:30:15.25",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00.5+05:30:15.25",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00.5+05:30:15.25"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00.5+05:30:15.25",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00.5+05:30:15.25",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00.5+05:30:15.25"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
 "last_run_at": "2026-10-24T23:59:59.999999-23:59",
 "last_status": "success",
 "consecutive_failures": 3
@@ -8613,6 +11277,117 @@
 "baseline": null
 },
 "output": "2026-10-25T00:06:39.999999-23:59"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T23:59:59.999999-23:59",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T23:59:59.999999-23:59",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T23:59:59.999999-23:59"
+},
+"interval": -86399999913600,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T23:59:59.999999-23:59",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T23:59:59.999999-23:59",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T23:59:59.999999-23:59"
+},
+"interval": -86399999913601,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T23:59:59.999999-23:59",
+"last_status": "success",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T23:59:59.999999-23:59",
+"last_status": "failed",
+"consecutive_failures": 3
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T23:59:59.999999-23:59"
+},
+"interval": -1000000000000000000000000000000,
+"baseline": null
+},
+"error": "OverflowError"
 },
 {
 "fn": "next_run_at",
@@ -9474,6 +12249,279 @@
 "baseline": null
 },
 "output": "2026-10-27T13:20:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": -18446744073709551611
+},
+"interval": 86400,
+"baseline": null
+},
+"output": "2026-10-24T00:05:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": -18446744073709551611
+},
+"interval": 600,
+"baseline": null
+},
+"output": "2026-10-24T00:05:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": -18446744073709551611
+},
+"interval": 1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-10-24T00:05:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": -9223372036854775809
+},
+"interval": 86400,
+"baseline": null
+},
+"output": "2026-10-24T00:05:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": -9223372036854775809
+},
+"interval": 600,
+"baseline": null
+},
+"output": "2026-10-24T00:05:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": -9223372036854775809
+},
+"interval": 1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-10-24T00:05:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": -9223372036854775808
+},
+"interval": 86400,
+"baseline": null
+},
+"output": "2026-10-24T00:05:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": -9223372036854775808
+},
+"interval": 600,
+"baseline": null
+},
+"output": "2026-10-24T00:05:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": -9223372036854775808
+},
+"interval": 1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-10-24T00:05:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": 18446744073709551617
+},
+"interval": 86400,
+"baseline": null
+},
+"output": "2026-10-25T00:00:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": 18446744073709551617
+},
+"interval": 600,
+"baseline": null
+},
+"output": "2026-10-24T00:10:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": 18446744073709551617
+},
+"interval": 1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-10-27T13:20:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": "-18446744073709551611"
+},
+"interval": 86400,
+"baseline": null
+},
+"output": "2026-10-24T00:05:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": "-18446744073709551611"
+},
+"interval": 600,
+"baseline": null
+},
+"output": "2026-10-24T00:05:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": "-18446744073709551611"
+},
+"interval": 1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-10-24T00:05:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": -1e+19
+},
+"interval": 86400,
+"baseline": null
+},
+"output": "2026-10-24T00:05:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": -1e+19
+},
+"interval": 600,
+"baseline": null
+},
+"output": "2026-10-24T00:05:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": -1e+19
+},
+"interval": 1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-10-24T00:05:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": "٣"
+},
+"interval": 86400,
+"baseline": null
+},
+"output": "2026-10-24T00:20:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": "٣"
+},
+"interval": 600,
+"baseline": null
+},
+"output": "2026-10-24T00:10:00+00:00"
+},
+{
+"fn": "next_run_at",
+"input": {
+"entry": {
+"last_run_at": "2026-10-24T00:00:00Z",
+"last_status": "failed",
+"consecutive_failures": "٣"
+},
+"interval": 1000000000000000000000000000000,
+"baseline": null
+},
+"output": "2026-10-24T00:20:00+00:00"
 },
 {
 "fn": "next_run_at",
@@ -11631,6 +14679,1359 @@
 "count": 0
 }
 ]
+}
+}
+}
+]
+},
+{
+"fn": "scenario",
+"input": "health review",
+"files": {
+"health": "{\"a\": {\"history\": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22]}, \"b\": {\"history\": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]}, \"c\": {\"history\": null, \"traffic\": {\"total\": 1}}, \"d\": {\"history\": []}, \"e\": {\"history\": \"é😀\"}, \"f\": {\"history\": false}, \"g\": {\"history\": 1.5}}"
+},
+"output": [
+{
+"call": "[\"a\", {\"ok\": true}]",
+"output": {
+"a": {
+"history": [
+0,
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"b": {
+"history": [
+0,
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+23
+]
+},
+"c": {
+"history": null,
+"traffic": {
+"total": 1
+}
+},
+"d": {
+"history": []
+},
+"e": {
+"history": "é😀"
+},
+"f": {
+"history": false
+},
+"g": {
+"history": 1.5
+}
+}
+},
+{
+"call": "[\"b\", {\"ok\": false, \"from_cache\": true}]",
+"output": {
+"a": {
+"history": [
+0,
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"b": {
+"history": [
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+23,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "cache",
+"count": 0
+}
+]
+},
+"c": {
+"history": null,
+"traffic": {
+"total": 1
+}
+},
+"d": {
+"history": []
+},
+"e": {
+"history": "é😀"
+},
+"f": {
+"history": false
+},
+"g": {
+"history": 1.5
+}
+}
+},
+{
+"call": "[\"c\", {\"ok\": true, \"traffic\": null}]",
+"output": {
+"a": {
+"history": [
+0,
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"b": {
+"history": [
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+23,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "cache",
+"count": 0
+}
+]
+},
+"c": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+],
+"traffic": {
+"total": 1
+}
+},
+"d": {
+"history": []
+},
+"e": {
+"history": "é😀"
+},
+"f": {
+"history": false
+},
+"g": {
+"history": 1.5
+}
+}
+},
+{
+"call": "[\"d\", {\"ok\": true, \"count\": NaN}]",
+"error": "ValueError"
+},
+{
+"call": "[\"d\", {\"ok\": true, \"count\": Infinity}]",
+"error": "OverflowError"
+},
+{
+"call": "[\"d\", {\"ok\": true, \"count\": -1e+300}]",
+"output": {
+"a": {
+"history": [
+0,
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"b": {
+"history": [
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+23,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "cache",
+"count": 0
+}
+]
+},
+"c": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+],
+"traffic": {
+"total": 1
+}
+},
+"d": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": -1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160
+}
+]
+},
+"e": {
+"history": "é😀"
+},
+"f": {
+"history": false
+},
+"g": {
+"history": 1.5
+}
+}
+},
+{
+"call": "[\"d\", {\"ok\": true, \"count\": \" 7 \"}]",
+"output": {
+"a": {
+"history": [
+0,
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"b": {
+"history": [
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+23,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "cache",
+"count": 0
+}
+]
+},
+"c": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+],
+"traffic": {
+"total": 1
+}
+},
+"d": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": -1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 7
+}
+]
+},
+"e": {
+"history": "é😀"
+},
+"f": {
+"history": false
+},
+"g": {
+"history": 1.5
+}
+}
+},
+{
+"call": "[\"d\", {\"ok\": true, \"count\": \"٧\"}]",
+"output": {
+"a": {
+"history": [
+0,
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"b": {
+"history": [
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+23,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "cache",
+"count": 0
+}
+]
+},
+"c": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+],
+"traffic": {
+"total": 1
+}
+},
+"d": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": -1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 7
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 7
+}
+]
+},
+"e": {
+"history": "é😀"
+},
+"f": {
+"history": false
+},
+"g": {
+"history": 1.5
+}
+}
+},
+{
+"call": "[\"d\", {\"ok\": true, \"count\": \"7.0\"}]",
+"error": "ValueError"
+},
+{
+"call": "[\"d\", {\"ok\": true, \"count\": {}}]",
+"output": {
+"a": {
+"history": [
+0,
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"b": {
+"history": [
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+23,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "cache",
+"count": 0
+}
+]
+},
+"c": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+],
+"traffic": {
+"total": 1
+}
+},
+"d": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": -1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 7
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 7
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"e": {
+"history": "é😀"
+},
+"f": {
+"history": false
+},
+"g": {
+"history": 1.5
+}
+}
+},
+{
+"call": "[\"d\", {\"ok\": true, \"count\": {\"a\": 1}}]",
+"error": "TypeError"
+},
+{
+"call": "[\"e\", {\"ok\": true}]",
+"output": {
+"a": {
+"history": [
+0,
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"b": {
+"history": [
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+23,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "cache",
+"count": 0
+}
+]
+},
+"c": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+],
+"traffic": {
+"total": 1
+}
+},
+"d": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": -1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 7
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 7
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"e": {
+"history": [
+"é",
+"😀",
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"f": {
+"history": false
+},
+"g": {
+"history": 1.5
+}
+}
+},
+{
+"call": "[\"f\", {\"ok\": true}]",
+"output": {
+"a": {
+"history": [
+0,
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"b": {
+"history": [
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+23,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "cache",
+"count": 0
+}
+]
+},
+"c": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+],
+"traffic": {
+"total": 1
+}
+},
+"d": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": -1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 7
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 7
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"e": {
+"history": [
+"é",
+"😀",
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"f": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"g": {
+"history": 1.5
+}
+}
+},
+{
+"call": "[\"g\", {\"ok\": true}]",
+"error": "TypeError"
+},
+{
+"call": "[\"订阅\", {\"ok\": true, \"traffic\": {\"upload\": 0}}]",
+"output": {
+"a": {
+"history": [
+0,
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"b": {
+"history": [
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+23,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "cache",
+"count": 0
+}
+]
+},
+"c": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+],
+"traffic": {
+"total": 1
+}
+},
+"d": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": -1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 7
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 7
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"e": {
+"history": [
+"é",
+"😀",
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"f": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"g": {
+"history": 1.5
+},
+"订阅": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+],
+"traffic": {
+"upload": 0
+},
+"traffic_at": "2026-11-01T00:00:00.250000Z"
+}
+}
+},
+{
+"call": "forget 订阅",
+"output": {
+"a": {
+"history": [
+0,
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"b": {
+"history": [
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+23,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "cache",
+"count": 0
+}
+]
+},
+"c": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+],
+"traffic": {
+"total": 1
+}
+},
+"d": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": -1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 7
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 7
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"e": {
+"history": [
+"é",
+"😀",
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"f": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"g": {
+"history": 1.5
+}
+}
+},
+{
+"call": "forget c",
+"output": {
+"a": {
+"history": [
+0,
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"b": {
+"history": [
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17,
+18,
+19,
+20,
+21,
+22,
+23,
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "cache",
+"count": 0
+}
+]
+},
+"d": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": -1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 7
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 7
+},
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"e": {
+"history": [
+"é",
+"😀",
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"f": {
+"history": [
+{
+"at": "2026-11-01T00:00:00.250000Z",
+"status": "ok",
+"count": 0
+}
+]
+},
+"g": {
+"history": 1.5
 }
 }
 }

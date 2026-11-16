@@ -77,8 +77,11 @@ last_values = ['2026-10-24T00:00:00Z', '2026-10-24T08:00:00+08:00', '2026-10-24T
                '2026-10-24T00:00:00,5-01:00', '2026-10-24T00:00-0100', '2026-10-24 00:00:00+14:00',
                '2026-10-24T00:00:00.5+05:30:15.25', '2026-10-24T23:59:59.999999-23:59']
 failures = ['missing', 0, 1, 2, 3, 11, 30, 10 ** 30, 2.7, '3', '３', ' 4 ', 'x', True, False, None, [], [1], -5,
-            float('inf'), float('nan'), 1e300]
-interval_values = [0, 60, 3600, 86400, -60, 10 ** 30, 999999999 * 86400 + 86399, 999999999 * 86400 + 86400, 400]
+            float('inf'), float('nan'), 1e300,
+            # review C15: ints beyond int64 in both directions
+            -(2 ** 64) + 5, -(2 ** 63) - 1, -(2 ** 63), 2 ** 64 + 1, '-18446744073709551611', -1e19, '٣']
+interval_values = [0, 60, 3600, 86400, -60, 10 ** 30, 999999999 * 86400 + 86399, 999999999 * 86400 + 86400, 400,
+                   -999999999 * 86400, -999999999 * 86400 - 1, -10 ** 30]
 for last in last_values:
     for interval in interval_values:
         for status in ['success', 'failed', None]:
@@ -245,6 +248,17 @@ scenario('health edited', health_setup('{"s": {"history": "ab", "traffic": 1}, "
     record('x', ok=True, count=1), forget('w'), forget('x'),
 ])
 scenario('health not object', health_setup('[1, 2]'), [record('s', ok=True)])
+# review C15: odd counts and history lengths around HISTORY_SIZE
+scenario('health review', health_setup('{"a": {"history": [' + ','.join(str(i) for i in range(23)) + ']}, '
+                                      '"b": {"history": [' + ','.join(str(i) for i in range(24)) + ']}, '
+                                      '"c": {"history": null, "traffic": {"total": 1}}, "d": {"history": []}, '
+                                      '"e": {"history": "é😀"}, "f": {"history": false}, "g": {"history": 1.5}}'), [
+    record('a', ok=True), record('b', ok=False, from_cache=True), record('c', ok=True, traffic=None),
+    record('d', ok=True, count=float('nan')), record('d', ok=True, count=float('inf')), record('d', ok=True, count=-1e300),
+    record('d', ok=True, count=' 7 '), record('d', ok=True, count='٧'), record('d', ok=True, count='7.0'),
+    record('d', ok=True, count={}), record('d', ok=True, count={'a': 1}), record('e', ok=True), record('f', ok=True),
+    record('g', ok=True), record('订阅', ok=True, traffic={'upload': 0}), forget('订阅'), forget('c'),
+])
 scenario('health broken', health_setup('{broken'), [record('s', ok=True)])
 
 RULE_URL = 'https://rules.test/list.txt?key=private'
