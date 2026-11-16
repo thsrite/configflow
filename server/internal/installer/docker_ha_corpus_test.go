@@ -108,6 +108,14 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 				t.Errorf("case %s (%s %.300s): "+format, append([]any{id, record.GetString("kind"), jsonx.Repr(input)}, args...)...)
 			}
 		}
+		if err != nil && deliberateServerURLFix(input, err) {
+			// Deliberate fix of a Python validation bug (A09 decision): one
+			// trailing "\n" in server_url is refused in Go.
+			if !(record.GetBool("ok") == false && record.GetObject("error").GetString("message") == invalidServerMessage) {
+				counts["deliberate (server_url trailing newline)"]++
+				continue
+			}
+		}
 		if err != nil {
 			class, message := pythonClassOf(err)
 			if class == "a10" {
@@ -171,5 +179,40 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 	t.Logf("docker HA corpus: %d cases, %v, %d differ", len(records), counts, failed)
 	if failed > 0 {
 		t.Fatalf("%d of %d cases differ", failed, len(records))
+	}
+}
+
+const invalidServerMessage = "请填写完整的 ConfigFlow HTTP(S) 地址"
+
+// deliberateServerURLFix reports whether a guide request's server_url ends
+// with exactly one "\n" and Go refused it as an invalid server address.
+func deliberateServerURLFix(input *jsonx.Object, err error) bool {
+	request, _ := input.Value("request").(*jsonx.Object)
+	server, _ := request.GetOr("server_url", nil).(string)
+	ve, isValue := err.(*ValueError)
+	return strings.HasSuffix(server, "\n") && !strings.HasSuffix(server, "\n\n") && isValue && ve.Message == invalidServerMessage
+}
+
+// TestServerURLTrailingNewlineIsRefused: deliberate fix of a Python
+// validation bug (maintainer decision 2026-11-16). Python's
+// re.match(r'^https?://[^\s]+$') accepts "http://x.test\n" and writes the
+// newline into the guide; Go refuses it like any other invalid address.
+func TestServerURLTrailingNewlineIsRefused(t *testing.T) {
+	base := jsonx.Obj("server_url", "http://config.test:8000", "agent_name", "dns-one", "agent_ip", "192.168.10.20",
+		"data_dir", "/srv/cf/new-data", "ha_host_id_path", "/srv/cf/host-id")
+	if _, err := GenerateGuide(base, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, server := range []string{"http://config.test:8000\n", "https://config.test/\n", "http://config.test\n\n", "http://x\r\n"} {
+		request := base.DeepCopy()
+		request.Set("server_url", server)
+		for _, mode := range []string{"new", "migrate"} {
+			request.Set("mode", mode)
+			_, err := GenerateGuide(request, nil)
+			ve, ok := err.(*ValueError)
+			if !ok || ve.Message != invalidServerMessage {
+				t.Errorf("%q %s: %v", server, mode, err)
+			}
+		}
 	}
 }

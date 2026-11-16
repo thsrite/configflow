@@ -917,8 +917,11 @@ func isImageName(image string) bool {
 	return len(image) >= 1 && len(image) <= 255 && matchesClass(image[:1], "") && (len(image) == 1 || matchesClass(image[1:], "._:/@-"))
 }
 
-// isServerURL is re.match(r'^https?://[^\s]+$', server): "$" also matches
-// before a final newline.
+// isServerURL is re.fullmatch(r'https?://[^\s]+', server). Deliberate fix
+// of a Python validation bug (maintainer, 2026-11-16): Python uses
+// re.match(r'^https?://[^\s]+$'), whose "$" lets one trailing "\n" through
+// into the generated guide and Compose file; Go refuses it with the same
+// error as any other invalid server address.
 func isServerURL(server string) bool {
 	rest, found := strings.CutPrefix(server, "http")
 	if !found {
@@ -928,7 +931,6 @@ func isServerURL(server string) bool {
 	if rest, found = strings.CutPrefix(rest, "://"); !found {
 		return false
 	}
-	rest = strings.TrimSuffix(rest, "\n")
 	return rest != "" && !strings.ContainsFunc(rest, pystr.IsSpace)
 }
 

@@ -323,6 +323,23 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 	for _, r := range haReadOnlyRequests() {
 		check(r)
 	}
+	// Deliberate fix of a Python validation bug (A09 decision): a server_url
+	// with one trailing "\n" passes Python's re.match(...$) and is refused
+	// in Go (migrate mode: no capability is issued on the Python side).
+	{
+		body := haNewBody("mode", "migrate", "container_name", "original-oxidns", "existing_agent_name", "original-dns",
+			"ha_data_dir", "/srv/cf/new-ha", "backup_dir", "/srv/cf/backup", "server_url", "https://panel.example\n",
+			"agent_mount", jsonx.Obj("type", "bind", "source", "/srv/cf/old-agent"), "core_mount", jsonx.Obj("type", "volume", "source", "old_core"))
+		p, g := both(guideReq("deliberate server_url trailing newline", body))
+		want := `{"message":"请填写完整的 ConfigFlow HTTP(S) 地址","success":false}`
+		goAnswer, _ := jsonx.Parse(g.body)
+		if data, _ := jsonx.Encode(goAnswer, jsonx.Options{SortKeys: true, Compact: true}); p.status != 200 || g.status != 400 || string(data) != want {
+			failed++
+			t.Errorf("deliberate difference changed: python %d, go %d %s", p.status, g.status, g.body)
+		} else {
+			t.Logf("deliberate difference: server_url with a trailing newline — python 200, go 400 (A09 decision)")
+		}
+	}
 	// A lone surrogate escape: Python's json.loads keeps it, jsonx decodes U+FFFD
 	// (jsonx-wide limitation); only logged.
 	{
