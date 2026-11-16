@@ -1202,3 +1202,10 @@ Questions for the maintainer (from this audit):
     for a non-dict provider definition. C17's corpus allowlists these two rows; remove the allowlist when
     fixed. Also `provider.flattenMapping` is a private copy of an unexported `yamlx` helper — export it
     from `yamlx` and switch (item 8).
+11. **Leftovers from the C12 review (2026-11-16):** (a) `convert.InspectStructuredProxyString` keeps the
+    yaml.v3 loose loader only as a fallback for node strings with a recursive alias (needed by repo's
+    verified `TestCompatProxyStringTimestamp`); removing it needs a `yamlx` option for recursive aliases
+    (owner C02 — next C02 touch). (b) `convert/pyhelpers.urlsplit` stays a private copy until `urlx.Split`
+    matches Python for bracketed non-IP hosts (`https://[github.com]/`); switch when that `urlx` fix lands.
+    (c) `repo`'s `TestWriteWaitsForReleasedFileLock` showed a data race in test code once under `-race`
+    (goroutine vs deferred close); fix in the next repo touch.
