@@ -43,7 +43,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C15 | subscription refresh, health, scheduled refresh | 600 | ported | C13, C14, C07 | – |
 | C16 | health check, latency, node DNS, region check, domain probe | 1089 | ported | C12, C13 | 5 (5 done) |
 | C17 | provider delivery and responses | 540 | ported | C15 | – |
-| C18 | Mihomo config generation, Mihomo base settings | 1275 | missing | C12, C15, C16, C17 | – |
+| C18 | Mihomo config generation, Mihomo base settings | 1275 | partial | C12, C15, C16, C17 | – |
 | C19 | Surge converter | 1129 | missing | C18 | – |
 | C20 | Loon converter | 764 | missing | C19 | – |
 | C21 | MosDNS converter | 1261 | missing | C14 | – |
@@ -712,21 +712,42 @@ Commands:
 
 ## C18 — Mihomo config generation, Mihomo base settings
 
-**Status: `missing`** · prereqs: C12, C15, C16, C17 · Go: internal/convert (new)
+**Status: `partial`** (porter at work; not reviewed) · prereqs: C12, C15, C16, C17 · Go: `internal/convert` (+ `internal/convert/mihomoenv`)
 
-Files:
-- `backend/converters/mihomo.py` (905) — generation group (see module notes)
-- `backend/common/mihomo_base_settings.py` (370)
+Files → Go:
+- `backend/converters/mihomo.py` generation group → `convert/mihomo_generate.go`: `CustomConfigYAMLError`, `ValidateIPv6Flags`, `DefaultMihomoTemplate`, `SplitRulesAndRulesets`, `DefaultHealthCheckURL`, `BuildProviderHealthCheck` (structured `health_check` via `health/check.ProviderHealthCheck`), `LogicRuleTypes`, `ApplyNoResolveToLogicRule`, `NormalizeFindProcessMode`, `ParseMosdnsCustomHosts`, `SyncMosdnsHosts`, `InjectRegionProbe`, `GenerateOptions`, `GenerateMihomoConfig` (= generate_mihomo_config; YAML via `yamlx.IndentDump`), `GenerateMihomoDocument` (= `yaml.safe_load(generate_mihomo_config(...))`, used by many callers); `convert/mihomo_downloads.go`: `Download`, `GetMihomoProviderDownloads`, `GetMihomoRulesetDownloads`; `convert/mihomo_generate_py.go`: Python-semantics helpers (raise/catch panics → returned errors, `dictGet`/`dictItem`/`iterate`, ordered sets, `appendURLQuery` = profile_context.append_url_query, `pyIntOf`).
+- `backend/common/mihomo_base_settings.py` → `convert/base_settings.go`: constants, `BaseSettingsError`, `SplitHostPort`, `ControllerScope`, `SniffPortError`, `ValidateBaseSettings(document, previous, reserved map[int]string, localAddresses []any)`, `TakeoverMode`, `AgentSource` + `AgentContext` (repo bindings + agent manager behind an interface: convert cannot import repo), `controllerSecretError` = setup_flow.controller_secret_error copy (TODO(port) C36).
 
-Tests: `test_dynamic_proxy_chains.py` (18), `test_group_exclusion_generation.py` (8), `test_mihomo_base_settings.py` (21)
+Collaborators (`convert/mihomo_generate_env.go`):
+- `MihomoEnv` (config domain; installed by `mihomoenv.Wire`, to be listed in `server.wirePackages`): `Converter` (substore, resolved at call time), `ProviderInterval` (refresh.ValidateRefreshInterval with `Mihomo 订阅同步间隔`), `LoadSubscriptionCache` (substore), `DownloadedText` (repo shared JSON at refresh.DownloadCachePath), `PrepareProviderBundle` (provider). Unset fields fail closed with `*HookMissingError`.
+- `MihomoHooks` (other domains; `RegisterMihomoHooks`, register nothing from config):
+  - `ApplyLinuxGateway` — **provided by agents A19/A21** (`linux_gateway.apply_linux_gateway`, which first calls **routers** `router_split.check_generation`). Default: no-op when `mihomo.linux_gateway` is absent/null and there is no `mihomo.router_split` marker (exactly Python's no-op), else `*HookMissingError`.
+  - `GatewayEnabled` — agents A19/A21 (`gateway_settings(config)['enabled']`; get_mihomo_ruleset_downloads, takeover_mode). Default: false when `linux_gateway` absent/null, else `*HookMissingError`.
+  - `FakeIPNetworkError` — agents A19/A21 (`fake_ip_network`, base settings `dns.fake-ip-range`). Default `*HookMissingError` when the value changed.
+  - `MihomoDNSLoop` — agents gateway onboarding (`gateway_onboarding.mihomo_dns_loop`). Default `*HookMissingError` when a DNS upstream changed.
+  - `IsFullTun` — routers clients/split (`router_split.is_full_tun`). Default false without a `router_split` marker, else `*HookMissingError`.
+  - Call order as Python: generation → `ApplyLinuxGateway` after rule-providers, before rules; base settings → fake range check after the type checks, DNS loop last.
 
-Routes: none.
+Tests:
+- Differential corpus `testdata/gen_mihomo.py` → `mihomo_corpus.jsonl.gz` (`mihomo_corpus_test.go`, external package): 6006 random + fixed profiles (config_template.json, default config, empty) → **4076 generated YAML byte-identical**, 1930 error rows equal (class + message; crash classes by class), reports and mutated profiles equal; 908 ruleset + 570 provider download lists; 6000 `validate_base_settings` (random docs/previous/reserved/local addresses, fake A19/onboarding hooks mirrored); helper rows. **13605 rows, 0 differences.** Covered: all group types, follow groups, filters incl. look-around, chains/dialers (valid relay topologies), all rule types, rule sets (library/url/content/mrs/github proxy), subscriptions + aggregations with caches (hosts metadata incl. domain mappings, dialer records, download-cache fallback), EasyTier, region probe, MosDNS hosts sync, custom base YAML (anchors/aliases, timestamps, binary, invalid YAML, non-mapping roots, ipv6 flags, find-process-mode), provider intervals, config tokens, server domains. Not in the corpus: preflight (provider), Linux gateway enabled (hook), non-string-key base YAML (yamlx limit).
+- Ported Python tests: in progress (see "Left").
 
-Evidence: No Go package; no route registered.
+Decisions / differences from Python:
+- Debug log lines with Python sets print them in insertion/sorted order (Python's set order is hash-seed dependent).
+- Base YAML with non-string mapping keys (`1: x`) cannot be loaded into jsonx (yamlx `NonStringKeyError` returned); Python would generate. Provider/rule-set names that are not strings → TypeError-class error (Python writes a non-string key).
+- `subscription_hosts_index` without the file-stamp memo (reads the cache each time; same result).
+- `add_dialer_groups`' node conversion errors cross `subs.AddDialerGroups` as a panic recovered by the generator (subs' `ConvertNode` callback has no error result).
+- `AgentContext` keeps int ports that fit int64.
 
-Missing / deferred: Everything in the files below.
+Commits: 7b0fb0ea (code), e879ebf9 (corpus).
 
-Notes for porter: Rest of `converters/mihomo.py`: `CustomConfigYAMLError`, `validate_ipv6_flags`, `_default_mihomo_template`, `split_rules_and_rulesets`, `build_provider_health_check`, `apply_no_resolve_to_logic_rule`, `normalize_find_process_mode`, `parse_mosdns_custom_hosts`, `sync_mosdns_hosts`, `inject_region_probe`, `generate_mihomo_config` (585 lines alone), `get_mihomo_provider_downloads`, `get_mihomo_ruleset_downloads` (≈905 lines). **Cross-domain:** `generate_mihomo_config` calls `common.linux_gateway.apply_linux_gateway`/`gateway_settings` (agents domain); `mihomo_base_settings` calls `gateway_onboarding.mihomo_dns_loop`, `linux_gateway.fake_ip_network`/`gateway_settings`, `router_split.is_full_tun`, `setup_flow`. Port those leaf functions as `compat.go` copies (TODO(port)) or coordinate with the agents/routers domains first. High-value generation goldens: generate from Python on the test server for the 128 repository base configs.
+Left: port the Python tests (generation cases of test_dynamic_proxy_chains, test_proxy_chains, test_group_exclusion_generation, test_mihomo_base_settings, test_converter_review_regressions, test_udp_fallback, test_proxy_server_dns, test_subscription_dialers, test_subscription_hosts, test_mihomo_easytier round trips, health generation cases, test_safe_url_queries, test_region_check probe entry, test_subscription_refresh_policy mihomo interval, …); add `mihomoenv.Wire` to `server.wirePackages`; preflight test.
+
+Pitfalls: the shared tree's `internal/convert` may not build while the C12 reviewer edits it — verify on a private detached worktree (`git worktree add --detach ~/program/configflow-go-c18 HEAD`, copy the C18 files, `rt` from there).
+
+Commands:
+- tests: `rt -- bash -lc 'cd server && gofmt -l internal/convert; go vet ./internal/convert/... && go test -count=1 ./internal/convert/...'`
+- corpus: `rt --back server/internal/convert/testdata/mihomo_corpus.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/convert/testdata/gen_mihomo.py 6000'` (deterministic seed; ~20 s)
 
 ## C19 — Surge converter
 
