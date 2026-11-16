@@ -135,6 +135,25 @@ exception texts) and private per-package copies of shared helpers. Under functio
 module and every review from now on also **deletes code that only existed for strict parity** and
 **merges private helper copies into one shared package**, and reports lines before/after.
 
+**N2 (done, commit 6afb0554).** `internal/urlx` and `internal/reqproxy` deleted, plus
+`installer/pyurl.go`, the urlsplit copy in `convert/pyhelpers.go`, agents' requote/proxy emulation and
+the 994-row requests proxy reference. Callers use `net/url` / `net/http` through `internal/weburl`
+(608 lines): `Parse` (url.Parse after the typed-URL clean-up; bare `%zone` accepted; unbalanced
+brackets, unbracketed IPv6 and NFKC-delimiter hosts refused), `Hostname`/`Port`/`RawPath`/
+`HasCredentials`, lenient `Unquote` (redaction), `Prepare` (RFC 3986 normalisation before a request),
+`ParseProxy` + `FromEnvironment` (lower-case first, ALL_PROXY counts, NO_PROXY domain/IP/CIDR/port/`*`,
+**no automatic loopback bypass** — coordinator decision 5 kept — chosen per redirect hop by
+http.Transport), `SafeForLog`/`SafeErrorDetails`. Accepted classes (tests compare outcome):
+URLs net/url refuses that urllib accepted (control chars, malformed `%` escapes or ports, IPvFuture,
+`{`/space in hosts, non-ASCII or unencoded credentials) are rejected; non-Chinese exception texts
+compared by class only; requests' all-`%` requoting when one escape is malformed and other byte-level
+quoting; redirect hops pick their own proxy (requests kept the first URL's); SOCKS proxies now work;
+invalid UTF-8 in query values becomes U+FFFD (Werkzeug re-quoted); upstream labels for odd inputs;
+CPython full case-folding (`İ`, final sigma). Not done here (left to S passes): the private urlsplit
+copies `rulefetch/urls.go` (SplitURL/URLJoin, used across rulefetch + its corpus) and
+`subs/proxyserverdns.go` urlSplitHost. Lines (non-test, urlx+reqproxy+weburl+agents+substore+
+rulefetch+localhttp+health+installer+convert+provider+redact+httpx): 59602 → 58285.
+
 ## Idiomatic Go (2026-11-16, maintainer: "用 go 原生库")
 
 PORTING rules 1–4 now say: port features, not code; typed structs; acceptance at the external boundary
