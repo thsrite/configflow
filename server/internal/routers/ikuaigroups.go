@@ -664,11 +664,14 @@ func layout(role string, existing []layoutGroup, want []string, taken map[int]bo
 	}
 	if groups > minimumGroups(rest, sizeOf)+2 {
 		// Repack in number order, existing groups first: entries only move down.
+		// The first pass already put pending[:position] into the existing groups,
+		// so only the rest is queued again (Python queued all of pending and the
+		// repacked groups held those entries twice).
 		var sequence []string
 		for _, s := range slots {
 			sequence = append(sequence, s.values...)
 		}
-		sequence = append(sequence, pending...)
+		sequence = append(sequence, pending[position:]...)
 		for _, s := range slots {
 			s.values, s.size = []string{}, groupBaseBytes
 		}

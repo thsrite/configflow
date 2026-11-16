@@ -24,18 +24,28 @@ func TestR03Corpus(t *testing.T) {
 	}
 	scanner := bufio.NewScanner(gz)
 	scanner.Buffer(make([]byte, 1<<20), 1<<28)
-	counts, differ := map[string]int{}, 0
+	counts, differ, intended := map[string]int{}, 0, 0
 	for scanner.Scan() {
 		var row struct {
 			Fn  string          `json:"fn"`
 			In  json.RawMessage `json:"in"`
 			Out json.RawMessage `json:"out"`
+			// Python's result with its repack bug fixed (gen_r03.py FIXED_LAYOUT):
+			// an intended difference, Go must match this one.
+			OutFixed json.RawMessage `json:"out_fixed"`
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
 			t.Fatal(err)
 		}
 		counts[row.Fn]++
 		got := r03Call(t, row.Fn, row.In)
+		if row.OutFixed != nil {
+			intended++
+			if sameJSON(t, got, row.Out) {
+				t.Errorf("%s: Go reproduces the Python repack bug (in %.300s)", row.Fn, row.In)
+			}
+			row.Out = row.OutFixed
+		}
 		if !sameJSON(t, got, row.Out) {
 			differ++
 			if differ <= 15 {
@@ -58,7 +68,10 @@ func TestR03Corpus(t *testing.T) {
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("rows %v; %d differ", counts, differ)
+	if intended == 0 {
+		t.Error("no corpus row exercises the fixed repack bug")
+	}
+	t.Logf("rows %v; %d differ; %d intended differences (Python repack bug fixed)", counts, differ, intended)
 }
 
 type r03State struct {

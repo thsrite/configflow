@@ -11,6 +11,7 @@ group_bytes, span, canon, digest, _networks.
 """
 import copy
 import gzip
+import inspect
 import ipaddress
 import json
 import random
@@ -27,9 +28,38 @@ from backend.routers.routeros_nat_list import inspect_rule
 rng = random.Random(3)
 rows = []
 
+# Python bug fixed in Go (intended difference, see PROGRESS R03): when layout
+# repacks a fragmented family, new CIDRs the first pass already put into an
+# existing group were queued again. FIXED_LAYOUT is ikuai_groups.layout with
+# exactly that line changed; ikuai_plan rows whose result differs under it
+# carry the fixed result as "out_fixed" (Go must match it, not "out").
+_LAYOUT_SRC = inspect.getsource(ig.layout)
+_BUGGY = "sequence = [value for slot in slots for value in slot['values']] + pending\n"
+assert _LAYOUT_SRC.count(_BUGGY) == 1
+_fixed_ns = dict(vars(ig))
+exec(_LAYOUT_SRC.replace(_BUGGY, "sequence = [value for slot in slots for value in slot['values']] + pending[position:]\n"),
+     _fixed_ns)
+FIXED_LAYOUT = _fixed_ns['layout']
 
-def emit(fn, value, out):
-    rows.append({'fn': fn, 'in': value, 'out': out})
+
+def emit(fn, value, out, out_fixed=None):
+    row = {'fn': fn, 'in': value, 'out': out}
+    if out_fixed is not None:
+        row['out_fixed'] = out_fixed
+    rows.append(row)
+
+
+def plan_rows(groups, nat, policy, steps):
+    """run_planner with the real layout and with FIXED_LAYOUT (None when equal)."""
+    out = run_planner(gstate_of(groups, nat, policy), steps)
+    real = ig.layout
+    ig.layout = FIXED_LAYOUT
+    try:
+        fixed = run_planner(gstate_of(groups, nat, policy), steps)
+    finally:
+        ig.layout = real
+    same = json.dumps(out, ensure_ascii=False, default=str) == json.dumps(fixed, ensure_ascii=False, default=str)
+    return out, None if same else fixed
 
 
 def pick(*options):
@@ -576,7 +606,7 @@ def gen_ikuai():
             emit('ikuai_read', value, {'groups': [group_view(g) for g in gstate['groups']],
                                        'rules': rules_view(gstate['rules'])})
         steps = planner_script(gstate)
-        emit('ikuai_plan', {**value, 'steps': steps}, run_planner(gstate_of(groups, nat, policy), steps))
+        emit('ikuai_plan', {**value, 'steps': steps}, *plan_rows(groups, nat, policy, steps))
         # Read-back: a check planned on this state, against this or a tampered readback.
         planner = ig.GroupPlanner(gstate_of(groups, nat, policy), [], [])
         role = pick('pa', 'pm', 'nat')
@@ -619,7 +649,7 @@ def gen_ikuai():
         steps = [{'op': 'family', 'role': role, 'want': want, 'subject': 'nat:10' if nat else None},
                  {'op': 'cleanup', 'roles': [role]}]
         emit('ikuai_plan', {'groups': groups, 'nat': nat, 'policy': [], 'steps': steps},
-             run_planner(gstate_of(groups, nat, []), steps))
+             *plan_rows(groups, nat, [], steps))
     for _ in range(600):
         role = pick('pa', 'pm', 'nat')
         values = [value_spelling(v) for v in rng.sample(POOL, rng.randint(0, 20))] + \
