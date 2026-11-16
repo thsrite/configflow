@@ -497,3 +497,20 @@ Questions for the coordinator/maintainer:
 5. `test_policy_editors.py` was not assigned to any config module; assigned to R08 with its rule-library route half deferred to C33 — confirm.
 6. Agents planned `test_router_gateway_forwarding.py` under A20 while the route lives in R15: keep the file with A20 (A20's porter adds the route cases to R15's differential when both exist)?
 7. The lab VMs (CHR, iKuai) were destroyed in October; rebuilding them is part of the HR lab step — confirm when the maintainer wants it.
+
+## Coordinator decisions (2026-11-16)
+
+1. **Shared requests-style HTTP client:** yes. Before R04 writes its driver, extract
+   `internal/substore/httpclient.go` (+ `internal/reqproxy`) into a shared package (e.g. `internal/reqhttp`)
+   used by substore, rulefetch where it fits, and the router drivers; no third copy. The R04 porter does
+   the extraction first, keeping substore's tests and differentials green.
+2. **`internal/gateway/gwbase`:** agreed. R02 creates it (only `LinuxGatewayError`, `TUNFilterKeys`,
+   `RestoreKey`); A19 adopts it.
+3. **`routerdoc` leaf:** agreed. The R01 porter creates it and switches the router compat copies in `repo`
+   and `notifications` to it with minimal edits, re-running those packages' tests.
+4. **`get_ruleset_content`:** C32 exports it from a non-API package (no routers hook for it); until C32
+   lands, R-modules that need it declare the narrowest interface and fail closed.
+5. `test_policy_editors.py` under R08 (rule-library route part → C33): confirmed.
+   `test_router_gateway_forwarding.py` stays with A20 (route in R15): confirmed.
+6. **VM lab rebuild:** only after the maintainer agrees; the coordinator asks when the first HR router
+   modules are verified. No production routers are ever touched.

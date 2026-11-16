@@ -90,10 +90,10 @@ Command used: `find backend -name '*.py' -not -name 'test_*' -not -path 'backend
 | `backend/common/__init__.py` | 1 | config | C02 |  |
 | `backend/common/agent_manager.py` | 28 | agents |  | also used by: config (notifications, routes/tasks, routes/config, domain discovery, setup) |
 | `backend/common/auth.py` | 171 | config | C06 |  |
-| `backend/common/client_devices.py` | 63 | routers |  |  |
+| `backend/common/client_devices.py` | 63 | routers |  | R16 |
 | `backend/common/client_discovery.py` | 204 | routers |  |  |
 | `backend/common/client_discovery_cache.py` | 88 | routers |  |  |
-| `backend/common/client_fixed_ip.py` | 281 | routers |  |  |
+| `backend/common/client_fixed_ip.py` | 281 | routers |  | R17 |
 | `backend/common/config.py` | 345 | config | C04 | also used by: every domain |
 | `backend/common/config_export.py` | 290 | config | C34 |  |
 | `backend/common/config_repository.py` | 2604 | config | C03,C04 | split by function groups: part A → C03, part B → C04 (see PROGRESS-config.md). Not ported: legacy pre-SQLite migration (`_migrate_to_store_locked`, `_legacy_*`, `_import_changed_legacy_locked`, `_read_legacy_json`, `_read_profile_layout`, `_migrate_profile_cache`, `_migrate_raw_cache`, `_create_migration_snapshot_dir`, `_snapshot` for legacy sources) and `_rebuild_corrupt_locked` (rebuild from config.json; see PROGRESS-config C03). Also used by: every domain. |
@@ -124,9 +124,9 @@ Command used: `find backend -name '*.py' -not -name 'test_*' -not -path 'backend
 | `backend/common/oxidns_validation.py` | 310 | config | C23 |  |
 | `backend/common/profile_context.py` | 208 | config | C05 | also used by: converters, routes of all domains |
 | `backend/common/resource.py` | 63 | config | C02 |  |
-| `backend/common/router_split.py` | 302 | routers |  | also used by: config (mihomo_base_settings, setup_flow, setup_completion), agents |
+| `backend/common/router_split.py` | 302 | routers | R02 | also used by: config (mihomo_base_settings, setup_flow, setup_completion), agents |
 | `backend/common/rule_dns.py` | 885 | config | C27 | calls agents.rule_sync.settings_for (agents) and common.rule_ip_presence (routers) |
-| `backend/common/rule_ip_presence.py` | 79 | routers |  | also used by: config (rule_dns) |
+| `backend/common/rule_ip_presence.py` | 79 | routers | R02 | also used by: config (rule_dns) |
 | `backend/common/setup_abandon.py` | 90 | config | C36 | calls agents.gateway_installation |
 | `backend/common/setup_completion.py` | 236 | config | C36 | calls routers.plan/desired/base, agents.oxidns_monitor, agent_manager |
 | `backend/common/setup_flow.py` | 600 | config | C36 | calls linux_gateway, gateway_onboarding (agents), router_split, routers.store (routers) |
@@ -151,45 +151,45 @@ Command used: `find backend -name '*.py' -not -name 'test_*' -not -path 'backend
 | `backend/models/config.py` | 68 | not-ported |  | no importer (maintainer decision) |
 | `backend/native_test_helpers.py` | 34 | config | C22 | test helper (Mihomo native YAML checks); port as Go test helpers |
 | `backend/notifications.py` | 296 | config | C07 | calls agents.operation_events, routers.pending/store, agent_manager |
-| `backend/routeros_test_helpers.py` | 109 | routers |  | test helper; port as Go test helpers |
-| `backend/routers/__init__.py` | 1 | routers |  |  |
+| `backend/routeros_test_helpers.py` | 109 | routers | R07 | test helper; port as Go test helpers |
+| `backend/routers/__init__.py` | 1 | routers |  | R01 |
 | `backend/routers/base.py` | 371 | routers |  |  |
 | `backend/routers/desired.py` | 163 | routers |  |  |
 | `backend/routers/dhcp_dns.py` | 158 | routers |  |  |
-| `backend/routers/dns_guard.py` | 589 | routers |  |  |
-| `backend/routers/forward_hint.py` | 184 | routers |  |  |
-| `backend/routers/ikuai.py` | 1179 | routers |  |  |
-| `backend/routers/ikuai_clients.py` | 142 | routers |  |  |
-| `backend/routers/ikuai_fixed_ip.py` | 261 | routers |  |  |
-| `backend/routers/ikuai_groups.py` | 684 | routers |  |  |
-| `backend/routers/ikuai_routes.py` | 237 | routers |  |  |
-| `backend/routers/ipv6_dns.py` | 232 | routers |  |  |
-| `backend/routers/ipv6_fakeip.py` | 348 | routers |  |  |
-| `backend/routers/ipv6_pd_guard.py` | 635 | routers |  |  |
-| `backend/routers/ipv6_policy.py` | 529 | routers |  |  |
-| `backend/routers/ipv6_readiness.py` | 294 | routers |  |  |
-| `backend/routers/ipv6_routes.py` | 370 | routers |  |  |
+| `backend/routers/dns_guard.py` | 589 | routers |  | R09 |
+| `backend/routers/forward_hint.py` | 184 | routers |  | R09 |
+| `backend/routers/ikuai.py` | 1179 | routers |  | R05 |
+| `backend/routers/ikuai_clients.py` | 142 | routers |  | R16 |
+| `backend/routers/ikuai_fixed_ip.py` | 261 | routers |  | R17 |
+| `backend/routers/ikuai_groups.py` | 684 | routers |  | R03 |
+| `backend/routers/ikuai_routes.py` | 237 | routers |  | R06 |
+| `backend/routers/ipv6_dns.py` | 232 | routers |  | R11 |
+| `backend/routers/ipv6_fakeip.py` | 348 | routers |  | R10 |
+| `backend/routers/ipv6_pd_guard.py` | 635 | routers |  | R11 |
+| `backend/routers/ipv6_policy.py` | 529 | routers |  | R10 |
+| `backend/routers/ipv6_readiness.py` | 294 | routers |  | R11 |
+| `backend/routers/ipv6_routes.py` | 370 | routers |  | R10 |
 | `backend/routers/lan_clients.py` | 93 | routers |  |  |
-| `backend/routers/pending.py` | 260 | routers |  |  |
-| `backend/routers/plan.py` | 807 | routers |  |  |
-| `backend/routers/policy_workspace.py` | 52 | routers |  |  |
-| `backend/routers/release.py` | 413 | routers |  |  |
-| `backend/routers/report.py` | 306 | routers |  |  |
-| `backend/routers/ros_address_lists.py` | 297 | routers |  |  |
-| `backend/routers/ros_clients.py` | 289 | routers |  |  |
-| `backend/routers/ros_policy.py` | 520 | routers |  |  |
-| `backend/routers/ros_policy_view.py` | 47 | routers |  |  |
-| `backend/routers/ros_policy_write.py` | 782 | routers |  |  |
-| `backend/routers/ros_return_advisory.py` | 210 | routers |  |  |
+| `backend/routers/pending.py` | 260 | routers |  | R13 |
+| `backend/routers/plan.py` | 807 | routers |  | R12 |
+| `backend/routers/policy_workspace.py` | 52 | routers |  | R15 |
+| `backend/routers/release.py` | 413 | routers |  | R12 |
+| `backend/routers/report.py` | 306 | routers |  | R03 |
+| `backend/routers/ros_address_lists.py` | 297 | routers |  | R07 |
+| `backend/routers/ros_clients.py` | 289 | routers |  | R16 |
+| `backend/routers/ros_policy.py` | 520 | routers |  | R08 |
+| `backend/routers/ros_policy_view.py` | 47 | routers |  | R08 |
+| `backend/routers/ros_policy_write.py` | 782 | routers |  | R08 |
+| `backend/routers/ros_return_advisory.py` | 210 | routers |  | R13 |
 | `backend/routers/ros_values.py` | 27 | routers |  |  |
-| `backend/routers/route_editor.py` | 164 | routers |  |  |
-| `backend/routers/routeros.py` | 816 | routers |  |  |
-| `backend/routers/routeros_batch.py` | 599 | routers |  |  |
-| `backend/routers/routeros_fixed_ip.py` | 382 | routers |  |  |
-| `backend/routers/routeros_nat.py` | 509 | routers |  |  |
-| `backend/routers/routeros_nat_list.py` | 1016 | routers |  |  |
-| `backend/routers/routeros_routes.py` | 283 | routers |  |  |
-| `backend/routers/rule_sync.py` | 474 | routers |  |  |
+| `backend/routers/route_editor.py` | 164 | routers |  | R06 |
+| `backend/routers/routeros.py` | 816 | routers |  | R04 |
+| `backend/routers/routeros_batch.py` | 599 | routers |  | R04 |
+| `backend/routers/routeros_fixed_ip.py` | 382 | routers |  | R17 |
+| `backend/routers/routeros_nat.py` | 509 | routers |  | R03 |
+| `backend/routers/routeros_nat_list.py` | 1016 | routers |  | R07 |
+| `backend/routers/routeros_routes.py` | 283 | routers |  | R06 |
+| `backend/routers/rule_sync.py` | 474 | routers |  | R14 |
 | `backend/routers/rule_sync_rules.py` | 214 | routers |  |  |
 | `backend/routers/rule_sync_store.py` | 90 | routers |  |  |
 | `backend/routers/rule_sync_write.py` | 265 | routers |  |  |
@@ -198,7 +198,7 @@ Command used: `find backend -name '*.py' -not -name 'test_*' -not -path 'backend
 | `backend/routes/agents.py` | 2388 | agents |  |  |
 | `backend/routes/aggregations.py` | 617 | config | C31 |  |
 | `backend/routes/auth.py` | 83 | config | C06 |  |
-| `backend/routes/client_devices.py` | 153 | routers |  |  |
+| `backend/routes/client_devices.py` | 153 | routers |  | R17 |
 | `backend/routes/client_tools.py` | 105 | agents |  | registers on the agents blueprint (`agents.*` endpoints) |
 | `backend/routes/config.py` | 497 | config | C34 |  |
 | `backend/routes/docker_ha_installation.py` | 67 | agents |  |  |
@@ -216,7 +216,7 @@ Command used: `find backend -name '*.py' -not -name 'test_*' -not -path 'backend
 | `backend/routes/oxidns.py` | 191 | config | C29 |  |
 | `backend/routes/profiles.py` | 336 | config | C34 |  |
 | `backend/routes/proxy_groups.py` | 436 | config | C33 |  |
-| `backend/routes/routers.py` | 820 | routers |  |  |
+| `backend/routes/routers.py` | 820 | routers |  | R13 |
 | `backend/routes/rule_library.py` | 540 | config | C33 |  |
 | `backend/routes/rules.py` | 1107 | config | C32 |  |
 | `backend/routes/settings.py` | 401 | config | C06 |  |
@@ -224,7 +224,7 @@ Command used: `find backend -name '*.py' -not -name 'test_*' -not -path 'backend
 | `backend/routes/stats.py` | 109 | config | C07 |  |
 | `backend/routes/subscriptions.py` | 696 | config | C30 |  |
 | `backend/routes/tasks.py` | 365 | config | C07 | row builders for router/agent/metrics slots are provided by the routers/agents domains through tasks.SetRows |
-| `backend/routes/upstream_router_pending.py` | 27 | routers |  |  |
+| `backend/routes/upstream_router_pending.py` | 27 | routers |  | R15 |
 | `backend/startup.py` | 56 | not-ported |  | Python runtime specifics (maintainer decision) |
 | `backend/utils/__init__.py` | 1 | config | C02 |  |
 | `backend/utils/commented_mihomo.py` | 112 | config | C11 |  |
