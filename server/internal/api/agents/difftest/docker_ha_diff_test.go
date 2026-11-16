@@ -425,8 +425,22 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 		enroll("enroll body null", "{session}", "Bearer {secret}", `null`),
 		enroll("enroll no content type", "{session}", "Bearer {secret}", `{"a": 1}`, func(r *request) { r.contentType = "" }),
 		enroll("enroll get", "{session}", "Bearer {secret}", ``, func(r *request) { r.method = "GET" }),
+		// A09 review: Authorization spellings around the capability token.
+		enroll("enroll lowercase bearer", "{session}", "bearer {secret}", "{}"),
+		enroll("enroll double space", "{session}", "Bearer  {secret}", "{}"),
+		enroll("enroll trailing tab", "{session}", "Bearer {secret}\t", "{}"),
+		enroll("enroll trailing space", "{session}", "Bearer {secret} ", "{}"),
+		enroll("enroll padded token", "{session}", "Bearer {secret}=", "{}"),
+		enroll("enroll latin-1 token", "{session}", "Bearer "+strings.Repeat("\xe9", 43), "{}"),
+		enroll("enroll trailing slash", "{session}/", "Bearer {secret}", "{}"),
+		enroll("enroll session suffix", "{session}0", "Bearer {secret}", "{}"),
+		enroll("enroll profile header", "{session}", "Bearer {secret}", "{}", func(r *request) {
+			r.headers["X-ConfigFlow-Profile"] = "bad id!"
+		}),
 	} {
-		checkV(r)
+		// Spellings both servers accept (trailing white space is OWS) enroll
+		// with random identities: mask them.
+		checkV(r, "agent_id", "token")
 	}
 	// Success and replay of a lost answer.
 	p, g := checkV(enroll("enroll ok", "{session}", "Bearer {secret}", "{}"), "agent_id", "token")
