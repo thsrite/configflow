@@ -299,13 +299,15 @@ func generateLoon(ctx context.Context, config *jsonx.Object, baseURL string) str
 	}
 	allocator := newNameAllocator(reserved)
 
-	remoteNames := newDict()
+	// Keep each dimension separate: resource IDs and regexes may themselves
+	// contain any delimiter chosen for a concatenated cache key.
+	type remoteKey struct{ kind, resourceID, excludeRegex string }
+	remoteNames := make(map[remoteKey]string)
 	remoteLines := []string{"[Remote Proxy]"}
 	remoteName := func(kind string, resourceID any, excludeRegex string) string {
-		cacheKey := []string{kind, key(resourceID), excludeRegex}
-		joined := strings.Join(cacheKey, "\x01")
-		if remoteNames.has(joined) {
-			return remoteNames.item(joined).(string)
+		cacheKey := remoteKey{kind, key(resourceID), excludeRegex}
+		if name, ok := remoteNames[cacheKey]; ok {
+			return name
 		}
 		var resources any
 		var path, suffix string
@@ -326,7 +328,7 @@ func generateLoon(ctx context.Context, config *jsonx.Object, baseURL string) str
 			}
 		}
 		if !truthy(resource) {
-			remoteNames.set(joined, "")
+			remoteNames[cacheKey] = ""
 			return ""
 		}
 		name := allocator.allocate(dictGet(resource, "name", ""), suffix)
@@ -340,7 +342,7 @@ func generateLoon(ctx context.Context, config *jsonx.Object, baseURL string) str
 		url := appendURLQuery(effective+profileAPIPath(config, path), query)
 		remoteLines = append(remoteLines, name+" = "+url+",udp=default,block-quic=default,fast-open=default,"+
 			"vmess-aead=default,skip-cert-verify=default,enabled=true")
-		remoteNames.set(joined, name)
+		remoteNames[cacheKey] = name
 		return name
 	}
 

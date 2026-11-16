@@ -992,7 +992,7 @@ Commands:
 
 ## C20 — Loon converter
 
-**Status: `ported`** (not reviewed) · prereqs: C19 · Go: `internal/convert` (`loon.go`, shared `clients_py.go`)
+**Status: `ported`** (adversarial review in progress) · prereqs: C19 · Go: `internal/convert` (`loon.go`, shared `clients_py.go`)
 
 Files → Go:
 - `backend/converters/loon.py` (764) → `convert/loon.go`: `GenerateLoonConfig(ctx, config, baseURL)`, `ConvertNodeToLoon(node) (line, err)` ("" = None), `ConvertProxyGroupToLoon(group, members)`, `ConvertProxiesToLoonText(proxies, toNodes)`, `BuildLoonRules` (= `_build_rules`), `SanitizeLoonName` (= `_sanitize_name`), constants `LoonDefaultGeneral`, `LoonBuiltinPolicies`, `LoonRuleTypes`, `LoonVmessCiphers`, `LoonDefaultTestURL`; private `effectiveLoonGroup`, `loonGroupSources`, `loonGroupMemberRefs`, `nameAllocator`, `resolveLoonNode`, `_quote/_value/_bool/_first/_transport_opts/_tls_opts/_shadow_tls_opts` ports.
@@ -1003,6 +1003,12 @@ Collaborators, tests, commands: shared with C19 (same corpus, replay and ported 
 Decisions / differences from Python: none known.
 
 Commits: same as C19.
+
+Review C19/C20 (2026-11-16, independent reviewer):
+- Medium: Loon remote cache concatenated `(kind, resource ID, exclusion)` with `\x01`; an ID/exclusion containing that delimiter aliases another source. Fixed with a Go struct map key; `review_clients_test.go::TestLoonRemoteCacheKeepsSourceAndExclusionSeparate` checks both remote lines and group references.
+- Scope confirmed by coordinator: this review closes functional findings; package-wide dynamic types and raised/caught Python errors are structural debt **→ S-convert, waiting for N8 design**. No public API rewrite in this review.
+- Baseline `.32`: `rt -- server/scripts/proddiff.sh` exit 0, `baseline: new=0 stale=0`; 2 Surge + 2 Loon configs and 4 subscriptions per client succeeded. Source-branch coverage still needs explicit synthetic checks.
+- Next: local native-library cleanup, Python-derived boundary corpus/coverage matrix, final `.32` checks, rebase `go`.
 
 ## C21 — MosDNS converter
 
