@@ -7,6 +7,28 @@ the tree as the reference until the Go server has full parity; it is never run n
 **Feature parity is a hard requirement.** Nothing is dropped silently. If something looks dead or
 not worth porting, list it in your hand-back under "Not ported" with evidence; do not decide alone.
 
+**Parity standard = functional parity (maintainer's decision, 2026-11-16; Python is retired for good,
+no rollback to it).** This overrides the stricter wording of the rules below where they conflict.
+- **Must match Python:** every feature, route and background task; API status codes, JSON field names,
+  types and values; Chinese user-facing messages (the frontend and the Agent match on them); the Agent
+  protocol; existing `configflow.sqlite3` and `DATA_DIR` data must be read and written compatibly
+  (Python-written data loads, nothing is lost on read-modify-write); generated configs (Mihomo, Surge,
+  Loon, MosDNS, OxiDNS, router scripts) must be **semantically** identical — same structure and values
+  after parsing, same lines/rules in the same order where order matters; validation must accept/reject
+  the same inputs (same status code, same Chinese message).
+- **No longer chased:** byte-level formatting where the consumer parses the result (YAML quoting/wrapping,
+  JSON whitespace, anchors — a one-time config change at the switch is accepted); text of Python-internal
+  exceptions on malformed input (`string indices must be integers`, PyYAML/TypeError texts) — Go still
+  rejects with the same status code and its own clear message; hash/set iteration order; CPython-only
+  Unicode edge cases (`'ß'.upper()`, superscript `isdigit`) unless a test or real user data depends on them.
+- **Existing helpers stay** (jsonx, yamlx/pyyaml, pystr, urlx, reqproxy): keep using them — they are
+  built and verified; replacing them is phase 2 after the switch. Do not spend effort extending them for
+  new byte-level or error-text quirks.
+- **Comparisons:** replay/corpus/differential compare outputs structurally (parsed YAML/JSON) and
+  exceptions by class/status + whether rejected, not by message text, except for Chinese user-facing
+  messages, which must match exactly. Rows that differ only in a "no longer chased" way count as equal;
+  list such classes once in the module section.
+
 ## Layout
 
 ```

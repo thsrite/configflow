@@ -77,12 +77,16 @@ agent; they are not maintained further.
 - Push `go` after each verified module or domain step. Never touch production; high-risk router/Agent
   behaviour additionally gets a VM lab test after the maintainer agrees.
 
-## Parity standard (confirmed 2026-11-15)
+## Parity standard (changed 2026-11-16: functional parity)
 
-The maintainer considered relaxing the standard to "functional equivalence" and decided to **keep the
-strict Python parity standard** after weighing the risks (judgement calls hiding real bugs, generated
-configs feeding fingerprints and auto-sync, frontend/Agent string matching, rollback to Python). Reviews
-continue to compare behaviour branch by branch against Python as written above.
+On 2026-11-15 the maintainer kept strict byte-level parity, partly to allow rollback to Python. On
+2026-11-16 Python was retired for good, and the standard became **functional parity** as defined at the
+top of `PORTING.md`: features, routes, API fields/values, Chinese messages, Agent protocol, stored-data
+compatibility and the semantics of generated configs must match; byte formatting, Python-internal error
+texts, hash order and CPython-only Unicode edge cases are no longer chased. Reviews still walk every
+branch against Python, but a finding must name a functional difference. Modules verified under the
+strict standard stay verified. A one-time change of generated config bytes at the switch is accepted
+(the maintainer is told before the switch, since Agents will receive one push).
 
 ## Test coverage policy (2026-11-16)
 
