@@ -176,3 +176,10 @@ them disagree (fake-ip traffic routed past the gateway). When N7 swaps yamlx to 
 keys / multi-document handling once in the yamlx facade and keep all readers on it.
 Note (2026-11-16): R01 also ports 67 validator lines of dns_guard/ipv6_pd_guard/client_fixed_ip; R09/R11/R17
 reuse them. Size budgets were dropped the same day: line counts are reported for information only.
+
+## Switch checklist (collected while porting; do these when Go replaces Python in production)
+
+- One full publish to every Agent and router right after the switch (generated config bytes, OxiDNS
+  resource tags and device-policy revision hashes change once; accepted by the maintainer 2026-11-16).
+- Stale resource files under old names: removed by the Agent/deployment cleanup, or cleaned once.
+- Tell the maintainer before the switch that Agents will receive one push.
