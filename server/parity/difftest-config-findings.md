@@ -292,6 +292,33 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `db.fields.system//system_config.value.config_token` | value | '' | '�' |
 | `db.meta.generation` | value | 4 | 5 |
 
+## R055-B01 / disabled/domain/example.com
+
+路由：`POST /api/domain-discovery/region/route`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `discovery.allocations` | invalid-Go-allocation | '<resource-prefixed hex/UUID IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase hex/UUID shape' |
+| `db.fields.profile/default/rule_configs.value[2].id` | value | 'ruleset_7cf664bc-d60c-4ed1-92cb-dbe875a45b0e' | 'ruleset_2ceb3caaa3c0d4424e27476d19a6548d' |
+
+## R055-S02 / new/domain/example.com
+
+路由：`POST /api/domain-discovery/region/route`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `discovery.allocations` | invalid-Go-allocation | '<resource-prefixed hex/UUID IDs and derived paths>' | 'discovery allocation needs its resource prefix and lowercase hex/UUID shape' |
+| `body.added[0].ruleset_id` | value | 'lib_52b75d6f15fc4cc5b2fa09d675318e37' | 'lib_95e5c54a38304179905b8c31e34edc48' |
+| `db.fields.profile/default/domain_discovery.value.history[0].ruleset_id` | value | 'lib_52b75d6f15fc4cc5b2fa09d675318e37' | 'lib_95e5c54a38304179905b8c31e34edc48' |
+| `db.fields.profile/default/domain_discovery.value.regional_rulesets.代理🧪` | value | 'lib_52b75d6f15fc4cc5b2fa09d675318e37' | 'lib_95e5c54a38304179905b8c31e34edc48' |
+| `db.fields.profile/default/rule_configs.value[1].id` | value | 'ruleset_faf6a670-8d8f-4db9-85ca-365c87eef38a' | 'ruleset_3c6bf050289794dd656afc99ea52e084' |
+| `db.fields.profile/default/rule_configs.value[1].library_rule_id` | value | 'lib_52b75d6f15fc4cc5b2fa09d675318e37' | 'lib_95e5c54a38304179905b8c31e34edc48' |
+| `db.fields.shared//rule_library.value[4].id` | value | 'lib_52b75d6f15fc4cc5b2fa09d675318e37' | 'lib_95e5c54a38304179905b8c31e34edc48' |
+| `files.shared/rules/by-id/6f08e1cf57a4cdd68afc0029e57a5d8ffb0646d0205c2ee872f061cad4ba4813.list` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 26, 'bytes_sha256': '145f7fd7beed2e748e7cfadb10fa168d309267d703f0ec09358ede2e8081bc9a', 'bytes_prefix_hex': '444f4d41494e2d5355464649582c6578616d706c652e636f6d0a'}} | None |
+| `files.shared/rules/by-id/6f08e1cf57a4cdd68afc0029e57a5d8ffb0646d0205c2ee872f061cad4ba4813.list.bak` | missing-in-go | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} | None |
+| `files.shared/rules/by-id/d8eda47d636884475dce1ba4755ff11abdf97547ec293d9579cd625347943042.list` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 26, 'bytes_sha256': '145f7fd7beed2e748e7cfadb10fa168d309267d703f0ec09358ede2e8081bc9a', 'bytes_prefix_hex': '444f4d41494e2d5355464649582c6578616d706c652e636f6d0a'}} |
+| `files.shared/rules/by-id/d8eda47d636884475dce1ba4755ff11abdf97547ec293d9579cd625347943042.list.bak` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+
 ## R056-B01 / name-collision/0
 
 路由：`POST /api/domain-discovery/rulesets/init`；状态：different

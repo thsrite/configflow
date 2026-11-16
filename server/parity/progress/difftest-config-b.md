@@ -869,3 +869,20 @@ request_variants=6889 named_matrix_cases=3540（S555 F2474 B511），H去重236�
 ```
 
 继续website/区域采纳/自动化、多Agent及超时/断连；未做最终全量。
+
+## 批次 49：区域服务/域名采纳与复用规则库
+
+- 27请求，25通过、2条已有ID形态问题的新路由记录。OpenAI/Claude/Netflix/YouTube精确域名集合、指定中文emoji策略组、域名大小写/尾点/punycode、已有专用库复用/重复采纳、禁用reference补新reference、新库/新引用及插在默认代理前，均比较完整DB、history(source=region)、缓存原文字节及另一profile不变。
+- 重复采纳的Python oracle更正：added=[]/skipped保留、内容/引用/history不变，但共享事务仍推进shared revision与generation一次；没有把no-op误断言为完全无提交。已重跑，全修订字段仍与Go严格比较。已有启用reference在MATCH后的形态，Python不会搬动它；保留实际行为。
+- kind非法/未知service/IP/中文原文/未知策略组失败必须无部分写入；H078–081各自真实请求。新分配ID沿用独立格式/唯一性/派生cache映射校验。
+- **R055-S02 new/domain与R055-B01 disabled/domain**：Python ruleset_带横线UUID、Go ruleset_hex32，映射校验拒绝并保留后续完整原始差异；同批其他25请求通过。属于已报初始化ID形态类别，不新增根因，不修改业务代码。
+
+```text
+.63 run.py --groups discovery-region-route,discovery-region-route-guards
+current compared=25 different=2 design_errors=[] seconds=17.53
+cumulative compared=1771 go-unimplemented=5063 dependency=28 different=53 O12-separate=1
+request_variants=6916 named_matrix_cases=3548（S557 F2478 B513），H去重240，G去重15
+48 self-checks + end-to-end wrong-Go-response check OK
+```
+
+继续website、多Agent/超时/断连/自动化、G13及其余路由/helper；未做最终全量。

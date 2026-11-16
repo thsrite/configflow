@@ -169,6 +169,8 @@ def main():
     groups.update(discovery_agent)
     from cases.discovery_region import GROUPS as discovery_region
     groups.update(discovery_region)
+    from cases.discovery_region_write import GROUPS as discovery_region_write
+    groups.update(discovery_region_write)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:
