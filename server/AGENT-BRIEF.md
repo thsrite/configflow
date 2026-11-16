@@ -13,8 +13,11 @@ asked in; the maintainer reads Chinese.
   reference outputs on the server: `~/cf-test/.venv/bin/python` (run with `PYTHONPATH=.` from the repo root).
 - Only light work locally: editing, git, reading files, grep, scripts that finish in seconds.
 - **Two test servers** (same setup: Arch, Go, `~/cf-test/.venv` Python 3.11, prod snapshot for proddiff):
-  `192.168.0.32` (default for `rt`) and `192.168.0.63` (WSL2, 16 cores; select it with
-  `RT_HOST=sunbroke@192.168.0.63 rt -- …`). Your brief says which one to use; if it says nothing, use .32.
+  `192.168.0.32` (native Linux, default for `rt`) and `192.168.0.63` (WSL2 on a Windows PC, 16 cores; select
+  it with `RT_HOST=sunbroke@192.168.0.63 rt -- …`). **Iterate on .63** (porters' and reviewers' repeated
+  runs). Your **final hand-back run** (full suite, `-race`, proddiff) goes on **.32**. .63 can disappear when
+  the PC sleeps or reboots: if it is unreachable or a run is cut off, continue on .32 — that is not a test
+  failure. A timing-sensitive failure seen only on .63 must be re-checked on .32 before you call it a bug.
   Run full `-race` (`go test -race ./...`) only once at the end; while iterating use `-race` only on the
   packages you changed.
 - **Never run `rt clean` in `~/program/configflow-go`** (the shared worktree); only inside your own
