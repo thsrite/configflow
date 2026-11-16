@@ -364,6 +364,10 @@ package's directory.
 
 ## Working next to other agents
 
+**Never run `rt clean` from the shared worktree `~/program/configflow-go`**: it deletes the shared remote copy
+on the test server (gitignored build outputs and generated test data of every agent). Only run it inside
+your own private worktree, right before removing that worktree.
+
 Several agents work in this same worktree at once. Touch only your package directories and your rows of
 `parity/routes.tsv`. Stage with explicit paths (`git add server/internal/<yours>`), never `git add -A` or
 `git commit -a`. If `git` reports an index lock, wait a few seconds and retry. Commit early and often
