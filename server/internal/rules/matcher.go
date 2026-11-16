@@ -8,8 +8,8 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
-	"configflow/internal/urlx"
 	"configflow/internal/pyyaml"
+	"configflow/internal/urlx"
 )
 
 // Port of backend/utils/rule_matcher.py: rule-line parsing and the indexed

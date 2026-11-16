@@ -27,6 +27,7 @@ import ipaddress
 import json
 import random
 import re
+import signal
 import sys
 import unicodedata
 
@@ -216,6 +217,68 @@ def regex_cases(count):
             except Exception as exc:
                 result = '__exception__ ' + exc_text(exc)
             emit(kind='rxerr', pattern=pattern, result=result)
+
+
+class _Slow(Exception):
+    pass
+
+
+def _alarm(*_):
+    raise _Slow
+
+
+signal.signal(signal.SIGALRM, _alarm)
+
+
+def quick_enough(pattern, subjects):
+    """Skip patterns whose search backtracks catastrophically in CPython."""
+    try:
+        signal.setitimer(signal.ITIMER_REAL, 0.2)
+        for flags in (0, re.IGNORECASE):
+            compiled = re.compile(pattern, flags)
+            for subject in subjects:
+                compiled.search(subject)
+        return True
+    except _Slow:
+        return False
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+
+
+def valid_regex_cases(count):
+    """Patterns Python accepts (the grammar fuzzer rejects most), longer subjects."""
+    seen = set()
+    made = 0
+    while made < count:
+        pattern = gen_pattern()
+        if pattern in seen or '\\N{' in pattern:
+            continue
+        seen.add(pattern)
+        compiled, error = compile_outcome(pattern, 0)
+        if error is not None:
+            continue
+        made += 1
+        subjects = []
+        for _ in range(10):
+            subject = gen_subject(pattern)
+            if R.random() < 0.3:
+                subject += gen_subject(pattern)[:4]
+            subjects.append(subject)
+        if not quick_enough(pattern, subjects):
+            continue
+        for flags in (0, re.IGNORECASE):
+            compiled, error = compile_outcome(pattern, flags)
+            record = {'pattern': pattern, 'ignore': bool(flags)}
+            if error is not None:
+                record.update(error)
+            else:
+                spans = []
+                for subject in subjects:
+                    m = compiled.search(subject)
+                    spans.append(None if m is None else [m.start(), m.end()] + [list(m.span(g)) for g in range(1, compiled.groups + 1)])
+                record['subjects'] = subjects
+                record['spans'] = spans
+            emit(kind='rx', **record)
 
 
 # --------------------------------------------------------------------------
@@ -598,6 +661,7 @@ def case_cases():
 
 
 regex_cases(int(sys.argv[2]) if len(sys.argv) > 2 else 6000)
+valid_regex_cases(int(sys.argv[4]) if len(sys.argv) > 4 else 6000)
 syntax_cases(4000)
 misc_cases(3000)
 match_cases(800)

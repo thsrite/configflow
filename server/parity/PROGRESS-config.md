@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 21 missing, 5 partial, 5 ported, 6 verified (C01, C02, C03, C04, C09, C10). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 21 missing, 4 partial, 5 ported, 7 verified (C01, C02, C03, C04, C08, C09, C10). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -33,7 +33,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C05 | profile context, OxiDNS settings normalizer | 497 | partial | C04 | – |
 | C06 | HTTP shell, auth, settings routes | 1028 | partial | C05 | 22 (17 done) |
 | C07 | logs, stats, tasks, notifications, web listener | 1393 | partial | C06 | 9 (5 done) |
-| C08 | rule syntax, matcher, rule utils | 1101 | partial | C02 | – |
+| C08 | rule syntax, matcher, rule utils | 1101 | verified | C02 | – |
 | C09 | matcher cache, group candidates, reorder, strategy refs, connection rules | 708 | verified | C08 | – |
 | C10 | manual node parser, subscription hosts/filter/dialers | 1242 | verified | C08 | – |
 | C11 | proxy chains, commented Mihomo editor, listeners, proxy-server DNS | 855 | partial | C10 | – |
@@ -314,7 +314,7 @@ Reviewer notes: Web listener: 14 Python cases are nginx-specific (reload failure
 
 ## C08 — rule syntax, matcher, rule utils
 
-**Status: `ported`, review in progress (2026-11-16)** · prereqs: C02 · Go: internal/rules, internal/rulefetch/cache.go (C08 functions)
+**Status: `verified`** (review 2026-11-16, one round; 0 open findings) · prereqs: C02 · Go: internal/rules, internal/rulefetch/cache.go (C08 functions)
 
 Files:
 - `backend/utils/rule_syntax.py` (216)
@@ -331,7 +331,29 @@ Missing / deferred: the repository-backed `rule_utils.py` functions are ported i
 
 Reviewer notes: Accepted: `\N{name}` and repeat counts > int32 give `*UnsupportedRegexError`; backtracking matches cut off after 1 s count as no match. `rules/compat.go` still holds copies of already-ported helpers: `safeExceptionDetails` returns `exception_type=%T` (Go type name, e.g. `*fs.PathError`) while `urlx.SafeExceptionDetails` exists — switch and check the log text; `Logger` interface instead of `logx`; `ProfileValidationError` instead of `repo.Error` (rules cannot import repo? it can — rules imports only jsonx; check for a cycle via repo→rules first). Remaining compat copies → C14 (ruleset_content), C12 (converters/common), C26 (device policy).
 
-Review (in progress, 2026-11-16) — fixed so far: group names use `str.isidentifier` (pystr.IsIdentifier, XID tables), `str.upper` full mapping (pystr.Upper) in split_rule_payload/parse_rule_line, regex error repr via jsonx.Repr, ip_address/ip_network ported from CPython (scope ids with spaces), YAML rule sets composed like CSafeLoader (pyyaml `Libyaml` mode; multi-line scalar end marks), matcher/matcher-cache module loggers + urlx.SafeExceptionDetails, rule_cache_read_path existing-cache-first. Commits c19aef3f, a06e7bab, 17bb4d03, fd9a48dc, 44028412, a0fe241c. Item 8 done for `rules` (private str copies removed). Remaining: valid-heavy regex fuzz round, final notes.
+Review C08 (2026-11-16, one round) — findings (all fixed, each with a regression test):
+1. **high** — YAML rule sets in the matcher (`_iter_ruleset_lines`): gopkg.in/yaml.v3 plus a hand-written resolver, and the displayed source taken from the start line only. Python composes with CSafeLoader (libyaml) and slices from the start mark's line to the line holding the *end* mark. Diverged on `%YAML 1.2` documents, `:`/`?` inside flow plain scalars, tabs inside plain scalars and after tokens/tags/directives/block indicators, a comment right after a block scalar header or `%YAML` version, byte order marks (stream start: marks exclude it; any line start: skipped), surrogate escapes (`"\ud83d"` is a libyaml error), the empty `! ` node (str), multi-line scalars (source spans to the end line). Fix a06e7bab + the final review commit (`pyyaml.ComposeOptions.Libyaml`: libyaml's scanner rules in the PyYAML port) + fd9a48dc (matcher on it, Python's rfind/find over end marks). Tests: `TestReviewC08YAMLPayload` (80000 fuzzed documents vs CSafeLoader), `TestReviewC08Matcher`.
+2. **medium** — `ip_address`/`ip_network` were net/netip: any white space refused, so scope ids Python keeps verbatim (`fe80::1%eth 0`, `::%a `, `x\n`) made parse_rule_line return DOMAIN instead of IP/IP-CIDR, cidr_error the wrong message, normalize_match_query strip the dot, matching fail. Fix 17bb4d03 (port of CPython 3.11 `_ip_int_from_string`/`_split_scope_id`). Tests: `TestReviewC08IP`, `TestReviewC08Lines`, `TestReviewC08Domains`.
+3. **medium** — regex group names (`(?P<n>`, `(?P=n)`, `(?(n)`, `\g<n>`) used a letter/digit approximation of `str.isidentifier`: `℘`, `a·`, `ⅷ`, `x\u0301`… valid in Python, rejected in Go (and the reverse for some letters), with different error texts. Fix c19aef3f (`pystr.IsIdentifier`, XID tables from CPython) + fd9a48dc. Tests: `TestReviewC08Regex`, `TestReviewC08Case` (every code point).
+4. **low** — `str.upper()` (split_rule_payload, parse_rule_line, `_parse_ruleset_line`) was Go's simple mapping plus 10 special cases: `ΐ`, `ᾳ`, `և`… and Unicode 15+ letters gave a different kind in `未知规则类型 …`. Fix c19aef3f (`pystr.Upper`, full mapping) + fd9a48dc. Tests: split records, `TestReviewC08Case`.
+5. **low** — regex error texts quoted with a minimal repr; Python escapes non-printables (`\u200b`, `\u2028`, `\u3000`). Fix fd9a48dc (`jsonx.Repr`). Test: rx records.
+6. **low** — the matcher's log lines were dropped without an injected logger, and `exception_type` was the Go type; Python logs under `backend.utils.rule_matcher` with the Python class. The matcher cache now defaults to `backend.utils.domain_matcher_cache` and lets its matchers log under rule_matcher. Fix 44028412 (`urlx.SafeExceptionDetails`, logx). Test: `TestReviewC08MatcherLogLines`.
+7. **low** — `rulefetch.RuleCacheReadPath` read the shared document before checking the current cache file; Python returns an existing file first (a repository failure does not matter then). Fix a0fe241c. Test: `rulefetch/TestReviewC08ReadPathPrefersExistingCacheWithoutRepositoryRead`.
+
+Coordinator item 8: done for `rules` — the private `pyLower`/`pyUpper`/`pyStrip`/`pyIsSpace`/`pyIsIdentifier` copies are gone; call sites use `internal/pystr` (Upper and IsIdentifier added there, generated by `pystr/testdata/gen_tables.py`). All corpora re-run.
+
+Fuzzing (testdata/review_c08_gen.py → review_c08.jsonl.gz, CPython 3.11.17, synthetic values): regex grammar fuzzer (groups, named groups/refs, conditionals, look-around, atomic, possessive, scoped/global flags incl. a/u/L/x, classes with categories and Unicode case pairs, quantifiers incl. invalid ones, stray metacharacters) — 6000 random + 5000 Python-valid patterns (13120 compiled pattern/flag pairs: 8342 on RE2, 4778 on the backtracking engine; 124952 searches with spans) × IGNORECASE on/off, error text or search span + every group span on 8–10 subjects each, plus rule_value_error('DOMAIN-REGEX') for each; 4000+ rule_value_error on mutated kinds (case, typos, ı/ſ/K, SpecialCasing letters) and values (domains with IDN/full-width/bidi/ZW chars, IPs with zones, ports/DSCP/UID ranges, logical rules, regexes); 1000 split_rule_payload with Unicode spaces; 3000 each of parse_rule_line (all dialects, quotes, comments, no-resolve variants), ip_address/ip_network/cidr_error, domain_value_error/is_valid_domain/normalize_match_query, match_query/match_domain; 800 RuleConfigMatcher cases (text and YAML bodies); 80000 YAML token-soup documents (5909 with entries) through `_iter_ruleset_lines`; str.upper/lower/isidentifier of all code points. All equal.
+
+Accepted differences (not open findings):
+- Python exceptions handled in Go: OverflowError for repeat counts ≥ MAXREPEAT escapes `_regex_error`, `match_domain` and the matcher index in Python (HTTP 500), Go reports `正则表达式格式无效：…` / no match; RecursionError depth is fixed at 490 nested groups (Python's depends on the call stack); non-dict rule items, non-string `rule_type`/`value` (Python's `ip_network(5)` would even accept an int value), unhashable behaviors — values every write path validates as strings.
+- From C09: Go's Unicode tables (newer than 14.0) for `\w`/`\d`/case folding on code points unassigned in Python 3.11; backtracking timeout (1 s, no match); `\N{name}`.
+- libyaml emulation covers the differences the fuzzing found; nesting deeper than the PyYAML port's limit (490) yields nothing where libyaml (no Python recursion) might parse.
+- `rule_cache_read_path` joins with filepath.Join (cleaned path text, same file); `refresh_remote_rule` with a non-string url passes its str() (Python passes the object; validated urls only).
+
+Checks: line-by-line walk of rule_syntax.py, rule_matcher.py (incl. `_RuleIndex` lookup order, IP index by prefix, behaviors, key/slot, logs), rule_utils.py vs rules/syntax.go, matcher.go, ipaddr.go, difflib.go, ruleutils.go and rulefetch/cache.go; regex engine selection (RE2 only without look-around/refs/atomic/possessive/conditionals/`\b`, `$` only at the tail), category classes, flags, `$`/`\Z`/`\b`/`\B` translations; existing corpora (27000 match pairs, regex, idna, syntax, cache names) and C09/C14 references pass.
+Not gofmt-clean but not C08's: `rulefetch/content.go`, `rulefetch/content_test.go` (C14).
+
+Commands: `rt -- bash -lc 'cd server && go vet ./internal/rules/... ./internal/rulefetch/... && go test -count=1 ./internal/rules/... ./internal/rulefetch/... ./internal/convert/... ./internal/subs/... ./internal/repo/...'`; regenerate: `rt --back server/internal/rules/testdata/review_c08.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python -W ignore server/internal/rules/testdata/review_c08_gen.py server/internal/rules/testdata/review_c08.jsonl.gz 6000 80000 5000'`; pystr tables: `rt --back server/internal/pystr/tables.go -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/pystr/testdata/gen_tables.py'`.
 
 ## C09 — matcher cache, group candidates, reorder, strategy refs, connection rules
 
@@ -1069,7 +1091,7 @@ Porting order (one fresh porter per module; each updates its section and commits
 Review order (one fresh reviewer per module, alongside the porter):
 1. Now (status `ported`): **C01**, **C03** (also switch `repo/compat_rules.go` to `internal/rules`), **C04**, **C09**, **C10**.
 2. ~~C02~~ verified 2026-11-16 (yamlx on the PyYAML port).
-3. **C08** after C14 has added the missing `rule_utils` functions (also switch `rules/compat.go` copies of `urlx`/`logx`/`repo` helpers).
+3. ~~C08~~ verified 2026-11-16.
 4. **C11** after the maintainer decides on the commented-editor open items (1)–(3).
 5. **C06** after C13 and C35 added their settings routes (add `internal/redact` tests); **C07** after every `tasks` slot exists (C15, C37, agents, routers).
 6. **C05** after C27.

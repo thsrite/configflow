@@ -714,7 +714,7 @@ func (s *scanner) scanYAMLDirectiveValue(start Mark) (int, int) {
 	}
 	s.forward(1)
 	minor := s.scanYAMLDirectiveNumber(start)
-	if !inSet(s.peek(0), "\x00 \r\n\u0085  ") && !(s.libyaml && s.peek(0) == '\t') {
+	if !inSet(s.peek(0), "\x00 \r\n\u0085  ") && !(s.libyaml && (s.peek(0) == '\t' || s.peek(0) == '#')) {
 		s.fail(scannerError("while scanning a directive", &start,
 			"expected a digit or ' ', but found "+reprRune(s.peek(0)), s.mark()))
 	}
@@ -941,7 +941,7 @@ func (s *scanner) scanBlockScalarIndicators(start Mark) (int, int) {
 			s.forward(1)
 		}
 	}
-	if ch := s.peek(0); !inSet(ch, "\x00 \r\n\u0085  ") && !(s.libyaml && ch == '\t') {
+	if ch := s.peek(0); !inSet(ch, "\x00 \r\n\u0085  ") && !(s.libyaml && (ch == '\t' || ch == '#')) {
 		s.fail(scannerError("while scanning a block scalar", &start,
 			"expected chomping or indentation indicators, but found "+reprRune(ch), s.mark()))
 	}
