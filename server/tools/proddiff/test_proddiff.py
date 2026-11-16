@@ -1,5 +1,7 @@
 """Synthetic regressions for the acceptance gate (run on the test server)."""
 import importlib.util
+import io
+import zipfile
 from pathlib import Path
 import unittest
 
@@ -16,6 +18,7 @@ class ComparatorTests(unittest.TestCase):
             ('content-type', (200, 'text/plain', good[2]), ('Content-Type', 'value')),
             ('value', (200, good[1], b'{"success":true,"data":{"count":4}}'), ('body.data.count', 'value')),
             ('missing', (200, good[1], b'{"success":true,"data":{}}'), ('body.data.count', 'missing-in-go')),
+            ('type', (200, good[1], b'{"success":true,"data":{"count":true}}'), ('body.data.count', 'type')),
             ('transport', (0, '', b''), ('status', 'value')),
         ]:
             with self.subTest(name=name):
@@ -39,6 +42,26 @@ class ComparatorTests(unittest.TestCase):
         rule = [{'route': '/synthetic', 'path': 'size', 'reason': 'test'}]
         self.assertEqual([('body.data.size', 'value')], pd.response_diffs(a, b, '/synthetic', rule))
         self.assertEqual(2, len(pd.response_diffs(a, b, '/other', rule)))
+
+    def test_invalid_documents_cannot_pass(self):
+        bad = (200, 'application/json', b'{')
+        self.assertEqual([('body', 'parse-python'), ('body', 'parse-go')], pd.response_diffs(bad, bad, '/synthetic', []))
+
+    def test_zip_members_use_their_own_format(self):
+        def archive(content):
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, 'w') as output:
+                output.writestr('config.yaml', 'a: 1\n')
+                output.writestr('rules.txt', content)
+            return (200, 'application/zip', buffer.getvalue())
+        self.assertEqual([], pd.response_diffs(archive('a\r\nb\r\n'), archive('a\nb'), '/api/generate/oxidns', []))
+        self.assertTrue(pd.response_diffs(archive('a\nb'), archive('a\nc'), '/api/generate/oxidns', []))
+
+    def test_normalization_preserves_type_changes(self):
+        a = (200, 'application/json', b'{"size":1}')
+        b = (200, 'application/json', b'{"size":{}}')
+        rule = [{'route': '/synthetic', 'path': 'size', 'reason': 'test'}]
+        self.assertEqual([('body.size', 'type')], pd.response_diffs(a, b, '/synthetic', rule))
 
     def test_unknown_keys_never_escape(self):
         self.assertEqual([('body.<key>', 'value')], pd.differences({'private.example': 1}, {'private.example': 2}))

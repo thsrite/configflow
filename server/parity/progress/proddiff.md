@@ -5,7 +5,7 @@ no push. Source snapshot stays on the test server; all reports/commits contain s
 Design and command documentation: [doc/testing/go-proddiff.md](../../../doc/testing/go-proddiff.md).
 
 Done:
-- Initial runner commit af90c23d (rebased from 493df48c): real cmd/configflow build, isolated
+- Initial runner commit 16c0292f (rebased from af90c23d/493df48c): real cmd/configflow build, isolated
   user/net/mount namespace, read-only snapshot mount/hash guard, separate disposable data copies,
   existing environment-account login, actual registered-route manifest, automatic mutation self-check.
 - Hardened startup equivalence with metrics_flush.load_history; removed false history differences.
@@ -15,7 +15,7 @@ Done:
   previews, sessions and SQLite installer capabilities. Installer output uses saved Agent parameters.
 - Exact normalization list; structural JSON/YAML/ZIP and text comparison; schema-only baseline and
   coverage inventory. Missing Go routes are counted, previously compared route removals fail.
-- Five synthetic comparator/enumeration tests passed; full server go vet passed on test server.
+- Eight synthetic comparator/enumeration tests passed; full server go vet passed on test server.
 
 Current remote result (integration Go source plus framework overlays):
 156 GET templates: 50 compared, 106 unimplemented. 205 selected method/templates: 51 compared,
@@ -34,4 +34,13 @@ Commands:
 - `rt --back server/parity/proddiff-baseline.txt --back server/parity/proddiff-coverage.txt -- server/scripts/proddiff.sh --record-baseline`
 - `rt -- bash -lc '~/cf-test/.venv/bin/python -m unittest discover -s server/tools/proddiff -p "test_*.py" -v && cd server && test -z "$(gofmt -l tools/proddiff)" && go vet ./...'`
 
-Remaining: final integration rebase, ordinary baseline recheck on rebased sources, clean worktree.
+Hardening: invalid JSON/YAML/ZIP cannot silently pass; ZIP text members keep text semantics;
+normalization preserves type/structure changes; processes stop before temporary copies are removed.
+
+Complete: rebased onto local go HEAD `6e59ce26e6966be9277833edc7f56ab2e3583a22`.
+Framework commits: 16c0292f (runner), f31b9ff7 (baseline/coverage), current commit (hardening).
+Final command, exit 0:
+`rt -- bash -lc '~/cf-test/.venv/bin/python -m unittest discover -s server/tools/proddiff -p "test_*.py" -v && server/scripts/proddiff.sh && cd server && test -z "$(gofmt -l tools/proddiff)" && go vet ./...'`
+Tail: `Ran 8 tests ... OK`; `self-check: PASS (mutated Go status detected)`;
+`baseline: new=0 stale=0`. Full counts match the table above, coverage_regressions=0.
+Only framework/scripts/parity/doc files differ from go; no business changes. No push.

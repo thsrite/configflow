@@ -1,6 +1,7 @@
 """Offline production-snapshot differential. Console and baseline contain schema only."""
 import ast
 import collections
+import contextlib
 import concurrent.futures
 import hashlib
 import io
@@ -75,14 +76,19 @@ def text(value):
 
 
 def parsed(body, content_type, route, member=''):
-    if 'json' in content_type:
+    if 'json' in content_type or member.endswith('.json'):
         return json.loads(body)
     if body.startswith(b'PK\x03\x04'):
         with zipfile.ZipFile(io.BytesIO(body)) as archive:
             return {name: parsed(archive.read(name), '', route, name) for name in archive.namelist() if not name.endswith('/')}
-    value = body.decode('utf-8')
+    try:
+        value = body.decode('utf-8')
+    except UnicodeError:
+        if 'yaml' in content_type or member.endswith(('.yaml', '.yml')):
+            raise
+        return body
     if ('yaml' in content_type or member.endswith(('.yaml', '.yml')) or
-            re.search(r'/(mihomo|mosdns|oxidns)(/preview)?$', route)):
+            (not member and re.search(r'/(mihomo|mosdns|oxidns)(/preview)?$', route))):
         return yaml.safe_load(value)
     return text(value).splitlines()
 
@@ -96,10 +102,15 @@ def response_diffs(left, right, route, rules):
     if left[0] == 0 or right[0] == 0:
         # Both failures are recorded; a one-sided transport failure cannot pass.
         return out
-    try:
-        a, b = (parsed(x[2], x[1], route) for x in (left, right))
-    except (ValueError, UnicodeError, yaml.YAMLError, zipfile.BadZipFile):
-        return out + ([] if left[2] == right[2] else [('body', 'unparseable-value')])
+    values = []
+    for label, reply in (('python', left), ('go', right)):
+        try:
+            values.append(parsed(reply[2], reply[1], route))
+        except (ValueError, UnicodeError, yaml.YAMLError, zipfile.BadZipFile):
+            out.append(('body', 'parse-' + label))
+    if len(values) != 2:
+        return out
+    a, b = values
     if isinstance(a, dict) and isinstance(b, dict):
         # Generated YAML embedded in JSON is compared structurally too.
         for key in ('content', 'config', 'compose'):
@@ -113,13 +124,18 @@ def response_diffs(left, right, route, rules):
         for rule in rules:
             if rule['route'] != route:
                 continue
+            targets = []
+            parts = rule['path'].split('.')
             for value in (a, b):
                 current = value
-                parts = rule['path'].split('.')
                 for key in parts[:-1]:
                     current = current.get(key, {}) if isinstance(current, dict) else {}
-                if isinstance(current, dict) and parts[-1] in current:
-                    current[parts[-1]] = '<runtime>'
+                targets.append(current)
+            if all(isinstance(target, dict) and parts[-1] in target for target in targets):
+                left_value, right_value = (target[parts[-1]] for target in targets)
+                if type(left_value) is type(right_value) and not isinstance(left_value, (dict, list)):
+                    for target in targets:
+                        target[parts[-1]] = '<runtime>'
     out.extend(differences(a, b))
     return out
 
@@ -264,6 +280,16 @@ def digest_tree(root):
     return digest.digest()
 
 
+def stop_processes(processes):
+    for process in processes:
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        process.wait()
+
+
 def main():
     global PRIVATE_REPORT
     if [name for _, name in socket.if_nameindex()] != ['lo']:
@@ -286,7 +312,8 @@ def main():
     if any(not rule['reason'] or '*' in rule['route'] + rule['path'] for rule in rules):
         raise RuntimeError('normalization requires an exact route/path and reason')
     try:
-        with tempfile.TemporaryDirectory(prefix='copies-', dir=report) as temporary:
+        with tempfile.TemporaryDirectory(prefix='copies-', dir=report) as temporary, contextlib.ExitStack() as cleanup:
+            cleanup.callback(stop_processes, processes)
             copies = [Path(temporary) / name for name in ('python', 'go')]
             for data in copies:
                 shutil.copytree(snapshot, data)
@@ -415,10 +442,7 @@ def main():
                 print('COVERAGE-REGRESSION\t' + route, flush=True)
             return int(bool(new or lost_coverage or failures['one-sided-transport-failure']))
     finally:
-        for process in processes:
-            if process.poll() is None:
-                os.killpg(process.pid, signal.SIGKILL)
-            process.wait()
+        stop_processes(processes)
         if digest_tree(snapshot) != before:
             raise RuntimeError('snapshot changed')
 
