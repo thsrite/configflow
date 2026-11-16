@@ -143,6 +143,12 @@ func (o *composeOrigin) count() int {
 	return len(o.calls)
 }
 
+func (o *composeOrigin) setStatus(status int) {
+	o.mu.Lock()
+	o.status = status
+	o.mu.Unlock()
+}
+
 // composeBootstrapFiles is bootstrap_files(tmp_path, cap).
 func composeBootstrapFiles(t *testing.T, dir string, e *Enrollment) (files, data, setup string) {
 	files = composeUnpack(t, composeGuide(t, composeParams(dir), e), filepath.Join(dir, "bundle"))
@@ -210,7 +216,7 @@ func TestBundleBootstrapFirstEnrollmentThenExpiredOfflineRestart(t *testing.T) {
 	config["service_type"], config["server_url"], config["config_version"] = "oxidns", "http://panel.example", "42"
 	updated, _ := json.Marshal(config)
 	os.WriteFile(filepath.Join(data, "config-oxidns.json"), updated, 0o600)
-	origin.status = 401
+	origin.setStatus(401)
 	settings := composeReadJSON(t, filepath.Join(files, "enrollment.json"))
 	settings["token"] = "expired"
 	raw, _ := json.Marshal(settings)
@@ -218,7 +224,7 @@ func TestBundleBootstrapFirstEnrollmentThenExpiredOfflineRestart(t *testing.T) {
 	if second := composeExecuteBootstrap(t, files, data, setup); second.code != 0 || origin.count() != 1 {
 		t.Fatalf("second: %+v calls %d", second, origin.count())
 	}
-	origin.status = 500 // the origin "gone": a saved identity must not contact it
+	origin.setStatus(500) // the origin "gone": a saved identity must not contact it
 	if third := composeExecuteBootstrap(t, files, data, setup); third.code != 0 || origin.count() != 1 {
 		t.Fatalf("third: %+v", third)
 	}
@@ -234,7 +240,7 @@ func TestBundleBootstrapExpiredFirstAttemptStaysStoppedAndRetries(t *testing.T) 
 	dir := t.TempDir()
 	origin := newComposeOrigin(t)
 	files, data, setup := composeBootstrapFiles(t, dir, composeCapability(origin.url))
-	origin.status = 401
+	origin.setStatus(401)
 	failed := composeExecuteBootstrap(t, files, data, setup)
 	if failed.code == 0 || strings.Contains(failed.stdout, "ENTRYPOINT_ALLOWED") {
 		t.Fatalf("%+v", failed)
@@ -242,7 +248,7 @@ func TestBundleBootstrapExpiredFirstAttemptStaysStoppedAndRetries(t *testing.T) 
 	if _, err := os.Stat(filepath.Join(data, "config-oxidns.json")); err == nil {
 		t.Fatal("identity written")
 	}
-	origin.status = 200
+	origin.setStatus(200)
 	if ok := composeExecuteBootstrap(t, files, data, setup); ok.code != 0 || origin.count() != 2 {
 		t.Fatalf("%+v %d", ok, origin.count())
 	}
