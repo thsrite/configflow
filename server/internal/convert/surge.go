@@ -1,7 +1,7 @@
 package convert
 
 // Port of backend/converters/surge.py (C19): the Surge configuration of a
-// profile, byte-identical to Python's. Manual node strings are parsed with
+// profile. Manual node strings are parsed with
 // the built-in subs.ParseURIList exactly as Python's parse_uri_list
 // (unknown schemes are dropped silently; switching Surge/Loon to Sub-Store
 // is a follow-up after parity, packages.md).
@@ -186,7 +186,7 @@ func generateSurge(ctx context.Context, config *jsonx.Object, baseURL string) st
 
 	proxies := []string{"[Proxy]"}
 	surgeLog.Debug("收集到的被使用节点ID: " + usedNodeIDs.repr())
-	nodeCount := pyLen(dictGet(config, "nodes", []any{}))
+	nodeCount := len(iterate(dictGet(config, "nodes", []any{})))
 	surgeLog.Debug("开始生成 Surge proxies，总节点数: " + jsonx.Repr(jsonx.Int(int64(nodeCount))))
 	for _, node := range iterate(dictGet(config, "nodes", []any{})) {
 		if !truthy(dictGet(node, "enabled", true)) {
@@ -841,7 +841,8 @@ func convertProxyGroupToSurge(group any, config *jsonx.Object, baseURL string, s
 	for _, path := range policyPaths {
 		line += ", policy-path = " + path + ", update-interval = 86400"
 	}
-	surgeLog.Debug("Group '" + fstr(name) + "' final line: " + line)
+	// The rendered line contains subscription URLs and the config token.
+	surgeLog.Debug("Generated Surge proxy group")
 	return line
 }
 
@@ -886,7 +887,7 @@ func GetProxyGroupNodes(group any, config *jsonx.Object) (names []any, err error
 	allNodes := dictGet(config, "nodes", []any{})
 	if subscriptions := dictGet(group, "subscriptions", []any{}); truthy(subscriptions) {
 		surgeLog.Debug("get_proxy_group_nodes: Looking for nodes with subscription_id in " + fstr(subscriptions))
-		surgeLog.Debug("Total nodes in config: " + jsonx.Repr(jsonx.Int(int64(pyLen(allNodes)))))
+		surgeLog.Debug("Total nodes in config: " + jsonx.Repr(jsonx.Int(int64(len(iterate(allNodes))))))
 		var matching []any
 		for _, node := range iterate(allNodes) {
 			if pyContainsAny(subscriptions, dictGet(node, "subscription_id", nil)) && truthy(dictGet(node, "enabled", true)) {

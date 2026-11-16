@@ -1,7 +1,7 @@
 package convert
 
 // Port of backend/converters/loon.py (C20): the Loon configuration of a
-// profile, byte-identical to Python's (https://nsloon.app/docs/intro).
+// profile (https://nsloon.app/docs/intro).
 //   - manual nodes go to [Proxy]
 //   - subscriptions / aggregations are [Remote Proxy] entries pointing at this
 //     server's ?format=loon endpoints
@@ -11,11 +11,13 @@ package convert
 
 import (
 	"context"
+	"regexp"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
-	"configflow/internal/pystr"
 )
 
 var loonLog = logx.Get("backend.converters.loon")
@@ -62,8 +64,8 @@ var LoonDefaultGeneral = []string{
 }
 
 var (
-	loonSubTypeRe = mustPyRegex(`\(\s*([A-Z0-9-]+)\s*,`, false)
-	loonDownRe    = mustPyRegex(`^\s*(\d+)`, false)
+	loonSubTypeRe = regexp.MustCompile(`\([\s\x{0085}\p{Z}]*([A-Z0-9-]+)[\s\x{0085}\p{Z}]*,`)
+	loonDownRe    = regexp.MustCompile(`^(\p{Nd}+)`)
 )
 
 // effectiveLoonGroup is _effective_group: follow mode merged into the
@@ -178,7 +180,7 @@ func (a *nameAllocator) allocate(preferred any, suffix string) string {
 	}
 	candidate := name + "-" + suffix
 	for index := 2; a.used[candidate]; index++ {
-		candidate = name + "-" + suffix + jsonx.Int(int64(index)).String()
+		candidate = name + "-" + suffix + strconv.Itoa(index)
 	}
 	a.used[candidate] = true
 	return candidate
@@ -188,7 +190,7 @@ func (a *nameAllocator) allocate(preferred any, suffix string) string {
 // separated lists.
 func sanitizeLoonName(name any) string {
 	text := pyReplace(or2(name, ""), ",", " ")
-	return pystr.Strip(strings.ReplaceAll(text, "=", " "))
+	return strings.TrimSpace(strings.ReplaceAll(text, "=", " "))
 }
 
 // SanitizeLoonName is _sanitize_name for callers outside the generator.
@@ -245,10 +247,6 @@ func generateLoon(ctx context.Context, config *jsonx.Object, baseURL string) str
 	sections := []string{general}
 
 	allGroups := dictGet(config, "proxy_groups", []any{})
-	nodesByID := newDict()
-	for _, n := range iterate(dictGet(config, "nodes", []any{})) {
-		nodesByID.set(dictGet(n, "id", nil), n)
-	}
 	groupsByID := newDict()
 	for _, g := range iterate(allGroups) {
 		groupsByID.set(dictGet(g, "id", nil), g)
@@ -526,8 +524,8 @@ func buildLoonRules(config *jsonx.Object, effective string) ([]string, []string)
 				}
 				line := ruleType.(string) + "," + loonValue + "," + fstr(policy)
 				unsupported := false
-				for _, sub := range findAllGroup1(loonSubTypeRe, loonValue) {
-					if !containsString(LoonRuleTypes, sub) {
+				for _, sub := range loonSubTypeRe.FindAllStringSubmatch(loonValue, -1) {
+					if !containsString(LoonRuleTypes, sub[1]) {
 						unsupported = true
 					}
 				}
@@ -906,8 +904,8 @@ func convertNodeToLoon(input *jsonx.Object) string {
 			}
 		}
 		if down := get("down", nil); truthy(down) {
-			if found := findAllGroup1(loonDownRe, fstr(down)); len(found) > 0 {
-				parts = append(parts, "download-bandwidth="+found[0])
+			if found := loonDownRe.FindStringSubmatch(strings.TrimLeftFunc(fstr(down), unicode.IsSpace)); len(found) > 0 {
+				parts = append(parts, "download-bandwidth="+found[1])
 			}
 		}
 		parts = append(parts, "fast-open="+loonBool(get("tfo", nil)), "udp=true")
@@ -973,7 +971,7 @@ func convertNodeToLoon(input *jsonx.Object) string {
 		if !isList(dns) {
 			var items []any
 			for _, d := range strings.Split(fstr(dns), ",") {
-				items = append(items, pystr.Strip(d))
+				items = append(items, strings.TrimSpace(d))
 			}
 			dns = items
 		}

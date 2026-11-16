@@ -1,18 +1,15 @@
 package convert
 
-// Python-semantics helpers shared by the Surge (C19) and Loon (C20)
-// generators. They follow the conventions of mihomo_generate_py.go: an
-// exception Python would raise on a malformed value is raise()d and turned
-// back into the returned error by catch in the exported function.
+// Shared helpers for the Surge and Loon generators. The legacy dynamic
+// document/error adapters remain until S-convert (after the N8 design);
+// string transformations use the Go standard library.
 
 import (
 	"context"
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
 	"configflow/internal/rules"
 	"configflow/internal/subs"
 )
@@ -85,24 +82,6 @@ func or2(a, b any) any {
 // eq is a == b.
 func eq(a, b any) bool { return jsonx.Equal(a, b) }
 
-// pyLen is len(v).
-func pyLen(v any) int {
-	switch x := v.(type) {
-	case []any:
-		return len(x)
-	case *jsonx.Object:
-		if x != nil {
-			return x.Len()
-		}
-	case string:
-		return utf8.RuneCountInString(x)
-	case []byte:
-		return len(x)
-	}
-	raise(pyError("TypeError", "object of type '"+typeName(v)+"' has no len()"))
-	return 0
-}
-
 // joinAny is sep.join(items): every item must be a str.
 func joinAny(sep string, items []any) string {
 	parts := make([]string, len(items))
@@ -117,7 +96,7 @@ func joinAny(sep string, items []any) string {
 }
 
 // pyStrip is v.strip() (AttributeError when v is not a str).
-func pyStrip(v any) string { return pystr.Strip(strMethod(v, "strip")) }
+func pyStrip(v any) string { return strings.TrimSpace(strMethod(v, "strip")) }
 
 // pyReplace is v.replace(old, new).
 func pyReplace(v any, old, new string) string {
@@ -125,7 +104,7 @@ func pyReplace(v any, old, new string) string {
 }
 
 // pyLower is v.lower().
-func pyLower(v any) string { return pystr.Lower(strMethod(v, "lower")) }
+func pyLower(v any) string { return strings.ToLower(strMethod(v, "lower")) }
 
 // startsWith is v.startswith(prefix).
 func startsWith(v any, prefix string) bool {
@@ -198,7 +177,7 @@ func hasPortListAny(ruleType, value any) bool {
 // networkAsProtocolAny is common.network_as_protocol(rule_type, value).
 func networkAsProtocolAny(ruleType, value any) (any, any) {
 	if eq(ruleType, "NETWORK") {
-		return "PROTOCOL", pystr.Upper(pyStrip(value))
+		return "PROTOCOL", strings.ToUpper(pyStrip(value))
 	}
 	if contains(LogicTypes, ruleType) {
 		s, ok := value.(string)
@@ -268,7 +247,7 @@ func policyNames(lines []string) []string {
 	var names []string
 	for _, line := range lines {
 		if before, _, ok := strings.Cut(line, "="); ok {
-			names = append(names, pystr.Strip(before))
+			names = append(names, strings.TrimSpace(before))
 		}
 	}
 	return names
@@ -297,8 +276,8 @@ func parseCustomSections(custom any) []customSection {
 	}
 	current := ""
 	var lines []string
-	for _, line := range strings.Split(pystr.Strip(custom.(string)), "\n") {
-		stripped := pystr.Strip(line)
+	for _, line := range strings.Split(strings.TrimSpace(custom.(string)), "\n") {
+		stripped := strings.TrimSpace(line)
 		if strings.HasPrefix(stripped, "[") && strings.Contains(stripped, "]") {
 			if current != "" {
 				store(current, lines)

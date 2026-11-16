@@ -1,10 +1,12 @@
 package convert_test
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/logx"
 )
 
 // A delimiter inside an ID must not shift into the exclusion dimension of
@@ -34,5 +36,33 @@ func TestLoonRemoteCacheKeepsSourceAndExclusionSeparate(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in output\n%s", want, out)
 		}
+	}
+}
+
+func TestSurgeDebugLogOmitsSubscriptionURLsAndTokens(t *testing.T) {
+	var logs bytes.Buffer
+	root, err := logx.Setup(logx.Config{Level: logx.Debug, Console: &logs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		root.Close()
+		if _, err := logx.Setup(logx.Config{Level: logx.Critical}); err != nil {
+			t.Error(err)
+		}
+	})
+	config := jsonx.Obj(
+		"system_config", jsonx.Obj("server_domain", "https://panel.example.com", "config_token", "synthetic-config-token"),
+		"subscriptions", []any{jsonx.Obj("id", "feed", "name", "Feed")},
+		"proxy_groups", []any{jsonx.Obj("id", "group", "name", "Proxy", "type", "select", "subscriptions", []any{"feed"})},
+	)
+	surgeOf(t, config)
+	for _, secret := range []string{"synthetic-config-token", "https://panel.example.com", "/subscriptions/"} {
+		if strings.Contains(logs.String(), secret) {
+			t.Errorf("debug log contains %q", secret)
+		}
+	}
+	if !strings.Contains(logs.String(), "Generated Surge proxy group") {
+		t.Fatal("group generation was not exercised with debug logging")
 	}
 }

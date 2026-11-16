@@ -963,11 +963,11 @@ Commands:
 
 ## C19 — Surge converter
 
-**Status: `ported`** (not reviewed) · prereqs: C18 · Go: `internal/convert` (`surge.go`, shared `clients_py.go`)
+**Status: `ported`** (not reviewed) · prereqs: C18 · Go: `internal/convert` (`surge.go`, shared `clients.go`)
 
 Files → Go:
 - `backend/converters/surge.py` (1129) → `convert/surge.go`: `GenerateSurgeConfig(ctx, config, baseURL)` (= generate_surge_config), `ConvertNodeToSurge(node) (line, wireguard, err)` ("" = None), `ConvertProxyGroupToSurge(group, config, baseURL, smartGroups)`, `ConvertProxiesToSurgeText(proxies, toNodes)` (toNodes = `substore.ProxiesToNodes`, passed by the caller because substore imports convert), `GetProxyGroupNodes`, `SurgeDefaultGeneral`, `SurgeBuiltinPolicies`; `split_rules_and_rulesets` is C18's identical `splitRulesAndRulesets`.
-- `convert/clients_py.go` (shared with C20): `pyDict` (hashable-key dict), `joinAny` (str.join TypeError), `pyLen`, `strIn`, `nextMatch`, `hasPortListAny` / `networkAsProtocolAny` / `rulesetFormatAny` (C12's common helpers for values of any type; a non-string truthy `source_url` is detected with two sentinel URLs → AttributeError 'decode' exactly when urlsplit would see it), `validateRulePolicies` (unhashable policy → TypeError before `rules.ValidateRulePolicies`), `parseCustomSections` (dict semantics: repeated section keeps first position, last text), `configAPIPath` (repo's copy; repo imports convert), `resolveProxyString` (parse_uri_list step), `clientConverter` (Sub-Store from `MihomoEnv.Converter`; unwired → `*HookMissingError` raised only when a URI node string needs converting).
+- `convert/clients.go` (shared with C20; renamed from `clients_py.go` during review): `pyDict` (hashable-key dict), `joinAny` (str.join TypeError), `pyLen`, `strIn`, `nextMatch`, `hasPortListAny` / `networkAsProtocolAny` / `rulesetFormatAny` (C12's common helpers for values of any type; a non-string truthy `source_url` is detected with two sentinel URLs → AttributeError 'decode' exactly when urlsplit would see it), `validateRulePolicies` (unhashable policy → TypeError before `rules.ValidateRulePolicies`), `parseCustomSections` (dict semantics: repeated section keeps first position, last text), `configAPIPath` (repo's copy; repo imports convert), `resolveProxyString` (parse_uri_list step), `clientConverter` (Sub-Store from `MihomoEnv.Converter`; unwired → `*HookMissingError` raised only when a URI node string needs converting).
 
 Collaborators: only Sub-Store `convert_proxy_string` (via `reject_surge_dialers` → `convert_node_to_mihomo`), taken from C18's `MihomoEnv` (`mihomoenv.Wire`). No new hooks; no other domain is called. `generate_aggregation_provider` is only used by the dead `get_aggregation_nodes` (below).
 
@@ -992,7 +992,7 @@ Commands:
 
 ## C20 — Loon converter
 
-**Status: `ported`** (adversarial review in progress) · prereqs: C19 · Go: `internal/convert` (`loon.go`, shared `clients_py.go`)
+**Status: `ported`** (adversarial review in progress) · prereqs: C19 · Go: `internal/convert` (`loon.go`, shared `clients.go`)
 
 Files → Go:
 - `backend/converters/loon.py` (764) → `convert/loon.go`: `GenerateLoonConfig(ctx, config, baseURL)`, `ConvertNodeToLoon(node) (line, err)` ("" = None), `ConvertProxyGroupToLoon(group, members)`, `ConvertProxiesToLoonText(proxies, toNodes)`, `BuildLoonRules` (= `_build_rules`), `SanitizeLoonName` (= `_sanitize_name`), constants `LoonDefaultGeneral`, `LoonBuiltinPolicies`, `LoonRuleTypes`, `LoonVmessCiphers`, `LoonDefaultTestURL`; private `effectiveLoonGroup`, `loonGroupSources`, `loonGroupMemberRefs`, `nameAllocator`, `resolveLoonNode`, `_quote/_value/_bool/_first/_transport_opts/_tls_opts/_shadow_tls_opts` ports.
@@ -1006,6 +1006,8 @@ Commits: same as C19.
 
 Review C19/C20 (2026-11-16, independent reviewer):
 - Medium: Loon remote cache concatenated `(kind, resource ID, exclusion)` with `\x01`; an ID/exclusion containing that delimiter aliases another source. Fixed with a Go struct map key; `review_clients_test.go::TestLoonRemoteCacheKeepsSourceAndExclusionSeparate` checks both remote lines and group references.
+- High: Surge DEBUG logging exposed the complete generated group line, including subscription URLs and `config_token`. Removed content from that log; `TestSurgeDebugLogOmitsSubscriptionURLsAndTokens` verifies the DEBUG path without leaking either. This fixes a Python logging bug; generated config semantics are unchanged.
+- Local native cleanup: strings.TrimSpace/ToLower/ToUpper, strconv.Itoa, regexp RE2 with Unicode decimal/space classes; removed emulated len and unused nodesByID exception probe; renamed shared helpers to clients.go. Full convert suite on `.63` passed (6.535 s).
 - Scope confirmed by coordinator: this review closes functional findings; package-wide dynamic types and raised/caught Python errors are structural debt **→ S-convert, waiting for N8 design**. No public API rewrite in this review.
 - Baseline `.32`: `rt -- server/scripts/proddiff.sh` exit 0, `baseline: new=0 stale=0`; 2 Surge + 2 Loon configs and 4 subscriptions per client succeeded. Source-branch coverage still needs explicit synthetic checks.
 - Next: local native-library cleanup, Python-derived boundary corpus/coverage matrix, final `.32` checks, rebase `go`.
