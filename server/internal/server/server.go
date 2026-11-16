@@ -30,6 +30,7 @@ import (
 	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/auth"
 	"configflow/internal/convert"
+	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/health"
 	"configflow/internal/httpx"
 	"configflow/internal/notifications"
@@ -68,6 +69,7 @@ var wirePackages = []func(){
 	substore.Wire,
 	refresh.Wire,
 	health.Wire,
+	mihomoenv.Wire,
 }
 
 func wireCore() {
