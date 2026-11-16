@@ -1,6 +1,6 @@
 # PROGRESS — domain `config`
 
-Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 15 missing, 3 partial, 10 ported, 9 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13). Only reviewers set `verified`.
+Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configuration/generation (#6–#19). **119 Python files, 39628 lines, 37 modules** — 15 missing, 3 partial, 9 ported, 10 verified (C01, C02, C03, C04, C08, C09, C10, C12, C13, C14). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
@@ -39,7 +39,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C11 | proxy chains, commented Mihomo editor, listeners, proxy-server DNS | 855 | partial | C10 | – |
 | C12 | converter common, Mihomo node conversion, dialer references, EasyTier | 1196 | verified | C09, C11 | – |
 | C13 | Sub-Store client, runtime, subscription cache, dependencies | 1193 | verified | C12, C10 | 3 (3 done) |
-| C14 | remote rule fetch, ruleset content, remote sources, website identity | 1202 | ported | C12, C08 | – |
+| C14 | remote rule fetch, ruleset content, remote sources, website identity | 1202 | verified | C12, C08 | – |
 | C15 | subscription refresh, health, scheduled refresh | 600 | ported | C13, C14, C07 | – |
 | C16 | health check, latency, node DNS, region check, domain probe | 1089 | ported | C12, C13 | 5 (5 done) |
 | C17 | provider delivery and responses | 540 | ported | C15 | – |
@@ -595,11 +595,11 @@ Commands (review): `rt -- bash -lc 'cd server && go vet ./internal/substore/... 
 
 ## C14 — remote rule fetch, ruleset content, remote sources, website identity
 
-**Status: `ported`** (not reviewed) · prereqs: C12, C08 · Go: `internal/rulefetch`, `internal/pyyaml` (moved from `rulefetch/pyyaml` by review C02)
+**Status: `verified`** (review 2026-11-16, one round, commits 6179d521, bd0a8387, ffc35d9c, 0b080bdf; 0 open findings — see *Review C14* below) · prereqs: C12, C08 · Go: `internal/rulefetch`, `internal/pyyaml` (moved from `rulefetch/pyyaml` by review C02)
 
 Files → Go:
 - `backend/utils/ruleset_content.py` (722) → `rulefetch/content.go` (ResultCache, ContentDigest, ClearRuleContentCaches, MetadataError, NormalizeClassicalLines, NormalizeMihomoYAML, NormalizeMihomoRuleset, InspectDomainContent, ValidateDomainContent, RemoteRuleValidationError (+NewRemoteRuleMessage/NewRemoteRuleError; unwraps to repo.ErrValidation), ValidateRemoteRuleContent, ReadRulePayload, AppendRulePayload/AppendRuleLines, RemoveRulePayload, ReadRulePayloadAny/AppendRulePayloadAny for rules.ConnectionDeps), `mrs.go` (_validate_remote_mrs on klauspost zstd). Line helpers `_valid_pattern`, `_classical_line`, `classical_line_error`, `_has_yaml_payload` live in `rules` (exported in `rules/ruleset_lines.go`: rulefetch imports rules); `convert/compat.go` now delegates to `rules.HasYAMLPayload`.
-- PyYAML (needed for marks/tokens/error text) → `rulefetch/pyyaml` (Scan, Compose).
+- PyYAML (needed for marks/tokens/error text) → `internal/pyyaml` (Scan, Compose).
 - `backend/utils/rule_fetch.py` (346) → `rulefetch/fetch.go` (Client{Transport, Local, Sleep}, DefaultClient, Request, RequestRule, RuleFetchSettings, IsInternalRuleURL, GetRuleFetchProxy, RuleRequestProxy, IsGithubURL, GithubDownloadCandidates, RuleFetchError), `transport.go` (Transport interface, HTTPTransport, Response{Content, Read, Close, RaiseForStatus}, FetchError{Class, Transient, Status}, IsTimeout, IsRequestException, PythonClass), `urls.go` (SplitURL = urlsplit, URLJoin = urljoin, ValidateRuleURL, NormalizeRuleFetchProxy).
 - `backend/utils/remote_rule_sources.py` (45) → `sources.go` ResolveRemoteRuleSource.
 - `backend/utils/website_identity.py` (89) → `website.go` (PageMarkers, SiteTitle, CleanText, KnownService, PageIdentity; `Services` = region_check.SERVICES copy, TODO C16).
@@ -613,22 +613,72 @@ Tests:
 - Deferred: `test_rule_delivery_proxy.py` 3, `test_rule_proxy_freshness.py` 3 (MosDNS zip / rule-proxy routes → C28).
 
 Decisions / differences from Python:
-- Transport failures: `FetchError.Class` and the retry decision follow requests/`_is_transient_disconnect` (TLS EOF, reset/abort/EPIPE, server or proxy closing early, body cut short and chunked EOF retried; certificate, timeout, refused, DNS, HTTP status, decoding and invalid chunk length not); message texts are Go's (requests renders urllib3 objects). RuleFetchError text = diag.FailureText (imports the leaf package `agents/diag`, no cycle). `response.url` = request URL with "/" for an empty path. Requests' headers kept (`User-Agent: python-requests/2.31.0`, `Accept-Encoding: gzip, deflate`); gzip/deflate/zstd decoded. Default trust = Go system roots (requests: certifi); REQUESTS_CA_BUNDLE/CURL_CA_BUNDLE honoured for default verify; environment proxies never used.
-- `read_rule_source_content`: every error except RemoteRuleValidationError and repo errors becomes `RequestException("Rule download failed (<class>)")`.
+- Transport failures: `FetchError.Class` and the retry decision follow requests/`_is_transient_disconnect`; message texts are Go's. Since review C14 the transport sends what requests sends (reqproxy proxy, prepared URL, ISO-8859-1 headers, Session.send body reading, urllib3 2.8 decoding: gzip/deflate only) — see *Review C14*.
+- `read_rule_source_content`: RequestException and ValueError (incl. UnicodeEncodeError, ProfileValidationError) become `RequestException("Rule download failed (<class>)")`; RemoteRuleValidationError and everything else (storage errors) propagate.
 - PyYAML RecursionError = nesting limit 490 (Python's depends on the stack depth); `\U` surrogates → U+FFFD.
-- Accepted (corpus allowlist): a flow-style YAML root with a non-string mapping key (`{payload: [...], 1: x}`) cannot be loaded into jsonx: NormalizeMihomoYAML keeps the text with the yamlx error as warning where Python rewrites it. ReadRulePayload falls back to a node-based document for such keys (merge keys not applied in the fallback).
-- website_identity: `_Meta` (HTMLParser) is a regex start-tag/attribute scan; `html.unescape` = Go `html.UnescapeString`; a non-numeric status counts as not 2xx (Python TypeError).
-- MRS: python-zstandard's "unknown frame prefix" for 1–3 trailing bytes after complete frames is emulated (trailingGarbage).
-- `refresh_remote_rule` log uses rulefetch's own safe_exception_details with Python class names. Suggestion for C02: let `urlx.SafeExceptionDetails` honour a `PythonClass() string` interface (it prints Go type names today).
+- (Review C14) Non-string YAML keys now load through `yamlx` `KeepNonStringKeys` and re-dump; the former allowlist is gone.
+- website_identity: `_Meta` is a port of CPython 3.11.17's HTMLParser feed (`pyhtml.go`), `html.unescape` a port with CPython's html5 table; a non-numeric status counts as not 2xx (Python TypeError).
+- MRS: zstd framing checked like libzstd 1.5.7 (`mrsFraming`: unknown prefix incl. 1–3 trailing bytes, block limits, reserved bits, dictionary id, 128 KiB window); content decoded by klauspost.
+- `refresh_remote_rule` log uses rulefetch's own `safeExceptionDetails` (Python class names via `PythonClass`, status only for an HTTPError itself).
 - PyRegex.Sub/SubTemplate/Match always run on regexp2 (CPython must_advance loop via `\G(?:p)(?!\G)`); a backtracking timeout returns ErrMatchTimeout.
 
 Commits: d426421b (pyyaml), c2ba3f6b (PyRegex sub), d3f50ef7 (content/MRS/sources/website/URLs + corpus), d36e5331 (fetch, transport, cache), edf7ac79 (fake transport tests), e773ef34 (integration), (cache tests), 3b9060e2 (settings switch), 7050d97d (local dispatch, adapters).
 
-Reviewer hints: compare content.go branch by branch with ruleset_content.py (rune indices everywhere marks are used); transport classification (`classifyRequestError`, `classifyBodyError`) against urllib3/requests exception mapping; urls.go urlsplit/urljoin against CPython 3.11; website.go metaContent vs HTMLParser.
 
 Commands:
 - tests: `rt -- bash -lc 'cd server && gofmt -l internal/rulefetch internal/rules internal/convert; go vet ./internal/rulefetch/... ./internal/rules/... ./internal/convert/... && go test -count=1 ./internal/rulefetch/... ./internal/rules/... ./internal/convert/...'` (last: all ok; `-race` ok)
 - corpora: `rt --back server/internal/rulefetch/testdata/corpus.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rulefetch/testdata/gen.py'`; `rt --back server/internal/pyyaml/testdata -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/pyyaml/testdata/gen.py'`; `rt --back server/internal/rules/testdata/sub_reference.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rules/testdata/gen_sub.py'`
+
+### Review C14 (adversarial, 2026-11-16)
+
+Every function and branch of `ruleset_content.py`, `rule_fetch.py`, `remote_rule_sources.py`, `website_identity.py` and the `rule_utils.py` functions finished here walked against `content.go`, `mrs.go`, `fetch.go`, `transport.go`, `urls.go`, `sources.go`, `website.go`, `cache.go`; the transport also against requests 2.31 / urllib3 2.8 source (Session.send, resolve_redirects, prepare_url/prepare_auth, HTTPAdapter, response decoders) and CPython 3.11.17's `html.parser`, `html.unescape`, `urllib.parse`.
+
+| # | Sev | Finding | Fix | Regression test |
+|---|---|---|---|---|
+| 1 | medium | website identity: `_meta_content` was a regex scan. HTMLParser (3.11.17: new attribute grammar, CDATA/RCDATA modes, comments, declarations) never reports an incomplete tag — the Agent truncates captures at 200 bytes, so a long `og:description` is `''` in Python and was the text in Go; also comments/script/title content, `= 'x` backtracking, duplicate attributes. `html.unescape` was Go's (`&#1;`, `&#x7f;`, `&#xFFFF;` kept, huge numbers wrapped, `&#1` at the end not decoded) | bd0a8387 (`pyhtml.go`: HTMLParser feed port, `pyUnescape` with the html5 table generated from CPython) | review corpus `meta_content` (6084), `unescape` (3132), `clean_text` (1522), `page_identity` |
+| 2 | medium | Rule download proxy credentials: `url.Parse` + Go transport sent `Proxy-Authorization` for a user without password (`user:`), UTF-8 instead of latin-1, Go's %-decoding; requests (proxy_headers) sends Basic only with a user and a password, latin-1, literal userinfo when a `%` is not an escape, and raises UnicodeEncodeError (not a RequestException) for non-latin-1 credentials. Decision 14 (shared `reqproxy`) | 0b080bdf (`reqproxy.FromValue`, CONNECT header for https targets, request header for http) | `TestFetchDifferentialAgainstRequests` proxy scenarios |
+| 3 | medium | Non-stream requests (`requests.get` path) read the body inside requests: a redirect goes through `resolve_redirects(yield_requests=True)` — non-UTF-8 Location bytes raise UnicodeDecodeError, the body is read (a stalled body is a ConnectionError, a Content-Length cut a transient ChunkedEncodingError and retried; chunked/decoding errors ignored), the target parsed (ValueError). Go skipped the body and decoded Location as UTF-8 (rule_fetch sees ISO-8859-1 text: `/é` → `/%C3%83%C2%A9` next hop) | 0b080bdf (`readUnstreamed`, header values decoded ISO-8859-1, repeated fields joined like HTTPHeaderDict, Transfer-Encoding kept) | differential: `latin1 location*`, `utf8 location`, `two locations`, `redirect body *`, `redirect bad *`, `redirect requote` |
+| 4 | medium | `http.Client` parsed a redirect's Location with Go's URL rules before the redirect policy: `%zz` or `http://[::1` became ConnectionError instead of requests' requote / rule_fetch's ValueError | 0b080bdf (`Transport.RoundTrip`; URL credentials as Authorization per prepare_auth: none without a password, latin-1) | `redirect requote`, `redirect bad ipv6`, `url userinfo` |
+| 5 | medium | Content-Encoding: Go decoded `zstd` (urllib3 2.8 here has neither zstd nor brotli: left encoded), ignored comma lists (`gzip, zstd` → MultiDecoder with deflate for unknown codings; > 5 codings DecodeError), failed on truncated gzip/deflate streams (zlib returns what it has), on gzip trailing garbage / later members (GzipDecoder swallows), reported a bad gzip header at request time instead of on read | 0b080bdf (`decodeBody`, `pyGzipReader`, `pyDeflateReader`, source vs decoder errors) | 54 decoding scenarios in the differential |
+| 6 | low | `_internal_rule_base` swallowed urlsplit/port errors (Python raises `Invalid IPv6 URL`, `Port out of range 0-65535`, … from `request_rule`/`github_download_candidates` before validation); urlsplit texts for bracketed hosts (`An IPv4 address cannot be in brackets`, `IPvFuture address is invalid`, ipaddress text), the NFKC message without the netloc, port repr, hostname lowered with Go tables (`İ`) | 0b080bdf, ffc35d9c (`checkBracketedNetloc`, `rules.IPAddressVersion`, `pystr.Lower`) | review corpus `is_internal_rule_url`/`github_download_candidates`/`rule_request_options` (576 each), `urlsplit_error`, `nfkc_forbidden` (all code points), `page_identity` |
+| 7 | low | Decision 8: non-string YAML keys. `read_rule_payload` used a node fallback (no merge keys) and composed before loading; Python loads first and lets KeyError/IndexError/TypeError/RecursionError of the constructors propagate. `normalize_mihomo_yaml` kept flow documents with non-string keys (the porter's accepted case) | ffc35d9c (`yamlx.LoadWith(KeepNonStringKeys)`, `yamlx.Dump` represents `*yamlx.Mapping`; corpus allowlist removed) | review corpus `read_payload`/`append`/`remove`/`normalize_yaml` (27 documents each), `yamlx.TestDumpMappingWithNonStringKeys` |
+| 8 | low | MRS: corrupt frames that libzstd rejects as soon as the block header is read (block larger than the frame's block limit, reserved type/bits, dictionary id, window) were "truncated" in Go | ffc35d9c (`mrsFraming`, replaces `trailingGarbage`) | review corpus `validate_remote_bytes` (520: 230 MRS inputs incl. 200 mutations, skippable frames, windows, checksums) |
+| 9 | low | Missing CA bundle (`verify=` / REQUESTS_CA_BUNDLE): requests raises OSError only for https URLs (`_request_with_https_proxy`: FileNotFoundError), not a RequestException; Go raised SSLError for every URL (retried/mirrored) | 0b080bdf | `missing ca bundle *` scenarios |
+| 10 | low | `read_rule_source_content` converted storage errors (OSError) and passed ValueError-class repository errors through; Python converts exactly RequestException and ValueError | 0b080bdf (`isValueError`, `PythonClass` for repo/store/OS errors) | recorded/corpus + code path |
+| 11 | low | `refresh_remote_rule` log: `status=` of the last attempt was printed for a RuleFetchError (Python: it has no response) | 0b080bdf (`safeExceptionDetails`) | code path |
+| 12 | low | gofmt: `content.go`, `content_test.go` | 6179d521 | – |
+
+Accepted differences (reviewer):
+- Transport error texts are Go's (requests renders urllib3 objects); the class, the retry decision and the RuleFetchError structure match (differential compares classes; `_is_transient_disconnect` cases reset / closed before response / IncompleteRead retried, InvalidChunkLength / decoding / timeouts / refused not). TLS-specific faults (EOF during handshake, certificate errors) are classified by code review only.
+- Default trust is the system roots (requests: certifi); IDNA of non-ASCII hosts and `.netrc` are not reproduced (as A01, C13). Go sends `Connection: close` (requests `keep-alive`; every download uses a fresh connection either way).
+- Python crashes that Go handles: a first `payload` key that is not a list followed by a payload list (`append_rule_lines` AttributeError; unreachable — `validate_domain_content` refuses documents without a unique payload list before they are stored); constructor KeyError/IndexError inside `normalize_mihomo_yaml` (Go keeps the text with a warning); non-dict/non-string config values (`server_domain`, rule items, markers) where Python raises TypeError/AttributeError.
+- `normalize_mihomo_yaml` on a flow document holding `!!set`/`!!omap` values: Python re-dumps them as tagged YAML, Go keeps the text with the yamlx warning (`reviewAccepted` in review_c14_test.go; values a Mihomo rule provider cannot use).
+- GzipDecoder holds back a later member's output up to 64 KiB (Python's loss of partial output on a corrupt later member depends on its read chunking); the redirect-body rules of finding 3 were determined empirically against requests (a reset during a redirect body is timing-dependent in Python and not emulated beyond its class); the `NO_PROXY` port check of a redirect hop treats only glibc-exact numeric IPv4 hosts as IPv4.
+- PyYAML RecursionError depth (490 nested nodes) as C02/C08.
+
+Coordinator decisions: 8 — rulefetch keeps no `pyLower`/strip copies (wrappers over `pystr`), payload/normalize YAML on `yamlx` `KeepNonStringKeys`; its own `safeExceptionDetails` stays private like C13's (Python looks only at the exception itself, `urlx.SafeExceptionDetails` walks `Unwrap`), now with `PythonClass` covering repository/store/OS errors. 14 — rule downloads choose and authorise their proxy through `internal/reqproxy` (explicit `proxies=` only; redirects are request_rule's own hops, so `ForRedirect` does not apply).
+
+Checks performed (no finding): ResultCache LRU/size bound, content_digest, metadata errors, every inspect/normalize/validate branch with marks in code points (libyaml fast path agrees on `_SIMPLE_PAYLOAD` shapes, confirmed for non-ASCII comments), comment indexing, flow/block rewrites, RemoteRuleValidationError texts (preview, repr, counts), `_remote_text_entries` mark/problem selection, UTF-8 error line numbers, payload append/remove index arithmetic; request_rule candidate order, mirror unwrap, retry delays 1 s/2 s and log lines, size limit (exact size passes), HTTPError text with ISO-8859-1 reason, redirect policy (max_redirects, internal origin, missing Location), local dispatch path; resolve_remote_rule_source branches; known_service/page_identity/site_title.
+
+Coverage map (Python tests of C14; "replay" = calls recorded by `c14_record.py` over the whole suite and replayed by `recorded_test.go`):
+- `test_remote_ruleset_validation.py` 12: hand-ported 12/12 + replay (88 calls).
+- `test_mihomo_yaml_delivery.py` 7: hand-ported 7/7 + replay (36).
+- `test_ruleset_classical_format.py` 15: hand-ported 15/15 + replay (123).
+- `test_rule_fetch_retries.py` 10, `test_rule_fetch_fallback.py` 6: hand-ported (fake Transport) + replay of the URL/candidate helpers (16, 30) + transport differential (retry counts per fault).
+- `test_rule_fetch_proxy_integration.py` 19: hand-ported over loopback servers + replay (163) + differential (proxy scenarios).
+- `test_remote_rule_cache.py` 8: 6 hand-ported (cache_test.go) + replay (32); route halves → C32/C33.
+- `test_ruleset_domain_format.py` 13: 5 hand-ported + replay (77); MosDNS conversions → C21, routes → C32/C33/C37.
+- `test_website_identity.py` 11: 4 hand-ported + replay (27) + review corpus (HTMLParser/unescape); job/route/region-store cases → C37/C16.
+- `test_rule_delivery_proxy.py` 3, `test_rule_proxy_freshness.py` 3: replay of their C14 calls (21, 119); the MosDNS zip / rule-proxy route behaviour → C28.
+- C08-deferred: `test_rule_syntax.py` 15 cases hand-ported + replay (219); `test_rule_cache_identity.py` / `test_remote_rule_cache_edges.py` read side hand-ported + replay (16, 31), routes → C32/C33; `test_local_http.py` rule_fetch cases hand-ported (local_test.go) + replay (52).
+- Calls from 82 test files in total are replayed (103734 distinct calls), e.g. converters, publication caches, connection rules, domain discovery, router rule sync.
+
+Open findings: none.
+
+Commands (review):
+- tests: `rt -- bash -lc 'cd server && go vet ./internal/rulefetch/... && go test -count=1 ./internal/rulefetch/... ./internal/rules/... ./internal/convert/... ./internal/refresh/... ./internal/health/... ./internal/api/settings/'` (+ `-race ./internal/rulefetch/... ./internal/yamlx/`, + `./internal/yamlx/... ./internal/agents/monitor/... ./internal/substore/... ./internal/provider/...` for the shared pieces): all ok.
+- record & replay: `rt -- bash -lc 'rm -rf /tmp/c14rec && C14_RECORD_DIR=/tmp/c14rec PYTHONPATH=.:server/internal/rulefetch/testdata ~/cf-test/.venv/bin/python -m pytest backend -q -n 10 --dist=worksteal -p c14_record -p no:cacheprovider'`, then `rt --back server/internal/rulefetch/testdata/c14_recorded.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rulefetch/testdata/c14_record.py merge /tmp/c14rec'` (copy back in the same rt call as the merge: another agent's sync deletes untracked server files).
+- review corpus: `rt --back server/internal/rulefetch/testdata/review_c14.jsonl.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rulefetch/testdata/gen_review_c14.py'`; transport differential: `rt --back server/internal/rulefetch/testdata/fetch_c14.json -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rulefetch/testdata/gen_fetch_c14.py'`; entity table: `rt --back server/internal/rulefetch/html5_entities.go -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rulefetch/testdata/gen_html5.py'` then `gofmt -w`.
 
 ## C15 — subscription refresh, health, scheduled refresh
 
