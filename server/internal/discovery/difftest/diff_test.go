@@ -125,17 +125,25 @@ func normalized(v any, key string) any {
 		}
 		return out
 	case []any:
+		// Flask groups apply results by a set of targets. Only that grouping is
+		// unordered; history entries with different timestamps retain their order.
+		if key == "added" || key == "skipped" || key == "history" {
+			x = append([]any{}, x...)
+			sort.SliceStable(x, func(i, j int) bool {
+				a, aok := x[i].(map[string]any)
+				b, bok := x[j].(map[string]any)
+				if !aok || !bok {
+					return false
+				}
+				if key == "history" && a["applied_at"] != b["applied_at"] {
+					return fmt.Sprint(a["applied_at"]) < fmt.Sprint(b["applied_at"])
+				}
+				return fmt.Sprint(a["target"], a["value"]) < fmt.Sprint(b["target"], b["value"])
+			})
+		}
 		out := make([]any, len(x))
 		for i, v := range x {
 			out[i] = normalized(v, key)
-		}
-		if len(out) > 0 {
-			if first, ok := out[0].(map[string]any); ok && first["value"] != nil && first["target"] != nil {
-				sort.Slice(out, func(i, j int) bool {
-					a, b := out[i].(map[string]any), out[j].(map[string]any)
-					return fmt.Sprint(a["target"], a["value"]) < fmt.Sprint(b["target"], b["value"])
-				})
-			}
 		}
 		if key == "cache" {
 			sort.Slice(out, func(i, j int) bool { return fmt.Sprint(out[i]) < fmt.Sprint(out[j]) })
@@ -369,6 +377,14 @@ func TestHTTPAndStorageParity(t *testing.T) {
 				goIDs = identities(gs)
 				equal(t, "storage", remap(ps, pyIDs), remap(gs, goIDs))
 			}
+			if q.path == "history" {
+				// The history endpoint wraps the same stored entries in items.
+				for _, v := range []any{pv, gv} {
+					if m, ok := v.(map[string]any); ok {
+						m["items"] = normalized(m["items"], "history")
+					}
+				}
+			}
 			equal(t, "response", remap(pv, pyIDs), remap(gv, goIDs))
 		})
 	}
@@ -493,4 +509,23 @@ func remap(v any, ids map[string]string) any {
 		return out
 	}
 	return v
+}
+
+func TestApplyNormalizationKeepsEmptyHistoryAndOrderedArrays(t *testing.T) {
+	entry := func(target, at string) any {
+		return map[string]any{"value": "example.net", "target": target, "applied_at": at}
+	}
+	a := []any{map[string]any{}, entry("proxy", "2026-01-01"), entry("direct", "2026-01-01")}
+	b := []any{map[string]any{}, entry("direct", "2026-01-01"), entry("proxy", "2026-01-01")}
+	if !reflect.DeepEqual(normalized(a, "history"), normalized(b, "history")) {
+		t.Fatal("same-time target groups must compare equally with an empty legacy entry")
+	}
+	later := []any{entry("proxy", "2026-01-01"), entry("direct", "2026-01-02")}
+	earlier := []any{entry("proxy", "2026-01-02"), entry("direct", "2026-01-01")}
+	if reflect.DeepEqual(normalized(later, "history"), normalized(earlier, "history")) {
+		t.Fatal("history chronology must remain observable")
+	}
+	if reflect.DeepEqual(normalized(a, "usable"), normalized(b, "usable")) {
+		t.Fatal("ordered arrays must remain observable")
+	}
 }

@@ -22,7 +22,7 @@ Validation: .63 scoped race tests discovery, domaindiscovery, rules all pass; .3
 Flask differential now 77 cases plus six missing-profile cases passes. Still reviewing task runner context
 ownership and region result ordering; final full-suite run not yet done.
 
-Second findings closed in working tree:
+Second findings closed in 361174cc:
 - Manual automatic-task runner retained cancelled request values through shared StartBackground.
   It now detaches before reads and gives the worker a repository-only context; weak-pointer test passes.
 - Region usable/restricted arrays were alphabetized instead of preserving target preference order.
@@ -72,3 +72,13 @@ Python branch walk completed:
 
 Latest .63 scoped race/vet run passes (discovery, domaindiscovery, rules). .32 boundary rerun required
 on rebased integration source, followed by the single final full -race suite and proddiff.
+
+Integration differential follow-up:
+- Rebased onto go 77df305c. Repeated Flask runs exposed an existing normalization assumption:
+  an empty legacy history object disabled sorting of same-batch target groups. Flask intentionally
+  builds these groups from a set. Normalization now names only added/skipped/history; history is
+  ordered by original timestamps before same-time groups, and all other arrays preserve order.
+- Regression checks empty legacy history, distinct history chronology and ordered region arrays.
+  This is a comparator correction, with no additional production behavior change.
+- .32 repeated enabled differential: `CONFIGFLOW_DIFF=1 go test -count=5 ./internal/discovery/difftest/`
+  passes, 9.464s. .63 comparator regression with race passes, 1.019s.
