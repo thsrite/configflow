@@ -1522,7 +1522,7 @@ Notes for porter: Also registers the 9 `/api/profiles/<id>/oxidns/*` wrapper rou
 
 ## C30 — subscription and node routes, node deletion
 
-**Status: `missing`** · prereqs: C17, C16, C19, C20 · Go: internal/api/subscriptions, api/nodes (new)
+**Status: `partial`** · prereqs: C17, C16, C19, C20 · Go: internal/api/subscriptions, api/nodes (new)
 
 Files:
 - `backend/routes/subscriptions.py` (696)
@@ -1535,9 +1535,13 @@ Routes (26, 0 done):
 
 `GET /api/nodes`; `POST /api/nodes`; `DELETE /api/nodes/<node_id>`; `PUT /api/nodes/<node_id>`; `POST /api/nodes/delete`; `POST /api/nodes/delete-preview`; `GET /api/nodes/latency`; `POST /api/nodes/latency`; `POST /api/nodes/latency/dns/check`; `GET /api/nodes/latency/settings`; `POST /api/nodes/latency/settings`; `POST /api/nodes/parse-lines`; `POST /api/nodes/reorder`; `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies`; `GET /api/subscriptions`; `POST /api/subscriptions`; `GET /api/subscriptions/<resource_id>/health-impact`; `DELETE /api/subscriptions/<sub_id>`; `PUT /api/subscriptions/<sub_id>`; `POST /api/subscriptions/<sub_id>/fetch`; `GET /api/subscriptions/<sub_id>/nodes`; `GET /api/subscriptions/<sub_id>/proxies`; `GET /api/subscriptions/health`; `GET /api/subscriptions/proxies`; `POST /api/subscriptions/reorder`; `GET /api/subscriptions/test`
 
-Evidence: No Go package; no route registered.
+Evidence: node CRUD, reorder, line parsing and reviewed deletion implemented in `internal/api/nodes`; `nodes.Wire` installs `PlanNodeDeletion`. Existing C16 latency routes retained. Node package tests and vet pass on .63.
 
-Missing / deferred: Everything in the files below.
+In progress: subscription management/provider routes and Flask↔Go boundary tests. Next: finish subscriptions, differential security/storage/dialer cases, proddiff, final .32 checks.
+
+Commands: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go vet ./internal/api/nodes/... && go test -count=1 ./internal/api/nodes/...'` → `ok configflow/internal/api/nodes 5.420s`.
+
+Decisions: auth.go unchanged; global subscription provider paths require JWT at the gate, profile aliases authenticate token/JWT in the handler. Legacy documents are adapted only in adapter.go; native JSON retains unknown resource fields. Confirmation retains the existing sorted UTF-8 JSON/SHA-256 protocol.
 
 Notes for porter: Registers `/api/profiles/<id>/subscriptions/<sub_id>/proxies` too. Fills `repo.Hooks.PlanNodeDeletion`. Subscription provider endpoints are public (token) — deferred security cases.
 

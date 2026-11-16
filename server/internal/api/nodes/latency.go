@@ -16,6 +16,7 @@ import (
 
 // Register declares the nodes blueprint routes ported so far.
 func Register(r *httpx.Router) {
+	registerCRUD(r)
 	r.Handle([]string{"GET", "POST"}, "/api/nodes/latency", "nodes.node_latency", auth.Require(nodeLatency))
 	r.Handle([]string{"GET", "POST"}, "/api/nodes/latency/settings", "nodes.node_latency_settings", auth.Require(nodeLatencySettings))
 	r.POST("/api/nodes/latency/dns/check", "nodes.node_dns_check", auth.Require(nodeDNSCheck))

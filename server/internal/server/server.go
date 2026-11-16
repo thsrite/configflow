@@ -68,6 +68,7 @@ var lateRoutePackages = []func(*httpx.Router){
 // providers).
 var wirePackages = []func(){
 	wireCore,
+	apinodes.Wire,
 	agents.Wire,
 	metrics.Wire,
 	metrics.WireTraffic,
