@@ -311,9 +311,9 @@ Coverage map (Python test file → Go boundary test or deferred module):
 
 Commands (test server, after rebasing onto `go`):
 - Focused boundary and batch unit tests: `rt -- bash -lc 'cd server && go test -count=1 ./internal/routers -run "TestRouterOSBoundaryCorpus|TestRouteBatches|TestConsoleScript|TestRestoreManyStops"'` → `ok configflow/internal/routers 10.392s`.
-- Full verification after rebase: `rt -- bash -lc 'cd server && go vet ./... && go test -count=1 ./...'` → exit 0; output included `ok configflow/internal/routers 38.087s`, `ok configflow/internal/yamlx 1.343s`, and final line `? configflow/tools/proddiff/generator [no test files]`.
+- Full verification after final rebase: `rt -- bash -lc 'cd server && go vet ./... && go test -count=1 ./...'` → exit 0; output included `ok configflow/internal/routers 42.998s`, `ok configflow/internal/yamlx 1.355s`, and final line `? configflow/tools/proddiff/generator [no test files]`.
 
-Commit: `fdedef41` (R04 driver, batching, boundary tests and coverage map).
+Commit: `5d3c48ed` (R04 driver, batching, boundary tests and coverage map).
 
 Files:
 - `backend/routers/routeros.py` (816), `backend/routers/routeros_batch.py` (599)
