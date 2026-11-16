@@ -21,9 +21,13 @@ no rollback to it).** This overrides the stricter wording of the rules below whe
   exceptions on malformed input (`string indices must be integers`, PyYAML/TypeError texts) — Go still
   rejects with the same status code and its own clear message; hash/set iteration order; CPython-only
   Unicode edge cases (`'ß'.upper()`, superscript `isdigit`) unless a test or real user data depends on them.
-- **Existing helpers stay** (jsonx, yamlx/pyyaml, pystr, urlx, reqproxy): keep using them — they are
-  built and verified; replacing them is phase 2 after the switch. Do not spend effort extending them for
-  new byte-level or error-text quirks.
+- **Go-native libraries first** (maintainer, 2026-11-16: "能用 go 原生库的肯定要用"). New code uses the
+  standard library or an established Go library (`net/netip`, `net/url`, `net/http`, `strings`,
+  `unicode`, `archive/zip`, `compress/*`, `gopkg.in/yaml.v3`, `regexp`/`regexp2`) instead of emulating
+  Python. Do not add new Python-emulation code. Call YAML/JSON through the `yamlx`/`jsonx` facades
+  (their implementations are being swapped to native libraries behind the same API — see "Native-library
+  swap" in WORKFLOW.md); call `strings`/`unicode` directly instead of `pystr`, and `net/url` /
+  `http.ProxyFromEnvironment` instead of `urlx`/`reqproxy` in new code.
 - **Comparisons:** replay/corpus/differential compare outputs structurally (parsed YAML/JSON) and
   exceptions by class/status + whether rejected, not by message text, except for Chinese user-facing
   messages, which must match exactly. Rows that differ only in a "no longer chased" way count as equal;

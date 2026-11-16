@@ -94,3 +94,28 @@ Python tests are no longer translated one by one by default. Equivalence is prov
 Python test suite and replaying the recorded calls in Go, plus random corpora and Flask↔Go differentials;
 only behaviour those cannot observe is hand-ported (rule 4 in PORTING.md). Every module's PROGRESS section
 maps each Python test file to how it is covered. Reviewers check that mapping as part of step 3.
+
+## Native-library swap (2026-11-16)
+
+The maintainer's goal for the rewrite is Go-native code: wherever the feature is kept, Go libraries
+replace the Python-emulation layers built so far. Each swap is its own module (port + adversarial
+review like any other), run alongside the domains, verified by re-running the replays/corpora of every
+consumer with structural comparison (functional parity). Planned order (cheapest/most contained first):
+
+| Id | Layer | Replace with | Keep only |
+|---|---|---|---|
+| N1 | `pyip` (Python `ipaddress`) | `net/netip` — done inside R01 | helpers netip lacks (collapse/summarise) |
+| N2 | `urlx`, `reqproxy` (requests URL/proxy rules) | `net/url`, `http.ProxyFromEnvironment` | – |
+| N3 | `pystr` (CPython Unicode/str/int/float rules) | `strings`, `unicode`, `strconv` | none, unless a real user-data case needs it |
+| N4 | installer zlib/zipfile port, `oxidns/fnmatch.go` | `archive/zip`, `compress/flate`, `path.Match` (+ `[!x]`→`[^x]`) | – |
+| N5 | httpx Werkzeug emulation (send_file, conditional requests, routing quirks) | `http.ServeContent`, `net/http` | auth/route semantics the frontend uses |
+| N6 | `rules` Python-`re` shims (icase tables, `re.sub` templates, `\N{}`) | `regexp` (RE2), `regexp2` for lookaround/backrefs (same as Mihomo's own filters) | – |
+| N7 | `pyyaml` + `yamlx` loader/dumper, `subs/commented` editor | `gopkg.in/yaml.v3` (Node API keeps comments; Mihomo itself uses yaml.v3) | `yamlx` facade API |
+| N8 | `jsonx` Python encoding (repr floats, ensure_ascii, separators) | `encoding/json`-style output | ordered `*jsonx.Object` type (unknown fields and key order survive) |
+
+Consequences accepted by the maintainer: YAML 1.1 implicit types (`yes/no/on/off`, `NO`, sexagesimal,
+`0777`) follow yaml.v3 (= Mihomo's own reading); generated config bytes and stored JSON formatting
+change once at the switch (Agents get one push; tell the maintainer before switching); CPython-only
+Unicode edge cases follow Go. Functional checks that must still hold after every swap: the domain
+replays/corpora/differentials with structural comparison, existing `configflow.sqlite3` loads and
+round-trips without loss.
