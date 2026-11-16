@@ -318,3 +318,29 @@ the level of scrutiny depend on timing).
   then R04 HR review, then HR ports in dependency order, then spot/refactor reviews.
 - When a window runs out mid-task, Opus agents stop with committed work + PROGRESS file (no half-finished
   hand-offs) and are resumed in the next window.
+
+## Complete Opus task list with triggers (maintainer, 2026-11-16 — the full list; no per-phase asking)
+
+The coordinator starts each item when its trigger fires, in the Opus queue order of "Fixed assignment by
+risk" (blockers first). Every item is done by an Opus agent that did not author the work under review.
+
+| # | Task | Trigger |
+|---|---|---|
+| O1 | N7 (YAML → yaml.v3) and N8 (remove jsonx) designs; later any new package/cross-package interface design | now (next window) / when a design is needed |
+| O2 | Review of the production-data differential harness itself: comparison logic, ignore/normalise list, auth hook, netns isolation, self-test — a false pass here lets every later merge through | when `go-proddiff` hands back, before it becomes the merge gate |
+| O3 | Storage + background-task design: SQLite write locking, task scheduler (22 Python threads → goroutines), cancellation and shutdown order, schema/version handling for future data changes | before the bulk of the agents domain is ported |
+| O4 | HR reviews (fresh Opus ≠ author), first R04 | each HR module hand-back |
+| O5 | HR module ports (R05, R07–R12, R14; agents publish / rule sync / DNS follow / DNS HA / Linux gateway / installers / upgrade) | prerequisites verified |
+| O6 | Coverage-matrix review of each domain's black-box difftest, incl. streaming/long-running endpoints (live logs, SSE/WebSocket, progress polling, uploads/downloads) that request/response diffs miss | each matrix hand-back |
+| O7 | Core-engine refactor reviews (S-rules, S-oxidns, later S passes / N swaps) | after merge |
+| O8 | Spot reviews: 1–2 non-HR modules per domain; a class of error → Codex sweep | per domain, after half its modules are verified |
+| O9 | Security review: auth/sessions/CSRF, static file serving (Go replaces nginx), path traversal, **injection into generated RouterOS scripts / install scripts / shell commands from user-entered names and addresses**, secrets in logs, third-party Go dependencies | after O3; again on the full tree before the switch |
+| O10 | Performance and memory against the rewrite's purpose (prod Python: 146 MB RSS, idle CPU): idle RSS/CPU with the prod snapshot, `/api/agents` and generation load, goroutine/fd/memory over a 24 h soak, pprof findings → Codex tasks | when the config + agents domains run end to end; soak in the lab |
+| O11 | Escalations (Codex failed 2–3 rounds) | when they happen |
+| O12 | Behaviour-change ledger: every place Go intentionally differs from Python (fixed Python bugs, dropped features, format changes) collected from all PROGRESS files and checked for user-visible impact → release notes | before the switch |
+| O13 | Feature-completeness final audit: `routes.tsv`, background tasks, every frontend API call, settings keys vs Go — by an Opus that ported nothing | before the switch |
+| O14 | Switch and release plan: the maintainer's production cutover (checks, data compatibility, Agents' one full re-publish and how to verify it, stop-loss without Python rollback), **and the public release for other users of thsrite/configflow** (legacy-data refusal path, Docker image/arch/tzdata, upgrade notes), plus the lab test plan (needs the maintainer's go-ahead to run) | when O13 is clean |
+| O15 | Architecture overview for future contributors (`server/ARCHITECTURE.md`): packages, data flow, background tasks, how to add a route/generator | before the switch |
+
+The maintainer is only asked for decisions that are theirs: lab test go-ahead, switch timing, user-visible
+behaviour changes from O12, and anything touching production.

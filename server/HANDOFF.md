@@ -69,6 +69,7 @@ Codex first + "Opus review pending" if Claude quota is out).
    other `missing` modules whose prerequisites are verified) and reviews.
 4. **Blocked until 1 exists:** N7 (YAML → yaml.v3 behind yamlx) and N8 (remove jsonx) Opus designs and their
    implementation, S passes of convert/subs/agents/repo, and any other large refactor of accepted code.
+**Opus task list O1–O15 with triggers:** WORKFLOW.md "Complete Opus task list" — start each on its trigger without asking.
 **Fixed assignment by risk:** see WORKFLOW.md last section — Opus always does designs, HR ports, HR reviews,
 matrix/spot/refactor reviews; Codex everything else; quota only sets when Opus tasks run (never handed to Codex). Max 2 Opus agents.
 5. S-rules and S-oxidns (already running) merge normally, then get re-checked with the production-data
