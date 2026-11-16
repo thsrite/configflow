@@ -352,6 +352,7 @@ func DescribeSettings(ctx context.Context, value any) (*jsonx.Object, error) {
 // SaveConfig is save_config(value): stores the normalized setting and the
 // node_test_dns mirror in system_config.
 func SaveConfig(ctx context.Context, value any) (*jsonx.Object, error) {
+	ctx = context.WithoutCancel(ctx) // never interrupted by a gone client, like Python
 	config, err := NormalizeConfig(value)
 	if err != nil {
 		return nil, err
@@ -386,6 +387,7 @@ func SaveConfig(ctx context.Context, value any) (*jsonx.Object, error) {
 // CheckSettings is check_settings(value): one query of a fixed public name
 // through the worker's resolver with the given (unsaved) setting.
 func CheckSettings(ctx context.Context, value any) (*jsonx.Object, error) {
+	ctx = context.WithoutCancel(ctx) // never interrupted by a gone client, like Python
 	env := currentEnv
 	options, err := EffectiveSettings(ctx, value)
 	if err != nil {

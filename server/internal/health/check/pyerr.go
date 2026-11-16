@@ -86,7 +86,7 @@ func item(v any, key string) any {
 	case []any:
 		raise("TypeError", "list indices must be integers or slices, not str")
 	case string:
-		raise("TypeError", "string indices must be integers")
+		raise("TypeError", "string indices must be integers, not 'str'")
 	}
 	raise("TypeError", "'"+TypeName(v)+"' object is not subscriptable")
 	return nil

@@ -399,6 +399,9 @@ func saveResults(ctx context.Context, results *jsonx.Object) {
 // RunTests is run_tests(names, keys=keys): nil slices are None. One test
 // at a time per process (ProbeBusy otherwise).
 func RunTests(ctx context.Context, names, keys []string) (*jsonx.Object, error) {
+	// A started test finishes and stores its results even when the request
+	// is cancelled (Python's request thread is never interrupted).
+	ctx = context.WithoutCancel(ctx)
 	if !testLock.TryLock() {
 		return nil, &ProbeBusy{"已有节点测速正在进行，请稍后重试"}
 	}

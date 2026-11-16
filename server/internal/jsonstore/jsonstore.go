@@ -10,9 +10,11 @@ import (
 	"crypto/sha256"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"configflow/internal/jsonx"
 )
@@ -136,13 +138,23 @@ func (s *Store) Write(id string, data any, verifySignature bool) (*Signature, er
 	return &verified, nil
 }
 
-// Remove is _remove: delete the file of id; a missing file is fine.
+// Remove is _remove: delete the file of id (os.remove = unlink(2), so a
+// directory in its place fails with EISDIR, empty or not, where Go's
+// os.Remove would rmdir it); a missing file is fine.
 func (s *Store) Remove(id string) error {
-	err := os.Remove(s.Path(id))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
+	path := s.Path(id)
+	for {
+		err := syscall.Unlink(path)
+		switch {
+		case err == nil:
+			return nil
+		case err == syscall.EINTR: // PEP 475: retried
+			continue
+		case errors.Is(err, os.ErrNotExist):
+			return nil
+		}
+		return &fs.PathError{Op: "remove", Path: path, Err: err}
 	}
-	return err
 }
 
 func signature(f *os.File) (Signature, error) {

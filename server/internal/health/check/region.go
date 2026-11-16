@@ -223,7 +223,14 @@ func evaluateClaude(results byID) *jsonx.Object {
 	if !jsonx.Truthy(finalURL) {
 		finalURL = ""
 	}
-	urls := append([]any{finalURL}, iterate(get(web, "redirects", []any{}))...)
+	redirects := get(web, "redirects", []any{})
+	switch redirects.(type) {
+	case []any, string, *jsonx.Object:
+	default:
+		// [x, *value] of a non-iterable value.
+		raise("TypeError", "Value after * must be an iterable, not "+TypeName(redirects))
+	}
+	urls := append([]any{finalURL}, iterate(redirects)...)
 	for _, url := range urls {
 		if contains(url, "app-unavailable-in-region") {
 			return result("blocked", region, "跳转到「所在地区不可用」页面", ev)

@@ -54,7 +54,9 @@ func (e *OSError) Unwrap() error { return e.Err }
 type ExecRunner struct{}
 
 // Run starts the command, writes Stdin, collects the output and kills the
-// process when Timeout passes (subprocess.run's kill + wait).
+// process when Timeout passes (subprocess.run's kill + wait). The context
+// does not end the run: Python's request thread finishes a started test
+// even when the browser has gone away.
 func (ExecRunner) Run(ctx context.Context, command Command) (Result, error) {
 	cmd := exec.Command(command.Argv[0], command.Argv[1:]...)
 	cmd.Env = command.Env
@@ -71,10 +73,6 @@ func (ExecRunner) Run(ctx context.Context, command Command) (Result, error) {
 	select {
 	case <-done:
 	case <-timer.C:
-		cmd.Process.Kill()
-		<-done
-		return Result{}, ErrTimeout
-	case <-ctx.Done():
 		cmd.Process.Kill()
 		<-done
 		return Result{}, ErrTimeout

@@ -2,10 +2,16 @@ package health
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io/fs"
 	"path/filepath"
+	"strings"
+	"syscall"
 
 	"configflow/internal/agents"
 	"configflow/internal/health/check"
+	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 )
 
@@ -32,7 +38,7 @@ func deleteProbeStore(ctx context.Context, agentID string) error {
 	if err != nil {
 		return err
 	}
-	return store.Delete(agentID)
+	return pythonOSError(store.Delete(agentID))
 }
 
 func deleteRegionStore(ctx context.Context, agentID string) error {
@@ -40,7 +46,32 @@ func deleteRegionStore(ctx context.Context, agentID string) error {
 	if err != nil {
 		return err
 	}
-	return store.Delete(agentID)
+	return pythonOSError(store.Delete(agentID))
+}
+
+// osError is an OSError whose text is str(exc) as Python renders it: the
+// DELETE route answers 500 with that text.
+type osError struct {
+	err  error
+	text string
+}
+
+func (e *osError) Error() string { return e.text }
+func (e *osError) Unwrap() error { return e.err }
+
+// pythonOSError gives a failed os.remove the text of Python's OSError
+// ("[Errno 21] Is a directory: '/data/probes/a.json'").
+func pythonOSError(err error) error {
+	var pathErr *fs.PathError
+	var errno syscall.Errno
+	if !errors.As(err, &pathErr) || !errors.As(pathErr.Err, &errno) {
+		return err
+	}
+	text := errno.Error()
+	if text != "" {
+		text = strings.ToUpper(text[:1]) + text[1:]
+	}
+	return &osError{err, fmt.Sprintf("[Errno %d] %s: %s", int(errno), text, jsonx.Repr(pathErr.Path))}
 }
 
 // Wire is C16's entry in internal/server wirePackages: the DELETE
