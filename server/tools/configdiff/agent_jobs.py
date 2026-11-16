@@ -112,7 +112,7 @@ class Running:
         return send(self.pair.bases[index], 'GET', '/api/domain-discovery/probe/' + (self.ids[index] or 'missing'),
                     headers={'Authorization': 'Bearer ' + self.pair.tokens[index], 'X-ConfigFlow-Profile': self.pair.default_profile})
 
-    def finish(self, expected_calls, *, errors=0, status='done', variant=''):
+    def finish(self, expected_calls, *, errors=0, status='done', variant='', case='T20'):
         for agent in self.agents:
             agent.release.set()
         final, statuses = [None, None], [None, None]
@@ -155,6 +155,7 @@ class Running:
         diffs += differences(final[0], final[1], 'job.final', policy)
         diffs += database_diffs(*self.pair.dirs, policy) + file_diffs(*self.pair.dirs, policy)
         path = {'probe': 'probe', 'region': 'region/check', 'website': 'website/identify'}[self.kind]
-        self.pair.recorder.record('T20', variant, 'POST /api/domain-discovery/' + path,
-                                  'T20', 'different' if diffs else 'compared', diffs, python_status=statuses[0], go_status=statuses[1])
+        category = re.search(r'-(S|F|B)\d+', case)[1] if case.startswith('R') else case
+        self.pair.recorder.record(case, variant, 'POST /api/domain-discovery/' + path,
+                                  category, 'different' if diffs else 'compared', diffs, python_status=statuses[0], go_status=statuses[1])
         return final

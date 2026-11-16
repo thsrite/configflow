@@ -955,3 +955,19 @@ request_variants=7079 named_matrix_cases=3556（S561 F2479 B516），H去重252�
 ```
 
 继续断连、并发poll、跨空间website busy、真实超时与T21自动化及剩余清单；未做最终全量。
+
+## 批次 54：客户端断连后完成与并发job隔离
+
+- 4新增命名请求/序列实际比较通过。使用真实HTTPConnection发送POST后不调用getresponse、不读取响应；待fake Agent确认收到并保持未响应时，关闭浏览器连接。两端均能在公开domains.probe_job读到仍running的任务，释放Agent后完整终态/一次RPC/probes文件/DB正确，不因浏览器连接消失而取消任务。
+- R052-B02各端并发12次GET，交错owner与foreign query并保持default header；逐响应比较body/header/status，owner始终同一running ID，foreign始终404且仅准确的not-found消息，不泄露进度或错误。poll前后全DB/文件不变，随后断连任务正常完成。
+- 通用完成观察器可用清单R编号记录完整序列；这里只把已发生的完整断连序列记为R051-B03，没有把它当作其他写接口的T05已覆盖。
+
+```text
+.63 run.py --groups discovery-client-disconnect
+current compared=4 design_errors=[] seconds=4.73
+cumulative compared=1894 go-unimplemented=5093 dependency=28 different=67 O12-separate=1
+request_variants=7083 named_matrix_cases=3558（S561 F2479 B518），H去重252，G去重16
+49 self-checks + end-to-end wrong-Go-response check OK
+```
+
+仍待website跨空间busy、真实Agent超时、T21及其他T05入口与剩余R/H；未做最终全量。
