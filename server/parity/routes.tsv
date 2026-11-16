@@ -159,23 +159,23 @@ GET	/api/custom-config/oxidns	routes.config.handle_custom_oxidns_config		todo
 POST	/api/custom-config/oxidns	routes.config.handle_custom_oxidns_config		todo
 GET	/api/custom-config/surge	routes.config.handle_custom_surge_config		todo
 POST	/api/custom-config/surge	routes.config.handle_custom_surge_config		todo
-GET	/api/domain-discovery/agents	routes.domain_discovery.list_agents		todo
-POST	/api/domain-discovery/apply	routes.domain_discovery.apply_rules		todo
-GET	/api/domain-discovery/domains	routes.domain_discovery.list_domains		todo
-GET	/api/domain-discovery/history	routes.domain_discovery.history		todo
-DELETE	/api/domain-discovery/ignore	routes.domain_discovery.remove_ignored		todo
-POST	/api/domain-discovery/ignore	routes.domain_discovery.add_ignored		todo
-POST	/api/domain-discovery/probe	routes.domain_discovery.start_probe		todo
-GET	/api/domain-discovery/probe/<job_id>	routes.domain_discovery.get_probe		todo
-GET	/api/domain-discovery/region	routes.domain_discovery.region_status		todo
-POST	/api/domain-discovery/region/check	routes.domain_discovery.start_region_check		todo
-POST	/api/domain-discovery/region/route	routes.domain_discovery.route_region		todo
-POST	/api/domain-discovery/rulesets/init	routes.domain_discovery.init_rulesets		todo
-GET	/api/domain-discovery/settings	routes.domain_discovery.get_settings		todo
-PUT	/api/domain-discovery/settings	routes.domain_discovery.update_settings		todo
-POST	/api/domain-discovery/undo	routes.domain_discovery.undo		todo
-POST	/api/domain-discovery/website/identify	routes.domain_discovery.identify_website		todo
-PUT	/api/domain-discovery/website/note	routes.domain_discovery.website_note		todo
+GET	/api/domain-discovery/agents	routes.domain_discovery.list_agents	internal/api/domaindiscovery	done
+POST	/api/domain-discovery/apply	routes.domain_discovery.apply_rules	internal/api/domaindiscovery	done
+GET	/api/domain-discovery/domains	routes.domain_discovery.list_domains	internal/api/domaindiscovery	done
+GET	/api/domain-discovery/history	routes.domain_discovery.history	internal/api/domaindiscovery	done
+DELETE	/api/domain-discovery/ignore	routes.domain_discovery.remove_ignored	internal/api/domaindiscovery	done
+POST	/api/domain-discovery/ignore	routes.domain_discovery.add_ignored	internal/api/domaindiscovery	done
+POST	/api/domain-discovery/probe	routes.domain_discovery.start_probe	internal/api/domaindiscovery	done
+GET	/api/domain-discovery/probe/<job_id>	routes.domain_discovery.get_probe	internal/api/domaindiscovery	done
+GET	/api/domain-discovery/region	routes.domain_discovery.region_status	internal/api/domaindiscovery	done
+POST	/api/domain-discovery/region/check	routes.domain_discovery.start_region_check	internal/api/domaindiscovery	done
+POST	/api/domain-discovery/region/route	routes.domain_discovery.route_region	internal/api/domaindiscovery	done
+POST	/api/domain-discovery/rulesets/init	routes.domain_discovery.init_rulesets	internal/api/domaindiscovery	done
+GET	/api/domain-discovery/settings	routes.domain_discovery.get_settings	internal/api/domaindiscovery	done
+PUT	/api/domain-discovery/settings	routes.domain_discovery.update_settings	internal/api/domaindiscovery	done
+POST	/api/domain-discovery/undo	routes.domain_discovery.undo	internal/api/domaindiscovery	done
+POST	/api/domain-discovery/website/identify	routes.domain_discovery.identify_website	internal/api/domaindiscovery	done
+PUT	/api/domain-discovery/website/note	routes.domain_discovery.website_note	internal/api/domaindiscovery	done
 POST	/api/generate/<service>/artifact	routes.generate.generate_artifact		todo
 GET	/api/generate/artifacts/<preview_id>/<action>	routes.generate.read_artifact		todo
 POST	/api/generate/loon	routes.generate.generate_loon		todo

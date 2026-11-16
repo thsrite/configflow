@@ -22,6 +22,7 @@ import (
 	"configflow/internal/agents/upgrades"
 	apiagents "configflow/internal/api/agents"
 	apiauth "configflow/internal/api/auth"
+	apidiscovery "configflow/internal/api/domaindiscovery"
 	apilogs "configflow/internal/api/logs"
 	apimosdns "configflow/internal/api/mosdns"
 	apinodes "configflow/internal/api/nodes"
@@ -32,6 +33,7 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
+	"configflow/internal/discovery"
 	"configflow/internal/health"
 	"configflow/internal/httpx"
 	"configflow/internal/ippresence"
@@ -53,6 +55,7 @@ var routePackages = []func(*httpx.Router){
 	apilogs.Register,
 	apistats.Register,
 	apimosdns.Register,
+	apidiscovery.Register,
 }
 
 // lateRoutePackages register after everything else is wired.
@@ -73,6 +76,7 @@ var wirePackages = []func(){
 	substore.Wire,
 	refresh.Wire,
 	health.Wire,
+	discovery.Wire,
 	mihomoenv.Wire,
 	ippresence.Wire, // routers R02: convert.MihomoHooks.IsFullTun, oxidns classical_ip_lines
 	routers.Wire,    // routers R01: repo.Hooks.RedactRouters

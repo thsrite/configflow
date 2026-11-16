@@ -66,12 +66,14 @@ type Recheck struct {
 }
 
 type libraryItem struct {
-	ID         string                     `json:"id"`
-	Name       string                     `json:"name"`
-	SourceType string                     `json:"source_type"`
-	Behavior   string                     `json:"behavior"`
-	Content    string                     `json:"content"`
-	Extra      map[string]json.RawMessage `json:"-"`
+	original        json.RawMessage
+	originalContent string
+	ID              string                     `json:"id"`
+	Name            string                     `json:"name"`
+	SourceType      string                     `json:"source_type"`
+	Behavior        string                     `json:"behavior"`
+	Content         string                     `json:"content"`
+	Extra           map[string]json.RawMessage `json:"-"`
 }
 
 func (v *libraryItem) UnmarshalJSON(b []byte) error {
@@ -81,14 +83,31 @@ func (v *libraryItem) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*v = libraryItem(p)
+	v.original = append(json.RawMessage(nil), b...)
+	v.originalContent = v.Content
 	return capture(b, &v.Extra, "id", "name", "source_type", "behavior", "content")
 }
 func (v libraryItem) MarshalJSON() ([]byte, error) {
+	if v.original != nil {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(v.original, &fields); err != nil {
+			return nil, err
+		}
+		if v.Content != v.originalContent {
+			b, err := json.Marshal(v.Content)
+			if err != nil {
+				return nil, err
+			}
+			fields["content"] = b
+		}
+		return json.Marshal(fields)
+	}
 	type plain libraryItem
 	return preserve(plain(v), v.Extra)
 }
 
 type ruleConfig struct {
+	original  json.RawMessage
 	ID        string                     `json:"id"`
 	ItemType  string                     `json:"itemType"`
 	RuleType  string                     `json:"rule_type,omitempty"`
@@ -106,9 +125,13 @@ func (v *ruleConfig) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*v = ruleConfig(p)
+	v.original = append(json.RawMessage(nil), b...)
 	return capture(b, &v.Extra, "id", "itemType", "rule_type", "value", "library_rule_id", "policy", "enabled")
 }
 func (v ruleConfig) MarshalJSON() ([]byte, error) {
+	if v.original != nil {
+		return v.original, nil
+	}
 	type plain ruleConfig
 	return preserve(plain(v), v.Extra)
 }

@@ -1655,7 +1655,7 @@ Files:
 
 Tests: `test_domain_background_lifecycle.py` (5), `test_domain_discovery.py` (27)
 
-Routes (17, 0 done):
+Routes (17, 17 registered; boundary validation in progress):
 
 `GET /api/domain-discovery/agents`; `POST /api/domain-discovery/apply`; `GET /api/domain-discovery/domains`; `GET /api/domain-discovery/history`; `DELETE /api/domain-discovery/ignore`; `POST /api/domain-discovery/ignore`; `POST /api/domain-discovery/probe`; `GET /api/domain-discovery/probe/<job_id>`; `GET /api/domain-discovery/region`; `POST /api/domain-discovery/region/check`; `POST /api/domain-discovery/region/route`; `POST /api/domain-discovery/rulesets/init`; `GET /api/domain-discovery/settings`; `PUT /api/domain-discovery/settings`; `POST /api/domain-discovery/undo`; `POST /api/domain-discovery/website/identify`; `PUT /api/domain-discovery/website/note`
 
@@ -1665,7 +1665,7 @@ Missing / deferred: Everything else in the files below. When porting `read_setti
 
 Notes for porter: Provides `tasks.SetRows(domain_discovery)` (ports `routes/tasks.py::_domain_rows`) and `ConnectionDeps.RulesetInfo` for rules. Calls `agents.traffic_store`, `agents.version.compare_versions`, agent manager (agents domain). `subs.ExtractDomain` (tldextract) is ready.
 
-Port in progress (go-port-c37): native settings, aggregation, rule adoption/undo, probe/region/website jobs compile on .63. Legacy Python-emulation helpers removed; existing jsonx APIs isolated in bridge.go. Next: route registration, auto loop/task rows, boundary differential, final .32 checks. No sub-agents, no pushes.
+Port in progress (go-port-c37): native settings, aggregation, rule adoption/undo, probe/region/website jobs compile on .63. Legacy Python-emulation helpers removed; existing jsonx APIs isolated in bridge.go. e6aeaf0c adds the native operations. All 17 routes, auto loop and task rows now compile; .63 go vet ./... and discovery/api/server tests pass. Next: proddiff, write/lifecycle differential, final .32 checks. No sub-agents, no pushes.
 
 ## Next steps (coordinator; at most 2 config agents at a time: one porter + one reviewer)
 

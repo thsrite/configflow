@@ -3,6 +3,7 @@ package discovery
 // This file is the boundary to the pre-N8 repository, matcher and health APIs.
 // Business logic uses native structs; these conversions disappear with N8.
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -61,6 +62,10 @@ func editProfile(ctx context.Context, id string, edit func(*config) error) error
 			return nil, err
 		}
 		c.Settings.normalize()
+		before, err := json.Marshal(c.Rules)
+		if err != nil {
+			return nil, err
+		}
 		if err := edit(&c); err != nil {
 			return nil, err
 		}
@@ -73,7 +78,13 @@ func editProfile(ctx context.Context, id string, edit func(*config) error) error
 			return nil, err
 		}
 		o.Set("domain_discovery", s)
-		o.Set("rule_configs", r)
+		after, err := json.Marshal(c.Rules)
+		if err != nil {
+			return nil, err
+		}
+		if !bytes.Equal(before, after) {
+			o.Set("rule_configs", r)
+		}
 		return nil, nil
 	}, id)
 	return err
@@ -562,4 +573,23 @@ func websiteMarkers() map[string]string {
 		out[m.Key] = m.Pattern
 	}
 	return out
+}
+
+type profile struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func listProfiles(ctx context.Context) ([]profile, error) {
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, err := r.ListProfiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []profile
+	err = decode(v, &out)
+	return out, err
 }
