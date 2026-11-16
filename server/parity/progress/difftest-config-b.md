@@ -801,3 +801,19 @@ request_variants=6753 named_matrix_cases=3488（S539 F2453 B496），H去重234�
 ```
 
 继续实际Agent报告/job、区域路由、G13与其他剩余清单；未做最终全量。
+
+## 批次 45：真实Agent上报与域名读取筛选
+
+- 32个真实Flask↔Go请求全部通过：合成Agent向两端发相同鉴权heartbeat/traffic-report（含rule_provider确定性hash响应与traffic JSON写入）；启用状态、旧/未知版本、独立开关、重启丢失内存heartbeat后状态分别验证，未用仅种DB冒充已上报。
+- incoming协议写后已比较后，向两端放入相同合成旧日桶，用三个当前域名和一个3日前域名明确区分1/7天；uncovered/failing/all/ignored、指定/未知Agent、days错值/0/2/空格1/1_0/-1/Arabic7、非法view的精确集合均比较。固定旧日期字段不忽略，当前上报时间只按明确字段/时间窗口比较。
+- query profile=other覆盖default header，Agent及region记录不跨空间；无Agent/无报告/无区域结果默认数组和对象形态完整比较。T20仅明确允许这两条公共协议前置路由，不增加config R路由数。
+
+```text
+.63 run.py --groups discovery-reported-selectors,discovery-agent-versions
+current compared=32 design_errors=[] seconds=9.22
+cumulative compared=1642 go-unimplemented=5063 dependency=28 different=51 O12-separate=1
+request_variants=6785 named_matrix_cases=3507（S549 F2453 B505），H去重234，G去重15
+45 self-checks + end-to-end wrong-Go-response check OK
+```
+
+T20尚未完成：这里是Agent→面板的上报和读取，面板→fake Agent的probe/website/region请求、批次/错误/超时、job进度及自动化仍待后续；G13和其余helper/路由继续，未做最终全量。

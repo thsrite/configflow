@@ -161,6 +161,8 @@ def main():
     groups.update(discovery_writes)
     from cases.discovery_init import GROUPS as discovery_init
     groups.update(discovery_init)
+    from cases.discovery_reads import GROUPS as discovery_reads
+    groups.update(discovery_reads)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:
@@ -189,6 +191,8 @@ def main():
         # distinguish old from unknown cores. This is a protocol prerequisite,
         # not a new config-domain route or a catch-all for misspelled routes.
         auxiliary = r['case'] == 'G16' and r['route'] == 'POST /api/agents/<agent_id>/traffic-report'
+        auxiliary |= r['case'] == 'T20' and r['route'] in {
+            'POST /api/agents/<agent_id>/heartbeat', 'POST /api/agents/<agent_id>/traffic-report'}
         if r['route'] != 'startup' and r['route'] not in matrix and not auxiliary:
             errors.append({'group': 'inventory', 'error': 'case names unknown route: ' + r['route']})
     previous = json.loads(args.output.read_text()).get('results', []) if args.output.exists() else []
