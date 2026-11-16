@@ -41,7 +41,7 @@ func isolateCache(t *testing.T) *int {
 		mu.Lock()
 		calls++
 		mu.Unlock()
-		return yamlx.SafeLoad(text)
+		return saved(text)
 	}
 	savedSize, savedInput, savedResult, savedObjects, savedDepth :=
 		proxyYAMLCacheSize, proxyYAMLMaxInputBytes, proxyYAMLMaxResultBytes, proxyYAMLMaxObjects, proxyYAMLMaxDepth
@@ -247,10 +247,10 @@ func TestResultBudgetsBypassWithoutChangingResults(t *testing.T) {
 }
 
 // test_special_yaml_types_bypass_with_original_types: dates and !!binary keep
-// their types and bypass the cache. !!set values and non-string keys
-// (yes/true) cannot be held by jsonx: yamlx refuses them, so the string is
-// left to Sub-Store (nil) — a documented difference (Python returns a dict
-// with a set value or a bool key).
+// their types and bypass the cache. Non-string keys (yes/true: one key True
+// in Python) bypass the cache and are written as json.dumps writes them; a
+// !!set value cannot be held by jsonx, so that string is left to Sub-Store
+// (nil) — documented differences.
 func TestSpecialYAMLTypesBypassWithOriginalTypes(t *testing.T) {
 	for _, text := range []string{"type: ss\nvalue: 2026-10-17", "type: ss\nvalue: !!binary aGVsbG8="} {
 		calls := isolateCache(t)
@@ -266,11 +266,19 @@ func TestSpecialYAMLTypesBypassWithOriginalTypes(t *testing.T) {
 			t.Fatalf("%q: calls %d", text, *calls)
 		}
 	}
-	for _, text := range []string{"type: ss\nvalue: !!set {a: null, b: null}", "type: ss\nyes: first\ntrue: second"} {
-		isolateCache(t)
-		if ParseStructuredProxyString(text) != nil {
-			t.Fatalf("%q: expected the documented yamlx refusal", text)
+	calls := isolateCache(t)
+	for i := 0; i < 2; i++ {
+		got := ParseStructuredProxyString("type: ss\nyes: first\ntrue: second")
+		if want := jsonx.Obj("type", "ss", "true", "second"); !jsonx.Equal(got, want) || got.Keys()[1] != "true" {
+			t.Fatalf("bool keys: %s", jsonx.Repr(got))
 		}
+	}
+	if *calls != 2 || cacheLen() != 0 {
+		t.Fatalf("bool keys: calls %d len %d", *calls, cacheLen())
+	}
+	isolateCache(t)
+	if ParseStructuredProxyString("type: ss\nvalue: !!set {a: null, b: null}") != nil {
+		t.Fatal("!!set: expected the documented yamlx refusal")
 	}
 }
 
