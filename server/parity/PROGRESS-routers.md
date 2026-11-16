@@ -310,8 +310,10 @@ Coverage map (Python test file → Go boundary test or deferred module):
 - `test_routeros_release.py` (14) → driver-level route/NAT round trips, REST errors, readback and uncertain-write cases in `TestRouterOSBoundaryCorpus`; release planning/stages and cross-stage rollback → R12.
 
 Commands (test server, after rebasing onto `go`):
-- Focused boundary and batch unit tests: `rt -- bash -lc 'cd server && go test -count=1 ./internal/routers -run "TestRouterOSBoundaryCorpus|TestRouteBatches|TestConsoleScript|TestRestoreManyStops"'` → `ok configflow/internal/routers 7.560s`.
-- Full verification: `rt -- bash -lc 'cd server && go vet ./... && go test -count=1 ./...'` → exit 0; output included `ok configflow/internal/routers 24.167s` and final line `ok configflow/internal/yamlx 0.857s`.
+- Focused boundary and batch unit tests: `rt -- bash -lc 'cd server && go test -count=1 ./internal/routers -run "TestRouterOSBoundaryCorpus|TestRouteBatches|TestConsoleScript|TestRestoreManyStops"'` → `ok configflow/internal/routers 10.392s`.
+- Full verification after rebase: `rt -- bash -lc 'cd server && go vet ./... && go test -count=1 ./...'` → exit 0; output included `ok configflow/internal/routers 38.087s`, `ok configflow/internal/yamlx 1.343s`, and final line `? configflow/tools/proddiff/generator [no test files]`.
+
+Commit: `fdedef41` (R04 driver, batching, boundary tests and coverage map).
 
 Files:
 - `backend/routers/routeros.py` (816), `backend/routers/routeros_batch.py` (599)
