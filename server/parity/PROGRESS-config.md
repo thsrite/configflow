@@ -1575,7 +1575,7 @@ Notes for porter: Also registers the 9 `/api/profiles/<id>/oxidns/*` wrapper rou
 
 ## C30 — subscription and node routes, node deletion
 
-**Status: `ported`** · prereqs: C17, C16, C19, C20 · Go: internal/api/subscriptions, internal/api/nodes
+**Status: `verified`** · prereqs: C17, C16, C19, C20 · Go: internal/api/subscriptions, internal/api/nodes
 
 Files: `backend/routes/subscriptions.py` (696), `backend/routes/nodes.py` (213), `backend/common/node_deletion.py` (85).
 
@@ -1583,19 +1583,13 @@ Routes (26/26 registered; 5 C16 latency methods retained):
 
 `GET /api/nodes`; `POST /api/nodes`; `DELETE /api/nodes/<node_id>`; `PUT /api/nodes/<node_id>`; `POST /api/nodes/delete`; `POST /api/nodes/delete-preview`; `GET /api/nodes/latency`; `POST /api/nodes/latency`; `POST /api/nodes/latency/dns/check`; `GET /api/nodes/latency/settings`; `POST /api/nodes/latency/settings`; `POST /api/nodes/parse-lines`; `POST /api/nodes/reorder`; `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies`; `GET /api/subscriptions`; `POST /api/subscriptions`; `GET /api/subscriptions/<resource_id>/health-impact`; `DELETE /api/subscriptions/<sub_id>`; `PUT /api/subscriptions/<sub_id>`; `POST /api/subscriptions/<sub_id>/fetch`; `GET /api/subscriptions/<sub_id>/nodes`; `GET /api/subscriptions/<sub_id>/proxies`; `GET /api/subscriptions/health`; `GET /api/subscriptions/proxies`; `POST /api/subscriptions/reorder`; `GET /api/subscriptions/test`
 
-Review in progress (`go-review-c30`): `e9c1e779` hardens constant-time capability comparisons and adds adversarial URL/JWT/rotation checks. `a793be81` fixes legacy non-array cache preview/list handling; deletion commit-failure rollback, concurrent reference writes and cancelled-request completion tested; missing C31 aggregation fails closed for single/combined activated graphs without stored effects. .63 whole-tree vet, scoped race and full C30 differential pass (63.728s). Final .32 acceptance remains before verified; see `parity/review-c30.md`.
+Independent review complete (`go-review-c30`), zero open C30 findings. Fixes: `6c80c783` constant-time public/internal capability comparison; `2ef264ae` legacy non-array cache summaries plus deletion rollback/concurrency tests; `37fa3455` malformed fetch/reorder bodies rejected before work; `729c2452` null-cache fallback without panic; `3e088219` UTF-8 BOM decoding. Coverage: `82f78031`, `627bed76` (all 25 global method/path pairs reject URL-token-only access; explicit profile provider tested separately).
 
-Late boundary check found non-object fetch bodies could import nodes, and non-object reorder bodies returned 404 instead of 500. Rejected before downloads/writes; 12 new Flask differential requests preserve status, Chinese messages and stored state. .63 vet/scoped tests/management+fetch differentials pass (2.881s). Final .32 checks must run again with this fix.
-
-Review coverage additionally checks every global method/path (25, including C16 methods) with valid URL token but no JWT: all Flask/Go 401; .63 vet + focused differential pass (0.603s). Rebased cleanly onto `go` including C37 review/design docs; final acceptance will run on the rebased tree.
-
-Final branch walk also reproduced a nil-slice adapter panic for offline fetch with `nodes: null` cache. Normalize the optional slice to an empty JSON array before bridging; preview/import differential checks added. Final acceptance must include this last fix.
-
-UTF-8 BOM native re-decoding fixed; 8 new differential requests cover node/subscription writes and optional bodies. .63 vet and focused BOM/malformed/null-cache checks pass (2.183s). Last .32 suite/race/C30 differential passed, but proddiff found 5 new Agent metrics summary count/average differences (no C30 differences); baseline/normalization untouched. Final rerun remains required.
+Final .32 acceptance at `3e088219` after rebase onto `go` (`e6c87cc1`): gofmt has no output, whole-tree vet/full suite pass; scoped race subscriptions 1.406s, nodes 4.922s, auth 1.430s; live Flask differential 67.413s. Proddiff: 65 GET templates, all self-checks PASS, coverage_regressions=0, new=0, stale=0, no baseline/normalization edits. One earlier transient Agent metrics summary difference disappeared on rerun; paths and limits are recorded in `parity/review-c30.md`. A11 diagnostics and C31 aggregation materialization remain their explicitly deferred owners; missing C31 materialization rejects activated single/combined delivery with unchanged storage. Full findings, boundary coverage, exact commands/output and commit list: `parity/review-c30.md`.
 
 Done: `bf499d37` implements node CRUD/parse/reorder/reviewed deletion and `nodes.Wire` → `repo.Hooks.PlanNodeDeletion`; `f19ee585` implements subscription management/cache preview/refresh/health/reorder and single/combined provider exports. `b063069d` adds Flask↔Go boundary acceptance and fixes found by it (URI conversion-record initialization/reuse, legacy health count adapter, semantic comparison of unaffected group JSON).
 
-Acceptance: `internal/api/subscriptions/difftest` compares each HTTP response and the complete exported SQLite document plus every JSON/YAML data file after each request. Route matrix and detailed mapping: `parity/difftest-c30.md`. Current .63 vet/package/differential run passes (`nodes 6.560s`, `subscriptions 0.206s`, `subscriptions/difftest 67.854s`). .32 proddiff passes: `coverage_regressions=0`, `new=0`, `stale=0`, all self-checks PASS; 9 newly compared GET templates added to proddiff-coverage. Final .32 checks passed after the code rebase: gofmt has no output, whole-tree vet/full test suite pass, scoped race pass; C30 differential 59.159s, C16 differential 13.418s, C30 differential under race 73.305s. Final rebase brought only coordinator HANDOFF documentation; no code changed.
+Acceptance: `internal/api/subscriptions/difftest` compares each HTTP response and the complete exported SQLite document plus every JSON/YAML data file after each request. Route matrix and detailed mapping: `parity/difftest-c30.md`. Independent review adds URL/JWT/rotation/BOM/malformed body/null-cache cases, direct deletion commit-failure/reopen/concurrent-reference tests and the missing-aggregation fail-closed check. Final independent .32 results are recorded above and in `parity/review-c30.md`; the original porter's acceptance (including C16 live differential and C30 live differential under race) remains in `parity/C30-HANDOFF.md` as historical evidence.
 
 | Python tests | Boundary coverage / remaining owner |
 |---|---|
@@ -1605,8 +1599,8 @@ Acceptance: `internal/api/subscriptions/difftest` compares each HTTP response an
 | test_dialer_delivery_staging.py (5) | final cross-feed graph/staged-cache comparison plus existing C17 missing-feed/late-activation tests; push consumer belongs to A14. |
 | test_dialer_proxy.py (23) | node CRUD/reference guards/reorder, reviewed deletion and alternate formats; proxy-group/aggregation/generate entry points belong to C33/C31/C34. |
 | test_dialer_standalone_activation.py (4) | URI graph/fallback/format/snapshot cases; aggregation/main-preview counterparts belong to C31/C34. |
-| test_node_deletion.py (9) | reviewed deletion, all blockers, stale/unrelated writes, empty sources, unaffected groups; repository commit-failure rollback already covered by repo/TestFailedDatabaseCommitKeepsPreviousData. |
-| test_subscription_cache_preview.py (4) | TestCachePreviewNeverRefreshes (7 states, repeated read-only calls), imported/missing/auth cases. |
+| test_node_deletion.py (9) | reviewed deletion, all blockers, stale/unrelated writes, empty sources, unaffected groups; nodes/review_test.go directly checks commit failure with reopen, concurrent affected-profile writes and cancellation. |
+| test_subscription_cache_preview.py (4) | TestCachePreviewNeverRefreshes (8 states, repeated read-only calls), TestFetchWithNullCacheNodes, imported/missing/auth cases. |
 
 Decisions/differences:
 - Native encoding/json and yaml.v3; unknown stored fields retained as json.RawMessage. Production jsonx usage is confined to adapter.go; no new pystr/urlx or dependencies.

@@ -1,6 +1,6 @@
 # C30 对抗性复核
 
-状态：进行中；分支 `go-review-c30`；无子 agent、无推送、无生产访问。
+状态：`verified`，没有未关闭的 C30 发现；分支 `go-review-c30`。无子 agent、无推送、无生产访问；全部测试在测试服务器上运行。
 
 ## 已发现并修复（按严重度排序）
 
@@ -38,7 +38,7 @@ RT_HOST=sunbroke@192.168.0.63 rt --back server/internal/api/subscriptions/securi
 - C30 生产代码 jsonx 仅在两个 adapter.go；RawMessage 保存未知字段，json/yaml/crypto 为 Go 原生库。确认摘要的排序 JSON/分隔符以及中文错误中的 ID 列表是已有外部协议，没有新增 Python 运行时模拟、依赖或下游实现副本。
 - flight key 是 kind/profile/resource/format/filter/config 摘要，不存请求 token；鉴权发生在 cache/flight 访问前。
 
-剩余：全量 .32 验收、proddiff、rebase 和最终报告。
+已完成 .32 全量验收及最终 rebase；批准延后的 A11 诊断位置信息、C31 聚合 materialization 仍由各自模块完成。缺省 hook 不会吞掉校验错误或提交未通过校验的产物；保持 Python 的 provider last-good 响应机制。
 
 ## 最终验收命令（.32）
 
@@ -64,4 +64,53 @@ rg "^self-check:|^baseline:" /tmp/review-c30-proddiff.log
 rg -o "\"coverage_regressions\": [0-9]+|\"new\": [0-9]+|\"stale\": [0-9]+" /tmp/review-c30-proddiff.log'
 ```
 
-最终一轮须包含 BOM 修复。上轮格式/vet/race/全量套件和 C30 差分通过（88.401s），但 proddiff 首次出现 5 个新差异，均属于 `GET /api/agents/<agent_id>/metrics/summary` 的 `data_points` 和四个 `avg`，无 C30 差异。未更改 baseline/normalize；将复跑确认是否为独立请求时钟窗口差异。
+最终一轮包含全部修复，命令退出 0，gofmt/vet 无输出。scoped race 输出如下（difftest 在本次 race 调用中按既有环境开关跳过；下一步 HTTP 差分显式启用）：
+
+```text
+ok  configflow/internal/api/subscriptions          1.406s
+ok  configflow/internal/api/subscriptions/difftest 1.028s
+ok  configflow/internal/api/nodes                  4.922s
+ok  configflow/internal/auth                      1.430s
+```
+
+全量 `go test -count=1 ./...` 退出 0，末尾：
+
+```text
+?   configflow/internal/tasks              [no test files]
+ok  configflow/internal/taskstatus          0.022s
+ok  configflow/internal/utilx               0.006s
+ok  configflow/internal/version             0.005s
+ok  configflow/internal/weblistener         0.012s
+ok  configflow/internal/weburl              0.004s
+ok  configflow/internal/yamlx               0.723s
+?   configflow/tools/proddiff/generator     [no test files]
+```
+
+启用 HTTP 差分及 proddiff：
+
+```text
+ok  configflow/internal/api/subscriptions          0.029s
+ok  configflow/internal/api/subscriptions/difftest 67.413s
+ok  configflow/internal/api/nodes                  0.296s
+self-check: status=PASS json-leaf=PASS yaml-leaf=PASS text-line=PASS
+baseline: new=0 stale=0
+"coverage_regressions": 0
+"new": 0
+"stale": 0
+```
+
+生产快照比较覆盖 65 个 GET 模板及生成器，原有 5 类基线差异不变。此前一轮 proddiff 曾出现 5 个额外 Agent metrics summary 差异，路径仅为 `body.data.summary.data_points`、`cpu.avg`、`memory.avg`、`network_recv.avg`、`network_sent.avg`，无 C30 差异；最终复跑消失。疑似独立请求时钟窗口造成，未证明根因，未修改 baseline/normalize 掩盖它；若再次出现应交给 metrics/proddiff 所属模块排查。
+
+## 提交与兼容性
+
+最终测试代码：`3e088219`，基于 `go` 的 `e6c87cc1`；验收后 `git rebase go` 返回 `Current branch go-review-c30 is up to date.`。最终文档提交后再次确认工作区干净。
+
+- `6c80c783`：常量时间 token 比较及 URL/轮换/JWT 边界。
+- `2ef264ae`：旧缓存摘要与删除事务故障/并发检查。
+- `82f78031`：响应/日志/served 文件凭据检查及复核记录。
+- `37fa3455`：非对象 fetch/reorder 请求体拒绝。
+- `627bed76`：全部全局路由 JWT 闸门差分。
+- `729c2452`：null 缓存回退不触发 panic。
+- `3e088219`：UTF-8 BOM 请求体。
+
+新增测试文件 `internal/api/nodes/review_test.go`（120 行）；修改 subscriptions/auth 的原生边界及差分用例，生产代码净增 66 行。没有新增依赖，没有复制 Python 运行时或下游业务实现。外部功能/存储兼容性与 Python 一致；安全加固不改变授权集合，畸形请求的原生英文提示不追逐 Python 内部异常文本。没有新增操作入口，故无需用户文档截图变更。
