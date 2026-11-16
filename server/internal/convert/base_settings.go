@@ -1,7 +1,6 @@
 package convert
 
 import (
-	"math/big"
 	"net/netip"
 	"strings"
 
@@ -338,11 +337,8 @@ func isExactInt(v any) (jsonx.Number, bool) {
 }
 
 func intBetween(n jsonx.Number, low, high int64) bool {
-	v, ok := n.BigInt()
-	if !ok {
-		return false
-	}
-	return v.Cmp(big.NewInt(low)) >= 0 && v.Cmp(big.NewInt(high)) <= 0
+	v, ok := n.Int64()
+	return ok && v >= low && v <= high
 }
 
 func portOwners(document *jsonx.Object) []portOwner {
@@ -467,9 +463,9 @@ func sniffPortError(value any) bool {
 	if !pyIsDigit(low) || !pyIsDigit(high) {
 		return true
 	}
-	l, _ := pyIntOf(low).BigInt()
-	h, _ := pyIntOf(high).BigInt()
-	return !(l.Cmp(big.NewInt(1)) >= 0 && l.Cmp(h) <= 0 && h.Cmp(big.NewInt(65535)) <= 0)
+	l, lowFits := pyIntOf(low).Int64()
+	h, highFits := pyIntOf(high).Int64()
+	return !(lowFits && highFits && 1 <= l && l <= h && h <= 65535)
 }
 
 func checkFakeRange(document *jsonx.Object, changed func([]string) bool) {

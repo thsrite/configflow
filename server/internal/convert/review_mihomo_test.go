@@ -71,3 +71,94 @@ func TestMihomoReviewEmptyLibraryURLUsesRuleFormat(t *testing.T) {
 		})
 	}
 }
+
+func TestMihomoReviewBoundaryReferences(t *testing.T) {
+	rows := loadJSONLines(t, "testdata/review_mihomo.jsonl.gz")
+	for _, entry := range rows {
+		t.Run(entry.GetString("case")+"/"+entry.GetString("fn"), func(t *testing.T) {
+			if msg := runMihomoReviewBoundary(t, rowOf(entry)); msg != "" {
+				t.Fatal(msg)
+			}
+		})
+	}
+	t.Logf("%d Python-derived Mihomo boundary cases", len(rows))
+}
+
+func runMihomoReviewBoundary(t *testing.T, row mihomoRow) string {
+	t.Helper()
+	e := row.entry
+	if row.fn == "takeover" {
+		args := e.GetList("args")
+		restore := convert.RegisterMihomoHooks(convert.MihomoHooks{
+			GatewayEnabled: func(*jsonx.Object) (bool, error) {
+				if args[1] == true {
+					return false, errors.New("synthetic gateway failure")
+				}
+				return args[0] == true, nil
+			},
+			IsFullTun: func(*jsonx.Object) (bool, error) { return args[2] == true, nil },
+		})
+		defer restore()
+		mode, err := convert.TakeoverMode(jsonx.NewObject())
+		if msg := sameError(t, row, err); msg != "" || err != nil {
+			return msg
+		}
+		return compareOut(row, noneString(mode))
+	}
+	if e.GetBool("gateway_fixture") {
+		restore := convert.RegisterMihomoHooks(convert.MihomoHooks{
+			GatewayEnabled: func(*jsonx.Object) (bool, error) { return true, nil },
+			ApplyLinuxGateway: func(main, _ *jsonx.Object, _ string) error {
+				providers := main.GetObject("rule-providers")
+				if providers == nil {
+					providers = jsonx.NewObject()
+					main.Set("rule-providers", providers)
+				}
+				providers.Set("Gateway", jsonx.Obj("type", "http", "url", "/gateway.rules", "path", "./ruleset/gateway.list", "behavior", "classical", "format", "text"))
+				providers.Set("File", jsonx.Obj("type", "file", "url", "/ignored", "path", "./ruleset/local.list"))
+				providers.Set("Empty", jsonx.Obj("type", "http", "url", "", "path", "./ruleset/empty.list"))
+				return nil
+			},
+		})
+		defer restore()
+	}
+	if row.fn == "generate" {
+		restore := convert.SetMihomoEnv(corpusEnv(e.GetObject("caches"), e.GetObject("downloads")))
+		defer restore()
+		args := e.GetObject("args")
+		profile := args.GetObject("profile").DeepCopy()
+		report := jsonx.NewObject()
+		doc, err := convert.GenerateMihomoDocument(context.Background(), profile, convert.GenerateOptions{
+			BaseURL: args.GetString("base_url"), SkipProviderPreflight: true,
+			SyncLANHosts: args.GetBool("sync_lan_hosts"), RegionProbe: args.GetBool("region_probe"),
+			MihomoCoreVersion: args.Value("core_version"), ForAgent: args.GetBool("for_agent"), Report: report,
+		})
+		if msg := sameError(t, row, err); msg != "" {
+			return msg
+		}
+		if err == nil {
+			if !sameValue(e.Value("document"), doc) {
+				return "generated document differs:\nPython " + encode(e.Value("document")) + "\nGo " + encode(mihomoConv(doc))
+			}
+		}
+		if !sameValue(e.Value("report"), report) {
+			return "generation report differs"
+		}
+		if !sameValue(e.Value("mutated"), profile) {
+			return "logical profile mutation differs"
+		}
+		return ""
+	}
+	if args := e.GetList("args"); row.fn == "provider_downloads" && len(args) == 3 {
+		downloads, err := convert.GetMihomoProviderDownloads(context.Background(), args[0].(*jsonx.Object), args[1].(string), args[2].(*jsonx.Object))
+		if msg := sameError(t, row, err); msg != "" || err != nil {
+			return msg
+		}
+		out := []any{}
+		for _, download := range downloads {
+			out = append(out, download.Object())
+		}
+		return compareOut(row, out)
+	}
+	return runMihomoRow(t, row)
+}

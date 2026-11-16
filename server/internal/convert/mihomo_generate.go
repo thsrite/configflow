@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 
 	"configflow/internal/health/check"
@@ -610,7 +611,7 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 	var inline []subs.InlineProxy
 	if debug {
 		mihomoLog.Debug("收集到的被使用节点ID: " + pySetRepr(sortedKeys(usedAll), keyValues(usedAll, usedNodeIDs, aggregationRoots)))
-		mihomoLog.Debug("开始生成 proxies，总节点数: " + jsonx.Repr(jsonx.Int(len(iterate(dictGet(config, "nodes", []any{}))))))
+		mihomoLog.Debug("开始生成 proxies，总节点数: " + strconv.Itoa(len(iterate(dictGet(config, "nodes", []any{})))))
 	}
 	for _, n := range iterate(dictGet(config, "nodes", []any{})) {
 		if !jsonx.Truthy(dictGet(n, "enabled", true)) {
@@ -644,7 +645,7 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 		}
 	}
 	if debug {
-		mihomoLog.Debug("最终生成的 proxies 数量: " + jsonx.Int(len(proxies)).String())
+		mihomoLog.Debug("最终生成的 proxies 数量: " + strconv.Itoa(len(proxies)))
 	}
 	mihomoConfig.Set("proxies", proxies)
 
@@ -718,7 +719,7 @@ func generateMihomoDocument(ctx context.Context, logical *jsonx.Object, opts Gen
 
 	proxyGroups := []any{}
 	if debug {
-		mihomoLog.Debug("开始处理策略组，总数: " + jsonx.Int(len(iterate(dictGet(config, "proxy_groups", []any{})))).String())
+		mihomoLog.Debug("开始处理策略组，总数: " + strconv.Itoa(len(iterate(dictGet(config, "proxy_groups", []any{})))))
 	}
 	for _, group := range iterate(dictGet(config, "proxy_groups", []any{})) {
 		if debug {
