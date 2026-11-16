@@ -1,1 +1,6 @@
 # Route template	key path	difference type	reason
+GET /api/agents/<agent_id>/config/logging	body.message	value	open
+GET /api/agents/<agent_id>/logs	body.message	value	open
+GET /api/agents/<agent_id>/logs/sources	body.message	value	open
+GET /api/logs/tail	body.logs[0]	value	open
+GET /api/logs/tail	body.logs[1]	value	open

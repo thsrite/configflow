@@ -2,7 +2,6 @@
 import ast
 import collections
 import concurrent.futures
-import copy
 import hashlib
 import io
 import itertools
@@ -18,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -28,6 +28,8 @@ ROOT = Path.cwd()
 PARITY = ROOT / 'server/parity'
 PARAM = re.compile(r'<(?:[^:>]+:)?([^>]+)>')
 BASE_URL = 'http://127.0.0.1:5001'
+READONLY_POST = json.loads((PARITY / 'proddiff-readonly-post.json').read_text())
+PRIVATE_REPORT = None
 # A key is public only if it is a literal schema identifier in the reference source.
 KEYS = {'<key>', '<file>', 'status', 'Content-Type', 'body', 'content', 'config'}
 for source in (ROOT / 'backend').rglob('*.py'):
@@ -100,9 +102,9 @@ def response_diffs(left, right, route, rules):
         return out + ([] if left[2] == right[2] else [('body', 'unparseable-value')])
     if isinstance(a, dict) and isinstance(b, dict):
         # Generated YAML embedded in JSON is compared structurally too.
-        for key in ('content', 'config'):
+        for key in ('content', 'config', 'compose'):
             if isinstance(a.get(key), str) and isinstance(b.get(key), str):
-                service_yaml = any('/' + service in route for service in ('mihomo', 'mosdns', 'oxidns'))
+                service_yaml = key == 'compose' or any('/' + service in route for service in ('mihomo', 'mosdns', 'oxidns')) or bool(re.search(r'(?m)^[A-Za-z_][A-Za-z_0-9-]*: ', a[key]))
                 try:
                     a[key], b[key] = ((yaml.safe_load(a[key]), yaml.safe_load(b[key])) if service_yaml
                                      else (text(a[key]).splitlines(), text(b[key]).splitlines()))
@@ -166,6 +168,14 @@ def cases(rows, doc, data):
     agents = doc['system'].get('agents', [])
     # Opaque job/artifact IDs are read only from local metadata, never printed.
     stored = collections.defaultdict(list)
+    preview_files = {}
+    for agent in agents:
+        stored['deployments'].extend(str(key) for key in (agent.get('deployments') or {}))
+    command_db = data / 'install-commands/snapshots.sqlite3'
+    if command_db.exists():
+        with sqlite3.connect(f'file:{command_db}?mode=ro', uri=True) as connection:
+            stored['tokens'] = [row[0] for row in connection.execute('SELECT token FROM snapshots')]
+
     for name in ('.generated-previews', 'deployments', 'setup-sessions', 'gateway-installations', 'probes'):
         folder = data / name
         if folder.exists():
@@ -174,12 +184,14 @@ def cases(rows, doc, data):
                     value = json.loads(file.read_bytes())
                     if isinstance(value, dict) and value.get('id'):
                         stored[name].append(str(value['id']))
+                        if name == '.generated-previews':
+                            preview_files[str(value['id'])] = [entry['path'] for entry in value.get('bundle_meta', {}).get('manifest', {}).get('files', [])]
+                            if not preview_files[str(value['id'])]:
+                                preview_files[str(value['id'])] = ['surge.conf']
                 except (OSError, ValueError):
                     pass
     for method, route, *_ in rows:
-        generate = (method == 'POST' and (
-            '/generate/' in route or route.endswith('/generate-config') or
-            route.endswith(('/preview', '/render', '/template-preview', '/rules/compose'))))
+        generate = method == 'POST' and route in READONLY_POST
         if method != 'GET' and not generate:
             continue
         for profile_id, profile in profiles.items():
@@ -193,12 +205,12 @@ def cases(rows, doc, data):
                 'rule_id': ids(config.get('rule_library', [])),
                 'name': [str(x.get('name', x.get('id'))) for x in config.get('rule_library', []) if isinstance(x, dict)],
                 'service': ['mihomo', 'surge', 'loon', 'mosdns', 'oxidns'],
-                'operation': ['status', 'preview'], 'resource': ['configs', 'proxies', 'rules', 'connections', 'version'],
+                'operation': ['status'] if method == 'GET' else ['preview'], 'resource': ['configs', 'proxies', 'rules', 'connections', 'version'],
                 'filename': ['loon.lcf'] if '/loon/' in route else ['configflow-agent-linux-amd64'],
                 'action': ['file', 'download'], 'preview_id': stored['.generated-previews'],
                 'deployment_id': stored['deployments'], 'job_id': stored['probes'],
                 'session_id': stored['gateway-installations'] if '/gateway-installations/' in route else stored['setup-sessions'],
-                'record_id': [], 'token': [],
+                'record_id': [], 'token': stored['tokens'],
             }
             names = PARAM.findall(route)
             no_data = any(not params.get(name) for name in names)
@@ -212,14 +224,31 @@ def cases(rows, doc, data):
                 body = None
                 if method == 'POST':
                     body = {'base_url': BASE_URL}
-                    if route.endswith('/generate-config'):
+                    if route.endswith('/docker-oxidns-ha-guide'):
+                        body.update(action='inspect')
+                    elif route.endswith('/generate-config'):
                         body.update(expected_profile_id=agent.get('profile_id') or profile_id,
                                     expected_service_type=agent.get('service_type'))
-                    elif route.endswith(('/render', '/template-preview')):
-                        body['settings'] = config.get('oxidns', {})
+                    elif '/oxidns/' in route:
+                        body.update(settings=config.get('oxidns', {}), changes={},
+                                    native_config=config.get('oxidns', {}).get('native_config', ''))
                     elif '/linux-gateway/' in route:
                         body.update(settings=config.get('linux_gateway', {}))
-                yield method, route, path + '?' + urllib.parse.urlencode(query), body, no_data
+                    elif route.endswith('/preview-regex'):
+                        body.update(source='subscription', source_id=next(iter(ids(config.get('subscriptions', []))), ''), regex='.*')
+                if route.endswith('/file') or mapping.get('action') == 'file':
+                    for filename in preview_files.get(mapping.get('preview_id'), ['config.yaml']):
+                        variant = dict(query, path=filename)
+                        yield method, route, path + '?' + urllib.parse.urlencode(variant), body, no_data
+                elif route in ('/api/agents/install-script', '/api/agents/docker-agent-compose', '/api/agents/docker-agent-run'):
+                    for target in agents or [{}]:
+                        variant = dict(query, server_url=doc['system'].get('system_config', {}).get('server_domain') or BASE_URL,
+                                       name=target.get('name', 'proddiff'), agent_name=target.get('name', 'proddiff'),
+                                       agent_ip=target.get('host', ''), type=target.get('service_type', 'mihomo'),
+                                       port=target.get('port', 8080), enable_mihomo='true', enable_oxidns='true')
+                        yield method, route, path + '?' + urllib.parse.urlencode(variant), body, no_data
+                else:
+                    yield method, route, path + '?' + urllib.parse.urlencode(query), body, no_data
 
 
 def digest_tree(root):
@@ -236,22 +265,34 @@ def digest_tree(root):
 
 
 def main():
+    global PRIVATE_REPORT
     if [name for _, name in socket.if_nameindex()] != ['lo']:
         raise RuntimeError('network isolation missing')
     snapshot, binary = map(Path, sys.argv[1:3])
     record = '--record-baseline' in sys.argv[3:]
+    if not os.statvfs(snapshot).f_flag & os.ST_RDONLY:
+        raise RuntimeError('snapshot mount is writable')
     before = digest_tree(snapshot)
     private = Path.home() / 'cf-prod-snapshot/runs'
     report = Path(tempfile.mkdtemp(prefix='run-', dir=private))
+    PRIVATE_REPORT = report
     processes = []
+    def stop_signal(signum, frame):
+        raise RuntimeError('interrupted')
+    signal.signal(signal.SIGTERM, stop_signal)
+    signal.signal(signal.SIGINT, stop_signal)
     rows = [line.split('\t') for line in (PARITY / 'routes.tsv').read_text().splitlines() if line and not line.startswith('#')]
     rules = json.loads((PARITY / 'proddiff-normalize.json').read_text())
+    if any(not rule['reason'] or '*' in rule['route'] + rule['path'] for rule in rules):
+        raise RuntimeError('normalization requires an exact route/path and reason')
     try:
         with tempfile.TemporaryDirectory(prefix='copies-', dir=report) as temporary:
             copies = [Path(temporary) / name for name in ('python', 'go')]
             for data in copies:
                 shutil.copytree(snapshot, data)
             doc = document(copies[0])
+            if not doc['profiles']:
+                raise RuntimeError('snapshot has no profiles')
             for index, data in enumerate(copies):
                 env = dict(os.environ, DATA_DIR=str(data), LOG_FILE=str(data / 'app.log'), LOG_LEVEL='ERROR',
                            ADMIN_USERNAME='proddiff-admin', ADMIN_PASSWORD='proddiff-test-password',
@@ -292,7 +333,7 @@ def main():
                 if (method, route) not in implemented:
                     return case, None, None
                 return case, send(15001, method, path, tokens[0], body), send(15002, method, path, tokens[1], body)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+            with (report / 'responses.jsonl').open('w') as responses, concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                 for case, left, right in pool.map(compare, all_cases):
                     method, route, path, body, no_data = case
                     key = method + ' ' + route
@@ -302,7 +343,13 @@ def main():
                     row['no-snapshot-parameter'] += int(no_data)
                     if left is None:
                         continue
+                    responses.write(json.dumps({'method': method, 'route': route, 'path': path,
+                                                'python': [left[0], left[1], left[2].decode('utf-8', errors='replace')],
+                                                'go': [right[0], right[1], right[2].decode('utf-8', errors='replace')]}, ensure_ascii=False) + '\n')
                     counts['compared'] += 1
+                    for label, reply in (('python', left), ('go', right)):
+                        if reply[0] == 0 or re.search(rb'ConnectionError|Network is unreachable|No route to host|Connection refused|Failed to establish|connect: network|dial tcp|timed out', reply[2], re.I):
+                            failures[label + '-connection-failed'] += 1
                     if left[0] == 0 or right[0] == 0:
                         failures['both-transport-failure' if left[0] == right[0] == 0 else 'one-sided-transport-failure'] += 1
                     for field, kind in response_diffs(left, right, route, rules):
@@ -323,19 +370,50 @@ def main():
                 baseline_path.write_text('# Route template\tkey path\tdifference type\treason\n' + formatted)
                 baseline = found
             new, stale = found - baseline, baseline - found
-            summary = {'GET_routes_total': sum(row[0] == 'GET' for row in rows),
+            coverage_path = PARITY / 'proddiff-coverage.txt'
+            current_coverage = {key for key, row in coverage.items() if row['compared']}
+            previous_coverage = {line for line in coverage_path.read_text().splitlines() if line and not line.startswith('#')}
+            if record:
+                coverage_path.write_text('# Previously compared route templates; removals fail the gate.\n' + '\n'.join(sorted(current_coverage)) + '\n')
+                previous_coverage = current_coverage
+            lost_coverage = previous_coverage - current_coverage
+            unique_counts = collections.Counter()
+            for route, field, kind in found:
+                domain = 'agents' if '/agents' in route else 'routers' if '/routers' in route else 'config'
+                unique_counts[domain + ':' + kind] += 1
+            summary = {'GET_routes_compared': sum(key.startswith('GET ') and row['compared'] > 0 for key, row in coverage.items()),
+                       'GET_Go_not_implemented': sum(key.startswith('GET ') and row['Go 尚未实现'] > 0 for key, row in coverage.items()),
+                       'python_disabled_background': len((report / 'python-loops.txt').read_text().splitlines()),
+                       'go_disabled_background': len((report / 'go-routes.tsv.loops').read_text().splitlines()),
+                       'unique_differences_by_domain_type': dict(sorted(unique_counts.items())),
+                       'no_snapshot_parameter_cases': sum(row['no-snapshot-parameter'] for row in coverage.values()),
+                       'GET_routes_total': sum(row[0] == 'GET' for row in rows),
                        'routes_total': len(coverage), 'routes_compared': sum(row['compared'] > 0 for row in coverage.values()),
                        'Go_not_implemented': sum(row['Go 尚未实现'] > 0 for row in coverage.values()),
                        'cases': len(all_cases), 'counts': dict(counts), 'connection_failures': dict(failures),
-                       'unique_differences': len(found), 'new': len(new), 'stale': len(stale), 'self_check': 'PASS'}
+                       'coverage_regressions': len(lost_coverage), 'unique_differences': len(found), 'new': len(new), 'stale': len(stale), 'self_check': 'PASS'}
             (report / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2))
             (report / 'coverage.json').write_text(json.dumps(coverage, ensure_ascii=False, indent=2))
+            phase2 = [
+                'POST /api/profiles', 'POST /api/profiles/<profile_id>/clone',
+                'POST /api/config/import', 'POST /api/subscriptions/<sub_id>/fetch',
+                'POST /api/rules/compose', 'PUT /api/agents/<agent_id>',
+                'POST /api/agents/<agent_id>/heartbeat', 'POST /api/agents/<agent_id>/push-config',
+                'POST /api/routers/<router_id>/apply', 'POST /api/routers/<router_id>/routes/apply',
+            ]
+            (report / 'report.md').write_text(
+                '# Production differential\n\n```json\n' + json.dumps(summary, ensure_ascii=False, indent=2)
+                + '\n```\n\nDifferences: route template / schema path / type only.\n\n'
+                + formatted + '\nPhase two: replay writes with DB/file/device-effect comparison.\n\n'
+                + '\n'.join('- ' + route for route in phase2) + '\n')
             # A safe report is deliberately stored separately from private server logs.
             print(json.dumps(summary, ensure_ascii=False), flush=True)
             print(f'baseline: new={len(new)} stale={len(stale)}' + ('; update baseline' if stale else ''), flush=True)
             for entry in sorted(new):
                 print('NEW\t' + '\t'.join(entry), flush=True)
-            return int(bool(new or failures['one-sided-transport-failure']))
+            for route in sorted(lost_coverage):
+                print('COVERAGE-REGRESSION\t' + route, flush=True)
+            return int(bool(new or lost_coverage or failures['one-sided-transport-failure']))
     finally:
         for process in processes:
             if process.poll() is None:
@@ -349,6 +427,8 @@ if __name__ == '__main__':
     try:
         sys.exit(main())
     except Exception as error:
+        if PRIVATE_REPORT is not None:
+            (PRIVATE_REPORT / 'error.txt').write_text(traceback.format_exc())
         # No traceback/exception values: these can contain snapshot secrets.
         print('proddiff: infrastructure failure (' + type(error).__name__ + '); inspect private run directory', flush=True)
         sys.exit(2)

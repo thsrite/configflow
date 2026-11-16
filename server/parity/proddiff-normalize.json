@@ -1,7 +1,37 @@
 [
-  {"route":"/api/logs/info","path":"path","reason":"Separate process log files live in different temporary data copies."},
-  {"route":"/api/logs/info","path":"size","reason":"Independent process startup logs have different sizes."},
-  {"route":"/api/logs/info","path":"size_mb","reason":"Derived from independent startup log sizes."},
-  {"route":"/api/logs/info","path":"modified","reason":"Each process writes its own log at startup."},
-  {"route":"/api/logs/info","path":"created","reason":"Each copied log is opened by a different process."}
+  {
+    "route": "/api/logs/info",
+    "path": "path",
+    "reason": "Separate process log files live in different temporary data copies."
+  },
+  {
+    "route": "/api/logs/info",
+    "path": "size",
+    "reason": "Independent process startup logs have different sizes."
+  },
+  {
+    "route": "/api/logs/info",
+    "path": "size_mb",
+    "reason": "Derived from independent startup log sizes."
+  },
+  {
+    "route": "/api/logs/info",
+    "path": "modified",
+    "reason": "Each process writes its own log at startup."
+  },
+  {
+    "route": "/api/logs/info",
+    "path": "created",
+    "reason": "Each copied log is opened by a different process."
+  },
+  {
+    "route": "/api/logs/tail",
+    "path": "log_file",
+    "reason": "Independent servers use separate temporary log file paths."
+  },
+  {
+    "route": "/api/agents/<agent_id>/traffic-history",
+    "path": "data.start",
+    "reason": "Query default start is computed from each request wall clock; persisted traffic content is still compared."
+  }
 ]
