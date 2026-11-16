@@ -18,6 +18,11 @@ asked in; the maintainer reads Chinese.
   runs). Your **final hand-back run** (full suite, `-race`, proddiff) goes on **.32**. .63 can disappear when
   the PC sleeps or reboots: if it is unreachable or a run is cut off, continue on .32 — that is not a test
   failure. A timing-sensitive failure seen only on .63 must be re-checked on .32 before you call it a bug.
+- **Anything that uses a real network stack runs on .32 only, never on .63 (WSL):** starting Docker
+  containers or Compose (host / bridge / macvlan), iptables/nftables, policy routing, TUN, keepalived/VIPs,
+  network namespaces, installer scripts executed in containers. WSL's mirrored networking and kernel make
+  those results meaningless. Pure unit tests of generated compose files/scripts may run anywhere. Real
+  multi-host network behaviour (macvlan HA, VIP failover) belongs to the PVE lab batches, driven from .32.
   Run full `-race` (`go test -race ./...`) only once at the end; while iterating use `-race` only on the
   packages you changed.
 - **Never run `rt clean` in `~/program/configflow-go`** (the shared worktree); only inside your own
