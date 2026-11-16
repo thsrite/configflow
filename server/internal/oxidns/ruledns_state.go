@@ -383,7 +383,7 @@ func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 				kind = messageDNSUnknownKind
 			}
 			reason := fmt.Sprintf(messageDNSUnsupportedKind, kind)
-			if kind == "IP-CIDR" || kind == "IP-CIDR6" || kind == "ipcidr" {
+			if IsIPRuleType(kind) || kind == "ipcidr" {
 				reason = messageDNSIPUnsupported
 			}
 			state.Rules[id] = RuleDNSRule{State: "unsupported", Reason: reason}

@@ -18,6 +18,9 @@ func RuleDNSMetadataFields() []string { return append([]string{}, ruleDNSFields.
 // Convertible reports whether a rule can participate in domain DNS routing.
 func Convertible(item *Node) bool { return convertible(item) }
 
+// IsIPRuleType identifies connection-only IP rules for rules-page validation.
+func IsIPRuleType(kind string) bool { return kind == "IP-CIDR" || kind == "IP-CIDR6" }
+
 // HasIPPart reports known or possible IP content, for legacy routing recognition.
 func HasIPPart(item *Node, p *Profile) bool { return hasIPPart(item, p) }
 
@@ -262,6 +265,8 @@ func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options R
 		if err := CheckDNSChoice(choices[id]); err != nil {
 			return RuleDNSUpdate{}, err
 		}
+	}
+	for _, id := range order {
 		item := rules[id]
 		if item == nil {
 			return RuleDNSUpdate{}, fail(fmt.Sprintf(messageDNSMissingRule, id))
