@@ -1,6 +1,6 @@
 # PROGRESS — domain `agents`
 
-Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 14 missing, 0 partial, 0 ported, 10 verified (A01, A02, A03, A04, A05, A06, A07, A08, A09, A15). Only reviewers set `verified`.
+Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 13 missing, 0 partial, 1 ported (A10), 10 verified (A01, A02, A03, A04, A05, A06, A07, A08, A09, A15). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.
 
@@ -25,7 +25,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A07 | Mihomo panel, OxiDNS cache/rule update/rankings/publication stats | 1316 | verified | | A06, C14 | 9 | internal/agents/monitor, api/agents |
 | A08 | installer script rendering, install command store | 1333 | verified | HR | A02, C02 | 8 (8 done) | internal/installer, internal/api/agents |
 | A09 | Docker HA guide, preflight, enrollment | 1083 | verified | HR | A08, A01 | 2 (2 done) | internal/installer, api/agents |
-| A10 | Docker HA compose variants, installer routes | 1018 | missing | HR | A08, A09 | 9 | internal/installer, api/agents |
+| A10 | Docker HA compose variants, installer routes | 1018 | ported | HR | A08, A09 | 9 (9 done) | internal/installer, api/agents |
 | A11 | deployment bundle, locations, Mihomo resources, generated preview | 1264 | missing | HR | A02, A19, C05, C12, C14, C15, C21, C22, C25 | – | internal/deploy (new) |
 | A12 | push diff | 1465 | missing | | A11 | – | internal/deploy |
 | A13 | content sync, Agent list/detail, push-diff routes | 584 | missing | | A12, A15 | 4 | internal/deploy, api/agents |
@@ -644,7 +644,7 @@ Checks performed: every generator branch, validation order and error text (agent
 
 Accepted differences: (a) jsonx-wide (as A03/A06/A07): a lone surrogate escape in an install-command body is U+FFFD in Go (Python keeps the surrogate: `\ud800` in the config JSON, or a 500 "无法保存安装命令" when it reaches the shell-quoted URL), and JSON nested deeper than CPython's recursion limit; (b) url_root parts where Python raises (500): Host port above 65535, an invalid bracketed IPv6 Host, IDNA decoding of `xn--` labels (Go keeps the punycode) — reachable only without the Edge (it always sets X-Forwarded-Proto/Host, which install-script prefers) and without `server_url`; (c) the gateway probe script is embedded, so its 503 "file missing" branch cannot occur; (d) `GeneratorFingerprint` is a constant (porter's decision; `TestGeneratorFingerprintMatchesPython` guards drift).
 
-Info for the maintainer (Python behaviour, mirrored byte for byte, not changed): `validate_agent_name` uses `re.match(r'^…+$')`, so `agent_name="agent\n"` passes and the Docker run snippet puts a line break before the fixed `-mihomo \` suffix (admin-only route; no attacker-controlled text after the newline).
+**Decision 6 done** (A10 porter, 61f82de3, 2026-11-16): `ValidateAgentName` now has fullmatch semantics — `agent_name="agent\n"` is refused with the usual "Invalid agent name: …" text (Python accepts it and writes a line break into the Docker snippets). Regression `TestAgentNameTrailingNewlineIsRefused`; deliberate rows: matrix 2, fuzz 105, installer differential 2 (`compose/run name newline`, Python 200 / Go 400), A09 corpus 13. A08 stays verified.
 
 VM lab test to run once the maintainer agrees (PVE lab, never production; Go server serving the links): Debian 12 systemd + Alpine 3.24 OpenRC guests; for each: `install-command` link for Mihomo single (forwarding default / opt-out), OxiDNS single with `install_core` and with `prepare_dns_ha`, MosDNS custom lifecycle (stop/start/status commands with quotes and `$`), AIO with and without `install_core`; run `curl …/api/agents/i/<token> | sh` as root and via sudo; verify the Agents register and heartbeat, deployment publish + rollback, forwarding persisted (`/etc/sysctl.d/99-configflow-*-forward.conf`) and kept on uninstall, re-run idempotency, uninstall; a stale link (fingerprint changed) prints the refusal and changes nothing; Docker run + compose (host, bridge, macvlan HA) on a Docker guest; the gateway installer as part of A22's lab.
 
@@ -702,9 +702,9 @@ Checks performed:
 
 Accepted differences (with reason): (a) server_url with one trailing "\n" refused (coordinator decision 6); (b) jsonx-wide: lone surrogate escapes (U+FFFD; the `"\ud800"` check output is Python 400 / Go 200 unknown report), JSON nested beyond CPython's recursion limit inside a preflight field (Python treats it as unparsable); (c) a hand-edited, unexpired session whose `token` is not a string: Python echoes it into a broken install command (200), Go answers 500 — server-side corrupted data only, and the `Enrollment.Token` type is shared with A10.
 
-Open findings: none for A09. **Note for A10/coordinator:** at a379e23a (A10's commit ec17cd14 wired the generators) the committed `TestDockerHADifferentialAgainstFlask` shows 3 DIFFs for the Compose methods because it compares bodies containing per-side random capabilities; A10's uncommitted rework of that test (`composeBodies`/`compareComposeAnswer`, docker_ha_compose_diff_test.go) addresses it.
+Open findings: none for A09. **Note for A10/coordinator:** at a379e23a (A10's commit ec17cd14 wired the generators) the committed `TestDockerHADifferentialAgainstFlask` shows 3 DIFFs for the Compose methods because it compares bodies containing per-side random capabilities; Resolved by A10 in 61f82de3 (`composeBodies`/`compareComposeAnswer`): 239 equal, 0 differ, 0 pending.
 
-Python behaviour mirrored, for the maintainer: `existing_agent_name` / `agent_name` still go through `validate_agent_name`'s `re.match(...$)` (trailing "\n" accepted) — the decision-6 follow-up for A08 is still open and would change A09's migrate/new output for such names too.
+Decision 6 for Agent names done by A10 (61f82de3): `ValidateAgentName` refuses one trailing "\n"; A09's corpus counts 13 rows "deliberate (agent name trailing newline)".
 
 VM lab test (PVE lab, never production; with A08/A10): Docker guests (Debian 12 + Alpine 3.24, rootful Docker, Compose ≥ 2.30): run the preflight collector and paste the output (pass/warning paths, a busy port 53, macvlan); new install script host mode and macvlan (with gateway / without), with enrollment: Agent registers once, heartbeats, re-run of the same command resumes without a second Agent, a changed command is refused, an expired capability is renewed by regenerating; identity command with an existing file refuses; migration of a single OxiDNS container (bind + named volume) and the rollback script; verify command against the VIP; enrollment with registration locked.
 
@@ -712,21 +712,61 @@ Review commands (private detached worktree of HEAD; the shared tree held A10's W
 
 ## A10 — Docker HA compose variants, installer routes
 
-**Status: `missing`** · HR · prereqs: A08, A09 · Go: internal/installer, api/agents
+**Status: `ported`** (2026-11-16, not reviewed) · HR (VM lab test with A08/A09 after the maintainer agrees) · prereqs: A08, A09 · Go: internal/installer (`docker_ha_compact.go`, `docker_ha_compose.go`, `docker_ha_compose_direct.go`, `docker_ha_compose_text.go` (generated), `docker_ha_compose_zip.go`, `docker_ha_compose_deflate.go`), internal/api/agents (`downloads.go`, `downloads_range.go`, +1 line in `Register`)
 
 Files:
 - `backend/agents/docker_ha_compact.py` (182)
 - `backend/agents/docker_ha_compose.py` (346)
 - `backend/agents/docker_ha_compose_direct.py` (96)
-- `backend/routes/agents.py` (394) — lines 246–537, 921–952, 1270–1339
+- `backend/routes/agents.py` (394) — lines 246–537, 921–952, 1270–1339 (all routes except `download/<filename>` were ported and verified with A08)
 
 Tests: `test_docker_ha_compact.py` (12), `test_docker_ha_compose.py` (13), `test_docker_ha_compose_direct.py` (13), `test_agent_install_commands.py` (18), `test_core_install_api.py` (4), `test_aio_agent_core_install.py` (13), `test_single_agent_core_install.py` (14), `test_agent_native_aio_api.py` (4), `test_gateway_network_probe.py` (9)
 
-Routes (9): `POST /api/agents/core-install-command`; `GET /api/agents/core-install-script`; `GET /api/agents/docker-agent-compose`; `GET /api/agents/docker-agent-run`; `GET /api/agents/download/<filename>`; `GET /api/agents/gateway-network-probe.sh`; `GET /api/agents/i/<token>`; `POST /api/agents/install-command`; `GET /api/agents/install-script`
+Routes (9, all `done` in routes.tsv): the 8 installer routes of A08 plus `GET /api/agents/download/<filename>` (public; gate entry already existed).
 
-Evidence: no Go code. Several of these are public (install script, `i/<token>`, download, probe): check the `internal/auth` gate list.
+Port log (A10 porter, 2026-11-16). Commits: ec17cd14 (generators, zip, record & replay, corpus), 61f82de3 (download route, Compose differential, A09 skips removed, decision 6), 09900f40 (bundle/probe shell scenarios, routes.tsv), f2689329 (store clock/fault cases).
+- Go API: `GenerateCompact`, `GenerateDirect`, `GenerateBundle(params, request, *Enrollment)`; an `init` assigns A09's `generateCompact/generateDirect/generateBundle`, so `ErrComposeVariantNotPorted` can no longer occur (left in A09's file, dead). Constants `ComposeLabel`, `ComposeRuntime`, `ComposeIdentityVolume`.
+- **Bundle zip is byte-identical**: `docker_ha_compose_deflate.go` ports zlib 1.3 raw deflate (level 6, memLevel 8: deflate_slow, longest_match, fill_window incl. high-water zeroing and window slide, trees.c), `docker_ha_compose_zip.go` CPython 3.11 zipfile's local headers / central directory / end record. Go's compress/flate would give a valid but different `content_base64`. Verified against zlib 1.3.2 (CPython 3.11.17 on the test server): 142 deflate inputs 0–200 KB (empty, 258/259 runs, block boundaries 16383/16384, window slide 65274+, random/binary/repetitive) + every bundle in replay and corpus.
+- `docker_ha_compose_text.go` is generated by `testdata/gen_compose_text.py` (ast extraction of BOOTSTRAP, the five raw-string blocks of `_prepare`, the README parts); `TestComposeBootstrapMatchesPython` fails on drift.
+- Compact: yamlx `SharedString{Anchor: "agent_image"}` = ImageName, `FlowMap`/`FlowList`, width 1000; `_annotate_compose` via `pyyaml.Compose` marks + `pySplitLines` + `pystr.IsSpace` lstrip.
+- Download route: `os.getenv('AGENTS_STATIC_DIR', default)` + `os.path.exists` (empty value falls back to backend/static/agents, unlike `upgrades.ArtifactDirectory`'s `Path('')`), relative directories joined with the app root like `flask.send_file`, OSErrors (directory, EACCES) → 500 `{"message": "[Errno N] …: '<path>'"}`; `downloads_range.go` reproduces Werkzeug 3.1's `RequestedRangeNotSatisfiable` decision (parse_range_header, range_for_length, If-Range branch of is_resource_modified, empty file) because the view's `except Exception` turns it into 500 `416 Requested Range Not Satisfiable: …`.
 
-From A08 (2026-11-16): the non-route cases of `test_single_agent_core_install.py` (11 functions) and `test_aio_agent_core_install.py` (10) are ported in internal/installer/core_harness_test.go with the harnesses (`newSingleHarness`, `newAIOCoreHarness`); only their Flask-client route cases remain for A10.
+Verification (all on the test server, CPython 3.11.17):
+- **Record & replay**: `testdata/a10_record.py` (pytest plugin) during the whole backend suite (12552 passed) → `testdata/docker_ha_compose_recorded.jsonl.gz`: 129 distinct calls from 108 tests in 3 files (0 unsupported); `TestComposeRecordedCallsMatchPython`: 115 answered + 14 refused, **0 differ** (texts, info dicts, zip bytes).
+- **Random corpus**: `testdata/gen_docker_ha_compose.py` (seed 20261116) → `docker_ha_compose.jsonl.gz`, 5218 cases: 576 fixed (host/macvlan × identity × 12 data dirs incl. `$`, quotes, backticks, `:`, CJK, U+2028, U+0085, U+001C, tab, 900 chars × gateway × enrollment/None × 3 functions) + 1500 seeded random requests × 3 functions (70 % mostly-valid params with one broken field, 30 % fully random: bad modes/names/ports/IPs/types, identity paths aliasing every managed part, malformed enrollments) + 142 deflate inputs. `TestComposeCorpusMatchesPython`: 3387 answered, 1606 refused, 83 deliberate (decision 6), 142 deflate, **0 differ**.
+- **Flask↔Go differential**: Docker HA routes **239 equal, 0 differ, 0 pending** (A09's 3 pending/3 DIFFs resolved: each side's Compose answer is compared with `installer.GenerateGuide` given that side's capability — Python's answer byte-for-byte against the Go generators; 15 Compose bodies × 2 requests; installation records of the Compose methods are no longer filtered); installer routes 293 equal, 0 differ (+2 deliberate, decision 6); installer fuzz 4538 equal; download route (`downloads_diff_test.go`, 3 server pairs: present / missing / empty `AGENTS_STATIC_DIR`) **66 equal, 0 differ, 10 known httpx differences** (see Findings).
+- A09's corpus after wiring: 1957 answered, 1123 refused, 180 base64, 6 + 13 deliberate, **0 skipped, 0 differ** (was 241 skipped).
+
+Python test file → coverage:
+| File | Coverage |
+|---|---|
+| test_docker_ha_compose.py | generator halves (topology/permissions ×2, script default, identity aliasing ×6) → replay; route halves (method validation before issue, generation with registration locked) → Docker HA differential (+A09 enrollment tests); bootstrap.py runs (first enrollment/offline restart, expired first attempt, foreign/corrupt state ×7, no redirect ×2) and prepare.sh runs with the fake docker (initialise ×2, reuse owned project ×2, refusals ×8, missing identity, root-level identity) → hand-ported `docker_ha_compose_shell_test.go` (Go-rendered bundle, same FAKE_DOCKER, loopback origin) |
+| test_docker_ha_compact.py | generator assertions (isolation ×2, literal values, different scopes, colon dirs) → replay; route cases (image upgrade keeps project/scope, invalid requests ×5) → Docker HA differential + replay of the refused calls; runtime cases of `docker/docker-compose-compact.py` (registration retry, concurrency, data refusals ×8, restart refusals ×12, redirects ×2, interrupted init ×5) → **finish #40** (image runtime; its input, the generated environment, is covered by replay) |
+| test_docker_ha_compose_direct.py | generator assertions (4 topologies, dollars/legacy) → replay; route cases (invalid ×7, locked registration) → differential + replay; runtime cases of `docker/docker-compose-install.py` → **finish #40** |
+| test_agent_install_commands.py | creation auth, snapshot = preview, core selection, capacity/recovery, invalid parameters, size bounds, exact public endpoint, stale/NULL generator → A08 differential (295 + 4538 fuzz); fingerprint → `TestGeneratorFingerprintMatchesPython`; HA bool → installer_ha_test.go; legacy shell agent → A08 differential; clock/store cases (24 h expiry + prune, scoped earlier expiry, invalid lifetimes 0/−1/86401 — `True`/`'later'` ruled out by int64, new store instance + modes, unsafe tokens) → hand-ported install_command_store_a10_test.go; storage failures → hand-ported installer_store_a10_test.go (non-database file = sqlite3.DatabaseError, checked against Python) |
+| test_core_install_api.py | public/shell-valid/no secrets/auth exactness → A08 differential (bytes equal to Python's, whose test runs `sh -n`); exception without server paths → not applicable (embedded template cannot fail, A08 accepted difference (c)) |
+| test_agent_native_aio_api.py | all 4 → A08 differential (install-script/install-command with AIO and single options, refusals) |
+| test_aio_agent_core_install.py, test_single_agent_core_install.py | non-route cases → A08 core_harness_test.go; the 5 Flask-client route cases → A08 differential (install-command with install_core combinations and refusals) |
+| test_gateway_network_probe.py | 6 shell functions (43 cases) + syntax → hand-ported gateway_probe_test.go (embedded script, stub `ip`; `_spec` (A19) replaced by the exact JSON); 2 download functions → A08 differential (+ embedded script cannot be missing, A08 (c)) |
+
+Decisions: zlib-exact deflate instead of compress/flate (strict parity of `content_base64`); decision 6 applied to `ValidateAgentName` (below).
+
+Decision 6 (coordinator, done here for A08): `ValidateAgentName` uses fullmatch semantics; `deliberate_agent_name_test.go` (`TestAgentNameTrailingNewlineIsRefused`, helper `deliberateAgentNameFix`) — rows with exactly one trailing "\n" in `agent_name`/`existing_agent_name` refused by Go with the usual text are counted as deliberate: matrix 2, fuzz 105, A09 corpus 13, A10 corpus 83, installer differential 2 (`compose/run name newline`: Python 200, Go 400).
+
+Findings for other modules (not fixed here; shared code):
+- **httpx send_file deviations from Werkzeug 3.1** (found by the download differential; affect every `httpx.File` route): (1) a 304 drops `Content-Disposition` and keeps `Last-Modified` (Werkzeug removes entity headers incl. Last-Modified/Content-Type and keeps Content-Disposition); (2) the Range request is processed before the 304 check in Werkzeug (Range + matching If-None-Match → 206; httpx 304); (3) If-Range `W/"tag"` matches in Werkzeug (unquoted comparison), not in httpx; (4) a failed If-Match → 412 in Werkzeug, ignored by httpx; (5) spaces in `Range: bytes = 1 - 2` accepted by Werkzeug; (6) Range on an empty file ignored by Werkzeug (httpx 416); multi-range / malformed Range → Werkzeug 416, httpx 200 (masked in this route by the 500 conversion); (7) ETag mtime float: Werkzeug uses CPython's `st_mtime` (sec + nsec·1e-9 as a double), httpx a differently rounded float (`…6141193` vs `…614119`). The differential lists them as "known httpx differences".
+- Left on the test server: an orphaned Flask child (pid 2494094, `~/rt/program__configflow-go-a10`, from a difftest run killed by `go test`'s 10-min timeout) — the sandbox refused `kill`; it only holds that worktree's rt lock (the worktree is deleted). Kill it manually.
+
+Commands:
+- tests: `rt -- bash -lc 'cd server && go vet ./internal/installer/ ./internal/api/agents/... ./internal/server/ && go test -count=1 ./internal/installer/ ./internal/api/agents/ ./internal/server/'` (installer ~150 s)
+- differentials: `rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -timeout 800s -v -run "DockerHA|Installer|Download" ./internal/api/agents/difftest/'` (~25 s)
+- re-record: `rt --back server/internal/installer/testdata/docker_ha_compose_recorded.jsonl.gz -- bash -lc 'rm -rf /tmp/a10rec; A10_RECORD_DIR=/tmp/a10rec PYTHONPATH=.:server/internal/installer/testdata ~/cf-test/.venv/bin/python -m pytest backend -q -n 6 --dist=worksteal -p a10_record -p no:cacheprovider; PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/installer/testdata/a10_record.py merge /tmp/a10rec'` (~4 min)
+- corpus: `rt --back server/internal/installer/testdata/docker_ha_compose.jsonl.gz -- bash -lc 'set -o pipefail; PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/installer/testdata/gen_docker_ha_compose.py | gzip -9n > server/internal/installer/testdata/docker_ha_compose.jsonl.gz'`
+- text constants: `python server/internal/installer/testdata/gen_compose_text.py && gofmt -w server/internal/installer/docker_ha_compose_text.go`
+
+Pitfalls: the shared tree did not build (another agent's WIP in internal/rulefetch) — verified in private detached worktrees of HEAD. Name clashes with existing test helpers in internal/installer (`readJSONLines`, `firstDifference`, `readJSONFile`, `snapshotFiles`, `pySplitLines`): prefix new helpers. Run difftests with `-timeout` and output to a file; a `go test` timeout leaves the Flask child alive holding the rt lock. `httpxtest` routes use `repo.DataDir()` = `$DATA_DIR`: `t.Setenv` it.
+
+Left: adversarial review; HR VM lab test with A08/A09 (Compose bundle prepare + up, direct, compact on Docker guests); httpx findings above to the httpx owner; finish #40 runtime cases.
 
 ## A11 — deployment bundle, locations, Mihomo resources, generated preview
 
@@ -1079,5 +1119,5 @@ Questions for the coordinator/maintainer:
    version rejects such input** (`fullmatch` semantics, same error text as any other invalid value). These
    are the only accepted behaviour differences of this kind: corpora/differentials mark exactly the rows
    with a single trailing "\n" as expected differences, with a regression test. A09: done by its porter.
-   A08 (verified) and C12 (verified): small follow-up by the next agent touching `internal/installer` /
+   A08 (verified) and C12 (verified): small follow-up by the next agent touching `internal/installer` / **A08/A09 part done by A10 (61f82de3, see A10 section).**
    `internal/convert` easytier code; the modules stay verified with this listed.
