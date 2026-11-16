@@ -355,6 +355,32 @@ proxy chains, commented Mihomo YAML edits (`subs/commented`), listeners, proxy-s
 - Domain discovery (#19): `ExtractDomain(url, includePrivate)` — tldextract 5.1.2 with its bundled
   snapshot, exactly as the Python code configures it (never `x/net/publicsuffix`).
 
+**`configflow/internal/importer` (C35)** — pure native client-config import; no storage or network I/O.
+- `Parse(clientType, content string) (*Plan, error)`: clients `mihomo`, `surge`, `loon`, `shadowrocket`.
+  The reusable Plan preserves protocol extras (`json.RawMessage`), custom settings and ordered warnings.
+- `Build(plan *Plan, shared Shared, options BuildOptions) (*Result, error)`: resolves against the current
+  shared catalog without mutating either input. Options provide default subscription IDs and optional
+  ID allocation; production IDs use crypto/rand. Result contains **shared additions only**, profile
+  fields, summary and warnings. It is JSON-marshalable into repo.ImportClientProfile's callback;
+  do not write the typed existing Shared back, since the repository retains unknown existing fields.
+- C34 owns HTTP dry-run/commit and its legacy-repository adapter. Use Parse before the transaction and
+  Build against the catalog supplied inside the transaction. Boundary examples:
+  `internal/importer/storage_test.go` (commit/rollback/opaque fields) and `corpus_test.go` (Python oracle).
+
+**`configflow/internal/webdav` (C35)** — standard-library WebDAV backup, retention and commit worker.
+- `NewService(HTTPDoer)` supplies an injectable transport and clock; the default transport rejects
+  cross-origin redirects. `Service.Test(ctx, Settings)` checks/creates directories; `Service.Upload`
+  takes an in-memory json.RawMessage full export and returns filename/removed count. Each HTTP operation
+  has a 30s timeout. `DescribeError` emits only safe categories/status; never echo raw transport errors.
+- `Capture(ctx)` obtains the originating repository's full Snapshot. `Run(ctx, snapshot, automatic)`
+  uploads and records task receipts/notifications. Its repository association survives request exit.
+- `Wire()` registers ConfigurationCommitted and shutdown handling (already listed by server.NewApp).
+  The lazy worker debounces for 1s, retaining only the latest Source reference; snapshots are loaded
+  outside commit locks. `WaitIdle(ctx)` fences uploads and their receipt callbacks without cancelling I/O.
+- Settings retention defaults/limits and `RetentionValue` are shared with api/settings; invalid imported
+  retention uses defaults. `ExpiredBackups` preserves the latest N plus one newest file per recent day.
+  Zero latest retention disables deletion; cleanup failures never invalidate a successful upload.
+
 ## Helpers from a package that is not ported yet
 
 If you need a small helper that belongs to another work package still marked `todo`/`wip` in

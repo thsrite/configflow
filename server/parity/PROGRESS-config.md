@@ -60,7 +60,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C32 | rule routes | 1107 | missing | C09, C14, C27 | 21 (0 done) |
 | C33 | rule library and proxy group routes | 976 | missing | C32 | 25 (0 done) |
 | C34 | generate, config and profile routes, config export | 1443 | missing | C18, C19, C20, C28, C29, C31, C33 | 59 (0 done) |
-| C35 | config importer, WebDAV backup | 1375 | partial | C04, C06 | – |
+| C35 | config importer, WebDAV backup | 1375 | ported | C04, C06 | – |
 | C36 | setup flow | 1372 | missing | C34, C35 | 5 (0 done) |
 | C37 | domain discovery | 1658 | verified | C14, C16 | 17 (17 done) |
 
@@ -241,7 +241,7 @@ Checks performed:
 - Python references `testdata/repo_c04_reference.json`: `_read_json` corpus (613 files), `get_default_config`, `_get_initial_config`, factory `_empty_profile`; Flask request-context probe for the resolve memo.
 - `go test -race` of `internal/repo` (incl. both cross-checks); dependent packages `internal/api/...`, `internal/subs/...`, `internal/convert/...`, `internal/httpx/...`, `internal/agents/...` pass except `internal/agents/monitor` (empty `pydecimal_table.go`, another agent's unfinished work).
 
-Deferred (not open findings): route-level tests → C34 (+ agents registry / routers): `test_profile_agent_bindings.py` 5/8 (rebind/delete-error cases), `test_profile_clone_router_isolation.py` 0/2, `test_save_publish_guard.py`, `test_editor_transactions.py`, `test_qa_integrity.py` (whole-app regressions; run when C30–C34 exist). Hooks still default until their owners land: `ConfigurationCommitted` (C35), `PlanNodeDeletion` (C30), redaction hooks (C34, routers, C12), `JobLock` (routers). `repo/compat_*.go` copies to switch: `compat_dialers.go`, `compat_proxystring.go` (C12), `compat_health.go` (C16), `compat_oxidns.go` (C26/C27/C31).
+Deferred (not open findings): route-level tests → C34 (+ agents registry / routers): `test_profile_agent_bindings.py` 5/8 (rebind/delete-error cases), `test_profile_clone_router_isolation.py` 0/2, `test_save_publish_guard.py`, `test_editor_transactions.py`, `test_qa_integrity.py` (whole-app regressions; run when C30–C34 exist). Hooks still default until their owners land: `PlanNodeDeletion` (C30), redaction hooks (C34, routers, C12), `JobLock` (routers). `repo/compat_*.go` copies to switch: `compat_dialers.go`, `compat_proxystring.go` (C12), `compat_health.go` (C16), `compat_oxidns.go` (C26/C27/C31).
 
 Commands: `rt -- bash -lc 'cd server && go vet ./internal/repo/... && CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO=$(cd .. && pwd) go test -count=1 ./internal/repo/...'`; regenerate: `python3 server/internal/repo/testdata/repo_crosscheck_c04_gen.py server/internal/repo/testdata/repo_crosscheck_c04_ops.json` (local, no Python backend needed) and `rt --back server/internal/repo/testdata/repo_c04_reference.json -- bash -lc 'CONFIGFLOW_REPO=$(pwd) ~/cf-test/.venv/bin/python server/internal/repo/testdata/repo_c04_reference.py server/internal/repo/testdata/repo_c04_reference.json'`.
 
@@ -1705,7 +1705,7 @@ C35 supplies native `importer.Parse/Build` for `/api/profiles/import-client` (AP
 
 ## C35 — config importer, WebDAV backup
 
-**Status: `partial`** · prereqs: C04, C06 · Go: internal/importer, internal/webdav, internal/api/settings
+**Status: `ported`** · prereqs: C04, C06 · Go: internal/importer, internal/webdav, internal/api/settings
 
 Files: `backend/utils/config_importer.py` (1148), `backend/utils/webdav_backup.py` (227); backup handlers from `backend/routes/settings.py`.
 
@@ -1725,7 +1725,11 @@ Boundary coverage and Python test mapping:
 
 Scoped validation on .63: importer vet/race `ok configflow/internal/importer 1.659s`; webdav vet/race `ok configflow/internal/webdav 1.721s`; `CONFIGFLOW_DIFF=1` race differential `ok configflow/internal/webdav/difftest 13.946s`; settings scoped race previously passed (5.263s). Early .32 proddiff: GET routes 65, cases 2060, `coverage_regressions=0`, `new=0`, `stale=0` (5 existing unique differences).
 
-Commits before final acceptance: `ed13691f` core/worker; `45a044f8` typed importer; `decafb67` production hook/settings routes; `cb09668e` aliases/storage boundary; `90866647` Snell corpus/round trip; `cb0c641e` DAV boundary/lifecycle. Final .32 gofmt/vet and scoped race pass. The importer corpus additionally enforces the Chinese YAML rejection prefix while allowing native parser diagnostics (`go test -race` on .63: 1.676s). Initial full run exposed only stale server.TestNewAppRegistersImplementedRoutes assertions that these two newly implemented routes must be absent. The test now requires both endpoints; scoped server vet/race passes (`ok configflow/internal/server 1.039s`). Full suite/differential/proddiff rerun follows; rebase go; clean; no push.
+Commits: `ed13691f` core/worker; `45a044f8` typed importer; `decafb67` production hook/routes; `cb09668e` aliases/storage; `90866647` Snell; `cb0c641e` DAV differential/lifecycle; `531b88b2` number precision; `632bb763` full-app route expectation; `3c946518` YAML error-prefix assertion. No pending implementation in C35. C34 owns the deferred import HTTP integration.
+
+Final acceptance on .32 (all exit 0): `gofmt -l internal/ tools/` and `go vet ./...` have no output; scoped `go test -race -count=1` importer/webdav/settings/server passes (latest importer after test-strengthening: 1.416s). `go test -count=1 ./...` passes (installer 141.490s; server 0.015s; webdav 0.225s). `CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/webdav/difftest/` → 14.075s; existing httpx/settings differential → 0.876s. `server/scripts/proddiff.sh`: 65 GET routes, 2060 cases, all self-checks PASS, `coverage_regressions=0`, `new=0`, `stale=0`, 5 existing baseline differences. No coverage/baseline changes needed. The first full run exposed stale “backup endpoints must be absent” assertions in server_test.go; these are fixed and the full rerun passes.
+
+Exact commands/tails, native differences and added-file counts: [C35-HANDOFF.md](C35-HANDOFF.md). Rebased on local go; no push; final documentation commit closes the clean worktree.
 
 ## C36 — setup flow
 
