@@ -14,7 +14,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `dav.requests` | length | 3 | 0 |
 | `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'webdav_backup': {'last_run_at': '2026-11-16T18:22:25Z', 'last_finished_at': '2026-11-16T18:22:25Z', 'last_status': 'success', 'last_duration_ms': 12, 'last_trigger': 'event', 'last_error': '', 'run_count': 1, 'last_success_at': '2026-11-16T18:22:25Z', 'consecutive_failures': 0}}} | None |
 
-## R103-F14 / 
+## R103-F14 /
 
 路由：`POST /api/nodes/reorder`；状态：different
 

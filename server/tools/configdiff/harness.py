@@ -104,6 +104,12 @@ class Pair:
                    SUB_STORE_URL='http://127.0.0.1:9', CONFIGFLOW_NODE_PROBE_BIN=str(self.root / 'missing-probe'),
                    CONFIGDIFF_ROUTES=str(self.root / 'go-routes.tsv'), PYTHONDONTWRITEBYTECODE='1',
                    PYTHONPATH=str(ROOT))
+        env.update(CONFIGFLOW_NODE_TEST_URL='http://probe-target.example/generate_204')
+        if self.options.get('probe_case'):
+            env.update(CONFIGFLOW_NODE_PROBE_BIN=str(self.root / 'synthetic-probe'),
+                       CONFIGDIFF_PROBE_INPUT=str(self.root / 'probe-input.jsonl'),
+                       CONFIGDIFF_PROBE_CASE=self.options['probe_case'])
+        env.update(self.options.get('environment', {}))
         if 'secret_key' in self.options:
             if self.options['secret_key'] is None:
                 env.pop('JWT_SECRET_KEY', None)
@@ -112,6 +118,9 @@ class Pair:
         return env
 
     def __enter__(self):
+        if self.options.get('probe_case'):
+            from probe import install
+            install(self.root, PYTHON, self.options['probe_case'])
         seed = self.root / 'seed'
         seed.mkdir()
         result = subprocess.run([PYTHON, str(Path(__file__).with_name('seed.py')), str(seed),
@@ -206,7 +215,7 @@ class Pair:
 
     def request(self, case_id, route, path=None, *, method=None, body=None, auth='admin', headers=None,
                 variant='', expect=None, check=None, writes=False, files=True, policy=None, capture=None,
-                interaction=None, bodies=None):
+                interaction=None, bodies=None, paths=None):
         nominal_method, nominal_path = route.split(' ', 1)
         method, path = method or nominal_method, path or nominal_path
         policy = policy or self.policy
@@ -226,7 +235,8 @@ class Pair:
                 local_headers['Authorization'] = credential if credential.startswith('Bearer ') else 'Bearer ' + credential
             if interaction:
                 interaction.before(index)
-            replies.append(send(base, method, path, bodies[index] if bodies is not None else body, local_headers))
+            replies.append(send(base, method, paths[index] if paths is not None else path,
+                                bodies[index] if bodies is not None else body, local_headers))
             if interaction:
                 interaction.after(index, replies[-1])
         policy.end = time.time()

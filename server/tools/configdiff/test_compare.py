@@ -146,6 +146,18 @@ class Comparators(unittest.TestCase):
                 exchange.observations[1]['requests'][0][field] = broken
                 self.assertTrue(exchange.compare(Policy()))
 
+    def test_probe_stdin_mutation(self):
+        from probe import Exchange
+        with tempfile.TemporaryDirectory() as tmp:
+            exchange = Exchange(SimpleNamespace(root=Path(tmp)))
+            original = {'nodes': [{'name': '["node","node-a"]', 'server': '192.0.2.1'}], 'timeout_ms': 5000}
+            exchange.inputs = [[copy.deepcopy(original)], [copy.deepcopy(original)]]
+            self.assertEqual(exchange.compare(Policy()), [])
+            exchange.inputs[1][0]['nodes'][0]['server'] = '192.0.2.2'
+            self.assertTrue(exchange.compare(Policy()))
+            exchange.inputs[1] = []
+            self.assertTrue(exchange.compare(Policy()))
+
 
 if __name__ == '__main__':
     unittest.main()

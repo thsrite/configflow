@@ -22,7 +22,7 @@ def render_findings(results):
     for r in results:
         if r['state'] not in ('different', 'O12-separate'):
             continue
-        lines += [f'## {r["case"]} / {r["variant"]}', '', f'路由：`{r["route"]}`；状态：{r["state"]}', '',
+        lines += [f'## {r["case"]} / {r["variant"]}'.rstrip(), '', f'路由：`{r["route"]}`；状态：{r["state"]}', '',
                   '| 路径 | 类型 | Python | Go |', '|---|---|---|---|']
         def display(v):
             text = repr(v)
@@ -62,6 +62,8 @@ def main():
     groups.update(mosdns)
     from cases.nodes import GROUPS as nodes
     groups.update(nodes)
+    from cases.probes import GROUPS as probes
+    groups.update(probes)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:
@@ -101,6 +103,8 @@ def main():
                'categories': dict(Counter(r['category'] for r in combined)),
                'named_matrix_cases': len({r['case'] for r in combined if r['case'].startswith('R')}),
                'named_matrix_categories': dict(Counter(case.split('-')[1][0] for case in {r['case'] for r in combined if r['case'].startswith('R')})),
+               'named_auxiliary_categories': dict(Counter('H' if c.startswith('H') else 'G' if c.startswith('G') else c
+                    for c in {r['case'] for r in combined if not r['case'].startswith('R')})),
                'request_variants': len(combined), 'design_errors': errors,
                'seconds': round(time.time() - started, 2)}
     args.output.parent.mkdir(parents=True, exist_ok=True)
