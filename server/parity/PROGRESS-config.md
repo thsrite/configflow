@@ -1715,13 +1715,17 @@ Routes: none.
 
 Evidence: `internal/webdav` implements native HTTP HEAD/MKCOL/PUT/PROPFIND/DELETE, retention, safe errors, task receipts, and a debounced single worker. Its repository adapter supplies ConfigurationCommitted; production/API wiring follows next. Loopback transport, retention, coalescing, slow upload, runtime-field suppression and post-commit failure isolation tests pass with scoped race on .63.
 
-In progress: native typed importer, backup API wiring and Flask↔Go/JSON-structure differentials. Next: finish importer; register backup routes and hook; complete synthetic import corpus and fake WebDAV boundary cases; final .32 full/vet/race/proddiff; rebase go, clean, no push.
+Done: `6ea8cd17` WebDAV core/worker. Native importer Parse/Build now passes 84 synthetic public-entry Python structure comparisons across all four clients, protocol/TLS/transport/WireGuard options, reuse/collisions, warnings, invalid formats, custom sections and rule ordering. Build preserves both shared input and reusable Plan.
+
+In progress: backup API wiring (implemented and scoped race passing, next commit) and Flask↔Go WebDAV HTTP boundary differential. Next: commit/register backup routes and hook; extend YAML alias/merge input coverage; complete fake WebDAV boundary cases; final .32 full/vet/race/proddiff; rebase go, clean, no push.
 
 Implementation contract: importer is pure Parse → Plan → Build (typed shared additions/profile/summary, protocol extras as json.RawMessage, custom YAML as yaml.Node). WebDAV uses net/http + encoding/xml, no new dependency. Worker owns one pending Source and deadline, snapshots after debounce outside commit locks, serializes uploads, and detaches request cancellation; failed upload/cleanup never rolls back a commit. Service errors omit remote URL/body/credentials.
 
 Commands: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go vet ./internal/webdav/... && go test -race -count=1 ./internal/webdav/...'`.
 
 Notes for porter: Fills `repo.Hooks.ConfigurationCommitted` (auto backup) and the two `/api/backup/*` routes of `routes/settings.py` (C06 missing list). `config_importer` (client config import: Clash/Surge/…) has no backend imports — self-contained, can start early.
+
+Importer validation: `RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && go vet ./internal/importer/... && go test -count=1 -v ./internal/importer/'` → `84 synthetic public parse/build cases`, `ok configflow/internal/importer 0.021s`.
 
 ## C36 — setup flow
 
