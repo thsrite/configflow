@@ -779,19 +779,30 @@ func ModeFromContext(config, context any) (any, error) {
 }
 
 // RouterSplitState is router_split_state(repository, profile_id,
-// config=None, context=None): config and context nil are None (read from
-// the repository).
-func RouterSplitState(ctx context.Context, r *repo.Repository, profileID string, config, context *jsonx.Object) (*jsonx.Object, error) {
-	var err error
-	if config == nil {
-		if config, err = getProfile(ctx, r, profileID); err != nil {
+// config=None, context=None): config and context nil (or a nil
+// *jsonx.Object) are None and are read from the repository.
+func RouterSplitState(ctx context.Context, r *repo.Repository, profileID string, config, context any) (*jsonx.Object, error) {
+	if isNone(config) {
+		profile, err := getProfile(ctx, r, profileID)
+		if err != nil {
 			return nil, err
 		}
+		config = profile
 	}
-	if context == nil {
-		if context, err = LegacyContext(ctx, r, profileID); err != nil {
+	if isNone(context) {
+		legacy, err := LegacyContext(ctx, r, profileID)
+		if err != nil {
 			return nil, err
 		}
+		context = legacy
 	}
 	return state(config, context)
+}
+
+// isNone is `value is None`, a nil *jsonx.Object included.
+func isNone(v any) bool {
+	if o, ok := v.(*jsonx.Object); ok {
+		return o == nil
+	}
+	return v == nil
 }

@@ -158,20 +158,28 @@ func declaration(item, config *jsonx.Object) (*jsonx.Object, error) {
 	return item, nil
 }
 
+// pyClass is the Python exception class of err ("" when unknown):
+// PythonClass() of this module's and yamlx's errors, convert.PyError's
+// class (convert, mosdns).
+func pyClass(err error) string {
+	var classed interface{ PythonClass() string }
+	if errors.As(err, &classed) {
+		return classed.PythonClass()
+	}
+	return convert.PyErrorClass(err)
+}
+
 // caught reports whether Python's `except (OSError, TypeError, ValueError)`
 // around ruleset_format / rule_cache_read_path / os.stat catches err.
 func caught(err error) bool {
 	if errors.Is(err, store.ErrStorage) || repo.IsValueError(err) {
 		return true
 	}
-	var classed interface{ PythonClass() string }
-	if errors.As(err, &classed) {
-		switch classed.PythonClass() {
-		case "TypeError", "ValueError", "OSError", "FileNotFoundError", "PermissionError",
-			"IsADirectoryError", "NotADirectoryError", "UnicodeDecodeError", "UnicodeEncodeError",
-			"ProfileValidationError", "ProfileExists", "JSONDecodeError":
-			return true
-		}
+	switch pyClass(err) {
+	case "TypeError", "ValueError", "OSError", "FileNotFoundError", "PermissionError",
+		"IsADirectoryError", "NotADirectoryError", "UnicodeDecodeError", "UnicodeEncodeError",
+		"ProfileValidationError", "ProfileExists", "JSONDecodeError":
+		return true
 	}
 	var pathErr *os.PathError
 	return errors.As(err, &pathErr)

@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,7 +30,17 @@ func encode(v any) string {
 }
 
 func TestRecordedPythonTests(t *testing.T) {
-	f, err := os.Open("../routersplit/testdata/r02_recorded.jsonl.gz")
+	replay(t, "../routersplit/testdata/r02_recorded.jsonl.gz")
+}
+
+// TestCorpus replays the classical_ip_lines rows of the random corpus
+// (routersplit/testdata/gen_r02.py): random libraries, declarations,
+// inline and cached contents (payload YAML, BOM, invalid UTF-8, line
+// separators), mrs formats, legacy cache names.
+func TestCorpus(t *testing.T) { replay(t, "../routersplit/testdata/r02_corpus.jsonl.gz") }
+
+func replay(t *testing.T, path string) {
+	f, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,11 +86,7 @@ func TestRecordedPythonTests(t *testing.T) {
 		out, err := ClassicalIPLines(ctx, args.Value("item"), args.Value("config"))
 		var problems []string
 		if want := row.GetObject("err"); want != nil {
-			class := "?"
-			var classed interface{ PythonClass() string }
-			if errors.As(err, &classed) {
-				class = classed.PythonClass()
-			}
+			class := pyClass(err)
 			if err == nil || class != want.GetString("class") || err.Error() != want.GetString("msg") {
 				problems = append(problems, fmt.Sprintf("python raised %s, go %v (%s)", encode(want), err, class))
 			}
@@ -105,8 +110,8 @@ func TestRecordedPythonTests(t *testing.T) {
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("classical_ip_lines replay: %d identical, %d differ, %d not expressible; from %d tests in %d files; outcomes %v",
-		identical, differ, notExpressible, len(tests), len(files), outcomes)
+	t.Logf("%s classical_ip_lines: %d identical, %d differ, %d not expressible; from %d tests in %d files; outcomes %v",
+		path, identical, differ, notExpressible, len(tests), len(files), outcomes)
 }
 
 // rowRepository builds the repository of a recorded call.

@@ -210,16 +210,6 @@ func profileArg(v any) (string, error) {
 	return "", notExpressible("profile_id is not a string")
 }
 
-func objectArg(v any) (*jsonx.Object, error) {
-	switch value := v.(type) {
-	case nil:
-		return nil, nil
-	case *jsonx.Object:
-		return value, nil
-	}
-	return nil, notExpressible("argument is not a dict or None")
-}
-
 func boolOut(v bool, err error) (any, error) { return v, err }
 
 // runRow calls the Go function of a recorded row.
@@ -266,9 +256,6 @@ func runRow(row recordedRow) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		if a.Value("profile_id") != nil && profileID == "" {
-			return nil, notExpressible("empty profile id")
-		}
 		return PublishLegacySource(ctx, nil, profileID, a.Value("config"), a.Value("agent_id"))
 	case "legacy_gateway_agent_ids":
 		return LegacyGatewayAgentIDs(a.Value("config"), a.Value("context"))
@@ -281,21 +268,21 @@ func runRow(row recordedRow) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		config, err := objectArg(a.Value("config"))
-		if err != nil {
-			return nil, err
-		}
-		context, err := objectArg(a.Value("context"))
-		if err != nil {
-			return nil, err
-		}
-		return RouterSplitState(ctx, nil, profileID, config, context)
+		return RouterSplitState(ctx, nil, profileID, a.Value("config"), a.Value("context"))
 	}
 	return nil, notExpressible("unknown function " + row.Fn)
 }
 
-func TestRecordedPythonTests(t *testing.T) {
-	rows := loadRecorded(t, "testdata/r02_recorded.jsonl.gz")
+func TestRecordedPythonTests(t *testing.T) { replay(t, "testdata/r02_recorded.jsonl.gz") }
+
+// TestCorpus replays the random corpus generated with real Python
+// (testdata/gen_r02.py): malformed markers, gateway settings, base YAML
+// (anchors, non-string keys, timestamps, invalid YAML, non-strings), router
+// topologies, contexts, sessions and agent bindings.
+func TestCorpus(t *testing.T) { replay(t, "testdata/r02_corpus.jsonl.gz") }
+
+func replay(t *testing.T, path string) {
+	rows := loadRecorded(t, path)
 	identical, notExpr := map[string]int{}, map[string]int{}
 	differ := 0
 	tests, files := map[string]bool{}, map[string]bool{}
@@ -347,6 +334,6 @@ func TestRecordedPythonTests(t *testing.T) {
 		names = append(names, fmt.Sprintf("%s %d", name, n))
 	}
 	sort.Strings(names)
-	t.Logf("router_split replay: %d identical, %d differ, %d not expressible %v; from %d tests in %d files; identical per function: %s",
-		total, differ, notTotal, notExpr, len(tests), len(files), strings.Join(names, ", "))
+	t.Logf("%s router_split: %d identical, %d differ, %d not expressible %v; from %d tests in %d files; identical per function: %s",
+		path, total, differ, notTotal, notExpr, len(tests), len(files), strings.Join(names, ", "))
 }
