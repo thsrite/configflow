@@ -261,7 +261,12 @@ func ControllerScope(host string) string {
 	if !ok {
 		return "other"
 	}
-	if addr.Is4() && addr.As4()[0] == 127 || addr.Is6() && addr.WithZone("") == netip.IPv6Loopback() {
+	// Python 3.11.17's IPv6Address.is_loopback also checks an IPv4-mapped address.
+	plain := addr.WithZone("")
+	if plain.Is4In6() {
+		plain = plain.Unmap()
+	}
+	if plain.Is4() && plain.As4()[0] == 127 || plain == netip.IPv6Loopback() {
 		return "local"
 	}
 	return "other"
