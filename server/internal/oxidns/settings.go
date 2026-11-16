@@ -1,472 +1,551 @@
 package oxidns
 
 import (
+	"fmt"
 	"math/big"
+	"path"
+	"regexp"
 	"strings"
 	"unicode/utf8"
-
-	"configflow/internal/convert"
-	"configflow/internal/jsonx"
-	"configflow/internal/repo"
 )
 
-// Port of backend/common/oxidns_settings.py (module C05). The defaults
-// (get_default_oxidns_settings) live in repo.GetDefaultOxidnsSettings because
-// the repository needs them; everything else is here.
-
-// BlockQtypesExec is BLOCK_QTYPES_EXEC: the exec that answers blocked query
-// types with an empty, cacheable response.
+// BlockQtypesExec answers blocked query types with a cacheable empty
+// response; "reject 0" is what older drafts carry.
 const BlockQtypesExec = "black_hole nodata short_circuit=true"
 
-// BlockQtypesExecs is BLOCK_QTYPES_EXECS: the current exec and the one older
-// drafts still carry.
-var BlockQtypesExecs = []string{BlockQtypesExec, "reject 0"}
+var blockQtypesExecs = []string{BlockQtypesExec, "reject 0"}
+
+const defaultSettingsJSON = `{
+"config_mode": "template", "native_config": "", "additional_files": [],
+"direct_rulesets": [], "proxy_rulesets": [], "direct_rules": [], "proxy_rules": [],
+"local_dns": "", "remote_dns": "", "fallback_dns": "",
+"default_forward": "forward_remote", "custom_hosts": "", "custom_config": "",
+"custom_matches": [], "custom_match_position": "tail", "device_policies": [],
+"worker_threads": 2, "listen": "0.0.0.0:53", "tcp_enabled": true,
+"prefer_ipv4": true, "block_qtypes": [65, 255], "metrics_enabled": true,
+"aggregate_rules": true, "local_concurrent": 2, "remote_concurrent": 1,
+"fallback_concurrent": 2, "fallback_threshold": 500, "always_standby": false,
+"remote_ttl": 1, "cache_enabled": true, "cache_size": 10240,
+"cache_lazy_ttl": 3600, "cache_dump_enabled": false,
+"cache_dump_file": "./state/cache.dump", "cache_dump_interval": 300,
+"probe_cache_enabled": true, "probe_cache_size": 2048,
+"api": {"enabled": true, "listen": "127.0.0.1:9199", "username": "", "password": "", "webui_root": "", "ssl": {}},
+"log": {"level": "info", "file": "", "rotation": "daily", "max_files": 7},
+"query_recorder": {"enabled": false, "args": {"path": "./state/queries.db", "queue_size": 8192, "batch_size": 256,
+  "flush_interval_ms": 200, "memory_tail": 1024, "retention_days": 7, "cleanup_interval_hours": 1, "reader_concurrency": 2}},
+"ip_selector": {"enabled": false, "args": {"selection_mode": "background", "probe_methods": ["tcp:443", "tcp:80"],
+  "probe_stagger": 200, "probe_timeout": 600, "max_wait": 1000, "top_n": 0, "dnssec_policy": "reorder_only",
+  "max_parallel_probes": 64, "cache": {"enabled": true, "size": 4096, "ttl": 3600, "failure_ttl": 60}}},
+"dynamic_domain_set": {"enabled": false, "route": "direct", "learn": false,
+  "args": {"path": "./state/learned-domains.txt", "bootstrap_rules": [], "queue_size": 1024, "batch_size": 256, "flush_interval_ms": 200},
+  "learn_args": {"phase": "after", "questions": "first", "qtypes": ["A", "AAAA"], "success_only": true,
+    "answer_required": true, "rule_kind": "full", "async": true, "error_mode": "continue", "timeout": "1s"}},
+"adguard": {"enabled": false, "content": "", "urls": [], "mode": "nxdomain"},
+"ros_address_list": {"enabled": false, "args": {"address": "", "username": "", "password": "", "async": true,
+  "address_list4": "oxidns", "address_list6": "oxidns", "min_ttl": 60, "max_ttl": 3600, "queue_capacity": 16384,
+  "comment_prefix": "configflow", "cleanup_on_shutdown": true}},
+"ros_route": {"enabled": false, "args": {"address": "", "username": "", "password": "", "async": true,
+  "routing_table": "", "gateway4": "", "gateway6": "", "distance": 100, "min_ttl": 60, "max_ttl": 3600,
+  "queue_capacity": 16384, "comment_prefix": "configflow", "cleanup_on_shutdown": true}},
+"rule_update": {"enabled": false, "args": {"schedule": "30 3 * * *", "timezone": "Asia/Shanghai", "timeout": "60s",
+  "outbound": "", "socks5": ""}},
+"rule_actions": {}, "rule_dns_follow": [], "rule_dns_parked": {}
+}`
+
+var defaultSettingsNode = func() *Node {
+	n, err := FromJSON([]byte(defaultSettingsJSON))
+	if err != nil {
+		panic(err)
+	}
+	return n
+}()
 
 // DefaultSettings is get_default_oxidns_settings(): a fresh copy.
-func DefaultSettings() *jsonx.Object { return repo.GetDefaultOxidnsSettings() }
+func DefaultSettings() *Node { return clone(defaultSettingsNode) }
 
-// Merge is _merge(defaults, value): a deep copy of defaults with value laid
-// over it; nested dicts merge recursively, everything else replaces (deep
-// copied). value must be a dict.
-func Merge(defaults, value *jsonx.Object) *jsonx.Object {
-	result := defaults.DeepCopy()
-	for key, item := range value.All() {
-		current, isObject := result.Value(key).(*jsonx.Object)
-		itemObject, itemIsObject := item.(*jsonx.Object)
-		if isObject && current != nil && itemIsObject && itemObject != nil {
-			result.Set(key, Merge(current, itemObject))
+// merge is _merge(defaults, value): nested mappings merge, the rest replaces.
+func merge(defaults, value *Node) *Node {
+	result := clone(defaults)
+	pairs(value, func(key string, item *Node) bool {
+		if current := get(result, key); isMap(current) && isMap(item) {
+			set(result, key, merge(current, item))
 		} else {
-			result.Set(key, jsonx.DeepCopy(item))
+			set(result, key, clone(item))
 		}
-	}
+		return true
+	})
 	return result
 }
 
-// SafeRelativePath is safe_relative_path(value, label): the normalized
-// POSIX form of a relative path inside the managed directory ("./" prefix
-// removed), or OxidnsSettingsError "<label>无效" (not a non-empty string, a
-// backslash or a control character) / "<label>必须为安全的相对路径"
-// (absolute, empty, "." or ".." segments). Python's default label is
-// DefaultPathLabel.
-func SafeRelativePath(value any, label string) (path string, err error) {
-	defer catch(&err)
-	return safeRelativePath(value, label), nil
-}
-
-// DefaultPathLabel is safe_relative_path's default label.
-const DefaultPathLabel = "文件路径"
-
-func safeRelativePath(value any, label string) string {
-	text, ok := value.(string)
-	if !ok || text == "" || strings.Contains(text, `\`) || hasControl(text) {
-		fail(label + "无效")
+// SafeRelativePath is safe_relative_path: the normalized relative path
+// inside the managed directory ("./" removed).
+func SafeRelativePath(value *Node, label string) (string, error) {
+	text := str(value)
+	if !isStr(value) || text == "" || strings.ContainsRune(text, '\\') || hasControl(text) {
+		return "", fail(label + "无效")
 	}
 	normalized := strings.TrimPrefix(text, "./")
 	if strings.HasPrefix(normalized, "/") {
-		fail(label + "必须为安全的相对路径")
+		return "", fail(label + "必须为安全的相对路径")
 	}
 	for _, part := range strings.Split(normalized, "/") {
 		if part == "" || part == "." || part == ".." {
-			fail(label + "必须为安全的相对路径")
+			return "", fail(label + "必须为安全的相对路径")
 		}
 	}
-	// PurePosixPath(normalized).as_posix() of a path without empty, "." or
-	// ".." segments is the path itself.
-	return normalized
+	return normalized, nil
 }
 
-// NormalizeOptions are the keyword arguments of normalize_oxidns_settings.
-type NormalizeOptions struct {
-	// SkipNativeArguments is validate_native_arguments=False: a native draft
-	// is only checked for safe YAML (load_native_yaml), not expanded and
-	// validated (native_document).
-	SkipNativeArguments bool
+func safePath(text, label string) (string, error) { return SafeRelativePath(S(text), label) }
+
+func hasControl(s string) bool {
+	for _, r := range s {
+		if r < 32 {
+			return true
+		}
+	}
+	return false
 }
 
-// NormalizeSettings is normalize_oxidns_settings(value,
-// validate_native_arguments=!opts.SkipNativeArguments): the profile's
-// `oxidns` value merged over the defaults and validated. value nil is
-// Python's None (= {}).
-//
-// It returns a new object; value is not modified. Errors: *Error
-// (OxidnsSettingsError, or OxidnsValidationError from the native document
-// validation), *convert.PyError where Python crashes on a malformed value,
-// *PendingError where a not yet ported OxiDNS function is needed.
-//
-// Template mode validates every template field; native mode validates the
-// shared fields (device policies, attachments, rule DNS fields) and the
-// native YAML, and returns the template draft fields untouched.
-func NormalizeSettings(value any, opts NormalizeOptions) (settings *jsonx.Object, err error) {
-	defer catch(&err)
-	return normalizeSettings(value, !opts.SkipNativeArguments), nil
+// normalizeRuleDNS is _normalize_rule_dns.
+func normalizeRuleDNS(settings *Node) error {
+	for _, key := range []string{"rule_actions", "rule_dns_parked"} {
+		value := get(settings, key)
+		if !isMap(value) {
+			return fail(key + " 必须为以规则 ID 为键的对象")
+		}
+		result := M()
+		var err error
+		pairs(value, func(identity string, action *Node) bool {
+			if isNone(action) {
+				return true
+			}
+			var normalized *Node
+			if normalized, err = NormalizeAction(action, key == "rule_dns_parked"); err != nil {
+				return false
+			}
+			set(result, identity, normalized)
+			return true
+		})
+		if err != nil {
+			return err
+		}
+		set(settings, key, result)
+	}
+	follow := get(settings, "rule_dns_follow")
+	if !allStrings(follow) {
+		return fail("rule_dns_follow 必须为规则 ID 数组")
+	}
+	follow = unique(follow)
+	set(settings, "rule_dns_follow", follow)
+	for _, identity := range items(follow) {
+		if action := get(get(settings, "rule_actions"), identity.Value); action != nil {
+			return fail(fmt.Sprintf("规则 %s 已设置 DNS 处理「%s」，不能同时跟随策略", identity.Value, RouteLabels[str(get(action, "action"))]))
+		}
+		if has(get(settings, "rule_dns_parked"), identity.Value) {
+			return fail(fmt.Sprintf("规则 %s 已暂存停用前的 DNS 处理，不能同时跟随策略", identity.Value))
+		}
+	}
+	return nil
 }
 
-const int32Max = 1<<31 - 1
+// allStrings: a list of strings.
+func allStrings(n *Node) bool {
+	if !isSeq(n) {
+		return false
+	}
+	for _, item := range n.Content {
+		if !isStr(item) {
+			return false
+		}
+	}
+	return true
+}
 
-func normalizeSettings(value any, validateNativeArguments bool) *jsonx.Object {
-	if value == nil {
-		value = jsonx.NewObject()
+// unique is list(dict.fromkeys(list)) for strings.
+func unique(list *Node) *Node {
+	out, seen := L(), map[string]bool{}
+	for _, item := range items(list) {
+		if !seen[item.Value] {
+			seen[item.Value] = true
+			out.Content = append(out.Content, item)
+		}
 	}
-	object, ok := value.(*jsonx.Object)
-	if !ok || object == nil {
-		fail("OxiDNS 设置必须是对象")
+	return out
+}
+
+var intLimit = big.NewInt(2147483647)
+
+func checkInt(obj *Node, key string, minimum int64, maximum *big.Int) error {
+	value, ok := intOf(get(obj, key))
+	if !ok || value.Cmp(big.NewInt(minimum)) < 0 || value.Cmp(maximum) > 0 {
+		return fail(fmt.Sprintf("%s 必须为 %d–%s 的整数", key, minimum, maximum))
 	}
-	s := Merge(DefaultSettings(), object)
-	s.Set("device_policies", normalizePolicies(s.Value("device_policies")))
-	if !strIn(s.Value("config_mode"), "template", "native") {
-		fail("OxiDNS 配置模式必须为 template 或 native")
+	return nil
+}
+
+func isOneOf(n *Node, options ...string) bool {
+	if !isStr(n) {
+		return false
 	}
-	if !isStr(s.Value("native_config")) {
-		fail("OxiDNS 完整配置必须为 YAML 文本")
+	for _, o := range options {
+		if n.Value == o {
+			return true
+		}
 	}
-	managedFiles(s.Value("additional_files"))
-	normalizeRuleDNS(s)
-	if s.Value("config_mode") == "native" {
-		if validateNativeArguments {
-			nativeDocument(s, true, nil)
+	return false
+}
+
+var httpURL = regexp.MustCompile(`^https?://`)
+
+// NormalizeSettings is normalize_oxidns_settings. value nil means {}.
+// validateNative false only checks the native YAML is safe (stored drafts
+// may be incomplete).
+func NormalizeSettings(value *Node, validateNative bool) (*Node, error) {
+	if isNone(value) {
+		value = M()
+	}
+	if !isMap(value) {
+		return nil, fail("OxiDNS 设置必须是对象")
+	}
+	s := merge(defaultSettingsNode, value)
+	policies, err := NormalizePolicies(get(s, "device_policies"))
+	if err != nil {
+		return nil, err
+	}
+	set(s, "device_policies", policies)
+	if !isOneOf(get(s, "config_mode"), "template", "native") {
+		return nil, fail("OxiDNS 配置模式必须为 template 或 native")
+	}
+	if !isStr(get(s, "native_config")) {
+		return nil, fail("OxiDNS 完整配置必须为 YAML 文本")
+	}
+	if _, err := ManagedFiles(get(s, "additional_files")); err != nil {
+		return nil, err
+	}
+	if err := normalizeRuleDNS(s); err != nil {
+		return nil, err
+	}
+	if str(get(s, "config_mode")) == "native" {
+		if validateNative {
+			_, err = NativeDocument(s, true, nil)
 		} else {
-			// A stored draft may be incomplete; only enforce safe YAML and
-			// bounded, explicitly managed attachment data at this boundary.
-			loadNativeYAML(s.Value("native_config"), DefaultNativeLabel)
+			_, err = loadNative(get(s, "native_config"), NativeLabel)
 		}
-		return s
+		if err != nil {
+			return nil, err
+		}
+		return s, nil
 	}
+	if err := checkTemplate(s); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
 
+func checkTemplate(s *Node) error {
 	for _, key := range []string{"worker_threads", "cache_size", "cache_dump_interval", "probe_cache_size",
 		"local_concurrent", "remote_concurrent", "fallback_concurrent", "fallback_threshold"} {
-		maximum := int64(int32Max)
+		maximum := intLimit
 		if key == "worker_threads" {
-			maximum = 256
+			maximum = big.NewInt(256)
 		}
-		checkInteger(s, key, 1, maximum)
+		if err := checkInt(s, key, 1, maximum); err != nil {
+			return err
+		}
 	}
 	for _, key := range []string{"cache_lazy_ttl", "remote_ttl"} {
-		checkInteger(s, key, 0, int32Max)
+		if err := checkInt(s, key, 0, intLimit); err != nil {
+			return err
+		}
 	}
 	for _, key := range []string{"tcp_enabled", "prefer_ipv4", "metrics_enabled", "aggregate_rules", "always_standby",
 		"cache_enabled", "cache_dump_enabled", "probe_cache_enabled"} {
-		if _, ok := s.Value(key).(bool); !ok {
-			fail(key + " 必须为布尔值")
+		if !isBool(get(s, key)) {
+			return fail(key + " 必须为布尔值")
 		}
 	}
 	for _, key := range []string{"direct_rulesets", "proxy_rulesets", "direct_rules", "proxy_rules"} {
-		ids, ok := stringList(s.Value(key))
-		if !ok {
-			fail(key + " 必须为规则 ID 数组")
+		if !allStrings(get(s, key)) {
+			return fail(key + " 必须为规则 ID 数组")
 		}
-		s.Set(key, jsonx.ListOf(dedupe(ids)))
+		set(s, key, unique(get(s, key)))
 	}
 	for _, suffix := range []string{"rules", "rulesets"} {
-		direct := map[string]bool{}
-		for _, id := range s.GetList("direct_" + suffix) {
-			direct[id.(string)] = true
-		}
-		for _, id := range s.GetList("proxy_" + suffix) {
-			if direct[id.(string)] {
-				fail("同一规则不能同时分配给直连和代理")
+		for _, id := range items(get(s, "direct_"+suffix)) {
+			if contains(get(s, "proxy_"+suffix), id) {
+				return fail("同一规则不能同时分配给直连和代理")
 			}
 		}
 	}
 	for _, key := range []string{"local_dns", "remote_dns", "fallback_dns", "listen", "custom_hosts", "custom_config"} {
-		if !isStr(s.Value(key)) {
-			fail(key + " 必须为文本")
+		if !isStr(get(s, key)) {
+			return fail(key + " 必须为文本")
 		}
 	}
-	if strip(s.Value("listen")) == "" {
-		fail("DNS 监听地址不能为空")
+	if strings.TrimSpace(str(get(s, "listen"))) == "" {
+		return fail("DNS 监听地址不能为空")
 	}
-	if !strIn(s.Value("default_forward"), "forward_local", "forward_remote") {
-		fail("默认转发目标无效")
+	if !isOneOf(get(s, "default_forward"), "forward_local", "forward_remote") {
+		return fail("默认转发目标无效")
 	}
-	if !strIn(s.Value("custom_match_position"), "head", "tail") {
-		fail("自定义匹配执行顺序无效")
+	if !isOneOf(get(s, "custom_match_position"), "head", "tail") {
+		return fail("自定义匹配执行顺序无效")
 	}
-	entries, ok := s.Value("custom_matches").([]any)
-	if !ok {
-		fail("自定义匹配必须为数组")
+	if !isSeq(get(s, "custom_matches")) {
+		return fail("自定义匹配必须为数组")
 	}
-	for _, raw := range entries {
-		entry, ok := raw.(*jsonx.Object)
-		if !ok || entry == nil {
-			fail("自定义匹配条目必须为对象")
+	for _, entry := range items(get(s, "custom_matches")) {
+		if !isMap(entry) {
+			return fail("自定义匹配条目必须为对象")
 		}
-		if !truthy(entry.GetOr("enabled", true)) {
+		if enabled := get(entry, "enabled"); has(entry, "enabled") && !truthy(enabled) {
 			continue
 		}
-		matches := entry.GetOr("matches", []any{})
-		if text, ok := matches.(string); ok {
-			matches = jsonx.ListOf(convert.PySplitlines(text))
+		matches := get(entry, "matches")
+		if !has(entry, "matches") {
+			matches = L()
 		}
-		list, isList := matches.([]any)
-		anyCondition := false
-		for _, m := range list {
-			if text, ok := m.(string); ok && strip(text) != "" {
-				anyCondition = true
-				break
-			}
+		if isStr(matches) {
+			matches = strs(splitLines(matches.Value, false))
 		}
-		if !isList || !anyCondition {
-			fail("启用的自定义匹配需要至少一个条件")
+		if !isSeq(matches) || len(filter(matches.Content, func(m *Node) bool { return isStr(m) && strings.TrimSpace(m.Value) != "" })) == 0 {
+			return fail("启用的自定义匹配需要至少一个条件")
 		}
-		allText := true
-		for _, m := range list {
-			if !isStr(m) {
-				allText = false
-			}
-		}
-		exec, execIsText := entry.Value("exec").(string)
-		if !allText || !execIsText || strip(exec) == "" {
-			fail("自定义匹配条件和执行动作必须为非空文本")
+		if !allStrings(matches) || !isStr(get(entry, "exec")) || strings.TrimSpace(str(get(entry, "exec"))) == "" {
+			return fail("自定义匹配条件和执行动作必须为非空文本")
 		}
 	}
-	qtypes, ok := s.Value("block_qtypes").([]any)
-	if ok {
-		for _, v := range qtypes {
-			if !isInt(v) || !inRange(v.(jsonx.Number), 1, 65535) {
-				ok = false
-				break
-			}
+	blocked := get(s, "block_qtypes")
+	if !isSeq(blocked) {
+		return fail("屏蔽查询类型必须为 1–65535 的整数数组")
+	}
+	for _, v := range blocked.Content {
+		if n, ok := int64Of(v); !ok || n < 1 || n > 65535 {
+			return fail("屏蔽查询类型必须为 1–65535 的整数数组")
 		}
 	}
-	if !ok {
-		fail("屏蔽查询类型必须为 1–65535 的整数数组")
-	}
-	if s.Value("cache_dump_enabled") == true {
-		safeRelativePath(s.Value("cache_dump_file"), "缓存文件")
+	if isTrue(get(s, "cache_dump_enabled")) {
+		if _, err := SafeRelativePath(get(s, "cache_dump_file"), "缓存文件"); err != nil {
+			return err
+		}
 	}
 	for _, name := range []string{"api", "log", "query_recorder", "ip_selector", "dynamic_domain_set", "adguard",
 		"ros_address_list", "ros_route", "rule_update"} {
-		section, ok := s.Value(name).(*jsonx.Object)
-		if !ok || section == nil {
-			fail(name + " 必须为对象")
+		section := get(s, name)
+		if !isMap(section) {
+			return fail(name + " 必须为对象")
 		}
-		if _, isBool := section.Value("enabled").(bool); name != "log" && !isBool {
-			fail(name + ".enabled 必须为布尔值")
+		if name != "log" && !isBool(get(section, "enabled")) {
+			return fail(name + ".enabled 必须为布尔值")
 		}
-		if args, present := section.Get("args"); present {
-			if a, isObject := args.(*jsonx.Object); !isObject || a == nil {
-				fail(name + ".args 必须为对象")
+		if has(section, "args") && !isMap(get(section, "args")) {
+			return fail(name + ".args 必须为对象")
+		}
+	}
+	api := get(s, "api")
+	for _, key := range []string{"listen", "username", "password", "webui_root"} {
+		if !isStr(get(api, key)) {
+			return fail("api." + key + " 必须为文本")
+		}
+	}
+	if isTrue(get(api, "enabled")) {
+		if strings.TrimSpace(str(get(api, "listen"))) == "" {
+			return fail("API 监听地址不能为空")
+		}
+		if (str(get(api, "username")) != "") != (str(get(api, "password")) != "") {
+			return fail("API 用户名和密码必须同时设置")
+		}
+		ssl := get(api, "ssl")
+		if !isMap(ssl) {
+			return fail("API TLS 设置必须为对象")
+		}
+		if truthy(get(ssl, "cert")) != truthy(get(ssl, "key")) {
+			return fail("API TLS 证书和私钥必须同时设置")
+		}
+	}
+	log := get(s, "log")
+	if !isStr(get(log, "file")) {
+		return fail("日志文件路径必须为文本")
+	}
+	if !isOneOf(get(log, "level"), "off", "trace", "debug", "info", "warn", "error") {
+		return fail("日志级别无效")
+	}
+	if !isOneOf(get(log, "rotation"), "never", "minutely", "hourly", "daily", "weekly") {
+		return fail("日志轮转方式无效")
+	}
+	if err := checkInt(log, "max_files", 0, intLimit); err != nil {
+		return err
+	}
+	if recorder := get(s, "query_recorder"); isTrue(get(recorder, "enabled")) {
+		args := get(recorder, "args")
+		for _, key := range []string{"queue_size", "batch_size", "flush_interval_ms", "retention_days", "cleanup_interval_hours", "reader_concurrency"} {
+			if err := checkInt(args, key, 1, intLimit); err != nil {
+				return err
 			}
 		}
-	}
-	api := s.GetObject("api")
-	for _, key := range []string{"listen", "username", "password", "webui_root"} {
-		if !isStr(api.Value(key)) {
-			fail("api." + key + " 必须为文本")
+		if err := checkInt(args, "memory_tail", 0, intLimit); err != nil {
+			return err
+		}
+		if p, err := SafeRelativePath(get(args, "path"), PathLabel); err != nil {
+			return err
+		} else if !strings.HasPrefix(p, "state/") {
+			return fail("查询记录请放在 state/ 下，避免部署覆盖运行数据")
 		}
 	}
-	if api.Value("enabled") == true {
-		if strip(api.Value("listen")) == "" {
-			fail("API 监听地址不能为空")
+	if selector := get(s, "ip_selector"); isTrue(get(selector, "enabled")) {
+		args := get(selector, "args")
+		if !isOneOf(get(args, "selection_mode"), "first_success", "best_within_budget", "background") {
+			return fail("IP 优选模式无效")
 		}
-		if truthy(api.Value("username")) != truthy(api.Value("password")) {
-			fail("API 用户名和密码必须同时设置")
+		if err := checkInt(args, "top_n", 0, intLimit); err != nil {
+			return err
 		}
-		ssl, ok := item(api, "ssl").(*jsonx.Object)
-		if !ok || ssl == nil {
-			fail("API TLS 设置必须为对象")
-		}
-		if truthy(ssl.Value("cert")) != truthy(ssl.Value("key")) {
-			fail("API TLS 证书和私钥必须同时设置")
-		}
-	}
-	log := s.GetObject("log")
-	if !isStr(item(log, "file")) {
-		fail("日志文件路径必须为文本")
-	}
-	if !strIn(item(log, "level"), "off", "trace", "debug", "info", "warn", "error") {
-		fail("日志级别无效")
-	}
-	if !strIn(item(log, "rotation"), "never", "minutely", "hourly", "daily", "weekly") {
-		fail("日志轮转方式无效")
-	}
-	checkInteger(log, "max_files", 0, int32Max)
-	recorder := s.GetObject("query_recorder")
-	if recorder.Value("enabled") == true {
-		args := item(recorder, "args").(*jsonx.Object)
-		for _, key := range []string{"queue_size", "batch_size", "flush_interval_ms", "retention_days", "cleanup_interval_hours", "reader_concurrency"} {
-			checkInteger(args, key, 1, int32Max)
-		}
-		checkInteger(args, "memory_tail", 0, int32Max)
-		if !strings.HasPrefix(safeRelativePath(item(args, "path"), DefaultPathLabel), "state/") {
-			fail("查询记录请放在 state/ 下，避免部署覆盖运行数据")
-		}
-	}
-	selector := s.GetObject("ip_selector")
-	if selector.Value("enabled") == true {
-		args := item(selector, "args").(*jsonx.Object)
-		if !strIn(args.Value("selection_mode"), "first_success", "best_within_budget", "background") {
-			fail("IP 优选模式无效")
-		}
-		checkInteger(args, "top_n", 0, int32Max)
 		for _, key := range []string{"probe_stagger", "probe_timeout", "max_wait", "max_parallel_probes"} {
 			minimum := int64(1)
 			if key == "probe_stagger" {
 				minimum = 0
 			}
-			checkInteger(args, key, minimum, int32Max)
+			if err := checkInt(args, key, minimum, intLimit); err != nil {
+				return err
+			}
 		}
-		if !strIn(args.Value("dnssec_policy"), "reorder_only", "skip") {
-			fail("IP 优选 DNSSEC 策略无效")
+		if !isOneOf(get(args, "dnssec_policy"), "reorder_only", "skip") {
+			return fail("IP 优选 DNSSEC 策略无效")
 		}
-		methods, ok := args.Value("probe_methods").([]any)
-		if ok {
-			_, ok = stringList(methods)
-		}
-		if !ok || len(methods) == 0 {
-			fail("IP 探测方式必须为非空文本数组")
+		if methods := get(args, "probe_methods"); !allStrings(methods) || len(methods.Content) == 0 {
+			return fail("IP 探测方式必须为非空文本数组")
 		}
 	}
-	dynamic := s.GetObject("dynamic_domain_set")
-	if dynamic.Value("enabled") == true {
-		if !strIn(item(dynamic, "route"), "direct", "proxy") {
-			fail("动态域名集路由或学习设置无效")
+	if dynamic := get(s, "dynamic_domain_set"); isTrue(get(dynamic, "enabled")) {
+		if !isOneOf(get(dynamic, "route"), "direct", "proxy") || !isBool(get(dynamic, "learn")) {
+			return fail("动态域名集路由或学习设置无效")
 		}
-		if _, learnIsBool := item(dynamic, "learn").(bool); !learnIsBool {
-			fail("动态域名集路由或学习设置无效")
+		args := get(dynamic, "args")
+		if p, err := SafeRelativePath(get(args, "path"), PathLabel); err != nil {
+			return err
+		} else if !strings.HasPrefix(p, "state/") {
+			return fail("动态规则请放在 state/ 下，避免部署覆盖运行数据")
 		}
-		args := item(dynamic, "args").(*jsonx.Object)
-		if !strings.HasPrefix(safeRelativePath(item(args, "path"), DefaultPathLabel), "state/") {
-			fail("动态规则请放在 state/ 下，避免部署覆盖运行数据")
-		}
-		learn, ok := item(dynamic, "learn_args").(*jsonx.Object)
-		if !ok || learn == nil {
-			fail("学习参数必须为对象")
+		learn := get(dynamic, "learn_args")
+		if !isMap(learn) {
+			return fail("学习参数必须为对象")
 		}
 		for _, key := range []string{"queue_size", "batch_size", "flush_interval_ms"} {
-			checkInteger(args, key, 1, int32Max)
+			if err := checkInt(args, key, 1, intLimit); err != nil {
+				return err
+			}
 		}
-		if _, ok := stringList(args.Value("bootstrap_rules")); !ok {
-			fail("动态域名初始规则必须为文本数组")
+		if !allStrings(get(args, "bootstrap_rules")) {
+			return fail("动态域名初始规则必须为文本数组")
 		}
-		if !strIn(learn.Value("phase"), "before", "after") || !strIn(learn.Value("questions"), "first", "all") {
-			fail("动态学习阶段或问题范围无效")
+		if !isOneOf(get(learn, "phase"), "before", "after") || !isOneOf(get(learn, "questions"), "first", "all") {
+			return fail("动态学习阶段或问题范围无效")
 		}
-		if !strIn(learn.Value("rule_kind"), "full", "domain") || !strIn(learn.Value("error_mode"), "continue", "stop", "fail") {
-			fail("动态学习规则类型或错误行为无效")
+		if !isOneOf(get(learn, "rule_kind"), "full", "domain") || !isOneOf(get(learn, "error_mode"), "continue", "stop", "fail") {
+			return fail("动态学习规则类型或错误行为无效")
 		}
 	}
-	adguard := s.GetObject("adguard")
-	if adguard.Value("enabled") == true {
-		if !strIn(item(adguard, "mode"), "nxdomain", "nodata", "null", "refused") {
-			fail("AdGuard 拦截响应模式无效")
+	if adguard := get(s, "adguard"); isTrue(get(adguard, "enabled")) {
+		if !isOneOf(get(adguard, "mode"), "nxdomain", "nodata", "null", "refused") {
+			return fail("AdGuard 拦截响应模式无效")
 		}
-		content, contentIsText := item(adguard, "content").(string)
-		if !contentIsText {
-			fail("AdGuard 规则必须为文本和订阅 URL 数组")
+		content, urls := get(adguard, "content"), get(adguard, "urls")
+		if !isStr(content) || !isSeq(urls) {
+			return fail("AdGuard 规则必须为文本和订阅 URL 数组")
 		}
-		urls, urlsIsList := item(adguard, "urls").([]any)
-		if !urlsIsList {
-			fail("AdGuard 规则必须为文本和订阅 URL 数组")
+		if strings.TrimSpace(content.Value) == "" && len(urls.Content) == 0 {
+			return fail("启用 AdGuard 时请填写规则或订阅 URL")
 		}
-		if strip(content) == "" && len(urls) == 0 {
-			fail("启用 AdGuard 时请填写规则或订阅 URL")
-		}
-		for _, url := range urls {
-			text, ok := url.(string)
-			if !ok || !(strings.HasPrefix(text, "http://") || strings.HasPrefix(text, "https://")) {
-				fail("AdGuard 订阅必须为 HTTP(S) URL")
+		for _, url := range urls.Content {
+			if !isStr(url) || !httpURL.MatchString(url.Value) {
+				return fail("AdGuard 订阅必须为 HTTP(S) URL")
 			}
 		}
 	}
 	for _, name := range []string{"ros_address_list", "ros_route"} {
-		section := s.GetObject(name)
-		if section.Value("enabled") != true {
+		section := get(s, name)
+		if !isTrue(get(section, "enabled")) {
 			continue
 		}
-		args := item(section, "args").(*jsonx.Object)
+		args := get(section, "args")
 		for _, key := range []string{"address", "username", "password"} {
-			text, ok := args.Value(key).(string)
-			if !ok || strip(text) == "" {
-				fail(name + " 需要 RouterOS 地址、用户名和密码")
+			if strings.TrimSpace(str(get(args, key))) == "" {
+				return fail(name + " 需要 RouterOS 地址、用户名和密码")
 			}
 		}
-		if tlsValue, present := args.Get("tls"); present {
-			tls, ok := tlsValue.(*jsonx.Object)
-			if !ok || tls == nil {
-				fail("RouterOS TLS 必须为对象，关闭时删除 tls 字段")
+		if has(args, "tls") {
+			tls := get(args, "tls")
+			if !isMap(tls) {
+				return fail("RouterOS TLS 必须为对象，关闭时删除 tls 字段")
 			}
-			if truthy(tls.Value("ca")) && truthy(tls.Value("insecure")) {
-				fail("RouterOS TLS 不能同时设置 CA 和跳过验证")
+			if truthy(get(tls, "ca")) && truthy(get(tls, "insecure")) {
+				return fail("RouterOS TLS 不能同时设置 CA 和跳过验证")
 			}
 		}
-		checkInteger(args, "min_ttl", 0, int32Max)
-		checkInteger(args, "max_ttl", 0, int32Max)
-		minTTL, _ := args.GetNumber("min_ttl")
-		maxTTL, _ := args.GetNumber("max_ttl")
-		if bigOf(minTTL).Cmp(bigOf(maxTTL)) > 0 {
-			fail("RouterOS 最小 TTL 不能大于最大 TTL")
+		if err := checkInt(args, "min_ttl", 0, intLimit); err != nil {
+			return err
 		}
-		if name == "ros_route" && (!truthy(args.Value("routing_table")) ||
-			!(truthy(args.Value("gateway4")) || truthy(args.Value("gateway6")))) {
-			fail("RouterOS 路由需要已存在的路由表和至少一个网关")
+		if err := checkInt(args, "max_ttl", 0, intLimit); err != nil {
+			return err
 		}
-	}
-	update := s.GetObject("rule_update")
-	if update.Value("enabled") == true {
-		args := item(update, "args").(*jsonx.Object)
-		schedule, ok := args.GetOr("schedule", "").(string)
-		if !ok || len(pySplit(schedule)) != 5 {
-			fail("规则更新需要五段 cron 表达式")
+		lo, _ := intOf(get(args, "min_ttl"))
+		hi, _ := intOf(get(args, "max_ttl"))
+		if lo.Cmp(hi) > 0 {
+			return fail("RouterOS 最小 TTL 不能大于最大 TTL")
+		}
+		if name == "ros_route" && (!truthy(get(args, "routing_table")) || !(truthy(get(args, "gateway4")) || truthy(get(args, "gateway6")))) {
+			return fail("RouterOS 路由需要已存在的路由表和至少一个网关")
 		}
 	}
-	return s
-}
-
-// inRange is minimum <= n <= maximum for an int Number.
-func inRange(n jsonx.Number, minimum, maximum int64) bool {
-	b := bigOf(n)
-	return b.Cmp(big.NewInt(minimum)) >= 0 && b.Cmp(big.NewInt(maximum)) <= 0
-}
-
-// checkInteger is normalize_oxidns_settings' integer(obj, key, minimum,
-// maximum).
-func checkInteger(obj *jsonx.Object, key string, minimum, maximum int64) {
-	value := get(obj, key, nil)
-	if !isInt(value) || !inRange(value.(jsonx.Number), minimum, maximum) {
-		fail(key + " 必须为 " + big.NewInt(minimum).String() + "–" + big.NewInt(maximum).String() + " 的整数")
-	}
-}
-
-// normalizeRuleDNS is _normalize_rule_dns: shape and disjointness of the
-// per-rule DNS fields (rule_actions, rule_dns_parked, rule_dns_follow), in
-// both modes. A null action deletes its key.
-func normalizeRuleDNS(s *jsonx.Object) {
-	for _, field := range []struct {
-		key    string
-		parked bool
-	}{{"rule_actions", false}, {"rule_dns_parked", true}} {
-		value, ok := item(s, field.key).(*jsonx.Object)
-		if !ok || value == nil {
-			fail(field.key + " 必须为以规则 ID 为键的对象")
+	if update := get(s, "rule_update"); isTrue(get(update, "enabled")) {
+		schedule := get(get(update, "args"), "schedule")
+		if !has(get(update, "args"), "schedule") {
+			schedule = S("")
 		}
-		normalized := jsonx.NewObject()
-		for identity, action := range value.All() {
-			if action == nil {
-				continue
+		if !isStr(schedule) || len(strings.Fields(schedule.Value)) != 5 {
+			return fail("规则更新需要五段 cron 表达式")
+		}
+	}
+	return nil
+}
+
+// splitLines is str.splitlines (keepEnds optional): Python's line boundaries.
+func splitLines(s string, keepEnds bool) []string {
+	var out []string
+	start := 0
+	for i := 0; i < len(s); {
+		r, width := utf8.DecodeRuneInString(s[i:])
+		end := i + width
+		switch r {
+		case '\r':
+			if end < len(s) && s[end] == '\n' {
+				end++
 			}
-			normalized.Set(identity, normalizeAction(action, field.parked))
+		case '\n', '\v', '\f', '\x1c', '\x1d', '\x1e', '\u0085', '\u2028', '\u2029':
+		default:
+			i = end
+			continue
 		}
-		s.Set(field.key, normalized)
-	}
-	follow, ok := stringList(item(s, "rule_dns_follow"))
-	if !ok {
-		fail("rule_dns_follow 必须为规则 ID 数组")
-	}
-	follow = dedupe(follow)
-	s.Set("rule_dns_follow", jsonx.ListOf(follow))
-	actions := s.GetObject("rule_actions")
-	parked := s.GetObject("rule_dns_parked")
-	for _, identity := range follow {
-		if action, ok := actions.Get(identity); ok {
-			label := RouteLabels[action.(*jsonx.Object).GetString("action")]
-			fail("规则 " + identity + " 已设置 DNS 处理「" + label + "」，不能同时跟随策略")
+		if keepEnds {
+			out = append(out, s[start:end])
+		} else {
+			out = append(out, s[start:i])
 		}
-		if parked.Has(identity) {
-			fail("规则 " + identity + " 已暂存停用前的 DNS 处理，不能同时跟随策略")
-		}
+		start, i = end, end
 	}
+	if start < len(s) {
+		out = append(out, s[start:])
+	}
+	return out
 }
 
-// runeLen is len(s) in code points.
-func runeLen(s string) int { return utf8.RuneCountInString(s) }
+// posixParent and posixName are str(PurePosixPath(p).parent) / .name.
+func posixParent(p string) string { return path.Dir(path.Clean(p)) }
+
+func posixName(p string) string {
+	if base := path.Base(path.Clean(p)); base != "." && base != "/" {
+		return base
+	}
+	return ""
+}

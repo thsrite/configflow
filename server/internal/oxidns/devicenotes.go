@@ -1,83 +1,70 @@
 package oxidns
 
-import (
-	"configflow/internal/jsonx"
-)
+import "fmt"
 
-// The read part of backend/common/device_notes.py (module C31), ported early
-// because read_policies (C26) shows the stored names. C31 adds the writers
-// (set_note, policy_names_revision, prepare_policy_notes, save_policy_rows)
-// to this file.
+// Display names of clients (device_notes); policy rows of older versions
+// still carry names, which notes override (an empty note hides one).
 
-// MaxNotes is MAX_NOTES.
+// MaxNotes bounds device_notes.
 const MaxNotes = 2048
 
-const nameMessage = "设备备注最多 80 个字符，不能包含换行或控制字符。"
-
-// NormalizeName is normalize_name(value).
-func NormalizeName(value any) (name string, err error) {
-	defer catch(&err)
-	return normalizeName(value), nil
+// NormalizeName validates one note.
+func NormalizeName(value *Node) (string, error) {
+	if !isStr(value) || len([]rune(value.Value)) > 80 || hasControl(value.Value) || containsRune(value.Value, 0x7f) {
+		return "", fail("设备备注最多 80 个字符，不能包含换行或控制字符。")
+	}
+	return trimSpace(value.Value), nil
 }
 
-func normalizeName(value any) string {
-	text, ok := value.(string)
-	if !ok || runeLen(text) > 80 {
-		fail(nameMessage)
+// NormalizeNotes validates device_notes (address → name), in order.
+func NormalizeNotes(value *Node) (*Node, error) {
+	if !isMap(value) || len(value.Content)/2 > MaxNotes {
+		return nil, fail(fmt.Sprintf("设备备注必须为对象，最多 %d 条。", MaxNotes))
 	}
-	for _, r := range text {
-		if r < 32 || r == 127 {
-			fail(nameMessage)
+	result := M()
+	var err error
+	pairs(value, func(address string, name *Node) bool {
+		var ip, text string
+		if ip, err = NormalizeClientRange(S(address)); err != nil {
+			return false
+		}
+		if has(result, ip) {
+			err = fail("设备备注地址重复：" + ip)
+			return false
+		}
+		if text, err = NormalizeName(name); err != nil {
+			return false
+		}
+		set(result, ip, S(text))
+		return true
+	})
+	return result, err
+}
+
+// StoredNames is every address with a known name (empty names included).
+func StoredNames(p *Profile) (map[string]string, error) {
+	policies := get(p.Settings(), "device_policies")
+	if !has(p.Settings(), "device_policies") {
+		policies = L()
+	}
+	rows, err := NormalizePolicies(policies)
+	if err != nil {
+		return nil, err
+	}
+	names := map[string]string{}
+	for _, row := range rows.Content {
+		if name := str(get(row, "name")); name != "" {
+			names[str(get(row, "ip"))] = name
 		}
 	}
-	return strip(text)
-}
-
-// NormalizeNotes is normalize_notes(value): {canonical address: name}.
-func NormalizeNotes(value any) (notes *jsonx.Object, err error) {
-	defer catch(&err)
-	return normalizeNotes(value), nil
-}
-
-func normalizeNotes(value any) *jsonx.Object {
-	notes, ok := value.(*jsonx.Object)
-	if !ok || notes == nil || notes.Len() > MaxNotes {
-		fail("设备备注必须为对象，最多 " + itoa(MaxNotes) + " 条。")
+	stored := p.get("device_notes")
+	if !has(p.doc, "device_notes") {
+		stored = M()
 	}
-	result := jsonx.NewObject()
-	for address, name := range notes.All() {
-		ip := normalizeClientRange(address)
-		if result.Has(ip) {
-			fail("设备备注地址重复：" + ip)
-		}
-		result.Set(ip, normalizeName(name))
+	notes, err := NormalizeNotes(stored)
+	if err != nil {
+		return nil, err
 	}
-	return result
-}
-
-// legacyNames is _legacy_names(config).
-func legacyNames(config any) *jsonx.Object {
-	rows := normalizePolicies(get(get(config, "oxidns", jsonx.NewObject()), "device_policies", []any{}))
-	out := jsonx.NewObject()
-	for _, row := range rows {
-		if name := row.(*jsonx.Object).GetString("name"); name != "" {
-			out.Set(row.(*jsonx.Object).GetString("ip"), name)
-		}
-	}
-	return out
-}
-
-// StoredNames is stored_names(config): every address with a known name,
-// including empty names that hide a legacy one.
-func StoredNames(config any) (names *jsonx.Object, err error) {
-	defer catch(&err)
-	return storedNames(config), nil
-}
-
-func storedNames(config any) *jsonx.Object {
-	out := legacyNames(config)
-	for ip, name := range normalizeNotes(get(config, "device_notes", jsonx.NewObject())).All() {
-		out.Set(ip, name)
-	}
-	return out
+	pairs(notes, func(ip string, name *Node) bool { names[ip] = name.Value; return true })
+	return names, nil
 }

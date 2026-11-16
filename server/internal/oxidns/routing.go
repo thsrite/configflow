@@ -1,78 +1,82 @@
 package oxidns
 
 import (
-	"errors"
+	"encoding/json"
+	"fmt"
+	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
-	"unsafe"
-
-	"configflow/internal/convert"
-	"configflow/internal/jsonx"
-	"configflow/internal/mosdns"
-	"configflow/internal/pystr"
 )
 
-// Port of backend/common/oxidns_common_routing.py (module C25): read and
-// edit the recognizable routing portion of an OxiDNS document.
-//
-// The native providers and sequence are the source of truth. Historical
-// template inputs are only retained as resource sources; they never supply
-// displayed values. Unrecognized routing is left for the complete editor
-// instead of being regenerated. Per-rule DNS actions are rule groups too,
-// but only on generated providers that nothing else uses; their owned helper
-// plugins are created and removed with the groups and never overwritten when
-// edited by hand. The constants and the helpers C24 needed early are in
-// common_routing.go; the rule_dns parts in ruledns_routing.go.
+// Reading and editing the recognizable routing part of a native document.
+// The native providers and sequence are the source of truth; unrecognized
+// routing is left to the complete editor. Per-rule DNS actions are rule
+// groups too, on generated providers nothing else uses; their helper plugins
+// are created and removed with the groups and never overwritten when edited
+// by hand.
+
+// Routing field names.
+var (
+	Selectors     = []string{"direct_rules", "proxy_rules", "direct_rulesets", "proxy_rulesets"}
+	RuleDNSFields = []string{"rule_actions", "rule_dns_follow"}
+	RoutingFields = append(append(append([]string{}, Selectors...), RuleDNSFields...), "aggregate_rules", "default_forward", "custom_matches", "custom_match_position")
+	customFields  = []string{"custom_matches", "custom_match_position"}
+)
 
 const (
 	routingReason = "当前分流执行链包含自定义结构，请在完整参数中编辑。"
 	missingRule   = "所选规则不在当前空间的可用规则库中，请刷新后重试。"
 )
 
-// routingFieldOrder is ROUTING_FIELDS in a fixed order (Python's frozenset
-// order is hash dependent; the capabilities only reach jsonify, which sorts).
-var routingFieldOrder = append(append(append([]string{}, Selectors...), RuleDNSFields...),
-	"aggregate_rules", "default_forward", "custom_matches", "custom_match_position")
+var (
+	helperTagRE   = regexp.MustCompile(`^(?:` + BlackholeTag + `|cf_dns_(?:up|fwd|cache)_([0-9a-f]{12}))$`)
+	helperExecRE  = regexp.MustCompile(`^(?:\$|goto |jump )cf_dns_`)
+	domainTargets = map[string]string{"goto china_dns": "direct", "goto proxy_dns_seq": "proxy"}
+)
 
-var customFields = []string{"custom_matches", "custom_match_position"}
-
-// routingTargets is _TARGETS['domain'].
-var routingTargets = map[string]string{"goto china_dns": "direct", "goto proxy_dns_seq": "proxy"}
-
-// ---- Python glue -------------------------------------------------------
-
-// pyBases maps a Python exception class to its base for except clauses.
-var pyBases = map[string]string{
-	ClassSettings: "ValueError", ClassReference: ClassSettings, ClassValidation: ClassSettings,
-	"UnicodeError": "ValueError", "UnicodeDecodeError": "UnicodeError", "UnicodeEncodeError": "UnicodeError",
-	"JSONDecodeError": "ValueError", "KeyError": "LookupError", "IndexError": "LookupError",
+// Capability says whether a field can be edited here, and why not.
+type Capability struct {
+	Editable bool
+	Reason   string
+	Target   string
+	Absent   bool
+	routing  bool // routing capabilities always carry reason and target
 }
 
-// pyClassOf is type(err).__name__ ("" for Go-only errors such as pending).
-func pyClassOf(err error) string {
-	if IsPending(err) {
-		return ""
+func (c Capability) MarshalJSON() ([]byte, error) {
+	out := map[string]any{"editable": c.Editable}
+	if c.routing || c.Reason != "" {
+		out["reason"] = c.Reason
 	}
-	var e *Error
-	if errors.As(err, &e) {
-		return e.Class
+	if c.routing || c.Target != "" {
+		out["target"] = c.Target
 	}
-	if class := convert.PyErrorClass(err); class != "" {
-		return class
+	if c.Absent {
+		out["absent"] = true
 	}
-	var p interface{ PythonClass() string }
-	if errors.As(err, &p) {
-		return p.PythonClass()
-	}
-	return ""
+	return json.Marshal(out)
 }
 
-// pyIsInstance is isinstance(err, classes).
-func pyIsInstance(err error, classes ...string) bool {
-	for class := pyClassOf(err); class != ""; class = pyBases[class] {
-		for _, want := range classes {
-			if class == want {
+func routingCap(editable bool, reason string) Capability {
+	return Capability{Editable: editable, Reason: reason, Target: "sequence_main", routing: true}
+}
+
+// refersTo is _references: a string anywhere in value mentions tag.
+func refersTo(value *Node, tag string) bool {
+	switch {
+	case isStr(value):
+		return mentions(value.Value, tag)
+	case isMap(value):
+		for i := 1; i < len(value.Content); i += 2 {
+			if refersTo(value.Content[i], tag) {
+				return true
+			}
+		}
+	case isSeq(value):
+		for _, item := range value.Content {
+			if refersTo(item, tag) {
 				return true
 			}
 		}
@@ -80,165 +84,67 @@ func pyIsInstance(err error, classes ...string) bool {
 	return false
 }
 
-// tryExcept runs fn; a raised error of one of classes is returned, any other
-// raise continues.
-func tryExcept(fn func(), classes ...string) (caught error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if p, ok := r.(raised); ok && pyIsInstance(p.err, classes...) {
-				caught = p.err
-				return
-			}
-			panic(r)
+// positions are the indexes of the values that refer to tag.
+func positions(values []*Node, tag string) []int {
+	var out []int
+	for i, v := range values {
+		if refersTo(v, tag) {
+			out = append(out, i)
 		}
-	}()
-	fn()
-	return nil
-}
-
-// configOf is the config dict (AttributeError for anything else, where
-// Python's first config.get would fail).
-func configOf(config any) *jsonx.Object {
-	obj, ok := config.(*jsonx.Object)
-	if !ok || obj == nil {
-		raise(attributeError(config, "get"))
 	}
-	return obj
+	return out
 }
 
-// setPluginsInPlace is document['plugins'][:] = items: every other holder
-// of the old list (YAML aliases) sees the new contents too.
-func setPluginsInPlace(document *jsonx.Object, old, items []any) {
-	document.Set("plugins", items)
-	if len(old) > 0 {
-		relinkList(document, old, items, map[unsafe.Pointer]bool{})
-	}
-}
-
-// capFor is _cap(editable, reason).
-func capFor(editable bool, reason string) *jsonx.Object {
-	return jsonx.Obj("editable", editable, "reason", reason, "target", "sequence_main")
-}
-
-func capEditable(caps *jsonx.Object, field string) bool {
-	return caps.GetObject(field).Value("editable") == true
-}
-
-func capReason(caps *jsonx.Object, field string) string {
-	return str(caps.GetObject(field).Value("reason"))
-}
-
-// routingPlugins is _plugins(document): tag -> plugin, empty when any plugin
-// is not an object with a unique string tag.
-func routingPlugins(document any) *jsonx.Object {
-	result := jsonx.NewObject()
-	list, ok := get(document, "plugins", nil).([]any)
-	if !ok {
-		return result
-	}
-	for _, element := range list {
-		plugin, isObj := element.(*jsonx.Object)
-		if !isObj || plugin == nil {
-			return jsonx.NewObject()
+func withoutPlugins(document *Node) *Node {
+	top := M()
+	pairs(document, func(key string, value *Node) bool {
+		if key != "plugins" {
+			set(top, key, value)
 		}
-		tag, isText := plugin.Value("tag").(string)
-		if !isText || result.Has(tag) {
-			return jsonx.NewObject()
-		}
-		result.Set(tag, plugin)
-	}
-	return result
+		return true
+	})
+	return top
 }
 
-func pluginAt(plugins *jsonx.Object, tag string) *jsonx.Object {
-	plugin, _ := plugins.Value(tag).(*jsonx.Object)
-	return plugin
-}
-
-// routingMatches is _matches(entry).
-func routingMatches(entry any) any {
-	value := get(entry, "matches", nil)
-	if text, ok := value.(string); ok {
-		return []any{text}
+func entryMatches(entry *Node) *Node {
+	value := get(entry, "matches")
+	if isStr(value) {
+		return L(value)
 	}
 	return value
 }
 
-// singleMatch is _single_match(entry) (ok false = None).
-func singleMatch(entry any) (string, bool) {
-	values, ok := routingMatches(entry).([]any)
-	if !ok || len(values) != 1 {
-		return "", false
+func singleMatch(entry *Node) (string, bool) {
+	values := entryMatches(entry)
+	if isSeq(values) && len(values.Content) == 1 && isStr(values.Content[0]) {
+		return values.Content[0].Value, true
 	}
-	text, ok := values[0].(string)
-	return text, ok
+	return "", false
 }
 
-func singleMatchIs(entry any, want string) bool {
-	match, ok := singleMatch(entry)
-	return ok && match == want
-}
+var qtypeMatch = regexp.MustCompile(`^qtype(?:\s+[0-9]+)+$`)
 
-// qtypeMatch is re.fullmatch(r'qtype(?:\s+\d+)+', value).
-func qtypeMatch(value string) bool {
-	if !strings.HasPrefix(value, "qtype") {
-		return false
-	}
-	runes := []rune(value[len("qtype"):])
-	if len(runes) == 0 {
-		return false
-	}
-	i := 0
-	for i < len(runes) {
-		spaces := 0
-		for i < len(runes) && pystr.IsSpace(runes[i]) {
-			i++
-			spaces++
-		}
-		digits := 0
-		for i < len(runes) && isDecimalRune(runes[i]) {
-			i++
-			digits++
-		}
-		if spaces == 0 || digits == 0 {
-			return false
-		}
-	}
-	return true
-}
-
-// PrefixEnd is _prefix_end(args): the end of the recognized built-ins at
-// the head of sequence_main, including imported deployment probe rules.
-// The device policy (C26) uses it too.
-func PrefixEnd(args []any) (end int, err error) {
-	defer catch(&err)
-	return prefixEnd(args), nil
-}
-
-func prefixEnd(args []any) int {
+// prefixEnd skips the recognized built-ins at the head of sequence_main.
+func prefixEnd(args []*Node) int {
 	index := 0
 	for index < len(args) {
-		entry := args[index]
-		action := get(entry, "exec", nil)
-		match, matched := singleMatch(entry)
-		actionText, actionIsText := action.(string)
+		item := args[index]
+		action := get(item, "exec")
+		match, single := singleMatch(item)
 		switch {
-		case jsonx.Equal(entry, watchdogRule):
+		case equal(item, WatchdogRule()):
 			index++
-		case !truthy(get(entry, "matches", nil)) && (strIn(action, "prefer_ipv4", "$query_recorder") ||
-			actionIsText && strings.HasPrefix(actionText, "metrics_collector ")):
+		case !truthy(get(item, "matches")) && (isOneOf(action, "prefer_ipv4", "$query_recorder") || strings.HasPrefix(str(action), "metrics_collector ")):
 			index++
-		case strIn(action, BlockQtypesExecs...) && matched && qtypeMatch(match):
+		case isOneOf(action, blockQtypesExecs...) && single && qtypeMatch.MatchString(match):
 			index++
-		case action == "$custom_hosts" && !truthy(get(entry, "matches", nil)) && index+1 < len(args) &&
-			get(args[index+1], "exec", nil) == "accept" && singleMatchIs(args[index+1], "has_resp"):
+		case equal(action, S("$custom_hosts")) && !truthy(get(item, "matches")) && index+1 < len(args) &&
+			equal(get(args[index+1], "exec"), S("accept")) && func() bool { m, ok := singleMatch(args[index+1]); return ok && m == "has_resp" }():
 			index += 2
-		case action == "goto adguard_reject" && matched && match == "question $adguard_rules":
+		case equal(action, S("goto adguard_reject")) && single && match == "question $adguard_rules":
 			index++
-		case jsonx.Equal(entry, jsonx.Obj("exec", "jump cf_device_policy")):
-			// Device policy owns this hook; routing edits keep it ahead of
-			// domain rules and never expose it as a user custom match.
-			index++
+		case equal(item, policyHook):
+			index++ // device policy keeps its hook ahead of the domain rules
 		default:
 			return index
 		}
@@ -246,666 +152,423 @@ func prefixEnd(args []any) int {
 	return index
 }
 
-// atomKey is the (part, key, value) tuple of _atom.
-type atomKey struct{ part, key, value string }
+// PrefixEnd is the index after the built-in head of sequence_main entries.
+func PrefixEnd(args *Node) int { return prefixEnd(items(args)) }
 
-// atomOf is _atom(part, key, value) (ok false = None).
-func atomOf(part, key string, value any) (atomKey, bool) {
-	text, ok := value.(string)
-	if !ok {
-		return atomKey{}, false
+// ---- rule catalog ----
+
+type ruleRecord struct {
+	suffix string
+	parts  map[string]bool
+	shapes map[string]bool
+	item   *Node
+}
+
+type ruleCatalog struct {
+	order   []string
+	records map[string]*ruleRecord
+	atoms   map[string]map[string]bool
+}
+
+func atomKey(part, key string, value *Node) (string, bool) {
+	if !isStr(value) {
+		return "", false
 	}
+	text := value.Value
 	if key == "files" {
 		text = strings.TrimPrefix(text, "./")
 	}
-	return atomKey{part, key, text}, true
-}
-
-type catalogRecord struct {
-	suffix string
-	parts  map[string]bool
-	shapes map[string]bool // frozensets as sorted, comma-joined parts
-	item   *jsonx.Object
-}
-
-// catalogData is the result of _catalog(config): records in profile order
-// and atom -> owning rule ids.
-type catalogData struct {
-	order   []string
-	records map[string]*catalogRecord
-	atoms   map[atomKey]map[string]bool
-}
-
-func (c *catalogData) has(identity string) bool {
-	_, ok := c.records[identity]
-	return ok
+	return part + "\x00" + key + "\x00" + text, true
 }
 
 func shapeKey(parts map[string]bool) string {
-	keys := make([]string, 0, len(parts))
-	for part := range parts {
-		keys = append(keys, part)
+	var list []string
+	for p := range parts {
+		list = append(list, p)
 	}
-	sort.Strings(keys)
-	return strings.Join(keys, ",")
+	sort.Strings(list)
+	return strings.Join(list, ",")
 }
 
-func onlyElement(set map[string]bool) string {
-	for key := range set {
-		return key
+func selectorSettings() *Node {
+	s := M()
+	for _, key := range Selectors {
+		set(s, key, L())
+	}
+	return s
+}
+
+// catalog is each rule's exact inline expression or generated resource path.
+func (p *Profile) catalog() *ruleCatalog {
+	c := &ruleCatalog{records: map[string]*ruleRecord{}, atoms: map[string]map[string]bool{}}
+	list := p.activeItems()
+	same := map[string][]*Node{}
+	for _, item := range list {
+		if id := get(item, "id"); isStr(id) {
+			key := id.Value + "\x00" + suffixOf(item)
+			same[key] = append(same[key], item)
+		}
+	}
+	for _, item := range list {
+		id := get(item, "id")
+		if !isStr(id) || c.records[id.Value] != nil {
+			continue
+		}
+		suffix := suffixOf(item)
+		settings := selectorSettings()
+		set(settings, "aggregate_rules", B(false))
+		set(settings, "direct_"+suffix, L(id.Value))
+		groups, err := p.routingGroups(settings, legacyAll, same[id.Value+"\x00"+suffix])
+		if err != nil {
+			continue
+		}
+		parts := map[string]bool{}
+		for _, part := range []string{"domain", "ip"} {
+			for _, g := range *groups.part(part) {
+				pairs(g.Args, func(key string, values *Node) bool {
+					for _, value := range items(values) {
+						if atom, ok := atomKey(part, key, value); ok {
+							if c.atoms[atom] == nil {
+								c.atoms[atom] = map[string]bool{}
+							}
+							c.atoms[atom][id.Value] = true
+							parts[part] = true
+						}
+					}
+					return true
+				})
+			}
+		}
+		current := map[string]bool{}
+		if suffix == "rulesets" {
+			for _, part := range managedRulesetParts(item) {
+				current[part] = true
+			}
+		} else {
+			current["domain"] = parts["domain"]
+			if !parts["domain"] {
+				delete(current, "domain")
+			}
+		}
+		aware := map[string]bool{"domain": parts["domain"], "ip": parts["ip"] && hasIPPart(item, p)}
+		for k, v := range aware {
+			if !v {
+				delete(aware, k)
+			}
+		}
+		c.order = append(c.order, id.Value)
+		c.records[id.Value] = &ruleRecord{suffix, parts,
+			map[string]bool{shapeKey(parts): true, shapeKey(aware): true, shapeKey(current): true}, item}
+	}
+	return c
+}
+
+func (c *ruleCatalog) owners(part, key string, value *Node) map[string]bool {
+	atom, ok := atomKey(part, key, value)
+	if !ok {
+		return nil
+	}
+	return c.atoms[atom]
+}
+
+func only(set map[string]bool) string {
+	for k := range set {
+		return k
 	}
 	return ""
 }
 
-// itemSuffix is _suffix(item).
-func itemSuffix(entry any) string {
-	if get(entry, "itemType", nil) == "ruleset" {
-		return "rulesets"
-	}
-	return "rules"
-}
+// ---- recognition ----
 
-// buildCatalog is _catalog(config): each rule's exact inline expression or
-// generated resource path.
-func buildCatalog(config *jsonx.Object) *catalogData {
-	result := &catalogData{records: map[string]*catalogRecord{}, atoms: map[atomKey]map[string]bool{}}
-	items := itemsOf(config)
-	type sameKey struct{ identity, suffix string }
-	same := map[sameKey][]any{}
-	for _, entry := range items {
-		if identity, ok := get(entry, "id", nil).(string); ok {
-			key := sameKey{identity, itemSuffix(entry)}
-			same[key] = append(same[key], entry)
-		}
-	}
-	for _, entry := range items {
-		identity, ok := get(entry, "id", nil).(string)
-		if !ok || result.has(identity) {
-			continue
-		}
-		suffix := itemSuffix(entry)
-		settings := jsonx.NewObject()
-		for _, key := range Selectors {
-			settings.Set(key, []any{})
-		}
-		settings.Set("aggregate_rules", false)
-		settings.Set("direct_"+suffix, []any{identity})
-		var groups *jsonx.Object
-		// Legacy shape: documents written before content-aware IP parts still
-		// reference the IP file of a classical set without IP lines.
-		if tryExcept(func() {
-			groups = routingGroups(config, settings, LegacyAll, same[sameKey{identity, suffix}], true)
-		}, ClassSettings, "KeyError", "TypeError", "ValueError") != nil {
-			continue
-		}
-		parts := map[string]bool{}
-		for _, part := range groups.Keys() {
-			for _, group := range groups.GetList(part) {
-				args := group.(*jsonx.Object).GetObject("args")
-				for key, values := range args.All() {
-					for _, value := range values.([]any) {
-						if atom, ok := atomOf(part, key, value); ok {
-							if result.atoms[atom] == nil {
-								result.atoms[atom] = map[string]bool{}
-							}
-							result.atoms[atom][identity] = true
-							parts[part] = true
-						}
-					}
-				}
-			}
-		}
-		current := map[string]bool{}
-		if get(entry, "itemType", nil) == "ruleset" {
-			for _, part := range rulesetPartsOf(entry) {
-				current[part] = true
-			}
-		} else {
-			for part := range parts {
-				if part != "ip" {
-					current[part] = true
-				}
-			}
-		}
-		contentAware := map[string]bool{}
-		withIP := hasIPPart(entry, config)
-		for part := range parts {
-			if withIP || part != "ip" {
-				contentAware[part] = true
-			}
-		}
-		object, _ := entry.(*jsonx.Object)
-		result.order = append(result.order, identity)
-		result.records[identity] = &catalogRecord{suffix: suffix, parts: parts,
-			shapes: map[string]bool{shapeKey(parts): true, shapeKey(contentAware): true, shapeKey(current): true},
-			item:   object}
-	}
-	return result
-}
-
-// ipSuffix is _ip_suffix(entries, default_forward, probe): the IP routing
-// clauses before the final fallback.
-func ipSuffix(entries []any, defaultForward any, probe bool) []any {
-	if len(entries) == 0 {
-		return []any{}
-	}
-	if !probe {
-		return append([]any{}, entries...)
-	}
-	out := append([]any{jsonx.Obj("exec", "jump local_probe")}, entries...)
-	if defaultForward == "forward_local" {
-		return append(out, jsonx.Obj("matches", []any{"has_resp"}, "exec", "goto default_direct_ip"))
-	}
-	return append(out, jsonx.Obj("exec", "drop_resp"))
-}
-
-// knownRules is _known(config): every rule of the space by id, disabled
-// ones included.
-func knownRules(config *jsonx.Object) *jsonx.Object {
-	result := jsonx.NewObject()
-	source := config.Value("rule_configs")
-	var list []any
-	if truthy(source) {
-		list = pyIter(source)
-	} else {
-		list = itemsOf(config)
-	}
-	for _, element := range list {
-		entry, ok := element.(*jsonx.Object)
-		if !ok || entry == nil {
-			continue
-		}
-		if identity, ok := entry.Value("id").(string); ok {
-			result.SetDefault(identity, entry)
-		}
-	}
-	return result
-}
-
-// storedFollow is _stored_follow(settings, config).
-func storedFollow(settings *jsonx.Object, config *jsonx.Object) []any {
-	follow := settings.Value("rule_dns_follow")
-	known := knownRules(config)
-	list, ok := follow.([]any)
-	if !ok {
-		return []any{}
-	}
-	out := []any{}
-	for _, identity := range dictFromKeys(list) {
-		if text, isText := identity.(string); isText && known.Has(text) {
-			out = append(out, text)
-		}
-	}
-	return out
-}
-
-// dictFromKeys is list(dict.fromkeys(values)) (TypeError for unhashable
-// values; 1, 1.0 and True are one key).
-func dictFromKeys(values []any) []any {
-	out := []any{}
-	for _, value := range values {
-		hashable(value)
-		if !listContains(out, value) {
-			out = append(out, value)
-		}
-	}
-	return out
-}
-
-// routeOf is _route_of(values, identity) (nil = None).
-func routeOf(values *jsonx.Object, identity string) any {
-	if action, ok := values.GetObject("rule_actions").Get(identity); ok && action != nil {
-		return routeKey(action)
-	}
-	for _, route := range ListRoutes {
-		if pyContains(values.Value(route+"_rules"), identity) || pyContains(values.Value(route+"_rulesets"), identity) {
-			return route
-		}
-	}
-	return nil
-}
-
-// recognizedGroup is one rule group of _recognize.
-type recognizedGroup struct {
+type recGroup struct {
 	index    int
 	tag      string
-	route    any // string or invalidRoute
-	args     any
-	entry    *jsonx.Object
-	provider *jsonx.Object
-	action   *jsonx.Object // nil: absent or None
+	route    string
+	args     *Node
+	entry    *Node
+	provider *Node
+	action   *Node
 }
 
-// routingState is the state dict of _recognize / _analyze. full is false
-// for the early returns that only carry values and capabilities.
+type recGroups struct{ Domain, IP []*recGroup }
+
+func (g *recGroups) part(name string) *[]*recGroup {
+	if name == "ip" {
+		return &g.IP
+	}
+	return &g.Domain
+}
+
+func (g *recGroups) all() []*recGroup { return append(append([]*recGroup{}, g.Domain...), g.IP...) }
+
 type routingState struct {
-	values, caps  *jsonx.Object
+	values        *Node
+	caps          map[string]Capability
 	full          bool
-	plugins       *jsonx.Object
-	main          *jsonx.Object
-	groups        map[string][]*recognizedGroup
-	prefix        []any
-	dynamic       []any
-	custom        []any
-	final         *jsonx.Object
-	records       *catalogData
+	plugins       map[string]*Node
+	main          *Node
+	groups        recGroups
+	prefix        []*Node
+	dynamic       []*Node
+	custom        []*Node
+	final         *Node
+	records       *ruleCatalog
 	claimed       bool
 	customIndices []int
 	actualMainTag string
 }
 
-func (s *routingState) allGroups() []*recognizedGroup {
-	return append(append([]*recognizedGroup{}, s.groups["domain"]...), s.groups["ip"]...)
-}
-
-// ownedGroup is _owned_group(mentions, entry, tag): a generated provider
-// that only this one sequence_main entry uses.
-func ownedGroup(mentionsOf func() [3]*mentions, entry *jsonx.Object, tag string) bool {
-	if !isGroupTag(tag) || !exactKeys(entry, "matches", "exec") {
-		return false
+// knownRules is every rule of the space by id (disabled ones included).
+func (p *Profile) knownRules() (map[string]*Node, []string) {
+	list := items(p.get("rule_configs"))
+	if !truthy(p.get("rule_configs")) {
+		list = p.activeItems()
 	}
-	m := mentionsOf()
-	args, top, plugins := m[0], m[1], m[2]
-	if len(args.positions(tag)) != 1 || len(top.positions(tag)) > 0 {
-		return false
-	}
-	for _, position := range plugins.positions(tag) {
-		if !strIn(plugins.values[position].(*jsonx.Object).Value("tag"), "sequence_main", "rules_reload", tag) {
-			return false
+	known := map[string]*Node{}
+	var order []string
+	for _, item := range list {
+		if id := get(item, "id"); isMap(item) && isStr(id) && known[id.Value] == nil {
+			known[id.Value] = item
+			order = append(order, id.Value)
 		}
 	}
-	return true
+	return known, order
 }
 
-func partArgKey(part string) string {
-	if part == "domain" {
-		return "exps"
+func storedFollow(settings *Node, p *Profile) *Node {
+	follow := get(settings, "rule_dns_follow")
+	known, _ := p.knownRules()
+	out := L()
+	if !isSeq(follow) {
+		return out
 	}
-	return "ips"
-}
-
-// onlyKeys is not (set(obj) - set(allowed)).
-func onlyKeys(obj *jsonx.Object, allowed ...string) bool {
-	for _, key := range obj.Keys() {
-		if !strIn(key, allowed...) {
-			return false
-		}
-	}
-	return true
-}
-
-// uniqueAtoms is _unique_atoms(part, provider, atoms): every provider value
-// belongs to exactly one catalog rule.
-func uniqueAtoms(part string, provider *jsonx.Object, atoms map[atomKey]map[string]bool) bool {
-	args, ok := provider.Value("args").(*jsonx.Object)
-	if !ok || args == nil || args.Len() == 0 || !onlyKeys(args, "files", partArgKey(part)) {
-		return false
-	}
-	for key, values := range args.All() {
-		list, ok := values.([]any)
-		if !ok || len(list) == 0 {
-			return false
-		}
-		for _, value := range list {
-			atom, ok := atomOf(part, key, value)
-			if !ok || len(atoms[atom]) != 1 {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func withoutKey(document *jsonx.Object, skip string) *jsonx.Object {
-	out := jsonx.NewObject()
-	for key, value := range document.All() {
-		if key != skip {
-			out.Set(key, value)
+	for _, id := range unique(seqOf(filter(follow.Content, isStr))).Content {
+		if known[id.Value] != nil {
+			out.Content = append(out.Content, id)
 		}
 	}
 	return out
 }
 
-// helperExec is _HELPER_EXEC.match(value).
-func helperExec(value string) bool {
-	return strings.HasPrefix(value, "$cf_dns_") || strings.HasPrefix(value, "goto cf_dns_") ||
-		strings.HasPrefix(value, "jump cf_dns_")
+func ipSuffix(entries []*Node, defaultForward string, probe bool) []*Node {
+	if len(entries) == 0 {
+		return nil
+	}
+	if !probe {
+		return append([]*Node{}, entries...)
+	}
+	last := M("exec", "drop_resp")
+	if defaultForward == "forward_local" {
+		last = M("matches", L("has_resp"), "exec", "goto default_direct_ip")
+	}
+	return append(append([]*Node{M("exec", "jump local_probe")}, entries...), last)
 }
 
-// helperTag is _HELPER_TAG.fullmatch(tag): matched, and group 1 (the key,
-// "" for the blackhole).
-func helperTag(tag string) (bool, string) {
-	if tag == BlackholeTag {
-		return true, ""
+// ownedGroup: a generated provider only this sequence_main entry uses.
+func ownedGroup(document *Node, args []*Node, plugins []*Node, entry *Node, tag string) bool {
+	if !groupTagRE.MatchString(tag) || len(entry.Content) != 4 || !has(entry, "matches") || !has(entry, "exec") {
+		return false
 	}
-	for _, prefix := range []string{UpstreamPrefix, ForwardPrefix, CachePrefix} {
-		if strings.HasPrefix(tag, prefix) && ruleKey.MatchString(tag[len(prefix):]) {
-			return true, tag[len(prefix):]
+	if len(positions(args, tag)) != 1 || refersTo(withoutPlugins(document), tag) {
+		return false
+	}
+	for _, i := range positions(plugins, tag) {
+		if !isOneOf(get(plugins[i], "tag"), "sequence_main", "rules_reload", tag) {
+			return false
 		}
 	}
-	return false, ""
+	return true
 }
 
-func isHelperTag(tag any) bool {
-	ok, _ := helperTag(str(tag))
+func uniqueAtoms(part string, provider *Node, c *ruleCatalog) bool {
+	args := get(provider, "args")
+	allowed := map[string]string{"domain": "exps", "ip": "ips"}[part]
+	if !isMap(args) || len(args.Content) == 0 {
+		return false
+	}
+	ok := true
+	pairs(args, func(key string, values *Node) bool {
+		if key != "files" && key != allowed || !isSeq(values) || len(values.Content) == 0 {
+			ok = false
+			return false
+		}
+		for _, value := range values.Content {
+			if len(c.owners(part, key, value)) != 1 {
+				ok = false
+				return false
+			}
+		}
+		return true
+	})
 	return ok
 }
 
-// analyzeRouting is _analyze(document, settings, config): the recognized
-// routing state. Upgrading never locks a document that was editable before
-// rule DNS actions existed: when claiming action entries breaks recognition
-// and no helper is in use, those entries are read as custom matches.
-func analyzeRouting(document, settings *jsonx.Object, config *jsonx.Object) *routingState {
-	var built *catalogData
-	catalog := func() *catalogData {
-		if built == nil {
-			built = buildCatalog(config)
-		}
-		return built
+var providerMatch = regexp.MustCompile(`^(qname|resp_ip) \$(\S+)$`)
+
+func newRoutingValues(settings *Node, p *Profile) *Node {
+	values := selectorSettings()
+	for _, kv := range [][2]any{{"aggregate_rules", nil}, {"default_forward", nil}, {"custom_matches", L()},
+		{"custom_match_position", nil}, {"rule_actions", M()}, {"rule_dns_follow", storedFollow(settings, p)}} {
+		set(values, kv[0].(string), val(kv[1]))
 	}
-	state := recognizeRouting(document, settings, config, true, catalog)
-	if state.full && state.claimed {
-		helper := false
-		for _, entry := range asList(state.main.Value("args")) {
-			if helperExec(entry.(*jsonx.Object).Value("exec").(string)) {
-				helper = true
-				break
-			}
-		}
-		if !helper {
-			legacy := recognizeRouting(document, settings, config, false, catalog)
-			if !capEditable(state.caps, "direct_rules") || (!capEditable(state.caps, "custom_matches") &&
-				capEditable(legacy.caps, "custom_matches")) {
-				return legacy
-			}
-		}
-	}
-	return state
+	return values
 }
 
-// observedLegacyGroups is _observed_legacy_groups(config, values, assigned,
-// atoms, aggregate): old per-rule parts validated against the current
-// catalog.
-func observedLegacyGroups(config, values *jsonx.Object, assigned map[string]map[string]any,
-	atoms map[atomKey]map[string]bool, aggregate bool) map[string][]*jsonx.Object {
-	settings := values.Clone()
-	settings.Set("aggregate_rules", false)
-	raw := routingGroups(config, settings, LegacyAll, nil, false)
-	expected := map[string][]*jsonx.Object{"domain": {}, "ip": {}}
-	for _, part := range raw.Keys() {
-		for _, element := range raw.GetList(part) {
-			group := element.(*jsonx.Object)
-			owners := map[string]bool{}
-			for key, entries := range group.GetObject("args").All() {
-				for _, value := range entries.([]any) {
-					if atom, ok := atomOf(part, key, value); ok {
-						for identity := range atoms[atom] {
-							owners[identity] = true
-						}
-					}
-				}
-			}
-			if len(owners) != 1 {
-				continue
-			}
-			if _, ok := assigned[onlyElement(owners)][part]; !ok {
-				continue
-			}
-			target := expected[part]
-			if aggregate && len(target) > 0 && jsonx.Equal(target[len(target)-1].Value("route"), group.Value("route")) {
-				last := target[len(target)-1].GetObject("args")
-				for key, entries := range group.GetObject("args").All() {
-					existing, _ := last.SetDefault(key, []any{}).([]any)
-					last.Set(key, appendCopy(existing, entries.([]any)...))
-				}
-			} else {
-				expected[part] = append(target, copyValue(group).(*jsonx.Object))
-			}
-		}
+func (p *Profile) recognize(document, settings *Node, claim bool, catalog func() *ruleCatalog) *routingState {
+	state := &routingState{values: newRoutingValues(settings, p), caps: map[string]Capability{}}
+	for _, key := range RoutingFields {
+		state.caps[key] = routingCap(false, routingReason)
 	}
-	return expected
-}
-
-// parseGroupMatch is re.fullmatch(r'(qname|resp_ip) \$([^\s]+)', match or
-// ”): the part and the provider tag.
-func parseGroupMatch(match string, ok bool) (string, string, bool) {
-	if !ok {
-		return "", "", false
-	}
-	var part, rest string
-	switch {
-	case strings.HasPrefix(match, "qname $"):
-		part, rest = "domain", match[len("qname $"):]
-	case strings.HasPrefix(match, "resp_ip $"):
-		part, rest = "ip", match[len("resp_ip $"):]
-	default:
-		return "", "", false
-	}
-	if rest == "" || strings.IndexFunc(rest, pystr.IsSpace) >= 0 {
-		return "", "", false
-	}
-	return part, rest, true
-}
-
-func listOrEmpty(list []any) []any {
-	if list == nil {
-		return []any{}
-	}
-	return list
-}
-
-// recognizeRouting is _recognize(document, settings, config, claim,
-// catalog).
-func recognizeRouting(document, settings *jsonx.Object, config *jsonx.Object, claim bool,
-	catalog func() *catalogData) *routingState {
-	values := jsonx.NewObject()
-	for _, key := range Selectors {
-		values.Set(key, []any{})
-	}
-	values.Set("aggregate_rules", nil)
-	values.Set("default_forward", nil)
-	values.Set("custom_matches", []any{})
-	values.Set("custom_match_position", nil)
-	values.Set("rule_actions", jsonx.NewObject())
-	values.Set("rule_dns_follow", storedFollow(settings, config))
-	caps := jsonx.NewObject()
-	for _, key := range routingFieldOrder {
-		caps.Set(key, capFor(false, routingReason))
-	}
-	state := &routingState{values: values, caps: caps}
-	plugins := routingPlugins(document)
-	main := pluginAt(plugins, "sequence_main")
-	if main == nil {
-		main = jsonx.NewObject()
-	}
-	args, isList := main.Value("args").([]any)
-	if main.Value("type") != "sequence" || !isList || len(args) == 0 {
+	values, caps := state.values, state.caps
+	plugins := pluginMap(document)
+	main := plugins["sequence_main"]
+	args := get(main, "args")
+	if !equal(get(main, "type"), S("sequence")) || !isSeq(args) || len(args.Content) == 0 {
 		return state
 	}
-	for _, element := range args {
-		entry, ok := element.(*jsonx.Object)
-		if !ok || entry == nil {
-			return state
-		}
-		if _, ok := entry.Value("exec").(string); !ok {
+	for _, item := range args.Content {
+		if !isMap(item) || !isStr(get(item, "exec")) {
 			return state
 		}
 	}
-	final := args[len(args)-1].(*jsonx.Object)
-	finalExec := final.Value("exec").(string)
-	if _, target := routingTargets[finalExec]; !truthy(final.Value("matches")) && target {
-		if finalExec == "goto china_dns" {
-			values.Set("default_forward", "forward_local")
-		} else {
-			values.Set("default_forward", "forward_remote")
-		}
-		caps.Set("default_forward", capFor(true, ""))
-	} else {
+	entries := args.Content
+	final := entries[len(entries)-1]
+	if truthy(get(final, "matches")) || domainTargets[get(final, "exec").Value] == "" {
 		return state
 	}
-	var records *catalogData
-	if catalog != nil {
-		records = catalog()
-	} else {
-		records = buildCatalog(config)
+	defaultForward := "forward_remote"
+	if get(final, "exec").Value == "goto china_dns" {
+		defaultForward = "forward_local"
 	}
-	atoms := records.atoms
-
-	var built *[3]*mentions
-	mentionsOf := func() [3]*mentions {
-		if built == nil {
-			m := [3]*mentions{newMentions(args), newMentions([]any{withoutKey(document, "plugins")}),
-				newMentions(plugins.Values())}
-			built = &m
-		}
-		return *built
+	set(values, "default_forward", S(defaultForward))
+	caps["default_forward"] = routingCap(true, "")
+	records := catalog()
+	var pluginList []*Node
+	for _, item := range items(get(document, "plugins")) {
+		pluginList = append(pluginList, item)
 	}
-	groups := map[string][]*recognizedGroup{"domain": {}, "ip": {}}
-	type indexed struct {
-		index int
-		entry *jsonx.Object
+	if len(plugins) == 0 {
+		pluginList = nil
 	}
-	var dynamic []indexed
-	middleEnd := len(args) - 1
+	var groups recGroups
+	var dynamic []*recGroup
+	middleEnd := len(entries) - 1
 	recognized := true
 	invalid, claimed := "", false
-	for index, element := range args[:len(args)-1] {
-		entry := element.(*jsonx.Object)
-		exec := entry.Value("exec").(string)
-		match, hasMatch := singleMatch(entry)
-		if _, target := routingTargets[exec]; hasMatch && match == "qname $dynamic_domains" && target {
-			dynamic = append(dynamic, indexed{index, entry})
+	for index, entry := range entries[:len(entries)-1] {
+		match, _ := singleMatch(entry)
+		exec := get(entry, "exec").Value
+		if match == "qname $dynamic_domains" && domainTargets[exec] != "" {
+			dynamic = append(dynamic, &recGroup{index: index, entry: entry})
 			middleEnd = min(middleEnd, index)
 			continue
 		}
-		if part, tag, ok := parseGroupMatch(match, hasMatch); ok {
-			provider := pluginAt(plugins, tag)
-			if provider == nil {
-				provider = jsonx.NewObject()
+		if parsed := providerMatch.FindStringSubmatch(match); parsed != nil {
+			part := map[string]string{"qname": "domain", "resp_ip": "ip"}[parsed[1]]
+			provider := plugins[parsed[2]]
+			route := ""
+			if equal(get(provider, "type"), S(map[string]string{"domain": "domain_set", "ip": "ip_set"}[part])) {
+				route = parseExec(get(entry, "exec"), part, plugins)
 			}
-			var route any
-			kind := "ip_set"
-			if part == "domain" {
-				kind = "domain_set"
-			}
-			if provider.Value("type") == kind {
-				route = parseExec(exec, part, plugins)
-			}
-			if route != nil && !strIn(route, ListRoutes...) {
-				// A user's own match (or one reusing a generated provider) stays a custom match.
-				_, isInvalid := route.(invalidRoute)
-				if claim && ownedGroup(mentionsOf, entry, tag) && (isInvalid || uniqueAtoms(part, provider, atoms)) {
+			if route != "" && !isListRoute(route) {
+				if claim && ownedGroup(document, entries, pluginList, entry, parsed[2]) && (isInvalid(route) || uniqueAtoms(part, provider, records)) {
 					claimed = true
 				} else {
-					route = nil
+					route = ""
 				}
 			}
-			if route != nil {
-				group := &recognizedGroup{index: index, tag: tag, route: route, args: provider.Value("args"),
-					entry: entry, provider: provider}
-				if bad, isInvalid := route.(invalidRoute); isInvalid {
-					if invalid == "" {
-						invalid = bad.reason
-					}
-				} else if strings.HasPrefix(route.(string), "upstream:") {
-					group.action = pinnedAction(exec[len("goto "+UpstreamPrefix):], plugins)
+			if route != "" {
+				group := &recGroup{index: index, tag: parsed[2], route: route, args: get(provider, "args"), entry: entry, provider: provider}
+				if provider == nil {
+					group.provider = M()
 				}
-				groups[part] = append(groups[part], group)
+				if isInvalid(route) {
+					if invalid == "" {
+						invalid = route[1:]
+					}
+				} else if strings.HasPrefix(route, "upstream:") {
+					group.action = pinnedAction(strings.TrimPrefix(exec, "goto "+UpstreamPrefix), plugins)
+				}
+				*groups.part(part) = append(*groups.part(part), group)
 				if part == "ip" {
 					middleEnd = min(middleEnd, index)
 				}
 				continue
 			}
 		}
-		if !truthy(entry.Value("matches")) && exec == "jump local_probe" {
+		if !truthy(get(entry, "matches")) && exec == "jump local_probe" {
 			middleEnd = min(middleEnd, index)
 		}
 	}
 	if len(dynamic) > 1 {
 		return state
 	}
-	// The generated suffix has a single probe, ordered IP routes, and one final fallback.
-	var entries, ipRoutes []any
-	for _, group := range groups["ip"] {
-		entries = append(entries, group.entry)
-		ipRoutes = append(ipRoutes, group.route)
+	var ipEntries []*Node
+	var ipRoutes []string
+	for _, g := range groups.IP {
+		ipEntries = append(ipEntries, g.entry)
+		ipRoutes = append(ipRoutes, g.route)
 	}
-	defaultForward := values.Value("default_forward")
-	candidates := [][]any{ipSuffix(entries, defaultForward, true)}
+	candidates := [][]*Node{ipSuffix(ipEntries, defaultForward, true)}
 	if !probeNeeded(ipRoutes, defaultForward) {
-		// Written without the probe; older documents still carry it.
-		candidates = append([][]any{ipSuffix(entries, defaultForward, false)}, candidates...)
+		candidates = append([][]*Node{ipSuffix(ipEntries, defaultForward, false)}, candidates...)
 	}
-	var head []any
-	if len(dynamic) > 0 {
-		head = []any{dynamic[0].entry}
+	var head []*Node
+	if len(dynamic) == 1 {
+		head = []*Node{dynamic[0].entry}
 	}
-	matched := false
+	matchedTail := false
 	for _, candidate := range candidates {
-		want := append(append(append([]any{}, head...), candidate...), final)
-		if sameValue(append([]any{}, args[middleEnd:]...), want) {
-			matched = true
-			break
-		}
+		expected := append(append(append([]*Node{}, head...), candidate...), final)
+		matchedTail = matchedTail || same(seqOf(entries[middleEnd:]), seqOf(expected))
 	}
-	if !matched {
-		caps.Set("default_forward", capFor(false, routingReason))
+	if !matchedTail {
+		caps["default_forward"] = routingCap(false, routingReason)
 		return state
 	}
-	prefixEndAt := prefixEnd(args[:middleEnd])
+	prefix := prefixEnd(entries[:middleEnd])
 	domainIndices := map[int]bool{}
-	minDomain, maxDomain := -1, -1
-	for _, group := range groups["domain"] {
-		domainIndices[group.index] = true
-		if minDomain < 0 || group.index < minDomain {
-			minDomain = group.index
-		}
-		maxDomain = max(maxDomain, group.index)
-	}
-	for index := range domainIndices {
-		if index < prefixEndAt || index >= middleEnd {
+	for _, g := range groups.Domain {
+		if g.index < prefix || g.index >= middleEnd {
 			return state
 		}
+		domainIndices[g.index] = true
 	}
 	var customIndices []int
-	var custom []any
-	for i := prefixEndAt; i < middleEnd; i++ {
+	var custom []*Node
+	for i := prefix; i < middleEnd; i++ {
 		if !domainIndices[i] {
 			customIndices = append(customIndices, i)
-			custom = append(custom, args[i])
+			custom = append(custom, entries[i])
 		}
 	}
 	customValid := true
-	for _, element := range custom {
-		entry := element.(*jsonx.Object)
-		list, ok := routingMatches(entry).([]any)
-		valid := ok && len(list) > 0
-		for _, match := range list {
-			if text, isText := match.(string); !isText || pystr.Strip(text) == "" {
-				valid = false
-			}
+	for _, entry := range custom {
+		matches := entryMatches(entry)
+		ok := isSeq(matches) && len(matches.Content) > 0 && strings.TrimSpace(get(entry, "exec").Value) != ""
+		for _, m := range items(matches) {
+			ok = ok && isStr(m) && strings.TrimSpace(m.Value) != ""
 		}
-		if !valid || pystr.Strip(entry.Value("exec").(string)) == "" {
-			customValid = false
-			break
-		}
+		customValid = customValid && ok
 	}
 	position := "tail"
 	if len(customIndices) > 0 && len(domainIndices) > 0 {
+		minDomain, maxDomain := len(entries), -1
+		for i := range domainIndices {
+			minDomain, maxDomain = min(minDomain, i), max(maxDomain, i)
+		}
 		if customIndices[len(customIndices)-1] < minDomain {
 			position = "head"
 		} else if customIndices[0] <= maxDomain {
 			customValid = false
 		}
 	}
-	values.Set("custom_matches", copyValue(listOrEmpty(custom)))
+	set(values, "custom_matches", clone(seqOf(custom)))
 	if customValid && len(custom) > 0 {
-		values.Set("custom_match_position", position)
-	} else {
-		values.Set("custom_match_position", nil)
+		set(values, "custom_match_position", S(position))
 	}
 	if customValid {
-		caps.Set("custom_matches", capFor(true, ""))
+		caps["custom_matches"] = routingCap(true, "")
 		reason := ""
 		switch {
 		case len(custom) == 0:
@@ -913,140 +576,131 @@ func recognizeRouting(document, settings *jsonx.Object, config *jsonx.Object, cl
 		case len(domainIndices) == 0:
 			reason = "当前没有域名分流规则，两种执行顺序效果相同。"
 		}
-		caps.Set("custom_match_position", capFor(len(custom) > 0, reason))
+		caps["custom_match_position"] = routingCap(len(custom) > 0, reason)
 	} else {
 		recognized = false
 	}
 	if invalid != "" {
-		// Rebuilding the chain for a custom match edit would silently drop the
-		// entry whose helper was edited by hand, so custom matches lock too.
+		// Rebuilding for a custom match edit would drop the hand-edited entry.
 		recognized = false
-		locked := capFor(false, invalid)
-		caps.Set("custom_matches", locked)
-		caps.Set("custom_match_position", locked)
+		caps["custom_matches"] = routingCap(false, invalid)
+		caps["custom_match_position"] = routingCap(false, invalid)
 	}
-	assigned := map[string]map[string]any{}
+	assigned := map[string]map[string]string{}
 	var assignedOrder []string
-	type orphan struct{ key, value string }
-	var orphans []orphan
-	actions := map[string]*jsonx.Object{}
+	var orphans [][2]string
+	actions := map[string]*Node{}
 	for _, part := range []string{"domain", "ip"} {
-		for _, group := range groups[part] {
-			route, isText := group.route.(string)
-			if !isText {
+		for _, g := range *groups.part(part) {
+			if isInvalid(g.route) {
 				continue
 			}
-			if !strIn(route, ListRoutes...) {
-				if group.action != nil {
-					actions[route] = group.action
-				} else {
-					actions[route] = jsonx.Obj("action", route)
+			if !isListRoute(g.route) {
+				action := g.action
+				if action == nil {
+					action = M("action", g.route)
 				}
+				actions[g.route] = action
 			}
-			argsValue, ok := group.args.(*jsonx.Object)
-			if !ok || argsValue == nil || argsValue.Len() == 0 || !onlyKeys(argsValue, "files", partArgKey(part)) ||
-				!exactKeys(group.entry, "matches", "exec") {
+			allowed := map[string]string{"domain": "exps", "ip": "ips"}[part]
+			if !isMap(g.args) || len(g.args.Content) == 0 || len(g.entry.Content) != 4 || !has(g.entry, "matches") {
 				recognized = false
 				continue
 			}
-			for key, element := range argsValue.All() {
-				list, ok := element.([]any)
-				if !ok || len(list) == 0 {
+			pairs(g.args, func(key string, list *Node) bool {
+				if key != "files" && key != allowed {
 					recognized = false
-					continue
 				}
-				for _, value := range list {
-					atom, hasAtom := atomOf(part, key, value)
-					var owners map[string]bool
-					if hasAtom {
-						owners = atoms[atom]
-					}
+				return true
+			})
+			if !recognized && len(filter(keyNodes(g.args), func(k *Node) bool { return k.Value != "files" && k.Value != allowed })) > 0 {
+				continue
+			}
+			pairs(g.args, func(key string, list *Node) bool {
+				if !isSeq(list) || len(list.Content) == 0 {
+					recognized = false
+					return true
+				}
+				for _, value := range list.Content {
+					owners := records.owners(part, key, value)
 					if len(owners) != 1 {
 						recognized = false
-						if len(owners) == 0 {
-							if !hasAtom {
-								raise(pyErr("TypeError", "'NoneType' object is not subscriptable"))
+						if len(owners) == 0 && isStr(value) {
+							text := value.Value
+							if key == "files" {
+								text = strings.TrimPrefix(text, "./")
 							}
-							orphans = append(orphans, orphan{atom.key, atom.value})
+							orphans = append(orphans, [2]string{key, text})
 						}
 						continue
 					}
-					identity := onlyElement(owners)
-					previous, seen := assigned[identity]
-					if !seen {
-						previous = map[string]any{}
+					identity := only(owners)
+					previous := assigned[identity]
+					if previous == nil {
+						previous = map[string]string{}
 						assigned[identity] = previous
 						assignedOrder = append(assignedOrder, identity)
 					}
-					if _, dup := previous[part]; dup {
+					if _, ok := previous[part]; ok {
 						recognized = false
 					}
-					previous[part] = route
+					previous[part] = g.route
 				}
-			}
+				return true
+			})
 		}
 	}
-	ruleActions := values.GetObject("rule_actions")
 	for _, identity := range assignedOrder {
-		parts := assigned[identity]
-		record := records.records[identity]
+		record, parts := records.records[identity], assigned[identity]
 		routes := map[string]bool{}
-		shape := map[string]bool{}
+		partSet := map[string]bool{}
 		for part, route := range parts {
-			routes[route.(string)] = true
-			shape[part] = true
+			routes[route] = true
+			partSet[part] = true
 		}
-		if !record.shapes[shapeKey(shape)] || len(routes) != 1 {
+		if !record.shapes[shapeKey(partSet)] || len(routes) != 1 {
 			recognized = false
 			continue
 		}
-		route := onlyElement(routes)
-		if strIn(route, ListRoutes...) {
-			key := route + "_" + record.suffix
-			values.Set(key, append(values.GetList(key), identity))
+		route := only(routes)
+		if isListRoute(route) {
+			list := get(values, route+"_"+record.suffix)
+			list.Content = append(list.Content, S(identity))
 		} else {
-			ruleActions.Set(identity, copyValue(actions[route]))
+			set(get(values, "rule_actions"), identity, clone(actions[route]))
 		}
 	}
-	// Reconstruct profile order instead of deriving it from stale selection metadata.
 	for _, key := range Selectors {
-		selected := map[string]bool{}
-		for _, identity := range values.GetList(key) {
-			selected[identity.(string)] = true
-		}
-		ordered := []any{}
+		selected := get(values, key)
+		ordered := L()
 		for _, identity := range records.order {
-			if selected[identity] {
-				ordered = append(ordered, identity)
+			if containsStr(selected, identity) {
+				ordered.Content = append(ordered.Content, S(identity))
 			}
 		}
-		values.Set(key, ordered)
+		set(values, key, ordered)
 	}
-	orderedActions := jsonx.NewObject()
+	ruleActions := get(values, "rule_actions")
+	orderedActions := M()
 	for _, identity := range records.order {
-		if action, ok := ruleActions.Get(identity); ok {
-			orderedActions.Set(identity, action)
+		if action := get(ruleActions, identity); action != nil {
+			set(orderedActions, identity, action)
 		}
 	}
-	values.Set("rule_actions", orderedActions)
+	set(values, "rule_actions", orderedActions)
 	var matches []bool
 	if recognized {
 		for _, aggregate := range []bool{true, false} {
-			expected := observedLegacyGroups(config, values, assigned, atoms, aggregate)
-			equal := true
+			expected := p.observedLegacyGroups(values, assigned, records, aggregate)
+			ok := true
 			for _, part := range []string{"domain", "ip"} {
-				got, want := []any{}, []any{}
-				for _, group := range groups[part] {
-					got = append(got, jsonx.Obj("route", group.route, "args", group.args))
-				}
-				for _, group := range expected[part] {
-					want = append(want, jsonx.Obj("route", group.Value("route"), "args", group.Value("args")))
-				}
-				if !sameValue(got, want) {
-					equal = false
+				got, want := *groups.part(part), *expected.part(part)
+				ok = ok && len(got) == len(want)
+				for i := 0; ok && i < len(got); i++ {
+					ok = got[i].route == want[i].Route && same(got[i].args, want[i].Args)
 				}
 			}
-			if equal {
+			if ok {
 				matches = append(matches, aggregate)
 			}
 		}
@@ -1054,591 +708,647 @@ func recognizeRouting(document, settings *jsonx.Object, config *jsonx.Object, cl
 	}
 	if recognized {
 		if len(matches) == 1 {
-			values.Set("aggregate_rules", matches[0])
-		} else {
-			values.Set("aggregate_rules", nil)
+			set(values, "aggregate_rules", B(matches[0]))
 		}
 		for _, key := range append(append([]string{}, Selectors...), RuleDNSFields...) {
-			caps.Set(key, capFor(true, ""))
+			caps[key] = routingCap(true, "")
 		}
 		reason := ""
 		if len(matches) == 2 {
 			reason = "当前没有相邻且同策略的规则，无需合并。"
 		}
-		caps.Set("aggregate_rules", capFor(len(matches) == 1, reason))
+		caps["aggregate_rules"] = routingCap(len(matches) == 1, reason)
 	} else {
 		reason := invalid
 		if reason == "" {
 			reason = "规则资源或顺序无法唯一对应当前规则库，请在完整参数中编辑。"
-		}
-		var hints []string
-		if invalid == "" {
-			paths := []any{}
+			var files []string
 			for _, o := range orphans {
-				if o.key == "files" {
-					paths = append(paths, o.value)
+				if o[0] == "files" {
+					files = append(files, o[1])
 				}
 			}
-			hints = unavailableRulesets(config, paths)
+			if hints := UnavailableRulesets(p, files); len(hints) > 0 {
+				reason = "分流里有不可用的规则集，暂时不能在这里编辑。" + strings.Join(hints, "；") + "。"
+			} else if len(orphans) > 0 {
+				reason = "分流里有规则库中不存在的单条规则（" + orphans[0][1] + "），请在完整参数中删除后再编辑。"
+			}
 		}
-		if len(hints) > 0 {
-			reason = "分流里有不可用的规则集，暂时不能在这里编辑。" + strings.Join(hints, "；") + "。"
-		} else if len(orphans) > 0 && invalid == "" {
-			reason = "分流里有规则库中不存在的单条规则（" + orphans[0].value + "），请在完整参数中删除后再编辑。"
-		}
-		for _, key := range append(append(append([]string{}, Selectors...), RuleDNSFields...), "aggregate_rules") {
-			caps.Set(key, capFor(false, reason))
+		for _, key := range append(append([]string{}, Selectors...), append(RuleDNSFields, "aggregate_rules")...) {
+			caps[key] = routingCap(false, reason)
 		}
 	}
-	state.full = true
-	state.plugins = plugins
-	state.main = main
-	state.groups = groups
-	state.prefix = args[:prefixEndAt]
+	state.full, state.plugins, state.main, state.groups = true, plugins, main, groups
+	state.prefix, state.custom, state.final = entries[:prefix], custom, final
 	for _, d := range dynamic {
 		state.dynamic = append(state.dynamic, d.entry)
 	}
-	state.custom = custom
-	state.final = final
-	state.records = records
-	state.claimed = claimed
-	state.customIndices = customIndices
+	state.records, state.claimed, state.customIndices = records, claimed, customIndices
 	return state
 }
 
-// aliasedCustomState is _aliased_custom_state(document, settings, config):
-// recognize recorded managed renames without changing their native names
-// (custom-match controls only). nil is None.
-func aliasedCustomState(document, settings *jsonx.Object, config *jsonx.Object) *routingState {
-	parked, _ := settings.Value("_common_disabled").(*jsonx.Object)
-	var aliasesValue any
-	if parked != nil {
-		aliasesValue = parked.Value("renamed_plugins")
+// observedLegacyGroups validates old per-rule parts against the catalog.
+func (p *Profile) observedLegacyGroups(values *Node, assigned map[string]map[string]string, c *ruleCatalog, aggregate bool) *routingGroups {
+	settings := shallow(values)
+	set(settings, "aggregate_rules", B(false))
+	raw, err := p.routingGroups(settings, legacyAll, nil)
+	expected := &routingGroups{}
+	if err != nil {
+		return expected
 	}
-	all, ok := aliasesValue.(*jsonx.Object)
-	if !ok || all == nil || all.Len() == 0 {
-		return nil
+	for _, part := range []string{"domain", "ip"} {
+		for _, g := range *raw.part(part) {
+			owners := map[string]bool{}
+			pairs(g.Args, func(key string, list *Node) bool {
+				for _, value := range items(list) {
+					for identity := range c.owners(part, key, value) {
+						owners[identity] = true
+					}
+				}
+				return true
+			})
+			if len(owners) != 1 {
+				continue
+			}
+			if _, ok := assigned[only(owners)][part]; !ok {
+				continue
+			}
+			target := expected.part(part)
+			if n := len(*target); aggregate && n > 0 && (*target)[n-1].Route == g.Route {
+				pairs(g.Args, func(key string, list *Node) bool {
+					l := setDefault((*target)[n-1].Args, key, L())
+					l.Content = append(l.Content, list.Content...)
+					return true
+				})
+				continue
+			}
+			*target = append(*target, &ruleGroup{g.Route, clone(g.Args), g.Tag})
+		}
 	}
-	aliases := jsonx.NewObject()
-	for old, new := range all.All() {
+	return expected
+}
+
+func cachedCatalog(p *Profile) func() *ruleCatalog {
+	var c *ruleCatalog
+	return func() *ruleCatalog {
+		if c == nil {
+			c = p.catalog()
+		}
+		return c
+	}
+}
+
+// analyzeRouting is _analyze: recognition that never locks a document that
+// was editable before rule DNS actions existed.
+func (p *Profile) analyzeRouting(document, settings *Node) *routingState {
+	catalog := cachedCatalog(p)
+	state := p.recognize(document, settings, true, catalog)
+	if state.claimed {
+		helper := false
+		for _, entry := range items(get(state.main, "args")) {
+			helper = helper || helperExecRE.MatchString(str(get(entry, "exec")))
+		}
+		if !helper {
+			legacy := p.recognize(document, settings, false, catalog)
+			if !state.caps["direct_rules"].Editable || !state.caps["custom_matches"].Editable && legacy.caps["custom_matches"].Editable {
+				return legacy
+			}
+		}
+	}
+	return state
+}
+
+// managedTags are the tags the template owns (native apply's _MANAGED).
+var managedTags = func() map[string]bool {
+	m := map[string]bool{}
+	for tag := range tagTypes {
+		m[tag] = true
+	}
+	for _, tag := range strings.Fields("china_dns direct_ip default_direct_ip sequence_main remote_dns local_probe proxy_dns_seq ip_requery_proxy fallback_dns adguard_reject rules_refresh") {
+		m[tag] = true
+	}
+	return m
+}()
+
+func tagType(tag string) string {
+	if t, ok := tagTypes[tag]; ok {
+		return t
+	}
+	return "sequence"
+}
+
+var referenceKeys = []string{"exec", "matches", "entry", "primary", "secondary", "provider", "executors", "args"}
+
+// renameReferences rewrites explicit reference fields from old to new (never
+// credentials or file paths). Lists are rebuilt as new lists.
+func renameReferences(value *Node, old, new string, field string) *Node {
+	switch {
+	case isMap(value):
+		for i := 0; i+1 < len(value.Content); i += 2 {
+			if key := value.Content[i].Value; key != "tag" && key != "type" {
+				value.Content[i+1] = renameReferences(value.Content[i+1], old, new, key)
+			}
+		}
+	case isSeq(value):
+		out := L()
+		for _, item := range value.Content {
+			out.Content = append(out.Content, renameReferences(item, old, new, field))
+		}
+		return out
+	case isStr(value) && containsString(referenceKeys, field):
+		if containsString([]string{"entry", "primary", "secondary", "provider"}, field) && value.Value == old {
+			return S(new)
+		}
+		if field == "exec" && (value.Value == "goto "+old || value.Value == "jump "+old) {
+			return S(strings.SplitN(value.Value, " ", 2)[0] + " " + new)
+		}
+		return S(replaceToken(value.Value, "$"+old, "$"+new))
+	}
+	return value
+}
+
+// replaceToken replaces whole-token occurrences of token (tag-character
+// boundaries on both sides).
+func replaceToken(s, token, replacement string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if strings.HasPrefix(s[i:], token) {
+			before := []rune(s[:i])
+			after := []rune(s[i+len(token):])
+			if (len(before) == 0 || !isTagRune(before[len(before)-1])) && (len(after) == 0 || !isTagRune(after[0])) {
+				b.WriteString(replacement)
+				i += len(token)
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
+
+// aliasedCustomState recognizes recorded managed renames for the custom
+// match controls only.
+func (p *Profile) aliasedCustomState(document, settings *Node) (*routingState, error) {
+	aliases := get(get(settings, "_common_disabled"), "renamed_plugins")
+	if !isMap(aliases) || len(aliases.Content) == 0 {
+		return nil, nil
+	}
+	renames := map[string]string{}
+	var order []string
+	valid := true
+	pairs(aliases, func(old string, new *Node) bool {
 		if managedTags[old] {
-			aliases.Set(old, new)
+			if !isStr(new) || !validTag(new.Value) {
+				valid = false
+			}
+			renames[old] = new.Value
+			order = append(order, old)
 		}
+		return true
+	})
+	if len(renames) == 0 || !valid {
+		return nil, nil
 	}
-	if aliases.Len() == 0 {
-		return nil
-	}
-	for _, value := range aliases.Values() {
-		new, isText := value.(string)
-		if !isText {
-			return nil
-		}
-		length := utf8.RuneCountInString(new)
-		if length == 0 || length > 64 || !Tag.MatchString(new) || hasAnyPrefix(new, "qs.exec.", "qs.match.", "qs.cron.") {
-			return nil
-		}
-	}
-	plugins := routingPlugins(document)
+	plugins := pluginMap(document)
 	expanded := plugins
-	if truthy(document.Value("include")) {
-		expanded = routingPlugins(nativeDocument(settings, false, nil))
+	if truthy(get(document, "include")) {
+		doc, err := NativeDocument(settings, false, nil)
+		if err != nil {
+			return nil, err
+		}
+		expanded = pluginMap(doc)
 	}
-	distinct := map[string]bool{}
-	for _, value := range aliases.Values() {
-		distinct[value.(string)] = true
+	targets := map[string]bool{}
+	for _, new := range renames {
+		targets[new] = true
 	}
-	if expanded.Len() == 0 || len(distinct) != aliases.Len() {
-		return nil
+	if len(expanded) == 0 || len(targets) != len(renames) {
+		return nil, nil
 	}
-	for old, value := range aliases.All() {
-		target := pluginAt(plugins, value.(string))
-		if expanded.Has(old) || target == nil || target.Value("type") != tagType(old) {
-			return nil
+	for _, old := range order {
+		new := renames[old]
+		if expanded[old] != nil || plugins[new] == nil || !equal(get(plugins[new], "type"), S(tagType(old))) {
+			return nil, nil
 		}
 	}
-	canonical := copyValue(document).(*jsonx.Object)
-	byTag := routingPlugins(canonical)
-	for old, value := range aliases.All() {
-		new := value.(string)
-		pluginAt(byTag, new).Set("tag", old)
-		renameReferences(canonical, new, old)
+	canonical := clone(document)
+	byTag := pluginMap(canonical)
+	for _, old := range order {
+		new := renames[old]
+		set(byTag[new], "tag", S(old))
+		renameReferences(canonical, new, old, "")
 	}
-	state := analyzeRouting(canonical, settings, config)
+	state := p.analyzeRouting(canonical, settings)
 	mainTag := "sequence_main"
-	if value, ok := aliases.Get("sequence_main"); ok {
-		mainTag = value.(string)
-	}
-	main := pluginAt(plugins, mainTag)
-	if main == nil {
-		main = jsonx.NewObject()
+	if t, ok := renames["sequence_main"]; ok {
+		mainTag = t
 	}
 	if state.full {
-		custom := []any{}
+		custom := L()
 		for _, index := range state.customIndices {
-			custom = append(custom, copyValue(listItem(item(main, "args"), index)))
+			custom.Content = append(custom.Content, clone(items(get(plugins[mainTag], "args"))[index]))
 		}
-		state.values.Set("custom_matches", custom)
+		set(state.values, "custom_matches", custom)
 	}
 	for _, field := range customFields {
-		state.caps.GetObject(field).Set("target", mainTag)
+		c := state.caps[field]
+		c.Target = mainTag
+		state.caps[field] = c
 	}
 	state.actualMainTag = mainTag
-	return state
+	return state, nil
 }
 
-// listItem is value[index] for a list (TypeError / IndexError otherwise).
-func listItem(value any, index int) any {
-	list, ok := value.([]any)
-	if !ok {
-		raise(pyErr("TypeError", "'"+typeName(value)+"' object is not subscriptable"))
+// RoutingView is read_routing's answer.
+type RoutingView struct {
+	Values       *Node
+	Capabilities map[string]Capability
+}
+
+// ReadRouting reads the recognized routing values and what can be edited.
+func ReadRouting(document, settings *Node, p *Profile) (RoutingView, error) {
+	state := p.analyzeRouting(document, settings)
+	aliased, err := p.aliasedCustomState(document, settings)
+	if err != nil {
+		return RoutingView{}, err
 	}
-	if index >= len(list) {
-		raise(pyErr("IndexError", "list index out of range"))
-	}
-	return list[index]
-}
-
-// ReadRouting is read_routing(document, settings, config): {"values",
-// "capabilities"} of the routing controls.
-func ReadRouting(document, settings, config *jsonx.Object) (result *jsonx.Object, err error) {
-	defer catch(&err)
-	return readRoutingImpl(document, settings, config), nil
-}
-
-func readRoutingImpl(document, settings *jsonx.Object, configValue any) *jsonx.Object {
-	config := configOf(configValue)
-	state := analyzeRouting(document, settings, config)
-	if aliased := aliasedCustomState(document, settings, config); aliased != nil {
+	if aliased != nil {
 		for _, field := range customFields {
-			state.values.Set(field, aliased.values.Value(field))
-			state.caps.Set(field, aliased.caps.Value(field))
+			set(state.values, field, get(aliased.values, field))
+			state.caps[field] = aliased.caps[field]
 		}
 	}
-	return jsonx.Obj("values", copyValue(state.values), "capabilities", copyValue(state.caps))
+	caps := map[string]Capability{}
+	for k, v := range state.caps {
+		caps[k] = v
+	}
+	return RoutingView{clone(state.values), caps}, nil
 }
 
-// MigrateDomainOnlyRouting is migrate_domain_only_routing(document,
-// settings, config, base_url): old managed IP routing rendered as
-// domain-only without changing the draft. Only a fully recognizable owned
-// suffix is migrated; otherwise document and settings are returned as they
-// are (the same objects).
-func MigrateDomainOnlyRouting(document, settings, config *jsonx.Object, baseURL string) (doc, values *jsonx.Object, err error) {
-	defer catch(&err)
-	doc, values = migrateDomainOnlyRouting(document, settings, config, baseURL)
-	return doc, values, nil
-}
-
-func migrateDomainOnlyRouting(document, settings, config *jsonx.Object, baseURL string) (*jsonx.Object, *jsonx.Object) {
-	// Publication expands includes first. Check the source too so an expanded
-	// custom document is not mistaken for a wholly managed draft.
-	source := jsonx.NewObject()
-	if strip(settings.GetOr("native_config", "")) != "" {
-		source = loadNativeYAML(item(settings, "native_config"), DefaultNativeLabel)
+// MigrateDomainOnlyRouting renders old managed IP routing as domain-only
+// (only a fully recognizable owned suffix; anything else is returned as is).
+func MigrateDomainOnlyRouting(document, settings *Node, p *Profile, baseURL string) (*Node, *Node, error) {
+	source := M()
+	if text := get(settings, "native_config"); strings.TrimSpace(str(text)) != "" {
+		var err error
+		if source, err = loadNative(text, NativeLabel); err != nil {
+			return nil, nil, err
+		}
 	}
-	if truthy(document.Value("include")) || truthy(source.Value("include")) {
-		return document, settings
+	if truthy(get(document, "include")) || truthy(get(source, "include")) {
+		return document, settings, nil
 	}
-	current := analyzeRouting(document, settings, config)
-	if !current.full || len(current.groups["ip"]) == 0 {
-		return document, settings
+	current := p.analyzeRouting(document, settings)
+	if len(current.groups.IP) == 0 {
+		return document, settings, nil
 	}
 	for _, key := range append(append([]string{}, Selectors...), "rule_actions") {
-		if !capEditable(current.caps, key) {
-			return document, settings
+		if !current.caps[key].Editable {
+			return document, settings, nil
 		}
 	}
-	// A recognizable routing suffix can still share a custom update pipeline:
-	// automatic export then preserves the draft atomically.
-	var rendered, values *jsonx.Object
-	if tryExcept(func() {
-		rendered, values = applyRoutingImpl(document, settings, config, jsonx.NewObject(), baseURL, config, true, nil)
-		// Empty owned executors cannot be emitted with an empty download list.
-		values.Set("native_config", dump(rendered))
-		finishRuleUpdates(newCommonContext(rendered, values), jsonx.Obj("direct_rulesets", []any{}), config, baseURL)
-		values.Set("native_config", dump(rendered))
-	}, ClassSettings) != nil {
-		return document, settings
+	rendered, values, err := ApplyRouting(document, settings, p, M(), baseURL, RoutingOptions{BeforeConfig: p})
+	if err == nil {
+		set(values, "native_config", S(dump(rendered)))
+		var ctx *commonContext
+		if ctx, err = newContext(rendered, values); err == nil {
+			if err = finishRuleUpdates(ctx, M("direct_rulesets", L()), p, baseURL); err == nil {
+				set(values, "native_config", S(dump(rendered)))
+				return rendered, values, nil
+			}
+		}
 	}
-	return rendered, values
+	if _, ok := IsSettingsError(err); ok {
+		return document, settings, nil
+	}
+	return nil, nil, err
 }
 
-// usesRule is _uses_rule(document, config, identity): whether any
-// domain/IP provider still holds a resource generated for identity.
-func usesRule(document *jsonx.Object, config *jsonx.Object, identity string) bool {
-	atoms := buildCatalog(config).atoms
-	list := document.Value("plugins")
-	if !truthy(list) {
-		list = []any{}
-	}
-	for _, element := range pyIter(list) {
-		plugin, ok := element.(*jsonx.Object)
-		if !ok || plugin == nil {
-			continue
-		}
-		kind := plugin.Value("type")
-		hashable(kind)
-		part := ""
-		switch kind {
-		case "domain_set":
-			part = "domain"
-		case "ip_set":
-			part = "ip"
-		}
+// usesRule: a domain/IP provider still holds a resource generated for identity.
+func (p *Profile) usesRule(document *Node, identity string) bool {
+	c := p.catalog()
+	for _, plugin := range items(get(document, "plugins")) {
+		part := map[string]string{"domain_set": "domain", "ip_set": "ip"}[str(get(plugin, "type"))]
 		if part == "" {
 			continue
 		}
-		args, ok := plugin.Value("args").(*jsonx.Object)
-		if !ok || args == nil {
-			continue
-		}
-		for key, values := range args.All() {
-			for _, value := range asList(values) {
-				if atom, ok := atomOf(part, key, value); ok && atoms[atom][identity] {
-					return true
-				}
+		found := false
+		pairs(get(plugin, "args"), func(key string, values *Node) bool {
+			for _, value := range items(values) {
+				found = found || c.owners(part, key, value)[identity]
 			}
+			return !found
+		})
+		if found {
+			return true
 		}
 	}
 	return false
 }
 
-// RemoveRule is remove_rule(settings, config, identity, base_url): native
-// settings without a rule that is about to be deleted, or nil if unused.
-func RemoveRule(settings, config *jsonx.Object, identity, baseURL string) (result *jsonx.Object, err error) {
-	defer catch(&err)
-	return removeRule(settings, config, identity, baseURL), nil
-}
-
-func removeRule(settings, config *jsonx.Object, identity, baseURL string) *jsonx.Object {
-	document := loadNativeYAML(item(settings, "native_config"), DefaultNativeLabel)
-	state := analyzeRouting(document, settings, config)
-	values := state.values
-	// A rule is routed by a selector list or by its own DNS action.
-	changes := jsonx.NewObject()
-	for _, key := range Selectors {
-		list := values.GetList(key)
-		if !pyContains(list, identity) {
-			continue
-		}
-		kept := []any{}
-		for _, value := range list {
-			if value != identity {
-				kept = append(kept, value)
-			}
-		}
-		changes.Set(key, kept)
+// RemoveRule returns native settings without a rule that is about to be
+// deleted, or nil when the draft does not use it.
+func RemoveRule(settings *Node, p *Profile, identity, baseURL string) (*Node, error) {
+	document, err := loadNative(get(settings, "native_config"), NativeLabel)
+	if err != nil {
+		return nil, err
 	}
-	if actions := values.GetObject("rule_actions"); actions.Has(identity) {
-		kept := jsonx.NewObject()
-		for key, value := range actions.All() {
-			if key != identity {
-				kept.Set(key, value)
-			}
+	state := p.analyzeRouting(document, settings)
+	changes := M()
+	for _, key := range Selectors {
+		if list := get(state.values, key); containsStr(list, identity) {
+			set(changes, key, seqOf(filter(list.Content, func(v *Node) bool { return !equal(v, S(identity)) })))
 		}
-		changes.Set("rule_actions", kept)
+	}
+	if actions := get(state.values, "rule_actions"); has(actions, identity) {
+		kept := M()
+		pairs(actions, func(k string, v *Node) bool {
+			if k != identity {
+				set(kept, k, v)
+			}
+			return true
+		})
+		set(changes, "rule_actions", kept)
 	}
 	editable := true
-	for _, key := range changes.Keys() {
-		if !capEditable(state.caps, key) {
-			editable = false
-			break
+	for _, key := range keys(changes) {
+		editable = editable && state.caps[key].Editable
+	}
+	var result *Node
+	if len(changes.Content) > 0 && editable {
+		applied, err := ApplyCommonSettings(settings, changes, p, baseURL)
+		if err != nil {
+			return nil, err
+		}
+		result = applied.Settings
+	} else if len(changes.Content) == 0 && !p.usesRule(document, identity) {
+		return nil, nil
+	}
+	if result != nil {
+		after, err := loadNative(get(result, "native_config"), NativeLabel)
+		if err != nil {
+			return nil, err
+		}
+		if !p.usesRule(after, identity) {
+			return result, nil
 		}
 	}
-	var result *jsonx.Object
-	if changes.Len() > 0 && editable {
-		// Same path as unchecking it in the editor, which also reconciles rule
-		// updates and drops helpers no other rule uses.
-		result = asObject(item(applyCommon(settings, changes, config, baseURL), "settings"))
-	} else if changes.Len() == 0 && !usesRule(document, config, identity) {
-		return nil
-	}
-	// Hand-written providers outside the recognized routing are never rewritten.
-	if result == nil || usesRule(loadNativeYAML(item(result, "native_config"), DefaultNativeLabel), config, identity) {
-		fail("OxiDNS 还在用这条规则，而且那部分配置是手动写的，没法自动移除。" +
-			"请先在 OxiDNS 设置的 YAML 中删掉对它的引用，再删除。")
-	}
-	return result
+	return nil, fail("OxiDNS 还在用这条规则，而且那部分配置是手动写的，没法自动移除。请先在 OxiDNS 设置的 YAML 中删掉对它的引用，再删除。")
 }
 
-// newName is _new_name(preferred, occupied).
 func newName(preferred string, occupied map[string]bool) string {
-	result, index := preferred, 2
-	for occupied[result] {
-		result = preferred + "_" + itoa(index)
-		index++
+	result := preferred
+	for index := 2; occupied[result]; index++ {
+		result = fmt.Sprintf("%s_%d", preferred, index)
 	}
 	occupied[result] = true
 	return result
 }
 
-// oldGroup is what place_routing_groups reads of a recognized group.
-type oldGroup struct {
-	tag          string
-	providerType any
-	args         any
-}
-
-// PlaceRoutingGroups is place_routing_groups(plugins, old, expected,
-// external): tag and insert routing providers; returns the new plugin list
-// and the placed groups ({domain, ip} of {route, args, tag}). old are
-// recognized groups (objects with "tag", "provider" and "args"). Rule sync
-// replays draft routing edits with this too.
-func PlaceRoutingGroups(plugins []any, old []any, expected *jsonx.Object, external []string) (placed []any, groups *jsonx.Object, err error) {
-	defer catch(&err)
-	var olds []oldGroup
-	for _, element := range old {
-		tag, ok := item(element, "tag").(string)
-		if !ok {
-			raise(pyErr("TypeError", "group tag is not a string"))
-		}
-		olds = append(olds, oldGroup{tag, item(item(element, "provider"), "type"), item(element, "args")})
-	}
-	set := map[string]bool{}
-	for _, tag := range external {
-		set[tag] = true
-	}
-	placed, groups = placeRoutingGroups(plugins, olds, expected, set)
-	return placed, groups, nil
-}
-
-func placeRoutingGroups(plugins []any, old []oldGroup, expected *jsonx.Object, external map[string]bool) ([]any, *jsonx.Object) {
+// PlaceRoutingGroups tags and inserts routing providers: unchanged providers
+// keep tag and position; fresh tags avoid the old ones. external tags are
+// still used elsewhere and stay.
+func placeRoutingGroups(plugins []*Node, old []*recGroup, expected *routingGroups, external map[string]bool) ([]*Node, *routingGroups, error) {
 	occupied := map[string]bool{}
 	for _, plugin := range plugins {
-		tag := get(plugin, "tag", nil)
-		hashable(tag)
-		if text, ok := tag.(string); ok {
-			occupied[text] = true
-		}
+		occupied[str(get(plugin, "tag"))] = true
 	}
 	retained := map[string]bool{}
-	additions := []any{}
-	result := jsonx.Obj("domain", []any{}, "ip", []any{})
-	for _, part := range expected.Keys() {
-		if !result.Has(part) {
-			raise(pyErr("KeyError", jsonx.Repr(part)))
-		}
-		for _, element := range pyIter(expected.Value(part)) {
-			group := element.(*jsonx.Object)
-			kind := "ip_set"
-			if part == "domain" {
-				kind = "domain_set"
-			}
-			var tag string
-			found := false
+	var additions []*Node
+	groups := &routingGroups{}
+	for _, part := range []string{"domain", "ip"} {
+		kind := map[string]string{"domain": "domain_set", "ip": "ip_set"}[part]
+		for _, g := range *expected.part(part) {
+			tag := ""
 			for _, candidate := range old {
-				if !retained[candidate.tag] && candidate.providerType == kind && sameValue(candidate.args, group.Value("args")) {
+				if !retained[candidate.tag] && equal(get(candidate.provider, "type"), S(kind)) && same(candidate.args, g.Args) {
 					tag = candidate.tag
-					retained[tag] = true
-					found = true
 					break
 				}
 			}
-			if !found {
-				tag = newName(str(item(group, "tag")), occupied)
-				additions = append(additions, jsonx.Obj("tag", tag, "type", kind, "args", copyValue(group.Value("args"))))
+			if tag != "" {
+				retained[tag] = true
+			} else {
+				tag = newName(g.Tag, occupied)
+				additions = append(additions, M("tag", tag, "type", kind, "args", clone(g.Args)))
 			}
-			placedGroup := copyValue(group).(*jsonx.Object)
-			placedGroup.Set("tag", tag)
-			result.Set(part, append(result.GetList(part), placedGroup))
+			*groups.part(part) = append(*groups.part(part), &ruleGroup{g.Route, clone(g.Args), tag})
 		}
 	}
 	removable := map[string]bool{}
-	for _, group := range old {
-		if !retained[group.tag] && !external[group.tag] {
-			removable[group.tag] = true
+	for _, g := range old {
+		if !retained[g.tag] && !external[g.tag] {
+			removable[g.tag] = true
 		}
 	}
-	// min(..., default=next(...)): the default is evaluated first.
 	insertion := -1
-	for index, plugin := range plugins {
-		if get(plugin, "tag", nil) == "sequence_main" {
-			insertion = index
+	for i, plugin := range plugins {
+		if removable[str(get(plugin, "tag"))] {
+			insertion = i
 			break
 		}
 	}
 	if insertion < 0 {
-		raise(pyErr("StopIteration", ""))
-	}
-	for index, plugin := range plugins {
-		if text, ok := get(plugin, "tag", nil).(string); ok && removable[text] {
-			insertion = index
-			break
+		for i, plugin := range plugins {
+			if equal(get(plugin, "tag"), S("sequence_main")) {
+				insertion = i
+				break
+			}
 		}
 	}
-	placed := []any{}
-	for index, plugin := range plugins {
-		if index == insertion {
+	if insertion < 0 {
+		return nil, nil, errMalformed
+	}
+	var placed []*Node
+	for i, plugin := range plugins {
+		if i == insertion {
 			placed = append(placed, additions...)
 		}
-		if text, ok := get(plugin, "tag", nil).(string); !ok || !removable[text] {
+		if !removable[str(get(plugin, "tag"))] {
 			placed = append(placed, plugin)
 		}
 	}
-	return placed, result
+	return placed, groups, nil
 }
 
-// ReloadReferences is reload_references(existing, old_tags, new_tags,
-// plugins): the edited reload list, where retained entries keep their order
-// and new providers are appended. plugins is the tag -> plugin map.
-func ReloadReferences(existing []any, oldTags map[string]bool, newTags []string, plugins *jsonx.Object) []any {
-	references := []any{}
-	values := append([]any{}, existing...)
+// ReloadReferences edits a reload provider list: retained entries keep
+// their order, new providers are appended.
+func ReloadReferences(existing []*Node, oldTags map[string]bool, newTags []string, plugins map[string]*Node) []*Node {
+	values := append([]*Node{}, existing...)
 	for _, tag := range newTags {
-		values = append(values, "$"+tag)
+		values = append(values, S("$"+tag))
 	}
-	inNew := func(tag string) bool {
-		for _, t := range newTags {
-			if t == tag {
-				return true
-			}
-		}
-		return false
-	}
+	var refs []*Node
 	for _, value := range values {
-		if listContains(references, value) {
-			continue
+		keep := true
+		if isStr(value) {
+			tag := strings.TrimPrefix(value.Value, "$")
+			keep = containsString(newTags, tag) || !oldTags[tag] || plugins[tag] != nil
 		}
-		text, isText := value.(string)
-		if !isText {
-			references = append(references, value)
-			continue
-		}
-		tag := strings.TrimPrefix(text, "$")
-		if inNew(tag) || !oldTags[tag] || plugins.Has(tag) {
-			references = append(references, value)
+		if keep && !contains(seqOf(refs), value) {
+			refs = append(refs, value)
 		}
 	}
-	return references
+	return refs
 }
 
-// resourceKey is relative_resource(path) as a set key.
-func resourceKey(p *string) string {
-	if p == nil {
-		return "\x00None"
-	}
-	return *p
+// ResourceDownloads are the download descriptors ({url, dir, filename}) of
+// the provider resources the document actually reads.
+func ResourceDownloads(document, settings *Node, p *Profile, baseURL string) ([]*Node, error) {
+	return p.resourceDownloads(document, settings, baseURL, nil)
 }
 
-// ResourceDownloads is resource_downloads(document, settings, config,
-// base_url): download descriptors for actual provider references, without
-// core validation.
-func ResourceDownloads(document, settings, config *jsonx.Object, baseURL string) (downloads []any, err error) {
-	defer catch(&err)
-	return resourceDownloadsImpl(document, settings, config, baseURL, nil), nil
-}
-
-func resourceDownloadsImpl(document, settings *jsonx.Object, configValue any, baseURL string, records *catalogData) []any {
-	referenced := map[string]bool{}
-	for _, p := range resourceReferences(document) {
-		referenced[resourceKey(relativeResource(p))] = true
+func (p *Profile) resourceDownloads(document, settings *Node, baseURL string, c *ruleCatalog) ([]*Node, error) {
+	referenced, err := referencedPaths(document)
+	if err != nil {
+		return nil, err
 	}
-	config := configOf(configValue)
-	effective := baseOf(config, baseURL)
-	desired := []any{}
-	if records == nil {
-		records = buildCatalog(config)
+	effective := p.base(baseURL)
+	if c == nil {
+		c = p.catalog()
 	}
-	for _, identity := range records.order {
-		record := records.records[identity]
+	desired := []*Node{}
+	entry := func(url, local string) *Node {
+		return M("url", url, "dir", posixParent(local), "filename", posixName(local))
+	}
+	for _, identity := range c.order {
+		record := c.records[identity]
 		if record.suffix != "rulesets" {
 			continue
 		}
-		parts := make([]string, 0, len(record.parts))
+		var parts []string
 		for part := range record.parts {
 			parts = append(parts, part)
 		}
 		sort.Strings(parts)
 		for _, part := range parts {
-			localPath := rulePath(record.item, part)
-			if !referenced[resourceKey(relativeResource(localPath))] {
+			local := RulePath(record.item, part)
+			if rel, _, err := relativeResource(local); err != nil || !referenced[rel] {
 				continue
 			}
-			url, ok := record.item.GetOr("url", "").(string)
-			if !ok || url == "" {
-				fail("已选择的规则集缺少下载来源。")
+			url := get(record.item, "url")
+			if !isStr(url) || url.Value == "" {
+				return nil, fail("已选择的规则集缺少下载来源。")
 			}
-			if strings.HasPrefix(url, "/") {
-				url = effective + url
+			link := url.Value
+			if strings.HasPrefix(link, "/") {
+				link = effective + link
 			}
-			proxied, err := mosdns.BuildRuleProxyURL(config, effective, url, part, nil)
-			must(err)
-			dir, name := purePosixParentName(localPath)
-			desired = append(desired, jsonx.Obj("url", proxied, "dir", dir, "filename", name))
+			proxied, err := p.ruleProxyURL(effective, link, part)
+			if err != nil {
+				return nil, err
+			}
+			desired = append(desired, entry(proxied, local))
 		}
 	}
-	adguard, _ := settings.Value("adguard").(*jsonx.Object)
-	var urls any
-	if adguard != nil {
-		urls = adguard.Value("urls")
-	}
-	for _, value := range asList(urls) {
-		url, ok := value.(string)
-		if !ok {
+	for _, url := range items(get(get(settings, "adguard"), "urls")) {
+		if !isStr(url) {
 			continue
 		}
-		localPath := "./rules/" + TagFor("adguard", url) + ".txt"
-		if referenced[resourceKey(relativeResource(localPath))] {
-			dir, name := purePosixParentName(localPath)
-			desired = append(desired, jsonx.Obj("url", url, "dir", dir, "filename", name))
+		local := "./rules/" + TagFor("adguard", url) + ".txt"
+		if rel, _, err := relativeResource(local); err == nil && referenced[rel] {
+			desired = append(desired, entry(url.Value, local))
 		}
 	}
-	return desired
+	return desired, nil
 }
 
-// ResourceReaders is resource_readers(document): conservative resource
-// consumers, including unknown plugin fields.
-func ResourceReaders(document *jsonx.Object) (readers []string, err error) {
-	defer catch(&err)
-	return resourceReaders(document), nil
-}
-
-func resourceReaders(document *jsonx.Object) []string {
-	out := []string{}
-	var walk func(value any)
-	walk = func(value any) {
-		switch x := value.(type) {
-		case string:
-			if strings.Contains(x, "/") || strings.Contains(x, "${") || strings.ContainsAny(x, "*?[") {
-				out = append(out, x)
+// ResourceReaders are conservative resource consumers (strings that look
+// like paths or patterns, including unknown plugin fields).
+func ResourceReaders(document *Node) []string {
+	var out []string
+	var walk func(*Node)
+	walk = func(v *Node) {
+		switch {
+		case isStr(v):
+			if strings.ContainsAny(v.Value, "/*?[") || strings.Contains(v.Value, "${") {
+				out = append(out, v.Value)
 			}
-		case *jsonx.Object:
-			for _, element := range x.Values() {
-				walk(element)
+		case isMap(v):
+			for i := 1; i < len(v.Content); i += 2 {
+				walk(v.Content[i])
 			}
-		case []any:
-			for _, element := range x {
-				walk(element)
+		case isSeq(v):
+			for _, item := range v.Content {
+				walk(item)
 			}
 		}
 	}
-	root := withoutKey(document, "plugins")
-	list, present := document.Get("plugins")
-	if !present {
-		list = []any{}
-	}
-	plugins := []any{}
-	for _, plugin := range pyIter(list) {
-		if get(plugin, "type", nil) != "download" {
-			plugins = append(plugins, plugin)
+	walk(withoutPlugins(document))
+	for _, plugin := range items(get(document, "plugins")) {
+		if !equal(get(plugin, "type"), S("download")) {
+			walk(plugin)
 		}
 	}
-	root.Set("plugins", plugins)
-	walk(root)
 	return out
 }
 
-// ResourceIsRead is resource_is_read(path, readers).
+// globMatch is fnmatch.fnmatchcase: shell wildcards over the whole string
+// (* also matches /); [!x] is a negated class.
+func globMatch(name, pattern string) bool {
+	var b strings.Builder
+	b.WriteString(`(?s)\A`)
+	for i := 0; i < len(pattern); {
+		c, width := utf8.DecodeRuneInString(pattern[i:])
+		i += width
+		switch c {
+		case '*':
+			for i < len(pattern) && pattern[i] == '*' {
+				i++
+			}
+			b.WriteString(".*")
+		case '?':
+			b.WriteString(".")
+		case '[':
+			j := i
+			if j < len(pattern) && pattern[j] == '!' {
+				j++
+			}
+			if j < len(pattern) && pattern[j] == ']' {
+				j++
+			}
+			for j < len(pattern) && pattern[j] != ']' {
+				j++
+			}
+			if j >= len(pattern) {
+				b.WriteString(`\[`)
+				continue
+			}
+			stuff := strings.ReplaceAll(pattern[i:j], `\`, `\\`)
+			i = j + 1
+			switch {
+			case stuff == "":
+				b.WriteString(`[^\x00-\x{10FFFF}]`)
+			case stuff == "!":
+				b.WriteString(".")
+			default:
+				if stuff[0] == '!' {
+					stuff = "^" + stuff[1:]
+				} else if stuff[0] == '^' || stuff[0] == '[' {
+					stuff = `\` + stuff
+				}
+				b.WriteString("[" + stuff + "]")
+			}
+		default:
+			b.WriteString(regexp.QuoteMeta(string(c)))
+		}
+	}
+	b.WriteString(`\z`)
+	re, err := regexp.Compile(b.String())
+	return err == nil && re.MatchString(name)
+}
+
+// ResourceIsRead: one of the readers may read path.
 func ResourceIsRead(path string, readers []string) bool {
 	for _, reference := range readers {
-		if strings.Contains(reference, "${") || fnmatchCase(path, strings.TrimPrefix(reference, "./")) ||
-			strings.HasSuffix(reference, "/"+path) {
+		if strings.Contains(reference, "${") || globMatch(path, strings.TrimPrefix(reference, "./")) || strings.HasSuffix(reference, "/"+path) {
 			return true
 		}
-		// Absolute patterns may refer to the same resource under the target's
-		// installation directory, whose prefix is not known while editing.
+		// An absolute pattern may name the resource under the target's directory.
 		if strings.HasPrefix(reference, "/") {
-			for index, r := range reference {
-				if r == '/' && fnmatchCase(path, reference[index+1:]) {
+			for i := 0; i < len(reference); i++ {
+				if reference[i] == '/' && globMatch(path, reference[i+1:]) {
 					return true
 				}
 			}
@@ -1647,56 +1357,47 @@ func ResourceIsRead(path string, readers []string) bool {
 	return false
 }
 
-// ownHelpers is _own_helpers(document, routes, actions, entries): create,
-// keep, refresh or remove the owned helper plugins in place. entries are the
-// rule group entries just written, which are not "elsewhere".
-func ownHelpers(document *jsonx.Object, routes []string, actions *jsonx.Object, entries []any) {
-	plugins := asList(item(document, "plugins"))
-	byTag := routingPlugins(document)
-	desired := helperPlugins(routes, actions, chainFeatures(byTag))
-	wanted := jsonx.NewObject()
+// replaceDownloadEntries detaches the downloader's args from other alias
+// holders and sets its downloads.
+func replaceDownloadEntries(download *Node, entries []*Node) {
+	args := shallow(get(download, "args"))
+	set(args, "downloads", seqOf(entries))
+	set(download, "args", clone(args))
+}
+
+// ownHelpers creates, keeps, refreshes or removes the owned helper plugins.
+// entries are the rule group entries just written (not "elsewhere").
+func ownHelpers(document *Node, routes []string, actions *Node, entries []*Node) error {
+	list := get(document, "plugins")
+	byTag := pluginMap(document)
+	desired, err := HelperPlugins(routes, actions, chainFeatures(byTag))
+	if err != nil {
+		return err
+	}
+	wanted := map[string]*Node{}
 	for _, plugin := range desired {
-		wanted.Set(plugin.(*jsonx.Object).GetString("tag"), plugin)
+		wanted[str(get(plugin, "tag"))] = plugin
 	}
-	owned := map[*jsonx.Object]bool{}
+	owned := map[*Node]bool{}
 	for _, entry := range entries {
-		owned[entry.(*jsonx.Object)] = true
+		owned[entry] = true
 	}
-	outside := []any{}
-	for _, element := range plugins {
-		plugin := element.(*jsonx.Object)
-		if isHelperTag(plugin.Value("tag")) {
+	var outside []*Node
+	for _, plugin := range list.Content {
+		if helperTagRE.MatchString(pyStr(get(plugin, "tag"))) {
 			continue
 		}
-		args, isList := plugin.Value("args").([]any)
-		if plugin.Value("tag") == "sequence_main" && isList {
-			copied := plugin.Clone()
-			kept := []any{}
-			for _, entry := range args {
-				if object, ok := entry.(*jsonx.Object); !ok || !owned[object] {
-					kept = append(kept, entry)
-				}
-			}
-			copied.Set("args", kept)
-			outside = append(outside, copied)
-		} else {
-			outside = append(outside, plugin)
+		if equal(get(plugin, "tag"), S("sequence_main")) && isSeq(get(plugin, "args")) {
+			copy := shallow(plugin)
+			set(copy, "args", seqOf(filter(get(plugin, "args").Content, func(item *Node) bool { return !owned[item] })))
+			plugin = copy
 		}
+		outside = append(outside, plugin)
 	}
-	top := withoutKey(document, "plugins")
-	external := func(tag string) bool {
-		if references(top, tag) {
-			return true
-		}
-		for _, plugin := range outside {
-			if references(plugin, tag) {
-				return true
-			}
-		}
-		return false
-	}
+	top := withoutPlugins(document)
+	external := func(tag string) bool { return refersTo(top, tag) || len(positions(outside, tag)) > 0 }
 	replaceable := func(tag string) bool {
-		_, key := helperTag(tag)
+		key := helperTagRE.FindStringSubmatch(tag)[1]
 		if key == "" {
 			return false
 		}
@@ -1704,10 +1405,9 @@ func ownHelpers(document *jsonx.Object, routes []string, actions *jsonx.Object, 
 		if action == nil {
 			return false
 		}
-		if routeKey(action) == "upstream:"+key {
+		if RouteKey(action) == "upstream:"+key {
 			return true
 		}
-		// Another address under this tag (edited by hand) is replaced only if unused elsewhere.
 		for _, prefix := range []string{UpstreamPrefix, ForwardPrefix, CachePrefix} {
 			if external(prefix + key) {
 				return false
@@ -1715,909 +1415,841 @@ func ownHelpers(document *jsonx.Object, routes []string, actions *jsonx.Object, 
 		}
 		return true
 	}
-	for tag, plugin := range wanted.All() {
-		if existing, ok := byTag.Get(tag); ok && !sameValue(existing, plugin) && !replaceable(tag) {
-			fail("已有同名插件 " + tag + "，无法创建 DNS 处理所需插件，请先在完整参数中改名")
+	for _, plugin := range desired {
+		tag := str(get(plugin, "tag"))
+		if existing := byTag[tag]; existing != nil && !same(existing, plugin) && !replaceable(tag) {
+			return fail("已有同名插件 " + tag + "，无法创建 DNS 处理所需插件，请先在完整参数中改名")
 		}
 	}
 	kept := map[string]bool{}
-	for _, tag := range wanted.Keys() {
+	for tag := range wanted {
 		kept[tag] = true
 	}
-	for _, tag := range byTag.Keys() {
-		if ok, _ := helperTag(tag); ok && external(tag) {
+	for tag := range byTag {
+		if helperTagRE.MatchString(tag) && external(tag) {
 			kept[tag] = true
 		}
 	}
-	// A kept chain keeps the forward and cache it calls (a closure: the
-	// processing order does not matter).
-	pendingTags := make([]string, 0, len(kept))
+	var pending []string
 	for tag := range kept {
-		pendingTags = append(pendingTags, tag)
+		pending = append(pending, tag)
 	}
-	sort.Strings(pendingTags)
-	for len(pendingTags) > 0 {
-		tag := pendingTags[len(pendingTags)-1]
-		pendingTags = pendingTags[:len(pendingTags)-1]
-		source, ok := wanted.Get(tag)
-		if !ok {
-			source = byTag.Value(tag)
+	for len(pending) > 0 {
+		tag := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		source := wanted[tag]
+		if source == nil {
+			source = byTag[tag]
 		}
-		for _, other := range byTag.Keys() {
-			if ok, _ := helperTag(other); ok && !kept[other] && references(source, other) {
+		for other := range byTag {
+			if !kept[other] && helperTagRE.MatchString(other) && refersTo(source, other) {
 				kept[other] = true
-				pendingTags = append(pendingTags, other)
+				pending = append(pending, other)
 			}
 		}
 	}
-	result := []any{}
-	for _, element := range plugins {
-		plugin := element.(*jsonx.Object)
-		tag := plugin.Value("tag")
-		text, _ := tag.(string)
-		if want, ok := wanted.Get(text); ok {
-			result = append(result, copyValue(want))
-		} else if !isHelperTag(tag) || kept[text] {
+	var result []*Node
+	for _, plugin := range list.Content {
+		tag := pyStr(get(plugin, "tag"))
+		if wanted[tag] != nil {
+			result = append(result, clone(wanted[tag]))
+		} else if !helperTagRE.MatchString(tag) || kept[tag] {
 			result = append(result, plugin)
 		}
 	}
-	for _, element := range desired {
-		plugin := element.(*jsonx.Object)
-		tag := plugin.GetString("tag")
-		if byTag.Has(tag) {
+	for _, plugin := range desired {
+		tag := str(get(plugin, "tag"))
+		if byTag[tag] != nil {
 			continue
 		}
-		// Before the first helper that uses it, else before the main sequence.
-		index := len(result)
-		for i, existing := range result {
-			if existing.(*jsonx.Object).Value("tag") == "sequence_main" {
+		index := -1
+		for i, item := range result {
+			other := str(get(item, "tag"))
+			if wanted[other] != nil && other != tag && refersTo(wanted[other], tag) {
 				index = i
 				break
 			}
 		}
-		for i, existing := range result {
-			other, _ := existing.(*jsonx.Object).Value("tag").(string)
-			if want, ok := wanted.Get(other); ok && other != tag && references(want, tag) {
-				index = i
-				break
+		if index < 0 {
+			index = len(result)
+			for i, item := range result {
+				if equal(get(item, "tag"), S("sequence_main")) {
+					index = i
+					break
+				}
 			}
 		}
-		result = insertCopy(result, index, copyValue(plugin))
+		result = append(result[:index], append([]*Node{clone(plugin)}, result[index:]...)...)
 	}
-	setPluginsInPlace(document, plugins, result)
-}
-
-// OwnedChains is owned_chains(document): {chain tag: action} of the pinned
-// upstream chains whose tag still names their content.
-func OwnedChains(document *jsonx.Object) (chains *jsonx.Object, err error) {
-	defer catch(&err)
-	return ownedChainsImpl(document), nil
-}
-
-func ownedChainsImpl(document *jsonx.Object) *jsonx.Object {
-	plugins := routingPlugins(document)
-	result := jsonx.NewObject()
-	for _, tag := range plugins.Keys() {
-		if !strings.HasPrefix(tag, UpstreamPrefix) || tag == UpstreamPrefix {
-			continue
-		}
-		key := tag[len(UpstreamPrefix):]
-		if action := pinnedAction(key, plugins); action != nil && routeKey(action) == "upstream:"+key {
-			result.Set(tag, action)
-		}
-	}
-	return result
-}
-
-// RefreshRuleHelpers is refresh_rule_helpers(document): rebuild owned
-// pinned upstream chains for the YAML's current IP selection, RouterOS,
-// cache and TTL features, in place. Chains edited by hand are left alone.
-func RefreshRuleHelpers(document *jsonx.Object) (err error) {
-	defer catch(&err)
-	refreshRuleHelpersImpl(document)
+	list.Content = result
 	return nil
 }
 
-func refreshRuleHelpersImpl(document *jsonx.Object) {
-	actions := ownedChainsImpl(document)
-	if actions.Len() == 0 {
-		return
-	}
-	routes := []string{}
-	for _, action := range actions.Values() {
-		routes = append(routes, routeKey(action))
-	}
-	ownHelpers(document, routes, actions, nil)
+type ownedChain struct {
+	tag    string
+	action *Node
 }
 
-// syncUpdates is _sync_updates(document, settings, config, old_groups,
-// new_groups, base_url, records, before_records): records are the catalog
-// of config, beforeRecords those of the rule space the document was written
-// for (nil = None).
-func syncUpdates(document, settings, config *jsonx.Object, oldGroups []*recognizedGroup, newTags []string,
-	baseURL string, records, beforeRecords *catalogData) {
-	plugins := routingPlugins(document)
-	download := pluginAt(plugins, "rules_download")
-	reload := pluginAt(plugins, "rules_reload")
-	if download == nil && reload == nil {
-		return
-	}
-	var parkedReload *jsonx.Object
-	if parked, ok := settings.GetOr("_common_disabled", jsonx.NewObject()).(*jsonx.Object); ok && parked != nil {
-		parkedReload, _ = parked.Value("rules_reload").(*jsonx.Object)
-	}
-	_, parkedArgsList := parkedReload.Value("args").([]any)
-	reloadParked := reload == nil && parkedReload != nil && parkedReload.Value("tag") == "rules_reload" &&
-		parkedReload.Value("type") == "reload_provider" && parkedArgsList
-	downloadOK := download != nil && download.Value("type") == "download"
-	if downloadOK {
-		args, isObj := download.Value("args").(*jsonx.Object)
-		_, isList := args.Value("downloads").([]any)
-		downloadOK = isObj && args != nil && isList
-	}
-	reloadOK := reloadParked
-	if !reloadParked {
-		_, isList := reload.Value("args").([]any)
-		reloadOK = reload != nil && reload.Value("type") == "reload_provider" && isList
-	}
-	if !downloadOK || !reloadOK {
-		fail("规则定时更新包含自定义结构，请先在完整参数中调整下载与重载任务。")
-	}
-	oldTags := map[string]bool{}
-	for _, group := range oldGroups {
-		oldTags[group.tag] = true
-	}
-	// Old providers retained for another caller also remain reloadable.
-	if reload != nil {
-		reload.Set("args", ReloadReferences(asList(reload.Value("args")), oldTags, newTags, plugins))
-	}
-	// Downloads of rulesets that left the catalog (deleted or disabled) are owned too.
-	knownPaths := map[string]bool{}
-	for _, catalog := range []*catalogData{records, beforeRecords} {
-		if catalog == nil {
+func ownedChainList(document *Node) []ownedChain {
+	plugins := pluginMap(document)
+	var out []ownedChain
+	for _, item := range items(get(document, "plugins")) {
+		tag := str(get(item, "tag"))
+		if len(plugins) == 0 || !strings.HasPrefix(tag, UpstreamPrefix) {
 			continue
 		}
-		for _, identity := range catalog.order {
-			record := catalog.records[identity]
-			if record.suffix != "rulesets" {
-				continue
+		key := tag[len(UpstreamPrefix):]
+		if action := pinnedAction(key, plugins); action != nil && RouteKey(action) == "upstream:"+key {
+			out = append(out, ownedChain{tag, action})
+		}
+	}
+	return out
+}
+
+// OwnedChains maps the pinned upstream chains whose tag still names their
+// content to their actions.
+func OwnedChains(document *Node) map[string]*Node {
+	out := map[string]*Node{}
+	for _, c := range ownedChainList(document) {
+		out[c.tag] = c.action
+	}
+	return out
+}
+
+// RefreshRuleHelpers rebuilds the owned pinned chains for the document's
+// current IP selection, RouterOS, cache and TTL features.
+func RefreshRuleHelpers(document *Node) error {
+	chains := ownedChainList(document)
+	if len(chains) == 0 {
+		return nil
+	}
+	actions := M()
+	var routes []string
+	for _, c := range chains {
+		set(actions, c.tag, c.action)
+		routes = append(routes, RouteKey(c.action))
+	}
+	return ownHelpers(document, routes, actions, nil)
+}
+
+// downloadPath is the managed path of a download entry ("" when unreadable).
+func downloadPath(entry *Node) string {
+	dir, file := get(entry, "dir"), get(entry, "filename")
+	if !isStr(dir) || !isStr(file) {
+		return ""
+	}
+	return strings.TrimPrefix(strings.TrimRight(dir.Value, "/")+"/"+file.Value, "./")
+}
+
+func (p *Profile) syncUpdates(document, settings *Node, oldGroups []*recGroup, newGroups *routingGroups, baseURL string, records, before *ruleCatalog) error {
+	plugins := pluginMap(document)
+	download, reload := plugins["rules_download"], plugins["rules_reload"]
+	if download == nil && reload == nil {
+		return nil
+	}
+	parked := get(get(settings, "_common_disabled"), "rules_reload")
+	reloadParked := reload == nil && isMap(parked) && equal(get(parked, "tag"), S("rules_reload")) &&
+		equal(get(parked, "type"), S("reload_provider")) && isSeq(get(parked, "args"))
+	if download == nil || !equal(get(download, "type"), S("download")) || !isSeq(get(get(download, "args"), "downloads")) ||
+		!reloadParked && (reload == nil || !equal(get(reload, "type"), S("reload_provider")) || !isSeq(get(reload, "args"))) {
+		return fail("规则定时更新包含自定义结构，请先在完整参数中调整下载与重载任务。")
+	}
+	oldTags := map[string]bool{}
+	for _, g := range oldGroups {
+		oldTags[g.tag] = true
+	}
+	var newTags []string
+	for _, g := range newGroups.all() {
+		newTags = append(newTags, g.Tag)
+	}
+	if reload != nil {
+		set(reload, "args", seqOf(ReloadReferences(get(reload, "args").Content, oldTags, newTags, plugins)))
+	}
+	knownPaths := map[string]bool{}
+	for _, c := range []*ruleCatalog{records, before} {
+		if c == nil {
+			continue
+		}
+		for _, r := range c.records {
+			if r.suffix == "rulesets" {
+				for part := range r.parts {
+					knownPaths[strings.TrimPrefix(RulePath(r.item, part), "./")] = true
+				}
 			}
-			for part := range record.parts {
-				knownPaths[strings.TrimPrefix(rulePath(record.item, part), "./")] = true
+		}
+	}
+	desired, err := p.resourceDownloads(document, settings, baseURL, records)
+	if err != nil {
+		return err
+	}
+	wanted := map[string]*Node{}
+	var wantedOrder []string
+	for _, item := range desired {
+		if local := downloadPath(item); knownPaths[local] {
+			if wanted[local] == nil {
+				wantedOrder = append(wantedOrder, local)
 			}
+			wanted[local] = item
 		}
 	}
-	desired := resourceDownloadsImpl(document, settings, config, baseURL, records)
-	entryPath := func(entry any) (string, bool) {
-		object, ok := entry.(*jsonx.Object)
-		if !ok || object == nil {
-			return "", false
-		}
-		dir, dirOK := object.Value("dir").(string)
-		name, nameOK := object.Value("filename").(string)
-		if !dirOK || !nameOK {
-			return "", false
-		}
-		return strings.TrimPrefix(strings.TrimRight(dir, "/")+"/"+name, "./"), true
-	}
-	desiredEntries := jsonx.NewObject()
-	for _, entry := range desired {
-		if local, ok := entryPath(entry); ok && knownPaths[local] {
-			desiredEntries.Set(local, entry)
-		}
-	}
-	output := []any{}
-	readers := resourceReaders(document)
-	for _, entry := range download.GetObject("args").GetList("downloads") {
-		location, ok := entryPath(entry)
+	var output []*Node
+	readers := ResourceReaders(document)
+	for _, entry := range get(get(download, "args"), "downloads").Content {
+		location := downloadPath(entry)
 		switch {
-		case !ok || !knownPaths[location]:
+		case !knownPaths[location]:
 			output = append(output, entry)
-		case desiredEntries.Has(location):
-			// Preserve per-download extensions and explicit URL overrides.
+		case wanted[location] != nil:
 			output = append(output, entry)
-			desiredEntries.Delete(location)
+			delete(wanted, location)
 		case ResourceIsRead(location, readers):
 			output = append(output, entry)
 		}
 	}
-	output = append(output, desiredEntries.Values()...)
+	for _, local := range wantedOrder {
+		if wanted[local] != nil {
+			output = append(output, wanted[local])
+		}
+	}
 	replaceDownloadEntries(download, output)
+	return nil
 }
 
-// routeLabel is _route_label(route).
-func routeLabel(route string) string {
-	name := strings.SplitN(route, ":", 2)[0]
-	label, ok := RouteLabels[name]
-	if !ok {
-		raise(pyErr("KeyError", jsonx.Repr(name)))
+func routeLabel(route string) string { return RouteLabels[strings.SplitN(route, ":", 2)[0]] }
+
+// assignStored routes one active rule by a stored choice.
+func assignStored(values, item, action *Node) error {
+	action, err := NormalizeAction(action, true)
+	if err != nil {
+		return err
 	}
-	return label
-}
-
-// ruleName is _name(item).
-func ruleName(entry *jsonx.Object) any {
-	for _, key := range []string{"name", "value"} {
-		if value := entry.Value(key); truthy(value) {
-			return value
-		}
-	}
-	return entry.Value("id")
-}
-
-// assignRoute is _assign(values, item, action): route one active rule by a
-// stored choice; direct/proxy live in the lists.
-func assignRoute(values *jsonx.Object, entry *jsonx.Object, action any) {
-	normalized := normalizeAction(action, true)
-	name := normalized.GetString("action")
-	identity := item(entry, "id")
-	if strIn(name, ListRoutes...) {
-		key := name + "_" + itemSuffix(entry)
-		values.Set(key, appendCopy(values.GetList(key), identity))
+	identity := get(item, "id")
+	if kind := str(get(action, "action")); isListRoute(kind) {
+		list := get(values, kind+"_"+suffixOf(item))
+		list.Content = append(list.Content, identity)
 	} else {
-		values.GetObject("rule_actions").Set(identity.(string), normalized)
+		set(get(values, "rule_actions"), identity.Value, action)
 	}
+	return nil
 }
 
-// validateSelections is _validate_selections(values, changes, known): shape
-// and existence of changed selections.
-func validateSelections(values, changes, known *jsonx.Object) {
-	allStrings := func(value any) bool {
-		list, ok := value.([]any)
-		if !ok {
-			return false
-		}
-		for _, element := range list {
-			if !isStr(element) {
-				return false
-			}
-		}
-		return true
+func routeOf(values *Node, identity string) string {
+	if action := get(get(values, "rule_actions"), identity); action != nil {
+		return RouteKey(action)
 	}
-	for _, key := range Selectors {
-		if !allStrings(values.Value(key)) {
-			fail(key + " 必须为规则 ID 列表")
+	for _, route := range ListRoutes {
+		if containsStr(get(values, route+"_rules"), identity) || containsStr(get(values, route+"_rulesets"), identity) {
+			return route
 		}
-		list := dictFromKeys(values.GetList(key))
-		values.Set(key, list)
+	}
+	return ""
+}
+
+func validateSelections(values, changes *Node, known map[string]*Node) error {
+	for _, key := range Selectors {
+		if !allStrings(get(values, key)) {
+			return fail(key + " 必须为规则 ID 列表")
+		}
+		set(values, key, unique(get(values, key)))
 		suffix := "rules"
 		if strings.HasSuffix(key, "rulesets") {
 			suffix = "rulesets"
 		}
-		if changes.Has(key) {
-			for _, identity := range list {
-				entry, found := known.Get(identity.(string))
-				if !found || itemSuffix(entry) != suffix {
-					fail(missingRule)
+		if has(changes, key) {
+			for _, id := range get(values, key).Content {
+				if known[id.Value] == nil || suffixOf(known[id.Value]) != suffix {
+					return fail(missingRule)
 				}
 			}
 		}
 	}
-	if changes.Has("rule_actions") {
-		actions, ok := values.Value("rule_actions").(*jsonx.Object)
-		if !ok || actions == nil {
-			fail("rule_actions 必须为以规则 ID 为键的对象")
+	if has(changes, "rule_actions") {
+		actions := get(values, "rule_actions")
+		if !isMap(actions) {
+			return fail("rule_actions 必须为以规则 ID 为键的对象")
 		}
-		for _, identity := range actions.Keys() {
-			if !known.Has(identity) {
-				fail(missingRule)
+		for _, id := range keys(actions) {
+			if known[id] == nil {
+				return fail(missingRule)
 			}
 		}
-		normalized := jsonx.NewObject()
-		for identity, action := range actions.All() {
-			if action != nil {
-				normalized.Set(identity, normalizeAction(action, false))
+		normalized := M()
+		var err error
+		pairs(actions, func(id string, action *Node) bool {
+			if !isNone(action) {
+				var n *Node
+				if n, err = NormalizeAction(action, false); err != nil {
+					return false
+				}
+				set(normalized, id, n)
 			}
+			return true
+		})
+		if err != nil {
+			return err
 		}
-		values.Set("rule_actions", normalized)
+		set(values, "rule_actions", normalized)
 	}
-	if changes.Has("rule_dns_follow") {
-		if !allStrings(values.Value("rule_dns_follow")) {
-			fail("rule_dns_follow 必须为规则 ID 数组")
+	if has(changes, "rule_dns_follow") {
+		follow := get(values, "rule_dns_follow")
+		if !allStrings(follow) {
+			return fail("rule_dns_follow 必须为规则 ID 数组")
 		}
-		follow := values.GetList("rule_dns_follow")
-		for _, identity := range follow {
-			if !known.Has(identity.(string)) {
-				fail(missingRule)
+		for _, id := range follow.Content {
+			if known[id.Value] == nil {
+				return fail(missingRule)
 			}
 		}
-		values.Set("rule_dns_follow", dictFromKeys(follow))
+		set(values, "rule_dns_follow", unique(follow))
 	}
 	for _, suffix := range []string{"rules", "rulesets"} {
-		direct := map[string]bool{}
-		for _, identity := range values.GetList("direct_" + suffix) {
-			direct[identity.(string)] = true
-		}
-		for _, identity := range values.GetList("proxy_" + suffix) {
-			if direct[identity.(string)] {
-				fail("同一规则不能同时选择直连和代理。")
+		for _, id := range get(values, "direct_"+suffix).Content {
+			if contains(get(values, "proxy_"+suffix), id) {
+				return fail("同一规则不能同时选择直连和代理。")
 			}
 		}
 	}
+	return nil
 }
 
-// takeOver is _take_over(values, current, changes, known, notices): a
-// changed key wins over the other kind of choice it newly takes a rule from.
-func takeOver(values *jsonx.Object, current *routingState, changes, known *jsonx.Object, notices *[]any) {
+func takeOver(values *Node, current *routingState, changes *Node, known map[string]*Node, notices *[]string) error {
 	old := current.values
-	type taking struct{ identity, before, after string }
-	var taken []taking
-	if changes.Has("rule_actions") {
-		for identity, action := range values.GetObject("rule_actions").All() {
-			if old.GetObject("rule_actions").Has(identity) {
-				continue
+	type taken struct{ identity, before, after string }
+	var moved []taken
+	if has(changes, "rule_actions") {
+		var err error
+		pairs(get(values, "rule_actions"), func(identity string, action *Node) bool {
+			if has(get(old, "rule_actions"), identity) {
+				return true
 			}
 			for _, key := range Selectors {
-				if pyContains(values.Value(key), identity) {
-					if changes.Has(key) {
-						fail("同一规则不能同时选择多种 DNS 处理。")
+				if list := get(values, key); containsStr(list, identity) {
+					if has(changes, key) {
+						err = fail("同一规则不能同时选择多种 DNS 处理。")
+						return false
 					}
-					values.Set(key, listRemove(values.Value(key), identity))
-					taken = append(taken, taking{identity, strings.SplitN(key, "_", 2)[0], routeKey(action)})
+					list.Content = filterOnce(list.Content, identity)
+					moved = append(moved, taken{identity, strings.Split(key, "_")[0], RouteKey(action)})
 				}
 			}
+			return true
+		})
+		if err != nil {
+			return err
 		}
 	}
 	for _, key := range Selectors {
-		if !changes.Has(key) {
+		if !has(changes, key) {
 			continue
 		}
-		for _, element := range values.GetList(key) {
-			identity := element.(string)
-			actions := values.GetObject("rule_actions")
-			if pyContains(old.Value(key), identity) || !actions.Has(identity) {
+		for _, id := range get(values, key).Content {
+			if containsStr(get(old, key), id.Value) || !has(get(values, "rule_actions"), id.Value) {
 				continue
 			}
-			if changes.Has("rule_actions") {
-				fail("同一规则不能同时选择多种 DNS 处理。")
+			if has(changes, "rule_actions") {
+				return fail("同一规则不能同时选择多种 DNS 处理。")
 			}
-			action := actions.Value(identity)
-			actions.Delete(identity)
-			taken = append(taken, taking{identity, routeKey(action), strings.SplitN(key, "_", 2)[0]})
+			action := del(get(values, "rule_actions"), id.Value)
+			moved = append(moved, taken{id.Value, RouteKey(action), strings.Split(key, "_")[0]})
 		}
 	}
 	if notices != nil {
-		for _, t := range taken {
-			*notices = append(*notices, "规则「"+str(ruleName(known.GetObject(t.identity)))+"」的 DNS 处理已从「"+
-				routeLabel(t.before)+"」改为「"+routeLabel(t.after)+"」")
+		for _, t := range moved {
+			*notices = append(*notices, "规则「"+pyStr(ruleName(known[t.identity]))+"」的 DNS 处理已从「"+routeLabel(t.before)+"」改为「"+routeLabel(t.after)+"」")
 		}
 	}
+	return nil
 }
 
-// settle is _settle(values, settings, changes, current, known, active,
-// routes): keep only active rules in the selections; return (parked,
-// follow). Follow rules are never parked: the policy decides again.
-func settle(values, settings, changes *jsonx.Object, current *routingState, known *jsonx.Object,
-	active *catalogData, routes *jsonx.Object) (*jsonx.Object, []any) {
-	followGiven := changes.Has("rule_dns_follow")
-	follow := []any{}
-	for _, identity := range values.GetList("rule_dns_follow") {
-		if known.Has(identity.(string)) {
-			follow = append(follow, identity)
+// filterOnce is list.remove(value) for a string.
+func filterOnce(list []*Node, value string) []*Node {
+	for i, v := range list {
+		if equal(v, S(value)) {
+			return append(append([]*Node{}, list[:i]...), list[i+1:]...)
 		}
 	}
-	parked := jsonx.NewObject()
-	if stored, ok := settings.Value("rule_dns_parked").(*jsonx.Object); ok && stored != nil {
-		for identity, action := range stored.All() {
-			if known.Has(identity) {
-				parked.Set(identity, copyValue(action))
-			}
+	return list
+}
+
+func ruleName(item *Node) *Node {
+	for _, key := range []string{"name", "value", "id"} {
+		if v := get(item, key); truthy(v) {
+			return v
 		}
 	}
+	return get(item, "id")
+}
+
+// settle keeps only active rules in the selections; returns (parked, follow).
+func settle(values, settings, changes *Node, current *routingState, known map[string]*Node, active *ruleCatalog, routes map[string]string) (*Node, *Node, error) {
+	followGiven := has(changes, "rule_dns_follow")
+	follow := seqOf(filter(get(values, "rule_dns_follow").Content, func(v *Node) bool { return known[v.Value] != nil }))
+	parked := M()
+	pairs(get(settings, "rule_dns_parked"), func(id string, action *Node) bool {
+		if known[id] != nil {
+			set(parked, id, clone(action))
+		}
+		return true
+	})
 	assigned := map[string]bool{}
 	for _, key := range Selectors {
-		if changes.Has(key) {
-			for _, identity := range values.GetList(key) {
-				assigned[identity.(string)] = true
+		if has(changes, key) {
+			for _, id := range get(values, key).Content {
+				assigned[id.Value] = true
 			}
 		}
 	}
-	if changes.Has("rule_actions") {
-		for _, identity := range values.GetObject("rule_actions").Keys() {
-			assigned[identity] = true
+	if has(changes, "rule_actions") {
+		for _, id := range keys(get(values, "rule_actions")) {
+			assigned[id] = true
 		}
 	}
-	leaving := jsonx.NewObject()
+	leaving := M()
 	for _, key := range Selectors {
-		kept := []any{}
-		for _, element := range values.GetList(key) {
-			identity := element.(string)
-			if !active.has(identity) {
-				leaving.Set(identity, jsonx.Obj("action", strings.SplitN(key, "_", 2)[0]))
-			} else {
-				kept = append(kept, identity)
+		list := get(values, key)
+		for _, id := range list.Content {
+			if active.records[id.Value] == nil {
+				set(leaving, id.Value, M("action", strings.Split(key, "_")[0]))
 			}
 		}
-		values.Set(key, kept)
+		set(values, key, seqOf(filter(list.Content, func(v *Node) bool { return active.records[v.Value] != nil })))
 	}
-	keptActions := jsonx.NewObject()
-	for identity, action := range values.GetObject("rule_actions").All() {
-		if !active.has(identity) {
-			leaving.Set(identity, action)
+	kept := M()
+	pairs(get(values, "rule_actions"), func(id string, action *Node) bool {
+		if active.records[id] == nil {
+			set(leaving, id, action)
 		} else {
-			keptActions.Set(identity, action)
+			set(kept, id, action)
 		}
-	}
-	values.Set("rule_actions", keptActions)
-	for identity, action := range leaving.All() {
-		if known.Has(identity) && (!listContains(follow, identity) || assigned[identity]) {
-			parked.Set(identity, action)
-			if listContains(follow, identity) && !followGiven {
-				follow = listRemove(follow, identity)
+		return true
+	})
+	set(values, "rule_actions", kept)
+	pairs(leaving, func(id string, action *Node) bool {
+		if known[id] != nil && (!containsStr(follow, id) || assigned[id]) {
+			set(parked, id, action)
+			if containsStr(follow, id) && !followGiven {
+				follow.Content = filterOnce(follow.Content, id)
 			}
 		}
-	}
-	if !current.full {
-		raise(pyErr("KeyError", "'records'"))
-	}
+		return true
+	})
 	before := current.records
-	for _, identity := range active.order {
-		record := active.records[identity]
-		if routeOf(values, identity) != nil {
-			parked.Delete(identity)
-		} else if parked.Has(identity) {
-			action := parked.Value(identity)
-			parked.Delete(identity)
-			assignRoute(values, record.item, action)
-		} else if listContains(follow, identity) && !before.has(identity) {
-			if route := followRoute(record.item, routes); route != nil {
-				assignRoute(values, record.item, jsonx.Obj("action", route))
+	for _, id := range active.order {
+		record := active.records[id]
+		switch {
+		case routeOf(values, id) != "":
+			del(parked, id)
+		case has(parked, id):
+			if err := assignStored(values, record.item, del(parked, id)); err != nil {
+				return nil, nil, err
+			}
+		case containsStr(follow, id) && (before == nil || before.records[id] == nil):
+			if route := followRoute(record.item, routes); route != "" {
+				if err := assignStored(values, record.item, M("action", route)); err != nil {
+					return nil, nil, err
+				}
 			}
 		}
 	}
 	if !followGiven {
-		// Follow intent ends for a rule active before and after whose actual
-		// route this write changed, and for a rule with an explicit action.
-		kept := []any{}
-		for _, element := range follow {
-			identity := element.(string)
-			if values.GetObject("rule_actions").Has(identity) {
-				continue
+		follow = seqOf(filter(follow.Content, func(v *Node) bool {
+			id := v.Value
+			if has(get(values, "rule_actions"), id) {
+				return false
 			}
-			if before.has(identity) && active.has(identity) &&
-				!jsonx.Equal(routeOf(current.values, identity), routeOf(values, identity)) {
-				continue
-			}
-			kept = append(kept, identity)
-		}
-		follow = kept
+			return !(before != nil && before.records[id] != nil && active.records[id] != nil &&
+				routeOf(current.values, id) != routeOf(values, id))
+		}))
 	}
-	for _, element := range follow {
-		identity := element.(string)
-		if action, ok := values.GetObject("rule_actions").Get(identity); ok {
-			label := RouteLabels[str(item(action, "action"))]
-			fail("规则 " + identity + " 已设置 DNS 处理「" + label + "」，不能同时跟随策略")
+	for _, v := range follow.Content {
+		if action := get(get(values, "rule_actions"), v.Value); action != nil {
+			return nil, nil, fail("规则 " + v.Value + " 已设置 DNS 处理「" + RouteLabels[str(get(action, "action"))] + "」，不能同时跟随策略")
 		}
-		if parked.Has(identity) {
-			fail("规则 " + identity + " 已暂存停用前的 DNS 处理，不能同时跟随策略")
+		if has(parked, v.Value) {
+			return nil, nil, fail("规则 " + v.Value + " 已暂存停用前的 DNS 处理，不能同时跟随策略")
 		}
 	}
-	return parked, follow
+	return parked, follow, nil
 }
 
-// normalizeCustomMatches is _normalize_custom_matches(value).
-func normalizeCustomMatches(value any) []any {
-	list, ok := value.([]any)
-	if !ok {
-		fail("自定义匹配必须为列表。")
+func normalizeCustomMatches(value *Node) (*Node, error) {
+	if !isSeq(value) {
+		return nil, fail("自定义匹配必须为列表。")
 	}
-	normalized := []any{}
-	for _, element := range list {
-		entry, ok := element.(*jsonx.Object)
-		if !ok || entry == nil {
-			fail("每条自定义匹配必须为对象。")
+	out := L()
+	for _, entry := range value.Content {
+		if !isMap(entry) {
+			return nil, fail("每条自定义匹配必须为对象。")
 		}
-		if entry.Value("enabled") == false {
-			fail("常用设置直接编辑执行中的匹配条目，不支持 enabled: false；请移除该条目或改为启用。")
+		if enabled := get(entry, "enabled"); isBool(enabled) && enabled.Value == "false" {
+			return nil, fail("常用设置直接编辑执行中的匹配条目，不支持 enabled: false；请移除该条目或改为启用。")
 		}
-		matches, ok := routingMatches(entry).([]any)
-		valid := ok && len(matches) > 0
-		for _, match := range matches {
-			if text, isText := match.(string); !isText || pystr.Strip(text) == "" {
-				valid = false
-			}
+		matches := entryMatches(entry)
+		ok := isSeq(matches) && len(matches.Content) > 0 && strings.TrimSpace(str(get(entry, "exec"))) != ""
+		for _, m := range items(matches) {
+			ok = ok && isStr(m) && strings.TrimSpace(m.Value) != ""
 		}
-		exec, isText := entry.Value("exec").(string)
-		if !valid || !isText || pystr.Strip(exec) == "" {
-			fail("自定义匹配需填写非空条件与执行动作。")
+		if !ok {
+			return nil, fail("自定义匹配需填写非空条件与执行动作。")
 		}
-		copied := jsonx.NewObject()
-		for key, value := range entry.All() {
+		copy := M()
+		pairs(entry, func(key string, v *Node) bool {
 			if key != "enabled" {
-				copied.Set(key, copyValue(value))
+				set(copy, key, clone(v))
 			}
-		}
-		normalized = append(normalized, copied)
+			return true
+		})
+		out.Content = append(out.Content, copy)
 	}
-	return normalized
+	return out, nil
 }
 
-// applyAliasedCustom is _apply_aliased_custom(document, settings, state,
-// changes).
-func applyAliasedCustom(document, settings *jsonx.Object, state *routingState, changes *jsonx.Object) (*jsonx.Object, *jsonx.Object) {
-	for _, field := range changes.Keys() {
-		if !capEditable(state.caps, field) {
-			fail(capReason(state.caps, field))
+func applyAliasedCustom(document, settings *Node, state *routingState, changes *Node) (*Node, *Node, error) {
+	for _, field := range keys(changes) {
+		if c := state.caps[field]; !c.Editable {
+			return nil, nil, fail(c.Reason)
 		}
 	}
-	position, ok := changes.Get("custom_match_position")
-	if !ok {
-		position = state.values.Value("custom_match_position")
-		if !truthy(position) {
-			position = "tail"
+	position := "tail"
+	if v := get(state.values, "custom_match_position"); truthy(v) {
+		position = str(v)
+	}
+	if has(changes, "custom_match_position") {
+		position = str(get(changes, "custom_match_position"))
+		if !isOneOf(get(changes, "custom_match_position"), "head", "tail") {
+			return nil, nil, fail("自定义匹配位置必须为 head 或 tail。")
 		}
 	}
-	if !strIn(position, "head", "tail") {
-		fail("自定义匹配位置必须为 head 或 tail。")
+	custom := clone(get(state.values, "custom_matches"))
+	if has(changes, "custom_matches") {
+		var err error
+		if custom, err = normalizeCustomMatches(get(changes, "custom_matches")); err != nil {
+			return nil, nil, err
+		}
 	}
-	var custom []any
-	if changes.Has("custom_matches") {
-		custom = normalizeCustomMatches(changes.Value("custom_matches"))
-	} else {
-		custom = asList(copyValue(state.values.Value("custom_matches")))
+	result := clone(document)
+	main := pluginMap(result)[state.actualMainTag]
+	args := get(main, "args").Content
+	prefix := len(state.prefix)
+	middle := prefix + len(state.customIndices) + len(state.groups.Domain)
+	var domain []*Node
+	for _, g := range state.groups.Domain {
+		domain = append(domain, args[g.index])
 	}
-	result := copyValue(document).(*jsonx.Object)
-	main := pluginAt(routingPlugins(result), state.actualMainTag)
-	if main == nil {
-		raise(pyErr("KeyError", jsonx.Repr(state.actualMainTag)))
-	}
-	args := asList(item(main, "args"))
-	if !state.full {
-		raise(pyErr("KeyError", "'prefix'"))
-	}
-	prefixLen := min(len(state.prefix), len(args))
-	middleEnd := min(len(state.prefix)+len(state.customIndices)+len(state.groups["domain"]), len(args))
-	// Indexes come from a read-only recognition copy. All retained entries
-	// come from the original document.
-	domain := []any{}
-	for _, group := range state.groups["domain"] {
-		domain = append(domain, listItem(args, group.index))
-	}
-	updated := append([]any{}, args[:prefixLen]...)
+	set(main, "args", seqOf(assemble(args[:prefix], custom.Content, domain, position, args[middle:])))
+	return result, clone(settings), nil
+}
+
+func assemble(prefix, custom, domain []*Node, position string, rest []*Node) []*Node {
+	out := append([]*Node{}, prefix...)
 	if position == "head" {
-		updated = append(updated, custom...)
+		out = append(out, custom...)
 	}
-	updated = append(updated, domain...)
+	out = append(out, domain...)
 	if position == "tail" {
-		updated = append(updated, custom...)
+		out = append(out, custom...)
 	}
-	main.Set("args", append(updated, args[middleEnd:]...))
-	return result, copyValue(settings).(*jsonx.Object)
+	return append(out, rest...)
 }
 
-// ApplyRoutingOptions are apply_routing's keyword arguments.
-type ApplyRoutingOptions struct {
-	// BeforeConfig is before_config: the rule space the document was
-	// written for (nil = None). Passing it rebuilds the owned routing for
-	// config even without changes.
-	BeforeConfig *jsonx.Object
-	// Notices is notices (nil = None): receives a line for each rule a
-	// changed key took from another kind of DNS choice.
-	Notices *[]any
+// RoutingOptions: BeforeConfig is the rule space the document was written
+// for (rebuild the owned routing for p even without changes); Notices, when
+// set, receives a line for each rule a changed key took from another choice.
+type RoutingOptions struct {
+	BeforeConfig *Profile
+	Notices      *[]string
 }
 
-// ApplyRouting is apply_routing(document, settings, config, changes,
-// base_url, before_config=..., notices=...): one atomic routing edit applied
-// to copies of document and settings; never persists or regenerates all
-// YAML.
-func ApplyRouting(document, settings, config, changes *jsonx.Object, baseURL string, options ApplyRoutingOptions) (doc, values *jsonx.Object, err error) {
-	defer catch(&err)
-	doc, values = applyRoutingImpl(document, settings, config, changes, baseURL, options.BeforeConfig,
-		options.BeforeConfig != nil, options.Notices)
-	return doc, values, nil
-}
-
-func applyRoutingImpl(document, settings *jsonx.Object, configValue any, changesValue *jsonx.Object, baseURL string,
-	beforeConfig *jsonx.Object, rebuild bool, notices *[]any) (*jsonx.Object, *jsonx.Object) {
-	changes := jsonx.NewObject()
-	for key, value := range changesValue.All() {
-		if RoutingFields[key] {
-			changes.Set(key, value)
+// ApplyRouting applies one atomic routing edit to copies of document and
+// settings.
+func ApplyRouting(document, settings *Node, p *Profile, changes *Node, baseURL string, opts RoutingOptions) (*Node, *Node, error) {
+	filtered := M()
+	pairs(changes, func(key string, value *Node) bool {
+		if containsString(RoutingFields, key) {
+			set(filtered, key, value)
 		}
+		return true
+	})
+	changes = filtered
+	rebuild := opts.BeforeConfig != nil
+	if len(changes.Content) == 0 && !rebuild {
+		return clone(document), clone(settings), nil
 	}
-	if changes.Len() == 0 && !rebuild {
-		return copyValue(document).(*jsonx.Object), copyValue(settings).(*jsonx.Object)
-	}
-	config := configOf(configValue)
 	onlyCustom, anyCustom := true, false
-	for _, key := range changes.Keys() {
-		if strIn(key, customFields...) {
-			anyCustom = true
-		} else {
-			onlyCustom = false
-		}
+	for _, key := range keys(changes) {
+		c := containsString(customFields, key)
+		onlyCustom, anyCustom = onlyCustom && c, anyCustom || c
 	}
 	if !rebuild && anyCustom {
-		if aliased := aliasedCustomState(document, settings, config); aliased != nil {
+		aliased, err := p.aliasedCustomState(document, settings)
+		if err != nil {
+			return nil, nil, err
+		}
+		if aliased != nil {
 			if onlyCustom {
 				return applyAliasedCustom(document, settings, aliased, changes)
 			}
-			fail("执行链已重命名，请单独调整自定义匹配，再编辑其他分流设置。")
+			return nil, nil, fail("执行链已重命名，请单独调整自定义匹配，再编辑其他分流设置。")
 		}
 	}
-	analyzed := config
+	source := p
 	if rebuild {
-		analyzed = beforeConfig
+		source = opts.BeforeConfig
 	}
-	current := analyzeRouting(document, settings, analyzed)
-	for _, key := range changes.Keys() {
-		if !capEditable(current.caps, key) {
-			fail(capReason(current.caps, key))
+	current := source.analyzeRouting(document, settings)
+	for _, key := range keys(changes) {
+		if c := current.caps[key]; !c.Editable {
+			return nil, nil, fail(c.Reason)
 		}
 	}
-	if rebuild && !capEditable(current.caps, "direct_rules") {
-		fail(capReason(current.caps, "direct_rules"))
+	if rebuild && !current.caps["direct_rules"].Editable {
+		return nil, nil, fail(current.caps["direct_rules"].Reason)
 	}
-	values := copyValue(current.values).(*jsonx.Object)
-	for key, value := range copyValue(changes).(*jsonx.Object).All() {
-		values.Set(key, value)
+	values := clone(current.values)
+	pairs(changes, func(key string, value *Node) bool { set(values, key, clone(value)); return true })
+	defaultForward := get(values, "default_forward")
+	if !isOneOf(defaultForward, "forward_local", "forward_remote") {
+		return nil, nil, fail("默认转发目标无效。")
 	}
-	if !strIn(values.Value("default_forward"), "forward_local", "forward_remote") {
-		fail("默认转发目标无效。")
+	migrateIP := len(current.groups.IP) > 0 && current.caps["direct_rules"].Editable
+	onlyDefault := len(changes.Content) == 2 && has(changes, "default_forward")
+	if !rebuild && !migrateIP && (onlyDefault || len(changes.Content) == 0) {
+		return switchDefault(document, settings, current, defaultForward.Value)
 	}
-	migrateIP := current.full && len(current.groups["ip"]) > 0 && capEditable(current.caps, "direct_rules")
-	onlyDefault := true
-	for _, key := range changes.Keys() {
-		if key != "default_forward" {
-			onlyDefault = false
-		}
-	}
-	if !rebuild && !migrateIP && onlyDefault {
-		return applyDefaultForward(document, settings, current, values)
-	}
-	known := knownRules(config)
-	// current was read against before_config when rebuilding.
-	var records *catalogData
+	known, _ := p.knownRules()
+	records := current.records
 	if rebuild {
-		records = buildCatalog(config)
-	} else {
-		if !current.full {
-			raise(pyErr("KeyError", "'records'"))
-		}
-		records = current.records
+		records = p.catalog()
 	}
-	active := &catalogData{records: map[string]*catalogRecord{}}
-	for _, identity := range records.order {
-		if record := records.records[identity]; Convertible(record.item) {
-			active.order = append(active.order, identity)
-			active.records[identity] = record
+	active := &ruleCatalog{records: map[string]*ruleRecord{}}
+	for _, id := range records.order {
+		if convertible(records.records[id].item) {
+			active.order = append(active.order, id)
+			active.records[id] = records.records[id]
 		}
 	}
-	validateSelections(values, changes, known)
-	takeOver(values, current, changes, known, notices)
-	routes := policyDNSRoutes(config)
-	parked, follow := settle(values, settings, changes, current, known, active, routes)
-	if changes.Has("aggregate_rules") {
-		if _, isBool := values.Value("aggregate_rules").(bool); !isBool {
-			fail("合并相邻规则必须为布尔值。")
+	if err := validateSelections(values, changes, known); err != nil {
+		return nil, nil, err
+	}
+	if err := takeOver(values, current, changes, known, opts.Notices); err != nil {
+		return nil, nil, err
+	}
+	parked, follow, err := settle(values, settings, changes, current, known, active, policyDNSRoutes(p))
+	if err != nil {
+		return nil, nil, err
+	}
+	if has(changes, "aggregate_rules") && !isBool(get(values, "aggregate_rules")) {
+		return nil, nil, fail("合并相邻规则必须为布尔值。")
+	}
+	if has(changes, "custom_match_position") && !isOneOf(get(values, "custom_match_position"), "head", "tail") {
+		return nil, nil, fail("自定义匹配执行顺序必须为 head 或 tail。")
+	}
+	if has(changes, "custom_matches") {
+		custom, err := normalizeCustomMatches(get(values, "custom_matches"))
+		if err != nil {
+			return nil, nil, err
 		}
+		set(values, "custom_matches", custom)
 	}
-	if changes.Has("custom_match_position") && !strIn(values.Value("custom_match_position"), "head", "tail") {
-		fail("自定义匹配执行顺序必须为 head 或 tail。")
-	}
-	if changes.Has("custom_matches") {
-		values.Set("custom_matches", normalizeCustomMatches(values.Value("custom_matches")))
-	}
-	result, resultSettings := copyValue(document).(*jsonx.Object), copyValue(settings).(*jsonx.Object)
-	main := pluginAt(routingPlugins(result), "sequence_main")
-	if main == nil {
-		raise(pyErr("KeyError", "'sequence_main'"))
-	}
+	result, resultSettings := clone(document), clone(settings)
+	main := pluginMap(result)["sequence_main"]
 	routingChanged := rebuild || migrateIP
 	for _, key := range append(append([]string{}, Selectors...), "aggregate_rules", "rule_actions") {
-		if changes.Has(key) {
-			routingChanged = true
-		}
+		routingChanged = routingChanged || has(changes, key)
 	}
-	type outGroup struct {
-		tag   string
-		route any // a string; an invalidRoute only on unchanged groups
-		entry *jsonx.Object
-	}
-	groups := map[string][]outGroup{}
-	var newTags []string
+	var groups *routingGroups
 	if routingChanged {
-		// There is no actual aggregate setting until adjacent same-route
-		// rules exist. New selections use the existing grouped representation,
-		// or the compact equivalent when the document could mean either.
-		if values.Value("aggregate_rules") == nil {
-			values.Set("aggregate_rules", true)
+		if isNone(get(values, "aggregate_rules")) {
+			set(values, "aggregate_rules", B(true))
 		}
-		expected := routingGroups(config, values, LegacyNone, nil, false)
-		old := current.allGroups()
-		outside := newMentions([]any{withoutKey(document, "plugins"), values.Value("custom_matches")})
-		resultPlugins := asList(result.Value("plugins"))
-		inside := newMentions(resultPlugins)
+		expected, err := p.routingGroups(values, legacyNone, nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		old := current.groups.all()
+		outside := []*Node{withoutPlugins(document), get(values, "custom_matches")}
+		inside := items(get(result, "plugins"))
 		external := map[string]bool{}
-		for _, group := range old {
-			isExternal := !onlyKeys(group.provider, "tag", "type", "args") || truthy(document.Value("include")) ||
-				len(outside.positions(group.tag)) > 0
-			for _, position := range inside.positions(group.tag) {
-				if !strIn(inside.values[position].(*jsonx.Object).Value("tag"), "sequence_main", "rules_reload", group.tag) {
-					isExternal = true
-				}
+		for _, g := range old {
+			extraKeys := len(filter(keyNodes(g.provider), func(k *Node) bool { return !isOneOf(k, "tag", "type", "args") })) > 0
+			used := false
+			for _, i := range positions(inside, g.tag) {
+				used = used || !isOneOf(get(inside[i], "tag"), "sequence_main", "rules_reload", g.tag)
 			}
-			if isExternal {
-				external[group.tag] = true
+			if extraKeys || truthy(get(document, "include")) || len(positions(outside, g.tag)) > 0 || used {
+				external[g.tag] = true
 			}
 		}
-		olds := []oldGroup{}
-		for _, group := range old {
-			olds = append(olds, oldGroup{group.tag, group.provider.Value("type"), group.args})
+		placed, placedGroups, err := placeRoutingGroups(inside, old, expected, external)
+		if err != nil {
+			return nil, nil, err
 		}
-		placed, placedGroups := placeRoutingGroups(resultPlugins, olds, expected, external)
-		result.Set("plugins", placed)
-		for _, part := range []string{"domain", "ip"} {
-			for _, element := range placedGroups.GetList(part) {
-				group := element.(*jsonx.Object)
-				tag := group.GetString("tag")
-				groups[part] = append(groups[part], outGroup{tag: tag, route: group.Value("route")})
-				newTags = append(newTags, tag)
-			}
-		}
+		set(result, "plugins", seqOf(placed))
+		groups = placedGroups
 		for _, key := range Selectors {
-			updated := []any{}
-			if list, isList := resultSettings.Value(key).([]any); isList {
-				updated = asList(copyValue(list))
+			previous := get(resultSettings, key)
+			list := L()
+			if isSeq(previous) {
+				list = clone(previous)
 			}
-			for _, identity := range values.GetList(key) {
-				if !listContains(updated, identity) {
-					updated = append(updated, identity)
+			for _, id := range get(values, key).Content {
+				if !contains(list, id) {
+					list.Content = append(list.Content, id)
 				}
 			}
-			resultSettings.Set(key, updated)
+			set(resultSettings, key, list)
 		}
-		// Unlike the retained list catalog, actions map exactly the active rules.
-		resultSettings.Set("rule_actions", copyValue(values.Value("rule_actions")))
-		resultSettings.Set("rule_dns_parked", parked)
+		set(resultSettings, "rule_actions", clone(get(values, "rule_actions")))
+		set(resultSettings, "rule_dns_parked", parked)
 	} else {
-		for _, part := range []string{"domain", "ip"} {
-			for _, group := range current.groups[part] {
-				groups[part] = append(groups[part], outGroup{tag: group.tag, route: group.route, entry: group.entry})
-			}
+		groups = &routingGroups{}
+		for _, g := range current.groups.Domain {
+			groups.Domain = append(groups.Domain, &ruleGroup{g.route, g.args, g.tag})
+		}
+		for _, g := range current.groups.IP {
+			groups.IP = append(groups.IP, &ruleGroup{g.route, g.args, g.tag})
 		}
 	}
-	if routingChanged || changes.Has("rule_dns_follow") {
-		resultSettings.Set("rule_dns_follow", follow)
+	if routingChanged || has(changes, "rule_dns_follow") {
+		set(resultSettings, "rule_dns_follow", follow)
 	}
-	// Build only the identified sequence regions, retaining all surrounding nodes.
-	prefix := asList(copyValue(listOrEmpty(current.prefix)))
-	custom := asList(copyValue(values.Value("custom_matches")))
-	position := values.Value("custom_match_position")
-	if !truthy(position) {
-		position = "tail"
+	custom := clone(get(values, "custom_matches"))
+	position := "tail"
+	if v := get(values, "custom_match_position"); truthy(v) {
+		position = str(v)
 	}
-	build := func(part, verb string) []any {
-		out := []any{}
-		for _, group := range groups[part] {
-			if !routingChanged {
-				out = append(out, copyValue(group.entry))
-			} else {
-				out = append(out, jsonx.Obj("matches", []any{verb + " $" + group.tag}, "exec", routeExec(group.route, part)))
-			}
+	entryFor := func(part string, index int, g *ruleGroup, recognized []*recGroup) (*Node, error) {
+		if !routingChanged {
+			return clone(recognized[index].entry), nil
 		}
-		return out
+		exec, err := RouteExec(g.Route, part)
+		if err != nil {
+			return nil, err
+		}
+		match := map[string]string{"domain": "qname $", "ip": "resp_ip $"}[part] + g.Tag
+		return M("matches", L(match), "exec", exec), nil
 	}
-	domain := build("domain", "qname")
-	ip := build("ip", "resp_ip")
-	final := copyValue(current.final).(*jsonx.Object)
-	if values.Value("default_forward") == "forward_local" {
-		final.Set("exec", "goto china_dns")
-	} else {
-		final.Set("exec", "goto proxy_dns_seq")
+	var domain, ip []*Node
+	var routes []string
+	for i, g := range groups.Domain {
+		e, err := entryFor("domain", i, g, current.groups.Domain)
+		if err != nil {
+			return nil, nil, err
+		}
+		domain = append(domain, e)
+		routes = append(routes, g.Route)
 	}
-	suffix := asList(copyValue(listOrEmpty(current.dynamic)))
-	var ipRoutes []any
-	for _, group := range groups["ip"] {
-		ipRoutes = append(ipRoutes, group.route)
+	var ipRoutes []string
+	for i, g := range groups.IP {
+		e, err := entryFor("ip", i, g, current.groups.IP)
+		if err != nil {
+			return nil, nil, err
+		}
+		ip = append(ip, e)
+		ipRoutes = append(ipRoutes, g.Route)
 	}
-	probe := probeNeeded(ipRoutes, values.Value("default_forward"))
-	suffix = append(suffix, ipSuffix(ip, values.Value("default_forward"), probe)...)
-	// Do not create a new jump into an absent helper sequence in a partial
-	// native document. Existing unrelated custom references remain untouched.
-	var affected []any
-	if changes.Has("default_forward") {
+	routes = append(routes, ipRoutes...)
+	final := clone(current.final)
+	finalExec := "goto proxy_dns_seq"
+	if defaultForward.Value == "forward_local" {
+		finalExec = "goto china_dns"
+	}
+	set(final, "exec", S(finalExec))
+	var suffix []*Node
+	for _, d := range current.dynamic {
+		suffix = append(suffix, clone(d))
+	}
+	probe := probeNeeded(ipRoutes, defaultForward.Value)
+	suffix = append(suffix, ipSuffix(ip, defaultForward.Value, probe)...)
+	var affected []*Node
+	if has(changes, "default_forward") {
 		affected = append(affected, final)
 	}
 	if routingChanged {
 		affected = append(append(affected, domain...), ip...)
 	}
-	if len(ip) > 0 && probe && (routingChanged || changes.Has("default_forward")) {
-		affected = append(affected, jsonx.Obj("exec", "jump local_probe"))
-		if values.Value("default_forward") == "forward_local" {
-			affected = append(affected, jsonx.Obj("exec", "goto default_direct_ip"))
+	if len(ip) > 0 && probe && (routingChanged || has(changes, "default_forward")) {
+		affected = append(affected, M("exec", "jump local_probe"))
+		if defaultForward.Value == "forward_local" {
+			affected = append(affected, M("exec", "goto default_direct_ip"))
 		}
 	}
-	available := routingPlugins(result)
+	available := pluginMap(result)
 	for _, entry := range affected {
-		verb, target, _ := strings.Cut(entry.(*jsonx.Object).GetString("exec"), " ")
-		// Rejections need no target; owned helpers are created below.
-		if (verb != "goto" && verb != "jump") || strings.HasPrefix(target, UpstreamPrefix) {
+		verb, target, _ := strings.Cut(str(get(entry, "exec")), " ")
+		if verb != "goto" && verb != "jump" || strings.HasPrefix(target, UpstreamPrefix) {
 			continue
 		}
-		if plugin := pluginAt(available, target); plugin == nil || plugin.Value("type") != "sequence" {
-			fail("分流执行链 " + target + " 未配置，请在完整参数中添加后再调整。")
+		if !equal(get(available[target], "type"), S("sequence")) {
+			return nil, nil, fail("分流执行链 " + target + " 未配置，请在完整参数中添加后再调整。")
 		}
 	}
-	args := append([]any{}, prefix...)
-	if position == "head" {
-		args = append(args, custom...)
+	prefix := make([]*Node, len(current.prefix))
+	for i, e := range current.prefix {
+		prefix[i] = clone(e)
 	}
-	args = append(args, domain...)
-	if position == "tail" {
-		args = append(args, custom...)
-	}
-	main.Set("args", append(append(args, suffix...), final))
+	set(main, "args", seqOf(assemble(prefix, custom.Content, domain, position, append(suffix, final))))
 	if routingChanged {
-		routes := []string{}
-		for _, part := range []string{"domain", "ip"} {
-			for _, group := range groups[part] {
-				routes = append(routes, str(group.route))
-			}
+		if err := ownHelpers(result, routes, get(values, "rule_actions"), append(append([]*Node{}, domain...), ip...)); err != nil {
+			return nil, nil, err
 		}
-		ownHelpers(result, routes, values.GetObject("rule_actions"), append(append([]any{}, domain...), ip...))
-		var before *catalogData
+		var before *ruleCatalog
 		if rebuild {
 			before = current.records
 		}
-		syncUpdates(result, resultSettings, config, current.allGroups(), newTags, baseURL, records, before)
+		if err := p.syncUpdates(result, resultSettings, current.groups.all(), groups, baseURL, records, before); err != nil {
+			return nil, nil, err
+		}
 	}
-	return result, resultSettings
+	return result, resultSettings, nil
 }
 
-// applyDefaultForward is apply_routing's path for a default_forward-only
-// change without IP migration: only the final fallback and the IP block are
-// rewritten, so an unrecognized custom middle stays untouched.
-func applyDefaultForward(document, settings *jsonx.Object, current *routingState, values *jsonx.Object) (*jsonx.Object, *jsonx.Object) {
-	result := copyValue(document).(*jsonx.Object)
-	main := pluginAt(routingPlugins(result), "sequence_main")
-	if main == nil {
-		raise(pyErr("KeyError", "'sequence_main'"))
-	}
-	args := asList(item(main, "args"))
-	direct := values.Value("default_forward") == "forward_local"
+// switchDefault rewrites only the final fallback (and the IP block, whose
+// probe depends on it).
+func switchDefault(document, settings *Node, current *routingState, defaultForward string) (*Node, *Node, error) {
+	result := clone(document)
+	plugins := pluginMap(result)
+	args := get(plugins["sequence_main"], "args")
+	direct := defaultForward == "forward_local"
 	target := "proxy_dns_seq"
 	if direct {
 		target = "china_dns"
 	}
-	if plugin := pluginAt(routingPlugins(result), target); plugin == nil || plugin.Value("type") != "sequence" {
-		fail("目标分流执行链未配置，请在完整参数中添加后再切换。")
+	if !equal(get(plugins[target], "type"), S("sequence")) {
+		return nil, nil, fail("目标分流执行链未配置，请在完整参数中添加后再切换。")
 	}
-	args[len(args)-1].(*jsonx.Object).Set("exec", "goto "+target)
-	if !current.full {
-		raise(pyErr("KeyError", "'groups'"))
-	}
-	ipGroups := current.groups["ip"]
-	if len(ipGroups) > 0 {
+	set(args.Content[len(args.Content)-1], "exec", S("goto "+target))
+	if ipGroups := current.groups.IP; len(ipGroups) > 0 {
 		first := ipGroups[0].index
-		var routes, entries []any
-		for _, group := range ipGroups {
-			first = min(first, group.index)
-			routes = append(routes, group.route)
+		for _, g := range ipGroups {
+			first = min(first, g.index)
 		}
 		start := first
-		if first > 0 && jsonx.Equal(args[first-1], jsonx.Obj("exec", "jump local_probe")) {
+		if first > 0 && equal(args.Content[first-1], M("exec", "jump local_probe")) {
 			start = first - 1
 		}
-		probe := probeNeeded(routes, values.Value("default_forward"))
+		var routes []string
+		var entries []*Node
+		for _, g := range ipGroups {
+			routes = append(routes, g.route)
+			entries = append(entries, args.Content[g.index])
+		}
+		probe := probeNeeded(routes, defaultForward)
 		if probe {
 			helpers := []string{"local_probe"}
 			if direct {
 				helpers = append(helpers, "default_direct_ip")
 			}
 			for _, helper := range helpers {
-				if plugin := pluginAt(routingPlugins(result), helper); plugin == nil || plugin.Value("type") != "sequence" {
-					fail("分流执行链 " + helper + " 未配置，请在完整参数中添加后再调整。")
+				if !equal(get(plugins[helper], "type"), S("sequence")) {
+					return nil, nil, fail("分流执行链 " + helper + " 未配置，请在完整参数中添加后再调整。")
 				}
 			}
 		}
-		for _, group := range ipGroups {
-			entries = append(entries, args[group.index])
-		}
-		replacement := ipSuffix(entries, values.Value("default_forward"), probe)
-		updated := append(append(append([]any{}, args[:start]...), replacement...), args[len(args)-1])
-		main.Set("args", updated)
-		relinkList(result, args, updated, map[unsafe.Pointer]bool{})
+		n := len(args.Content)
+		args.Content = append(append(append([]*Node{}, args.Content[:start]...), ipSuffix(entries, defaultForward, probe)...), args.Content[n-1])
 	}
-	return result, copyValue(settings).(*jsonx.Object)
+	return result, clone(settings), nil
 }
+
+var _ = unicode.IsSpace

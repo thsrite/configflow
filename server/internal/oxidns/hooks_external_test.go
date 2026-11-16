@@ -1,11 +1,9 @@
 package oxidns_test
 
-// Added by routers R02: the replays of this package (recorded.jsonl.gz,
-// corpus.jsonl.gz, c23/c24 files) run with the real
-// rule_ip_presence.classical_ip_lines hook instead of C22's pending stub, so
-// rows that reach it are compared instead of counted as pending. The hook
-// gets a private temporary repository (created on first use) instead of the
-// default one, which would open DATA_DIR or the working directory.
+// The boundary rows ran Python with the real rule_ip_presence hook; the Go
+// tests register the routers' implementation on a private temporary
+// repository (never DATA_DIR). External test package: ippresence imports
+// oxidns.
 
 import (
 	"context"
@@ -25,7 +23,7 @@ func init() {
 	)
 	oxidns.SetClassicalIPLines(func(ctx context.Context, item, config any) (any, error) {
 		once.Do(func() {
-			dir, err := os.MkdirTemp("", "oxidns-r02-hook-")
+			dir, err := os.MkdirTemp("", "oxidns-boundary-")
 			if err != nil {
 				openErr = err
 				return

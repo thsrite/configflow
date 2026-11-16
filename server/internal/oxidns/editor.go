@@ -1,682 +1,636 @@
 package oxidns
 
 import (
+	"errors"
 	"strings"
-
-	"configflow/internal/jsonx"
-	"configflow/internal/yamlx"
 )
 
-// Parts of backend/common/oxidns_editor.py (module C26) that oxidns_common
-// (C24) needs; C26 adds the rest of the module to this file.
+// The editor prepares one native draft per profile (without writing it) and
+// merges template changes three-way into it. The native YAML is the
+// executable source; template inputs and their last generated baseline are
+// editing metadata.
 
-// missingValue is the _MISSING sentinel of the OxiDNS form modules.
-var missingValue any = &sentinel{"_MISSING"}
+var (
+	editorFields  = []string{"config_mode", "native_config", "additional_files", "template_settings", "template_base_config", "legacy_native_config", "editor_version"}
+	resourceLists = []string{"direct_rules", "proxy_rules", "direct_rulesets", "proxy_rulesets"}
+)
 
-type sentinel struct{ name string }
-
-// sameValue is oxidns_editor._same(left, right): equality that also
-// compares types, so False is not 0 and 1 is not 1.0.
-func sameValue(left, right any) bool {
-	if left == missingValue || right == missingValue {
-		return left == right
+// ruleIDs is (every rule id → item, ids of active rules) of a profile.
+func (p *Profile) ruleIDs() (map[string]*Node, map[string]bool) {
+	known := map[string]*Node{}
+	list := items(p.get("rule_configs"))
+	if !truthy(p.get("rule_configs")) {
+		list = p.activeItems()
 	}
-	if typeName(left) != typeName(right) {
-		return false
-	}
-	switch l := left.(type) {
-	case *jsonx.Object:
-		r, ok := right.(*jsonx.Object)
-		if !ok || l.Len() != r.Len() {
-			return false
-		}
-		for key := range l.All() {
-			if !r.Has(key) {
-				return false
-			}
-		}
-		for key, value := range l.All() {
-			if !sameValue(value, r.Value(key)) {
-				return false
-			}
-		}
-		return true
-	case []any:
-		r := right.([]any)
-		if len(l) != len(r) {
-			return false
-		}
-		for i := range l {
-			if !sameValue(l[i], r[i]) {
-				return false
-			}
-		}
-		return true
-	case yamlx.Timestamp:
-		return l == right.(yamlx.Timestamp)
-	case []byte:
-		return string(l) == string(right.([]byte))
-	}
-	return jsonx.Equal(left, right)
-}
-
-// ---- the rest of oxidns_editor.py (C26): non-persistent preparation and
-// three-way template tools for one native draft ----
-
-// editorFields is _EDITOR_FIELDS.
-var editorFields = map[string]bool{
-	"config_mode": true, "native_config": true, "additional_files": true, "template_settings": true,
-	"template_base_config": true, "legacy_native_config": true, "editor_version": true,
-}
-
-// resourceLists is _RESOURCE_LISTS.
-var resourceLists = []string{"direct_rules", "proxy_rules", "direct_rulesets", "proxy_rulesets"}
-
-// ruleIDs is _rule_ids(config): (every rule id -> item, ids of active
-// rules) of a space.
-func ruleIDs(configValue any) (*jsonx.Object, map[string]bool) {
-	config := configOf(configValue)
-	items := config.Value("rule_configs")
-	if !truthy(items) {
-		items = itemsOf(config)
-	}
-	known := jsonx.NewObject()
-	for _, entry := range pyIter(items) {
-		if obj, ok := entry.(*jsonx.Object); ok && obj != nil {
-			if identity, ok := obj.Value("id").(string); ok && !known.Has(identity) {
-				known.Set(identity, obj)
-			}
+	for _, item := range list {
+		if id := get(item, "id"); isMap(item) && isStr(id) && known[id.Value] == nil {
+			known[id.Value] = item
 		}
 	}
 	active := map[string]bool{}
-	for _, entry := range itemsOf(config) {
-		identity := get(entry, "id", nil)
-		hashable(identity)
-		if text, ok := identity.(string); ok {
-			active[text] = true
+	for _, item := range p.activeItems() {
+		if id := get(item, "id"); isStr(id) {
+			active[id.Value] = true
 		}
 	}
 	return known, active
 }
 
-// restoreParked is _restore_parked(inputs, config): template inputs route
-// disabled rules again; config nil is None.
-func restoreParked(inputs *jsonx.Object, config any) *jsonx.Object {
-	parked, ok1 := inputs.Value("rule_dns_parked").(*jsonx.Object)
-	actions, ok2 := inputs.Value("rule_actions").(*jsonx.Object)
-	if !ok1 || parked == nil || !ok2 || actions == nil {
-		return inputs // Normalization reports the malformed value.
+// restoreParked: template inputs route disabled rules again (generation
+// skips them itself); rule_actions ids leave the selector lists.
+func restoreParked(inputs *Node, p *Profile) *Node {
+	parked, actions := get(inputs, "rule_dns_parked"), get(inputs, "rule_actions")
+	if !isMap(parked) || !isMap(actions) {
+		return inputs
 	}
 	for _, key := range resourceLists {
-		if _, ok := inputs.GetOr(key, []any{}).([]any); !ok {
-			return inputs
+		if has(inputs, key) && !isSeq(get(inputs, key)) {
+			return inputs // normalization reports the malformed value
 		}
 	}
-	known := jsonx.NewObject()
-	if config != nil {
-		known, _ = ruleIDs(config)
+	known := map[string]*Node{}
+	if p != nil {
+		known, _ = p.ruleIDs()
 	}
-	for identity, action := range parked.All() {
-		var route any
-		if isDict(action) {
-			route = get(action, "action", nil)
-		}
-		if strIn(route, "direct", "proxy") {
-			routeText := route.(string)
-			var suffix string
-			if entry, ok := known.Get(identity); ok {
-				suffix = itemSuffix(entry)
-			} else if inList(asList(inputs.GetOr(routeText+"_rulesets", []any{})), identity, true) {
+	pairs(parked, func(identity string, action *Node) bool {
+		route := get(action, "action")
+		switch {
+		case isOneOf(route, "direct", "proxy"):
+			suffix := "rules"
+			if item := known[identity]; item != nil {
+				suffix = suffixOf(item)
+			} else if containsStr(get(inputs, route.Value+"_rulesets"), identity) {
 				suffix = "rulesets"
-			} else {
-				suffix = "rules"
 			}
-			otherRoute := "direct"
-			if routeText == "direct" {
-				otherRoute = "proxy"
+			other := map[string]string{"direct": "proxy", "proxy": "direct"}[route.Value] + "_" + suffix
+			set(inputs, other, seqOf(filter(items(get(inputs, other)), func(v *Node) bool { return !equal(v, S(identity)) })))
+			list := setDefault(inputs, route.Value+"_"+suffix, L())
+			if !containsStr(list, identity) {
+				list.Content = append(list.Content, S(identity))
 			}
-			other := otherRoute + "_" + suffix
-			inputs.Set(other, listWithout(asList(inputs.GetOr(other, []any{})), identity))
-			target := routeText + "_" + suffix
-			list := asList(inputs.SetDefault(target, []any{}))
-			if !inList(list, identity, true) {
-				inputs.Set(target, appendCopy(list, identity))
-			}
-		} else if route != nil {
-			if !actions.Has(identity) {
-				actions.Set(identity, action)
-			}
+		case !isNone(route) && isMap(action):
+			setDefault(actions, identity, action)
 		}
-	}
-	inputs.Set("rule_dns_parked", jsonx.NewObject())
+		return true
+	})
+	set(inputs, "rule_dns_parked", M())
 	for _, key := range resourceLists {
-		if list, ok := inputs.Get(key); ok {
-			kept := []any{}
-			for _, value := range asList(list) {
-				if !pyContains(actions, value) {
-					kept = append(kept, value)
-				}
-			}
-			inputs.Set(key, kept)
+		if has(inputs, key) {
+			set(inputs, key, seqOf(filter(items(get(inputs, key)), func(v *Node) bool { return !isStr(v) || !has(actions, v.Value) })))
 		}
 	}
 	return inputs
 }
 
-// TemplateInputs is template_inputs(settings, config): copy template
-// controls without recursively embedding previous editor data; config nil
-// is None.
-func TemplateInputs(settings *jsonx.Object, config any) (inputs *jsonx.Object, err error) {
-	defer catch(&err)
-	return templateInputs(settings, config), nil
+// TemplateInputs copies the template controls of settings (no editor data)
+// with parked choices restored.
+func TemplateInputs(settings *Node, p *Profile) *Node {
+	inputs := M()
+	pairs(settings, func(key string, value *Node) bool {
+		if !containsString(editorFields, key) && !strings.HasPrefix(key, "_editor_") {
+			set(inputs, key, clone(value))
+		}
+		return true
+	})
+	return restoreParked(inputs, p)
 }
 
-func templateInputs(settings any, config any) *jsonx.Object {
-	obj, ok := settings.(*jsonx.Object)
-	if !ok || obj == nil {
-		raise(attributeError(settings, "items"))
-	}
-	inputs := jsonx.NewObject()
-	for key, value := range obj.All() {
-		if !editorFields[key] && !strings.HasPrefix(key, "_editor_") {
-			inputs.Set(key, copyValue(value))
-		}
-	}
-	return restoreParked(inputs, config)
-}
-
-// parkInactive is _park_inactive(settings, config): native routing keeps
-// only active rules; park the choices of the others.
-func parkInactive(settings *jsonx.Object, config any) {
-	known, active := ruleIDs(config)
-	follow := map[string]bool{}
-	for _, value := range pyIter(item(settings, "rule_dns_follow")) {
-		hashable(value)
-		if text, ok := value.(string); ok {
-			follow[text] = true
-		}
-	}
-	parked := item(settings, "rule_dns_parked")
-	actions := asObject(item(settings, "rule_actions"))
-	for _, identity := range actions.Keys() {
-		action := actions.Value(identity)
+// parkInactive keeps only active rules routed; choices of the others are
+// parked (selector lists stay a retained catalog).
+func parkInactive(settings *Node, p *Profile) {
+	known, active := p.ruleIDs()
+	follow := get(settings, "rule_dns_follow")
+	parked := get(settings, "rule_dns_parked")
+	actions := get(settings, "rule_actions")
+	for _, identity := range keys(actions) {
 		if active[identity] {
 			continue
 		}
-		actions.Delete(identity)
-		if known.Has(identity) && !follow[identity] {
+		action := del(actions, identity)
+		if known[identity] != nil && !containsStr(follow, identity) {
 			setDefault(parked, identity, action)
 		}
 	}
 	for _, key := range resourceLists {
-		for _, value := range pyIter(item(settings, key)) {
-			identity, ok := value.(string)
-			if ok && known.Has(identity) && !active[identity] && !follow[identity] {
-				setDefault(parked, identity, jsonx.Obj("action", strings.SplitN(key, "_", 2)[0]))
+		for _, identity := range items(get(settings, key)) {
+			if known[identity.Value] != nil && !active[identity.Value] && !contains(follow, identity) {
+				setDefault(parked, identity.Value, M("action", strings.Split(key, "_")[0]))
 			}
 		}
 	}
 }
 
-// renderTemplate is _template(settings, config, base_url): the normalized
-// template settings, the generated text and its document.
-func renderTemplate(settings *jsonx.Object, config any, baseURL string) (*jsonx.Object, string, *jsonx.Object) {
-	source := copyValue(configOf(config)).(*jsonx.Object)
-	values := templateInputs(settings, config)
-	values.Set("config_mode", "template")
-	values.Set("native_config", "")
-	values.Set("additional_files", copyValue(settings.GetOr("additional_files", []any{})))
-	source.Set("oxidns", normalizeSettings(values, true))
-	text := generateConfig(source, baseURL)
-	return source.GetObject("oxidns"), text, loadNativeYAML(text, DefaultNativeLabel)
-}
-
-// PrepareEditor is prepare_editor(settings, config, base_url): a unified
-// native draft, without writing or normalizing native YAML text.
-func PrepareEditor(settings, config any, baseURL string) (draft *jsonx.Object, err error) {
-	defer catch(&err)
-	return prepareEditor(settings, config, baseURL), nil
-}
-
-func prepareEditorImpl(settings, config any, baseURL string) *jsonx.Object {
-	current := normalizeSettings(settings, false)
-	if current.Value("config_mode") == "native" {
-		// A former native user may have an invalid, inactive template. Opening
-		// the editor must not attempt to regenerate it or replace their YAML.
-		if !isDict(current.Value("template_settings")) {
-			current.Set("template_settings", templateInputs(current, config))
-		}
-		return current
+// renderTemplate is _template: normalized template settings, generated
+// text and its document.
+func renderTemplate(settings *Node, p *Profile, baseURL string) (*Node, string, *Node, error) {
+	inputs := TemplateInputs(settings, p)
+	set(inputs, "config_mode", S("template"))
+	set(inputs, "native_config", S(""))
+	files := get(settings, "additional_files")
+	if !has(settings, "additional_files") {
+		files = L()
 	}
-	template, text, document := renderTemplate(current, config, baseURL)
-	oldNative := item(current, "native_config")
-	if strip(oldNative) != "" && !current.Has("legacy_native_config") {
-		same := false
-		if tryExcept(func() {
-			same = sameValue(loadNativeYAML(oldNative, DefaultNativeLabel), document)
-		}, ClassSettings) != nil {
-			same = false
-		}
-		if !same {
-			current.Set("legacy_native_config", oldNative)
-		}
+	set(inputs, "additional_files", clone(files))
+	template, err := NormalizeSettings(inputs, true)
+	if err != nil {
+		return nil, "", nil, err
 	}
-	current.Set("config_mode", "native")
-	current.Set("native_config", text)
-	current.Set("template_settings", templateInputs(template, config))
-	current.Set("template_base_config", text)
-	parkInactive(current, config)
-	return current
+	text, err := generate(template, p, baseURL)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	document, err := LoadNativeYAML(text, NativeLabel)
+	return template, text, document, err
 }
 
-// copyOrMissing is _copy(value).
-func copyOrMissing(value any) any {
-	if value == missingValue {
-		return value
+// PrepareEditor returns the unified native draft of settings without
+// writing it: template settings are rendered into a native draft.
+func PrepareEditor(settings *Node, p *Profile, baseURL string) (*Node, error) {
+	if p == nil {
+		p = NewProfile(nil)
 	}
-	return copyValue(value)
+	current, err := NormalizeSettings(settings, false)
+	if err != nil {
+		return nil, err
+	}
+	if str(get(current, "config_mode")) == "native" {
+		if !isMap(get(current, "template_settings")) {
+			set(current, "template_settings", TemplateInputs(current, p))
+		}
+		return current, nil
+	}
+	template, text, document, err := renderTemplate(current, p, baseURL)
+	if err != nil {
+		return nil, err
+	}
+	if old := get(current, "native_config"); strings.TrimSpace(old.Value) != "" && !has(current, "legacy_native_config") {
+		previous, err := loadNative(old, NativeLabel)
+		if err != nil || !same(previous, document) {
+			set(current, "legacy_native_config", old)
+		}
+	}
+	set(current, "config_mode", S("native"))
+	set(current, "native_config", S(text))
+	set(current, "template_settings", TemplateInputs(template, p))
+	set(current, "template_base_config", S(text))
+	parkInactive(current, p)
+	return current, nil
 }
 
-// pointer is _pointer(path): a JSON pointer.
+// Change is one difference a template preview would make.
+type Change struct {
+	Path string `json:"path"`
+	Kind string `json:"kind"`
+}
+
+// Conflict is a value both the draft and the template changed.
+type Conflict struct {
+	Path   string `json:"path"`
+	Label  string `json:"label"`
+	Choice string `json:"choice"`
+}
+
+// pointer is a JSON pointer of path.
 func pointer(path []string) string {
-	parts := make([]string, len(path))
+	escaped := make([]string, len(path))
 	for i, part := range path {
-		parts[i] = strings.ReplaceAll(strings.ReplaceAll(part, "~", "~0"), "/", "~1")
+		escaped[i] = strings.ReplaceAll(strings.ReplaceAll(part, "~", "~0"), "/", "~1")
 	}
-	return "/" + strings.Join(parts, "/")
+	return "/" + strings.Join(escaped, "/")
 }
 
-// unionKeys is _keys(*objects): the keys of the dicts among objects, in
-// first-seen order.
-func unionKeys(objects ...any) []string {
-	seen := map[string]bool{}
+func label(path []string) string {
+	switch {
+	case len(path) > 1 && path[0] == "plugins":
+		text := "插件「" + path[1] + "」"
+		if len(path) > 2 {
+			text += " · " + strings.Join(path[2:], ".")
+		}
+		return text
+	case strings.Join(path, "\x00") == "resources\x00custom_hosts":
+		return "Hosts 规则文件内容"
+	case strings.Join(path, "\x00") == "resources\x00adguard\x00content":
+		return "AdGuard 自定义规则文件内容"
+	}
+	return strings.Join(path, ".")
+}
+
+func with(path []string, part string) []string { return append(append([]string{}, path...), part) }
+
+// orderedKeys is dict.fromkeys over the keys of several mappings.
+func orderedKeys(objects ...*Node) []string {
 	var out []string
-	for _, value := range objects {
-		if obj, ok := value.(*jsonx.Object); ok && obj != nil {
-			for _, key := range obj.Keys() {
-				if !seen[key] {
-					seen[key] = true
-					out = append(out, key)
-				}
+	seen := map[string]bool{}
+	for _, obj := range objects {
+		for _, key := range keys(obj) {
+			if !seen[key] {
+				seen[key] = true
+				out = append(out, key)
 			}
 		}
 	}
 	return out
 }
 
-// getOrMissing is obj.get(key, _MISSING) on a dict (or the sentinel).
-func getOrMissing(value any, key string) any {
-	if obj, ok := value.(*jsonx.Object); ok && obj != nil {
-		if element, ok := obj.Get(key); ok {
-			return element
-		}
+// pluginsByTag is the editor's _plugin_map: nil unless a clean list.
+func pluginsByTag(value *Node) (map[string]*Node, []string) {
+	if !isSeq(value) {
+		return nil, nil
 	}
-	return missingValue
+	result := map[string]*Node{}
+	var order []string
+	for _, item := range value.Content {
+		tag, ok := tagOf(item)
+		if !isMap(item) || !ok || result[tag] != nil {
+			return nil, nil
+		}
+		result[tag] = item
+		order = append(order, tag)
+	}
+	return result, order
 }
 
-// pluginMap is _plugin_map(value): tag -> plugin, nil when value is not a
-// list of objects with unique string tags.
-func pluginMap(value any) *jsonx.Object {
-	list, ok := value.([]any)
-	if !ok {
+// merger is one three-way merge; resolutions choose "current" or
+// "template" per pointer.
+type merger struct {
+	resolutions map[string]string
+	conflicts   []Conflict
+}
+
+func (m *merger) choice(location string) string {
+	if c, ok := m.resolutions[location]; ok {
+		return c
+	}
+	return "current"
+}
+
+func (m *merger) mergePlugins(base, current, proposed *Node, path []string) *Node {
+	baseMap, baseOrder := pluginsByTag(base)
+	currentMap, currentOrder := pluginsByTag(current)
+	nextMap, nextOrder := pluginsByTag(proposed)
+	if baseMap == nil || currentMap == nil || nextMap == nil {
 		return nil
 	}
-	result := jsonx.NewObject()
-	for _, element := range list {
-		obj, ok := element.(*jsonx.Object)
-		if !ok || obj == nil {
-			return nil
-		}
-		tag, ok := obj.Value("tag").(string)
-		if !ok || result.Has(tag) {
-			return nil
-		}
-		result.Set(tag, obj)
-	}
-	return result
-}
-
-// label is _label(path).
-func label(path []string) string {
-	if len(path) > 1 && path[0] == "plugins" {
-		text := "插件「" + path[1] + "」"
-		if len(path) > 2 {
-			text += " · " + strings.Join(path[2:], ".")
-		}
-		return text
-	}
-	switch strings.Join(path, "\x00") {
-	case "resources\x00custom_hosts":
-		return "Hosts 规则文件内容"
-	case "resources\x00adguard\x00content":
-		return "AdGuard 自定义规则文件内容"
-	}
-	return strings.Join(path, ".")
-}
-
-func childPath(path []string, key string) []string {
-	return append(append([]string{}, path...), key)
-}
-
-// mergePlugins is _merge_plugins(base, current, proposed, path,
-// resolutions, conflicts); ok false is None.
-func mergePlugins(base, current, proposed any, path []string, resolutions *jsonx.Object, conflicts *[]any) ([]any, bool) {
-	baseMap, currentMap, nextMap := pluginMap(base), pluginMap(current), pluginMap(proposed)
-	if baseMap == nil || currentMap == nil || nextMap == nil {
-		return nil, false
-	}
-	merged := jsonx.NewObject()
-	for _, tag := range unionKeys(currentMap, nextMap, baseMap) {
-		value := mergeValues(getOrMissing(baseMap, tag), getOrMissing(currentMap, tag), getOrMissing(nextMap, tag),
-			childPath(path, tag), resolutions, conflicts)
-		if value != missingValue {
-			merged.Set(tag, value)
+	merged := map[string]*Node{}
+	var tags []string
+	for _, list := range [][]string{currentOrder, nextOrder, baseOrder} {
+		for _, tag := range list {
+			if !containsString(tags, tag) {
+				tags = append(tags, tag)
+			}
 		}
 	}
-	order := []string{}
-	for _, tag := range currentMap.Keys() {
-		if merged.Has(tag) {
+	for _, tag := range tags {
+		if value := m.merge(baseMap[tag], currentMap[tag], nextMap[tag], with(path, tag)); value != nil {
+			merged[tag] = value
+		}
+	}
+	var order []string
+	for _, tag := range currentOrder {
+		if merged[tag] != nil {
 			order = append(order, tag)
 		}
 	}
 	indexOf := func(tag string) int {
-		for i, value := range order {
-			if value == tag {
+		for i, t := range order {
+			if t == tag {
 				return i
 			}
 		}
 		return -1
 	}
-	templateOrder := nextMap.Keys()
-	for index, tag := range templateOrder {
-		if !merged.Has(tag) || indexOf(tag) >= 0 {
+	for index, tag := range nextOrder {
+		if merged[tag] == nil || indexOf(tag) >= 0 {
 			continue
 		}
-		previous, following := "", ""
-		for i := index - 1; i >= 0; i-- {
-			if indexOf(templateOrder[i]) >= 0 {
-				previous = templateOrder[i]
-				break
+		position := -1
+		for i := index - 1; i >= 0 && position < 0; i-- {
+			if at := indexOf(nextOrder[i]); at >= 0 {
+				position = at + 1
 			}
 		}
-		for _, candidate := range templateOrder[index+1:] {
-			if indexOf(candidate) >= 0 {
-				following = candidate
-				break
+		for _, following := range nextOrder[index+1:] {
+			if at := indexOf(following); position < 0 && at >= 0 {
+				position = at
 			}
 		}
-		at := len(order)
-		if previous != "" {
-			at = indexOf(previous) + 1
-		} else if following != "" {
-			at = indexOf(following)
+		if position < 0 {
+			position = len(order)
 		}
-		order = append(order[:at], append([]string{tag}, order[at:]...)...)
+		order = append(order[:position], append([]string{tag}, order[position:]...)...)
 	}
-	result := make([]any, len(order))
-	for i, tag := range order {
-		result[i] = merged.Value(tag)
+	result := L()
+	for _, tag := range order {
+		result.Content = append(result.Content, merged[tag])
 	}
-	return result, true
+	return result
 }
 
-// mergeValues is _merge(base, current, proposed, path, resolutions,
-// conflicts): the three-way merge of one value (missingValue = _MISSING).
-func mergeValues(base, current, proposed any, path []string, resolutions *jsonx.Object, conflicts *[]any) any {
-	if sameValue(proposed, base) || sameValue(current, proposed) {
-		return copyOrMissing(current)
+// merge is _merge; nil stands for a missing value.
+func (m *merger) merge(base, current, proposed *Node, path []string) *Node {
+	if same(proposed, base) || same(current, proposed) {
+		return clone(current)
 	}
-	currentObj, ok1 := current.(*jsonx.Object)
-	proposedObj, ok2 := proposed.(*jsonx.Object)
-	baseObj, baseIsDict := base.(*jsonx.Object)
-	if ok1 && currentObj != nil && ok2 && proposedObj != nil && (base == missingValue || baseIsDict && baseObj != nil) {
-		var previous any = jsonx.NewObject()
-		if base != missingValue {
-			previous = base
+	if isMap(current) && isMap(proposed) && (base == nil || isMap(base)) {
+		previous := base
+		if previous == nil {
+			previous = M()
 		}
-		result := jsonx.NewObject()
-		for _, key := range unionKeys(current, proposed, previous) {
-			value := mergeValues(getOrMissing(previous, key), getOrMissing(current, key), getOrMissing(proposed, key),
-				childPath(path, key), resolutions, conflicts)
-			if value != missingValue {
-				result.Set(key, value)
+		result := M()
+		for _, key := range orderedKeys(current, proposed, previous) {
+			if value := m.merge(get(previous, key), get(current, key), get(proposed, key), with(path, key)); value != nil {
+				set(result, key, value)
 			}
 		}
 		return result
 	}
 	if len(path) == 1 && path[0] == "plugins" {
-		var baseList any = []any{}
-		if base != missingValue {
-			baseList = base
+		previous := base
+		if previous == nil {
+			previous = L()
 		}
-		if result, ok := mergePlugins(baseList, current, proposed, path, resolutions, conflicts); ok {
+		if result := m.mergePlugins(previous, current, proposed, path); result != nil {
 			return result
 		}
 	}
-	if sameValue(current, base) {
-		return copyOrMissing(proposed)
+	if same(current, base) {
+		return clone(proposed)
 	}
 	location := pointer(path)
-	choice := resolutions.GetOr(location, "current")
-	*conflicts = append(*conflicts, jsonx.Obj("path", location, "label", label(path), "choice", choice))
+	choice := m.choice(location)
+	m.conflicts = append(m.conflicts, Conflict{location, label(path), choice})
 	if choice == "template" {
-		return copyOrMissing(proposed)
+		return clone(proposed)
 	}
-	return copyOrMissing(current)
+	return clone(current)
 }
 
-// changesOf is _changes(current, proposed, path).
-func changesOf(current, proposed any, path []string) []any {
-	if sameValue(current, proposed) {
-		return []any{}
+// changesOf is _changes: what turning current into proposed changes.
+func changesOf(current, proposed *Node, path []string) []Change {
+	if same(current, proposed) {
+		return nil
 	}
-	if current == missingValue || proposed == missingValue {
+	if current == nil || proposed == nil {
 		kind := "remove"
-		if current == missingValue {
+		if current == nil {
 			kind = "add"
 		}
-		return []any{jsonx.Obj("path", pointer(path), "kind", kind)}
+		return []Change{{pointer(path), kind}}
 	}
-	currentObj, ok1 := current.(*jsonx.Object)
-	proposedObj, ok2 := proposed.(*jsonx.Object)
-	if ok1 && currentObj != nil && ok2 && proposedObj != nil {
-		out := []any{}
-		for _, key := range unionKeys(current, proposed) {
-			out = append(out, changesOf(getOrMissing(current, key), getOrMissing(proposed, key), childPath(path, key))...)
+	if isMap(current) && isMap(proposed) {
+		var out []Change
+		for _, key := range orderedKeys(current, proposed) {
+			out = append(out, changesOf(get(current, key), get(proposed, key), with(path, key))...)
 		}
 		return out
 	}
 	if len(path) == 1 && path[0] == "plugins" {
-		left, right := pluginMap(current), pluginMap(proposed)
+		left, leftOrder := pluginsByTag(current)
+		right, rightOrder := pluginsByTag(proposed)
 		if left != nil && right != nil {
-			out := []any{}
-			for _, tag := range unionKeys(left, right) {
-				out = append(out, changesOf(getOrMissing(left, tag), getOrMissing(right, tag), childPath(path, tag))...)
+			var out []Change
+			tags := append([]string{}, leftOrder...)
+			for _, tag := range rightOrder {
+				if left[tag] == nil {
+					tags = append(tags, tag)
+				}
 			}
-			if sameKeySet(left, right) && strings.Join(left.Keys(), "\x00") != strings.Join(right.Keys(), "\x00") {
-				out = append(out, jsonx.Obj("path", pointer(path), "kind", "reorder"))
+			for _, tag := range tags {
+				out = append(out, changesOf(left[tag], right[tag], with(path, tag))...)
+			}
+			sameSet := len(leftOrder) == len(rightOrder)
+			for _, tag := range leftOrder {
+				sameSet = sameSet && right[tag] != nil
+			}
+			if sameSet && strings.Join(leftOrder, "\x00") != strings.Join(rightOrder, "\x00") {
+				out = append(out, Change{pointer(path), "reorder"})
 			}
 			return out
 		}
 	}
-	return []any{jsonx.Obj("path", pointer(path), "kind", "update")}
+	return []Change{{pointer(path), "update"}}
 }
 
-func sameKeySet(a, b *jsonx.Object) bool {
-	if a.Len() != b.Len() {
-		return false
+func union(left, right *Node) *Node {
+	result := L()
+	if isSeq(left) {
+		result = clone(left)
 	}
-	for _, key := range a.Keys() {
-		if !b.Has(key) {
-			return false
+	for _, item := range items(right) {
+		found := false
+		for _, existing := range result.Content {
+			found = found || same(item, existing)
 		}
-	}
-	return true
-}
-
-// union is _union(left, right): left plus the items of right not already
-// in it (by sameValue).
-func union(left, right any) []any {
-	result := []any{}
-	if list, ok := left.([]any); ok {
-		result = copyValue(list).([]any)
-	}
-	if list, ok := right.([]any); ok {
-		for _, element := range list {
-			found := false
-			for _, existing := range result {
-				if sameValue(element, existing) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				result = append(result, copyValue(element))
-			}
+		if !found {
+			result.Content = append(result.Content, clone(item))
 		}
 	}
 	return result
 }
 
-// keepReferencedContent is _keep_referenced_content(...): deleting template
-// inputs cannot remove a file retained by a manual plugin.
-func keepReferencedContent(current, merged any, resource string, path []string, referenced map[string]bool,
-	resolutions *jsonx.Object, conflicts *[]any) any {
-	currentText, ok := current.(string)
-	mergedText, mergedIsText := merged.(string)
-	if !referenced[resource] || !ok || strings.TrimSpace(currentText) == "" || (mergedIsText && strings.TrimSpace(mergedText) != "") {
-		return merged
+// keepReferencedContent: removing a template input cannot drop a file a
+// manual plugin still reads.
+func (m *merger) keepReferencedContent(current, merged *Node, resource string, path []string, referenced map[string]bool) (*Node, error) {
+	if !referenced[resource] || !isStr(current) || strings.TrimSpace(current.Value) == "" || isStr(merged) && strings.TrimSpace(merged.Value) != "" {
+		return merged, nil
 	}
 	location := pointer(path)
-	if resolutions.GetOr(location, "current") == "template" {
-		fail(label(path) + "仍被完整配置引用，请先移除相关文件引用再清空内容")
+	if m.choice(location) == "template" {
+		return nil, fail(label(path) + "仍被完整配置引用，请先移除相关文件引用再清空内容")
 	}
-	for _, conflict := range *conflicts {
-		if item(conflict, "path") == location {
-			return current
+	for _, c := range m.conflicts {
+		if c.Path == location {
+			return current, nil
 		}
 	}
-	*conflicts = append(*conflicts, jsonx.Obj("path", location, "label", label(path), "choice", "current"))
-	return current
+	m.conflicts = append(m.conflicts, Conflict{location, label(path), "current"})
+	return current, nil
 }
 
-// PreviewTemplate is preview_template(settings, proposed_inputs, config,
-// base_url, resolutions): a merge preview {settings, changes, conflicts}
-// that retains manual edits and all resource sources. resolutions nil is
-// None.
-func PreviewTemplate(settings, proposedInputs, config any, baseURL string, resolutions any) (preview *jsonx.Object, err error) {
-	defer catch(&err)
-	return previewTemplate(settings, proposedInputs, config, baseURL, resolutions), nil
+// Preview is a template preview: merged settings, changes and conflicts.
+type Preview struct {
+	Settings  *Node
+	Changes   []Change
+	Conflicts []Conflict
 }
 
-func previewTemplate(settings, proposedInputs, config any, baseURL string, resolutionsValue any) *jsonx.Object {
-	if !isDict(proposedInputs) {
-		fail("template_settings 必须为模板参数对象")
+// PreviewTemplate merges proposed template inputs into the draft, keeping
+// manual edits and every resource source. resolutions (pointer → "current"
+// or "template") may be nil.
+func PreviewTemplate(settings, proposedInputs *Node, p *Profile, baseURL string, resolutions *Node) (Preview, error) {
+	if !isMap(proposedInputs) {
+		return Preview{}, fail("template_settings 必须为模板参数对象")
 	}
-	if resolutionsValue == nil {
-		resolutionsValue = jsonx.NewObject()
-	}
-	resolutions, ok := resolutionsValue.(*jsonx.Object)
-	if ok && resolutions != nil {
-		for _, choice := range resolutions.Values() {
-			if !strIn(choice, "current", "template") {
-				ok = false
-			}
+	m := &merger{resolutions: map[string]string{}}
+	if resolutions != nil {
+		if !isMap(resolutions) {
+			return Preview{}, fail("resolutions 必须按参数路径选择 current 或 template")
+		}
+		bad := false
+		pairs(resolutions, func(path string, choice *Node) bool {
+			bad = bad || !isOneOf(choice, "current", "template")
+			m.resolutions[path] = str(choice)
+			return true
+		})
+		if bad {
+			return Preview{}, fail("resolutions 必须按参数路径选择 current 或 template")
 		}
 	}
-	if !ok || resolutions == nil {
-		fail("resolutions 必须按参数路径选择 current 或 template")
+	current, err := PrepareEditor(settings, p, baseURL)
+	if err != nil {
+		return Preview{}, err
 	}
-	current := prepareEditor(settings, config, baseURL)
-	fallback := templateInputs(current, config)
-	previousInputs := current.GetOr("template_settings", fallback)
-	// Validate only on invoking this tool. Merely opening a native draft never
-	// depends on whether its retained template controls are still renderable.
-	oldTemplate := templateInputs(previousInputs, config)
-	oldTemplate.Set("additional_files", item(current, "additional_files"))
-	var base *jsonx.Object
-	switch baseText := current.Value("template_base_config").(type) {
-	case string:
-		if strings.TrimSpace(baseText) != "" {
-			base = loadNativeYAML(baseText, "模板基线")
-		}
-	case *jsonx.Object:
-		if baseText != nil {
-			// Accept early draft metadata stored as a parsed document as well.
-			text, err := yamlx.SafeDump(baseText)
-			must(err)
-			base = loadNativeYAML(text, "模板基线")
-		}
+	previousInputs := get(current, "template_settings")
+	if !has(current, "template_settings") {
+		previousInputs = TemplateInputs(current, p)
 	}
-	if base == nil {
-		_, _, base = renderTemplate(oldTemplate, config, baseURL)
+	if !isMap(previousInputs) {
+		return Preview{}, errMalformed
 	}
-	nextInputs := templateInputs(proposedInputs, config)
-	nextInputs.Set("additional_files", item(current, "additional_files"))
-	nextTemplate, nextText, proposed := renderTemplate(nextInputs, config, baseURL)
-	document := loadNativeYAML(item(current, "native_config"), DefaultNativeLabel)
-	conflicts := []any{}
-	merged := mergeValues(base, document, proposed, nil, resolutions, &conflicts)
+	withFiles := func(inputs *Node) *Node {
+		t := TemplateInputs(inputs, p)
+		set(t, "additional_files", get(current, "additional_files"))
+		return t
+	}
+	var base *Node
+	switch baseText := get(current, "template_base_config"); {
+	case isStr(baseText) && strings.TrimSpace(baseText.Value) != "":
+		base, err = LoadNativeYAML(baseText.Value, "模板基线")
+	case isMap(baseText):
+		base, err = LoadNativeYAML(dump(baseText), "模板基线")
+	default:
+		_, _, base, err = renderTemplate(withFiles(previousInputs), p, baseURL)
+	}
+	if err != nil {
+		return Preview{}, err
+	}
+	nextTemplate, nextText, proposed, err := renderTemplate(withFiles(proposedInputs), p, baseURL)
+	if err != nil {
+		return Preview{}, err
+	}
+	document, err := loadNative(get(current, "native_config"), NativeLabel)
+	if err != nil {
+		return Preview{}, err
+	}
+	merged := m.merge(base, document, proposed, nil)
 	changes := changesOf(document, merged, nil)
-	result := copyValue(current).(*jsonx.Object)
-	result.Set("config_mode", "native")
-	result.Set("template_settings", templateInputs(nextTemplate, config))
-	result.Set("template_base_config", nextText)
-	// Keep comments and original formatting when the actual document is equal.
-	if !sameValue(document, merged) {
-		result.Set("native_config", dump(merged.(*jsonx.Object)))
+	result := clone(current)
+	set(result, "config_mode", S("native"))
+	set(result, "template_settings", TemplateInputs(nextTemplate, p))
+	set(result, "template_base_config", S(nextText))
+	if !same(document, merged) {
+		set(result, "native_config", S(dump(merged)))
 	}
-	referenced := map[string]bool{}
-	for _, path := range resourceReferences(nativeDocument(result, false, nil)) {
-		referenced[resourceKey(relativeResource(path))] = true
+	expanded, err := NativeDocument(result, false, nil)
+	if err != nil {
+		return Preview{}, err
+	}
+	referenced, err := referencedPaths(expanded)
+	if err != nil {
+		return Preview{}, err
 	}
 	for _, key := range resourceLists {
-		result.Set(key, union(current.Value(key), nextTemplate.Value(key)))
-		changes = append(changes, changesOf(getOrMissing(current, key), result.Value(key), []string{"resources", key})...)
+		set(result, key, union(get(current, key), get(nextTemplate, key)))
+		changes = append(changes, changesOf(get(current, key), get(result, key), []string{"resources", key})...)
 	}
-	// The draft's own rule DNS choices win; follow ends where the template set an action.
-	actions := asObject(item(nextTemplate, "rule_actions")).Clone()
-	for key, value := range asObject(item(current, "rule_actions")).All() {
-		actions.Set(key, value)
-	}
-	result.Set("rule_actions", actions)
-	follow := []any{}
-	for _, identity := range pyIter(item(current, "rule_dns_follow")) {
-		if !pyContains(actions, identity) {
-			follow = append(follow, identity)
-		}
-	}
-	result.Set("rule_dns_follow", follow)
-	parkInactive(result, config)
+	actions := clone(get(nextTemplate, "rule_actions"))
+	pairs(get(current, "rule_actions"), func(id string, action *Node) bool { set(actions, id, clone(action)); return true })
+	set(result, "rule_actions", actions)
+	set(result, "rule_dns_follow", seqOf(filter(items(get(current, "rule_dns_follow")), func(v *Node) bool { return !has(actions, v.Value) })))
+	parkInactive(result, p)
 	hostsPath := []string{"resources", "custom_hosts"}
-	hosts := mergeValues(get(previousInputs, "custom_hosts", ""), current.GetOr("custom_hosts", ""),
-		item(nextTemplate, "custom_hosts"), hostsPath, resolutions, &conflicts)
-	hosts = keepReferencedContent(current.GetOr("custom_hosts", ""), hosts, "rules/custom_hosts.txt",
-		hostsPath, referenced, resolutions, &conflicts)
-	result.Set("custom_hosts", hosts)
-	changes = append(changes, changesOf(current.GetOr("custom_hosts", ""), hosts, hostsPath)...)
-	oldAdguard, ok := get(previousInputs, "adguard", nil).(*jsonx.Object)
-	if !ok || oldAdguard == nil {
-		oldAdguard = jsonx.NewObject()
+	currentHosts := get(current, "custom_hosts")
+	if !has(current, "custom_hosts") {
+		currentHosts = S("")
 	}
-	currentAdguard, ok := current.Value("adguard").(*jsonx.Object)
-	if !ok || currentAdguard == nil {
-		currentAdguard = jsonx.NewObject()
+	previousHosts := get(previousInputs, "custom_hosts")
+	if !has(previousInputs, "custom_hosts") {
+		previousHosts = S("")
 	}
-	nextAdguard := item(nextTemplate, "adguard")
-	adguard := copyValue(currentAdguard).(*jsonx.Object)
-	adguard.Set("enabled", truthy(currentAdguard.Value("enabled")) || truthy(item(nextAdguard, "enabled")))
-	adguard.Set("urls", union(currentAdguard.Value("urls"), item(nextAdguard, "urls")))
+	hosts := m.merge(previousHosts, currentHosts, get(nextTemplate, "custom_hosts"), hostsPath)
+	if hosts, err = m.keepReferencedContent(currentHosts, hosts, "rules/custom_hosts.txt", hostsPath, referenced); err != nil {
+		return Preview{}, err
+	}
+	set(result, "custom_hosts", orNull(hosts))
+	changes = append(changes, changesOf(currentHosts, hosts, hostsPath)...)
+	oldAdguard := mapOr(get(previousInputs, "adguard"))
+	currentAdguard := mapOr(get(current, "adguard"))
+	nextAdguard := get(nextTemplate, "adguard")
+	adguard := clone(currentAdguard)
+	set(adguard, "enabled", B(truthy(get(currentAdguard, "enabled")) || truthy(get(nextAdguard, "enabled"))))
+	set(adguard, "urls", union(get(currentAdguard, "urls"), get(nextAdguard, "urls")))
 	contentPath := []string{"resources", "adguard", "content"}
-	content := mergeValues(oldAdguard.GetOr("content", ""), currentAdguard.GetOr("content", ""),
-		item(nextAdguard, "content"), contentPath, resolutions, &conflicts)
-	content = keepReferencedContent(currentAdguard.GetOr("content", ""), content, "rules/adguard-custom.txt",
-		contentPath, referenced, resolutions, &conflicts)
-	adguard.Set("content", content)
-	result.Set("adguard", adguard)
+	textOr := func(m *Node) *Node {
+		if has(m, "content") {
+			return get(m, "content")
+		}
+		return S("")
+	}
+	content := m.merge(textOr(oldAdguard), textOr(currentAdguard), get(nextAdguard, "content"), contentPath)
+	if content, err = m.keepReferencedContent(textOr(currentAdguard), content, "rules/adguard-custom.txt", contentPath, referenced); err != nil {
+		return Preview{}, err
+	}
+	set(adguard, "content", orNull(content))
+	set(result, "adguard", adguard)
 	changes = append(changes, changesOf(currentAdguard, adguard, []string{"resources", "adguard"})...)
-	// Includes and attached files must still be structurally valid, while an
-	// incomplete legacy plugin is allowed to remain editable in this preview.
-	normalizeSettings(result, false)
-	return jsonx.Obj("settings", result, "changes", changes, "conflicts", conflicts)
+	if _, err := NormalizeSettings(result, false); err != nil {
+		return Preview{}, err
+	}
+	if changes == nil {
+		changes = []Change{}
+	}
+	if m.conflicts == nil {
+		m.conflicts = []Conflict{}
+	}
+	return Preview{Settings: result, Changes: changes, Conflicts: m.conflicts}, nil
+}
+
+func orNull(n *Node) *Node {
+	if n == nil {
+		return Null()
+	}
+	return n
+}
+
+// Validation is the editor diagnostics of a draft (publication rules).
+type Validation struct {
+	Valid             bool    `json:"valid"`
+	Issues            []Issue `json:"issues"`
+	SchemaVersion     string  `json:"schema_version"`
+	CoreCheckRequired bool    `json:"core_check_required"`
+}
+
+// ValidateSettings returns non-persistent editor diagnostics.
+func ValidateSettings(settings *Node, p *Profile, baseURL string) (Validation, error) {
+	issues, err := func() ([]Issue, error) {
+		draft, err := PrepareEditor(settings, p, baseURL)
+		if err != nil {
+			return nil, err
+		}
+		sources := &Sources{}
+		document, err := NativeDocument(draft, false, sources)
+		if err != nil {
+			return nil, err
+		}
+		return ValidateExpandedDocument(document, sources), nil
+	}()
+	var validation *ValidationError
+	var settingsErr *SettingsError
+	switch {
+	case err == nil:
+	case errors.As(err, &validation):
+		issues = append([]Issue{}, validation.Issues...)
+	case errors.As(err, &settingsErr) && settingsErr.Issues != nil:
+		issues = settingsErr.Issues
+	default:
+		message, ok := IsSettingsError(err)
+		if !ok {
+			return Validation{}, err
+		}
+		issues = []Issue{{Path: Path{}, Message: message, Code: "structure", Severity: "error", Source: "config.yaml"}}
+	}
+	if issues == nil {
+		issues = []Issue{}
+	}
+	return Validation{Valid: !hasError(issues), Issues: issues, SchemaVersion: "1.6.1", CoreCheckRequired: true}, nil
 }

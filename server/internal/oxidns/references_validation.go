@@ -1,179 +1,162 @@
 package oxidns
 
 import (
+	"errors"
 	"math/big"
+	"strconv"
 	"strings"
+	"unicode"
 
-	"configflow/internal/convert"
-	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
+	"gopkg.in/yaml.v3"
 )
 
-// Port of backend/common/oxidns_reference_validation.py (module C23):
-// plugin references and quick-setup syntax audited against OxiDNS 1.6.1.
+// Plugin references and quick-setup expressions, audited against the
+// OxiDNS 1.6.1 factories. Unknown names are warnings; nothing is resolved.
 
 var (
-	refDomainProviders = []string{"domain_set", "dynamic_domain_set", "geosite", "adguard_rule"}
-	refIPProviders     = []string{"ip_set", "geoip"}
-	refRules           = []string{"qname", "cname", "client_ip", "resp_ip", "ptr_ip", "question", "reload_provider"}
-	refQuick           = map[string]bool{}
-	refIgnored         = []string{"drop_resp", "reload", "prefer_ipv4", "prefer_ipv6", "ecs_handler"}
-)
-
-func init() {
-	for _, name := range strings.Fields(`_true _false has_resp has_wanted_ans qtype qclass rcode qname cname client_ip
+	domainProviders = []string{"domain_set", "dynamic_domain_set", "geosite", "adguard_rule"}
+	ipProviders     = []string{"ip_set", "geoip"}
+	ruleKinds       = []string{"qname", "cname", "client_ip", "resp_ip", "ptr_ip", "question", "reload_provider"}
+	quickKinds      = strings.Fields(`_true _false has_resp has_wanted_ans qtype qclass rcode qname cname client_ip
 resp_ip ptr_ip question mark random env string_exp time rate_limiter forward cache black_hole
 ttl sleep ecs_handler forward_edns0opt client_ip_from_ecs ipset nftset ip_selector prefer_ipv4
-prefer_ipv6 download upgrade reload reload_provider drop_resp query_summary debug_print metrics_collector`) {
-		refQuick[name] = true
-	}
+prefer_ipv6 download upgrade reload reload_provider drop_resp query_summary debug_print metrics_collector`)
+	ignoredQuick = []string{"drop_resp", "reload", "prefer_ipv4", "prefer_ipv6", "ecs_handler", "query_summary", "debug_print", "metrics_collector"}
+)
+
+// splitTokens is re.split(r'[\s,]+', s.strip()) without empty tokens.
+func splitTokens(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
 }
 
-// refTokens is the reference module's _tokens(value): str items only.
-func refTokens(value any) []string {
-	values, isList := value.([]any)
-	if !isList {
-		values = []any{value}
+// refTokens is _tokens of the reference module: strings of a value or list.
+func refTokens(value *Node) []string {
+	list := []*Node{value}
+	if isSeq(value) {
+		list = value.Content
 	}
 	var out []string
-	for _, raw := range values {
-		if text, ok := raw.(string); ok {
-			out = append(out, splitSpaceComma(pystr.Strip(text))...)
+	for _, raw := range list {
+		if isStr(raw) {
+			out = append(out, splitTokens(raw.Value)...)
 		}
 	}
 	return out
 }
 
-// refUint is the reference module's _uint(raw, maximum) (bool).
-func refUint(raw any, maximum int64) bool {
-	return boundedUint(raw, big.NewInt(maximum), true) != nil
-}
-
-// refUintValue is _uint_value(raw).
-func refUintValue(raw string) jsonx.Number {
-	digits := strings.TrimLeft(strings.TrimLeft(raw, "+"), "0")
-	if digits == "" {
-		digits = "0"
+// splitFirst is s.split(None, 1) of a left-trimmed string.
+func splitFirst(s string) (string, string, bool) {
+	s = strings.TrimLeftFunc(s, unicode.IsSpace)
+	i := strings.IndexFunc(s, unicode.IsSpace)
+	if i < 0 {
+		return s, "", false
 	}
-	return jsonx.Number(digits)
+	rest := strings.TrimLeftFunc(s[i:], unicode.IsSpace)
+	return s[:i], rest, rest != ""
 }
 
-type refEdge struct {
+// edge is one parsed dependency: owner → target at path.
+type edge struct {
 	target string
-	path   []any
+	at     Path
 }
 
-// CollectReferenceIssues is collect_reference_issues(document,
-// plugin_schemas, dependency_graph=...): the reference diagnostics; when
-// graph is not nil it receives tag -> referenced tags (and order the tags in
-// the dict's insertion order).
-func CollectReferenceIssues(document any, catalog *jsonx.Object, graph map[string][]string, order *[]string) (issues []any, err error) {
-	defer catch(&err)
-	return collectReferenceIssues(document, catalog, graph, order), nil
+// depGraph holds the dependency edges per tag in declaration order.
+type depGraph struct {
+	order []string
+	edges map[string][]edge
 }
 
-func collectReferenceIssues(document any, catalog *jsonx.Object, graph map[string][]string, order *[]string) []any {
-	issues := []any{}
-	plugins, ok := get(mapping(document), "plugins", []any{}).([]any)
-	if !ok {
+func collectReferenceIssues(document *Node, graph *depGraph) []Issue {
+	var issues []Issue
+	plugins := get(mapOr(document), "plugins")
+	if !has(mapOr(document), "plugins") || !isSeq(plugins) {
 		return issues
 	}
-	addIssue := func(path []any, message, code, severity string) {
-		issues = append(issues, jsonx.Obj("path", append([]any{}, path...), "message", message, "code", code, "severity", severity))
+	_, catalog := schemas()
+	issue := func(at Path, message, code, severity string) {
+		issues = append(issues, Issue{Path: at, Message: message, Code: code, Severity: severity})
 	}
-	type entry struct {
-		index  int
-		plugin any
-	}
-	registry := map[string]entry{}
-	edges := map[string][]refEdge{}
-	var edgeOrder []string
-	for index, plugin := range plugins {
-		tag, ok := get(mapping(plugin), "tag", nil).(string)
+	registry := map[string]*Node{}
+	g := depGraph{edges: map[string][]edge{}}
+	for index, plugin := range plugins.Content {
+		tag, ok := tagOf(mapOr(plugin))
 		if !ok {
 			continue
 		}
-		if _, seen := registry[tag]; seen {
-			addIssue([]any{"plugins", jsonx.Int(index), "tag"}, "插件 tag 重复，必须全局唯一", "duplicate-tag", "error")
+		if registry[tag] != nil {
+			issue(P("plugins", index, "tag"), "插件 tag 重复，必须全局唯一", "duplicate-tag", "error")
 		} else {
-			registry[tag] = entry{index, plugin}
-			edges[tag] = nil
-			edgeOrder = append(edgeOrder, tag)
+			registry[tag] = plugin
+			g.order = append(g.order, tag)
+			g.edges[tag] = []edge{}
 		}
 	}
-	schemaOf := func(kind any) any {
-		if name, ok := kind.(string); ok {
-			return catalog.Value(name)
-		}
-		return nil
-	}
-	reference := func(owner string, raw any, path []any, kind, exact, capability string) {
-		text, ok := raw.(string)
-		if !ok || envSearch(text) {
+	reference := func(owner string, raw *Node, at Path, kind, exact, capability string) {
+		if !isStr(raw) || envRef(raw.Value) {
 			return
 		}
-		tag := pystr.Strip(text)
+		tag := strings.TrimSpace(raw.Value)
 		if tag == "" {
-			addIssue(path, "插件引用不能为空", "reference", "error")
+			issue(at, "插件引用不能为空", "reference", "error")
 			return
 		}
-		target, found := registry[tag]
-		if !found {
-			addIssue(path, "引用的插件 tag 不存在", "reference", "error")
+		target := registry[tag]
+		if target == nil {
+			issue(at, "引用的插件 tag 不存在", "reference", "error")
 			return
 		}
-		targetType := get(target.plugin, "type", nil)
-		schema := schemaOf(targetType)
-		if _, known := edges[owner]; known {
-			edges[owner] = append(edges[owner], refEdge{tag, path})
+		targetType := get(target, "type")
+		schema := catalog[str(targetType)]
+		if !isStr(targetType) {
+			schema = nil
 		}
-		if !truthy(schema) {
-			addIssue(path, "目标是尚未识别的插件类型，由目标核心确认其能力", "unknown-reference", "warning")
-			return
+		if _, ok := g.edges[owner]; ok {
+			g.edges[owner] = append(g.edges[owner], edge{tag, at})
 		}
 		switch {
-		case get(schema, "x-kind", nil) != kind:
-			addIssue(path, "引用目标必须为 "+kind+" 类型插件", "reference-kind", "error")
-		case exact != "" && targetType != exact:
-			addIssue(path, "引用目标必须为 "+exact+" 插件", "reference-type", "error")
-		case capability == "domain" && !strIn(targetType, refDomainProviders...):
-			addIssue(path, "引用的 Provider 必须支持域名匹配", "reference-capability", "error")
-		case capability == "ip" && !strIn(targetType, refIPProviders...):
-			addIssue(path, "引用的 Provider 必须支持 IP 匹配", "reference-capability", "error")
+		case schema == nil:
+			issue(at, "目标是尚未识别的插件类型，由目标核心确认其能力", "unknown-reference", "warning")
+		case schema.Kind != kind:
+			issue(at, "引用目标必须为 "+kind+" 类型插件", "reference-kind", "error")
+		case exact != "" && targetType.Value != exact:
+			issue(at, "引用目标必须为 "+exact+" 插件", "reference-type", "error")
+		case capability == "domain" && !containsString(domainProviders, targetType.Value):
+			issue(at, "引用的 Provider 必须支持域名匹配", "reference-capability", "error")
+		case capability == "ip" && !containsString(ipProviders, targetType.Value):
+			issue(at, "引用的 Provider 必须支持 IP 匹配", "reference-capability", "error")
 		}
 	}
-	providerRules := func(owner, kind string, args any, path []any) {
+	providerRules := func(owner, kind string, args *Node, at Path) {
 		for _, token := range refTokens(args) {
-			if strings.HasPrefix(token, "$") && runeLen(token) > 1 {
+			if strings.HasPrefix(token, "$") && len(token) > 1 {
 				capability := ""
-				if kind == "qname" || kind == "cname" {
+				switch kind {
+				case "qname", "cname":
 					capability = "domain"
-				} else if strIn(kind, "client_ip", "resp_ip", "ptr_ip") {
+				case "client_ip", "resp_ip", "ptr_ip":
 					capability = "ip"
 				}
-				reference(owner, token[1:], path, "provider", "", capability)
+				reference(owner, S(token[1:]), at, "provider", "", capability)
 			}
 		}
 	}
-	converted := func(owner, kind string, args any, path []any) {
-		if schema := catalog.Value(kind); truthy(schema) {
-			for _, problem := range validateSchema(args, asObject(schema), path) {
-				copied := asObject(problem).Clone()
-				copied.Set("path", append([]any{}, path...))
-				issues = append(issues, copied)
+	converted := func(owner, kind string, args *Node, at Path) {
+		if schema := catalog[kind]; schema != nil {
+			for _, problem := range ValidateSchema(args, schema, at) {
+				problem.Path = at
+				issues = append(issues, problem)
 			}
 		}
-		pseudo := jsonx.Obj("tag", owner, "type", kind, "args", args)
-		for _, problem := range collectPluginIssues(pseudo, jsonx.Int(0)) {
-			copied := asObject(problem).Clone()
-			copied.Set("path", append([]any{}, path...))
-			issues = append(issues, copied)
+		for _, problem := range collectPluginIssues(M("tag", owner, "type", kind, "args", args), 0) {
+			problem.Path = at
+			issues = append(issues, problem)
 		}
-		if strIn(kind, refRules...) {
-			providerRules(owner, kind, args, path)
+		if containsString(ruleKinds, kind) {
+			providerRules(owner, kind, args, at)
 		}
 	}
-	shortFlags := func(tokens []string, path []any) ([]string, bool) {
+	shortFlags := func(tokens []string, at Path) ([]string, bool) {
 		result := false
 		for len(tokens) > 0 {
 			last := tokens[len(tokens)-1]
@@ -181,379 +164,326 @@ func collectReferenceIssues(document any, catalog *jsonx.Object, graph map[strin
 				break
 			}
 			tokens = tokens[:len(tokens)-1]
-			if last == "short_circuit" {
+			switch value := strings.TrimPrefix(last, "short_circuit="); {
+			case last == "short_circuit":
 				result = true
-			} else if value := last[strings.IndexByte(last, '=')+1:]; value != "true" && value != "false" {
-				addIssue(path, "short_circuit 只能使用 true 或 false", "quick-setup", "error")
-			} else {
-				result = strings.HasSuffix(last, "=true")
+			case value != "true" && value != "false":
+				issue(at, "short_circuit 只能使用 true 或 false", "quick-setup", "error")
+			default:
+				result = value == "true"
 			}
 		}
 		return tokens, result
 	}
-	quickSetup := func(path []any, message string) { addIssue(path, message, "quick-setup", "error") }
-	quick := func(owner, kind string, param *string, path []any, expected string) {
-		schema, present := catalog.Get(kind)
-		if !present || schema == nil {
-			addIssue(path, "尚未识别的快捷表达式，请由目标核心确认", "unknown-expression", "warning")
+	quick := func(owner, kind, raw string, at Path, expected string) {
+		schema := catalog[kind]
+		if schema == nil {
+			issue(at, "尚未识别的快捷表达式，请由目标核心确认", "unknown-expression", "warning")
 			return
 		}
-		if get(schema, "x-kind", nil) != expected {
-			addIssue(path, "此处需要 "+expected+" 表达式", "expression-kind", "error")
+		if schema.Kind != expected {
+			issue(at, "此处需要 "+expected+" 表达式", "expression-kind", "error")
 			return
 		}
-		if !refQuick[kind] {
-			quickSetup(path, "该插件不支持快捷表达式，请定义插件后使用 $tag 引用")
+		if !containsString(quickKinds, kind) {
+			issue(at, "该插件不支持快捷表达式，请定义插件后使用 $tag 引用", "quick-setup", "error")
 			return
 		}
-		raw := ""
-		if param != nil {
-			raw = *param
-		}
-		tokens := pySplit(raw)
+		tokens := strings.Fields(raw)
+		quickIssue := func(message string) { issue(at, message, "quick-setup", "error") }
 		switch {
-		case strIn(kind, refIgnored...) || strIn(kind, "query_summary", "debug_print", "metrics_collector"):
-			return
-		case strIn(kind, "_true", "_false", "has_resp", "has_wanted_ans"):
-			if pystr.Strip(raw) != "" {
-				quickSetup(path, "此匹配器不接受参数")
+		case containsString(ignoredQuick, kind):
+		case kind == "_true" || kind == "_false" || kind == "has_resp" || kind == "has_wanted_ans":
+			if strings.TrimSpace(raw) != "" {
+				quickIssue("此匹配器不接受参数")
 			}
-			return
-		case strIn(kind, refRules...) || strIn(kind, "qtype", "qclass", "rcode", "mark", "random", "string_exp", "ttl"):
-			if pystr.Strip(raw) == "" {
-				quickSetup(path, "快捷表达式缺少必填参数")
+		case containsString(ruleKinds, kind) || containsString([]string{"qtype", "qclass", "rcode", "mark", "random", "string_exp", "ttl"}, kind):
+			if strings.TrimSpace(raw) == "" {
+				quickIssue("快捷表达式缺少必填参数")
 				return
 			}
-			converted(owner, kind, raw, path)
+			converted(owner, kind, S(raw), at)
 		case kind == "env":
-			converted(owner, kind, jsonx.ListOf(tokens), path)
+			converted(owner, kind, strs(tokens), at)
 		case kind == "forward":
-			tokens, _ = shortFlags(tokens, path)
-			upstreams := []any{}
-			for _, token := range tokens {
-				upstreams = append(upstreams, jsonx.Obj("addr", token))
+			tokens, _ = shortFlags(tokens, at)
+			upstreams := L()
+			for _, item := range tokens {
+				upstreams.Content = append(upstreams.Content, M("addr", item))
 			}
-			converted(owner, kind, jsonx.Obj("upstreams", upstreams), path)
+			converted(owner, kind, M("upstreams", upstreams), at)
 		case kind == "cache":
-			for _, token := range tokens {
-				if !strIn(token, "short_circuit", "short_circuit=true", "short_circuit=false") {
-					quickSetup(path, "cache 快捷参数仅支持 short_circuit、short_circuit=true/false")
+			for _, item := range tokens {
+				if item != "short_circuit" && item != "short_circuit=true" && item != "short_circuit=false" {
+					quickIssue("cache 快捷参数仅支持 short_circuit、short_circuit=true/false")
 					break
 				}
 			}
 		case kind == "black_hole":
-			rest, short := shortFlags(tokens, path)
-			rest = refTokens(jsonx.ListOf(rest))
-			var mode *string
-			if len(rest) > 0 && strIn(pystr.Lower(rest[0]), "nxdomain", "nodata", "null", "custom", "refused") {
-				lowered := pystr.Lower(rest[0])
-				mode = &lowered
-				rest = rest[1:]
+			tokens, short := shortFlags(tokens, at)
+			var split []string
+			for _, item := range tokens {
+				split = append(split, splitTokens(item)...)
 			}
-			args := jsonx.Obj("ips", jsonx.ListOf(rest), "short_circuit", short)
-			if mode != nil {
-				args.Set("mode", *mode)
+			args := M()
+			mode := ""
+			if len(split) > 0 && containsString([]string{"nxdomain", "nodata", "null", "custom", "refused"}, strings.ToLower(split[0])) {
+				mode, split = strings.ToLower(split[0]), split[1:]
 			}
-			converted(owner, kind, args, path)
+			set(args, "ips", strs(split))
+			set(args, "short_circuit", B(short))
+			if mode != "" {
+				set(args, "mode", S(mode))
+			}
+			converted(owner, kind, args, at)
 		case kind == "sleep":
-			message := formatError("duration", raw)
-			if pystr.Strip(raw) == "" || message != "" {
+			message := FormatError("duration", S(raw))
+			if strings.TrimSpace(raw) == "" || message != "" {
 				if message == "" {
 					message = "sleep 必须填写时长"
 				}
-				quickSetup(path, message)
+				quickIssue(message)
 			}
 		case kind == "forward_edns0opt":
-			for _, token := range refTokens(raw) {
-				if !refUint(token, 65535) {
-					quickSetup(path, "EDNS0 代码必须为 0–65535 的整数")
+			for _, token := range splitTokens(raw) {
+				if !uintMax(token, 65535) {
+					quickIssue("EDNS0 代码必须为 0–65535 的整数")
 					break
 				}
 			}
 		case kind == "client_ip_from_ecs":
-			converted(owner, kind, jsonx.ListOf(refTokens(raw)), path)
+			converted(owner, kind, strs(splitTokens(raw)), at)
 		case kind == "time":
 			if len(tokens) != 1 || !strings.Contains(tokens[0], "-") {
-				quickSetup(path, "time 快捷参数必须是单个 HH:MM-HH:MM 时间段")
+				quickIssue("time 快捷参数必须是单个 HH:MM-HH:MM 时间段")
 				return
 			}
 			start, end, _ := strings.Cut(tokens[0], "-")
-			converted(owner, kind, jsonx.Obj("periods", []any{jsonx.Obj("start", start, "end", end)}), path)
+			converted(owner, kind, M("periods", L(M("start", start, "end", end))), at)
 		case kind == "rate_limiter":
-			args := jsonx.NewObject()
+			args := M()
 			for index, key := range []string{"qps", "burst", "mask4", "mask6"} {
 				if len(tokens) <= index {
 					break
 				}
 				if key == "qps" {
-					f, err := pystr.Float(tokens[index])
-					if err != nil {
-						quickSetup(path, "rate_limiter 快捷参数需为 qps burst mask4 mask6 数字")
+					f, err := strconv.ParseFloat(strings.ReplaceAll(tokens[index], "_", ""), 64)
+					if err != nil && !errors.Is(err, strconv.ErrRange) {
+						quickIssue("rate_limiter 快捷参数需为 qps burst mask4 mask6 数字")
 						return
 					}
-					args.Set(key, jsonx.Float(f))
+					set(args, key, Float(f))
 					continue
 				}
-				if !refUint(tokens[index], 4294967295) {
-					quickSetup(path, "rate_limiter 快捷参数需为 qps burst mask4 mask6 数字")
+				if !uintMax(tokens[index], 4294967295) {
+					quickIssue("rate_limiter 快捷参数需为 qps burst mask4 mask6 数字")
 					return
 				}
-				args.Set(key, refUintValue(tokens[index]))
+				set(args, key, uintNode(tokens[index]))
 			}
-			converted(owner, kind, args, path)
+			converted(owner, kind, args, at)
 		case kind == "ip_selector":
-			args := jsonx.NewObject()
-			if len(tokens) > 0 && strIn(tokens[0], "first_success", "best_within_budget", "background") {
-				args.Set("selection_mode", tokens[0])
+			args := M()
+			if len(tokens) > 0 && containsString([]string{"first_success", "best_within_budget", "background"}, tokens[0]) {
+				set(args, "selection_mode", S(tokens[0]))
 				tokens = tokens[1:]
 			}
 			if len(tokens) > 0 {
-				args.Set("probe_methods", jsonx.ListOf(tokens))
+				set(args, "probe_methods", strs(tokens))
 			}
-			converted(owner, kind, args, path)
+			converted(owner, kind, args, at)
 		case kind == "ipset":
-			args := jsonx.NewObject()
+			args := M()
 			for _, token := range tokens {
 				parts := strings.Split(token, ",")
-				if len(parts) != 3 || !strIn(parts[1], "inet", "inet6") || !refUint(parts[2], 255) {
-					quickSetup(path, "ipset 快捷格式为 set,inet|inet6,mask")
+				if len(parts) != 3 || (parts[1] != "inet" && parts[1] != "inet6") || !uintMax(parts[2], 255) {
+					quickIssue("ipset 快捷格式为 set,inet|inet6,mask")
 					continue
 				}
-				suffix := "4"
-				if parts[1] != "inet" {
-					suffix = "6"
-				}
-				args.Set("set_name"+suffix, parts[0])
-				args.Set("mask"+suffix, refUintValue(parts[2]))
+				suffix := map[string]string{"inet": "4", "inet6": "6"}[parts[1]]
+				set(args, "set_name"+suffix, S(parts[0]))
+				set(args, "mask"+suffix, uintNode(parts[2]))
 			}
-			converted(owner, kind, args, path)
+			converted(owner, kind, args, at)
 		case kind == "nftset":
-			args := jsonx.NewObject()
+			args := M()
 			for _, token := range tokens {
 				parts := strings.Split(token, ",")
-				if len(parts) != 5 || !strIn(parts[0], "ip", "ip6", "inet") || parts[1] == "" || parts[2] == "" || !refUint(parts[4], 255) {
-					quickSetup(path, "nftset 快捷格式为 family,table,set,type,mask")
+				if len(parts) != 5 || !containsString([]string{"ip", "ip6", "inet"}, parts[0]) || parts[1] == "" || parts[2] == "" || !uintMax(parts[4], 255) {
+					quickIssue("nftset 快捷格式为 family,table,set,type,mask")
 					continue
 				}
-				if !strIn(parts[3], "ipv4_addr", "ipv6_addr") {
-					addIssue(path, "未知 nftset 地址类型，核心会忽略此条目", "ignored-parameter", "warning")
+				if parts[3] != "ipv4_addr" && parts[3] != "ipv6_addr" {
+					issue(at, "未知 nftset 地址类型，核心会忽略此条目", "ignored-parameter", "warning")
 					continue
 				}
-				key := "ipv6"
-				if parts[3] == "ipv4_addr" {
-					key = "ipv4"
-				}
-				args.Set(key, jsonx.Obj("table_family", parts[0], "table_name", parts[1], "set_name", parts[2], "mask", refUintValue(parts[4])))
+				key := map[string]string{"ipv4_addr": "ipv4", "ipv6_addr": "ipv6"}[parts[3]]
+				set(args, key, M("table_family", parts[0], "table_name", parts[1], "set_name", parts[2], "mask", uintNode(parts[4])))
 			}
-			converted(owner, kind, args, path)
+			converted(owner, kind, args, at)
 		case kind == "download":
-			parts := splitMax1(pystr.Strip(raw))
-			if len(parts) < 2 || pystr.Strip(parts[1]) == "" {
-				quickSetup(path, "download 快捷参数必须包含 URL 和目录")
-			} else {
-				converted(owner, kind, jsonx.Obj("downloads", []any{jsonx.Obj("url", parts[0], "dir", pystr.Strip(parts[1]))}), path)
+			url, dir, ok := splitFirst(strings.TrimSpace(raw))
+			if !ok || strings.TrimSpace(dir) == "" {
+				quickIssue("download 快捷参数必须包含 URL 和目录")
+				return
 			}
+			converted(owner, kind, M("downloads", L(M("url", url, "dir", strings.TrimSpace(dir)))), at)
 		case kind == "upgrade":
-			args := jsonx.NewObject()
+			args := M()
 			for _, token := range tokens {
 				if token == "force" || token == "no_restart" {
-					args.Set(token, true)
+					set(args, token, B(true))
 					continue
 				}
-				key, value, found := strings.Cut(token, "=")
+				key, value, sep := strings.Cut(token, "=")
 				switch {
-				case !found || !strIn(key, "force", "no_restart", "github_token", "bundle"):
-					quickSetup(path, "upgrade 包含不支持的快捷参数")
+				case !sep || !containsString([]string{"force", "no_restart", "github_token", "bundle"}, key):
+					quickIssue("upgrade 包含不支持的快捷参数")
 				case key == "force" || key == "no_restart":
 					if value != "true" && value != "false" {
-						quickSetup(path, "upgrade 开关必须为 true 或 false")
+						quickIssue("upgrade 开关必须为 true 或 false")
 					} else {
-						args.Set(key, value == "true")
+						set(args, key, B(value == "true"))
 					}
 				case key == "bundle":
-					args.Set(key, pystr.Lower(value))
+					set(args, key, S(strings.ToLower(value)))
 				default:
-					args.Set(key, value)
+					set(args, key, S(value))
 				}
 			}
-			converted(owner, kind, args, path)
+			converted(owner, kind, args, at)
 		}
 	}
-	expression := func(owner string, value any, path []any, expected string, sequence, cron bool) {
-		raw, ok := value.(string)
-		if !ok || envSearch(raw) {
+	expression := func(owner string, rawNode *Node, at Path, expected string, sequence, cron bool) {
+		if !isStr(rawNode) || envRef(rawNode.Value) {
 			return
 		}
-		raw = lstrip(raw)
+		raw := strings.TrimLeftFunc(rawNode.Value, unicode.IsSpace)
 		if expected == "matcher" && strings.HasPrefix(raw, "!") {
-			raw = lstrip(raw[1:])
+			raw = strings.TrimLeftFunc(raw[1:], unicode.IsSpace)
 		}
-		if pystr.Strip(raw) == "" {
-			addIssue(path, "表达式不能为空", "expression", "error")
+		if strings.TrimSpace(raw) == "" {
+			issue(at, "表达式不能为空", "expression", "error")
 			return
 		}
 		if strings.HasPrefix(raw, "$") {
-			reference(owner, raw[1:], path, expected, "", "")
+			reference(owner, S(raw[1:]), at, expected, "", "")
 			return
 		}
-		split := splitMax1(raw)
-		first := split[0]
-		var param *string
-		if len(split) > 1 {
-			param = &split[1]
-		}
-		paramText := ""
-		if param != nil {
-			paramText = *param
-		}
-		if sequence && (first == "accept" || first == "return") {
+		first, param, hasParam := splitFirst(raw)
+		switch {
+		case sequence && (first == "accept" || first == "return"):
 			return
-		}
-		if sequence && (first == "jump" || first == "goto") {
-			if paramText == "" || strings.HasPrefix(pystr.Strip(paramText), "$") {
-				addIssue(path, "jump/goto 必须引用不带 $ 的 sequence tag", "expression", "error")
+		case sequence && (first == "jump" || first == "goto"):
+			if !hasParam || strings.HasPrefix(strings.TrimSpace(param), "$") {
+				issue(at, "jump/goto 必须引用不带 $ 的 sequence tag", "expression", "error")
 			} else {
-				reference(owner, paramText, path, "executor", "sequence", "")
+				reference(owner, S(param), at, "executor", "sequence", "")
 			}
 			return
-		}
-		if sequence && first == "reject" {
-			tokens := pySplit(paramText)
-			if len(tokens) > 0 && (len(tokens) != 1 || !dnsCodeValid("base-rcode", tokens[0])) {
-				addIssue(path, "reject 只接受一个基础响应码 0–15 或对应名称", "expression", "error")
+		case sequence && first == "reject":
+			tokens := strings.Fields(param)
+			if len(tokens) > 0 && (len(tokens) != 1 || !DNSCodeValid("base-rcode", S(tokens[0]))) {
+				issue(at, "reject 只接受一个基础响应码 0–15 或对应名称", "expression", "error")
 			}
 			return
-		}
-		if sequence && (first == "mark" || first == "set_mark") {
-			var tokens []string
-			if param != nil {
-				tokens = refTokens(paramText)
-			}
+		case sequence && (first == "mark" || first == "set_mark"):
+			tokens := splitTokens(param)
 			bad := len(tokens) == 0
 			for _, token := range tokens {
-				if !refUint(token, 4294967295) {
-					bad = true
-				}
+				bad = bad || !uintMax(token, 4294967295)
 			}
 			if bad {
-				addIssue(path, "mark/set_mark 至少需要一个 0–4294967295 整数", "expression", "error")
+				issue(at, "mark/set_mark 至少需要一个 0–4294967295 整数", "expression", "error")
 			}
 			return
-		}
-		if cron && get(catalog.GetOr(first, jsonx.NewObject()), "x-kind", nil) != "executor" {
-			reference(owner, raw, path, "executor", "", "")
+		case cron && pluginKind(first) != "executor":
+			reference(owner, S(raw), at, "executor", "", "")
 			return
 		}
-		quick(owner, first, param, path, expected)
+		quick(owner, first, param, at, expected)
 	}
-	for index, plugin := range plugins {
-		if !isDict(plugin) {
+	for index, plugin := range plugins.Content {
+		if !isMap(plugin) {
 			continue
 		}
-		owner, ok1 := get(plugin, "tag", nil).(string)
-		kind, ok2 := get(plugin, "type", nil).(string)
-		args := get(plugin, "args", nil)
-		if !ok1 || !ok2 {
+		owner, ownerOK := tagOf(plugin)
+		kindNode, args := get(plugin, "type"), get(plugin, "args")
+		if !ownerOK || !isStr(kindNode) {
 			continue
 		}
-		path := []any{"plugins", jsonx.Int(index), "args"}
-		cfg := mapping(args)
-		if strIn(kind, "udp_server", "tcp_server", "quic_server") {
-			reference(owner, get(cfg, "entry", nil), appendPath(path, "entry"), "executor", "", "")
-		}
-		if kind == "http_server" {
-			entries, _ := get(cfg, "entries", nil).([]any)
-			for j, entry := range entries {
-				reference(owner, get(mapping(entry), "exec", nil), appendPath(path, "entries", jsonx.Int(j), "exec"), "executor", "", "")
+		kind, at, cfg := kindNode.Value, P("plugins", index, "args"), mapOr(args)
+		switch kind {
+		case "udp_server", "tcp_server", "quic_server":
+			reference(owner, get(cfg, "entry"), at.with("entry"), "executor", "", "")
+		case "http_server":
+			for j, entry := range items(get(cfg, "entries")) {
+				reference(owner, get(mapOr(entry), "exec"), at.with("entries", j, "exec"), "executor", "", "")
 			}
-		}
-		if kind == "fallback" {
+		case "fallback":
 			for _, key := range []string{"primary", "secondary"} {
-				reference(owner, get(cfg, key, nil), appendPath(path, key), "executor", "", "")
+				reference(owner, get(cfg, key), at.with(key), "executor", "", "")
+			}
+		case "prefer_ipv4", "prefer_ipv6":
+			reference(owner, get(cfg, "probe_executor"), at.with("probe_executor"), "executor", "", "")
+		case "learn_domain":
+			reference(owner, get(cfg, "provider"), at.with("provider"), "provider", "dynamic_domain_set", "")
+		case "domain_set", "ip_set":
+			capability := map[string]string{"domain_set": "domain", "ip_set": "ip"}[kind]
+			for j, value := range items(get(cfg, "sets")) {
+				reference(owner, value, at.with("sets", j), "provider", "", capability)
 			}
 		}
-		if strIn(kind, "prefer_ipv4", "prefer_ipv6") {
-			reference(owner, get(cfg, "probe_executor", nil), appendPath(path, "probe_executor"), "executor", "", "")
+		if containsString(ruleKinds, kind) {
+			providerRules(owner, kind, args, at)
 		}
-		if kind == "learn_domain" {
-			reference(owner, get(cfg, "provider", nil), appendPath(path, "provider"), "provider", "dynamic_domain_set", "")
-		}
-		if strIn(kind, "domain_set", "ip_set") {
-			sets, _ := get(cfg, "sets", nil).([]any)
-			capability := "ip"
-			if kind == "domain_set" {
-				capability = "domain"
-			}
-			for j, value := range sets {
-				reference(owner, value, appendPath(path, "sets", jsonx.Int(j)), "provider", "", capability)
-			}
-		}
-		if strIn(kind, refRules...) {
-			providerRules(owner, kind, args, path)
-		}
-		if rulesList, ok := args.([]any); ok && kind == "sequence" {
-			for j, rule := range rulesList {
-				rule = mapping(rule)
-				expression(owner, get(rule, "exec", nil), appendPath(path, jsonx.Int(j), "exec"), "executor", true, false)
-				switch matches := get(rule, "matches", nil).(type) {
-				case string:
-					expression(owner, matches, appendPath(path, jsonx.Int(j), "matches"), "matcher", false, false)
-				case []any:
-					for k, match := range matches {
-						expression(owner, match, appendPath(path, jsonx.Int(j), "matches", jsonx.Int(k)), "matcher", false, false)
-					}
+		switch kind {
+		case "sequence":
+			for j, rule := range items(args) {
+				rule = mapOr(rule)
+				expression(owner, get(rule, "exec"), at.with(j, "exec"), "executor", true, false)
+				matches := get(rule, "matches")
+				if isStr(matches) {
+					expression(owner, matches, at.with(j, "matches"), "matcher", false, false)
+				}
+				for k, match := range items(matches) {
+					expression(owner, match, at.with(j, "matches", k), "matcher", false, false)
 				}
 			}
-		}
-		if kind == "any_match" {
-			var values []any
-			list, isList := args.([]any)
-			if isList {
-				values = list
-			} else if text, ok := args.(string); ok {
-				for _, line := range convert.PySplitlines(text) {
-					values = append(values, line)
+		case "any_match":
+			values := items(args)
+			if isStr(args) {
+				for _, line := range splitLines(args.Value, false) {
+					values = append(values, S(line))
 				}
 			}
 			for j, value := range values {
-				if text, ok := value.(string); ok && pystr.Strip(text) != "" {
-					at := path
-					if isList {
-						at = appendPath(path, jsonx.Int(j))
+				if isStr(value) && strings.TrimSpace(value.Value) != "" {
+					where := at
+					if isSeq(args) {
+						where = at.with(j)
 					}
-					expression(owner, value, at, "matcher", false, false)
+					expression(owner, value, where, "matcher", false, false)
 				}
 			}
-		}
-		if kind == "cron" {
-			jobs, _ := get(cfg, "jobs", nil).([]any)
-			for j, job := range jobs {
-				values, _ := get(mapping(job), "executors", nil).([]any)
-				for k, value := range values {
-					expression(owner, value, appendPath(path, "jobs", jsonx.Int(j), "executors", jsonx.Int(k)), "executor", false, true)
+		case "cron":
+			for j, job := range items(get(cfg, "jobs")) {
+				for k, value := range items(get(mapOr(job), "executors")) {
+					expression(owner, value, at.with("jobs", j, "executors", k), "executor", false, true)
 				}
 			}
 		}
 	}
 	if graph != nil {
-		for _, tag := range edgeOrder {
-			targets := []string{}
-			for _, e := range edges[tag] {
-				targets = append(targets, e.target)
-			}
-			graph[tag] = targets
-		}
-		if order != nil {
-			*order = append(*order, edgeOrder...)
-		}
+		*graph = g
 	}
-	// Iterative DFS (cycle detection) in edge insertion order.
+	// Iterative DFS for dependency cycles.
 	done, active := map[string]bool{}, map[string]bool{}
 	type frame struct {
 		node string
 		next int
 	}
-	for _, start := range edgeOrder {
+	for _, start := range g.order {
 		if done[start] {
 			continue
 		}
@@ -561,7 +491,7 @@ func collectReferenceIssues(document any, catalog *jsonx.Object, graph map[strin
 		stack := []frame{{start, 0}}
 		for len(stack) > 0 {
 			top := &stack[len(stack)-1]
-			list := edges[top.node]
+			list := g.edges[top.node]
 			if top.next >= len(list) {
 				delete(active, top.node)
 				done[top.node] = true
@@ -571,7 +501,7 @@ func collectReferenceIssues(document any, catalog *jsonx.Object, graph map[strin
 			e := list[top.next]
 			top.next++
 			if active[e.target] {
-				addIssue(e.path, "插件依赖形成循环，无法初始化", "dependency-cycle", "error")
+				issue(e.at, "插件依赖形成循环，无法初始化", "dependency-cycle", "error")
 			} else if !done[e.target] {
 				active[e.target] = true
 				stack = append(stack, frame{e.target, 0})
@@ -579,4 +509,9 @@ func collectReferenceIssues(document any, catalog *jsonx.Object, graph map[strin
 		}
 	}
 	return issues
+}
+
+func uintNode(digits string) *Node {
+	v, _ := new(big.Int).SetString(strings.TrimPrefix(digits, "+"), 10)
+	return &Node{Kind: yaml.ScalarNode, Tag: tagInt, Value: v.String()}
 }

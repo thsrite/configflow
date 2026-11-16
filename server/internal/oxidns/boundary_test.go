@@ -2,7 +2,7 @@ package oxidns
 
 // Boundary acceptance: the public entry points driven with the inputs the
 // Python implementation was recorded with (test suite replays and random
-// corpora under ../oxidns/testdata, synthetic values only), outputs compared
+// corpora under testdata, synthetic values only), outputs compared
 // structurally (YAML texts parsed; ints, floats and bools kept apart) and
 // rejections by whether they happen plus the exact Chinese message for
 // OxidnsSettingsError and its subclasses.
@@ -10,7 +10,6 @@ package oxidns
 import (
 	"bufio"
 	"compress/gzip"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -20,40 +19,18 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"unicode"
 
-	"configflow/internal/ippresence"
 	"configflow/internal/jsonx"
-	"configflow/internal/repo"
 )
 
-const testdataDir = "../oxidns/testdata/"
+const testdataDir = "testdata/"
 
 func TestMain(m *testing.M) {
 	if os.Getenv("CONFIGFLOW_ROOT") == "" {
 		os.Setenv("CONFIGFLOW_ROOT", "../../..")
 	}
-	var (
-		once       sync.Once
-		repository *repo.Repository
-		openErr    error
-	)
-	SetClassicalIPLines(func(ctx context.Context, item, config any) (any, error) {
-		once.Do(func() {
-			dir, err := os.MkdirTemp("", "oxidns-boundary-")
-			if err != nil {
-				openErr = err
-				return
-			}
-			repository, openErr = repo.Open(dir, repo.Options{})
-		})
-		if openErr != nil {
-			return nil, openErr
-		}
-		return ippresence.ClassicalIPLines(repo.WithRepository(ctx, repository), item, config)
-	})
 	os.Exit(m.Run())
 }
 

@@ -4,902 +4,717 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-
-	"configflow/internal/jsonx"
-	"configflow/internal/mosdns"
-	"configflow/internal/repo"
-	"configflow/internal/yamlx"
 )
 
-// Port of backend/common/oxidns_common_updates.py (module C26): keep the
-// owned rule-update pipeline (rules_download -> rules_reload ->
-// rules_refresh, called by the rules_cron job refresh_rules) valid as the
-// resource set of a native draft changes.
+// The owned rule-update pipeline (rules_download → rules_reload, called by
+// rules_refresh and the rules_cron job) stays valid as its resources change.
 
-// pipelineTags is _PIPELINE in Python's dict order; pipelineKind maps each
-// tag to its plugin type.
-var (
-	pipelineTags = []string{"rules_download", "rules_reload", "rules_refresh"}
-	pipelineKind = map[string]string{"rules_download": "download", "rules_reload": "reload_provider", "rules_refresh": "sequence"}
-)
+var pipeline = map[string]string{"rules_download": "download", "rules_reload": "reload_provider", "rules_refresh": "sequence"}
 
-// refreshSteps is _REFRESH, downloadOnlySteps _DOWNLOAD_ONLY (fresh copies).
-func refreshSteps() []any {
-	return []any{jsonx.Obj("exec", "$rules_download"), jsonx.Obj("exec", "$rules_reload")}
-}
+var pipelineTags = []string{"rules_download", "rules_reload", "rules_refresh"}
 
-func downloadOnlySteps() []any { return []any{jsonx.Obj("exec", "$rules_download")} }
+func refreshSteps() *Node      { return L(M("exec", "$rules_download"), M("exec", "$rules_reload")) }
+func downloadOnlySteps() *Node { return L(M("exec", "$rules_download")) }
 
-const pipelineErrorMessage = "规则更新流水线仍被自定义执行链引用或包含自定义步骤，请先在完整参数中调整，不能自动停用"
-
-// updatesDocument is _document(ctx): the document, expanded when it has
-// includes.
-func updatesDocument(ctx *commonContext) *jsonx.Object {
-	if !truthy(ctx.doc.Value("include")) {
-		return ctx.doc
-	}
-	settings := ctx.settings.Clone()
-	settings.Set("native_config", dump(ctx.doc))
-	return nativeDocument(settings, false, nil)
-}
-
-// downloadPath is _path(entry): "dir/filename" without "./", ok false for
-// None.
-func downloadPath(entry any) (string, bool) {
-	obj, isObj := entry.(*jsonx.Object)
-	if !isObj || obj == nil {
-		return "", false
-	}
-	dir, ok1 := obj.Value("dir").(string)
-	name, ok2 := obj.Value("filename").(string)
-	if !ok1 || !ok2 {
-		return "", false
-	}
-	return strings.TrimPrefix(strings.TrimRight(dir, "/")+"/"+name, "./"), true
-}
-
-// pathKey is _path(entry) as a set/dict key (None has its own key).
-func pathKey(entry any) string {
-	if p, ok := downloadPath(entry); ok {
-		return p
-	}
-	return "\x00None"
-}
-
-// pluginsOf is document.get('plugins', []) iterated.
-func pluginsOf(document any) []any {
-	return pyIter(get(document, "plugins", []any{}))
-}
-
-// ReconcileNativeWithdrawals is reconcile_native_withdrawals(before,
-// candidate, original_settings, settings, config): withdraw proven managed
-// download targets from candidate (in place); returns (removed entries,
-// whether candidate changed).
-func ReconcileNativeWithdrawals(before, candidate, originalSettings, settings, config *jsonx.Object) (removed int, changed bool, err error) {
-	defer catch(&err)
-	removed, changed = reconcileNativeWithdrawals(before, candidate, originalSettings, settings, config)
-	return removed, changed, nil
-}
-
-func reconcileNativeWithdrawals(before, candidate, originalSettings, settings *jsonx.Object, configValue any) (int, bool) {
-	expanded := func(document, values *jsonx.Object) *jsonx.Object {
-		if !truthy(document.Value("include")) {
-			return document
+func relevant(changes *Node) bool {
+	for _, key := range keys(changes) {
+		if containsString(RoutingFields, key) || strings.HasPrefix(key, "rule_update.") || strings.HasPrefix(key, "adguard.") {
+			return true
 		}
-		merged := values.Clone()
-		text, err := yamlx.SafeDump(document)
-		must(err)
-		merged.Set("native_config", text)
-		return nativeDocument(merged, false, nil)
 	}
-	var current *jsonx.Object
+	return false
+}
+
+func pipelineError() error {
+	return fail("规则更新流水线仍被自定义执行链引用或包含自定义步骤，请先在完整参数中调整，不能自动停用")
+}
+
+// ReconcileNativeWithdrawals removes downloads of managed resources the
+// candidate draft no longer reads (proven by its actual references).
+// It returns the number of removed entries and whether candidate changed.
+func ReconcileNativeWithdrawals(before, candidate, originalSettings, settings *Node, p *Profile) (int, bool, error) {
+	expand := func(document, values *Node) (*Node, error) {
+		if !truthy(get(document, "include")) {
+			return document, nil
+		}
+		v := shallow(values)
+		set(v, "native_config", S(dump(document)))
+		return NativeDocument(v, false, nil)
+	}
+	previous, err := expand(before, originalSettings)
+	var current *Node
 	var references []string
-	oldPaths, live := map[string]bool{}, map[string]bool{}
-	if tryExcept(func() {
-		previous := expanded(before, originalSettings)
-		current = expanded(candidate, settings)
-		for _, path := range resourceReferences(previous) {
-			oldPaths[resourceKey(relativeResource(path))] = true
-		}
-		references = resourceReferences(current)
-		for _, path := range references {
-			live[resourceKey(relativeResource(path))] = true
-		}
-	}, ClassSettings) != nil {
-		// Complete-form drafts may contain unfinished unrelated resource fields.
-		return 0, false
+	var oldPaths, live map[string]bool
+	if err == nil {
+		current, err = expand(candidate, settings)
 	}
-	// Unexpanded paths could still consume one of the withdrawn files.
-	for _, path := range references {
-		if strings.Contains(path, "${") {
-			return 0, false
-		}
+	if err == nil {
+		oldPaths, err = referencedPaths(previous)
 	}
-	config := configOf(configValue)
-	paths := map[string]bool{}
-	catalog := buildCatalog(config)
-	for _, identity := range catalog.order {
-		record := catalog.records[identity]
-		if record.suffix != "rulesets" {
-			continue
+	if err == nil {
+		references, err = ResourceReferences(current)
+	}
+	if err == nil {
+		live, err = referencedPaths(current)
+	}
+	if err != nil {
+		if _, ok := IsSettingsError(err); ok {
+			return 0, false, nil // unfinished drafts: leave every download alone
 		}
-		for part := range record.parts {
-			paths[strings.TrimPrefix(rulePath(record.item, part), "./")] = true
+		return 0, false, err
+	}
+	for _, ref := range references {
+		if strings.Contains(ref, "${") {
+			return 0, false, nil
 		}
 	}
-	adguard := get(originalSettings, "adguard", jsonx.NewObject())
-	for _, value := range pyIter(get(adguard, "urls", []any{})) {
-		if text, ok := value.(string); ok {
-			paths["rules/"+TagFor("adguard", text)+".txt"] = true
+	managed := map[string]bool{}
+	c := p.catalog()
+	for _, r := range c.records {
+		if r.suffix == "rulesets" {
+			for part := range r.parts {
+				managed[strings.TrimPrefix(RulePath(r.item, part), "./")] = true
+			}
 		}
 	}
-	readers := append(append([]string{}, references...), resourceReaders(current)...)
+	for _, u := range items(get(get(originalSettings, "adguard"), "urls")) {
+		if isStr(u) {
+			managed["rules/"+TagFor("adguard", u)+".txt"] = true
+		}
+	}
+	readers := append(append([]string{}, references...), ResourceReaders(current)...)
 	withdrawn := map[string]bool{}
 	for path := range oldPaths {
-		if !live[path] && paths[path] && !ResourceIsRead(path, readers) {
+		if !live[path] && managed[path] && !ResourceIsRead(path, readers) {
 			withdrawn[path] = true
 		}
 	}
-	var downloader any
-	for _, plugin := range pluginsOf(candidate) {
-		if get(plugin, "tag", nil) == "rules_download" {
+	var downloader *Node
+	for _, plugin := range items(get(candidate, "plugins")) {
+		if equal(get(plugin, "tag"), S("rules_download")) {
 			downloader = plugin
 			break
 		}
 	}
-	if len(withdrawn) == 0 || !truthy(downloader) || get(downloader, "type", nil) != "download" {
-		return 0, false
+	if len(withdrawn) == 0 || downloader == nil || !equal(get(downloader, "type"), S("download")) {
+		return 0, false, nil
 	}
-	args, ok := get(downloader, "args", nil).(*jsonx.Object)
-	if !ok || args == nil {
-		return 0, false
+	downloads := get(get(downloader, "args"), "downloads")
+	if !isMap(get(downloader, "args")) || !isSeq(downloads) {
+		return 0, false, nil
 	}
-	downloads, ok := args.Value("downloads").([]any)
-	if !ok {
-		return 0, false // Leave unfinished/custom native values to their editor.
+	prior := clone(candidate)
+	retained := filter(downloads.Content, func(item *Node) bool { return !withdrawn[downloadPath(item)] })
+	removed := len(downloads.Content) - len(retained)
+	replaceDownloadEntries(downloader, retained)
+	ctx, err := newContext(candidate, settings)
+	if err == nil {
+		err = finishRuleUpdates(ctx, M("direct_rulesets", L()), p, "")
 	}
-	prior := copyValue(candidate)
-	retained := []any{}
-	for _, entry := range downloads {
-		if p, ok := downloadPath(entry); !ok || !withdrawn[p] {
-			retained = append(retained, entry)
-		}
+	if err != nil {
+		return 0, false, err
 	}
-	removed := len(downloads) - len(retained)
-	replaceDownloadEntries(downloader.(*jsonx.Object), retained)
-	// Reuse the common editor's conservative empty-pipeline lifecycle.
-	finishRuleUpdates(newCommonContext(candidate, settings), jsonx.Obj("direct_rulesets", []any{}), configValue, "")
-	return removed, !jsonx.Equal(candidate, prior)
+	return removed, !equal(candidate, prior), nil
 }
 
-// updateProviders is _providers(document, existing).
-func updateProviders(document any, existing any) []any {
-	_, pluginSchemas, err := Schemas()
-	must(err)
+// updateProviders is _providers: live provider references for the reload.
+func updateProviders(document, existing *Node) *Node {
+	_, catalog := schemas()
 	available := map[string]bool{}
-	for _, plugin := range pluginsOf(document) {
-		if !isDict(plugin) {
-			continue
-		}
-		kind := get(plugin, "type", nil)
-		hashable(kind)
-		include := true
-		if text, ok := kind.(string); ok && pluginSchemas.Has(text) {
-			include = get(pluginSchemas.Value(text), "x-kind", nil) == "provider"
-		}
-		if include {
-			tag := item(plugin, "tag")
-			hashable(tag)
-			if text, ok := tag.(string); ok {
-				available[text] = true
-			}
+	for _, item := range items(get(document, "plugins")) {
+		kind := str(get(item, "type"))
+		if s := catalog[kind]; isMap(item) && (s == nil || s.Kind == "provider") {
+			available[str(get(item, "tag"))] = true
 		}
 	}
-	result := []any{}
-	contains := func(value string) bool {
-		for _, element := range result {
-			if element == value {
-				return true
-			}
-		}
-		return false
-	}
-	if list, ok := existing.([]any); ok {
-		for _, value := range list {
-			if text, ok := value.(string); ok && strings.HasPrefix(text, "$") && available[text[1:]] && !contains(text) {
-				result = append(result, text)
-			}
+	result := L()
+	for _, value := range items(existing) {
+		if isStr(value) && strings.HasPrefix(value.Value, "$") && available[value.Value[1:]] && !contains(result, value) {
+			result.Content = append(result.Content, value)
 		}
 	}
-	for _, plugin := range pluginsOf(document) {
-		if !strIn(get(plugin, "type", nil), "domain_set", "ip_set", "adguard_rule") {
-			continue
-		}
-		args, ok := get(plugin, "args", nil).(*jsonx.Object)
-		if !ok || args == nil || !truthy(args.Value("files")) {
-			continue
-		}
-		tag, ok := item(plugin, "tag").(string)
-		if !ok {
-			raise(pyErr("TypeError", `can only concatenate str (not "`+typeName(item(plugin, "tag"))+`") to str`))
-		}
-		if !contains("$" + tag) {
-			result = append(result, "$"+tag)
+	for _, item := range items(get(document, "plugins")) {
+		if isOneOf(get(item, "type"), "domain_set", "ip_set", "adguard_rule") && truthy(get(mapOr(get(item, "args")), "files")) {
+			if value := S("$" + str(get(item, "tag"))); !contains(result, value) {
+				result.Content = append(result.Content, value)
+			}
 		}
 	}
 	return result
 }
 
-// restorePipeline is _restore(ctx, tag).
-func restorePipeline(ctx *commonContext, tag string) bool {
-	if ctx.plugin(tag) != nil {
-		return false
+func restorePipeline(c *commonContext, tag string) (bool, error) {
+	if c.plugin(tag) != nil {
+		return false, nil
 	}
-	saved, ok := get(ctx.parked, tag, nil).(*jsonx.Object)
-	if ok && saved != nil && saved.Value("tag") == tag && saved.Value("type") == pipelineKind[tag] {
-		ctx.ensure(tag, nil, pipelineKind[tag])
-		return true
+	saved := get(c.parked, tag)
+	if isMap(saved) && equal(get(saved, "tag"), S(tag)) && equal(get(saved, "type"), S(pipeline[tag])) {
+		_, err := c.ensure(tag, nil, pipeline[tag])
+		return err == nil, err
 	}
-	return false
+	return false, nil
 }
 
-// prepareRuleUpdateImpl is prepare_rule_update(ctx, changes, config,
-// base_url): keep manual updates available for live subscriptions,
-// independently of cron.
-func prepareRuleUpdateImpl(ctx *commonContext, changes *jsonx.Object, config any, baseURL string) {
-	if !ruleUpdateRelevant(changes) {
-		return
+// prepareRuleUpdate keeps manual updates available for live subscriptions,
+// independently of the schedule.
+func prepareRuleUpdate(c *commonContext, changes *Node, p *Profile, baseURL string) error {
+	if !relevant(changes) {
+		return nil
 	}
-	enabling := changes.Value("rule_update.enabled") == true
+	enable := isTrue(get(changes, "rule_update.enabled"))
 	for _, tag := range pipelineTags {
-		if ctx.includedTags[tag] || ctx.aliasCapability(tag) != nil {
-			if enabling {
-				fail("规则更新流水线来自 include 文件或已重命名，请在完整参数或附加文件中调整")
+		if c.includedTags[tag] || c.aliasCapability(tag) != nil {
+			if enable {
+				return fail("规则更新流水线来自 include 文件或已重命名，请在完整参数或附加文件中调整")
 			}
-			return
+			return nil
 		}
 	}
-	document := updatesDocument(ctx)
-	desired := resourceDownloadsImpl(document, ctx.settings, config, baseURL, nil)
-	if len(desired) == 0 {
-		return
+	document, err := c.expanded()
+	if err != nil {
+		return err
 	}
-	// Do not introduce a second update plan alongside custom native executors.
-	custom := false
+	desired, err := p.resourceDownloads(document, c.settings, baseURL, nil)
+	if err != nil || len(desired) == 0 {
+		return err
+	}
+	custom, complete := false, true
 	for _, tag := range pipelineTags {
-		if p := ctx.plugin(tag); p != nil && p.Value("type") != pipelineKind[tag] {
-			custom = true
-			break
-		}
+		plugin := c.plugin(tag)
+		custom = custom || plugin != nil && !equal(get(plugin, "type"), S(pipeline[tag]))
+		complete = complete && plugin != nil
 	}
-	all := true
-	for _, tag := range pipelineTags {
-		if ctx.plugin(tag) == nil {
-			all = false
-		}
-	}
-	if !all {
-		// Imported YAML may rename only part of a chain, without editor alias
-		// metadata. A custom sequence can also reuse both standard executors.
-		if !custom {
-			for _, plugin := range pluginsOf(document) {
-				if strIn(get(plugin, "type", nil), "download", "reload_provider") {
-					tag := get(plugin, "tag", nil)
-					hashable(tag)
-					if text, ok := tag.(string); !ok || pipelineKind[text] == "" {
-						custom = true
-						break
-					}
-				}
+	if !complete {
+		// Imported YAML may rename part of a chain, or reuse both executors.
+		kinds := map[string]*Node{}
+		for _, item := range items(get(document, "plugins")) {
+			if isOneOf(get(item, "type"), "download", "reload_provider") && pipeline[str(get(item, "tag"))] == "" {
+				custom = true
 			}
+			kinds[str(get(item, "tag"))] = get(item, "type")
 		}
-		kinds := map[string]any{}
-		for _, plugin := range pluginsOf(document) {
-			tag := get(plugin, "tag", nil)
-			hashable(tag)
-			kind := get(plugin, "type", nil)
-			if text, ok := tag.(string); ok {
-				kinds[text] = kind
-			}
-		}
-		for _, plugin := range pluginsOf(document) {
-			steps := get(plugin, "args", nil)
-			list, isList := steps.([]any)
-			if get(plugin, "type", nil) != "sequence" || get(plugin, "tag", nil) == "rules_refresh" || !isList || len(list) != 2 {
+		for _, item := range items(get(document, "plugins")) {
+			steps := get(item, "args")
+			if !equal(get(item, "type"), S("sequence")) || equal(get(item, "tag"), S("rules_refresh")) || !isSeq(steps) || len(steps.Content) != 2 {
 				continue
 			}
-			refs := make([]any, 2)
-			for i, step := range list {
-				refs[i] = ""
-				if obj, ok := step.(*jsonx.Object); ok && obj != nil && obj.Len() == 1 && obj.Has("exec") {
-					refs[i] = obj.Value("exec")
+			refs := make([]string, 2)
+			for i, step := range steps.Content {
+				if isMap(step) && len(step.Content) == 2 && has(step, "exec") {
+					refs[i] = pyStr(get(step, "exec"))
 				}
 			}
-			allRefs := true
-			for _, ref := range refs {
-				if text, ok := ref.(string); !ok || !strings.HasPrefix(text, "$") {
-					allRefs = false
-				}
-			}
-			if allRefs && kinds[refs[0].(string)[1:]] == "download" && kinds[refs[1].(string)[1:]] == "reload_provider" {
+			if strings.HasPrefix(refs[0], "$") && strings.HasPrefix(refs[1], "$") &&
+				equal(kinds[refs[0][1:]], S("download")) && equal(kinds[refs[1][1:]], S("reload_provider")) {
 				custom = true
 			}
 		}
 	}
 	if custom {
-		if enabling {
-			fail("已有自定义规则更新插件，请在完整参数中配置其定时任务，不能重复创建更新链")
+		if enable {
+			return fail("已有自定义规则更新插件，请在完整参数中配置其定时任务，不能重复创建更新链")
 		}
-		return
+		return nil
 	}
-	restoredDownload := restorePipeline(ctx, "rules_download")
-	restoredReload := restorePipeline(ctx, "rules_reload")
-	restoredRefresh := restorePipeline(ctx, "rules_refresh")
-	download := ctx.plugin("rules_download")
+	restoredDownload, err := restorePipeline(c, "rules_download")
+	if err != nil {
+		return err
+	}
+	restoredReload, err := restorePipeline(c, "rules_reload")
+	if err != nil {
+		return err
+	}
+	restoredRefresh, err := restorePipeline(c, "rules_refresh")
+	if err != nil {
+		return err
+	}
+	download := c.plugin("rules_download")
 	if restoredDownload {
-		args, ok := download.Value("args").(*jsonx.Object)
-		if !ok || args == nil {
-			fail(pipelineErrorMessage)
+		args := get(download, "args")
+		if !isMap(args) {
+			return pipelineError()
 		}
-		// Empty owned downloads were parked only after resource reconciliation.
-		// Preserve any surviving entry's options, and never restore old resources.
-		historical, ok := get(ctx.parked, "rules_download_entries", []any{}).([]any)
-		if !ok {
-			historical = []any{}
-		}
-		old := map[string]any{}
-		for _, entry := range append(append([]any{}, historical...), pyIter(args.GetOr("downloads", []any{}))...) {
-			if p, ok := downloadPath(entry); ok {
-				old[p] = entry
+		// Parked empty downloads keep the options of surviving entries only.
+		historical := get(c.parked, "rules_download_entries")
+		old := map[string]*Node{}
+		for _, item := range append(append([]*Node{}, items(historical)...), items(get(args, "downloads"))...) {
+			if p := downloadPath(item); p != "" {
+				old[p] = item
 			}
 		}
-		downloads := make([]any, 0, len(desired))
-		for _, entry := range desired {
-			value := entry
-			if previous, ok := old[pathKey(entry)]; ok {
-				value = previous
+		entries := L()
+		for _, item := range desired {
+			chosen := item
+			if previous := old[downloadPath(item)]; previous != nil {
+				chosen = previous
 			}
-			downloads = append(downloads, copyValue(value))
+			entries.Content = append(entries.Content, clone(chosen))
 		}
-		if customEntries, ok := get(ctx.parked, "rules_download_custom_entries", []any{}).([]any); ok {
+		set(args, "downloads", entries)
+		if customEntries := get(c.parked, "rules_download_custom_entries"); isSeq(customEntries) || !has(c.parked, "rules_download_custom_entries") {
 			present := map[string]bool{}
-			for _, entry := range downloads {
-				present[pathKey(entry)] = true
+			for _, item := range entries.Content {
+				present[downloadPath(item)] = true
 			}
-			for _, entry := range customEntries {
-				if p, ok := downloadPath(entry); ok && !present[p] {
-					downloads = append(downloads, copyValue(entry))
+			for _, item := range items(customEntries) {
+				if p := downloadPath(item); p != "" && !present[p] {
+					entries.Content = append(entries.Content, clone(item))
 				}
 			}
 		}
-		args.Set("downloads", downloads)
 	}
-	reload := ctx.plugin("rules_reload")
+	reload := c.plugin("rules_reload")
 	if restoredReload {
-		existing, ok := reload.Value("args").([]any)
-		if !ok {
-			fail(pipelineErrorMessage)
+		if !isSeq(get(reload, "args")) {
+			return pipelineError()
 		}
-		reload.Set("args", updateProviders(document, existing))
+		set(reload, "args", updateProviders(document, get(reload, "args")))
 	}
-	refresh := ctx.plugin("rules_refresh")
-	if restoredRefresh && jsonx.Equal(refresh.Value("args"), []any{}) {
-		refresh.Set("args", refreshSteps())
+	refresh := c.plugin("rules_refresh")
+	if restoredRefresh && equal(get(refresh, "args"), L()) {
+		set(refresh, "args", refreshSteps())
 	}
-	if refresh != nil && refresh.Value("type") == "sequence" && jsonx.Equal(refresh.Value("args"), downloadOnlySteps()) &&
-		reload != nil && truthy(reload.Value("args")) {
-		refresh.Set("args", refreshSteps())
+	if refresh != nil && equal(get(refresh, "type"), S("sequence")) && equal(get(refresh, "args"), downloadOnlySteps()) && reload != nil && truthy(get(reload, "args")) {
+		set(refresh, "args", refreshSteps())
 	}
-	defaults := DefaultSettings().GetObject("rule_update").GetObject("args")
-	ctx.ensure("rules_download", jsonx.Obj("timeout", defaults.Value("timeout"), "downloads", desired), "download")
-	ctx.ensure("rules_reload", updateProviders(document, []any{}), "reload_provider")
-	ctx.ensure("rules_refresh", refreshSteps(), "sequence")
+	defaults := at(defaultSettingsNode, "rule_update", "args")
+	if _, err := c.ensure("rules_download", M("timeout", get(defaults, "timeout"), "downloads", seqOf(desired)), "download"); err != nil {
+		return err
+	}
+	if _, err := c.ensure("rules_reload", updateProviders(document, L()), "reload_provider"); err != nil {
+		return err
+	}
+	_, err = c.ensure("rules_refresh", refreshSteps(), "sequence")
+	return err
 }
 
-// managedJobs is _managed_jobs(cron).
-func managedJobs(cron *jsonx.Object) []any {
+func managedJobs(cron *Node) ([]*Node, error) {
 	if cron == nil {
-		return []any{}
+		return nil, nil
 	}
-	args, ok := cron.Value("args").(*jsonx.Object)
-	if cron.Value("type") != "cron" || !ok || args == nil {
-		fail(pipelineErrorMessage)
+	if !equal(get(cron, "type"), S("cron")) || !isMap(get(cron, "args")) || !isSeq(get(get(cron, "args"), "jobs")) {
+		return nil, pipelineError()
 	}
-	list, ok := args.Value("jobs").([]any)
-	if !ok {
-		fail(pipelineErrorMessage)
-	}
-	jobs := []any{}
-	for _, job := range list {
-		obj, ok := job.(*jsonx.Object)
-		if ok && obj != nil && (obj.Value("name") == "refresh_rules" || references(obj.Value("executors"), "rules_refresh")) {
+	var jobs []*Node
+	for _, job := range get(get(cron, "args"), "jobs").Content {
+		if isMap(job) && (equal(get(job, "name"), S("refresh_rules")) || refersTo(get(job, "executors"), "rules_refresh")) {
 			jobs = append(jobs, job)
 		}
 	}
-	if len(jobs) > 1 {
-		fail(pipelineErrorMessage)
-	}
 	for _, job := range jobs {
-		obj := job.(*jsonx.Object)
-		if obj.Value("name") != "refresh_rules" || !jsonx.Equal(obj.Value("executors"), []any{"$rules_refresh"}) {
-			fail(pipelineErrorMessage)
+		if len(jobs) > 1 || !equal(get(job, "name"), S("refresh_rules")) || !equal(get(job, "executors"), L("$rules_refresh")) {
+			return nil, pipelineError()
 		}
 	}
-	return jobs
+	return jobs, nil
 }
 
-// externalReferences is _external_references(ctx, targets, managed_jobs).
-func externalReferences(ctx *commonContext, targets map[string]bool, jobs []any) bool {
-	document := updatesDocument(ctx)
-	if len(referenceLocations(document, nil, true)) > 0 {
-		return true
+func externalReferences(c *commonContext, targets map[string]bool, jobs []*Node) (bool, error) {
+	document, err := c.expanded()
+	if err != nil {
+		return false, err
 	}
-	external := withoutKey(document, "plugins")
+	if len(ReferenceLocations(document, nil, true)) > 0 {
+		return true, nil
+	}
+	top := withoutPlugins(document)
 	for tag := range targets {
-		if references(external, tag) {
-			return true
+		if refersTo(top, tag) {
+			return true, nil
 		}
 	}
-	for _, plugin := range pluginsOf(document) {
-		tag := get(plugin, "tag", nil)
-		hashable(tag)
-		if text, ok := tag.(string); ok && targets[text] {
+	for _, item := range items(get(document, "plugins")) {
+		if targets[str(get(item, "tag"))] {
 			continue
 		}
-		value := plugin
-		if tag == "rules_cron" && isDict(get(plugin, "args", nil)) {
-			copied := copyValue(plugin).(*jsonx.Object)
-			kept := []any{}
-			for _, job := range pyIter(get(item(plugin, "args"), "jobs", []any{})) {
-				if listIndex(jobs, job) < 0 {
-					kept = append(kept, job)
-				}
-			}
-			copied.Value("args").(*jsonx.Object).Set("jobs", kept)
-			value = copied
+		value := item
+		if equal(get(item, "tag"), S("rules_cron")) && isMap(get(item, "args")) {
+			value = clone(item)
+			kept := filter(items(get(get(item, "args"), "jobs")), func(job *Node) bool { return !contains(seqOf(jobs), job) })
+			set(get(value, "args"), "jobs", seqOf(kept))
 		}
 		for tag := range targets {
-			if references(value, tag) {
-				return true
+			if refersTo(value, tag) {
+				return true, nil
 			}
 		}
 	}
-	return false
+	return false, nil
 }
 
-// stopPipeline is _stop_pipeline(ctx, refresh_only).
-func stopPipeline(ctx *commonContext, refreshOnly bool) {
+// stopPipeline parks the owned pipeline (only rules_refresh when
+// refreshOnly), keeping user jobs and refusing unknown references.
+func stopPipeline(c *commonContext, refreshOnly bool) error {
 	targets := map[string]bool{}
 	for _, tag := range pipelineTags {
-		if ctx.plugin(tag) != nil && (!refreshOnly || tag == "rules_refresh") {
+		if c.plugin(tag) != nil && (!refreshOnly || tag == "rules_refresh") {
 			targets[tag] = true
+			if !equal(get(c.plugin(tag), "type"), S(pipeline[tag])) {
+				return pipelineError()
+			}
 		}
 	}
-	for _, tag := range pipelineTags {
-		if targets[tag] && ctx.plugin(tag).Value("type") != pipelineKind[tag] {
-			fail(pipelineErrorMessage)
+	if refresh := c.plugin("rules_refresh"); refresh != nil {
+		args := get(refresh, "args")
+		if !equal(args, refreshSteps()) && !equal(args, downloadOnlySteps()) && !equal(args, L()) {
+			return pipelineError()
 		}
 	}
-	refresh := ctx.plugin("rules_refresh")
-	if refresh != nil {
-		args := refresh.Value("args")
-		if !jsonx.Equal(args, refreshSteps()) && !jsonx.Equal(args, downloadOnlySteps()) && !jsonx.Equal(args, []any{}) {
-			fail(pipelineErrorMessage)
-		}
+	cron := c.plugin("rules_cron")
+	jobs, err := managedJobs(cron)
+	if err != nil {
+		return err
 	}
-	cron := ctx.plugin("rules_cron")
-	jobs := managedJobs(cron)
-	if externalReferences(ctx, targets, jobs) {
-		fail(pipelineErrorMessage)
+	if external, err := externalReferences(c, targets, jobs); err != nil {
+		return err
+	} else if external {
+		return pipelineError()
 	}
 	for _, job := range jobs {
-		ctx.park("rules_cron_job", job)
-		cronArgs := cron.Value("args").(*jsonx.Object)
-		old := cronArgs.Value("jobs").([]any)
-		ctx.replaceList(cronArgs, "jobs", old, listRemove(old, job))
+		c.park("rules_cron_job", job)
+		list := get(get(cron, "args"), "jobs")
+		if i := indexOf(list, job); i >= 0 {
+			list.Content = append(list.Content[:i:i], list.Content[i+1:]...)
+		}
 	}
 	if targets["rules_download"] {
-		// Retain the options of withdrawn entries separately from the empty
-		// parked plugin, so changing a disabled option cannot resurrect a
-		// removed download.
-		original := loadNativeYAML(item(ctx.settings, "native_config"), DefaultNativeLabel)
-		var prior any = jsonx.NewObject()
-		for _, plugin := range pluginsOf(original) {
-			if get(plugin, "tag", nil) == "rules_download" && get(plugin, "type", nil) == "download" {
-				prior = plugin
+		// Keep the options of withdrawn entries apart from the empty plugin.
+		original, err := loadNative(get(c.settings, "native_config"), NativeLabel)
+		if err != nil {
+			return err
+		}
+		var entries []*Node
+		for _, item := range items(get(original, "plugins")) {
+			if equal(get(item, "tag"), S("rules_download")) && equal(get(item, "type"), S("download")) {
+				entries = items(get(mapOr(get(item, "args")), "downloads"))
 				break
 			}
 		}
-		var entries any = []any{}
-		if args := get(prior, "args", nil); isDict(args) {
-			entries = get(args, "downloads", []any{})
-		}
-		saved, ok := get(ctx.parked, "rules_download_entries", []any{}).([]any)
-		if !ok {
-			saved = []any{}
-		}
-		all := append([]any{}, saved...)
-		if list, ok := entries.([]any); ok {
-			all = append(all, list...)
-		}
-		byPath := jsonx.NewObject()
-		for _, entry := range all {
-			if p, ok := downloadPath(entry); ok {
-				byPath.Set(p, entry)
+		byPath := map[string]*Node{}
+		var order []string
+		for _, item := range append(append([]*Node{}, items(get(c.parked, "rules_download_entries"))...), entries...) {
+			if p := downloadPath(item); p != "" {
+				if byPath[p] == nil {
+					order = append(order, p)
+				}
+				byPath[p] = item
 			}
 		}
-		if byPath.Len() > 0 {
-			ctx.park("rules_download_entries", byPath.Values())
+		if len(order) > 0 {
+			saved := L()
+			for _, p := range order {
+				saved.Content = append(saved.Content, byPath[p])
+			}
+			c.park("rules_download_entries", saved)
 		}
 	}
 	for _, tag := range pipelineTags {
 		if targets[tag] {
-			ctx.parkPlugin(tag)
+			c.parkPlugin(tag)
 		}
 	}
-	if cron != nil && jsonx.Equal(cron.Value("args").(*jsonx.Object).Value("jobs"), []any{}) {
-		ctx.parkPlugin("rules_cron")
+	if cron != nil && equal(get(get(cron, "args"), "jobs"), L()) {
+		c.parkPlugin("rules_cron")
 	}
+	return nil
 }
 
-// removeEmptyReload is _remove_empty_reload(ctx).
-func removeEmptyReload(ctx *commonContext) {
-	refresh := ctx.plugin("rules_refresh")
-	if refresh != nil && (refresh.Value("type") != "sequence" ||
-		(!jsonx.Equal(refresh.Value("args"), refreshSteps()) && !jsonx.Equal(refresh.Value("args"), downloadOnlySteps()))) {
-		fail(pipelineErrorMessage)
+func removeEmptyReload(c *commonContext) error {
+	refresh := c.plugin("rules_refresh")
+	if refresh != nil && (!equal(get(refresh, "type"), S("sequence")) || !equal(get(refresh, "args"), refreshSteps()) && !equal(get(refresh, "args"), downloadOnlySteps())) {
+		return pipelineError()
 	}
-	// The canonical refresh is the only reference that can safely be rewritten.
-	document := updatesDocument(ctx)
-	for _, plugin := range pluginsOf(document) {
-		if !strIn(get(plugin, "tag", nil), "rules_reload", "rules_refresh") && references(plugin, "rules_reload") {
-			fail(pipelineErrorMessage)
+	document, err := c.expanded()
+	if err != nil {
+		return err
+	}
+	for _, item := range items(get(document, "plugins")) {
+		if !isOneOf(get(item, "tag"), "rules_reload", "rules_refresh") && refersTo(item, "rules_reload") {
+			return pipelineError()
 		}
 	}
-	if references(withoutKey(document, "plugins"), "rules_reload") {
-		fail(pipelineErrorMessage)
+	if refersTo(withoutPlugins(document), "rules_reload") {
+		return pipelineError()
 	}
-	ctx.parkPlugin("rules_reload")
+	c.parkPlugin("rules_reload")
 	if refresh != nil {
-		ctx.park("rules_refresh", refresh)
-		refresh.Set("args", downloadOnlySteps())
+		c.park("rules_refresh", refresh)
+		set(refresh, "args", downloadOnlySteps())
 	}
+	return nil
 }
 
-// finishRuleUpdatesImpl is finish_rule_updates(ctx, changes, config,
-// base_url): suspend an empty owned pipeline without deleting independent
-// user jobs.
-func finishRuleUpdatesImpl(ctx *commonContext, changes *jsonx.Object, config any, baseURL string) {
-	if !ruleUpdateRelevant(changes) {
-		return
+// finishRuleUpdates suspends an empty owned pipeline without deleting
+// independent user jobs, and restores the reload when resources return.
+func finishRuleUpdates(c *commonContext, changes *Node, p *Profile, baseURL string) error {
+	if !relevant(changes) {
+		return nil
 	}
-	download := ctx.plugin("rules_download")
-	reload := ctx.plugin("rules_reload")
-	refresh := ctx.plugin("rules_refresh")
-	downloadArgs, downloadDict := (*jsonx.Object)(nil), false
-	if download != nil {
-		downloadArgs, downloadDict = download.Value("args").(*jsonx.Object)
-		downloadDict = downloadDict && downloadArgs != nil
+	download, reload, refresh := c.plugin("rules_download"), c.plugin("rules_reload"), c.plugin("rules_refresh")
+	downloads := get(get(download, "args"), "downloads")
+	if !has(get(download, "args"), "downloads") {
+		downloads = L()
 	}
-	emptyDownload := download != nil && download.Value("type") == "download" && downloadDict &&
-		jsonx.Equal(downloadArgs.GetOr("downloads", []any{}), []any{})
-	emptyRefresh := refresh != nil && refresh.Value("type") == "sequence" && jsonx.Equal(refresh.Value("args"), []any{})
+	emptyDownload := download != nil && equal(get(download, "type"), S("download")) && isMap(get(download, "args")) && equal(downloads, L())
+	emptyRefresh := refresh != nil && equal(get(refresh, "type"), S("sequence")) && equal(get(refresh, "args"), L())
 	if emptyDownload || emptyRefresh {
-		stopPipeline(ctx, emptyRefresh && !emptyDownload && reload != nil && truthy(reload.Value("args")))
-		return
+		return stopPipeline(c, emptyRefresh && !emptyDownload && reload != nil && truthy(get(reload, "args")))
 	}
-	if reload != nil && reload.Value("type") == "reload_provider" && jsonx.Equal(reload.Value("args"), []any{}) {
-		if download != nil && download.Value("type") == "download" && downloadDict && truthy(downloadArgs.Value("downloads")) {
-			removeEmptyReload(ctx)
-		} else {
-			stopPipeline(ctx, false)
+	if reload != nil && equal(get(reload, "type"), S("reload_provider")) && equal(get(reload, "args"), L()) {
+		if download != nil && equal(get(download, "type"), S("download")) && isMap(get(download, "args")) && truthy(get(get(download, "args"), "downloads")) {
+			return removeEmptyReload(c)
 		}
-		return
+		return stopPipeline(c, false)
 	}
-	// A custom download may remain useful after its last managed provider was
-	// removed. Restore only live provider references when resources return.
-	saved, ok := get(ctx.parked, "rules_reload", nil).(*jsonx.Object)
-	if download != nil && reload == nil && ok && saved != nil && saved.Value("tag") == "rules_reload" &&
-		saved.Value("type") == "reload_provider" {
-		existing, isList := saved.Value("args").([]any)
-		if !isList {
-			return
+	// A custom download may outlive its last managed provider.
+	saved := get(c.parked, "rules_reload")
+	if download != nil && reload == nil && isMap(saved) && equal(get(saved, "tag"), S("rules_reload")) &&
+		equal(get(saved, "type"), S("reload_provider")) && isSeq(get(saved, "args")) {
+		document, err := c.expanded()
+		if err != nil {
+			return err
 		}
-		providers := updateProviders(updatesDocument(ctx), existing)
-		if len(providers) > 0 {
-			restorePipeline(ctx, "rules_reload")
-			ctx.plugin("rules_reload").Set("args", providers)
-			if refresh != nil && refresh.Value("type") == "sequence" && jsonx.Equal(refresh.Value("args"), downloadOnlySteps()) {
-				refresh.Set("args", refreshSteps())
+		if providers := updateProviders(document, get(saved, "args")); len(providers.Content) > 0 {
+			if _, err := restorePipeline(c, "rules_reload"); err != nil {
+				return err
+			}
+			set(c.plugin("rules_reload"), "args", providers)
+			if refresh != nil && equal(get(refresh, "type"), S("sequence")) && equal(get(refresh, "args"), downloadOnlySteps()) {
+				set(refresh, "args", refreshSteps())
 			}
 		}
 	}
+	return nil
 }
 
-// managedDownloads is _managed_downloads(document): the owned downloader's
-// entries, ok false for None.
-func managedDownloads(document any) ([]any, bool) {
-	var downloader any
-	found := false
-	for _, plugin := range pluginsOf(document) {
-		if get(plugin, "tag", nil) == "rules_download" {
-			downloader, found = plugin, true
-			break
-		}
+// FinishRuleUpdates runs the pipeline reconciliation on a draft (used after
+// native edits).
+func FinishRuleUpdates(document, settings, changes *Node, p *Profile, baseURL string) error {
+	c, err := newContext(document, settings)
+	if err != nil {
+		return err
 	}
-	if !found || get(downloader, "type", nil) != "download" {
-		return nil, false
-	}
-	args, ok := get(downloader, "args", nil).(*jsonx.Object)
-	if !ok || args == nil {
-		return nil, false
-	}
-	list, ok := args.Value("downloads").([]any)
-	return list, ok
+	return finishRuleUpdates(c, changes, p, baseURL)
 }
 
-// proxyIdentity is _proxy_identity(config): known capability tokens and the
-// profile rule-proxy endpoint; ok false without a token.
-type proxyIdentity struct {
-	tokens   map[string]bool
-	endpoint string
-}
-
-func proxyIdentityOf(config *jsonx.Object) (proxyIdentity, bool) {
-	system := get(config, "system_config", jsonx.NewObject())
-	token, ok := get(system, "rule_proxy_token", nil).(string)
-	if !ok || token == "" {
-		return proxyIdentity{}, false
-	}
-	tokens := map[string]bool{token: true}
-	if retired, ok := get(system, "retired_rule_proxy_tokens", []any{}).([]any); ok {
-		for _, value := range retired {
-			if text, ok := value.(string); ok && text != "" {
-				tokens[text] = true
+func managedDownloads(document *Node) *Node {
+	for _, item := range items(get(document, "plugins")) {
+		if equal(get(item, "tag"), S("rules_download")) {
+			if !equal(get(item, "type"), S("download")) || !isSeq(get(mapOr(get(item, "args")), "downloads")) || !isMap(get(item, "args")) {
+				return nil
 			}
+			return get(get(item, "args"), "downloads")
 		}
 	}
-	endpoint := repo.ProfileAPIPath(config, "/mosdns/rule-proxy")
-	if endpoint == "/mosdns/rule-proxy" {
-		endpoint = "/api" + endpoint
+	return nil
+}
+
+// proxyIdentity: the known capability tokens and the profile's rule-proxy
+// endpoint (ok false without a token).
+func (p *Profile) proxyIdentity() (map[string]bool, string, bool) {
+	system := mapOr(p.get("system_config"))
+	token := get(system, "rule_proxy_token")
+	if !isStr(token) || token.Value == "" {
+		return nil, "", false
 	}
-	return proxyIdentity{tokens, endpoint}, true
+	tokens := map[string]bool{token.Value: true}
+	for _, t := range items(get(system, "retired_rule_proxy_tokens")) {
+		if isStr(t) && t.Value != "" {
+			tokens[t.Value] = true
+		}
+	}
+	endpoint := "/api/mosdns/rule-proxy"
+	if id := p.get("profile_id"); truthy(id) {
+		endpoint = "/api/profiles/" + pyStr(id) + "/mosdns/rule-proxy"
+	}
+	return tokens, endpoint, true
 }
 
 type sourcePart struct{ source, part string }
 
-// rulesetSources is _ruleset_sources(config, referenced): active ruleset
-// sources by generated resource path (keys as resourceKey); referenced nil
-// is None.
-func rulesetSources(config *jsonx.Object, referenced map[string]bool) map[string]sourcePart {
-	sources := map[string]sourcePart{}
-	catalog := buildCatalog(config)
-	for _, identity := range catalog.order {
-		record := catalog.records[identity]
-		source, ok := record.item.Value("url").(string)
-		if record.suffix != "rulesets" || !ok || source == "" {
+// rulesetSources maps generated resource paths to (source, part).
+func (p *Profile) rulesetSources(referenced map[string]bool) map[string]sourcePart {
+	out := map[string]sourcePart{}
+	c := p.catalog()
+	for _, id := range c.order {
+		r := c.records[id]
+		source := get(r.item, "url")
+		if r.suffix != "rulesets" || !isStr(source) || source.Value == "" {
 			continue
 		}
-		for part := range record.parts {
-			path := resourceKey(relativeResource(rulePath(record.item, part)))
+		for part := range r.parts {
+			path, _, _ := relativeResource(RulePath(r.item, part))
 			if referenced == nil || referenced[path] {
-				sources[path] = sourcePart{source, part}
+				out[path] = sourcePart{source.Value, part}
 			}
 		}
 	}
-	return sources
+	return out
 }
 
-// generatedSource is _generated_source(entry, identity, source, part): the
-// origin of a generated rule-proxy URL built from source, ok false when
-// the URL is a manual override.
-func generatedSource(entry any, identity proxyIdentity, source, part string) (string, bool) {
-	raw, ok := get(entry, "url", nil).(string)
-	if !ok {
-		return "", false
+// generatedOrigin is the origin of a rule-proxy URL ConfigFlow rendered from
+// source ("" for a manual override): endpoint, exact query, part, a known
+// token and the nested source must all match.
+func generatedOrigin(entry *Node, tokens map[string]bool, endpoint, source, part string) string {
+	raw := get(entry, "url")
+	if !isStr(raw) {
+		return ""
 	}
-	parsed, err := url.Parse(raw)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" ||
-		parsed.User != nil || parsed.Fragment != "" || parsed.Opaque != "" {
-		return "", false
+	u, err := url.Parse(raw.Value)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || u.Fragment != "" ||
+		u.Opaque != "" || !strings.HasSuffix(u.EscapedPath(), endpoint) {
+		return ""
 	}
-	path := parsed.EscapedPath()
-	if !strings.HasSuffix(path, identity.endpoint) {
-		return "", false
-	}
-	// Reading the port also rejects malformed authorities conservatively.
-	if port := parsed.Port(); port != "" {
-		value, err := strconv.Atoi(port)
-		if err != nil || value < 1 || value > 65535 {
-			return "", false
+	if port := u.Port(); port != "" {
+		if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+			return ""
 		}
 	}
-	var keys []string
-	query := map[string]string{}
-	for _, pair := range strings.Split(parsed.RawQuery, "&") {
-		if pair == "" {
-			continue
-		}
-		key, value, _ := strings.Cut(pair, "=")
-		key, err1 := url.QueryUnescape(key)
-		value, err2 := url.QueryUnescape(value)
-		if err1 != nil || err2 != nil {
-			return "", false
-		}
-		keys = append(keys, key)
-		query[key] = value
+	query, err := url.ParseQuery(u.RawQuery)
+	if err != nil || len(strings.Split(u.RawQuery, "&")) != 3 || len(query) != 3 ||
+		len(query["url"]) != 1 || len(query["part"]) != 1 || len(query["token"]) != 1 ||
+		!tokens[query.Get("token")] || query.Get("part") != part {
+		return ""
 	}
-	if len(keys) != 3 || len(query) != 3 || !hasKeys(query, "url", "part", "token") ||
-		!identity.tokens[query["token"]] || query["part"] != part {
-		return "", false
-	}
-	origin := parsed.Scheme + "://" + parsed.Host + path[:len(path)-len(identity.endpoint)]
-	want := source
+	path := u.EscapedPath()
+	origin := u.Scheme + "://" + u.Host + path[:len(path)-len(endpoint)]
+	expected := source
 	if strings.HasPrefix(source, "/") {
-		want = origin + source
+		expected = origin + source
 	}
-	if query["url"] != want {
-		return "", false
+	if query.Get("url") != expected {
+		return ""
 	}
-	return origin, true
+	return origin
 }
 
-func hasKeys(m map[string]string, keys ...string) bool {
-	for _, key := range keys {
-		if _, ok := m[key]; !ok {
-			return false
+func withDownloads(document *Node, output []*Node) *Node {
+	rendered := clone(document)
+	for _, item := range items(get(rendered, "plugins")) {
+		if equal(get(item, "tag"), S("rules_download")) {
+			replaceDownloadEntries(item, output)
+			break
 		}
 	}
-	return true
+	return rendered
 }
 
-// withDownloads is _with_downloads(document, output).
-func withDownloads(document *jsonx.Object, output []any) *jsonx.Object {
-	rendered := copyValue(document).(*jsonx.Object)
-	for _, plugin := range pyIter(item(rendered, "plugins")) {
-		if get(plugin, "tag", nil) == "rules_download" {
-			replaceDownloadEntries(plugin.(*jsonx.Object), output)
-			return rendered
-		}
+// refreshManagedRuleURLs rebases proven generated downloads onto the current
+// origin without changing custom native state.
+func (p *Profile) refreshManagedRuleURLs(document *Node, baseURL string) (*Node, error) {
+	downloads := managedDownloads(document)
+	tokens, endpoint, ok := p.proxyIdentity()
+	effective := p.base(baseURL)
+	if downloads == nil || !ok || effective == "" {
+		return document, nil
 	}
-	raise(pyErr("StopIteration", ""))
-	return nil
-}
-
-// refreshManagedRuleURLs is _refresh_managed_rule_urls(document, config,
-// base_url): rebase proven generated downloads to the current origin.
-func refreshManagedRuleURLs(document *jsonx.Object, config *jsonx.Object, baseURL string) *jsonx.Object {
-	downloads, ok := managedDownloads(document)
-	identity, hasIdentity := proxyIdentityOf(config)
-	effective := baseOf(config, baseURL)
-	if !ok || !hasIdentity || effective == "" {
-		return document
+	referenced, err := referencedPaths(document)
+	if err != nil {
+		return nil, err
 	}
-	referenced := map[string]bool{}
-	for _, path := range resourceReferences(document) {
-		referenced[resourceKey(relativeResource(path))] = true
-	}
-	sources := rulesetSources(config, referenced)
-	output, changed := []any{}, false
-	for _, entry := range downloads {
+	sources := p.rulesetSources(referenced)
+	var output []*Node
+	changed := false
+	for _, entry := range downloads.Content {
 		output = append(output, entry)
-		sp, found := sources[pathKey(entry)]
-		if !found {
+		sp, found := sources[downloadPath(entry)]
+		if !found || generatedOrigin(entry, tokens, endpoint, sp.source, sp.part) == "" {
 			continue
 		}
-		if _, generated := generatedSource(entry, identity, sp.source, sp.part); !generated {
-			continue
+		current := sp.source
+		if strings.HasPrefix(current, "/") {
+			current = effective + current
 		}
-		currentSource := sp.source
-		if strings.HasPrefix(currentSource, "/") {
-			currentSource = effective + currentSource
+		link, err := p.ruleProxyURL(effective, current, sp.part)
+		if err != nil {
+			return nil, err
 		}
-		proxied, err := mosdns.BuildRuleProxyURL(config, effective, currentSource, sp.part, nil)
-		must(err)
-		if obj := entry.(*jsonx.Object); obj.Value("url") != proxied {
-			updated := obj.Clone()
-			updated.Set("url", proxied)
+		if !equal(get(entry, "url"), S(link)) {
+			updated := shallow(entry)
+			set(updated, "url", S(link))
 			output[len(output)-1] = updated
 			changed = true
 		}
 	}
 	if changed {
-		return withDownloads(document, output)
+		return withDownloads(document, output), nil
 	}
-	return document
+	return document, nil
 }
 
-// RebaseNativeRuleSources is rebase_native_rule_sources(before, after):
-// follow a rule-library source edit in after's native draft, in place.
-func RebaseNativeRuleSources(before, after *jsonx.Object) (changed bool, err error) {
-	defer catch(&err)
-	return rebaseNativeRuleSources(before, after), nil
-}
-
-func rebaseNativeRuleSources(before, after *jsonx.Object) bool {
-	settings, ok := after.Value("oxidns").(*jsonx.Object)
-	if !ok || settings == nil || settings.Value("config_mode") != "native" {
-		return false
+// RebaseNativeRuleSources follows a rule-library source edit in after's
+// native draft (in place): only URLs generated from the previous source move.
+func RebaseNativeRuleSources(before, after *Profile) (bool, error) {
+	settings := after.Settings()
+	if !isMap(settings) || !equal(get(settings, "config_mode"), S("native")) {
+		return false, nil
 	}
-	var document *jsonx.Object
-	if tryExcept(func() {
-		document = loadNativeYAML(settings.GetOr("native_config", ""), DefaultNativeLabel)
-	}, ClassSettings) != nil {
-		return false
+	document, err := loadNative(orDefault(settings, "native_config", S("")), NativeLabel)
+	if err != nil {
+		return false, nil
 	}
-	downloads, hasDownloads := managedDownloads(document)
-	identity, hasIdentity := proxyIdentityOf(before)
-	if !hasDownloads || !hasIdentity {
-		return false
+	downloads := managedDownloads(document)
+	tokens, endpoint, ok := before.proxyIdentity()
+	if downloads == nil || !ok {
+		return false, nil
 	}
-	previous, current := rulesetSources(before, nil), rulesetSources(after, nil)
-	output, changed := []any{}, false
-	for _, entry := range downloads {
+	previous, current := before.rulesetSources(nil), after.rulesetSources(nil)
+	var output []*Node
+	changed := false
+	for _, entry := range downloads.Content {
 		output = append(output, entry)
-		path := pathKey(entry)
-		old, inPrevious := previous[path]
-		next, inCurrent := current[path]
-		if !inPrevious || !inCurrent || old == next {
+		path := downloadPath(entry)
+		old, okOld := previous[path]
+		next, okNew := current[path]
+		if !okOld || !okNew || old == next || old.part != next.part {
 			continue
 		}
-		if old.part != next.part {
-			continue
-		}
-		origin, generated := generatedSource(entry, identity, old.source, old.part)
-		if !generated {
+		origin := generatedOrigin(entry, tokens, endpoint, old.source, old.part)
+		if origin == "" {
 			continue
 		}
 		source := next.source
 		if strings.HasPrefix(source, "/") {
 			source = origin + source
 		}
-		proxied, err := mosdns.BuildRuleProxyURL(after, origin, source, old.part, nil)
-		must(err)
-		updated := entry.(*jsonx.Object).Clone()
-		updated.Set("url", proxied)
+		link, err := after.ruleProxyURL(origin, source, old.part)
+		if err != nil {
+			return false, err
+		}
+		updated := shallow(entry)
+		set(updated, "url", S(link))
 		output[len(output)-1] = updated
 		changed = true
 	}
 	if changed {
-		settings.Set("native_config", dump(withDownloads(document, output)))
+		set(settings, "native_config", S(dump(withDownloads(document, output))))
 	}
-	return changed
+	return changed, nil
 }
 
-// PrepareNativeRuleUpdates is prepare_native_rule_updates(document,
-// settings, config, base_url): render current routing and manual updates
+// PrepareNativeRuleUpdates renders current routing and manual updates
 // without changing the saved draft.
-func PrepareNativeRuleUpdates(document, settings, config *jsonx.Object, baseURL string) (rendered *jsonx.Object, err error) {
-	defer catch(&err)
-	return prepareNativeRuleUpdates(document, settings, config, baseURL), nil
-}
-
-func prepareNativeRuleUpdates(document, settings, config *jsonx.Object, baseURL string) *jsonx.Object {
-	document, settings = migrateDomainOnlyRouting(document, settings, config, baseURL)
-	document = refreshManagedRuleURLs(document, config, baseURL)
-	for _, plugin := range pluginsOf(document) {
-		if strIn(get(plugin, "type", nil), "download", "reload_provider") {
-			return document
-		}
-		tag := get(plugin, "tag", nil)
-		hashable(tag)
-		if text, ok := tag.(string); ok && pipelineKind[text] != "" {
-			return document
+func PrepareNativeRuleUpdates(document, settings *Node, p *Profile, baseURL string) (*Node, error) {
+	document, settings, err := MigrateDomainOnlyRouting(document, settings, p, baseURL)
+	if err != nil {
+		return nil, err
+	}
+	if document, err = p.refreshManagedRuleURLs(document, baseURL); err != nil {
+		return nil, err
+	}
+	for _, item := range items(get(document, "plugins")) {
+		if isOneOf(get(item, "type"), "download", "reload_provider") || pipeline[str(get(item, "tag"))] != "" {
+			return document, nil
 		}
 	}
-	rendered := copyValue(document).(*jsonx.Object)
-	current := copyValue(settings).(*jsonx.Object)
-	current.Set("native_config", dump(rendered))
-	prepareRuleUpdate(newCommonContext(rendered, current), jsonx.Obj("rule_update.enabled", false), config, baseURL)
-	return rendered
-}
-
-// FinishRuleUpdates is finish_rule_updates(_Context(document, settings),
-// changes, config, base_url) on a fresh context (document and settings are
-// changed in place). The native apply module (C29) is in this package and
-// uses stopPipeline, downloadPath, refreshSteps, downloadOnlySteps directly.
-func FinishRuleUpdates(document, settings, changes *jsonx.Object, config any, baseURL string) (err error) {
-	defer catch(&err)
-	finishRuleUpdates(newCommonContext(document, settings), changes, config, baseURL)
-	return nil
+	rendered, current := clone(document), clone(settings)
+	set(current, "native_config", S(dump(rendered)))
+	c, err := newContext(rendered, current)
+	if err != nil {
+		return nil, err
+	}
+	if err := prepareRuleUpdate(c, M("rule_update.enabled", false), p, baseURL); err != nil {
+		return nil, err
+	}
+	return rendered, nil
 }

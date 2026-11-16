@@ -2,148 +2,100 @@ package oxidns
 
 import (
 	"strings"
-
-	"configflow/internal/convert"
-	"configflow/internal/jsonx"
-	"configflow/internal/rules"
+	"unicode/utf8"
 )
 
-// Port of backend/common/oxidns_references.py (module C22): conservative
-// reference checks shared by both OxiDNS form editors.
+// Conservative reference checks shared by the OxiDNS form editors: unknown
+// literal references and unexpanded expressions prevent automatic deletion.
+
+const (
+	// DefaultReferencePrefix is reference_reason's default prefix.
+	DefaultReferencePrefix = "功能仍被自定义执行链引用，请在完整参数中调整"
+	envReason              = "未展开的环境变量引用"
+)
 
 var referenceFields = []string{"exec", "matches", "entry", "primary", "secondary", "executors", "provider"}
 
-const (
-	reasonEnv       = "未展开的环境变量引用"
-	reasonReference = "仍有插件引用"
-)
-
-// NewReferenceError is OxidnsReferenceError(message, references): the
-// message gets the first four reference locations appended in "（…）".
-func NewReferenceError(message string, references []any) *Error {
-	n := len(references)
-	if n > 4 {
-		n = 4
-	}
-	locations := make([]string, n)
-	for i := 0; i < n; i++ {
-		locations[i] = referencePath(asList(get(references[i], "path", nil)))
-	}
-	joined := strings.Join(locations, "、")
-	if joined != "" {
-		message += "（" + joined + "）"
-	}
-	return &Error{Class: ClassReference, Message: message, References: references}
+// Reference is one remaining edge; Tag "" with the env reason is an
+// unexpanded ${...} reference (Python's tag None).
+type Reference struct {
+	Path   Path
+	Tag    string
+	Reason string
 }
 
-// referencePath is _path(parts).
-func referencePath(parts []any) string {
-	var b strings.Builder
-	for index, part := range parts {
-		if n, ok := part.(jsonx.Number); ok && n.IsInt() {
-			b.WriteString("[" + n.String() + "]")
-			continue
+func isTagRune(r rune) bool { return isWordRune(r) || r == '.' || r == '-' }
+
+// mentions is (?<![\w.\-])\$?<tag>(?![\w.\-]) searched in s.
+func mentions(s, tag string) bool {
+	for from := 0; from <= len(s); {
+		i := strings.Index(s[from:], tag)
+		if i < 0 {
+			return false
 		}
-		if index > 0 {
-			b.WriteString(".")
+		i += from
+		before, _ := utf8.DecodeLastRuneInString(s[:i])
+		after, _ := utf8.DecodeRuneInString(s[i+len(tag):])
+		if (i == 0 || !isTagRune(before)) && (i+len(tag) == len(s) || !isTagRune(after)) {
+			return true
 		}
-		text, ok := part.(string)
-		if !ok {
-			raise(pyErr("TypeError", "can only concatenate str (not \""+typeName(part)+"\") to str"))
-		}
-		b.WriteString(text)
+		_, width := utf8.DecodeRuneInString(s[i:])
+		from = i + max(width, 1)
 	}
-	return b.String()
+	return false
 }
 
-// ReferenceLocations is reference_locations(document, tags, dynamic=dynamic):
-// the remaining edges ({path, tag, reason}; tag nil for an unexpanded
-// environment reference) after the caller removed its precisely owned edges.
-// Plugin tag/type declarations are not references; a dynamic plugin tag is
-// reported when dynamic is set.
-func ReferenceLocations(document any, tags []string, dynamic bool) (locations []any, err error) {
-	defer catch(&err)
-	return referenceLocations(document, tags, dynamic), nil
-}
-
-type tagPattern struct {
-	tag     string
-	pattern *rules.PyRegex
-}
-
-func referenceLocations(document any, tags []string, dynamic bool) []any {
-	var patterns []tagPattern
-	seen := map[string]bool{}
-	for _, tag := range tags {
-		if seen[tag] {
-			continue
-		}
-		seen[tag] = true
-		pattern, err := rules.CompilePyRegex(`(?<![\w.\-])\$?`+convert.PyReEscape(tag)+`(?![\w.\-])`, false)
-		must(err)
-		patterns = append(patterns, tagPattern{tag, pattern})
-	}
-	result := []any{}
-	var walk func(value any, path []any, reference bool)
-	walk = func(value any, path []any, reference bool) {
-		switch x := value.(type) {
-		case *jsonx.Object:
-			if x == nil {
-				return
-			}
-			for key, element := range x.All() {
-				definition := len(path) == 2 && path[0] == "plugins" && (key == "tag" || key == "type")
-				if definition {
-					if text, ok := element.(string); dynamic && key == "tag" && ok && envSearch(text) {
-						result = append(result, jsonx.Obj("path", appendPath(path, key), "tag", nil, "reason", reasonEnv))
+// ReferenceLocations finds the edges left after the caller removed the
+// ones it owns. Plugin tag/type declarations are not references; dynamic
+// also reports unexpanded ${...} references in reference fields.
+func ReferenceLocations(document *Node, tags []string, dynamic bool) []Reference {
+	var result []Reference
+	var walk func(value *Node, at Path, reference bool)
+	walk = func(value *Node, at Path, reference bool) {
+		switch {
+		case isMap(value):
+			pairs(value, func(key string, item *Node) bool {
+				if len(at) == 2 && at[0] == (Elem{Key: "plugins"}) && (key == "tag" || key == "type") {
+					if dynamic && key == "tag" && isStr(item) && envRef(item.Value) {
+						result = append(result, Reference{Path: at.with(key), Reason: envReason})
 					}
-					continue
+					return true
 				}
-				_, isText := element.(string)
-				_, isList := element.([]any)
-				isReference := strIn(key, referenceFields...) || (key == "args" && (isText || isList))
-				walk(element, appendPath(path, key), isReference)
+				ref := containsString(referenceFields, key) || key == "args" && (isStr(item) || isSeq(item))
+				walk(item, at.with(key), ref)
+				return true
+			})
+		case isSeq(value):
+			for i, item := range value.Content {
+				walk(item, at.with(i), reference)
 			}
-		case []any:
-			for index, element := range x {
-				walk(element, appendPath(path, jsonx.Int(index)), reference)
+		case isStr(value):
+			if dynamic && reference && envRef(value.Value) {
+				result = append(result, Reference{Path: at, Reason: envReason})
 			}
-		case string:
-			if dynamic && reference && envSearch(x) {
-				result = append(result, jsonx.Obj("path", appendPath(path), "tag", nil, "reason", reasonEnv))
-			}
-			for _, p := range patterns {
-				if p.pattern.Search(x) {
-					result = append(result, jsonx.Obj("path", appendPath(path), "tag", p.tag, "reason", reasonReference))
+			seen := map[string]bool{}
+			for _, tag := range tags {
+				if !seen[tag] && mentions(value.Value, tag) {
+					result = append(result, Reference{Path: at, Tag: tag, Reason: "仍有插件引用"})
 				}
+				seen[tag] = true
 			}
 		}
 	}
-	walk(document, []any{}, false)
+	walk(document, nil, false)
 	return result
 }
 
-// DefaultReferencePrefix is reference_reason's default prefix.
-const DefaultReferencePrefix = "功能仍被自定义执行链引用，请在完整参数中调整"
-
-// ReferenceReason is reference_reason(references, prefix): prefix (Python's
-// default: DefaultReferencePrefix) plus the first four distinct locations;
-// an unexpanded environment reference switches to its own prefix.
-func ReferenceReason(references []any, prefix string) (reason string, err error) {
-	defer catch(&err)
-	for _, reference := range references {
-		if item(reference, "reason") == reasonEnv {
+// ReferenceReason explains references (the first four distinct locations).
+func ReferenceReason(references []Reference, prefix string) string {
+	var locations []string
+	for i, item := range references {
+		if item.Reason == envReason {
 			prefix = "执行链含未展开的环境变量引用，请在完整参数中确认后调整"
-			break
+		}
+		if i < 4 && !containsString(locations, item.Path.dotted()) {
+			locations = append(locations, item.Path.dotted())
 		}
 	}
-	n := len(references)
-	if n > 4 {
-		n = 4
-	}
-	locations := make([]string, 0, n)
-	for i := 0; i < n; i++ {
-		locations = append(locations, referencePath(asList(item(references[i], "path"))))
-	}
-	return prefix + "（" + strings.Join(dedupe(locations), "、") + "）", nil
+	return prefix + "（" + strings.Join(locations, "、") + "）"
 }

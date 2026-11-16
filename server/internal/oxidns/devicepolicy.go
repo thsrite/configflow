@@ -3,366 +3,296 @@ package oxidns
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/netip"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-	"unsafe"
 
-	"configflow/internal/convert"
-	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
+	"configflow/internal/netipx"
+
+	"gopkg.in/yaml.v3"
 )
 
-// The parts of backend/common/oxidns_device_policy.py (module C26) that the
-// settings normalizer (C05) calls. C26 adds the rest of the module here.
+// Profile-owned device rules, patched into the native draft without
+// regenerating it: two owned plugins and one hook in sequence_main.
 
-var (
-	clientAddressPattern = regexp.MustCompile(`^[0-9a-fA-F:.]+$`)
-	clientPrefixPattern  = regexp.MustCompile(`^[0-9]{1,3}$`)
-)
-
-const clientRangeMessage = "请输入有效的客户端 IPv4、IPv6 或 CIDR 网段，例如 192.168.50.0/24。"
-
-// NormalizeClientRange is normalize_client_range(raw): a host or CIDR in
-// canonical text (IPv4-mapped peers as IPv4), or OxidnsSettingsError.
-func NormalizeClientRange(raw any) (text string, err error) {
-	defer catch(&err)
-	return normalizeClientRange(raw), nil
-}
-
-func normalizeClientRange(raw any) string {
-	text, ok := raw.(string)
-	if !ok {
-		fail(clientRangeMessage)
-	}
-	parts := strings.Split(pystr.Strip(text), "/")
-	if len(parts) > 2 || !clientAddressPattern.MatchString(parts[0]) {
-		fail(clientRangeMessage)
-	}
-	address, ok := convert.ParseIPAddress(parts[0])
-	if !ok {
-		fail(clientRangeMessage)
-	}
-	prefix := address.BitLen()
-	if len(parts) == 2 {
-		if !clientPrefixPattern.MatchString(parts[1]) {
-			fail(clientRangeMessage)
-		}
-		prefix, _ = strconv.Atoi(parts[1])
-	}
-	if prefix > address.BitLen() {
-		fail(clientRangeMessage)
-	}
-	// OxiDNS sees IPv4-mapped peers as the same IPv4 client.
-	if address.Is4In6() {
-		if prefix < 96 {
-			fail(clientRangeMessage)
-		}
-		address, prefix = address.Unmap(), prefix-96
-	}
-	network := netip.PrefixFrom(address, prefix).Masked()
-	if network.Addr().IsMulticast() && lastAddress(network).IsMulticast() {
-		fail(clientRangeMessage)
-	}
-	if prefix == address.BitLen() {
-		if address.IsUnspecified() {
-			fail(clientRangeMessage)
-		}
-		return address.String()
-	}
-	return network.Addr().String() + "/" + strconv.Itoa(prefix)
-}
-
-// lastAddress is network.broadcast_address.
-func lastAddress(network netip.Prefix) netip.Addr {
-	bytes := network.Addr().AsSlice()
-	for bit := network.Bits(); bit < len(bytes)*8; bit++ {
-		bytes[bit/8] |= 1 << (7 - bit%8)
-	}
-	address, _ := netip.AddrFromSlice(bytes)
-	return address
-}
-
-// NormalizePolicies is normalize_policies(value): the validated device
-// policy rows ({ip, name, mode}).
-func NormalizePolicies(value any) (rows []any, err error) {
-	defer catch(&err)
-	return normalizePolicies(value), nil
-}
-
-func normalizePolicies(value any) []any {
-	list, ok := value.([]any)
-	if !ok || len(list) > 512 {
-		fail("设备策略必须为列表，最多 512 条策略。")
-	}
-	result := []any{}
-	seen := map[string]bool{}
-	for _, raw := range list {
-		row, ok := raw.(*jsonx.Object)
-		if ok && row != nil {
-			for _, key := range row.Keys() {
-				if !strIn(key, "ip", "name", "mode") {
-					ok = false
-				}
-			}
-		}
-		if !ok || row == nil {
-			fail("设备策略仅支持 IP / 网段、备注和策略。")
-		}
-		ip := normalizeClientRange(row.Value("ip"))
-		if seen[ip] {
-			fail("客户端 IP / 网段重复：" + ip)
-		}
-		seen[ip] = true
-		name, mode := row.GetOr("name", ""), row.Value("mode")
-		text, isText := name.(string)
-		if !isText || runeLen(text) > 80 || hasControl(text) {
-			fail("设备备注最多 80 个字符，不能包含换行或控制字符。")
-		}
-		if !strIn(mode, "smart", "direct") {
-			fail("设备策略必须为智能分流或直连。")
-		}
-		// Older versions accepted DEL in names; drop it so the row stays editable.
-		result = append(result, jsonx.Obj("ip", ip, "name", pystr.Strip(strings.ReplaceAll(text, "\x7f", "")), "mode", mode))
-	}
-	return result
-}
-
-// ---- the rest of oxidns_device_policy.py (C26) ----
-
-// Owned plugin tags and fixed values of the device policy.
 const (
 	PolicyTag = "cf_device_policy"
 	DirectTag = "cf_device_direct"
 )
 
-// policyHook is HOOK, directPlugin DIRECT (fresh copies).
-func policyHook() *jsonx.Object { return jsonx.Obj("exec", "jump "+PolicyTag) }
+var (
+	policyHook   = M("exec", "jump "+PolicyTag)
+	directPlugin = M("tag", DirectTag, "type", "sequence", "args", L(
+		M("exec", "$forward_local"), M("matches", L("!has_resp"), "exec", "reject 3"), M("exec", "accept")))
+	clientAddress = regexp.MustCompile(`^[0-9a-fA-F:.]+$`)
+	prefixDigits  = regexp.MustCompile(`^[0-9]{1,3}$`)
+)
 
-func directPlugin() *jsonx.Object {
-	return jsonx.Obj("tag", DirectTag, "type", "sequence", "args", []any{
-		jsonx.Obj("exec", "$forward_local"), jsonx.Obj("matches", []any{"!has_resp"}, "exec", "reject 3"),
-		jsonx.Obj("exec", "accept"),
-	})
-}
+const clientRangeError = "请输入有效的客户端 IPv4、IPv6 或 CIDR 网段，例如 192.168.50.0/24。"
 
-// Revision is revision(settings): sha256 hex of the settings as sorted,
-// compact, non-ASCII-escaped JSON.
-func Revision(settings any) (string, error) {
-	data, err := jsonx.Encode(settings, jsonx.Options{SortKeys: true, Compact: true})
-	if err != nil {
-		return "", err
+// NormalizeClientRange canonicalizes a client host or CIDR (IPv4-mapped
+// peers become IPv4; a host prefix becomes the address).
+func NormalizeClientRange(raw *Node) (string, error) {
+	invalid := fail(clientRangeError)
+	if !isStr(raw) {
+		return "", invalid
 	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:]), nil
+	parts := strings.Split(strings.TrimSpace(raw.Value), "/")
+	if len(parts) > 2 || !clientAddress.MatchString(parts[0]) {
+		return "", invalid
+	}
+	address, err := netip.ParseAddr(parts[0])
+	if err != nil {
+		return "", invalid
+	}
+	prefix := address.BitLen()
+	if len(parts) == 2 {
+		if !prefixDigits.MatchString(parts[1]) {
+			return "", invalid
+		}
+		prefix, _ = strconv.Atoi(parts[1])
+	}
+	if prefix > address.BitLen() {
+		return "", invalid
+	}
+	if address.Is4In6() {
+		if prefix < 96 {
+			return "", invalid
+		}
+		address, prefix = address.Unmap(), prefix-96
+	}
+	network := netip.PrefixFrom(address, prefix).Masked()
+	if network.Addr().IsMulticast() && netipx.Broadcast(network).IsMulticast() {
+		return "", invalid
+	}
+	if prefix == address.BitLen() {
+		if address.IsUnspecified() {
+			return "", invalid
+		}
+		return address.String(), nil
+	}
+	return network.String(), nil
 }
 
-// policyPlugin is _policy_plugin(rows) (nil = None).
-func policyPlugin(rows []any) *jsonx.Object {
-	direct := []string{}
-	ranged := false
-	for _, row := range rows {
-		if item(row, "mode") == "direct" {
-			direct = append(direct, str(item(row, "ip")))
+// NormalizePolicies validates device policy rows ({ip, name, mode}).
+func NormalizePolicies(value *Node) (*Node, error) {
+	if !isSeq(value) || len(value.Content) > 512 {
+		return nil, fail("设备策略必须为列表，最多 512 条策略。")
+	}
+	result, seen := L(), map[string]bool{}
+	for _, row := range value.Content {
+		if !isMap(row) || len(filter(keyNodes(row), func(k *Node) bool { return !isOneOf(k, "ip", "name", "mode") })) > 0 {
+			return nil, fail("设备策略仅支持 IP / 网段、备注和策略。")
+		}
+		ip, err := NormalizeClientRange(get(row, "ip"))
+		if err != nil {
+			return nil, err
+		}
+		if seen[ip] {
+			return nil, fail("客户端 IP / 网段重复：" + ip)
+		}
+		seen[ip] = true
+		name, mode := get(row, "name"), get(row, "mode")
+		if !has(row, "name") {
+			name = S("")
+		}
+		if !isStr(name) || len([]rune(name.Value)) > 80 || hasControl(name.Value) {
+			return nil, fail("设备备注最多 80 个字符，不能包含换行或控制字符。")
+		}
+		if !isOneOf(mode, "smart", "direct") {
+			return nil, fail("设备策略必须为智能分流或直连。")
+		}
+		result.Content = append(result.Content, M("ip", ip, "name", strings.TrimSpace(strings.ReplaceAll(name.Value, "\x7f", "")), "mode", mode.Value))
+	}
+	return result, nil
+}
+
+func keyNodes(m *Node) []*Node {
+	var out []*Node
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		out = append(out, m.Content[i])
+	}
+	return out
+}
+
+// Revision is the sha256 of the settings as sorted compact JSON.
+func Revision(settings *Node) string {
+	sum := sha256.Sum256(sortedJSON(settings))
+	return hex.EncodeToString(sum[:])
+}
+
+func policyPlugin(rows *Node) *Node {
+	var direct []string
+	cidr := false
+	for _, row := range items(rows) {
+		ip := str(get(row, "ip"))
+		cidr = cidr || strings.Contains(ip, "/")
+		if str(get(row, "mode")) == "direct" {
+			direct = append(direct, ip)
 		}
 	}
 	if len(direct) == 0 {
 		return nil
 	}
-	for _, row := range rows {
-		if strings.Contains(str(item(row, "ip")), "/") {
-			ranged = true
-		}
+	if !cidr {
+		return M("tag", PolicyTag, "type", "sequence", "args", L(
+			M("matches", L("client_ip "+strings.Join(direct, " ")), "exec", "goto "+DirectTag), M("exec", "return")))
 	}
-	if ranged {
-		// More specific ranges (including individual clients) override broader
-		// ones. A smart exception must return to the caller before a broader
-		// direct rule.
-		type keyed struct {
-			row    any
-			prefix netip.Prefix
-		}
-		sortedRows := make([]keyed, 0, len(rows))
-		for _, row := range rows {
-			text := str(item(row, "ip"))
-			prefix, err := netip.ParsePrefix(text)
-			if err != nil {
-				address, err := netip.ParseAddr(text)
-				if err != nil {
-					raise(pyErr("ValueError", text+" does not appear to be an IPv4 or IPv6 network"))
-				}
-				prefix = netip.PrefixFrom(address, address.BitLen())
-			}
-			sortedRows = append(sortedRows, keyed{row, prefix})
-		}
-		sort.SliceStable(sortedRows, func(i, j int) bool {
-			a, b := sortedRows[i].prefix, sortedRows[j].prefix
-			if a.Bits() != b.Bits() {
-				return a.Bits() > b.Bits()
-			}
-			if a.Addr().Is4() != b.Addr().Is4() {
-				return a.Addr().Is4()
-			}
-			return a.Addr().Less(b.Addr())
-		})
-		args := []any{}
-		for _, entry := range sortedRows {
-			exec := "return"
-			if item(entry.row, "mode") == "direct" {
-				exec = "goto " + DirectTag
-			}
-			args = append(args, jsonx.Obj("matches", []any{"client_ip " + str(item(entry.row, "ip"))}, "exec", exec))
-		}
-		return jsonx.Obj("tag", PolicyTag, "type", "sequence", "args", append(args, jsonx.Obj("exec", "return")))
+	// More specific ranges override broader ones.
+	sorted := append([]*Node{}, rows.Content...)
+	key := func(row *Node) netip.Prefix {
+		p, _ := netipx.ParseNetwork(str(get(row, "ip")), true)
+		return p
 	}
-	// Preserve the original host-only shape so existing drafts stay editable.
-	return jsonx.Obj("tag", PolicyTag, "type", "sequence", "args", []any{
-		jsonx.Obj("matches", []any{"client_ip " + strings.Join(direct, " ")}, "exec", "goto "+DirectTag),
-		jsonx.Obj("exec", "return"),
+	sort.SliceStable(sorted, func(i, j int) bool {
+		a, b := key(sorted[i]), key(sorted[j])
+		if a.Bits() != b.Bits() {
+			return a.Bits() > b.Bits()
+		}
+		if a.Addr().Is4() != b.Addr().Is4() {
+			return a.Addr().Is4()
+		}
+		return a.Addr().Less(b.Addr())
 	})
+	args := L()
+	for _, row := range sorted {
+		exec := "return"
+		if str(get(row, "mode")) == "direct" {
+			exec = "goto " + DirectTag
+		}
+		args.Content = append(args.Content, M("matches", L("client_ip "+str(get(row, "ip"))), "exec", exec))
+	}
+	args.Content = append(args.Content, M("exec", "return"))
+	return M("tag", PolicyTag, "type", "sequence", "args", args)
 }
 
-// refuse is _refuse(reason, fix).
-func refuse(reason string, fix ...string) {
-	how := "请先在 OxiDNS 完整参数中调整"
+func refuse(reason string, fix ...string) error {
+	f := "请先在 OxiDNS 完整参数中调整"
 	if len(fix) > 0 {
-		how = fix[0]
+		f = fix[0]
 	}
-	fail(reason + "，无法安全插入设备策略；" + how + "。")
+	return fail(reason + "，无法安全插入设备策略；" + f + "。")
 }
 
-// checkMain is _check_main(document, plugins): the hook is only placed in a
-// recognizable sequence_main with a local upstream.
-func checkMain(document, plugins *jsonx.Object) {
-	if truthy(document.Value("include")) {
-		refuse("配置用 include 引入了其他文件，看不到完整的处理链")
+func pyStr(n *Node) string {
+	if isNone(n) {
+		return "None"
 	}
-	if items, ok := document.Value("plugins").([]any); plugins.Len() == 0 && ok && len(items) > 0 {
+	if isBool(n) {
+		return map[string]string{"true": "True", "false": "False"}[n.Value]
+	}
+	if n.Kind == yaml.ScalarNode {
+		return n.Value
+	}
+	return string(ToJSON(n))
+}
+
+// checkMain: the hook needs a recognizable sequence_main and a local upstream.
+func checkMain(document *Node, plugins map[string]*Node) error {
+	if truthy(get(document, "include")) {
+		return refuse("配置用 include 引入了其他文件，看不到完整的处理链")
+	}
+	if list := items(get(document, "plugins")); len(plugins) == 0 && len(list) > 0 {
 		seen := map[string]bool{}
-		for index, element := range items {
-			var tag any
-			if isDict(element) {
-				tag = get(element, "tag", nil)
-			}
-			text, ok := tag.(string)
+		for index, item := range list {
+			tag, ok := tagOf(item)
 			if !ok {
-				refuse("第 " + itoa(index+1) + " 个插件没有 tag")
+				return refuse(fmt.Sprintf("第 %d 个插件没有 tag", index+1))
 			}
-			if seen[text] {
-				refuse("插件 tag「" + text + "」重复")
+			if seen[tag] {
+				return refuse("插件 tag「" + tag + "」重复")
 			}
-			seen[text] = true
+			seen[tag] = true
 		}
 	}
-	main := pluginAt(plugins, "sequence_main")
+	main := plugins["sequence_main"]
 	if main == nil {
-		refuse("找不到主处理链 sequence_main")
+		return refuse("找不到主处理链 sequence_main")
 	}
-	if main.Value("type") != "sequence" {
-		refuse("主处理链 sequence_main 的类型是 " + str(main.Value("type")) + "，不是 sequence")
+	if !equal(get(main, "type"), S("sequence")) {
+		return refuse("主处理链 sequence_main 的类型是 " + pyStr(get(main, "type")) + "，不是 sequence")
 	}
-	args, ok := main.Value("args").([]any)
-	if !ok || len(args) == 0 {
-		refuse("主处理链 sequence_main 没有处理步骤")
+	args := get(main, "args")
+	if !isSeq(args) || len(args.Content) == 0 {
+		return refuse("主处理链 sequence_main 没有处理步骤")
 	}
-	for index, element := range args {
-		obj, ok := element.(*jsonx.Object)
-		if !ok || obj == nil || !isStr(obj.Value("exec")) {
-			refuse("主处理链 sequence_main 第 " + itoa(index+1) + " 步没有 exec 动作")
+	for index, item := range args.Content {
+		if !isStr(get(item, "exec")) || !isMap(item) {
+			return refuse(fmt.Sprintf("主处理链 sequence_main 第 %d 步没有 exec 动作", index+1))
 		}
 	}
-	last := args[len(args)-1].(*jsonx.Object)
-	if !jsonx.Equal(last, jsonx.Obj("exec", "goto china_dns")) && !jsonx.Equal(last, jsonx.Obj("exec", "goto proxy_dns_seq")) {
-		hasMatches, hasExtra := false, false
-		for _, key := range last.Keys() {
-			if key != "exec" {
-				hasExtra = true
-				if key == "matches" {
-					hasMatches = true
-				}
-			}
-		}
-		text := last.Value("exec").(string)
-		if hasMatches {
+	last := args.Content[len(args.Content)-1]
+	if !equal(last, M("exec", "goto china_dns")) && !equal(last, M("exec", "goto proxy_dns_seq")) {
+		text := str(get(last, "exec"))
+		if has(last, "matches") {
 			text += "（带匹配条件）"
-		} else if hasExtra {
+		} else if len(last.Content) > 2 {
 			text += "（带其他字段）"
 		}
-		refuse("主处理链 sequence_main 的最后一步是「" + text + "」，" +
-			"设备策略要求最后一步是不带条件的 goto china_dns 或 goto proxy_dns_seq")
+		return refuse("主处理链 sequence_main 的最后一步是「" + text + "」，设备策略要求最后一步是不带条件的 goto china_dns 或 goto proxy_dns_seq")
 	}
-	forward := pluginAt(plugins, "forward_local")
-	if forward == nil {
-		refuse("找不到本地上游 forward_local，直连设备没有可用的上游")
+	forward := plugins["forward_local"]
+	switch {
+	case forward == nil:
+		return refuse("找不到本地上游 forward_local，直连设备没有可用的上游")
+	case !equal(get(forward, "type"), S("forward")):
+		return refuse("本地上游 forward_local 的类型是 " + pyStr(get(forward, "type")) + "，不是 forward")
+	case !isMap(get(forward, "args")) || !truthy(get(get(forward, "args"), "upstreams")):
+		return refuse("本地上游 forward_local 没有配置上游地址")
 	}
-	if forward.Value("type") != "forward" {
-		refuse("本地上游 forward_local 的类型是 " + str(forward.Value("type")) + "，不是 forward")
-	}
-	if args, ok := forward.Value("args").(*jsonx.Object); !ok || args == nil || !truthy(args.Value("upstreams")) {
-		refuse("本地上游 forward_local 没有配置上游地址")
-	}
+	return nil
 }
 
-// listenPort is _listen_port(listen): the port, ok false when the core
-// resolves the address later.
-func listenPort(listen any) (int, bool) {
-	text, ok := listen.(string)
-	if !ok || strings.Contains(text, "${") {
-		return 0, false
+// listenPort is the listening port, 0 when the core resolves it later.
+func listenPort(listen string) int {
+	if strings.Contains(listen, "${") {
+		return 0
 	}
-	trimmed := strings.TrimSpace(text)
-	port := trimmed[strings.LastIndex(trimmed, ":")+1:]
-	if port == "" || strings.TrimLeft(port, "0123456789") != "" {
-		return 0, false
+	text := strings.TrimSpace(listen)
+	port := text[strings.LastIndexByte(text, ':')+1:]
+	n, err := strconv.Atoi(port)
+	if err != nil || strings.Trim(port, "0123456789") != "" || n <= 0 || n > 65535 {
+		return 0
 	}
-	value, err := strconv.Atoi(port)
-	if err != nil || value <= 0 || value > 65535 {
-		return 0, false
-	}
-	return value, true
+	return n
 }
 
-// serverEntries is _server_entries(plugin): the executors a DNS server
-// hands queries to, ok false when they cannot be read.
-func serverEntries(plugin *jsonx.Object) ([]string, bool) {
-	args, ok := plugin.Value("args").(*jsonx.Object)
-	if !ok || args == nil {
-		return nil, false
+// serverEntries are the executors a DNS server hands queries to.
+func serverEntries(plugin *Node) []string {
+	args := get(plugin, "args")
+	if !isMap(args) {
+		return nil
 	}
-	var values []any
-	if plugin.Value("type") == "http_server" {
-		items, ok := args.Value("entries").([]any)
-		if !ok || len(items) == 0 {
-			return nil, false
+	values := []*Node{get(args, "entry")}
+	if equal(get(plugin, "type"), S("http_server")) {
+		list := get(args, "entries")
+		if !isSeq(list) || len(list.Content) == 0 {
+			return nil
 		}
-		for _, element := range items {
-			if !isDict(element) {
-				return nil, false
+		values = nil
+		for _, item := range list.Content {
+			if !isMap(item) {
+				return nil
 			}
+			values = append(values, get(item, "exec"))
 		}
-		for _, element := range items {
-			values = append(values, get(element, "exec", nil))
-		}
-	} else {
-		values = []any{args.Value("entry")}
 	}
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		text, ok := value.(string)
-		if !ok || text == "" {
-			return nil, false
+	var out []string
+	for _, v := range values {
+		if !isStr(v) || v.Value == "" {
+			return nil
 		}
-		out = append(out, text)
+		out = append(out, v.Value)
 	}
-	return out, true
+	return out
 }
 
-// reach is _reach(document, plugins, start): the plugins a chain can run
-// from its entries, and the unresolved reason ("" when complete).
-func reach(plugins *jsonx.Object, start []string) (map[string]bool, string) {
-	tags := plugins.Keys()
+// reach is the set of plugins a chain can run from its entries, or the
+// reason it cannot be followed.
+func reach(plugins map[string]*Node, order []string, start []string) (map[string]bool, string) {
 	seen := map[string]bool{}
 	queue := append([]string{}, start...)
 	for len(queue) > 0 {
@@ -374,201 +304,114 @@ func reach(plugins *jsonx.Object, start []string) (map[string]bool, string) {
 		if strings.Contains(tag, "${") {
 			return seen, "含未展开的环境变量"
 		}
-		if !plugins.Has(tag) {
+		if plugins[tag] == nil {
 			return seen, "用到的插件 " + tag + " 不存在"
 		}
 		seen[tag] = true
 		if tag == "sequence_main" {
-			continue // Reaching it is the answer; its own graph is irrelevant here.
+			continue
 		}
-		for _, edge := range referenceLocations(jsonx.Obj("plugins", []any{plugins.Value(tag)}), tags, true) {
-			next, ok := get(edge, "tag", nil).(string)
-			if !ok {
+		for _, edge := range ReferenceLocations(M("plugins", L(plugins[tag])), order, true) {
+			if edge.Tag == "" {
 				return seen, "含未展开的环境变量"
 			}
-			queue = append(queue, next)
+			queue = append(queue, edge.Tag)
 		}
 	}
 	return seen, ""
 }
 
-// listenEndpoint is _endpoint(listen): (host without brackets, port).
-func listenEndpoint(listen string) (string, string) {
-	trimmed := strings.TrimSpace(listen)
-	host, port := "", trimmed
-	if i := strings.LastIndex(trimmed, ":"); i >= 0 {
-		host, port = trimmed[:i], trimmed[i+1:]
-	}
-	return strings.Trim(host, "[]"), port
-}
-
-// EntryContext is entry_context(config): what ConfigFlow itself knows about
-// node-test DNS listeners of this profile (no I/O). Present is false for
-// Python's {} (config not a dict).
+// EntryContext is what ConfigFlow knows about the profile's node-test DNS
+// listeners (no I/O): the queried addresses and the profile's OxiDNS hosts.
 type EntryContext struct {
-	Present   bool
-	ProfileID any
-	Agents    []any
-	Addresses map[[2]string]bool // (IPv4, port)
+	Addresses map[[2]string]bool
 	Hosts     map[string]bool
 }
 
-// Object is the context as a JSON-able value: sets as sorted lists
-// (addresses as [ip, port] pairs).
-func (c EntryContext) Object() *jsonx.Object {
-	if !c.Present {
-		return jsonx.NewObject()
+// NewEntryContext reads the node-test DNS addresses and OxiDNS Agent hosts.
+func NewEntryContext(p *Profile) EntryContext {
+	ctx := EntryContext{Addresses: map[[2]string]bool{}, Hosts: map[string]bool{}}
+	if p == nil {
+		return ctx
 	}
-	addresses := make([][2]string, 0, len(c.Addresses))
-	for address := range c.Addresses {
-		addresses = append(addresses, address)
+	system := mapOr(p.get("system_config"))
+	values := items(get(system, "node_test_dns"))
+	if saved := get(system, "node_test_dns_config"); equal(get(saved, "mode"), S("custom")) && isSeq(get(saved, "servers")) {
+		values = append(append([]*Node{}, values...), get(saved, "servers").Content...)
 	}
-	sort.Slice(addresses, func(i, j int) bool {
-		if addresses[i][0] != addresses[j][0] {
-			return addresses[i][0] < addresses[j][0]
-		}
-		return addresses[i][1] < addresses[j][1]
-	})
-	pairs := []any{}
-	for _, address := range addresses {
-		pairs = append(pairs, []any{address[0], address[1]})
-	}
-	hosts := make([]string, 0, len(c.Hosts))
-	for host := range c.Hosts {
-		hosts = append(hosts, host)
-	}
-	sort.Strings(hosts)
-	hostList := []any{}
-	for _, host := range hosts {
-		hostList = append(hostList, host)
-	}
-	agents := c.Agents
-	if agents == nil {
-		agents = []any{}
-	}
-	return jsonx.Obj("profile_id", c.ProfileID, "agents", agents, "addresses", pairs, "hosts", hostList)
-}
-
-// NewEntryContext is entry_context(config).
-func NewEntryContext(config any) (context EntryContext, err error) {
-	defer catch(&err)
-	return entryContext(config), nil
-}
-
-func entryContext(configValue any) EntryContext {
-	config, ok := configValue.(*jsonx.Object)
-	if !ok || config == nil {
-		return EntryContext{}
-	}
-	profileID := config.Value("profile_id")
-	agents := []any{}
-	if value := config.Value("agents"); truthy(value) {
-		for _, agent := range pyIter(value) {
-			if isDict(agent) {
-				agents = append(agents, agent)
-			}
-		}
-	}
-	system, ok := config.Value("system_config").(*jsonx.Object)
-	if !ok || system == nil {
-		system = jsonx.NewObject()
-	}
-	values := []any{}
-	if list, ok := system.Value("node_test_dns").([]any); ok {
-		values = append(values, list...)
-	}
-	if saved, ok := system.Value("node_test_dns_config").(*jsonx.Object); ok && saved != nil && saved.Value("mode") == "custom" {
-		if servers, ok := saved.Value("servers").([]any); ok {
-			values = append(values, servers...)
-		}
-	}
-	addresses := map[[2]string]bool{}
 	for _, value := range values {
-		text, ok := value.(string)
-		if !ok || strings.Contains(text, "://") {
+		if !isStr(value) || strings.Contains(value.Value, "://") {
 			continue
 		}
-		host, port, separator := strings.Cut(strings.TrimSpace(text), ":")
-		address, err := netip.ParseAddr(host)
-		if err != nil || !address.Is4() {
+		host, port, separator := strings.Cut(strings.TrimSpace(value.Value), ":")
+		ip, ok := netipx.ParseAddr4(host)
+		if !ok || strings.Contains(host, "%") {
 			continue
 		}
 		if !separator {
 			port = "53"
 		}
-		addresses[[2]string{address.String(), port}] = true
+		ctx.Addresses[[2]string{ip.String(), port}] = true
 	}
-	hosts := map[string]bool{}
-	for _, agent := range agents {
-		host, ok := get(agent, "host", nil).(string)
-		if get(agent, "service_type", nil) == "oxidns" && jsonx.Equal(get(agent, "profile_id", "default"), profileID) && ok {
-			hosts[host] = true
+	profileID := p.get("profile_id")
+	for _, agent := range items(p.get("agents")) {
+		agentProfile := get(agent, "profile_id")
+		if !has(agent, "profile_id") {
+			agentProfile = S("default")
+		}
+		if isMap(agent) && equal(get(agent, "service_type"), S("oxidns")) && equal(agentProfile, profileID) && isStr(get(agent, "host")) {
+			ctx.Hosts[get(agent, "host").Value] = true
 		}
 	}
-	return EntryContext{Present: true, ProfileID: profileID, Agents: agents, Addresses: addresses, Hosts: hosts}
+	return ctx
 }
 
-type serverMember struct {
-	plugin  *jsonx.Object
+type server struct {
+	plugin  *Node
 	entries []string
 }
 
-// legacyNodeTest is _legacy_node_test(document, plugins, servers, reach,
-// listen, context): a hand-made listener node tests currently query, on an
-// isolated chain.
-func legacyNodeTest(document, plugins *jsonx.Object, servers []serverMember, reached map[string]bool, listen string, context EntryContext) bool {
-	host, port := listenEndpoint(listen)
+// legacyNodeTest: a hand-made listener that node tests currently query, on
+// a chain of its own (it cannot touch client traffic).
+func legacyNodeTest(document *Node, plugins map[string]*Node, servers []server, reached map[string]bool, listen string, ctx EntryContext) bool {
+	text := strings.TrimSpace(listen)
+	i := strings.LastIndexByte(text, ':')
+	host, port := strings.Trim(text[:max(i, 0)], "[]"), text[i+1:]
 	matched := false
-	for address := range context.Addresses {
-		ip, want := address[0], address[1]
-		if port == want && (host == ip || (host == "" || host == "0.0.0.0" || host == "::") && context.Hosts[ip]) {
+	for address := range ctx.Addresses {
+		if port == address[1] && (host == address[0] || (host == "" || host == "0.0.0.0" || host == "::") && ctx.Hosts[address[0]]) {
 			matched = true
-			break
 		}
 	}
 	if !matched {
 		return false
 	}
-	entries := map[string]bool{}
-	for _, member := range servers {
-		for _, entry := range member.entries {
-			entries[entry] = true
+	entries, names := map[string]bool{}, map[string]bool{}
+	var entry string
+	for _, s := range servers {
+		for _, e := range s.entries {
+			entries[e], entry = true, e
 		}
-	}
-	if len(entries) != 1 {
-		return false
-	}
-	for _, member := range servers {
-		if !strIn(member.plugin.Value("type"), "udp_server", "tcp_server") {
+		if !isOneOf(get(s.plugin, "type"), "udp_server", "tcp_server") {
 			return false
 		}
+		names[str(get(s.plugin, "tag"))] = true
 	}
-	entry := onlyElement(entries)
-	if pluginAt(plugins, entry).Value("type") != "sequence" {
+	if len(entries) != 1 || !equal(get(plugins[entry], "type"), S("sequence")) {
 		return false
 	}
 	for tag := range reached {
-		if tag != entry && strIn(pluginAt(plugins, tag).Value("type"), "sequence", "fallback") {
+		if tag != entry && isOneOf(get(plugins[tag], "type"), "sequence", "fallback") {
 			return false
 		}
 	}
-	names := map[string]bool{}
-	for _, member := range servers {
-		names[member.plugin.Value("tag").(string)] = true
-	}
-	list := asList(document.Value("plugins"))
-	// owners: a reference outside plugins (or an unreadable path) counts as
-	// foreign ("" here, Python's None).
 	owners := func(tag string) map[string]bool {
 		out := map[string]bool{}
-		for _, edge := range referenceLocations(document, []string{tag}, false) {
-			path := asList(item(edge, "path"))
-			owner := "\x00None"
-			if len(path) > 1 && path[0] == "plugins" {
-				index, _ := path[1].(jsonx.Number).Int64()
-				if text, ok := get(list[index], "tag", nil).(string); ok {
-					owner = text
-				}
+		list := items(get(document, "plugins"))
+		for _, edge := range ReferenceLocations(document, []string{tag}, false) {
+			owner := "\x00"
+			if len(edge.Path) > 1 && edge.Path[0] == (Elem{Key: "plugins"}) && edge.Path[1].IsIndex && edge.Path[1].Index < len(list) {
+				owner = str(get(list[edge.Path[1].Index], "tag"))
 			}
 			out[owner] = true
 		}
@@ -581,7 +424,7 @@ func legacyNodeTest(document, plugins *jsonx.Object, servers []serverMember, rea
 	}
 	forwards := 0
 	for tag := range reached {
-		if pluginAt(plugins, tag).Value("type") != "forward" {
+		if !equal(get(plugins[tag], "type"), S("forward")) {
 			continue
 		}
 		forwards++
@@ -594,234 +437,258 @@ func legacyNodeTest(document, plugins *jsonx.Object, servers []serverMember, rea
 	return forwards > 0
 }
 
-// InspectEntries is inspect_entries(document, plugins, config): check every
-// DNS listener; return {side_entries, node_test_entries}.
-func InspectEntries(document *jsonx.Object, config any) (report *jsonx.Object, err error) {
-	defer catch(&err)
-	return inspectEntries(document, routingPlugins(document), config), nil
+// EntryReport lists listeners that bypass sequence_main.
+type EntryReport struct {
+	Side     []SideEntry `json:"side_entries"`
+	NodeTest []SideEntry `json:"node_test_entries"`
 }
 
-func inspectEntries(document, plugins *jsonx.Object, config any) *jsonx.Object {
-	var servers []*jsonx.Object
-	for _, value := range plugins.Values() {
-		plugin := value.(*jsonx.Object)
-		if strings.HasSuffix(str(plugin.GetOr("type", "")), "_server") {
-			servers = append(servers, plugin)
+// SideEntry is a listener group with its own chain.
+type SideEntry struct {
+	Tags   []string `json:"tags"`
+	Listen string   `json:"listen"`
+	Entry  string   `json:"entry"`
+	Kind   string   `json:"kind,omitempty"`
+}
+
+// InspectEntries checks every DNS listener: client DNS ports must enter
+// sequence_main; other listeners on their own chain are reported.
+func InspectEntries(document *Node, plugins map[string]*Node, order []string, p *Profile) (EntryReport, error) {
+	report := EntryReport{Side: []SideEntry{}, NodeTest: []SideEntry{}}
+	var servers []*Node
+	for _, tag := range order {
+		if kind := get(plugins[tag], "type"); kind != nil && kind.Kind == yaml.ScalarNode && strings.HasSuffix(kind.Value, "_server") {
+			servers = append(servers, plugins[tag])
 		}
 	}
 	if len(servers) == 0 {
-		refuse("没有任何 DNS 监听入口（udp_server / tcp_server 等）")
+		return report, refuse("没有任何 DNS 监听入口（udp_server / tcp_server 等）")
 	}
-	type groupKey struct{ listen, entries string }
-	var order []groupKey
-	groups := map[groupKey][]serverMember{}
-	groupEntries := map[groupKey][]string{}
-	mainPorts := map[int]bool{53: true}
-	hasMain := false
+	type group struct {
+		listen  string
+		entries []string
+		members []server
+	}
+	var groups []*group
+	mainPorts, hasMain := map[int]bool{53: true}, false
 	for _, plugin := range servers {
-		var listen any
-		if args, ok := plugin.Value("args").(*jsonx.Object); ok && args != nil {
-			listen = args.Value("listen")
+		listen := str(get(get(plugin, "args"), "listen"))
+		if strings.TrimSpace(listen) == "" {
+			listen = "未填写监听地址"
 		}
-		text, ok := listen.(string)
-		if !ok || strings.TrimSpace(text) == "" {
-			text = "未填写监听地址"
-		}
-		name := "监听入口 " + str(plugin.Value("tag")) + "（" + text + "）"
-		entries, ok := serverEntries(plugin)
-		if !ok {
-			refuse(name + " 的 entry 无法读取")
+		entries := serverEntries(plugin)
+		if entries == nil {
+			return report, refuse("监听入口 " + str(get(plugin, "tag")) + "（" + listen + "） 的 entry 无法读取")
 		}
 		allMain := true
-		for _, entry := range entries {
-			if entry != "sequence_main" {
-				allMain = false
-			}
+		for _, e := range entries {
+			allMain = allMain && e == "sequence_main"
 		}
 		if allMain {
 			hasMain = true
-			if port, ok := listenPort(text); ok {
+			if port := listenPort(listen); port != 0 {
 				mainPorts[port] = true
 			}
 			continue
 		}
-		key := groupKey{text, strings.Join(entries, "\x00")}
-		if _, ok := groups[key]; !ok {
-			order = append(order, key)
-			groupEntries[key] = entries
+		key := strings.Join(entries, "\x00")
+		var found *group
+		for _, g := range groups {
+			if g.listen == listen && strings.Join(g.entries, "\x00") == key {
+				found = g
+			}
 		}
-		groups[key] = append(groups[key], serverMember{plugin, entries})
+		if found == nil {
+			found = &group{listen: listen, entries: entries}
+			groups = append(groups, found)
+		}
+		found.members = append(found.members, server{plugin, entries})
 	}
 	if !hasMain {
-		refuse("没有任何监听入口进入主处理链 sequence_main")
+		return report, refuse("没有任何监听入口进入主处理链 sequence_main")
 	}
-	var context EntryContext
-	if len(order) > 0 {
-		context = entryContext(config)
+	ctx := EntryContext{}
+	if len(groups) > 0 {
+		ctx = NewEntryContext(p)
 	}
-	side, nodeTest := []any{}, []any{}
-	for _, key := range order {
-		members, entries := groups[key], groupEntries[key]
-		listen := key.listen
-		tags := []any{}
-		names := []string{}
-		for _, member := range members {
-			tags = append(tags, member.plugin.Value("tag"))
-			names = append(names, member.plugin.Value("tag").(string))
+	for _, g := range groups {
+		var tags, unique []string
+		for _, m := range g.members {
+			tags = append(tags, str(get(m.plugin, "tag")))
 		}
-		entryText := strings.Join(dedupe(entries), "、")
-		entryItem := jsonx.Obj("tags", tags, "listen", listen, "entry", entryText)
-		name := "监听入口 " + strings.Join(names, "、") + "（" + listen + "）"
-		port, ok := listenPort(listen)
-		if !ok || mainPorts[port] {
-			portText := "无法确认监听端口"
-			if ok {
-				portText = "监听客户端 DNS 端口 " + itoa(port)
+		for _, e := range g.entries {
+			if !containsString(unique, e) {
+				unique = append(unique, e)
 			}
-			refuse(name+portText+"，但 entry 是 "+entryText+"，没有进入主处理链 sequence_main"+
-				"（经这里查询的客户端不受设备策略控制）",
+		}
+		item := SideEntry{Tags: tags, Listen: g.listen, Entry: strings.Join(unique, "、")}
+		name := "监听入口 " + strings.Join(tags, "、") + "（" + g.listen + "）"
+		if port := listenPort(g.listen); port == 0 || mainPorts[port] {
+			text := "无法确认监听端口"
+			if port != 0 {
+				text = "监听客户端 DNS 端口 " + strconv.Itoa(port)
+			}
+			return report, refuse(name+text+"，但 entry 是 "+item.Entry+"，没有进入主处理链 sequence_main（经这里查询的客户端不受设备策略控制）",
 				"请在 OxiDNS 完整参数中把它的 entry 改为 sequence_main，或让它改用其他端口")
 		}
-		reached, problem := reach(plugins, entries)
+		reached, problem := reach(plugins, order, g.entries)
 		if problem != "" {
-			refuse(name + " 的处理链" + problem + "，无法确认它是否经过主处理链")
+			return report, refuse(name + " 的处理链" + problem + "，无法确认它是否经过主处理链")
 		}
 		if reached["sequence_main"] {
-			refuse(name+" 的处理链 "+entryText+" 会间接调用主处理链 sequence_main，看不出设备策略是否生效",
+			return report, refuse(name+" 的处理链 "+item.Entry+" 会间接调用主处理链 sequence_main，看不出设备策略是否生效",
 				"请在 OxiDNS 完整参数中把它的 entry 直接改为 sequence_main，或让它不再调用主处理链")
 		}
-		if legacyNodeTest(document, plugins, members, reached, listen, context) {
-			legacy := entryItem.Clone()
-			legacy.Set("kind", "legacy")
-			nodeTest = append(nodeTest, legacy)
+		if legacyNodeTest(document, plugins, g.members, reached, g.listen, ctx) {
+			item.Kind = "legacy"
+			report.NodeTest = append(report.NodeTest, item)
 		} else {
-			side = append(side, entryItem)
+			report.Side = append(report.Side, item)
 		}
 	}
-	return jsonx.Obj("side_entries", side, "node_test_entries", nodeTest)
+	return report, nil
 }
 
-// patchPolicies is _patch(document, previous, rows, config): the patched
-// copy of document and the entry report.
-func patchPolicies(document *jsonx.Object, previous, rows []any, config any) (*jsonx.Object, *jsonx.Object) {
-	document = copyValue(document).(*jsonx.Object)
-	plugins := routingPlugins(document)
-	checkMain(document, plugins)
-	report := inspectEntries(document, plugins, config)
-	main := pluginAt(plugins, "sequence_main")
-	args := main.Value("args").([]any)
-	setArgs := func(items []any) {
-		old := args
-		main.Set("args", items)
-		relinkList(document, old, items, map[unsafe.Pointer]bool{})
-		args = items
-	}
-
-	old := policyPlugin(previous)
-	owned := jsonx.NewObject()
-	for _, tag := range []string{PolicyTag, DirectTag} {
-		if plugins.Has(tag) {
-			owned.Set(tag, plugins.Value(tag))
+// orderedPlugins is _plugins with the tag order.
+func orderedPlugins(document *Node) (map[string]*Node, []string) {
+	plugins := pluginMap(document)
+	var order []string
+	if len(plugins) > 0 {
+		for _, item := range items(get(document, "plugins")) {
+			order = append(order, str(get(item, "tag")))
 		}
 	}
+	return plugins, order
+}
+
+func patchPolicies(document, previous, rows *Node, p *Profile) (*Node, EntryReport, error) {
+	document = clone(document)
+	plugins, order := orderedPlugins(document)
+	if err := checkMain(document, plugins); err != nil {
+		return nil, EntryReport{}, err
+	}
+	report, err := InspectEntries(document, plugins, order, p)
+	if err != nil {
+		return nil, report, err
+	}
+	main := get(plugins["sequence_main"], "args")
+	old := policyPlugin(previous)
 	var hooks []int
-	for i, entry := range args {
-		if jsonx.Equal(entry, policyHook()) {
+	for i, item := range main.Content {
+		if equal(item, policyHook) {
 			hooks = append(hooks, i)
 		}
 	}
+	policy, direct := plugins[PolicyTag], plugins[DirectTag]
 	if old != nil {
-		if !jsonx.Equal(owned, jsonx.Obj(PolicyTag, old, DirectTag, directPlugin())) || len(hooks) != 1 {
-			fail("设备策略执行链已被手动修改，请先在完整参数中恢复，避免覆盖自定义内容。")
+		if policy == nil || direct == nil || !equal(policy, old) || !equal(direct, directPlugin) || len(hooks) != 1 {
+			return nil, report, fail("设备策略执行链已被手动修改，请先在完整参数中恢复，避免覆盖自定义内容。")
 		}
-		index := hooks[0]
-		setArgs(popCopy(args, index))
-		if index != prefixEnd(args) {
-			fail("设备策略的位置已被修改，请先恢复到分流规则之前。")
+		main.Content = append(main.Content[:hooks[0]:hooks[0]], main.Content[hooks[0]+1:]...)
+		if hooks[0] != prefixEnd(main.Content) {
+			return nil, report, fail("设备策略的位置已被修改，请先恢复到分流规则之前。")
 		}
-	} else if owned.Len() > 0 || len(hooks) > 0 {
-		fail("完整参数中存在同名设备策略插件，请先处理命名冲突。")
+	} else if policy != nil || direct != nil || len(hooks) > 0 {
+		return nil, report, fail("完整参数中存在同名设备策略插件，请先处理命名冲突。")
 	}
-	// Extra calls to owned plugins could turn a per-client rule into a global rule.
-	remaining := []any{}
-	for _, plugin := range asList(document.Value("plugins")) {
-		if !strIn(get(plugin, "tag", nil), PolicyTag, DirectTag) {
-			remaining = append(remaining, plugin)
-		}
+	remaining := filter(items(get(document, "plugins")), func(item *Node) bool {
+		return !isOneOf(get(item, "tag"), PolicyTag, DirectTag)
+	})
+	if text := string(ToJSON(seqOf(remaining))); strings.Contains(text, PolicyTag) || strings.Contains(text, DirectTag) {
+		return nil, report, fail("设备策略插件存在额外引用，请先在完整参数中处理。")
 	}
-	text, err := jsonx.Encode(remaining, jsonx.Options{EnsureASCII: true})
+	if next := policyPlugin(rows); next != nil {
+		index := prefixEnd(main.Content)
+		main.Content = append(main.Content[:index:index], append([]*Node{clone(policyHook)}, main.Content[index:]...)...)
+		remaining = append(remaining, next, clone(directPlugin))
+	}
+	set(document, "plugins", seqOf(remaining))
+	return document, report, nil
+}
+
+// PatchDocument owns exactly two plugins and one hook in sequence_main;
+// altered or ambiguous chains are refused. previous/rows are policy rows.
+func PatchDocument(document, previous, rows *Node, p *Profile) (*Node, error) {
+	doc, _, err := patchPolicies(document, previous, rows, p)
+	return doc, err
+}
+
+// PolicyView is read_policies' answer.
+type PolicyView struct {
+	Policies    *Node       `json:"-"`
+	Editable    bool        `json:"editable"`
+	Reason      string      `json:"reason"`
+	SideEntries []SideEntry `json:"side_entries"`
+}
+
+// ReadPolicies returns the rows (names from device notes) and whether the
+// draft can take them.
+func ReadPolicies(settings *Node, p *Profile) (PolicyView, error) {
+	names, err := StoredNames(p)
 	if err != nil {
-		raise(pyErr("TypeError", err.Error()))
+		return PolicyView{}, err
 	}
-	if strings.Contains(string(text), PolicyTag) || strings.Contains(string(text), DirectTag) {
-		fail("设备策略插件存在额外引用，请先在完整参数中处理。")
+	stored := get(settings, "device_policies")
+	if !has(settings, "device_policies") {
+		stored = L()
 	}
-	document.Set("plugins", remaining)
-	if added := policyPlugin(rows); added != nil {
-		setArgs(insertCopy(args, prefixEnd(args), policyHook()))
-		document.Set("plugins", append(remaining, added, directPlugin()))
+	rows, err := NormalizePolicies(stored)
+	if err != nil {
+		return PolicyView{}, err
 	}
-	return document, report
-}
-
-// PatchDocument is patch_document(document, previous, rows, config): own
-// exactly two plugins and one hook in sequence_main; refuse altered or
-// ambiguous chains. Side listeners with their own chain are never
-// modified. config nil is None.
-func PatchDocument(document *jsonx.Object, previous, rows []any, config any) (patched *jsonx.Object, err error) {
-	defer catch(&err)
-	return patchDocument(document, previous, rows, config), nil
-}
-
-func patchDocument(document *jsonx.Object, previous, rows []any, config any) *jsonx.Object {
-	patched, _ := patchPolicies(document, previous, rows, config)
-	return patched
-}
-
-// ReadPolicies is read_policies(settings, config): {policies, editable,
-// reason, side_entries}.
-func ReadPolicies(settings, config any) (result *jsonx.Object, err error) {
-	defer catch(&err)
-	return readPolicies(settings, config), nil
-}
-
-func readPolicies(settings, config any) *jsonx.Object {
-	names := storedNames(config)
-	rows := []any{}
-	for _, value := range normalizePolicies(get(settings, "device_policies", []any{})) {
-		row := value.(*jsonx.Object).Clone()
-		if name, ok := names.Get(row.GetString("ip")); ok {
-			row.Set("name", name)
+	for _, row := range rows.Content {
+		if name, ok := names[str(get(row, "ip"))]; ok {
+			set(row, "name", S(name))
 		}
-		rows = append(rows, row)
 	}
-	var report *jsonx.Object
-	caught := tryExcept(func() {
-		current := prepareEditor(settings, config, "")
-		_, report = patchPolicies(loadNativeYAML(item(current, "native_config"), DefaultNativeLabel), rows, rows, config)
-	}, ClassSettings)
-	if caught != nil {
-		return jsonx.Obj("policies", rows, "editable", false, "reason", caught.Error(), "side_entries", []any{})
+	view := PolicyView{Policies: rows, SideEntries: []SideEntry{}}
+	current, err := PrepareEditor(settings, p, "")
+	if err == nil {
+		var doc *Node
+		if doc, err = loadNative(get(current, "native_config"), NativeLabel); err == nil {
+			var report EntryReport
+			if _, report, err = patchPolicies(doc, rows, rows, p); err == nil {
+				view.Editable, view.SideEntries = true, report.Side
+				return view, nil
+			}
+		}
 	}
-	return jsonx.Obj("policies", rows, "editable", true, "reason", "", "side_entries", report.Value("side_entries"))
+	if message, ok := IsSettingsError(err); ok {
+		view.Reason = message
+		return view, nil
+	}
+	return PolicyView{}, err
 }
 
-// ApplyPolicies is apply_policies(settings, config, rows, base_url): the
-// prepared draft with the device policy patched in.
-func ApplyPolicies(settings, config, rows any, baseURL string) (result *jsonx.Object, err error) {
-	defer catch(&err)
-	return applyPolicies(settings, config, rows, baseURL), nil
-}
-
-func applyPolicies(settings, config, value any, baseURL string) *jsonx.Object {
-	rows := normalizePolicies(value)
-	current := prepareEditor(settings, config, baseURL)
-	previous := normalizePolicies(current.GetOr("device_policies", []any{}))
-	document := patchDocument(loadNativeYAML(item(current, "native_config"), DefaultNativeLabel), previous, rows, config)
-	current.Set("native_config", dump(document))
-	current.Set("device_policies", rows)
-	if template, ok := current.Value("template_settings").(*jsonx.Object); ok && template != nil {
-		template.Set("device_policies", copyValue(rows))
+// ApplyPolicies stores new rows and patches the native draft.
+func ApplyPolicies(settings *Node, p *Profile, rows *Node, baseURL string) (*Node, error) {
+	rows, err := NormalizePolicies(rows)
+	if err != nil {
+		return nil, err
 	}
-	return current
+	current, err := PrepareEditor(settings, p, baseURL)
+	if err != nil {
+		return nil, err
+	}
+	stored := get(current, "device_policies")
+	if !has(current, "device_policies") {
+		stored = L()
+	}
+	previous, err := NormalizePolicies(stored)
+	if err != nil {
+		return nil, err
+	}
+	document, err := loadNative(get(current, "native_config"), NativeLabel)
+	if err != nil {
+		return nil, err
+	}
+	if document, err = PatchDocument(document, previous, rows, p); err != nil {
+		return nil, err
+	}
+	set(current, "native_config", S(dump(document)))
+	set(current, "device_policies", rows)
+	if template := get(current, "template_settings"); isMap(template) {
+		set(template, "device_policies", clone(rows))
+	}
+	return current, nil
 }

@@ -1,667 +1,796 @@
 package oxidns
 
 import (
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"io"
 	"math"
+	"math/big"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
-	"configflow/internal/jsonx"
-	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
-// Port of backend/common/oxidns_native.py (module C22): bounded native
-// OxiDNS documents and explicitly managed deployment assets.
-
+// Limits of native documents and attachments.
 const (
-	// MaxNativeBytes is MAX_NATIVE_BYTES.
-	MaxNativeBytes = 2 * 1024 * 1024
-	// MaxAdditionalFiles is MAX_ADDITIONAL_FILES.
-	MaxAdditionalFiles = 256
-	// MaxAdditionalFileBytes is MAX_ADDITIONAL_FILE_BYTES.
-	MaxAdditionalFileBytes = 16 * 1024 * 1024
-	// MaxAdditionalTotalBytes is MAX_ADDITIONAL_TOTAL_BYTES.
-	MaxAdditionalTotalBytes = 64 * 1024 * 1024
+	MaxNativeBytes          = 2 << 20
+	MaxAdditionalFiles      = 256
+	MaxAdditionalFileBytes  = 16 << 20
+	MaxAdditionalTotalBytes = 64 << 20
 )
 
-// Tag is TAG: a plugin tag (dot-separated ASCII labels). Callers also check
-// the length (1–64) and the reserved qs.exec./qs.match./qs.cron. prefixes.
-var Tag = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?)*$`)
+// TagPattern is a valid plugin tag (1–64 characters is checked separately).
+var TagPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?)*$`)
 
-// nativeKey is NativeLoader.construct_mapping's key check.
-func nativeKey(key any, duplicate bool) error {
-	text, ok := key.(string)
-	if !ok || text == "__proto__" || text == "prototype" || text == "constructor" {
-		return settingsError("OxiDNS YAML 字段名必须为安全文本")
+// validTag: a plugin tag the core accepts.
+func validTag(tag string) bool {
+	return len(tag) > 0 && len(tag) <= 64 && TagPattern.MatchString(tag) &&
+		!strings.HasPrefix(tag, "qs.exec.") && !strings.HasPrefix(tag, "qs.match.") && !strings.HasPrefix(tag, "qs.cron.")
+}
+
+var (
+	nativeInt   = regexp.MustCompile(`^[-+]?(?:[0-9][0-9_]*|0o[0-7_]+|0x[0-9a-fA-F_]+|0b[01_]+)$`)
+	nativeFloat = regexp.MustCompile(`^[-+]?(?:(?:[0-9][0-9_]*\.[0-9_]*|\.[0-9_]+)(?:[eE][-+]?[0-9]+)?|[0-9][0-9_]*[eE][-+]?[0-9]+|\.(?:inf|Inf|INF|nan|NaN|NAN))$`)
+)
+
+const tagUnsupported = "!unsupported"
+
+// LoadNativeYAML parses native OxiDNS YAML: YAML 1.2 scalars (no yes/no,
+// no timestamps, 0x/0o/0b ints), safe string keys, no duplicates, plain
+// objects/arrays/finite scalars only, depth ≤ 32, ≤ 50000 nodes, mapping at
+// the top. label defaults to "完整配置".
+func LoadNativeYAML(text string, label string) (*Node, error) { return loadNative(S(text), label) }
+
+func loadNative(text *Node, label string) (*Node, error) {
+	if !isStr(text) || len(text.Value) > MaxNativeBytes {
+		return nil, fail(fmt.Sprintf("OxiDNS %s必须为不超过 2 MiB 的 YAML 文本", label))
 	}
-	if duplicate {
-		return settingsError("OxiDNS YAML 包含重复字段")
+	syntax := fail("OxiDNS " + label + " YAML 语法无效")
+	value, err := parseYAML(text.Value, syntax)
+	if err != nil {
+		return nil, err
+	}
+	count := 0
+	active := map[*Node]bool{}
+	var visit func(n *Node, depth int) error
+	visit = func(n *Node, depth int) error {
+		count++
+		if count > 50000 || depth > 32 {
+			return fail("OxiDNS YAML 超出结构大小限制")
+		}
+		switch {
+		case n.Kind == yaml.MappingNode || n.Kind == yaml.SequenceNode:
+			if active[n] {
+				return fail("OxiDNS YAML 不支持循环别名")
+			}
+			active[n] = true
+			for i, child := range n.Content {
+				if n.Kind == yaml.MappingNode && i%2 == 0 {
+					continue
+				}
+				if err := visit(child, depth+1); err != nil {
+					return err
+				}
+			}
+			delete(active, n)
+		case n.Tag == tagUnsupported:
+			return fail("OxiDNS YAML 只支持普通对象、数组和标量")
+		case n.Tag == tagFloat:
+			if f, _ := strconv.ParseFloat(n.Value, 64); math.IsInf(f, 0) || math.IsNaN(f) {
+				return fail("OxiDNS YAML 数字必须为有限值")
+			}
+		}
+		return nil
+	}
+	if err := visit(value, 0); err != nil {
+		return nil, err
+	}
+	if !isMap(value) {
+		return nil, fail("OxiDNS " + label + "顶层必须为对象")
+	}
+	return value, nil
+}
+
+// parseYAML builds the node tree of one YAML document with NativeLoader's
+// rules, mappings in PyYAML's breadth-first construction order (so the first
+// reported key error is the same). syntax is returned for parse errors.
+func parseYAML(text string, syntax error) (*Node, error) {
+	dec := yaml.NewDecoder(strings.NewReader(text))
+	var doc yaml.Node
+	if err := dec.Decode(&doc); err == io.EOF {
+		return Null(), nil
+	} else if err != nil {
+		return nil, syntax
+	}
+	var extra yaml.Node
+	if err := dec.Decode(&extra); err != io.EOF {
+		return nil, syntax
+	}
+	if duplicateAnchor(&doc, map[string]bool{}) {
+		return nil, syntax
+	}
+	root := &doc
+	if doc.Kind == yaml.DocumentNode {
+		if len(doc.Content) == 0 {
+			return Null(), nil
+		}
+		root = doc.Content[0]
+	}
+	b := &builder{memo: map[*Node]*Node{}, syntax: syntax}
+	out, err := b.node(root)
+	for len(b.queue) > 0 && err == nil {
+		src, dst := b.queue[0][0], b.queue[0][1]
+		b.queue = b.queue[1:]
+		err = b.fill(src, dst)
+	}
+	return out, err
+}
+
+type builder struct {
+	memo   map[*Node]*Node
+	queue  [][2]*Node
+	syntax error
+}
+
+func (b *builder) node(src *Node) (*Node, error) {
+	for src.Kind == yaml.AliasNode {
+		src = src.Alias
+	}
+	if out, ok := b.memo[src]; ok {
+		return out, nil
+	}
+	explicit := src.Style&yaml.TaggedStyle != 0
+	var out *Node
+	switch src.Kind {
+	case yaml.ScalarNode:
+		tag, value, err := resolveScalar(src, explicit)
+		if err != nil {
+			return nil, b.syntax
+		}
+		out = &Node{Kind: yaml.ScalarNode, Tag: tag, Value: value}
+	case yaml.MappingNode, yaml.SequenceNode:
+		tag := src.Tag
+		switch {
+		case !explicit || tag == "!!map" && src.Kind == yaml.MappingNode || tag == "!!seq" && src.Kind == yaml.SequenceNode:
+			out = &Node{Kind: src.Kind, Tag: map[yaml.Kind]string{yaml.MappingNode: "!!map", yaml.SequenceNode: "!!seq"}[src.Kind]}
+			b.queue = append(b.queue, [2]*Node{src, out})
+		case tag == "!!set" && src.Kind == yaml.MappingNode, (tag == "!!omap" || tag == "!!pairs") && src.Kind == yaml.SequenceNode:
+			out = &Node{Kind: yaml.ScalarNode, Tag: tagUnsupported}
+		default:
+			return nil, b.syntax
+		}
+	default:
+		return nil, b.syntax
+	}
+	b.memo[src] = out
+	return out, nil
+}
+
+func (b *builder) fill(src, dst *Node) error {
+	if src.Kind == yaml.SequenceNode {
+		dst.Content = make([]*Node, 0, len(src.Content))
+		for _, child := range src.Content {
+			n, err := b.node(child)
+			if err != nil {
+				return err
+			}
+			dst.Content = append(dst.Content, n)
+		}
+		return nil
+	}
+	seen := map[string]bool{}
+	for i := 0; i+1 < len(src.Content); i += 2 {
+		key, err := b.node(src.Content[i])
+		if err != nil {
+			return err
+		}
+		if !isStr(key) || key.Value == "__proto__" || key.Value == "prototype" || key.Value == "constructor" {
+			return fail("OxiDNS YAML 字段名必须为安全文本")
+		}
+		if seen[key.Value] {
+			return fail("OxiDNS YAML 包含重复字段")
+		}
+		seen[key.Value] = true
+		value, err := b.node(src.Content[i+1])
+		if err != nil {
+			return err
+		}
+		dst.Content = append(dst.Content, S(key.Value), value)
 	}
 	return nil
 }
 
-// LoadNativeYAML is load_native_yaml(text, label): a native OxiDNS YAML
-// document (NativeLoader: YAML 1.2 style booleans and numbers, safe string
-// keys without duplicates), bounded in size (2 MiB, 50000 nodes, depth 32),
-// plain values only, with a mapping at the top. Python's default label is
-// DefaultNativeLabel.
-//
-// The document is loaded with yamlx.SchemaNative. Errors: *Error
-// (OxidnsSettingsError) as in Python; Python's own non-YAML exceptions of
-// PyYAML constructors (KeyError, TypeError ...) as *convert.PyError.
-//
-// Difference: PyYAML builds sets (!!set) and tuples (!!omap, !!pairs), and
-// collections that contain themselves through an alias, that jsonx cannot
-// hold; they are reported with the message Python gives when it reaches them
-// ("只支持普通对象、数组和标量" / "不支持循环别名"), even where Python's
-// traversal would first stop at another limit of the same document.
-func LoadNativeYAML(text any, label string) (document *jsonx.Object, err error) {
-	defer catch(&err)
-	return loadNativeYAML(text, label), nil
-}
-
-// DefaultNativeLabel is load_native_yaml's default label.
-const DefaultNativeLabel = "完整配置"
-
-func loadNativeYAML(text any, label string) *jsonx.Object {
-	source, ok := text.(string)
-	if !ok || len(source) > MaxNativeBytes {
-		fail("OxiDNS " + label + "必须为不超过 2 MiB 的 YAML 文本")
-	}
-	value, err := yamlx.LoadWith(source, yamlx.LoadOptions{Schema: yamlx.SchemaNative, Key: nativeKey})
-	if err != nil {
-		switch e := err.(type) {
-		case *Error:
-			raise(e)
-		case *yamlx.Error:
-			if e.IsYAMLError() || e.Class == "RecursionError" || e.Class == "ValueError" {
-				fail("OxiDNS " + label + " YAML 语法无效")
+func resolveScalar(src *Node, explicit bool) (string, string, error) {
+	value := src.Value
+	plain := src.Style&(yaml.DoubleQuotedStyle|yaml.SingleQuotedStyle|yaml.LiteralStyle|yaml.FoldedStyle) == 0
+	tag := src.Tag
+	if !explicit {
+		tag = tagStr
+		if plain {
+			switch {
+			case value == "" || value == "~" || value == "null" || value == "Null" || value == "NULL":
+				tag = tagNull
+			case value == "true" || value == "True" || value == "TRUE" || value == "false" || value == "False" || value == "FALSE":
+				tag = tagBool
+			case nativeInt.MatchString(value):
+				tag = tagInt
+			case nativeFloat.MatchString(value):
+				tag = tagFloat
+			case value == "<<" || value == "=":
+				return "", "", errMalformed
 			}
-			raise(pyErr(e.Class, e.Msg))
-		case *yamlx.UnrepresentableError:
-			if e.Kind == "recursive" {
-				fail("OxiDNS YAML 不支持循环别名")
-			}
-			fail("OxiDNS YAML 只支持普通对象、数组和标量")
-		}
-		raise(err)
-	}
-	count := 0
-	var visit func(item any, depth int)
-	visit = func(item any, depth int) {
-		count++
-		if count > 50000 || depth > 32 {
-			fail("OxiDNS YAML 超出结构大小限制")
-		}
-		switch x := item.(type) {
-		case *jsonx.Object:
-			for _, child := range x.Values() {
-				visit(child, depth+1)
-			}
-		case []any:
-			for _, child := range x {
-				visit(child, depth+1)
-			}
-		case nil, string, bool:
-		case jsonx.Number:
-			if x.IsFloat() {
-				f := x.Float64()
-				if math.IsInf(f, 0) || math.IsNaN(f) || x == "NaN" || x == "Infinity" || x == "-Infinity" {
-					fail("OxiDNS YAML 数字必须为有限值")
-				}
-			}
-		default:
-			fail("OxiDNS YAML 只支持普通对象、数组和标量")
 		}
 	}
-	visit(value, 0)
-	document, ok := value.(*jsonx.Object)
-	if !ok || document == nil {
-		fail("OxiDNS " + label + "顶层必须为对象")
+	switch tag {
+	case tagStr, "!":
+		return tagStr, value, nil
+	case tagNull:
+		return tagNull, "null", nil
+	case tagBool:
+		switch strings.ToLower(value) {
+		case "true", "yes", "on":
+			return tagBool, "true", nil
+		case "false", "no", "off":
+			return tagBool, "false", nil
+		}
+		return "", "", errMalformed
+	case tagInt:
+		text := strings.TrimSpace(strings.ReplaceAll(value, "_", ""))
+		base := 10
+		unsigned := strings.TrimLeft(text, "-+")
+		if strings.HasPrefix(unsigned, "0x") || strings.HasPrefix(unsigned, "0o") || strings.HasPrefix(unsigned, "0b") {
+			base = 0
+		}
+		n, ok := new(big.Int).SetString(text, base)
+		if !ok {
+			return "", "", errMalformed
+		}
+		return tagInt, n.String(), nil
+	case tagFloat:
+		f, err := yamlFloat(value)
+		if err != nil {
+			return "", "", err
+		}
+		if math.IsInf(f, 0) || math.IsNaN(f) {
+			return tagFloat, strconv.FormatFloat(f, 'g', -1, 64), nil
+		}
+		return tagFloat, Float(f).Value, nil
+	case "!!binary", "!!timestamp":
+		return tagUnsupported, value, nil
 	}
-	return document
+	return "", "", errMalformed
 }
 
-// ManagedFile is one entry of managed_files: the normalized path and the
-// exact bytes to write (Python's {'path', 'content': bytes, 'native': True}).
-type ManagedFile struct {
-	Path    string
-	Content []byte
-}
-
-// Object is the Python dict of the entry ({path, content, native: true});
-// content is []byte.
-func (f ManagedFile) Object() *jsonx.Object {
-	return jsonx.Obj("path", f.Path, "content", f.Content, "native", true)
-}
-
-// ManagedFiles is managed_files(value): validates the additional_files
-// settings metadata and returns byte-exact materializer inputs.
-func ManagedFiles(value any) (files []ManagedFile, err error) {
-	defer catch(&err)
-	return managedFiles(value), nil
-}
-
-func managedFiles(value any) []ManagedFile {
-	list, ok := value.([]any)
-	if !ok || len(list) > MaxAdditionalFiles {
-		fail("附加文件必须为数组，最多 256 个文件")
+// yamlFloat is SafeConstructor.construct_yaml_float.
+func yamlFloat(text string) (float64, error) {
+	value := strings.ToLower(strings.ReplaceAll(text, "_", ""))
+	sign := 1.0
+	if strings.HasPrefix(value, "-") {
+		sign = -1
 	}
-	result := []ManagedFile{}
-	var seen []string
-	seenSet := map[string]bool{}
+	if value != "" && (value[0] == '-' || value[0] == '+') {
+		value = value[1:]
+	}
+	switch {
+	case value == ".inf":
+		return sign * math.Inf(1), nil
+	case value == ".nan":
+		return math.NaN(), nil
+	case strings.Contains(value, ":"):
+		digits := strings.Split(value, ":")
+		total, base := 0.0, 1.0
+		for i := len(digits) - 1; i >= 0; i-- {
+			d, err := strconv.ParseFloat(digits[i], 64)
+			if err != nil {
+				return 0, errMalformed
+			}
+			total += d * base
+			base *= 60
+		}
+		return sign * total, nil
+	}
+	if strings.HasPrefix(value, "0x") || value == "" {
+		return 0, errMalformed
+	}
+	f, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0, errMalformed
+	}
+	return sign * f, nil
+}
+
+// File is a deployment file: managed attachments are Native.
+type File struct {
+	Path    string `json:"path"`
+	Content []byte `json:"content"`
+	Native  bool   `json:"native,omitempty"`
+}
+
+// ManagedFiles is managed_files: validated attachment metadata and bytes.
+func ManagedFiles(value *Node) ([]File, error) {
+	if !isSeq(value) || len(value.Content) > MaxAdditionalFiles {
+		return nil, fail("附加文件必须为数组，最多 256 个文件")
+	}
+	result := []File{}
+	seen := map[string]bool{}
 	total := 0
-	for _, raw := range list {
-		if !isDict(raw) {
-			fail("附加文件条目必须为对象")
+	for _, item := range value.Content {
+		if !isMap(item) {
+			return nil, fail("附加文件条目必须为对象")
 		}
-		entry := raw
-		p := safeRelativePath(get(entry, "path", nil), "附加文件路径")
-		if p == "config.yaml" || p == "manifest.json" || p == "state" ||
-			strings.HasPrefix(p, "state/") || strings.HasPrefix(p, ".configflow") {
-			fail("附加文件不能覆盖主配置、部署元数据或 state/ 运行数据")
+		p, err := SafeRelativePath(get(item, "path"), "附加文件路径")
+		if err != nil {
+			return nil, err
 		}
-		if seenSet[p] {
-			fail("附加文件路径重复")
+		if p == "config.yaml" || p == "manifest.json" || p == "state" || strings.HasPrefix(p, "state/") || strings.HasPrefix(p, ".configflow") {
+			return nil, fail("附加文件不能覆盖主配置、部署元数据或 state/ 运行数据")
 		}
-		for _, previous := range seen {
+		if seen[p] {
+			return nil, fail("附加文件路径重复")
+		}
+		for previous := range seen {
 			if strings.HasPrefix(p, previous+"/") || strings.HasPrefix(previous, p+"/") {
-				fail("附加文件路径存在文件与目录冲突")
+				return nil, fail("附加文件路径存在文件与目录冲突")
 			}
 		}
-		seen = append(seen, p)
-		seenSet[p] = true
-		content, isText := get(entry, "content", nil).(string)
-		encoding := get(entry, "encoding", "text")
-		if !isText || !strIn(encoding, "text", "base64") {
-			fail("附加文件内容必须为文本，编码为 text 或 base64")
-		}
-		if utf8.RuneCountInString(content) > MaxAdditionalFileBytes*2 {
-			fail("单个附加文件不能超过 16 MiB")
-		}
-		var data []byte
-		if encoding == "text" {
-			data = []byte(content)
-		} else {
-			decoded, ok := b64decodeValidate(content)
-			if !ok {
-				fail("附加文件 Base64 内容无效")
+		seen[p] = true
+		content, encoding := get(item, "content"), "text"
+		if has(item, "encoding") {
+			encoding = "\x00"
+			if e := get(item, "encoding"); isStr(e) {
+				encoding = e.Value
 			}
-			data = decoded
+		}
+		if !isStr(content) || (encoding != "text" && encoding != "base64") {
+			return nil, fail("附加文件内容必须为文本，编码为 text 或 base64")
+		}
+		if utf8.RuneCountInString(content.Value) > MaxAdditionalFileBytes*2 {
+			return nil, fail("单个附加文件不能超过 16 MiB")
+		}
+		data := []byte(content.Value)
+		if encoding == "base64" {
+			if data, err = decodeBase64(content.Value); err != nil {
+				return nil, fail("附加文件 Base64 内容无效")
+			}
 		}
 		if len(data) > MaxAdditionalFileBytes {
-			fail("单个附加文件不能超过 16 MiB")
+			return nil, fail("单个附加文件不能超过 16 MiB")
 		}
-		total += len(data)
-		if total > MaxAdditionalTotalBytes {
-			fail("附加文件总大小不能超过 64 MiB")
+		if total += len(data); total > MaxAdditionalTotalBytes {
+			return nil, fail("附加文件总大小不能超过 64 MiB")
 		}
-		result = append(result, ManagedFile{Path: p, Content: data})
+		result = append(result, File{Path: p, Content: data, Native: true})
 	}
-	return result
+	return result, nil
 }
 
-// b64decodeValidate is base64.b64decode(text, validate=True) of CPython
-// 3.11: binascii.a2b_base64(text, strict_mode=True) on the ASCII text. No
-// leading "=", only alphabet characters, no data after padding started; a
-// "=" right after a complete group is skipped, a complete pad sequence ends
-// the input (anything after it is an error), trailing bits are ignored, and
-// an unfinished group at the end is an error.
-func b64decodeValidate(text string) ([]byte, bool) {
-	if len(text) > 0 && text[0] == '=' {
-		return nil, false
-	}
-	var out []byte
-	quad, pads, left := 0, 0, byte(0)
-	paddingStarted := false
-	for i := 0; i < len(text); i++ {
-		c := text[i]
-		if c == '=' {
-			paddingStarted = true
-			if quad >= 2 {
-				pads++
-				if quad+pads >= 4 {
-					if i+1 < len(text) {
-						return nil, false
-					}
-					return out, true
-				}
-			}
-			continue
-		}
-		v := base64Value(c)
-		if v < 0 || paddingStarted {
-			return nil, false
-		}
-		pads = 0
-		value := byte(v)
-		switch quad {
-		case 0:
-			left = value
-		case 1:
-			out = append(out, left<<2|value>>4)
-			left = value & 0x0f
-		case 2:
-			out = append(out, left<<4|value>>2)
-			left = value & 0x03
-		case 3:
-			out = append(out, left<<6|value)
-		}
-		quad = (quad + 1) % 4
-	}
-	if quad != 0 {
-		return nil, false
-	}
-	if out == nil {
-		out = []byte{}
-	}
-	return out, true
+// Origin is where a plugin of an expanded document was declared.
+type Origin struct {
+	Source string `json:"source"`
+	Index  int    `json:"index"`
 }
 
-func base64Value(c byte) int {
-	switch {
-	case c >= 'A' && c <= 'Z':
-		return int(c - 'A')
-	case c >= 'a' && c <= 'z':
-		return int(c-'a') + 26
-	case c >= '0' && c <= '9':
-		return int(c-'0') + 52
-	case c == '+':
-		return 62
-	case c == '/':
-		return 63
-	}
-	return -1
-}
-
-// NativeSources is the include metadata native_document reports through its
-// sources argument: the origin of every expanded plugin ({source, index})
-// and the globals of each included file (name, mapping without plugins).
-type NativeSources struct {
-	Plugins  []any
-	Includes []NativeInclude
-}
-
-// NativeInclude is one (name, globals) pair of NativeSources.Includes.
-type NativeInclude struct {
+// Included are the globals of one include file (ignored by the core, but
+// type-checked).
+type Included struct {
 	Name    string
-	Globals *jsonx.Object
+	Globals *Node
 }
 
-// Object is the Python sources dict ({'plugins': [...], 'includes':
-// [[name, globals], ...]}).
-func (s *NativeSources) Object() *jsonx.Object {
-	includes := []any{}
-	for _, include := range s.Includes {
-		includes = append(includes, []any{include.Name, include.Globals})
+// Sources describes an expanded document: origin per plugin, include globals.
+type Sources struct {
+	Plugins  []Origin
+	Includes []Included
+}
+
+func structureError(message, source string, at Path) error {
+	return &SettingsError{Msg: message, Issues: []Issue{{Path: at, Source: source, Message: message, Severity: "error", Code: "structure"}}}
+}
+
+// NativeDocument is native_document: the native YAML of settings with its
+// includes expanded like the core (included plugins first, their globals
+// ignored). validate runs the full validation. sources, when not nil,
+// receives the origins.
+func NativeDocument(settings *Node, validate bool, sources *Sources) (*Node, error) {
+	files := get(settings, "additional_files")
+	if !has(settings, "additional_files") {
+		files = L()
 	}
-	return jsonx.Obj("plugins", s.Plugins, "includes", includes)
-}
-
-// NativeDocument is native_document(settings, validate_arguments=validate,
-// sources=sources): the native YAML with its includes expanded the way the
-// OxiDNS core does (included plugins first, included globals ignored). When
-// sources is not nil it receives the include metadata. With validate the
-// expanded document is checked by validate_expanded_document (module C23)
-// and an OxidnsValidationError is returned for errors.
-//
-// Structure errors are *Error with Issues ({path, source, message,
-// severity, code}).
-func NativeDocument(settings *jsonx.Object, validate bool, sources *NativeSources) (document *jsonx.Object, err error) {
-	defer catch(&err)
-	return nativeDocument(settings, validate, sources), nil
-}
-
-func structureError(message, source string, at []any) *Error {
-	if at == nil {
-		at = []any{}
+	managed, err := ManagedFiles(files)
+	if err != nil {
+		return nil, err
 	}
-	issue := jsonx.Obj("path", at, "source", source, "message", message, "severity", "error", "code", "structure")
-	return &Error{Class: ClassSettings, Message: message, Issues: []any{issue}, HasIssues: true}
-}
-
-func nativeDocument(settings any, validate bool, sources *NativeSources) *jsonx.Object {
 	assets := map[string][]byte{}
-	for _, file := range managedFiles(get(settings, "additional_files", []any{})) {
-		assets[file.Path] = file.Content
+	for _, f := range managed {
+		assets[f.Path] = f.Content
 	}
+	meta := &Sources{Plugins: []Origin{}, Includes: []Included{}}
 	count := 0
-	origins := []any{}
-	includedGlobals := []NativeInclude{}
-
-	var expand func(document *jsonx.Object, name string, parents []string) *jsonx.Object
-	expand = func(document *jsonx.Object, name string, parents []string) *jsonx.Object {
+	var expand func(document *Node, name string, parents []string) error
+	expand = func(document *Node, name string, parents []string) error {
 		count++
 		if len(parents) > 8 || count > 512 {
-			raise(structureError("OxiDNS include 超过 8 层或文件数量限制", name, []any{"include"}))
+			return structureError("OxiDNS include 超过 8 层或文件数量限制", name, P("include"))
 		}
-		var includesValue any = []any{}
-		if value, present := document.Pop("include"); present {
-			includesValue = value
+		includes := del(document, "include")
+		if includes == nil {
+			includes = L()
 		}
-		references, ok := stringList(includesValue)
-		if !ok {
-			raise(structureError("OxiDNS include 必须为文件路径数组", name, []any{"include"}))
+		if !allStrings(includes) {
+			return structureError("OxiDNS include 必须为文件路径数组", name, P("include"))
 		}
-		plugins, ok := document.GetOr("plugins", []any{}).([]any)
-		if !ok {
-			raise(structureError("OxiDNS plugins 必须为数组", name, []any{"plugins"}))
+		plugins := get(document, "plugins")
+		if !has(document, "plugins") {
+			plugins = L()
 		}
-		result := []any{}
-		for index, reference := range references {
+		if !isSeq(plugins) {
+			return structureError("OxiDNS plugins 必须为数组", name, P("plugins"))
+		}
+		var result []*Node
+		for index, ref := range includes.Content {
+			reference := ref.Value
 			if reference == "" || strings.HasPrefix(reference, "/") || strings.Contains(reference, "${") ||
-				strings.Contains(reference, `\`) || hasControl(reference) {
-				raise(structureError("include 必须引用附加文件中的相对路径，不能使用绝对路径或环境变量", name,
-					[]any{"include", jsonx.Int(index)}))
+				strings.ContainsRune(reference, '\\') || hasControl(reference) {
+				return structureError("include 必须引用附加文件中的相对路径，不能使用绝对路径或环境变量", name, P("include", index))
 			}
-			// OxiDNS resolves each include relative to its declaring document.
-			// Parent segments inside the managed root are legitimate.
-			p := safeRelativePath(path.Clean(path.Join(path.Dir(name), reference)), "include 路径")
-			cycle := p == name
-			for _, parent := range parents {
-				if parent == p {
-					cycle = true
-				}
+			p, err := safePath(path.Clean(path.Join(path.Dir(name), reference)), "include 路径")
+			if err != nil {
+				return err
 			}
-			if cycle {
-				raise(structureError("OxiDNS include 存在循环引用", name, []any{"include", jsonx.Int(index)}))
+			if p == name || containsString(parents, p) {
+				return structureError("OxiDNS include 存在循环引用", name, P("include", index))
 			}
-			content, ok := assets[p]
+			data, ok := assets[p]
 			if !ok {
-				raise(structureError("OxiDNS include 文件未在附加文件中提供", name, []any{"include", jsonx.Int(index)}))
+				return structureError("OxiDNS include 文件未在附加文件中提供", name, P("include", index))
 			}
-			if !utf8.Valid(content) {
-				raise(structureError("OxiDNS include 文件必须为 UTF-8 YAML", p, nil))
+			if !utf8.Valid(data) {
+				return structureError("OxiDNS include 文件必须为 UTF-8 YAML", p, nil)
 			}
-			var included *jsonx.Object
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						if x, ok := r.(raised); ok {
-							if e, ok := x.err.(*Error); ok {
-								raise(structureError(e.Message, p, nil))
-							}
-						}
-						panic(r)
-					}
-				}()
-				included = loadNativeYAML(string(content), "include 文件")
-			}()
-			nested := append(append([]string{}, parents...), name)
-			result = append(result, expand(included, p, nested).GetList("plugins")...)
+			included, err := LoadNativeYAML(string(data), "include 文件")
+			if err != nil {
+				return structureError(err.Error(), p, nil)
+			}
+			if err := expand(included, p, append(append([]string{}, parents...), name)); err != nil {
+				return err
+			}
+			result = append(result, get(included, "plugins").Content...)
 		}
 		if name != "config.yaml" {
-			globals := jsonx.NewObject()
-			for key, value := range document.All() {
+			globals := M()
+			pairs(document, func(key string, value *Node) bool {
 				if key != "plugins" {
-					globals.Set(key, value)
+					set(globals, key, value)
 				}
-			}
-			includedGlobals = append(includedGlobals, NativeInclude{Name: name, Globals: globals})
+				return true
+			})
+			meta.Includes = append(meta.Includes, Included{name, globals})
 		}
-		for index := range plugins {
-			origins = append(origins, jsonx.Obj("source", name, "index", jsonx.Int(index)))
+		for i := range plugins.Content {
+			meta.Plugins = append(meta.Plugins, Origin{name, i})
 		}
-		combined := make([]any, 0, len(result)+len(plugins))
-		combined = append(combined, result...)
-		combined = append(combined, plugins...)
-		document.Set("plugins", combined)
-		return document
+		set(document, "plugins", seqOf(append(result, plugins.Content...)))
+		return nil
 	}
-
-	document := expand(loadNativeYAML(get(settings, "native_config", ""), DefaultNativeLabel), "config.yaml", nil)
-	metadata := &NativeSources{Plugins: origins, Includes: includedGlobals}
+	text := get(settings, "native_config")
+	if !has(settings, "native_config") {
+		text = S("")
+	}
+	document, err := loadNative(text, NativeLabel)
+	if err != nil {
+		return nil, err
+	}
+	if err := expand(document, "config.yaml", nil); err != nil {
+		return nil, err
+	}
 	if sources != nil {
-		*sources = *metadata
+		*sources = *meta
 	}
 	if validate {
-		issues := validateExpandedDocument(document, metadata)
-		for _, issue := range issues {
-			if get(issue, "severity", nil) == "error" {
-				raise(validationError(issues))
-			}
+		if issues := ValidateExpandedDocument(document, meta); hasError(issues) {
+			return nil, &ValidationError{issues}
 		}
 	}
-	return document
+	return document, nil
 }
 
-// ResourceReferences is resource_references(document): the read-only local
-// resources the document references (plugin files/file/cert/key, nested
-// persistent/tls files and ca, API TLS files and the WebUI index), never
-// mutable cache/log/database paths.
-func ResourceReferences(document *jsonx.Object) (references []string, err error) {
-	defer catch(&err)
-	return resourceReferences(document), nil
+func containsString(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
-func resourceReferences(document any) []string {
+// pluginList iterates document.get('plugins', []) like Python: a missing key
+// is empty, a non-list that Python cannot iterate as plugins is malformed.
+func pluginList(document *Node) ([]*Node, error) {
+	plugins := get(document, "plugins")
+	switch {
+	case !has(document, "plugins"):
+		return nil, nil
+	case isSeq(plugins):
+		for _, p := range plugins.Content {
+			if !isMap(p) {
+				return nil, errMalformed
+			}
+		}
+		return plugins.Content, nil
+	case (isMap(plugins) || isStr(plugins)) && (len(plugins.Content) == 0 && plugins.Value == ""):
+		return nil, nil
+	}
+	return nil, errMalformed
+}
+
+// ResourceReferences lists read-only local resources the document reads.
+func ResourceReferences(document *Node) ([]string, error) {
 	references := []string{}
-	add := func(value any) {
-		text, ok := value.(string)
-		if !ok || text == "" {
-			fail("OxiDNS 文件引用必须为非空文本")
+	add := func(value *Node) error {
+		if !isStr(value) || value.Value == "" {
+			return fail("OxiDNS 文件引用必须为非空文本")
 		}
-		references = append(references, text)
+		references = append(references, value.Value)
+		return nil
 	}
-	files := func(args any) {
-		if has(args, "files") {
-			list, ok := item(args, "files").([]any)
-			if !ok {
-				fail("OxiDNS 文件引用必须为列表")
-			}
-			for _, p := range list {
-				add(p)
+	files := func(args *Node) error {
+		if !has(args, "files") {
+			return nil
+		}
+		list := get(args, "files")
+		if !isSeq(list) {
+			return fail("OxiDNS 文件引用必须为列表")
+		}
+		for _, p := range list.Content {
+			if err := add(p); err != nil {
+				return err
 			}
 		}
+		return nil
 	}
-	for _, plugin := range iterate(get(document, "plugins", []any{})) {
-		args := orEmpty(get(plugin, "args", nil))
-		if !isDict(args) {
+	plugins, err := pluginList(document)
+	if err != nil {
+		return nil, err
+	}
+	for _, plugin := range plugins {
+		args := get(plugin, "args")
+		if !truthy(args) {
+			args = M()
+		}
+		if !isMap(args) {
 			continue
 		}
-		files(args)
+		if err := files(args); err != nil {
+			return nil, err
+		}
 		for _, key := range []string{"file", "cert", "key"} {
-			if truthy(get(args, key, nil)) {
-				add(item(args, key))
+			if truthy(get(args, key)) {
+				if err := add(get(args, key)); err != nil {
+					return nil, err
+				}
 			}
 		}
 		for _, key := range []string{"persistent", "tls"} {
-			nested := orEmpty(get(args, key, nil))
-			if isDict(nested) {
-				files(nested)
-				if truthy(get(nested, "ca", nil)) {
-					add(item(nested, "ca"))
+			nested := get(args, key)
+			if !isMap(nested) {
+				continue
+			}
+			if err := files(nested); err != nil {
+				return nil, err
+			}
+			if truthy(get(nested, "ca")) {
+				if err := add(get(nested, "ca")); err != nil {
+					return nil, err
 				}
 			}
 		}
 	}
-	api := orEmpty(get(document, "api", nil))
-	var http any = jsonx.NewObject()
-	if isDict(api) {
-		http = orEmpty(get(api, "http", nil))
+	api := get(document, "api")
+	if !truthy(api) {
+		api = M()
 	}
-	if isDict(http) {
-		ssl := orEmpty(get(http, "ssl", nil))
-		if isDict(ssl) {
-			for _, key := range []string{"cert", "key", "client_ca"} {
-				if truthy(get(ssl, key, nil)) {
-					add(item(ssl, key))
+	var http *Node
+	if isMap(api) {
+		if http = get(api, "http"); !truthy(http) {
+			http = M()
+		}
+	} else if isStr(api) || isSeq(api) || isTag(api, tagInt) || isTag(api, tagFloat) || isBool(api) {
+		return references, nil
+	}
+	if !isMap(http) {
+		return references, nil
+	}
+	if ssl := get(http, "ssl"); isMap(ssl) {
+		for _, key := range []string{"cert", "key", "client_ca"} {
+			if truthy(get(ssl, key)) {
+				if err := add(get(ssl, key)); err != nil {
+					return nil, err
 				}
 			}
 		}
-		webui := orEmpty(get(http, "webui", nil))
-		if isDict(webui) && truthy(get(webui, "root", nil)) {
-			root, rootIsText := item(webui, "root").(string)
-			index, indexIsText := get(webui, "index", "index.html").(string)
-			if !rootIsText || !indexIsText {
-				fail("OxiDNS WebUI 路径必须为文本")
-			}
-			add(purePosixPath(root, index))
+	}
+	if webui := get(http, "webui"); isMap(webui) && truthy(get(webui, "root")) {
+		root, index := get(webui, "root"), get(webui, "index")
+		if !has(webui, "index") {
+			index = S("index.html")
+		}
+		if !isStr(root) || !isStr(index) {
+			return nil, fail("OxiDNS WebUI 路径必须为文本")
+		}
+		if err := add(S(purePosixJoin(root.Value, index.Value))); err != nil {
+			return nil, err
 		}
 	}
-	return references
+	return references, nil
 }
 
-// orEmpty is `value or {}`.
-func orEmpty(value any) any {
-	if truthy(value) {
-		return value
+// purePosixJoin is str(PurePosixPath(a) / b).
+func purePosixJoin(a, b string) string {
+	if strings.HasPrefix(b, "/") {
+		a = ""
 	}
-	return jsonx.NewObject()
-}
-
-// iterate is `for x in v`: list items, dict keys, string characters.
-func iterate(v any) []any {
-	switch x := v.(type) {
-	case []any:
-		return x
-	case *jsonx.Object:
-		if x != nil {
-			out := make([]any, 0, x.Len())
-			for _, k := range x.Keys() {
-				out = append(out, k)
-			}
-			return out
-		}
-	case *yamlx.Mapping:
-		out := make([]any, 0, x.Len())
-		for _, pair := range x.Pairs {
-			out = append(out, pair.Key)
-		}
-		return out
-	case string:
-		out := []any{}
-		for _, r := range x {
-			out = append(out, string(r))
-		}
-		return out
+	full := a + "/" + b
+	if a == "" {
+		full = b
 	}
-	raise(pyErr("TypeError", "'"+typeName(v)+"' object is not iterable"))
-	return nil
-}
-
-// purePosixPath is str(PurePosixPath(parts[0]) / parts[1] / ...): an
-// absolute part restarts the path, exactly two leading slashes are kept,
-// empty and "." segments and trailing slashes are dropped, "" is ".".
-func purePosixPath(parts ...string) string {
-	root := ""
-	var segments []string
-	for _, part := range parts {
-		if strings.HasPrefix(part, "/") {
-			stripped := strings.TrimLeft(part, "/")
-			if len(part)-len(stripped) == 2 {
-				root = "//"
-			} else {
-				root = "/"
-			}
-			segments = nil
-			part = stripped
-		}
-		for _, segment := range strings.Split(part, "/") {
-			if segment != "" && segment != "." {
-				segments = append(segments, segment)
-			}
+	var parts []string
+	for _, part := range strings.Split(full, "/") {
+		if part != "" && part != "." {
+			parts = append(parts, part)
 		}
 	}
-	text := root + strings.Join(segments, "/")
-	if text == "" {
+	prefix := ""
+	if strings.HasPrefix(full, "//") && !strings.HasPrefix(full, "///") {
+		prefix = "//"
+	} else if strings.HasPrefix(full, "/") {
+		prefix = "/"
+	}
+	if len(parts) == 0 {
+		if prefix != "" {
+			return prefix
+		}
 		return "."
 	}
-	return text
+	return prefix + strings.Join(parts, "/")
 }
 
-// purePosixParentName is (str(PurePosixPath(p).parent), PurePosixPath(p).name).
-func purePosixParentName(p string) (string, string) {
-	normalized := purePosixPath(p)
-	root := ""
-	rest := normalized
-	switch {
-	case strings.HasPrefix(normalized, "//") && !strings.HasPrefix(normalized, "///"):
-		root, rest = "//", normalized[2:]
-	case strings.HasPrefix(normalized, "/"):
-		root, rest = "/", normalized[1:]
+// RelativeResource is relative_resource: the managed path of a resource
+// reference; ok false for absolute or ${ENV} references (provisioned on the
+// target).
+func RelativeResource(value *Node) (string, bool, error) {
+	if isStr(value) && (strings.HasPrefix(value.Value, "/") || strings.Contains(value.Value, "${")) {
+		return "", false, nil
 	}
-	if rest == "" || rest == "." {
-		if root == "" {
-			return ".", ""
+	p, err := SafeRelativePath(value, "资源文件路径")
+	return p, err == nil, err
+}
+
+func relativeResource(value string) (string, bool, error) { return RelativeResource(S(value)) }
+
+// referencedPaths is {relative_resource(p) for p in resource_references(doc)}
+// ("" stands for Python's None).
+func referencedPaths(document *Node) (map[string]bool, error) {
+	references, err := ResourceReferences(document)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, ref := range references {
+		p, _, err := relativeResource(ref)
+		if err != nil {
+			return nil, err
 		}
-		return root, ""
+		out[p] = true
 	}
-	i := strings.LastIndexByte(rest, '/')
-	if i < 0 {
-		if root == "" {
-			return ".", rest
-		}
-		return root, rest
-	}
-	return root + rest[:i], rest[i+1:]
+	return out, nil
 }
 
-// RelativeResource is relative_resource(value): nil (None) for an absolute
-// or environment-expanded resource (provisioned on the target), else the
-// safe relative path.
-func RelativeResource(value any) (p *string, err error) {
-	defer catch(&err)
-	return relativeResource(value), nil
-}
-
-func relativeResource(value any) *string {
-	if text, ok := value.(string); ok && (strings.HasPrefix(text, "/") || strings.Contains(text, "${")) {
-		return nil
-	}
-	p := safeRelativePath(value, "资源文件路径")
-	return &p
-}
-
-// ValidateResourceFiles is validate_resource_files(document, paths): every
-// relative resource the document references must be among paths, and no
-// runtime output (cache dump, query recorder, dynamic domain set) may be one
-// of them.
-func ValidateResourceFiles(document *jsonx.Object, paths []any) (err error) {
-	defer catch(&err)
-	validateResourceFiles(document, paths)
-	return nil
-}
-
-func validateResourceFiles(document any, paths []any) {
+// ValidateResourceFiles checks every relative resource is shipped and that
+// runtime outputs are not attachments.
+func ValidateResourceFiles(document *Node, paths []string) error {
 	normalized := map[string]bool{}
 	for _, p := range paths {
-		normalized[safeRelativePath(p, DefaultPathLabel)] = true
+		n, err := safePath(p, PathLabel)
+		if err != nil {
+			return err
+		}
+		normalized[n] = true
 	}
-	for _, reference := range resourceReferences(document) {
-		p := relativeResource(reference)
-		if p != nil && !normalized[*p] {
-			fail("OxiDNS 配置引用了未打包的资源文件：" + *p)
+	references, err := ResourceReferences(document)
+	if err != nil {
+		return err
+	}
+	for _, ref := range references {
+		p, ok, err := relativeResource(ref)
+		if err != nil {
+			return err
+		}
+		if ok && !normalized[p] {
+			return fail("OxiDNS 配置引用了未打包的资源文件：" + p)
 		}
 	}
-	// Runtime outputs must never be overwritten or rolled back with config.
-	runtime := map[string]string{"cache": "dump_file", "query_recorder": "path", "dynamic_domain_set": "path"}
-	for _, plugin := range iterate(get(document, "plugins", []any{})) {
-		args := orEmpty(get(plugin, "args", nil))
-		if !isDict(args) {
+	plugins, _ := pluginList(document)
+	for _, plugin := range plugins {
+		args := get(plugin, "args")
+		if !truthy(args) {
+			args = M()
+		}
+		if !isMap(args) {
 			continue
 		}
-		kind := get(plugin, "type", nil)
-		hashable(kind)
-		name, _ := kind.(string)
-		key := runtime[name]
-		if key != "" && truthy(get(args, key, nil)) {
-			p := relativeResource(item(args, key))
-			if p != nil && normalized[*p] {
-				fail("OxiDNS 运行数据不能与附加文件重合")
+		kind := get(plugin, "type")
+		if isMap(kind) || isSeq(kind) {
+			return errMalformed
+		}
+		key := map[string]string{"cache": "dump_file", "query_recorder": "path", "dynamic_domain_set": "path"}[str(kind)]
+		if key != "" && truthy(get(args, key)) {
+			p, ok, err := RelativeResource(get(args, key))
+			if err != nil {
+				return err
+			}
+			if ok && normalized[p] {
+				return fail("OxiDNS 运行数据不能与附加文件重合")
 			}
 		}
 	}
+	return nil
 }
 
-// hashable raises Python's TypeError for a value used as a dict key that
-// cannot be hashed.
-func hashable(v any) {
-	switch v.(type) {
-	case []any:
-		raise(pyErr("TypeError", "unhashable type: 'list'"))
-	case *jsonx.Object, *yamlx.Mapping:
-		raise(pyErr("TypeError", "unhashable type: 'dict'"))
+// NativeLabel names the main native configuration in messages; PathLabel is
+// safe_relative_path's default label.
+const (
+	NativeLabel = "完整配置"
+	PathLabel   = "文件路径"
+)
+
+// decodeBase64 is strict standard base64: only alphabet characters, then the
+// padding a partial final quantum needs; '=' after a complete quantum is
+// ignored (as the panel always accepted).
+func decodeBase64(text string) ([]byte, error) {
+	core := strings.TrimRight(text, "=")
+	padding := len(text) - len(core)
+	if core == "" && padding > 0 {
+		return nil, errors.New("invalid base64 padding")
 	}
+	switch len(core) % 4 {
+	case 1:
+		return nil, errors.New("invalid base64 length")
+	case 2:
+		if padding != 2 {
+			return nil, errors.New("invalid base64 padding")
+		}
+	case 3:
+		if padding != 1 {
+			return nil, errors.New("invalid base64 padding")
+		}
+	}
+	if strings.ContainsAny(core, "=\r\n") {
+		return nil, errors.New("invalid base64 data")
+	}
+	return base64.RawStdEncoding.DecodeString(core)
+}
+
+// duplicateAnchor: an anchor name defined twice (PyYAML refuses that; yaml.v3
+// lets the later one win).
+func duplicateAnchor(n *Node, seen map[string]bool) bool {
+	if n == nil || n.Kind == yaml.AliasNode {
+		return false
+	}
+	if n.Anchor != "" {
+		if seen[n.Anchor] {
+			return true
+		}
+		seen[n.Anchor] = true
+	}
+	for _, child := range n.Content {
+		if duplicateAnchor(child, seen) {
+			return true
+		}
+	}
+	return false
 }

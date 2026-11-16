@@ -3,162 +3,120 @@ package oxidns
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"strconv"
 	"strings"
-
-	"configflow/internal/jsonx"
 )
 
-// Port of backend/common/dns_watchdog.py (module C25): local DNS liveness
-// replies in delivered configurations, never profile drafts.
-//
-// The Go Agent checks this exact first rule before probing a DNS listener
-// (backend/agents/go-agent/routes/dns_watchdog.go). Keep the rule in sync
-// with it. All other names retain the original execution path; the probe
-// bypasses caches, recorders and upstreams.
+// Local DNS liveness replies in delivered configurations (never in profile
+// drafts). The Agent checks this exact first rule before probing a listener
+// (backend/agents/go-agent/routes/dns_watchdog.go).
 
-// WatchdogName is WATCHDOG_NAME.
+// WatchdogName is the probe name the Agent queries.
 const WatchdogName = "configflow-watchdog.invalid"
 
-// WatchdogRule is WATCHDOG_RULE (a fresh copy):
-// {"matches": ["qname full:configflow-watchdog.invalid"], "exec": "reject 3"}.
-func WatchdogRule() *jsonx.Object {
-	return jsonx.Obj("matches", []any{"qname full:" + WatchdogName}, "exec", "reject 3")
-}
+// WatchdogRule is the reply rule placed first at every server entry.
+func WatchdogRule() *Node { return M("matches", L("qname full:"+WatchdogName), "exec", "reject 3") }
 
-// watchdogRule is the shared constant for comparisons (never mutate it).
-var watchdogRule = WatchdogRule()
-
-// EnsureLocalDNSWatchdog is ensure_local_dns_watchdog(document): a copy of
-// document with an idempotent local reply at each actual DNS server entry.
-//
-// Includes are left alone (the Agent does not enable its watchdog for such
-// configurations). Non-sequence executors are wrapped without changing the
-// original plugin; wrappers precede their server. Errors are Python's
-// ValueError (*convert.PyError with Class "ValueError").
-func EnsureLocalDNSWatchdog(document *jsonx.Object) (result *jsonx.Object, err error) {
-	defer catch(&err)
-	return ensureLocalDNSWatchdog(document), nil
-}
-
-func ensureLocalDNSWatchdog(document any) *jsonx.Object {
-	result, _ := copyValue(document).(*jsonx.Object)
-	if result == nil {
-		raise(attributeError(document, "get"))
+// EnsureLocalDNSWatchdog adds the reply at each DNS server entry of a copy
+// of document: sequences get the rule first, other executors a wrapper.
+// Documents with includes are returned unchanged (the Agent does not probe
+// them).
+func EnsureLocalDNSWatchdog(document *Node) (*Node, error) {
+	result := clone(document)
+	if truthy(get(result, "include")) {
+		return result, nil
 	}
-	if truthy(result.Value("include")) {
-		return result
+	plugins := get(result, "plugins")
+	if !has(result, "plugins") {
+		plugins = L()
 	}
-	value, present := result.Get("plugins")
-	if !present {
-		value = []any{}
+	if !isSeq(plugins) {
+		return nil, errors.New("DNS watchdog requires a plugins list")
 	}
-	plugins, ok := value.([]any)
-	if !ok {
-		raise(pyErr("ValueError", "DNS watchdog requires a plugins list"))
-	}
-	tagged := map[string]*jsonx.Object{}
-	for _, element := range plugins {
-		plugin, ok := element.(*jsonx.Object)
-		if !ok || plugin == nil {
-			raise(pyErr("ValueError", "DNS watchdog requires plugin objects"))
+	tagged := map[string]*Node{}
+	for _, plugin := range plugins.Content {
+		if !isMap(plugin) {
+			return nil, errors.New("DNS watchdog requires plugin objects")
 		}
-		tag := plugin.Value("tag")
+		tag := get(plugin, "tag")
 		if !truthy(tag) {
-			continue // MosDNS server plugins need not have a tag.
+			continue // MosDNS servers need no tag
 		}
-		text, isText := tag.(string)
-		if !isText || tagged[text] != nil {
-			raise(pyErr("ValueError", "DNS watchdog cannot use ambiguous plugin tags"))
+		if !isStr(tag) || tagged[tag.Value] != nil {
+			return nil, errors.New("DNS watchdog cannot use ambiguous plugin tags")
 		}
-		tagged[text] = plugin
+		tagged[tag.Value] = plugin
 	}
-
-	output := []any{}
-	wrappers := map[string]string{}
-	protected := map[string]bool{}
-	protect := func(owner *jsonx.Object, key string) {
-		entry, isText := owner.Value(key).(string)
-		if isText && strings.Contains(entry, "${") {
-			// Native OxiDNS resolves these in the core's environment; the
-			// Agent pauses probing an entry it cannot verify locally.
-			return
+	rule := WatchdogRule()
+	var output []*Node
+	wrappers, protected := map[string]string{}, map[string]bool{}
+	protect := func(owner *Node, key string) error {
+		entry := get(owner, key)
+		if isStr(entry) && strings.Contains(entry.Value, "${") {
+			return nil // resolved in the core's environment; the Agent pauses probing it
 		}
-		if !isText || tagged[entry] == nil {
-			raise(pyErr("ValueError", "DNS watchdog cannot resolve the DNS server entry"))
+		if !isStr(entry) || tagged[entry.Value] == nil {
+			return errors.New("DNS watchdog cannot resolve the DNS server entry")
 		}
-		target := tagged[entry]
-		if target.Value("type") == "sequence" {
-			if !protected[entry] {
-				args, ok := target.Value("args").([]any)
-				if !ok {
-					raise(pyErr("ValueError", "DNS watchdog requires sequence rules to be a list"))
+		target := tagged[entry.Value]
+		if equal(get(target, "type"), S("sequence")) {
+			if !protected[entry.Value] {
+				args := get(target, "args")
+				if !isSeq(args) {
+					return errors.New("DNS watchdog requires sequence rules to be a list")
 				}
-				// Move an existing exact rule to the front, keeping the
-				// other rules and their order.
-				rules := []any{WatchdogRule()}
-				for _, rule := range args {
-					if !jsonx.Equal(rule, watchdogRule) {
-						rules = append(rules, rule)
-					}
-				}
-				target.Set("args", rules)
-				protected[entry] = true
+				rules := append([]*Node{clone(rule)}, filter(args.Content, func(r *Node) bool { return !equal(r, rule) })...)
+				set(target, "args", seqOf(rules))
+				protected[entry.Value] = true
 			}
-			return
+			return nil
 		}
-		if _, done := wrappers[entry]; !done {
-			sum := sha256.Sum256([]byte(entry))
+		if wrappers[entry.Value] == "" {
+			sum := sha256.Sum256([]byte(entry.Value))
 			base := "cf_watchdog_" + hex.EncodeToString(sum[:])[:16]
-			name, suffix := base, 1
-			for tagged[name] != nil {
-				name = base + "_" + itoa(suffix)
-				suffix++
+			name := base
+			for suffix := 1; tagged[name] != nil; suffix++ {
+				name = base + "_" + strconv.Itoa(suffix)
 			}
-			wrapper := jsonx.Obj("tag", name, "type", "sequence", "args", []any{
-				WatchdogRule(), jsonx.Obj("exec", "$"+entry)})
+			wrapper := M("tag", name, "type", "sequence", "args", L(clone(rule), M("exec", "$"+entry.Value)))
 			tagged[name] = wrapper
-			wrappers[entry] = name
+			wrappers[entry.Value] = name
 			output = append(output, wrapper)
 		}
-		owner.Set(key, wrappers[entry])
+		set(owner, key, S(wrappers[entry.Value]))
+		return nil
 	}
-
-	for _, element := range plugins {
-		plugin := element.(*jsonx.Object)
-		kind := plugin.Value("type")
-		if strIn(kind, "udp_server", "tcp_server", "quic_server", "http_server") {
-			args, ok := plugin.Value("args").(*jsonx.Object)
-			if !ok || args == nil {
-				raise(pyErr("ValueError", "DNS watchdog requires DNS server arguments"))
+	for _, plugin := range plugins.Content {
+		switch kind := str(get(plugin, "type")); kind {
+		case "udp_server", "tcp_server", "quic_server", "http_server":
+			args := get(plugin, "args")
+			if !isMap(args) {
+				return nil, errors.New("DNS watchdog requires DNS server arguments")
 			}
-			if kind == "http_server" {
-				value, present := args.Get("entries")
-				if !present {
-					value = []any{}
+			if kind != "http_server" {
+				if err := protect(args, "entry"); err != nil {
+					return nil, err
 				}
-				entries, ok := value.([]any)
-				if ok {
-					for _, entry := range entries {
-						if object, isObject := entry.(*jsonx.Object); !isObject || object == nil {
-							ok = false
-							break
-						}
-					}
+				break
+			}
+			entries := get(args, "entries")
+			if !has(args, "entries") {
+				entries = L()
+			}
+			if !isSeq(entries) || len(filter(entries.Content, isMap)) != len(entries.Content) {
+				return nil, errors.New("DNS watchdog requires HTTP DNS entries")
+			}
+			for _, entry := range entries.Content {
+				if err := protect(entry, "exec"); err != nil {
+					return nil, err
 				}
-				if !ok {
-					raise(pyErr("ValueError", "DNS watchdog requires HTTP DNS entries"))
-				}
-				for _, entry := range entries {
-					protect(entry.(*jsonx.Object), "exec")
-				}
-			} else {
-				protect(args, "entry")
 			}
 		}
 		output = append(output, plugin)
 	}
-	if present {
-		result.Set("plugins", output)
+	if has(result, "plugins") {
+		set(result, "plugins", seqOf(output))
 	}
-	return result
+	return result, nil
 }

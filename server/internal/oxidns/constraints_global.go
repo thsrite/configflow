@@ -1,266 +1,203 @@
 package oxidns
 
 import (
-	"net"
+	"net/netip"
+	"regexp"
+	"strconv"
 	"strings"
 
-	"configflow/internal/convert"
-	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
 	"configflow/internal/weburl"
 )
 
-// Port of backend/common/oxidns_global_constraints.py (module C23):
-// cross-field rules of OxiDNS 1.6.1's config and network deserializers.
+// Cross-field rules of OxiDNS 1.6.1's config and network deserializers. Only
+// errors are reported; nothing is rewritten.
 
-// envAny is the global module's _ENV.search: "${" + at least one non-"}"
-// character + "}" (no "$$" exception).
-func envAny(value string) bool {
-	for i := 0; i+1 < len(value); i++ {
-		if value[i] == '$' && value[i+1] == '{' {
-			if j := strings.IndexByte(value[i+2:], '}'); j > 0 {
-				return true
-			}
+func deferredEnv(n *Node) bool { return isStr(n) && anyEnv(n.Value) }
+
+// upstreamHost is (scheme, host) of an upstream address; ok false when it
+// cannot be read or is deferred.
+func upstreamHost(value *Node) (string, string) {
+	if !isStr(value) || deferredEnv(value) {
+		return "", ""
+	}
+	raw := value.Value
+	if !strings.Contains(raw, "//") {
+		raw = "udp://" + raw
+	}
+	u, err := weburl.Parse(raw)
+	if err != nil {
+		return "", ""
+	}
+	return strings.ToLower(u.Scheme), weburl.Hostname(u)
+}
+
+func literalIP(host string) bool {
+	_, err := netip.ParseAddr(host)
+	return err == nil
+}
+
+var (
+	bootstrap6 = regexp.MustCompile(`^\[([^\]]+)\]:([0-9]+)$`)
+	bootstrap4 = regexp.MustCompile(`^([^:]+):([0-9]+)$`)
+)
+
+// bootstrapSocket: legacy bootstrap is a SocketAddr (no :port shorthand).
+func bootstrapSocket(value *Node) bool {
+	if !isStr(value) {
+		return false
+	}
+	text := strings.TrimSpace(value.Value)
+	for _, form := range []struct {
+		re *regexp.Regexp
+		v6 bool
+	}{{bootstrap6, true}, {bootstrap4, false}} {
+		if m := form.re.FindStringSubmatch(text); m != nil {
+			addr, err := netip.ParseAddr(m[1])
+			port, perr := strconv.Atoi(m[2])
+			return err == nil && addr.Is6() == form.v6 && (perr == nil && port <= 65535)
+		}
+		if form.v6 && strings.HasPrefix(text, "[") {
+			continue
 		}
 	}
 	return false
 }
 
-func globalDeferred(v any) bool {
-	s, ok := v.(string)
-	return ok && envAny(s)
-}
-
-// mapping is _mapping(value).
-func mapping(v any) any {
-	if isDict(v) {
-		return v
+func collectGlobalIssues(document *Node) []Issue {
+	var issues []Issue
+	issue := func(at Path, message, code string) {
+		issues = append(issues, Issue{Path: at, Message: message, Code: code, Severity: "error"})
 	}
-	return jsonx.NewObject()
-}
-
-// globalEndpoint is _endpoint(value): (scheme.lower(), hostname) or
-// ("", "") for None.
-func globalEndpoint(value any) (string, string) {
-	text, ok := value.(string)
-	if !ok || envAny(text) {
-		return "", ""
-	}
-	raw := text
-	if !strings.Contains(text, "//") {
-		raw = "udp://" + text
-	}
-	parts, err := weburl.Parse(raw)
-	if err != nil {
-		// An address net/url refuses (e.g. a space in the host) is reported
-		// as invalid elsewhere; its host still decides the bootstrap check.
-		scheme, rest, _ := strings.Cut(raw, "://")
-		if strings.ContainsAny(rest, "[]") {
-			return "", "" // urlsplit refuses broken IPv6 brackets too
-		}
-		if i := strings.IndexAny(rest, "/?#"); i >= 0 {
-			rest = rest[:i]
-		}
-		if i := strings.LastIndex(rest, "@"); i >= 0 {
-			rest = rest[i+1:]
-		}
-		if host, _, splitErr := net.SplitHostPort(rest); splitErr == nil {
-			rest = host
-		}
-		return strings.ToLower(scheme), strings.ToLower(rest)
-	}
-	return parts.Scheme, weburl.Hostname(parts)
-}
-
-func literalIP(value string) bool {
-	_, ok := convert.ParseIPAddress(value)
-	return ok
-}
-
-// portUpTo65535 is 0 <= int(port) <= 65535 for a run of decimal digits.
-func portUpTo65535(port string) bool {
-	if runeLen(port) > 4300 {
-		return false // int() refuses more than 4300 digits
-	}
-	value := 0
-	for _, r := range port {
-		value = value*10 + isDecimalValue(r)
-		if value > 65535 {
-			return false
+	nonblank := func(value *Node, at Path) {
+		if isStr(value) && !deferredEnv(value) && strings.TrimSpace(value.Value) == "" {
+			issue(at, "必须填写非空文本", "constraint")
 		}
 	}
-	return true
-}
-
-func isDecimalValue(r rune) int { return pystr.Decimal(r) }
-
-// bootstrapSocket is _bootstrap_socket(value).
-func bootstrapSocket(value any) bool {
-	text, ok := value.(string)
-	if !ok {
-		return false
-	}
-	text = pystr.Strip(text)
-	if strings.HasPrefix(text, "[") {
-		if end := strings.LastIndex(text, "]:"); end > 1 {
-			host, port := text[1:end], text[end+2:]
-			if !strings.Contains(host, "]") && decimalDigits(port) {
-				address, ok := convert.ParseIPAddress(host)
-				return ok && !address.Is4() && portUpTo65535(port)
-			}
+	tlsPair := func(config *Node, at Path, required bool) {
+		cert, key := get(config, "cert"), get(config, "key")
+		if !required && isNone(cert) && isNone(key) {
+			return
 		}
-	}
-	host, port, found := strings.Cut(text, ":")
-	if !found || host == "" || !decimalDigits(port) {
-		return false
-	}
-	address, ok := convert.ParseIPAddress(host)
-	return ok && address.Is4() && portUpTo65535(port)
-}
-
-// CollectGlobalIssues is collect_global_issues(document): path-addressed
-// issues {path, message, code} (no severity: the caller defaults it).
-func CollectGlobalIssues(document any) (issues []any, err error) {
-	defer catch(&err)
-	return collectGlobalIssues(document), nil
-}
-
-func collectGlobalIssues(document any) []any {
-	issues := []any{}
-	fail := func(path []any, message, code string) {
-		issues = append(issues, jsonx.Obj("path", path, "message", message, "code", code))
-	}
-	nonblank := func(value any, path []any) {
-		if text, ok := value.(string); ok && !envAny(text) && pystr.Strip(text) == "" {
-			fail(path, "必须填写非空文本", "constraint")
-		}
-	}
-	tlsPair := func(config any, path []any, required bool) {
-		cert, key := get(config, "cert", nil), get(config, "key", nil)
-		if required || cert != nil || key != nil {
-			if cert == nil {
-				fail(appendPath(path, "cert"), "启用 TLS 时必须同时配置证书和私钥", "constraint")
+		for _, item := range []struct {
+			name  string
+			value *Node
+		}{{"cert", cert}, {"key", key}} {
+			if isNone(item.value) {
+				issue(at.with(item.name), "启用 TLS 时必须同时配置证书和私钥", "constraint")
 			} else {
-				nonblank(cert, appendPath(path, "cert"))
-			}
-			if key == nil {
-				fail(appendPath(path, "key"), "启用 TLS 时必须同时配置证书和私钥", "constraint")
-			} else {
-				nonblank(key, appendPath(path, "key"))
+				nonblank(item.value, at.with(item.name))
 			}
 		}
 	}
-	if !isDict(document) {
+	if !isMap(document) {
 		return issues
 	}
-	log := mapping(get(document, "log", nil))
-	if level, ok := get(log, "level", nil).(string); ok && !envAny(level) &&
-		!strIn(pystr.Lower(level), "off", "trace", "debug", "info", "warn", "error") {
-		fail([]any{"log", "level"}, "日志级别必须为 off、trace、debug、info、warn 或 error", "enum")
+	level := get(mapOr(get(document, "log")), "level")
+	if isStr(level) && !deferredEnv(level) && !containsString([]string{"off", "trace", "debug", "info", "warn", "error"}, strings.ToLower(level.Value)) {
+		issue(P("log", "level"), "日志级别必须为 off、trace、debug、info、warn 或 error", "enum")
 	}
-	http := mapping(get(mapping(get(document, "api", nil)), "http", nil))
-	ssl := mapping(get(http, "ssl", nil))
-	tlsPair(ssl, []any{"api", "http", "ssl"}, false)
-	if get(ssl, "require_client_cert", nil) == true && get(ssl, "client_ca", nil) == nil {
-		fail([]any{"api", "http", "ssl", "client_ca"}, "要求客户端证书时必须配置 client_ca", "constraint")
+	ssl := mapOr(get(mapOr(get(mapOr(get(document, "api")), "http")), "ssl"))
+	tlsPair(ssl, P("api", "http", "ssl"), false)
+	if isTrue(get(ssl, "require_client_cert")) && isNone(get(ssl, "client_ca")) {
+		issue(P("api", "http", "ssl", "client_ca"), "要求客户端证书时必须配置 client_ca", "constraint")
 	}
-	if get(ssl, "client_ca", nil) != nil {
-		nonblank(get(ssl, "client_ca", nil), []any{"api", "http", "ssl", "client_ca"})
+	if !isNone(get(ssl, "client_ca")) {
+		nonblank(get(ssl, "client_ca"), P("api", "http", "ssl", "client_ca"))
 	}
-	outbound := mapping(get(mapping(get(document, "network", nil)), "outbound", nil))
-	profiles := mapping(get(outbound, "profiles", nil))
-	profileReference := func(value any, path []any, strictName, allowEmpty bool) {
-		text, ok := value.(string)
-		if !ok || envAny(text) {
+	outbound := mapOr(get(mapOr(get(document, "network")), "outbound"))
+	profiles := mapOr(get(outbound, "profiles"))
+	profileReference := func(value *Node, at Path, strictName, allowEmpty bool) {
+		if !isStr(value) || deferredEnv(value) {
 			return
 		}
-		name := pystr.Strip(text)
+		name := strings.TrimSpace(value.Value)
 		if name == "" {
 			if !allowEmpty {
-				fail(path, "出站配置名称不能为空", "constraint")
+				issue(at, "出站配置名称不能为空", "constraint")
 			}
 			return
 		}
-		if strictName && name != text {
-			fail(path, "出站配置名称不能包含首尾空白", "constraint")
+		if strictName && name != value.Value {
+			issue(at, "出站配置名称不能包含首尾空白", "constraint")
 		}
 		if !has(profiles, name) {
-			fail(path, "引用的出站配置未在 network.outbound.profiles 中定义", "reference")
+			issue(at, "引用的出站配置未在 network.outbound.profiles 中定义", "reference")
 		}
 	}
-	profileReference(get(outbound, "default", nil), []any{"network", "outbound", "default"}, true, false)
-	for _, nameValue := range iterate(profiles) {
-		name := nameValue.(string)
-		rawProfile := get(profiles, name, nil)
-		path := []any{"network", "outbound", "profiles", name}
-		if pystr.Strip(name) == "" || name != pystr.Strip(name) {
-			fail(path, "出站配置名称必须为不含首尾空白的非空文本", "constraint")
+	profileReference(get(outbound, "default"), P("network", "outbound", "default"), true, false)
+	pairs(profiles, func(name string, raw *Node) bool {
+		at := P("network", "outbound", "profiles", name)
+		if strings.TrimSpace(name) == "" || name != strings.TrimSpace(name) {
+			issue(at, "出站配置名称必须为不含首尾空白的非空文本", "constraint")
 		}
-		profile := mapping(rawProfile)
-		resolver, proxy := get(profile, "resolver", nil), get(profile, "proxy", nil)
-		if text, ok := resolver.(string); ok && !envAny(text) && pystr.Lower(pystr.Strip(text)) != "system" {
-			fail(appendPath(path, "resolver"), "解析器简写只支持 system", "enum")
+		profile := mapOr(raw)
+		resolver, proxy := get(profile, "resolver"), get(profile, "proxy")
+		if isStr(resolver) && !deferredEnv(resolver) && strings.ToLower(strings.TrimSpace(resolver.Value)) != "system" {
+			issue(at.with("resolver"), "解析器简写只支持 system", "enum")
 		}
-		if text, ok := proxy.(string); ok && !envAny(text) && !strIn(pystr.Lower(pystr.Strip(text)), "none", "direct") {
-			fail(appendPath(path, "proxy"), "代理简写只支持 none 或 direct", "enum")
+		if isStr(proxy) && !deferredEnv(proxy) && !containsString([]string{"none", "direct"}, strings.ToLower(strings.TrimSpace(proxy.Value))) {
+			issue(at.with("proxy"), "代理简写只支持 none 或 direct", "enum")
 		}
-		resolver = mapping(resolver)
-		usesProxy := get(resolver, "proxy", nil) == "profile"
-		if _, isText := get(mapping(proxy), "socks5", nil).(string); usesProxy && !isText {
-			fail(appendPath(path, "resolver", "proxy"), "使用 profile 代理时，当前出站配置必须设置 socks5 代理", "constraint")
+		resolver = mapOr(resolver)
+		usesProxy := equal(get(resolver, "proxy"), S("profile"))
+		if usesProxy && !isStr(get(mapOr(proxy), "socks5")) {
+			issue(at.with("resolver", "proxy"), "使用 profile 代理时，当前出站配置必须设置 socks5 代理", "constraint")
 		}
-		servers, _ := get(resolver, "nameservers", nil).([]any)
-		for index, server := range servers {
-			server = mapping(server)
-			itemPath := appendPath(path, "resolver", "nameservers", jsonx.Int(index))
-			scheme, host := globalEndpoint(get(server, "addr", nil))
-			if host != "" && !literalIP(host) && get(server, "dial_addr", nil) == nil {
-				fail(appendPath(itemPath, "dial_addr"), "域名型 nameserver 必须配置 dial_addr，避免引导解析循环", "constraint")
+		for index, server := range items(get(resolver, "nameservers")) {
+			server = mapOr(server)
+			itemAt := at.with("resolver", "nameservers", index)
+			scheme, host := upstreamHost(get(server, "addr"))
+			if host != "" && !literalIP(host) && isNone(get(server, "dial_addr")) {
+				issue(itemAt.with("dial_addr"), "域名型 nameserver 必须配置 dial_addr，避免引导解析循环", "constraint")
 			}
-			if usesProxy && strIn(scheme, "udp", "quic", "doq", "h3") {
-				fail(appendPath(itemPath, "addr"), "UDP、DoQ 和 DoH3 nameserver 不支持 profile SOCKS5 代理", "constraint")
+			if usesProxy && containsString([]string{"udp", "quic", "doq", "h3"}, scheme) {
+				issue(itemAt.with("addr"), "UDP、DoQ 和 DoH3 nameserver 不支持 profile SOCKS5 代理", "constraint")
 			}
 		}
-	}
-	plugins, _ := get(document, "plugins", nil).([]any)
-	for index, raw := range plugins {
-		plugin := mapping(raw)
-		kind, args := get(plugin, "type", nil), mapping(get(plugin, "args", nil))
-		path := []any{"plugins", jsonx.Int(index), "args"}
-		if strIn(kind, "tcp_server", "http_server") {
-			tlsPair(args, path, kind == "http_server" && get(args, "enable_http3", nil) == true)
+		return true
+	})
+	for index, plugin := range items(get(document, "plugins")) {
+		plugin = mapOr(plugin)
+		kind, args := str(get(plugin, "type")), mapOr(get(plugin, "args"))
+		if !isStr(get(plugin, "type")) {
+			kind = ""
+		}
+		at := P("plugins", index, "args")
+		if kind == "tcp_server" || kind == "http_server" {
+			tlsPair(args, at, kind == "http_server" && isTrue(get(args, "enable_http3")))
 		}
 		if kind == "http_server" {
-			entries, _ := get(args, "entries", nil).([]any)
-			for offset, entry := range entries {
-				if route, ok := get(mapping(entry), "path", nil).(string); ok && !envAny(route) && !strings.HasPrefix(route, "/") {
-					fail(appendPath(path, "entries", jsonx.Int(offset), "path"), "HTTP 路径必须以 / 开头", "format")
+			for offset, entry := range items(get(args, "entries")) {
+				route := get(mapOr(entry), "path")
+				if isStr(route) && !deferredEnv(route) && !strings.HasPrefix(route.Value, "/") {
+					issue(at.with("entries", offset, "path"), "HTTP 路径必须以 / 开头", "format")
 				}
 			}
 		}
-		if strIn(kind, "download", "http_request", "upgrade", "ip_selector") {
-			profileReference(get(args, "outbound", nil), appendPath(path, "outbound"), false, kind != "ip_selector")
+		if containsString([]string{"download", "http_request", "upgrade", "ip_selector"}, kind) {
+			profileReference(get(args, "outbound"), at.with("outbound"), false, kind != "ip_selector")
 		}
 		if kind != "forward" {
 			continue
 		}
-		upstreams, _ := get(args, "upstreams", nil).([]any)
-		for offset, raw := range upstreams {
-			upstream := mapping(raw)
-			itemPath := appendPath(path, "upstreams", jsonx.Int(offset))
-			profileReference(get(upstream, "outbound", nil), appendPath(itemPath, "outbound"), false, false)
-			minimum, maximum := get(upstream, "min_conns", nil), get(upstream, "max_conns", nil)
-			if maximum == nil {
-				maximum = jsonx.Int(64)
+		for offset, upstream := range items(get(args, "upstreams")) {
+			upstream = mapOr(upstream)
+			itemAt := at.with("upstreams", offset)
+			profileReference(get(upstream, "outbound"), itemAt.with("outbound"), false, false)
+			minimum, maximum := get(upstream, "min_conns"), get(upstream, "max_conns")
+			if isNone(maximum) {
+				maximum = I(64)
 			}
-			if isInt(minimum) && isInt(maximum) && compareNumbers(minimum.(jsonx.Number), maximum.(jsonx.Number)) > 0 {
-				fail(appendPath(itemPath, "min_conns"), "不能大于有效 max_conns（未配置时为 64）", "constraint")
+			if lo, ok := intOf(minimum); ok {
+				if hi, ok := intOf(maximum); ok && lo.Cmp(hi) > 0 {
+					issue(itemAt.with("min_conns"), "不能大于有效 max_conns（未配置时为 64）", "constraint")
+				}
 			}
-			_, host := globalEndpoint(get(upstream, "addr", nil))
-			bootstrap := get(upstream, "bootstrap", nil)
-			if text, ok := bootstrap.(string); ok && host != "" && !literalIP(host) && get(upstream, "dial_addr", nil) == nil &&
-				!envAny(text) && !bootstrapSocket(text) {
-				fail(appendPath(itemPath, "bootstrap"), "引导 DNS 必须为 IP:端口 或 [IPv6]:端口", "format")
+			_, host := upstreamHost(get(upstream, "addr"))
+			bootstrap := get(upstream, "bootstrap")
+			if host != "" && !literalIP(host) && isNone(get(upstream, "dial_addr")) && isStr(bootstrap) &&
+				!deferredEnv(bootstrap) && !bootstrapSocket(bootstrap) {
+				issue(itemAt.with("bootstrap"), "引导 DNS 必须为 IP:端口 或 [IPv6]:端口", "format")
 			}
 		}
 	}
