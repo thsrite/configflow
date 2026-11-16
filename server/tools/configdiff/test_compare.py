@@ -17,6 +17,17 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_discovery_allocations_require_distinct_lowercase_uuid4_ids(self):
+        from discovery import allocation_ids
+        library = {'id': 'lib_123456781234423482341234567890ab'}
+        rule = {'id': 'ruleset_12345678-1234-4234-8234-1234567890ab'}
+        self.assertEqual(len(allocation_ids([library], [rule])), 2)
+        for bad in ('lib_0123456789ab', 'lib_' + '0' * 32, library['id'].upper(), None):
+            with self.assertRaises(ValueError):
+                allocation_ids([{'id': bad}], [rule])
+        with self.assertRaises(ValueError):
+            allocation_ids([library, library], [rule])
+
     def test_aggregation_created_ids_reject_bad_shape_and_reuse(self):
         from cases.aggregations import created
         def reply(value):

@@ -159,6 +159,8 @@ def main():
     groups.update(domain_discovery)
     from cases.discovery_writes import GROUPS as discovery_writes
     groups.update(discovery_writes)
+    from cases.discovery_init import GROUPS as discovery_init
+    groups.update(discovery_init)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

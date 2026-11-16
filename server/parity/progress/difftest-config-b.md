@@ -785,3 +785,19 @@ request_variants=6738 named_matrix_cases=3480（S535 F2451 B494），H去重232�
 ```
 
 默认规则库写前改变的CAS竞争、规则库初始化、实际Agent报告/job及G13等继续，未做最终全量。
+
+## 批次 44：域名规则库初始化与ID格式校验
+
+- 15请求：direct/proxy/both、空targets默认两者、重复target、重复初始化、名称碰撞加-2、引用位于MATCH前；坏targets/未知policy及H052/H053无任何DB/revision写入，6个失败输入实际比较通过。
+- 真实Python确认R056-S04不是幂等：重复调用分配新库/引用且切换默认指针。重复target被接受，分配多份库/引用，较早同target库未被选中且不写缓存。清单已保留编号更正。每次Python新库/规则UUID4、数量、唯一性、选中库确定性cache路径及未选中库无cache均独立验证。
+- 新增ID格式/重复分配故意错误自检，45项。**9条差异记录首先被格式校验拦住**：Python library是UUID4 hex，reference是带横线UUID4；观测到的Go library为hex32且不全满足UUID4位，reference为无横线hex32。未为此放宽格式或直接mask ID；findings保留完整两侧ID、DB、文件差异。是否把资源ID当作opaque而允许此形态差异需审查，不能把格式失败后的其他字段归一化称为通过；未改Go。
+
+```text
+.63 run.py --groups discovery-init,discovery-init-guards
+current compared=6 different=9 design_errors=[] seconds=13.49
+cumulative compared=1610 go-unimplemented=5063 dependency=28 different=51 O12-separate=1
+request_variants=6753 named_matrix_cases=3488（S539 F2453 B496），H去重234，G去重15
+45 self-checks + end-to-end wrong-Go-response check OK
+```
+
+继续实际Agent报告/job、区域路由、G13与其他剩余清单；未做最终全量。
