@@ -1286,3 +1286,8 @@ Questions for the maintainer (from this audit):
 13. **EasyTier URL check (C12)**: deliberate fix of a Python validation bug — see PROGRESS-agents.md
     "Coordinator decisions" item 6. The Go version rejects a URL with a single trailing "\n"; follow-up by
     the next agent touching `convert/easytier.go`.
+14. **From the C13 review (2026-11-16):** `internal/reqproxy` is now the shared requests-2.31 proxy logic
+    (A07's port moved there; `agents/proxy.go` is a shim). Every package that makes requests-style calls
+    uses it; `reqproxy.ForRedirect` should also replace Go's redirect proxy rules in `agents.HTTPClient`
+    (A01 follow-up for the next agent touching `agents/client.go`). C17 review: check the timing flake in
+    `TestAggregationFallsBackToCommittedArtifactBeforeFirstServe` (0.2 s budget, failed once under load).
