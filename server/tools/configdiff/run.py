@@ -136,6 +136,8 @@ def main():
     groups.update(backup_shapes)
     from cases.subscription_hosts import GROUPS as subscription_hosts
     groups.update(subscription_hosts)
+    from cases.oxidns_controls import GROUPS as oxidns_controls
+    groups.update(oxidns_controls)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

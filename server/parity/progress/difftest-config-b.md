@@ -668,3 +668,19 @@ request_variants=6185 named_matrix_cases=3320（S480 F2387 B453），H去重217�
 ```
 
 Go生成器尚未接通；这些用例未计为Go通过。继续G10–G13及其余业务/长流程，未做最终全量。
+
+## 批次 37：G11 OxiDNS通用控件输出
+
+- 198请求，11控件×关闭/合法defaults/自定义×默认/scoped×草稿render/保存settings/已保存preview。覆盖主缓存和探测缓存、API、log、query recorder、IP selector、动态域名及学习、AdGuard、ROS地址表、ROS路由、rule_update。
+- 核对主缓存short_circuit=true与探测缓存false、lazy TTL=0必须省略、dump放state、API基础认证/TLS资源路径和生成正文里的合成凭据、日志rotation、学习插件独立开关、RouterOS TLS/async布尔及规则download→reload→cron执行引用。保存的SHA ETag、publish guard、完整DB及文件沿用既有严格比较；生成配置不脱敏。
+- 这是生成形态验收，不启动DNS核心、不会连接RouterOS或执行cron；不存在将预览当成运行时功能通过的情况。Go相关路由全未接通。
+
+```text
+.63 run.py --groups oxidns-control-output
+current go-unimplemented=198 design_errors=[] seconds=66.75
+cumulative compared=1472 go-unimplemented=4841 dependency=28 different=41 O12-separate=1
+request_variants=6383 named_matrix_cases=3320（S480 F2387 B453），H去重217，G去重13
+42 self-checks + end-to-end wrong-Go-response check OK
+```
+
+继续原生附件/草稿编辑/交付图及其他剩余清单，未做最终全量。
