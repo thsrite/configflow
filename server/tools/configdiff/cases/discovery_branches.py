@@ -23,7 +23,7 @@ def branches(binary, recorder):
             observer = Completion(pair, kind, text)
             pair.request(case, 'POST /api/domain-discovery/' + ('probe' if kind == 'probe' else 'region/check'),
                          body=json_body({'domains': ['example.com']} if kind == 'probe' else {'services': True}),
-                         expect=202, writes=True, interaction=observer, capture=observer.capture, projection=observer.projection, variant=variant)
+                         expect=202, writes=True, runtime_writes=True, interaction=observer, capture=observer.capture, projection=observer.projection, variant=variant)
     vectors = [('H070', 'probe', {'domains': values}, 'domains 必须是 1-100 个有效域名')
                for values in (None, [], ['192.0.2.1'], ['x' + str(i) + '.example' for i in range(101)])]
     vectors += [('H076', 'region/check', {'services': False, 'domains': ['x' + str(i) + '.example' for i in range(11)]}, '一次最多检测 10 个域名'),

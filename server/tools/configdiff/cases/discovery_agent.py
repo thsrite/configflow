@@ -34,7 +34,7 @@ def probe(binary, recorder):
                 for host in hosts:
                     pair.policy.times.add('files.probes/agent-synthetic.json.content.hosts.' + host + '.checked_at')
                 observer = Running(pair, [left, right], 'probe', len(hosts))
-                pair.request(case, 'POST /api/domain-discovery/probe', body=json_body({'domains': values}), expect=202, writes=True,
+                pair.request(case, 'POST /api/domain-discovery/probe', body=json_body({'domains': values}), expect=202, writes=True, runtime_writes=True,
                              interaction=observer, capture=observer.capture, projection=observer.projection, variant=variant)
                 paths = ['/api/domain-discovery/probe/' + (ident or 'missing') for ident in observer.ids]
                 pair.request('T19', 'GET /api/domain-discovery/probe/<job_id>', paths=paths, expect=200, writes=True, variant=variant + '/held',

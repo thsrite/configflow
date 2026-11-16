@@ -57,7 +57,7 @@ def website(binary, recorder):
                     pair.policy.times.add('files.regions/agent-synthetic.json.content.websites.' + collected_host(domain) + '.checked_at')
                 observer = Running(pair, [left, right], 'website', len(domains))
                 body = {'domains': domains + (['not-reported.example'] if missing else [])}
-                pair.request(case, 'POST /api/domain-discovery/website/identify', body=json_body(body), expect=202, writes=True,
+                pair.request(case, 'POST /api/domain-discovery/website/identify', body=json_body(body), expect=202, writes=True, runtime_writes=True,
                              interaction=observer, capture=observer.capture, projection=observer.projection, variant=variant)
                 if case == 'R060-S01':
                     pair.request('R060-F12', 'POST /api/domain-discovery/website/identify', body=json_body(body), expect=409, writes=True,

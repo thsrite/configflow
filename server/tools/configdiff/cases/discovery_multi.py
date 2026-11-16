@@ -77,7 +77,7 @@ def multi(binary, recorder):
                         pair.policy.times.add('files.probes/' + ident + '.json.content.hosts.' + host + '.checked_at')
                 observer = Running(pair, fleets, 'probe', 3)
                 pair.request('T20', 'POST /api/domain-discovery/probe', body=json_body({'domains': ['example.com']}),
-                             expect=202, writes=True, interaction=observer, capture=observer.capture, projection=observer.projection,
+                             expect=202, writes=True, runtime_writes=True, interaction=observer, capture=observer.capture, projection=observer.projection,
                              variant='multi/' + scenario + '/start')
                 pair.request('R052-S01', 'GET /api/domain-discovery/probe/<job_id>',
                              paths=['/api/domain-discovery/probe/' + (ident or 'missing') for ident in observer.ids],

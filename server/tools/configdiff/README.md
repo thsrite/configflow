@@ -24,3 +24,5 @@ RT_HOST=sunbroke@192.168.0.63 rt \
 写入场景设 `writes=True`，读取 SQLite 的 meta/sections/fields（含行位置/revision/JSON 值）和 DATA_DIR 文件，观察失败后的真实结果。SQLite 物理页不比；app.log/锁文件列为专用 X07/T26 的比较边界，不混入普通生成文件。DB 行、生成文件、深层 JSON、YAML、文本、status/header、身份单射和时间窗都有故意出错的自检。新比较类型必须先加同一生产比较器的篡改测试。
 
 当前已有框架、O6 横切多蓝图、全表 A1–A7 与 auth 路由；不宣称已经实现整个 5697 条设计清单。每个后续路由文件应提供具体合法 fixture、独立失败输入、写后 DB/文件观察和编号，不能把全表发一个坏 JSON 当逐行覆盖。
+
+异步任务会先改变内存中的 job/lock，再落盘。启动请求使用 `runtime_writes=True`：Go入口未接通时，后续已接通读取也标记依赖未实现，不拿Python的在途任务与Go空状态比较。源端仍走完整终态/DB/files前提验证；接通后自动进行真实双端比较。

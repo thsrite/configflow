@@ -112,11 +112,41 @@ class Running:
         return send(self.pair.bases[index], 'GET', '/api/domain-discovery/probe/' + (self.ids[index] or 'missing'),
                     headers={'Authorization': 'Bearer ' + self.pair.tokens[index], 'X-ConfigFlow-Profile': self.pair.default_profile})
 
-    def finish(self, expected_calls, *, errors=0, status='done', variant='', case='T20'):
+    def current(self, field):
+        self.pair.policy.times.add('body.' + field + '.started_at')
+        def capture(replies, policy):
+            for index, reply in enumerate(replies):
+                value = self.decode(reply)
+                job = value.get(field) if isinstance(value, dict) else None
+                errors = job_errors({'success': True, 'job': job}, policy, self.kind, self.total)
+                if index == 0 and errors:
+                    raise DesignError('Python current running state: ' + repr((errors, value)))
+                self.violations[index] += errors
+                if not errors:
+                    self.ids[index], self.previous[index] = job['id'], job
+            return self.capture(replies, policy) + self.compare(policy)
+        return capture
+
+    def reference_current(self, reply, field):
+        value = self.decode(reply)
+        job = value.get(field) if isinstance(value, dict) else None
+        policy = copy.deepcopy(self.pair.policy)
+        policy.end = time.time()
+        errors = job_errors({'success': True, 'job': job}, policy, self.kind, self.total)
+        if errors:
+            raise DesignError('Python current running state: ' + repr((errors, value)))
+        self.ids[0], self.previous[0] = job['id'], job
+
+    def finish(self, expected_calls, *, errors=0, status='done', variant='', case='T20', expected_done=None, route=None):
+        expected_done = self.total if expected_done is None else expected_done
+        path = {'probe': 'probe', 'region': 'region/check', 'website': 'website/identify'}[self.kind]
+        route = route or 'POST /api/domain-discovery/' + path
+        registered = self.pair.route_available(route)
+        available = registered and not self.pair.unimplemented_mutations
         for agent in self.agents:
             agent.release.set()
         final, statuses = [None, None], [None, None]
-        for index in range(2):
+        for index in range(2 if available else 1):
             deadline = time.monotonic() + 10
             while time.monotonic() < deadline:
                 reply = self.poll(index)
@@ -141,11 +171,17 @@ class Running:
             if index == 0:
                 if self.violations[0]:
                     raise DesignError('Python job lifecycle: ' + repr(self.violations[0]))
-                if job['status'] != status or len(job['errors']) != errors or job['done'] != self.total or job['total'] != self.total:
+                if job['status'] != status or len(job['errors']) != errors or job['done'] != expected_done or job['total'] != self.total:
                     raise DesignError('Python terminal outcome: ' + repr(job))
                 actual = self.agents[0].snapshot()
                 if actual != expected_calls or self.agents[0].errors:
                     raise DesignError('Python fake Agent protocol: ' + repr((expected_calls, actual, self.agents[0].errors)))
+        category = re.search(r'-(S|F|B)\d+', case)[1] if case.startswith('R') else case
+        if not available:
+            self.pair.recorder.record(case, variant, route, category,
+                'go-unimplemented-dependency' if registered else 'go-unimplemented',
+                python_status=statuses[0], go_status=None, blocked_by=sorted(self.pair.unimplemented_mutations))
+            return final
         policy = self.pair.policy
         policy.end = time.time()
         diffs = self.compare(policy)
@@ -154,8 +190,6 @@ class Running:
             diffs.append(Difference('agent.transport', 'fake-errors', [], self.agents[1].errors))
         diffs += differences(final[0], final[1], 'job.final', policy)
         diffs += database_diffs(*self.pair.dirs, policy) + file_diffs(*self.pair.dirs, policy)
-        path = {'probe': 'probe', 'region': 'region/check', 'website': 'website/identify'}[self.kind]
-        category = re.search(r'-(S|F|B)\d+', case)[1] if case.startswith('R') else case
-        self.pair.recorder.record(case, variant, 'POST /api/domain-discovery/' + path,
+        self.pair.recorder.record(case, variant, route,
                                   category, 'different' if diffs else 'compared', diffs, python_status=statuses[0], go_status=statuses[1])
         return final

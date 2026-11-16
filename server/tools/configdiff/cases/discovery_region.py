@@ -38,7 +38,7 @@ def region(binary, recorder):
                     pair.policy.times.add('body.domains.' + host + '.checked_at')
                 observer = Running(pair, [left, right], 'region', 3)
                 pair.request(case, 'POST /api/domain-discovery/region/check', body=json_body({'services': services, 'domains': domains}),
-                             expect=202, writes=True, interaction=observer, capture=observer.capture, projection=observer.projection, variant=variant)
+                             expect=202, writes=True, runtime_writes=True, interaction=observer, capture=observer.capture, projection=observer.projection, variant=variant)
                 pair.request('T19', 'GET /api/domain-discovery/probe/<job_id>',
                              paths=['/api/domain-discovery/probe/' + (ident or 'missing') for ident in observer.ids], expect=200, writes=True,
                              check=lambda r: require(r.json()['job']['status'] == 'running' and r.json()['job']['total'] == 3,
@@ -95,7 +95,7 @@ def unavailable(binary, recorder):
                         raise DesignError('Python target GET trace: ' + repr((left.snapshot(), left.errors)))
                     return out + differences(left.snapshot(), right.snapshot(), 'agent.requests', policy)
                 pair.request('H075' if variant == '500-helper' else 'R054-F15', 'POST /api/domain-discovery/region/check', body=json_body({'services': True}),
-                             expect=202, writes=True, interaction=observer, capture=capture, projection=observer.projection, variant=variant)
+                             expect=202, writes=True, runtime_writes=True, interaction=observer, capture=capture, projection=observer.projection, variant=variant)
 
 
 GROUPS = {'discovery-agent-region': region, 'discovery-region-target-errors': unavailable}

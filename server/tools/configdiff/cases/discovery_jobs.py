@@ -24,7 +24,7 @@ def failures(binary, recorder):
             observer = Completion(pair, kind, message)
             route = 'POST /api/domain-discovery/' + ('probe' if kind == 'probe' else 'region/check')
             body = {'domains': ['example.com']} if kind == 'probe' else {'services': True}
-            pair.request(case, route, body=json_body(body), expect=202, writes=True, interaction=observer,
+            pair.request(case, route, body=json_body(body), expect=202, writes=True, runtime_writes=True, interaction=observer,
                          capture=observer.capture, projection=observer.projection, variant=variant)
             policy = copy.deepcopy(pair.policy)
             policy.times.add('body.job.finished_at')

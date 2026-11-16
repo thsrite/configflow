@@ -262,7 +262,7 @@ class Pair:
 
     def request(self, case_id, route, path=None, *, method=None, body=None, auth='admin', headers=None,
                 variant='', expect=None, check=None, writes=False, files=True, policy=None, capture=None,
-                interaction=None, bodies=None, paths=None, projection=None, filename='', raw_body=False):
+                interaction=None, bodies=None, paths=None, projection=None, filename='', raw_body=False, runtime_writes=False):
         nominal_method, nominal_path = route.split(' ', 1)
         method, path = method or nominal_method, path or nominal_path
         policy = policy or self.policy
@@ -297,7 +297,7 @@ class Pair:
         category = re.search(r'-(S|F|B)\d+', case_id)
         category = category[1] if category else case_id.split('-')[0]
         if not available:
-            if before_reference is not None and before_reference != (database(self.dirs[0]), stored_files(self.dirs[0])):
+            if runtime_writes or (before_reference is not None and before_reference != (database(self.dirs[0]), stored_files(self.dirs[0]))):
                 self.unimplemented_mutations.add(route)
             if registered:
                 self.recorder.record(case_id, variant, route, category, 'go-unimplemented-dependency',

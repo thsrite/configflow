@@ -17,6 +17,40 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_unwired_runtime_job_skips_go_but_wired_wrong_final_job_is_detected(self):
+        import threading
+        from datetime import datetime, timezone
+        from agent_jobs import Running
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = [Path(tmp, value) for value in ('python', 'go')]
+            for directory in dirs:
+                directory.mkdir()
+                with sqlite3.connect(directory / 'configflow.sqlite3') as db:
+                    db.executescript('CREATE TABLE meta(key,value); CREATE TABLE sections(scope,owner,position); '
+                                     'CREATE TABLE fields(scope,owner,field,position,value,revision);')
+            for registered, blocked, verdict in [(False, True, 'go-unimplemented'),
+                                                  (True, True, 'go-unimplemented-dependency'), (True, False, 'different')]:
+                results, polled = [], []
+                now = time.time()
+                stamp = datetime.fromtimestamp(now, timezone.utc).replace(tzinfo=None).isoformat(timespec='seconds')
+                job = {'id': 'a' * 32, 'kind': 'probe', 'status': 'done', 'total': 0, 'done': 0, 'errors': [],
+                       'message': '', 'started_at': stamp, 'finished_at': stamp}
+                def record(*args, **kwargs):
+                    results.append((args, kwargs))
+                pair = SimpleNamespace(policy=Policy(start=now), dirs=dirs, recorder=SimpleNamespace(record=record),
+                    route_available=lambda route: registered, unimplemented_mutations={'POST /api/tasks/run'} if blocked else set())
+                agents = [SimpleNamespace(release=threading.Event(), snapshot=lambda: [], errors=[]) for _ in range(2)]
+                observer = Running(pair, agents, 'probe', 0)
+                def poll(index):
+                    polled.append(index)
+                    return Reply(200, {}, json.dumps({'success': True, 'job': {**job, 'message': 'corrupted' if index else ''}}).encode())
+                observer.poll = poll
+                observer.finish([], route='POST /api/tasks/run')
+                self.assertEqual(results[-1][0][4], verdict)
+                self.assertEqual(polled, [0, 1] if verdict == 'different' else [0])
+                if verdict == 'different':
+                    self.assertTrue(any(d.path == 'job.final.job.message' for d in results[-1][0][5]))
+
     def test_provider_attachment_identity_is_specific_to_its_subscription(self):
         from providers import filename
         policy = Policy(start=1767225600, end=1767225601)

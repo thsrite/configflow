@@ -971,3 +971,21 @@ request_variants=7083 named_matrix_cases=3558（S561 F2479 B518），H去重252�
 ```
 
 仍待website跨空间busy、真实Agent超时、T21及其他T05入口与剩余R/H；未做最终全量。
+
+## 批次 55：T21阈值、真实失败流量与同步job失败
+
+- 新增29请求/序列：9条真实incoming协议前置已与Go比较通过；16条task入口未接通，4条后续已接通读取受该入口依赖。Python完整前提通过：80采纳85分，90不采纳85分，第二次真实traffic-report加入失败流量得到99分并在95阈值采纳；只写指定proxy规则库与source=auto history，另一profile全行/修订不变。
+- fake Agent返回长度正确但缺paths的控制结果，使同步_start_job(wait=True)失败；经真实POST /api/tasks/run到达**H072**，不是拿异步失败冒充。job保留准确安全中文message、0/1进度、无probe半成品；task-status记录failed/count/error并释放锁。H072实际入口记录为tasks/run，未虚构发了POST probe。
+- Go tasks/run当前未接通。通用harness新增显式runtime_writes：即使在途job/lock尚未落盘，未接通启动也阻断后续状态对比；接通后自动启用。最初8条“Go没有这个job”是该依赖缺失造成的测试噪声，已修正重跑消除，未作为业务发现提交。
+- 完成观察器在源端继续验证终态/协议/DB/files前提，未接通时只跳过不存在的Go任务。新增故意错误自检：unwired与依赖只poll源端，真正wired时故意破坏Go最终message必须报different；使用真实SQLite/file比较函数，50项自检通过。来源端H072/95/80等计数不是声称Go实现已通过。
+- 9组回归涵盖probe/region/website/多Agent/断连/预检/命名helper/region错误，188实际请求比较通过，无新业务差异。
+
+```text
+.63 run.py --groups discovery-automatic-thresholds,discovery-client-disconnect,discovery-agent-probe,discovery-agent-region,discovery-agent-website,discovery-multiple-agents,discovery-job-preflight,discovery-named-branches,discovery-region-target-errors
+current compared=188 go-unimplemented=16 dependency=4 design_errors=[] seconds=86.87
+cumulative compared=1903 go-unimplemented=5109 dependency=32 different=67 O12-separate=1
+request_variants=7112 named_matrix_cases=3558（S561 F2479 B518），H去重253，G去重16
+50 self-checks + end-to-end wrong-Go-response check OK
+```
+
+T21仍待忽略/已覆盖/3天重探/30天复检/人工apply竞争；还需website跨空间busy、真实Agent超时、H064以及剩余R/H/T，未做最终全量。
