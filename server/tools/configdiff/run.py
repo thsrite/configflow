@@ -118,6 +118,8 @@ def main():
     groups.update(rule_dns)
     from cases.compose import GROUPS as compose
     groups.update(compose)
+    from cases.rule_io import GROUPS as rule_io
+    groups.update(rule_io)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:

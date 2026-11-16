@@ -30,6 +30,7 @@ class Difference:
 class Policy:
     times: set = field(default_factory=set)
     durations: set = field(default_factory=set)
+    elapsed_ms: set = field(default_factory=set)
     epochs: dict = field(default_factory=dict)
     future_times: dict = field(default_factory=dict)
     tz: str = 'UTC'
@@ -66,6 +67,12 @@ def timestamp(value, policy, offset=0):
 
 def differences(left, right, path='body', policy=None):
     policy = policy or Policy()
+    if path in policy.elapsed_ms:
+        maximum = max(0, (policy.end - policy.start + 2) * 1000)
+        if any(type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= maximum
+               or not math.isclose(value * 100, round(value * 100), abs_tol=1e-6, rel_tol=0) for value in (left, right)):
+            return [Difference(path, 'invalid-elapsed-milliseconds', left, right)]
+        return []
     if path in policy.epochs:
         offset = policy.epochs[path]
         if any(type(v) is not int or not policy.start + offset - 2 <= v <= policy.end + offset + 2 for v in (left, right)):
@@ -200,7 +207,7 @@ def ini_structure(text):
 HEADERS = ('content-type', 'content-disposition', 'cache-control', 'etag', 'x-configflow-profile',
            'location', 'allow', 'access-control-allow-origin', 'access-control-allow-headers',
            'access-control-allow-methods', 'access-control-expose-headers', 'vary',
-           'x-configflow-provider', 'x-configflow-rule-cache', 'warning',
+           'x-configflow-provider', 'x-configflow-rule-cache', 'x-configflow-cache', 'warning',
            'last-modified', 'accept-ranges', 'content-range', 'referrer-policy', 'x-content-type-options')
 
 

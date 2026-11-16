@@ -533,3 +533,21 @@ request_variants=5805 named_matrix_cases=3272（S461 F2372 B439），H去重192
 ```
 
 Go尚未接通，未计通过。native成功compose更多形态和helper/G配方仍需推进，未做最终全量。
+
+## 批次 29：匿名规则文件、匹配和重复扫描
+
+- 52请求：默认和显式profile local入口均匿名验证内容首次建cache/已有cache、中文名、无catalog旧名称cache、路径特殊字符不逃逸、空文件、Mihomo classical交付转换且raw cache不变、非法UTF-8原字节回退，以及文件路径为目录时500。所有请求继续SQL/文件比较。
+- fake URL来源：已有验证cache不再下载；既有failed task使其带stale/Warning；无cache首次真实GET落盘；非法源422、HTTP403无cache502并比较manual/pull回执与notification。比较器增加真实`X-ConfigFlow-Cache`头，不因其他provider头名称不同而漏掉。
+- match覆盖域名/IPv4/IPv6/未命中/根尾点/disabled与缺参数、空值、坏query、非对象/数字query和非法remote规则422。中文query实测400，ASCII punycode可查询但不自动转存量Unicode值，已补oracle说明，未把错误Python前提记录成Go差异。
+- duplicates覆盖无重复、同库内部、跨direct/library且policy冲突、REGEX大小写敏感、domain大小写合并与稳定tie；远端非法导致查重500、远端403仅列failed_rulesets仍200。完整响应包括行号、来源、计数与排序均比较。
+- elapsed_time仅在这些具体路径以非负有限毫秒、两位小数精度且不超过真实请求窗口验证；没有把所有数值或时间泛化mask。增加负数/布尔/字符串/NaN/Infinity/超时/过多小数反例，40项自检。
+
+```text
+.63 run.py --groups rule-local-content,rule-local-remote,rule-match,rule-duplicates,rule-index-remote-errors
+current go-unimplemented=52 design_errors=[] seconds=34.45
+cumulative compared=1455 go-unimplemented=4332 dependency=28 different=41 O12-separate=1
+request_variants=5857 named_matrix_cases=3320（S480 F2387 B453），H去重192
+40 self-checks + end-to-end wrong-Go-response check OK
+```
+
+Go相关路由仍未接通，未计通过。大规模扫描取消客户端/日志协议、更多matcher/helper和生成器G形态继续，未做最终全量。

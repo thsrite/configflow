@@ -17,6 +17,11 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_elapsed_milliseconds_are_finite_bounded_and_two_decimal_places(self):
+        policy = Policy(start=100, end=101, elapsed_ms={'body.elapsed_time'})
+        self.assertEqual(differences({'elapsed_time': 1.23}, {'elapsed_time': 900}, policy=policy), [])
+        for value in (-1, True, '1.23', float('nan'), float('inf'), 3001, 1.234):
+            self.assertTrue(differences({'elapsed_time': 1.23}, {'elapsed_time': value}, policy=policy))
     def test_composition_ids_require_prefix_shape_uniqueness_and_derived_cache(self):
         from composition import identities, capture, cache_name
         good = {'data': {'library': {'id': 'lib_0123456789ab'},
@@ -311,7 +316,7 @@ class Comparators(unittest.TestCase):
 
     def test_provider_fallback_and_rule_stale_headers_remain_observable(self):
         a = Reply(200, {'content-type': 'text/yaml'}, b'proxies: []')
-        for key in ('x-configflow-provider', 'x-configflow-rule-cache', 'warning'):
+        for key in ('x-configflow-provider', 'x-configflow-rule-cache', 'x-configflow-cache', 'warning'):
             b = copy.deepcopy(a)
             b.headers[key] = 'unexpected'
             self.assertTrue(response_diffs(a, b))
