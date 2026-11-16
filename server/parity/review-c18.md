@@ -245,3 +245,48 @@ chain-conversion-failure/filter-order tests in `mihomo_ported_test.go`.
 | `backend/test_subscription_refresh_policy.py` | 16 |
 | `backend/test_udp_fallback.py` | 7 |
 | `backend/test_upstream_router_pending.py` | 1 |
+
+## Authoritative acceptance on .32
+
+All final checks ran after rebasing onto the then-current `go` (including
+S-oxidns and discovery integration), with exit 0:
+
+```text
+gofmt -l internal/ tools/: clean
+go vet ./...: PASS
+ok  configflow/internal/convert  56.312s  # -race -count=1 -timeout=30m
+```
+
+`go test -count=1 ./...` passed in full (convert 28.788 s, installer 150.618 s,
+oxidns 86.902 s). Its final lines were:
+
+```text
+ok  configflow/internal/weburl  0.004s
+ok  configflow/internal/yamlx  0.831s
+?   configflow/tools/proddiff/generator  [no test files]
+```
+
+Production differential final lines:
+
+```text
+self-check: status=PASS json-leaf=PASS yaml-leaf=PASS text-line=PASS
+baseline: new=0 stale=0
+```
+
+The intervening summary reports `coverage_regressions=0`, `new=0`, `stale=0`,
+5 existing unrelated global differences, 56 compared GET templates and 57
+compared route templates (discovery integration increased coverage). Mihomo
+successes remain: main configs 2, Agent config 1, subscriptions 4, provider
+download lists 2, rule-download lists 2. No production-data regression.
+
+The format fallback and sensitive parser log findings are closed; C18 is
+**verified** with no open functional findings. Existing replay/corpus tests also
+pass. New artifacts: `review_mihomo_test.go` 164 lines,
+`testdata/review_mihomo_gen.py` 412 lines, `review_mihomo.jsonl.gz` 1010 rows
+(27,629 bytes). The branch is handed back without pushing, after a final
+`git rebase go` and clean-worktree check.
+
+Final branch: `go-review-c18`, rebased onto `go` at `869db198`. Review code and
+boundary commits are `d1bba127` and `6eab5b5a`. The post-test integration delta
+contains only `HANDOFF.md` and the router differential matrix documentation;
+the tested Go/Python fixture sources are unchanged.

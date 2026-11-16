@@ -43,7 +43,7 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 | C15 | subscription refresh, health, scheduled refresh | 600 | verified | C13, C14, C07 | – |
 | C16 | health check, latency, node DNS, region check, domain probe | 1089 | verified | C12, C13 | 5 (5 done) |
 | C17 | provider delivery and responses | 540 | verified | C15 | – |
-| C18 | Mihomo config generation, Mihomo base settings | 1275 | ported | C12, C15, C16, C17 | – |
+| C18 | Mihomo config generation, Mihomo base settings | 1275 | verified | C12, C15, C16, C17 | – |
 | C19 | Surge converter | 1129 | verified | C18 | – |
 | C20 | Loon converter | 764 | verified | C19 | – |
 | C21 | MosDNS converter | 1261 | verified | C14 | – |
@@ -918,7 +918,7 @@ Commands (review):
 
 ## C18 — Mihomo config generation, Mihomo base settings
 
-**Status: `ported`** (independent adversarial review in progress) · prereqs: C12, C15, C16, C17 · Go: `internal/convert` (+ `internal/convert/mihomoenv`)
+**Status: `verified`** (independent functional review 2026-11-17; zero open functional findings) · prereqs: C12, C15, C16, C17 · Go: `internal/convert` (+ `internal/convert/mihomoenv`)
 
 Files → Go:
 - `backend/converters/mihomo.py` generation group → `convert/mihomo_generate.go`: `CustomConfigYAMLError`, `ValidateIPv6Flags`, `DefaultMihomoTemplate`, `SplitRulesAndRulesets`, `DefaultHealthCheckURL`, `BuildProviderHealthCheck` (structured `health_check` via `health/check.ProviderHealthCheck`), `LogicRuleTypes`, `ApplyNoResolveToLogicRule`, `NormalizeFindProcessMode`, `ParseMosdnsCustomHosts`, `SyncMosdnsHosts`, `InjectRegionProbe`, `GenerateOptions`, `GenerateMihomoConfig` (= generate_mihomo_config; YAML via `yamlx.IndentDump`), `GenerateMihomoDocument` (= `yaml.safe_load(generate_mihomo_config(...))`, used by many callers); `convert/mihomo_downloads.go`: `Download`, `GetMihomoProviderDownloads`, `GetMihomoRulesetDownloads`; `convert/mihomo_generate_py.go`: Python-semantics helpers (raise/catch panics → returned errors, `dictGet`/`dictItem`/`iterate`, ordered sets, `appendURLQuery` = profile_context.append_url_query, `pyIntOf`).
@@ -966,10 +966,11 @@ Review C18 (2026-11-17, independent reviewer; branch `go-review-c18`):
 - Medium: `sourceURLText` stringified false/zero/empty legacy library URLs into nonempty format overrides. Python falls back to the rule's URL. Fixed empty-value coalescing; both generated rule-provider format/path and ruleset download extension now match. Python on `.63` confirmed all six null/empty/false/zero/container variants resolve `/fallback.yaml` as YAML. Four non-string variants failed in Go before the fix.
 - Baseline `.32` proddiff exit 0: self checks PASS, coverage_regressions=0, new=0/stale=0; main Mihomo 2 successes, Agent Mihomo 1, subscription Mihomo 4, downloads 2 per kind.
 - Structural Python types/errors remain **→ S-convert, waiting for N8 design**, per the coordinator's explicit scope. Public APIs and invalid-input acceptance/rejection stay unchanged.
-- Fix commit: `49e423ea`; `.63` full convert suite passed (6.426s).
+- Review commits: `d1bba127` (parse-log leak and format fallback fixes), `6eab5b5a` (1010 structural boundary cases, coverage matrix and native bounds). `.63` full convert suite passed (6.426s, then 6.698s); final boundary suite passed (0.137s).
 - Added independent `review_mihomo_gen.py` → `review_mihomo.jsonl.gz`: **1010 public-boundary rows, 235 expected rejections**, structural generated documents + reports/mutations, ordered download lists, base validation, takeover and Agent context. Earlier 998-row full convert suite passed on `.63` (6.698s); final added host/core-version cases also passed. Source coverage / full branch matrix / all 66 Python test-file mappings are in `parity/review-c18.md`. Production trace confirms base validators and several generation helpers are not visited by the snapshot.
 - Local native cleanup: bounded int64 comparisons replace arbitrary-precision temporary allocations; DEBUG lengths use strconv.Itoa. String/digit validation semantics remain intact. Mutation check temporarily restored the broken nonempty format override on the remote copy: config structure and ruleset-download comparisons failed as expected (`format-fallback mutation detected`); fixed source restored. Partial reports on generation errors are also compared.
-- Next: final `.32` gofmt/vet/convert race/full suite/proddiff, mark verified only with no open functional findings, rebase `go`, no push.
+- Authoritative `.32` acceptance after rebase to current `go`: gofmt internal/tools clean; `go vet ./...` PASS; `go test -race -count=1 -timeout=30m ./internal/convert/` → `ok configflow/internal/convert 56.312s`; `go test -count=1 ./...` all PASS (convert 28.788s, installer 150.618s, oxidns 86.902s; final weburl 0.004s / yamlx 0.831s / proddiff generator no tests). `server/scripts/proddiff.sh` exit 0: self-check status/json-leaf/yaml-leaf/text-line PASS, coverage_regressions=0, new=0/stale=0; main2/Agent1/sub4/provider-download2/rule-download2 success, 5 existing unrelated global differences.
+- Complete: no open functional findings; no public API changes or new dependencies. Structural debt stays assigned to S-convert. Final report and exact commands/output: `parity/review-c18.md`. Rebased onto `go` at `869db198`; the last rebase added only HANDOFF/router-matrix documentation, so tested Go sources are unchanged. Clean worktree at hand-back; no push.
 
 ## C19 — Surge converter
 
