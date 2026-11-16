@@ -1447,7 +1447,14 @@ Cross-domain contracts:
 - A16 is missing. The read model decodes the saved library/rules booleans from agent.rule_sync.settings into a typed SyncSettings; read options allow an agent settings adapter when A16 supplies its own type. No workers, HTTP or repository calls are introduced.
 - C27 has no routes or repository writes. C32 owns HTTP/auth/transaction/cancellation semantics and converts choice/setting errors to 400 and RoutingLockedError to 409 with usages. C29 owns invalidate-follow at whole-settings replacement; group writers also call the same C27 update API.
 
-Public API signatures and Python-test-file coverage will be filled with each compiling step below. Remaining: implement steps 1–3 and final checks.
+Step 1 implemented in `ruledns_state.go` (typed JSON engine/rule/Agent/upstream views):
+- `ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error)`; `RuleDNSEntries(p *Profile, ids []string, options RuleDNSReadOptions) (map[string]RuleDNSRule, error)`; `ExplicitRuleDNS(p *Profile, id string) (string, error)`. Empty route means no route; JSON uses null where the Python read model does. Unsupported rows omit route fields. Read options: nil Agents selects ProfileAgents, nonnil empty selects none; optional SyncSettings adapter returns `{Library, Rules bool}`.
+- `ProfileAgents(p *Profile) []*Node` (copies); `PolicyDNSRoutes(p *Profile) map[string]string`; `FollowRoute(item *Node, p *Profile) string` (empty route = no DNS route).
+- `UpstreamCatalog(settings, document *Node, bindings []DNSBinding) ([]UpstreamCandidate, error)`; nil document parses the template lists or saved native YAML. Candidate includes key/source/addr/label/linked and `Entry json.RawMessage`; the read model hides Entry. Bindings contain UpstreamTag and UpstreamIndex.
+- `HydrateRuleset(item, library *Node, profileID string) *Node` returns a copy; C32 assigns the returned reference. It clears old library source fields, retains rule-owned fields/unknown metadata and uses a profile content URL for inline sources.
+- `.63`: gofmt, `go vet ./internal/oxidns` and `go test -count=1 -run "^TestReviewNativeRevision$" ./internal/oxidns` passed (`0.006s`). No new dependency or jsonx import.
+
+Remaining: step 2 write API, fresh Python boundary/generation corpus and test-file map, then final .32 gates. No runtime behavior from C32 routes is claimed until that module wires these APIs into its transactions.
 
 ## C28 — MosDNS archive and routes
 
