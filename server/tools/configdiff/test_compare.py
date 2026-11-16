@@ -233,6 +233,32 @@ class Comparators(unittest.TestCase):
             with self.assertRaises(ProtocolError):
                 normalized(changed, 'http://source.example/feed', 'opaque-body')
 
+    def test_provider_local_time_comment_and_filename_mutations(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from providers import comments, filename
+        policy = Policy(start=1760000000, end=1760000001, tz='Asia/Shanghai')
+        local = datetime.fromtimestamp(policy.start, ZoneInfo(policy.tz)).replace(tzinfo=None)
+        raw = ('# Generated: ' + local.isoformat() + 'Z\n# Source: from local cache\nproxies: []\n').encode()
+        valid = comments(raw, policy)
+        with self.assertRaises(ValueError):
+            comments(raw.replace(str(local.year).encode(), b'1990'), policy)
+        changed = raw.replace(b'from local cache', b'changed source')
+        self.assertTrue(differences(valid, comments(changed, policy)))
+        reply = Reply(200, {'content-disposition': 'inline; filename="proxies_sub-a_' + local.strftime('%Y%m%d_%H%M%S') + '.yaml"'}, raw)
+        filename(reply, policy)
+        with self.assertRaises(ValueError):
+            filename(Reply(200, {'content-disposition': reply.headers['content-disposition'].replace('sub-a', 'wrong')}, raw), policy)
+        with self.assertRaises(ValueError):
+            filename(Reply(200, {'content-disposition': reply.headers['content-disposition'].replace(str(local.year), '1990')}, raw), policy)
+
+    def test_provider_fallback_and_rule_stale_headers_remain_observable(self):
+        a = Reply(200, {'content-type': 'text/yaml'}, b'proxies: []')
+        for key in ('x-configflow-provider', 'x-configflow-rule-cache', 'warning'):
+            b = copy.deepcopy(a)
+            b.headers[key] = 'unexpected'
+            self.assertTrue(response_diffs(a, b))
+
     def test_generated_file_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:
             dirs = [Path(tmp, n) for n in ('python', 'go')]

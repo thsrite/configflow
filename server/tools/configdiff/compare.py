@@ -198,6 +198,7 @@ def ini_structure(text):
 HEADERS = ('content-type', 'content-disposition', 'cache-control', 'etag', 'x-configflow-profile',
            'location', 'allow', 'access-control-allow-origin', 'access-control-allow-headers',
            'access-control-allow-methods', 'access-control-expose-headers', 'vary',
+           'x-configflow-provider', 'x-configflow-rule-cache', 'warning',
            'last-modified', 'accept-ranges', 'content-range', 'referrer-policy', 'x-content-type-options')
 
 

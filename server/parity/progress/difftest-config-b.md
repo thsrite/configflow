@@ -358,4 +358,21 @@ request_variants=5181 named_matrix_cases=2794（S321 F2143 B330），H去重167
 29 self-checks + end-to-end wrong-Go-response check OK
 ```
 
-继续provider下载、真实HTTP HEAD副作用、单飞/30秒复用/取消，以及其他业务文件。当前并非整个5181个设计用例完成，也未做最终全量。
+继续provider下载、真实HTTP HEAD副作用、单飞/30秒复用/取消，以及其他业务文件。5181是已编码请求变体，不代表5697项设计清单已完成，也未做最终全量。
+
+## 批次 19：subscription provider 格式、HEAD、时区和元数据
+
+- 43请求（含4个T04准备PUT），28比较通过、15差异：默认/显式profile两入口的YAML、Surge、Loon、include/exclude筛选、空结果、unknown format、无URL缓存、无缓存/空缓存/非法filters/不存在对象；UTC与Asia/Shanghai，以及URL profile覆盖query/header。准备PUT只是令interval=60走首次拉取，不代表整个T04配方完成。
+- 真实HEAD首次请求确实执行上游GET并写raw cache/health/served文件，响应body为空；比较实际副作用。Surge/Loon文本逐行、YAML逐结构比较外，新增独立注释元数据观察：Generated是本地ISO时间后接字面Z，文件名时间戳也按本端TZ校验；只把验证过的时间数字和文件名对应，其他注释全部比较。served YAML文件中的注释也观察，不能被通用YAML解析丢掉。
+- **15个差异是同一遗漏的不同场景**：Go两入口的YAML响应和served副本无Python的注释（实际Go comments=[]），包括Generated时间；YAML数据、文件名、上游次数和HEAD副作用相同。不是15种独立根因。保留R154/R220的S01/S06/B03/B90/B91以及R154-B04的具体证据。
+- 实际路由manifest表明R154已接通，尽管routes.tsv仍todo，本工具自动比较而未继续跳过。新增last-good/stale/warning标头比较与元数据/错误时间/错误subscription文件名自检，共31项。
+
+```text
+.63 run.py --groups subscription-provider-formats,subscription-provider-head,subscription-provider-validation,subscription-provider-timezone,subscription-provider-selector
+current compared=28 different=15 design_errors=[] seconds=27.12
+cumulative compared=1446 go-unimplemented=3721 dependency=28 different=28 O12-separate=1
+request_variants=5224 named_matrix_cases=2823（S331 F2151 B341），H去重167
+31 self-checks + end-to-end wrong-Go-response check OK
+```
+
+继续12秒last-good回退/后台收尾、并发单飞/格式隔离、merged provider和引用图错误；未做最终全量。

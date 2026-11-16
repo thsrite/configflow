@@ -100,6 +100,8 @@ def main():
     groups.update(subscriptions)
     from cases.subscription_fetch import GROUPS as subscription_fetch
     groups.update(subscription_fetch)
+    from cases.subscription_providers import GROUPS as subscription_providers
+    groups.update(subscription_providers)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:
