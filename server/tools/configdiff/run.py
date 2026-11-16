@@ -12,7 +12,7 @@ import traceback
 
 from build import build
 from harness import ROOT, Recorder, DesignError
-from inventory import routes
+from inventory import routes, cases
 
 
 def render_findings(results):
@@ -20,9 +20,9 @@ def render_findings(results):
              '仅合成数据；来源为公开 Flask↔Go HTTP、SQLite 行及文件比较。未修改业务代码。', '',
              'Go 尚未实现单独计数，不列为业务失败。以下待协调人派移植 agent，不能用基线吞掉。', '']
     for r in results:
-        if r['state'] != 'different':
+        if r['state'] not in ('different', 'O12-separate'):
             continue
-        lines += [f'## {r["case"]} / {r["variant"]}', '', f'路由：`{r["route"]}`', '',
+        lines += [f'## {r["case"]} / {r["variant"]}', '', f'路由：`{r["route"]}`；状态：{r["state"]}', '',
                   '| 路径 | 类型 | Python | Go |', '|---|---|---|---|']
         def display(v):
             text = repr(v)
@@ -30,7 +30,7 @@ def render_findings(results):
         lines += [f'| `{d["path"]}` | {d["kind"]} | {display(d["python"])} | {display(d["go"])} |'
                   for d in r['differences']]
         lines.append('')
-    if not any(r['state'] == 'different' for r in results):
+    if not any(r['state'] in ('different', 'O12-separate') for r in results):
         lines += ['当前已执行用例未发现差异；不代表尚未实现或未运行的条目通过。', '']
     return '\n'.join(lines)
 
@@ -50,6 +50,10 @@ def main():
     groups = dict(crosscutting)
     from cases.auth import GROUPS as auth
     groups.update(auth)
+    from cases.redaction import GROUPS as redaction
+    groups.update(redaction)
+    from cases.admin_auth import GROUPS as admin_auth
+    groups.update(admin_auth)
     requested = list(groups) if args.groups == 'all' else args.groups.split(',')
     unknown = set(requested) - groups.keys()
     if unknown:
@@ -68,7 +72,10 @@ def main():
                 traceback.print_exc()
             for result in recorder.results[first_result:]:
                 result['group'] = group
+    matrix_cases = cases()
     for r in recorder.results:
+        if r['case'].startswith('R') and matrix_cases.get(r['case']) != r['route']:
+            errors.append({'group': 'inventory', 'error': 'case ID does not name its matrix route: ' + r['case']})
         if r['route'] != 'startup' and r['route'] not in matrix:
             errors.append({'group': 'inventory', 'error': 'case names unknown route: ' + r['route']})
     previous = json.loads(args.output.read_text()).get('results', []) if args.output.exists() else []
@@ -85,10 +92,13 @@ def main():
                'cumulative': dict(Counter(r['state'] for r in combined)),
                'categories': dict(Counter(r['category'] for r in combined)),
                'named_matrix_cases': len({r['case'] for r in combined if r['case'].startswith('R')}),
+               'named_matrix_categories': dict(Counter(case.split('-')[1][0] for case in {r['case'] for r in combined if r['case'].startswith('R')})),
                'request_variants': len(combined), 'design_errors': errors,
                'seconds': round(time.time() - started, 2)}
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps({'summary': summary, 'results': combined}, ensure_ascii=False, indent=2) + '\n')
+    args.output.write_text('{"summary":' + json.dumps(summary, ensure_ascii=False, separators=(',', ':')) +
+                           ',\n"results":[\n' +
+                           ',\n'.join(json.dumps(r, ensure_ascii=False, separators=(',', ':')) for r in combined) + '\n]}\n')
     args.findings.write_text(render_findings(combined))
     print('SUMMARY ' + json.dumps(summary, ensure_ascii=False), flush=True)
     return 2 if errors else 1 if current_counts['different'] else 0

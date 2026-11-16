@@ -15,7 +15,8 @@ import time
 import urllib.error
 import urllib.request
 
-from compare import Policy, response_diffs, database_diffs, file_diffs
+from compare import Policy, Difference, response_diffs, database_diffs, file_diffs
+from inventory import declared_states
 
 ROOT = Path(__file__).resolve().parents[3]
 USERNAME, PASSWORD, SECRET = 'diff-admin', 'diff-password', 'synthetic-shared-jwt-secret'
@@ -81,13 +82,14 @@ class Pair:
         self.admin_username = self.options.get('admin_username', USERNAME) if mode == 'login' else ''
         self.admin_password = self.options.get('admin_password', PASSWORD) if mode == 'login' else ''
         self.auth_enabled = bool(self.admin_username and self.admin_password)
-        self.options['config_token'] = 'synthetic-public-pull-token' if mode == 'token' else ''
+        self.options.setdefault('config_token', 'synthetic-public-pull-token' if mode == 'token' else '')
         self.temp = tempfile.TemporaryDirectory(prefix='configdiff-')
         self.root = Path(self.temp.name)
         self.dirs = [self.root / name for name in ('python', 'go')]
         self.processes, self.handles, self.bases, self.tokens = [], [], [], []
         self.policy = Policy(start=time.time())
         self.registered = set()
+        self.declared = declared_states()
 
     def environment(self, directory, port):
         env = dict(os.environ)
@@ -126,7 +128,7 @@ class Pair:
         for item in document['shared']['subscriptions'] + document['shared']['rule_library']:
             if item.get('enabled', True) and item.get('interval', item.get('update_interval', 0)):
                 raise DesignError('X08 default fixture contains a refreshable source')
-        self.default_profile = document.get('default_profile_id') or 'default'
+        self.default_profile = document['system']['system_config'].get('default_profile_id') or 'default'
         try:
             return self.start_servers()
         except BaseException:
@@ -207,8 +209,12 @@ class Pair:
         nominal_method, nominal_path = route.split(' ', 1)
         method, path = method or nominal_method, path or nominal_path
         policy = policy or self.policy
+        available = self.route_available(route)
         replies = []
         for index, base in enumerate(self.bases):
+            if index == 1 and not available:
+                replies.append(Reply(0, {}, b''))
+                continue
             local_headers = {'X-ConfigFlow-Profile': self.default_profile}
             local_headers.update(headers or {})
             if body is not None:
@@ -225,9 +231,14 @@ class Pair:
             check(reference)
         category = re.search(r'-(S|F|B)\d+', case_id)
         category = category[1] if category else case_id.split('-')[0]
-        if not self.route_available(route):
-            self.recorder.record(case_id, variant, route, category, 'go-unimplemented',
-                                 python_status=reference.status, go_status=replies[1].status)
+        if not available:
+            if self.declared.get((nominal_method, nominal_path)) == 'done':
+                self.recorder.record(case_id, variant, route, category, 'different',
+                                     [Difference('route.registration', 'declared-done-but-unregistered', True, False)],
+                                     python_status=reference.status, go_status=None)
+            else:
+                self.recorder.record(case_id, variant, route, category, 'go-unimplemented',
+                                     python_status=reference.status, go_status=None)
             return replies
         captured = capture(replies, policy) if capture else []
         diffs = list(captured or []) + response_diffs(*replies, policy, method=method)

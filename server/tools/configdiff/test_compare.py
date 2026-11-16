@@ -1,6 +1,9 @@
 """Mutation tests for every comparison class; run on the test server only."""
 import copy
 import json
+import io
+import zipfile
+import tarfile
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -52,6 +55,23 @@ class Comparators(unittest.TestCase):
         self.assertTrue(differences(a, b))
         self.assertTrue(differences(structure(b'[Rule]\nDOMAIN,example.com,DIRECT\n'),
                                     structure(b'[Rule]\nDOMAIN,example.com,REJECT\n')))
+
+    def test_archive_and_binary_mutations(self):
+        def zipped(content):
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, 'w') as archive:
+                archive.writestr('rules.txt', content)
+            return structure(buffer.getvalue())
+        self.assertTrue(differences(zipped('DOMAIN,example.com,DIRECT'), zipped('DOMAIN,example.com,REJECT')))
+        def tarred(content):
+            buffer = io.BytesIO()
+            with tarfile.open(fileobj=buffer, mode='w:gz') as archive:
+                member = tarfile.TarInfo('rules.txt')
+                member.size = len(content)
+                archive.addfile(member, io.BytesIO(content))
+            return structure(buffer.getvalue(), filename='bundle.tar.gz')
+        self.assertTrue(differences(tarred(b'one'), tarred(b'two')))
+        self.assertTrue(differences(structure(b'\xff\x00'), structure(b'\xff\x01')))
 
     def test_database_row_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:

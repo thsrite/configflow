@@ -19,3 +19,21 @@ def cases():
                 for n in range(int(first), int(last or first) + 1):
                     out[f'{row[1]}-{category}{n:02}'] = row[2]
     return out
+
+
+def admin_auth_rows():
+    out = []
+    for line in MATRIX.read_text().splitlines():
+        row = re.match(r'^\| \*\*(R\d{3})\*\* `([^`]+)`', line)
+        ids = re.search(r'\*\*F(\d+)–(\d+)\*\* A1–7', line)
+        if row and ids:
+            if int(ids[2]) - int(ids[1]) != 6:
+                raise ValueError('matrix auth range no longer has seven entries')
+            out.append((row[1], row[2], int(ids[1])))
+    return out
+
+
+def declared_states():
+    return {(method, path): status for line in (ROOT / 'server/parity/routes.tsv').read_text().splitlines()
+            if line and not line.startswith('#')
+            for method, path, _handler, _package, status in [line.split('\t')]}

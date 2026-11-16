@@ -4,4 +4,22 @@
 
 Go 尚未实现单独计数，不列为业务失败。以下待协调人派移植 agent，不能用基线吞掉。
 
-当前已执行用例未发现差异；不代表尚未实现或未运行的条目通过。
+## X08 / retired-node-test-dns-migration
+
+路由：`startup`；状态：O12-separate
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `db.fields.profile/default/_revision.revision` | value | 5 | 2 |
+| `db.fields.profile/default/_revision.value` | value | 2 | 1 |
+| `db.fields.profile/default/updated_at.revision` | value | 5 | 1 |
+| `db.fields.system//_revision.revision` | value | 6 | 4 |
+| `db.fields.system//_revision.value` | value | 3 | 2 |
+| `db.fields.system//agents.revision` | value | 6 | 4 |
+| `db.fields.system//agents.value[0].node_test_dns_endpoints` | extra-in-go | None | {'legacy-synthetic': {'endpoint': '192.0.2.53:15353', 'profile_id': 'default', 'status': 'installed', 'plugins': [], 'installed': True}} |
+| `db.fields.system//system_config.revision` | value | 6 | 4 |
+| `db.fields.system//system_config.value.node_test_dns` | missing-in-go | ['https://dns.example/dns-query'] | None |
+| `db.fields.system//system_config.value.node_test_dns_config.servers` | length | 1 | 2 |
+| `db.fields.system//system_config.value.node_test_dns_config.servers[0]` | value | 'https://dns.example/dns-query' | '192.0.2.53:15353' |
+| `db.meta.generation` | value | 6 | 4 |
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'notice:node-test-dns-managed-removed': {'source': 'notice', 'scope': 'system', 'severity': 'warning', 'status_label': '已自动调整', 'title': '节点测速 DNS 已自动调整', 'message': '节点测速的「OxiDNS 托管」模式已移除。测速 DNS 已改为自定义：https://dns.example/dns-query。原专用入口 192.0.2.53:15353 已从 OxiDNS 配置中去掉，「合成 Agent 🧪」上的监听在下一次发布 OxiDNS 后关闭。', 'impact': '', 'checked_at': '2026-11-16T18:08:41.246814+00:00', 'target': {'path': '/nodes', 'query': {}, 'label': '查看测速设置'}, 'id': 'notice:node-test-dns-managed-removed', 'state': 'pending', 'read': False, 'version': '2026-11-16T18:08:41.246865+00:00', 'first_seen_at': '2026-11-16T18:08:41.246865+00:00' | None |

@@ -5,7 +5,7 @@ from urllib.parse import quote
 
 import jwt
 
-from compare import Policy, Difference, database_diffs, file_diffs
+from compare import Policy, Difference, database, database_diffs, file_diffs
 from harness import Pair, DesignError, USERNAME, PASSWORD, SECRET, json_body
 from seed import CURRENT, RETIRED, AGENT, PULL
 from inventory import routes
@@ -155,5 +155,30 @@ def startup(binary, recorder):
                         'different' if diffs else 'compared', diffs)
 
 
+def startup_migration(binary, recorder):
+    # O6 explicitly moves this retired migration to O12; record the observed
+    # storage difference, never count it as an implemented parity success.
+    with Pair(binary, recorder, options={'legacy_dns': True}) as pair:
+        left, right = [database(directory) for directory in pair.dirs]
+        a = left['fields']['system//system_config']['value']['node_test_dns_config']
+        b = right['fields']['system//system_config']['value']['node_test_dns_config']
+        if a.get('servers') != ['https://dns.example/dns-query']:
+            raise DesignError('X08 legacy migration seed did not reach Python cleanup')
+        policy = Policy(start=pair.policy.start, end=time.time(),
+                        times={'db.fields.profile/default/updated_at.value'})
+        observed = database_diffs(*pair.dirs, policy) + file_diffs(*pair.dirs, policy)
+        allowed = ('db.meta.generation', 'db.fields.system//system_config.',
+                   'db.fields.system//agents.', 'db.fields.system//_revision.',
+                   'db.fields.profile/default/_revision.', 'db.fields.profile/default/updated_at.',
+                   'files.notifications.json', 'files.task-status.json')
+        retired = [d for d in observed if d.path.startswith(allowed)]
+        unexpected = [d for d in observed if not d.path.startswith(allowed)]
+        recorder.record('X08', 'retired-node-test-dns-migration', 'startup', 'X08',
+                        'O12-separate' if retired else 'compared', retired)
+        if unexpected:
+            recorder.record('X08', 'retired-migration-unexpected-storage', 'startup', 'X08',
+                            'different', unexpected)
+
+
 GROUPS = {'precedence': precedence, 'jwt': jwt_compatibility, 'auth-environments': auth_environments,
-          'redaction': redaction, 'startup': startup}
+          'redaction': redaction, 'startup': startup, 'startup-migration': startup_migration}

@@ -181,7 +181,7 @@ def database_diffs(left, right, policy):
 
 # Logs/lock files are compared in X07/T26, not silently included with runtime noise.
 # Seed export is setup-only. SQLite is compared as rows, never physical page bytes.
-RUNTIME_FILES = re.compile(r'(^|/)(app\.log(?:\.\d+)?|[^/]+\.lock|configflow\.sqlite3(?:-wal|-shm|-journal)?|configdiff-seed\.json)$')
+RUNTIME_FILES = re.compile(r'^(app\.log(?:\.\d+)?|configflow\.sqlite3(?:-wal|-shm|-journal)?|configdiff-seed\.json)$|(^|/)[^/]+\.lock$')
 
 
 def files(directory):
