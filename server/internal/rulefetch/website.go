@@ -4,7 +4,6 @@ package rulefetch
 // the page metadata an Agent returns.
 
 import (
-	"html"
 	"regexp"
 	"strings"
 
@@ -52,7 +51,7 @@ func SiteTitle(title string) string {
 // CleanText is clean_text(value, limit): tags removed, entities decoded,
 // whitespace collapsed, stripped, cut to limit characters.
 func CleanText(value string, limit int) string {
-	text := html.UnescapeString(tagPattern.ReplaceAllString(value, ""))
+	text := pyUnescape(tagPattern.ReplaceAllString(value, ""))
 	var b strings.Builder
 	space := false
 	for _, r := range text {
@@ -71,49 +70,6 @@ func CleanText(value string, limit int) string {
 		text = string(runes[:limit])
 	}
 	return text
-}
-
-var (
-	metaTag = regexp.MustCompile(`(?i)<([a-zA-Z][^\t\n\r\f />\x00]*)`)
-	attr    = regexp.MustCompile(`((?:^|[\s/'"])[^\s/>][^\s/=>]*)(\s*=+\s*('[^']*'|"[^"]*"|[^>\s'"][^>\s]*|))?`)
-)
-
-// metaContent is _meta_content: the content attribute of the last <meta>
-// start tag (html.parser.HTMLParser), cleaned. The start-tag scan follows
-// HTMLParser's tolerant attribute grammar for the single tags the Agent
-// returns.
-func metaContent(value string) string {
-	content := ""
-	for _, loc := range metaTag.FindAllStringSubmatchIndex(value, -1) {
-		if !strings.EqualFold(value[loc[2]:loc[3]], "meta") {
-			continue
-		}
-		rest := value[loc[1]:]
-		if end := strings.IndexByte(rest, '>'); end >= 0 {
-			rest = rest[:end]
-		}
-		attrs := map[string]*string{}
-		for _, m := range attr.FindAllStringSubmatch(" "+rest, -1) {
-			name := strings.ToLower(strings.TrimLeft(m[1], " \t\n\r\f/'\""))
-			if m[2] == "" {
-				attrs[name] = nil
-				continue
-			}
-			v := m[3]
-			if len(v) >= 2 && (v[0] == '\'' && v[len(v)-1] == '\'' || v[0] == '"' && v[len(v)-1] == '"') {
-				v = v[1 : len(v)-1]
-			}
-			if v != "" {
-				v = html.UnescapeString(v)
-			}
-			attrs[name] = &v
-		}
-		content = ""
-		if v := attrs["content"]; v != nil {
-			content = *v
-		}
-	}
-	return CleanText(content, 200)
 }
 
 // KnownService is known_service(host): the built-in service owning host at
