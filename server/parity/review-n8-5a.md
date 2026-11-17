@@ -2,8 +2,10 @@
 
 状态：**复核完成，条件交回**。high：2 已修复、1 既有依赖阻断；medium：0；low：1 已修复。
 F4 等待 O3-6c，尚不具备独立合入条件；完整 gate 排队超 15 分钟按规则停止，未执行门禁阶段。
-分支 `go-review-n8-5a`，起点 `go-n8-5@fbe61bc64`，已变基到 `go@9c88c4390`。
+分支 `go-review-n8-5a`，起点 `go-n8-5@fbe61bc64`，已变基到 `go@d43cca6e4`。
 变基仅行为变更文档有追加冲突，保留 C33 与 N8-5a 两节，无产品代码冲突。
+最后从 `9c88c4390` 变基到 `d43cca6e4` 仅叠加 CFG-08 的报告/Python 差分工具与结果文件；
+`server/internal/` 的源码与最后定向验证时一致，没有把未跑的完整 gate 写成通过。
 复核者未参与原实现；无子 agent、无 push、无生产访问，用例仅含合成数据。
 
 ## 发现
@@ -15,7 +17,7 @@ F4 等待 O3-6c，尚不具备独立合入条件；完整 gate 排队超 15 分�
   `9007199254740993.0` 变成 `9007199254740992.0`、`\u003c` 变成 `<`。
   修复只回填业务维护实际拥有的 `rule_proxy_token`、`retired_rule_proxy_tokens`，保留其他字段的 Raw。
   回归 `TestReviewN85TokenMaintenancePreservesUntouchedMembers`：修复前两入口均失败，修复后通过。
-  修复提交：`a6eada000`（变基前 `219035cd4`）。
+  修复提交：`c1d18aa1b`（变基前 `219035cd4`）。
 
 - **F2，high，已修复：启动自动写入重新造成 R5 加载锁死。**
   `validateStored` 已允许畸形成员，但 `openLocked` 无条件运行 legacy token 初始化。
@@ -24,7 +26,7 @@ F4 等待 O3-6c，尚不具备独立合入条件；完整 gate 排队超 15 分�
   现在只有当前业务文档有效时才做可选启动写入；无效文档直接保持只读加载，修复事务再维护 token。
   `TestReviewN85InvalidStoredValuesDoNotTriggerStartupWrites` 对全部 meta/sections/fields
   和完整非 DB 文件树断言加载零改动、typed 修复可提交、无关文件保留。
-  修复提交：`5ef64fa91`（变基前 `9ead8212a`）。
+  修复提交：`f047aa15f`（变基前 `9ead8212a`）。
 
 - **F3，low，已修复：View / 校验文档过度承诺。** 文档称“每个 head 只解码一次”、
   “不取锁”，但已有缓存上限会让超大文档每次解码，并发冷读也不保证唯一实例；
@@ -33,7 +35,7 @@ F4 等待 O3-6c，尚不具备独立合入条件；完整 gate 排队超 15 分�
   `TestReviewN85ViewRespectsCacheLimit` 固定两次 View 的加载计数及不缓存边界；
   `ValidateDocument` 注释也不再误称每次 load 必须通过业务校验。
   三条设计 Clarified 已写入 `n7-n8.md`，并补上 Clear 的 R3 与业务维护例外。
-  修复提交：`767521a8e`。
+  修复提交：`12b90eacf`。
 
 - **F4，high，已复现，合入阻断：仍缺 O3-6c 的关机提交屏障。**
   这不是 N8-5a 新引入的取消策略，但其新 typed Update 同样受影响。
@@ -140,3 +142,5 @@ RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 -- bash -lc 'export GATE_LOGS=$
 - 本轮产品变化是保留 R1/R2/R5 数据及解除 R5 启动锁死；原有业务 token 维护仍保留。
   加载/写入拆分、按类型 merge、R8 修订号的 Python 差异已在 behaviour-changes.md 登记，未放宽差分。
 - 无新依赖、无 push、无子 agent；工作分支 `go-review-n8-5a`。
+- 最终修复/说明提交：F1 `c1d18aa1b`，F2 `f047aa15f`，F3/独立测试/集成补丁 `12b90eacf`，
+  验证与阻断记录 `668639b2c`。原作者 a 段提交仅随变基重放，未重做实现。
