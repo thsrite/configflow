@@ -1,131 +1,109 @@
 # N8-2 — store on raw rows
 
-Status: implemented; final .32 acceptance pending; branch `go-n8-2`.
+Status: **ported**, boundary acceptance passed; independent review pending.
+Branch: `go-n8-2`; integrated with N7-1 and N8-1 (`go` at `5535931d`).
+No design deviation, schema/version change, new dependency or push.
 
-Scope: `design/n7-n8.md` §2.4 exactly. SQLite schema, version, locking,
-transaction boundaries and error kinds unchanged. No model or typed repo API
-(N8-3/N8-5). D2: no canonjson; store metadata uses encoding/json.
+## Design correspondence
 
-Done:
-- `c22843c4`: designed Field/Section/Document/ProfileRows/Meta types.
-- Store Load/Commit/Create/BuildTemporary/Meta/SalvageMeta carry raw JSON.
-  Only the metadata needed by the store is decoded. JSON validity and row
-  envelopes are checked; field values are never decoded. Diff uses raw bytes.
-- repo/store_rows.go is the temporary jsonx boundary. It retains original row
-  bytes when the ordered legacy encoding is unchanged; committed rows and
-  decoded cache remain immutable. N8-3 deletes this bridge for the model codec.
-- Fingerprint uses length-prefixed Go rows, not Python JSON. Store crosscheck
-  already compares tables; repo interchange now compares every actual row too.
-- Raw fixture preserves whitespace, escapes, integral float/exponent syntax,
-  unknown/malformed-shape members, empty sections/profiles; one-field edit
-  verifies all unrelated bytes/revisions; typed raw-envelope rejection tests.
-- Existing Python crosschecks remain live public ConfigStore/ProfileRepository
-  boundary tests (not mocks). Legacy input fixture adapters are test-only.
-  Their independent ordered-JSON shell codec does not copy repo's byte-preservation
-  logic or decide whether a row changed (.63 live Python suite: store 18.800s).
-  Two old encoder-specific tests were replaced: non-JSON struct input becomes
-  invalid raw JSON rejection; Python tuple repr becomes native check diagnostics.
-  Synthetic Infinity/NaN in the old generator were replaced with finite values;
-  the designed json.Valid policy separately rejects non-standard JSON explicitly.
-- `TestStoredRoundTrip` uses real Python, committed Go/Python fixture variants,
-  and optional CONFIGFLOW_SNAPSHOT read-only SQLite backup. Only copies mutate;
-  Python diagnostics suppressed; test output contains counts only. Private copies
-  and expectations live in a mode-0700 directory under ~/cf-prod-snapshot/runs,
-  removed by t.Cleanup on success/failure. Other tests retain default /tmp.
-- Encoder inventory: parity/n8-2-json-encoders.tsv, 86 non-test call sites,
-  classified by use; owning consumer steps apply D2 to persisted identities.
-  No persisted application identity is changed by this storage-only step.
+- `design/n7-n8.md` §2.4: `store/document.go` defines exactly the designed
+  Field/Section/Document/ProfileRows/Meta types. Entry.Document and all write
+  APIs carry raw rows; metadata inputs are `map[string]json.RawMessage`.
+- Store never decodes field values. It validates JSON syntax, UTF-8 and envelope
+  consistency, preserves field bytes/order, and diffs bytes/positions. Metadata
+  needed by the engine is decoded with encoding/json; unknown metadata stays raw.
+  SQLite tables, version, transactions, locking, backups and error kinds remain.
+  Malformed JSON/version/quick_check diagnostic details use Go formatting; the
+  Chinese error categories/prefixes remain (PORTING permits internal text changes).
+- §4 N8-2: `repo/store_rows.go` is the temporary jsonx boundary. It preserves
+  original bytes when the ordered legacy value is unchanged, keeps committed
+  entries immutable, and preserves fail-closed handling of uncertain commits.
+  The N8-3 model codec replaces this bridge; N8-5 changes the public repo API.
+- §2.4/§5.7: Fingerprint is a Go-defined SHA-256 over length-prefixed rows.
+  Cross-language tests compare actual rows, not Python/Go digest equality.
+- §2.7/§6 D2: native store metadata/digest; no canonjson. Current encoder
+  inventory: `parity/n8-2-json-encoders.tsv`, **80** non-test calls (86 before
+  N8-1 removed six response/request/helper calls). Inventory base `db41f7a1`.
+  N8-1's design Appendix A retains its original frozen inventory.
+- Persisted application identities are unchanged in N8-2. Inventory explicitly
+  identifies health latency source keys and HA installation owner/compact Agent
+  hashes/enrollment .index files. N8-10's HR installer owner must account for
+  adoption/reinstall and session reuse when migrating these encoders under D2.
 
-Iterative .63 validation:
-`RT_HOST=sunbroke@192.168.0.63 rt -- bash -lc 'cd server && CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO="$(dirname "$PWD")" go test -count=1 ./internal/store ./internal/repo && go test -run "^$" ./...'`
-passed: store 11.374s, repo 45.228s; every package compiles.
-Targeted raw + fixture tests: store 1.080s, repo 0.152s; both fixture directions
-12 rows each, no-op unchanged, Go→Python→Go→Python passed.
+## Storage boundary and regression coverage
 
-Additional checks: raw metadata bytes and metadata-only commits; UTF-8 validity
-checked before writing fields, identifiers and metadata (json.Valid alone accepts
-invalid UTF-8 inside strings); bridge encoding errors keep ErrDocument; failed
-post-commit confirmation keeps the conservative uncertain/cache-preservation path.
-The Python audit now recursively compares exact JSON types and member order.
-Targeted .63 raw suite: store 1.448s, repo 0.154s; rollback/cache + bridge checks
-passed after these safeguards.
+`TestStoredRoundTrip` invokes real Python ConfigStore; the private case also
+opens/exports through real Python ProfileRepository before/after Go writes.
+No Python mocks or value emulation. Recursive comparisons check exact JSON
+scalar/container types and member order (no Python bool/int equality loophole).
 
-Next: .32 gofmt/vet, store+repo race, full tests, 60s raw-envelope fuzz,
-proddiff new=0, private-copy interchange; rebase go; clean; no push.
-No design deviations. Only internal malformed-JSON/version repr and quick_check
-formatting use Go diagnostics (Chinese category/prefix retained); native digest
-value changes as explicitly allowed in design §5.7.
+| Corpus | Rows before probe | Result |
+|---|---:|---|
+| Committed raw fixture written by Go | 12 | Go→Python→Go→Python PASS |
+| Same committed fixture written by Python | 12 | Python→Go→Python→Go→Python PASS |
+| Private snapshot read-only SQLite backup | 43 | Both directions + ProfileRepository PASS |
 
-## Design mapping and coverage
+Every case asserts byte-identical no-op rows, unchanged generation, and one Go
+probe row added while all original field bytes/revisions stay unchanged. Python
+then edits the same database; Go reads it and Python checks again. Unknown and
+wrong-shape opaque members, escaped Unicode, whitespace, exponent/integral float
+notation, empty sections/profiles and key order survive. The private source is
+opened with `mode=ro`; copies and expectations stay under a mode-0700 directory
+in `~/cf-prod-snapshot/runs`, removed by t.Cleanup. Final private-copy count: 0.
+No private values are printed or committed; child Python diagnostics are discarded.
 
-- §2.4: designed public raw row types in store/document.go; row envelopes in
-  rows.go; store.go/conn.go hold only raw field JSON and typed store metadata.
-  Commit compares raw bytes and positions; table definitions and storage version
-  unchanged. Fingerprint is length-prefixed rows, as explicitly permitted.
-- §4 N8-2: repo/store_rows.go is the only new production jsonx boundary; no
-  consumer API change. Store non-test imports of jsonx/pyyaml/pystr: zero.
-- §2.7/§6 D2: inventory is parity/n8-2-json-encoders.tsv (86 call sites). Native
-  store metadata/digest; application identity migrations remain in their owning
-  consumer steps. No canonjson package or new dependency.
-- §5.2 early storage gate: native fixture plus real-Python-created fixture,
-  each 12 rows; private read-only source copy, 43 rows. Byte-identical no-op,
-  generation unchanged, only new probe row written by Go, original row revisions
-  retained, Python opens/edits Go database and Go reads it, Python checks again.
-  N8-3 adds the model-specific typed record edits/warnings; this step does not
-  claim to implement those future codec rules.
-- backend/common/config_store.py: row schema, ordering, diff, conflicts, temporary
-  builds, metadata, recovery-copy/backup and locking remain covered by the live
-  crosscheck + store boundary tests. backend/test_config_store.py: all 11 tests'
-  behaviour covered by store_test.go/repo/store_level_test.go; raw_test.go
-  replaces unsupported Go-value rejection and adds opaque-byte invariants.
-  Python's unchanged-value pointer identity is internal and replaced by immutable
-  raw entries; exact row bytes/revisions are asserted. No feature skipped.
-- Existing repo Python crosschecks still run after the bridge: public repository
-  operations, rollback, concurrency, locking, cache invalidation and interchange.
+`backend/common/config_store.py` row layout, diff, conflicts, ordering, metadata,
+creation/recovery/backup, transactions and locking retain live crosschecks.
+All 11 behaviours from `backend/test_config_store.py` remain covered by
+store/store_test.go and repo/store_level_test.go. Native raw tests replace
+unsupported-Go-value input with invalid raw JSON rejection and add UTF-8,
+opaque metadata, immutable entry, row revision and failed-encoding rollback
+checks. Existing public repository crosschecks still cover operations, locks,
+cache invalidation, rollback and interchange. Legacy corpus adapters are test-only
+and use an independent JSON shell codec, not a copy of repo's preservation logic.
+Python's unchanged-value pointer identity is internal; raw byte/revision invariants
+replace it. Synthetic Infinity/NaN legacy corpus values are finite now; separate
+native tests enforce the designed json.Valid rejection of non-standard JSON.
+No feature skipped; model-specific R1–R9 tests remain N8-3 work.
 
-Sizes (Go non-test source lines, including comments/blank lines): store
-1629 → 1684; temporary repo bridge 212 + messages 8. New focused tests:
-store/raw_test.go 264, store/fuzz_test.go 35, repo/store_rows_test.go 74;
-Python raw interchange driver 82. No production schema or dependency changes.
+## Final commands and output (.32)
 
-Runner correction: the first .32 commands exported TMPDIR under the snapshot's
-Btrfs disk for **all** packages; /tmp on .32 is tmpfs. Thousands of SQLite fsyncs
-there caused unrelated full-suite packages to exceed the default 600s; the next
-reduced-parallelism full run was intentionally terminated once the filesystem
-cause was identified. No timeout was increased. The harness now allocates only
-its private snapshot copy/expectation under ~/cf-prod-snapshot/runs and cleans
-that directory explicitly; ordinary test temp files remain on default /tmp.
-After rebasing on N7-1 (`e5903ffb`), live Python interchange on .32 passed again:
-fixture 12 + 12 rows, private 43 rows; total 0.677s. Final gates are rerun with
-this corrected environment, not counted from the invalid full-suite runs.
+Actual phase logs: `/tmp/n8-2-integrated.mvzoHa/`. Default /tmp; `-p=2` only
+limits package concurrency; no test sampling/timeout changes.
 
-Final acceptance in progress on .32 after rebase to e5903ffb, using default /tmp:
-`go vet ./...` passed; `go test -race -p=2 -count=1 ./internal/store ./internal/repo`
-passed (store 11.991s, repo 233.133s); explicit live-Python round trip passed again
-(12 + 12 + 43 rows, 1.137s). Full normal suite, 60s fuzz and proddiff pending.
+```sh
+rt -- bash -lc 'set -euo pipefail; unset TMPDIR; export CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO="$PWD" CONFIGFLOW_SNAPSHOT=$HOME/cf-prod-snapshot/20261116/data; cd server; test -z "$(gofmt -l .)"; go vet ./...; go test -race -p=2 -count=1 ./internal/store ./internal/repo; go test -count=1 -run "^TestStoredRoundTrip$" -v ./internal/store; go test -p=2 -count=1 ./...; cd ..; server/scripts/proddiff.sh'
+rt -- bash -lc 'cd server && go test -run "^$" -fuzz "^FuzzRawDocument$" -fuzztime=60s -parallel=4 ./internal/store'
+```
 
-Inventory follow-up for owning consumer steps (no identity is changed in N8-2):
-health's source keys are persisted in latency results; HA installer hashes also
-select enrollment .index files, compact Agent identities and .ha-install/container
-ownership labels. These are explicitly marked persisted identities in the TSV,
-not ordinary file writers. N8-10's HR installer owner must handle adoption/reinstall
-and enrollment reuse when applying D2. Provider single-flight and log dedup digests
-are transient. The inventory does not silently preserve Python encodings or add
-canonjson, and it does not convert these other packages in this storage-only step.
+- gofmt: no output; vet: PASS; production store emulation-import gate: PASS.
+- Race: `ok configflow/internal/store 11.219s`, `ok configflow/internal/repo 197.156s`.
+- Explicit interchange: PASS, 12+12+43 rows, `ok configflow/internal/store 1.420s`.
+- Full suite: every package PASS; store 8.615s, repo 16.028s, oxidns 88.804s,
+  installer 188.378s; final `ok configflow/internal/yamlx 1.850s` and
+  `? configflow/tools/proddiff/generator [no test files]`.
+- Proddiff: all self-checks PASS; 2831 cases / 415 comparisons / 65 GET routes;
+  coverage_regressions=0, unmapped_routes=0, **new=0 stale=0**. Ten existing
+  baseline differences retained. Python/Go transport failures both 30. Every
+  available configuration/file/download generator succeeds on all its cases.
+- Raw fuzz: integrated rerun PASS, **61.078s / 464224 executions**, no failure.
+  Earlier raw-code run also passed (61.055s / 230146 executions).
 
-Completed final-code .32 results before N8-1 integration:
-- Full normal suite passed (`-p=2`): monitor 20.740s, installer 381.983s,
-  oxidns 189.476s, repo 29.596s, store 12.703s; final yamlx 3.393s.
-- Raw fuzz: PASS, 61.055s, 230146 executions, no failure.
-- Proddiff: 2831 cases / 415 compared, coverage_regressions=0, all self-checks
-  PASS, but new=2 at domain-discovery/domains. Private response inspection
-  showed exactly two Python transport timeouts (status 0) vs Go 200, then
-  a subsequent request 200/200; load reached 65.55. No baseline edits.
-  Retry on the rebased final branch is pending; this is not marked accepted.
-- Added private ProfileRepository audits in addition to ConfigStore: the real
-  Python repository opens/exports the Go-written private DB before and after
-  edits, with exact type/member-order equality. .32 store race passed 14.807s;
-  explicit 12+12+43-row interchange passed 2.711s, all copies deleted.
+Earlier runner issues were resolved, not hidden: exporting TMPDIR to the snapshot
+Btrfs disk made every SQLite test fsync to disk (default /tmp is tmpfs); unrelated
+packages timed out at 600s. Only private copies now use that disk. A later proddiff
+run had two Python transport timeouts at domain-discovery/domains (0 vs Go 200,
+then 200/200); rerun passed with no baseline edits. Default timeouts were retained.
 
-Next: commit the additional audit; rebase N8-1; rerun integrated acceptance and
-proddiff to new=0. No runtime store code changed since the successful full suite.
+## Commits and size
+
+Buildable steps: `c9914ee0` types; `381c65f9` raw engine/repo bridge;
+`f3381010` UTF-8/rollback guards; `dd6307c6` independent fixture codec;
+`0935159d` private-copy isolation; `db41f7a1` Python repository audits.
+
+Non-test Go lines (comments/blank lines included): store **1629→1684**;
+temporary repo bridge 212 + messages 8. New files: store/document.go 40,
+store/messages.go 31, store/raw_test.go 274, store/fuzz_test.go 35,
+store/legacy_test.go 211, testdata/raw_crosscheck.py 82, raw_rows.json 23;
+repo/store_rows_test.go 74. No open N8-2 finding or implementation work remains. Final `git rebase go`
+and clean-worktree check are performed after this acceptance record commit.

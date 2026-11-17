@@ -36,10 +36,6 @@ internal/discovery/bridge.go	539	Compact	response	func classifyRegion(result *Re
 internal/health/dns.go	371	Default	Agent payload	func CheckSettings(ctx context.Context, value any) (*jsonx.Object, error)	outbound HTTP/JWT/probe payload (includes non-Agent peers)
 internal/health/latency.go	123	Encode	persisted identity	func (c *candidates) add(node any, identity []any) error	D2: source key is stored in node-latency history/results; owning health step migrates it
 internal/health/latency.go	243	Encode	Agent payload	func runProbe(ctx context.Context, proxies []*jsonx.Object, options *jsonx.Object) (*jsonx.Object, error)	outbound HTTP/JWT/probe payload (includes non-Agent peers)
-internal/httpx/httpxtest/httpxtest.go	163	Encode	Agent payload	func JSON(v any) Option	test request JSON body, not production Agent traffic
-internal/httpx/httpxtest/httpxtest.go	284	Encode	response	func (r *Result) WantJSON(want any) *Result	test expected-response comparison only
-internal/httpx/internal.go	78	Encode	Agent payload	func (a *App) Invoke(ctx context.Context, in InvokeRequest) (*InvokeResponse, error)	outbound HTTP/JWT/probe payload (includes non-Agent peers)
-internal/httpx/response.go	155	Response	response	func (r *Response) encodeValue()	response or response DTO bridge
 internal/installer/aio.go	249	Encode	file content	func GenerateGoAIOInstallScript(o AIOOptions) (string, error)	generated/exported/persisted JSON content
 internal/installer/docker_ha_compose.go	32	Encode	persisted identity	func pyJSONHash(value any, compact bool) (string, error)	D2 inventory: HA installation owner labels and compact Agent identity; HR installer migration owns adoption/reinstall compatibility
 internal/installer/docker_ha_compose.go	87	Default	file content	func composePrepare(params, request *jsonx.Object, owner, project string, compose *jsonx.Object) (string, error)	generated/exported/persisted JSON content
@@ -52,9 +48,7 @@ internal/installer/docker_ha_enrollment.go	564	Encode	file content	func Bootstra
 internal/installer/docker_ha_guide.go	561	Encode	persisted identity	func newInstall(params, request *jsonx.Object, enrollment *Enrollment) (string, string, error)	D2 inventory: .ha-install and container ownership label; HR installer migration owns adoption/reinstall compatibility
 internal/installer/docker_ha_guide.go	839	Default	file content	func migration(params, request *jsonx.Object) (string, string, string, error)	generated/exported/persisted JSON content
 internal/installer/goagent.go	195	Encode	file content	func GenerateGoAgentInstallScript(o GoAgentOptions) (string, error)	generated/exported/persisted JSON content
-internal/jsonresp/jsonresp.go	36	Encode	response	func External(payload any) ([]byte, error)	response or response DTO bridge
 internal/jsonstore/jsonstore.go	78	Compact	file content	func (s *Store) Write(id string, data any, verifySignature bool) (*Signature, error)	generated/exported/persisted JSON content
-internal/localhttp/localhttp.go	256	Default	Agent payload	func prepare(r Request, method string) (*preparedRequest, error)	outbound HTTP/JWT/probe payload (includes non-Agent peers)
 internal/mosdns/archive.go	72	Compact	stored document	func viaJSON(value any, target any) error	typed settings/catalog DTO bridge; not an archive writer
 internal/notifications/notifications.go	423	Encode	persisted identity	func RouterSignature(config, router *jsonx.Object) string	D2: migrate to Go-native encoding in owning consumer step; warm rule caches at switch
 internal/notifications/store.go	52	Encode	persisted identity	func Fingerprint(key string, item *jsonx.Object) string	D2: migrate to Go-native encoding in owning consumer step; warm rule caches at switch
