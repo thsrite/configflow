@@ -322,8 +322,8 @@ func forget(ctx context.Context, id string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	// O3-6 owns the future ForgetContext cutover and the guard inside its lock.
-	return taskstatus.New(r.DataDir()).Forget(refresh.RuleSourceKey(id))
+	// The status owner rechecks cancellation after leaf-lock admission.
+	return taskstatus.New(r.DataDir()).ForgetContext(ctx, refresh.RuleSourceKey(id))
 }
 func removeCache(ctx context.Context, item record) error {
 	if err := ctx.Err(); err != nil {

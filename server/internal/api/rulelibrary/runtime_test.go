@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"configflow/internal/api/proxygroups"
+	apirules "configflow/internal/api/rules"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
 	"configflow/internal/rulefetch"
@@ -333,5 +334,46 @@ func TestShutdownBetweenDBCommitAndCacheRenameIsFailClosed(t *testing.T) {
 	}
 	if _, err = os.Stat(path + ".invalid"); err != nil {
 		t.Fatal("shutdown cleared durable invalidation", err)
+	}
+	// Reopen the repository and start a fresh Runtime: the durable marker must
+	// keep every reader on the committed inline declaration, never the old file.
+	reopened := httpxtest.New(t, httpxtest.Options{DataDir: app.DataDir, Auth: true,
+		Register: httpxtest.Routes(apirules.Register, Register)})
+	_, fresh, _ := runtimeRequest(t, reopened.Context())
+	for _, route := range []string{"/api/rule-library/content/manual", "/api/profiles/default/rule-library/content/manual", "/api/rules/local/Manual"} {
+		if got := reopened.Get(route, reopened.Login()).WantStatus(200).Text(); got != "+.committed.example\n" {
+			t.Fatalf("restart did not serve committed inline content at %s: %q", route, got)
+		}
+	}
+	if raw, err = os.ReadFile(path); err != nil || string(raw) != "+.old.example\n" {
+		t.Fatalf("restart reader published outside the edit protocol: %q %v", raw, err)
+	}
+	if _, err = os.Stat(path + ".invalid"); err != nil {
+		t.Fatal("restart reader cleared invalidation", err)
+	}
+	freshService := &Service{client: rulefetch.DefaultClient}
+	draft, err = freshService.Draft(reopened.Context(), "manual")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = record{}
+	if err = put(&body, "revision", draft.Revision); err != nil {
+		t.Fatal(err)
+	}
+	if err = put(&body, "content", "+.repaired.example\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = freshService.SaveDraft(fresh, "manual", body); err != nil {
+		t.Fatal("next edit did not repair interrupted publication", err)
+	}
+	if raw, err = os.ReadFile(path); err != nil || string(raw) != "+.repaired.example\n" {
+		t.Fatalf("repaired cache: %q %v", raw, err)
+	}
+	if _, err = os.Stat(path + ".invalid"); !os.IsNotExist(err) {
+		t.Fatal("next edit retained invalidation", err)
+	}
+	temps, err := filepath.Glob(filepath.Join(filepath.Dir(path), ".rule-edit-*.tmp"))
+	if err != nil || len(temps) != 0 {
+		t.Fatal("next edit retained stopped stages", temps, err)
 	}
 }
