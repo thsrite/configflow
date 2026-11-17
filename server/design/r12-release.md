@@ -504,7 +504,8 @@ type Result struct {
 }
 
 // Execute is release.execute. ctx must be a job or background context: its cancellation means "the server is
-// stopping" (3.4). All device and Agent I/O runs on context.WithoutCancel(ctx). agent may be nil.
+// stopping" (3.4). All device and Agent I/O runs on lifecycle.Detach(ctx) (request cancellation ignored, shutdown
+// cancellation honoured — Clarified in R08 review). agent may be nil.
 func Execute(ctx context.Context, plan *Plan, driver Driver, agent ReturnAgent) *Result
 
 // Verify is release._verify for one stage; state reuses a read with no write since (routes/nat_bypass return the
@@ -568,8 +569,8 @@ Rules (from `release.py` and the R04/R05 reviews):
   failed, stage = the entry's stage.
 - An error from the batch itself (iKuai end-of-rollback proof) → `撤销失败：<error>` with the stage of `done[0]`
   (Go guards an empty `done`).
-- Every rollback step runs to completion on `WithoutCancel` (R04 F3); rollback is never skipped because of the
-  error type.
+- Every rollback step runs on `lifecycle.Detach` (R04 F3; Clarified in R08 review): a disconnected request never
+  skips it; only the shutdown deadline (3.4) can stop it. Rollback is never skipped because of the error type.
 
 ### 2.8 Publish (owner of the apply route body)
 
@@ -767,7 +768,8 @@ Interactions (same outcome as Python unless noted):
   `context.WithoutCancel` semantics (lifecycle.Spawn). A disconnected browser (or the old Nginx 504 at 300 s, X10)
   does not stop it; the job finishes, records, refreshes tasks, captures the baseline and releases both locks.
   R15's handler returns when the request ends without writing.
-- Inside `Execute` all I/O uses `WithoutCancel(ctx)`; `ctx` itself is consulted only at operation boundaries (3.4).
+- Inside `Execute` all I/O uses `lifecycle.Detach(ctx)` (O3 review / R08 review: request cancellation ignored, shutdown
+  cancellation reaches I/O); `ctx` itself is consulted only at operation boundaries (3.4).
 - `Inspect` for previews uses the request ctx (pure reads; a cancelled preview returns its error, nothing written).
 - `Verify` called by R14 runs under R14's detached job context.
 
