@@ -248,3 +248,35 @@ After the ID/ref-count helper refinement, targeted fresh .32 validation:
 0 implemented, 105 Go 尚未实现. This filtered run is not the full coverage count.
 Still 1875 design entries without an attached executed recipe; ALL entries need
 final variant/reachability audit. Work continues; no final hand-back/rebase yet.
+
+Intermediate integration refresh: committed work rebased cleanly onto go
+fa237d77 (8 test-only commits; new HEAD fb00da2c before this probe step).
+Rebuilt the real public Go command and re-ran 16 infrastructure/boundary checks
+plus all 1398 then-current recipes. .32 command:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python build.py /tmp/routerdiff-build.AybfCK; ROUTERDIFF_BINARY=/tmp/routerdiff-build.AybfCK/configflow ~/cf-test/.venv/bin/python -m unittest -v test_inventory test_seed test_compare test_recipes test_console test_boundary; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build.AybfCK/configflow --output /tmp/routerdiff-rebased-agent.json'`
+→ Ran 16 tests in 14.141s / OK; 1398 Go 尚未实现 recipes, 426 referenced entries,
+0 implemented domain routes. Still incomplete; final rebase remains required.
+
+Probe error/capability step: 94 additional real HTTP recipes. RouterOS covers
+HTTP auth/refusal/details/permissions, HTML/non-JSON, JSON null/scalars/arrays,
+resource/version bounds, Chinese model/version, each optional capability error,
+connection close, actual 10-second read timeout, device password echoes vs
+protected global-token redaction. iKuai covers status/redirect origin mapping
+(without following), empty/non-JSON/wrong shapes, Result10000 plus refused code,
+legacy response rejection, individual call errors, one session re-login and
+persistent expiry (exact login request counts), versions and each capability.
+Every success/failure probe asserts profile revision +1, stored ok/message and
+foreign rows/device configuration unchanged. Real waits use current request gates
+and an elapsed lower bound, not mocked exceptions or clock jumps.
+Fake sessions now require an actual successful login and rotate cookies on each
+login; their generation/current cookie are observable state. Fixed JSON-null
+fault ambiguity caught by the new source guard: null now emits literal JSON
+null, while only explicit disconnect closes the socket. Direct fake regression
+and actual R017 null guards both lock this distinction.
+
+Fresh .32 validation after these changes:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build.AybfCK/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_seed test_compare test_recipes test_boundary; ~/cf-test/.venv/bin/python run.py --allow-incomplete --world probe-errors --world manual-routes --world forwarding --binary "$ROUTERDIFF_BINARY" --output /tmp/routerdiff-probe-session-verified.json; cd ../..; gofmt -l $(rg --files -g "*.go"); go vet ./...'`
+→ Ran 11 tests in 11.498s / OK; manual18, forwarding25, ROS probes69, iKuai
+probes119 cumulative; 119 Go 尚未实现, 46 referenced entries; formatting/vet
+exit 0, no output. Filtered iteration only. The next full run must include all
+new probes before the total is treated as verified composition.

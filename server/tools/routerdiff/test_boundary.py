@@ -84,6 +84,8 @@ class BoundaryTests(unittest.TestCase):
                         body=base64.b64encode(json.dumps(document).encode()).decode())
                     return json.loads(base64.b64decode(reply['body']))
                 basic = {'Authorization': 'Basic ' + base64.b64encode(('test-admin:' + DEVICE_PASSWORD).encode()).decode()}
+                side.rpc('fake', action='fault', match={'peer': 'ros', 'path': '/rest/system/resource'}, status=200, body=None)
+                self.assertIsNone(call(18081, '/rest/system/resource', None, basic, 'GET'))
                 row = call(18081, '/rest/ip/route', {'dst-address': '10.55.0.0/24',
                     'gateway': '10.44.0.2', 'comment': 'foreign🧪'}, basic, 'PUT')
                 self.assertRegex(row['.id'], r'^\*[0-9A-F]+$')

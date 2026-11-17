@@ -41,7 +41,8 @@ class World:
         self.webdav = {'files': {}, 'collections': []}
         self.hidden_refs = {}
         self.sequence = {'ros': 16, 'ikuai': 1}
-        self.cookie = 'synthetic-session-1'
+        self.cookie = None
+        self.cookie_generation = 0
         self.nat_pending = set()
         self.servers = []
         world = self
@@ -144,11 +145,16 @@ class World:
     @staticmethod
     def fault_response(fault):
         content = fault.get('body', {'message': 'synthetic device refusal'})
+        headers = dict(fault.get('headers', {}))
         if 'raw' in fault:
             content = base64.b64decode(fault['raw'])
+        elif content is None:
+            # JSON null is a real malformed device value, not a lost reply.
+            content = b'null'
+            headers.setdefault('Content-Type', 'application/json')
         if fault.get('disconnect'):
             content = None
-        return fault.get('status', 500), fault.get('headers', {}), content
+        return fault.get('status', 500), headers, content
 
     def ros_request(self, request):
         expected = 'Basic ' + base64.b64encode(('test-admin:' + DEVICE_PASSWORD).encode()).decode()
@@ -288,11 +294,16 @@ class World:
         if request['path'] == '/Action/login':
             valid = body == {'username': 'test-admin', 'passwd': hashlib.md5(DEVICE_PASSWORD.encode()).hexdigest(),
                 'pass': base64.b64encode(('salt_11' + DEVICE_PASSWORD).encode()).decode()}
-            return 200, {'Set-Cookie': 'sess_key=' + self.cookie + '; Path=/'}, {
+            headers = {}
+            if valid:
+                self.cookie_generation += 1
+                self.cookie = 'synthetic-session-' + str(self.cookie_generation)
+                headers['Set-Cookie'] = 'sess_key=' + self.cookie + '; Path=/'
+            return 200, headers, {
                 'Result': 10000, 'code': 0 if valid else 1005, 'message': '' if valid else '账号或密码错误'}
         if request['path'] != '/Action/call':
             raise ProtocolError('unknown iKuai endpoint')
-        if 'sess_key=' + self.cookie not in request['headers'].get('cookie', ''):
+        if not self.cookie or 'sess_key=' + self.cookie not in request['headers'].get('cookie', ''):
             return self.ik_reply(code=1008)
         func, action, param = body.get('func_name'), body.get('action'), body.get('param')
         if not isinstance(param, dict):
@@ -478,6 +489,7 @@ class World:
         with self.lock:
             return copy.deepcopy({'ros': self.ros, 'ikuai': self.ikuai, 'agent': self.agent,
                                   'webdav': self.webdav,
+                                  'sessions': {'ikuai_cookie': self.cookie, 'generation': self.cookie_generation},
                                   'transcript': self.transcript, 'errors': self.errors})
 
     def release_all(self):

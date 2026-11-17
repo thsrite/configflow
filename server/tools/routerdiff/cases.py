@@ -50,6 +50,9 @@ class Case:
     join: str = ''
     stored: dict = field(default_factory=dict)
     header_checks: dict = field(default_factory=dict)
+    finalize: tuple = ()
+    expected_requests: tuple = ()
+    elapsed_min: float = 0
 
 
 def at(document, path):

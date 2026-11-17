@@ -13,12 +13,14 @@ import cases
 import guards
 import workflows
 import fixtures
+import probes
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair
 from harness import decode_response
 from inventory import design_json, load
 from invariants import configuration_only, profile_write, fields
 from seed import router, AGENT_TOKEN
+from fakes import World
 
 
 def shape(path):
@@ -58,7 +60,11 @@ def execute(pair, case, available, routes):
         own_request = {**request, 'document': cases.resolve(case.document, side.observations),
                        'path': cases.resolve(case.path, side.observations)}
         started = side.pending[case.join]['started'] if case.join else time.time()
-        response = decode_response(side.rpc('join', ident=case.join)) if case.join else side.request(**own_request)
+        try:
+            response = decode_response(side.rpc('join', ident=case.join)) if case.join else side.request(**own_request)
+        finally:
+            for control in case.finalize:
+                side.rpc('fake', **control)
         if case.join:
             del side.pending[case.join]
         ended = time.time()
@@ -100,6 +106,13 @@ def execute(pair, case, available, routes):
                     raise RuntimeError(case.ident + ': invalid Python identity/hash at ' + path)
             for path in case.times:
                 timestamp(cases.at(response['content'], path), started - 1, ended + 1)
+            if ended - started < case.elapsed_min:
+                raise RuntimeError(case.ident + ': expected real transport wait did not occur')
+            transcript = after['fake']['transcript'][len(before['fake']['transcript']):]
+            for requirement in case.expected_requests:
+                count = sum(World.matches(item, requirement['match']) for item in transcript)
+                if count != requirement['count']:
+                    raise RuntimeError(case.ident + ': outbound protocol count mismatch: ' + repr(requirement['match']))
             if case.effect in ('profile-write', 'profile-write-device', 'router-create', 'router-delete'):
                 profile_write(before, after, case.profile)
                 if case.effect != 'profile-write-device':
@@ -255,6 +268,7 @@ def main():
               ('unlinked-inspection', options, (workflows.unlinked_inspection,)),
               ('agent-scope', fixtures.agent_options(), (fixtures.agent_scope,)),
               ('forwarding', fixtures.agent_options(), (fixtures.forwarding,)),
+              ('probe-errors', options, (probes.routeros, probes.ikuai)),
               ('stored', fixtures.stored_options(), (fixtures.receipts, fixtures.stored_guards))]
     if args.world:
         unknown = set(args.world) - {name for name, _, _ in worlds}
