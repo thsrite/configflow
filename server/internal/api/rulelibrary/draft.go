@@ -82,6 +82,9 @@ func (s *Service) Draft(ctx context.Context, id string) (draftResult, error) {
 func (s *Service) SaveDraft(ctx context.Context, id string, body record) (draftResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := draftResult{Success: true}
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 	token, tokenOK := stringField(body, "revision")
 	content, contentOK := stringField(body, "content")
 	if body.Len() != 2 || !tokenOK || !contentOK {
@@ -104,7 +107,7 @@ func (s *Service) SaveDraft(ctx context.Context, id string, body record) (draftR
 	committed := false
 	defer func() {
 		if !committed {
-			staged.abort()
+			staged.abort(ctx)
 		}
 	}()
 	err = editShared(ctx, func(tx context.Context, catalog *record) error {
@@ -147,13 +150,16 @@ func (s *Service) SaveDraft(ctx context.Context, id string, body record) (draftR
 	})
 	if err != nil {
 		if !rejectedBeforeCommit(err) {
-			staged.failClosed()
+			staged.failClosed(ctx)
 			staged = nil
 		}
 		return out, err
 	}
 	committed = true
-	if err = staged.commit(); err != nil {
+	if err = staged.commit(ctx); err != nil {
+		if stopped := ctx.Err(); stopped != nil {
+			return out, stopped
+		}
 		return out, fail(500, msgCacheFailed)
 	}
 	return out, nil

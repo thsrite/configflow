@@ -1,6 +1,7 @@
 package rulelibrary
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -16,7 +17,7 @@ func Register(r *httpx.Router) { RegisterWithOptions(r, Options{}) }
 // Options injects loopback-only HTTP transport for boundary tests.
 type Options struct {
 	Client       *rulefetch.Client
-	replaceCache func(string, string) error
+	replaceCache func(context.Context, string, string) error
 }
 
 // RegisterWithOptions installs the library routes with an injected transport.

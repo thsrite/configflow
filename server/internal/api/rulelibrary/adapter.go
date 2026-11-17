@@ -73,7 +73,13 @@ func systemConfig(ctx context.Context) (record, error) {
 	return native(r)
 }
 func editShared(ctx context.Context, fn func(context.Context, *record) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	_, err := repo.UpdateSharedConfigTransaction(ctx, func(tx context.Context, raw *jsonx.Object) (*jsonx.Object, error) {
+		if err := tx.Err(); err != nil {
+			return nil, err
+		}
 		r, err := native(raw)
 		if err != nil {
 			return nil, err
@@ -81,16 +87,32 @@ func editShared(ctx context.Context, fn func(context.Context, *record) error) er
 		if err = fn(tx, &r); err != nil {
 			return nil, err
 		}
-		return legacy(r)
+		next, err := legacy(r)
+		if err != nil {
+			return nil, err
+		}
+		if err = tx.Err(); err != nil {
+			return nil, err
+		}
+		return next, nil
 	})
 	return err
 }
 func editSystem(ctx context.Context, fn func(*record) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return err
 	}
-	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, raw *jsonx.Object) (*jsonx.Object, error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	_, err = r.UpdateSystemTransaction(ctx, func(tx context.Context, raw *jsonx.Object) (*jsonx.Object, error) {
+		if err := tx.Err(); err != nil {
+			return nil, err
+		}
 		v, err := native(raw)
 		if err != nil {
 			return nil, err
@@ -98,7 +120,14 @@ func editSystem(ctx context.Context, fn func(*record) error) error {
 		if err = fn(&v); err != nil {
 			return nil, err
 		}
-		return legacy(v)
+		next, err := legacy(v)
+		if err != nil {
+			return nil, err
+		}
+		if err = tx.Err(); err != nil {
+			return nil, err
+		}
+		return next, nil
 	})
 	return err
 }
@@ -137,12 +166,18 @@ func (s *Service) readSource(ctx context.Context, item record) ([]byte, error) {
 	}
 }
 func create(ctx context.Context, item record, content []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return err
 	}
 	raw, err := legacy(item)
 	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	_, err = r.CreateRuleLibraryItem(ctx, raw, content)
@@ -257,26 +292,45 @@ func readCache(ctx context.Context, item record) ([]byte, error) {
 	return rulefetch.ReadValidatedRuleCache(ctx, raw, nil)
 }
 func writeCache(ctx context.Context, item record, content []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	raw, err := legacy(item)
 	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	_, err = rulefetch.WriteValidatedRuleCache(ctx, raw, content, nil)
 	return err
 }
 func forget(ctx context.Context, id string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// O3-6 owns the future ForgetContext cutover and the guard inside its lock.
 	return taskstatus.New(r.DataDir()).Forget(refresh.RuleSourceKey(id))
 }
 func removeCache(ctx context.Context, item record) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	path, err := cachePath(ctx, item)
 	if err != nil {
 		return err
 	}
 	for _, name := range []string{path, path + ".invalid"} {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err = os.Remove(name); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
@@ -284,8 +338,14 @@ func removeCache(ctx context.Context, item record) error {
 	return nil
 }
 func removeLegacy(ctx context.Context, name string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	root, err := rulefetch.GetRulesDir(ctx)
 	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	err = os.Remove(filepath.Join(root, rules.SanitizeRuleName(name)+".list"))
@@ -296,9 +356,15 @@ func removeLegacy(ctx context.Context, name string) error {
 }
 
 func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(context.Context, *record) error, base string) ([]profileWarning, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	warnings := []profileWarning{}
 	applicable := []sourceChange{}
 	selector := func(shared, profiles *jsonx.Object) ([]string, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		catalog, err := native(shared)
 		if err != nil {
 			return nil, err
@@ -333,7 +399,13 @@ func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(con
 		}
 		return ids, nil
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	_, _, err := repo.UpdateSharedAndConfigTransaction(ctx, func(tx context.Context, raw *jsonx.Object) (*jsonx.Object, error) {
+		if err := tx.Err(); err != nil {
+			return nil, err
+		}
 		catalog, err := native(raw)
 		if err != nil {
 			return nil, err
@@ -341,8 +413,18 @@ func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(con
 		if err = edit(tx, &catalog); err != nil {
 			return nil, err
 		}
-		return legacy(catalog)
-	}, func(_ context.Context, id string, old, current *jsonx.Object) (*jsonx.Object, error) {
+		next, err := legacy(catalog)
+		if err != nil {
+			return nil, err
+		}
+		if err = tx.Err(); err != nil {
+			return nil, err
+		}
+		return next, nil
+	}, func(tx context.Context, id string, old, current *jsonx.Object) (*jsonx.Object, error) {
+		if err := tx.Err(); err != nil {
+			return nil, err
+		}
 		before, err := native(old)
 		if err != nil {
 			return nil, err
@@ -362,7 +444,14 @@ func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(con
 		for _, message := range messages {
 			warnings = append(warnings, profileWarning{id, message})
 		}
-		return legacy(updated)
+		next, err := legacy(updated)
+		if err != nil {
+			return nil, err
+		}
+		if err = tx.Err(); err != nil {
+			return nil, err
+		}
+		return next, nil
 	}, selector)
 	return warnings, err
 }
@@ -426,6 +515,9 @@ func rejectedBeforeCommit(err error) bool {
 }
 
 func (s *Service) requestStatus(ctx context.Context, address string, system record, head bool) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	raw, err := legacy(system)
 	if err != nil {
 		return 0, err
@@ -437,6 +529,9 @@ func (s *Service) requestStatus(ctx context.Context, address string, system reco
 	method := "get"
 	if head {
 		method = "head"
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
 	}
 	response, err := s.client.RequestRule(ctx, address, rulefetch.Request{Config: raw, Method: method, ConnectTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second})
 	if err != nil {
@@ -451,14 +546,23 @@ func (s *Service) requestStatus(ctx context.Context, address string, system reco
 	return response.StatusCode, nil
 }
 func (s *Service) cacheOne(ctx context.Context, item record) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	raw, err := legacy(item)
 	if err != nil {
 		return "", err
 	}
 	if sourceType(item) == "url" {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		// A manual refresh resolves global fetch settings, just like the
 		// scheduler. Passing a shared catalog here would erase proxy settings.
 		_, _, err := refresh.RefreshRuleSource(ctx, raw, "manual", refresh.RuleOptions{Fetch: func(url string) (any, error) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			response, err := s.client.RequestRule(ctx, url, rulefetch.Request{ConnectTimeout: 30 * time.Second, ReadTimeout: 30 * time.Second})
 			if err != nil {
 				return nil, err
@@ -485,7 +589,7 @@ func (s *Service) cacheOne(ctx context.Context, item record) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err = stage.commit(); err != nil {
+	if err = stage.commit(ctx); err != nil {
 		return "", err
 	}
 	return rules.RuleCacheFilename(raw), nil

@@ -1,6 +1,7 @@
 package rulelibrary
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -88,7 +89,7 @@ func TestRevisionUsesRecursiveNativeSortedJSON(t *testing.T) {
 }
 func TestFailedCacheReplacementNeverServesStableOrLegacyContent(t *testing.T) {
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apirules.Register, func(r *httpx.Router) {
-		RegisterWithOptions(r, Options{replaceCache: func(string, string) error { return os.ErrPermission }})
+		RegisterWithOptions(r, Options{replaceCache: func(context.Context, string, string) error { return os.ErrPermission }})
 	})})
 	createManual(t, s)
 	auth := s.Login()

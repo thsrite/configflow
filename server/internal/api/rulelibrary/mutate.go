@@ -74,6 +74,9 @@ func affects(profile record, changes []sourceChange) (routing, downloads bool, e
 func (s *Service) Mutate(ctx context.Context, id string, next record, remove bool, base string) (mutationResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := mutationResult{Success: true}
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 	var baseline record
 	var prepared []byte
 	changed := false
@@ -134,7 +137,7 @@ func (s *Service) Mutate(ctx context.Context, id string, next record, remove boo
 	committed := false
 	defer func() {
 		if !committed {
-			stage.abort()
+			stage.abort(ctx)
 		}
 	}()
 	changes := []sourceChange{}
@@ -186,7 +189,7 @@ func (s *Service) Mutate(ctx context.Context, id string, next record, remove boo
 	}, base)
 	if err != nil {
 		if !rejectedBeforeCommit(err) {
-			stage.failClosed()
+			stage.failClosed(ctx)
 			stage = nil
 		}
 		return out, err
@@ -196,7 +199,10 @@ func (s *Service) Mutate(ctx context.Context, id string, next record, remove boo
 		if err = removeCache(ctx, previous); err != nil {
 			return out, err
 		}
-	} else if err = stage.commit(); err != nil {
+	} else if err = stage.commit(ctx); err != nil {
+		if stopped := ctx.Err(); stopped != nil {
+			return out, stopped
+		}
 		return out, fail(500, msgCacheFailed)
 	}
 	if remove || changed {

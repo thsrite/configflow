@@ -47,6 +47,9 @@ func clean(group *object) {
 func (s *Service) Create(ctx context.Context, id string, group object, base string) (result, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := result{Success: true}
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 	if group.Has("delete_fields") {
 		return out, bad(msgDeleteCreate)
 	}
@@ -79,6 +82,9 @@ func (s *Service) Create(ctx context.Context, id string, group object, base stri
 func (s *Service) Mutate(ctx context.Context, id, groupID string, patch object, remove bool, base string) (result, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := result{Success: true}
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 	err := edit(ctx, id, func(ctx context.Context, profile *object) error {
 		before := *profile
 		groups, err := list(*profile, "proxy_groups")
@@ -214,6 +220,9 @@ func (s *Service) Mutate(ctx context.Context, id, groupID string, patch object, 
 // BatchHealthURL updates only the selected groups' probe URL, atomically.
 func (s *Service) BatchHealthURL(ctx context.Context, id string, body object) ([]object, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	ids, err := value[[]string](body, "ids")
 	if err != nil || len(ids) == 0 {
 		return nil, bad(msgBatchIDs)
@@ -264,6 +273,9 @@ func (s *Service) BatchHealthURL(ctx context.Context, id string, body object) ([
 // Reorder moves stored groups by ID without accepting response display fields.
 func (s *Service) Reorder(ctx context.Context, id string, body object) ([]string, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	order := []string{}
 	err := edit(ctx, id, func(_ context.Context, profile *object) error {
 		groups, err := list(*profile, "proxy_groups")

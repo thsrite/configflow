@@ -68,7 +68,13 @@ func load(ctx context.Context, id string) (object, error) {
 	return native(raw)
 }
 func edit(ctx context.Context, id string, fn func(context.Context, *object) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	_, err := repo.UpdateConfigTransaction(ctx, func(tx context.Context, raw *jsonx.Object) (*jsonx.Object, error) {
+		if err := tx.Err(); err != nil {
+			return nil, err
+		}
 		p, err := native(raw)
 		if err != nil {
 			return nil, err
@@ -78,6 +84,9 @@ func edit(ctx context.Context, id string, fn func(context.Context, *object) erro
 		}
 		next, err := legacy(p)
 		if err != nil {
+			return nil, err
+		}
+		if err := tx.Err(); err != nil {
 			return nil, err
 		}
 		raw.Update(next)

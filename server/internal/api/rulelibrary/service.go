@@ -15,7 +15,7 @@ import (
 // Service owns shared-library transactions and injectable external transport.
 type Service struct {
 	client       *rulefetch.Client
-	replaceCache func(string, string) error
+	replaceCache func(context.Context, string, string) error
 }
 
 // List annotates shared entries with the shared DNS engine's IP projection.
@@ -44,6 +44,9 @@ func (s *Service) List(ctx context.Context) ([]record, error) {
 func (s *Service) Create(ctx context.Context, item record) (itemResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := itemResult{Success: true}
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 	id := text(item, "id")
 	if id == "" {
 		return out, fail(400, msgID)
@@ -141,6 +144,9 @@ func (s *Service) Content(ctx context.Context, id string) ([]byte, error) {
 // Reorder resolves identifiers against the latest shared transaction snapshot.
 func (s *Service) Reorder(ctx context.Context, body record) ([]string, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	order := []string{}
 	err := editShared(ctx, func(_ context.Context, catalog *record) error {
 		library, err := rows(*catalog, "rule_library")
@@ -179,6 +185,9 @@ func (s *Service) ProxyDomains(ctx context.Context) (jsonValue, error) {
 // SetProxyDomains preserves other system settings in the same transaction.
 func (s *Service) SetProxyDomains(ctx context.Context, body record) (string, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	value := ""
 	if body.Has("proxy_domains") {
 		var ok bool

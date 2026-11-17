@@ -43,6 +43,9 @@ func defaultField(item record, key string) json.RawMessage {
 // Single checks the configured forwarding path with Python's five-second timeout.
 func (s *Service) Single(ctx context.Context, body record) (singleResult, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return singleResult{}, err
+	}
 	address, err := requestURL(body)
 	if err != nil {
 		return singleResult{}, err
@@ -63,6 +66,9 @@ func (s *Service) Single(ctx context.Context, body record) (singleResult, error)
 func (s *Service) Test(ctx context.Context, base string) (checksResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := checksResult{Success: true, Results: []checkResult{}}
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 	catalog, err := sharedConfig(ctx)
 	if err != nil {
 		return out, err
@@ -185,6 +191,9 @@ type cacheResults struct {
 func (s *Service) Cache(ctx context.Context, body record) (cacheResults, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := cacheResults{Success: true, Results: []cacheResult{}}
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 	var selectedIDs []json.RawMessage
 	input, present := body.Get("rule_ids")
 	if !present || json.Unmarshal(input, &selectedIDs) != nil || len(selectedIDs) == 0 {

@@ -16,6 +16,9 @@ import (
 var edits = lockx.NewKeyed[string](lockx.LevelDevice, "rule-library-edit")
 
 func editLease(ctx context.Context, item record) (context.Context, func(), error) {
+	if err := ctx.Err(); err != nil {
+		return ctx, nil, err
+	}
 	identity := record{}
 	if err := put(&identity, "id", text(item, "id")); err != nil {
 		return ctx, nil, err
@@ -27,115 +30,190 @@ func editLease(ctx context.Context, item record) (context.Context, func(), error
 	if err != nil {
 		return ctx, nil, err
 	}
-	return edits.Lock(ctx, path, 5*time.Minute)
+	held, release, err := edits.Lock(ctx, path, 5*time.Minute)
+	if err != nil {
+		return ctx, nil, err
+	}
+	if err = held.Err(); err != nil {
+		release()
+		return ctx, nil, err
+	}
+	return held, release, nil
 }
 
 type stagedCache struct {
 	path, temp, marker string
 	wasInvalid         bool
-	replace            func(string, string) error
+	replace            func(context.Context, string, string) error
 }
 
-func stageCache(ctx context.Context, item record, content []byte, replace func(string, string) error) (*stagedCache, error) {
+func stageCache(ctx context.Context, item record, content []byte, replace func(context.Context, string, string) error) (*stagedCache, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	path, err := cachePath(ctx, item)
 	if err != nil {
+		return nil, err
+	}
+	if err = ctx.Err(); err != nil {
 		return nil, err
 	}
 	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, err
 	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".rule-edit-*.tmp")
+	if err = ctx.Err(); err != nil {
+		return nil, err
+	}
+	// A previous stopped owner leaves its durable receipt and private temp in
+	// place. The next admitted edit of this identity owns its cleanup lease.
+	prefix := ".rule-edit-" + filepath.Base(path) + "-"
+	leftovers, err := filepath.Glob(filepath.Join(filepath.Dir(path), prefix+"*.tmp"))
+	if err != nil {
+		return nil, err
+	}
+	for _, leftover := range leftovers {
+		if err = ctx.Err(); err != nil {
+			return nil, err
+		}
+		if err = os.Remove(leftover); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
+	if err = ctx.Err(); err != nil {
+		return nil, err
+	}
+	file, err := os.CreateTemp(filepath.Dir(path), prefix+"*.tmp")
 	if err != nil {
 		return nil, err
 	}
 	stage := &stagedCache{path: path, temp: file.Name(), marker: path + ".invalid", replace: replace}
 	if replace == nil {
-		stage.replace = os.Rename
+		stage.replace = replaceFile
 	}
 	if _, err = os.Stat(stage.marker); err == nil {
 		stage.wasInvalid = true
 	} else if !errors.Is(err, os.ErrNotExist) {
 		file.Close()
-		_ = os.Remove(stage.temp)
+		if ctx.Err() == nil {
+			_ = os.Remove(stage.temp)
+		}
 		return nil, err
 	}
-	if _, err = file.Write(content); err == nil {
+	if err = ctx.Err(); err == nil {
+		_, err = file.Write(content)
+	}
+	if err == nil {
+		err = ctx.Err()
+	}
+	if err == nil {
 		err = file.Sync()
 	}
 	if closeErr := file.Close(); err == nil {
 		err = closeErr
 	}
 	if err != nil {
-		stage.abort()
+		stage.abort(ctx)
 		return nil, fmt.Errorf("stage rule cache: %w", err)
 	}
 	// A durable invalidation receipt prevents the old stable or legacy cache from
 	// being served after a committed edit, even when rename and removal fail.
-	marker, err := os.OpenFile(stage.marker, os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
-		stage.abort()
+	if err = ctx.Err(); err != nil {
+		stage.abort(ctx)
 		return nil, err
 	}
-	err = marker.Sync()
+	marker, err := os.OpenFile(stage.marker, os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		stage.abort(ctx)
+		return nil, err
+	}
+	err = ctx.Err()
+	if err == nil {
+		err = marker.Sync()
+	}
 	if closeErr := marker.Close(); err == nil {
 		err = closeErr
 	}
 	if err != nil {
-		stage.abort()
+		stage.abort(ctx)
 		return nil, err
 	}
-	if err = syncDirectory(filepath.Dir(path)); err != nil {
-		stage.abort()
+	if err = syncDirectory(ctx, filepath.Dir(path)); err != nil {
+		stage.abort(ctx)
 		return nil, err
 	}
 	return stage, nil
 }
-func (s *stagedCache) abort() {
-	if s == nil {
+func (s *stagedCache) abort(ctx context.Context) {
+	if s == nil || ctx.Err() != nil {
 		return
 	}
 	_ = os.Remove(s.temp)
-	if !s.wasInvalid {
+	if !s.wasInvalid && ctx.Err() == nil {
 		_ = os.Remove(s.marker)
 	}
 }
 
 // failClosed is used when the repository cannot establish a failed commit's
 // outcome. Keep the durable receipt across restarts; readers use DB/inline.
-func (s *stagedCache) failClosed() {
-	if s == nil {
+func (s *stagedCache) failClosed(ctx context.Context) {
+	if s == nil || ctx.Err() != nil {
 		return
 	}
 	_ = os.Remove(s.temp)
-	_ = os.Remove(s.path)
+	if ctx.Err() == nil {
+		_ = os.Remove(s.path)
+	}
 }
-func (s *stagedCache) commit() error {
+func (s *stagedCache) commit(ctx context.Context) error {
 	if s == nil {
 		return nil
 	}
-	if err := s.replace(s.temp, s.path); err != nil {
-		_ = os.Remove(s.path)
-		_ = os.Remove(s.temp)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := s.replace(ctx, s.temp, s.path); err != nil {
+		if ctx.Err() == nil {
+			_ = os.Remove(s.path)
+		}
+		if ctx.Err() == nil {
+			_ = os.Remove(s.temp)
+		}
 		return fmt.Errorf("replace rule cache: %w", err)
 	}
 	// Persist the replacement before clearing its durable invalidation receipt.
-	if err := syncDirectory(filepath.Dir(s.path)); err != nil {
+	if err := syncDirectory(ctx, filepath.Dir(s.path)); err != nil {
 		return fmt.Errorf("persist rule cache replacement: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if err := os.Remove(s.marker); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("clear rule cache invalidation: %w", err)
 	}
-	return syncDirectory(filepath.Dir(s.path))
+	return syncDirectory(ctx, filepath.Dir(s.path))
 }
 
-func syncDirectory(path string) error {
+func syncDirectory(ctx context.Context, path string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	err = file.Sync()
+	err = ctx.Err()
+	if err == nil {
+		err = file.Sync()
+	}
 	if closeErr := file.Close(); err == nil {
 		err = closeErr
 	}
 	return err
+}
+
+func replaceFile(ctx context.Context, from, to string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return os.Rename(from, to)
 }
