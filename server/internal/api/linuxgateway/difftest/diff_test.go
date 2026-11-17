@@ -211,14 +211,15 @@ func (f *fakeAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type world struct {
-	t       *testing.T
-	srv     *httpxtest.Server
-	stdin   io.WriteCloser
-	scanner *bufio.Scanner
-	cmd     *exec.Cmd
-	stderr  bytes.Buffer
-	token   string
-	fake    *fakeAgent
+	t              *testing.T
+	srv            *httpxtest.Server
+	stdin          io.WriteCloser
+	scanner        *bufio.Scanner
+	cmd            *exec.Cmd
+	stderr         bytes.Buffer
+	token          string
+	fake           *fakeAgent
+	profileHeaders []string
 }
 
 func newWorld(t *testing.T, sessions ...string) *world {
@@ -468,6 +469,9 @@ func (w *world) callBodies(method, path, goBody, pyBody string, authHeader bool)
 		headers["Authorization"] = "Bearer " + w.token
 	}
 	headers["Content-Type"] = "application/json"
+	if len(w.profileHeaders) > 0 {
+		headers["X-ConfigFlow-Profile"] = strings.Join(w.profileHeaders, ", ")
+	}
 	input := map[string]any{"method": method, "path": path, "headers": headers, "body": pyBody}
 	data, _ := json.Marshal(input)
 	_, _ = fmt.Fprintln(w.stdin, string(data))
@@ -538,6 +542,12 @@ func (w *world) callBodies(method, path, goBody, pyBody string, authHeader bool)
 		request := httptest.NewRequest(method, "http://localhost"+path, strings.NewReader(goBody))
 		for k, v := range headers {
 			request.Header.Set(k, v)
+		}
+		if len(w.profileHeaders) > 0 {
+			request.Header.Del("X-ConfigFlow-Profile")
+			for _, value := range w.profileHeaders {
+				request.Header.Add("X-ConfigFlow-Profile", value)
+			}
 		}
 		rec := httptest.NewRecorder()
 		w.srv.Handler().ServeHTTP(rec, request)
@@ -823,5 +833,14 @@ func TestA20NormalizationKeepsUserFields(t *testing.T) {
 	}
 	if isDatabaseFile("configflow.sqlite3-extra") {
 		t.Fatal("non-database file excluded")
+	}
+}
+
+func TestA20CapturedProfileHeaderSemantics(t *testing.T) {
+	w := newWorld(t)
+	path := "/api/agents/gateway/linux-gateway/status?profile_id=default"
+	for _, headers := range [][]string{{"home"}, {"home", "default"}, {"home", ""}} {
+		w.profileHeaders = headers
+		w.call("GET", path, "", true)
 	}
 }

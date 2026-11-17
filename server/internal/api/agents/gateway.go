@@ -51,7 +51,7 @@ func gatewayResult(value any, err error) (*httpx.Response, error) {
 	return httpx.JSON(value).NoStore(), nil
 }
 func gatewayOperation(c *httpx.Ctx) (*httpx.Response, error) {
-	profile := c.Request.Header.Get("X-ConfigFlow-Profile")
+	profile := c.HeaderDefault("X-ConfigFlow-Profile", "")
 	if profile == "" {
 		profile = c.ArgDefault("profile_id", "")
 	}
