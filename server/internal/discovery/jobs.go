@@ -3,10 +3,10 @@ package discovery
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 
 	"configflow/internal/lifecycle"
+	"configflow/internal/lockx"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 )
@@ -99,13 +99,42 @@ func BusyPayload(b *Busy, profile string) map[string]any {
 	}
 	return map[string]any{"success": false, "message": msg, "job": j}
 }
+
+var jobLock = lockx.NewMutex(lockx.LevelJob, "domain-discovery")
+
+// jobFailure retains the internal cause while exposing the existing safe message.
+type jobFailure struct {
+	user  *ProbeError
+	cause error
+}
+
+func (e *jobFailure) Error() string   { return e.user.Error() }
+func (e *jobFailure) Unwrap() []error { return []error{e.user, e.cause} }
+
 func startJob(ctx context.Context, profile, kind string, wait bool, run func(context.Context, func(int, int)) (outcome, error)) (*Job, map[string]Probe, error) {
+	return startJobOn(ctx, profile, kind, wait, run, lifecycle.DefaultSpawner{})
+}
+
+func startJobOn(ctx context.Context, profile, kind string, wait bool, run func(context.Context, func(int, int)) (outcome, error), spawner lockx.Spawner) (*Job, map[string]Probe, error) {
+	// Async workers retain the repository and their held lock, not request
+	// values/Scope. The spawner supplies Runtime lifetime and a fresh Scope.
+	base := context.Background()
+	if wait {
+		base = lifecycle.Detach(ctx)
+	}
 	jobState.Lock()
 	for _, j := range jobState.jobs {
 		if j.Status == "running" {
 			jobState.Unlock()
 			return nil, nil, &Busy{j.ID}
 		}
+	}
+	// L1 is tried, never waited for; metadata and admission are published
+	// together. release below does no I/O and completes before metadata unlock.
+	held, release, ok := jobLock.TryLock(base)
+	if !ok {
+		jobState.Unlock()
+		return nil, nil, &Busy{}
 	}
 	j := &Job{ID: uniqueID(""), ProfileID: profile, Kind: kind, Status: "running", Errors: []JobError{}, StartedAt: timestamp()}
 	finished := []*Job{}
@@ -122,60 +151,66 @@ func startJob(ctx context.Context, profile, kind string, wait bool, run func(con
 	jobState.jobs = append(finished, j)
 	initial := cloneJob(j)
 	jobState.Unlock()
-	// Async jobs retain only the repository (O3-5). Synchronous rounds keep
-	// their Runtime cancellation but always get a fresh repository scope.
+	failAdmission := func() {
+		jobState.Lock()
+		j.Status, j.Message, j.FinishedAt = "failed", msgFailed, ptr(timestamp())
+		release()
+		jobState.Unlock()
+	}
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
-		jobState.Lock()
-		j.Status = "failed"
-		j.Message = msgFailed
-		j.FinishedAt = ptr(timestamp())
-		jobState.Unlock()
+		failAdmission()
 		return nil, nil, err
 	}
-	work := func() (results map[string]Probe, err error) {
-		base := context.Background()
-		if wait {
-			base = lifecycle.Detach(ctx)
-		}
-		workCtx := repo.WithScope(repo.WithRepository(base, r))
+	work := func(worker context.Context) (results map[string]Probe, err error) {
+		workCtx := repo.WithScope(repo.WithRepository(worker, r))
 		defer repo.ResetConfigContext(workCtx)
 		var out outcome
+		returned := false
 		defer func() {
-			if p := recover(); p != nil {
-				err = fmt.Errorf("discovery job failed: %v", p)
+			_ = recover()
+			if !returned {
+				err = lifecycle.ErrPanic
+				logger.Error("Domain discovery job panicked")
+			}
+			message := ""
+			if err != nil {
+				message = msgFailed
+				var pe *ProbeError
+				if errors.As(err, &pe) {
+					message = pe.Message
+				} else if !wait && !errors.Is(err, lifecycle.ErrPanic) {
+					logger.Exception("Domain discovery job failed", err)
+				}
+				err = &jobFailure{user: &ProbeError{message}, cause: err}
 			}
 			jobState.Lock()
 			defer jobState.Unlock()
-			j.Status = "done"
-			j.Errors = out.Errors
+			j.Status, j.Errors, j.Message = "done", out.Errors, message
 			if j.Errors == nil {
 				j.Errors = []JobError{}
 			}
 			if err != nil {
-				j.Errors = []JobError{}
-				j.Status = "failed"
-				var pe *ProbeError
-				if errors.As(err, &pe) {
-					j.Message = pe.Message
-				} else {
-					logger.Exception("Domain discovery job failed", err)
-					j.Message = msgFailed
-				}
-				err = &ProbeError{j.Message}
+				j.Status, j.Errors = "failed", []JobError{}
 			}
 			j.FinishedAt = ptr(timestamp())
+			release()
 		}()
 		out, err = run(workCtx, func(done, total int) { jobState.Lock(); j.Done = done; j.Total = total; jobState.Unlock() })
+		returned = true
 		return out.Results, err
 	}
 	if wait {
-		results, err := work()
+		results, err := work(held)
 		return GetJob(j.ID, profile), results, err
 	}
-	go func() { _, _ = work() }()
+	if err := spawner.Spawn(repo.WithRepository(held, r), "domain-"+kind, func(worker context.Context) { _, _ = work(worker) }); err != nil {
+		failAdmission()
+		return nil, nil, err
+	}
 	return initial, nil, nil
 }
+
 func cleanValues(values []string) ([]string, error) {
 	if len(values) == 0 || len(values) > 100 {
 		return nil, invalid(msgDomains)

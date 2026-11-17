@@ -12,6 +12,7 @@ import (
 	"time"
 	"weak"
 
+	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
 )
 
@@ -118,6 +119,13 @@ func TestJobFailureAndResultLifetime(t *testing.T) {
 			if !errors.As(err, &pe) || pe.Message != tt.message || j.Status != "failed" || j.FinishedAt == nil {
 				t.Fatalf("failure: %+v %v", j, err)
 			}
+			if tt.err != nil && !errors.Is(err, tt.err) {
+				t.Fatal("job lost its cause", err)
+			}
+			if tt.name == "panic" && !errors.Is(err, lifecycle.ErrPanic) {
+				t.Fatal("panic sentinel lost", err)
+			}
+
 		})
 	}
 	ctx := jobFixture(t)

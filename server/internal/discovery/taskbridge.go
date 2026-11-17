@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
@@ -13,7 +14,7 @@ import (
 func wireTasks() {
 	tasks.SetRows(tasks.SlotDomains, domainRows)
 	tasks.SetRunner(tasks.SlotDomains, func(ctx context.Context, key, resource string) error {
-		ctx = context.WithoutCancel(ctx)
+		ctx = lifecycle.Detach(ctx)
 		c, err := loadConfig(ctx, resource)
 		if err != nil {
 			return err
