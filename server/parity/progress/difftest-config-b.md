@@ -1262,3 +1262,16 @@ current go-unimplemented=16 dependency=6 request_variants=22 design_errors=[] se
 ```
 
 剩余setup managed报告门禁、其他H/helper、其余profile选择和长流程继续；仍非最终验收。
+
+## 批次 72：发现设置、忽略列表和网站备注的空间选择
+
+- R049/R050/R058/R061各P3–P6，共16个新增原B编号，全部实际Flask↔Go比较通过。每个变体从独立同seed开始，分别真正删除/增加ignore、修改confidence=95、保存中文emoji备注；验证响应profile头与实际目标空间值，沿用逐端隔离比较器，其他空间/共享/系统行、所有文件原样，只前进一次目标revision/generation。
+- 覆盖并集原R4071（S656/F2601/B814）、H322；独立报告/tmp/configdiff-profile-discovery.json待与统一全量合并。.63正在运行的批次68旧组全量尚未返回，不把单组16通过写成新HEAD全量通过。
+
+```text
+.32 run.py --groups profile-discovery-write-selectors
+current compared=16 request_variants=16 design_errors=[] seconds=44.90；exit=0
+66 comparator self-checks + wrong-Go-response check OK
+```
+
+接着补config.py live pull的有名场景及剩余helpers/长流程。
