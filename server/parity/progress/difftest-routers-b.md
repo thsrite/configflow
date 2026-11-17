@@ -815,3 +815,20 @@ IPv6 public rule routes/RA/PD scripts and failures, background scheduler rounds,
 backup/proxy, SIGTERM/KILL mid-write and Nginx ingress boundaries. Then fresh full
 composition, final gate through gate.sh (never standalone full race/proddiff),
 latest git rebase go/build/recheck/clean. Task is actively continuing, no hand-back.
+
+Explicit profile-guard audits:
+- Re-read profile_context resolution and before-request hooks, global auth and
+  upstream explicit-profile handling. Added80 auditable entries: non-global
+  F08/F09 three selectors each and F90 six unauthenticated combinations; global
+  F13/F14/F90/B90 plus F91's two empty-linked and one real alpha/beta-linked case.
+  Every requirement names its exact world/case/status and source. Selector
+  precedence as a whole remains X02 pending. Original R001-F08/F09 stay pending
+  their explicit supersession audit, not silently counted from the wrong guard.
+- Negative audit test requires both failure kinds/all three selectors and keeps
+  global/non-global contracts separate. No product or fake implementation change.
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build-302rx1dg/configflow --world guards --world runtime-reads --world upstream-linked --output /tmp/routerdiff-profile-audit.json'`
+=> Ran4 tests0.662s/OK; guards1319, runtime1330(.92s), upstream1341(3.04s).
+Matrix2301/routes26/implemented0/go-unimplemented1341/referenced341/
+audited262/remaining2039/complete=false. No Python bugs in this selected subset.
+The last full composition remains cb95c4562435 recipes/611 referenced/182 then
+audited; this new audit subset proves80 more, not a new full composition.
