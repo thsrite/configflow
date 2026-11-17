@@ -16,7 +16,7 @@ import (
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/substore"
-	"gopkg.in/yaml.v3"
+	"configflow/internal/yamlx"
 )
 
 func TestBoundedCollectionDetachesCancellationAndDoesNotMutate(t *testing.T) {
@@ -118,7 +118,7 @@ func TestOneOpaqueMaterializationForMainAndAggregation(t *testing.T) {
 	}
 	// The converter's preflight uses the same materialization in the bundle.
 	var document map[string]any
-	if err := yaml.Unmarshal([]byte(main), &document); err != nil {
+	if err := yamlx.Unmarshal([]byte(main), &document); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := document["proxy-providers"].(map[string]any)["Aggregate"]; !ok {

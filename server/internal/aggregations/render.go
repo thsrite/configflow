@@ -3,7 +3,6 @@
 package aggregations
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,7 +10,7 @@ import (
 	"sync"
 
 	"configflow/internal/rules"
-	"gopkg.in/yaml.v3"
+	"configflow/internal/yamlx"
 )
 
 // Proxy preserves protocol-specific fields without interpreting their schema.
@@ -209,26 +208,10 @@ func providerYAML(proxies []Proxy) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var root yaml.Node
-	if err := yaml.Unmarshal(raw, &root); err != nil {
+	root, err := yamlx.FromJSON(raw)
+	if err != nil {
 		return "", err
 	}
-	var block func(*yaml.Node)
-	block = func(n *yaml.Node) {
-		n.Style = 0
-		for _, child := range n.Content {
-			block(child)
-		}
-	}
-	block(&root)
-	var output bytes.Buffer
-	encoder := yaml.NewEncoder(&output)
-	encoder.SetIndent(2)
-	if err := encoder.Encode(&root); err != nil {
-		return "", err
-	}
-	if err := encoder.Close(); err != nil {
-		return "", err
-	}
-	return output.String(), nil
+	output, err := yamlx.Marshal(root)
+	return string(output), err
 }

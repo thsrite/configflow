@@ -339,6 +339,10 @@ A19 网关编辑器与启用校验也受统一 alias 预算约束：超预算基
 变化（递归1、隐式类型1、Tab2）由真实 Python 仅替换 loader 得到完整新期望，
 旧 golden 不改，changed=classified4、unknown0。
 
+C31 聚合输出的 JSON→Node 桥改用标准 JSON 解码，合法代理对转义不再被当作
+YAML 转义拒绝；数字样/布尔样字符串、大整数精度和特殊字符保留原值与类型。
+这是标准 JSON 语义与共享 writer 的修正，输出字段仍由原 typed struct 决定。
+
 ## N7-3 — native YAML readers (subs/substore)
 
 Approved by the maintainer/coordinator; design §2.2/5.7. YAML 1.1 implicit spellings follow yaml.v3

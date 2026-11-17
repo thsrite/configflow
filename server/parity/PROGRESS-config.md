@@ -66,6 +66,9 @@ A19 readers now use Parse with no generation/plan changes: base3739/payload5161
 sources,unknown0. All7494 corpus rows pass;4 approved native-loader differences
 have real Python expectations. Editor/enable checks explicitly reject budget
 excess, small chains succeed. Full gateway suite PASS8.645s.
+Rebased on N7-4 integration at e980d402. Aggregation's typed JSON→YAML bridge
+now uses FromJSON/Marshal; surrogate/scalar-type/special-character regressions
+and C31 HTTP differential pass (.64 27.400s). Final fuzz/proddiff pending.
 See [progress/n7-3d.md](progress/n7-3d.md).
 
 ## N7-4 — native YAML writers (complete; coordinator verification pending)
