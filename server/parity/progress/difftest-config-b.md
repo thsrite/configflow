@@ -2536,3 +2536,19 @@ RT_HOST=sunbroke@192.168.0.64 rt --back server/tools/configdiff/testdata/results
 current compared117 / Go未实现44 / different24（open24）；design_errors=[]；seconds184.47；exit1
 coverage audit: routes228 / variants10648 / R-H5428 / unaccounted=[] / unknown_labels=[] / missing S-F=[] / runtime_design_errors=[]；exit0
 ```
+
+## 批次 154：T25在线Agent完整请求观察补齐
+
+- 最后核对发现普通规则/组/库写入缺少独立在线fake Agent的完整负向RPC观察；新增write_agent_quiet.py，复用已有两端独立port分配、真实heartbeat和NoRequests记录器。实际执行规则create/edit/DNS/reorder/delete、策略组create/edit/delete、规则库create/edit/delete、Mihomo结构预览四种流程；每一步HTTP/全SQL/files照常比，源端逐步证明真实保存/移动/删除/生成，不用no-op冒充保存。
+- 每流程最后一请求后每端观察6秒，保存完整requests/errors到报告；Python任何请求即前提错误，Go额外push/activate/其他RPC都会产生严格差异。Go操作尚未实现时只验证Python并明确Go observation=null，不伪造空请求。复用已有比较器的真实HTTP六种动词及故意Go额外PUT自检；完整145项自检再次通过。
+- .64 baseline15173872f最终16变体38.77秒：compared8/Go未实现7/different1、design_errors=[]。四种Python流程都零RPC；当前已接通rules流程Go也零RPC。唯一新增open是rules/delete的mosdns.revision 1 vs10，属于已有删除修订号差异，不是推送差异。旧独立草稿已删除，canonical由标准runner实际重跑加入，未手拼verdict。
+- 此处为模板模式、在线Mihomo Agent、未部署的代表流程与有限6秒窗口；不能外推到所有native DNS绑定/已有部署的content-sync异步时序，后者与真实Agent rule-sync仍保留agents/O3/O14跨域边界。已有R189等native重建SQL用例保留，不以本负向RPC测试替代。
+- 当前总数10664变体：3551 compared/6863未实现/111依赖/138严格差异/O12单列1；reviews closed265/accepted68/open70/separate1。新增T25一个配方ID；R4492/H936/G16不变，228路由S/F与214项明确处置审计再次通过。完整原始all为402组；本批新增第403组已单独完整实跑，修正后的62组和最新13组也全部实跑，未声称单次all已在最新基线重跑。
+- .32官方Go门禁仍执行race，现44包完成、无失败标记；agents/monitor整包已通过（1379.935秒），原.tmpfs I/O失败未再现。继续等待本命令完成，不遗留后台任务。
+
+```text
+RT_HOST=sunbroke@192.168.0.64 rt --back server/tools/configdiff/testdata/results.json --back server/parity/difftest-config-findings.md -- bash -lc 'server/tools/configdiff/native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups writes-real-online-Agent-no-push-or-activate --baseline 15173872f'
+current compared8 / Go未实现7 / different1；design_errors=[]；seconds38.77；exit1仅因已知修订号类差异
+agent_observations rules/delete: Python requests=[] errors=[] / Go requests=[] errors=[]；6s each
+coverage audit: routes228 / variants10664 / R-H5428 / unaccounted=[] / unknown_labels=[] / missing S-F=[] / runtime_design_errors=[]；exit0
+```

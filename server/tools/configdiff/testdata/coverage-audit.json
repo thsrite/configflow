@@ -1251,11 +1251,11 @@
   "unaccounted": [],
   "unknown_labels": [],
   "routes": 228,
-  "request_variants": 10648,
+  "request_variants": 10664,
   "raw_verdicts": {
-    "compared": 3543,
-    "go-unimplemented": 6856,
-    "different": 137,
+    "compared": 3551,
+    "go-unimplemented": 6863,
+    "different": 138,
     "go-unimplemented-dependency": 111,
     "O12-separate": 1
   },

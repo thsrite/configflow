@@ -2287,3 +2287,5 @@ setup已有真实check屏障下断连后receipt保存及新浏览器读回；pre
 已批准的C32 HEAD列表修正、Step B #3 API JSON错误出口、N7-4生成YAML布局按有限实际向量精确accepted，保留原始严格差异，不全局忽略状态/错误/SQL文本。N7-4只接受完整typed Nodes相同的生成native_config；重复键、别名、类型/列表顺序/额外字段/注释或其他SQL差异均不能被这个规则接受。具体批准链接逐例保存在findings。
 
 canonical覆盖审计为228路由、R4492（S712/F2763/B1017）、H936、G16；R/H未运行214项见上表，不能计通过。长流程的真实进程/存储/网络实验边界不因route S/F齐全而消失；Go尚未实现及依赖也始终单列。完整命令、基线、覆盖及门禁限制见[Step B进度](progress/difftest-config-b.md)。
+
+T25补充（批次154）：`write_agent_quiet.py`通过两端独立loopback Agent端口、真实heartbeat在线态，分别执行规则/策略组/规则库CRUD和Mihomo结构预览；每步比较HTTP/完整SQL/files，源端核实真实保存/重排/删除/生成。每流程末每端至少观察6秒，完整requests/errors写进报告；原始NoRequests比较器已有故意额外Go PUT及真实六动词记录自检。当前Go未接通的组/库/预览仍source-only且Go观察为null；rules流程双端零RPC，但删除保留已知MosDNS字段revision差异。该代表流程没有active deployment，也不替代native DNS绑定/既有content-sync异步状态或真实发布联测；有限窗口不宣称无限期零请求。总实际变体随之为10664，R/H覆盖数与214项边界不变。

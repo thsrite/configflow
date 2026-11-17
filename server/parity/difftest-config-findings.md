@@ -390,6 +390,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | T06 / 12-second-last-good-and-background-finish | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | c14763b3 | 200 / 200 |
 | T06 / 20-clients-one-flight | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | c14763b3 | [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] / [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] |
 | T06 / next-poll-is-fresh | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | c14763b3 | 200 / 200 |
+| T25 / rules/operation-5 | `DELETE /api/rules/<rule_id>` | open | — | 15173872f | 200 / 200 |
 | T27 / real-tick/due-and-backoff | `startup` | closed | 8f3d36ad | c14763b3 | None / None |
 | X04 / login/empty | `POST /api/auth/login` | accepted | [behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | c14763b3 | 500 / 400 |
 | X04 / login/ignored-extra/-Infinity | `POST /api/auth/login` | accepted | [behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | c14763b3 | 200 / 400 |
@@ -589,6 +590,14 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `db.fields.profile/default/mosdns.revision` | value | 1 | 7 |
 | `db.fields.profile/default/oxidns.value.native_config` | value | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: local_probe_cache\n  type: cache\n  args:\n    size: 2048\n    short_circuit: false\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://223.5.5.5\n    - addr: udp://119.29.29.29\n- tag: forward_remote\n  type: forward\n  args:\n | "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: synthetic-agent/token+01234567890123456789\n      password: synthetic-current-proxy/token+0123456789\nlog:\n  level: info\nplugins:\n  - tag: lazy_cache\n    type: cache\n    args:\n      size: 10240\n      lazy_cache_ttl: 3600\n      short_circuit: true\n  - tag: local_probe_cache\n    type: cache\n    args:\n      size: 2048\n      short_circuit: false\n  - tag: forward_local\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n        - addr: udp://223.5.5.5\n        - addr: udp://119.29.29.29\n  - tag:  |
+
+## T25 / rules/operation-5
+
+路由：`DELETE /api/rules/<rule_id>`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `db.fields.profile/default/mosdns.revision` | value | 1 | 10 |
 
 ## X06 / head//api/aggregations
 
