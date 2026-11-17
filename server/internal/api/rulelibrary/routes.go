@@ -110,7 +110,7 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 		return respond(out, err)
 	}))
 	r.POST("/api/rule-library/reorder", "rule_library.reorder_rule_library", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, _, err := readCaughtBody(c)
+		body, err := readReorderBody(c)
 		if err != nil {
 			return nil, err
 		}

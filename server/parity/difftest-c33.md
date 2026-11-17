@@ -55,3 +55,12 @@ Scope: 25 methods in `routes/rule_library.py` and `routes/proxy_groups.py`; publ
 - Fixed clocks for existing refresh/notification rows and timestamps only; one-to-one generated-ID correspondence inherited from C32's harness (no C33 generated IDs in ordinary source CRUD).
 
 Fuzz target: `FuzzEditableContent` in api/rulelibrary. Registration is exercised with rules, aggregations and all server routes; no ServeMux ambiguity is tolerated.
+
+## Independent C33 review additions
+
+- `TestReviewAuthenticationAllowlist`: all 23 JWT-only method/path pairs versus absent/config/internal/retired/invalid capabilities; both anonymous aliases remain anonymous. Real Flask/Go response and complete stored state comparisons.
+- `TestReviewStrictAndSilentBinding`: 14 write bindings × JSON/text/plain/+json × valid/malformed input. Explicit Content-Type is preserved by both harness sides, rather than overwritten by the fixture.
+- `TestReviewReorderMalformedHTTPParity`: both reorder methods × falsey defaults and truthy non-object errors; fixes Go404/Python500. Only those internal English diagnostics are class-compared, with exact status, remaining envelope and storage.
+- `TestReviewDraftRevisionShape`: live D2 requires exactly64 lowercasehex, matching production's already narrow route/top-level rule. Production direct/discover comparator controls run all40 tests, including wrong shape/type/missing/nested/unrelated-field/unrelated-route negative controls.
+- Cache safety has actual SIGKILL/reopen coverage at four durable boundaries, marker-permission denial, old scoped reader versus actual draft rename, cold population from current DB and late shared inline writers. Those intentional reliability corrections are asserted independently; ordinary C32 cache files remain fully compared.
+- 27 actual HEAD probes prove ten-worker bound, join and raw method/body/headers. Native DNS diffs check the tracked lock-order counter. Existing 15-class real Runtime shutdown/disconnection tests remain active; shared final cancellation windows are still O3-6c ownership.

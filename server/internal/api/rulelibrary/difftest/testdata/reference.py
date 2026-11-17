@@ -61,7 +61,7 @@ for line in sys.stdin:
         request = json.loads(line)
         with contextlib.redirect_stdout(io.StringIO()):
             headers = request.get('headers', {})
-            if request.get('body') is not None:
+            if request.get('body') is not None and 'Content-Type' not in headers:
                 headers['Content-Type'] = 'application/json'
             if request['method'] == 'DESIRED':
                 from backend.routers.desired import compute_desired

@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,6 +29,7 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/lockx"
 	"configflow/internal/notifications"
 	"configflow/internal/oxidns"
 	"configflow/internal/refresh"
@@ -66,6 +66,11 @@ func newWorld(t *testing.T, seed func(context.Context, *repo.Repository)) *world
 		t.Skip("set CONFIGFLOW_DIFF=1 on test server")
 	}
 	w := &world{t: t, ids: map[string]string{}}
+	t.Cleanup(func() {
+		if count := lockx.Violations(); count != 0 {
+			t.Errorf("lock order violations: %d", count)
+		}
+	})
 	w.srv = httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Register: httpxtest.Routes(apirules.Register, rulelibrary.Register, proxygroups.Register)})
 	notifications.SetSources(notifications.Sources{Agents: func(context.Context) ([]*jsonx.Object, error) { return []*jsonx.Object{}, nil }, ListTasks: func(ctx context.Context) ([]*jsonx.Object, error) {
 		status, err := taskstatus.New(w.srv.DataDir).Load()
@@ -228,6 +233,12 @@ func snapshot(t *testing.T, s *httpxtest.Server) any {
 }
 
 var generatedID = regexp.MustCompile(`^(?:rule|ruleset|lib)_[0-9a-f]{12}$`)
+var draftRevision = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+func validDraftRevision(value any) bool {
+	token, ok := value.(string)
+	return ok && draftRevision.MatchString(token)
+}
 
 func (w *world) normalize(v any) any {
 	switch value := v.(type) {
@@ -361,18 +372,28 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 }
 
 func (w *world) callWithBody(method, path, body, goBody string, authenticated bool) answer {
-	t := w.t
-	t.Helper()
 	headers := map[string]string{}
-	options := []httpxtest.Option{}
 	if authenticated {
 		headers["Authorization"] = "Bearer " + w.token
-		options = append(options, httpxtest.Bearer(w.token))
+	}
+	return w.callHeaders(method, path, body, goBody, headers)
+}
+
+func (w *world) callHeaders(method, path, body, goBody string, headers map[string]string) answer {
+	t := w.t
+	t.Helper()
+	options := []httpxtest.Option{}
+	for key, value := range headers {
+		options = append(options, httpxtest.Header(key, value))
 	}
 	var payload *string
 	if body != "" {
 		payload = &body
-		options = append(options, httpxtest.Body([]byte(goBody), "application/json"))
+		contentType := headers["Content-Type"]
+		if contentType == "" {
+			contentType = "application/json"
+		}
+		options = append(options, httpxtest.Body([]byte(goBody), contentType))
 	}
 	request := struct {
 		Method  string            `json:"method"`
@@ -465,12 +486,8 @@ func (w *world) callWithBody(method, path, body, goBody string, authenticated bo
 				if !ok {
 					t.Fatal("draft returned no object")
 				}
-				token, ok := obj["revision"].(string)
-				if !ok || len(token) != 64 {
+				if !validDraftRevision(obj["revision"]) {
 					t.Fatal("invalid draft revision", obj["revision"])
-				}
-				if _, err := hex.DecodeString(token); err != nil {
-					t.Fatal(err)
 				}
 				obj["revision"] = "<native editor revision>"
 			}
@@ -545,12 +562,28 @@ func (w *world) callWithBody(method, path, body, goBody string, authenticated bo
 					a["message"], b["message"] = "<native diagnostic>", "<native diagnostic>"
 				}
 			}
+			if (path == "/api/rule-library/reorder" || path == "/api/proxy-groups/reorder") && py.Status == 500 && got.Status == 500 {
+				a, aok := py.Body.(map[string]any)
+				b, bok := actual.(map[string]any)
+				var request any
+				decodeErr := json.Unmarshal([]byte(body), &request)
+				_, object := request.(map[string]any)
+				// The shared response hook hides native English 500 diagnostics.
+				// Only valid non-object reorder inputs have a different message.
+				if aok && bok && decodeErr == nil && !object && b["message"] == httpx.DescInternal {
+					switch a["message"] {
+					case "exception_type=AttributeError", "'list' object has no attribute 'get'", "'str' object has no attribute 'get'", "'int' object has no attribute 'get'", "'bool' object has no attribute 'get'":
+						a["message"], b["message"] = "<native non-object diagnostic>", "<native non-object diagnostic>"
+					}
+				}
+			}
 			if py.Status == 500 && got.Status == 500 && (path == "/api/proxy-groups/preview-regex" || path == "/api/rule-library/cache" || path == "/api/rule-library/reorder" || path == "/api/rule-library/proxy-domains") {
 				a, aok := py.Body.(map[string]any)
 				b, bok := actual.(map[string]any)
 				if aok && bok && (b["message"] == "invalid JSON request" || b["message"] == httpx.DescInternal) {
 					message, _ := a["message"].(string)
-					if message == "exception_type=BadRequest" || strings.HasPrefix(message, "400 Bad Request:") {
+					if message == "exception_type=BadRequest" || strings.HasPrefix(message, "400 Bad Request:") ||
+						message == "exception_type=UnsupportedMediaType" || message == "415 Unsupported Media Type: Did not attempt to load JSON data because the request Content-Type was not 'application/json'." {
 						a["message"], b["message"] = "<native JSON diagnostic>", "<native JSON diagnostic>"
 					}
 				}

@@ -27,12 +27,17 @@
   直接调用它们共用的真实 SaveRuleToLocal，验证编辑完成后迟到旧写不覆盖。
   `TestReviewColdInlineReaderPopulatesCurrentDeclaration` 验证旧请求可完成，补写字节来自新 DB，revision 不变。
   C32 原逐路由和冷交付差分保持完整文件比较，不豁免缺失缓存。修复提交：同 F1。
-- **F3，medium，已修待提交：两个 reorder 入口把真值非对象丢成空对象，错误返回404。**
+- **F3，medium，已修：两个 reorder 入口把真值非对象丢成空对象，错误返回404。**
   `[1]`、`"bad"`、42、true 在真实 Flask 为500，Go 为404；空列表/null/false/0/空字符串原来均按空对象处理。
   已保留严格 JSON/media 边界和 falsey 默认，仅真值非对象提前返回 native500。
   `TestReviewReorderMalformedHTTPParity` 对两路由逐请求比较状态、envelope、DB/files。
   Python 内部 AttributeError 文字按既有标准不复制；只归一这两路由、合法非对象请求的已知内部诊断，
-  其他字段及存储完整比较。修复提交：待下一提交。
+  其他字段及存储完整比较。修复提交：输入边界修复提交（最终 ID 在文末）。
+- **F4，low，已修：live 差分的 D2 形状检查接受大写 hex。**
+  生产 proddiff 配置已有精确路由/顶层 `revision`/`^[0-9a-f]{64}$`，但 C33 live harness
+  的 hex.DecodeString 同样接受大写，弱于生产规范。改为同样的完整小写 regex；
+  `TestReviewDraftRevisionShape` 有合法 token、长短、大写、非字符串、缺值及换行负控。
+  生产比较器的字段/路由/嵌套值正负控未放宽。修复提交：同 F3。
 
 ## 缓存崩溃/故障核对
 
@@ -60,4 +65,14 @@
 共享 taskstatus/repo/rulefetch 的最终提交/锁等待取消窗口按明确分工仍归 O3-6c，**不是 C33 发现**；
 本轮缓存 reader 的声明一致性及 marker 判定不等同于该关机窗口。不得把 C33 回归当成共享层已完成。
 
-命令、完整测试结果、F3提交和最终状态将在门禁后补齐；不引用作者历史 GATE PASS 作为本次修复后的验收。
+`TestReviewAuthenticationAllowlist` 覆盖全部23个管理 method/path 的缺省/config/rule-proxy/retired/wrong
+query token 与 Bearer，均真实 Flask/Go 401；两个匿名内容出口对这些 token 均200，比较每次完整存储。
+有效JWT成功矩阵继续由作者25方法用例覆盖。`TestReviewStrictAndSilentBinding` 对14个写入口比较
+JSON/text/plain/+json 与畸形/有效body；保留严格400/415、捕获异常500和 batch silent400的区别。
+oracle 不再强制覆盖显式 Content-Type，实际 Go 请求和 Flask 收到同一个 media 参数。
+
+`TestReviewConnectivityWorkerBoundAndRawRequest` 对27个真实回环 HEAD 验证峰值10、全部收敛、结果ID/status
+对应，原始 body为空、没有 Content-Type/Authorization。没有覆盖或缩短生产 timeout。现有回环 forward
+proxy 用例继续核对 GET URI/body/headers。所有 native DNS/live路径结束检查 lockx.Violations()==0。
+
+命令、完整测试结果、提交和最终状态将在门禁后补齐；不引用作者历史 GATE PASS 作为本次修复后的验收。

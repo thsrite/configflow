@@ -2034,6 +2034,8 @@ R08 integration follow-up: rebased `go-port-c32` onto `go=d8f50b00`; preserved e
 
 - Resolved C28 deferral: both `internal/mosdns/difftest` callback cases now run unconditionally through the registered `/api/profiles/<id>/rule-library/content/<id>` route and pass.
 
+复核增量：reorder 两路由真值非对象的 500/空值默认已修；live D2 小写 hex 守卫已补，生产 normalize 无变化。新增23管理方法鉴权白名单、显式 Content-Type 的14入口严格/silent矩阵、27真实 HEAD 的10worker上限/原始报文及 lock-order 断言。最新 .64 scoped race/live：C33 API5.671s/diff17.283s，C32 API21.382s/diff27.551s通过；共享 inline 守卫后的 .32 API rules43.457s/library12.118s通过。现已 rebase 到 go@6e37489ff（L1更新），准备最终完整 gate。共享最终关机提交点仍归O3-6c，不混入C33结论。
+
 **Status: `ported`** · prereqs: C32 · Go: internal/api/rulelibrary, api/proxygroups (new)
 
 Files:

@@ -620,3 +620,16 @@ func readCaughtBody(c *httpx.Ctx) (record, bool, error) {
 	}
 	return body, ok, nil
 }
+
+func readReorderBody(c *httpx.Ctx) (record, error) {
+	body, ok, err := readCaughtBody(c)
+	if err != nil || ok {
+		return body, err
+	}
+	// Python's `body or {}` defaults only empty values. A nonempty scalar or
+	// array still fails before resolving IDs; do not report a missing resource.
+	if jsonx.Truthy(c.JSONSilent()) {
+		return record{}, fail(500, "reorder request must be a JSON object")
+	}
+	return record{}, nil
+}

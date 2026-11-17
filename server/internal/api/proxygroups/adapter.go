@@ -60,6 +60,17 @@ func readBody(c *httpx.Ctx, silent bool) (object, bool, error) {
 	out, err := native(v)
 	return out, true, err
 }
+
+func readReorderBody(c *httpx.Ctx) (object, error) {
+	body, ok, err := readBody(c, false)
+	if err != nil || ok {
+		return body, err
+	}
+	if jsonx.Truthy(c.JSONSilent()) {
+		return object{}, &fault{500, "reorder request must be a JSON object"}
+	}
+	return object{}, nil
+}
 func load(ctx context.Context, id string) (object, error) {
 	raw, err := repo.GetConfig(ctx, id)
 	if err != nil {

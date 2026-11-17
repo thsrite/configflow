@@ -65,7 +65,7 @@ func Register(r *httpx.Router) {
 	}))
 	r.GET("/api/proxy-groups/health-defaults", "proxy_groups.health_defaults", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) { out, err := defaults(); return respond(out, err) }))
 	r.POST("/api/proxy-groups/reorder", "proxy_groups.reorder_proxy_groups", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, _, err := readBody(c, false)
+		body, err := readReorderBody(c)
 		if err != nil {
 			return nil, err
 		}
