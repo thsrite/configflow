@@ -32,6 +32,22 @@ legacy until O3-4. Preserve the concurrent agent's repeated Start/Stop regressio
 - Final focused .63 recheck passed: lifecycle race 2.055s, clock 1.017s, proddiff-tag lifecycle 0.028s,
   cmd/configflow compiled, difftest-tag lifecycle 0.022s. Admission seals atomically at idle drain completion;
   hooks receive their generation's closed Stopping signal. Final .32 and rebase still pending.
+- First .32 acceptance run passed gofmt/vet, race (lifecycle 2.098s, clock 1.065s, lockx 3.654s), both
+  build tags, full Go suite (lifecycle 0.209s, clock 0.102s, lockx 0.746s, installer 228.350s,
+  oxidns 166.083s, yamlx 3.321s), Python proddiff tool tests (20 OK) and new tagged proddiff
+  (23 self-checks, 2831 cases/415 comparisons, baseline new=0 stale=0; 5 loops suppressed and
+  subscription-cache-prune recorded as the only synchronous Startup).
+- All 9 enabled CONFIGFLOW_DIFF=1/configflow_difftest packages ran: 8 passed; agents failed two tests
+  (DockerHADifferentialAgainstFlask: invalid IPv6 exception wording; InstallerFuzzAgainstFlask: 92
+  malformed-UTF8 query cases, 4446 equal). Clean-go 5535931d baseline reproduced both failures exactly
+  (same DockerHA URL row; installer fuzz 4446 equal/92 differ). These are existing N2 native URL/error and
+  invalid UTF-8 query differences, not lifecycle regressions. No business code/comparison waiver changed.
+  Temporary baseline worktree and its rt copy removed; logs remain private on .32 under /tmp.
+- Additional shutdown/restart audit found a real framework edge: a round ignoring cancellation must
+  retain its same-name gate across generations. Gate is now Runtime-owned, with fake-clock regression;
+  Configure also rejects a stopped generation that still has active work. .63 three-run race passes
+  (lifecycle 4.134s, clock 1.016s); both tags pass. Substore cleanup/full vet passed after removing its
+  now-unused startup logger. Final .32 rerun pending after this code change.
 - Next: Runtime + scopes/drain/restart tests; default adapters and Flight wiring; tagged modes, main helpers,
   remove overlay builder and update proddiff metadata/docs. Final .32 race (lifecycle/lockx), full suite,
   proddiff new=0, enabled difftests, rebase go and clean worktree.

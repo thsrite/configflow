@@ -32,7 +32,6 @@ type generation struct {
 	admit                                bool
 	active, runners                      int
 	drivers                              map[string]bool
-	busy                                 map[string]bool
 	startups                             map[string]bool
 }
 
@@ -49,6 +48,7 @@ type Runtime struct {
 	registry  *Registry
 	drain     func(context.Context) error
 	current   *generation
+	busy      map[string]bool
 }
 
 // NewRuntime constructs an independent runtime without starting background work.
@@ -62,7 +62,7 @@ func NewRuntime(opts Options) *Runtime {
 	if opts.Grace <= 0 {
 		opts.Grace = 8 * time.Second
 	}
-	return &Runtime{clock: opts.Clock, mode: opts.Mode, grace: opts.Grace, registry: opts.Registry, drain: opts.Drain}
+	return &Runtime{clock: opts.Clock, mode: opts.Mode, grace: opts.Grace, registry: opts.Registry, drain: opts.Drain, busy: make(map[string]bool)}
 }
 
 func (r *Runtime) generation(ctx context.Context) *generation {
@@ -71,7 +71,7 @@ func (r *Runtime) generation(ctx context.Context) *generation {
 		jobs, stopJobs := context.WithCancel(context.Background())
 		r.current = &generation{runtime: r, root: ctx, loops: loops, stopLoops: stopLoops, jobs: jobs, stopJobs: stopJobs,
 			stopping: make(chan struct{}), changed: make(chan struct{}), admit: true,
-			drivers: map[string]bool{}, busy: map[string]bool{}, startups: map[string]bool{}}
+			drivers: map[string]bool{}, startups: map[string]bool{}}
 	}
 	return r.current
 }
@@ -261,11 +261,11 @@ func (r *Runtime) round(ctx context.Context, g *generation, p Periodic) (err err
 		r.mu.Unlock()
 		return ErrStopping
 	}
-	if g.busy[p.Name] {
+	if r.busy[p.Name] {
 		r.mu.Unlock()
 		return lockx.ErrBusy
 	}
-	g.busy[p.Name] = true
+	r.busy[p.Name] = true
 	g.active++
 	r.notify(g)
 	r.mu.Unlock()
@@ -279,7 +279,7 @@ func (r *Runtime) round(ctx context.Context, g *generation, p Periodic) (err err
 		finish()
 		emitEvent(r.clock.Now(), p.Name, "round-end")
 		r.mu.Lock()
-		delete(g.busy, p.Name)
+		delete(r.busy, p.Name)
 		g.active--
 		r.notify(g)
 		r.mu.Unlock()

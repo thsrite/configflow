@@ -6,7 +6,6 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/lifecycle"
-	"configflow/internal/logx"
 )
 
 // Service bundles the module-level singletons of sub_store_client,
@@ -59,8 +58,6 @@ func SetDefault(s *Service) (restore func()) {
 // Converter is the Sub-Store node converter for convert.ConvertNodeToMihomo
 // and convert.RejectSurgeDialers (sub_store_client.convert_proxy_string).
 func Converter() convert.ProxyStringConverter { return Default().Client }
-
-var appLog = logx.Get("backend.app")
 
 // Wire registers the startup work of backend/app.py::initialize_app that
 // belongs to this module: the Sub-Store idle monitor (only with the bundled

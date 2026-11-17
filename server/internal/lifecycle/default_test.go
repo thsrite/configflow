@@ -92,4 +92,22 @@ func TestDefaultRuntimeProcess(t *testing.T) {
 	if drains.Load() != 1 || startups.Load() != 3 {
 		t.Fatalf("Configure dropped registry or Drain: %d/%d", drains.Load(), startups.Load())
 	}
+	if err := lifecycle.Configure(lifecycle.Options{Grace: time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
+	gate, finish := releaseGate(t)
+	oldStarted := make(chan struct{})
+	oldDone := make(chan struct{})
+	if err := lifecycle.Spawn(context.Background(), "ignores-cancel", func(context.Context) { close(oldStarted); <-gate; close(oldDone) }); err != nil {
+		t.Fatal(err)
+	}
+	receive(t, oldStarted)
+	lifecycle.Stop(time.Second)
+	if err := lifecycle.Configure(lifecycle.Options{}); !errors.Is(err, lifecycle.ErrRunning) {
+		finish()
+		t.Fatalf("Configure abandoned active old work: %v", err)
+	}
+	finish()
+	receive(t, oldDone)
+	until(t, func() bool { return lifecycle.Configure(lifecycle.Options{}) == nil })
 }
