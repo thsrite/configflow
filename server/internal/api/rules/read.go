@@ -30,7 +30,11 @@ func (e *sourceFailure) Error() string { return e.Message }
 // Local serves the public provider through the shared cache owner. Delivery
 // normalization never changes source bytes or their validation metadata.
 func (s *Service) Local(ctx context.Context, id, name, target, host string) (delivery, error) {
-	return s.local(lifecycle.Detach(ctx), id, name, target, host)
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return delivery{}, err
+	}
+	return s.local(ctx, id, name, target, host)
 }
 func (s *Service) elapsed(start time.Time) float64 {
 	return math.Round(s.now().Sub(start).Seconds()*100000) / 100
@@ -39,6 +43,9 @@ func (s *Service) elapsed(start time.Time) float64 {
 // Match tests a domain or IP lazily, fetching only rule sources actually reached.
 func (s *Service) Match(ctx context.Context, id string, body record, host string) (record, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	start := s.now()
 	if body == nil {
 		return nil, &fault{500, msgMatchFailed}
@@ -113,6 +120,9 @@ type scanBucket struct {
 // allocating a list only for keys that actually repeat.
 func (s *Service) FindDuplicates(ctx context.Context, id, host string) (scanResult, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return scanResult{}, err
+	}
 	start := s.now()
 	rows, load, err := s.scanRows(ctx, id, host)
 	if err != nil {

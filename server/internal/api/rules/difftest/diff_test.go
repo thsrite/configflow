@@ -328,13 +328,19 @@ func (w *world) pairIDs(a, b any) {
 	}
 }
 func (w *world) call(method, path, body string, authenticated bool) answer {
-	t := w.t
-	t.Helper()
+	w.t.Helper()
 	headers := map[string]string{}
-	options := []httpxtest.Option{}
 	if authenticated {
 		headers["Authorization"] = "Bearer " + w.token
-		options = append(options, httpxtest.Bearer(w.token))
+	}
+	return w.callHeaders(method, path, body, headers)
+}
+func (w *world) callHeaders(method, path, body string, headers map[string]string) answer {
+	t := w.t
+	t.Helper()
+	options := []httpxtest.Option{}
+	for key, value := range headers {
+		options = append(options, httpxtest.Header(key, value))
 	}
 	var payload *string
 	if body != "" {

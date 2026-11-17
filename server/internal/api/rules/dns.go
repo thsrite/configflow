@@ -85,6 +85,9 @@ func (s *Service) DNSState(ctx context.Context, id, base string) (dnsReadResult,
 func (s *Service) SetDNS(ctx context.Context, id string, body record, base string) (dnsWriteResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := dnsWriteResult{Success: true, Rules: map[string]oxidns.RuleDNSRule{}, Skipped: []string{}, Warnings: []string{}}
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 	choices, err := orderedChoices(body["routes"])
 	if err != nil {
 		return out, err

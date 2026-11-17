@@ -66,12 +66,21 @@ func loadProfile(ctx context.Context, id string) (record, error) {
 	return native(value)
 }
 func editProfile(ctx context.Context, id string, edit func(record) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	_, err := repo.UpdateConfigTransaction(ctx, func(tx context.Context, raw *jsonx.Object) (*jsonx.Object, error) {
+		if err := tx.Err(); err != nil {
+			return nil, err
+		}
 		profile, err := native(raw)
 		if err != nil {
 			return nil, err
 		}
 		if err = edit(profile); err != nil {
+			return nil, err
+		}
+		if err := tx.Err(); err != nil {
 			return nil, err
 		}
 		next, err := legacy(profile)

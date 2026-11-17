@@ -119,6 +119,9 @@ func (s *Service) List(ctx context.Context, id string, sets bool) ([]record, err
 func (s *Service) Create(ctx context.Context, id string, item record, sets bool) (mutationResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	result := mutationResult{Success: true}
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
 	if item == nil {
 		if sets {
 			return result, errors.New("rule-set request must be an object")
@@ -147,6 +150,9 @@ func (s *Service) Create(ctx context.Context, id string, item record, sets bool)
 func (s *Service) Mutate(ctx context.Context, profileID, id string, payload record, remove, sets bool, base string) (mutationResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	result := mutationResult{Success: true}
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
 	dns := ""
 	dnsPresent := false
 	var dnsErr error
@@ -297,6 +303,9 @@ func knownPolicy(p record, policy string) bool {
 // Rename updates only selected group labels, preserving concurrent rule fields.
 func (s *Service) Rename(ctx context.Context, id string, body record) error {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	name, ok := textValue(body["group_name"])
 	if body == nil || !ok {
 		return invalid(msgGroupBody)
@@ -326,6 +335,9 @@ func (s *Service) Rename(ctx context.Context, id string, body record) error {
 func (s *Service) SetPolicy(ctx context.Context, id string, body record, base string) (mutationResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := mutationResult{Success: true}
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 	if body == nil {
 		return out, invalid(msgPolicyBody)
 	}
@@ -379,6 +391,9 @@ func (s *Service) SetPolicy(ctx context.Context, id string, body record, base st
 // Reorder moves IDs using the current transaction snapshot, including legacy input.
 func (s *Service) Reorder(ctx context.Context, id string, body record, base string) ([]string, []string, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	if len(body) == 0 {
 		return nil, nil, invalid(msgNoBody)
 	}
@@ -415,12 +430,22 @@ func (s *Service) Reorder(ctx context.Context, id string, body record, base stri
 // Batch validates the whole input before allocating collision-free IDs under lock.
 func (s *Service) Batch(ctx context.Context, id string, body record) ([]record, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if body == nil {
 		return nil, invalid(msgRuleObject)
 	}
-	var values []string
-	if json.Unmarshal(body["domains"], &values) != nil || len(values) == 0 {
+	var inputs []*string
+	if json.Unmarshal(body["domains"], &inputs) != nil || len(inputs) == 0 {
 		return nil, invalid(msgBatchValues)
+	}
+	values := make([]string, len(inputs))
+	for i, value := range inputs {
+		if value == nil {
+			return nil, invalid(msgBatchValues)
+		}
+		values[i] = *value
 	}
 	for i, value := range values {
 		item := record{"rule_type": body["rule_type"], "value": stringJSON(strings.TrimSpace(value))}

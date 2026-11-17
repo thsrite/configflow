@@ -30,6 +30,9 @@ type sourceOptions struct {
 }
 
 func (s *Service) sourceContent(ctx context.Context, config, item, library *jsonx.Object, options sourceOptions) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	source := library
 	if source == nil {
 		source = item
@@ -59,6 +62,9 @@ func (s *Service) sourceContent(ctx context.Context, config, item, library *json
 	if err == nil {
 		return sourceText(content), nil
 	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	var validation *rulefetch.RemoteRuleValidationError
 	if errors.As(err, &validation) {
 		return "", err
@@ -78,6 +84,9 @@ func (s *Service) sourceContent(ctx context.Context, config, item, library *json
 }
 func (s *Service) fetch(ctx context.Context, config *jsonx.Object, host string, timeout time.Duration) func(string) (any, error) {
 	return func(address string) (any, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		response, err := s.client.RequestRule(ctx, address, rulefetch.Request{Config: config, HostURL: host, ConnectTimeout: timeout, ReadTimeout: timeout})
 		if err != nil {
 			return nil, err
@@ -86,7 +95,11 @@ func (s *Service) fetch(ctx context.Context, config *jsonx.Object, host string, 
 		if err = response.RaiseForStatus(); err != nil {
 			return nil, err
 		}
-		return response.Content()
+		content, err := response.Content()
+		if err == nil {
+			err = ctx.Err()
+		}
+		return content, err
 	}
 }
 func (s *Service) local(ctx context.Context, id, name, target, host string) (delivery, error) {

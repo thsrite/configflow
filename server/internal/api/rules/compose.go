@@ -148,6 +148,9 @@ type composeResult struct {
 func (s *Service) Compose(ctx context.Context, id string, body record, base string) (composeResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := composeResult{Success: true, Data: composeData{Rules: []record{}}, DNS: map[string]oxidns.RuleDNSRule{}, Skipped: []skippedRule{}, Warnings: []string{}, Draft: true}
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 	if body == nil {
 		return out, invalid(msgComposeObject)
 	}

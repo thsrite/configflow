@@ -1934,7 +1934,9 @@ Load-stability follow-up (`go-fix-agg-provider-load`, based on O3-5): old 65c0e6
 
 最终 go 更新到 0f943623（provider慢渲染修正），新增第14个 live differential 已追加 race：provider/difftest51.543s；proddiff tag回归0.070s，API1.414s/server0.035s及相关vet均PASS。完整 gate 的13个既有包和此新增包均已执行，不改baseline；报告中区分完整gate内容与追加验证。
 
-**Status: ported**（独立复核待安排） · prereqs: C09, C14, C27 · Go: internal/api/rules。分支 go-port-c32，最终实现 ccab8632，基于 go 0f943623。无新依赖、不 push，A24 分支未动。
+**Status: ported**（独立复核修复已完成，最终 gate 待执行） · prereqs: C09, C14, C27 · Go: internal/api/rules。分支 go-port-c32，最终实现 ccab8632，基于 go 0f943623。无新依赖、不 push，A24 分支未动。
+
+独立复核 `go-review-c32`（起点 c3e4e9ac，非作者）：已修两项发现，F1 高（Runtime 停止后 owner 仍可提交；增加关机准入/事务/下载/缓存检查，普通断开仍完成）、F2 中（batch null 元素被当空字符串；严格拒绝）。九类写入取消矩阵、SQLite 提交失败重开验证、30 秒/镜像/校验失败缓存归属、19 管理方法及两个匿名 provider 的 token/JWT 矩阵已补充；改动包 vet/race/live diff 通过。完整记录：[review-c32.md](review-c32.md)；最终门禁完成后更新 verified。
 
 Files: backend/routes/rules.py 全部方法及 profiles.py 两类别名。核心使用 native DTO/RawMessage，legacy存储/引擎转换仅在adapter；复用C09 syntax/reorder/lazy matcher、C14 validation/fetch/cache/delivery、refresh、C27 DNS/native routing。共享库+profile+DNS一个事务；owner lifecycle.Detach；缓存失败保留保存。全应用注册无冲突。
 

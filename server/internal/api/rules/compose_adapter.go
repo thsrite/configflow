@@ -44,11 +44,17 @@ func prepareLibrary(raw json.RawMessage) (record, error) {
 	return library, nil
 }
 func (s *Service) prepareRemote(ctx context.Context, library record) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	value, err := legacy(library)
 	if err != nil {
 		return nil, err
 	}
 	content, err := rulefetch.ReadRuleSourceContent(ctx, value, s.client)
+	if canceled := ctx.Err(); canceled != nil {
+		return nil, canceled
+	}
 	if err != nil {
 		if rulefetch.IsRequestException(err) {
 			return nil, &fault{502, msgDownloadFailed}
@@ -67,6 +73,9 @@ func (s *Service) prepareRemote(ctx context.Context, library record) ([]byte, er
 	}
 }
 func (s *Service) cacheComposed(ctx context.Context, library record, prepared []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	value, err := legacy(library)
 	if err != nil {
 		return err
@@ -79,11 +88,17 @@ func (s *Service) cacheComposed(ctx context.Context, library record, prepared []
 	return err
 }
 func editSharedProfile(ctx context.Context, id string, sharedEdit func(record) error, profileEdit func(record, record) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	resolved, err := repo.ResolveProfileID(ctx, id)
 	if err != nil {
 		return err
 	}
 	_, _, err = repo.UpdateSharedAndConfigTransaction(ctx, func(tx context.Context, value *jsonx.Object) (*jsonx.Object, error) {
+		if err := tx.Err(); err != nil {
+			return nil, err
+		}
 		native, err := native(value)
 		if err != nil {
 			return nil, err
@@ -98,6 +113,9 @@ func editSharedProfile(ctx context.Context, id string, sharedEdit func(record) e
 		value.Update(next)
 		return nil, nil
 	}, func(tx context.Context, id string, before, after *jsonx.Object) (*jsonx.Object, error) {
+		if err := tx.Err(); err != nil {
+			return nil, err
+		}
 		old, err := native(before)
 		if err != nil {
 			return nil, err
@@ -107,6 +125,9 @@ func editSharedProfile(ctx context.Context, id string, sharedEdit func(record) e
 			return nil, err
 		}
 		if err := profileEdit(old, next); err != nil {
+			return nil, err
+		}
+		if err := tx.Err(); err != nil {
 			return nil, err
 		}
 		out, err := legacy(next)
