@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -16,6 +17,8 @@ import (
 	"configflow/internal/gateway"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/logx"
+	"configflow/internal/redact"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
@@ -155,16 +158,29 @@ func (s *Service) local(ctx context.Context, id, name, target, host string) (del
 	if err != nil {
 		return delivery{}, &fault{500, msgLocalFailed}
 	}
-	if source != nil && target == "mihomo" && utf8.Valid(content) {
+	if source != nil && target == "mihomo" && !utf8.Valid(content) {
+		logger.Warningf(msgLocalUTF8, localLogName(ctx, config, name))
+	} else if source != nil && target == "mihomo" {
 		format, err := convert.RulesetFormat(source, config, "")
 		if err != nil {
 			return delivery{}, &fault{500, msgLocalFailed}
 		}
-		normalized, _, err := rulefetch.NormalizeMihomoRuleset(string(content), source.GetOr("behavior", "domain"), format)
+		normalized, warnings, err := rulefetch.NormalizeMihomoRuleset(string(content), source.GetOr("behavior", "domain"), format)
 		if err != nil {
 			return delivery{}, &fault{500, msgLocalFailed}
 		}
 		content = []byte(normalized)
+		if len(warnings) > 0 {
+			lines := make([]string, 0, min(10, len(warnings)))
+			for _, warning := range warnings[:min(10, len(warnings))] {
+				line := "?"
+				if item, ok := warning.(*jsonx.Object); ok {
+					line = strconv.FormatInt(item.GetInt("line"), 10)
+				}
+				lines = append(lines, line)
+			}
+			logger.Warningf(msgLocalReview, localLogName(ctx, config, name), len(warnings), strings.Join(lines, ", "))
+		}
 	}
 	return delivery{Content: content, Stale: stale != nil}, nil
 }
@@ -192,6 +208,15 @@ func populateInlineCache(ctx context.Context, source *jsonx.Object) {
 		}
 		break
 	}
+}
+
+func localLogName(ctx context.Context, config *jsonx.Object, name string) string {
+	secrets, err := redact.ExternalPayloadSecrets(ctx, config.GetObject("system_config"))
+	if err != nil {
+		return redact.Redacted
+	}
+	public := redact.SanitizeCredentials(jsonx.Obj("name", name), secrets)
+	return logx.LogText(public.GetString("name"), 120)
 }
 func boolPointer(value bool) *bool { return &value }
 func remoteFault(err error) *sourceFailure {

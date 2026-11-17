@@ -56,6 +56,8 @@ const (
 const (
 	msgLocalFailed     = "Error getting local rule"
 	msgLocalMissing    = "Rule not found in rule library: %s. Please add it to the rule library first."
+	msgLocalReview     = "Rule '%s': %d entries need manual review (lines [%s])"
+	msgLocalUTF8       = "Rule '%s' is not UTF-8; leaving rule content unchanged"
 	msgQuery           = "请输入域名或IP地址"
 	msgQueryInvalid    = "请输入有效的域名或IP地址"
 	msgUnmatched       = "该域名/IP未匹配任何规则，将使用默认策略"
