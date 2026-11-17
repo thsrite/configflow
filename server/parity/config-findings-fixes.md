@@ -13,7 +13,7 @@
 | 7 准备失败上下文 | 已修。`.63 TestConfigFindingsPreparationContextWithoutA11Positions` 修前缺订阅前缀和来源，修后默认provider上下文保留「订阅…准备失败」及内容来源。provider整包race通过169.005s。C30差异仅延后文件/坐标/摘录，前缀和来源严格比较；A11记录已缩小范围。 |
 | 8 ruleset UUID4 | 已修。`.63`真实POST rulesets/init修前ruleset_32hex，修后存储/返回规则引用采用带横线UUID4并验证版本/variant；lib_32hex保持。使用既有google/uuid模块的NewRandom（返回错误、不panic），未增加依赖版本。discovery/API race 5.962s/1.761s。 |
 | 9 auto_backup | C35已解决，无业务修改。`.63 CONFIGFLOW_DIFF=1 go test -count=1 -run ^TestAutomaticChangesCoalesceAndPendingDisableCancels/false$ ./internal/webdav/difftest/` 通过1.797s：启用auto_backup和连续提交经1s窗口只上传一次，Flask/Go文件及回执一致。实际注册方法为POST /api/backup/config（Python也是POST，PUT未注册），对应R015-S90。 |
-| 10 BOM | 待确认 C30 复核 |
+| 10 BOM | C30复核已解决，无业务修改。`.63 CONFIGFLOW_DIFF=1 go test -count=1 -run ^TestUTF8BOMRequestBodies$ ./internal/api/subscriptions/difftest/` 通过1.091s；含parse-lines在内的BOM写入/读取边界与Flask响应和存储一致。 |
 | 11 未知字段保留 | 待验证并登记接受差异 |
 | 12 Docker HA 测试 | 待复现 |
 
