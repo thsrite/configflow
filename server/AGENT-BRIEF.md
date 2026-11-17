@@ -68,6 +68,13 @@ uncommitted or non-compiling code: commit what compiles, revert the rest, write 
 PROGRESS file. If you fail the same problem 2–3 rounds, stop and report an escalation packet: failing command
 + trimmed output, file paths, one line per attempt and why it failed, branch/commit (WORKFLOW.md, last section).
 
+## Never end your turn while waiting
+
+Run tests and other long commands in the **foreground** with a long timeout (the test servers can be slow
+under load). Background-job notifications do not reliably wake an agent in this setup: if you end your turn
+saying "waiting for the run", nothing resumes you and the task stalls. Only end your turn when the task is
+finished (or you are blocked on a question to the coordinator).
+
 ## Reporting
 
 At the end (and when your context gets long) update your PROGRESS section: status, commits, decisions,
