@@ -415,3 +415,22 @@ func TestFormattingNotes(t *testing.T) {
 		}
 	}
 }
+
+func TestDeepConfigPathsRemainComplete(t *testing.T) {
+	source := func(value string) []byte {
+		var b strings.Builder
+		for i := 0; i < 80; i++ {
+			fmt.Fprintf(&b, "%sk%d:\n", strings.Repeat(" ", i*2), i)
+		}
+		fmt.Fprintf(&b, "%sleaf: %s\n", strings.Repeat(" ", 160), value)
+		return []byte(b.String())
+	}
+	result := Config(source("before"), source("after"), "", "")
+	if len(result.Items) != 1 || result.Items[0].Path == nil || len(*result.Items[0].Path) != 81 || !strings.HasSuffix(result.Items[0].Key, ".leaf") {
+		t.Fatalf("deep path truncated: %+v", result.Items)
+	}
+	text, _ := result.Items[0].New.Unpack()
+	if text != "after" {
+		t.Fatal(text)
+	}
+}

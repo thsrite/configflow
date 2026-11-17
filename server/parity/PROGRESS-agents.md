@@ -931,7 +931,7 @@ The earlier .63-only rulefetch proxy_refused timeout difference did not reproduc
 
 ## A12 — push diff
 
-**Status: `ported`（实现/语料通过，最终门禁进行中）** · prereqs: A11 verified · Go: `internal/deploy/pushdiff` · branch `go-port-a12` · commit: 本节随 A12 实现提交，最终门禁记录在后续提交。
+**Status: `ported`（实现/语料通过，最终门禁进行中）** · prereqs: A11 verified · Go: `internal/deploy/pushdiff` · branch `go-port-a12` · 实现提交 `e03197e9`（rebase 到 `go` `0b367ae5` 后），最终门禁记录在后续提交。
 
 范围：`backend/agents/push_diff.py` 全部纯比较能力。实现按 `design/a14-publish.md` A12-1：typed `Diff`/`Page`/`Text`、逐键 YAML、命名/标量列表、带敏感片段的统一 diff、文件排序/计数、节点重复名/未命名配对、规则多重集合、行/字节/文件/条目预算、zlib 压缩分页、搜索、stored-token 局部替换。无 HTTP 注册（A13/A14）、无仓库/网络/设备访问，无 push、无子 agent。
 
@@ -999,13 +999,16 @@ The earlier .63-only rulefetch proxy_refused timeout difference did not reproduc
 | `test_paths_that_name_another_file_still_count` | `TestPythonCorpus`（真实 Python oracle） |
 | `test_same_writing_style_is_not_called_reformatting` | `TestPythonCorpus`（真实 Python oracle） |
 
+新增文件行数（`internal/deploy/pushdiff/`）：`build.go` 263；`config.go` 606；`corpus_test.go` 195；`credentials_test.go` 66；`entries.go` 341；`fuzz_test.go` 89；`json.go` 90；`lists.go` 308；`messages.go` 8；`raw.go` 372；`safety_test.go` 417；`text.go` 303；`types.go` 166。
+共享新增 `internal/agents/diag/credentials.go` 121 行；`yamlx/native_node.go` 增加 13 行（AllPairs）；语料生成器 `testdata/gen_a12.py` 175 行、门禁 `testdata/gate.sh` 20 行、Python oracle gzip 1761756 bytes。无新增依赖。
+
 命令（均从 worktree 根目录）：
 ```sh
 rt --back server/internal/deploy/pushdiff/testdata/python.json.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/deploy/pushdiff/testdata/gen_a12.py'
 rt -- bash -lc 'cd server && go test -count=1 ./internal/deploy/pushdiff ./internal/agents/diag ./internal/yamlx'
 rt -- bash server/internal/deploy/pushdiff/testdata/gate.sh
 ```
-目前 `.64`：oracle `A12 Python: 32 tests / 67 boundary rows; 28433991 JSON bytes`；包测试 `ok configflow/internal/deploy/pushdiff`，diag/yamlx 同样通过。最后门禁结果待回填。
+目前 `.64`：oracle `A12 Python: 32 tests / 67 boundary rows; 28433991 JSON bytes`；包测试 `ok configflow/internal/deploy/pushdiff`，diag/yamlx 同样通过。最后门禁结果待回填。收尾检查移除了 walk 复用显示 MAX_DEPTH 的路径截断：MaxDepth 只限制展示值，80 层真实 key path 仍完整；`TestDeepConfigPathsRemainComplete` 锁住此行为。
 
 ## A13 — content sync, Agent list/detail, push-diff routes
 

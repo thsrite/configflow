@@ -201,7 +201,10 @@ func (b *rowBudget) row(p, full []string, change string, old, new *yaml.Node, se
 	b.rows = append(b.rows, r)
 }
 func walk(old, new *yaml.Node, p, base []string, b *rowBudget, nested bool) {
-	full := append(slices.Clone(base), p...)
+	full := p
+	if len(base) > 0 {
+		full = append(slices.Clone(base), p...)
+	}
 	change := "modified"
 	if old == nil {
 		change = "added"
@@ -212,7 +215,7 @@ func walk(old, new *yaml.Node, p, base []string, b *rowBudget, nested bool) {
 		return
 	}
 	sensitive := len(full) > 0 && secretField(full[:len(full)-1], full[len(full)-1])
-	if sensitive || len(full) > MaxDepth {
+	if sensitive {
 		if change != "modified" || !yamlx.Equal(old, new) {
 			b.row(p, full, change, old, new, sensitive, nested, nil)
 		}
@@ -235,11 +238,11 @@ func walk(old, new *yaml.Node, p, base []string, b *rowBudget, nested bool) {
 		}
 		for _, q := range news {
 			byNew[keyID(q)] = q
-			walk(byOld[keyID(q)].value, q.value, appendPath(p, q.key), base, b, nested)
+			walk(byOld[keyID(q)].value, q.value, append(p, q.key), base, b, nested)
 		}
 		for _, q := range olds {
 			if _, ok := byNew[keyID(q)]; !ok {
-				walk(q.value, nil, appendPath(p, q.key), base, b, nested)
+				walk(q.value, nil, append(p, q.key), base, b, nested)
 			}
 		}
 		return
