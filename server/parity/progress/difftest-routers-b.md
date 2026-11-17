@@ -73,3 +73,34 @@ Read Python routers.py through line 825 (including all policy/workspace/manual
 route/rule-sync handlers), routeros.py 1–260 and ikuai.py 1–230. Config Step B
 native namespace wrapper read as infrastructure reference only. No HTTP coverage
 yet; only the synthetic repository import and build boundary are validated.
+
+Native foundation and first concrete HTTP group completed:
+- namespace.sh gives each side independent net/mount/PID namespaces, same owned
+  DATA_DIR path, lo-only synthetic LAN/ULA, private resolver, normal-user server.
+- Python starts via -m backend.app with INFO/waitress and normal startup loops;
+  Go public command uses normal lifecycle and manifest-only observer. The observer
+  TSV delimiter bug was caught by the boundary test and corrected in test code.
+- Stateful ROS/iKuai baseline fakes + six owned HTTP peer listeners per side.
+  Contract tests prove own Basic/login hashes/cookie, state read/write, duplicate
+  tags, 1008 rejection without writes, applied write with empty acknowledgement,
+  independent tables. Transcript gate proves Python probe holds the job lock and
+  an invalid concurrent update gets 409 before body validation. Full /execute,
+  all Agent endpoints and detailed vendor edge contracts remain to implement.
+- Strict typed response/database/files/device comparison and mutation tests:
+  status, Chinese text, fingerprint, ordered operations, profile headers, foreign
+  objects, revisions and receipts cannot be silently ignored. Only HTTP transport
+  branding/framing and explicitly accepted device JSON whitespace are excluded.
+- Actual public manifest registers NONE of the 26 domain routes: R15/R17 are
+  still missing (consistent with PROGRESS-routers). R01–R06 are lower-level code,
+  not registered public routes. Go device HTTP tests activate when registration
+  appears; Python prerequisites still execute now.
+
+.32 commands:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build.AybfCK/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_inventory test_seed test_compare test_boundary'`
+→ Ran 9 tests in 9.674s / OK.
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python run.py --binary /tmp/routerdiff-build.AybfCK/configflow --output /tmp/routerdiff-auth-shapes.json'`
+→ authentication 182; profile_selection_failures 485 cumulative; body_guards 549
+cumulative; matrix_entries=2301, matrix_routes=26, implemented_routes=0,
+go-unimplemented=549, referenced_entries=268. This is partial coverage: each
+referenced entry remains variants-in-progress; 2033 entries still pending. No
+product differences can yet be claimed (zero implemented HTTP domain routes).
