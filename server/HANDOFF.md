@@ -76,6 +76,14 @@ Infra: gate.sh = 2 slots/server, both tags, race+proddiff parallel, concurrent f
 Opus: N8-4e/f HR data review running (9669815f). Next Opus: R09 review, A14 review, N8-5 (repo typed API).
 User may want faster switch; asked 2026-11-18, decided to keep the full plan (refactors before the switch).
 
+**Planned after O3-6a merges (owner 6e5c7760):** O3-6c "shared commit points honour shutdown" — taskstatus
+RecordContext/ForgetContext (lock-held ctx check, old entries kept), repo final commit ctx check, rulefetch
+WriteValidatedRuleCache touch/rename ctx check, mosdns BuildMosDNSZip WithoutCancel if still there. C29/C33/A14/A20/R09
+only add pre-call ctx.Err() checks in their own owners and switch to the ctx entries afterwards (WORKFLOW 4th item).
+Shared C36 read-only reader: A20 (ProfileSessions) and A14 (wizard records) must converge on one package.
+A13 deferral baseline is now 24 rows (adds content_sync.checked_at ×4); A14 must remove all 24. A14 also adds one
+"deferred → A18" row (HA final generation). R09: Netwatch runtime-script ownership is a mandatory Opus check.
+
 **Running agents** (Paseo project prj_b0033e1859522497; worktrees ~/.paseo/worktrees/302rx1dg/<slug>)
 | agent | kind | task | branch |
 |---|---|---|---|
