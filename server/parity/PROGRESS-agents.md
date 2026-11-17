@@ -811,6 +811,8 @@ Review commands (shared worktree builds): `rt -- bash -lc 'cd server && go vet .
 
 **Status: `missing`** · HR · prereqs: A02, A19 (`linux_gateway` routing mark, gateway bundle), C05 (`oxidns_settings.safe_relative_path`, `OxidnsSettingsError`), C12 (`converters.common.ruleset_format`), C14 (`rule_fetch`, `ruleset_content`, `remote_rule_sources`), C15 (`scheduled_refresh.read_rule_source`), C21 (`converters.mosdns` rule parts), C22 (`oxidns_native`, `converters.oxidns.unavailable_rulesets`), C25 (`dns_watchdog.ensure_local_dns_watchdog`), C11 (`subs.ReportedCoreVersion`, ready) · Go: internal/deploy (new)
 
+**Design:** `server/design/a14-publish.md` (Opus, 2026-11-17) covers the whole chain A11→A14 — package map, types, Agent protocol, state machine, locks, failure table, steps A11-1…A11-4, acceptance. Port to it; contract changes need the designer's or coordinator's agreement.
+
 Files:
 - `backend/agents/deployment_bundle.py` (834)
 - `backend/agents/deployment_locations.py` (106)
@@ -829,6 +831,8 @@ C30 dependency (maintainer decision, 2026-11-17): after registering `provider.Se
 
 **Status: `missing`** · prereqs: A11 · Go: internal/deploy
 
+**Design:** `server/design/a14-publish.md` (Opus, 2026-11-17) covers the whole chain A11→A14 — package map, types, Agent protocol, state machine, locks, failure table, steps A12-1, acceptance. Port to it; contract changes need the designer's or coordinator's agreement.
+
 Files:
 - `backend/agents/push_diff.py` (1465)
 
@@ -841,6 +845,8 @@ Evidence: no Go code. Uses `yamlx.Marked`/`OnMarked`; the CSafeDumper size measu
 ## A13 — content sync, Agent list/detail, push-diff routes
 
 **Status: `missing`** · prereqs: A12, A15 (`upgrades.artifacts` for `upgrade_available`) · Go: internal/deploy, api/agents
+
+**Design:** `server/design/a14-publish.md` (Opus, 2026-11-17) covers the whole chain A11→A14 — package map, types, Agent protocol, state machine, locks, failure table, steps A13-1, A13-2, acceptance. Port to it; contract changes need the designer's or coordinator's agreement.
 
 Files:
 - `backend/agents/content_sync.py` (460)
@@ -855,6 +861,8 @@ Evidence: no Go code. Port `_public_agent` (A03 lines) here. Extend the existing
 ## A14 — publishing: transactional content, push-config, deployments, receipts
 
 **Status: `missing`** · HR · prereqs: A11, A13, A01, C13 (`sub_store_client.get_subscription_proxies_yaml`), C17 (`provider_delivery.prepare/commit_provider_bundle`, `commit_cache_updates`), C18/C19/C20/C21/C22 (generators via `config_generator`), C12 (`node_conversions`), C23 (`oxidns_validation.require_valid_document`), C26 (`oxidns_device_policy.revision`), A19 (`gateway_settings`), routers (`router_split` in `_prepare_transactional_content`) · Go: internal/deploy, api/agents
+
+**Design:** `server/design/a14-publish.md` (Opus, 2026-11-17) covers the whole chain A11→A14 — package map, types, Agent protocol, state machine, locks, failure table, steps A14-1…A14-4, acceptance. Port to it; contract changes need the designer's or coordinator's agreement.
 
 Files:
 - `backend/agents/manager.py` (145) — lines 1013–1157: `_remember_deployment_content`, `publish_deployment`, `_publish_deployment`
