@@ -1452,3 +1452,22 @@ compared=7 request_variants=7 design_errors=[] seconds=21.11；exit=0
 ```
 
 继续H737并发busy、生成选择器、其余helper与长流程；最终.32全量未执行，Step B未完成。
+
+## 批次 84：生成器profile选择、节点并发busy及差异复验状态
+
+- 50个原清单P3–P6编号新增实际HTTP变体，覆盖默认/scoped五客户端下载与预览，共20路由。全部Go尚未实现；新增H737与T13并发恢复2变体在.63实际相比通过。覆盖并集原R4213（S678/F2636/B899）、H533、G16，已验证变体并集9104。
+- 两profile以不同Mihomo端口、Surge/Loon DNS配置、MosDNS日志路径、OxiDNS native tag使选择结果可观察。精确比较URL/query/header/default所选profile、完整生成文本/ZIP、每次SQL全库不变、只允许选中profile的指定生成文件及其正确前驱.bak改变；其他空间和文件必须不变，回环上游HTTP0次。比较器故意错误自检覆盖数据库/foreign file/输出/备份/写错profile；Surge/Loon格式也有对照。
+- 夹具修正：MosDNS实际重建plugins，不能用custom plugin tag作持久标记，改为实际保留的log_file；主文件与.bak的同源内容检查统一使用原生成路径选择解析格式，全部50变体最终整组重跑design_errors=[]。中间前提错误均未计通过或Go差异。
+- H737通过真实外部子进程门闩：第一个公开测速进入worker后保持在途，第二请求409且不写SQL/files，释放后第一请求200；随后新公开请求200，锁已释放。精确比较worker stdin、第一批响应和完整历史文件，已验证窗口内的备份tested_at使用单独精确时间路径规则，其他字段未归一化。新增门闩未进入/第一批错误/并发写入故意错误自检。
+- findings复验状态现在由runner记录：只有本轮实际compared才closed，still different为open，未实现/依赖为blocked，未跑为pending；保留既有差异原始记录和最后复验baseline。支持--baseline显式标明生产源码版本，历史状态不会随无关组更新。自检故意用跳过/未跑验证不能误关；修复合入go后据此重新核对既有84差异。
+
+```text
+.63 run.py --groups profile-generator-selectors --baseline 5535931d
+go-unimplemented=50 request_variants=50 design_errors=[] seconds=25.70；exit=0
+.63 run.py --groups node-helper-concurrent-busy --baseline 5535931d
+H737 compared；T13 compared；design_errors=[]；exit=0
+73 comparator/report self-checks + wrong-Go-response check OK
+独立报告/tmp/configdiff-generator-selectors.json、/tmp/configdiff-node-concurrency.json
+```
+
+原R仍差317编号、H仍差579编号，另有多子形态/长流程partial；继续补，不将变体数当完成率。

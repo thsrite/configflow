@@ -41,6 +41,13 @@ def main():
     with open(os.environ['CONFIGDIFF_PROBE_INPUT'], 'a') as out:
         out.write(json.dumps(value, ensure_ascii=False) + '\n')
     mode = os.environ.get('CONFIGDIFF_PROBE_CASE', 'valid')
+    if mode == 'gate':
+        release = Path(os.environ['CONFIGDIFF_PROBE_INPUT']).with_suffix('.release')
+        deadline = time.monotonic() + 12
+        while not release.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if not release.exists():
+            return 1
     if mode == 'timeout':
         time.sleep(20)
     if mode in ('exit-1', 'exit-3'):

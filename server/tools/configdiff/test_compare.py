@@ -17,6 +17,65 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_busy_probe_checks_admission_completed_batch_and_concurrent_writes(self):
+        from cases.node_concurrency import BusyProbe
+        observer = BusyProbe.__new__(BusyProbe)
+        observer.inputs = [[], []]
+        observer.entered = [True, True]
+        observer.violations = [[], []]
+        observer.first_replies = [Reply(200, {}, b'{"success":true}'), Reply(200, {}, b'{"success":true}')]
+        self.assertEqual(observer.compare(Policy()), [])
+        observer.entered[1] = False
+        self.assertTrue(observer.compare(Policy()))
+        observer.entered[1] = True
+        observer.first_replies[1] = Reply(503, {}, b'{"success":false}')
+        self.assertTrue(observer.compare(Policy()))
+        observer.first_replies[1] = observer.first_replies[0]
+        observer.violations[1] = [dict(path='changed-storage')]
+        self.assertTrue(observer.compare(Policy()))
+
+    def test_finding_rechecks_close_only_actual_comparisons_and_keep_unrun_pending(self):
+        from finding_reviews import reviews
+        old = {'case': 'R013-S01', 'variant': 'synthetic', 'route': 'GET /api/auth/verify',
+               'group': 'synthetic-group', 'state': 'different', 'differences': [{'path': 'body.success'}]}
+        self.assertEqual(reviews([old], [])[0]['status'], 'pending')
+        for state, expected in [('compared', 'closed'), ('different', 'open'), ('go-unimplemented', 'blocked'),
+                                ('go-unimplemented-dependency', 'blocked'), ('O12-separate', 'separate')]:
+            current = {**old, 'state': state, 'python_status': 200, 'go_status': 200 if state == 'compared' else None}
+            value = reviews([old], [current], baseline='synthetic-fixed-revision')
+            self.assertEqual(value[0]['status'], expected)
+            self.assertEqual(value[0]['checked_baseline'], 'synthetic-fixed-revision')
+            self.assertEqual(reviews([], [], value, 'unrelated-new-run'), value)
+        closed = reviews([old], [{**old, 'state': 'compared'}])
+        self.assertEqual(reviews([], [old], closed)[0]['status'], 'open')
+
+    def test_generator_isolation_checks_output_backup_foreign_files_and_database(self):
+        from cases.profile_generators import generated_errors
+        from compare import ini_structure
+        for name in ('config.conf', 'loon.lcf'):
+            ini = b'[General]\ndns-server = selector-other.example\n'
+            saved = {'database': {}, 'files': {'profiles/other/generated/' + name: {'content': ini_structure(ini.decode())}}}
+            self.assertEqual(generated_errors({'database': {}, 'files': {}}, saved, 'other', name, ini), [])
+        path = 'profiles/other/generated/config.yaml'
+        before = {'database': {'revision': 7}, 'files': {'keep': {'content': 'unchanged'}, path: {'content': {'port': 1}}}}
+        after = copy.deepcopy(before)
+        after['files'][path] = {'content': {'port': 2}}
+        after['files'][path + '.bak'] = {'content': {'port': 1}}
+        self.assertEqual(generated_errors(before, after, 'other', 'config.yaml', b'port: 2\n'), [])
+        for mutation in ('database', 'foreign-file', 'wrong-output', 'wrong-backup', 'wrong-owner'):
+            wrong = copy.deepcopy(after)
+            if mutation == 'database':
+                wrong['database']['revision'] += 1
+            elif mutation == 'foreign-file':
+                wrong['files']['keep']['content'] = 'wrong'
+            elif mutation == 'wrong-output':
+                wrong['files'][path]['content']['port'] = 3
+            elif mutation == 'wrong-backup':
+                wrong['files'][path + '.bak']['content']['port'] = 3
+            else:
+                wrong['files']['profiles/default/generated/config.yaml'] = wrong['files'].pop(path)
+            self.assertTrue(generated_errors(before, wrong, 'other', 'config.yaml', b'port: 2\n'), mutation)
+
     def test_node_worker_deadline_rejects_immediate_and_unbounded_timeouts(self):
         from cases.node_helpers import WorkerDeadline
         observer = WorkerDeadline(SimpleNamespace(root=Path('/synthetic-unused')))

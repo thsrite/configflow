@@ -13,12 +13,14 @@ import traceback
 from build import build
 from harness import ROOT, Recorder, DesignError
 from inventory import routes, cases
+from finding_reviews import reviews as review_findings, markdown as review_markdown
 
 
-def render_findings(results):
+def render_findings(results, reviews=()):
     lines = ['# Config Step B 差异发现', '',
              '仅合成数据；来源为公开 Flask↔Go HTTP、SQLite 行及文件比较。未修改业务代码。', '',
              'Go 尚未实现单独计数，不列为业务失败。以下待协调人派移植 agent，不能用基线吞掉。', '']
+    lines += review_markdown(reviews)
     for r in results:
         if r['state'] not in ('different', 'O12-separate'):
             continue
@@ -63,6 +65,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--groups', default='all')
     parser.add_argument('--binary', type=Path)
+    parser.add_argument('--baseline', default='', help='Exact public Go source revision used for this run')
     parser.add_argument('--output', type=Path, default=ROOT / 'server/tools/configdiff/testdata/results.json')
     parser.add_argument('--findings', type=Path, default=ROOT / 'server/parity/difftest-config-findings.md')
     args = parser.parse_args()
@@ -102,8 +105,12 @@ def main():
     groups.update(profiles)
     from cases.node_helpers import GROUPS as node_helpers
     groups.update(node_helpers)
+    from cases.node_concurrency import GROUPS as node_concurrency
+    groups.update(node_concurrency)
     from cases.repository_resources import GROUPS as repository_resources
     groups.update(repository_resources)
+    from cases.profile_generators import GROUPS as profile_generators
+    groups.update(profile_generators)
     from cases.profile_rebind_helpers import GROUPS as profile_rebind_helpers
     groups.update(profile_rebind_helpers)
     from cases.profile_guards import GROUPS as profile_guards
@@ -271,7 +278,9 @@ def main():
         auxiliary |= r['case'] == 'X08' and r['route'] == 'POST /api/agents/<agent_id>/heartbeat'
         if r['route'] != 'startup' and r['route'] not in matrix and not auxiliary:
             errors.append({'group': 'inventory', 'error': 'case names unknown route: ' + r['route']})
-    previous = json.loads(args.output.read_text()).get('results', []) if args.output.exists() else []
+    prior_report = json.loads(args.output.read_text()) if args.output.exists() else {}
+    previous = prior_report.get('results', [])
+    reviewed = review_findings(previous, recorder.results, prior_report.get('finding_reviews', []), args.baseline)
     # Rerunning one group replaces its earlier verdicts, preserving other batches.
     replacement_keys = {(r['case'], r['variant'], r['route']) for r in recorder.results}
     previous = [r for r in previous if r.get('group') and r['group'] not in requested]
@@ -282,6 +291,7 @@ def main():
     combined.sort(key=lambda r: (r['route'], r['case'], r['variant']))
     current_counts = Counter(r['state'] for r in recorder.results)
     summary = {'groups': requested, 'current': dict(current_counts),
+               'baseline': args.baseline,
                'end_to_end_mutation_check': True,
                'cumulative': dict(Counter(r['state'] for r in combined)),
                'categories': dict(Counter(r['category'] for r in combined)),
@@ -293,9 +303,9 @@ def main():
                'seconds': round(time.time() - started, 2)}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text('{"summary":' + json.dumps(summary, ensure_ascii=False, separators=(',', ':')) +
-                           ',\n"results":[\n' +
+                           ',\n"finding_reviews":' + json.dumps(reviewed, ensure_ascii=False, separators=(',', ':')) + ',\n"results":[\n' +
                            ',\n'.join(json.dumps(r, ensure_ascii=False, separators=(',', ':')) for r in combined) + '\n]}\n')
-    args.findings.write_text(render_findings(combined))
+    args.findings.write_text(render_findings(combined, reviewed))
     print('SUMMARY ' + json.dumps(summary, ensure_ascii=False), flush=True)
     return 2 if errors else 1 if current_counts['different'] else 0
 
