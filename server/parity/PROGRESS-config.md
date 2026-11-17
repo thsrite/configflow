@@ -42,7 +42,7 @@ diagnosis and strict other fields/storage; no aggregation runtime code changes. 
 - Python lazily imports in cycles (e.g. converters ↔ provider delivery ↔ route files, the whole OxiDNS cluster). Go needs a DAG: the prerequisite order below breaks the cycles; when a module needs a function of a later module, put a `compat.go` copy (`TODO(port)`) or an interface/hook and list it here.
 - Cross-domain calls (config → agents/routers code) are listed per module; they are the main blockers for C18, C27, C34, C36, C37.
 
-## N7-4 — native YAML writers (final gates pending)
+## N7-4 — native YAML writers (complete; coordinator verification pending)
 
 All runtime writer callers now construct Nodes/typed values and call Marshal:
 convert, installer, gateway, provider, refresh, routersplit and the proddiff
@@ -65,10 +65,15 @@ Agent push diff has no semantic edit for writer-only changes; later credential
 edits stay redacted. The A19 16-level binary graph now explicitly fails the
 shared alias budget with empty output; small shared graphs succeed. Approved
 Python bug fixes and the single D2/O14 generation byte change are in the ledger.
-Old golden files remain unchanged. Installer provenance and affected corpus
-iteration pass on .64. Final latest-go rebase and gate.sh full race, difftests,
-fuzz and proddiff are pending; see
-[progress/n7-4-writers.md](progress/n7-4-writers.md) for commands and results.
+Old golden files remain unchanged. The .64 gate passed all88 race test packages,
+all12 then-existing difftest packages, all9 fuzz targets at60s each, and proddiff
+new=0/stale=0/coverage_regressions=0 (2831cases/462compares/23selfchecks).
+Rebased cleanly onto go@64815165 (provider load fix and N8-6). Per coordinator,
+post-rebase acceptance reran full vet plus all16 changed test packages (.64),
+the exact tagged provider manifest regression, and all13 enabled difftest
+packages (.32, including new provider/difftest); all passed. See
+[progress/n7-4-writers.md](progress/n7-4-writers.md) for exact commands and output.
+N7-3d follows after merge; its OxiDNS readers are owned by C29.
 
 ## Step B findings — config boundary repairs (ported, 2026-11-17)
 

@@ -1,5 +1,15 @@
 # PROGRESS — domain `agents`
 
+N7-4 writer follow-up (implementation complete, coordinator verification pending):
+installer Compose/guide now use native Nodes/Marshal and the single yamlbridge;
+A12 pushdiff's native writer stays intact, with transition/redaction regression.
+The writer-only real-Python oracle verifies8623 rows plus4 explicit HTTP NEL
+rows; NEL/LS/PS are counted separately and round-trip exactly. The A19 alias
+budget change is noted in its section. .64 full gate PASS (race,12diff,9fuzz,
+proddiff new0/stale0); post64815165 rebase vet/changed packages and all13diff
+pass. Detailed sources, classifications and commands:
+[progress/n7-4-writers.md](progress/n7-4-writers.md).
+
 Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 11 missing, 0 partial, 1 ported, 12 verified (A01, A02, A03, A04, A05, A06, A07, A08, A09, A10, A15, A19). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.

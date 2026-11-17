@@ -8,8 +8,9 @@ First reproduce and strictly validate every selected legacy output/hash. Record
 real yaml.dump/safe_dump input graphs, then replay with only those endpoints
 replaced by native Marshal. Each typed graph is journaled before rendering, and
 the rendered bytes are journaled before Python receives them. Unmodified Python
-postprocessing produces complete expected answers. All changed non-YAML fields,
-unknown semantic changes and changed writer inputs are fatal.
+postprocessing produces complete expected answers. Unclassified non-YAML,
+semantic or later writer-input changes are fatal; approved Unicode restorations
+are recorded explicitly, including derived command fields.
 """
 
 import base64

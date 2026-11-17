@@ -1,7 +1,8 @@
 # N7-4 — native YAML writers
 
 Branch: `go-n7-4`, initially based on `go` at `d7c481c7`.
-Implementation and final acceptance are in progress; this is not a hand-back report.
+Implementation and acceptance complete; coordinator verification pending.
+Final integration base: `go@64815165`. No push. N7-3d remains a separate follow-up.
 
 ## Agent push diff
 
@@ -56,11 +57,11 @@ the entire repository buildable. Counts are static call sites, not run counts.
 
 ## Remaining work
 
-Implementation, oracle recording and deletion are complete. Final latest-go
-rebase and gate.sh full acceptance remain. The package notes below preserve the
-implementation/iteration evidence; references to earlier private bridges and
-waiting for N7-3c describe those stages, superseded by the shared bridge and
-installer migration sections at the end.
+N7-4 has no implementation or acceptance work remaining. Coordinator verification
+and merge follow. N7-3d retains convert reader migration, importer/rules bare
+decoders, legacy loader/pyyaml deletion, bridge legacy-branch cleanup, helper
+consolidation and grep gate. OxiDNS's two readers are assigned to C29. Historical
+package notes below are superseded by the final integration results at the end.
 
 ## Unused convert wrapper removed
 
@@ -421,3 +422,97 @@ waits for completed output in proddiff, production's positive deadline is
 unchanged; a new provider/difftest package was added. Rebase and a second
 integrated gate are warranted by this upstream change. Writer code and the nine
 passing fuzz targets are unchanged, so the next gate omits repeated fuzz.
+
+
+## Final rebase onto N8-6
+
+Coordinator merged N8-6 at64815165 and explicitly requested only vet plus changed
+packages after this non-overlapping integration. The provider-integration second
+full gate was still queued and was canceled before any race/proddiff started.
+Final base is `go@64815165`; rebase was conflict-free. The one completed full
+race/proddiff/fuzz gate above remains the full acceptance evidence.
+
+Post-rebase commands (all exit0):
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=6 -- bash -lc 'set -e; cd server; gofmt -l internal/ tools/ cmd/; go vet ./...; go vet -tags configflow_proddiff ./cmd/...; go test -tags configflow_proddiff -count=1 ./cmd/configflow -run "Test.*Manifest"; go test -p=6 -count=1 ./internal/yamlx/... ./internal/yamlbridge ./internal/convert ./internal/deploy/pushdiff ./internal/gateway ./internal/installer ./internal/provider ./internal/mosdns ./internal/refresh ./internal/routersplit ./internal/rulefetch ./internal/subs ./tools/proddiff/generator ./tools/yamlwriteroracle > /tmp/n74-rebase-packages.log; tail -n 20 /tmp/n74-rebase-packages.log'
+RT_HOST=sunbroke@192.168.0.64 rt --no-sync -e GOMAXPROCS=6 -- bash -lc 'cd server && go test -tags configflow_proddiff -count=1 ./cmd/configflow -run "^TestProddiffWaitsForFreshProvider$"'
+RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=4 -- bash -lc 'set -e; cd server; CONFIGFLOW_DIFF=1 go test -p=4 -count=1 -timeout=40m $(go list ./... | grep difftest) > /tmp/n74-rebase-diff.log; cat /tmp/n74-rebase-diff.log'
+```
+The first tagged command used a non-matching test filter and reported “no tests
+to run”; it is not counted as verification. The exact new provider manifest
+regression is run by the second command. All13 enabled differential packages
+are rerun, including the newly merged provider/difftest.
+
+
+Post-rebase final output:
+```text
+# .64: gofmt/vet silent; changed packages
+ok configflow/internal/yamlx 1.963s
+ok configflow/internal/yamlx/yamltest 0.264s
+ok configflow/internal/yamlx/yamlxtest 0.003s
+ok configflow/internal/yamlbridge 0.006s
+ok configflow/internal/convert 15.173s
+ok configflow/internal/deploy/pushdiff 4.138s
+ok configflow/internal/gateway 2.088s
+ok configflow/internal/installer 169.571s
+ok configflow/internal/provider 19.545s
+ok configflow/internal/mosdns 54.236s
+ok configflow/internal/refresh 22.363s
+ok configflow/internal/routersplit 3.407s
+ok configflow/internal/rulefetch 4.363s
+ok configflow/internal/subs 5.401s
+ok configflow/tools/proddiff/generator 0.012s
+ok configflow/tools/yamlwriteroracle 0.003s
+# .64: exact tagged TestProddiffWaitsForFreshProvider
+ok configflow/cmd/configflow 0.068s
+# .32: CONFIGFLOW_DIFF=1, all13 packages
+ok configflow/internal/api/agents/difftest 165.174s
+ok configflow/internal/api/aggregations/difftest 46.821s
+ok configflow/internal/api/subscriptions/difftest 137.329s
+ok configflow/internal/devicenotes/difftest 1.177s
+ok configflow/internal/discovery/difftest 5.217s
+ok configflow/internal/health/difftest 15.828s
+ok configflow/internal/httpx/difftest 4.110s
+ok configflow/internal/mosdns/difftest 5.368s
+ok configflow/internal/provider/difftest 51.280s
+ok configflow/internal/refresh/difftest 5.794s
+ok configflow/internal/subs/difftest 3.062s
+ok configflow/internal/substore/difftest 11.880s
+ok configflow/internal/webdav/difftest 29.581s
+```
+Logs retrieved to ignored `.ci-results/n74-rebase-packages/` and
+`.ci-results/n74-rebase-diff/` using the matching pinned host's
+`rt --no-sync --back` after completion. No test process remains running.
+
+Fuzz execution counts (all60s, PASS): Encode668276; NativeRoundTrip11997;
+NativeNoPanic19379; Compose9569; Provider2148; RouterSplit15832;
+MosDNS37157; SourceYAMLPolicy85561; Config115699. Depth40 sharing and
+object/list/native/pure-alias recursion are explicit unit regressions; invalid
+graphs return typed alias errors before output, never null/truncated output.
+
+Design correspondence: §2.2 owns all emission through native Marshal; N7-4's
+entire caller inventory migrated, core old emitter/style types removed; §5.3
+uses narrow structural outputs and independent Python typed oracles; D2/O14
+records the one-time generated-byte/full-push change. Approved Python type and
+NEL/LS/PS writer bug fixes plus the unified alias budget are in behaviour-changes.
+All old golden/baseline files remain unchanged. The production snapshot has no
+new/stale differences. No API field/status or storage-identity migration occurs.
+
+Implementation commits after final rebase (record-only final handoff follows):
+```text
+c80e55f1 deploy transition regression
+933fc656 remove unused convert options
+cb1d4f86 Mihomo writer and independent Python semantic references
+d3c61886 fuzz actual legacy input values
+3bfb4975 typed gateway payload and alias budget
+1221f363 rule/subscription test writer migration
+8473075f core1395 semantic references
+ac996f76 sole physical graph bridge
+56750be6 provider/refresh/router/tool writers
+5a5ee997 writer-only oracle transport
+591317d4 installer native writers and old emitter removal
+70072b5a strict HTTP YAML comparison and explicit4 NEL references
+e10153f6 first complete gate record
+```
+Final `git rebase go` and clean-worktree confirmation are performed after this
+record-only commit; the final response supplies that commit's hash. No push.
