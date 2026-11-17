@@ -57,3 +57,12 @@ Regressions cover cancelled-request continuation, actual loopback HTTP cancellat
 cancellation, refused admission and production500KiB/15s-connect/120s-read bounds. .32 fmt/vet green;
 race3 substore32.298s/settings44.573s, then fixture isolation race1 substore22.125s/settings15.724s;
 final added cancellation regressions with full substore race3 passed55.844s.
+
+Sub-Store commit: b34dd4b3. Listener Serve now runs as tracked jobs, ends on owner Close or Runtime
+cancellation, and closes all newly opened sockets on partial Spawn refusal. Failed admission restores
+the prior token and does not publish active state. Existing5s health timeout is pinned; health polling
+and file-lock migration remain O3-6. .32 gofmt/vet green; full listener race count3 passed1.109s,
+including actual sockets, owner Close, Runtime cancellation and partial admission rollback.
+
+Prefix work is complete. Remaining: after O3 review merge notice, rebase go, shared Clock extraction,
+Flight.DoChan/provider/matcher, then all final gates (all enabled difftests and proddiff included).

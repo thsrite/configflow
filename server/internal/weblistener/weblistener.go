@@ -17,6 +17,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -29,6 +30,9 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/lockx"
+	"configflow/internal/logx"
 )
 
 // HealthPath is the listener check path.
@@ -54,11 +58,15 @@ type Server interface {
 	ListenerToken() string
 }
 
+var logger = logx.Get("backend.utils.web_listener")
+
 // Manager owns the web listener sockets.
 type Manager struct {
 	// DataDir holds web-listener.json and web-listener.lock.
 	DataDir string
 	Server  Server
+	// Spawner tracks Serve jobs; nil uses the default lifecycle Runtime.
+	Spawner lockx.Spawner
 	// HealthTimeout bounds the check of a new listener (5 s).
 	HealthTimeout time.Duration
 	// Getenv is os.Getenv (tests).
@@ -266,10 +274,28 @@ func randomToken() string {
 	return hex.EncodeToString(b)
 }
 
-func (m *Manager) serve(listeners []net.Listener) {
-	for _, l := range listeners {
-		go func(l net.Listener) { _ = m.Server.Serve(l) }(l)
+func (m *Manager) serve(listeners []net.Listener) error {
+	spawner := m.Spawner
+	if spawner == nil {
+		spawner = lifecycle.DefaultSpawner{}
 	}
+	for _, listener := range listeners {
+		l := listener
+		if err := spawner.Spawn(context.Background(), "web-listener", func(ctx context.Context) {
+			stop := context.AfterFunc(ctx, func() { _ = l.Close() })
+			defer stop()
+			defer l.Close()
+			if err := m.Server.Serve(l); err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, http.ErrServerClosed) && ctx.Err() == nil {
+				logger.Warningf("Web listener serving failed (%T)", err)
+			}
+		}); err != nil {
+			for _, opened := range listeners {
+				_ = opened.Close()
+			}
+			return fmt.Errorf("start web listener: %w", err)
+		}
+	}
+	return nil
 }
 
 // Start is prepare_listener at startup: open the selected port (IPv4, and
@@ -293,11 +319,15 @@ func (m *Manager) Start() (*jsonx.Object, error) {
 		return nil, err
 	}
 	token := randomToken()
+	previousToken := m.Server.ListenerToken()
 	m.Server.SetListenerToken(token)
+	if err := m.serve(listeners); err != nil {
+		m.Server.SetListenerToken(previousToken)
+		return nil, err
+	}
 	m.mu.Lock()
 	m.active = &active{port: port, ipv6: ipv6, token: token, listeners: listeners}
 	m.mu.Unlock()
-	m.serve(listeners)
 	return m.status()
 }
 
@@ -394,7 +424,10 @@ func (m *Manager) Update(value any) (*jsonx.Object, error) {
 	}
 	token := randomToken()
 	m.Server.SetListenerToken(token)
-	m.serve(listeners)
+	if err := m.serve(listeners); err != nil {
+		m.Server.SetListenerToken(old.token)
+		return nil, err
+	}
 	restore := func() {
 		for _, l := range listeners {
 			l.Close()
@@ -418,11 +451,15 @@ func (m *Manager) Update(value any) (*jsonx.Object, error) {
 	return m.status()
 }
 
-func (m *Manager) waitHealthy(port int, ipv6 bool, token string) error {
-	timeout := m.HealthTimeout
-	if timeout == 0 {
-		timeout = 5 * time.Second
+func (m *Manager) healthTimeout() time.Duration {
+	if m.HealthTimeout != 0 {
+		return m.HealthTimeout
 	}
+	return 5 * time.Second
+}
+
+func (m *Manager) waitHealthy(port int, ipv6 bool, token string) error {
+	timeout := m.healthTimeout()
 	deadline := time.Now().Add(timeout)
 	for {
 		if healthy(port, ipv6, token) {
