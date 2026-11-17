@@ -77,3 +77,42 @@ After fresh Opus review and A14, real guests must prove actual core load/reload/
 ## Commands
 
 All heavy commands run on test servers. `.63` was used for iteration; `.32` is authoritative. No unfinished command is handed back. Exact final commands and output tails are in PROGRESS-agents A11.
+
+Final commands/results (authoritative .32): gofmt empty; whole-tree vet passed; deploy/gateway/provider race
+10.365s/33.992s/110.743s; `go test -p=4 -count=1 ./...` exit 0; all nine CONFIGFLOW_DIFF packages passed;
+real Agent `ServerArchive` 15 cases passed 0.340s; comparator 32 tests passed. After the late timeout correction,
+whole-tree gofmt/vet and focused deploy/agentfake race passed 7.069s/1.062s; proddiff was repeated:
+self_check PASS, coverage_regressions=0, new=0, stale=0, bundle compared=3/success=2/partial=1.
+The exact single-shell commands and output tails are in PROGRESS-agents A11. Final base is go `3ae44741`;
+main step commits: A11-1 `bed570e8`, A11-2 `ad0c78de`, A11-3 `c88f50a5`, A11-4 `21765054`.
+
+Added Go file line counts (including tests):
+
+| Added Go file | Lines |
+|---|---:|
+| `backend/agents/go-agent/routes/server_archive_conformance_test.go` | 81 |
+| `server/internal/agents/agentfake/agentfake.go` | 264 |
+| `server/internal/agents/agentfake/agentfake_test.go` | 57 |
+| `server/internal/agents/record.go` | 9 |
+| `server/internal/deploy/adapter.go` | 479 |
+| `server/internal/deploy/build.go` | 543 |
+| `server/internal/deploy/build_test.go` | 397 |
+| `server/internal/deploy/bundle.go` | 336 |
+| `server/internal/deploy/convert.go` | 170 |
+| `server/internal/deploy/core.go` | 240 |
+| `server/internal/deploy/core_test.go` | 216 |
+| `server/internal/deploy/locations.go` | 166 |
+| `server/internal/deploy/materialize.go` | 250 |
+| `server/internal/deploy/messages.go` | 65 |
+| `server/internal/deploy/previews.go` | 453 |
+| `server/internal/deploy/rawcache.go` | 78 |
+| `server/internal/deploy/receipts.go` | 191 |
+| `server/internal/deploy/resources.go` | 266 |
+| `server/internal/deploy/rules_test.go` | 136 |
+| `server/internal/deploy/storage.go` | 175 |
+| `server/internal/deploy/stores_test.go` | 502 |
+| `server/internal/deploy/types.go` | 223 |
+| `server/internal/deploy/validation.go` | 87 |
+| `server/internal/oxidns/schema_fingerprint.go` | 30 |
+| `server/internal/oxidns/schema_fingerprint_test.go` | 31 |
+| `server/tools/proddiff/generator/bundle.go` | 189 |

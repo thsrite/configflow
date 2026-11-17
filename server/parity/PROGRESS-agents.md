@@ -817,86 +817,68 @@ Review commands (shared worktree builds): `rt -- bash -lc 'cd server && go vet .
 
 ## A11 — deployment bundle, locations, Mihomo resources, generated preview
 
-**Status: `ported`** (Codex; final .32 acceptance below; fresh Opus HR review still required) · HR · prereqs: A02, A19 (`linux_gateway` routing mark, gateway bundle), C05 (`oxidns_settings.safe_relative_path`, `OxidnsSettingsError`), C12 (`converters.common.ruleset_format`), C14 (`rule_fetch`, `ruleset_content`, `remote_rule_sources`), C15 (`scheduled_refresh.read_rule_source`), C21 (`converters.mosdns` rule parts), C22 (`oxidns_native`, `converters.oxidns.unavailable_rulesets`), C25 (`dns_watchdog.ensure_local_dns_watchdog`), C11 (`subs.ReportedCoreVersion`, ready) · Go: internal/deploy (new)
+**Status: `ported`** · HR · Codex port complete; fresh Opus review required before `verified`. Branch `go-port-a11`, rebased onto `go` `3ae44741` (contains verified A19). No push, subagent or production access. Scope is design A11-1–4; A12/A13/A14 orchestration/routes remain their owners.
 
-**Design:** `server/design/a14-publish.md` (Opus, 2026-11-17) covers the whole chain A11→A14 — package map, types, Agent protocol, state machine, locks, failure table, steps A11-1…A11-4, acceptance. Port to it; contract changes need the designer's or coordinator's agreement.
+Design: `server/design/a14-publish.md`. Complete design map, **one row per HR issue class for every step**, Python test-file mapping and L2-only list: **[A11-HANDOFF.md](A11-HANDOFF.md)**.
 
-Files:
-- `backend/agents/deployment_bundle.py` (834)
-- `backend/agents/deployment_locations.py` (106)
-- `backend/agents/mihomo_resources.py` (165)
-- `backend/agents/generated_preview.py` (159)
+| Step | Main commit | Completed |
+|---|---|---|
+| A11-1 | `bed570e8` | Typed immutable bundles, native deterministic PAX/gzip, strict bounded archive reads, Python-compatible content fingerprint/digests, retarget/comparison, Source/Target adapter, fake Agent receiver, real Agent extractor conformance. |
+| A11-2 | `ad0c78de` | Source coordinates/secret hiding/artifact context, provider locations hook, MosDNS conversion, captured library/rule-proxy/gateway callbacks, recursion bound 3, last-good rule sources/download remedies. |
+| A11-3 | `c88f50a5` | Complete Mihomo/MosDNS/OxiDNS graphs, pins/resources/watchdog, gateway hostile-provider guard, eight joined workers + per-build URL single flight/LRU, Geo resources, actual production bundle comparison. |
+| A11-4 | `21765054` | Private atomic receipts/previews, retention/quota/expiry/current identities, frozen ZIP/file/final-preview, OxiDNS schema/build evidence, default-profile fix, public task projection. |
 
-Tests: `test_agent_content_manifest.py` (8), `test_agent_content_preparation.py` (9), `test_agent_content_baseline.py` (8), `test_agent_deployment_downloads.py` (18), `test_classical_deployment.py` (10), `test_deployment_error_locations.py` (10), `test_mihomo_resources.py` (8), `test_generated_preview.py` (9), `test_agent_publish_caches.py` (6); deferred bundle cases of `test_agent_deployments.py` (listed in A01) and of the config-owned deployment-content tests (see "Tests owned elsewhere").
+Follow-ups: `20b7f4ea` acceptance adapter formatting/status, `17336d4b` fake transcript file labels, `8909ced4` test hook cleanup, `a2da6dd6` per-attempt rule-download timeout correction. No extra total deadline shortens Python's (10 s connect, 60 s read) retry/candidate semantics. Existing shared transports remain unchanged.
 
-Routes: none.
+Python files: `deployment_bundle.py`, `deployment_locations.py`, `mihomo_resources.py`, `generated_preview.py`; design A11-4 also provides `rule_sync_store.py` and `oxidns_validation_receipt.py` primitives needed by later A14/A16. Routes: none. C34 helpers are Pack/Open and Previews Save/Load/Public/Zip/File.
 
-Evidence: A11-1–4 implemented; final acceptance and HR review status recorded below. Provides for config: `deployment_locations` (`preparation_context`, `source_error`, `DeploymentPreparationError`) used by C17 `provider_delivery`, and `_pack` used by C34 `routes/generate.py` — register through interfaces declared in C17/C34 (decision 3). `generated_preview` uses `rule_sync_store._write/bundle_files` (A14): put `rule_sync_store` before it in the same package or port A11 and A14's store file together.
+Boundary evidence:
+- Real Python: 31 manifests + 17 path cases and Python PAX readback; 64 conversions, 23 excerpts, 9 contexts, 7 callbacks; 41 bundle/failure cases + 10 Geo selections; Python-written receipt/preview directories and public files. Generated main YAML compared structurally; verbatim rule/provider/custom bytes exact. Frozen v1 fingerprint encoding compared byte-for-byte to Python independently from native archive encoding.
+- Concurrency/bounds: lazy pack once/drop raw content, immutable copies, URL sharing within one build, no cross-build reuse, ≤8 workers, caller completion callbacks, raw/result byte/entry limits (including empty and oversized responses), failure retry, alias depth-64/cycle providers, aggregate limits, strict flags. Receipts acknowledge only an unchanged applied pointer; preview metadata/source bytes count toward quota.
+- C30 deferred diagnostics **closed**: deploy.Wire installs provider.SetLocations; isolated C30 fixture installs/restores it explicitly. `deferA11Locations` removed. Full source/file/line/column/excerpt 400 messages and all stored effects compare strictly.
+- OxiDNS content identity and validation identity are separate: current schema/build proof accepted; changed/old/extra-field/foreign proof refused. Actual A01 activation gate returns exact Chinese re-push diagnostic and sends no activation POST. Profile-less Agents use the resolved non-default-named default profile.
 
-C30 dependency (closed by A11-2; original maintainer decision, 2026-11-17): after registering `provider.SetLocations`, rerun `CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/api/subscriptions/difftest/`. Remove only `deferA11Locations` once the owning-artifact/source-location envelope matches. Annotated cases are the invalid-provider 400 branches of `TestProviderDeliveryGraphs`, `TestCombinedCrossFeedAndStaging` (bad-second and topology failures), and alternate-format/transport failures that carry provider preparation context. C30 continues comparing status, success, base validation message/field path and persisted state; only file/coordinate/excerpt diagnostics remain deferred after the Step B #7 fix. Provider ownership prefix and source labels now compare strictly through the default provider implementation; no early A11 wiring is added.
+Approved clarifications/dependencies:
+- convert.Download optional Behavior/Format are populated on convert's side and read only in deploy/adapter.go. Existing Object/public download DTO unchanged; all downloads generators retain successful outputs with no differences. Contract note in a14-publish.md; N8/S-convert ownership note in HANDOFF 3b.
+- Read-only oxidns.SchemaFingerprint; RulesFingerprint follows native schema/build design and intentionally invalidates Python-era ready candidates (O12 ledger updated). Content Fingerprint remains frozen to Python encoding for unchanged bytes.
+- Production bundle generator: **3 compared, 2 independent generation successes, 1 partial** labelled `partial: A11 packaging only, aggregation provider frozen (C31 pending)` in summary and coverage, excluded from end-to-end success. Frozen real Python aggregation bytes stay mode 0600 in private temporary test-server reports. Aggregation-provider generator remains Go 尚未实现. C31 unfreeze task is in PROGRESS-config. No snapshot data or baseline normalization committed; coverage floors protect complete and partial output counts.
 
-### A11 implementation (go-port-a11, Codex)
-
-Scope: design A11-1–4 only; no A12–A14 routes/publication. Initially rebased on verified A19; next commit point rebases to `go` which now contains A19. No push; fresh Opus review required before `verified`.
-
-A11-1: typed immutable Bundle, lazy deterministic PAX/gzip packing, strict bounded structural archive reading, path/manifest validation, Python-compatible UTF-8 compact fingerprint and digests, comparison/retarget, Source/Target adapter, agents.Record/Result aliases, isolated agentfake capabilities/upload skeleton. Native archive bytes intentionally differ. Python corpus: 31 manifests + 17 paths + Python archive readback. Real Agent test uses its own extractDeployment/UnmarshalJSON against 15 server archives (three services, CJK/emoji, 4096 files, empty files, flags, resources).
-
-Python coverage: `test_agent_content_manifest.py`, `test_agent_content_baseline.py`, `test_deployment_bundle_lazy_archive.py` core/laziness/retarget halves → deploy/core_test.go + testdata/gen_a11_core.py; remaining baseline preparation/receipts → A11-3/4. No A11 routes; route-level diagnostics acceptance in A11-2, previews routes in A14.
-
-HR A11-1 checklist (each class):
-- R04 F1 unexpected/malformed replies: archive members/count/sizes/digests checked before use; no unchecked indexing. Fake checks target and headers.
-- R04 F2/F5 messages/check order: persisted fingerprint validation follows Python order; Chinese preparation context follows in A11-2.
-- R04 F3 cancellation/uncertain work: A11-1 pure in-memory; no state write or device activation.
-- R04 F4/F6 rollback/batch outcome: no device write/rollback; fake journal replay preserves prior content identity.
-- R04 F7 composite comparison: typed manifests with reflect.DeepEqual, byte equality for content; no interface comparability.
-- R04 F8 size bounds: per-file, aggregate, file-count, manifest and expanded archive limits checked before allocation/read.
-- R04 F9 absent proof: explicit file size required; missing/null metadata rejected; archive must match listed files.
-- R04 F10 shared helpers: yamlx/agents adapters reused; no Python codec copy or new dependency.
-- R05 C1 shared client: no shared transport change; fake handles Authorization and digest/target independently.
-- R05 C2 error typing: archive/path validation returns PreparationError; native gzip/tar errors wrap cause; no activation exists.
-- R05 C3 missing identity: no missing path/digest becomes a valid match; replay key checked nonempty.
-- R05 C4 reused identity/undo: no undo; fake same-ID/different-digest refuses.
-- R05 C5 indexed reads: archive scanned once; path and manifest maps indexed; deterministic sort once for writing.
-- R05 C6 refused/uncertain/cancellation: no publication yet; receiver journals only validated uploads.
-- A19 F1 shared/cyclic YAML: core handles typed acyclic manifests only; provider YAML validation belongs to A11-3.
-- A19 F2 wrappers/shapes: archive manifest decoded structurally; required config entry checked by real Agent.
-- A19 F3 whitespace/empty capture: no rule conversion yet; A11-2 conversion will preserve shared parser behavior.
-
-Commands/results A11-1:
-- `.63` Python generator → `A11 core: 31 manifests, 17 paths, Python PAX archive`.
-- `.63` go vet ./... → exit 0; go test -race deploy/agentfake → both ok; full `go test -p=4 -count=1 ./...` in progress at commit.
-- `.32` Agent conformance command from design 6.3 → `ok agent/routes 0.707s`.
-- `.32` `rt -- server/scripts/proddiff.sh` → self_check PASS, coverage_regressions 0, new 0, stale 0; bundle generator still missing until A11-3.
-
-A11-2: Locations/SourceError/PreparationContext with secret continuation hiding; provider hook wired in production and explicitly installed/restored in the isolated C30 fixture. C30 deferA11Locations removed; `.32` strict differential passed 99.756s, no diagnostics normalization. Rule callbacks use the captured snapshot (library, rule-proxy, gateway loader), recursion bound 3; shared rulefetch/refresh supply last-good source reads and download remedies. Conversion uses shared MosDNS semantics and an L5 256-entry/16 MiB result cache.
-
-A11-2 Python coverage: `test_deployment_error_locations.py` source excerpts/context/conversion → rules_test.go + gen_a11_rules.py (64 conversions, 23 excerpts, 9 contexts, 7 callbacks); provider owning-file/source coordinates and malformed payloads → strict C30 differential. DNS conversion halves of `test_classical_deployment.py`, source callback/error halves of `test_agent_deployment_downloads.py` → this corpus + TestLoopbackRuleDownload. Build/progress/concurrency halves remain A11-3; routes A14.
-
-HR A11-2 (each issue class): R04 F1 checked payload kinds/indices; F2/F5 contexts and coordinates compare to Python; F3 source fetch honors job ctx with bounded network calls, shared refresh owns its durable writes; F4/F6 no device compensation/state advancement; F7 node structural access, no interface comparison; F8 input/output/cache bounds; F9 missing callback/source fails closed; F10 shared mosdns/rulefetch/refresh/diag only. R05 C1 no shared client behavior changed; C2 typed preparation errors retain causes/remedies; C3 local identity requires matching snapshot path; C4 snapshot immutable, no id-based undo; C5 map/payload lookup and bounded cache; C6 transport refusal distinguished from network remedy, no publication writes. A19 F1 all new YAML reads go through bounded yamlx; F2 mapping/payload shape checked; F3 Unicode whitespace accepted before payload detection (facade rejects malformed YAML instead of returning empty capture).
-
-Coordinator clarification: convert.Download gains optional Behavior/Format, convert populates known consumer metadata; deploy adapter reads only; Object/public download DTO unchanged. Contract documented in a14-publish.md and HANDOFF 3b N8/S-convert debt. No new dependency. Native parser diagnostic text on malformed syntax follows N7; Chinese context, real coordinates and non-parser messages match exactly.
-
-Commands A11-2: `.32` proddiff self_check PASS, coverage_regressions 0, new 0, stale 0 (all download generator successes retained). `.32` gofmt/vet passed; deploy race 1.614s, provider race 102.396s; strict C30 99.756s. A11-1 full suite on .63: all packages passed except rulefetch TestFetchDifferentialAgainstRequests/proxy_refused (ConnectTimeout vs ProxyError under WSL); final authoritative .32 run will recheck. Full result is not claimed green.
-
-A11-3: Build materializes full Mihomo/MosDNS/OxiDNS graphs, provider and attachment paths/names, pins, gateway checks, DNS watchdog, native OxiDNS validation/resource hints. Eight joined workers share a publication-local 128-entry/16 MiB LRU and in-flight raw response; no network under memory locks. Geo selection covers nested/classical/DNS/sniffer consumers, Agent aliases, progress and HTML/empty refusal. Third-party provider YAML goes through bounded yamlx then A19's seen-container traversal (never expansion into jsonx).
-
-Python boundary coverage: gen_a11_build.py / TestPythonBuild runs 41 real Python bundle/failure cases + 10 Geo selections; main YAML structural, verbatim rule/provider/custom bytes and metadata exact (normalized rule YAML structural). TestBuildSharedSourcesAndProgress proves one request per URL per build, no cross-publication reuse, ≤8 workers and caller completion callbacks; TestRawCacheBoundsAndCoalescing covers empty-entry count, oversized response non-retention and concurrent sharing; TestGatewayHostileProviderFailsClosed covers routing-mark/cycle/depth-64 alias inputs; TestGeoPreparation covers reuse, missing resources, progress/no source URL, bad HTML and resources excluded from content fingerprint.
-
-Python map A11-3: `test_agent_content_preparation.py` bundle content/metadata/selected resource halves; `test_agent_deployment_downloads.py` download sharing/progress/bounds/errors/empty proxy halves; `test_classical_deployment.py` local marking, normalization, DNS splitting and verbatim remote halves; `test_mihomo_resources.py` all resource selection/reuse/required failure behavior; `test_agent_publish_caches.py` shared-source/cache touch behavior uses existing rulefetch/refresh plus Build tests (PyYAML/libyaml choice moot under N7). Deferred `test_agent_deployments.py` bundle/inline/MosDNS/Geo/download/name/retarget branches map to these corpora; manager/route progress remains A14. Config-owned domain wildcard, MosDNS fields, ruleset format, remote consumers, UDP fallback, OxiDNS native files and watchdog bundle behavior uses the same public converter/resource validation helpers; full generated corpus is augmented by production generator comparison, remaining route/publish owners A14.
-
-HR A11-3: R04 F1 checked node kinds/paths/results before indexing; F2/F5 artifact/refusal messages match Python; F3 joined worker lifetimes and bounded job-context I/O, cancelled jobs return ctx error; F4/F6 no device mutation or compensation (A14 owns it); F7 typed results and structural YAML equality; F8 file/aggregate/raw/result caches bounded; F9 every referenced provider/file must exist, missing source fails; F10 shared convert/mosdns/oxidns/gateway helpers. R05 C1 transport unchanged; C2 typed preparation/download errors retain cause/remedy; C3 no empty path/role proof; C4 pinned bytes only caller-owned prior receipts, no undo; C5 O(1) file/cache lookup and final path sort; C6 network/HTTP failures separated, no upload on preparation failure. A19 F1 bounded parser + one-visit routing traversal and adversarial tests; F2 main mapping checked and facade unwraps documents; F3 Unicode payload detection + exact empty-part bytes.
-
-Production generator now actually compares three Agent bundles: two independently generated successes, one coordinator-approved `partial: A11 packaging only, aggregation provider frozen (C31 pending)` (excluded from end-to-end success). Frozen Python aggregation bytes remain mode 0600 only in private temporary report; aggregation-provider generator stays Go 尚未实现. C31 has an explicit unfreeze task. Coverage floor tracks successful plus partial packaging counts without accepting both-error. No baseline differences/normalization changed. `.32` proddiff: self_check PASS, coverage_regressions 0, new 0, stale 0. `.32` vet passed; deploy/gateway/provider race: 6.768s/33.367s/108.508s. `.63` Python Build corpus + deploy race passed 5.278s.
-
-A11-4: receipts capture/load/stamp/advance with atomic private files, bounded archive reads, two-archive retention and applied/in-flight pruning; repository reads before L4, CAS transaction after L4. Previews retain frozen main/files, ordered target identities, source/input digest/revision, expiry/count/byte quotas (source metadata included), ZIP/file/public helpers and actual target final-preview. Python-generated receipt/preview directories load; tamper/expiry/foreign identity/old applied pointer fail closed. Validator receipt uses native schema/build identity, not Python source hashes; exact content Fingerprint remains independently Python-locked. Existing A01 activation refuses a Python-era proof with the exact Chinese re-push message and no POST. Default profile resolution bug fixed in receipt load and validation matching.
-
-A11-4 Python coverage and one row per HR class for every step: **parity/A11-HANDOFF.md** (authoritative design map, Python test-file map, L2-only list and approved C31 partial boundary). `stores_test.go` + gen_a11_stores.py use real Python disk metadata/archives/public view. `.63` deploy race passed 7.021s; `.32` deploy race passed 8.786s, vet passed, proddiff comparator's 32 synthetic tests passed. No status is `verified` before fresh Opus.
-
-A11-1 follow-up: agentfake transcript now retains manifest file display names (the real Agent preserves them); the upload contract test asserts the label survives. `.63` focused vet/race passed 1.100s. No publishing behavior changed. A11-4 proof tests also restore the Agent hooks after each case (no test-global state leak); focused deploy race on .63 passed 7.340s.
-
-A11-2 timeout correction at final audit: removed an extra overall 70-second deadline so request_rule retains the designed per-attempt 10-second connect / 60-second read timeouts across retries/candidates. TestDownloadKeepsPerAttemptTimeouts locks both phase values and the absence of an extra total deadline; .63 deploy race passed 7.336s.
-
-Final acceptance pending: rebase current go; `.32` gofmt/vet, race deploy/gateway/provider, full `go test -p=4 -count=1 ./...`, all CONFIGFLOW_DIFF difftest packages, real Agent conformance, proddiff (with explicit partial C31 case). No push.
+Final authoritative `.32` command (exit 0):
+```sh
+rt -- bash -lc 'set -e; cd server; gofmt -l internal/ tools/; test -z "$(gofmt -l internal/ tools/)"; go vet ./...; go test -race -count=1 ./internal/deploy ./internal/gateway ./internal/provider; go test -p=4 -count=1 ./...; CONFIGFLOW_DIFF=1 go test -p=4 -count=1 $(go list ./... | rg /difftest); cd ../backend/agents/go-agent; CONFIGFLOW_SERVER_ARCHIVES=$PWD/../../../server/internal/deploy/testdata/archives go test -count=1 -run ServerArchive ./routes/; cd ../../..; ~/cf-test/.venv/bin/python -m unittest server/tools/proddiff/test_proddiff.py'
+```
+Results/tails:
+```text
+gofmt: no output; go vet: exit 0
+ok configflow/internal/deploy 10.365s       (race)
+ok configflow/internal/gateway 33.992s      (race)
+ok configflow/internal/provider 110.743s    (race)
+full suite: exit 0; final lines:
+ok configflow/internal/weburl 0.006s
+ok configflow/internal/yamlx 2.304s
+?  configflow/tools/proddiff/generator [no test files]
+all 9 CONFIGFLOW_DIFF packages: ok
+  api/agents 122.243s; api/subscriptions 81.608s; discovery 2.638s;
+  health 14.103s; httpx 1.433s; mosdns 1.693s; refresh 3.837s;
+  substore 6.897s; webdav 21.334s
+ok agent/routes 0.340s                    (15 real-Agent archive cases)
+Ran 32 tests in 0.018s — OK              (proddiff comparator regressions)
+```
+After the late per-attempt timeout correction and test-only follow-ups, `.32` reran whole-tree gofmt/vet and focused race (exit 0):
+```sh
+rt -- bash -lc 'cd server && test -z "$(gofmt -l internal/ tools/)" && go vet ./... && go test -race -count=1 ./internal/deploy ./internal/agents/agentfake'
+```
+```text
+ok configflow/internal/deploy 7.069s
+ok configflow/internal/agents/agentfake 1.062s
+```
+Final proddiff after that correction (exit 0): `rt -- server/scripts/proddiff.sh`:
+```text
+self_check: PASS; coverage_regressions: 0; unmapped_routes: 0
+agent-deployment-bundle: compared=3 success=2 partial=1
+baseline: new=0 stale=0
+```
+The earlier .63-only rulefetch proxy_refused timeout difference did not reproduce in the authoritative `.32` full run (`ok configflow/internal/rulefetch 9.574s`). No open implementation findings are claimed; this is not a substitute for the required fresh-Opus HR review. L2 real core/service/recovery validation remains as listed in A11-HANDOFF.md and design 6.7.
 
 ## A12 — push diff
 
