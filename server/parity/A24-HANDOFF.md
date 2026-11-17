@@ -49,7 +49,7 @@ No intentional functional difference or newly fixed Python bug. The existing acc
 
 ## Final commands and results
 
-All commands ran on **192.168.0.64**. Production code tested on local go `d7c481c7` (C31 verified + O3 BindRequest/Detach + N7-3a + A12/R07). Final rebase to `038b52ae` adds only `parity/lab/L1.md`. Initial full rebased gate loadavg: `4.66 2.32 2.21`; last full ordinary/diff/proddiff run: `8.02 8.44 6.93`. No artificial stress workload.
+All commands ran on **192.168.0.64**. Previous complete production-code gate was on local go `d7c481c7` (C31 verified + O3 BindRequest/Detach + N7-3a + A12/R07). Final rebase brought in N7-3b at `d3124353`, including the shared rule reader/append API changes. Compilation/full vet already pass; another complete race/ordinary/difftest/proddiff gate is running on that actual final integration base. No production changes are pending. Results below are the previous complete acceptance until the new gate is recorded. Initial full rebased gate loadavg: `4.66 2.32 2.21`; last full ordinary/diff/proddiff run: `8.02 8.44 6.93`. No artificial stress workload.
 
 Complete rebased gate (exit 0; gofmt and full vet silent):
 
