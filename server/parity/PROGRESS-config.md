@@ -2003,6 +2003,8 @@ Notes for porter: **Cross-domain heavy:** setup flow uses `linux_gateway`, `gate
 
 ## C37 — domain discovery
 
+**Clarified in A24:** `discovery.ApplyOptions.BeforeWrite` provides Python's `before_write` guard inside the shared transaction, before library mutation. An error aborts the transaction and prevents cache/history writes. Its transaction context supports fresh binding/default reads. `discovery.QueryRuleset(json.RawMessage, id)` returns the existing concrete `*RulesetInfo` for a supplied profile snapshot, reusing C37 reference/eligibility logic. Existing ApplyDomains callers remain compatible. A24's entry point uses `lifecycle.Detach`. `TestApplyDomainsTransactionGuard` verifies rejection leaves the repository/caches unchanged and acceptance commits. .64: `go test -count=1 ./internal/api/agents ./internal/discovery` PASS (5.676s / 0.680s).
+
 **Status: `verified`** (independent review 2026-11-17; 0 open findings) · prereqs: C14, C16 · Go: `internal/discovery`, `internal/api/domaindiscovery`
 
 Scope: all of `backend/utils/domain_discovery.py` (175), `domain_discovery_service.py` (1309), `routes/domain_discovery.py` (174). All **17/17 routes registered** and routes.tsv marked done, including settings, domains/status, apply/undo/history/ignore, probe polling, region checks/routing, website identification/notes. Server changes are imports plus routePackages/wirePackages only.

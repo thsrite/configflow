@@ -98,12 +98,15 @@ func editSettings(ctx context.Context, id string, edit func(*Settings) error) er
 	return editProfile(ctx, id, func(c *config) error { return edit(&c.Settings) })
 }
 func editLibrary(ctx context.Context, edit func(*[]libraryItem) error) error {
-	_, err := repo.UpdateSharedConfigTransaction(context.WithoutCancel(ctx), func(ctx context.Context, o *jsonx.Object) (*jsonx.Object, error) {
+	return editLibraryContext(ctx, func(_ context.Context, items *[]libraryItem) error { return edit(items) })
+}
+func editLibraryContext(ctx context.Context, edit func(context.Context, *[]libraryItem) error) error {
+	_, err := repo.UpdateSharedConfigTransaction(lifecycle.Detach(ctx), func(ctx context.Context, o *jsonx.Object) (*jsonx.Object, error) {
 		var items []libraryItem
 		if err := decode(o.GetOr("rule_library", []any{}), &items); err != nil {
 			return nil, err
 		}
-		if err := edit(&items); err != nil {
+		if err := edit(ctx, &items); err != nil {
 			return nil, err
 		}
 		v, err := legacy(items)

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"configflow/internal/lifecycle"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
 )
@@ -98,9 +99,16 @@ func formatLine(behavior string, e ApplyEntry) string {
 	return e.Value
 }
 
+// ApplyOptions supplies an optional authorization/precondition check. BeforeWrite
+// runs under the shared repository transaction before any library mutation. Its
+// context carries the transaction lock; errors abort without caches or history.
+type ApplyOptions struct {
+	BeforeWrite func(context.Context, map[string]*RulesetInfo) error
+}
+
 // ApplyDomains commits shared rule content, refreshes served caches, and records history.
-func ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source string, evidence map[string]Probe) (ApplyResult, error) {
-	ctx = context.WithoutCancel(ctx)
+func ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source string, evidence map[string]Probe, options ...ApplyOptions) (ApplyResult, error) {
+	ctx = lifecycle.Detach(ctx)
 	out := ApplyResult{Added: []AddedEntry{}, Skipped: []SkippedEntry{}, Warnings: []string{}}
 	c, err := loadConfig(ctx, id)
 	if err != nil {
@@ -120,7 +128,14 @@ func ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source s
 		targets = append(targets, e.Target)
 	}
 	updated := []libraryItem{}
-	err = editLibrary(ctx, func(items *[]libraryItem) error {
+	err = editLibraryContext(ctx, func(tx context.Context, items *[]libraryItem) error {
+		for _, option := range options {
+			if option.BeforeWrite != nil {
+				if err := option.BeforeWrite(tx, infos); err != nil {
+					return err
+				}
+			}
+		}
 		for _, target := range targets {
 			inf := infos[target]
 			var item *libraryItem
