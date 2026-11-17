@@ -25,6 +25,7 @@ import (
 	apiaggregations "configflow/internal/api/aggregations"
 	apiauth "configflow/internal/api/auth"
 	apidiscovery "configflow/internal/api/domaindiscovery"
+	apilinuxgateway "configflow/internal/api/linuxgateway"
 	apilogs "configflow/internal/api/logs"
 	apimosdns "configflow/internal/api/mosdns"
 	apinodes "configflow/internal/api/nodes"
@@ -50,6 +51,7 @@ import (
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
+	"configflow/internal/setupflow"
 	"configflow/internal/substore"
 	"configflow/internal/tasks"
 	"configflow/internal/utilx"
@@ -66,6 +68,7 @@ var routePackages = []func(*httpx.Router){
 	apirulelibrary.Register,
 	apiproxygroups.Register,
 	apiagents.Register,
+	apilinuxgateway.Register,
 	apisettings.Register,
 	apilogs.Register,
 	apistats.Register,
@@ -102,7 +105,8 @@ var wirePackages = []func(){
 	ippresence.Wire, // routers R02: convert.MihomoHooks.IsFullTun, oxidns classical_ip_lines
 	routers.Wire,    // routers R01: repo.Hooks.RedactRouters
 	apirules.Wire,   // config C32: shared source loader for gateway providers
-	gateway.Wire,    // agents A19: convert.MihomoHooks Linux gateway
+	gateway.Wire,
+	setupflow.Wire, // agents A19: convert.MihomoHooks Linux gateway
 }
 
 func wireCore() {

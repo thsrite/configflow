@@ -52,6 +52,7 @@ func Register(r *httpx.Router) {
 	registerOxidns(r)
 	registerClientTools(r)
 	registerPanel(r)
+	registerGateway(r)
 	registerInstaller(r)
 	registerUpgrades(r)
 	registerDockerHA(r)

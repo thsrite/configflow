@@ -30,8 +30,8 @@ POST	/api/agents/<agent_id>/ipv6-readiness/<operation>	routes.ipv6_readiness.ipv
 GET	/api/agents/<agent_id>/ipv6-readiness/verification-settings	routes.ipv6_readiness.ipv6_readiness_operation	31	todo
 PUT	/api/agents/<agent_id>/ipv6-readiness/verification-settings	routes.ipv6_readiness.ipv6_readiness_operation	31	todo
 GET	/api/agents/<agent_id>/ipv6-readiness/verify	routes.ipv6_readiness.ipv6_readiness_operation	31	todo
-GET	/api/agents/<agent_id>/linux-gateway/<operation>	routes.linux_gateway_agents.linux_gateway_operation	30	todo
-POST	/api/agents/<agent_id>/linux-gateway/<operation>	routes.linux_gateway_agents.linux_gateway_operation	30	todo
+GET	/api/agents/<agent_id>/linux-gateway/<operation>	routes.linux_gateway_agents.linux_gateway_operation	internal/api/agents	done
+POST	/api/agents/<agent_id>/linux-gateway/<operation>	routes.linux_gateway_agents.linux_gateway_operation	internal/api/agents	done
 GET	/api/agents/<agent_id>/logs	routes.agents.get_agent_logs	api/agents	done
 POST	/api/agents/<agent_id>/logs/clear	routes.agents.clear_agent_log	api/agents	done
 GET	/api/agents/<agent_id>/logs/sources	routes.agents.get_agent_log_sources	api/agents	done
@@ -87,8 +87,8 @@ GET	/api/agents/docker-agent-run	routes.agents.get_docker_agent_run	internal/api
 POST	/api/agents/docker-oxidns-ha-enroll/<session_id>	routes.docker_ha_installation.docker_oxidns_ha_enroll	internal/api/agents	done
 POST	/api/agents/docker-oxidns-ha-guide	routes.docker_ha_installation.docker_oxidns_ha_guide	internal/api/agents	done
 GET	/api/agents/download/<filename>	routes.agents.download_agent_binary	internal/api/agents	done
-GET	/api/agents/gateway-forwarding	routes.linux_gateway_agents.agent_gateway_forwarding	30	todo
-POST	/api/agents/gateway-forwarding	routes.linux_gateway_agents.agent_gateway_forwarding	30	todo
+GET	/api/agents/gateway-forwarding	routes.linux_gateway_agents.agent_gateway_forwarding	internal/api/agents	done
+POST	/api/agents/gateway-forwarding	routes.linux_gateway_agents.agent_gateway_forwarding	internal/api/agents	done
 GET	/api/agents/gateway-installations	routes.gateway_installations.gateway_installations	30	todo
 POST	/api/agents/gateway-installations	routes.gateway_installations.gateway_installations	30	todo
 GET	/api/agents/gateway-installations/<session_id>	routes.gateway_installations.gateway_installation_status	30	todo
@@ -142,13 +142,13 @@ GET	/api/config/mosdns	routes.config.get_mosdns_config		todo
 GET	/api/config/oxidns	routes.config.get_oxidns_config		todo
 POST	/api/config/reset	routes.config.reset_config		todo
 GET	/api/config/surge	routes.config.get_surge_config		todo
-GET	/api/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings		todo
-POST	/api/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings		todo
-POST	/api/custom-config/linux-gateway/preview	routes.linux_gateway.linux_gateway_settings		todo
-POST	/api/custom-config/linux-gateway/restore	routes.linux_gateway.linux_gateway_settings		todo
-POST	/api/custom-config/linux-gateway/restore/preview	routes.linux_gateway.linux_gateway_settings		todo
-GET	/api/custom-config/linux-gateway/rules/<path:rule_id>	routes.linux_gateway.linux_gateway_rule_provider		todo
-GET	/api/custom-config/linux-gateway/source/<path:rule_id>	routes.linux_gateway.linux_gateway_source_provider		todo
+GET	/api/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+POST	/api/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+POST	/api/custom-config/linux-gateway/preview	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+POST	/api/custom-config/linux-gateway/restore	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+POST	/api/custom-config/linux-gateway/restore/preview	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+GET	/api/custom-config/linux-gateway/rules/<path:rule_id>	routes.linux_gateway.linux_gateway_rule_provider	internal/api/linuxgateway	done
+GET	/api/custom-config/linux-gateway/source/<path:rule_id>	routes.linux_gateway.linux_gateway_source_provider	internal/api/linuxgateway	done
 GET	/api/custom-config/loon	routes.config.handle_custom_loon_config		todo
 POST	/api/custom-config/loon	routes.config.handle_custom_loon_config		todo
 GET	/api/custom-config/mihomo	routes.config.handle_custom_mihomo_config		todo
@@ -238,11 +238,11 @@ GET	/api/profiles/<profile_id>/agents	routes.profiles.profile_agent_bindings		to
 POST	/api/profiles/<profile_id>/agents/rebind	routes.profiles.rebind_profile_agents	17	todo
 GET	/api/profiles/<profile_id>/aggregations/<agg_id>/provider	routes.profiles.profile_aggregation_provider	internal/api/aggregations	done
 POST	/api/profiles/<profile_id>/clone	routes.profiles.clone_profile		todo
-GET	/api/profiles/<profile_id>/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings		todo
-POST	/api/profiles/<profile_id>/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings		todo
-POST	/api/profiles/<profile_id>/custom-config/linux-gateway/preview	routes.linux_gateway.linux_gateway_settings		todo
-POST	/api/profiles/<profile_id>/custom-config/linux-gateway/restore	routes.linux_gateway.linux_gateway_settings		todo
-POST	/api/profiles/<profile_id>/custom-config/linux-gateway/restore/preview	routes.linux_gateway.linux_gateway_settings		todo
+GET	/api/profiles/<profile_id>/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+POST	/api/profiles/<profile_id>/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+POST	/api/profiles/<profile_id>/custom-config/linux-gateway/preview	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+POST	/api/profiles/<profile_id>/custom-config/linux-gateway/restore	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+POST	/api/profiles/<profile_id>/custom-config/linux-gateway/restore/preview	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
 POST	/api/profiles/<profile_id>/default	routes.profiles.set_default_profile		todo
 GET	/api/profiles/<profile_id>/export	routes.profiles.export_profile		todo
 GET	/api/profiles/<profile_id>/gateway-onboarding	routes.gateway_onboarding.gateway_onboarding		todo
@@ -260,8 +260,8 @@ POST	/api/profiles/<profile_id>/generate/oxidns/preview	routes.profiles.profile_
 POST	/api/profiles/<profile_id>/generate/surge	routes.profiles.profile_generate_surge		todo
 POST	/api/profiles/<profile_id>/generate/surge/preview	routes.profiles.profile_preview_surge		todo
 POST	/api/profiles/<profile_id>/import	routes.profiles.import_profile		todo
-GET	/api/profiles/<profile_id>/linux-gateway/rules/<path:rule_id>	routes.linux_gateway.linux_gateway_rule_provider		todo
-GET	/api/profiles/<profile_id>/linux-gateway/source/<path:rule_id>	routes.linux_gateway.linux_gateway_source_provider		todo
+GET	/api/profiles/<profile_id>/linux-gateway/rules/<path:rule_id>	routes.linux_gateway.linux_gateway_rule_provider	internal/api/linuxgateway	done
+GET	/api/profiles/<profile_id>/linux-gateway/source/<path:rule_id>	routes.linux_gateway.linux_gateway_source_provider	internal/api/linuxgateway	done
 GET	/api/profiles/<profile_id>/mosdns/rule-proxy	routes.profiles.profile_mosdns_rule_proxy	api/mosdns	done
 POST	/api/profiles/<profile_id>/oxidns/common-settings	routes.profiles.profile_read_oxidns_common_settings	internal/api/oxidns	done
 POST	/api/profiles/<profile_id>/oxidns/common-settings/apply	routes.profiles.profile_apply_oxidns_common_settings	internal/api/oxidns	done

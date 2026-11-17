@@ -1628,19 +1628,83 @@ The corpus proves the generated Mihomo configuration; it cannot prove what the h
 
 ## A20 — Agent gateway bridge, gateway draft, gateway routes
 
-**Status: `missing`** · HR · prereqs: A19, A06 (`MonitorError`, `_agent_origin`), A02 (`compare_versions`), C18 (`generate_mihomo_config` in the draft), routers (`router_split` MESSAGES/state/markers, `routers/store.routers_of`) · Go: internal/gateway, api/agents, api/linuxgateway (new; endpoints `custom_config.*` and `profiles.*`)
+**Status: `ported`** · HR，等待新的 Opus 独立复核；L4 尚未执行。分支 `go-port-a20`，起点 `go@601a8121`。不 push、不开子 agent、未访问任何生产或实验设备。
 
-Files:
-- `backend/agents/linux_gateway.py` (668)
-- `backend/routes/linux_gateway_agents.py` (74)
-- `backend/common/linux_gateway_draft.py` (165)
-- `backend/routes/linux_gateway.py` (203)
+实现：`internal/gateway/host`（版本能力、严格网络 spec、带转发保护的五种 Agent 操作、跨 profile 路由关联、转发状态/持久化、命令白名单、发布/bundle 前置检查）；`internal/gateway/draft`（首次恢复快照、只读生成预览、完整输入身份、版本/preview 二次校验、Mihomo+OxiDNS 原子保存/恢复）；`internal/api/linuxgateway` + `api/agents/gateway.go` 的 **18 条路由**，服务器注册及冲突优先级测试。全部请求走 `Bind/BindSilent`；YAML 走 yamlx；无新增依赖、Python 模拟、flock、后台任务或 goroutine。
 
-Tests: `test_linux_gateway.py` (27), `test_linux_gateway_draft.py` (27), `test_linux_gateway_agent_bridge.py` (35), `test_agent_gateway_forwarding.py` (9), `test_router_gateway_forwarding.py` (25), `test_gateway_publish_compatibility.py` (18)
+共享 C36 reader 已与 A14 对齐：先查 `go-port-a14@4ded0b99`，复用其 `internal/setupflow.ProfileSessions(ctx,dataDir,profileID)` 和 Session/Raw 接口，补类型错误/取消/16 MiB 上界及中文 fail-closed；`setupflow.Wire` 由服务器注入 `routersplit`。真实 `setup-sessions/*.json` fixture、缺失目录/会话、损坏 JSON、错误类型均覆盖。读取会话在 repo 写事务外，Agent 绑定/配置通过 repo 快照读取。`PROGRESS-config` C36 已注明将来的写入/流程扩展这里。A14 后续 rebase 时保留一套 reader，合并其 deploy.Wire 的同义 adapter。
 
-Routes (18): `GET|POST /api/agents/<agent_id>/linux-gateway/<operation>`; `GET|POST /api/agents/gateway-forwarding`; `GET|POST /api/custom-config/linux-gateway`; `POST /api/custom-config/linux-gateway/preview`; `POST …/restore`; `POST …/restore/preview`; `GET /api/custom-config/linux-gateway/rules/<path:rule_id>`; `GET /api/custom-config/linux-gateway/source/<path:rule_id>`; `GET|POST /api/profiles/<profile_id>/custom-config/linux-gateway`; `POST …/preview`; `POST …/restore`; `POST …/restore/preview`; `GET /api/profiles/<profile_id>/linux-gateway/rules/<path:rule_id>`; `GET /api/profiles/<profile_id>/linux-gateway/source/<path:rule_id>`
+### 边界验收
 
-Evidence: no Go code. The rules/source provider routes use `validate_token_or_jwt` (config pulls, public in the gate). Routers' `routes/routers.py` imports `agents.linux_gateway` and `linux_gateway_draft.RESTORE_KEY`.
+- `api/linuxgateway/difftest` 启动真实 Python Flask，输入全部是合成数据，requests 只能访问 loopback。18 条路由均有成功/失败；管理员鉴权、token/JWT providers、跨 profile、错误/大 body、版本边界、forwarding 状态、full_tun/invalid/legacy/legacy_full_tun、真实向导记录、旧式和带 guard 的保存/恢复均比较。每次响应后比较完整 export、SQLite sections/fields（含位置/所有成员）与所有普通文件（排除数据库本体/锁/日志；JSON/YAML 结构化，其余字节 SHA-256）。生成配置通过真实公开 Mihomo generator 与 Python 结构比较。仅时间、随机恢复 ID 和不透明 preview identity 归一化；两端各自的 preview token 保存并回传，不能拿固定 token 掩盖校验。
+- `host` 单测使用真实 Agent HTTPClient 的原始 GET 空 body、POST `{}`、Authorization/Accept/Content-Type，并断言生产 `Pair(3,45)`、512 KiB、NoProxy/NoRedirects；fake 不替换这些参数。
+- 真实 Runtime.Start/BindRequest/Shutdown：apply/remove/forwarding/PersistForwarding/底层写请求、草稿 save/restore 在关机后零请求/零 DB 改动；请求断开仍完成。关机发生在状态预检与 Agent POST 之间、发生在 repo 回调内生成预览之后，都拒绝提交。每个写 owner Detach 后与提交点前检查 ctx.Err；无 handler 级 detach。
+- `scripts/a20-mutation-gate.py`：response、完整 storage、wire timeout、forwarding proof、preview input、command whitelist 六处变异 **6/6 DETECTED**，源文件 finally 恢复。解析 fuzz：FuzzGatewaySpec、FuzzGatewayForwardFilter、FuzzGatewayBundle、FuzzGatewayDraft，另保留 A19 FuzzExtractCIDRs。
+
+### 复核问题类别逐项自查
+
+| 清单 | A20 的避免方式 / 证据 |
+|---|---|
+| A19 F1 alias 放大/环 | 所有 YAML 由 yamlx.Parse/ToJSON 预算检查；不 Clone 用户 Node、不按 occurrence 展开；结构 diff 用 ValueHash，bundle 入口先 Parse；环/duplicate/共享图测试及 bundle fuzz。 |
+| A19 F2 wrapper/错误形态 | yamlx 返回 content Node；生成/差分/marker 都检查 mapping 与字段存在，不把非对象当可用配置；bundle null/list/无 marker 是普通无 gateway，非法 YAML 拒绝。 |
+| A19 F3 / A11 F1 私有不完整 parser | 配置生成、规则来源、CIDR、router split、版本、认证、脱敏均复用现有 owner；未复制 payload 检测或规则提取器；netmask/hostmask 用 netipx.ParseNetwork4(strict)。 |
+| A11 F2 / A24 F1 多行/旧凭据泄露 | Agent 回复和错误都经共享 redact.SanitizeCredentials（含已知 Agent token）；draft opaque 文本仅摘要、URL 隐藏 userinfo/query、共享 diag 识别敏感键，多行 Bearer/registration key/private-key 等测试；用户名本身保持。 |
+| A11 F3 YAML scalar 值语义 | bundle marker 用 yamlx.Decode 的 bool，不比 tag 文本；普通配置由 C18/A19 生成，diff 用共享 ValueHash；协议整数只接受 JSON integer literal。 |
+| A11 F4 持久化身份 | preview 是临时能力，使用原生 JSON/SHA-256，始终两端自己生成再验证；不改 Agent/manifest 的持久化指纹；D2 编码差异登记。 |
+| A11 F5 过紧上界失败变 missing | Agent 512 KiB 与 Python 相同；新的向导 16 MiB 限制超出明确失败，不变空会话；恢复文档无新上界，也不会截断/清空。 |
+| A11 F6/F8 中文诊断/重复常量 | messages.go 集中；RouterSplitError 先于 gateway.Error 映射（保留 code/status），monitor.Error 保留身份；中文消息由 Flask 差分逐值比对。 |
+| A11 F7 重复全归档读取 | bundle guard 接收 deploy 已验证的 main member，不重新解压；发布 guard 只查需要的 Agent；global forwarding 每 Agent 去重一次。 |
+| A11 F9 嵌入错误链 | 沿用 errors.As monitor.Error / RouterSplitError / gateway.Error，repo.ErrInUse；setupflow 错误 errors.Is 保留链与固定中文出口。 |
+| A24 F2 / 第四常设项 | Detach 后、Agent.Do 前、repo 调用前与事务回调返回前 ctx.Err；真实 Runtime 关机和断开、两个中途关机测试均检查零副作用。 |
+| R04 F1/F7 malformed reply/不可比较值 | 原生 RawMessage / model.Agent / typed spec/filter；无未校验下标或 map==；512 KiB 截止、非法 JSON/数组/null/错误状态均测试；复合内容做结构 hash/JSON 比较。 |
+| R04 F2/F5/F6 状态/消息顺序 | 先 operation、Agent、profile、service/version，再 router split，再 enabled/spec；remove 不转发 confirm 字段，成功才改提示；明确拒绝与不确定连接错误分开；错误不声称无效果。 |
+| R04 F3 / R05 第6项 取消 | 所有写 owner Detach，读保留请求取消，外部 IO 保持 3s connect/45s read，shutdown 仍能取消；无重试不确定网络写。 |
+| R04 F4/F8 / R05 第5项 批量/复杂度/预算 | A20 无设备批量或 rollback；路由关联用索引去重，filter 数量有限，raw 回复有界；读 bundle 只用已验证 main，file reader 显式上界且失败关闭。 |
+| R04 F9 / R05 第3/4项 身份/旧对象 | profile captured binding 必须匹配，spec 不接受命令/目标主机；旧 snapshot/preview 在 repo 锁内复核；无设备 ID 定址补偿/删除；managed 错误类型算未知记录，不算“没有”。 |
+| R04 F10 共享 helper | 无私有 YAML/JSON/网络/脱敏 engine，旧 jsonx 仅接现有 repo/manager/routersplit/generator/redact 边界；C36 reader 与 A14 一套。 |
+| R05 第1项 / R06 F3 原始协议 | 共享 Agent Client，不修改 shared transport；原始 GET 空 body 与 POST JSON 及 headers 实测，no proxy/no redirect/最大值/超时参数断言。 |
+| R05 第2项 写路径错误 | 用户级拒绝为 monitor.Error / gateway.Error / RouterSplitError，中文 constants；关机错误保留 context.Canceled。无“返回 nil 当成功”回退。 |
+| R06 F1 fake 覆盖生产参数 | 原始生产 Agent HTTPClient 路径测 3/45 与 512 KiB，无 shortHTTP；wire-timeout 变异能检出 45→44。 |
+| R06 F2 / R07 F1 username/共享脱敏回归 | 只复用 redact，用户名 `operator/api/rest-api` 原样，密码/token 被遮盖；未修改 shared driver/redactor，最终全仓门禁也覆盖 R04–R08 既有测试。 |
+| R06 F4/F5 类型/惯用 Go | DTO 原生字段、exact-case RawMessage 与 httpx.Number；结构化 spec/filter/entries/summaries；无 Python exception/truthiness/dict merge 模拟。 |
+| R07 F2 identity/parser | 网络 spec 使用 strict IPv4 shared parser；不把 range 或错类型当 CIDR/合法 spec；设备 ID/profile 都明确非空；snapshot 版本用 model.Int。 |
+| R07 F3/F4/F5 二次复杂度/alias/set 验证 | 关联一次索引；JSON/Node 不暴露内部缓存可变共享值；candidate 复制配置顶层和编辑 section；完整存储差分/原文不变断言；无按计数证明设备成功。 |
+| R08 F1 moved-member | A20 不按设备 ID 删除对象、不做归属回滚；跨 profile 授权遍历全部真实路由关联，不能把 scoped 缺失当全局不存在；单设备操作仍要求明确 profile 绑定。 |
+| R08 F2/N8-4ef R5 空回退非 proof | malformed managed 算 unreadable record；typed wizard evidence 出错拒绝；restore_point 字段逐项校验（含 null/nested restore），无 empty fallback 继续 write；未消费路由 manifests，故无 model.Issues ownership 查询入口。 |
+| R08 F3/F4 presence | Request map 区分缺失/显式 null，expected_config_revision/preview_token 任一存在即 guarded；空 rule_set_ids/commands/flows 输出 []；restore 删除快照通过完整 section 替换，非 pointer=nil 猜 clear。 |
+| R08 F5/F6 诊断/注释 | code/message/status 的真实 HTTP 比较；owner 注释明确 request cancellation dropped、Runtime shutdown kept，没有“任何取消都完成”的陈旧承诺。 |
+| N8-4ef 字段/未知数据/clear | model.Agent 只读，profile sections/恢复文档以原生 RawMessage 完整携带；首次 snapshot/未知字段与完整 SQLite 往返比较；restore 显式替换 mihomo/oxidns；错误数据不被有效空值覆盖。 |
+
+无新增 L1 锁（Python A20 没有）；repo 只取 L3，Agent 预检严格在 L3 外；无 Spawn/Keyed/后台 loop 需要注册。
+
+### Python 测试到边界覆盖
+
+- `test_linux_gateway.py`：A19 已覆盖的纯提取/生成保留；API/token/preview/overlap 由 A20 Flask+storage+GENERATE 覆盖；bundle materialization 继续 A11 的真实 Build tests。
+- `test_linux_gateway_draft.py`：save/restore/preview、opaque/credential、guard/revision/system/backup 语义由 A20 Flask 回合与 DraftGuardAtomicity/Runtime/Privacy 覆盖；并发事务内重检和取消用 owner 测试。
+- `test_linux_gateway_agent_bridge.py`：operation/profile/spec/Agent HTTP mapping、各 split remove/forwarding guard、filter 用 A20HostFlask/SplitHTTPGuards/ForwardingStatesAndVersions + host raw-wire/拒绝/Runtime/fuzz。
+- `test_agent_gateway_forwarding.py`：全 profile 关联、授权、去重、状态/持久化走 Flask；静态路径不误作 Agent ID 由全服务器注册测试。
+- `test_router_gateway_forwarding.py`：A20 提供相同 host.Forwarding/PersistForwarding/ProxyRouters；状态/filter/spec 经 Agents 全局路由实测。routers 自己的 GET/POST 注册是后续 routers API owner，A20 不冒充已注册。
+- `test_gateway_publish_compatibility.py`：支持版本、RequireGatewayAgent/RequireGatewayBundleAgent/RequireForwardingKept/RequireGatewayOffKept 已提供且有 frozen-main/状态检查；完整正常 publish HTTP 与上传入口的接线由 A14 使用这些入口（A14 是独立并行模块，不能在这里宣称 L2/L4 已实测）。
+
+### Python bug 修正及差异
+
+- 安全（高）：Python 直接透传 Agent diagnostics/未来字段，可能泄露密码/token；Go 使用共享凭据 sanitizer，正常文本不改。多行/编码和 username 回归说明边界。
+- 安全（中）：Python 把错类型 managed 当无记录、错类型 wizard goal 当无用途；Go 前者视为 unreadable record，后者拒绝加载（中文 500、零提交），不会因存储降级而允许撤销转发。
+- 兼容/低：N8-6 非有限请求 JSON 统一拒绝400；专门对 `{enabled:NaN}` 比较 Python 的 enabled 校验400与 Go 的 JSON 对象400，其余状态/DB不放宽。非法标准 JSON Agent 回复也拒绝502。
+- 已接受：preview token 原生编码是临时身份（无需跨实现复用）；YAML 展示仅格式可异，changes 两侧逐值解析比较，opaque 摘要仍检查；Go JSON/YAML 与 A19 的 D1/alias/unknown-tag/native-depth 政策一致，不回退 parser；恢复快照 version 接受 model.Int 的1.0/1e0，拒绝 bool。
+- 资源/低：新的共享 reader 16 MiB 超出明确 fail-closed；非记录文件名/非对象 JSON 按 Python 跳过；匹配 profile 的关键字段类型错误拒绝，无空会话替代。
+
+### L4 实机项（fresh Opus review 后由协调者执行）
+
+selective/full_tun/legacy 的 TUN、ip rule/route、nft/iptables、sysctl 转发/撤销与重启持久；旧 journal active/pending/error、AIO 1.8.40 与单服务1.8.41、system-persisted/OpenRC 场景；prepare_tun 权限/设备节点；FORWARD/DNS/redirect/TUN 实际流量与 firewall remedies；provider token 每300s刷新、503保留旧集；绑定 profile/spec 对应真实主机；IPv6 off、fakeIP/OxiDNS/IP-DoH、客户端实流与回流/泄漏防护。fake 只能证明协议/配置/拒绝与状态，不能证明任何网络生效。
+
+### 命令与结果
+
+迭代固定 `.64`：`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -timeout=10m ./internal/api/linuxgateway/difftest && go test -race -count=1 ./internal/gateway/host ./internal/gateway/draft ./internal/setupflow'` → difftest `ok`，host `ok 5.720s`、draft `ok 2.952s`、setupflow `ok 1.025s`。后续新增用例已定向复验。
+
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 ./internal/api/linuxgateway/difftest && python3 scripts/a20-mutation-gate.py'` → `response/storage/wire-timeout/forwarding-proof/preview-input/command-whitelist: DETECTED`；`A20 mutation gate: 6/6 detected; sources restored`。
+
+最终 gate / rebase / 提交号在完成后补录。
 
 ## A21 — gateway onboarding
 

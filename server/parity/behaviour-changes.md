@@ -623,3 +623,22 @@ Python接受。Go按本次安全修复要求统一拒绝这些歧义，保留Inv
 协调者裁定（2026-11-18）：`POST /api/domain-discovery/rulesets/init` 的 `targets` 按首次出现顺序去重，重复项返回200，每个目标只创建一套规则库、引用及空缓存。Python 会创建孤立库项和重复引用；旧 Go 还会重复写同一缓存，产生空 `.list.bak`。Go 修复这两个共同冗余问题，不复制旧结果；无效目标仍400且无写入，空 targets 仍默认 direct、proxy。
 
 去重限定在一次请求内。不同调用之间保持 Python 合同：继续创建新资源及名称后缀，保留之前的资源。`TestCFG06DuplicateTargetDifference` 用真实 Flask 对重复/非相邻混合目标的两次调用分别断言 Python 冗余与 Go 去重的库项、引用、首见顺序和缓存数量；普通输入仍严格比较。后续是否复用已有绑定另行裁定。
+
+## A20 — gateway bridge and recoverable drafts
+
+- Agent gateway replies and diagnostics now use shared credential redaction,
+  including multiline/encoded passwords, legacy registration keys and Agent
+  tokens. Usernames alone remain visible. Python forwarded these fields.
+- Malformed host `managed` evidence is an unreadable record, never proof of no
+  gateway record. Wrong-typed wizard routing evidence fails closed with a
+  Chinese diagnostic and zero writes. The shared A14/C36 reader refuses a
+  session over 16 MiB rather than treating it as absent.
+- Native request binding rejects non-finite JSON with 400; the A20 HTTP
+  differential explicitly asserts the different diagnostic for `enabled:NaN`.
+  Non-standard JSON from an Agent is refused as invalid response (502).
+- Preview tokens use native JSON/SHA-256; they are ephemeral and regenerated
+  after switching implementations. Persisted restore documents retain their
+  unknown members; restoration explicitly replaces both service sections.
+  Stored snapshot version uses model.Int (1, 1.0, 1e0 accepted; bool refused).
+
+See PROGRESS-agents A20 for per-class checks, commands and the L4 boundary.

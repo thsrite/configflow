@@ -2123,6 +2123,8 @@ Exact commands/tails, native differences and added-file counts: [C35-HANDOFF.md]
 
 ## C36 — setup flow
 
+A20/A14 已提供共享只读 reader：`internal/setupflow.ProfileSessions(ctx, dataDir, profileID)`（首版来自 `go-port-a14`，A20 复用并补强类型错误的 fail-closed 中文提示，服务器 `setupflow.Wire` 注入 routersplit）。C36 在此基础上实现写入与流程，不另建第二套 reader。会话是 `setup-sessions/*.json` 的原子替换文件；读取在 repo 写事务外，绑定 Agent/配置取 repo 一致快照。
+
 **Status: `missing`** · prereqs: C34, C35 · Go: internal/setup, internal/api/setup (new)
 
 Files:
