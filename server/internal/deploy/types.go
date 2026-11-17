@@ -130,6 +130,11 @@ func (e *PreparationError) Unwrap() error { return e.cause }
 // RuleDownloadError is a preparation error with optional network remedy.
 type RuleDownloadError struct{ *PreparationError }
 
+// Unwrap exposes the embedded preparation error (Python: RuleDownloadError is a
+// DeploymentPreparationError), whose own Unwrap continues to the cause; without
+// it errors.As(err, **PreparationError) would skip straight to the cause.
+func (e *RuleDownloadError) Unwrap() error { return e.PreparationError }
+
 // PreviewChanged requires generation of a new immutable preview.
 type PreviewChanged struct{ Message string }
 

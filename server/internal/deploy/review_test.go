@@ -266,3 +266,17 @@ func TestReviewFilesStopsAtWantedMembers(t *testing.T) {
 		t.Fatal("reading past the wanted members did not reach the damaged stream")
 	}
 }
+
+// F9: a rule download failure is a preparation failure for errors.As, and
+// still reaches its transport cause.
+func TestReviewRuleDownloadErrorIsPreparationError(t *testing.T) {
+	cause := errors.New("synthetic transport failure")
+	var err error = &RuleDownloadError{&PreparationError{Message: "download failed", Remedy: &Remedy{Kind: "rule_download"}, cause: cause}}
+	var prep *PreparationError
+	if !errors.As(err, &prep) || prep.Remedy == nil || prep.Message != "download failed" {
+		t.Fatalf("not a preparation error: %#v", prep)
+	}
+	if !errors.Is(err, cause) {
+		t.Fatal("cause lost")
+	}
+}
