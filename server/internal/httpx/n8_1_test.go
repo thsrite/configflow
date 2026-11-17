@@ -5,9 +5,11 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
@@ -106,7 +108,7 @@ func TestN8NativeValuesCannotBypassResponsePolicy(t *testing.T) {
 func TestN8ResponseEncodingFailureReturns500(t *testing.T) {
 	cyclic := jsonx.NewObject()
 	cyclic.Set("self", cyclic)
-	for _, value := range []any{cyclic, make(chan int), jsonx.Obj("n", jsonx.Number("NaN"))} {
+	for _, value := range []any{cyclic, make(chan int)} {
 		srv := jsonServer(t, func() any { return value }, nil)
 		srv.Get("/static/ordinary").WantStatus(500)
 		srv.Get("/static/single").WantStatus(500)
@@ -141,5 +143,62 @@ func TestN8MaterializedBodyKeepsCollisionOrdering(t *testing.T) {
 	})
 	for _, path := range []string{"/static/ordinary", "/static/single"} {
 		srv.Get(path).WantStatus(200).WantJSON(jsonx.Obj("[REDACTED]", 1))
+	}
+}
+
+func TestN8NonFiniteResponsesAreValidJSON(t *testing.T) {
+	type Embedded struct {
+		NonFinite float64 `json:"embedded,omitempty"`
+	}
+	type native struct {
+		Embedded
+		Values  []float64          `json:"values"`
+		Map     map[string]float64 `json:"map"`
+		Pointer *float64           `json:"pointer"`
+		Binary  []byte             `json:"binary"`
+		At      time.Time          `json:"at"`
+		Omitted string             `json:"omitted,omitempty"`
+		Hidden  float64            `json:"-"`
+	}
+	inf := math.Inf(1)
+	legacyNaN := jsonx.Number("NaN")
+	payload := native{Embedded: Embedded{math.NaN()}, Values: []float64{math.NaN(), inf, math.Inf(-1), 1e308}, Map: map[string]float64{"nan": math.NaN(), "finite": 2}, Pointer: &inf, Binary: []byte{1, 2, 3}, At: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), Hidden: math.NaN()}
+	cases := []struct {
+		name  string
+		value any
+		want  any
+	}{
+		{"native DTO", payload, jsonx.Obj("embedded", nil, "values", []any{nil, nil, nil, jsonx.Number("1e308")}, "map", jsonx.Obj("nan", nil, "finite", 2), "pointer", nil, "binary", "AQID", "at", "2026-01-02T03:04:05Z")},
+		{"legacy mixed", jsonx.Obj("legacy", []any{jsonx.Number("NaN"), jsonx.Number("Infinity"), jsonx.Number("-Infinity")}, "native", payload), jsonx.Obj("legacy", []any{nil, nil, nil}, "native", jsonx.Obj("embedded", nil, "values", []any{nil, nil, nil, jsonx.Number("1e308")}, "map", jsonx.Obj("nan", nil, "finite", 2), "pointer", nil, "binary", "AQID", "at", "2026-01-02T03:04:05Z"))},
+		{"scalar legacy pointer", &legacyNaN, nil},
+		{"scalar NaN", math.NaN(), nil}, {"scalar infinity", inf, nil}, {"scalar legacy", jsonx.Number("-Infinity"), nil},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := jsonServer(t, func() any { return tt.value }, nil)
+			for _, path := range []string{"/static/ordinary", "/static/single"} {
+				res := srv.Get(path).WantStatus(200).WantJSON(tt.want)
+				if !json.Valid(res.Body) {
+					t.Fatal("non-finite response is not valid JSON")
+				}
+			}
+		})
+	}
+}
+
+func TestN8RawNonFiniteResponses(t *testing.T) {
+	raw := []byte(`{"numbers":[NaN,Infinity,-Infinity,1e308],"text":"NaN Infinity -Infinity \"NaN\""}`)
+	want := jsonx.Obj("numbers", []any{nil, nil, nil, jsonx.Number("1e308")}, "text", `NaN Infinity -Infinity "NaN"`)
+	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
+		r.GET("/static/raw-nonfinite", "test.raw_nonfinite", func(_ *httpx.Ctx) (*httpx.Response, error) { return httpx.RawJSON(200, raw), nil })
+		r.GET("/static/value-nonfinite", "test.value_nonfinite", func(_ *httpx.Ctx) (*httpx.Response, error) { return httpx.JSON(json.RawMessage(raw)), nil })
+		r.GET("/static/scalar-nonfinite", "test.scalar_nonfinite", func(_ *httpx.Ctx) (*httpx.Response, error) { return httpx.RawJSON(200, []byte("NaN")), nil })
+	})})
+	for _, path := range []string{"/static/raw-nonfinite", "/static/value-nonfinite"} {
+		srv.Get(path).WantStatus(200).WantJSON(want)
+	}
+	scalar := srv.Get("/static/scalar-nonfinite").WantStatus(200)
+	if string(scalar.Body) != "null" {
+		t.Fatal(string(scalar.Body))
 	}
 }

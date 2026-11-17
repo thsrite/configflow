@@ -327,6 +327,12 @@ Accepted limitations: nesting depth — CPython's RecursionError depends on the 
 
 ## A04 — metrics history and flush
 
+N8-1 follow-up (coordinator, 2026-11-17): reject or discard non-finite metric
+points (NaN/±Infinity) at Agent report ingestion before storing them. N8-1
+repairs JSON responses to null at the common native exit; it intentionally does
+not change ingestion/storage here. See parity/behaviour-changes.md.
+
+
 **Status: `verified`** (review 2026-11-15, commits 724a72ff, ce3e7845, c15b0fb8, d35aba60; table under "Review") · prereqs: A01, C07 · Go: internal/agents/metrics (history.go, stats.go, pyvalue.go, flush.go, wire.go), internal/api/agents/metrics.go
 
 Files:
@@ -392,6 +398,12 @@ Commands:
 - `rt -- bash -lc '~/cf-test/.venv/bin/python -I server/internal/agents/metrics/testdata/probe.py'`
 
 ## A05 — traffic history and traffic store
+
+N8-1 follow-up (coordinator, 2026-11-17): reject or discard non-finite metric
+points (NaN/±Infinity) at Agent report ingestion before storing them. N8-1
+repairs JSON responses to null at the common native exit; it intentionally does
+not change ingestion/storage here. See parity/behaviour-changes.md.
+
 
 **Status: `verified`** (review 2026-11-15, commits 6b3cd8d9, a449aa0c, 0b149290, 084b8416, 548348df; table under "Review") · prereqs: A04, C37 (`registrable_domain`, ported early here) · Go: internal/agents/metrics (traffic.go, traffic_wire.go, traffic_compat.go), internal/agents/trafficstore (new: store.go, stat_*.go), internal/discovery (new; C37's package: discovery.go), internal/api/agents/traffic.go
 

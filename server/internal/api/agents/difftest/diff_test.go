@@ -251,14 +251,16 @@ func startGo(t *testing.T, dataDir string) (string, func()) {
 }
 
 type request struct {
-	name        string
-	method      string
-	path        string
-	admin       bool
-	headers     map[string]string
-	body        string
-	contentType string
-	mask        []string
+	// nonFiniteMetrics names only the saved agent-odd history/summary bug cases.
+	nonFiniteMetrics bool
+	name             string
+	method           string
+	path             string
+	admin            bool
+	headers          map[string]string
+	body             string
+	contentType      string
+	mask             []string
 	// capture stores top-level (or dotted) answer fields under a name for
 	// "{name}" placeholders in later requests of the same side.
 	capture map[string]string
@@ -373,7 +375,10 @@ func compare(r request, py, gor response) []string {
 	}
 	pv, perr := jsonx.Parse(py.body)
 	gv, gerr := jsonx.Parse(gor.body)
-	if perr == nil && gerr == nil && len(r.mask) > 0 {
+	if perr == nil && gerr == nil {
+		if r.nonFiniteMetrics {
+			diffs = append(diffs, compareNonFiniteMetrics(r, pv, gv)...)
+		}
 		if !jsonx.Equal(maskJSON(pv, r.mask), maskJSON(gv, r.mask)) {
 			diffs = append(diffs, fmt.Sprintf("json python %s go %s", py.body, gor.body))
 		}
@@ -581,7 +586,7 @@ func reviewRequests() []request {
 		{"history odd repeated hours", "/metrics/history?hours=1&hours=6"},
 		{"latest odd", "/metrics"},
 	} {
-		out = append(out, request{name: "metrics " + item.name, method: "GET", path: "/api/agents/agent-odd" + item.query, admin: true})
+		out = append(out, request{name: "metrics " + item.name, method: "GET", path: "/api/agents/agent-odd" + item.query, admin: true, nonFiniteMetrics: (strings.HasPrefix(item.query, "/metrics/history") || strings.HasPrefix(item.query, "/metrics/summary")) && item.query != "/metrics/summary?hours=6"})
 	}
 	return out
 }
@@ -794,4 +799,48 @@ func compareAfterStop(t *testing.T, pyDir, goDir string, pyValues, goValues map[
 	}
 	t.Logf("after stop: %d files, %d metrics files compared", len(pyFiles), compared)
 	return failed
+}
+
+// compareNonFiniteMetrics asserts only the specific Python-bug fields seeded
+// by oddMetrics: history[*].cpu.usage_percent, summary.cpu.avg and
+// summary.network_sent.avg. Everything else remains a strict JSON comparison.
+func compareNonFiniteMetrics(r request, python, native any) []string {
+	p, _ := python.(*jsonx.Object)
+	g, _ := native.(*jsonx.Object)
+	pd, gd := p.GetObject("data"), g.GetObject("data")
+	var diffs []string
+	count := 0
+	check := func(path string, po, goObj *jsonx.Object, key, want string) {
+		n, ok := po.Value(key).(jsonx.Number)
+		if !ok || string(n) != want {
+			return
+		}
+		count++
+		value, present := goObj.Get(key)
+		if !present || value != nil {
+			diffs = append(diffs, "non-finite Python bug: "+path+" must be JSON null in Go")
+		}
+		po.Set(key, nil)
+	}
+	if strings.HasPrefix(r.path, "/api/agents/agent-odd/metrics/history") {
+		ph, gh := pd.GetList("history"), gd.GetList("history")
+		for i, point := range ph {
+			pp, _ := point.(*jsonx.Object)
+			var gp *jsonx.Object
+			if i < len(gh) {
+				gp, _ = gh[i].(*jsonx.Object)
+			}
+			check(fmt.Sprintf("data.history[%d].cpu.usage_percent", i), pp.GetObject("cpu"), gp.GetObject("cpu"), "usage_percent", "NaN")
+		}
+	} else if strings.HasPrefix(r.path, "/api/agents/agent-odd/metrics/summary") {
+		ps, gs := pd.GetObject("summary"), gd.GetObject("summary")
+		check("data.summary.cpu.avg", ps.GetObject("cpu"), gs.GetObject("cpu"), "avg", "NaN")
+		check("data.summary.network_sent.avg", ps.GetObject("network_sent"), gs.GetObject("network_sent"), "avg", "Infinity")
+	} else {
+		return []string{"non-finite metrics exception enabled for an unexpected route"}
+	}
+	if count == 0 {
+		diffs = append(diffs, "non-finite metrics fixture did not produce the expected Python NaN/Infinity text")
+	}
+	return diffs
 }

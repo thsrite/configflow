@@ -9,6 +9,7 @@ package difftest
 //	rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run Download ./internal/api/agents/difftest/'
 
 import (
+	"configflow/internal/jsonx"
 	"fmt"
 	"io"
 	"math"
@@ -54,15 +55,25 @@ func sendDownload(t *testing.T, base string, r downloadRequest) response {
 
 func compareDownload(py, gor response) []string {
 	var diffs []string
+	pv, perr := jsonx.Parse(py.body)
+	gv, gerr := jsonx.Parse(gor.body)
+	jsonBody := strings.HasPrefix(py.header.Get("Content-Type"), "application/json") && perr == nil && gerr == nil
 	if py.status != gor.status {
 		diffs = append(diffs, fmt.Sprintf("status python %d go %d", py.status, gor.status))
 	}
 	for _, name := range downloadHeaders {
+		if jsonBody && name == "Content-Length" {
+			continue
+		}
 		if a, b := py.header.Get(name), gor.header.Get(name); a != b {
 			diffs = append(diffs, fmt.Sprintf("header %s python %q go %q", name, a, b))
 		}
 	}
-	if string(py.body) != string(gor.body) {
+	if jsonBody {
+		if !jsonx.Equal(pv, gv) {
+			diffs = append(diffs, fmt.Sprintf("json python %s go %s", py.body, gor.body))
+		}
+	} else if string(py.body) != string(gor.body) {
 		diffs = append(diffs, fmt.Sprintf("body (%d vs %d bytes) python %.200q go %.200q", len(py.body), len(gor.body), py.body, gor.body))
 	}
 	return diffs

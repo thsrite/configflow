@@ -358,7 +358,7 @@ func oxidnsCompare(r request, py, gor response) []string {
 	}
 	var kept []string
 	for _, d := range diffs {
-		if !strings.HasPrefix(d, "body ") {
+		if !strings.HasPrefix(d, "body ") && !strings.HasPrefix(d, "json ") {
 			kept = append(kept, d)
 		}
 	}

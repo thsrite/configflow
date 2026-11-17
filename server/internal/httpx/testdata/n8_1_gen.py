@@ -34,7 +34,7 @@ for secret in (RULE, RETIRED, AGENT):
     variants = [secret, quote(secret, safe=""), quote_plus(secret), quote(quote(secret, safe=""), safe=""),
                 quote(quote_plus(secret), safe=""), quote(secret, safe="").lower() if secret == RULE else secret]
     for index, variant in enumerate(variants):
-        # The lowercase case lowercases ASCII token text too; it must not match.
+        # Lowercase percent escapes must be recognized too.
         for raw in (False, True):
             emit(f"variants-{secret[:3]}-{index}-{raw}", {f"prefix-{variant}-suffix": "visible", "value": f"before {variant} after"}, raw=raw)
 for raw in (False, True):
@@ -45,7 +45,7 @@ for raw in (False, True):
          "nested": [{f"{AGENT}-z": 4, f"{AGENT}-a": 5}]}, raw=raw)
     emit(f"escaped-{raw}", {"value": "https://example.com/" + quote(AGENT, safe="")}, raw=raw)
 for depth in (127, 128, 129):
-    for leaf in ({"safe": "visible", "secret": RULE}, [], "safe", RULE):
+    for leaf in ({"safe": "visible", "secret": RULE, RULE: RULE}, [], "safe", RULE):
         payload = leaf
         for _ in range(depth):
             payload = [payload]

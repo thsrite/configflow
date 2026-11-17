@@ -231,7 +231,7 @@ func TestFailedRenderIsNotStoredAsLastGood(t *testing.T) {
 	got := f.serve(func(context.Context) (*httpx.Response, error) {
 		return httpx.JSONStatus(400, jsonx.Obj("success", false)), nil
 	}, "")
-	if got.status != 400 || got.body != "{\"success\": false}" { // the copy is re-encoded by the sanitizer, as in Flask
+	if got.status != 400 || got.body != "{\"success\":false}" { // the copy uses the common native JSON response exit
 		t.Fatalf("got %+v", got)
 	}
 	path, _ := f.srv.Repo.ProfilePath("alpha", "providers/served/aggregation-agg-1.yaml")

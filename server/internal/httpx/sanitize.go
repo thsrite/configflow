@@ -54,7 +54,17 @@ func writeJSON(c *Ctx, r *Response) error {
 	if r.hasValue {
 		body, err := jsonresp.Encode(r.value)
 		if err != nil {
-			return err
+			native, changed, normalizeErr := responseValue(r.value)
+			if normalizeErr != nil {
+				return normalizeErr
+			}
+			if !changed {
+				return err
+			}
+			body, err = jsonresp.Encode(native)
+			if err != nil {
+				return err
+			}
 		}
 		r.body, r.value, r.hasValue = body, nil, false
 	}
@@ -87,9 +97,14 @@ func writeJSON(c *Ctx, r *Response) error {
 	if err != nil {
 		return nil
 	} // Python's silent get_json leaves invalid bodies alone.
-	// Validate before walking: malformed raw JSON must never be partly rewritten.
+	// Repair legacy non-finite literals before native validation. Invalid syntax
+	// otherwise keeps Python's silent get_json behaviour.
+	text, nonFinite := finiteJSON(text)
 	if !json.Valid(text) {
 		return nil
+	}
+	if nonFinite {
+		r.body = text
 	}
 	secrets, err := redact.ExternalPayloadSecrets(c.ctx, nil)
 	if err != nil {
