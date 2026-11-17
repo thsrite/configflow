@@ -56,6 +56,16 @@ func (s *Signal) Notify() {
 	}
 }
 
+// Clear discards at most one pending notification without waiting. It is used
+// when initializing owner state, before a loop's first wait. Later Notify calls
+// retain their usual coalescing semantics.
+func (s *Signal) Clear() {
+	select {
+	case <-s.channel():
+	default:
+	}
+}
+
 // StartMode selects when a periodic loop becomes eligible to start.
 type StartMode int
 

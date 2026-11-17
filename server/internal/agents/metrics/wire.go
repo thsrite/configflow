@@ -68,8 +68,6 @@ func deleteHistory(m *agents.Manager, agentID string) {
 	ForManager(m).DeleteAgentHistory(agentID)
 }
 
-var lifecycleOnce sync.Once
-
 // Wire is A04's entry in internal/server wirePackages: the registry hooks
 // (heartbeat metrics, Agent deletion), synchronous saved-history Startup,
 // the task-list row with "run now" and the interval edit, the flush loop,
@@ -80,11 +78,9 @@ func Wire() {
 	tasks.SetRows(tasks.SlotMetrics, Rows)
 	tasks.SetRunner(TaskKey, runNow)
 	tasks.SetIntervalSetter(TaskKey, SetInterval)
-	lifecycleOnce.Do(func() {
-		lifecycle.Loop("metrics-history-flush", loop)
-		lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "metrics-history-flush-first", Phase: lifecycle.PhaseStopSignal, Run: func(ctx context.Context) { shutdownFlush(ctx, true) }})
-		lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "metrics-history-flush-last", Phase: lifecycle.PhaseAfterDrain, Run: func(ctx context.Context) { shutdownFlush(ctx, false) }})
-	})
+	lifecycle.RegisterPeriodic(flushPeriodic())
+	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "metrics-history-flush-first", Phase: lifecycle.PhaseStopSignal, Run: func(ctx context.Context) { shutdownFlush(ctx, true) }})
+	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "metrics-history-flush-last", Phase: lifecycle.PhaseAfterDrain, Run: func(ctx context.Context) { shutdownFlush(ctx, false) }})
 }
 
 // shutdownFlush runs one save in its own repository scope. The stop-signal

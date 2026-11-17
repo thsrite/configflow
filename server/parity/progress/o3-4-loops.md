@@ -1,8 +1,8 @@
 # O3-4 — periodic owner migration
 
-Status: partial implementation, awaiting Signal reset interface decision; not ready for O3-4 merge.
+Status: implementation resumed after coordinator approval of Signal.Clear; final acceptance pending.
 go-o3-4 from go@fb43c371 after O3-3 merge. No sub-agents/pushes.
-Only .32 is available; all tests/builds/formatting/vet run there.
+.32 and .64 are accepted test servers; this task continues all validation on .32.
 
 Scope: refresh 30/30 (L1 Keyed, RunNow→Spawn, rows Held, ≤3 joined workers), discovery120/600,
 ranking60/60, metrics30/30+Signal and per-generation activation state, conditional Sub-Store0/5.
@@ -99,3 +99,21 @@ Signal reset approval. The preserved patch path is
 `/Users/sunbroke/program/configflow/.git/worktrees/go-n7-1/o3-4-metrics-pending.patch`.
 Apply from the git root with `git apply "$(git rev-parse --git-path o3-4-metrics-pending.patch)"`.
 It has not been applied to the clean hand-back tree. Do not merge this branch as completed O3-4 yet.
+
+
+## Resumed after Signal.Clear approval
+
+Coordinator confirmed the nonblocking Clear API (at most one pending notification, Notify/wait unchanged).
+The saved metrics patch has been applied; Clear is called only from metrics OnStart/ResetFlushState.
+Signal tests cover no residual wake and successful subsequent Notify. Design Clarified in O3-4 updated.
+Metrics Periodic30/30 initializes memory per ModeRun activation, resets startedAt/attemptedAt/stopping,
+uses Signal for interval changes, and retains the existing Startup/two-phase save hooks. ModeManual
+never initializes the schedule. Final acceptance will supersede the partial hand-back above.
+
+Restored metrics migration + Signal.Clear: .32 gofmt/vet passed; full lifecycle/metrics race count3
+passed (lifecycle7.376s, lifecycletest1.024s, metrics19.219s). A shutdown test initially passed a bare
+Background context to its independent Runtime hook, causing the test-only default repository to open
+in the package directory. Corrected the fixture to pass its bound repository context, removed those
+synthetic artifacts, and added an assertion that the shutdown receipt is written to the fixture repository.
+Also strengthened the fake-clock test with a7s round duration and a29+1s next pause. Focused race count3
+then passed metrics1.560s/lifecycle1.032s. No product repository fallback or shutdown contracts changed.

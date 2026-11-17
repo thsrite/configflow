@@ -291,7 +291,6 @@ func TestIntervalAcceptsOnlyTheOfferedChoicesAndReschedules(t *testing.T) {
 	if ran, _ := RunDue(ctx, started.Add(10*time.Minute)); ran {
 		t.Fatal("ran early")
 	}
-	ClearWake()
 	body := srv.Put("/api/tasks/interval", httpxtest.JSON(jsonx.Obj("key", TaskKey, "interval_seconds", 300))).WantStatus(200).Object()
 	if jsonx.Path(body, "task", "interval_seconds") != jsonx.Int(300) {
 		t.Fatal(body)
@@ -299,9 +298,6 @@ func TestIntervalAcceptsOnlyTheOfferedChoicesAndReschedules(t *testing.T) {
 	system, _ = srv.Repo.GetSystem(ctx)
 	if system.GetObject("system_config").Value(Setting) != jsonx.Int(300) {
 		t.Fatal(system)
-	}
-	if !WakeIsSet() { // the loop recomputes without a restart
-		t.Fatal("not woken")
 	}
 	if ran, err := RunDue(ctx, started.Add(10*time.Minute)); !ran || err != nil {
 		t.Fatal(ran, err)

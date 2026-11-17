@@ -381,6 +381,9 @@ Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
   release, whose startup already performed this retired migration. Do not resurrect it in Go.
 
 **Clarified in O3-4 (coordinator, 2026-11-17):**
+- Signal.Clear() is nonblocking and discards at most one pending notification. Notify and normal
+  waits keep their semantics. Only metrics OnStart and ResetFlushState call it, preventing an old
+  shutdown wake from shortening the next generation's first 30-second wait.
 - Export ClockFrom(ctx) Clock: use the originating Runtime's clock, otherwise the real clock.
   Owner scheduling waits use it; existing owner business timestamp injection stays unchanged.
 - Periodic.OnStart(ctx) is optional, once per actual ModeRun activation before the first wait.

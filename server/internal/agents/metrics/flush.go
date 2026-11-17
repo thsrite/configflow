@@ -24,6 +24,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
@@ -51,8 +52,8 @@ var (
 	// runMu is _run_lock; running is its locked().
 	runMu   sync.Mutex
 	running atomic.Bool
-	// wake is _wake (a set event is a buffered value).
-	wake = make(chan struct{}, 1)
+	// wake coalesces interval edits without launching overlapping rounds.
+	wake lifecycle.Signal
 
 	stateMu sync.Mutex
 	// startedAt is _started_at: when the loop started (nil before).
@@ -74,10 +75,7 @@ func ResetFlushState() {
 	stateMu.Lock()
 	startedAt, attemptedAt, stopping = nil, nil, false
 	stateMu.Unlock()
-	select {
-	case <-wake:
-	default:
-	}
+	wake.Clear()
 }
 
 // SetStartedAt sets _started_at (tests).
@@ -87,23 +85,7 @@ func SetStartedAt(t *time.Time) {
 	stateMu.Unlock()
 }
 
-func setWake() {
-	select {
-	case wake <- struct{}{}:
-	default:
-	}
-}
-
-// WakeIsSet reports whether the loop's wake event is set (tests).
-func WakeIsSet() bool { return len(wake) > 0 }
-
-// ClearWake is _wake.clear() (tests).
-func ClearWake() {
-	select {
-	case <-wake:
-	default:
-	}
-}
+func setWake() { wake.Notify() }
 
 var errInterval = &tasks.Invalid{Message: "保存间隔只能是 5、10、30 或 60 分钟"}
 
@@ -397,44 +379,26 @@ func isStopping() bool {
 	return stopping
 }
 
-// markStarted is start_loop's _started_at (once per process).
-func markStarted() bool {
-	stateMu.Lock()
-	defer stateMu.Unlock()
-	if startedAt != nil {
-		return false
-	}
-	t := utcNow()
-	startedAt = &t
-	return true
-}
-
-// loop is _loop: every TickSeconds (or when woken) run when due; failures
-// are recorded in task_status and logged by Run.
-func loop(ctx context.Context) {
-	if !markStarted() {
-		return
-	}
-	for !isStopping() && ctx.Err() == nil {
-		scope := repo.WithScope(ctx)
-		func() {
-			defer func() {
-				if p := recover(); p != nil {
-					flushLogger.Errorf("监控历史保存失败：%v", p)
-				}
-			}()
-			_, _ = RunDue(scope, utcNow())
-		}()
-		repo.ResetConfigContext(scope)
-		timer := time.NewTimer(TickSeconds * time.Second)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return
-		case <-wake:
-		case <-timer.C:
-		}
-		timer.Stop()
+func flushPeriodic() lifecycle.Periodic {
+	return lifecycle.Periodic{
+		Name: "metrics-history-flush", Start: lifecycle.AtBoot,
+		FirstDelay: TickSeconds * time.Second, Wake: &wake,
+		Interval: func(context.Context) time.Duration { return TickSeconds * time.Second },
+		OnStart: func(context.Context) {
+			wake.Clear()
+			stateMu.Lock()
+			t := utcNow()
+			startedAt, attemptedAt, stopping = &t, nil, false
+			stateMu.Unlock()
+		},
+		Round: func(ctx context.Context) error {
+			if isStopping() {
+				return nil
+			}
+			// Run owns recording and logging of ordinary save failures.
+			_, _ = RunDue(ctx, utcNow())
+			return nil
+		},
 	}
 }
 
