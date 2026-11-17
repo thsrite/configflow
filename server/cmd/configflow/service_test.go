@@ -12,8 +12,10 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -23,7 +25,10 @@ import (
 	"configflow/internal/instance"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/refresh"
 	"configflow/internal/repo"
+	"configflow/internal/rulefetch"
+	"configflow/internal/substore"
 	"configflow/internal/taskstatus"
 )
 
@@ -45,6 +50,17 @@ func TestServiceProcess(t *testing.T) {
 		defer file.Close()
 		_, _ = fmt.Fprintln(file, event)
 	}
+	var outbound atomic.Int64
+	restore := refresh.SetEnv(schedulerObserver(func() { outbound.Add(1); trace("outbound") }))
+	defer restore()
+	defer func() {
+		if n := outbound.Load(); n != 0 {
+			t.Errorf("unexpected scheduled network attempts: %d", n)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "test-outbound"), []byte(strconv.FormatInt(outbound.Load(), 10)), 0o600); err != nil {
+			t.Error(err)
+		}
+	}()
 	firstSaved := make(chan struct{})
 	opts := runOptions{
 		listen: func(network, _ string) (net.Listener, error) {
@@ -125,12 +141,11 @@ type serviceProcess struct {
 func startService(t *testing.T, mode string) *serviceProcess {
 	t.Helper()
 	dir := t.TempDir()
-	r, err := repo.OpenDefault(dir)
+	r, err := repo.Open(dir, repo.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Alias owners run beyond the first scheduler tick. Remove bundled remote
-	// resources so these real-process fixtures only use loopback networking.
+	// Start from the empty native test repository, never the production template.
 	_, err = r.UpdateSharedTransaction(context.Background(), func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
 		shared.Set("subscriptions", []any{})
 		shared.Set("rule_library", []any{})
@@ -277,6 +292,9 @@ func TestRealSIGTERMServiceShutdown(t *testing.T) {
 			}
 			data, _ := os.ReadFile(filepath.Join(p.dir, "test-events"))
 			text := string(data)
+			if strings.Contains(text, "outbound") {
+				t.Fatalf("unexpected scheduled network attempt: %s", text)
+			}
 			if strings.Index(text, "startup") < 0 || strings.Index(text, "listen") < 0 || strings.Index(text, "startup") > strings.Index(text, "listen") || !strings.Contains(text, "first") {
 				t.Fatalf("startup/flush order: %s", text)
 			}
@@ -335,7 +353,7 @@ func TestPythonLifetimeLocksRejectServerBeforeRepositoryOpen(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	probe, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	probe, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	_, expected := instance.Acquire(probe, dir)
 	if !errors.Is(expected, instance.ErrInUse) {
@@ -373,7 +391,7 @@ func TestMainRejectsDataDirectoryAliases(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			probe, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+			probe, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 			_, expected := instance.Acquire(probe, first.dir)
 			cancel()
 			if !errors.Is(expected, instance.ErrInUse) {
@@ -397,6 +415,48 @@ func TestMainRejectsDataDirectoryAliases(t *testing.T) {
 				t.Fatal(err)
 			}
 			first.wait(t)
+			outbound, err := os.ReadFile(filepath.Join(first.dir, "test-outbound"))
+			if err != nil || string(outbound) != "0" {
+				t.Fatalf("scheduled requests during the 30s ownership window: count=%q err=%v", outbound, err)
+			}
 		})
+	}
+}
+
+// The only remote scheduler eligible in the 30s ownership window is refresh.
+// Record and refuse all of its I/O boundaries, without changing its real clock.
+func schedulerObserver(record func()) *refresh.Env {
+	env := refresh.DefaultEnv()
+	env.FetchSubscription = func(context.Context, string, string, substore.FetchOptions) (*substore.SubscriptionResult, error) {
+		record()
+		return nil, errors.New("scheduled subscription request blocked by test observer")
+	}
+	env.RuleClient = &rulefetch.Client{Transport: blockedRuleRequests{record}, Sleep: func(time.Duration) {}}
+	env.HTTP = blockedUserinfoRequests{record}
+	return env
+}
+
+type blockedRuleRequests struct{ record func() }
+
+func (b blockedRuleRequests) Do(context.Context, rulefetch.TransportRequest) (*rulefetch.Response, error) {
+	b.record()
+	return nil, errors.New("scheduled rule request blocked by test observer")
+}
+
+type blockedUserinfoRequests struct{ record func() }
+
+func (b blockedUserinfoRequests) Do(context.Context, *substore.Request) (*substore.Response, error) {
+	b.record()
+	return nil, errors.New("scheduled userinfo request blocked by test observer")
+}
+
+func TestSchedulerObserverDetectsEveryDownloadBoundary(t *testing.T) {
+	count := 0
+	env := schedulerObserver(func() { count++ })
+	_, subErr := env.FetchSubscription(context.Background(), "edge", "http://example.com/disabled", substore.FetchOptions{})
+	_, ruleErr := env.RuleClient.Transport.Do(context.Background(), rulefetch.TransportRequest{URL: "http://example.com/disabled"})
+	_, infoErr := env.HTTP.Do(context.Background(), &substore.Request{URL: "http://example.com/disabled"})
+	if count != 3 || subErr == nil || ruleErr == nil || infoErr == nil {
+		t.Fatalf("observer missed network boundary: %d %v %v %v", count, subErr, ruleErr, infoErr)
 	}
 }

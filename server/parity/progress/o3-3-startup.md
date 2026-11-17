@@ -90,3 +90,22 @@ Final full rerun follows this fixture isolation adjustment.
 
 After rebasing, main's recovery logger and the no-remote-resource fixture adjustment compile and
 pass .63 vet/focused tests (cmd.020s, repo.059s). Final post-alias-fix acceptance starts now.
+
+Post-alias-fix full attempt: required race packages and repo pass, but cmd's new fixture resource
+removal correctly hit repository reference protection (default profile still references subscribe).
+Fixture now retains IDs, disables entries and clears URLs. No product reference guard changed.
+Probe deadlines are 100ms rather than 1ms to avoid scheduler-dependent pre-expired probes. Recheck
+all real main scenarios before restarting the complete gate sequence.
+
+Coordinator approved a fresh empty fixture via repo.Open(Options{}), explicit empty resources and
+synthetic Agent, read later by the real child OpenDefault. Added a recording/refusing refresh.Env
+covering subscription, rule and userinfo I/O; the real clock and loop delays are unchanged. Alias
+owner asserts zero outbound attempts after its actual 30s exclusion window; a positive test proves
+all three observer boundaries detect an attempt. Parent also rejects any outbound trace in signal
+scenarios. The two failed resource-edit attempts are test setup errors, not product guard changes.
+New coordinator session: bb75f5c0-8c87-410c-84cd-20801944f7e0; task scope is unchanged.
+
+Approved empty fixture + observer passes full real-main .32 race: cmd105.006s, idle1.048s,
+publish1.087s, blocked drain7.010s, force exit1.060s; Python lifetime lock rejection30.16s;
+home and symlink server rejection31.43s/31.44s with outbound count 0. Observer positive test passes.
+No product guard or loop timing was changed to resolve the fixture failures. Full final gates restart now.
