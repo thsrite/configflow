@@ -84,6 +84,16 @@ class ComparatorTests(unittest.TestCase):
         transport_only = {'x-configflow-profile': 'one', 'etag': '"a"', 'date': 'd2', 'server': 'go', 'content-length': '3'}
         self.assertEqual([], pd.response_diffs(left, reply(b'{}', headers=transport_only), '/synthetic', []))
 
+    def test_provider_stale_header_and_body_are_still_compared(self):
+        stale = reply(b'proxies: [{name: One}, {name: Two}]\n', 'text/yaml',
+                      headers={'x-configflow-provider': 'last-good'})
+        fresh = reply(b'proxies: [{name: One}]\n', 'text/yaml')
+        for route in ('/api/aggregations/<agg_id>/provider',
+                      '/api/profiles/<profile_id>/aggregations/<agg_id>/provider'):
+            differences = pd.response_diffs(stale, fresh, route, [])
+            self.assertIn(('header.X-ConfigFlow-Provider', 'missing-in-go'), differences)
+            self.assertIn(('body.proxies', 'length'), differences)
+
     def test_structural_formats(self):
         cases = [
             (reply(b'{"b":2,"a":1}'), reply(b'{"a":1,"b":2}'), '/synthetic'),

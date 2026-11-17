@@ -8,9 +8,14 @@ import (
 	"strings"
 
 	"configflow/internal/httpx"
+	"configflow/internal/provider"
 )
 
 func writeTestManifest(app *httpx.App) error {
+	// Compare completed outputs, not whichever old snapshot a loaded worker
+	// happened to serve after its 12-second client deadline. Flask's launcher
+	// selects the same wait policy; production binaries retain the deadline.
+	provider.SetResponseSeconds(-1)
 	var manifest strings.Builder
 	for _, route := range app.Router.Routes() {
 		for _, method := range route.Methods {

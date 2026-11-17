@@ -258,3 +258,22 @@ C31 removes the temporary aggregation freeze. Both workers now independently ren
 provider with offline fetch and snapshot caches. The former partial Agent case is promoted
 to successful end-to-end generator coverage; the standalone aggregation-provider generator
 also compares real Python/Go output. No frozen fixture bytes are passed between workers.
+
+## Provider 响应预算与负载隔离
+
+普通服务的 Mihomo provider 保持 12 秒 last-good 降级：慢渲染返回旧 YAML 和
+`X-ConfigFlow-Provider: last-good`，后台继续刷新；没有旧内容则一直等待。
+这不是固定的生成结果：相同输入在两端渲染速度不同的情况下，一端可返回旧文件，另一端已返回新文件。
+
+生产快照比较专门等待两端完成生成。`flask_worker.py` 的 `provider_policy.wait_for_fresh_provider`
+把 Python future 的等待预算设为 `None`；Go 仅在 `configflow_proddiff` 构建的启动钩子中设置
+`provider.SetResponseSeconds(-1)`。两端仍通过原 provider HTTP 入口生成、校验、提交并保存 last-good，
+没有复制缓存给另一端，也没有更改 body、header、比较规则或 baseline。HTTP 传输重试和最终失败门禁仍然有效。
+普通 Go 构建不调用这个钩子，12 秒生产行为不变。
+
+`internal/provider/difftest/TestSlowProviderParity` 对两个 provider 路径比较真实 Python：
+生产默认预算的慢渲染必须带 last-good header 并返回旧 body；比较模式必须等到新 body，且仍保存新产物。
+生产测试使用同步屏障和真正的 12 秒预算，不用短超时模拟。
+`cmd/configflow/TestProddiffWaitsForFreshProvider`（`-tags configflow_proddiff`）验证启动钩子；
+比较器负向测试仍要求旧 header 和 proxies 长度差异报错。根因、负载复现和命令见
+[复核记录](../../parity/fix-agg-provider-load.md)。

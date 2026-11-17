@@ -43,7 +43,8 @@ var (
 )
 
 // SetResponseSeconds replaces RESPONSE_SECONDS (tests); it returns a
-// restore function.
+// restore function. A negative value waits for completed rendering without
+// a deadline; successful responses are still saved as last-good content.
 func SetResponseSeconds(seconds float64) (restore func()) {
 	settingsMu.Lock()
 	previous := responseSeconds
@@ -171,7 +172,7 @@ func ServeProvider(c *httpx.Ctx, kind, itemID, profileID string, configData any,
 func awaitResponse(ctx context.Context, source clock.Clock, result <-chan lockx.Result[*responseCopy], fallback bool, profileID, kind, itemID string) (*httpx.Response, error) {
 	var timeout <-chan time.Time
 	seconds := currentResponseSeconds()
-	if fallback {
+	if fallback && seconds >= 0 {
 		timer := source.NewTimer(time.Duration(seconds * float64(time.Second)))
 		defer timer.Stop()
 		timeout = timer.C()

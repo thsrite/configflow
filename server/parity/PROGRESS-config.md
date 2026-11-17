@@ -1875,6 +1875,8 @@ Notes boundary: `devicenotes/difftest.TestDeviceNotesBoundary` drives all stored
 
 Final: gofmt/vet, all changed-package race, full ordinary suite (80 tested packages), all 12 enabled difftest packages, both 60s fuzz targets and proddiff pass. New=0 stale=0, aggregation-provider 2/2, independent Agent bundle 3/3 (no partial). No A11 diagnostic deferral remains. No remaining C31 route/feature work. Independent adversarial review completed on `go-review-c31`: one high (owner shutdown cancellation) and one low (Unicode note revision) finding fixed, zero open. Final .32 gofmt/vet, changed-package/provider race, full suite (80 tested packages), all 12 enabled difftests, both 60s fuzz targets and proddiff passed; aggregation 2/2, Agent bundle 3/3, no partial, new=0 stale=0. Findings, exact commands/output and hand-back: [review-c31.md](review-c31.md). Chinese findings, exact commands/output and commits: [C31-HANDOFF.md](C31-HANDOFF.md).
 
+Load-stability follow-up (`go-fix-agg-provider-load`, based on O3-5): old 65c0e6d4 also reproduces stale/fresh response timing differences under a one-CPU limit; no introduced provider semantic regression. Proddiff now waits for completed provider rendering on both sides, while production keeps the same 12-second last-good behavior. Real Python production/fresh-mode header/body regressions, unchanged strict comparator controls, .64 full gate (`-p 4`, 87 race packages, 13 enabled difftests, two 60s fuzz targets) and single-CPU proddiff pass. Concurrent gate proddiff at load 42.70 to 35.94: new=0 stale=0, aggregation 2/2, bundle 3/3, no partial. Full evidence: [fix-agg-provider-load.md](fix-agg-provider-load.md).
+
 ## C32 — rule routes
 
 **Status: `missing`** · prereqs: C09, C14, C27 · Go: internal/api/rules (new)

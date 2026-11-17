@@ -33,6 +33,8 @@ for module, name in STARTERS:
     setattr(importlib.import_module(module), name, lambda *args, **kwargs: None)
 from backend.utils.sub_store_runtime import runtime
 runtime.start_monitor = lambda: None
+from provider_policy import wait_for_fresh_provider
+wait_for_fresh_provider()
 from backend.app import app
 Path(os.environ['PRODDIFF_PY_LOOPS']).write_text('\n'.join(m + '.' + n for m, n in STARTERS) + '\nsub-store-idle\n')
 Path(os.environ['PRODDIFF_PY_ROUTES']).write_text(''.join(
