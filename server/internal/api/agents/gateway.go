@@ -101,7 +101,10 @@ func gatewayForwarding(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	if c.Request.Method == http.MethodGet {
+	// HEAD is served by this GET route and stays read-only. Python took every
+	// method but GET as the POST branch, so a HEAD with a JSON body persisted
+	// forwarding on the device (A20 review).
+	if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead {
 		entries := []host.ForwardingEntry{}
 		for _, link := range linked {
 			entry, err := bridge.Forwarding(c.Context(), link.AgentID, link.Routers)
