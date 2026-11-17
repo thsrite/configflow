@@ -1,11 +1,12 @@
 package discovery
 
 import (
-	"configflow/internal/yamlx/yamltest"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"configflow/internal/yamlx/yamltest"
 )
 
 func TestN73CustomPortYAMLGraphs(t *testing.T) {

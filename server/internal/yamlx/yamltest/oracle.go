@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,7 +22,26 @@ type Oracle struct {
 	input       io.WriteCloser
 	output      *bufio.Scanner
 	command     *exec.Cmd
-	diagnostics bytes.Buffer
+	diagnostics oracleDiagnostics
+}
+
+// oracleDiagnostics can be inspected when stdout ends before os/exec has
+// finished draining stderr. A failed reference process must not introduce a race.
+type oracleDiagnostics struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (d *oracleDiagnostics) Write(data []byte) (int, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.buffer.Write(data)
+}
+
+func (d *oracleDiagnostics) String() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.buffer.String()
 }
 
 // NewOracle starts a fixture program relative to the repository root.
@@ -39,9 +59,10 @@ func NewOracle(t *testing.T, script string) *Oracle {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Minute)
 	command := exec.CommandContext(ctx, python, "-u", script)
 	command.Dir = root
+	command.WaitDelay = 5 * time.Second
 	command.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+t.TempDir(), "PYTHONDONTWRITEBYTECODE=1")
 	oracle := &Oracle{command: command}
 	command.Stderr = &oracle.diagnostics

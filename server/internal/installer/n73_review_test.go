@@ -1,8 +1,9 @@
 package installer
 
 import (
-	"configflow/internal/jsonx"
 	"testing"
+
+	"configflow/internal/jsonx"
 )
 
 func TestN73ComposeHashOnlyReviewCases(t *testing.T) {

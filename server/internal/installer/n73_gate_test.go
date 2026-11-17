@@ -1,9 +1,10 @@
 package installer
 
 import (
-	"configflow/internal/yamlx/yamltest"
 	"strings"
 	"testing"
+
+	"configflow/internal/yamlx/yamltest"
 )
 
 func TestN73ComposeReaderMigrationGate(t *testing.T) {

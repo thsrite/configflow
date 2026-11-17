@@ -22,6 +22,7 @@ import (
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
 	"configflow/internal/yamlx"
+
 	"gopkg.in/yaml.v3"
 )
 

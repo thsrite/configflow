@@ -1,10 +1,11 @@
 package mosdns
 
 import (
-	"configflow/internal/jsonx"
-	"configflow/internal/yamlx"
 	"errors"
 	"testing"
+
+	"configflow/internal/jsonx"
+	"configflow/internal/yamlx"
 )
 
 func TestN73YAMLOnlyValuesRemainNodes(t *testing.T) {

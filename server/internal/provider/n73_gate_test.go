@@ -1,8 +1,9 @@
 package provider
 
 import (
-	"configflow/internal/yamlx/yamltest"
 	"testing"
+
+	"configflow/internal/yamlx/yamltest"
 )
 
 func TestN73ProviderReaderMigrationGate(t *testing.T) {

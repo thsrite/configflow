@@ -1,8 +1,9 @@
 package routers
 
 import (
-	"configflow/internal/yamlx/yamltest"
 	"testing"
+
+	"configflow/internal/yamlx/yamltest"
 )
 
 func TestN73DesiredReaderMigrationGate(t *testing.T) {

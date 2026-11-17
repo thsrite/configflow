@@ -1,13 +1,14 @@
 package mosdns
 
 import (
+	"errors"
 	"strings"
 
 	"configflow/internal/convert"
 	"configflow/internal/pystr"
 	"configflow/internal/rules"
 	"configflow/internal/yamlx"
-	"errors"
+
 	"gopkg.in/yaml.v3"
 )
 

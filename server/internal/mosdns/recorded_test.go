@@ -1,10 +1,11 @@
 package mosdns
 
 import (
-	"configflow/internal/yamlx/yamltest"
 	"fmt"
 	"strings"
 	"testing"
+
+	"configflow/internal/yamlx/yamltest"
 )
 
 // TestRecordedPythonTests replays every top-level call of the MosDNS

@@ -1,12 +1,13 @@
 package mosdns
 
 import (
-	"configflow/internal/jsonx"
-	"configflow/internal/rules"
-	"configflow/internal/yamlx/yamltest"
 	"os"
 	"strings"
 	"testing"
+
+	"configflow/internal/jsonx"
+	"configflow/internal/rules"
+	"configflow/internal/yamlx/yamltest"
 )
 
 func TestN73MosDNSReaderMigrationGate(t *testing.T) {
