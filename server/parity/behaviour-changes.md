@@ -1,5 +1,18 @@
 # Deliberate behaviour changes
 
+## R09 — 强制 DNS 的归属保护（Python bug 修正）
+
+- 路由器上存在未登记归属、注释为 `cf-dnsguard:hijack` 的 NAT（不论 chain、端口、是否 disabled，
+  也不论是否开启「OxiDNS 故障时自动暂停」）时，启用或更新强制 DNS 的预览变为「未知」并说明原因，
+  不生成写入；撤销不受影响。Python 不阻断，Netwatch 会按注释一并启停这些规则。**用户可见：**
+  由 Python 发布过、且路由器上已有这类规则的设备，升级后第一次检查会从「一致」变为该提示，
+  需要先修改那条规则的注释。
+- 预览后出现的保留名称对象、同注释 NAT、更靠前的 53 规则，或受管对象被改动，发布时写前拒绝并要求
+  重新预览；删除前按发布记录的证明比较，被改过的对象保留现场（Python 会删除或吸收中途修改）。
+- 回滚按「表 + ID」重映射恢复后的新 ID（Python 只按 ID，可能跨表混淆）；内部回滚只完成一部分时，
+  已成功恢复的对象仍登记为 ConfigFlow 所有（Python 会把它们变成无归属对象，阻断之后的每次预览）。
+- 见 [R09 复核](review-r09.md) 与 [R09 移植报告](progress/R09-dns-guard.md)。
+
 ## A24 review — public Agent/deployment credential safety
 
 复核按任务要求修复 Python 原版同样存在的泄露：旧/导入 Agent 与部署记录中的

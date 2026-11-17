@@ -606,7 +606,9 @@ and the L5 lab items above. R12/R15 own their separately listed route/release in
 
 ## R09 — forced DNS (DNS guard), IPv4 same-port forward hint
 
-**Status: `ported`** · HR · prereqs: R04, R07 · Go: internal/routers
+**Status: `verified`** (Opus HR review 2026-11-18, [review-r09.md](review-r09.md): 0 high, 1 medium fixed in
+`b3e93b5c`, 5 low; Netwatch comment selector ruled: keep it with the existing preflight/inspection block, none of
+the three alternatives; gate PASS on `.64 -p 6`) · HR · prereqs: R04, R07 · Go: internal/routers · L5-C items added
 
 Scope: `backend/routers/dns_guard.py` (589), `forward_hint.py` (184), latest upstream
 `2a8cb64c` / PR #572 incremental publication. No new route or UI entry. Existing R01
