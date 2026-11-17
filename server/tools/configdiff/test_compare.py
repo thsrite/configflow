@@ -17,6 +17,21 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_agent_fake_records_every_write_verb_and_no_request_observer_detects_push(self):
+        from agent_fake import Agent, NoRequests
+        from harness import send
+        with Agent(lambda request, index: (200, {'success': True})) as agent:
+            agent.release.set()
+            for method in ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'):
+                self.assertEqual(send('http://127.0.0.1:' + str(agent.port), method, '/synthetic-push',
+                                      body=b'{}' if method != 'HEAD' else None).status, 200)
+            self.assertEqual([row['method'] for row in agent.snapshot()], ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'])
+        fakes = [SimpleNamespace(snapshot=lambda: [], errors=[]), SimpleNamespace(snapshot=lambda: [{'method': 'PUT'}], errors=[])]
+        observer = NoRequests(fakes, wait_seconds=0)
+        observer.after(0, None)
+        observer.after(1, None)
+        self.assertTrue(observer.compare(Policy()))
+
     def test_selector_defaults_are_semantic_but_editable_text_and_types_are_preserved(self):
         from cases.profile_reads import project
         parse = project('GET /api/custom-config/mihomo')

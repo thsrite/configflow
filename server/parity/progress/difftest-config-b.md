@@ -1027,3 +1027,20 @@ Ran 51 tests; OK
 ```
 
 继续写入入口P边界、custom-config业务用例、website跨空间busy/真实Agent超时、H064与其余R/H/T；未做最终全量。
+
+## 批次 58：补custom-config P3与在线Agent无推送观察
+
+- 复核已有custom-config基本/合并/64KiB/坏JSON/存储故障/legacy native隔离用例后，只补缺口，未重复宣称全部新实现。五种编辑器各新增P3有效写入：query default覆盖header other，仍精确检查选中字段及另一profile不变；原P4–P6保持原编号/variant。
+- 每种编辑器启动独立fake Agent，真实授权heartbeat证明在线后再保存草稿。fake记录GET/POST/PUT/PATCH/DELETE/HEAD全部方法，不漏掉PUT发布。最后读取等待6秒，覆盖Python rule-sync的5秒扫描周期；源端整个fixture零Agent HTTP请求/错误，说明默认后台约定下保存草稿不发布。这里是有界观察窗，不宣称无限时长或启用其他同步功能后的行为。
+- Agent端口分别分配，两端只在DB Agent.port与公开Mihomo reserved_ports[0].port精确映射已分配整数；owner/其他字段和未知端口继续比较。生成default_config复用语义投影，编辑原文保留；新增真实fake各HTTP方法与故意Go PUT破坏无请求期望的自检，52项通过。
+- 20新增变体：5条X08在线前置实际Go比较通过、15编辑/读取入口尚未接通；新增5个原P3写入B编号。原失败/完整DB/files/publish guard检查重跑通过，无新业务差异。在线heartbeat作为X08唯一明确的非config公开协议前置，不改变228路由分母。
+
+```text
+.63 run.py --groups custom-config-basic,custom-config-selectors,custom-config-failures
+current compared=5 go-unimplemented=106 design_errors=[] seconds=57.71
+cumulative compared=1980 go-unimplemented=5231 dependency=37 different=67 O12-separate=1
+request_variants=7316 named_matrix_cases=3666（S562 F2479 B625），H去重253，G去重16
+52 self-checks + end-to-end wrong-Go-response check OK
+```
+
+继续其余写入P边界、website跨空间busy/真实Agent超时、H064及其余R/H/T；仍未最终全量。

@@ -3,6 +3,10 @@ import copy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import threading
+import time
+
+from compare import differences
+from harness import DesignError
 
 from seed import AGENT
 
@@ -76,11 +80,12 @@ class Agent:
                 self.send_header('Content-Length', str(len(content)))
                 self.end_headers()
                 try:
-                    self.wfile.write(content)
+                    if self.command != 'HEAD':
+                        self.wfile.write(content)
                 except (BrokenPipeError, ConnectionResetError):
                     owner.errors.append('panel disconnected before fake reply')
 
-            do_POST = do_GET = request
+            do_POST = do_GET = do_PUT = do_PATCH = do_DELETE = do_HEAD = request
 
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -99,3 +104,22 @@ class Agent:
         self.server.shutdown()
         self.server.server_close()
         self.thread.join()
+
+
+class NoRequests:
+    """Observe the entire fixture; a six-second window includes a 5s scan."""
+    def __init__(self, agents, wait_seconds=6):
+        self.agents, self.wait_seconds = agents, wait_seconds
+        self.observed = [None, None]
+
+    def before(self, index):
+        pass
+
+    def after(self, index, reply):
+        time.sleep(self.wait_seconds)
+        self.observed[index] = {'requests': self.agents[index].snapshot(), 'errors': list(self.agents[index].errors)}
+        if index == 0 and (self.observed[0]['requests'] or self.observed[0]['errors']):
+            raise DesignError('Python draft save unexpectedly contacted Agent: ' + repr(self.observed[0]))
+
+    def compare(self, policy):
+        return differences(*self.observed, 'agent.no-unsolicited-requests', policy)

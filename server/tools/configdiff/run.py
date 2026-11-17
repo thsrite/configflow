@@ -217,6 +217,7 @@ def main():
         auxiliary = r['case'] == 'G16' and r['route'] == 'POST /api/agents/<agent_id>/traffic-report'
         auxiliary |= r['case'] == 'T20' and r['route'] in {
             'POST /api/agents/<agent_id>/heartbeat', 'POST /api/agents/<agent_id>/traffic-report'}
+        auxiliary |= r['case'] == 'X08' and r['route'] == 'POST /api/agents/<agent_id>/heartbeat'
         if r['route'] != 'startup' and r['route'] not in matrix and not auxiliary:
             errors.append({'group': 'inventory', 'error': 'case names unknown route: ' + r['route']})
     previous = json.loads(args.output.read_text()).get('results', []) if args.output.exists() else []

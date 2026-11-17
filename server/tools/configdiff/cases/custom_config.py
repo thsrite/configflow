@@ -4,9 +4,12 @@ import json
 
 from compare import database
 from harness import Pair, DesignError, json_body
+from agent_fake import Agent, NoRequests
+from seed import AGENT
 from publish import check as guard_check, capture as guard_capture
 from cases.helpers import profile_capture, profile_policy, deny_writes, exception_policy
 from cases.config_backup import message
+from cases.profile_reads import project
 
 IDS = {'loon': (35, 36), 'mihomo': (37, 38), 'mosdns': (39, 40), 'oxidns': (41, 42), 'surge': (43, 44)}
 TEXTS = {'loon': '# 中文🧪\n[General]\nloglevel = notify\n', 'mihomo': '# 中文🧪\nipv6: true\ndns:\n  ipv6: false\n',
@@ -43,15 +46,23 @@ def save(pair, service, case, data, *, path=None, headers=None, variant='', prof
 
 def basic(binary, recorder):
     for service, (read_id, write_id) in IDS.items():
-        with Pair(binary, recorder) as pair:
+        responder = lambda request, index: (200, {'success': True})
+        with Agent(responder) as left, Agent(responder) as right, Pair(binary, recorder, options={
+                'agent_port_pairs': {'agent-synthetic': [left.port, right.port]}}) as pair:
+            left.release.set()
+            right.release.set()
+            pair.request('X08', 'POST /api/agents/<agent_id>/heartbeat', '/api/agents/agent-synthetic/heartbeat',
+                         body=json_body({'version': '1.8.60-go', 'service_status': 'running'}), auth=AGENT,
+                         expect=200, writes=True, variant='custom-' + service + '/online-before-draft')
             capture = setup(pair)
+            pair.policy.allocated_ports['body.base_settings.reserved_ports[0].port'] = (left.port, right.port)
             route = 'GET /api/custom-config/' + service
-            pair.request(f'R{read_id:03}-S01', route, expect=200, writes=True, capture=capture)
+            pair.request(f'R{read_id:03}-S01', route, expect=200, writes=True, capture=capture, projection=project(route))
             save(pair, service, 'S01', {'config': TEXTS[service]})
-            pair.request(f'R{read_id:03}-S02', route, expect=200, writes=True, capture=capture)
+            pair.request(f'R{read_id:03}-S02', route, expect=200, writes=True, capture=capture, projection=project(route))
             save(pair, service, 'B01' if service in ('loon', 'mihomo', 'surge') else 'S02',
                  {'smart_groups': []} if service == 'surge' else {'config': ''}, variant='clear')
-            pair.request(f'R{read_id:03}-B01', route, expect=200, writes=True, capture=capture)
+            pair.request(f'R{read_id:03}-B01', route, expect=200, writes=True, capture=capture, projection=project(route))
             if service == 'loon':
                 save(pair, service, 'S02', {})
                 save(pair, service, 'B02', {'config': TEXTS[service]})
@@ -75,6 +86,8 @@ def basic(binary, recorder):
                 save(pair, service, 'B02', {'config': None})
             # Long text is not assigned an invented limit. Generation is a separate step.
             save(pair, service, 'S01', {'config': '# 中文🧪' + 'x' * 65536 + '\n'}, variant='64KiB')
+            pair.request(f'R{read_id:03}-S02', route, expect=200, writes=True, capture=capture, projection=project(route),
+                         interaction=NoRequests([left, right]), variant='online-agent/no-push-6-seconds')
 
 
 def selectors(binary, recorder):
@@ -82,18 +95,19 @@ def selectors(binary, recorder):
         with Pair(binary, recorder, options={'profile': {service: {'custom_config': '# default\n'}},
                                            'other_profile': {service: {'custom_config': '# other\n'}}}) as pair:
             setup(pair)
-            first = 6 if service == 'mihomo' else 3 if service == 'mosdns' else 4
+            first = 5 if service == 'mihomo' else 2 if service == 'mosdns' else 3
             for offset, (query, headers, profile) in enumerate([
+                ('?profile=default', {'X-ConfigFlow-Profile': 'other'}, 'default'),
                 ('?profile=default&profile_id=other', {'X-ConfigFlow-Profile': 'other'}, 'default'),
                 ('', {'X-ConfigFlow-Profile': 'other'}, 'other'), ('', {'X-ConfigFlow-Profile': None}, 'default')]):
                 base = '/api/custom-config/' + service
                 def check(reply):
                     if reply.json()['config'] != database(pair.dirs[0])['fields']['profile/' + profile + '/' + service]['value']['custom_config']:
                         raise DesignError('Python custom selector resolved another profile')
-                pair.request(f'R{read_id:03}-B{3 + offset:02}', 'GET ' + base, base + query,
-                             expect=200, headers=headers, check=check, writes=True)
+                pair.request(f'R{read_id:03}-B{2 + offset:02}', 'GET ' + base, base + query,
+                             expect=200, headers=headers, check=check, writes=True, projection=project('GET ' + base))
                 save(pair, service, f'B{first + offset:02}', {'config': '# selector ' + profile + '\n'},
-                     path=base + query, headers=headers, profile=profile, variant='P' + str(offset + 4))
+                     path=base + query, headers=headers, profile=profile, variant='P' + str(offset + 3))
 
 
 def wrappers_and_failures(binary, recorder):
