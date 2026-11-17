@@ -35,7 +35,6 @@ import (
 	"time"
 
 	"configflow/internal/jsonresp"
-	"configflow/internal/jsonx"
 	"configflow/internal/weburl"
 )
 
@@ -238,13 +237,13 @@ func prepare(r Request, method string) (*preparedRequest, error) {
 	}
 	u, err := weburl.Prepare(strings.TrimLeft(r.URL, " \t\n\r\v\f"), params)
 	if err != nil {
-		return nil, fmt.Errorf("Invalid URL %s: %w", jsonx.Repr(r.URL), err)
+		return nil, fmt.Errorf("Invalid URL %q: %w", r.URL, err)
 	}
 	if u.Scheme == "" {
-		return nil, fmt.Errorf("Invalid URL %s: No scheme supplied. Perhaps you meant https://%s?", jsonx.Repr(r.URL), r.URL)
+		return nil, fmt.Errorf("Invalid URL %q: No scheme supplied. Perhaps you meant https://%s?", r.URL, r.URL)
 	}
 	if u.Host == "" {
-		return nil, fmt.Errorf("Invalid URL %s: No host supplied", jsonx.Repr(r.URL))
+		return nil, fmt.Errorf("Invalid URL %q: No host supplied", r.URL)
 	}
 	prepared := &preparedRequest{scheme: u.Scheme, host: u.Host, path: u.EscapedPath(), dispatchPath: u.Path, query: u.RawQuery, header: http.Header{}}
 	for key, values := range r.Headers {
