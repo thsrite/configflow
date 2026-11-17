@@ -119,16 +119,17 @@ func TestModelR5StoredValuesLoadWriteValidationRepairs(t *testing.T) {
 			func(r *Repository) error { _, _, err := r.UpdateProfileTransaction(bg, "default", noop); return err }, `1`},
 		{"integral float revision", "_revision", `60.0`, false, 60, "默认配置", "",
 			func(r *Repository) error { _, _, err := r.UpdateProfileTransaction(bg, "default", noop); return err }, `61`},
+		// 60.5 is not an integer (R8): it reads as 0, so the repair stores 1.
 		{"fractional revision", "_revision", `60.5`, true, 0, "默认配置", "配置修订号无效",
-			func(r *Repository) error { _, _, err := r.UpdateProfileTransaction(bg, "default", noop); return err }, `61`},
+			func(r *Repository) error { _, _, err := r.UpdateProfileTransaction(bg, "default", noop); return err }, `1`},
 		{"numeric name", "name", `7`, true, 0, "", "配置名称不能为空",
 			func(r *Repository) error {
-				_, err := r.UpdateProfile(bg, "default", jsonx.Obj("name", "fixed"))
+				_, err := r.UpdateProfileMetadata(bg, "default", jsonx.Obj("name", "fixed"))
 				return err
 			}, `"fixed"`},
 		{"empty name", "name", `""`, false, 0, "", "配置名称不能为空",
 			func(r *Repository) error {
-				_, err := r.UpdateProfile(bg, "default", jsonx.Obj("name", "fixed"))
+				_, err := r.UpdateProfileMetadata(bg, "default", jsonx.Obj("name", "fixed"))
 				return err
 			}, `"fixed"`},
 	}

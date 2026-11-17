@@ -284,12 +284,26 @@ func TestReferencePruneRuleDNS(t *testing.T) {
 }
 
 func TestReferenceResourceUsage(t *testing.T) {
-	for _, item := range refLoad(t).GetList("resource_usage") {
+	// Usages read names by type (R5): a null name shows the id, where
+	// Python passed the stored null on.
+	goAnswers := map[int]string{
+		6: `[{"kind":"aggregation","id":"g1","name":"g1"},{"kind":"profile","id":"default","name":"默认配置","profile_id":"default","profile_name":"默认配置"}]`,
+	}
+	for index, item := range refLoad(t).GetList("resource_usage") {
 		record := item.(*jsonx.Object)
 		document := refBase(t)
 		refPatch(t, document, record.GetList("patch"))
-		usages, err := resourceUsage(document, record.GetString("kind"), record.GetString("id"))
-		refOutcome(t, record.GetString("kind")+"/"+record.GetString("id"), record, usages, err)
+		typed := must(modelFromLegacy(document, nil))(t)
+		label := record.GetString("kind") + "/" + record.GetString("id")
+		usages, err := resourceUsage(typed, record.GetString("kind"), record.GetString("id"))
+		if answer, changed := goAnswers[index]; changed {
+			noError(t, err)
+			if got := refText(t, usages); got != answer || got == refText(t, record.Value("result")) {
+				t.Errorf("%s: go %s", label, got)
+			}
+			continue
+		}
+		refOutcome(t, label, record, usages, err)
 	}
 }
 

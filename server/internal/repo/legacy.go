@@ -156,3 +156,122 @@ func threeWayMerge(current, baseline, proposed any) (any, error) {
 	}
 	return jsonx.Parse(merged)
 }
+
+// legacyValue is a model value in its jsonx form.
+func legacyValue(value any) (any, error) {
+	data, err := model.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	return jsonx.Parse(data)
+}
+
+// legacyObject is a model record (or Config) as a *jsonx.Object.
+func legacyObject(value any) (*jsonx.Object, error) {
+	converted, err := legacyValue(value)
+	if err != nil {
+		return nil, err
+	}
+	object, ok := jsonx.AsObject(converted)
+	if !ok {
+		return nil, &store.Error{Kind: store.ErrDocument, Message: msgStoreDocumentObject}
+	}
+	return object, nil
+}
+
+// sameLegacy reports whether two jsonx values encode identically (member
+// order and number text included).
+func sameLegacy(a, b any) bool {
+	left, err := jsonx.Compact(a)
+	if err != nil {
+		return false
+	}
+	right, err := jsonx.Compact(b)
+	return err == nil && string(left) == string(right)
+}
+
+// setChanged stores the members of updated named in keys that differ from
+// view (the value a legacy updater was handed) through set, as stored JSON
+// (SetMemberJSON): members the updater did not change keep their stored bytes,
+// and a value of the wrong shape is kept for write validation to refuse.
+func setChanged(keys []string, view, updated *jsonx.Object, set func(member string, data json.RawMessage) error) error {
+	for _, key := range keys {
+		value, ok := updated.Get(key)
+		if !ok {
+			continue
+		}
+		if before, had := view.Get(key); had && sameLegacy(before, value) {
+			continue
+		}
+		data, err := jsonx.Compact(value)
+		if err != nil {
+			return err
+		}
+		if err := set(key, data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// setLegacy stores a jsonx value as a record member (SetMemberJSON).
+func setLegacy(set func(member string, data json.RawMessage) error, member string, value any) error {
+	data, err := jsonx.Compact(value)
+	if err != nil {
+		return err
+	}
+	return set(member, data)
+}
+
+// legacyConfig is the jsonx compat view of a profile in a typed document.
+func legacyConfig(document *model.Document, profileID string, roots ResourceRoots, agents bool) (*jsonx.Object, error) {
+	config, err := resolveConfig(document, profileID, roots, agents)
+	if err != nil {
+		return nil, err
+	}
+	return legacyObject(config)
+}
+
+// updateProfileLegacy runs a legacy Updater, which edits the compat view, as
+// a profile update: the ProfileFields it changed are stored.
+func updateProfileLegacy(ctx context.Context, document *model.Document, profileID string, updater Updater) (*model.Profile, error) {
+	return updateProfileIn(document, profileID, func(p *model.Profile) error {
+		view, err := legacyConfig(document, profileID, nil, true)
+		if err != nil {
+			return err
+		}
+		original := view.DeepCopy()
+		updated, err := applyUpdater(ctx, view, updater)
+		if err != nil {
+			return err
+		}
+		return setChanged(ProfileFields, original, updated, p.SetJSON)
+	})
+}
+
+// applySharedLegacy runs a legacy Updater, which edits a copy of the shared
+// section, as a shared update: the SharedFields it changed are stored.
+func applySharedLegacy(ctx context.Context, document *model.Document, updater Updater) (*model.Shared, error) {
+	return applySharedIn(document, func(s *model.Shared) error {
+		view, err := legacyObject(s)
+		if err != nil {
+			return err
+		}
+		original := view.DeepCopy()
+		updated, err := applyUpdater(ctx, view, updater)
+		if err != nil {
+			return err
+		}
+		return setChanged(SharedFields, original, updated, s.SetJSON)
+	})
+}
+
+// nodeRawDialer is dialer_references.raw_dialer of a typed node, through
+// the jsonx converter until convert reads typed nodes (N8-8a).
+func nodeRawDialer(node *model.Node) (any, error) {
+	object, err := legacyObject(node)
+	if err != nil {
+		return nil, err
+	}
+	return rawDialer(object)
+}

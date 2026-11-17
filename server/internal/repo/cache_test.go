@@ -35,7 +35,7 @@ func ccName(t *testing.T, r *Repository) any {
 
 func ccRename(t *testing.T, r *Repository, name string) {
 	t.Helper()
-	must(r.UpdateProfile(bg, "default", jsonx.Obj("name", name)))(t)
+	must(r.UpdateProfileMetadata(bg, "default", jsonx.Obj("name", name)))(t)
 }
 
 func TestUnchangedGettersReadAndValidateOnce(t *testing.T) {
@@ -79,7 +79,10 @@ func TestPublicResultsCannotMutateCachedDocument(t *testing.T) {
 	resolved.GetList("nodes")[0].(*jsonx.Object).Set("name", "Changed")
 	resolved.GetList("rule_configs")[0].(*jsonx.Object).GetObject("library_enabled").Set("custom", []any{"Changed"})
 	usages := must(r.GetResourceUsage(bg, "nodes", "n"))(t)
-	usages[0].(*jsonx.Object).GetObject("name").Set("display", []any{"Changed"})
+	// The aggregation's name is stored with a wrong type: usages read it under
+	// R5 (zero value, so the id is shown) instead of passing the object on.
+	wantEqual(t, usages[0].(*jsonx.Object).Value("name"), "a")
+	usages[0].(*jsonx.Object).Set("name", "Changed")
 	wantEqual(t, must(r.ExportAll(bg, false))(t), before)
 }
 
@@ -125,7 +128,7 @@ func TestCommitDuringReadNeverLabelsOldDocumentAsNew(t *testing.T) {
 		if !started {
 			started = true
 			go func() {
-				_, err := other.UpdateProfile(bg, "default", jsonx.Obj("name", "External"))
+				_, err := other.UpdateProfileMetadata(bg, "default", jsonx.Obj("name", "External"))
 				done <- err
 			}()
 		}
@@ -177,7 +180,7 @@ func TestFailedCommitKeepsDataAndDropsCache(t *testing.T) {
 	fingerprint := must(r.store.Fingerprint())(t)
 	failure := errors.New("injected failure at COMMIT")
 	r.store.BeforeCommit = func() error { return failure }
-	_, err := r.UpdateProfile(bg, "default", jsonx.Obj("name", "Uncommitted"))
+	_, err := r.UpdateProfileMetadata(bg, "default", jsonx.Obj("name", "Uncommitted"))
 	if !errors.Is(err, failure) {
 		t.Fatalf("got %v", err)
 	}

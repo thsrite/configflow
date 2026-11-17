@@ -369,15 +369,15 @@ func GetConfig(ctx context.Context, profileID string) (*jsonx.Object, error) {
 			return cached, nil
 		}
 	}
-	config, source, err := repository.GetCompatConfigWithSource(ctx, resolvedID)
+	config, rebuild, err := repository.compatConfigWithBaseline(ctx, resolvedID)
 	if err != nil || scope == nil {
 		return config, err
 	}
 	entry := baseline{value: config.DeepCopy()}
-	if source != nil {
-		// A committed document is never modified in place: keeping the
-		// reference yields the exact baseline at save time without copying.
-		entry = baseline{build: func() (*jsonx.Object, error) { return repository.CompatConfigFrom(source, resolvedID) }}
+	if rebuild != nil {
+		// A committed generation is never modified in place: keeping it
+		// yields the exact baseline at save time without copying.
+		entry = baseline{build: rebuild}
 	}
 	scope.mu.Lock()
 	defer scope.mu.Unlock()

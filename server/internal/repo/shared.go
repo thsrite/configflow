@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/rules"
 )
 
@@ -120,65 +121,23 @@ func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Obje
 	return rule.DeepCopy(), nil
 }
 
-// applySharedLocked is _apply_shared_locked: apply one shared updater inside
-// an open write transaction. Removing or disabling a resource that is still
-// referenced fails with ErrInUse.
-func (r *Repository) applySharedLocked(ctx context.Context, document *jsonx.Object, updater Updater) (*jsonx.Object, error) {
-	current := document.GetObject("shared")
-	updated, err := applyUpdater(ctx, current.DeepCopy(), updater)
-	if err != nil {
-		return nil, err
-	}
-	proposed := jsonx.NewObject()
-	for _, key := range SharedFields {
-		proposed.Set(key, jsonx.DeepCopy(updated.GetOr(key, current.Value(key))))
-	}
-	for _, kind := range SharedFields {
-		remaining, err := itemsByID(proposed.Value(kind), kind)
-		if err != nil {
-			return nil, err
-		}
-		for _, item := range current.GetList(kind) {
-			resource, _ := jsonx.AsObject(item)
-			id := resource.GetString("id")
-			kept, found := remaining.values[id]
-			disabled := kind != "rule_library" && truthyOr(resource, "enabled", true) && !truthyOr(kept, "enabled", true)
-			if found && !disabled {
-				continue
-			}
-			usages, err := resourceUsage(document, kind, id)
-			if err != nil {
-				return nil, err
-			}
-			if len(usages) > 0 {
-				names := make([]string, len(usages))
-				for index, usage := range usages {
-					names[index] = jsonx.Str(usage.(*jsonx.Object).Value("name"))
-				}
-				return nil, inUse("资源 "+jsonx.Str(resource.GetOr("name", id))+" 仍被引用："+strings.Join(names, "、"), usages...)
-			}
-		}
-	}
-	proposed.Set("_revision", jsonx.Int(revisionOf(current)+1))
-	document.Set("shared", proposed)
-	return proposed, nil
-}
-
 // UpdateSharedTransaction is update_shared_transaction: updater edits a copy
-// of the shared section; the SharedFields of its result are stored and the
+// of the shared section; the SharedFields it changed are stored and the
 // revision advances by one. It returns a copy of the committed section.
 func (r *Repository) UpdateSharedTransaction(ctx context.Context, updater Updater) (*jsonx.Object, error) {
 	ctx = ctxx.Detach(ctx)
 	var proposed *jsonx.Object
-	err := r.update(ctx, writeOptions{}, func(ctx context.Context, document *jsonx.Object) error {
-		var err error
-		proposed, err = r.applySharedLocked(ctx, document, updater)
+	err := r.Update(ctx, func(ctx context.Context, document *model.Document) error {
+		shared, err := applySharedLegacy(ctx, document, updater)
+		if err == nil {
+			proposed, err = legacyObject(shared)
+		}
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	return proposed.DeepCopy(), nil
+	return proposed, nil
 }
 
 // SaveShared is save_shared(snapshot, baseline).
@@ -234,8 +193,20 @@ func Profiles(ids ...string) ProfileSelector {
 func (r *Repository) UpdateSharedAndProfilesTransaction(ctx context.Context, sharedUpdater Updater,
 	profileUpdater ProfileUpdater, profileIDs ProfileSelector) (shared, profiles *jsonx.Object, err error) {
 	ctx = ctxx.Detach(ctx)
-	err = r.update(ctx, writeOptions{}, func(ctx context.Context, document *jsonx.Object) error {
-		chosen, err := profileIDs(document.GetObject("shared"), document.GetObject("profiles"))
+	err = r.Update(ctx, func(ctx context.Context, document *model.Document) error {
+		sharedView, err := legacyObject(&document.Shared)
+		if err != nil {
+			return err
+		}
+		profilesView := jsonx.NewObject()
+		for _, profile := range document.Profiles {
+			view, err := legacyObject(profile)
+			if err != nil {
+				return err
+			}
+			profilesView.Set(profile.Key(), view)
+		}
+		chosen, err := profileIDs(sharedView, profilesView)
 		if err != nil {
 			return err
 		}
@@ -249,25 +220,31 @@ func (r *Repository) UpdateSharedAndProfilesTransaction(ctx context.Context, sha
 		}
 		before := map[string]*jsonx.Object{}
 		for _, profileID := range selected {
-			if before[profileID], err = resolveProfile(document, profileID, nil, true); err != nil {
+			if before[profileID], err = legacyConfig(document, profileID, nil, true); err != nil {
 				return err
 			}
 		}
-		updatedShared, err := r.applySharedLocked(ctx, document, sharedUpdater)
+		updatedShared, err := applySharedLegacy(ctx, document, sharedUpdater)
 		if err != nil {
 			return err
 		}
-		updatedProfiles := jsonx.NewObject()
+		if shared, err = legacyObject(updatedShared); err != nil {
+			return err
+		}
+		profiles = jsonx.NewObject()
 		for _, profileID := range selected {
-			profile, err := r.updateProfileLocked(ctx, document, profileID, func(ctx context.Context, snapshot *jsonx.Object) (*jsonx.Object, error) {
+			profile, err := updateProfileLegacy(ctx, document, profileID, func(ctx context.Context, snapshot *jsonx.Object) (*jsonx.Object, error) {
 				return profileUpdater(ctx, profileID, before[profileID], snapshot)
 			})
 			if err != nil {
 				return err
 			}
-			updatedProfiles.Set(profileID, profile)
+			view, err := legacyObject(profile)
+			if err != nil {
+				return err
+			}
+			profiles.Set(profileID, view)
 		}
-		shared, profiles = updatedShared.DeepCopy(), updatedProfiles.DeepCopy()
 		return nil
 	})
 	if err != nil {
@@ -285,7 +262,7 @@ func (r *Repository) GetResourceUsage(ctx context.Context, resourceType, resourc
 	if !known {
 		return nil, validationError("未知资源类型")
 	}
-	err = r.view(ctx, func(document *jsonx.Object) error {
+	err = r.View(ctx, func(document *model.Document) error {
 		usages, err := resourceUsage(document, resourceType, resourceID)
 		if err != nil {
 			return err
@@ -339,10 +316,13 @@ func (r *Repository) DeleteNodesWithReferences(ctx context.Context, nodeIDs any,
 	if !confirmationPattern.MatchString(confirmation) {
 		return nil, validationError("请先查看并确认删除影响")
 	}
-	err = r.update(ctx, writeOptions{}, func(ctx context.Context, document *jsonx.Object) error {
+	err = r.Update(ctx, func(ctx context.Context, document *model.Document) error {
+		legacy, err := r.working(ctx)
+		if err != nil {
+			return err
+		}
 		var candidate *jsonx.Object
-		var err error
-		if preview, candidate, err = r.nodeDeletionPlan(document, nodeIDs); err != nil {
+		if preview, candidate, err = r.nodeDeletionPlan(legacy, nodeIDs); err != nil {
 			return err
 		}
 		if subtle.ConstantTimeCompare([]byte(confirmation), []byte(preview.GetString("confirmation"))) != 1 {
@@ -361,9 +341,9 @@ func (r *Repository) DeleteNodesWithReferences(ctx context.Context, nodeIDs any,
 			}
 		}
 		for _, profileID := range changedProfiles {
-			_, err := r.updateProfileLocked(ctx, document, profileID, func(_ context.Context, profile *jsonx.Object) (*jsonx.Object, error) {
-				profile.Set("proxy_groups", candidate.GetObject("profiles").GetObject(profileID).Value("proxy_groups"))
-				return nil, nil
+			groups := candidate.GetObject("profiles").GetObject(profileID).Value("proxy_groups")
+			_, err := updateProfileIn(document, profileID, func(profile *model.Profile) error {
+				return setLegacy(profile.SetJSON, "proxy_groups", groups)
 			})
 			if err != nil {
 				return err
@@ -371,11 +351,12 @@ func (r *Repository) DeleteNodesWithReferences(ctx context.Context, nodeIDs any,
 		}
 		// Detach first inside the same transaction, then retain the normal
 		// shared-resource deletion guard and the final document validation.
-		document.GetObject("shared").Set("subscription_aggregations",
-			candidate.GetObject("shared").Value("subscription_aggregations"))
-		_, err = r.applySharedLocked(ctx, document, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-			shared.Set("nodes", candidate.GetObject("shared").Value("nodes"))
-			return nil, nil
+		candidateShared := candidate.GetObject("shared")
+		if err := setLegacy(document.Shared.SetJSON, "subscription_aggregations", candidateShared.Value("subscription_aggregations")); err != nil {
+			return err
+		}
+		_, err = applySharedIn(document, func(shared *model.Shared) error {
+			return setLegacy(shared.SetJSON, "nodes", candidateShared.Value("nodes"))
 		})
 		return err
 	})

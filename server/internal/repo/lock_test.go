@@ -38,7 +38,7 @@ func TestWriteWaitsForForeignFileLockUntilTimeout(t *testing.T) {
 	defer handle.Close()
 	noError(t, syscall.Flock(int(handle.Fd()), syscall.LOCK_EX))
 	started := time.Now()
-	_, err := r.UpdateProfile(bg, "default", jsonx.Obj("name", "blocked"))
+	_, err := r.UpdateProfileMetadata(bg, "default", jsonx.Obj("name", "blocked"))
 	wantError(t, err, ErrRepository, "Timed out waiting for profile repository lock")
 	if waited := time.Since(started); waited < 250*time.Millisecond || waited > 3*time.Second {
 		t.Fatalf("waited %v", waited)
@@ -46,7 +46,7 @@ func TestWriteWaitsForForeignFileLockUntilTimeout(t *testing.T) {
 	// Reads never need the lock.
 	wantEqual(t, must(r.GetProfile(bg, "default"))(t).Value("_revision"), 0)
 	noError(t, syscall.Flock(int(handle.Fd()), syscall.LOCK_UN))
-	must(r.UpdateProfile(bg, "default", jsonx.Obj("name", "free")))(t)
+	must(r.UpdateProfileMetadata(bg, "default", jsonx.Obj("name", "free")))(t)
 }
 
 func TestWriteWaitsForReleasedFileLock(t *testing.T) {
@@ -63,7 +63,7 @@ func TestWriteWaitsForReleasedFileLock(t *testing.T) {
 		syscall.Flock(fd, syscall.LOCK_UN)
 	}()
 	started := time.Now()
-	must(r.UpdateProfile(bg, "default", jsonx.Obj("name", "waited")))(t)
+	must(r.UpdateProfileMetadata(bg, "default", jsonx.Obj("name", "waited")))(t)
 	<-released // the deferred Close must not race with the unlocking goroutine
 	if waited := time.Since(started); waited < 150*time.Millisecond {
 		t.Fatalf("did not wait: %v", waited)
@@ -76,7 +76,7 @@ func TestNestedWriteIsRefusedAndReadsSeeWorkingCopy(t *testing.T) {
 		if !r.InTransaction(ctx) || r.InTransaction(bg) {
 			t.Error("InTransaction")
 		}
-		_, err := r.UpdateProfile(ctx, "default", jsonx.Obj("name", "nested"))
+		_, err := r.UpdateProfileMetadata(ctx, "default", jsonx.Obj("name", "nested"))
 		wantError(t, err, ErrInUse, "不能在配置事务中再次开启写事务")
 		_, err = r.UpdateSharedTransaction(ctx, func(context.Context, *jsonx.Object) (*jsonx.Object, error) { return nil, nil })
 		wantError(t, err, ErrInUse, "不能在配置事务中再次开启写事务")

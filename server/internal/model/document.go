@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"slices"
@@ -46,6 +47,11 @@ func (p *Profile) Clear(member string) error { return ClearMember(p, &p.raw, mem
 // MarshalJSON preserves the profile's unknown and unchanged members.
 func (p Profile) MarshalJSON() ([]byte, error) { return EncodeRecord(&p, &p.raw) }
 
+// SetJSON stores a JSON value as a member of the profile; see SetMemberJSON.
+func (p *Profile) SetJSON(member string, data json.RawMessage) error {
+	return SetMemberJSON(p, &p.raw, member, data)
+}
+
 // Key returns the profile's section key in the stored document: the key it
 // was decoded under while ID is unchanged (even if the stored id member is
 // malformed), otherwise ID.
@@ -77,6 +83,11 @@ func (s *Shared) Clear(member string) error { return ClearMember(s, &s.raw, memb
 // MarshalJSON preserves unknown and unchanged shared members.
 func (s Shared) MarshalJSON() ([]byte, error) { return EncodeRecord(&s, &s.raw) }
 
+// SetJSON stores a JSON value as a member of the shared; see SetMemberJSON.
+func (s *Shared) SetJSON(member string, data json.RawMessage) error {
+	return SetMemberJSON(s, &s.raw, member, data)
+}
+
 // System holds global settings, backup preferences and registered Agents.
 type System struct {
 	SystemConfig SystemConfig `json:"system_config"`
@@ -96,6 +107,11 @@ func (s *System) Clear(member string) error { return ClearMember(s, &s.raw, memb
 
 // MarshalJSON preserves unknown and unchanged system members.
 func (s System) MarshalJSON() ([]byte, error) { return EncodeRecord(&s, &s.raw) }
+
+// SetJSON stores a JSON value as a member of the system; see SetMemberJSON.
+func (s *System) SetJSON(member string, data json.RawMessage) error {
+	return SetMemberJSON(s, &s.raw, member, data)
+}
 
 // Document is the stored root record. Profiles retains the stored section order;
 // Root holds other root members, including schema_version. The root member order

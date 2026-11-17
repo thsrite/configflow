@@ -355,7 +355,7 @@ func xcExecute(t *testing.T, r *Repository, op *jsonx.Object, variables map[stri
 	case "clone_profile":
 		return r.CloneProfile(bg, op.GetString("source"), arg("metadata"))
 	case "update_profile":
-		return r.UpdateProfile(bg, id, arg("updates"))
+		return r.UpdateProfileMetadata(bg, id, arg("updates"))
 	case "update_profile_fields":
 		return withRevision(r.UpdateProfileFields(bg, id, arg("fields"), arg("baseline")))
 	case "update_profile_transaction":

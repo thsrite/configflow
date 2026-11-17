@@ -183,7 +183,7 @@ func TestWriteFromAnotherProcessIsSeen(t *testing.T) {
 // the reopening half of test_restart_is_idempotent (without legacy files).
 func TestCacheFollowsTheGeneration(t *testing.T) {
 	r := newRepo(t)
-	must(r.UpdateProfile(bg, "default", jsonx.Obj("name", "Cached")))(t)
+	must(r.UpdateProfileMetadata(bg, "default", jsonx.Obj("name", "Cached")))(t)
 	loads, validations := r.loads.Load(), r.validations.Load()
 	for range 3 {
 		must(r.GetProfile(bg, "default"))(t)
@@ -202,7 +202,7 @@ func TestCacheFollowsTheGeneration(t *testing.T) {
 	if len(opSnapshots(t, r, "*")) > 0 {
 		t.Fatal("snapshot taken")
 	}
-	must(openRepo(t, r.DataDir()).UpdateProfile(bg, "default", jsonx.Obj("name", "Elsewhere")))(t)
+	must(openRepo(t, r.DataDir()).UpdateProfileMetadata(bg, "default", jsonx.Obj("name", "Elsewhere")))(t)
 	for range 3 {
 		wantEqual(t, must(r.GetProfile(bg, "default"))(t).Value("name"), "Elsewhere")
 	}

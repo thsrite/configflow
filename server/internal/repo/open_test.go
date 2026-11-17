@@ -252,7 +252,7 @@ func TestReaderIsNotBlockedByAWriterHoldingItsTransaction(t *testing.T) {
 		return nil
 	}
 	go func() {
-		_, err := writer.UpdateProfile(bg, "default", jsonx.Obj("name", "Committed"))
+		_, err := writer.UpdateProfileMetadata(bg, "default", jsonx.Obj("name", "Committed"))
 		done <- err
 	}()
 	<-inside

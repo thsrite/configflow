@@ -477,63 +477,6 @@ func resolveProfile(document *jsonx.Object, profileID string, roots ResourceRoot
 	return result, nil
 }
 
-func profileUsage(profile *jsonx.Object) *jsonx.Object {
-	return jsonx.Obj("kind", "profile", "id", profile.Value("id"), "name", profile.Value("name"),
-		"profile_id", profile.Value("id"), "profile_name", profile.Value("name"))
-}
-
-// resourceUsage is _resource_usage: who references a shared resource.
-func resourceUsage(document *jsonx.Object, kind, resourceID string) ([]any, error) {
-	usages := []any{}
-	shared := document.GetObject("shared")
-	if kind == "subscriptions" || kind == "nodes" {
-		for _, item := range shared.GetList("subscription_aggregations") {
-			aggregation, _ := jsonx.AsObject(item)
-			for _, value := range aggregation.GetList(kind) {
-				if value == resourceID {
-					usages = append(usages, jsonx.Obj("kind", "aggregation", "id", aggregation.Value("id"),
-						"name", aggregation.GetOr("name", aggregation.Value("id"))))
-					break
-				}
-			}
-		}
-	}
-	if kind == "subscriptions" {
-		for _, item := range shared.GetList("nodes") {
-			node, _ := jsonx.AsObject(item)
-			if node.Value("subscription_id") == resourceID {
-				usages = append(usages, jsonx.Obj("kind", "node", "id", node.Value("id"),
-					"name", node.GetOr("name", node.Value("id"))))
-			}
-		}
-	}
-	catalogs, err := resourceCatalogs(shared, ResourceFields)
-	if err != nil {
-		return nil, err
-	}
-	for _, value := range document.GetObject("profiles").All() {
-		profile, _ := jsonx.AsObject(value)
-		selected, err := collectResourceRefs(profile, catalogs, nil)
-		if err != nil {
-			return nil, err
-		}
-		referenced := selected[kind].has(resourceID)
-		if kind == "rule_library" {
-			referenced = false
-			for _, item := range profile.GetList("rule_configs") {
-				if rule, ok := jsonx.AsObject(item); ok && rule.Value("library_rule_id") == resourceID {
-					referenced = true
-					break
-				}
-			}
-		}
-		if referenced {
-			usages = append(usages, profileUsage(profile))
-		}
-	}
-	return usages, nil
-}
-
 // routerKey is (profile_id, router_id).
 type routerKey struct{ ProfileID, RouterID string }
 

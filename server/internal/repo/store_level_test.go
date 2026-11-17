@@ -14,7 +14,7 @@ func TestRepositoryExportIsByteIdenticalAfterReopening(t *testing.T) {
 	r := newRepo(t)
 	must(r.CreateProfile(bg, jsonx.Obj("id", "second", "name", "第二个", "description", "desc"), ""))(t)
 	must(r.CreateProfile(bg, jsonx.Obj("id", "alpha", "name", "Alpha"), ""))(t)
-	must(r.UpdateProfile(bg, "second", jsonx.Obj("name", "改名")))(t)
+	must(r.UpdateProfileMetadata(bg, "second", jsonx.Obj("name", "改名")))(t)
 	exported := string(must(jsonx.Encode(must(r.ExportAll(bg, false))(t), jsonx.Options{}))(t))
 	reopened := openRepo(t, r.DataDir())
 	if got := string(must(jsonx.Encode(must(reopened.ExportAll(bg, false))(t), jsonx.Options{}))(t)); got != exported {
@@ -69,7 +69,7 @@ func TestFingerprintIsStableAcrossReadsAndChangesOnWrite(t *testing.T) {
 	if got := must(r.Store().Fingerprint())(t); got != first {
 		t.Fatal("fingerprint changed by reads")
 	}
-	must(r.UpdateProfile(bg, "default", jsonx.Obj("description", "changed")))(t)
+	must(r.UpdateProfileMetadata(bg, "default", jsonx.Obj("description", "changed")))(t)
 	if got := must(r.Store().Fingerprint())(t); got == first {
 		t.Fatal("fingerprint unchanged by a write")
 	}

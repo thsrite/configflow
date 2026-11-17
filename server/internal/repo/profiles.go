@@ -8,6 +8,7 @@ import (
 
 	"configflow/internal/ctxx"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 var metadataKeys = []string{"id", "name", "description", "created_at", "updated_at"}
@@ -160,13 +161,13 @@ func (r *Repository) ConfigRevision(ctx context.Context, profileID string) (resu
 // compat view and its config revision from the same read snapshot.
 // agents=false leaves the Agent records out.
 func (r *Repository) GetPublishSnapshot(ctx context.Context, profileID string, agents bool) (config *jsonx.Object, revision int64, err error) {
-	err = r.view(ctx, func(document *jsonx.Object) error {
-		profile, err := profileOf(document, profileID)
+	err = r.View(ctx, func(document *model.Document) error {
+		profile, err := profileFor(document, profileID)
 		if err != nil {
 			return err
 		}
-		revision = revisionOf(profile) + revisionOf(document.GetObject("shared"))
-		config, err = resolveProfile(document, profileID, nil, agents)
+		revision = int64(profile.Revision) + int64(document.Shared.Revision)
+		config, err = legacyConfig(document, profileID, nil, agents)
 		return err
 	})
 	if err != nil {
@@ -175,13 +176,23 @@ func (r *Repository) GetPublishSnapshot(ctx context.Context, profileID string, a
 	return config, revision, nil
 }
 
-// GetCompatConfig is get_compat_config(profile_id, resource_roots=...): the
-// profile with system_config, backup, agents, the shared resources its
-// composition selects (plus roots), the whole rule library, and rulesets
-// hydrated from it.
+// Config returns the resolved view of a profile (Python's compat config):
+// its own members, system_config, backup, the Agents, the shared resources
+// its composition selects plus roots, the whole rule library, and rulesets
+// hydrated from it. The value belongs to the caller.
+func (r *Repository) Config(ctx context.Context, profileID string, roots ResourceRoots) (result *model.Config, err error) {
+	err = r.View(ctx, func(document *model.Document) error {
+		result, err = resolveConfig(document, profileID, roots, true)
+		return err
+	})
+	return result, err
+}
+
+// GetCompatConfig is get_compat_config(profile_id, resource_roots=...):
+// Config as a *jsonx.Object.
 func (r *Repository) GetCompatConfig(ctx context.Context, profileID string, roots ResourceRoots) (result *jsonx.Object, err error) {
-	err = r.view(ctx, func(document *jsonx.Object) error {
-		result, err = resolveProfile(document, profileID, roots, true)
+	err = r.View(ctx, func(document *model.Document) error {
+		result, err = legacyConfig(document, profileID, roots, true)
 		return err
 	})
 	if err != nil {
@@ -194,18 +205,38 @@ func (r *Repository) GetCompatConfig(ctx context.Context, profileID string, root
 // view and the committed document it was resolved from (nil inside a
 // transaction). The source is shared and must never be modified.
 func (r *Repository) GetCompatConfigWithSource(ctx context.Context, profileID string) (result, source *jsonx.Object, err error) {
-	document, committed, err := r.committedSource(ctx)
+	result, rebuild, err := r.compatConfigWithBaseline(ctx, profileID)
+	if err != nil || rebuild == nil {
+		return result, nil, err
+	}
+	entry, err := r.readEntry(ctx, false)
 	if err != nil {
 		return nil, nil, err
 	}
-	result, err = resolveProfile(document, profileID, nil, true)
+	return result, entry.Document, nil
+}
+
+// compatConfigWithBaseline is the compat view and, when it was read from a
+// committed generation, a function that resolves the same view again from
+// that generation (the three-way merge baseline of SaveConfig).
+func (r *Repository) compatConfigWithBaseline(ctx context.Context, profileID string) (*jsonx.Object, func() (*jsonx.Object, error), error) {
+	if r.InTransaction(ctx) {
+		document, _, err := r.workingModel(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		result, err := legacyConfig(document, profileID, nil, true)
+		return result, nil, err
+	}
+	entry, err := r.readEntry(ctx, false)
 	if err != nil {
 		return nil, nil, err
 	}
-	if committed {
-		source = document
+	result, err := legacyConfig(entry.Model, profileID, nil, true)
+	if err != nil {
+		return nil, nil, err
 	}
-	return result, source, nil
+	return result, func() (*jsonx.Object, error) { return legacyConfig(entry.Model, profileID, nil, true) }, nil
 }
 
 // CompatConfigFrom is compat_config_from: resolve again from a document
@@ -378,7 +409,7 @@ func (r *Repository) ImportClientProfile(ctx context.Context, metadata *jsonx.Ob
 
 // UpdateProfile is update_profile(profile_id, updates): rename or describe a
 // profile; updates may only hold "name" and "description".
-func (r *Repository) UpdateProfile(ctx context.Context, profileID string, updates *jsonx.Object) (*jsonx.Object, error) {
+func (r *Repository) UpdateProfileMetadata(ctx context.Context, profileID string, updates *jsonx.Object) (*jsonx.Object, error) {
 	ctx = ctxx.Detach(ctx)
 	if updates == nil {
 		return nil, validationError("只能修改配置名称和说明")
@@ -592,84 +623,26 @@ func nameSet(groups any) (map[string]bool, error) {
 	return names, nil
 }
 
-// updateProfileLocked is _update_profile_locked: apply one profile updater
-// inside an open write transaction. The updater sees the compat view
-// (hydrated resources) but only ProfileFields are stored.
-func (r *Repository) updateProfileLocked(ctx context.Context, document *jsonx.Object, profileID string, updater Updater) (*jsonx.Object, error) {
-	current, err := profileOf(document, profileID)
-	if err != nil {
-		return nil, err
-	}
-	previousNames, err := nameSet(current.Value("proxy_groups"))
-	if err != nil {
-		return nil, err
-	}
-	// Updaters may inspect hydrated resources but cannot persist copies.
-	snapshot, err := resolveProfile(document, profileID, nil, true)
-	if err != nil {
-		return nil, err
-	}
-	updated, err := applyUpdater(ctx, snapshot, updater)
-	if err != nil {
-		return nil, err
-	}
-	for _, key := range ProfileFields {
-		if value, ok := updated.Get(key); ok {
-			current.Set(key, jsonx.DeepCopy(value))
-		}
-	}
-	currentNames, err := nameSet(current.Value("proxy_groups"))
-	if err != nil {
-		return nil, err
-	}
-	rules, err := compatList(current.Value("rule_configs"))
-	if err != nil {
-		return nil, err
-	}
-	for _, item := range rules {
-		rule, err := compatObject(item)
-		if err != nil {
-			return nil, err
-		}
-		policy := jsonx.Repr(rule.Value("policy"))
-		if previousNames[policy] && !currentNames[policy] {
-			return nil, inUse("配置 "+jsonx.Str(current.Value("name"))+" 的规则仍引用被删除策略组："+jsonx.Str(rule.Value("policy")),
-				jsonx.Obj("kind", "profile", "id", profileID, "name", current.Value("name")))
-		}
-	}
-	for _, item := range rules {
-		rule := item.(*jsonx.Object)
-		if rule.Value("itemType") == "ruleset" {
-			for _, key := range RuleSourceFields {
-				rule.Delete(key)
-			}
-			rule.Delete("library_enabled")
-		}
-	}
-	bumpRevision(current)
-	current.Set("updated_at", nowISO())
-	return current, nil
-}
-
 // UpdateProfileTransaction is update_profile_transaction(profile_id,
 // updater, include_config_revision=True): updater edits the compat view of
 // the profile; its ProfileFields are stored. It returns a copy of the
 // stored profile and the new config revision.
 func (r *Repository) UpdateProfileTransaction(ctx context.Context, profileID string, updater Updater) (saved *jsonx.Object, revision int64, err error) {
 	ctx = ctxx.Detach(ctx)
-	var current *jsonx.Object
-	err = r.update(ctx, writeOptions{}, func(ctx context.Context, document *jsonx.Object) error {
+	var current *model.Profile
+	err = r.Update(ctx, func(ctx context.Context, document *model.Document) error {
 		var err error
-		if current, err = r.updateProfileLocked(ctx, document, profileID, updater); err != nil {
+		if current, err = updateProfileLegacy(ctx, document, profileID, updater); err != nil {
 			return err
 		}
-		revision = revisionOf(current) + revisionOf(document.GetObject("shared"))
+		revision = int64(current.Revision) + int64(document.Shared.Revision)
 		return nil
 	})
 	if err != nil {
 		return nil, 0, err
 	}
-	return current.DeepCopy(), revision, nil
+	saved, err = legacyObject(current)
+	return saved, revision, err
 }
 
 // UpdateProfileFields is update_profile_fields(profile_id, fields,

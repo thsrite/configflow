@@ -235,6 +235,73 @@ func ClearMember(rec any, raw *Raw, member string) error {
 	return nil
 }
 
+// SetMemberJSON stores data as the value of a declared member of rec, as if
+// it had been read that way: a value of the member's Go type is decoded into
+// the field and written back as given while the field is unchanged (R2); a
+// value of another type leaves the field at its zero value, is written back as
+// given (R5) and adds a FieldIssue. The member keeps its stored position or is
+// appended. It is for values that arrive as JSON (imports, legacy callers);
+// Go code assigns the field instead.
+func SetMemberJSON(rec any, raw *Raw, member string, data json.RawMessage) error {
+	value, schema, err := recordValue(rec)
+	if err != nil {
+		return err
+	}
+	if err := ownRaw(value, schema, raw); err != nil {
+		return err
+	}
+	field, known := schema.byName[member]
+	if !known {
+		return fmt.Errorf("%w: set of an undeclared member %q", ErrType, member)
+	}
+	if err := validJSON(data); err != nil {
+		return err
+	}
+	destination := value.Field(field.index)
+	target := reflect.New(destination.Type())
+	invalid := decodeValue(data, target.Interface()) != nil
+	if invalid {
+		destination.SetZero()
+	} else {
+		destination.Set(target.Elem())
+	}
+	baseline, err := Marshal(destination.Interface())
+	if err != nil {
+		return err
+	}
+	if raw.typ == nil {
+		raw.typ = value.Type()
+	}
+	entry := rawMember{jsonMember: jsonMember{name: member, value: bytes.Clone(data)}, baseline: baseline, known: true, invalid: invalid}
+	members := slices.Clone(raw.members)
+	replaced := false
+	for index := range members {
+		if members[index].name == member {
+			entry.jsonMember.key = members[index].key
+			entry.jsonMember.leading = members[index].leading
+			entry.jsonMember.separator = members[index].separator
+			entry.jsonMember.trailing = members[index].trailing
+			members[index] = entry
+			replaced = true
+		}
+	}
+	if !replaced {
+		members = append(members, entry)
+	}
+	raw.members = members
+	issues := make([]FieldIssue, 0, len(raw.issues)+1)
+	for _, issue := range raw.issues {
+		if issue.Path != member {
+			issues = append(issues, issue)
+		}
+	}
+	if invalid {
+		issues = append(issues, FieldIssue{member, IssueType})
+	}
+	raw.issues = issues
+	return nil
+}
+
 // EncodeRecord preserves existing member positions and original bytes whenever
 // their typed value is unchanged. Existing non-pointer zero values stay present;
 // changed pointers set to nil are removed. New non-zero fields append in struct
