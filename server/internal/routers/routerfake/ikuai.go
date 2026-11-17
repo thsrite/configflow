@@ -443,7 +443,7 @@ func (f *Ikuai) validate(funcName, action string, param map[string]any, table []
 		}
 		return nil
 	}
-	for key := range param {
+	for _, key := range slices.Sorted(maps.Keys(param)) {
 		if !slices.Contains(ikuaiForms[funcName], key) {
 			return refused(3001, "请求参数不合法", Row{"field": key, "msg": "不支持的参数"})
 		}
