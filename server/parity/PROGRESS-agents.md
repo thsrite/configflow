@@ -931,7 +931,7 @@ The earlier .63-only rulefetch proxy_refused timeout difference did not reproduc
 
 ## A12 — push diff
 
-**Status: `ported`（实现/语料通过，最终门禁进行中）** · prereqs: A11 verified · Go: `internal/deploy/pushdiff` · branch `go-port-a12` · 实现提交 `e03197e9`（rebase 到 `go` `0b367ae5` 后），最终门禁记录在后续提交。
+**Status: `ported`（完整门禁通过；最终 rebase 集成检查进行中）** · prereqs: A11 verified · Go: `internal/deploy/pushdiff` · branch `go-port-a12` · 实现提交 `2a1ffd94`；深层路径修正 `02459497`；空区间修正 `e127a116`（rebase 到 `go` `8bf1b189` 后），最终门禁记录在后续提交。
 
 范围：`backend/agents/push_diff.py` 全部纯比较能力。实现按 `design/a14-publish.md` A12-1：typed `Diff`/`Page`/`Text`、逐键 YAML、命名/标量列表、带敏感片段的统一 diff、文件排序/计数、节点重复名/未命名配对、规则多重集合、行/字节/文件/条目预算、zlib 压缩分页、搜索、stored-token 局部替换。无 HTTP 注册（A13/A14）、无仓库/网络/设备访问，无 push、无子 agent。
 
@@ -999,8 +999,8 @@ The earlier .63-only rulefetch proxy_refused timeout difference did not reproduc
 | `test_paths_that_name_another_file_still_count` | `TestPythonCorpus`（真实 Python oracle） |
 | `test_same_writing_style_is_not_called_reformatting` | `TestPythonCorpus`（真实 Python oracle） |
 
-新增文件行数（`internal/deploy/pushdiff/`）：`build.go` 263；`config.go` 606；`corpus_test.go` 195；`credentials_test.go` 66；`entries.go` 341；`fuzz_test.go` 89；`json.go` 90；`lists.go` 308；`messages.go` 8；`raw.go` 372；`safety_test.go` 417；`text.go` 303；`types.go` 166。
-共享新增 `internal/agents/diag/credentials.go` 121 行；`yamlx/native_node.go` 增加 13 行（AllPairs）；语料生成器 `testdata/gen_a12.py` 175 行、门禁 `testdata/gate.sh` 20 行、Python oracle gzip 1761756 bytes。无新增依赖。
+新增文件行数（`internal/deploy/pushdiff/`）：`build.go` 263；`config.go` 609；`corpus_test.go` 195；`credentials_test.go` 68；`entries.go` 341；`fuzz_test.go` 89；`json.go` 90；`lists.go` 308；`messages.go` 8；`raw.go` 372；`safety_test.go` 436；`text.go` 303；`types.go` 166。
+共享新增 `internal/agents/diag/credentials.go` 124 行；`yamlx/native_node.go` 增加 13 行（AllPairs）；语料生成器 `testdata/gen_a12.py` 175 行、门禁 `testdata/gate.sh` 20 行、Python oracle gzip 1761756 bytes。无新增依赖。
 
 命令（均从 worktree 根目录）：
 ```sh
@@ -1008,7 +1008,32 @@ rt --back server/internal/deploy/pushdiff/testdata/python.json.gz -- bash -lc 'P
 rt -- bash -lc 'cd server && go test -count=1 ./internal/deploy/pushdiff ./internal/agents/diag ./internal/yamlx'
 rt -- bash server/internal/deploy/pushdiff/testdata/gate.sh
 ```
-目前 `.64`：oracle `A12 Python: 32 tests / 67 boundary rows; 28433991 JSON bytes`；包测试 `ok configflow/internal/deploy/pushdiff`，diag/yamlx 同样通过。最后门禁结果待回填。第二轮 `.64` 的前三个 fuzz 分别通过 399488 / 255665 / 880637 次执行；凭据 fuzz 首轮找到空 URL userinfo 的零长度区间（Go 低问题，不是泄漏），合并前过滤空区间，回归种子 `testdata/fuzz/FuzzCredentialSpans/e07ee712a01e982a` 与显式用例均保留。该轮到此停止，最终完整门禁重新执行。收尾检查移除了 walk 复用显示 MAX_DEPTH 的路径截断：MaxDepth 只限制展示值，80 层真实 key path 仍完整；`TestDeepConfigPathsRemainComplete` 锁住此行为。
+最终完整门禁（`.64`，`GOMAXPROCS=4`，实现树 `e127a116` / base `8bf1b189`）：**全通过，exit 0**。确切命令：
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 -- bash -lc 'set -o pipefail; bash server/internal/deploy/pushdiff/testdata/gate.sh 2>&1 | tee /tmp/configflow-a12-gates.log'
+```
+`gate.sh` 顺序执行 `gofmt -l internal/ tools/`（空且强制检查）、`go vet ./...`、`go test -race -count=1 ./internal/deploy/pushdiff ./internal/agents/diag ./internal/yamlx`、`go test -count=1 ./...`、`for d in $(go list ./... | grep difftest); do CONFIGFLOW_DIFF=1 go test -count=1 "$d"; done`、四个 fuzz 各 60 秒、`server/scripts/proddiff.sh`。
+
+最后输出摘要（各命令完整输出在测试服务器 `/tmp/configflow-a12-gates.log`，该日志不入库）：
+```text
+gofmt-output: []   go vet: exit 0
+ok configflow/internal/deploy/pushdiff 44.883s (race)
+ok configflow/internal/yamlx 12.971s (race); diag [no test files]（其逻辑由 pushdiff 的 corpus/fuzz/race 覆盖）
+full go test -count=1 ./...: exit 0; pushdiff 3.213s; cmd/configflow 96.782s; installer 174.535s; lifecycle 0.050s
+CONFIGFLOW_DIFF all 10: agents 110.389s, subscriptions 67.488s, discovery 1.789s, health 13.546s,
+ httpx 1.058s, mosdns 1.388s, refresh 3.125s, subs 1.204s, substore 4.491s, webdav 14.800s — all ok
+FuzzConfig          60s 307048 execs PASS  (61.048s)
+FuzzRuleEntries     60s 293678 execs PASS  (61.040s)
+FuzzNodeItems       60s 563710 execs PASS  (61.023s)
+FuzzCredentialSpans 60s 125972 execs PASS  (61.025s)
+proddiff.sh: self_check PASS, coverage_regressions 0, unmapped_routes 0
+agent-deployment-bundle compared=3 success=2 partial=1（沿用 C31 frozen aggregation 的已有显式 partial）
+baseline: new=0 stale=0
+```
+
+此前迭代：`.64` Python oracle `A12 Python: 32 tests / 67 boundary rows; 28433991 JSON bytes`。收尾发现并修正 Go 端两项低问题：walk 错把显示 MAX_DEPTH 用于路径截断（80 层路径测试已补）；首次凭据 fuzz 找到空 userinfo 的零长度区间，合并前过滤空区间，保留 `testdata/fuzz/FuzzCredentialSpans/e07ee712a01e982a` 和显式测试。修正后上面的四个 fuzz 均跑满 60 秒通过；没有未解决问题。
+
+门禁完成后 `go` 合入 N8-3 复核（`6b50151c`）；最终 rebase 及集成补测记录待回填。A12 源码不变，不重复上述已通过的 fuzz。
 
 ## A13 — content sync, Agent list/detail, push-diff routes
 
