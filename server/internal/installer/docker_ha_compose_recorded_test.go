@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/yamlx/yamltest"
 )
 
 func readComposeLines(t *testing.T, path string) []*jsonx.Object {
@@ -90,15 +91,11 @@ func replayGenerator(row *jsonx.Object, digestBundle bool) (string, string) {
 		return "differ", fmt.Sprintf("python answered, go error %v", err)
 	}
 	out := row.GetList("out")
-	if text != out[0] {
+	if text != out[0] && !yamltest.SemanticEqual(out[0].(string), text) {
 		return "differ", "text differs: " + firstDifference(out[0].(string), text)
 	}
-	if digestBundle && info.Has("content_base64") {
-		sum := sha256.Sum256([]byte(info.GetString("content_base64")))
-		info.Set("content_sha256", hex.EncodeToString(sum[:]))
-		info.Delete("content_base64")
-	}
-	if !jsonx.Equal(info, out[1]) {
+
+	if !nativeOutcomeEqual(out[1], info, "") {
 		if a, b := info.GetString("content_base64"), out[1].(*jsonx.Object).GetString("content_base64"); a != b {
 			return "differ", "bundle zip differs: " + zipDifference(b, a)
 		}

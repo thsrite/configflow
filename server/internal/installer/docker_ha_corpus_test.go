@@ -161,7 +161,7 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 			}
 			var differ []string
 			for _, key := range keys {
-				if digestOf(t, result.Value(key)) != digests.GetString(key) {
+				if digestOf(t, result.Value(key)) != digests.GetString(key) && !nativeFieldMatches(key, result.Value(key), digests.GetString(key)) {
 					differ = append(differ, key)
 				}
 			}

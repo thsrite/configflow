@@ -258,10 +258,23 @@ func annotateCompose(text string, compose *jsonx.Object) (string, error) {
 		notes[notePath("networks", "dns-ha", "ipam", "config", 0, "subnet")] = "核对：局域网网段"
 		notes[notePath("networks", "dns-ha", "ipam", "config", 0, "gateway")] = "核对：局域网网关"
 	}
+	// Only paths with an actual maintenance note need traversal. In particular,
+	// arbitrary nested extension data must not incur a copied path at every level.
+	prefixes := map[string]bool{"": true}
+	for path := range notes {
+		for at := 0; at < len(path); at++ {
+			if path[at] == 0 {
+				prefixes[path[:at+1]] = true
+			}
+		}
+	}
 	annotations := map[int]string{}
-	var visit func(node *yamlx.Node, path []any, key *yamlx.Node)
-	visit = func(node *yamlx.Node, path []any, key *yamlx.Node) {
-		if note, found := notes[notePath(path...)]; found && len(path) > 0 {
+	var visit func(*yamlx.Node, string, *yamlx.Node)
+	visit = func(node *yamlx.Node, path string, key *yamlx.Node) {
+		if !prefixes[path] {
+			return
+		}
+		if note, found := notes[path]; found && path != "" {
 			marked := node
 			if key != nil {
 				marked = key
@@ -271,20 +284,24 @@ func annotateCompose(text string, compose *jsonx.Object) (string, error) {
 		switch node.Kind {
 		case yaml.MappingNode:
 			for key, value := range yamlx.AllPairs(node) {
-				visit(value, append(append([]any{}, path...), key.Value), key)
+				resolved := yamlx.Resolve(key)
+				if resolved.Kind == yaml.ScalarNode && resolved.ShortTag() == "!!str" {
+					visit(value, path+notePath(resolved.Value), key)
+				}
 			}
 		case yaml.SequenceNode:
 			for index, item := range node.Content {
-				visit(item, append(append([]any{}, path...), index), nil)
+				visit(item, path+notePath(index), nil)
 			}
 		}
 	}
+
 	root, err := yamlx.Parse([]byte(text))
 	if err != nil {
 		return "", err
 	}
 	if root != nil {
-		visit(root, nil, nil)
+		visit(root, "", nil)
 	}
 	lines := []string{"# 已按页面填写生成；地址、名称、端口或网络要调整，请回页面重新生成。",
 		"# 已安装请保留原数据目录和身份；变更设备信息请使用迁移入口。"}

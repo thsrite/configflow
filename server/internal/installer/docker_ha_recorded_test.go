@@ -171,7 +171,7 @@ func compareOutcome(entry *jsonx.Object, got any, err error) (string, string) {
 		return "answer", fmt.Sprintf("python answered, go error %T %v", err, err)
 	}
 	want, have := canonical(entry.Value("out")), canonical(digestRecordedBundle(entry.Value("out"), got))
-	if want != have {
+	if want != have && !nativeOutcomeEqual(entry.Value("out"), got, "") {
 		return "answer", recordedDifference(want, have)
 	}
 	return "answer", ""

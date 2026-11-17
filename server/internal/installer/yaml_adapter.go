@@ -13,19 +13,19 @@ import (
 func readCompose(text string) (*jsonx.Object, error) {
 	document, err := yamlx.Parse([]byte(text))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(msgComposeInvalid, err)
 	}
 	data, err := yamlx.ToJSON(document)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(msgComposeInvalid, err)
 	}
 	value, err := jsonx.Parse(data)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(msgComposeInvalid, err)
 	}
 	object, ok := value.(*jsonx.Object)
 	if !ok {
-		return nil, fmt.Errorf("decode Compose: document must be a mapping")
+		return nil, fmt.Errorf(msgComposeMapping)
 	}
 	return object, nil
 }
