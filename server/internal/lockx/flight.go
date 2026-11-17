@@ -27,6 +27,15 @@ type flightCall[V any] struct {
 	err      error
 	joiners  int
 	finished bool
+	channels []chan Result[V]
+}
+
+// Result is the result of shared work sent by DoChan. Shared reports whether
+// another caller joined before completion.
+type Result[V any] struct {
+	Value  V
+	Err    error
+	Shared bool
 }
 
 // Flight coalesces overlapping calls per key. Callers can independently cancel
@@ -52,24 +61,9 @@ func NewFlight[K comparable, V any](spawner Spawner, name string) *Flight[K, V] 
 // shared. Cancelling all waiters does not cancel or discard the running work.
 func (f *Flight[K, V]) Do(ctx context.Context, key K, fn func(context.Context) (V, error)) (V, error, bool) {
 	var zero V
-	if f == nil || f.spawner == nil {
-		return zero, errMissingSpawner, false
-	}
-	f.mu.Lock()
-	c := f.calls[key]
-	first := c == nil
-	if first {
-		c = &flightCall[V]{done: make(chan struct{})}
-		f.calls[key] = c
-	} else {
-		c.joiners++
-	}
-	f.mu.Unlock()
-	if first {
-		err := f.spawner.Spawn(context.WithoutCancel(ctx), f.name, func(workCtx context.Context) { f.run(workCtx, key, c, fn) })
-		if err != nil {
-			f.finish(key, c, zero, fmt.Errorf("start shared work: %w", err))
-		}
+	c, err := f.start(ctx, key, fn, nil)
+	if err != nil {
+		return zero, err, false
 	}
 	// Give a caller whose context already ended a deterministic cancellation
 	// result, even when the worker also finished before the select.
@@ -82,6 +76,45 @@ func (f *Flight[K, V]) Do(ctx context.Context, key K, fn func(context.Context) (
 	case <-c.done:
 		return c.value, c.err, f.shared(c)
 	}
+}
+
+// DoChan starts or joins the same work as Do and returns a buffered channel
+// receiving exactly one result. The channel is not closed. Cancellation of ctx
+// does not discard the result or cancel the work: callers select on ctx.Done
+// themselves. Registering a waiter starts no additional goroutine.
+func (f *Flight[K, V]) DoChan(ctx context.Context, key K, fn func(context.Context) (V, error)) <-chan Result[V] {
+	result := make(chan Result[V], 1)
+	if _, err := f.start(ctx, key, fn, result); err != nil {
+		result <- Result[V]{Err: err}
+	}
+	return result
+}
+
+func (f *Flight[K, V]) start(ctx context.Context, key K, fn func(context.Context) (V, error), result chan Result[V]) (*flightCall[V], error) {
+	if f == nil || f.spawner == nil {
+		return nil, errMissingSpawner
+	}
+	f.mu.Lock()
+	c := f.calls[key]
+	first := c == nil
+	if first {
+		c = &flightCall[V]{done: make(chan struct{})}
+		f.calls[key] = c
+	} else {
+		c.joiners++
+	}
+	if result != nil {
+		c.channels = append(c.channels, result)
+	}
+	f.mu.Unlock()
+	if first {
+		err := f.spawner.Spawn(context.WithoutCancel(ctx), f.name, func(workCtx context.Context) { f.run(workCtx, key, c, fn) })
+		if err != nil {
+			var zero V
+			f.finish(key, c, zero, fmt.Errorf("start shared work: %w", err))
+		}
+	}
+	return c, nil
 }
 
 func (f *Flight[K, V]) shared(c *flightCall[V]) bool {
@@ -118,4 +151,8 @@ func (f *Flight[K, V]) finish(key K, c *flightCall[V], value V, err error) {
 		delete(f.calls, key)
 	}
 	close(c.done)
+	for _, ch := range c.channels {
+		ch <- Result[V]{Value: value, Err: err, Shared: c.joiners > 0}
+	}
+	c.channels = nil
 }

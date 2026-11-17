@@ -80,3 +80,9 @@ New BindRequest and recorded Detach parent remain as integrated; no replacement 
 Shared Clock/Timer and real implementation now live in internal/clock. Lifecycle exports aliases;
 lifecycletest imports only clock, allowing rules tests/owners to use the shared fake without a cycle.
 .64 gofmt/vet pass; race count3 clock1.011s, lifecycle7.918s, lifecycletest1.015s, lockx8.495s.
+
+Clock extraction commit: 647b8a97. Flight.DoChan now registers a capacity1 result channel on the same
+underlying call as Do, with no waiter goroutine or cancellation of shared work. Finish publishes all
+results on normal return, panic/Goexit and rejected Spawn. Tests combine Do/DoChan,1000 channel waiters,
+an unread cancelled waiter's buffered result, shared flags, panic and a blocked refusal with joiners.
+.64 fmt/vet green; race count3 lockx8.191s, lifecycle7.728s, lifecycletest1.007s.
