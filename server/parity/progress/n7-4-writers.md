@@ -115,3 +115,42 @@ Output: oracle `{changed:111,total:5408,unknown:0}`; convert **11.345s**,
 yamlxtest **0.005s**, oracle tool builds, whole-repository vet/gofmt silent.
 An earlier pre-switch iteration passed convert/pushdiff race (46.774s/25.695s);
 it is not final writer acceptance.
+
+## Gateway writer and alias budget
+
+`gateway.dumpPayload` now marshals a typed `payload []string` record. It preserves
+empty lists and ambiguous scalar strings. The existing gateway corpus already
+compares YAML payload semantics (including its pre-existing approved IP spelling
+exception), so no byte comparator was relaxed. A new Parse/Equal regression checks
+the entire output and tags.
+
+A19's old 16-level binary alias graph now returns ErrAliasBudget and no output;
+a 6-level graph still succeeds with compact shared aliases. Editor/selection
+checks remain. Coordinator explicitly approved this security regression update;
+the native emitter must not generate a file Mihomo itself cannot materialize.
+PROGRESS-agents A19 and behaviour-changes both record the change.
+
+After rebase onto go@d3124353 (including N7-3b), `.64` gofmt/vet pass and
+`go test -count=1 ./internal/gateway ./internal/convert` passes:
+gateway **1.184s**, convert **10.238s**.
+
+Mihomo writer fuzz `.32`:
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/convert/testdata/fuzz -- bash -lc 'cd server && go test -run "^$" -fuzz "^FuzzMihomoWriter$" -fuzztime=60s -parallel=4 ./internal/convert'
+```
+
+PASS **61.026s**, **348927 executions**. An initial harness failure was invalid
+UTF-8: encoding/json replaces it but the legacy reader rejects it before a
+builder value exists. The input generator now skips failed legacy parses;
+builder errors and semantic mismatches remain fatal. Non-finite YAML values are
+covered explicitly in unit tests.
+
+First post-Mihomo-switch proddiff `.64` (before the N7-3b rebase):
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'bash server/scripts/proddiff.sh'
+```
+
+2831 cases / 435 comparisons, all 23 self-checks PASS;
+**new=0 stale=0 coverage_regressions=0**. No baseline changes.

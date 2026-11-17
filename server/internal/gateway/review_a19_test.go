@@ -139,34 +139,41 @@ func TestSharedContainersStayShared(t *testing.T) {
 	}
 }
 
-// F1: generation with the gateway on stays linear in an aliased base
-// configuration (Python keeps the aliases; the generated text stays small).
+// F1: a small shared graph stays compact. N7-4 applies the same alias
+// expansion budget as Mihomo before emitting any generated configuration.
 func TestGenerateWithAliasChain(t *testing.T) {
 	generationEnv(t)
-	var b strings.Builder
-	b.WriteString("mixed-port: 7890\nx-chain:\n  l0: &l0 [a, a]\n")
-	for i := 1; i <= 16; i++ {
-		b.WriteString("  l" + itoa(i) + ": &l" + itoa(i) + " [*l" + itoa(i-1) + ", *l" + itoa(i-1) + "]\n")
-	}
-	config := snapshot(true)
-	config.GetObject("mihomo").Set("custom_config", b.String())
-	var text string
-	var err error
-	within(t, 20*time.Second, func() {
-		text, err = convert.GenerateMihomoConfig(context.Background(), config, convert.GenerateOptions{SkipProviderPreflight: true})
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(text) > 64<<10 || !strings.Contains(text, "route-address-set") {
-		t.Fatalf("generated %d bytes (aliases expanded?)", len(text))
-	}
-	state, err := gateway.NewConfig(config).EditorState(false)
-	if err != nil || state.FakeIPRange != "198.18.0.0/16" {
-		t.Fatalf("editor: %+v %v", state, err)
-	}
-	if _, err := gateway.NewConfig(config).ValidateSelection([]byte(`{"enabled": true, "rule_set_ids": ["r"]}`)); err != nil {
-		t.Fatal(err)
+	for _, depth := range []int{6, 16} {
+		t.Run(itoa(depth), func(t *testing.T) {
+			var b strings.Builder
+			b.WriteString("mixed-port: 7890\nx-chain:\n  l0: &l0 [a, a]\n")
+			for i := 1; i <= depth; i++ {
+				b.WriteString("  l" + itoa(i) + ": &l" + itoa(i) + " [*l" + itoa(i-1) + ", *l" + itoa(i-1) + "]\n")
+			}
+			config := snapshot(true)
+			config.GetObject("mihomo").Set("custom_config", b.String())
+			var text string
+			var err error
+			within(t, 20*time.Second, func() {
+				text, err = convert.GenerateMihomoConfig(context.Background(), config, convert.GenerateOptions{SkipProviderPreflight: true})
+			})
+			if depth == 16 {
+				if !errors.Is(err, yamlx.ErrAliasBudget) || text != "" {
+					t.Fatalf("unsafe generated graph was not rejected: %d bytes, %v", len(text), err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			} else if len(text) > 64<<10 || !strings.Contains(text, "route-address-set") || !strings.Contains(text, "*id") {
+				t.Fatalf("generated %d bytes (aliases expanded?)", len(text))
+			}
+			state, err := gateway.NewConfig(config).EditorState(false)
+			if err != nil || state.FakeIPRange != "198.18.0.0/16" {
+				t.Fatalf("editor: %+v %v", state, err)
+			}
+			if _, err := gateway.NewConfig(config).ValidateSelection([]byte(`{"enabled": true, "rule_set_ids": ["r"]}`)); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

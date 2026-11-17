@@ -1301,6 +1301,12 @@ Hooks to provide: `agents.RegisterHooks{HAServiceOperation, HADeployment, HAActi
 
 ## A19 — Linux gateway core
 
+N7-4 follow-up (coordinator-approved): `TestGenerateWithAliasChain` retains a
+small shared graph success check; its 16-level binary graph now requires
+`ErrAliasBudget` and empty output. The native writer applies the same expansion
+budget as Mihomo, which could not read that old compact-but-expansive output.
+No budget relaxation; editor/selection checks remain.
+
 **Status: `verified`** (Opus porter, 2026-11-17; HR review by a fresh Opus (O4) 2026-11-17, `parity/review-a19.md`: F1 medium, F2/F3 low, all fixed, 0 open; lab batch L4 still due) · HR · prereqs: C05 (`append_url_query` = existing `convert.AppendURLQuery`), C08 (`rulefetch.RuleCacheReadPath`), C06 (`auth.IsAuthEnabled`), C32 (`get_ruleset_content`, hook below), routers (`routersplit.CheckGeneration`) · Go: `internal/gateway` (+ existing leaf `internal/gateway/gwbase`)
 
 Files:

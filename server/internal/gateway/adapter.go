@@ -2,9 +2,8 @@ package gateway
 
 // The boundary to packages that still speak jsonx (repo's configuration
 // view, convert's generated Mihomo document, routersplit, rulefetch) and to
-// the PyYAML-compatible yamlx facade. Nothing else in this package touches
-// jsonx. N8 replaces NewConfig's input by the typed model and N7 the yamlx
-// calls by the yaml.v3 facade; the rest of the package stays as it is.
+// the yamlx facade. Nothing else in this package touches jsonx. N8 replaces
+// NewConfig's input by the typed model; the rest of the package stays as it is.
 
 import (
 	"context"
@@ -172,7 +171,10 @@ func yamlPayloadStrings(text string) ([]string, error) {
 
 // dumpPayload writes a rule provider file ({payload: [...]}).
 func dumpPayload(payload []string) (string, error) {
-	return yamlx.SafeDumpUnicode(jsonx.Obj("payload", jsonx.ListOf(payload)))
+	data, err := yamlx.Marshal(struct {
+		Payload []string `yaml:"payload"`
+	}{Payload: payload})
+	return string(data), err
 }
 
 // RulesetContentFunc reads a rule set's text like
