@@ -7,7 +7,7 @@ transaction boundaries and error kinds unchanged. No model or typed repo API
 (N8-3/N8-5). D2: no canonjson; store metadata uses encoding/json.
 
 Done:
-- `e044738f`: designed Field/Section/Document/ProfileRows/Meta types.
+- `37748f39`: designed Field/Section/Document/ProfileRows/Meta types.
 - Store Load/Commit/Create/BuildTemporary/Meta/SalvageMeta carry raw JSON.
   Only the metadata needed by the store is decoded. JSON validity and row
   envelopes are checked; field values are never decoded. Diff uses raw bytes.
@@ -38,6 +38,14 @@ Iterative .63 validation:
 passed: store 11.374s, repo 45.228s; every package compiles.
 Targeted raw + fixture tests: store 1.080s, repo 0.152s; both fixture directions
 12 rows each, no-op unchanged, Go→Python→Go→Python passed.
+
+Additional checks: raw metadata bytes and metadata-only commits; UTF-8 validity
+checked before writing fields, identifiers and metadata (json.Valid alone accepts
+invalid UTF-8 inside strings); bridge encoding errors keep ErrDocument; failed
+post-commit confirmation keeps the conservative uncertain/cache-preservation path.
+The Python audit now recursively compares exact JSON types and member order.
+Targeted .63 raw suite: store 1.448s, repo 0.154s; rollback/cache + bridge checks
+passed after these safeguards.
 
 Next: .32 gofmt/vet, store+repo race, full tests, 60s raw-envelope fuzz,
 proddiff new=0, private-copy interchange; rebase go; clean; no push.

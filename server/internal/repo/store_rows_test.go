@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"configflow/internal/jsonx"
@@ -13,7 +14,7 @@ import (
 func TestRawStoreBridgePreservesUntouchedFields(t *testing.T) {
 	r := newRepo(t)
 	base := must(r.store.Load())(t)
-	raw := base.Document
+	raw := must(encodeRows(must(decodeRows(base.Document))(t), base.Document))(t)
 	opaque := json.RawMessage(`{ "z": 6e1, "a": "\u4f8b <>&", "future": {"b":1.0,"a":null} }`)
 	raw.Order = append(raw.Order, "n8_unknown")
 	raw.Root = append(raw.Root, store.Field{Name: "n8_unknown", Value: opaque})
@@ -54,5 +55,20 @@ func TestRawStoreBridgePreservesUntouchedFields(t *testing.T) {
 	}
 	if count != 4 {
 		t.Fatalf("retained %d unknown fields", count)
+	}
+}
+
+func TestRawStoreBridgeRejectsNonJSONWithoutWriting(t *testing.T) {
+	r := newRepo(t)
+	before := must(r.store.Fingerprint())(t)
+	err := r.update(bg, writeOptions{}, func(_ context.Context, document *jsonx.Object) error {
+		document.Set("n8_non_json", struct{}{})
+		return nil
+	})
+	if !errors.Is(err, store.ErrDocument) {
+		t.Fatalf("expected ErrDocument, got %v", err)
+	}
+	if after := must(r.store.Fingerprint())(t); after != before {
+		t.Fatal("failed encoding changed database")
 	}
 }

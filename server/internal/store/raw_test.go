@@ -75,6 +75,10 @@ func TestRawRowsRefuseInvalidEnvelopesBeforeWriting(t *testing.T) {
 		name string
 		edit func(*Document)
 	}{
+		{"invalid UTF-8 value", func(d *Document) { d.Root[0].Value = json.RawMessage{'"', 255, '"'} }},
+		{"invalid UTF-8 field", func(d *Document) { d.Root[0].Name = string([]byte{255}) }},
+		{"invalid UTF-8 owner", func(d *Document) { d.Profiles[0].ID = string([]byte{255}) }},
+		{"invalid UTF-8 root", func(d *Document) { d.Order[0] = string([]byte{255}) }},
 		{"invalid field", func(d *Document) { d.Root[0].Value = json.RawMessage(`NaN`) }},
 		{"invalid nested JSON", func(d *Document) { d.Shared.Fields[0].Value = json.RawMessage(`{"x":Infinity}`) }},
 		{"duplicate field", func(d *Document) { d.Root = append(d.Root, d.Root[0]) }},
@@ -102,8 +106,33 @@ func TestRawRowsRefuseInvalidEnvelopesBeforeWriting(t *testing.T) {
 	}
 	s := New(filepath.Join(t.TempDir(), Filename), seconds(2))
 	base := must(s.Create(rawFixture(t), nil))(t)
-	if _, _, err := s.Commit(base, base.Document, map[string]json.RawMessage{"bad": json.RawMessage(`NaN`)}); !errors.Is(err, ErrDocument) {
-		t.Fatal(err)
+	for _, meta := range []map[string]json.RawMessage{{"bad": json.RawMessage(`NaN`)}, {"bad": json.RawMessage{'"', 255, '"'}}, {string([]byte{255}): json.RawMessage(`null`)}} {
+		if _, _, err := s.Commit(base, base.Document, meta); !errors.Is(err, ErrDocument) {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestOpaqueMetadata(t *testing.T) {
+	s := New(filepath.Join(t.TempDir(), Filename), seconds(2))
+	opaque := json.RawMessage(`{ "z": 1.0, "a": "\u4f8b <>&" }`)
+	base := must(s.Create(rawFixture(t), map[string]json.RawMessage{"future": opaque}))(t)
+	if got := must(s.Meta("future"))(t); !bytes.Equal(got, opaque) {
+		t.Fatal("metadata was re-encoded")
+	}
+	if missing := must(s.Meta("missing"))(t); missing != nil {
+		t.Fatal("missing metadata is present")
+	}
+	if got := s.SalvageMeta()["future"]; !bytes.Equal(got, opaque) {
+		t.Fatal("salvage decoded metadata")
+	}
+	changed := json.RawMessage(`{"next":true}`)
+	next, committed, err := s.Commit(base, base.Document, map[string]json.RawMessage{"future": changed})
+	if err != nil || !committed || next.Head != base.Head {
+		t.Fatal("metadata-only commit changed document head")
+	}
+	if got := must(s.Meta("future"))(t); !bytes.Equal(got, changed) {
+		t.Fatal("metadata-only write missing")
 	}
 }
 

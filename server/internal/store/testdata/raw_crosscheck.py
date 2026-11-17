@@ -24,6 +24,21 @@ def document(envelope):
     return result
 
 
+def equivalent(actual, expected):
+    # bool/int and scalar/container type changes must not hide behind Python ==.
+    assert type(actual) is type(expected)
+    if isinstance(actual, dict):
+        assert list(actual) == list(expected)
+        for key in actual:
+            equivalent(actual[key], expected[key])
+    elif isinstance(actual, list):
+        assert len(actual) == len(expected)
+        for left, right in zip(actual, expected):
+            equivalent(left, right)
+    else:
+        assert actual == expected
+
+
 def main():
     mode, path, other = sys.argv[1:]
     if mode == 'copy':
@@ -46,7 +61,7 @@ def main():
     entry = target.load()
     if mode == 'audit-final':
         expected['n8_2_python_probe'] = {'written': 'Python', 'number': 1.0}
-    assert entry.document == expected
+    equivalent(entry.document, expected)
     # Check object/section/profile order as well as JSON values.
     assert list(entry.document) == list(expected)
     assert list(entry.document.get('profiles', {})) == list(expected.get('profiles', {}))
@@ -55,7 +70,7 @@ def main():
         updated['n8_2_python_probe'] = {'written': 'Python', 'number': 1.0}
         committed = target.commit(entry, updated)
         assert committed.head.generation == entry.head.generation + 1
-        assert target.load().document == updated
+        equivalent(target.load().document, updated)
 
 
 if __name__ == '__main__':

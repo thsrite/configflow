@@ -1,6 +1,7 @@
 package store
 
 const (
+	msgInvalidRowText        = "配置行标识不是有效 UTF-8"
 	msgDocumentObject        = "配置文档必须是对象"
 	msgProfileID             = "配置空间 ID 必须是非空字符串"
 	msgDuplicateField        = "配置节 %s/%s 的字段 %s 重复"

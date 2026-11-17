@@ -141,8 +141,7 @@ var (
 	fieldColumns   = []string{"scope", "owner", "field", "value"}
 )
 
-// metaRows returns the meta table (or the given keys of it) parsed, in key
-// order.
+// metaRows reads opaque metadata JSON, without decoding unknown values.
 func (c *Conn) metaRows(keys ...string) (map[string]json.RawMessage, error) {
 	statement := "SELECT key, value FROM meta"
 	var args []any

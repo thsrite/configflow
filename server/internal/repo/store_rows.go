@@ -90,7 +90,7 @@ func encodeRows(doc *jsonx.Object, base *store.Document) (*store.Document, error
 		for name, value := range object.All() {
 			encoded, err := jsonx.Compact(value)
 			if err != nil {
-				return nil, err
+				return nil, &store.Error{Kind: store.ErrDocument, Message: err.Error(), Cause: err}
 			}
 			if raw, ok := previous[name]; ok {
 				before, err := jsonx.Parse(raw)
@@ -171,7 +171,7 @@ func encodeMeta(meta *jsonx.Object) (map[string]json.RawMessage, error) {
 	for key, value := range meta.All() {
 		encoded, err := jsonx.Compact(value)
 		if err != nil {
-			return nil, err
+			return nil, &store.Error{Kind: store.ErrDocument, Message: err.Error(), Cause: err}
 		}
 		result[key] = encoded
 	}

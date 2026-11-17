@@ -96,14 +96,12 @@ func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Obje
 		// committed source. Reads need no document lock.
 		preserve = true
 		if raw, failure := r.store.Load(); failure == nil {
-			current, decodeErr := decodeEntry(raw)
-			if decodeErr != nil {
-				return nil, decodeErr
-			}
-			preserve = false
-			for _, item := range current.Document.GetObject("shared").GetList("rule_library") {
-				if object, _ := jsonx.AsObject(item); object.Value("id") == ruleID {
-					preserve = true
+			if current, failure := decodeEntry(raw); failure == nil {
+				preserve = false
+				for _, item := range current.Document.GetObject("shared").GetList("rule_library") {
+					if object, _ := jsonx.AsObject(item); object.Value("id") == ruleID {
+						preserve = true
+					}
 				}
 			}
 		}

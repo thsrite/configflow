@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"unicode/utf8"
 )
 
 // A document is stored as one row per (scope, owner, field): the root keys
@@ -66,15 +67,23 @@ func documentRows(document *Document) (*rows, error) {
 	if document == nil {
 		return nil, newError(ErrDocument, msgDocumentObject)
 	}
+	for _, key := range document.Order {
+		if !utf8.ValidString(key) {
+			return nil, newError(ErrDocument, msgInvalidRowText)
+		}
+	}
 	result := &rows{rootOrder: append([]string{}, document.Order...), sections: newOrdered[sectionKey, int64](), fields: newOrdered[fieldKey, fieldRow]()}
 	result.sections.set(sectionKey{"root", ""}, 0)
 	add := func(scope, owner string, fields []Field) error {
 		for i, field := range fields {
+			if !utf8.ValidString(field.Name) {
+				return newError(ErrDocument, msgInvalidRowText)
+			}
 			key := fieldKey{scope, owner, field.Name}
 			if result.fields.has(key) {
 				return newError(ErrDocument, fmt.Sprintf(msgDuplicateField, scope, owner, field.Name))
 			}
-			if !json.Valid(field.Value) {
+			if !utf8.Valid(field.Value) || !json.Valid(field.Value) {
 				return newError(ErrDocument, fmt.Sprintf(msgInvalidField, scope, owner, field.Name))
 			}
 			result.fields.set(key, fieldRow{int64(i), string(field.Value)})
@@ -96,6 +105,9 @@ func documentRows(document *Document) (*rows, error) {
 		}
 	}
 	for i, profile := range document.Profiles {
+		if !utf8.ValidString(profile.ID) {
+			return nil, newError(ErrDocument, msgInvalidRowText)
+		}
 		if profile.ID == "" {
 			return nil, newError(ErrDocument, msgProfileID)
 		}

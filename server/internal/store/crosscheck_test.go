@@ -125,7 +125,6 @@ func parseObject(t *testing.T, text any) *jsonx.Object {
 	return must(jsonx.ParseString(text.(string)))(t).(*jsonx.Object)
 }
 
-
 func TestCrossCheckPython(t *testing.T) {
 	directory := t.TempDir()
 	pythonDB := filepath.Join(directory, "python.sqlite3")

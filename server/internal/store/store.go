@@ -81,8 +81,8 @@ type Head struct {
 }
 
 // Entry is a document as stored at Head. Document must be treated as
-// immutable: all rows and byte slices returned by the store are read-only. Size is the total length of the stored field
-// values in characters.
+// immutable: all rows and byte slices returned by the store are read-only.
+// Size is the total length of the stored field values in Unicode code points.
 type Entry struct {
 	Head     Head
 	Document *Document
@@ -91,7 +91,8 @@ type Entry struct {
 
 // Fingerprint identifies the exact contents of a database: Digest is a
 // SHA-256 over every row of every table. Comparable with ==; tests use it
-// to assert "nothing was written". Its digest is Go-defined; cross-language tests compare rows directly.
+// to assert "nothing was written". Its digest is Go-defined; cross-language
+// tests compare rows directly.
 type Fingerprint struct {
 	StoreID    string
 	Generation int64
@@ -143,7 +144,7 @@ func (s *Store) Reading(fn func(*Conn) error) error {
 	return translate(connection.commit())
 }
 
-// Meta returns the parsed value of one meta key, or nil when it is missing.
+// Meta returns the raw JSON of one meta key, or nil when it is missing.
 func (s *Store) Meta(key string) (value json.RawMessage, err error) {
 	err = s.Reading(func(connection *Conn) error {
 		value, err = connection.Meta(key)
@@ -513,7 +514,10 @@ func jsonText[T string | int | int64 | []string](value T) json.RawMessage {
 
 func validateMeta(meta map[string]json.RawMessage) error {
 	for key, value := range meta {
-		if !json.Valid(value) {
+		if !utf8.ValidString(key) {
+			return newError(ErrDocument, msgInvalidRowText)
+		}
+		if !utf8.Valid(value) || !json.Valid(value) {
 			return newError(ErrDocument, fmt.Sprintf(msgMetaValueInvalid, key))
 		}
 	}
