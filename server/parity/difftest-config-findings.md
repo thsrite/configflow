@@ -314,7 +314,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
-| `files.shared/rules/by-id/f2bfa147c0fa9588ed3c7d11436b52daf0ad90be493fd1145a022cb3f7724326.list.bak` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+| `files.shared/rules/by-id/370eb7fcc9eac2d84c388428c6487da9a427b401a0ca539c6bfe3a278705924e.list.bak` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
 
 ## R090-F10 / SQLite-trigger-rejects-real-editor-commit
 

@@ -1936,3 +1936,18 @@ current compared=36 design_errors=[]；exit=0
 ```
 
 原R仍差198（含已审计N/A槽）、H仍差479及partial/长流程。继续同步发现写入与其他条目；最终.32全量未执行。
+
+## 批次 114：同步发现的成功跨空间写入与库/cache隔离
+
+- R046/R055/R056/R059各补P4–P6，共12新增原R边界及HTTP变体。两个空间有独立direct/proxy/regional库与策略组：apply写所选库和history，undo仅去目标行保留注释，region写所选策略库，init实际分配新库/引用并更换所选指针。每个改变的库cache字节等于新提交content，完整SQL/files跨实现继续比。
+- ForeignRows在各端独立禁止其他profile、system、无关shared字段、sections和其他meta变化；位置/revision/updated_at均不使用跨端时间许可。新增篡改自检发现foreign更新时间、nodes、system、section与schema变动，95项自检通过。UUID/cache派生比较器支持显式owner，默认行为由旧init9变体回归证明；不是忽略other空间的引用/文件。
+- .32草稿及正式21变体：20compared、既有duplicate-targets多余.bak严格different/open1、design_errors=[]。12新变体全部compared，无新差异。统一9570变体、原R4344（S691/F2677/B976）、H633/G16；findings仍closed80/accepted7/open21/O12单列1。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups discovery-shared-write-profile-selectors,discovery-init --baseline 3c8a1760
+current compared=20 different=1 open=1 design_errors=[] seconds=22.17；exit=1
+95 self-checks + deliberately wrong-Go-response detection OK
+独立报告/tmp/configdiff-discovery-shared-profiles-draft.json
+```
+
+原R仍差186（含已审计N/A槽）、H仍差479及partial/长流程。继续artifact冻结/驱逐等，最终.32全量未执行。

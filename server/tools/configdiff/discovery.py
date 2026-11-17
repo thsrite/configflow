@@ -20,19 +20,19 @@ def allocation_ids(libraries, rules):
     return result
 
 
-def rows(directory):
+def rows(directory, profile='default'):
     fields = database(directory)['fields']
-    return [fields['shared//rule_library']['value'], fields['profile/default/rule_configs']['value']]
+    return [fields['shared//rule_library']['value'], fields['profile/' + profile + '/rule_configs']['value']]
 
 
 class Allocations:
-    def __init__(self, pair, count):
-        self.pair, self.count = pair, count
-        self.before = [[{row['id'] for row in collection} for collection in rows(directory)] for directory in pair.dirs]
+    def __init__(self, pair, count, *, profile='default'):
+        self.pair, self.count, self.profile = pair, count, profile
+        self.before = [[{row['id'] for row in collection} for collection in rows(directory, profile)] for directory in pair.dirs]
 
     def added(self, index):
         return [[row for row in collection if row.get('id') not in known]
-                for collection, known in zip(rows(self.pair.dirs[index]), self.before[index])]
+                for collection, known in zip(rows(self.pair.dirs[index], self.profile), self.before[index])]
 
     def reference(self, reply):
         new = self.added(0)

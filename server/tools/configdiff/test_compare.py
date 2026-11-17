@@ -17,6 +17,30 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_discovery_shared_write_isolation_keeps_foreign_rows_revisions_sections_and_metadata_strict(self):
+        from cases.discovery_profile_writes import foreign_snapshot
+        from cases.setup import Stable
+        value = {'fields': {key: {'value': 1, 'revision': 7, 'position': 0} for key in (
+            'profile/default/updated_at', 'profile/other/updated_at', 'shared//rule_library',
+            'shared//_revision', 'shared//nodes', 'system//system_config')},
+            'sections': [['profile', 'other', 0]], 'meta': {'generation': 7, 'commit_id': 'a', 'schema': 5}}
+        expected = foreign_snapshot(value, 'default')
+        own = copy.deepcopy(value)
+        own['fields']['profile/default/updated_at']['value'] = 'changed'
+        own['fields']['shared//rule_library']['value'] = ['new']
+        own['meta'].update(generation=8, commit_id='b')
+        self.assertEqual(expected, foreign_snapshot(own, 'default'))
+        for key in ('profile/other/updated_at', 'shared//nodes', 'system//system_config'):
+            wrong = copy.deepcopy(own)
+            wrong['fields'][key]['value'] = 'corrupted'
+            observer = Stable(None)
+            observer.before_values[1], observer.after_values[1] = expected, foreign_snapshot(wrong, 'default')
+            self.assertTrue(observer.compare(Policy()), key)
+        for key in ('sections', 'meta'):
+            wrong = copy.deepcopy(own)
+            wrong[key] = [] if key == 'sections' else {**wrong['meta'], 'schema': 4}
+            self.assertTrue(differences(expected, foreign_snapshot(wrong, 'default')))
+
     def test_rule_delivery_warning_compares_complete_event_and_stable_storage(self):
         from cases.rule_delivery_yaml import Delivery, WARNING
         observer = Delivery(None)
