@@ -683,6 +683,59 @@ def declared():
         'Readonly plan/report do not enter this decorator despite the original H scope shorthand. '
         'This proves the HTTP nonacquired branch with real in-process contention, not separate-process '
         'flock or scheduler/crash recovery, which remain T25 and their own helper entries.', tuple(lock_required))
+    client_sources = ('backend/routes/client_devices.py:39', 'backend/routes/client_devices.py:55',
+                      'backend/common/client_devices.py:28', 'backend/common/client_devices.py:39')
+    agent_pin_bad = tuple(('agent-scope', route + '/invalid-agent-' + agent, 404)
+                          for route in ('R002', 'R004') for agent in ('missing-agent', '', 'm-a'))
+    agent_pin_ok = tuple(('agent-scope', 'R002-S03/' + agent, 200) for agent in ('o-a', 'o-b'))
+    discovery_pin_ok = (('agent-scope', 'R004-S04/pinned-empty-profile', 200),)
+    query_writes = tuple(('client-agent-query-writes', 'R003/PUT-ignores-agent-' + agent, 200)
+                         for agent in ('o-b', 'missing-agent'))
+    audits['H1256'] = Audit(client_sources,
+        'Actual agent pin guard is reachable on R002 GET and R004 GET/HEAD, not every R002–R006 method '
+        'in the original shorthand. Missing/empty/wrong-service IDs, alpha/beta OxiDNS successes, '
+        'unsupported beta discovery, distinct HEAD behaviour (R002 ignores pin, R004 keeps it), and '
+        'PUT ignores both a valid foreign-profile Agent and unknown Agent. Writes retain DNS/bindings '
+        'and foreign profiles, no device I/O. Missing legacy bindings are a separate loading barrier.',
+        agent_pin_bad + agent_pin_ok + discovery_pin_ok
+        + (('agent-scope', 'R002-B92/head-ignores-missing-agent', 200),
+           ('agent-scope', 'R004/head-retains-agent-pin-invalid', 404)) + query_writes)
+    good_draft = (('client-drafts', 'R003-S01/0', 200),)
+    draft_shape = tuple(('guards', 'R003-F10/' + label, 400)
+                        for label in ('none', 'null', 'array', 'text', 'bool', 'number', 'malformed', 'wrong-content-type'))
+    draft_shape += tuple(('guards', 'R003/missing-' + key, 400) for key in
+                         ('profile_id', 'ip', 'name', 'mode', 'previous_name', 'previous_mode', 'base_url'))
+    draft_shape += (('guards', 'R003/extra', 400),)
+    draft_shape += tuple(('guards', 'R003/base_url-' + repr(value), 400) for value in (None, 0, False, [], {}))
+    bad_profiles = tuple(('guards', 'R003/profile-' + repr(value), 409)
+                         for value in ('beta', '', None, 0, False, True, [], {}, 1.5, ' alpha ', 'ALPHA'))
+    stale_drafts = (('guards', 'R003/previous_name-stale', 409), ('guards', 'R003/previous_mode-stale', 409))
+    audits['H1257'] = Audit(client_sources,
+        'Eight real body parsing/root-type failures, each missing key, extra key and five nonstring '
+        'base_url values reach the wrapper400 with exact message and full state unchanged. The actual '
+        'valid fresh-note write is the successful shape control.', draft_shape + good_draft)
+    audits['H1258'] = Audit(client_sources,
+        'Valid exact object with wrong body profile: foreign/empty/case/whitespace and every JSON '
+        'type including unhashable array/object. Exact409 and unchanged state, fresh alpha write200 '
+        'control; no inferred type-validation error or accidental parsing failure.', bad_profiles + good_draft)
+    for ident in ('H1259', 'H1260'):
+        audits[ident] = Audit(client_sources,
+            'Real stale previous name and mode are the two DeviceChanged operands inside the transaction; '
+            'both409 exact message/full state unchanged. A fresh empty row actually commits200. '
+            'OxidnsSettingsError translation is a separate unfinished parent audit, not inferred here.',
+            stale_drafts + good_draft)
+    normalizer_failures = tuple(sorted(set(requirement for ident in ('H0068', 'H0023', 'H0078')
+                                          for requirement in client_requirements[ident])))
+    for ident, required in (('R003-F10', draft_shape), ('R003-F11', bad_profiles),
+                            ('R003-F12', normalizer_failures), ('R003-F13', stale_drafts[:1]),
+                            ('R003-F14', stale_drafts[1:])):
+        audits[ident] = Audit(client_sources,
+            'Explicit endpoint-specific parsing/profile/field/stale-row prerequisites. Normalizer '
+            'variants reuse the source-reviewed H0068/H0023/H0078 exact lists (127 typed/error inputs), '
+            'not whatever recipes happen to claim the parent ID. No rejected request changes any state.', required)
+    audits['R002-S03'] = Audit(client_sources, 'Both real alpha/beta OxiDNS Agent pins, with response header still reflecting the selected request profile.', agent_pin_ok)
+    audits['R004-S04'] = Audit(client_sources, 'Actual beta-pinned discovery with no routers returns unsupported/empty data and real timestamp, selected header alpha.', discovery_pin_ok)
+    audits['R003-B06'] = Audit(client_sources, 'Valid foreign-profile and missing Agent queries cannot change PUT scope; both write alpha notes only and retain all DNS/binding/foreign state.', query_writes)
     return audits
 
 

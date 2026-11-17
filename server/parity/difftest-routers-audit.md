@@ -283,3 +283,16 @@ H0002/H0003 仍待专门的可达性证明：普通格式错误在 try 之前返
 不再要求所有兄弟路由先实现。异步前序若提前返回错误，保留真实 Go 结果并
 阻断后续，而不是当成 fake 未到达。这里证明 HTTP 的进程内非阻塞竞争，
 不声称跨进程 flock、后台 scheduler 或 kill 恢复已经完成，后者仍待 T25。
+
+## 客户端 wrapper 与 Agent pin 的方法差异
+
+H1256 不是整个 R002–R006 都能进入：R002 仅 GET 根据 agent 查询选择绑定
+空间，HEAD 忽略；R004 则 GET/HEAD 都保留绑定。R003 PUT 忽略 valid beta
+Agent 与不存在 Agent 的 query，两次实际写入只影响 alpha 的本地备注，DNS、
+固定 IP、router 及 beta 都保持。缺、空、错服务的读查询与 alpha/beta 正常
+绑定分别作为拒绝/成功控制，不能拿非法旧 Agent 绑定绕过仓库加载校验。
+
+H1257–H1260 与 R003-F10–F14 的 shape/profile/normalizer/stale guard 已显式
+覆盖，包含21种结构拒绝、11种 profile 不匹配、127种字段错误、两个陈旧值
+以及真实新行保存。H1261/H1262 的传递设置错误族仍单列待补，不据这些局部
+guard 宣称整个错误 wrapper 已完成。

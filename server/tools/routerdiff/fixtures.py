@@ -237,7 +237,7 @@ def heartbeat(ident):
 def agent_scope():
     for agent_id, profile in (('o-a', 'alpha'), ('o-b', 'beta')):
         yield Case('R002-S03/' + agent_id, 'R002', 'GET', '/api/client-devices?agent=' + agent_id, 200,
-                   ('R002-S03',) + (('R002-B91',) if profile == 'beta' else ()), checks={'success': True, 'profile_id': profile},
+                   ('R002-S03', 'H1256') + (('R002-B91',) if profile == 'beta' else ()), checks={'success': True, 'profile_id': profile},
                    header_checks={'X-ConfigFlow-Profile': 'alpha', 'Cache-Control': 'no-store'})
     yield Case('R002-B90/agent-header-missing', 'R002', 'GET', '/api/client-devices?agent=o-b', 404,
                ('R002-B90',), headers={'X-ConfigFlow-Profile': 'missing-profile'},
@@ -247,9 +247,12 @@ def agent_scope():
             yield Case(route + '/invalid-agent-' + agent_id, route, 'GET', path + '?agent=' + agent_id, 404,
                        ('H1256',), message='这台 OxiDNS Agent 已不存在，请返回 Agent 页刷新。')
     yield Case('R002-B92/head-ignores-missing-agent', 'R002', 'HEAD', '/api/client-devices?agent=missing-agent',
-               200, ('R002-B92',), header_checks={'X-ConfigFlow-Profile': 'alpha', 'Cache-Control': 'no-store'})
+               200, ('R002-B92', 'H1256'), header_checks={'X-ConfigFlow-Profile': 'alpha', 'Cache-Control': 'no-store'})
+    yield Case('R004/head-retains-agent-pin-invalid', 'R004', 'HEAD',
+               '/api/client-devices/discovery?agent=missing-agent', 404, ('H1256',),
+               header_checks={'X-ConfigFlow-Profile': 'alpha', 'Cache-Control': 'no-store'})
     yield Case('R004-S04/pinned-empty-profile', 'R004', 'GET', '/api/client-devices/discovery?agent=o-b', 200,
-               ('R004-S04',), checks={'success': True, 'profile_id': 'beta', 'state': 'unsupported', 'sources': [],
+               ('R004-S04', 'H1256'), checks={'success': True, 'profile_id': 'beta', 'state': 'unsupported', 'sources': [],
                                       'devices': [], 'discovered': []}, header_checks={'X-ConfigFlow-Profile': 'alpha'},
                times=('checked_at',))
     yield Case('R004/agent-header-missing', 'R004', 'GET', '/api/client-devices/discovery?agent=o-b', 404,

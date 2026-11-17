@@ -1426,3 +1426,30 @@ audits1/remaining2300 in this subset/complete=false. No active command.
 Last full composition still37937739,3054/301, unchanged main findings header.
 Current full assembly, final gate and final rebase remain pending; do not hand
 this incomplete matrix back as completed Step B acceptance.
+
+Client wrapper / Agent pin increment:
+- H1256 actual scope is R002 GET and R004 GET/HEAD; R002 HEAD and all PUT/fixed-IP
+  writes do not pin by Agent. Added the distinguishing R004 HEAD missing-Agent
+  404 alongside R002 HEAD200. Two real PUTs with foreign beta/missing Agent query
+  still write alpha notes only, retain DNS/bindings/router fields and all prior
+  notes, foreign profile unchanged. Original alpha/beta read pins remain real.
+- Exact shape guard:8 parse/root failures, all7 missing keys, extra key and5
+  wrong base_url types. Profile mismatch11 variants include every JSON type and
+  case/whitespace, all409. Stale name/mode are actual DeviceChanged responses;
+  fresh row write is a control. All127 reviewed name/mode/network error variants
+  are explicit endpoint requirements, not just one400 or a harvested ID list.
+-13 new audits: H1256–H1260, R003-F10–F14, R002-S03/R004-S04/R003-B06.
+  Declarations396/remaining1905 if composed. H1261/H1262 broad settings-error
+  translation still pending a complete transitive-error family check, including
+  actual growth beyond note/policy capacity and malformed stored-IP contexts.
+  No convenient parent closure from a single child failure. No new Python bug.
+
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world guards --world client-drafts --world agent-scope --world client-agent-query-writes --output "$HOME/.cache/routerdiff-reports/302rx1dg/client-wrapper-audits.json"'`
+=> Ran55 tests4.574s/OK;1700 real HTTP requests, routes0/domain missing1700/
+references372/audits310/remaining1991 in this subset/complete=false. This also
+revalidates the existing large guards world after new profile/body metadata.
+
+No active command. Last full composition remains37937739,3054 recipes/301 audits;
+current increments are not assembled. Final gate/final rebase pending. Next
+continue stored/capacity failure contexts, remaining public route/helper/device/
+background coverage and other scoped dynamic values. Step B remains incomplete.

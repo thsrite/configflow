@@ -22,6 +22,22 @@ import forwarding_guards
 
 
 class AuditTests(unittest.TestCase):
+    def test_client_wrapper_audits_require_true_method_scope_and_every_shape(self):
+        actual = {('guards', case.ident): case for group in (guards.client_draft, cases.body_guards) for case in group()}
+        for world, group in (('agent-scope', fixtures.agent_scope), ('client-drafts', workflows.client_drafts),
+                             ('client-agent-query-writes', workflows.client_agent_query_writes)):
+            actual.update({(world, case.ident): case for case in group()})
+        counts = {'H1256': 13, 'H1257': 22, 'H1258': 12, 'H1259': 3, 'H1260': 3,
+                  'R003-F10': 21, 'R003-F11': 11, 'R003-F12': 127, 'R003-F13': 1, 'R003-F14': 1,
+                  'R002-S03': 2, 'R004-S04': 1, 'R003-B06': 2}
+        for ident, count in counts.items():
+            required = declared()[ident].requirements
+            self.assertEqual(len(required), count, ident)
+            for world, name, status in required:
+                case = actual[world, name]
+                self.assertIn(ident, case.entries)
+                self.assertEqual(case.expected, status)
+
     def test_job_lock_audit_needs_each_guard_and_its_real_probe_completion(self):
         actual = {(world, case.ident): case for world, _, groups in workflows.job_lock_worlds({})
                   for group in groups for case in group()}
@@ -103,7 +119,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24 + 1)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24 + 1 + 13)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'

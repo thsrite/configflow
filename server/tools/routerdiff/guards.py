@@ -163,13 +163,13 @@ def client_draft():
     for field in base:
         body = dict(base)
         body.pop(field)
-        yield case('missing-' + field, body, '客户端设备请求格式无效。', 'R003-F10')
-    yield case('extra', {**base, 'extra': None}, '客户端设备请求格式无效。', 'R003-F10')
+        yield case('missing-' + field, body, '客户端设备请求格式无效。', 'R003-F10', 'H1257')
+    yield case('extra', {**base, 'extra': None}, '客户端设备请求格式无效。', 'R003-F10', 'H1257')
     for value in (None, 0, False, [], {}):
-        yield case('base_url-' + repr(value), {**base, 'base_url': value}, '客户端设备请求格式无效。', 'R003-F10')
-    for value in ('beta', '', None, 0):
+        yield case('base_url-' + repr(value), {**base, 'base_url': value}, '客户端设备请求格式无效。', 'R003-F10', 'H1257')
+    for value in ('beta', '', None, 0, False, True, [], {}, 1.5, ' alpha ', 'ALPHA'):
         yield case('profile-' + repr(value), {**base, 'profile_id': value},
-                   '配置空间已切换，请重新载入。', 'R003-F11', status=409)
+                   '配置空间已切换，请重新载入。', 'R003-F11', 'H1258', status=409)
     # Each normalizer guard is attached only to values that reach it. The
     # enclosing ValueError translation is a separate, all-families audit.
     ranges = [
@@ -201,7 +201,7 @@ def client_draft():
     for field, value, entry in (('previous_name', 'old-name', 'R003-F13'),
                                 ('previous_mode', 'direct', 'R003-F14')):
         yield case(field + '-stale', {**base, field: value},
-                   '此设备已在其他页面修改，请重新载入后再保存。', entry, 'H0024', status=409)
+                   '此设备已在其他页面修改，请重新载入后再保存。', entry, 'H0024', 'H1259', 'H1260', status=409)
 
 
 def fixed_ip_shape():

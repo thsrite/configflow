@@ -701,6 +701,7 @@ def main():
                       guards.client_draft, guards.fixed_ip_shape,
                       guards.route_edit_shape, guards.workspace_shape, guards.rule_sync_shape, guards.rejected_draft_readback)),
               ('client-drafts', options, (workflows.client_drafts,)),
+              ('client-agent-query-writes', fixtures.agent_options(), (workflows.client_agent_query_writes,)),
               ('client-canonical-names', options, (workflows.client_canonical_names,)),
               ('notes-capacity', fixtures.notes_capacity_options(), (fixtures.notes_capacity,)),
               ('client-mode-notes', options, (workflows.client_mode_notes,)),
