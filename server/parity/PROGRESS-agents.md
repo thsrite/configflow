@@ -931,7 +931,7 @@ The earlier .63-only rulefetch proxy_refused timeout difference did not reproduc
 
 ## A12 — push diff
 
-**Status: `ported`（完整门禁通过；最终 rebase 集成检查进行中）** · prereqs: A11 verified · Go: `internal/deploy/pushdiff` · branch `go-port-a12` · 实现提交 `2a1ffd94`；深层路径修正 `02459497`；空区间修正 `e127a116`（rebase 到 `go` `8bf1b189` 后），最终门禁记录在后续提交。
+**Status: `ported`（完整门禁与最终 rebase 集成检查均通过，待独立复核）** · prereqs: A11 verified · Go: `internal/deploy/pushdiff` · branch `go-port-a12` · 实现提交 `1dc56a5c`；深层路径修正 `20ac2ef0`；空区间修正 `460121de`；完整门禁记录 `ae299ba8`（最终 rebase 到 `go` `8489da36`）。
 
 范围：`backend/agents/push_diff.py` 全部纯比较能力。实现按 `design/a14-publish.md` A12-1：typed `Diff`/`Page`/`Text`、逐键 YAML、命名/标量列表、带敏感片段的统一 diff、文件排序/计数、节点重复名/未命名配对、规则多重集合、行/字节/文件/条目预算、zlib 压缩分页、搜索、stored-token 局部替换。无 HTTP 注册（A13/A14）、无仓库/网络/设备访问，无 push、无子 agent。
 
@@ -1033,7 +1033,22 @@ baseline: new=0 stale=0
 
 此前迭代：`.64` Python oracle `A12 Python: 32 tests / 67 boundary rows; 28433991 JSON bytes`。收尾发现并修正 Go 端两项低问题：walk 错把显示 MAX_DEPTH 用于路径截断（80 层路径测试已补）；首次凭据 fuzz 找到空 userinfo 的零长度区间，合并前过滤空区间，保留 `testdata/fuzz/FuzzCredentialSpans/e07ee712a01e982a` 和显式测试。修正后上面的四个 fuzz 均跑满 60 秒通过；没有未解决问题。
 
-门禁完成后 `go` 合入 N8-3 复核（`6b50151c`）；最终 rebase 及集成补测记录待回填。A12 源码不变，不重复上述已通过的 fuzz。
+门禁完成后 `go` 合入 N8-3 复核（`6b50151c`）；最终 `git rebase go` 到该基线后补跑以下集成检查，**全部 exit 0**。A12 源码不变，不重复上述已通过的 difftest/fuzz；完整门禁和本轮补测都只在 `.64` 上跑。
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 -- bash -lc 'set -euo pipefail; cd server; test -z "$(gofmt -l internal/ tools/)"; go vet ./...; go test -race -count=1 ./internal/deploy/pushdiff ./internal/agents/diag ./internal/yamlx; go test -count=1 ./...; cd ..; server/scripts/proddiff.sh'
+```
+```text
+gofmt-output []   go vet exit 0
+race: pushdiff 50.130s; yamlx 11.570s; diag [no test files]
+full go test -count=1 ./... exit 0; pushdiff 8.326s; model 0.021s; repo 20.273s
+ok configflow/internal/yamlx 4.715s
+? configflow/tools/proddiff/generator [no test files]
+proddiff: coverage_regressions=0 unmapped_routes=0 self_check=PASS
+baseline: new=0 stale=0
+```
+分支 `go-port-a12`，无 push/PR、无生产访问、无子 agent、无新增依赖。纯 A12 功能无未移植项；A13 的 7 个 Checker 测试归属见上表。
+
+最后一次 `git rebase go` 纳入 `8489da36`，相对已补测的 `6b50151c` **仅 WORKFLOW.md 增加 4 行**，无源码变化，不重复测试。最终工作树干净。
 
 ## A13 — content sync, Agent list/detail, push-diff routes
 
