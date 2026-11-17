@@ -81,6 +81,10 @@ PROGRESS file. If you fail the same problem 2–3 rounds, stop and report an esc
 
 ## Never end your turn while waiting
 
+**Concretely: run `gate.sh` and every long test in the foreground with a long timeout (e.g. 3600000 ms), even
+while it waits for a gate slot. Do not start it in the background and do not use a Monitor/until-loop and then
+end your turn — two Opus reviewers stalled that way on 2026-11-18.**
+
 Run tests and other long commands in the **foreground** with a long timeout (the test servers can be slow
 under load). Background-job notifications do not reliably wake an agent in this setup: if you end your turn
 saying "waiting for the run", nothing resumes you and the task stalls. Only end your turn when the task is
