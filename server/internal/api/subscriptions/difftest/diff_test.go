@@ -384,7 +384,8 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 	if err != nil {
 		t.Fatalf("decode Go: %v %s", err, got.Body)
 	}
-	if got.Status != py.Status {
+	approvedShape := approvedShapeError(path, body, py, got)
+	if got.Status != py.Status && !approvedShape {
 		t.Errorf("%s %s status Python=%d Go=%d body=%s", method, path, py.Status, got.Status, got.Body)
 	}
 	compare := func(label string, a, b any) {
@@ -398,7 +399,11 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 			t.Errorf("%s %s %s: %s", method, path, label, firstDifference(a, b, ""))
 		}
 	}
-	compare("body", py.Body, gb)
+	if approvedShape {
+		t.Log("EXPECTED Step B #1: invalid input returns accurate 400 JSON; stored effects still compared")
+	} else {
+		compare("body", py.Body, gb)
+	}
 	comments := []string{}
 	if strings.Contains(got.Header.Get("Content-Type"), "yaml") {
 		for _, line := range strings.Split(string(got.Body), "\n") {
@@ -415,6 +420,12 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 	}
 	compare("provider comments", py.Comments, comments)
 	for _, key := range []string{"Content-Type", "Cache-Control", "X-ConfigFlow-Profile", "X-ConfigFlow-Provider", "Content-Disposition"} {
+		if approvedShape && key == "Content-Type" {
+			if !strings.HasPrefix(got.Header.Get(key), "application/json") {
+				t.Error("expected JSON shape error")
+			}
+			continue
+		}
 		a, b := py.Headers[key], got.Header.Get(key)
 		if key == "Content-Disposition" {
 			a = dispositionTime.ReplaceAllString(a, "_<time>.yaml")
