@@ -165,14 +165,14 @@ class Comparators(unittest.TestCase):
             item = {'group': group, 'case': case, 'variant': variant, 'route': route, 'status': 'closed',
                     'differences': [{'path': path}], 'remaining_differences': []}
             closed = annotate([copy.deepcopy(item)])[0]
-            self.assertEqual(closed['fix_commits'], ['3ab6f5b4'])
+            self.assertEqual(closed['fix_commits'], ['82506568'])
             self.assertIn('不是Go业务修复', closed['closure_note'])
             wrong = copy.deepcopy(item)
             wrong['differences'].append({'path': 'db.genuine-regression'})
-            self.assertNotIn('3ab6f5b4', annotate([wrong])[0]['fix_commits'])
+            self.assertNotIn('82506568', annotate([wrong])[0]['fix_commits'])
             wrong = copy.deepcopy(item)
             wrong['status'] = 'open'
-            self.assertNotIn('3ab6f5b4', annotate([wrong])[0]['fix_commits'])
+            self.assertNotIn('82506568', annotate([wrong])[0]['fix_commits'])
 
     def test_source_completion_gate_observes_fast_body_before_slow_response(self):
         import threading
@@ -297,7 +297,7 @@ class Comparators(unittest.TestCase):
                 'group': 'webdav-named-preflight-and-directory-failure', 'status': 'closed', 'python_status': 400,
                 'go_status': 400, 'checked_baseline': 'synthetic', 'differences': [], 'remaining_differences': []}
         result = annotate([copy.deepcopy(item)])[0]
-        self.assertEqual(result['fix_commits'], ['e4ced9d6'])
+        self.assertEqual(result['fix_commits'], ['b5c071dd'])
         self.assertIn('不是Go业务修复', result['closure_note'])
         self.assertIn('不是Go业务修复', '\n'.join(markdown([result])))
         for mutation in ({'status': 'open'}, {'variant': 'other'}, {'route': 'other'}):
@@ -1745,6 +1745,68 @@ serve(app, host='127.0.0.1', port=int(sys.argv[1]))
             else:
                 bad['files']['migrations/arbitrary/import/configflow.sqlite3'] = bad['files'].pop(path)
             self.assertTrue(rejected_import_errors(before, bad), mutation)
+
+    def test_draft_attachment_conflict_preserves_all_noncheck_state(self):
+        from cases.setup_router_draft_conflict import preserved_errors
+        from cases.setup import SID
+        key = 'setup-sessions/' + SID + '.json'
+        before = {'database': {'generation': 1}, 'files': {key: {'mode': 384, 'content': {
+            'step': 3, 'router_draft': {'password': 'synthetic'}, 'prepared': True}}, 'another': {'content': 'exact'}}}
+        after = copy.deepcopy(before)
+        after['files'][key]['content'].update(installation={'id': 'checked'}, updated_at='new', config_revision=4,
+            route_instructions={'routes': []})
+        self.assertEqual(preserved_errors(before, after), [])
+        for field in ('database', 'file', 'step', 'password', 'mode', 'extra'):
+            bad = copy.deepcopy(after)
+            if field == 'database':
+                bad['database']['generation'] += 1
+            elif field == 'file':
+                bad['files']['another']['content'] = 'changed'
+            elif field == 'step':
+                bad['files'][key]['content']['step'] = 4
+            elif field == 'password':
+                bad['files'][key]['content']['router_draft']['password'] = 'changed'
+            elif field == 'mode':
+                bad['files'][key]['mode'] = 420
+            else:
+                bad['files'][key]['content']['extra'] = True
+            self.assertTrue(preserved_errors(before, bad), field)
+
+    def test_full_config_gate_retains_official_slot_and_both_exit_codes(self):
+        import os
+        import subprocess
+        import shutil
+        # This is a tools-only miniature tree: no real Go gate or full suite.
+        wrapper = Path(__file__).with_name('gate.sh')
+        for go_rc, config_rc in [(0, 0), (1, 0), (0, 2), (1, 2)]:
+            with self.subTest(go=go_rc, config=config_rc), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                folder = root / 'server/tools/configdiff'
+                folder.mkdir(parents=True)
+                shutil.copy2(wrapper, folder / 'gate.sh')
+                scripts = root / 'server/scripts'
+                scripts.mkdir()
+                (scripts / 'gate.sh').write_text('cd "$(dirname "$0")/.."\n'
+                    '[ -d tools/configdiff ] || exit 22\n'
+                    'exec 8>"$CONFIGDIFF_TEST_SLOT"\nflock -n 8 || exit 20\ngot=1\n'
+                    + ('exit 1\n' if go_rc else 'true\n'))
+                fake = folder / 'native_network.sh'
+                fake.write_text('#!/usr/bin/env bash\n'
+                    'if flock -n "$CONFIGDIFF_TEST_SLOT" true; then exit 21; fi\n'
+                    'printf "%s\\n" "$*" > "$CONFIGDIFF_TEST_ARGUMENTS"\n'
+                    'exit "$CONFIGDIFF_TEST_EXIT"\n')
+                fake.chmod(0o755)
+                logs = root / 'logs'
+                env = {**os.environ, 'CONFIGDIFF_GATE_LOGS': str(logs),
+                    'CONFIGDIFF_TEST_SLOT': str(root / 'slot'), 'CONFIGDIFF_TEST_ARGUMENTS': str(root / 'arguments'),
+                    'CONFIGDIFF_TEST_EXIT': str(config_rc)}
+                result = subprocess.run(['bash', str(folder / 'gate.sh'), 'synthetic-baseline', '-p', '4'],
+                    env=env, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, go_rc or config_rc, result.stdout + result.stderr)
+                self.assertEqual((logs / 'go-exit.txt').read_text().strip(), str(go_rc))
+                self.assertEqual((logs / 'configdiff-exit.txt').read_text().strip(), str(config_rc))
+                self.assertIn('--groups all --baseline synthetic-baseline', (root / 'arguments').read_text())
+                self.assertEqual(subprocess.run(['flock', '-n', str(root / 'slot'), 'true']).returncode, 0)
 
     def test_import_snapshot_must_contain_previous_rows(self):
         from compare import database

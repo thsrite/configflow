@@ -25,22 +25,22 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | G13 / same-name-different-definition/merged | `GET /api/subscriptions/proxies` | closed | 7b904725 | df6928ae | 200 / 200 |
 | G13 / same-name-identical/merged | `GET /api/subscriptions/proxies` | closed | 7b904725 | df6928ae | 200 / 200 |
 | H123 / original-and-mirror-both-fail-through-loopback-proxy | `GET /api/mosdns/rule-proxy` | open | — | df6928ae | 502 / 502 |
-| R007-S02 /  | `GET /api/aggregations/<agg_id>/preview` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 200 / 200 |
-| R008-S05 / failed-source-valid-cache | `GET /api/aggregations/<agg_id>/provider` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 200 / 200 |
+| R007-S02 /  | `GET /api/aggregations/<agg_id>/preview` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 200 / 200 |
+| R008-S05 / failed-source-valid-cache | `GET /api/aggregations/<agg_id>/provider` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 200 / 200 |
 | R012-F01 /  | `GET /api/auth/status` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | df6928ae | 405 / 405 |
-| R015-B01 /  | `POST /api/backup/config` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 200 / 200 |
-| R015-B02 /  | `POST /api/backup/config` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 200 / 200 |
-| R015-B03 /  | `POST /api/backup/config` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 200 / 200 |
-| R015-B04 /  | `POST /api/backup/config` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 200 / 200 |
-| R015-F08 / empty | `POST /api/backup/config` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R015-F09 / array | `POST /api/backup/config` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R015-F10 / unknown | `POST /api/backup/config` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R015-F11 / text-type | `POST /api/backup/config` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R015-F12 / auto-type | `POST /api/backup/config` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R015-F13 / keep-negative | `POST /api/backup/config` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R015-F14 / keep-large | `POST /api/backup/config` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R015-F15 / daily-large | `POST /api/backup/config` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R015-F16 / keep-bool | `POST /api/backup/config` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R015-B01 /  | `POST /api/backup/config` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 200 / 200 |
+| R015-B02 /  | `POST /api/backup/config` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 200 / 200 |
+| R015-B03 /  | `POST /api/backup/config` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 200 / 200 |
+| R015-B04 /  | `POST /api/backup/config` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 200 / 200 |
+| R015-F08 / empty | `POST /api/backup/config` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R015-F09 / array | `POST /api/backup/config` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R015-F10 / unknown | `POST /api/backup/config` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R015-F11 / text-type | `POST /api/backup/config` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R015-F12 / auto-type | `POST /api/backup/config` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R015-F13 / keep-negative | `POST /api/backup/config` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R015-F14 / keep-large | `POST /api/backup/config` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R015-F15 / daily-large | `POST /api/backup/config` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R015-F16 / keep-bool | `POST /api/backup/config` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
 | R015-S04 /  | `POST /api/backup/config` | accepted | [behaviour-changes.md · C35空密码保留](behaviour-changes.md#c35webdav-凭据安全与表单密码保留) | df6928ae | 200 / 200 |
 | R016-B02 /  | `POST /api/backup/now` | open | — | df6928ae | 200 / 200 |
 | R016-B03 /  | `POST /api/backup/now` | open | — | df6928ae | 200 / 200 |
@@ -48,35 +48,35 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R016-B91 / Asia/Shanghai/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | df6928ae | 200 / 200 |
 | R016-B91 / Etc/GMT+12/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | df6928ae | 200 / 200 |
 | R016-B91 / Etc/GMT-14/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | df6928ae | 200 / 200 |
-| R016-F08 / array | `POST /api/backup/now` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R016-F09 / empty | `POST /api/backup/now` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R016-F10 / unknown | `POST /api/backup/now` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R016-F11 / text-type | `POST /api/backup/now` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R016-F12 / auto-type | `POST /api/backup/now` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R016-F13 / daily-large | `POST /api/backup/now` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R016-F13 / keep-bool | `POST /api/backup/now` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R016-F13 / keep-large | `POST /api/backup/now` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R016-F13 / keep-negative | `POST /api/backup/now` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R016-F15 /  | `POST /api/backup/now` | closed | abdf47ef, d01fdf32, f9963a7f, e4ced9d6；e4ced9d6为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | df6928ae | 500 / 500 |
-| R016-F15 / real-MKCOL-403-before-PUT | `POST /api/backup/now` | closed | e4ced9d6；e4ced9d6为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | df6928ae | 400 / 400 |
+| R016-F08 / array | `POST /api/backup/now` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R016-F09 / empty | `POST /api/backup/now` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R016-F10 / unknown | `POST /api/backup/now` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R016-F11 / text-type | `POST /api/backup/now` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R016-F12 / auto-type | `POST /api/backup/now` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R016-F13 / daily-large | `POST /api/backup/now` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R016-F13 / keep-bool | `POST /api/backup/now` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R016-F13 / keep-large | `POST /api/backup/now` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R016-F13 / keep-negative | `POST /api/backup/now` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R016-F15 /  | `POST /api/backup/now` | closed | abdf47ef, d01fdf32, f9963a7f, b5c071dd；b5c071dd为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | df6928ae | 500 / 500 |
+| R016-F15 / real-MKCOL-403-before-PUT | `POST /api/backup/now` | closed | b5c071dd；b5c071dd为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | df6928ae | 400 / 400 |
 | R016-F16 /  | `POST /api/backup/now` | open | — | df6928ae | 200 / 200 |
 | R016-S01 /  | `POST /api/backup/now` | open | — | df6928ae | 200 / 200 |
 | R016-S02 /  | `POST /api/backup/now` | open | — | df6928ae | 200 / 200 |
 | R016-S03 /  | `POST /api/backup/now` | open | — | df6928ae | 200 / 200 |
-| R017-F08 / array | `POST /api/backup/test` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R017-F09 / empty | `POST /api/backup/test` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R017-F10 / unknown | `POST /api/backup/test` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R017-F11 / text-type | `POST /api/backup/test` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R017-F12 / auto-type | `POST /api/backup/test` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R017-F13 / daily-large | `POST /api/backup/test` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R017-F13 / keep-bool | `POST /api/backup/test` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R017-F13 / keep-large | `POST /api/backup/test` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R017-F13 / keep-negative | `POST /api/backup/test` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R017-F14 /  | `POST /api/backup/test` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R017-F15 /  | `POST /api/backup/test` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R017-F16 /  | `POST /api/backup/test` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
-| R017-F18 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, e4ced9d6；e4ced9d6为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | df6928ae | 400 / 400 |
-| R017-F19 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, e4ced9d6；e4ced9d6为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | df6928ae | 500 / 500 |
+| R017-F08 / array | `POST /api/backup/test` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R017-F09 / empty | `POST /api/backup/test` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R017-F10 / unknown | `POST /api/backup/test` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R017-F11 / text-type | `POST /api/backup/test` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R017-F12 / auto-type | `POST /api/backup/test` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R017-F13 / daily-large | `POST /api/backup/test` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R017-F13 / keep-bool | `POST /api/backup/test` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R017-F13 / keep-large | `POST /api/backup/test` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R017-F13 / keep-negative | `POST /api/backup/test` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R017-F14 /  | `POST /api/backup/test` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R017-F15 /  | `POST /api/backup/test` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R017-F16 /  | `POST /api/backup/test` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 400 / 400 |
+| R017-F18 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, b5c071dd；b5c071dd为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | df6928ae | 400 / 400 |
+| R017-F19 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, b5c071dd；b5c071dd为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | df6928ae | 500 / 500 |
 | R055-B01 / disabled/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | df6928ae | 200 / 200 |
 | R055-S02 / new/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | df6928ae | 200 / 200 |
 | R056-B01 / name-collision/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | df6928ae | 200 / 200 |
@@ -88,7 +88,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R056-S03 / empty-means-both/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | df6928ae | 200 / 200 |
 | R056-S04 / repeat/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | df6928ae | 200 / 200 |
 | R056-S04 / repeat/1 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | df6928ae | 200 / 200 |
-| R058-B03 / stored-legacy-extension | `PUT /api/domain-discovery/settings` | accepted | [behaviour-changes.md · R058-B03](behaviour-changes.md#config-step-b--coordinator-decisions) | df6928ae | 200 / 200 |
+| R058-B03 / stored-legacy-extension | `PUT /api/domain-discovery/settings` | accepted | [behaviour-changes.md · R058-B03](behaviour-changes.md#config-step-b--coordinator-decisions) | 9a208c6c | 200 / 200 |
 | R075-F08 / real-stat-EACCES-with-database-still-readable | `GET /api/logs/info` | open | — | df6928ae | 500 / 200 |
 | R087-B04 / text/B04 | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | df6928ae | 422 / 422 |
 | R087-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/mosdns/rule-proxy` | open | — | df6928ae | 200 / 502 |
@@ -102,7 +102,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R103-F10 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | df6928ae | 404 / 400 |
 | R103-F11 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | df6928ae | 404 / 400 |
 | R103-F14 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | df6928ae | 500 / 400 |
-| R122-S05 / failed-source-valid-cache | `GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider` | closed | 3ab6f5b4；3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 200 / 200 |
+| R122-S05 / failed-source-valid-cache | `GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider` | closed | 82506568；82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | df6928ae | 200 / 200 |
 | R138-B04 / text/B04 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | df6928ae | 422 / 422 |
 | R138-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | df6928ae | 200 / 502 |
 | R138-F13 / text/F13 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | df6928ae | 422 / 422 |

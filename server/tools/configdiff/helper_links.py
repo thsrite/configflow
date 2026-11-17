@@ -87,6 +87,16 @@ VARIANT_LINKS = {
                                  (prefix + '-B04', 'text/B04', ('H143',))]
 }
 VARIANT_LINKS.update({
+    (case, repr({'direct_ruleset': value}), 'PUT /api/domain-discovery/settings'): (helper,)
+    for case in ('R058-F09', 'H046')
+    for value, helper in [('missing', 'H042'), ('discovery-url', 'H043'), ('discovery-ip', 'H044')]
+})
+VARIANT_LINKS.update({
+    ('R199-F13', 'controller-status-failure', 'POST /api/settings/dependencies/sub-store/mode'): ('H1077',),
+    **{('G05', 'chain/' + service, 'POST /api/generate/' + service + '/preview'): ('H220',)
+       for service in ('surge', 'loon')},
+})
+VARIANT_LINKS.update({
     ('R016-F15', 'real-MKCOL-403-before-PUT', 'POST /api/backup/now'): ('H031',),
 })
 VARIANT_LINKS.update({
@@ -114,6 +124,10 @@ VARIANT_LINKS.update({
 ROUTE_LINKS = {(case, route): ('H423',)
     for case in ('H416', 'H417', 'H418', 'H419', 'H420', 'H421', 'H422')
     for route in ('POST /api/oxidns/editor', 'POST /api/profiles/<profile_id>/oxidns/editor')}
+ROUTE_LINKS.update({(case, 'POST /api/config/import'): ('H867',) for case in ('H346', 'H347', 'H348')})
+ROUTE_LINKS[('H1056', 'GET /api/subscriptions/<sub_id>/proxies')] = ('H1064', 'H1068')
+ROUTE_LINKS.update({(case, 'POST /api/config/import'): ('H867',) for case in ('H346', 'H347', 'H348')})
+ROUTE_LINKS[('H1056', 'GET /api/subscriptions/<sub_id>/proxies')] = ('H1064', 'H1068')
 
 VARIANT_LINKS.update({
     (rid + '-F15', variant, route): (helper,)

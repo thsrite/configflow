@@ -8,12 +8,14 @@
 RT_HOST=sunbroke@192.168.0.32 rt \
   --back server/tools/configdiff/testdata/results.json \
   --back server/parity/difftest-config-findings.md \
-  -- bash -lc 'server/tools/configdiff/native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --baseline REPLACE_WITH_PUBLIC_GO_COMMIT'
+  -- bash -lc 'server/tools/configdiff/gate.sh REPLACE_WITH_PUBLIC_GO_COMMIT -p 4'
 ```
 
-`--groups precedence,jwt,auth-environments,redaction,startup,auth-routes` 可选择批次；`--binary /path/to/configflow` 可复用本工具生成的测试二进制。迭代和最终全量可使用等价的 .32 或 .64（独立内核的 Hyper-V Arch）；命名空间、容器、MITM 或真实网络栈实验两台均可，报告注明主机。原 WSL .63 已停用。
+全量统一由上面的包装器先执行官方`server/scripts/gate.sh`，随后在同一个gate锁槽内运行Python configdiff all；官方门禁失败也保留configdiff完整证据，两者退出码分开记录且总退出码不吞失败。包装器只source官方脚本以保留FD 8，无另起race/proddiff。最多两轮共享门禁，.64使用`-p 4`。
 
-`native_network.sh`在所选测试服务器建立只有lo的网络命名空间和private mount namespace，把owned临时目录绑定到`/etc/nginx`，随后降回调用用户运行测试；不会修改宿主网络、配置或服务。需要服务器安装nginx（Web状态只检查它存在，Step B不会启动真实Nginx）。fixture还验证mount表及临时源目录与挂载目录的inode对应。退出时卸载并删除owned目录。依赖HTTPS fake和Web完整部署要求这个边界，拒绝在WSL/普通宿主网络启动。默认all及最终全量使用上面的命令，RT_HOST也可固定为sunbroke@192.168.0.64；省略RT_HOST由rt自动选负载低的主机，连续复用同一远端副本时应固定主机。网络命名空间内不能下载缺失依赖，首次需要的Go/Python工具链先在测试服务器普通环境安装或缓存。
+迭代用`native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups precedence,jwt,auth-environments,redaction,startup,auth-routes --baseline COMMIT`选择相关批次；`--binary /path/to/configflow`可复用本工具生成的测试二进制。迭代和最终全量可使用等价的.32或.64，报告注明主机；原WSL .63已停用。
+
+`native_network.sh`在所选测试服务器建立只有lo的网络命名空间和private mount namespace，把owned临时目录绑定到`/etc/nginx`，随后降回调用用户运行测试；不会修改宿主网络、配置或服务。需要服务器安装nginx（Web状态只检查它存在，Step B不会启动真实Nginx）。fixture还验证mount表及临时源目录与挂载目录的inode对应。退出时卸载并删除owned目录。依赖HTTPS fake和Web完整部署要求这个边界，拒绝在WSL/普通宿主网络启动。全量gate包装器会调用此wrapper；RT_HOST也可固定为sunbroke@192.168.0.64，连续复用同一远端副本时应固定主机。网络命名空间内不能下载缺失依赖，首次需要的Go/Python工具链先在测试服务器普通环境安装或缓存。
 
 Web用例必须启用公开Go frontend入口，不能用API-only模式代表完整部署。Python前端HTTP peer为fake，状态/同端口noop/占用拒绝不调用Nginx；成功换端口通过受限`nginx_peer.py`记录精确check/reload并按真实生成配置切换双栈fake HTTP。wrapper仅在private mount namespace把该peer绑定到Nginx可执行文件，不运行真实Nginx，宿主二进制/服务不变。Go前端始终真实运行；比较新端口双栈健康/页面/能力轮换、旧端口关闭，以及失败后旧监听不变和全SQL/保存文件。Nginx专属故障为partial，真实Nginx+Flask叠加留给实验容器/O9/O14，具体合同见behaviour-changes.md的Go取代Nginx条目。
 
@@ -40,15 +42,8 @@ Web用例必须启用公开Go frontend入口，不能用API-only模式代表完�
 `artifact-real-metadata-size-boundary`（默认all包含）真实通过公开Surge设置保存>512MiB的合成注释，再验证普通生成成功而预览metadata超限；生产常量没有改。该夹具及request spool放在服务器磁盘的owned临时目录`~/.cache/configdiff-large`，退出清理，避免撑满/tmp tmpfs。实测峰值约8.5GiB，完整all须给足内存；共享服务器上可像下例使用独立scope，具体主机写入报告。降权会清除user bus环境，所以显式传递调用用户的runtime目录。
 
 ```sh
-RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc '
-fixture_uid=$(id -u)
-server/tools/configdiff/native_network.sh env \
-  XDG_RUNTIME_DIR=/run/user/$fixture_uid \
-  DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$fixture_uid/bus \
-  systemd-run --user --scope --quiet --collect \
-  -p MemoryMax=14G -p MemorySwapMax=0 \
-  ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --baseline REPLACE_WITH_GO_COMMIT
-'
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc \
+  'server/tools/configdiff/gate.sh REPLACE_WITH_GO_COMMIT -p 4'
 ```
 
 大字符串/字节在实际完整比较产生diff之后才压缩报告证据：长度、完整SHA256及首尾字节。状态、路径和差异仍保留，不拿摘要替代比较或把超长值视为相等；对应篡改自检覆盖Unicode、末尾改动和surrogate。

@@ -2291,3 +2291,18 @@ current Go未实现134；design_errors=[]；seconds27.14；exit0
 current Go未实现52 / 依赖3；design_errors=[]；seconds16.35；exit0
 123 self-checks + deliberately wrong-Go-response detection OK
 ```
+
+## 批次 135：真实依赖图、Provider命名空间和向导草稿冲突
+
+- rebase到go 9a208c6c；当前可达夹具修正提交变为b5c071dd/82506568。10类实际导入图拒绝包括include-all、use名称、停用订阅、空前置、落地DIRECT/停用/订阅成员、空前置/落地聚合和原始两节点循环。raw错型/缺名称导入先经_collect_resource_refs，未到H195/H196，已撤回，不借相同错误文本计覆盖。
+- 实际生成到达H204节点转换丢失、H264同名订阅/聚合、H265独立follow循环、H221显式raw dialer和H222通过fake Sub-Store才发现的dialer。后者完整比create/download/delete协议和清理。H220精确关联已有chain/Surge/Loon实际生成；H042–044精确关联现有三种规则集错误；H867关联实际导入设备备注校验，H1077关联真实进程控制返回失败。
+- H1056真实Provider与面板链出口冲突，保留中文准备上下文和文件路径；H1081真实缓存的机场Relay自动组与面板同名组冲突。H1085空原始下载分别无旧缓存/有旧缓存，已双端相比通过：所有SQL精确不变、旧缓存字节保留、原始transport缓存与失败task/health落盘完整相比。H1086尝试公开导入非法间隔，实际在仓库前置校验即400；未到后置guard，草稿撤回。
+- H1055实际创建私有草稿后公开profile import写入同ID不同router，再执行真实Agent check；409且完整原router/所有SQL不动。check先保存installation、revision、route_instructions和时间，草稿保留在step3；仅允许这四项并继续全文件跨端比较。新增篡改SQL/其他文件/step/密码/模式/额外字段的自检。
+- 新增tools内全量gate包装器，source官方gate保留同一FD 8锁槽，Go门禁失败也取得configdiff证据，分别记录两个退出码，不吞失败。四组合自检验证实际工作目录、锁在configdiff期间仍占用、最终释放、各失败退出码保留。全量使用此入口；不修改官方脚本，不另开race/proddiff。
+- .64正式10组144变体、72.09秒：compared56/Go未实现85/依赖2/accepted严格差异1，design_errors=[]，125项自检及错误Go响应检出。统一10537变体、原R4487（S712/F2759/B1016）、H906/G16；累计compared2941/Go未实现7439/依赖107/严格差异49/O12单列1。172个finding未全部在新基线复验；最终all将统一复验。剩余原R43/H206含防御/跨域/部分覆盖，未算通过。
+
+```text
+.64 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups repository-real-dialer-dependency-graph-guards,generator-real-provider-name-and-follow-chain-guards,generator-real-unsupported-raw-and-converted-dialers,subscription-real-empty-download-keeps-cache,provider-real-chain-and-airport-name-collisions,setup-real-existing-router-draft-conflict,discovery-settings,dependency-managed-modes,generator-group-shapes,repository-complete-import-edge-invariants --baseline 9a208c6c
+current compared56 / Go未实现85 / 依赖2 / different1（accepted1）；design_errors=[]；seconds72.09；exit0
+125 self-checks + deliberately wrong-Go-response detection OK
+```

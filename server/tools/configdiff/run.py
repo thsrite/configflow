@@ -76,6 +76,14 @@ def main():
     matrix = routes()
     from cases.crosscutting import GROUPS as crosscutting
     groups = dict(crosscutting)
+    from cases.chain_graph_guards import GROUPS as chain_graph_guards
+    groups.update(chain_graph_guards)
+    from cases.subscription_empty_source import GROUPS as subscription_empty_source
+    groups.update(subscription_empty_source)
+    from cases.provider_namespace_guards import GROUPS as provider_namespace_guards
+    groups.update(provider_namespace_guards)
+    from cases.setup_router_draft_conflict import GROUPS as setup_router_draft_conflict
+    groups.update(setup_router_draft_conflict)
     from cases.auth import GROUPS as auth
     groups.update(auth)
     from cases.redaction import GROUPS as redaction

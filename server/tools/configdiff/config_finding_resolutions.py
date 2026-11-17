@@ -151,18 +151,18 @@ def repair_commits(item):
     if group == 'subscription-fetch-failures':
         return ['0313e086', '8f3d36ad'] if item['case'] == 'R218-F12' else ['0313e086', '3ab22d36']
     if group == 'settings-webdav':
-        return ['abdf47ef', 'd01fdf32', 'f9963a7f'] + (['e4ced9d6'] if item['case'] in ('R016-F15', 'R017-F18', 'R017-F19') else [])
+        return ['abdf47ef', 'd01fdf32', 'f9963a7f'] + (['b5c071dd'] if item['case'] in ('R016-F15', 'R017-F18', 'R017-F19') else [])
     if (group == 'webdav-named-preflight-and-directory-failure' and item['case'] == 'R016-F15'
             and item['route'] == 'POST /api/backup/now' and item['variant'] == 'real-MKCOL-403-before-PUT'):
-        return ['e4ced9d6']
+        return ['b5c071dd']
     if (group == 'settings-backup-validation' and item['case'] != 'R015-S04'
             and paths == {'db.fields.system//backup.value.webdav_password'}):
-        return ['3ab6f5b4']
+        return ['82506568']
     if (group == 'aggregation-provider-refresh'
             and paths == {'files.shared/subscribes/sub-a.json.content.updated_at'} and (
             (item['case'] == 'R007-S02' and item['variant'] == '') or
             (item['case'] in ('R008-S05', 'R122-S05') and item['variant'] == 'failed-source-valid-cache'))):
-        return ['3ab6f5b4']
+        return ['82506568']
     return []
 
 
@@ -177,8 +177,8 @@ def annotate(records):
             item['status'] = 'accepted'
         item['fix_commits'] = repair_commits(item)
         item.pop('closure_note', None)
-        if item['status'] == 'closed' and 'e4ced9d6' in item['fix_commits']:
-            item['closure_note'] = 'e4ced9d6为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较'
-        if item['status'] == 'closed' and '3ab6f5b4' in item['fix_commits']:
-            item['closure_note'] = '3ab6f5b4为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复'
+        if item['status'] == 'closed' and 'b5c071dd' in item['fix_commits']:
+            item['closure_note'] = 'b5c071dd为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较'
+        if item['status'] == 'closed' and '82506568' in item['fix_commits']:
+            item['closure_note'] = '82506568为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复'
     return records

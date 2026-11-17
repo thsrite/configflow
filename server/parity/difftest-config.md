@@ -2116,6 +2116,14 @@ H1001/H1002分别在真实check标记缺失后finish再次下载失败、成功�
 
 H830/H839/H846/H847通过完整公开import实际到达，细分H184/H257/H260–263沿原有源行。H764五类旧发布回执的20种替换请求409，在事务末尾拒绝之前已由[_apply_import](../../backend/common/config_repository.py#L1703)生成恢复快照，故比较一份完整旧数据库快照及其余状态精确不变，而非要求无新增文件。回执为明确合成保留值，零设备交互不代表真实RouterOS发布。H765由R117-F13实际设备首读阻塞时的删除请求到达，未直接持Python文件锁。
 
+### Step B 实际图与命名空间后置校验（批次135）
+
+H191–194/H197–200/H202–204/H264/H265通过实际完整import或公开Mihomo生成到达。原始拨号节点必须被策略组实际选中才进入resolved profile；坏raw名称会先被[config_repository.py:328](../../backend/common/config_repository.py#L328)拒绝，未到H195/H196，不计覆盖。Provider同名测试也须同时选中订阅和聚合，未被选中的共享资源不属于生成快照。
+
+H221/H222分别是已保存raw拓扑与真实Sub-Store转换才出现的dialer，Surge/Loon实际拒绝，转换完整线级协议仍相比。H1056/H1081实际验证链出口与自动机场Relay组的名称冲突，见[provider_delivery.py:94](../../backend/utils/provider_delivery.py#L94)、[subscription_dialers.py:204](../../backend/utils/subscription_dialers.py#L204)。H1085真实空YAML下载先保存transport原文，再记录失败；旧节点缓存保持完整字节，[subscription_refresh.py:84](../../backend/utils/subscription_refresh.py#L84)。H1086的非法间隔导入先被[config_repository.py:2442](../../backend/common/config_repository.py#L2442)拒绝，草稿撤回。
+
+H1055由实际私有草稿加公开profile import的同ID不同router到达；check在attach拒绝前已经保存检查回执，因此只允许installation/config_revision/route_instructions/updated_at变化，原路由器、其他session字段及全SQL必须不变，见[setup.py:115](../../backend/routes/setup.py#L115)、[setup_flow.py:597](../../backend/common/setup_flow.py#L597)。合成installation publication仍是边界前提，不代表安装或设备发布已经验收。
+
 R020-B90新增独立公开前置：先真正保存public token，再分别执行缺内部能力/能力冲突/当前有效能力三种完整import（登录/认证关闭），及reset；当前/退役能力不能再保存为public token，失败全SQL/files精确不变。有效schema能力的import保留原值，缺失/冲突与reset才轮换，沿用上文T28 oracle更正。原独立import/reset用例保留，不因新增公开setter的wiring前置而丢掉原先能比较的路径。
 
 R228-B90实际测试未注入公开构建的完整`{"version":"dev"}`响应，检查精确字段形态且所有值仍严格比；没有用shape投影掩掉版本值。Docker发布时对[backend/version.py](../../backend/version.py)的Git tag替换和Go发布构建注入之间的值约定仍属O12/O14部分覆盖，当前dev/dev通过不能外推为发布版本注入已经验收。
