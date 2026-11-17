@@ -260,7 +260,26 @@ def plain_install_error(left, right, route):
             and 'content-disposition' not in right[3])
 
 
+def installer_rollback_baseline(reply, route):
+    """Reverse only the fixed approved D3 source edits for the public script."""
+    if route != '/api/agents/install-script' or reply[0] != 200 or not reply[1].startswith('text/plain'):
+        return reply
+    approved = json.loads((ROOT / 'server/internal/installer/installertest/l1-rollback-deltas.json').read_text())
+    try:
+        script = reply[2].decode('utf-8')
+    except UnicodeError:
+        return reply
+    if approved['module'] not in script:
+        return reply
+    edits = [(item['after'].replace('{agent_install_rollback}', approved['module']), item['before'])
+             for item in approved['deltas']]
+    for after, before in sorted(edits, key=lambda item: len(item[0]), reverse=True):
+        script = script.replace(after, before)
+    return (reply[0], reply[1], script.encode('utf-8'), *reply[3:])
+
+
 def response_diffs(left, right, route, rules):
+    right = installer_rollback_baseline(right, route)
     if plain_install_error(left, right, route):
         # Body/status/type already agree exactly. Assert only the approved
         # attachment-header removal; every other header still compares.

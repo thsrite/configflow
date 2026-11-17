@@ -108,6 +108,10 @@ Python 启动迁移和缓存整理仍正常执行，但只作用于临时副本�
   Content-Type 必须与 Flask 完全一致，不再允许 JSON 包装。只有已批准的错误附件头移除
   单独声明：Python 必须恰为 configflow-install.sh 的 attachment，Go 必须没有该头，
   其余头仍比较。篡改消息、状态、类型或回到 JSON 都会失败。
+- L1 D3 的 `/api/agents/install-script` 成功脚本仅反向应用固定的
+  `internal/installer/installertest/l1-rollback-deltas.json` 源码差异，与在线差分共用
+  同一份批准记录；完整模块必须精确匹配，其余正文、状态和响应头继续比较。
+  修改无关脚本行或回滚模块任一字节的负向检验会失败。不新增允许差异条目。
 - `proddiff-normalize.json` 逐项声明精确路由（必须在 routes.tsv 中）、精确路径和原因，不支持通配符；
   未知字段或多个模式同时出现即框架失败。路径可用 `name[]` 表示列表每一项，`header.<name>` 表示响应头。
   模式：默认（两端同类型标量才替换）；`pattern`（两端各自只替换匹配部分，其余文本照常比较）；

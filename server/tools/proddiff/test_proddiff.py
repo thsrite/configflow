@@ -26,6 +26,23 @@ def reply(body, content_type=JSON, status=200, headers=None):
 
 
 class ComparatorTests(unittest.TestCase):
+    def test_installer_rollback_delta_is_fixed_and_other_script_bytes_stay_strict(self):
+        approved = json.loads((pd.ROOT / 'server/internal/installer/installertest/l1-rollback-deltas.json').read_text())
+        first, trap = approved['deltas'][:2]
+        suffix = 'echo unchanged\n'
+        original = '#!/bin/sh\n' + first['before'] + trap['before'] + suffix
+        changed = ('#!/bin/sh\n' + first['after'].replace('{agent_install_rollback}', approved['module'])
+                   + trap['after'] + suffix)
+        route = '/api/agents/install-script'
+        left = reply(original.encode(), 'text/plain; charset=utf-8')
+        right = reply(changed.encode(), left[1])
+        self.assertEqual([], pd.response_diffs(left, right, route, []))
+        for mutation in [changed.replace(suffix, 'echo wrong\n'),
+                         changed.replace('AGENT_ROLLBACK_KEEP=0', 'AGENT_ROLLBACK_KEEP=1')]:
+            self.assertTrue(pd.response_diffs(left, reply(mutation.encode(), left[1]), route, []))
+        self.assertTrue(pd.response_diffs(left, right, '/different-script', []))
+        self.assertTrue(pd.response_diffs(left, reply(right[2], left[1], 500), route, []))
+
     def test_short_link_plain_error_and_attachment_exception_are_strict(self):
         route = '/api/agents/i/<token>'
         for status, message in [(404, '安装链接不存在或已过期，请在面板重新生成。\n'),
