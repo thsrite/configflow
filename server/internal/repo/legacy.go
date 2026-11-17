@@ -62,11 +62,9 @@ func modelFromLegacy(legacy *jsonx.Object, base *store.Document) (*model.Documen
 // not change keep their stored bytes (row level, legacyIntentRows).
 func (r *Repository) update(ctx context.Context, options writeOptions, fn func(ctx context.Context, document *jsonx.Object) error) error {
 	return r.transact(ctx, options, func(ctx context.Context, tx *transaction) error {
+		// A legacy updater always starts from the base generation, so the
+		// base rows are the rows of its starting point.
 		legacy, err := legacyModelDocument(tx.document)
-		if err != nil {
-			return err
-		}
-		rows, err := encodeModelRows(tx.document, tx.base.Entry.Document)
 		if err != nil {
 			return err
 		}
@@ -76,8 +74,12 @@ func (r *Repository) update(ctx context.Context, options writeOptions, fn func(c
 		if err != nil {
 			return err
 		}
-		tx.document, err = modelFromLegacy(legacy, rows)
-		return err
+		if tx.document, err = modelFromLegacy(legacy, tx.base.Entry.Document); err != nil {
+			return err
+		}
+		// legacy is exactly the converted working copy: validation reuses it.
+		tx.proposed = legacy
+		return nil
 	})
 }
 

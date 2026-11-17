@@ -36,6 +36,9 @@ type transaction struct {
 	// legacy is the *jsonx.Object working copy while a legacy updater runs
 	// (legacy.go); it is authoritative until converted back into document.
 	legacy *jsonx.Object
+	// proposed, when set, is a legacy view equal to document (the legacy
+	// updater's result); validation uses it instead of converting again.
+	proposed *jsonx.Object
 }
 
 type txKey struct{ repository *Repository }
@@ -156,9 +159,11 @@ func (r *Repository) transactLocked(ctx context.Context, options writeOptions, f
 	}
 	// Business validation and the router guard still run on the legacy view
 	// until their owners are migrated (N8-5b/c).
-	legacy, err := legacyModelDocument(tx.document)
-	if err != nil {
-		return err
+	legacy := tx.proposed
+	if legacy == nil {
+		if legacy, err = legacyModelDocument(tx.document); err != nil {
+			return err
+		}
 	}
 	if err := ensureLegacyRuleProxyToken(tx, legacy); err != nil {
 		return err
