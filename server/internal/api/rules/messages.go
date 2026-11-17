@@ -52,3 +52,15 @@ const (
 	msgComposedCacheWarning = "规则集已保存，但本地缓存失败，发布时会重新获取"
 	msgComposedCacheLog     = "Caching composed rule library failed; committed save retained"
 )
+
+const (
+	msgLocalFailed     = "Error getting local rule"
+	msgLocalMissing    = "Rule not found in rule library: %s. Please add it to the rule library first."
+	msgQuery           = "请输入域名或IP地址"
+	msgQueryInvalid    = "请输入有效的域名或IP地址"
+	msgUnmatched       = "该域名/IP未匹配任何规则，将使用默认策略"
+	msgMatchFailed     = "查询失败"
+	msgDuplicateFailed = "查重失败"
+	msgDirectRules     = "直接配置的规则"
+	msgRuleset         = "规则集"
+)

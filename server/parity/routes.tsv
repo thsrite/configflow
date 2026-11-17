@@ -275,9 +275,9 @@ POST	/api/profiles/<profile_id>/oxidns/validate	routes.profiles.profile_validate
 GET	/api/profiles/<profile_id>/proxy-groups	routes.profiles.profile_proxy_groups		todo
 POST	/api/profiles/<profile_id>/proxy-groups	routes.profiles.profile_proxy_groups		todo
 GET	/api/profiles/<profile_id>/rule-library/content/<rule_id>	routes.profiles.profile_rule_library_content		todo
-GET	/api/profiles/<profile_id>/rules	routes.profiles.profile_rules		todo
-POST	/api/profiles/<profile_id>/rules	routes.profiles.profile_rules		todo
-GET	/api/profiles/<profile_id>/rules/local/<name>	routes.profiles.profile_local_rule		todo
+GET	/api/profiles/<profile_id>/rules	routes.profiles.profile_rules	internal/api/rules	done
+POST	/api/profiles/<profile_id>/rules	routes.profiles.profile_rules	internal/api/rules	done
+GET	/api/profiles/<profile_id>/rules/local/<name>	routes.profiles.profile_local_rule	internal/api/rules	done
 GET	/api/profiles/<profile_id>/subscriptions/<sub_id>/proxies	routes.profiles.profile_subscription_proxies	api/subscriptions	done
 POST	/api/profiles/import-client	routes.profiles.import_client_profile		todo
 GET	/api/proxy-groups	routes.proxy_groups.handle_proxy_groups		todo
@@ -322,24 +322,24 @@ POST	/api/rule-library/proxy-domains	routes.rule_library.handle_proxy_domains		t
 POST	/api/rule-library/reorder	routes.rule_library.reorder_rule_library		todo
 POST	/api/rule-library/test	routes.rule_library.test_rules		todo
 POST	/api/rule-library/test-single	routes.rule_library.test_single_rule		todo
-GET	/api/rule-sets	routes.rules.handle_rule_sets		todo
-POST	/api/rule-sets	routes.rules.handle_rule_sets		todo
-DELETE	/api/rule-sets/<rule_set_id>	routes.rules.handle_rule_set		todo
-PUT	/api/rule-sets/<rule_set_id>	routes.rules.handle_rule_set		todo
-GET	/api/rules	routes.rules.handle_rules		todo
-POST	/api/rules	routes.rules.handle_rules		todo
-DELETE	/api/rules/<rule_id>	routes.rules.handle_rule		todo
-PUT	/api/rules/<rule_id>	routes.rules.handle_rule		todo
-POST	/api/rules/batch	routes.rules.batch_add_rules		todo
-POST	/api/rules/compose	routes.rules.compose_rules		todo
-GET	/api/rules/dns	routes.rules.handle_rule_dns		todo
-PUT	/api/rules/dns	routes.rules.handle_rule_dns		todo
-POST	/api/rules/find-duplicates	routes.rules.find_duplicate_rules		todo
-POST	/api/rules/group-name	routes.rules.rename_rule_group		todo
-GET	/api/rules/local/<name>	routes.rules.get_local_rule		todo
-POST	/api/rules/match-test	routes.rules.match_test_rule		todo
-PUT	/api/rules/policy	routes.rules.set_rule_policy		todo
-POST	/api/rules/reorder	routes.rules.reorder_rules		todo
+GET	/api/rule-sets	routes.rules.handle_rule_sets	internal/api/rules	done
+POST	/api/rule-sets	routes.rules.handle_rule_sets	internal/api/rules	done
+DELETE	/api/rule-sets/<rule_set_id>	routes.rules.handle_rule_set	internal/api/rules	done
+PUT	/api/rule-sets/<rule_set_id>	routes.rules.handle_rule_set	internal/api/rules	done
+GET	/api/rules	routes.rules.handle_rules	internal/api/rules	done
+POST	/api/rules	routes.rules.handle_rules	internal/api/rules	done
+DELETE	/api/rules/<rule_id>	routes.rules.handle_rule	internal/api/rules	done
+PUT	/api/rules/<rule_id>	routes.rules.handle_rule	internal/api/rules	done
+POST	/api/rules/batch	routes.rules.batch_add_rules	internal/api/rules	done
+POST	/api/rules/compose	routes.rules.compose_rules	internal/api/rules	done
+GET	/api/rules/dns	routes.rules.handle_rule_dns	internal/api/rules	done
+PUT	/api/rules/dns	routes.rules.handle_rule_dns	internal/api/rules	done
+POST	/api/rules/find-duplicates	routes.rules.find_duplicate_rules	internal/api/rules	done
+POST	/api/rules/group-name	routes.rules.rename_rule_group	internal/api/rules	done
+GET	/api/rules/local/<name>	routes.rules.get_local_rule	internal/api/rules	done
+POST	/api/rules/match-test	routes.rules.match_test_rule	internal/api/rules	done
+PUT	/api/rules/policy	routes.rules.set_rule_policy	internal/api/rules	done
+POST	/api/rules/reorder	routes.rules.reorder_rules	internal/api/rules	done
 GET	/api/server-domain	routes.settings.handle_server_domain	internal/api/settings	done
 POST	/api/server-domain	routes.settings.handle_server_domain	internal/api/settings	done
 GET	/api/settings/dependencies	routes.settings.list_third_party_dependencies	internal/api/settings	done

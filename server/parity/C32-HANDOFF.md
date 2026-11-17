@@ -6,7 +6,7 @@
 
 847da438：首批16方法，server 已接线。native 稀疏 JSON patch/响应类型、CRUD、batch、reorder、group-name、policy、GET/PUT dns、owner lifecycle.Detach，C09/C27 逻辑不复制。JSONx 仅 adapter。hook nil/error/true/false/no-device、持久化不回滚和日志不泄漏测试通过。全应用注册测试通过。
 
-当前 compose 实现与测试已编译通过，17/21。复用共享校验、AllowedCommaPayload getter；保持逗号 payload；服务器生成ID；共享库+profile+DNS同一事务；预验证远程源；提交后缓存失败返回警告。原子回滚、取消、并发去重及纯解析fuzz种子测试通过。
+02693e11 compose 已提交，17/21。复用共享校验、AllowedCommaPayload getter；保持逗号 payload；服务器生成ID；共享库+profile+DNS同一事务；预验证远程源；提交后缓存失败返回警告。原子回滚、取消、并发去重及纯解析fuzz种子测试通过。
 
 下一步：
 1. 完成两条公开 local provider；复用 rulefetch/refresh 的缓存、2秒下载、stale、Mihomo delivery-only normalization、422/502及镜像语义。
@@ -22,3 +22,5 @@
 - `rt -- bash -lc 'cd server && go test -p 4 -count=1 ./internal/api/rules -v'` PASS 1.533s。
 
 注意：当前 readBody 通过 HTTP JSON facade 读取后转换原生稀疏patch；C27 settings/节点操作与repo旧接口全部集中在adapter；不要把 jsonx 放进核心。新 rulefetch Append 返回(string,error)；yamlx 不允许用 Clone 展开用户图，也不允许把策略/alias错误降级为plaintext。无效旧 native draft 的删除路径先显式拒绝 YAML policy/alias 错误，语法损坏按Python保留不可发布草稿。最终报告需重写为已完成状态。
+
+全部21方法已实现；公开provider、lazy match、compact查重、2万条重复保留测试，.64 go test -p 4 -count=1 ./internal/api/rules PASS 0.854s。实际 Flask/DB/files 差分及最终门禁仍未做完。

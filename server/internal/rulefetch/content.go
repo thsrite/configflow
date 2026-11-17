@@ -977,3 +977,7 @@ func payloadEditError(err error) error {
 	}
 	return &repo.Error{Kind: repo.ErrValidation, Message: fmt.Sprintf(msgReadPayloadYAML, err), Cause: err}
 }
+
+// RuleLines splits text using the rule-source line separators accepted by the
+// shared parser, retaining blank lines for diagnostic line numbers.
+func RuleLines(content string) []string { return splitLines(content, false) }

@@ -3,6 +3,7 @@ package rules
 import (
 	"configflow/internal/rulefetch"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +26,9 @@ type Options struct {
 func RegisterWithOptions(r *httpx.Router, options Options) {
 	if options.Now == nil {
 		options.Now = time.Now
+	}
+	if options.Client == nil {
+		options.Client = rulefetch.DefaultClient
 	}
 	s := &Service{client: options.Client, now: options.Now}
 	for _, path := range []struct {
@@ -124,6 +128,36 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 		out, err := s.SetDNS(c.Context(), "", body, requestBase(c, body))
 		return respond(out, err)
 	}))
+	for _, path := range []struct{ path, name string }{{"/api/rules/local/<name>", "rules.get_local_rule"}, {"/api/profiles/<profile_id>/rules/local/<name>", "profiles.profile_local_rule"}} {
+		r.GET(path.path, path.name, func(c *httpx.Ctx) (*httpx.Response, error) {
+			target, _ := c.Arg("target")
+			out, err := s.Local(c.Context(), c.Param("profile_id"), c.Param("name"), target, c.HostURL())
+			if err != nil {
+				return respond(nil, err)
+			}
+			response := httpx.Bytes(200, "text/plain; charset=utf-8", out.Content).WithHeader("Content-Length", strconv.Itoa(len(out.Content)))
+			if out.Stale {
+				response.WithHeader("X-ConfigFlow-Cache", "stale").WithHeader("Warning", `110 ConfigFlow "Rule refresh failed; using validated cache"`)
+			}
+			return response, nil
+		})
+	}
+	r.POST("/api/rules/match-test", "rules.match_test_rule", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
+		body, err := readBody(c, false)
+		if err != nil {
+			return respond(nil, &fault{500, msgMatchFailed})
+		}
+		out, err := s.Match(c.Context(), "", body, c.HostURL())
+		return respond(out, err)
+	}))
+	r.POST("/api/rules/find-duplicates", "rules.find_duplicate_rules", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
+		out, err := s.FindDuplicates(c.Context(), "", c.HostURL())
+		if err != nil {
+			return respond(nil, err)
+		}
+		return httpx.External(c, out)
+	}))
+
 }
 func requestBase(c *httpx.Ctx, body record) string {
 	if value, ok := textValue(body["base_url"]); ok && strings.TrimSpace(value) != "" {
@@ -134,6 +168,14 @@ func requestBase(c *httpx.Ctx, body record) string {
 func respond(value any, err error) (*httpx.Response, error) {
 	if err == nil {
 		return httpx.JSON(value), nil
+	}
+	var source *sourceFailure
+	if errors.As(err, &source) {
+		status := source.Status
+		if status == 0 {
+			status = 422
+		}
+		return httpx.JSONStatus(status, source), nil
 	}
 	var paste *pasteError
 	if errors.As(err, &paste) {
