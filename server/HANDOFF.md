@@ -81,6 +81,11 @@ Codex first + "Opus review pending" if Claude quota is out).
    (`pyError` type with Python exception classes in errors.go/delivery.go/response.go — N2 added two more
    `ValueError` uses in delivery.go) and `internal/convert` (mihomo_generate.go, exports_mosdns.go). The S pass
    of those packages removes them (plain Go errors with the Chinese messages the API returns).
+3c. **Route-pattern conflicts to solve when those routes are ported** (O6 routers review): in Go's ServeMux
+   `/api/agents/gateway-installations/{session_id}` and `/api/agents/{agent_id}/upstream-routers` overlap and
+   panic at registration; also `/api/agents/i/status` must reach the install short-link handler and
+   `POST …/mihomo/rule-targets` the Mihomo proxy route as in Flask. The porter of the second route must
+   resolve the precedence explicitly (and test it).
 4. **Blocked until 1 exists:** N7 (YAML → yaml.v3 behind yamlx) and N8 (remove jsonx) Opus designs and their
    implementation, S passes of convert/subs/agents/repo, and any other large refactor of accepted code.
 **Opus task list O1–O15 with triggers:** WORKFLOW.md "Complete Opus task list" — start each on its trigger without asking.
