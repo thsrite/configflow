@@ -178,7 +178,7 @@ func (d *RouterOS) runAddressBatches(ctx context.Context, shared Row, addresses 
 		batches = append(batches, current)
 	}
 	failed, first := 0, ""
-	d.invalidateAddresses()
+	d.InvalidateAddressReads()
 	for _, batch := range batches {
 		value, err := d.request(ctx, "POST", "/execute", Row{"script": head + strings.Join(batch, ";") + tail, "as-string": ""}, rosTimeout)
 		if err != nil {
@@ -232,7 +232,7 @@ func (d *RouterOS) CreateAddresses(ctx context.Context, entries []Row, journal *
 	return d.createAddresses(ctx, entries, journal, ids, nil)
 }
 func (d *RouterOS) createAddresses(ctx context.Context, entries []Row, journal *[]NATStep, ids ROSIDs, created map[int]ROSResource) ([]ROSResource, error) {
-	d.invalidateAddresses()
+	d.InvalidateAddressReads()
 	type member struct {
 		index  int
 		values Row
@@ -351,7 +351,7 @@ func (d *RouterOS) createAddresses(ctx context.Context, entries []Row, journal *
 	return resources, nil
 }
 func (d *RouterOS) removeAddresses(ctx context.Context, ids []string) error {
-	d.invalidateAddresses()
+	d.InvalidateAddressReads()
 	for start := 0; start < len(ids); start += AddressRemoveBatch {
 		if _, err := d.request(ctx, "POST", rosAddresses+"/remove", Row{".id": strings.Join(ids[start:min(start+AddressRemoveBatch, len(ids))], ",")}, rosTimeout); err != nil {
 			return err
@@ -393,7 +393,7 @@ func (d *RouterOS) forgetAddresses(items []ROSResource, removed map[string]bool)
 // journaling and removing any of them. Cancellation cannot interrupt rollback.
 func (d *RouterOS) DeleteAddresses(ctx context.Context, items []ROSResource, journal *[]NATStep) error {
 	ctx = context.WithoutCancel(ctx)
-	d.invalidateAddresses()
+	d.InvalidateAddressReads()
 	live, err := d.liveAddresses(ctx, items)
 	if err != nil {
 		return err
@@ -442,7 +442,7 @@ func stepsResources(steps []NATStep) []ROSResource {
 	return items
 }
 func (d *RouterOS) restoreDeleteAddresses(ctx context.Context, steps []NATStep) error {
-	d.invalidateAddresses()
+	d.InvalidateAddressReads()
 	live, err := d.liveAddresses(ctx, stepsResources(steps))
 	if err != nil {
 		return err
@@ -528,7 +528,7 @@ func (d *RouterOS) restoreAddressSweep(ctx context.Context, s NATStep) error {
 	return nil
 }
 func (d *RouterOS) restoreAddresses(ctx context.Context, steps []NATStep, ids ROSIDs, remapped map[[2]string]string) error {
-	d.invalidateAddresses()
+	d.InvalidateAddressReads()
 	live, err := d.liveAddresses(ctx, stepsResources(steps))
 	if err != nil {
 		return err

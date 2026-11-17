@@ -2,7 +2,6 @@ package routers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -54,7 +53,7 @@ type ROSReplacement struct {
 
 // NATListSync is the complete list delta decided by a preview.
 type NATListSync struct {
-	Kind         string        `json:"kind"`
+	OpHead
 	Comment      string        `json:"comment"`
 	SrcList      string        `json:"src_list"`
 	DstList      string        `json:"dst_list"`
@@ -70,7 +69,6 @@ type NATListSync struct {
 	Legacy       []ROSResource `json:"legacy"`
 	Stale        []ROSResource `json:"stale"`
 	Withdraw     bool          `json:"withdraw"`
-	Summary      string        `json:"summary"`
 }
 
 // NATListMembers is the ConfigFlow-owned member keys remaining after a stage.
@@ -92,12 +90,12 @@ type NATListCheck struct {
 
 // NATListPlan is nil when the existing per-rule plan and reads stay unchanged.
 type NATListPlan struct {
-	Ops      []json.RawMessage `json:"ops"`
-	Blockers []string          `json:"blockers"`
-	Warnings []string          `json:"warnings"`
-	Evidence *NATListEvidence  `json:"evidence"`
-	Check    *NATListCheck     `json:"check"`
-	Exempt   []string          `json:"exempt"`
+	Ops      []Op             `json:"ops"`
+	Blockers []string         `json:"blockers"`
+	Warnings []string         `json:"warnings"`
+	Evidence *NATListEvidence `json:"evidence"`
+	Check    *NATListCheck    `json:"check"`
+	Exempt   []string         `json:"exempt"`
 }
 
 // NATListEvidence retains stable list snapshots in a preview fingerprint.
@@ -205,6 +203,7 @@ func StillRoutedNAT(report *Report, state *RouterState, gateway string) []netip.
 
 func legacyNAT(rows []Row, sources []string, items []NatItem, desired, skipped []string, excluded map[string]bool, egress string, routed []netip.Prefix) (merged []ROSResource, destinations []string, stale, retained []ROSResource) {
 	merged, destinations, stale, retained = []ROSResource{}, []string{}, []ROSResource{}, []ROSResource{}
+	blocked, proxied := Networks(skipped), Networks(desired)
 	wanted := map[string]string{}
 	for _, item := range items {
 		if item.Status == "synced" || item.Status == "missing" {
@@ -253,13 +252,13 @@ func legacyNAT(rows []Row, sources []string, items []NatItem, desired, skipped [
 			continue
 		}
 		if cidr, ok := wanted[key]; ok {
-			if !overlapsAny(network, Networks(skipped)) {
+			if !overlapsAny(network, blocked) {
 				for _, row := range group {
 					selected[row.id()] = true
 				}
 				destinations = append(destinations, cidr)
 			}
-		} else if !overlapsAny(network, Networks(desired)) {
+		} else if !overlapsAny(network, proxied) {
 			target := kept
 			if routed != nil && !overlapsAny(network, routed) {
 				target = old
@@ -337,7 +336,7 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 	if found.Rule == nil && found.Problem == "" && len(missing) == 0 && len(legacy) == 0 {
 		return nil
 	}
-	result := &NATListPlan{Ops: []json.RawMessage{}, Blockers: []string{}, Warnings: []string{}, Exempt: []string{}}
+	result := &NATListPlan{Ops: []Op{}, Blockers: []string{}, Warnings: []string{}, Exempt: []string{}}
 	lists := ListsOfNAT(ctx, state)
 	if lists == nil {
 		result.Blockers = append(result.Blockers, messageNATListsUnreadable)
@@ -485,20 +484,23 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 		entry := natRules[id]
 		comment := ManagedComment(entry.Comment)
 		label := firstNonEmpty(entry.Comment, id)
-		result.Ops = append(result.Ops, marshalRow(Row{"kind": "nat_update", "id": id, "add_dst": []string{}, "comment": comment, "summary": fmt.Sprintf(messageNATAdopt, label, comment), "expected": json.RawMessage(entry.Attributes)}))
+		result.Ops = append(result.Ops, &NATUpdateOp{OpHead: OpHead{Kind: "nat_update", Summary: fmt.Sprintf(messageNATAdopt, label, comment)}, ID: id, AddDst: []string{}, Comment: comment, Expected: slices.Clone(entry.Attributes)})
 	}
 	create := rule == nil && len(targets) > 0
 	if create || withdraw || len(srcAdd)+len(srcRemove)+len(dstAdd)+len(dstRemove)+len(legacy)+len(stale) > 0 {
-		op := NATListSync{Kind: "nat_list_sync", Comment: NATListComment, SrcList: NATSrcList, DstList: NATDstList, Rule: rule, OutInterface: found.OutInterface, Sources: sources, Destinations: targets, SrcAdd: srcAdd, SrcRemove: srcRemove, DstAdd: dstAdd, DstRemove: dstRemove, Legacy: legacy, Stale: stale, Withdraw: withdraw}
+		op := NATListSync{OpHead: OpHead{Kind: "nat_list_sync"}, Comment: NATListComment, SrcList: NATSrcList, DstList: NATDstList, Rule: rule, OutInterface: found.OutInterface, Sources: sources, Destinations: targets, SrcAdd: srcAdd, SrcRemove: srcRemove, DstAdd: dstAdd, DstRemove: dstRemove, Legacy: legacy, Stale: stale, Withdraw: withdraw}
+		legacyKeys := map[string]bool{}
+		for _, cidr := range legacyDest {
+			legacyKeys[natKey(cidr)] = true
+		}
 		fresh := []string{}
 		for _, cidr := range targets {
-			if !slices.ContainsFunc(legacyDest, func(value string) bool { return natKey(value) == natKey(cidr) }) {
+			if !legacyKeys[natKey(cidr)] {
 				fresh = append(fresh, cidr)
 			}
 		}
 		op.Summary = NATListSummary(op, gateway, create, fresh)
-		raw, _ := json.Marshal(op)
-		result.Ops = append(result.Ops, raw)
+		result.Ops = append(result.Ops, &op)
 	}
 	removed := []string{}
 	for _, item := range append(slices.Clone(legacy), stale...) {
@@ -597,26 +599,21 @@ func NATListSummary(op NATListSync, gateway string, create bool, fresh []string)
 }
 
 // NATRemovalsFirst moves pruning and stale exemptions before route deletions.
-func NATRemovalsFirst(natOps, routeOps []json.RawMessage, gateway string) ([]json.RawMessage, []json.RawMessage) {
-	hasDelete := false
-	for _, raw := range routeOps {
-		var head struct{ Kind string }
-		_ = json.Unmarshal(raw, &head)
-		hasDelete = hasDelete || head.Kind == "route_delete"
-	}
+func NATRemovalsFirst(natOps, routeOps []Op, gateway string) ([]Op, []Op) {
+	hasDelete := slices.ContainsFunc(routeOps, func(op Op) bool { return op.OpKind() == "route_delete" })
 	if !hasDelete {
 		return natOps, routeOps
 	}
-	early, rest := []json.RawMessage{}, []json.RawMessage{}
-	for _, raw := range natOps {
-		var op NATListSync
-		_ = json.Unmarshal(raw, &op)
-		if op.Kind != "nat_list_sync" || op.ReplaceRule {
-			rest = append(rest, raw)
+	early, rest := []Op{}, []Op{}
+	for _, original := range natOps {
+		sync, ok := original.(*NATListSync)
+		if !ok || sync.ReplaceRule {
+			rest = append(rest, original)
 			continue
 		}
+		op := *sync
 		if op.Withdraw {
-			early = append(early, raw)
+			early = append(early, original)
 			continue
 		}
 		pruning := []ROSResource{}
@@ -624,14 +621,13 @@ func NATRemovalsFirst(natOps, routeOps []json.RawMessage, gateway string) ([]jso
 			pruning = op.DstRemove
 		}
 		if len(pruning)+len(op.Stale) == 0 {
-			rest = append(rest, raw)
+			rest = append(rest, original)
 			continue
 		}
 		prune := op
 		prune.SrcAdd, prune.SrcRemove, prune.DstAdd, prune.Legacy, prune.Destinations, prune.DstRemove = []string{}, []ROSResource{}, []string{}, []ROSResource{}, []string{}, pruning
 		prune.Summary = NATListSummary(prune, gateway, false, nil) + messageNATBeforeRoutes
-		v, _ := json.Marshal(prune)
-		early = append(early, v)
+		early = append(early, &prune)
 		if len(pruning) > 0 {
 			op.DstRemove = []ROSResource{}
 		}
@@ -644,8 +640,7 @@ func NATRemovalsFirst(natOps, routeOps []json.RawMessage, gateway string) ([]jso
 				}
 			}
 			op.Summary = NATListSummary(op, gateway, op.Rule == nil, fresh)
-			v, _ := json.Marshal(op)
-			rest = append(rest, v)
+			rest = append(rest, &op)
 		}
 	}
 	return rest, append(early, routeOps...)

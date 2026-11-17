@@ -251,7 +251,9 @@ func (d *RouterOS) ReuseAddressReads() func() {
 	d.addressReads = map[string]addressProof{}
 	return func() { d.addressReads = nil }
 }
-func (d *RouterOS) invalidateAddresses() { clear(d.addressReads) }
+
+// InvalidateAddressReads drops all proofs reused in the current scope before a write.
+func (d *RouterOS) InvalidateAddressReads() { clear(d.addressReads) }
 func (d *RouterOS) knownAddresses() map[string][]Row {
 	known := map[string][]Row{}
 	var manifest rosManifest

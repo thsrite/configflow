@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 )
@@ -158,6 +159,16 @@ func (d *RouterOS) deleteResource(ctx context.Context, item ROSResource, journal
 	return nil
 }
 
+func indexROSRows(rows []Row) (map[string]Row, map[string]int) {
+	byID := make(map[string]Row, len(rows))
+	position := make(map[string]int, len(rows))
+	for i, row := range rows {
+		byID[row.id()] = row
+		position[row.id()] = i
+	}
+	return byID, position
+}
+
 // DeleteNATRules guards a whole legacy run and records original positions before
 // batched removal. A fallback rechecks every remaining snapshot before DELETE.
 func (d *RouterOS) DeleteNATRules(ctx context.Context, items []ROSResource, journal *[]NATStep) error {
@@ -166,35 +177,41 @@ func (d *RouterOS) DeleteNATRules(ctx context.Context, items []ROSResource, jour
 	if err != nil {
 		return err
 	}
+	byID, position := indexROSRows(rows)
 	deleting := map[string]bool{}
 	for _, item := range items {
 		if item.Path != rosNAT || item.Config == nil || item.ID == "" {
 			return routerError(messageOperationFormat)
 		}
-		row := findRow(rows, item.ID)
+		row := byID[item.ID]
 		if row == nil || !sameRow(configROSRow(row), configROSRow(item.Config)) {
 			return routerError(fmt.Sprintf(messageNATChanged, rosNAT, item.ID))
 		}
 		deleting[item.ID] = true
 	}
+	following := make([]int, len(rows))
+	next := -1
+	for i := len(rows) - 1; i >= 0; i-- {
+		following[i] = next
+		if !deleting[rows[i].id()] {
+			next = i
+		}
+	}
 	steps := []NATStep{}
 	ids := []string{}
 	for _, item := range items {
-		row := findRow(rows, item.ID)
+		row := byID[item.ID]
 		values, err := writableResource(rosNAT, row)
 		if err != nil {
 			return err
 		}
-		at := indexOfRow(rows, item.ID)
+		at := position[item.ID]
 		step := stepResource("restore", item)
 		step.Values = values
 		step.Order = new(at)
-		for i := at + 1; i < len(rows); i++ {
-			if !deleting[rows[i].id()] {
-				values["place-before"] = rows[i][".id"]
-				step.FollowingOrder = new(i)
-				break
-			}
+		if next := following[at]; next >= 0 {
+			values["place-before"] = rows[next][".id"]
+			step.FollowingOrder = new(next)
 		}
 		steps = append(steps, step)
 		ids = append(ids, item.ID)
@@ -211,8 +228,9 @@ func (d *RouterOS) DeleteNATRules(ctx context.Context, items []ROSResource, jour
 		if err != nil {
 			return err
 		}
+		remainingByID, _ := indexROSRows(remaining)
 		for _, item := range items {
-			if row := findRow(remaining, item.ID); row != nil {
+			if row := remainingByID[item.ID]; row != nil {
 				if !sameRow(configROSRow(row), configROSRow(item.Config)) || row.flag("dynamic") {
 					return routerError(fmt.Sprintf(messageNATChanged, rosNAT, item.ID))
 				}
@@ -294,6 +312,7 @@ func (d *RouterOS) restoreNATRules(ctx context.Context, steps []NATStep, ids ROS
 		*failures = append(*failures, err.Error())
 		return
 	}
+	byID, _ := indexROSRows(rows)
 	batched := []NATStep{}
 	single := []NATStep{}
 	for _, s := range steps {
@@ -306,14 +325,14 @@ func (d *RouterOS) restoreNATRules(ctx context.Context, steps []NATStep, ids ROS
 	slices.SortFunc(batched, func(a, b NATStep) int { return *a.Order - *b.Order })
 	present := []NATStep{}
 	for _, s := range batched {
-		if findRow(rows, s.ID) != nil {
+		if byID[s.ID] != nil {
 			present = append(present, s)
 		}
 	}
 	pending := []NATStep{}
 	changes := []ROSChange{}
 	for _, s := range batched {
-		if row := findRow(rows, s.ID); row != nil {
+		if row := byID[s.ID]; row != nil {
 			if !sameRow(configROSRow(row), configROSRow(s.Config)) {
 				*failures = append(*failures, fmt.Sprintf(messageNATChanged, rosNAT, s.ID))
 			}
@@ -326,16 +345,13 @@ func (d *RouterOS) restoreNATRules(ctx context.Context, steps []NATStep, ids ROS
 			values["place-before"] = newID
 		}
 		var sibling *NATStep
-		for i := range present {
-			if *present[i].Order > *s.Order {
-				sibling = &present[i]
-				break
-			}
+		if i := sort.Search(len(present), func(i int) bool { return *present[i].Order > *s.Order }); i < len(present) {
+			sibling = &present[i]
 		}
-		if sibling != nil && !(findRow(rows, before) != nil && s.FollowingOrder != nil && *s.FollowingOrder < *sibling.Order) {
+		if sibling != nil && !(byID[before] != nil && s.FollowingOrder != nil && *s.FollowingOrder < *sibling.Order) {
 			values["place-before"] = sibling.ID
 		}
-		if anchor := values.text("place-before"); anchor != "" && findRow(rows, anchor) == nil {
+		if anchor := values.text("place-before"); anchor != "" && byID[anchor] == nil {
 			*failures = append(*failures, messagePolicyAnchor)
 			continue
 		}
@@ -440,8 +456,9 @@ func (d *RouterOS) checkNATUnchanged(ctx context.Context, op NATListSync, full, 
 	} else if found.Rule == nil || found.Rule.id() != op.Rule.ID || !sameRow(configROSRow(found.Rule), configROSRow(op.Rule.Config)) {
 		return routerError(messageNATChangedPreview)
 	}
+	byID, _ := indexROSRows(rows)
 	for _, item := range append(slices.Clone(op.Legacy), op.Stale...) {
-		row := findRow(rows, item.ID)
+		row := byID[item.ID]
 		if row == nil || !sameRow(configROSRow(row), configROSRow(item.Config)) {
 			return routerError(messageNATChangedPreview)
 		}
@@ -458,14 +475,19 @@ func (d *RouterOS) checkNATUnchanged(ctx context.Context, op NATListSync, full, 
 		if i == 1 {
 			removing, adding = op.DstRemove, op.DstAdd
 		}
+		members, _ := indexROSRows(lists[name])
+		presentKeys := map[string]bool{}
+		for _, row := range lists[name] {
+			presentKeys[natKey(row.text("address"))] = true
+		}
 		for _, item := range removing {
-			row := findRow(lists[name], item.ID)
+			row := members[item.ID]
 			if row == nil || !sameRow(configROSRow(row), configROSRow(item.Config)) {
 				return routerError(messageNATChangedPreview)
 			}
 		}
 		for _, value := range adding {
-			if slices.ContainsFunc(lists[name], func(row Row) bool { return natKey(row.text("address")) == natKey(value) }) {
+			if presentKeys[natKey(value)] {
 				return routerError(messageNATChangedPreview)
 			}
 		}
@@ -530,7 +552,7 @@ func (d *RouterOS) proveNATList(ctx context.Context, op NATListSync, id string) 
 // on failure. Every mutation is guarded by the preview and recorded before I/O.
 func (d *RouterOS) ApplyNATLists(ctx context.Context, op NATListSync) (*NATListUndo, error) {
 	ctx = context.WithoutCancel(ctx)
-	d.invalidateAddresses()
+	d.InvalidateAddressReads()
 	full, err := d.list(ctx, rosNAT)
 	if err != nil {
 		return nil, err
@@ -629,7 +651,8 @@ func (d *RouterOS) ApplyNATLists(ctx context.Context, op NATListSync) (*NATListU
 				}
 			}
 			items := append(slices.Clone(op.Legacy), op.Stale...)
-			slices.SortFunc(items, func(a, b ROSResource) int { return indexOfRow(full, a.ID) - indexOfRow(full, b.ID) })
+			_, position := indexROSRows(full)
+			slices.SortFunc(items, func(a, b ROSResource) int { return position[a.ID] - position[b.ID] })
 			if err := d.DeleteNATRules(ctx, items, &journal); err != nil {
 				return err
 			}
@@ -661,7 +684,7 @@ func (d *RouterOS) RestoreNATLists(ctx context.Context, op NATListUndo) error {
 			return routerError(messageOperationFormat)
 		}
 	}
-	d.invalidateAddresses()
+	d.InvalidateAddressReads()
 	d.natListTouched = true
 	rows, err := d.list(ctx, rosNAT)
 	if err != nil {

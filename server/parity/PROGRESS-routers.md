@@ -434,7 +434,7 @@ Latest targeted output: `171 real Python boundary cases`, `PASS`, `ok configflow
 
 Files: `backend/routers/routeros_nat_list.py` (1016), `ros_address_lists.py` (297), `backend/routeros_test_helpers.py` (109).
 
-Commits: cb64b567 (scoped reads/proofs/fake), d6302eb1 (typed plan, lazy state reads), 4fee989f (bounded address writes, NAT migration/compensation), 2587327a (sync helpers, external-write/restore boundaries). No push; fresh Opus must review before `verified`.
+Commits: 96e096bf (scoped reads/proofs/fake), e6cd7b3f (typed plan, lazy state reads), e7113b3b (bounded address writes, NAT migration/compensation), aed7ba20 (sync helpers, external-write/restore boundaries). No push; fresh Opus must review before `verified`.
 
 Full handoff, R04 F1–F10 prevention, Python test-file mapping, safety corrections and L5 list: [progress/R07-nat-lists.md](progress/R07-nat-lists.md).
 
@@ -454,6 +454,13 @@ Tests: `test_ros_policy.py` (32), `test_ros_policy_activation.py` (6), `test_ros
 Routes: none.
 
 Notes for porter: `inspect_desired`, `snapshot`, `owned_rows`, `digest`, `config_row`, `network_overlap`, `subtract`, write steps/journal/rollback (`run_steps`, `_create`, `_delete`, `_restore_step`, `_writable`, `_read`), table/FIB flag normalisation, `read_policy_objects`. `ros_policy.digest` is used by R15's policy workspace.
+
+R07/R12 interface follow-up (required in R08): `plan_model.go` already defines the shared `Op`/`OpHead`/`Stage`
+contract and stage keys; extend those definitions rather than redeclaring them. Once `*ROSPolicyReplace`
+provides `PrepareStatic []Op`, replace `nestedNATMigration` with typed traversal and **delete
+`internal/routers/natlist_policy_adapter.go`** (header: R08 落地后移除). Connect R07's temporary
+`NATPolicyEvidence` reads to the same `ROSPolicyPlan.Check` / previous-spec resources R08 owns, so the NAT and
+policy planners cannot use different migration evidence. See R12 design §2.4 “Clarified in R07”.
 
 ## R09 — forced DNS (DNS guard), IPv4 same-port forward hint
 

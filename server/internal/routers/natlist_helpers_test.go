@@ -11,6 +11,46 @@ import (
 	"configflow/internal/routers/routerfake"
 )
 
+// The Python input fixture is decoded only in tests. Production plans are
+// constructed as concrete Op values and never decode polymorphic client JSON.
+type r07WireStage struct {
+	Key string            `json:"key"`
+	Ops []json.RawMessage `json:"ops"`
+}
+type r07FixtureOp struct {
+	routers.OpHead
+	raw json.RawMessage
+}
+
+func (o r07FixtureOp) MarshalJSON() ([]byte, error) { return o.raw, nil }
+func r07TypedOps(rows []json.RawMessage) []routers.Op {
+	ops := []routers.Op{}
+	for _, raw := range rows {
+		var head routers.OpHead
+		_ = json.Unmarshal(raw, &head)
+		switch head.Kind {
+		case "nat_list_sync":
+			var op routers.NATListSync
+			_ = json.Unmarshal(raw, &op)
+			ops = append(ops, &op)
+		case "nat_update":
+			var op routers.NATUpdateOp
+			_ = json.Unmarshal(raw, &op)
+			ops = append(ops, &op)
+		default:
+			ops = append(ops, r07FixtureOp{head, raw})
+		}
+	}
+	return ops
+}
+func r07TypedStages(rows []r07WireStage) []routers.Stage {
+	stages := []routers.Stage{}
+	for _, row := range rows {
+		stages = append(stages, routers.Stage{Key: row.Key, Ops: r07TypedOps(row.Ops)})
+	}
+	return stages
+}
+
 func runR07Helper(tc boundaryCase, endpoint string) boundaryOutcome {
 	out := boundaryOutcome{Records: []map[string]any{}}
 	raw, _ := json.Marshal(tc.op)
@@ -22,7 +62,7 @@ func runR07Helper(tc boundaryCase, endpoint string) boundaryOutcome {
 		Sync                               routers.NATListSync
 		Check                              routers.NATListCheck
 		Interface                          string
-		Stages                             []routers.NATStage
+		Stages                             []r07WireStage
 		Baseline                           *routers.NATBaseline
 		Row                                routers.Row
 		Addresses                          []routers.Row
@@ -35,15 +75,15 @@ func runR07Helper(tc boundaryCase, endpoint string) boundaryOutcome {
 	var err error
 	switch p.Function {
 	case "removals":
-		nat, route := routers.NATRemovalsFirst(p.NATOps, p.RouteOps, p.Gateway)
+		nat, route := routers.NATRemovalsFirst(r07TypedOps(p.NATOps), r07TypedOps(p.RouteOps), p.Gateway)
 		out.Result = []any{nat, route}
 	case "restrict":
 		blocker := routers.RestrictNATEgress(&p.Sync, &p.Check, p.Interface)
 		out.Result = map[string]any{"blocker": blocker, "sync": p.Sync, "check": p.Check}
 	case "member":
-		out.Result = routers.NATMemberUpdate(p.Stages, p.Baseline)
+		out.Result = routers.NATMemberUpdate(r07TypedStages(p.Stages), p.Baseline)
 	case "migration":
-		merged, stale := routers.NATMigration(p.Stages)
+		merged, stale := routers.NATMigration(r07TypedStages(p.Stages))
 		out.Result = []int{merged, stale}
 	case "policy_migrations":
 		out.Result, err = routers.NATPolicyMigrations(p.Row, p.Addresses, p.Exclusions)
@@ -135,10 +175,10 @@ func TestNATListHelperBoundary(t *testing.T) {
 			baseline = nil
 		}
 		ops = append(ops, rawValue(copy))
-		stages := []routers.NATStage{{Key: "routes", Ops: []json.RawMessage{rawValue(copy)}}, {Key: "nat_bypass", Ops: ops}}
+		stages := []r07WireStage{{Key: "routes", Ops: []json.RawMessage{rawValue(copy)}}, {Key: "nat_bypass", Ops: ops}}
 		add("member/"+change, map[string]any{"function": "member", "stages": stages, "baseline": baseline})
 	}
-	add("migration/nested", map[string]any{"function": "migration", "stages": []routers.NATStage{{Key: "routes", Ops: []json.RawMessage{rawValue(map[string]any{"kind": "ros_policy_replace", "prepare_static": []routers.NATListSync{op}})}}, {Key: "nat_bypass", Ops: []json.RawMessage{rawValue(op)}}}})
+	add("migration/nested", map[string]any{"function": "migration", "stages": []r07WireStage{{Key: "routes", Ops: []json.RawMessage{rawValue(map[string]any{"kind": "ros_policy_replace", "prepare_static": []routers.NATListSync{op}})}}, {Key: "nat_bypass", Ops: []json.RawMessage{rawValue(op)}}}})
 	for _, change := range []string{"owned", "foreign", "dynamic", "disabled", "invalid", "no_overlap"} {
 		address := "198.51.100.0/24"
 		comment := routers.NATListComment

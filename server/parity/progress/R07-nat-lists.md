@@ -18,8 +18,8 @@ R04 issue-class prevention:
 - F10: reuse configROSRow/payload/sameRow/ScriptString/putNAT, no private emulation helpers.
 
 Done: address proof/read layer and stateful fake scripts; 24 Python boundary comparisons (digest/fetch/reuse across 0/1/499/500/501/2000/2001/4500 members), content-mutation check. .32 go vet ./... and existing routers/devhttp tests pass.
-Done step 1: cb64b567. Typed NAT planner/read integration: 135 boundary scenarios compare real Python plans and exact request sequences, all pass on .32. Covers no-list paths, adopt/unknown, merge/stale/retained, foreign/dynamic/disabled/reference/shape/order blockers and grow/shrink/unchanged membership.
-Done step 2: d6302eb1. Address batches + NAT apply/restore implemented; .32 vet all and 30 successful apply/roundtrip + 24 NAT failure + 31 address-write boundary cases pass, comparing outcomes/journal/full requests/final tables. Batches cover 200/201/450/3000 members and 560 legacy rules. Digest/fetch/names script text is exact. Address/NAT add parameter order is immaterial: full grammar and all values/address order/anchors are compared, with independent Python interpreter checks. Redact password/URL-encoded password from device diagnostics; accepted security correction vs Python (O9/O12).
+Done step 1: 96e096bf. Typed NAT planner/read integration: 135 boundary scenarios compare real Python plans and exact request sequences, all pass on .32. Covers no-list paths, adopt/unknown, merge/stale/retained, foreign/dynamic/disabled/reference/shape/order blockers and grow/shrink/unchanged membership.
+Done step 2: e6cd7b3f. Address batches + NAT apply/restore implemented; .32 vet all and 30 successful apply/roundtrip + 24 NAT failure + 31 address-write boundary cases pass, comparing outcomes/journal/full requests/final tables. Batches cover 200/201/450/3000 members and 560 legacy rules. Digest/fetch/names script text is exact. Address/NAT add parameter order is immaterial: full grammar and all values/address order/anchors are compared, with independent Python interpreter checks. Redact password/URL-encoded password from device diagnostics; accepted security correction vs Python (O9/O12).
 Done: helper boundary cases (removals-first, restrict egress, enrolled member-only update, nested migration, policy address split, baseline, locate and occupied-name reservation) and 5 external-mutation/restore fault cases pass on .32. Fake mutations preserve allocated IDs and transcript. No open differential mismatch.
 Done: independent Python script-interpreter cross-check; request-cancelled apply and rollback; UTF-8 script byte limits; all-member delete guard; partial address recreation preserves new IDs; deep-copy proof cache; ambiguous/dynamic sweep refusal; wrong-table undo rejection; secret diagnostics; malformed proof/page fallbacks; 600-member pruning/withdrawal and narrowed-rule roundtrips. Deliberately wrong Go result was detected (expected test failure). A fault fixture initially reused *F1 at 200 members; corrected to *F0001, with duplicate-ID behaviour covered explicitly as fail closed.
 Next: authoritative .32 race/all/difftest/proddiff on rebased go, final evidence and clean-tree rebase.
@@ -50,3 +50,35 @@ R07 route count: zero. No Python functionality dropped. No new dependency, jsonx
 ## L5 outstanding (only a CHR proves these)
 
 D07/D08, G08, L5-A/B/I and review-r04 L5 1–9: RouterOS acceptance of 200-member/16KiB scripts and 500-ID removes; associative key/ID ordering and 500-row MD5 chunks with CJK/escaping; 2000-row print pagination and separator fallback; real permission groups and /execute output/ID format; short-lived invalid settling; large-list/legacy migration load; true firmware partial-delete ordering, link loss and restore anchors; original client IP/proxy and WAN packet paths at every transition, including gateway renumbering and policy withdrawal. TLS/credential encodings and real restart persistence stay in the shared R04 L5 checks. No lab or production device was contacted.
+
+
+## R12 §2.4 对应关系
+
+Coordinator explicitly approved the minimal shared contract on 2026-11-17. `plan_model.go` provides exactly the
+§2.2 `Op` / `OpHead` / `Stage` fields and JSON tags, stage keys, and the needed `NATUpdateOp`; R12-1 extends it.
+
+| Contract | R07 implementation |
+|---|---|
+| PlanNATLists → *NATListPlan, Ops []Op | Concrete *NATListSync / *NATUpdateOp, no raw operation JSON in the plan. NATListSync embeds OpHead. |
+| NATRemovalsFirst([]Op, []Op, gateway) | Typed copies split early removals, preserving unrelated op identities and JSON. |
+| RestrictNATEgress(*NATListSync, *NATListCheck, iface) | Mutates typed egress, replacement flag, removed ID check and OpHead.Summary. |
+| VerifyNATLists(ctx, check, state) | Same signatures and complete reference/member checks. |
+| InvalidateAddressReads / ReuseAddressReads | Exported invalidation and nested per-driver reuse scope. R12 invalidates before each op/batch. |
+| Stage consumption | NATMemberUpdate([]Stage, baseline), NATMigration([]Stage); NATStage removed. |
+| R08 not present yet | Approved read-only adapter in natlist_policy_adapter.go, header “R08 落地后移除”; only nested prepare_static migration counts. Required typed replacement/delete task in R08; clarification added to r12-release.md §2.4. |
+
+§3–4: R07 owns no new lock; the caller's L1→L2 contexts are retained and writes/rollback detach cancellation with
+per-request timeouts. One release must retain one driver for the proof cache and newly known IDs. A failed NAT
+operation compensates inside Apply; an incomplete compensation is KindRollback, with its explicit failure text
+(no duplicate/retried partial undo). R12 owns the stage loop: **every** error fails the stage, any UndoOf(err)
+is recorded before failing, and nil/empty/null/{} undo records are skipped. The R07 restore handler returns {}.
+R07 never suppresses an operation error; its successful undo journal is returned before a subsequent stage can
+run. TestR12TypedNATContract checks typed dispatch, JSON field presence and exported invalidation; existing real
+Python boundary tests continue to compare the same driver/API JSON after the model change.
+
+R05 checklist: shared devhttp behaviour unchanged (explicit RouterOS auth still wins); every driver refusal is a
+RouterError with Chinese constants; resource ID/config must be non-empty before destructive I/O; restore proves
+stable identity before overwriting/deleting; row readbacks/positions and next surviving anchors are indexed once
+(no per-item JSON scans). Uncertain writes are compensated inside the same detached driver operation.
+A19 checklist: no YAML container/alias traversal or payload parser is introduced; address proof caches own deep
+JSON copies and composite-valued rows use REST instead of lossy digest coercion; no silent unsupported shape.

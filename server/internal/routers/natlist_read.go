@@ -2,7 +2,6 @@ package routers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -115,30 +114,21 @@ func (d *RouterOS) NATResources(ctx context.Context) (*NATBaseline, error) {
 	return result, nil
 }
 
-// NATStage carries the relevant release operations including nested static
-// preparation. R12/R14 can use it without dynamically shaped dictionaries.
-type NATStage struct {
-	Key string            `json:"key"`
-	Ops []json.RawMessage `json:"ops"`
-}
-
 // NATMemberUpdate permits only enrolled destination deltas; all other changes
 // require a manual publish. Source identity is additionally checked by R14.
-func NATMemberUpdate(stages []NATStage, enrolled *NATBaseline) *NATListSync {
-	ops := []json.RawMessage{}
+func NATMemberUpdate(stages []Stage, enrolled *NATBaseline) *NATListSync {
+	ops := []Op{}
 	for _, stage := range stages {
-		if stage.Key == "routes" {
-			for _, raw := range stage.Ops {
-				var head struct{ Kind string }
-				_ = json.Unmarshal(raw, &head)
-				if head.Kind == "nat_list_sync" {
-					ops = append(ops, raw)
+		if stage.Key == StageRoutes {
+			for _, op := range stage.Ops {
+				if op.OpKind() == "nat_list_sync" {
+					ops = append(ops, op)
 				}
 			}
 		}
 	}
 	for _, stage := range stages {
-		if stage.Key == "nat_bypass" {
+		if stage.Key == StageNATBypass {
 			ops = append(ops, stage.Ops...)
 		}
 	}
@@ -147,14 +137,14 @@ func NATMemberUpdate(stages []NATStage, enrolled *NATBaseline) *NATListSync {
 	}
 	var merged NATListSync
 	adds, removes := []string{}, []ROSResource{}
-	for _, raw := range ops {
-		var op NATListSync
-		if json.Unmarshal(raw, &op) != nil || op.Kind != "nat_list_sync" || op.Rule == nil || op.ReplaceRule || op.Withdraw || len(op.Legacy)+len(op.Stale)+len(op.SrcAdd)+len(op.SrcRemove) > 0 || op.Rule.ID != enrolled.Rule.ID || !sameRow(configROSRow(op.Rule.Config), configROSRow(enrolled.Rule.Config)) || op.OutInterface != enrolled.Rule.Config.text("out-interface") {
+	for _, value := range ops {
+		op, ok := value.(*NATListSync)
+		if !ok || op.Rule == nil || op.ReplaceRule || op.Withdraw || len(op.Legacy)+len(op.Stale)+len(op.SrcAdd)+len(op.SrcRemove) > 0 || op.Rule.ID != enrolled.Rule.ID || !sameRow(configROSRow(op.Rule.Config), configROSRow(enrolled.Rule.Config)) || op.OutInterface != enrolled.Rule.Config.text("out-interface") {
 			return nil
 		}
 		adds = append(adds, op.DstAdd...)
 		removes = append(removes, op.DstRemove...)
-		merged = op
+		merged = *op
 	}
 	merged.DstAdd, merged.DstRemove = adds, removes
 	return &merged
@@ -162,32 +152,17 @@ func NATMemberUpdate(stages []NATStage, enrolled *NATBaseline) *NATListSync {
 
 // NATMigration counts legacy merges and stale deletions, including static
 // preparation nested inside a source-policy operation.
-func NATMigration(stages []NATStage) (merged, stale int) {
-	var count func(json.RawMessage)
-	count = func(raw json.RawMessage) {
-		var op struct {
-			Kind    string
-			Legacy  []ROSResource
-			Stale   []ROSResource
-			Prepare []json.RawMessage `json:"prepare_static"`
-		}
-		if json.Unmarshal(raw, &op) != nil {
-			return
-		}
-		if op.Prepare != nil {
-			for _, inner := range op.Prepare {
-				count(inner)
-			}
-			return
-		}
-		if op.Kind == "nat_list_sync" {
-			merged += len(op.Legacy)
-			stale += len(op.Stale)
-		}
-	}
+func NATMigration(stages []Stage) (merged, stale int) {
 	for _, stage := range stages {
-		for _, raw := range stage.Ops {
-			count(raw)
+		for _, op := range stage.Ops {
+			if sync, ok := op.(*NATListSync); ok {
+				merged += len(sync.Legacy)
+				stale += len(sync.Stale)
+			} else {
+				m, s := nestedNATMigration(op)
+				merged += m
+				stale += s
+			}
 		}
 	}
 	return

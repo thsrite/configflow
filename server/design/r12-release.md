@@ -401,6 +401,19 @@ type Manifests struct { Policy, DNSGuard, IPv6FakeIP, IPv6Routes, IPv6PDGuard Ma
 type ManifestHolder interface { Manifests() Manifests } // RouterOS implements; iKuai does not (all unset)
 ```
 
+**Clarified in R07 (coordinator, 2026-11-17):** R07 submits the minimal shared definitions in
+`internal/routers/plan_model.go`: `Op`, `OpHead`, `Stage` (field names, exports and JSON tags exactly as §2.2),
+the stage-key constants, and `NATUpdateOp` needed by NAT-list adoption. R12-1 extends this file instead of
+redeclaring those types. R07's `NATListSync` embeds `OpHead`; `NATListPlan.Ops` is `[]Op`;
+`NATRemovalsFirst` takes/returns `[]Op`; `NATMemberUpdate` and `NATMigration` consume `[]Stage` (no `NATStage`);
+`(*RouterOS).InvalidateAddressReads` is exported.
+
+Until R08 supplies `*ROSPolicyReplace`, the separate read-only `natlist_policy_adapter.go` reads only nested
+`prepare_static` migration counts through `encoding/json`; it constructs no operation and performs no writes.
+Its header says **R08 落地后移除**. R08 must replace this traversal with typed `PrepareStatic []Op` and delete the
+adapter (task recorded in PROGRESS-routers R08). This bridge is specifically approved by the coordinator; the
+production plan model never decodes polymorphic client input.
+
 ### 2.5 Return routing (Agent) contract
 
 ```go

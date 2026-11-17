@@ -19,7 +19,7 @@ func r07NewSync() NATListSync {
 	for _, p := range ClientSourceNetworks(netip.MustParseAddr("192.0.2.3")) {
 		sources = append(sources, p.String())
 	}
-	return NATListSync{Kind: "nat_list_sync", Comment: NATListComment, SrcList: NATSrcList, DstList: NATDstList, Sources: sources, Destinations: []string{"198.51.100.0/24"}, SrcAdd: sources, DstAdd: []string{"198.51.100.0/24"}, SrcRemove: []ROSResource{}, DstRemove: []ROSResource{}, Legacy: []ROSResource{}, Stale: []ROSResource{}}
+	return NATListSync{OpHead: OpHead{Kind: "nat_list_sync"}, Comment: NATListComment, SrcList: NATSrcList, DstList: NATDstList, Sources: sources, Destinations: []string{"198.51.100.0/24"}, SrcAdd: sources, DstAdd: []string{"198.51.100.0/24"}, SrcRemove: []ROSResource{}, DstRemove: []ROSResource{}, Legacy: []ROSResource{}, Stale: []ROSResource{}}
 }
 func r07FakeState() routerfake.State {
 	return routerfake.State{Tables: map[string][]routerfake.Row{rosNAT: {{".id": "*3", "chain": "srcnat", "action": "masquerade", "disabled": "false"}}}}

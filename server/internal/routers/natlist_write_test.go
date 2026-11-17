@@ -86,7 +86,7 @@ func TestNATListWriteBoundary(t *testing.T) {
 						t.Fatalf("bad fixture plan %#v", plan)
 					}
 					var op map[string]any
-					_ = json.Unmarshal(plan.Ops[0], &op)
+					_ = json.Unmarshal(rawValue(plan.Ops[0]), &op)
 					tc := boundaryCase{action: action, state: initial, op: op}
 					py, pyState := runPythonBoundary(t, python, root, helper, srv.URL, f, tc)
 					f.Reset(initial)
@@ -210,7 +210,7 @@ func r07PlannedOperation(t *testing.T, initial routerfake.State, count int) map[
 		t.Fatalf("bad fixture plan %#v", plan)
 	}
 	var op map[string]any
-	_ = json.Unmarshal(plan.Ops[0], &op)
+	_ = json.Unmarshal(rawValue(plan.Ops[0]), &op)
 	return op
 }
 
