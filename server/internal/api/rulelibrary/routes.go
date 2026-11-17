@@ -72,9 +72,12 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 		return respond(out, err)
 	}))
 	r.POST("/api/rule-library/test-single", "rule_library.test_single_rule", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, _, err := readBody(c)
+		body, ok, err := readBody(c)
 		if err != nil {
 			return nil, err
+		}
+		if !ok {
+			return nil, errors.New("invalid URL request object")
 		}
 		out, err := s.Single(c.Context(), body)
 		return respond(out, err)
@@ -84,9 +87,12 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 		return respond(out, err)
 	}))
 	r.POST("/api/rule-library/cache", "rule_library.cache_rules", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, _, err := readBody(c)
+		body, ok, err := readBody(c)
 		if err != nil {
 			return nil, err
+		}
+		if !ok {
+			return respond(nil, fail(500, "invalid rule cache request object"))
 		}
 		out, err := s.Cache(c.Context(), body)
 		return respond(out, err)

@@ -2,9 +2,6 @@ package rulelibrary
 
 // Only this boundary deals with legacy repository and rule-engine objects.
 import (
-	"configflow/internal/convert"
-	"configflow/internal/refresh"
-	"configflow/internal/taskstatus"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,12 +9,15 @@ import (
 	"path/filepath"
 	"time"
 
+	"configflow/internal/convert"
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
 	"configflow/internal/oxidns"
+	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
+	"configflow/internal/taskstatus"
 	"configflow/internal/yamlx"
 )
 
@@ -450,18 +450,16 @@ func (s *Service) requestStatus(ctx context.Context, address string, system reco
 	}
 	return response.StatusCode, nil
 }
-func (s *Service) cacheOne(ctx context.Context, item, catalog record) (string, error) {
+func (s *Service) cacheOne(ctx context.Context, item record) (string, error) {
 	raw, err := legacy(item)
 	if err != nil {
 		return "", err
 	}
-	config, err := legacy(catalog)
-	if err != nil {
-		return "", err
-	}
 	if sourceType(item) == "url" {
-		_, _, err := refresh.RefreshRuleSource(ctx, raw, "manual", refresh.RuleOptions{Config: config, Fetch: func(url string) (any, error) {
-			response, err := s.client.RequestRule(ctx, url, rulefetch.Request{Config: config, ConnectTimeout: 30 * time.Second, ReadTimeout: 30 * time.Second})
+		// A manual refresh resolves global fetch settings, just like the
+		// scheduler. Passing a shared catalog here would erase proxy settings.
+		_, _, err := refresh.RefreshRuleSource(ctx, raw, "manual", refresh.RuleOptions{Fetch: func(url string) (any, error) {
+			response, err := s.client.RequestRule(ctx, url, rulefetch.Request{ConnectTimeout: 30 * time.Second, ReadTimeout: 30 * time.Second})
 			if err != nil {
 				return nil, err
 			}
@@ -493,3 +491,18 @@ func (s *Service) cacheOne(ctx context.Context, item, catalog record) (string, e
 	return rules.RuleCacheFilename(raw), nil
 }
 func describeFailure(err error) string { return refresh.DescribeFailure(err) }
+
+func requestURL(body record) (string, error) {
+	value, err := jsonx.Parse(field(body, "url"))
+	if err != nil {
+		return "", err
+	}
+	if !jsonx.Truthy(value) {
+		return "", fail(400, "URL is required")
+	}
+	address, ok := value.(string)
+	if !ok {
+		return "", fail(500, httpx.DescInternal)
+	}
+	return address, nil
+}

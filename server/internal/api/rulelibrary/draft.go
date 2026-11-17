@@ -2,11 +2,12 @@ package rulelibrary
 
 import (
 	"bytes"
-	"configflow/internal/lifecycle"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+
+	"configflow/internal/lifecycle"
 )
 
 type draftResult struct {

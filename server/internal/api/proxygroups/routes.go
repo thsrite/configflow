@@ -76,7 +76,7 @@ func Register(r *httpx.Router) {
 		}{true, out}, err)
 	}))
 	r.POST("/api/proxy-groups/preview-regex", "proxy_groups.preview_proxy_group_regex", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, ok, err := readBody(c, false)
+		body, ok, err := readPreviewBody(c)
 		if err != nil {
 			return nil, err
 		}

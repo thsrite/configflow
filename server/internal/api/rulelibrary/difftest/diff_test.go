@@ -537,6 +537,13 @@ func (w *world) callWithBody(method, path, body, goBody string, authenticated bo
 					a["message"], b["message"] = "<native diagnostic>", "<native diagnostic>"
 				}
 			}
+			if path == "/api/rule-library/cache" && py.Status == 500 && got.Status == 500 {
+				a, aok := py.Body.(map[string]any)
+				b, bok := actual.(map[string]any)
+				if aok && bok && a["message"] == "exception_type=AttributeError" && b["message"] == "invalid rule cache request object" {
+					a["message"], b["message"] = "<native diagnostic>", "<native diagnostic>"
+				}
+			}
 			compare("body", py.Body, actual)
 		}
 	}

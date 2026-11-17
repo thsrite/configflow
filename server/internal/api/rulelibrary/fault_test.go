@@ -1,7 +1,6 @@
 package rulelibrary
 
 import (
-	"configflow/internal/jsonx"
 	"context"
 	"errors"
 	"net/http"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/jsonx"
 )
 
 func TestStageWriteFailureDoesNotPublishDeclaration(t *testing.T) {

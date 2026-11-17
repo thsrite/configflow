@@ -3,6 +3,9 @@ package difftest
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -15,6 +18,13 @@ func dnsSeed(t *testing.T, native, locked bool) func(context.Context, *repo.Repo
 	t.Helper()
 	return func(ctx context.Context, r *repo.Repository) {
 		seed(t)(ctx, r)
+		if _, err := r.UpdateSystemTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
+			p.GetObject("system_config").Set("server_domain", "http://localhost")
+			p.GetObject("system_config").Set("rule_proxy_token", "c33-proxy-token-0123456789abcdef")
+			return nil, nil
+		}); err != nil {
+			t.Fatal(err)
+		}
 		_, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
 			p.Set("rule_library", []any{jsonx.Obj("id", "library", "name", "Domains", "source_type", "content", "content", "DOMAIN,service.example.com", "behavior", "classical", "enabled", true)})
 			p.Set("nodes", append(p.GetList("nodes"), jsonx.Obj("id", "unused", "name", "Unused node", "type", "http", "server", "proxy.example.com", "port", 8080)))
@@ -87,12 +97,26 @@ func TestProxyGroupFollowDNSHTTPParity(t *testing.T) {
 	w.call("PUT", "/api/proxy-groups/source?profile=other", `{"proxies_order":[{"type":"node","id":"node"},{"type":"node","id":"DIRECT"}]}`, true)
 }
 func TestLibraryNativeParkingHTTPParity(t *testing.T) {
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("+.service.example.com\n")) }))
+	defer origin.Close()
 	w := newWorld(t, dnsSeed(t, true, false))
 	for _, enabled := range []bool{false, true} {
 		w.call("PUT", "/api/rule-library/library", body(map[string]any{"id": "library", "name": "Domains", "source_type": "content", "behavior": "classical", "content": "DOMAIN,service.example.com", "enabled": enabled}), true)
 		w.call("GET", "/api/rules/dns?profile=other", "", true)
 	}
 	w.call("PUT", "/api/rule-library/library", `{"name":"Domain form","source_type":"content","behavior":"domain","format":"text","content":"+.service.example.com","enabled":true}`, true)
+	for _, suffix := range []string{"/first", "/second"} {
+		address := origin.URL + suffix
+		w.call("PUT", "/api/rule-library/library", body(map[string]any{"name": "Remote form", "source_type": "url", "behavior": "domain", "format": "text", "url": address, "enabled": true}), true)
+		profile, err := w.srv.Repo.GetProfile(w.srv.Context(), "other")
+		if err != nil {
+			t.Fatal(err)
+		}
+		draft := profile.GetObject("oxidns").GetString("native_config")
+		if !strings.Contains(draft, address) && !strings.Contains(draft, url.QueryEscape(address)) {
+			t.Fatal("native source rewrite was not observable")
+		}
+	}
 	w.call("DELETE", "/api/rule-library/library", "", true)
 }
 func TestGroupListenerRelinkingHTTPParity(t *testing.T) {

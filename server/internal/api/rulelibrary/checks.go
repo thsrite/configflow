@@ -43,9 +43,9 @@ func defaultField(item record, key string) json.RawMessage {
 // Single checks the configured forwarding path with Python's five-second timeout.
 func (s *Service) Single(ctx context.Context, body record) (singleResult, error) {
 	ctx = lifecycle.Detach(ctx)
-	address := text(body, "url")
-	if address == "" {
-		return singleResult{}, fail(400, "URL is required")
+	address, err := requestURL(body)
+	if err != nil {
+		return singleResult{}, err
 	}
 	system, err := systemConfig(ctx)
 	if err != nil {
@@ -185,13 +185,17 @@ type cacheResults struct {
 func (s *Service) Cache(ctx context.Context, body record) (cacheResults, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := cacheResults{Success: true, Results: []cacheResult{}}
-	ids, err := stringsField(body, "rule_ids")
-	if err != nil || len(ids) == 0 {
+	var selectedIDs []json.RawMessage
+	input, present := body.Get("rule_ids")
+	if !present || json.Unmarshal(input, &selectedIDs) != nil || len(selectedIDs) == 0 {
 		return out, fail(400, msgCacheSelect)
 	}
 	chosen := map[string]bool{}
-	for _, id := range ids {
-		chosen[id] = true
+	for _, raw := range selectedIDs {
+		var id string
+		if string(raw) != "null" && json.Unmarshal(raw, &id) == nil {
+			chosen[id] = true
+		}
 	}
 	catalog, err := sharedConfig(ctx)
 	if err != nil {
@@ -227,7 +231,7 @@ func (s *Service) Cache(ctx context.Context, body record) (cacheResults, error) 
 			result.Retained = &retained
 			return result, nil
 		}
-		result.Path, err = s.cacheOne(ctx, current, catalog)
+		result.Path, err = s.cacheOne(ctx, current)
 		if err == nil {
 			result.Success = true
 			return result, nil

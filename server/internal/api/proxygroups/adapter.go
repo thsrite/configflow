@@ -400,3 +400,18 @@ func cachedNodes(ctx context.Context, id string) ([]object, error) {
 	}
 	return list(v, "nodes")
 }
+
+func readPreviewBody(c *httpx.Ctx) (object, bool, error) {
+	value, err := c.JSON()
+	if err != nil {
+		return object{}, false, err
+	}
+	if !jsonx.Truthy(value) {
+		return object{}, true, nil
+	}
+	if _, ok := value.(*jsonx.Object); !ok {
+		return object{}, false, nil
+	}
+	out, err := native(value)
+	return out, true, err
+}
