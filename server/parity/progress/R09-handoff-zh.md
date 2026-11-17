@@ -87,4 +87,4 @@ L5 尚未执行：真实 CHR 接受 payload/scripts、UDP/TCP DNS/hairpin/853、
 
 分支 `go-port-r09`，已 rebase 到 `go@9a208c6c`。实现提交：`54a3fd9f`（核心）、`63986dd9`（HA/解析门禁）、`9040581f`（未知选择器修正）；其后为门禁与文档提交。未 push，临时基线 worktree 已清理。
 
-最终仅待协调者启动新的 Opus HR 复核；R09 实现与所需验证均已交齐。已知 proddiff 例外及 L5 不作通过宣称。
+独立验收已完成。协调者追加最终集成要求：等待 aggregation-oracle 修复 `72d4b2c0` 和已 verified 的 R08 合入 go，再 rebase、去重 manifest 标志并保留 Manifests()；接入 R08 的策略目的 CIDR 与 filter 快照，使用共享 gate.sh 重跑最终门禁后才交回。R09 自有写／恢复已用 lifecycle.Detach。已知 proddiff 例外及 L5 不作通过宣称。

@@ -244,7 +244,7 @@ This is not caused by R09 and is not suppressed/normalised here. The original ru
 transport_retries14, but the cause is left to the assigned investigation. No baseline changed. A temporary clean
 reference worktree was removed unused after the coordinator supplied the independent reproduction.
 
-No remaining R09 implementation work. Next owner: fresh Opus HR review, then R08/R12/R14/R15 integration and L5.
+R09 standalone acceptance is complete. Coordinator now requires a final dependency integration before hand-back: wait for aggregation-oracle fix72d4b2c0 and verified R08 to merge into go, then rebase. Preserve R08 Manifests(), only one dnsGuardManifestSet/setter; all device/rollback I/O must use lifecycle.Detach. R09 own writes already do. Wire policy CIDRs and filter-snapshot reuse to R08 types, remove the transitional projection where possible, run the shared gate on the combined tree. Fresh Opus R09 review and L5 follow.
 No push. Implementation commits after the final rebase: 54a3fd9f (core), 63986dd9 (HA/parser gates),
 9040581f (malformed-selector conservatism); later commits only runner/progress/hand-back documents.
 
