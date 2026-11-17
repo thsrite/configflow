@@ -628,3 +628,29 @@ class ContentObserverTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class C33EditorRevisionTests(unittest.TestCase):
+    def test_native_editor_revision_normalization_is_exact_and_shape_checked(self):
+        route = '/api/rule-library/<rule_id>/draft-content'
+        configured = json.loads((pd.PARITY / 'proddiff-normalize.json').read_text())
+        selected = [rule for rule in configured if rule['route'] == route]
+        self.assertEqual(1, len(selected))
+        self.assertEqual('revision', selected[0]['path'])
+        self.assertEqual('^[0-9a-f]{64}$', selected[0]['pattern'])
+        source = {'success': True, 'revision': 'a' * 64,
+                  'rule': {'id': 'synthetic', 'content': 'a.example', '_revision': 2},
+                  'usage_count': 1}
+        target = {**source, 'revision': 'b' * 64}
+        self.assertEqual([], pd.response_diffs(reply(source), reply(target), route, selected))
+        for changed in [
+            {**target, 'revision': 'b' * 63},
+            {**target, 'revision': 'B' * 64},
+            {**target, 'revision': 42},
+            {key: value for key, value in target.items() if key != 'revision'},
+            {**target, 'usage_count': 2},
+            {**target, 'rule': {**source['rule'], 'content': 'changed.example'}},
+            {**target, 'rule': {**source['rule'], '_revision': 3}},
+        ]:
+            with self.subTest(changed=changed):
+                self.assertTrue(pd.response_diffs(reply(source), reply(changed), route, selected))
+        self.assertTrue(pd.response_diffs(reply(source), reply(target), '/api/rule-library', selected))

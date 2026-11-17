@@ -295,3 +295,16 @@ also compares real Python/Go output. No frozen fixture bytes are passed between 
 `cmd/configflow/TestProddiffWaitsForFreshProvider`（`-tags configflow_proddiff`）验证启动钩子；
 比较器负向测试仍要求旧 header 和 proxies 长度差异报错。根因、负载复现和命令见
 [复核记录](../../parity/fix-agg-provider-load.md)。
+
+## C33 编辑 revision（D2）
+
+协调者批准只对精确路由 `/api/rule-library/<rule_id>/draft-content` 的顶层
+`revision` 使用 `^[0-9a-f]{64}$` 归一化。它是未持久化的页面乐观锁 token，
+Go 按 D2 使用原生 encoding/json 排序编码后取 SHA-256；Python 的 ASCII 转义和数字拼写
+可能产生不同摘要。切换前页面的一次 409 影响见
+[behaviour-changes D2](../../parity/behaviour-changes.md)。
+
+只增加 normalize 条目，不改 baseline。格式错、类型错、字段缺失、其他字段和其他路由仍报差异，
+包括嵌套的存储 `_revision`。`C33EditorRevisionTests` 有对应正负控。
+C33 的真实 Flask/Go 测试独立断言每侧 token 稳定、内容变化后失效、并发相同 token
+只成功一条（200/409）；生产比较不修改快照来验证乐观锁。

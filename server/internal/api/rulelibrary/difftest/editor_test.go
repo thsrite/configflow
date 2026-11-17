@@ -58,3 +58,33 @@ func TestBothSidesRejectConcurrentDraftSubmissions(t *testing.T) {
 	}
 	w.call("GET", path, "", true)
 }
+
+func TestCacheSelectionCannotUseStringMembership(t *testing.T) {
+	w := newWorld(t, seed(t))
+	for _, id := range []string{"a", "manual"} {
+		w.call("POST", "/api/rule-library", body(map[string]string{"id": id, "name": id, "source_type": "content", "behavior": "domain", "format": "text", "content": "+." + id + ".example\n"}), true)
+	}
+	before := snapshot(t, w.srv)
+	request := map[string]any{"method": "POST", "path": "/api/rule-library/cache", "body": `{"rule_ids":"manual"}`, "headers": map[string]string{"Authorization": "Bearer " + w.token}}
+	raw, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = w.stdin.Write(append(raw, '\n')); err != nil {
+		t.Fatal(err)
+	}
+	if !w.scanner.Scan() {
+		t.Fatal(w.stderr.String())
+	}
+	var py answer
+	if err = json.Unmarshal(w.scanner.Bytes(), &py); err != nil {
+		t.Fatal(err)
+	}
+	if py.Status != 200 || py.Error != "" || py.Body.(map[string]any)["total_count"] != float64(2) {
+		t.Fatalf("Python no longer demonstrates substring selection: %+v", py)
+	}
+	w.srv.Post("/api/rule-library/cache", httpxtest.Bearer(w.token), httpxtest.Body([]byte(`{"rule_ids":"manual"}`), "application/json")).WantStatus(400)
+	if !reflect.DeepEqual(before, snapshot(t, w.srv)) {
+		t.Fatal("invalid selection changed Go state")
+	}
+}

@@ -95,5 +95,11 @@
     "path": "header.content-disposition",
     "pattern": "(?<=_)\\d{8}_\\d{6}(?=\\.[a-z]+\"$)",
     "reason": "Download file name embeds datetime.now() to the second; disposition type, prefix and extension are still compared."
+  },
+  {
+    "route": "/api/rule-library/<rule_id>/draft-content",
+    "path": "revision",
+    "pattern": "^[0-9a-f]{64}$",
+    "reason": "Maintainer-approved D2 ephemeral editor revision: native encoding/json hashing differs from Python ASCII/numeric spelling. Only this response field is normalized; C33 real Flask/Go tests separately prove per-side stability, invalidation and competing-submission rejection. See behaviour-changes.md D2 and difftest-c33.md."
   }
 ]

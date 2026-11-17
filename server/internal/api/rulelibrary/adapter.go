@@ -610,3 +610,13 @@ func requestURL(body record) (string, error) {
 	}
 	return address, nil
 }
+
+// readCaughtBody preserves the error boundary of endpoints that deliberately
+// catch JSON decoding failures. The diagnostic stays native and contains no body.
+func readCaughtBody(c *httpx.Ctx) (record, bool, error) {
+	body, ok, err := readBody(c)
+	if err != nil {
+		return record{}, false, fail(500, "invalid JSON request")
+	}
+	return body, ok, nil
+}

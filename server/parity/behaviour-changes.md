@@ -161,6 +161,8 @@ writer-only 夹具显式断言；其余 HTTP 行严格比较。
 
 **C33 编辑 revision 的一次性影响**：`/api/rule-library/<id>/draft-content` 的乐观锁 token 改为 Go 原生 `encoding/json` 递归排序后 SHA-256，不模拟 ASCII 转义、Python 数字拼写。token 不持久化。切换前打开的页面可能第一次保存得到原有 409「规则集已在其他页面更新，请重新读取后再编辑。」；刷新重新读取即可。`TestDraftNativeRevisionContract` 分别验证 Python/Go token 稳定、内容变化后过期；`TestBothSidesRejectConcurrentDraftSubmissions` 在真实 Flask/Go 两侧分别并发提交并断言一条 200、一条 409，其他响应字段、DB 和文件仍严格比较。
 
+生产差分只在精确路由 `/api/rule-library/<rule_id>/draft-content` 的顶层 `revision` 使用 `^[0-9a-f]{64}$` 归一化（协调者同意）。错误格式/类型、字段缺失仍报差异，其他响应字段、存储 revision 和其他路由仍严格比较；harness 有对应正负控。仅改 normalize 配置，baseline 不改。
+
 C27：上游 `tag` 等字符串元数据包含真实 U+2028/U+2029 时，Go `encoding/json` 的
 转义会使 `EntryKey` 与 Python 的旧标识不同。字面反斜杠文本 `\u2028` / `\u2029`
 不属于此项。Go 保持原生 JSON 哈希，不增加 `canonjson` 或局部旧编码 adapter。
@@ -555,5 +557,6 @@ headers、完整 DB 和所有文件不变。合法 JSON、普通数字和原有�
 - **DB 已提交而内容缓存写入失败时，禁止继续交付旧缓存**。Python draft/内容 PUT 在提交后才改稳定缓存，磁盘错误会留下「新 DB + 旧文件」。Go 先暂存并同步内容，在 DB 提交前留下持久失效标记，提交后原子替换并 fsync 目录，最后清除标记。替换失败返回 500，旧稳定和 legacy 缓存均不可回退；交付从当前 DB/inline 重建或直接交付。未知提交故障保留失效标记，避免误判回滚后恢复旧文件；手动缓存可修复标记。事务内明确拒绝时清理暂存文件，配置不变。未新增 repo 更新原语；N8-5 正式事务 API 落地后重写这条 DB+cache 协议。
 - **连通性检查不覆盖并发编辑**。Python 批量 HEAD 后保存旧共享快照，可能覆盖测试期间的库修改；同时没有按 PUT 重建 native DNS。Go 检查结束后重新开启事务，只有 ID 和完整声明仍与测试快照一致才关闭失败源，并复用 PUT 的 native profile rebuild/parking。检查期间的其他编辑保留，已关闭源的 DNS 状态同步提交。
 - **HEAD 只读**。Python draft handler 会把带合法 JSON 的授权 HEAD 当 PUT 保存；Go 只有 PUT 才写。规则库、策略组和代理域名集合的 HEAD 按 GET 处理，修复 Python 无返回值而 500 的分支。正常 GET/POST/PUT/DELETE 的功能不变。
+- **缓存选择必须是数组**。Python 把非空字符串/对象当容器筛选 ID；例如 `rule_ids: "manual"` 会同时缓存 ID `a` 和 `manual`。Go 拒绝这类非数组选择并返回现有 400，请调用方传 `rule_ids: ["manual"]`。前端已使用数组。真实 Flask 回归复现误选两条，Go 拒绝并保持 DB/文件不变；数组中的未知值仍按 Python 忽略，完全未匹配时返回原有 404。
 
 证据：`internal/api/rulelibrary/fault_test.go`、`draft_test.go`、`mutate_test.go`；真实 Flask/Go 的 `TestDraftHEADCannotWrite`、native DNS/parking、全部 25 方法 HTTP/SQLite/文件差分。D1 的 YAML 引号/缩进和 English 内部异常诊断按既有标准比较；监听入口用户注释另有保存断言。

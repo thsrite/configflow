@@ -251,10 +251,10 @@ func (s *Service) BatchHealthURL(ctx context.Context, id string, body object) ([
 			}
 			group := groups[n]
 			if text(group, "follow_group") != "" {
-				return bad(fmt.Sprintf(msgFollowHealth, text(group, "name")))
+				return bad(fmt.Sprintf(msgFollowHealth, fallbackName(group)))
 			}
 			if !healthKind(text(group, "type")) {
-				return bad(fmt.Sprintf(msgNoHealth, text(group, "name")))
+				return bad(fmt.Sprintf(msgNoHealth, fallbackName(group)))
 			}
 			positions[i] = n
 		}

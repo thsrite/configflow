@@ -27,6 +27,7 @@ import (
 	"configflow/internal/api/rulelibrary"
 	apirules "configflow/internal/api/rules"
 	"configflow/internal/auth"
+	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/notifications"
@@ -542,6 +543,16 @@ func (w *world) callWithBody(method, path, body, goBody string, authenticated bo
 				b, bok := actual.(map[string]any)
 				if aok && bok && a["message"] == "exception_type=AttributeError" && b["message"] == "invalid rule cache request object" {
 					a["message"], b["message"] = "<native diagnostic>", "<native diagnostic>"
+				}
+			}
+			if py.Status == 500 && got.Status == 500 && (path == "/api/proxy-groups/preview-regex" || path == "/api/rule-library/cache" || path == "/api/rule-library/reorder" || path == "/api/rule-library/proxy-domains") {
+				a, aok := py.Body.(map[string]any)
+				b, bok := actual.(map[string]any)
+				if aok && bok && (b["message"] == "invalid JSON request" || b["message"] == httpx.DescInternal) {
+					message, _ := a["message"].(string)
+					if message == "exception_type=BadRequest" || strings.HasPrefix(message, "400 Bad Request:") {
+						a["message"], b["message"] = "<native JSON diagnostic>", "<native JSON diagnostic>"
+					}
 				}
 			}
 			compare("body", py.Body, actual)

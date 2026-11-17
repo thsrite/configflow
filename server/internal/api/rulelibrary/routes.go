@@ -88,7 +88,7 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 		return respond(out, err)
 	}))
 	r.POST("/api/rule-library/cache", "rule_library.cache_rules", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, ok, err := readBody(c)
+		body, ok, err := readCaughtBody(c)
 		if err != nil {
 			return nil, err
 		}
@@ -110,7 +110,7 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 		return respond(out, err)
 	}))
 	r.POST("/api/rule-library/reorder", "rule_library.reorder_rule_library", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, _, err := readBody(c)
+		body, _, err := readCaughtBody(c)
 		if err != nil {
 			return nil, err
 		}
@@ -136,7 +136,7 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 				Domains jsonValue `json:"proxy_domains"`
 			}{out}, err)
 		}
-		body, ok, err := readBody(c)
+		body, ok, err := readCaughtBody(c)
 		if err != nil {
 			return nil, err
 		}

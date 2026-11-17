@@ -49,7 +49,9 @@ Scope: 25 methods in `routes/rule_library.py` and `routes/proxy_groups.py`; publ
 - D1: parsed YAML values for native_config and known Mihomo custom_config; check-content's YAML content field only. Raw rule cache bytes stay exact.
 - D2: only draft response revision hashes are compared by per-side validity/stability/invalidation, not cross-language bytes; every other field remains exact. A Unicode/HTML fixture proves the native hash differs. Concurrent real Flask/Go requests submit the same text with each side's token and require 200/409.
 - Python future completion order: sort only `results` on the two bulk endpoints by ID. All other arrays retain order.
-- Native internal English diagnostics: only the malformed proxy-domain scalar's AttributeError/native string differs; status500, unchanged state, other envelope fields stay exact. Chinese diagnostics stay exact.
+- Native internal English diagnostics: malformed proxy-domain scalar, non-object cache request and caught malformed JSON retain status500 and compare native descriptions by the specifically observed error class. Unchanged state and all other envelope fields stay exact; Chinese diagnostics stay exact. Empty falsey previews, malformed probe/cache statuses and mixed unknown IDs have explicit Flask cases.
+- Python cache's erroneous string/container ID membership is fixed by requiring an array (400); a dedicated real Flask regression proves `manual` selected both `a` and `manual`, while Go rejects without any durable effects. This is an explicit validation bug fix, never a broad comparator skip.
+- Production comparison has one approved D2 normalize: exact draft route, top-level revision, anchored lowercase64hex. Harness shape/type/missing-field/other-field/other-route negative controls stay live; baseline is unchanged.
 - Fixed clocks for existing refresh/notification rows and timestamps only; one-to-one generated-ID correspondence inherited from C32's harness (no C33 generated IDs in ordinary source CRUD).
 
 Fuzz target: `FuzzEditableContent` in api/rulelibrary. Registration is exercised with rules, aggregations and all server routes; no ServeMux ambiguity is tolerated.

@@ -413,7 +413,7 @@ func cachedNodes(ctx context.Context, id string) ([]object, error) {
 func readPreviewBody(c *httpx.Ctx) (object, bool, error) {
 	value, err := c.JSON()
 	if err != nil {
-		return object{}, false, err
+		return object{}, false, &fault{500, "invalid JSON request"}
 	}
 	if !jsonx.Truthy(value) {
 		return object{}, true, nil
