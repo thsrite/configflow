@@ -230,7 +230,17 @@ func canon(n *Node, yamlText bool) *Node {
 		return S(strings.Join(strings.Fields(n.Value), ""))
 	case isMap(n):
 		out := M()
-		pairs(n, func(k string, v *Node) bool { set(out, k, canon(v, yamlTextKeys[k])); return true })
+		indices := make(map[string]int, len(n.Content)/2)
+		pairs(n, func(k string, v *Node) bool {
+			value := canon(v, yamlTextKeys[k])
+			if index, exists := indices[k]; exists {
+				out.Content[index] = value
+			} else {
+				indices[k] = len(out.Content) + 1
+				out.Content = append(out.Content, S(k), value)
+			}
+			return true
+		})
 		return out
 	case isSeq(n):
 		out := L()
@@ -315,7 +325,35 @@ func compare(r row, got *Node, err error) string {
 	}
 	want, _ := FromJSON(r.Out)
 	yamlOut := r.Fn == "generate"
-	return firstDifference(canon(got, yamlOut), canon(want, yamlOut), "out")
+	return canonicalDifference(got, want, yamlOut, "out")
+}
+
+// canonicalDifference avoids reparsing unchanged YAML and rebuilding already
+// equal trees. Exact structural equality is sufficient; otherwise the complete
+// existing YAML canonical comparison still decides the result.
+func canonicalDifference(got, want *Node, yamlText bool, path string) string {
+	if identicalBoundaryTree(got, want) {
+		return ""
+	}
+	return firstDifference(canon(got, yamlText), canon(want, yamlText), path)
+}
+
+// identicalBoundaryTree is deliberately stricter than semantic equality: map
+// order, duplicate entries and scalar spellings must match too. That makes it a
+// sufficient fast path without bypassing canonical duplicate/merge handling.
+func identicalBoundaryTree(a, b *Node) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil || a.Kind != b.Kind || a.Tag != b.Tag || a.Value != b.Value || len(a.Content) != len(b.Content) || a.Alias != nil || b.Alias != nil {
+		return false
+	}
+	for i := range a.Content {
+		if !identicalBoundaryTree(a.Content[i], b.Content[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 func boolArg(n *Node) bool { return isTrue(n) }
@@ -853,7 +891,7 @@ func compareAfter(r row, args []*Node, got *Node) string {
 			continue
 		}
 		want, _ := FromJSON(raw)
-		if d := firstDifference(canon(args[i], false), canon(want, false), fmt.Sprintf("args_after[%d]", i)); d != "" {
+		if d := canonicalDifference(args[i], want, false, fmt.Sprintf("args_after[%d]", i)); d != "" {
 			return d
 		}
 	}
