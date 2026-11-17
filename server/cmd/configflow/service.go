@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"configflow/internal/agents"
@@ -76,10 +77,14 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 		return err
 	}
 	acquiring, cancelAcquire := context.WithTimeout(ctx, 30*time.Second)
-	owner, err := instance.Acquire(acquiring, dataDir)
+	owner, stoppedBeforeStart, err := acquireInstance(acquiring, dataDir, signals)
 	cancelAcquire()
 	if err != nil {
 		return err
+	}
+	if stoppedBeforeStart {
+		logx.Get("configflow").Info(msgStoppedBeforeStart)
+		return nil
 	}
 	defer owner.Release()
 	root, err := logx.Setup(logx.Config{Level: logx.LevelFromEnv(), File: logx.DefaultFile(dataDir), Console: os.Stderr})
@@ -221,6 +226,35 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 			return serveErr
 		}
 	}
+}
+
+// acquireInstance waits for the data directory as instance.Acquire does, but a
+// stop signal during that wait (up to 30 s) ends it at once: nothing has been
+// opened or started yet, so there is nothing to save. stopped reports that case.
+func acquireInstance(ctx context.Context, dataDir string, signals <-chan os.Signal) (_ *instance.Instance, stopped bool, _ error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var signalled atomic.Bool
+	acquired := make(chan struct{})
+	watched := make(chan struct{})
+	// Joined below before returning; it never outlives this call.
+	go func() {
+		defer close(watched)
+		select {
+		case <-signals:
+			signalled.Store(true)
+			cancel()
+		case <-acquired:
+		}
+	}()
+	owner, err := instance.Acquire(ctx, dataDir)
+	close(acquired)
+	<-watched
+	if signalled.Load() {
+		owner.Release() // nil-safe; a signal racing a successful acquisition still stops
+		return nil, true, nil
+	}
+	return owner, false, err
 }
 
 func drainServers(ctx context.Context, servers ...*http.Server) error {

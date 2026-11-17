@@ -440,6 +440,58 @@ func TestPythonLifetimeLocksRejectServerBeforeRepositoryOpen(t *testing.T) {
 	}
 }
 
+// O3 review: a stop signal while waiting up to 30 s for the instance lock ends
+// the wait at once (Python had no such wait; Docker would SIGKILL after 10 s).
+func TestStopSignalDuringInstanceWaitExitsAtOnce(t *testing.T) {
+	dir := t.TempDir()
+	holder, err := os.OpenFile(filepath.Join(dir, ".task-scheduler.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Close()
+	if err := syscall.Flock(int(holder.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	p := startProcess(t, dir, "held-locks")
+	waitFor(t, func() bool {
+		_, err := os.Stat(filepath.Join(dir, ".configflow-server.lock"))
+		return err == nil
+	})
+	time.Sleep(time.Second) // inside the 500 ms retry loop
+	start := time.Now()
+	if err := p.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-p.done:
+		if err != nil {
+			t.Fatalf("stopped server exit: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stop signal ignored while waiting for the data directory")
+	}
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("stop took %v", elapsed)
+	}
+	data, _ := os.ReadFile(p.log)
+	if !strings.Contains(string(data), msgStoppedBeforeStart) {
+		t.Fatalf("missing stop diagnostic: %s", data)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "configflow.sqlite3")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stopped server opened the repository: %v", err)
+	}
+	acquiring, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := syscall.Flock(int(holder.Fd()), syscall.LOCK_UN); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := instance.Acquire(acquiring, dir)
+	if err != nil {
+		t.Fatalf("stopped server retained a lock: %v", err)
+	}
+	owner.Release()
+}
+
 func TestMainRejectsDataDirectoryAliases(t *testing.T) {
 	for _, mode := range []string{"home-alias", "symlink"} {
 		t.Run(mode, func(t *testing.T) {
