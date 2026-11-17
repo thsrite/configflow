@@ -318,7 +318,7 @@ func (d *RouterOS) ReadAddresses(ctx context.Context, names []string) (map[strin
 		for _, name := range unproven {
 			if actual[name] == expected[name] {
 				v := expected[name]
-				reads[name] = addressProof{&v, proof[name]}
+				reads[name] = addressProof{&v, cloneRows(proof[name])}
 				reusable[name] = true
 			}
 		}
@@ -333,7 +333,8 @@ func (d *RouterOS) ReadAddresses(ctx context.Context, names []string) (map[strin
 				return nil, err
 			}
 			result[name] = rows
-			p := addressProof{Rows: rows}
+			// The scope keeps its own copy: callers may modify the rows they get.
+			p := addressProof{Rows: cloneRows(rows)}
 			if _, ok := known[name]; ok {
 				d.RememberAddresses(name, rows)
 				v := DigestAddresses(rows)
@@ -358,7 +359,11 @@ func (d *RouterOS) LocateAddresses(ctx context.Context, ids []string) ([]Row, er
 	ids = uniqueStrings(ids)
 	if len(ids) > 20 {
 		rows, err := d.list(ctx, rosAddresses)
-		return slices.DeleteFunc(rows, func(row Row) bool { return !slices.Contains(ids, row.id()) }), err
+		if err != nil {
+			return nil, err
+		}
+		wanted := stringSet(ids...)
+		return slices.DeleteFunc(rows, func(row Row) bool { return !wanted[row.id()] }), nil
 	}
 	rows := []Row{}
 	for _, id := range ids {

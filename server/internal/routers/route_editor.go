@@ -361,7 +361,9 @@ func RouterOperationLock(ctx context.Context, router Router, write bool) (contex
 // A device may echo the password in its own error text. Keep the error kind but
 // never expose that text, including encoded passwords from URL userinfo.
 // Usernames are not secrets (the router form shows them) and often equal words
-// of the fixed diagnostics, such as a RouterOS user named "api".
+// of the fixed diagnostics, such as a RouterOS user named "api". The RouterOS
+// transport already replaces a device detail echoing the password with
+// redact.Redacted (safeDeviceText); such an error is hidden the same way.
 func routeSafeError(err error, endpoint, password string) error {
 	if err == nil {
 		return nil
@@ -372,7 +374,8 @@ func routeSafeError(err error, endpoint, password string) error {
 			secrets = append(secrets, p)
 		}
 	}
-	if !redact.ContainsEncodedSecret(err.Error(), redact.NewSecrets(secrets)) {
+	text := err.Error()
+	if !redact.ContainsEncodedSecret(text, redact.NewSecrets(secrets)) && !strings.Contains(text, redact.Redacted) {
 		return err
 	}
 	kind := KindRouter

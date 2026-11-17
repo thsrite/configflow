@@ -1,20 +1,18 @@
 package routers
 
-import (
-	"net/url"
-	"strings"
-)
+import "configflow/internal/redact"
 
-// Device response text can echo credentials (for example inside a console
-// error). Keep row data intact for ownership checks and scrub only diagnostics.
+// safeDeviceText hides device text that echoes the router password, in any
+// URL-encoded form, using the shared redaction rules. Usernames are not
+// secrets (the router form shows them) and often equal words of the fixed
+// diagnostics, such as a RouterOS user named "api" next to "rest-api"; they
+// stay visible. Row data is never redacted, so ownership checks stay exact.
 func (d *RouterOS) safeDeviceText(text string) string {
-	for _, secret := range []string{d.password} {
-		if secret == "" {
-			continue
-		}
-		for _, form := range []string{secret, url.QueryEscape(secret), url.PathEscape(secret)} {
-			text = strings.ReplaceAll(text, form, "[REDACTED]")
-		}
+	if d.password == "" {
+		return text
+	}
+	if redact.ContainsEncodedSecret(text, redact.NewSecrets([]string{d.password})) {
+		return redact.Redacted
 	}
 	return text
 }

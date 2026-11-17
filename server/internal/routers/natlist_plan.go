@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net/netip"
 	"slices"
+	"sort"
 	"strings"
+
+	"configflow/internal/netipx"
 )
 
 // ROSResource identifies one previewed object with its complete stable config.
@@ -104,19 +107,16 @@ type NATListEvidence struct {
 	Dst []Row `json:"dst"`
 }
 
+// natKey is one member or CIDR as RouterOS compares it: 192.0.2.1 and
+// 192.0.2.1/32 are one entry. Only a single IPv4 network is normalised; a range
+// such as 192.0.2.0-192.0.2.255 keeps its text, because RouterOS stores it as a
+// different entry and the earlier per-destination writer never produced one.
 func natKey(value string) string {
 	value = strings.TrimSpace(value)
-	if p, ok := parsePrefix4(value); ok {
+	if p, ok := netipx.ParseNetwork4(value, false); ok {
 		return p.String()
 	}
 	return value
-}
-func parsePrefix4(value string) (netip.Prefix, bool) {
-	p := Networks([]string{value})
-	if len(p) == 1 {
-		return p[0], true
-	}
-	return netip.Prefix{}, false
 }
 func natMembers(name string, rows []Row) (ours, foreign []Row, problems []string) {
 	ours, foreign, problems = []Row{}, []Row{}, []string{}
@@ -136,6 +136,24 @@ func natMembers(name string, rows []Row) (ours, foreign []Row, problems []string
 }
 func overlapsAny(network netip.Prefix, others []netip.Prefix) bool {
 	return slices.ContainsFunc(others, network.Overlaps)
+}
+
+// prefixOverlap answers "overlaps any of networks" by bisection over the
+// collapsed, sorted networks, like Python's ros_policy.network_overlap: a
+// policy migration checks thousands of members against thousands of
+// exclusions. R08 may replace it by its exported ROSPolicyNetworkOverlap.
+func prefixOverlap(networks []netip.Prefix) func(netip.Prefix) bool {
+	collapsed, err := netipx.Collapse(networks)
+	if err != nil {
+		return func(network netip.Prefix) bool { return overlapsAny(network, networks) }
+	}
+	return func(network netip.Prefix) bool {
+		last := netipx.Broadcast(network)
+		// The last collapsed network starting at or before network's end is
+		// the only candidate; it overlaps when it ends at or after the start.
+		i := sort.Search(len(collapsed), func(i int) bool { return last.Less(collapsed[i].Addr()) })
+		return i > 0 && !netipx.Broadcast(collapsed[i-1]).Less(network.Masked().Addr())
+	}
 }
 func viaGateway(gateway, value string) bool {
 	for _, part := range strings.Split(value, ",") {
@@ -247,7 +265,7 @@ func legacyNAT(rows []Row, sources []string, items []NatItem, desired, skipped [
 		if len(found) != len(sourceKeys) || len(interfaces) != 1 {
 			continue
 		}
-		network, ok := parsePrefix4(key)
+		network, ok := netipx.ParseNetwork4(key, true)
 		if !ok {
 			continue
 		}
@@ -633,9 +651,13 @@ func NATRemovalsFirst(natOps, routeOps []Op, gateway string) ([]Op, []Op) {
 		}
 		op.Stale = []ROSResource{}
 		if op.Rule == nil || len(op.SrcAdd)+len(op.SrcRemove)+len(op.DstAdd)+len(op.DstRemove)+len(op.Legacy) > 0 {
+			merged := map[string]bool{}
+			for _, item := range op.Legacy {
+				merged[natKey(item.Config.text("dst-address"))] = true
+			}
 			fresh := []string{}
 			for _, cidr := range op.Destinations {
-				if !slices.ContainsFunc(op.Legacy, func(item ROSResource) bool { return natKey(item.Config.text("dst-address")) == natKey(cidr) }) {
+				if !merged[natKey(cidr)] {
 					fresh = append(fresh, cidr)
 				}
 			}
@@ -666,6 +688,7 @@ func RestrictNATEgress(op *NATListSync, check *NATListCheck, iface string) strin
 // NATPolicyMigrations selects only provably owned overlapping destination members.
 func NATPolicyMigrations(rule Row, addresses []Row, exclusions []string) ([]ROSResource, error) {
 	result := []ROSResource{}
+	overlaps := prefixOverlap(Networks(exclusions))
 	for _, item := range addresses {
 		if item.text("list") != rule.text("dst-address-list") || !item.enabled() {
 			continue
@@ -674,11 +697,7 @@ func NATPolicyMigrations(rule Row, addresses []Row, exclusions []string) ([]ROSR
 		if len(networks) == 0 {
 			return nil, routerError(fmt.Sprintf(messageNATSplitInvalid, item.id()))
 		}
-		overlap := false
-		for _, n := range networks {
-			overlap = overlap || overlapsAny(n, Networks(exclusions))
-		}
-		if !overlap {
+		if !slices.ContainsFunc(networks, overlaps) {
 			continue
 		}
 		if !item.is("comment", NATListComment) || item.flag("dynamic") {

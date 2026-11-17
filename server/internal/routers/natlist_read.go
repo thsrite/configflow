@@ -3,6 +3,7 @@ package routers
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -200,8 +201,9 @@ func VerifyNATLists(ctx context.Context, check *NATListCheck, state *RouterState
 			return routerError(messageNATVerifyEgress)
 		}
 	}
+	removed := stringSet(check.Removed...)
 	for _, row := range rows {
-		if slices.Contains(check.Removed, row.id()) {
+		if removed[row.id()] {
 			return routerError(messageNATVerifyLegacy)
 		}
 	}
@@ -223,13 +225,8 @@ func VerifyNATLists(ctx context.Context, check *NATListCheck, state *RouterState
 		if check.Withdraw {
 			expected = nil
 		}
-		if len(ours) != len(expected) {
+		if !maps.Equal(ours, stringSet(expected...)) {
 			return routerError(fmt.Sprintf(messageNATVerifyMembers, name))
-		}
-		for _, key := range expected {
-			if !ours[key] {
-				return routerError(fmt.Sprintf(messageNATVerifyMembers, name))
-			}
 		}
 		if !check.Withdraw {
 			for _, value := range wanted {

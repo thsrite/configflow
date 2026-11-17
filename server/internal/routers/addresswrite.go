@@ -376,15 +376,23 @@ func (d *RouterOS) liveAddresses(ctx context.Context, items []ROSResource) (map[
 	}
 	return live, nil
 }
+
+// forgetAddresses drops removed members from the lists ConfigFlow knows (or
+// only expects), so the next read of those lists is again a digest proof.
 func (d *RouterOS) forgetAddresses(items []ROSResource, removed map[string]bool) {
-	known := d.knownAddresses()
+	names := map[string]bool{}
 	for _, item := range items {
-		name := item.Config.text("list")
+		names[item.Config.text("list")] = true
+	}
+	kept := func(rows []Row) []Row {
+		return slices.DeleteFunc(slices.Clone(rows), func(row Row) bool { return removed[row.id()] })
+	}
+	known := d.knownAddresses()
+	for name := range names {
 		if rows, ok := known[name]; ok {
-			d.RememberAddresses(name, slices.DeleteFunc(slices.Clone(rows), func(row Row) bool { return removed[row.id()] }))
-			delete(known, name)
+			d.RememberAddresses(name, kept(rows))
 		} else if rows, ok := d.addressExpected[name]; ok {
-			d.ExpectAddresses(name, slices.DeleteFunc(slices.Clone(rows), func(row Row) bool { return removed[row.id()] }))
+			d.ExpectAddresses(name, kept(rows))
 		}
 	}
 }
@@ -520,8 +528,9 @@ func (d *RouterOS) restoreAddressSweep(ctx context.Context, s NATStep) error {
 	if err != nil {
 		return err
 	}
+	gone := stringSet(removing...)
 	for _, row := range latest {
-		if slices.Contains(removing, row.id()) {
+		if gone[row.id()] {
 			return routerError(messageRollbackDeletePresent)
 		}
 	}
