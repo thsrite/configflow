@@ -2038,6 +2038,10 @@ R062-B04、R063-B03的P3无显式profile URL别名，N/A；R126-B04的URL优先�
 
 R062/R126-S90均用13种真实hosts缓存/DNS配置和真实Agent核心版本上报，检查报告与生成主文件一致；其他四服务两字段明确null。没有链式节点的缓存要求subscription_dialers为null，有链式节点的非空报告仍需进一步覆盖。R062/R126-B90分别把当前能力的原文/percent/双编码/plus放进真实附加文件路径，content保留真实生成rule-proxy URL，公开files对应path精确为[REDACTED]，其余metadata及完整私有归档不变。比较器只在验证完整预期公开metadata后恢复这一字段以复用归档验证；Go漏脱敏/过度脱敏/改size或hash/改正文均有故意出错自检。源码仍见X01及R062/R126来源行。
 
+### Step B 生成器故障补充（批次121）
+
+所有下载S04以启用远端源、有效真实缓存和503 fake源证明零网络请求，DNS ZIP检查配套缓存规则；文本写失败用真实只读generated目录，不能用坏JSON代替。H152/H155–165/H167–169/H171–174由实际default/scoped preview到达，按本清单Python来源行断言准确错误和全SQL/files不变；H014的MRS下载错误在default/scoped分别关联R068/R131-F08。客户端中断与其他未到达helper仍未计覆盖。
+
 冻结比较针对每个端自己的已校验bundle成员原始字节。配置通过公开settings改为另一份后，旧file仍必须等于旧成员，完整SQL/预览文件不变；跨实现的生成主YAML照结构比较。ZIP下载由[generated_preview.download](../../backend/agents/generated_preview.py#L163)每次重打包，ZIP容器自身的时间戳不属于“旧成员内容不变”，不能把整个ZIP字节相等当作冻结条件。TTL仍核对真实expires_at≈创建时刻+3600，过期拒绝另由F11验证，不缩短生产TTL。
 
 ### Step B token保存后的轮换与版本注入边界

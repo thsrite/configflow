@@ -39,8 +39,10 @@ def callbacks(binary, recorder):
                         variant='archive-callback/' + case + '/' + service)
         with Pair(binary, recorder, options=options(source.url + '/never-request-mrs', source.url, 'mrs')) as pair:
             text = '规则“' + NAME + '”下载失败：OxiDNS/MosDNS 不支持 MRS 二进制规则，请使用该订阅的 Text 或 YAML 版本。'
-            pair.request('H014', 'POST /api/generate/mosdns', body='{}', expect=500, writes=True,
-                check=message(text), interaction=SourceStable(pair, source), variant='declared-MRS-rejected-before-HTTP')
+            for case, template, path in [('R068-F08', 'POST /api/generate/mosdns', '/api/generate/mosdns'),
+                    ('R131-F08', 'POST /api/profiles/<profile_id>/generate/mosdns', '/api/profiles/default/generate/mosdns')]:
+                pair.request(case, template, path, body='{}', expect=500, writes=True,
+                    check=message(text), interaction=SourceStable(pair, source), variant='declared-MRS-rejected-before-HTTP')
     # These cases also prove the outer archive preparation-error wrapper H012;
     # the helper label is attached to the same request, without duplicate HTTP.
 

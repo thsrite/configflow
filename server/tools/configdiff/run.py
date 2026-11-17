@@ -180,6 +180,10 @@ def main():
     groups.update(json_boundary)
     from cases.generate import GROUPS as generate
     groups.update(generate)
+    from cases.generator_edges import GROUPS as generator_edges
+    groups.update(generator_edges)
+    from cases.generator_guards import GROUPS as generator_guards
+    groups.update(generator_guards)
     from cases.pulls import GROUPS as pulls
     groups.update(pulls)
     from cases.pull_routes import GROUPS as pull_routes

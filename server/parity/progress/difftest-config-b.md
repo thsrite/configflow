@@ -2050,3 +2050,21 @@ current compared=2 go-unimplemented=55 design_errors=[] seconds=25.06；exit=0
 ```
 
 原R仍差159（含N/A）、H仍差474及partial/长流程。继续生成错误/离线缓存；最终完整all仍未执行。
+
+## 批次 121：生成失败、离线规则缓存与converter防御分支
+
+- 默认/scoped各客户端实际缺策略引用→400，预览非对象→500、OxiDNS下载非对象→500、MosDNS非对象一般异常→500，非法原生YAML→400；均要求完整SQL/files不变。三个文本下载器在普通UID下真实generated目录0500触发EACCES，比较故障是否生效/权限是否被偷偷改动、全行和文件未留下半成品；新增故意篡改检查，101项自检通过。
+- 10种下载S04均使用真实启用远端声明+有效by-id规则缓存，对应源真实返回503但必须零请求；MosDNS/OxiDNS ZIP必须含缓存的真实转换内容。仅允许选定文本生成文件及精确前版本.bak变化，完整SQL/其他文件不变，完整下载结构和headers继续比较。
+- 公开preview到达H152、H155–165、H167–169和H171–174，共19个新helper编号，精确中文错误/500 YAML上下文和只读状态验证，两种路由各执行。H014既有MRS前置现在以R068-F08命名并新增scoped R131-F08，保留H014/H015关联，13种旧callback回归保留。
+- .64正式生成/归档60变体均Go尚未实现、design_errors=[]，26.82秒；.32正式helper42变体均Go尚未实现、design_errors=[]，不计Go通过。合计净增89变体、48个原R编号、19个H。统一9811变体、原R4419（S704/F2721/B994）、H657/G16；findings仍closed80/accepted7/open21/O12单列1。
+
+```text
+.64 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups generator-real-failures,generator-offline-valid-cache,archive-callback-helper-guards --baseline 21dfb92c
+current go-unimplemented=60 design_errors=[] seconds=26.82；exit=0
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups generator-oxidns-guard-branches,generator-mihomo-guard-branches --baseline 21dfb92c
+current go-unimplemented=42 design_errors=[]；exit=0
+101 self-checks + deliberately wrong-Go-response detection OK
+独立报告/tmp/configdiff-config-generator-{edges,guards}-draft.json
+```
+
+原R仍差111（含N/A）、H仍差455及partial/长流程；继续DNS/native、provider与剩余路由。最终完整all仍未执行。

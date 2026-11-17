@@ -17,6 +17,22 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_generator_output_permission_observer_detects_chmod_and_persistent_writes(self):
+        from cases.generator_edges import ReadonlyOutput
+        observer = ReadonlyOutput(None)
+        observer.before_values[1] = observer.after_values[1] = {'sql': 'same', 'files': 'same'}
+        expected = {'real_fault_active': True, 'readonly_mode_retained': True}
+        observer.observed = [expected, expected]
+        self.assertEqual(observer.compare(Policy()), [])
+        for key in expected:
+            observer.observed[1] = {**expected, key: False}
+            self.assertTrue(observer.compare(Policy()), key)
+        observer.observed[1] = expected
+        observer.after_values[1] = {'sql': 'changed', 'files': 'same'}
+        self.assertTrue(observer.compare(Policy()), 'committed row')
+        observer.after_values[1] = {'sql': 'same', 'files': 'partial-generated-file'}
+        self.assertTrue(observer.compare(Policy()), 'partial file')
+
     def test_artifact_path_redaction_does_not_hide_unredacted_paths_or_other_metadata(self):
         from cases.artifact_redaction import RedactedPath
         path = 'rules/synthetic-secret.txt'

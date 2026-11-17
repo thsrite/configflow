@@ -6,6 +6,8 @@ Unreachable/earlier-guard branches are deliberately absent.
 """
 
 LINKS = {
+    'R068-F08': ('POST /api/generate/mosdns', ('H014', 'H015')),
+    'R131-F08': ('POST /api/profiles/<profile_id>/generate/mosdns', ('H014', 'H015')),
     'R062-B90': ('POST /api/generate/<service>/artifact', ('X01',)),
     'R126-B90': ('POST /api/profiles/<profile_id>/generate/<service>/artifact', ('X01',)),
     'R062-S90': ('POST /api/generate/<service>/artifact', ('G16',)),
