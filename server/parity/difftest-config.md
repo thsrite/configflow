@@ -2270,7 +2270,7 @@ T07每端真实Barrier同时启动八客户端，交叉default/other、Surge/Loo
 
 T05新增create/compose/fetch/provider/MosDNS生成五种真实source屏障：先从Python生成的不可变seed执行正常请求；再从完全相同seed启动独立服务，在真实上游已接收请求但未返回时shutdown客户端socket，放行来源后观察完整提交。数据库全部行/metadata/revision、所有文件/模式/缓存、task/health/notification及源协议须等于不断连对照，并继续做Python↔Go比较；随机composition/node身份先校验完整格式/唯一性及关联cache路径才建立双射。原响应从未读取，记录为不可观察，不捏造200。
 
-provider还用公开PUT启用真实首次拉取；对照和断连各自保存一遍相同设置。Control↔aborted与Python↔Go是两个不同配对，身份映射必须独立；原将两者混用产生的commit假差异已撤回，故意多一次真实generation/改行/文件字节/权限/额外文件仍检出。等待依据是完整对照状态已相等，不用固定sleep掩盖后台落盘。create/compose/generate的Go路由未接通，六变体保留未实现；fetch/provider六变体实际compared。原始源码分别为[rule_library.py:120](../../backend/routes/rule_library.py#L120)、[rule_composition.py](../../backend/utils/rule_composition.py)、[subscriptions.py:216](../../backend/routes/subscriptions.py#L216)、[provider_response.py:89](../../backend/utils/provider_response.py#L89)、[generate.py:169](../../backend/routes/generate.py#L169)。
+provider还用公开PUT启用真实首次拉取；对照和断连各自保存一遍相同设置。Control↔aborted与Python↔Go是两个不同配对，身份映射必须独立；原将两者混用产生的commit假差异已撤回，故意多一次真实generation/改行/文件字节/权限/额外文件仍检出。等待依据是完整对照状态已相等，不用固定sleep掩盖后台落盘。create/compose/generate的Go路由未接通，六变体保留未实现；fetch/provider六变体实际compared。原始源码分别为[rule_library.py:120](../../backend/routes/rule_library.py#L120)、[rules.py:378](../../backend/routes/rules.py#L378)、[subscriptions.py:216](../../backend/routes/subscriptions.py#L216)、[provider_response.py:89](../../backend/utils/provider_response.py#L89)、[generate.py:169](../../backend/routes/generate.py#L169)。
 
 setup已有真实check屏障下断连后receipt保存及新浏览器读回；prepare的最后纯生成/事务窄窗口没有等价可控外部屏障，不以check覆盖冒充命中prepare中间位置。生成下载另有实际大响应首字节后关闭socket的完整落盘观察，见T08/B04，纯CPU阶段取消仍为部分覆盖。
 

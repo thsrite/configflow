@@ -2452,3 +2452,9 @@ current compared30 / Go未实现4 / different10（全部accepted）；current_op
 current compared6 / Go未实现6；design_errors=[]；exit0
 138 self-checks + deliberately wrong-Go-response detection OK
 ```
+
+## 批次 146：冻结f147cf21最终门禁输入
+
+- 再次rebase到最新go f147cf21（含A24和N8-4e/f），无业务源码改动。工具修正提交当前5ace5b28/622d54d1，精确注释和自检同步更新；历史基线与历史提交引用保留记录。
+- 五类断连最终实跑12变体19.67秒，compared6/未实现6，design_errors=[]；false commit-mapping草稿已删除，未带入canonical finding。N8-6九个批准差异实际接受谓词通过，138项篡改自检通过。
+- 最终完整门禁固定.64、-p4，先官方Go gate，再同一锁槽configdiff all，使用独立final-results.json/final-findings.md保留原始证据，结束后将整份实际报告交回canonical。当前只冻结输入，尚无最终通过结论；不会把旧4d8a665a夹具失败全量算通过。
