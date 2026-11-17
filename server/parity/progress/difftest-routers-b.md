@@ -2,7 +2,7 @@
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
 Latest clean integration rebase: go15173872f; normal public binary built from it.
-Current declarations:398 source-reviewed variant audits,1903 remaining if all
+Current declarations:410 source-reviewed variant audits,1891 remaining if all
 completed increments are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
@@ -1511,3 +1511,38 @@ strengthened the64hex/token negative values:
 => Ran31 tests0.688s/OK. No actual Go domain handler comparison or new bug claimed.
 No active command; declarations398/remaining1903 unchanged. Full composition,
 final gate/rebase and all remaining matrix/dynamic work still pending.
+
+Fixed-IP outer shape / profile guards:
+- H0036 exact object/operation/list guard covers every parse/root class, all
+  missing/extra members, all operation types, empty/65 lists and NONEMPTY wrong
+  string/object device collections. H0037 covers wrong row types, empty/extra
+  rows and all four missing fields. Actual one-device plus64-device add/delete
+  previews are the successful schema/cap controls; their real signed payloads
+  and device effects are not mocked.
+- Added exact two-member apply shape (missing profile/token and extra) plus11
+  preview and11 apply profile mismatches: all JSON types, case and whitespace.
+  They stop before device I/O/cache invalidation, status/message exact and all
+  state unchanged. Root messages now prove the intended guard instead of only400.
+  Device/row variant labels became stable readable names; refreshed guard results
+  are used, not stale labels from the first report.
+-12 audits: H0036/H0037/H1263/H1270/H1271, R005-F10/F11,
+  R006-F10/F11/F12/F13/F16. Declarations410/remaining1891 if composed. Remaining
+  MAC/IP/name, source checks, setup, tokens and all compensation parents are NOT
+  implied by these outer checks. No new bug; all native domain routes still absent.
+
+.64 initial real positive/control command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world guards --world fixed-ip --world fixed-ip-64 --output "$HOME/.cache/routerdiff-reports/302rx1dg/fixed-wrapper-pilot.json"'`
+=> Ran11 tests0.422s/OK;1715 requests, including real64-device add/delete52.42s;
+routes0/missing1715/references374/audits301 for earlier loaded declarations.
+After stable label/declaration changes, reran changed guards (positive/control
+recipes were unchanged, so did not repeat52-second batch):
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world guards --output "$HOME/.cache/routerdiff-reports/302rx1dg/fixed-wrapper-guards.json"'`
+=> Ran58 tests5.241s/OK;1698 requests, routes0/missing1698/references356/
+audits311/remaining1990 in this subset/complete=false. The same foreground shell
+then evaluated ONLY the unchanged fixed-ip/fixed-ip-64 positive records plus the
+new guards file:1715 actual observations, all12 explicit audit sets variants-audited.
+
+No active command. Last full composition3054/301 still not replaced. Full current
+composition/final gate/rebase pending; native parity and1900-ish remaining source
+paths are not complete. Next work: deeper fixed-IP fields/setup and reachability,
+remaining device/background/OS paths and content-bound dynamic comparison.

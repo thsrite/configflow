@@ -185,8 +185,13 @@ def body_guards():
             ('bool', b'true', 'application/json'), ('number', b'1', 'application/json'),
             ('malformed', b'{', 'application/json'), ('wrong-content-type', b'{}', 'text/plain')]:
             headers = {'Content-Type': content_type} if content_type else {}
-            helpers = ('H1234',) if route in ('R008', 'R010') else ('H1257',) if route == 'R003' else ()
+            helpers = (('H1234',) if route in ('R008', 'R010') else ('H1257',) if route == 'R003' else
+                       ('H1270',) if route == 'R005' else ('H0036',) if route == 'R006' else ())
+            message = ('路由器参数必须是对象' if route in ('R008', 'R010') else
+                       '客户端设备请求格式无效。' if route == 'R003' else
+                       '固定 IP 确认请求格式无效。' if route == 'R005' else
+                       '请选择 1 至 64 台设备预览固定 IP 操作。' if route == 'R006' else None)
             yield Case(route + '-' + entry + '/' + ('iKuai-' if path.endswith('/r-ik') else '') + variant,
                 route, method, path, 400, (route + '-' + entry, *helpers), raw=raw, headers=headers,
-                message='路由器参数必须是对象' if route in ('R008', 'R010') else '客户端设备请求格式无效。' if route == 'R003' else None,
+                message=message,
                 reason='request.get_json(silent=True) and exact outer shape guard')

@@ -217,13 +217,16 @@ def fixed_ip_shape():
         body.pop(field)
         yield case('missing-' + field, body, outer, 'R006-F10', 'H0036')
     yield case('extra', {**base, 'extra': False}, outer, 'R006-F10', 'H0036')
-    for value in ('ADD', 'unknown', '', None, 1, [], {}):
+    for value in ('ADD', 'unknown', '', None, 1, False, [], {}):
         yield case('operation-' + repr(value), {**base, 'operation': value}, outer, 'R006-F11', 'H0036')
-    for value in (None, 0, False, '', {}, [], [row] * 65):
-        yield case('devices-' + str(type(value)) + '-' + str(len(value) if isinstance(value, (list, str)) else value),
+    for label, value in (('null', None), ('number', 0), ('bool', False), ('empty-string', ''),
+                         ('string', 'nonempty'), ('empty-object', {}), ('object', {'row': row}),
+                         ('empty', []), ('65', [row] * 65)):
+        yield case('devices-' + label,
                    {**base, 'devices': value}, outer, 'R006-F12', 'H0036')
-    for value in (None, 0, False, '', [], {}, {**row, 'extra': ''}):
-        yield case('row-' + repr(value), {**base, 'devices': [value]},
+    for label, value in (('null', None), ('number', 0), ('bool', False), ('string', ''),
+                         ('array', []), ('empty-object', {}), ('extra', {**row, 'extra': ''})):
+        yield case('row-' + label, {**base, 'devices': [value]},
                    '固定 IP 请求需要 IP、MAC、来源路由器和设备名称。', 'R006-F13', 'H0037')
     for field in row:
         value = dict(row)
@@ -242,9 +245,9 @@ def fixed_ip_shape():
                    message, 'R006-B90', 'H0038')
     yield case('same-router-mac', {**base, 'devices': [row, {**row, 'ip': '10.44.0.22'}]},
                '同一路由器上的同一 MAC 只能选择一个固定 IP。', 'H0039', 'R006-F15')
-    for value in ('beta', '', None):
+    for value in ('beta', '', None, 0, False, True, [], {}, 1.5, ' alpha ', 'ALPHA'):
         yield case('profile-' + repr(value), {**base, 'profile_id': value},
-                   '配置空间已切换，请重新载入。', 'R006-F16', status=409)
+                   '配置空间已切换，请重新载入。', 'R006-F16', 'H1263', status=409)
     for value in (None, 0, False, [], {}, '', 'x' * 1_000_001):
         yield invalid('R005', 'POST', '/api/client-devices/fixed-ip/apply',
                       'token-' + str(type(value)) + '-' + str(len(value) if isinstance(value, (str, list)) else value),
@@ -253,6 +256,20 @@ def fixed_ip_shape():
         yield invalid('R005', 'POST', '/api/client-devices/fixed-ip/apply', 'invalid-token-' + str(len(value)),
                       {'profile_id': 'alpha', 'token': value}, '固定 IP 预览无效或已过期，请重新预览确认。',
                       ('H0045', 'H0046', 'R005-B90'), 409)
+
+
+def fixed_apply_shape():
+    base = {'profile_id': 'alpha', 'token': 'synthetic-unverified-token'}
+    for field in base:
+        value = dict(base)
+        value.pop(field)
+        yield invalid('R005', 'POST', '/api/client-devices/fixed-ip/apply', 'missing-' + field,
+                      value, '固定 IP 确认请求格式无效。', ('H1270', 'R005-F10'))
+    yield invalid('R005', 'POST', '/api/client-devices/fixed-ip/apply', 'extra',
+                  {**base, 'extra': False}, '固定 IP 确认请求格式无效。', ('H1270', 'R005-F10'))
+    for value in ('beta', '', None, 0, False, True, [], {}, 1.5, ' alpha ', 'ALPHA'):
+        yield invalid('R005', 'POST', '/api/client-devices/fixed-ip/apply', 'profile-' + repr(value),
+                      {**base, 'profile_id': value}, '配置空间已切换，请重新载入。', ('H1271', 'R005-F11'), 409)
 
 
 def route_edit_shape():

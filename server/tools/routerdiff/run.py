@@ -704,7 +704,7 @@ def main():
     guard_options = fixtures.authentication_options(options)
     worlds = [('guards', guard_options, (cases.authentication, cases.query_credentials, cases.profile_selection_failures, cases.body_guards,
                       guards.router_settings, guards.router_settings_ikuai, guards.guard_vendor_support,
-                      guards.client_draft, guards.fixed_ip_shape,
+                      guards.client_draft, guards.fixed_ip_shape, guards.fixed_apply_shape,
                       guards.route_edit_shape, guards.workspace_shape, guards.rule_sync_shape, guards.rejected_draft_readback)),
               ('client-drafts', options, (workflows.client_drafts,)),
               ('client-agent-query-writes', fixtures.agent_options(), (workflows.client_agent_query_writes,)),

@@ -763,6 +763,47 @@ def declared():
             'cannot pass public import/loading (separately proven), so not forged into this HTTP '
             'catch. Does not claim all shared C22 normalizer internals outside the routers file inventory '
             'or repository/transaction errors, which have separate parent entries.', settings_errors)
+    fixed_sources = ('backend/common/client_fixed_ip.py:68', 'backend/routes/client_devices.py:105',
+                     'backend/routes/client_devices.py:129')
+    root_labels = ('none', 'null', 'array', 'text', 'bool', 'number', 'malformed', 'wrong-content-type')
+    preview_shape = tuple(('guards', 'R006-F10/' + label, 400) for label in root_labels)
+    preview_shape += tuple(('guards', 'R006/missing-' + field, 400) for field in ('profile_id', 'operation', 'devices'))
+    preview_shape += (('guards', 'R006/extra', 400),)
+    preview_operation = tuple(('guards', 'R006/operation-' + repr(value), 400)
+                              for value in ('ADD', 'unknown', '', None, 1, False, [], {}))
+    preview_devices = tuple(('guards', 'R006/devices-' + label, 400) for label in
+                            ('null', 'number', 'bool', 'empty-string', 'string', 'empty-object', 'object', 'empty', '65'))
+    preview_rows = tuple(('guards', 'R006/row-' + label, 400)
+                         for label in ('null', 'number', 'bool', 'string', 'array', 'empty-object', 'extra'))
+    preview_rows += tuple(('guards', 'R006/row-missing-' + field, 400) for field in ('ip', 'mac', 'router_id', 'name'))
+    scope_values = ('beta', '', None, 0, False, True, [], {}, 1.5, ' alpha ', 'ALPHA')
+    preview_profile = tuple(('guards', 'R006/profile-' + repr(value), 409) for value in scope_values)
+    apply_shape = tuple(('guards', 'R005-F10/' + label, 400) for label in root_labels)
+    apply_shape += tuple(('guards', 'R005/missing-' + field, 400) for field in ('profile_id', 'token'))
+    apply_shape += (('guards', 'R005/extra', 400),)
+    apply_profile = tuple(('guards', 'R005/profile-' + repr(value), 409) for value in scope_values)
+    preview_positive = (('fixed-ip', 'R006/fixed-add-dynamic', 200),
+                        ('fixed-ip-64', 'R006/mixed-64-add', 200), ('fixed-ip-64', 'R006/mixed-64-delete', 200))
+    audits['H0036'] = Audit(fixed_sources,
+        'Exact outer object, allowed operation and1..64 device list: all JSON roots, missing/extra '
+        'members, malformed/content-type cases, all operation types and list types including NONEMPTY '
+        'wrong string/map (not hidden by a simultaneous empty-list check), zero/65. Actual one-row '
+        'and64-row add/delete previews succeed with real device reads and signed reference payloads.',
+        preview_shape + preview_operation + preview_devices + preview_positive)
+    audits['H0037'] = Audit(fixed_sources,
+        'Each wrong row type, empty/extra object and every missing IP/MAC/router/name key. Actual '
+        'one-row and64-row add/delete are schema controls. Field-value/MAC/IP/name normalization '
+        'is separate; this audit does not pretend those helpers are covered by an outer-shape400.',
+        preview_rows + preview_positive)
+    for ident, required in (('H1263', preview_profile), ('H1270', apply_shape), ('H1271', apply_profile),
+                            ('R005-F10', apply_shape), ('R005-F11', apply_profile),
+                            ('R006-F10', preview_shape), ('R006-F11', preview_operation),
+                            ('R006-F12', preview_devices), ('R006-F13', preview_rows), ('R006-F16', preview_profile)):
+        audits[ident] = Audit(fixed_sources,
+            'Actual endpoint-specific shape/profile/operation/list/row guard with exact message and '
+            'complete state unchanged. Profile mismatch uses eleven wrong values of every JSON type '
+            'plus case/whitespace and a valid row/token-shaped object, before device I/O or apply '
+            'cache invalidation; no unknown signed-token value is substituted from Python into Go.', required)
     return audits
 
 

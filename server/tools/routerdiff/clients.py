@@ -56,7 +56,7 @@ def fixed_ip():
     for index, (label, ip, mac, router_id, name, preview_entry, apply_entry) in enumerate(records):
         preview = 'R006/fixed-add-' + label
         yield Case(preview, 'R006', 'POST', '/api/client-devices/fixed-ip/preview', 200,
-                   ('R006-' + preview_entry, 'R006-B06', 'R006-B90'),
+                   ('R006-' + preview_entry, 'R006-B06', 'R006-B90', 'H0036', 'H0037'),
                    document=request('add', ip, mac.lower().replace(':', '-'), router_id, name),
                    prepare=(device_world(),) if index == 0 else (), unchanged=False, effect='device-read',
                    checks={'success': True, 'actions/0/ip': ip, 'actions/0/router_id': router_id},
@@ -495,7 +495,7 @@ def batch64():
     for operation in ('add', 'delete'):
         preview = 'R006/mixed-64-' + operation
         yield Case(preview, 'R006', 'POST', '/api/client-devices/fixed-ip/preview', 200,
-                   ('R006-S05', 'R006-B04', 'T05'), document={**body, 'operation': operation},
+                   ('R006-S05', 'R006-B04', 'T05', 'H0036', 'H0037'), document={**body, 'operation': operation},
                    prepare=(world,) if operation == 'add' else (), unchanged=False, effect='device-read',
                    checks=checks, formats={'token': r'.{1,1000000}'}, foreign=FOREIGN)
         yield Case('R005/mixed-64-' + operation, 'R005', 'POST', '/api/client-devices/fixed-ip/apply', 200,
