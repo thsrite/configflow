@@ -161,7 +161,8 @@ func editROSEntries(rows []Row) []*EditableRoute {
 }
 
 // ReadRoutes reads manual route snapshots, retaining read-only rows for display.
-func (d *RouterOS) ReadRoutes(ctx context.Context) ([]*EditableRoute, error) {
+func (d *RouterOS) ReadRoutes(ctx context.Context) (result []*EditableRoute, err error) {
+	defer func() { err = routeSafeError(err, d.endpoint, d.editSecrets...) }()
 	rows, err := d.list(ctx, rosRoutes)
 	if err != nil {
 		return nil, err
@@ -233,7 +234,8 @@ func editValues(values *RouteValues, message string) (netip.Prefix, string, erro
 func editResource(id string) string { return rosRoutes + "/" + escapeROSPathID(id) }
 
 // MutateRoute edits one route, proving ownership again before every compensation.
-func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *EditableRoute, values *RouteValues) (*RouteMutation, error) {
+func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *EditableRoute, values *RouteValues) (result *RouteMutation, err error) {
+	defer func() { err = routeSafeError(err, d.endpoint, d.editSecrets...) }()
 	ctx = context.WithoutCancel(ctx)
 	if action != "add" && action != "update" && action != "delete" {
 		return nil, routerError(messageEditVendorAction)
@@ -287,7 +289,7 @@ func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *Edi
 			}
 		}
 	}
-	result, err := d.editROSWrite(ctx, action, desired, previous, &id, &after, before)
+	result, err = d.editROSWrite(ctx, action, desired, previous, &id, &after)
 	if err == nil {
 		return result, nil
 	}
@@ -296,7 +298,7 @@ func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *Edi
 	}
 	return nil, err
 }
-func (d *RouterOS) editROSWrite(ctx context.Context, action string, desired Row, previous []Row, id *string, after *Row, before *EditableRoute) (*RouteMutation, error) {
+func (d *RouterOS) editROSWrite(ctx context.Context, action string, desired Row, previous []Row, id *string, after *Row) (*RouteMutation, error) {
 	if action == "add" {
 		response, err := d.request(ctx, "PUT", rosRoutes, desired, 0)
 		if err != nil {
@@ -438,13 +440,19 @@ func (d *RouterOS) editROSCompensate(ctx context.Context, action string, previou
 	return d.editROSRestore(ctx, "PUT", rosRoutes, payload(rosRoutes, before.Snapshot), func(latest []Row, response any) bool {
 		candidates := []Row{}
 		for _, r := range latest {
-			if !prior[r.text(".id")] && editROSSame(r, before.Snapshot, true) {
+			if rosIDPattern.MatchString(r.text(".id")) && !prior[r.text(".id")] && editROSSame(r, before.Snapshot, true) {
 				candidates = append(candidates, r)
 			}
 		}
 		candidate := ""
 		if r, ok := response.(map[string]any); ok {
-			candidate, _ = r[".id"].(string)
+			if raw, exists := r[".id"]; exists && raw != nil && raw != "" {
+				var valid bool
+				candidate, valid = raw.(string)
+				if !valid || !rosIDPattern.MatchString(candidate) {
+					return false
+				}
+			}
 		}
 		return len(candidates) == 1 && (candidate == "" || candidates[0][".id"] == candidate)
 	})

@@ -95,7 +95,8 @@ func editIkuaiEntry(raw Row) *EditableRoute {
 }
 
 // ReadRoutes reads every static_rt page, retaining unsupported forms as read-only.
-func (d *Ikuai) ReadRoutes(ctx context.Context) ([]*EditableRoute, error) {
+func (d *Ikuai) ReadRoutes(ctx context.Context) (result []*EditableRoute, err error) {
+	defer func() { err = routeSafeError(err, d.endpoint, d.username, d.password) }()
 	raw, err := d.ListAll(ctx, "static_rt", "", true, "")
 	if err != nil {
 		return nil, err
@@ -165,7 +166,8 @@ func (d *Ikuai) MutateRoute(ctx context.Context, action string, expected *Editab
 }
 
 // name is a deterministic per-call seam for the Python boundary corpus, never a global hook.
-func (d *Ikuai) mutateRoute(ctx context.Context, action string, expected *EditableRoute, values *RouteValues, name string) (*RouteMutation, error) {
+func (d *Ikuai) mutateRoute(ctx context.Context, action string, expected *EditableRoute, values *RouteValues, name string) (result *RouteMutation, err error) {
+	defer func() { err = routeSafeError(err, d.endpoint, d.username, d.password) }()
 	ctx = context.WithoutCancel(ctx)
 	if action != "add" && action != "update" && action != "delete" {
 		return nil, routerError(messageEditVendorAction)
@@ -244,7 +246,7 @@ func (d *Ikuai) mutateRoute(ctx context.Context, action string, expected *Editab
 		}
 		desired["comment"] = values.Comment
 	}
-	result, err := d.editIKWrite(ctx, action, previous, before, desired, values)
+	result, err = d.editIKWrite(ctx, action, previous, before, desired, values)
 	if err == nil {
 		return result, nil
 	}

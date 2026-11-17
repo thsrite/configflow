@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Row is one fake RouterOS object.
@@ -47,6 +48,7 @@ type Fault struct {
 	OutputSuffix []string         `json:"output_suffix,omitempty"`
 	ExtraRows    map[string][]Row `json:"extra_rows,omitempty"`
 	LoseReply    bool             `json:"lose_reply,omitempty"`
+	DelayMS      int              `json:"delay_ms,omitempty"` // delay the reply after accepting the operation
 	AfterCommit  bool             `json:"after_commit,omitempty"`
 	// PatchCreated changes fields of the row an /execute add created, by the
 	// add's index, as a device that normalizes or flags a new row would.
@@ -58,6 +60,7 @@ type State struct {
 	Tables        map[string][]Row `json:"tables"`
 	Calls         []Call           `json:"calls"`
 	Faults        []Fault          `json:"faults,omitempty"`
+	Mutations     []Mutation       `json:"mutations,omitempty"`
 	HideNewRoutes bool             `json:"hide_new_routes,omitempty"`
 }
 
@@ -68,6 +71,7 @@ type Fake struct {
 	tables        map[string][]Row
 	calls         []Call
 	faults        []Fault
+	mutations     []Mutation
 	counts        map[string]int
 	nextID        int
 	hiddenIDs     map[string]bool
@@ -99,6 +103,7 @@ func (f *Fake) Reset(state State) {
 	}
 	f.calls = nil
 	f.faults = slices.Clone(state.Faults)
+	f.mutations = slices.Clone(state.Mutations)
 	f.counts = map[string]int{}
 	f.nextID = 100
 	f.hiddenIDs = map[string]bool{}
@@ -152,11 +157,27 @@ func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeFault(w, *fault)
 		return
 	}
+	if r.Method == http.MethodGet {
+		f.mutateLocked(r.Method, path)
+	}
 	status, result, closeReply := f.serveLocked(r.Method, path, query, body, fault)
+	if r.Method != http.MethodGet {
+		f.mutateLocked(r.Method, path)
+	}
 	f.mu.Unlock()
 	if closeReply || fault != nil && fault.LoseReply {
 		closeConnection(w)
 		return
+	}
+	if fault != nil && fault.AfterCommit && (fault.Body != nil || fault.RawBody != "" || fault.Status != 0) {
+		if fault.DelayMS > 0 {
+			time.Sleep(time.Duration(fault.DelayMS) * time.Millisecond)
+		}
+		writeFault(w, *fault)
+		return
+	}
+	if fault != nil && fault.DelayMS > 0 {
+		time.Sleep(time.Duration(fault.DelayMS) * time.Millisecond)
 	}
 	writeJSON(w, status, result)
 }

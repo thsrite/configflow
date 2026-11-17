@@ -1,13 +1,16 @@
 package routers
 
 import (
+	"configflow/internal/redact"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/netip"
+	"net/url"
 	"reflect"
 	"strings"
 	"sync"
@@ -151,8 +154,11 @@ func NormalizeRouteRequest(data json.RawMessage) (RouteIntent, error) {
 		}
 	} else {
 		for _, key := range []string{"id", "revision"} {
-			if v := strings.TrimSpace(string(raw[key])); v != "" && v != "null" && v != `""` && v != "false" && v != "0" {
-				return intent, invalid(messageEditAddIdentity)
+			if value, exists := raw[key]; exists && strings.TrimSpace(string(value)) != "null" {
+				text, valid := jsonString(value)
+				if !valid || text != "" {
+					return intent, invalid(messageEditAddIdentity)
+				}
 			}
 		}
 	}
@@ -265,16 +271,17 @@ func BuildRoutePlan(router Router, rows []*EditableRoute, data json.RawMessage) 
 	if (current != nil && current.Managed) || (v != nil && IsManaged(v.Comment)) {
 		plan.Warnings = append(plan.Warnings, messageEditManaged)
 	}
-	connection := struct {
+	type routeConnection struct {
 		ID        string `json:"id"`
 		Type      string `json:"type"`
 		Endpoint  string `json:"endpoint"`
 		Username  string `json:"username"`
 		VerifyTLS bool   `json:"verify_tls"`
-	}{router.ID, router.Type, router.Endpoint, router.Username, router.VerifyTLS}
+	}
+	connection := routeConnection{router.ID, router.Type, router.Endpoint, router.Username, router.VerifyTLS}
 	plan.Fingerprint = routeDigest(struct {
 		Protocol   int             `json:"protocol"`
-		Connection any             `json:"connection"`
+		Connection routeConnection `json:"connection"`
 		Intent     RouteIntent     `json:"intent"`
 		Before     *PublicRoute    `json:"before"`
 		After      json.RawMessage `json:"after"`
@@ -318,9 +325,6 @@ func editableByID(rows []*EditableRoute, id string) *EditableRoute {
 func routeValuesEqual(row *EditableRoute, v *RouteValues) bool {
 	return row.CIDR == v.CIDR && row.Gateway == v.Gateway && row.Enabled == v.Enabled && row.Comment == v.Comment
 }
-func snapshotEqual(entry *EditableRoute, snapshot Row) bool {
-	return entry != nil && entry.Editable && sameRow(entry.Snapshot, snapshot)
-}
 func routeIdentityEqual(a, b *EditableRoute) bool {
 	return a != nil && b != nil && a.ID == b.ID && a.CIDR == b.CIDR && a.Gateway == b.Gateway && a.Enabled == b.Enabled && a.Comment == b.Comment && a.Table == b.Table && reflect.DeepEqual(a.Snapshot, b.Snapshot)
 }
@@ -343,6 +347,8 @@ type routeLock struct {
 func RouterOperationLock(ctx context.Context, router Router, write bool) (context.Context, func(), error) {
 	if write {
 		ctx = context.WithoutCancel(ctx)
+	} else if err := ctx.Err(); err != nil {
+		return ctx, nil, err
 	}
 	key := [2]string{router.Type, strings.TrimRight(router.Endpoint, "/")}
 	routeLocks.Lock()
@@ -378,4 +384,26 @@ func RouterOperationLock(ctx context.Context, router Router, write bool) (contex
 		}
 		return ctx, nil, wait.Err()
 	}
+}
+
+// A device may echo supplied credentials in its own error text. Keep the error
+// kind but never expose that text, including encoded secrets from URL userinfo.
+func routeSafeError(err error, endpoint string, secrets ...string) error {
+	if err == nil {
+		return nil
+	}
+	if u, e := url.Parse(endpoint); e == nil && u.User != nil {
+		secrets = append(secrets, u.User.Username())
+		if p, ok := u.User.Password(); ok {
+			secrets = append(secrets, p)
+		}
+	}
+	if !redact.ContainsEncodedSecret(err.Error(), redact.NewSecrets(secrets)) {
+		return err
+	}
+	kind := KindRouter
+	if e, ok := errors.AsType[*RouterError](err); ok {
+		kind = e.Kind
+	}
+	return rosError(kind, messageEditSecret)
 }

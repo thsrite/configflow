@@ -38,8 +38,8 @@ HR issue-class handling (review-r04 F1-F10; review-r05 checklist 1-6):
 - ID reuse/restore: restore only if the live record is still the exact desired
   snapshot; deleted rows are recreated only if ID, destination and (iKuai) name
   are free. Never write an old image over an unknown ID occupant.
-- Readback: build ID/name indexes once for lookup and ownership; no per-route JSON
-  conversion or quadratic batch proof. R06 edits only one route per operation.
+- Readback: each edit proves one object with a bounded number of linear scans;
+  no nested per-item scans or quadratic batch proof (R05 batch indexes stay reused). R06 edits only one route per operation.
 - Refused versus uncertain: preserve driver classification. Both paths reconcile
   against fresh evidence; unchanged tables need no compensation, unproven writes
   preserve the scene. No assumed missing-object proof. No release Batch/UndoOf
@@ -80,3 +80,9 @@ convergence; real ID allocation/reuse, full-table pagination under device churn;
 lost management link and identity after recreation; real routing/VRF/ECMP/dynamic
 entry protection, active forwarding and persistence over reboot. Fakes prove
 protocol and conservative compensation, not firmware or actual packet paths.
+
+Accepted deviations: native opaque JSON hashes; malformed RouterOS comment objects
+remain in snapshots and are read-only but display empty instead of Python repr;
+add identity fields accept absent/null/empty strings, rejecting falsy wrong types
+that Python accepted. Device errors echoing credentials are replaced with a Chinese
+redacted diagnostic instead of exposing the text (matrix X01/O9 security fix).

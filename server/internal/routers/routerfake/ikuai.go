@@ -35,6 +35,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Credentials the fake accepts unless the state names others.
@@ -71,6 +72,7 @@ type IkuaiFault struct {
 	Reply    any     `json:"reply,omitempty"`
 	// Drop the connection without (Drop) or after (LoseReply) handling it.
 	Drop      bool `json:"drop,omitempty"`
+	DelayMS   int  `json:"delay_ms,omitempty"` // delay an accepted operation
 	LoseReply bool `json:"lose_reply,omitempty"`
 	// Answer code 0 without storing anything.
 	Swallow bool `json:"swallow,omitempty"`
@@ -259,6 +261,9 @@ func (f *Ikuai) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if cookie != "" {
 		http.SetCookie(w, &http.Cookie{Name: "sess_key", Value: cookie, Path: "/"})
+	}
+	if fault != nil && fault.DelayMS > 0 {
+		time.Sleep(time.Duration(fault.DelayMS) * time.Millisecond)
 	}
 	writeJSON(w, status, reply)
 }

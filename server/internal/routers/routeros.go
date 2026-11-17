@@ -78,8 +78,9 @@ type BatchDriver interface {
 // driver from one goroutine at a time (ReadState and the policy/DNS guard
 // manifests are per-driver state); only Ping may run concurrently.
 type RouterOS struct {
-	endpoint string
-	client   DeviceHTTP
+	endpoint    string
+	client      DeviceHTTP
+	editSecrets []string
 
 	// Batch sizes are per driver so independent routers can use their own limits.
 	routeBatch int
@@ -93,9 +94,11 @@ type RouterOS struct {
 
 // NewRouterOS constructs a REST driver with requests-compatible device HTTP.
 func NewRouterOS(endpoint, username, password string, verifyTLS bool) *RouterOS {
-	return NewRouterOSWithHTTP(endpoint, devhttp.New(devhttp.Config{
+	driver := NewRouterOSWithHTTP(endpoint, devhttp.New(devhttp.Config{
 		VerifyTLS: verifyTLS, BasicAuth: true, Username: username, Password: password,
 	}))
+	driver.editSecrets = []string{username, password}
+	return driver
 }
 
 // NewRouterOSWithHTTP creates a driver with an injected device client.

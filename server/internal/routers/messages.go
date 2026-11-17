@@ -277,3 +277,5 @@ const (
 	messageEditIKRollback      = "%s；安全补偿未完成：%s"
 	messageEditIKRecovered     = "%s；已确认未保留本次变更"
 )
+
+const messageEditSecret = "路由操作失败：设备回复包含凭据，已隐藏详情，请检查路由器"
