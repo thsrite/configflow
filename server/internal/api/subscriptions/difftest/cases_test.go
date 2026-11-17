@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/provider"
 	"configflow/internal/repo"
@@ -516,5 +517,10 @@ func TestUTF8BOMRequestBodies(t *testing.T) {
 	w.call("PUT", "/api/subscriptions/s", "\ufeff"+`{"name":"Feed","url":"https://feed.example/s"}`, true)
 	w.call("POST", "/api/subscriptions/reorder", "\ufeff"+`{"ids":["s"]}`, true)
 	w.call("POST", "/api/subscriptions/s/fetch", "\ufeff"+`{"preview":true}`, true)
-	w.call("POST", "/api/subscriptions/s/fetch", "\ufeffnull", true)
+	// Step B #1: null is now rejected before effects; Python treated it as {}.
+	before := normalize(snapshot(t, w.srv))
+	w.srv.Post("/api/subscriptions/s/fetch", httpxtest.Body([]byte("\ufeffnull"), "application/json"), httpxtest.Bearer(strings.TrimPrefix(w.token, "Bearer "))).WantStatus(400)
+	if !reflect.DeepEqual(before, normalize(snapshot(t, w.srv))) {
+		t.Fatal("BOM null fetch changed storage")
+	}
 }

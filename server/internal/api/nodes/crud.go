@@ -216,18 +216,7 @@ func reorderNodes(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	if body == nil {
-		data, err := c.Data()
-		if err != nil {
-			return nil, err
-		}
-		var compact bytes.Buffer
-		if err := json.Compact(&compact, bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))); err != nil {
-			return nil, err
-		}
-		if nonempty(compact.Bytes()) {
-			return httpx.Message(400, false, msgBodyObject), nil
-		}
-		body = record{}
+		return httpx.Message(400, false, msgBodyObject), nil
 	}
 	order, _, err := reorderNodesStored(context.WithoutCancel(c.Context()), body)
 	var bad *httpx.HTTPError

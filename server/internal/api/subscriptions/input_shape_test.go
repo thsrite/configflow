@@ -42,6 +42,11 @@ func TestConfigFindingsRejectInvalidRequestShapesWithoutEffects(t *testing.T) {
 		{"/api/subscriptions/reorder", `{"ids":1}`, "ids 必须是数组"},
 		{"/api/subscriptions/reorder", `{"ids":["s","s"]}`, "id 必须是互不重复的字符串"},
 	}
+	for _, path := range []string{"/api/nodes/reorder", "/api/subscriptions/reorder", "/api/subscriptions/s/fetch", "/api/subscriptions/missing/fetch"} {
+		for _, body := range []string{`null`, `[]`, `false`, `0`, `""`} {
+			tests = append(tests, struct{ path, body, message string }{path, body, "请求体必须是 JSON 对象"})
+		}
+	}
 	for _, test := range tests {
 		t.Run(test.path+test.body, func(t *testing.T) {
 			value, err := jsonx.Parse([]byte(test.body))

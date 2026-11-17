@@ -185,7 +185,7 @@ func (e *reorderError) Error() string {
 }
 func reorderSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := context.WithoutCancel(c.Context())
-	body, err := readOptionalBody(c)
+	body, err := readRequestObject(c)
 	if err != nil {
 		var bad *httpx.HTTPError
 		if errors.As(err, &bad) && bad.Code == 400 {
@@ -324,6 +324,14 @@ func fetchSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 
 func fetchSubscriptionData(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := context.WithoutCancel(c.Context())
+	body, err := readRequestObject(c)
+	if err != nil {
+		var bad *httpx.HTTPError
+		if errors.As(err, &bad) && bad.Code == 400 {
+			return httpx.Message(400, false, bad.Description), nil
+		}
+		return nil, err
+	}
 	list, _, err := listShared(ctx)
 	if err != nil {
 		return nil, err
@@ -331,14 +339,6 @@ func fetchSubscriptionData(c *httpx.Ctx) (*httpx.Response, error) {
 	sub := findSubscription(list, c.Param("sub_id"))
 	if sub == nil {
 		return httpx.Message(404, false, "Subscription not found"), nil
-	}
-	body, err := readOptionalBody(c)
-	if err != nil {
-		var bad *httpx.HTTPError
-		if errors.As(err, &bad) && bad.Code == 400 {
-			return httpx.Message(400, false, bad.Description), nil
-		}
-		return nil, err
 	}
 	nodes, cached, err := refreshSubscription(ctx, sub)
 	fromCache := false

@@ -45,25 +45,14 @@ func readBody(c *httpx.Ctx) (object, error) {
 	return value, nil
 }
 
-// readOptionalBody accepts the empty legacy payloads used by optional-body
-// endpoints, but never turns a populated non-object into a write request.
-func readOptionalBody(c *httpx.Ctx) (object, error) {
+// readRequestObject rejects every non-object, including null and empty arrays,
+// before a reorder or fetch can acquire a write lock or contact a source.
+func readRequestObject(c *httpx.Ctx) (object, error) {
 	body, err := readBody(c)
 	if err != nil || body != nil {
 		return body, err
 	}
-	data, err := c.Data()
-	if err != nil {
-		return nil, err
-	}
-	var compact bytes.Buffer
-	if err := json.Compact(&compact, bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))); err != nil {
-		return nil, err
-	}
-	if nonempty(compact.Bytes()) {
-		return nil, httpx.BadRequest(msgBodyObject)
-	}
-	return object{}, nil
+	return nil, httpx.BadRequest(msgBodyObject)
 }
 
 type cache struct {
