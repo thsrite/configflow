@@ -36,6 +36,7 @@ type Error struct {
 
 	contexts []contextKey
 	field    []any
+	cause    error
 }
 
 func (e *Error) Error() string { return e.Message }
@@ -43,15 +44,18 @@ func (e *Error) Error() string { return e.Message }
 // PythonClass is the Python exception class name.
 func (e *Error) PythonClass() string { return e.Class }
 
-// Unwrap exposes the Python base classes.
+// Unwrap exposes the reference class and the original validation failure.
 func (e *Error) Unwrap() error {
+	var reference error
 	switch e.Class {
 	case classDialer:
-		return &convert.DialerReferenceError{Message: e.Message}
+		reference = &convert.DialerReferenceError{Message: e.Message}
 	case classListener:
-		return &subs.ListenerReferenceError{Message: e.Message}
+		reference = &subs.ListenerReferenceError{Message: e.Message}
+	default:
+		reference = &rules.StrategyReferenceError{Message: e.Message}
 	}
-	return &rules.StrategyReferenceError{Message: e.Message}
+	return errors.Join(reference, e.cause)
 }
 
 // Field is the provider_field of a shape error (nil otherwise): strings
@@ -120,11 +124,11 @@ func providerContext(err error, name, path any, kind string) error {
 		}
 	}
 	if !(jsonx.Truthy(name) || jsonx.Truthy(path)) || seen {
-		return &Error{Class: class, Message: err.Error(), contexts: contexts}
+		return &Error{Class: class, Message: err.Error(), contexts: contexts, cause: err}
 	}
 	message := currentLocations().PreparationContext(err.Error(), pyStrIfTruthy(name), pyStrIfTruthy(path), kind)
 	next := append(append([]contextKey{}, contexts...), key)
-	return &Error{Class: class, Message: message, contexts: next}
+	return &Error{Class: class, Message: message, contexts: next, cause: err}
 }
 
 // shapeError is _shape_error(message, *field).
@@ -217,7 +221,9 @@ func providerSourceError(err, yamlErr error, text, sourceLabel string) error {
 		message, cause = msgProviderYAMLInvalid, yamlErr
 	}
 	detail := currentLocations().SourceError(message, text, line, column, cause, sourceLabel)
-	return dialerErr(diag.FailureText(detail, nil, 0))
+	result := dialerErr(diag.FailureText(detail, nil, 0))
+	result.cause = err
+	return result
 }
 
 // pyError is an exception Python raises on a value the code does not check.

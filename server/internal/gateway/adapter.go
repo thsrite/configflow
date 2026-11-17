@@ -134,7 +134,7 @@ func (c *Config) BaseDocument() (*yaml.Node, error) {
 	}
 	node, err := yamlx.Parse([]byte(c.customConfig))
 	if err != nil {
-		return nil, gatewayError(msgBaseYAMLInvalid)
+		return nil, &Error{Message: msgBaseYAMLInvalid, Cause: err}
 	}
 	if node.Kind != yaml.MappingNode {
 		return nil, gatewayError(msgBaseNotMapping)
@@ -147,7 +147,7 @@ func (c *Config) BaseDocument() (*yaml.Node, error) {
 func yamlPayloadStrings(text string) ([]string, error) {
 	node, err := yamlx.Parse([]byte(text))
 	if err != nil {
-		return nil, gatewayError(msgYAMLSyntax)
+		return nil, &Error{Message: msgYAMLSyntax, Cause: err}
 	}
 	if node.Kind == yaml.MappingNode {
 		node = yamlx.Get(node, "payload")

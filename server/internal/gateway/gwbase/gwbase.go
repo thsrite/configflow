@@ -8,9 +8,16 @@ package gwbase
 // LinuxGatewayError is common/linux_gateway.LinuxGatewayError (a
 // ValueError): a gateway setting cannot safely be applied. Message is
 // str(exc).
-type LinuxGatewayError struct{ Message string }
+type LinuxGatewayError struct {
+	Message string
+	// Cause retains the original validation failure without changing the message.
+	Cause error
+}
 
 func (e *LinuxGatewayError) Error() string { return e.Message }
+
+// Unwrap exposes the original validation failure, including YAML diagnostics.
+func (e *LinuxGatewayError) Unwrap() error { return e.Cause }
 
 // PythonClass is the Python exception class name.
 func (e *LinuxGatewayError) PythonClass() string { return "LinuxGatewayError" }
