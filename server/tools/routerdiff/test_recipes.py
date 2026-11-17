@@ -33,6 +33,25 @@ from bugs import BUGS
 
 
 class RecipeTests(unittest.TestCase):
+    def test_job_lock_worlds_do_not_require_unrelated_sibling_handlers(self):
+        options = {'alpha': {'routers': {'items': []}}}
+        worlds = workflows.job_lock_worlds(options)
+        self.assertEqual(len(worlds), 15)
+        seen = set()
+        for world, _, groups in worlds:
+            rows = [case for group in groups for case in group()]
+            self.assertEqual(len(rows), 2)
+            busy, finish = rows
+            self.assertEqual(busy.requires, ())
+            self.assertEqual(busy.expected, 409)
+            self.assertTrue(any(control.get('rpc') == 'await_gate' for control in busy.prepare))
+            self.assertEqual(finish.requires, (busy.route,))
+            self.assertTrue(finish.capture_before_prepare)
+            self.assertEqual(finish.join, next(control['ident'] for control in busy.prepare if control.get('rpc') == 'begin'))
+            for case in rows:
+                self.assertNotIn(case.ident, seen)
+                seen.add(case.ident)
+
     def test_creation_does_not_require_a_future_cleanup_handler(self):
         creates = [case for case in workflows.router_creates() if case.route == 'R008']
         self.assertTrue(creates)

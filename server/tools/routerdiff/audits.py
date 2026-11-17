@@ -663,6 +663,26 @@ def declared():
         'real45-second timeout and both lost-reply outcomes. Full device/DB/file state and one POST '
         'only are compared; no proxy follows a redirect and no generic500 is accepted.',
         post_error_requirements + size_post + transport_errors[1:3] + transport_errors[4:5])
+    lock_required = []
+    for vendor in ('routeros', 'ikuai'):
+        labels = ('R009', 'R010', 'R011', 'R015', 'R017', 'R020', 'R024')
+        if vendor == 'routeros':
+            labels += ('shared-connection',)
+        for label in labels:
+            route = 'R010' if label == 'shared-connection' else label
+            world = 'job-lock-' + vendor + '-' + label
+            lock_required += [(world, route + '/busy-before-body-' + vendor + '-' + label, 409),
+                              (world, 'R017/gated-probe-finish-' + vendor + '-' + label,
+                               200 if vendor == 'routeros' else 502)]
+    audits['H1278'] = Audit(
+        ('backend/routes/routers.py:37', 'backend/routes/routers.py:52', 'backend/routers/rule_sync_store.py:52'),
+        'All seven actual decorator callers/methods for both vendors plus the shared physical connection '
+        'across alpha/beta. A real public probe reaches its device gate before each malformed-body409; '
+        'then the same pending probe is released/joined and saves exactly one last_probe revision. '
+        'Each isolated world needs only its target and the holding probe, never all sibling routes. '
+        'Readonly plan/report do not enter this decorator despite the original H scope shorthand. '
+        'This proves the HTTP nonacquired branch with real in-process contention, not separate-process '
+        'flock or scheduler/crash recovery, which remain T25 and their own helper entries.', tuple(lock_required))
     return audits
 
 

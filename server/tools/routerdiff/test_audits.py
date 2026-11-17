@@ -22,6 +22,20 @@ import forwarding_guards
 
 
 class AuditTests(unittest.TestCase):
+    def test_job_lock_audit_needs_each_guard_and_its_real_probe_completion(self):
+        actual = {(world, case.ident): case for world, _, groups in workflows.job_lock_worlds({})
+                  for group in groups for case in group()}
+        required = declared()['H1278'].requirements
+        self.assertEqual(len(required), 30)
+        for world, name, status in required:
+            case = actual[world, name]
+            self.assertIn('H1278', case.entries)
+            self.assertEqual(case.expected, status)
+        evidence = [{'world': world, 'case': name, 'entries': ['H1278'], 'python': {'status': status},
+                     'status': 'go-unimplemented'} for world, name, status in required]
+        self.assertEqual(evaluate(evidence)['H1278']['audit'], 'variants-audited')
+        self.assertEqual(evaluate(evidence[:-1])['H1278']['audit'], 'variants-pending')
+
     def test_forwarding_guards_and_transport_audits_require_all_real_callers(self):
         actual = {(world, case.ident): case for world, _, groups in forwarding_guards.worlds()
                   for group in groups for case in group()}
@@ -89,7 +103,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24 + 1)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'

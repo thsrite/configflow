@@ -717,7 +717,6 @@ def main():
               ('runtime-reads', options, (workflows.runtime_reads,)),
               ('sync-settings', options, (workflows.sync_settings,)),
               ('manual-routes', options, (workflows.manual_routes,)),
-              ('job-locks', options, (workflows.job_locks,)),
               ('router-creations', options, (workflows.router_creates,)),
               ('unlinked-inspection', options, (workflows.unlinked_inspection,)),
               ('agent-scope', fixtures.agent_options(), (fixtures.agent_scope,)),
@@ -798,6 +797,7 @@ def main():
     worlds += split_onboarding.worlds()
     worlds += split_state.worlds()
     worlds += forwarding_guards.worlds()
+    worlds += workflows.job_lock_worlds(options)
     if args.world or args.world_prefix:
         names = {item[0] for item in worlds}
         unknown = set(args.world or ()) - names

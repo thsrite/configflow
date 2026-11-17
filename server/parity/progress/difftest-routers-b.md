@@ -1401,3 +1401,28 @@ Asynchronous gate prerequisite observation:
 => Ran36 tests22.630s/OK after the negative fixture correction. No product domain
 comparison or new finding claimed by these harness checks. No active command.
 Declarations382/remaining1919 unchanged; next split job-lock dependency worlds.
+
+Independent lock-contention worlds:
+- Replaced one shared18-request lock world with15 isolated target/vendor worlds,
+  30 requests. Each starts its own real R017 probe, awaits the actual device gate,
+  compares one malformed-body409, then releases/joins the SAME probe and checks
+  exactly one profile revision/last_probe write. Explicit before-release snapshot
+  keeps the write phase unambiguous. RouterOS success/iKuai intentional probe
+  refusal remain their real200/502 results.
+- All seven actual _manual_sync_lock/_router_settings_lock callers, both vendors,
+  plus alpha/beta sharing one physical connection. Busy request only depends on
+  itself and the automatic public begin-probe prerequisite. Joining depends on
+  that target, so no missing sibling handler hides an implemented endpoint.
+  Removed the unrelated R019 login prerequisite. No device/Go implementation read.
+- H1278 declaration requires all15 busy results AND all15 real probe completions,
+  not just one409. Original shorthand R012/R018 scope does not make those readonly
+  handlers call this decorator. OS flock/scheduler/crash behaviour still separate.
+  Declarations383, remaining1918 if composed. No new bug.
+
+.64 pilot6 requests: Ran38 tests0.842s/OK, missing6.
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix job-lock- --output "$HOME/.cache/routerdiff-reports/302rx1dg/job-lock-independent-all.json"'`
+=> Ran54 tests2.299s/OK;30 requests, domain missing30/routes0/references3/
+audits1/remaining2300 in this subset/complete=false. No active command.
+Last full composition still37937739,3054/301, unchanged main findings header.
+Current full assembly, final gate and final rebase remain pending; do not hand
+this incomplete matrix back as completed Step B acceptance.
