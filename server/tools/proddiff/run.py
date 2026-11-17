@@ -355,30 +355,6 @@ class AgentComparisonIdentities:
 AGENT_COMPARISON_ROUTES = {'/api/agents', '/api/agents/<agent_id>', '/api/agents/<agent_id>/push-diff'}
 
 
-def settled_agent_comparison(fetch, route):
-    """Observe the completed read-only comparison, never mask a checking result."""
-    deadline = time.monotonic() + 120
-    while True:
-        reply = fetch()
-        if reply[0] != 200:
-            return reply
-        try:
-            body = load_json(reply[2])
-        except (ValueError, UnicodeError):
-            return reply
-        if route == '/api/agents':
-            checking = isinstance(body, list) and any(isinstance(a, dict) and isinstance(a.get('content_sync'), dict) and a['content_sync'].get('status') == 'checking' for a in body)
-        elif route == '/api/agents/<agent_id>':
-            checking = isinstance(body, dict) and isinstance(body.get('content_sync'), dict) and body['content_sync'].get('status') == 'checking'
-        else:
-            checking = isinstance(body, dict) and body.get('status') == 'checking'
-        if not checking:
-            return reply
-        if time.monotonic() >= deadline:
-            raise RuntimeError('Agent content comparison did not settle: ' + route)
-        time.sleep(0.2)
-
-
 def same_agent_transport_target(python_message, go_message):
     """Recognize native offline-Agent exception text, retaining the target proof."""
     if not isinstance(python_message, str) or not isinstance(go_message, str):
@@ -791,9 +767,13 @@ def migrate_baselines(go_copy, report):
         with sqlite3.connect(database) as connection:
             return (list(connection.execute('SELECT scope, owner, field, position, value, revision FROM fields ORDER BY scope,owner,field')),
                     list(connection.execute('SELECT key,value FROM meta ORDER BY key')))
-    before = rows()
-    old = document(go_copy)['system']['agents']
+    old = document(go_copy).get('system', {}).get('agents', [])
     (proof / 'agents-before.json').write_text(json.dumps(old, ensure_ascii=False))
+    if not any(isinstance(agent, dict) and agent.get('applied_content') for agent in old):
+        (proof / 'agents-after.json').write_text(json.dumps(old, ensure_ascii=False))
+        (proof / 'summary.json').write_text(json.dumps({'converted': 0, 'proof': 'no historical baseline'}))
+        return
+    before = rows()
     env = dict(os.environ, DATA_DIR=str(go_copy), PRODDIFF_BASELINE_MIGRATION='1',
                LOG_LEVEL='ERROR', LOG_FILE=str(proof / 'worker.log'), SUB_STORE_BUILTIN_DIR='/nonexistent')
     with (proof / 'worker.log').open('wb') as log:
@@ -900,33 +880,18 @@ def main():
             all_cases = list(cases(rows, doc, copies[0]))
 
             agent_identities = AgentComparisonIdentities()
-            def ask(index, method, path, body, timeout):
+            def ask(index, method, route, path, body, timeout):
+                from content_policy import REQUEST_SECONDS, ROUTES
+                if method == 'GET' and route in ROUTES:
+                    timeout = max(timeout, REQUEST_SECONDS)
                 return scrub(send(15001 + index, method, path, tokens[index], body, timeout=timeout), copies[index])
 
             def compare(case):
                 method, route, path, body, no_data = case
                 if (method, route) not in implemented:
                     return case, None, None, 0, [0, 0]
-                def one(index, timeout):
-                    from content_policy import REQUEST_SECONDS, ROUTES
-                    if method == 'GET' and route in ROUTES:
-                        timeout = max(timeout, REQUEST_SECONDS)
-                    last = None
-                    def fetch():
-                        nonlocal last
-                        last = ask(index, method, path, body, timeout)
-                        return last
-                    try:
-                        return settled_agent_comparison(fetch, route) if method == 'GET' and route in AGENT_COMPARISON_ROUTES else fetch()
-                    except RuntimeError:
-                        # Keep diagnostic values in the already protected run directory.
-                        # Route templates and side only appear in the exception itself.
-                        if last is not None:
-                            (report / ('agent-comparison-timeout-' + str(index) + '.json')).write_text(json.dumps(
-                                {'route': route, 'reply': load_json(last[2])}, ensure_ascii=False))
-                        raise
-                python = lambda timeout: one(0, timeout)
-                go = lambda timeout: one(1, timeout)
+                python = lambda timeout: ask(0, method, route, path, body, timeout)
+                go = lambda timeout: ask(1, method, route, path, body, timeout)
                 return (case,) + compare_http(python, go, lambda a, b: response_diffs(a, b, route, rules, agent_identities),
                                               bracket=method == 'GET' and route in bracket)
 

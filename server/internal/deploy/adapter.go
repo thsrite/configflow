@@ -23,6 +23,7 @@ import (
 	"configflow/internal/mosdns"
 	"configflow/internal/oxidns"
 	"configflow/internal/provider"
+	"configflow/internal/redact"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/routersplit"
@@ -378,13 +379,14 @@ func publicDeployment(record *agents.Record) *agents.Record {
 	if record == nil {
 		return nil
 	}
+	secrets := redact.CollectCredentials(record, nil)
 	out := record.DeepCopy()
 	if public := out.GetObject("ha_publication"); public != nil && public.Len() > 0 {
 		out = agents.HAAggregate(out, public)
 	}
 	out.Delete("prepared_content")
 	out.Delete("oxidns_validation_receipt")
-	return agents.SanitizePublicMetadata(agents.PublicDeploymentMessages(out), nil)
+	return agents.SanitizePublicMetadata(agents.PublicDeploymentMessages(out), secrets)
 }
 
 // AgentIdentity freezes fields that affect target adaptation, including the
