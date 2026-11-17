@@ -1,6 +1,9 @@
 # N8-5a 独立复核
 
-状态：复核进行中；分支 `go-review-n8-5a`，起点 `go-n8-5@fbe61bc64`。
+状态：**复核完成，条件交回**。high：2 已修复、1 既有依赖阻断；medium：0；low：1 已修复。
+F4 等待 O3-6c，尚不具备独立合入条件；完整 gate 排队超 15 分钟按规则停止，未执行门禁阶段。
+分支 `go-review-n8-5a`，起点 `go-n8-5@fbe61bc64`，已变基到 `go@9c88c4390`。
+变基仅行为变更文档有追加冲突，保留 C33 与 N8-5a 两节，无产品代码冲突。
 复核者未参与原实现；无子 agent、无 push、无生产访问，用例仅含合成数据。
 
 ## 发现
@@ -12,7 +15,7 @@
   `9007199254740993.0` 变成 `9007199254740992.0`、`\u003c` 变成 `<`。
   修复只回填业务维护实际拥有的 `rule_proxy_token`、`retired_rule_proxy_tokens`，保留其他字段的 Raw。
   回归 `TestReviewN85TokenMaintenancePreservesUntouchedMembers`：修复前两入口均失败，修复后通过。
-  修复提交：`219035cd4`。
+  修复提交：`a6eada000`（变基前 `219035cd4`）。
 
 - **F2，high，已修复：启动自动写入重新造成 R5 加载锁死。**
   `validateStored` 已允许畸形成员，但 `openLocked` 无条件运行 legacy token 初始化。
@@ -21,7 +24,7 @@
   现在只有当前业务文档有效时才做可选启动写入；无效文档直接保持只读加载，修复事务再维护 token。
   `TestReviewN85InvalidStoredValuesDoNotTriggerStartupWrites` 对全部 meta/sections/fields
   和完整非 DB 文件树断言加载零改动、typed 修复可提交、无关文件保留。
-  修复提交：`9ead8212a`。
+  修复提交：`5ef64fa91`（变基前 `9ead8212a`）。
 
 - **F3，low，已修复：View / 校验文档过度承诺。** 文档称“每个 head 只解码一次”、
   “不取锁”，但已有缓存上限会让超大文档每次解码，并发冷读也不保证唯一实例；
@@ -30,7 +33,7 @@
   `TestReviewN85ViewRespectsCacheLimit` 固定两次 View 的加载计数及不缓存边界；
   `ValidateDocument` 注释也不再误称每次 load 必须通过业务校验。
   三条设计 Clarified 已写入 `n7-n8.md`，并补上 Clear 的 R3 与业务维护例外。
-  修复提交：本文件同提交（最终交回补 hash）。
+  修复提交：`767521a8e`。
 
 - **F4，high，已复现，合入阻断：仍缺 O3-6c 的关机提交屏障。**
   这不是 N8-5a 新引入的取消策略，但其新 typed Update 同样受影响。
@@ -40,6 +43,7 @@
   `progress/n8-5a-shutdown.patch` 保存可应用的六场景 typed 回归（外部测试包，无生产数据）；
   当前直接执行它，两个 shutdown 场景失败、四个正负控通过。
   O3-6c 合入并移植后必须应用此补丁重跑；不能用本分支绿色 gate 宣称取消问题已解决。
+  修复提交：无，归 O3-6c 合入与移植；本轮未放宽断言或把失败标成通过。
 
 ## O3-6c 冲突与集成要求
 
@@ -79,7 +83,7 @@ N8-5a **确实改了提交核心的表示和函数布局**，不是仅新增包�
 6. legacy.go 是过渡转换层（另含尚待 N8-5c 迁移的 token 桥）；没有新增业务调用方绕开 typed
    事务核心。N8-5b/c 的旧业务文件仍在原文件中，不能把 a 段宣称为整个 repo S pass 完成。
 
-## 当前验证
+## 验证
 
 测试服务器 `.64`：
 
@@ -99,7 +103,40 @@ Nodes 新增独立表覆盖同类型不同数字文本、对象顺序/转义、�
 （CONFIGFLOW_PY/CONFIGFLOW_REPO 同上，`.64`），`ok 6.090s`。
 新增 fuzz `FuzzMergeJSON` 检查有效 JSON、输入不变性、未修改 baseline 时精确保留 current 字节。
 
-## 待完成
+### 全 repo/model race 与最后定向复验（.32）
 
-- 完整 gate、Python 全 repo/model race、fuzz；最终提交列表。
-- O3-6c 集成取消修复是明确的合入前置，协调者负责集成后复验。
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && gofmt -w internal/repo/review_n85_test.go internal/repo/read.go && export CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO=$(dirname "$PWD"); go test -race -count=1 -timeout 40m ./internal/repo ./internal/model'
+```
+
+`ok configflow/internal/repo 963.133s`、`ok configflow/internal/model 29.064s`。
+这是变基前的核心代码，含 F1/F2 与 View 修订；启用了真实 Python crosscheck/interchange。
+长任务最初带了 `--back`，完成时回传旧版测试文件，覆盖了本机之后新增的测试；
+已用 HEAD 恢复，未匹配 fuzz 目标的空跑结果不计入验收。最后按已提交完整测试文件重新同步执行：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=4 -- bash -lc 'set -e; cd server; test -z "$(gofmt -l internal tools cmd)"; go vet ./...; export CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO=$(dirname "$PWD"); go test -race -count=1 -timeout 10m -run "^(TestReviewN85|TestClearMember)" ./internal/repo ./internal/model; go test -list "^FuzzMergeJSON$" ./internal/repo; go test -run "^$" -fuzz "^FuzzMergeJSON$" -fuzztime=60s -parallel=2 ./internal/repo'
+```
+
+- gofmt 无输出，全仓 `go vet ./...` 通过。
+- repo `11.451s`、model `1.066s`，含新增完整 Python DB/文件差分。
+- 目标列出 `FuzzMergeJSON` 后实际 fuzz：261,868 execs、358 new interesting、`PASS`，`ok 61.023s`。
+
+### 完整 gate（.64，排队停止）
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 -- bash -lc 'export GATE_LOGS=$HOME/.cache/rt-tmp/n85a-review-gate; mkdir -p "$GATE_LOGS"; echo $$ > "$GATE_LOGS/runner.pid"; exec server/scripts/gate.sh -p 6 FuzzMergeJSON:./internal/repo FuzzReviewRecordEdits:./internal/model FuzzStoredTypes:./internal/model'
+```
+
+2026-11-18 北京时间 07:38:08 起一直等待 slot，07:53:15 后确认未取得 slot，
+只终止本任务 runner，rt 退出 143；未执行全仓 race/proddiff/difftest 或两个 model fuzz。
+遵循 `AGENT-BRIEF.md` 的 15 分钟限制交回，由协调者在 O3-6c 集成后 cf-gate。
+没有读取/取回快照内容，也没有把作者旧 gate 结果当成本轮全绿。
+
+## 交回
+
+- O3-6c 集成取消修复是合入前置；应用关机补丁，重跑真实 Runtime 六场景与完整 gate。
+- 新增合成测试 `review_n85_test.go` 269 行、Python 完整存储差分脚本 50 行、集成回归补丁 77 行。
+- 本轮产品变化是保留 R1/R2/R5 数据及解除 R5 启动锁死；原有业务 token 维护仍保留。
+  加载/写入拆分、按类型 merge、R8 修订号的 Python 差异已在 behaviour-changes.md 登记，未放宽差分。
+- 无新依赖、无 push、无子 agent；工作分支 `go-review-n8-5a`。
