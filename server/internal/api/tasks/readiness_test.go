@@ -78,6 +78,15 @@ func TestRunBodyBindingIsSilentAndExact(t *testing.T) {
 	}
 }
 
+func TestReviewUnknownExactKeyDoesNotBecomeUnavailable(t *testing.T) {
+	s := setup(t)
+	t.Cleanup(tasks.SetRows(tasks.SlotMetrics, nil))
+	key := tasks.MetricsTaskKey + ":unknown"
+	s.Post("/api/tasks/run", httpxtest.JSON(map[string]string{"key": key})).WantStatus(400)
+	s.Put("/api/tasks/interval", httpxtest.JSON(map[string]any{"key": key, "interval_seconds": 600})).WantStatus(400).
+		WantJSON(jsonx.Obj("success", false, "message", "这个任务的间隔不能在这里修改"))
+}
+
 func TestReviewRunFailuresUseCentralRedaction(t *testing.T) {
 	s := setup(t)
 	secret := "synthetic-private-task-token"

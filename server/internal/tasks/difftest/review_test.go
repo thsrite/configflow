@@ -35,3 +35,19 @@ func TestReviewC07LegacyCountersAndSilentBinding(t *testing.T) {
 		t.Run(c.Method+" "+c.Path+"/"+c.Body, func(t *testing.T) { compare(t, w, c, send(t, w, c), want[i], true) })
 	}
 }
+
+func TestReviewC07UnknownExactKeyAgainstFlask(t *testing.T) {
+	w := newWorld(t)
+	t.Cleanup(tasks.SetRows(tasks.SlotMetrics, nil))
+	commands := w.commands([]command{
+		{Method: "POST", Path: "/api/tasks/run", Body: `{"key":"metrics_history_flush:unknown"}`},
+		{Method: "PUT", Path: "/api/tasks/interval", Body: `{"key":"metrics_history_flush:unknown","interval_seconds":600}`},
+	})
+	want := python(t, w, commands)
+	for i, c := range commands {
+		if want[i].Status != 400 {
+			t.Fatal("Python accepted an unknown exact task key", want[i].Status)
+		}
+		compare(t, w, c, send(t, w, c), want[i], true)
+	}
+}

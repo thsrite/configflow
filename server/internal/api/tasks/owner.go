@@ -36,6 +36,9 @@ func updateInterval(ctx context.Context, body intervalRequest) (*jsonx.Object, e
 	if body.Key == tasks.MetricsTaskKey {
 		category = body.Key
 	}
+	if category == tasks.MetricsTaskKey && body.Key != tasks.MetricsTaskKey {
+		return nil, &tasks.Invalid{Message: msgIntervalUnsupported}
+	}
 	slot, known := tasks.SlotFor(category)
 	if known && !tasks.HasRows(slot) {
 		return nil, &tasks.Unavailable{Slots: []string{slot}}

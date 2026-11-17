@@ -16,4 +16,9 @@
 
 进行中：.32最新集成树增量验收；.64最终gate（单机一个，900秒排队守卫），07:48:41开始等待。
 下一步：补fuzz/CFG-07；等待gate结果并完成报告；不以已排队门禁冒充检查通过。
+补查F4（low）：metrics slot缺失时，interval错误把 metrics_history_flush:unknown 当已知任务503；
+已复现（.32 status503/want400）并在owner先校验exact key，新增真实Flask及合法缺失key503控制。
+完整最新集成树定向race/live已PASS，含server2.315s、C37手动任务三轮6.249s。
+07:57:17停止仍未获槽的gate（exit241，无阶段开始）补F4；恢复后仍用原08:03:41绝对排队截止，
+暂停时间计入900秒，不延长。当前另在.64跑API race、60s fuzz、CFG07；.32跑F4 live/API验证。
 共享repo/taskstatus最终提交窗口沿用O3-6c分派，不复制修复。CFG-07原方向Py500/Go200已核对。

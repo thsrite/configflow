@@ -3,7 +3,7 @@
 分支 `go-review-c07`，起点 `go-port-c07@edde72d2b`，初始集成基底 `go@765c04edb`。
 复核者不是作者。已完整读取 C07 的七个 Python 源文件，再核对实现和映射。
 未启动子 agent、未 push、未接触生产；新增输入全部合成，所有测试/格式/vet 经 rt。
-当前发现 **high 0 / medium 1 / low 2**，三项均已修复并有修复前失败证据；最终验收进行中。
+当前发现 **high 0 / medium 1 / low 3**，四项均已修复并有修复前失败证据；最终验收进行中。
 
 ## 发现及修复
 
@@ -34,6 +34,14 @@
   `TestReviewStateReadFailureAfterHealthRollsBackWithSafeError` 用真实无权限目录、实际HTTP探测，
   检查旧 socket/token/文件字节与新端口关闭，修复前检出 PathError，修复后通过。
   没有改持久化协议或用假写入替代故障。修复提交待填写。
+- **F4 / low：无效单键任务被误判为已知但尚未就绪。**
+  metrics slot 缺失时，`PUT /api/tasks/interval` 接收
+  `metrics_history_flush:unknown`，先按分类查询 readiness 而返回503；该 key 从来不属于
+  metrics 的唯一合法任务，真实 Python 返回400，Go run 分派原来也返回400。
+  interval 现在先拒绝这个非法 exact key，再对合法 key 查询缺失 owner。
+  `TestReviewUnknownExactKeyDoesNotBecomeUnavailable` 修复前实测503/期望400，另保持
+  合法 exact key 的 run/interval503 正控；`TestReviewC07UnknownExactKeyAgainstFlask`
+  比较真实 Python 两条400、完整响应及 DB/files 不变。修复提交待填写。
 
 ## 审计结论
 
