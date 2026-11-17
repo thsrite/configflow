@@ -1,7 +1,6 @@
 package httpx
 
 import (
-	"bytes"
 	"encoding"
 	"encoding/json"
 	"errors"
@@ -9,6 +8,7 @@ import (
 	"math"
 	"reflect"
 
+	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
 )
 
@@ -197,57 +197,5 @@ func normalizeResponseValue(v reflect.Value, active map[responseVisit]bool, dept
 	return v, false, nil
 }
 
-// finiteJSON repairs only the three legacy non-JSON numeric literals, outside
-// quoted strings. Native validation still rejects any other malformed syntax.
-func finiteJSON(data []byte) ([]byte, bool) {
-	if !bytes.Contains(data, []byte("NaN")) && !bytes.Contains(data, []byte("Infinity")) {
-		return data, false
-	}
-	var out bytes.Buffer
-	quoted, escaped, changed := false, false, false
-	for i := 0; i < len(data); {
-		b := data[i]
-		if quoted {
-			out.WriteByte(b)
-			i++
-			if escaped {
-				escaped = false
-			} else if b == '\\' {
-				escaped = true
-			} else if b == '"' {
-				quoted = false
-			}
-			continue
-		}
-		if b == '"' {
-			quoted = true
-			out.WriteByte(b)
-			i++
-			continue
-		}
-		matched := false
-		for _, literal := range []string{"-Infinity", "Infinity", "NaN"} {
-			if !bytes.HasPrefix(data[i:], []byte(literal)) {
-				continue
-			}
-			end := i + len(literal)
-			before := i == 0 || bytes.IndexByte([]byte("[,: \t\r\n"), data[i-1]) >= 0
-			after := end == len(data) || bytes.IndexByte([]byte("],} \t\r\n"), data[end]) >= 0
-			if before && after {
-				out.WriteString("null")
-				i = end
-				changed = true
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			out.WriteByte(b)
-			i++
-		}
-	}
-	if !changed {
-		return data, false
-	}
-	return out.Bytes(), true
-}
+// finiteJSON is the response-only compatibility boundary. Requests remain strict.
+func finiteJSON(data []byte) ([]byte, bool) { return jsonresp.NormalizeNonFinite(data) }
