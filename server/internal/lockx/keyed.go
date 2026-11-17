@@ -19,11 +19,20 @@ type Keyed[K comparable] struct {
 	entries map[K]*keyedEntry
 	level   Level
 	name    string
+	tracked bool
 }
 
 // NewKeyed constructs a set of locks sharing a level and stable diagnostic name.
 func NewKeyed[K comparable](level Level, name string) *Keyed[K] {
-	return &Keyed[K]{entries: make(map[K]*keyedEntry), level: level, name: name}
+	return &Keyed[K]{entries: make(map[K]*keyedEntry), level: level, name: name, tracked: true}
+}
+
+// NewLeafKeyed constructs cancellable leaf locks without level recording or
+// checking. They preserve any ancestor levels in ctx. Use a positive Lock limit
+// for bounded leaf waits; ordinary unbounded L4 stores should use sync.Mutex.
+// Unused entries are removed just as in NewKeyed.
+func NewLeafKeyed[K comparable](name string) *Keyed[K] {
+	return &Keyed[K]{entries: make(map[K]*keyedEntry), name: name}
 }
 
 func (k *Keyed[K]) pin(key K) *keyedEntry {
@@ -34,7 +43,7 @@ func (k *Keyed[K]) pin(key K) *keyedEntry {
 	}
 	e := k.entries[key]
 	if e == nil {
-		e = &keyedEntry{mutex: NewMutex(k.level, k.name)}
+		e = &keyedEntry{mutex: newMutex(k.level, k.name, k.tracked)}
 		k.entries[key] = e
 	}
 	e.refs++

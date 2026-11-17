@@ -17,6 +17,9 @@ const (
 	LevelJob Level = 10
 	// LevelDevice is L2, blocking device/session read-modify-write locks.
 	LevelDevice Level = 20
+	// LevelDeviceControl is the second L2 suborder: Sub-Store work leases
+	// precede control operations; reversing that nesting is a violation.
+	LevelDeviceControl Level = LevelDevice + 1
 	// LevelRepository is L3, reserved for repo's configuration transaction lock.
 	LevelRepository Level = 30
 )

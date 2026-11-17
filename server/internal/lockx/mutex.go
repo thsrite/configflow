@@ -3,6 +3,7 @@ package lockx
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -18,16 +19,21 @@ var (
 // Mutex is a non-reentrant in-process lock with cancellable, bounded waits.
 // Its zero value is unusable; construct it with NewMutex.
 type Mutex struct {
-	token chan struct{}
-	level Level
-	name  string
-	held  atomic.Bool
+	token   chan struct{}
+	level   Level
+	name    string
+	tracked bool
+	held    atomic.Bool
 }
 
 // NewMutex constructs a lock at one of the server's tracked levels. Names are
 // stable diagnostic labels, not resource keys or other user-supplied values.
 func NewMutex(level Level, name string) *Mutex {
-	m := &Mutex{token: make(chan struct{}, 1), level: level, name: name}
+	return newMutex(level, name, true)
+}
+
+func newMutex(level Level, name string, tracked bool) *Mutex {
+	m := &Mutex{token: make(chan struct{}, 1), level: level, name: name, tracked: tracked}
 	m.token <- struct{}{}
 	return m
 }
@@ -45,7 +51,7 @@ func (m *Mutex) TryLock(ctx context.Context) (context.Context, func(), bool) {
 			return ctx, nil, false
 		}
 		m.held.Store(true)
-		held, release := hold(ctx, m.level, m.name, m.unlock)
+		held, release := m.record(ctx)
 		return held, release, true
 	default:
 		return ctx, nil, false
@@ -72,7 +78,9 @@ func (m *Mutex) Lock(ctx context.Context, limit time.Duration) (context.Context,
 		}
 		return ctx, nil, ErrBusy
 	}
-	checkOrder(ctx, m.level, m.name)
+	if m.tracked {
+		checkOrder(ctx, m.level, m.name)
+	}
 	timer, stop := waitLimit(limit)
 	defer stop()
 	select {
@@ -86,9 +94,17 @@ func (m *Mutex) Lock(ctx context.Context, limit time.Duration) (context.Context,
 			return ctx, nil, err
 		}
 		m.held.Store(true)
-		held, release := hold(ctx, m.level, m.name, m.unlock)
+		held, release := m.record(ctx)
 		return held, release, nil
 	}
+}
+
+func (m *Mutex) record(ctx context.Context) (context.Context, func()) {
+	if m.tracked {
+		return hold(ctx, m.level, m.name, m.unlock)
+	}
+	var once sync.Once
+	return ctx, func() { once.Do(m.unlock) }
 }
 
 func (m *Mutex) unlock() { m.held.Store(false); m.token <- struct{}{} }

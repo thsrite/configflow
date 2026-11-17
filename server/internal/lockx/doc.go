@@ -1,7 +1,8 @@
 // Package lockx provides cancellable in-process locks, keyed operation claims
 // and shared calls. It checks the server's L1 job → L2 device → L3 repository
-// ordering using the contexts returned by acquisitions. L1 is try-only; L4 leaf
-// stores and L5 memory guards use sync.Mutex in their owning packages.
+// ordering using the contexts returned by acquisitions. L2 work precedes its
+// control suborder. L1 is try-only; ordinary L4/L5 guards use sync.Mutex. Bounded
+// L4 waits use NewLeafKeyed without recording or hiding tracked ancestor levels.
 //
 // Locks create, open and remove no files. Only instance and repo own file locks;
 // old per-resource lock files are left untouched. Callers own lock names and
