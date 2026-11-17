@@ -115,3 +115,16 @@ func TestJSONBridgeRejectsMixedCycles(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestJSONBridgeAllowsSharedSlicePrefixes(t *testing.T) {
+	list := make([]any, 2)
+	list[0] = 1
+	list[1] = list[:1]
+	got, err := json.Marshal(Obj("list", list))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `{"list":[1,[1]]}` {
+		t.Fatal(string(got))
+	}
+}

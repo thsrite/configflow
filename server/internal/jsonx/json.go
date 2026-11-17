@@ -15,7 +15,7 @@ func (o *Object) MarshalJSON() ([]byte, error) {
 	if err := checkBridgeCycles(reflect.ValueOf(o), make(map[bridgeID]bool), 0); err != nil {
 		return nil, err
 	}
-	b := bridgeEncoder{objects: make(map[*Object]bool), lists: make(map[*any]bool)}
+	b := bridgeEncoder{objects: make(map[*Object]bool), lists: make(map[bridgeList]bool)}
 	if err := b.value(o, 0); err != nil {
 		return nil, err
 	}
@@ -74,10 +74,15 @@ func (n *Number) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type bridgeList struct {
+	first  *any
+	length int
+}
+
 type bridgeEncoder struct {
 	buf     bytes.Buffer
 	objects map[*Object]bool
-	lists   map[*any]bool
+	lists   map[bridgeList]bool
 }
 
 func (b *bridgeEncoder) value(v any, depth int) error {
@@ -118,7 +123,7 @@ func (b *bridgeEncoder) value(v any, depth int) error {
 			return nil
 		}
 		if len(v) > 0 {
-			id := &v[0]
+			id := bridgeList{&v[0], len(v)}
 			if b.lists[id] {
 				return errors.New("encode ordered object: cyclic list")
 			}

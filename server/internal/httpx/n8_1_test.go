@@ -169,7 +169,7 @@ func TestN8NonFiniteResponsesAreValidJSON(t *testing.T) {
 		want  any
 	}{
 		{"native DTO", payload, jsonx.Obj("embedded", nil, "values", []any{nil, nil, nil, jsonx.Number("1e308")}, "map", jsonx.Obj("nan", nil, "finite", 2), "pointer", nil, "binary", "AQID", "at", "2026-01-02T03:04:05Z")},
-		{"legacy mixed", jsonx.Obj("legacy", []any{jsonx.Number("NaN"), jsonx.Number("Infinity"), jsonx.Number("-Infinity")}, "native", payload), jsonx.Obj("legacy", []any{nil, nil, nil}, "native", jsonx.Obj("embedded", nil, "values", []any{nil, nil, nil, jsonx.Number("1e308")}, "map", jsonx.Obj("nan", nil, "finite", 2), "pointer", nil, "binary", "AQID", "at", "2026-01-02T03:04:05Z"))},
+		{"legacy mixed", jsonx.Obj("none", nil, "legacy", []any{nil, jsonx.Number("NaN"), jsonx.Number("Infinity"), jsonx.Number("-Infinity")}, "native", payload), jsonx.Obj("none", nil, "legacy", []any{nil, nil, nil, nil}, "native", jsonx.Obj("embedded", nil, "values", []any{nil, nil, nil, jsonx.Number("1e308")}, "map", jsonx.Obj("nan", nil, "finite", 2), "pointer", nil, "binary", "AQID", "at", "2026-01-02T03:04:05Z"))},
 		{"scalar legacy pointer", &legacyNaN, nil},
 		{"scalar NaN", math.NaN(), nil}, {"scalar infinity", inf, nil}, {"scalar legacy", jsonx.Number("-Infinity"), nil},
 	}

@@ -51,7 +51,7 @@ var (
 
 func normalizeResponseValue(v reflect.Value, active map[responseVisit]bool, depth int) (reflect.Value, bool, error) {
 	if !v.IsValid() {
-		return reflect.ValueOf((*any)(nil)).Elem(), false, nil
+		return reflect.Zero(reflect.TypeFor[any]()), false, nil
 	}
 	if depth > jsonx.MaxDepth {
 		return reflect.Value{}, false, errors.New("normalize JSON response: nesting limit exceeded")
