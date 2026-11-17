@@ -11,13 +11,14 @@ frontend APIs, domain matrix. Findings go to porters; never fix implementation.
 
 Required matrix: parity/difftest-routers.md (2049 lines; O6 approved with
 additions). 26 routes, 2301 named design entries, not request/pass counts.
-Reads completed: AGENT-BRIEF; WORKFLOW Independent acceptance; matrix lines
-1–1020 (all S/F/B/D/G/T/X/O6 additions, H through H0607); O6 review at document
-end also read from initial output. Still explicitly read 1021–2049 before code.
-Config Step B branch reference: file inventory and tools/configdiff/README.md
-read; findings format partly viewed (large output truncated). Need finish format
-reference and inspect generic build/compare/seed/harness only. Do not copy/edit
-that branch's files or infer expectations from Go implementation.
+Reads completed: AGENT-BRIEF; WORKFLOW Independent acceptance; full matrix
+lines 1–2049, including all 1356 H rows and complete O6 review/additions. Config
+Step B reference at 29f9c2cf: README, build.py, harness environment/start/request
+outline, compare policies, seed setup, concrete profile-write recipe and findings
+format. Borrow patterns only, no edits/copies of that branch. Public Go command
+main.go and manifest files read (allowed entry); no business implementations.
+Python app.py/client_devices.py/upstream_router_pending.py read completely;
+routers handler/vendor helpers still to inspect while writing concrete recipes.
 
 Acceptance rules: strict status/headers/types/keys/values/array order, Chinese
 messages, logical SQLite meta/sections/fields+revisions, filesystem and stateful
@@ -46,4 +47,20 @@ Next:
 5. .32 validation, explicit-path buildable commits go(difftest): routers Step B…;
    final git rebase go, clean tree, counts/commands/output/commits hand-back.
 
-No test/build/lint/dev server run yet. No findings/coverage claimed yet.
+Buildable inventory step: tools/routerdiff/inventory.py parses all 2301 design
+entries and 26 unique routes, including shared O6 F90 and non-HTTP fixture/fake
+contracts. Entry != executable recipe != request count. Unit tests assert all
+category counts, route-table identity, table parsing and O6 sentinels. .32:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server/tools/routerdiff && PYTHONDONTWRITEBYTECODE=1 ~/cf-test/.venv/bin/python -m unittest -v test_inventory'`
+→ Ran 3 tests in 0.099s, OK. Initial same lightweight test was accidentally
+scheduled to .64 by the updated rt least-load default (also passed); ALL future
+commands explicitly pin RT_HOST to .32, especially network/namespace cases.
+No HTTP coverage/findings yet; no public server or fake started yet.
+
+Next concrete build step: production Go executable + manifest-only overlay on
+public command (no lifecycle build tags), native .32 per-side net/mount namespaces
+at identical loopback/synthetic addresses, stdio RPC worker and independent
+DATA_DIR binds; real Python -m backend.app. Stateful fakes and transcript-gated
+lock holder must be ready before device cases. Need strict comparator mutation
+self-checks and physically meaningful Python precondition checks before ledger
+entries count as compared/unimplemented. Do not treat inventory as coverage.
