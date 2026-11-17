@@ -124,3 +124,11 @@ wait contract (render still starts and finishes, live Surge waiter receives its 
 Configure/Start/Stop wiring (I/O cancelled, no publication). No lifecycle/Spawner API changed, and no
 production assertion was dropped. All other full-suite packages passed. Focused API aggregations
 race count3 now passes5.593s, with vet green. Repeat full suite and continue remaining gates.
+
+Second full run passed the updated C31 tests and every other package except one listener fixture:
+TestSavedPortSurvivesRestartAndUpdateMovesTheListener reported the old port still accepting. Its two
+freePort calls released both ports before use, permitting equal ports (a valid Update no-op). Require
+distinct ports and include both ports in failure output; retain the old-port rejection assertion.
+No product listener logic changed. Full listener race3 plus100 repetitions of the move test passed
+on both hosts: .64 1.033s/0.162s, .32 1.028s/0.096s. Repeat the complete full suite. Remaining gates
+can run independently: full on .64, both tags/enabled differentials/proddiff on .32 (both valid hosts).

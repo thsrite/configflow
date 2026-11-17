@@ -70,7 +70,11 @@ func wantError(t *testing.T, err error, status int, message string) {
 
 // test_web_listener.py::test_startup_default_dual_stack_then_saved_port_survives_restart
 func TestSavedPortSurvivesRestartAndUpdateMovesTheListener(t *testing.T) {
-	first, second := freePort(t), freePort(t)
+	first := freePort(t)
+	second := freePort(t)
+	for second == first {
+		second = freePort(t)
+	}
 	m := manager(t, map[string]string{})
 	os.WriteFile(filepath.Join(m.DataDir, "web-listener.json"), []byte(`{"port": `+strconv.Itoa(first)+"}\n"), 0o600)
 	status, err := m.Start()
@@ -100,7 +104,7 @@ func TestSavedPortSurvivesRestartAndUpdateMovesTheListener(t *testing.T) {
 	}
 	resp.Body.Close()
 	if _, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(first), 200*time.Millisecond); err == nil {
-		t.Fatal("old port still accepts")
+		t.Fatalf("old port %d still accepts after moving to %d", first, second)
 	}
 	same, err := m.Update(jsonx.Int(int64(second)))
 	if err != nil || same.GetInt("port") != int64(second) {
