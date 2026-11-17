@@ -12,6 +12,9 @@ import json
 import re
 import threading
 import time
+import ssl
+import subprocess
+import socket
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from seed import DEVICE_PASSWORD
@@ -23,7 +26,7 @@ class ProtocolError(Exception):
 
 
 class World:
-    def __init__(self):
+    def __init__(self, tls_directory=None, ipv6=False):
         self.lock = threading.RLock()
         self.condition = threading.Condition(self.lock)
         self.transcript = []
@@ -100,9 +103,35 @@ class World:
                 except (BrokenPipeError, ConnectionResetError):
                     pass
 
-        for peer, port in (('ros', 18081), ('ikuai', 18082), ('agent', 18083),
-                           ('rules', 18084), ('proxy', 18085), ('webdav', 18086)):
-            server = ThreadingHTTPServer(('0.0.0.0', port), Handler)
+        peers = [('ros', 18081), ('ikuai', 18082), ('agent', 18083),
+                 ('rules', 18084), ('proxy', 18085), ('webdav', 18086)]
+        context = None
+        if tls_directory is not None:
+            tls_directory.mkdir(parents=True, exist_ok=True)
+            certificate, key = tls_directory / 'certificate.pem', tls_directory / 'key.pem'
+            subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '3650',
+                            '-subj', '/CN=routerdiff.invalid', '-addext',
+                            'subjectAltName=IP:10.44.0.1,DNS:routerdiff.invalid',
+                            '-keyout', str(key), '-out', str(certificate)],
+                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.load_cert_chain(certificate, key)
+            peers.extend([('ros', 18443), ('ikuai', 18444)])
+        class IPv6Server(ThreadingHTTPServer):
+            address_family = socket.AF_INET6
+
+            def server_bind(self):
+                self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                super().server_bind()
+
+        listeners = [(peer, port, False) for peer, port in peers]
+        if ipv6:
+            listeners += [(peer, port, True) for peer, port in peers if peer in ('ros', 'ikuai')]
+        for peer, port, v6 in listeners:
+            server = IPv6Server(('::', port), Handler) if v6 else ThreadingHTTPServer(('0.0.0.0', port), Handler)
+            if port in (18443, 18444):
+                server.socket = context.wrap_socket(server.socket, server_side=True)
             server.daemon_threads = True
             server.peer = peer
             thread = threading.Thread(target=server.serve_forever, daemon=True)

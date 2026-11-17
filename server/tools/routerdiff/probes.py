@@ -3,6 +3,7 @@ import base64
 
 from cases import Case
 from seed import DEVICE_PASSWORD, CURRENT_PROXY
+from seed import router
 
 
 PERMISSION = ('请用管理员登录 WinBox，在 System → Users 找到 ConfigFlow 使用的账号并确认 Group；'
@@ -25,6 +26,44 @@ def probe(label, vendor, controls=(), message='', ok=False, checks=None, entries
                 prepare=controls, finalize=finalize, elapsed_min=elapsed_min, expected_requests=expected_requests,
                 message=message, unchanged=False, effect='profile-write', stored=stored,
                 checks={'success': ok, 'probe/ok': ok, **(checks or {})}, times=('probe/at',))
+
+
+def tls_options():
+    return {'fake_tls': True,
+            'alpha': {'routers': {'items': [router(), router('r-ik', 'ikuai')]}},
+            'beta': {'routers': {'items': [router()]}}}
+
+
+def tls():
+    for vendor, ident, port in [('routeros', 'r-ros', 18443), ('ikuai', 'r-ik', 18444)]:
+        message = ('无法连接 RouterOS：SSLError' if vendor == 'routeros' else
+                   'iKuai HTTPS 连接失败：请检查证书是否可信、是否过期，以及管理地址和 HTTPS 端口是否正确。')
+        for index, verify in enumerate((True, False, True)):
+            # Public settings edit clears stale last_probe and increments its
+            # own revision before the actual probe's independent write baseline.
+            label = 'self-signed-' + ('verified' if verify else 'unverified')
+            preparation = ({'rpc': 'http', 'method': 'PUT', 'path': '/api/routers/' + ident,
+                'document': {'endpoint': 'https://10.44.0.1:' + str(port), 'verify_tls': verify}, 'expected': 200},)
+            yield probe(label + '-' + str(index), vendor, preparation,
+                        message=message if verify else '', ok=not verify,
+                        checks={'probe/version': '7.24.5 (stable)' if vendor == 'routeros' else '4.0.314'} if not verify else {},
+                        entries=('H0220', 'H0221') if verify and vendor == 'ikuai' else
+                                ('H0826', 'H0827') if verify else (),
+                        expected_requests=({'match': {'peer': 'ros' if vendor == 'routeros' else 'ikuai'}, 'count': 0},)
+                                          if verify else ())
+
+
+def ipv6_options():
+    return {**tls_options(), 'fake_ipv6': True}
+
+
+def ipv6():
+    for vendor, ident, http_port, tls_port in [('routeros', 'r-ros', 18081, 18443), ('ikuai', 'r-ik', 18082, 18444)]:
+        for scheme, port in [('http', http_port), ('https', tls_port)]:
+            preparation = ({'rpc': 'http', 'method': 'PUT', 'path': '/api/routers/' + ident,
+                'document': {'endpoint': scheme + '://[fd42:cf::1]:' + str(port), 'verify_tls': False}, 'expected': 200},)
+            yield probe('ipv6-' + scheme, vendor, preparation, ok=True,
+                        checks={'probe/version': '7.24.5 (stable)' if vendor == 'routeros' else '4.0.314'})
 
 
 def routeros():

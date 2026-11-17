@@ -452,3 +452,19 @@ go-unimplemented41, referenced_entries6, complete=false, remaining_audits2301.
 → Ran 9 tests in 0.357s / OK; proxy3, upstream-linked14 cumulative;
 go-unimplemented14, referenced_entries16, complete=false, remaining_audits2301.
 No test processes remain after these commands. Task continues.
+
+Native TLS and IPv6 device transport iteration:
+- Optional fake TLS listeners use independently generated synthetic self-signed
+  certificates inside each owned namespace root, outside DATA_DIR. Real TLS1.2+
+  handshake, no patched requests/crypto, no host CA/network changes. Probe rejects
+  untrusted certificates with validation on, succeeds with validation off, then
+  rejects again after re-enabling it. Device HTTP transcript stays empty for
+  failed handshakes; failed and successful probe commits are both asserted.
+- Optional IPv6-only listeners on the same private namespace ports prove actual
+  RouterOS/iKuai HTTP and HTTPS communication to synthetic fd42:cf::1. IPv4 and
+  IPv6 sockets have separate V6ONLY binding, each side retains its own table and
+  session world. No home IPv6 device/DNS/PVE is accessed. Synthetic key files are
+  deleted with the owned Pair root.
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build.AybfCK/configflow --world probe-tls --world probe-ipv6 --output /tmp/routerdiff-probe-tls-ipv6.json'`
+→ Ran 2 tests in0.234s / OK; TLS6 in0.79s, IPv6 transport10 cumulative in1.00s;
+go-unimplemented10, referenced_entries7, complete=false, remaining_audits2301.

@@ -43,7 +43,8 @@ class Worker:
         if os.environ.get('ROUTERDIFF_ISOLATED') != '1':
             raise RuntimeError('worker requires its own native network/mount/PID namespace')
         self.side, self.binary, self.options = side, binary, options
-        self.world = World()
+        self.world = World(tls_directory=ACTIVE / 'fake-tls' if options.get('fake_tls') else None,
+                           ipv6=options.get('fake_ipv6', False))
         self.pool = ThreadPoolExecutor(max_workers=16)
         self.pending = {}
         self.process = None

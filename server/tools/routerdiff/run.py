@@ -380,6 +380,8 @@ def main():
               ('agent-scope', fixtures.agent_options(), (fixtures.agent_scope,)),
               ('forwarding', fixtures.agent_options(), (fixtures.forwarding,)),
               ('probe-errors', options, (probes.routeros, probes.ikuai)),
+              ('probe-tls', probes.tls_options(), (probes.tls,)),
+              ('probe-ipv6', probes.ipv6_options(), (probes.ipv6,)),
               ('release-ros', releases.options(), (releases.routeros_basic,)),
               ('release-ik-suffix', releases.options(), (releases.ikuai_suffix_bug,)),
               ('release-ik-plain', releases.options(), (releases.ikuai_plain,)),
