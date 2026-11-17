@@ -66,6 +66,11 @@ def ipv6():
                         checks={'probe/version': '7.24.5 (stable)' if vendor == 'routeros' else '4.0.314'})
 
 
+def auth_disabled():
+    for vendor in ('routeros', 'ikuai'):
+        yield probe('authentication-disabled', vendor, ok=True)
+
+
 def routeros():
     resource = '/rest/system/resource'
     for status, message, helpers in (

@@ -20,6 +20,7 @@ DEVICE_PASSWORD = 'synthetic-device-password-0123456789'
 CURRENT_PROXY = 'synthetic-current-rule-proxy/token+01234567890123456789'
 RETIRED_PROXY = 'synthetic-retired-rule-proxy/token+98765432109876543210'
 AGENT_TOKEN = 'synthetic-routerdiff-agent/token+01234567890123456789'
+CONFIG_TOKEN = 'synthetic-routerdiff-config-download-token-01234567890123456789'
 
 
 def merge(target, patch):

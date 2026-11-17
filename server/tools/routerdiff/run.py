@@ -24,7 +24,7 @@ from harness import Pair
 from harness import decode_response
 from inventory import design_json, load
 from invariants import configuration_only, profile_write, fields
-from seed import router, AGENT_TOKEN
+from seed import router, AGENT_TOKEN, CONFIG_TOKEN
 from fakes import World
 from addresses import report_aliases
 from tokens import inspect_python_token
@@ -33,6 +33,10 @@ from seed import JWT_SECRET
 
 def shape(path):
     return re.sub(r'<(?:[^:>]+:)?[^>]+>|\{[^}]+\}', '{}', path)
+
+
+def auth_off(options):
+    return {**options, 'environment': {**options.get('environment', {}), 'ADMIN_USERNAME': '', 'ADMIN_PASSWORD': ''}}
 
 
 def registered(manifest):
@@ -291,7 +295,7 @@ def report(output, results, available, announce=True, error=None):
     # Pending remains visible. A design entry may require further variants even
     # after a concrete recipe references it; completion is a separate audit.
     ledger = {ident: {'kind': entry.kind, 'source_line': entry.source_line,
-                     'recipes': [item['case'] for item in results if ident in item['entries']],
+                     'recipes': [item.get('world', '<self-check>') + ':' + item['case'] for item in results if ident in item['entries']],
                      'audit': 'variants-in-progress' if ident in referenced else 'pending'}
               for ident, entry in entries.items()}
     data = {'matrix_entries': len(entries), 'matrix_routes': len(routes),
@@ -330,7 +334,7 @@ def findings(path, data):
         lines += ['目前没有已比较的 Go 缺陷结论。Python 参考异常单独记录；“Go 尚未实现”不算差分通过。', '']
     for result in (item for item in data['results'] if item.get('python_bug')):
         lines += ['## Python bug · medium · ' + result['python_bug'], '',
-                  '- 用例：' + result['case'] + '；矩阵：' + ', '.join(result['entries']),
+                  '- 用例：' + result.get('world', '<self-check>') + ':' + result['case'] + '；矩阵：' + ', '.join(result['entries']),
                   '- 建议负责模块：R05（iKuai）。',
                   '- 默认 fake 保留真实 static_rt netmask 显示后缀。Python 发布返回 502，',
                   '  新增静态路由的回读和补偿均因后缀不匹配失败，设备留下配置。未修改 fake 来掩盖此问题。',
@@ -352,7 +356,7 @@ def findings(path, data):
             owner = 'R05（iKuai）'
         if result['python']['status'] == 401 and result['go'] and result['go']['status'] < 400:
             severity = 'P1'
-        lines += [f'## F{index:03} · {severity} · {result["case"]}', '',
+        lines += [f'## F{index:03} · {severity} · ' + result.get('world', '<self-check>') + ':' + result['case'], '',
                   '- 用例编号：' + ', '.join(result['entries']),
                   '- 建议负责模块：' + owner + '；设备传输差异另交 R04/R05，发布与同步交 R12/R14。',
                   '- 请求：`' + json.dumps(result['request'], ensure_ascii=False) + '`',
@@ -385,8 +389,9 @@ def main():
                'beta': {'routers': {'items': [router()]}}}
     guard_options = {**options, 'system': {'agents': [{'id': 'auth-agent', 'name': '合成鉴权 Agent',
         'service_type': 'oxidns', 'profile_id': 'alpha', 'host': '10.44.0.53', 'port': 18083,
-        'version': '1.99.0-go', 'status': 'offline', 'enabled': True, 'token': AGENT_TOKEN}]}}
-    worlds = [('guards', guard_options, (cases.authentication, cases.profile_selection_failures, cases.body_guards,
+        'version': '1.99.0-go', 'status': 'offline', 'enabled': True, 'token': AGENT_TOKEN}],
+        'system_config': {'config_token': CONFIG_TOKEN}}}
+    worlds = [('guards', guard_options, (cases.authentication, cases.query_credentials, cases.profile_selection_failures, cases.body_guards,
                       guards.router_settings, guards.client_draft, guards.fixed_ip_shape,
                       guards.route_edit_shape, guards.workspace_shape, guards.rule_sync_shape)),
               ('client-drafts', options, (workflows.client_drafts,)),
@@ -425,6 +430,14 @@ def main():
               ('dns-guard', dns.options(), (dns.guard,)),
               ('dhcp-ikuai-plain', dns.ikuai_options(), (dns.ikuai_dhcp,)),
               ('dns-ha', dns.ha_options(), (dns.ha,)),
+              ('auth-off-editors', auth_off(options), (workflows.client_drafts, workflows.workspace_drafts,
+                    workflows.router_updates, workflows.runtime_reads, workflows.sync_settings,
+                    workflows.manual_routes, workflows.router_creates, workflows.unlinked_inspection, probes.auth_disabled)),
+              ('auth-off-release', auth_off(releases.options()), (releases.routeros_basic, releases.ikuai_plain)),
+              ('auth-off-fixed', auth_off(clients.options()), (clients.fixed_ip,)),
+              ('auth-off-discovery', auth_off(clients.options()), (clients.discovery,)),
+              ('auth-off-forwarding', auth_off(fixtures.agent_options()), (fixtures.forwarding,)),
+              ('auth-off-sync', auth_off(sync.options()), (sync.manual_refresh,)),
               ('stored', fixtures.stored_options(), (fixtures.receipts, fixtures.stored_guards))]
     if args.world:
         unknown = set(args.world) - {name for name, _, _ in worlds}

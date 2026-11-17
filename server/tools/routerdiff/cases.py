@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 import jwt
 
 from inventory import load
-from seed import AGENT_TOKEN, JWT_SECRET
+from seed import AGENT_TOKEN, JWT_SECRET, CONFIG_TOKEN, DEVICE_PASSWORD, ADMIN
 
 
 @dataclass(frozen=True)
@@ -135,6 +135,24 @@ def profile_selection_failures():
                ('R001-F90',), auth=False, reason='global blueprint authenticates before explicit scope')
     yield Case('R001-B90/empty-explicit-profile', 'R001', 'GET',
                '/api/agents/missing-agent/upstream-routers?profile=', 400, ('R001-B90',))
+
+
+def query_credentials():
+    routes, _ = load()
+    now = int(time.time())
+    valid_jwt = jwt.encode({'username': ADMIN, 'iat': now, 'exp': now + 3600}, JWT_SECRET)
+    for route in routes.values():
+        for label, query, headers in [
+            ('config-token', {'config_token': CONFIG_TOKEN}, {}),
+            ('download-token', {'token': CONFIG_TOKEN}, {}),
+            ('agent-token', {'token': AGENT_TOKEN}, {}),
+            ('admin-jwt-query', {'token': valid_jwt}, {}),
+            ('device-password', {}, {'Authorization': 'Bearer ' + DEVICE_PASSWORD}),
+            ('config-cookie', {}, {'Cookie': 'token=' + CONFIG_TOKEN})]:
+            path = concrete(route.path) + ('?' + urlencode(query) if query else '')
+            yield Case(route.ident + '/no-admin-header-' + label, route.ident, route.method, path, 401,
+                       (route.ident + '-F01',), headers=headers, auth=False,
+                       reason='configured download/Agent/device/query/cookie credentials never grant admin API access')
 
 
 def body_guards():

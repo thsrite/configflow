@@ -515,3 +515,30 @@ go-unimplemented26, referenced_entries13, complete=false, remaining_audits2301.
 → Ran 9 tests in0.492s / OK; fixed13, random-key15, binding-cap17, long-id19;
 go-unimplemented19, referenced_entries21, complete=false, remaining_audits2301.
 No test sessions remain. Task continues; full latest composition not yet rerun.
+
+Authentication cross-cut iteration:
+- Added156 real unauthorized requests across all26 routes: a configured long
+  download config token in either query spelling, Agent query token, a valid
+  signed admin JWT in query, device password as Bearer and config-token cookie.
+  None is an admin Authorization header; all are401 before device/storage writes.
+  Guard fixture really persists the config token, not a made-up unmatched value.
+- Six auth-off worlds replay198 ordinary recipes, including a successful request
+  on EVERY one of the26 routes: editors/manual route add/edit/delete, real fixed
+  IP and discovery, vendor publications, Agent forwarding and detached sync.
+  Each public process starts normally with empty ADMIN_USERNAME/ADMIN_PASSWORD;
+  Side observes authEnabled=false and sends no admin credential. Device/Agent
+  credentials remain enforced by their own fakes; they are not bypassed.
+- Case references remain side/world local. Ledger and findings now identify a
+  recipe as world:case because the same legal recipe is intentionally replayed
+  with a different auth mode. This does not increase matrix-entry denominator or
+  turn a missing Go HTTP route into a pass.
+
+Exact .32 command:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_tokens test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build.AybfCK/configflow --world guards --world auth-off-editors --world auth-off-release --world auth-off-fixed --world auth-off-discovery --world auth-off-forwarding --world auth-off-sync --output /tmp/routerdiff-auth-modes.json'`
+→ Ran9 tests in0.366s / OK; guard1319, auth-off-editors1471, release1483,
+fixed1496, discovery1501, forwarding1508, sync1517 cumulative;
+go-unimplemented1517, referenced_entries435, complete=false,
+remaining_audits2301. A separate read-only remote JSON audit of this report:
+`{"auth_off_recipes":198,"auth_off_routes_with_success":26,"missing_success_routes":[]}`.
+The198 auth-off recipes and156 new guards passed; this is a subset run, not the
+full latest composition or final matrix audit. No pending test process.
