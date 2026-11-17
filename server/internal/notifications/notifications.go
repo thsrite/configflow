@@ -26,6 +26,7 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
+	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
 )
 
@@ -35,6 +36,9 @@ var logger = logx.Get("backend.notifications")
 type Sources struct {
 	// ListTasks is routes.tasks.list_tasks.
 	ListTasks func(ctx context.Context) ([]*jsonx.Object, error)
+	// MissingTasks prevents incomplete observations from retiring old receipts.
+	// Production wiring supplies tasks.Missing; isolated source fixtures may omit it.
+	MissingTasks func() []string
 	// Agents is get_agent_manager().get_all_agents().
 	Agents func(ctx context.Context) ([]*jsonx.Object, error)
 	// Summarize is routers.pending.summarize(report, plan).
@@ -46,12 +50,16 @@ var (
 	sources   Sources
 )
 
-// SetSources installs the non-nil fields.
-func SetSources(s Sources) {
+// SetSources installs non-nil fields and returns an isolated-test restoration.
+func SetSources(s Sources) func() {
 	sourcesMu.Lock()
 	defer sourcesMu.Unlock()
+	previous := sources
 	if s.ListTasks != nil {
 		sources.ListTasks = s.ListTasks
+	}
+	if s.MissingTasks != nil {
+		sources.MissingTasks = s.MissingTasks
 	}
 	if s.Agents != nil {
 		sources.Agents = s.Agents
@@ -59,6 +67,7 @@ func SetSources(s Sources) {
 	if s.Summarize != nil {
 		sources.Summarize = s.Summarize
 	}
+	return func() { sourcesMu.Lock(); sources = previous; sourcesMu.Unlock() }
 }
 
 // ResetSources clears them (tests).
@@ -78,6 +87,19 @@ func currentSources() Sources {
 func Complete() bool {
 	s := currentSources()
 	return s.ListTasks != nil && s.Agents != nil
+}
+
+// MissingSources names the unwired sources required for a complete projection.
+func MissingSources() []string {
+	s := currentSources()
+	var missing []string
+	if s.ListTasks == nil {
+		missing = append(missing, "task_rows")
+	}
+	if s.Agents == nil {
+		missing = append(missing, "agents")
+	}
+	return missing
 }
 
 // ErrSourceUnavailable may be wrapped by a source to report a read failure
@@ -310,6 +332,7 @@ func AgentObservation(ctx context.Context, agent *jsonx.Object, repository *repo
 
 // RecordAgent is record_agent(agent, repository).
 func RecordAgent(ctx context.Context, agent *jsonx.Object, repository *repo.Repository) error {
+	ctx = lifecycle.Detach(ctx)
 	if !jsonx.Truthy(agent) {
 		return nil
 	}
@@ -317,7 +340,7 @@ func RecordAgent(ctx context.Context, agent *jsonx.Object, repository *repo.Repo
 	if err != nil {
 		return err
 	}
-	return Transaction(repository.DataDir(), func(items *jsonx.Object) error {
+	return TransactionContext(ctx, repository.DataDir(), func(items *jsonx.Object) error {
 		Observe(items, "deployment:"+jsonx.Str(agent.Value("id")), observation)
 		return nil
 	})
@@ -341,7 +364,7 @@ func truncateRunes(s string, n int) string {
 }
 
 // RecordRegistrationRejection is record_registration_rejection.
-func RecordRegistrationRejection(repository *repo.Repository, agentData *jsonx.Object, reason string) error {
+func RecordRegistrationRejection(ctx context.Context, repository *repo.Repository, agentData *jsonx.Object, reason string) error {
 	if !jsonx.Truthy(agentData) {
 		agentData = jsonx.NewObject()
 	}
@@ -350,7 +373,7 @@ func RecordRegistrationRejection(repository *repo.Repository, agentData *jsonx.O
 	service := truncateRunes(jsonx.Str(orValue(agentData.Value("service_type"), "mihomo")), 16)
 	sum := sha256.Sum256([]byte(name + "|" + host + "|" + service))
 	key := "registration:" + hex.EncodeToString(sum[:])[:24]
-	return Transaction(repository.DataDir(), func(items *jsonx.Object) error {
+	return TransactionContext(ctx, repository.DataDir(), func(items *jsonx.Object) error {
 		if _, exists := items.Get(key); !exists {
 			count := 0
 			for _, item := range items.Values() {
@@ -377,10 +400,10 @@ func RecordRegistrationRejection(repository *repo.Repository, agentData *jsonx.O
 }
 
 // RecordAgentAddress is record_agent_address.
-func RecordAgentAddress(repository *repo.Repository, agent *jsonx.Object, host, label, message string) error {
+func RecordAgentAddress(ctx context.Context, repository *repo.Repository, agent *jsonx.Object, host, label, message string) error {
 	name := truncateRunes(EventMessage(jsonx.Str(orValue(agent.Value("name"), agent.Value("id")))), 64)
 	id := jsonx.Str(agent.Value("id"))
-	return Transaction(repository.DataDir(), func(items *jsonx.Object) error {
+	return TransactionContext(ctx, repository.DataDir(), func(items *jsonx.Object) error {
 		Observe(items, "agent-address:"+id, jsonx.Obj(
 			"state", "pending", "source", AgentAddressSource, "scope", "system", "severity", "warning",
 			"status_label", label, "title", name+" · 地址已从 "+jsonx.Str(agent.Value("host"))+" 变为 "+host,
@@ -392,8 +415,8 @@ func RecordAgentAddress(repository *repo.Repository, agent *jsonx.Object, host, 
 }
 
 // ResolveAgentAddress is resolve_agent_address.
-func ResolveAgentAddress(repository *repo.Repository, agentID string) error {
-	return Transaction(repository.DataDir(), func(items *jsonx.Object) error {
+func ResolveAgentAddress(ctx context.Context, repository *repo.Repository, agentID string) error {
+	return TransactionContext(ctx, repository.DataDir(), func(items *jsonx.Object) error {
 		Observe(items, "agent-address:"+agentID, jsonx.Obj("state", "resolved"))
 		return nil
 	})
@@ -401,8 +424,8 @@ func ResolveAgentAddress(repository *repo.Repository, agentID string) error {
 
 // RecordNotice is record_notice: something ConfigFlow changed on its own,
 // shown until it is read.
-func RecordNotice(repository *repo.Repository, key, title, message string, link *jsonx.Object) error {
-	return Transaction(repository.DataDir(), func(items *jsonx.Object) error {
+func RecordNotice(ctx context.Context, repository *repo.Repository, key, title, message string, link *jsonx.Object) error {
+	return TransactionContext(ctx, repository.DataDir(), func(items *jsonx.Object) error {
 		Observe(items, key, jsonx.Obj(
 			"state", "pending", "source", NoticeSource, "scope", "system", "severity", "warning",
 			"status_label", "已自动调整", "title", title, "message", truncateRunes(message, MessageLimit), "impact", "",
@@ -444,6 +467,7 @@ func objectOr(v any) *jsonx.Object {
 // RecordRouter is record_router(profile_id, config, router, report, plan,
 // checked_at=...). plan may be nil; checkedAt "" means now.
 func RecordRouter(ctx context.Context, profileID string, config, router, report, plan *jsonx.Object, checkedAt string) error {
+	ctx = lifecycle.Detach(ctx)
 	repository, err := repo.GetRepository(ctx)
 	if err != nil {
 		return err
@@ -494,7 +518,7 @@ func RecordRouter(ctx context.Context, profileID string, config, router, report,
 		}
 		summary = summarize(report, plan)
 	}
-	return Transaction(repository.DataDir(), func(items *jsonx.Object) error {
+	return TransactionContext(ctx, repository.DataDir(), func(items *jsonx.Object) error {
 		_, hasDesired := report.Get("desired")
 		_, hasRoutes := report.Get("routes")
 		for _, check := range checks {
@@ -655,7 +679,7 @@ func collect(ctx context.Context, repository *repo.Repository, completedTask str
 	return &collectedObservations{profiles: profiles, routers: routers, keys: keys, observations: observations}, nil
 }
 
-func (c *collectedObservations) apply(items *jsonx.Object) {
+func (c *collectedObservations) apply(items *jsonx.Object, retainUnseen bool) {
 	for _, observation := range c.observations {
 		Observe(items, observation.key, observation.value)
 	}
@@ -681,7 +705,7 @@ func (c *collectedObservations) apply(items *jsonx.Object) {
 		if source == NoticeSource {
 			keys[key] = true
 		}
-		if !keys[key] {
+		if !keys[key] && !retainUnseen {
 			Observe(items, key, jsonx.Obj("state", "inactive"))
 		}
 		if profileID, ok := item.Value("profile_id").(string); ok {
@@ -696,6 +720,16 @@ func (c *collectedObservations) apply(items *jsonx.Object) {
 // pending notifications, newest first within each severity.
 func Snapshot(ctx context.Context, completedTask string) ([]any, error) {
 	ctx = lifecycle.Detach(ctx)
+	return snapshot(ctx, completedTask, true, false)
+}
+
+// Preview projects the same notifications without migration or persistence.
+// HEAD uses this path so reading it cannot acknowledge or create receipts.
+func Preview(ctx context.Context) ([]any, error) {
+	return snapshot(ctx, "", false, false)
+}
+
+func snapshot(ctx context.Context, completedTask string, persist, partial bool) ([]any, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -703,11 +737,23 @@ func Snapshot(ctx context.Context, completedTask string) ([]any, error) {
 	if s.ListTasks == nil || s.Agents == nil {
 		return nil, ErrSourcesMissing
 	}
+	retainUnseen := false
+	if s.MissingTasks != nil {
+		if missing := s.MissingTasks(); len(missing) > 0 {
+			if !partial {
+				return nil, &tasks.Unavailable{Slots: missing}
+			}
+			retainUnseen = true
+		}
+	}
 	repository, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
-	ticket := observationSequence.Add(1)
+	var ticket uint64
+	if persist {
+		ticket = observationSequence.Add(1)
+	}
 	collected, err := collect(ctx, repository, completedTask, s)
 	if err != nil {
 		return nil, err
@@ -716,9 +762,9 @@ func Snapshot(ctx context.Context, completedTask string) ([]any, error) {
 		return nil, err
 	}
 	var result []*jsonx.Object
-	err = transaction(repository.DataDir(), ticket, func(items *jsonx.Object, apply bool) error {
+	err = transaction(ctx, repository.DataDir(), ticket, persist, func(items *jsonx.Object, apply bool) error {
 		if apply {
-			collected.apply(items)
+			collected.apply(items, retainUnseen)
 		}
 		for _, value := range items.Values() {
 			item, _ := value.(*jsonx.Object)
@@ -762,7 +808,7 @@ func RefreshTasks(ctx context.Context, completedTask string) error {
 	if !Complete() {
 		return nil
 	}
-	_, err := Snapshot(ctx, completedTask)
+	_, err := snapshot(lifecycle.Detach(ctx), completedTask, true, true)
 	return err
 }
 

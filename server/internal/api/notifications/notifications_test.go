@@ -21,13 +21,9 @@ func registered() bool {
 	return app.Router.HasEndpoint(listEndpoint)
 }
 
-// Coordinator decision 4 (PROGRESS-agents.md): GET /api/notifications reads
-// every task row, so it registers only when every notification source and
-// every task-row slot is provided; agents.Wire installs the Agent source
-// whatever the order of wiring. This test sets the task slots of the whole
-// process (internal/tasks has no reset), so it must stay the only test of
-// this package that depends on them.
-func TestListRouteWaitsForEveryTaskSlotAndAgentsSourceIsUnconditional(t *testing.T) {
+// C07 registers the list immediately and reports explicit readiness. Agent
+// wiring supplies the real registry even before the task owners are ready.
+func TestListRouteRegistersBeforeTaskSlotsAndAgentsSourceIsUnconditional(t *testing.T) {
 	notifications.ResetSources()
 	agents.ResetHooks()
 	t.Cleanup(func() { notifications.ResetSources(); agents.ResetHooks() })
@@ -39,8 +35,8 @@ func TestListRouteWaitsForEveryTaskSlotAndAgentsSourceIsUnconditional(t *testing
 	if !notifications.Complete() {
 		t.Fatal("agents.Wire must install the Agent source while task slots are missing")
 	}
-	if registered() || apinotifications.ListComplete() {
-		t.Fatal("the list registered while task slots are missing")
+	if !registered() || apinotifications.ListComplete() {
+		t.Fatal("registration/readiness confused")
 	}
 	if !func() bool {
 		app := httpx.New()
@@ -51,8 +47,8 @@ func TestListRouteWaitsForEveryTaskSlotAndAgentsSourceIsUnconditional(t *testing
 	}
 	missing := tasks.Missing()
 	for i, slot := range missing {
-		tasks.SetRows(slot, func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return nil, nil })
-		if last := i == len(missing)-1; registered() != last {
+		t.Cleanup(tasks.SetRows(slot, func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return nil, nil }))
+		if last := i == len(missing)-1; apinotifications.ListComplete() != last {
 			t.Fatalf("after providing %s (last %v) registered=%v", slot, last, registered())
 		}
 	}

@@ -1,15 +1,16 @@
 // Package notifications holds the routes of backend/routes/notifications.py
 // (blueprint "notifications", prefix /api/notifications).
 //
-// POST /read works on its own. GET (the list) needs every notification
-// source (internal/notifications.Complete: the task list, Agents) and every
-// task-row slot (tasks.Complete: the list reads all task rows); Register adds
-// it only then, so call Register after the other packages' wiring.
+// Routes always register. GET reports incomplete source wiring explicitly;
+// HEAD projects receipts without committing an observation.
 package notifications
 
 import (
 	"errors"
+	"fmt"
+	"net/http"
 	"os"
+	"strings"
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
@@ -19,15 +20,12 @@ import (
 	"configflow/internal/tasks"
 )
 
-// Register adds the routes available now.
+// Register adds both routes regardless of source readiness.
 func Register(r *httpx.Router) {
-	if ListComplete() {
-		r.GET("/api/notifications", "notifications.list_notifications", auth.Require(listNotifications))
-	}
-	r.POST("/api/notifications/read", "notifications.read_notifications", auth.Require(readNotifications))
+	RegisterAlways(r)
 }
 
-// ListComplete reports whether GET /api/notifications can register: every
+// ListComplete reports whether GET /api/notifications can observe every
 // notification source and every task-row slot is provided.
 func ListComplete() bool { return notifications.Complete() && tasks.Complete() }
 
@@ -49,10 +47,24 @@ func isOSOrValueError(err error) bool {
 }
 
 func listNotifications(c *httpx.Ctx) (*httpx.Response, error) {
-	items, err := notifications.Snapshot(c.Context(), "")
+	missing := append(tasks.Missing(), notifications.MissingSources()...)
+	if len(missing) > 0 {
+		return httpx.JSONStatus(503, struct {
+			Success bool     `json:"success"`
+			Message string   `json:"message"`
+			Missing []string `json:"missing_slots"`
+		}{false, fmt.Sprintf(msgNotReady, strings.Join(missing, "、")), missing}).NoStore(), nil
+	}
+	var items []any
+	var err error
+	if c.Request.Method == http.MethodHead {
+		items, err = notifications.Preview(c.Context())
+	} else {
+		items, err = notifications.Snapshot(c.Context(), "")
+	}
 	if err != nil {
 		if isOSOrValueError(err) {
-			return httpx.Message(503, false, "通知暂时无法读取，请稍后重试。"), nil
+			return httpx.Message(503, false, msgReadFailed), nil
 		}
 		return nil, err
 	}
@@ -60,26 +72,19 @@ func listNotifications(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 func readNotifications(c *httpx.Ctx) (*httpx.Response, error) {
-	body := c.JSONObject()
-	versions, ok := body.Value("versions").(*jsonx.Object)
-	valid := ok && versions != nil && versions.Len() <= 2000
-	if valid {
-		for key, value := range versions.All() {
-			text, isString := value.(string)
-			if len([]rune(key)) > 1024 || !isString || len([]rune(text)) > 100 {
-				valid = false
-				break
-			}
-		}
-	}
-	if !valid {
-		return httpx.Message(400, false, "请指定要标为已读的通知及其版本。"), nil
+	var body readRequest
+	if !c.BindSilent(&body) || !body.valid() {
+		return httpx.Message(400, false, msgSpecifyVersions), nil
 	}
 	repository, err := repo.GetRepository(c.Context())
 	if err != nil {
 		return nil, err
 	}
-	if err := notifications.MarkRead(repository.DataDir(), versions); err != nil {
+	versions := jsonx.NewObject()
+	for key, version := range body.Versions {
+		versions.Set(key, version)
+	}
+	if err := notifications.MarkReadContext(c.Context(), repository.DataDir(), versions); err != nil {
 		return nil, err
 	}
 	return httpx.JSON(jsonx.Obj("success", true)), nil

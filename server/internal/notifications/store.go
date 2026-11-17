@@ -1,17 +1,19 @@
 package notifications
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/lockx"
 	"configflow/internal/repo"
 )
 
@@ -19,7 +21,7 @@ import (
 // DATA_DIR/notifications.json is guarded by a process-wide leaf mutex. The
 // instance lock excludes other servers; legacy lock files are left untouched.
 
-var guard sync.Mutex
+var guard = lockx.NewLeafKeyed[string]("notification-store")
 
 // Observation tickets order collection starts against committed mutations.
 // appliedVersions is protected by guard; unrelated data directories do not
@@ -71,19 +73,33 @@ func dismissed(key string, item *jsonx.Object) *jsonx.Object {
 // document changed. Old read or resolved records are migrated on first
 // access. A file that does not decode returns the decoder error (ValueError).
 func Transaction(dataDir string, fn func(items *jsonx.Object) error) error {
-	return transaction(dataDir, 0, func(items *jsonx.Object, _ bool) error { return fn(items) })
+	return TransactionContext(context.Background(), dataDir, fn)
 }
 
-func transaction(dataDir string, ticket uint64, fn func(items *jsonx.Object, apply bool) error) error {
+// TransactionContext owns a notification leaf update. Request cancellation is
+// detached, but the originating Runtime still cancels admission and replacement.
+func TransactionContext(ctx context.Context, dataDir string, fn func(items *jsonx.Object) error) error {
+	return transaction(lifecycle.Detach(ctx), dataDir, 0, true, func(items *jsonx.Object, _ bool) error { return fn(items) })
+}
+
+func transaction(ctx context.Context, dataDir string, ticket uint64, persist bool, fn func(items *jsonx.Object, apply bool) error) error {
 	key, err := repo.ResolveDataDir(dataDir)
 	if err != nil {
 		return err
 	}
 	path := filepath.Join(dataDir, "notifications.json")
-	guard.Lock()
-	defer guard.Unlock()
-	if err := os.MkdirAll(dataDir, 0o777); err != nil {
+	_, release, err := guard.Lock(ctx, "notifications", 5*time.Second)
+	if err != nil {
 		return err
+	}
+	defer release()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if persist {
+		if err := os.MkdirAll(dataDir, 0o777); err != nil {
+			return err
+		}
 	}
 
 	var data *jsonx.Object
@@ -130,6 +146,12 @@ func transaction(dataDir string, ticket uint64, fn func(items *jsonx.Object, app
 	if err := fn(migrated, apply); err != nil {
 		return err
 	}
+	if !persist {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if jsonx.Equal(data, before) {
 		if ticket != 0 && apply {
 			appliedVersions[key] = ticket
@@ -155,6 +177,9 @@ func transaction(dataDir string, ticket uint64, fn func(items *jsonx.Object, app
 		return err
 	}
 	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if err := os.Rename(name, path); err != nil {
@@ -218,7 +243,12 @@ func Observe(items *jsonx.Object, key string, observation *jsonx.Object) {
 // MarkRead is notification_store.mark_read: dismiss the items whose version
 // is the one the user saw.
 func MarkRead(dataDir string, versions *jsonx.Object) error {
-	return Transaction(dataDir, func(items *jsonx.Object) error {
+	return MarkReadContext(context.Background(), dataDir, versions)
+}
+
+// MarkReadContext dismisses matching versions in a shutdown-aware transaction.
+func MarkReadContext(ctx context.Context, dataDir string, versions *jsonx.Object) error {
+	return TransactionContext(ctx, dataDir, func(items *jsonx.Object) error {
 		for key, version := range versions.All() {
 			item, ok := items.Value(key).(*jsonx.Object)
 			if ok && jsonx.Equal(item.Value("version"), version) {

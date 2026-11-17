@@ -135,7 +135,7 @@ func TestObservationCollectionDoesNotHoldLeafAndCannotOverwriteNewerState(t *tes
 				case "newer snapshot", "unchanged snapshot":
 					_, err = Snapshot(ctx, "")
 				case "notice":
-					err = RecordNotice(repository, "task:sample", "new notice", "new notice", nil)
+					err = RecordNotice(ctx, repository, "task:sample", "new notice", "new notice", nil)
 				case "read":
 					err = MarkRead(repository.DataDir(), jsonx.Obj("task:sample", version))
 				}

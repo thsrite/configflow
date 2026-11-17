@@ -108,7 +108,7 @@ func registrationRejected(ctx context.Context, data *jsonx.Object, reason string
 		if err != nil {
 			return err
 		}
-		return notifications.RecordRegistrationRejection(repository, fields, reason)
+		return notifications.RecordRegistrationRejection(ctx, repository, fields, reason)
 	})
 }
 

@@ -161,7 +161,7 @@ func Follow(ctx context.Context, m *agents.Manager, agent *jsonx.Object, reporte
 		pending := reported[agentID]
 		addressMu.Unlock()
 		if host != "" && pending {
-			resolve(m, agentID)
+			resolve(ctx, m, agentID)
 		}
 		return nil
 	}
@@ -336,7 +336,7 @@ func follow(ctx context.Context, m *agents.Manager, agentID, host string) error 
 	}
 	if member {
 		addressLog.Warning("Agent " + label + " 上报地址由 " + old + " 变为 " + host + "；它是 DNS 高可用成员，记录未修改")
-		report(m, agent, host, "是 DNS 高可用成员，记录未修改", HASteps)
+		report(ctx, m, agent, host, "是 DNS 高可用成员，记录未修改", HASteps)
 		return nil
 	}
 	if taken, err := sameNamedAt(ctx, m, agent, agentID, host); err != nil {
@@ -351,7 +351,7 @@ func follow(ctx context.Context, m *agents.Manager, agentID, host string) error 
 	}
 	if !ok {
 		addressLog.Warning("Agent " + label + " 上报地址由 " + old + " 变为 " + host + "，但面板用它的凭据连不上新地址，记录未修改")
-		report(m, agent, host, "面板连不上新地址，记录未修改",
+		report(ctx, m, agent, host, "面板连不上新地址，记录未修改",
 			"面板用这台 Agent 的凭据访问 "+host+":"+jsonx.Str(agent.Value("port"))+" 没有成功，所以仍按 "+old+" 联系它。"+
 				"请确认面板所在的机器能访问新地址和 Agent 端口；能访问后会自动更新。")
 		return nil
@@ -373,14 +373,14 @@ func follow(ctx context.Context, m *agents.Manager, agentID, host string) error 
 		return nil
 	}
 	addressLog.Info("Agent " + label + " 的地址已由 " + old + " 更新为 " + host + "（Agent 上报，已用其凭据核实可连接）")
-	resolve(m, agentID)
+	resolve(ctx, m, agentID)
 	name := agent.Value("name")
 	if !jsonx.Truthy(name) {
 		name = agentID
 	}
 	repository := m.Repository()
 	notifications.Safely(func() error {
-		return notifications.RecordNotice(repository, "notice:agent-address:"+agentID,
+		return notifications.RecordNotice(ctx, repository, "notice:agent-address:"+agentID,
 			jsonx.Str(name)+" · Agent 地址已自动更新",
 			"设备的地址由 "+old+" 变为 "+host+"，面板已核实能用新地址连上它并更新了记录。"+
 				"如果上游路由关联了这台设备（代理网关或 DHCP DNS），请重新预览并发布上游路由。",
@@ -389,21 +389,21 @@ func follow(ctx context.Context, m *agents.Manager, agentID, host string) error 
 	return nil
 }
 
-func report(m *agents.Manager, agent *jsonx.Object, host, label, message string) {
+func report(ctx context.Context, m *agents.Manager, agent *jsonx.Object, host, label, message string) {
 	id, _ := agentIDOf(agent)
 	addressMu.Lock()
 	reported[id] = true
 	addressMu.Unlock()
 	repository := m.Repository()
-	notifications.Safely(func() error { return notifications.RecordAgentAddress(repository, agent, host, label, message) })
+	notifications.Safely(func() error { return notifications.RecordAgentAddress(ctx, repository, agent, host, label, message) })
 }
 
-func resolve(m *agents.Manager, agentID string) {
+func resolve(ctx context.Context, m *agents.Manager, agentID string) {
 	addressMu.Lock()
 	delete(reported, agentID)
 	addressMu.Unlock()
 	repository := m.Repository()
-	notifications.Safely(func() error { return notifications.ResolveAgentAddress(repository, agentID) })
+	notifications.Safely(func() error { return notifications.ResolveAgentAddress(ctx, repository, agentID) })
 }
 
 // mode is _mode(agent, status, info): what changing the address changes.
@@ -592,7 +592,7 @@ func Change(ctx context.Context, m *agents.Manager, agent *jsonx.Object, value a
 	addressMu.Lock()
 	delete(attempts, agentID)
 	addressMu.Unlock()
-	resolve(m, agentID)
+	resolve(ctx, m, agentID)
 	note := ""
 	if written {
 		note = "，已写入设备配置"
