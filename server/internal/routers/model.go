@@ -23,15 +23,28 @@ const (
 	KindUncertainWrite                    // a write may have committed but its result is unknown
 	KindMissingResource                   // the requested RouterOS resource is unavailable
 	KindPingNotPermitted                  // RouterOS account lacks the test policy
+	KindRejected                          // the device answered and refused the write: nothing changed
 )
 
 // RouterError is a failure whose message is safe to show to users (use errors.As).
 type RouterError struct {
 	Kind    ErrorKind
 	Message string
+	// Undo, when set, reverts what the failed operation may still have
+	// changed (a write whose reply was lost). The release records it like the
+	// undo of a finished operation and runs it on rollback.
+	Undo json.RawMessage
 }
 
 func (e *RouterError) Error() string { return e.Message }
+
+// UndoOf is the undo a failed operation carries (nil when there is none).
+func UndoOf(err error) json.RawMessage {
+	if e, ok := errors.AsType[*RouterError](err); ok {
+		return e.Undo
+	}
+	return nil
+}
 
 func routerError(message string) error { return &RouterError{Message: message} }
 

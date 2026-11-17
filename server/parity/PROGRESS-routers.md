@@ -330,7 +330,9 @@ Remaining module boundaries: R07 replaces plain address-list reads with digest p
 
 ## R05 — iKuai driver
 
-**Status: `missing`** · HR · prereqs: R01, R03; shared requests client (question 1) · Go: internal/routers
+**Status: `partial`** (Opus port O5 in progress, branch `go-port-r05`) · HR · prereqs: R01, R03; shared requests client (`internal/devhttp`) · Go: internal/routers
+
+In progress: driver code committed (`ikuai.go`, `ikuai_dhcp.go`, `ikuai_apply.go`, messages, `RouterError.Undo` + `KindRejected`); next: loopback iKuai fake (`routerfake/ikuai.go`), Python reference harness (`testdata/r05_reference.py`), boundary corpus, Go-only HR tests, coverage map.
 
 Files:
 - `backend/routers/ikuai.py` (1179)
