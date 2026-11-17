@@ -1112,6 +1112,8 @@ Tests: `test_agent_content_sync.py` (42), `test_agent_content_api.py` (10), `tes
 
 Routes (4): `GET /api/agents`; `GET /api/agents/<agent_id>`; `GET /api/agents/<agent_id>/push-diff`; `GET /api/agents/<agent_id>/push-diff/entries`
 
+A24 clarification: reuse the same-package `publicAgent(*agents.Record) *agents.Record` helper in `api/agents/public_agent_adapter.go`; do not add another serializer. It delegates deployment, upgrade and HA sanitization to their existing owners and omits unread history. Real Python field-by-field differential: `TestPublicAgentPython` (8 cases).
+
 Evidence: no Go code. Port `_public_agent` (A03 lines) here. Extend the existing `createAgent`/`handleAgentItem` handlers with the GET branch (router panics on a second handler for the same endpoint). Provides for config: `content_sync.invalidate_content_sync` used by C13 `subscription_cache` (interface declared in C13, registered here).
 
 ## A14 — publishing: transactional content, push-config, deployments, receipts
@@ -1399,7 +1401,7 @@ Hooks to provide: `agents.OnManagerInit` (`ipv6_verification.start_loop`, last);
 
 ## A24 — client tools, OxiDNS device policies, domain-discovery toggles
 
-**Status: `missing`** · prereqs: A05, C09 (`connection_rules`, ready), C26 (`oxidns_device_policy.read_policies/revision/normalize_client_range`), C31 (`device_notes`), C37 (`domain_discovery_service`, `provider_revisions`), C05 (`OxidnsSettingsError`) · Go: api/agents
+**Status: `in progress`** · prereqs: A05, C09 (`connection_rules`, ready), C26 (`oxidns_device_policy.read_policies/revision/normalize_client_range`), C31 (`device_notes`), C37 (`domain_discovery_service`, `provider_revisions`), C05 (`OxidnsSettingsError`) · Go: api/agents
 
 Files:
 - `backend/routes/client_tools.py` (105) — registers on the agents blueprint (`agents.*` endpoints)
@@ -1410,6 +1412,8 @@ Tests: `test_client_tools.py` (15)
 Routes (8): `GET|PUT /api/agents/<agent_id>/client-notes`; `GET /api/agents/<agent_id>/mihomo/rule-targets`; `POST /api/agents/<agent_id>/mihomo/rule-targets/apply`; `PUT /api/agents/<agent_id>/domain-discovery`; `POST /api/agents/<agent_id>/domain-discovery/clear`; `GET|PUT /api/agents/<agent_id>/oxidns/device-policies`
 
 Evidence: no Go code (manager `SetDomainDiscovery` exists in A01). Note: `mihomo/rule-targets` must register before the `mihomo/<path:resource>` catch-all of A07 or rely on Werkzeug rule ordering — check `httpx.Router` ordering against Flask's.
+
+Implementation started on `go-port-a24` from `f5258a8b`. Shared public Agent adapter complete; .64 `CONFIGFLOW_DIFF=1 go test -count=1 ./internal/api/agents -run TestPublicAgent -v` PASS (0.231s). Coordinator approved minimal C37 typed ruleset query and transaction guard without a separate design document. Next: C37 interfaces, eight route methods, HTTP/storage differential and complete gates.
 
 ## Cross-domain interfaces (decision 3: interfaces/hooks, no copies)
 
