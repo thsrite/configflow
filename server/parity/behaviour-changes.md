@@ -573,3 +573,10 @@ C33 请求 adapter 使用现有 Bind/BindSilent，拒绝 Python json.loads 独�
 这是既有 N8 原生 JSON 类别，不影响合法 JSON、Content-Type、精确大小写成员或未知字段保留。
 真实 Flask 正控证明 check-content 原来可接受 unused:NaN；三种非有限字面量在14入口的响应/无写入
 均按真实 Flask malformed 控制比较，不放宽 normalizer。
+
+## C33 预览来源选择的输入验证
+
+preview-regex 的 subscriptions/aggregations 空值继续按空选择处理；数组内无法命中来源的非字符串成员
+继续忽略，不阻止其余字符串ID。真值非数组现在400拒绝，避免 Python 把字符串逐字符、对象逐键当作
+来源ID遍历；调用方应传ID数组。这与规则库 cache 的非数组 rule_ids 属于同一验证纠错类别；无数据迁移，
+合法数组和预览结果不变。`TestReviewPreviewSelectionShapes` 对照真实Python并明确断言双方无写入。

@@ -17,10 +17,11 @@ const (
 )
 
 const (
-	msgPreviewObject  = "预览请求必须是 JSON 对象"
-	msgRegexType      = "正则表达式必须是字符串"
-	msgExcludeType    = "排除正则必须是字符串"
-	msgRegexRequired  = "请输入正则表达式"
-	msgRegexInvalid   = "正则表达式无效: %s"
-	msgExcludeInvalid = "排除正则无效: %s"
+	msgPreviewObject    = "预览请求必须是 JSON 对象"
+	msgPreviewSelection = "预览来源 ID 必须是数组"
+	msgRegexType        = "正则表达式必须是字符串"
+	msgExcludeType      = "排除正则必须是字符串"
+	msgRegexRequired    = "请输入正则表达式"
+	msgRegexInvalid     = "正则表达式无效: %s"
+	msgExcludeInvalid   = "排除正则无效: %s"
 )

@@ -34,12 +34,6 @@ func raw(o object, key string) json.RawMessage {
 	}
 	return v
 }
-func names(o object, key string) ([]string, error) {
-	if !o.Has(key) || string(raw(o, key)) == "null" {
-		return nil, nil
-	}
-	return value[[]string](o, key)
-}
 func pattern(o object, key, message string) (string, error) {
 	v := raw(o, key)
 	if string(v) == "null" {

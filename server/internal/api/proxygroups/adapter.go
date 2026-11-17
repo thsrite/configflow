@@ -359,6 +359,29 @@ func sharedConfig(ctx context.Context) (object, error) {
 	}
 	return native(raw)
 }
+
+func names(o object, key string) ([]string, error) {
+	selection, err := jsonx.Parse(raw(o, key))
+	if err != nil {
+		return nil, err
+	}
+	if !jsonx.Truthy(selection) {
+		return nil, nil
+	}
+	entries, ok := selection.([]any)
+	if !ok {
+		return nil, bad(msgPreviewSelection)
+	}
+	ids := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		// Like an unknown string ID, a value that cannot name a stored source
+		// has no match. Do not reject the other IDs of a mixed selection.
+		if id, ok := entry.(string); ok {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
 func filterSubscription(sub object, nodes []object) ([]object, error) {
 	s, err := legacy(sub)
 	if err != nil {

@@ -2038,6 +2038,10 @@ R08 integration follow-up: rebased `go-port-c32` onto `go=d8f50b00`; preserved e
 
 最新收尾基底：`go@cb5732ec5`，已保留C29 server注册、18条路由done及共享reader。冲突仅server.go import、routes.tsv和behaviour登记；合并后C33仍25/25 done且method/path无重复。新发现F5 medium已切换原生Bind/BindSilent，42项非有限请求按各入口malformed合同对照真实Flask；显式Python接受/Go400控制已补。最新.64合并树C33/代理/C29/server定向race+live全部通过（38.783s/58.310s/5.887s/1.981s/25.788s/1.717s），.32更广C29 reader及C32重叠检查仍在前台。已取消两轮未进入检查的旧门禁队列（分别因协调者要求合入C29、新绑定修复）；新最终gate待启动。5项发现均已修，详见review-c33.md；共享最终关机窗口仍归O3-6c。
 
+最终增量：已再次 rebase 到 `go@28e6e0c12`（R09），C29重叠检查全部绿，详见复核报告。最后错类型检查F6 low：预览来源选择保留falsey空值和混合数组未知ID的Python语义；真值非数组400拒绝，登记为与rule_ids同类验证纠错。两来源16组精确差分+4组显式Python200/Go400控制已补。当前6项发现已修，runtime已冻结；新增预览回归正在.32前台跑。上一完整门禁已通过格式/vet/双tag/observer及proddiff new0/stale0/self-check PASS，但为纳入F6主动中止，**不计完整通过**；最终完整门禁将在这一提交树重新跑。
+
+F6后的最终C33定向检查已完成：.32 `CONFIGFLOW_DIFF=1 go test -race -p6 -count=1 ./internal/api/rulelibrary/... ./internal/api/proxygroups/... ./internal/server` 全绿（library92.565s、live144.693s、proxy11.583s、server2.832s）。没有进一步runtime改动；接下来仅最终gate及报告收尾。
+
 **Status: `ported`** · prereqs: C32 · Go: internal/api/rulelibrary, api/proxygroups (new)
 
 Files:

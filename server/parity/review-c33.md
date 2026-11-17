@@ -1,6 +1,6 @@
 # C33 独立复核
 
-状态：代码复核完成，5项发现（2 high / 2 medium / 1 low）已修复；最终门禁待执行。
+状态：代码复核完成，6项发现（2 high / 2 medium / 2 low）已修复；最终门禁待执行。
 分支 `go-review-c33`，独立于作者，从 `go-port-c33@a4445071` 分出，先 rebase 到本地
 `go@dda8973d`（A13），再到 `6e37489ff`（L1）和 `cb5732ec5`（C29及其复核）。
 实际冲突为 behaviour-changes.md 和 proddiff 自检入口；保留双方登记/测试，main 入口置于文件末尾。
@@ -48,6 +48,13 @@
   请求提供每个边界的完整响应控制，状态、消息、headers及存储不归一。
   `TestReviewPythonNonFiniteAcceptanceIsExplicit` 独立证明真实 Python check-content 接受 unused:NaN
   而 Go400，双方均无写入；归入已批准的 N8 原生 JSON 差异。修复提交：绑定修复提交（最终ID在文末）。
+- **F6，low，已修：预览的来源选择未保留宽松默认/未知ID语义。**
+  `subscriptions/aggregations` 的 false/0/空字符串/空对象在 Python 按空选择处理；混合数组里的
+  非字符串成员无法命中来源，仍会处理其余字符串ID。Go 的 []string 解码却直接500。
+  现在 adapter 保留空值默认，数组忽略无法命中来源的成员；同时将真值非数组明确400拒绝，修复 Python
+  偶然迭代字符串字符/对象键的输入验证漏洞（与作者已登记的非数组 rule_ids 同类），合法字符串数组不变。
+  `TestReviewPreviewSelectionShapes` 对两个来源比较16组宽松输入的真实Flask完整响应/存储；
+  另独立证明4组非数组 Python200/Go400，双方无写入。修复提交：预览选择修复提交（最终ID在文末）。
 
 ## 缓存崩溃/故障核对
 

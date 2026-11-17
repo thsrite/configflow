@@ -28,6 +28,53 @@ func TestReviewDraftRevisionShape(t *testing.T) {
 	}
 }
 
+func pythonOnly(w *world, method, path, requestBody string) answer {
+	w.t.Helper()
+	request := map[string]any{"method": method, "path": path, "body": requestBody, "headers": map[string]string{"Authorization": "Bearer " + w.token}}
+	raw, err := json.Marshal(request)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	if _, err = w.stdin.Write(append(raw, '\n')); err != nil {
+		w.t.Fatal(err)
+	}
+	if !w.scanner.Scan() {
+		w.t.Fatal(w.stderr.String())
+	}
+	var py answer
+	if err = json.Unmarshal(w.scanner.Bytes(), &py); err != nil {
+		w.t.Fatal(err)
+	}
+	if py.Error != "" {
+		w.t.Fatal(py.Error)
+	}
+	return py
+}
+
+func TestReviewPreviewSelectionShapes(t *testing.T) {
+	w := newWorld(t, seed(t))
+	for _, source := range []struct{ kind, key, id string }{{"subscription", "subscriptions", "feed"}, {"aggregation", "aggregations", "agg"}} {
+		for _, selection := range []string{`null`, `false`, `0`, `0.0`, `""`, `{}`, `[]`, `[null,42,{},[],"` + source.id + `"]`} {
+			request := `{"source":"` + source.kind + `","regex":".*","` + source.key + `":` + selection + `}`
+			w.call("POST", "/api/proxy-groups/preview-regex", request, true)
+		}
+		for _, selection := range []string{`"` + source.id + `"`, `{"` + source.id + `":true}`} {
+			request := `{"source":"` + source.kind + `","regex":".*","` + source.key + `":` + selection + `}`
+			before := snapshot(t, w.srv)
+			// Python accidentally treats strings and object keys as ID iterables.
+			// Keep this validation correction explicit, like non-array rule_ids.
+			py := pythonOnly(w, "POST", "/api/proxy-groups/preview-regex", request)
+			if py.Status != 200 || !reflect.DeepEqual(w.normalize(py.State), w.normalize(jsonValue(t, before))) {
+				t.Fatal("Python non-array selection control failed", py.Status)
+			}
+			w.srv.Post("/api/proxy-groups/preview-regex", httpxtest.Bearer(w.token), httpxtest.Body([]byte(request), "application/json")).WantStatus(400)
+			if !reflect.DeepEqual(before, snapshot(t, w.srv)) {
+				t.Fatal("invalid preview selection wrote state")
+			}
+		}
+	}
+}
+
 func TestReviewReorderMalformedHTTPParity(t *testing.T) {
 	w := newWorld(t, seed(t))
 	for _, path := range []string{"/api/rule-library/reorder", "/api/proxy-groups/reorder"} {
