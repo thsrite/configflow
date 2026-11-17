@@ -9,7 +9,7 @@
 # non-race run. Exit code 0 only when every step passed; logs stay in $GATE_LOGS (printed).
 #
 #   -p N     package parallelism for race/difftest (default: go's default = GOMAXPROCS).
-#            Use -p 4 on .64 (15 GB RAM; full -race at default -p was OOM-killed once).
+#            Use -p 6 on .64 (20 GB RAM + swap; full -race at default -p was OOM-killed once at 15 GB).
 # Env: GATE_FUZZTIME (default 60s), GATE_FUZZ_PARALLEL (default 2 workers per target).
 set -u
 cd "$(dirname "$0")/.."            # server/
