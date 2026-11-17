@@ -289,6 +289,11 @@ func installationFiles(t *testing.T, dir string) map[string]string {
 	}
 	for _, entry := range entries {
 		name := entry.Name()
+		// O3-6a retires only this server resource lock. Installation data,
+		// permissions and unexpected files remain part of the comparison.
+		if name == ".issue.lock" {
+			continue
+		}
 		data, _ := os.ReadFile(filepath.Join(root, name))
 		text := string(data)
 		if label, ok := labels[strings.TrimSpace(text)]; ok {
@@ -615,6 +620,9 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 	}
 
 	// Stored state: installation records and Agents.
+	if _, err := os.Lstat(filepath.Join(goDir, "docker-ha-installations", ".issue.lock")); !os.IsNotExist(err) {
+		t.Errorf("Go created retired .issue.lock: %v", err)
+	}
 	pyFiles, goFiles := installationFiles(t, pyDir), installationFiles(t, goDir)
 	var keys []string
 	for k := range pyFiles {

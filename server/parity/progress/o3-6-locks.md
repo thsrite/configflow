@@ -179,3 +179,15 @@ C27 callbacks now also assert the owner retained Scope. No product/default/timeo
 probe changed. .32 gofmt/vet ./... and those3 C27 tests race3 passed13.340s. Full gate reruns at
 /tmp/o36a-2 on the same host, without-p as the coordinator requested. No difftest was run by the first
 gate because it stopped at race; its proddiff did not exercise router device writes.
+
+Second gate(/tmp/o36a-2, basef147cf21) passed fmt/vet, both tags, full race(including oxidns466.639s,
+repo439.841s, routers791.400s) and proddiff new=0/stale=0. Enabled difftest exposed only retired-file
+snapshots: DockerHA.issue.lock(239 responses equal), DNS dashboard3 hash.lock files(69 requests and
+all JSON equal), rule-source64hex.list.lock(refresh31 responses and all data equal). No JobLock
+or router response difference. Coordinator explicitly approved exact filename/glob exclusions and
+Go-no-new-lock assertions. These3 collectors now omit only the named/64-lowercase-hex lock paths;
+all response/data/permission comparisons remain. O12 behaviour-changes lists every retired resource
+lock and states existing locks are not deleted. Targeted real Flask tests .32 passed:
+`CONFIGFLOW_DIFF=1 go test -count=1 -timeout=15m -run '^(TestDockerHADifferentialAgainstFlask|TestOxidnsDifferentialAgainstFlask|TestDifferentialTaskRoutes)$' ./internal/api/agents/difftest ./internal/refresh/difftest`
+Results agents13.651s, refresh7.666s; gofmt/vet ./... passed. No product code/default changed.
+Final complete gate reruns on .32 at/tmp/o36a-3, foreground, without-p.

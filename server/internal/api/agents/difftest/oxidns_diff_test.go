@@ -376,12 +376,19 @@ func oxidnsCompare(r request, py, gor response) []string {
 	return kept
 }
 
-// stateFiles is the dashboard state directory: file names (with .lock
-// files) and the state documents with the generation masked.
+// retiredDashboardLockGlob matches only the 64-hex Agent hash lock files
+// retired by O3-6a. Other files, including unexpected locks, remain compared.
+var retiredDashboardLockGlob = strings.Repeat("[0-9a-f]", 64) + ".lock"
+
+// stateFiles compares the dashboard documents with the generation masked.
+// Only retiredDashboardLockGlob is excluded from Python's filesystem trace.
 func stateFiles(t *testing.T, dir string) map[string]string {
 	out := map[string]string{}
 	entries, _ := os.ReadDir(filepath.Join(dir, "dns-monitor"))
 	for _, e := range entries {
+		if retired, _ := filepath.Match(retiredDashboardLockGlob, e.Name()); retired {
+			continue
+		}
 		data, _ := os.ReadFile(filepath.Join(dir, "dns-monitor", e.Name()))
 		if strings.HasSuffix(e.Name(), ".json") {
 			value, err := jsonx.Parse(data)
@@ -452,6 +459,13 @@ func TestOxidnsDifferentialAgainstFlask(t *testing.T) {
 		} else {
 			t.Logf("same %-34s %s %s → %d (%d agent requests)", r.name, r.method, r.path, py.status, len(pyCalls))
 		}
+	}
+	locks, err := filepath.Glob(filepath.Join(goDir, "dns-monitor", retiredDashboardLockGlob))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locks) != 0 {
+		t.Errorf("Go created retired dashboard locks: %v", locks)
 	}
 	pyState, goState := stateFiles(t, pyDir), stateFiles(t, goDir)
 	names := func(m map[string]string) []string {

@@ -278,6 +278,27 @@ Go 不接受 legacy 存储，不再执行 `node_test_dns_cleanup.migrate` 等一
 启动时完成。O3-3 保留此既定边界，在有序 Startup 中省略 `node-test-dns-migrate`。
 来源：PORTING 的不移植清单、Config Step B 的 O12 决定，以及 O3-3 协调者确认。
 
+### O12 锁文件（O3-6a）
+
+服务端资源互斥改为进程内锁：**Python 遗留的锁文件不再创建，已有的不删除**。
+这包括下列文件（`<sha256>` 表示 64 位小写十六进制摘要）：
+
+- `task-status.json.lock`。
+- `notifications.lock`。
+- `web-listener.lock`。
+- `.agent-deployment-locks/<sha256(agent_id/deployment_id)>`。
+- `docker-ha-installations/.issue.lock`。
+- `dns-monitor/<sha256(agent_id)>.lock`（本轮差分涉及三个 Agent 的三把锁）。
+- `shared/rules/by-source/<sha256>.list.lock`。
+- 其他共享缓存、生成文件和配置空间文件旁的 `<file>.lock`。
+- `profiles/.<profile_id>.operation.lock`。
+- Sub-Store runtime 目录里的 `work.lock`、`control.lock`。
+
+已有锁文件的内容、inode、mtime 保持不变；订阅缓存删除与孤立缓存清理也不删除旁边的旧锁。
+差分只排除明确退休的锁文件或精确的摘要文件名 glob，继续逐项比较响应、配置和实际数据文件，
+并额外断言 Go 没有新建对应资源锁。实例锁（含兼容 Python 的生命周期锁）和 `.config.lock`
+仍保留；目标机 `bootstrap.py` 使用的 `.compose-enrollment.lock` 不属于服务端资源锁，保持不变。
+
 ## O3 — 单实例与有界关机
 
 设计 D1/D5 与维护者 M1：每个 DATA_DIR 只允许一个 Go 服务进程；启动时同时持有 Python

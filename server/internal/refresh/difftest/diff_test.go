@@ -343,7 +343,12 @@ func readJSON(t *testing.T, path string) any {
 	return value
 }
 
-// files lists the data written below dir that the module owns.
+// retiredRuleLockGlob matches only the by-source SHA-256 cache locks retired
+// in O3-6a, not arbitrary files or locks elsewhere in the data directory.
+var retiredRuleLockGlob = filepath.Join("shared", "rules", "by-source", strings.Repeat("[0-9a-f]", 64)+".list.lock")
+
+// files lists the data written below dir that the module owns, excluding
+// Python's retiredRuleLockGlob resource locks.
 func files(t *testing.T, dir string) map[string]any {
 	out := map[string]any{"task-status.json": mask(readJSON(t, filepath.Join(dir, "task-status.json")), "")}
 	for _, pattern := range []string{"shared/subscription_health.json", "shared/subscribes/*.json",
@@ -357,6 +362,9 @@ func files(t *testing.T, dir string) map[string]any {
 	filepath.WalkDir(filepath.Join(dir, "shared/rules"), func(path string, entry fs.DirEntry, err error) error {
 		if err == nil && entry.Type().IsRegular() {
 			rel, _ := filepath.Rel(dir, path)
+			if retired, _ := filepath.Match(retiredRuleLockGlob, rel); retired {
+				return nil
+			}
 			data, _ := os.ReadFile(path)
 			out[rel] = string(data)
 		}
@@ -492,6 +500,13 @@ func TestDifferentialTaskRoutes(t *testing.T) {
 			failed++
 			t.Errorf("DIFF next_run_at %s: python %v, go %v, want %s", key, p, g, want)
 		}
+	}
+	locks, err := filepath.Glob(filepath.Join(goDir, retiredRuleLockGlob))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locks) != 0 {
+		t.Errorf("Go created retired rule cache locks: %v", locks)
 	}
 	pyFiles, goFiles := files(t, pyDir), files(t, goDir)
 	var names []string
