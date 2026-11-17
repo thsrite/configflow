@@ -69,3 +69,17 @@ func TestChainsCorpus(t *testing.T) {
 	}
 	t.Logf("%d rows %v", len(rows), stats)
 }
+
+func TestChainProviderFilterWithoutSources(t *testing.T) {
+	runtime := jsonx.Obj("proxy_groups", []any{jsonx.Obj("id", "chain", "name", "Chain", "_chain_dialer", jsonx.Obj("type", "node", "id", "entry"))})
+	main := jsonx.Obj("proxy-groups", []any{jsonx.Obj("name", "Chain", "type", "select", "filter", "(`z")})
+	// Python compiles sorting filters only when a provider consumes them. An
+	// unused invalid pattern must not make a static-only chain fail generation.
+	if err := LowerChainProviders(runtime, main); err != nil {
+		t.Fatal(err)
+	}
+	expected := jsonx.Obj("proxy-groups", []any{jsonx.Obj("name", "Chain", "type", "select")})
+	if !jsonx.Equal(main, expected) {
+		t.Fatal(compact(t, main))
+	}
+}

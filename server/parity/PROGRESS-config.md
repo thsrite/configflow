@@ -707,7 +707,7 @@ Commands: `rt -- bash -lc 'cd server && go vet ./internal/subs/... && go test -c
 
 ## C11 — proxy chains, commented Mihomo editor, listeners, proxy-server DNS
 
-**Status: `partial`** · prereqs: C10 · Go: internal/subs, internal/yamlx.Edit
+**Status: `ported`** (completion on `go-port-c06-c11`; independent Codex review and integrated C06/C11 gate pending) · prereqs: C10 · Go: internal/subs, internal/yamlx.Edit
 
 Files:
 - `backend/utils/proxy_chains.py` (262)
@@ -715,20 +715,13 @@ Files:
 - `backend/utils/mihomo_listeners.py` (87)
 - `backend/utils/proxy_server_dns.py` (394)
 
-Tests: `test_mihomo_listener_lifecycle.py` (10), `test_proxy_chains.py` (18), `test_proxy_server_dns.py` (22)
+Tests: `test_mihomo_listener_lifecycle.py` (10), `test_proxy_chains.py` (19), `test_proxy_server_dns.py` (22)
 
 Routes: none.
 
-Evidence: `internal/subs` chains.go, listeners.go, proxyserverdns.go and the
-shared `internal/yamlx.Edit`. `test_mihomo_listener_lifecycle.py` 10/10 at the
-listener boundary; `test_proxy_chains.py` 8/18 and `test_proxy_server_dns.py` 5/22
-helpers remain covered by existing tests/corpora. Deferred: the other 10 chain
-cases through generation/Surge/provider (C17/C18/C19), 17 proxy-server DNS cases
-through generation (C18) and Agent versions. The old C11 editor refusal classes
-(CRLF, flow/block expansion, null-item notes/tags) are superseded by N7-2's native
-parse/splice/rewrite policy. D1 and native YAML schema rejections are deliberate;
-valid frozen-corpus edits have zero editor refusals and zero semantic mismatches.
-`chains.go`'s existing PyRegex.Groups TODO is outside N7-2.
+Evidence: `internal/subs` chains.go/listeners.go/proxyserverdns.go and shared `yamlx.Edit`. All 19 chain, 22 DNS and 10 listener source functions now have explicit mappings in [progress/c11.md](progress/c11.md). The old 10-chain/17-DNS blanket deferrals are superseded by verified C18 generation and C19 Surge replay, C15 refresh replay, native helper/corpus tests and the exact public logical-reference regression. C33 proxy-group PUT/DELETE persistence/409/rollback and C34 preview response wiring remain external, coordinator-approved owner entry points; this module does not implement them.
+
+The capture-count TODO is closed: provider backtick sorting compiles each bucket once and uses `rules.Regex.Groups()`. Live Python differential covers conditional/verbose/named/escaped/class parentheses, complete provider lowering and the emitted $N sorting substitution. .64 targeted subs/difftest/convert tests pass. Independent C11 review is still required.
 
 N7-2 implementation: removed the private `subs/commented` parser/emitter
 and its generators. The frozen 12,479-row corpus now checks native YAML meaning
@@ -758,8 +751,7 @@ Opus review N7-2 (2026-11-17, review-n7-2.md): F1 high (alias expansion through 
 silently wrote `null` into relinked listeners/displaced alias consumers), F2 medium (splice failures
 refused instead of rewriting; indentless sequences), F3–F6 low (`!!merge <<`, removed-pair comments
 moved to the document head, English multi-document reason, unwritable `!!` tag) — all fixed, 0 open; the editor is
-verified. C11 stays `partial` only for the deferred generation/route cases above. Proxy-groups route
-difftest → C33 deferred.
+verified. C11 completion retains this reviewed editor unchanged; remaining actual proxy-group HTTP transactions belong to C33 and preview response wiring to C34, as mapped above.
 
 ## C12 — converter common, Mihomo node conversion, dialer references, EasyTier
 

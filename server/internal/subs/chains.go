@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/rules"
 )
 
 func lookupByID(items []*jsonx.Object) (map[string]*jsonx.Object, []string) {
@@ -485,40 +486,6 @@ func orEmpty(l []any) []any {
 	return l
 }
 
-// countGroups is re.compile(pattern).groups for a pattern Python accepts.
-// TODO(port): replace with a PyRegex.Groups() method of package rules.
-func countGroups(pattern string) int {
-	rs := []rune(pattern)
-	n, inClass := 0, false
-	for i := 0; i < len(rs); i++ {
-		switch c := rs[i]; {
-		case c == '\\':
-			i++
-		case inClass:
-			if c == ']' {
-				inClass = false
-			}
-		case c == '[':
-			inClass = true
-			if i+1 < len(rs) && rs[i+1] == '^' {
-				i++
-			}
-			if i+1 < len(rs) && rs[i+1] == ']' {
-				i++
-			}
-		case c == '(':
-			if i+1 < len(rs) && rs[i+1] == '?' {
-				if i+3 < len(rs) && rs[i+2] == 'P' && rs[i+3] == '<' {
-					n++
-				}
-			} else {
-				n++
-			}
-		}
-	}
-	return n
-}
-
 // LowerChainProviders is lower_chain_providers: Mihomo filters original names
 // before applying provider overrides. runtime is the lowered profile, main
 // the generated Mihomo document (modified in place).
@@ -572,6 +539,7 @@ func LowerChainProviders(runtime, main *jsonx.Object) error {
 		}
 		var use []any
 		var patterns []string
+		var captures []int
 		if strings.Contains(filterValue, "`") {
 			patterns = strings.Split(filterValue, "`")
 		}
@@ -649,11 +617,20 @@ func LowerChainProviders(runtime, main *jsonx.Object) error {
 					parts[i] = "(?:" + p + ")"
 				}
 				provider.Set("filter", strings.Join(parts, "|"))
+				if captures == nil {
+					for _, pattern := range patterns {
+						compiled, err := rules.CompilePyRegex(pattern, false)
+						if err != nil {
+							return fmt.Errorf("compile chain provider filter: %w", err)
+						}
+						captures = append(captures, compiled.Groups())
+					}
+				}
 				rules := []any{}
 				for rank, pattern := range patterns {
 					rules = append(rules, jsonx.Obj(
 						"pattern", fmt.Sprintf(`^(?!%s)(?=[\s\S]*?(?:%s))([\s\S]*)$`, pyReEscape(orderTag), pattern),
-						"target", fmt.Sprintf("%s%d_$%d", orderTag, rank+1, countGroups(pattern)+1)))
+						"target", fmt.Sprintf("%s%d_$%d", orderTag, rank+1, captures[rank]+1)))
 				}
 				override.Set("proxy-name", rules)
 			}
