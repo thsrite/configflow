@@ -1,0 +1,222 @@
+[
+  {
+    "id": "47c2950d2e0846201ef2472929e998d5416fd82400c2f70fabe956a3e6c91525",
+    "category": "5.7 alias rejection diagnostics",
+    "native": "0187503b585d2e96a4d92e17fcbd6d5298a4bb704b9b549c103e48ef4b907470"
+  },
+  {
+    "id": "3b480b0b372595a64d427cc25d476e169aec810dd9d3a37216936d62813f1da1",
+    "category": "5.7 alias rejection diagnostics",
+    "native": "0187503b585d2e96a4d92e17fcbd6d5298a4bb704b9b549c103e48ef4b907470"
+  },
+  {
+    "id": "81d66b9edd6e14cc5c192d202ec8805075edc6fafbb18b094928bcd3a7a0826f",
+    "category": "5.7 alias rejection diagnostics",
+    "native": "449dbf7036b7216dafb88d424d5b9f968db4ab47ae3c03c6309efefba89b40bf"
+  },
+  {
+    "id": "6ea7f3bc4767487d16792dbb6b8378e5ddd315429bbca0c8ca4f29ec1959c1bf",
+    "category": "5.7 alias rejection diagnostics",
+    "native": "449dbf7036b7216dafb88d424d5b9f968db4ab47ae3c03c6309efefba89b40bf"
+  },
+  {
+    "id": "9a1cd247f2600bf4bab187b8abba702f60fa6d8a5bffa51915558354d165a67c",
+    "category": "Python bug: append after alias",
+    "native": "80754772cf2a50af99b77451f0725424108eabe86960386142d4d854615854f5"
+  },
+  {
+    "id": "26ee9d7a0fb75efdecfddafc83e896f15c5b205941d61ee6bec45b0100a8fbc8",
+    "category": "D3 quoted scalar folding",
+    "native": "becf4de644e33dcada2598224fb402b660efb62b5cc949b54a0c695ec7c4916a"
+  },
+  {
+    "id": "535f3ef67e562d877e5236cc129384f5ef6990bb6ad07bea85f7fc7ebbd5dc23",
+    "category": "D3 quoted scalar folding",
+    "native": "71e8dc0cd31676298090aa55d051e567570a39a45b4878909fd907c43d3aad91"
+  },
+  {
+    "id": "1cb1d79c6c45e38b793076880006786f556f3c015336b37f006ff96c83fed881",
+    "category": "D3 quoted scalar folding",
+    "native": "becf4de644e33dcada2598224fb402b660efb62b5cc949b54a0c695ec7c4916a"
+  },
+  {
+    "id": "f50d64b0a8af9cd6c7c83185351301f28ec1e5660c765952794123b5876b81f0",
+    "category": "D3 quoted scalar folding",
+    "native": "4ae20dae1db011588b8248b8d224b2be0837fb9af3f714dafc2b70fd7474733e"
+  },
+  {
+    "id": "d8ac215cd350d26b951b539710224212f5afe6fce10d363146e9e2a3253776de",
+    "category": "D3 quoted scalar folding",
+    "native": "4ae20dae1db011588b8248b8d224b2be0837fb9af3f714dafc2b70fd7474733e"
+  },
+  {
+    "id": "7f3911ae66b0a8723d3015dab1e4e3f34cdceb722634f377646bb526d74de997",
+    "category": "D3 quoted scalar folding",
+    "native": "52ba686ccadac5c2058355e9984dedc6a2463284d74bd8f9b0dae1768cd13f09"
+  },
+  {
+    "id": "ec99ee0cfb78d056ac67349abe82b28240b4cdc70856060da6940b14c449a8cc",
+    "category": "D3 quoted scalar folding",
+    "native": "52ba686ccadac5c2058355e9984dedc6a2463284d74bd8f9b0dae1768cd13f09"
+  },
+  {
+    "id": "2e961bd19442d04c8f00a1f7bc8c45e25b9028200cae6351a730cc399b48e612",
+    "category": "D3 quoted scalar folding",
+    "native": "7ada9dd9e904e0af0edd2e3c4414cb7d03f743f3d790a59df28b672b6848a14c"
+  },
+  {
+    "id": "857196302d6e9d2b1042530fa8730cbfd97a5361c12c0fdd70cc4c32307e9663",
+    "category": "D3 quoted scalar folding",
+    "native": "7ada9dd9e904e0af0edd2e3c4414cb7d03f743f3d790a59df28b672b6848a14c"
+  },
+  {
+    "id": "fa5268a4ebc0bdeee023e753871533652e1de720dfa5c5999db5cc197e479951",
+    "category": "Python bug: empty sequence",
+    "native": "0dd294d7a8361f1b24db4538697c1ab7f5590a5ef037da9ca74489f992024b66"
+  },
+  {
+    "id": "9d5fbf8b7faac28fbda0d26cd56357b58b077cbd0b9f378041fa14cfd927bca8",
+    "category": "Python bug: empty sequence",
+    "native": "750fb15d29ab6c17e404db41fd76bbfb1a998c7c0ae8c9be6986aa5dd0f23812"
+  },
+  {
+    "id": "3e0b22e054c2054e897f34ceefe6da3e38f69e4fc701066dfda399231968a64f",
+    "category": "Python bug: empty sequence",
+    "native": "a3391a7a473af8d4b6485bb5f0471b2a0f5548927015cdd8257a8d803611adbd"
+  },
+  {
+    "id": "962279acf8d52ae95727112286c413d1e44942dec7b1f104473fa7ddaf5d0215",
+    "category": "Python bug: empty sequence",
+    "native": "5e3b4adb187b24dd2a2f32541b1842a14076acb868d98f0487ebff64ae2e4b30"
+  },
+  {
+    "id": "4c9a2f1873740b0b0a207339f637ddbdcd13de4a5f08a7b1668a7a5f3baebf82",
+    "category": "Python bug: empty sequence",
+    "native": "f2ca0336c78c06748c1e0990fa2e12375eebf548f1ba410552a1307d5f67fc6f"
+  },
+  {
+    "id": "825e9c5fa71d96b2654414809469113acb8a342f17d3f88e1b4da7548d80a905",
+    "category": "Python bug: empty sequence",
+    "native": "98e357b3267b0fe729ff11d98ba85fc8a897e7b3d2b1f896d5f536fed050a51a"
+  },
+  {
+    "id": "ad4895e9ce8feeece05e0cc119c4e9b4bc33a62fd23f12104828c29511aef366",
+    "category": "Python bug: empty sequence",
+    "native": "6f183fee1dead1ea5642b6d8b02585ae04635f15d88f7e28a6be2e3dc8ba224b"
+  },
+  {
+    "id": "8d8f8cd4972b88340baab8bfb86623e1fddaa1224f23f14be6e66a788248ec46",
+    "category": "Python bug: empty sequence",
+    "native": "1bec7a5c8e5d17a2e79895312a9ec99d565d3f7f198b3f8960c0eb698841e0b3"
+  },
+  {
+    "id": "7f4c86af7b053e70ed00b1ae9d5a33d9448cfa8c0d3d6ff2d96721a237701a5f",
+    "category": "Python bug: empty sequence",
+    "native": "a8d02ae5816a1b941f23e010bc69efce6e765fdf982b314e8573608c99b31251"
+  },
+  {
+    "id": "1175c9089e027060496905841b3476b02272ea4607f602b9c1505fb52bda969f",
+    "category": "Python bug: empty sequence",
+    "native": "66843fcbc8400c147702a60a063128820605376c4167a57e0480dae07db461e5"
+  },
+  {
+    "id": "a80d46a424ec5f958f60d98366eeb36effa3f04980dad9f178417c26b1bbd3ea",
+    "category": "Python bug: empty sequence",
+    "native": "8af7c5cc0168941a7b8dc4878852d448f6ba7adf209bbdc75a5612c27169c581"
+  },
+  {
+    "id": "658037c074b873a3506075adf04a6bea0fb299ba96da5971575a5647c6c8b653",
+    "category": "Python bug: empty sequence",
+    "native": "9261d06d28d323d06234360ee9436883dd4c909e1a6c69d5d2f5ce322e1b15af"
+  },
+  {
+    "id": "1623e285a44146016c2e7cd3e2da08f8954f66586092c3b5d4653be7b5340bfa",
+    "category": "Python bug: empty sequence",
+    "native": "fe0922a5a1f74c9a93db0e83ab61ec7c618898c73f2e387997b28a8583460b7d"
+  },
+  {
+    "id": "2240e98dda81c32a4649c2ac2d53bb55c427143bd4294292d844001f251ded08",
+    "category": "Python bug: empty sequence",
+    "native": "deb9f1f92a4abaf45f6514b9364dc1012634eaead0566edb89a6b3f7a671ac7b"
+  },
+  {
+    "id": "3a0fd958b86a9f70d2139eadd04e4d07fca64b7824751b95c57ee765d04d5a6f",
+    "category": "Python bug: empty sequence",
+    "native": "8ded7c5d665cfaae39939fae2be02f058db7b4026fb13eb08fae883b5a9879ab"
+  },
+  {
+    "id": "549abb1373a72fc2ed0c46257bb61041c078983257723628d37e97a1547ff465",
+    "category": "Python bug: empty sequence",
+    "native": "128e49b2413bd6a32dcfd516df100dba7e4a4a250477c3657750160bedee5eac"
+  },
+  {
+    "id": "42987c9b4ef62dff13a97d5d955f7fffb6eb59fdbd7a9ac62338a300e2711f71",
+    "category": "Python bug: empty sequence",
+    "native": "a82a1037b93b2670c737ec02b462cc7b4cd4153e887efbde3369243d0b48f1b4"
+  },
+  {
+    "id": "ccfde911c526cdabc595654630a7b7e719d55e66cfa37d1b3cdaaf8c64e7a5ba",
+    "category": "Python bug: empty sequence",
+    "native": "8028a9f131ada3f25793ca316c61f48c155f181a7601b95596f9f36413e7a8f3"
+  },
+  {
+    "id": "cee5895c297400fa4cbdc815128b074b84bc687a4f1537f2bff6d0808d938ad5",
+    "category": "Python bug: empty sequence",
+    "native": "119e8c9189513a8abc05e70baa9950819886bde0e85d924aee7a0d27b6f72423"
+  },
+  {
+    "id": "d3df0b71bb82da01a46be72053be76645bd0d4957717f0b1787d4f41ab7daf4a",
+    "category": "Python bug: empty sequence",
+    "native": "89c776a6d09dc475064741b7681ff3690aeb7b1b4745a756f692f8e9efb81fde"
+  },
+  {
+    "id": "1c9a1765c5b3f3a4c7b030439d12d436a2f736053caee4370d71112bfeabae4f",
+    "category": "5.7 alias rejection diagnostics",
+    "native": "881bf754117b1b4506c737c38a4daaa011550558fd8114d45355624a44e04286"
+  },
+  {
+    "id": "f2efb6539a1fde8952f23e8ea614edc4eaa86fb0e5c05193496b2a627addc16f",
+    "category": "5.7 alias rejection diagnostics",
+    "native": "881bf754117b1b4506c737c38a4daaa011550558fd8114d45355624a44e04286"
+  },
+  {
+    "id": "ba9805b497271c442c0762d3948c89baca40bc54bc629aa25a174447dda89a92",
+    "category": "D3 quoted scalar folding",
+    "native": "becf4de644e33dcada2598224fb402b660efb62b5cc949b54a0c695ec7c4916a"
+  },
+  {
+    "id": "c20d548daf37ee34cb4dd93a46f4deebad7ef24dbab52662e89570dd1977a9cf",
+    "category": "D3 quoted scalar folding",
+    "native": "8e39b0e60ece7d5e3b72035ca8420280cadf04e18db0710408e1d537cf8c3942"
+  },
+  {
+    "id": "a2c3b8cb7981afbe377d99461e6bec651de5141e0662074e0a715a8249b3e6af",
+    "category": "5.7 Node mapping keys",
+    "native": "e75775a8dc412a9ab40e5bb42e65e22cb28bd591ef9ae719c29f3fe6ff53ea0a"
+  },
+  {
+    "id": "73a587c01d02deb4ed1ca188952083f93caea2f19bb62ec2c14f80d75f6b7a4c",
+    "category": "5.7 Node mapping keys",
+    "native": "91cab98f8aea5efc4b844616da69dbc78c96a2e4b12d68c8de0bc29d1587fe8d"
+  },
+  {
+    "id": "06598857c4ad7feacb76b8525fd842049f1f820d0fd82a61de509abee023b06c",
+    "category": "5.7 Node mapping keys",
+    "native": "b32f38c8575ed5a13007081b3d9b6bc97c82c3e5ed42d157cc88d8472d6bd80c"
+  },
+  {
+    "id": "b148b81c965224cb937adbc3d8c29d749a8b086921c4fab82575d1c3abb7ad05",
+    "category": "5.7 Node mapping keys",
+    "native": "ae8c161525622176ea9c7dd0dfaf2dc4ceffb9a67ee1b5d00c0ae40b4755795e"
+  },
+  {
+    "id": "4c1dae869bc3274d15356bdef4497481bc25dc37a74e6b6c9f90698a6d385e70",
+    "category": "5.7 Node mapping keys",
+    "native": "6e13015f362161e39003f117629f81560f96b1d70605943e1ca907a3f969ffd8"
+  },
+  {
+    "id": "1f52779aba8e3afdfdd51cd1f8507e9af3d2a68d52fbcb3c8b6923a33617a2d3",
+    "category": "5.7 binary scalar text",
+    "native": "f71737b8cd99b081f913f88f59e05f74b7faa51e9f170a5f89c5167610f1ed47"
+  }
+]

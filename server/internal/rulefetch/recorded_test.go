@@ -218,6 +218,7 @@ func TestRecordedSuiteCalls(t *testing.T) {
 	sc := bufio.NewScanner(zr)
 	sc.Buffer(make([]byte, 1<<20), 1<<28)
 	rows, failures := 0, map[string]int{}
+	classes := map[string]int{}
 	for sc.Scan() {
 		value, err := jsonx.Parse(sc.Bytes())
 		if err != nil {
@@ -252,6 +253,10 @@ func TestRecordedSuiteCalls(t *testing.T) {
 			if url, _ := args.Value("url").(string); urlAccepted(fn, url, args.Value("result")) {
 				continue
 			}
+			if category := nativeReplayDifference(t, "recorded", fn, row.Value("args"), gotText, wantText); category != "" {
+				classes[category]++
+				continue
+			}
 			failures[fn]++
 			if failures[fn] <= 3 {
 				t.Errorf("%s (%s)\nargs %.600s\n got %.800s\nwant %.800s", fn, row.GetString("test"),
@@ -259,6 +264,7 @@ func TestRecordedSuiteCalls(t *testing.T) {
 			}
 		}
 	}
+	t.Logf("N7-3b classifications: %v", classes)
 	if err := sc.Err(); err != nil {
 		t.Fatal(err)
 	}

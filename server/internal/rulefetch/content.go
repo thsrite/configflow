@@ -252,16 +252,16 @@ func normalizeMihomoYAML(content string) (string, error) {
 	if root.Kind != yaml.MappingNode {
 		return "", errors.New(msgYAMLPayload)
 	}
-	pairs := payloadPairs(root)
-	if len(pairs) != 1 || pairs[0][1].Kind != yaml.SequenceNode {
-		return "", errors.New(msgUniquePayload)
-	}
-	payload := pairs[0][1]
 	var anchor bool
 	walkRuleNodes(root, func(n *yamlx.Node) { anchor = anchor || n.Anchor != "" || n.Kind == yaml.AliasNode })
 	if anchor {
 		return "", errors.New(msgDeliveryAliases)
 	}
+	pairs := payloadPairs(root)
+	if len(pairs) != 1 || pairs[0][1].Kind != yaml.SequenceNode {
+		return "", errors.New(msgUniquePayload)
+	}
+	payload := pairs[0][1]
 	for _, node := range payload.Content {
 		if !singleLineStr(node) {
 			return "", errors.New(msgDeliveryItem)
@@ -712,17 +712,22 @@ func remoteTextEntries(content string, ruleFormat any) ([]textEntry, []any) {
 		return nil, problems
 	}
 	payload := pairs[0][1]
-	if payload.Kind != yaml.SequenceNode {
-		problem(payload.Line, msgPayloadList)
-		return nil, problems
-	}
 	walkRuleNodes(root, func(n *yamlx.Node) {
 		if n.Anchor != "" || n.Kind == yaml.AliasNode {
 			problem(n.Line, msgRemoteAliases)
 		}
 	})
+	if payload.Kind != yaml.SequenceNode {
+		if payload.Kind != yaml.AliasNode {
+			problem(payload.Line, msgPayloadList)
+		}
+		return nil, problems
+	}
 	var entries []textEntry
 	for _, node := range payload.Content {
+		if node.Kind == yaml.AliasNode {
+			continue
+		}
 		if !singleLineStr(node) {
 			problem(node.Line, msgRemoteItem)
 			continue

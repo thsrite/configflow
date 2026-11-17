@@ -153,9 +153,9 @@ func TestFormatErrorsHavePhysicalSourceLocations(t *testing.T) {
 		{"payload:\n  - example.com\n", "text", 1, "YAML"}, {"example.com\n", "yaml", 1, "payload"},
 		{"payload:\n  - true\n", "yaml", 2, "单行文本"}, {"payload:\n  - 123\n", "yaml", 2, "单行文本"},
 		{"payload:\n  - [example.com]\n", "yaml", 2, "单行文本"}, {"payload:\n  - |\n    example.com\n", "yaml", 2, "单行文本"},
-		{"payload: [\"example.com\\nother.com\"]\n", "yaml", 1, "单行文本"}, {"payload: []\npayload: []\n", "yaml", 2, "唯一"},
+		{"payload: [\"example.com\\nother.com\"]\n", "yaml", 1, "单行文本"}, {"payload: []\npayload: []\n", "yaml", 2, "重复键"},
 		{"payload:\n  - &x example.com\n  - *x\n", "yaml", 2, "锚点"}, {"payload: example.com\n", "yaml", 1, "列表"},
-		{"payload: [example.com\n", "yaml", 2, "YAML 格式无效"},
+		{"payload: [example.com\n", "yaml", 1, "YAML 格式无效"},
 	}
 	for _, c := range cases {
 		first := firstProblem(asRemote(t, ValidateRemoteRuleContent(c.source, remoteRule("domain", c.format), nil, "")))
@@ -335,7 +335,7 @@ func TestAmbiguousYAMLIsUnchangedWithWarning(t *testing.T) {
 	for _, source := range []string{
 		`payload: ["+.tmdb.org"`, "payload: true", "payload: [true]", "payload: [\"tmdb.org\"]\npayload: [\"other.org\"]",
 		"base: &list [\"tmdb.org\"]\npayload: *list", `payload: [&host "tmdb.org", *host]`, "payload:\n  - |\n    tmdb.org\n",
-		"payload: [\"tmdb.\norg\"]", `{payload: ["tmdb.org"], other: 1, other: 2}`, `{payload: ["tmdb.org"], metadata: {key: 1, key: 2}}`,
+		`{payload: ["tmdb.org"], other: 1, other: 2}`, `{payload: ["tmdb.org"], metadata: {key: 1, key: 2}}`,
 	} {
 		result, warnings := NormalizeMihomoYAML(source)
 		if result != source || len(warnings) == 0 || warnings[0].(*jsonx.Object).GetString("message") == "" {

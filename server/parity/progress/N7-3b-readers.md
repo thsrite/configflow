@@ -61,3 +61,35 @@ proxyOf uses its existing failed-probe path. No bulk import/skip loop at these
 call sites, so no new silent skipping. Dedicated .32 tests prove policies/alias40
 never call the fake Sub-Store and never populate the proxy cache; syntax still
 falls back. Changed callers compile. Legacy scalar replay classification pending.
+
+Boundary classification is complete: rulefetch 9,058 changed call rows (including
+whole-suite recordings), all assigned §5.7/D1/D3 or the two documented Python
+editor fixes; 44 distinct special-case fingerprints cover 49 calls. Convert has
+48 distinct changed inputs with precise native output/error expectations; repo
+has30 explicit native golden expectations. Full per-class counts are in
+PROGRESS-config. Existing URI/URL and non-string-key recorder marker allowances
+remain separate. No record/generate bypass remains in the tests.
+
+Additional fixes/checks: shared proxy JSON key collisions fail explicitly; native
+proxy validation errors preserve the yamlx cause and the strategy-validation
+channel (repo adapters keep a ValueError/400 path). Removed the CPython allocation
+estimate/cache parser seam name in favor of a Go value-size estimate and
+parseProxyYAML. Refresh policy admission now precedes writes to both transport
+and validated-node caches; four entry tests prove preservation. Exact CRLF splice,
+no-op, BOM, comment/sequence order, valid empty YAML and alias append-order tests
+passed. Scoped legacy-reader grep is clear. Bare decoder inventory outside this
+scope is assigned to N7-3d by the coordinator.
+
+Final remote suite is pinned with RT_HOST=sunbroke@192.168.0.32 because rt now
+load-balances default runs between .32/.64. The initial automatically selected
+.64 final run was interrupted; it is not counted as final acceptance. Iteration
+checks had passed on the available test host; .63 was unreachable.
+
+Final full-suite consumer follow-up: C09 ApplyIP replay used the old editor's
+byte layout. Its1536 rows now keep every result/error-context field exact while
+comparing only changed YAML content as Nodes:198 D3 layout rows and36 native
+parser diagnostic suffix rows; all pass. No rules runtime reader was modified
+(N7-3d owns it). New escaped-line-continuation test proves exact-domain matching
+agrees with the equivalent one-line rule; illegal space-folded domains still
+fail validation. Initial full run stopped only on those stale C09 assertions;
+full acceptance is rerun after the focused consumer checks passed.

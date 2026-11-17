@@ -78,6 +78,7 @@ func TestReviewC14Corpus(t *testing.T) {
 	sc := bufio.NewScanner(zr)
 	sc.Buffer(make([]byte, 1<<20), 1<<28)
 	rows, failures, accepted := 0, map[string]int{}, 0
+	classes := map[string]int{}
 	for sc.Scan() {
 		value, err := jsonx.Parse(sc.Bytes())
 		if err != nil {
@@ -114,11 +115,16 @@ func TestReviewC14Corpus(t *testing.T) {
 			accepted++
 			continue
 		}
+		if category := nativeReplayDifference(t, "review", fn, row.Value("args"), gotText, wantText); category != "" {
+			classes[category]++
+			continue
+		}
 		failures[fn]++
 		if failures[fn] <= 4 {
 			t.Errorf("%s%.400s\n got %.600s\nwant %.600s", fn, encode(row.Value("args")), gotText, wantText)
 		}
 	}
+	t.Logf("N7-3b classifications: %v", classes)
 	if err := sc.Err(); err != nil {
 		t.Fatal(err)
 	}

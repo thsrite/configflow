@@ -140,6 +140,7 @@ func TestCorpus(t *testing.T) {
 	sc := bufio.NewScanner(zr)
 	sc.Buffer(make([]byte, 1<<20), 1<<26)
 	rows, failures := 0, map[string]int{}
+	classes := map[string]int{}
 	for sc.Scan() {
 		value, err := jsonx.Parse(sc.Bytes())
 		if err != nil {
@@ -175,12 +176,17 @@ func TestCorpus(t *testing.T) {
 			if urlAccepted(fn, input, args) {
 				continue
 			}
+			if category := nativeReplayDifference(t, "corpus", fn, row.Value("args"), gotText, wantText); category != "" {
+				classes[category]++
+				continue
+			}
 			failures[fn]++
 			if failures[fn] <= 4 {
 				t.Errorf("%s%s\n got %s\nwant %s", fn, encode(row.Value("args")), gotText, wantText)
 			}
 		}
 	}
+	t.Logf("N7-3b classifications: %v", classes)
 	if err := sc.Err(); err != nil {
 		t.Fatal(err)
 	}
