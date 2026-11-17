@@ -99,6 +99,19 @@ class BoundaryTests(unittest.TestCase):
                 ordered = side.rpc('snapshot')['fake']['ros']['/ip/firewall/nat']
                 self.assertEqual([item['.id'] for item in ordered], [second['.id'], first['.id']])
                 self.assertNotIn('place-before', ordered[0])
+                side.rpc('fake', action='fault', match={'peer': 'ros', 'method': 'PUT', 'path': '/rest/ip/route'},
+                         gate='actual-add-ack', apply=True, passthrough=True)
+                side.rpc('async', ident='actual-add', port=18081, method='PUT', path='/rest/ip/route',
+                         headers={**basic, 'Content-Type': 'application/json'},
+                         body=base64.b64encode(json.dumps({'dst-address': '10.57.0.0/24',
+                              'gateway': '10.44.0.2', 'comment': 'real gated acknowledgement'}).encode()).decode())
+                side.rpc('fake', action='wait', gate='actual-add-ack')
+                side.rpc('fake', action='release', gate='actual-add-ack')
+                actual = side.rpc('join', ident='actual-add')
+                self.assertEqual(actual['status'], 201)
+                actual = json.loads(base64.b64decode(actual['body']))
+                self.assertRegex(actual['.id'], r'^\*[0-9A-F]+$')
+                self.assertEqual(actual['dst-address'], '10.57.0.0/24')
                 login = {'username': 'test-admin', 'passwd': hashlib.md5(DEVICE_PASSWORD.encode()).hexdigest(),
                          'pass': base64.b64encode(('salt_11' + DEVICE_PASSWORD).encode()).decode()}
                 self.assertEqual(call(18082, '/Action/login', login)['code'], 0)

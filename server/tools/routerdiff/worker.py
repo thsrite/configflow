@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 import http.client
 import json
 import os
+import socket
 from pathlib import Path
 import signal
 import sqlite3
@@ -47,6 +48,7 @@ class Worker:
                            ipv6=options.get('fake_ipv6', False))
         self.pool = ThreadPoolExecutor(max_workers=16)
         self.pending = {}
+        self.open_clients = {}
         self.process = None
         self.log = None
 
@@ -127,6 +129,30 @@ class Worker:
             return self.stop(**values)
         if operation == 'request':
             return request(**values)
+        if operation == 'open_request':
+            ident = values.pop('ident')
+            if ident in self.open_clients:
+                raise ValueError('duplicate open public HTTP client')
+            if not values['path'].startswith('/api/'):
+                raise ValueError('open client is restricted to the owned public API')
+            connection = http.client.HTTPConnection('127.0.0.1', 5000, timeout=75)
+            try:
+                connection.request(values['method'], values['path'], headers=values.get('headers', {}),
+                    body=base64.b64decode(values['body']) if values.get('body') is not None else None)
+            except Exception:
+                connection.close()
+                raise
+            self.open_clients[ident] = connection
+            return {'sent': ident}
+        if operation == 'abandon':
+            connection = self.open_clients.pop(values['ident'])
+            try:
+                if connection.sock is not None:
+                    connection.sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass  # The server may already have closed its end.
+            connection.close()
+            return {'closed': values['ident']}
         if operation == 'async':
             ident = values.pop('ident')
             if ident in self.pending:
@@ -151,6 +177,8 @@ class Worker:
 
     def close(self):
         self.world.release_all()
+        for connection in self.open_clients.values():
+            connection.close()
         self.stop()
         self.pool.shutdown(wait=True, cancel_futures=True)
         self.world.close()

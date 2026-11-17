@@ -65,6 +65,7 @@ class Case:
     pause_before: float = 0
     preserved: tuple = ()
     console_patterns: tuple = ()
+    capture_before_prepare: bool = False
 
 
 def at(document, path):

@@ -7,7 +7,7 @@ import unittest
 
 from cases import Case, Ref
 from inventory import load
-from run import execute, poll, shape
+from run import execute, poll, shape, wait_guard
 
 
 class ObservationSide:
@@ -40,6 +40,34 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_guard_wait_never_retries_an_accepted_write(self):
+        side = ObservationSide(status=200)
+        self.assertEqual(wait_guard(side, '/api/routers/test', 0, strict=False)['status'], 200)
+        self.assertEqual(len(side.requests), 1)
+        self.assertEqual(side.requests[0]['document'], [])
+        with self.assertRaisesRegex(RuntimeError, 'guard did not settle'):
+            wait_guard(ObservationSide(status=200), '/api/routers/test', 0)
+        self.assertEqual(wait_guard(ObservationSide(status=400), '/api/routers/test', 0)['status'], 400)
+
+    def test_missing_go_preparation_reference_never_uses_python_value(self):
+        class FlowSide(ObservationSide):
+            token = None
+
+            def rpc(self, operation, **values):
+                if operation == 'open_request':
+                    return {'sent': values['ident']}
+                return super().rpc(operation, **values)
+        routes, _ = load()
+        world = pair(FlowSide(), FlowSide())
+        world.python.observations['preview'] = {'body': {'token': 'python-only-token'}}
+        case = Case('flow', 'R001', 'GET', '/api/agents/test/upstream-routers', 200,
+                    prepare=({'rpc': 'open_request', 'ident': 'owned', 'method': 'POST', 'path': '/api/test',
+                              'document': {'token': Ref('preview', '/body/token')}},))
+        result = execute(world, case, {('GET', shape(routes['R001'].path))}, routes)
+        self.assertEqual(result['status'], 'blocked-by-difference')
+        self.assertEqual(world.go.requests, [])
+        self.assertEqual(result['request']['preceding_abandoned_requests'][0]['document']['token'], 'python-only-token')
+
     def test_matching_reference_metadata_crash_is_not_a_pass(self):
         routes, _ = load()
         healthy = {'success': True, 'gateways': [{'agent_id': 'm-a', 'state': 'needs_persist', 'forward_filter': None},

@@ -20,6 +20,7 @@ import sync
 import upstream
 import dns
 import gateway
+import disconnect
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair
 from harness import decode_response
@@ -64,6 +65,19 @@ def poll(side, values, expected, seconds, strict=True):
         time.sleep(.1)
 
 
+def wait_guard(side, path, seconds, strict=True):
+    # Retry only the deliberate non-object rejection while L1 is busy. Never
+    # retry an accepted write or any other status; all storage remains compared.
+    deadline = time.monotonic() + seconds
+    while True:
+        response = side.request(method='PUT', path=path, document=[])
+        if response['status'] != 409 or time.monotonic() >= deadline:
+            if strict and response['status'] != 400:
+                raise RuntimeError('reference public write guard did not settle to validation refusal')
+            return response
+        time.sleep(.1)
+
+
 def execute(pair, case, available, routes):
     if not 0 <= case.pause_before <= 605:
         raise ValueError('real-time boundary wait exceeds reviewed fixture limit')
@@ -76,7 +90,7 @@ def execute(pair, case, available, routes):
                   + '/' + str(case.pause_before) + 's', flush=True)
     request = dict(method=case.method, path=case.path, document=case.document, raw=case.raw,
                    headers=case.headers, auth=case.auth)
-    observations, snapshots = {}, {}
+    observations, snapshots, flow_requests, flow_checks = {}, {}, {}, {}
     missing_routes = [ident for ident in (case.route, *case.requires)
                       if (routes[ident].method, shape(routes[ident].path)) not in available]
     implemented = not missing_routes and not pair.go.missing_effects
@@ -84,7 +98,17 @@ def execute(pair, case, available, routes):
     for name, side in pair.sides.items():
         if name == 'go' and not implemented:
             continue
-        for control in case.prepare:
+        try:
+            preparation = cases.resolve(list(case.prepare), side.observations)
+        except (KeyError, IndexError, TypeError) as error:
+            if name != 'go':
+                raise
+            blocked_reference = 'Go preparation lacks a required own-side HTTP reference: ' + str(error)
+            break
+        before_preparation = logical_snapshot(side.rpc('snapshot')) if case.capture_before_prepare else None
+        flow_requests[name] = []
+        flow_checks[name] = []
+        for control in preparation:
             if control.get('rpc') == 'restart':
                 side.rpc('stop', kill=control.get('kill', False))
                 side.start()  # Same production entry and fresh public login.
@@ -93,6 +117,28 @@ def execute(pair, case, available, routes):
                 reply = side.request(**values)
                 if reply['status'] != control['expected'] or reply['content'].get('success') is not True:
                     raise RuntimeError(case.ident + ': public HTTP fixture setup failed on ' + name)
+            elif control.get('rpc') == 'open_request':
+                values = {key: value for key, value in control.items() if key not in ('rpc', 'document')}
+                document = control.get('document')
+                flow_requests[name].append({'method': values['method'], 'path': values['path'], 'document': document})
+                values['headers'] = {'Content-Type': 'application/json', **values.get('headers', {})}
+                if side.token:
+                    values['headers'].setdefault('Authorization', 'Bearer ' + side.token)
+                values['body'] = base64.b64encode(json.dumps(document, ensure_ascii=False, separators=(',', ':')).encode()).decode() \
+                                 if document is not None else None
+                side.rpc('open_request', **values)
+            elif control.get('rpc') == 'abandon':
+                side.rpc('abandon', ident=control['ident'])
+            elif control.get('rpc') == 'assert_http':
+                values = {key: value for key, value in control.items() if key not in ('rpc', 'expected')}
+                reply = side.request(**values)
+                flow_checks[name].append({'request': values, 'response': response_view(reply)})
+                if name == 'python' and reply['status'] != control['expected']:
+                    raise RuntimeError(case.ident + ': reference flow guard reached the wrong HTTP status')
+            elif control.get('rpc') == 'wait_guard':
+                reply = wait_guard(side, control['path'], control.get('seconds', 30), strict=name == 'python')
+                flow_checks[name].append({'request': {'method': 'PUT', 'path': control['path'], 'document': []},
+                                          'response': response_view(reply)})
             elif control.get('rpc') == 'begin':
                 values = {key: value for key, value in control.items() if key != 'rpc'}
                 ident = values['ident']
@@ -102,7 +148,8 @@ def execute(pair, case, available, routes):
                 side.rpc('async', **values)
             else:
                 side.rpc('fake', **control)
-        before = side.pending[case.join]['before'] if case.join else logical_snapshot(side.rpc('snapshot'))
+        before = (before_preparation if before_preparation is not None else
+                  side.pending[case.join]['before'] if case.join else logical_snapshot(side.rpc('snapshot')))
         try:
             own_request = {**request, 'document': cases.resolve(case.document, side.observations),
                            'path': cases.resolve(case.path, side.observations)}
@@ -129,6 +176,8 @@ def execute(pair, case, available, routes):
         observations[name] = response_view(response)
         if settled:
             observations[name]['settled_reads'] = settled
+        if flow_checks[name]:
+            observations[name]['flow_checks'] = flow_checks[name]
         side.observations[case.ident] = observations[name]
         after = logical_snapshot(side.rpc('snapshot'))
         if after['fake']['errors']:
@@ -283,6 +332,8 @@ def execute(pair, case, available, routes):
     request['headers'] = {key: '<synthetic credential>' if key.lower() == 'authorization' else value
                           for key, value in request['headers'].items()}
     request['raw'] = request['raw'].decode(errors='replace') if request['raw'] is not None else None
+    if flow_requests.get('python'):
+        request['preceding_abandoned_requests'] = flow_requests['python']
     safety = any((item.get('category') if isinstance(item, dict) else item.category) == 'safety' for item in found)
     status = ('blocked-by-difference' if blocked_reference else 'go-unimplemented' if not implemented else 'different' if safety else
               'reference-bug-observation' if case.python_bug else 'different' if found else 'compared')
@@ -433,7 +484,8 @@ def main():
               ('agent-scope', fixtures.agent_options(), (fixtures.agent_scope,)),
               ('forwarding', fixtures.agent_options(), (fixtures.forwarding,)),
               ('forwarding-failures', fixtures.agent_options(),
-                    (gateway.reads, gateway.writes, gateway.response_limits, gateway.malformed_filter_bug)),
+                    (gateway.reads, gateway.writes, gateway.response_limits, gateway.display_filter, gateway.malformed_filter_bug)),
+              ('forwarding-uncertain', fixtures.agent_options(), (gateway.uncertain, gateway.timeouts)),
               ('probe-errors', options, (probes.routeros, probes.ikuai)),
               ('probe-tls', probes.tls_options(), (probes.tls,)),
               ('probe-ipv6', probes.ipv6_options(), (probes.ipv6,)),
@@ -460,6 +512,9 @@ def main():
               ('dns-guard', dns.options(), (dns.guard,)),
               ('dhcp-ikuai-plain', dns.ikuai_options(), (dns.ikuai_dhcp,)),
               ('dns-ha', dns.ha_options(), (dns.ha,)),
+              ('disconnect-release', releases.options(), (disconnect.release,)),
+              ('disconnect-fixed', clients.options(), (disconnect.fixed,)),
+              ('disconnect-manual', options, (disconnect.manual,)),
               ('auth-off-editors', auth_off(options), (workflows.client_drafts, workflows.workspace_drafts,
                     workflows.router_updates, workflows.runtime_reads, workflows.sync_settings,
                     workflows.manual_routes, workflows.router_creates, workflows.unlinked_inspection, probes.auth_disabled)),

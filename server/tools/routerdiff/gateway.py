@@ -15,7 +15,7 @@ def preparation():
 
 def fault(operation, **values):
     return {'action': 'fault', 'match': {'peer': 'agent', '/headers/host': '10.44.0.2:18083',
-            'path': '/api/linux-gateway/' + operation}, **values}
+            'path': '/api/linux-gateway/' + operation}, **deepcopy(values)}
 
 
 def body():
@@ -121,3 +121,77 @@ def malformed_filter_bug():
                    python_bug='AGENT_FORWARD_FILTER_UNHASHABLE',
                    console_patterns=(r"TypeError: unhashable type: 'dict'" if label == 'state-object' else
                                      r"TypeError: unhashable type: 'list'",))
+
+
+def display_filter():
+    for index, value in enumerate((None, False, [], 'wrong', {}, {'state': 'wrong'}, {'state': 0})):
+        data = body()
+        data['forward_filter'] = value
+        yield Case('R025/filter-dropped-' + str(index), 'R025', 'GET', '/api/routers/gateway-forwarding', 200,
+                   ('H0016',), prepare=(*preparation(), fault('status', status=200, body=data)),
+                   unchanged=False, effect='device-read', checks={'gateways/0/forward_filter': None,
+                                                                'gateways/0/state': 'needs_persist'})
+    commands = ['iptables -I FORWARD -i tun0 -j ACCEPT', 'nft add rule inet filter forward iifname "tun0" accept',
+                'iptables -I FORWARD -i tun0 -j ACCEPT && nft add rule inet filter forward accept']
+    source = {'kind': 'nftables', 'backend': 'nft', 'hook': 'forward', 'family': 'inet',
+              'table': 'filter', 'chain': 'forward', 'policy': 'drop', 'detail': '\x00 来源🧪\u200b\n'}
+    remedy = {'source': 'iptables', 'label': '\x00 允许转发🧪\u200b', 'device': 'tun0',
+              'commands': commands + ['curl https://example.com', 'iptables -I FORWARD -i $(touch synthetic) -j ACCEPT',
+                  'iptables -I FORWARD -i tun0 -j ACCEPT; echo synthetic', 'iptables -I FORWARD -j ACCEPT > synthetic'],
+              'persist_note': '提示🧪' * 200}
+    data = body()
+    data['forward_filter'] = {'protocol': 1, 'state': 'may_drop', 'reason': 'forward_chain_drop', 'device': 'tun0',
+        'auto_redirect': True, 'policy': 'drop', 'input_policy': 'accept', 'flows': ['tun_tcp', 'forward', 'dns', 'forward', 'bad'],
+        'forward_protocols': ['udp', 'TCP', 'tcp', 'icmp', 'ssh'], 'sources': [None, {'kind': 'wrong'}] + [source] * 10,
+        'remedies': [None, {'source': 'wrong'}] + [remedy] * 8, 'hint': '\x00 提示🧪\u200b\n', 'verify': 7,
+        'checked_at': '2026-01-02T03:04:05Z', 'cached': True, 'unknown': 'must not appear'}
+    expected_source = {**source, 'detail': '来源🧪'}
+    expected_remedy = {**remedy, 'label': '允许转发🧪', 'commands': commands, 'persist_note': ('提示🧪' * 200)[:300]}
+    expected = {'protocol': 1, 'state': 'may_drop', 'reason': 'forward_chain_drop', 'device': 'tun0',
+        'auto_redirect': True, 'policy': 'drop', 'input_policy': 'accept', 'flows': ['forward', 'dns', 'tun_tcp'],
+        'forward_protocols': ['tcp', 'udp', 'icmp'], 'sources': [expected_source] * 8, 'remedies': [expected_remedy] * 6,
+        'hint': '提示🧪', 'verify': '', 'checked_at': '2026-01-02T03:04:05Z', 'cached': True}
+    yield Case('R025/filter-safe-display-shape', 'R025', 'GET', '/api/routers/gateway-forwarding', 200, ('H0016',),
+               prepare=(*preparation(), fault('status', status=200, body=data)), unchanged=False, effect='device-read',
+               checks={'gateways/0/forward_filter': expected})
+    data['forward_filter'].update(protocol=True, auto_redirect=1, cached=1, reason='Bad Reason', device='bad;device',
+                                  flows=['dns'], policy='invalid', input_policy=False, sources=[], remedies=[])
+    yield Case('R025/filter-exact-types', 'R025', 'GET', '/api/routers/gateway-forwarding', 200, ('H0016',),
+               prepare=(*preparation(), fault('status', status=200, body=data)), unchanged=False, effect='device-read',
+               checks={'gateways/0/forward_filter': {**expected, 'protocol': 0, 'auto_redirect': False, 'cached': False,
+                    'reason': '', 'device': '', 'flows': ['dns'], 'forward_protocols': [], 'policy': '', 'input_policy': '',
+                    'sources': [], 'remedies': []}})
+
+
+def uncertain():
+    for applied in (False, True):
+        label = 'applied' if applied else 'not-applied'
+        yield Case('R026/lost-reply-' + label, 'R026', 'POST', '/api/routers/gateway-forwarding', 502,
+                   ('R026-B03', 'T20'), document={'agent_id': 'm-a'},
+                   prepare=(*preparation(), fault('forwarding', apply=applied, disconnect=True)),
+                   unchanged=False, effect='device-only' if applied else 'device-read',
+                   message='未能确认转发持久化结果，请先刷新设备状态，勿重复操作。',
+                   checks={'code': 'AGENT_UNREACHABLE'},
+                   after_poll=({'path': '/api/routers/gateway-forwarding',
+                                'expect': {'gateways/0/state': 'persisted' if applied else 'needs_persist'}},),
+                   expected_requests=({'match': {'peer': 'agent', 'path': '/api/linux-gateway/forwarding'}, 'count': 1},))
+
+
+def timeouts():
+    for operation in ('status', 'forwarding'):
+        writing = operation == 'forwarding'
+        gate = 'Agent-' + operation + '-real-timeout'
+        yield Case('R025-26/real-timeout-' + operation, 'R026' if writing else 'R025',
+                   'POST' if writing else 'GET', '/api/routers/gateway-forwarding', 502 if writing else 200,
+                   ('R026-F13', 'T20') if writing else ('R025-F11', 'T20'),
+                   document={'agent_id': 'm-a'} if writing else None,
+                   prepare=(*preparation(), fault(operation, gate=gate, apply=writing, passthrough=writing,
+                                                  status=200, body=body())),
+                   finalize=({'action': 'release', 'gate': gate},), elapsed_min=44,
+                   unchanged=False, effect='device-only' if writing else 'device-read',
+                   message='未能确认转发持久化结果，请先刷新设备状态，勿重复操作。' if writing else None,
+                   checks={'code': 'AGENT_UNREACHABLE'} if writing else
+                          {'gateways/0/state': 'error', 'gateways/0/message': '暂时无法连接 Agent，请检查设备连接。',
+                           'gateways/1/state': 'needs_persist'},
+                   after_poll=({'path': '/api/routers/gateway-forwarding', 'expect': {'gateways/0/state': 'persisted'}},)
+                               if writing else ())

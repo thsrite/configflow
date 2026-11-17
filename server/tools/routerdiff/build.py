@@ -33,7 +33,9 @@ func writeTestManifest(app *httpx.App) error {
 '''
 
 
-def build(directory):
+def build(directory, parallelism=4):
+    if not 1 <= parallelism <= 64:
+        raise ValueError('build parallelism must be between 1 and 64')
     directory = Path(directory).resolve()
     directory.mkdir(parents=True, exist_ok=True)
     original = ROOT / 'server/cmd/configflow/manifest_default.go'
@@ -45,7 +47,7 @@ def build(directory):
     overlay = directory / 'overlay.json'
     overlay.write_text(json.dumps({'Replace': {str(original): str(observer)}}))
     binary = directory / 'configflow'
-    subprocess.run(['go', 'build', '-overlay', str(overlay), '-o', str(binary), './cmd/configflow'],
+    subprocess.run(['go', 'build', '-p', str(parallelism), '-overlay', str(overlay), '-o', str(binary), './cmd/configflow'],
                    cwd=ROOT / 'server', check=True)
     return binary
 
@@ -53,4 +55,6 @@ def build(directory):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('output', type=Path)
-    print(build(parser.parse_args().output))
+    parser.add_argument('--parallel', type=int, default=4)
+    args = parser.parse_args()
+    print(build(args.output, args.parallel))

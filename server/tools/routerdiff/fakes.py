@@ -162,7 +162,7 @@ class World:
             if fault and not fault.get('apply', False):
                 return self.fault_response(fault)
             response = getattr(self, request['peer'] + '_request')(request)
-            return self.fault_response(fault) if fault else response
+            return self.fault_response(fault) if fault and not fault.get('passthrough') else response
 
     @staticmethod
     def matches(request, match):
@@ -517,6 +517,8 @@ class World:
                 return True
             if action == 'fault':
                 values.setdefault('remaining', 1)
+                if values.get('passthrough') and not values.get('apply'):
+                    raise ValueError('a pass-through gate must execute the real fixture operation')
                 if values.get('gate'):
                     self.gates[values['gate']] = threading.Event()
                     self.entered_gates[values['gate']] = threading.Event()

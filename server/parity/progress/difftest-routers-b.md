@@ -569,3 +569,50 @@ Exact .32 command:
 cumulative; go-unimplemented50, referenced_entries7,
 python_bugs=[AGENT_FORWARD_FILTER_UNHASHABLE], complete=false,
 remaining_audits2301. No pending process. Task continues.
+
+Server-load rule update and new cancellation/Agent checks (2026-11-17):
+- Rebased cleanly again onto then-local go65c0e6d4 after coordinator's load notice.
+  Read server/scripts/gate.sh: final full race/full server tests/proddiff must use
+  that two-slot gate; on .64 pass -p4. No independent full-race/proddiff started.
+  Iteration is restricted to relevant routerdiff modules/worlds. Test build
+  observer now defaults to Go -p4, still only overlays the public manifest hook.
+- Rebuilt normal public Go binary on .64 at /tmp/routerdiff-build-302rx1dg/configflow.
+  Uptime load31.83/37.13/25.92 for the build; source/public hook unchanged. Targeted
+  recipe/runner tests9 passed0.369s. Domain manifest remains zero registered.
+- Real TCP abandonment infrastructure sends a public request without reading its
+  response, waits for a current device write gate, shuts down that exact client
+  socket, checks public write guard409 while held, releases the REAL fixture
+  operation/actual acknowledgement, then waits for guard400 validation refusal.
+  Retry only deliberately invalid[] while409; accepted writes are never retried.
+  No handler, context, Python function or Go implementation is patched.
+- Six real preview/write/read cases prove R011 still saves last_release/revision
+  and receipt, R005 saves binding/revision, R020 leaves the new manual route after
+  disconnect. Final snapshots wait for public completion/guard and R013 L2 read;
+  they are not transient mid-write samples. Own-side Ref applies equally to flow
+  preparation; missing Go refs block and never borrow Python tokens. Flow guard
+  responses are compared, including wrong Go early-unlock status.
+- Pass-through gate executes the independent fake and returns its actual dynamic
+  ID/HTTP ack; it does not fabricate a success. Real TCP fake boundary regression
+  verifies the201 and new row. Two negative runner checks prove preparation-ref
+  isolation and no retry of an incorrectly accepted invalid write.
+- Added9 untrusted forward_filter display variants: malformed-but-hashable values
+  discarded, exact primitives, stable enum ordering/dedup, source/remedy bounds,
+  Unicode control/format removal and safe command whitelist. These are returned
+  strings only; no displayed command is executed. Added two lost-forwarding-reply
+  outcomes and real45s GET/POST Agent timeouts; query confirms actual persisted
+  vs untouched state and no duplicate POST. The two timeouts took90.38s total.
+
+Exact new .64 commands and tails:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; uptime; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python build.py /tmp/routerdiff-build-302rx1dg --parallel 4; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_runner'`
+→ load31.83/37.13/25.92; binary path above; Ran9 tests in0.369s / OK.
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; uptime; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_runner test_boundary; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world disconnect-release --world disconnect-fixed --world disconnect-manual --output /tmp/routerdiff-disconnect.json'`
+→ load40.04/32.95/26.63; Ran13 tests in35.629s / OK; disconnect6 cumulative,
+go-unimplemented6, complete=false. Quiescent refinement's authoritative rerun:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build-302rx1dg/configflow --world disconnect-release --world disconnect-fixed --world disconnect-manual --output /tmp/routerdiff-disconnect-quiescent.json'`
+→ Ran11 tests in0.738s / OK; release2 in0.78s, fixed4 in1.03s, manual6 in0.35s;
+go-unimplemented6, referenced_entries3, complete=false, remaining_audits2301.
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; uptime; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary /tmp/routerdiff-build-302rx1dg/configflow --world forwarding-failures --world forwarding-uncertain --output /tmp/routerdiff-forwarding-composition.json --findings /tmp/routerdiff-forwarding-composition-findings.md'`
+→ load34.83/33.89/28.02; Ran9 tests in0.506s / OK; failure59, uncertain61,
+timeouts63 cumulative in90.38s; go-unimplemented63, referenced_entries9,
+python_bugs includes AGENT_FORWARD_FILTER_UNHASHABLE; complete=false,
+remaining_audits2301. No pending processes; latest full composition still pending.
