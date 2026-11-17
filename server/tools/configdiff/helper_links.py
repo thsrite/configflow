@@ -6,6 +6,18 @@ Unreachable/earlier-guard branches are deliberately absent.
 """
 
 LINKS = {
+    'R157-F19': ('POST /api/proxy-groups', ('H917',)),
+    'R149-F19': ('POST /api/profiles/<profile_id>/proxy-groups', ('H917',)),
+    'R159-F18': ('PUT /api/proxy-groups/<group_id>', ('H917',)),
+    'R185-F20': ('PUT /api/rules/<rule_id>', ('H917',)),
+    'R008-F15': ('GET /api/aggregations/<agg_id>/provider', ('D8',)),
+    'R220-F18': ('GET /api/subscriptions/<sub_id>/proxies', ('D8',)),
+    'R222-F13': ('GET /api/subscriptions/proxies', ('D8',)),
+    'R189-F12': ('PUT /api/rules/dns', ('H909',)),
+    'R189-F13': ('PUT /api/rules/dns', ('H912',)),
+    'R189-F15': ('PUT /api/rules/dns', ('H913',)),
+    'R185-F19': ('PUT /api/rules/<rule_id>', ('H913',)),
+    'R181-F11': ('PUT /api/rule-sets/<rule_set_id>', ('H913',)),
     'R068-F08': ('POST /api/generate/mosdns', ('H014', 'H015')),
     'R131-F08': ('POST /api/profiles/<profile_id>/generate/mosdns', ('H014', 'H015')),
     'R062-B90': ('POST /api/generate/<service>/artifact', ('X01',)),

@@ -40,10 +40,22 @@ def filename(reply, policy, subscription_id='sub-a'):
     return value
 
 
+def failure_comments(rows, status):
+    """O6 permits this proven native English diagnostic suffix to differ."""
+    original = '# Source: from local cache (fetch error: request_failed (exception_type=SubscriptionFetchError))'
+    suffixed = original[:-2] + ' status=' + str(status) + '))'
+    return [original if line == suffixed else line for line in rows]
+
+
 class Metadata:
-    def __init__(self, pair, *, profile='default', method='GET', yaml=True, served=True, subscription_id='sub-a'):
+    def __init__(self, pair, *, profile='default', method='GET', yaml=True, served=True, subscription_id='sub-a', fetch_error_status=None):
         self.pair, self.profile, self.method, self.yaml, self.served = pair, profile, method, yaml, served
         self.subscription_id = subscription_id
+        self.fetch_error_status = fetch_error_status
+
+    def comments(self, raw, policy):
+        rows = comments(raw, policy)
+        return failure_comments(rows, self.fetch_error_status) if self.fetch_error_status is not None else rows
 
     def reference(self, reply):
         self.pair.policy.end = time.time()
@@ -71,7 +83,7 @@ class Metadata:
                 continue
             try:
                 names.append(filename(reply, policy, self.subscription_id))
-                body_comments.append(comments(reply.body, policy) if self.method != 'HEAD' else [])
+                body_comments.append(self.comments(reply.body, policy) if self.method != 'HEAD' else [])
             except ValueError as error:
                 if index == 0:
                     raise DesignError('Python provider metadata changed: ' + str(error)) from error
@@ -96,7 +108,7 @@ class Metadata:
                         metadata.append(None)
                         continue  # An extra Go backup is a difference, not a bad Python fixture.
                     try:
-                        metadata.append(comments(path.read_bytes(), policy))
+                        metadata.append(self.comments(path.read_bytes(), policy))
                     except (OSError, ValueError) as error:
                         if index == 0:
                             raise DesignError('Python served provider lost metadata') from error

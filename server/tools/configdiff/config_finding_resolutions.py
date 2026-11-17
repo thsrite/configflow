@@ -41,14 +41,19 @@ def accepted_basis(item):
     mosdns_storage = (item['route'] == 'POST /api/mosdns/settings' and item['case'] == 'R090-F10'
                      and item['group'] == 'mosdns-whole-editor-failures'
                      and item['variant'] == 'SQLite-trigger-rejects-real-editor-commit' and statuses == (500, 500))
-    if not (version_method or mosdns_storage) and (item['route'] != 'POST /api/subscriptions/<sub_id>/fetch' or item['variant'] != ''):
+    provider_storage = (item['group'] == 'provider-named-graph-and-file-failures'
+                        and item['variant'] == 'last-good-provider-output-path-is-directory' and statuses == (500, 500)
+                        and (item['case'], item['route']) in {
+                            ('R220-F17', 'GET /api/subscriptions/<sub_id>/proxies'),
+                            ('R154-F17', 'GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies')})
+    if not (version_method or mosdns_storage or provider_storage) and (item['route'] != 'POST /api/subscriptions/<sub_id>/fetch' or item['variant'] != ''):
         return ''
     if version_method:
         status, title = 405, 'Method Not Allowed'
         description = 'The method is not allowed for the requested URL.'
         expected = {'message': description, 'success': False}
         fields, decision = {'headers.content-type', 'body'}, 'Step B #3'
-    elif mosdns_storage:
+    elif mosdns_storage or provider_storage:
         status, title = 500, 'Internal Server Error'
         description = ('The server encountered an internal error and was unable to complete your request. '
                        'Either the server is overloaded or there is an error in the application.')

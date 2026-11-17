@@ -17,6 +17,45 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_provider_failure_comment_allows_only_the_proven_english_status_suffix(self):
+        from providers import failure_comments
+        plain = '# Source: from local cache (fetch error: request_failed (exception_type=SubscriptionFetchError))'
+        suffix = plain[:-2] + ' status=403))'
+        self.assertEqual(failure_comments([plain], 403), failure_comments([suffix], 403))
+        for wrong in [suffix.replace('403', '500'), suffix.replace('local cache', 'remote source'),
+                      suffix.replace('SubscriptionFetchError', 'DifferentError'), suffix + ' extra',
+                      '# Subscription: changed', '# Proxies: 0']:
+            self.assertTrue(differences(failure_comments([plain], 403), failure_comments([wrong], 403)))
+        self.assertEqual(failure_comments(['# Subscription: same', suffix], 403), ['# Subscription: same', plain])
+
+    def test_provider_file_failure_approval_keeps_status_payload_and_storage_exact(self):
+        from config_finding_resolutions import annotate
+        description = ('The server encountered an internal error and was unable to complete your request. '
+                       'Either the server is overloaded or there is an error in the application.')
+        for case, route in [('R220-F17', 'GET /api/subscriptions/<sub_id>/proxies'),
+                            ('R154-F17', 'GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies')]:
+            item = {'case': case, 'route': route, 'variant': 'last-good-provider-output-path-is-directory',
+                    'group': 'provider-named-graph-and-file-failures', 'status': 'open',
+                    'python_status': 500, 'go_status': 500, 'differences': [], 'remaining_differences': [
+                        {'path': 'headers.content-type', 'kind': 'value', 'python': 'text/html; charset=utf-8', 'go': 'application/json'},
+                        {'path': 'body', 'kind': 'type', 'python': ['<!doctype html>', '<html lang=en>',
+                            '<title>500 Internal Server Error</title>', '<h1>Internal Server Error</h1>', '<p>' + description + '</p>'],
+                         'go': {'success': False, 'message': description}}]}
+            self.assertEqual(annotate([copy.deepcopy(item)])[0]['status'], 'accepted')
+            for label in ('message', 'extra-field', 'status', 'db', 'file', 'header', 'wrong-case', 'wrong-route'):
+                wrong = copy.deepcopy(item)
+                if label == 'message':
+                    wrong['remaining_differences'][1]['go']['message'] = 'wrong'
+                elif label == 'extra-field':
+                    wrong['remaining_differences'][1]['go']['extra'] = True
+                elif label == 'status':
+                    wrong['go_status'] = 400
+                elif label.startswith('wrong-'):
+                    wrong[label[6:]] = 'other'
+                else:
+                    wrong['remaining_differences'].append({'path': label + '.extra', 'kind': 'value', 'python': 0, 'go': 1})
+                self.assertEqual(annotate([wrong])[0]['status'], 'open', label)
+
     def test_generator_output_permission_observer_detects_chmod_and_persistent_writes(self):
         from cases.generator_edges import ReadonlyOutput
         observer = ReadonlyOutput(None)

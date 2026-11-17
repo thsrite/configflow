@@ -2042,6 +2042,10 @@ R062/R126-S90均用13种真实hosts缓存/DNS配置和真实Agent核心版本上
 
 所有下载S04以启用远端源、有效真实缓存和503 fake源证明零网络请求，DNS ZIP检查配套缓存规则；文本写失败用真实只读generated目录，不能用坏JSON代替。H152/H155–165/H167–169/H171–174由实际default/scoped preview到达，按本清单Python来源行断言准确错误和全SQL/files不变；H014的MRS下载错误在default/scoped分别关联R068/R131-F08。客户端中断与其他未到达helper仍未计覆盖。
 
+### Step B DNS/native与provider具体前提（批次122）
+
+R149/R157-F19、R159-F18用group默认DIRECT↔proxy确实改变已有following规则，从而触发自定义native的严格重建409；不是仅设置rule_dns_follow就认定走到失败。R180-F10/R184-F09的domain_set必须包含规则集真实派生路径/普通规则原子，删除400且完整状态不变。R185-F20须显式传dns，普通未传dns的修改是非严格warning路径。R154/R220-S04使用无URL来源证明的legacy缓存才先请求远端再降级；当前URL缓存按[subscription_refresh.py:126](../../backend/utils/subscription_refresh.py#L126)直接复用，不能强求重新下载。R154/R220-F12/F13是实际面板chain拒绝客户端，F14是坏拨号图不回缓存，F17用真实last-good写路径冲突；两个F17的HTML→JSON精确差异依维护者Step B #3接受，不接受额外副作用。
+
 冻结比较针对每个端自己的已校验bundle成员原始字节。配置通过公开settings改为另一份后，旧file仍必须等于旧成员，完整SQL/预览文件不变；跨实现的生成主YAML照结构比较。ZIP下载由[generated_preview.download](../../backend/agents/generated_preview.py#L163)每次重打包，ZIP容器自身的时间戳不属于“旧成员内容不变”，不能把整个ZIP字节相等当作冻结条件。TTL仍核对真实expires_at≈创建时刻+3600，过期拒绝另由F11验证，不缩短生产TTL。
 
 ### Step B token保存后的轮换与版本注入边界

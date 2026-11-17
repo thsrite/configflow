@@ -160,6 +160,8 @@ def main():
     groups.update(profile_concurrency)
     from cases.provider_auth import GROUPS as provider_auth
     groups.update(provider_auth)
+    from cases.provider_edges import GROUPS as provider_edges
+    groups.update(provider_edges)
     from cases.dependency_status import GROUPS as dependency_status
     groups.update(dependency_status)
     from cases.dependency_modes import GROUPS as dependency_modes
@@ -232,6 +234,8 @@ def main():
     groups.update(profile_rules)
     from cases.rule_dns import GROUPS as rule_dns
     groups.update(rule_dns)
+    from cases.rule_dns_edges import GROUPS as rule_dns_edges
+    groups.update(rule_dns_edges)
     from cases.compose import GROUPS as compose
     groups.update(compose)
     from cases.rule_io import GROUPS as rule_io

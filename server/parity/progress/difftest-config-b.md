@@ -2068,3 +2068,23 @@ current go-unimplemented=42 design_errors=[]；exit=0
 ```
 
 原R仍差111（含N/A）、H仍差455及partial/长流程；继续DNS/native、provider与剩余路由。最终完整all仍未执行。
+
+## 批次 122：新go基线复验、DNS/native原子边界与provider具名失败
+
+- 已rebase到go 6b50151c；.64实际复验全部30个既有finding groups，571变体、447.94秒，design_errors=[]。T27仍49处差异，不把生命周期重构当预期；R222-F11实际compared关闭。两项通知evidence跨秒出现假差异，补入已有capture_notice：先核对各端自己run_count/last_run_at/status、通知evidence和checked_at/last_seen_at，再建立对应，所有其他字段严格比较。两组42变体实际复跑后，两条时间假证据关闭，内部callback的2个真实差异仍保留。既有finding为closed81/accepted7/open20/O12单列1，全部有真实最后复验基线，不把未跑的条目更新成最新。
+- 13个新原R用例：新增group改变following DNS在自定义native中失败时整事务不动；手写domain_set确实使用普通规则原子/规则集路径时，删除400准确中文且不删SQL/文件；显式IP DNS不可转换、显式DNS的native严格更新冲突；禁用library仍hydrate显示、native禁用规则暂存refused；显式DNS不随policy变化、真实recognizable native重排。再用公开草稿/真实catalog绑定覆盖H904–907/H910/H911/H914，并将已实际经过的R189及strict失败关联H909/H912/H913/H917，共11新H。
+- provider补14原R：有效JWT混入当前/退役能力仍401；真实active panel chain分别拒绝Surge/Loon；坏缓存拨号图400不可降级；真实last-good输出路径被目录占用→500。后两种500仅完整HTML→JSON错误边界的精确两处差异按已批准Step B #3标accepted，保留raw证据；任何额外status/字段/header/SQL/files变化均不接受，专用篡改自检通过。
+- S04首次草稿证明“当前URL缓存”不再网络请求，已撤回其错误前提；改成无URL来源证明的legacy缓存才实际发出一次403并降级。缓存固定updated_at保持严格输入，不当成当前时刻。两端仅英文异常多status=403的后缀按O6作精确可选归一，其余comment/源地址/错误类/状态码/数据仍比；新增改变status/message/count注释的负向自检。103项自检+故意错误Go响应检出。
+- .32正式86变体：15compared、69Go尚未实现、strict different2/accepted2/open0，design_errors=[]，61.95秒。净增46变体、27原R、11H。统一9857变体、原R4446（S706/F2741/B999）、H668/G16；findings合计closed81/accepted9/open20/O12单列1。
+
+```text
+.64 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups [上列30个既有finding groups] --baseline 6b50151c
+current compared=427 go-unimplemented=114 different=29 accepted=7 open=22 O12-separate=1 design_errors=[] seconds=447.94；exit=1
+.64 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups rule-proxy-local-cache,rule-proxy-declarations --baseline 6b50151c
+current compared=40 different=2 design_errors=[] seconds=51.14；exit=1（只余已知内部callback差异）
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups rule-dns-group-strict-boundaries,rule-dns-native-write-boundaries,rule-dns-disabled-reads,rule-dns-explicit-and-reorder,rule-dns-extra-guard-branches,rule-dns-choices,provider-named-reserved-auth,provider-real-stale-cache,provider-named-graph-and-file-failures --baseline 6b50151c
+current compared=15 go-unimplemented=69 different=2 accepted=2 open=0 design_errors=[]；exit=0
+103 self-checks + deliberately wrong-Go-response detection OK
+```
+
+原R仍差84（含N/A）、H仍差444及partial/长流程；继续剩余import/native、任务与断连等。最终完整all仍未执行。

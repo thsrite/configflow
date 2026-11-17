@@ -8,7 +8,7 @@ from compare import database
 from harness import Pair, USERNAME, SECRET
 from seed import CURRENT, RETIRED, PULL
 from sources import Source
-from subscriptions import Exchange
+from subscriptions import Exchange, capture_notice
 from task_lifecycle import configure
 from cases.config_backup import message
 from cases.rule_library import DOMAIN
@@ -30,7 +30,7 @@ def options(library=None, origin=None):
     return value
 
 
-def request(pair, rid, route, base, suffix, query, *, auth='admin', expect=200, source=None, calls=0, body=None, check=None, variant=''):
+def request(pair, rid, route, base, suffix, query, *, auth='admin', expect=200, source=None, calls=0, body=None, check=None, variant='', capture=None):
     before = database(pair.dirs[0])
     def reference(reply):
         require(database(pair.dirs[0]) == before, 'rule proxy never commits configuration, including on cache refresh/failure')
@@ -40,7 +40,7 @@ def request(pair, rid, route, base, suffix, query, *, auth='admin', expect=200, 
             check(reply)
     return pair.request(rid + '-' + suffix, route, base + ('?' + urlencode(query) if query else ''), auth=auth,
                         expect=expect, writes=True, check=reference, interaction=Exchange(pair, source, expected=calls) if source else None,
-                        raw_body=expect == 200, variant=variant)
+                        raw_body=expect == 200, variant=variant, capture=capture)
 
 
 def credentials(binary, recorder):
@@ -132,7 +132,8 @@ def local_and_cache(binary, recorder):
             with Pair(binary, recorder, options=options([declaration])) as pair:
                 configure(pair, 'rule_source:proxy-first')
                 request(pair, rid, route, base, 'S05', {'url': declaration['url'], 'source_id': declaration['id']}, source=source, calls=1,
-                        body=b'full:fresh.example', variant='first-fetch-writes-validated-cache-and-receipt')
+                        body=b'full:fresh.example', variant='first-fetch-writes-validated-cache-and-receipt',
+                        capture=capture_notice(pair, 'rule_source:proxy-first'))
         with Source(b'synthetic upstream failure') as source:
             source.status = 503
             declaration = {**INLINE, 'id': 'proxy-no-cache', 'source_type': 'url', 'content': '',
@@ -142,7 +143,8 @@ def local_and_cache(binary, recorder):
                 request(pair, rid, route, base, 'S90', {'url': declaration['url'], 'source_id': declaration['id']}, source=source, calls=1,
                         expect=502, check=lambda r: require(r.json()['code'] == 'RULE_SOURCE_UNAVAILABLE'
                             and r.headers.get('cache-control') == 'no-store' and 'x-configflow-rule-cache' not in r.headers,
-                            'failed first refresh has no stale snapshot to serve'), variant='declared-no-cache-download-failure')
+                            'failed first refresh has no stale snapshot to serve'), variant='declared-no-cache-download-failure',
+                        capture=capture_notice(pair, 'rule_source:proxy-no-cache'))
 
 
 GROUPS = {'rule-proxy-credentials': credentials, 'rule-proxy-conversions': conversions, 'rule-proxy-local-cache': local_and_cache}
@@ -214,7 +216,7 @@ def declarations(binary, recorder):
                     request(pair, rid, route, base, case, {'url': remote['url'], 'source_id': remote['id']}, expect=422, source=source,
                             calls=0 if rule_format == 'mrs' else 1,
                             check=lambda r: require(r.json()['code'] == 'RULE_CONTENT_INVALID', 'declared source bytes fail their declared type before any invalid cache is installed'),
-                            variant=rule_format + '/' + case)
+                            variant=rule_format + '/' + case, capture=capture_notice(pair, 'rule_source:proxy-invalid'))
 
 
 GROUPS.update({'rule-proxy-guards': guards, 'rule-proxy-declarations': declarations})
