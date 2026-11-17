@@ -15,6 +15,6 @@
 | 9 auto_backup | C35已解决，无业务修改。`.63 CONFIGFLOW_DIFF=1 go test -count=1 -run ^TestAutomaticChangesCoalesceAndPendingDisableCancels/false$ ./internal/webdav/difftest/` 通过1.797s：启用auto_backup和连续提交经1s窗口只上传一次，Flask/Go文件及回执一致。实际注册方法为POST /api/backup/config（Python也是POST，PUT未注册），对应R015-S90。 |
 | 10 BOM | C30复核已解决，无业务修改。`.63 CONFIGFLOW_DIFF=1 go test -count=1 -run ^TestUTF8BOMRequestBodies$ ./internal/api/subscriptions/difftest/` 通过1.091s；含parse-lines在内的BOM写入/读取边界与Flask响应和存储一致。 |
 | 11 未知字段保留 | 接受，无业务修改。`.63 TestConfigFindingsPreserveLegacyDiscoveryExtension` race通过1.199s；R058-B03的false/空数组未知遗留扩展在PUT后完整保留，符合N8。Python删除已登记O12。 |
-| 12 Docker HA 测试 | 待复现 |
+| 12 agents 差异测试 | (a) .63复现非法IPv6的urllib/net/url英文诊断差异；只对该命名用例断言400、success=false并允许原生诊断不同，其他字段/头仍严格比较。末尾换行继续明确断言Python200/Go400。(b) .63复现fuzz 92项非法UTF-8 query差异；仅将非法字节规范成U+FFFD，再由独立Flask生成完整预期，脚本不mask；bash -n、字面JSON heredoc和隔离赋值验证引号/命令替换安全。a/b/safety通过86.991s。(c) .32原始启动器-count=3复现两次48/0；按维护者要求保留原startGo，撤回未提交的子进程方案，不调等待。Stop成功等待循环及hooks后复位started/cancel/baseCtx，超时不复位；.63重启单元修前第2代失败，修后race1.009s。.32整个agents/difftest-count=2验收中。 |
 
 最终：gofmt/vet/改动包 race/全量/全部 CONFIGFLOW_DIFF=1 difftest/proddiff、rebase go、干净、不推送。
