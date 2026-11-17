@@ -37,7 +37,7 @@ import (
 	"configflow/internal/routers"
 	shared "configflow/internal/rules"
 	"configflow/internal/taskstatus"
-	"gopkg.in/yaml.v3"
+	"configflow/internal/yamlx"
 )
 
 const secret = "c33-synthetic-secret"
@@ -174,7 +174,7 @@ func snapshot(t *testing.T, s *httpxtest.Server) any {
 		case ".json":
 			err = json.Unmarshal(data, &value)
 		case ".yaml":
-			err = yaml.Unmarshal(data, &value)
+			err = yamlx.Unmarshal(data, &value)
 		default:
 			value = string(data)
 		}
@@ -274,7 +274,7 @@ func (w *world) normalize(v any) any {
 			if key == "native_config" {
 				if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
 					var document any
-					if yaml.Unmarshal([]byte(text), &document) == nil {
+					if yamlx.Unmarshal([]byte(text), &document) == nil {
 						value[key] = w.normalize(jsonValue(w.t, document))
 						continue
 					}
@@ -311,7 +311,7 @@ func normalizeMihomo(t *testing.T, value any) any {
 	}
 	if content, ok := settings["custom_config"].(string); ok && content != "" {
 		var document any
-		if yaml.Unmarshal([]byte(content), &document) == nil {
+		if yamlx.Unmarshal([]byte(content), &document) == nil {
 			settings["custom_config"] = jsonValue(t, document)
 		}
 	}
@@ -521,8 +521,8 @@ func (w *world) callHeaders(method, path, body, goBody string, headers map[strin
 	if !migrated {
 		if text, ok := py.Body.(string); ok && strings.Contains(path, "target=mihomo") && strings.HasPrefix(strings.TrimSpace(text), "payload:") {
 			var a, b any
-			left := yaml.Unmarshal([]byte(text), &a)
-			right := yaml.Unmarshal([]byte(actual.(string)), &b)
+			left := yamlx.Unmarshal([]byte(text), &a)
+			right := yamlx.Unmarshal([]byte(actual.(string)), &b)
 			if left != nil || right != nil {
 				t.Fatalf("marked YAML delivery invalid: Python=%v Go=%v", left, right)
 			}
@@ -539,7 +539,7 @@ func (w *world) callHeaders(method, path, body, goBody string, headers map[strin
 						if obj, ok := response.(map[string]any); ok {
 							if content, ok := obj["content"].(string); ok {
 								var parsed any
-								if err := yaml.Unmarshal([]byte(content), &parsed); err != nil {
+								if err := yamlx.Unmarshal([]byte(content), &parsed); err != nil {
 									t.Fatal(err)
 								}
 								obj["content"] = jsonValue(t, parsed)
