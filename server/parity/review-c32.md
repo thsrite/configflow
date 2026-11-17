@@ -1,6 +1,6 @@
 # C32 对抗式复核
 
-状态：复核修复完成，最终门禁待执行。分支 `go-review-c32`，从作者
+状态：**verified，0 个未决发现**。两项发现（1 高、1 中）均已修复。分支 `go-review-c32`，从作者
 `go-port-c32@c3e4e9ac` 分出；起始工作区干净，复核者未参与移植。
 无子 agent、无 push、无生产或设备访问；所有输入合成，所有测试通过 `rt`。
 
@@ -112,9 +112,118 @@ RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 --back server/internal/api/rule
 
 退出 0：`ok configflow/internal/api/rules 13.700s`。
 
-完整最终 gate 结果待补。
+变基到 `go@64815165`，仅 behaviour-changes 文末冲突，保留 N8-6 与 C32 两段。
+变基前后的 C32 运行时及测试、desired.go 无差异；复核提交变为 `a18a6d8a`。
+
+最终门禁原先按下面的直接命令进入脚本队列：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GATE_LOGS=/tmp/c32-review-final-gate -- bash -lc 'server/scripts/gate.sh -p 6 FuzzPastedRules:./internal/api/rules'
+```
+
+20 秒轮询多次错过释放槽位，约 21 分钟后仍未开始任何格式/测试检查。
+终止该等待脚本（退出 143，不是测试失败），改为阻塞等待既有 slot 2，
+取得后立即解锁并执行未修改的原 gate.sh；并发上限仍为 2。
+最初进入执行阶段的命令：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GATE_LOGS=/tmp/c32-review-final-gate -- bash -lc 'mkdir -p "$HOME/rt/.gate-slots"; exec 9>"$HOME/rt/.gate-slots/2"; echo "C32: blocking until existing gate slot 2 is released"; flock 9; flock -u 9; exec 9>&-; exec server/scripts/gate.sh -p 6 FuzzPastedRules:./internal/api/rules'
+```
+
+02:00:29 取得 slot 2，load 26.14 / 19.08 / 15.17。gofmt/vet、
+双 tag 检查通过，proddiff 23 自检 PASS、new=0/stale=0、coverage_regressions=0、
+unmapped_routes=0。该轮 race 尚未完成时，go 已合入 R08 与 A24；为验证完整合并树，
+终止本 worktree 的门禁进程组（退出 255，不计作通过或测试失败）。
+
+再变基到 `go@8d716ceb`：R08 的 `Desired.ROSPolicy` 及全部相关字段保留。
+新增 R08 `InspectROSPolicyDesired` 调用点透传已有 ctx，作为正常签名迁移适配
+合入 C32 原 context 接线提交，以免中间提交不能编译；没有改变 R08 算法。
+其余 C32 runtime/tests 未变。发现仍为上面 F1/F2 两项，不把上游新增调用点算作原移植缺陷。
+
+最终合并树使用全新的日志目录，完整重跑原脚本：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GATE_LOGS=/tmp/c32-review-integrated-gate -- bash -lc 'mkdir -p "$HOME/rt/.gate-slots"; exec 9>"$HOME/rt/.gate-slots/2"; echo "C32: blocking until existing gate slot 2 is released"; flock 9; flock -u 9; exec 9>&-; exec server/scripts/gate.sh -p 6 FuzzPastedRules:./internal/api/rules'
+```
+
+02:06:09 立即取得 slot 2，load 19.04 / 23.40 / 18.74；02:27:01 结束，
+load 31.82 / 20.29 / 22.38。**退出 0，GATE PASS**。
+
+- gofmt 无输出，vet 与 configflow_proddiff/configflow_difftest 双 tag build/vet/lifecycle 均通过。
+- 全量 race 的 91 个包测试命令均通过（live differential 在随后的显式启用阶段执行）。
+  API rules 49.239s、oxidns 114.265s、routers 456.132s、server 1.425s。
+- 全部 14 个 live differential 通过。
+- FuzzPastedRules 跑满 60 秒，369,572 execs，263 总 interesting，退出 0，wall 61.064s。
+- proddiff 23 自检 PASS，coverage_regressions=0、unmapped_routes=0、new=0、stale=0。
+  无高负载单侧差异，不需要重跑或修改 baseline。
+
+最终末尾原始输出：
+
+```text
+baseline: new=0 stale=0
+== difftest
+ok configflow/internal/api/agents/difftest 113.920s
+ok configflow/internal/api/aggregations/difftest 19.081s
+ok configflow/internal/api/rules/difftest 33.880s
+ok configflow/internal/api/subscriptions/difftest 53.117s
+ok configflow/internal/devicenotes/difftest 0.517s
+ok configflow/internal/discovery/difftest 2.091s
+ok configflow/internal/health/difftest 13.771s
+ok configflow/internal/httpx/difftest 1.464s
+ok configflow/internal/mosdns/difftest 1.865s
+ok configflow/internal/provider/difftest 49.799s
+ok configflow/internal/refresh/difftest 3.468s
+ok configflow/internal/subs/difftest 1.373s
+ok configflow/internal/substore/difftest 5.027s
+ok configflow/internal/webdav/difftest 14.961s
+== fuzz (1 targets, 60s each, concurrent)
+FuzzPastedRules ok configflow/internal/api/rules 61.064s
+GATE PASS
+```
+
+## 门禁后的变基增量验证
+
+协调者将原版 C32 和 R08 ctx 透传以 ported 合入 `go@76f65828`。
+复核分支变基后跳过已集成的作者提交，最终只保留独立复核修复及报告两个提交。
+没有改动 R08 文件或丢弃其字段。差分 helper 仅补回 `t.Helper()`，不改变断言或输入。
+
+随后变基到 `go@601a8121`（包含 N8-4e/f model 及已验证的并行测试更新），
+同一 .64 追加全树格式/vet 和相关包启用 live differential 的 race：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 -- bash -lc 'set -e; tail -4 /tmp/c32-review-integrated-gate/fuzz-FuzzPastedRules.log; rg "^ok.*(internal/api/rules[[:space:]]|internal/routers[[:space:]]|internal/oxidns[[:space:]]|internal/server[[:space:]])" /tmp/c32-review-integrated-gate/race.log; cd server; test -z "$(gofmt -l internal/ tools/ cmd/)"; go vet ./...; CONFIGFLOW_DIFF=1 go test -race -p 6 -count=1 ./internal/api/rules/... ./internal/model ./internal/repo ./internal/server'
+```
+
+退出 0，gofmt/vet 无输出，末尾：
+
+```text
+ok configflow/internal/api/rules 50.714s
+ok configflow/internal/api/rules/difftest 166.861s
+ok configflow/internal/model 20.533s
+ok configflow/internal/repo 125.254s
+ok configflow/internal/server 1.759s
+```
+
+最后 `git rebase go` 到 `e980d402`（N7 writer 已由其作者独立完整验收）。
+复核运行时代码不变；为覆盖 C32 调用共享 writer 的交付/DNS 以及完整接线，
+追加以下命令，不重复全量 race/proddiff：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 -- bash -lc 'cd server && test -z "$(gofmt -l internal/ tools/ cmd/)" && go vet ./... && CONFIGFLOW_DIFF=1 go test -p 6 -count=1 ./internal/api/rules/... ./internal/server'
+```
+
+退出 0，gofmt/vet 无输出，全部 C32 live differential 和新复核用例仍通过：
+
+```text
+ok configflow/internal/api/rules 4.002s
+ok configflow/internal/api/rules/difftest 56.612s
+ok configflow/internal/server 0.053s
+```
+
+完整 gate 覆盖 R08/A24 集成树；末次增量检查覆盖新 model/writer 与 C32 的交互。
 
 ## 提交与交回
 
 独立复核提交使用明确路径；最后执行 `git rebase go`。分支 `go-review-c32`。
-提交 ID 与最终门禁结果见后续记录及交回消息。不 push。
+最终基于 go@e980d402，只含 C32 独立复核的 13 个路径；完整记录与 PROGRESS 均为 verified。
+修复提交和报告提交 ID 见最终交回消息。不 push；工作区干净。
