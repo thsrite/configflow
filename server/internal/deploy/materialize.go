@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/url"
 	"strings"
-	"time"
 	"unicode/utf8"
 )
 
@@ -195,8 +194,9 @@ func fetchBytes(ctx context.Context, rawURL string, src *Source) ([]byte, error)
 	if rawURL == "" {
 		return nil, preparation("Required rule has no source URL")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 70*time.Second)
-	defer cancel()
+	// requestRule retains Python's per-attempt (10 s connect, 60 s read)
+	// timeouts. The caller job context controls shutdown; do not shorten
+	// multi-candidate/retried downloads with an extra overall deadline.
 	response, err := src.requestRule(ctx, rawURL)
 	if err == nil {
 		defer response.Close()

@@ -3,14 +3,17 @@ package deploy
 import (
 	"bytes"
 	"configflow/internal/jsonx"
+	"configflow/internal/rulefetch"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPythonRulesAndLocations(t *testing.T) {
@@ -103,5 +106,31 @@ func TestLoopbackRuleDownload(t *testing.T) {
 		} else if err != nil || string(data) != "DOMAIN,example.com" {
 			t.Fatal(data, err)
 		}
+	}
+}
+
+type timeoutTransport struct {
+	t     *testing.T
+	calls int
+}
+
+func (f *timeoutTransport) Do(ctx context.Context, r rulefetch.TransportRequest) (*rulefetch.Response, error) {
+	f.calls++
+	if _, ok := ctx.Deadline(); ok {
+		f.t.Error("download acquired an extra overall deadline")
+	}
+	if r.ConnectTimeout != 10*time.Second || r.ReadTimeout != 60*time.Second {
+		f.t.Error("download phase timeouts changed", r.ConnectTimeout, r.ReadTimeout)
+	}
+	return &rulefetch.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("DOMAIN,example.com")), URL: r.URL}, nil
+}
+func TestDownloadKeepsPerAttemptTimeouts(t *testing.T) {
+	previous := rulefetch.DefaultClient
+	transport := &timeoutTransport{t: t}
+	rulefetch.DefaultClient = &rulefetch.Client{Transport: transport}
+	t.Cleanup(func() { rulefetch.DefaultClient = previous })
+	data, err := fetchBytes(context.Background(), "https://rules.example/source", NewSource(jsonx.NewObject(), nil))
+	if err != nil || string(data) != "DOMAIN,example.com" || transport.calls != 1 {
+		t.Fatal(string(data), err, transport.calls)
 	}
 }

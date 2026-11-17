@@ -894,6 +894,8 @@ A11-4 Python coverage and one row per HR class for every step: **parity/A11-HAND
 
 A11-1 follow-up: agentfake transcript now retains manifest file display names (the real Agent preserves them); the upload contract test asserts the label survives. `.63` focused vet/race passed 1.100s. No publishing behavior changed. A11-4 proof tests also restore the Agent hooks after each case (no test-global state leak); focused deploy race on .63 passed 7.340s.
 
+A11-2 timeout correction at final audit: removed an extra overall 70-second deadline so request_rule retains the designed per-attempt 10-second connect / 60-second read timeouts across retries/candidates. TestDownloadKeepsPerAttemptTimeouts locks both phase values and the absence of an extra total deadline; .63 deploy race passed 7.336s.
+
 Final acceptance pending: rebase current go; `.32` gofmt/vet, race deploy/gateway/provider, full `go test -p=4 -count=1 ./...`, all CONFIGFLOW_DIFF difftest packages, real Agent conformance, proddiff (with explicit partial C31 case). No push.
 
 ## A12 — push diff
