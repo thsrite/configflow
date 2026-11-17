@@ -1,193 +1,151 @@
-# O3-6 — in-process locks and owner cancellation
+# O3-6a — 进程内资源锁与 owner 取消边界
 
-Status: implementing on go-o3-6 from go@9a208c6c; O3-5 is frozen. No sub-agents or pushes.
-First commit619e4412 records all five coordinator clarifications in design/o3-concurrency.md.
-Final acceptance is server/scripts/gate.sh -p 6, on .32 or .64; no separate full race/proddiff.
-Routers writes and JobLock wiring wait for the R08/R09 merge notification, then rebase go first.
+分支 `go-o3-6`，基于 `go@dda8973d`（含 R08、C32、TMPDIR 调整和 A13/复核）。
+代码与测试提交截止 `1bd4ae10`。非 routers 范围及两项 test-only 时序修正已完成。
+实现与定向复核完成；最终完整门禁尚待协调者使用 cf-gate 复验，当前不标记全绿。
+本机只做编辑和 Git；没有子 agent、push 或本机测试。变基均无冲突，routers 相对 go 无代码改动。
 
-Order: ctxx/batch lifetime + lock primitives; repo L3/read snapshot/fail-closed; leaf stores,
-listener, deployments, monitor, installer issue lock; Sub-Store leases; handler→owner detach;
-routers last; full gate. Leave all Python lock files and the target-side compose bootstrap unchanged.
+## 已交付
 
-Foundations: NewLeafKeyed reuses keyed admission, cancellation/limit and reference cleanup without
-recording a level or hiding ancestor records. Ordinary L4 stays sync.Mutex. LevelDeviceControl is
-the second L2 suborder (after work/device, before repository); reverse acquisition still reports.
-.32 gofmt/vet passed; full lockx race count3 passed11.939s. Tests cover bounded/cancelled leaf waits,
-serialization/cleanup, forward suborder and subprocess-isolated reverse/ancestor violations.
+- `ctxx` 仅依赖 context，共享 cancelParent/Detach，lifecycle 保留转发。
+  `Uninterruptible` 为本地原子批处理屏蔽父取消，下游再次 Detach 也不能恢复它。
+  repo 写入口先 Detach；provider/repo/deploy 的本地批处理显式使用该边界。
+- `lockx.NewLeafKeyed`：有上限、可取消、无用条目清理，不记录 L4、不掩盖祖先层级。
+  `LevelDeviceControl` 表达 Sub-Store work→control 的 L2 子顺序，反向仍记违规。
+- repo：`.config.lock` 保留 flock 并实际记录 L3；profile operation 改为按物理目录/profile ID
+  的 L2 Keyed；缓存和生成文件改用有界叶锁。多份 Repository 对象共享物理资源互斥。
+  `WithReadSnapshot` 在 L3 内提供一致读取，供核验→叶锁 CAS；禁止回调内写入及设备/网络 I/O，
+  回调结束后快照失效。缺少 JobLock hook 时默认拒绝。
+- taskstatus/notifications：进程内叶锁和原子写，不再创建或打开旧 flock。notifications 在锁外
+  收集观察、锁内按版本合并；新的未变化快照和已提交通知操作都能阻止旧观察覆盖，包括 MarkRead。
+- monitor：StateStore 阻塞 API 接收 ctx；每物理文件叶锁上限 5 秒。真实 repo 上保持
+  L3 读取并核验 target/publication → L4 CAS，全程没有释放 L3 的核验窗口。
+- weblistener：按目录共享 L1 try admission；Start/Status/Update 接收 ctx 并在 owner Detach。
+  保留原校验/409 优先级，健康检查 5 秒、探测间隔 300ms，Clock 等待能收到关机取消。
+- agents deployments：按物理目录/Agent/deployment 共享 L1，preparationRunning 使用 Held。
+  内存锁不跨 repo I/O；Finish、提交失败、panic 展开及关机在提交完成后释放自身租约，
+  失败申请者不释放其他任务的租约。
+- installer：仅替换服务端 `.issue.lock`，IssueEnrollment 接收 ctx；目标 bootstrap.py 的
+  `.compose-enrollment.lock` 原样保留。并发签发仍只产生一个 installation identity。
+- Sub-Store：按物理 root 共享 work RWMutex(L2)、control Mutex(L2 子顺序)，沿用 45/90/45 秒。
+  Tick/SetMode 显式 TryLock。Use/Maintenance 的回调接收 held ctx；嵌套 Use 复用有效读租约，
+  不在等写者时嵌套 RLock，不允许读升写。启动等待使用 Clock，生产 20 秒/200ms 值有测试钉住；
+  持久化 Monotonic 不改；资源条目引用包含等待者和持有者。
+- 非 routers handler 传原始请求 ctx；discovery/health/MosDNS/WebDAV/Sub-Store/repo/adapter
+  owner 负责 Detach。metrics 历史保存横跨 I/O，按 review-o3 改为可取消的 L2 operation 锁。
 
-Lock primitive commit: b4dbc67a. ctxx and provider local-batch replacement passed .64 gofmt/vet and
-race3: ctxx1.030s, lifecycle7.876s, lifecycletest1.011s, full provider570.205s. The shared context
-package has only the context dependency; tests cover detached disconnects, shutdown cancellation,
-masked parent across nested Detach, preserved values and child-owned cancellation.
+## JobLock 未接线的实际影响
 
-Additional coordinator ruling: repo's generic withLock also covered profile operation and file locks,
-so do not blindly label all of them L3. Migrate profile operation locks to L2 Keyed by profile id and
-cache/generated files to bounded leaf locks; retain only config's flock. Add concurrency/legacy-file
-sentinels; this ruling is now in Clarified in O3-6. Repo migration is now being implemented; validation is pending.
+生产 routers.Wire 暂未注册 JobLock。通用 repo 事务修改或删除**已有 router** 的连接字段
+（type/endpoint/username/password/verify_tls）或 manifest 字段时，返回 ErrInUse，HTTP 409：
+`路由器正在发布或同步，不能替换连接或删除记录，请稍后重试`，usages=[]，不提交。
+已有 manifest ownership 检查可能更早拒绝。受影响的操作也包括改变这些记录的 import/overwrite、
+profile 删除和 reset；新建 router 或只改非保护显示字段，不会仅因这个 hook 被拒绝。
+`SaveRouterSettings`/`SaveRouterPublication` 保留“调用方已经持有 job lock”的契约，不重复取锁。
+真实 routers Keyed 的接线留给 O3-6b，未放宽 fail-closed。
+非测试 Go 文件本轮新增 878 行、移除 498 行，净增 380 行。
 
-Important agreed interfaces/boundaries:
-- ctxx depends only on context; WithParent/Detach share the existing lifecycle semantics.
-  Uninterruptible masks the parent through downstream Detach, only for local atomic/batch work.
-- repo records real L3 via held contexts and exposes a minimal locked-read snapshot; missing JobLock
-  fails closed (old code actually allowed nil). JobLock gets ctx. Keep .config.lock/flock and timeout.
-- monitor reads/verifies at L3 then acquires L4 CAS, never an unlocked verify gap. Notifications gather
-  observations outside L4 and version-fence their merge so stale observation work cannot win later.
-- Sub-Store Use/Maintenance callbacks receive the held ctx; work45s/read,90s/maintenance,
-  control45s; Tick/SetMode use explicit TryLock. Shared locks must cover Runtime copies of one Root.
-  No nested RLock while a writer waits. Scheduling waits use Clock/ctx; persisted Monotonic stays.
-- weblistener/StateStore blocking APIs gain ctx. Preserve validation/409 precedence.
-- retain target bootstrap.py's cross-process compose-enrollment flock; only server .issue.lock moves.
-- owned L1 leases must be released on every failure path, and Held replaces preparation flags.
+当前 router HTTP 路由仍有 todo；proddiff 排除设备 apply/route-apply 写入和 config import，
+router-script generator 也明确尚未实现。因此绿色 proddiff 不代表这些写路径已覆盖。
+已跑过的 proddiff 和差分未发现 JobLock 引起的失败；但最终基线的全部启用 difftest 尚未重跑，
+不能从排除范围推断覆盖，协调者的完整 gate 仍是合入门禁。
 
-Preflight-only facts to preserve in tests: multiple store/manager/runtime objects may share one
-physical directory; file-flock replacement must not weaken their mutual exclusion. Local commits
-must remain whole even when a downstream owner detaches after job cancellation. Legacy leaf code
-currently calls external repo/task readers while holding its file lock; fix the boundary, not merely
-the syscall. CAS/publication/target-generation assertions are mandatory, not optional cleanup.
+## Python 遗留锁与差分
 
-ctxx commit: 3fcc53ec. Task-status now keeps its existing process-wide leaf mutex and atomic writes,
-without opening/creating the legacy lock. New tests exercise100 concurrent updates from independent
-Store objects and unchanged legacy bytes/inode/mtime, plus no new lock file. The old test expecting
-a new lock file now asserts its absence; content/key order/mode assertions are unchanged.
-.32 full taskstatus race3 passed2.613s. Notification leaf removal is pending its own commit; its
-full suite currently hits the newly fail-closed repo guard in a router-removal fixture, which will
-receive an explicit mock gate in the repo-contract step rather than weakening production defaults.
+旧锁文件内容、inode、mtime 不变，不再新建；缓存删除/清理也不删除旧锁。
+O12 已逐项列明 task-status、notifications、listener、deployment、installer、dashboard、规则缓存、
+profile operation 和 Sub-Store 文件名；只保留实例锁（含 Python lifetime 兼容锁）、`.config.lock`
+和目标机 bootstrap 的跨进程锁。真实跨进程服务边界仍由 O3-3 instance 测试保证。
 
-Repo resource migration now passes .64 gofmt/vet ./... and full touched-package race1:
-`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go vet ./... && go test -race -p=6 -count=1 -timeout=20m ./internal/repo ./internal/notifications'`
-Tail: repo90.651s, notifications4.924s. Config retains flock with real L3, profiles have L2 keyed
-operations, generated/cache files bounded leaf admission; old resource files are not opened.
-ReadSnapshot supplies a coherent locked read, rejects writes, and expires with its callback.
-Missing JobLock rejects router-changing commits. Fixtures now explicitly supply the gate when
-required and C04 probes the actual leaf admission instead of creating a historical file lock.
-Regressions cover cancellation/batches, snapshot expiry and writer exclusion, profile parallelism,
-delete/write ordering, timeout/cancellation and legacy bytes/inode/mtime. Intentional order errors
-run in subprocesses; normal repository suite requires zero Violations.
-One fixture-edit script aborted before saving, then its shell ran stale tests; corrected with
-atomic apply_patch, unused import removed, and the full package run above passed. This was reported
-to the coordinator; no product assertions were removed.
-Notification store lock removal and staged observations/version fencing are currently uncommitted,
-with new concurrency regressions being validated next. Routers remain untouched.
+三个 Flask 文件快照只排除精确 `.issue.lock`、`dns-monitor/<64hex>.lock` 和
+`shared/rules/by-source/<64hex>.list.lock`，每处另断言 Go 没有创建对应锁。
+其他文件、全部响应和实际 JSON/cache/config 数据继续逐项比较，没有排除整个目录。
+installer corpus 的 review/issue/197 原本只验证打开遗留锁目录，已明确接受这个退休边界，
+并由成功签发且旧目录原样保留的回归替代。资源互斥测试改为独立 Store/Runtime 对象竞争。
 
-Notification leaf migration is complete: no flock/open of notifications.lock. Snapshot detaches at
-its owner, reserves an observation ticket, collects repo/task/Agent data outside the leaf, then
-merges only if no newer snapshot or committed notification mutation won. Successful unchanged
-snapshots also fence older work; failed callbacks/commits do not advance the applied version.
-Concurrent regressions hold a source open and prove newer snapshots, unchanged snapshots, notices,
-and MarkRead finish immediately and survive the old source completing. Legacy sentinel plus100
-concurrent store mutations also pass. .64 gofmt/vet ./... and full notifications race3:15.574s.
-Next: monitor L3 read/verify→leaf CAS, listener, deployment Held, installer, Sub-Store; owner/handler
-migration and routers after the coordinator's merge notification. Repo commit88422be8.
+## 验证与门禁经历
 
-Notifications committedf24daeb1. Monitor now passes .64 gofmt/vet ./... and full monitor race1
-173.713s. StateStore Read/CAS take ctx and use per-physical-file NewLeafKeyed with the unchanged5s
-production bound (pinned by test); no file locks or Sleep polling. Manager requires WithReadSnapshot;
-FromAgents delegates to its repository. Target/publication verification occurs in L3 and remains
-held through leaf CAS. Real-repo concurrent tests hold the leaf and prove target/deployment writers
-cannot cross this boundary; after their changes, stale target/publication checks refuse CAS and
-preserve bytes. Normal Violations=0, timeout/cancel and legacy bytes/inode/mtime tests pass. The
-old four-process reset test is replaced by four independent Store objects in one process (instance
-cross-process exclusion already tested in O3-3); the single-winner CAS assertion remains intact.
-Listener changes (ctx API, shared L1 try, Clock health wait) are in progress on .32. Routers untouched.
+所有测试通过 rt 在 .32/.64。相关包迭代 race、取消/超时、CAS 和旧文件哨兵已通过。
+repo/Sub-Store 正常测试断言 Violations=0；故意反序用子进程隔离。替换短时限或自动假钟的
+测试另钉生产值，叶锁/profile 用例覆盖串行、并行、删除/写入竞争、取消和条目清理。
 
-Monitor committed1473d985. Listener migration passes .32 gofmt/vet ./... and race3: weblistener1.255s,
-api/settings47.382s. Start/Status/Update now take ctx and detach in the owner; cmd/settings pass
-original contexts. L1 Try admission is keyed by physical dataDir across Manager copies, preserving
-validation-before-busy precedence. Serve Spawn receives the owner context; health I/O keeps300ms
-probes and5s default, waits via Clock and stops on shutdown. Tests pin5s, drive the production wait
-with a fake Clock, prove disconnect survival/shutdown cancellation and timer cleanup, and verify
-legacy bytes/inode/mtime/no new locks. No router changes.
+- 两次 .64 gate（基于 64815165/d8f50b00）在排队时按协调者通知终止，退出 143，没有执行检查。
+- .32 `/tmp/o36a`：proddiff 2831 cases、23 self-checks PASS，new=0/stale=0；race 仅旧 C27
+  控制用例失败。它把已取消的请求交给新 repo owner，仍期待立即取消，导致等待自身未释放的写锁。
+  测试改为负控使用已取消工作父级、正控使用原始已取消请求，保留真实竞争、Scope（含 updater）、
+  精确 revision、合并及回滚断言；三个受影响测试 race count=3 通过（13.340s）。未改产品默认或探针上限。
+- .32 `/tmp/o36a-2`：两种 tag、全量 race、proddiff new=0/stale=0 全通过；启用的差分仅上述
+  三份退休锁文件痕迹不同。DockerHA 239、OxiDNS 69、refresh 31 次响应/设备比较及实际数据相等。
+  协调者批准精确排除并补无新锁断言后，真实 Flask 定向复核通过：agents 13.651s、refresh 7.666s；
+  gofmt/vet 通过。没有 JobLock 导致的现有差分失败。
+- 最终命令（协调者指定 .32，无 -p）：
 
-Listener committed6992840e. Installer server issuance now uses a process-wide sync.Mutex over its
-local file batch; IssueEnrollment takes ctx and detaches in the owner (API passes original ctx).
-Target-side compose bootstrap text is unchanged. .64 gofmt/vet ./... and installer touched regression/
-DockerHA corpus race1 passed36.490s. Twenty simultaneous issues per legacy file/directory/missing
-case retain one identity; old lock metadata/content stay unchanged and missing lock stays missing.
-Corpus still compares all state files; only .issue.lock is omitted from after-tree comparison.
-One obsolete Python row(review/issue/197: .issue.lock is a directory) is explicitly classified as
-accepted and replaced by the successful boundary test above; no corpus is regenerated. First vet
-caught a syscall import also used for non-lock errno handling; retained it, then checks passed.
-Agents deployment Held leases and cleanup are now being validated on .32; Sub-Store and remaining
-owner/handler migration follow. Routers wait for R08/R09.
+  `RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'GATE_LOGS=/tmp/o36a-3 server/scripts/gate.sh'`
 
-Sub-Store runtime migration passes .64 gofmt/vet ./... and full substore race1:25.380s. Shared physical
-root owners use work RWMutex L2 and control L2 suborder, reference-counted through holders/waiters.
-Use/Maintenance receive held ctx callbacks; try-only Tick/SetMode have explicit entry points. Nested
-Use reuses its active lease so queued writers cannot deadlock a recursive RLock; read→write upgrades
-return the existing busy response. Tests pin45/90/45s and20s/200ms, check writer preference/nested
-Use, Runtime copies, ctx cancellation, short-limit error, forward0/reverse1 violations and legacy
-sentinels. Startup waits use the scheduler Clock; persisted env.Clock.Monotonic remains unchanged;
-the owner fake-clock seam remains available. The obsolete cross-process work test now exercises
-independent Runtime objects, with cross-process exclusion covered by O3-3 instance tests.
-Cache cleanup no longer deletes Python .lock files. Both explicit deletion/pruning have sentinel
-regressions. Cache file-list fixtures expect no newly created lock. The first run surfaced those
-fixtures plus an independent-request test accidentally inheriting the held callback ctx; fixed the
-fixture and asserted startup elapsed time in its scheduler domain, then the complete suite passed.
-Agent deployment full race is still running on .32 (no failure output). Owner/handler migration and
-routers remain; wait for R08/R09 before routers. No full gate has been run yet.
+  覆盖 gofmt、vet、两种 tag（build/vet/lifecycle 测试）、全量 race、proddiff、全部启用 difftest。
+  第三轮仍通过 gofmt/vet、两种 tag、proddiff（2831 cases，new=0/stale=0，23 项自检通过，
+  coverage_regressions=0、unmapped_routes=0）。race 返回两项失败：Latin1 fixture 时序，以及
+  C27 释放锁后的测试 5 秒完成断言；因此 gate 退出 1，没有进入启用 difftest。
+  其他 race 包全部通过，未出现 data race。日志留在 .32 `/tmp/o36a-3`。
 
-Sub-Store committed8cc5994a. Agent deployment migration passes .32 gofmt/vet ./... and full agents
-race1:522.971s. Preparation admission is a shared directory/Agent/deployment L1 key; running uses
-Held without accessing legacy files. Manager's short release-handle mutex is not held over repo
-transactions. Owned leases release on failed commit, panic unwind, Finish, and generation shutdown
-(after commit finishes); rejection never releases a foreign lease. Existing busy/validation order
-is preserved inside BeginDeployment. Tests cover Manager copies, interrupted preparation recovery,
-disconnected request, synthetic failed/panicked/cancelled commits, no new legacy file and unchanged
-legacy bytes/inode/mtime. Normal paths require Violations=0. Removed obsolete lock-path I/O-error
-expectation: that path is now an ignored sentinel. Next: owner/handler cancellation and routers.
+### 第三轮失败的定向复核与修正
 
-Agent leases committedbac4d3f6. Non-router owner cancellation migration is complete and validated:
-HTTP handlers now pass original contexts; discovery edits/probes/jobs, health workers, MosDNS,
-Sub-Store shared fetch/conversion, WebDAV and native adapter owners detach themselves. Repo public
-write entry points also detach before any preparation reads; the existing update transaction uses
-Uninterruptible for its local commit. Deploy preview/receipt file batches explicitly mask the parent
-while holding their leaf lock. The review's metrics note is implemented: its save mutex is recorded
-as L2, waiting with ctx, not held as an L5 memory lock over I/O. Its running flag retains its previous
-meaning (actual admitted Run); no new lockx API. New DNS-I/O/metrics-wait regressions prove disconnect
-survival and shutdown cancellation. No changes to routers or its handlers.
+Latin1：captureAuthorization 启动 1.5 秒 Accept deadline 后，原测试才创建 repo/Agent fixture。
+负载下 fixture 耗尽时限，实际请求尚未发出，不能抓到 header。协调者批准将 newUpgradeEnv 提前；
+1.5 秒 Accept、3 秒读取及所有 header/错误断言均未改，产品代码未改。独立 test-only 提交。
+`.64 gofmt/vet` 通过；`go test -race -count=3 -run '^TestReviewLatin1Tokens$' ./internal/agents/upgrades`
+在 .64 通过 59.212s，在 .32 通过 75.418s。
 
-Validation (remote only, gofmt on explicit paths + go vet ./... passed in both):
-- .64 `go test -race -p=6 -count=1 -timeout=20m ./internal/agents/metrics ./internal/api/domaindiscovery ./internal/api/mosdns ./internal/api/nodes ./internal/api/settings ./internal/api/subscriptions ./internal/deploy ./internal/discovery ./internal/health ./internal/mosdns ./internal/substore ./internal/webdav`
-  PASS:10.386s,3.211s,1.037s,22.664s,14.992s,3.791s,59.800s,18.020s,310.735s,181.116s,24.563s,4.966s.
-  Log /tmp/o36-owners.log in this rt copy. Vet first caught an assumed Mutex.Held API; retained the
-  existing running atomic flag and used only the already available Mutex.Lock/ctx contract.
-- .32 `go test -race -p=6 -count=1 -timeout=15m ./internal/repo`: PASS133.022s,
-  log /tmp/o36-repo-owners.log. Earlier repo/resource90.651s remains recorded above.
+C27：本轮不同于第一轮的旧取消契约，是最新 go 加入 t.Parallel 后，在整包 CPU 重载下的
+完成等待断言。没有直接归为测试问题；依协调者要求在同一 .32 同时启动基线 go@895f5e21、
+分支（修正前）和 `go test -race -count=10 ./internal/rules` 负载，三进程启动相差不足 3ms。
+两边都执行 `go test -json -race -run TestC27Review -count=5 ./internal/oxidns/`，全部通过：
 
-O3-6a delivery split (coordinator, 2026-11-18): all non-routers work is ready for independent
-integration, including repo's missing-JobLock fail-closed behavior. Initial rebase onto go@64815165 was conflict-free. Its .64 gate remained queued and was
-terminated before running any check when R08 merged at go@d8f50b00. Rebase onto that R08 integration
-and rerun the gate. Prior commit IDs above are historical pre-rebase references.
-Final gate command on .64: `RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'GATE_LOGS=/tmp/o36a-d8f50b00 server/scripts/gate.sh -p 6'`.
-Do not weaken fail-closed or reclassify its router failures; if it breaks existing difftest/proddiff,
-stop and report concrete paths. The changed guard covers existing router connection or manifest
-changes/deletion; creating a new record alone is not gated. Existing ownership-manifest invariants
-can reject a change earlier. Privileged already-locked commit APIs retain their existing contract.
-Actual HTTP/differential results are pending the gate.
+| 项目 | 基线 go@895f5e21 | O3-6a 分支 |
+|---|---|---|
+| 整包耗时 | 272.678s | 272.149s |
+| 关键事务五轮耗时（秒） | 5.02 / 4.83 / 4.95 / 4.84 / 6.49 | 4.66 / 5.22 / 4.47 / 4.57 / 5.13 |
+| 关键事务中位数 | 4.95s | 4.66s |
+| 失败 | 0 | 0 |
 
-O3-6b is intentionally unimplemented here: routers-owned physical connection L1 Keyed → repo.JobLock,
-plus R04–R07/R09 write/readback/rollback Detach, after the explicit R08/R09 merge notification, on a
-new branch from then-current go. Routers and their handlers have not been edited. No push/subagents.
+表内是整条测试的耗时，含准备工作；内部每个事务的 5 秒完成断言仍通过。
+基线使用原有取消契约；分支使用已批准的 owner Detach/工作父级契约，正式对照时都保留 t.Parallel。
+负载 rules count=10 通过 212.435s。未见分支明显变慢或丢失唤醒的证据。
+原始记录：.32 `/tmp/o36a-c27-compare/{baseline,branch}-concurrent.json`、
+`summary-concurrent.json`、`load-concurrent.log`，调度脚本 `/tmp/o36a-c27-compare.py`。
+预检因 rt 项目锁而未严格同时启动，没有用它代替正式对照。
+满足协调者条件后，仅删除这一条测试的 t.Parallel，另作 test-only 提交；两个真实竞争事务、
+5s/50ms、Scope/revision/merge 断言全保留。修改后单条测试 race count=5 通过 8.091s。
 
-.32 first full gate(/tmp/o36a) completed: fmt/vet and both tags passed; proddiff PASS2831 cases,
-new=0 stale=0, no coverage regression. Race had exactly one failure: C27's canceled-transaction
-negative control still expected a canceled request to stop a repo write. O3-6a intentionally moves
-Detach into that write owner, so the control waited for its unreleased competing writer until300s.
-Updated the control to a canceled work parent(negative) and raw canceled request(positive), keeping
-real contention, Scope identity, merged commits, concurrent revisions and rollback assertions.
-C27 callbacks now also assert the owner retained Scope. No product/default/timeout changed, no C35
-probe changed. .32 gofmt/vet ./... and those3 C27 tests race3 passed13.340s. Full gate reruns at
-/tmp/o36a-2 on the same host, without-p as the coordinator requested. No difftest was run by the first
-gate because it stopped at race; its proddiff did not exercise router device writes.
+协调者最新要求：Latin1 count3 与上述对比完成后，不再跑完整 gate，直接交回，由其 cf-gate。
+完整 gate 如果排队超过 15 分钟也交回；本次没有再启动排队。
+最终已变基到 dda8973d（A13 合入），无冲突。变基后在 .32 执行：
 
-Second gate(/tmp/o36a-2, basef147cf21) passed fmt/vet, both tags, full race(including oxidns466.639s,
-repo439.841s, routers791.400s) and proddiff new=0/stale=0. Enabled difftest exposed only retired-file
-snapshots: DockerHA.issue.lock(239 responses equal), DNS dashboard3 hash.lock files(69 requests and
-all JSON equal), rule-source64hex.list.lock(refresh31 responses and all data equal). No JobLock
-or router response difference. Coordinator explicitly approved exact filename/glob exclusions and
-Go-no-new-lock assertions. These3 collectors now omit only the named/64-lowercase-hex lock paths;
-all response/data/permission comparisons remain. O12 behaviour-changes lists every retired resource
-lock and states existing locks are not deleted. Targeted real Flask tests .32 passed:
-`CONFIGFLOW_DIFF=1 go test -count=1 -timeout=15m -run '^(TestDockerHADifferentialAgainstFlask|TestOxidnsDifferentialAgainstFlask|TestDifferentialTaskRoutes)$' ./internal/api/agents/difftest ./internal/refresh/difftest`
-Results agents13.651s, refresh7.666s; gofmt/vet ./... passed. No product code/default changed.
-Final complete gate reruns on .32 at/tmp/o36a-3, foreground, without-p.
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && test -z "$(gofmt -l internal tools cmd)" && go vet ./... && go build -tags configflow_proddiff ./... && go build -tags configflow_difftest ./... && go test -race -count=1 -run "^(TestC27ReviewCanceledTransactionWaitsAndCommits|TestReviewLatin1Tokens|TestMissingJobLockFailsClosed|TestOwnerLifetimeAndLocalBatch|TestReadSnapshotSerializesWriterAndExpires|TestProfileOperationsSerializePerProfileAndAllowParallelProfiles|TestDeleteWaitsForProfileWrite|TestResourceLeafWaitAndLegacyFiles)$" ./internal/oxidns ./internal/agents/upgrades ./internal/repo'
+```
+
+退出 0：gofmt 无输出、vet 和两种 tag build 通过；OxiDNS 3.492s、upgrades 25.840s、repo 8.650s。
+没有在 A13 新基线上重跑完整 race/proddiff/启用的 difftest，不能把旧基线结果写成最终全绿。
+对照用的本机 detached worktree 已删除；远端对照源码与日志保留。
+
+## 后续边界
+
+**O3-6b**：等 R09 合入后另开分支，接 routers 按物理连接共享的 L1 Keyed → repo.JobLock，
+审计 R04–R07/R09 写入、读回、回滚 owner Detach。R08 已迁移多数 RouterOS 设备 I/O；
+剩余当前点包含 route_editor ExecuteRoutePlan/RouterOperationLock(write)、routeros_routes、
+iKuai write/confirm。保留只读操作取消与写入 10 分钟上限，补真实共享 key/busy/CAS 边界测试。
+
+**O3-6c**：6a 合入后处理 shared commit points honour shutdown。A14 已复现真实 Runtime
+在 Store.BeforeCommit 期间关机仍能 SQLite COMMIT，这次没有声称已修复。
+以 `git show go-port-a14:server/parity/progress/a14-shared-commit-window.patch` 为起点，保留复现测试；
+增加 taskstatus RecordContext/ForgetContext（锁内写前检查，旧入口保留）、repo 最终提交 ctx 检查、
+rulefetch touch/rename 前检查，并处理 BuildMosDNSZip 若仍有 WithoutCancel。沿用本次锁分层。
+
+## 当前提交
+
+e83ca4ac 设计；8bb67ca6 叶锁/子顺序；e87c02cc ctxx/本地批处理；484e97b8 taskstatus；
+789cac1e repo；006a94d1 notifications；f97e1a96 monitor；3cdff3ea listener；5e0314df installer；
+7047df75 Sub-Store；7e8bf84a deployment；bd4ab9a8 owners；9a24e3f5 拆分范围；
+2f0948c4 C27 取消契约；bc3fbdad 退休锁差分；0645c11f Latin1 test-only；1bd4ae10 C27 调度 test-only。
+最终验证记录提交见本文件的 git log。
