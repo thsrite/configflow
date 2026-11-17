@@ -1828,7 +1828,7 @@ Commands (review): `rt -- bash -lc 'cd server && go vet ./internal/mosdns/... ./
 
 ## C29 — OxiDNS native apply, archive, routes
 
-**Status: `missing`** · prereqs: C27, C28 · Go: internal/oxidns, internal/api/oxidns (new)
+**Status: `ported`** · prereqs: C27, C28 · Go: internal/oxidns, internal/api/oxidns (new)
 
 C27 reviewer integration note: the shared recognizer now locks a pinned chain when its upstream tag/string metadata contains U+2028/U+2029, no Go-native source hash matches, and the old source would otherwise be guessed by shape. This is intentional D2 safe failure, not a custom-lock condition to bypass. Preserve the recovery message, typed 400/409 or lenient warning and original YAML. Template users refresh/reselect; native users regenerate routing in the editor from current upstreams. Do not add a legacy JSON hash adapter or silently rewrite the pin's source. Details: [behaviour changes](behaviour-changes.md), [C27 review](review-c27.md). C29/C32 still own route auth, request detachment and one-transaction persistence; the snapshot API tests do not claim their HTTP routes are implemented.
 
@@ -1839,13 +1839,34 @@ Files:
 
 Tests: `test_oxidns_archive.py` (4), `test_oxidns_common_api.py` (2), `test_oxidns_download_aliases.py` (5), `test_oxidns_hosts_cleanup.py` (9), `test_oxidns_integration.py` (16), `test_oxidns_native_apply.py` (31), `test_oxidns_native_cleanup.py` (11), `test_oxidns_native_restore.py` (20), `test_oxidns_settings_routes.py` (7), `test_oxidns_withdrawn_downloads.py` (10)
 
-Routes (18, 0 done):
+Routes (18/18 done):
 
 `POST /api/oxidns/common-settings`; `POST /api/oxidns/common-settings/apply`; `POST /api/oxidns/editor`; `POST /api/oxidns/native-settings/apply`; `POST /api/oxidns/render`; `GET /api/oxidns/settings`; `POST /api/oxidns/settings`; `POST /api/oxidns/template-preview`; `POST /api/oxidns/validate`; `POST /api/profiles/<profile_id>/oxidns/common-settings`; `POST /api/profiles/<profile_id>/oxidns/common-settings/apply`; `POST /api/profiles/<profile_id>/oxidns/editor`; `POST /api/profiles/<profile_id>/oxidns/native-settings/apply`; `POST /api/profiles/<profile_id>/oxidns/render`; `GET /api/profiles/<profile_id>/oxidns/settings`; `POST /api/profiles/<profile_id>/oxidns/settings`; `POST /api/profiles/<profile_id>/oxidns/template-preview`; `POST /api/profiles/<profile_id>/oxidns/validate`
 
-Evidence: No Go package; no route registered.
+Evidence: `internal/oxidns/native_apply.go`, `native_activate.go`, `native_input.go`, `archive.go`,
+`settings_store.go`, `internal/api/oxidns` and server registration. All new handlers use N8-6
+BindSilent (Python silent JSON reads). Native apply has 222 actual Python public input/output/post-state
+references; archive has 18 actual Python ZIP cases (content, order, permissions); the live Flask
+HTTP differential compares responses and complete exported DB/all data files after each request.
+Route inventory/dispatch conflict, cancellation and atomic competing If-Match saves have regressions.
+Detailed scope, commands, remaining acceptance and N8-5 adapters: [C29 progress](progress/c29.md).
 
-Missing / deferred: Everything in the files below.
+Missing / deferred: no C29 implementation deferred. Final gate pending; this is ported, not verified.
+The approved Python HEAD save bug is fixed as read-only with an explicit expected differential;
+reader policies follow N7-3d §5.7 (unknown=0). No new dependency or Python compatibility hash adapter.
+
+N8-5 follow-up: settings_store.go storedSettings and the transaction assignment bridge, the render
+snapshot/NewProfile bridge in api/oxidns, and archive.go's shared MosDNS snapshot argument migrate
+when the typed repository API lands. New stored settings already use model.Dynamic.
+
+Python test coverage: native_apply/native_restore/native_cleanup/hosts_cleanup →
+TestC29NativePythonBoundary (170 actual pytest cases, 7 API cases deselected from recording and covered
+by live HTTP workflow). archive → TestC29ArchivePythonBoundary (18 cases) plus unsafe-YAML refusals;
+common_api/settings_routes/validation_api → api/oxidns/difftest workflow/route matrix and
+settings_store_test cancellation/concurrent guard checks. download_aliases/withdrawn_downloads and
+shared integration logic reuse C25–C27 boundary suites, rerun as part of the complete oxidns package.
+Profile clone/backup/import, publication/device delivery/MCP remain owned by their existing modules;
+C29 exposes the complete package builder and editor/settings boundaries without duplicating those owners.
 
 Notes for porter: Also registers the 9 `/api/profiles/<id>/oxidns/*` wrapper routes (rule 8: the delegate package registers the profile wrapper). `oxidns_archive` imports `mosdns_archive` (C28).
 

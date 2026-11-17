@@ -22,6 +22,7 @@ type Reference struct {
 	Path   Path
 	Tag    string
 	Reason string
+	tagSet bool // distinguishes an explicit unfinished empty tag from no tag
 }
 
 func isTagRune(r rune) bool { return isWordRune(r) || r == '.' || r == '-' }
@@ -76,7 +77,7 @@ func ReferenceLocations(document *Node, tags []string, dynamic bool) []Reference
 			seen := map[string]bool{}
 			for _, tag := range tags {
 				if !seen[tag] && mentions(value.Value, tag) {
-					result = append(result, Reference{Path: at, Tag: tag, Reason: "仍有插件引用"})
+					result = append(result, Reference{Path: at, Tag: tag, Reason: "仍有插件引用", tagSet: true})
 				}
 				seen[tag] = true
 			}

@@ -13,7 +13,6 @@ type NativeRename struct{ From, To string }
 
 // NativeApplyOptions identifies deliberate renames and standard-entry actions.
 type NativeApplyOptions struct {
-	BaseURL     string
 	Renames     []NativeRename
 	StandardAdd []string
 }
@@ -27,6 +26,7 @@ type NativeApplied struct {
 }
 
 type nativeEdit struct {
+	input                                *Node
 	current, original, before, candidate *Node
 	old, proposed                        map[string]*Node
 	removed, added                       map[string]bool
@@ -154,7 +154,7 @@ func prepareNativeEdit(settings *Node, text string, p *Profile, baseURL string) 
 	if err != nil {
 		return nil, err
 	}
-	edit := &nativeEdit{current: current, original: clone(current), before: before, candidate: candidate, old: old, proposed: proposed, removed: map[string]bool{}, added: map[string]bool{}, profile: p, baseURL: baseURL, text: text, notices: []string{}}
+	edit := &nativeEdit{input: clone(settings), current: current, original: clone(current), before: before, candidate: candidate, old: old, proposed: proposed, removed: map[string]bool{}, added: map[string]bool{}, profile: p, baseURL: baseURL, text: text, notices: []string{}}
 	for tag := range old {
 		if proposed[tag] == nil {
 			edit.removed[tag] = true
@@ -170,12 +170,12 @@ func prepareNativeEdit(settings *Node, text string, p *Profile, baseURL string) 
 
 // ApplyNativeSettings reconciles a complete-form edit using the shared common
 // lifecycle. It never guesses a custom plugin's identity from its type or index.
-func ApplyNativeSettings(settings *Node, text string, p *Profile, options NativeApplyOptions) (NativeApplied, error) {
-	edit, err := prepareNativeEdit(settings, text, p, options.BaseURL)
+func ApplyNativeSettings(settings *Node, text string, p *Profile, baseURL string, options NativeApplyOptions) (NativeApplied, error) {
+	edit, err := prepareNativeEdit(settings, text, p, baseURL)
 	if err != nil {
 		return NativeApplied{}, err
 	}
-	return edit.apply(settings, options)
+	return edit.apply(edit.input, options)
 }
 
 func nativeWithoutTag(plugin *Node) *Node { out := clone(plugin); del(out, "tag"); return out }
@@ -284,7 +284,7 @@ func nativeShapeReferences(candidate *Node, targets map[string]bool, message str
 	for i, item := range items(get(candidate, "plugins")) {
 		tag := str(get(item, "tag"))
 		if targets[tag] || tag == "proxy_dns_seq" || tag == "sequence_main" {
-			return []Reference{{Path: Path{}.with("plugins").with(i).with("args"), Tag: tag, Reason: message}}
+			return []Reference{{Path: Path{}.with("plugins").with(i).with("args"), Tag: tag, Reason: message, tagSet: true}}
 		}
 	}
 	return []Reference{}

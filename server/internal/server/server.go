@@ -29,6 +29,7 @@ import (
 	apimosdns "configflow/internal/api/mosdns"
 	apinodes "configflow/internal/api/nodes"
 	apinotifications "configflow/internal/api/notifications"
+	apioxidns "configflow/internal/api/oxidns"
 	apirules "configflow/internal/api/rules"
 	apisettings "configflow/internal/api/settings"
 	apistats "configflow/internal/api/stats"
@@ -65,6 +66,7 @@ var routePackages = []func(*httpx.Router){
 	apilogs.Register,
 	apistats.Register,
 	apimosdns.Register,
+	apioxidns.Register,
 	apidiscovery.Register,
 }
 

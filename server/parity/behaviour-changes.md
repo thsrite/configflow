@@ -452,3 +452,21 @@ credential in metadata strings/keys (including row paths and file paths). Search
 Plain user configuration passwords remain revealable only in their existing marked credential pieces;
 their hidden view stays secret-free. Global ExternalPayloadSecrets / JSON-hook policy is unchanged.
 
+
+
+## HEAD 只读（C29 / C31 / C32）
+
+协调者确认的共同类别：HEAD 按 GET 的只读语义处理，沿用 GET 的状态和 headers，不返回 body。
+C29 的 Python settings 路由自动接受 HEAD，但把非 GET 请求都当作保存；携带 JSON 的 HEAD
+因而会保存设置并递增 revision。Go 的两个 OxiDNS settings 前缀统一进入只读 owner，忽略 HEAD
+请求体，不改变 DB、文件或 revision。`api/oxidns/difftest.TestC29ExpectedDifferenceHEADReadOnly`
+在隔离的 Python 副本上明确复现旧写入，再验证 Go HEAD 与 GET 的一致性及完整存储不变；
+`api/oxidns.TestC29HEADReturnsGETHeadersWithoutSaving` 逐个比较 GET/HEAD 的全部 headers。
+
+## N7-3d share — OxiDNS readers
+
+`parseYAML` 与 `safeLoad` 迁到共享 `yamlx.Parse`；复用 §5.7 已有 D1、reader-policy、unsafe-alias
+等类别。只有 ErrSyntax 保留原来的 native syntax / template fallback 契约；重复键、错误标签与
+形状、无效 merge 源、自引用和超预算 alias 不回退。native 的原 builder 与所有业务校验不变，
+include 的 source/path 诊断保留 reader cause。真实输入逐行旧/新对照 unknown=0，计数与安全回归
+见 [reader 迁移报告](progress/n7-3d-oxidns.md)。普通接受输入与 C29 行为严格比较，无额外差异。

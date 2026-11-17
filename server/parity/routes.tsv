@@ -220,15 +220,15 @@ POST	/api/nodes/parse-lines	routes.nodes.parse_node_lines	api/nodes	done
 POST	/api/nodes/reorder	routes.nodes.reorder_nodes	api/nodes	done
 GET	/api/notifications	routes.notifications.list_notifications	internal/api/notifications	wip
 POST	/api/notifications/read	routes.notifications.read_notifications	internal/api/notifications	done
-POST	/api/oxidns/common-settings	routes.oxidns.read_oxidns_common_settings		todo
-POST	/api/oxidns/common-settings/apply	routes.oxidns.apply_oxidns_common_settings		todo
-POST	/api/oxidns/editor	routes.oxidns.prepare_oxidns_editor		todo
-POST	/api/oxidns/native-settings/apply	routes.oxidns.apply_oxidns_native_settings		todo
-POST	/api/oxidns/render	routes.oxidns.render_oxidns_draft		todo
-GET	/api/oxidns/settings	routes.oxidns.oxidns_settings		todo
-POST	/api/oxidns/settings	routes.oxidns.oxidns_settings		todo
-POST	/api/oxidns/template-preview	routes.oxidns.preview_oxidns_template		todo
-POST	/api/oxidns/validate	routes.oxidns.validate_oxidns_draft		todo
+POST	/api/oxidns/common-settings	routes.oxidns.read_oxidns_common_settings	internal/api/oxidns	done
+POST	/api/oxidns/common-settings/apply	routes.oxidns.apply_oxidns_common_settings	internal/api/oxidns	done
+POST	/api/oxidns/editor	routes.oxidns.prepare_oxidns_editor	internal/api/oxidns	done
+POST	/api/oxidns/native-settings/apply	routes.oxidns.apply_oxidns_native_settings	internal/api/oxidns	done
+POST	/api/oxidns/render	routes.oxidns.render_oxidns_draft	internal/api/oxidns	done
+GET	/api/oxidns/settings	routes.oxidns.oxidns_settings	internal/api/oxidns	done
+POST	/api/oxidns/settings	routes.oxidns.oxidns_settings	internal/api/oxidns	done
+POST	/api/oxidns/template-preview	routes.oxidns.preview_oxidns_template	internal/api/oxidns	done
+POST	/api/oxidns/validate	routes.oxidns.validate_oxidns_draft	internal/api/oxidns	done
 GET	/api/profiles	routes.profiles.handle_profiles		todo
 POST	/api/profiles	routes.profiles.handle_profiles		todo
 DELETE	/api/profiles/<profile_id>	routes.profiles.handle_profile		todo
@@ -263,15 +263,15 @@ POST	/api/profiles/<profile_id>/import	routes.profiles.import_profile		todo
 GET	/api/profiles/<profile_id>/linux-gateway/rules/<path:rule_id>	routes.linux_gateway.linux_gateway_rule_provider		todo
 GET	/api/profiles/<profile_id>/linux-gateway/source/<path:rule_id>	routes.linux_gateway.linux_gateway_source_provider		todo
 GET	/api/profiles/<profile_id>/mosdns/rule-proxy	routes.profiles.profile_mosdns_rule_proxy	api/mosdns	done
-POST	/api/profiles/<profile_id>/oxidns/common-settings	routes.profiles.profile_read_oxidns_common_settings		todo
-POST	/api/profiles/<profile_id>/oxidns/common-settings/apply	routes.profiles.profile_apply_oxidns_common_settings		todo
-POST	/api/profiles/<profile_id>/oxidns/editor	routes.profiles.profile_prepare_oxidns_editor		todo
-POST	/api/profiles/<profile_id>/oxidns/native-settings/apply	routes.profiles.profile_apply_oxidns_native_settings		todo
-POST	/api/profiles/<profile_id>/oxidns/render	routes.profiles.profile_render_oxidns_draft		todo
-GET	/api/profiles/<profile_id>/oxidns/settings	routes.profiles.profile_oxidns_settings		todo
-POST	/api/profiles/<profile_id>/oxidns/settings	routes.profiles.profile_oxidns_settings		todo
-POST	/api/profiles/<profile_id>/oxidns/template-preview	routes.profiles.profile_preview_oxidns_template		todo
-POST	/api/profiles/<profile_id>/oxidns/validate	routes.profiles.profile_validate_oxidns_draft		todo
+POST	/api/profiles/<profile_id>/oxidns/common-settings	routes.profiles.profile_read_oxidns_common_settings	internal/api/oxidns	done
+POST	/api/profiles/<profile_id>/oxidns/common-settings/apply	routes.profiles.profile_apply_oxidns_common_settings	internal/api/oxidns	done
+POST	/api/profiles/<profile_id>/oxidns/editor	routes.profiles.profile_prepare_oxidns_editor	internal/api/oxidns	done
+POST	/api/profiles/<profile_id>/oxidns/native-settings/apply	routes.profiles.profile_apply_oxidns_native_settings	internal/api/oxidns	done
+POST	/api/profiles/<profile_id>/oxidns/render	routes.profiles.profile_render_oxidns_draft	internal/api/oxidns	done
+GET	/api/profiles/<profile_id>/oxidns/settings	routes.profiles.profile_oxidns_settings	internal/api/oxidns	done
+POST	/api/profiles/<profile_id>/oxidns/settings	routes.profiles.profile_oxidns_settings	internal/api/oxidns	done
+POST	/api/profiles/<profile_id>/oxidns/template-preview	routes.profiles.profile_preview_oxidns_template	internal/api/oxidns	done
+POST	/api/profiles/<profile_id>/oxidns/validate	routes.profiles.profile_validate_oxidns_draft	internal/api/oxidns	done
 GET	/api/profiles/<profile_id>/proxy-groups	routes.profiles.profile_proxy_groups		todo
 POST	/api/profiles/<profile_id>/proxy-groups	routes.profiles.profile_proxy_groups		todo
 GET	/api/profiles/<profile_id>/rule-library/content/<rule_id>	routes.profiles.profile_rule_library_content		todo

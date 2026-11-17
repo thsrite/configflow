@@ -47,6 +47,7 @@ type row struct {
 	Out        json.RawMessage   `json:"out"`
 	Err        []string          `json:"err"`
 	Issues     json.RawMessage   `json:"issues"`
+	References json.RawMessage   `json:"references"`
 	Aliases    [][][]any         `json:"aliases"`
 	ArgsAfter  []json.RawMessage `json:"args_after"`
 	Unholdable json.RawMessage   `json:"unholdable"`

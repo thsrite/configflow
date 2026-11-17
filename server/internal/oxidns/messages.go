@@ -66,3 +66,22 @@ const (
 	messageNativeIncludeHostsReason  = "请先确认附加文件中的共享引用"
 	messageNativeHostsOff            = "Hosts 来源已清空，已移除空插件及标准调用；已撤回的来源不会在恢复时重新加入"
 )
+
+const (
+	messageNativeRenamesShape = "renames 必须为原 tag 到新 tag 的文本映射"
+	// NativeConfigTextMessage is the native-editor text-field rejection.
+	NativeConfigTextMessage = "native_config 必须为 YAML 文本"
+)
+
+const (
+	messageArchiveState   = "OxiDNS 运行数据 state/ 不能包含在配置包中"
+	messageArchiveFormat  = "OxiDNS 配置格式无效"
+	messageArchiveInclude = "OxiDNS 完整配置包不支持外部 include"
+)
+
+const (
+	// SettingsObjectMessage rejects a non-object whole-settings request.
+	SettingsObjectMessage = "OxiDNS 设置必须是对象"
+	// SettingsChangedMessage explains a stale whole-object editor save.
+	SettingsChangedMessage = "OxiDNS 设置已在其他页面修改（例如策略规则的 DNS），请重新加载后再保存"
+)

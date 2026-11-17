@@ -12,8 +12,9 @@
 - TestN73OxidnsReaderInputs 流式读取真实既有 fixture 的输入 args（不取预期输出）；包括
   native_config、模板 YAML 字段和 include YAML 附件。逐行比较旧/新 reader，不按旧/新业务
   输出猜测。只允许设计 §5.7 既有分类，unknown 必须为 0。
-- 首轮不含 include 附件候选的计数：native 45718（equal 45062、D1 383、policy 177、alias 96）；
-  template 324455（equal 324190、D1 132、alias 133），unknown=0。补充 include 输入后将复核最终计数。
+- 最终迁移门包含 include 附件和 C29 新真实参考：native 53588（equal 52768、D1 547、
+  reader-policy 177、unsafe-alias 96）；template 326232（equal 325967、D1 132、unsafe-alias 133）；
+  两类 unknown=0。逐输入 occurrence 计数，不去重，不取 Python 预期输出。
 - 深度 40 alias/self-reference/重复键/tag-shape/无效 merge 源均拒绝；普通 syntax 才保留 fallback。
   另比对合法共享 alias/merge 的完整值，防止 reader 替换破坏原 builder 后处理。
 - S 核心参考中仅“双方都作为 settings error 拒绝”的显式 yamlReadError policy/alias 诊断按 §5.7
@@ -23,3 +24,7 @@
 include 的结构错误包装丢失原因。现在仅补读取层 cause 保留，不改变该包装的文本或 issue/source。
 
 所有检查通过 rt 在测试服务器执行；本机未测试、未访问生产、未 push、未开子 agent。
+
+最终迁移计数命令（.64）：`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go test -count=1 -run "^TestN73OxidnsReaderInputs$" -v -timeout=15m ./internal/oxidns'`。
+末行：`PASS; ok configflow/internal/oxidns 56.795s`。完整核心包较早复验：`ok ... 129.337s`。
+两个指定 fuzz 与最终门禁结果将在 C29 完成时补齐。
