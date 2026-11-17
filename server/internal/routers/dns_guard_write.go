@@ -337,8 +337,16 @@ func (d *RouterOS) ApplyDNSGuard(ctx context.Context, op DNSGuardReplace) (*DNSG
 	slices.Reverse(undo)
 	if err != nil {
 		remap, rollback := d.rollbackDNSGuard(ctx, undo)
-		if rollback == nil {
-			rollback = d.remapDNSGuard(ctx, op.Previous, remap)
+		// Objects the rollback did restore are ours again under new IDs, even
+		// when another step failed. Without the remap they carry the reserved
+		// list name / hijack comment with no proof and block every later preview,
+		// while the restored Netwatch keeps toggling by comment (Python bug).
+		if rollback == nil || len(remap) > 0 {
+			if remapErr := d.remapDNSGuard(ctx, op.Previous, remap); rollback == nil {
+				rollback = remapErr
+			} else if remapErr != nil {
+				rollback = rollbackError(rollback.Error() + "；" + remapErr.Error())
+			}
 		}
 		if rollback != nil {
 			return nil, rollbackError(err.Error() + "；" + rollback.Error())
