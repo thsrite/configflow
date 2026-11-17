@@ -75,7 +75,7 @@ func TestNativeDuplicateKeys(t *testing.T) {
 			for _, load := range []func() error{func() error { _, err := Parse([]byte(tt.src)); return err }, func() error { return Unmarshal([]byte(tt.src), &value) }} {
 				err := load()
 				var e *SyntaxError
-				if !errors.As(err, &e) || !errors.Is(err, ErrSyntax) || e.Line != tt.line || e.Column < 1 || err.Error() != fmt.Sprintf(msgDuplicateKey, tt.key, tt.line) {
+				if !errors.As(err, &e) || !errors.Is(err, ErrPolicy) || e.Line != tt.line || e.Column < 1 || err.Error() != fmt.Sprintf(msgDuplicateKey, tt.key, tt.line) {
 					t.Fatalf("got %#v %v", e, err)
 				}
 			}
@@ -238,7 +238,7 @@ func TestNativeAliasSafety(t *testing.T) {
 	for _, src := range []string{"&a [*a]", "a: &a {b: *a}", "a: &a [ &b [*a] ]"} {
 		_, err := Parse([]byte(src))
 		var e *SyntaxError
-		if !errors.As(err, &e) || !errors.Is(err, ErrSyntax) || e.Line != 1 || e.Problem != fmt.Sprintf(msgRecursiveAlias, 1) {
+		if !errors.As(err, &e) || !errors.Is(err, ErrAliasRecursion) || e.Line != 1 || e.Problem != fmt.Sprintf(msgRecursiveAlias, 1) {
 			t.Fatalf("recursive %q: %v", src, err)
 		}
 	}
@@ -247,7 +247,7 @@ func TestNativeAliasSafety(t *testing.T) {
 	cycle.Content = []*Node{alias}
 	var dst any
 	for _, load := range []func() error{func() error { return Decode(cycle, &dst) }, func() error { _, err := Marshal(cycle); return err }} {
-		if err := load(); !errors.Is(err, ErrSyntax) {
+		if err := load(); !errors.Is(err, ErrAliasRecursion) {
 			t.Fatalf("manual cycle: %v", err)
 		}
 	}
@@ -265,7 +265,7 @@ func TestNativeAliasSafety(t *testing.T) {
 	if err := yaml.Unmarshal([]byte(b.String()), &manual); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Marshal(&manual); !errors.Is(err, ErrSyntax) {
+	if _, err := Marshal(&manual); !errors.Is(err, ErrAliasBudget) {
 		t.Fatalf("manual alias bomb: %v", err)
 	}
 	cloned := Clone(manual.Content[0])
@@ -337,7 +337,7 @@ func TestNativeRejectsMalformedManualNodes(t *testing.T) {
 	for _, n := range []*Node{Map(Str("odd")), {Kind: yaml.AliasNode}, {Kind: 99}, {Kind: yaml.DocumentNode}, {Kind: yaml.SequenceNode, Content: []*Node{nil}}} {
 		var dst any
 		for _, check := range []func() error{func() error { return Decode(n, &dst) }, func() error { _, err := Marshal(n); return err }, func() error { _, err := ToJSON(n); return err }} {
-			if err := check(); !errors.Is(err, ErrSyntax) {
+			if err := check(); !errors.Is(err, ErrPolicy) {
 				t.Fatalf("manual node %#v: %v", n, err)
 			}
 		}

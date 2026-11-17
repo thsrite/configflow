@@ -38,7 +38,7 @@ func checkGraph(n *Node, path, done map[*Node]bool) error {
 		return invalidNode(n, "nil child node")
 	}
 	if path[n] {
-		return nodeError(n, fmt.Sprintf(msgRecursiveAlias, n.Line))
+		return aliasNodeError(n, fmt.Sprintf(msgRecursiveAlias, n.Line), ErrAliasRecursion)
 	}
 	if done[n] {
 		return nil
@@ -79,7 +79,7 @@ func checkGraph(n *Node, path, done map[*Node]bool) error {
 			return invalidNode(n, "alias has no target")
 		}
 		if path[n.Alias] {
-			return nodeError(n, fmt.Sprintf(msgRecursiveAlias, n.Line))
+			return aliasNodeError(n, fmt.Sprintf(msgRecursiveAlias, n.Line), ErrAliasRecursion)
 		}
 		if err := checkGraph(n.Alias, path, done); err != nil {
 			return err
@@ -180,7 +180,7 @@ func checkTagShape(n *Node) error {
 
 func checkAliasBudget(n *Node, b *aliasBudget, alias bool) error {
 	if !b.visit(alias) {
-		return nodeError(n, fmt.Sprintf(msgExcessiveAliases, n.Line))
+		return aliasNodeError(n, fmt.Sprintf(msgExcessiveAliases, n.Line), ErrAliasBudget)
 	}
 	if n.Kind == yaml.AliasNode {
 		return checkAliasBudget(n.Alias, b, true)

@@ -48,15 +48,15 @@ func TestStandardTagShapes(t *testing.T) {
 					}
 					want := fmt.Sprintf(msgTagShape, "!!"+tag, tc.shape, 2)
 					var syntax *SyntaxError
-					if !errors.Is(err, ErrSyntax) || !errors.As(err, &syntax) || syntax.Line != 2 || err.Error() != want {
+					if !errors.Is(err, ErrPolicy) || !errors.As(err, &syntax) || syntax.Line != 2 || err.Error() != want {
 						t.Fatalf("diagnostic %v want %s", err, want)
 					}
 					manual := &Node{Kind: form.kind, Tag: "!!" + tag, Line: 2}
 					var value any
-					if err := Decode(manual, &value); !errors.Is(err, ErrSyntax) {
+					if err := Decode(manual, &value); !errors.Is(err, ErrPolicy) {
 						t.Fatalf("Decode: %v", err)
 					}
-					if _, err := Marshal(manual); !errors.Is(err, ErrSyntax) {
+					if _, err := Marshal(manual); !errors.Is(err, ErrPolicy) {
 						t.Fatalf("Marshal: %v", err)
 					}
 				})

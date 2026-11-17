@@ -134,11 +134,11 @@ func TestReviewN72EmptyYAMLTagRejected(t *testing.T) {
 	for _, source := range []string{"!%21", "a: !%21 x\n", "a: !<tag:yaml.org,2002:> [b]\n"} {
 		_, err := Parse([]byte(source))
 		var syntax *SyntaxError
-		if !errors.Is(err, ErrSyntax) || !errors.As(err, &syntax) || syntax.Line < 1 || err.Error() != fmt.Sprintf(msgEmptyTag, syntax.Line) {
+		if !errors.Is(err, ErrPolicy) || !errors.As(err, &syntax) || syntax.Line < 1 || err.Error() != fmt.Sprintf(msgEmptyTag, syntax.Line) {
 			t.Errorf("%q: %v", source, err)
 		}
 	}
-	if out, err := Marshal(&Node{Kind: yaml.ScalarNode, Tag: "!!", Value: "x"}); !errors.Is(err, ErrSyntax) {
+	if out, err := Marshal(&Node{Kind: yaml.ScalarNode, Tag: "!!", Value: "x"}); !errors.Is(err, ErrPolicy) {
 		t.Errorf("unwritable tag marshalled as %q: %v", out, err)
 	}
 }

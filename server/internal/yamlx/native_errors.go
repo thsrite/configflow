@@ -8,9 +8,15 @@ import (
 )
 
 var (
-	// ErrSyntax identifies invalid YAML, including duplicate keys and unsafe aliases.
+	// ErrSyntax identifies YAML syntax errors reported by the parser.
 	ErrSyntax = errors.New("yamlx: invalid YAML")
-	// ErrDuplicateKey identifies a duplicate mapping key. It also matches ErrSyntax.
+	// ErrAliasRecursion identifies a recursive YAML alias graph.
+	ErrAliasRecursion = errors.New("yamlx: recursive alias")
+	// ErrAliasBudget identifies alias expansion beyond the shared budget.
+	ErrAliasBudget = errors.New("yamlx: alias budget exceeded")
+	// ErrPolicy identifies input refused by the facade's validation policy.
+	ErrPolicy = errors.New("yamlx: policy violation")
+	// ErrDuplicateKey identifies a duplicate mapping key; it also matches ErrPolicy.
 	ErrDuplicateKey = errors.New("yamlx: duplicate mapping key")
 	// ErrType identifies YAML values incompatible with a typed destination.
 	ErrType = errors.New("yamlx: incompatible YAML type")
@@ -25,7 +31,7 @@ type multipleDocumentsError struct{ line int }
 
 func (e *multipleDocumentsError) Error() string { return fmt.Sprintf(msgMultipleDocuments, e.line) }
 
-func (e *multipleDocumentsError) Unwrap() error { return ErrMultipleDocuments }
+func (e *multipleDocumentsError) Unwrap() error { return errors.Join(ErrMultipleDocuments, ErrPolicy) }
 
 type decodeTypeError struct{ cause error }
 
@@ -44,10 +50,10 @@ type SyntaxError struct {
 // Error returns the diagnostic supplied by yaml.v3 or the facade's policy check.
 func (e *SyntaxError) Error() string { return e.Problem }
 
-// Unwrap identifies every SyntaxError as ErrSyntax.
+// Unwrap identifies syntax, policy or alias failures without conflating them.
 func (e *SyntaxError) Unwrap() error {
 	if e.cause != nil {
-		return errors.Join(ErrSyntax, e.cause)
+		return e.cause
 	}
 	return ErrSyntax
 }
@@ -63,7 +69,7 @@ type DuplicateKeyError struct {
 func (e *DuplicateKeyError) Error() string { return fmt.Sprintf(msgDuplicateKey, e.Key, e.Line) }
 
 // Unwrap identifies a duplicate-key policy failure.
-func (e *DuplicateKeyError) Unwrap() error { return ErrDuplicateKey }
+func (e *DuplicateKeyError) Unwrap() error { return errors.Join(ErrDuplicateKey, ErrPolicy) }
 
 func duplicateKeyError(n *Node, key string) error {
 	detail := &DuplicateKeyError{Key: key, Line: n.Line}
@@ -76,7 +82,8 @@ func syntaxError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, ErrSyntax) {
+	var native *SyntaxError
+	if errors.As(err, &native) {
 		return err
 	}
 	e := &SyntaxError{Problem: err.Error()}
@@ -90,7 +97,7 @@ func syntaxError(err error) error {
 }
 
 func nodeError(n *Node, problem string) error {
-	e := &SyntaxError{Problem: problem}
+	e := &SyntaxError{Problem: problem, cause: ErrPolicy}
 	if n != nil {
 		e.Line, e.Column = n.Line, n.Column
 	}
@@ -99,4 +106,12 @@ func nodeError(n *Node, problem string) error {
 
 func invalidNode(n *Node, problem string) error {
 	return nodeError(n, fmt.Sprintf("yamlx: %s", problem))
+}
+
+func aliasNodeError(n *Node, problem string, cause error) error {
+	e := &SyntaxError{Problem: problem, cause: cause}
+	if n != nil {
+		e.Line, e.Column = n.Line, n.Column
+	}
+	return e
 }

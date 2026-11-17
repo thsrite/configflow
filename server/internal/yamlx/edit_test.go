@@ -79,7 +79,7 @@ func TestEditDuplicateKeyDiagnostics(t *testing.T) {
 	out, err := Edit(source, func(*Node) error { t.Fatal("callback ran for duplicate keys"); return nil })
 	var syntax *SyntaxError
 	var duplicate *DuplicateKeyError
-	if !errors.Is(err, ErrSyntax) || !errors.Is(err, ErrDuplicateKey) || !errors.As(err, &syntax) || !errors.As(err, &duplicate) || duplicate.Key != "name" || duplicate.Line != 2 || syntax.Line != 2 || !bytes.Equal(out, source) {
+	if !errors.Is(err, ErrPolicy) || !errors.Is(err, ErrDuplicateKey) || !errors.As(err, &syntax) || !errors.As(err, &duplicate) || duplicate.Key != "name" || duplicate.Line != 2 || syntax.Line != 2 || !bytes.Equal(out, source) {
 		t.Fatalf("wrong duplicate diagnostic: %v", err)
 	}
 }
