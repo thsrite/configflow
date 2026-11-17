@@ -403,7 +403,7 @@ Commands (from the worktree root; iterate on .63, final run on .32):
 
 ## R06 — device route editor
 
-**Status: `missing`** · HR · prereqs: R04, R05 · Go: internal/routers
+**Status: `partial`** · HR · prereqs: R04, R05 · Go: internal/routers
 
 Files:
 - `backend/routers/route_editor.py` (164), `backend/routers/routeros_routes.py` (283), `backend/routers/ikuai_routes.py` (237)
@@ -411,6 +411,8 @@ Files:
 Tests: `test_route_editor.py` (14), `test_routeros_routes.py` (24), `test_ikuai_routes.py` (24)
 
 Routes: none here (`/routes`, `/routes/plan`, `/routes/apply` handlers are R15).
+
+Implementation underway: typed editor/preview and transitional L2 connection lock; design and HR issue-class dispositions: `design/r06-route-editor.md`. Next: vendor mutation/compensation adapters, loopback Python corpus, adversarial checks, final .32 gates. HTTP routes and L1-before-validation remain R15 (not claimed as covered).
 
 Notes for porter: `router_operation_lock(router)` (per-connection in-process lock; used by R15, R17 and agents A23) — export it. `read_routes`, `public_route`, plan/apply with conflict/rollback.
 

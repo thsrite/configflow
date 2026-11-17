@@ -182,3 +182,31 @@ var ikuaiHTTPReasons = map[int]string{
 // ikuaiListLabels name the lists in incomplete-read messages.
 var ikuaiListLabels = map[string]string{"static_rt": "静态路由", "static_rt_table": "当前路由表",
 	"route_object": "IP 分组", "nat_rule": "NAT 规则", "stream_ipport": "端口分流"}
+
+// Manual route editor diagnostics.
+const (
+	messageEditUnsupported  = "该路由器暂不支持手工路由管理"
+	messageEditListIdentity = "路由列表缺少完整、唯一的对象信息，停止操作"
+	messageEditFormat       = "路由操作参数格式错误"
+	messageEditAction       = "只支持添加、编辑或删除单条路由"
+	messageEditID           = "请选择有效的路由记录"
+	messageEditRevision     = "缺少路由原始版本，请刷新列表后重试"
+	messageEditAddIdentity  = "新增路由不能指定已有路由的身份"
+	messageEditDeleteValues = "删除操作不能同时修改路由字段"
+	messageEditValues       = "请提供网段、下一跳、启用状态和备注，不能包含其他字段"
+	messageEditAddressText  = "网段和下一跳必须为 IPv4 地址文本"
+	messageEditAddress      = "网段必须为有效 IPv4 网段，下一跳必须为单个 IPv4 地址"
+	messageEditGateway      = "下一跳必须为可用的单播 IPv4 地址"
+	messageEditEnabled      = "启用状态必须为 true 或 false"
+	messageEditComment      = "备注最多 512 个字符，且不能包含空字符"
+	messageEditMissing      = "该路由已不存在，请刷新列表后重试"
+	messageEditDrift        = "路由已被其他操作修改，请刷新列表后重新预览"
+	messageEditReadonly     = "该路由为只读，不能修改或删除"
+	messageEditDuplicate    = "主路由表中已存在 %s，请编辑已有路由，避免重复添加"
+	messageEditAdd          = "添加"
+	messageEditUpdate       = "编辑"
+	messageEditDelete       = "删除"
+	messageEditSummary      = "%s静态路由 %s → %s"
+	messageEditManaged      = "此路由带有 ConfigFlow 管理标记；后续自动发布可能接管、调整或删除它。手工维护的路由建议移除备注中的 cf 管理前缀。"
+	messageEditBusy         = "此路由器正在发布或同步，请稍后重试"
+)
