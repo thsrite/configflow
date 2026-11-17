@@ -1151,6 +1151,12 @@ F2 高严重度，环境注册密钥明文/编码从 diff、entries、搜索泄�
 复验 20 条准确 baseline、最终 gate.sh -p 6 和 fuzz，零未决后 verified。生产 spec 边界和广播注销并发已补回归。
 F2 非显示元数据已在 A12 唯一 mapTexts 加同一 finder 兜底，pushdiff race 60.471s 通过；
 原版 20 条 baseline 因果证明复验也通过（21 HTTP cases / 3 actual bundles）。
+基线合成验收 36 tests 通过：实际 proddiff.main 的 matching/record 成功、new/stale 失败，且精确20条或全部移除。
+原 Python A13 六文件 101 tests 通过。F3 独立 high 已在 A24 c106af0d scratch checkout 复现：
+projection 先清掉 deployment api_key，外层 journal/HA 消息引用泄露；待 A24 合入后在 shared publicAgent 收集原记录密钥再投影，单独提交。
+协调者批准提前在临时 `go-review-a13-a24-prep`（基于 go-review-a24@3c2e0589）准备 F2/F3：
+两处 own diff 已在该 sibling worktree 实现，F3/vet/真实 Python public boundary race 通过；finder 全包 race 1.163s。
+正式分支的 API/collector 测试当前未提交，等 A24 合入后 rebase，先提交 F3共享修复，再提交F2 finder/HTTP防漏，最后完整门禁。
 
 **Design:** `server/design/a14-publish.md` (Opus, 2026-11-17) covers the whole chain A11→A14 — package map, types, Agent protocol, state machine, locks, failure table, steps A13-1, A13-2, acceptance. Port to it; contract changes need the designer's or coordinator's agreement.
 

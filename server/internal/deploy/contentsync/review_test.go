@@ -26,6 +26,7 @@ func (s runtimeGate) Spawn(ctx context.Context, name string, fn func(context.Con
 	})
 }
 
+// TestReviewCloseCancelsRealRuntimeWorkers checks admission and live cancellation.
 func TestReviewCloseCancelsRealRuntimeWorkers(t *testing.T) {
 	for _, queued := range []bool{false, true} {
 		t.Run(fmt.Sprintf("before-start=%t", queued), func(t *testing.T) {
@@ -86,6 +87,7 @@ func TestReviewCloseCancelsRealRuntimeWorkers(t *testing.T) {
 	}
 }
 
+// TestReviewProductionCacheSpec pins default quotas independently of fixtures.
 func TestReviewProductionCacheSpec(t *testing.T) {
 	c := New(Options{})
 	defer c.Close()
@@ -125,6 +127,7 @@ func TestReviewProductionCacheSpec(t *testing.T) {
 	}
 }
 
+// TestReviewUnregisterWaitsForBroadcast checks isolation after overlapping delivery.
 func TestReviewUnregisterWaitsForBroadcast(t *testing.T) {
 	a, b := newFixture(t, nil), newFixture(t, nil)
 	var dispatcher Dispatcher

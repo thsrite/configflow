@@ -9,6 +9,7 @@ import (
 	"configflow/internal/redact"
 )
 
+// TestReviewStoredCredentialMetadataFallback covers metadata outside display unions.
 func TestReviewStoredCredentialMetadataFallback(t *testing.T) {
 	const stored = "synthetic-stored-key"
 	find := func(text string) []redact.Range {

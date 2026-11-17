@@ -1,7 +1,11 @@
 """Synthetic regressions for the acceptance gate (run on the test server)."""
 import importlib.util
+import contextlib
 import io
 import json
+import os
+import tempfile
+from types import SimpleNamespace
 import zipfile
 from email.message import Message
 from pathlib import Path
@@ -450,6 +454,87 @@ class AggregationInventoryTests(unittest.TestCase):
         differences = pd.response_diffs(reply(document), reply(changed),
                                        '/generator/agent-deployment-bundle', [])
         self.assertIn(('body.files[0].document.proxies[0].port', 'value'), differences)
+
+
+class BaselineExitTests(unittest.TestCase):
+    def test_a13_deferrals_are_exact_or_removed_together_by_a14(self):
+        rows = [line.split('\t', 3) for line in (pd.PARITY / 'proddiff-baseline.txt').read_text().splitlines()
+                if 'deferred → A14' in line]
+        if not rows:
+            return  # A14 removes all twenty after wiring real preparation.
+        self.assertEqual(20, len(rows))
+        fixture = Path(__file__).parents[2] / 'internal/api/agents/content_proof_test.go'
+        approved = fixture.read_text().split('const a13DeferredFields = `', 1)[1].split('`', 1)[0]
+        expected = {('GET ' + route, path, kind) for route, path, kind in
+                    (line.split('\t') for line in approved.splitlines())}
+        self.assertEqual(expected, {tuple(row[:3]) for row in rows})
+        for row in rows:
+            self.assertNotIn('*', row[0] + row[1])
+            self.assertEqual('deferred → A14：PrepareFunc 未接线，接线后必须消失', row[3])
+
+    def test_real_main_rejects_stale_but_accepts_matching_and_recorded_baselines(self):
+        # Exercise main's actual baseline/report/exit path. Only process and
+        # network boundaries are replaced; all data belongs to this temp tree.
+        difference = ('GET /synthetic', 'body.value', 'value')
+        obsolete = ('GET /synthetic', 'body.old', 'missing-in-go')
+        for name, baseline, record, expected in (
+            ('matching', {difference}, False, 0),
+            ('stale-only', {difference, obsolete}, False, 1),
+            ('new-only', set(), False, 1),
+            ('explicit-record', {obsolete}, True, 0),
+        ):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                snapshot, parity = root / 'snapshot', root / 'parity'
+                snapshot.mkdir()
+                parity.mkdir()
+                (root / 'cf-prod-snapshot/runs').mkdir(parents=True)
+                (parity / 'routes.tsv').write_text('')
+                (parity / 'proddiff-coverage.txt').write_text('')
+                (parity / 'proddiff-generator-coverage.json').write_text('{}')
+                path = parity / 'proddiff-baseline.txt'
+                path.write_text(''.join('\t'.join(row) + '\tSynthetic accepted difference\n' for row in baseline))
+
+                def launch(_command, *, env, **_kwargs):
+                    for key in ('PRODDIFF_ROUTES', 'PRODDIFF_PY_ROUTES', 'PRODDIFF_PY_LOOPS'):
+                        Path(env[key]).write_text('')
+                    manifest = env['PRODDIFF_ROUTES']
+                    for suffix in ('.ready', '.loops', '.startups'):
+                        Path(manifest + suffix).write_text('')
+                    return mock.Mock(poll=lambda: None)
+
+                argv = ['run.py', str(snapshot), '/synthetic/configflow'] + (['--record-baseline'] if record else [])
+                with contextlib.ExitStack() as patches:
+                    for patch in (
+                        mock.patch.object(pd, 'PARITY', parity),
+                        mock.patch.object(pd, 'PRIVATE_REPORT', None),
+                        mock.patch.object(pd.Path, 'home', return_value=root),
+                        mock.patch.object(pd, 'assert_no_egress'),
+                        mock.patch.object(pd, 'digest_tree', return_value='immutable'),
+                        mock.patch.object(pd, 'lock_runs'),
+                        mock.patch.object(pd, 'load_rules', return_value=[]),
+                        mock.patch.object(pd, 'document', return_value={'profiles': {'default': {}}}),
+                        mock.patch.object(pd, 'run_workers', return_value=({difference}, {}, {})),
+                        mock.patch.object(pd, 'cases', return_value=[]),
+                        mock.patch.object(pd, 'self_check', return_value={}),
+                        mock.patch.object(pd, 'stop_processes'),
+                        mock.patch.object(pd.os, 'statvfs', return_value=SimpleNamespace(f_flag=os.ST_RDONLY)),
+                        mock.patch.object(pd.subprocess, 'Popen', side_effect=launch),
+                        mock.patch.object(pd.signal, 'signal'),
+                        mock.patch.object(pd, 'send', return_value=reply({'token': 'synthetic-login'})),
+                        mock.patch.object(pd.sys, 'argv', argv),
+                        mock.patch.dict(pd.os.environ, PRODDIFF_GENERATOR='/synthetic/generator'),
+                        mock.patch('sys.stdout', new_callable=io.StringIO),
+                    ):
+                        patches.enter_context(patch)
+                    self.assertEqual(expected, pd.main())
+                summary_path = next((root / 'cf-prod-snapshot/runs').glob('run-*/summary.json'))
+                summary = json.loads(summary_path.read_text())
+                self.assertEqual(int(name == 'stale-only'), summary['stale'])
+                self.assertEqual(int(name == 'new-only'), summary['new'])
+                if record:
+                    self.assertNotIn('body.old', path.read_text())
+                    self.assertIn('body.value', path.read_text())
 
 
 if __name__ == "__main__":
