@@ -63,7 +63,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A10 | Docker HA compose variants, installer routes | 1018 | verified | HR | A08, A09 | 9 (9 done) | internal/installer, api/agents |
 | A11 | deployment bundle, locations, Mihomo resources, generated preview | 1264 | ported | HR | A02, A19, C05, C12, C14, C15, C21, C22, C25 | – | internal/deploy (new) |
 | A12 | push diff | 1465 | verified | | A11 | – | internal/deploy/pushdiff |
-| A13 | content sync, Agent list/detail, push-diff routes | 584 | missing | | A12, A15 | 4 | internal/deploy, api/agents |
+| A13 | content sync, Agent list/detail, push-diff routes | 584 | ported | | A12, A15 | 4 | internal/deploy, api/agents |
 | A14 | publishing: transactional content, push-config, deployments, receipts | 1002 | missing | HR | A11, A13, C13, C17, C18, C19, C20, C22, C23 | 9 | internal/deploy, api/agents |
 | A15 | upgrades, Agent operations, address follow | 745 | verified | HR | A01, A02 | 15 (15 done) | internal/agents/upgrades (new), api/agents |
 | A16 | Agent rule sync, projection, snapshot | 1371 | missing | HR | A07, A14, C25, C27 | 2 | internal/agents/rulesync (new), api/agents |
@@ -1142,7 +1142,7 @@ baseline: new=0 stale=0
 
 ## A13 — content sync, Agent list/detail, push-diff routes
 
-**Status: `in progress`** · prereqs: A12, A15 (`upgrades.artifacts` for `upgrade_available`) · Go: internal/deploy, api/agents
+**Status: `ported`** · prereqs: A12, A15 (`upgrades.artifacts` for `upgrade_available`) · Go: internal/deploy, api/agents
 
 **Design:** `server/design/a14-publish.md` (Opus, 2026-11-17) covers the whole chain A11→A14 — package map, types, Agent protocol, state machine, locks, failure table, steps A13-1, A13-2, acceptance. Port to it; contract changes need the designer's or coordinator's agreement.
 
@@ -1158,7 +1158,7 @@ A24 clarification: reuse the same-package `publicAgent(*agents.Record) *agents.R
 
 Evidence: GET branches extend the existing `createAgent`/`handleAgentItem` handlers, sharing endpoint registration. `_public_agent` is supplied by A24's shared helper. C13 `subscription_cache` invalidation is registered here and broadcasts to all live Manager-owned Checkers.
 
-Branch `go-port-a13`, original base `631a4815`, rebased onto `go@ae2e0f59` (A24, A12 review fixes, N8-4). Coordinator decisions are recorded in design/a14-publish.md “Clarified in A13”. A13-1 commit `2e0dc74f`: opaque input keys, bounded Checker, Manager lifetime cleanup, and api/agents dispatcher wiring. A13-2 commit `64180c0c` implements all four GET routes. A24 helper was initially cherry-picked; after A24 merged, the duplicate commit was skipped, retaining upstream's expanded publicAgent tests and empty-HA fix. A14 production preparation remains injected. All tests run through rt; no subagents, pushes or production access.
+Branch `go-port-a13`, original base `631a4815`, rebased onto `go@4d8a665a` (A24, A12 review fixes, N8-4, O3-5). Coordinator decisions are recorded in design/a14-publish.md “Clarified in A13”. A13-1 commit `e07211a2`: opaque input keys, bounded Checker, Manager lifetime cleanup, and api/agents dispatcher wiring. A13-2 commit `d4a3f737` implements all four GET routes. Causality proof / exact deferred baseline / stale enforcement: `f55cb76d`; O3-5 fixture isolation: `9bcd2cf3`. A24 helper was initially cherry-picked; after A24 merged, the duplicate commit was skipped, retaining upstream's expanded publicAgent tests and empty-HA fix. A14 production preparation remains injected. All tests run through rt; no subagents, pushes or production-device access.
 
 
 A13-1 decisions and evidence:
@@ -1274,6 +1274,30 @@ Additional Python test mapping (all function names):
 | `test_rendering_again_asks_sub_store_once_per_uri_node` | A14 preparation; no production PrepareFunc in A13 by coordinator decision |
 
 A12's seven deferred Checker tests map to TestSharedDetailsExpiryPagingAndSearch (shared worker and prepared list), TestDetailCountByteQuotasAndSyncedCleanup (synced cleanup, eviction and rebuilding), TestDetailFailuresRetryWithoutDiscardingStatus (short detail retry), and TestInputProjectionAndPreconditions (synced/unavailable skips listing). Deferred A01/A03/A15 GET privacy/history/localization cases use TestContentReadsAgainstFlask, TestContentChangesAgainstFlask, TestContentHTTPHistorySummaryAndPending and A24 TestPublicAgentPython; write-side failure/upgrade/deployment setup remains with the respective owner.
+
+Final acceptance (2026-11-18, **.64**, `-p 4`, server gate-slot limit observed):
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'GATE_LOGS=/tmp/configflow-a13-complete-gate server/scripts/gate.sh -p 4 FuzzContentPageQuery:./internal/api/agents'
+RT_HOST=sunbroke@192.168.0.64 rt --no-sync -- bash -lc 'server/scripts/proddiff.sh --a13-proof'
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'PYTHONPATH=server/tools/proddiff ~/cf-test/.venv/bin/python -m unittest discover -s server/tools/proddiff -p test_proddiff.py && bash -n server/scripts/proddiff.sh'
+```
+
+```text
+gofmt -l internal/ tools/ cmd/       no output
+go vet ./...                        PASS
+configflow_proddiff/configflow_difftest: build ./..., vet + lifecycle tests PASS
+full go test -race -p=4 -count=1 ./...: 87 packages PASS, no FAIL/data races
+  agents 376.816s; api/agents 233.645s; deploy 39.031s; contentsync 1.966s; pushdiff 42.296s
+baseline: new=0 stale=0
+12 difftest packages PASS (api/agents 131.510s)
+FuzzContentPageQuery ok  configflow/internal/api/agents 61.040s (60s fuzz)
+GATE PASS
+A13 real preparation: 21 HTTP cases, 3 actual bundles; all 20 deferred fields reproduced without preparation and resolved with it; PASS
+Ran 34 tests in 0.029s — OK (proddiff harness); bash -n PASS
+```
+
+Gate logs: `/tmp/configflow-a13-complete-gate` on .64. Final rebase after the passing gate adds only `design/r12-release.md` (6 insertions/4 deletions), no compiled source or test change; the tested source is code-equivalent to `9bcd2cf3`. The real-preparation proof was repeated successfully on the final source copy. Per the updated Brief, the full race gate replaces a redundant full non-race run (a plain full suite had also passed earlier before the O3-5 integration). No new Python bug fixes. Open limitation is precisely the 20 approved A14 deferrals above; independent A13 review is still required.
 
 ## A14 — publishing: transactional content, push-config, deployments, receipts
 
