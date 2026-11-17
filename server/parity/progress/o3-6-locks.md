@@ -168,3 +168,14 @@ Actual HTTP/differential results are pending the gate.
 O3-6b is intentionally unimplemented here: routers-owned physical connection L1 Keyed → repo.JobLock,
 plus R04–R07/R09 write/readback/rollback Detach, after the explicit R08/R09 merge notification, on a
 new branch from then-current go. Routers and their handlers have not been edited. No push/subagents.
+
+.32 first full gate(/tmp/o36a) completed: fmt/vet and both tags passed; proddiff PASS2831 cases,
+new=0 stale=0, no coverage regression. Race had exactly one failure: C27's canceled-transaction
+negative control still expected a canceled request to stop a repo write. O3-6a intentionally moves
+Detach into that write owner, so the control waited for its unreleased competing writer until300s.
+Updated the control to a canceled work parent(negative) and raw canceled request(positive), keeping
+real contention, Scope identity, merged commits, concurrent revisions and rollback assertions.
+C27 callbacks now also assert the owner retained Scope. No product/default/timeout changed, no C35
+probe changed. .32 gofmt/vet ./... and those3 C27 tests race3 passed13.340s. Full gate reruns at
+/tmp/o36a-2 on the same host, without-p as the coordinator requested. No difftest was run by the first
+gate because it stopped at race; its proddiff did not exercise router device writes.

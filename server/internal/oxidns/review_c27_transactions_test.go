@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/ctxx"
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 )
@@ -138,7 +139,11 @@ func c27Repository(t *testing.T, native bool) (*repo.Repository, context.Context
 }
 
 func c27Transaction(r *repo.Repository, ctx context.Context, id, choice string) error {
-	_, _, err := r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+	scope := repo.ScopeOf(ctx)
+	_, _, err := r.UpdateProfileTransaction(ctx, "default", func(held context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+		if repo.ScopeOf(held) != scope {
+			return nil, fmt.Errorf("transaction owner lost the request Scope")
+		}
 		after := current.DeepCopy()
 		if id != "a" && id != "b" {
 			after.Set("rule_configs", append(after.GetList("rule_configs"), jsonx.Obj("id", id, "itemType", "rule", "rule_type", "DOMAIN",
@@ -156,9 +161,9 @@ func c27Transaction(r *repo.Repository, ctx context.Context, id, choice string) 
 	return err
 }
 
-// This is the C32 calling contract, not a new repository or HTTP implementation:
-// detach the request before taking the transaction lock, compute using the
-// locked before/after snapshots, and install settings only after success.
+// The repository owner detaches requests before transaction admission (O3-6a).
+// Shutdown still cancels that admission. Compute using locked before/after
+// snapshots and install settings only after success, as required by C32.
 func TestC27ReviewCanceledTransactionWaitsAndCommits(t *testing.T) {
 	t.Parallel()
 	r, base := c27Repository(t, false)
@@ -184,16 +189,19 @@ func TestC27ReviewCanceledTransactionWaitsAndCommits(t *testing.T) {
 	request, cancel := context.WithCancel(repo.WithScope(base))
 	scope := repo.ScopeOf(request)
 	cancel()
-	// A real contended lock makes this negative control deterministic.
-	if err := c27Transaction(r, request, "a", "proxy"); !errors.Is(err, context.Canceled) {
-		t.Fatalf("cancellable lock returned %v", err)
+	// Request cancellation is ignored by the owner; cancellation of its work
+	// parent must still stop a real contended lock wait immediately.
+	work, stop := context.WithCancel(base)
+	stop()
+	if err := c27Transaction(r, ctxx.WithParent(request, work), "a", "proxy"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("shutdown-cancellable lock returned %v", err)
 	}
-	detached := context.WithoutCancel(request)
+	detached := ctxx.Detach(request)
 	if repo.ScopeOf(detached) != scope {
 		t.Fatal("detaching lost the request Scope")
 	}
 	second := make(chan error, 1)
-	go func() { second <- c27Transaction(r, detached, "a", "proxy") }()
+	go func() { second <- c27Transaction(r, request, "a", "proxy") }()
 	select {
 	case err := <-second:
 		t.Fatalf("detached request did not wait for the lock: %v", err)
@@ -244,7 +252,7 @@ func TestC27ReviewConcurrentTransactionsMerge(t *testing.T) {
 			if index%2 != 0 {
 				choice = "proxy"
 			}
-			failures <- c27Transaction(r, context.WithoutCancel(request), fmt.Sprintf("added%d", index), choice)
+			failures <- c27Transaction(r, request, fmt.Sprintf("added%d", index), choice)
 		}(worker)
 	}
 	wg.Wait()
@@ -303,7 +311,7 @@ func TestC27ReviewLockedTransactionRollsBack(t *testing.T) {
 	}
 	request, cancel := context.WithCancel(repo.WithScope(base))
 	cancel()
-	err = c27Transaction(r, context.WithoutCancel(request), "added", "proxy")
+	err = c27Transaction(r, request, "added", "proxy")
 	if !errors.Is(err, ErrRoutingLocked) {
 		t.Fatalf("expected routing conflict, got %v", err)
 	}
