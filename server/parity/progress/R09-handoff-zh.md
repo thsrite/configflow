@@ -57,6 +57,21 @@ R09 不新增锁、后台线程或循环；L1/L2 和 lock-before-validation 的�
 - 低：畸形／重复 manifest 身份明确拒绝，恢复保留未知字段。
 - 低：接口引用增加资源预算；空／错型动作、错型 include 保持未知。
 - 仅格式：Go 使用紧凑 JSON，Python requests 有空格／不同键顺序；解析后相同，原始字节分别检查。
+- 中（已加发布防线）：未登记且 comment=`cf-dnsguard:hijack` 的 foreign NAT，包括 disabled=true 的旧 53 规则，Python 不阻断。Go 在构建和执行前阻断并给中文说明；正常 manifest 归属对象通过，撤销仍可进行。不论当前 failover 开关都保护该保留 comment，避免以后开启时继承冲突。
+
+## 待 Opus 裁定：Netwatch 运行时脚本的归属
+
+具体场景：某 NAT 未登记在 manifest 中，`disabled=true`，comment 却为 `cf-dnsguard:hijack`。Netwatch 的 up 动作执行 `enable [find comment="cf-dnsguard:hijack"]`，会启用该 foreign NAT；down 动作同样可能停用它。选择器不检查 chain、端口、ID 或完整配置。**Python 和 Go 当前生成的脚本一致。** API 发布的 ID+配置归属证明不能证明运行时脚本的安全。暂按潜在高严重度提交复核，不宣称已修复脚本合同。
+
+本次小修仅阻断预览／写前快照已存在的同 comment foreign NAT。它不会停用已运行的旧 Netwatch，也不能消除写前检查之后或发布之后出现 foreign 对象的时间窗；这一限制必须由后续运行时设计处理。
+
+| 候选修法 | 删除重建 | 回滚 | ID 复用／其他边界 |
+|---|---|---|---|
+| 脚本按受管 ID 绑定 | RouterOS 删除重建会分配新 ID，旧脚本漏控新规则；预览时新 ID 尚未知。 | 补偿重新创建得到新 ID，必须同步脚本与 manifest；恢复旧脚本可能指向失效 ID。 | 旧 ID 被 foreign 规则复用时，单凭 ID 仍会误操作，需另行配置或身份校验。 |
+| comment 增加 manifest 指纹或 router id 等标识 | router id 在同设备上不区分新旧代；manifest 指纹若含对象 ID，会在重建后变化；不含 ID 则不能区分同配置的 foreign 副本。 | 需明确恢复哪一代标识，并同时恢复规则和脚本；部分补偿可能留下混合代。 | ID 复用配合旧标识残留、复制同标识仍有误认可能；额外标识是候选身份合同，不能天然当作归属证明。 |
+| 每次发布后取得 ID，再重写脚本写入 ID | 新建后可获 ID，但引入脚本更新阶段和暂时不一致窗口；无变化发布也重写会破坏现有增量合同。 | journal 必须记录脚本重写，补偿重建后重新绑定实际新 ID，不能机械恢复旧脚本文本。 | 仍需防止发布后的 ID 复用，并验证完整配置；脚本重写请求失败／结果不确定时须定义安全状态。 |
+
+建议 L5 仅在获授权的隔离 CHR 实验网执行：建立一条未登记、disabled=true、同 comment 的 NAT，触发 up/down 并观察其 enabled 状态及实际命中计数；分别覆盖普通 53 规则和非 53／非 dstnat 规则。验证发布前阻断、预览后插入与发布后插入的差别；受管 NAT 删除重建、回滚中新 ID、foreign ID 复用、Netwatch 正在执行时更新脚本、重启及网络丢失后的恢复。各修法还需验证无变化发布保持增量行为、暂停状态保持及失败补偿后仅操作已证明归属的对象。本次不操作真实 RouterOS。
 
 完整 Python 测试逐项映射、文件行数、接口与精确命令见 [R09-dns-guard.md](R09-dns-guard.md)。
 R14 baseline、R12/R15 真实 HTTP 发布／指纹／规则同步长流程是其消费者的测试范围，没有在 R09 伪造接口冒充完成。
@@ -73,6 +88,11 @@ R14 baseline、R12/R15 真实 HTTP 发布／指纹／规则同步长流程是其
   具体是全局 provider 的 `body.proxies` 长度、全局及 profile provider 的 `header.X-ConfigFlow-Provider` 缺失。未改 baseline。
 - 最终变基到 `go@9a208c6c` 后：两种 tag 的 build/vet/lifecycle 全过；12 difftest 全过；三个 60 秒 fuzz 全过（60.305/61.226/61.308s）；四类编译变异均检出。补跑命令退出 0，日志 `.32:/tmp/configflow-r09-remaining/`。
 - 最终 `go@9a208c6c` 变基后再次执行 `rt --no-sync -- bash -lc 'cd server && go test -race -count=1 -timeout=10m -run "^TestR09" ./internal/routers'`，通过：`ok configflow/internal/routers 41.458s`。
+- 同 comment foreign NAT 防线补充后，`.32` 执行下列命令退出 0；gofmt 无输出、vet 通过，末行 `ok configflow/internal/routers 36.374s`。新测试 `TestR09ForeignHijackCommentBlocksPublish` 对照真实 Python，另在 `TestR09LateForeignObjectsAreNeverClaimed/hijack_comment_collision` 验证晚插入导致写前拒绝。
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && test -z "$(gofmt -l internal/routers/dns_guard_messages.go internal/routers/dns_guard_plan.go internal/routers/dns_guard_write.go internal/routers/r09_safety_test.go)" && go vet ./internal/routers/... && go test -race -count=1 -timeout=10m -run "^TestR09" ./internal/routers'
+```
 
 ## 共享文件与接线
 

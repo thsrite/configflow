@@ -16,6 +16,18 @@ Files: `dns_guard_{model,spec,plan,write,messages}.go`, `forward_hint{,_messages
 Typed open RouterOS rows retain all unknown selectors; manifests/ops/checks are typed, previous documents raw.
 Rollback preserves unknown top-level and per-resource manifest members.
 
+Additional ownership boundary: BuildDNSGuard and apply preflight reject any unproven NAT with
+comment `cf-dnsguard:hijack`, including disabled rules and non-dstnat/non-53 rules, with a centralized
+Chinese blocker. Withdrawal remains available. Real Python plan tests demonstrate the old permissive
+behaviour; Go tests require zero operations/writes and intact foreign rows, including a late insertion.
+Runtime Netwatch scripts still select by comment in both languages. This is a potential high-severity
+ownership-contract question deferred to fresh Opus by the coordinator, not claimed fixed by preflight.
+The dedicated Chinese hand-back section records ID binding, extra comment identity, post-create script
+rewrites, rebuild/rollback/ID-reuse hazards and proposed L5 traffic/state checks. Post-preflight/publication
+foreign inserts and already running old scripts remain outside this small publication defence.
+Follow-up on .32: gofmt check and routers vet PASS, all TestR09 -race PASS (36.374s).
+The exact rt command/output and the dedicated review decision are in the Chinese hand-back.
+
 Minimal shared changes: Desired.DNSGuard; RouterState.DNSGuard/DNSGuardPlan; RoutesReport.ForwardHint;
 RouterOS.dnsGuardManifestSet + setter. `ReportParts` wraps the predecessor. R04's existing stableROSRow,
 ownershipSnapshot, perform, verifyChange, ownedHairpinIDs are reused. No modification to shared HTTP semantics.
@@ -254,23 +266,23 @@ Four shared Go files only gain fields/set tracking; paths below are the R09 addi
 
 | Path under server/ | Lines |
 |---|---:|
-| `internal/routers/dns_guard_messages.go` | 49 |
+| `internal/routers/dns_guard_messages.go` | 50 |
 | `internal/routers/dns_guard_model.go` | 150 |
-| `internal/routers/dns_guard_plan.go` | 268 |
+| `internal/routers/dns_guard_plan.go` | 282 |
 | `internal/routers/dns_guard_spec.go` | 261 |
-| `internal/routers/dns_guard_write.go` | 394 |
+| `internal/routers/dns_guard_write.go` | 397 |
 | `internal/routers/forward_hint.go` | 213 |
 | `internal/routers/forward_hint_messages.go` | 8 |
 | `internal/routers/ipv6_policy_eval.go` | 487 |
 | `internal/routers/ipv6_policy_eval_test.go` | 187 |
 | `internal/routers/r09_boundary_test.go` | 370 |
 | `internal/routers/r09_forward_test.go` | 156 |
-| `internal/routers/r09_safety_test.go` | 441 |
+| `internal/routers/r09_safety_test.go` | 560 |
 | `internal/routers/routerfake/r09.go` | 9 |
 | `internal/routers/testdata/r09_eval_reference.py` | 19 |
 | `internal/routers/testdata/r09_forward_reference.py` | 23 |
 | `internal/routers/testdata/r09_gates.sh` | 12 |
 | `internal/routers/testdata/r09_mutations.py` | 30 |
 | `internal/routers/testdata/r09_reference.py` | 54 |
-| `parity/progress/R09-handoff-zh.md` | 90 |
-| `parity/progress/R09-dns-guard.md` | 276 |
+| `parity/progress/R09-handoff-zh.md` | 110 |
+| `parity/progress/R09-dns-guard.md` | 288 |

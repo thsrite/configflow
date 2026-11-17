@@ -224,8 +224,54 @@ func TestR09IncrementalKeepsPausedIDs(t *testing.T) {
 	}
 }
 
+func TestR09ForeignHijackCommentBlocksPublish(t *testing.T) {
+	for _, failover := range []bool{false, true} {
+		for _, disabled := range []string{"false", "true"} {
+			t.Run(fmt.Sprintf("failover=%t/disabled=%s", failover, disabled), func(t *testing.T) {
+				tc := r09Base("foreign_hijack_comment")
+				tc.Settings.Failover = failover
+				tc.Steps = []r09Step{{Action: "plan"}}
+				foreign := tc.State.Tables[rosNAT][0]
+				foreign["comment"] = dnsGuardHijack
+				foreign["disabled"] = disabled
+				// The runtime selector has no chain, action or port predicate.
+				if disabled == "false" {
+					foreign["chain"], foreign["dst-port"] = "srcnat", "5353"
+				}
+				f := routerfake.New(tc.State.Tables)
+				srv := httptest.NewServer(f)
+				defer srv.Close()
+				var python struct {
+					Steps []struct {
+						Plan struct{ Blockers []string }
+					}
+				}
+				if err := json.Unmarshal(r09Python(t, "r09_reference.py", tc, srv.URL), &python); err != nil {
+					t.Fatal(err)
+				}
+				if len(python.Steps[0].Plan.Blockers) != 0 {
+					t.Fatalf("Python reference no longer permits collision: %s", r09Raw(python))
+				}
+				result := r09Go(t, tc, f, srv.URL)
+				plan := result.Steps[0].Plan
+				if plan.Status != "unknown" || !reflect.DeepEqual(plan.Blockers, []string{messageGuardHijackCollision}) || len(plan.Ops) != 0 || len(result.Writes) != 0 {
+					t.Fatalf("foreign comment did not block without writes: %s", r09Raw(result))
+				}
+				if !reflect.DeepEqual(result.Tables[rosNAT], tc.State.Tables[rosNAT]) {
+					t.Fatal("foreign NAT changed")
+				}
+				// Withdrawal must remain available; the foreign rule is never claimed.
+				tc.Settings.Enabled = false
+				if plan = r09Go(t, tc, f, srv.URL).Steps[0].Plan; len(plan.Blockers) != 0 || len(plan.Ops) != 0 {
+					t.Fatalf("foreign comment blocked disabled cleanup: %s", r09Raw(plan))
+				}
+			})
+		}
+	}
+}
+
 func TestR09LateForeignObjectsAreNeverClaimed(t *testing.T) {
-	for _, variant := range []string{"name_collision", "hijack_overtaken", "removed_owned", "moved_owned", "duplicate_owned", "delete_read_drift", "final_read_drift"} {
+	for _, variant := range []string{"name_collision", "hijack_comment_collision", "hijack_overtaken", "removed_owned", "moved_owned", "duplicate_owned", "delete_read_drift", "final_read_drift"} {
 		t.Run(variant, func(t *testing.T) {
 			f, _, d, previous := r09Seed(t)
 			settings := r09Base("late").Settings
@@ -238,6 +284,8 @@ func TestR09LateForeignObjectsAreNeverClaimed(t *testing.T) {
 			switch variant {
 			case "name_collision":
 				snapshot.Tables[rosAddresses] = append(snapshot.Tables[rosAddresses], routerfake.Row{".id": "*F1", "list": DNSGuardBypassList, "address": "192.0.2.99"})
+			case "hijack_comment_collision":
+				snapshot.Tables[rosNAT] = append(snapshot.Tables[rosNAT], routerfake.Row{".id": "*F1", "chain": "dstnat", "action": "redirect", "dst-port": "53", "disabled": "true", "comment": dnsGuardHijack})
 			case "hijack_overtaken":
 				snapshot.Tables[rosNAT] = append([]routerfake.Row{{".id": "*F1", "chain": "dstnat", "action": "redirect", "dst-port": "53"}}, snapshot.Tables[rosNAT]...)
 			case "removed_owned":
@@ -257,6 +305,9 @@ func TestR09LateForeignObjectsAreNeverClaimed(t *testing.T) {
 			_, err := d.ApplyDNSGuard(context.Background(), *p.Ops[0].(*DNSGuardReplace))
 			if err == nil {
 				t.Fatal("late drift accepted")
+			}
+			if variant == "hijack_comment_collision" && !strings.Contains(err.Error(), messageGuardHijackCollision) {
+				t.Fatalf("missing collision explanation: %v", err)
 			}
 			if variant != "delete_read_drift" && variant != "final_read_drift" {
 				for _, call := range f.Calls()[count:] {

@@ -18,6 +18,7 @@ const (
 	messageGuardAddress          = "无法确定 OxiDNS Agent 的 IPv4 地址"
 	messageGuardWatchUnsupported = "路由器不支持 Netwatch 或账号无法读取，请关闭「OxiDNS 故障时自动暂停」"
 	messageGuardNameCollision    = "%s「%s」已被其他配置使用，请先改名或删除这些对象"
+	messageGuardHijackCollision  = "NAT 中存在未登记归属且注释为「cf-dnsguard:hijack」的对象；Netwatch 可能启用或停用它，请先核对并修改该对象的注释后重新预览"
 	messageGuardForeignDNS       = "路由器上已有其他 53 端口的 dst-nat / redirect 规则（%s）。本功能的劫持规则放在 NAT 列表最前并优先生效；确认无误后可手动删除这些旧规则。"
 	messageGuardDisabledGone     = "未开启强制 DNS；已发布的受管对象均已不存在。"
 	messageGuardDisabled         = "未开启强制 DNS。"

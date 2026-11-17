@@ -108,6 +108,17 @@ func guardOnTop(id string, nat []Row, owned map[[2]string]bool) bool {
 	return false
 }
 
+func guardForeignHijack(nat []Row, owned map[[2]string]bool) bool {
+	for _, row := range nat {
+		// Netwatch selects all matching comments, including disabled rules and
+		// rules outside dstnat/53. Only the manifest proof establishes ownership.
+		if row.is("comment", dnsGuardHijack) && !owned[[2]string{rosNAT, row.id()}] {
+			return true
+		}
+	}
+	return false
+}
+
 // BuildDNSGuard plans a safe incremental publish from a single device snapshot.
 func BuildDNSGuard(desired *Desired, state *RouterState) *DNSGuardPlan {
 	p := &DNSGuardPlan{DNSGuardReport: DNSGuardReport{Status: "disabled", Items: []DNSGuardItem{}, Blockers: []string{}, Warnings: []string{}}, Spec: json.RawMessage("null"), Ops: []Op{}, Roles: []string{}}
@@ -157,6 +168,9 @@ func BuildDNSGuard(desired *Desired, state *RouterState) *DNSGuardPlan {
 		}
 	}
 	if spec != nil {
+		if guardForeignHijack((*live)[rosNAT], ownedIDs) {
+			return fail(routerError(messageGuardHijackCollision))
+		}
 		if spec.Failover && (*live)[rosNetwatch] == nil {
 			p.Blockers = append(p.Blockers, messageGuardWatchUnsupported)
 		}

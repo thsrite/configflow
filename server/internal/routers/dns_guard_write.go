@@ -96,6 +96,9 @@ func guardCheckPreview(op DNSGuardReplace, owned []DNSGuardResource, live *DNSGu
 		ownedIDs[[2]string{e.Path, e.ID}] = true
 	}
 	if op.Spec != nil {
+		if guardForeignHijack((*live)[rosNAT], ownedIDs) {
+			return routerError(messageGuardHijackCollision)
+		}
 		// A collision introduced after preview is still foreign, even if it uses
 		// our familiar comment/name. Never claim it by that marker.
 		for _, r := range []struct{ path, key, name string }{{rosAddresses, "list", DNSGuardBypassList}, {rosNetwatch, "name", dnsGuardWatch}} {
