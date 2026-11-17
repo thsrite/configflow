@@ -366,3 +366,58 @@ Scoped HTTP iteration (.32, exit0; fmt/vet silent):
 RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=3 -- bash -lc 'cd server; go vet ./internal/api/agents/difftest; CONFIGFLOW_DIFF=1 go test -json -count=1 ./internal/api/agents/difftest -run "Test(NativeComposeHTTPComparison|NativeWriterHTTPProvenance|N73GuideComposeComparison|Installer|DockerHA)"'
 ```
 Output: configflow/internal/api/agents/difftest PASS44.337s.
+
+## Final integrated gate
+
+Host: **192.168.0.64**, 20 GB + swap, `-p 6`, GOMAXPROCS=6.
+Integration base at launch: `go@5680fbb3`. Uses the coordinator's shared
+2-slot gate; the initial `-p4` and first `-p6` invocations were stopped while
+still queued, before any full race/proddiff started. The following is the one
+actual final full-race invocation:
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=6 -e GATE_FUZZ_PARALLEL=1 -e GATE_LOGS=/tmp/n74-final-gate -- bash server/scripts/gate.sh -p 6 FuzzEncode:./internal/yamlbridge FuzzNativeRoundTrip:./internal/yamlx FuzzNativeNoPanic:./internal/yamlx FuzzComposeYAML:./internal/installer FuzzProviderYAML:./internal/provider FuzzRouterSplitYAML:./internal/routersplit FuzzMosDNSYAML:./internal/mosdns FuzzSourceYAMLPolicy:./internal/refresh FuzzConfig:./internal/deploy/pushdiff
+```
+
+The gate runs `gofmt -l internal/ tools/ cmd/`, `go vet ./...`, build/vet/lifecycle
+checks with both configflow_proddiff and configflow_difftest tags, then the full
+`go test -race -p=6 -count=1 -timeout=60m ./...` and proddiff. The full race run
+executes the complete suite; the gate intentionally has no redundant non-race
+full run. Enabled difftests run with `CONFIGFLOW_DIFF=1`, followed by all nine
+listed fuzz targets for 60 seconds each, one worker per target.
+
+Confirmed so far: gofmt/vet/tag checks passed. Proddiff exit0:
+`cases=2831 compared=462 new=0 stale=0 coverage_regressions=0`, all23 selfchecks
+PASS; aggregation-provider2/2 succeeded. Full race/difftest/fuzz all passed; final output `GATE PASS`.
+
+
+First gate final output (.64, exit0):
+```text
+baseline: new=0 stale=0
+== difftest
+12 packages PASS (agents110.391s, subscriptions46.266s, others0.449–16.650s)
+== fuzz (9 targets, 60s each, concurrent)
+FuzzEncode ok configflow/internal/yamlbridge 61.013s
+FuzzNativeRoundTrip ok configflow/internal/yamlx 61.046s
+FuzzNativeNoPanic ok configflow/internal/yamlx 61.051s
+FuzzComposeYAML ok configflow/internal/installer 61.002s
+FuzzProviderYAML ok configflow/internal/provider 61.031s
+FuzzRouterSplitYAML ok configflow/internal/routersplit 61.042s
+FuzzMosDNSYAML ok configflow/internal/mosdns 60.101s
+FuzzSourceYAMLPolicy ok configflow/internal/refresh 61.022s
+FuzzConfig ok configflow/internal/deploy/pushdiff 61.056s
+GATE PASS
+```
+Full race: all88 test packages passed, including convert115.924s,
+installer507.446s/provider168.265s/refresh232.089s/mosdns157.392s/
+routersplit11.880s/gateway24.053s/pushdiff59.684s/yamlbridge1.016s/yamlx7.904s.
+Logs retrieved to ignored `.ci-results/n74-gate-5680/` with:
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --no-sync --back .ci-results/n74-gate-5680 -- bash -lc 'mkdir -p .ci-results/n74-gate-5680; cp /tmp/n74-final-gate/* .ci-results/n74-gate-5680/'
+```
+
+During this run go advanced to0f943623: provider's negative test timeout now
+waits for completed output in proddiff, production's positive deadline is
+unchanged; a new provider/difftest package was added. Rebase and a second
+integrated gate are warranted by this upstream change. Writer code and the nine
+passing fuzz targets are unchanged, so the next gate omits repeated fuzz.
