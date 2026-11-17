@@ -153,3 +153,10 @@ changes. Plaintext remains opaque (a valid Classical regex body is not subjected
 to YAML mapping policy). Re-encode regression retains timestamp/bigint/binary/
 custom/.inf/.nan/string tags, all rules and header comments. Four affected package
 suites pass. Deploy regressions are added after rebase to the A11 integration.
+
+After rebasing through A11/N8-3/O3-4, deploy's required
+TestReviewYAMLPayloadForms and TestReviewBuildDownloadsAndJSONSources plus the new
+TestN73CommentedFlowRuleSourceIsNotEmpty pass with -race (.32 deploy3.665s).
+The new source forms include #header and BOM/CRLF/--- before a flow payload;
+conversion yields the two exact domain rules, never an empty file. No production
+baseline is edited. The writer tag/append regressions pass with -race1.053s.
