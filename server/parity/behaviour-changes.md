@@ -213,11 +213,22 @@ A valid escaped-line continuation has the same rule matching behavior as its
 single-line value. Native scalar typing, timestamp/binary text, tagged collection
 shape and preservation of non-string Node keys follow §5.7; a complex mapping key
 cannot cross the structured-proxy JSON boundary and is an explicit validation
-error. Distinct keys that would collide at that boundary are refused instead of
-overwriting a field. Native map member order/JSON number spellings may differ.
+error. Scalar-key projection uses shared `ProjectJSONKeys(StringifyScalarKeys)`;
+converted-name collisions keep the last value at the first position, as the
+existing JSON boundary did. Native map member order/JSON number spellings may differ.
 
 Python bugs fixed: clearing an unindented payload sequence emitted invalid YAML
 (`payload:` followed by unindented `[]`); it now emits a valid empty list. Appending
 to a flow list containing an alias previously inserted ahead of an existing rule;
 new rules now follow every existing rule in order. Neither fix changes other
 rules' values.
+
+N7-3b format-hint bug (same origin in Python and old Go): leading blank lines,
+`#` comments or a standalone `---` hid a flow-root `payload` mapping from format
+inference. Such sources could be treated as plain text, return empty DNS rule
+sets, or acquire invalid YAML on append. The shared hint now recognizes the flow
+mapping after those leading lines; nil-payload append re-reads and validates it.
+The visible change is correct rule recognition and valid appended YAML. Plaintext
+remains opaque; no YAML mapping policy is applied to ordinary Classical text.
+This also fixes A11's MosDNS/OxiDNS rule-source conversion; no production
+baseline is changed to conceal a difference.

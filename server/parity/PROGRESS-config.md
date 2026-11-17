@@ -2187,7 +2187,7 @@ No skip. Counts below are changed boundary rows, not all corpus rows:
 |---|---:|---:|---:|
 | D1 duplicate refusal | 63 | 20 | 17 |
 | §5.4 tag/merge/document validation | 21 | 0 | 18 |
-| Native diagnostics/positions | 6396 | 32 | 11 |
+| Native diagnostics/positions | 6417 | 32 | 11 |
 | D3 layout, equal Node semantics | 2327 | 68 | 36 |
 | D3 quoted scalar folding | 9 | 2 | 0 |
 | Alias refusal diagnostic collation | 4 | 2 | 0 |

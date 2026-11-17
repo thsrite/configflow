@@ -29,7 +29,9 @@ Legacy yamlx loaders and internal/pyyaml are intentionally retained for the othe
 N7-3 migrations and N7-3d cleanup.
 
 Shared changes cherry-picked from N7-3a: 0b98b42e (tag shape), dc3f339c (AllPairs),
-23196ddd (merge/scalar validation), a7acc788 (error identities). No duplicate
+23196ddd (merge/scalar validation), a7acc788 (error identities), a5f553d0 (Chinese syntax diagnostics),
+4ad822f5 (unbounded decimal ints),942e752f (JSON key projection),09740db3
+(writer tag preservation; logical equivalent of ae109f82). No duplicate
 policy/merge implementation. Remaining bare yaml.v3 readers outside this scope
 (importer, rules, OxiDNS) were reported and assigned to N7-3d by the coordinator.
 
@@ -53,20 +55,38 @@ policy/merge implementation. Remaining bare yaml.v3 readers outside this scope
 - Medium (Python bugs fixed): clearing an unindented list emitted invalid YAML;
   alias-containing flow append could insert before an existing item. Native
   sequence edits emit a valid empty list and append after all old rules.
-- Defensive boundary: distinct scalar keys that stringify to one JSON field are
-  refused explicitly, so the bridge cannot silently overwrite a field. Complex
-  keys cannot cross a structured proxy's JSON-object boundary.
+- Shared JSON boundary: private key conversion is gone. ProjectJSONKeys handles
+  StringifyScalarKeys, including last-value/first-position converted-name
+  collisions as in the original boundary; unsupported/complex keys fail clearly.
+  Scalars are memoized as well as containers, so a1MiB scalar with100 aliases
+  shares its backing storage instead of being serialized/copied per occurrence.
+- Python/old-Go bug: a leading comment or document marker hid a flow-root
+  payload from the shared format hint. That could append invalid YAML or yield
+  empty DNS rule sets. The minimal shared hint fix and nil-payload re-read
+  recognize it correctly; plaintext remains opaque. No matcher reader changed.
+
+Append-channel closeout (`423dea5d`): the three Append internal APIs and
+Rules.ConnectionDeps callback now return(string,error), rather than silently
+returning source on Edit failure. Rules/connection and discovery/write propagate
+errors before claiming success; direct nil/non-nil payload tests preserve source
+and assert native policy/alias identities plus the typed400 channel. Remove edit
+errors use the same validation wrapper. Plaintext syntax fallback remains;
+policy/alias failures never fall back. Rulefetch fuzz also covers append.
 
 ## Error-return caller choices
 
-`e76be2c7` isolates the signature/caller adaptation as requested. Generation
+`74c9e28d` isolates the signature/caller adaptation as requested. Generation
 (ConvertNodeToMihomo), convert/repo rawDialer, repo import dialer rewrite and
 provider delivery use their existing error-return paths. Repo maps native proxy
 validation to its ValueError channel (400), rather than an unintended TypeError.
 health.needsSubStore does not count a policy-refused string as remote conversion;
 health.proxyOf uses its existing failed-probe result after conversion fails.
-None of these is a bulk node-import skip loop, so no new silent skip path was
-introduced. No warning contains node text/passwords/tokens. Dedicated tests assert
+The existing api/subscriptions.cachedProxies lenient batch is handled explicitly:
+ProxyYAMLError skips one node, logs only its index and error category, and increments
+a local skipped count reported by one summary warning. Other nodes still return;
+strict mode returns the typed validation error without logging it. HTTP fields
+are unchanged. The regression checks both paths and confirms no node text, names,
+passwords or tokens appear in warnings. Dedicated tests assert
 zero fake Sub-Store calls and zero cache entries for each policy/alias class.
 
 ## Migration gate and accepted differences
@@ -80,8 +100,8 @@ the exact shared diagnostic. Special outcomes use exact native result/error
 fingerprints keyed to the original suite/function/input, rather than blanket
 function skips. No candidate-recording bypass remains in tests.
 
-Rulefetch changed rows: **9,058**; classes and per-corpus counts are in
-PROGRESS-config's N7-3b table. Total by class: D1 100; §5.4 39; diagnostics 6,439;
+Rulefetch changed rows: **9,079**; classes and per-corpus counts are in
+PROGRESS-config's N7-3b table. Total by class: D1 100; §5.4 39; diagnostics 6,460;
 D3 layout 2,431; D3 quoted folding 11; alias diagnostic collation 6; Node mapping
 keys 5; binary text 1; the two Python fixes 25+1. The final49 exceptional calls
 were reviewed individually (44 distinct input fingerprints).
