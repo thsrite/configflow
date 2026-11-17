@@ -705,11 +705,11 @@ func prepareFallback(c *commonContext, changes *Node) (*bool, error) {
 		upstreams := L()
 		if text := str(get(changes, "fallback_dns")); strings.TrimSpace(text) != "" {
 			parsed, ok, err := safeLoad(text)
-			if !ok {
-				return nil, fail("DNS 上游 YAML 语法无效")
-			}
 			if err != nil {
 				return nil, err
+			}
+			if !ok {
+				return nil, fail("DNS 上游 YAML 语法无效")
 			}
 			if !isNone(parsed) {
 				upstreams = parsed
@@ -2231,11 +2231,11 @@ func (c *commonContext) patchField(field string, value *Node) error {
 		upstreams := L()
 		if text := str(value); strings.TrimSpace(text) != "" {
 			parsed, ok, err := safeLoad(text)
-			if !ok {
-				return fail("DNS 上游 YAML 语法无效")
-			}
 			if err != nil {
 				return err
+			}
+			if !ok {
+				return fail("DNS 上游 YAML 语法无效")
 			}
 			upstreams = parsed
 			if field == "fallback_dns" && isNone(parsed) {

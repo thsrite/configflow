@@ -497,11 +497,11 @@ func forwardUpstreams(text string, defaults []string) (*Node, error) {
 	}
 	if hasPrefix(strings.TrimLeft(text, " \t\n\r\v\f"), "-", "[", "{", "addr:") {
 		parsed, ok, err := safeLoad(text)
-		if !ok {
-			return nil, fail("DNS 上游 YAML 语法无效")
-		}
 		if err != nil {
 			return nil, err
+		}
+		if !ok {
+			return nil, fail("DNS 上游 YAML 语法无效")
 		}
 		values := []*Node{parsed}
 		if isSeq(parsed) {
@@ -538,10 +538,13 @@ func fallbackUpstreams(text string) (*Node, error) {
 	}
 	if hasPrefix(strings.TrimLeft(text, " \t\n\r\v\f"), "-", "[", "{", "addr:") || trimmed == "null" || trimmed == "~" {
 		value, ok, err := safeLoad(text)
+		if err != nil {
+			return nil, err
+		}
 		if !ok {
 			return nil, fail("DNS 上游 YAML 语法无效")
 		}
-		if err == nil && (isNone(value) || isSeq(value) && len(value.Content) == 0) {
+		if isNone(value) || isSeq(value) && len(value.Content) == 0 {
 			return L(), nil
 		}
 	}
@@ -582,11 +585,11 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 	custom := M()
 	if text := str(get(s, "custom_config")); strings.TrimSpace(text) != "" {
 		parsed, ok, err := safeLoad(text)
-		if !ok {
-			return nil, fail("OxiDNS 高级 YAML 语法无效")
-		}
 		if err != nil {
 			return nil, err
+		}
+		if !ok {
+			return nil, fail("OxiDNS 高级 YAML 语法无效")
 		}
 		custom = parsed
 	}

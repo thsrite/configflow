@@ -1855,7 +1855,10 @@ Missing / deferred: no C29 implementation deferred; shared in-flight shutdown wi
 Final .64 gate (-p6) passed: gofmt/vet/tags/full race/all15 difftest, proddiff new=0 stale=0, both specified fuzz60s.
 Rebased onto go@0dace4ae (C32 review); C29 runtime code unchanged from the gated version.
 Merged C29/C32 API differentials and all new C29 tests under race passed again.
-This is ported, not independently verified. Evidence and exact commands: [C29 hand-back](C29-HANDOFF.md).
+Independent review in progress on `go-review-c29`: three medium findings fixed (exact-case DTO keys,
+updater error location, template reader policy/alias cause propagation). Full core and scoped race/HTTP
+differentials plus per-input reader gate pass; final gate pending. [Review evidence](review-c29.md).
+Author evidence and commands: [C29 hand-back](C29-HANDOFF.md).
 The approved Python HEAD save bug is fixed as read-only with an explicit expected differential;
 N8-6 non-finite JSON rejection has 48 explicit Flask controls across all 16 POST pairs;
 C29 SaveSettings/BuildZIP now check shutdown after Detach and before shared commits; real Runtime

@@ -29,6 +29,22 @@ type draftRequest struct {
 	StandardAdd      json.RawMessage `json:"standard_add"`
 }
 
+// UnmarshalJSON keeps request member names exact: encoding/json's default
+// case-insensitive struct matching would turn unrelated fields into edit intent.
+func (r *draftRequest) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	*r = draftRequest{
+		Settings: fields["settings"], BaseURL: fields["base_url"],
+		NativeConfig: fields["native_config"], Changes: fields["changes"],
+		TemplateSettings: fields["template_settings"], Resolutions: fields["resolutions"],
+		Renames: fields["renames"], StandardAdd: fields["standard_add"],
+	}
+	return nil
+}
+
 type commonResponse struct {
 	Values       model.Dynamic                `json:"values"`
 	Capabilities map[string]engine.Capability `json:"capabilities"`

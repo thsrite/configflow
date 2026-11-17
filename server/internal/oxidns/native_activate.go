@@ -108,7 +108,13 @@ func (e *nativeEdit) activate(added, standard map[string]bool) error {
 			return err
 		}
 		if len(available) == 0 {
-			return NewReferenceError(messageNativeUpdateNeedsSource, nativeShapeReferences(e.candidate, added, messageNativeAddSourceReason))
+			updaters := map[string]bool{}
+			for tag := range additions {
+				if nativeUpdater[tag] {
+					updaters[tag] = true
+				}
+			}
+			return NewReferenceError(messageNativeUpdateNeedsSource, nativeShapeReferences(e.candidate, updaters, messageNativeAddSourceReason))
 		}
 		refresh := proposed["rules_refresh"]
 		if refresh != nil && !equal(get(refresh, "args"), refreshSteps()) && !equal(get(refresh, "args"), downloadOnlySteps()) {
