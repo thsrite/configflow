@@ -24,6 +24,7 @@ import (
 	"configflow/internal/store"
 	"configflow/internal/utilx"
 	"configflow/internal/version"
+	"configflow/internal/webdav"
 	"configflow/internal/weblistener"
 )
 
@@ -388,6 +389,9 @@ func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
 				changed = append(changed, key)
 			}
 			backup.Set(key, value)
+		}
+		if err := (webdav.Settings{URL: backup.GetString("webdav_url"), Path: backup.GetString("webdav_path")}).ValidatePaths(); err != nil {
+			return failure(400, err.Error()), nil
 		}
 		if err := repo.SaveSystemConfig(ctx, config, nil); err != nil {
 			return nil, err

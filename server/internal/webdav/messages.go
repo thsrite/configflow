@@ -4,6 +4,7 @@ const (
 	msgManual          = "手动"
 	msgAutomatic       = "自动"
 	msgIncomplete      = "请填写完整的 WebDAV 配置"
+	msgUnsafePath      = "WebDAV 地址和备份路径不能包含 . 或 .. 路径段，请改用不含 . 或 .. 的普通目录"
 	msgCreateDirectory = "无法创建目录 %s：%s"
 	msgUploaded        = "WebDAV %s备份完成：%s%s（%.1f KB）"
 	msgListFailed      = "WebDAV 旧备份清理失败：无法列出备份目录（%s）"

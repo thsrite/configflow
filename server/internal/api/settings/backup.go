@@ -28,7 +28,7 @@ func testBackup(c *httpx.Ctx) (*httpx.Response, error) {
 	connected, err := webdav.Default().Test(context.WithoutCancel(c.Context()), settings)
 	if err != nil {
 		var directory *webdav.DirectoryError
-		if errors.Is(err, webdav.ErrIncompleteSettings) || errors.As(err, &directory) {
+		if errors.Is(err, webdav.ErrIncompleteSettings) || errors.Is(err, webdav.ErrUnsafePath) || errors.As(err, &directory) {
 			return failure(400, err.Error()), nil
 		}
 		detail := webdav.DescribeError(err)
@@ -60,7 +60,7 @@ func backupNow(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 	}
 	var directory *webdav.DirectoryError
-	if errors.Is(err, webdav.ErrIncompleteSettings) || errors.As(err, &directory) {
+	if errors.Is(err, webdav.ErrIncompleteSettings) || errors.Is(err, webdav.ErrUnsafePath) || errors.As(err, &directory) {
 		return failure(400, err.Error()), nil
 	}
 	detail := webdav.DescribeError(err)

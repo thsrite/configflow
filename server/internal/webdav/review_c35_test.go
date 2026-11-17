@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/notifications"
 	"configflow/internal/repo"
 )
 
@@ -216,5 +218,168 @@ else:
 	out, err := exec.CommandContext(ctx, filepath.Join(home, "cf-test/.venv/bin/python"), "-c", script, remote.URL).CombinedOutput()
 	if err != nil || strings.TrimSpace(string(out)) != "TLS_REJECTED" {
 		t.Fatalf("Python TLS verification probe failed: %v %.250s", err, out)
+	}
+}
+
+func TestNonRuntimeAgentCommitsUploadAndRuntimeDoesNot(t *testing.T) {
+	fake, remote := newDAV(t)
+	t.Cleanup(SetDefault(NewService(remote.Client())))
+	r, err := repo.Open(t.TempDir(), repo.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := repo.SetHooks(repo.Hooks{})
+	t.Cleanup(func() { repo.SetHooks(previous) })
+	worker := NewWorker(10*time.Millisecond, func(ctx context.Context, snapshot Snapshot) error { _, err := Run(ctx, snapshot, true); return err })
+	registerHook(worker)
+	t.Cleanup(func() { _ = worker.Close(context.Background()) })
+	_, err = r.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+		settings := fixtureSettings(remote)
+		settings.Auto = true
+		raw, _ := json.Marshal(settings)
+		backup, err := jsonx.Parse(raw)
+		if err != nil {
+			return nil, err
+		}
+		system.Set("backup", backup)
+		system.Set("agents", []any{jsonx.Obj("id", "a", "name", "Agent", "host", "example.com", "profile_id", "default", "agent_service", "mihomo", "enabled", true, "token", "synthetic-agent-token")})
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitWorker(t, worker)
+	uploads := func() int { fake.mu.Lock(); defer fake.mu.Unlock(); return fake.uploads }
+	if uploads() != 1 {
+		t.Fatal("agent creation was not backed up")
+	}
+	tests := []struct {
+		field      string
+		value      any
+		wantUpload bool
+	}{
+		{"version", "synthetic-v2", false}, {"status", "online", false}, {"applied_content", jsonx.Obj("digest", "synthetic"), false},
+		{"name", "Renamed", true}, {"host", "other.example.com", true}, {"enabled", false, true},
+		{"logging_config", jsonx.Obj("enabled", true), true}, {"rule_sync_state", jsonx.Obj("result", "saved"), true},
+		{"dns_follow", jsonx.Obj("enabled", true), true}, {"oxidns_ha", jsonx.Obj("enabled", true), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.field, func(t *testing.T) {
+			before := uploads()
+			_, err := r.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+				system.GetList("agents")[0].(*jsonx.Object).Set(tt.field, tt.value)
+				return nil, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			waitWorker(t, worker)
+			want := before
+			if tt.wantUpload {
+				want++
+			}
+			if uploads() != want {
+				t.Errorf("uploads=%d want=%d", uploads(), want)
+			}
+		})
+	}
+}
+
+func TestStoredDotPathAutomaticFailureHasClearTaskMessage(t *testing.T) {
+	fake, remote := newDAV(t)
+	t.Cleanup(SetDefault(NewService(remote.Client())))
+	r, err := repo.Open(t.TempDir(), repo.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := repo.SetHooks(repo.Hooks{})
+	t.Cleanup(func() { repo.SetHooks(previous) })
+	worker := NewWorker(0, func(ctx context.Context, snapshot Snapshot) error { _, err := Run(ctx, snapshot, true); return err })
+	registerHook(worker)
+	t.Cleanup(func() { _ = worker.Close(context.Background()) })
+	// Seed a legacy/imported setting directly, bypassing the newly secured form.
+	_, err = r.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+		settings := fixtureSettings(remote)
+		settings.Auto = true
+		settings.Path = "/%2E%2E/ordinary/"
+		data, _ := json.Marshal(settings)
+		value, err := jsonx.Parse(data)
+		if err != nil {
+			return nil, err
+		}
+		system.Set("backup", value)
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitWorker(t, worker)
+	ctx := repo.WithRepository(context.Background(), r)
+	receipt, err := notifications.TaskStatus(ctx, r.DataDir()).Get("webdav_backup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.GetString("last_status") != "failed" || receipt.GetString("last_error") != ErrUnsafePath.Error() {
+		t.Fatal("stored invalid path failed silently or used an unclear message")
+	}
+	fake.mu.Lock()
+	count := len(fake.events)
+	fake.mu.Unlock()
+	if count != 0 {
+		t.Fatal("stored unsafe path reached WebDAV")
+	}
+	saved, err := r.GetSystem(context.Background())
+	if err != nil || saved.GetObject("backup").GetString("webdav_path") != "/%2E%2E/ordinary/" {
+		t.Fatal("failed backup rolled back/rewrote committed configuration")
+	}
+}
+
+func TestDAVKeepsSessionCookieOnlyWithinOneOperation(t *testing.T) {
+	var mu sync.Mutex
+	var cookies []string
+	dirs := map[string]bool{"/": true}
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		cookies = append(cookies, r.Header.Get("Cookie"))
+		if r.URL.Path == "/" && r.Method == "HEAD" {
+			http.SetCookie(w, &http.Cookie{Name: "dav-session", Value: "synthetic-cookie", Path: "/", HttpOnly: true})
+			return
+		}
+		cookie, err := r.Cookie("dav-session")
+		if err != nil || cookie.Value != "synthetic-cookie" {
+			w.WriteHeader(401)
+			return
+		}
+		if r.Method == "HEAD" {
+			if !dirs[r.URL.Path] {
+				w.WriteHeader(404)
+			}
+			return
+		}
+		if r.Method == "MKCOL" {
+			dirs[r.URL.Path] = true
+			w.WriteHeader(201)
+			return
+		}
+		w.WriteHeader(405)
+	}))
+	defer remote.Close()
+	service := NewService(nil)
+	settings := fixtureSettings(remote)
+	for range 2 {
+		mu.Lock()
+		start := len(cookies)
+		mu.Unlock()
+		ok, err := service.Test(context.Background(), settings)
+		if err != nil || !ok {
+			t.Fatalf("WebDAV did not maintain its HTTP session: %v", err)
+		}
+		mu.Lock()
+		first := cookies[start]
+		mu.Unlock()
+		if first != "" {
+			t.Fatal("WebDAV cookie leaked into a separate backup operation")
+		}
 	}
 }

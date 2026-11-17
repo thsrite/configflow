@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"path"
 	"sort"
@@ -15,13 +17,16 @@ import (
 )
 
 type client struct {
-	service            *Service
+	transport          HTTPDoer
 	base               *url.URL
 	username, password string
 	secrets            []string
 }
 
 func (s *Service) client(settings Settings) (*client, error) {
+	if err := settings.ValidatePaths(); err != nil {
+		return nil, err
+	}
 	if strings.TrimRight(settings.URL, "/") == "" || settings.Username == "" || settings.Password == "" {
 		return nil, ErrIncompleteSettings
 	}
@@ -38,11 +43,22 @@ func (s *Service) client(settings Settings) (*client, error) {
 	base.User = nil
 	base.RawQuery = ""
 	base.Fragment = ""
-	return &client{service: s, base: base, username: settings.Username, password: settings.Password, secrets: secrets}, nil
+	transport := s.HTTP
+	if template, ok := transport.(*http.Client); ok {
+		session := *template
+		if session.Jar == nil {
+			session.Jar, err = cookiejar.New(nil)
+			if err != nil {
+				return nil, fmt.Errorf("create WebDAV session: %w", err)
+			}
+		}
+		transport = &session
+	}
+	return &client{transport: transport, base: base, username: settings.Username, password: settings.Password, secrets: secrets}, nil
 }
 func (c *client) request(ctx context.Context, method, remote string, data []byte) (*http.Response, error) {
 	target := *c.base
-	target.Path = strings.TrimRight(target.Path, "/") + remote
+	target.Path = c.remotePath(remote)
 	target.RawPath = ""
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	req, err := http.NewRequestWithContext(ctx, method, target.String(), bytes.NewReader(data))
@@ -58,7 +74,7 @@ func (c *client) request(ctx context.Context, method, remote string, data []byte
 	if method == "PUT" {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	response, err := c.service.HTTP.Do(req)
+	response, err := c.transport.Do(req)
 	if err != nil {
 		cancel()
 		return nil, &transportError{err}
@@ -189,7 +205,7 @@ func (c *client) list(ctx context.Context, directory string) ([]string, error) {
 		return nil, errors.New("invalid WebDAV directory response")
 	}
 	names := []string{}
-	expected := strings.TrimRight(c.base.Path, "/") + directory
+	expected := c.remotePath(directory)
 	for _, entry := range listing.Responses {
 		u, err := url.Parse(entry.Href)
 		if err != nil {
@@ -237,6 +253,15 @@ func (s *Service) Test(ctx context.Context, settings Settings) (bool, error) {
 		directory += "/"
 	}
 	return true, c.ensure(ctx, directory)
+}
+
+func (c *client) remotePath(remote string) string {
+	full := strings.TrimRight(c.base.Path, "/") + remote
+	clean := path.Clean(full)
+	if strings.HasSuffix(full, "/") && clean != "/" {
+		clean += "/"
+	}
+	return clean
 }
 
 func (c *client) safePath(value string) string {

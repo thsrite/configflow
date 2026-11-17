@@ -8,6 +8,8 @@
 - 中：保存备份表单的空密码覆盖原密码。按协调者明确要求，空值与 `******` 都保留原密码，真实新密码仍可替换。这与 Python 的空值清空行为不同，已记入行为变更账本。
 - 中：手动备份在应用有效的请求参数前，先解析了不使用的已存连接字段；已存 username/path 类型错误时 Python 成功、Go 500 且不上传/不记回执。拆开文档捕获和自动任务设置读取，手动备份只验证实际请求设置；新增完整 Flask/存储/DAV 差分修复前失败、修复后通过。
 - 中：Surge WebSocket 的显式空 Host 被 obfs-host 覆盖，与 Python 不同，可能改变实际连接目标。按 map 键是否存在决定回退；新增 Python 原始结构语料修复前失败、修复后通过。
+- 中：重复斜杠未归一导致上传位置和清理目录偏离 Python。请求和 PROPFIND 根目录统一使用标准库 path.Clean；新增六组真实 Flask/DAV 路径差分。点路径段按协调者裁定在保存、测试、手动/自动执行前拦截，不模拟 Python 的意外目录展开；48 个 HTTP 拒绝用例及旧设置自动任务用例证明零网络请求，错误提示清楚、配置不回滚。安全修正及用户迁移说明已入账。
+- 中：默认 HTTP 客户端没有 cookie jar，不能连接依赖会话 cookie 的 DAV（Python 每次操作使用 requests.Session）。使用标准库 cookiejar，并为每次操作克隆 http.Client；同一次操作保留 cookie，不同操作不串会话，保留原 transport、TLS 校验和重定向策略。
 - 低：照搬 Python 的警告去重列表和 section 查找导致二次复杂度。改用 Go map 索引，警告只保存显示的前 8 项与精确去重计数，标准库 slices.Contains 替代私有 contains 副本；Python 警告顺序/去重/总数语料不变。
 - 已核对禁用行为：repo.update 在调用提交后 hook 前过滤 auto_backup=false；禁用提交不会启动 worker 或重置 pending deadline。原实现没有这项缺陷，新增测试通过。
 
@@ -27,4 +29,8 @@ rt --back server/internal/api/settings/review_c35_test.go --back server/internal
 - .63 importer 97 条 Python parse/build 结构语料通过；普通测试 0.876s，race 11.998s。独立子进程探测 2 万层嵌套、递归 alias、merge 扩展、2 万键 mapping、4 万警告及 32 MiB 文本；普通运行 1.691s，峰值 RSS 约 108 MiB。race 的 shadow memory/访问检查开销单独放宽测试限额，不作为生产内存测量；没有把 instrumentation 超限当作实现缺陷。
 - 明确的 Python 安全修正只对两个已知字段调整预期，并先断言 Python 原行为；其余响应、完整 SQLite 导出、JSON sidecars 和远端 DAV 文件仍完整比较。未增加通用归一化掩盖差异。
 
-剩余：导入路径隔离、fuzz、最后分支复查，最终 .32 全量验收/proddiff/rebase。
+- .63 `TestImportedNamesCannotEscapeRepository` 通过：恶意资源名只作数据，缓存路径不越界；非法 profile ID 不改变数据库，目录外哨兵保留。
+- .63 `go test -run=^$ -fuzz=FuzzClientImport -fuzztime=60s -parallel=4 ./internal/importer` 通过：96 个支持客户端的语料种子，1,201,454 次执行，61.037s；最大 1 MiB 与 HTTP edge 限额一致，另有 32 MiB 直接库调用资源探测。
+- .32 Agent O6 第 7 条真实 repo→worker→DAV 覆盖：创建以及 name/host/enabled/logging_config/rule_sync_state/dns_follow/oxidns_ha 变化触发，version/status/applied_content 运行字段不触发；race 通过（1.774s）。
+
+剩余：最终 .32 全量验收/proddiff/rebase。

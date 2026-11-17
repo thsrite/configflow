@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -110,8 +111,59 @@ func (e *DirectoryError) Unwrap() error { return e.Cause }
 // ErrIncompleteSettings means one of the required connection fields is empty.
 var ErrIncompleteSettings = errors.New(msgIncomplete)
 
+// ErrUnsafePath rejects ambiguous directory traversal before network I/O.
+var ErrUnsafePath = errors.New(msgUnsafePath)
+
+// ValidatePaths checks only path safety, allowing partially filled editor forms.
+// URL userinfo and query fields are not directory components.
+func (s Settings) ValidatePaths() error {
+	if unsafePath(s.Path) {
+		return ErrUnsafePath
+	}
+	u, err := url.Parse(s.URL)
+	if err == nil && (unsafePath(u.Path) || unsafePath(u.Opaque)) {
+		return ErrUnsafePath
+	}
+	if err != nil {
+		// An invalid port/escape must not hide a plainly unsafe address path.
+		address := s.URL
+		if end := strings.IndexAny(address, "?#"); end >= 0 {
+			address = address[:end]
+		}
+		if unsafePath(address) {
+			return ErrUnsafePath
+		}
+	}
+	return nil
+}
+
+func unsafePath(value string) bool {
+	for range 8 {
+		for _, component := range strings.Split(strings.ReplaceAll(value, `\`, "/"), "/") {
+			if component == "." || component == ".." {
+				return true
+			}
+		}
+		decoded, err := url.PathUnescape(value)
+		if err != nil {
+			// Literal percent signs are valid directory data. If malformed escapes
+			// coexist with encoded separators/dots, do not partially interpret them.
+			lower := strings.ToLower(value)
+			return strings.Contains(lower, "%2e") || strings.Contains(lower, "%2f") || strings.Contains(lower, "%5c") || strings.Contains(lower, "%25")
+		}
+		if decoded == value {
+			return false
+		}
+		value = decoded
+	}
+	return true // Excessive encoding layers are ambiguous, not ordinary directories.
+}
+
 // DescribeError never includes credentials, URLs, remote bodies or raw errors.
 func DescribeError(err error) string {
+	if errors.Is(err, ErrUnsafePath) {
+		return msgUnsafePath
+	}
 	var status *StatusError
 	if errors.As(err, &status) {
 		return status.Error()

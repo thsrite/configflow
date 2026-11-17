@@ -1,6 +1,7 @@
 package difftest
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -129,4 +130,16 @@ func TestManualRequestOverridesMalformedSavedConnection(t *testing.T) {
 	w := newWorldSaved(t, jsonx.Obj("webdav_username", 42, "webdav_path", 17))
 	body := `{"webdav_url":"<DAV>","webdav_username":"fixture-user","webdav_password":"fixture-password","webdav_path":"one/two"}`
 	w.call("POST", "/api/backup/now", body, true, false)
+}
+
+func TestWebDAVDirectoryVariantsAgainstFlask(t *testing.T) {
+	for _, path := range []string{"", "/", "one//two", "/directory with spaces/", "/备份/", "/a%2Fb/"} {
+		t.Run(path, func(t *testing.T) {
+			w := newWorld(t)
+			encodedPath, _ := json.Marshal(path)
+			body := fmt.Sprintf(`{"webdav_url":"<DAV>","webdav_username":"fixture-user","webdav_password":"******","webdav_path":%s}`, encodedPath)
+			w.call("POST", "/api/backup/test", string(body), true, false)
+			w.call("POST", "/api/backup/now", string(body), true, false)
+		})
+	}
 }
