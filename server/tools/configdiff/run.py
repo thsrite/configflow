@@ -69,6 +69,8 @@ def main():
     groups.update(webdav)
     from cases.mosdns import GROUPS as mosdns
     groups.update(mosdns)
+    from cases.rule_proxy import GROUPS as rule_proxy
+    groups.update(rule_proxy)
     from cases.nodes import GROUPS as nodes
     groups.update(nodes)
     from cases.probes import GROUPS as probes

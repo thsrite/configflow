@@ -10,6 +10,8 @@ class Source:
     def __init__(self, body=FEED):
         self.requests, self.body = [], body
         self.status = 200
+        self.omit_content_length = False
+        self.record_wire = False
         self.headers = {'Content-Type': 'text/yaml; charset=utf-8'}
         self.responses = {}
         self.before_reply = lambda _path: None
@@ -28,15 +30,22 @@ class Source:
                 owner.requests.append({'method': self.command, 'path': self.path,
                                        'authorization': self.headers.get('Authorization', ''),
                                        'user_agent': self.headers.get('User-Agent', '')})
+                if owner.record_wire:
+                    owner.requests[-1].update(request_line=self.requestline, host=self.headers.get('Host', ''),
+                                              proxy_authorization=self.headers.get('Proxy-Authorization', ''))
                 owner.before_reply(self.path)
                 status, body, headers = owner.responses.get(self.path, (owner.status, owner.body, owner.headers))
                 self.send_response(status)
                 for key, value in headers.items():
                     self.send_header(key, value)
-                self.send_header('Content-Length', str(len(body)))
+                if not owner.omit_content_length and not any(key.lower() == 'content-length' for key in headers):
+                    self.send_header('Content-Length', str(len(body)))
                 self.end_headers()
                 if not head:
-                    self.wfile.write(body)
+                    try:
+                        self.wfile.write(body)
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass  # Size-limit consumers may close immediately after headers.
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         self.url = 'http://127.0.0.1:' + str(self.server.server_port)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)

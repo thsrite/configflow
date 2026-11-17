@@ -1071,3 +1071,23 @@ exit=1（既有67项差异保留为失败；未实现项不算失败）
 ```
 
 继续rule-proxy、其余写入P边界、setup/native OxiDNS与剩余H/T；最终还需在.32完整重跑。
+
+## 批次 61：MosDNS rule-proxy 真实上游、认证、缓存和限制
+
+- R087/R138新增204请求变体，194实际比较通过、10差异；新增原R编号66（S22/F32/B12）及H106–H114九个helper编号。三种认证环境分别验证JWT、当前内部能力的query/Bearer角色、退役优先级、超长凭据、公开pull token；有效JWT优先于退役query的真实Python行为也保留。
+- 四种输入（classical/YAML/list/native）分别验证domain/ip/混合，含正则中的逗号、原生注释、BOM/中文、坏UTF-8的声明与未声明路径、空过滤结果；精确5MiB通过，Content-Length超限与无长度的实际流超限均400。fake支持显式/省略长度，不重复Content-Length；首部与流超限独立真实客户端验证。
+- 声明源缓存零下载、失败回执的stale头、首次刷新持久缓存、无缓存下载失败502、source_id引用/不存在/变更/歧义、MRS及声明类型错误、URL语法、非2xx与重定向环；每次完整SQL配置不变，并比较缓存、task-status和通知文件。S91由HTTP代理fake记录改写后的absolute URI请求行、Host及鉴权字段，禁止外部DNS/网络与凭据泄漏。
+- inline跨profile相对URL、query相对URL、禁用共享源均不走快捷解析；绝对自身API带query由Python进程内分发。清单更正：重定向超限实际400；内部能力会自动生成，C1指未配置管理/公开pull且未提供内部能力；library_enabled是共享源enabled解析所得，不能直接存该引用字段。
+- AUTO(T16/17)负向观察：显式仅允许127.0.0.1已分配DAV端口的备份fixture，启动安静期6秒后逐端点读取、再观察6秒，Python与Go均零DAV请求/对象且SQL不变。默认fixture仍强制auto_backup=false，不能借新选项接外网。新增源HTTP framing/代理字段破坏/意外备份请求与对象/备份fixture边界自检，55项通过。
+- 新发现10条：两个入口各有F13声明内容无效、B04坏UTF8、S90无缓存503的通知缺失（6）；B91自身绝对URL带query Python200而Go502（2）；F16真实task-status路径目录冲突Python500而Go400（2）。已写findings，未改Go业务代码。真实Agent超时、其他helper故障/重试等仍待后续，不把本批当所有H-FETCH完备。
+
+```text
+.63 run.py --groups rule-proxy-credentials,rule-proxy-conversions,rule-proxy-local-cache,rule-proxy-guards,rule-proxy-declarations,rule-proxy-size-limits,rule-proxy-transport,rule-proxy-processing-failure,rule-proxy-no-backup
+.63 run.py --groups rule-proxy-no-backup（显式fixture修正后2 compared；40.65s）
+.63 run.py --groups rule-proxy-local-cache（补无缓存503，16 compared /4 different；16.36s）
+all rule-proxy groups: compared=194 different=10 design_errors=[]
+cumulative variants=7520 compared=2174 go-unimplemented=5231 dependency=37 different=77 O12-separate=1
+R去重3732（S584 F2511 B637），H262，G16；55 self-checks + wrong-Go-response check OK
+```
+
+继续OxiDNS各原编号、其余写入P边界与剩余H/T；不是最终.32验收。

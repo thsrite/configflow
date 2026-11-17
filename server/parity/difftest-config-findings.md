@@ -4,6 +4,92 @@
 
 Go 尚未实现单独计数，不列为业务失败。以下待协调人派移植 agent，不能用基线吞掉。
 
+## R087-B04 / text/B04
+
+路由：`GET /api/mosdns/rule-proxy`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:rule_source:proxy-invalid': {'source': 'task', 'title': '声明无效内容 · 规则集更新', 'message': '远端规则集「声明无效内容」声明为 domain/text，第 1 行，原文 "b\'\\\\xff\'"：内容不是有效 UTF-8 文本；请检查订阅链接、编码或是否误选了 MRS 格式。', 'impact': '没有可用缓存', 'status_label': '执行失败', 'severity': 'error', 'profile_id': None, 'scope': 'shared', 'profile_name': None, 'target': {'path': '/rule-library', 'query': {'rule': 'proxy-invalid', 'section': 'settings'}, 'label': '检查规则集设置'}, 'checked_at': '2026-11-17T00:37:19Z', 'failure_count': 1, 'id': 'task:rule_source:proxy-invalid', 'state': 'pending', 'read': False, 'version': '2026-11-17T00:37:19.743187+00:00', 'fir | None |
+
+## R087-B91 / absolute-query-dispatches-internal-content-endpoint
+
+路由：`GET /api/mosdns/rule-proxy`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `status` | value | 200 | 502 |
+| `headers.content-type` | value | 'text/plain; charset=utf-8' | 'application/json' |
+| `body` | type | ['full:inline.example'] | {'code': 'RULE_SOURCE_UNAVAILABLE', 'message': '规则源暂时不可用，未返回旧缓存；请恢复规则源后重试。', 'success': False} |
+
+## R087-F13 / text/F13
+
+路由：`GET /api/mosdns/rule-proxy`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:rule_source:proxy-invalid': {'source': 'task', 'title': '声明无效内容 · 规则集更新', 'message': "远端规则集「声明无效内容」声明为 domain/text，第 1 行，原文 'DOMAIN,example.com'：Domain 不接受 Classical 规则行；精确域名请填写 example.com，域名及其子域名请填写 +.example.com。", 'impact': '没有可用缓存', 'status_label': '执行失败', 'severity': 'error', 'profile_id': None, 'scope': 'shared', 'profile_name': None, 'target': {'path': '/rule-library', 'query': {'rule': 'proxy-invalid', 'section': 'settings'}, 'label': '检查规则集设置'}, 'checked_at': '2026-11-17T00:37:18Z', 'failure_count': 1, 'id': 'task:rule_source:proxy-invalid', 'state': 'pending', 'read': False, 'version': '202 | None |
+
+## R087-F16 / receipt-path-is-directory
+
+路由：`GET /api/mosdns/rule-proxy`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `status` | value | 500 | 400 |
+| `body.message` | value | 'Failed to process rule proxy request' | 'Invalid remote URL' |
+
+## R087-S90 / declared-no-cache-download-failure
+
+路由：`GET /api/mosdns/rule-proxy`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:rule_source:proxy-no-cache': {'source': 'task', 'title': '手写规则🧪 · 规则集更新', 'message': '上游返回 HTTP 503', 'impact': '没有可用缓存', 'status_label': '执行失败', 'severity': 'error', 'profile_id': None, 'scope': 'shared', 'profile_name': None, 'target': {'path': '/rule-library', 'query': {'rule': 'proxy-no-cache', 'section': 'settings'}, 'label': '检查规则集设置'}, 'checked_at': '2026-11-17T00:40:53Z', 'failure_count': 1, 'id': 'task:rule_source:proxy-no-cache', 'state': 'pending', 'read': False, 'version': '2026-11-17T00:40:53.051292+00:00', 'first_seen_at': '2026-11-17T00:40:53.051292+00:00', 'last_seen_at': '2026-11-17T0 | None |
+
+## R138-B04 / text/B04
+
+路由：`GET /api/profiles/<profile_id>/mosdns/rule-proxy`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:rule_source:proxy-invalid': {'source': 'task', 'title': '声明无效内容 · 规则集更新', 'message': '远端规则集「声明无效内容」声明为 domain/text，第 1 行，原文 "b\'\\\\xff\'"：内容不是有效 UTF-8 文本；请检查订阅链接、编码或是否误选了 MRS 格式。', 'impact': '没有可用缓存', 'status_label': '执行失败', 'severity': 'error', 'profile_id': None, 'scope': 'shared', 'profile_name': None, 'target': {'path': '/rule-library', 'query': {'rule': 'proxy-invalid', 'section': 'settings'}, 'label': '检查规则集设置'}, 'checked_at': '2026-11-17T00:37:25Z', 'failure_count': 1, 'id': 'task:rule_source:proxy-invalid', 'state': 'pending', 'read': False, 'version': '2026-11-17T00:37:25.651702+00:00', 'fir | None |
+
+## R138-B91 / absolute-query-dispatches-internal-content-endpoint
+
+路由：`GET /api/profiles/<profile_id>/mosdns/rule-proxy`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `status` | value | 200 | 502 |
+| `headers.content-type` | value | 'text/plain; charset=utf-8' | 'application/json' |
+| `body` | type | ['full:inline.example'] | {'code': 'RULE_SOURCE_UNAVAILABLE', 'message': '规则源暂时不可用，未返回旧缓存；请恢复规则源后重试。', 'success': False} |
+
+## R138-F13 / text/F13
+
+路由：`GET /api/profiles/<profile_id>/mosdns/rule-proxy`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:rule_source:proxy-invalid': {'source': 'task', 'title': '声明无效内容 · 规则集更新', 'message': "远端规则集「声明无效内容」声明为 domain/text，第 1 行，原文 'DOMAIN,example.com'：Domain 不接受 Classical 规则行；精确域名请填写 example.com，域名及其子域名请填写 +.example.com。", 'impact': '没有可用缓存', 'status_label': '执行失败', 'severity': 'error', 'profile_id': None, 'scope': 'shared', 'profile_name': None, 'target': {'path': '/rule-library', 'query': {'rule': 'proxy-invalid', 'section': 'settings'}, 'label': '检查规则集设置'}, 'checked_at': '2026-11-17T00:37:24Z', 'failure_count': 1, 'id': 'task:rule_source:proxy-invalid', 'state': 'pending', 'read': False, 'version': '202 | None |
+
+## R138-F16 / receipt-path-is-directory
+
+路由：`GET /api/profiles/<profile_id>/mosdns/rule-proxy`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `status` | value | 500 | 400 |
+| `body.message` | value | 'Failed to process rule proxy request' | 'Invalid remote URL' |
+
+## R138-S90 / declared-no-cache-download-failure
+
+路由：`GET /api/profiles/<profile_id>/mosdns/rule-proxy`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:rule_source:proxy-no-cache': {'source': 'task', 'title': '手写规则🧪 · 规则集更新', 'message': '上游返回 HTTP 503', 'impact': '没有可用缓存', 'status_label': '执行失败', 'severity': 'error', 'profile_id': None, 'scope': 'shared', 'profile_name': None, 'target': {'path': '/rule-library', 'query': {'rule': 'proxy-no-cache', 'section': 'settings'}, 'label': '检查规则集设置'}, 'checked_at': '2026-11-17T00:40:59Z', 'failure_count': 1, 'id': 'task:rule_source:proxy-no-cache', 'state': 'pending', 'read': False, 'version': '2026-11-17T00:40:59.988589+00:00', 'first_seen_at': '2026-11-17T00:40:59.988589+00:00', 'last_seen_at': '2026-11-17T0 | None |
+
 ## R154-B03 / ?format=unknown
 
 路由：`GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies`；状态：different

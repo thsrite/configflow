@@ -102,8 +102,18 @@ class Recorder:
                               'diffs': len(diffs)}, ensure_ascii=False), flush=True)
 
 
+def verify_backup_fixture(backup, allow_backup_fixture=False):
+    from urllib.parse import urlsplit
+    if backup.get('auto_backup') is False:
+        return
+    endpoint = urlsplit(backup.get('webdav_url', ''))
+    if not allow_backup_fixture or backup.get('auto_backup') is not True or endpoint.scheme != 'http' or endpoint.hostname != '127.0.0.1' or not endpoint.port:
+        raise DesignError('default fixture must disable auto_backup; explicit backup fixture requires an allocated loopback DAV endpoint')
+
+
 class Pair:
-    def __init__(self, binary, recorder, *, mode='login', options=None, tz='UTC'):
+    def __init__(self, binary, recorder, *, mode='login', options=None, tz='UTC', allow_backup_fixture=False):
+        self.allow_backup_fixture = allow_backup_fixture
         self.binary, self.recorder, self.mode, self.tz = str(binary), recorder, mode, tz
         self.options = dict(options or {})
         self.admin_username = self.options.get('admin_username', USERNAME) if mode == 'login' else ''
@@ -178,8 +188,7 @@ class Pair:
                     db.execute("UPDATE fields SET value=? WHERE scope='system' AND owner='' AND field='agents'", (json.dumps(agents),))
                 self.policy.allocated_ports[f'db.fields.system//agents.value[{position}].port'] = tuple(ports)
         document = json.loads((seed / 'configdiff-seed.json').read_text())
-        if document['system']['backup'].get('auto_backup') is not False:
-            raise DesignError('default fixture must disable auto_backup')
+        verify_backup_fixture(document['system']['backup'], self.allow_backup_fixture)
         for item in document['shared']['subscriptions'] + document['shared']['rule_library']:
             if item.get('enabled', True) and item.get('interval', item.get('update_interval', 0)):
                 raise DesignError('X08 default fixture contains a refreshable source')

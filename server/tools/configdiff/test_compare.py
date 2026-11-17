@@ -17,6 +17,54 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_background_backup_exception_requires_explicit_loopback_fixture(self):
+        from harness import DesignError, verify_backup_fixture
+        verify_backup_fixture({'auto_backup': False})
+        backup = {'auto_backup': True, 'webdav_url': 'http://127.0.0.1:12345'}
+        with self.assertRaises(DesignError):
+            verify_backup_fixture(backup)
+        verify_backup_fixture(backup, True)
+        for endpoint in ('https://127.0.0.1:12345', 'http://dav.example:12345', 'http://127.0.0.1'):
+            with self.assertRaises(DesignError):
+                verify_backup_fixture({**backup, 'webdav_url': endpoint}, True)
+
+    def test_source_size_framing_is_observable_without_duplicate_length_headers(self):
+        import http.client
+        from sources import Source
+        with Source(b'abc') as source:
+            for explicit, omitted, expected in [(None, False, ['3']), ('5242881', False, ['5242881']),
+                                                (None, True, [])]:
+                source.headers = {} if explicit is None else {'content-length': explicit}
+                source.omit_content_length = omitted
+                client = http.client.HTTPConnection('127.0.0.1', source.server.server_port)
+                client.request('HEAD', '/framing')
+                reply = client.getresponse()
+                self.assertEqual([v for k, v in reply.getheaders() if k.lower() == 'content-length'], expected)
+                reply.read()
+                client.close()
+
+    def test_proxy_wire_and_no_backup_observers_detect_intentional_wrong_values(self):
+        from cases.rule_proxy import no_backup_errors
+        snapshot = {'requests': [], 'objects': {}}
+        self.assertEqual(no_backup_errors(snapshot), [])
+        for broken in ({'requests': [{'method': 'HEAD'}], 'objects': {}},
+                       {'requests': [], 'objects': {'/backup/unexpected.json': {}}}):
+            self.assertTrue(no_backup_errors(broken))
+        from sources import Source
+        import http.client
+        with Source(b'example.com') as source:
+            source.record_wire = True
+            client = http.client.HTTPConnection('127.0.0.1', source.server.server_port)
+            client.request('GET', 'http://mirror.example/cache/rules', headers={'Proxy-Authorization': 'Basic synthetic'})
+            client.getresponse().read()
+            client.close()
+            row = source.requests[0]
+            self.assertEqual(row['request_line'], 'GET http://mirror.example/cache/rules HTTP/1.1')
+            self.assertEqual(row['host'], 'mirror.example')
+            self.assertEqual(row['proxy_authorization'], 'Basic synthetic')
+            for field in ('request_line', 'host', 'proxy_authorization'):
+                self.assertTrue(differences(row, {**row, field: 'wrong'}, 'subscription.source.requests[0]'))
+
     def test_agent_fake_records_every_write_verb_and_no_request_observer_detects_push(self):
         from agent_fake import Agent, NoRequests
         from harness import send
