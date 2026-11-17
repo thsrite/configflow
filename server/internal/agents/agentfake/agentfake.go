@@ -22,6 +22,7 @@ import (
 // File is an Agent manifest entry.
 type File struct {
 	Path   string `json:"path"`
+	Name   string `json:"name,omitempty"`
 	Size   int64  `json:"size"`
 	SHA256 string `json:"sha256"`
 	Role   string `json:"role"`

@@ -16,7 +16,7 @@ import (
 func TestUploadContract(t *testing.T) {
 	data := []byte("rules: []\n")
 	h := sha256.Sum256(data)
-	m := deploy.Manifest{ProtocolVersion: 1, DeploymentID: "a11-example", AgentID: "agent-example", ProfileID: "profile-example", ServiceType: "mihomo", ConfigPath: "config.yaml", Files: []deploy.File{{Path: "config.yaml", Size: int64(len(data)), SHA256: hex.EncodeToString(h[:]), Role: deploy.RoleConfig}}}
+	m := deploy.Manifest{ProtocolVersion: 1, DeploymentID: "a11-example", AgentID: "agent-example", ProfileID: "profile-example", ServiceType: "mihomo", ConfigPath: "config.yaml", Files: []deploy.File{{Name: "Main config", Path: "config.yaml", Size: int64(len(data)), SHA256: hex.EncodeToString(h[:]), Role: deploy.RoleConfig}}}
 	b, err := deploy.Pack(m, map[string]deploy.Content{"config.yaml": {Data: data, Role: deploy.RoleConfig}}, "version", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +51,7 @@ func TestUploadContract(t *testing.T) {
 		})
 	}
 	calls := a.Calls()
-	if len(calls) != 4 || calls[0].Manifest == nil || calls[0].FileDigests["config.yaml"] != hex.EncodeToString(h[:]) {
+	if len(calls) != 4 || calls[0].Manifest == nil || calls[0].Manifest.Files[0].Name != "Main config" || calls[0].FileDigests["config.yaml"] != hex.EncodeToString(h[:]) {
 		t.Fatalf("transcript %#v", calls)
 	}
 }
