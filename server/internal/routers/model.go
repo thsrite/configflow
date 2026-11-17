@@ -140,10 +140,12 @@ type DhcpDnsState struct {
 
 // RouterState is one readback of the device (later modules add their fields).
 type RouterState struct {
-	Routes      []*RouteEntry       `json:"routes"`
-	NatBypass   []*NatBypassEntry   `json:"nat_bypass"`
-	AddressSets map[string][]string `json:"address_sets"`
-	DhcpDNS     *DhcpDnsState       `json:"dhcp_dns"`
+	ROSPolicy     *ROSPolicySnapshot  `json:"ros_policy,omitempty"`
+	ROSPolicyPlan *ROSPolicyPlan      `json:"-"`
+	Routes        []*RouteEntry       `json:"routes"`
+	NatBypass     []*NatBypassEntry   `json:"nat_bypass"`
+	AddressSets   map[string][]string `json:"address_sets"`
+	DhcpDNS       *DhcpDnsState       `json:"dhcp_dns"`
 	// nil: proxy CIDRs go by static routes; a list: by policy rules.
 	PolicyRoutes []*PolicyRouteEntry `json:"policy_routes"`
 	// Our policy rules being withdrawn (RetirePolicyRoutes).
@@ -160,7 +162,6 @@ type RouterState struct {
 	// NATLists is eager when the lists are referenced; the reader is lazy otherwise.
 	NATLists       *NATLists                                `json:"-"`
 	NATListsReader func(context.Context) (*NATLists, error) `json:"-"`
-	NATPolicy      *NATPolicyEvidence                       `json:"-"`
 }
 
 // Driver talks to one router.

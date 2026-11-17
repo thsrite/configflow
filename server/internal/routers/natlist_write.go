@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -62,6 +63,9 @@ func (d *RouterOS) confirmResource(ctx context.Context, path string, values Row,
 		return ROSResource{}, routerError(messagePolicyDynamic)
 	}
 	undo.Config = configROSRow(actual)
+	if path == rosRoutes && firstNonEmpty(values.text("routing-table"), "main") != "main" && !rosTruthy(actual["active"]) {
+		return ROSResource{}, routerError(messagePolicyRouteNotReady)
+	}
 	if path == rosNAT && values.set("place-before") {
 		rows, err := d.list(ctx, path)
 		if err != nil {
@@ -172,7 +176,7 @@ func indexROSRows(rows []Row) (map[string]Row, map[string]int) {
 // DeleteNATRules guards a whole legacy run and records original positions before
 // batched removal. A fallback rechecks every remaining snapshot before DELETE.
 func (d *RouterOS) DeleteNATRules(ctx context.Context, items []ROSResource, journal *[]NATStep) error {
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
 	rows, err := d.list(ctx, rosNAT)
 	if err != nil {
 		return err
@@ -266,6 +270,15 @@ func (d *RouterOS) restoreResource(ctx context.Context, s NATStep, ids ROSIDs, r
 		}
 		if row.flag("dynamic") {
 			return routerError(messagePolicyDynamic)
+		}
+		if s.Path == rosTables {
+			live, err := d.snapshotPolicy(ctx, false)
+			if err != nil {
+				return err
+			}
+			if err = checkPolicyReferences([]ROSResource{{s.Path, s.ID, s.Config}}, *live); err != nil {
+				return err
+			}
 		}
 		if _, err := d.request(ctx, "DELETE", s.Path+"/"+escapeROSPathID(s.ID), nil, rosTimeout); err != nil {
 			return err
@@ -383,7 +396,7 @@ func (d *RouterOS) runNATSteps(ctx context.Context, steps []NATStep, ids ROSIDs,
 		end := start + 1
 		address := steps[start].Path == rosAddresses
 		action := steps[start].Action
-		for end < len(steps) && steps[end].Action == action && (steps[end].Path == rosAddresses) == address {
+		for end < len(steps) && steps[end].Action == action && (steps[end].Path == rosAddresses) == address && (action != "restore" || steps[end].Path == steps[start].Path) {
 			end++
 		}
 		run := steps[start:end]
@@ -408,11 +421,46 @@ func (d *RouterOS) runNATSteps(ctx context.Context, steps []NATStep, ids ROSIDs,
 					}
 				}
 			}
-		} else if action == "restore" && len(run) >= d.batchMin && slices.ContainsFunc(run, func(s NATStep) bool { return s.Path == rosNAT }) {
+		} else if action == "operation" {
+			if len(*failures) == 0 {
+				undos := []json.RawMessage{}
+				for _, s := range run {
+					raw := s.Undo
+					var head OpHead
+					_ = json.Unmarshal(raw, &head)
+					if head.Kind == "nat_list_restore" {
+						var undo NATListUndo
+						if json.Unmarshal(raw, &undo) != nil {
+							*failures = append(*failures, messageOperationFormat)
+							break
+						}
+						for _, key := range slices.SortedFunc(maps.Keys(remapped), func(a, b [2]string) int {
+							if c := strings.Compare(a[0], b[0]); c != 0 {
+								return c
+							}
+							return strings.Compare(a[1], b[1])
+						}) {
+							undo.Remapped = append(undo.Remapped, [3]string{key[0], key[1], remapped[key]})
+						}
+						raw = mustPolicyJSON(undo)
+					}
+					undos = append(undos, raw)
+				}
+				if len(*failures) == 0 {
+					for _, failure := range d.RestoreMany(ctx, undos, true) {
+						if failure != "" && failure != BatchSkipped {
+							*failures = append(*failures, failure)
+						}
+					}
+				}
+			}
+		} else if action == "restore" && run[0].Path == rosRoutes && len(run) >= d.batchMin {
+			d.restorePolicyRoutes(ctx, run, ids, remapped, failures)
+		} else if action == "restore" && len(run) >= d.batchMin && run[0].Path == rosNAT {
 			d.restoreNATRules(ctx, run, ids, remapped, failures)
 		} else {
 			for _, s := range run {
-				if e := d.restoreResource(ctx, s, ids, remapped, deleteSafe); e != nil {
+				if e := d.restoreResource(ctx, s, ids, remapped, deleteSafe && len(*failures) == 0); e != nil {
 					*failures = append(*failures, e.Error())
 				}
 			}
@@ -551,7 +599,7 @@ func (d *RouterOS) proveNATList(ctx context.Context, op NATListSync, id string) 
 // ApplyNATLists runs one list delta to completion, compensating in reverse order
 // on failure. Every mutation is guarded by the preview and recorded before I/O.
 func (d *RouterOS) ApplyNATLists(ctx context.Context, op NATListSync) (*NATListUndo, error) {
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
 	d.InvalidateAddressReads()
 	full, err := d.list(ctx, rosNAT)
 	if err != nil {
@@ -678,7 +726,7 @@ func (d *RouterOS) ApplyNATLists(ctx context.Context, op NATListSync) (*NATListU
 // failed restoration or new foreign reference preserves the new protection and
 // reports an incomplete rollback; it never deletes by a destination guess.
 func (d *RouterOS) RestoreNATLists(ctx context.Context, op NATListUndo) error {
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
 	for _, step := range op.Steps {
 		if (step.Path != rosNAT && step.Path != rosAddresses) || (step.Action != "delete" && step.Action != "restore" && step.Action != "sweep") || (step.Action != "sweep" && (step.ID == "" || step.Config == nil)) {
 			return routerError(messageOperationFormat)

@@ -2,6 +2,19 @@ package routers
 
 import "encoding/json"
 
+// CIDRGateway is one static forwarding path that must be proven before withdrawal.
+type CIDRGateway struct {
+	CIDR    string `json:"cidr"`
+	Gateway string `json:"gateway"`
+}
+
+// NATChecks is the release NAT verification contract shared with source policy.
+type NATChecks struct {
+	Gateway        string        `json:"gateway"`
+	NATBypass      []string      `json:"nat_bypass"`
+	NATNotRequired []CIDRGateway `json:"nat_not_required"`
+}
+
 // Op is one release operation. The JSON of the concrete type is the driver contract.
 type Op interface {
 	OpKind() string

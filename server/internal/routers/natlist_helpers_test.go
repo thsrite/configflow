@@ -29,6 +29,12 @@ func r07TypedOps(rows []json.RawMessage) []routers.Op {
 		var head routers.OpHead
 		_ = json.Unmarshal(raw, &head)
 		switch head.Kind {
+		case "ros_policy_replace":
+			var wire struct {
+				Prepare []json.RawMessage `json:"prepare_static"`
+			}
+			_ = json.Unmarshal(raw, &wire)
+			ops = append(ops, &routers.ROSPolicyReplace{OpHead: head, PrepareStatic: r07TypedOps(wire.Prepare)})
 		case "nat_list_sync":
 			var op routers.NATListSync
 			_ = json.Unmarshal(raw, &op)

@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
 	"errors"
@@ -87,13 +88,15 @@ type RouterOS struct {
 	routeBatch int
 	batchMin   int
 
-	forwardFilterRows []Row
-	natListTouched    bool
-	addressCache      map[string][]Row
-	addressExpected   map[string][]Row
-	addressReads      map[string]addressProof
-	policyManifest    json.RawMessage
-	dnsGuardManifest  json.RawMessage
+	forwardFilterRows   []Row
+	natListTouched      bool
+	addressCache        map[string][]Row
+	addressExpected     map[string][]Row
+	addressReads        map[string]addressProof
+	policyManifest      json.RawMessage
+	policyManifestSet   bool
+	dnsGuardManifest    json.RawMessage
+	dnsGuardManifestSet bool
 }
 
 // NewRouterOS constructs a REST driver with requests-compatible device HTTP.
@@ -792,11 +795,17 @@ func withoutCounters(rows []Row) []Row {
 
 // SetPolicyManifest installs the last RouterOS policy manifest for readback
 // filtering. The policy-routing module owns the contents of this value.
-func (d *RouterOS) SetPolicyManifest(raw json.RawMessage) { d.policyManifest = slices.Clone(raw) }
+func (d *RouterOS) SetPolicyManifest(raw json.RawMessage) {
+	d.policyManifest = slices.Clone(raw)
+	d.policyManifestSet = true
+}
 
 // SetDNSGuardManifest installs the DNS guard ownership snapshot for NAT
 // assessment. The DNS guard module owns the contents of this value.
-func (d *RouterOS) SetDNSGuardManifest(raw json.RawMessage) { d.dnsGuardManifest = slices.Clone(raw) }
+func (d *RouterOS) SetDNSGuardManifest(raw json.RawMessage) {
+	d.dnsGuardManifest = slices.Clone(raw)
+	d.dnsGuardManifestSet = true
+}
 
 type rosResourceManifest struct {
 	ID     string `json:"id"`
@@ -838,7 +847,7 @@ var rosPolicyRuntime = map[string]bool{
 
 func configROSRow(row Row) Row {
 	config := make(Row)
-	for key, value := range row {
+	for key, value := range cloneAddressRow(row) {
 		if !rosPolicyRuntime[key] {
 			config[key] = value
 		}
@@ -870,7 +879,7 @@ func stableROSRow(path string, row Row) Row {
 
 func (d *RouterOS) filterPolicyMangle(state *NatContext) error {
 	var manifest rosManifest
-	if err := json.Unmarshal(d.policyManifest, &manifest); err != nil {
+	if err := devhttp.DecodeJSON(d.policyManifest, &manifest); err != nil {
 		return ErrNotPorted
 	}
 	proven := map[string]bool{}
@@ -969,7 +978,7 @@ type rosOperation struct {
 // change on the router that no undo record covers. Every device request
 // still has its own timeout.
 func (d *RouterOS) Apply(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
 	var head struct {
 		Kind string `json:"kind"`
 	}
@@ -1705,7 +1714,7 @@ func (d *RouterOS) compensate(ctx context.Context, cause error, undo []ROSChange
 	}
 	changes := slices.Clone(undo)
 	slices.Reverse(changes)
-	_, rollback := d.restore(context.WithoutCancel(ctx), changes)
+	_, rollback := d.restore(lifecycle.Detach(ctx), changes)
 	if rollback != nil {
 		return rollbackError(cause.Error() + "；" + rollback.Error())
 	}

@@ -73,7 +73,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R05 | iKuai driver | 1179 | verified | HR | R01, R03; shared requests client³ | – | internal/routers |
 | R06 | device route editor (RouterOS/iKuai static routes) | 684 | verified | HR | R04, R05 | – | internal/routers |
 | R07 | RouterOS NAT address lists, address-list sync, test helpers | 1422 | verified | HR | R03, R04 | – | internal/routers, internal/routers/routerfake |
-| R08 | RouterOS policy routing (plan, write, view) | 1349 | missing | HR | R07, C05, C26 (`normalize_policies`, present) | – | internal/routers |
+| R08 | RouterOS policy routing (plan, write, view) | 1349 | in progress | HR | R07, C05, C26 (`normalize_policies`, present) | – | internal/routers |
 | R09 | forced DNS (DNS guard), IPv4 same-port forward hint | 773 | missing | HR | R04, R07 | – | internal/routers |
 | R10 | IPv6 policy, IPv6 fake-IP, IPv6 rule-set routes | 1247 | missing | HR | R04, R09 | – | internal/routers |
 | R11 | IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness | 1161 | missing | HR | R10 | – | internal/routers |
@@ -487,7 +487,7 @@ No push. L5 and fresh Opus review remain required before production / `verified`
 
 ## R08 — RouterOS policy routing
 
-**Status: `missing`** · HR · prereqs: R07, C05, C26 (`normalize_policies`, present in `internal/oxidns`) · Go: internal/routers
+**Status: `in progress`** · HR · prereqs: R07, C05, C26 (`normalize_policies`, present in `internal/oxidns`) · Go: internal/routers
 
 Files:
 - `backend/routers/ros_policy.py` (520), `backend/routers/ros_policy_write.py` (782), `backend/routers/ros_policy_view.py` (47)
@@ -504,6 +504,76 @@ provides `PrepareStatic []Op`, replace `nestedNATMigration` with typed traversal
 `internal/routers/natlist_policy_adapter.go`** (header: R08 落地后移除). Connect R07's temporary
 `NATPolicyEvidence` reads to the same `ROSPolicyPlan.Check` / previous-spec resources R08 owns, so the NAT and
 policy planners cannot use different migration evidence. See R12 design §2.4 “Clarified in R07”.
+
+
+Implemented, compiling, final gates pending: `rospolicy_{model,read,plan,write,restore}.go`,
+R08 boundary/safety tests and `testdata/r08_reference.py`; shared R07 journals and R04 transport retain
+10 s device timeouts and now use lifecycle.Detach. No routes, locks, goroutines, dependency, push or
+real device access added. Typed `PrepareStatic` traversal replaces the deleted JSON adapter.
+
+Boundary reference (real Python, synthetic loopback): base plans, publish/noop/view, replacement,
+withdrawal, NAT splitting, old-bundle delete failures, lookup order/version, flags, 200/201/4096
+members, legacy hashed names/runtime flags and static replacement checks. Comparison covers plans,
+journals, ordered write requests and final device tables, without removing result fields. All R08 boundary/activation/report/raw-timeout safety tests and affected R07 write/removal/helper
+tests pass on .64 (36.871 s); full go vet ./... passes. Earlier .32 full-package regression found
+only extra-read transcript differences and the old nested fixture; both were corrected without
+weakening its comparator. Remaining: rebase go, final race/full suite/difftest/fuzz/mutation/proddiff
+gates, update results and mark ported. Per-test map and HR checklist below are complete.
+
+Finding to record in O12: Python rollback can mistake an ID moved into another address list for an
+already deleted member and report success. R08 rollback preflight now locates journal IDs absent from the scoped snapshot and reports
+changed ownership, preserving the external edit. Safety test reproduces the silent-success defect.
+
+Commands (all on .32, no local tests):
+- `RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test ./internal/routers -run "TestR08PythonBoundary/(static_replacement|legacy|batched_route)|TestR08PreviewAndOwnershipGuards" -count=1'` → `ok configflow/internal/routers 4.727s`.
+- `RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/routers -- bash -lc 'cd server && gofmt -w internal/routers && go vet ./... && go test ./internal/routers -run "TestR08|TestNATListHelperBoundary/migration|TestNATListWriteBoundary|TestNATListRemovalBoundary" -count=1'` → vet clean; `ok configflow/internal/routers 36.871s`.
+
+
+### R08 HR issue-class checklist
+
+- R04 F1 malformed/extra reply IDs: uses R07 createResource/CreateAddresses fresh unique ID proofs and R04 bounded consoleAdd; unknown surplus rows are not journaled; FuzzR08PolicyInput rejects malformed manifest/lookup shapes without panic.
+- R04 F2 messages: new Chinese text is centralized in messages.go; real-Python boundary compares errors without blanket message stripping. Only pre-existing driver error classes/native internal parse texts differ as documented by R04.
+- R04 F3 disconnect: ApplyROSPolicy/RestoreROSPolicy and shared R04/R07 write/restore entry points use lifecycle.Detach; every I/O still passes rosTimeout. Production timeout recorder, real 10 s silent peer and cancelled-request tests use production devhttp.
+- R04 F4 batching: reuse CreateAddresses/DeleteAddresses; policy route migration uses 200-term reads/500-ID removes; restore reuses consoleAdd with 100 rows and 32 KiB accounting. 200/201/4096 members and five-route rollback are Python-compared.
+- R04 F5 dynamic rows: writableResource rejects dynamic/timed members; all destructive paths guard full raw config; route restores check active state before accepting a non-main route.
+- R04 F6 journal placement: append restore before DELETE/remove; operation undos include UndoOf(err); reverse execution restores old path before discarding replacements; remapped IDs refresh the raw previous manifest, including unknown fields.
+- R04 F7 composite values: sameRow deep comparisons and cloneAddressRow in configROSRow/owned results; native decoder keeps json.Number. No maps.Equal over arbitrary device values; proof baseline copy tested with nested maps/slices.
+- R04 F8 limits: shared 16 KiB/200 member and 500 remove limits retained; route restore splits at 32 KiB UTF-8 bytes. No short size/timeout seam in R08 tests.
+- R04 F9 missing proof: missing/empty IDs or config and duplicate manifest/live IDs refuse; all non-route preview dependencies compare before writes, migration IDs guard exact config, each delete re-reads; table/chain/list foreign references retain the bundle.
+- R04 F10 helpers: reuse configROSRow, sameRow, payload/writableResource, valuesMatch/ComparableValues, address proof cache, ScriptString, prefixOverlap, addressExclude and consoleAdd; no private redaction/network parser/YAML/JSON compatibility engine.
+- R05 class 1 shared clients: no HTTP transport change; production Basic auth/raw Content-Type/no-body and 10 s parameters are checked. Existing devhttp no-proxy/no-redirect/read retry tests run again on the combined tree.
+- R05 class 2 error types: write/rollback failures are RouterError (including KindUncertainWrite/KindRollback); native parse failure at the internal driver contract maps to messageOperationFormat.
+- R05 class 3 non-empty identity: manifest/undo validation and guardPolicyIn reject missing identity before destructive writes; a name/comment never claims ownership.
+- R05 class 4 ID reuse: before-images are used only after full stable equality; missing restore IDs may be recreated, changed IDs are preserved; place-before is remapped and its current existence re-proven.
+- R05 class 5 readback indexing: ownership builds path+ID maps once; scoped member reads/batched route reads replace per-member whole-table scans; overlap reuses the R07 binary index and subtraction is a sorted sweep.
+- R05 class 6 refused vs uncertain/cancellation: shared PUT logic distinguishes an answered refusal from transport/5xx/invalid-ID uncertainty, journals one provable fresh candidate only, and never retries an uncertain write. create_*_lost_* compares real Python compensation.
+- R06 standing timeout/raw checks: TestR08RequestsKeepProductionTimeoutAndRawBodies checks actual body bytes and headers plus all production timeouts through apply and rollback; TestR08DeviceTimeoutActuallyExpires observes the unchanged ten-second watchdog. Existing R04/R06/R07 suites included in final routers race run.
+- R06/R07 redaction: no new redaction logic; only existing password/token helpers hide secrets. Username/diagnostic text and ownership rows remain intact; existing R06/R07 password-only tests rerun.
+- R07 F2 range identity: NAT migrations call shared NATPolicyMigrations/natKey; an address range remains text, never a CIDR ownership key (explicit range assertion).
+- R07 F3 scale: no pairwise prefix re-parsing; ROSPolicyNetworkOverlap delegates to prefixOverlap; SubtractNetworks collapses once then sweeps exclusions; large bundle boundary covers repeated reads.
+- R07 F4 aliasing: driver manifests are copied on setter/getter; configROSRow and owned rows deep-copy composite values; address proof caches stay on R07's shared clone implementation.
+- R07 F5 set equality: shared NAT Verify keeps set comparison. Policy ownership rejects duplicate IDs first, so count completeness is applied only to a uniquely indexed manifest; rule order is separately compared as an ordered ID sequence.
+- R07/R12 interface: extend Op/OpHead/Stage in plan_model.go; typed PrepareStatic traversal deletes natlist_policy_adapter.go; NATPolicy temporary state field is removed, NAT evidence is derived exclusively from ROSPolicyPlan.Check + its raw previous manifest. ManifestHolder/Manifests/CIDRGateway/NATChecks follow the approved R12 design.
+- A19 F1 graph expansion/cycles: no new YAML traversal; settings use oxidns.ProfileFromJSON/ReadPolicies/NormalizePolicies and the yamlx facade; dynamic device values originate in bounded JSON trees, not expanded alias graphs.
+- A19 F2 document wrappers: no private YAML entry point; shared readers own document/shape validation. Invalid native JSON/manifest input is rejected at the parser boundary.
+- A19 F3 Unicode whitespace/content: content extraction remains shared ComputeDesired (R01/C05), with no new content sniffing regex or scanner. The version regex parses only RouterOS version digits.
+- O3 locks/Spawn/Detach: R08 introduces no locks/loops/goroutines; one driver per serialized release, caller R12/R14 holds L1/L2. Pure inspection stays cancellable; write owners detach with shutdown cancellation retained.
+- N7/N8: encoding/json + typed structs/raw unknown manifest fields, shared yamlx/oxidns; no jsonx import/new dependency.
+
+### R08 coverage and L5 boundary
+
+Every Python named test is mapped in [r08-test-map.md](r08-test-map.md): 32 policy, 6 activation,
+9 advisory, 13 transition, 12 table flag, 2 freshness, 2/6 editor tests owned by R08 (four draft-content
+route tests belong to C33). R07's 16 bulk tests are also mapped to shared and new boundary coverage.
+R12/R15 retain HTTP auth/profile/revision/SQLite/total fingerprint and Agent cross-stage orchestration;
+R08 has no HTTP route, so no fake handler is claimed as a Flask differential.
+
+L5-B / L5-I **not run here** (loopback only): CHR 7.22+ policy-rules/unmarked jump/FIB wire forms;
+real active/invalid settle and actual gateway/egress; source/direct/gateway packets and LAN/WAN NAT
+continuity during static↔policy switch and rollback; FastTrack/raw/VRF/foreign references; real console
+16 KiB/32 KiB limits and 10 s hardware budget, ID assignment/reuse, lost replies and 20k member scale.
+L5-A transport/permission and batch-order items from R04/R07 remain required. This port touches no PVE
+or real device and claims no packet-path/firmware proof.
 
 ## R09 — forced DNS (DNS guard), IPv4 same-port forward hint
 

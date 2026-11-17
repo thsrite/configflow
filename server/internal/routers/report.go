@@ -187,6 +187,11 @@ type Report struct {
 // MarshalJSON adds the later modules' sections under their keys.
 func (r Report) MarshalJSON() ([]byte, error) {
 	type plain Report
+	if r.Desired != nil {
+		desired := *r.Desired
+		desired.ROSPolicy = nil
+		r.Desired = &desired
+	}
 	data, err := json.Marshal(plain(r))
 	if err != nil || len(r.Parts) == 0 {
 		return data, err
@@ -404,6 +409,9 @@ func BuildReport(desired *Desired, state *RouterState) (*Report, error) {
 	parts, err := ReportParts(desired, state)
 	if err != nil {
 		return nil, err
+	}
+	if desired.ROSPolicy != nil {
+		parts = append(parts, policyReportPart(desired, state))
 	}
 	r.Parts = parts
 	for _, part := range parts {

@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -54,7 +55,7 @@ func (*RouterOS) BatchKinds() []string { return []string{"route_add", "route_del
 // stops it only between batches, when everything written is recorded; a
 // batch once sent is always proven (or reported uncertain) to the end.
 func (d *RouterOS) ApplyMany(ctx context.Context, ops []json.RawMessage, record func(json.RawMessage, json.RawMessage)) error {
-	work := context.WithoutCancel(ctx)
+	work := lifecycle.Detach(ctx)
 	for index := 0; index < len(ops); {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -138,7 +139,7 @@ func (d *RouterOS) BatchRestorable(raw json.RawMessage) bool {
 // strings for success and BatchSkipped for untouched records after a failure.
 // Rollback is the safety net, so it runs to the end even if ctx is cancelled.
 func (d *RouterOS) RestoreMany(ctx context.Context, undos []json.RawMessage, stopOnFailure bool) []string {
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
 	errors := []string{}
 	for index := 0; index < len(undos); {
 		if stopOnFailure && anySet(errors) {
@@ -1074,7 +1075,7 @@ func (d *RouterOS) natBatch(ctx context.Context, values []Row, rows []Row, undo 
 			unproven = true
 			continue
 		}
-		if _, rollback := d.restore(context.WithoutCancel(ctx), []ROSChange{{Method: "DELETE", Path: rosNAT, ID: item.id,
+		if _, rollback := d.restore(lifecycle.Detach(ctx), []ROSChange{{Method: "DELETE", Path: rosNAT, ID: item.id,
 			Expected: marshalRow(item.expected)}}); rollback != nil {
 			failures = append(failures, rollback.Error())
 		}

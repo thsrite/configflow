@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -25,17 +26,18 @@ const (
 // NATStep is one guarded compensation record. A sweep temporarily stands in
 // for fresh address IDs while the post-write read is unavailable.
 type NATStep struct {
-	Action         string   `json:"action"`
-	Path           string   `json:"path,omitempty"`
-	ID             string   `json:"id,omitempty"`
-	Config         Row      `json:"config,omitempty"`
-	Values         Row      `json:"values,omitempty"`
-	Order          *int     `json:"order,omitempty"`
-	FollowingOrder *int     `json:"following_order,omitempty"`
-	List           string   `json:"list,omitempty"`
-	Shared         Row      `json:"shared,omitempty"`
-	Addresses      []string `json:"addresses,omitempty"`
-	Before         []string `json:"before,omitempty"`
+	Action         string          `json:"action"`
+	Path           string          `json:"path,omitempty"`
+	ID             string          `json:"id,omitempty"`
+	Config         Row             `json:"config,omitempty"`
+	Values         Row             `json:"values,omitempty"`
+	Order          *int            `json:"order,omitempty"`
+	FollowingOrder *int            `json:"following_order,omitempty"`
+	List           string          `json:"list,omitempty"`
+	Shared         Row             `json:"shared,omitempty"`
+	Addresses      []string        `json:"addresses,omitempty"`
+	Before         []string        `json:"before,omitempty"`
+	Undo           json.RawMessage `json:"undo,omitempty"`
 }
 
 // MarshalJSON keeps the required empty before-ID list on sweep records.
@@ -100,6 +102,14 @@ func writableResource(path string, row Row) (Row, error) {
 		values := configROSRow(row)
 		delete(values, "dynamic")
 		delete(values, "invalid")
+		return values, nil
+	}
+	if path == rosTables {
+		return selectFields([]Row{row}, stringSet("name", "fib", "disabled"))[0], nil
+	}
+	if path == rosMangle {
+		values := configROSRow(row)
+		delete(values, "dynamic")
 		return values, nil
 	}
 	values := payload(path, row)
@@ -228,7 +238,7 @@ func (d *RouterOS) settledAddressRows(ctx context.Context, name string) ([]Row, 
 // CreateAddresses creates members in bounded console batches and journals only
 // fresh, unique IDs with matching submitted values. It detaches cancellation.
 func (d *RouterOS) CreateAddresses(ctx context.Context, entries []Row, journal *[]NATStep, ids ROSIDs) ([]ROSResource, error) {
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
 	return d.createAddresses(ctx, entries, journal, ids, nil)
 }
 func (d *RouterOS) createAddresses(ctx context.Context, entries []Row, journal *[]NATStep, ids ROSIDs, created map[int]ROSResource) ([]ROSResource, error) {
@@ -400,7 +410,7 @@ func (d *RouterOS) forgetAddresses(items []ROSResource, removed map[string]bool)
 // DeleteAddresses proves every member against a fresh scoped read before
 // journaling and removing any of them. Cancellation cannot interrupt rollback.
 func (d *RouterOS) DeleteAddresses(ctx context.Context, items []ROSResource, journal *[]NATStep) error {
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
 	d.InvalidateAddressReads()
 	live, err := d.liveAddresses(ctx, items)
 	if err != nil {

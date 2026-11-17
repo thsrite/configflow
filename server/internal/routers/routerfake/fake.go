@@ -65,6 +65,9 @@ type State struct {
 	Faults        []Fault          `json:"faults,omitempty"`
 	Mutations     []Mutation       `json:"mutations,omitempty"`
 	HideNewRoutes bool             `json:"hide_new_routes,omitempty"`
+	// PolicyWire supplies the RouterOS wire defaults used by R08 (FIB presence
+	// flag, gateway @main alias, passthrough flag and active resolved next hop).
+	PolicyWire bool `json:"policy_wire,omitempty"`
 }
 
 // Fake implements a synthetic RouterOS REST device. Control endpoints under
@@ -79,6 +82,7 @@ type Fake struct {
 	nextID        int
 	hiddenIDs     map[string]bool
 	hideNewRoutes bool
+	policyWire    bool
 }
 
 // New returns an empty stateful RouterOS fake with all R04 tables available.
@@ -111,6 +115,7 @@ func (f *Fake) Reset(state State) {
 	f.nextID = 100
 	f.hiddenIDs = map[string]bool{}
 	f.hideNewRoutes = state.HideNewRoutes
+	f.policyWire = state.PolicyWire
 }
 
 // Snapshot returns a deep copy of tables and calls.
@@ -118,7 +123,7 @@ func (f *Fake) Snapshot() State {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return State{Tables: cloneTables(f.tables), Calls: cloneCalls(f.calls), Faults: slices.Clone(f.faults),
-		HideNewRoutes: f.hideNewRoutes}
+		HideNewRoutes: f.hideNewRoutes, PolicyWire: f.policyWire}
 }
 
 // Calls returns the device requests recorded so far.
@@ -247,6 +252,15 @@ func writeFault(w http.ResponseWriter, fault Fault) {
 }
 
 func (f *Fake) serveLocked(method, path string, query url.Values, body any, fault *Fault) (int, any, bool) {
+	if path == "/routing/settings" && method == http.MethodGet {
+		if rows, ok := f.tables[path]; ok {
+			if len(rows) == 1 {
+				return http.StatusOK, cloneRow(rows[0]), false
+			}
+			return http.StatusOK, rows, false
+		}
+		return http.StatusOK, Row{"policy-rules": "mangle,vrf-lookup,vrf-unreach,local,user,main"}, false
+	}
 	if path == "/system/resource" && method == http.MethodGet {
 		return http.StatusOK, Row{"version": "7.24.5 (stable)", "board-name": "CHR"}, false
 	}
@@ -395,6 +409,27 @@ func (f *Fake) add(collection string, values Row) (Row, error) {
 	row := Row{".id": id, "disabled": "false"}
 	for key, value := range values {
 		row[key] = value
+	}
+	if f.policyWire {
+		switch collection {
+		case "/routing/table":
+			if row["fib"] == "true" {
+				row["fib"] = ""
+			}
+		case "/ip/firewall/mangle":
+			if row["passthrough"] == "false" {
+				row["passthrough"] = "no"
+			}
+		case "/ip/route":
+			gateway := strings.TrimSuffix(text(row["gateway"]), "@main")
+			row["gateway"] = gateway
+			if _, ok := row["active"]; !ok {
+				row["active"] = "true"
+			}
+			if _, ok := row["immediate-gw"]; !ok {
+				row["immediate-gw"] = gateway + "%bridge"
+			}
+		}
 	}
 	before := text(row["place-before"])
 	delete(row, "place-before")

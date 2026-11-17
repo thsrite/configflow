@@ -177,7 +177,7 @@ func StillRoutedNAT(report *Report, state *RouterState, gateway string) []netip.
 	for _, extra := range report.Routes.Extra {
 		deleting[extra.RouteID] = true
 	}
-	policy := state.NATPolicy
+	policy := state.natPolicyEvidence()
 	everything := netip.MustParsePrefix("0.0.0.0/0")
 	for _, row := range state.NatContext.Routes {
 		if !row.enabled() || !viaGateway(gateway, row.text("gateway")) || deleting[row.id()] {
@@ -335,7 +335,7 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 	found := InspectNATListRule(rows, refs)
 	moving := map[string]bool{}
 	movingAddress := map[string]bool{}
-	if p := state.NATPolicy; p != nil {
+	if p := state.natPolicyEvidence(); p != nil {
 		for _, item := range p.Migrations {
 			if item.Path == rosNAT {
 				moving[item.ID] = true
@@ -545,7 +545,7 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 		}
 	}
 	result.Exempt = append(result.Exempt, targets...)
-	if p := state.NATPolicy; p != nil {
+	if p := state.natPolicyEvidence(); p != nil {
 		for _, item := range p.Replacements {
 			if item.Path == rosNAT {
 				result.Exempt = append(result.Exempt, item.Values.text("dst-address"))
