@@ -93,6 +93,7 @@ and 31 proddiff tool tests pass; proddiff 23 self-checks/2831cases/415comparison
 blocked Drain and second-signal cases pass; real Python-compatible and alias ownership rejection pass
 with zero scheduled egress. Author status is ported; Opus review with O3-1/O3-2 is still required.
 Latest-go composition check also passes with N7-2; no O3-3 production source changed during rebase.
+Final upstream-only importer/oxidns test fixes were rechecked on .32 (2.477s/73.814s), with fmt/vet clean.
 
 ## Known accepted differences (do not rediscover)
 

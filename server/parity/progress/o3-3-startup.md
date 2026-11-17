@@ -1,7 +1,8 @@
 # O3-3 — instance ownership, startup and shutdown
 
-Status: ported; post-fix `.32` acceptance and latest-go composition checks complete. Branch `go-o3-3`, rebased onto
-`go@3ae44741`; tested candidate `00126bf9`. No sub-agents, pushes or production-device access.
+Status: ported; all final `.32` checks complete. Branch `go-o3-3`, rebased onto `go@a44b343b`.
+Required race/tag candidate `00126bf9` and N7-2 composition candidate `bcccb1d9` share the same O3-3
+source as the final branch. No sub-agents, pushes or production-device access.
 Coordinator successor: `bb75f5c0-8c87-410c-84cd-20801944f7e0`.
 
 ## Implementation and approved boundaries
@@ -78,14 +79,14 @@ full/differential/proddiff gates; those results are superseded by the post-fix f
 
 ## Commits
 
-- `ad9067ff`: instance core and cross-process locks.
-- `922b4fd5`: ordered startup, main drain/shutdown, request notification, early owner wiring.
-- `e09a2773`: real signal tests, grace validation and startup/Configure regression.
-- `d1255fb0`: developer notes routed into server/design.
-- `c7f7cfca`: joined drain workers and private tagged process fixtures.
-- `4244d85a`: shared data-directory resolver and real alias regressions.
-- `b98e6110`: preserve integrated safe startup diagnostics.
-- `00126bf9`: approved empty fixtures and zero scheduled egress assertions.
+- `f1c2aa54`: instance core and cross-process locks.
+- `f5811a36`: ordered startup, main drain/shutdown, request notification, early owner wiring.
+- `2768a2f0`: real signal tests, grace validation and startup/Configure regression.
+- `e936d427`: developer notes routed into server/design.
+- `772ec753`: joined drain workers and private tagged process fixtures.
+- `05987b68`: shared data-directory resolver and real alias regressions.
+- `e8e3eeb5`: preserve integrated safe startup diagnostics.
+- `67be1bf1`: approved empty fixtures and zero scheduled egress assertions.
 
 ## Final `.32` acceptance
 
@@ -131,7 +132,7 @@ Final candidate command exited 0:
   periodic loops. No comparator waiver or baseline rewrite. Existing 11 baseline differences remain.
 
 Earlier all-touched-package race also passed metrics/refresh/discovery/monitor/substore. Full oxidns
-race is not requested here; its known default-timeout issue remains owned by another agent.
+race is not claimed here; the earlier slow-test issue was subsequently repaired upstream.
 Non-test lines: instance0→121, cmd233→393. No dependency added.
 
 ## Latest-go composition acceptance
@@ -140,8 +141,24 @@ Rebased onto `go@fd731be1`, retaining all N7-2 and O3 ledger/progress entries. O
 conflicted; compared every O3-3 source directory against the full-tested candidate and found no code
 or test differences. N7-2 adds a tenth enabled differential package.
 
-The composition command is the final command above with the race and two tag-test lines omitted
-(the O3-3 sources remain identical). It exited 0 on .32:
+The composition command exited 0 on .32:
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail
+cd server
+test -z "$(gofmt -l .)"
+go vet ./...
+go test -p=4 -timeout=30m -count=1 ./...
+mapfile -t o3_diff_packages < <(go list -tags=configflow_difftest ./... | rg "/difftest$")
+CONFIGFLOW_DIFF=1 go test -tags=configflow_difftest -p=4 -timeout=30m -count=1 "${o3_diff_packages[@]}"
+o3_binary=$(mktemp)
+trap "rm -f \"$o3_binary\"" EXIT
+go build -o "$o3_binary" ./cmd/configflow
+cd ..
+PYTHONPATH=. ~/cf-test/.venv/bin/python server/scripts/review-n8-2-startup.py "$o3_binary"
+~/cf-test/.venv/bin/python server/tools/proddiff/test_proddiff.py
+server/scripts/proddiff.sh'
+```
 
 - gofmt/vet: silent pass.
 - Full `go test -p=4 -timeout=30m -count=1 ./...`: all pass, including main96.608s,
@@ -157,6 +174,18 @@ The composition command is the final command above with the race and two tag-tes
   differences, 4 synchronous Startup names, 5 disabled periodic loops. Existing bracket tolerance
   rescued 2 comparisons after N7-2; no rule, waiver or baseline was added by O3-3.
 
-Latest go then merged only importer/oxidns test-harness repairs and handoff notes. Final rebase and
-focused checks of those changed tests follow; production code is unchanged from this composition run.
-No source change remains pending. Author status is ported, not independently verified.
+Final rebase onto go@a44b343b adds only importer/oxidns test-harness repairs and handoff notes.
+Checked the upstream delta: no production Go file changed. Compared all O3-3 source/test directories
+against bcccb1d9: identical. Final focused .32 check exits 0:
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail
+cd server
+test -z "$(gofmt -l .)"
+go vet ./...
+go test -p=4 -timeout=30m -count=1 ./internal/importer ./internal/oxidns'
+```
+
+Output: `ok configflow/internal/importer 2.477s`, `ok configflow/internal/oxidns 73.814s`.
+Final diff check passes, worktree is clean, no push. Nothing remains for implementation acceptance;
+independent O3-1/O3-2/O3-3 Opus review remains with the coordinator. Author status is ported.
