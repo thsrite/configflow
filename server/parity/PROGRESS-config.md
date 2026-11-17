@@ -2165,3 +2165,60 @@ Questions for the maintainer (from this audit):
     root: the C22/C23 reviewer switches them to an embedded copy. Finish (#40): the image must contain
     tzdata (`/usr/share/zoneinfo`), because OxiDNS timezone validation follows the host's zoneinfo like the
     Python server.
+
+## N7-3b — rulefetch / refresh / structured proxy YAML readers
+
+Status: b implementation and pinned `.32` acceptance complete; final rebase/integration run pending.
+Branch `go-n7-3b`; detailed inventory/results: [progress/N7-3b-readers.md](progress/N7-3b-readers.md).
+Scope added by coordinator: convert structured proxy reader and api/subscriptions'
+program-generated JSON→YAML helper; minimal convert error-return caller adapters
+in repo/provider/health are a separate commit (`e76be2c7`). Shared yamlx validation
+comes from N7-3a's four commits, without private policy/merge implementations.
+
+Migration gate replays actual caller inputs from the existing Python corpora and
+whole-suite recordings, comparing exact response fields/rule values; YAML edited
+text is compared structurally plus separate exact splice/no-op/comment tests.
+Native diagnostic comparisons keep refusal channels; D1/policy cases assert the
+native diagnostic and retain the source. Special cases have exact native output
+fingerprints keyed to the original suite/function/input (no copied private data).
+No skip. Counts below are changed boundary rows, not all corpus rows:
+
+| §5.7 / decision | rulefetch corpus | rulefetch whole-suite | C14 review |
+|---|---:|---:|---:|
+| D1 duplicate refusal | 63 | 20 | 17 |
+| §5.4 tag/merge/document validation | 21 | 0 | 18 |
+| Native diagnostics/positions | 6396 | 32 | 11 |
+| D3 layout, equal Node semantics | 2327 | 68 | 36 |
+| D3 quoted scalar folding | 9 | 2 | 0 |
+| Alias refusal diagnostic collation | 4 | 2 | 0 |
+| Native Node mapping keys | 0 | 0 | 5 |
+| Binary scalar text | 0 | 0 | 1 |
+| Python empty-sequence bug fixed | 25 | 0 | 0 |
+| Python alias-append order bug fixed | 1 | 0 | 0 |
+
+Convert: 48 distinct changed corpus/review inputs: native scalar schema 28,
+D1 4, §5.4 7, recursive alias refusal 5, native JSON number spelling 2,
+map member order 2. Cached repetitions assert those same exact expectations.
+Repo caller golden: 30 explicit native expectations: scalar schema 18, D1 3,
+§5.4 6, JSON complex-key refusal 2, member order 1. All remaining rows retain
+strict existing comparisons and earlier accepted differences.
+
+Alias coverage: depth-40 shared diamond, linear chain and self-reference across
+rule inspection/normalization/read/edit/remote validation and both proxy readers;
+no expansion/null substitution. Proxy policy/alias errors never reach Sub-Store
+or its local cache. Refresh metadata/remember/download/preview entry tests reject
+unsafe graphs before writing either cache. Native malformed input uses existing
+validation channels. Runtime `yamlx.Clone` callers: zero.
+
+Pending integration dependency (coordinator-approved): refresh delegates hosts,
+dialer and proxy-list reads to N7-3a's subs/substore. After a merges, rebase and
+re-run refresh, all difftest packages and proddiff. Do not mark that delegated
+integration verification complete before it runs. Remaining bare decoders in
+importer/rules/oxidns are assigned to N7-3d; legacy loaders/pyyaml remain until
+that follow-up, as instructed.
+
+C09 consumer follow-up: `rules.TestReviewC09ApplyIPRule` replays1536 rows;
+198 changed YAML layouts compare structurally and36 malformed-YAML rows retain
+the Chinese context with the exact native parser suffix. All result/status/rule
+fields remain exact, and all other comparisons/previous allowances remain.
+Only this consumer test changed; rules' runtime reader remains N7-3d scope.

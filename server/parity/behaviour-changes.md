@@ -183,3 +183,41 @@ snapshot scan: 43 stored fields, 55 JSON, 14 YAML and 522 other stored/subscript
 high-surrogate escape occurrences in every category (therefore JSON=0, non-JSON YAML flow=0).
 Surge/Loon's 29 changed synthetic corpus outputs use complete real-Python expected configurations,
 not omissions or normalization. The original 34697-row old oracle is checked before native injection.
+
+
+## N7-3b — rule YAML and structured proxy readers
+
+D1 / §5.4 / HANDOFF 3d: rulefetch, refresh cache admission and convert's
+structured-proxy reader use the shared Node reader. Duplicate keys, malformed
+explicit standard tags/merge sources, recursive aliases and alias amplification
+are refused explicitly. A proxy policy/alias failure is a validation error; it
+is not retried through Sub-Store. A failed subscription policy check replaces
+neither its transport cache nor its validated-node cache; an unsafe historical
+transport cache is refused on reuse while its original bytes are retained. Alias diagnostics name
+physical occurrences, without repeatedly validating the alias target as another
+rule; some redundant errors/positions therefore differ from Python.
+
+§5.7/D3: rule edits use the shared splice-first editor. Unchanged documents and
+no-op edits keep every byte, including BOM/CRLF/comments/quotes. A changed scalar
+keeps all other bytes; sequence insertion/removal and flow-to-block normalization
+may require a whole-document rewrite. Comments and rule order/values survive;
+blank lines/quotes/indentation of stored text may normalize once when the user
+actually edits that rule. Delivery-only flow-to-block formatting remains a
+generated-output concern (§5.7); it does not rewrite source/cache bytes. Read-only/device reads of an already supported block layout do not
+rewrite stored content or change its fingerprint.
+
+Clarified in N7-3 (coordinator, 2026-11-17): Python refused physically multiline
+quoted rule scalars; Go accepts and folds them according to native YAML semantics.
+A folded value containing a space is still rejected by domain-rule validation.
+A valid escaped-line continuation has the same rule matching behavior as its
+single-line value. Native scalar typing, timestamp/binary text, tagged collection
+shape and preservation of non-string Node keys follow §5.7; a complex mapping key
+cannot cross the structured-proxy JSON boundary and is an explicit validation
+error. Distinct keys that would collide at that boundary are refused instead of
+overwriting a field. Native map member order/JSON number spellings may differ.
+
+Python bugs fixed: clearing an unindented payload sequence emitted invalid YAML
+(`payload:` followed by unindented `[]`); it now emits a valid empty list. Appending
+to a flow list containing an alias previously inserted ahead of an existing rule;
+new rules now follow every existing rule in order. Neither fix changes other
+rules' values.
