@@ -1,13 +1,13 @@
 # A14 交回记录
 
-状态：`ported`，待新的 Opus HR 复核和 L2；分支 `go-port-a14`，已经 rebase 到 `go@cb5732ec5`。没有 push，没有子 agent，没有操作生产或真实 Agent。以下验收只使用测试服务器、loopback fake 和合成语料；proddiff 快照只留在服务器私有目录。
+状态：`ported`，待新的 Opus HR 复核和 L2；分支 `go-port-a14`，已经 rebase 到 `go@28e6e0c12`。没有 push，没有子 agent，没有操作生产或真实 Agent。以下验收只使用测试服务器、loopback fake 和合成语料；proddiff 快照只留在服务器私有目录。
 
 ## 完成范围
 
-- A14-1 `a29e9c379`：类型化 prepare、provider 下载保存后重渲染、生成错误位置、配置拉取、真实 PrepareFunc 接线。
-- A14-2 `e7974ca2c`：submitted 先持久化后 POST；upload/activate、回执合并、unknown、仅当前目标确认成功推进 applied_content；Keyed 准备锁、回滚和恢复、旧协议兼容。
-- A14-3 `56e6862cd`：九条 HTTP 路由、guard、冻结 generation、TTL/no-store 产物、进度节流。
-- A14-4 `e1570e8ab` 及后续提交：完整 HTTP/DB/文件差分、真实进程崩溃/关机、原始 Agent 请求、首推缓存、真实 go-agent 归档兼容、变异和 fuzz、共享提交窗口 patch。
+- A14-1 `687fe17a2`：类型化 prepare、provider 下载保存后重渲染、生成错误位置、配置拉取、真实 PrepareFunc 接线。
+- A14-2 `1c35c4994`：submitted 先持久化后 POST；upload/activate、回执合并、unknown、仅当前目标确认成功推进 applied_content；Keyed 准备锁、回滚和恢复、旧协议兼容。
+- A14-3 `736af4a90`：九条 HTTP 路由、guard、冻结 generation、TTL/no-store 产物、进度节流。
+- A14-4 `637165642` 及后续提交：完整 HTTP/DB/文件差分、真实进程崩溃/关机、原始 Agent 请求、首推缓存、真实 go-agent 归档兼容、变异和 fuzz、共享提交窗口 patch。
 - 消费 A13 的状态稳定观察 harness；全部 24 条 A14 延期 baseline 已删除，保留且只新增获准的那一条 A18 精确 message baseline。A18 删除任务已登记。
 - C36 只读 reader 位于共享 `internal/setupflow`，PROGRESS-config 已登记复用；未实现 C36 写入流程。
 - `RulesFingerprint` 保持规则 schema/build 证明语义，内容 Fingerprint 排除资源身份；nil read 不清除证明。准备状态通过 Keyed/Held 判断，不持久化 `_preparation_running`。
@@ -93,4 +93,43 @@ baseline: new=0 stale=0
 GATE STAGE PASS: proddiff
 ```
 
-这个成功的 proddiff 基于 `go@6e37489ff` + A14；其后 rebase 到 C29 合入后的 `go@cb5732ec5`，正在补合并后的 difftest/生成边界。最终合并树完整门禁仍由协调者 cf-gate 复验；不把分阶段结果写成一次完整 GATE PASS。真实 120s upload-read 超时测试已随完整 deploy race 执行通过。Opus HR 和 L2 尚未执行。
+这个成功的 proddiff 基于 `go@6e37489ff` + A14；其后最终 rebase 到含 C29/R09 的 `go@28e6e0c12`。最终合并树完整门禁仍由协调者 cf-gate 复验；不把分阶段结果写成一次完整 GATE PASS。真实 120s upload-read 超时测试已随完整 deploy race 执行通过。Opus HR 和 L2 尚未执行。
+
+C29 合入后的全 difftest 阶段命令：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 -- bash -lc 'GATE_ONLY=difftest GATE_LOGS=$HOME/.cache/rt-tmp/a14-c29-difftest server/scripts/gate.sh -p 6'
+```
+
+14 个包通过；agents 差分只有 TestContentChangesAgainstFlask 失败。已单独复现：A13 夹具在 app 启动前装替身，被 A14 正常接线覆盖。只将其移到启动后，保留全部比较与 shutdown 后 cleanup；未改生产参数。修正后最终 R09-base 下验证：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -e CONFIGFLOW_DIFF=1 -- bash -lc 'cd server && test -z "$(gofmt -l internal/api/agents/difftest/content_diff_test.go)" && go test -race -count=1 -run "^(TestContentChangesAgainstFlask|TestPublishHTTPAgainstFlask|TestPublishLegacyProxyAgainstFlask)$" ./internal/api/agents/difftest && go test -race -count=1 -run "^TestPublishedContentUsesRealAsyncPreparation$" ./internal/api/agents'
+```
+
+```text
+ok configflow/internal/api/agents/difftest 20.257s
+ok configflow/internal/api/agents 3.856s
+```
+
+最终树另通过 gofmt/vet、Python prepare/transcript/首推缓存/资源重试的 race（deploy 124.704s）和真实发布 Flask race（16.207s）。该命令的末尾 Python 检查曾因 cwd 留在 server/ 而未执行；已从仓库根目录单独重跑成功：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'PYTHONPATH=server/tools/proddiff ~/cf-test/.venv/bin/python -m unittest test_proddiff'
+```
+
+```text
+Ran 46 tests in 0.908s
+OK
+```
+
+补跑的四个 fuzz（.32，L1-base；后续 C29/R09 未改这些目标源码），每个均为 `go test -run '^$' -fuzz="^${name}$" -fuzztime=60s -parallel=2 ./internal/deploy`，通过 rt、GOMAXPROCS=4 并发执行，日志留在 `$TMPDIR/a14-merged-fuzz/`：
+
+```text
+FuzzPublishRequest: ok configflow/internal/deploy 60.930s
+FuzzOpenArchive: ok configflow/internal/deploy 61.042s
+FuzzConvertMosDNSRules: ok configflow/internal/deploy 61.078s
+FuzzSourceExcerpt: ok configflow/internal/deploy 61.075s
+```
+
+最后只提交交回文档；A14 四步和后续修复均在分支独立提交，代码修复截止 `3c7e5dfdd`。完整合并树 cf-gate、独立 Opus HR、L2 仍由协调者继续。
