@@ -133,11 +133,12 @@ type request struct {
 	Control control           `json:"control"`
 }
 type answer struct {
-	Status  int               `json:"status"`
-	Headers map[string]string `json:"headers"`
-	Body    any               `json:"body"`
-	State   any               `json:"state"`
-	Error   string            `json:"oracle_error"`
+	Comments []string          `json:"comments"`
+	Status   int               `json:"status"`
+	Headers  map[string]string `json:"headers"`
+	Body     any               `json:"body"`
+	State    any               `json:"state"`
+	Error    string            `json:"oracle_error"`
 }
 type world struct {
 	srv     *httpxtest.Server
@@ -398,6 +399,21 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 		}
 	}
 	compare("body", py.Body, gb)
+	comments := []string{}
+	if strings.Contains(got.Header.Get("Content-Type"), "yaml") {
+		for _, line := range strings.Split(string(got.Body), "\n") {
+			if strings.HasPrefix(line, "#") {
+				comments = append(comments, line)
+			}
+		}
+	}
+	stamp := regexp.MustCompile(`[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z?`)
+	for _, side := range [][]string{py.Comments, comments} {
+		for i, line := range side {
+			side[i] = stamp.ReplaceAllString(line, "<timestamp>")
+		}
+	}
+	compare("provider comments", py.Comments, comments)
 	for _, key := range []string{"Content-Type", "Cache-Control", "X-ConfigFlow-Profile", "X-ConfigFlow-Provider", "Content-Disposition"} {
 		a, b := py.Headers[key], got.Header.Get(key)
 		if key == "Content-Disposition" {

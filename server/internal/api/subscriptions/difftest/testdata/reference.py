@@ -85,7 +85,7 @@ for line in sys.stdin:
                 body = yaml.safe_load(text)
             else:
                 body = text
-            result = {'status': reply.status_code, 'headers': dict(reply.headers), 'body': body, 'state': state()}
+            result = {'status': reply.status_code, 'headers': dict(reply.headers), 'body': body, 'comments': [line for line in text.splitlines() if line.startswith('#')] if 'yaml' in reply.content_type else [], 'state': state()}
         print(json.dumps(result, ensure_ascii=False), flush=True)
     except Exception as error:
         print(json.dumps({'oracle_error': str(error)}), flush=True)

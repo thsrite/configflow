@@ -9,7 +9,7 @@
 | 3 JSON 错误出口 | 已修。`.63 TestConfigFindingsEveryAPIErrorUsesJSON` 修前HTML400/404/405/500，修后统一JSON；文件迟发错误与编码失败也走JSON。R218非法缓存回归断言「订阅操作失败」。httpx全包race与真实Flask差异通过；差异仅显式验证HTML→JSON的同status/准确描述，其他头/数据继续比较。 |
 | 4 失败/退避通知 | 已修。修前完整NewApp的任务回执投影因缺任务slot返回ErrIncomplete，notifications.json不存在。生产通知改读AvailableTasks（只收集真实已注册模块），任务页面ListTasks仍要求完整。预存backoff三次失败+due完成的回归验证backoff通知pending/failure_count=3，无需浏览器GET。`.63 server race` 1.289s，notifications race 5.049s。refresh整包回放在WSL fsync滞留，已停止诊断，最终在.32复验。 |
 | 5 同值 PUT revision | 已修。修前SQL subscriptions行revision 2→3（连续相同PUT）；修后保留原始有序存储对象，同一行value/revision均不变，包含嵌套未知字段。`.63 subscriptions race` 1.880s。注意证据针对字段revision；Python _apply_shared_locked仍每次推进全局generation/shared._revision，Go保持该事务语义。 |
-| 6 provider 注释 | 待复现 |
+| 6 provider 注释 | 已修。修前global/scoped/merged及served文件无注释；修后单源六行、合并源数量/明细、Generated本地微秒时间+Z、Source均恢复。`.63 targeted metadata race` 1.251s；完整C30差异新增逐行注释比较，元数据无差异，只剩第1项已决定4xx需显式更新旧比较器。 |
 | 7 准备失败上下文 | 待复现 |
 | 8 ruleset UUID4 | 待复现 |
 | 9 auto_backup | 待确认 C35 |

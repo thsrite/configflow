@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"configflow/internal/httpx"
@@ -32,7 +33,7 @@ func yamlContent(proxies []object) (string, error) {
 	data, err = yaml.Marshal(&root)
 	return string(data), err
 }
-func providerResponse(proxies []object, id string) (*httpx.Response, error) {
+func providerResponse(proxies []object, id, header string) (*httpx.Response, error) {
 	text, err := yamlContent(proxies)
 	if err != nil {
 		return nil, err
@@ -42,7 +43,35 @@ func providerResponse(proxies []object, id string) (*httpx.Response, error) {
 		name += id + "_"
 	}
 	name += time.Now().Format("20060102_150405") + ".yaml"
-	return httpx.Bytes(200, "text/yaml; charset=utf-8; charset=utf-8", []byte(text)).WithHeader("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, name)), nil
+	return httpx.Bytes(200, "text/yaml; charset=utf-8; charset=utf-8", []byte(header+text)).WithHeader("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, name)), nil
+}
+
+type subscriptionDetail struct {
+	name    string
+	count   int
+	updated string
+}
+
+func generatedStamp() string { return time.Now().Format("2006-01-02T15:04:05.000000") }
+
+func singleHeader(name, id string, count int, updated bool, fetchError string) string {
+	source := "from local cache"
+	if updated {
+		source = "from Sub-Store (cache updated)"
+	} else if fetchError != "" {
+		source += " (fetch error: " + fetchError + ")"
+	}
+	return fmt.Sprintf("# ConfigFlow Subscription Proxies\n# Subscription: %s\n# ID: %s\n# Generated: %sZ\n# Proxies: %d\n# Source: %s\n\n", name, id, generatedStamp(), count, source)
+}
+
+func combinedHeader(details []subscriptionDetail, count int) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("# ConfigFlow Subscription Proxies\n# Generated: %sZ\n# Subscriptions: %d\n# Total Proxies: %d\n#\n# Subscription Details:\n", generatedStamp(), len(details), count))
+	for _, detail := range details {
+		b.WriteString(fmt.Sprintf("#   - %s: %d proxies (updated: %s)\n", detail.name, detail.count, detail.updated))
+	}
+	b.WriteByte('\n')
+	return b.String()
 }
 func providerFailure(err error) (*httpx.Response, error) {
 	if referenceError(err) {
@@ -74,6 +103,7 @@ func combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
 	all := []object{}
 	prepared := map[string][]object{}
 	updates := []staged{}
+	details := []subscriptionDetail{}
 	for _, sub := range list {
 		if !sub.enabled() {
 			continue
@@ -114,6 +144,7 @@ func combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		prepared[sub.text("name")] = proxies
 		all = append(all, proxies...)
+		details = append(details, subscriptionDetail{sub.text("name"), len(proxies), generatedStamp()})
 	}
 	if err := delivery.validate(all, nil); err != nil {
 		return providerFailure(err)
@@ -130,7 +161,7 @@ func combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
 	if err := commitStaged(ctx, updates); err != nil {
 		return providerFailure(err)
 	}
-	return providerResponse(all, "")
+	return providerResponse(all, "", combinedHeader(details, len(all)))
 }
 func subscriptionProxies(c *httpx.Ctx) (*httpx.Response, error) {
 	if rejected, err := authorize(c); err != nil || rejected != nil {
@@ -184,7 +215,7 @@ func (d *delivery) renderSingle(ctx context.Context, sub object, format string, 
 	alternate := format == "surge" || format == "loon"
 	proxies := []object(nil)
 	cacheUpdated := false
-	fetchError := msgUnknownError
+	fetchError := ""
 	if sub.text("url") != "" {
 		raw, result, fetchErr := fetchRaw(ctx, sub)
 		if fetchErr == nil {
@@ -233,6 +264,9 @@ func (d *delivery) renderSingle(ctx context.Context, sub object, format string, 
 			}
 		}
 		if cached == nil {
+			if fetchError == "" {
+				fetchError = msgUnknownError
+			}
 			return httpx.Message(404, false, fmt.Sprintf(msgProviderNoCache, sub.text("name"), fetchError)), nil
 		}
 		if len(cached.Nodes) == 0 {
@@ -278,5 +312,5 @@ func (d *delivery) renderSingle(ctx context.Context, sub object, format string, 
 		}
 		return httpx.Text(200, alternativeText), nil
 	}
-	return providerResponse(proxies, sub.text("id"))
+	return providerResponse(proxies, sub.text("id"), singleHeader(sub.text("name"), sub.text("id"), len(proxies), cacheUpdated, fetchError))
 }
