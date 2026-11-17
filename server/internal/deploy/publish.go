@@ -200,7 +200,14 @@ func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle,
 	if (previous.Status == "failed" || previous.Status == "rolled_back") && !previous.Submitted {
 		return taskResult(current, did), nil
 	}
-	sourceSHA, err := b.SHA256()
+	contentBundle := b
+	if manifest.FinalConfig {
+		contentBundle, err = withoutResources(b)
+		if err != nil {
+			return nil, err
+		}
+	}
+	sourceSHA, err := contentBundle.SHA256()
 	if err != nil {
 		return nil, err
 	}
@@ -214,13 +221,7 @@ func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle,
 		}
 		return m.GetDeployment(ctx, id, did)
 	}
-	contentBundle := b
-	if manifest.FinalConfig {
-		contentBundle, err = withoutResources(b)
-		if err != nil {
-			return nil, err
-		}
-	} else if t.ServiceType == "mihomo" {
+	if !manifest.FinalConfig && t.ServiceType == "mihomo" {
 		if _, err = recordUpdate(ctx, m, id, did, Update{Status: ptr("preparing"), Message: ptr(msgCheckingGeo)}, agents.RecordOptions{}); err != nil {
 			return nil, err
 		}

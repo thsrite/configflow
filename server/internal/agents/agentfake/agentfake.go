@@ -226,7 +226,7 @@ func (a *Agent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			respond(w, 200, a.options.Capabilities)
 			return
 		}
-		respond(w, 200, map[string]any{"deployment_protocols": []int{1}, "final_config_protocols": []int{1}, "reload_only_protocols": []int{1}, "service_type": a.options.ServiceType, "config_path": a.options.ConfigPath})
+		respond(w, 200, map[string]any{"deployment_protocols": []int{1}, "final_config_protocols": []int{1}, "reload_only_protocols": []int{1}, "service_type": a.options.ServiceType, "config_path": a.options.ConfigPath, "mihomo_resources": []string{}})
 		return
 	}
 	if r.Method == http.MethodPost && r.URL.Path == "/api/config/final-preview" {

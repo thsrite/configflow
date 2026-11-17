@@ -125,6 +125,10 @@ func TestPublishBoundary(t *testing.T) {
 			t.Fatal("body on bodyless request", c)
 		}
 	}
+	journal := f.fake.Journal()["stage"]
+	if journal.Digest == "" || journal.Digest != calls[1].Headers.Get("X-Content-SHA256") {
+		t.Fatal("Agent journal digest does not match accepted bytes", journal)
+	}
 	if uploads != 1 {
 		t.Fatal("upload count", uploads)
 	}
@@ -168,7 +172,7 @@ func TestSubmittedBeforeNetworkAndLostResponse(t *testing.T) {
 func TestLateUploadCannotRegressPoll(t *testing.T) {
 	arrived, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
-	f := newPublish(t, agentfake.Options{}, func(next http.Handler) http.Handler {
+	f := newPublish(t, agentfake.Options{Progress: []string{"checking", "succeeded"}}, func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/api/deployments" {
 				rec := httptest.NewRecorder()
@@ -194,14 +198,14 @@ func TestLateUploadCannotRegressPoll(t *testing.T) {
 	}()
 	<-arrived
 	got, e := f.m.GetDeployment(f.ctx, "publish-agent", "late")
-	if e != nil || resultView(got).Status != "succeeded" {
+	if e != nil || resultView(got).Status != "checking" {
 		t.Fatal(got, e)
 	}
 	close(release)
 	if e = <-done; e != nil {
 		t.Fatal(e)
 	}
-	if f.agent(t).GetObject("latest_deployment").GetString("status") != "succeeded" {
+	if f.agent(t).GetObject("latest_deployment").GetString("status") != "checking" {
 		t.Fatal("late accepted receipt regressed confirmation")
 	}
 }
