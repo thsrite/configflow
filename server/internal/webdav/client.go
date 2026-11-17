@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"sort"
 	"strings"
 	"time"
 )
@@ -17,6 +18,7 @@ type client struct {
 	service            *Service
 	base               *url.URL
 	username, password string
+	secrets            []string
 }
 
 func (s *Service) client(settings Settings) (*client, error) {
@@ -27,10 +29,16 @@ func (s *Service) client(settings Settings) (*client, error) {
 	if err != nil || base.Host == "" || (base.Scheme != "http" && base.Scheme != "https") {
 		return nil, errors.New("invalid WebDAV address")
 	}
+	secrets := []string{settings.Username, settings.Password}
+	if base.User != nil {
+		password, _ := base.User.Password()
+		secrets = append(secrets, base.User.Username(), password)
+	}
+	sort.Slice(secrets, func(i, j int) bool { return len(secrets[i]) > len(secrets[j]) })
 	base.User = nil
 	base.RawQuery = ""
 	base.Fragment = ""
-	return &client{s, base, settings.Username, settings.Password}, nil
+	return &client{service: s, base: base, username: settings.Username, password: settings.Password, secrets: secrets}, nil
 }
 func (c *client) request(ctx context.Context, method, remote string, data []byte) (*http.Response, error) {
 	target := *c.base
@@ -232,12 +240,28 @@ func (s *Service) Test(ctx context.Context, settings Settings) (bool, error) {
 }
 
 func (c *client) safePath(value string) string {
-	for _, secret := range []string{c.username, c.password} {
-		if secret != "" {
-			value = strings.ReplaceAll(value, secret, "[REDACTED]")
+	original := value
+	redacted := false
+	for range 8 {
+		for _, secret := range c.secrets {
+			if secret != "" && strings.Contains(value, secret) {
+				value = strings.ReplaceAll(value, secret, "[REDACTED]")
+				redacted = true
+			}
 		}
+		decoded, err := url.PathUnescape(value)
+		if err != nil {
+			return "[REDACTED]"
+		}
+		if decoded == value {
+			if redacted {
+				return value
+			}
+			return original
+		}
+		value = decoded
 	}
-	return value
+	return "[REDACTED]"
 }
 
 type transportError struct{ cause error }

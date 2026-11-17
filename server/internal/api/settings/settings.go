@@ -364,7 +364,7 @@ func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
 			password = "******"
 		}
 		return httpx.JSON(jsonx.Obj(
-			"webdav_url", backup.GetOr("webdav_url", ""),
+			"webdav_url", backupEditorURL(backup.GetString("webdav_url")),
 			"webdav_username", backup.GetOr("webdav_username", ""),
 			"webdav_password", password,
 			"webdav_path", backup.GetOr("webdav_path", "/config-flow-backup/"),
@@ -381,7 +381,7 @@ func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
 		var changed []string
 		for _, key := range backupFields {
 			value, ok := data.Get(key)
-			if !ok || (key == "webdav_password" && value == "******") {
+			if !ok || (key == "webdav_password" && (value == "******" || value == "")) {
 				continue
 			}
 			if previous, _ := backup.Get(key); !jsonx.Equal(previous, value) {

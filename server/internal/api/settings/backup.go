@@ -4,10 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 
 	"configflow/internal/httpx"
 	"configflow/internal/webdav"
 )
+
+// backupEditorURL keeps the editable address without returning URL credentials.
+func backupEditorURL(address string) string {
+	u, err := url.Parse(address)
+	if err != nil || u.Opaque != "" {
+		return ""
+	}
+	u.User = nil
+	return u.String()
+}
 
 func testBackup(c *httpx.Ctx) (*httpx.Response, error) {
 	settings, bad, err := connectionSettings(c, false)

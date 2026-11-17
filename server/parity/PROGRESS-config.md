@@ -1737,6 +1737,8 @@ Files: `backend/utils/config_importer.py` (1148), `backend/utils/webdav_backup.p
 
 Routes: `POST /api/backup/now`, `POST /api/backup/test` [done; C06 accounting now 22/22]. No new GET routes; existing production coverage file needs no additions.
 
+Independent review in progress (`go-review-c35`): URL-userinfo/encoded-path credential leaks fixed; editor URL removes userinfo and blank/masked password preserves stored password per coordinator. Security differences tracked in `parity/behaviour-changes.md`; .32 vet and settings/webdav race pass. Remaining checks and exact command in `parity/review-c35.md`.
+
 Implementation:
 - Pure typed importer `Parse → Plan → Build`: Mihomo/Clash, Surge, Loon, Shadowrocket; resource reuse/collisions, protocol/TLS/transport/WireGuard/ShadowTLS options, providers, group/rule ordering, warnings and custom settings. Protocol extras use json.RawMessage; free-form settings use yaml.Node. Native alias/merge expansion avoids dangling anchors after generated sections are removed. Node signatures retain JSON numbers, avoiding false reuse of adjacent integers above 2^53 (two dedicated Python-comparison corpus cases). Existing shared data is never rewritten by Build.
 - WebDAV uses net/http + encoding/xml; no dependency added. Full exports are encoded in memory, eliminating temporary-file cleanup paths. HEAD/MKCOL/PUT/PROPFIND/DELETE, recursive directories, timestamped filenames and latest+daily retention are implemented. Cleanup failures preserve successful uploads.
