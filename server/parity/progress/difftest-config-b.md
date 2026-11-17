@@ -2278,3 +2278,16 @@ current compared622 / Go未实现72 / different49 / accepted29 / open20 / O12单
 current Go未实现134；design_errors=[]；seconds27.14；exit0
 121 self-checks + deliberately wrong-Go-response detection OK
 ```
+
+## 批次 134：转发规则实际补下载与导入保留发布记录
+
+- H1001/H1002真实prepare、规则库下载/绑定和公开profile import后移除自有缓存；check实际403，finish分别再次403拒绝、200补下载但要求重新检查。比较真实Agent/来源GET和完整session/SQL；后者仅允许准确600模式的原始规则缓存新增。合成发布回执仅是向导边界前提。
+- H830四种legacy集合的null/object/非对象成员、H839共享节点三种形态、H846/H847真实resolved chain错误：停用节点、订阅节点、同节点、混普通来源、跨node/group同名、含链时引用停用普通组；精确关联H184/H257/H260–263。H765关联实际阻塞RouterOS首读期间删除profile的已有请求。
+- H764五类保留路由器发布记录分别删除路由器/删回执/换类型/换endpoint，20请求409。Python先生成恢复快照再拒绝；原“文件完全不变”草稿前提撤回。现在要求恰好一份快照且每个逻辑SQL字段等于请求前状态，其他行/文件不变，零设备/源请求；快照路径/内容/模式继续跨端相比。故意破坏SQL、快照、旧文件、缺失/额外/错误路径均检出。
+- .64正式五组55变体（Go未实现52/依赖3）、16.35秒，design_errors=[]，123项自检及故意错误Go响应检出。累计10503变体，原R4487（S712/F2759/B1016）、H879/G16；compared2938/Go未实现7410/依赖105/严格差异49/O12单列1。findings仍closed122/accepted29/open20/separate1。剩余原R43、H233含部分覆盖/跨域，最终all尚未完成。
+
+```text
+.64 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups setup-finish-real-forwarded-rule-download-guards,repository-legacy-collections-and-shared-shape-errors,repository-resolved-chain-import-errors,repository-retained-router-publication-guards,profile-delete-real-router-publication-busy --baseline df6928ae
+current Go未实现52 / 依赖3；design_errors=[]；seconds16.35；exit0
+123 self-checks + deliberately wrong-Go-response detection OK
+```

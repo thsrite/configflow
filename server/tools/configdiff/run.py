@@ -276,6 +276,10 @@ def main():
     groups.update(oxidns_policy_guards)
     from cases.oxidns_native_lifecycle_guards import GROUPS as oxidns_native_lifecycle_guards
     groups.update(oxidns_native_lifecycle_guards)
+    from cases.setup_forwarded_rules import GROUPS as setup_forwarded_rules
+    groups.update(setup_forwarded_rules)
+    from cases.repository_retained_guards import GROUPS as repository_retained_guards
+    groups.update(repository_retained_guards)
     from cases.groups import GROUPS as managed_groups
     groups.update(managed_groups)
     from cases.rule_library import GROUPS as rule_library

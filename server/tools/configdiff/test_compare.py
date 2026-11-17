@@ -17,6 +17,23 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_forwarded_rule_finish_compares_SQL_file_agent_and_source_proofs(self):
+        from cases.setup_forwarded_rules import ForwardedRead
+        observer = ForwardedRead(SimpleNamespace(), [], None)
+        observer.violations = [[], []]
+        observer.status.observed = [[], []]
+        observer.wire.transcripts = [[], []]
+        self.assertEqual(observer.compare(Policy()), [])
+        for field in ('SQL', 'files'):
+            observer.violations[1] = [{'path': 'forwarded.' + field, 'kind': 'value', 'python': 'kept', 'go': 'changed'}]
+            self.assertTrue(observer.compare(Policy()), field)
+        observer.violations[1] = []
+        observer.status.observed[1] = [{'requests': [{'method': 'POST', 'path': '/unexpected-Agent-write'}]}]
+        self.assertTrue(observer.compare(Policy()), 'Agent mutation')
+        observer.status.observed[1] = []
+        observer.wire.transcripts[1] = [{'method': 'GET', 'path': '/unexpected-source'}]
+        self.assertTrue(observer.compare(Policy()), 'extra source read')
+
     def test_native_reference_oracle_rejects_wrong_message_or_malformed_coordinates(self):
         from cases.oxidns_native_lifecycle_guards import reference_message
         from harness import DesignError
@@ -1705,6 +1722,29 @@ serve(app, host='127.0.0.1', port=int(sys.argv[1]))
             with sqlite3.connect(dirs[1] / 'configflow.sqlite3') as db:
                 db.execute('UPDATE fields SET value=?, revision=2', ('[{"policy":"DIRECT"}]',))
             self.assertTrue(database_diffs(*dirs, Policy()))
+
+    def test_rejected_import_keeps_every_row_and_file_except_one_exact_snapshot(self):
+        from cases.repository_retained_guards import rejected_import_errors
+        before = {'database': {'meta': {'generation': 7}}, 'files': {'retained': {'mode': 384, 'content': 'exact'}}}
+        path = 'migrations/20261118T000000Z-' + 'a' * 32 + '/import/configflow.sqlite3'
+        after = copy.deepcopy(before)
+        after['files'][path] = {'mode': 384, 'content': copy.deepcopy(before['database'])}
+        self.assertEqual(rejected_import_errors(before, after), [])
+        for mutation in ('database', 'snapshot', 'retained', 'missing', 'extra', 'wrong-path'):
+            bad = copy.deepcopy(after)
+            if mutation == 'database':
+                bad['database']['meta']['generation'] = 8
+            elif mutation == 'snapshot':
+                bad['files'][path]['content']['meta']['generation'] = 8
+            elif mutation == 'retained':
+                bad['files']['retained']['content'] = 'changed'
+            elif mutation == 'missing':
+                del bad['files'][path]
+            elif mutation == 'extra':
+                bad['files']['extra'] = {'content': 'unexpected'}
+            else:
+                bad['files']['migrations/arbitrary/import/configflow.sqlite3'] = bad['files'].pop(path)
+            self.assertTrue(rejected_import_errors(before, bad), mutation)
 
     def test_import_snapshot_must_contain_previous_rows(self):
         from compare import database

@@ -138,6 +138,10 @@ VARIANT_LINKS.update({
     for variant in ('False', 'True')
 })
 VARIANT_LINKS.update({
+    ('R117-F13', 'real-router-apply-blocked-on-first-device-read', 'DELETE /api/profiles/<profile_id>'): ('H765',),
+    **{('H846', 'resolved-chain/' + variant, 'POST /api/config/import'): (helper, 'H847')
+       for variant, helper in [('disabled-entry', 'H260'), ('subscription-entry', 'H261'), ('same-node', 'H262'),
+            ('mixed-ordinary-sources', 'H263'), ('node-group-same-name', 'H184'), ('disabled-group-with-a-chain-present', 'H257')]},
     ('R185-F20', 'explicit-DNS-write-requires-safe-native-rebuild', 'PUT /api/rules/<rule_id>'): ('H396', 'H917'),
     ('H290', '1', 'POST /api/custom-config/mihomo'): ('H289',),
     ('H320', '2001:db8::1', 'POST /api/custom-config/mihomo'): ('H319',),

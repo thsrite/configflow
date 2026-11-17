@@ -2110,6 +2110,12 @@ OxiDNS剩余9个H不计runtime覆盖，逐条边界如下：
 
 ### Step B token保存后的轮换与版本注入边界
 
+### Step B 转发规则和保留路由器导入（批次134）
+
+H1001/H1002分别在真实check标记缺失后finish再次下载失败、成功补下载但要求重新检查，来源[setup_completion.py:153](../../backend/common/setup_completion.py#L153)。仅成功补下载新增准确原始缓存，session/所有SQL及其他文件精确不变；Agent和来源HTTP完整比较。
+
+H830/H839/H846/H847通过完整公开import实际到达，细分H184/H257/H260–263沿原有源行。H764五类旧发布回执的20种替换请求409，在事务末尾拒绝之前已由[_apply_import](../../backend/common/config_repository.py#L1703)生成恢复快照，故比较一份完整旧数据库快照及其余状态精确不变，而非要求无新增文件。回执为明确合成保留值，零设备交互不代表真实RouterOS发布。H765由R117-F13实际设备首读阻塞时的删除请求到达，未直接持Python文件锁。
+
 R020-B90新增独立公开前置：先真正保存public token，再分别执行缺内部能力/能力冲突/当前有效能力三种完整import（登录/认证关闭），及reset；当前/退役能力不能再保存为public token，失败全SQL/files精确不变。有效schema能力的import保留原值，缺失/冲突与reset才轮换，沿用上文T28 oracle更正。原独立import/reset用例保留，不因新增公开setter的wiring前置而丢掉原先能比较的路径。
 
 R228-B90实际测试未注入公开构建的完整`{"version":"dev"}`响应，检查精确字段形态且所有值仍严格比；没有用shape投影掩掉版本值。Docker发布时对[backend/version.py](../../backend/version.py)的Git tag替换和Go发布构建注入之间的值约定仍属O12/O14部分覆盖，当前dev/dev通过不能外推为发布版本注入已经验收。
