@@ -28,13 +28,17 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R016-B02 /  | `POST /api/backup/now` | open | — | 6b50151c | 200 / 200 |
 | R016-B03 /  | `POST /api/backup/now` | open | — | 6b50151c | 200 / 200 |
 | R016-B90 /  | `POST /api/backup/now` | open | — | 6b50151c | 200 / 200 |
-| R016-F15 /  | `POST /api/backup/now` | open | — | 6b50151c | 500 / 500 |
+| R016-B91 / Asia/Shanghai/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | 6b50151c | 200 / 200 |
+| R016-B91 / Etc/GMT+12/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | 6b50151c | 200 / 200 |
+| R016-B91 / Etc/GMT-14/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | 6b50151c | 200 / 200 |
+| R016-F15 /  | `POST /api/backup/now` | closed | abdf47ef, d01fdf32, f9963a7f | 6b50151c | 500 / 500 |
+| R016-F15 / real-MKCOL-403-before-PUT | `POST /api/backup/now` | closed | — | 6b50151c | 400 / 400 |
 | R016-F16 /  | `POST /api/backup/now` | open | — | 6b50151c | 200 / 200 |
 | R016-S01 /  | `POST /api/backup/now` | open | — | 6b50151c | 200 / 200 |
 | R016-S02 /  | `POST /api/backup/now` | open | — | 6b50151c | 200 / 200 |
 | R016-S03 /  | `POST /api/backup/now` | open | — | 6b50151c | 200 / 200 |
-| R017-F18 /  | `POST /api/backup/test` | open | — | 6b50151c | 400 / 400 |
-| R017-F19 /  | `POST /api/backup/test` | open | — | 6b50151c | 500 / 500 |
+| R017-F18 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f | 6b50151c | 400 / 400 |
+| R017-F19 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f | 6b50151c | 500 / 500 |
 | R055-B01 / disabled/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | 6b50151c | 200 / 200 |
 | R055-S02 / new/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | 6b50151c | 200 / 200 |
 | R056-B01 / name-collision/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | 6b50151c | 200 / 200 |
@@ -253,15 +257,29 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 |---|---|---|---|
 | `dav.requests[10].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
 
-## R016-F15 /
+## R016-B91 / Asia/Shanghai/previous-local-day-crosses-UTC-midnight
 
 路由：`POST /api/backup/now`；状态：different
 
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
-| `body.message` | value | '备份失败：NotEnoughSpace' | '备份失败：HTTP 507' |
-| `files.notifications.json.content.items.task:webdav_backup.message` | value | 'NotEnoughSpace' | 'HTTP 507' |
-| `files.task-status.json.content.webdav_backup.last_error` | value | 'NotEnoughSpace' | 'HTTP 507' |
+| `dav.requests[4].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
+
+## R016-B91 / Etc/GMT+12/previous-local-day-crosses-UTC-midnight
+
+路由：`POST /api/backup/now`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `dav.requests[4].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
+
+## R016-B91 / Etc/GMT-14/previous-local-day-crosses-UTC-midnight
+
+路由：`POST /api/backup/now`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `dav.requests[4].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
 
 ## R016-F16 /
 
@@ -294,22 +312,6 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `dav.requests[4].body` | value | '' | '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>' |
-
-## R017-F18 /
-
-路由：`POST /api/backup/test`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `body.message` | value | '无法创建目录 /one/：ResponseErrorCode HTTP 403' | '无法创建目录 /one/：HTTP 403' |
-
-## R017-F19 /
-
-路由：`POST /api/backup/test`；状态：different
-
-| 路径 | 类型 | Python | Go |
-|---|---|---|---|
-| `body.message` | value | '连接测试失败：NoConnection' | '连接测试失败：network request failed' |
 
 ## X04 / token/literal/"\ud800"
 

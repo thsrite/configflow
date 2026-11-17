@@ -90,6 +90,8 @@ def main():
     groups.update(web_switch)
     from cases.webdav import GROUPS as webdav
     groups.update(webdav)
+    from cases.webdav_edges import GROUPS as webdav_edges
+    groups.update(webdav_edges)
     from cases.mosdns import GROUPS as mosdns
     groups.update(mosdns)
     from cases.mosdns_edges import GROUPS as mosdns_edges
@@ -228,6 +230,8 @@ def main():
     groups.update(merged_provider)
     from cases.tasks import GROUPS as tasks
     groups.update(tasks)
+    from cases.task_interval_race import GROUPS as task_interval_race
+    groups.update(task_interval_race)
     from cases.groups import GROUPS as managed_groups
     groups.update(managed_groups)
     from cases.rule_library import GROUPS as rule_library

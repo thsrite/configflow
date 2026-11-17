@@ -2,6 +2,7 @@
 from contextlib import ExitStack
 import copy
 import json
+import os
 from pathlib import Path
 import re
 from urllib.parse import urlsplit
@@ -122,7 +123,50 @@ class Switch:
         return differences(*self.observed, 'listener.switch', policy)
 
 
+class Rollback(Switch):
+    def before(self, index):
+        folder = self.pair.dirs[index]
+        (folder / 'web-listener.lock').touch(mode=0o600, exist_ok=True)
+        super().before(index)
+        self.before_config = (ROOT / 'nginx.conf').read_bytes()
+        folder.chmod(0o500)
+        self.active = not os.access(folder, os.W_OK)
+        if index == 0:
+            require(self.active, 'real data directory prevents creating an atomic listener state file')
+
+    def after(self, index, reply):
+        folder = self.pair.dirs[index]
+        try:
+            retained = folder.stat().st_mode & 0o777 == 0o500
+            same_files = files(folder) == self.before_files
+            same_db = database(folder) == self.before_db
+        finally:
+            folder.chmod(0o700)
+        old = health(self.old[index])
+        events = self.peer.events[self.offset:]
+        self.observed[index] = {'real_fault_active': self.active, 'readonly_mode_retained': retained,
+            'database_unchanged': same_db, 'all_files_unchanged': same_files,
+            'old_health_and_capability_unchanged': old == self.before_health and old[0] == 200,
+            'old_dual_stack_same_capability': health(self.old[index], '[::1]') == old,
+            'new_port_closed': health(self.target[index])[0] == 0 and health(self.target[index], '[::1]')[0] == 0,
+            'controller_rollback_valid': events == ([{'action': 'check', 'valid': True},
+                {'action': 'reload', 'valid': True}, {'action': 'reload', 'valid': True}] if index == 0 else []),
+            'python_config_restored': (ROOT / 'nginx.conf').read_bytes() == self.before_config,
+            'clear_Chinese_failure': reply.json().get('success') is False
+                and bool(re.search('[\u4e00-\u9fff]', reply.json().get('message', '')))}
+        if index == 0:
+            require(all(self.observed[0].values()), 'failed final state save restores the original complete deployment: ' + repr(self.observed[0]))
+
+
 def success(binary, recorder):
+    switch(binary, recorder)
+
+
+def save_failure(binary, recorder):
+    switch(binary, recorder, readonly=True)
+
+
+def switch(binary, recorder, *, readonly=False):
     require_listener_mount()
     with Peer() as peer:
         go_port = free_port()
@@ -138,15 +182,25 @@ def success(binary, recorder):
                 (ROOT / 'nginx.conf').write_text('# configflow-web-listener ' + json.dumps({
                     'port': old[0], 'ipv6': True, 'token': TOKEN}) + '\n' + rendered(old[0], TOKEN, peer.backend))
                 pair.policy.allocated_ports['body.port'] = target
-                pair.policy.allocated_ports['files.web-listener.json.content.port'] = target
-                pair.request('R206-S01', 'POST ' + ROUTE, body='{}', bodies=[json_body({'port': port}) for port in target],
-                    expect=200, writes=True, interaction=Switch(pair, peer, old, target),
-                    variant='native-frontend-and-recorded-nginx-peer-successful-switch',
-                    check=lambda reply: require(reply.json() == {'success': True, 'supported': True, 'port': target[0],
-                        'editable': True, 'ipv6': True, 'source': 'saved'}, 'public switch response agrees with saved new listener'))
+                pair.policy.allocated_ports['files.web-listener.json.content.port'] = old if readonly else target
+                if readonly:
+                    pair.request('R206-F20', 'POST ' + ROUTE, body='{}', bodies=[json_body({'port': port}) for port in target],
+                        expect=503, writes=True, interaction=Rollback(pair, peer, old, target),
+                        variant='real-state-save-EACCES-restores-old-listener-and-all-storage',
+                        check=lambda reply: require(reply.json() == {'success': False, 'message': '保存 Web 端口失败，已恢复原配置'},
+                            'actual final state save failure has the precise public rollback message'))
+                else:
+                    pair.request('R206-S01', 'POST ' + ROUTE, body='{}', bodies=[json_body({'port': port}) for port in target],
+                        expect=200, writes=True, interaction=Switch(pair, peer, old, target),
+                        variant='native-frontend-and-recorded-nginx-peer-successful-switch',
+                        check=lambda reply: require(reply.json() == {'success': True, 'supported': True, 'port': target[0],
+                            'editable': True, 'ipv6': True, 'source': 'saved'}, 'public switch response agrees with saved new listener'))
         finally:
+            for directory in pair.dirs:
+                if directory.exists():
+                    directory.chmod(0o700)
             (ROOT / 'configflow-nginx.conf.template').unlink(missing_ok=True)
             (ROOT / 'nginx.conf').unlink(missing_ok=True)
 
 
-GROUPS = {'web-listener-complete-switch': success}
+GROUPS = {'web-listener-complete-switch': success, 'web-listener-real-save-failure': save_failure}

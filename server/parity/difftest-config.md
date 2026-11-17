@@ -2050,6 +2050,10 @@ R149/R157-F19、R159-F18用group默认DIRECT↔proxy确实改变已有following�
 
 H469–496走真实default/scoped render、实际限额，不缩小生产常量；未知插件仅warning，H496须已知插件的错型参数等真实error。H497/H498的native坏files会被schema提前拒绝，故改走template手写插件的完整ZIP，实际到达resource_references。H500/H501关联既有完整ZIP guard；同样的公开路径只计一次变体。R028-F10以当前schema profile索引键/内容ID不一致驱动，R028-F12以Agent缺失profile引用驱动；导入的后续各H guard按本表源行保留前置、精确中文和全状态不变。H854空组名仍被更早validate_shapes拒绝，H857/H858缺共享引用仍被更早资源闭包拒绝，不能借前置错误宣称到达这些后续重复检查。
 
+### Step B Web、WebDAV与任务边界（批次124）
+
+R206-F20完整部署真实保存EACCES要求回滚到原端口/能力、双栈可达、新端口关闭、全SQL/files不变；不是Nginx故障文本对比，见[web_listener.py:286](../../backend/utils/web_listener.py#L286)。R014-B90是只读设置、没有DAV交互，协议B90应由R016/R017承载，见[settings.py:201](../../backend/routes/settings.py#L201)。R016-F14即使400也记manual失败回执（[webdav_backup.py:48](../../backend/utils/webdav_backup.py#L48)）；H031实际被backup_now捕获为400。R016-B91按真实TZ检查上传名、以同一本地日跨UTC午夜的旧文件验证keep_daily；不冻结或修改系统时钟。英文异常类差异按本表开头O6做精确有限值比较，保留中文/目录/HTTP状态数字与其余全部数据；PROPFIND请求体仍作为真实未批准差异。R226-B03用两个真实同时HTTP请求修改URL与间隔，要求两提交和完整最终对象，两种操作不允许丢字段。
+
 冻结比较针对每个端自己的已校验bundle成员原始字节。配置通过公开settings改为另一份后，旧file仍必须等于旧成员，完整SQL/预览文件不变；跨实现的生成主YAML照结构比较。ZIP下载由[generated_preview.download](../../backend/agents/generated_preview.py#L163)每次重打包，ZIP容器自身的时间戳不属于“旧成员内容不变”，不能把整个ZIP字节相等当作冻结条件。TTL仍核对真实expires_at≈创建时刻+3600，过期拒绝另由F11验证，不缩短生产TTL。
 
 ### Step B token保存后的轮换与版本注入边界

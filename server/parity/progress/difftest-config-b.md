@@ -2106,3 +2106,23 @@ current Go尚未实现、design_errors=[]；exit=0
 ```
 
 原R仍差82（含N/A）、H仍差389及partial/长流程；继续任务、生成器断连与剩余guard。最终完整all仍未执行。
+
+## 批次 124：真实Web状态落盘失败、任务并发、WebDAV时区与英文诊断纠正
+
+- R206-F20在完整Go frontend/Python peer部署中，先预置实际锁文件，再将真实DATA_DIR chmod0500，避免提前失败在建锁。换端口最终保存失败503后，两端旧端口/双栈/原健康能力保持不变、新端口关闭、全部SQL/files原样；source还必须实际check→reload→rollback reload并恢复原Nginx配置。普通UID故障生效和目录模式保持都单独比较。原成功换端口同时回归；都compared。自检逐项翻转10个真实不变量必须检出。
+- R226-B03两个真实并发HTTP客户端分别设interval=60、替换为新URL且interval=60，要求完整新对象、精确两个提交/修订、无丢URL/间隔、无外部请求/其他行变化；完整两响应/SQL/files自动跨端比较，105项自检通过。Go任务间隔未接通，实际Python前提通过，仅计未实现。
+- R014-B90原清单错误：GET保存设置根本不发DAV；用fake证明零请求且全状态不变，协议序列仍由R016/R017承担。R016-F14三种不完整凭据400零网络但会新增准确的失败manual任务回执，首稿的“完全无文件变化”假设已撤回并修正，106项自检验证不得漏记回执或夹带别的状态变化。R016-F15实际MKCOL403→400到达H031，先前误设500已更正。
+- R016-B91用Asia/Shanghai及+14/-12两端时区，不改时钟：上一本地日07:30/08:30的版本跨UTC午夜，但按同一本地日只保留最新；过期日、当天新上传、无关对象逐一核对。上传文件名按真实TZ/时间窗验证、Basic/方法/路径/完整上传内容/回执/files继续比较。仅PROPFIND空body→allprop XML这一已知未批准线级差异保留open。
+- 依据矩阵开头已审核的O6“Python内部异常英文措辞只比拒绝/status/字段形态”，纠正DAV三个旧假差异及新增mkdir：只在精确body/回执/通知路径允许已证明的有限等价值（NotEnoughSpace↔HTTP507、ResponseErrorCode HTTP403↔HTTP403、NoConnection↔network request failed）。中文、目录、HTTP数字、额外英文/字段、头与副作用均不能被掩盖；107项自检含故意篡改这些字段。没有要求Go实现Python异常类，没有新增行为批准。三个旧英文差异和新增mkdir变体compared/closed；实际PROPFIND差异仍保留。
+- 另补H151/H153/H154/H166两种preview：缺下载来源、不支持的单条规则、空转换结果、实际生成downloader错型timeout；8变体均Go尚未实现。
+- .32正式Web/task/DAV共29变体：18compared、1Go尚未实现、10open strict差异（全部为已知PROPFIND模式的不同请求），design_errors=[]，65.99秒；.64随后生成guard8变体均TODO。净增18变体、5原R、7H。统一10002变体、原R4453（S706/F2745/B1002）、H730/G16；findings closed85/accepted9/open20/O12单列1。新mkdir关闭属于本批O6比较器纠正，绝不冒充Go业务修复。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups web-listener-real-save-failure,web-listener-complete-switch,tasks-interval-concurrent-URL-retention,webdav-named-preflight-and-directory-failure,webdav-local-day-retention-boundary,settings-webdav --baseline 6b50151c
+current compared=18 go-unimplemented=1 different=10 accepted=0 open=10 design_errors=[] seconds=65.99；exit=1
+.64 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups generator-oxidns-selected-rule-guards --baseline 6b50151c
+current go-unimplemented=8 design_errors=[]；exit=0
+107 self-checks + deliberately wrong-Go-response detection OK
+```
+
+原R仍差77（含N/A）、H仍差382及partial/长流程；继续任务、断连与剩余guard。最终完整all仍未执行。

@@ -36,6 +36,9 @@ class Policy:
     tz: str = 'UTC'
     # Only separately diagnosed CPython exception messages may use this exact path.
     internal_errors: dict = field(default_factory=dict)
+    # O6 English exception diagnostics with a proven, finite equivalence set.
+    # Exact paths retain Chinese context, remote status and every other field.
+    internal_error_values: dict = field(default_factory=dict)
     start: float = 0
     end: float = float('inf')
     identities: dict = field(default_factory=dict)
@@ -70,6 +73,10 @@ def timestamp(value, policy, offset=0):
 
 def differences(left, right, path='body', policy=None):
     policy = policy or Policy()
+    if path in policy.internal_error_values:
+        allowed = policy.internal_error_values[path]
+        if type(left) is str and type(right) is str and left in allowed and right in allowed:
+            return []
     if path in policy.allocated_ports:
         expected = policy.allocated_ports[path]
         if any(type(value) is not int or not 1 <= value <= 65535 for value in (left, right)) or (left, right) != expected:

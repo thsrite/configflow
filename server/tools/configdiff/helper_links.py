@@ -6,6 +6,8 @@ Unreachable/earlier-guard branches are deliberately absent.
 """
 
 LINKS = {
+    'R206-F20': ('POST /api/settings/web-port', ('H1112',)),
+    'R016-F14': ('POST /api/backup/now', ('H030',)),
     'H497': ('POST /api/generate/oxidns', ('H023',)),
     'H498': ('POST /api/generate/oxidns', ('H023',)),
     'R180-F10': ('DELETE /api/rule-sets/<rule_set_id>', ('H374',)),
@@ -84,6 +86,9 @@ VARIANT_LINKS = {
     for case, variant, labels in [(prefix + '-F13', 'text/F13', ('H124', 'H145')),
                                  (prefix + '-B04', 'text/B04', ('H143',))]
 }
+VARIANT_LINKS.update({
+    ('R016-F15', 'real-MKCOL-403-before-PUT', 'POST /api/backup/now'): ('H031',),
+})
 VARIANT_LINKS.update({
     ('G10', variant, 'POST /api/generate/oxidns'): labels
     for variant, labels in [('missing-resource/reject-package', ('H500', 'H023')),

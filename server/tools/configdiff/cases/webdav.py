@@ -12,6 +12,20 @@ from fakes import WebDAV
 from harness import Pair, DesignError, Reply, json_body
 
 
+def diagnostic_policy(pair, kind, *, stored=False):
+    """O6 excludes English implementation exception names, never Chinese or codes."""
+    prefix, variants = {
+        'space': ('备份失败：', ('NotEnoughSpace', 'HTTP 507')),
+        'mkdir': ('', ('无法创建目录 /one/：ResponseErrorCode HTTP 403', '无法创建目录 /one/：HTTP 403')),
+        'connection': ('连接测试失败：', ('NoConnection', 'network request failed')),
+    }[kind]
+    pair.policy.internal_error_values['body.message'] = tuple(prefix + value for value in variants)
+    if stored:
+        for path in ('files.task-status.json.content.webdav_backup.last_error',
+                     'files.notifications.json.content.items.task:webdav_backup.message'):
+            pair.policy.internal_error_values[path] = variants
+
+
 def receipt_policy(pair, policy):
     for field in ('last_run_at', 'last_finished_at', 'last_success_at'):
         policy.times.add('files.task-status.json.content.webdav_backup.' + field)
@@ -125,6 +139,9 @@ def dav_requests(binary, recorder):
             backup = case_id.startswith('R016')
             status = 400 if case_id in ('R017-F17', 'R017-F18') else 500 if case_id in ('R017-F19', 'R016-F15') else 200
             with Pair(binary, recorder, options={'backup': settings}) as pair:
+                if case_id in ('R016-F15', 'R017-F18', 'R017-F19'):
+                    diagnostic_policy(pair, {'R016-F15': 'space', 'R017-F18': 'mkdir', 'R017-F19': 'connection'}[case_id],
+                                      stored=case_id == 'R016-F15')
                 exchange = Exchange(fake, pair, **options, backup=backup, expected_status=status, put_count=int(backup))
                 pair.request(case_id, 'POST /api/backup/' + ('now' if backup else 'test'),
                              body=json_body({**settings, **changed}), expect=status, writes=True,

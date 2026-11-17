@@ -1,5 +1,7 @@
 """Python converter guard branches through actual default/scoped previews."""
 from harness import Pair
+from cases.rule_library import DOMAIN
+from cases.rules import RULE
 from cases.config_backup import message
 from cases.setup import Stable
 from cases.subscriptions import require
@@ -58,3 +60,33 @@ def mihomo(binary, recorder):
 
 
 GROUPS = {'generator-oxidns-guard-branches': oxidns, 'generator-mihomo-guard-branches': mihomo}
+
+
+def selected_rule_guards(binary, recorder):
+    missing = {**DOMAIN, 'source_type': 'url', 'url': ''}
+    missing.pop('content')
+    ref = {'id': 'guard-ruleset', 'itemType': 'ruleset', 'library_rule_id': 'lib-a', 'policy': 'DIRECT', 'enabled': True}
+    rows = [('H151', {'shared': {'rule_library': [missing]}, 'profile': {'rule_configs': [ref],
+                      'oxidns': {'direct_rulesets': ['guard-ruleset']}}}, '已选择的规则集缺少下载来源'),
+            ('H153', {'profile': {'rule_configs': [{**RULE, 'rule_type': 'GEOSITE', 'value': 'cn'}],
+                      'oxidns': {'direct_rules': ['r-a']}}}, '所选规则类型暂不能转换为 OxiDNS 规则：GEOSITE'),
+            ('H154', {'profile': {'rule_configs': [{**RULE, 'value': ''}],
+                      'oxidns': {'direct_rules': ['r-a']}}}, '所选单条规则无法转换为 DNS 规则'),
+            ('H166', {'shared': {'rule_library': [DOMAIN]}, 'profile': {'rule_configs': [ref],
+                      'oxidns': {'direct_rulesets': ['guard-ruleset'], 'rule_update': {'args': {'timeout': {}}}}}}, None)]
+    for case, options, text in rows:
+        with Pair(binary, recorder, options=options) as pair:
+            for template, path in [('POST /api/generate/oxidns/preview', '/api/generate/oxidns/preview'),
+                    ('POST /api/profiles/<profile_id>/generate/oxidns/preview', '/api/profiles/default/generate/oxidns/preview')]:
+                def check(reply):
+                    if text:
+                        message(text)(reply)
+                    else:
+                        value = reply.json()
+                        require(value.get('success') is False and value.get('message', '').startswith('OxiDNS 配置校验未通过：')
+                                and 'timeout' in value['message'], 'real generated downloader arguments reach the timeout schema guard')
+                pair.request(case, template, path, body='{}', expect=400, writes=True,
+                             interaction=Stable(pair), check=check, variant='actual-selected-rule-converter-branch')
+
+
+GROUPS['generator-oxidns-selected-rule-guards'] = selected_rule_guards

@@ -17,6 +17,74 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_finite_english_diagnostic_equivalence_preserves_Chinese_codes_and_other_fields(self):
+        from cases.webdav import diagnostic_policy
+        for kind, stored in [('space', True), ('mkdir', True), ('connection', False)]:
+            pair = SimpleNamespace(policy=Policy())
+            diagnostic_policy(pair, kind, stored=stored)
+            for path, values in pair.policy.internal_error_values.items():
+                self.assertEqual(differences(*values, path, pair.policy), [])
+                for wrong in [values[1] + ' extra', values[1].replace('403', '500').replace('507', '500'),
+                              values[1].replace('目录', '路径').replace('失败', '成功'), None, {'message': values[1]}]:
+                    if wrong == values[1]:
+                        continue
+                    self.assertTrue(differences(values[0], wrong, path, pair.policy), (kind, path, wrong))
+                self.assertTrue(differences(*values, 'db.unrelated-value', pair.policy), 'only exact configured field may differ')
+            self.assertTrue(differences(500, 400, 'status', pair.policy))
+            self.assertTrue(differences('application/json', 'text/plain', 'headers.content-type', pair.policy))
+
+    def test_incomplete_DAV_checks_real_receipt_and_every_ordinary_state_field(self):
+        from cases.webdav_edges import ConfigurationFailure
+        observer = ConfigurationFailure(None, None)
+        expected = {key: True for key in ('database_unchanged', 'only_failed_receipt_file_added',
+                                         'precise_failed_manual_receipt', 'no_network_request')}
+        observer.observed = [expected, expected]
+        observer.observations = [{'requests': [], 'objects': {}}, {'requests': [], 'objects': {}}]
+        observer.replies = []
+        # Exercise the exact added field comparison independently of the
+        # established wire/receipt time comparator, which is already tested.
+        from unittest.mock import patch
+        with patch('cases.webdav_edges.Exchange.compare', return_value=[]):
+            self.assertEqual(observer.compare(Policy()), [])
+            for key in expected:
+                observer.observed[1] = {**expected, key: False}
+                self.assertTrue(observer.compare(Policy()), key)
+
+    def test_task_interval_race_detects_lost_URL_interval_foreign_row_and_response(self):
+        from cases.task_interval_race import expected_errors
+        value = {'id': 'sub-a', 'url': 'http://source.example/changed', 'interval': 60}
+        before = {'meta': {'generation': 1}, 'fields': {'shared//subscriptions': {'value': []},
+            'shared//_revision': {'value': 1}, 'system//config': {'value': {'keep': True}}}, 'sections': []}
+        after = copy.deepcopy(before)
+        after['meta']['generation'] = after['fields']['shared//_revision']['value'] = 3
+        after['fields']['shared//subscriptions']['value'] = [value]
+        replies = [Reply(200, {}, b'{}'), Reply(200, {}, json.dumps({'success': True, 'data': value}).encode())]
+        self.assertEqual(expected_errors(before, after, replies, value), [])
+        for field, wrong in [('url', 'http://source.example/old'), ('interval', 0)]:
+            changed = copy.deepcopy(after)
+            changed['fields']['shared//subscriptions']['value'][0][field] = wrong
+            self.assertTrue(expected_errors(before, changed, replies, value), field)
+        changed = copy.deepcopy(after)
+        changed['fields']['system//config']['value']['keep'] = False
+        self.assertTrue(expected_errors(before, changed, replies, value), 'foreign row')
+        changed = copy.deepcopy(after)
+        changed['meta']['generation'] = 2
+        self.assertTrue(expected_errors(before, changed, replies, value), 'lost commit')
+        bad = [replies[0], Reply(200, {}, b'{"success":true}')]
+        self.assertTrue(expected_errors(before, after, bad, value), 'secondary response')
+
+    def test_listener_rollback_comparison_requires_every_storage_network_and_fault_invariant(self):
+        from cases.web_switch import Rollback
+        observer = Rollback(None, None, None, None)
+        expected = {key: True for key in ('real_fault_active', 'readonly_mode_retained', 'database_unchanged',
+            'all_files_unchanged', 'old_health_and_capability_unchanged', 'old_dual_stack_same_capability',
+            'new_port_closed', 'controller_rollback_valid', 'python_config_restored', 'clear_Chinese_failure')}
+        observer.observed = [expected, expected]
+        self.assertEqual(observer.compare(Policy()), [])
+        for key in expected:
+            observer.observed[1] = {**expected, key: False}
+            self.assertTrue(observer.compare(Policy()), key)
+
     def test_provider_failure_comment_allows_only_the_proven_english_status_suffix(self):
         from providers import failure_comments
         plain = '# Source: from local cache (fetch error: request_failed (exception_type=SubscriptionFetchError))'
