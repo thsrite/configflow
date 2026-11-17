@@ -178,13 +178,6 @@ func writeCurrentInline(ctx context.Context, r *repo.Repository, rule *jsonx.Obj
 		}
 		return nil
 	}
-	if r.InTransaction(ctx) {
-		catalog, err := r.GetShared(ctx)
-		if err != nil {
-			return err
-		}
-		return check(ctx, catalog)
-	}
 	_, err := r.UpdateSharedTransaction(ctx, func(tx context.Context, catalog *jsonx.Object) (*jsonx.Object, error) {
 		if err := check(tx, catalog); err != nil {
 			return nil, err

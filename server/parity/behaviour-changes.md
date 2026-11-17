@@ -564,3 +564,12 @@ headers、完整 DB 和所有文件不变。合法 JSON、普通数字和原有�
 ## C33 独立复核 — inline 缓存发布的读侧约束
 
 失效标记只有明确不存在时才允许稳定/legacy 回退；权限或 I/O 错误一律按失效处理。inline 交付在编辑标记存在期间不补写文件，防止旧请求快照在 draft rename 后覆盖新缓存。普通冷缓存仍会补写当前 DB 声明；共用 rulefetch 的 inline writer 在现有 repo 事务锁内核对当前声明及字节，过期/已删除/已变 remote 的迟到调用不发布。只做缓存副作用后中止未修改的 DB 候选，不改变 revision 或配置 hooks。交付保持 cache→inline 顺序，返回状态/内容和普通冷缓存文件与 Python 相同。没有新增后台恢复；失败/中断编辑的标记由下次编辑或手动缓存修复。
+
+## C33 / N8 原生 JSON 绑定
+
+C33 请求 adapter 使用现有 Bind/BindSilent，拒绝 Python json.loads 独有的 NaN、Infinity、-Infinity。
+严格绑定入口按 malformed JSON 返回400，batch-health-url 的 silent 入口返回原有 malformed400；
+明确捕获 JSON 解码异常的 cache/reorder/proxy-domains/preview-regex 保留各自 malformed500合同。
+这是既有 N8 原生 JSON 类别，不影响合法 JSON、Content-Type、精确大小写成员或未知字段保留。
+真实 Flask 正控证明 check-content 原来可接受 unused:NaN；三种非有限字面量在14入口的响应/无写入
+均按真实 Flask malformed 控制比较，不放宽 normalizer。

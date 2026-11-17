@@ -48,14 +48,15 @@ func legacy(r record) (*jsonx.Object, error) {
 	return out, nil
 }
 func readBody(c *httpx.Ctx) (record, bool, error) {
-	v, err := c.JSON()
-	if err != nil {
+	var raw json.RawMessage
+	if err := c.Bind(&raw); err != nil {
 		return record{}, false, err
 	}
-	if _, ok := v.(*jsonx.Object); !ok {
+	if len(raw) == 0 || raw[0] != '{' {
 		return record{}, false, nil
 	}
-	out, err := native(v)
+	var out record
+	err := json.Unmarshal(raw, &out)
 	return out, true, err
 }
 func sharedConfig(ctx context.Context) (record, error) {

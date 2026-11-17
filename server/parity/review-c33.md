@@ -1,7 +1,8 @@
 # C33 独立复核
 
-状态：复核进行中，缓存修复已通过定向检查；最终门禁待执行。分支 `go-review-c33`，独立于作者，
-从 `go-port-c33@a4445071` 分出，首先 rebase 到本地 `go@dda8973d`，已包含 A13。
+状态：代码复核完成，5项发现（2 high / 2 medium / 1 low）已修复；最终门禁待执行。
+分支 `go-review-c33`，独立于作者，从 `go-port-c33@a4445071` 分出，先 rebase 到本地
+`go@dda8973d`（A13），再到 `6e37489ff`（L1）和 `cb5732ec5`（C29及其复核）。
 实际冲突为 behaviour-changes.md 和 proddiff 自检入口；保留双方登记/测试，main 入口置于文件末尾。
 无子 agent、无 push；自写用例及 fixture 只用合成数据。所有测试/格式/vet 经 rt 在服务器前台运行。
 
@@ -38,6 +39,15 @@
   的 hex.DecodeString 同样接受大写，弱于生产规范。改为同样的完整小写 regex；
   `TestReviewDraftRevisionShape` 有合法 token、长短、大写、非字符串、缺值及换行负控。
   生产比较器的字段/路由/嵌套值正负控未放宽。修复提交：同 F3。
+- **F5，medium，已修：严格请求的旧解析→原生转换把非有限 JSON 变成500。**
+  旧 c.JSON 接受 NaN/Infinity/-Infinity，随后 json.Marshal(jsonx.Object) 拒绝它们，导致原本应在
+  绑定阶段拒绝的内容走内部500。请求 adapter 改用现有 Bind/BindSilent + RawMessage，精确成员/未知值
+  继续由 model.Fields 持有；不新增解析器。严格入口返回 malformed400，batch silent返回原有400；
+  四个明确捕获 JSON 异常的入口仍按其既有 malformed500合同处理。
+  `TestReviewNonFiniteBindingUsesMalformedBoundary` 对14个入口×3字面量，使用真实 Flask malformed
+  请求提供每个边界的完整响应控制，状态、消息、headers及存储不归一。
+  `TestReviewPythonNonFiniteAcceptanceIsExplicit` 独立证明真实 Python check-content 接受 unused:NaN
+  而 Go400，双方均无写入；归入已批准的 N8 原生 JSON 差异。修复提交：绑定修复提交（最终ID在文末）。
 
 ## 缓存崩溃/故障核对
 

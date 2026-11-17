@@ -44,20 +44,21 @@ func legacy(o object) (*jsonx.Object, error) {
 	return out, nil
 }
 func readBody(c *httpx.Ctx, silent bool) (object, bool, error) {
-	var v any
-	var err error
+	var raw json.RawMessage
 	if silent {
-		v = c.JSONSilent()
+		if !c.BindSilent(&raw) {
+			return object{}, false, nil
+		}
 	} else {
-		v, err = c.JSON()
-		if err != nil {
+		if err := c.Bind(&raw); err != nil {
 			return object{}, false, err
 		}
 	}
-	if _, ok := v.(*jsonx.Object); !ok {
+	if len(raw) == 0 || raw[0] != '{' {
 		return object{}, false, nil
 	}
-	out, err := native(v)
+	var out object
+	err := json.Unmarshal(raw, &out)
 	return out, true, err
 }
 
@@ -422,16 +423,12 @@ func cachedNodes(ctx context.Context, id string) ([]object, error) {
 }
 
 func readPreviewBody(c *httpx.Ctx) (object, bool, error) {
-	value, err := c.JSON()
+	body, ok, err := readBody(c, false)
 	if err != nil {
 		return object{}, false, &fault{500, "invalid JSON request"}
 	}
-	if !jsonx.Truthy(value) {
+	if !ok && !jsonx.Truthy(c.JSONSilent()) {
 		return object{}, true, nil
 	}
-	if _, ok := value.(*jsonx.Object); !ok {
-		return object{}, false, nil
-	}
-	out, err := native(value)
-	return out, true, err
+	return body, ok, nil
 }

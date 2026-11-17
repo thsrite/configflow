@@ -2036,6 +2036,8 @@ R08 integration follow-up: rebased `go-port-c32` onto `go=d8f50b00`; preserved e
 
 复核增量：reorder 两路由真值非对象的 500/空值默认已修；live D2 小写 hex 守卫已补，生产 normalize 无变化。新增23管理方法鉴权白名单、显式 Content-Type 的14入口严格/silent矩阵、27真实 HEAD 的10worker上限/原始报文及 lock-order 断言。最新 .64 scoped race/live：C33 API5.671s/diff17.283s，C32 API21.382s/diff27.551s通过；共享 inline 守卫后的 .32 API rules43.457s/library12.118s通过。现已 rebase 到 go@6e37489ff（L1更新），准备最终完整 gate。共享最终关机提交点仍归O3-6c，不混入C33结论。
 
+最新收尾基底：`go@cb5732ec5`，已保留C29 server注册、18条路由done及共享reader。冲突仅server.go import、routes.tsv和behaviour登记；合并后C33仍25/25 done且method/path无重复。新发现F5 medium已切换原生Bind/BindSilent，42项非有限请求按各入口malformed合同对照真实Flask；显式Python接受/Go400控制已补。最新.64合并树C33/代理/C29/server定向race+live全部通过（38.783s/58.310s/5.887s/1.981s/25.788s/1.717s），.32更广C29 reader及C32重叠检查仍在前台。已取消两轮未进入检查的旧门禁队列（分别因协调者要求合入C29、新绑定修复）；新最终gate待启动。5项发现均已修，详见review-c33.md；共享最终关机窗口仍归O3-6c。
+
 **Status: `ported`** · prereqs: C32 · Go: internal/api/rulelibrary, api/proxygroups (new)
 
 Files:
