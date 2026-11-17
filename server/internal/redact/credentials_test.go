@@ -1,6 +1,7 @@
 package redact
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -49,4 +50,23 @@ func legacyRedacted(t *testing.T, data []byte) *jsonx.Object {
 		t.Fatalf("redacted root %T", value)
 	}
 	return out
+}
+
+func TestLegacyNumericRedactionPreservesNativeJSONLiterals(t *testing.T) {
+	for _, literal := range []string{"1e400", "-1e400", "1e-400", strings.Repeat("9", 4301), "NaN", "Infinity", "-Infinity"} {
+		input := jsonx.Obj("counter", jsonx.Number(literal), "ordinary", "kept")
+		data := SanitizeCredentials(input, nil)
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(data, &fields); err != nil {
+			t.Fatalf("%s: %v", literal, err)
+		}
+		want := literal
+		switch literal {
+		case "NaN", "Infinity", "-Infinity":
+			want = "null"
+		}
+		if string(fields["counter"]) != want || string(fields["ordinary"]) != `"kept"` {
+			t.Fatalf("numeric redaction changed a valid literal: %s", data)
+		}
+	}
 }

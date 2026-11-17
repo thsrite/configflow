@@ -298,6 +298,9 @@ func (s *sanitizer) visit(value any, depth int) any {
 		}
 		return output
 	case json.RawMessage:
+		if v == nil {
+			return nil
+		}
 		parsed, err := decodePublic(v)
 		if err != nil {
 			return Redacted
@@ -350,8 +353,15 @@ func (s *sanitizer) visit(value any, depth int) any {
 	}
 	switch n := value.(type) {
 	case interface{ Float64() float64 }:
-		if f := n.Float64(); math.IsNaN(f) || math.IsInf(f, 0) {
-			return nil
+		// Legacy numeric wrappers have string storage. Read that raw storage:
+		// String() may normalize or round, and Float64() may overflow a valid JSON
+		// number. Only actual non-JSON numeric literals are replaced with null.
+		raw := reflect.ValueOf(value)
+		if raw.Kind() == reflect.String {
+			switch raw.String() {
+			case "NaN", "Infinity", "-Infinity":
+				return nil
+			}
 		}
 	case float64:
 		if math.IsNaN(n) || math.IsInf(n, 0) {

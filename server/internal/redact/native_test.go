@@ -56,3 +56,11 @@ func FuzzNativeCredentialJSON(f *testing.F) {
 		}
 	})
 }
+
+func TestNativeNilOpaqueValueKeepsJSONNull(t *testing.T) {
+	output := SanitizeCredentials(map[string]any{"future": json.RawMessage(nil), "literal": json.RawMessage(`"null"`)}, nil)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(output, &fields); err != nil || string(fields["future"]) != "null" || string(fields["literal"]) != `"null"` {
+		t.Fatalf("%s %v", output, err)
+	}
+}
