@@ -97,3 +97,15 @@ validation-before-busy precedence. Serve Spawn receives the owner context; healt
 probes and5s default, waits via Clock and stops on shutdown. Tests pin5s, drive the production wait
 with a fake Clock, prove disconnect survival/shutdown cancellation and timer cleanup, and verify
 legacy bytes/inode/mtime/no new locks. No router changes.
+
+Listener committed6992840e. Installer server issuance now uses a process-wide sync.Mutex over its
+local file batch; IssueEnrollment takes ctx and detaches in the owner (API passes original ctx).
+Target-side compose bootstrap text is unchanged. .64 gofmt/vet ./... and installer touched regression/
+DockerHA corpus race1 passed36.490s. Twenty simultaneous issues per legacy file/directory/missing
+case retain one identity; old lock metadata/content stay unchanged and missing lock stays missing.
+Corpus still compares all state files; only .issue.lock is omitted from after-tree comparison.
+One obsolete Python row(review/issue/197: .issue.lock is a directory) is explicitly classified as
+accepted and replaced by the successful boundary test above; no corpus is regenerated. First vet
+caught a syscall import also used for non-lock errno handling; retained it, then checks passed.
+Agents deployment Held leases and cleanup are now being validated on .32; Sub-Store and remaining
+owner/handler migration follow. Routers wait for R08/R09.

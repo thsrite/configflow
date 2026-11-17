@@ -107,7 +107,7 @@ func dockerOxidnsHAGuide(c *httpx.Ctx) (*httpx.Response, error) {
 			if err != nil {
 				return nil, err
 			}
-			capability, err := installer.IssueEnrollment(repository.DataDir(), body, profileID)
+			capability, err := installer.IssueEnrollment(c.Context(), repository.DataDir(), body, profileID)
 			if err != nil {
 				return nil, err
 			}

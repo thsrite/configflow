@@ -14,11 +14,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unicode/utf8"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/pystr"
 	"configflow/internal/repo"
 )
@@ -182,9 +184,16 @@ func sessionPaths(root, id string) (string, string, error) {
 	return path, temp, nil
 }
 
+var issueMu sync.Mutex
+
 // IssueEnrollment is issue(repository, body, profile_id). Call only after
-// guide input validation and administrator authentication.
-func IssueEnrollment(dataDir string, body *jsonx.Object, profileID string) (*Enrollment, error) {
+// guide input validation and administrator authentication. The local file
+// batch completes atomically once admitted; legacy .issue.lock is untouched.
+func IssueEnrollment(ctx context.Context, dataDir string, body *jsonx.Object, profileID string) (*Enrollment, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := repo.ValidateProfileID(profileID); err != nil {
 		return nil, err
 	}
@@ -218,15 +227,11 @@ func IssueEnrollment(dataDir string, body *jsonx.Object, profileID string) (*Enr
 	}
 	sum := sha256.Sum256(specJSON)
 	index := filepath.Join(root, hex.EncodeToString(sum[:])+".index")
-	lock, err := os.OpenFile(filepath.Join(root, ".issue.lock"), os.O_RDWR|os.O_CREATE, 0o600)
-	if err != nil {
+	issueMu.Lock()
+	defer issueMu.Unlock()
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
-		return nil, err
-	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
 
 	var session *jsonx.Object
 	exists, err := pathExists(index)

@@ -63,6 +63,13 @@ func replayRecordFile(t *testing.T, name string) {
 			counts[fn+" patched"]++
 			continue
 		}
+		// This row only tested opening the removed server lock path. O3-6
+		// deliberately ignores that legacy directory; a boundary test below
+		// proves enrollment succeeds and leaves it unchanged.
+		if entry.GetString("test") == "review/issue/197" {
+			counts[fn+" accepted (legacy lock ignored)"]++
+			continue
+		}
 		outcome, problem := replayRecorded(t, entry)
 		counts[fn+" "+outcome]++
 		if problem != "" {
@@ -480,7 +487,7 @@ func replayIO(t *testing.T, entry *jsonx.Object) (string, string) {
 		if !isObject || !isString {
 			return "unsupported", ""
 		}
-		capability, err := IssueEnrollment(dataDir, body, profileID)
+		capability, err := IssueEnrollment(context.Background(), dataDir, body, profileID)
 		// Accepted difference: a hand-edited, unexpired session whose token is
 		// not a string is echoed by Python; Go refuses it (500).
 		if out, isObject := entry.Value("out").(*jsonx.Object); isObject {
@@ -520,7 +527,18 @@ func replayIO(t *testing.T, entry *jsonx.Object) (string, string) {
 		problem = clock.leftover()
 	}
 	if problem == "" {
-		if want, have := canonical(entry.Value("after")), canonical(readTree(root)); want != have {
+		wantTree, haveTree := entry.Value("after"), readTree(root)
+		// Python created .issue.lock; Go does not open or create it. All data
+		// files and their metadata are still compared, without regenerating corpus.
+		if tree, ok := wantTree.(*jsonx.Object); ok {
+			tree = tree.DeepCopy()
+			tree.Delete(".issue.lock")
+			wantTree = tree
+		}
+		if tree, ok := haveTree.(*jsonx.Object); ok {
+			tree.Delete(".issue.lock")
+		}
+		if want, have := canonical(wantTree), canonical(haveTree); want != have {
 			problem = "files afterwards: " + recordedDifference(want, have)
 		}
 	}

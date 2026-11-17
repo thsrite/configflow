@@ -54,7 +54,7 @@ func capability(t *testing.T, srv *httpxtest.Server, body *jsonx.Object) *instal
 	if err != nil {
 		t.Fatal(err)
 	}
-	enrollment, err := installer.IssueEnrollment(srv.Repo.DataDir(), body, profileID)
+	enrollment, err := installer.IssueEnrollment(srv.Context(), srv.Repo.DataDir(), body, profileID)
 	if err != nil {
 		t.Fatal(err)
 	}

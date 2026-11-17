@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -22,7 +23,7 @@ func reviewBody() *jsonx.Object {
 // creates a new session; the existing index keeps its old id.
 func TestReviewIssueNullSessionStartsANewSession(t *testing.T) {
 	dataDir := t.TempDir()
-	first, err := IssueEnrollment(dataDir, reviewBody(), "default")
+	first, err := IssueEnrollment(context.Background(), dataDir, reviewBody(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +32,7 @@ func TestReviewIssueNullSessionStartsANewSession(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, oldID+".json"), []byte("null"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	second, err := IssueEnrollment(dataDir, reviewBody(), "default")
+	second, err := IssueEnrollment(context.Background(), dataDir, reviewBody(), "default")
 	if err != nil {
 		t.Fatalf("python answers a new session, go: %v", err)
 	}
@@ -55,7 +56,7 @@ func TestReviewIssueNullSessionStartsANewSession(t *testing.T) {
 func TestReviewIssueWithoutAgentIPIsAKeyError(t *testing.T) {
 	body := reviewBody()
 	body.Delete("agent_ip")
-	_, err := IssueEnrollment(t.TempDir(), body, "default")
+	_, err := IssueEnrollment(context.Background(), t.TempDir(), body, "default")
 	var te *TypeError
 	if !errors.As(err, &te) {
 		t.Fatalf("want a non-ValueError, got %v", err)
