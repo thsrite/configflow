@@ -136,3 +136,8 @@ Proxy step validation after ALL_PROXY preservation: .63 vet + agents 41.321s,
 substore 6.481s, weburl 0.003s. .32 real requests differential: 42 cases,
 18 explicit native differences / 24 identical outcomes, 4.511s. Runtime proxy
 instructions updated in doc/manual/system-settings.md (no UI/screenshot change).
+
+Buildable proxy step: `3ac0714d`; store step `ba7af7d2`. Added reproducible
+`server/scripts/review-n8-2-startup.py` synthetic CLI smoke: .32 exit 0,
+3 cases exit=1 / safe log+stderr / original bytes unchanged. It builds/runs only
+on test servers; no snapshot content or network access. Final combined acceptance pending.
