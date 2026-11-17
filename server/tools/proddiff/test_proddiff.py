@@ -3,6 +3,7 @@ import importlib.util
 import contextlib
 import hashlib
 import io
+import os
 import json
 import os
 import tempfile
@@ -128,6 +129,43 @@ class ComparatorTests(unittest.TestCase):
         self.assertTrue(pd.response_diffs(py, native, '/api/other', []))
         wrong_status = reply({'success': False, 'message': json.loads(native[2])['message']}, status=500)
         self.assertTrue(pd.response_diffs(py, wrong_status, route, []))
+
+    def test_baseline_migration_patches_only_private_identity_without_revision(self):
+        import tempfile
+        import copy
+        import sqlite3
+        for tamper in (False, True):
+            with self.subTest(tamper=tamper), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                go = root / 'copies-synthetic' / 'go'
+                go.mkdir(parents=True)
+                database = go / 'configflow.sqlite3'
+                original = [{'id': 'synthetic', 'host': '192.0.2.1', 'config_version': 'a'*64,
+                             'applied_content': {'fingerprint': 'old', 'files': {'config.yaml': 'old'}, 'profile_id': 'default'}}]
+                with sqlite3.connect(database) as connection:
+                    connection.executescript('CREATE TABLE fields(scope,owner,field,position,value,revision); CREATE TABLE meta(key,value);')
+                    connection.execute('INSERT INTO fields VALUES(?,?,?,?,?,?)', ('system', '', 'agents', 0, json.dumps(original), 7))
+                    connection.execute('INSERT INTO fields VALUES(?,?,?,?,?,?)', ('system', '', '_revision', 1, '11', 2))
+                    connection.execute('INSERT INTO meta VALUES(?,?)', ('generation', '19'))
+                def worker(command, **kwargs):
+                    updated = copy.deepcopy(original)
+                    updated[0]['applied_content'].update(fingerprint='new', files={'config.yaml': 'new'})
+                    if tamper:
+                        updated[0]['host'] = '192.0.2.2'
+                    (Path(command[2]) / 'agents-after.json').write_text(json.dumps(updated))
+                with mock.patch.dict(os.environ, {'PRODDIFF_BASELINE_TOOL': '/synthetic/baseline'}), mock.patch.object(pd.subprocess, 'run', side_effect=worker):
+                    if tamper:
+                        with self.assertRaises(RuntimeError):
+                            pd.migrate_baselines(go, root)
+                    else:
+                        pd.migrate_baselines(go, root)
+                with sqlite3.connect(database) as connection:
+                    value, revision = connection.execute("SELECT value,revision FROM fields WHERE field='agents'").fetchone()
+                    self.assertEqual(7, revision)
+                    self.assertEqual([('generation', '19')], list(connection.execute('SELECT key,value FROM meta')))
+                    actual = json.loads(value)
+                    self.assertEqual('old' if tamper else 'new', actual[0]['applied_content']['fingerprint'])
+                    self.assertEqual('192.0.2.1', actual[0]['host'])
 
     def test_agent_comparison_identity_pairing_has_proofs(self):
         identities = pd.AgentComparisonIdentities()

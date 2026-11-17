@@ -782,6 +782,46 @@ def stop_processes(processes):
         process.wait()
 
 
+def migrate_baselines(go_copy, report):
+    """Test-copy-only format migration; no production or source snapshot writes."""
+    proof = report / 'baseline-format'
+    proof.mkdir(mode=0o700)
+    database = go_copy / 'configflow.sqlite3'
+    def rows():
+        with sqlite3.connect(database) as connection:
+            return (list(connection.execute('SELECT scope, owner, field, position, value, revision FROM fields ORDER BY scope,owner,field')),
+                    list(connection.execute('SELECT key,value FROM meta ORDER BY key')))
+    before = rows()
+    old = document(go_copy)['system']['agents']
+    (proof / 'agents-before.json').write_text(json.dumps(old, ensure_ascii=False))
+    env = dict(os.environ, DATA_DIR=str(go_copy), PRODDIFF_BASELINE_MIGRATION='1',
+               LOG_LEVEL='ERROR', LOG_FILE=str(proof / 'worker.log'), SUB_STORE_BUILTIN_DIR='/nonexistent')
+    with (proof / 'worker.log').open('wb') as log:
+        subprocess.run([os.environ['PRODDIFF_BASELINE_TOOL'], str(go_copy), str(proof)],
+                       env=env, stdout=log, stderr=log, timeout=600, check=True)
+    if rows() != before:
+        raise RuntimeError('baseline proof worker unexpectedly modified database')
+    new = json.loads((proof / 'agents-after.json').read_text())
+    old_projection, new_projection = json.loads(json.dumps(old)), json.loads(json.dumps(new))
+    for records in (old_projection, new_projection):
+        for record in records:
+            if isinstance(record, dict) and isinstance(record.get('applied_content'), dict):
+                for field in ('fingerprint', 'files', 'deployed_config_sha256'):
+                    record['applied_content'].pop(field, None)
+    if old_projection != new_projection:
+        raise RuntimeError('baseline migration changed a field outside its private format identity')
+    with sqlite3.connect(database) as connection:
+        cursor = connection.execute("UPDATE fields SET value=? WHERE scope='system' AND owner='' AND field='agents'",
+                                    ((proof / 'agents-after.json').read_text(),))
+        if cursor.rowcount != 1:
+            raise RuntimeError('baseline migration did not patch exactly one existing row')
+    after = rows()
+    expected = [(scope, owner, field, position, (proof / 'agents-after.json').read_text() if (scope, owner, field) == ('system', '', 'agents') else value, revision)
+                for scope, owner, field, position, value, revision in before[0]]
+    if after != (expected, before[1]):
+        raise RuntimeError('baseline migration changed database revision metadata')
+
+
 def main():
     global PRIVATE_REPORT
     load_start = Path('/proc/loadavg').read_text().strip()
@@ -809,6 +849,7 @@ def main():
             copies = [Path(temporary) / name for name in ('python', 'go')]
             for data in copies:
                 shutil.copytree(snapshot, data)
+            migrate_baselines(copies[1], report)
             doc = document(copies[0])
             if not doc['profiles']:
                 raise RuntimeError('snapshot has no profiles')

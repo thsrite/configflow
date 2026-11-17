@@ -318,3 +318,24 @@ other 503, missing slot, extra field or message. The branch stops applying when
 real owners register their rows. Synthetic mutations live in test_proddiff.py;
 C07's Flask differential separately proves this intended difference and retention
 of unseen old failures.
+
+## A14 测试副本内的基线格式迁移
+
+这是**测试副本内的基线格式迁移**，仅用于比较切换后后续的完整状态，不是生产迁移入口。
+设计 A14 §7.1 / O14 已接受：Go 的 YAML 字节格式会改变；原 Python 基线在切换后必须显示一次
+`changed`，由切换流程统一全量推送。生产比较器不会把这次真实的 `changed` 改成 `synced`。
+
+`baseline` 工具只接受私有 proddiff `copies-*/go` 目录。它读取原 Python 收据及存档，先验证原
+fingerprint 和文件摘要，再用真实 A14 准备结果的主 YAML 构建格式转换候选。独立重开存档后，
+使用 **yamlx.Equal** 比较主 YAML，且比较完整文件集合及每个非主文件的原始字节；任何证明失败
+都会中止整轮，不转换、不登记 baseline。非主文件采用原基线字节，因而真实 provider/rule 内容
+变化仍由后续 HTTP 差分检出。报告的 Agent 身份、设备版本、时间和 revision 不变。
+
+只有全部证明成功，driver 才替换 Go 测试副本的私有收据，以及 agents 行内依赖于文件格式的
+私有 fingerprint/files；SQLite 的其他行、generation 和 revision 必须逐值保持。
+转换前后存档、主 YAML、收据、Agent 记录和 proof.json 保存在测试服务器受保护的
+`~/cf-prod-snapshot/runs/run-*/baseline-format/`，不取回、不提交。
+
+`tools/proddiff/baseline.TestOriginalPythonBaselineRequiresOnePublish` 使用真实 Python oracle 的原
+YAML 基线，要求 Go content checker 返回 `changed`，push-diff 恰有一个主文件字节变更、零语义
+条目且为 formatting。值改变、键删除、非主字节改变和文件丢失均有拒绝回归。

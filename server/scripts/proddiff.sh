@@ -33,7 +33,7 @@ trap 'rm -rf "$build"' EXIT
 if ((a13proof)); then
  (cd "$root/server" && go test -c -o "$build/configflow" ./internal/api/agents)
 else
- (cd "$root/server" && go build -tags configflow_proddiff -o "$build/configflow" ./cmd/configflow && go build -o "$build/generator" ./tools/proddiff/generator)
+ (cd "$root/server" && go build -tags configflow_proddiff -o "$build/configflow" ./cmd/configflow && go build -o "$build/generator" ./tools/proddiff/generator && go build -o "$build/baseline" ./tools/proddiff/baseline)
 fi
 # Mount namespace makes the source itself read-only, including to descendants.
 unshare --user --map-root-user --net --mount --pid --fork --kill-child --mount-proc bash -c '
@@ -58,5 +58,6 @@ unshare --user --map-root-user --net --mount --pid --fork --kill-child --mount-p
  cd "$2"
  export PYTHONPATH="$2" PYTHONDONTWRITEBYTECODE=1
  export PRODDIFF_GENERATOR="$(dirname "$4")/generator"
+ export PRODDIFF_BASELINE_TOOL="$(dirname "$4")/baseline"
  exec "$3" "$5" "$1" "$4" "${@:6}"
 ' proddiff "$snapshot" "$root" "$python" "$build/configflow" "$runner" "$@"
