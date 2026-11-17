@@ -221,7 +221,7 @@ func replayRecorded(t *testing.T, entry *jsonx.Object) (string, string) {
 		if request, isObject := args[0].(*jsonx.Object); isObject && entry.Has("out") && deliberateAgentNameFix(request, err) {
 			return "deliberate (agent_name + \"\\n\")", ""
 		}
-		return compareOutcome(entry, got, err)
+		return compareOutcome(entry, l1GuideBaseline(t, got), err)
 	case "identity_command":
 		got, err := IdentityCommand(args[0])
 		return compareOutcome(entry, got, err)

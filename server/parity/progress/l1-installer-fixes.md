@@ -200,3 +200,38 @@ cases both install404/malformed-token and binary404/invalid-filename pass;
 difftest2.829s. Curl-fsSL returns22 without a body, curl|sh exposes the original
 Chinese refusal rather than treating JSON as a script. No real network outside
 loopback; no production access.
+
+## D5 — check host DNS port and core health
+
+Before new/stopped Host installation, a temporary Python socket probe uses the
+Docker daemon's host network namespace and binds UDP/TCP53 together. Already
+running, ownership-proven installation skips this probe (its own listener is not
+a foreign conflict). New and migration script success requires actual supervisor
+oxidns RUNNING, with bounded30 polls; FATAL/EXITED/STOPPED or timeout is failure.
+Existing state/CIDs/backup and explicit retry/rollback mechanisms are preserved.
+Pure shell tests cover busy port and FATAL through the full generated install
+command. Frozen source module/calls are reversed only at strict historical
+comparison boundaries, including duplicated install command block. All other
+fields, Compose, capabilities and rollback commands remain strict.
+
+Real .64 containers use Supervisor and actual bound sockets: free succeeds,
+UDP53 and TCP53 each refuse, RUNNING succeeds and real FATAL cannot print success.
+The test substitutes only --network host → owned-container namespace for the
+probe, so the test server host's53 is never bound. All owned containers removed.
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/installer/l1_ha_container_test.go --back server/internal/installer/installertest/ha.go -- bash -c 'set -eu; cd server; gofmt -w internal/installer/l1_ha_container_test.go internal/installer/installertest/ha.go; go test -count=1 -run "Test(L1HA|NewRetry|Migration|DockerHA.*(Corpus|Recorded))" ./internal/installer > /tmp/configflow-l1-d5-focus.log 2>&1; tail -10 /tmp/configflow-l1-d5-focus.log; CONFIGFLOW_L1_CONTAINERS=1 go test -count=1 -v -run TestL1HAStartupWithRealSocketsAndSupervisor ./internal/installer > /tmp/configflow-l1-d5-real.log 2>&1; tail -15 /tmp/configflow-l1-d5-real.log'
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/api/agents/difftest/docker_ha_compose_diff_test.go -- bash -c 'set -eu; cd server; gofmt -w internal/api/agents/difftest/docker_ha_compose_diff_test.go; CONFIGFLOW_DIFF=1 go test -count=1 -v -run TestDockerHADifferentialAgainstFlask ./internal/api/agents/difftest > /tmp/configflow-l1-d5-diff.log 2>&1; tail -6 /tmp/configflow-l1-d5-diff.log; go vet ./internal/installer/... ./internal/api/agents/...'
+```
+
+```text
+ok configflow/internal/installer 11.134s
+--- PASS: TestL1HAStartupWithRealSocketsAndSupervisor (21.22s)
+ok configflow/internal/installer 21.221s
+docker HA routes: 239 comparisons equal, 0 differ
+ok configflow/internal/api/agents/difftest 4.412s
+```
+Initial comparison failures exposed duplicate command_blocks and a separate
+Python→Go Compose-generator comparison path; both now apply the same fixed
+approved delta. They were comparison coverage gaps, not runtime failures, and
+are not counted as successful acceptance runs. Full gate remains outstanding.

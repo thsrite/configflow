@@ -304,6 +304,8 @@ elif args[0] in ('inspect','container'):
     elif '.RestartPolicy' in fmt: print('always:0')
     else: print('{}')
 elif args[0]=='exec':
+    if 'supervisorctl' in args and args[-2:]==['status','oxidns']:
+        print('oxidns FATAL' if state.get('fatal') else 'oxidns RUNNING pid 123, uptime 0:00:10');sys.exit(3 if state.get('fatal') else 0)
     if '-i' in args: sys.stdin.read()
     if state.get('reject_existing'): sys.exit(1)
     print('HEARTBEAT_INTERVAL=42\nDEPLOYMENT_HEALTH_TIMEOUT=30\nAGENT_HOST=0.0.0.0')
@@ -315,6 +317,9 @@ elif args[0]=='rename':
     _,c=lookup(args[1]);c['name']=args[2];save()
 elif args[0]=='cp': pass
 elif args[0]=='run':
+	# Probe only; no installation state is changed.
+    if '--network' in args and args[args.index('--network')+1]=='host' and '--rm' in args and state.get('port_busy'):
+        print('宿主机的 UDP/TCP 53 端口不可用',file=sys.stderr);sys.exit(1)
     if '--rm' in args: sys.exit(1 if state.get('ha_journal') else 0)
     name=args[args.index('--name')+1]; ident=('b' if name.endswith('-ha') else 'c')*64
     if state.get('fail_before_main') and not name.endswith('-ha'):

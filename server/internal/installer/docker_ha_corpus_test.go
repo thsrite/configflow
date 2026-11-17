@@ -96,6 +96,9 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 				enrollment = &Enrollment{URL: e.GetString("url"), Token: e.GetString("token")}
 			}
 			result, err = GenerateGuide(jsonx.DeepCopy(input.Value("request")), enrollment)
+			if err == nil {
+				result = l1GuideBaseline(t, result)
+			}
 		default:
 			mode := input.GetOr("mode", "host")
 			result, err = ParsePreflightReport(input.Value("output"), mode)

@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"configflow/internal/installer"
+	"configflow/internal/installer/installertest"
 	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 )
@@ -117,6 +118,12 @@ func compareComposeAnswer(side string, body *jsonx.Object, r response) []string 
 	expectedBytes, encodeErr := jsonx.Response(expected)
 	if encodeErr != nil {
 		return []string{side + " expected: " + encodeErr.Error()}
+	}
+	if side == "python" {
+		expectedBytes, err = installertest.GuideBaseline(expectedBytes)
+		if err != nil {
+			return []string{side + " approved HA delta: " + err.Error()}
+		}
 	}
 	normalized := equalGuideComposeLayout(expectedBytes, r.body)
 	parsedExpected, parseErr := jsonx.Parse(normalized)

@@ -205,6 +205,11 @@ Host 宿主机 A 用 `192.168.1.21`；独立宿主机 B 用 `192.168.1.12`，B �
 
 <template #prepare-host>
 
+使用备用安装脚本时，脚本会在 Docker 宿主机的网络空间检查 UDP/TCP 53 是否可用；
+已有本次安装且正在运行的容器可安全续装，不会把它自己的监听误当成外部占用。
+启动后还会等待 OxiDNS 在 Supervisor 中正常运行，FATAL、退出或等待超时都会报错。
+出现这些错误时先检查端口和容器日志；容器处于运行状态并不代表 DNS 已正常工作。
+
 ### Docker Host 端：默认推荐
 
 ![Docker 高可用准备环境与网络模式选择](../img/guide/oxidns-docker-ha-prepare.jpg)

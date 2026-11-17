@@ -101,6 +101,16 @@ func compareInstaller(py, gor response, mask []string) []string {
 		a, errA := jsonx.Parse(py.body)
 		b, errB := jsonx.Parse(gor.body)
 		if obj, ok := b.(*jsonx.Object); ok && gor.status == 200 {
+			if obj.Has("install_command") {
+				raw, err := installertest.GuideBaseline(gor.body)
+				if err != nil {
+					return []string{err.Error()}
+				}
+				b, err = jsonx.Parse(raw)
+				if err != nil {
+					return []string{err.Error()}
+				}
+			}
 			if script, ok := obj.Value("script").(string); ok {
 				baseline, err := installertest.PythonBaseline(script)
 				if err != nil {

@@ -14,6 +14,16 @@ redactor 的既有策略不变。无新接口或 UI 操作变化。
 `redact.TestPublicMetadataCredentials`。24 组非泄露类真实 Python 参照继续逐字段相等；
 泄露类单独断言安全结果，不放宽差分比较。见 [A24 复核](review-a24.md)。
 
+## L1 D5 — HA 安装检查端口和核心状态
+
+修复 Python 遗留缺陷：新 HA Host 安装在启动容器前通过临时 Python socket 探针
+检查 Docker daemon 网络空间的 UDP/TCP 53；已证明归属且正在运行的本次主容器
+续装时跳过该探针，避免误判自己的监听。新安装和迁移脚本均在输出成功前等待
+OxiDNS 的 Supervisor RUNNING；FATAL/EXITED/STOPPED 或 30 次等待仍失败时非零退出。
+不因外层容器 Running 就报成功。既有数据、CID 和迁移备份保留，便于明确续装/回滚。
+固定 `installertest/l1-ha-deltas.json` 只反向应用批准的函数和调用点；其余语料、
+Compose、注册凭据和撤销命令严格比较。真实 socket/Supervisor 测试仅使用自有容器网络空间。
+
 ## L1 D7 — 无法满足的二进制下载 Range 返回 416
 
 协调者批准修复：Agent 二进制下载中 Werkzeug 原本抛出的范围错误被 Python 的

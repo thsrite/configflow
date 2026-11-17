@@ -768,6 +768,14 @@ that as a separate defect.
 
 ## A09 — Docker HA guide, preflight, enrollment
 
+L1 D5 follow-up (ported, review pending): Host script probes UDP/TCP53 in daemon
+namespace before starting a new/stopped installation, skips already-running owned
+main container on retry; all new/migration scripts verify actual OxiDNS supervisor
+RUNNING before success and refuse FATAL/EXITED/STOPPED/timeout. Pure shell cases,
+old corpora and Flask239 comparisons pass. Real namespace-isolated socket and
+Supervisor RUNNING/FATAL tests pass on .64 (21.221s); no host53 bindings.
+Exact approved HA source deltas are recorded in installertest/l1-ha-deltas.json.
+
 **Status: `verified`** (review 2026-11-16, commits 2b9a0c88, 5a17282e, f43a0525, a379e23a + this PROGRESS commit; see "Review" below; HR: VM lab test still due after the maintainer agrees) · HR · prereqs: A08, A01, C05 · Go: internal/installer (`docker_ha_guide.go`, `docker_ha_preflight.go`, `docker_ha_enrollment.go`), internal/api/agents/docker_ha.go (+1 line in `Register`)
 
 Files:

@@ -601,7 +601,7 @@ func newInstall(params, request *jsonx.Object, enrollment *Enrollment) (string, 
 		script += "  ! docker container inspect " + q(name) + " >/dev/null 2>&1 || " + haFail("同名容器已存在且不属于本次安装："+name) + "\n"
 	}
 	script += `  mkdir -p -- "$cf_data"` + "\n" + `  mkdir -- "$cf_state"` + "\n" + `  (set -o noclobber; printf "%s\n" "$cf_owner" > "$cf_state/setup")` + "\nfi\n"
-	script += ownedContainerFunction
+	script += ownedContainerFunction + haStartupChecks
 	main := services.GetObject("agent")
 	mainName, err := haString(main.GetOr("container_name", nil))
 	if err != nil {
@@ -644,6 +644,9 @@ func newInstall(params, request *jsonx.Object, enrollment *Enrollment) (string, 
 		script += "  " + joinQuoted(append(args, name)) + "\nfi\n"
 	}
 	script += "docker image inspect " + q(image) + " >/dev/null 2>&1 || docker pull " + q(image) + "\n"
+	if params.GetString("network_mode") == "host" {
+		script += haPortCheck(image)
+	}
 	for _, dirname := range []string{"agent", "oxidns", "ha"} {
 		script += `[ ! -L "$cf_data/` + dirname + `" ] || ` + haFail("数据子目录是软链接，拒绝继续") + "\n"
 	}
@@ -682,6 +685,7 @@ func newInstall(params, request *jsonx.Object, enrollment *Enrollment) (string, 
 		}
 		script += run + "fi\n"
 	}
+	script += haNewReadiness(mainName)
 	script += `printf "%s\n" "本次安装的容器已启动或恢复；请回到页面检查真实心跳和高可用环境，再配对。相同命令可安全续装，不会接管同名其他容器。"` + "\n"
 	for _, value := range services.All() {
 		service := value.(*jsonx.Object)
@@ -829,6 +833,7 @@ func migration(params, request *jsonx.Object) (string, string, string, error) {
 	previous, failed, companion := old+"-pre-ha", old+"-failed-ha", old+"-ha"
 	hostIDPath, _ := params.GetOr("ha_host_id_path", nil).(string)
 	script := haHeader() + haDaemonCheck() + haIdentityCheck(hostIDPath)
+	script += haStartupChecks
 	script += "cf_old=" + q(old) + "\ncf_backup=" + q(backup) + "\n"
 	script += `cf_old_id=$(docker inspect --format '{{.Id}}' "$cf_old")` + "\n"
 	script += `[ "$(docker inspect --format '{{.State.Running}}' "$cf_old_id")" = true ] || ` + haFail("原容器须正在运行，以核对配置；未执行迁移") + "\n"
@@ -889,6 +894,7 @@ func migration(params, request *jsonx.Object) (string, string, string, error) {
 		return "", "", "", err
 	}
 	script += run
+	script += haMigrationReadiness
 	script += `printf "%s\n" "新容器已启动；先检查 Agent 身份、DNS 与高可用环境，再处理第二台并配对。旧容器和数据备份均已保留。"` + "\n"
 	rollback := haHeader() + haDaemonCheck() + "cf_backup=" + q(backup) + "\n"
 	rollback += "cf_old_id=$(cat \"$cf_backup/old-id\")\n[[ \"$cf_old_id\" =~ ^[0-9a-f]{64}$ ]] || exit 1\n"
