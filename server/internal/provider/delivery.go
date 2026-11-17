@@ -7,6 +7,7 @@ import (
 
 	"configflow/internal/agents/diag"
 	"configflow/internal/convert"
+	"configflow/internal/ctxx"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/pystr"
@@ -742,7 +743,7 @@ func ValidateRenderedBundle(snapshot *Snapshot, providers []*Rendered) (bool, er
 
 // CommitCacheUpdates is commit_cache_updates(updates).
 func CommitCacheUpdates(ctx context.Context, updates []CacheUpdate) error {
-	ctx = context.WithoutCancel(ctx) // PORTING rule 4b: never commit half a bundle.
+	ctx = ctxx.Uninterruptible(ctx) // Local batches remain whole across nested owner Detach.
 	for _, u := range updates {
 		if _, err := substore.SaveSubscriptionNodes(ctx, u.SubID, u.Nodes, u.Metadata); err != nil {
 			return err
@@ -1172,7 +1173,7 @@ func PrepareProviderBundle(ctx context.Context, config, main *jsonx.Object, opts
 // CommitProviderBundle is commit_provider_bundle(profile_id, bundle): only
 // call after the complete exact bundle passed validation.
 func CommitProviderBundle(ctx context.Context, profileID string, bundle []*Rendered) error {
-	ctx = context.WithoutCancel(ctx) // PORTING rule 4b: never commit half a bundle.
+	ctx = ctxx.Uninterruptible(ctx) // Local batches remain whole across nested owner Detach.
 	var order []string
 	updates := map[string]CacheUpdate{}
 	var artifactOrder []string

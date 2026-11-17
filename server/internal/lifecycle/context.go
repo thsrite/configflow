@@ -1,6 +1,9 @@
 package lifecycle
 
-import "context"
+import (
+	"configflow/internal/ctxx"
+	"context"
+)
 
 // ClockFrom returns the originating Runtime's clock, or the real clock for
 // callers outside a Runtime. Owner business timestamps can retain their own
@@ -12,11 +15,6 @@ func ClockFrom(ctx context.Context) Clock {
 	return realClock{}
 }
 
-// cancelParentKey holds the context whose cancellation Detach keeps: a
-// generation's job context for rounds, jobs, startup work and bound requests,
-// or the overall shutdown deadline inside shutdown hooks and Drain.
-type cancelParentKey struct{}
-
 // Detach keeps values and drops request cancellation/deadlines. Inside a
 // Runtime (rounds, jobs, startup work, requests bound with BindRequest) it
 // remains cancellable by that generation's shutdown cancellation phase, even
@@ -25,11 +23,7 @@ type cancelParentKey struct{}
 // instead. Outside it matches WithoutCancel. The returned view creates neither
 // a goroutine nor a cancellation registration.
 func Detach(ctx context.Context) context.Context {
-	values := context.WithoutCancel(ctx)
-	if parent, ok := ctx.Value(cancelParentKey{}).(context.Context); ok {
-		return detachedContext{Context: parent, values: values}
-	}
-	return values
+	return ctxx.Detach(ctx)
 }
 
 // BindRequest attaches the default Runtime's live generation to a request
@@ -57,20 +51,5 @@ func (r *Runtime) BindRequest(ctx context.Context) context.Context {
 // withGeneration records g for Stopping/ClockFrom and the cancellation parent
 // that Detach keeps.
 func withGeneration(ctx context.Context, g *generation, cancelParent context.Context) context.Context {
-	return context.WithValue(context.WithValue(ctx, generationKey{}, g), cancelParentKey{}, cancelParent)
-}
-
-// detachedContext is a Context view, not an owner retaining a request for I/O.
-// The cancellation parent supplies Done/Err/Deadline and its internal values;
-// WithoutCancel supplies only the caller's ordinary values.
-type detachedContext struct {
-	context.Context
-	values context.Context
-}
-
-func (d detachedContext) Value(key any) any {
-	if value := d.values.Value(key); value != nil {
-		return value
-	}
-	return d.Context.Value(key)
+	return ctxx.WithParent(context.WithValue(ctx, generationKey{}, g), cancelParent)
 }

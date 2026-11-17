@@ -15,10 +15,15 @@ the second L2 suborder (after work/device, before repository); reverse acquisiti
 .32 gofmt/vet passed; full lockx race count3 passed11.939s. Tests cover bounded/cancelled leaf waits,
 serialization/cleanup, forward suborder and subprocess-isolated reverse/ancestor violations.
 
-ctxx implementation and provider local-batch replacement are being tested on .64: ctxx/lifecycle
-race3 already passed; provider full race3 is still running in foreground session27514.
-Do not sync production changes onto that copy until it completes. Uncommitted ctxx files are not
-dependencies of the lock primitive commit. After completion, commit ctxx separately.
+Lock primitive commit: b4dbc67a. ctxx and provider local-batch replacement passed .64 gofmt/vet and
+race3: ctxx1.030s, lifecycle7.876s, lifecycletest1.011s, full provider570.205s. The shared context
+package has only the context dependency; tests cover detached disconnects, shutdown cancellation,
+masked parent across nested Detach, preserved values and child-owned cancellation.
+
+Additional coordinator ruling: repo's generic withLock also covered profile operation and file locks,
+so do not blindly label all of them L3. Migrate profile operation locks to L2 Keyed by profile id and
+cache/generated files to bounded leaf locks; retain only config's flock. Add concurrency/legacy-file
+sentinels; this ruling is now in Clarified in O3-6. No repo file changes have been made yet.
 
 Important agreed interfaces/boundaries:
 - ctxx depends only on context; WithParent/Detach share the existing lifecycle semantics.

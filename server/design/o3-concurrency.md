@@ -462,6 +462,12 @@ Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
   so O3-6 corrects it. Routers writes and that wiring wait until R08/R09 have merged, then rebase.
 - Leave every Python-written lock file untouched. Final acceptance uses server/scripts/gate.sh
   (-p 6 on .64); it includes both tags, full race, all enabled difftests and proddiff.
+- Repo's other resource locks are included: profile operations use L2 Keyed by profile id, shared
+  caches/generated files use bounded NewLeafKeyed, and only .config.lock keeps the cross-process
+  flock with L3 recording. Writes follow operation L2 → reads/necessary L3 → file leaf;
+  deletion follows operation L2 → config L3. Do not touch or create the old .profile-operations
+  locks or per-file .lock paths. Test same-profile serialization, different-profile parallelism,
+  delete/write races, cancellation/limits, normal order and unchanged legacy-file sentinels.
 
 ### 2.4 Mapping table (every Python loop/lock → Go construct)
 
