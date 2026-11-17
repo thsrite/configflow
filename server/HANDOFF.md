@@ -54,6 +54,56 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | 19338c67-c336-40c7-98a9-b4532a66af68 | C19/C20 Surge/Loon adversarial review | wks_0d8cd06808daac1f, branch `go-review-c19c20` |
 | 3112fbeb-e43a-4d16-ad1a-bc88670b1099 | C37 domain discovery port | wks_0dcc037efd16c502, branch `go-port-c37` |
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
+## >>> CURRENT STATE — 2026-11-17 evening (read this first; everything below is history) <<<
+
+**First action for a new coordinator session:** completion notifications of running agents go to the session that
+started them. Re-route them by sending every running agent below a one-line `mcp__paseo__send_agent_prompt` with
+`notifyOnFinish: true` ("协调会话已更换，任务不变，继续做，完成后照常报告。"). Then poll each once with
+`get_agent_status`; act on any that already finished.
+
+**Pending coordinator actions**
+1. **N7-2** (yaml.v3 editor; Opus review verified, `<<` quoting fix done): branch `go-opus-review-n7-2`. The old
+   session started its .32 verification (race, full, all difftests, 3 fuzz × 60 s, proddiff) but it will be lost —
+   **re-run it** on a temp copy (`git branch -f tmp b; worktree add; rebase go`), then fast-forward go and push.
+2. When **R06 Opus review** (1866c686, branch `go-opus-review-r06` off `go-port-r06`) hands back: verify on .32 and
+   merge. It is the first Codex-ported HR module — read its "Codex-port quality" note; ≥2 high findings ⇒ routers HR
+   ports go back to Opus (WORKFLOW last section).
+3. User owes: IP of a **third native-Linux test server** (Windows Hyper-V VM OK if always-on, bridged, Arch, 8+ cores,
+   16+ GB, no dynamic memory, user sunbroke + routeros-audit key). Set it up like .63 (see memory remote-test-server).
+
+**Running agents** (Paseo project prj_b0033e1859522497; worktrees ~/.paseo/worktrees/302rx1dg/<slug>)
+| agent | kind | task | branch |
+|---|---|---|---|
+| 1866c686-a5d3-4465-bdbd-ddcf37a936ad | Opus | R06 HR review | go-opus-review-r06 |
+| 74bce4a1-d81e-4f7f-9379-91ca1f2bfe48 | Codex | A11 bundle (HR) per design/a14-publish.md A11-1..4 | go-port-a11 |
+| 66833acf-d1e4-45fb-b3bb-3b7d4bae0cbd | Codex | R07 NAT address lists (HR); adapting API to r12-release.md §2.4, landing minimal shared plan types | go-port-r07 |
+| 6e5c7760-36eb-4e1d-a5f0-1c378a081b14 | Codex | O3-3 instance lock/startup/shutdown (+ ResolveDataDir path fix) | go-o3-3 |
+| c5332a35-f886-4d2d-90e2-f48496728a68 | Codex | N8-3 model skeleton + byte-preserving codec (→ Opus review) | go-n8-3 |
+| 0d31fb93-a16c-48f8-8e5e-9c2756fb0e6f | Codex | importer bounds test + oxidns race runtime | go-fix-importer-bounds |
+| e46d698f-6345-41b9-8a38-06d61b6622d3 | Codex | config black-box Step B (findings file) | go-difftest-config-b |
+Idle and reusable: 19338c67 (reviewer, knows convert/oxidns/store/proxy), 097eba4e (N8-1/N7-2 author),
+27131008 (C30/C35/findings author), 12b84914 (proddiff load fix), c5332a35 after N8-3.
+
+**Queue (in order of value)**
+- Opus: review O3-1+O3-2+O3-3 together once O3-3 is merged; review N8-3 when handed back; HR reviews of A11, R07 when
+  ported; O9 security review after O3 (include the YAML alias-amplification sweep, item 3d).
+- Codex: N7-3/N7-4 (migrate YAML readers/writers to new yamlx, delete pyyaml; brief must include item 3d: alias class,
+  never `yamlx.Clone` user values; corpus classification gate per design 5.4 "Open for N7-3"); N8-4..N8-11 after N8-3
+  review; O3-4..O3-8 after O3-3; R08/R09 after R07 (to r12-release.md §2.4); R12-1..R12-4 (only need R03–R07);
+  A12 → A13 → A14 after A11 (design a14-publish.md); A16 → A17 → A18 after A14 (design a16-a18-sync-follow-ha.md);
+  A24 (non-HR); remaining config C29/C31–C36 and partials C06/C07/C11; Step B for agents and routers matrices
+  (writer must not port in that domain); a fix for the agents `TestProxyDifferentialAgainstRequests`-style stale
+  assertions is done (N8-2 review).
+- Decisions taken today that porters must follow: D1 reject duplicate YAML keys; D2 Go-native persisted hashes;
+  D3 whole-document rewrite; D-A17-1 Go-native (re-bind DNS follow once after switch); D-A18-1 retry when busy;
+  D-A14-1 poll-driven deployment status; D-R12-1..3; M1 10 s stop grace; loopback always direct (httpproxy),
+  ALL_PROXY fallback kept, CGI protection kept; NaN/±Inf in responses → null; Python 500s become proper 4xx.
+
+**Coordinator rules learned today:** integrate/verify on a temp branch copy, never `git merge` in the shared worktree
+before verification, never force-rebase a branch checked out in an agent worktree; always run ALL difftest packages
+and the fuzz targets of changed packages in merge verification (they caught two misses today); full `-race` with
+`-p=4` to avoid the importer timeout flake until go-fix-importer-bounds lands.
+
 State 2026-11-17 ~15:00: Claude quota hit ~09:00–13:50 (Opus A19/R05 errored, resumed after reset); four Codex sessions were closed and resumed via send_agent_prompt (sessions persist). Merged since 08:00: N7-1, N8-1, and (integration of cherry-picks, verified on .32) C27 review, N8-2, C35 review, proddiff one-sided-retry, go-fix-config-findings (all difftest packages now green incl. api/agents). Known: importer resource-bounds test times out under full parallel -race → 0d31fb93 fixing (branch go-fix-importer-bounds); `internal/agents` TestProxyDifferentialAgainstRequests (CONFIGFLOW_DIFF) reported failing on go by the R05 porter — needs an owner. In progress — Opus: 53661fec R05 HR review (branch go-opus-review-r05 off go-port-r05), b9a2a95d A19 HR review (go-opus-review-a19 off go-port-a19). Codex: 097eba4e N7-2, 6e5c7760 O3-2 (rebasing onto go, conflicts with the lifecycle restart fix), e46d698f config Step B, 19338c67/c5332a35 idle. Coordinator lesson: build integrations in a separate worktree (never `git merge` inside ~/program/configflow-go before verification).
 State 2026-11-17 ~08:00: O3 design merged (server/design/o3-concurrency.md; M1 decided: keep 10 s stop). Routers matrix O6 merged (all three matrices reviewed). Opus now: edd7e708 R05 iKuai port, ece3fa7f A19 Linux gateway core port (root of the agents publish chain A11→A12→A13→A14→A16–A18). Codex queue when one frees: O3-1 lockx, O3-2 lifecycle v2 (Opus review O3-2+O3-3 together), Step B for agents/routers (writer e46d698f after config Step B), A24 (non-HR). .32 load ~40 with many authoritative runs; consider a third native Linux test server if it persists.
 State 2026-11-17 ~06:30: O2 proddiff review merged (netns DNS leak via host systemd-resolved fixed — isolation is now proven at start; headers compared; 23 self-checks; metrics window flake fixed; F1: A18 not ported → oxidns rules/update 500 for HA members, baselined). Weekly snapshot refresh rule added. Opus now: eed29a36 O6 routers matrix, edd7e708 R05 iKuai port (O5). Next Opus: O3 storage/background-task design, then HR review of R05 (fresh Opus).
