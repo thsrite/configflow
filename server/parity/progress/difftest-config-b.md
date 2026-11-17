@@ -1196,3 +1196,20 @@ exit=0 design_errors=[]
 ```
 
 下一步先验证工作区尚未注册的setup_lifecycle.py（router-draft/abandon）及setup.call的capture扩展，再启动当前全部group的新全量；当前报告不宣称Step B完成或新Go全量通过。
+
+## 批次 68：setup私有路由草稿、放弃与恢复
+
+- 新增78请求变体，均Go尚未实现；原R去重新增5（S4/F1），H新增7。iKuai/RouterOS私有草稿的新增、保留密码编辑、中文特殊名、撤回与重新生成身份；只写session，不提前创建profile router或接触设备。完整SQL与session不可变字段逐端检查，密码仅在私有文件存在，公开响应只有has_password。身份捕获器拒绝Go格式错误、编辑变号、撤回后复用旧号，不以重新绑定吞掉差异；新增故意出错自检。
+- H1049–H1054逐个HTTP请求覆盖阶段/目标限制、参数key集合、错型/强制id、过早绑定Agent/auto-sync、各路由器连接字段校验和新空间策略路由限制。H987完成后拒绝放弃，拒绝请求逐端SQL/files严格不变。
+- 放弃预览与实际执行分别覆盖未使用、默认空间、已绑定Agent、已有路由、已有安装记录；核对真实profile/session删除或保留、全局dismissal，以及拥有订阅/cache清理。其他空间仍引用的订阅及缓存必须保留，其他空间SQL原样。T23通过公开GET核对列表、suggested与abandoned/reopen状态。
+- 真实公开序列先dry_run显示可删，再通过公开rebind让Agent占用，confirm必须重算并保留，随后PATCH恢复。覆盖用户预览与确认之间的竞态；没有声称确定性覆盖abandon函数内部plan与delete事务之间的极短竞态。安装占用只用合成持久记录，不冒充完成安装或安装检查。
+
+```text
+.63 run.py --groups setup-router-drafts,setup-router-draft-guards,setup-abandon,setup-abandon-shared-source,setup-abandon-binding-race
+current go-unimplemented=78 design_errors=[] seconds=18.83；exit=0
+cumulative variants=8091 compared=2173 go-unimplemented=5802 dependency=37 different=78 O12-separate=1
+R去重3977（S654 F2599 B724），H305，G16
+63 comparator self-checks + wrong-Go-response check OK
+```
+
+下一步重新全量刷新当前go基线，再继续check/finish与余下H/T；仍未完成Step B，最终.32全量尚待执行。

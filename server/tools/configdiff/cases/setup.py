@@ -96,9 +96,9 @@ class Stable:
         return differences(self.before_values[1], self.after_values[1], 'setup.readonly-go')
 
 
-def call(pair, case, route, path=None, *, body=None, expect=200, check=None, variant='', headers=None, readonly=False, interaction=None):
+def call(pair, case, route, path=None, *, body=None, expect=200, check=None, variant='', headers=None, readonly=False, interaction=None, capture=None):
     return pair.request(case, route, path, body=json_body(body) if isinstance(body, (dict, list)) else body, expect=expect,
-                        writes=True, check=check, capture=profile_capture(pair), variant=variant, headers=headers,
+                        writes=True, check=check, capture=capture or profile_capture(pair), variant=variant, headers=headers,
                         interaction=Stable(pair) if readonly else interaction)
 
 

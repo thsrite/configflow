@@ -120,6 +120,8 @@ def main():
     groups.update(setup)
     from cases.setup_prepare import GROUPS as setup_prepare
     groups.update(setup_prepare)
+    from cases.setup_lifecycle import GROUPS as setup_lifecycle
+    groups.update(setup_lifecycle)
     from cases.config_backup import GROUPS as config_backup
     groups.update(config_backup)
     from cases.custom_config import GROUPS as custom_config

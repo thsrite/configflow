@@ -17,6 +17,28 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_private_draft_capture_reports_go_identity_faults_without_rebinding(self):
+        from cases.setup_lifecycle import capture_draft
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = [Path(tmp, name) for name in ('python', 'go')]
+            for directory in dirs:
+                directory.mkdir()
+                with sqlite3.connect(directory / 'configflow.sqlite3') as db:
+                    db.executescript('CREATE TABLE meta(key,value); CREATE TABLE sections(scope,owner,position); '
+                                     'CREATE TABLE fields(scope,owner,field,position,value,revision);')
+            pair = SimpleNamespace(dirs=dirs)
+            capture, policy = capture_draft(pair), Policy()
+            def reply(identity):
+                return Reply(200, {}, json.dumps({'router_draft': {'id': identity}}).encode())
+            left, right = 'router_001122334455', 'router_aabbccddeeff'
+            self.assertEqual(capture([reply(left), reply(right)], policy), [])
+            for source, broken, kind in [(left, 'router_112233445566', 'unstable-Go-draft-id'),
+                                         ('router_667788990011', right, 'reused-Go-draft-id'),
+                                         (left, 'wrong', 'not-source-generated-router-id-shape')]:
+                result = capture([reply(source), reply(broken)], policy)
+                self.assertTrue(any(item.kind == kind for item in result))
+                self.assertEqual(policy.identities[left], right)
+
     def test_port_leases_retire_between_fixtures_but_survive_restart(self):
         from unittest.mock import patch
         import harness
