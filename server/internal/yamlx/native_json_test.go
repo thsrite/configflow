@@ -57,9 +57,11 @@ func TestNativeYAMLToJSON(t *testing.T) {
 	if err != nil || string(data) != want {
 		t.Fatalf("got %s %v; want %s", data, err, want)
 	}
-	for _, src := range []string{".inf", "-.inf", ".nan"} {
-		if _, err := ToJSON(parseNative(t, src)); err == nil {
-			t.Fatalf("nonfinite %s accepted", src)
+	for _, src := range []string{".inf", "-.inf", ".nan", ".Inf", "+.INF", ".NaN"} {
+		data, err := ToJSON(parseNative(t, src))
+		var got string
+		if err != nil || json.Unmarshal(data, &got) != nil || got != src {
+			t.Fatalf("nonfinite %s: %s %v", src, data, err)
 		}
 	}
 	if data, err := ToJSON(nil); err != nil || string(data) != "null" {

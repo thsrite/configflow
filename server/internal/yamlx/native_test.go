@@ -343,3 +343,19 @@ func TestNativeRejectsMalformedManualNodes(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeDecodeTypeError(t *testing.T) {
+	for _, src := range []string{"value: not-an-int\n", "value: [1, 2]\n", "value: {nested: 1}\n"} {
+		var dst struct {
+			Value int `yaml:"value"`
+		}
+		err := Unmarshal([]byte(src), &dst)
+		var cause *yaml.TypeError
+		if !errors.Is(err, ErrType) || errors.Is(err, ErrSyntax) || !errors.As(err, &cause) {
+			t.Fatalf("lost native type error: %T %v", err, err)
+		}
+		if err.Error() != fmt.Sprintf(msgTypeMismatch, cause) {
+			t.Fatalf("unexpected type error message: %v", err)
+		}
+	}
+}

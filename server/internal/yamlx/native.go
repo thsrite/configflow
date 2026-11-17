@@ -2,6 +2,7 @@ package yamlx
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -67,7 +68,14 @@ func Decode(n *Node, v any) (err error) {
 		return err
 	}
 	c := decodeTree(n, t.Elem())
-	return syntaxError(c.Decode(v))
+	if err := c.Decode(v); err != nil {
+		var typeError *yaml.TypeError
+		if errors.As(err, &typeError) {
+			return &decodeTypeError{cause: err}
+		}
+		return syntaxError(err)
+	}
+	return nil
 }
 
 // Marshal encodes a node or typed value as YAML with two-space indentation,

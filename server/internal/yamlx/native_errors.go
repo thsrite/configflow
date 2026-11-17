@@ -10,11 +10,19 @@ import (
 var (
 	// ErrSyntax identifies invalid YAML, including duplicate keys and unsafe aliases.
 	ErrSyntax = errors.New("yamlx: invalid YAML")
+	// ErrType identifies YAML values incompatible with a typed destination.
+	ErrType = errors.New("yamlx: incompatible YAML type")
 	// ErrMultipleDocuments identifies input containing more than one document.
 	ErrMultipleDocuments = errors.New("yamlx: more than one document")
 	// ErrUnsafeEdit identifies an edit whose output cannot be verified.
 	ErrUnsafeEdit = errors.New("yamlx: edit cannot keep the rest of the text")
 )
+
+type decodeTypeError struct{ cause error }
+
+func (e *decodeTypeError) Error() string { return fmt.Sprintf(msgTypeMismatch, e.cause) }
+
+func (e *decodeTypeError) Unwrap() []error { return []error{ErrType, e.cause} }
 
 // SyntaxError describes invalid YAML. Positions are one-based when available;
 // yaml.v3 sometimes supplies a line only, or no position at all (zero).

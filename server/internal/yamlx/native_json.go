@@ -94,8 +94,9 @@ func readJSONNode(d *json.Decoder) (*Node, error) {
 
 // ToJSON writes compact JSON in effective mapping order without HTML escaping.
 // Timestamp, binary and other non-JSON scalar tags become their scalar text.
-// Non-string object keys and non-finite numbers return errors rather than
-// silently losing keys or emitting invalid JSON. Aliases and merges are followed.
+// Non-finite YAML numbers likewise become their original scalar text. Non-string
+// object keys return errors rather than silently losing keys. Aliases and merges
+// are followed.
 func ToJSON(n *Node) ([]byte, error) {
 	if n == nil {
 		n = Null()
@@ -177,7 +178,8 @@ func writeJSONNode(b *bytes.Buffer, n *Node) error {
 				return syntaxError(err)
 			}
 			if math.IsNaN(v) || math.IsInf(v, 0) {
-				return invalidNode(n, "non-finite number cannot be encoded as JSON")
+				writeJSONString(b, n.Value)
+				break
 			}
 			b.WriteString(strconv.FormatFloat(v, 'g', -1, 64))
 		default:

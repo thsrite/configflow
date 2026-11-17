@@ -18,12 +18,15 @@ and native builders/navigation/clone/equality. Editor and reader/writer migratio
   duplicate key messages/positions, clone isolation/manual cycles, alias bomb, 60k ordinary rules.
 - First compiling step: `beb5c56e`; .63 yamlx tests and full `go vet ./...` passed.
 - FromJSON/ToJSON keep object order, duplicate-last semantics and exact number text; JSON strings use
-  encoding/json without HTML escaping. Non-string keys and non-finite floats return errors.
+  encoding/json without HTML escaping. Non-string keys return errors; YAML non-finite floats become their
+  original scalar text strings (coordinator's final clarification, documented in design §2.2).
 - Live PyYAML reference: 257 synthetic YAML documents agree on semantic values or rejection; 15 string
   round trips stay strings in PyYAML. Explicit differences: YAML 1.1 bool/sexagesimal typing and D1.
 - Two fuzz targets cover YAML round trips, arbitrary-input safety and exact JSON round trips. .63 short
   runs (15s each) passed after fixing the discovered empty-null-key encoder issue; its seed is committed.
 - Typed timestamp tests cover aliases to different destination types, merge sequences and inline maps.
+- Typed Decode mismatches use ErrType, retaining errors.As to *yaml.TypeError and a Chinese template;
+  syntax/policy failures remain ErrSyntax.
 
 ## Next
 
