@@ -55,6 +55,7 @@ class Worker:
         self.pending = {}
         self.open_clients = {}
         self.process = None
+        self.last_exit_code = None
         self.log = None
         self.faults = Faults(ACTIVE / "data")
 
@@ -78,6 +79,7 @@ class Worker:
         command = [sys.executable, '-m', 'backend.app'] if self.side == 'python' else [self.binary]
         self.process = subprocess.Popen(command, cwd=ROOT, env=environment,
             stdin=subprocess.DEVNULL, stdout=self.log, stderr=self.log, start_new_session=True)
+        self.last_exit_code = None
         deadline = time.monotonic() + 45
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
@@ -102,6 +104,7 @@ class Worker:
             os.killpg(self.process.pid, signal.SIGKILL)
             self.process.wait(timeout=3)
         result = self.process.returncode
+        self.last_exit_code = result
         self.process = None
         self.log.close()
         return result
@@ -178,12 +181,12 @@ class Worker:
                             response = future.result()
                         except Exception as error:
                             return {'state': 'transport-error', 'error_class': type(error).__name__,
-                                    'exit_code': self.process.poll() if self.process is not None else None}
+                                    'exit_code': self.process.poll() if self.process is not None else self.last_exit_code}
                         return {'state': 'http-completed', 'response': response}
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         return {'state': 'gate-deadline', 'seconds': timeout,
-                                'exit_code': self.process.poll() if self.process is not None else None}
+                                'exit_code': self.process.poll() if self.process is not None else self.last_exit_code}
                     self.world.condition.wait(min(.1, remaining))
                 return {'state': 'device-entered'}
         if operation == 'join':
@@ -195,7 +198,8 @@ class Worker:
         if operation == 'fake':
             return self.world.control(**values)
         if operation == 'process_status':
-            return {'exit_code': self.process.poll() if self.process is not None else None}
+            return {'exit_code': self.process.poll() if self.process is not None else self.last_exit_code,
+                    'running': self.process is not None and self.process.poll() is None}
         if operation == 'manifest':
             return (ACTIVE / 'manifest.tsv').read_text() if self.side == 'go' else ''
         if operation == 'log_position':
@@ -226,6 +230,7 @@ def main():
                 reply = {'ok': True, 'result': result}
             except Exception as error:
                 reply = {'ok': False, 'error': type(error).__name__ + ': ' + str(error),
+                         'error_class': type(error).__name__,
                          'traceback': traceback.format_exc()}
             print(json.dumps(reply, ensure_ascii=False), flush=True)
     finally:

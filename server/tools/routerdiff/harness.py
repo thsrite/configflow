@@ -35,9 +35,10 @@ def decode_response(response):
 
 class RemoteError(RuntimeError):
     """A namespace RPC failure, carrying transport context without parsing prose."""
-    def __init__(self, side, operation, error, trace):
+    def __init__(self, side, operation, error, trace, error_class=None):
         super().__init__(side + ' RPC: ' + error + '\n' + trace)
         self.side, self.operation, self.remote_error = side, operation, error
+        self.error_class = error_class
 
 
 def observed_startup_exit(side, error, stage):
@@ -48,6 +49,23 @@ def observed_startup_exit(side, error, stage):
     if status['exit_code'] is None:
         return None
     return {'exit_code': status['exit_code'], 'stage': stage}
+
+
+def observed_request_failure(side, error, stage):
+    """Retain real loopback HTTP client failures without inventing a response.
+
+    Only concrete connection/read/protocol failures from request/join qualify.
+    RPC, fixture validation and namespace errors stay fixture errors; exception
+    prose is never parsed to guess a class or a server exit.
+    """
+    transport = {'ConnectionRefusedError', 'ConnectionResetError', 'ConnectionAbortedError', 'BrokenPipeError',
+                 'RemoteDisconnected', 'TimeoutError', 'BadStatusLine', 'IncompleteRead', 'LineTooLong'}
+    if (not isinstance(error, RemoteError) or error.side != 'go' or error.operation not in ('request', 'join')
+            or error.error_class not in transport):
+        return None
+    status = side.rpc('process_status')
+    return {'stage': stage, 'operation': error.operation, 'error_class': error.error_class,
+            'exit_code': status['exit_code'], 'running': status['running']}
 
 class Side:
     def __init__(self, name, directory, binary, options):
@@ -75,7 +93,7 @@ class Side:
             raise RuntimeError(self.name + ' namespace exited; inspect ' + str(self.directory / 'worker.log'))
         reply = json.loads(line)
         if not reply['ok']:
-            raise RemoteError(self.name, operation, reply['error'], reply.get('traceback', ''))
+            raise RemoteError(self.name, operation, reply['error'], reply.get('traceback', ''), reply.get('error_class'))
         return reply['result']
 
     def request(self, method, path, document=None, raw=None, headers=None, auth=True, **kwargs):

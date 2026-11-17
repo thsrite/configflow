@@ -10,13 +10,37 @@ import unittest
 from harness import Pair
 from seed import DEVICE_PASSWORD, router, AGENT_TOKEN
 from fixtures import agent_peers, agent_options, authentication_options
-from run import registered, shape
+from run import registered, shape, execute
+from cases import Case
+from inventory import load
 import returns
 import fixed_setup
 
 
 @unittest.skipUnless(os.environ.get('ROUTERDIFF_BINARY'), 'requires .32 native public Go binary')
 class BoundaryTests(unittest.TestCase):
+    def test_real_native_exit_after_start_is_a_transport_observation_without_fabricated_http(self):
+        with Pair(Path(os.environ['ROUTERDIFF_BINARY'])) as pair:
+            available = registered(pair.go.rpc('manifest'))
+            self.assertIn(('GET', '/api/auth/status'), available)
+            stopped = pair.go.rpc('stop', kill=True)
+            self.assertEqual(stopped, -9)
+            # Purpose-broken oracle control only. Use the actual registered
+            # auth boundary; never pretend a missing routers handler exists.
+            case = Case('oracle-killed-native', '', 'GET', '/api/auth/status', 200,
+                        boundary=('GET', '/api/auth/status'), owner='test oracle negative control')
+            result = execute(pair, case, available, load()[0])
+            self.assertEqual(result['status'], 'different')
+            self.assertEqual(result['python']['status'], 200)
+            self.assertIsNone(result['go'])
+            self.assertEqual(result['go_process']['exit_code'], -9)
+            self.assertFalse(result['go_process']['running'])
+            self.assertEqual(result['go_process']['error_class'], 'ConnectionRefusedError')
+            self.assertNotIn('status', result['go_process'])
+            self.assertNotIn('response', result['go_process'])
+            self.assertFalse(result['go_transport_state']['quiescence_proven'])
+            self.assertEqual(pair.python.request('GET', '/api/auth/status')['status'], 200)
+
     def test_setup_file_fixture_is_accepted_by_real_public_reader_and_matches_creation_contract(self):
         binary = Path(os.environ['ROUTERDIFF_BINARY'])
         # Prove the fixture's base shape and permissions against a real HTTP

@@ -453,3 +453,16 @@ Persisted probe-clock/public-view boundary:
   persistence. Comparator negatives cover wrong/duplicate owner, stale/missing
   time, foreign profile, raw-file/message corruption and actual execute/list/
   workspace flow. Purpose-broken observations are oracle tests, not product bugs.
+
+Native main-request failure classification:
+- Actual worker exception class and actual child running/exit state establish a
+  transport observation; never classify by a substring of exception prose.
+  Only main request/join concrete connection/read/protocol failures qualify.
+  Unknown RPC/fixture errors and Python reference failures stay fixture failures.
+- No complete HTTP observation means go=null plus typed transport details,
+  different and blocked subsequent dependencies. No manufactured500/empty JSON,
+  Go-unimplemented fallback or false parity. Immediate state evidence explicitly
+  cannot prove quiescence, completed work or compensation, even after child exit.
+- Real own-namespace -9 negative control uses an actually registered auth route;
+  it is not a router case or product finding. Main HTTP polls/joins are covered;
+  auxiliary setup and post-response settling transport distinctions remain open.

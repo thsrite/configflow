@@ -50,6 +50,57 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_main_native_transport_failure_retains_actual_error_without_an_http_status(self):
+        class FailedRequest(ObservationSide):
+            def __init__(self, error_class='RemoteDisconnected', operation='request', side='go', exit_code=-9,
+                         broken_snapshot=False):
+                super().__init__()
+                self.error_class, self.operation, self.side = error_class, operation, side
+                self.exit_code, self.broken_snapshot = exit_code, broken_snapshot
+
+            def request(self, **values):
+                self.requests.append(values)
+                # Deliberately misleading prose: classification must use the
+                # structured observed class, never this human-readable string.
+                raise RemoteError(self.side, self.operation, 'ValueError: synthetic misleading description', '', self.error_class)
+
+            def rpc(self, operation, **values):
+                if operation == 'process_status':
+                    return {'exit_code': self.exit_code, 'running': self.exit_code is None}
+                if operation == 'snapshot' and self.requests and self.broken_snapshot:
+                    raise RemoteError('go', 'snapshot', 'synthetic snapshot not available', '', 'DatabaseError')
+                return super().rpc(operation, **values)
+
+        routes, _ = load()
+        case = Case('transport', 'R002', 'GET', '/api/client-devices', 200)
+        available = {('GET', case.path)}
+        for error_class in ('ConnectionRefusedError', 'RemoteDisconnected', 'TimeoutError', 'BadStatusLine', 'IncompleteRead'):
+            world = pair(go=FailedRequest(error_class))
+            result = execute(world, case, available, routes)
+            self.assertEqual(result['status'], 'different')
+            self.assertIsNone(result['go'])
+            self.assertEqual(result['go_process']['error_class'], error_class)
+            self.assertEqual(result['go_process']['exit_code'], -9)
+            self.assertNotIn('status', result['go_process'])
+            self.assertFalse(result['go_transport_state']['quiescence_proven'])
+            self.assertIn('transport', {item['category'] for item in result['differences']})
+            self.assertNotIn(case.ident, world.go.observations)
+            following = execute(world, Case('dependent', 'R002', 'GET', case.path, 200), available, routes)
+            self.assertEqual(following['status'], 'blocked-by-difference')
+            self.assertEqual(len(world.go.requests), 1)
+        live = execute(pair(go=FailedRequest('TimeoutError', exit_code=None)), case, available, routes)
+        self.assertTrue(live['go_process']['running'])
+        self.assertIsNone(live['go_process']['exit_code'])
+        broken = execute(pair(go=FailedRequest(broken_snapshot=True)), case, available, routes)
+        self.assertEqual(broken['status'], 'different')
+        self.assertEqual(broken['go_transport_state']['snapshot_error_class'], 'DatabaseError')
+        self.assertNotIn('differences', broken['go_transport_state'])
+        for native in (FailedRequest('ValueError'), FailedRequest(None), FailedRequest('TimeoutError', 'filesystem_fault')):
+            with self.assertRaises(RemoteError):
+                execute(pair(go=native), case, available, routes)
+        with self.assertRaises(RemoteError):
+            execute(pair(python=FailedRequest(side='python')), case, available, routes)
+
     def test_execute_binds_probe_clock_to_storage_and_subsequent_public_list(self):
         class ProbeSide(ObservationSide):
             def __init__(self, native=False, corrupt=None):

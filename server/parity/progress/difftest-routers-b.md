@@ -1802,3 +1802,41 @@ native findings. No command pending. Full historical3054/301 remains unchanged.
 Next: main native request transport failure classification, remaining dynamic
 ownership/token/hash/YAML/receipt clocks, device/background matrix; full
 composition, final gate/rebase/clean hand-back still pending.
+
+Main-request native transport observations:
+- Worker RPC now returns actual exception class as structured metadata, separate
+  from its prose/traceback. Request/join connection/read/protocol failures are
+  retained with actual child running/exit state; other RPC/fixture exceptions
+  remain fixture errors. No prose parsing and no manufactured HTTP status/body.
+- Native failure returns different with go=null (no complete HTTP observation),
+  actual go_process transport details, and blocks dependent world requests. It
+  cannot be miscounted as Go-unimplemented or a matching500. Python transport
+  precondition failures still abort as reference fixture errors.
+- Immediate state capture/differences are retained separately and explicitly
+  quiescence_proven=false. Capture failure stores its actual error class. Neither
+  snapshot availability nor child exit alone claims successful rollback or
+  completed jobs. Markdown findings include this limited observation.
+- Keep the actual exit code after an explicit stop until the next start, so
+  later observations do not lose real -9/other child evidence. Same value feeds
+  existing async-gate outcomes. Purpose-broken own Go process test uses only the
+  actually registered /api/auth/status boundary, never an invented routers route.
+  Native is killed only inside its disposable namespace; Python remains ready.
+- Unit controls cover refused/disconnected/timeout/malformed/incomplete response,
+  a still-running child, unavailable state snapshot and misleading error prose;
+  unknown classes/fixture RPC/Python failures are not converted into Go findings.
+  This closes MAIN request/poll/join observation. Auxiliary setup/settling request
+  transport failures still need the same distinction later (bad HTTP statuses
+  and async device-gate outcomes already handled). No matrix audit count added.
+
+.64 actual own-process fault/self-check command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a08c4cc27/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_runner test_boundary'`
+=> Ran43 tests67.265s/OK. Actual killed native produced ConnectionRefusedError,
+exit_code=-9/running=false, no HTTP status/response; reference HTTP200 remained.
+After strengthening live-child/snapshot-failure controls and findings rendering:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-a08c4cc27/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world runtime-reads --output "$HOME/.cache/routerdiff-reports/302rx1dg/transport-normal-regression.json"'`
+=> Ran32 tests2.418s/OK;13 real normal recipes/allGo-unimplemented,9 references,
+0 audits/exclusions/corrections in this subset, complete=false, no bug. All
+purpose-broken observations above are oracle tests, not native product findings.
+No active command. Counts431 executed declarations+5 source proofs+2 O6 entries,
+1863 pending if composed. Current full report remains historical3054/301.
+Remaining matrix/dynamics/aux transport, full composition, final gate/rebase pending.

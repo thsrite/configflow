@@ -52,3 +52,11 @@ matrix are `review-superseded`, not unreachable-source branches or executed
 passes. Their replacement refusals and ignored-selector controls must all run;
 otherwise they remain `review-proof-controls-pending`. The report keeps a
 separate `review_superseded_entries` count and the full2301-entry denominator.
+
+A native main-request connection/read/protocol failure is retained as actual
+transport/process metadata with no invented HTTP status/body. Later dependencies
+are blocked. Immediate snapshots after client failure explicitly do not prove
+quiescence or compensation. Worker exception classes are structured observations;
+RPC/fixture failures and Python precondition failures are kept distinct. Oracle
+negative controls kill only an owned disposable process and do not enter the
+product findings/corpus counts.

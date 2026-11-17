@@ -42,6 +42,7 @@ import fixed_setup
 import fixed_sources
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair, RemoteError, observed_startup_exit
+from harness import observed_request_failure
 from harness import decode_response
 from inventory import design_json, load
 from invariants import configuration_only, profile_write, fields
@@ -136,6 +137,8 @@ def execute(pair, case, available, routes):
     observations, snapshots, flow_requests, flow_checks, setup_observations = {}, {}, {}, {}, {}
     response_windows = {}
     resolved_requests = {}
+    request_failure = None
+    transport_state = None
     if case.boundary:
         if case.route or len(case.boundary) != 2 or case.boundary[0] != case.method or not isinstance(case.path, str):
             raise ValueError('external boundary must declare its actual method/path with no routers route ID')
@@ -297,12 +300,33 @@ def execute(pair, case, available, routes):
                         side.request(**own_request))
             response_ended = time.monotonic()
             response_received_wall = time.time()
+        except RemoteError as error:
+            failure = observed_request_failure(side, error, 'main public HTTP request') if name == 'go' else None
+            if failure is None:
+                raise
+            request_failure = {**failure, 'request': {'method': own_request['method'], 'path': own_request['path']}}
         finally:
             for control in case.finalize:
                 if control.get('rpc') == 'filesystem_fault':
                     side.rpc(**{key: value for key, value in control.items() if key != 'rpc'}, operation='filesystem_fault')
                 else:
                     side.rpc('fake', **control)
+        if request_failure:
+            # No complete HTTP response is available. Snapshot what is observable now;
+            # a live/unfinished handler or delayed peer may still be changing
+            # state, so this is never a proof of completed compensation.
+            transport_state = {'capture': 'immediate after client failure', 'quiescence_proven': False}
+            try:
+                after = logical_snapshot(side.rpc('snapshot'))
+                snapshots[name] = {'before': before, 'after': after}
+                transport_state['differences'] = [asdict(item) for item in differences(
+                    snapshots['python']['after'], after, '/state-immediate')]
+            except RemoteError as error:
+                transport_state['snapshot_error_class'] = error.error_class
+            if not hasattr(side, 'failed_prerequisites'):
+                side.failed_prerequisites = []
+            side.failed_prerequisites.append(case.ident)
+            break
         if case.age_limit and response_ended - age_anchor >= case.age_limit:
             raise RuntimeError(case.ident + ': response exceeded real-time fixture window; rerun at lower server load')
         side.request_windows[case.ident] = {'started': request_started, 'ended': response_ended}
@@ -488,8 +512,11 @@ def execute(pair, case, available, routes):
     if startup_failure:
         found.append({'path': '/public-process/startup', 'python': {'state': 'public listener ready; HTTP request completed'},
                       'go': startup_failure, 'category': 'process'})
+    if request_failure:
+        found.append({'path': '/public-process/request', 'python': {'http_status': observations['python']['status']},
+                      'go': request_failure, 'category': 'transport'})
     go_bug_outcome = None
-    if implemented and not blocked_reference:
+    if implemented and not blocked_reference and not request_failure:
         if not hasattr(pair, 'router_ids'):
             pair.router_ids = RouterIDs()
         if (case.route == 'R008' and case.method == 'POST' and case.effect == 'router-create'
@@ -579,7 +606,7 @@ def execute(pair, case, available, routes):
     if flow_requests.get('python'):
         request['preceding_abandoned_requests'] = flow_requests['python']
     safety = any((item.get('category') if isinstance(item, dict) else item.category) == 'safety' for item in found)
-    status = ('different' if startup_failure else 'blocked-by-difference' if blocked_reference else 'go-unimplemented' if not implemented else 'different' if safety else
+    status = ('different' if startup_failure or request_failure else 'blocked-by-difference' if blocked_reference else 'go-unimplemented' if not implemented else 'different' if safety else
               'reference-bug-observation' if case.python_bug else 'different' if found else 'compared')
     unimplemented_reason = {'missing_routes': sorted(set(missing_routes)),
                             'prior_missing_mutations': [item['case'] for item in pair.go.missing_effects]}
@@ -609,7 +636,7 @@ def execute(pair, case, available, routes):
             'unimplemented_reason': unimplemented_reason if not implemented else None,
             'blocked_reference': blocked_reference,
             'setup_observations': setup_observations,
-            'go_process': startup_failure,
+            'go_process': request_failure or startup_failure, 'go_transport_state': transport_state,
             'python': observations['python'], 'go': observations.get('go'),
             'python_bug': case.python_bug, 'python_bug_outcome': python_bug_outcome, 'go_bug_outcome': go_bug_outcome,
             'differences': [asdict(item) if not isinstance(item, dict) else item for item in found]}
@@ -713,6 +740,9 @@ def findings(path, data):
                   '- Python：`' + json.dumps(result['python'], ensure_ascii=False) + '`',
                   '- Go：`' + json.dumps(result['go'], ensure_ascii=False) + '`',
                   '- Go 公开进程：`' + json.dumps(result.get('go_process'), ensure_ascii=False) + '`',
+                  *(['- 传输失败后的即时状态（未证明任务静止或补偿完成）：`'
+                     + json.dumps(result['go_transport_state'], ensure_ascii=False) + '`']
+                    if result.get('go_transport_state') else []),
                   '- 前序阻断原因：`' + json.dumps(result.get('blocked_reference'), ensure_ascii=False) + '`',
                   '- 前置公开 HTTP 实际响应：`' + json.dumps(result.get('setup_observations', {}), ensure_ascii=False) + '`', '',
                   '| 路径 | Python | Go | 类别 |', '|---|---|---|---|']
