@@ -289,7 +289,7 @@ func TestStoredRoundTrip(t *testing.T) {
 				t.Fatal("agent binding failed")
 			}
 			records = append(records, added)
-			d.System.Agents = must(model.Marshal(records))(t)
+			d.System.Agents = roundTripDecode[[]model.Agent](t, records)
 		})
 		commit("agent edit", []modelRowKey{{"system", "", "agents"}}, func(d *model.Document) {
 			records := must(roundTripList(d.System.Agents))(t)
@@ -298,7 +298,7 @@ func TestStoredRoundTrip(t *testing.T) {
 					records[i].Name = "N8 agent renamed"
 				}
 			}
-			d.System.Agents = must(model.Marshal(records))(t)
+			d.System.Agents = roundTripDecode[[]model.Agent](t, records)
 		})
 		commit("router add", []modelRowKey{profileKey("routers")}, func(d *model.Document) {
 			fields := roundTripFields(t, d.Profiles[0].Routers)

@@ -1,6 +1,7 @@
 """Real Python JSON/SQLite boundary; never print stored values or user map keys."""
 import json
 import os
+from pathlib import Path
 import sqlite3
 import sys
 
@@ -18,6 +19,13 @@ if mode == 'snapshot':
         copy.close()
         original.close()
         os.remove(private)
+    root = Path(source).parent
+    for pattern, name in (
+        ('.agent-rule-sync/**/receipt.json', 'AgentRuleSyncReceipt'),
+        ('.oxidns-ha-publications/**/payload.json', 'HAPayload'),
+    ):
+        for path in root.glob(pattern):
+            rows.append((name, path.read_text()))
     with open(target, 'w') as handle:
         handle.write('[' + ','.join('{"name":' + json.dumps(name) + ',"value":' + value + '}' for name, value in rows) + ']')
 elif mode == 'write':

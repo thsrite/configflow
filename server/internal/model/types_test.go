@@ -15,6 +15,45 @@ import (
 // unchanged source cannot mask a child codec dropping members.
 func storedRecordTypes() []reflect.Type {
 	return []reflect.Type{
+		reflect.TypeFor[Agent](),
+		reflect.TypeFor[AgentMetrics](),
+		reflect.TypeFor[AgentCPU](),
+		reflect.TypeFor[AgentMemory](),
+		reflect.TypeFor[AgentDisk](),
+		reflect.TypeFor[AgentNetwork](),
+		reflect.TypeFor[LegacyDNSEndpoint](),
+		reflect.TypeFor[OperationEvent](),
+		reflect.TypeFor[Deployment](),
+		reflect.TypeFor[DeploymentDNSCheck](),
+		reflect.TypeFor[PreparedContent](),
+		reflect.TypeFor[AppliedContent](),
+		reflect.TypeFor[OxiDNSValidationReceipt](),
+		reflect.TypeFor[AgentUpgrade](),
+		reflect.TypeFor[UpgradeArtifact](),
+		reflect.TypeFor[IPv6VerificationSettings](),
+		reflect.TypeFor[IPv6Verification](),
+		reflect.TypeFor[IPv6VerificationCheck](),
+		reflect.TypeFor[DeploymentFile](),
+		reflect.TypeFor[DeploymentManifest](),
+		reflect.TypeFor[AgentRuleSyncReceipt](),
+		reflect.TypeFor[RuleSyncSettings](),
+		reflect.TypeFor[AgentRuleSync](),
+		reflect.TypeFor[RuleSyncState](),
+		reflect.TypeFor[DNSFollowBinding](),
+		reflect.TypeFor[DNSFollowState](),
+		reflect.TypeFor[DNSFollowJob](),
+		reflect.TypeFor[HASettings](),
+		reflect.TypeFor[HAState](),
+		reflect.TypeFor[HAMember](),
+		reflect.TypeFor[HAIdentity](),
+		reflect.TypeFor[HAEnable](),
+		reflect.TypeFor[HARouter](),
+		reflect.TypeFor[HAHandoff](),
+		reflect.TypeFor[HAHandoffFailure](),
+		reflect.TypeFor[HAJournal](),
+		reflect.TypeFor[HAPublicationSummary](),
+		reflect.TypeFor[HABundle](),
+		reflect.TypeFor[HAPayload](),
 		reflect.TypeFor[SystemConfig](),
 		reflect.TypeFor[NodeTestDNSConfig](),
 		reflect.TypeFor[ManagedDNSBinding](),
@@ -44,6 +83,11 @@ func typeJSON(typ reflect.Type, changed bool) []byte {
 		typ = typ.Elem()
 	}
 	switch typ {
+	case reflect.TypeFor[json.RawMessage]():
+		if changed {
+			return []byte(`{"changed":true}`)
+		}
+		return []byte(`{ "opaque": [1.0,null,true] }`)
 	case reflect.TypeFor[TextLines]():
 		if changed {
 			return []byte(`["qname edited.example.com"]`)
@@ -155,10 +199,10 @@ func TestStoredTypes(t *testing.T) {
 					if base.Kind() == reflect.Struct || base == reflect.TypeFor[Dynamic]() {
 						wrong = []byte(`false`)
 					}
-					if base == reflect.TypeFor[Dynamic]() {
+					if base == reflect.TypeFor[Dynamic]() || base == reflect.TypeFor[json.RawMessage]() {
 						return
 					} // all JSON shapes are valid by definition
-					corrupt := bytes.Replace(source, append([]byte(`"`+field.name+`":`), typeJSON(typ.Field(field.index).Type, false)...), append([]byte(`"`+field.name+`":`), wrong...), 1)
+					corrupt := replaceStoredMember(t, source, field.name, wrong)
 					bad := decode(corrupt)
 					issues := valueIssues(bad, "")
 					if !slices.Contains(issues, FieldIssue{field.name, IssueType}) {
@@ -277,6 +321,7 @@ func runTypesInterchange(t *testing.T, rows []interchangeRow, private bool) {
 		"client_fixed_ips": reflect.TypeFor[Profile](),
 		"oxidns":           reflect.TypeFor[Profile](),
 		"proxy_groups":     reflect.TypeFor[Profile](), "rule_configs": reflect.TypeFor[Profile](),
+		"agents":        reflect.TypeFor[System](),
 		"system_config": reflect.TypeFor[System](), "backup": reflect.TypeFor[System](),
 		"nodes": reflect.TypeFor[Shared](), "subscriptions": reflect.TypeFor[Shared](),
 		"subscription_aggregations": reflect.TypeFor[Shared](), "rule_library": reflect.TypeFor[Shared](),
@@ -401,7 +446,11 @@ func checkSnapshotTypes(t *testing.T, rows []interchangeRow) {
 	for _, row := range rows {
 		var holder json.Unmarshaler
 		switch row.Name {
-		case "system_config", "backup":
+		case "AgentRuleSyncReceipt":
+			holder = &AgentRuleSyncReceipt{}
+		case "HAPayload":
+			holder = &HAPayload{}
+		case "system_config", "backup", "agents":
 			holder = &System{}
 		case "nodes", "subscriptions", "subscription_aggregations", "rule_library":
 			holder = &Shared{}
@@ -410,9 +459,12 @@ func checkSnapshotTypes(t *testing.T, rows []interchangeRow) {
 		default:
 			continue
 		}
-		key, _ := json.Marshal(row.Name)
-		source := append(append(append([]byte("{"), key...), ':'), row.Value...)
-		source = append(source, '}')
+		source := row.Value
+		if row.Name != "AgentRuleSyncReceipt" && row.Name != "HAPayload" {
+			key, _ := json.Marshal(row.Name)
+			source = append(append(append([]byte("{"), key...), ':'), row.Value...)
+			source = append(source, '}')
+		}
 		if holder.UnmarshalJSON(source) != nil {
 			t.Fatal("snapshot wrapper decode failed")
 		}
@@ -433,7 +485,7 @@ func assertStoredTree(t *testing.T, source []byte, value reflect.Value, counts m
 		return
 	}
 	typ := value.Type()
-	if typ == reflect.TypeFor[Dynamic]() || typ == reflect.TypeFor[TextLines]() {
+	if typ == reflect.TypeFor[Dynamic]() || typ == reflect.TypeFor[TextLines]() || typ == reflect.TypeFor[json.RawMessage]() {
 		return
 	}
 	switch value.Kind() {
