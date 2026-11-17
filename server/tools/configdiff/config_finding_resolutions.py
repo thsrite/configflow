@@ -36,9 +36,16 @@ def accepted_basis(item):
             and set(values) == {legacy} and values[legacy]['kind'] == 'extra-in-go'
             and values[legacy]['python'] is None and not differences({'flag': False, 'values': []}, values[legacy]['go'])):
         return DECISIONS.format(item='R058-B03')
-    if item['route'] != 'POST /api/subscriptions/<sub_id>/fetch' or item['variant'] != '':
+    version_method = (item['route'] == 'GET /api/version' and item['case'] == 'R228-F01'
+                      and item['group'] == 'settings-sync' and item['variant'] == '' and statuses == (405, 405))
+    if not version_method and (item['route'] != 'POST /api/subscriptions/<sub_id>/fetch' or item['variant'] != ''):
         return ''
-    if item['case'] == 'R218-F10' and statuses == (400, 400):
+    if version_method:
+        status, title = 405, 'Method Not Allowed'
+        description = 'The method is not allowed for the requested URL.'
+        expected = {'message': description, 'success': False}
+        fields, decision = {'headers.content-type', 'body'}, 'Step B #3'
+    elif item['case'] == 'R218-F10' and statuses == (400, 400):
         status, title = 400, 'Bad Request'
         description = 'The browser (or proxy) sent a request that this server could not understand.'
         expected = {'message': description, 'success': False}

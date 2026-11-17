@@ -17,6 +17,18 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_listener_switch_observer_detects_false_success_and_controller_mutations(self):
+        from cases.web_switch import Switch
+        observer = Switch(None, None, None, None)
+        value = {'database_unchanged': True, 'new_health_200': True, 'new_token_valid': True,
+                 'new_token_rotated': True, 'dual_stack_same_token': True, 'html_exact': True,
+                 'old_port_closed': True, 'controller_sequence_valid': True}
+        observer.observed = [copy.deepcopy(value), copy.deepcopy(value)]
+        self.assertEqual(observer.compare(Policy()), [])
+        for key in value:
+            observer.observed[1] = {**value, key: False}
+            self.assertTrue(observer.compare(Policy()), key)
+
     def test_listener_observer_detects_health_capability_storage_and_unexpected_requests(self):
         from cases.web_listener import Readonly
         observer = Readonly(None, None)
@@ -234,6 +246,33 @@ class Comparators(unittest.TestCase):
         self.assertNotIn('helper_cases', wrong)
         self.assertEqual(auxiliary_cases(results), {'H770'})
         self.assertEqual(first['state'], 'go-unimplemented')
+
+    def test_version_405_json_approval_preserves_allow_storage_and_exact_public_payload(self):
+        from config_finding_resolutions import annotate
+        description = 'The method is not allowed for the requested URL.'
+        item = {'case': 'R228-F01', 'variant': '', 'route': 'GET /api/version', 'group': 'settings-sync',
+                'status': 'open', 'python_status': 405, 'go_status': 405, 'differences': [], 'remaining_differences': [
+                    {'path': 'headers.content-type', 'kind': 'value', 'python': 'text/html; charset=utf-8', 'go': 'application/json'},
+                    {'path': 'body', 'kind': 'type', 'python': ['<!doctype html>', '<html lang=en>',
+                        '<title>405 Method Not Allowed</title>', '<h1>Method Not Allowed</h1>', '<p>' + description + '</p>'],
+                     'go': {'success': False, 'message': description}}]}
+        self.assertEqual(annotate([copy.deepcopy(item)])[0]['status'], 'accepted')
+        for mutation in ('group', 'case', 'route', 'variant', 'status', 'success', 'message', 'extra-field', 'allow', 'SQL', 'file'):
+            wrong = copy.deepcopy(item)
+            if mutation in ('group', 'case', 'route', 'variant'):
+                wrong[mutation] += 'wrong'
+            elif mutation == 'status':
+                wrong['go_status'] = 400
+            elif mutation == 'success':
+                wrong['remaining_differences'][1]['go']['success'] = 0
+            elif mutation == 'message':
+                wrong['remaining_differences'][1]['go']['message'] = 'wrong'
+            elif mutation == 'extra-field':
+                wrong['remaining_differences'][1]['go']['extra'] = False
+            else:
+                path = {'allow': 'headers.allow', 'SQL': 'setup.readonly-go.database', 'file': 'files.web-listener.json'}[mutation]
+                wrong['remaining_differences'].append({'path': path, 'kind': 'value', 'python': 'old', 'go': 'wrong'})
+            self.assertEqual(annotate([wrong])[0]['status'], 'open', mutation)
 
     def test_repair_attribution_requires_actual_success_and_keeps_raw_evidence(self):
         from config_finding_resolutions import annotate

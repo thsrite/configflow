@@ -6,6 +6,9 @@ Unreachable/earlier-guard branches are deliberately absent.
 """
 
 LINKS = {
+    **{case: ('POST /api/settings/web-port', ('H1088',)) for case in ('R206-F09', 'R206-F10', 'R206-F11', 'R206-F12')},
+    'R206-F13': ('POST /api/settings/web-port', ('H1104',)),
+    'R206-F16': ('POST /api/settings/web-port', ('H1109',)),
     'R206-F14': ('POST /api/settings/web-port', ('H1105',)),
     'R093-F10': ('DELETE /api/nodes/<node_id>', ('H796',)),
     'R093-F11': ('DELETE /api/nodes/<node_id>', ('H796',)),

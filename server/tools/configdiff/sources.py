@@ -1,5 +1,6 @@
 """Stateful loopback subscription/rule HTTP source; no external requests."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import socket
 import threading
 
 
@@ -7,7 +8,7 @@ FEED = b'proxies:\n  - {name: synthetic-node, type: socks5, server: 192.0.2.1, p
 
 
 class Source:
-    def __init__(self, body=FEED):
+    def __init__(self, body=FEED, *, host='127.0.0.1', port=0):
         self.requests, self.body = [], body
         self.status = 200
         self.omit_content_length = False
@@ -62,8 +63,15 @@ class Source:
                         self.wfile.write(body)
                     except (BrokenPipeError, ConnectionResetError):
                         pass  # Size-limit consumers may close immediately after headers.
-        self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-        self.url = 'http://127.0.0.1:' + str(self.server.server_port)
+        server_type = ThreadingHTTPServer
+        if host == '::1':
+            class IPv6Server(ThreadingHTTPServer):
+                address_family = socket.AF_INET6
+            server_type = IPv6Server
+        elif host != '127.0.0.1':
+            raise ValueError('synthetic source must use IPv4 or IPv6 loopback')
+        self.server = server_type((host, port), Handler)
+        self.url = 'http://' + ('[::1]' if host == '::1' else host) + ':' + str(self.server.server_port)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
     def __enter__(self):

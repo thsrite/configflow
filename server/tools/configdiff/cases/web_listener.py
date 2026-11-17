@@ -56,8 +56,7 @@ class Readonly(Stable):
         return super().compare(policy) + differences(*self.observed, 'listener.readonly', policy)
 
 
-@contextmanager
-def deployment(binary, recorder):
+def require_listener_mount():
     require_native_network()
     source = os.environ.get('CONFIGDIFF_LISTENER_SOURCE', '')
     mounted = any(len(parts) > 4 and parts[4] == '/etc/nginx'
@@ -65,6 +64,11 @@ def deployment(binary, recorder):
     if (os.environ.get('CONFIGDIFF_ISOLATED_LISTENER') != '1' or not mounted
             or not re.fullmatch('/tmp/configdiff-listener[.][A-Za-z0-9]{6}', source) or not ROOT.samefile(source)):
         raise DesignError('listener API fixture requires private /etc/nginx from native_network.sh')
+
+
+@contextmanager
+def deployment(binary, recorder):
+    require_listener_mount()
     with Source(TOKEN.encode()) as frontend:
         port = free_port()
         ports = (frontend.server.server_port, port)

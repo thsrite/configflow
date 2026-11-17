@@ -1701,3 +1701,20 @@ current compared=15 design_errors=[] seconds=21.93；exit=0
 继续Web成功换端口/原生失败、其余路由及helper清单；最终.32全量尚未执行。未读Go业务实现、未推送、未派子agent。
 
 98批提交后rebase至go7521bb5c；behaviour-changes.md仅append冲突，保留集成分支N2原生代理决定和本批维护者Web决定两节。随后同5组15变体在.32重新执行：compared15、design_errors=[]、33.96s、exit0，84自检通过；统一报告更新该5组基线，未把其余未重跑组冒充新基线全量。
+
+## 批次 99：成功换端口的公开结果与受限Python前端peer
+
+- R206-S01新增1变体实际相比通过。Go始终是真正公开frontend/native listener；Python受限CLI peer只接受精确`-c /etc/nginx/nginx.conf -t`与`-s reload`，通过带合成Bearer的回环controller录制check/reload。controller验证metadata字段、32hex健康能力、精确生成body（监听端口/IPv6/upstream实际端口），再切换双栈HTTP fake。没有启动真实Nginx或执行shell。private mount namespace中将peer临时绑定到Nginx可执行路径，退出卸载；宿主二进制/配置/服务不变。
+- 真实API返回200及保存的目标port；双栈新端口200、相同新健康token且相对旧值轮换、页面字节与合成frontend index相同、旧端口不再接入。全SQL不动，仅web-listener.json更新（600），其余DATA_DIR文件精确不变；Python生成配置与实际peer服务能力/上游字段完整对应。Go不模拟Nginx文件，按维护者原生替代决定比较公开结果和保存状态；真实Nginx叠加仍O9/O14容器部分覆盖。
+- Source新增显式loopback host/port选项以构建双栈peer，默认行为不变，非回环host在绑定前拒绝。新Switch比较器故意错SQL、无新监听、坏/未轮换token、单栈、错误页面、旧端口残留或错CLI序列均失败。现86项自检通过（含下条精确JSON迁移门禁）。
+- 四组60变体（Web成功/状态/占用与settings-sync）复跑：59compared、R228-F01严格different1。该POST版本接口405从HTML转JSON，精确命中已批准Step B #3；只接受同405、准确公开message和success=false、只有content-type/body两条差异。Allow、状态、group/route/case/variant、额外JSON、SQL/files差异会重开；为该请求增Stable独立SQL/files不变观察，保留完整原始diff，未全局忽略错误页。findings现closed81/accepted6/open18/O12单列1。
+- H1088/H1104/H1109以实际重跑的settings校验/保留端口/无部署三个Python分支关联，新增H3不增加请求。统一9344变体、原R4287（S689/F2665/B933）、H576、G16；原R仍差243、H仍差536，另有partial/不可达槽及长流程。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups web-listener-complete-switch,web-listener-complete-readonly,web-listener-complete-occupied,settings-sync --baseline 7521bb5c
+current compared=59 different=1；accepted=1 open=0；design_errors=[] seconds=11.49；exit=0
+86 self-checks + deliberately wrong-Go-response detection OK
+独立原始报告/tmp/configdiff-web-switch.json
+```
+
+继续原生监听失败边界、MosDNS/发现选择器和其余清单；最终.32全量未执行。未派子agent/未推送/未读Go业务实现。

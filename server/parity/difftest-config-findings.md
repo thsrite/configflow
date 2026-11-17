@@ -108,6 +108,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R222-S02 / disabled | `GET /api/subscriptions/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
 | R222-S03 / http403-cache-fallback | `GET /api/subscriptions/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
 | R222-S04 / none | `GET /api/subscriptions/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
+| R228-F01 /  | `GET /api/version` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 7521bb5c | 405 / 405 |
 | T06 / 12-second-last-good-and-background-finish | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
 | T06 / 20-clients-one-flight | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] / [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200] |
 | T06 / next-poll-is-fresh | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
@@ -181,6 +182,15 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `body.message` | value | '订阅「订阅甲🧪」准备失败：Provider 代理必须是含非空 name 的对象\n字段：proxies[0]\n内容来源：本次订阅返回的内容\n位置：第 1 行，第 11 列\n出错内容：proxies: [bad]' | '订阅「订阅甲🧪」准备失败：Provider 代理必须是含非空 name 的对象\n字段：proxies[0]\n内容来源：本次订阅返回的内容' |
+
+## R228-F01 /
+
+路由：`GET /api/version`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `headers.content-type` | value | 'text/html; charset=utf-8' | 'application/json' |
+| `body` | type | ['<!doctype html>', '<html lang=en>', '<title>405 Method Not Allowed</title>', '<h1>Method Not Allowed</h1>', '<p>The method is not allowed for the requested URL.</p>'] | {'message': 'The method is not allowed for the requested URL.', 'success': False} |
 
 ## R016-B02 /
 

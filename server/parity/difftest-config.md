@@ -2004,4 +2004,4 @@ H037以真实Node的stdin语法检查作为可重复外部工具夹具：wrapper
 
 维护者已明确：Go 通过 `CONFIGFLOW_FRONTEND_DIR` 原生提供前端并取代 Nginx；API-only Go 不可作为完整Python部署的对照。R206-F17/F18/F19 的Nginx专属故障列partial，Go侧验证原生监听失败后的配置不变、清楚中文、旧端口可访问；不比较Nginx自身错误文本。真实Nginx+Flask叠加属于.32容器实验/O9/O14，不在Step B中做。见[behaviour-changes.md · Go取代Nginx](behaviour-changes.md#go-取代-nginxweb-监听端口的验收边界)。
 
-当前新fixture由公开入口启动真正Go frontend；Python前端HTTP peer为回环fake、监听配置文件位于私有mount namespace，只做不调用Nginx的状态/同端口noop/绑定前占用拒绝。此fixture不声称覆盖Python真实重载或Go成功换端口；这些尚待进一步实现。已撤回不等价API-only旧夹具的13变体，不计覆盖或findings。
+当前fixture由公开入口启动真正Go frontend；Python前端HTTP peer为回环fake，配置文件位于私有mount namespace。状态/同端口noop/占用拒绝不调用Nginx；成功换端口使用受限CLI peer记录生产check/reload，并按真实生成配置切换双栈fake HTTP。比较公开成功响应、新健康能力轮换、双栈新端口/相同合成页面、旧端口关闭及全SQL/保存文件；不声称覆盖真实Nginx的检查/重载。已撤回不等价API-only旧夹具的13变体，不计覆盖或findings。

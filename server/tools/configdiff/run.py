@@ -86,6 +86,8 @@ def main():
     groups.update(settings)
     from cases.web_listener import GROUPS as web_listener
     groups.update(web_listener)
+    from cases.web_switch import GROUPS as web_switch
+    groups.update(web_switch)
     from cases.webdav import GROUPS as webdav
     groups.update(webdav)
     from cases.mosdns import GROUPS as mosdns

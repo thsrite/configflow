@@ -65,7 +65,9 @@ def sync_settings(binary, recorder):
             call(199, suffix, 'POST', 'settings/dependencies/sub-store/mode', body, expect=status)
         call(200, 'F11', 'POST', 'settings/dependencies/sub-store/update', {}, expect=409)
         call(228, 'S01', 'GET', 'version', expect=200)
-        pair.request('R228-F01', 'GET /api/version', method='POST', expect=405)
+        from cases.setup import Stable
+        pair.request('R228-F01', 'GET /api/version', method='POST', expect=405,
+                     writes=True, interaction=Stable(pair))
         pair.request('R228-B01', 'GET /api/version', auth='invalid-synthetic-jwt', expect=200)
     # Old imported values must be observed, not normalized by our fixture.
     with Pair(binary, recorder, options={'system_config': {'server_domain': '',

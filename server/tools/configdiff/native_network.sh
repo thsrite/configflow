@@ -9,6 +9,7 @@ if (($# == 0)); then
   echo 'usage: native_network.sh command [args...]' >&2
   exit 2
 fi
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 exec sudo unshare --net --mount --fork bash -ceu '
   mount --make-rprivate /
   test -x /usr/sbin/nginx && test -d /etc/nginx || {
@@ -18,8 +19,9 @@ exec sudo unshare --net --mount --fork bash -ceu '
   listener_root=$(mktemp -d /tmp/configdiff-listener.XXXXXX)
   chown "$1" "$listener_root"
   mount --bind "$listener_root" /etc/nginx
-  cleanup() { umount /etc/nginx; rm -rf "$listener_root"; }
+  cleanup() { umount /usr/sbin/nginx; umount /etc/nginx; rm -rf "$listener_root"; }
   trap cleanup EXIT
+  mount --bind "$2" /usr/sbin/nginx
   ip link set lo up
-  runuser -u "$1" -- env CONFIGDIFF_ISOLATED_NETWORK=1 CONFIGDIFF_ISOLATED_LISTENER=1 CONFIGDIFF_LISTENER_SOURCE="$listener_root" "${@:2}"
-' configdiff-native-network "$(id -un)" "$@"
+  runuser -u "$1" -- env CONFIGDIFF_ISOLATED_NETWORK=1 CONFIGDIFF_ISOLATED_LISTENER=1 CONFIGDIFF_LISTENER_SOURCE="$listener_root" "${@:3}"
+' configdiff-native-network "$(id -un)" "$script_dir/nginx_peer.py" "$@"
