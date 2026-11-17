@@ -212,7 +212,7 @@ func compareRow(t *testing.T, oracle *yamltest.Oracle, entry *jsonx.Object) (msg
 		if err == nil {
 			return fmt.Sprintf("want %v, got output %s", want, compact(out)), false, true
 		}
-		if fn == "convert" && want[0] == "TypeError" && err.Error() == msgPayloadCollection {
+		if fn == "convert" && want[0] == "TypeError" && err.Error() == PayloadCollectionMessage {
 			return "", true, true
 		}
 		class := errClass(err)

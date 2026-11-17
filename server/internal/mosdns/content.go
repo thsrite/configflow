@@ -226,7 +226,7 @@ func ConvertRuleContentForMosDNS(content string, part ...string) (out string, er
 						return "", err
 					}
 					if truthy(value) {
-						return "", errors.New(msgPayloadCollection)
+						return "", errors.New(PayloadCollectionMessage)
 					}
 				}
 			}

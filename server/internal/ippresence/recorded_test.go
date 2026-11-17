@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/mosdns"
 	"configflow/internal/repo"
 )
 
@@ -87,7 +88,14 @@ func replay(t *testing.T, path string) {
 		var problems []string
 		if want := row.GetObject("err"); want != nil {
 			class := pyClass(err)
-			if err == nil || class != want.GetString("class") || err.Error() != want.GetString("msg") {
+			if test == "corpus::classical_ip_lines::1589" {
+				// N7-3c §5.7: this one scalar-payload refusal uses the native
+				// validator, without reproducing Python's internal TypeError.
+				if want.GetString("class") != "TypeError" || err == nil || err.Error() != mosdns.PayloadCollectionMessage {
+					problems = append(problems, fmt.Sprintf("native scalar-payload refusal: %v", err))
+				}
+				outcomes["native scalar-payload refusal"]++
+			} else if err == nil || class != want.GetString("class") || err.Error() != want.GetString("msg") {
 				problems = append(problems, fmt.Sprintf("python raised %s, go %v (%s)", encode(want), err, class))
 			}
 			outcomes["raise "+want.GetString("class")]++
