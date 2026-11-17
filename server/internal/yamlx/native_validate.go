@@ -102,7 +102,7 @@ func checkGraph(n *Node, path, done map[*Node]bool) error {
 					if resolved.Kind != yaml.ScalarNode {
 						label = "<collection>"
 					}
-					return nodeError(key, fmt.Sprintf(msgDuplicateKey, label, key.Line))
+					return duplicateKeyError(key, label)
 				}
 			}
 			seen[id] = append(seen[id], key)
