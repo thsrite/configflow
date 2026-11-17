@@ -496,8 +496,6 @@ def digest_tree(root):
 PY_DISABLED_THREADS = {'dns-follow', 'oxidns-ha-publish', 'ipv6-verification-scheduler', 'agent-rule-sync-loop',
                        'metrics-history-flush', 'oxidns-ranking-history', 'domain-discovery-auto',
                        'scheduled-refresh', 'router-rule-sync', 'sub-store-idle'}
-# Go lifecycle loops that are one-shot startup work Python also performs synchronously at import
-# (initialize_app -> prune_orphan_caches); the test lifecycle runs them once before serving.
 RULE_FIELDS = {'route', 'path', 'reason', 'pattern', 'tolerance', 'bracket', 'unordered'}
 
 

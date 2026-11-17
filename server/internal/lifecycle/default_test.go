@@ -107,6 +107,15 @@ func TestDefaultRuntimeProcess(t *testing.T) {
 		finish()
 		t.Fatalf("Configure abandoned active old work: %v", err)
 	}
+	lifecycle.Start(context.Background())
+	if !manualDefaultBuild {
+		receive(t, ran)
+	}
+	lifecycle.Stop(time.Second)
+	if err := lifecycle.Configure(lifecycle.Options{}); !errors.Is(err, lifecycle.ErrRunning) {
+		finish()
+		t.Fatalf("Configure abandoned earlier-generation work after restart: %v", err)
+	}
 	finish()
 	receive(t, oldDone)
 	until(t, func() bool { return lifecycle.Configure(lifecycle.Options{}) == nil })

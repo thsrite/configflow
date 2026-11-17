@@ -37,7 +37,7 @@ func Configure(opts Options) error {
 	r := defaultRuntime
 	r.mu.Lock()
 	g := r.current
-	running := defaultStarting || g != nil && (g.active > 0 || g.runners > 0 || !g.closed && (g.started || g.draining))
+	running := defaultStarting || r.pending > 0 || g != nil && !g.closed && (g.started || g.draining)
 	r.mu.Unlock()
 	if running {
 		return ErrRunning

@@ -49,6 +49,7 @@ type Runtime struct {
 	drain     func(context.Context) error
 	current   *generation
 	busy      map[string]bool
+	pending   int // active work and loop drivers across every generation
 }
 
 // NewRuntime constructs an independent runtime without starting background work.
@@ -149,30 +150,40 @@ func (r *Runtime) startEligible() {
 		}
 		g.drivers[p.Name] = true
 		g.runners++
+		r.pending++
 		go r.drive(g, p)
 	}
 	for _, l := range snapshot.legacy {
-		if g.drivers[l.name] {
+		if g.drivers[l.name] || r.busy[l.name] {
 			continue
 		}
 		g.drivers[l.name] = true
+		r.busy[l.name] = true
 		g.runners++
+		r.pending++
 		go r.runLegacy(g, l)
 	}
 }
 
-func (r *Runtime) finishRunner(g *generation, name string) {
+func (r *Runtime) finishRunner(g *generation, name string, legacy bool) {
 	if recover() != nil {
 		logger.Errorf(msgTaskPanic, name)
 	}
 	r.mu.Lock()
 	g.runners--
+	r.pending--
+	if legacy {
+		delete(r.busy, name)
+	}
 	r.notify(g)
 	r.mu.Unlock()
+	if legacy {
+		r.startEligible()
+	}
 }
 
 func (r *Runtime) runLegacy(g *generation, l loop) {
-	defer r.finishRunner(g, l.name)
+	defer r.finishRunner(g, l.name, true)
 	ctx := context.WithValue(g.loops, generationKey{}, g)
 	l.run(ctx)
 }
@@ -197,7 +208,7 @@ func (r *Runtime) pause(ctx context.Context, d time.Duration, wake *Signal) bool
 }
 
 func (r *Runtime) drive(g *generation, p Periodic) {
-	defer r.finishRunner(g, p.Name)
+	defer r.finishRunner(g, p.Name, false)
 	if !r.pause(g.loops, p.FirstDelay, p.Wake) {
 		return
 	}
@@ -267,6 +278,7 @@ func (r *Runtime) round(ctx context.Context, g *generation, p Periodic) (err err
 	}
 	r.busy[p.Name] = true
 	g.active++
+	r.pending++
 	r.notify(g)
 	r.mu.Unlock()
 	work, finish := r.workContext(ctx, g, true)
@@ -281,6 +293,7 @@ func (r *Runtime) round(ctx context.Context, g *generation, p Periodic) (err err
 		r.mu.Lock()
 		delete(r.busy, p.Name)
 		g.active--
+		r.pending--
 		r.notify(g)
 		r.mu.Unlock()
 	}()
@@ -301,6 +314,7 @@ func (r *Runtime) Spawn(ctx context.Context, name string, fn func(context.Contex
 		return ErrStopping
 	}
 	g.active++
+	r.pending++
 	r.notify(g)
 	r.mu.Unlock()
 	work, finish := r.workContext(ctx, g, true)
@@ -314,6 +328,7 @@ func (r *Runtime) Spawn(ctx context.Context, name string, fn func(context.Contex
 			emitEvent(r.clock.Now(), name, "job-end")
 			r.mu.Lock()
 			g.active--
+			r.pending--
 			r.notify(g)
 			r.mu.Unlock()
 		}()
