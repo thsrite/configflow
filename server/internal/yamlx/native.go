@@ -87,7 +87,7 @@ func Marshal(v any) (data []byte, err error) {
 		return nil, err
 	}
 	n = copyGraph(n, map[*Node]*Node{})
-	prepareStrings(n, map[*Node]bool{})
+	prepareStrings(n, map[*Node]bool{}, false)
 	var b bytes.Buffer
 	e := yaml.NewEncoder(&b)
 	e.SetIndent(2)
@@ -179,7 +179,7 @@ func copyGraph(n *Node, memo map[*Node]*Node) *Node {
 	return &c
 }
 
-func prepareStrings(n *Node, seen map[*Node]bool) {
+func prepareStrings(n *Node, seen map[*Node]bool, flow bool) {
 	if n == nil || seen[n] {
 		return
 	}
@@ -221,6 +221,7 @@ func prepareStrings(n *Node, seen map[*Node]bool) {
 			}
 		}
 	}
+	preserveScalarTag(n, flow)
 	protectString(n)
 	// The Node encoder bypasses yaml.v3's string encoder's YAML 1.1 quoting.
 	// Ask that encoder for the style instead of introducing another resolver.
@@ -233,9 +234,9 @@ func prepareStrings(n *Node, seen map[*Node]bool) {
 		}
 	}
 	for _, c := range n.Content {
-		prepareStrings(c, seen)
+		prepareStrings(c, seen, flow || n.Style&yaml.FlowStyle != 0)
 	}
-	prepareStrings(n.Alias, seen)
+	prepareStrings(n.Alias, seen, flow)
 }
 
 var timeType = reflect.TypeFor[time.Time]()
@@ -344,4 +345,35 @@ func yamlFieldType(t reflect.Type, key string) reflect.Type {
 		}
 	}
 	return inlineMap
+}
+
+// preserveScalarTag lets yaml.v3 choose plain style when its native resolver
+// agrees with the node's tag. In flow context the emitter may nevertheless quote
+// a plain scalar (e.g. a timestamp containing spaces/colons) after deciding to
+// omit its tag. Probe that native emission and make the tag explicit if needed.
+// Strings retain their quoting protection; custom and explicitly tagged nodes
+// already retain their tag in yaml.v3's encoder.
+func preserveScalarTag(n *Node, flow bool) {
+	if n.Kind != yaml.ScalarNode || n.Tag == "" || n.ShortTag() == "!!str" || n.Style&yaml.TaggedStyle != 0 {
+		return
+	}
+	plain := Node{Kind: yaml.ScalarNode, Value: n.Value}
+	if plain.ShortTag() != n.ShortTag() {
+		return
+	}
+	n.Style &^= yaml.SingleQuotedStyle | yaml.DoubleQuotedStyle | yaml.LiteralStyle | yaml.FoldedStyle
+	probe := *n
+	probe.Anchor, probe.HeadComment, probe.LineComment, probe.FootComment = "", "", "", ""
+	wrapper := Seq(&probe)
+	if flow {
+		wrapper.Style = yaml.FlowStyle
+	}
+	data, err := yaml.Marshal(wrapper)
+	if err != nil {
+		return
+	}
+	var doc Node
+	if err := yaml.Unmarshal(data, &doc); err != nil || len(doc.Content) != 1 || len(doc.Content[0].Content) != 1 || doc.Content[0].Content[0].ShortTag() != n.ShortTag() {
+		n.Style |= yaml.TaggedStyle
+	}
 }

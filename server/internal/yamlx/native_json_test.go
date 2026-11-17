@@ -84,6 +84,8 @@ func TestNativePassThroughTags(t *testing.T) {
 
 func FuzzNativeRoundTrip(f *testing.F) {
 	for _, source := range []string{
+		"{addr: x, when: 2001-01-01 10:00:00}",
+		"[!!int 100000000000000000000, !!binary YQ==, !custom value, .inf, .nan, '123']",
 		"A:\n[]: #", "A:\n{}: #", "? [one, two] # note\n: value\n",
 		"text: >-\n  with # hash\n      more\n    proxy: Pinned\n",
 	} {

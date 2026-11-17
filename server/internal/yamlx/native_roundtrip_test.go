@@ -44,3 +44,25 @@ func TestMarshalTabStringsUseDoubleQuotes(t *testing.T) {
 		}
 	}
 }
+
+func TestMarshalPreservesScalarTagsInAllLayouts(t *testing.T) {
+	for _, source := range []string{
+		"{addr: x, when: 2001-01-01 10:00:00}",
+		"[2001-01-01 10:00:00, 2001-01-01, .inf, -.inf, .nan]",
+		"{large: !!int 100000000000000000000, binary: !!binary YQ==, custom: !custom value}",
+		"['100000000000000000000', 'true', '2001-01-01', '.inf', '<<']",
+		"!!timestamp '2001-01-01 10:00:00'",
+	} {
+		t.Run(source, func(t *testing.T) {
+			n := parseNative(t, source)
+			out, err := Marshal(n)
+			if err != nil {
+				t.Fatal(err)
+			}
+			again, err := Parse(out)
+			if err != nil || !Equal(n, again) {
+				t.Fatalf("%q -> %s: %v", source, out, err)
+			}
+		})
+	}
+}
