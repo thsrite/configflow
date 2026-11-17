@@ -48,7 +48,10 @@ func pyStrOf(value any) string { return jsonx.Str(value) }
 
 // GenerateCompact is generate_compact(params, request, enrollment).
 func GenerateCompact(params, request *jsonx.Object, enrollment *Enrollment) (string, *jsonx.Object, error) {
-	data := params.GetString("data_dir")
+	data, err := guidePath(params.Value("data_dir"), "持久数据根目录", false)
+	if err != nil {
+		return "", nil, err
+	}
 	if composeDataDirRefused(data) {
 		return "", nil, valueError(composeDataDirMessage)
 	}
@@ -105,15 +108,6 @@ func GenerateCompact(params, request *jsonx.Object, enrollment *Enrollment) (str
 			"bind", flow(yamlx.Map(yamlx.Str("create_host_path"), yamlx.Bool(false))))
 	}
 	directories := func(readonly bool) []any {
-		targets := [][2]string{{"agent", "/opt/configflow-agent"}, {"oxidns", "/etc/oxidns"}, {"ha", "/var/lib/configflow-ha"}}
-		var out []any
-		if strings.Contains(data, ":") {
-			for _, item := range targets {
-				out = append(out, jsonx.Obj("type", "bind", "source", data+"/"+item[0], "target", item[1],
-					"read_only", readonly && item[0] != "ha", "bind", flow(yamlx.Map(yamlx.Str("create_host_path"), yamlx.Bool(true)))))
-			}
-			return out
-		}
 		ro := ""
 		if readonly {
 			ro = ":ro"

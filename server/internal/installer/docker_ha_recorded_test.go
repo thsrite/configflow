@@ -211,6 +211,12 @@ func replayRecorded(t *testing.T, entry *jsonx.Object) (string, string) {
 			return "unsupported enrollment", ""
 		}
 		got, err := GenerateGuide(args[0], enrollment)
+		if request, ok := args[0].(*jsonx.Object); ok && got == nil && l1CompactColonRefusal(request, err) {
+			return "deliberate (L1 D1 compact colon)", ""
+		}
+		if request, ok := args[0].(*jsonx.Object); ok && got == nil && l1CompactPathWording(request, entry.GetList("err"), err) {
+			return "deliberate (L1 D1 path wording)", ""
+		}
 		// Deliberate fix (decision 6): an Agent name with one trailing "\n".
 		if request, isObject := args[0].(*jsonx.Object); isObject && entry.Has("out") && deliberateAgentNameFix(request, err) {
 			return "deliberate (agent_name + \"\\n\")", ""

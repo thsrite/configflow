@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -60,6 +61,12 @@ func replayGenerator(row *jsonx.Object, digestBundle bool) (string, string) {
 	switch fn {
 	case "generate_compact":
 		text, info, err = GenerateCompact(params, request, enrollment)
+		if strings.Contains(params.GetString("data_dir"), ":") && err != nil && text == "" && info == nil {
+			var ve *ValueError
+			if errors.As(err, &ve) && ve.Message == l1CompactPathMessage {
+				return "deliberate (L1 D1 compact colon)", ""
+			}
+		}
 	case "generate_direct":
 		text, info, err = GenerateDirect(params, request, enrollment)
 	case "generate_bundle":

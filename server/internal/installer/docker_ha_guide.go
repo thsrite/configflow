@@ -1049,7 +1049,7 @@ func GenerateGuide(value any, enrollment *Enrollment) (*jsonx.Object, error) {
 			return nil, err
 		}
 	} else {
-		dataDir, err := guidePath(params.Value("data_dir"), "持久数据根目录", method == "compose_compact")
+		dataDir, err := guidePath(params.Value("data_dir"), "持久数据根目录", false)
 		if err != nil {
 			return nil, err
 		}

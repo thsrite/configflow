@@ -884,6 +884,13 @@ VM lab test (with A08/A09; PVE lab, never production; Go server serving the guid
 
 Review commands (shared worktree builds): `rt -- bash -lc 'cd server && go vet ./internal/installer/ ./internal/api/agents/... && go test -count=1 ./internal/installer/ ./internal/api/agents/ && CONFIGFLOW_DIFF=1 go test -count=1 -timeout 800s -v -run "DockerHA|Installer|Download" ./internal/api/agents/difftest/'` → `ok configflow/internal/installer 145.161s`, `ok configflow/internal/api/agents 1.995s`, difftest `docker HA routes: 239 comparisons equal, 0 differ`, `download route: 120 comparisons equal, 0 differ, 12 known httpx differences`, `installer fuzz: 4538 comparisons equal, 0 differ`, `installer routes: 293 comparisons equal, 0 differ`, `ok …/difftest 20.587s`. Big runs: `rt -- bash -lc 'cd server && A10_DEFLATE_FUZZ=4000 go test -count=1 -timeout 900s -run TestReviewDeflateAndZipMatchPython -v ./internal/installer/'`; `rt -- bash -lc 'cd server && A10_CONDITIONAL_FUZZ=40000 go test -count=1 -run TestReviewConditionalMatchesWerkzeug -v ./internal/api/agents/'`. Regenerate the review corpus: `rt --back server/internal/installer/testdata/docker_ha_compose_review.jsonl.gz -- bash -lc 'PYTHONPATH=.:server/internal/installer/testdata ~/cf-test/.venv/bin/python server/internal/installer/testdata/gen_review_a10.py 3000'`.
 
+L1 D1 follow-up (2026-11-17): compact now rejects colon-bearing data directories
+before rendering/issuing capability, matching other installation methods; removed
+the ineffective long-bind special case. Four recording files explicitly classify
+the named Python difference; HTTP refusal/no-write regression, live Flask
+differential, and real Compose 5.6.1 mount tests pass on .32. See
+[L1 fixes](progress/l1-installer-fixes.md) and the behaviour ledger.
+
 ## A11 — deployment bundle, locations, Mihomo resources, generated preview
 
 **Status: `verified`** · HR · Codex port; fresh-Opus HR review 2026-11-17 (**[review-a11.md](review-a11.md)**): 9 findings fixed (0 high, 2 medium: JSON/quoted-key rule sources emptied by a private payload detector, credentials continuing on an excerpted line shown; 7 low), **0 open**. Branch `go-opus-review-a11` (author branch `go-port-a11`), rebased onto `go` `62427c41`. No push, subagent or production access. Scope is design A11-1–4; A12/A13/A14 orchestration/routes remain their owners.

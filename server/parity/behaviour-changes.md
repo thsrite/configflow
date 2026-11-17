@@ -14,6 +14,21 @@ redactor 的既有策略不变。无新接口或 UI 操作变化。
 `redact.TestPublicMetadataCredentials`。24 组非泄露类真实 Python 参照继续逐字段相等；
 泄露类单独断言安全结果，不放宽差分比较。见 [A24 复核](review-a24.md)。
 
+## L1 D1 — compact Compose 拒绝冒号数据目录
+
+协调者批准修复 Python 遗留缺陷（2026-11-17）：`compose_compact` 与其他安装方式
+统一拒绝数据目录中的 `:`，返回 400「持久数据根目录须为规范的绝对路径，不能包含
+逗号、冒号或换行」，在生成内容和签发安装凭据前停止。已有非法路径的校验提示也
+统一使用这条文案。Compose 的 `create_host_path: true` 会使用 Docker 的旧 Binds
+字符串格式，长格式 YAML 仍不能使冒号源路径可用；compact 又没有 prepare 阶段。
+
+四份原始录制语料保持不变，在比较器中仅显式认可这项路径拒绝及准确文案变化：
+`docker_ha_compose_recorded.jsonl.gz`、`docker_ha_compose.jsonl.gz`、
+`docker_ha_compose_review.jsonl.gz`、`docker_ha_recorded.jsonl.gz`。其余输出继续严格
+比较。在线 Flask 差分明确断言 Python 200/生成失效挂载并写入 capability，与 Go
+400/不写入 capability 的差异。真实 Docker Compose 挂载测试见
+[L1 修复记录](progress/l1-installer-fixes.md)。
+
 ## N8-1 — non-finite JSON response numbers (Python bug fix)
 
 Coordinator decision, 2026-11-17; design/n7-n8.md §2.6 clarification.
