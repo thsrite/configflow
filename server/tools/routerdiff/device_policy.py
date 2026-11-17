@@ -40,7 +40,8 @@ def invalid_variants():
 def invalid_cases(label, entry, message):
     body = {'profile_id': 'alpha', 'ip': '10.44.0.22', 'name': 'must not persist', 'mode': '',
             'previous_name': '', 'previous_mode': '', 'base_url': ''}
-    return tuple(Case(route + '/stored-policy-' + label, route, method, path, 400, (entry,),
+    return tuple(Case(route + '/stored-policy-' + label, route, method, path, 400,
+        (entry,) + (('H1261', 'H1262') if route == 'R003' else ()),
         document=body if method == 'PUT' else None, message=message)
         for route, method, path in (('R002', 'GET', '/api/client-devices'),
                                    ('R003', 'PUT', '/api/client-devices'),
@@ -52,6 +53,32 @@ def worlds():
     for label, rows, entry, message in invalid_variants():
         options = {'alpha': {'routers': {'items': [router()]}, 'oxidns': {'device_policies': rows}}}
         items = invalid_cases(label, entry, message)
+        result.append(('stored-policy-' + label, options, (lambda items=items: items,)))
+    return result
+
+
+def invalid_ip_worlds():
+    row = {'ip': '10.44.0.21', 'name': '合法旧备注🧪', 'mode': 'smart'}
+    groups = (
+        ('H0071', (None, 0, False, [], {})),
+        ('H0072', ('', 'bad', '10.44.0.1/1/2', '10.44.0.1%lo', '地址', '１０.４４.０.１')),
+        ('H0073', ('10.44.0.1/', '10.44.0.1/-1', '10.44.0.1/+1', '10.44.0.1/3a',
+                   '10.44.0.1/0001', '10.44.0.1/ 24', '10.44.0.1/２４')),
+        ('H0074', ('10.44.0.1/33', 'fd42:cf::1/129')),
+        ('H0075', ('::ffff:10.44.0.1/95',)),
+        ('H0076', ('224.0.0.1', '224.0.0.1/24', 'ff02::1', 'ff02::1/64')),
+        ('H0077', ('0.0.0.0', '0.0.0.0/32', '::', '::/128')),
+        ('H0078', ('10.44.0.999', '1:2:3:4:5:6:7:8:9')),
+    )
+    values = [('missing', {key: value for key, value in row.items() if key != 'ip'}, 'H0071')]
+    values += [(entry + '-' + str(index), {**row, 'ip': value}, entry)
+               for entry, candidates in groups for index, value in enumerate(candidates)]
+    result = []
+    for label, bad_row, entry in values:
+        label = 'ip-' + label
+        options = {'alpha': {'routers': {'items': [router()]}, 'oxidns': {'device_policies': [bad_row]}}}
+        items = invalid_cases(label, entry,
+            '请输入有效的客户端 IPv4、IPv6 或 CIDR 网段，例如 192.168.50.0/24。')
         result.append(('stored-policy-' + label, options, (lambda items=items: items,)))
     return result
 
@@ -86,3 +113,7 @@ def capacity_options():
 def capacity():
     yield Case('R002/stored-policy-512-accepted', 'R002', 'GET', '/api/client-devices', 200,
         ('R002-S01', 'H0085'), checks={'editable': True, 'devices/511': {'ip': '10.49.1.255', 'name': '策略🧪', 'mode': 'smart'}})
+    yield Case('R003/policy-513-growth-refused-atomically', 'R003', 'PUT', '/api/client-devices', 400,
+        ('H0080', 'H1261', 'H1262'), document={'profile_id': 'alpha', 'ip': '10.77.0.250',
+        'name': '不得半存🧪', 'mode': 'direct', 'previous_name': '', 'previous_mode': '', 'base_url': ''},
+        message='设备策略必须为列表，最多 512 条策略。')

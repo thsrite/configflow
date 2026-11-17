@@ -159,6 +159,8 @@ def client_draft():
     base = {'profile_id': 'alpha', 'ip': '10.44.0.21', 'name': '设备🧪', 'mode': '',
             'previous_name': '', 'previous_mode': '', 'base_url': ''}
     def case(label, body, message, *entries, status=400):
+        if 'R003-F12' in entries:
+            entries += ('H1261', 'H1262')
         return invalid('R003', 'PUT', '/api/client-devices', label, body, message, entries, status)
     for field in base:
         body = dict(base)

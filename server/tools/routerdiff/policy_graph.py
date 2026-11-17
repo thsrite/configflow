@@ -147,7 +147,7 @@ def guard_cases(label, reason, helpers=()):
             ('R002-F12', 'H0086', 'H0100', 'H0101') + helpers,
             checks={'editable': False, 'reason': reason, 'devices': [row], 'side_entries': []}),
         Case('R003/native-policy-mode-refused-' + label, 'R003', 'PUT', '/api/client-devices', 400,
-            ('R003-F15', 'H0086') + helpers, document={**body, 'name': 'must not half-save', 'mode': 'direct'}, message=reason),
+            ('R003-F15', 'H0086', 'H1261', 'H1262') + helpers, document={**body, 'name': 'must not half-save', 'mode': 'direct'}, message=reason),
         Case('R003/native-policy-name-only-' + label, 'R003', 'PUT', '/api/client-devices', 200,
             ('R003-S08',), document={**body, 'name': '仍可改名🧪'}, unchanged=False, effect='profile-write',
             retained_fields=('oxidns', 'routers', 'client_fixed_ips'),

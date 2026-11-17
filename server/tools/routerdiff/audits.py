@@ -161,6 +161,10 @@ def declared():
                                                    'empty', 'upper', 'proxy', 'missing')),
     }
     for ident, labels in policy_variants.items():
+        required = tuple(('stored-policy-' + label, route + '/stored-policy-' + label, 400)
+                         for label in labels for route in ('R002', 'R003', 'R014'))
+        if ident == 'H0080':
+            required += (('stored-policy-capacity', 'R003/policy-513-growth-refused-atomically', 400),)
         audits[ident] = Audit(
             ('backend/common/oxidns_device_policy.py:54', 'backend/common/device_notes.py:36',
              'backend/common/client_devices.py:18', 'backend/routers/policy_workspace.py:18',
@@ -171,10 +175,10 @@ def declared():
             'families require explicit variants, including every C0 control, canonical mapped/network '
             'duplicates and missing mode. DEL is accepted and removed only for legacy policy names, '
             'with a separate successful read/rename fixture; it is not confused with normalize_name. '
-            '512 rows and80 Unicode characters are separate positive controls. These helper audits do '
+            '512 rows and80 Unicode characters are separate positive controls; H0080 additionally '
+            'requires a real write growing512 valid rows to513, with no partial note/policy commit. These helper audits do '
             'not claim every policy graph mutation or all public router call sites.',
-            tuple(('stored-policy-' + label, route + '/stored-policy-' + label, 400)
-                  for label in labels for route in ('R002', 'R003', 'R014')))
+            required)
     client_successes = {
         'S01': (('client-drafts', 'R003-S01/0'), ('notes-capacity', 'R003/notes-2048-freed-slot-accepted')),
         'S02': (('client-drafts', 'R003-S02/1'), ('client-drafts', 'R003-S02/3'),
@@ -736,6 +740,29 @@ def declared():
     audits['R002-S03'] = Audit(client_sources, 'Both real alpha/beta OxiDNS Agent pins, with response header still reflecting the selected request profile.', agent_pin_ok)
     audits['R004-S04'] = Audit(client_sources, 'Actual beta-pinned discovery with no routers returns unsupported/empty data and real timestamp, selected header alpha.', discovery_pin_ok)
     audits['R003-B06'] = Audit(client_sources, 'Valid foreign-profile and missing Agent queries cannot change PUT scope; both write alpha notes only and retain all DNS/binding/foreign state.', query_writes)
+    raw_policy_errors = tuple(('stored-policy-' + label, 'R003/stored-policy-' + label, 400)
+                              for labels in policy_variants.values() for label in labels)
+    raw_ip_labels = ('missing',) + tuple(ident + '-' + str(index) for ident, values in invalid_ranges.items()
+                                        for index in range(len(values))) + ('H0078-0', 'H0078-1')
+    raw_ip_errors = tuple(('stored-policy-ip-' + label, 'R003/stored-policy-ip-' + label, 400)
+                          for label in raw_ip_labels)
+    growth_errors = (('notes-capacity', 'R003/notes-2049-refused-atomically', 400),
+                     ('notes-capacity', 'R003/notes-2049-policy-change-rollback', 400),
+                     ('stored-policy-capacity', 'R003/policy-513-growth-refused-atomically', 400))
+    settings_errors = normalizer_failures + raw_policy_errors + raw_ip_errors
+    settings_errors += audits['R003-F15'].requirements + growth_errors + good_draft
+    for ident in ('H1261', 'H1262'):
+        audits[ident] = Audit(client_sources + ('backend/common/oxidns_device_policy.py:54',
+                                               'backend/common/device_notes.py:18'),
+            'All routers-inventory OxidnsSettingsError families at R003:127 request normalizer inputs, '
+            '65 raw policy shape/name/mode/duplicate cases,32 bad stored-IP/missing-field contexts, '
+            '120 native graph/settings/ownership refusals, actual512→513 policy growth, notes2048→2049 '
+            'with and without a simultaneous DNS policy rewrite, and a fresh success control. All '
+            'refusals compare complete DB/files/devices unchanged; the latter note failure occurs '
+            'after preparing the policy and must roll both changes back. Invalid stored device_notes '
+            'cannot pass public import/loading (separately proven), so not forged into this HTTP '
+            'catch. Does not claim all shared C22 normalizer internals outside the routers file inventory '
+            'or repository/transaction errors, which have separate parent entries.', settings_errors)
     return audits
 
 

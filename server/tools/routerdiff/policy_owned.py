@@ -82,7 +82,7 @@ def guard_cases(label, rows, helper, reason):
         Case('R002/native-owned-' + label, 'R002', 'GET', '/api/client-devices', 200,
             ('R002-F12', helper, 'H0100', 'H0101'), checks={'editable': False, 'reason': reason, 'devices': [row]}),
         Case('R003/native-owned-mode-refused-' + label, 'R003', 'PUT', '/api/client-devices', 400,
-            ('R003-F15', helper), document={**body, 'name': 'must not half-save',
+            ('R003-F15', helper, 'H1261', 'H1262'), document={**body, 'name': 'must not half-save',
                                           'mode': 'smart' if rows else 'direct'}, message=reason),
         Case('R003/native-owned-note-only-' + label, 'R003', 'PUT', '/api/client-devices', 200,
             ('R003-S08',), document={**body, 'name': '仍可改名🧪'}, unchanged=False, effect='profile-write',

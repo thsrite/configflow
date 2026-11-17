@@ -79,7 +79,10 @@ def notes_capacity():
     base = {'profile_id': 'alpha', 'ip': '10.48.0.21', 'name': '新备注🧪', 'mode': '',
             'previous_name': '', 'previous_mode': '', 'base_url': ''}
     yield Case('R003/notes-2049-refused-atomically', 'R003', 'PUT', '/api/client-devices', 400,
-        ('H0069',), document=base, message='设备备注必须为对象，最多 2048 条。')
+        ('H0069', 'H1261', 'H1262'), document=base, message='设备备注必须为对象，最多 2048 条。')
+    yield Case('R003/notes-2049-policy-change-rollback', 'R003', 'PUT', '/api/client-devices', 400,
+        ('H0069', 'H1261', 'H1262'), document={**base, 'mode': 'direct'},
+        message='设备备注必须为对象，最多 2048 条。')
     yield Case('R003/notes-2048-replace-existing', 'R003', 'PUT', '/api/client-devices', 200,
         ('R003-S08',), document={**base, 'ip': '10.47.0.0', 'previous_name': '备注🧪'},
         unchanged=False, effect='profile-write', retained_fields=('oxidns', 'routers', 'client_fixed_ips'),

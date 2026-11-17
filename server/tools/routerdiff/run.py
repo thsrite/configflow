@@ -790,6 +790,7 @@ def main():
               ('auth-off-sync', auth_off(sync.options()), (sync.manual_refresh,)),
               ('stored', fixtures.stored_options(), (fixtures.receipts, fixtures.stored_guards))]
     worlds += device_policy.worlds()
+    worlds += device_policy.invalid_ip_worlds()
     worlds += policy_graph.worlds()
     worlds += policy_owned.worlds()
     worlds += policy_side.worlds()

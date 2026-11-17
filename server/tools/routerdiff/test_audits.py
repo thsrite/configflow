@@ -22,6 +22,31 @@ import forwarding_guards
 
 
 class AuditTests(unittest.TestCase):
+    def test_client_settings_error_parent_requires_stored_contexts_and_atomic_growth(self):
+        actual = {('guards', case.ident): case for case in guards.client_draft()}
+        for world, group in (('client-drafts', workflows.client_drafts), ('notes-capacity', fixtures.notes_capacity),
+                             ('stored-policy-capacity', device_policy.capacity)):
+            actual.update({(world, case.ident): case for case in group()})
+        factories = (device_policy.worlds, device_policy.invalid_ip_worlds, policy_graph.worlds,
+                     policy_owned.worlds, policy_invalid.worlds)
+        for factory in factories:
+            actual.update({(world, case.ident): case for world, _, groups in factory()
+                           for group in groups for case in group()})
+        for ident in ('H1261', 'H1262'):
+            required = declared()[ident].requirements
+            self.assertEqual(len(required), 348)
+            for world, name, status in required:
+                case = actual[world, name]
+                self.assertIn(ident, case.entries)
+                self.assertEqual(case.expected, status)
+                if status == 400:
+                    self.assertTrue(case.unchanged)
+            evidence = [{'world': world, 'case': name, 'entries': [ident], 'python': {'status': status},
+                         'status': 'go-unimplemented'} for world, name, status in required]
+            self.assertEqual(evaluate(evidence)[ident]['audit'], 'variants-audited')
+            without_growth = [row for row in evidence if 'growth' not in row['case']]
+            self.assertEqual(evaluate(without_growth)[ident]['audit'], 'variants-pending')
+
     def test_client_wrapper_audits_require_true_method_scope_and_every_shape(self):
         actual = {('guards', case.ident): case for group in (guards.client_draft, cases.body_guards) for case in group()}
         for world, group in (('agent-scope', fixtures.agent_scope), ('client-drafts', workflows.client_drafts),
@@ -119,7 +144,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24 + 1 + 13)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24 + 1 + 13 + 2)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'
@@ -191,6 +216,7 @@ class AuditTests(unittest.TestCase):
         audits = declared()
         actual = {(world, case.ident): case for world, _, groups in device_policy.worlds()
                   for group in groups for case in group()}
+        actual.update({('stored-policy-capacity', case.ident): case for case in device_policy.capacity()})
         for number in range(80, 85):
             ident = 'H' + str(number).zfill(4)
             for world, name, status in audits[ident].requirements:

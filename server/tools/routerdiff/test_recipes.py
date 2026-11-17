@@ -100,7 +100,7 @@ class RecipeTests(unittest.TestCase):
     def test_stored_policy_worlds_have_explicit_sources_and_all_public_callers(self):
         _, entries = load()
         seen = set()
-        for world, options, groups in device_policy.worlds():
+        for world, options, groups in device_policy.worlds() + device_policy.invalid_ip_worlds():
             rows = [case for group in groups for case in group()]
             self.assertEqual({case.route for case in rows}, {'R002', 'R003', 'R014'})
             for case in rows:

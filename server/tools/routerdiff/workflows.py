@@ -18,7 +18,7 @@ def client_drafts():
         ('S05', '新备注🧪', ''), ('S08', '仅改备注🧪', ''), ('S07', '', '')]):
         body = {**base, 'name': name, 'mode': mode, 'previous_name': previous_name, 'previous_mode': previous_mode}
         yield Case('R003-' + entry + '/' + str(index), 'R003', 'PUT', '/api/client-devices', 200,
-                   ('R003-' + entry,) + (('H1257', 'H1258', 'H1259', 'H1260') if index == 0 else ()), document=body, unchanged=False, effect='profile-write',
+                   ('R003-' + entry,) + (('H1257', 'H1258', 'H1259', 'H1260', 'H1261', 'H1262') if index == 0 else ()), document=body, unchanged=False, effect='profile-write',
                    checks={'success': True, 'profile_id': 'alpha',
                            'devices': [{'ip': base['ip'], 'name': name, 'mode': mode}] if name or mode else []},
                    formats={'oxidns_revision': r'[0-9a-f]{64}'})

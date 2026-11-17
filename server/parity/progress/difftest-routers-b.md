@@ -1,15 +1,25 @@
 # Routers Step B — independent public HTTP differential
 
-Status: in progress. Branch go-difftest-routers-b, base go 62427c41.
+Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
+Latest clean integration rebase: go15173872f; normal public binary built from it.
+Current declarations:398 source-reviewed variant audits,1903 remaining if all
+completed increments are composed. Last FULL composition still37937739:3054
+recipes/301 audits. Newer subsets do not replace that full evidence; latest
+large subset2470 recipes/327 audits. All observed26 domain routes remain absent
+from the actual Go public manifest, so no native domain parity is claimed.
+Final composition, gate.sh and final rebase are pending. History follows below.
 Previous task go-n8-3 is frozen; do not modify that branch. No subagents/push.
-Only .32 via rt; .63 unavailable. Synthetic fixtures only, isolated loopback
+.32 and .64 are equivalent; runs currently pinned to .64 through rt. Domain
+fixtures are synthetic only; authorized final gate.sh may read the offline
+private snapshot but reports only proddiff new/stale/self-check summaries.
+Isolated loopback
 RouterOS/iKuai/Agent/rule URL/proxy/WebDAV fakes; separate namespaces/fake state
 and DATA_DIR per public Python/Go server. Do not read Go implementation in
 internal/routers, routersplit, devhttp (or other internal business packages).
 Allowed references: difftest harness, public server entry, Python source, routes,
 frontend APIs, domain matrix. Findings go to porters; never fix implementation.
 
-Required matrix: parity/difftest-routers.md (2049 lines; O6 approved with
+Required matrix: parity/difftest-routers.md (2062 current lines; O6 approved with
 additions). 26 routes, 2301 named design entries, not request/pass counts.
 Reads completed: AGENT-BRIEF; WORKFLOW Independent acceptance; full matrix
 lines 1–2049, including all 1356 H rows and complete O6 review/additions. Config
@@ -1453,3 +1463,27 @@ No active command. Last full composition remains37937739,3054 recipes/301 audits
 current increments are not assembled. Final gate/final rebase pending. Next
 continue stored/capacity failure contexts, remaining public route/helper/device/
 background coverage and other scoped dynamic values. Step B remains incomplete.
+
+Client settings-error transitive contexts / atomic capacity:
+-32 new stored-IP worlds ×3 actual callers=96 requests: missing member and all
+  31 type/parse/prefix/mapped/multicast/unspecified families, through R002 read,
+  R003 update and R014 workspace. These malformed rows pass real public import;
+  the API errors are not a synthetic loading bypass or a mocked helper.
+- Actual512→513 policy write refuses atomically, not just an imported513-row
+  rejection. Notes2048→2049 tested both name-only and simultaneous mode/direct
+  rewrite; the latter failure happens after policy preparation and must roll
+  DNS and name changes back together. Complete DB/files/devices remain identical.
+  H0080 now explicitly requires the real growth write, so omitting it loses proof.
+- H1261/H1262 each require348 exact inputs/controls:127 request normalizer,
+  65 stored policy shape/name/mode/duplicate,32 stored IP,120 native graph/
+  settings/ownership,3 growth refusals and a fresh success. Scope is routers
+  inventory errors; not all shared C22 normalizer internals or repository/SQL
+  errors. Invalid stored notes have their already-proven public loading barrier
+  and are not forged into an HTTP fixture. Declarations398/remaining1903 if composed.
+
+.64 pilot19 requests: Ran11 tests0.379s/OK, missing19, no new bug.
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world guards --world client-drafts --world notes-capacity --world-prefix stored-policy- --world-prefix native-policy- --world-prefix native-owned- --world-prefix native-invalid- --output "$HOME/.cache/routerdiff-reports/302rx1dg/client-settings-error-parents.json"'`
+=> Ran56 tests3.266s/OK;2470 real HTTP requests, routes0/domain missing2470/
+references384/audits327/remaining1974 in this subset/complete=false. No new bug.
+No active command. Last full composition3054/301 remains unchanged. Final
+composition/gate/rebase pending; still1903 matrix entries without complete audits.
