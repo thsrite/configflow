@@ -25,9 +25,11 @@ logs="${GATE_LOGS:-$(mktemp -d "${TMPDIR:-/tmp}/gate.XXXXXX")}"
 mkdir -p "$logs"
 echo "gate: logs in $logs"; uptime
 
-# At most GATE_SLOTS full gates per test server at once (default 2): a dozen agents running full
+# At most GATE_SLOTS full gates per test server at once (default 1; the coordinator's cf-gate uses 2):
+# three concurrent gates on the 12-core .32 pushed installer/provider past the 60-minute race timeout,
+# and before that a dozen agents running full
 # -race + proddiff together pushed the load past 100 on 12 cores and produced timing-only diffs.
-slots="${GATE_SLOTS:-2}"
+slots="${GATE_SLOTS:-1}"
 mkdir -p "$HOME/rt/.gate-slots"
 waited=0
 while :; do
