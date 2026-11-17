@@ -8,7 +8,7 @@ import unittest
 
 from cases import Case, Ref
 from inventory import load
-from run import execute, poll, shape, wait_guard
+from run import execute, poll, shape, wait_guard, registered_request
 
 
 class ObservationSide:
@@ -61,6 +61,48 @@ class RunnerTests(unittest.TestCase):
         changed['database']['fields']['rows'][0][4] = json.dumps({'native_config': 'unexpected rewrite'})
         with self.assertRaisesRegex(RuntimeError, 'unrelated profile field changed at oxidns'):
             execute(pair(ObservationSide(200, before, changed)), case, set(), routes)
+
+    def test_auxiliary_http_failure_is_observed_and_blocks_dependent_mutations(self):
+        routes, _ = load()
+        class SetupSide(ObservationSide):
+            def request(self, **values):
+                if values['path'] == '/api/routers/r-ros':
+                    return super().request(**values)
+                # If an incorrect Go setup is accepted, reaching this main
+                # request makes the test fail rather than inventing its result.
+                if self.status != 200:
+                    raise AssertionError('main HTTP ran after a failed Go prerequisite')
+                return super().request(**values)
+        for status, content in ((502, {'success': False, 'message': 'real synthetic refusal'}),
+                                (200, {'success': False}), (500, 'synthetic HTML error')):
+            world = pair(SetupSide(), SetupSide(status=status, content=content))
+            case = Case('setup-failure', 'R004', 'GET', '/api/client-devices/discovery', 200,
+                        prepare=({'rpc': 'http', 'method': 'PUT', 'path': '/api/routers/r-ros',
+                                  'document': {'name': 'synthetic change'}, 'expected': 200},))
+            available = {('GET', shape(routes['R004'].path)), ('PUT', '/api/routers/{}')}
+            result = execute(world, case, available, routes)
+            self.assertEqual(result['status'], 'blocked-by-difference')
+            self.assertEqual(result['setup_observations']['go'][0]['response']['status'], status)
+            self.assertTrue(result['differences'])
+            self.assertIsNone(result['go'])
+            follow = Case('later', 'R004', 'GET', '/api/client-devices/discovery', 200)
+            self.assertEqual(execute(world, follow, available, routes)['status'], 'blocked-by-difference')
+            self.assertEqual(len(world.go.requests), 1)
+
+    def test_missing_auxiliary_route_is_classified_from_the_public_manifest(self):
+        routes, _ = load()
+        world = pair()
+        case = Case('aux-not-ported', 'R004', 'GET', '/api/client-devices/discovery', 200,
+                    prepare=({'rpc': 'http', 'method': 'PUT', 'path': '/api/routers/r-ros',
+                              'document': {'name': 'synthetic'}, 'expected': 200},))
+        result = execute(world, case, {('GET', shape(routes['R004'].path))}, routes)
+        self.assertEqual(result['status'], 'go-unimplemented')
+        self.assertIn('PUT /api/routers/r-ros', result['unimplemented_reason']['missing_routes'])
+        self.assertEqual(world.go.requests, [])
+        available = {('POST', '/api/agents/{}/heartbeat')}
+        self.assertTrue(registered_request('POST', '/api/agents/alpha/heartbeat?profile=beta', available))
+        self.assertFalse(registered_request('GET', '/api/agents/alpha/heartbeat', available))
+        self.assertFalse(registered_request('POST', '/api/agents/alpha/nested/heartbeat', available))
 
     def test_notification_prerequisites_cannot_pass_missing_or_stale_evidence(self):
         routes, _ = load()
@@ -126,7 +168,7 @@ class RunnerTests(unittest.TestCase):
         case = Case('flow', 'R001', 'GET', '/api/agents/test/upstream-routers', 200,
                     prepare=({'rpc': 'open_request', 'ident': 'owned', 'method': 'POST', 'path': '/api/test',
                               'document': {'token': Ref('preview', '/body/token')}},))
-        result = execute(world, case, {('GET', shape(routes['R001'].path))}, routes)
+        result = execute(world, case, {('GET', shape(routes['R001'].path)), ('POST', '/api/test')}, routes)
         self.assertEqual(result['status'], 'blocked-by-difference')
         self.assertEqual(world.go.requests, [])
         self.assertEqual(result['request']['preceding_abandoned_requests'][0]['document']['token'], 'python-only-token')

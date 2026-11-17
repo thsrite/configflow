@@ -19,6 +19,7 @@ import policy_view
 import returns
 import persistence
 import ipv6
+import device_policy
 from inventory import load
 from bugs import BUGS
 
@@ -27,7 +28,7 @@ class RecipeTests(unittest.TestCase):
     def test_unique_variants_and_real_design_references(self):
         routes, entries = load()
         seen = set()
-        for module in (cases, guards, workflows, fixtures, probes, releases, clients, sync, upstream, dns, gateway, disconnect, routing, policy_view, returns, persistence, ipv6):
+        for module in (cases, guards, workflows, fixtures, probes, releases, clients, sync, upstream, dns, gateway, disconnect, routing, policy_view, returns, persistence, ipv6, device_policy):
             for name in module.__dict__:
                 value = getattr(module, name)
                 if not inspect.isgeneratorfunction(value) or getattr(value, '__module__', '') != module.__name__:
@@ -41,6 +42,20 @@ class RecipeTests(unittest.TestCase):
                             self.assertTrue(reference in entries, 'unknown matrix ID: ' + reference)
                         if case.python_bug:
                             self.assertTrue(case.python_bug in BUGS, 'unknown reference-bug ID: ' + case.python_bug)
+
+    def test_stored_policy_worlds_have_explicit_sources_and_all_public_callers(self):
+        _, entries = load()
+        seen = set()
+        for world, options, groups in device_policy.worlds():
+            rows = [case for group in groups for case in group()]
+            self.assertEqual({case.route for case in rows}, {'R002', 'R003', 'R014'})
+            for case in rows:
+                self.assertNotIn(case.ident, seen)
+                seen.add(case.ident)
+                self.assertEqual(case.expected, 400)
+                self.assertTrue(set(case.entries) <= set(entries))
+                self.assertIsNotNone(case.message)
+            self.assertIn('device_policies', options['alpha']['oxidns'])
 
     def test_response_references_are_side_local(self):
         value = {'revision': cases.Ref('first', '/body/own')}

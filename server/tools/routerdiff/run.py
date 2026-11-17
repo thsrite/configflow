@@ -27,6 +27,7 @@ import policy_view
 import returns
 import persistence
 import ipv6
+import device_policy
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair
 from harness import decode_response
@@ -53,6 +54,18 @@ def registered(manifest):
     return {(method, shape(path)) for method, path in
             (line.split('\t', 1) for line in manifest.splitlines())}
 
+
+
+def registered_request(method, path, available):
+    """Match a concrete auxiliary request against the public route manifest."""
+    path = urlsplit(path).path
+    for candidate_method, template in available:
+        if candidate_method != method:
+            continue
+        pattern = re.escape(template).replace(r'\{\}', '[^/]+')
+        if re.fullmatch(pattern, path):
+            return True
+    return False
 
 def poll(side, values, expected, seconds, strict=True):
     if values['method'] != 'GET':
@@ -105,15 +118,24 @@ def wait_age(side, case):
 def execute(pair, case, available, routes):
     request = dict(method=case.method, path=case.path, document=case.document, raw=case.raw,
                    headers=case.headers, auth=case.auth)
-    observations, snapshots, flow_requests, flow_checks = {}, {}, {}, {}
+    observations, snapshots, flow_requests, flow_checks, setup_observations = {}, {}, {}, {}, {}
     missing_routes = [ident for ident in (case.route, *case.requires)
                       if (routes[ident].method, shape(routes[ident].path)) not in available]
     missing_routes += [method + ' ' + path for method, path in case.manifest_requires
                        if (method, shape(path)) not in available]
+    for control in case.prepare:
+        operation = control.get('rpc')
+        if operation not in ('http', 'assert_http', 'begin', 'open_request', 'wait_guard'):
+            continue
+        method = control.get('method', 'PUT' if operation == 'wait_guard' else 'GET')
+        path = control.get('path')
+        if isinstance(path, str) and not registered_request(method, path, available):
+            missing_routes.append(method + ' ' + path)
     implemented = not missing_routes and not pair.go.missing_effects
-    blocked_reference = None
+    prior_failed = getattr(pair.go, 'failed_prerequisites', [])
+    blocked_reference = 'Go prior mutating HTTP prerequisite failed: ' + ', '.join(prior_failed) if prior_failed else None
     for name, side in pair.sides.items():
-        if name == 'go' and not implemented:
+        if name == 'go' and (not implemented or blocked_reference):
             continue
         try:
             preparation = cases.resolve(list(case.prepare), side.observations)
@@ -125,6 +147,7 @@ def execute(pair, case, available, routes):
         before_preparation = logical_snapshot(side.rpc('snapshot')) if case.capture_before_prepare else None
         flow_requests[name] = []
         flow_checks[name] = []
+        setup_observations[name] = []
         for control in preparation:
             if control.get('rpc') == 'restart':
                 side.rpc('stop', kill=control.get('kill', False))
@@ -134,8 +157,18 @@ def execute(pair, case, available, routes):
             elif control.get('rpc') == 'http':
                 values = {key: value for key, value in control.items() if key not in ('rpc', 'expected')}
                 reply = side.request(**values)
-                if reply['status'] != control['expected'] or reply['content'].get('success') is not True:
-                    raise RuntimeError(case.ident + ': public HTTP fixture setup failed on ' + name)
+                setup_observations[name].append({'request': values, 'response': response_view(reply)})
+                valid = (reply['status'] == control['expected'] and isinstance(reply['content'], dict)
+                         and reply['content'].get('success') is True)
+                if not valid:
+                    if name == 'python':
+                        raise RuntimeError(case.ident + ': public HTTP fixture setup failed on python')
+                    blocked_reference = 'Go public HTTP prerequisite returned an unexpected response'
+                    if values['method'] not in ('GET', 'HEAD', 'OPTIONS'):
+                        if not hasattr(side, 'failed_prerequisites'):
+                            side.failed_prerequisites = []
+                        side.failed_prerequisites.append(case.ident)
+                    break
             elif control.get('rpc') == 'open_request':
                 values = {key: value for key, value in control.items() if key not in ('rpc', 'document')}
                 document = control.get('document')
@@ -167,6 +200,8 @@ def execute(pair, case, available, routes):
                 side.rpc('async', **values)
             else:
                 side.rpc('fake', **control)
+        if name == 'go' and blocked_reference:
+            break
         before = (before_preparation if before_preparation is not None else
                   side.pending[case.join]['before'] if case.join else logical_snapshot(side.rpc('snapshot')))
         try:
@@ -357,7 +392,8 @@ def execute(pair, case, available, routes):
                 if changed:
                     raise RuntimeError(case.ident + ': Python supposedly rejected/read-only request changed state: '
                                        + repr([asdict(item) for item in changed[:5]]))
-    found = []
+    found = (differences(setup_observations['python'], setup_observations['go'], '/setup-http')
+             if 'go' in setup_observations else [])
     go_bug_outcome = None
     if implemented and not blocked_reference:
         if case.html_error and observations['go']['status'] == 500 and observations['go']['kind'] == 'text':
@@ -436,6 +472,7 @@ def execute(pair, case, available, routes):
             'status': status,
             'unimplemented_reason': unimplemented_reason if not implemented else None,
             'blocked_reference': blocked_reference,
+            'setup_observations': setup_observations,
             'python': observations['python'], 'go': observations.get('go'),
             'python_bug': case.python_bug, 'python_bug_outcome': python_bug_outcome, 'go_bug_outcome': go_bug_outcome,
             'differences': [asdict(item) if not isinstance(item, dict) else item for item in found]}
@@ -491,7 +528,8 @@ def findings(path, data):
         '仅使用合成数据；两端独立 DATA_DIR、网络命名空间和设备 fake；未访问生产或真实设备。',
         '比较器会检查状态、语义响应头、类型/键/值/数组顺序、完整逻辑数据库、文件与设备状态。',
         'Python 前置条件失败单列为夹具错误，不算 Go 发现；实际比较为零时不能下“无缺陷”结论。', '']
-    changed = [result for result in data['results'] if result['status'] == 'different']
+    changed = [result for result in data['results']
+               if result['status'] == 'different' or (result['status'] == 'blocked-by-difference' and result['differences'])]
     if not changed:
         lines += ['目前没有已比较的 Go 缺陷结论。Python 参考异常单独记录；“Go 尚未实现”不算差分通过。', '']
     for result in (item for item in data['results'] if item.get('python_bug')):
@@ -521,7 +559,8 @@ def findings(path, data):
                   '- 建议负责模块：' + owner + '；设备传输差异另交 R04/R05，发布与同步交 R12/R14。',
                   '- 请求：`' + json.dumps(result['request'], ensure_ascii=False) + '`',
                   '- Python：`' + json.dumps(result['python'], ensure_ascii=False) + '`',
-                  '- Go：`' + json.dumps(result['go'], ensure_ascii=False) + '`', '',
+                  '- Go：`' + json.dumps(result['go'], ensure_ascii=False) + '`',
+                  '- 前置公开 HTTP 实际响应：`' + json.dumps(result.get('setup_observations', {}), ensure_ascii=False) + '`', '',
                   '| 路径 | Python | Go | 类别 |', '|---|---|---|---|']
         for difference in result['differences']:
             escape = lambda value: json.dumps(value, ensure_ascii=False).replace('|', '&#124;').replace('\n', '<br>')
@@ -542,6 +581,7 @@ def main():
     parser.add_argument('--allow-incomplete', action='store_true',
                         help='iteration only: allow pending coverage audits; default gate exits 2')
     parser.add_argument('--world', action='append', help='iteration only: run these named isolated worlds')
+    parser.add_argument('--world-prefix', action='append', help='iteration only: select all isolated worlds with this prefix')
     args = parser.parse_args()
     routes, _ = load()
     results = []
@@ -556,6 +596,8 @@ def main():
               ('client-canonical-names', options, (workflows.client_canonical_names,)),
               ('notes-capacity', fixtures.notes_capacity_options(), (fixtures.notes_capacity,)),
               ('client-mode-notes', options, (workflows.client_mode_notes,)),
+              ('stored-policy-legacy', device_policy.legacy_options(), (device_policy.legacy,)),
+              ('stored-policy-capacity', device_policy.capacity_options(), (device_policy.capacity,)),
               ('notes-keep-reservation', clients.options(), (clients.notes_keep_reservation,)),
               ('legacy-credentials', fixtures.legacy_credentials_options(), (fixtures.legacy_credentials,)),
               ('router-guard-normalization', options, (guards.normalized_router_guards,)),
@@ -631,11 +673,17 @@ def main():
               ('auth-off-forwarding', auth_off(fixtures.agent_options()), (fixtures.forwarding,)),
               ('auth-off-sync', auth_off(sync.options()), (sync.manual_refresh,)),
               ('stored', fixtures.stored_options(), (fixtures.receipts, fixtures.stored_guards))]
-    if args.world:
-        unknown = set(args.world) - {name for name, _, _ in worlds}
+    worlds += device_policy.worlds()
+    if args.world or args.world_prefix:
+        names = {item[0] for item in worlds}
+        unknown = set(args.world or ()) - names
         if unknown:
             parser.error('unknown isolated world: ' + ', '.join(sorted(unknown)))
-        worlds = [item for item in worlds if item[0] in args.world]
+        for prefix in args.world_prefix or ():
+            if not prefix or not any(name.startswith(prefix) for name in names):
+                parser.error('unknown or empty isolated-world prefix: ' + prefix)
+        worlds = [item for item in worlds if item[0] in (args.world or ())
+                  or any(item[0].startswith(prefix) for prefix in args.world_prefix or ())]
     available = None
     try:
         for name, options, groups in worlds:

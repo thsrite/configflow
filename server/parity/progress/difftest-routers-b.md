@@ -924,3 +924,37 @@ Notes persistence and resource retention controls:
 Both reports remain complete=false, no new Python bugs; they do not replace the
 last full composition report. No test process pending. Import rejection probes,
 remaining2013 audits, full composition, final gate/rebase remain pending.
+
+Stored-policy and prerequisite-oracle increment:
+- Added device_policy.py:65 invalid public-import worlds ×3 actual public HTTP
+  callers=195 requests, plus3 legacy/capacity positives. H0080-H0084 explicitly
+  require all source-reviewed variants. Full pass on .64; declared audits now293,
+  remaining2008 when composed, not a completed matrix.
+- Real notes import rejection probes now passed (8 invalid variants). Invalid
+  notes load barriers remain pending, not conveniently counted as HTTP coverage.
+- Fixed another test-oracle gap: auxiliary public setup responses were ignored on
+  success, and an actual bad Go response aborted as a fixture failure. They are
+  now recorded/compared; a failed Go setup blocks the dependent main request and
+  later state-dependent writes, with the actual response retained. Python setup
+  failure remains a genuine fixture error. Public-manifest matching separately
+  labels missing auxiliary HTTP routes Go-unimplemented (never business404).
+  Deliberate502,200/success:false and scalar-body negatives prove no abort/no
+  invented main response/no dependent mutation. Existing side-local-reference
+  negative updated with an explicit available auxiliary route, keeping the
+  original no-cross-side-value proof distinct from missing implementation.
+- Findings renderer now includes blocked prerequisites with actual differences,
+  rather than silently omitting them. Full findings file not overwritten with a
+  subset. Auxiliary native timestamps still need the planned scoped comparison;
+  this change deliberately does not mask those differences.
+
+Actual .64 commands:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_seed test_recipes test_audits; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix stored-policy- --output /tmp/routerdiff-stored-policy-audits.json'`
+=> Ran11 tests5.071s/OK;198 recipes, Go missing198, referenced9, audited5,
+remaining2296 for this isolated subset; complete=false, no new Python bugs.
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_runner test_recipes test_audits; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world stored-policy-legacy --world discovery-failures --world client-mode-notes --world notes-keep-reservation --output /tmp/routerdiff-prerequisite-guard.json'`
+=> Ran26 tests1.657s/OK; mode7(.55s), legacy9(.29s), reservation13(1.19s),
+discovery22(3.29s), Go missing22, complete=false. No pending process. Final full
+composition still pending; this is not ready for hand-back. Still2008 audits,
+dynamic comparison integration, startup-failure classification and deeper device/
+background cases remain. All final full/race/proddiff commands must use gate.sh;
+latest explicit coordinator instruction says -p4 on .64 (overrides older docs-p6).

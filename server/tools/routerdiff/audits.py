@@ -150,6 +150,31 @@ def declared():
             'Canonical accepted host/network/mapped forms and Unicode80 limits are separate positive controls; '
             'these guard audits do not claim policy graph rewriting, device I/O or all client route coverage.',
             required)
+    policy_variants = {
+        'H0080': tuple('shape-' + label for label in ('null', 'false', 'number', 'string', 'object', '513')),
+        'H0081': tuple('row-' + label for label in ('null', 'false', 'number', 'string', 'array', 'extra-key')),
+        'H0082': tuple('duplicate-' + label for label in ('host-prefix', 'mapped-host', 'ipv6-compression', 'network-mask')),
+        'H0083': tuple('name-' + label for label in ('null', 'false', 'number', 'array', 'object',
+                                                   'ascii81', 'unicode81', 'space81'))
+                  + tuple('name-control' + str(number) for number in range(32)),
+        'H0084': tuple('mode-' + label for label in ('null', 'false', 'number', 'array', 'object',
+                                                   'empty', 'upper', 'proxy', 'missing')),
+    }
+    for ident, labels in policy_variants.items():
+        audits[ident] = Audit(
+            ('backend/common/oxidns_device_policy.py:54', 'backend/common/device_notes.py:36',
+             'backend/common/client_devices.py:18', 'backend/routers/policy_workspace.py:18',
+             'backend/common/config_repository.py:2577'),
+            'Real public import permits these invalid legacy policy rows (unlike invalid device_notes). '
+            'R002 read, R003 draft write and R014 workspace each reach the guard and return its exact400; '
+            'full state remains unchanged, no device I/O. All type/length/member/duplicate/name/mode '
+            'families require explicit variants, including every C0 control, canonical mapped/network '
+            'duplicates and missing mode. DEL is accepted and removed only for legacy policy names, '
+            'with a separate successful read/rename fixture; it is not confused with normalize_name. '
+            '512 rows and80 Unicode characters are separate positive controls. These helper audits do '
+            'not claim every policy graph mutation or all public router call sites.',
+            tuple(('stored-policy-' + label, route + '/stored-policy-' + label, 400)
+                  for label in labels for route in ('R002', 'R003', 'R014')))
     return audits
 
 

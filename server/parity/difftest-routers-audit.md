@@ -165,3 +165,16 @@ OxiDNS 或 binding，删备注仅删本地 binding，不向设备发请求，不
 OxiDNS/native_config/旧兼容策略名不变；旧 names_revision 的 legacy R015
 保存409，未携带 sources 的现代 R015 使用原 revision 仍200且保留新备注。
 清空备注写空字符串遮盖旧名，最后移除策略时再删除空备注，无幽灵设备行。
+
+## H0080–H0084：存量策略与备注的加载边界不同
+
+公开 repository import 校验 OxiDNS 外层对象、规则引用与 DNS 动作，不调用
+normalize_policies；真实导入后启动普通 Python 进程可到达这些 guard。新增65个
+非法策略世界，每个分别用 R002 GET、R003 PUT 和 R014 GET 验证相同的精确400
+以及完整 DB/文件/设备不变：外层类型/513条、行类型/未知键、canonical重复、
+name类型/81字符/全部C0控制、mode缺失/非法。不是以 helper 调用替代 HTTP。
+
+另有512条成功控制，和旧 DEL 名称/IPv4-mapped/IPv6/CIDR/空备注遮盖的成功控制。
+策略旧名中的 DEL 被丢弃，但 normalize_name 拒绝 DEL；两者不能混为一个规则。
+只改名称会保存 canonical note，同时保持旧策略行与 native_config 原样。
+H0080–H0084 各有完整显式变体声明；没有据此宣称 R016 生成或所有策略图已覆盖。

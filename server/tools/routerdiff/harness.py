@@ -46,6 +46,7 @@ class Side:
         self.request_windows = {}
         self.pending = {}
         self.missing_effects = []
+        self.failed_prerequisites = []
 
     def rpc(self, operation, **values):
         self.process.stdin.write(json.dumps({'operation': operation, **values}) + '\n')

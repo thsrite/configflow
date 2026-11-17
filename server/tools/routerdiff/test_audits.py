@@ -5,12 +5,13 @@ import unittest
 from audits import declared, evaluate
 from inventory import load
 import guards
+import device_policy
 
 
 class AuditTests(unittest.TestCase):
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'
@@ -77,6 +78,20 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(len(audits['H0023'].requirements), 14)
         self.assertEqual(len(audits['H0024'].requirements), 2)
         self.assertGreater(len(audits['H0078'].requirements), len(audits['H0073'].requirements))
+
+    def test_stored_policy_guards_require_all_inputs_on_three_public_paths(self):
+        audits = declared()
+        actual = {(world, case.ident): case for world, _, groups in device_policy.worlds()
+                  for group in groups for case in group()}
+        for number in range(80, 85):
+            ident = 'H' + str(number).zfill(4)
+            for world, name, status in audits[ident].requirements:
+                with self.subTest(entry=ident, world=world, case=name):
+                    case = actual[world, name]
+                    self.assertIn(ident, case.entries)
+                    self.assertEqual(case.expected, status)
+        self.assertEqual(len(audits['H0083'].requirements), 40 * 3)
+        self.assertEqual(len(audits['H0084'].requirements), 9 * 3)
 
 
 if __name__ == '__main__':
