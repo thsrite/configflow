@@ -2473,3 +2473,8 @@ current compared16；design_errors=[]；seconds21.70；exit0
 Ran 141 tests ... OK
 MUTATION-CHECK detected deliberately corrupted Go body.authEnabled
 ```
+
+## 批次 148：最新集成基线与最终运行
+
+- rebase到go c14763b3（147个任务提交重放）；behaviour-changes唯一冲突保留集成C32和维护者批准Web退役两节。工具修正归因同步为6a99ee8b/1b280f1a，历史记录不重写。
+- 最终门禁固定.64、-p4，官方gate持槽后同槽运行configdiff all；独立final-results.json/final-findings.md保存本轮实际结果。此处尚未宣称门禁通过。
