@@ -8,9 +8,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"configflow/internal/logx"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 
@@ -20,11 +23,149 @@ import (
 func main() {
 	input := flag.String("in", "", "Python JSONL graph records")
 	output := flag.String("out", "", "selected gzip JSON references")
+	stream := flag.Bool("stream", false, "render/compare recorded graphs as a JSONL stream")
 	flag.Parse()
-	if err := run(*input, *output); err != nil {
+	var err error
+	if *stream {
+		err = writerStream(os.Stdin, os.Stdout)
+	} else {
+		err = run(*input, *output)
+	}
+	if err != nil {
 		logx.Get("yamlwriteroracle").Error(fmt.Sprintf("writer oracle generation failed: %v", err))
 		os.Exit(1)
 	}
+}
+
+func writerStream(input io.Reader, output io.Writer) error {
+	d, e := json.NewDecoder(input), json.NewEncoder(output)
+	e.SetEscapeHTML(false)
+	for {
+		var request struct {
+			yamlxtest.WriterReference
+			Op  string `json:"op"`
+			Old string `json:"old"`
+			New string `json:"new"`
+		}
+		if err := d.Decode(&request); err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+		answer := map[string]any{}
+		if request.Op == "compare" {
+			a, err := yamlx.Parse([]byte(request.Old))
+			if err != nil {
+				answer["error"] = err.Error()
+			} else if b, err := yamlx.Parse([]byte(request.New)); err != nil {
+				answer["error"] = err.Error()
+			} else {
+				var changes []yamlxtest.WriterChange
+				if err := writerChanges(a, b, "", &changes, map[[2]*yamlx.Node]bool{}); err != nil {
+					answer["error"] = err.Error()
+				} else {
+					answer["changes"] = changes
+				}
+			}
+		} else {
+			n, err := request.Document()
+			if err == nil {
+				n, err = yamlbridge.Encode(n)
+			}
+			if err == nil {
+				var data []byte
+				data, err = yamlx.Marshal(n)
+				answer["yaml"] = string(data)
+			}
+			if err != nil {
+				answer["error"] = err.Error()
+			}
+		}
+		if err := e.Encode(answer); err != nil {
+			return err
+		}
+	}
+}
+
+func writerChanges(old, want *yamlx.Node, path string, out *[]yamlxtest.WriterChange, seen map[[2]*yamlx.Node]bool) error {
+	old, want = yamlx.Resolve(old), yamlx.Resolve(want)
+	if yamlx.Equal(old, want) || seen[[2]*yamlx.Node{old, want}] {
+		return nil
+	}
+	seen[[2]*yamlx.Node{old, want}] = true
+	if old.Kind != want.Kind {
+		return fmt.Errorf("unexpected node shape change at %s", path)
+	}
+	if want.Kind == yaml.MappingNode {
+		a, b := map[string]*yamlx.Node{}, map[string]*yamlx.Node{}
+		for key, value := range yamlx.Pairs(old) {
+			a[key] = value
+		}
+		for key, value := range yamlx.Pairs(want) {
+			b[key] = value
+		}
+		if len(a) != len(b) {
+			return fmt.Errorf("unexpected mapping field change at %s", path)
+		}
+		for key, value := range yamlx.Pairs(want) {
+			before, ok := a[key]
+			if !ok {
+				return fmt.Errorf("unexpected mapping key change at %s", path)
+			}
+			if err := writerChanges(before, value, path+"."+key, out, seen); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if want.Kind == yaml.SequenceNode {
+		if len(old.Content) != len(want.Content) {
+			return fmt.Errorf("unexpected sequence change at %s", path)
+		}
+		for i, child := range want.Content {
+			if err := writerChanges(old.Content[i], child, fmt.Sprintf("%s[%d]", path, i), out, seen); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	category := ""
+	restored := map[string]int{}
+	for _, ch := range []rune{'\u0085', '\u2028', '\u2029'} {
+		if count := strings.Count(want.Value, string(ch)) - strings.Count(old.Value, string(ch)); count > 0 {
+			restored[fmt.Sprintf("U+%04X", ch)] = count
+		}
+	}
+	switch {
+	case want.ShortTag() == "!!str" && (old.ShortTag() == "!!int" || old.ShortTag() == "!!float" || old.ShortTag() == "!!bool" || old.ShortTag() == "!!null"):
+		category = "string-type-preservation"
+	case want.ShortTag() == "!!int" && old.ShortTag() == "!!float":
+		category = "large-int-preservation"
+	case want.ShortTag() == "!!timestamp" && old.ShortTag() == "!!str":
+		category = "timestamp-preservation"
+	case want.ShortTag() == "!!str" && old.ShortTag() == "!!str" && len(restored) > 0:
+		category = "unicode-line-separator-preservation"
+	default:
+		a, b := []rune(old.Value), []rune(want.Value)
+		i := 0
+		for i < len(a) && i < len(b) && a[i] == b[i] {
+			i++
+		}
+		var before, after rune
+		if i < len(a) {
+			before = a[i]
+		}
+		if i < len(b) {
+			after = b[i]
+		}
+		return fmt.Errorf("unclassified scalar change at %s (%s -> %s; rune %d U+%04X -> U+%04X; lengths %d/%d)", path, old.ShortTag(), want.ShortTag(), i, before, after, len(a), len(b))
+	}
+	if category != "unicode-line-separator-preservation" {
+		restored = nil
+	}
+	*out = append(*out, yamlxtest.WriterChange{Path: path, Before: old.ShortTag(), After: want.ShortTag(), Category: category, Restored: restored})
+	return nil
 }
 
 func run(input, output string) error {

@@ -13,15 +13,18 @@ type WriterNode struct {
 	Kind     uint32 `json:"kind"`
 	Tag      string `json:"tag"`
 	Value    string `json:"value,omitempty"`
+	Style    uint32 `json:"style,omitempty"`
+	Anchor   string `json:"anchor,omitempty"`
 	Children []int  `json:"children,omitempty"`
 }
 
 // WriterChange records one old consumer interpretation corrected by a writer.
 type WriterChange struct {
-	Path     string `json:"path"`
-	Before   string `json:"before"`
-	After    string `json:"after"`
-	Category string `json:"category"`
+	Path     string         `json:"path"`
+	Before   string         `json:"before"`
+	After    string         `json:"after"`
+	Category string         `json:"category"`
+	Restored map[string]int `json:"restored,omitempty"`
 }
 
 // WriterReference preserves the source row, output digest and Python value graph.
@@ -42,7 +45,7 @@ func (r WriterReference) Document() (*yamlx.Node, error) {
 	}
 	nodes := make([]*yamlx.Node, len(r.Nodes))
 	for i, v := range r.Nodes {
-		nodes[i] = &yamlx.Node{Kind: yaml.Kind(v.Kind), Tag: v.Tag, Value: v.Value}
+		nodes[i] = &yamlx.Node{Kind: yaml.Kind(v.Kind), Tag: v.Tag, Value: v.Value, Style: yaml.Style(v.Style), Anchor: v.Anchor}
 	}
 	for i, v := range r.Nodes {
 		for _, child := range v.Children {

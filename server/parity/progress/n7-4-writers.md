@@ -267,3 +267,24 @@ Command uses `go test -json -count=1` for the five packages above, recorded in
 avoid dumping entire fixture documents. Initial expected byte mismatches were
 replaced by the narrow structural comparisons described above; unknown reader
 classifications remain zero. Subsequent comparator-negative tests pass (0.008s).
+
+## Writer oracle transport
+
+The coordinator approved an installer writer-layer oracle: patch only real
+Python yaml.dump/safe_dump, persist its actual typed input graph before rendering,
+render through native Marshal, persist those bytes before returning them to the
+unchanged Python postprocessor. No business-source line or non-writer hook changes.
+The graph transport now includes explicit flow styles and shared image anchors.
+The Go tool's streaming mode invokes only graph reconstruction, yamlbridge.Encode,
+Marshal and Parse; no Go business generator participates in expected values.
+
+Classification records changed paths and restored character counts separately
+for U+0085 (NEL), U+2028 and U+2029, all explicitly approved. Negative tool tests
+reject unrelated values, fields and sequence changes. Existing safe_load graph
+fixtures keep their original codec behavior when writer_styles is false.
+
+`.32` changed-tool vet/tests PASS:
+`go vet ./tools/yamlwriteroracle ./internal/yamlx/yamlxtest`;
+`go test -p=2 -count=1 ./tools/yamlwriteroracle ./internal/yamlx/yamlxtest`
+(tool0.007s, yamlxtest0.005s). Installer fixture generation and full acceptance
+remain in progress.

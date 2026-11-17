@@ -9,17 +9,23 @@ import datetime
 import math
 
 
-def graph(value):
+def graph(value, writer_styles=False):
     nodes, memo = [], {}
 
     def visit(value):
         container = isinstance(value, (dict, list))
-        if container and id(value) in memo:
+        image = writer_styles and type(value).__name__ == "ImageName"
+        shared = container or image
+        if shared and id(value) in memo:
             return memo[id(value)]
         index = len(nodes)
         node = {}
+        if writer_styles and type(value).__name__ in ("FlowMap", "FlowList"):
+            node["style"] = 32
+        if image:
+            node["anchor"] = "agent_image"
         nodes.append(node)
-        if container:
+        if shared:
             memo[id(value)] = index
         if value is None:
             tag, text = "null", "null"
