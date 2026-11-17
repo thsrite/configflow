@@ -365,8 +365,10 @@ func (d *Ikuai) Call(ctx context.Context, funcName string, param map[string]any)
 // Write submits an add/edit/del form (encoded like the web UI) and returns
 // the reply's results. A refusal is a *RouterError of KindRejected: nothing
 // changed. Any other error may hide a change (the reply was lost). timeout is
-// in seconds (0: the default 10).
+// in seconds (0: the default 10). A started write is not abandoned when ctx
+// is cancelled (o3-concurrency 2.5): the request keeps its own timeout.
 func (d *Ikuai) Write(ctx context.Context, funcName, action string, param any, timeout float64) (Row, error) {
+	ctx = context.WithoutCancel(ctx)
 	encoded, err := ikuaiEncodeParam(param)
 	if err != nil {
 		return nil, err
