@@ -326,6 +326,14 @@ C31 生成器的输入校验修正：聚合的 `subscriptions` 必须为字符�
 
 C31 同时拒绝损坏的非数组节点缓存。Python 在拉取失败、缓存 `nodes` 为布尔值等错误类型时，会吞掉工作线程异常并返回成功的空 provider；Go 返回错误并保留旧发布内容，避免静默丢节点。真实 Python 差分 `TestCorruptNodeCacheCannotProducePartialProvider` 明确验证此修正，干运行两端均不写状态。
 
+## N7-3d — 统一 reader 的诊断位置
+
+Mihomo 导入原先拒绝多文档时只显示“YAML 解析失败”和无位置的内部原因，
+现在由共享 Parse 指出第二份文档的起始行；拒绝状态与原中文上下文不变。
+真实导入语料中单列“诊断位置”1 条。provider→A11 的接口改为原生 error 和
+一基行列号，235 个冻结旧输出逐字核对，193 个错误和147个带位置的提示均不变，
+位置差异0。生成、发布指纹和网关行为保持原有约束。
+
 ## N7-3 — native YAML readers (subs/substore)
 
 Approved by the maintainer/coordinator; design §2.2/5.7. YAML 1.1 implicit spellings follow yaml.v3

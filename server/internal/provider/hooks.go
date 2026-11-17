@@ -31,7 +31,6 @@ import (
 	"configflow/internal/agents/diag"
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
-	"configflow/internal/pyyaml"
 	"configflow/internal/refresh"
 	"configflow/internal/substore"
 )
@@ -46,9 +45,9 @@ type Locations interface {
 	PreparationContext(message, name, path, kind string) string
 	// SourceError is str(source_error(message, text, line=, column=,
 	// cause=, source_label=)). line and column are nil for None. cause is
-	// the yaml.YAMLError (a *pyyaml.Error; Class "ReaderError" has no
-	// context/problem/marks) or nil for None.
-	SourceError(message, text string, line, column *int, cause *pyyaml.Error, sourceLabel string) string
+	// the native parser/policy failure, or nil for reference errors. Positions
+	// are one-based and absent when the parser supplied none.
+	SourceError(message, text string, line, column *int, cause error, sourceLabel string) string
 }
 
 // PassthroughLocations is the default Locations until A11 registers the
@@ -67,7 +66,7 @@ func (PassthroughLocations) PreparationContext(message, name, _ string, kind str
 }
 
 // SourceError returns message.
-func (PassthroughLocations) SourceError(message, _ string, line, _ *int, _ *pyyaml.Error, sourceLabel string) string {
+func (PassthroughLocations) SourceError(message, _ string, line, _ *int, _ error, sourceLabel string) string {
 	if line != nil && sourceLabel != "" {
 		return message + fmt.Sprintf(msgContentSource, sourceLabel)
 	}

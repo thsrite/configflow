@@ -11,7 +11,6 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/oxidns"
 	"configflow/internal/provider"
-	"configflow/internal/pyyaml"
 	"configflow/internal/redact"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
@@ -22,7 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 )
@@ -141,30 +139,20 @@ func (s *Source) readRule(ctx context.Context, rawURL, sourceID string, declared
 	return ruleRead{data: value, stale: stale, name: rule.GetString("name"), declared: true}, err
 }
 
-// SourceError bridges the legacy provider parser's marks; all new deploy YAML
-// readers use yamlx.Parse. Delete this bridge when N7-3 migrates provider.
-func (Locations) SourceError(message, text string, line, column *int, cause *pyyaml.Error, sourceLabel string) string {
-	var diagnostic error
-	if cause != nil {
-		if line == nil && cause.ProblemMark != nil {
-			l, c := cause.ProblemMark.Line+1, cause.ProblemMark.Column+1
-			line, column = &l, &c
-		}
-		parts := []string{}
-		if cause.Context != "" {
-			parts = append(parts, cause.Context)
-		}
-		if cause.Problem != "" {
-			parts = append(parts, cause.Problem)
-		}
-		if len(parts) > 0 {
-			diagnostic = errors.New(strings.Join(parts, ": "))
-		} else {
-			diagnostic = cause
-		}
+// SourceError renders the provider's native error and one-based positions.
+func (Locations) SourceError(message, text string, line, column *int, cause error, sourceLabel string) string {
+	var syntax *yamlx.SyntaxError
+	if line == nil && errors.As(cause, &syntax) && syntax.Line > 0 {
+		l, c := syntax.Line, max(1, syntax.Column)
+		line, column = &l, &c
 	}
-	return SourceError(message, text, Position{Line: line, Column: column}, diagnostic, sourceLabel).Error()
+	diagnostic := ""
+	if cause != nil {
+		diagnostic = cause.Error()
+	}
+	return sourceDiagnostic(message, text, Position{Line: line, Column: column}, cause, sourceLabel, diagnostic).Error()
 }
+
 func downloadRef(d convert.Download) (RuleRef, string, error) {
 	u, ok := d.URL.(string)
 	if !ok {

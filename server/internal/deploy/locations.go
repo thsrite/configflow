@@ -111,6 +111,19 @@ func SourceError(message, text string, at Position, cause error, sourceLabel str
 		l, c := syntax.Line, syntax.Column
 		at.Line, at.Column = &l, &c
 	}
+	diagnostic := ""
+	if cause != nil {
+		diagnostic = cause.Error()
+		if syntax != nil {
+			diagnostic = syntax.Problem
+		}
+	}
+	return sourceDiagnostic(message, text, at, cause, sourceLabel, diagnostic)
+}
+
+// sourceDiagnostic renders explicit coordinates and keeps the original cause.
+// Caller-owned diagnostic text is not reinterpreted by the presentation layer.
+func sourceDiagnostic(message, text string, at Position, cause error, sourceLabel, diagnostic string) *PreparationError {
 	parts := []string{message}
 	if at.Line != nil {
 		if sourceLabel != "" {
@@ -125,14 +138,8 @@ func SourceError(message, text string, at Position, cause error, sourceLabel str
 			parts = append(parts, excerpt)
 		}
 	}
-	if cause != nil {
-		diagnostic := cause.Error()
-		if syntax != nil {
-			diagnostic = syntax.Problem
-		}
-		if diagnostic != "" {
-			parts = append(parts, fmt.Sprintf(msgDiagnostic, diag.FailureText(diagnostic, nil, 0)))
-		}
+	if diagnostic != "" {
+		parts = append(parts, fmt.Sprintf(msgDiagnostic, diag.FailureText(diagnostic, nil, 0)))
 	}
 	return &PreparationError{Message: strings.Join(parts, "\n"), cause: cause}
 }

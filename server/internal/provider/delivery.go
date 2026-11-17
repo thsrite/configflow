@@ -391,7 +391,7 @@ func ValidateProxyShapes(proxies any) error {
 func loadProviderProxies(text string, name, path any, kind, sourceLabel string) ([]any, error) {
 	data, err := yamlx.Parse([]byte(text))
 	if err != nil {
-		if cause := yamlCause(err, text); cause != nil {
+		if cause := yamlCause(err); cause != nil {
 			return nil, providerContext(providerSourceError(err, cause, text, sourceLabel), name, path, kind)
 		}
 		return nil, err
@@ -405,11 +405,11 @@ func loadProviderProxies(text string, name, path any, kind, sourceLabel string) 
 		return []any{}, nil
 	}
 	if err := yamlx.ProjectJSONKeys(proxyNode, yamlx.StringifyScalarKeys); err != nil {
-		return nil, providerContext(providerSourceError(err, yamlCause(err, text), text, sourceLabel), name, path, kind)
+		return nil, providerContext(providerSourceError(err, yamlCause(err), text, sourceLabel), name, path, kind)
 	}
 	encoded, err := yamlx.ToJSON(proxyNode)
 	if err != nil {
-		return nil, providerContext(providerSourceError(err, yamlCause(err, text), text, sourceLabel), name, path, kind)
+		return nil, providerContext(providerSourceError(err, yamlCause(err), text, sourceLabel), name, path, kind)
 	}
 	proxies, err := jsonx.Parse(encoded)
 	if err != nil {

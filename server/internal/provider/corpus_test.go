@@ -23,7 +23,6 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
-	"configflow/internal/pyyaml"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
@@ -63,16 +62,26 @@ func pyOptStr(s string) string {
 	return s
 }
 
-func (fakeLocations) SourceError(message, text string, line, column *int, cause *pyyaml.Error, sourceLabel string) string {
+func (fakeLocations) SourceError(message, text string, line, column *int, cause error, sourceLabel string) string {
 	c := "None"
 	if cause != nil {
 		mark := "None"
-		if cause.ProblemMark != nil {
-			mark = fmt.Sprintf("%d,%d", cause.ProblemMark.Line, cause.ProblemMark.Column)
+		if position := nativeCauseFixtureMark(cause); position != nil {
+			mark = fmt.Sprintf("%d,%d", position[0], position[1])
 		}
-		c = cause.Class + ":" + pyOptStr(cause.Context) + ":" + pyOptStr(cause.Problem) + ":" + mark
+		c = "YAMLError:None:" + pyOptStr(cause.Error()) + ":" + mark
 	}
 	return "SRC[" + message + "|" + pyOptInt(line) + "|" + pyOptInt(column) + "|" + sourceLabel + "|" + c + "]"
+}
+
+// nativeCauseFixtureMark encodes only the historical test collaborator trace.
+// Runtime diagnostic coordinates remain native and one-based.
+func nativeCauseFixtureMark(cause error) *[2]int {
+	var syntax *yamlx.SyntaxError
+	if errors.As(cause, &syntax) && syntax.Line > 0 {
+		return &[2]int{syntax.Line - 1, max(1, syntax.Column) - 1}
+	}
+	return nil
 }
 
 // fakeErr is an exception a fake raises.

@@ -6,3 +6,5 @@ const (
 	msgPreparationName   = "%s「%s」"
 	msgContentSource     = "\n内容来源：%s"
 )
+
+const msgProviderYAMLInvalid = "Provider YAML 内容无效"

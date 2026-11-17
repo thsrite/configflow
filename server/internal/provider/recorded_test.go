@@ -24,7 +24,6 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
-	"configflow/internal/pyyaml"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
@@ -104,13 +103,13 @@ func (l *replayLocations) PreparationContext(message, name, path, kind string) s
 	return l.lookup([]any{"ctx", message, name, path, kind})
 }
 
-func (l *replayLocations) SourceError(message, text string, line, column *int, cause *pyyaml.Error, sourceLabel string) string {
+func (l *replayLocations) SourceError(message, text string, line, column *int, cause error, sourceLabel string) string {
 	// N7-3 §5.7: the A11 collaborator receives native YAML diagnostics.
 	// Only validated parser/policy failures may reuse the reference collaborator
 	// answer; all owner/source/text arguments and every non-YAML call stay strict.
-	if cause != nil && cause.Class == "YAMLError" {
+	if cause != nil {
 		_, nativeErr := yamlx.Parse([]byte(text))
-		if nativeErr != nil && cause.Problem == nativeErr.Error() {
+		if nativeErr != nil && cause.Error() == nativeErr.Error() {
 			for _, entry := range l.entries {
 				args, ok := entry[0].([]any)
 				if !ok || len(args) != 7 || args[0] != "src" || args[2] != text || args[6] != sourceLabel {
@@ -125,10 +124,10 @@ func (l *replayLocations) SourceError(message, text string, line, column *int, c
 	var c any
 	if cause != nil {
 		var mark any
-		if cause.ProblemMark != nil {
-			mark = []any{jsonx.Int(int64(cause.ProblemMark.Line)), jsonx.Int(int64(cause.ProblemMark.Column))}
+		if position := nativeCauseFixtureMark(cause); position != nil {
+			mark = []any{jsonx.Int(int64(position[0])), jsonx.Int(int64(position[1]))}
 		}
-		c = []any{cause.Class, cause.Context, cause.Problem, mark}
+		c = []any{"YAMLError", "", cause.Error(), mark}
 	}
 	return l.lookup([]any{"src", message, text, optInt(line), optInt(column), c, sourceLabel})
 }

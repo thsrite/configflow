@@ -51,6 +51,9 @@ func CompareNativeReader(source string, mode NativeReaderMode) (string, error) {
 		return "unsafe-alias", nil
 	case errors.Is(err, yamlx.ErrDuplicateKey):
 		return "D1-duplicate", nil
+	case errors.Is(oldErr, yamlx.ErrMultipleDocuments) && errors.Is(err, yamlx.ErrMultipleDocuments):
+		// The former direct reader supplied no position for the second document.
+		return "诊断位置", nil
 	case oldErr != nil && err != nil:
 		return "native-diagnostics", nil
 	case errors.Is(err, yamlx.ErrPolicy):

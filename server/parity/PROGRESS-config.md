@@ -56,9 +56,13 @@ selection; real native-reader comparison equal940/native-diagnostics41,unknown0.
 The complete rules tests pass (.64 1.755s), including depth40 and self-alias
 rejection through both extraction and public Match. Importer's reader now uses
 Parse/ToJSON and preserves retained Node sharing instead of recursive expansion;
-real14-input gate equal12/native-diagnostics2,unknown0. Original importer corpus
+real14-input gate equal12/native-diagnostics1/诊断位置1,unknown0. Original importer corpus
 and extracted-subtree budget regressions pass (1.499s). Other implementation and
-final acceptance remain pending. See [progress/n7-3d.md](progress/n7-3d.md).
+final acceptance remain pending. Provider/deploy diagnostic hooks now carry native
+errors/one-based coordinates. A frozen old public boundary reference checks235
+complete visible outputs (193 refused,147 positioned),position changes0/unknown0;
+provider/A11/A12 full tests and A13 diagnostic tests pass.
+See [progress/n7-3d.md](progress/n7-3d.md).
 
 ## N7-4 — native YAML writers (complete; coordinator verification pending)
 

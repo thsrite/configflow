@@ -9,7 +9,6 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
-	"configflow/internal/pyyaml"
 	"configflow/internal/rules"
 	"configflow/internal/subs"
 	"configflow/internal/yamlx"
@@ -145,28 +144,17 @@ func shapeError(message string, field ...any) *Error {
 	return &Error{Class: classDialer, Message: message + "\n字段：" + label.String(), field: field}
 }
 
-// yamlCause adapts native diagnostics to the existing A11 hook argument. It
-// preserves yaml.v3's message and position; it never reconstructs Python errors.
-func yamlCause(err error, _ string) *pyyaml.Error {
+// yamlCause selects facade failures for the native A11 diagnostic hook.
+func yamlCause(err error) error {
 	if !errors.Is(err, yamlx.ErrType) && !errors.Is(err, yamlx.ErrSyntax) && !errors.Is(err, yamlx.ErrPolicy) && !errors.Is(err, yamlx.ErrAliasRecursion) && !errors.Is(err, yamlx.ErrAliasBudget) {
 		return nil
 	}
-	cause := &pyyaml.Error{Class: "YAMLError", Problem: err.Error()}
-	var syntax *yamlx.SyntaxError
-	if errors.As(err, &syntax) && syntax.Line > 0 {
-		column := syntax.Column
-		if column < 1 {
-			column = 1
-		}
-		cause.ProblemMark = &pyyaml.Mark{Line: syntax.Line - 1, Column: column - 1}
-	}
-	return cause
+	return err
 }
 
 // nodeAt is the field lookup of _provider_source_error: the start mark of
-// the node a provider_field points at (SafeLoader composition, merge keys
-// flattened, last duplicate key wins), or nil.
-func nodeAt(text string, field []any) (*pyyaml.Mark, bool) {
+// the node a provider_field points at, following shared merge/alias policies.
+func nodeAt(text string, field []any) (*yamlx.Node, bool) {
 	node, err := yamlx.Parse([]byte(text))
 	if err != nil {
 		return nil, false
@@ -193,7 +181,7 @@ func nodeAt(text string, field []any) (*pyyaml.Mark, bool) {
 	if node == nil {
 		return nil, true
 	}
-	return &pyyaml.Mark{Line: node.Line - 1, Column: node.Column - 1}, true
+	return node, true
 }
 
 func isString(v any) bool { _, ok := v.(string); return ok }
@@ -202,10 +190,12 @@ func isInt(v any) bool    { _, ok := v.(int); return ok }
 // providerSourceError is _provider_source_error(exc, text, source_label):
 // resolve a known field only on failure; never guess a node's line number.
 // yamlErr is the yaml.YAMLError of the load (nil for reference errors).
-func providerSourceError(err error, yamlErr *pyyaml.Error, text, sourceLabel string) error {
-	var mark *pyyaml.Mark
-	if yamlErr != nil {
-		mark = yamlErr.ProblemMark
+func providerSourceError(err, yamlErr error, text, sourceLabel string) error {
+	var line, column *int
+	var syntax *yamlx.SyntaxError
+	if errors.As(yamlErr, &syntax) && syntax.Line > 0 {
+		l, c := syntax.Line, max(1, syntax.Column)
+		line, column = &l, &c
 	}
 	var field []any
 	var own *Error
@@ -214,18 +204,17 @@ func providerSourceError(err error, yamlErr *pyyaml.Error, text, sourceLabel str
 	}
 	if len(field) > 0 {
 		if found, ok := nodeAt(text, field); ok {
-			mark = found
+			line, column = nil, nil
+			if found != nil {
+				l, c := found.Line, found.Column
+				line, column = &l, &c
+			}
 		}
 	}
 	message := err.Error()
-	var cause *pyyaml.Error
+	var cause error
 	if yamlErr != nil {
-		message, cause = "Provider YAML 内容无效", yamlErr
-	}
-	var line, column *int
-	if mark != nil {
-		l, c := mark.Line+1, mark.Column+1
-		line, column = &l, &c
+		message, cause = msgProviderYAMLInvalid, yamlErr
 	}
 	detail := currentLocations().SourceError(message, text, line, column, cause, sourceLabel)
 	return dialerErr(diag.FailureText(detail, nil, 0))

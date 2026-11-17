@@ -14,7 +14,8 @@ import (
 	"configflow/internal/yamlx"
 )
 
-func fixture(t testing.TB, path string) *jsonx.Object {
+// Fixture reads a gzip JSON-object fixture without normalizing its values.
+func Fixture(t testing.TB, path string) *jsonx.Object {
 	t.Helper()
 	f, err := os.Open(path)
 	if err != nil {
@@ -40,7 +41,7 @@ func fixture(t testing.TB, path string) *jsonx.Object {
 // ReaderCases reads the separately recorded Python business expectations.
 func ReaderCases(t testing.TB, path string) *jsonx.Object {
 	t.Helper()
-	return fixture(t, path).GetObject("cases")
+	return Fixture(t, path).GetObject("cases")
 }
 
 // CheckReaderFixtures checks every recorded actual loader input against the old
@@ -50,8 +51,8 @@ func ReaderCases(t testing.TB, path string) *jsonx.Object {
 // projectors are transition functions only, never consumer business functions.
 func CheckReaderFixtures(t testing.TB, valuesPath, expectedPath string, projectors map[string]func(*yamlx.Node) error) {
 	t.Helper()
-	sources := fixture(t, valuesPath)
-	expected := fixture(t, expectedPath)
+	sources := Fixture(t, valuesPath)
+	expected := Fixture(t, expectedPath)
 	modes, classes := map[string]int{}, map[string]int{}
 	for id, item := range sources.All() {
 		record := item.(*jsonx.Object)
