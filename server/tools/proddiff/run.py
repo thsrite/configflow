@@ -3,6 +3,9 @@ import ast
 import collections
 import contextlib
 import concurrent.futures
+import datetime
+import errno
+import fcntl
 import hashlib
 import io
 import itertools
@@ -47,11 +50,62 @@ def safe_key(key):
     return key if isinstance(key, str) and key in KEYS else '<key>'
 
 
+HEADER_KEYS = {key.lower(): key for key in KEYS}
+# Transport/framing headers of two different HTTP servers; everything else is compared.
+IGNORED_HEADERS = {'date', 'server', 'content-length', 'connection', 'keep-alive', 'transfer-encoding', 'content-type'}
+
+
+def safe_header(name):
+    return HEADER_KEYS.get(name, '<key>')
+
+
+class DuplicateKey(ValueError):
+    """A parser would silently keep only one of two equal keys."""
+
+
+def _unique_pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise DuplicateKey('duplicate JSON key')
+        result[key] = value
+    return result
+
+
+def load_json(body):
+    return json.loads(body, object_pairs_hook=_unique_pairs)
+
+
+class StrictLoader(yaml.SafeLoader):
+    """SafeLoader that rejects duplicate mapping keys (PyYAML keeps the last; yaml.v3 consumers reject)."""
+
+    def construct_mapping(self, node, deep=False):
+        if isinstance(node, yaml.MappingNode):
+            seen = set()
+            for key_node, _ in node.value:
+                if key_node.tag == 'tag:yaml.org,2002:merge':
+                    continue
+                key = self.construct_object(key_node, deep=True)
+                try:
+                    duplicate = key in seen
+                    seen.add(key)
+                except TypeError:
+                    continue
+                if duplicate:
+                    raise yaml.constructor.ConstructorError(None, None, 'duplicate YAML key', key_node.start_mark)
+        return super().construct_mapping(node, deep)
+
+
+def load_yaml(text_value):
+    return yaml.load(text_value, Loader=StrictLoader)
+
+
 def differences(a, b, path='body'):
     if type(a) is not type(b):
-        # JSON numbers use mathematical equality, bool remains a distinct type.
+        # Equal JSON/YAML numbers of different kinds stay a separate class: typed consumers
+        # (Go Agent structs, yaml.v3 int fields) reject 1.0 where they expect 1.
         if type(a) in (int, float) and type(b) in (int, float) and a == b:
-            return []
+            return [(path, 'int-float')]
         return [(path, 'type')]
     if isinstance(a, dict):
         out = []
@@ -76,12 +130,30 @@ def text(value):
     return value.replace('\r\n', '\n').replace('\r', '\n').rstrip('\n') + '\n'
 
 
+def line_endings(body):
+    """Line-ending style of a text body; CRLF in a shell script is a functional change."""
+    crlf = body.count(b'\r\n')
+    return (crlf > 0, body.count(b'\r') - crlf > 0)
+
+
 def parsed(body, content_type, route, member=''):
     if 'json' in content_type or member.endswith('.json'):
-        return json.loads(body)
+        return load_json(body)
     if body.startswith(b'PK\x03\x04'):
+        result = {}
         with zipfile.ZipFile(io.BytesIO(body)) as archive:
-            return {name: parsed(archive.read(name), '', route, name) for name in archive.namelist() if not name.endswith('/')}
+            names = [info.filename for info in archive.infolist()]
+            if len(names) != len(set(names)):
+                raise DuplicateKey('duplicate ZIP member')
+            for info in archive.infolist():
+                if info.filename.endswith('/'):
+                    continue
+                raw = archive.read(info)
+                result[info.filename] = parsed(raw, '', route, info.filename)
+                result[info.filename + '#eol'] = list(line_endings(raw))
+                # Unix mode bits: an install script that loses +x is a real regression.
+                result[info.filename + '#mode'] = info.external_attr >> 16
+        return result
     try:
         value = body.decode('utf-8')
     except UnicodeError:
@@ -90,8 +162,90 @@ def parsed(body, content_type, route, member=''):
         return body
     if ('yaml' in content_type or member.endswith(('.yaml', '.yml')) or
             (not member and re.search(r'/(mihomo|mosdns|oxidns)(/preview)?$', route))):
-        return yaml.safe_load(value)
+        return load_yaml(value)
     return text(value).splitlines()
+
+
+def _walk(root, parts):
+    """Yield (container, key) pairs addressed by a dotted path; `name[]` means every element."""
+    current = [root]
+    for index, part in enumerate(parts):
+        last = index == len(parts) - 1
+        every = part.endswith('[]')
+        name = part[:-2] if every else part
+        following = []
+        for value in current:
+            if not isinstance(value, dict) or name not in value:
+                continue
+            if every:
+                if isinstance(value[name], list):
+                    following.extend((value[name], i) for i in range(len(value[name])))
+            else:
+                following.append((value, name))
+        if last:
+            return following
+        current = [container[key] for container, key in following]
+    return []
+
+
+def _timestamp(value):
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return datetime.datetime.fromisoformat(value).timestamp()
+        except ValueError:
+            return None
+    return None
+
+
+def normalize_pair(rule, left, right):
+    """Return the normalised pair, or None when the rule's preconditions do not hold (diff stays)."""
+    if type(left) is not type(right) or isinstance(left, (dict, list)):
+        return None
+    if 'tolerance' in rule:
+        shape = lambda value: re.sub(r'\d', '9', value) if isinstance(value, str) else type(value).__name__
+        a, b = _timestamp(left), _timestamp(right)
+        if a is None or b is None or shape(left) != shape(right) or abs(a - b) > rule['tolerance']:
+            return None
+        return '<runtime>', '<runtime>'
+    return '<runtime>', '<runtime>'
+
+
+def apply_rules(rules, route, a, b):
+    """a/b are {'body': parsed body, 'header': {...}}; paths starting with `header.` address headers."""
+    for rule in rules:
+        if rule['route'] != route or 'path' not in rule:
+            continue
+        if rule['path'].startswith('header.'):
+            section, parts = 'header', [rule['path'][len('header.'):]]
+        else:
+            section, parts = 'body', rule['path'].split('.')
+        if not isinstance(a[section], dict) or not isinstance(b[section], dict):
+            continue
+        left_targets, right_targets = _walk(a[section], parts), _walk(b[section], parts)
+        if 'pattern' in rule:
+            # Masking is a per-value transform: masked values only become equal when everything
+            # outside the pattern is equal, so each side is masked on its own (lists may differ in length).
+            pattern = re.compile(rule['pattern'])
+            for container, key in left_targets + right_targets:
+                if isinstance(container[key], str):
+                    container[key] = pattern.sub('<runtime>', container[key])
+            continue
+        if len(left_targets) != len(right_targets):
+            continue
+        for (lc, lk), (rc, rk) in zip(left_targets, right_targets):
+            if lk != rk:
+                continue
+            if rule.get('unordered'):
+                # Multiset comparison for lists whose order is not defined (concurrent writers).
+                if isinstance(lc[lk], list) and isinstance(rc[rk], list):
+                    order = lambda item: json.dumps(item, sort_keys=True, ensure_ascii=False, default=str)
+                    lc[lk], rc[rk] = sorted(lc[lk], key=order), sorted(rc[rk], key=order)
+                continue
+            pair = normalize_pair(rule, lc[lk], rc[rk])
+            if pair is not None:
+                lc[lk], rc[rk] = pair
 
 
 def response_diffs(left, right, route, rules):
@@ -100,8 +254,10 @@ def response_diffs(left, right, route, rules):
         out.append(('status', 'value'))
     if left[1].lower().replace(' ', '') != right[1].lower().replace(' ', ''):
         out.append(('Content-Type', 'value'))
+    if left[0] == 0 and right[0] == 0:
+        # Both sides hung or refused: never an agreement.
+        out.append(('status', 'transport-both'))
     if left[0] == 0 or right[0] == 0:
-        # Both failures are recorded; a one-sided transport failure cannot pass.
         return out
     values = []
     for label, reply in (('python', left), ('go', right)):
@@ -109,35 +265,38 @@ def response_diffs(left, right, route, rules):
             values.append(parsed(reply[2], reply[1], route))
         except (ValueError, UnicodeError, yaml.YAMLError, zipfile.BadZipFile):
             out.append(('body', 'parse-' + label))
-    if len(values) != 2:
-        return out
-    a, b = values
-    if isinstance(a, dict) and isinstance(b, dict):
+    if ('json' not in left[1] and 'json' not in right[1] and not left[2].startswith(b'PK\x03\x04')
+            and line_endings(left[2]) != line_endings(right[2])):
+        out.append(('body', 'line-endings'))
+    a = {'body': values[0] if len(values) == 2 else None,
+         'header': {k: v for k, v in (left[3] if len(left) > 3 else {}).items() if k not in IGNORED_HEADERS}}
+    b = {'body': values[1] if len(values) == 2 else None,
+         'header': {k: v for k, v in (right[3] if len(right) > 3 else {}).items() if k not in IGNORED_HEADERS}}
+    if len(values) == 2 and isinstance(a['body'], dict) and isinstance(b['body'], dict):
         # Generated YAML embedded in JSON is compared structurally too.
         for key in ('content', 'config', 'compose'):
-            if isinstance(a.get(key), str) and isinstance(b.get(key), str):
-                service_yaml = key == 'compose' or any('/' + service in route for service in ('mihomo', 'mosdns', 'oxidns')) or bool(re.search(r'(?m)^[A-Za-z_][A-Za-z_0-9-]*: ', a[key]))
+            if isinstance(a['body'].get(key), str) and isinstance(b['body'].get(key), str):
+                left_text, right_text = a['body'][key], b['body'][key]
+                service_yaml = key == 'compose' or any('/' + service in route for service in ('mihomo', 'mosdns', 'oxidns')) or bool(re.search(r'(?m)^[A-Za-z_][A-Za-z_0-9-]*: ', left_text))
+                if line_endings(left_text.encode()) != line_endings(right_text.encode()):
+                    out.append(('body.' + key, 'line-endings'))
                 try:
-                    a[key], b[key] = ((yaml.safe_load(a[key]), yaml.safe_load(b[key])) if service_yaml
-                                     else (text(a[key]).splitlines(), text(b[key]).splitlines()))
+                    a['body'][key], b['body'][key] = ((load_yaml(left_text), load_yaml(right_text)) if service_yaml
+                                                      else (text(left_text).splitlines(), text(right_text).splitlines()))
                 except yaml.YAMLError:
                     pass
-        for rule in rules:
-            if rule['route'] != route:
-                continue
-            targets = []
-            parts = rule['path'].split('.')
-            for value in (a, b):
-                current = value
-                for key in parts[:-1]:
-                    current = current.get(key, {}) if isinstance(current, dict) else {}
-                targets.append(current)
-            if all(isinstance(target, dict) and parts[-1] in target for target in targets):
-                left_value, right_value = (target[parts[-1]] for target in targets)
-                if type(left_value) is type(right_value) and not isinstance(left_value, (dict, list)):
-                    for target in targets:
-                        target[parts[-1]] = '<runtime>'
-    out.extend(differences(a, b))
+    apply_rules(rules, route, a, b)
+    if len(left) > 3 and len(right) > 3:
+        for name in sorted(a['header'].keys() | b['header'].keys()):
+            path = 'header.' + safe_header(name)
+            if name not in a['header']:
+                out.append((path, 'extra-in-go'))
+            elif name not in b['header']:
+                out.append((path, 'missing-in-go'))
+            elif a['header'][name] != b['header'][name]:
+                out.append((path, 'value'))
+    if len(values) == 2:
+        out.extend(differences(a['body'], b['body']))
     return out
 
 
@@ -160,9 +319,17 @@ def send(port, method, path, token='', body=None):
     except urllib.error.HTTPError as error:
         response = error
     except (OSError, TimeoutError):
-        return 0, '', b''
+        return 0, '', b'', {}
     with response:
-        return response.code, response.headers.get('Content-Type', ''), response.read()
+        headers = {name.lower(): ', '.join(response.headers.get_all(name)) for name in set(response.headers.keys())}
+        return response.code, response.headers.get('Content-Type', ''), response.read(), headers
+
+
+def scrub(reply, data_dir):
+    """Each server runs on its own temporary data copy; its absolute path is not a difference."""
+    marker = str(data_dir)
+    return (reply[0], reply[1], reply[2].replace(marker.encode(), b'<DATA_DIR>'),
+            {name: value.replace(marker, '<DATA_DIR>') for name, value in reply[3].items()})
 
 
 def document(data):
@@ -211,7 +378,7 @@ def cases(rows, doc, data):
         generate = method == 'POST' and route in READONLY_POST
         if method != 'GET' and not generate:
             continue
-        for profile_id, profile in profiles.items():
+        for profile_index, (profile_id, profile) in enumerate(profiles.items()):
             config = dict(doc['shared'], **profile)
             params = {
                 'profile_id': [profile_id], 'agent_id': ids(agents),
@@ -253,23 +420,30 @@ def cases(rows, doc, data):
                         body.update(settings=config.get('linux_gateway', {}))
                     elif route.endswith('/preview-regex'):
                         body.update(source='subscription', source_id=next(iter(ids(config.get('subscriptions', []))), ''), regex='.*')
+                def emit(variant):
+                    yield method, route, path + '?' + urllib.parse.urlencode(variant), body, no_data
+                    # Once per route, also let each server resolve the default profile itself.
+                    if profile_index == 0 and '<profile_id>' not in route and method == 'GET':
+                        rest = {k: v for k, v in variant.items() if k != 'profile_id'}
+                        yield method, route, path + ('?' + urllib.parse.urlencode(rest) if rest else ''), body, no_data
+
                 if '/subscriptions/' in route and route.endswith('/proxies'):
                     for output_format in ('mihomo', 'surge', 'loon'):
                         variant = dict(query, format=output_format)
-                        yield method, route, path + '?' + urllib.parse.urlencode(variant), body, no_data
+                        yield from emit(variant)
                 elif route.endswith('/file') or mapping.get('action') == 'file':
                     for filename in preview_files.get(mapping.get('preview_id'), ['config.yaml']):
                         variant = dict(query, path=filename)
-                        yield method, route, path + '?' + urllib.parse.urlencode(variant), body, no_data
+                        yield from emit(variant)
                 elif route in ('/api/agents/install-script', '/api/agents/docker-agent-compose', '/api/agents/docker-agent-run'):
                     for target in agents or [{}]:
                         variant = dict(query, server_url=doc['system'].get('system_config', {}).get('server_domain') or BASE_URL,
                                        name=target.get('name', 'proddiff'), agent_name=target.get('name', 'proddiff'),
                                        agent_ip=target.get('host', ''), type=target.get('service_type', 'mihomo'),
                                        port=target.get('port', 8080), enable_mihomo='true', enable_oxidns='true')
-                        yield method, route, path + '?' + urllib.parse.urlencode(variant), body, no_data
+                        yield from emit(variant)
                 else:
-                    yield method, route, path + '?' + urllib.parse.urlencode(query), body, no_data
+                    yield from emit(query)
 
 
 def digest_tree(root):
@@ -284,6 +458,96 @@ def digest_tree(root):
                     digest.update(chunk)
     return digest.digest()
 
+# Background starters disabled in flask_worker.py; none of these thread names may ever start.
+PY_DISABLED_THREADS = {'dns-follow', 'oxidns-ha-publish', 'ipv6-verification-scheduler', 'agent-rule-sync-loop',
+                       'metrics-history-flush', 'oxidns-ranking-history', 'domain-discovery-auto',
+                       'scheduled-refresh', 'router-rule-sync', 'sub-store-idle'}
+# Go lifecycle loops that are one-shot startup work Python also performs synchronously at import
+# (initialize_app -> prune_orphan_caches); the test lifecycle runs them once before serving.
+GO_STARTUP_ONCE = {'subscription-cache-prune'}
+RULE_FIELDS = {'route', 'path', 'reason', 'pattern', 'tolerance', 'bracket', 'unordered'}
+
+
+def assert_no_egress():
+    """Prove the namespace has no route out: interfaces, host IPC resolvers, DNS and TCP."""
+    if [name for _, name in socket.if_nameindex()] != ['lo']:
+        raise RuntimeError('network isolation missing')
+    # Filesystem sockets are not network-namespaced: systemd-resolved (nss-resolve), nscd,
+    # D-Bus and Docker would all carry requests out of an otherwise empty netns.
+    for path in ('/run/systemd/resolve/io.systemd.Resolve', '/run/nscd/socket', '/run/dbus/system_bus_socket',
+                 '/run/docker.sock', '/var/run/docker.sock'):
+        if os.path.exists(path):
+            raise RuntimeError('host IPC socket visible in namespace')
+    try:
+        socket.getaddrinfo('example.com', 80)
+    except socket.gaierror:
+        pass
+    else:
+        raise RuntimeError('DNS resolution escapes the namespace')
+    for family, address in ((socket.AF_INET, ('192.0.2.1', 80)), (socket.AF_INET6, ('2001:db8::1', 80))):
+        with socket.socket(family, socket.SOCK_STREAM) as probe:
+            probe.settimeout(2)
+            try:
+                probe.connect(address)
+            except OSError as error:
+                if error.errno not in (errno.ENETUNREACH, errno.EHOSTUNREACH, errno.EADDRNOTAVAIL):
+                    raise RuntimeError('unexpected egress probe result') from None
+            else:
+                raise RuntimeError('egress connection succeeded')
+
+
+def lock_runs(private):
+    """Shared lock for the run; whoever gets it exclusively first removes copies of killed runs."""
+    handle = (private / '.lock').open('a')
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        pass
+    else:
+        for stale in private.glob('run-*/copies-*'):
+            shutil.rmtree(stale, ignore_errors=True)
+    fcntl.flock(handle, fcntl.LOCK_SH)
+    return handle
+
+
+def load_rules(rows):
+    routes = {row[1] for row in rows}
+    rules = json.loads((PARITY / 'proddiff-normalize.json').read_text())
+    for rule in rules:
+        valid = (set(rule) <= RULE_FIELDS and rule.get('reason') and rule.get('route') in routes
+                 and '*' not in rule['route'] + rule.get('path', '')
+                 and (('path' not in rule) if rule.get('bracket') else bool(rule.get('path')))
+                 and sum(key in rule for key in ('pattern', 'tolerance', 'unordered')) <= 1)
+        if not valid:
+            raise RuntimeError('normalization requires an exact route/path and reason')
+        if 'pattern' in rule:
+            re.compile(rule['pattern'])
+    return rules
+
+
+def phase(case):
+    """Reads first (parallel), then read-only POSTs that may stage artifacts (parallel),
+    then log readers serially: they observe what every earlier request logged."""
+    method, route = case[0], case[1]
+    return 2 if route.startswith('/api/logs/') else 1 if method != 'GET' else 0
+
+
+def bracketed(python, go, diffs, attempts=3):
+    """Compare a wall-clock windowed GET: Go answered between two Python requests, so it must equal
+    the Python reply on one side of it. Returns (python reply, go reply, retries); retries == 0 and
+    a differing pair when no adjacent pair agrees. Only for routes declared with `bracket`."""
+    left, right = python(), go()
+    if not diffs(left, right):
+        return left, right, 0
+    for attempt in range(1, attempts + 1):
+        left = python()
+        if not diffs(left, right):
+            return left, right, attempt
+        right = go()
+        if not diffs(left, right):
+            return left, right, attempt
+    return left, right, 0
+
 
 def stop_processes(processes):
     for process in processes:
@@ -297,25 +561,24 @@ def stop_processes(processes):
 
 def main():
     global PRIVATE_REPORT
-    if [name for _, name in socket.if_nameindex()] != ['lo']:
-        raise RuntimeError('network isolation missing')
+    assert_no_egress()
     snapshot, binary = map(Path, sys.argv[1:3])
     record = '--record-baseline' in sys.argv[3:]
     if not os.statvfs(snapshot).f_flag & os.ST_RDONLY:
         raise RuntimeError('snapshot mount is writable')
     before = digest_tree(snapshot)
     private = Path.home() / 'cf-prod-snapshot/runs'
+    run_lock = lock_runs(private)
     report = Path(tempfile.mkdtemp(prefix='run-', dir=private))
     PRIVATE_REPORT = report
     processes = []
     def stop_signal(signum, frame):
         raise RuntimeError('interrupted')
-    signal.signal(signal.SIGTERM, stop_signal)
-    signal.signal(signal.SIGINT, stop_signal)
+    for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(signum, stop_signal)
     rows = [line.split('\t') for line in (PARITY / 'routes.tsv').read_text().splitlines() if line and not line.startswith('#')]
-    rules = json.loads((PARITY / 'proddiff-normalize.json').read_text())
-    if any(not rule['reason'] or '*' in rule['route'] + rule['path'] for rule in rules):
-        raise RuntimeError('normalization requires an exact route/path and reason')
+    rules = load_rules(rows)
+    bracket = {rule['route'] for rule in rules if rule.get('bracket')}
     try:
         with tempfile.TemporaryDirectory(prefix='copies-', dir=report) as temporary, contextlib.ExitStack() as cleanup:
             cleanup.callback(stop_processes, processes)
@@ -331,17 +594,21 @@ def main():
                            JWT_SECRET_KEY='proddiff-test-only-shared-secret', CONFIGFLOW_BACKEND_HOST='127.0.0.1',
                            CONFIGFLOW_BACKEND_PORT=str(15001 + index), CONFIGFLOW_FRONTEND_DIR='',
                            SUB_STORE_BUILTIN_DIR='/nonexistent', PRODDIFF_ROUTES=str(report / 'go-routes.tsv'),
-                           PRODDIFF_PY_LOOPS=str(report / 'python-loops.txt'))
+                           PRODDIFF_PY_ROUTES=str(report / 'python-routes.tsv'),
+                           PRODDIFF_PY_LOOPS=str(report / 'python-loops.txt'),
+                           PRODDIFF_PY_THREADS=str(report / 'python-threads.txt'))
                 command = [sys.executable, 'server/tools/proddiff/flask_worker.py'] if index == 0 else [str(binary)]
                 with (report / ('python.log' if index == 0 else 'go.log')).open('wb') as log:
                     processes.append(subprocess.Popen(command, env=env, stdout=log, stderr=log, start_new_session=True))
             tokens = []
+            ready = [None, report / 'go-routes.tsv.ready']
             for index in range(2):
                 for _ in range(450):
                     if processes[index].poll() is not None:
                         raise RuntimeError('server startup failed; inspect private logs')
                     reply = send(15001 + index, 'GET', '/api/auth/status')
-                    if reply[0] == 200:
+                    # Go serves before lifecycle.Start; wait until its startup work finished.
+                    if reply[0] == 200 and (ready[index] is None or ready[index].exists()):
                         break
                     time.sleep(.2)
                 else:
@@ -351,21 +618,43 @@ def main():
                     raise RuntimeError('test login failed')
                 tokens.append(json.loads(login[2])['token'])
             implemented = set(tuple(line.split('\t')) for line in (report / 'go-routes.tsv').read_text().splitlines())
+            known = {(row[0], row[1]) for row in rows}
+            python_routes = set(tuple(line.split('\t')) for line in (report / 'python-routes.tsv').read_text().splitlines())
+            # A route registered under another template would be silently reported as not implemented.
+            unmapped = {'UNMAPPED-GO-ROUTE\t' + ' '.join(route) for route in implemented - known}
+            unmapped |= {'UNMAPPED-PYTHON-ROUTE\t' + ' '.join(route) for route in python_routes - known}
+            go_loops = set((report / 'go-routes.tsv.loops').read_text().split())
             found, generator_coverage, generator_samples = run_workers(
                 snapshot, Path(temporary), report, Path(os.environ['PRODDIFF_GENERATOR']),
                 doc, implemented, response_diffs)
-            real = send(15002, 'GET', '/api/auth/status', tokens[1])
+            real = scrub(send(15002, 'GET', '/api/auth/status', tokens[1]), copies[1])
             counts = collections.Counter()
             coverage, failures = {}, collections.Counter()
             http_successes = collections.defaultdict(set)
             all_cases = list(cases(rows, doc, copies[0]))
+
+            def ask(index, method, path, body):
+                return scrub(send(15001 + index, method, path, tokens[index], body), copies[index])
+
             def compare(case):
                 method, route, path, body, no_data = case
                 if (method, route) not in implemented:
-                    return case, None, None
-                return case, send(15001, method, path, tokens[0], body), send(15002, method, path, tokens[1], body)
-            with (report / 'responses.jsonl').open('w') as responses, concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-                for case, left, right in pool.map(compare, all_cases):
+                    return case, None, None, 0
+                python = lambda: ask(0, method, path, body)
+                go = lambda: ask(1, method, path, body)
+                if method == 'GET' and route in bracket:
+                    return (case,) + bracketed(python, go, lambda a, b: response_diffs(a, b, route, rules))
+                return case, python(), go(), 0
+
+            def results():
+                with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                    for stage in (0, 1):
+                        yield from pool.map(compare, [case for case in all_cases if phase(case) == stage])
+                yield from map(compare, [case for case in all_cases if phase(case) == 2])
+
+            json_sample = None
+            with (report / 'responses.jsonl').open('w') as responses:
+                for case, left, right, retries in results():
                     method, route, path, body, no_data = case
                     key = method + ' ' + route
                     status = 'Go 尚未实现' if left is None else 'compared'
@@ -374,15 +663,20 @@ def main():
                     row['no-snapshot-parameter'] += int(no_data)
                     if left is None:
                         continue
+                    counts['bracket-rescued'] += int(retries > 0)
                     responses.write(json.dumps({'method': method, 'route': route, 'path': path,
-                                                'python': [left[0], left[1], left[2].decode('utf-8', errors='replace')],
-                                                'go': [right[0], right[1], right[2].decode('utf-8', errors='replace')]}, ensure_ascii=False) + '\n')
+                                                'python': [left[0], left[1], left[2].decode('utf-8', errors='replace'), left[3]],
+                                                'go': [right[0], right[1], right[2].decode('utf-8', errors='replace'), right[3]]}, ensure_ascii=False) + '\n')
                     counts['compared'] += 1
                     if 200 <= right[0] < 300:
                         if 'yaml' in right[1]:
                             generator_samples.setdefault('yaml', right)
                         if 'text/plain' in right[1] and ('/config/' in route or '/generate/' in route or route.endswith('/install-script')):
                             generator_samples.setdefault('text', right)
+                        if 'json' in right[1] and (json_sample is None or len(right[2]) > len(json_sample[2])):
+                            json_sample = right
+                        if set(right[3]) - IGNORED_HEADERS:
+                            generator_samples.setdefault('headers', right)
                     for generator_key, row in generator_coverage.items():
                         name = generator_key.removeprefix('GENERATOR ')
                         if row['mode'] != 'http' or row['route'] != key:
@@ -412,26 +706,39 @@ def main():
                         found.add((key, field, kind))
                         domain = 'agents' if '/agents' in route or route.startswith('GENERATOR agent-') else 'routers' if '/routers' in route or route.startswith('GENERATOR router-') else 'config'
                         counts[domain + ':' + kind] += 1
-            checks = self_check(real, generator_samples, response_diffs)
+            if json_sample is not None:
+                generator_samples['http-json'] = json_sample
+            checks = self_check(real, generator_samples, response_diffs, safe_key, safe_header)
             print('self-check: ' + ' '.join(name + '=PASS' for name in checks), flush=True)
+            started_threads = set((report / 'python-threads.txt').read_text().split('\n')) if (report / 'python-threads.txt').exists() else set()
+            if started_threads & PY_DISABLED_THREADS:
+                raise RuntimeError('a disabled Python background loop started')
             coverage.update(generator_coverage)
             baseline_path = PARITY / 'proddiff-baseline.txt'
             baseline = set()
             for line in baseline_path.read_text().splitlines():
                 if line and not line.startswith('#'):
                     method_route, field, kind, reason = line.split('\t', 3)
-                    if not reason.strip():
-                        raise RuntimeError('baseline entry needs reason')
+                    if not record and (not reason.strip() or reason.strip() == 'open'):
+                        raise RuntimeError('baseline entry needs a reason')
                     baseline.add((method_route, field, kind))
-            formatted = '\n'.join('\t'.join(row) + '\topen' for row in sorted(found)) + '\n'
+            reasons = {}
+            for line in baseline_path.read_text().splitlines():
+                if line and not line.startswith('#'):
+                    parts = line.split('\t', 3)
+                    reasons[tuple(parts[:3])] = parts[3]
+            formatted = '\n'.join('\t'.join(row) + '\t' + reasons.get(row, 'open') for row in sorted(found)) + '\n'
             (report / 'differences.tsv').write_text(formatted)
             if record:
-                baseline_path.write_text('# Route template\tkey path\tdifference type\treason\n' + formatted)
+                baseline_path.write_text('# Route template\tkey path\tdifference type\treason (entries marked open must be triaged before commit)\n' + formatted)
                 baseline = found
             new, stale = found - baseline, baseline - found
             coverage_path = PARITY / 'proddiff-coverage.txt'
             current_coverage = {key for key, row in coverage.items() if row.get('compared')}
             current_coverage.update(key + ' success' for key, row in generator_coverage.items() if row.get('success'))
+            # A route that loses every snapshot-derived parameter keeps only its error branch.
+            current_coverage.update(key + ' snapshot-parameter' for key, row in coverage.items()
+                                    if not key.startswith('GENERATOR ') and row.get('compared', 0) > row.get('no-snapshot-parameter', 0))
             previous_coverage = {line for line in coverage_path.read_text().splitlines() if line and not line.startswith('#')}
             if record:
                 coverage_path.write_text('# Previously compared route templates; removals fail the gate.\n' + '\n'.join(sorted(current_coverage)) + '\n')
@@ -446,18 +753,23 @@ def main():
             for route, field, kind in found:
                 domain = 'agents' if '/agents' in route or route.startswith('GENERATOR agent-') else 'routers' if '/routers' in route or route.startswith('GENERATOR router-') else 'config'
                 unique_counts[domain + ':' + kind] += 1
-            summary = {'GET_routes_compared': sum(key.startswith('GET ') and row.get('compared', 0) > 0 for key, row in coverage.items()),
-                       'GET_Go_not_implemented': sum(key.startswith('GET ') and row.get('Go 尚未实现', 0) > 0 for key, row in coverage.items()),
+            http_rows = {key: row for key, row in coverage.items() if not key.startswith('GENERATOR ')}
+            summary = {'GET_routes_compared': sum(key.startswith('GET ') and row.get('compared', 0) > 0 for key, row in http_rows.items()),
+                       'GET_routes_error_branch_only': sum(key.startswith('GET ') and 0 < row.get('compared', 0) <= row.get('no-snapshot-parameter', 0) for key, row in http_rows.items()),
+                       'GET_Go_not_implemented': sum(key.startswith('GET ') and row.get('Go 尚未实现', 0) > 0 for key, row in http_rows.items()),
                        'python_disabled_background': len((report / 'python-loops.txt').read_text().splitlines()),
-                       'go_disabled_background': len((report / 'go-routes.tsv.loops').read_text().splitlines()),
+                       'go_disabled_background': len(go_loops - GO_STARTUP_ONCE),
+                       'go_startup_once': sorted(go_loops & GO_STARTUP_ONCE),
+                       'python_threads_started': len(started_threads - {''}),
                        'unique_differences_by_domain_type': dict(sorted(unique_counts.items())),
-                       'no_snapshot_parameter_cases': sum(row.get('no-snapshot-parameter', 0) for row in coverage.values()),
+                       'no_snapshot_parameter_cases': sum(row.get('no-snapshot-parameter', 0) for row in http_rows.values()),
                        'GET_routes_total': sum(row[0] == 'GET' for row in rows),
-                       'routes_total': sum(not key.startswith('GENERATOR ') for key in coverage), 'routes_compared': sum(row.get('compared', 0) > 0 for key, row in coverage.items() if not key.startswith('GENERATOR ')),
+                       'routes_total': len(http_rows), 'routes_compared': sum(row.get('compared', 0) > 0 for row in http_rows.values()),
                        'Go_not_implemented': sum(row.get('Go 尚未实现', 0) > 0 for row in coverage.values()),
                        'generators': generator_coverage, 'self_checks': checks,
                        'cases': len(all_cases), 'counts': dict(counts), 'connection_failures': dict(failures),
-                       'coverage_regressions': len(lost_coverage), 'unique_differences': len(found), 'new': len(new), 'stale': len(stale), 'self_check': 'PASS'}
+                       'coverage_regressions': len(lost_coverage), 'unmapped_routes': len(unmapped),
+                       'unique_differences': len(found), 'new': len(new), 'stale': len(stale), 'self_check': 'PASS'}
             (report / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2))
             (report / 'coverage.json').write_text(json.dumps(coverage, ensure_ascii=False, indent=2))
             phase2 = [
@@ -479,9 +791,12 @@ def main():
                 print('NEW\t' + '\t'.join(entry), flush=True)
             for route in sorted(lost_coverage):
                 print('COVERAGE-REGRESSION\t' + route, flush=True)
-            return int(bool(new or lost_coverage or failures['one-sided-transport-failure']))
+            for route in sorted(unmapped):
+                print(route, flush=True)
+            return int(bool(new or lost_coverage or unmapped or failures['one-sided-transport-failure']))
     finally:
         stop_processes(processes)
+        run_lock.close()
         if digest_tree(snapshot) != before:
             raise RuntimeError('snapshot changed')
 

@@ -1,6 +1,11 @@
-# Route template	key path	difference type	reason
-GET /api/agents/<agent_id>/config/logging	body.message	value	open
-GET /api/agents/<agent_id>/logs	body.message	value	open
-GET /api/agents/<agent_id>/logs/sources	body.message	value	open
-GET /api/logs/tail	body.logs[0]	value	open
-GET /api/logs/tail	body.logs[1]	value	open
+# Route template	key path	difference type	reason (entries marked open must be triaged before commit)
+GET /api/agents/<agent_id>/oxidns/rules/update	Content-Type	value	Go bug F1 (proddiff-findings.md): default-profile request reaches unported oxidns_ha_publish.rules (A18), 500 HTML
+GET /api/agents/<agent_id>/oxidns/rules/update	body	type	Go bug F1 (proddiff-findings.md): default-profile request reaches unported oxidns_ha_publish.rules (A18), 500 HTML
+GET /api/agents/<agent_id>/oxidns/rules/update	header.Cache-Control	missing-in-go	Go bug F1 (proddiff-findings.md): default-profile request reaches unported oxidns_ha_publish.rules (A18), 500 HTML
+GET /api/agents/<agent_id>/oxidns/rules/update	status	value	Go bug F1 (proddiff-findings.md): default-profile request reaches unported oxidns_ha_publish.rules (A18), 500 HTML
+GET /api/logs/info	body.size	value	Consequence of F1: Go logs two extra request exceptions; the remaining lines agree
+GET /api/logs/tail	body.filtered_lines	value	Consequence of F1: Go logs two extra request exceptions; the remaining lines agree
+GET /api/logs/tail	body.logs	length	Consequence of F1: Go logs two extra request exceptions; the remaining lines agree
+GET /api/logs/tail	body.logs[0]	value	Consequence of F1: Go logs two extra request exceptions; the remaining lines agree
+GET /api/logs/tail	body.logs[1]	value	Consequence of F1: Go logs two extra request exceptions; the remaining lines agree
+GET /api/logs/tail	body.total_lines	value	Consequence of F1: Go logs two extra request exceptions; the remaining lines agree

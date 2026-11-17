@@ -16,11 +16,17 @@ rt -- server/scripts/proddiff.sh ~/cf-prod-snapshot/20261116/data
 
 脚本先构建 Go，然后进入新的 user/net/mount/PID namespace。
 命名空间内只启用 lo；程序用接口 API 再次确认只有 loopback。
+文件系统 Unix socket 不受网络命名空间限制（例如 systemd-resolved 的 varlink socket 会让
+nss-resolve 在宿主机上解析域名），因此脚本在命名空间内用 tmpfs 覆盖 `/run`，并把
+`/etc/nsswitch.conf`、`resolv.conf` 固定为 `hosts: files dns` / `nameserver 127.0.0.1`。
+`run.py` 启动时证明无出口：只有 lo、看不到宿主机 IPC socket、`example.com` 解析失败、
+到 192.0.2.1 和 2001:db8::1 的 TCP 连接返回网络不可达。任一项不满足即框架失败。
 快照以 bind mount 挂为只读，程序验证只读挂载标志，并在运行前后对文件内容做摘要检查。
 拒绝含符号链接的快照，防止复制或访问越出快照目录。
 
 Python、Go 和比较程序都在同一个断网命名空间。两端各加载快照的一份临时副本；
-无论正常完成还是异常退出都清理副本。SIGINT/SIGTERM 触发清理；PID namespace
+无论正常完成还是异常退出都清理副本。SIGINT/SIGTERM/SIGHUP 触发清理；
+运行期间持有共享锁，第一个拿到独占锁的运行会删除被强制终止的旧运行遗留的副本；PID namespace
 确保服务退出后不会遗留子进程。直接 SIGKILL/主机断电无法执行文件清理，遗留副本仅会位于私有目录。
 没有外部设备假服务，也不会放开网络。真实设备不可达时保留并比较原始 HTTP 失败响应；
 报告另外统计两端连接失败数。HTTP 客户端超时为 20 秒，单边无响应额外判失败。
@@ -33,14 +39,18 @@ Python、Go 和比较程序都在同一个断网命名空间。两端各加载�
 Python 通过测试启动器在导入 app 之前禁用具名启动函数，正常加载持久历史。
 HTTP 模式的 Go 构建的是 `cmd/configflow`，使用临时 `-overlay` 文件和
 `-tags configflow_proddiff`，仅替换 `lifecycle.Start` 为不启动循环的测试版本，
-并从实际 Router 导出路由清单。临时文件带相同 build tag，不能被普通构建误用。
+并从实际 Router 导出路由清单。测试版 Start 只同步执行 Python 在导入时同样同步执行的
+一次性启动工作（`subscription-cache-prune` ↔ `prune_orphan_caches`），之后写 ready 标记，
+比较程序等到标记后才发请求。临时文件带相同 build tag，不能被普通构建误用。
 仓库中的 Go 业务源码没有改动。直接构建生产入口仍保留全部后台功能。
 
 当前 Python 禁用 10 项：DNS follow、OxiDNS HA publication、IPv6 verification、
 Agent rule sync、metrics flush、OxiDNS ranking、domain discovery、scheduled refresh、
 router rule sync、Sub-Store idle monitor。
 当前 Go 禁用 5 个已注册循环：metrics-history-flush、oxidns-ranking-history、
-sub-store-idle、subscription-cache-prune、scheduled-refresh。
+sub-store-idle、scheduled-refresh、domain-discovery-auto；subscription-cache-prune 按上文启动时执行一次。
+Python 多出的 5 项（DNS follow、HA publication、IPv6 verification、Agent/router rule sync）在 Go 中尚无实现，
+无需禁用。`flask_worker.py` 记录每个启动的线程（只写私有目录），被禁用的循环一旦启动即框架失败。
 所有已知定时启动入口均已关闭；按请求执行的计算、连接尝试仍在隔离网络中运行。
 Python 启动迁移和缓存整理仍正常执行，但只作用于临时副本。
 
@@ -52,8 +62,13 @@ Python 启动迁移和缓存整理仍正常执行，但只作用于临时副本�
 
 - 从 `server/parity/routes.tsv` 选择所有 GET，不相信表中的 todo/done 状态。
   是否“Go 尚未实现”由测试构建实际注册的 method/template 决定；不会把业务 404 当作未实现。
+  Go Router 和 Flask `url_map` 中的每条路由都必须出现在 routes.tsv，否则打印 `UNMAPPED-*-ROUTE` 并失败，
+  防止模板写法不同的已实现路由被永久算作未实现。
 - 每个配置空间均作为请求作用域，展开保存的 Agent、routers.items、订阅、聚合、规则库、
   部署记录、预览、安装会话、安装脚本 token。读取配置 SQLite 和快照元数据时只使用副本。
+  对路径中没有 `<profile_id>` 的 GET，第一个配置空间的每个实体另发一次不带配置空间参数的请求，
+  覆盖默认配置空间解析，以及拒绝任何查询参数的路由的正常分支。
+- 请求分三段：GET 并行 → 只读 POST 并行 → `/api/logs/*` 最后串行（日志内容取决于之前所有请求）。
 - 安装脚本和 Docker 命令按保存的 Agent 参数渲染；配置拉取包含 Mihomo、Surge、Loon、
   MosDNS、OxiDNS；生成、预览、导出、provider、Agent 配置均由各自公开入口覆盖。
 - 非 GET 使用经过逐条选择的 `proddiff-readonly-post.json`。
@@ -61,15 +76,26 @@ Python 启动迁移和缓存整理仍正常执行，但只作用于临时副本�
   生成接口可在临时副本中保存生成产物，不能提交配置或应用设备变更。
   HA guide 只执行 `action=inspect`，避免签发新安装能力。
 - JSON 深度比较，YAML 解析后比较；JSON 内的 content/config/compose 也解析配置内容。
-  ZIP 按成员读取后做同样比较。文本统一 CRLF/CR 和末尾换行后逐行比较。
-  状态码、Content-Type 独立比较。差异只输出模板、键路径、类型。
-- `proddiff-normalize.json` 逐项声明精确路由、精确路径和原因，不支持通配符。
-  当前仅处理独立进程的日志路径/统计和按请求计算的默认查询起点；其余内容继续比较。
-- 每次运行必做四种篡改：真实 Go HTTP 状态码、七层 JSON 控制文档的叶子值、
-  实际成功生成的 Go YAML 的叶子值、实际成功生成的 Go 文本配置的一行。
-  四种都交给同一个生产比较器，任一种未检出就失败；缺少可供自检的成功生成结果也失败。
-  另有合成测试覆盖深层值、缺键、类型、
-  Content-Type、YAML 结构、文本换行、精确规范化、动态键脱敏和实体枚举。
+  JSON/YAML 重复键视为解析失败（PyYAML/json 会静默保留最后一个，yaml.v3 消费方会拒绝）。
+  相等的整数与浮点数单独记为 `int-float`。ZIP 按成员读取后做同样比较，并比较成员权限位和换行风格。
+  文本逐行比较；换行风格（CRLF/CR）不同记为 `line-endings`，只忽略末尾换行数量。
+  状态码、Content-Type、除传输层（Date、Server、Content-Length、Connection、Keep-Alive、
+  Transfer-Encoding）之外的全部响应头独立比较；两端都无响应记为 `transport-both`。
+  每个服务的临时数据目录路径在比较前替换为 `<DATA_DIR>`。差异只输出模板、键路径、类型。
+- `proddiff-normalize.json` 逐项声明精确路由（必须在 routes.tsv 中）、精确路径和原因，不支持通配符；
+  未知字段或多个模式同时出现即框架失败。路径可用 `name[]` 表示列表每一项，`header.<name>` 表示响应头。
+  模式：默认（两端同类型标量才替换）；`pattern`（两端各自只替换匹配部分，其余文本照常比较）；
+  `tolerance`（两端时间文本形状相同且相差不超过 N 秒）；`unordered`（按多重集合比较列表）；
+  路由级 `bracket`（按墙钟时间窗口计算的 GET：出现差异时交替重问两端，
+  只有 Go 等于紧邻其前或其后的 Python 回复才通过，最多 3 轮；未声明的路由从不重试）。
+- 每次运行必做 23 项自检，全部交给同一个生产比较器，并要求报告准确的路径和类型：
+  对照组（真实回复与自身、重新编码的真实 JSON、重新输出的真实 YAML 必须无差异）；
+  真实 Go 回复的状态码、Content-Type、响应头值/缺失、双端无响应；
+  合成 JSON 的深层叶子、int↔float、int↔string、重复键、列表顺序；
+  最大的真实 Go JSON 回复的叶子、缺键、多键、null 与值、列表顺序；
+  真实 Go YAML 的叶子、重复键；真实 Go 文本的改行、插行、CRLF。
+  任一项未检出、或缺少可用的真实样本即失败；永远不报差异或永远报差异的比较器都过不了对照组。
+  合成测试另覆盖响应头、规范化各模式、规则校验、bracket、分段顺序、数据目录替换和实体枚举。
 
 没有保存实例的路径参数用合成 missing 参数请求错误分支，并在 coverage 中明确计数。
 进程内探测 job、设备端 DNS query record 等无法从离线快照恢复，只覆盖错误分支。
@@ -123,7 +149,9 @@ Agent 按 service_type 归属。没有独立 HTTP 入口的附件元数据生成
 
 `server/parity/proddiff-baseline.txt` 每行包含 method/template、键路径、差异类型、原因或 open。
 出现基线之外的新项目即失败；基线项目消失则提示更新。
-`proddiff-coverage.txt` 记录之前实际比较的路由和生成器，并记录成功输出标记。
+`proddiff-coverage.txt` 记录之前实际比较的路由和生成器、成功输出标记，以及
+`<route> snapshot-parameter`（至少一个用例使用了快照中的真实参数）；只剩合成 missing 参数也算覆盖回退。
+基线原因不能是 `open`：重录后必须逐项写明原因（Go 问题写 `proddiff-findings.md` 编号）。
 `proddiff-generator-coverage.json` 记录全部生成器（包含零实例、未实现项）的覆盖数量；
 普通运行要求每种生成器成功输出数不低于该基线，防止部分或全部转为报错后掩盖回退。
 需要人工审阅后更新基线时执行：
@@ -144,10 +172,10 @@ rt --back server/parity/proddiff-baseline.txt \
 不能复制到仓库、交接回复或公开报告。框架错误详情也只写入私有 `error.txt`。
 普通运行不会在项目中生成未跟踪文件。
 
-当前基线按去重的模板/键路径计数：agents 的 value 差异 3 项，config 的 value 差异 2 项，
-routers 的已比较差异 0 项（其路由尚未接入，不能理解为已验证）。
-Agent 差异是三个设备日志/日志设置入口的断网失败消息文本；config 差异是独立进程日志行内容。
-未修改这些业务行为。详情定位见基线文件。
+当前基线 10 项，全部来自 Go 问题 F1（见 `server/parity/proddiff-findings.md`）：
+`GET /api/agents/<agent_id>/oxidns/rules/update` 在默认配置空间下对 HA 成员返回 500（A18 未移植），
+以及由此多出的两行异常日志造成的 `/api/logs/info`、`/api/logs/tail` 差异。
+审查记录见 `server/parity/review-proddiff.md`。
 
 ## 第二阶段建议回放的写接口
 

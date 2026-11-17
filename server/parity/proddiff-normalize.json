@@ -1,42 +1,99 @@
 [
   {
     "route": "/api/logs/info",
-    "path": "path",
-    "reason": "Separate process log files live in different temporary data copies."
-  },
-  {
-    "route": "/api/logs/info",
-    "path": "size",
-    "reason": "Independent process startup logs have different sizes."
-  },
-  {
-    "route": "/api/logs/info",
-    "path": "size_mb",
-    "reason": "Derived from independent startup log sizes."
-  },
-  {
-    "route": "/api/logs/info",
     "path": "modified",
-    "reason": "Each process writes its own log at startup."
+    "tolerance": 600,
+    "reason": "Each process writes its own log file during the run; same timestamp format within 10 minutes."
   },
   {
     "route": "/api/logs/info",
     "path": "created",
-    "reason": "Each copied log is opened by a different process."
+    "tolerance": 600,
+    "reason": "Each process creates its own log file at startup; same timestamp format within 10 minutes."
   },
   {
     "route": "/api/logs/tail",
-    "path": "log_file",
-    "reason": "Independent servers use separate temporary log file paths."
+    "path": "logs[]",
+    "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2},\\d{3}(?= - )",
+    "reason": "Log line timestamps of two processes; logger, level and message text are still compared."
+  },
+  {
+    "route": "/api/logs/tail",
+    "path": "logs",
+    "unordered": true,
+    "reason": "Lines are written by concurrent requests in scheduler order; the multiset of lines (and its size) is still compared."
+  },
+  {
+    "route": "/api/agents/<agent_id>/config/logging",
+    "path": "message",
+    "pattern": "(?s)(?<=^Connection error: ).+",
+    "reason": "Offline device: transport error text after the shared literal prefix comes from requests vs net/http (PORTING forbids emulating Python exception texts)."
+  },
+  {
+    "route": "/api/agents/<agent_id>/logs",
+    "path": "message",
+    "pattern": "(?s)(?<=^Connection error: ).+",
+    "reason": "Offline device: transport error text after the shared literal prefix comes from requests vs net/http (PORTING forbids emulating Python exception texts)."
+  },
+  {
+    "route": "/api/agents/<agent_id>/logs/sources",
+    "path": "message",
+    "pattern": "(?s)(?<=^Connection error: ).+",
+    "reason": "Offline device: transport error text after the shared literal prefix comes from requests vs net/http (PORTING forbids emulating Python exception texts)."
   },
   {
     "route": "/api/agents/<agent_id>/traffic-history",
     "path": "data.start",
-    "reason": "Query default start is computed from each request wall clock; persisted traffic content is still compared."
+    "tolerance": 120,
+    "reason": "Query default start is now - range from each request wall clock; persisted traffic content is still compared."
   },
   {
     "route": "/api/subscriptions/test",
     "path": "timestamp",
-    "reason": "Subscription diagnostic endpoint returns the independent request wall clock; message and success are still compared."
+    "tolerance": 120,
+    "reason": "Diagnostic endpoint returns the request wall clock; message and success are still compared."
+  },
+  {
+    "route": "/api/agents/<agent_id>/metrics/history",
+    "bracket": true,
+    "reason": "Window is datetime.now() - hours over 30 s samples; Go must equal Python immediately before or after it."
+  },
+  {
+    "route": "/api/agents/<agent_id>/metrics/summary",
+    "bracket": true,
+    "reason": "Window is datetime.now() - hours over 30 s samples (observed flake); Go must equal Python immediately before or after it."
+  },
+  {
+    "route": "/api/agents/<agent_id>/traffic/stats",
+    "bracket": true,
+    "reason": "Periods are derived from datetime.now() over the 24 h metrics window."
+  },
+  {
+    "route": "/api/agents/<agent_id>/traffic/trend",
+    "bracket": true,
+    "reason": "Window is datetime.now() - hours over 30 s samples."
+  },
+  {
+    "route": "/api/agents/<agent_id>/traffic-history",
+    "bracket": true,
+    "reason": "Rows are selected from time.time() - range over persisted buckets."
+  },
+  {
+    "route": "/api/profiles/<profile_id>/subscriptions/<sub_id>/proxies",
+    "path": "header.content-disposition",
+    "pattern": "(?<=_)\\d{8}_\\d{6}(?=\\.[a-z]+\"$)",
+    "reason": "Download file name embeds datetime.now() to the second; disposition type, prefix and extension are still compared."
+  },
+  {
+    "route": "/api/subscriptions/<sub_id>/proxies",
+    "path": "header.content-disposition",
+    "pattern": "(?<=_)\\d{8}_\\d{6}(?=\\.[a-z]+\"$)",
+    "reason": "Download file name embeds datetime.now() to the second; disposition type, prefix and extension are still compared."
+  },
+  {
+    "route": "/api/subscriptions/proxies",
+    "path": "header.content-disposition",
+    "pattern": "(?<=_)\\d{8}_\\d{6}(?=\\.[a-z]+\"$)",
+    "reason": "Download file name embeds datetime.now() to the second; disposition type, prefix and extension are still compared."
   }
 ]

@@ -3,6 +3,9 @@ import json
 import pathlib
 import sys
 
+# One-shot startup work that Python performs synchronously at import (initialize_app).
+STARTUP_ONCE = ('subscription-cache-prune',)
+
 root, out = map(pathlib.Path, sys.argv[1:])
 replacements = {}
 for relative in ('internal/lifecycle/lifecycle.go', 'cmd/configflow/main.go'):
@@ -16,7 +19,22 @@ for relative in ('internal/lifecycle/lifecycle.go', 'cmd/configflow/main.go'):
         while depth:
             depth += (text[end] == '{') - (text[end] == '}')
             end += 1
-        text = text[:start] + '\n // proddiff: never launch registered background loops\n}' + text[end:]
+        allowed = ' || '.join(f'l.name == {json.dumps(name)}' for name in STARTUP_ONCE)
+        text = text[:start] + f'''
+ // proddiff: never launch registered background loops; run Python's synchronous
+ // startup work once, in the caller, before the ready marker is written.
+ mu.Lock()
+ var once []loop
+ for _, l := range loops {{
+  if {allowed} {{
+   once = append(once, l)
+  }}
+ }}
+ mu.Unlock()
+ for _, l := range once {{
+  l.run(ctx)
+ }}
+}}''' + text[end:]
     else:
         marker = '\tapp.RegisterLocal()'
         assert text.count(marker) == 1
@@ -28,7 +46,13 @@ for relative in ('internal/lifecycle/lifecycle.go', 'cmd/configflow/main.go'):
   }
  }
  if err := os.WriteFile(os.Getenv("PRODDIFF_ROUTES"), []byte(manifest.String()), 0600); err != nil { return err }
+''')
+        marker = '\tlifecycle.Start(ctx)\n'
+        assert text.count(marker) == 1
+        # Loops are listed after Start: lazily wired loops are registered by then.
+        text = text.replace(marker, marker + '''
  if err := os.WriteFile(os.Getenv("PRODDIFF_ROUTES")+".loops", []byte(strings.Join(lifecycle.Names(), "\\n")), 0600); err != nil { return err }
+ if err := os.WriteFile(os.Getenv("PRODDIFF_ROUTES")+".ready", nil, 0600); err != nil { return err }
 ''')
     text = '//go:build configflow_proddiff\n\n' + text
     destination = out / source.name

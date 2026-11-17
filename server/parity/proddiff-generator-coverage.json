@@ -88,7 +88,7 @@
     "compared": 2
   },
   "GENERATOR subscription-mihomo": {
-    "mode": "generator",
+    "mode": "http",
     "route": "GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies",
     "cases": 4,
     "success": 4,
@@ -96,7 +96,7 @@
     "compared": 4
   },
   "GENERATOR subscription-surge": {
-    "mode": "generator",
+    "mode": "http",
     "route": "GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies",
     "cases": 4,
     "success": 4,
@@ -104,7 +104,7 @@
     "compared": 4
   },
   "GENERATOR subscription-loon": {
-    "mode": "generator",
+    "mode": "http",
     "route": "GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies",
     "cases": 4,
     "success": 4,

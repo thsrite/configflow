@@ -120,47 +120,136 @@ def successful_output_regressions(expected, current):
             if current.get(key, {}).get('success', 0) < previous.get('success', 0)}
 
 
-def self_check(real_status, samples, compare):
-    checks = {}
-    broken = (real_status[0] + 1, real_status[1], real_status[2])
-    checks['status'] = ('status', 'value') in compare(real_status, broken, '/self-check', [])
-    # Deep JSON traversal passes through the same production deep comparator.
-    good = (200, 'application/json', b'{"data":{"profiles":[{"config":{"dns":{"upstreams":[{"port":53}]}}}]}}')
-    bad = (200, good[1], good[2].replace(b'53', b'54'))
-    checks['json-leaf'] = ('body.data.profiles[0].config.dns.upstreams[0].port', 'value') in compare(good, bad, '/self-check', [])
+def _walk_values(value, keys=()):
+    """Yield (keys, value) for every node, depth first; keys is a tuple of dict keys/list indexes."""
+    yield keys, value
+    children = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
+    for key, child in children:
+        yield from _walk_values(child, keys + (key,))
+
+
+def _locate(document, keys):
+    for key in keys:
+        document = document[key]
+    return document
+
+
+def self_check(real_status, samples, compare, safe_key=str, safe_header=str):
+    """Mutate real Go outputs and require the production comparator to report each exact change."""
     import yaml
-    if 'yaml' not in samples or 'text' not in samples:
-        raise RuntimeError('self-check requires actual successful YAML and text generator outputs')
-    original = yaml.safe_load(samples['yaml'][2])
-    changed = copy.deepcopy(original)
-    def mutate(value):
-        if isinstance(value, dict):
-            for key, child in value.items():
-                if isinstance(child, (dict, list)):
-                    if mutate(child):
-                        return True
-                elif child is not None:
-                    value[key] = not child if isinstance(child, bool) else child + 1 if isinstance(child, (int, float)) else str(child) + '-self-check'
-                    return True
-        elif isinstance(value, list):
-            for index, child in enumerate(value):
-                if isinstance(child, (dict, list)):
-                    if mutate(child):
-                        return True
-                else:
-                    value[index] = 'self-check-mutated'
-                    return True
-        return False
-    if not mutate(changed):
+    checks = {}
+    for required in ('yaml', 'text', 'headers', 'http-json'):
+        if required not in samples:
+            raise RuntimeError('self-check requires actual successful Go outputs: ' + required)
+
+    def detects(name, left, right, expected):
+        checks[name] = expected in compare(left, right, '/self-check', [])
+
+    def agrees(name, left, right):
+        checks[name] = compare(left, right, '/self-check', []) == []
+
+    def shown(document, keys):
+        # The comparator prints schema-safe paths; build the expected path the same way.
+        path = 'body'
+        for key in keys:
+            path += f'[{key}]' if isinstance(document, list) else '.' + safe_key(key)
+            document = document[key]
+        return path
+
+    def kind(old, new):
+        return 'value' if type(old) is type(new) else 'type'
+
+    def bump(value):
+        if isinstance(value, bool):
+            return not value
+        if isinstance(value, (int, float)):
+            return value + 1
+        return str(value) + '-self-check' if value is not None else 0
+
+    # HTTP status and headers of a real Go reply.
+    agrees('control-real-reply', real_status, real_status)
+    detects('status', real_status, (real_status[0] + 1,) + tuple(real_status[1:]), ('status', 'value'))
+    detects('content-type', real_status, (real_status[0], 'text/plain') + tuple(real_status[2:]), ('Content-Type', 'value'))
+    detects('transport-both', (0, '', b'', {}), (0, '', b'', {}), ('status', 'transport-both'))
+    reply = samples['headers']
+    name = sorted(set(reply[3]) - {'date', 'server', 'content-length', 'connection', 'keep-alive', 'transfer-encoding', 'content-type'})[0]
+    changed = dict(reply[3], **{name: reply[3][name] + '-self-check'})
+    detects('header-value', reply, reply[:3] + (changed,), ('header.' + safe_header(name), 'value'))
+    dropped = {key: value for key, value in reply[3].items() if key != name}
+    detects('header-missing', reply, reply[:3] + (dropped,), ('header.' + safe_header(name), 'missing-in-go'))
+
+    # Deep JSON traversal: synthetic seven-level control document.
+    good = (200, 'application/json', b'{"data":{"profiles":[{"config":{"dns":{"upstreams":[{"port":53}]}}}]}}')
+    port = 'body.data.profiles[0].config.dns.upstreams[0].port'
+    detects('json-leaf', good, (200, good[1], good[2].replace(b'53', b'54')), (port, 'value'))
+    detects('json-int-float', good, (200, good[1], good[2].replace(b'53', b'53.0')), (port, 'int-float'))
+    detects('json-int-string', good, (200, good[1], good[2].replace(b'53', b'"53"')), (port, 'type'))
+    detects('json-duplicate-key', good, (200, good[1], good[2].replace(b'{"port":53}', b'{"port":53,"port":53}')), ('body', 'parse-go'))
+    rules = (200, 'application/json', b'{"rules":["DOMAIN,a.example,DIRECT","MATCH,PROXY"]}')
+    detects('json-list-order', rules, (200, rules[1], b'{"rules":["MATCH,PROXY","DOMAIN,a.example,DIRECT"]}'), ('body.rules[0]', 'value'))
+
+    # Real JSON reply: re-encoding is no difference; each structural mutation is reported at its path.
+    sample = samples['http-json'][:3]
+    original = json.loads(sample[2])
+    encode = lambda value: (200, sample[1], json.dumps(value, ensure_ascii=False, indent=1, sort_keys=True).encode())
+    agrees('control-json-reencoded', sample, encode(original))
+    nodes = list(_walk_values(original))
+    leaves = [(keys, value) for keys, value in nodes if keys and not isinstance(value, (dict, list))]
+    objects = [(keys, value) for keys, value in nodes if isinstance(value, dict) and value]
+    lists = [(keys, value) for keys, value in nodes if isinstance(value, list) and len(value) >= 2 and value[0] != value[1]]
+    if not leaves or not objects:
+        raise RuntimeError('real JSON self-check sample has no leaf or object')
+    keys, old = leaves[-1]
+    mutated = copy.deepcopy(original)
+    _locate(mutated, keys[:-1])[keys[-1]] = bump(old)
+    detects('json-real-leaf', sample, encode(mutated), (shown(original, keys), kind(old, bump(old))))
+    keys, obj = objects[-1]
+    first = next(iter(obj))
+    mutated = copy.deepcopy(original)
+    del _locate(mutated, keys)[first]
+    detects('json-missing-key', sample, encode(mutated), (shown(original, keys + (first,)), 'missing-in-go'))
+    mutated = copy.deepcopy(original)
+    _locate(mutated, keys)['self_check_extra'] = ''
+    detects('json-extra-key', sample, encode(mutated), (shown(original, keys) + '.' + safe_key('self_check_extra'), 'extra-in-go'))
+    mutated = copy.deepcopy(original)
+    replacement = None if obj[first] is not None else ''
+    _locate(mutated, keys)[first] = replacement
+    detects('json-null-vs-value', sample, encode(mutated), (shown(original, keys + (first,)), 'type'))
+    if lists:
+        keys, items = lists[0]
+        mutated = copy.deepcopy(original)
+        moved = _locate(mutated, keys)
+        moved[0], moved[1] = moved[1], moved[0]
+        found = compare(sample, encode(mutated), '/self-check', [])
+        prefix = shown(original, keys) + '['
+        checks['json-real-list-order'] = bool(found) and all(path.startswith(prefix) for path, _ in found)
+
+    # Real YAML: a re-dump is no difference, a leaf change is reported at its path, duplicates fail.
+    loaded = yaml.safe_load(samples['yaml'][2])
+    if not isinstance(loaded, dict) or not loaded:
+        raise RuntimeError('YAML self-check needs a top-level mapping')
+    agrees('control-yaml-redumped', samples['yaml'][:3], (200, 'text/yaml', yaml.safe_dump(loaded, allow_unicode=True, sort_keys=True).encode()))
+    leaves = [(keys, value) for keys, value in _walk_values(loaded) if keys and value is not None and not isinstance(value, (dict, list))]
+    if not leaves:
         raise RuntimeError('no YAML leaf available for self-check')
-    modified_yaml = (200, 'text/yaml', yaml.safe_dump(changed, allow_unicode=True).encode())
-    checks['yaml-leaf'] = bool(compare(samples['yaml'], modified_yaml, '/self-check', []))
+    keys, old = leaves[0]
+    changed = copy.deepcopy(loaded)
+    _locate(changed, keys[:-1])[keys[-1]] = bump(old)
+    detects('yaml-leaf', samples['yaml'][:3], (200, 'text/yaml', yaml.safe_dump(changed, allow_unicode=True).encode()), (shown(loaded, keys), kind(old, bump(old))))
+    duplicate = samples['yaml'][2].rstrip(b'\n') + b'\n' + yaml.safe_dump({next(iter(loaded)): None}).encode()
+    detects('yaml-duplicate-key', samples['yaml'][:3], (200, 'text/yaml', duplicate), ('body', 'parse-go'))
+
+    # Real text: one changed line, one inserted line and CRLF line endings are all reported.
     lines = samples['text'][2].decode().splitlines()
     if not lines:
         raise RuntimeError('no text line available for self-check')
-    lines[len(lines) // 2] += ' # self-check-mutated'
-    modified_text = (200, 'text/plain', ('\n'.join(lines) + '\n').encode())
-    checks['text-line'] = bool(compare(samples['text'], modified_text, '/self-check', []))
+    middle = len(lines) // 2
+    edited = list(lines)
+    edited[middle] += ' # self-check-mutated'
+    detects('text-line', samples['text'][:3], (200, 'text/plain', ('\n'.join(edited) + '\n').encode()), (f'body[{middle}]', 'value'))
+    inserted = lines[:middle] + ['# self-check-inserted'] + lines[middle:]
+    detects('text-insert', samples['text'][:3], (200, 'text/plain', ('\n'.join(inserted) + '\n').encode()), ('body', 'length'))
+    detects('text-line-endings', samples['text'][:3], (200, 'text/plain', ('\r\n'.join(lines) + '\r\n').encode()), ('body', 'line-endings'))
     if not all(checks.values()):
-        raise RuntimeError('differential mutation self-check failed')
+        raise RuntimeError('differential mutation self-check failed: ' + ','.join(sorted(k for k, v in checks.items() if not v)))
     return {name: 'PASS' for name in checks}

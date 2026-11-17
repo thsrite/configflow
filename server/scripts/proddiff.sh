@@ -27,6 +27,19 @@ unshare --user --map-root-user --net --mount --pid --fork --kill-child --mount-p
  set -euo pipefail
  ip link set lo up
  test "$(ip -o link show | wc -l)" -eq 1
+ # Filesystem sockets ignore network namespaces: nss-resolve would reach systemd-resolved on
+ # the host and resolve snapshot hostnames there. Hide /run and pin name lookup to loopback.
+ mount -t tmpfs -o mode=755 proddiff-run /run
+ printf "hosts: files dns\n" >/run/proddiff-nsswitch.conf
+ printf "nameserver 127.0.0.1\noptions attempts:1 timeout:1\n" >/run/proddiff-resolv.conf
+ mount --bind /run/proddiff-nsswitch.conf /etc/nsswitch.conf
+ resolv=$(readlink -m /etc/resolv.conf)
+ if [[ $resolv == /run/* ]]; then
+  mkdir -p "$(dirname "$resolv")"
+  cp /run/proddiff-resolv.conf "$resolv"
+ else
+  mount --bind /run/proddiff-resolv.conf "$resolv"
+ fi
  mount --bind "$1" "$1"
  mount -o remount,bind,ro "$1"
  cd "$2"
