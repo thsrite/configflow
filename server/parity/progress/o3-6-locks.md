@@ -125,3 +125,13 @@ fixtures plus an independent-request test accidentally inheriting the held callb
 fixture and asserted startup elapsed time in its scheduler domain, then the complete suite passed.
 Agent deployment full race is still running on .32 (no failure output). Owner/handler migration and
 routers remain; wait for R08/R09 before routers. No full gate has been run yet.
+
+Sub-Store committed8cc5994a. Agent deployment migration passes .32 gofmt/vet ./... and full agents
+race1:522.971s. Preparation admission is a shared directory/Agent/deployment L1 key; running uses
+Held without accessing legacy files. Manager's short release-handle mutex is not held over repo
+transactions. Owned leases release on failed commit, panic unwind, Finish, and generation shutdown
+(after commit finishes); rejection never releases a foreign lease. Existing busy/validation order
+is preserved inside BeginDeployment. Tests cover Manager copies, interrupted preparation recovery,
+disconnected request, synthetic failed/panicked/cancelled commits, no new legacy file and unchanged
+legacy bytes/inode/mtime. Normal paths require Violations=0. Removed obsolete lock-path I/O-error
+expectation: that path is now an ignored sentinel. Next: owner/handler cancellation and routers.

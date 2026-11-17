@@ -340,14 +340,17 @@ func TestAgentDeletedDuringRollbackIsAnErrorNotAnUnknownOutcome(t *testing.T) {
 	}
 }
 
-// TestPreparationLockErrorsPropagate: _preparation_running lets OSError
-// through (Python); a lock directory that is a file is an error, not "idle".
-func TestPreparationLockErrorsPropagate(t *testing.T) {
+// O3-6 no longer accesses Python preparation files, even a damaged legacy path.
+func TestPreparationStatusIgnoresLegacyLockPath(t *testing.T) {
 	e := newEnv(t)
 	if err := os.WriteFile(e.dir+"/.agent-deployment-locks", nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.m.defaultPreparationRunning(e.id(), "d"); err == nil {
-		t.Fatal("expected an error")
+	if held, err := e.m.defaultPreparationRunning(e.id(), "d"); err != nil || held {
+		t.Fatal(held, err)
+	}
+	data, err := os.ReadFile(e.dir + "/.agent-deployment-locks")
+	if err != nil || len(data) != 0 {
+		t.Fatal("legacy sentinel changed", err)
 	}
 }

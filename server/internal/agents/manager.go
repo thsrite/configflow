@@ -260,8 +260,7 @@ type Manager struct {
 	client     Client
 
 	deploymentMu sync.Mutex
-	preparing    map[[2]string]bool
-	prepFiles    map[[2]string]*preparationLock
+	preparations map[[2]string]*preparationLease
 
 	// Test seams (Python monkeypatched time.sleep / time.monotonic and
 	// _preparation_running).
@@ -274,12 +273,11 @@ type Manager struct {
 // directory and imports a legacy runtime.sqlite3 once.
 func New(ctx context.Context, repository *repo.Repository) (*Manager, error) {
 	m := &Manager{
-		repository: repository,
-		runtime:    RuntimeFor(repository.DataDir()),
-		preparing:  map[[2]string]bool{},
-		prepFiles:  map[[2]string]*preparationLock{},
-		sleep:      time.Sleep,
-		monotonic:  func() float64 { return time.Since(processStart).Seconds() },
+		repository:   repository,
+		runtime:      RuntimeFor(repository.DataDir()),
+		preparations: map[[2]string]*preparationLease{},
+		sleep:        time.Sleep,
+		monotonic:    func() float64 { return time.Since(processStart).Seconds() },
 	}
 	m.preparationRunning = m.defaultPreparationRunning
 	if err := ImportLegacyDatabase(ctx, repository, m.runtime, m.saveReportedFields); err != nil {

@@ -8,20 +8,16 @@ package agents
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"net/http"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/lockx"
 	"configflow/internal/logx"
 	"configflow/internal/notifications"
 )
@@ -30,78 +26,58 @@ var deploymentIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,80}\z`)
 
 const busyMessage = "another service operation is in progress"
 
-type preparationLock struct{ file *os.File }
-
-func (l *preparationLock) Close() { l.file.Close() }
-
-// preparationFile is _preparation_file: DATA_DIR/.agent-deployment-locks/
-// sha256(agent_id/deployment_id), opened for appending.
-func (m *Manager) preparationFile(agentID, deploymentID string) (*os.File, error) {
-	root := filepath.Join(m.repository.DataDir(), ".agent-deployment-locks")
-	if err := os.Mkdir(root, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
-		return nil, err
-	}
-	sum := sha256.Sum256([]byte(agentID + "/" + deploymentID))
-	return os.OpenFile(filepath.Join(root, hex.EncodeToString(sum[:])), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
+type preparationLease struct {
+	release func()
+	stop    func() bool
 }
 
-func tryLock(file *os.File) (bool, error) {
-	err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB)
-	if errors.Is(err, unix.EWOULDBLOCK) {
-		return false, nil
-	}
-	return err == nil, err
-}
+var preparationLocks = lockx.NewKeyed[[3]string](lockx.LevelJob, "deployment-preparation")
 
-// FinishDeploymentPreparation is finish_deployment_preparation.
+// FinishDeploymentPreparation releases the preparation lease after its owner
+// has finished. Multiple Manager objects observe one shared physical key.
 func (m *Manager) FinishDeploymentPreparation(agentID, deploymentID string) {
-	m.deploymentMu.Lock()
-	defer m.deploymentMu.Unlock()
-	m.finishLocked(agentID, deploymentID)
+	m.releasePreparation([2]string{agentID, deploymentID}, nil)
 }
 
-func (m *Manager) finishLocked(agentID, deploymentID string) {
-	key := [2]string{agentID, deploymentID}
-	delete(m.preparing, key)
-	if lock := m.prepFiles[key]; lock != nil {
-		delete(m.prepFiles, key)
-		lock.Close()
+func (m *Manager) releasePreparation(key [2]string, owned *preparationLease) {
+	m.deploymentMu.Lock()
+	lease := m.preparations[key]
+	if lease != nil && (owned == nil || owned == lease) {
+		delete(m.preparations, key)
+	} else {
+		lease = nil
 	}
-}
-
-// defaultPreparationRunning is _preparation_running: the preparation request
-// and a poll may run in different processes; the file lock dies with its
-// process, an in-memory flag cannot prove that. Opening the lock file and
-// flock failures other than "already locked" are errors, as in Python.
-func (m *Manager) defaultPreparationRunning(agentID, deploymentID string) (bool, error) {
-	m.deploymentMu.Lock()
-	running := m.preparing[[2]string{agentID, deploymentID}]
 	m.deploymentMu.Unlock()
-	if running {
-		return true, nil
+	if lease != nil {
+		if lease.stop != nil {
+			lease.stop()
+		}
+		lease.release()
+	} else if owned != nil {
+		owned.release() // Idempotent; never release a newer owner's lease.
 	}
-	file, err := m.preparationFile(agentID, deploymentID)
-	if err != nil {
-		return false, err
-	}
-	defer file.Close()
-	acquired, err := tryLock(file)
-	if err != nil {
-		return false, err
-	}
-	return !acquired, nil
+}
+
+func (m *Manager) defaultPreparationRunning(agentID, deploymentID string) (bool, error) {
+	return preparationLocks.Held([3]string{m.repository.DataDir(), agentID, deploymentID}), nil
 }
 
 // BeginDeployment is begin_deployment(agent_id, deployment_id): persist a
 // profile-bound task before preparing or sending its artifacts.
 func (m *Manager) BeginDeployment(ctx context.Context, agentID, deploymentID string) (*jsonx.Object, error) {
+	ctx = lifecycle.Detach(ctx)
 	if !deploymentIDPattern.MatchString(deploymentID) {
 		return nil, &ValueError{Message: "Invalid deployment ID"}
 	}
 	var started *jsonx.Object
-	m.deploymentMu.Lock()
-	defer m.deploymentMu.Unlock()
 	key := [2]string{agentID, deploymentID}
+	var lease *preparationLease
+	keep := false
+	defer func() {
+		if !keep && lease != nil {
+			m.releasePreparation(key, lease)
+		}
+	}()
 	value, err := m.UpdateAgents(ctx, "", func(ctx context.Context, agents *[]any) (any, error) {
 		agent, _ := findAgent(*agents, agentID)
 		if agent == nil {
@@ -149,22 +125,15 @@ func (m *Manager) BeginDeployment(ctx context.Context, agentID, deploymentID str
 		record := jsonx.Obj("success", true, "deployment_id", deploymentID, "status", "preparing", "profile_id", profile,
 			"service_type", agent.GetOr("service_type", "mihomo"), "created_at", nowISO())
 		record.Set("events", AppendEvent([]any{}, "preparing", nil, "", nil))
-		file, err := m.preparationFile(agentID, deploymentID)
-		if err != nil {
-			return nil, err
-		}
-		acquired, err := tryLock(file)
-		if err != nil || !acquired {
-			file.Close()
-			if err != nil {
-				return nil, err
-			}
+		_, release, acquired := preparationLocks.TryLock(ctx, [3]string{m.repository.DataDir(), agentID, deploymentID})
+		if !acquired {
 			return jsonx.Obj("success", false, "message", "Deployment preparation already running", "http_status", jsonx.Int(409)), nil
 		}
-		if old := m.prepFiles[key]; old != nil {
-			old.Close()
-		}
-		m.prepFiles[key] = &preparationLock{file}
+		lease = &preparationLease{release: release}
+		m.deploymentMu.Lock()
+		m.preparations[key] = lease
+		m.deploymentMu.Unlock()
+
 		// Earlier tasks can no longer become the latest one, the only task whose
 		// per-file digests are read. Keep their fingerprint; drop the digests.
 		for _, item := range deployments.Values() {
@@ -184,12 +153,18 @@ func (m *Manager) BeginDeployment(ctx context.Context, agentID, deploymentID str
 		return record.Clone(), nil
 	})
 	if err != nil {
-		m.finishLocked(agentID, deploymentID)
 		return nil, err
 	}
 	result := value.(*jsonx.Object)
 	if jsonx.Truthy(result.Value("success")) && !jsonx.Truthy(result.Value("existing")) {
-		m.preparing[key] = true
+		if lease != nil {
+			m.deploymentMu.Lock()
+			if m.preparations[key] == lease {
+				lease.stop = context.AfterFunc(ctx, func() { m.releasePreparation(key, lease) })
+			}
+			m.deploymentMu.Unlock()
+			keep = true
+		}
 		if started != nil {
 			logger.Infof("开始向 Agent %s 发布配置（任务 %s）", agentLabel(started), prefix(deploymentID, 12))
 		}
