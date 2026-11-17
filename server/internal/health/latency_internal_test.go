@@ -13,6 +13,7 @@ import (
 
 // test_node_latency.py::test_raw_and_cached_node_credentials_are_preserved
 func TestRawAndCachedNodeCredentialsArePreserved(t *testing.T) {
+	t.Parallel()
 	raw := proxyOf(context.Background(), jsonx.Obj("id", "a", "name", "A", "type", "trojan", "server", "example.invalid",
 		"port", jsonx.Int(443), "password", "secret", "tls", true), nil)
 	if raw.GetString("password") != "secret" || raw.Value("tls") != true {
@@ -32,6 +33,7 @@ func TestRawAndCachedNodeCredentialsArePreserved(t *testing.T) {
 }
 
 func TestISOUTCOmitsZeroMicroseconds(t *testing.T) {
+	t.Parallel()
 	env := testEnv(nil, nil)
 	if got := isoUTC(env.Now()); got != "2026-11-15T01:02:03.456789Z" {
 		t.Fatal(got)
@@ -40,6 +42,7 @@ func TestISOUTCOmitsZeroMicroseconds(t *testing.T) {
 
 // The DELETE /api/agents/<id> hooks clear both stores of the Agent.
 func TestWireRegistersTheAgentDeleteHooksInOrder(t *testing.T) {
+	// Sequential: resets and installs the process-wide Agent delete hooks.
 	agents.ResetHooks()
 	t.Cleanup(agents.ResetHooks)
 	Wire()

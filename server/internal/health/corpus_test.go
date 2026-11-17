@@ -166,6 +166,7 @@ func encode(v any) string {
 }
 
 func TestReferenceCorpus(t *testing.T) {
+	// Sequential: rows replace the process-wide probe Env and share store files.
 	data, err := os.ReadFile("testdata/corpus.json")
 	if err != nil {
 		t.Fatal(err)

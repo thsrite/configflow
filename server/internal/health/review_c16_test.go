@@ -20,6 +20,7 @@ import (
 // ENOTEMPTY in Go's wording for a full one. Python (3.11, Linux):
 // "[Errno 21] Is a directory: '<path>'" for both.
 func TestReviewStoreDeleteOfADirectoryFailsLikeOSRemove(t *testing.T) {
+	t.Parallel()
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -57,6 +58,7 @@ func TestReviewStoreDeleteOfADirectoryFailsLikeOSRemove(t *testing.T) {
 // stored) when the request context is cancelled; Python's request thread is
 // never interrupted.
 func TestReviewCancelledRequestFinishesTheLatencyTest(t *testing.T) {
+	// Sequential: installs the process-wide probe Env for all three runs.
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)

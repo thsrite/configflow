@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 )
 
 func loadRecordedRows(t *testing.T, name string) []*jsonx.Object {
+	t.Helper()
 	handle, err := os.Open(name)
 	if err != nil {
 		t.Fatal(err)
@@ -75,6 +77,7 @@ func recordedClass(err error) string {
 
 // naive is a recorded naive datetime.now() as a time with those wall fields.
 func naive(t *testing.T, text string) time.Time {
+	t.Helper()
 	parsed, err := time.Parse("2006-01-02T15:04:05.999999", text)
 	if err != nil {
 		t.Fatalf("naive time %q: %v", text, err)
@@ -162,8 +165,20 @@ func TestRecordedPythonSuite(t *testing.T) { replayRecordedFile(t, "testdata/c16
 // server).
 func TestReviewCorpus(t *testing.T) { replayRecordedFile(t, "testdata/review_c16.jsonl.gz") }
 
+// recordedEnvMu protects the process-wide Env while the existing replay suites
+// prepare private fixtures. Other Env/hook tests intentionally remain sequential.
+var recordedEnvMu sync.Mutex
+
 func replayRecordedFile(t *testing.T, name string) {
+	t.Helper()
+	t.Parallel()
 	rows := loadRecordedRows(t, name)
+	replayRecordedRows(t, rows)
+}
+
+func replayRecordedRows(t *testing.T, rows []*jsonx.Object) {
+	t.Helper()
+	var defaults *repo.Repository
 	counts := map[string]int{}
 	failures := 0
 	for i, row := range rows {
@@ -176,23 +191,38 @@ func replayRecordedFile(t *testing.T, name string) {
 			counts["accepted (İ ı ſ under IGNORECASE)"]++
 			continue // Python folds İ/ı/ſ to i/s; Go's engines do not always (rules: turkishI)
 		}
+		// Only repository readers need a database. All other rows exercise pure
+		// functions or their own store files. Default readers share a read-only
+		// repository within the suite; recorded system settings get a fresh one.
 		dir := t.TempDir()
-		r, err := repo.Open(dir, repo.Options{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
-		if system := row.GetObject("system"); system != nil && system.Len() > 0 {
-			if _, err := r.UpdateSystemTransaction(ctx, func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-				target := current.SetDefault("system_config", jsonx.NewObject()).(*jsonx.Object)
-				for key, value := range system.All() {
-					target.Set(key, jsonx.DeepCopy(value))
+		ctx := context.Background()
+		var err error
+		switch fn {
+		case "load_config", "effective_settings", "describe_settings", "check_settings", "settings", "_proxy_of":
+			system := row.GetObject("system")
+			r := defaults
+			if r == nil || system.Len() > 0 {
+				r, err = repo.Open(dir, repo.Options{})
+				if err != nil {
+					t.Fatal(err)
 				}
-				return nil, nil
-			}); err != nil {
-				t.Fatalf("row %d: seed system: %v", i, err)
+				if system.Len() == 0 {
+					defaults = r
+				}
 			}
-			repo.ResetConfigContext(ctx)
+			ctx = repo.WithScope(repo.WithRepository(ctx, r))
+			if system.Len() > 0 {
+				if _, err := r.UpdateSystemTransaction(ctx, func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+					target := current.SetDefault("system_config", jsonx.NewObject()).(*jsonx.Object)
+					for key, value := range system.All() {
+						target.Set(key, jsonx.DeepCopy(value))
+					}
+					return nil, nil
+				}); err != nil {
+					t.Fatalf("row %d: seed system: %v", i, err)
+				}
+				repo.ResetConfigContext(ctx)
+			}
 		}
 		envVars := row.GetObject("env")
 		runner := &replayRunner{worker: row.GetObject("worker")}
@@ -219,120 +249,123 @@ func replayRecordedFile(t *testing.T, name string) {
 			},
 			Converter: converter,
 		}
-		restore := SetEnv(env)
 		now := naive(t, row.GetString("now"))
 		storeNow := now
 		if o, ok := arg("now").(*jsonx.Object); ok {
 			storeNow = naive(t, strings.SplitN(o.GetString("__datetime__"), "+", 2)[0])
 		}
 		var value any
-		switch fn {
-		case "validate_health":
-			err = check.ValidateHealth(arg("values"), jsonx.Truthy(arg("provider")))
-		case "initialize_group_health":
-			group := obj("group")
-			check.InitializeGroupHealth(group)
-			value = group
-		case "initialize_provider_health":
-			source := obj("source")
-			check.InitializeProviderHealth(source)
-			value = source
-		case "provider_health_check":
-			value, err = check.ProviderHealthCheck(obj("source"))
-		case "_ipv4_server":
-			value, err = ipv4Server(arg("value"), str("message"))
-		case "_server":
-			value, err = server(arg("value"))
-		case "normalize_dns_servers":
-			value, err = NormalizeDNSServers(arg("value"), jsonx.Truthy(arg("bootstrap")))
-		case "_needs_bootstrap":
-			value = needsBootstrap(str("server"))
-		case "normalize_config":
-			value, err = NormalizeConfig(arg("value"))
-		case "load_config":
-			value, err = LoadConfig(ctx)
-		case "effective_settings":
-			value, err = EffectiveSettings(ctx, arg("value"))
-		case "describe_settings":
-			value, err = DescribeSettings(ctx, arg("value"))
-		case "check_settings":
-			value, err = CheckSettings(ctx, arg("value"))
-		case "settings":
-			value, err = Settings(ctx)
-		case "_proxy_of":
-			if proxy := proxyOf(ctx, obj("node"), converter); proxy != nil {
-				value = proxy
-			}
-		case "_needs_sub_store":
-			value = needsSubStore(obj("node"))
-		case "_run_probe":
-			value, err = runProbe(ctx, objects(arg("proxies")), obj("options"))
-		case "region_of_name":
-			var code string
-			code, err = check.RegionOfNameValue(arg("name"))
-			value = noneIfEmpty(code)
-		case "region_label":
-			value = check.RegionLabel(arg("code"))
-		case "service_requests":
-			value = check.ServiceRequests()
-		case "evaluate_services":
-			value, err = check.EvaluateServices(arg("results").([]any))
-		case "exit_info":
-			value, err = check.ExitInfo(arg("results").([]any))
-		case "public_services":
-			value = check.PublicServices()
-		case "domain_request":
-			value = check.DomainRequest(str("request_id"), str("url"))
-		case "classify_domain_result":
-			value, err = check.ClassifyDomainResult(arg("result"), str("original_url"))
-		case "summarize_domain":
-			value, err = check.SummarizeDomain(obj("per_target"))
-		case "pick_targets":
-			value, err = check.PickTargets(arg("targets").([]any), arg("preferred_group"))
-		case "probe_url":
-			value = check.ProbeURL(str("host"), arg("port"))
-		case "path_healthy":
-			value, err = check.PathHealthy(arg("stats"))
-		case "judge":
-			value, err = check.Judge(arg("direct"), arg("proxy"), check.JudgeOptions{
-				PassiveFailing: jsonx.Truthy(arg("passive_failing")), DirectHealthy: jsonx.Truthy(arg("direct_healthy")),
-				ProxyHealthy: jsonx.Truthy(arg("proxy_healthy"))})
-		case "domain_suggestion":
-			value, err = check.DomainSuggestion(arg("hosts").([]any))
-			if value == (*jsonx.Object)(nil) {
-				value = nil
-			}
-		case "RegionStore.update", "RegionStore.load", "ProbeStore.save", "ProbeStore.load":
-			storeDir := filepath.Join(dir, "store")
-			agent := str("agent_id")
-			region, probe := check.NewRegionStore(storeDir), check.NewProbeStore(storeDir)
-			if before, ok := row.Value("before").(string); ok {
-				os.MkdirAll(storeDir, 0o755)
-				os.WriteFile(region.Path(agent), []byte(before), 0o644)
-			}
+		func() {
+			recordedEnvMu.Lock()
+			defer recordedEnvMu.Unlock()
+			defer SetEnv(env)()
 			switch fn {
-			case "RegionStore.update":
-				mutated := row.GetObject("mutated")
-				err = region.Update(agent, func(data *jsonx.Object) error {
-					for _, key := range data.Keys() {
-						data.Delete(key)
-					}
-					for key, item := range mutated.All() {
-						data.Set(key, jsonx.DeepCopy(item))
-					}
-					return nil
-				}, storeNow)
-			case "RegionStore.load":
-				value = region.Load(agent)
-			case "ProbeStore.save":
-				err = probe.Save(agent, obj("results"), storeNow)
-			case "ProbeStore.load":
-				value, err = probe.Load(agent, storeNow)
+			case "validate_health":
+				err = check.ValidateHealth(arg("values"), jsonx.Truthy(arg("provider")))
+			case "initialize_group_health":
+				group := obj("group")
+				check.InitializeGroupHealth(group)
+				value = group
+			case "initialize_provider_health":
+				source := obj("source")
+				check.InitializeProviderHealth(source)
+				value = source
+			case "provider_health_check":
+				value, err = check.ProviderHealthCheck(obj("source"))
+			case "_ipv4_server":
+				value, err = ipv4Server(arg("value"), str("message"))
+			case "_server":
+				value, err = server(arg("value"))
+			case "normalize_dns_servers":
+				value, err = NormalizeDNSServers(arg("value"), jsonx.Truthy(arg("bootstrap")))
+			case "_needs_bootstrap":
+				value = needsBootstrap(str("server"))
+			case "normalize_config":
+				value, err = NormalizeConfig(arg("value"))
+			case "load_config":
+				value, err = LoadConfig(ctx)
+			case "effective_settings":
+				value, err = EffectiveSettings(ctx, arg("value"))
+			case "describe_settings":
+				value, err = DescribeSettings(ctx, arg("value"))
+			case "check_settings":
+				value, err = CheckSettings(ctx, arg("value"))
+			case "settings":
+				value, err = Settings(ctx)
+			case "_proxy_of":
+				if proxy := proxyOf(ctx, obj("node"), converter); proxy != nil {
+					value = proxy
+				}
+			case "_needs_sub_store":
+				value = needsSubStore(obj("node"))
+			case "_run_probe":
+				value, err = runProbe(ctx, objects(arg("proxies")), obj("options"))
+			case "region_of_name":
+				var code string
+				code, err = check.RegionOfNameValue(arg("name"))
+				value = noneIfEmpty(code)
+			case "region_label":
+				value = check.RegionLabel(arg("code"))
+			case "service_requests":
+				value = check.ServiceRequests()
+			case "evaluate_services":
+				value, err = check.EvaluateServices(arg("results").([]any))
+			case "exit_info":
+				value, err = check.ExitInfo(arg("results").([]any))
+			case "public_services":
+				value = check.PublicServices()
+			case "domain_request":
+				value = check.DomainRequest(str("request_id"), str("url"))
+			case "classify_domain_result":
+				value, err = check.ClassifyDomainResult(arg("result"), str("original_url"))
+			case "summarize_domain":
+				value, err = check.SummarizeDomain(obj("per_target"))
+			case "pick_targets":
+				value, err = check.PickTargets(arg("targets").([]any), arg("preferred_group"))
+			case "probe_url":
+				value = check.ProbeURL(str("host"), arg("port"))
+			case "path_healthy":
+				value, err = check.PathHealthy(arg("stats"))
+			case "judge":
+				value, err = check.Judge(arg("direct"), arg("proxy"), check.JudgeOptions{
+					PassiveFailing: jsonx.Truthy(arg("passive_failing")), DirectHealthy: jsonx.Truthy(arg("direct_healthy")),
+					ProxyHealthy: jsonx.Truthy(arg("proxy_healthy"))})
+			case "domain_suggestion":
+				value, err = check.DomainSuggestion(arg("hosts").([]any))
+				if value == (*jsonx.Object)(nil) {
+					value = nil
+				}
+			case "RegionStore.update", "RegionStore.load", "ProbeStore.save", "ProbeStore.load":
+				storeDir := filepath.Join(dir, "store")
+				agent := str("agent_id")
+				region, probe := check.NewRegionStore(storeDir), check.NewProbeStore(storeDir)
+				if before, ok := row.Value("before").(string); ok {
+					os.MkdirAll(storeDir, 0o755)
+					os.WriteFile(region.Path(agent), []byte(before), 0o644)
+				}
+				switch fn {
+				case "RegionStore.update":
+					mutated := row.GetObject("mutated")
+					err = region.Update(agent, func(data *jsonx.Object) error {
+						for _, key := range data.Keys() {
+							data.Delete(key)
+						}
+						for key, item := range mutated.All() {
+							data.Set(key, jsonx.DeepCopy(item))
+						}
+						return nil
+					}, storeNow)
+				case "RegionStore.load":
+					value = region.Load(agent)
+				case "ProbeStore.save":
+					err = probe.Save(agent, obj("results"), storeNow)
+				case "ProbeStore.load":
+					value, err = probe.Load(agent, storeNow)
+				}
+			default:
+				t.Fatalf("row %d: unknown function %s", i, fn)
 			}
-		default:
-			t.Fatalf("row %d: unknown function %s", i, fn)
-		}
-		restore()
+		}()
 		got, want := jsonx.NewObject(), jsonx.NewObject()
 		if err != nil {
 			got.Set("err", jsonx.Obj("class", recordedClass(err), "text", err.Error()))
