@@ -931,7 +931,7 @@ The earlier .63-only rulefetch proxy_refused timeout difference did not reproduc
 
 ## A12 — push diff
 
-**Status: `ported`（完整门禁与最终 rebase 集成检查均通过，待独立复核）** · prereqs: A11 verified · Go: `internal/deploy/pushdiff` · branch `go-port-a12` · 实现提交 `1dc56a5c`；深层路径修正 `20ac2ef0`；空区间修正 `460121de`；完整门禁记录 `ae299ba8`（最终 rebase 到 `go` `8489da36`）。
+**Status: `ported`（N7-3a rebase 复验全通过，待独立复核）** · prereqs: A11 verified · Go: `internal/deploy/pushdiff` · branch `go-port-a12` · 实现提交 `44f409e9`；深层路径修正 `f001fc9f`；空区间修正 `476143c4`；既有验收记录 `659fdb8e` / `ad03c2a4`（本轮先 rebase 到 N7-3a `8303397c`，最终基线 `ac1f2377`）。
 
 范围：`backend/agents/push_diff.py` 全部纯比较能力。实现按 `design/a14-publish.md` A12-1：typed `Diff`/`Page`/`Text`、逐键 YAML、命名/标量列表、带敏感片段的统一 diff、文件排序/计数、节点重复名/未命名配对、规则多重集合、行/字节/文件/条目预算、zlib 压缩分页、搜索、stored-token 局部替换。无 HTTP 注册（A13/A14）、无仓库/网络/设备访问，无 push、无子 agent。
 
@@ -939,7 +939,7 @@ The earlier .63-only rulefetch proxy_refused timeout difference did not reproduc
 - `Build(AppliedView, *deploy.Bundle, *deploy.Receipt, map[string]*FileEntries)`；nil `AppliedView.Files` 才表示摘要缺失，空 map 是有效基线；nil receipt 明确表示无保存 bundle，调用者负责 Load。
 - 复用 `deploy.Digests`/`ComparisonManifest`；基线比较摘要读取 **Receipt.ComparisonConfig**，详情读取 receipt 的 live bytes。仅 `Bundle.Files(paths...)` 读取列出的变化文件，空路径集不调用会读取全量的 Files()。
 - `diag.CredentialSpans` / `IsCredentialKey` 放在共享诊断包，URL 识别直接复用 FailureText 的 `diag.URLPattern`，没有复制它的私有模式。URL/userinfo/query/opaque 各分支有单独测试。
-- 所有 YAML 入口使用 `yamlx.Parse`；新增 `yamlx.AllPairs` 只是现有 effectivePairs 的公开迭代视图，避免 Pairs 跳过非字符串键造成静默丢失，也避免在 A12 私有重写 merge。无 `yamlx.Clone`。布尔/数字值通过 facade 解码或 ToJSON 处理。
+- 所有 YAML 入口使用 `yamlx.Parse`；直接使用 N7-3a 已提供的 `yamlx.AllPairs`，保留有效映射键的类型和 merge 次序；A12 原来新增的 13 行已在 rebase 中删除，`internal/yamlx` 相对 go 无改动。`ProjectJSONKeys` 用于改写临时 JSON 投影；本包需要保留键标签做差异比较，不使用该变换。无 `yamlx.Clone`。布尔/数字值通过 facade 解码或 ToJSON 处理。
 - `Text` 保持 string / [string, {secret:string}] wire union；`WithoutStored` 接受 `func(string) []redact.Range`（现有 redact.StoredSecretFinder 是返回该函数的工厂，并非类型）。分页不可变，可并发读；Page 对无效 change 返回空页，A13 在调用前验证 change/offset/limit/query（常量供其复用）。
 
 与 Python 的差异/修正：
@@ -1000,7 +1000,7 @@ The earlier .63-only rulefetch proxy_refused timeout difference did not reproduc
 | `test_same_writing_style_is_not_called_reformatting` | `TestPythonCorpus`（真实 Python oracle） |
 
 新增文件行数（`internal/deploy/pushdiff/`）：`build.go` 263；`config.go` 609；`corpus_test.go` 195；`credentials_test.go` 68；`entries.go` 341；`fuzz_test.go` 89；`json.go` 90；`lists.go` 308；`messages.go` 8；`raw.go` 372；`safety_test.go` 436；`text.go` 303；`types.go` 166。
-共享新增 `internal/agents/diag/credentials.go` 124 行；`yamlx/native_node.go` 增加 13 行（AllPairs）；语料生成器 `testdata/gen_a12.py` 175 行、门禁 `testdata/gate.sh` 20 行、Python oracle gzip 1761756 bytes。无新增依赖。
+共享新增 `internal/agents/diag/credentials.go` 124 行；`yamlx/native_node.go` 无 A12 增补（改用 N7-3a 的 AllPairs）；语料生成器 `testdata/gen_a12.py` 175 行、门禁 `testdata/gate.sh` 20 行、Python oracle gzip 1761756 bytes。无新增依赖。
 
 命令（均从 worktree 根目录）：
 ```sh
@@ -1049,6 +1049,29 @@ baseline: new=0 stale=0
 分支 `go-port-a12`，无 push/PR、无生产访问、无子 agent、无新增依赖。纯 A12 功能无未移植项；A13 的 7 个 Checker 测试归属见上表。
 
 最后一次 `git rebase go` 纳入 `8489da36`，相对已补测的 `6b50151c` **仅 WORKFLOW.md 增加 4 行**，无源码变化，不重复测试。最终工作树干净。
+
+N7-3a 合入后的冲突复验：唯一冲突 `internal/yamlx/native_node.go` 保留 go 版本；没有新增/复制共享 API，A12 实现源码无其他改动。pushdiff/yamlx、四个 60 秒 fuzz、全部 difftest 和 proddiff 复验均通过（`.64`，exit 0），没有新的实现差异或遗留问题。
+
+本轮确切命令（worktree 根目录，`rt` 自动选择 `.64`）：
+```sh
+rt -e GOMAXPROCS=4 -- bash -lc 'set -euo pipefail; set -o pipefail; { cd server; test -z "$(gofmt -l internal/deploy/pushdiff internal/yamlx internal/agents/diag)"; go test -race -count=1 ./internal/deploy/pushdiff ./internal/yamlx; for target in FuzzConfig FuzzRuleEntries FuzzNodeItems FuzzCredentialSpans; do go test -run "^$" -fuzz "^${target}$" -fuzztime=60s ./internal/deploy/pushdiff; done; for d in $(go list ./... | grep difftest); do CONFIGFLOW_DIFF=1 go test -count=1 "$d"; done; cd ..; server/scripts/proddiff.sh; } 2>&1 | tee /tmp/configflow-a12-n73a-rebase.log'
+```
+```text
+ok configflow/internal/deploy/pushdiff 35.065s (race; Python corpus included)
+ok configflow/internal/yamlx 9.216s (race)
+FuzzConfig          60s 244263 execs PASS (61.042s)
+FuzzRuleEntries     60s 328254 execs PASS (61.032s)
+FuzzNodeItems       60s 228981 execs PASS (61.061s)
+FuzzCredentialSpans 60s 176694 execs PASS (61.054s)
+all 12 CONFIGFLOW_DIFF packages: agents 117.365s; aggregations 24.155s; subscriptions 76.717s;
+ devicenotes 0.505s; discovery 2.146s; health 13.633s; httpx 1.354s; mosdns 1.705s;
+ refresh 3.654s; subs 1.835s; substore 6.173s; webdav 18.065s — all ok
+proddiff: self_check=PASS coverage_regressions=0 unmapped_routes=0 compared=435
+agent-deployment-bundle compared=3 success=3（新 go 已解除旧 C31 frozen partial）
+baseline: new=0 stale=0
+```
+
+最终 `git rebase go` 到 `ac1f2377`；相对本轮已验证的 `8303397c`，仅 installer 测试的 UTF-8 locale 修正和文档，无 A12/yamlx 或其他生产源码变化，不重复验证。工作树干净，未 push，尚未开始 A13。
 
 ## A13 — content sync, Agent list/detail, push-diff routes
 
