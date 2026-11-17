@@ -1275,3 +1275,18 @@ current compared=16 request_variants=16 design_errors=[] seconds=44.90；exit=0
 ```
 
 接着补config.py live pull的有名场景及剩余helpers/长流程。
+
+## 批次 73：端口租约修复后有效全量刷新
+
+- .63对批次68已有的全部8091变体完整运行，design_errors=[]，无端口耗尽；耗时1632.85s、退出1（保留84差异变体），不是基础设施失败。生产Go基线为该次构建的afca350b；运行期间集成go已前进至e5903ffb，尚未再rebase，不能声称最新go全量。新批69–72独立验证报告尚未加入本次旧组结果。
+- 5733 Go尚未实现、2236相比通过、37前置依赖、84不同、1 O12单列。原R3977（S654/F2599/B724）、H305、G16；这是本次全量本身，不是包含69–72新用例的覆盖并集。先前失败端口审计的7081中间结果已被本次有效结果替换。
+- 当前主要差异：provider/merged缺生成注释和落盘注释；WebDAV新客户端的PROPFIND正文/方法序列及错误消息（10变体）；规则代理缺通知、内部内容分派、receipt错误分类、CONNECT标准传输字段；订阅失败通知/500外壳、重复写revision；发现库ID形态、旧扩展字段清理；孤立surrogate接受并写U+FFFD；scheduler失败通知。findings保留每个路由/编号/原始合成结果，没有改Go或加基线豁免；CONNECT传输观察仍单独解释待兼容性审核。
+
+```text
+RT_HOST=sunbroke@192.168.0.63 rt --back server/tools/configdiff/testdata/results.json --back server/parity/difftest-config-findings.md -- bash -lc '~/cf-test/.venv/bin/python server/tools/configdiff/run.py > /tmp/configdiff-current-all.log 2>&1; rc=$?; tail -6 /tmp/configdiff-current-all.log | head -5; exit $rc'
+current compared=2236 go-unimplemented=5733 dependency=37 different=84 O12-separate=1
+request_variants=8091 design_errors=[] seconds=1632.85；exit=1
+63 comparator self-checks + wrong-Go-response check OK（该次开始时的框架）
+```
+
+下一步把新组通过常规runner合并刷新到统一结果；仍有大量matrix/H条目和最终.32全量，Step B未完成。
