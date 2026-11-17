@@ -43,7 +43,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R04 | RouterOS REST driver, batch writes | 1415 | verified | HR | R01, R03; shared requests client³ | – | internal/routers |
 | R05 | iKuai driver | 1179 | verified | HR | R01, R03; shared requests client³ | – | internal/routers |
 | R06 | device route editor (RouterOS/iKuai static routes) | 684 | verified | HR | R04, R05 | – | internal/routers |
-| R07 | RouterOS NAT address lists, address-list sync, test helpers | 1422 | missing | HR | R03, R04 | – | internal/routers, internal/routers/routerfake |
+| R07 | RouterOS NAT address lists, address-list sync, test helpers | 1422 | verified | HR | R03, R04 | – | internal/routers, internal/routers/routerfake |
 | R08 | RouterOS policy routing (plan, write, view) | 1349 | missing | HR | R07, C05, C26 (`normalize_policies`, present) | – | internal/routers |
 | R09 | forced DNS (DNS guard), IPv4 same-port forward hint | 773 | missing | HR | R04, R07 | – | internal/routers |
 | R10 | IPv6 policy, IPv6 fake-IP, IPv6 rule-set routes | 1247 | missing | HR | R04, R09 | – | internal/routers |
@@ -430,7 +430,16 @@ Latest targeted output: `171 real Python boundary cases`, `PASS`, `ok configflow
 
 ## R07 — RouterOS NAT address lists, address-list sync, test helpers
 
-**Status: `ported`** (fresh Opus HR review pending; final .32 gates pass) · HR · prereqs: R03, R04 · Go: internal/routers, internal/routers/routerfake
+**Status: `verified`** (O4 Opus HR review 2026-11-17, [review-r07.md](review-r07.md): 0 high, 1 medium, 4 low, all fixed; reviewed together with the R06 fixes) · HR · prereqs: R03, R04 · Go: internal/routers, internal/routers/routerfake
+
+O4 review summary: Medium F1 device diagnostics hid the username, used a private redaction copy and, in the shared
+`request` path, defeated R06's verified route-edit secret message once combined → password only via `internal/redact`,
+`routeSafeError` also hides transport-redacted echoes. Low F2 ranges normalised to CIDR member keys unlike Python `_key`;
+F3 quadratic policy-migration overlap (now bisection) and list scans; F4 reuse scope aliased downloaded rows;
+F5 member read-back compared lengths, not sets. Tests: `r07_review_test.go` (incl. timeouts + raw bodies of every R07
+request, fuzz `FuzzR07DecodeAddressRow`), Python-compared `r07_review_boundary_test.go`. Fake: R07's external-write
+helper renamed `routerfake.ExternalWrite`/`ApplyExternal` (R06 owns `routerfake.Mutation`). Codex-port quality: no
+high finding, fallback not triggered. Extra L5 items 1–4 in the review file.
 
 Files: `backend/routers/routeros_nat_list.py` (1016), `ros_address_lists.py` (297), `backend/routeros_test_helpers.py` (109).
 

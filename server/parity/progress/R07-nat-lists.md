@@ -1,6 +1,6 @@
 # R07 — NAT address lists
 
-Status: **ported**; fresh Opus HR review required before `verified`. Branch go-port-r07, rebased on go.
+Status: **verified** after the fresh Opus HR review ([../review-r07.md](../review-r07.md); 5 findings fixed on branch go-opus-review-r07, rebased on go incl. the R06 fixes). Ported on branch go-port-r07.
 Scope: routeros_nat_list.py, ros_address_lists.py, routeros_test_helpers.py. No routes, no subagents, no push.
 
 Design follows R03 typed rows and R04 driver/handler registry. Typed list plan, resource/check and journal structs; open RouterOS rows retain unknown fields. No jsonx, new dependencies, locks or goroutines. Driver owned by one operation; outer R12/R14 owns L1/L2 locks. Read context cancellable; exported writes detach and each device request retains 10s timeout. Cache proof lives only in one explicit reuse scope, invalidated before any destructive operation.

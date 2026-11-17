@@ -280,3 +280,27 @@ func TestR07PrefixOverlapMatchesPairwise(t *testing.T) {
 		}
 	}
 }
+
+// FuzzR07DecodeAddressRow drives the console row decoder with arbitrary device
+// output: it never panics, and a decoded row survives the encoder that the
+// digest proof uses (runtime keys excluded) unchanged.
+func FuzzR07DecodeAddressRow(f *testing.F) {
+	for _, seed := range []string{
+		"5:.id=*1;address=198.51.100.1;comment=cf-mihomo-nat;disabled=false;list=cf-mihomo-nat-dst",
+		"0:", "1:", "1:=", "2:a=b;c", "2:a=1;a=2", "-1:", "+1:a=b", "3:comment=中文=x;list=L;.id=*FFFF",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, text string) {
+		row := decodeAddressRow(text)
+		if row == nil {
+			return
+		}
+		delete(row, "creation-time")
+		delete(row, "timeout")
+		again := decodeAddressRow(strings.TrimSuffix(EncodeAddressRow(row), "\n"))
+		if !reflect.DeepEqual(again, row) {
+			t.Fatalf("%q decoded to %#v, re-encoded to %#v", text, row, again)
+		}
+	})
+}
