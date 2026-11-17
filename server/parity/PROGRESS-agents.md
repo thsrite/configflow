@@ -1543,6 +1543,15 @@ Hooks to provide: `agents.RegisterHooks{HAServiceOperation, HADeployment, HAActi
 
 ## A19 — Linux gateway core
 
+N7-3d reader follow-up (coordinator-approved): BaseDocument/payload use Parse,
+legacy Mapping codec branches removed; gateway generation/plan logic unchanged.
+All7494 A19 rows pass;4 loader-policy changes have independently recorded real
+Python loader-only expectations (recursion1/schema1/Tab2),changed=classified4,
+unknown0. Base/payload source gates cover3739/5161 occurrences. The unified alias
+budget also applies to editor and enable validation: depth16 gives the existing
+base-YAML warning/refusal, while depth6 preserves all successful assertions.
+See [N7-3d progress](progress/n7-3d.md) for inputs and commands.
+
 N7-4 follow-up (coordinator-approved): `TestGenerateWithAliasChain` retains a
 small shared graph success check; its 16-level binary graph now requires
 `ErrAliasBudget` and empty output. The native writer applies the same expansion

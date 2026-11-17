@@ -167,11 +167,20 @@ func TestGenerateWithAliasChain(t *testing.T) {
 				t.Fatalf("generated %d bytes (aliases expanded?)", len(text))
 			}
 			state, err := gateway.NewConfig(config).EditorState(false)
-			if err != nil || state.FakeIPRange != "198.18.0.0/16" {
-				t.Fatalf("editor: %+v %v", state, err)
-			}
-			if _, err := gateway.NewConfig(config).ValidateSelection([]byte(`{"enabled": true, "rule_set_ids": ["r"]}`)); err != nil {
-				t.Fatal(err)
+			if depth == 16 {
+				if err != nil || state.FakeIPRange != "" || len(state.Warnings) == 0 || !strings.Contains(strings.Join(state.Warnings, "\n"), gateway.BaseYAMLInvalidMessage) {
+					t.Fatalf("unsafe editor graph did not report its base YAML warning: %+v %v", state, err)
+				}
+				if _, err := gateway.NewConfig(config).ValidateSelection([]byte(`{"enabled": true, "rule_set_ids": ["r"]}`)); err == nil {
+					t.Fatal("unsafe base graph enabled the gateway")
+				}
+			} else {
+				if err != nil || state.FakeIPRange != "198.18.0.0/16" {
+					t.Fatalf("editor: %+v %v", state, err)
+				}
+				if _, err := gateway.NewConfig(config).ValidateSelection([]byte(`{"enabled": true, "rule_set_ids": ["r"]}`)); err != nil {
+					t.Fatal(err)
+				}
 			}
 		})
 	}

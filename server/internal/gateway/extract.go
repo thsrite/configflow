@@ -34,8 +34,7 @@ func contentLines(content string) ([]string, error) {
 	}
 	stripped := strings.TrimLeft(content, "\ufeff\r\n \t")
 	var values []string
-	if yamlPayload.MatchString(stripped) || strings.HasPrefix(stripped, "[") ||
-		strings.HasPrefix(stripped, "- ") || strings.HasPrefix(stripped, "---") {
+	if isYAMLContent(stripped) {
 		var err error
 		if values, err = yamlPayloadStrings(stripped); err != nil {
 			return nil, err
@@ -47,6 +46,12 @@ func contentLines(content string) ([]string, error) {
 		return nil, gatewayError(msgTooManyRules)
 	}
 	return values, nil
+}
+
+// isYAMLContent selects the existing rule-provider YAML boundary.
+func isYAMLContent(stripped string) bool {
+	return yamlPayload.MatchString(stripped) || strings.HasPrefix(stripped, "[") ||
+		strings.HasPrefix(stripped, "- ") || strings.HasPrefix(stripped, "---")
 }
 
 // withoutComment is a line up to its first "#", trimmed.

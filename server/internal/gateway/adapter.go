@@ -132,39 +132,37 @@ func (c *Config) BaseDocument() (*yaml.Node, error) {
 	if strings.TrimSpace(c.customConfig) == "" {
 		return yamlx.Map(), nil
 	}
-	value, err := yamlx.LoadWith(c.customConfig, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true})
+	node, err := yamlx.Parse([]byte(c.customConfig))
 	if err != nil {
 		return nil, gatewayError(msgBaseYAMLInvalid)
 	}
-	switch value.(type) {
-	case *jsonx.Object, *yamlx.Mapping:
-		return (&codec{}).node(value), nil
+	if node.Kind != yaml.MappingNode {
+		return nil, gatewayError(msgBaseNotMapping)
 	}
-	return nil, gatewayError(msgBaseNotMapping)
+	return node, nil
 }
 
 // yamlPayloadStrings reads a YAML rule set: the payload list of a mapping,
 // or the document itself, which must be a list of strings.
 func yamlPayloadStrings(text string) ([]string, error) {
-	value, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true})
+	node, err := yamlx.Parse([]byte(text))
 	if err != nil {
 		return nil, gatewayError(msgYAMLSyntax)
 	}
-	switch doc := value.(type) {
-	case *jsonx.Object:
-		value = doc.Value("payload")
-	case *yamlx.Mapping:
-		value, _ = doc.Get("payload")
+	if node.Kind == yaml.MappingNode {
+		node = yamlx.Get(node, "payload")
 	}
-	list, ok := value.([]any)
-	if !ok {
+	node = yamlx.Resolve(node)
+	if node == nil || node.Kind != yaml.SequenceNode {
 		return nil, gatewayError(msgYAMLPayload)
 	}
-	out := make([]string, len(list))
-	for i, item := range list {
-		if out[i], ok = item.(string); !ok {
+	out := make([]string, len(node.Content))
+	for i, item := range node.Content {
+		item = yamlx.Resolve(item)
+		if item == nil || item.Kind != yaml.ScalarNode || item.ShortTag() != "!!str" {
 			return nil, gatewayError(msgYAMLPayload)
 		}
+		out[i] = item.Value
 	}
 	return out, nil
 }
@@ -302,8 +300,6 @@ func containerID(v any) (id any, ok bool) {
 	switch value := v.(type) {
 	case *jsonx.Object:
 		return value, value != nil
-	case *yamlx.Mapping:
-		return value, value != nil
 	case []any:
 		if len(value) > 0 {
 			return listID{&value[0], len(value)}, true
@@ -330,21 +326,6 @@ func (k *codec) node(v any) *yaml.Node {
 		}
 		for key, child := range value.All() {
 			m.Content = append(m.Content, yamlx.Str(key), k.node(child))
-		}
-		return m
-	case *yamlx.Mapping:
-		m := yamlx.Map()
-		if container {
-			k.nodes[id] = m
-		}
-		for _, pair := range value.Pairs {
-			key := yamlx.Str("")
-			if text, ok := pair.Key.(string); ok {
-				key.Value = text
-			} else {
-				key.Tag, key.Value = tagOpaque, jsonx.Str(pair.Key)
-			}
-			m.Content = append(m.Content, key, k.node(pair.Value))
 		}
 		return m
 	case []any:

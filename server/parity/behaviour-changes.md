@@ -334,6 +334,11 @@ Mihomo 导入原先拒绝多文档时只显示“YAML 解析失败”和无位�
 一基行列号，235 个冻结旧输出逐字核对，193 个错误和147个带位置的提示均不变，
 位置差异0。生成、发布指纹和网关行为保持原有约束。
 
+A19 网关编辑器与启用校验也受统一 alias 预算约束：超预算基础 YAML 在编辑器显示
+原有中文 warning，启用校验拒绝；小型共享链继续可用。A19 四条语料的原生 loader
+变化（递归1、隐式类型1、Tab2）由真实 Python 仅替换 loader 得到完整新期望，
+旧 golden 不改，changed=classified4、unknown0。
+
 ## N7-3 — native YAML readers (subs/substore)
 
 Approved by the maintainer/coordinator; design §2.2/5.7. YAML 1.1 implicit spellings follow yaml.v3

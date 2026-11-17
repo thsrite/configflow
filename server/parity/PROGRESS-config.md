@@ -62,6 +62,10 @@ final acceptance remain pending. Provider/deploy diagnostic hooks now carry nati
 errors/one-based coordinates. A frozen old public boundary reference checks235
 complete visible outputs (193 refused,147 positioned),position changes0/unknown0;
 provider/A11/A12 full tests and A13 diagnostic tests pass.
+A19 readers now use Parse with no generation/plan changes: base3739/payload5161
+sources,unknown0. All7494 corpus rows pass;4 approved native-loader differences
+have real Python expectations. Editor/enable checks explicitly reject budget
+excess, small chains succeed. Full gateway suite PASS8.645s.
 See [progress/n7-3d.md](progress/n7-3d.md).
 
 ## N7-4 — native YAML writers (complete; coordinator verification pending)

@@ -76,6 +76,8 @@ func CheckReaderFixtures(t testing.TB, valuesPath, expectedPath string, projecto
 			_, oldErr = yamlx.SafeLoad(source)
 		case "dialers":
 			_, oldErr = yamlx.LoadCSafeFirst(source, yamlx.LoadOptions{KeepNonStringKeys: true})
+		case "gateway-payload":
+			_, oldErr = yamlx.LoadWith(source, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true})
 		default:
 			_, oldErr = yamlx.LoadWith(source, yamlx.LoadOptions{KeepNonStringKeys: true})
 		}

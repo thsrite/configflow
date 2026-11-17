@@ -12,3 +12,6 @@ func SetAuthEnabled(enabled bool) (restore func()) {
 
 // JSONXNode is the node the jsonx boundary makes of a loaded value.
 var JSONXNode = func(v any) *yaml.Node { return (&codec{}).node(v) }
+
+// BaseYAMLInvalidMessage is the original base-reader context for external tests.
+const BaseYAMLInvalidMessage = msgBaseYAMLInvalid

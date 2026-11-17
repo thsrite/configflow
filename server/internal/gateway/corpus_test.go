@@ -174,10 +174,10 @@ func samePayloadYAML(t *testing.T, goText, pyText string) bool {
 	var goDoc, pyDoc struct {
 		Payload []string `yaml:"payload"`
 	}
-	if err := yaml.Unmarshal([]byte(goText), &goDoc); err != nil {
+	if err := yamlx.Unmarshal([]byte(goText), &goDoc); err != nil {
 		t.Fatalf("Go YAML: %v\n%s", err, goText)
 	}
-	if err := yaml.Unmarshal([]byte(pyText), &pyDoc); err != nil {
+	if err := yamlx.Unmarshal([]byte(pyText), &pyDoc); err != nil {
 		t.Fatalf("Python YAML: %v", err)
 	}
 	return slices.EqualFunc(goDoc.Payload, pyDoc.Payload, sameEntry)
@@ -228,6 +228,7 @@ func generationEnv(t *testing.T) {
 
 func TestPythonCorpus(t *testing.T) {
 	rows := loadCorpus(t)
+	nativeReferences := nativeGatewayReferences(t)
 	generationEnv(t)
 	ctx := context.Background()
 	counts := map[string]int{}
@@ -243,6 +244,7 @@ func TestPythonCorpus(t *testing.T) {
 		}
 	}
 	for i, row := range rows {
+		row = nativeGatewayRow(t, i, row, nativeReferences)
 		counts[row.FN]++
 		switch row.FN {
 		case "normalize":
@@ -450,9 +452,9 @@ func TestPythonCorpus(t *testing.T) {
 			} else if err == nil {
 				var want string
 				_ = json.Unmarshal(row.Out, &want)
-				goDoc, errGo := yamlx.Load(text)
-				pyDoc, errPy := yamlx.Load(want)
-				if errGo != nil || errPy != nil || !jsonx.Equal(goDoc, pyDoc) {
+				goDoc, errGo := yamlx.Parse([]byte(text))
+				pyDoc, errPy := yamlx.Parse([]byte(want))
+				if errGo != nil || errPy != nil || !yamlx.Equal(goDoc, pyDoc) {
 					fail(i, row, "generated configuration differs\nGo:\n%s\nPython:\n%s", text, want)
 				}
 			}

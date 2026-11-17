@@ -259,6 +259,8 @@ func main() {
 			oldValue, oldErr = yamlx.SafeLoad(source)
 		case "dialers":
 			oldValue, oldErr = yamlx.LoadCSafeFirst(source, yamlx.LoadOptions{KeepNonStringKeys: true})
+		case "gateway-payload":
+			oldValue, oldErr = yamlx.LoadWith(source, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true})
 		default:
 			oldValue, oldErr = yamlx.LoadWith(source, yamlx.LoadOptions{KeepNonStringKeys: true})
 		}
@@ -285,7 +287,7 @@ func main() {
 						_, newErr = yamlx.ToJSON(proxies)
 					}
 				}
-			case "detection", "core-corpus", "core-review":
+			case "detection", "core-corpus", "core-review", "gateway-payload":
 			default:
 				panic("unknown caller mode")
 			}
