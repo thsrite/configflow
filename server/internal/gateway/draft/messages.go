@@ -1,6 +1,7 @@
 package draft
 
 const (
+	msgBadSection      = "Mihomo/OxiDNS 草稿格式无效，请先检查配置备份"
 	msgNoSnapshot      = "没有可用的试用前草稿快照"
 	msgBadSnapshot     = "原有网关恢复快照无效，请先检查配置备份"
 	msgRevisionMissing = "缺少有效配置版本，请重新打开 Linux 网关设置"

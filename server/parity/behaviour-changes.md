@@ -633,6 +633,9 @@ Python接受。Go按本次安全修复要求统一拒绝这些歧义，保留Inv
   gateway record. Wrong-typed wizard routing evidence fails closed with a
   Chinese diagnostic and zero writes. The shared A14/C36 reader refuses a
   session over 16 MiB rather than treating it as absent.
+- Wrong-typed Mihomo/OxiDNS draft sections refuse with Chinese 400 rather than
+  becoming empty recovery snapshots (Python could crash or create an unusable
+  snapshot). The original stored value is preserved.
 - Native request binding rejects non-finite JSON with 400; the A20 HTTP
   differential explicitly asserts the different diagnostic for `enabled:NaN`.
   Non-standard JSON from an Agent is refused as invalid response (502).

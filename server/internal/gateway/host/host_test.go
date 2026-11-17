@@ -15,6 +15,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/monitor"
+	"configflow/internal/gateway"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -297,5 +298,28 @@ func TestDeviceUsernameIsNotCredential(t *testing.T) {
 	_, err := b.Call(context.Background(), "gw", "status", "GET", "default", nil)
 	if err == nil || err.Error() != "operator api rest-api" {
 		t.Fatal("username destroyed diagnostics", err)
+	}
+}
+
+func TestPublicationRefusalsKeepGatewayErrorAndCause(t *testing.T) {
+	b, c := newBridge(t)
+	c.call = func(context.Context, agents.Request) (*agents.Response, error) {
+		return &agents.Response{StatusCode: 200, Body: []byte(`{"managed":{"active":true}}`)}, nil
+	}
+	for _, check := range []func(context.Context, string, string) error{b.RequireForwardingKept, b.RequireGatewayOffKept} {
+		err := check(context.Background(), "gw", "default")
+		var gatewayErr *gateway.Error
+		if !errors.As(err, &gatewayErr) {
+			t.Fatal("publication refusal lost class", err)
+		}
+	}
+	c.call = func(context.Context, agents.Request) (*agents.Response, error) {
+		return nil, errors.New("synthetic transport")
+	}
+	err := b.RequireForwardingKept(context.Background(), "gw", "default")
+	var gatewayErr *gateway.Error
+	var monitorErr *monitor.Error
+	if !errors.As(err, &gatewayErr) || !errors.As(err, &monitorErr) {
+		t.Fatal("publication transport refusal lost chain", err)
 	}
 }

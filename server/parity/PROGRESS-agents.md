@@ -1639,7 +1639,7 @@ The corpus proves the generated Mihomo configuration; it cannot prove what the h
 - `api/linuxgateway/difftest` 启动真实 Python Flask，输入全部是合成数据，requests 只能访问 loopback。18 条路由均有成功/失败；管理员鉴权、token/JWT providers、跨 profile、错误/大 body、版本边界、forwarding 状态、full_tun/invalid/legacy/legacy_full_tun、真实向导记录、旧式和带 guard 的保存/恢复均比较。每次响应后比较完整 export、SQLite sections/fields（含位置/所有成员）与所有普通文件（排除数据库本体/锁/日志；JSON/YAML 结构化，其余字节 SHA-256）。生成配置通过真实公开 Mihomo generator 与 Python 结构比较。仅时间、随机恢复 ID 和不透明 preview identity 归一化；两端各自的 preview token 保存并回传，不能拿固定 token 掩盖校验。
 - `host` 单测使用真实 Agent HTTPClient 的原始 GET 空 body、POST `{}`、Authorization/Accept/Content-Type，并断言生产 `Pair(3,45)`、512 KiB、NoProxy/NoRedirects；fake 不替换这些参数。
 - 真实 Runtime.Start/BindRequest/Shutdown：apply/remove/forwarding/PersistForwarding/底层写请求、草稿 save/restore 在关机后零请求/零 DB 改动；请求断开仍完成。关机发生在状态预检与 Agent POST 之间、发生在 repo 回调内生成预览之后，都拒绝提交。每个写 owner Detach 后与提交点前检查 ctx.Err；无 handler 级 detach。
-- `scripts/a20-mutation-gate.py`：response、完整 storage、wire timeout、forwarding proof、preview input、command whitelist 六处变异 **6/6 DETECTED**，源文件 finally 恢复。解析 fuzz：FuzzGatewaySpec、FuzzGatewayForwardFilter、FuzzGatewayBundle、FuzzGatewayDraft，另保留 A19 FuzzExtractCIDRs。
+- `scripts/a20-mutation-gate.py`：response、完整 storage、wire timeout、forwarding proof、preview input、command whitelist 六处变异 **6/6 DETECTED**，源文件 finally 恢复。解析 fuzz：FuzzGatewaySpec、FuzzGatewayForwardFilter、FuzzGatewayBundle、FuzzGatewayDraft、FuzzSetupSession，另保留 A19 FuzzExtractCIDRs。
 
 ### 复核问题类别逐项自查
 
@@ -1704,7 +1704,11 @@ selective/full_tun/legacy 的 TUN、ip rule/route、nft/iptables、sysctl 转发
 
 `RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 ./internal/api/linuxgateway/difftest && python3 scripts/a20-mutation-gate.py'` → `response/storage/wire-timeout/forwarding-proof/preview-input/command-whitelist: DETECTED`；`A20 mutation gate: 6/6 detected; sources restored`。
 
-最终 gate / rebase / 提交号在完成后补录。
+变基到 `go@c14763b3`，实现提交 `eabcf6d7`。首次 gate 仅在槽位排队，因补齐 A14 共享版本门和错误类型 section 拒绝而主动取消，未计通过。
+
+A14 接口补充对齐：其 `gateway/agentversion.go` 也并入 A20，公开函数/常量名完全相同；底层改复用 A02 `agents.CompareVersions`，host 引用父包，不保留第二套版本算法。`RequireForwardingKept/RequireGatewayOffKept` 的拒绝现在可 `errors.As` 到 `gateway.Error`，连接失败保留 `monitor.Error` 链，A14 的 `IsPreparationFailure` 能按已有路径识别。A14 的 `deploy.SetGatewayGuards` 尚不在本分支基线；合入两者后在 server wiring 注册两个回调：`host.Bridge{Repository:m.Repository(),Manager:m}.RequireForwardingKept(ctx,t.ID,t.ProfileID)` 与 `RequireGatewayOffKept`（`t` 为 deploy.Target）。A14 的 bundle 上传保护已自行使用同一 parent version gate；A20 的 frozen-main guard 可独立复用。
+
+补充安全拒绝：写前发现 mihomo 不是对象，或首次 snapshot 需携带的 oxidns 不是对象，中文400、原始数据不变；不把错误类型降为 `{}` 快照。最终 gate / 提交号完成后补录。
 
 ## A21 — gateway onboarding
 

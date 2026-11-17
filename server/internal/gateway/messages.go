@@ -3,6 +3,7 @@ package gateway
 // User-facing messages (byte-identical to common/linux_gateway.py; the
 // frontend shows them and tests match on them).
 const (
+	msgGatewayUpgrade    = "Linux 网关需要 Mihomo Agent %s 或更新版本，请先升级 Agent 后再发布。"
 	msgSettingsNotObject = "Linux 网关设置必须是对象"
 	msgEnabledNotBool    = "enabled 必须是布尔值"
 	msgInvalidRuleSetIDs = "请选择有效的 IP 规则集，最多 1024 个"

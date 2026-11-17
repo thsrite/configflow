@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"configflow/internal/gateway"
+	"configflow/internal/gateway/gwbase"
 	"configflow/internal/httpx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -26,7 +27,7 @@ import (
 )
 
 // RestoreKey is the persisted first-trial recovery snapshot member.
-const RestoreKey = "linux_gateway_restore_point"
+const RestoreKey = gwbase.RestoreKey
 
 type document map[string]json.RawMessage
 
@@ -105,6 +106,9 @@ func prepare(config document, body Request, restore bool) (document, error) {
 		candidate["oxidns"] = encode(p.OxiDNS)
 		return candidate, nil
 	}
+	if raw, exists := config["mihomo"]; exists && fields(raw) == nil {
+		return nil, invalid(msgBadSection)
+	}
 	value, ok := body["settings"]
 	if !ok {
 		value = encode(body)
@@ -139,6 +143,11 @@ func remember(config, candidate document) error {
 			return invalid(msgBadSnapshot)
 		}
 		return nil
+	}
+	for _, key := range []string{"mihomo", "oxidns"} {
+		if raw, exists := config[key]; exists && fields(raw) == nil {
+			return invalid(msgBadSection)
+		}
 	}
 	id := make([]byte, 16)
 	if _, err = rand.Read(id); err != nil {

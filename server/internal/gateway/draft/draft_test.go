@@ -347,3 +347,17 @@ func TestBackupRuntimeDoesNotInvalidateAndConcurrentSaveConflicts(t *testing.T) 
 		t.Fatalf("success=%d conflict=%d", success, conflict)
 	}
 }
+
+func TestWrongTypedDraftSectionsCannotBecomeEmptySnapshots(t *testing.T) {
+	for _, config := range []string{`{"mihomo":7,"oxidns":{}}`, `{"mihomo":null,"oxidns":{}}`, `{"mihomo":{},"oxidns":[]}`} {
+		native := fields([]byte(config))
+		before := encode(native)
+		candidate, err := prepare(native, opBody(t, `{"enabled":true,"rule_set_ids":[]}`), false)
+		if err == nil {
+			err = remember(native, candidate)
+		}
+		if err == nil || string(before) != string(encode(native)) {
+			t.Fatal("wrong-typed section became empty evidence", config, err)
+		}
+	}
+}

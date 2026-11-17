@@ -27,9 +27,9 @@ import (
 
 // Minimum versions of the gateway, AIO and standalone forwarding APIs.
 const (
-	MinVersion        = "1.8.25-go"
-	ForwardingVersion = "1.8.40-go"
-	StandaloneVersion = "1.8.41-go"
+	MinVersion        = gateway.MinAgentVersion
+	ForwardingVersion = gateway.ForwardingMinAgentVersion
+	StandaloneVersion = gateway.StandaloneForwardingMinAgentVersion
 	MaxResponseBytes  = 512 * 1024
 )
 
@@ -56,11 +56,20 @@ func fail(code string, status int, message string) error {
 	return monitor.NewError(code, status, message)
 }
 
-var versionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-go)?$`)
-
 // Supports reports whether a well-formed Agent version implements minimum.
 func Supports(a *model.Agent, minimum string) bool {
-	return a != nil && versionPattern.MatchString(a.Version) && agents.CompareVersions(a.Version, minimum) >= 0
+	if a == nil {
+		return false
+	}
+	switch minimum {
+	case MinVersion:
+		return gateway.SupportsGateway(a.Version)
+	case ForwardingVersion:
+		return gateway.SupportsForwarding(a.Version)
+	case StandaloneVersion:
+		return gateway.SupportsStandaloneForwarding(a.Version)
+	}
+	return false
 }
 
 func (b *Bridge) agent(ctx context.Context, id string) (*model.Agent, *jsonx.Object, error) {
@@ -536,10 +545,10 @@ func (b *Bridge) RecordStatus(ctx context.Context, id, profile string) (Reply, e
 func (b *Bridge) RequireForwardingKept(ctx context.Context, id, profile string) error {
 	s, err := b.Call(ctx, id, "status", "GET", profile, nil)
 	if err != nil {
-		return fmt.Errorf(msgPublishUnknown, err)
+		return publishError(err)
 	}
 	if !KeepsForwarding(s) {
-		return errors.New(ForwardingNotKept(msgPublishAction))
+		return &gateway.Error{Message: ForwardingNotKept(msgPublishAction)}
 	}
 	return nil
 }
@@ -552,18 +561,34 @@ func (b *Bridge) RequireGatewayOffKept(ctx context.Context, id, profile string) 
 	}
 	s, err := b.RecordStatus(ctx, id, profile)
 	if err != nil {
-		return fmt.Errorf(msgPublishUnknown, err)
+		return publishError(err)
 	}
 	if !recordKept(a, s) {
-		return errors.New(msgPublishOff)
+		return &gateway.Error{Message: msgPublishOff}
 	}
 	return nil
 }
 
 // RequireGatewayAgent guards a generated gateway configuration before upload.
 func RequireGatewayAgent(a *model.Agent) error {
-	if !Supports(a, MinVersion) {
-		return errors.New(msgGatewayAgent)
+	version := ""
+	if a != nil {
+		version = a.Version
 	}
-	return nil
+	return gateway.RequireGatewayAgent(version)
+}
+
+type guardFailure struct {
+	reason *gateway.Error
+	cause  error
+}
+
+func (e *guardFailure) Error() string   { return e.reason.Error() }
+func (e *guardFailure) Unwrap() []error { return []error{e.reason, e.cause} }
+func publishError(err error) error {
+	var monitorErr *monitor.Error
+	if !errors.As(err, &monitorErr) {
+		return err
+	}
+	return &guardFailure{reason: &gateway.Error{Message: fmt.Sprintf(msgPublishUnknown, monitorErr.Message)}, cause: err}
 }
