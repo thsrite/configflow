@@ -14,7 +14,7 @@
   修复保留原因链，仍能匹配原验证错误类；中文展示文本不变，完整原生诊断、原生行列
   通过 `errors.As(*yamlx.SyntaxError)` 保留。gateway 不新增显示诊断，以遵守原有中文合同。
   `TestReviewN73DProviderReaderCauses` / `TestReviewN73DGatewayReaderCauses` 通过；
-  原235条 provider 完整显示参照也通过（0位置差）。修复提交：本条对应提交，最终补列 SHA。
+  原235条 provider 完整显示参照也通过（0位置差）。修复提交：`117f785f0`。
 - **F2 / medium：AST 门漏扫 cmd/tools 对 yamlxtest 的运行时导入，并放过 yamlx 任意子包。**
   原门仅限制 internal 下运行时 helper 导入，且 WalkDir 跳过整个 yamlx 目录。
   合成违规文件在 cmd 导入 yamlxtest、在 yamlx/bypass 直接引用 yaml.Unmarshal，旧门均退出0；
@@ -22,12 +22,12 @@
   现扫描全部子包，仅 yamlx 本包和 yamlxtest 本包可直接读 YAML；两个固定 oracle 工具和
   testdata recorder 可以导入测试 helper，其余 cmd/tools/internal 的非测试文件均禁止。
   11个永久正/负控覆盖 import alias、函数引用、dot import、Clone、helper、子包，全部通过。
-  修复提交：待提交。
+  修复提交：本次门禁补强提交，最终补列 SHA。
 - **F3 / low：冻结档案缺少独立全来源执行门。**
   原有 Classify 按调用者选中的来源运行；convert 的3837来源只跑注入值/Parse audit，
   不调用 Classify。档案条数/SHA固定不能保证全部21343来源均在每次测试实际执行。
   新增 `TestAllFrozenReaderSources` 对每条来源调用 Classify，逐条校验当前完整图或完整错误，
-  不恢复旧实现；执行21343，unknown=0，类别计数与作者报告一致。修复提交：待提交。
+  不恢复旧实现；执行21343，unknown=0，类别计数与作者报告一致。修复提交：本次门禁补强提交，最终补列 SHA。
 
 ## 验证（迭代）
 

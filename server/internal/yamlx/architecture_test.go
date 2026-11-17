@@ -1,6 +1,7 @@
 package yamlx_test
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -22,6 +23,18 @@ func TestYAMLFacadeBoundary(t *testing.T) {
 		t.Fatal("missing source location")
 	}
 	server := filepath.Clean(filepath.Join(filepath.Dir(file), "../.."))
+	violations, err := yamlFacadeViolations(server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, violation := range violations {
+		t.Error(violation)
+	}
+}
+
+func yamlFacadeViolations(server string) ([]string, error) {
+	var violations []string
+	report := func(format string, args ...any) { violations = append(violations, fmt.Sprintf(format, args...)) }
 	facade := filepath.Join(server, "internal/yamlx")
 	for _, relative := range []string{"internal", "tools", "cmd"} {
 		err := filepath.WalkDir(filepath.Join(server, relative), func(path string, entry fs.DirEntry, walkErr error) error {
@@ -29,9 +42,7 @@ func TestYAMLFacadeBoundary(t *testing.T) {
 				return walkErr
 			}
 			if entry.IsDir() {
-				if path == facade {
-					return filepath.SkipDir
-				}
+
 				return nil
 			}
 			if !strings.HasSuffix(path, ".go") {
@@ -48,11 +59,17 @@ func TestYAMLFacadeBoundary(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				if imported == "configflow/internal/yamlx/yamlxtest" && strings.HasPrefix(path, filepath.Join(server, "internal")+string(filepath.Separator)) && !strings.HasSuffix(path, "_test.go") {
-					t.Errorf("runtime import of migration test facade: %s", positions.Position(spec.Pos()))
+				testOnly := strings.HasSuffix(path, "_test.go")
+				relative, err := filepath.Rel(server, path)
+				if err != nil {
+					return err
+				}
+				oracle := relative == "tools/yamlreaderoracle/main.go" || relative == "tools/yamlwriteroracle/main.go" || relative == "internal/yamlx/testdata/readers/main.go"
+				if imported == "configflow/internal/yamlx/yamlxtest" && !testOnly && !oracle {
+					report("runtime import of migration test facade: %s", positions.Position(spec.Pos()))
 				}
 				if imported == "configflow/internal/pyyaml" || imported == "configflow/internal/yamlx/yamltest" {
-					t.Errorf("retired YAML package at %s", positions.Position(spec.Pos()))
+					report("retired YAML package at %s", positions.Position(spec.Pos()))
 				}
 				if imported != "gopkg.in/yaml.v3" && imported != "configflow/internal/yamlx" {
 					continue
@@ -65,7 +82,7 @@ func TestYAMLFacadeBoundary(t *testing.T) {
 					name = spec.Name.Name
 				}
 				if name == "." {
-					t.Errorf("dot-import bypasses YAML facade audit: %s", path)
+					report("dot-import bypasses YAML facade audit: %s", path)
 				}
 				imports[name] = imported
 			}
@@ -79,26 +96,75 @@ func TestYAMLFacadeBoundary(t *testing.T) {
 					return true
 				}
 				imported := imports[identifier.Name]
-				if imported == "gopkg.in/yaml.v3" && (selector.Sel.Name == "Unmarshal" || selector.Sel.Name == "NewDecoder") {
-					t.Errorf("raw YAML reader outside facade: %s", positions.Position(selector.Pos()))
+				nativeReader := filepath.Dir(path) == facade || filepath.Dir(path) == filepath.Join(facade, "yamlxtest")
+				if !nativeReader && imported == "gopkg.in/yaml.v3" && (selector.Sel.Name == "Unmarshal" || selector.Sel.Name == "NewDecoder") {
+					report("raw YAML reader outside facade: %s", positions.Position(selector.Pos()))
 				}
 				if imported == "configflow/internal/yamlx" && selector.Sel.Name == "Clone" && !strings.HasSuffix(path, "_test.go") {
-					t.Errorf("runtime YAML clone: %s", positions.Position(selector.Pos()))
+					report("runtime YAML clone: %s", positions.Position(selector.Pos()))
 				}
 				return true
 			})
 			return nil
 		})
 		if err != nil {
-			t.Fatal(err)
+			return nil, err
 		}
 	}
 	for _, name := range []string{"load.go", "construct.go", "resolve.go", "timestamp.go", "libyaml.go"} {
 		if _, err := os.Stat(filepath.Join(facade, name)); !os.IsNotExist(err) {
-			t.Errorf("retired YAML loader remains: %s (%v)", name, err)
+			report("retired YAML loader remains: %s (%v)", name, err)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(server, "internal/pyyaml")); !os.IsNotExist(err) {
-		t.Errorf("retired parser remains: %v", err)
+		report("retired parser remains: %v", err)
+	}
+
+	return violations, nil
+}
+
+func TestYAMLFacadeNegativeControls(t *testing.T) {
+	tests := []struct{ name, path, source, diagnostic string }{
+		{"raw reader", "internal/example/reader.go", `package example; import y "gopkg.in/yaml.v3"; var read = y.Unmarshal`, "raw YAML reader"},
+		{"decoder reference", "tools/example/reader.go", `package example; import y "gopkg.in/yaml.v3"; var read = y.NewDecoder`, "raw YAML reader"},
+		{"dot import", "internal/example/reader.go", `package example; import . "gopkg.in/yaml.v3"`, "dot-import"},
+		{"runtime clone", "cmd/example/reader.go", `package example; import y "configflow/internal/yamlx"; var copy = y.Clone`, "runtime YAML clone"},
+		{"runtime helper", "internal/example/reader.go", `package example; import _ "configflow/internal/yamlx/yamlxtest"`, "runtime import"},
+		{"command helper", "cmd/example/reader.go", `package example; import _ "configflow/internal/yamlx/yamlxtest"`, "runtime import"},
+		{"tool helper", "tools/example/reader.go", `package example; import _ "configflow/internal/yamlx/yamlxtest"`, "runtime import"},
+		{"facade subpackage", "internal/yamlx/bypass/reader.go", `package bypass; import y "gopkg.in/yaml.v3"; var read = y.Unmarshal`, "raw YAML reader"},
+		{"types and writer", "internal/example/writer.go", `package example; import y "gopkg.in/yaml.v3"; var n y.Node; var write = y.NewEncoder`, ""},
+		{"test helper", "internal/example/reader_test.go", `package example; import _ "configflow/internal/yamlx/yamlxtest"`, ""},
+		{"oracle helper", "tools/yamlreaderoracle/main.go", `package main; import _ "configflow/internal/yamlx/yamlxtest"`, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			for _, dir := range []string{"internal", "cmd", "tools"} {
+				if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			path := filepath.Join(root, tt.path)
+			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(tt.source), 0600); err != nil {
+				t.Fatal(err)
+			}
+			violations, err := yamlFacadeViolations(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.diagnostic == "" {
+				if len(violations) != 0 {
+					t.Fatalf("valid boundary rejected: %v", violations)
+				}
+				return
+			}
+			if len(violations) != 1 || !strings.Contains(violations[0], tt.diagnostic) {
+				t.Fatalf("negative control escaped audit: %v", violations)
+			}
+		})
 	}
 }
