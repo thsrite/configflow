@@ -87,12 +87,12 @@ second-signal exit. Three old loop lifetime flocks removed now; their timing/Per
 O3-4. Production has no loop-disable switch. Implementation and approved boundaries:
 [progress/o3-3-startup.md](progress/o3-3-startup.md), [design notes](../design/o3-startup-shutdown.md).
 
-Post-fix .32 fmt/vet, required race plus instance/repo, both tag sets, `-p=4` full suite, all nine then
-present enabled tagged differentials, three synthetic corrupt-startup checks and 31 proddiff tool tests
-pass; proddiff 23 self-checks/2831cases/415comparisons, `new=0 stale=0`. Actual SIGTERM idle/publishing/
+Post-fix .32 fmt/vet, required race plus instance/repo, both tag sets, `-p=4` full suite, all ten
+currently enabled tagged differentials (including N7-2 subs), three synthetic corrupt-startup checks
+and 31 proddiff tool tests pass; proddiff 23 self-checks/2831cases/415comparisons, `new=0 stale=0`. Actual SIGTERM idle/publishing/
 blocked Drain and second-signal cases pass; real Python-compatible and alias ownership rejection pass
 with zero scheduled egress. Author status is ported; Opus review with O3-1/O3-2 is still required.
-Final latest-go composition check includes N7-2's additional subs/difftest package.
+Latest-go composition check also passes with N7-2; no O3-3 production source changed during rebase.
 
 ## Known accepted differences (do not rediscover)
 

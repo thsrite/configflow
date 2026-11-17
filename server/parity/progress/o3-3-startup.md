@@ -1,6 +1,6 @@
 # O3-3 — instance ownership, startup and shutdown
 
-Status: implementation and post-fix `.32` acceptance complete; latest-go composition check pending. Branch `go-o3-3`, rebased onto
+Status: ported; post-fix `.32` acceptance and latest-go composition checks complete. Branch `go-o3-3`, rebased onto
 `go@3ae44741`; tested candidate `00126bf9`. No sub-agents, pushes or production-device access.
 Coordinator successor: `bb75f5c0-8c87-410c-84cd-20801944f7e0`.
 
@@ -134,7 +134,29 @@ Earlier all-touched-package race also passed metrics/refresh/discovery/monitor/s
 race is not requested here; its known default-timeout issue remains owned by another agent.
 Non-test lines: instance0→121, cmd233→393. No dependency added.
 
-During final acceptance, go integrated N7-2 and its new subs/difftest package. Final rebase will
-preserve both ledger/progress sections; a composition rerun will check the full suite, all ten now
-present enabled tagged differential packages, fmt/vet and proddiff. Required race above remains
-recorded against the tested O3-3 code. Final rebase/clean verification follows this composition check.
+## Latest-go composition acceptance
+
+Rebased onto `go@fd731be1`, retaining all N7-2 and O3 ledger/progress entries. Only documentation
+conflicted; compared every O3-3 source directory against the full-tested candidate and found no code
+or test differences. N7-2 adds a tenth enabled differential package.
+
+The composition command is the final command above with the race and two tag-test lines omitted
+(the O3-3 sources remain identical). It exited 0 on .32:
+
+- gofmt/vet: silent pass.
+- Full `go test -p=4 -timeout=30m -count=1 ./...`: all pass, including main96.608s,
+  importer1.455s, installer218.506s, oxidns106.586s, repo4.226s, yamlx1.684s.
+- All ten explicitly enabled configflow_difftest packages: agents157.811s, subscriptions145.899s,
+  discovery5.680s, health16.447s, httpx2.658s, mosdns3.194s, refresh6.742s,
+  subs3.169s, substore11.701s, webdav34.478s; every package passes.
+- Production binary synthetic corrupt startup script: all 3 cases pass, safe file+stderr,
+  original database bytes unchanged.
+- Proddiff tool tests: `Ran 31 tests in 0.030s`, `OK`.
+- Tagged proddiff: 23 self-checks PASS, 2831 cases/415 comparisons,
+  coverage_regressions=0, unmapped_routes=0, baseline `new=0 stale=0`; unchanged 11 baseline
+  differences, 4 synchronous Startup names, 5 disabled periodic loops. Existing bracket tolerance
+  rescued 2 comparisons after N7-2; no rule, waiver or baseline was added by O3-3.
+
+Latest go then merged only importer/oxidns test-harness repairs and handoff notes. Final rebase and
+focused checks of those changed tests follow; production code is unchanged from this composition run.
+No source change remains pending. Author status is ported, not independently verified.
