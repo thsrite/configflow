@@ -70,6 +70,12 @@ func FuzzMosDNSYAML(f *testing.F) {
 		_, _ = ParseDNSUpstreams(text)
 		_, _ = ConvertRuleContentForMosDNS(text)
 		_ = checkReferences(text, nil, false)
+		out, err := GenerateMosDNSConfig(jsonx.Obj("mosdns", jsonx.Obj("custom_config", text)), "")
+		if err == nil {
+			if _, err := yamlx.Parse([]byte(out)); err != nil {
+				t.Fatalf("invalid generated YAML: %v", err)
+			}
+		}
 	})
 }
 

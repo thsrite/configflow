@@ -19,6 +19,7 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/substore"
+	"configflow/internal/yamlx"
 )
 
 func repoContext(t *testing.T) (context.Context, *repo.Repository) {
@@ -63,13 +64,18 @@ func wantContains(t *testing.T, detail string, parts ...string) {
 
 func TestInvalidYAMLKeepsSourcePositionAndOriginalProblem(t *testing.T) {
 	repoContext(t)
-	_, err := ParseProviderProxies("proxies:\n  - name: Broken\n    type: [http\n", "机场 A", "./providers/a.yaml")
+	source := "proxies:\n  - name: Broken\n    type: [http\n"
+	_, parseErr := yamlx.Parse([]byte(source))
+	if parseErr == nil {
+		t.Fatal("invalid fixture accepted")
+	}
+	_, err := ParseProviderProxies(source, "机场 A", "./providers/a.yaml")
 	var strategy *rules.StrategyReferenceError
 	if !errors.As(err, &strategy) || errClass(err) != "DialerReferenceError" {
 		t.Fatalf("err %v (%s)", err, errClass(err))
 	}
 	wantContains(t, err.Error(), "CTX[订阅|机场 A|./providers/a.yaml]",
-		"SRC[Provider YAML 内容无效|2|1|本次订阅返回的内容|YAMLError:None:yaml: line 2:")
+		"SRC[Provider YAML 内容无效|2|1|本次订阅返回的内容|YAMLError:None:"+parseErr.Error())
 }
 
 func TestShapesReportExactFieldAndSourceLine(t *testing.T) {

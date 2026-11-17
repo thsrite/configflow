@@ -52,6 +52,7 @@ func FuzzProviderYAML(f *testing.F) {
 	f.Add("proxies: [{name: Synthetic, type: http}]")
 	f.Add("proxies: &p [*p]")
 	f.Fuzz(func(t *testing.T, text string) {
+		_, _ = loadProviderProxies(text, "Synthetic", "", "订阅", "本次订阅返回的内容")
 		document, err := yamlx.Parse([]byte(text))
 		if err != nil {
 			return
