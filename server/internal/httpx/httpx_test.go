@@ -79,7 +79,7 @@ func TestLargeResponseEncodesOnceAndKeepsRedaction(t *testing.T) {
 	if !jsonx.Equal(shared, original) {
 		t.Fatal("payload was modified")
 	}
-	if !strings.HasPrefix(single.Text(), "{\"items\": [{\"[REDACTED]\": \"[REDACTED]\", \"name\": \"\\u4f8b") {
+	if !strings.HasPrefix(single.Text(), "{\"items\":[{\"[REDACTED]\":\"[REDACTED]\",\"name\":\"例子") {
 		t.Fatal(single.Text()[:80])
 	}
 }
@@ -96,7 +96,7 @@ func TestScalarsKeepWireBehavior(t *testing.T) {
 		}
 	}
 	srv := jsonServer(t, func() any { return nil }, nil)
-	if body := srv.Get("/static/ordinary").Text(); body != "null\n" {
+	if body := srv.Get("/static/ordinary").Text(); body != "null" {
 		t.Fatalf("null body %q", body)
 	}
 	srv = jsonServer(t, func() any { return "private-secret" }, nil)
@@ -137,7 +137,7 @@ func TestRedactedKeyCollisionsPreserveEncoderOrder(t *testing.T) {
 		t.Fatal("differ")
 	}
 	// sorted visit: "[REDACTED]"(3), "nested", "private-secret-a"(2), "private-secret-z"(1) → last wins
-	if single != `{"[REDACTED]": 1, "nested": [{"[REDACTED]": 4}]}` {
+	if single != `{"[REDACTED]":1,"nested":[{"[REDACTED]":4}]}` {
 		t.Fatal(single)
 	}
 }
@@ -187,7 +187,7 @@ func TestSensitiveKeysAreDroppedAndRawJSONBodiesAreRedacted(t *testing.T) {
 		})
 	})})
 	setSecrets(t, srv, []string{"private-secret"}, "agent-secret")
-	if body := srv.Get("/static/raw").Text(); body != `{"a": {}, "b": "[REDACTED]"}` {
+	if body := srv.Get("/static/raw").Text(); body != `{"a":{},"b":"[REDACTED]"}` {
 		t.Fatal(body)
 	}
 	if body := srv.Get("/static/text").Text(); body != "private-secret" {

@@ -73,14 +73,14 @@ func TestFileResponsesHeadRangeAndUploads(t *testing.T) {
 	resp = get("POST", "/static/upload", map[string]string{"Content-Type": "application/octet-stream"}, body)
 	data, _ = io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if string(data) != `{"size": `+itoa(len(body))+`}` {
+	if string(data) != `{"size":`+itoa(len(body))+`}` {
 		t.Fatal(string(data))
 	}
 	resp = get("GET", "/static/headers", map[string]string{"X-Forwarded-Host": "config.example:8443",
 		"X-Forwarded-Proto": "https", "X-Forwarded-For": "198.51.100.10, 192.0.2.1"}, nil)
 	data, _ = io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if string(data) != `{"forwarded": "198.51.100.10, 192.0.2.1", "host": "config.example:8443", "scheme": "https"}` {
+	if string(data) != `{"forwarded":"198.51.100.10, 192.0.2.1","host":"config.example:8443","scheme":"https"}` {
 		t.Fatal(string(data))
 	}
 }

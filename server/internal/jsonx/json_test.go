@@ -88,3 +88,30 @@ func TestJSONBridgeRejectsInvalidValues(t *testing.T) {
 		}
 	}
 }
+
+func TestJSONBridgeRejectsMixedCycles(t *testing.T) {
+	type record struct {
+		Back *Object `json:"back"`
+	}
+	tests := []struct {
+		name string
+		wrap func(*Object) any
+	}{
+		{"map", func(o *Object) any { return map[string]any{"back": o} }},
+		{"struct", func(o *Object) any { return record{o} }},
+		{"slice", func(o *Object) any { return []*Object{o} }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := NewObject()
+			o.Set("native", tt.wrap(o))
+			if _, err := json.Marshal(o); err == nil {
+				t.Fatal("mixed cycle must fail")
+			}
+		})
+	}
+	shared := Obj("safe", true)
+	if _, err := json.Marshal(Obj("one", shared, "two", shared)); err != nil {
+		t.Fatal(err)
+	}
+}

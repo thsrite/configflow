@@ -31,6 +31,7 @@ import (
 	apiauth "configflow/internal/api/auth"
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
+	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 )
@@ -160,7 +161,7 @@ func Bearer(token string) Option { return Header("Authorization", "Bearer "+toke
 // JSON sends v as an application/json body (Flask test client's json=).
 func JSON(v any) Option {
 	return func(r *http.Request) {
-		data, err := jsonx.Encode(v, jsonx.Options{EnsureASCII: true, SortKeys: true})
+		data, err := jsonresp.Encode(v)
 		if err != nil {
 			panic(err)
 		}
@@ -281,7 +282,7 @@ func (r *Result) Text() string { return string(r.Body) }
 func (r *Result) WantJSON(want any) *Result {
 	r.T.Helper()
 	if got := r.JSON(); !jsonx.Equal(got, want) {
-		encoded, _ := jsonx.Encode(want, jsonx.Options{SortKeys: true})
+		encoded, _ := jsonresp.Encode(want)
 		r.T.Fatalf("body %s\nwant %s", r.Body, encoded)
 	}
 	return r

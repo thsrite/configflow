@@ -358,7 +358,7 @@ func compare(r request, py, gor response) []string {
 	pv, perr := jsonx.Parse(py.body)
 	gv, gerr := jsonx.Parse(gor.body)
 	switch {
-	case perr == nil && gerr == nil && len(r.mask) > 0:
+	case perr == nil && gerr == nil:
 		if !jsonx.Equal(maskJSON(pv, r.mask), maskJSON(gv, r.mask)) {
 			diffs = append(diffs, fmt.Sprintf("json python %s go %s", py.body, gor.body))
 		}

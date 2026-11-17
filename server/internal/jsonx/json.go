@@ -6,11 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 )
 
 // MarshalJSON bridges ordered legacy objects to encoding/json. Member order and
 // number literals are retained; non-JSON numbers and cyclic trees are rejected.
 func (o *Object) MarshalJSON() ([]byte, error) {
+	if err := checkBridgeCycles(reflect.ValueOf(o), make(map[bridgeID]bool), 0); err != nil {
+		return nil, err
+	}
 	b := bridgeEncoder{objects: make(map[*Object]bool), lists: make(map[*any]bool)}
 	if err := b.value(o, 0); err != nil {
 		return nil, err
@@ -45,6 +49,9 @@ func (o *Object) UnmarshalJSON(data []byte) error {
 
 // MarshalJSON writes n as a JSON number without changing its literal text.
 func (n Number) MarshalJSON() ([]byte, error) {
+	if n == "" {
+		return nil, errors.New("encode legacy number: empty number")
+	}
 	return json.Marshal(json.Number(n))
 }
 
@@ -182,4 +189,97 @@ func bridgeDecode(d *json.Decoder) (any, error) {
 		return Number(n), nil
 	}
 	return token, nil
+}
+
+// Native containers can point back through an Object's custom marshaler. Check
+// that mixed graph before invoking encoding/json, which cannot detect cycles
+// spanning separate MarshalJSON calls. Ignore fields the native encoder ignores.
+type bridgeID struct {
+	kind    reflect.Kind
+	pointer uintptr
+	length  int
+}
+
+func checkBridgeCycles(v reflect.Value, active map[bridgeID]bool, depth int) error {
+	if !v.IsValid() {
+		return nil
+	}
+	if depth > MaxDepth {
+		return errors.New("encode ordered object: nesting limit exceeded")
+	}
+	if v.Kind() == reflect.Interface {
+		return checkBridgeCycles(v.Elem(), active, depth)
+	}
+	if v.Type() == reflect.TypeFor[*Object]() {
+		if v.IsNil() {
+			return nil
+		}
+		id := bridgeID{reflect.Pointer, v.Pointer(), 0}
+		if active[id] {
+			return errors.New("encode ordered object: cyclic value")
+		}
+		active[id] = true
+		defer delete(active, id)
+		for _, item := range v.Interface().(*Object).All() {
+			if err := checkBridgeCycles(reflect.ValueOf(item), active, depth+1); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	// Other custom marshalers own their representation (e.g. time.Time).
+	if v.Type().Implements(reflect.TypeFor[json.Marshaler]()) {
+		return nil
+	}
+	var id bridgeID
+	switch v.Kind() {
+	case reflect.Pointer, reflect.Slice:
+		if v.IsNil() {
+			return nil
+		}
+		id = bridgeID{v.Kind(), v.Pointer(), 0}
+		if v.Kind() == reflect.Slice {
+			id.length = v.Len()
+		}
+	case reflect.Map:
+		if v.IsNil() {
+			return nil
+		}
+		id = bridgeID{v.Kind(), uintptr(v.UnsafePointer()), 0}
+	}
+	if id.pointer != 0 {
+		if active[id] {
+			return errors.New("encode ordered object: cyclic value")
+		}
+		active[id] = true
+		defer delete(active, id)
+	}
+	switch v.Kind() {
+	case reflect.Pointer:
+		return checkBridgeCycles(v.Elem(), active, depth+1)
+	case reflect.Map:
+		it := v.MapRange()
+		for it.Next() {
+			if err := checkBridgeCycles(it.Value(), active, depth+1); err != nil {
+				return err
+			}
+		}
+	case reflect.Array, reflect.Slice:
+		for i := 0; i < v.Len(); i++ {
+			if err := checkBridgeCycles(v.Index(i), active, depth+1); err != nil {
+				return err
+			}
+		}
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			field := v.Type().Field(i)
+			if field.PkgPath != "" || field.Tag.Get("json") == "-" {
+				continue
+			}
+			if err := checkBridgeCycles(v.Field(i), active, depth+1); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

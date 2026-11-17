@@ -236,7 +236,7 @@ func TestInfoAndClear(t *testing.T) {
 	ctx := repo.WithRepository(context.Background(), client.repo)
 	res, _ := client.app.Invoke(ctx, httpx.InvokeRequest{Method: "POST", Path: "/api/logs/clear"})
 	cleared, _ := jsonx.Parse(res.Body)
-	if !jsonx.Equal(cleared, jsonx.Obj("message", "日志已清空", "success", true)) || !strings.HasPrefix(string(res.Body), `{"message": "\u65e5`) {
+	if !jsonx.Equal(cleared, jsonx.Obj("message", "日志已清空", "success", true)) || !strings.HasPrefix(string(res.Body), `{"message":"日志`) {
 		t.Fatal(string(res.Body))
 	}
 	if content, _ := os.ReadFile(client.path); len(content) != 0 {

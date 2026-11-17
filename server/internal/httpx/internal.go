@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"sync"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
 )
 
 // InternalCallHeader carries the per-process token of in-process calls
@@ -75,7 +75,7 @@ func (a *App) Invoke(ctx context.Context, in InvokeRequest) (*InvokeResponse, er
 	}
 	var body io.Reader = http.NoBody
 	if in.JSON != nil || in.HasJSON {
-		data, err := jsonx.Encode(normalizeValue(in.JSON), jsonx.Options{EnsureASCII: true, SortKeys: true})
+		data, err := jsonresp.Encode(in.JSON)
 		if err != nil {
 			return nil, err
 		}

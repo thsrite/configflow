@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
 )
 
@@ -22,8 +21,7 @@ type Response struct {
 	header http.Header
 
 	body []byte
-	// value is a jsonify payload not encoded yet (the response hook
-	// redacts it before it is written).
+	// value is encoded before the global JSON response policy is applied.
 	value    any
 	hasValue bool
 
@@ -34,7 +32,8 @@ type Response struct {
 	// stream writes the body (for Stream responses); nil otherwise.
 	stream func(w io.Writer) error
 
-	sanitized *jsonresp.Sanitized
+	// sortValue preserves Flask's original-key order for redaction collisions.
+	sortValue bool
 }
 
 // Header returns the response headers (mutable).
@@ -57,13 +56,13 @@ func (r *Response) WithHeader(key, value string) *Response {
 // NoStore sets Cache-Control: no-store and returns r.
 func (r *Response) NoStore() *Response { return r.WithHeader("Cache-Control", "no-store") }
 
-// JSON is flask.jsonify(v) with status 200. v is a jsonx value (*jsonx.Object,
-// []any, string, jsonx.Number, bool, nil; Go ints and floats are accepted).
+// JSON returns v as JSON with status 200. Native Go values and legacy jsonx
+// values use the same encoding/json response pipeline.
 func JSON(v any) *Response { return JSONStatus(200, v) }
 
 // JSONStatus is `return jsonify(v), status`.
 func JSONStatus(status int, v any) *Response {
-	r := &Response{Status: status, value: normalizeValue(v), hasValue: true}
+	r := &Response{Status: status, value: v, hasValue: true, sortValue: true}
 	r.Header().Set("Content-Type", "application/json")
 	return r
 }
@@ -71,16 +70,6 @@ func JSONStatus(status int, v any) *Response {
 // Message is the common {"success": false, "message": msg} body with status.
 func Message(status int, success bool, message string) *Response {
 	return JSONStatus(status, jsonx.Obj("success", success, "message", message))
-}
-
-func normalizeValue(v any) any {
-	if v == nil {
-		return nil
-	}
-	if o, ok := v.(*jsonx.Object); ok && o == nil {
-		return nil
-	}
-	return jsonx.ListOf([]any{v})[0]
 }
 
 // Bytes is a raw response with a content type.
@@ -148,18 +137,13 @@ func (r *Response) Body() []byte {
 
 // SetBody replaces the body (response.set_data).
 func (r *Response) SetBody(body []byte) {
-	r.body, r.value, r.hasValue = body, nil, false
+	r.body, r.value, r.hasValue, r.sortValue = body, nil, false, false
 }
 
 func (r *Response) encodeValue() {
-	body, err := jsonx.Response(r.value)
-	if err != nil {
-		// The Python encoder would have raised inside the view: 500.
-		page := (&HTTPError{Code: 500, Description: DescInternal}).Page()
-		*r = *page
-		return
+	if err := writeJSON(nil, r); err != nil {
+		*r = *(&HTTPError{Code: 500, Description: DescInternal}).Page()
 	}
-	r.body, r.value, r.hasValue = body, nil, false
 }
 
 // FileOptions describe a send_file response.

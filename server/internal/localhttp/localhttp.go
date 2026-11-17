@@ -34,6 +34,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
 	"configflow/internal/weburl"
 )
@@ -253,7 +254,7 @@ func prepare(r Request, method string) (*preparedRequest, error) {
 	}
 	switch {
 	case r.HasJSON:
-		body, err := jsonx.Default(r.JSON)
+		body, err := jsonresp.Encode(r.JSON)
 		if err != nil {
 			return nil, err
 		}

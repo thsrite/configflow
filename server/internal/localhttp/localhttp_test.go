@@ -146,15 +146,15 @@ func TestPrefixParamsExplicitAuthAndHeadArePreserved(t *testing.T) {
 	}
 }
 
-func TestBodiesAreEncodedLikeRequests(t *testing.T) {
+func TestBodiesUseNativeJSONEncoding(t *testing.T) {
 	newFixture(t)
 	response, err := Do(context.Background(), Request{Method: "post", URL: "http://config.test/api/inspect", HasJSON: true, JSON: jsonx.Obj("name", "例子")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := decode(t, response)
-	// requests: json.dumps(ensure_ascii=True) => {"name": "\\u4f8b\\u5b50"}, 24 bytes
-	if got["content_type"] != "application/json" || got["length"] != "24" || got["method"] != "POST" {
+	// Native UTF-8 JSON body: 17 bytes.
+	if got["content_type"] != "application/json" || got["length"] != "17" || got["method"] != "POST" {
 		t.Errorf("json body: %v", got)
 	}
 	response, _ = Do(context.Background(), Request{Method: "post", URL: "http://config.test/api/inspect", Form: []Param{{"a", "b c"}}})

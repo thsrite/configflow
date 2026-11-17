@@ -1,35 +1,19 @@
 package httpx
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"sort"
+
 	"configflow/internal/jsonresp"
-	"configflow/internal/jsonx"
 	"configflow/internal/redact"
 )
 
-// External is backend.common.json_response.jsonify_external: ordinary
-// metadata encoded once, already redacted against the current stored
-// credentials, so the global hook does not decode and re-encode a large
-// body. The wire bytes equal those of JSON(v) after the hook. Payloads that
-// are not plain JSON trees (deeper than 128 levels, cyclic, not an object
-// or list) fall back to JSON(v).
-func External(c *Ctx, v any) (*Response, error) {
-	v = normalizeValue(v)
-	if !jsonresp.PlainTree(v) {
-		return JSON(v), nil
-	}
-	secrets, err := redact.ExternalPayloadSecrets(c.ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	sanitized := redact.SanitizeWithSecrets(v, secrets, true)
-	body, err := jsonresp.External(sanitized)
-	if err != nil {
-		return nil, err
-	}
-	r := RawJSON(200, body)
-	r.sanitized = jsonresp.NewSanitized(body, secrets, c.Endpoint)
-	return r, nil
-}
+// External returns metadata through the same global JSON exit as JSON. Policy
+// runs after after-request hooks, using the final committed credential snapshot.
+func External(_ *Ctx, v any) (*Response, error) { return JSON(v), nil }
 
 var renderDraftEndpoints = map[string]bool{
 	"oxidns.render_oxidns_draft": true, "profiles.profile_render_oxidns_draft": true,
@@ -59,61 +43,63 @@ var artifactEndpoints = map[string]bool{
 	"generate.generate_artifact": true, "profiles.profile_generate_artifact": true,
 }
 
-// maxRawJSONDepth approximates where CPython's JSON decoder hits the
-// recursion limit for a raw JSON body.
+// maxRawJSONDepth retains the existing protection for deeply nested raw bodies.
 const maxRawJSONDepth = 990
 
-// sanitizeResponse is profile_context._sanitize_external_json: every JSON
-// response that is not a file and was not prepared by External is decoded,
-// redacted and re-encoded with the provider's dumps (sorted keys, ASCII,
-// ", "/": " separators, no trailing newline), except for the endpoint
-// whitelists below that must round-trip exact editor content.
-func sanitizeResponse(c *Ctx, r *Response) error {
-	if !r.IsJSON() || r.passthrough {
-		return nil
-	}
-	marker := r.sanitized
-	r.sanitized = nil
-	if marker != nil && !r.hasValue {
-		secrets, err := redact.ExternalPayloadSecrets(c.ctx, nil)
+// writeJSON is the sole JSON response exit: encode, redact decoded tokens,
+// resolve key collisions in the original provider order, then sort output keys.
+// A nil context is used only to materialize Body before request finalization;
+// the finalizer still applies the policy to those encoded bytes.
+func writeJSON(c *Ctx, r *Response) error {
+	if r.hasValue {
+		body, err := jsonresp.Encode(r.value)
 		if err != nil {
 			return err
 		}
-		if marker.Consume(r.body, c.Endpoint, secrets) {
-			return nil
-		}
+		r.body, r.value, r.hasValue = body, nil, false
 	}
-	var payload any
-	sortKeys := false
-	if r.hasValue {
-		payload, sortKeys = r.value, true
-	} else {
-		if jsonDepth(r.body) > maxRawJSONDepth {
-			r.SetBody([]byte(`"[REDACTED]"`))
-			return nil
-		}
-		text, err := decodeJSONBytes(r.body)
-		if err != nil {
-			return nil
-		}
-		if payload, err = jsonx.Parse(text); err != nil {
-			return nil
-		}
+	if c == nil || !r.IsJSON() || r.passthrough {
+		return nil
 	}
-	if payload == nil {
+	if !r.sortValue && jsonDepth(r.body) > maxRawJSONDepth {
+		r.SetBody([]byte(`"[REDACTED]"`))
+		return nil
+	}
+	text, err := decodeJSONBytes(r.body)
+	if err != nil {
+		return nil
+	} // Python's silent get_json leaves invalid bodies alone.
+	// Validate before walking: malformed raw JSON must never be partly rewritten.
+	if !json.Valid(text) {
 		return nil
 	}
 	secrets, err := redact.ExternalPayloadSecrets(c.ctx, nil)
 	if err != nil {
 		return err
 	}
-	sanitized := redact.SanitizeWithSecrets(payload, secrets, sortKeys)
-	original, isDict := payload.(*jsonx.Object)
-	target, _ := sanitized.(*jsonx.Object)
-	if isDict && target != nil {
+	d := json.NewDecoder(bytes.NewReader(text))
+	d.UseNumber()
+	pass := responseRedactor{decoder: d, secrets: secrets, sortKeys: r.sortValue, cache: make(map[string]string)}
+	payload, err := pass.value(0)
+	if err != nil {
+		return fmt.Errorf("redact JSON response: %w", err)
+	}
+	if _, err := d.Token(); err != io.EOF {
+		return fmt.Errorf("redact JSON response: trailing data")
+	}
+	if payload == nil {
+		return nil
+	} // Flask leaves a JSON null body untouched.
+	if target, ok := payload.(map[string]any); ok && hasExemptions(c.Endpoint) {
+		originalDecoder := json.NewDecoder(bytes.NewReader(text))
+		originalDecoder.UseNumber()
+		var original map[string]any
+		if err := originalDecoder.Decode(&original); err != nil {
+			return fmt.Errorf("decode JSON exemption: %w", err)
+		}
 		applyWhitelists(c, r.Status, original, target)
 	}
-	body, err := jsonresp.External(sanitized)
+	body, err := jsonresp.Encode(payload) // encoding/json sorts every object map.
 	if err != nil {
 		return err
 	}
@@ -121,47 +107,164 @@ func sanitizeResponse(c *Ctx, r *Response) error {
 	return nil
 }
 
-func applyWhitelists(c *Ctx, status int, payload, sanitized *jsonx.Object) {
+const responseMaxDepth = 128
+
+type responseRedactor struct {
+	decoder  *json.Decoder
+	secrets  redact.Secrets
+	sortKeys bool
+	cache    map[string]string
+}
+
+type responseMember struct {
+	key   string
+	value any
+}
+
+func (s *responseRedactor) value(depth int) (any, error) {
+	token, err := s.decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if token == json.Delim('{') || token == json.Delim('[') {
+		if depth >= responseMaxDepth {
+			if err := s.skipContainer(); err != nil {
+				return nil, err
+			}
+			return redact.Redacted, nil
+		}
+	}
+	switch token {
+	case json.Delim('{'):
+		members := []responseMember{}
+		positions := map[string]int{}
+		for s.decoder.More() {
+			keyToken, err := s.decoder.Token()
+			if err != nil {
+				return nil, err
+			}
+			key := keyToken.(string)
+			value, err := s.value(depth + 1)
+			if err != nil {
+				return nil, err
+			}
+			if redact.SensitiveSystemConfigFields[key] {
+				continue
+			}
+			if i, ok := positions[key]; ok {
+				members[i].value = value
+			} else {
+				positions[key] = len(members)
+				members = append(members, responseMember{key, value})
+			}
+		}
+		if _, err := s.decoder.Token(); err != nil {
+			return nil, err
+		}
+		if s.sortKeys {
+			sort.SliceStable(members, func(i, j int) bool { return members[i].key < members[j].key })
+		}
+		out := make(map[string]any, len(members))
+		for _, m := range members {
+			out[s.str(m.key)] = m.value
+		}
+		return out, nil
+	case json.Delim('['):
+		out := []any{}
+		for s.decoder.More() {
+			value, err := s.value(depth + 1)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, value)
+		}
+		_, err := s.decoder.Token()
+		return out, err
+	}
+	if value, ok := token.(string); ok {
+		return s.str(value), nil
+	}
+	return token, nil
+}
+
+func (s *responseRedactor) str(value string) string {
+	if result, ok := s.cache[value]; ok {
+		return result
+	}
+	result := value
+	if redact.ContainsEncodedSecret(value, s.secrets) {
+		result = redact.Redacted
+	}
+	if len(value) <= 1024 && len(s.cache) < 4096 {
+		s.cache[value] = result
+	}
+	return result
+}
+
+// skipContainer consumes a subtree iteratively, keeping the call stack bounded
+// even for hostile raw bodies. The opening delimiter has already been read.
+func (s *responseRedactor) skipContainer() error {
+	depth := 1
+	for depth > 0 {
+		token, err := s.decoder.Token()
+		if err != nil {
+			return err
+		}
+		switch token {
+		case json.Delim('{'), json.Delim('['):
+			depth++
+		case json.Delim('}'), json.Delim(']'):
+			depth--
+		}
+	}
+	return nil
+}
+
+func hasExemptions(endpoint string) bool {
+	return renderDraftEndpoints[endpoint] || oxidnsSettingsEndpoints[endpoint] || oxidnsValuesEndpoints[endpoint] ||
+		tokenEndpoints[endpoint] || artifactEndpoints[endpoint] || endpoint == "settings.handle_rule_fetch_proxy"
+}
+
+func applyWhitelists(c *Ctx, status int, payload, sanitized map[string]any) {
 	endpoint := c.Endpoint
 	if status == 200 {
 		if renderDraftEndpoints[endpoint] {
-			if config, ok := payload.Value("config").(string); ok {
-				sanitized.Set("config", config)
+			if config, ok := payload["config"].(string); ok {
+				sanitized["config"] = config
 			}
 		} else if oxidnsSettingsEndpoints[endpoint] {
-			original, target := any(payload), any(sanitized)
+			original, target := payload, sanitized
 			if c.Request.Method == "POST" {
-				original, target = payload.Value("settings"), sanitized.Value("settings")
+				original, _ = payload["settings"].(map[string]any)
+				target, _ = sanitized["settings"].(map[string]any)
 			}
-			o, ok1 := original.(*jsonx.Object)
-			t, ok2 := target.(*jsonx.Object)
-			if ok1 && ok2 && o != nil && t != nil {
+			if original != nil && target != nil {
 				for _, key := range oxidnsNativeKeys {
-					if value, ok := o.Get(key); ok {
-						t.Set(key, value)
+					if value, ok := original[key]; ok {
+						target[key] = value
 					}
 				}
 			}
 		}
 		if oxidnsValuesEndpoints[endpoint] {
-			if values, ok := payload.Value("values").(*jsonx.Object); ok && values != nil {
-				sanitized.Set("values", values)
+			if values, ok := payload["values"].(map[string]any); ok {
+				sanitized["values"] = values
 			}
 		}
 	}
 	if endpoint == "settings.handle_rule_fetch_proxy" && status == 200 {
-		if proxy, ok := payload.Value("rule_fetch_proxy").(string); ok {
-			sanitized.Set("rule_fetch_proxy", proxy)
+		if proxy, ok := payload["rule_fetch_proxy"].(string); ok {
+			sanitized["rule_fetch_proxy"] = proxy
 		}
 	}
-	if tokenEndpoints[endpoint] && status >= 200 && status < 300 && payload.Value("success") == true {
-		if token, ok := payload.Value("token").(string); ok {
-			sanitized.Set("token", token)
+	if tokenEndpoints[endpoint] && status >= 200 && status < 300 && payload["success"] == true {
+		if token, ok := payload["token"].(string); ok {
+			sanitized["token"] = token
 		}
 	}
-	if artifactEndpoints[endpoint] && status == 200 && payload.Value("success") == true {
-		if content, ok := payload.Value("content").(string); ok {
-			sanitized.Set("content", content)
+	if artifactEndpoints[endpoint] && status == 200 && payload["success"] == true {
+		if content, ok := payload["content"].(string); ok {
+			sanitized["content"] = content
 		}
 	}
 }

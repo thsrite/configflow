@@ -54,20 +54,19 @@
 // # Responses
 //
 //	httpx.JSON(v)                       jsonify(v); JSONStatus(status, v); Message(status, success, msg)
-//	httpx.External(c, v)                jsonify_external(v): encoded and redacted once (large metadata)
+//	httpx.External(c, v)                metadata through the same JSON response exit
 //	httpx.RawJSON(status, body)         Response(body, mimetype="application/json") (still redacted by the hook)
 //	httpx.Text(status, s), HTML(status, s), Bytes(status, contentType, body), Empty(status)
 //	httpx.File(FileOptions{...})        send_file: attachment name, ETag/Last-Modified, 304, Range, never redacted
 //	httpx.Stream(status, type, write)   generator responses
 //	r.WithStatus(n), r.WithHeader(k, v), r.NoStore()   (Cache-Control: no-store)
 //
-// Values are jsonx values (*jsonx.Object, []any, string, jsonx.Number, bool,
-// nil; Go ints are accepted). The global hook re-encodes every JSON body the
-// way Flask's after_request did (sorted keys, ASCII, ", " separators, no
-// trailing newline; a JSON null stays "null\n"), dropping
-// rule_proxy_token / retired_rule_proxy_tokens / rule_fetch_proxy keys and
-// replacing any string containing a stored credential with "[REDACTED]",
-// except for the endpoint whitelists in sanitize.go.
+// Values may be native structs, maps, slices, scalars, json.RawMessage or legacy
+// jsonx values. writeJSON encodes first, applies one global token-redaction pass,
+// then writes UTF-8 JSON with sorted keys and no trailing newline. The policy
+// drops rule_proxy_token / retired_rule_proxy_tokens / rule_fetch_proxy keys and
+// replaces any string containing a stored credential with "[REDACTED]", except
+// for the endpoint exemptions in sanitize.go. Passthrough files/streams are kept.
 //
 // # Errors
 //

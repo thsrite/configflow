@@ -199,7 +199,7 @@ func (a *App) finalize(c *Ctx, r *Response) {
 		r.Header().Set("X-ConfigFlow-Profile", c.ProfileID)
 	}
 	repo.ResetConfigContext(c.ctx)
-	if err := sanitizeResponse(c, r); err != nil {
+	if err := writeJSON(c, r); err != nil {
 		*r = *a.internalError(c, err)
 	}
 	cors(c, r)
