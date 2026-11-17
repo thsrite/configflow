@@ -42,9 +42,22 @@ func deploymentBundle(ctx context.Context, config *jsonx.Object, j job, opts con
 			return "", err
 		}
 		in.ConfigContent = content
-        frozen:=map[string]*provider.Rendered{}
-        if root:=os.Getenv("PRODDIFF_FROZEN_PROVIDERS");root!=""{raw,readErr:=os.ReadFile(filepath.Join(root,strconv.Itoa(j.Index)+".json"));if readErr==nil{var values []struct{Name,Content string};if err=json.Unmarshal(raw,&values);err!=nil{return "",err};for _,v:=range values{frozen[v.Name]=&provider.Rendered{Name:v.Name,HasName:true,Content:v.Content}}}else if !os.IsNotExist(readErr){return "",readErr}}
-        prepared, err := provider.PrepareProviderBundle(ctx, config, main, provider.BundleOptions{RenderAll: true, SubscriptionFetch: offlineFetch,Prepared:frozen})
+		frozen := map[string]*provider.Rendered{}
+		if root := os.Getenv("PRODDIFF_FROZEN_PROVIDERS"); root != "" {
+			raw, readErr := os.ReadFile(filepath.Join(root, strconv.Itoa(j.Index)+".json"))
+			if readErr == nil {
+				var values []struct{ Name, Content string }
+				if err = json.Unmarshal(raw, &values); err != nil {
+					return "", err
+				}
+				for _, v := range values {
+					frozen[v.Name] = &provider.Rendered{Name: v.Name, HasName: true, Content: v.Content}
+				}
+			} else if !os.IsNotExist(readErr) {
+				return "", readErr
+			}
+		}
+		prepared, err := provider.PrepareProviderBundle(ctx, config, main, provider.BundleOptions{RenderAll: true, SubscriptionFetch: offlineFetch, Prepared: frozen})
 		if err != nil {
 			return "", err
 		}
