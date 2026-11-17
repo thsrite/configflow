@@ -382,6 +382,9 @@ func (m *Manager) saveReportedFields(ctx context.Context, changes map[string]*js
 // or replace through the pointer). profileID, when given, must still exist
 // at commit. ProfileInUse becomes *DeploymentConflict.
 func (m *Manager) UpdateAgents(ctx context.Context, profileID string, updater func(ctx context.Context, agents *[]any) (any, error)) (any, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if testFailUpdate != nil {
 		if err := testFailUpdate(); err != nil {
 			return nil, err
@@ -400,6 +403,9 @@ func (m *Manager) UpdateAgents(ctx context.Context, profileID string, updater fu
 		list, _ := system.Value("agents").([]any)
 		value, err := updater(ctx, &list)
 		if err != nil {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		system.Set("agents", list)

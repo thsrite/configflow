@@ -11,6 +11,10 @@ type publishJobKey struct{}
 // RunDetached tracks a publication through shutdown while dropping browser cancellation.
 // Nested preparation/publish calls reuse their owner's job and cancellation parent.
 func RunDetached(ctx context.Context, name string, fn func(context.Context) error) error {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if ctx.Value(publishJobKey{}) != nil || lifecycle.Tracked(ctx) {
 		return fn(lifecycle.Detach(ctx))
 	}

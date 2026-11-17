@@ -95,7 +95,19 @@ func defaultHADeployment(ctx context.Context, m *Manager, agentID, deploymentID 
 		return nil, err
 	}
 	if jsonx.Equal(haChild(agent, agentID), deploymentID) {
-		return nil, ErrNotPorted
+		job := agent.GetObject(HAField)
+		// Python advance is a no-op for these durable pair snapshots. Reading
+		// them does not require A18's scheduler; active/recovery work still does.
+		switch job.GetString("status") {
+		case "succeeded", "failed", "ready":
+			record := taskOf(agent, deploymentID)
+			if !jsonx.Truthy(record) {
+				record = jsonx.Obj("deployment_id", deploymentID)
+			}
+			return HAAggregate(record, HASummary(job)), nil
+		default:
+			return nil, ErrNotPorted
+		}
 	}
 	record, err := m.getDeployment(ctx, agentID, deploymentID)
 	if err != nil {

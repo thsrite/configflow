@@ -167,6 +167,9 @@ func (p *Previews) root() string { return filepath.Join(p.dataDir, ".generated-p
 // under L4. Archive and source metadata both count toward the quota.
 func (p *Previews) Save(ctx context.Context, in PreviewInput) (*Preview, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	key, err := randomID()
 	if err != nil {
 		return nil, err
@@ -224,6 +227,11 @@ func (p *Previews) Save(ctx context.Context, in PreviewInput) (*Preview, error) 
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	// Shutdown while waiting for the store lock writes nothing; once started,
+	// save and eviction complete as a whole.
+	if err = ctx.Err(); err != nil {
+		return nil, err
+	}
 	ctx = ctxx.Uninterruptible(ctx)
 	if err = privateDir(p.root()); err != nil {
 		return nil, err
@@ -239,12 +247,18 @@ func (p *Previews) Save(ctx context.Context, in PreviewInput) (*Preview, error) 
 	for len(folders) > 0 && (len(folders) >= MaxPreviews || total+incoming > MaxPreviewBytes || folders[0].mtime < p.now().Add(-PreviewTTL).UnixNano()) {
 		old := folders[0]
 		folders = folders[1:]
+		if err = ctx.Err(); err != nil {
+			return nil, err
+		}
 		if err = os.RemoveAll(old.path); err != nil {
 			return nil, err
 		}
 		total -= old.size
 	}
 	folder := filepath.Join(p.root(), key)
+	if err = ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err = privateDir(folder); err != nil {
 		return nil, err
 	}

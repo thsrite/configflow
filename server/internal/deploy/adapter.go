@@ -303,6 +303,9 @@ func finished(status string) bool {
 	return status == "succeeded" || status == "failed" || status == "rolled_back"
 }
 func advanceApplied(ctx context.Context, m *agents.Manager, agent *agents.Record, fingerprint string, files map[string]string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	accepted := false
 	expected := agent.Value("applied_content")
 	id := agent.GetString("id")
@@ -314,6 +317,9 @@ func advanceApplied(ctx context.Context, m *agents.Manager, agent *agents.Record
 		fileMap.Set(p, sha)
 	}
 	_, err := m.Repository().UpdateSystemTransaction(ctx, func(ctx context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		for _, value := range system.GetList("agents") {
 			current, ok := value.(*jsonx.Object)
 			if !ok || current.GetString("id") != id {

@@ -292,6 +292,9 @@ func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle,
 	enroll := publicationHooks.ipv6
 	publicationHooks.RUnlock()
 	if t.ServiceType == "mihomo" && o.SourceSnapshot != nil && enroll != nil {
+		if err = ctx.Err(); err != nil {
+			return nil, err
+		}
 		if err = enroll(ctx, m, id, did, o.SourceSnapshot); err != nil {
 			return nil, err
 		}
@@ -326,6 +329,9 @@ func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle,
 	}
 	if o.Activate && t.ServiceType == "oxidns" {
 		if hook := agents.CurrentHooks().PublicationCheckpoint; hook != nil {
+			if err = ctx.Err(); err != nil {
+				return nil, err
+			}
 			if err = hook(ctx, m, id, did, prepared.DeployedConfigSHA256); err != nil {
 				return nil, err
 			}

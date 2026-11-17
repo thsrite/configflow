@@ -66,6 +66,9 @@ func (m *Manager) defaultPreparationRunning(agentID, deploymentID string) (bool,
 // profile-bound task before preparing or sending its artifacts.
 func (m *Manager) BeginDeployment(ctx context.Context, agentID, deploymentID string) (*jsonx.Object, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if !deploymentIDPattern.MatchString(deploymentID) {
 		return nil, &ValueError{Message: "Invalid deployment ID"}
 	}
@@ -354,8 +357,8 @@ func (m *Manager) recordUpdater(agentID, deploymentID string, updates *jsonx.Obj
 // ...): only a confirmed successful activation changes the displayed version.
 func (m *Manager) RecordDeployment(ctx context.Context, agentID, deploymentID string, updates *jsonx.Object, options RecordOptions) (*jsonx.Object, error) {
 	ctx = lifecycle.Detach(ctx)
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	var finished []finishedDeployment
 	record := m.recordUpdater(agentID, deploymentID, updates, options, &finished)
@@ -401,6 +404,9 @@ func (m *Manager) RecordDeployment(ctx context.Context, agentID, deploymentID st
 }
 
 func (m *Manager) publicationComplete(ctx context.Context, agentID, deploymentID string, status any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if hook := currentHooks().PublicationComplete; hook != nil {
 		return hook(ctx, m, agentID, deploymentID, status)
 	}
@@ -464,6 +470,9 @@ func (m *Manager) DeploymentRequest(ctx context.Context, agent *jsonx.Object, me
 		(strings.HasSuffix(suffix, "/activate") || strings.HasSuffix(suffix, "/rollback") || strings.HasSuffix(suffix, "/recover"))))
 	deadline := m.monotonic() + 2
 	for attempt := 0; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		// Only this exact lock rejection proves no mutation was accepted.
 		response, err := m.Call(ctx, agent, method, "/api/"+suffix, header, body, t)
 		if err != nil {
@@ -525,6 +534,9 @@ func taskOf(agent *jsonx.Object, deploymentID string) *jsonx.Object {
 // GetDeployment is get_deployment (oxidns_ha_publish.deployment, #29).
 func (m *Manager) GetDeployment(ctx context.Context, agentID, deploymentID string) (*jsonx.Object, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if hook := currentHooks().HADeployment; hook != nil {
 		return hook(ctx, m, agentID, deploymentID)
 	}
@@ -534,6 +546,9 @@ func (m *Manager) GetDeployment(ctx context.Context, agentID, deploymentID strin
 // GetDeploymentDirect is _get_deployment (for #29).
 func (m *Manager) GetDeploymentDirect(ctx context.Context, agentID, deploymentID string) (*jsonx.Object, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return m.getDeployment(ctx, agentID, deploymentID)
 }
 
@@ -666,6 +681,9 @@ func httpStatusIn(result *jsonx.Object, statuses ...int) bool {
 // ActivateDeployment is activate_deployment (oxidns_ha_publish.activate, #29).
 func (m *Manager) ActivateDeployment(ctx context.Context, agentID, deploymentID string) (*jsonx.Object, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if hook := currentHooks().HAActivate; hook != nil {
 		return hook(ctx, m, agentID, deploymentID)
 	}
@@ -675,6 +693,9 @@ func (m *Manager) ActivateDeployment(ctx context.Context, agentID, deploymentID 
 // ActivateDeploymentDirect is _activate_deployment (for #29).
 func (m *Manager) ActivateDeploymentDirect(ctx context.Context, agentID, deploymentID string) (*jsonx.Object, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return m.activateDeployment(ctx, agentID, deploymentID)
 }
 
@@ -748,6 +769,9 @@ func (m *Manager) activateDeployment(ctx context.Context, agentID, deploymentID 
 	}
 	if agent.Value("service_type") == "oxidns" {
 		if hook := currentHooks().PublicationCheckpoint; hook != nil {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			prepared, _ := state.Value("prepared_content").(*jsonx.Object)
 			if err := hook(ctx, m, agentID, deploymentID, prepared.Value("deployed_config_sha256")); err != nil {
 				return nil, err
@@ -771,6 +795,9 @@ func (m *Manager) activateDeployment(ctx context.Context, agentID, deploymentID 
 // any network I/O so a new push cannot race it.
 func (m *Manager) RollbackDeployment(ctx context.Context, agentID, deploymentID string) (*jsonx.Object, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	agent, err := m.GetAgentByID(ctx, agentID, true)
 	if err != nil {
 		return nil, err
@@ -867,6 +894,9 @@ func (m *Manager) RollbackDeployment(ctx context.Context, agentID, deploymentID 
 // backups, start it again).
 func (m *Manager) RecoverDeployment(ctx context.Context, agentID, deploymentID string) (*jsonx.Object, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	previous := jsonx.NewObject()
 	value, err := m.UpdateAgents(ctx, "", func(_ context.Context, agents *[]any) (any, error) {
 		previous = jsonx.NewObject()

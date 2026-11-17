@@ -38,6 +38,9 @@ func (r *Receipts) folder(agentID, deploymentID string) string {
 // enrolls them; the retained set is captured BEFORE taking the leaf-store lock.
 func (r *Receipts) Capture(ctx context.Context, agentID string, b *Bundle, src *Source, baseURL string, comparison *File) error {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if agentID == "" || b.manifest.DeploymentID == "" {
 		return preparation("Missing receipt publication identity")
 	}
@@ -111,6 +114,9 @@ func (r *Receipts) Capture(ctx context.Context, agentID string, b *Bundle, src *
 		return e == nil && a.ModTime().After(b.ModTime())
 	})
 	for _, old := range archives[min(2, len(archives)):] {
+		if err = ctx.Err(); err != nil {
+			return err
+		}
 		if err = os.Remove(old); err != nil && !os.IsNotExist(err) {
 			return err
 		}
@@ -121,6 +127,9 @@ func (r *Receipts) Capture(ctx context.Context, agentID string, b *Bundle, src *
 	}
 	for _, child := range children {
 		if child.IsDir() && !retained[child.Name()] {
+			if err = ctx.Err(); err != nil {
+				return err
+			}
 			if err = os.RemoveAll(filepath.Join(r.root(agentID), child.Name())); err != nil {
 				return err
 			}
@@ -183,6 +192,9 @@ func (r *Receipts) Stamp(agent *agents.Record) (Stamp, bool) {
 // applied pointer with no unfinished publication. The transaction runs after L4.
 func (r *Receipts) AdvanceContent(ctx context.Context, m *agents.Manager, agent *agents.Record, src *Source, b *Bundle) (bool, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	record, err := r.Load(ctx, agent, true)
 	if err != nil || record == nil {
 		return false, err

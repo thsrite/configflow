@@ -187,6 +187,9 @@ type PushConfig struct {
 // Transactional service types fail closed; deploy.Push owns their publication.
 func (m *Manager) PushLegacyConfig(ctx context.Context, agentID, configContent string, push PushConfig) (*jsonx.Object, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	agent, err := m.GetAgentByID(ctx, agentID, true)
 	if err != nil {
 		return nil, err
@@ -225,6 +228,9 @@ func (m *Manager) PushLegacyConfig(ctx context.Context, agentID, configContent s
 	// 手动序列化JSON，确保中文不被转义
 	body, err := jsonx.Encode(payload, jsonx.Options{})
 	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	response, err := m.Call(ctx, agent, "POST", "/api/config/update",

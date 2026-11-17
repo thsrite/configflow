@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"configflow/internal/lifecycle"
 	"context"
 	"fmt"
 	"io"
@@ -34,6 +35,9 @@ func atomicWrite(ctx context.Context, path string, data []byte) error {
 	}
 	if err = temp.Close(); err != nil {
 		return fmt.Errorf("close deployment temporary: %w", err)
+	}
+	if err = ctx.Err(); err != nil {
+		return err
 	}
 	if err = os.Rename(name, path); err != nil {
 		return fmt.Errorf("replace deployment file: %w", err)
@@ -176,5 +180,5 @@ func (l *leafLocks) lock(key string) func() {
 
 // WriteFileAtomic publishes one complete private file by fsync and rename.
 func WriteFileAtomic(ctx context.Context, path string, data []byte) error {
-	return atomicWrite(ctx, path, data)
+	return atomicWrite(lifecycle.Detach(ctx), path, data)
 }

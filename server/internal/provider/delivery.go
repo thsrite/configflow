@@ -743,6 +743,10 @@ func ValidateRenderedBundle(snapshot *Snapshot, providers []*Rendered) (bool, er
 
 // CommitCacheUpdates is commit_cache_updates(updates).
 func CommitCacheUpdates(ctx context.Context, updates []CacheUpdate) error {
+	// Shutdown before the first write commits nothing; a started batch is whole.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	ctx = ctxx.Uninterruptible(ctx) // Local batches remain whole across nested owner Detach.
 	for _, u := range updates {
 		if _, err := substore.SaveSubscriptionNodes(ctx, u.SubID, u.Nodes, u.Metadata); err != nil {
@@ -1173,6 +1177,10 @@ func PrepareProviderBundle(ctx context.Context, config, main *jsonx.Object, opts
 // CommitProviderBundle is commit_provider_bundle(profile_id, bundle): only
 // call after the complete exact bundle passed validation.
 func CommitProviderBundle(ctx context.Context, profileID string, bundle []*Rendered) error {
+	// Shutdown before the first write commits nothing; a started batch is whole.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	ctx = ctxx.Uninterruptible(ctx) // Local batches remain whole across nested owner Detach.
 	var order []string
 	updates := map[string]CacheUpdate{}
@@ -1204,6 +1212,9 @@ func CommitProviderBundle(ctx context.Context, profileID string, bundle []*Rende
 		return err
 	}
 	for _, id := range artifactOrder {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if _, err := r.WriteProfileText(ctx, profileID, "providers/"+id+".yaml", []byte(artifacts[id])); err != nil {
 			return err
 		}

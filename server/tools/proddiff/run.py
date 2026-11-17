@@ -397,14 +397,11 @@ def same_agent_transport_target(python_message, go_message):
     return path is None or path.group(1) == target.path
 
 
-def response_diffs(left, right, route, rules):
+def response_diffs(left, right, route, rules, agent_identities=None):
     if approved_c07_readiness(left, right, route):
         # Compare the approved availability contract instead of exposing a
         # partial task list. Keep both original content types and headers.
         left = (right[0], left[1], right[2], *left[3:])
-
-
-def response_diffs(left, right, route, rules, agent_identities=None):
     right = installer_rollback_baseline(right, route)
     if plain_install_error(left, right, route):
         # Body/status/type already agree exactly. Assert only the approved
