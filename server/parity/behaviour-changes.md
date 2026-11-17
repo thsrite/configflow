@@ -36,6 +36,23 @@ report ingestion, so it cannot enter newly stored history. Not part of N8-1.
 本表记录维护者明确接受、需要在切换说明中告知用户的行为。设计决定见
 [N7/N8 第 6 节](../design/n7-n8.md)。不以兼容层模拟 Python 的编码。
 
+## N7-4 — 原生 YAML writer 与 Python 类型输出 bug 修正
+
+生成配置改由 yaml.v3 输出，统一两空格缩进、LF、不折行；引号、显式标签、
+锚点和 Unicode 的字节形式会变化一次。切换时按 D2/O14 既定安排全量推送一次，
+并先预热规则缓存。后续相同输入的输出保持确定。
+
+修复 Python bug：旧 PyYAML writer 按自己的隐式类型规则输出文本，Mihomo 使用
+yaml.v3 读取时会误解其中部分类型。例如字符串 `0o17` 被读成整数 15，字符串
+`1e3` 被读成浮点数 1000；超大整数被隐式读成浮点数；带空格和时区的 timestamp
+被读成字符串。新 writer 加上必要的引号或显式类型，保留原本的字符串、整数精度
+和 timestamp 类型。这类节点或字段以前可能失效，现在能够按正确类型工作。
+
+Mihomo 旧语料中逐行确认 111 项：字符串误读 56、超大整数误读 22、timestamp
+误读 33。期望图只由真实 Python `safe_load` 旧输出生成，旧 golden 不改；其余
+输出仍直接解析后比较。来源、生成命令和全部行号见
+[writer oracle](../internal/convert/testdata/mihomo_writer_oracle.md)。
+
 ## D2 — 上游持久化标识的 Go 原生编码
 
 C27：上游 `tag` 等字符串元数据包含真实 U+2028/U+2029 时，Go `encoding/json` 的

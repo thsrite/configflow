@@ -74,9 +74,10 @@ func TestMihomoReviewEmptyLibraryURLUsesRuleFormat(t *testing.T) {
 
 func TestMihomoReviewBoundaryReferences(t *testing.T) {
 	rows := loadJSONLines(t, "testdata/review_mihomo.jsonl.gz")
+	oracle := loadWriterOracle(t)
 	for _, entry := range rows {
 		t.Run(entry.GetString("case")+"/"+entry.GetString("fn"), func(t *testing.T) {
-			if msg := runMihomoReviewBoundary(t, rowOf(entry)); msg != "" {
+			if msg := runMihomoReviewBoundary(t, rowOf(entry), oracle); msg != "" {
 				t.Fatal(msg)
 			}
 		})
@@ -84,7 +85,7 @@ func TestMihomoReviewBoundaryReferences(t *testing.T) {
 	t.Logf("%d Python-derived Mihomo boundary cases", len(rows))
 }
 
-func runMihomoReviewBoundary(t *testing.T, row mihomoRow) string {
+func runMihomoReviewBoundary(t *testing.T, row mihomoRow, oracle writerOracle) string {
 	t.Helper()
 	e := row.entry
 	if row.fn == "takeover" {
@@ -160,5 +161,5 @@ func runMihomoReviewBoundary(t *testing.T, row mihomoRow) string {
 		}
 		return compareOut(row, out)
 	}
-	return runMihomoRow(t, row)
+	return runMihomoRow(t, row, oracle)
 }

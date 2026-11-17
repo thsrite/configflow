@@ -261,7 +261,7 @@ func sameValue(want, got any) bool {
 
 func bool_(v any) bool { b, _ := v.(bool); return b }
 
-func runMihomoRow(t *testing.T, row mihomoRow) string {
+func runMihomoRow(t *testing.T, row mihomoRow, oracle writerOracle) string {
 	t.Helper()
 	ctx := context.Background()
 	e := row.entry
@@ -281,8 +281,8 @@ func runMihomoRow(t *testing.T, row mihomoRow) string {
 			return msg
 		}
 		if err == nil {
-			if want := e.GetString("out"); want != out {
-				return "YAML differs:\n" + firstDiff(want, out)
+			if msg := oracle.compare(e.GetString("out"), out); msg != "" {
+				return msg
 			}
 			if !sameValue(e.Value("report"), report) {
 				return "report differs:\n  python " + encode(e.Value("report")) + "\n  go     " + encode(mihomoConv(report))
@@ -420,10 +420,11 @@ func firstDiff(want, got string) string {
 }
 
 // TestMihomoCorpus replays testdata/mihomo_corpus.jsonl.gz (gen_mihomo.py):
-// generated YAML bytes, reports, mutated profiles, download lists, base
+// generated YAML semantics, reports, mutated profiles, download lists, base
 // settings checks and helpers must equal Python's.
 func TestMihomoCorpus(t *testing.T) {
 	rows := loadMihomoCorpus(t)
+	oracle := loadWriterOracle(t)
 	counts := map[string]int{}
 	failures := 0
 	generated := 0
@@ -432,7 +433,7 @@ func TestMihomoCorpus(t *testing.T) {
 		if row.fn == "generate" && row.errClass == "" {
 			generated++
 		}
-		if msg := runMihomoRow(t, row); msg != "" {
+		if msg := runMihomoRow(t, row, oracle); msg != "" {
 			failures++
 			if failures <= 15 {
 				t.Errorf("row %d %s: %s", i, row.fn, msg)

@@ -48,7 +48,12 @@ Agent push diff already uses native Nodes and `yamlx.Marshal` after A12. A trans
 regression checks that writer-only changes produce no semantic edits/canonical patch
 and that subsequent credential edits retain redaction. `.64` package tests, full vet
 and 60-second pushdiff fuzz pass. Removed the unused convert `IndentDumperOptions`
-wrapper; the Mihomo writer and its corpus comparator will switch together.
+wrapper. Mihomo now builds a physical Node graph and calls Marshal; the corpus
+comparators switched to Parse/Equal in the same implementation step. 111 old
+writer schema bugs use separately recorded real Python safe_load graphs
+(strings56/large integers22/timestamps33, unknown=0); the other outputs compare
+directly through Parse. Old golden files are unchanged. Legacy loaded
+Timestamp/bytes/Mapping branches are explicitly deferred for removal in N7-3d.
 
 The remaining writer inventory and commands are tracked in
 [progress/n7-4-writers.md](progress/n7-4-writers.md). Installer is explicitly waiting

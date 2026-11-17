@@ -187,7 +187,7 @@ func loadRecorded(t *testing.T) []*jsonx.Object {
 	return rows
 }
 
-func replayRow(t *testing.T, entry *jsonx.Object) string {
+func replayRow(t *testing.T, entry *jsonx.Object, oracle writerOracle) string {
 	t.Helper()
 	ctx := context.Background()
 	rec := &recordedEnv{env: entry.GetObject("env")}
@@ -215,8 +215,8 @@ func replayRow(t *testing.T, entry *jsonx.Object) string {
 		})
 		msg = sameError(t, row, err)
 		if msg == "" && err == nil {
-			if want := entry.GetString("out"); want != out {
-				msg = "YAML differs:\n" + firstDiff(want, out)
+			if comparison := oracle.compare(entry.GetString("out"), out); comparison != "" {
+				msg = comparison
 			} else if report != nil && !sameValue(entry.Value("report"), report) {
 				msg = "report differs:\n  python " + encode(entry.Value("report")) + "\n  go     " + encode(mihomoConv(report))
 			}
@@ -267,9 +267,10 @@ func replayRow(t *testing.T, entry *jsonx.Object) string {
 // by the Python test that made the call. The collaborators of other packages
 // answer what they answered in Python (Sub-Store, caches, provider preflight,
 // Linux gateway, gateway setting, fake_ip_network, mihomo_dns_loop); the
-// generator itself must produce the same bytes, report, errors and mutations.
+// generator itself must produce the same YAML semantics, report, errors and mutations.
 func TestMihomoRecordedPythonTests(t *testing.T) {
 	rows := loadRecorded(t)
+	oracle := loadWriterOracle(t)
 	failures, skipped := 0, 0
 	counts := map[string]int{}
 	index := map[string]int{}
@@ -284,7 +285,7 @@ func TestMihomoRecordedPythonTests(t *testing.T) {
 			skipped++
 			continue
 		}
-		if msg := replayRow(t, entry); msg != "" {
+		if msg := replayRow(t, entry, oracle); msg != "" {
 			failures++
 			if failures <= 20 {
 				t.Errorf("%s (%s): %s", name, entry.GetString("fn"), msg)

@@ -56,9 +56,8 @@ the entire repository buildable. Counts are static call sites, not run counts.
 
 ## Remaining work
 
-- Convert Mihomo writer and structural corpus comparison in the same commit.
-- Confirm remaining writer call sites with the coordinator before removing the
-  shared old writer; do not broaden product scope implicitly.
+- Mihomo implementation/structural corpus comparison completed together; final acceptance remains pending.
+- Coordinator approved every remaining writer listed below for N7-4; wait for N7-3c before overlapping mosdns/provider/routersplit/installer changes.
 - Installer compose/guide: explicitly deferred until the coordinator announces
   that N7-3c is merged, then rebase first.
 - Record the one-time generation byte change (D2/O14); no baseline updates.
@@ -76,3 +75,43 @@ RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/convert/mihomo_nodes.go 
 
 Output: gofmt/vet silent, `ok configflow/internal/convert 7.034s`,
 `ok configflow/internal/deploy/pushdiff 1.892s`.
+
+## Mihomo native writer
+
+`GenerateMihomoConfig` constructs Nodes with `mihomoDocumentNode`, then calls
+`yamlx.Marshal`. Repeated physical objects/slices become aliases; cycles and a
+40-level exponential shared graph return ErrAliasRecursion/ErrAliasBudget before
+output. Scalar strings, bools and numbers keep their intended types, including
+big integers and non-finite YAML floats. Timestamp/binary/Mapping are a temporary
+boundary for the remaining old convert readers; coordinator explicitly assigned
+those reader migrations and removal of these three branches to N7-3d.
+
+Two generation corpus comparisons and their shared review entry now parse both
+outputs and compare Equal, retaining strict errors/reports/mutations/text elsewhere.
+Native parsing of the old PyYAML text misread **111 rows**, independently confirmed
+by real Python safe_load: string-read-as-number56, large-int-read-as-float22,
+timestamp-read-as-string33; unknown=0. The old writer emitted text under YAML1.1
+rules that Mihomo (yaml.v3) interpreted with different scalar tags. This is the
+approved Python bug fix in behaviour-changes. The fixture only overrides these
+explicit rows; every other output still compares its native Parse result directly.
+
+Oracle: Python records complete typed physical graphs from 5408 successful old
+outputs, then a Go-only parser filter selects the 111 differing old interpretations.
+No Go business code participates in recording expected values. Every reference
+has corpus/row/output SHA256 and category/field metadata; tests reject stale
+references and digest/count drift. Old golden files are unchanged. All 111 rows,
+old→new consumer types, source hashes and exact reproduction commands are in
+`internal/convert/testdata/mihomo_writer_oracle.md`.
+
+Iteration `.64`:
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/convert/testdata/mihomo_writer_oracle.json.gz --back server/tools/yamlwriteroracle/main.go -- bash -lc 'cd server && gofmt -w tools/yamlwriteroracle/main.go && go run ./tools/yamlwriteroracle -in /tmp/n74-writer-graphs.jsonl -out internal/convert/testdata/mihomo_writer_oracle.json.gz'
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/convert/yaml_writer_test.go --back server/internal/convert/mihomo_corpus_test.go --back server/internal/convert/mihomo_recorded_test.go --back server/internal/convert/review_mihomo_test.go -- bash -lc 'cd server && gofmt -w internal/convert/yaml_writer_test.go internal/convert/mihomo_corpus_test.go internal/convert/mihomo_recorded_test.go internal/convert/review_mihomo_test.go && go test -count=1 ./internal/convert ./internal/yamlx/yamlxtest ./tools/yamlwriteroracle && go vet ./...'
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && gofmt -l internal/ tools/'
+```
+
+Output: oracle `{changed:111,total:5408,unknown:0}`; convert **11.345s**,
+yamlxtest **0.005s**, oracle tool builds, whole-repository vet/gofmt silent.
+An earlier pre-switch iteration passed convert/pushdiff race (46.774s/25.695s);
+it is not final writer acceptance.

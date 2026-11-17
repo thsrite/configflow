@@ -318,8 +318,8 @@ type GenerateOptions struct {
 }
 
 // GenerateMihomoConfig is generate_mihomo_config(config_data, ...): the Mihomo
-// YAML of a profile, byte-identical to Python's (yaml.dump with IndentDumper,
-// allow_unicode, sort_keys=False, indent=2). Errors are the exceptions Python
+// YAML of a profile, rendered with yamlx.Marshal (two-space indentation and LF).
+// Generated document semantics match Python. Errors are the exceptions Python
 // raises: *CustomConfigYAMLError, *DialerReferenceError, StrategyReferenceError,
 // ListenerReferenceError, refresh/health ValueErrors, *HookMissingError for
 // an unregistered hook, *PyError for crashes on malformed values.
@@ -330,7 +330,12 @@ func GenerateMihomoConfig(ctx context.Context, config *jsonx.Object, opts Genera
 	if err != nil {
 		return "", err
 	}
-	return yamlx.IndentDump(main)
+	n, err := mihomoDocumentNode(main)
+	if err != nil {
+		return "", err
+	}
+	data, err := yamlx.Marshal(n)
+	return string(data), err
 }
 
 // GenerateMihomoDocument is yaml.safe_load(generate_mihomo_config(...)) for
