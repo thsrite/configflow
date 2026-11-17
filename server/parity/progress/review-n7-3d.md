@@ -49,3 +49,14 @@ another gate/race/proddiff alongside this one.
    rebase onto local go (still a08), commit docs, verify clean tree, final Chinese
    report with branch, commits and report link. Coordinator performs full gate if
    queue limit prevents it; do not claim author's historical gate as this review.
+
+## Final queue result / integration
+
+Session84484 exited124 after900s waiting; no gate stage ran. Logs fetched to
+.ci-results/review-n73d-gate. Session22085 final fallback passed: global gofmt empty,
+go vet ./... passes; convert15.826s/importer2.632s/aggregations0.761s/generator0.016s;
+permanent real-Python contracts checker passes. Logs .ci-results/review-n73d-final.
+Local go advanced to97580425b while waiting (158 configdiff tool/doc commits, no Go
+file or internal/design/script/cmd changes). Committing report then rebase to it,
+remap fix SHAs, final integrated checks, final clean commit/handback. Do not run a
+second full gate;900s queue allowance exhausted and no Go upstream drift exists.

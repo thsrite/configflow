@@ -2,7 +2,7 @@
 
 复核者未参与作者实现；起点 `go@a08c4cc27`，范围 `f90a156e..a08c4cc2`。
 分支 `go-review-n7-3d`。仅用 rt 测试；新增用例为合成数据；无生产访问、push 或子 agent。
-状态：实现复核完成，6项发现全部修复；high0 / medium3 / low3，未决0。最终完整 gate 正在 .64 前台排队，结果待补；不计通过。
+状态：实现复核完成，6项发现全部修复；high0 / medium3 / low3，未决0。最终完整 gate 在 .64 排队900秒未获slot，按约定停止，未计通过；相关包及全树fmt/vet均通过。
 
 ## 发现
 
@@ -120,7 +120,8 @@ YAML1.1 布尔变字符串而拒绝的输入，仍使用原验证消息，无默
 34条 diagnostic 逐条重算 `n73d_diagnostic_positions.json`：32个主行号变化、34个不可用列被移除，
 全部保留 `mihomo.custom_config YAML 解析失败: YAML 语法错误` 前缀和原生诊断。按 §5.7
 允许使用原生实际位置，不能补造不存在的列。provider 235个完整显示文本（193拒绝）逐字相同，
-位置差0；F4只修直接 deploy formatter 的两种合成未知坐标，未改这235条。
+位置差0。provider hook 对原生缺列但有行的错误继续按既有合同显示第1列，保持完整展示；
+直接 formatter 和convert不补造缺列。F4只修直接 deploy formatter 的两种合成未知坐标，未改这235条。
 
 A19四条 oracle：111/130/209/210，实际3个来源，递归1、隐式schema1、Tab1来源影响2行；
 changed=classified=4/unknown0。旧 fn/args/result/corpus SHA 校验保留，其他7490行继续严格比较。
@@ -176,4 +177,25 @@ yamlxtest27；Python检查16行、oracle生成31行，14行gzip合成语料3718 
 `cf23b3fd7` 启动 .64 前台 gate，`GOMAXPROCS=4`、`-p 6`，包含
 FuzzMatcherYAML / FuzzRuleEntries / FuzzNodeItems / FuzzCustomConfigYAML（各60秒）。
 使用900秒无slot截止包装器；获得slot后不设900秒测试运行截止，不会误杀已开始的gate。
-日志 `.ci-results/review-n73d-gate/gate.out`。当前排队，尚未运行任何gate阶段；最终结果待补。
+日志 `.ci-results/review-n73d-gate/gate.out`。排队900秒后退出124：
+
+```text
+QUEUE LIMIT: stopped after 900 seconds without a gate slot; no gate stages ran.
+```
+
+没有执行完整gate的fmt/build-tag/race/difftest/proddiff或定时fuzz阶段；作者历史gate不计本次通过。
+按AGENT-BRIEF的15分钟排队约定交回，由协调者在合并树运行完整gate。
+
+随后执行最终补验：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 --back .ci-results/review-n73d-final -- bash -lc 'set -euo pipefail; review_logs="$PWD/.ci-results/review-n73d-final"; mkdir -p "$review_logs"; cd server; gofmt -l internal/ tools/ cmd/ > "$review_logs/gofmt.log"; if [ -s "$review_logs/gofmt.log" ]; then cat "$review_logs/gofmt.log"; exit 1; fi; go vet ./... > "$review_logs/vet.log" 2>&1; go test -p=4 -count=1 ./internal/convert ./internal/importer ./internal/aggregations ./tools/proddiff/generator | tee "$review_logs/targeted.log"; cd ..; PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/deploy/pushdiff/testdata/check_review_n73d_contracts.py | tee "$review_logs/python-contracts.log"; echo "FINAL TARGETED PASS; gofmt empty; vet passed"'
+```
+
+最终输出：convert15.826s/importer2.632s/aggregations0.761s/generator0.016s PASS；
+Python合同控制全部通过；`FINAL TARGETED PASS; gofmt empty; vet passed`。
+日志已取回 `.ci-results/review-n73d-final/`。
+
+收尾时本地go前进到97580425b（新增158个configdiff工具/文档提交，无Go文件、设计、scripts或cmd变化）。
+按约定变基到该提交后做集成检查，不把这些新工具重新计入本次N7-3d复核范围。
+
