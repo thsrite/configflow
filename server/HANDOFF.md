@@ -61,7 +61,11 @@ started them. Re-route them by sending every running agent below a one-line `mcp
 `notifyOnFinish: true` ("协调会话已更换，任务不变，继续做，完成后照常报告。"). Then poll each once with
 `get_agent_status`; act on any that already finished.
 
-**Pending coordinator actions** (updated 2026-11-17 ~19:10 by coordinator bb75f5c0)
+**Pending coordinator actions** (updated 2026-11-17 ~20:30 by coordinator bb75f5c0)
+Merged since 19:10: O3-4 (8bf1b189, verified on .64), N8-3 Opus review verified (fa237d77). O3-1..O3-4 joint Opus review
+61a8e7c1 running (go-opus-review-o3). O3-5 (6e5c7760, go-o3-5) does non-lockx/lifecycle parts first; internal/clock +
+Flight.DoChan + provider + matchercache after the O3 review merges. N8-4a–d → 95eb529e (go-n8-4); N8-4e/f (HR data, Opus
+review) + N8-6 + N8-7 (after O3-5) still to dispatch. N7-3a final gate running on .64; merge order a → b → c.
 Merged since: O3-3 (fb43c371), N8-3 ported + A11 Opus review verified (1e0f7ac3). Opus quota ran out ~18:00, reset 19:00;
 R07 review (64c0ec9d) and N8-3 review (38e6f0a7) resumed. Next Opus: O3-1..O3-3 joint review. A12 → fresh Codex.
 N7-3 shared yamlx commits on go-n7-3a, cherry-picked by b/c: 0b98b42e tag/shape, dc3f339c AllPairs, 23196ddd merge
@@ -86,9 +90,10 @@ Chinese error (PyYAML rejects them too; same direction as D1 and N7-2 F6) — im
 | agent | kind | task | branch |
 |---|---|---|---|
 | 64c0ec9d-4e6e-4d7b-8e11-8fd4f97b4f3d | Opus | R07 HR review | go-opus-review-r07 |
-| 38e6f0a7-ac7b-484e-be98-c5e51af310f3 | Opus | N8-3 structural review | go-opus-review-n8-3 |
+| 61a8e7c1-fef5-477b-8e16-2130779acce9 | Opus | O3-1..O3-4 joint review | go-opus-review-o3 |
+| 95eb529e-0369-4d40-9205-13e4c4764e1c | Codex | N8-4a–d model types | go-n8-4 |
 | e4c12b68-f030-4c50-8cb2-a7a86b73f6bc | Codex | A12 push diff (non-HR) | go-port-a12 |
-| 6e5c7760-36eb-4e1d-a5f0-1c378a081b14 | Codex | O3-4 loops (Signal.Clear approved) | go-o3-4 |
+| 6e5c7760-36eb-4e1d-a5f0-1c378a081b14 | Codex | O3-5 Spawn migration (decisions 1–4 in Clarified in O3-5) | go-o3-5 |
 | c5332a35-f886-4d2d-90e2-f48496728a68 | Codex | routers black-box Step B (findings → difftest-routers-findings.md) | go-difftest-routers-b |
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | Codex | config black-box Step B (findings file) | go-difftest-config-b |
 | 0d31fb93-a16c-48f8-8e5e-9c2756fb0e6f | Codex | C31 aggregation routes + device notes; register aggregation-provider in proddiff | go-port-c31 |
