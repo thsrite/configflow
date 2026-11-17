@@ -268,6 +268,14 @@ def main():
     groups.update(group_listener_edges)
     from cases.repository_legacy_shapes import GROUPS as repository_legacy_shapes
     groups.update(repository_legacy_shapes)
+    from cases.oxidns_graph_guards import GROUPS as oxidns_graph_guards
+    groups.update(oxidns_graph_guards)
+    from cases.rule_dns_new_issue import GROUPS as rule_dns_new_issue
+    groups.update(rule_dns_new_issue)
+    from cases.oxidns_policy_guards import GROUPS as oxidns_policy_guards
+    groups.update(oxidns_policy_guards)
+    from cases.oxidns_native_lifecycle_guards import GROUPS as oxidns_native_lifecycle_guards
+    groups.update(oxidns_native_lifecycle_guards)
     from cases.groups import GROUPS as managed_groups
     groups.update(managed_groups)
     from cases.rule_library import GROUPS as rule_library

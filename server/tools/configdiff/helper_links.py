@@ -138,6 +138,7 @@ VARIANT_LINKS.update({
     for variant in ('False', 'True')
 })
 VARIANT_LINKS.update({
+    ('R185-F20', 'explicit-DNS-write-requires-safe-native-rebuild', 'PUT /api/rules/<rule_id>'): ('H396', 'H917'),
     ('H290', '1', 'POST /api/custom-config/mihomo'): ('H289',),
     ('H320', '2001:db8::1', 'POST /api/custom-config/mihomo'): ('H319',),
     **{(rid + '-F12', 'agg-a?' + query, route): ('H224',)

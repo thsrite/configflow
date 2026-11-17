@@ -17,6 +17,27 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_native_reference_oracle_rejects_wrong_message_or_malformed_coordinates(self):
+        from cases.oxidns_native_lifecycle_guards import reference_message
+        from harness import DesignError
+        value = {'success': False, 'message': '合成拒绝（plugins[2].args）',
+            'references': [{'path': ['plugins', 2, 'args'], 'tag': 'synthetic', 'reason': '合成原因'}]}
+        response = lambda data: Reply(400, {'content-type': 'application/json'}, json.dumps(data).encode())
+        check = reference_message('合成拒绝')
+        check(response(value))
+        for field in ('message', 'path', 'reason', 'missing-references'):
+            bad = copy.deepcopy(value)
+            if field == 'message':
+                bad['message'] = '其他拒绝（plugins[2].args）'
+            elif field == 'path':
+                bad['references'][0]['path'][1] = True
+            elif field == 'reason':
+                bad['references'][0]['reason'] = None
+            else:
+                bad['references'] = []
+            with self.assertRaises(DesignError, msg=field):
+                check(response(bad))
+
     def test_helper_annotations_require_the_audited_route_and_specific_guard_input(self):
         from helper_links import attach
         vectors = [('H290', '1', 'POST /api/custom-config/mihomo', 'H289'),
@@ -127,14 +148,14 @@ class Comparators(unittest.TestCase):
             item = {'group': group, 'case': case, 'variant': variant, 'route': route, 'status': 'closed',
                     'differences': [{'path': path}], 'remaining_differences': []}
             closed = annotate([copy.deepcopy(item)])[0]
-            self.assertEqual(closed['fix_commits'], ['5e5dd8ee'])
+            self.assertEqual(closed['fix_commits'], ['3ab6f5b4'])
             self.assertIn('不是Go业务修复', closed['closure_note'])
             wrong = copy.deepcopy(item)
             wrong['differences'].append({'path': 'db.genuine-regression'})
-            self.assertNotIn('5e5dd8ee', annotate([wrong])[0]['fix_commits'])
+            self.assertNotIn('3ab6f5b4', annotate([wrong])[0]['fix_commits'])
             wrong = copy.deepcopy(item)
             wrong['status'] = 'open'
-            self.assertNotIn('5e5dd8ee', annotate([wrong])[0]['fix_commits'])
+            self.assertNotIn('3ab6f5b4', annotate([wrong])[0]['fix_commits'])
 
     def test_source_completion_gate_observes_fast_body_before_slow_response(self):
         import threading
@@ -259,7 +280,7 @@ class Comparators(unittest.TestCase):
                 'group': 'webdav-named-preflight-and-directory-failure', 'status': 'closed', 'python_status': 400,
                 'go_status': 400, 'checked_baseline': 'synthetic', 'differences': [], 'remaining_differences': []}
         result = annotate([copy.deepcopy(item)])[0]
-        self.assertEqual(result['fix_commits'], ['9b421107'])
+        self.assertEqual(result['fix_commits'], ['e4ced9d6'])
         self.assertIn('不是Go业务修复', result['closure_note'])
         self.assertIn('不是Go业务修复', '\n'.join(markdown([result])))
         for mutation in ({'status': 'open'}, {'variant': 'other'}, {'route': 'other'}):

@@ -2084,6 +2084,28 @@ H342/H343经default/scoped真实Mihomo生成/预览到达EasyTier输出校验，
 
 H176–182经schema2完整import在资源remap之前触发[validate_shapes](../../backend/utils/dialer_references.py#L9)及H818；包括节点/组集合、元素、ID/名称、params/proxy_string、每类源数组和排序对象形态。H817/H819/H820/H821/H828/H829分别在同一真实legacy流程覆盖坏profile、坏订阅引用、原始拨号类型/缺目标、中间格式与缺本地资源，来源[config_repository.py:2087](../../backend/common/config_repository.py#L2087)、[config_repository.py:2202](../../backend/common/config_repository.py#L2202)。原H757/H758两个前置拒绝请求改记实际H182，并关联H853；撤回后置guard的覆盖计数，UNOBSERVABLE理由保留。H838/H856只关联实际由repository捕获的provider/group健康错误；不是按同一中文提示给所有wrapper打标签。
 
+### Step B OxiDNS 后置生命周期与可达性复核（批次133）
+
+H437–468现在每项都有真实公开native-settings/apply输入，含所有已有R标签。新夹具覆盖完整草稿形态、重复tag、空新tag、两类坏重命名记录、standard_add/rename意图冲突、include/共享引用、新旧资源/暂存插件冲突及最终剩余引用。H467在删除cache/其目标链的同时添加另一功能，不能使用“只删除、无新增”的修复fallback；H468让实际standard_add恢复的暂存参数重新引用已删cache，证明检查的是最终图。每项比较准确中文及完整references路径/tag/reason、全SQL/files、零网络。来源[oxidns_native_apply.py:346](../../backend/common/oxidns_native_apply.py#L346)、[oxidns_references.py:15](../../backend/common/oxidns_references.py#L15)。暂存参数只是公开editor请求的合成边界输入，不代表真实设备已发布。
+
+H363–415的新增图用例保留完整前置：H349显式启用API后才能越过字段capability并到达坏父对象；H350使用read投影而非render；H375用可导入保留的空URL资源；H376用真实新blackhole action与未受管同名插件；H394/H395先经真实native apply记录rename；H399/H403分别是缺目标链的默认切换/新规则选择；H400保留结构可识别但不属于当前库的旧IP块，不能让自动domain-only迁移抢先。H404–415分别覆盖include流水线、错类型、恢复坏参数、坏cron/步骤、额外调用及根引用，未缩小任何限额或替换业务函数。来源[oxidns_common.py:1076](../../backend/common/oxidns_common.py#L1076)、[oxidns_common_routing.py:1083](../../backend/common/oxidns_common_routing.py#L1083)、[oxidns_common_updates.py:124](../../backend/common/oxidns_common_updates.py#L124)。
+
+H499必须用native common apply的资源扫描；template模式会丢弃手写api并重新生成，先前“template package必失败”草稿实际200，已撤回。H429/H432/H433由template editor生成设备策略，H434用独立Hosts消费者和显式template resolution证明不得删仍被引用的内容。H916先用真实editor生成指定上游三插件，公开保存一份带保留参数错误的native，再实际改变规则DNS移除旧helper；错误坐标改变使Python新增issue集合非空→409，原状态精确不动。来源[oxidns_native.py:232](../../backend/common/oxidns_native.py#L232)、[oxidns_device_policy.py:314](../../backend/common/oxidns_device_policy.py#L314)、[rule_dns.py:755](../../backend/common/rule_dns.py#L755)。H396精确关联已有R185-F20的真实native重建，不把前置wrapper错误借给它。
+
+OxiDNS剩余9个H不计runtime覆盖，逐条边界如下：
+
+| 编号 | 公开驱动的限制与部分覆盖理由 | Python依据 |
+|---|---|---|
+| H351 | common调用ensure前先用allowed/capability拒绝错类型；updater错类型由H405先拒绝；native新增要求tag的标准类型正确。不能把同样的前置400算成ensure的后置raise。 | [oxidns_common.py:188](../../backend/common/oxidns_common.py#L188)、[oxidns_common.py:1091](../../backend/common/oxidns_common.py#L1091)、[oxidns_common_updates.py:135](../../backend/common/oxidns_common_updates.py#L135) |
+| H352 | _read把同一fallback capability赋给所有_FALLBACK_FIELDS，apply先在H371拒绝不可编辑字段，后置_prepare_fallback的重复拒绝未由公开输入证明到达。 | [oxidns_common.py:614](../../backend/common/oxidns_common.py#L614)、[oxidns_common.py:414](../../backend/common/oxidns_common.py#L414) |
+| H393 | alias custom字段的相同capability已在common apply入口拒绝；不以H371结果计内部重复拒绝。可达的H394/H395有独立实际输入。 | [oxidns_common.py:1091](../../backend/common/oxidns_common.py#L1091)、[oxidns_common_routing.py:1031](../../backend/common/oxidns_common_routing.py#L1031) |
+| H397 | migration的空changes调用前已要求所有SELECTORS可编辑；rule_dns重建传完整changes，先经H396。未找到所列REST驱动绕过前置而独立到达H397的合法输入。 | [oxidns_common_routing.py:510](../../backend/common/oxidns_common_routing.py#L510)、[rule_dns.py:853](../../backend/common/rule_dns.py#L853) |
+| H430 | 已有非空previous设备策略的手改检查属于apply_policies/client_devices/routers；config转换器调用patch_document时previous固定为空。不能把配置editor的命名冲突当作此项。 | [oxidns_device_policy.py:325](../../backend/common/oxidns_device_policy.py#L325)、[oxidns_device_policy.py:374](../../backend/common/oxidns_device_policy.py#L374)、[oxidns.py:487](../../backend/converters/oxidns.py#L487) |
+| H431 | 同H430，只有非空previous时才检查旧hook位置；config模板生成固定previous=[]。 | [oxidns_device_policy.py:331](../../backend/common/oxidns_device_policy.py#L331) |
+| H508 | settings非对象在REST wrapper先400；完整repository也拒绝非对象oxidns，见先前errata。 | [oxidns.py:103](../../backend/routes/oxidns.py#L103)、[config_repository.py:2577](../../backend/common/config_repository.py#L2577) |
+| H664 | format名称由随程序发布的plugin schema指定，无HTTP入口修改该schema；提供普通未知插件名不会触发unsupported validation format。不能修改参考schema来制造输入。 | [oxidns_plugin_constraints.py:619](../../backend/common/oxidns_plugin_constraints.py#L619) |
+| H704 | 顶层schema format同样来自固定资源；普通draft值错误由已有类型/格式guard处理，不会产生未知schema-format定义。 | [oxidns_validation.py:152](../../backend/common/oxidns_validation.py#L152) |
+
 冻结比较针对每个端自己的已校验bundle成员原始字节。配置通过公开settings改为另一份后，旧file仍必须等于旧成员，完整SQL/预览文件不变；跨实现的生成主YAML照结构比较。ZIP下载由[generated_preview.download](../../backend/agents/generated_preview.py#L163)每次重打包，ZIP容器自身的时间戳不属于“旧成员内容不变”，不能把整个ZIP字节相等当作冻结条件。TTL仍核对真实expires_at≈创建时刻+3600，过期拒绝另由F11验证，不缩短生产TTL。
 
 ### Step B token保存后的轮换与版本注入边界

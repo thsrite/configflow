@@ -2261,3 +2261,20 @@ current compared39 / Go未实现450；design_errors=[]；exit0
 Python前提通过；compared/Go未实现；design_errors=[]；exit0
 120 self-checks + deliberately wrong-Go-response detection OK
 ```
+
+## 批次 133：df6928ae全部finding复验、OxiDNS后置生命周期和图拒绝
+
+- rebase到go df6928ae；behaviour-changes的追加冲突保留集成N7说明和维护者批准的Web listener边界。更新工具自修正提交引用为当前可达e4ced9d6（原9b421107）和3ab6f5b4（原5e5dd8ee），不冒充业务修复。
+- .64实际复跑全部40个finding组744变体、582.66秒：compared622/Go未实现72/严格差异49（accepted29/open20）/O12单列1、design_errors=[]，exit1仅因20个原有open。172个review全部checked_baseline=df6928ae，仍closed122/accepted29/open20/separate1。期间服务器过载使总耗时增加，未新增时序差异；已有open也在较早基线实际复现，未因慢机器自行关闭或接受。
+- 新增6个定向组正式在.64运行134变体（全部Go未实现、Python前提通过），27.14秒；新组包括18类初始graph/updater拒绝及后续API、legacy-IP、缺URL/链、rename、设备策略和Hosts引用边界。native lifecycle的H437–468每项现都有真实公开输入，未替换任何业务函数。H467必须“删除+新增”才越过纯修复fallback；H468确实从standard_add恢复的暂存参数引入新悬空引用，再由最终图检查拒绝。
+- H916真实editor→公开保存保留参数错误→规则DNS写入后移除旧指定上游helper，参数issue坐标发生变化并进入新增issue拒绝；全SQL/files不动。H499的template草稿实际200，因为转换器会重建api；已撤回，改用native common资源扫描后实际到达。每次References诊断要求准确中文加实际坐标，引用路径/tag/reason和所有字段继续跨端严格比；新增121项自检含坏坐标/错误消息/缺诊断的故意变异。
+- 正式10449变体，原R4487（S712/F2759/B1016）、H865/G16；累计compared2938/Go未实现7359/依赖102/严格差异49/O12单列1。原R差43（含N/A）、H差247，矩阵新增逐条OxiDNS剩余9H的防御/跨域可达性说明，不把它们计为通过。其他剩余和最终all继续推进。
+- 新规则：后续完整Go门禁使用server/scripts/gate.sh的两槽排队（.64加-p 4），高负载单次时序差异先复验。当前新增运行均为定向用例组；未另开全量race/proddiff。
+
+```text
+.64 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups <全部40个finding组，JSON summary保留精确列表> --baseline df6928ae
+current compared622 / Go未实现72 / different49 / accepted29 / open20 / O12单列1；design_errors=[]；seconds582.66；exit1
+.64 --groups oxidns-native-common-graph-and-updater-guards,oxidns-retained-selected-source-missing-URL,oxidns-template-policy-and-retained-resource-guards,oxidns-explicit-native-lifecycle-guard-branches,rule-DNS-real-new-native-validation-issue,rule-dns-native-write-boundaries --baseline df6928ae
+current Go未实现134；design_errors=[]；seconds27.14；exit0
+121 self-checks + deliberately wrong-Go-response detection OK
+```
