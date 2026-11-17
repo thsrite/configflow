@@ -1,6 +1,6 @@
 # PROGRESS — domain `agents`
 
-Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 12 missing, 0 partial, 1 ported (A19), 11 verified (A01, A02, A03, A04, A05, A06, A07, A08, A09, A10, A15). Only reviewers set `verified`.
+Domain `agents` (WORKFLOW.md): Agent registry/heartbeat, metrics/traffic, OxiDNS/Mihomo monitoring, installers, Docker HA, deployment bundle, push diff, content sync, publishing, upgrades, address follow, rule sync, DNS follow, DNS HA, Linux gateway, gateway onboarding/installation, IPv6 readiness (old packages #20–#31). **69 Python files, 25154 lines, 24 modules** (equal to the `agents` totals in `FILES.md`) — 12 missing, 0 partial, 0 ported, 12 verified (A01, A02, A03, A04, A05, A06, A07, A08, A09, A10, A15, A19). Only reviewers set `verified`.
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 496004d7. The Go code was read directly (`internal/agents`, `internal/api/agents`, `internal/notifications`, `internal/tasks`, `internal/server`); the hand-back in `progress/20-agents.md` was not relied on.
 
@@ -34,7 +34,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A16 | Agent rule sync, projection, snapshot | 1371 | missing | HR | A07, A14, C25, C27 | 2 | internal/agents/rulesync (new), api/agents |
 | A17 | DNS follow | 760 | missing | HR | A14, C26 | 4 | internal/agents/dnsfollow (new), api/agents |
 | A18 | DNS HA (keepalived pair, handoff, pair publication) | 1529 | missing | HR | A16, A17, C26, routers (`routers/store.py`) | 4 | internal/agents/dnsha (new), api/agents |
-| A19 | Linux gateway core (common/linux_gateway.py) | 518 | ported | HR | C05, C08, routers (`router_split.check_generation`) | – | internal/gateway (new) |
+| A19 | Linux gateway core (common/linux_gateway.py) | 518 | verified | HR | C05, C08, routers (`router_split.check_generation`) | – | internal/gateway (new) |
 | A20 | Agent gateway bridge, gateway draft, gateway routes | 1110 | missing | HR | A19, A06, C18, routers (`router_split`, `routers/store.py`) | 18 | internal/gateway, api/agents, api/linuxgateway (new) |
 | A21 | gateway onboarding | 751 | missing | HR | A19, A20, C18, C22, C23, C24, C05, routers (`router_split`) | 3 | internal/gateway, api/gatewayonboarding (new) |
 | A22 | gateway installation | 809 | missing | HR | A08, A14, A20, A21, C17 | 7 | internal/gateway, api/agents |
@@ -1001,7 +1001,7 @@ Hooks to provide: `agents.RegisterHooks{HAServiceOperation, HADeployment, HAActi
 
 ## A19 — Linux gateway core
 
-**Status: `ported`** (Opus porter, 2026-11-17; HR review by a fresh Opus pending) · HR · prereqs: C05 (`append_url_query` = existing `convert.AppendURLQuery`), C08 (`rulefetch.RuleCacheReadPath`), C06 (`auth.IsAuthEnabled`), C32 (`get_ruleset_content`, hook below), routers (`routersplit.CheckGeneration`) · Go: `internal/gateway` (+ existing leaf `internal/gateway/gwbase`)
+**Status: `verified`** (Opus porter, 2026-11-17; HR review by a fresh Opus (O4) 2026-11-17, `parity/review-a19.md`: F1 medium, F2/F3 low, all fixed, 0 open; lab batch L4 still due) · HR · prereqs: C05 (`append_url_query` = existing `convert.AppendURLQuery`), C08 (`rulefetch.RuleCacheReadPath`), C06 (`auth.IsAuthEnabled`), C32 (`get_ruleset_content`, hook below), routers (`routersplit.CheckGeneration`) · Go: `internal/gateway` (+ existing leaf `internal/gateway/gwbase`)
 
 Files:
 - `backend/common/linux_gateway.py` (518) → `internal/gateway`: `settings.go` (Settings, NormalizeSettings, Error), `config.go` (typed view: Config, Rule, Reason), `extract.go` (content lines, ExtractCIDRs), `fakeip.go`, `provider.go` (ProviderName/Path/Payload/YAML, SourceYAML, ContentLoader), `apply.go` (Apply, RoutingMarkPath), `overlap.go` (DirectOverlapWarnings), `editor.go` (EditorState, ValidateRuleSetIDs, ValidateSelection), `node.go` (value predicates on the shared yamlx node helpers), `adapter.go` (the only jsonx/legacy-yamlx file), `wire.go`, `messages.go`. 1866 non-test lines; tests 754 + `testdata/gen_a19.py` 638.
@@ -1039,12 +1039,26 @@ Documents are `*yaml.Node` (`yamlx` conventions: content nodes, no document wrap
 
 ### Python tests → coverage
 
-A19 has no test file of its own. Oracle: `testdata/gen_a19.py` runs the real Python functions (7432 rows, synthetic values, loaders instead of the network; `auth` patched) and `TestPythonCorpus` compares every row (Chinese messages exact, RouterSplitError by code, crash classes as "refused but not a gateway error", configs must stay unmodified): normalize 31, fake_ip_range/network 57, routing_mark 14, extract ~1850 (fixed + random), provider payload/yaml/source ~610 each, provider_path/name ~1800, overlap ~310 (with loader call order), editor_state ~310, validate_ids ~270, validate_selection ~290, apply ~380 (byte-exact jsonx), generate 134 (full `generate_mihomo_config` vs `convert.GenerateMihomoConfig` with the real hooks), downloads 134 (`get_mihomo_ruleset_downloads`).
+A19 has no test file of its own. Oracle: `testdata/gen_a19.py` runs the real Python functions (7494 rows since the review, synthetic values, loaders instead of the network; `auth` patched) and `TestPythonCorpus` compares every row (Chinese messages exact, RouterSplitError by code, crash classes as "refused but not a gateway error", configs must stay unmodified): normalize 31, fake_ip_range/network 57, routing_mark 14, extract ~1850 (fixed + random), provider payload/yaml/source ~610 each, provider_path/name ~1800, overlap ~310 (with loader call order), editor_state ~310, validate_ids ~270, validate_selection ~290, apply ~380 (byte-exact jsonx), generate 134 (full `generate_mihomo_config` vs `convert.GenerateMihomoConfig` with the real hooks), downloads 134 (`get_mihomo_ruleset_downloads`).
 - `test_linux_gateway.py` (27; file owned by A20): A19 halves covered by corpus rows built from the same inputs — empty-cache rename → `TestDefaultContentReader`; disabled no-op/no mutation → generate/downloads/apply rows + `TestApplyKeepsUntouchedValues`; selective output, fake-only/deleted, rename/disable, classical extraction, unsafe rules, conflicts on the base, candidates/MRS, comments, single IP, classical non-IP, rule mode, TUN filters, disabling after type change, huge sources, auth token, overlap (2), router split markers (2) → the matching fixed rows. Routes/bundle/draft cases (`test_api_*` 2, `test_runtime_tokens_*`, `test_bundle_*` 2, `test_draft_preview_*`) → A20/A11.
 - `test_router_split.py::test_rule_set_id_validation_is_shared_with_gateway_selection` → validate_ids/validate_selection fixed rows.
 - `test_mihomo_base_settings.py` fake-ip-range cases (12) → fake_ip_range rows + `TestHooks` (through `FakeIPNetworkError`); the integer value is C18's own check.
 - `test_setup_flow.py`, `test_linux_gateway_draft.py`, `test_gateway_onboarding.py`, `test_gateway_publish_compatibility.py`, `test_gateway_installation.py` exercise A19 only through A20/A21/A22/C36 → their modules.
 - Extra: `TestSettingsDefaults` (raw JSON forms), `FuzzExtractCIDRs` (capture invariants: IPv4, ≥/8, sorted, disjoint, never all of IPv4). Purpose-broken check: flipping `ipv6`, the /8 limit and the overlap sort made 249 rows differ.
+
+### HR review (O4, 2026-11-17) — verified
+
+`parity/review-a19.md`. **F1 (medium)** shared YAML containers (aliases) were expanded by the jsonx
+boundary, `cloneShared` and `RoutingMarkPath` — exponential generation/editor/validation time and
+memory for an alias chain in the base configuration or a third-party provider file (A11's routing-mark
+check), endless recursion on a cyclic node graph; now one node per shared container and Python's
+`seen` set. **F2 (low)** `Apply`/`RoutingMarkPath` silently did nothing on a yaml.v3 document wrapper
+or a non-mapping; the wrapper is transparent, anything else an error. **F3 (low)** non-ASCII white
+space around `payload:` made a classical set's capture silently empty (Python reads YAML); the
+detection takes Unicode white space, 62 corpus rows added (7494). New tests for the content limits,
+all TUN filter keys and scalar tun/dns. Debt: N7-3 (`LoadWith` vs convert's `Load` acceptance),
+N3/N8 (`PySplitlines`, `jsonx.Str`), N9 (`PythonClass` in gwbase); C32 must install
+`SetRulesetContent` before A20's provider routes ship.
 
 ### Only lab batch L4 can prove
 
