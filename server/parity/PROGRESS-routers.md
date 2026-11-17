@@ -675,15 +675,19 @@ Routes: none.
 
 Notes for porter: IPv6 address/prefix math against Python `ipaddress` (corpus: ULA, link-local, mapped, zone ids, `strict=False`, prefix lifetimes — RouterOS 7.25.1 lifetime fingerprint fix 4191cf70), manifests `ipv6_fakeip_state`/`ipv6_routes_state`, `relevant`/`settings`/`inspect`/`needs_host`.
 
-实现提交 `55a022ad4`、`99c4b1cc3`；已 rebase 到 `go@f90a156eb`（O3-6a），已 rebase 本地 go。
+实现提交 `55a022ad4`、`99c4b1cc3`、`165cb81fd`、`96e8b4326`；
+O3-6a 跟进 `f03376cca`、`151c7b3a0`，已 rebase 到 `go@f90a156eb`。
 共享 evaluator 原位扩展为按表返回完整 evidence / NAT translation；R09 继续只取 Decision。
 IPv6 Fake-IP / rule-set typed inspect/apply/restore/verify、manifest/BuildReport/driver handler 已接线。
 不新增 HTTP route/loop/锁/依赖；R11 复用下一跳/环境转换，R12/R14 负责发布 orchestration。
 
 真实 Python：68 路由/完整报告序列、330 全证据 policy cases、14 settings/原 YAML 字节组；
 原始 wire/10s 参数、真实 Runtime shutdown/disconnect、归属/ID reuse/部分恢复回归；
-仓库 84 子场景；4/4 编译成功的 boundary mutations 检出。全部通过 rt 在 .64 跑。
-最终 `.64 gate.sh -p 6` 前台排队/执行中，最多等待 15 分钟；最终结果写入交接文件。
+仓库 86 子场景；5/5 编译成功的 boundary/recovery mutations 检出。全部通过 rt 在 .64 跑。
+最终 `.64 gate.sh -p 6` 排队超过 15 分钟未获槽，按 brief 已终止；完整门禁由协调者 cf-gate 跑。
+O3-6a 合并树 `.32`：全仓 gofmt/vet clean；相关包全部 race 通过（routers 471.428s、
+routersplit 17.040s、devhttp 3.596s、repo 214.788s）；R10 / R09 evaluator 两个 60s fuzz PASS。
+新增 borrowed active 回归 race 1.067s PASS。全量 race/proddiff/difftest 未宣称通过。
 未 push，未访问真实设备/生产/PVE，待新的 Opus 复核和 L5。
 
 详细逐类复核防护、API 契约、Python 测试映射、行为修正、文件行数、精确命令与结果：

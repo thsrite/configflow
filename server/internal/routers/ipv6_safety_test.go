@@ -559,3 +559,39 @@ func TestR10FailedApplyRetainsProvenCreationWhenDeleteRefused(t *testing.T) {
 		})
 	}
 }
+
+func TestR10BorrowedRouteMustRemainActive(t *testing.T) {
+	for _, feature := range []string{"fake", "routes"} {
+		t.Run(feature, func(t *testing.T) {
+			d, f := r10Driver(t)
+			state := r10State()
+			cidr := "fd00:face::/64"
+			if feature == "routes" {
+				cidr = r10Wanted(1).IPv6CIDRs[0].CIDR
+			}
+			state.Tables[rosIPv6Routes] = []routerfake.Row{r10Route("*50", cidr, "fe80::4%bridge")}
+			f.Reset(state)
+			var verify func() error
+			if feature == "fake" {
+				p := r10FakePlan(t, d)
+				if p.Status != "borrowed" {
+					t.Fatal("not borrowed", p)
+				}
+				verify = func() error { return VerifyIPv6FakeIP(t.Context(), d, &p.Check) }
+			} else {
+				p := r10RoutesPlan(t, d, 1)
+				if len(p.Check.Borrowed) != 1 {
+					t.Fatal("not borrowed", p)
+				}
+				verify = func() error { return VerifyIPv6Routes(t.Context(), d, p.Check) }
+			}
+			if err := verify(); err != nil {
+				t.Fatal("active borrowed route failed", err)
+			}
+			f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{rosIPv6Routes: {"*50": {"active": "false"}}}}})
+			if err := verify(); err == nil {
+				t.Fatal("inactive borrowed route reported verified")
+			}
+		})
+	}
+}

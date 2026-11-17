@@ -747,3 +747,7 @@ host 错误沿用共享 agents/diag 脱敏，隐藏已知 Agent token/router pas
 普通 username/api/权限诊断保留。设备所有写/回滚 owner 在 Detach 后与提交前遵循 shutdown 检查，
 关机取消后禁止继续写；请求断开仍完成。不可证明的丢失写回复保留现场，不猜测、不删除。
 R10 不生成/重写 YAML；原保存 YAML（含 CRLF/注释/引号/alias）逐字节保留，读取政策沿用 N7。
+
+R10 rule-set 的 borrowed 回读也要求路由仍然 active：Python 仅比较排除了 active 的 stable config，
+会把发布期间失活但配置未变的借用路由报为验证成功；Go 返回既有 borrowed verification 错误。
+`TestR10BorrowedRouteMustRemainActive` 同时固定 fake/rules 的只读回读边界。

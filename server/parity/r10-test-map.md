@@ -102,3 +102,5 @@
 
 
 额外 Python bug 修正回归：`TestR10FailedApplyRetainsProvenCreationWhenDeleteRefused`（fake/routes）验证初次部分 apply 的补偿 DELETE 拒绝后保留 birth config/可信 ID；mutation gate 的 recovery 破坏必须触发该测试失败。
+
+额外 borrowed 运行时校验：`TestR10BorrowedRouteMustRemainActive`（fake/routes）验证仅 active 失效、stable config 不变时也拒绝 verify，修复 Python rule-set borrowed 漏检；定向 race 通过。

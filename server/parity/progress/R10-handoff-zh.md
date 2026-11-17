@@ -2,8 +2,9 @@
 
 ## 范围与状态
 
-分支 `go-port-r10`，基底本地 `go@f90a156eb`（O3-6a 已合入）。实现提交 `55a022ad4`、`99c4b1cc3`、
-`165cb81fd`、`96e8b4326`；已无冲突 `git rebase go`。状态 **ported，待独立 Opus HR 复核**。
+分支 `go-port-r10`，已无冲突 rebase 本地 `go@f90a156eb`（O3-6a）。
+实现提交：`55a022ad4`、`99c4b1cc3`、`165cb81fd`、`96e8b4326`；
+O3-6a 跟进：`f03376cca`、`151c7b3a0`。状态 **ported，待独立 Opus HR 复核**。
 只访问测试服务器上的 loopback fake；没有访问生产、真实路由器、DNS、PVE，没有 push/子 agent。
 
 完整移植 `backend/routers/ipv6_policy.py`、`ipv6_fakeip.py`、`ipv6_routes.py` 的模块功能，
@@ -63,7 +64,9 @@ readiness 读表服务仍属于各自模块；这里只提供实际可调用的�
    host bits 并规范化 /064。无有效候选时使用已有保守 blocker/skip。
 6. host 错误复用 agents/diag 的共享凭据处理并传入实际 Agent token/router password；
    username=api、rest-api 诊断保留。无新私有脱敏算法，也不修改归属行里的值。
-7. 无效/缺失 range 的 Python 内部 ipaddress 异常文字改为明确中文；业务中文文案保持一致。
+7. 借用规则集路由的 verify 同时要求 active；Python 只比 stable config 会放过运行时失活。
+   两个 route feature 的 borrowed 活动状态有独立 race 回归。
+8. 无效/缺失 range 的 Python 内部 ipaddress 异常文字改为明确中文；业务中文文案保持一致。
    YAML duplicate/alias/depth 等沿用 N7 已接受政策，没有额外的 YAML/JSON 模拟器。
 
 残余边界（与 R04–R09 相同）：关机 drain 取消后禁止继续补偿写，可能留下尚未登记的现场；
@@ -100,10 +103,11 @@ R09 既有 matcher/jump/list/budget 差分继续运行；没有把 unknown 当�
 `TestR10RollbackNeverAdoptsMatchingForeignRoute`、`TestR10RollbackRemapDoesNotBlessExternalEdit`、
 `TestR10HostDiagnosticsRedactCredentials`、`TestR10ManifestSpecAndUnknownFields`、
 `TestR10RestoreFailureKeepsPublishedOwnership`、
-`TestR10FailedApplyRetainsProvenCreationWhenDeleteRefused`：外部编辑、ID reuse、connect/dynamic、malformed manifest、
+`TestR10FailedApplyRetainsProvenCreationWhenDeleteRefused`、
+`TestR10BorrowedRouteMustRemainActive`：外部编辑、ID reuse、connect/dynamic、malformed manifest、
 R5 fallback、部分恢复、新 ID、同配置外部路由与脱敏。`TestR10ManifestCopies` 防输入/输出别名。
 
-repo 的四个 `TestR10...`：84 个子场景，五种 writer 的 IPv6 ownership 丢失保护、
+repo 的五个 `TestR10...`：86 个子场景，五种 writer 的 IPv6 ownership 丢失保护、
 publication remap/显式 clear/并发 metadata、连接变更拒绝/凭据修复/克隆/删除保护，两种 manifest 均覆盖。
 
 `TestR10IPv6AddressMathPython`：10 组真实 Python interface stable 证据（ULA/LLA/zone/mapped/host bits/
@@ -147,26 +151,57 @@ publication remap/显式 clear/并发 metadata、连接变更拒绝/凭据修复
 - N8-4ef presence/clear：Set 与 Value 独立，未读 nil 不成为清除意图；资源未知字段和 manifest 未来字段保留，重映射不丢。
 - O3/N7/N8：不新增 goroutine/flock/锁；纯读可取消，owner detach；yamlx 唯一入口，typed model.Profile/model.Agent，原生 JSON/RawMessage。
 
-## 定向命令与结果
+## O3-6a 的 JobLock 边界
 
-全部在 `.64`，本机未运行任何测试/构建/lint：
+读完 `o3-6-locks.md` 后，四个 R10 写 owner 改用 ctxx.Detach；真实 Runtime 取消父级不变。
+没有本地文件/叶存储，不新增叶锁，也不对设备 I/O 使用 Uninterruptible。
+共享 R08/R09 的 owner 模式保留；O3-6b 再接 routers JobLock。
 
-```sh
-RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/routers -- bash -lc 'cd server && gofmt -w internal/routers/ipv6* && go test -p 6 -count=1 -run "TestR10|TestR09SharedEvaluatorPython" ./internal/routers && go vet ./internal/routers/...'
-# ok configflow/internal/routers 10.377s；vet 无输出
-RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/routers --back server/internal/repo/r10_ipv6_safety_test.go -- bash -lc 'cd server && gofmt -w internal/routers/ipv6* internal/repo/r10_ipv6_safety_test.go && go test -p 6 -count=1 -run "TestR10" ./internal/routers ./internal/repo && python3 scripts/r10-mutation-gate.py'
-# routers 9.568s；repo 21.118s；四类 DETECTED；R10 mutation gate: 4/4 detected; sources restored
-RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/routers/rospolicy_model.go -- bash -lc 'cd server && gofmt -w internal/routers/rospolicy_model.go && go test -p 6 -count=1 -run "TestR10ManifestCopies" ./internal/routers'
-# ok configflow/internal/routers 0.010s
-```
+仓库测试允许修改连接的场景均显式装入非阻塞合成 JobLock hook，模拟 caller 已持有锁；
+没有依赖默认 hook 成功。`TestR10MissingJobLockRefusesProtectedTransactions` 确认两个 IPv6 manifest
+在无 hook 时的普通凭据更新均 ErrInUse（对应 409），DB 指纹不变。生产在 O3-6b 前的 fail-closed
+限制保留；R12/R15 接线不得绕过。
 
-最终门禁：前台启动于测试机本地 05:30:30（协调时钟 UTC 21:30:30），最初两槽均占用；
-其间为了修正 scope-id 边界暂停了仍在排队的进程，补验后重新启动；
-排队预算仍按首次启动累计到 UTC 21:45:30，严格最多等 15 分钟。日志 `.64:~/.cache/r10-final-gate`。结果待本节补齐。
+## 精确命令与结果
+
+本机未运行测试/构建/lint。最新 O3-6a 合并树定向：
 
 ```sh
-RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'GATE_LOGS=$HOME/.cache/r10-final-gate server/scripts/gate.sh -p 6 FuzzR10IPv6Input:./internal/routers FuzzR09PolicyEvaluator:./internal/routers FuzzR09DNSGuardManifest:./internal/routers FuzzR09DNSGuardOperation:./internal/routers FuzzR08PolicyInput:./internal/routers FuzzR07DecodeAddressRow:./internal/routers FuzzFakeIPYAML:./internal/routers'
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/routers/ipv6_write.go --back server/internal/repo/r10_ipv6_safety_test.go -- bash -lc 'cd server && gofmt -w internal/routers/ipv6_write.go internal/repo/r10_ipv6_safety_test.go && go test -p 6 -count=1 -run "TestR10|TestR09SharedEvaluatorPython" ./internal/routers ./internal/repo && go vet ./internal/routers/... ./internal/repo/...'
+# ok configflow/internal/routers 11.532s
+# ok configflow/internal/repo 29.859s
+# 相关 vet 无输出
 ```
+
+补偿失败修正之后（ctxx/lifecycle 仅有等价转发差异）的变异验证：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && python3 scripts/r10-mutation-gate.py'
+# result / journal / request / device-table / recovery: DETECTED
+# R10 mutation gate: 5/5 detected; sources restored
+```
+
+`.32` O3-6a 合并树共享路径 **全部通过，rt 退出 0**：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && gofmt -l internal tools cmd && go vet ./... && go test -race -p 4 -count=1 -timeout=40m ./internal/routers/... ./internal/routersplit/... ./internal/devhttp/... ./internal/repo/... && go test -p 4 -run "^$" -fuzz "^FuzzR10IPv6Input$" -fuzztime=60s -parallel=2 ./internal/routers && go test -p 4 -run "^$" -fuzz "^FuzzR09PolicyEvaluator$" -fuzztime=60s -parallel=2 ./internal/routers'
+# gofmt 无输出；go vet ./... clean
+# race: routers 471.428s；routersplit 17.040s；devhttp 3.596s；repo 214.788s
+# FuzzR10IPv6Input: 124205 execs, PASS, ok 61.040s
+# FuzzR09PolicyEvaluator: 694886 execs, PASS, ok 61.057s
+```
+
+最终 `.64` gate：**未执行检查，排队超 15 分钟，按 AGENT-BRIEF 停止并交回**。
+UTC 21:50:51 开始等槽，22:06:02 仍未获槽；随后终止，只清理本任务等待进程树（1 root/3 processes）。
+没有改槽位数、没有绕过调度器、没有把中止算 PASS。完整门禁由协调者 cf-gate 执行。
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'GATE_LOGS=$HOME/.cache/r10-o36a-final server/scripts/gate.sh -p 6 FuzzR10IPv6Input:./internal/routers FuzzR09PolicyEvaluator:./internal/routers FuzzR09DNSGuardManifest:./internal/routers FuzzR09DNSGuardOperation:./internal/routers FuzzR08PolicyInput:./internal/routers FuzzR07DecodeAddressRow:./internal/routers FuzzFakeIPYAML:./internal/routers'
+```
+
+旧基底与自查修正前的门禁已停止，确认仅本任务的进程树退出，不算最终 PASS。
+本分支未完成全量 race、两个 build tag、完整 proddiff、启用的全部 HTTP difftest 和其余五个 fuzz；
+当前新基底上的完整门禁无 PASS 声明。定向 race 已覆盖全部 R04–R10 共享驱动测试。
 
 ## 未运行的 L5 / 后续验证
 
@@ -177,44 +212,31 @@ RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'GATE_LOGS=$HOME/.cache/r10-final-g
 关机 drain 截断时 R12 的 manifest/错误保存与重启恢复。R11 readiness 读取范围及 R12/R14 orchestration
 须在它们落地后加入对应黑盒 HTTP/发布集成测试；本模块无生产启用动作。
 
-## 文件规模（实现提交时）
+## 文件规模
 
-新增运行时代码：ipv6_model.go 384、ipv6_plan.go 660、ipv6_write.go 698、
+新增运行时代码：ipv6_model.go 391、ipv6_plan.go 660、ipv6_write.go 761、
 ipv6_policy_checks.go 544、ipv6_policy_messages.go 73、ipv6_messages.go 82、ipv6_report.go 24。
 共享 ipv6_policy_eval.go 扩展至 550 行；已有共享驱动/forward_hint/Manifests/Report 原位接线。
-新增测试：ipv6_boundary_test.go 394、ipv6_policy_boundary_test.go 149、ipv6_safety_test.go 432、
-ipv6_settings_test.go 86、repo/r10_ipv6_safety_test.go 155；Python 三个合成 reference 共 88 行；
-变异验证脚本 43 行。没有临时 debug/testdata 或生产数据。
-
-补充定向验证（scope-id 修正后，仍只在 .64）：
-`go test -p 6 -count=1 -run "TestR10|TestR09SharedEvaluatorPython" ./internal/routers && go vet ./internal/routers/...`
-→ `ok configflow/internal/routers 8.505s`，vet clean；
-`go test -p 6 -count=1 -run "TestR10IPv6AddressMathPython|TestR10ManifestSpecAndUnknownFields|TestR10RestoreFailureKeepsPublishedOwnership" ./internal/routers`
-→ `ok configflow/internal/routers 0.129s`。均经 RT_HOST=.64 rt 运行，gofmt 通过 --back 带回。
-
-最后自查修正：初次 apply 部分成功、回滚 DELETE 拒绝时保留创建时的完整配置证明，
-不只修复已成功发布后 Restore 的记录。`.64` 定向全 R10 + R09 evaluator `8.142s`，vet clean。
-原完整 gate 已在 race/proddiff 阶段停止并确认其私有进程树退出；该轮不算 PASS。
-最终 gate 将在此修正提交后重新前台运行，沿用槽位限制。
+新增测试：ipv6_boundary_test.go 394、ipv6_policy_boundary_test.go 149、ipv6_safety_test.go 597、
+ipv6_settings_test.go 117、repo/r10_ipv6_safety_test.go 174；Python 四个合成 reference 共 93 行；
+变异验证脚本 40 行。没有临时 debug/testdata 或生产数据。
 
 
-## O3-6a 合并树跟进
+## 交回结论
 
-协调者通知后已 rebase `go@f90a156eb`，无冲突；读完 `o3-6-locks.md`。
-四个 R10 写 owner 改用 `ctxx.Detach`，保持真实 Runtime 的 BindRequest/shutdown 取消父级；
-请求断开与提交前 ctx.Err 规则不变，无本地原子批处理/文件存储，不能用 Uninterruptible 屏蔽设备 I/O。
-没有为 router 提前接 JobLock 或新建叶锁。
+实现完成，工作树交回前清理并提交；R10 保持 `ported`，**不标 verified**。
+没有待实现的三个模块功能；自查发现的归属/部分成功恢复问题均已修复并有回归。
+自查风险等级（非 Opus 独立定级）：中——删除完整 proof、按配置收养/部分回滚丢归属、补偿拒绝后孤儿；
+低——scope 前缀截断、borrowed active 验证、native 内部错误文案；凭据与 shutdown 采用共享安全政策。
+所有这些项目已修复；未决的是完整 gate、独立 Opus HR 复核、R11/R12/R14 自身集成与 L5 实机。
 
-仓库测试允许修改连接的场景都显式装入非阻塞合成 JobLock hook，模拟 caller 已持有锁的契约，
-没有依赖未接线的默认成功。另增 `TestR10MissingJobLockRefusesProtectedTransactions`，
-两个 IPv6 manifest 的普通凭据更新，在无 hook 时必须 ErrInUse（409 对应消息）且 DB 指纹不变。
-原 84 个 repo 子场景加这两组为 86。生产在 O3-6b 前普通事务修改已有 router 的连接/manifest
-仍会 fail-closed，本模块没有放宽；R12/R15 接线时必须保留这条限制。
+最后一个新增测试只触及 test/doc，运行时代码与上述 `.32` 完整相关包 race 的 `151c7b3a0` 相同：
 
-旧基底 gate 在 race/proddiff 阶段因协调者通知暂停，并确认专属进程树退出；无完整 PASS 声明。
-最终门禁只以后续 O3-6a 合并树的执行结果为准。
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers/ipv6_safety_test.go -- bash -lc 'cd server && gofmt -w internal/routers/ipv6_safety_test.go && go test -race -p 4 -count=1 -run "^TestR10BorrowedRouteMustRemainActive$" ./internal/routers'
+# ok configflow/internal/routers 1.067s
+```
 
-O3-6a 合并树定向结果（`.64`）：
-`RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/routers/ipv6_write.go --back server/internal/repo/r10_ipv6_safety_test.go -- bash -lc 'cd server && gofmt -w internal/routers/ipv6_write.go internal/repo/r10_ipv6_safety_test.go && go test -p 6 -count=1 -run "TestR10|TestR09SharedEvaluatorPython" ./internal/routers ./internal/repo && go vet ./internal/routers/... ./internal/repo/...'`
-→ routers `11.532s`、repo `29.859s`，相关 vet clean。随后本机对齐 ctxx/devhttp import 排序，
-仅格式；新一轮 `.32` 合并树全相关包 race + fuzz 与全仓 vet 前台执行中。
+新 R11 注意：readiness 的全表/按引用列表读取仍由 R11 完成；如果要复用已经读取的 snapshot 来给出 hairpin，
+应抽取 CheckForwardHint 的纯 snapshot 部分，保持错误表为 unknown，不能因重读成功而掩盖本次 snapshot 的错误。
+本模块没有伪装完成这条 R11 集成路径。
