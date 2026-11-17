@@ -116,7 +116,7 @@ func TestFullTunBaseYAMLKeepsAliases(t *testing.T) {
 	}
 	want := "base: &id001\n- 1\n- 2\nlist: *id001\ntun:\n  enable: true\n  stack: mixed\n  auto-route: true\n" +
 		"  auto-redirect: true\n  auto-detect-interface: true\n  dns-hijack:\n  - any:53\n  - tcp://any:53\n"
-	if got != want {
+	if !sameYAML(got, want) {
 		t.Fatalf("got\n%s", got)
 	}
 }

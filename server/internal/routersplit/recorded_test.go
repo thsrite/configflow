@@ -354,15 +354,10 @@ func sameYAML(got, want any) bool {
 	if !ok1 || !ok2 {
 		return false
 	}
-	canon := func(text string) (string, bool) {
-		v, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true})
-		if err != nil {
-			return "", false
-		}
-		out, err := yamlx.Dump(v, yamlx.DumpOptions{AllowUnicode: true, NoAliases: true})
-		return out, err == nil
+	left, err := yamlx.Parse([]byte(g))
+	if err != nil {
+		return false
 	}
-	cg, okg := canon(g)
-	cw, okw := canon(w)
-	return okg && okw && cg == cw
+	right, err := yamlx.Parse([]byte(w))
+	return err == nil && yamlx.Equal(left, right)
 }

@@ -4,7 +4,6 @@ import (
 	"unsafe"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/yamlx"
 )
 
 // PyError is a Python exception raised where router_split.py does not catch
@@ -27,7 +26,7 @@ func pyTypeName(v any) string {
 		return "str"
 	case []any:
 		return "list"
-	case *jsonx.Object, *yamlx.Mapping:
+	case *jsonx.Object:
 		return "dict"
 	case jsonx.Number:
 		if value.IsInt() {
@@ -36,11 +35,6 @@ func pyTypeName(v any) string {
 		return "float"
 	case []byte:
 		return "bytes"
-	case yamlx.Timestamp:
-		if value.HasTime {
-			return "datetime"
-		}
-		return "date"
 	}
 	return "object"
 }
@@ -52,12 +46,8 @@ func attributeError(v any, name string) error {
 // truthy is Python bool(v) for loaded YAML/JSON values.
 func truthy(v any) bool {
 	switch value := v.(type) {
-	case *yamlx.Mapping:
-		return value != nil && value.Len() > 0
 	case []byte:
 		return len(value) > 0
-	case yamlx.Timestamp, *yamlx.Unrepresentable:
-		return true
 	}
 	return jsonx.Truthy(v)
 }
@@ -67,8 +57,6 @@ func isDict(v any) bool {
 	switch m := v.(type) {
 	case *jsonx.Object:
 		return m != nil
-	case *yamlx.Mapping:
-		return m != nil
 	}
 	return false
 }
@@ -77,11 +65,6 @@ func isDict(v any) bool {
 func dictGet(d any, key string) (any, bool) {
 	switch m := d.(type) {
 	case *jsonx.Object:
-		if m == nil {
-			return nil, false
-		}
-		return m.Get(key)
-	case *yamlx.Mapping:
 		if m == nil {
 			return nil, false
 		}
@@ -106,14 +89,6 @@ func dictSet(d any, key string, value any) {
 	switch m := d.(type) {
 	case *jsonx.Object:
 		m.Set(key, value)
-	case *yamlx.Mapping:
-		for i, p := range m.Pairs {
-			if k, ok := p.Key.(string); ok && k == key {
-				m.Pairs[i].Value = value
-				return
-			}
-		}
-		m.Pairs = append(m.Pairs, yamlx.Pair{Key: key, Value: value})
 	}
 }
 
@@ -122,13 +97,6 @@ func dictPop(d any, key string) {
 	switch m := d.(type) {
 	case *jsonx.Object:
 		m.Delete(key)
-	case *yamlx.Mapping:
-		for i, p := range m.Pairs {
-			if k, ok := p.Key.(string); ok && k == key {
-				m.Pairs = append(m.Pairs[:i], m.Pairs[i+1:]...)
-				return
-			}
-		}
 	}
 }
 
@@ -177,12 +145,6 @@ func pyList(v any) ([]any, error) {
 		return out, nil
 	case *jsonx.Object:
 		return jsonx.ListOf(value.Keys()), nil
-	case *yamlx.Mapping:
-		out := []any{}
-		for _, p := range value.Pairs {
-			out = append(out, p.Key)
-		}
-		return out, nil
 	}
 	return nil, &PyError{"TypeError", "'" + pyTypeName(v) + "' object is not iterable"}
 }
@@ -199,7 +161,7 @@ func contains(values []any, needle any) bool {
 
 func hashable(v any) error {
 	switch v.(type) {
-	case []any, *jsonx.Object, *yamlx.Mapping:
+	case []any, *jsonx.Object:
 		return &PyError{"TypeError", "unhashable type: '" + pyTypeName(v) + "'"}
 	}
 	return nil
@@ -213,13 +175,12 @@ type listKey struct {
 // copier is copy.deepcopy with its memo: a value reached twice (a YAML
 // alias) stays one shared value, so yaml.safe_dump writes the same anchors.
 type copier struct {
-	objects  map[*jsonx.Object]*jsonx.Object
-	mappings map[*yamlx.Mapping]*yamlx.Mapping
-	lists    map[listKey][]any
+	objects map[*jsonx.Object]*jsonx.Object
+	lists   map[listKey][]any
 }
 
 func deepcopy(v any) any {
-	c := &copier{map[*jsonx.Object]*jsonx.Object{}, map[*yamlx.Mapping]*yamlx.Mapping{}, map[listKey][]any{}}
+	c := &copier{map[*jsonx.Object]*jsonx.Object{}, map[listKey][]any{}}
 	return c.copy(v)
 }
 
@@ -236,19 +197,6 @@ func (c *copier) copy(v any) any {
 		c.objects[value] = out
 		for k, item := range value.All() {
 			out.Set(k, c.copy(item))
-		}
-		return out
-	case *yamlx.Mapping:
-		if value == nil {
-			return value
-		}
-		if out, ok := c.mappings[value]; ok {
-			return out
-		}
-		out := &yamlx.Mapping{}
-		c.mappings[value] = out
-		for _, p := range value.Pairs {
-			out.Pairs = append(out.Pairs, yamlx.Pair{Key: p.Key, Value: c.copy(p.Value)})
 		}
 		return out
 	case []any:

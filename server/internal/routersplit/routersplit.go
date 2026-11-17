@@ -27,6 +27,7 @@ import (
 	"configflow/internal/pystr"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
 // MarkerKey is MARKER_KEY.
@@ -214,6 +215,9 @@ func gatewayEnabled(config any) (bool, error) {
 // TunFilters is tun_filters(tun): the TUN filter keys in use; each lets
 // some forwarded connections bypass the TUN.
 func TunFilters(tun any) []string {
+	if node, ok := tun.(*yamlx.Node); ok {
+		return nodeTunFilters(node)
+	}
 	out := []string{}
 	if !isDict(tun) {
 		return out
@@ -227,9 +231,12 @@ func TunFilters(tun any) []string {
 }
 
 // FullTunDocument is full_tun_document(document): the base document (a
-// *jsonx.Object or a *yamlx.Mapping) with the full TUN; user TUN keys are
+// *jsonx.Object or a *yamlx.Node) with the full TUN; user TUN keys are
 // kept. The input is not changed.
 func FullTunDocument(document any) (any, error) {
+	if node, ok := document.(*yamlx.Node); ok {
+		return fullTunNode(node)
+	}
 	if _, err := getter(document); err != nil {
 		return nil, attributeError(document, "get")
 	}
@@ -272,21 +279,23 @@ func loadBase(text any) (any, error) {
 	if pystr.Strip(s) == "" {
 		return convert.DefaultMihomoTemplate(), nil
 	}
-	document, err := yamlx.LoadWith(s, yamlx.LoadOptions{KeepNonStringKeys: true})
+	document, err := yamlx.Parse([]byte(s))
 	if err != nil {
-		if e, ok := err.(*yamlx.Error); ok && (e.IsYAMLError() || e.Class == "RecursionError") {
-			return nil, gatewayError("Mihomo 基础 YAML 无法解析，请先修正基础配置")
-		}
-		return nil, err
+		return nil, gatewayError("Mihomo 基础 YAML 无法解析，请先修正基础配置")
 	}
-	if !isDict(document) {
+	if document.Kind != yaml.MappingNode {
 		return nil, gatewayError("Mihomo 基础配置必须是 YAML 对象")
 	}
+
 	return document, nil
 }
 
 // dump is yaml.safe_dump(document, allow_unicode=True, sort_keys=False).
 func dump(document any) (string, error) {
+	if node, ok := document.(*yamlx.Node); ok {
+		data, err := yamlx.Marshal(node)
+		return string(data), err
+	}
 	return yamlx.SafeDumpUnicode(document)
 }
 
@@ -300,12 +309,20 @@ func FullTunBaseYAML(text any) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if node, ok := document.(*yamlx.Node); ok {
+		source, _ := text.(string)
+		data, err := yamlx.Edit([]byte(source), func(root *yamlx.Node) error { *root = *node; return nil })
+		return string(data), err
+	}
 	return dump(document)
 }
 
 // fullTunShape is _full_tun_shape(doc): captures every connection, apart
 // from what a TUN filter excludes.
 func fullTunShape(doc any) bool {
+	if node, ok := doc.(*yamlx.Node); ok {
+		return fullTunNodeShape(node)
+	}
 	if !isDict(doc) || dictHas(doc, GatewayMarker) {
 		return false
 	}
@@ -331,6 +348,9 @@ func fullTunShape(doc any) bool {
 }
 
 func documentFilters(doc any) []string {
+	if node, ok := doc.(*yamlx.Node); ok {
+		return nodeTunFilters(yamlx.Get(node, "tun"))
+	}
 	if !isDict(doc) {
 		return []string{}
 	}
@@ -522,18 +542,11 @@ func baseDocument(config any) (any, error) {
 		// yaml.safe_load treats anything else as a file object.
 		return nil, attributeError(value, "read")
 	}
-	// Values jsonx cannot hold (a recursive alias, !!set, !!omap/!!pairs)
-	// become *yamlx.Unrepresentable placeholders: Python loads them, and only
-	// the TUN shape and filters are read from this document (a placeholder
-	// is never a dict, never True, never "any:53", and truthy — an empty
-	// !!set filter value would be falsy in Python, the one case not told apart).
-	document, err := yamlx.LoadWith(text, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true})
+	document, err := yamlx.Parse([]byte(text))
 	if err != nil {
-		if e, ok := err.(*yamlx.Error); ok && (e.IsYAMLError() || e.Class == "RecursionError") {
-			return nil, nil
-		}
-		return nil, err
+		return nil, nil
 	}
+
 	return document, nil
 }
 
@@ -683,7 +696,7 @@ func GatewayWasUsed(config, agent, source any) (bool, error) {
 	}
 	mihomo := orEmpty(dictValue(c, "mihomo"))
 	switch value := mihomo.(type) {
-	case *jsonx.Object, *yamlx.Mapping:
+	case *jsonx.Object:
 		if dictHas(value, gwbase.RestoreKey) {
 			return true, nil
 		}
