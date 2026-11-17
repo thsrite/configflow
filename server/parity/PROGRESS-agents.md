@@ -831,7 +831,7 @@ Tests: `test_agent_content_manifest.py` (8), `test_agent_content_preparation.py`
 
 Routes: none.
 
-Evidence: A11-1 core implemented; A11-2–4 pending. Provides for config: `deployment_locations` (`preparation_context`, `source_error`, `DeploymentPreparationError`) used by C17 `provider_delivery`, and `_pack` used by C34 `routes/generate.py` — register through interfaces declared in C17/C34 (decision 3). `generated_preview` uses `rule_sync_store._write/bundle_files` (A14): put `rule_sync_store` before it in the same package or port A11 and A14's store file together.
+Evidence: A11-1 core implemented; A11-2 locations/materialization implemented; A11-3/4 pending. Provides for config: `deployment_locations` (`preparation_context`, `source_error`, `DeploymentPreparationError`) used by C17 `provider_delivery`, and `_pack` used by C34 `routes/generate.py` — register through interfaces declared in C17/C34 (decision 3). `generated_preview` uses `rule_sync_store._write/bundle_files` (A14): put `rule_sync_store` before it in the same package or port A11 and A14's store file together.
 
 C30 dependency (maintainer decision, 2026-11-17): after registering `provider.SetLocations`, rerun `CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/api/subscriptions/difftest/`. Remove only `deferA11Locations` once the owning-artifact/source-location envelope matches. Annotated cases are the invalid-provider 400 branches of `TestProviderDeliveryGraphs`, `TestCombinedCrossFeedAndStaging` (bad-second and topology failures), and alternate-format/transport failures that carry provider preparation context. C30 continues comparing status, success, base validation message/field path and persisted state; only file/coordinate/excerpt diagnostics remain deferred after the Step B #7 fix. Provider ownership prefix and source labels now compare strictly through the default provider implementation; no early A11 wiring is added.
 
@@ -868,7 +868,17 @@ Commands/results A11-1:
 - `.32` Agent conformance command from design 6.3 → `ok agent/routes 0.707s`.
 - `.32` `rt -- server/scripts/proddiff.sh` → self_check PASS, coverage_regressions 0, new 0, stale 0; bundle generator still missing until A11-3.
 
-Next: A11-2 locations/materialization + C30 strict diagnostics; A11-3 Build/resources/proddiff generator; A11-4 receipts/previews/validation; final .32 acceptance and rebase.
+A11-2: Locations/SourceError/PreparationContext with secret continuation hiding; provider hook wired in production and explicitly installed/restored in the isolated C30 fixture. C30 deferA11Locations removed; `.32` strict differential passed 99.756s, no diagnostics normalization. Rule callbacks use the captured snapshot (library, rule-proxy, gateway loader), recursion bound 3; shared rulefetch/refresh supply last-good source reads and download remedies. Conversion uses shared MosDNS semantics and an L5 256-entry/16 MiB result cache.
+
+A11-2 Python coverage: `test_deployment_error_locations.py` source excerpts/context/conversion → rules_test.go + gen_a11_rules.py (64 conversions, 23 excerpts, 9 contexts, 7 callbacks); provider owning-file/source coordinates and malformed payloads → strict C30 differential. DNS conversion halves of `test_classical_deployment.py`, source callback/error halves of `test_agent_deployment_downloads.py` → this corpus + TestLoopbackRuleDownload. Build/progress/concurrency halves remain A11-3; routes A14.
+
+HR A11-2 (each issue class): R04 F1 checked payload kinds/indices; F2/F5 contexts and coordinates compare to Python; F3 source fetch honors job ctx with bounded network calls, shared refresh owns its durable writes; F4/F6 no device compensation/state advancement; F7 node structural access, no interface comparison; F8 input/output/cache bounds; F9 missing callback/source fails closed; F10 shared mosdns/rulefetch/refresh/diag only. R05 C1 no shared client behavior changed; C2 typed preparation errors retain causes/remedies; C3 local identity requires matching snapshot path; C4 snapshot immutable, no id-based undo; C5 map/payload lookup and bounded cache; C6 transport refusal distinguished from network remedy, no publication writes. A19 F1 all new YAML reads go through bounded yamlx; F2 mapping/payload shape checked; F3 Unicode whitespace accepted before payload detection (facade rejects malformed YAML instead of returning empty capture).
+
+Coordinator clarification: convert.Download gains optional Behavior/Format, convert populates known consumer metadata; deploy adapter reads only; Object/public download DTO unchanged. Contract documented in a14-publish.md and HANDOFF 3b N8/S-convert debt. No new dependency. Native parser diagnostic text on malformed syntax follows N7; Chinese context, real coordinates and non-parser messages match exactly.
+
+Commands A11-2: `.32` proddiff self_check PASS, coverage_regressions 0, new 0, stale 0 (all download generator successes retained). `.32` gofmt/vet passed; deploy race 1.614s, provider race 102.396s; strict C30 99.756s. A11-1 full suite on .63: all packages passed except rulefetch TestFetchDifferentialAgainstRequests/proxy_refused (ConnectTimeout vs ProxyError under WSL); final authoritative .32 run will recheck. Full result is not claimed green.
+
+Next: A11-3 Build/resources/proddiff bundle generator; A11-4 receipts/previews/validation; final .32 checks and rebase.
 
 ## A12 — push diff
 

@@ -13,6 +13,10 @@ type Download struct {
 	Name      string
 	URL       any
 	LocalPath any
+	// Behavior and Format carry the final consumer metadata for deployment builds.
+	// Object deliberately retains the existing public download representation.
+	Behavior string `json:"behavior,omitempty"`
+	Format   string `json:"format,omitempty"`
 }
 
 // Object is the Python dict of the entry.
@@ -48,7 +52,12 @@ func providerDownloads(main *jsonx.Object, field string, httpOnly bool) []Downlo
 		if !jsonx.Truthy(dictGet(provider, "url", nil)) {
 			continue
 		}
-		out = append(out, Download{Name: name, URL: dictItem(provider, "url"), LocalPath: dictItem(provider, "path")})
+		d := Download{Name: name, URL: dictItem(provider, "url"), LocalPath: dictItem(provider, "path")}
+		if field == "rule-providers" {
+			d.Behavior, _ = dictGet(provider, "behavior", "").(string)
+			d.Format, _ = dictGet(provider, "format", "yaml").(string)
+		}
+		out = append(out, d)
 	}
 	return out
 }
@@ -89,7 +98,7 @@ func GetMihomoRulesetDownloads(ctx context.Context, config *jsonx.Object, baseUR
 			extension = "list"
 		}
 		name := dictItem(ruleSet, "name")
-		out = append(out, Download{Name: providerKey(name), URL: url, LocalPath: "./ruleset/" + fstr(name) + "." + extension})
+		out = append(out, Download{Name: providerKey(name), URL: url, LocalPath: "./ruleset/" + fstr(name) + "." + extension, Behavior: fstr(dictGet(ruleSet, "behavior", "domain")), Format: ruleFormat})
 	}
 	return out, nil
 }

@@ -34,6 +34,7 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
+	"configflow/internal/deploy"
 	"configflow/internal/discovery"
 	"configflow/internal/gateway"
 	"configflow/internal/health"
@@ -71,6 +72,7 @@ var lateRoutePackages = []func(*httpx.Router){
 // wirePackages run before the routes are registered (hooks, loops,
 // providers).
 var wirePackages = []func(){
+	deploy.Wire,
 	wireCore,
 	webdav.Wire,
 	apinodes.Wire,

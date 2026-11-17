@@ -315,6 +315,12 @@ func PreparationContext(err error, name, path, kind string) *PreparationError
 type Position struct{ Line, Column, PayloadIndex *int }  // PayloadIndex -1 = the payload key itself
 ```
 
+**Clarified in A11 (coordinator, 2026-11-17):** `convert.Download` gains optional `Behavior` and `Format`
+fields (`json:"behavior,omitempty"`, `json:"format,omitempty"`). Convert populates them when the final consumer
+is known; deploy/adapter.go only reads them. Existing public download encodings remain unchanged (`Object`
+and the proddiff download DTO keep their current fields). This preserves classical domain/IP splitting without
+changing BuildInput's type; the N8 typed model will own Download later.
+
 Positions come from yaml.v3 Node `Line`/`Column` (`yamlx.Parse` keeps them); the "last duplicate key wins" lookup of
 Python is moot under D1 (duplicates are a parse error, whose `*yamlx.SyntaxError` line/column is used). The provider
 hook's `SourceError(…, cause *pyyaml.Error, …)` signature is adapted in the step that registers it (and changes with
