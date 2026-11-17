@@ -240,3 +240,5 @@ rt -- bash -lc '~/cf-test/.venv/bin/python server/tools/proddiff/test_proddiff.p
 更早的一轮在 81.88 → 80.03 负载下发生 33 次 Python 传输重试，仍为
 `new=0 stale=0`、最终连接失败 30/30；但窗口重问增加了线程数量，
 那组三轮不满足非重试字段完全相同，未作为上述三轮验收结果。
+
+O3-3 的实例锁、Startup 和关机接线见 [实现说明](../../design/o3-startup-shutdown.md)。

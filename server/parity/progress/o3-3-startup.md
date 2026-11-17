@@ -35,3 +35,8 @@ Finite/range grace validation and Configure-during-startup regression pass on .3
 cmd12.346s, lifecycle2.031s, fake clock1.015s. The real signal scenarios also reran after the managed
 shutdown panic boundary was added. The retired migration was listed in PORTING but not explicitly
 in the behaviour-change table; an O12 entry now makes that operator prerequisite explicit.
+
+Per coordinator routing correction, developer operation notes live at
+[design/o3-startup-shutdown.md](../../design/o3-startup-shutdown.md), not doc/.
+Rebased onto go@045f2485 before final .32 acceptance; three code steps now
+6be4e9f6 / feb5e869 / c09be36e. Final acceptance in progress.

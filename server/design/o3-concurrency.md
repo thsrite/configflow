@@ -358,6 +358,8 @@ func (r *Runtime) Names() []string
   N of X finished" instead of sleeping. Production builds have neither; no environment variable can switch loops off.
 
 **Clarified in O3-3 (coordinator, 2026-11-17):**
+
+Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
 - Remove the old lifetime flocks from refresh.Loop, discovery.autoLoop and monitor.rankingLoop in
   O3-3, before Periodic migration. Otherwise the instance's separately opened descriptors exclude
   its own loops. Preserve first delays, intervals and round behaviour. Cross-process exclusion is
