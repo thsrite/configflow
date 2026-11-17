@@ -2,11 +2,12 @@ package model
 
 import (
 	"bytes"
-	"configflow/internal/yamlx"
 	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
+
+	"configflow/internal/yamlx"
 )
 
 type sampleRecord struct {
@@ -127,6 +128,29 @@ func TestRejectDuplicateOrInvalidJSON(t *testing.T) {
 	cyclic["self"] = cyclic
 	if _, err := Marshal(cyclic); !errors.Is(err, ErrJSON) {
 		t.Fatalf("cycle: %v", err)
+	}
+}
+
+func TestSliceOverlapIsNotACycle(t *testing.T) {
+	records := make([]sampleRecord, 2)
+	records[0].Name = "first"
+	records[1].Name = "second"
+	records[1].Children = records[:1]
+	encoded, err := Marshal(records)
+	if err != nil {
+		t.Fatal("acyclic overlapping slices rejected:", err)
+	}
+	var decoded []sampleRecord
+	if err := json.Unmarshal(encoded, &decoded); err != nil || len(decoded) != 2 || len(decoded[1].Children) != 1 || decoded[1].Children[0].Name != "first" {
+		t.Fatal("overlapping slice values changed")
+	}
+	records[0].Children = records[:0]
+	if _, err := Marshal(records); err != nil {
+		t.Fatal("empty overlapping slice rejected:", err)
+	}
+	records[0].Children = records[:1]
+	if _, err := Marshal(records); !errors.Is(err, ErrJSON) {
+		t.Fatal("real slice cycle accepted")
 	}
 }
 

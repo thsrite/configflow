@@ -233,6 +233,7 @@ func Marshal(v any) ([]byte, error) {
 type visitKey struct {
 	typ     reflect.Type
 	pointer uintptr
+	length  int
 }
 
 func acyclic(v reflect.Value, active map[visitKey]bool) error {
@@ -259,7 +260,12 @@ func acyclic(v reflect.Value, active map[visitKey]bool) error {
 		} else {
 			pointer = v.Pointer()
 		}
-		key := visitKey{v.Type(), pointer}
+		// Overlapping slices may share their first element without forming a
+		// cycle: a later record can refer to an earlier, shorter prefix.
+		key := visitKey{typ: v.Type(), pointer: pointer}
+		if v.Kind() == reflect.Slice {
+			key.length = v.Len()
+		}
 		if active[key] {
 			return fmt.Errorf("%w: cyclic value", ErrJSON)
 		}
