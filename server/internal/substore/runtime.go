@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 )
@@ -100,9 +101,6 @@ type Runtime struct {
 	saveMode func(ctx context.Context, mode string) error
 	ready    func(ctx context.Context) (bool, error)
 	command  func(ctx context.Context, action string) (string, error)
-
-	monitorMu      sync.Mutex
-	monitorRunning bool
 }
 
 // NewRuntime returns a runtime on env (directory "" = default root).
@@ -574,36 +572,12 @@ func (r *Runtime) Status(ctx context.Context, running bool) (*jsonx.Object, erro
 	return jsonx.Obj("managed", managed, "mode", mode, "state", current, "idle_seconds", idle, "error", errorText), nil
 }
 
-// Monitor is the idle monitor (_monitor): tick every 5 seconds until ctx
-// ends; failures are logged.
-func (r *Runtime) Monitor(ctx context.Context) {
-	r.monitorMu.Lock()
-	if r.monitorRunning {
-		r.monitorMu.Unlock()
-		return
-	}
-	r.monitorRunning = true
-	r.monitorMu.Unlock()
-	defer func() {
-		r.monitorMu.Lock()
-		r.monitorRunning = false
-		r.monitorMu.Unlock()
-	}()
-	for {
-		func() {
-			defer func() {
-				if p := recover(); p != nil {
-					runtimeLog.Exception("Sub-Store 空闲检查失败", fmt.Errorf("%v", p))
-				}
-			}()
-			if err := r.Tick(ctx); err != nil {
-				runtimeLog.Exception("Sub-Store 空闲检查失败", err)
-			}
-		}()
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(5 * time.Second):
-		}
+// idlePeriodic only drives Tick; work/control leases keep their existing
+// implementation until O3-6. Tick's persisted clock stays kernel-monotonic.
+func (r *Runtime) idlePeriodic() lifecycle.Periodic {
+	return lifecycle.Periodic{
+		Name: "sub-store-idle", Start: lifecycle.AtBoot, FirstDelay: 0,
+		Interval: func(context.Context) time.Duration { return 5 * time.Second },
+		Round:    func(ctx context.Context) error { return r.Tick(ctx) },
 	}
 }

@@ -34,3 +34,11 @@ expired while building a SQLite fixture, not while waiting on a lock. One new ca
 receipt assertion was corrected: at the cancellation deadline storage may abort, while the tracked
 worker must exit and release its key. Request cancellation still permits completion (existing C15 tests).
 Next: metrics/Signal activation and conditional Sub-Store idle, followed by complete final gates.
+
+Owner migration commit: f86d4de8. Sub-Store next step replaces Monitor with conditional Periodic0/5,
+Round delegates to Tick; work/control leases, readiness polling and persisted Monotonic stay unchanged.
+Fake-clock test executes Tick at0 and5s after round completion and checks state.json still uses1234.5
+from the existing owner clock, independent of the Runtime wall clock. Builtin/external Wire registration
+is tested with independent registries. .32 gofmt/vet pass; focused race count3 passes metrics1.173s,
+substore1.043s. Metrics Manual no-activation check is also green. Metrics restart/wake finalization awaits
+the coordinator's Signal.Clear API decision (pending old wake must not shorten the new first30s wait).

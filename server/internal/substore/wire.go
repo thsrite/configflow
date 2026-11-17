@@ -64,13 +64,10 @@ func Converter() convert.ProxyStringConverter { return Default().Client }
 // Sub-Store) and the one-time removal of node caches of deleted
 // subscriptions.
 func Wire() {
-	lifecycle.Loop("sub-store-idle", func(ctx context.Context) {
-		service := Default()
-		if !service.Env.IsBuiltinAvailable() {
-			return
-		}
-		service.Runtime.Monitor(ctx)
-	})
+	service := Default()
+	if service.Env.IsBuiltinAvailable() {
+		lifecycle.RegisterPeriodic(service.Runtime.idlePeriodic())
+	}
 	RegisterStartup()
 }
 
