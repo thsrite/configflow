@@ -100,6 +100,10 @@ func TestContentChangesAgainstFlask(t *testing.T) {
 	copyDir(t, seedDir, goDir)
 	pyBase, stopPython := startPythonArgs(t, pyDir, "server/internal/api/agents/difftest/testdata/content_app.py")
 	defer stopPython()
+	goBase, stopGo := startGo(t, goDir)
+	defer stopGo()
+	// App startup installs the real A14 callback. This A13-only comparison
+	// replaces it afterwards; real preparation is checked independently.
 	candidate := contentDiffBundle(t, true)
 	restore := apiagents.SetContentPrepare(func(_ context.Context, _ deploy.Target, _ *deploy.Source, origin, id string) (*deploy.Bundle, error) {
 		if origin != "https://original.example.test/prefix" || !strings.HasPrefix(id, "check-") {
@@ -107,9 +111,7 @@ func TestContentChangesAgainstFlask(t *testing.T) {
 		}
 		return candidate, nil
 	})
-	defer restore()
-	goBase, stopGo := startGo(t, goDir)
-	defer stopGo()
+	t.Cleanup(restore)
 	pyToken, goToken := login(t, pyBase), login(t, goBase)
 	diffRequest := request{name: "full changed comparison", method: "GET", path: "/api/agents/agent-1/push-diff", admin: true, mask: []string{"checked_at", "version"}}
 	settle := func(base, token string) (response, string) {
