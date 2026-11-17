@@ -1899,28 +1899,27 @@ Load-stability follow-up (`go-fix-agg-provider-load`, based on O3-5): old 65c0e6
 
 ## C32 — rule routes
 
-R01 collaborator completed with coordinator approval: ComputeDesired/RulesetContent receive ctx first, with unchanged ContentLoader closure; C32 Wire reuses sourceOptions.offline (validated cache → inline, never network). Missing-cache desired-plan diagnostics compare with real Python, and a refusing transport proves zero requests. `.32` first targeted pass API0.604s/diff1.419s; related vet/race follow. Existing `.64` full gate continues by explicit coordinator instruction; this final context addition needs only related-package checks.
+最终 go 更新到 0f943623（provider慢渲染修正），新增第14个 live differential 已追加 race：provider/difftest51.543s；proddiff tag回归0.070s，API1.414s/server0.035s及相关vet均PASS。完整 gate 的13个既有包和此新增包均已执行，不改baseline；报告中区分完整gate内容与追加验证。
 
-**Status: `in progress`** · prereqs: C09, C14, C27 · Go: internal/api/rules (new)
+**Status: ported**（独立复核待安排） · prereqs: C09, C14, C27 · Go: internal/api/rules。分支 go-port-c32，最终实现 ccab8632，基于 go 0f943623。无新依赖、不 push，A24 分支未动。
 
-Files:
-- `backend/routes/rules.py` (1107)
-
-Tests: `test_domain_wildcard_inputs.py` (5), `test_mihomo_classical_delivery.py` (13), `test_profile_rule_routes.py` (29), `test_rule_compose_route.py` (24), `test_rule_duplicates.py` (7), `test_rule_fetch_proxy_routes.py` (7), `test_rule_validation_routes.py` (8)
+Files: backend/routes/rules.py 全部方法及 profiles.py 两类别名。核心使用 native DTO/RawMessage，legacy存储/引擎转换仅在adapter；复用C09 syntax/reorder/lazy matcher、C14 validation/fetch/cache/delivery、refresh、C27 DNS/native routing。共享库+profile+DNS一个事务；owner lifecycle.Detach；缓存失败保留保存。全应用注册无冲突。
 
 Routes (21, 21 done):
 
 `GET /api/profiles/<profile_id>/rules`; `POST /api/profiles/<profile_id>/rules`; `GET /api/profiles/<profile_id>/rules/local/<name>`; `GET /api/rule-sets`; `POST /api/rule-sets`; `DELETE /api/rule-sets/<rule_set_id>`; `PUT /api/rule-sets/<rule_set_id>`; `GET /api/rules`; `POST /api/rules`; `DELETE /api/rules/<rule_id>`; `PUT /api/rules/<rule_id>`; `POST /api/rules/batch`; `POST /api/rules/compose`; `GET /api/rules/dns`; `PUT /api/rules/dns`; `POST /api/rules/find-duplicates`; `POST /api/rules/group-name`; `GET /api/rules/local/<name>`; `POST /api/rules/match-test`; `PUT /api/rules/policy`; `POST /api/rules/reorder`
 
-Evidence: internal/api/rules is wired in server; whole-application registration test passes. Every method has real Flask HTTP success/failure coverage and persisted SQLite/file comparisons.
+**延期仅 deferred → A16**：A16 必须注册 agents.Hooks.PinnedWithheld。无符合条件的auto-sync OxiDNS确定false；需要projection但hook nil/error，单条脱敏warning、省略字段、不回滚保存。nil/error/true/false/no-device都有测试，不豁免其他字段。PROGRESS-agents A16 已明确合同。
 
-Missing / deferred: final integration gate pending. Only PinnedWithheld projection is deferred → A16 as approved; no other C32 feature is missing.
+问题已修：中等 C27 legacy Agent 数字/数组名称丢为null → 独立json.RawMessage（数字/数组/null真实Python及字节隔离回归）；中等 Python HEAD DNS意外写入 → 仅PUT写、HEAD只读（真实Python旧写入/Go全状态不变断言及behaviour-changes记录）。C32 reorder保持旧对象数组/异常ID和position的Python合同；11种已接受文本行分隔通过C14 RuleLines适配matcher，不改raw缓存。
 
-Notes for porter: Registers `/api/profiles/<id>/rules` and `/rules/local/<name>`. `routes/rules.py` imports `agents.rule_sync.pinned_withheld` (agents) and the OxiDNS cluster; `find-duplicates` lives here (noted in PORTING).
+A19 gateway和R01 reader均已接线。协调者批准ComputeDesired/RulesetContent首参ctx、ContentLoader形状不变；shared sourceOptions.offline固定cache→inline、零网络。R01缺缓存完整plan/中文blocking warning与真实Python一致；拒绝所有出站的fake断言0次。PROGRESS-routers R01已写C32已接线。合并顺序R08→C32→R09；desired.go只改ctx签名/透传，R08字段全部保留。
 
-Started on `go-port-c32` from go d3124353; A24 branch remains frozen. Scope: all 21 methods, existing C09/C14/C27 orchestration only, native DTOs/RawMessage and isolated legacy adapter. Coordinator approved `agents.Hooks.PinnedWithheld` registered by A16. Until A16 lands, this field is degraded only when projection is required: omit it with one redacted warning; committed save stands. No eligible auto-syncing OxiDNS → definitive false. Deferred → A16; differential/proddiff may ignore only this documented missing field in the affected case, never other fields. First buildable slice (server-wired): 16 method registrations + native CRUD/batch/reorder/group/policy/DNS owners and A16 hook consumer. .64 `go test -count=1 ./internal/api/rules -v` PASS (0.433s; full server registration 0.045s): profile isolation/future fields, atomic edits, all hook nil/error/true/false cases, exact single warning with no content/URL credential, committed save retained. Compose now implemented (17/21 methods): C09 AllowsCommaPayload getter avoids copying the type set; server-owned IDs, exact paste payloads/field errors, combined shared/profile/DNS transaction, prevalidated URL preparation and best-effort post-commit cache. .64 `go test -p 4 -count=1 ./internal/api/rules -v` PASS (1.533s): rollback, cache failure, cancelled caller, concurrent duplicate check and fuzz seeds. All 21 implemented. Public local providers use C14/refresh validated caches and delivery-only normalization; match uses shared lazy RuleConfigMatcher; duplicates retain all occurrences using compact typed snapshots (20,000-repeat completeness test). .64 go test -p 4 -count=1 ./internal/api/rules PASS 0.854s. Real Flask+SQLite sections/fields+JSON/YAML/list files differential now passes: all methods, template/native/custom DNS, validation, lazy fetching, delivery. .64 shared RuleDNS/C27 snapshot tests PASS 1.709s; API PASS 1.103s; differential PASS 21.573s. Reorder malformed/legacy contracts, HEAD read-only fix, 250-rule policy edits, all 11 source line boundaries, raw persisted-proxy requests and central duplicate redaction are covered. C32 matcher adapts uncommon accepted source line boundaries via C14 RuleLines without altering raw caches or generic C09 semantics. Python test-file mapping and all 21 method boundaries: [difftest-c32.md](difftest-c32.md). Remaining: latest-go rebase and final gate.sh -p 6.
+验收：[C32-HANDOFF.md](C32-HANDOFF.md)，[21方法及7个Python文件映射](difftest-c32.md)。Python文件5/13/29/24/7/7/8个原始测试函数的归属均有说明；C33/C18/C28/A11之外的路由不复制。每请求比较status/JSON/headers、SQLite sections/fields全行、export及JSON/YAML/list文件。Mihomo YAML与native_config按结构，raw/cache保留字节；仅归一化计时/有效时间及一一配对随机ID派生引用，不改生产baseline。
 
-C32 integration follow-up: server bootstrap installs the existing A19 `gateway.SetRulesetContent` hook via `api/rules.Wire`, reusing C32 source reading and the provided publish snapshot; no copied gateway/parser logic. `.64 go test -p 6 -count=1 ./internal/api/rules ./internal/server ./internal/gateway` PASS 1.944s / 0.057s / 1.604s. Rebased onto go 9a208c6c; final gate follows.
+完整 .64 gate：gofmt、vet、双tag、全量race（88个包测试命令）、全部13个live difftest、proddiff、60秒FuzzPastedRules均PASS。API rules race16.886s、oxidns95.383s、routers442.437s；C32 live diff74.075s；fuzz90,402 execs。proddiff23自检PASS、81GET/82method-path、693实际比较（planned cases2831）、aggregation-provider2/2、agent-deployment-bundle3/3，new=0 stale=0 coverage_regressions=0；baseline未改。提交gate load18.06/15.16/16.48，结束25.59/24.32/21.56。
+
+最后R01补丁按协调者裁定只追加相关检查，.32 gofmt/vet + CONFIGFLOW_DIFF=1相关全包race均PASS：API37.281s/diff172.626s/routers399.537s/routersplit27.638s/server1.480s/gateway29.774s；load开始21.67/23.75/25.79、结束3.08/12.39/20.44。完整gate内容、最后最小补丁及0f943623增量验证的范围/命令见交回报告。没有其他待移植的C32功能。
 
 ## C33 — rule library and proxy group routes
 
