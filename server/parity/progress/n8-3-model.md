@@ -1,6 +1,6 @@
 # N8-3 — model skeleton and byte-preserving record codec
 
-Status: implementation complete; final acceptance after slice-cycle fix pending.
+Status: **ported**; ready for independent Opus stored-data-core review.
 Branch `go-n8-3`, no push; Opus review required before verified.
 Scope follows design/n7-n8.md §2.3, N8-3 and R1–R9. Concrete resource/settings
 records and public typed repo transactions remain N8-4/N8-5 respectively.
@@ -76,7 +76,7 @@ ProfileRepository.export_all after Go writes, then edits the same database for G
 to load and round-trip. No Python behaviour is simulated. Existing live repo/store
 crosschecks and tests for backend/test_config_store.py, test_config_repository.py,
 test_config_repository_cache.py, test_config_storage_migration.py and
- test_config_import.py remain in the full suite; this step adds storage boundaries,
+test_config_import.py remain in the full suite; this step adds storage boundaries,
 not replacements/skips of their tests.
 
 Private copies/expectations use unique 0700 directories under
@@ -94,28 +94,55 @@ one warning per head, no secret/password in logs, no shared logger mutation.
 
 ## Commits and acceptance
 
-Buildable steps before final rebase: 79481211 codec; f3355a10 skeleton/type guards;
-3b87a2af repo integration/round trips; 7aada095 independent fuzz assertions.
-Next commit fixes the adversarial slice-alias cycle false positive (no design
-change). .63 gofmt/vet, model race PASS 1.034s, fixture + private Python round trips
-PASS 9.620s after this fix.
+Buildable commits (after rebase onto go 62427c41):
+800a0bb2 codec; 78c9ddcd skeleton/type guards; 59ab729e repo integration/round trips;
+37a17b20 independent fuzz assertions; af6b2bca slice-sharing cycle correction;
+5ad799b4 explicit unknown members at every skeleton record level.
 
-First .32 acceptance (before the slice fix) passed: gofmt/vet, model race 1.041s,
-repo race 367.576s (uptime load 31.56/29.34/25.05 at start), explicit private round
-trip 12.216s, full suite (repo 57.280s, store 6.862s, oxidns 103.646s, installer
-187.223s; final yamlx 1.481s), proddiff 2831 cases/415 comparisons/65 GET routes,
-coverage_regressions=0, unmapped_routes=0, new=0 stale=0 (11 existing differences).
-Final post-fix .32 commands/results, 120s fuzz targets, cleanup/rebase/clean
-worktree check still pending; do not treat this as verified.
+Final .32 logs: `/tmp/n8-3-final.zljxZS/`, result **PASS**, default umask 0022,
+TMPDIR unset (/tmp tmpfs); only snapshot copies use private on-disk directories.
+The full repo race log is `/tmp/n8-3-final.irF7yR/race.log`; later model/repo
+runtime sources are byte-identical (only tests/docs and unrelated go merges).
+No timeout increase, sampling, corpus/feature skip, baseline change or dependency.
 
-Additional explicit skeleton coverage retains unknown members at root, System,
-Shared and Profile levels through a typed edit. .32 gofmt/vet + model race PASS
-1.039s; native/legacy-constraint/log-dedup/private round-trip selection PASS
-15.885s. Final post-fix repo race already PASS 319.732s (start uptime load
-0.72/4.60/7.86). A runner-only global umask 077 caused unrelated installer/store
-file-mode assertions to fail; remove that override, retain private logs inside
-a 0700 mktemp directory. Default umask 0022 targeted reruns PASS (store 0.003s,
-installer 2.190s), no implementation or expected-mode change. One prior SSH
-session lost its remote process/result (not counted as passing); .63 subsequently
-became unreachable, so remaining checks run on .32. Final corrected-mask full
-suite, proddiff and post-fix 120s fuzz results are still pending.
+Reproduction phases (all via rt from this worktree; phase logging omitted):
+
+```sh
+rt -- bash -lc 'set -euo pipefail; unset TMPDIR; export CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO="$PWD" CONFIGFLOW_SNAPSHOT=$HOME/cf-prod-snapshot/20261116/data; cd server; test -z "$(gofmt -l .)"; go vet ./...; go test -race -p=2 -count=1 ./internal/model ./internal/repo; go test -count=1 -run "^TestStoredRoundTrip$" -v ./internal/repo; go test -p=2 -count=1 ./...; scripts/proddiff.sh; go test -run "^$" -fuzz "^FuzzRecordRoundTrip$" -fuzztime=120s -parallel=2 ./internal/model; go test -run "^$" -fuzz "^FuzzDocumentRoundTrip$" -fuzztime=120s -parallel=2 ./internal/model'
+```
+
+- gofmt: no output; vet: PASS.
+- Full changed-package race: model 1.031s / repo **319.732s**, default 600s
+  timeout unchanged. Start uptime load **0.72/4.60/7.86**. Earlier shared-load
+  acceptance also passed repo 367.576s (start load 31.56/29.34/25.05).
+- Explicit final fixture + Python-written + full Go + private snapshot round trip:
+  PASS **13.744s**, counts 12/12/27/43 rows and private profiles=2. No-op bytes,
+  generation/fingerprint and touched row revisions all checked. Private copies=0.
+- Full suite: every package PASS. installer **155.585s**, model 0.004s,
+  oxidns 66.978s, repo **43.745s**, store 6.041s; final lines:
+  `ok configflow/internal/yamlx 2.183s`,
+  `? configflow/tools/proddiff/generator [no test files]`.
+- Proddiff: all self-checks PASS; 2831 cases / 415 comparisons / 65 GET routes;
+  coverage_regressions=0, unmapped_routes=0, **new=0 stale=0**; 11 existing
+  baseline differences unchanged. Available snapshot generators all succeed.
+- FuzzRecordRoundTrip: PASS **120.110s / 6042777 executions**.
+- FuzzDocumentRoundTrip: PASS **120.127s / 3581117 executions**.
+- Post-rebase onto R06 integration: gofmt/vet PASS; model race **1.069s**;
+  `go test -race -count=1 -run "^TestStoredRoundTrip$|^TestModel" ./internal/repo`
+  PASS **77.334s**, including private copy and legacy limitation/logging tests.
+  Post-rebase proddiff also PASS: **new=0 stale=0**, coverage_regressions=0,
+  unmapped_routes=0 (2831 cases, 415 comparisons).
+
+Runner incidents resolved: one SSH session lost its remote process/exit status
+(not counted as a pass), so reran with keepalive and per-phase server logs. .63
+then became unreachable; final work stayed on .32. A global runner umask 077
+changed expected 0644/0640 test files to 0600; restored default 0022, targeted
+store/installer cases and the complete suite passed with no code/expectation
+change. Logs are protected by the 0700 mktemp directory, not a global test mask.
+
+Size (new Go files, comments/blanks included): model runtime **1403** lines;
+model tests **516** (codec 316, fuzz 200); repo model_rows.go 196;
+repo model_rows_test.go 184 / model_roundtrip_test.go 440. N8-3 has no open
+implementation finding. The legacy loading restriction above is an explicitly
+accepted N8-5 prerequisite, not evidence that legacy APIs already implement R5.
+Final rebase/commit/clean-tree check follows the acceptance record; no push.
