@@ -320,7 +320,7 @@ Rules for O3-5..O3-8 are in the review's last section.
 | C30 | subscription and node routes, node deletion | 994 | ported | C17, C16, C19, C20 | 26 (26 done) |
 | C31 | aggregation routes, device notes | 722 | ported | C30, C26 | 11 (11 done) |
 | C32 | rule routes | 1107 | missing | C09, C14, C27 | 21 (0 done) |
-| C33 | rule library and proxy group routes | 976 | missing | C32 | 25 (0 done) |
+| C33 | rule library and proxy group routes | 976 | ported | C32 | 25 (25 done) |
 | C34 | generate, config and profile routes, config export | 1443 | missing | C18, C19, C20, C28, C29, C31, C33 | 59 (0 done) |
 | C35 | config importer, WebDAV backup | 1375 | verified | C04, C06 | – |
 | C36 | setup flow | 1372 | missing | C34, C35 | 5 (0 done) |
@@ -2030,9 +2030,9 @@ R08 integration follow-up: rebased `go-port-c32` onto `go=d8f50b00`; preserved e
 
 ## C33 — rule library and proxy group routes
 
-- Deferred from C28: `internal/mosdns/difftest` cases marked `deferTo("C33")` (rule proxy served via in-process `/api/profiles/<id>/rule-library/content/<id>`); remove the marks once that route is registered.
+- Resolved C28 deferral: both `internal/mosdns/difftest` callback cases now run unconditionally through the registered `/api/profiles/<id>/rule-library/content/<id>` route and pass.
 
-**Status: `in progress`** · prereqs: C32 · Go: internal/api/rulelibrary, api/proxygroups (new)
+**Status: `ported`** · prereqs: C32 · Go: internal/api/rulelibrary, api/proxygroups (new)
 
 Files:
 - `backend/routes/rule_library.py` (540)
@@ -2040,7 +2040,7 @@ Files:
 
 Tests: `test_proxy_group_batch_health.py` (6), `test_proxy_group_regex_exclusion.py` (9), `test_rule_library_create.py` (9)
 
-Routes (25, 25 implemented; final gate pending):
+Routes (25, 25 implemented; full gate PASS):
 
 `GET /api/profiles/<profile_id>/proxy-groups`; `POST /api/profiles/<profile_id>/proxy-groups`; `GET /api/profiles/<profile_id>/rule-library/content/<rule_id>`; `GET /api/proxy-groups`; `POST /api/proxy-groups`; `DELETE /api/proxy-groups/<group_id>`; `PUT /api/proxy-groups/<group_id>`; `PUT /api/proxy-groups/batch-health-url`; `GET /api/proxy-groups/health-defaults`; `POST /api/proxy-groups/preview-regex`; `POST /api/proxy-groups/reorder`; `GET /api/rule-library`; `POST /api/rule-library`; `DELETE /api/rule-library/<rule_id>`; `PUT /api/rule-library/<rule_id>`; `GET /api/rule-library/<rule_id>/draft-content`; `PUT /api/rule-library/<rule_id>/draft-content`; `POST /api/rule-library/cache`; `POST /api/rule-library/check-content`; `GET /api/rule-library/content/<rule_id>`; `GET /api/rule-library/proxy-domains`; `POST /api/rule-library/proxy-domains`; `POST /api/rule-library/reorder`; `POST /api/rule-library/test`; `POST /api/rule-library/test-single`
 
@@ -2064,13 +2064,13 @@ Shutdown audit (fourth standing item) completed for C33-owned code: checks after
 
 Rebased onto C32 verified review `go=0dace4ae`. Extra malformed JSON keeps Python's protected500 boundaries without copying its diagnostics; standalone legacy malformed bodies/unknown IDs also match. Native cache selection rejects Python's accidental string/container membership (explicit validation bug fix). Latest .64 C33 live race26.351s/30.245s and 36 proddiff harness tests PASS. D2 production normalize is coordinator-approved, exact route+top-level revision+anchored64 lowercasehex, with full positive/negative controls; README/ledger updated, baseline unchanged.
 
-Per coordinator, do not change taskstatus/repo/rulefetch shared commit logic here. Known remaining lock-wait/final-commit window is deferred to O3-6 author `6e5c7760` (O3-6c shared commit points, after O3-6a): add ForgetContext/RecordContext (old API retained), repo final commit and shared cache touch/rename checks. C33 currently checks immediately before these calls; switch to new entries and add shutdown-during-shared-lock-wait tests when that independent step lands. Final gate/fuzz remain; no C33-owned unclosed issue.
+Per coordinator, do not change taskstatus/repo/rulefetch shared commit logic here. Known remaining lock-wait/final-commit window is deferred to O3-6 author `6e5c7760` (O3-6c shared commit points, after O3-6a): add ForgetContext/RecordContext (old API retained), repo final commit and shared cache touch/rename checks. C33 currently checks immediately before these calls; switch to new entries and add shutdown-during-shared-lock-wait tests when that independent step lands. Full gate/fuzz now pass (see final result below); no C33-owned unclosed issue.
 
 Final gate moved to equivalent .32 after confirming a free slot there (.64 still full). Both .64 queued rounds30829/79393 were cancelled before any checks; the first lacked the newly configured disk TMPDIR. .32 initial load19.99/26.98/38.59, slot1 acquired, first gofmt check caught the auto-merged server.go import block; formatting only fixed, all-directory gofmt-l clean. Restart same `gate.sh -p6` below. Python direct/discover each run all36 tests and PASS. Base `go=895f5e21`; production logic stays frozen.
 
 Current command: `RT_HOST=sunbroke@192.168.0.32 rt -e GATE_LOGS=/home/sunbroke/.cache/rt-tmp/c33-gate-20261118-final -- bash -lc 'test -n "$TMPDIR" && cat /proc/loadavg && server/scripts/gate.sh -p 6 FuzzEditableContent:./internal/api/rulelibrary && cat /proc/loadavg'`.
 
-Active .32 gate session9396, start13.76/23.34/36.29; gofmt/vet/双tag PASS。Proddiff already PASS: 23 self-checks, 89GET/91method-path, 1061actual, new=0 stale=0 coverage_regressions=0, aggregation2/2/bundle3/3. Proddiff load15.10/22.61/35.51→32.58/26.23/35.35; race observation41.89/31.57/33.75. Race still running; no final result claimed. Details in C33-HANDOFF.md.
+Completed .32 gate session9396, start13.76/23.34/36.29; gofmt/vet/双tag PASS。Proddiff already PASS: 23 self-checks, 89GET/91method-path, 1061actual, new=0 stale=0 coverage_regressions=0, aggregation2/2/bundle3/3. Proddiff load15.10/22.61/35.51→32.58/26.23/35.35; race observation41.89/31.57/33.75. Race and subsequent difftest/fuzz all PASS; final figures below and in C33-HANDOFF.md.
 
 Coordinator confirmed long agents race is expected (613s normal, >20min at load40+); do not intervene. Script already uses race60m/difftest40m, unchanged. Latest go dda8973d includes A13 server/route-table edits; explicit latest instruction is finish this gate and hand back directly, with coordinator handling final rebase and merged cf-gate. Do not add another full run or rebase over this accepted candidate just for A13.
 
@@ -2080,11 +2080,11 @@ N8-5: draft/content PUT 的 DB+cache 原子性，N8-5 的事务 API 落地后，
 
 Command: `RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go vet ./internal/api/proxygroups && go test -race -count=1 ./internal/api/proxygroups ./internal/server'`.
 
-Notes for porter: Registers `/api/profiles/<id>/rule-library/content/<rule_id>` and `/proxy-groups`. Proxy-group routes run `subs.RelinkGroupListeners` (deferred listener-lifecycle cases of C11).
+Registered `/api/profiles/<id>/rule-library/content/<rule_id>` and `/proxy-groups`. Proxy-group routes run `subs.RelinkGroupListeners`, resolving C11 listener-lifecycle deferrals.
 
-N7-2 follow-up: 接入后运行 N7-2 relink 的 difftest。The current test HTTP shell
-covers the public relink boundary and repository rollback only; real proxy-group
-route wiring/HTTP differential belongs to C33 and is explicitly deferred.
+N7-2 follow-up resolved: real proxy-group HTTP requests compare listener relink and repository rollback with Flask; comments are separately asserted to survive. C11/subs difftest also passes in both targeted race and final live gate.
+
+Final result (.32): `GATE PASS`, exit0. Entire96-package race PASS, all15 live difftest PASS, proddiff new=0/stale=0/coverage_regressions=0, FuzzEditableContent117660 executions/61.056s PASS; gofmt/vet/both build tags PASS. C33 race library69.975s/proxy13.567s, live81.944s; long existing agents1176.346s/ippresence2145.572s passed within script's unchanged60m timeout. Actual load start13.76/23.34/36.29, race observed52.39/42.34/37.59, end38.63/32.24/28.04. No manual stress or extra full round. Tested base895f5e21; coordinator will rebase over A13 and run merged cf-gate. Exact rt command, final output, intentional Python bug fixes and remaining O3-6c shared lock-window ownership: [C33-HANDOFF.md](C33-HANDOFF.md). Status ported, independent review pending.
 
 ## C34 — generate, config and profile routes, config export
 
