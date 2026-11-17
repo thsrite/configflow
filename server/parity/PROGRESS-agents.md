@@ -892,7 +892,7 @@ A11-4: receipts capture/load/stamp/advance with atomic private files, bounded ar
 
 A11-4 Python coverage and one row per HR class for every step: **parity/A11-HANDOFF.md** (authoritative design map, Python test-file map, L2-only list and approved C31 partial boundary). `stores_test.go` + gen_a11_stores.py use real Python disk metadata/archives/public view. `.63` deploy race passed 7.021s; `.32` deploy race passed 8.786s, vet passed, proddiff comparator's 32 synthetic tests passed. No status is `verified` before fresh Opus.
 
-A11-1 follow-up: agentfake transcript now retains manifest file display names (the real Agent preserves them); the upload contract test asserts the label survives. `.63` focused vet/race passed 1.100s. No publishing behavior changed.
+A11-1 follow-up: agentfake transcript now retains manifest file display names (the real Agent preserves them); the upload contract test asserts the label survives. `.63` focused vet/race passed 1.100s. No publishing behavior changed. A11-4 proof tests also restore the Agent hooks after each case (no test-global state leak); focused deploy race on .63 passed 7.340s.
 
 Final acceptance pending: rebase current go; `.32` gofmt/vet, race deploy/gateway/provider, full `go test -p=4 -count=1 ./...`, all CONFIGFLOW_DIFF difftest packages, real Agent conformance, proddiff (with explicit partial C31 case). No push.
 

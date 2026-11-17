@@ -353,7 +353,9 @@ func TestRulesProofAndOldCandidateRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	Wire()
+	previousHooks := agents.CurrentHooks()
+	agents.RegisterHooks(agents.Hooks{ReceiptMatches: ReceiptMatches})
+	t.Cleanup(func() { agents.ResetHooks(); agents.RegisterHooks(previousHooks) })
 	var callsMu sync.Mutex
 	postCalls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
