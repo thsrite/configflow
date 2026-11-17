@@ -124,10 +124,10 @@ def fixed_ip_shape():
         yield case('same-ip-' + second['router_id'], {**base, 'devices': [row, second]},
                    message, 'R006-B90', 'H0038')
     yield case('same-router-mac', {**base, 'devices': [row, {**row, 'ip': '10.44.0.22'}]},
-               '同一路由器上的同一 MAC 只能选择一个固定 IP。', 'H0039')
+               '同一路由器上的同一 MAC 只能选择一个固定 IP。', 'H0039', 'R006-F15')
     for value in ('beta', '', None):
         yield case('profile-' + repr(value), {**base, 'profile_id': value},
-                   '配置空间已切换，请重新载入。', 'R006-F15', status=409)
+                   '配置空间已切换，请重新载入。', 'R006-F16', status=409)
     for value in (None, 0, False, [], {}, '', 'x' * 1_000_001):
         yield invalid('R005', 'POST', '/api/client-devices/fixed-ip/apply',
                       'token-' + str(type(value)) + '-' + str(len(value) if isinstance(value, (str, list)) else value),

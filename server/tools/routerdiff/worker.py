@@ -60,7 +60,11 @@ class Worker:
             CONFIGFLOW_FRONTEND_DIR='', SUB_STORE_URL='http://127.0.0.1:9',
             SUB_STORE_BUILTIN_DIR=str(ACTIVE / 'no-sub-store'), TZ='UTC',
             ROUTERDIFF_MANIFEST=str(ACTIVE / 'manifest.tsv'))
-        environment.update(self.options.get('environment', {}))
+        for key, value in self.options.get('environment', {}).items():
+            if value is None:
+                environment.pop(key, None)
+            else:
+                environment[key] = value
         self.log = (ACTIVE / 'console.log').open('ab')
         command = [sys.executable, '-m', 'backend.app'] if self.side == 'python' else [self.binary]
         self.process = subprocess.Popen(command, cwd=ROOT, env=environment,

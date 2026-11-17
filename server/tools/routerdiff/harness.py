@@ -12,9 +12,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+
+import jwt
 
 from inventory import ROOT
-from seed import ADMIN, PASSWORD
+from seed import ADMIN, PASSWORD, JWT_SECRET
 
 HERE = Path(__file__).resolve().parent
 
@@ -32,6 +35,7 @@ def decode_response(response):
 class Side:
     def __init__(self, name, directory, binary, options):
         self.name, self.directory = name, Path(directory)
+        self.options = options
         (self.directory / 'options.json').write_text(json.dumps(options))
         self.stderr = (self.directory / 'worker.log').open('wb')
         self.process = subprocess.Popen(['bash', str(HERE / 'namespace.sh'), str(self.directory),
@@ -40,6 +44,7 @@ class Side:
         self.token = None
         self.observations = {}
         self.pending = {}
+        self.missing_effects = []
 
     def rpc(self, operation, **values):
         self.process.stdin.write(json.dumps({'operation': operation, **values}) + '\n')
@@ -69,10 +74,29 @@ class Side:
 
     def start(self):
         self.rpc('start')
+        status = self.request('GET', '/api/auth/status', auth=False)
+        if status['content'].get('authEnabled') is False:
+            self.token = None
+            return
+        started = time.time()
         response = self.request('POST', '/api/auth/login', document={'username': ADMIN, 'password': PASSWORD}, auth=False)
         if response['status'] != 200 or response['content'].get('success') is not True:
             raise RuntimeError(self.name + ' public login failed')
         self.token = response['content']['token']
+        if not isinstance(self.token, str) or not 0 < len(self.token) <= 8192 or self.token.count('.') != 2:
+            raise RuntimeError(self.name + ' returned an invalid JWT shape')
+        secret = self.options.get('environment', {}).get('JWT_SECRET_KEY', JWT_SECRET)
+        claims = jwt.decode(self.token, secret, algorithms=['HS256']) if secret else jwt.decode(
+            self.token, options={'verify_signature': False}, algorithms=['HS256'])
+        for key in ('iat', 'exp'):
+            if type(claims.get(key)) not in (int, float):
+                raise RuntimeError(self.name + ' returned an invalid JWT numeric date')
+        if not started - 1 <= claims['iat'] <= time.time() + 1 or abs(claims['exp'] - claims['iat'] - response['content']['expiresIn']) > 1:
+            raise RuntimeError(self.name + ' JWT dates do not match its lifetime')
+        if claims.get('username', claims.get('sub')) != ADMIN:
+            raise RuntimeError(self.name + ' JWT does not identify the synthetic admin')
+        if self.request('GET', '/api/auth/verify')['status'] != 200:
+            raise RuntimeError(self.name + ' rejected its own fresh admin token')
 
     def close(self):
         if self.process.poll() is None:

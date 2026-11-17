@@ -53,6 +53,10 @@ class Case:
     finalize: tuple = ()
     expected_requests: tuple = ()
     elapsed_min: float = 0
+    fake_checks: dict = field(default_factory=dict)
+    fake_lengths: dict = field(default_factory=dict)
+    python_bug: str = ''
+    stored_absent: tuple = ()
 
 
 def at(document, path):
@@ -104,9 +108,10 @@ def profile_selection_failures():
         for suffix, profile, status in (('F08', 'missing-profile', 404), ('F09', 'bad!profile', 400)):
             if route.ident == 'R001':
                 # Global agents route checks explicit profile after authentication.
-                yield Case(route.ident + '-' + suffix + '/explicit', route.ident, route.method,
+                entry = 'F14' if status == 404 else 'F13'
+                yield Case(route.ident + '-' + entry + '/explicit', route.ident, route.method,
                            path + '?' + urlencode({'profile': profile}), status,
-                           (route.ident + '-' + suffix,), reason='R001 explicit scope only')
+                           (route.ident + '-' + entry,), reason='O6 supersedes global P1/P2 with explicit profile cases')
                 continue
             # All three selectors must reach profile validation before auth.
             for selector in ('profile', 'profile_id', 'header'):
@@ -121,6 +126,8 @@ def profile_selection_failures():
     yield Case('R001-F90/no-bearer-missing-profile', 'R001', 'GET',
                '/api/agents/missing-agent/upstream-routers?profile=missing-profile', 401,
                ('R001-F90',), auth=False, reason='global blueprint authenticates before explicit scope')
+    yield Case('R001-B90/empty-explicit-profile', 'R001', 'GET',
+               '/api/agents/missing-agent/upstream-routers?profile=', 400, ('R001-B90',))
 
 
 def body_guards():

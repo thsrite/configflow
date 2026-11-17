@@ -35,7 +35,10 @@ class World:
                     '/ip/route': [], '/ip/firewall/nat': [], '/ip/firewall/mangle': [],
                     '/ip/firewall/filter': [], '/ip/firewall/address-list': [],
                     '/routing/table': [{'.id': '*1', 'name': 'main', 'fib': 'true'}]}
-        self.ikuai = {'sysstat': {'verinfo': {'version': '4.0.314', 'verstring': 'synthetic-router'}}}
+        self.ikuai = {name: [] for name in ('static_rt', 'static_rt_table', 'nat_rule', 'route_object',
+            'stream_ipport', 'dhcp_server', 'dhcp_static', 'dhcp_lease', 'monitor_lanip', 'lan')}
+        self.ikuai['sysstat'] = {'verinfo': {'version': '4.0.314', 'verstring': 'synthetic-router'}}
+        self.presentation = {'static_mask_suffix': True}
         self.agent = {}
         self.documents = {}
         self.webdav = {'files': {}, 'collections': []}
@@ -320,9 +323,10 @@ class World:
                 rows = self.ikuai.get('dhcp_lease', [])
             page = copy.deepcopy(rows[offset:offset + limit])
             for row in page:
-                if func == 'static_rt' and isinstance(row.get('netmask'), str):
-                    row['netmask'] = row['netmask'].split(' ')[0] + ' (synthetic display)'
+                if func == 'static_rt':
                     row.setdefault('status', 1)
+                    if isinstance(row.get('netmask'), str) and self.presentation['static_mask_suffix']:
+                        row['netmask'] = row['netmask'].split(' ')[0] + ' (synthetic display)'
                 if func == 'route_object':
                     row['tagname'] = row.get('group_name', '')
                     row['ref_count'] = self.group_refs(row)
@@ -444,7 +448,7 @@ class World:
     def control(self, action, **values):
         with self.condition:
             if action == 'seed':
-                for key in ('ros', 'ikuai', 'agent', 'documents', 'hidden_refs'):
+                for key in ('ros', 'ikuai', 'agent', 'documents', 'hidden_refs', 'presentation'):
                     if key in values:
                         getattr(self, key).update(copy.deepcopy(values[key]))
                 for rows in self.ros.values():
@@ -490,6 +494,7 @@ class World:
             return copy.deepcopy({'ros': self.ros, 'ikuai': self.ikuai, 'agent': self.agent,
                                   'webdav': self.webdav,
                                   'sessions': {'ikuai_cookie': self.cookie, 'generation': self.cookie_generation},
+                                  'presentation': self.presentation,
                                   'transcript': self.transcript, 'errors': self.errors})
 
     def release_all(self):

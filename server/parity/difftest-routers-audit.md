@@ -35,3 +35,46 @@ Agent 直接装入正常 HTTP 成功夹具，再声称验证了运行时回退�
 空 script、空 fingerprint，并且 empty=true。该返回不是可确认发布的有效指纹。
 `unlinked_inspection` 明确检查三个空值及 blocker；不能拿十六位 hash 的正常成功
 约束套在这个分支上，也不能把 empty=true 当作已同步或可以发布。
+
+## R011-S02：真实 netmask 后缀导致 Python 补偿残留
+
+维护者 2026-11-17 明确要求同时保留两种独立变体。默认设备 fake 继续显示真实
+netmask 后缀。公开 Python plan 为无 blocker 的待发布计划；确认发布后返回 502，
+`result.failed_stage=routes`，回滚条目 failed，设备仍有新建的 Fake-IP 静态路由。
+
+根因依据：`backend/routers/ikuai.py:639` 的 `_confirm_added` 及 `:692` 的 `_revert_add`
+通过 `_matches` 逐字段对比原始 netmask，未剥离显示后缀；`:315` 的 read_state 也会
+把带后缀的网段当解析失败略过。`_route_payload` 和 R06 手工编辑器虽会剥后缀，
+这些发布确认/撤销路径没有使用同样的规范化。这里只记录，不修改实现。
+
+- 默认变体 `release-ik-suffix`：锁定真实边界及至少 medium 的 Python bug，交 R05。
+  Go 同例记录 HTTP 实际结果及失败后剩余新增静态路由数；复制 Python 的补偿残留
+  必须被比较器判为 Go 安全性失败，不能因两端一致而通过。
+- 独立变体 `release-ik-plain`：仅对本世界关闭后缀，保留 runtime status 等其他字段，
+  覆盖静态成功发布及 empty 计划再次确认。默认 fake 没有放宽。
+- 当 Go 成功或失败补偿干净、与 Python bug 结果不同，保留全部差异并单独记
+  reference-bug-observation，待实际结果复核，不能自动计为差分通过。
+- 当前公开 Go 未注册本领域 HTTP 路由，故 R05 实际行为暂时只能记 Go 尚未实现；
+  不允许为了补结果直接调用 Go 私有 helper。
+
+### L5 待实机核对（只列计划）
+
+在维护者安排的隔离 iKuai 实验 VM 中记录固件版本、`static_rt show` 原始响应中
+netmask 的类型和完整后缀；分别核对读取已有路由和新增后的回读。再受控注入确认
+失败，比较发布前后完整设备表，确认新建路由撤销、foreign 路由保留、回滚日志
+与设备终态一致。不得用测试 fake 推断固件格式或实际补偿效果；本轮不连接任何
+PVE、生产、家庭设备。该项同步列入主矩阵 L5-A 的执行变体表。
+
+## 执行配方与矩阵编号复查
+
+逐项核对成功/失败编号，避免“请求真的执行了”被误算成其他含义的覆盖：
+
+- R001 全局 P1/P2 的原 F08/F09 已被 O6 划掉，实际显式 profile 校验绑定 F13/F14；旧项最终按 superseded 审计。
+- R006 同 router 同 MAC 多 IP 是 F15，profile 不符是 F16。
+- R023 关闭/无 baseline 是 F12，paused 是 F13，running/queued 是 F14。
+- R019 空列表只绑定 B01；S01/S02 另用真实可编辑路由读取证明。
+- R020/R021 的 ROS add/update/delete 是 S01–S03，iKuai 是 S04–S06，no-op 是 S07。
+- R010 空对象幂等是 B04；B01 另有持久 manifest/id 不被未知字段覆盖的五种真实写入。
+- R011 empty 发布是 S16；S04 保留给真正 return protocol2。
+
+所有条目仍处于变体审计中；修正编号不等于宣告整个条目已完成。

@@ -56,8 +56,8 @@ def receipts():
     # that round; there is no test-only lifecycle switch here.
     yield Case('R023-F91/restarted-running', 'R023', 'POST', '/api/routers/receipt-running/rule-sync', 409,
                ('R023-F91',), message='合成重启遗留任务')
-    yield Case('R023-F12/paused', 'R023', 'POST', '/api/routers/receipt-paused/rule-sync', 409,
-               ('R023-F12',), message='同步已暂停：合成控制条件变化。请先「预览发布」并确认，重新建立同步基准')
+    yield Case('R023-F13/paused', 'R023', 'POST', '/api/routers/receipt-paused/rule-sync', 409,
+               ('R023-F13',), message='同步已暂停：合成控制条件变化。请先「预览发布」并确认，重新建立同步基准')
     for label in ('array', 'scalar'):
         yield Case('R022-B90/' + label, 'R022', 'GET', '/api/routers/receipt-' + label + '/rule-sync', 200,
                    ('R022-B90',), checks={'sync/status': 'waiting', 'sync/ready': False})
@@ -109,6 +109,14 @@ def stored_guards():
     for body in (['nonempty'], 'nonempty'):
         yield Case('R011/structural-body-' + type(body).__name__, 'R011', 'POST', '/api/routers/r-ros/apply', 500,
                    (), document=body, html_error=True)
+    for index, (field, *_) in enumerate(MANIFESTS):
+        ident = 'protected-' + str(index)
+        root = 'routers/items/' + str(index + 2)
+        yield Case('R010-B01/preserve-' + field, 'R010', 'PUT', '/api/routers/' + ident, 200,
+                   ('R010-B01',), document={'id': 'injected-id', field: None, 'injected_unknown': 'must-not-persist'},
+                   unchanged=False, effect='profile-write', checks={'success': True, 'router/id': ident},
+                   stored={root + '/id': ident, root + '/' + field: {'version': 1, 'resources': []}},
+                   stored_absent=(root + '/injected_unknown',))
 
 
 def agent_options():

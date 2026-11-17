@@ -280,3 +280,48 @@ Fresh .32 validation after these changes:
 probes119 cumulative; 119 Go 尚未实现, 46 referenced entries; formatting/vet
 exit 0, no output. Filtered iteration only. The next full run must include all
 new probes before the total is treated as verified composition.
+
+Release and confirmed Python bug step (maintainer decision 2026-11-17):
+- Default iKuai fake retains real static_rt netmask display suffix. Actual public
+  Python publish returns 502, fails _confirm_added, and _revert_add refuses its
+  own newly added row because _matches sees the suffix. One new Fake-IP route
+  remains. Recorded Python bug IKUAI_NETMASK_SUFFIX_ROLLBACK, severity medium,
+  responsible R05; not a Go finding while R011 is unregistered. Full actual
+  response and remaining row are in difftest-routers-findings.md.
+- User explicitly required BOTH variants: default suffix bug + independent plain
+  netmask success, not a global fake relaxation. Added separate worlds and
+  matrix execution table; runtime status remains in both variants. Plain variant
+  successfully publishes static/NAT/group state and confirms empty publication;
+  ROS basic/static and empty publications also pass actual readback.
+- L5-A checklist now explicitly checks real firmware raw static_rt netmask suffix
+  format and clean compensation on failure. No real-device/PVE operation done.
+- Go same-case observation records actual status and newly created static rows
+  remaining. Mirroring Python's failure residue is an explicit safety failure,
+  even if both endpoints otherwise match. A different, cleaner outcome is kept
+  as reference-bug-observation for review (neither an automatic pass nor failure).
+  No-Go-route result stays Go 尚未实现, never a private R05 helper call.
+- Hardened dependency handling: missing Go responses never borrow Python values;
+  they block only dependent steps as prior Go differences. A skipped missing Go
+  write marks that world's subsequent state-dependent cases Go 尚未实现 instead
+  of comparing polluted Python-only state to empty Go state. Four deliberate
+  runner self-checks prove these paths and the unsafe “both reproduce residue”
+  false-pass trap. Cases/worlds remain isolated.
+- Fresh login tokens now validate JWT shape, known-key HMAC, numeric dates/lifetime,
+  admin identity and same-side /auth/verify. Random-key/auth-off worlds have
+  explicit support without substituting another side's credentials.
+- Matrix attachments audited against actual S/F/B meanings: corrected vendor
+  action IDs, empty vs editable reads, R001 superseded global P1/P2, fixed-IP
+  duplicate/profile guards, sync paused/missing-baseline and update unknown-field
+  vs no-op IDs. Five manifest/id unknown-input preservation writes added. See
+  difftest-routers-audit.md; these remain partial variant audits, not completion.
+
+Full fresh .32 composition:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build.AybfCK/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_inventory test_seed test_compare test_recipes test_console test_boundary test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --output /tmp/routerdiff-release-composition.json --findings /tmp/routerdiff-release-composition-findings.md; cd ../..; gofmt -l $(rg --files -g "*.go"); go vet ./...'`
+→ Ran 20 tests in 19.004s / OK; ROS probe1395, iKuai probe1445, ROS release1451,
+suffix1453, plain1459, receipts1466, stored guards1514 cumulative;
+matrix_entries=2301, matrix_routes=26, implemented_routes=0,
+go-unimplemented=1514, referenced_entries=474, python_bugs includes
+IKUAI_NETMASK_SUFFIX_ROLLBACK, complete=false, remaining_audits=2301.
+Formatting/vet exit 0 with no output. Findings retrieved from this full run.
+1827 entries still lack an executed recipe; every entry still needs its final
+variant/reachability audit. Task continues; no final coverage/hand-back claim.

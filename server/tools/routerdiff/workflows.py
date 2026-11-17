@@ -55,7 +55,7 @@ def router_updates():
     yield Case('R010-S03/empty-password-retains', 'R010', 'PUT', '/api/routers/r-ros', 200,
                ('R010-S03',), document={'password': ''}, unchanged=False, effect='profile-write',
                checks={'success': True, 'router/has_password': True})
-    yield Case('R010-B01/noop', 'R010', 'PUT', '/api/routers/r-ros', 200, ('R010-B01',),
+    yield Case('R010-B04/noop', 'R010', 'PUT', '/api/routers/r-ros', 200, ('R010-B04',),
                document={}, unchanged=False, effect='profile-write', checks={'success': True})
     yield Case('R015-F15/real-stale', 'R015', 'PUT', '/api/routers/r-ros/policy-settings', 409,
                ('R015-F15',), document={'revision': Ref('R015-S02/legacy', '/body/workspace/revision'),
@@ -76,14 +76,14 @@ def runtime_reads():
     for vendor, router_id in (('routeros', 'r-ros'), ('ikuai', 'r-ik')):
         entry = 'S01' if vendor == 'routeros' else 'S02'
         yield Case('R019-' + entry + '/empty', 'R019', 'GET', '/api/routers/' + router_id + '/routes', 200,
-                   ('R019-' + entry,), checks={'success': True, 'routes': []}, unchanged=False, effect='device-read')
+                   ('R019-B01',), checks={'success': True, 'routes': []}, unchanged=False, effect='device-read')
     yield Case('R025-S03/no-links', 'R025', 'GET', '/api/routers/gateway-forwarding', 200,
                ('R025-S03',), checks={'success': True, 'gateways': []})
     yield Case('R022-S01/waiting', 'R022', 'GET', '/api/routers/r-ros/rule-sync', 200,
                ('R022-S01',), checks={'success': True, 'sync/status': 'waiting', 'sync/ready': False,
                                       'settings/auto_rule_sync': False, 'settings/rule_sync_interval': 60})
-    yield Case('R023-F11/no-baseline', 'R023', 'POST', '/api/routers/r-ros/rule-sync', 409,
-               ('R023-F11',), message='请开启自动同步，并先手动预览发布一次')
+    yield Case('R023-F12/no-baseline', 'R023', 'POST', '/api/routers/r-ros/rule-sync', 409,
+               ('R023-F12',), message='请开启自动同步，并先手动预览发布一次')
 
 
 def sync_settings():
@@ -102,6 +102,7 @@ def manual_routes():
         values = {'cidr': '10.55.0.9/24', 'gateway': '10.44.0.2', 'enabled': True, 'comment': '  手工🧪 "\\$;\n备注  '}
         canonical = {**values, 'cidr': '10.55.0.0/24', 'comment': values['comment'].strip()}
         tag = '/' + vendor
+        add_entry, update_entry, delete_entry = ('S01', 'S02', 'S03') if vendor == 'routeros' else ('S04', 'S05', 'S06')
         foreign = (('ros', '/ip/route', '.id', '*F0'),) if vendor == 'routeros' else (
             ('ikuai', 'static_rt', 'id', 9999),)
         seed = {'ros': {'/ip/route': [{'.id': '*F0', 'dst-address': '10.56.0.0/24', 'gateway': '10.44.0.3',
@@ -109,51 +110,56 @@ def manual_routes():
                 'ikuai': {'static_rt': [{'id': 9999, 'enabled': 'yes', 'tagname': 'foreign', 'ip_type': '4',
                     'interface': 'lan4', 'dst_addr': '10.56.0.0', 'gateway': '10.44.0.3',
                     'netmask': '255.255.255.0', 'prio': 9, 'comment': 'foreign'}]}}
-        add_plan = 'R021-S01/add' + tag
-        add_apply = 'R020-S01/add' + tag
-        yield Case(add_plan, 'R021', 'POST', root + '/routes/plan', 200, ('R021-S01',),
+        add_plan = 'R021-' + add_entry + '/add' + tag
+        add_apply = 'R020-' + add_entry + '/add' + tag
+        yield Case(add_plan, 'R021', 'POST', root + '/routes/plan', 200, ('R021-' + add_entry,),
                    document={'action': 'add', 'values': values}, unchanged=False, effect='device-read',
                    prepare=({'action': 'seed', **seed},), foreign=foreign,
                    checks={'success': True, 'plan/action': 'add', 'plan/empty': False, 'plan/values': canonical},
                    formats={'plan/fingerprint': r'[0-9a-f]{64}'})
-        yield Case(add_apply, 'R020', 'POST', root + '/routes/apply', 200, ('R020-S01',),
+        yield Case(add_apply, 'R020', 'POST', root + '/routes/apply', 200, ('R020-' + add_entry,),
                    document={'action': 'add', 'values': values, 'fingerprint': Ref(add_plan, '/body/plan/fingerprint')},
                    unchanged=False, effect='device-only', foreign=foreign,
                    checks={'success': True, 'result/changed': True, 'result/entry/cidr': canonical['cidr'],
                            'result/entry/comment': canonical['comment'], 'result/entry/editable': True},
                    formats={'result/entry/revision': r'[0-9a-f]{64}'})
+        yield Case('R019/after-manual-add' + tag, 'R019', 'GET', root + '/routes', 200,
+                   ('R019-S01',) if vendor == 'routeros' else ('R019-S02',),
+                   unchanged=False, effect='device-read', foreign=foreign, requires=('R020',),
+                   checks={'success': True, 'routes/0/editable': True, 'routes/1/editable': True,
+                           'routes/1/id': Ref(add_apply, '/body/result/entry/id')})
         changed = {**canonical, 'gateway': '10.44.0.53', 'enabled': False, 'comment': '更新🧪'}
         intent = {'action': 'update', 'id': Ref(add_apply, '/body/result/entry/id'),
                   'revision': Ref(add_apply, '/body/result/entry/revision'), 'values': changed}
-        update_plan, update_apply = 'R021-S02/update' + tag, 'R020-S02/update' + tag
-        yield Case(update_plan, 'R021', 'POST', root + '/routes/plan', 200, ('R021-S02',), document=intent,
+        update_plan, update_apply = 'R021-' + update_entry + '/update' + tag, 'R020-' + update_entry + '/update' + tag
+        yield Case(update_plan, 'R021', 'POST', root + '/routes/plan', 200, ('R021-' + update_entry,), document=intent,
                    unchanged=False, effect='device-read', foreign=foreign,
                    checks={'success': True, 'plan/empty': False, 'plan/values': changed},
                    formats={'plan/fingerprint': r'[0-9a-f]{64}'})
-        yield Case(update_apply, 'R020', 'POST', root + '/routes/apply', 200, ('R020-S02',),
+        yield Case(update_apply, 'R020', 'POST', root + '/routes/apply', 200, ('R020-' + update_entry,),
                    document={**intent, 'fingerprint': Ref(update_plan, '/body/plan/fingerprint')},
                    unchanged=False, effect='device-only', foreign=foreign,
                    checks={'success': True, 'result/changed': True, 'result/entry/gateway': changed['gateway'],
                            'result/entry/enabled': False, 'result/entry/comment': changed['comment']})
-        yield Case('R021-F15/stale-revision' + tag, 'R021', 'POST', root + '/routes/plan', 409,
+        yield Case('R021/stale-revision' + tag, 'R021', 'POST', root + '/routes/plan', 409,
                    ('H0823',), document=intent, unchanged=False, effect='device-read', foreign=foreign,
                    message='路由已被其他操作修改，请刷新列表后重新预览')
         noop = {**intent, 'revision': Ref(update_apply, '/body/result/entry/revision')}
-        noop_plan, noop_apply = 'R021-S04/noop' + tag, 'R020-S04/noop' + tag
-        yield Case(noop_plan, 'R021', 'POST', root + '/routes/plan', 200, ('R021-S04',), document=noop,
+        noop_plan, noop_apply = 'R021-S07/noop' + tag, 'R020-S07/noop' + tag
+        yield Case(noop_plan, 'R021', 'POST', root + '/routes/plan', 200, ('R021-S07',), document=noop,
                    unchanged=False, effect='device-read', foreign=foreign,
                    checks={'success': True, 'plan/empty': True})
-        yield Case(noop_apply, 'R020', 'POST', root + '/routes/apply', 200, ('R020-S04',),
+        yield Case(noop_apply, 'R020', 'POST', root + '/routes/apply', 200, ('R020-S07',),
                    document={**noop, 'fingerprint': Ref(noop_plan, '/body/plan/fingerprint')},
                    unchanged=False, effect='device-read', foreign=foreign,
                    checks={'success': True, 'result/changed': False, 'message': '路由没有变化'})
         delete = {'action': 'delete', 'id': Ref(update_apply, '/body/result/entry/id'),
                   'revision': Ref(update_apply, '/body/result/entry/revision')}
-        delete_plan = 'R021-S03/delete' + tag
-        yield Case(delete_plan, 'R021', 'POST', root + '/routes/plan', 200, ('R021-S03',), document=delete,
+        delete_plan = 'R021-' + delete_entry + '/delete' + tag
+        yield Case(delete_plan, 'R021', 'POST', root + '/routes/plan', 200, ('R021-' + delete_entry,), document=delete,
                    unchanged=False, effect='device-read', foreign=foreign,
                    checks={'success': True, 'plan/action': 'delete', 'plan/after': None})
-        yield Case('R020-S03/delete' + tag, 'R020', 'POST', root + '/routes/apply', 200, ('R020-S03',),
+        yield Case('R020-' + delete_entry + '/delete' + tag, 'R020', 'POST', root + '/routes/apply', 200, ('R020-' + delete_entry,),
                    document={**delete, 'fingerprint': Ref(delete_plan, '/body/plan/fingerprint')},
                    unchanged=False, effect='device-only', foreign=foreign,
                    checks={'success': True, 'result/changed': True, 'result/entry': None})
@@ -237,7 +243,7 @@ def unlinked_inspection():
                    ('R018-' + entry,), unchanged=False, effect='device-read',
                    checks={'success': True, 'report/return_routing/status': 'disabled'}, times=('generated_at',))
         plan = 'R012/unlinked-plan-' + vendor
-        yield Case(plan, 'R012', 'POST', root + '/plan', 200, (), unchanged=False, effect='device-read',
+        yield Case(plan, 'R012', 'POST', root + '/plan', 200, ('R012-S12',), unchanged=False, effect='device-read',
                    checks={'success': True, 'plan/blockers/0': '未关联 mihomo Agent，无法确定代理路由的下一跳',
                            'plan/fingerprint': '', 'plan/stages': [], 'plan/script': ''}, absent=('plan/sync_baseline',))
         yield Case('R011/unlinked-blocked-' + vendor, 'R011', 'POST', root + '/apply', 409, ('H1308',),
