@@ -32,9 +32,9 @@ def options(rule_url=None):
 
 
 class SourceStable(Stable):
-    def __init__(self, pair, source):
+    def __init__(self, pair, source, *, expected=0):
         super().__init__(pair)
-        self.exchange = Exchange(pair, source, expected=0)
+        self.exchange = Exchange(pair, source, expected=expected)
 
     def before(self, index):
         super().before(index)

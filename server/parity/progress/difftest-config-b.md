@@ -1734,3 +1734,19 @@ current compared=7 different=1 accepted=1 open=0 design_errors=[]；exit=0
 ```
 
 继续余下helpers、生成/发现选择器和长流程；最终.32全量未执行。
+
+## 批次 101：下载代理校验、无Location和耗尽镜像
+
+- 新增20变体：H115九种非字符串值、H116三个path/query/fragment、H117五种URL解析错误，公开R202统一400且全SQL/files/HTTP0次；H116到H117的异常包装以同次HTTP关联。H119两种profile路径的302无Location真实HTTP1次后400，完整协议及存储不变。H123通过回环HTTP proxy使GitHub原地址CONNECT503、镜像HTTP503，实际耗尽两个候选并得到502/RULE_SOURCE_UNAVAILABLE/no-store；未访问GitHub、mirror.example或生产网络。
+- 新增H6（115/116/117/119/121/123）；H121来自实际重跑原有R087/R138四跳loop请求。62变体（含原guards42）.63复跑：compared61、H123 different1、design_errors=[]。H123仅CONNECT User-Agent：Python空、Go Go-http-client/1.1；这是既有CONNECT传输差异的另一个实例，仍open，不自行accepted。两端HTTP502及业务响应、SQL/文件其余均一致。
+- source审计纠正：R087/R138-F15的size限制在mosdns._fetch_remote_content外层chunks里，不经过request_rule(max_bytes)的H122，未错误贴标签。H118的未知method同样不是public route POST错误能驱动；当前config callers固定get/head。matrix已写部分覆盖/跨领域调用边界，而不是用相似错误冒充私有分支。
+- SourceStable现在显式支持expected请求数参数，仍组合原有完整Stable与Exchange，非恒等比较；86项原有SQL/files/协议/错误接受篡改自检通过。统一9372变体、原R4292（S689/F2667/B936）、H582、G16；findings closed81/accepted7/open19/O12单列1。原R仍差238、H仍差530及partial/长流程。
+
+```text
+.63 ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups rule-fetch-proxy-normalizer-guards,rule-fetch-redirect-without-location,rule-fetch-exhausted-candidates,rule-proxy-guards --baseline 7521bb5c
+current compared=61 different=1 open=1 design_errors=[]；exit=1（保留真实CONNECT差异）
+86 self-checks + deliberately wrong-Go-response detection OK
+独立原始报告/tmp/configdiff-rule-fetch-edges.json
+```
+
+继续规则内容helper、其余清单；最终.32全量未执行。

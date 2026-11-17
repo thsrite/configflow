@@ -24,6 +24,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | G13 / interval-zero/filtered/mihomo/sub-b | `GET /api/subscriptions/<sub_id>/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
 | G13 / same-name-different-definition/merged | `GET /api/subscriptions/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
 | G13 / same-name-identical/merged | `GET /api/subscriptions/proxies` | closed | 7b904725 | aeff9d75 | 200 / 200 |
+| H123 / original-and-mirror-both-fail-through-loopback-proxy | `GET /api/mosdns/rule-proxy` | open | — | 7521bb5c | 502 / 502 |
 | R016-B02 /  | `POST /api/backup/now` | open | — | aeff9d75 | 200 / 200 |
 | R016-B03 /  | `POST /api/backup/now` | open | — | aeff9d75 | 200 / 200 |
 | R016-B90 /  | `POST /api/backup/now` | open | — | aeff9d75 | 200 / 200 |
@@ -117,6 +118,14 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | X04 / new_domain/literal/"\ud800" | `POST /api/server-domain` | accepted | [behaviour-changes.md · Step B #2](behaviour-changes.md#config-step-b--coordinator-decisions) | aeff9d75 | 500 / 400 |
 | X04 / token/literal/"\ud800" | `POST /api/config-token` | accepted | [behaviour-changes.md · Step B #2](behaviour-changes.md#config-step-b--coordinator-decisions) | aeff9d75 | 500 / 400 |
 | X08 / retired-node-test-dns-migration | `startup` | separate | — | aeff9d75 | None / None |
+
+## H123 / original-and-mirror-both-fail-through-loopback-proxy
+
+路由：`GET /api/mosdns/rule-proxy`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `subscription.source.requests[0].user_agent` | value | '' | 'Go-http-client/1.1' |
 
 ## R087-B91 / absolute-query-dispatches-internal-content-endpoint
 

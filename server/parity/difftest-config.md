@@ -2005,3 +2005,9 @@ H037以真实Node的stdin语法检查作为可重复外部工具夹具：wrapper
 维护者已明确：Go 通过 `CONFIGFLOW_FRONTEND_DIR` 原生提供前端并取代 Nginx；API-only Go 不可作为完整Python部署的对照。R206-F17/F18/F19 的Nginx专属故障列partial，Go侧验证原生监听失败后的配置不变、清楚中文、旧端口可访问；不比较Nginx自身错误文本。真实Nginx+Flask叠加属于.32容器实验/O9/O14，不在Step B中做。见[behaviour-changes.md · Go取代Nginx](behaviour-changes.md#go-取代-nginxweb-监听端口的验收边界)。
 
 当前fixture由公开入口启动真正Go frontend；Python前端HTTP peer为回环fake，配置文件位于私有mount namespace。状态/同端口noop/占用拒绝不调用Nginx；成功换端口使用受限CLI peer记录生产check/reload，并按真实生成配置切换双栈fake HTTP。比较公开成功响应、新健康能力轮换、双栈新端口/相同合成页面、旧端口关闭及全SQL/保存文件；不声称覆盖真实Nginx的检查/重载。已撤回不等价API-only旧夹具的13变体，不计覆盖或findings。
+
+### Step B rule-fetch helper的真实调用边界
+
+H115/H116/H117现在由公开R202保存代理入口驱动（[settings.py:49](../../backend/routes/settings.py#L49)直接调用normalize_rule_fetch_proxy）：非字符串、path/query/fragment、URL语法错误分别到达对应源码guard；不必经过R087才算同一helper。H116的ValueError还经过H117，关联为同次真实HTTP标签。H119在R087/R138的真实302无Location响应到达；H121以已有四跳redirect-loop请求关联。
+
+H118的未知method guard不能用公开GET/HEAD改成POST来冒充：当前config调用方传入固定get/head，HTTP入口方法由路由提前处理。H122的`max_bytes`循环也不由R087/R138-F15证明：`mosdns._fetch_remote_content`调用request_rule时未传max_bytes，而在自身chunks循环另做大小限制（[mosdns.py:412](../../backend/routes/mosdns.py#L412)、[mosdns.py:426](../../backend/routes/mosdns.py#L426)）。已找到的显式max_bytes生产调用在Agent deployment_bundle/mihomo_panel，不能借相似400消息虚增config helper覆盖；目前保留partial/未覆盖，待对应领域/额外公开驱动。H123用配置的回环代理实际耗尽GitHub原始地址及镜像两个候选，确实到达最终candidate失败分支；单个普通URL在外层raise_for_status的502不能自动贴这个标签。

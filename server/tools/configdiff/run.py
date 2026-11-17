@@ -96,6 +96,8 @@ def main():
     groups.update(mosdns_edges)
     from cases.rule_proxy import GROUPS as rule_proxy
     groups.update(rule_proxy)
+    from cases.rule_fetch_edges import GROUPS as rule_fetch_edges
+    groups.update(rule_fetch_edges)
     from cases.nodes import GROUPS as nodes
     groups.update(nodes)
     from cases.node_reference_edges import GROUPS as node_reference_edges
