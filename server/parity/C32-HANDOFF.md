@@ -165,3 +165,23 @@ ok configflow/internal/server 0.035s
 另新增 internal/oxidns/ruledns_legacy_test.go（45）、internal/server/rules_wire_test.go（27）。改动的共享接口/调用点：agents/hooks.go、rules/syntax.go、rulefetch/content.go、oxidns/ruledns_state.go、routers/desired.go 及4个显式ctx测试调用点、server/server.go。核心10文件2396行，C32 native测试749行，live differential含Python1205行。Python/backend/frontend没有改动。
 
 最终 git 检查：git rebase go 成功；git diff --check 无输出；工作区干净。报告提交为 docs-only，准确最终tip见 git log -1（本报告不自引用自身hash）。不 push。
+
+2026-11-18 R08 集成补充：`go-port-c32` 已变基到 `go=d8f50b00`。保留 R08 的全部字段；`routers/desired.go` 相对 go 仍只有 C32 原定的 context 签名及传参变化。R08 新调用 `InspectROSPolicyDesired → ComputeDesired` 直接传已有 ctx，无需扩大调用链，无新增 Background。全 server 检索这两个符号的调用，无其他旧签名。新增 `rospolicy_context_test.go` 验证同一个 ctx、request value、deadline 到达默认 loader。
+
+指定增量门禁（.64）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/routers/rospolicy_context_test.go -- bash -lc 'cd server && cat /proc/loadavg && gofmt -w internal/routers/rospolicy_context_test.go && go vet ./internal/routers/... ./internal/routersplit/... ./internal/api/rules/... && CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/routers/... ./internal/routersplit/... ./internal/api/rules/... && cat /proc/loadavg'
+```
+
+```text
+22.83 13.33 11.87 7/518 505957
+ok  configflow/internal/routers 404.956s
+?   configflow/internal/routers/routerfake [no test files]
+ok  configflow/internal/routersplit 13.863s
+ok  configflow/internal/api/rules 23.183s
+ok  configflow/internal/api/rules/difftest 113.050s
+11.41 13.64 12.76 20/518 571888
+```
+
+routers 包内真实 Python 边界（含 R04/R06/R07/R08）全部运行通过。首次增量运行发现新测试夹带的 CIDR 结果断言超出 ctx 回归目的，删除此多余断言后重跑上述指定范围全绿；ctx 身份、值和 deadline 检查均保留。完整 gate 由协调者重跑。

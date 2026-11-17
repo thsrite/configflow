@@ -287,7 +287,7 @@ func InspectROSPolicyDesired(ctx context.Context, config json.RawMessage, router
 	if len(result.Selected) == 0 {
 		return result, nil
 	}
-	policy, err := ComputeDesired(config, desired.ProxyGateway, result.Selected, loader)
+	policy, err := ComputeDesired(ctx, config, desired.ProxyGateway, result.Selected, loader)
 	if err != nil {
 		return nil, err
 	}

@@ -1919,6 +1919,8 @@ A19 gateway和R01 reader均已接线。协调者批准ComputeDesired/RulesetCont
 
 完整 .64 gate：gofmt、vet、双tag、全量race（88个包测试命令）、全部13个live difftest、proddiff、60秒FuzzPastedRules均PASS。API rules race16.886s、oxidns95.383s、routers442.437s；C32 live diff74.075s；fuzz90,402 execs。proddiff23自检PASS、81GET/82method-path、693实际比较（planned cases2831）、aggregation-provider2/2、agent-deployment-bundle3/3，new=0 stale=0 coverage_regressions=0；baseline未改。提交gate load18.06/15.16/16.48，结束25.59/24.32/21.56。
 
+R08 integration follow-up: rebased `go-port-c32` onto `go=d8f50b00`; preserved every R08 desired-state field. The only newly stale production call was `InspectROSPolicyDesired` → `ComputeDesired`; it now passes the existing caller ctx. `TestROSPolicyDesiredPassesContextToDefaultContentLoader` checks the exact context, request value and deadline reach the default source loader. Repository-wide `rg` of both ComputeDesired and RulesetContent found no other stale callers. .64 gofmt/vet + `CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/routers/... ./internal/routersplit/... ./internal/api/rules/...` PASS: routers404.956s (includes R04/R06/R07/R08 live Python boundaries), routersplit13.863s, API23.183s, API difftest113.050s. Load start22.83/13.33/11.87; end11.41/13.64/12.76. No full gate repeated here (coordinator owns it).
+
 最后R01补丁按协调者裁定只追加相关检查，.32 gofmt/vet + CONFIGFLOW_DIFF=1相关全包race均PASS：API37.281s/diff172.626s/routers399.537s/routersplit27.638s/server1.480s/gateway29.774s；load开始21.67/23.75/25.79、结束3.08/12.39/20.44。完整gate内容、最后最小补丁及0f943623增量验证的范围/命令见交回报告。没有其他待移植的C32功能。
 
 ## C33 — rule library and proxy group routes
