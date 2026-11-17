@@ -1,6 +1,6 @@
 # Config 领域公开 HTTP 差异测试
 
-依据 `server/parity/difftest-config.md`（含 O6）。只启动真正的 Python/Go 公开服务，不导入 Go 业务包，不从 Go 实现推导期望。`build.py` 使用公开命令已有的 `configflow_proddiff` build tag 和 `PRODDIFF_ROUTES` 导出实际 method/template；后台生命周期保留生产行为，不再依赖 main.go 文本 overlay。
+依据 `server/parity/difftest-config.md`（含 O6）。只启动真正的 Python/Go 公开服务，不导入 Go 业务包，不从 Go 实现推导期望。被测Go是**无build tag的生产二进制**；`build.py`另建一个`configflow_proddiff`公开入口临时进程，只导出实际method/template后立即退出，不接收测试请求。集成0f943623开始该tag会关闭Provider的12秒回退，故不能再用带tag进程验收T06。后台循环、回退时限和HTTP服务均保留生产行为，无源码overlay。
 
 在测试服务器运行，Python 依赖沿用 `~/cf-test/.venv`：
 
@@ -13,7 +13,7 @@ RT_HOST=sunbroke@192.168.0.32 rt \
 
 全量统一由上面的包装器先执行官方`server/scripts/gate.sh`，随后在同一个gate锁槽内运行Python configdiff all；官方门禁失败也保留configdiff完整证据，两者退出码分开记录且总退出码不吞失败。包装器只source官方脚本以保留FD 8，无另起race/proddiff。最多两轮共享门禁，.64使用`-p 4`。
 
-迭代用`native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups precedence,jwt,auth-environments,redaction,startup,auth-routes --baseline COMMIT`选择相关批次；`--binary /path/to/configflow`可复用本工具生成的测试二进制。迭代和最终全量可使用等价的.32或.64，报告注明主机；原WSL .63已停用。
+迭代用`native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups precedence,jwt,auth-environments,redaction,startup,auth-routes --baseline COMMIT`选择相关批次；`--binary /path/to/configflow`可复用本工具生成的无tag生产二进制，必须同时保留其`.routes.tsv`和`.build.json`。工具核对二进制/清单完整SHA256和构建标签；旧带tag二进制或错配sidecar明确拒绝，不以静态routes.tsv猜实际wiring。迭代和最终全量可使用等价的.32或.64，报告注明主机；原WSL .63已停用。
 
 `native_network.sh`在所选测试服务器建立只有lo的网络命名空间和private mount namespace，把owned临时目录绑定到`/etc/nginx`，随后降回调用用户运行测试；不会修改宿主网络、配置或服务。需要服务器安装nginx（Web状态只检查它存在，Step B不会启动真实Nginx）。fixture还验证mount表及临时源目录与挂载目录的inode对应。退出时卸载并删除owned目录。依赖HTTPS fake和Web完整部署要求这个边界，拒绝在WSL/普通宿主网络启动。全量gate包装器会调用此wrapper；RT_HOST也可固定为sunbroke@192.168.0.64，连续复用同一远端副本时应固定主机。网络命名空间内不能下载缺失依赖，首次需要的Go/Python工具链先在测试服务器普通环境安装或缓存。
 

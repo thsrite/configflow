@@ -2391,3 +2391,16 @@ current compared11 / Go未实现2 / 依赖1；design_errors=[]；exit0
 current compared7；design_errors=[]；exit0
 133 self-checks + deliberately wrong-Go-response detection OK
 ```
+
+## 批次 142：被测进程改用无tag生产入口
+
+- 集成0f943623的公开manifest hook现在对proddiff关闭Provider12秒回退；原configdiff使用同一tag会污染T06。只读取公开cmd/configflow入口，未读业务实现。build.py现在另建/启动一个tagged路由导出进程，导出后立即清理；实际所有HTTP夹具使用无tag生产二进制。没有patch/overlay任何Go源码。
+- 二进制和route sidecar的完整SHA256、build_tags=[]与manifest_build_tags明确验证；缓存仅复用文件inode/size/mtime都未变的已验证清单，变更会重验。新增故意换tag、错hash、换binary的自检。--binary文档要求保留匹配sidecar，旧tagged binary不能悄悄继续验收。
+- .32 baseline4d8a665a，production-entry.json实际30变体38.49秒：compared29/已批准严格差异1，无open、design_errors=[]，exit0；真实T06仍在原12秒返回last-good并完成后台更新，登录/中文/长密码及完整Web读取回归通过。134项自检及故意错误Go响应检出；缓存额外校验将在下轮标准runner复验。
+- .64旧基线完整运行仍保留生产timer，因为其4d8a665a尚未引入新tag行为。后续rebase和最终门禁使用新生产入口。没有把进行中的旧基线结果冒充最新go验收。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups provider-last-good-lifecycle,auth-routes,web-listener-complete-readonly --baseline 4d8a665a --output <独立报告>
+current compared29 / different1（accepted1）；design_errors=[]；seconds38.49；exit0
+134 self-checks + deliberately wrong-Go-response detection OK
+```

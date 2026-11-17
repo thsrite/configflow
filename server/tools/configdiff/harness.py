@@ -230,6 +230,8 @@ class Pair:
             raise
 
     def start_servers(self):
+        from build import manifest_for_server
+        self.registered = manifest_for_server(self.binary)
         for index, directory in enumerate(self.dirs):
             port = free_port()
             self.port_leases.append(port)
@@ -264,9 +266,6 @@ class Pair:
                 self.tokens.append(reply.json()['token'])
             else:
                 self.tokens.append('')
-        for line in (self.root / 'go-routes.tsv').read_text().splitlines():
-            method, path = line.split('\t')
-            self.registered.add((method, path))
         return self
 
     def close(self, *, release_ports=True):

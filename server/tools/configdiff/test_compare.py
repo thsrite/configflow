@@ -17,6 +17,30 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_route_manifest_rejects_tagged_stale_or_mismatched_binary_sidecars(self):
+        import hashlib
+        from build import route_manifest, manifest_for_server
+        with tempfile.TemporaryDirectory() as root:
+            binary = Path(root) / 'synthetic-unexecuted-binary'
+            binary.write_bytes(b'production-placeholder')
+            manifest = b'GET\t/api/auth/status\nPOST\t/api/auth/login\n'
+            Path(str(binary) + '.routes.tsv').write_bytes(manifest)
+            metadata = {'build_tags': [], 'manifest_build_tags': ['configflow_proddiff'],
+                'binary_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
+                'manifest_sha256': hashlib.sha256(manifest).hexdigest()}
+            path = Path(str(binary) + '.build.json')
+            path.write_text(json.dumps(metadata))
+            self.assertEqual(route_manifest(binary), {('GET', '/api/auth/status'), ('POST', '/api/auth/login')})
+            self.assertEqual(manifest_for_server(binary), route_manifest(binary))
+            for field, value in [('build_tags', ['configflow_proddiff']), ('manifest_build_tags', []),
+                    ('binary_sha256', '0' * 64), ('manifest_sha256', '0' * 64)]:
+                path.write_text(json.dumps({**metadata, field: value}))
+                with self.assertRaises(ValueError, msg=field): route_manifest(binary)
+            path.write_text(json.dumps(metadata))
+            binary.write_bytes(b'changed-production-placeholder')
+            with self.assertRaises(ValueError): route_manifest(binary)
+            with self.assertRaises(ValueError): manifest_for_server(binary)
+
     def test_recursion_limit_saved_JSON_keeps_all_original_bytes_and_mode(self):
         from compare import files
         with tempfile.TemporaryDirectory() as root:
