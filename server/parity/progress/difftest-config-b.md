@@ -1782,3 +1782,19 @@ current go-unimplemented=11 design_errors=[]；exit=0
 ```
 
 继续真实日志warning/tail、I/O失败与其余清单；最终.32全量未执行。未读Go业务、未派子agent、未推送。
+
+## 批次 104：缺失拉取路径的WARNING、真实tail与stat权限错误
+
+- R030-B93访问不存在的/api/config/mihomo/x也实际写一条WARNING“配置被拉取”事件，HTTP404、来源与独立User-Agent准确、query/capabilities不进日志，SQL/files不变。runtime_writes显式标记日志前置影响；Go该拉取路由未接通，所以随后已接通的R076-B91正确标依赖未实现，不能把缺失前置日志当tail bug。
+- R076-B91从服务自身生成的文件取真实warning，level正则与中文search都需匹配。User-Agent刻意不含WARNING，避免过滤因客户端词语偶然命中。每端原始rows必须准确来自自己文件的过滤结果、filtered_lines严格保留，total_lines只有验证等于本端实际总行数后才映射；log_file按实际指派路径单射比较。完整中文事件/severity继续比，额外/漏掉/错误过滤行、坏总数、能力泄露的自检能失败，不用固定日志。
+- R075-F08在与数据库分离的owned日志目录施加真实chmod000，driver和两端进程均为普通用户；验证stat确实EACCES、权限没有被悄悄改掉、SQL/files不变。**新增open：Python500/permission denied，Go200/success=true/exists=false**，把权限错误误当缺失。路径/原因检查加上全部响应字段保留证据，未用API错误JSON迁移来接受状态变化。该差异已在.32独立与统一报告重跑稳定复现。
+- .32两组3新增变体：Go尚未实现1、依赖未实现1、different/open1、design_errors=[]，89项自检和故意错误Go响应检出通过。统一9424变体、原R4306（S689/F2668/B949）、H599、G16；findings closed81/accepted7/open20/O12单列1。原R仍差224、H仍差513及partial/长流程。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups config-pull-warning-and-real-tail,logs-real-stat-permission --baseline 7521bb5c
+current go-unimplemented=1 go-unimplemented-dependency=1 different=1 open=1 design_errors=[] seconds=6.51；exit=1
+89 self-checks + deliberately wrong-Go-response detection OK
+独立原始报告/tmp/configdiff-real-log-edges.json（首轮UA标记后已移除warning词；统一报告为修正后）
+```
+
+.63仍因SSH连接超时按brief使用.32。继续缓存I/O失败与剩余清单，最终.32全量未执行。

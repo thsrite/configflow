@@ -17,6 +17,35 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_real_tail_projection_validates_own_filter_and_counts_without_hiding_extra_rows(self):
+        from cases.pull_logging import Tail, MARKER, WARNING_AGENT
+        tail = Tail(None)
+        message = MARKER + 'mihomo（配置空间 默认），HTTP 404，来源 127.0.0.1，客户端 ' + WARNING_AGENT
+        a = '2026-01-01 - WARNING - ' + message
+        b = json.dumps({'level': 'WARNING', 'message': message}, ensure_ascii=False)
+        tail.lines = [['source startup', a], ['Go startup one', 'Go startup two', b]]
+        make = lambda rows, count: {'success': True, 'logs': rows, 'total_lines': count, 'filtered_lines': 1}
+        left, right = tail.project(make([a], 2), 0), tail.project(make([b], 3), 1)
+        self.assertEqual(differences(left, right), [])
+        for value in (make([], 3), make([b, 'unexpected warning'], 3), make([b], 2),
+                      make([b.replace('WARNING', 'WARN')], 3), make([b], True)):
+            self.assertTrue(differences(left, tail.project(value, 1)))
+
+    def test_stat_fault_observer_detects_missing_fault_wrong_cause_path_and_storage_write(self):
+        from cases.log_stat_fault import StatFault
+        observer = StatFault(None, None)
+        observer.before_values[1] = observer.after_values[1] = {'db': 'same'}
+        value = {'active_stat_fault': True, 'fault_still_denied': True, 'mode_unchanged': True,
+                 'permission_error': True, 'assigned_path': True}
+        observer.observed = [copy.deepcopy(value), copy.deepcopy(value)]
+        self.assertEqual(observer.compare(Policy()), [])
+        for key in value:
+            observer.observed[1] = {**value, key: False}
+            self.assertTrue(observer.compare(Policy()), key)
+        observer.observed[1] = copy.deepcopy(value)
+        observer.after_values[1] = {'db': 'wrong'}
+        self.assertTrue(observer.compare(Policy()), 'failed stat must not update storage')
+
     def test_pull_log_parser_and_observer_detect_extra_head_log_header_drift_and_capability_leaks(self):
         from cases.pull_logging import events, HeadPull
         message = '配置被拉取：mihomo（配置空间 默认），HTTP 200，来源 127.0.0.1，客户端 configdiff-before-head'

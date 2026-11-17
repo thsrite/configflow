@@ -102,6 +102,8 @@ def main():
     groups.update(rule_content_helpers)
     from cases.pull_logging import GROUPS as pull_logging
     groups.update(pull_logging)
+    from cases.log_stat_fault import GROUPS as log_stat_fault
+    groups.update(log_stat_fault)
     from cases.nodes import GROUPS as nodes
     groups.update(nodes)
     from cases.node_reference_edges import GROUPS as node_reference_edges

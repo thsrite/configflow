@@ -47,6 +47,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R056-S04 / repeat/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | aeff9d75 | 200 / 200 |
 | R056-S04 / repeat/1 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | aeff9d75 | 200 / 200 |
 | R058-B03 / stored-legacy-extension | `PUT /api/domain-discovery/settings` | accepted | [behaviour-changes.md · R058-B03](behaviour-changes.md#config-step-b--coordinator-decisions) | aeff9d75 | 200 / 200 |
+| R075-F08 / real-stat-EACCES-with-database-still-readable | `GET /api/logs/info` | open | — | 7521bb5c | 500 / 200 |
 | R087-B04 / text/B04 | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | 7521bb5c | 422 / 422 |
 | R087-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/mosdns/rule-proxy` | open | — | aeff9d75 | 200 / 502 |
 | R087-F13 / text/F13 | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | 7521bb5c | 422 / 422 |
@@ -118,6 +119,20 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | X04 / new_domain/literal/"\ud800" | `POST /api/server-domain` | accepted | [behaviour-changes.md · Step B #2](behaviour-changes.md#config-step-b--coordinator-decisions) | aeff9d75 | 500 / 400 |
 | X04 / token/literal/"\ud800" | `POST /api/config-token` | accepted | [behaviour-changes.md · Step B #2](behaviour-changes.md#config-step-b--coordinator-decisions) | aeff9d75 | 500 / 400 |
 | X08 / retired-node-test-dns-migration | `startup` | separate | — | aeff9d75 | None / None |
+
+## R075-F08 / real-stat-EACCES-with-database-still-readable
+
+路由：`GET /api/logs/info`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `log.stat-permission.assigned_path` | value | True | False |
+| `log.stat-permission.permission_error` | value | True | False |
+| `status` | value | 500 | 200 |
+| `body.error` | missing-in-go | "[Errno 13] Permission denied: '/tmp/configdiff-41i0wm5i/denied-log/synthetic.log'" | None |
+| `body.exists` | extra-in-go | None | False |
+| `body.path` | extra-in-go | None | '/tmp/configdiff-41i0wm5i/denied-log/synthetic.log' |
+| `body.success` | value | False | True |
 
 ## H123 / original-and-mirror-both-fail-through-loopback-proxy
 
