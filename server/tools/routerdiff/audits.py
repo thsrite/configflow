@@ -259,6 +259,36 @@ def declared():
             'changes and deletion. Missing/empty legacy credentials load, reject incomplete edits, and can '
             'be repaired without losing unknown stored fields. These are normalizer/ownership guards, '
             'not proof that a selected resource exists or any publication succeeds.', required)
+    cache_requirements = [('discovery', name, 200) for name in (
+        'R004/dual-vendor-first', 'R004/dual-vendor-cached', 'R004/refresh-literal-true-is-cache',
+        'R003/discovery-rename', 'R004/cached-renamed')]
+    cache_requirements += [('discovery-failures', 'R004/' + label, 200) for label in (
+        'outage-prior-good', 'failed-refresh-keeps-good', 'required-arp', 'required-terminal', 'both-required')]
+    cache_requirements += [('discovery-signature', name, 200) for name in (
+        'R004/cache-signature-initial', 'R010/cache-signature-edit-password', 'R004/cache-signature-invalidated-password',
+        'R010/cache-signature-edit-restore', 'R004/cache-signature-invalidated-restore',
+        'R010/cache-signature-edit-tls', 'R004/cache-signature-invalidated-tls',
+        'R010/cache-signature-noop-revision-only', 'R004/cache-signature-noop-keeps-good')]
+    lru = ['alpha-first', 'beta-first'] + ['fill-' + str(number) for number in range(126)]
+    lru += ['touch-alpha-at128', 'insert129-evicts-beta', 'alpha-recent-survives', 'beta-least-recent-rereads',
+            'cache001-survives', 'cache000-evicted-by-beta-rereads']
+    cache_requirements += [('discovery-lru', 'R004/cache-lru-' + label, 200) for label in lru]
+    cache_requirements += [('discovery-coalescing', 'R004/cache-coalesce-' + label, 200) for label in (
+        'owner', 'waiter-same-snapshot', 'subsequent-explicit-refresh')]
+    cache_requirements += [('discovery-staleness', 'R004/stale-cache-' + label, 200) for label in (
+        'first', '61s-only-marks-stale', 'true-does-not-refresh', 'forced-refresh-clears-stale', 'process-restart-reads-again')]
+    audits['T03'] = Audit(
+        ('backend/common/client_discovery_cache.py:34', 'backend/common/client_discovery.py:89',
+         'backend/routes/client_devices.py:81', 'server/parity/difftest-routers.md:170'),
+        'Every T03 listed variant is explicit: regular/cache/refresh1/true, fresh all-failure retaining good '
+        'snapshot with refresh_error, partial replacement and unknown missing saved hosts,129 real profiles '
+        'testing128-capacity LRU with recency touch, actual simultaneous TCP refreshes gated on a device '
+        'read, exact same own-side snapshot, real61s age and restart. Credential/TLS changes invalidate '
+        'without forced refresh; same router fields with a new profile revision retain the snapshot. '
+        'Router credentials are not overridden in the fake: a wrong new password really returns401, '
+        'which becomes a fresh failed snapshot, then restoration reads again. Name changes join current '
+        'saved notes without re-reading devices. This does not close H0030/H0031 OS-resource failures '
+        'or claim physical device presence/Go parity while the public route is absent.', tuple(cache_requirements))
     return audits
 
 

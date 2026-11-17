@@ -1,6 +1,6 @@
 """Discovery and DHCP transactions through the real client-device HTTP API."""
 from cases import Case, Ref
-from seed import router
+from seed import router, DEVICE_PASSWORD
 
 
 def options():
@@ -122,27 +122,57 @@ def notes_keep_reservation():
 
 def discovery():
     yield Case('R004/dual-vendor-first', 'R004', 'GET', '/api/client-devices/discovery?refresh=1', 200,
-               ('R004-S01', 'R004-S02', 'R004-S03', 'R004-S08', 'R004-B04'),
+               ('T03', 'R004-S01', 'R004-S02', 'R004-S03', 'R004-S08', 'R004-B04'),
                prepare=(device_world(),), unchanged=False, effect='device-read', foreign=FOREIGN,
                checks={'success': True, 'state': 'ok', 'cached': False, 'sources/0/ok': True, 'sources/1/ok': True,
                        'devices/0/presence': 'online', 'devices/0/fixed_ip/eligible': True,
                        'devices/2/presence': 'online', 'devices/2/last_seen': 100}, times=('checked_at',))
     yield Case('R004/dual-vendor-cached', 'R004', 'GET', '/api/client-devices/discovery', 200,
-               ('R004-S07',), checks={'cached': True, 'checked_at': Ref('R004/dual-vendor-first', '/body/checked_at')},
+               ('T03', 'R004-S07'), checks={'cached': True, 'checked_at': Ref('R004/dual-vendor-first', '/body/checked_at')},
                expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
     yield Case('R004/refresh-literal-true-is-cache', 'R004', 'GET', '/api/client-devices/discovery?refresh=true', 200,
-               ('R004-S07',), checks={'cached': True},
+               ('T03', 'R004-S07'), checks={'cached': True},
                expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
-    yield Case('R003/discovery-rename', 'R003', 'PUT', '/api/client-devices', 200, ('R003-S08',),
+    yield Case('R003/discovery-rename', 'R003', 'PUT', '/api/client-devices', 200, ('T03', 'R003-S08'),
                document={'profile_id': 'alpha', 'ip': '10.44.0.21', 'name': '缓存也显示新名称🧪', 'mode': '',
                          'previous_name': '动态设备🧪', 'previous_mode': '', 'base_url': ''},
                unchanged=False, effect='profile-write')
-    yield Case('R004/cached-renamed', 'R004', 'GET', '/api/client-devices/discovery', 200, ('R004-S10',),
+    yield Case('R004/cached-renamed', 'R004', 'GET', '/api/client-devices/discovery', 200, ('T03', 'R004-S10'),
                checks={'cached': True, 'devices/0/name': '缓存也显示新名称🧪'},
                expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
 
 
 
+
+
+def cache_options():
+    value = options()
+    value['alpha']['routers']['items'] = [router()]
+    return value
+
+
+def cache_signature():
+    arp = {'match': {'peer': 'ros', 'method': 'GET', 'path': '/rest/ip/arp'}, 'count': 1}
+    quiet = ({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0})
+    yield Case('R004/cache-signature-initial', 'R004', 'GET', '/api/client-devices/discovery', 200,
+        ('T03',), prepare=(device_world(),), unchanged=False, effect='device-read',
+        checks={'cached': False, 'state': 'ok'}, expected_requests=(arp,))
+    edits = (('password', {'password': 'synthetic-rotated-but-not-on-device-0123456789'}, 'failed'),
+             ('restore', {'password': DEVICE_PASSWORD}, 'ok'), ('tls', {'verify_tls': False}, 'ok'))
+    for label, body, state in edits:
+        yield Case('R010/cache-signature-edit-' + label, 'R010', 'PUT', '/api/routers/r-ros', 200,
+            ('T03',), document=body, unchanged=False, effect='profile-write',
+            retained_fields=('oxidns', 'device_notes', 'client_fixed_ips'), expected_requests=quiet)
+        yield Case('R004/cache-signature-invalidated-' + label, 'R004', 'GET', '/api/client-devices/discovery', 200,
+            ('T03',), unchanged=False, effect='device-read',
+            checks={'cached': False, 'state': state, 'sources/0/ok': state == 'ok'}, expected_requests=(arp,))
+    yield Case('R010/cache-signature-noop-revision-only', 'R010', 'PUT', '/api/routers/r-ros', 200,
+        ('T03',), document={'verify_tls': False}, unchanged=False, effect='profile-write',
+        retained_fields=('oxidns', 'device_notes', 'client_fixed_ips'), expected_requests=quiet)
+    yield Case('R004/cache-signature-noop-keeps-good', 'R004', 'GET', '/api/client-devices/discovery', 200,
+        ('T03',), checks={'cached': True, 'state': 'ok',
+                         'checked_at': Ref('R004/cache-signature-invalidated-tls', '/body/checked_at')},
+        expected_requests=quiet)
 
 def cache_lru_options():
     def profile(ident):
@@ -304,21 +334,21 @@ def fixed_preview_guards():
 
 def discovery_failures():
     yield Case('R004/outage-prior-good', 'R004', 'GET', '/api/client-devices/discovery?refresh=1', 200,
-               ('R004-S03',), prepare=(device_world(),), unchanged=False, effect='device-read',
+               ('T03', 'R004-S03'), prepare=(device_world(),), unchanged=False, effect='device-read',
                checks={'state': 'ok', 'cached': False}, times=('checked_at',))
     ros_fail = {'action': 'fault', 'match': {'peer': 'ros', 'method': 'GET', 'path': '/rest/ip/arp'},
                 'status': 500, 'body': {'message': 'synthetic ARP refusal'}}
     ik_fail = {'action': 'fault', 'match': {'peer': 'ikuai', '/body/func_name': 'monitor_lanip'},
                'status': 200, 'body': {'Result': 10000, 'code': 3001, 'message': 'synthetic terminal refusal'}}
     yield Case('R004/failed-refresh-keeps-good', 'R004', 'GET', '/api/client-devices/discovery?refresh=1', 200,
-               ('R004-S09',), prepare=(ros_fail, ik_fail), unchanged=False, effect='device-read',
+               ('T03', 'R004-S09'), prepare=(ros_fail, ik_fail), unchanged=False, effect='device-read',
                checks={'state': 'ok', 'cached': True,
                        'checked_at': Ref('R004/outage-prior-good', '/body/checked_at')}, formats={'refresh_error': r'.+'})
     definitions = [
         ('required-arp', (ros_fail,), {'state': 'partial', 'sources/0/ok': False, 'sources/1/ok': True,
-                                      'devices/0/presence': 'unknown'}, ('R004-S05', 'R004-F11')),
-        ('required-terminal', (ik_fail,), {'state': 'partial', 'sources/0/ok': True, 'sources/1/ok': False}, ('R004-S05',)),
-        ('both-required', (ros_fail, ik_fail), {'state': 'failed', 'sources/0/ok': False, 'sources/1/ok': False}, ('R004-S06',)),
+                                      'devices/0/presence': 'unknown'}, ('T03', 'R004-S05', 'R004-F11')),
+        ('required-terminal', (ik_fail,), {'state': 'partial', 'sources/0/ok': True, 'sources/1/ok': False}, ('T03', 'R004-S05')),
+        ('both-required', (ros_fail, ik_fail), {'state': 'failed', 'sources/0/ok': False, 'sources/1/ok': False}, ('T03', 'R004-S06')),
         ('ros-enrich', ({'action': 'fault', 'match': {'peer': 'ros', 'path': '/rest/ip/dhcp-server/network'},
                         'status': 500, 'body': {'message': 'synthetic reservation denial'}},),
          {'state': 'ok', 'devices/0/presence': 'online', 'devices/0/fixed_ip/eligible': False}, ('R004-F15', 'H0062')),

@@ -1024,3 +1024,27 @@ All changes are tests/docs, no product code or Go business implementation read.
 T03 still pending its explicit integrated audit, as are native policy graph
 cases, deeper device/backgound branches, scoped dynamic comparison and external
 G23 dispatch. Final full composition/gate/final rebase remain pending; no hand-back.
+
+T03 explicit audit completed (helper OS-thread failures remain separate):
+-161 named requirements integrate default/repeated/forced/literal-true reads,
+  current note join, good-snapshot outage retention, partial replacement/unknown
+  saved rows, real61s stale boundary,129-profile128-capacity LRU, simultaneous
+  refresh sharing and restart. Added9 credential/TLS/no-op-signature requests:
+  wrong locally saved password really gets a device401/new failed snapshot,
+  restoration and TLS-setting change re-read, same router fields with a new
+  profile revision reuse the good cache. Fake credentials were not relaxed.
+- New cache_options fixture returns the same single-router synthetic options as
+  the preceding inline expressions; no app state/clock helper is imported.
+- All161 requirements' exact world/case/status/entry attachments have integrity
+  checks. T03 does not imply R004 is complete, does not close H0030/H0031 resource
+  failures, and does not claim physical presence or unregistered Go route parity.
+  Declarations now325/remaining1976 if composed; last full3054 report still301.
+
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world discovery --world discovery-failures --world discovery-signature --world discovery-coalescing --world discovery-lru --world discovery-staleness --output /tmp/routerdiff-cache-complete-audit.json'`
+=> Ran11 tests2.407s/OK; discovery5(1.58s), signature14 cumulative(2.20s),
+coalesce17(1.56s), LRU151(86.03s), stale156(63.66s), failures165(2.96s).
+Go routes0/missing165/references17/audited1/remaining2300 in this subset;
+complete=false, no new Python bug. No active or queued command remains.
+Next: native device-policy graph read-only/atomic rejection and reachable H0085-
+H0101, remaining wrapper audits, deeper device/generator/background branches,
+scoped dynamic identities/timestamps/hashes and G23 external manifest dispatch.

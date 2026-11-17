@@ -15,7 +15,7 @@ import cases
 class AuditTests(unittest.TestCase):
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'
@@ -138,6 +138,21 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(len(audits['H1234'].requirements), 24)
         self.assertEqual(len(audits['H1237'].requirements), 13 * 4 + 14)
         self.assertEqual(len(audits['H1241'].requirements), 2)
+
+    def test_cache_audit_requires_real_age_lru_overlap_and_signature_controls(self):
+        groups = [('discovery', clients.discovery), ('discovery-failures', clients.discovery_failures),
+                  ('discovery-signature', clients.cache_signature), ('discovery-lru', clients.cache_lru),
+                  ('discovery-coalescing', clients.cache_coalescing), ('discovery-staleness', clients.cache_staleness)]
+        actual = {(world, case.ident): case for world, group in groups for case in group()}
+        required = declared()['T03'].requirements
+        self.assertEqual(len(required), 161)
+        for world, name, status in required:
+            case = actual[world, name]
+            self.assertIn('T03', case.entries)
+            self.assertEqual(case.expected, status)
+        aged = actual['discovery-staleness', 'R004/stale-cache-61s-only-marks-stale']
+        self.assertEqual(aged.age_seconds, 61)
+        self.assertEqual(aged.age_anchor, 'ended')
 
 
 if __name__ == '__main__':
