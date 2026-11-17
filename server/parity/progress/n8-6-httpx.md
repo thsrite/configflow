@@ -1,6 +1,6 @@
 # N8-6 — native HTTP request binding
 
-状态：实现与示范调用方完成，最终门禁待跑（ported，待独立复核）。分支 go-n8-6。
+状态：实现与最终完整门禁通过（ported，待独立复核）。分支 go-n8-6。
 开工确认 go-n7-3a=c597cbf3 干净且不再改该分支；从 go=6b50151c 新建 go-n8-6。
 已读 AGENT-BRIEF、AGENTS/PORTING/WORKFLOW、设计2.6/5.6/N8-6行及O6 X04。
 无 push，无子 agent。
@@ -93,3 +93,25 @@ Options.Auth配置凭据；当前示范提交已修订为可编译。R226在http
 全量发现internal/auth/http_test.go仍要求登录畸形请求500，这是本步已批准的旧预期。
 该测试改为400/415及精确错误体，.32 auth0.096s、api/auth0.019s通过（无产品变更）。
 新版本最终完整门禁改固定 .32 运行；不将旧预期失败的 .64 全量当作通过。
+
+## 最终完整门禁（.32，通过）
+
+代码ab18eb10，基线ac1f2377（已含N7-3a/C31）。确切命令：
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -euo pipefail; cd server; test -z "$(gofmt -l internal/ tools/)"; go vet ./...; go test -race -count=1 ./internal/httpx/... ./internal/auth/... ./internal/api/auth/... ./internal/api/tasks/...; go test -p=4 -count=1 ./...; for d in $(go list ./... | grep difftest); do CONFIGFLOW_DIFF=1 go test -count=1 "$d"; done; go test ./internal/httpx -run=^$ -fuzz=^FuzzBindNativeJSON$ -fuzztime=60s -parallel=4; cd ..; server/scripts/proddiff.sh'
+```
+已确认gofmt/vet静默；race全绿：httpx36.992s、core auth2.278s、api/auth1.304s、api/tasks2.584s。
+全量中的auth0.222s、api/auth0.078s、tasks0.290s、httpx5.444s均过；完整全量已过：installer389.315s、oxidns212.388s、routers250.465s；
+最后yamlx5.566s、yamlxtest0.010s、tools/proddiff/generator0.032s，exit0。
+
+门禁进行期间，go另合入O3复核197c3c3f（request lifecycle scope绑定）。交回前会rebase；
+N8绑定API与该处生命周期Context绑定职责不同，最后按实际冲突/改动做整合复验并记录。
+
+全部12个 CONFIGFLOW_DIFF=1 包通过（秒）：api/agents156.167、api/aggregations47.323、
+api/subscriptions134.555、devicenotes1.042、discovery4.084、health14.875、httpx2.541、
+mosdns2.901、refresh4.450、subs2.383、substore8.569、webdav24.877。
+FuzzBindNativeJSON：632396 exec / PASS / 61.018s；没有失败种子。
+proddiff：23项self-check PASS，2831 cases / 435 compared，coverage_regressions=0、
+unmapped_routes=0，11项既有差异，最后 `baseline: new=0 stale=0`。正式组合命令 exit0。
+无baseline变更、无未批准的行为变化。API生产迁移仅两个示范，legacy接口/Agent ingestion/
+字符串int词法均按裁定保留到各自后续步骤。

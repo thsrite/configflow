@@ -112,7 +112,7 @@ retain emoji through encoding/json first. Read-only production snapshot high-sur
 across all scanned categories; no stored texts were rewritten. Expected changes / classified remain
 subs209/209, substore14/14, convert29/29. API and non-YAML golden behavior remains strict.
 
-## N8-6 — native HTTP request binding (ported; final gates pending)
+## N8-6 — native HTTP request binding (ported; final gates passed)
 
 Ctx.Bind / BindSilent(bool) plus literal/form-preserving httpx.Number, native duplicate whole-value
 replacement, media/BOM/empty/invalid handling and DTO rules are implemented. Only R226 tasks interval
@@ -123,6 +123,11 @@ Legacy JSON helpers stay unchanged; N8-7+ callers record their own non-finite tr
 heartbeat/history seeds and traffic ingestion are inventoried, not changed. Detailed design mapping,
 DTOs, HTTP-shell scope, exact commands and output: [progress/n8-6-httpx.md](progress/n8-6-httpx.md).
 
+
+Final `.32`: gofmt/vet silent; changed-package race (httpx/core-auth/API-auth/tasks) and full `-p=4`
+pass; all 12 enabled differential packages pass; FuzzBindNativeJSON 60s/632396 exec PASS;
+proddiff 23 self-checks PASS, 2831 cases/435 comparisons, coverage_regressions=0, `new=0 stale=0`.
+118 shell differential vectors include 17 explicitly asserted migrations. No baseline change.
 
 ## N7-1 — native yamlx core (ported, 2026-11-17)
 
