@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Regressions from the N7-2 Opus review (server/parity/review-n7-2.md).
@@ -123,5 +125,20 @@ func TestReviewN72MultipleDocumentsDiagnostic(t *testing.T) {
 	out, err := Edit(source, func(*Node) error { t.Fatal("callback ran"); return nil })
 	if !errors.Is(err, ErrMultipleDocuments) || err.Error() != fmt.Sprintf(msgMultipleDocuments, 2) || !bytes.Equal(out, source) {
 		t.Fatalf("multi-document diagnostic: %v", err)
+	}
+}
+
+// yaml.v3 parses `!%21` as the tag `!!` but writes it back as a bare `!!`,
+// which is not YAML. PyYAML refused the tag too (no constructor).
+func TestReviewN72EmptyYAMLTagRejected(t *testing.T) {
+	for _, source := range []string{"!%21", "a: !%21 x\n", "a: !<tag:yaml.org,2002:> [b]\n"} {
+		_, err := Parse([]byte(source))
+		var syntax *SyntaxError
+		if !errors.Is(err, ErrSyntax) || !errors.As(err, &syntax) || syntax.Line < 1 || err.Error() != fmt.Sprintf(msgEmptyTag, syntax.Line) {
+			t.Errorf("%q: %v", source, err)
+		}
+	}
+	if out, err := Marshal(&Node{Kind: yaml.ScalarNode, Tag: "!!", Value: "x"}); !errors.Is(err, ErrSyntax) {
+		t.Errorf("unwritable tag marshalled as %q: %v", out, err)
 	}
 }

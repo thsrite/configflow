@@ -6,4 +6,5 @@ const (
 	msgExcessiveAliases  = "YAML 引用展开过多（第 %d 行）"
 	msgTypeMismatch      = "YAML 类型不匹配：%v"
 	msgMultipleDocuments = "YAML 只能包含一个文档（第 %d 行开始第二个文档）"
+	msgEmptyTag          = "YAML 标签 !! 缺少类型名（第 %d 行）"
 )

@@ -45,6 +45,11 @@ func checkGraph(n *Node, path, done map[*Node]bool) error {
 	}
 	path[n] = true
 	defer delete(path, n)
+	// `!%21` reads as the tag `!!` (no type name), which yaml.v3 writes back
+	// as a bare, unparsable `!!`. PyYAML refused it too (no constructor).
+	if n.Tag == "!!" || n.Tag == "tag:yaml.org,2002:" {
+		return nodeError(n, fmt.Sprintf(msgEmptyTag, n.Line))
+	}
 	switch n.Kind {
 	case yaml.DocumentNode:
 		if len(n.Content) != 1 {
