@@ -67,7 +67,8 @@ func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Obje
 			releaseCache()
 		}
 	}()
-	err = r.update(ctx, writeOptions{}, func(ctx context.Context, document *jsonx.Object) error {
+	batch := false
+	err = r.update(ctx, writeOptions{batch: &batch}, func(ctx context.Context, document *jsonx.Object) error {
 		shared := document.GetObject("shared")
 		for _, item := range shared.GetList("rule_library") {
 			if object, _ := jsonx.AsObject(item); object.Value("id") == ruleID {
@@ -83,6 +84,9 @@ func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Obje
 		// importing a new source must not overwrite its custom bytes.
 		if pathExists(path) || pathExists(path+".bak") {
 			return exists("规则缓存已存在，请使用新的规则 ID")
+		}
+		if err := beginCommitBatch(ctx, &batch); err != nil {
+			return err
 		}
 		ownsCache = true
 		shared.Set("rule_library", append(append([]any{}, shared.GetList("rule_library")...), rule.DeepCopy()))

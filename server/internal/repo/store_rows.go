@@ -6,6 +6,7 @@ package repo
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -190,7 +191,7 @@ func (r *Repository) createStore(doc, meta *jsonx.Object) (storedEntry, error) {
 	return decodeEntry(entry)
 }
 
-func (r *Repository) commitStore(base storedEntry, doc, meta *jsonx.Object) (storedEntry, bool, error) {
+func (r *Repository) commitStore(ctx context.Context, base storedEntry, doc, meta *jsonx.Object) (storedEntry, bool, error) {
 	raw, err := encodeRows(doc, base.Entry.Document)
 	if err != nil {
 		return storedEntry{}, false, err
@@ -199,7 +200,7 @@ func (r *Repository) commitStore(base storedEntry, doc, meta *jsonx.Object) (sto
 	if err != nil {
 		return storedEntry{}, false, err
 	}
-	entry, changed, err := r.store.Commit(base.Entry, raw, extra)
+	entry, changed, err := r.store.CommitContext(ctx, base.Entry, raw, extra)
 	if err != nil || !changed {
 		return storedEntry{}, changed, err
 	}

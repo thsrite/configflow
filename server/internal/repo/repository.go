@@ -538,6 +538,17 @@ type writeOptions struct {
 	lockedRouters map[routerKey]bool
 	policyRouter  *routerKey
 	meta          *jsonx.Object
+	batch         *bool // marked immediately before an approved filesystem + DB batch
+}
+
+// beginCommitBatch is restricted to the three paths listed in Clarified in
+// O3-6c. Once filesystem effects start, their final database commit must finish.
+func beginCommitBatch(ctx context.Context, started *bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	*started = true
+	return nil
 }
 
 // update is `with self._document(write=True, ...) as document`: one write
@@ -546,6 +557,9 @@ type writeOptions struct {
 // ConfigurationCommitted hook runs when auto backup is on.
 func (r *Repository) update(ctx context.Context, options writeOptions, fn func(ctx context.Context, document *jsonx.Object) error) error {
 	ctx = ctxx.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if readSnapshotActive(ctx) {
 		return ErrReadOnlySnapshot
 	}
@@ -554,7 +568,7 @@ func (r *Repository) update(ctx context.Context, options writeOptions, fn func(c
 	}
 	var previous, current *jsonx.Object
 	err := withLock(ctx, r.lockFile, func(ctx context.Context) error {
-		return r.writeLocked(ctxx.Uninterruptible(ctx), options, func(ctx context.Context, before, document *jsonx.Object) error {
+		return r.writeLocked(ctx, options, func(ctx context.Context, before, document *jsonx.Object) error {
 			previous, current = before, document
 			return fn(ctx, document)
 		})
@@ -575,6 +589,9 @@ func (r *Repository) update(ctx context.Context, options writeOptions, fn func(c
 // mutate. Only rows that changed are written, in one SQLite transaction.
 func (r *Repository) writeLocked(ctx context.Context, options writeOptions,
 	fn func(ctx context.Context, previous, document *jsonx.Object) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if r.working(ctx) != nil {
 		return inUse(nestedWriteMessage)
 	}
@@ -586,6 +603,9 @@ func (r *Repository) writeLocked(ctx context.Context, options writeOptions,
 	document := previous.DeepCopy()
 	if err := fn(context.WithValue(ctx, txKey{r}, document), previous, document); err != nil {
 		return err
+	}
+	if options.batch != nil && *options.batch {
+		ctx = ctxx.Uninterruptible(ctx)
 	}
 	system, err := compatObject(document.Value("system"))
 	if err != nil {
@@ -602,7 +622,7 @@ func (r *Repository) writeLocked(ctx context.Context, options writeOptions,
 		return err
 	}
 	defer release()
-	committed, changed, err := r.commitStore(base, document, options.meta)
+	committed, changed, err := r.commitStore(ctx, base, document, options.meta)
 	if err != nil {
 		r.dropCache()
 		if errors.Is(err, store.ErrConflict) {

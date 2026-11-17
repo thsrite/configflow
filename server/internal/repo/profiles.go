@@ -455,7 +455,8 @@ func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID 
 			return err
 		}
 		lockedRouters := map[routerKey]bool{}
-		err = r.update(ctx, writeOptions{lockedRouters: lockedRouters}, func(ctx context.Context, document *jsonx.Object) error {
+		batch := false
+		err = r.update(ctx, writeOptions{lockedRouters: lockedRouters, batch: &batch}, func(ctx context.Context, document *jsonx.Object) error {
 			profile, err := profileOf(document, profileID)
 			if err != nil {
 				return err
@@ -512,6 +513,9 @@ func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID 
 				if key.ProfileID == profileID {
 					lockedRouters[key] = true
 				}
+			}
+			if err := beginCommitBatch(ctx, &batch); err != nil {
+				return err
 			}
 			if err := os.Mkdir(r.migrationsDir, 0o777); err != nil && !os.IsExist(err) {
 				return err

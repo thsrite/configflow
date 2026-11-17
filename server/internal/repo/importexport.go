@@ -249,7 +249,11 @@ func (r *Repository) ImportAll(ctx context.Context, data *jsonx.Object) (*jsonx.
 	if err != nil {
 		return nil, err
 	}
-	err = r.update(ctx, writeOptions{}, func(_ context.Context, previous *jsonx.Object) error {
+	batch := false
+	err = r.update(ctx, writeOptions{batch: &batch}, func(ctx context.Context, previous *jsonx.Object) error {
+		if err := beginCommitBatch(ctx, &batch); err != nil {
+			return err
+		}
 		_, err := r.applyImport(previous, document, "import")
 		return err
 	})

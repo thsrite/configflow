@@ -16,6 +16,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
@@ -254,6 +255,15 @@ func (s *Store) Fingerprint() (Fingerprint, error) {
 // A document that cannot be stored fails with ErrDocument before anything
 // is written; SQLite failures are ErrStorage.
 func (s *Store) Commit(base Entry, document *Document, meta map[string]json.RawMessage) (entry Entry, committed bool, err error) {
+	return s.CommitContext(context.Background(), base, document, meta)
+}
+
+// CommitContext commits while ctx permits writing. Cancellation after
+// BeforeCommit and before COMMIT rolls back the complete SQLite transaction.
+func (s *Store) CommitContext(ctx context.Context, base Entry, document *Document, meta map[string]json.RawMessage) (entry Entry, committed bool, err error) {
+	if err := ctx.Err(); err != nil {
+		return Entry{}, false, err
+	}
 	// Serialize first: a non-JSON value must fail before anything is written.
 	target, err := documentRows(document)
 	if err != nil {
@@ -274,7 +284,13 @@ func (s *Store) Commit(base Entry, document *Document, meta map[string]json.RawM
 
 	var head Head
 	err = func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := connection.begin("BEGIN IMMEDIATE"); err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if head, err = connection.Head(); err != nil {
@@ -326,6 +342,9 @@ func (s *Store) Commit(base Entry, document *Document, meta map[string]json.RawM
 			if err := s.BeforeCommit(); err != nil {
 				return err
 			}
+		}
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		return connection.commit()
 	}()
