@@ -49,8 +49,8 @@ func TestQuotedMultilineUsesNativeFoldAndRuleValidation(t *testing.T) {
 	}
 
 	normalized, warnings := NormalizeMihomoYAML(source)
-	if len(warnings) != 0 {
-		t.Fatal(warnings)
+	if len(warnings) != 1 || normalized != source {
+		t.Fatal("physical multiline delivery must preserve its original source and warning", warnings)
 	}
 	after, err := yamlx.Parse([]byte(normalized))
 	if err != nil || !yamlx.Equal(root, after) {
@@ -167,8 +167,8 @@ func TestQuotedContinuationKeepsRuleMatching(t *testing.T) {
 		t.Fatalf("native continuation: %v %v", lines, err)
 	}
 	normalized, warnings := NormalizeMihomoYAML(source)
-	if len(warnings) != 0 {
-		t.Fatal(warnings)
+	if len(warnings) != 1 || normalized != source {
+		t.Fatal("physical continuation must be delivered unchanged with one warning", warnings)
 	}
 	if err := ValidateRemoteRuleContent(normalized, remoteRule("domain", "yaml"), nil, ""); err != nil {
 		t.Fatal(err)

@@ -262,8 +262,9 @@ func normalizeMihomoYAML(content string) (string, error) {
 		return "", errors.New(msgUniquePayload)
 	}
 	payload := pairs[0][1]
+	source := yamlx.NewSource([]byte(content))
 	for _, node := range payload.Content {
-		if !singleLineStr(node) {
+		if !singleLineStr(node) || !source.IsSingleLineScalar(node) {
 			return "", errors.New(msgDeliveryItem)
 		}
 	}
@@ -272,15 +273,17 @@ func normalizeMihomoYAML(content string) (string, error) {
 	}
 	if root.Style&yaml.FlowStyle != 0 {
 		var invalid error
+		keys := map[*yamlx.Node]bool{}
 		walkRuleNodes(root, func(n *yamlx.Node) {
 			if n.Kind == yaml.MappingNode {
 				for i := 0; i+1 < len(n.Content); i += 2 {
+					keys[n.Content[i]] = true
 					if n.Content[i].Kind != yaml.ScalarNode {
 						invalid = errors.New(msgComplexMapping)
 					}
 				}
 			}
-			if n.Kind == yaml.ScalarNode && (n.Style&(yaml.LiteralStyle|yaml.FoldedStyle) != 0 || strings.ContainsAny(n.Value, "\n\r")) {
+			if n.Kind == yaml.ScalarNode && (n.Style&(yaml.LiteralStyle|yaml.FoldedStyle) != 0 || strings.ContainsAny(n.Value, "\n\r") || !keys[n] && !source.IsSingleLineScalar(n)) {
 				invalid = errors.New(msgMultilineContent)
 			}
 		})

@@ -42,3 +42,13 @@ updated, no global trace exemption. Amend CFG01 evidence, then implementCFG03.
 CFG03 added14 real-Python source controls; old Go fails10 physical-multiline cases,
 4 ordinary singleline controls pass. New tests/fixtures remain untracked untilCFG03
 commit. Actual group name from C32: rule-delivery-yaml-helpers.
+
+CFG01 final/amended commit1d0a791a8 (H1204/4 +150selfchecks). CFG03 implementation
+now uses shared yamlx.Source physical line/column index +editor quote lexer, no
+PyYAML scanner copy. 16 real Python controls pass; original14 failed10 before.
+One-line Unicode20k scalar positions check52.6ms in isolated15s. Fullrulefetch
+12.689s/yamlx4.782s and globalvet pass. Native reader folding/matching unchanged;
+delivery normalizer now original bytes+one warning. Final overflow guard in new
+indexed offset path needs targeted fmt/test beforecommitCFG03. C32 commit9fe6a851
+ready; afterCFG03 commit ask them joint22/22 on temp merge branch, noC32 sourcecopy.
+Then implementCFG09 (confirmed6c interface unchanged/nativeIO errors).

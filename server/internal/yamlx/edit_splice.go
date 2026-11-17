@@ -17,6 +17,7 @@ type textPatch struct {
 type editSplicer struct {
 	source   []byte
 	lines    []sourceLine
+	columns  [][]int // indexed rune columns; nil keeps the editor's sparse lookup
 	before   editSnapshot
 	patches  []textPatch
 	anchored map[*Node]bool
@@ -62,15 +63,12 @@ func editSourceLines(src []byte) []sourceLine {
 	var out []sourceLine
 	for start := 0; start < len(src); {
 		end := start
-		for end < len(src) && src[end] != '\r' && src[end] != '\n' {
+		for end < len(src) && yamlBreakWidth(src[end:]) == 0 {
 			end++
 		}
 		next := end
 		if next < len(src) {
-			next++
-			if src[end] == '\r' && next < len(src) && src[next] == '\n' {
-				next++
-			}
+			next += yamlBreakWidth(src[next:])
 		}
 		out = append(out, sourceLine{start, end, next})
 		start = next
@@ -78,11 +76,49 @@ func editSourceLines(src []byte) []sourceLine {
 	return out
 }
 
+func yamlBreakWidth(src []byte) int {
+	if len(src) == 0 {
+		return 0
+	}
+	switch src[0] {
+	case '\r':
+		if len(src) > 1 && src[1] == '\n' {
+			return 2
+		}
+		return 1
+	case '\n':
+		return 1
+	case 0xc2:
+		if len(src) > 1 && src[1] == 0x85 {
+			return 2
+		}
+	case 0xe2:
+		if len(src) > 2 && src[1] == 0x80 && (src[2] == 0xa8 || src[2] == 0xa9) {
+			return 3
+		}
+	}
+	return 0
+}
+
 func (p *editSplicer) offset(n *Node) (int, bool) {
 	if n.Line < 1 || n.Line > len(p.lines) || n.Column < 1 {
 		return 0, false
 	}
 	line := p.lines[n.Line-1]
+	if p.columns != nil {
+		columns := p.columns[n.Line-1]
+		if columns != nil {
+			if n.Column > len(columns) {
+				return 0, false
+			}
+			return columns[n.Column-1], true
+		}
+		if n.Column-1 > line.end-line.start {
+			return 0, false
+		}
+		offset := line.start + n.Column - 1
+		return offset, true
+	}
 	offset := line.start
 	if n.Line == 1 && bytes.HasPrefix(p.source, []byte("\ufeff")) {
 		offset += 3
@@ -183,20 +219,8 @@ func (p *editSplicer) scalarEnd(n *Node, start int, flow, isKey bool) (int, bool
 		if text[0] != quote {
 			return 0, false
 		}
-		for i := 1; i < len(text); i++ {
-			if quote == '"' && text[i] == '\\' {
-				i++
-				continue
-			}
-			if text[i] == quote {
-				if quote == '\'' && i+1 < len(text) && text[i+1] == '\'' {
-					i++
-					continue
-				}
-				return start + i + 1, true
-			}
-		}
-		return 0, false
+		end, ok := quotedScalarEnd(text)
+		return start + end, ok
 	}
 	// yaml.v3 accepts a tab-only continuation after a plain scalar, but the
 	// same continuation after a quoted replacement is invalid. Such whitespace

@@ -1,0 +1,148 @@
+[
+  {
+    "name": "H133",
+    "source": "{payload: [+.example.com], extra: \"first\n second\"}\n",
+    "output": "{payload: [+.example.com], extra: \"first\n second\"}\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "single-quote",
+    "source": "{payload: [+.example.com], extra: 'first\n second'}\n",
+    "output": "{payload: [+.example.com], extra: 'first\n second'}\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "CRLF",
+    "source": "{payload: [+.example.com], extra: \"first\r\n second\"}\r\n",
+    "output": "{payload: [+.example.com], extra: \"first\r\n second\"}\r\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "BOM-CJK",
+    "source": "﻿{payload: [+.example.com], 中文: \"首行\n 次行\"}\n",
+    "output": "﻿{payload: [+.example.com], 中文: \"首行\n 次行\"}\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "nested",
+    "source": "{payload: [+.example.com], extra: [{nested: \"first\n second\"}]}\n",
+    "output": "{payload: [+.example.com], extra: [{nested: \"first\n second\"}]}\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "plain-fold",
+    "source": "{payload: [+.example.com], extra: first\n second}\n",
+    "output": "{payload: [+.example.com], extra: first\n second}\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "tagged",
+    "source": "{payload: [+.example.com], extra: !!str \"first\n second\"}\n",
+    "output": "{payload: [+.example.com], extra: !!str \"first\n second\"}\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "escaped-quote",
+    "source": "{payload: [+.example.com], extra: \"first \\\"quoted\\\"\n second\"}\n",
+    "output": "{payload: [+.example.com], extra: \"first \\\"quoted\\\"\n second\"}\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "escaped-break",
+    "source": "{payload: [+.example.com], extra: \"first\\\n second\"}\n",
+    "output": "{payload: [+.example.com], extra: \"first\\\n second\"}\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "多行 YAML 内容已保留原文，请展开为普通 payload 列表。"
+      }
+    ]
+  },
+  {
+    "name": "payload-physical",
+    "source": "payload: [\"example.\n com\"]\n",
+    "output": "payload: [\"example.\n com\"]\n",
+    "warnings": [
+      {
+        "line": 0,
+        "message": "payload 每项应为一行文本；复杂 YAML 内容已保留原文。"
+      }
+    ]
+  },
+  {
+    "name": "valid-CJK-BOM",
+    "source": "﻿{payload: [+.example.com], 中文: \"首行 次行\"}\r\n",
+    "output": "﻿payload:\n- +.example.com\n中文: 首行 次行\r\n",
+    "warnings": []
+  },
+  {
+    "name": "valid-Unicode-break",
+    "source": "{payload: [+.example.com], extra: \"first second\"}\n",
+    "output": "payload:\n- +.example.com\nextra: first second\n",
+    "warnings": []
+  },
+  {
+    "name": "valid-flow",
+    "source": "{payload: [+.example.com], extra: \"first second\"}\n",
+    "output": "payload:\n- +.example.com\nextra: first second\n",
+    "warnings": []
+  },
+  {
+    "name": "valid-tagged",
+    "source": "{payload: [+.example.com], extra: !!str \"first second\"}\n",
+    "output": "payload:\n- +.example.com\nextra: first second\n",
+    "warnings": []
+  },
+  {
+    "name": "valid-quote",
+    "source": "{payload: [+.example.com], extra: \"first \\\"quoted\\\" second\"}\n",
+    "output": "payload:\n- +.example.com\nextra: first \"quoted\" second\n",
+    "warnings": []
+  },
+  {
+    "name": "valid-plain",
+    "source": "{payload: [+.example.com], extra: first second}\n",
+    "output": "payload:\n- +.example.com\nextra: first second\n",
+    "warnings": []
+  }
+]

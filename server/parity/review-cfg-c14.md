@@ -34,11 +34,28 @@ backslash），Go按本票统一规范化边界要求拒绝；测试逐名固定
 `RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 -- bash -lc 'server/tools/configdiff/native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups rule-fetch-real-internal-redirect-escape-after-dot-normalization --baseline b52f1b79b+observer-selfcheck --output "$PWD/.ci-results/cfg01/results.json" --findings "$PWD/.ci-results/cfg01/findings.md"'`
 该基线为amend前等价Go代码；CFG-01完成后交协调者另行安全复核，当前不标verified。
 
-## CFG-03 / P2 / C14（待做）
+## CFG-03 / P2 / C14
 
-只改shared rulefetch物理跨行识别，保留原文字节并返回line0 warning。
-CFG-02由0d31fb93负责route消费warning/仅一次日志；不把A12展示扫描当成本票覆盖。
-H133必须同时合入两票再关闭mixed finding。
+用yamlx.Source复用editor的line/column定位和quoted scalar lexer，按原文token判断物理跨行，
+而非只看fold后的Value。行索引支持CRLF、BOM、CJK和YAML Unicode换行；每行列索引只建一次，
+避免大flow列表每项重复扫描行首形成平方复杂度。editor与delivery共用quote扫描，不复制PyYAML。
+
+payload跨行或flow mapping中的跨行value会原样返回全部字节+已有line0 warning；普通单行
+flow仍可展开，native reader的折叠值/后续规则匹配不变。补设计Clarified和用户文档说明。
+真实Python normalize_mihomo_yaml初始14组中旧Go失败10组；最终16组全部通过，覆盖双/单引号、
+escaped续行/引号、plain折叠、nested value、tag、BOM/CJK、CRLF及Unicode换行正控。
+20,000个同一物理行的Unicode标量位置检查在.64约52.6毫秒完成（隔离15秒截止）。
+
+完整rulefetch12.689s/yamlx4.782s通过，随后全树vet通过。更新原N7正常化测试只要求本delivery
+入口保留原文+warning；ReadRulePayload/InspectDomainContent的原生折叠/匹配断言继续严格。
+CFG-02由0d31fb93负责route消费warning/每请求一次日志；本票不改api/rules/read_adapter.go。
+对方CFG02提交9fe6a8512817231ba066dc3014cb8bfe7806cf47已实跑20compared+2H133不同，
+正是尚缺本票shared判断。将提供本提交hash后由对方临时联合分支跑rule-delivery-yaml-helpers，
+H133必须两票同时验原文与日志后才关闭；A12展示扫描不计本票覆盖。
+
+复现：
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/rulefetch/testdata/gen_cfg03.py'`
+`RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 -- bash -lc 'cd server; go test -count=1 ./internal/rulefetch ./internal/yamlx; go vet ./...'`
 
 ## CFG-09 / P2 / C28（待做）
 
