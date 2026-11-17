@@ -30,7 +30,9 @@ for name, filename, pattern, replacement in mutations:
         result = subprocess.run(['go', 'test', './internal/routers', '-count=1',
             '-run', '^TestR08PythonBoundary/publish_noop_view$'], cwd=server,
             text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        if result.returncode == 0 or 'differs:' not in result.stdout or '[build failed]' in result.stdout:
+        detected = any(marker in result.stdout for marker in
+                       ('result differs:', 'device tables differ:', 'write sequence differs:'))
+        if result.returncode == 0 or not detected or '[build failed]' in result.stdout:
             print(result.stdout[-4000:])
             raise SystemExit(f'{name}: NOT DETECTED')
         print(f'{name}: DETECTED (boundary comparison failed)', flush=True)

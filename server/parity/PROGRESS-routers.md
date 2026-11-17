@@ -73,7 +73,7 @@ Python's `backend/routers` is one big import cycle (most cross-module imports ar
 | R05 | iKuai driver | 1179 | verified | HR | R01, R03; shared requests client³ | – | internal/routers |
 | R06 | device route editor (RouterOS/iKuai static routes) | 684 | verified | HR | R04, R05 | – | internal/routers |
 | R07 | RouterOS NAT address lists, address-list sync, test helpers | 1422 | verified | HR | R03, R04 | – | internal/routers, internal/routers/routerfake |
-| R08 | RouterOS policy routing (plan, write, view) | 1349 | in progress | HR | R07, C05, C26 (`normalize_policies`, present) | – | internal/routers |
+| R08 | RouterOS policy routing (plan, write, view) | 1349 | ported | HR | R07, C05, C26 (`normalize_policies`, present) | – | internal/routers |
 | R09 | forced DNS (DNS guard), IPv4 same-port forward hint | 773 | missing | HR | R04, R07 | – | internal/routers |
 | R10 | IPv6 policy, IPv6 fake-IP, IPv6 rule-set routes | 1247 | missing | HR | R04, R09 | – | internal/routers |
 | R11 | IPv6 PD guard, IPv6 DNS, RouterOS IPv6 readiness | 1161 | missing | HR | R10 | – | internal/routers |
@@ -487,7 +487,7 @@ No push. L5 and fresh Opus review remain required before production / `verified`
 
 ## R08 — RouterOS policy routing
 
-**Status: `in progress`** · HR · prereqs: R07, C05, C26 (`normalize_policies`, present in `internal/oxidns`) · Go: internal/routers
+**Status: `ported`** · HR · prereqs: R07, C05, C26 (`normalize_policies`, present in `internal/oxidns`) · Go: internal/routers
 
 Files:
 - `backend/routers/ros_policy.py` (520), `backend/routers/ros_policy_write.py` (782), `backend/routers/ros_policy_view.py` (47)
@@ -506,28 +506,31 @@ provides `PrepareStatic []Op`, replace `nestedNATMigration` with typed traversal
 policy planners cannot use different migration evidence. See R12 design §2.4 “Clarified in R07”.
 
 
-Implemented, compiling, final gates pending: `rospolicy_{model,read,plan,write,restore}.go`,
-R08 boundary/safety tests and `testdata/r08_reference.py`; shared R07 journals and R04 transport retain
-10 s device timeouts and now use lifecycle.Detach. No routes, locks, goroutines, dependency, push or
-real device access added. Typed `PrepareStatic` traversal replaces the deleted JSON adapter.
+Implemented: `rospolicy_{model,read,plan,write,restore}.go` (plan/inspection/view/guarded write,
+shared journal and rollback), plus native typed R07/R12 integration and real-Python loopback tests.
+No module feature omitted; no route, lock, goroutine, dependency, push or real-device access added.
+The JSON adapter is deleted, the temporary NATPolicy state field is removed, and all NAT evidence
+comes from the same ROSPolicyPlan.Check. Shared writes retain 10 s device timeouts and use
+lifecycle.Detach. Commits: `6b40ef58` (implementation), `44b38c8b` (full report retirement proof).
 
-Boundary reference (real Python, synthetic loopback): base plans, publish/noop/view, replacement,
-withdrawal, NAT splitting, old-bundle delete failures, lookup order/version, flags, 200/201/4096
-members, legacy hashed names/runtime flags and static replacement checks. Comparison covers plans,
-journals, ordered write requests and final device tables, without removing result fields. All R08 boundary/activation/report/raw-timeout safety tests and affected R07 write/removal/helper
-tests pass on .64 (36.871 s); full go vet ./... passes. Earlier .32 full-package regression found
-only extra-read transcript differences and the old nested fixture; both were corrected without
-weakening its comparator. Remaining: rebase go, final race/full suite/difftest/fuzz/mutation/proddiff
-gates, update results and mark ported. Per-test map and HR checklist below are complete.
+Python boundaries cover plans, full report, ordered writes, journals, raw stable manifests, views,
+final device tables, 200/201/4096 members, nested NAT-list preparation/undo, legacy hashed names,
+FIB present-empty/wire aliases, activation/runtime drift and failed/uncertain writes. The final
+nested-NAT case also checks that the recreated policy is a no-op on the next preview.
 
-Finding to record in O12: Python rollback can mistake an ID moved into another address list for an
-already deleted member and report success. R08 rollback preflight now locates journal IDs absent from the scoped snapshot and reports
-changed ownership, preserving the external edit. Safety test reproduces the silent-success defect.
+Final gate evidence (only rt; .64 race/fuzz/proddiff, .32 full/difftest):
+- `RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && gofmt -l internal/ tools/ cmd/ && go vet ./... && go test -race -p=4 -timeout=60m -count=1 ./internal/routers/... ./internal/routersplit/... ./internal/devhttp/...'` → gofmt empty, vet clean; routers `295.892s`, routersplit `4.151s`, devhttp `3.448s`, all ok. After the final report fix: `go test -race -p=4 -timeout=60m -count=1 -run "^TestR08" ./internal/routers` on .64 → `ok 43.055s`.
+- `RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && gofmt -l internal/ tools/ cmd/ && go vet ./... && go test -p=4 -timeout=60m -count=1 ./...'` → all pass; routers `241.707s`, routersplit `0.972s`, cmd/configflow `104.650s`, final line `ok configflow/tools/proddiff/generator 0.010s`.
+- Final nested-list case: `RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -race -p=4 ./internal/routers -run "TestR08PythonBoundary/static_nat_list_nested_rollback" -count=1'` → `ok 1.741s`.
+- `RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && python3 scripts/r08-mutation-gate.py && go test -p=4 -run "^$" -fuzz "^FuzzR08PolicyInput$" -fuzztime=60s -parallel=4 ./internal/routers && go test -p=4 -run "^$" -fuzz "^FuzzR07DecodeAddressRow$" -fuzztime=60s -parallel=4 ./internal/routers'` → result/journal/request/device-table all DETECTED, `4/4 detected; sources restored`; R08 `159951 execs`, `PASS`, `ok 61.019s`; R07 `1330511 execs`, `PASS`, `ok 60.108s`. Mutation-gate result matching accepts the explicit result/write/device comparison diagnostics; build failures never count.
+- `RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'GOFLAGS=-p=4 server/scripts/proddiff.sh'` → `self_check: PASS`, `coverage_regressions: 0`, `new: 0`, `stale: 0`; final `baseline: new=0 stale=0`. Existing snapshot only, isolated namespace; no production fetch or data committed.
+- All 12 difftest packages passed: `RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers -- bash -lc 'cd server && gofmt -w internal/routers && CONFIGFLOW_DIFF=1 go test -p=4 -timeout=60m -count=1 $(go list ./... | rg /difftest)'` → agents `152.535s`, aggregations `50.553s`, subscriptions `122.698s`, devicenotes `1.055s`, discovery `6.281s`, health `15.522s`, httpx `3.550s`, mosdns `4.186s`, refresh `5.747s`, subs `2.902s`, substore `13.001s`, final `ok configflow/internal/webdav/difftest 26.858s`.
 
-Commands (all on .32, no local tests):
-- `RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test ./internal/routers -run "TestR08PythonBoundary/(static_replacement|legacy|batched_route)|TestR08PreviewAndOwnershipGuards" -count=1'` → `ok configflow/internal/routers 4.727s`.
-- `RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/routers -- bash -lc 'cd server && gofmt -w internal/routers && go vet ./... && go test ./internal/routers -run "TestR08|TestNATListHelperBoundary/migration|TestNATListWriteBoundary|TestNATListRemovalBoundary" -count=1'` → vet clean; `ok configflow/internal/routers 36.871s`.
-
+Intentional differences / findings for O12:
+1. **Medium, Python bug fixed:** rollback could mistake an address ID moved into another list for an already deleted member and report success. R08 rollback preflight locates missing journal IDs globally, checks complete configs before deletion, preserves the external edit and reports incomplete rollback. TestR08PreviewAndOwnershipGuards proves it.
+2. **Safety corrections:** malformed/missing/duplicate identity is refused instead of Python's KeyError or accidental match; a failed rollback proof stops later deletions and retains dependent replacement protection (shared R07 rule). Route migration guards the whole batch before deleting any row, rather than deleting an earlier prefix before a later guard fails. Existing R04/R07 fresh-ID, dynamic-row, uncertain-write and script-size safety fixes are reused.
+3. **Native opaque revision:** ROSPolicyDigest uses encoding/json (N8 D2), so non-ASCII/number-text hash bytes may differ once; typed fields, user messages, generated device semantics and raw unknown manifest fields are retained. No Python encoder/emulation added.
+4. **No open finding.** The port's own medium report/NAT-retirement wiring error was caught and fixed by the complete BuildReport differential below. Opus HR review is still required; status is ported, never verified.
 
 Self-audit follow-up: full BuildReport differential `report_policy_nat_retirement` caught a
 medium integration defect before hand-back: PolicyNATRetiring must be the NAT resources in the
@@ -580,6 +583,14 @@ continuity during static↔policy switch and rollback; FastTrack/raw/VRF/foreign
 16 KiB/32 KiB limits and 10 s hardware budget, ID assignment/reuse, lost replies and 20k member scale.
 L5-A transport/permission and batch-order items from R04/R07 remain required. This port touches no PVE
 or real device and claims no packet-path/firmware proof.
+
+
+Hand-back file sizes (lines): rospolicy_model.go 303, rospolicy_plan.go 451,
+rospolicy_read.go 405, rospolicy_restore.go 114, rospolicy_write.go 724 (1997 native Go);
+rospolicy_boundary_test.go 585, rospolicy_safety_test.go 506, testdata/r08_reference.py 108,
+scripts/r08-mutation-gate.py 41. Shared definitions/helpers are extended in place; no copied
+Python compatibility layer. No open implementation step in R08; pending independent Opus review
+and the L5 lab items above. R12/R15 own their separately listed route/release integration.
 
 ## R09 — forced DNS (DNS guard), IPv4 same-port forward hint
 

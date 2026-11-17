@@ -1,6 +1,7 @@
 # R08 Python tests → Go boundary coverage
 
 按 Python 命名测试逐项映射（计数不含 pytest 参数展开）。B = `TestR08PythonBoundary`；所有输入均为合成数据。
+补充 `B/report_policy_nat_retirement` 比较完整 report；`B/static_nat_list_nested_rollback` 比较真实 NAT 列表准备和整体回滚后的新 ID/no-op。
 HTTP、全 release/Agent 编排未伪造替代入口，仍归 R12/R15；C33 的四项不认领。
 
 ## test_ros_policy.py (32)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -379,6 +380,15 @@ func r08Cases() []r08Case {
 	reportState := r08State()
 	delete(reportState.Tables[rosNAT][0], "out-interface")
 	cases = append(cases, r08Case{"report_policy_nat_retirement", reportState, []r08Step{{Action: "report", Desired: r08Desired(true)}, {Action: "publish", Desired: r08Desired(true)}, {Action: "report", Desired: r08Desired(true)}, {Action: "report", Desired: r08Desired(false)}}})
+	nestedState := r08State()
+	delete(nestedState.Tables[rosNAT][0], "out-interface")
+	sources := []string{}
+	for _, network := range ClientSourceNetworks(netip.MustParseAddr(r08Gateway)) {
+		sources = append(sources, network.String())
+	}
+	nested := NATListSync{OpHead: OpHead{Kind: "nat_list_sync"}, Comment: NATListComment, SrcList: NATSrcList, DstList: NATDstList, OutInterface: "bridge", Sources: sources, Destinations: []string{"198.18.0.0/16", r08Target}, SrcAdd: sources, DstAdd: []string{"198.18.0.0/16", r08Target}, SrcRemove: []ROSResource{}, DstRemove: []ROSResource{}, Legacy: []ROSResource{}, Stale: []ROSResource{}}
+	nestedPreparation := mustPolicyJSON(Row{"prepare_static": []any{nested, Row{"kind": "route_add", "cidr": r08Target, "gateway": r08Gateway, "comment": "cf"}}, "static_checks": []CIDRGateway{{r08Target, r08Gateway}}, "static_nat_checks": NATChecks{r08Gateway, []string{"198.18.0.0/16", r08Target}, []CIDRGateway{}}})
+	cases = append(cases, r08Case{"static_nat_list_nested_rollback", nestedState, []r08Step{{Action: "publish", Desired: r08Desired(true)}, {Action: "rollback", Desired: r08Desired(false), Prepare: nestedPreparation}, {Action: "plan", Desired: r08Desired(true)}, {Action: "view"}}})
 	for _, action := range []string{"publish", "rollback"} {
 		cases = append(cases, r08Case{"legacy_" + action, r08State(), []r08Step{{Action: "publish", Desired: r08Desired(true)}, {Action: "legacy"}, {Action: "view"}, {Action: action, Desired: r08Desired(true)}}})
 	}
