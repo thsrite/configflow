@@ -4,8 +4,18 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamltest"
 )
+
+func equalComposeYAML(left, right string) bool {
+	a, err := yamlx.Parse([]byte(left))
+	if err != nil {
+		return false
+	}
+	b, err := yamlx.Parse([]byte(right))
+	return err == nil && yamlx.Equal(a, b)
+}
 
 func equalGuideComposeLayout(expected, actual []byte) []byte {
 	left, err := jsonx.Parse(expected)
@@ -23,7 +33,7 @@ func equalGuideComposeLayout(expected, actual []byte) []byte {
 	}
 	x, xok := a.Value("compose").(string)
 	y, yok := b.Value("compose").(string)
-	if xok && yok && yamltest.SemanticEqual(x, y) {
+	if xok && yok && equalComposeYAML(x, y) {
 		a.Set("compose", y)
 	}
 	leftBundle, lok := a.Value("compose_bundle").(*jsonx.Object)
@@ -31,7 +41,7 @@ func equalGuideComposeLayout(expected, actual []byte) []byte {
 	if lok && rok {
 		leftArchive, leftYAML, leftErr := yamltest.ComposeArchive(leftBundle.GetString("content_base64"))
 		rightArchive, rightYAML, rightErr := yamltest.ComposeArchive(rightBundle.GetString("content_base64"))
-		if leftErr == nil && rightErr == nil && yamltest.SemanticEqual(leftYAML, rightYAML) && jsonx.Equal(leftArchive, rightArchive) {
+		if leftErr == nil && rightErr == nil && equalComposeYAML(leftYAML, rightYAML) && jsonx.Equal(leftArchive, rightArchive) {
 			leftBundle.Set("content_base64", rightBundle.GetString("content_base64"))
 		}
 	}
@@ -66,6 +76,36 @@ func TestN73GuideComposeComparisonKeepsEveryOtherValue(t *testing.T) {
 			}
 			if got := jsonx.Equal(a, b); got != test.want {
 				t.Fatalf("equal=%v want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestNativeComposeHTTPComparison(t *testing.T) {
+	for _, test := range []struct {
+		name, before, after string
+		equal               bool
+	}{
+		{"layout", "value: [one, two]\n", "value:\n  - one\n  - two\n", true},
+		{"value", "value: one", "value: two", false},
+		{"timestamp tag", "value: !!timestamp 2001-01-01", "value: '2001-01-01'", false},
+		{"binary tag", "value: !!binary YQ==", "value: 'YQ=='", false},
+		{"sequence order", "value: [one, two]", "value: [two, one]", false},
+		{"invalid", "value: [", "value: []", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			makeResponse := func(text string) response {
+				return response{method: "GET", status: 200, header: map[string][]string{"Content-Type": {"text/yaml; charset=utf-8"}}, body: []byte(text)}
+			}
+			before, after := makeResponse(test.before), makeResponse(test.after)
+			if equal := len(compareInstaller(before, after, nil)) == 0; equal != test.equal {
+				t.Fatalf("equal=%v want %v", equal, test.equal)
+			}
+			if test.equal {
+				after.header.Set("Cache-Control", "private")
+				if len(compareInstaller(before, after, nil)) == 0 {
+					t.Fatal("YAML layout comparison ignored a changed header")
+				}
 			}
 		})
 	}

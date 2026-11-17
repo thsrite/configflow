@@ -339,3 +339,30 @@ Output: fmt/vet silent; yamlx1.332s/yamltest0.119s/yamlxtest0.002s/
 yamlbridge0.005s/yamlwriteroracle0.004s PASS. The second strict installer
 comparison run (same affected-corpus regex plus DockerHACorpus/recorded and tag
 negative tests, JSON log `/tmp/n74-installer-strict.jsonl`) passed16.702s.
+
+
+## HTTP Compose comparator completion
+
+Queue-time review found the plain Compose download still compared bytes.
+It now uses Parse/Equal only for successful text/yaml responses; status and all
+existing headers remain strict. Guide and ZIP comparison now also retain scalar
+tags. Negative cases include timestamp/binary tags, value/list order, bad YAML
+and changed headers.
+
+The first scoped HTTP run passed DockerHA9.320s and Installer3.550s but exposed
+four deterministic installer HTTP-fuzz NEL paths. These are the approved writer
+bug, not new behavior. The explicit HTTP writer-only extension records actual
+Flask route responses and one typed writer call per URI, validates the old SHA,
+and injects native bytes into unchanged Python. Four rows/seven fields/seven NEL
+occurrences are classified; unknown=0. Every other HTTP-fuzz row stays strict.
+The exact URI/live source SHA/status/type is mandatory before selecting the
+fixture, and exactly four named expectations must pass. Provenance and generation:
+[HTTP writer oracle](../../internal/api/agents/difftest/testdata/n74_writer_http_oracle.md).
+The original full gate was still waiting for a slot when stopped for this test
+completion; no full race or proddiff had started.
+
+Scoped HTTP iteration (.32, exit0; fmt/vet silent):
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=3 -- bash -lc 'cd server; go vet ./internal/api/agents/difftest; CONFIGFLOW_DIFF=1 go test -json -count=1 ./internal/api/agents/difftest -run "Test(NativeComposeHTTPComparison|NativeWriterHTTPProvenance|N73GuideComposeComparison|Installer|DockerHA)"'
+```
+Output: configflow/internal/api/agents/difftest PASS44.337s.

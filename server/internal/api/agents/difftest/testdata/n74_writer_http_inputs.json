@@ -1,0 +1,30 @@
+[
+  {
+    "content_type": "text/yaml; charset=utf-8",
+    "old_sha256": "025df4e152ccf3ec0758fcb5f424355d1d8370f3a1732abc54422ed8c358f4e3",
+    "oracle_path": "/api/agents/docker-agent-compose?data_dir=%C3%A9%C2%85\u0026ha_parent=a.b\u0026oxidns_port%EF%BF%BD=%EF%BC%91%EF%BC%92192.168.1.0%2F24%E7%B3%82%EF%BF%BD\u0026enable_dns_ha=:\u0026enable_mihomo=%E0%B4%AB%0B%2\u0026server_url=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\u0026agent_ip=192.168.1.53\u0026ha_host_id_path=0%EF%BF%BD\u0026ha_gateway=192.168.1.53%2B",
+    "path": "/api/agents/docker-agent-compose?data_dir=%C3%A9%C2%85\u0026ha_parent=a.b\u0026oxidns_port%c0%af=%EF%BC%91%EF%BC%92192.168.1.0%2F24%E7%B3%82%c0%af\u0026enable_dns_ha=:\u0026enable_mihomo=%E0%B4%AB%0B%2\u0026server_url=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\u0026agent_ip=192.168.1.53\u0026ha_host_id_path=0%c0%af\u0026ha_gateway=192.168.1.53%2B",
+    "status": 200
+  },
+  {
+    "content_type": "text/yaml; charset=utf-8",
+    "old_sha256": "7a7389b7cf062f93968aa8f16433856972c378031e2ef8cae1e208674304fe81",
+    "oracle_path": "/api/agents/docker-agent-compose?enable_mosdns=http%3A%2F%2Fu%3Ap%40h%23f%EF%BF%BD\u0026ha_subnet=go\u0026enable_dns_ha=\u0026enable_mosdns=false\u0026mihomo_port=1023\u0026agent_ip=192.168.1.53%\u0026data_dir=%C2%85command+",
+    "path": "/api/agents/docker-agent-compose?enable_mosdns=http%3A%2F%2Fu%3Ap%40h%23f%e4%b8\u0026ha_subnet=go\u0026enable_dns_ha=\u0026enable_mosdns=false\u0026mihomo_port=1023\u0026agent_ip=192.168.1.53%\u0026data_dir=%C2%85command+",
+    "status": 200
+  },
+  {
+    "content_type": "text/yaml; charset=utf-8",
+    "old_sha256": "265d2cef152c1ce003173c89b7352cea5e3f1950c73d31ddd88d8734db3001f3",
+    "oracle_path": "/api/agents/docker-agent-compose?mihomo_port=1024\u0026ha_parent%EF%BF%BD=a.b\u0026data_dir=%EA%B9%B9%F0%9F%98%80%C2%85",
+    "path": "/api/agents/docker-agent-compose?mihomo_port=1024\u0026ha_parent%c0%af=a.b\u0026data_dir=%EA%B9%B9%F0%9F%98%80%C2%85",
+    "status": 200
+  },
+  {
+    "content_type": "text/yaml; charset=utf-8",
+    "old_sha256": "45bf98e5b6e7f8da08b0cc9e1fdbc1bedddca1b48cc2430a5ef59fb2143a5199",
+    "oracle_path": "/api/agents/docker-agent-compose?data_dir=%C2%85/:\u0026agent_ip%EF%BF%BD=127.0.0.1\u0026enable_mihomo=\u0026enable_oxidns=true\u0026enable_dns_ha=true%0A",
+    "path": "/api/agents/docker-agent-compose?data_dir=%C2%85/:\u0026agent_ip%e4%b8=127.0.0.1\u0026enable_mihomo=\u0026enable_oxidns=true\u0026enable_dns_ha=true%0A",
+    "status": 200
+  }
+]

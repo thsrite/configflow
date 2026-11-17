@@ -320,15 +320,25 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 		py, gor := sendInstaller(t, pyBase, r, pyToken), sendInstaller(t, goBase, r, goToken)
 		counts[fmt.Sprintf("%s %d", kind, py.status)]++
 		diffs := compareInstaller(py, gor, mask)
+		oracleResponse := py
 		if len(diffs) > 0 && r.method == "GET" && py.status == 200 && gor.status == 200 {
 			if canonical, changed := nativeQueryVariant(r.path); changed {
 				alternative := r
 				alternative.path = canonical
 				expected := sendInstaller(t, pyBase, alternative, pyToken)
+				oracleResponse = expected
 				assertNativeOutputSyntax(t, kind, gor.body)
 				diffs = compareInstaller(expected, gor, mask)
 				if len(diffs) == 0 {
 					counts["EXPECTED native invalid UTF-8 "+kind]++
+				}
+			}
+		}
+		if len(diffs) > 0 && kind == "compose" {
+			if expected, ok := nativeWriterHTTPExpected(t, r.path, oracleResponse); ok {
+				diffs = compareInstaller(expected, gor, mask)
+				if len(diffs) == 0 {
+					counts["EXPECTED native writer NEL compose"]++
 				}
 			}
 		}
@@ -399,6 +409,9 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 				execDB(t, dir, "DELETE FROM snapshots")
 			}
 		}
+	}
+	if count := counts["EXPECTED native writer NEL compose"]; count != 4 {
+		t.Errorf("explicit NEL writer expectations used %d times, want 4", count)
 	}
 	t.Logf("installer fuzz: %d comparisons equal, %d differ; statuses %v", same, failed, counts)
 }

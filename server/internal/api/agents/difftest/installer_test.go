@@ -95,6 +95,10 @@ func compareInstaller(py, gor response, mask []string) []string {
 		if errA != nil || errB != nil || !jsonx.Equal(maskJSON(a, mask), maskJSON(b, mask)) {
 			diffs = append(diffs, fmt.Sprintf("json python %.400s go %.400s", py.body, gor.body))
 		}
+	} else if py.status == 200 && gor.status == 200 && strings.HasPrefix(py.header.Get("Content-Type"), "text/yaml") {
+		if !equalComposeYAML(string(py.body), string(gor.body)) {
+			diffs = append(diffs, "Compose YAML semantics differ")
+		}
 	} else if string(py.body) != string(gor.body) {
 		diffs = append(diffs, fmt.Sprintf("body (%d vs %d bytes) %s", len(py.body), len(gor.body), firstLineDiff(string(py.body), string(gor.body))))
 	}

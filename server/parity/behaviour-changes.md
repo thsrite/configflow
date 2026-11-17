@@ -64,7 +64,9 @@ Mihomo 旧语料中逐行确认 111 项：字符串误读 56、超大整数误�
 53 行、U+2029 47 行（有交叠）。其余 8,127 行仅布局变化，39 行输出未变，
 unknown=0。每行来源、完整类型图和分类见
 [installer writer oracle](../internal/installer/testdata/n74_writer_oracle.md)。
-旧 golden 未改；配置字节变化合并在上述一次切换推送中。
+旧 golden 未改；配置字节变化合并在上述一次切换推送中。另有 HTTP fuzz 的 4 个
+Compose 请求逐行确认相同的 NEL 修复（7 个字段、7 次字符恢复），以真实 Flask
+writer-only 夹具显式断言；其余 HTTP 行严格比较。
 
 ## D2 — 上游持久化标识的 Go 原生编码
 
