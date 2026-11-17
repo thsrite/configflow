@@ -19,11 +19,14 @@
 package provider
 
 import (
+	"configflow/internal/agents/diag"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 
 	"configflow/internal/convert"
@@ -49,16 +52,25 @@ type Locations interface {
 }
 
 // PassthroughLocations is the default Locations until A11 registers the
-// real one: PreparationContext returns the message unchanged and
-// SourceError returns the message without location, excerpt or diagnostic.
+// real one: it retains owning-artifact and source labels; coordinates,
+// file locations, excerpts and parser diagnostics remain A11's responsibility.
 // It never changes which errors are raised, only their text.
 type PassthroughLocations struct{}
 
-// PreparationContext returns message.
-func (PassthroughLocations) PreparationContext(message, _, _, _ string) string { return message }
+// PreparationContext identifies the owning provider without source positions.
+func (PassthroughLocations) PreparationContext(message, name, _ string, kind string) string {
+	label := kind
+	if name != "" {
+		label = fmt.Sprintf(msgPreparationName, kind, strings.ReplaceAll(diag.FailureText(name, nil, 512), "\n", `\n`))
+	}
+	return fmt.Sprintf(msgPreparationFailed, label, message)
+}
 
 // SourceError returns message.
-func (PassthroughLocations) SourceError(message, _ string, _, _ *int, _ *pyyaml.Error, _ string) string {
+func (PassthroughLocations) SourceError(message, _ string, line, _ *int, _ *pyyaml.Error, sourceLabel string) string {
+	if line != nil && sourceLabel != "" {
+		return message + fmt.Sprintf(msgContentSource, sourceLabel)
+	}
 	return message
 }
 

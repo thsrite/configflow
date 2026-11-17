@@ -470,17 +470,21 @@ func deferA11Locations(t *testing.T, left, right any) {
 	if !found || !strings.HasSuffix(prefix, "」") {
 		return
 	}
-	// SetLocations also formats the owning provider label. The base validation
-	// message is the prefix compared here; no Go validation text is removed.
-	keep := []string{}
-	for _, line := range strings.Split(core, "\n") {
-		if strings.HasPrefix(line, "文件：") || strings.HasPrefix(line, "内容来源：") || strings.HasPrefix(line, "位置：") || strings.HasPrefix(line, "出错内容：") {
-			continue
+	// Only A11 file/coordinate/excerpt lines are deferred. Owning label,
+	// validation and source description must now compare exactly (Step B #7).
+	strip := func(message string) string {
+		keep := []string{}
+		for _, line := range strings.Split(message, "\n") {
+			if strings.HasPrefix(line, "文件：") || strings.HasPrefix(line, "位置：") || strings.HasPrefix(line, "出错内容：") {
+				continue
+			}
+			keep = append(keep, line)
 		}
-		keep = append(keep, line)
+		return strings.Join(keep, "\n")
 	}
-	a["message"] = strings.Join(keep, "\n")
-	t.Log("DEFERRED A11: provider.SetLocations owning-artifact/source-location envelope; validation message, success/status and storage compared")
+	_ = core
+	a["message"], b["message"] = strip(pm), strip(gm)
+	t.Log("DEFERRED A11: file/coordinate/excerpt only; provider context, source, status and storage compared")
 }
 func firstDifference(a, b any, path string) string {
 	if reflect.TypeOf(a) != reflect.TypeOf(b) {

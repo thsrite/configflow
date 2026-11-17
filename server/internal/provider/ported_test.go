@@ -380,7 +380,7 @@ func TestNoChainDirectSubscriptionPreservesDuplicateLegacyNames(t *testing.T) {
 }
 
 func TestDefaultHooksFailClosedAndPassThrough(t *testing.T) {
-	if got := (PassthroughLocations{}).PreparationContext("m", "n", "p", "k"); got != "m" {
+	if got := (PassthroughLocations{}).PreparationContext("m", "n", "p", "k"); got != "k「n」准备失败：m" {
 		t.Fatal(got)
 	}
 	ctx, _ := repoContext(t)
