@@ -34,6 +34,8 @@ func TestCredentialFieldsAndSpans(t *testing.T) {
 		{"https://rules.example.com/a?api_key=k%2B1&x=2#frag", []string{"k%2B1"}},
 		{"see http://[::1/broken", []string{"http://[::1/broken"}},
 		{"mail me: someone@example.com", nil},
+		{"0000A://@", nil},
+		{"https://@rules.example.com/", nil},
 		{"中文 https://u:p@rules.example.com/Q2xhc2hTdWJzY3JpcHRpb25QYXRoVG9rZW4wMDg?access_token=value", []string{"u:p", "Q2xhc2hTdWJzY3JpcHRpb25QYXRoVG9rZW4wMDg", "value"}},
 	} {
 		t.Run(tc.text, func(t *testing.T) {

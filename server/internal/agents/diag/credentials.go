@@ -62,6 +62,9 @@ func CredentialSpans(text string) [][2]int {
 	})
 	out := make([][2]int, 0, len(spans))
 	for _, s := range spans {
+		if s[1] <= s[0] {
+			continue
+		}
 		if len(out) > 0 && s[0] <= out[len(out)-1][1] {
 			out[len(out)-1][1] = max(s[1], out[len(out)-1][1])
 		} else {

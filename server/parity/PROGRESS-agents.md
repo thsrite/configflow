@@ -1008,7 +1008,7 @@ rt --back server/internal/deploy/pushdiff/testdata/python.json.gz -- bash -lc 'P
 rt -- bash -lc 'cd server && go test -count=1 ./internal/deploy/pushdiff ./internal/agents/diag ./internal/yamlx'
 rt -- bash server/internal/deploy/pushdiff/testdata/gate.sh
 ```
-目前 `.64`：oracle `A12 Python: 32 tests / 67 boundary rows; 28433991 JSON bytes`；包测试 `ok configflow/internal/deploy/pushdiff`，diag/yamlx 同样通过。最后门禁结果待回填。收尾检查移除了 walk 复用显示 MAX_DEPTH 的路径截断：MaxDepth 只限制展示值，80 层真实 key path 仍完整；`TestDeepConfigPathsRemainComplete` 锁住此行为。
+目前 `.64`：oracle `A12 Python: 32 tests / 67 boundary rows; 28433991 JSON bytes`；包测试 `ok configflow/internal/deploy/pushdiff`，diag/yamlx 同样通过。最后门禁结果待回填。第二轮 `.64` 的前三个 fuzz 分别通过 399488 / 255665 / 880637 次执行；凭据 fuzz 首轮找到空 URL userinfo 的零长度区间（Go 低问题，不是泄漏），合并前过滤空区间，回归种子 `testdata/fuzz/FuzzCredentialSpans/e07ee712a01e982a` 与显式用例均保留。该轮到此停止，最终完整门禁重新执行。收尾检查移除了 walk 复用显示 MAX_DEPTH 的路径截断：MaxDepth 只限制展示值，80 层真实 key path 仍完整；`TestDeepConfigPathsRemainComplete` 锁住此行为。
 
 ## A13 — content sync, Agent list/detail, push-diff routes
 
