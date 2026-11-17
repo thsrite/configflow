@@ -525,6 +525,12 @@ func TestClientNoteAndPolicyCancelledOwners(t *testing.T) {
 	if err := (clientTools{}).SavePolicies(ctx, "d", policyEdit{ProfileID: "office", Revision: revision, NotesRevision: notes, Policies: json.RawMessage(`[{"ip":"192.0.2.5","mode":"direct","name":"second"}]`)}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := (clientTools{}).ApplyConnection(ctx, "m", connectionEdit{"office", "domains", "direct", json.RawMessage(`"cancelled.example"`), "DOMAIN"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (clientTools{}).ApplyConnection(ctx, "m", connectionEdit{"office", "ip", "direct", json.RawMessage(`"198.51.100.7"`), "IP-CIDR"}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := (clientTools{}).SetDiscovery(ctx, "m", true); err != nil {
 		t.Fatal(err)
 	}

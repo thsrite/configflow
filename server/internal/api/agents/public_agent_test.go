@@ -55,6 +55,7 @@ func TestPublicAgentPython(t *testing.T) {
 		`{"id":"device","deployments":{"one":{"status":"failed","message":"Connection refused","prepared_content":"secret-prepared","oxidns_validation_receipt":{"agent_id":"secret-receipt"},"events":[{"status":"failed","message":"timeout"}]}},"latest_deployment":{"status":"succeeded","message":"ok","prepared_content":"secret-latest"},"latest_upgrade":{"status":"failed","error":"Connection refused","message":"timeout","events":[{"status":"failed","message":"Connection refused"}]}}`,
 		`{"oxidns_ha_publication":{"id":"pair","status":"failed","message":"失败","members":["a","b"],"children":{"a":"secret-child"},"private":"secret-private"},"latest_deployment":{"ha_publication":{"status":"failed","message":"同步失败"},"pending":true,"http_status":202,"prepared_content":"secret-content"}}`,
 		`{"deployments":{},"latest_upgrade":{},"oxidns_ha_publication":{}}`,
+		`{"latest_deployment":{"status":"queued","ha_publication":{},"prepared_content":"secret-empty-ha"},"deployments":{"empty":{"status":"ready","ha_publication":{}}}}`,
 	}
 	for i, text := range cases {
 		for _, unread := range []bool{false, true} {

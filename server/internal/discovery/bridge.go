@@ -61,7 +61,7 @@ func loadConfig(ctx context.Context, id string) (config, error) {
 	return c, err
 }
 func editProfile(ctx context.Context, id string, edit func(*config) error) error {
-	_, err := repo.UpdateConfigTransaction(context.WithoutCancel(ctx), func(ctx context.Context, o *jsonx.Object) (*jsonx.Object, error) {
+	_, err := repo.UpdateConfigTransaction(lifecycle.Detach(ctx), func(ctx context.Context, o *jsonx.Object) (*jsonx.Object, error) {
 		c := config{Settings: defaultSettings()}
 		if err := decode(o, &c); err != nil {
 			return nil, err
@@ -123,7 +123,7 @@ func saveRule(ctx context.Context, item libraryItem) error {
 	if err != nil {
 		return err
 	}
-	_, err = rulefetch.SaveRuleToLocal(context.WithoutCancel(ctx), v, nil)
+	_, err = rulefetch.SaveRuleToLocal(lifecycle.Detach(ctx), v, nil)
 	return err
 }
 func validateContent(item libraryItem) error {

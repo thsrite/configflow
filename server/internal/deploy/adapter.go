@@ -384,7 +384,7 @@ func publicDeployment(record *agents.Record) *agents.Record {
 		return nil
 	}
 	out := record.DeepCopy()
-	if public := out.GetObject("ha_publication"); public != nil {
+	if public := out.GetObject("ha_publication"); public != nil && public.Len() > 0 {
 		out = agents.HAAggregate(out, public)
 	}
 	out.Delete("prepared_content")
