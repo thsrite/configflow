@@ -47,7 +47,7 @@ def client_canonical_names():
         rows.append({'ip': normalized, 'name': name, 'mode': ''})
         yield Case('R003/canonical-' + label, 'R003', 'PUT', '/api/client-devices', 200,
             ('R003-B01', 'R003-B02', 'R003-B03', 'R003-B04'), document={**base, 'ip': raw, 'name': name},
-            unchanged=False, effect='profile-write', checks={'devices': list(rows)},
+            unchanged=False, effect='profile-write', retained_fields=('oxidns', 'routers', 'client_fixed_ips'), checks={'devices': list(rows)},
             stored={'device_notes/' + normalized.replace('~', '~0').replace('/', '~1'): name},
             expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
     trimmed = '备注 "引号" 🧪'
@@ -55,15 +55,50 @@ def client_canonical_names():
     yield Case('R003/name-trim-and-own-previous', 'R003', 'PUT', '/api/client-devices', 200,
         ('R003-B01',), document={**base, 'ip': '10.44.0.21', 'name': '  ' + trimmed + '  ',
                                 'previous_name': '行🧪' * 40},
-        unchanged=False, effect='profile-write', checks={'devices': list(rows)})
+        unchanged=False, effect='profile-write', retained_fields=('oxidns', 'routers', 'client_fixed_ips'), checks={'devices': list(rows)})
     rows.pop(0)
     yield Case('R003/remove-note-with-normalized-previous', 'R003', 'PUT', '/api/client-devices', 200,
         ('R003-S07',), document={**base, 'ip': '::ffff:10.44.0.21', 'previous_name': trimmed + '  '},
-        unchanged=False, effect='profile-write', checks={'devices': list(rows)},
+        unchanged=False, effect='profile-write', retained_fields=('oxidns', 'routers', 'client_fixed_ips'), checks={'devices': list(rows)},
         stored_absent=('device_notes/10.44.0.21',))
     yield Case('R002/canonical-names-beta-isolation', 'R002', 'GET', '/api/client-devices?profile=beta', 200,
         ('R002-S02', 'R003-B07'), checks={'devices': [], 'profile_id': 'beta'})
 
+
+
+def client_mode_notes():
+    base = {'profile_id': 'alpha', 'ip': '10.44.0.21', 'name': '旧备注🧪', 'mode': 'direct',
+            'previous_name': '', 'previous_mode': '', 'base_url': ''}
+    yield Case('R003/mode-note-create-direct', 'R003', 'PUT', '/api/client-devices', 200,
+        ('R003-S03',), document=base, unchanged=False, effect='profile-write',
+        checks={'devices': [{'ip': base['ip'], 'name': base['name'], 'mode': 'direct'}]})
+    initial = 'R014/mode-note-workspace-before-rename'
+    yield Case(initial, 'R014', 'GET', '/api/routers/r-ros/policy-settings', 200,
+        ('R014-S01',), checks={'workspace/sources/policies/0/name': base['name']})
+    yield Case('R003/mode-note-rename-preserves-native-and-legacy-name', 'R003', 'PUT', '/api/client-devices', 200,
+        ('R003-S08',), document={**base, 'name': '新备注🧪', 'previous_name': base['name'], 'previous_mode': 'direct'},
+        unchanged=False, effect='profile-write', retained_fields=('oxidns', 'routers', 'client_fixed_ips'),
+        checks={'devices': [{'ip': base['ip'], 'name': '新备注🧪', 'mode': 'direct'}]},
+        stored={'device_notes/10.44.0.21': '新备注🧪', 'oxidns/device_policies/0/name': base['name']})
+    body = {'revision': Ref(initial, '/body/workspace/revision'),
+            'router': {'ip_rule_sets': [], 'ros_policy_rule_sets': [], 'proxy_gateway_agent_id': ''}, 'base_url': ''}
+    yield Case('R015/mode-note-old-names-revision-refused', 'R015', 'PUT', '/api/routers/r-ros/policy-settings', 409,
+        ('R015-F15',), document={**body, 'names_revision': Ref(initial, '/body/workspace/names_revision'),
+            'policies': [{'ip': base['ip'], 'name': 'must not restore old name', 'mode': 'direct'}]},
+        requires=('R014',), message='配置已在其他页面更新，请重新载入后再保存。')
+    yield Case('R015/mode-note-modern-editor-keeps-renamed-note', 'R015', 'PUT', '/api/routers/r-ros/policy-settings', 200,
+        ('R015-S01',), document=body, requires=('R014',), unchanged=False, effect='profile-write',
+        retained_fields=('oxidns', 'device_notes', 'client_fixed_ips'),
+        checks={'workspace/sources/policies/0/name': '新备注🧪'})
+    yield Case('R003/mode-note-empty-note-hides-legacy-name', 'R003', 'PUT', '/api/client-devices', 200,
+        ('R003-S06',), document={**base, 'name': '', 'previous_name': '新备注🧪', 'previous_mode': 'direct'},
+        unchanged=False, effect='profile-write', retained_fields=('oxidns', 'routers', 'client_fixed_ips'),
+        checks={'devices': [{'ip': base['ip'], 'name': '', 'mode': 'direct'}]},
+        stored={'device_notes/10.44.0.21': '', 'oxidns/device_policies/0/name': base['name']})
+    yield Case('R003/mode-note-clear-policy-removes-hidden-name', 'R003', 'PUT', '/api/client-devices', 200,
+        ('R003-S07',), document={**base, 'name': '', 'mode': '', 'previous_mode': 'direct'},
+        unchanged=False, effect='profile-write', checks={'devices': []},
+        stored_absent=('device_notes/10.44.0.21',), stored={'oxidns/device_policies': []})
 
 def workspace_drafts():
     yield Case('R014-S01/initial', 'R014', 'GET', '/api/routers/r-ros/policy-settings', 200,

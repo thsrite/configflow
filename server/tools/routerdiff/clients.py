@@ -92,6 +92,34 @@ def fixed_ip():
                                  'ikuai/dhcp_static': 1 if index == 2 else 2})
 
 
+
+def notes_keep_reservation():
+    preview = 'R006/note-retention-add-preview'
+    yield Case(preview, 'R006', 'POST', '/api/client-devices/fixed-ip/preview', 200,
+        ('R006-S01',), document=request('add', '10.44.0.21', '02:00:00:00:00:21', 'r-ros', '动态设备🧪'),
+        prepare=(device_world(),), unchanged=False, effect='device-read', foreign=FOREIGN)
+    yield Case('R005/note-retention-add-confirmed', 'R005', 'POST', '/api/client-devices/fixed-ip/apply', 200,
+        ('R005-S01',), document={'profile_id': 'alpha', 'token': Ref(preview, '/body/token')},
+        requires=('R006',), unchanged=False, effect='profile-write-device', foreign=FOREIGN,
+        fake_checks={'ros/~1ip~1dhcp-server~1lease/0/dynamic': 'false'},
+        stored={'client_fixed_ips/10.44.0.21/id': '*B0'})
+    base = {'profile_id': 'alpha', 'ip': '10.44.0.21', 'name': '改名而不改租约🧪', 'mode': '',
+            'previous_name': '动态设备🧪', 'previous_mode': '', 'base_url': ''}
+    quiet = ({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0})
+    yield Case('R003/note-rename-preserves-real-binding', 'R003', 'PUT', '/api/client-devices', 200,
+        ('R003-S08',), document=base, unchanged=False, effect='profile-write', foreign=FOREIGN,
+        retained_fields=('oxidns', 'routers', 'client_fixed_ips'), expected_requests=quiet,
+        checks={'devices/0/name': '改名而不改租约🧪', 'devices/0/fixed_ip/id': '*B0'})
+    yield Case('R003/note-remove-forgets-binding-keeps-reservation', 'R003', 'PUT', '/api/client-devices', 200,
+        ('R003-S07',), document={**base, 'name': '', 'previous_name': base['name']},
+        unchanged=False, effect='profile-write', foreign=FOREIGN,
+        retained_fields=('oxidns', 'routers'), expected_requests=quiet,
+        stored_absent=('device_notes/10.44.0.21', 'client_fixed_ips/10.44.0.21'),
+        checks={'devices/0/ip': '10.44.0.22'},
+        fake_checks={'ros/~1ip~1dhcp-server~1lease/0/dynamic': 'false',
+                     'ros/~1ip~1dhcp-server~1lease/0/address': '10.44.0.21'},
+        fake_lengths={'ros/~1ip~1dhcp-server~1lease': 2})
+
 def discovery():
     yield Case('R004/dual-vendor-first', 'R004', 'GET', '/api/client-devices/discovery?refresh=1', 200,
                ('R004-S01', 'R004-S02', 'R004-S03', 'R004-S08', 'R004-B04'),

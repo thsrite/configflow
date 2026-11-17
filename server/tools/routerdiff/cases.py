@@ -59,6 +59,7 @@ class Case:
     fake_lengths: dict = field(default_factory=dict)
     python_bug: str = ''
     stored_absent: tuple = ()
+    retained_fields: tuple = ()
     request_order: tuple = ()
     wait_until: dict = field(default_factory=dict)
     wait_seconds: float = 30

@@ -29,6 +29,24 @@ class SeedTests(unittest.TestCase):
             self.assertIn('ProfileValidationError', result.stderr)
             self.assertIn('绑定的配置不存在', result.stderr)
 
+    def test_invalid_notes_are_refused_by_real_public_import_before_http(self):
+        invalid = [None, [], 'notes', 1, False,
+                   {'10.44.0.21': 'first', '10.44.0.21/32': 'same canonical address'},
+                   {'::ffff:10.44.0.21': 'first', '10.44.0.21': 'same canonical address'},
+                   {'10.47.' + str(number // 256) + '.' + str(number % 256): 'note'
+                    for number in range(2049)}]
+        for number, notes in enumerate(invalid):
+            with self.subTest(variant=number), tempfile.TemporaryDirectory(prefix='routerdiff-notes-import-') as directory:
+                root = Path(directory)
+                options = root / 'options.json'
+                options.write_text(json.dumps({'alpha': {'device_notes': notes}}))
+                result = subprocess.run([sys.executable, str(Path(__file__).with_name('seed.py')), str(root / 'data'),
+                    '--options', str(options)], cwd=ROOT, env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'},
+                    capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('ProfileValidationError', result.stderr)
+                self.assertIn('设备备注地址重复' if number in (5, 6) else '设备备注必须为对象', result.stderr)
+
     def test_public_python_import_and_independent_snapshot(self):
         with tempfile.TemporaryDirectory(prefix='routerdiff-seed-test-') as directory:
             data = Path(directory) / 'data'

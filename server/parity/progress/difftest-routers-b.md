@@ -900,3 +900,27 @@ Matrix2301/routes26/implemented0/go-unimplemented1673/referenced360/
 audited287/remaining2014/complete=false. This subset lacks R001-F91's linked
 world; all existing+new declarations total288, so the full remaining count is2013
 if those already-proven worlds are composed. No new Python bug in this subset.
+
+Notes persistence and resource retention controls:
+- Added retained_fields assertions for source-proven no-change profile fields;
+  deliberate DNS-rewrite negative runner test proves the assertion can fail.
+  Canonical notes cases now retain full oxidns/router/fixed-IP settings, rather
+  than inferring retention from device silence.
+-4 notes-capacity requests prove2049 refusal/no partial write, existing2048 edit,
+  removal and freed-slot acceptance.7 mode-note requests prove original native/
+  legacy names unchanged, stale names_revision409 vs modern editor old-revision
+  success, empty-note override and final hidden-name cleanup.4 real preview/
+  apply/rename/remove requests prove local binding removal keeps actual DHCP
+  reservation and makes no device requests.
+- Added8 real import rejection probes for invalid notes types/canonical duplicate
+  aliases/2049 cap. Their test has not yet been run; H0069/H0070 remain unclosed,
+  distinguishing load barrier from reachable normal write overflow.
+
+.64 exact controls:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world client-canonical-names --world notes-capacity --output /tmp/routerdiff-notes-retention.json'`
+=> Ran18 tests0.733s/OK; canonical12(.45s), capacity16 cumulative(1.01s), Go missing16.
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world client-mode-notes --world notes-keep-reservation --output /tmp/routerdiff-notes-policy-reservation.json'`
+=> Ran18 tests0.690s/OK; mode-note7(.44s), reservation11 cumulative(1.12s), Go missing11.
+Both reports remain complete=false, no new Python bugs; they do not replace the
+last full composition report. No test process pending. Import rejection probes,
+remaining2013 audits, full composition, final gate/rebase remain pending.

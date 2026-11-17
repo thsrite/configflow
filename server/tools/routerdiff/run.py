@@ -282,6 +282,11 @@ def execute(pair, case, available, routes):
                 profile_write(before, after, case.profile)
                 if case.effect != 'profile-write-device':
                     configuration_only(before, after)
+            for path in case.retained_fields:
+                original = cases.at(fields(before, 'profile', case.profile), path)
+                current = cases.at(fields(after, 'profile', case.profile), path)
+                if differences(original, current):
+                    raise RuntimeError(case.ident + ': unrelated profile field changed at ' + path)
             for path, expected in case.stored.items():
                 actual = cases.at(fields(after, 'profile', case.profile), path)
                 if differences(actual, cases.resolve(expected, side.observations)):
@@ -549,6 +554,9 @@ def main():
                       guards.route_edit_shape, guards.workspace_shape, guards.rule_sync_shape, guards.rejected_draft_readback)),
               ('client-drafts', options, (workflows.client_drafts,)),
               ('client-canonical-names', options, (workflows.client_canonical_names,)),
+              ('notes-capacity', fixtures.notes_capacity_options(), (fixtures.notes_capacity,)),
+              ('client-mode-notes', options, (workflows.client_mode_notes,)),
+              ('notes-keep-reservation', clients.options(), (clients.notes_keep_reservation,)),
               ('legacy-credentials', fixtures.legacy_credentials_options(), (fixtures.legacy_credentials,)),
               ('router-guard-normalization', options, (guards.normalized_router_guards,)),
               ('workspace-drafts', options, (workflows.workspace_drafts, workflows.router_updates)),

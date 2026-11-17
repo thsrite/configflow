@@ -69,6 +69,29 @@ def legacy_credentials():
             expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
 
 
+
+def notes_capacity_options():
+    return {'alpha': {'device_notes': {'10.47.' + str(number // 256) + '.' + str(number % 256): '备注🧪'
+                                      for number in range(2048)}}}
+
+
+def notes_capacity():
+    base = {'profile_id': 'alpha', 'ip': '10.48.0.21', 'name': '新备注🧪', 'mode': '',
+            'previous_name': '', 'previous_mode': '', 'base_url': ''}
+    yield Case('R003/notes-2049-refused-atomically', 'R003', 'PUT', '/api/client-devices', 400,
+        ('H0069',), document=base, message='设备备注必须为对象，最多 2048 条。')
+    yield Case('R003/notes-2048-replace-existing', 'R003', 'PUT', '/api/client-devices', 200,
+        ('R003-S08',), document={**base, 'ip': '10.47.0.0', 'previous_name': '备注🧪'},
+        unchanged=False, effect='profile-write', retained_fields=('oxidns', 'routers', 'client_fixed_ips'),
+        stored={'device_notes/10.47.0.0': '新备注🧪'})
+    yield Case('R003/notes-2048-remove-one', 'R003', 'PUT', '/api/client-devices', 200,
+        ('R003-S07',), document={**base, 'ip': '10.47.0.0', 'name': '', 'previous_name': '新备注🧪'},
+        unchanged=False, effect='profile-write', retained_fields=('oxidns', 'routers', 'client_fixed_ips'),
+        stored_absent=('device_notes/10.47.0.0',))
+    yield Case('R003/notes-2048-freed-slot-accepted', 'R003', 'PUT', '/api/client-devices', 200,
+        ('R003-S01',), document=base, unchanged=False, effect='profile-write',
+        retained_fields=('oxidns', 'routers', 'client_fixed_ips'), stored={'device_notes/10.48.0.21': '新备注🧪'})
+
 def stored_options():
     items = [router(), router('r-ik', 'ikuai')]
     for index, (field, *_) in enumerate(MANIFESTS):

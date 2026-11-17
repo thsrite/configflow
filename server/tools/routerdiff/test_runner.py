@@ -48,6 +48,20 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_retained_profile_fields_reject_note_only_dns_rewrite(self):
+        routes, _ = load()
+        before = ObservationSide().before
+        before['database']['fields']['rows'] = [
+            ['profile', 'alpha', 'oxidns', 0, json.dumps({'native_config': 'synthetic original'}), 1]]
+        case = Case('note-only', 'R003', 'PUT', '/api/client-devices', 200,
+                    unchanged=False, retained_fields=('oxidns',))
+        self.assertEqual(execute(pair(ObservationSide(200, before, before)), case, set(), routes)['status'],
+                         'go-unimplemented')
+        changed = copy.deepcopy(before)
+        changed['database']['fields']['rows'][0][4] = json.dumps({'native_config': 'unexpected rewrite'})
+        with self.assertRaisesRegex(RuntimeError, 'unrelated profile field changed at oxidns'):
+            execute(pair(ObservationSide(200, before, changed)), case, set(), routes)
+
     def test_notification_prerequisites_cannot_pass_missing_or_stale_evidence(self):
         routes, _ = load()
         before = ObservationSide().before
