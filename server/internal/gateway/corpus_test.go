@@ -456,6 +456,26 @@ func TestPythonCorpus(t *testing.T) {
 					fail(i, row, "generated configuration differs\nGo:\n%s\nPython:\n%s", text, want)
 				}
 			}
+		case "downloads":
+			a := args[struct {
+				Config json.RawMessage `json:"config"`
+				Auth   bool            `json:"auth"`
+			}](t, row)
+			restore := gateway.SetAuthEnabled(a.Auth)
+			downloads, err := convert.GetMihomoRulesetDownloads(ctx, jsonxObject(t, a.Config), "")
+			restore()
+			if m := errorMismatch(err, row.Err); m != "" {
+				fail(i, row, "%s", m)
+			} else if err == nil {
+				got := make([]any, len(downloads))
+				for j, d := range downloads {
+					got[j] = d.Object()
+				}
+				encoded, _ := jsonx.Compact(got)
+				if !sameJSON(t, encoded, row.Out) {
+					fail(i, row, "Go %s\nPython %s", encoded, row.Out)
+				}
+			}
 		default:
 			t.Fatalf("unknown corpus function %q", row.FN)
 		}

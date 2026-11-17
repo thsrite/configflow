@@ -34,7 +34,7 @@ import yaml
 from backend.common import auth as auth_module
 from backend.common import linux_gateway as lg
 from backend.common.router_split import RouterSplitError
-from backend.converters.mihomo import generate_mihomo_config
+from backend.converters.mihomo import generate_mihomo_config, get_mihomo_ruleset_downloads
 
 COUNT = int(sys.argv[1]) if len(sys.argv) > 1 else 600
 R = random.Random(20261117)
@@ -595,6 +595,8 @@ def gen_generate(count):
         set_auth(auth)
         record('generate', {'config': config, 'auth': auth},
                lambda: generate_mihomo_config(deepcopy(config), preflight_providers=False))
+        record('downloads', {'config': config, 'auth': auth},
+               lambda: get_mihomo_ruleset_downloads(deepcopy(config)))
     set_auth(False)
 
 
