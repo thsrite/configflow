@@ -311,7 +311,7 @@ const (
 	ModeManual             // loops never run by themselves; tests and proddiff call RunRound
 )
 
-func NewRuntime(opts Options) *Runtime // Options{Clock, Mode, Grace, Registry}
+func NewRuntime(opts Options) *Runtime // Options{Clock, Mode, Grace, Registry, Drain}
 func (r *Runtime) RunStartup(ctx context.Context)
 func (r *Runtime) Start(ctx context.Context)
 func (r *Runtime) RunRound(ctx context.Context, name string) error // exactly one round, synchronously
@@ -319,6 +319,24 @@ func (r *Runtime) WaitIdle(ctx context.Context) error            // all spawned 
 func (r *Runtime) Shutdown(ctx context.Context)                   // section 3.4
 func (r *Runtime) Names() []string
 ```
+
+**Clarified in O3-2 (coordinator, 2026-11-17):**
+- Timer exposes `C() <-chan time.Time` and `Stop() bool`; Signal has coalescing `Notify`. Registry owns
+  ordered specifications with registration methods and a `NewRegistry` constructor. Independent Runtime
+  methods include Spawn, Stopping and RequestSeen; it implements lockx.Spawner, with an adapter for the
+  default global Spawn as well. Runtime natively supports repeated Start → Shutdown → Start.
+- `Options.Drain func(context.Context) error` is the O3-3 HTTP shutdown adapter. During drain, Runtime
+  waits concurrently for Drain and jobs/rounds; only when both are idle can it finish early. Until then,
+  handlers may still Spawn, at most through grace−2s. With no Drain, idle standalone runtimes (including
+  repeated-Start/Stop difftests) return immediately instead of imposing a fixed six-second pause.
+- Hooks execute in controlled goroutines; overall grace bounds how long Shutdown waits. Go cannot kill
+  a callback that ignores its context: all normal hooks and Drain must honour ctx.
+- Migrate only the one-shot subscription-cache-prune to RegisterStartup in O3-2; keep the five periodic
+  consumers on legacy Loop until O3-4. No test-mode legacy-name whitelist is introduced.
+- Proddiff builds use tagged main helpers for the route manifest and tagged lifecycle mode for manual
+  scheduling, Names and readiness after Startup. Normal helpers are no-ops, with no production env or
+  flag capable of disabling loops. Delete source overlays/build.py when no longer needed and update
+  the proddiff README. Difftest builds append events under their own build tag only.
 
 - `Loop`/`OnShutdown` stay as adapters until step O3-5 removes them.
 - **Busy keys stay with their owner** (different messages and sharing rules): a `lockx.Keyed[string]` at
