@@ -106,6 +106,17 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 				t.Errorf("case %s (%s %.300s): "+format, append([]any{id, record.GetString("kind"), jsonx.Repr(input)}, args...)...)
 			}
 		}
+		if request := input.GetObject("request"); request != nil && err != nil {
+			if l1CompactColonRefusal(request, err) {
+				counts["deliberate (L1 D1 compact colon refusal)"]++
+				continue
+			}
+			prior := record.GetObject("error")
+			if prior != nil && l1CompactPathWording(request, []any{prior.GetString("class"), prior.GetString("message")}, err) {
+				counts["deliberate (L1 D1 compact path wording)"]++
+				continue
+			}
+		}
 		if request, _ := input.Value("request").(*jsonx.Object); err != nil && request != nil && deliberateAgentNameFix(request, err, "agent_name", "existing_agent_name") {
 			// Decision 6: one trailing "\n" in an Agent name is refused in Go.
 			if !(record.GetBool("ok") == false && record.GetObject("error").GetString("message") == invalidAgentNameMessage) {

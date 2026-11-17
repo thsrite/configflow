@@ -156,3 +156,9 @@ All three tests pass; `ok configflow/internal/api/agents 0.151s`.
 D3 full package check (331.726s, .64) reports only the older A09 compact corpus's
 13 undeclared D1 cases; API agents passed 28.736s. No D3 failures. The additional
 A09 corpus must receive the same narrow D1 declaration before final acceptance.
+
+D1 additional A09 recording: docker_ha.jsonl.gz has 1 compact-colon and 12 exact
+old path-message cases. Explicitly classified using the same narrow helpers;
+all other cases remain strict. On .64:
+`RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/installer/docker_ha_corpus_test.go -- bash -c 'set -eu; cd server; gofmt -w internal/installer/docker_ha_corpus_test.go; go test -count=1 -v -run TestDockerHACorpusMatchesPython ./internal/installer'`
+→ 3279 cases, 0 differ; `ok configflow/internal/installer 0.511s`.
