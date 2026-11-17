@@ -17,7 +17,7 @@ forged-log-entry 泄露，测试退出 1（0.588s）。
 现在两个位置只记更新事件，不记录设置内容；继续保存、返回原值，没有改校验和 API。
 回归同时断言事件仍存在、完整存储值不变和日志无凭据/伪造行。遍历其他 C06 写 handler，
 proxy/token/backup/mode 已分别只记录固定事件、字段名、开关或已验证枚举，不存在另一个
-拼接任意设置值的 INFO 位点。此安全差异已登记 behaviour-changes；修复提交 `4754d18da`。
+拼接任意设置值的 INFO 位点。此安全差异已登记 behaviour-changes；修复提交 `86edb0737`。
 
 ## 审计结论
 
@@ -37,7 +37,7 @@ proxy/token/backup/mode 已分别只记录固定事件、字段名、开关或�
 - 新增 `TestReviewC06SettingsMemberTypes`，34 个独立 Flask 请求：null/bool/数字/数组/对象
   成员、整数与 1.0/1e0、保留份数边界、重复键最后成员替换、大小写不同键、
   aggregation 对象覆盖/null/字符串。响应和完整 meta/sections/fields 及文件状态全部相等。
-  复用原有状态比较器，没有增加 normalization。提交：`546ee6f48`。
+  复用原有状态比较器，没有增加 normalization。提交：`d9ecc1d36`。
 - `saveSettings`、`testBackupConnection`、`runManualBackup` 在 owner Detach 后检查取消；
   保存前直接检查，手动备份在 Capture 后、Run 前再次检查。handler 没有 WithoutCancel。
   原始 Scope/baseline 继续交给 repo，不另造提交/锁/回执 helper。
@@ -94,8 +94,8 @@ C35 安全修正继续以设计/behaviour-changes 为准。
 本地 go 前进到 N7-3d `a08c4cc27` 后，停止原基线刚进入 race/proddiff 阶段的 gate
 （退出 241，不记通过），完成 `git rebase go`。唯一冲突是 behaviour-changes 两个
 append-only 小节，保留 N7-3d 和 C06 全部记录，没有产品代码冲突。
-当前门禁基线 `a08c4cc27 + C06/C11`，末笔测试提交 `7ae4ae1ef`。
-测试/修正变基后提交：`546ee6f48`、`a3d95be15`、`7ae4ae1ef`。
+当前门禁基线 `a08c4cc27 + C06/C11`，末笔测试提交 `9116717ae`。
+测试/修正变基后提交：`d9ecc1d36`、`95f0bb80d`、`9116717ae`。
 
 在 `.32` 前台通过 rt + Python 子进程守卫执行：
 `GATE_LOGS=$HOME/.cache/rt-tmp/review-c06-c11-rebased server/scripts/gate.sh -p 6 FuzzBindNativeJSON:./internal/httpx FuzzSubscriptionYAMLReaders:./internal/subs`。
@@ -114,5 +114,14 @@ RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go test -race -count=
 vet/gofmt 无输出。修复前最小复现命令：
 `RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && go test -count=1 -run "^TestReviewSettingsLogsDoNotEchoValues$" ./internal/api/settings'`，退出 1，两条路由各有四项泄露断言失败。
 
-最终 gate 在 `4754d18da` 上执行，目录 `.32:~/.cache/rt-tmp/review-c06-c11-fixed`，
+最终 gate 在 `86edb0737` 上执行，目录 `.32:~/.cache/rt-tmp/review-c06-c11-fixed`，
 仍使用上面的 `gate.sh -p 6`、两个 fuzz 目标及相同前台 900 秒队列守卫。最终结果待补。
+
+
+完整 gate 运行中，local go 又合入 configdiff 工具/文档到 `1439e503d`，本分支再次变基。
+唯一冲突仍为 behaviour-changes 追加段落，保留双方全文。静态核验新增路径仅
+server/parity 与 server/tools/configdiff，没有任何 Go 或 backend 变更。
+`git diff --exit-code 4754d18da HEAD -- backend server/internal server/cmd server/go.mod server/go.sum server/scripts server/tools/proddiff`
+退出 0：最终分支与正在测试的旧 `4754d18da` 的产品、测试和 gate/proddiff 源码完全相同，
+所以不中断 gate，也不重复同一套测试。等价日志修复提交现为 `86edb0737`。
+最终基线 `go@1439e503d`；本轮差分分诊也明确没有新增归 C06/C11 的工单。
