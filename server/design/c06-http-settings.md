@@ -39,6 +39,23 @@ Coordinator decisions:
   C33 proxy-group CRUD remain their owners' work. Contract tests close C06/C11
   only; they do not claim those external routes have been implemented or tested.
 
+## Implemented after O3-6a merge
+
+On go@f90a156e, settings saves use `saveSettings`; backup connection checks use
+`testBackupConnection`; manual capture/upload uses `runManualBackup`. These owner
+entries Detach and check shutdown immediately before invoking shared operations.
+Handlers retain the original ctx; listener internals and dependency owners stay
+with C07/C13. The settings save owner keeps the existing request Scope/baseline.
+
+`TestSettingsRuntimeWriteLifetime` covers all eight C06 write actions with real
+Runtime.Start/BindRequest/Shutdown, warm cache state, full store fingerprints and
+all file bytes. A canceled client on a live Runtime still completes settings,
+remote directories, full upload and success receipt. Shared final windows remain
+**已知、已分派** to O3-6c/6e5c7760: cancellation inside WebDAV.Run can still reach
+its old context-free taskstatus.Record until that owner migrates it. C06's tests
+cover its own invocation/commit boundaries and do not claim that shared window
+has already been closed.
+
 ## Acceptance
 
 `api/settings.TestSettingsHEADIsReadOnly` compares GET/HEAD headers, all files and

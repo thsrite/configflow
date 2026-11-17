@@ -24,7 +24,7 @@ func testBackup(c *httpx.Ctx) (*httpx.Response, error) {
 	if bad != nil || err != nil {
 		return bad, err
 	}
-	connected, err := webdav.Default().Test(c.Context(), settings)
+	connected, err := testBackupConnection(c.Context(), settings)
 	if err != nil {
 		var directory *webdav.DirectoryError
 		if errors.Is(err, webdav.ErrIncompleteSettings) || errors.Is(err, webdav.ErrUnsafePath) || errors.As(err, &directory) {
@@ -44,20 +44,15 @@ func backupNow(c *httpx.Ctx) (*httpx.Response, error) {
 	if bad != nil || err != nil {
 		return bad, err
 	}
-	ctx := c.Context()
-	snapshot, err := webdav.Capture(ctx)
+	result, err := runManualBackup(c.Context(), settings)
 	if err == nil {
-		snapshot.Settings = settings
-		var result webdav.Result
-		result, err = webdav.Run(ctx, snapshot, false)
-		if err == nil {
-			cleaned := ""
-			if result.Removed > 0 {
-				cleaned = fmt.Sprintf(msgBackupCleaned, result.Removed)
-			}
-			return httpx.Message(200, true, fmt.Sprintf(msgBackupUploaded, result.Filename, cleaned)), nil
+		cleaned := ""
+		if result.Removed > 0 {
+			cleaned = fmt.Sprintf(msgBackupCleaned, result.Removed)
 		}
+		return httpx.Message(200, true, fmt.Sprintf(msgBackupUploaded, result.Filename, cleaned)), nil
 	}
+
 	var directory *webdav.DirectoryError
 	if errors.Is(err, webdav.ErrIncompleteSettings) || errors.Is(err, webdav.ErrUnsafePath) || errors.As(err, &directory) {
 		return failure(400, err.Error()), nil

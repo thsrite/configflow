@@ -59,9 +59,9 @@ func failure(status int, message string) *httpx.Response {
 func handleWebPort(c *httpx.Ctx) (*httpx.Response, error) {
 	manager := webListener.Load()
 	result, err := func() (*httpx.Response, error) {
-        // HEAD shares GET semantics and never enters the write branch.
-        if c.Method() == "GET" || c.Method() == "HEAD" {
-            status, err := manager.Status(c.Context())
+		// HEAD shares GET semantics and never enters the write branch.
+		if c.Method() == "GET" || c.Method() == "HEAD" {
+			status, err := manager.Status(c.Context())
 			if err != nil {
 				return nil, err
 			}
@@ -147,7 +147,7 @@ func handleRuleFetchProxy(c *httpx.Ctx) (*httpx.Response, error) {
 		return failure(400, "规则下载代理须为有效的 HTTP/HTTPS 代理地址，或留空使用现有网络"), nil
 	}
 	ensureSystemSettings(config).Set("rule_fetch_proxy", proxy)
-	if err := repo.SaveSystemConfig(c.Context(), config, nil); err != nil {
+	if err := saveSettings(c.Context(), config); err != nil {
 		appLogger.Error("Failed to update rule download proxy: exception_type=" + pyExceptionName(err))
 		return failure(500, "保存规则下载代理失败"), nil
 	}
@@ -204,7 +204,7 @@ func handleServerDomain(c *httpx.Ctx) (*httpx.Response, error) {
 			}
 			ensureSystemSettings(config).Set("server_domain", newDomain)
 			appLogger.Info("Updated server domain to " + newDomain)
-			if err := repo.SaveSystemConfig(c.Context(), config, nil); err != nil {
+			if err := saveSettings(c.Context(), config); err != nil {
 				return nil, err
 			}
 			return httpx.JSON(jsonx.Obj("success", true, "server_domain", newDomain)), nil
@@ -258,7 +258,7 @@ func handleConfigToken(c *httpx.Ctx) (*httpx.Response, error) {
 			}
 			ensureSystemSettings(config).Set("config_token", newToken)
 			appLogger.Info("Updated config token")
-			if err := repo.SaveSystemConfig(c.Context(), config, nil); err != nil {
+			if err := saveSettings(c.Context(), config); err != nil {
 				return nil, err
 			}
 			return httpx.JSON(jsonx.Obj("success", true, "config_token", newToken)), nil
@@ -274,7 +274,7 @@ func handleConfigToken(c *httpx.Ctx) (*httpx.Response, error) {
 		return response, nil
 	case "DELETE":
 		ensureSystemSettings(config).Set("config_token", "")
-		if err := repo.SaveSystemConfig(c.Context(), config, nil); err != nil {
+		if err := saveSettings(c.Context(), config); err != nil {
 			appLogger.Error("Failed to delete config token: " + err.Error())
 			return failure(500, err.Error()), nil
 		}
@@ -405,7 +405,7 @@ func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
 		if err := (webdav.Settings{URL: backup.GetString("webdav_url"), Path: backup.GetString("webdav_path")}).ValidatePaths(); err != nil {
 			return failure(400, err.Error()), nil
 		}
-		if err := repo.SaveSystemConfig(ctx, config, nil); err != nil {
+		if err := saveSettings(ctx, config); err != nil {
 			return nil, err
 		}
 		summary := strings.Join(changed, "、")
@@ -439,7 +439,7 @@ func handleSubscriptionAggregation(c *httpx.Ctx) (*httpx.Response, error) {
 			enabled := data.GetOr("enabled", false)
 			ensureSystemSettings(config).Set("subscription_aggregation_enabled", enabled)
 			appLogger.Info("Updated subscription aggregation enabled to " + jsonx.Str(enabled))
-			if err := repo.SaveSystemConfig(c.Context(), config, nil); err != nil {
+			if err := saveSettings(c.Context(), config); err != nil {
 				return nil, err
 			}
 			return httpx.JSON(jsonx.Obj("success", true, "enabled", enabled)), nil

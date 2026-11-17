@@ -536,7 +536,7 @@ Review coverage includes template short-circuit/first-error order, big integers/
 
 ## C06 — HTTP shell, auth, settings routes
 
-**Status: `partial`** · prereqs: C05 · Go: internal/httpx, httpxtest, auth, server, lifecycle, cmd/configflow, api/auth, api/settings, redact
+**Status: `ported`** (completion on `go-port-c06-c11`; final gate / independent review pending) · prereqs: C05 · Go: internal/httpx, httpxtest, auth, server, lifecycle, cmd/configflow, api/auth, api/settings, redact
 
 Files:
 - `backend/app.py` (206)
@@ -554,7 +554,7 @@ Routes (22, 22 done):
 
 Evidence: all 22 declared routes exist, including delegated C13 dependency routes and C35 backup I/O. Completion branch adds six-path read-only HEAD dispatch, native Bind/BindSilent request DTOs, per-path complete-file/DB/revision invariance, 132 real Flask response + complete SQLite table/file comparisons (including 27 explicit non-finite rejection vectors), real SQLite save-failure log redaction, direct Python secret/text/finder/error-metadata contracts, and an authentication matrix over all 144 current registrations / 406 method-path rows (anonymous, invalid JWT, valid JWT). Existing HTTP differential and changed consumer tests pass on .64; the eight targeted Python source files pass 296 cases. Exact per-function mappings replace the stale blanket 26/9/2 deferrals in [progress/c06.md](progress/c06.md).
 
-Missing / deferred: C06 remains partial only while its own lifecycle owners await the coordinator's O3-6a merge notification. Do not change overlapping owner structure or backup WithoutCancel before that merge; then add post-Detach/pre-commit checks and real Runtime shutdown/disconnect regressions. Shared final commit windows are known and assigned to O3-6c / 6e5c7760. C07 is excluded. MCP (finish), C34 config/export leaf HTTP and C33 proxy-group HTTP retain explicit external owner cases; shared contracts do not claim those entry points exist.
+Missing / deferred: C06 owner work is complete on O3-6a go@f90a156e: three owner entries detach and check shutdown before settings commits / WebDAV operations; handlers have no Detach or WithoutCancel. Real Runtime HTTP regressions cover eight operations, stopped-runtime state invariance and disconnected-request completion. Shared final commit windows are **已知、已分派**, O3-6c / 6e5c7760 (including WebDAV.Run's context-free receipt after in-flight cancellation). C07 is excluded. MCP (finish), C34 config/export leaf HTTP and C33 proxy-group HTTP retain explicit external owner cases; shared contracts do not claim those entry points exist.
 
 Clarified in: [design/c06-http-settings.md](../design/c06-http-settings.md). HEAD on all six GET/write settings paths is GET without a body; strict binding follows N8-6 400/415 while silent readers keep their business responses. `compat.go` rule URL validation already delegates to shared rulefetch. `redact` has direct A24 credential-policy tests and new C06 Python text/finder/encoding comparisons; the old “no tests” note is obsolete. Final integrated gate and separate independent Codex C06/C11 reviews are pending.
 
