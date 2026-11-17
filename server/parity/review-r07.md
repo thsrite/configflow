@@ -260,26 +260,29 @@ no separate "before" run exists for it; `TestR07RedactionHidesOnlyPassword`
 covers it.)
 
 After the fixes, final authoritative run on `.32` (`RT_HOST=sunbroke@192.168.0.32`,
-tree = go 1e0f7ac3 + R07 + review; go 0b367ae5 adds only HANDOFF/AGENT-BRIEF text):
+tree = go 8bf1b189 (incl. R06 fixes, N8-3, A11, O3-4) + R07 + review):
 
 ```
 gofmt -l internal/ tools/                                         GOFMT_PASS (no output)
 go vet ./...                                                      VET_PASS
 go test -race -count=1 ./internal/routers/... ./internal/devhttp/
-  ok  configflow/internal/routers  397.393s
-  ok  configflow/internal/devhttp  3.502s
-go test -count=1 ./...                                            FULL_EXIT 0 (routers 263.514s, installer 221.812s)
+  ok  configflow/internal/routers  364.582s
+  ok  configflow/internal/devhttp  3.443s
+rt -- bash -lc 'cd server && go test -count=1 ./...'              FULL_EXIT 0 (routers 208.104s, installer 150.754s)
 for d in $(go list ./... | grep difftest); do CONFIGFLOW_DIFF=1 go test -count=1 $d; done
-  10 × ok (api/agents 118.563s … webdav 15.970s)                  DIFFTEST_EXIT 0
+  10 × ok (api/agents 122.788s … webdav 15.955s)                  DIFFTEST_EXIT 0
 go test -run '^$' -fuzz '^FuzzR07DecodeAddressRow$' -fuzztime 60s ./internal/routers/   PASS
 CONFIGFLOW_R07_MUTATE=<result|journal|request|table> go test -run 'TestNATListWriteBoundary/new/1/nat_apply$' ./internal/routers/
   MUTATION_DETECTED result / journal / request / table
 server/scripts/proddiff.sh                                        self_check PASS, baseline: new=0 stale=0, exit 0
 ```
 
-No other fuzz targets exist in the changed package. One earlier full run under
-load average ~33 failed six `internal/installer` `dash` subtests with garbled
-UTF-8 output; the identical installer package passes alone on .32 with this
-branch, plain `go` passes the full suite on .32, and the repeated full run of
-this branch passed — a load-dependent installer flake, unrelated to R07
-(reported to the coordinator).
+No other fuzz targets exist in the changed package. Unrelated observation: six
+`internal/installer` `dash` subtests fail when the test process has no UTF-8
+locale (`LANG` unset, e.g. `rt -- bash script.sh` instead of `bash -lc`); with
+`LANG=en_US.UTF-8` they pass. Pre-existing installer test dependency, reported
+to the coordinator.
+
+Not changed here: O3-4 moved PORTING 4b to `lifecycle.Detach`. R07, like R04 and
+R06 in the same driver, still detaches with `context.WithoutCancel`; moving the
+whole RouterOS driver (with R12's shutdown-abort semantics) belongs to O3-6.
