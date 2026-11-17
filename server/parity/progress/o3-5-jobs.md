@@ -132,3 +132,16 @@ distinct ports and include both ports in failure output; retain the old-port rej
 No product listener logic changed. Full listener race3 plus100 repetitions of the move test passed
 on both hosts: .64 1.033s/0.162s, .32 1.028s/0.096s. Repeat the complete full suite. Remaining gates
 can run independently: full on .64, both tags/enabled differentials/proddiff on .32 (both valid hosts).
+
+Acceptance on go@038b52ae + O3-5: .64 full suite exit0/FULL_PASS (cmd104.201s,
+API aggregations0.128s, listener0.008s, provider10.290s, routers147.193s). On .32 both tags pass
+lifecycle/clock/lockx tests and whole-tree test compilation. All12 enabled tagged difftests passed:
+agents115.666s, aggregations41.257s, subscriptions130.962s, devicenotes1.178s, discovery3.983s,
+health15.118s, httpx2.447s, mosdns3.040s, refresh5.199s, subs3.079s, substore10.344s, webdav27.929s.
+Proddiff exit0:23 self-checks PASS,2831 cases/435 comparisons, coverage_regressions0,
+unmapped_routes0,11 existing unique differences,new=0/stale=0. WebDAV worker Startup is visible as
+webdav-worker-init, as intended. No baseline or exemption changed.
+
+During the final gates go integrated N7-3b (d3124353), including the provider preparation chain.
+Rebase next, retaining its new native-reader error handling and the O3-5 Detach changes, then repeat
+composition gates so the latest source is covered rather than reporting old-base results as current.
