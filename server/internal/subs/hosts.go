@@ -250,6 +250,9 @@ func ExtractSubscriptionHosts(text string) *jsonx.Object {
 	if raw.Kind != yaml.MappingNode {
 		return hostsFailure("not_mapping")
 	}
+	if err := ProjectHostsYAMLKeys(raw); err != nil {
+		return hostsFailure("parse_error")
+	}
 	type hostPair struct{ key, value *yamlx.Node }
 	var pairs []hostPair
 	for key, value := range yamlx.AllPairs(raw) {
@@ -261,9 +264,6 @@ func ExtractSubscriptionHosts(text string) *jsonx.Object {
 	index := 0
 	for _, pair := range pairs {
 		key := yamlx.Resolve(pair.key)
-		if key.Kind != yaml.ScalarNode {
-			return hostsFailure("parse_error")
-		}
 		value, err := subscriptionYAMLValue(pair.value)
 		if err != nil {
 			return hostsFailure("parse_error")

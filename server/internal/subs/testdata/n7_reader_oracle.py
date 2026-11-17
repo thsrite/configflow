@@ -55,7 +55,33 @@ def same(left,right):
  if isinstance(left,list) and isinstance(right,list):return len(left)==len(right) and all(same(a,b) for a,b in zip(left,right))
  return left==right
 
+def call_convert(case):
+ # Reuse exactly the original corpus environment (cache/network fakes), not a
+ # second business implementation. The only migration injection is YAML loading.
+ args=copy.deepcopy(case['input']);fn=case['fn'].removeprefix('convert_');payload={}
+ if fn in ('surge','loon'):
+  work=args['profile'];corpus_env.set_caches({}, {})
+  try:payload['out']=(surge.generate_surge_config if fn=='surge' else loon.generate_loon_config)(work,base_url=args['base_url'])
+  except Exception as error:payload['err']=[type(error).__name__,str(error)]
+  payload['mutated']=corpus_env.conv(work)
+ else:
+  functions={
+   'node_surge':lambda:surge.convert_node_to_surge(*args),
+   'node_loon':lambda:loon.convert_node_to_loon(*args),
+   'proxies_surge':lambda:surge.convert_proxies_to_surge_text(*args),
+   'proxies_loon':lambda:loon.convert_proxies_to_loon_text(*args),
+   'group_surge':lambda:surge.convert_proxy_group_to_surge(*args),
+   'group_loon':lambda:loon.convert_proxy_group_to_loon(*args),
+   'group_nodes':lambda:surge.get_proxy_group_nodes(*args),
+   'build_rules':lambda:loon._build_rules(*args),
+   'sanitize':lambda:loon._sanitize_name(*args),
+  }
+  try:payload['out']=corpus_env.conv(functions[fn]())
+  except Exception as error:payload['err']=[type(error).__name__,str(error)]
+ return {'value':freeze(payload)}
+
 def call(case):
+ if case['fn'].startswith('convert_'):return call_convert(case)
  try: return {'value':freeze(FUNCTIONS[case['fn']](copy.deepcopy(case['input'])))}
  except Exception as error: return {'error':type(error).__name__, 'message':str(error)}
 
@@ -78,6 +104,9 @@ def cases():
  data=rows(ROOT/'server/internal/substore/testdata/review_reference.json')
  for fn in ('is_yaml_response','parse_proxies_from_yaml','proxies_to_nodes'):
   for i,row in enumerate(data[fn]):result.append({'id':f'substore/review/{fn}/{i}','fn':fn,'input':row['input']})
+ for i,row in enumerate(rows(ROOT/'server/internal/convert/testdata/surge_loon_corpus.jsonl.gz')):
+  golden={key:row[key] for key in ('out','err','mutated') if key in row}
+  result.append({'id':f'convert/surge_loon/{i}','fn':'convert_'+row['fn'],'input':row['args'],'golden':golden})
  return result
 
 def caller_mode(case):
@@ -96,6 +125,15 @@ def write(path,value):
   with gzip.GzipFile(filename=str(path),mode='wb',mtime=0) as stream:stream.write(payload)
  else:path.write_bytes(payload)
 
+# Original Surge/Loon corpus setup, identical for the old and native runs.
+# gen_mihomo installs the existing isolated test fakes at import; no new non-YAML
+# patch is made by this migration oracle, and production Python stays untouched.
+sys.path.insert(0,str(ROOT/'server/internal/convert/testdata'))
+original_argv=sys.argv;sys.argv=[sys.argv[0]]
+import gen_mihomo as corpus_env
+sys.argv=original_argv
+from backend.converters import surge,loon
+
 if sys.argv[1]=='collect':
  sources={}
  original_load=yaml.load
@@ -109,7 +147,9 @@ if sys.argv[1]=='collect':
  output=[]
  with patch.object(yaml,'load',load),patch.object(yaml,'safe_load',safe):
   for case in cases():
-   current=[];mode=caller_mode(case);case['old']=call(case);case['old_loads']=current[:];output.append(case)
+   current=[];mode=caller_mode(case);case['old']=call(case);case['old_loads']=current[:]
+   if 'golden' in case and not same(case['old'],{'value':case['golden']}):raise AssertionError('original converter oracle drift '+case['id'])
+   output.append(case)
  core=[]
  for name in ('corpus','review'):
   for i,line in enumerate((ROOT/'server/internal/yamlx/testdata'/f'{name}.jsonl').read_text().splitlines()):
@@ -148,7 +188,10 @@ else:
    changed=not same(case['old'],expected)
    if changed and not classes:raise AssertionError('unclassified expected change '+case['id'])
    output[case['id']]={'expected':expected,'old':case['old'],'changed':changed,'classes':classes,'old_loads':case['old_loads'],'native_loads':current[:]}
-   domain=case['id'].split('/')[0];row=stats.setdefault(domain,{'rows':0,'changed':0,'classified':0})
+   domain=case['id'].split('/')[0]
+   if domain=='convert' and not changed:
+    output[case['id']].pop('old');output[case['id']].pop('expected');output[case['id']]['unchanged_original']=True
+   row=stats.setdefault(domain,{'rows':0,'changed':0,'classified':0})
    row['rows']+=1
    if changed:row['changed']+=1;row['classified']+=bool(classes)
  write(sys.argv[4],{'cases':output,'stats':stats,'core_rows':data.get('core_rows',[])})

@@ -48,7 +48,7 @@ func parseStructuredProxyString(proxyString string) *jsonx.Object {
 		}
 	}
 	if strings.HasPrefix(stripped, "{") {
-		if v, err := jsonx.ParseString(stripped); err == nil {
+		if v, err := readSubscriptionJSON(stripped); err == nil {
 			if o, ok := v.(*jsonx.Object); ok && jsonx.Truthy(o.Value("type")) {
 				return o
 			}

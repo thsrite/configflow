@@ -1,6 +1,9 @@
 package subs
 
 import (
+	"configflow/internal/yamlx"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -89,5 +92,32 @@ func TestNativeTabSeparationAndURIValues(t *testing.T) {
 	want.Set("name", "tab\there")
 	if !yamlxtest.EqualJSON(got[0], want) {
 		t.Fatal("Tab in a literal URI label changed other node fields")
+	}
+}
+
+func TestJSONSurrogatePairsRemainJSON(t *testing.T) {
+	escaped := `{"name":"\ud83c\udded\ud83c\uddf0","type":"ss","server":"n.example.com","port":443}`
+	literal := `{"name":"🇭🇰","type":"ss","server":"n.example.com","port":443}`
+	if !json.Valid([]byte(escaped)) {
+		t.Fatal("invalid test JSON")
+	}
+	for _, parse := range []func(string) *jsonx.Object{ParseYAMLObject, parseStructuredProxyString} {
+		got, want := parse(escaped), parse(literal)
+		if got == nil || !yamlxtest.EqualJSON(got, want) || got.GetString("name") != "🇭🇰" {
+			t.Fatal("JSON surrogate pair was refused or changed")
+		}
+	}
+	if got := ParseURIList(escaped); len(got) != 1 || got[0].GetString("name") != "🇭🇰" {
+		t.Fatal("JSON URI-list entry lost")
+	}
+	flow := `{name: "\ud83c\udded\ud83c\uddf0", type: ss}`
+	if json.Valid([]byte(flow)) {
+		t.Fatal("YAML flow unexpectedly JSON")
+	}
+	if got := ParseYAMLObject(flow); got != nil {
+		t.Fatal("non-JSON surrogate YAML accepted")
+	}
+	if _, err := readSubscriptionYAML(flow, false); !errors.Is(err, yamlx.ErrSyntax) || !strings.HasPrefix(err.Error(), "YAML 语法错误") {
+		t.Fatalf("native diagnostic: %v", err)
 	}
 }

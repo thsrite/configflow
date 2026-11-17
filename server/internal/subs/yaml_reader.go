@@ -28,6 +28,17 @@ func readSubscriptionYAML(source string, stringKeysOnly bool) (any, error) {
 	return subscriptionYAMLValue(n)
 }
 
+// readSubscriptionJSON gives valid JSON its native encoding/json semantics,
+// including paired UTF-16 escapes. FromJSON is the shared native decoder. The
+// legacy fallback preserves nonstandard JSON behavior until the N8-9 migration.
+func readSubscriptionJSON(source string) (any, error) {
+	n, err := yamlx.FromJSON([]byte(source))
+	if err != nil {
+		return jsonx.ParseString(source)
+	}
+	return subscriptionYAMLValue(n)
+}
+
 func subscriptionYAMLValue(n *yamlx.Node) (any, error) {
 	data, err := yamlx.ToJSON(n)
 	if err != nil {

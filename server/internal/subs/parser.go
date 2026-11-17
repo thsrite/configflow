@@ -80,7 +80,7 @@ func ParseURIList(content string) []*jsonx.Object {
 // ParseYAMLObject is parse_yaml_object: a JSON or YAML mapping marked with
 // `_raw_object: true`, or nil.
 func ParseYAMLObject(line string) *jsonx.Object {
-	if v, err := jsonx.ParseString(line); err == nil {
+	if v, err := readSubscriptionJSON(line); err == nil {
 		if obj, ok := v.(*jsonx.Object); ok {
 			obj.Set("_raw_object", true)
 			return obj

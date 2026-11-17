@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"configflow/internal/jsonx"
@@ -34,6 +35,12 @@ func fixture(t testing.TB, path string) *jsonx.Object {
 		t.Fatal(err)
 	}
 	return v.(*jsonx.Object)
+}
+
+// ReaderCases reads the separately recorded Python business expectations.
+func ReaderCases(t testing.TB, path string) *jsonx.Object {
+	t.Helper()
+	return fixture(t, path).GetObject("cases")
 }
 
 // CheckReaderFixtures checks every recorded actual loader input against the old
@@ -101,11 +108,17 @@ func CheckReaderFixtures(t testing.TB, valuesPath, expectedPath string, projecto
 	totals, changed, classified := map[string]int{}, map[string]int{}, map[string]int{}
 	for id, item := range expected.GetObject("cases").All() {
 		row := item.(*jsonx.Object)
-		domain := "subs"
-		if len(id) > 9 && id[:9] == "substore/" {
-			domain = "substore"
-		}
+		domain, _, _ := strings.Cut(id, "/")
 		totals[domain]++
+		if row.GetBool("unchanged_original") {
+			if domain != "convert" || row.GetBool("changed") || row.Has("old") || row.Has("expected") {
+				t.Fatalf("invalid original-golden manifest %s", id)
+			}
+			// collect checked the full original Python result against its old
+			// golden. Unchanged convert rows use that golden directly, not a
+			// second order-normalised copy in this large fixture.
+			continue
+		}
 		actualChange := !EqualJSON(row.Value("old"), row.Value("expected"))
 		if actualChange != row.GetBool("changed") {
 			t.Fatalf("false changed flag %s", id)

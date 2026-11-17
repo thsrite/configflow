@@ -175,3 +175,11 @@ caller-specific (parser rejects, dialers discard, substore converts number/bool/
 projector preserves alias sharing and refuses over-budget output without truncation or null fallback.
 API statuses/fields and non-YAML behavior remain unchanged. Exact input counts, expected-change
 classification and final gates: [N7-3a report](progress/n7-3a.md).
+
+N7-3a follow-up (coordinator): standard JSON with paired UTF-16 escapes is decoded first through
+encoding/json (FromJSON), so pasted/stored JSON emoji nodes remain valid. Non-JSON YAML flow with
+surrogate escapes is refused by yaml.v3 with Chinese ErrSyntax; no text repair is added. Read-only
+snapshot scan: 43 stored fields, 55 JSON, 14 YAML and 522 other stored/subscription text files, zero
+high-surrogate escape occurrences in every category (therefore JSON=0, non-JSON YAML flow=0).
+Surge/Loon's 29 changed synthetic corpus outputs use complete real-Python expected configurations,
+not omissions or normalization. The original 34697-row old oracle is checked before native injection.

@@ -12,6 +12,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/substore"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 func loadJSONLines(t *testing.T, path string) []*jsonx.Object {
@@ -97,7 +98,11 @@ func runSurgeLoonRow(t *testing.T, row mihomoRow) string {
 				return "config differs:\n" + firstDiff(want, out)
 			}
 		}
-		if e.Has("mutated") && !sameValue(e.Value("mutated"), profile) {
+		mutatedEqual := sameValue(e.Value("mutated"), profile)
+		if e.GetBool("native_yaml_oracle") {
+			mutatedEqual = yamlxtest.EqualJSON(e.Value("mutated"), profile)
+		}
+		if e.Has("mutated") && !mutatedEqual {
 			return "mutated profile differs:\n  python " + encode(e.Value("mutated")) + "\n  go     " + encode(mihomoConv(profile))
 		}
 		return ""
@@ -175,10 +180,32 @@ func TestSurgeLoonCorpus(t *testing.T) {
 	restore := convert.SetMihomoEnv(corpusEnv(nil, nil))
 	defer restore()
 	rows := loadJSONLines(t, "testdata/surge_loon_corpus.jsonl.gz")
+	native := yamlxtest.ReaderCases(t, "../subs/testdata/n7_reader_expected.json.gz")
 	counts := map[string]int{}
 	generated := map[string]int{}
 	failures := 0
 	for i, entry := range rows {
+		recorded := native.GetObject(fmt.Sprintf("convert/surge_loon/%d", i))
+		if recorded == nil {
+			t.Fatalf("missing native YAML oracle row %d", i)
+		}
+		if recorded.GetBool("changed") {
+			if len(recorded.GetList("classes")) == 0 {
+				t.Fatalf("unclassified YAML oracle row %d", i)
+			}
+			expected := recorded.GetObject("expected").GetObject("value")
+			if expected == nil {
+				t.Fatalf("missing converter payload %d", i)
+			}
+			entry = entry.DeepCopy()
+			entry.Set("native_yaml_oracle", true)
+			for _, field := range []string{"out", "err", "mutated"} {
+				entry.Delete(field)
+				if expected.Has(field) {
+					entry.Set(field, expected.Value(field))
+				}
+			}
+		}
 		row := rowOf(entry)
 		counts[row.fn]++
 		if row.errClass == "" && (row.fn == "surge" || row.fn == "loon") {

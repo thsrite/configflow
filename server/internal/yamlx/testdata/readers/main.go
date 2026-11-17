@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -224,6 +225,9 @@ func hints(n *yamlx.Node, old *pyyaml.Node) map[string]bool {
 	scan(n, false)
 	return classes
 }
+
+var surrogateEscape = regexp.MustCompile(`\\u[dD][89aAbB][[:xdigit:]]{2}`)
+
 func main() {
 	if len(os.Args) != 3 {
 		fmt.Fprintln(os.Stderr, "usage: readers collected.json native-values.json")
@@ -319,6 +323,8 @@ func main() {
 				default:
 					classes["policy-validation"] = true
 				}
+			case errors.Is(newErr, yamlx.ErrSyntax) && oldErr == nil && surrogateEscape.MatchString(source):
+				classes["native-parser-surrogate"] = true
 			case errors.Is(newErr, yamlx.ErrSyntax) && oldErr == nil && (strings.HasPrefix(source, "%YAML 1.2\n") || strings.HasPrefix(source, "\ufeff\ufeff") || strings.Contains(source, `\/`)):
 				classes["native-parser-A"] = true
 			case oldErr != nil:

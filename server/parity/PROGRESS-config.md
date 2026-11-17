@@ -37,10 +37,11 @@ and the one shared ProjectJSONKeys boundary. No legacy Load*/Mapping/Lookup/Time
 these packages; no runtime Clone. The bridge retains alias sharing and checks full/subtree budgets;
 40-level alias and self-reference regressions cover each entry. N8-9 removes the jsonx transition.
 
-Migration gate: 1944 real caller inputs (parser763/dialers610/hosts494/substore51/detection26), plus
+Migration gate: 4845 real caller inputs (parser3664/dialers610/hosts494/substore51/detection26), plus
 1591+735 old core texts; unknown=0. Real Python oracle patches only YAML loaders with separately
 recorded native values and complete pre-projection tag/alias audit. Business code is unchanged;
-expected changes / classified: subs209/209 out of7494, substore14/14 out of146. Per-class input counts,
+expected changes / classified: subs209/209 out of7494, substore14/14 out of146,
+convert29/29 out of34697 (authorized corpus-only extension; product code unchanged). Per-class input counts,
 all eight shared yamlx commits, approved native behavior, exact commands and final gates are recorded
 in [progress/n7-3a.md](progress/n7-3a.md). Non-YAML golden assertions remain strict. Old loaders and
 pyyaml stay until a/b/c/d integration cleanup; no public route added. Independent review pending.
