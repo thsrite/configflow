@@ -973,10 +973,12 @@ type rosOperation struct {
 }
 
 // Apply applies one RouterOS release operation and returns its compensation.
-// Once started it runs to the end even if ctx is cancelled (PORTING rule 4b):
-// a write abandoned between the request and its read-back would leave a
-// change on the router that no undo record covers. Every device request
-// still has its own timeout.
+// Once started it runs to the end even if the request is cancelled (PORTING
+// rule 4b): a write abandoned between the request and its read-back would leave
+// a change on the router that no undo record covers. lifecycle.Detach keeps
+// only the shutdown cancellation at the drain deadline (O3 2.5; R12 D-R12-3
+// then records instead of rolling back). Every device request still has its
+// own timeout.
 func (d *RouterOS) Apply(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 	ctx = lifecycle.Detach(ctx)
 	var head struct {

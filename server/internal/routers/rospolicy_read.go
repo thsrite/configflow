@@ -361,8 +361,11 @@ func ReadPolicyObjects(ctx context.Context, d *RouterOS, raw json.RawMessage) ([
 	roles := map[string]string{}
 	for _, entry := range manifest.Resources {
 		if entry.Path == rosMangle && entry.Config.is("chain", "prerouting") && entry.Config.is("action", "jump") {
-			roles[entry.Config.text("src-address-list")] = "source"
-			roles[entry.Config.text("dst-address-list")] = "destination"
+			for _, field := range [][2]string{{"src-address-list", "source"}, {"dst-address-list", "destination"}} {
+				if name := entry.Config.text(field[0]); name != "" {
+					roles[name] = field[1]
+				}
+			}
 		}
 	}
 	live := map[string][]Row{}

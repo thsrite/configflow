@@ -408,7 +408,8 @@ func (d *RouterOS) forgetAddresses(items []ROSResource, removed map[string]bool)
 }
 
 // DeleteAddresses proves every member against a fresh scoped read before
-// journaling and removing any of them. Cancellation cannot interrupt rollback.
+// journaling and removing any of them. Request cancellation cannot interrupt
+// it; only the shutdown drain deadline can (lifecycle.Detach).
 func (d *RouterOS) DeleteAddresses(ctx context.Context, items []ROSResource, journal *[]NATStep) error {
 	ctx = lifecycle.Detach(ctx)
 	d.InvalidateAddressReads()
@@ -465,10 +466,26 @@ func (d *RouterOS) restoreDeleteAddresses(ctx context.Context, steps []NATStep) 
 	if err != nil {
 		return err
 	}
+	// A fresh member missing from its own list may have been moved into another
+	// one: that is an external edit to keep and report, never "already deleted".
+	missing := []string{}
+	for _, s := range steps {
+		if live[s.ID] == nil {
+			missing = append(missing, s.ID)
+		}
+	}
+	located, err := d.LocateAddresses(ctx, missing)
+	if err != nil {
+		return err
+	}
+	moved := rowIDs(located)
 	removing, changed := []string{}, ""
 	for _, s := range steps {
 		row := live[s.ID]
 		if row == nil {
+			if moved[s.ID] && changed == "" {
+				changed = s.ID
+			}
 			continue
 		}
 		if !sameRow(configROSRow(row), configROSRow(s.Config)) || row.flag("dynamic") || row.set("timeout") {

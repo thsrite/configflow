@@ -115,6 +115,20 @@ type ROSPolicyReplace struct {
 	StaticNATChecks *NATChecks        `json:"static_nat_checks,omitempty"`
 }
 
+// MarshalJSON emits prepare_static whenever the planner set it, including an
+// empty list (static checks whose replacement routes already exist); nil means
+// the key is absent, as in Python's op dict.
+func (op ROSPolicyReplace) MarshalJSON() ([]byte, error) {
+	type plain ROSPolicyReplace
+	if op.PrepareStatic == nil {
+		return json.Marshal(plain(op))
+	}
+	return json.Marshal(struct {
+		plain
+		PrepareStatic []Op `json:"prepare_static"`
+	}{plain(op), op.PrepareStatic})
+}
+
 // ROSPolicyItem is one destination shown in the report.
 type ROSPolicyItem struct {
 	ProxyCIDR
@@ -158,18 +172,34 @@ func ROSPolicyNetworkOverlap(networks []netip.Prefix) func(netip.Prefix) bool {
 	return prefixOverlap(networks)
 }
 
-// SubtractNetworks removes sorted disjoint exclusions with a sweep. Inputs are
-// IPv4 prefixes, as accepted by the policy parser; no address-range identities
-// are converted into CIDRs here.
+// SubtractNetworks removes sorted disjoint exclusions with a sweep. No
+// address-range identities are converted into CIDRs here. Each address family
+// is subtracted on its own (an IPv6 exclusion never removes IPv4 space), so the
+// result is never an empty list standing in for an input error; invalid
+// prefixes are ignored.
 func SubtractNetworks(from, minus []netip.Prefix) []netip.Prefix {
-	from, err := netipx.Collapse(from)
-	if err != nil {
-		return nil
+	out := []netip.Prefix{}
+	for _, is4 := range []bool{true, false} {
+		out = append(out, subtractFamily(prefixFamily(from, is4), prefixFamily(minus, is4))...)
 	}
-	minus, err = netipx.Collapse(minus)
-	if err != nil {
-		return nil
+	return out
+}
+
+func prefixFamily(prefixes []netip.Prefix, is4 bool) []netip.Prefix {
+	out := []netip.Prefix{}
+	for _, p := range prefixes {
+		if p.IsValid() && p.Addr().Is4() == is4 {
+			out = append(out, p)
+		}
 	}
+	return out
+}
+
+// subtractFamily is the sweep over one address family; Collapse cannot fail
+// for single-family input.
+func subtractFamily(from, minus []netip.Prefix) []netip.Prefix {
+	from, _ = netipx.Collapse(from)
+	minus, _ = netipx.Collapse(minus)
 	out := []netip.Prefix{}
 	first := 0
 	for _, network := range from {

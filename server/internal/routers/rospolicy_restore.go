@@ -54,11 +54,18 @@ func (d *RouterOS) restorePolicyRoutes(ctx context.Context, steps []NATStep, ids
 			count = min(added.Count, len(chunk))
 			for position, i := range chunk[:count] {
 				pointer, exists := added.Rows[position]
-				if !exists || pointer == nil {
+				if !exists {
 					errors[i] = fmt.Sprintf(messageUncertainRouteWrite, rosRoutes)
 					if added.Failure != nil && added.Failure.Index == position && added.Failure.Err != nil {
 						errors[i] = added.Failure.Err.Error()
 					}
+					continue
+				}
+				if pointer == nil {
+					// Written under a proven fresh ID, then gone: the read-back
+					// mismatch is reported like any other missing object.
+					_, err := d.confirmResource(ctx, rosRoutes, steps[i].Values, "", &NATStep{}, nil)
+					errors[i] = err.Error()
 					continue
 				}
 				row := *pointer

@@ -53,7 +53,8 @@ func (*RouterOS) BatchKinds() []string { return []string{"route_add", "route_del
 // ApplyMany applies an ordered run of route operations, recording each undo
 // only after its write has been proven by RouterOS readback. A cancelled ctx
 // stops it only between batches, when everything written is recorded; a
-// batch once sent is always proven (or reported uncertain) to the end.
+// batch once sent is proven (or reported uncertain) to the end unless the
+// shutdown drain deadline cancels the detached work context.
 func (d *RouterOS) ApplyMany(ctx context.Context, ops []json.RawMessage, record func(json.RawMessage, json.RawMessage)) error {
 	work := lifecycle.Detach(ctx)
 	for index := 0; index < len(ops); {
@@ -137,7 +138,8 @@ func (d *RouterOS) BatchRestorable(raw json.RawMessage) bool {
 
 // RestoreMany restores route undo records in original order; errors are empty
 // strings for success and BatchSkipped for untouched records after a failure.
-// Rollback is the safety net, so it runs to the end even if ctx is cancelled.
+// Rollback is the safety net, so request cancellation never stops it; only the
+// shutdown drain deadline does (lifecycle.Detach).
 func (d *RouterOS) RestoreMany(ctx context.Context, undos []json.RawMessage, stopOnFailure bool) []string {
 	ctx = lifecycle.Detach(ctx)
 	errors := []string{}
