@@ -57,12 +57,14 @@ func compareDownload(py, gor response) []string {
 	var diffs []string
 	pv, perr := jsonx.Parse(py.body)
 	gv, gerr := jsonx.Parse(gor.body)
-	jsonBody := strings.HasPrefix(py.header.Get("Content-Type"), "application/json") && perr == nil && gerr == nil
+	jsonType := strings.HasPrefix(py.header.Get("Content-Type"), "application/json")
+	jsonBody := jsonType && perr == nil && gerr == nil
+	jsonHead := jsonType && len(py.body) == 0 && len(gor.body) == 0
 	if py.status != gor.status {
 		diffs = append(diffs, fmt.Sprintf("status python %d go %d", py.status, gor.status))
 	}
 	for _, name := range downloadHeaders {
-		if jsonBody && name == "Content-Length" {
+		if (jsonBody || jsonHead) && name == "Content-Length" {
 			continue
 		}
 		if a, b := py.header.Get(name), gor.header.Get(name); a != b {

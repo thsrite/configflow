@@ -376,6 +376,9 @@ func compare(r request, py, gor response) []string {
 	pv, perr := jsonx.Parse(py.body)
 	gv, gerr := jsonx.Parse(gor.body)
 	if perr == nil && gerr == nil {
+		if r.name == "panel NaN reply" && r.method == "GET" && r.path == "/api/agents/gw/mihomo/version" {
+			diffs = append(diffs, compareNonFinitePanel(pv, gv)...)
+		}
 		if r.nonFiniteMetrics {
 			diffs = append(diffs, compareNonFiniteMetrics(r, pv, gv)...)
 		}
@@ -841,6 +844,28 @@ func compareNonFiniteMetrics(r request, python, native any) []string {
 	}
 	if count == 0 {
 		diffs = append(diffs, "non-finite metrics fixture did not produce the expected Python NaN/Infinity text")
+	}
+	return diffs
+}
+
+// compareNonFinitePanel asserts the exact fakePanelAgent "nan" response. Only
+// data.a (NaN) and data.b (Infinity) are expected to become null; c/d stay exact.
+func compareNonFinitePanel(python, native any) []string {
+	p, _ := python.(*jsonx.Object)
+	g, _ := native.(*jsonx.Object)
+	pd, gd := p.GetObject("data"), g.GetObject("data")
+	var diffs []string
+	for _, field := range []struct{ key, literal string }{{"a", "NaN"}, {"b", "Infinity"}} {
+		n, ok := pd.Value(field.key).(jsonx.Number)
+		if !ok || string(n) != field.literal {
+			diffs = append(diffs, "panel non-finite fixture: Python data."+field.key+" must be "+field.literal)
+			continue
+		}
+		value, present := gd.Get(field.key)
+		if !present || value != nil {
+			diffs = append(diffs, "panel non-finite fixture: Go data."+field.key+" must be JSON null")
+		}
+		pd.Set(field.key, nil)
 	}
 	return diffs
 }
