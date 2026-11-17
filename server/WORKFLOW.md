@@ -433,3 +433,7 @@ the issue classes are now written down; porting is the most token-heavy step and
   parameter it is meant to exercise (R06's fake client forced a 200 ms timeout and hid a missing 10 s write timeout);
   (2) at least one test per device/HTTP client compares the raw request (body bytes and headers), not only the decoded
   content (R04's client sent a JSON `null` body on every GET/DELETE and both fakes accepted it).
+- **Third standing item (R07 review, 2026-11-17):** a change to a shared driver path (request, redaction, parsing) is
+  tested on the *merged* tree with the other modules' tests of that driver (R07's private redaction in R04's shared
+  `request` broke two verified R06 tests). Credential redaction hides only passwords/tokens, never usernames, and uses
+  `internal/redact` — this class was found twice (R06 F2, R07 F1).
