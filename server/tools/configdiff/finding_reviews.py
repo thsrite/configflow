@@ -9,7 +9,7 @@ def key(result):
 
 def reviews(previous, current, saved=(), baseline=''):
     by_key = {key(item): copy.deepcopy(item) for item in saved}
-    for item in previous:
+    for item in list(previous) + list(current):
         if item['state'] not in ('different', 'O12-separate') or key(item) in by_key:
             continue
         by_key[key(item)] = {name: copy.deepcopy(item[name]) for name in ('case', 'variant', 'route', 'group', 'differences')}
@@ -30,7 +30,7 @@ def markdown(records):
     if not records:
         return []
     lines = ['## 既有差异复验状态', '',
-             '仅实际相比通过标为closed；未实现/依赖跳过标blocked，未重跑标pending。基线表示该条最后一次复验；未重跑条目不随本轮更新。', '',
+             '仅实际相比通过标为closed；accepted要求全部原始差异精确符合链接中的批准决定，仍保留严格比较证据。未实现/依赖跳过标blocked，未重跑标pending。基线表示该条最后一次复验；未重跑条目不随本轮更新。', '',
              '| 用例 / 变体 | 路由 | 状态 | 修复提交 / 接受依据 | 最后复验Go基线 | Python / Go HTTP |',
              '|---|---|---|---|---|---|']
     for item in records:

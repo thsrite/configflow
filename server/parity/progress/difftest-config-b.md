@@ -1516,3 +1516,25 @@ Ran 74 tests in 2.521s / OK
 .63 run.py --groups delivery-graph,delivery-graph-collisions,discovery-init,discovery-region-route,discovery-settings,json-settings-intervals,merged-provider-data,merged-provider-remote,merged-provider-timezone,provider-auth-environments,provider-concurrent-clients,provider-last-good-lifecycle,rule-proxy-declarations,rule-proxy-local-cache,rule-proxy-processing-failure,rule-proxy-transport,scheduler-tick,settings-webdav,startup-migration,subscription-fetch-failures,subscription-provider-formats,subscription-provider-head,subscription-provider-selector,subscription-provider-timezone,subscription-provider-validation,subscriptions-cleanup --baseline aeff9d75
 （仍在运行；最终证据待写入下一批）
 ```
+
+## 批次 88：全部既有findings复验、精确接受决定及helper关联
+
+- 基线aeff9d75。26组首先在.63执行：486变体，348相比通过/114 Go尚未实现/23严格差异/O12单列1，409.76s；provider-auth的全会话文件名身份绑定发生非单射夹具错误，缺21变体，此轮不当完整通过。SSH banner一度超时后恢复回传；按brief回退.32完整同组507变体复验，design_errors=[]、396.83s、exit1，369相比通过/114 Go尚未实现/23严格差异/O12单列1。
+- 已修正provider-auth的文件名绑定作用域：每个响应采用独立比较policy，仍严格验证同一订阅ID、文件名格式和真实时间窗，不要求多个响应的秒级时间戳形成全会话一一映射。保持Metadata对正文/served及.bak注释逐行比较。.63修正后provider-auth与原有profile/node/client组281变体通过前提校验（95相比通过/186 Go尚未实现），51.72s；随后常规runner合并统一报告的同组281变体design_errors=[]、38.18s、exit0。
+- **findings最终复验表：closed81、accepted5、open18、O12-separate1、pending0**。81条closed均附修复提交；accepted精确链接behaviour-changes中的Step B #1/#2/#3、R058-B03：两个孤立surrogate、保留遗留扩展、fetch坏JSON的同状态JSON迁移、fetch非对象400。原始case仍保留different及全差异，只将明确批准且全部差异精确吻合的项从当前失败退出码中分出。额外字段、错误success/中文/状态、额外SQL或文件写入、错route/variant会重开open；未整体忽略HTML、message或存储。
+- 仍open：规则代理内部内容dispatch两项200→502、receipt目录错误两项500→400、CONNECT传输字段两项；R222-F11缺A11位置/摘录一项；WebDAV七项PROPFIND正文及507/403/连接失败提示三项；R056-S01 duplicate-targets新多出空缓存.bak一项。UUID形态差异本身已在11配方全部消失（041ab5a6），但duplicate-targets该用例因新文件差异保持open，未用修复ID来关闭新问题。O12旧DNS清理仍单列，无behaviour-changes明确接受条目，未擅自accepted。
+- 原R请求现在可附source-audited helper_cases：关联16个此前已有真实HTTP用例对应的H编号；重新执行后H549。没有新增HTTP或伪造通过状态；一个请求同时覆盖路由槽与源码helper槽，重复标签按集合计一次。H770使用truthy数组的clone入口，不能误拿R116-F08的早期list.pop崩溃；H773/H774并未错误关联到clone或import-client wrapper。
+- 统一仍9252变体，原R4245（S678/F2652/B915）、H549、G16。cumulative compared2454/unimplemented6707/dependency67/different23/O12单列1，其中严格different有5项accepted、18open。当前仅新Go基线的选定组复验，不宣称整个9252已经新基线全量。
+
+```text
+.32 run.py --groups <87批同26组> --baseline aeff9d75
+current compared=369 go-unimplemented=114 different=23 O12-separate=1
+request_variants=9252 design_errors=[] seconds=396.83；exit=1（保留真实差异）
+.63 refresh_finding_reviews.py
+recorded_rechecks: closed81 open18 accepted5 separate1；actual_case_results_unchanged=9252
+.63 run.py --groups provider-auth-environments,profiles-metadata,profiles-deletion,profiles-bindings,profiles-independent-import,profiles-missing,nodes-deletion,client-import-validation --baseline aeff9d75
+current compared=95 go-unimplemented=186；design_errors=[] seconds=38.18；exit=0
+78 comparator/report/approval self-checks + deliberately wrong-Go-response detection OK
+```
+
+原R仍差285编号、H仍差563编号，另有已明确partial/不可观察分支和长流程。继续清单；未改Go业务、未推送、未派子agent，最终.32全量仍待完成清单后执行。

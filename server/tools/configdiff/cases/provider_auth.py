@@ -1,5 +1,6 @@
 """D1–D8 on default/scoped subscription and aggregation delivery endpoints."""
 import jwt
+import copy
 from urllib.parse import quote
 
 from harness import Pair, SECRET, USERNAME
@@ -36,6 +37,7 @@ def environments(binary, recorder):
                 for query, auth, number in vectors:
                     status = 200 if mode == 'open' and number not in (4, 5) else 401
                     pair.request(f'{rid}-F{number:02}', route, path + query, auth=auth, expect=status, writes=True,
+                        policy=copy.deepcopy(pair.policy) if metadata and status == 200 else None,
                         capture=metadata.capture if metadata and status == 200 else None,
                         check=metadata.reference if metadata and status == 200 else None,
                         interaction=SourceStable(pair, source) if status == 401 else Exchange(pair, source, expected=0),
@@ -47,12 +49,14 @@ def environments(binary, recorder):
                         variant=mode + '/provider-reserved-token/' + rid + '/' + ('current' if token == CURRENT else 'retired'))
                 pair.request(rid + '-F08', route, path + '?token=wrong-synthetic', auth='',
                     expect=200 if mode == 'open' else 401, writes=True,
+                    policy=copy.deepcopy(pair.policy) if metadata and mode == 'open' else None,
                     capture=metadata.capture if metadata and mode == 'open' else None,
                     check=metadata.reference if metadata and mode == 'open' else None,
                     interaction=Exchange(pair, source, expected=0) if mode == 'open' else SourceStable(pair, source),
                     variant=mode + '/named-provider-authorization-guard')
                 pair.request(rid + '-S01', route, path + ('?token=' + PULL if mode == 'token' else ''),
                     auth='admin' if mode == 'login' else '', expect=200, writes=True,
+                    policy=copy.deepcopy(pair.policy) if metadata else None,
                     capture=metadata.capture if metadata else None, check=metadata.reference if metadata else None,
                     interaction=Exchange(pair, source, expected=0), variant=mode + '/authorized-provider')
 

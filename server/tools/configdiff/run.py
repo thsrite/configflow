@@ -14,6 +14,7 @@ from build import build
 from harness import ROOT, Recorder, DesignError
 from inventory import routes, cases
 from finding_reviews import reviews as review_findings, markdown as review_markdown
+from helper_links import attach as attach_helpers, auxiliary_cases
 
 
 def render_findings(results, reviews=()):
@@ -282,6 +283,7 @@ def main():
         auxiliary |= r['case'] == 'X08' and r['route'] == 'POST /api/agents/<agent_id>/heartbeat'
         if r['route'] != 'startup' and r['route'] not in matrix and not auxiliary:
             errors.append({'group': 'inventory', 'error': 'case names unknown route: ' + r['route']})
+    attach_helpers(recorder.results)
     prior_report = json.loads(args.output.read_text()) if args.output.exists() else {}
     previous = prior_report.get('results', [])
     reviewed = review_findings(previous, recorder.results, prior_report.get('finding_reviews', []), args.baseline)
@@ -294,15 +296,19 @@ def main():
         errors.append({'group': 'inventory', 'error': 'duplicate case/variant/route key'})
     combined.sort(key=lambda r: (r['route'], r['case'], r['variant']))
     current_counts = Counter(r['state'] for r in recorder.results)
+    accepted_keys = {(item['case'], item['variant'], item['route']) for item in reviewed if item['status'] == 'accepted'}
+    accepted_current = sum(r['state'] == 'different' and (r['case'], r['variant'], r['route']) in accepted_keys for r in recorder.results)
     summary = {'groups': requested, 'current': dict(current_counts),
                'baseline': args.baseline,
+               'current_accepted_differences': accepted_current,
+               'current_open_differences': current_counts['different'] - accepted_current,
                'end_to_end_mutation_check': True,
                'cumulative': dict(Counter(r['state'] for r in combined)),
                'categories': dict(Counter(r['category'] for r in combined)),
                'named_matrix_cases': len({r['case'] for r in combined if r['case'].startswith('R')}),
                'named_matrix_categories': dict(Counter(case.split('-')[1][0] for case in {r['case'] for r in combined if r['case'].startswith('R')})),
                'named_auxiliary_categories': dict(Counter('H' if c.startswith('H') else 'G' if c.startswith('G') else c
-                    for c in {r['case'] for r in combined if not r['case'].startswith('R')})),
+                    for c in auxiliary_cases(combined))),
                'request_variants': len(combined), 'design_errors': errors,
                'seconds': round(time.time() - started, 2)}
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -311,7 +317,7 @@ def main():
                            ',\n'.join(json.dumps(r, ensure_ascii=False, separators=(',', ':')) for r in combined) + '\n]}\n')
     args.findings.write_text(render_findings(combined, reviewed))
     print('SUMMARY ' + json.dumps(summary, ensure_ascii=False), flush=True)
-    return 2 if errors else 1 if current_counts['different'] else 0
+    return 2 if errors else 1 if current_counts['different'] > accepted_current else 0
 
 
 if __name__ == '__main__':

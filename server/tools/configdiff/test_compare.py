@@ -17,6 +17,92 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_approved_difference_requires_exact_case_values_and_no_extra_storage_effects(self):
+        from config_finding_resolutions import annotate
+        path = 'db.fields.profile/default/domain_discovery.value.synthetic_legacy_extension'
+        item = {'case': 'R058-B03', 'variant': 'stored-legacy-extension', 'route': 'PUT /api/domain-discovery/settings',
+                'group': 'discovery-settings', 'status': 'open', 'python_status': 200, 'go_status': 200,
+                'differences': [], 'remaining_differences': [{'path': path, 'kind': 'extra-in-go', 'python': None,
+                                                           'go': {'flag': False, 'values': []}}]}
+        self.assertEqual(annotate([copy.deepcopy(item)])[0]['status'], 'accepted')
+        for mutation in ('route', 'case', 'extra-write', 'wrong-value', 'wrong-type', 'status'):
+            wrong = copy.deepcopy(item)
+            if mutation in ('route', 'case'):
+                wrong[mutation] += '-wrong'
+            elif mutation == 'extra-write':
+                wrong['remaining_differences'].append({'path': 'db.extra', 'kind': 'value', 'python': 0, 'go': 1})
+            elif mutation == 'wrong-value':
+                wrong['remaining_differences'][0]['go']['values'] = ['wrong']
+            elif mutation == 'wrong-type':
+                wrong['remaining_differences'][0]['go']['flag'] = 0
+            else:
+                wrong['go_status'] = 400
+            self.assertEqual(annotate([wrong])[0]['status'], 'open', mutation)
+        approved = annotate([copy.deepcopy(item)])[0]
+        approved['remaining_differences'].append({'path': 'db.extra', 'kind': 'value', 'python': 0, 'go': 1})
+        self.assertEqual(annotate([approved])[0]['status'], 'open', 'approval cannot hide a later regression')
+
+    def test_surrogate_approval_keeps_exact_400_message_route_and_readonly_boundary(self):
+        from config_finding_resolutions import annotate
+        item = {'case': 'X04', 'variant': 'token/literal/"\\ud800"', 'route': 'POST /api/config-token',
+                'group': 'json-settings-intervals', 'status': 'open', 'python_status': 500, 'go_status': 400, 'differences': [],
+                'remaining_differences': [{'path': 'status', 'kind': 'value', 'python': 500, 'go': 400},
+                    {'path': 'body.message', 'kind': 'non-ascii-internal-error-text',
+                     'python': "'utf-8' codec can't encode character '\\ud800' in position 238: surrogates not allowed",
+                     'go': '请求内容包含无效的 Unicode 字符'}]}
+        self.assertEqual(annotate([copy.deepcopy(item)])[0]['status'], 'accepted')
+        for mutation in ('route', 'message', 'stored-replacement'):
+            wrong = copy.deepcopy(item)
+            if mutation == 'route':
+                wrong['route'] = 'POST /api/server-domain'
+            elif mutation == 'message':
+                wrong['remaining_differences'][1]['go'] = 'wrong'
+            else:
+                wrong['remaining_differences'].append({'path': 'db.token', 'kind': 'value', 'python': '', 'go': '\ufffd'})
+            self.assertEqual(annotate([wrong])[0]['status'], 'open', mutation)
+
+    def test_api_json_migration_accepts_only_the_approved_error_without_extra_fields(self):
+        from config_finding_resolutions import annotate
+        description = 'The browser (or proxy) sent a request that this server could not understand.'
+        item = {'case': 'R218-F10', 'variant': '', 'route': 'POST /api/subscriptions/<sub_id>/fetch',
+                'group': 'subscription-fetch-failures', 'status': 'open', 'python_status': 400, 'go_status': 400,
+                'differences': [], 'remaining_differences': [
+                    {'path': 'headers.content-type', 'kind': 'value', 'python': 'text/html; charset=utf-8', 'go': 'application/json'},
+                    {'path': 'body', 'kind': 'type', 'python': ['<!doctype html>', '<html lang=en>', '<title>400 Bad Request</title>',
+                        '<h1>Bad Request</h1>', '<p>' + description + '</p>'], 'go': {'success': False, 'message': description}}]}
+        self.assertEqual(annotate([copy.deepcopy(item)])[0]['status'], 'accepted')
+        shape = copy.deepcopy(item)
+        shape.update(case='R218-F11', python_status=500, go_status=400)
+        shape['remaining_differences'][1].update(
+            python=['<!doctype html>', '<html lang=en>', '<title>500 Internal Server Error</title>', '<h1>Internal Server Error</h1>',
+                    '<p>The server encountered an internal error and was unable to complete your request. '
+                    'Either the server is overloaded or there is an error in the application.</p>'],
+            go={'message': '请求体必须是 JSON 对象', 'success': False})
+        shape['remaining_differences'].insert(0, {'path': 'status', 'kind': 'value', 'python': 500, 'go': 400})
+        self.assertEqual(annotate([shape])[0]['status'], 'accepted')
+        for mutation in ('success', 'extra-field', 'message', 'status'):
+            wrong = copy.deepcopy(item)
+            if mutation == 'success':
+                wrong['remaining_differences'][1]['go']['success'] = 0
+            elif mutation == 'extra-field':
+                wrong['remaining_differences'][1]['go']['extra'] = True
+            elif mutation == 'message':
+                wrong['remaining_differences'][1]['go']['message'] = 'wrong'
+            else:
+                wrong['go_status'] = 500
+            self.assertEqual(annotate([wrong])[0]['status'], 'open', mutation)
+
+    def test_helper_labels_require_exact_recorded_case_and_route_without_extra_requests(self):
+        from helper_links import attach, auxiliary_cases
+        first = {'case': 'R123-F08', 'route': 'POST /api/profiles/<profile_id>/clone', 'state': 'go-unimplemented'}
+        wrong = {**first, 'route': 'POST /api/profiles'}
+        results = attach([first, wrong, {'case': 'H770', 'route': first['route'], 'state': 'compared'}])
+        self.assertEqual(len(results), 3)
+        self.assertEqual(first['helper_cases'], ['H770'])
+        self.assertNotIn('helper_cases', wrong)
+        self.assertEqual(auxiliary_cases(results), {'H770'})
+        self.assertEqual(first['state'], 'go-unimplemented')
+
     def test_repair_attribution_requires_actual_success_and_keeps_raw_evidence(self):
         from config_finding_resolutions import annotate
         item = {'case': 'G13', 'group': 'delivery-graph', 'status': 'closed', 'differences': [{'path': 'provider.comments'}]}
