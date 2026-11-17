@@ -30,6 +30,15 @@ func Edit(src []byte, edit func(doc *Node) error) ([]byte, error) {
 	if before.unchanged(doc, map[*Node]bool{}) {
 		return src, nil
 	}
+	if err := validateNode(doc); err != nil {
+		return src, fmt.Errorf("%w: validate edited document: %w", ErrUnsafeEdit, err)
+	}
+	if out, ok := spliceEdit(src, doc, before); ok {
+		if err := verifyEdit(out, doc, before.comments); err != nil {
+			return src, err
+		}
+		return out, nil
+	}
 	return rewriteEdit(src, doc, before.comments)
 }
 
@@ -135,7 +144,24 @@ func rewriteEdit(src []byte, doc *Node, comments []string) ([]byte, error) {
 	if err != nil {
 		return src, fmt.Errorf("%w: encode edited document: %w", ErrUnsafeEdit, err)
 	}
-	if bytes.Contains(src, []byte("\r\n")) && !bytes.Contains(bytes.ReplaceAll(src, []byte("\r\n"), nil), []byte("\n")) {
+	// yaml.v3 may attach an end-of-document comment to a block container's
+	// LineComment, a position its emitter does not write. Check the emitted
+	// tree and relocate only missing notes before the final verification.
+	parsed, err := Parse(out)
+	if err != nil || !Equal(parsed, doc) {
+		if err != nil {
+			return src, fmt.Errorf("%w: parse edited document: %w", ErrUnsafeEdit, err)
+		}
+		return src, fmt.Errorf("%w: edited document changed meaning", ErrUnsafeEdit)
+	}
+	if missing := missingEditComments(parsed, comments); len(missing) > 0 {
+		doc.HeadComment = joinComment(strings.Join(missing, "\n"), doc.HeadComment)
+		out, err = Marshal(doc)
+		if err != nil {
+			return src, fmt.Errorf("%w: encode retained comments: %w", ErrUnsafeEdit, err)
+		}
+	}
+	if bytes.Contains(src, []byte("\r\n")) && !bytes.ContainsAny(bytes.ReplaceAll(src, []byte("\r\n"), nil), "\r\n") {
 		out = bytes.ReplaceAll(out, []byte("\n"), []byte("\r\n"))
 	}
 	if err := verifyEdit(out, doc, comments); err != nil {
@@ -152,17 +178,8 @@ func verifyEdit(out []byte, want *Node, comments []string) error {
 	if !Equal(parsed, want) {
 		return fmt.Errorf("%w: edited document changed meaning", ErrUnsafeEdit)
 	}
-	counts := map[string]int{}
-	walkEditNodes(parsed, func(n *Node) {
-		for _, line := range nodeCommentLines(n) {
-			counts[line]++
-		}
-	})
-	for _, line := range comments {
-		if counts[line] == 0 {
-			return fmt.Errorf("%w: edited document lost a comment", ErrUnsafeEdit)
-		}
-		counts[line]--
+	if len(missingEditComments(parsed, comments)) > 0 {
+		return fmt.Errorf("%w: edited document lost a comment", ErrUnsafeEdit)
 	}
 	return nil
 }
@@ -192,4 +209,22 @@ func materializeEditAliases(doc *Node) {
 		}
 	}
 	walk(doc)
+}
+
+func missingEditComments(doc *Node, comments []string) []string {
+	counts := map[string]int{}
+	walkEditNodes(doc, func(n *Node) {
+		for _, line := range nodeCommentLines(n) {
+			counts[line]++
+		}
+	})
+	var missing []string
+	for _, line := range comments {
+		if counts[line] > 0 {
+			counts[line]--
+		} else {
+			missing = append(missing, line)
+		}
+	}
+	return missing
 }
