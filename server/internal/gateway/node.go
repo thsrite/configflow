@@ -4,84 +4,61 @@ import (
 	"math/big"
 	"strconv"
 
+	"configflow/internal/yamlx"
+
 	"gopkg.in/yaml.v3"
 )
 
-// Helpers for the *yaml.Node documents this package reads and edits.
-// TODO(N7): use the shared yamlx Node helpers (n7-n8.md 2.2) once they land.
+// Value predicates and builders for the *yaml.Node documents this package
+// reads and edits, on top of the shared yamlx node helpers.
 
-// Node tags.
-const (
-	tagStr   = "!!str"
-	tagInt   = "!!int"
-	tagFloat = "!!float"
-	tagBool  = "!!bool"
-	tagNull  = "!!null"
-	tagMap   = "!!map"
-	tagSeq   = "!!seq"
-	// tagOpaque marks a scalar this package only carries (a YAML timestamp
-	// or binary value of the source document); it counts as set and truthy.
-	tagOpaque = "!configflow/opaque"
-)
-
-// resolve follows aliases and unwraps a document node.
-func resolve(n *yaml.Node) *yaml.Node {
-	for n != nil {
-		switch {
-		case n.Kind == yaml.AliasNode:
-			n = n.Alias
-		case n.Kind == yaml.DocumentNode && len(n.Content) == 1:
-			n = n.Content[0]
-		default:
-			return n
-		}
-	}
-	return nil
-}
+// tagOpaque marks a scalar this package only carries (a YAML timestamp or
+// binary value of the source document); it counts as set and truthy.
+const tagOpaque = "!configflow/opaque"
 
 func isMap(n *yaml.Node) bool {
-	n = resolve(n)
+	n = yamlx.Resolve(n)
 	return n != nil && n.Kind == yaml.MappingNode
 }
 
 func isScalar(n *yaml.Node, tag string) bool {
-	n = resolve(n)
-	return n != nil && n.Kind == yaml.ScalarNode && n.Tag == tag
+	n = yamlx.Resolve(n)
+	return n != nil && n.Kind == yaml.ScalarNode && n.ShortTag() == tag
 }
 
 // stringValue is the text of a string scalar.
 func stringValue(n *yaml.Node) (string, bool) {
-	if !isScalar(n, tagStr) {
+	if !isScalar(n, "!!str") {
 		return "", false
 	}
-	return resolve(n).Value, true
+	return yamlx.Resolve(n).Value, true
 }
 
 // numberIsZero reports an integer or float scalar equal to zero.
 func numberIsZero(n *yaml.Node) bool {
 	switch {
-	case isScalar(n, tagInt):
-		value, ok := new(big.Int).SetString(resolve(n).Value, 0)
+	case isScalar(n, "!!int"):
+		value, ok := new(big.Int).SetString(yamlx.Resolve(n).Value, 0)
 		return ok && value.Sign() == 0
-	case isScalar(n, tagFloat):
-		value, err := strconv.ParseFloat(resolve(n).Value, 64)
+	case isScalar(n, "!!float"):
+		value, err := strconv.ParseFloat(yamlx.Resolve(n).Value, 64)
 		return err == nil && value == 0
 	}
 	return false
 }
 
-// truthy reports a value that is not null, false, zero, "" or an empty
-// mapping/sequence.
+// truthy reports a value that is not absent, null, false, zero, "" or an
+// empty mapping/sequence.
 func truthy(n *yaml.Node) bool {
-	n = resolve(n)
+	n = yamlx.Resolve(n)
 	switch {
-	case n == nil, isScalar(n, tagNull):
+	case n == nil, isScalar(n, "!!null"):
 		return false
-	case isScalar(n, tagBool):
+	case isScalar(n, "!!bool"):
 		return n.Value == "true"
-	case isScalar(n, tagInt), isScalar(n, tagFloat):
+	case isScalar(n, "!!int"), isScalar(n, "!!float"):
 		return !numberIsZero(n)
-	case isScalar(n, tagStr):
+	case isScalar(n, "!!str"):
 		return n.Value != ""
 	case n.Kind == yaml.MappingNode, n.Kind == yaml.SequenceNode:
 		return len(n.Content) > 0
@@ -89,118 +66,46 @@ func truthy(n *yaml.Node) bool {
 	return true
 }
 
-// unset reports a routing-mark value that leaves the default routing: null,
+// unset reports a routing-mark value that keeps the default routing: null,
 // false, zero or "" (an empty list or mapping still counts as set).
 func unset(n *yaml.Node) bool {
-	n = resolve(n)
-	return n == nil || isScalar(n, tagNull) || (isScalar(n, tagBool) && n.Value == "false") ||
-		numberIsZero(n) || (isScalar(n, tagStr) && n.Value == "")
+	n = yamlx.Resolve(n)
+	return n == nil || isScalar(n, "!!null") || (isScalar(n, "!!bool") && n.Value == "false") ||
+		numberIsZero(n) || (isScalar(n, "!!str") && n.Value == "")
 }
 
-// pairs calls fn for each string key of a mapping, in order.
-func pairs(m *yaml.Node, fn func(key string, value *yaml.Node) bool) {
-	m = resolve(m)
-	if m == nil || m.Kind != yaml.MappingNode {
-		return
-	}
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		if key, ok := stringValue(m.Content[i]); ok {
-			if !fn(key, resolve(m.Content[i+1])) {
-				return
-			}
-		}
-	}
-}
-
-// get is the value of key in a mapping (nil when absent).
-func get(m *yaml.Node, key string) *yaml.Node {
-	var found *yaml.Node
-	pairs(m, func(k string, v *yaml.Node) bool {
-		if k == key {
-			found = v
-			return false
-		}
-		return true
-	})
-	return found
-}
-
-// set replaces the value of key in place, or appends the pair.
-func set(m *yaml.Node, key string, value *yaml.Node) {
-	m = resolve(m)
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		if k, ok := stringValue(m.Content[i]); ok && k == key {
-			m.Content[i+1] = value
-			return
-		}
-	}
-	m.Content = append(m.Content, strNode(key), value)
-}
-
-// setDefault is set when key is absent; it returns the value of key.
+// setDefault sets key when it is absent and returns the value of key.
 func setDefault(m *yaml.Node, key string, value *yaml.Node) *yaml.Node {
-	for i := 0; i+1 < len(resolve(m).Content); i += 2 {
-		if k, ok := stringValue(resolve(m).Content[i]); ok && k == key {
-			return resolve(resolve(m).Content[i+1])
-		}
+	if current := yamlx.Get(m, key); current != nil {
+		return yamlx.Resolve(current)
 	}
-	set(m, key, value)
+	yamlx.Set(m, key, value)
 	return value
 }
 
-// remove deletes key from a mapping.
-func remove(m *yaml.Node, key string) {
-	m = resolve(m)
-	kept := m.Content[:0]
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		if k, ok := stringValue(m.Content[i]); ok && k == key {
-			continue
-		}
-		kept = append(kept, m.Content[i], m.Content[i+1])
-	}
-	m.Content = kept
-}
-
-// clone copies mappings and sequences (aliases become copies); scalars are
-// shared, since nothing in this package edits a scalar in place.
-func clone(n *yaml.Node) *yaml.Node {
-	n = resolve(n)
+// cloneShared copies mappings and sequences (aliases become copies) but
+// shares scalar nodes, which this package never edits in place. Unlike
+// yamlx.Clone it keeps scalar identity, so the jsonx boundary (codec) can
+// return untouched values of a copied TUN or DNS section exactly.
+func cloneShared(n *yaml.Node) *yaml.Node {
+	n = yamlx.Resolve(n)
 	if n == nil || n.Kind == yaml.ScalarNode {
 		return n
 	}
 	out := *n
+	out.Anchor = ""
 	out.Content = make([]*yaml.Node, len(n.Content))
 	for i, child := range n.Content {
-		out.Content[i] = clone(child)
+		out.Content[i] = cloneShared(child)
 	}
 	return &out
 }
 
-func strNode(s string) *yaml.Node {
-	return &yaml.Node{Kind: yaml.ScalarNode, Tag: tagStr, Value: s}
-}
-
-func boolNode(b bool) *yaml.Node {
-	return &yaml.Node{Kind: yaml.ScalarNode, Tag: tagBool, Value: strconv.FormatBool(b)}
-}
-
-func intNode(i int64) *yaml.Node {
-	return &yaml.Node{Kind: yaml.ScalarNode, Tag: tagInt, Value: strconv.FormatInt(i, 10)}
-}
-
-// mapNode builds a mapping from key, value, key, value, ...
-func mapNode(kv ...any) *yaml.Node {
-	m := &yaml.Node{Kind: yaml.MappingNode, Tag: tagMap}
-	for i := 0; i+1 < len(kv); i += 2 {
-		m.Content = append(m.Content, strNode(kv[i].(string)), kv[i+1].(*yaml.Node))
-	}
-	return m
-}
-
+// strSeq is a sequence of strings.
 func strSeq(items []string) *yaml.Node {
-	s := &yaml.Node{Kind: yaml.SequenceNode, Tag: tagSeq, Content: []*yaml.Node{}}
-	for _, item := range items {
-		s.Content = append(s.Content, strNode(item))
+	nodes := make([]*yaml.Node, len(items))
+	for i, item := range items {
+		nodes[i] = yamlx.Str(item)
 	}
-	return s
+	return yamlx.Seq(nodes...)
 }

@@ -92,11 +92,11 @@ func jsonxObject(t *testing.T, raw json.RawMessage) *jsonx.Object {
 // node reads JSON as a YAML node tree.
 func node(t *testing.T, raw json.RawMessage) *yaml.Node {
 	t.Helper()
-	var n yaml.Node
-	if err := yaml.Unmarshal(raw, &n); err != nil {
+	n, err := yamlx.FromJSON(raw)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return &n
+	return n
 }
 
 // loader serves a row's loader map (missing: "") and records the calls.

@@ -4,6 +4,7 @@ import (
 	"net/netip"
 
 	"configflow/internal/netipx"
+	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
 )
@@ -16,14 +17,14 @@ const DefaultFakeIPRange = "198.18.0.1/16"
 // dns.fake-ip-range, DefaultFakeIPRange when absent. Errors are *Error: dns
 // is not a mapping, or the range is not usable (see ParseFakeIPRange).
 func FakeIPNetwork(doc *yaml.Node) (netip.Prefix, error) {
-	dns := get(doc, "dns")
+	dns := yamlx.Get(doc, "dns")
 	if !truthy(dns) {
 		return ParseFakeIPRange(DefaultFakeIPRange)
 	}
 	if !isMap(dns) {
 		return netip.Prefix{}, gatewayError(msgDNSNotObject)
 	}
-	value := get(dns, "fake-ip-range")
+	value := yamlx.Get(dns, "fake-ip-range")
 	if value == nil {
 		return ParseFakeIPRange(DefaultFakeIPRange)
 	}

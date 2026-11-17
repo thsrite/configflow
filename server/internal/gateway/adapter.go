@@ -131,7 +131,7 @@ func (c *Config) nodes() *yaml.Node {
 // Errors are *Error.
 func (c *Config) BaseDocument() (*yaml.Node, error) {
 	if strings.TrimSpace(c.customConfig) == "" {
-		return mapNode(), nil
+		return yamlx.Map(), nil
 	}
 	value, err := yamlx.LoadWith(c.customConfig, yamlx.LoadOptions{KeepNonStringKeys: true, KeepUnrepresentable: true})
 	if err != nil {
@@ -284,15 +284,15 @@ type codec struct {
 func (k *codec) node(v any) *yaml.Node {
 	switch value := v.(type) {
 	case *jsonx.Object:
-		m := &yaml.Node{Kind: yaml.MappingNode, Tag: tagMap}
+		m := yamlx.Map()
 		for key, child := range value.All() {
-			m.Content = append(m.Content, strNode(key), k.node(child))
+			m.Content = append(m.Content, yamlx.Str(key), k.node(child))
 		}
 		return m
 	case *yamlx.Mapping:
-		m := &yaml.Node{Kind: yaml.MappingNode, Tag: tagMap}
+		m := yamlx.Map()
 		for _, pair := range value.Pairs {
-			key := strNode("")
+			key := yamlx.Str("")
 			if text, ok := pair.Key.(string); ok {
 				key.Value = text
 			} else {
@@ -302,7 +302,7 @@ func (k *codec) node(v any) *yaml.Node {
 		}
 		return m
 	case []any:
-		s := &yaml.Node{Kind: yaml.SequenceNode, Tag: tagSeq, Content: make([]*yaml.Node, 0, len(value))}
+		s := yamlx.Seq()
 		for _, child := range value {
 			s.Content = append(s.Content, k.node(child))
 		}
@@ -311,15 +311,15 @@ func (k *codec) node(v any) *yaml.Node {
 	n := &yaml.Node{Kind: yaml.ScalarNode, Tag: tagOpaque}
 	switch value := v.(type) {
 	case string:
-		n.Tag, n.Value = tagStr, value
+		n.Tag, n.Value = "!!str", value
 	case bool:
-		n.Tag, n.Value = tagBool, strconv.FormatBool(value)
+		n.Tag, n.Value = "!!bool", strconv.FormatBool(value)
 	case nil:
-		n.Tag, n.Value = tagNull, "null"
+		n.Tag, n.Value = "!!null", "null"
 	case jsonx.Number:
-		n.Tag, n.Value = tagFloat, value.String()
+		n.Tag, n.Value = "!!float", value.String()
 		if value.IsInt() {
-			n.Tag = tagInt
+			n.Tag = "!!int"
 		}
 	}
 	if k.leaves != nil {
@@ -329,7 +329,7 @@ func (k *codec) node(v any) *yaml.Node {
 }
 
 func (k *codec) value(n *yaml.Node) any {
-	n = resolve(n)
+	n = yamlx.Resolve(n)
 	if original, ok := k.leaves[n]; ok {
 		return original
 	}
@@ -347,14 +347,14 @@ func (k *codec) value(n *yaml.Node) any {
 		}
 		return list
 	}
-	switch n.Tag {
-	case tagBool:
+	switch n.ShortTag() {
+	case "!!bool":
 		return n.Value == "true"
-	case tagNull:
+	case "!!null":
 		return nil
-	case tagInt:
-		if i, err := strconv.ParseInt(n.Value, 10, 64); err == nil {
-			return jsonx.Int(i)
+	case "!!int", "!!float":
+		if number, err := jsonx.ParseNumber(n.Value); err == nil {
+			return number
 		}
 	}
 	return n.Value
