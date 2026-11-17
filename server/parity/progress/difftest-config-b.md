@@ -2204,3 +2204,16 @@ current compared273 / Go未实现51 / different20 / accepted20 / open0；design_
 .32 --groups config-pull-retained-non-text-settings-failure --baseline 038b52ae：7TODO；design_errors=[]；exit0
 115 self-checks + deliberately wrong-Go-response detection OK；有效草稿移至/tmp/configdiff-batch128-evidence。
 ```
+
+## 批次 129：路由器同步任务的真实排队、暂停回执与重试释放
+
+- R227-S07使用启用自动同步的真实router记录、所选IP规则库/规则引用，以及合成历史runtime baseline（控制摘要对应尚未发布的旧设置）。真正POST任务202后，真实worker先写queued/running，再因未发布控制变化写paused；精确检查完整receipt/历史baseline/rules均保留、当前checked_at、task-status失败计数/原因、全SQL不变及零设备请求。初稿没有选择IP规则，提前命中另一个guard，已纠正并撤回该前提。
+- 随后R227-F14重试准确409「同步已暂停：来源、规则选择或网关设置尚未发布，请手动预览发布」；若worker锁未释放，应得到另一条“已有任务运行”提示，不能通过。完整runtime文件、DB/通知/计时继续比较；116项自检逐项改变暂停证明、SQL和设备请求都必须检出。
+- 这只覆盖任务准入、真实后台前置检查及持久化，不把合成baseline当成真实设备所有权证明；ROS实际同步写入/回读/补偿仍属于routers领域fake协议和L5实验网部分覆盖。
+- .64独立及正式运行2变体，Python前提通过，Go任务入口未实现，design_errors=[]，exit0。统一10173变体、原R4485（S711/F2759/B1015）、H750/G16；Go未实现7085、依赖100，其他计数和findings不变。原R仍差45（含N/A）、H差362及partial/长流程，最终完整all未完成。
+
+```text
+.64 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups tasks-router-sync-queued-pause-and-retry-guard --baseline 038b52ae
+current Go未实现2；design_errors=[]；exit0
+116 self-checks + deliberately wrong-Go-response detection OK
+```

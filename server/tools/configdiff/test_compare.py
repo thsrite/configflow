@@ -17,6 +17,22 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_router_task_completion_keeps_pause_baseline_SQL_and_wire_observable(self):
+        from cases.task_router_retry import RouterCompletion
+        pair = SimpleNamespace(policy=Policy(), route_available=lambda route: False)
+        observer = RouterCompletion(pair, None, {}, 'router-rule-sync/synthetic.json')
+        observer.observations = [{'receipt_completed': True}, {'receipt_completed': True}]
+        observer.proofs = [{'exact_paused_receipt': True, 'actual_checked_time': True, 'configuration_unchanged': True}
+                           for _ in range(2)]
+        observer.wire.transcripts = [[], []]
+        self.assertEqual(observer.compare(pair.policy), [])
+        for key in observer.proofs[1]:
+            observer.proofs[1][key] = False
+            self.assertTrue(observer.compare(pair.policy), key)
+            observer.proofs[1][key] = True
+        observer.wire.transcripts[1] = [{'method': 'PUT', 'path': '/unexpected'}]
+        self.assertTrue(observer.compare(pair.policy), 'unexpected device write')
+
     def test_router_publication_busy_comparison_detects_secondary_HTTP_wire_and_storage_changes(self):
         from cases.profile_router_busy import Busy
         observer = Busy(SimpleNamespace(), None)

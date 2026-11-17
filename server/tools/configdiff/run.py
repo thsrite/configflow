@@ -254,6 +254,8 @@ def main():
     groups.update(archive_limits)
     from cases.pull_failures import GROUPS as pull_failures
     groups.update(pull_failures)
+    from cases.task_router_retry import GROUPS as task_router_retry
+    groups.update(task_router_retry)
     from cases.groups import GROUPS as managed_groups
     groups.update(managed_groups)
     from cases.rule_library import GROUPS as rule_library
