@@ -23,7 +23,7 @@ const (
 
 type rows = []routerfake.Row
 
-func intp(n int) *int { return &n }
+func intp(n int) *int       { return &n }
 func strp(s string) *string { return &s }
 
 func ikMask(bits int) string { return net.IP(net.CIDRMask(bits, 32)).String() }
@@ -75,7 +75,9 @@ func addressField(custom []string, objects ...map[string]any) map[string]any {
 	return map[string]any{"custom": c, "object": o}
 }
 
-func ref(gid, name string) map[string]any { return map[string]any{"type": 0, "gid": gid, "gp_name": name} }
+func ref(gid, name string) map[string]any {
+	return map[string]any{"type": 0, "gid": gid, "gp_name": name}
+}
 
 func ikNAT(id int, comment string, dst map[string]any) routerfake.Row {
 	return routerfake.Row{"id": id, "action": "filter", "enabled": "yes", "tagname": fmt.Sprintf("NAT_%d", id),
@@ -434,7 +436,10 @@ func ikuaiDHCPCases() []ikuaiCase {
 			input: map[string]any{"op": dhcpOp(server, nil)}})
 		add(ikuaiCase{name: fmt.Sprintf("dhcp_blank_slot_read_%d", i), action: "read_dhcp_dns", state: dhcpState(rows{server}, nil)})
 	}
-	edit := func(f routerfake.IkuaiFault) routerfake.IkuaiFault { f.Func, f.Action = "dhcp_server", "edit"; return f }
+	edit := func(f routerfake.IkuaiFault) routerfake.IkuaiFault {
+		f.Func, f.Action = "dhcp_server", "edit"
+		return f
+	}
 	for name, faults := range map[string][]routerfake.IkuaiFault{
 		"swallowed":       {edit(routerfake.IkuaiFault{Count: 1, Swallow: true})},
 		"corrupted":       {edit(routerfake.IkuaiFault{Count: 1, Corrupt: routerfake.Row{"lease": 1}})},
@@ -642,7 +647,11 @@ func ikuaiReleaseCases() []ikuaiCase {
 		input: map[string]any{"op": map[string]any{"kind": "policy_route_add", "gateway": ikGateway, "dst": []string{"203.0.113.0/24"}, "comment": "cf-mihomo-manual"}}})
 	add(ikuaiCase{name: "policy_delete_roundtrip", action: "roundtrip", state: routerfake.IkuaiState{Tables: polTables}, input: map[string]any{"op": byID("policy_route_delete", 3)}})
 	add(ikuaiCase{name: "policy_add_duplicate_name_refused", action: "apply", state: routerfake.IkuaiState{Tables: tables("stream_ipport",
-		rows{func() routerfake.Row { r := ikPolicy(3, "x", addressField(nil)); r["tagname"] = routers.IkuaiTagname("pr", "cf-mihomo"); return r }()})},
+		rows{func() routerfake.Row {
+			r := ikPolicy(3, "x", addressField(nil))
+			r["tagname"] = routers.IkuaiTagname("pr", "cf-mihomo")
+			return r
+		}()})},
 		input: map[string]any{"op": map[string]any{"kind": "policy_route_add", "gateway": ikGateway, "dst": []string{"203.0.113.0/24"}, "comment": "cf-mihomo"}}})
 	many := make([]any, 1200)
 	for i := range many {

@@ -488,7 +488,8 @@ func (f *Ikuai) refCount(group Row) int64 {
 			objects, _ := value["object"].([]any)
 			if slices.ContainsFunc(objects, func(item any) bool {
 				ref, ok := item.(map[string]any)
-				return ok && ref["gid"] == group["group_id"]
+				gid, isText := ref["gid"].(string)
+				return ok && isText && gid == group["group_id"]
 			}) {
 				return true
 			}
