@@ -16,6 +16,14 @@ import returns
 
 @unittest.skipUnless(os.environ.get('ROUTERDIFF_BINARY'), 'requires .32 native public Go binary')
 class BoundaryTests(unittest.TestCase):
+    def test_broken_native_launch_is_retained_without_a_fake_http_response(self):
+        # Deliberately broken launch, only an oracle negative: not a product
+        # observation and never part of the domain findings/corpus counts.
+        with Pair(Path('/usr/bin/false')) as pair:
+            self.assertEqual(pair.go_startup_failure['exit_code'], 1)
+            self.assertEqual(pair.python.request('GET', '/api/client-devices')['status'], 200)
+            self.assertEqual(pair.go.rpc('process_status')['exit_code'], 1)
+
     def test_registry_agent_capability_does_not_authenticate_router_admin(self):
         with Pair(Path(os.environ['ROUTERDIFF_BINARY']), authentication_options()) as pair:
             available = registered(pair.go.rpc('manifest'))

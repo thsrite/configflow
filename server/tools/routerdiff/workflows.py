@@ -99,6 +99,17 @@ def client_mode_notes():
         ('R003-S07',), document={**base, 'name': '', 'mode': '', 'previous_mode': 'direct'},
         unchanged=False, effect='profile-write', checks={'devices': []},
         stored_absent=('device_notes/10.44.0.21',), stored={'oxidns/device_policies': []})
+    yield Case('R003/mode-note-smart-with-name', 'R003', 'PUT', '/api/client-devices', 200,
+        ('R003-S02',), document={**base, 'name': '保留备注🧪', 'mode': 'smart'},
+        unchanged=False, effect='profile-write',
+        checks={'devices': [{'ip': base['ip'], 'name': '保留备注🧪', 'mode': 'smart'}]})
+    yield Case('R003/mode-note-clear-mode-retains-same-name', 'R003', 'PUT', '/api/client-devices', 200,
+        ('R003-S05',), document={**base, 'name': '保留备注🧪', 'mode': '',
+            'previous_name': '保留备注🧪', 'previous_mode': 'smart'},
+        unchanged=False, effect='profile-write', retained_fields=('routers', 'client_fixed_ips'),
+        checks={'devices': [{'ip': base['ip'], 'name': '保留备注🧪', 'mode': ''}]},
+        stored={'device_notes/10.44.0.21': '保留备注🧪', 'oxidns/device_policies': []})
+
 
 def workspace_drafts():
     yield Case('R014-S01/initial', 'R014', 'GET', '/api/routers/r-ros/policy-settings', 200,

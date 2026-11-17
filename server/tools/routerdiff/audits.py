@@ -175,6 +175,34 @@ def declared():
             'not claim every policy graph mutation or all public router call sites.',
             tuple(('stored-policy-' + label, route + '/stored-policy-' + label, 400)
                   for label in labels for route in ('R002', 'R003', 'R014')))
+    client_successes = {
+        'S01': (('client-drafts', 'R003-S01/0'), ('notes-capacity', 'R003/notes-2048-freed-slot-accepted')),
+        'S02': (('client-drafts', 'R003-S02/1'), ('client-drafts', 'R003-S02/3'),
+                ('client-mode-notes', 'R003/mode-note-smart-with-name')),
+        'S03': (('client-drafts', 'R003-S03/2'), ('client-mode-notes', 'R003/mode-note-create-direct')),
+        'S04': (('client-drafts', 'R003-S04/4'),),
+        'S05': (('client-drafts', 'R003-S05/6'), ('client-mode-notes', 'R003/mode-note-clear-mode-retains-same-name')),
+        'S06': (('client-drafts', 'R003-S06/5'), ('client-mode-notes', 'R003/mode-note-empty-note-hides-legacy-name')),
+        'S07': (('client-drafts', 'R003-S07/8'), ('client-canonical-names', 'R003/remove-note-with-normalized-previous'),
+                ('client-mode-notes', 'R003/mode-note-clear-policy-removes-hidden-name'),
+                ('notes-keep-reservation', 'R003/note-remove-forgets-binding-keeps-reservation')),
+        'S08': (('client-drafts', 'R003-S08/7'), ('client-mode-notes', 'R003/mode-note-rename-preserves-native-and-legacy-name'),
+                ('stored-policy-legacy', 'R003/stored-policy-legacy-rename-keeps-raw-rows'),
+                ('notes-capacity', 'R003/notes-2048-replace-existing'),
+                ('notes-keep-reservation', 'R003/note-rename-preserves-real-binding')),
+    }
+    for suffix, required in client_successes.items():
+        audits['R003-' + suffix] = Audit(
+            ('backend/routes/client_devices.py:55', 'backend/common/client_devices.py:39',
+             'backend/common/device_notes.py:52'),
+            'Actual public row transitions with own previous values: new smart/direct and transitions, '
+            'name-only vs policy changes, legacy-name hiding/cleanup and Unicode/mapped address removal. '
+            'S07 additionally requires a genuinely previewed/applied DHCP reservation: local binding is '
+            'forgotten while the complete device state survives with zero device requests. S08 requires '
+            'full native/settings/binding retention for normal direct policies, canonical legacy rows, '
+            'the2048-note boundary and an actual DHCP binding. R015 stale names_revision vs modern '
+            'editor success is tested separately, not inferred from the devices response.',
+            tuple((world, name, 200) for world, name in required))
     return audits
 
 

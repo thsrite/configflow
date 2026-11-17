@@ -958,3 +958,38 @@ composition still pending; this is not ready for hand-back. Still2008 audits,
 dynamic comparison integration, startup-failure classification and deeper device/
 background cases remain. All final full/race/proddiff commands must use gate.sh;
 latest explicit coordinator instruction says -p4 on .64 (overrides older docs-p6).
+
+Rebased onto go f73983fb; latest native public binary rebuilt at
+/tmp/routerdiff-build-302rx1dg-latest/configflow. Prior commit IDs above are
+historical command/source provenance (rebase rewrote branch IDs). .64 load at
+rebuild27.98/29.03/27.06. Exact smoke command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; uptime; export PYTHONDONTWRITEBYTECODE=1; ~/cf-test/.venv/bin/python server/tools/routerdiff/build.py /tmp/routerdiff-build-302rx1dg-latest --parallel 4; cd server/tools/routerdiff; export ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_boundary; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world client-mode-notes --world stored-policy-legacy --world discovery-failures --world guards --output /tmp/routerdiff-rebase-f73983fb-smoke.json'`
+=> native build OK; Ran7 tests23.377s/OK; guards1650, mode1657, legacy1659,
+discovery1668(5.02s). Matrix2301/Go routes0/missing1668/audited287/remaining2014
+in this subset. Source at a66ce734 after rebase, before next additions.
+
+Native startup and client-success audit increment:
+- Namespace RPC errors now carry operation context. If Python public startup
+  succeeds but Go's actual public child process exits during start, preserve the
+  real exit code as a process difference, with no fabricated HTTP500 or missing-
+  implementation classification. Live/slow listeners and RPC/environment errors
+  remain fixture errors, not product conclusions. Unknown route inventory is
+  null/native_inventory_observed=false rather than falsely asserting zero routes.
+- Real negative launches /usr/bin/false in the owned Go worker (test-oracle probe
+  only, excluded from product reports), confirms exit1, and independently serves
+  actual Python HTTP200. Runner negative confirms actual process difference and
+  no invented Go response. This is not a finding against the real Go binary.
+- Added8 explicit R003 success audits: ordinary new/mode/name transitions plus
+  native retention, hidden legacy-name cleanup,2048-note boundary and actual
+  DHCP binding retention. Added a pure smart→default transition with unchanged
+  name to complement prior combined name+mode edits. All required42 requests
+  completed against actual Python; Go public routers remain unregistered.
+- Explicit declarations now301, remaining2000 when all proven worlds compose.
+  Complete=false. Main findings remain the old full composition; no hand-back.
+
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_runner test_boundary test_inventory; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world client-mode-notes --world release-ik-suffix --output /tmp/routerdiff-startup-classification.json --findings /tmp/routerdiff-startup-classification-findings.md'`
+=> Ran30 tests28.401s/OK;9 recipes; native_inventory_observed=true, routes0,
+Go missing9, known IKUAI_NETMASK_SUFFIX_ROLLBACK reproduced; complete=false.
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; cd server/tools/routerdiff; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world client-drafts --world client-canonical-names --world notes-capacity --world client-mode-notes --world stored-policy-legacy --world notes-keep-reservation --output /tmp/routerdiff-client-success-audits.json'`
+=> Ran9 tests0.789s/OK;42 requests, references24, audits8 in this subset,
+Go missing42. No process pending. Full composition/gate/final rebase still pending.

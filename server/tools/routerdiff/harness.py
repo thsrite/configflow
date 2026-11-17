@@ -32,6 +32,13 @@ def decode_response(response):
     return {**response, 'content': document, 'kind': kind}
 
 
+
+class RemoteError(RuntimeError):
+    """A namespace RPC failure, carrying transport context without parsing prose."""
+    def __init__(self, side, operation, error, trace):
+        super().__init__(side + ' RPC: ' + error + '\n' + trace)
+        self.side, self.operation, self.remote_error = side, operation, error
+
 class Side:
     def __init__(self, name, directory, binary, options):
         self.name, self.directory = name, Path(directory)
@@ -58,7 +65,7 @@ class Side:
             raise RuntimeError(self.name + ' namespace exited; inspect ' + str(self.directory / 'worker.log'))
         reply = json.loads(line)
         if not reply['ok']:
-            raise RuntimeError(self.name + ' RPC: ' + reply['error'] + '\n' + reply.get('traceback', ''))
+            raise RemoteError(self.name, operation, reply['error'], reply.get('traceback', ''))
         return reply['result']
 
     def request(self, method, path, document=None, raw=None, headers=None, auth=True, **kwargs):
@@ -118,6 +125,7 @@ class Pair:
         self.root.mkdir(parents=True, exist_ok=True)
         self.keep = bool(keep)
         self.sides = {}
+        self.go_startup_failure = None
         options = options or {}
         seed_dir = self.root / 'seed'
         option_path = self.root / 'options.json'
@@ -131,7 +139,18 @@ class Pair:
                 shutil.copytree(seed_dir, directory / 'data')
                 side = Side(name, directory, binary, options)
                 self.sides[name] = side
-                side.start()
+                try:
+                    side.start()
+                except RemoteError as error:
+                    if name != 'go' or error.operation != 'start':
+                        raise
+                    status = side.rpc('process_status')
+                    # A live-but-slow listener or namespace failure remains a
+                    # fixture problem, never a manufactured product finding.
+                    if status['exit_code'] is None:
+                        raise
+                    self.go_startup_failure = {'exit_code': status['exit_code'],
+                                               'stage': 'public native process startup'}
         except BaseException:
             self.close()
             raise

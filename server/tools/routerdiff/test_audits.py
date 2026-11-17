@@ -6,12 +6,15 @@ from audits import declared, evaluate
 from inventory import load
 import guards
 import device_policy
+import workflows
+import fixtures
+import clients
 
 
 class AuditTests(unittest.TestCase):
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'
@@ -92,6 +95,25 @@ class AuditTests(unittest.TestCase):
                     self.assertEqual(case.expected, status)
         self.assertEqual(len(audits['H0083'].requirements), 40 * 3)
         self.assertEqual(len(audits['H0084'].requirements), 9 * 3)
+
+    def test_client_success_audit_requires_persistent_and_real_device_variants(self):
+        actual = {('client-drafts', case.ident): case for case in workflows.client_drafts()}
+        for world, group in (('client-mode-notes', workflows.client_mode_notes),
+                             ('client-canonical-names', workflows.client_canonical_names),
+                             ('notes-capacity', fixtures.notes_capacity),
+                             ('stored-policy-legacy', device_policy.legacy),
+                             ('notes-keep-reservation', clients.notes_keep_reservation)):
+            actual.update({(world, case.ident): case for case in group()})
+        audits = declared()
+        for number in range(1, 9):
+            ident = 'R003-S' + str(number).zfill(2)
+            for world, name, status in audits[ident].requirements:
+                with self.subTest(entry=ident, world=world, case=name):
+                    case = actual[world, name]
+                    self.assertIn(ident, case.entries)
+                    self.assertEqual(case.expected, status)
+        self.assertEqual(len(audits['R003-S07'].requirements), 4)
+        self.assertEqual(len(audits['R003-S08'].requirements), 5)
 
 
 if __name__ == '__main__':

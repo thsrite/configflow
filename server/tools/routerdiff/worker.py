@@ -161,6 +161,8 @@ class Worker:
             return self.faults.control(**values)
         if operation == 'fake':
             return self.world.control(**values)
+        if operation == 'process_status':
+            return {'exit_code': self.process.poll() if self.process is not None else None}
         if operation == 'manifest':
             return (ACTIVE / 'manifest.tsv').read_text() if self.side == 'go' else ''
         if operation == 'log_position':

@@ -131,7 +131,8 @@ def execute(pair, case, available, routes):
         path = control.get('path')
         if isinstance(path, str) and not registered_request(method, path, available):
             missing_routes.append(method + ' ' + path)
-    implemented = not missing_routes and not pair.go.missing_effects
+    startup_failure = getattr(pair, 'go_startup_failure', None)
+    implemented = not startup_failure and not missing_routes and not pair.go.missing_effects
     prior_failed = getattr(pair.go, 'failed_prerequisites', [])
     blocked_reference = 'Go prior mutating HTTP prerequisite failed: ' + ', '.join(prior_failed) if prior_failed else None
     for name, side in pair.sides.items():
@@ -394,6 +395,9 @@ def execute(pair, case, available, routes):
                                        + repr([asdict(item) for item in changed[:5]]))
     found = (differences(setup_observations['python'], setup_observations['go'], '/setup-http')
              if 'go' in setup_observations else [])
+    if startup_failure:
+        found.append({'path': '/public-process/startup', 'python': {'state': 'public listener ready; HTTP request completed'},
+                      'go': startup_failure, 'category': 'process'})
     go_bug_outcome = None
     if implemented and not blocked_reference:
         if case.html_error and observations['go']['status'] == 500 and observations['go']['kind'] == 'text':
@@ -446,7 +450,7 @@ def execute(pair, case, available, routes):
     if flow_requests.get('python'):
         request['preceding_abandoned_requests'] = flow_requests['python']
     safety = any((item.get('category') if isinstance(item, dict) else item.category) == 'safety' for item in found)
-    status = ('blocked-by-difference' if blocked_reference else 'go-unimplemented' if not implemented else 'different' if safety else
+    status = ('different' if startup_failure else 'blocked-by-difference' if blocked_reference else 'go-unimplemented' if not implemented else 'different' if safety else
               'reference-bug-observation' if case.python_bug else 'different' if found else 'compared')
     unimplemented_reason = {'missing_routes': sorted(set(missing_routes)),
                             'prior_missing_mutations': [item['case'] for item in pair.go.missing_effects]}
@@ -473,6 +477,7 @@ def execute(pair, case, available, routes):
             'unimplemented_reason': unimplemented_reason if not implemented else None,
             'blocked_reference': blocked_reference,
             'setup_observations': setup_observations,
+            'go_process': startup_failure,
             'python': observations['python'], 'go': observations.get('go'),
             'python_bug': case.python_bug, 'python_bug_outcome': python_bug_outcome, 'go_bug_outcome': go_bug_outcome,
             'differences': [asdict(item) if not isinstance(item, dict) else item for item in found]}
@@ -495,7 +500,9 @@ def report(output, results, available, announce=True, error=None):
         ledger[ident].update(verdict)
     remaining = sum(item['audit'] != 'variants-audited' for item in ledger.values())
     data = {'matrix_entries': len(entries), 'matrix_routes': len(routes),
-        'implemented_routes': sum((route.method, shape(route.path)) in available for route in routes.values()),
+        'implemented_routes': (sum((route.method, shape(route.path)) in available for route in routes.values())
+                               if available is not None else None),
+        'native_inventory_observed': available is not None,
         'recipe_counts': dict(counts), 'referenced_entries': len(referenced),
         'executed_worlds': sorted({item.get('world', '<self-check>') for item in results}),
         'python_bugs': sorted({item['python_bug'] for item in results if item.get('python_bug')}),
@@ -543,6 +550,8 @@ def findings(path, data):
                   '- Go：' + (('Go 尚未实现（公开路由或前序写入依赖未注册，不能通过 HTTP 检查）：`' +
                               json.dumps(result.get('unimplemented_reason'), ensure_ascii=False) + '`')
                              if result['status'] == 'go-unimplemented' else
+                             'Go 公开进程启动退出，未虚构 HTTP 响应：`' + json.dumps(result['go_process'], ensure_ascii=False) + '`'
+                             if result.get('go_process') else
                              '前置 Go 响应差异阻止后续请求，未使用 Python 的值代替 Go：`' + str(result['blocked_reference']) + '`'
                              if result['go'] is None else
                              '`' + json.dumps({'response': result['go'], 'outcome': result['go_bug_outcome']}, ensure_ascii=False) + '`'),
@@ -560,6 +569,7 @@ def findings(path, data):
                   '- 请求：`' + json.dumps(result['request'], ensure_ascii=False) + '`',
                   '- Python：`' + json.dumps(result['python'], ensure_ascii=False) + '`',
                   '- Go：`' + json.dumps(result['go'], ensure_ascii=False) + '`',
+                  '- Go 公开进程：`' + json.dumps(result.get('go_process'), ensure_ascii=False) + '`',
                   '- 前置公开 HTTP 实际响应：`' + json.dumps(result.get('setup_observations', {}), ensure_ascii=False) + '`', '',
                   '| 路径 | Python | Go | 类别 |', '|---|---|---|---|']
         for difference in result['differences']:
@@ -689,21 +699,22 @@ def main():
         for name, options, groups in worlds:
             keep = args.keep / name if args.keep else None
             with Pair(args.binary, options, keep) as pair:
-                current = registered(pair.go.rpc('manifest'))
-                if available is not None and current != available:
-                    raise RuntimeError('public route inventory changed between synthetic worlds')
-                available = current
+                if not pair.go_startup_failure:
+                    current = registered(pair.go.rpc('manifest'))
+                    if available is not None and current != available:
+                        raise RuntimeError('public route inventory changed between synthetic worlds')
+                    available = current
                 for group in groups:
                     started = time.monotonic()
                     for case in group():
-                        result = execute(pair, case, available, routes)
+                        result = execute(pair, case, available or set(), routes)
                         result['world'] = name
                         results.append(result)
                     report(args.output, results, available, announce=False)
                     print(name + '/' + group.__name__ + ': ' + str(len(results)) + ' cumulative recipes, '
                           + format(time.monotonic() - started, '.2f') + 's', flush=True)
     except Exception as error:
-        report(args.output, results, available or set(), error=str(error))
+        report(args.output, results, available, error=str(error))
         # Runtime global classification fixtures must not escape through a
         # diagnostic traceback while their exact values still drive comparisons.
         raise RuntimeError(report_aliases(str(error))) from None

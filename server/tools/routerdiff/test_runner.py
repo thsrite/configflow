@@ -104,6 +104,18 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse(registered_request('GET', '/api/agents/alpha/heartbeat', available))
         self.assertFalse(registered_request('POST', '/api/agents/alpha/nested/heartbeat', available))
 
+    def test_native_startup_exit_is_a_process_difference_without_invented_http(self):
+        world = pair()
+        world.go_startup_failure = {'exit_code': 7, 'stage': 'public native process startup'}
+        case = Case('startup', 'R002', 'GET', '/api/client-devices', 200)
+        result = execute(world, case, set(), load()[0])
+        self.assertEqual(result['status'], 'different')
+        self.assertEqual(result['go_process']['exit_code'], 7)
+        self.assertIsNone(result['go'])
+        self.assertEqual(world.go.requests, [])
+        self.assertEqual(len(world.python.requests), 1)
+        self.assertEqual(result['differences'][0]['category'], 'process')
+
     def test_notification_prerequisites_cannot_pass_missing_or_stale_evidence(self):
         routes, _ = load()
         before = ObservationSide().before
