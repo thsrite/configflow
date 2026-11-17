@@ -38,11 +38,20 @@ def accepted_basis(item):
         return DECISIONS.format(item='R058-B03')
     version_method = (item['route'] == 'GET /api/version' and item['case'] == 'R228-F01'
                       and item['group'] == 'settings-sync' and item['variant'] == '' and statuses == (405, 405))
-    if not version_method and (item['route'] != 'POST /api/subscriptions/<sub_id>/fetch' or item['variant'] != ''):
+    mosdns_storage = (item['route'] == 'POST /api/mosdns/settings' and item['case'] == 'R090-F10'
+                     and item['group'] == 'mosdns-whole-editor-failures'
+                     and item['variant'] == 'SQLite-trigger-rejects-real-editor-commit' and statuses == (500, 500))
+    if not (version_method or mosdns_storage) and (item['route'] != 'POST /api/subscriptions/<sub_id>/fetch' or item['variant'] != ''):
         return ''
     if version_method:
         status, title = 405, 'Method Not Allowed'
         description = 'The method is not allowed for the requested URL.'
+        expected = {'message': description, 'success': False}
+        fields, decision = {'headers.content-type', 'body'}, 'Step B #3'
+    elif mosdns_storage:
+        status, title = 500, 'Internal Server Error'
+        description = ('The server encountered an internal error and was unable to complete your request. '
+                       'Either the server is overloaded or there is an error in the application.')
         expected = {'message': description, 'success': False}
         fields, decision = {'headers.content-type', 'body'}, 'Step B #3'
     elif item['case'] == 'R218-F10' and statuses == (400, 400):

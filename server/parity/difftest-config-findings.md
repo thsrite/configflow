@@ -52,6 +52,7 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R087-F16 / receipt-path-is-directory | `GET /api/mosdns/rule-proxy` | open | — | aeff9d75 | 500 / 400 |
 | R087-S90 / declared-no-cache-download-failure | `GET /api/mosdns/rule-proxy` | closed | 8f3d36ad | aeff9d75 | 502 / 502 |
 | R087-S91 /  | `GET /api/mosdns/rule-proxy` | open | — | aeff9d75 | 200 / 200 |
+| R090-F10 / SQLite-trigger-rejects-real-editor-commit | `POST /api/mosdns/settings` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 7521bb5c | 500 / 500 |
 | R138-B04 / text/B04 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | aeff9d75 | 422 / 422 |
 | R138-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | aeff9d75 | 200 / 502 |
 | R138-F13 / text/F13 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | aeff9d75 | 422 / 422 |
@@ -290,6 +291,15 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | 路径 | 类型 | Python | Go |
 |---|---|---|---|
 | `files.shared/rules/by-id/4041f17d5c0fdd2b085350804ce17233c8aaee66326b570e4c54146b778a3c67.list.bak` | extra-in-go | None | {'mode': 384, 'content': {'bytes_length': 0, 'bytes_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'bytes_prefix_hex': ''}} |
+
+## R090-F10 / SQLite-trigger-rejects-real-editor-commit
+
+路由：`POST /api/mosdns/settings`；状态：different
+
+| 路径 | 类型 | Python | Go |
+|---|---|---|---|
+| `headers.content-type` | value | 'text/html; charset=utf-8' | 'application/json' |
+| `body` | type | ['<!doctype html>', '<html lang=en>', '<title>500 Internal Server Error</title>', '<h1>Internal Server Error</h1>', '<p>The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.</p>'] | {'message': 'The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.', 'success': False} |
 
 ## X04 / new_domain/literal/"\ud800"
 

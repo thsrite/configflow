@@ -273,6 +273,19 @@ class Comparators(unittest.TestCase):
                 path = {'allow': 'headers.allow', 'SQL': 'setup.readonly-go.database', 'file': 'files.web-listener.json'}[mutation]
                 wrong['remaining_differences'].append({'path': path, 'kind': 'value', 'python': 'old', 'go': 'wrong'})
             self.assertEqual(annotate([wrong])[0]['status'], 'open', mutation)
+        storage = copy.deepcopy(item)
+        description = ('The server encountered an internal error and was unable to complete your request. '
+                       'Either the server is overloaded or there is an error in the application.')
+        storage.update(case='R090-F10', variant='SQLite-trigger-rejects-real-editor-commit', route='POST /api/mosdns/settings',
+                       group='mosdns-whole-editor-failures', python_status=500, go_status=500)
+        storage['remaining_differences'][1].update(python=['<!doctype html>', '<html lang=en>',
+            '<title>500 Internal Server Error</title>', '<h1>Internal Server Error</h1>', '<p>' + description + '</p>'],
+            go={'message': description, 'success': False})
+        self.assertEqual(annotate([copy.deepcopy(storage)])[0]['status'], 'accepted')
+        for path in ('status', 'db.changed', 'setup.readonly-go.files', 'headers.allow'):
+            wrong = copy.deepcopy(storage)
+            wrong['remaining_differences'].append({'path': path, 'kind': 'value', 'python': 'old', 'go': 'wrong'})
+            self.assertEqual(annotate([wrong])[0]['status'], 'open', path)
 
     def test_repair_attribution_requires_actual_success_and_keeps_raw_evidence(self):
         from config_finding_resolutions import annotate

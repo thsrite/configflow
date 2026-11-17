@@ -1718,3 +1718,19 @@ current compared=59 different=1；accepted=1 open=0；design_errors=[] seconds=1
 ```
 
 继续原生监听失败边界、MosDNS/发现选择器和其余清单；最终.32全量未执行。未派子agent/未推送/未读Go业务实现。
+
+## 批次 100：MosDNS完整编辑器选择、失效规则及实际提交失败
+
+- 8新增变体、原R5（R090-B05/B06/B07/F09/F10）；P4 query优先、P5 header选择other、P6默认各通过一次真实完整编辑器事务。验证selected revision/generation各+1、所有foreign行/文件不变；目标local_dns/cache_size确实更新、未知嵌套false/空数组保留、api_addr移除，返回publish_guard准确对应目标和shared revision。R090-B04无公开URL alias仍N/A，没有虚构路由。
+- direct/proxy的rule/ruleset四种不存在引用均409，准确配置空间前缀/中文/usages和全SQL/files相比，不因失败留下默认化设置。第一次草稿少了Python repository添加的“配置 默认配置:”消息前缀而触发参考前提错误，已修正后四种实际重跑通过，未计作业务差异。
+- SQLite BEFORE触发器拒绝真实editor commit得到500，两端数据和文件在各自前后严格不变。仅HTML→JSON公共500错误精确符合Step B #3，链接accepted；其余状态、存储变化、额外字段/头继续open。未把“存储冲突”改成永远相等的比较；保留两条严格原始diff。86项自检通过，包括该精确接受门禁的额外SQL/file/Allow/status反例。
+- .63常规runner：compared7、严格different1/accepted1/open0、design_errors=[]。统一9352变体、原R4292（S689/F2667/B936）、H576、G16；findings closed81/accepted7/open18/O12单列1。原R仍差238、H仍差536及partial/不可达槽/长流程。
+
+```text
+.63 ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups mosdns-whole-editor-selectors,mosdns-whole-editor-failures --baseline 7521bb5c
+current compared=7 different=1 accepted=1 open=0 design_errors=[]；exit=0
+86 self-checks + deliberately wrong-Go-response detection OK
+独立原始报告/tmp/configdiff-mosdns-edges.json
+```
+
+继续余下helpers、生成/发现选择器和长流程；最终.32全量未执行。
