@@ -388,6 +388,49 @@ def declared():
             'keeps side upstream/opaque settings; note-only editing keeps complete native bytes. '
             'Neutral main tags reach these guards; the udp tag/udp:// false reference is a separately '
             'recorded Python bug, never hidden by changing a device fake.', required)
+    invalid_labels = ['mode']
+    invalid_labels += ['native-type-' + label for label in ('null', 'bool', 'number', 'array', 'object')]
+    invalid_labels += ['yaml-' + label for label in ('empty', 'array', 'null', 'scalar', 'syntax', 'duplicate',
+                                                    'key-number', 'key-forbidden', 'loop', 'nonfinite', 'binary')]
+    invalid_labels += ['files-shape-' + label for label in ('null', 'bool', 'number', 'object', 'string')]
+    invalid_labels += ['files-257']
+    invalid_labels += ['file-row-' + label for label in ('null', 'array', 'number', 'string')]
+    invalid_labels += ['file-path-' + label for label in ('null', 'empty', 'number', 'array', 'object', 'backslash',
+        'control', 'absolute', 'parent', 'empty-part', 'dot-part', 'parent-part')]
+    invalid_labels += ['file-reserved-' + label for label in ('config', 'manifest', 'state', 'state-child', 'hidden', 'hidden-child')]
+    invalid_labels += ['file-' + label for label in ('duplicate', 'parent-first', 'child-first')]
+    invalid_labels += ['file-content-' + label for label in ('null', 'number', 'array', 'object', 'encoding')]
+    invalid_labels += ['file-base64']
+    families = [('native-policy', (*native_main, *native_listeners)),
+                ('native-owned', tuple(label for labels in ownership.values() for label in labels)),
+                ('native-invalid', invalid_labels)]
+    readonly = tuple((prefix + '-' + label, route + '/' + prefix + '-' + middle + label, 200)
+        for prefix, labels in families for label in labels
+        for route, middle in (('R002', ''), ('R014', 'readonly-')))
+    ordinary = (('native-policy-valid', 'R002/native-policy-recognized-main', 200),
+                ('native-owned-valid', 'R002/native-owned-valid-recorded', 200))
+    parent_sources = ('backend/common/oxidns_device_policy.py:357', 'backend/common/oxidns_editor.py:107',
+                      'backend/common/oxidns_settings.py:116', 'backend/common/oxidns_native.py:65')
+    for ident in ('H0100', 'H0101'):
+        audits[ident] = Audit(parent_sources,
+            'Actual read_policies exception/readonly return across native settings/YAML/attachment normalization, '
+            'all main/listener refusals and all managed ownership families, through both client and workspace '
+            'GETs. Covers schema/type/duplicate/unsafe keys/cycles/nonfinite/binary, metadata count/paths/'
+            'reserved/duplicate/file-directory/content/base64 errors without writing files. Positive empty '
+            'and old-owned native chains remain editable. Does not claim every callee outside the routers '
+            'file inventory or physical DNS core validation; malformed raw policy rows fail before this try '
+            'and are separately covered by H0080-H0084/API400, not falsely counted as readonly200.', readonly + ordinary)
+    audits['R002-F12'] = Audit(parent_sources,
+        'All120 negative native graph/settings worlds return200 editable=false with exact diagnostic '
+        'and unchanged complete state; callers can still rename notes without rewriting native data. '
+        'The valid udp:// reference collision is a separate Python bug, not a legitimate rejection.',
+        tuple(requirement for requirement in readonly if requirement[1].startswith('R002/')))
+    audits['R003-F15'] = Audit(parent_sources,
+        'All120 negative native graph/settings worlds reject a valid selected-profile, fresh-previous '
+        'mode change with exact400 and complete state unchanged; name-only edits remain usable and '
+        'retain native settings. Existing direct ownership cases change toward smart, others toward direct.',
+        tuple((prefix + '-' + label, 'R003/' + prefix + '-mode-refused-' + label, 400)
+              for prefix, labels in families for label in labels))
     return audits
 
 

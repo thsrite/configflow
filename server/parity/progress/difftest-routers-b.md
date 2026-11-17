@@ -1167,3 +1167,28 @@ statistics unchanged; they are still the last full composition.
 Next work: native normalization/parent diagnostics, remaining HTTP wrapper guard
 closure, G23 external-public-route dispatch, deeper policy/NAT/IPv6/background/
 restart branches and strict scoped dynamic comparison. Final gate/rebase pending.
+
+Native normalization and parent/API diagnostics:
+-54 public-import malformed settings worlds ×4 HTTP operations=216 new requests:
+  mode/native text types, empty/scalar/malformed/duplicate/unsafe-key/cyclic/
+  nonfinite/binary YAML, attachment outer/row/count257, bad/unsafe/reserved paths,
+  duplicate and both file-directory orders, content/encoding/base64 errors.
+  No attachment is materialized. Each safely reads readonly, atomically refuses
+  mode change, allows notes with complete settings retention and reads workspace.
+- H0100/H0101 and R002-F12/R003-F15 explicit4 declarations require120 negative
+  worlds from normalization+main/listener+ownership, plus ordinary parent-success
+  controls. Invalid raw policy rows fail before the read_policies try and remain
+  their own H0080-H0084/API400 family, not incorrectly classified readonly200.
+  No claim of exhaustive imported C22 parser internals outside routers inventory.
+- Declarations344, remaining1957 if composed. Full matrix remains incomplete.
+
+.64 pilot: Ran7 tests0.398s/OK;20 selected requests passed.
+Authoritative command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix native-policy- --world-prefix native-owned- --world-prefix native-invalid- --world stored-policy-capacity --output /tmp/routerdiff-native-parents.json'`
+=> All selected selftests OK,487 requests passed; routes0/missing487/references17/
+audits13 in this subset/remaining2288/complete=false, no new Python bug. Confirmed
+with a read-only JSON summary afterward (no test rerun). No active command.
+Last full remains379377393054 recipes/301 audits; newer independent batches do
+not replace it. Next priority G23's real external-public-route oracle and simple
+config/Agent generation guards, alongside remaining wrapper/device/background
+coverage and dynamic-value comparison. Final gate/rebase still pending.

@@ -105,7 +105,7 @@ def worlds():
 def valid():
     row = {'ip': '10.44.0.21', 'name': '现存备注🧪', 'mode': 'direct'}
     yield Case('R002/native-owned-valid-recorded', 'R002', 'GET', '/api/client-devices', 200,
-        ('R002-S01', 'H0096', 'H0097'), checks={'editable': True, 'reason': '', 'devices': [row]})
+        ('R002-S01', 'H0096', 'H0097', 'H0100', 'H0101'), checks={'editable': True, 'reason': '', 'devices': [row]})
     body = {'profile_id': 'alpha', 'ip': row['ip'], 'name': '保留备注🧪', 'mode': 'smart',
             'previous_name': row['name'], 'previous_mode': 'direct', 'base_url': ''}
     yield Case('R003/native-owned-direct-to-smart-withdraws-plugins', 'R003', 'PUT', '/api/client-devices', 200,

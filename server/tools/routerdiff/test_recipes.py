@@ -23,6 +23,7 @@ import device_policy
 import policy_graph
 import policy_owned
 import policy_side
+import policy_invalid
 from inventory import load
 from bugs import BUGS
 
@@ -100,6 +101,16 @@ class RecipeTests(unittest.TestCase):
                 seen.add(case.ident)
                 self.assertTrue(set(case.entries) <= set(entries))
             self.assertIn('oxidns/native_config', rows[1].stored_contains)
+            self.assertIn('oxidns', rows[2].retained_fields)
+
+    def test_invalid_native_settings_use_real_readonly_and_atomic_refusal_workflow(self):
+        _, entries = load()
+        for world, options, groups in policy_invalid.worlds():
+            rows = [case for group in groups for case in group()]
+            self.assertEqual([case.expected for case in rows], [200, 400, 200, 200])
+            for case in rows:
+                self.assertTrue(set(case.entries) <= set(entries))
+                self.assertNotIn('H0086', case.entries)
             self.assertIn('oxidns', rows[2].retained_fields)
 
     def test_response_references_are_side_local(self):

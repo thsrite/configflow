@@ -170,7 +170,7 @@ def worlds():
 def valid():
     row = {'ip': '10.44.0.21', 'name': '现存备注🧪', 'mode': ''}
     yield Case('R002/native-policy-recognized-main', 'R002', 'GET', '/api/client-devices', 200,
-        ('R002-S01', 'H0085', 'H0098'), checks={'editable': True, 'reason': '', 'devices': [row], 'side_entries': []})
+        ('R002-S01', 'H0085', 'H0098', 'H0100', 'H0101'), checks={'editable': True, 'reason': '', 'devices': [row], 'side_entries': []})
     body = {'profile_id': 'alpha', 'ip': row['ip'], 'name': '新直连设备🧪', 'mode': 'direct',
             'previous_name': row['name'], 'previous_mode': '', 'base_url': ''}
     yield Case('R003/native-policy-valid-direct', 'R003', 'PUT', '/api/client-devices', 200,

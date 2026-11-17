@@ -13,12 +13,13 @@ import cases
 import policy_graph
 import policy_owned
 import policy_side
+import policy_invalid
 
 
 class AuditTests(unittest.TestCase):
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'
@@ -201,6 +202,20 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(len(audits['H0091'].requirements), (6 + 5) * 2)
         self.assertIn(('native-side-legacy-empty-wildcard-agent-host',
                       'R003/native-side-direct-legacy-empty-wildcard-agent-host', 200), audits['H0091'].requirements)
+    def test_native_parent_audits_require_all_graph_and_normalization_families(self):
+        worlds = policy_graph.worlds() + policy_owned.worlds() + policy_invalid.worlds()
+        actual = {(world, case.ident): case for world, _, groups in worlds for group in groups for case in group()}
+        actual.update({('native-policy-valid', case.ident): case for case in policy_graph.valid()})
+        actual.update({('native-owned-valid', case.ident): case for case in policy_owned.valid()})
+        audits = declared()
+        for ident in ('H0100', 'H0101', 'R002-F12', 'R003-F15'):
+            for world, name, status in audits[ident].requirements:
+                case = actual[world, name]
+                self.assertIn(ident, case.entries)
+                self.assertEqual(case.expected, status)
+        self.assertEqual(len(audits['R002-F12'].requirements), 120)
+        self.assertEqual(len(audits['R003-F15'].requirements), 120)
+        self.assertEqual(len(audits['H0100'].requirements), 120 * 2 + 2)
 
 
 if __name__ == '__main__':
