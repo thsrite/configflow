@@ -72,12 +72,19 @@ func point(config document) *restorePoint {
 	if json.Unmarshal(o["version"], &version) != nil || version != 1 {
 		return nil
 	}
-	var p restorePoint
-	if json.Unmarshal(raw, &p) != nil || p.ID == "" || p.Mihomo == nil || p.OxiDNS == nil || o["created_at"] == nil || p.Mihomo[RestoreKey] != nil {
+	// Members are read exact-case from the raw object, as Python's dict.get:
+	// encoding/json's struct matching is case-insensitive ("ID", "Mihomo").
+	p := restorePoint{Version: version}
+	if string(o["id"]) == "null" || json.Unmarshal(o["id"], &p.ID) != nil || p.ID == "" {
 		return nil
 	}
-	var created string
-	if string(o["created_at"]) == "null" || json.Unmarshal(o["created_at"], &created) != nil {
+	if string(o["created_at"]) == "null" || json.Unmarshal(o["created_at"], &p.CreatedAt) != nil {
+		return nil
+	}
+	if json.Unmarshal(o["mihomo"], &p.Mihomo) != nil || json.Unmarshal(o["oxidns"], &p.OxiDNS) != nil {
+		return nil
+	}
+	if p.Mihomo == nil || p.OxiDNS == nil || p.Mihomo[RestoreKey] != nil {
 		return nil
 	}
 	return &p

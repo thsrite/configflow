@@ -99,7 +99,7 @@ func safeValue(key string, value json.RawMessage, seeds redact.Secrets) (json.Ra
 			*n = *yamlx.Str(msgDigest + digest(json.RawMessage(b))[:12])
 			return nil
 		}
-		if diag.IsCredentialKey(key) {
+		if hiddenKey(key) {
 			*n = *yamlx.Str(msgHidden)
 			return nil
 		}
@@ -151,6 +151,19 @@ func safeValue(key string, value json.RawMessage, seeds redact.Secrets) (json.Ra
 	// Scan metadata keys too, after named fields have their Chinese mask.
 	// This pass never discovers credentials from projected placeholders.
 	return jsonx.Compact(redact.SanitizeWithSecrets(projected, seeds, true))
+}
+
+// hiddenKeyWords are the field-name words the preview has always masked by
+// substring ("secret_key", "api_tokens", "vmess-uuid"). The shared list only
+// matches exact names and suffixes; the mask must never show more than before.
+var hiddenKeyWords = []string{"password", "secret", "token", "authorization", "private-key", "private_key", "uuid"}
+
+func hiddenKey(key string) bool {
+	if diag.IsCredentialKey(key) {
+		return true
+	}
+	lower := strings.ToLower(key)
+	return slices.ContainsFunc(hiddenKeyWords, func(word string) bool { return strings.Contains(lower, word) })
 }
 
 func sourceCredentials(config, candidate document) (redact.Secrets, error) {
