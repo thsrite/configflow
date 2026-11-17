@@ -257,9 +257,11 @@ func TestCorpus(t *testing.T) {
 				}
 			}
 		}
-		nativeMatch := !jsonx.Equal(want, got) && nativeProviderOutcome(kind,asObject(input),want,got)
-        if nativeMatch { counts["N7-3 native boundary"]++ }
-        if !jsonx.Equal(want, got) && !nativeMatch {
+		nativeMatch := !jsonx.Equal(want, got) && nativeProviderOutcome(kind, asObject(input), want, got)
+		if nativeMatch {
+			counts["N7-3 native boundary"]++
+		}
+		if !jsonx.Equal(want, got) && !nativeMatch {
 			failures++
 			if failures <= 40 {
 				t.Errorf("row %d (%s) input %s%s", i, kind, diffText(input, nil)[6:], diffText(want, got))
