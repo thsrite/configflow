@@ -38,9 +38,10 @@ def healthy_status(goal='router'):
 
 class GatewayAgent:
     """Only the recorded status protocol; deliberately has no OS capabilities."""
-    def __init__(self, value=None, status=200):
+    def __init__(self, value=None, status=200, *, bind_host='127.0.0.1'):
         self.value = healthy_status() if value is None else value
         self.status, self.calls, self.errors = status, [], []
+        self.responses = {}
         self.before_reply = None
         self.expected_disconnect = False
         self.lock = threading.Lock()
@@ -58,7 +59,7 @@ class GatewayAgent:
                         'accept': self.headers.get('Accept', ''), 'content_type': self.headers.get('Content-Type', '')})
                 if owner.before_reply:
                     owner.before_reply()
-                value = owner.value
+                value = owner.responses.get(self.path, owner.value)
                 content = value if isinstance(value, bytes) else json.dumps(value, ensure_ascii=False).encode()
                 self.send_response(owner.status)
                 self.send_header('Content-Type', 'application/json')
@@ -72,7 +73,7 @@ class GatewayAgent:
 
             do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = request
 
-        self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        self.server = ThreadingHTTPServer((bind_host, 0), Handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.port = self.server.server_port
 
@@ -142,15 +143,17 @@ def publication(pair, agents, **changes):
 
 
 @contextmanager
-def prepared(binary, recorder, goal, variant, *, heartbeat=True, version='1.8.60-go', disabled=False, quiet_library=False):
-    with GatewayAgent(healthy_status(goal)) as mihomo, GatewayAgent() as oxidns, Source(b'synthetic blocked upstream') as outbound:
+def prepared(binary, recorder, goal, variant, *, heartbeat=True, version='1.8.60-go', disabled=False, quiet_library=False,
+             service_host='127.0.0.1'):
+    bind = '127.0.0.1' if service_host == '127.0.0.1' else '0.0.0.0'
+    with GatewayAgent(healthy_status(goal), bind_host=bind) as mihomo, GatewayAgent(bind_host=bind) as oxidns, Source(b'synthetic blocked upstream') as outbound:
         outbound.status = 503
         agents = (mihomo, oxidns)
         fixture = {'config_token': PULL, 'shared': {'nodes': [NODE]},
                    'setup_shadow_builtin_names': quiet_library,
                    'system_config': {'rule_fetch_proxy': outbound.url},
                    'agents': [{'id': ident, 'name': INSTALL_NAME + '-' + service, 'service_type': service,
-                       'token': TOKENS[index], 'profile_id': 'default', 'host': '127.0.0.1', 'port': agent.port,
+                       'token': TOKENS[index], 'profile_id': 'default', 'host': service_host, 'port': agent.port,
                        'enabled': not (disabled and index == 0), 'version': version, 'deployment_method': 'shell',
                        'latest_deployment': {'deployment_id': 'synthetic-published-' + service, 'status': 'succeeded'}}
                        for index, (ident, service, agent) in enumerate(zip(IDS, SERVICES, agents))]}
@@ -164,7 +167,7 @@ def prepared(binary, recorder, goal, variant, *, heartbeat=True, version='1.8.60
                 pair.policy.times.add('db.fields.system//agents.value[' + str(index) + '].updated_at')
             call(pair, 'R121-S01', 'POST /api/profiles/<profile_id>/agents/rebind', '/api/profiles/default/agents/rebind',
                  body={'target_profile_id': PID, 'agent_ids': list(IDS)}, variant=variant + '/bind')
-            publication(pair, agents)
+            publication(pair, agents, network={'address': service_host})
             if heartbeat:
                 refresh_heartbeats(pair, variant, version)
             yield pair, agents, outbound

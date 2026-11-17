@@ -256,6 +256,8 @@ def main():
     groups.update(pull_failures)
     from cases.task_router_retry import GROUPS as task_router_retry
     groups.update(task_router_retry)
+    from cases.setup_managed_router import GROUPS as setup_managed_router
+    groups.update(setup_managed_router)
     from cases.groups import GROUPS as managed_groups
     groups.update(managed_groups)
     from cases.rule_library import GROUPS as rule_library

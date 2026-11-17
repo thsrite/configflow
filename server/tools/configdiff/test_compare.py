@@ -17,6 +17,40 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_managed_setup_race_retains_secondary_HTTP_and_every_commit_proof(self):
+        from cases.setup_managed_router import ChangedDuringInspection
+        observer = ChangedDuringInspection(SimpleNamespace(), [], None, set())
+        observer.status.observed = [[], []]
+        observer.observed = [[], []]
+        observer.source_requests = [[], []]
+        response = Reply(200, {'content-type': 'application/json'}, b'{"success":true}')
+        observer.secondary = [response, response]
+        observer.proofs = [{'edit_status': 200, 'exact_single_router_edit': True,
+            'new_commit': True, 'actual_edit_time': True} for _ in range(2)]
+        self.assertEqual(observer.compare(Policy()), [])
+        for field in observer.proofs[1]:
+            original = observer.proofs[1][field]
+            observer.proofs[1][field] = False
+            self.assertTrue(observer.compare(Policy()), field)
+            observer.proofs[1][field] = original
+        observer.secondary[1] = Reply(409, response.headers, response.body)
+        self.assertTrue(observer.compare(Policy()), 'secondary update rejection')
+
+    def test_managed_setup_detects_any_extra_router_or_Agent_interaction(self):
+        from cases.setup_managed_router import ManagedExchange
+        observer = ManagedExchange(SimpleNamespace(), [], None, set())
+        observer.status.observed = [[], []]
+        observer.observed = [[], []]
+        self.assertEqual(observer.compare(Policy()), [])
+        observer.observed[1] = [{'method': 'PATCH', 'path': '/rest/ip/route'}]
+        self.assertTrue(observer.compare(Policy()), 'unexpected router write')
+        observer.observed[1] = []
+        observer.status.observed[1] = [{'requests': [{'method': 'POST', 'path': '/api/unexpected'}]}]
+        self.assertTrue(observer.compare(Policy()), 'unexpected Agent operation')
+        observer.status.observed[1] = []
+        observer.source_requests = [[], [{'method': 'GET', 'path': '/unexpected-source'}]]
+        self.assertTrue(observer.compare(Policy()), 'unexpected rule download')
+
     def test_router_task_completion_keeps_pause_baseline_SQL_and_wire_observable(self):
         from cases.task_router_retry import RouterCompletion
         pair = SimpleNamespace(policy=Policy(), route_available=lambda route: False)

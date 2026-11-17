@@ -2217,3 +2217,17 @@ current compared273 / Go未实现51 / different20 / accepted20 / open0；design_
 current Go未实现2；design_errors=[]；exit0
 116 self-checks + deliberately wrong-Go-response detection OK
 ```
+
+## 批次 130：真实 managed finish、设备拒绝/漂移和并发路由器编辑
+
+- R211-S12及H1005/1006/1007均经Python真实公开finish走RouterOS driver、inspect和plan；不替换业务函数。仅private native namespace的lo短暂添加192.0.2.240/32，finally移除，宿主没有网络改动。两个fake Agent只提供HTTP状态，不做安装或网络操作；原completion helper默认127.0.0.1路径保持原行为。
+- 逐项比较完整只读REST transcript、Basic认证、两条准确Mihomo GET及其头/正文、OxiDNS零请求、规则源零连接、全部DB/files。真实首读401必须502；真实gateway漂移使非空plan必须409；空plan才完成并返回准确客户端路由表。
+- 并发项在首个REST读已进入且未返回时，由另一个公开PUT实际提交名称更新，finish必须409。只允许这次PUT的完整单一SQL事务，验证行revision、全局generation、唯一新commit和当前updated_at；额外行/文件仍严格比较。首个草稿漏算正常updated_at/commit变化，已更正并重新实际通过，未把草稿错误报成Go差异。
+- .32独立组12变体及正式三组回归全部Python前提通过，Go未接通；118项比较器自检含故意设备写入、额外Agent请求、规则下载、次HTTP拒绝和每项事务证明篡改。draft移至/tmp，不提交临时报告。
+- 正式10185变体，原R4486（S712/F2759/B1015）、H753/G16；累计compared2938/Go未实现7095/依赖102/严格差异49/O12单列1。findings仍closed122/accepted29/open20/O12单列1。原R差44（含N/A）、H差359及partial/长流程，最终all尚未完成。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups setup-completion-real-managed-router,setup-completion-lifecycle,setup-completion-attach-router --baseline 038b52ae
+Python前提全部通过；Go未实现/依赖未实现；design_errors=[]；exit0
+118 self-checks + deliberately wrong-Go-response detection OK
+```

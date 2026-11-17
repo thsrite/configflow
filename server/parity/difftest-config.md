@@ -2074,6 +2074,8 @@ H001/H002由真实规则库名称派生的包路径触发[mosdns_archive.py:28](
 
 R227-S07用合成历史runtime receipt加当前有效IP规则选择验证真实排队202→控制变化暂停→持久task失败→锁释放后的精准重试拒绝，见[rule_sync.py:404](../../backend/routers/rule_sync.py#L404)、[rule_sync.py:263](../../backend/routers/rule_sync.py#L263)。baseline不是实际ROS已发布证明；设备同步写入/回读/补偿不因本用例计完成，仍为跨领域fake/L5覆盖。
 
+R211-S12及H1005–1007由真实managed finish驱动：仅在private netns的lo添加合成客户端LAN地址，fake RouterOS返回完整只读表，真实Mihomo Agent HTTP返回完整TUN状态及return-routing状态；要求空计划后完成。首读401→502、非空漂移计划→409、首读被阻塞期间另一公开PUT真实修改router→409逐项验证，不替换`_inspect`或内部函数。逐条比较所有设备方法/路径/Basic、Agent请求正文/头、零规则源访问、全SQL/files；并发PUT只允许准确的单一router名称事务，含revision、commit与时间窗验证。来源[setup_completion.py:204](../../backend/common/setup_completion.py#L204)、[routers.py:160](../../backend/routes/routers.py#L160)。合成安装发布回执仍只作为向导边界前提，不代表真实安装、转发或L5设备验收。
+
 冻结比较针对每个端自己的已校验bundle成员原始字节。配置通过公开settings改为另一份后，旧file仍必须等于旧成员，完整SQL/预览文件不变；跨实现的生成主YAML照结构比较。ZIP下载由[generated_preview.download](../../backend/agents/generated_preview.py#L163)每次重打包，ZIP容器自身的时间戳不属于“旧成员内容不变”，不能把整个ZIP字节相等当作冻结条件。TTL仍核对真实expires_at≈创建时刻+3600，过期拒绝另由F11验证，不缩短生产TTL。
 
 ### Step B token保存后的轮换与版本注入边界
