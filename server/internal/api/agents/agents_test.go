@@ -131,6 +131,19 @@ func TestRegistrationKeyDoesNotBypassExistingAgentToken(t *testing.T) {
 	}
 }
 
+func TestL1LockedOrdinaryRegistrationExplainsEnrollmentWithoutLeakingKey(t *testing.T) {
+	s := newServer(t)
+	t.Setenv("AGENT_REGISTRATION_KEY", "l1-private-registration-key")
+	before := storedAgents(t, s)
+	for _, method := range []string{"shell", "docker"} {
+		r := s.Post("/api/agents/register", httpxtest.JSON(payload("deployment_method", method))).WantStatus(403)
+		r.WantJSON(jsonx.Obj("success", false, "message", apiagents.RegistrationLocked))
+		if strings.Contains(r.Text(), os.Getenv("AGENT_REGISTRATION_KEY")) || !jsonx.Equal(storedAgents(t, s), before) {
+			t.Fatal("refusal leaked registration key or changed registry")
+		}
+	}
+}
+
 func TestHostMatchingHappensAfterRealClientIPNormalization(t *testing.T) {
 	s := newServer(t)
 	p := payload("host", "172.18.0.4")

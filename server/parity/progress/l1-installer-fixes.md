@@ -138,3 +138,21 @@ ok configflow/internal/installer 134.163s
 ok configflow/internal/installer 20.375s
 ok configflow/internal/api/agents/difftest 4.736s
 ```
+
+## D4 — registration-policy clarification
+
+Python routes/agents.py already requires registration_key for ordinary register;
+ordinary Shell/Docker Agent has no client option for it. HA enrollment instead
+uses a scoped installation capability. Authentication is unchanged. Missing/empty
+key 403 now explains this and how to choose enrollment/contact the administrator;
+wrong keys retain the original refusal. No global secret is placed in an URL,
+script, response or persisted Agent. Updated agent-install documentation.
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --back server/internal/api/agents/messages.go --back server/internal/api/agents/agents_test.go -- bash -c 'set -eu; cd server; gofmt -w internal/api/agents/messages.go internal/api/agents/agents_test.go; go vet ./internal/api/agents; go test -count=1 -v -run "Test(L1Locked|RegistrationKey|DockerHAEnrollmentLocked)" ./internal/api/agents'
+```
+
+All three tests pass; `ok configflow/internal/api/agents 0.151s`.
+D3 full package check (331.726s, .64) reports only the older A09 compact corpus's
+13 undeclared D1 cases; API agents passed 28.736s. No D3 failures. The additional
+A09 corpus must receive the same narrow D1 declaration before final acceptance.

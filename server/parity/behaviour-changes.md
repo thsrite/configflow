@@ -14,6 +14,14 @@ redactor 的既有策略不变。无新接口或 UI 操作变化。
 `redact.TestPublicMetadataCredentials`。24 组非泄露类真实 Python 参照继续逐字段相等；
 泄露类单独断言安全结果，不放宽差分比较。见 [A24 复核](review-a24.md)。
 
+## L1 D4 — 注册锁定提示
+
+Python 原来就要求普通注册提交 `registration_key`，而现有 Agent/普通安装器没有
+传入该字段的功能；HA enrollment 使用独立 capability。这是既有注册策略，保留
+403、错误密钥的旧提示、密钥校验及已有身份 token 校验。仅在缺少/空密钥时把
+`Invalid registration key` 扩充为 `api/agents.RegistrationLocked` 的明确中文操作提示。
+不把全局密钥写入链接、脚本、响应或持久数据。文档说明锁定与 HA enrollment 的区别。
+
 ## L1 D3 — 覆盖安装失败恢复原 Agent
 
 协调者批准修复 Python 遗留缺陷（2026-11-17）：单服务和 AIO 安装在停止旧服务后、

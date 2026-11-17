@@ -661,6 +661,13 @@ Open findings: none.
 
 ## A08 — installer script rendering, install command store
 
+L1 D4: confirmed Python's existing optional registration-key policy; ordinary
+Shell/Docker Agent has no registration_key input. Missing-key 403 now explains
+the policy and HA enrollment alternative, without exposing the key or relaxing
+authentication. Documented in doc/guide/agent-install.md; regression checks both
+ordinary deployment methods and unchanged registry; existing HA locked-enrollment
+and existing-token tests continue to apply.
+
 L1 D3 follow-up (`go-fix-l1-installer`, ported; independent review pending): native
 single/AIO installers journal old binary/config/identity, service definitions and
 enabled/active state before replacing them. Failure stops/disables candidates,

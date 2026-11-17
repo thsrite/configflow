@@ -189,6 +189,9 @@ func doRegister(c *httpx.Ctx, out **jsonx.Object) (*httpx.Response, error) {
 	if key := os.Getenv("AGENT_REGISTRATION_KEY"); key != "" && installationProfile == nil {
 		if !jsonx.Equal(data.GetOr("registration_key", ""), key) {
 			logger.Warning("Agent 注册被拒绝：注册密钥不匹配")
+			if data.GetOr("registration_key", "") == "" {
+				return failure(403, RegistrationLocked), nil
+			}
 			return failure(403, "Invalid registration key"), nil
 		}
 	}
