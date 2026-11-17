@@ -1324,3 +1324,18 @@ compared=3 独立累计=33 design_errors=[] seconds=30.48；exit=0
 ```
 
 T14仍不代表真实DNS网络路径或实际代理RTT通过；T13节点并发busy/上限转换、其余helpers/长流程继续。
+
+## 批次 76：统一报告合并69–75批
+
+- 通过常规runner在.63重跑此前独立验证的新组并更新统一results.json：先414变体（368 Go尚未实现、30心跳前置依赖、16相比通过），design_errors=[]、180.27s、exit0；再33 DNS worker变体全部相比通过，design_errors=[]。没有手工拼接或把测试尚未运行的条目登记通过。
+- 统一累计8538变体：compared2285、Go尚未实现6101、dependency67、different84、O12-separate1；原R4162（S678/F2635/B849）、H329、G16。所有此报告的Go生产代码基线仍afca350b，新集成go尚待rebase/重跑；新OxiDNS helper工作区不在此统计中。
+- 相比73批有效全量，新增447真实变体；84差异与findings条目未被豁免或丢弃，已完成的新组不再只存在/tmp独立报告。68 comparator self-checks及故意错误Go响应检出通过。
+
+```text
+.63 run.py --groups setup-completion-lifecycle,setup-completion-status-guards,setup-completion-publication-guards,setup-completion-protocol-guards,setup-completion-finish-guards,setup-completion-concurrent-core-edit,setup-completion-attach-router,profile-rule-group-write-selectors,setup-same-session-serial,setup-browser-disconnect,setup-agent-status-timeout,profile-discovery-write-selectors,config-pull-named-forms,config-pull-named-guards,config-pull-named-failures
+current go-unimplemented=368 dependency=30 compared=16 design_errors=[] seconds=180.27；exit=0
+.63 run.py --groups dns-worker-helper-failures,dns-worker-boundary-inputs,dns-worker-returned-failures,dns-worker-production-deadline,dns-worker-success-forms
+current compared=33 design_errors=[]；exit=0
+```
+
+仍余原R368编号及H783编号，另有已具名但多子形态/长流程部分覆盖；不把变体总数当作清单已完成。最终rebase与.32全量尚待执行。
