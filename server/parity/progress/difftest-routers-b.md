@@ -1362,3 +1362,21 @@ scoped other dynamic families, helpers/wrappers, device compensation/background/
 OS failures, and reviewing unnecessary future/sibling route dependencies in
 recipe eligibility (creation requires future DELETE; job-lock world requires
 every sibling endpoint). Those must not hide an already implemented handler.
+
+Eligibility false-skip fixes (test infrastructure only):
+- R008 creation no longer requires future R009 cleanup. Every world owns a
+  disposable DATA_DIR, so a missing DELETE cannot justify skipping implemented
+  POST. Deletion still requires the actual prior creation and own raw ID.
+- manifest_requires now uses the same concrete/template matcher as the actual
+  HTTP prerequisite oracle. A registered generic service handler satisfies the
+  concrete Mihomo prerequisite; wrong method, a Surge-only path and no handler
+  remain missing. Existing token-overlap missing-handler check stays strict.
+- Purpose-broken negative controls cover absence/wrong method/wrong concrete
+  endpoint; real execute uses only R008 registration for an ID-bound successful
+  creation. This fixes false unimplemented counts, not a product behaviour.
+
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_recipes test_runner test_identities; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world router-creations --output "$HOME/.cache/routerdiff-reports/302rx1dg/create-independent-eligibility.json"'`
+=> Ran39 tests0.740s/OK;80 real create/delete recipes3.80s, missing80/complete=false.
+No active command. Declarations382/remaining1919 unchanged; full composition/
+final gate/final rebase pending. The shared job-lock world's sibling dependencies
+are still a separate open test-infrastructure issue, not silently accepted.

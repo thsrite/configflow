@@ -312,8 +312,7 @@ def router_creates():
                   **{'routers/items/-1/' + field: value for field, value in expected.items()}}
         yield Case(ident, 'R008', 'POST', '/api/routers', 200, (entry,), document={**base, **patch},
                    unchanged=False, effect='router-create', checks=checks, stored=stored,
-                   absent=('router/password', 'router/unknown'), formats={'router/id': r'router_[0-9a-f]{12}'},
-                   requires=('R009',))
+                   absent=('router/password', 'router/unknown'), formats={'router/id': r'router_[0-9a-f]{12}'})
         yield Case('R009/delete-' + label, 'R009', 'DELETE', Ref(ident, '/body/router/id', prefix='/api/routers/'),
                    200, ('R009-S01',), unchanged=False, effect='router-delete', checks={'success': True}, requires=('R008',))
 

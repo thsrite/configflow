@@ -49,6 +49,21 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_concrete_manifest_requirement_accepts_an_actual_generic_handler(self):
+        routes, _ = load()
+        case = Case('generic-prerequisite', 'R002', 'GET', '/api/client-devices', 200,
+                    manifest_requires=(('POST', '/api/custom-config/mihomo'),))
+        available = {('GET', shape(routes['R002'].path)), ('POST', '/api/custom-config/{}')}
+        world = pair()
+        self.assertEqual(execute(world, case, available, routes)['status'], 'compared')
+        self.assertEqual(len(world.go.requests), 1)
+        for missing in ({('GET', shape(routes['R002'].path)), ('GET', '/api/custom-config/{}')},
+                        {('GET', shape(routes['R002'].path)), ('POST', '/api/custom-config/surge')}):
+            world = pair()
+            result = execute(world, case, missing, routes)
+            self.assertEqual(result['status'], 'go-unimplemented')
+            self.assertEqual(world.go.requests, [])
+
     def test_actual_create_comparison_uses_scoped_storage_bound_ids_and_retains_raw_references(self):
         def created_side(ident, name='合成新路由🧪', wrong_stored_id=False):
             before = ObservationSide().before

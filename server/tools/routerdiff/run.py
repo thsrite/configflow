@@ -138,7 +138,7 @@ def execute(pair, case, available, routes):
     missing_routes += [ident for ident in case.requires
                        if (routes[ident].method, shape(routes[ident].path)) not in available]
     missing_routes += [method + ' ' + path for method, path in case.manifest_requires
-                       if (method, shape(path)) not in available]
+                       if not registered_request(method, path, available)]
     for control in case.prepare:
         operation = control.get('rpc')
         if operation not in ('http', 'assert_http', 'begin', 'open_request', 'wait_guard'):

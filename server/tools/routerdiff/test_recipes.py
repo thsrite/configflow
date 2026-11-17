@@ -33,6 +33,15 @@ from bugs import BUGS
 
 
 class RecipeTests(unittest.TestCase):
+    def test_creation_does_not_require_a_future_cleanup_handler(self):
+        creates = [case for case in workflows.router_creates() if case.route == 'R008']
+        self.assertTrue(creates)
+        self.assertTrue(all(not case.requires for case in creates))
+        # Every fixture has its own disposable DATA_DIR. Missing DELETE must
+        # not prevent comparison of an already implemented POST handler.
+        deletes = [case for case in workflows.router_creates() if case.route == 'R009']
+        self.assertTrue(all(case.requires == ('R008',) for case in deletes))
+
     def test_forwarding_guards_use_linked_records_and_real_heartbeat_before_version_checks(self):
         _, entries = load()
         seen = set()
