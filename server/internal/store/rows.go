@@ -1,9 +1,10 @@
 package store
 
 import (
+	"encoding/json"
+	"fmt"
+	"slices"
 	"sort"
-
-	"configflow/internal/jsonx"
 )
 
 // A document is stored as one row per (scope, owner, field): the root keys
@@ -24,12 +25,6 @@ type fieldKey struct{ scope, owner, field string }
 type fieldRow struct {
 	position int64
 	value    string
-}
-
-// parsedField is a field with its value parsed.
-type parsedField struct {
-	position int64
-	value    any
 }
 
 // ordered is a map that iterates in insertion order (a Python dict).
@@ -66,175 +61,140 @@ type rows struct {
 	fields    *ordered[fieldKey, fieldRow]
 }
 
-// dumps is the stored form of a value. No sort_keys: key order is part of
-// the document.
-func dumps(value any) (string, error) {
-	text, err := jsonx.Compact(value)
-	if err != nil {
-		return "", &Error{Kind: ErrDocument, Message: err.Error(), Cause: err}
-	}
-	return string(text), nil
-}
-
-func sectionRows(section any, scope, owner string, fields *ordered[fieldKey, fieldRow]) error {
-	object, ok := jsonx.AsObject(section)
-	if !ok {
-		return newError(ErrDocument, "配置节 "+scope+"/"+owner+" 必须是对象")
-	}
-	position := int64(0)
-	for field, value := range object.All() {
-		text, err := dumps(value)
-		if err != nil {
-			return err
-		}
-		fields.set(fieldKey{scope, owner, field}, fieldRow{position, text})
-		position++
-	}
-	return nil
-}
-
-// documentRows splits a document into root order, sections and fields.
-func documentRows(document *jsonx.Object) (*rows, error) {
+// documentRows validates the row envelope and copies the opaque field bytes.
+func documentRows(document *Document) (*rows, error) {
 	if document == nil {
-		return nil, newError(ErrDocument, "配置文档必须是对象")
+		return nil, newError(ErrDocument, msgDocumentObject)
 	}
-	result := &rows{sections: newOrdered[sectionKey, int64](), fields: newOrdered[fieldKey, fieldRow]()}
+	result := &rows{rootOrder: append([]string{}, document.Order...), sections: newOrdered[sectionKey, int64](), fields: newOrdered[fieldKey, fieldRow]()}
 	result.sections.set(sectionKey{"root", ""}, 0)
-	rootPosition := int64(0)
-	for key, value := range document.All() {
-		result.rootOrder = append(result.rootOrder, key)
-		switch {
-		case isSectionKey(key):
-			result.sections.set(sectionKey{key, ""}, 0)
-			if err := sectionRows(value, key, "", result.fields); err != nil {
-				return nil, err
+	add := func(scope, owner string, fields []Field) error {
+		for i, field := range fields {
+			key := fieldKey{scope, owner, field.Name}
+			if result.fields.has(key) {
+				return newError(ErrDocument, fmt.Sprintf(msgDuplicateField, scope, owner, field.Name))
 			}
-		case key == profilesKey:
-			profiles, ok := jsonx.AsObject(value)
-			if !ok {
-				return nil, newError(ErrDocument, "profiles 必须是对象")
+			if !json.Valid(field.Value) {
+				return newError(ErrDocument, fmt.Sprintf(msgInvalidField, scope, owner, field.Name))
 			}
-			position := int64(0)
-			for owner, profile := range profiles.All() {
-				if owner == "" {
-					return nil, newError(ErrDocument, "配置空间 ID 必须是非空字符串")
-				}
-				result.sections.set(sectionKey{"profile", owner}, position)
-				if err := sectionRows(profile, "profile", owner, result.fields); err != nil {
-					return nil, err
-				}
-				position++
-			}
-		default:
-			text, err := dumps(value)
-			if err != nil {
-				return nil, err
-			}
-			result.fields.set(fieldKey{"root", "", key}, fieldRow{rootPosition, text})
-			rootPosition++
+			result.fields.set(key, fieldRow{int64(i), string(field.Value)})
 		}
+		return nil
+	}
+	if err := add("root", "", document.Root); err != nil {
+		return nil, err
+	}
+	for _, section := range []struct {
+		scope string
+		value *Section
+	}{{"system", document.System}, {"shared", document.Shared}} {
+		if section.value != nil {
+			result.sections.set(sectionKey{section.scope, ""}, 0)
+			if err := add(section.scope, "", section.value.Fields); err != nil {
+				return nil, err
+			}
+		}
+	}
+	for i, profile := range document.Profiles {
+		if profile.ID == "" {
+			return nil, newError(ErrDocument, msgProfileID)
+		}
+		key := sectionKey{"profile", profile.ID}
+		if result.sections.has(key) {
+			return nil, newError(ErrDocument, fmt.Sprintf(msgDuplicateProfile, profile.ID))
+		}
+		result.sections.set(key, int64(i))
+		if err := add("profile", profile.ID, profile.Fields); err != nil {
+			return nil, err
+		}
+	}
+	// The same structural invariants apply on reads and writes.
+	if _, err := buildDocument(result.rootOrder, result.sections, result.fields); err != nil {
+		return nil, &Error{Kind: ErrDocument, Message: err.Error(), Cause: err}
 	}
 	return result, nil
 }
 
-// buildDocument is the inverse of documentRows.
-func buildDocument(rootOrder []string, sections *ordered[sectionKey, int64], fields *ordered[fieldKey, parsedField]) (*jsonx.Object, error) {
+// buildDocument assembles the envelope, never decoding a field's value.
+func buildDocument(rootOrder []string, sections *ordered[sectionKey, int64], fields *ordered[fieldKey, fieldRow]) (*Document, error) {
 	type item struct {
 		position int64
-		field    string
-		value    any
+		field    Field
 	}
 	grouped := map[sectionKey][]item{}
 	for _, key := range fields.keys {
 		owner := sectionKey{key.scope, key.owner}
 		if !sections.has(owner) {
-			return nil, newError(ErrCorrupt, "字段 "+key.scope+"/"+key.owner+"/"+key.field+" 没有所属配置节")
+			return nil, newError(ErrCorrupt, fmt.Sprintf(msgOrphanField, key.scope, key.owner, key.field))
 		}
 		field := fields.values[key]
-		grouped[owner] = append(grouped[owner], item{field.position, key.field, field.value})
+		grouped[owner] = append(grouped[owner], item{field.position, Field{key.field, json.RawMessage(field.value)}})
 	}
-	section := func(key sectionKey) *jsonx.Object {
+	section := func(key sectionKey) []Field {
 		items := grouped[key]
-		// Stable, by position only: rows with equal positions keep the
-		// order they were read in, as Python's sorted() does.
 		sort.SliceStable(items, func(i, j int) bool { return items[i].position < items[j].position })
-		object := jsonx.NewObject()
+		result := make([]Field, 0, len(items))
 		for _, item := range items {
-			object.Set(item.field, item.value)
+			result = append(result, item.field)
 		}
-		return object
+		return result
 	}
-
 	root := section(sectionKey{"root", ""})
 	seen := map[string]bool{}
 	expected := 0
-	consistent := true
+	rootNames := map[string]bool{}
+	for _, field := range root {
+		rootNames[field.Name] = true
+	}
 	for _, key := range rootOrder {
 		if seen[key] {
-			consistent = false
+			return nil, newError(ErrCorrupt, msgRootOrderMismatch)
 		}
 		seen[key] = true
 		if !isSectionKey(key) && key != profilesKey {
 			expected++
-			consistent = consistent && root.Has(key)
+			if !rootNames[key] {
+				return nil, newError(ErrCorrupt, msgRootOrderMismatch)
+			}
 		}
 	}
-	if !consistent || expected != root.Len() {
-		return nil, newError(ErrCorrupt, "顶层键顺序与数据库内容不一致")
+	if expected != len(root) {
+		return nil, newError(ErrCorrupt, msgRootOrderMismatch)
 	}
+	doc := &Document{Order: slices.Clone(rootOrder), Root: root}
 	for _, scope := range []string{"system", "shared"} {
 		if seen[scope] != sections.has(sectionKey{scope, ""}) {
-			return nil, newError(ErrCorrupt, "配置节 "+scope+" 与顶层键顺序不一致")
+			return nil, newError(ErrCorrupt, fmt.Sprintf(msgSectionOrderMismatch, scope))
+		}
+		if seen[scope] {
+			value := &Section{section(sectionKey{scope, ""})}
+			if scope == "system" {
+				doc.System = value
+			} else {
+				doc.Shared = value
+			}
 		}
 	}
-	type profile struct {
-		position int64
-		owner    string
-	}
-	var profiles []profile
+	profileKeys := []sectionKey{}
 	for _, key := range sections.keys {
 		if key.scope == "profile" {
-			profiles = append(profiles, profile{sections.values[key], key.owner})
+			profileKeys = append(profileKeys, key)
 		}
 	}
-	sort.Slice(profiles, func(i, j int) bool {
-		if profiles[i].position != profiles[j].position {
-			return profiles[i].position < profiles[j].position
+	sort.Slice(profileKeys, func(i, j int) bool {
+		a, b := profileKeys[i], profileKeys[j]
+		if sections.values[a] != sections.values[b] {
+			return sections.values[a] < sections.values[b]
 		}
-		return profiles[i].owner < profiles[j].owner
+		return a.owner < b.owner
 	})
-	if len(profiles) > 0 && !seen[profilesKey] {
-		return nil, newError(ErrCorrupt, "配置空间与顶层键顺序不一致")
+	if len(profileKeys) > 0 && !seen[profilesKey] {
+		return nil, newError(ErrCorrupt, msgProfilesOrderMismatch)
 	}
-	document := jsonx.NewObject()
-	for _, key := range rootOrder {
-		switch {
-		case isSectionKey(key):
-			document.Set(key, section(sectionKey{key, ""}))
-		case key == profilesKey:
-			object := jsonx.NewObject()
-			for _, item := range profiles {
-				object.Set(item.owner, section(sectionKey{"profile", item.owner}))
-			}
-			document.Set(key, object)
-		default:
-			document.Set(key, root.Value(key))
-		}
+	for _, key := range profileKeys {
+		doc.Profiles = append(doc.Profiles, ProfileRows{key.owner, section(key)})
 	}
-	return document, nil
-}
-
-// lookup returns the value of one row in a loaded document.
-func lookup(document *jsonx.Object, key fieldKey) (any, bool) {
-	section := document
-	switch key.scope {
-	case "root":
-	case "profile":
-		section = document.GetObject(profilesKey).GetObject(key.owner)
-	default:
-		section = document.GetObject(key.scope)
-	}
-	return section.Get(key.field)
+	return doc, nil
 }
 
 // changes is what a commit has to write.
@@ -250,7 +210,7 @@ func (c *changes) any() bool {
 	return len(c.deleteSections)+len(c.upsertSections)+len(c.deleteFields)+len(c.upsertFields) > 0 || c.rootOrder
 }
 
-func diff(storedRootOrder any, storedSections *ordered[sectionKey, int64], storedFields *ordered[fieldKey, fieldRow], target *rows) *changes {
+func diff(storedRootOrder []string, storedSections *ordered[sectionKey, int64], storedFields *ordered[fieldKey, fieldRow], target *rows) *changes {
 	result := &changes{}
 	for _, key := range storedSections.keys {
 		if !target.sections.has(key) {
@@ -273,6 +233,6 @@ func diff(storedRootOrder any, storedSections *ordered[sectionKey, int64], store
 			result.upsertFields = append(result.upsertFields, key)
 		}
 	}
-	result.rootOrder = !jsonx.Equal(jsonx.ListOf(target.rootOrder), storedRootOrder)
+	result.rootOrder = !slices.Equal(target.rootOrder, storedRootOrder)
 	return result
 }

@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -188,9 +189,9 @@ func translate(err error) error {
 		return err
 	}
 	if isCorrupt(err) {
-		return &Error{Kind: ErrStorage, Message: "配置数据库已损坏：" + sqliteMessage(err), Cause: err}
+		return &Error{Kind: ErrStorage, Message: fmt.Sprintf(msgCorruptAccess, sqliteMessage(err)), Cause: err}
 	}
-	return &Error{Kind: ErrStorage, Message: "配置数据库访问失败：" + sqliteMessage(err), Cause: err}
+	return &Error{Kind: ErrStorage, Message: fmt.Sprintf(msgAccess, sqliteMessage(err)), Cause: err}
 }
 
 // untranslated wraps a SQLite failure that Python raises as it is.

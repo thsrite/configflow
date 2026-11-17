@@ -73,7 +73,7 @@ type Repository struct {
 	// One validated generation only, keyed by the database head; public
 	// readers return independent values.
 	cacheMu       sync.Mutex
-	documentCache *store.Entry
+	documentCache *storedEntry
 	tokensCache   atomic.Pointer[sanitizationTokens]
 	// commitCount is the number of write transactions this process
 	// committed; request-scoped profile validation is invalidated by it.
@@ -388,7 +388,7 @@ func (r *Repository) createFreshLocked() error {
 		"migration", jsonx.Obj("source", "defaults", "at", now, "snapshot", nil),
 		"legacy_config", jsonx.Obj("sha256", nil, "size", nil, "revisions", revisionsOf(document),
 			"content", nil, "status", "migrated", "at", now, "data_source", false))
-	entry, err := r.store.Create(document, meta)
+	entry, err := r.createStore(document, meta)
 	if err != nil {
 		return err
 	}
@@ -396,7 +396,7 @@ func (r *Repository) createFreshLocked() error {
 	return nil
 }
 
-func (r *Repository) cached() *store.Entry {
+func (r *Repository) cached() *storedEntry {
 	r.cacheMu.Lock()
 	defer r.cacheMu.Unlock()
 	return r.documentCache
@@ -404,7 +404,7 @@ func (r *Repository) cached() *store.Entry {
 
 // setCache keeps the latest loaded or committed entry: every read compares
 // its head with the database, so an older one only costs a reload.
-func (r *Repository) setCache(entry store.Entry) {
+func (r *Repository) setCache(entry storedEntry) {
 	if entry.Size > r.cacheMaxBytes {
 		return
 	}
@@ -421,8 +421,8 @@ func (r *Repository) dropCache() {
 
 // loadEntry is _load_entry: head and rows from one snapshot; the cached
 // generation is returned when the database head still equals it.
-func (r *Repository) loadEntry() (store.Entry, error) {
-	var entry store.Entry
+func (r *Repository) loadEntry() (storedEntry, error) {
+	var entry storedEntry
 	hit := false
 	err := r.store.Reading(func(connection *store.Conn) error {
 		head, err := connection.Head()
@@ -434,7 +434,11 @@ func (r *Repository) loadEntry() (store.Entry, error) {
 			return nil
 		}
 		r.loads.Add(1)
-		entry, err = connection.Load()
+		raw, failure := connection.Load()
+		err = failure
+		if err == nil {
+			entry, err = decodeEntry(raw)
+		}
 		if err == nil && r.afterLoad != nil {
 			r.afterLoad()
 		}
@@ -445,7 +449,7 @@ func (r *Repository) loadEntry() (store.Entry, error) {
 	}
 	r.validations.Add(1)
 	if err := ValidateDocument(entry.Document); err != nil {
-		return store.Entry{}, err
+		return storedEntry{}, err
 	}
 	r.setCache(entry)
 	return entry, nil
@@ -456,7 +460,7 @@ const conflictMessage = "配置数据库在事务外被修改，已放弃本次�
 // readEntry is _read_entry: the current validated document. Reads never
 // need .config.lock; a failed read is retried once serialized with writers
 // (network filesystems may not honour SQLite's own locks).
-func (r *Repository) readEntry(ctx context.Context, locked bool) (store.Entry, error) {
+func (r *Repository) readEntry(ctx context.Context, locked bool) (storedEntry, error) {
 	entry, err := r.loadEntry()
 	if err != nil && !locked && !holdsLock(ctx, r.lockFile) {
 		err = withLock(ctx, r.lockFile, func(context.Context) error {
@@ -469,11 +473,11 @@ func (r *Repository) readEntry(ctx context.Context, locked bool) (store.Entry, e
 	case err == nil:
 		return entry, nil
 	case errors.Is(err, store.ErrConflict):
-		return store.Entry{}, &Error{Kind: ErrRepository, Message: conflictMessage, Cause: err}
+		return storedEntry{}, &Error{Kind: ErrRepository, Message: conflictMessage, Cause: err}
 	case errors.Is(err, store.ErrStore):
-		return store.Entry{}, &Error{Kind: ErrRepository, Message: "配置数据库内容无效：" + err.Error(), Cause: err}
+		return storedEntry{}, &Error{Kind: ErrRepository, Message: "配置数据库内容无效：" + err.Error(), Cause: err}
 	}
-	return store.Entry{}, err
+	return storedEntry{}, err
 }
 
 type txKey struct{ repository *Repository }
@@ -582,7 +586,7 @@ func (r *Repository) writeLocked(ctx context.Context, options writeOptions,
 		return err
 	}
 	defer release()
-	committed, changed, err := r.store.Commit(base, document, options.meta)
+	committed, changed, err := r.commitStore(base, document, options.meta)
 	if err != nil {
 		r.dropCache()
 		if errors.Is(err, store.ErrConflict) {

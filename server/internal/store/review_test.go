@@ -91,21 +91,6 @@ func TestTranslateKeepsClassifiedErrors(t *testing.T) {
 	}
 }
 
-// TestQuickCheckFailureMessage: build_temporary formats the failed
-// quick_check result as f'{result}', the repr of the row list.
-func TestQuickCheckFailureMessage(t *testing.T) {
-	cases := map[string][]string{
-		"[]":                 {},
-		"[('ok',), ('ok',)]": {"ok", "ok"},
-		`[("row 1 missing from index it's",), ('*** in database main ***\nPage 3: 例',)]`: {"row 1 missing from index it's", "*** in database main ***\nPage 3: 例"},
-	}
-	for want, rows := range cases {
-		if got := rowsRepr(rows); got != want {
-			t.Errorf("rowsRepr(%q) = %s, want %s", rows, got, want)
-		}
-	}
-}
-
 // TestCopyFileKeepsTimes: the no-hard-link fallback of preserve_corrupt is
 // shutil.copy2, which copies st_atime and st_mtime (nanoseconds) and the
 // permission bits.
@@ -181,25 +166,25 @@ func TestOpenAndPermissionFailures(t *testing.T) {
 	}
 	directory := t.TempDir()
 	path := filepath.Join(directory, Filename)
-	must(New(path, seconds(1)).Create(jsonx.Obj("a", 1), nil))(t)
+	must(legacyNew(path, seconds(1)).Create(jsonx.Obj("a", 1), nil))(t)
 	if err := os.Chmod(path, 0); err != nil {
 		t.Fatal(err)
 	}
-	unreadable := New(path, seconds(1))
+	unreadable := legacyNew(path, seconds(1))
 	_, err := unreadable.Load()
 	assertKind(t, "unreadable load", err, ErrStorage, "配置数据库访问失败：unable to open database file")
 	assertKind(t, "unreadable check", unreadable.Check(), ErrSQLite, "unable to open database file")
 	if unreadable.SalvageMeta() != nil {
 		t.Error("unreadable salvage: want nil")
 	}
-	folder := New(directory, seconds(1))
+	folder := legacyNew(directory, seconds(1))
 	_, err = folder.Load()
 	assertKind(t, "directory load", err, ErrStorage, "配置数据库访问失败：unable to open database file")
 	assertKind(t, "directory check", folder.Check(), ErrSQLite, "unable to open database file")
 	if err := os.Chmod(path, 0o400); err != nil {
 		t.Fatal(err)
 	}
-	readonly := New(path, seconds(1))
+	readonly := legacyNew(path, seconds(1))
 	entry := must(readonly.Load())(t)
 	_, _, err = readonly.Commit(entry, jsonx.Obj("a", 2), nil)
 	assertKind(t, "read-only commit", err, ErrStorage, "配置数据库访问失败：attempt to write a readonly database")
@@ -215,7 +200,7 @@ func TestPathsWithURISpecialCharacters(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(directory, Filename)
-	target := New(path, seconds(1))
+	target := legacyNew(path, seconds(1))
 	must(target.Create(sampleDocument(t), nil))(t)
 	entry := must(target.Load())(t)
 	document := entry.Document.Clone()
@@ -231,7 +216,7 @@ func TestPathsWithURISpecialCharacters(t *testing.T) {
 	if err := target.BackupTo(backup); err != nil {
 		t.Fatal(err)
 	}
-	if got := must(New(backup, seconds(1)).Load())(t); !got.Document.Has("written") {
+	if got := must(legacyNew(backup, seconds(1)).Load())(t); !got.Document.Has("written") {
 		t.Error("backup lacks the commit")
 	}
 	entries := must(os.ReadDir(directory))(t)

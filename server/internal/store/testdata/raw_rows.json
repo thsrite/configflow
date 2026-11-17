@@ -1,0 +1,23 @@
+{
+  "Order": ["system", "schema_version", "profiles", "future", "shared"],
+  "Root": [
+    {"Name":"schema_version","Value":5},
+    {"Name":"future","Value": { "z": 6e1, "a": [true, null, "\u4f8b <>&", "\u2028"], "unknown": {"b": 1.0, "a": -0.0} }}
+  ],
+  "System": {"Fields":[
+    {"Name":"agents","Value":[{"id":"agent-example","future":{"x":1},"malformed":"retained"}]},
+    {"Name":"_revision","Value":0},
+    {"Name":"future","Value":null}
+  ]},
+  "Shared": {"Fields":[
+    {"Name":"nodes","Value":[{"id":"node-example","unknown":{"z":1,"a":2}}]},
+    {"Name":"_revision","Value":0},
+    {"Name":"unknown","Value":"\u4fdd\u7559"}
+  ]},
+  "Profiles": [{"ID":"default","Fields":[
+    {"Name":"id","Value":"default"},
+    {"Name":"name","Value":"Example"},
+    {"Name":"_revision","Value":0},
+    {"Name":"future","Value":{"enabled":"wrong-type","count":60.0,"opaque": { "b": 1, "a": 2 }}}
+  ]}, {"ID":"empty","Fields":[]}]
+}

@@ -42,8 +42,8 @@ func TestFreshDirectoryCreatesDatabaseWithoutConfigJson(t *testing.T) {
 	if lexists(filepath.Join(r.DataDir(), "config.json")) {
 		t.Fatal("config.json created")
 	}
-	wantEqual(t, must(r.Store().Meta("migration"))(t).(*jsonx.Object).Value("source"), "defaults")
-	record := must(r.Store().Meta("legacy_config"))(t).(*jsonx.Object)
+	wantEqual(t, must(jsonx.Parse(must(r.Store().Meta("migration"))(t)))(t).(*jsonx.Object).Value("source"), "defaults")
+	record := must(jsonx.Parse(must(r.Store().Meta("legacy_config"))(t)))(t).(*jsonx.Object)
 	if record.Value("sha256") != nil || record.Value("size") != nil {
 		t.Fatal("legacy record")
 	}
@@ -209,7 +209,7 @@ func TestRootCacheDirectoriesAloneAreAFreshInstall(t *testing.T) {
 		noError(t, os.WriteFile(filepath.Join(directory, relative), []byte("x"), 0o600))
 	}
 	r := openRepo(t, directory)
-	wantEqual(t, must(r.Store().Meta("migration"))(t).(*jsonx.Object).Value("source"), "defaults")
+	wantEqual(t, must(jsonx.Parse(must(r.Store().Meta("migration"))(t)))(t).(*jsonx.Object).Value("source"), "defaults")
 	// Unlike Python's migration, the old caches are not copied into shared/.
 	if lexists(filepath.Join(directory, "shared", "subscribes", "a.json")) {
 		t.Fatal("legacy cache copied")
@@ -399,7 +399,7 @@ func TestExportImportRoundTripAndImportSnapshot(t *testing.T) {
 		t.Fatalf("snapshots %v", snapshots)
 	}
 	saved := must(store.New(filepath.Join(snapshots[0], DatabaseFilename), LockTimeout).Load())(t)
-	wantEqual(t, saved.Document, exported)
+	wantEqual(t, must(decodeRows(saved.Document))(t), exported)
 	if lexists(filepath.Join(snapshots[0], "config.json")) {
 		t.Fatal("legacy file in an import snapshot")
 	}

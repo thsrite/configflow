@@ -309,7 +309,7 @@ func mpSystemConfig(t *testing.T, repository *Repository) *jsonx.Object {
 
 func mpPersistedSystemConfig(t *testing.T, repository *Repository) *jsonx.Object {
 	t.Helper()
-	return must(repository.Store().Load())(t).Document.GetObject("system").GetObject("system_config")
+	return must(decodeEntry(must(repository.Store().Load())(t)))(t).Document.GetObject("system").GetObject("system_config")
 }
 
 func mpNoTemporaries(t *testing.T, repository *Repository) {
@@ -415,7 +415,7 @@ func TestRestartAtomicallyRotatesRuleProxyTokenEqualToConfigToken(t *testing.T) 
 	document := must(repository.ExportAll(bg, false))(t)
 	document.Set("system", system)
 	// Persist a raw document that skips the repository's token rule.
-	if _, _, err := repository.Store().Commit(must(repository.Store().Load())(t), document, nil); err != nil {
+	if _, _, err := repository.commitStore(must(decodeEntry(must(repository.Store().Load())(t)))(t), document, nil); err != nil {
 		t.Fatal(err)
 	}
 	mpFixedToken(t, "rotated-internal-token")

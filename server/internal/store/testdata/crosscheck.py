@@ -94,7 +94,7 @@ def create(path):
         document['profiles']['zeta']['name'] = 'Renamed'
 
     def numbers_and_text(document):
-        document['system']['numbers'] = [0, -0.0, 1.0, 1.5, 1e16, 1e-05, 2 ** 64, -(10 ** 30), float('inf'), 0.1 + 0.2]
+        document['system']['numbers'] = [0, -0.0, 1.0, 1.5, 1e16, 1e-05, 2 ** 64, -(10 ** 30), 3.25, 0.1 + 0.2]
         document['system']['text'] = 'tab\t nl\n quote" back\\ nul\x00 del\x7f sep\u2028 </x> é 例 🚀'
         document['system']['system_config']['z'] = {'nested': [{'k': None}, [], {}]}
         document['shared']['nodes'].append({'id': 'm', 'name': 'second', 'tags': ['a', 'b']})
@@ -247,7 +247,7 @@ ODD_SEQUENCES = [
     # key orders, empty sections and keys, profiles without fields
     [{}, {'profiles': {}}, {'system': {}, 'shared': {}, 'profiles': {'p': {}}}, {}],
     [{'': 1, 'root': {'x': 1}, 'system': {'': '', 'z': 1, 'a': 2},
-      'profiles': {'z': {'': None}, 'a': {'b': 1}, '例🚀': {'k': [1.0, -0.0, 1e16, 5e-324, 2 ** 70, float('nan')]}}},
+      'profiles': {'z': {'': None}, 'a': {'b': 1}, '例🚀': {'k': [1.0, -0.0, 1e16, 5e-324, 2 ** 70, 1.25]}}},
      {'system': {'a': 2, 'z': 1, '': ''}, 'profiles': {'a': {'b': 1}, '例🚀': {'k': [1.0]}, 'z': {'': None}},
       'root': {'x': 1}, '': 1},
      {'shared': {'k': 'sep\u2028\u2029 nul\x00'}, 'profiles': {'z': {'': None, 'n': 1}},

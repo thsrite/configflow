@@ -11,24 +11,29 @@
 // A Store opens a new connection for every operation and holds no state
 // besides its path, so it may be used from several goroutines; writers are
 // serialised by the repository's lock and by SQLite itself. The package
-// never interprets the document beyond splitting it into rows.
+// never interprets field values; it only validates JSON syntax and the row envelope.
 package store
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"maps"
+	"math/big"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"configflow/internal/jsonx"
 
 	"modernc.org/sqlite"
 )
@@ -76,19 +81,17 @@ type Head struct {
 }
 
 // Entry is a document as stored at Head. Document must be treated as
-// immutable: entries returned by Commit share unchanged values with the
-// entry they were based on. Size is the total length of the stored field
+// immutable: all rows and byte slices returned by the store are read-only. Size is the total length of the stored field
 // values in characters.
 type Entry struct {
 	Head     Head
-	Document *jsonx.Object
+	Document *Document
 	Size     int64
 }
 
 // Fingerprint identifies the exact contents of a database: Digest is a
 // SHA-256 over every row of every table. Comparable with ==; tests use it
-// to assert "nothing was written". It is identical to the Python
-// ConfigStore.fingerprint() of the same file.
+// to assert "nothing was written". Its digest is Go-defined; cross-language tests compare rows directly.
 type Fingerprint struct {
 	StoreID    string
 	Generation int64
@@ -141,7 +144,7 @@ func (s *Store) Reading(fn func(*Conn) error) error {
 }
 
 // Meta returns the parsed value of one meta key, or nil when it is missing.
-func (s *Store) Meta(key string) (value any, err error) {
+func (s *Store) Meta(key string) (value json.RawMessage, err error) {
 	err = s.Reading(func(connection *Conn) error {
 		value, err = connection.Meta(key)
 		return err
@@ -163,12 +166,29 @@ func (s *Store) Load() (entry Entry, err error) {
 func (s *Store) Fingerprint() (Fingerprint, error) {
 	digest := sha256.New()
 	var head Head
+	// Every row and component is length-prefixed; table markers keep table
+	// boundaries distinct. This is a Go-defined digest, not a wire identity.
 	row := func(values ...any) error {
-		// json.dumps(row, ensure_ascii=False) of the row tuple.
-		text, err := jsonx.Encode(values, jsonx.Options{})
-		digest.Write(text)
-		return err
+		var length [8]byte
+		binary.BigEndian.PutUint64(length[:], uint64(len(values)))
+		digest.Write(length[:])
+		for _, value := range values {
+			var text string
+			switch v := value.(type) {
+			case string:
+				text = v
+			case int64:
+				text = strconv.FormatInt(v, 10)
+			default:
+				return fmt.Errorf("store fingerprint: unsupported column %T", value)
+			}
+			binary.BigEndian.PutUint64(length[:], uint64(len(text)))
+			digest.Write(length[:])
+			digest.Write([]byte(text))
+		}
+		return nil
 	}
+
 	err := s.Reading(func(connection *Conn) (err error) {
 		if head, err = connection.Head(); err != nil {
 			return err
@@ -233,17 +253,18 @@ func (s *Store) Fingerprint() (Fingerprint, error) {
 //
 // A document that cannot be stored fails with ErrDocument before anything
 // is written; SQLite failures are ErrStorage.
-func (s *Store) Commit(base Entry, document, meta *jsonx.Object) (entry Entry, committed bool, err error) {
+func (s *Store) Commit(base Entry, document *Document, meta map[string]json.RawMessage) (entry Entry, committed bool, err error) {
 	// Serialize first: a non-JSON value must fail before anything is written.
 	target, err := documentRows(document)
 	if err != nil {
 		return Entry{}, false, err
 	}
-	meta = meta.Clone()
-	for _, value := range meta.Values() {
-		if _, err := dumps(value); err != nil {
-			return Entry{}, false, err
-		}
+	meta = maps.Clone(meta)
+	if err := validateMeta(meta); err != nil {
+		return Entry{}, false, err
+	}
+	if meta == nil {
+		meta = make(map[string]json.RawMessage)
 	}
 	connection, err := s.connect(false)
 	if err != nil {
@@ -252,7 +273,6 @@ func (s *Store) Commit(base Entry, document, meta *jsonx.Object) (entry Entry, c
 	defer connection.close()
 
 	var head Head
-	var storedFields *ordered[fieldKey, fieldRow]
 	err = func() error {
 		if err := connection.begin("BEGIN IMMEDIATE"); err != nil {
 			return err
@@ -261,9 +281,9 @@ func (s *Store) Commit(base Entry, document, meta *jsonx.Object) (entry Entry, c
 			return err
 		}
 		if head != base.Head {
-			return newError(ErrConflict, "配置数据库在事务外被修改")
+			return newError(ErrConflict, msgConflict)
 		}
-		storedRootOrder, err := connection.Meta("root_order")
+		storedRootOrder, err := connection.rootOrder()
 		if err != nil {
 			return err
 		}
@@ -271,10 +291,10 @@ func (s *Store) Commit(base Entry, document, meta *jsonx.Object) (entry Entry, c
 		if err != nil {
 			return err
 		}
-		storedFields = fields
+		storedFields := fields
 		pending := diff(storedRootOrder, storedSections, storedFields, target)
 		changed := pending.any()
-		if !changed && meta.Len() == 0 {
+		if !changed && len(meta) == 0 {
 			connection.rollback()
 			return nil
 		}
@@ -282,7 +302,7 @@ func (s *Store) Commit(base Entry, document, meta *jsonx.Object) (entry Entry, c
 		if changed {
 			head.Generation++
 			head.CommitID = newUUIDHex()
-			meta.Set("commit_id", head.CommitID)
+			meta["commit_id"] = jsonText(head.CommitID)
 		}
 		if err := connection.apply(pending, target, head.Generation, meta); err != nil {
 			return err
@@ -300,26 +320,13 @@ func (s *Store) Commit(base Entry, document, meta *jsonx.Object) (entry Entry, c
 	if !committed {
 		return Entry{}, false, nil
 	}
-	// The new entry: unchanged rows reuse the previous (immutable) values,
-	// changed rows are parsed from the text already written.
-	parsed := newOrdered[fieldKey, parsedField]()
+	// Rebuild from the serialized rows so the returned immutable entry never
+	// shares mutable slices with the caller's proposed document.
 	size := int64(0)
 	for _, key := range target.fields.keys {
-		field := target.fields.values[key]
-		size += textLength(field.value)
-		var value any
-		reused := false
-		if stored, ok := storedFields.get(key); ok && stored.value == field.value {
-			value, reused = lookup(base.Document, key)
-		}
-		if !reused {
-			if value, err = jsonx.ParseString(field.value); err != nil {
-				return Entry{}, false, err
-			}
-		}
-		parsed.set(key, parsedField{field.position, value})
+		size += textLength(target.fields.values[key].value)
 	}
-	built, err := buildDocument(target.rootOrder, target.sections, parsed)
+	built, err := buildDocument(target.rootOrder, target.sections, target.fields)
 	if err != nil {
 		return Entry{}, false, err
 	}
@@ -327,7 +334,7 @@ func (s *Store) Commit(base Entry, document, meta *jsonx.Object) (entry Entry, c
 }
 
 // apply executes every statement of one commit.
-func (c *Conn) apply(pending *changes, target *rows, generation int64, meta *jsonx.Object) error {
+func (c *Conn) apply(pending *changes, target *rows, generation int64, meta map[string]json.RawMessage) error {
 	for _, key := range pending.deleteSections {
 		if err := c.exec("DELETE FROM sections WHERE scope = ? AND owner = ?", key.scope, key.owner); err != nil {
 			return err
@@ -357,17 +364,16 @@ func (c *Conn) apply(pending *changes, target *rows, generation int64, meta *jso
 			return err
 		}
 	}
-	updates := meta.Clone()
-	if pending.rootOrder {
-		updates.Set("root_order", jsonx.ListOf(target.rootOrder))
+	updates := maps.Clone(meta)
+	if updates == nil {
+		updates = make(map[string]json.RawMessage)
 	}
-	updates.Set("generation", generation)
-	for key, value := range updates.All() {
-		text, err := dumps(value)
-		if err != nil {
-			return err
-		}
-		if err := c.exec("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", key, text); err != nil {
+	if pending.rootOrder {
+		updates["root_order"] = jsonText(target.rootOrder)
+	}
+	updates["generation"] = jsonText(generation)
+	for key, value := range updates {
+		if err := c.exec("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", key, string(value)); err != nil {
 			return err
 		}
 	}
@@ -394,9 +400,12 @@ func (s *Store) fsyncDir() error {
 // (mode 0600) and returns its path and the entry read back from it. The
 // caller moves it into place with Install or removes it with
 // DiscardTemporary; on error nothing is left behind.
-func (s *Store) BuildTemporary(document, meta *jsonx.Object) (temporary string, entry Entry, err error) {
+func (s *Store) BuildTemporary(document *Document, meta map[string]json.RawMessage) (temporary string, entry Entry, err error) {
 	target, err := documentRows(document)
 	if err != nil {
+		return "", Entry{}, err
+	}
+	if err := validateMeta(meta); err != nil {
 		return "", Entry{}, err
 	}
 	handle, err := os.CreateTemp(filepath.Dir(s.path), "."+filepath.Base(s.path)+".*.tmp")
@@ -417,20 +426,21 @@ func (s *Store) BuildTemporary(document, meta *jsonx.Object) (temporary string, 
 	if entry, err = New(temporary, s.timeout).Load(); err != nil {
 		return "", Entry{}, err
 	}
-	written, err := dumps(entry.Document)
+	written, err := documentRows(entry.Document)
 	if err != nil {
 		return "", Entry{}, err
 	}
-	if wanted, _ := dumps(document); written != wanted {
-		return "", Entry{}, newError(ErrStore, "新建数据库的内容与迁移文档不一致")
+	if !maps.Equal(written.fields.values, target.fields.values) || !maps.Equal(written.sections.values, target.sections.values) || !slices.Equal(written.rootOrder, target.rootOrder) {
+		return "", Entry{}, newError(ErrStore, msgBuiltMismatch)
 	}
+
 	if err = fsyncPath(temporary); err != nil {
 		return "", Entry{}, err
 	}
 	return temporary, entry, nil
 }
 
-func (s *Store) writeTemporary(temporary string, target *rows, meta *jsonx.Object) error {
+func (s *Store) writeTemporary(temporary string, target *rows, meta map[string]json.RawMessage) error {
 	connection, err := connect(temporary, false, s.timeout())
 	if err != nil {
 		return err
@@ -441,7 +451,7 @@ func (s *Store) writeTemporary(temporary string, target *rows, meta *jsonx.Objec
 		return err
 	}
 	if len(mode) != 1 || strings.ToLower(mode[0]) != "delete" {
-		return newError(ErrStore, "无法设置数据库日志模式："+strings.Join(mode, ""))
+		return newError(ErrStore, fmt.Sprintf(msgJournalSet, strings.Join(mode, "")))
 	}
 	if err := connection.exec("PRAGMA application_id=" + strconv.Itoa(ApplicationID)); err != nil {
 		return err
@@ -454,18 +464,17 @@ func (s *Store) writeTemporary(temporary string, target *rows, meta *jsonx.Objec
 			return err
 		}
 	}
-	values := jsonx.Obj("storage_version", StorageVersion, "store_id", newUUIDHex(), "generation", 1,
-		"commit_id", newUUIDHex(), "root_order", jsonx.ListOf(target.rootOrder), "created_at", now())
-	values.Update(meta)
-	for key, value := range values.All() {
-		text, err := dumps(value)
-		if err != nil {
-			return err
-		}
-		if err := connection.exec("INSERT INTO meta (key, value) VALUES (?, ?)", key, text); err != nil {
+	values := map[string]json.RawMessage{
+		"storage_version": jsonText(StorageVersion), "store_id": jsonText(newUUIDHex()), "generation": jsonText(1),
+		"commit_id": jsonText(newUUIDHex()), "root_order": jsonText(target.rootOrder), "created_at": jsonText(now()),
+	}
+	maps.Copy(values, meta)
+	for key, value := range values {
+		if err := connection.exec("INSERT INTO meta (key, value) VALUES (?, ?)", key, string(value)); err != nil {
 			return err
 		}
 	}
+
 	for _, key := range target.sections.keys {
 		err := connection.exec("INSERT INTO sections (scope, owner, position) VALUES (?, ?, ?)",
 			key.scope, key.owner, target.sections.values[key])
@@ -489,24 +498,26 @@ func (s *Store) writeTemporary(temporary string, target *rows, meta *jsonx.Objec
 		return err
 	}
 	if len(result) != 1 || result[0] != "ok" {
-		return newError(ErrStore, "新建数据库未通过完整性检查："+rowsRepr(result))
+		return newError(ErrStore, fmt.Sprintf(msgBuiltCheck, rowsRepr(result)))
 	}
 	return nil
 }
 
-// rowsRepr is repr(cursor.fetchall()) for one-column text rows:
-// [('a',), ('b',)].
-func rowsRepr(values []string) string {
-	var b strings.Builder
-	b.WriteByte('[')
-	for i, value := range values {
-		if i > 0 {
-			b.WriteString(", ")
+func rowsRepr(values []string) string { return fmt.Sprint(values) }
+
+// jsonText is used only for the store's own typed metadata, never field values.
+func jsonText[T string | int | int64 | []string](value T) json.RawMessage {
+	data, _ := json.Marshal(value) // these metadata types cannot fail to encode
+	return data
+}
+
+func validateMeta(meta map[string]json.RawMessage) error {
+	for key, value := range meta {
+		if !json.Valid(value) {
+			return newError(ErrDocument, fmt.Sprintf(msgMetaValueInvalid, key))
 		}
-		b.WriteString("(" + jsonx.Repr(value) + ",)")
 	}
-	b.WriteByte(']')
-	return b.String()
+	return nil
 }
 
 // DiscardTemporary removes a file made by BuildTemporary and its journal.
@@ -527,7 +538,7 @@ func (s *Store) Install(temporary string) error {
 // Create builds the database for document (with the given meta keys, nil
 // for none) in a temporary file and atomically moves it into place,
 // replacing any existing file.
-func (s *Store) Create(document, meta *jsonx.Object) (Entry, error) {
+func (s *Store) Create(document *Document, meta map[string]json.RawMessage) (Entry, error) {
 	temporary, entry, err := s.BuildTemporary(document, meta)
 	if err != nil {
 		return Entry{}, err
@@ -565,7 +576,7 @@ func (s *Store) check() error {
 		return err
 	}
 	if len(result) != 1 || result[0] != "ok" {
-		return newError(ErrCorrupt, "完整性检查失败："+strings.Join(result[:min(len(result), 5)], "; "))
+		return newError(ErrCorrupt, fmt.Sprintf(msgQuickCheck, strings.Join(result[:min(len(result), 5)], "; ")))
 	}
 	tables, err := connection.strings1("SELECT name FROM sqlite_master WHERE type = 'table'")
 	if err != nil {
@@ -582,7 +593,7 @@ func (s *Store) check() error {
 		}
 	}
 	if len(missing) > 0 {
-		return newError(ErrCorrupt, "缺少数据表："+strings.Join(missing, "、"))
+		return newError(ErrCorrupt, fmt.Sprintf(msgMissingTables, strings.Join(missing, "、")))
 	}
 	meta, err := connection.metaRows()
 	if err != nil {
@@ -590,22 +601,22 @@ func (s *Store) check() error {
 	}
 	missing = nil
 	for _, key := range requiredMeta {
-		if !meta.Has(key) {
+		if meta[key] == nil {
 			missing = append(missing, key)
 		}
 	}
 	if len(missing) > 0 {
-		return newError(ErrCorrupt, "缺少数据库元信息："+strings.Join(missing, "、"))
+		return newError(ErrCorrupt, fmt.Sprintf(msgMissingMeta, strings.Join(missing, "、")))
 	}
-	version := meta.Value("storage_version")
-	number, _ := jsonx.AsNumber(version)
-	value, isInt := number.BigInt()
-	if !isInt || value.Sign() < 1 {
-		return newError(ErrCorrupt, "数据库存储版本无效："+jsonx.Repr(version))
+	version := meta["storage_version"]
+	value, ok := new(big.Int).SetString(string(bytes.TrimSpace(version)), 10)
+	if !ok || value.Sign() < 1 {
+		return newError(ErrCorrupt, fmt.Sprintf(msgVersionInvalid, string(version)))
 	}
 	if !value.IsInt64() || value.Int64() > StorageVersion {
-		return newError(ErrUnsupported, "数据库存储版本 "+number.String()+" 高于当前支持的 "+strconv.Itoa(StorageVersion))
+		return newError(ErrUnsupported, fmt.Sprintf(msgVersionUnsupported, value.String(), StorageVersion))
 	}
+
 	mode, err := connection.strings1("PRAGMA journal_mode")
 	if err != nil {
 		return err
@@ -615,7 +626,7 @@ func (s *Store) check() error {
 			return err
 		}
 		if current := strings.ToLower(strings.Join(mode, "")); current != "delete" {
-			return newError(ErrStore, "无法把数据库日志模式恢复为 DELETE："+current)
+			return newError(ErrStore, fmt.Sprintf(msgJournalRestore, current))
 		}
 	}
 	return nil
@@ -623,7 +634,7 @@ func (s *Store) check() error {
 
 // SalvageMeta is a best-effort read-only read of the meta table of a
 // damaged file; it returns nil on any error.
-func (s *Store) SalvageMeta() *jsonx.Object {
+func (s *Store) SalvageMeta() map[string]json.RawMessage {
 	connection, err := s.connect(true)
 	if err != nil {
 		return nil
@@ -784,9 +795,7 @@ func textLength(text string) int64 {
 // newUUIDHex is uuid.uuid4().hex.
 func newUUIDHex() string {
 	var raw [16]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		panic(err) // crypto/rand does not fail on supported systems
-	}
+	_, _ = rand.Read(raw[:]) // crypto/rand.Read always fills its buffer or terminates the process.
 	raw[6] = raw[6]&0x0f | 0x40
 	raw[8] = raw[8]&0x3f | 0x80
 	return hex.EncodeToString(raw[:])

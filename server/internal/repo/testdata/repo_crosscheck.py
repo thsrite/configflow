@@ -314,13 +314,21 @@ def run(directory, mode, operations):
     return records
 
 
+def stored_rows(path):
+    import sqlite3
+    with sqlite3.connect(path) as connection:
+        return [connection.execute(f'SELECT * FROM {table} ORDER BY {order}').fetchall()
+                for table, order in (('meta', 'key'), ('sections', 'scope, owner'),
+                                     ('fields', 'scope, owner, field'))]
+
+
 def fingerprint(directory, mode):
     path = Path(directory) / 'configflow.sqlite3'
-    before = list(ConfigStore(path, lambda: 2.0).fingerprint())
+    before = stored_rows(path)
     repository = open_repository(directory, mode)
-    opened = list(repository._store.fingerprint())
+    opened = stored_rows(path)
     exported = repository.export_all()
-    return {'before': before, 'opened': opened, 'after': list(repository._store.fingerprint()),
+    return {'before': before, 'opened': opened, 'after': stored_rows(path),
             'export': exported, 'profiles': repository.list_profiles()}
 
 

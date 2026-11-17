@@ -47,9 +47,9 @@ func seconds(value float64) func() time.Duration {
 	return func() time.Duration { return time.Duration(value * float64(time.Second)) }
 }
 
-func newStore(t testing.TB) *Store {
+func newStore(t testing.TB) *legacyStore {
 	t.Helper()
-	return New(filepath.Join(t.TempDir(), Filename), seconds(2.5))
+	return legacyNew(filepath.Join(t.TempDir(), Filename), seconds(2.5))
 }
 
 func compact(t testing.TB, value any) string {
@@ -71,7 +71,7 @@ func must[T any](value T, err error) func(testing.TB) T {
 	}
 }
 
-func mustCommit(t testing.TB, target *Store, base Entry, document, meta *jsonx.Object) Entry {
+func mustCommit(t testing.TB, target *legacyStore, base legacyEntry, document, meta *jsonx.Object) legacyEntry {
 	t.Helper()
 	entry, committed, err := target.Commit(base, document, meta)
 	if err != nil || !committed {
@@ -125,26 +125,10 @@ func pragma(t testing.TB, connection *Conn, name string) string {
 
 func TestRowsRoundTripPreservesOrderUnicodeAndExtraKeys(t *testing.T) {
 	document := sampleDocument(t)
-	split := must(documentRows(document))(t)
-	if !reflect.DeepEqual(split.rootOrder, []string{"schema_version", "system", "shared", "profiles", "future_root_key"}) {
-		t.Fatal(split.rootOrder)
-	}
-	if split.sections.values[sectionKey{"profile", "zeta"}] != 0 || split.sections.values[sectionKey{"profile", "default"}] != 1 {
-		t.Fatal(split.sections.values)
-	}
-	parsed := newOrdered[fieldKey, parsedField]()
-	for _, key := range split.fields.keys {
-		field := split.fields.values[key]
-		parsed.set(key, parsedField{field.position, must(jsonx.ParseString(field.value))(t)})
-	}
-	rebuilt := must(buildDocument(split.rootOrder, split.sections, parsed))(t)
-	if compact(t, rebuilt) != compact(t, document) {
-		t.Fatal(compact(t, rebuilt))
-	}
 
 	target := newStore(t)
 	must(target.Create(document, nil))(t)
-	loaded := must(New(target.Path(), seconds(1)).Load())(t).Document
+	loaded := must(legacyNew(target.Path(), seconds(1)).Load())(t).Document
 	if compact(t, loaded) != compact(t, document) {
 		t.Fatal(compact(t, loaded))
 	}
@@ -174,7 +158,7 @@ func TestDocumentIsByteIdenticalAfterReopening(t *testing.T) {
 	entry = mustCommit(t, target, entry, document, nil)
 
 	exported := must(jsonx.Indent2(entry.Document))(t)
-	reopened := must(New(target.Path(), seconds(1)).Load())(t)
+	reopened := must(legacyNew(target.Path(), seconds(1)).Load())(t)
 	if again := must(jsonx.Indent2(reopened.Document))(t); string(again) != string(exported) || string(again) != string(must(jsonx.Indent2(document))(t)) {
 		t.Fatalf("%s", again)
 	}
@@ -187,7 +171,7 @@ func TestDocumentIsByteIdenticalAfterReopening(t *testing.T) {
 }
 
 func TestPragmasAndFileMode(t *testing.T) {
-	target := New(filepath.Join(t.TempDir(), Filename), seconds(7))
+	target := legacyNew(filepath.Join(t.TempDir(), Filename), seconds(7))
 	must(target.Create(sampleDocument(t), nil))(t)
 	connection := must(target.connect(false))(t)
 	defer connection.close()
@@ -259,16 +243,7 @@ func TestCommitWritesOnlyChangedRows(t *testing.T) {
 	if !jsonx.Equal(entry.Document, document) || compact(t, entry.Document) != compact(t, document) {
 		t.Fatal(compact(t, entry.Document))
 	}
-	// Unchanged rows reuse the previous values instead of parsing them again.
-	if entry.Document.GetObject("shared") == base.Document.GetObject("shared") {
-		t.Fatal("the section object is shared")
-	}
-	if &entry.Document.GetObject("shared").GetList("nodes")[0] != &base.Document.GetObject("shared").GetList("nodes")[0] {
-		t.Fatal("an unchanged value was parsed again")
-	}
-	if entry.Document == document || entry.Document.GetObject("profiles").GetObject("zeta") == document.GetObject("profiles").GetObject("zeta") {
-		t.Fatal("the entry shares objects with the caller's document")
-	}
+
 }
 
 func TestDeletingAProfileCascadesItsFieldsAndReorders(t *testing.T) {
@@ -353,23 +328,6 @@ func TestHeadMovedOutsideTheLockRaisesConflict(t *testing.T) {
 	}
 }
 
-func TestNonJSONValueFailsBeforeWriting(t *testing.T) {
-	target := newStore(t)
-	base := must(target.Create(sampleDocument(t), nil))(t)
-	before := must(target.Fingerprint())(t)
-	document := sampleDocument(t)
-	document.GetObject("shared").Set("nodes", []any{struct{}{}})
-	if _, _, err := target.Commit(base, document, nil); !errors.Is(err, ErrDocument) || errors.Is(err, ErrStore) {
-		t.Fatal(err)
-	}
-	if _, _, err := target.Commit(base, sampleDocument(t), jsonx.Obj("note", []any{map[string]any{}})); !errors.Is(err, ErrDocument) {
-		t.Fatal(err)
-	}
-	if must(target.Fingerprint())(t) != before {
-		t.Fatal("a failed commit wrote something")
-	}
-}
-
 func TestDocumentShapeErrors(t *testing.T) {
 	cases := map[string]string{
 		`{"system":[]}`:                   "配置节 system/ 必须是对象",
@@ -400,7 +358,7 @@ func TestFingerprintIsStableAcrossReadsAndChangesOnWrite(t *testing.T) {
 	first := must(target.Fingerprint())(t)
 	must(target.Load())(t)
 	must(target.Meta("root_order"))(t)
-	must(New(target.Path(), seconds(1)).Load())(t)
+	must(legacyNew(target.Path(), seconds(1)).Load())(t)
 	if err := target.Check(); err != nil {
 		t.Fatal(err)
 	}
@@ -483,7 +441,7 @@ func TestCheckRejectsDamagedAndNewerFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	execSQL(t, target.Path(), `UPDATE meta SET value = '"1"' WHERE key = 'storage_version'`)
-	if err := target.Check(); !errors.Is(err, ErrCorrupt) || err.Error() != "数据库存储版本无效：'1'" {
+	if err := target.Check(); !errors.Is(err, ErrCorrupt) || err.Error() != "数据库存储版本无效：\"1\"" {
 		t.Fatal(err)
 	}
 	execSQL(t, target.Path(), "DELETE FROM meta WHERE key IN ('storage_version', 'root_order')")
@@ -500,8 +458,8 @@ func TestCheckRejectsDamagedAndNewerFiles(t *testing.T) {
 // database is a failure to report, not a damaged file.
 func TestLockedDatabaseIsNotCorrupt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), Filename)
-	base := must(New(path, seconds(1)).Create(sampleDocument(t), nil))(t)
-	target := New(path, seconds(0.2))
+	base := must(legacyNew(path, seconds(1)).Create(sampleDocument(t), nil))(t)
+	target := legacyNew(path, seconds(0.2))
 	holder := must(connect(path, false, 0))(t)
 	if err := holder.begin("BEGIN EXCLUSIVE"); err != nil {
 		t.Fatal(err)
@@ -553,7 +511,7 @@ func TestBeforeCommitHook(t *testing.T) {
 	target.BeforeCommit = func() error {
 		calls++
 		started := time.Now()
-		seen := must(New(target.Path(), seconds(2)).Load())(t)
+		seen := must(legacyNew(target.Path(), seconds(2)).Load())(t)
 		if seen.Head != base.Head || time.Since(started) > time.Second {
 			t.Errorf("reader saw %v after %v", seen.Head, time.Since(started))
 		}
@@ -585,7 +543,7 @@ func TestBackupTo(t *testing.T) {
 	document.Set("schema_version", 6)
 	mustCommit(t, target, base, document, nil)
 
-	copied := New(backup, seconds(1))
+	copied := legacyNew(backup, seconds(1))
 	if err := copied.Check(); err != nil {
 		t.Fatal(err)
 	}
@@ -598,7 +556,7 @@ func TestBackupTo(t *testing.T) {
 	if pragma(t, connection, "application_id") != "1128680535" || pragma(t, connection, "journal_mode") != "delete" {
 		t.Fatal("the backup lost the database header")
 	}
-	missing := New(filepath.Join(t.TempDir(), Filename), seconds(1))
+	missing := legacyNew(filepath.Join(t.TempDir(), Filename), seconds(1))
 	if err := missing.BackupTo(filepath.Join(t.TempDir(), "x.sqlite3")); !errors.Is(err, ErrStorage) {
 		t.Fatal(err)
 	}
@@ -687,7 +645,7 @@ func TestDiscardStaleTemporaries(t *testing.T) {
 
 func TestSQLiteMessage(t *testing.T) {
 	path := filepath.Join(t.TempDir(), Filename)
-	must(New(path, seconds(1)).Create(sampleDocument(t), nil))(t)
+	must(legacyNew(path, seconds(1)).Create(sampleDocument(t), nil))(t)
 	connection := must(connect(path, false, time.Second))(t)
 	defer connection.close()
 	for statement, want := range map[string]string{

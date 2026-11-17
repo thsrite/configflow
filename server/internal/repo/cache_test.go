@@ -103,10 +103,10 @@ func TestRebuiltDatabaseWithSameGenerationInvalidates(t *testing.T) {
 	r := newRepo(t)
 	ccRename(t, r, "Alpha")
 	head := r.cached().Head
-	document := must(r.store.Load())(t).Document.DeepCopy()
+	document := must(decodeEntry(must(r.store.Load())(t)))(t).Document.DeepCopy()
 	document.GetObject("profiles").GetObject("default").Set("name", "Rebuilt")
 	// Same generation number, different database: store_id must differ.
-	must(r.store.Create(document, jsonx.NewObject()))(t)
+	must(r.createStore(document, jsonx.NewObject()))(t)
 	rcSQL(t, r.DatabasePath(), "UPDATE meta SET value = '"+jsonx.Int(head.Generation).String()+"' WHERE key = 'generation'")
 	if got := must(r.store.Load())(t).Head.Generation; got != head.Generation {
 		t.Fatalf("generation %d, want %d", got, head.Generation)
@@ -146,7 +146,7 @@ func TestDamagedDatabaseRaisesInsteadOfUsingCachedCopy(t *testing.T) {
 		"UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'generation'")
 	_, err := r.GetSystem(bg)
 	wantError(t, err, ErrRepository, "配置数据库内容无效")
-	must(r.store.Create(original, jsonx.NewObject()))(t)
+	must(r.createStore(original, jsonx.NewObject()))(t)
 	wantEqual(t, must(r.ExportAll(bg, false))(t), original)
 }
 

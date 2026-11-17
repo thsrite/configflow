@@ -95,7 +95,11 @@ func (r *Repository) CreateRuleLibraryItem(ctx context.Context, rule *jsonx.Obje
 		// (COMMIT reported an error), retain the cache for any possibly
 		// committed source. Reads need no document lock.
 		preserve = true
-		if current, failure := r.store.Load(); failure == nil {
+		if raw, failure := r.store.Load(); failure == nil {
+			current, decodeErr := decodeEntry(raw)
+			if decodeErr != nil {
+				return nil, decodeErr
+			}
 			preserve = false
 			for _, item := range current.Document.GetObject("shared").GetList("rule_library") {
 				if object, _ := jsonx.AsObject(item); object.Value("id") == ruleID {

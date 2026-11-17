@@ -521,8 +521,27 @@ func TestCrossCheckOperations(t *testing.T) {
 
 func xcFingerprint(t *testing.T, s *store.Store) []any {
 	t.Helper()
-	fingerprint := must(s.Fingerprint())(t)
-	return []any{fingerprint.StoreID, jsonx.Int(fingerprint.Generation), fingerprint.Digest}
+	connection := must(sql.Open("sqlite", s.Path()))(t)
+	defer connection.Close()
+	var tables []any
+	for _, query := range []string{"SELECT * FROM meta ORDER BY key", "SELECT * FROM sections ORDER BY scope, owner", "SELECT * FROM fields ORDER BY scope, owner, field"} {
+		rows := must(connection.Query(query))(t)
+		columns := must(rows.Columns())(t)
+		var values []any
+		for rows.Next() {
+			row := make([]any, len(columns))
+			pointers := make([]any, len(columns))
+			for i := range row {
+				pointers[i] = &row[i]
+			}
+			noError(t, rows.Scan(pointers...))
+			values = append(values, row)
+		}
+		noError(t, rows.Err())
+		rows.Close()
+		tables = append(tables, values)
+	}
+	return tables
 }
 
 func TestCrossCheckInterchange(t *testing.T) {

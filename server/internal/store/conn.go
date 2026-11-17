@@ -1,14 +1,15 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"net/url"
 	"path/filepath"
 	"strconv"
 	"time"
-
-	"configflow/internal/jsonx"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" database/sql driver
 )
@@ -142,7 +143,7 @@ var (
 
 // metaRows returns the meta table (or the given keys of it) parsed, in key
 // order.
-func (c *Conn) metaRows(keys ...string) (*jsonx.Object, error) {
+func (c *Conn) metaRows(keys ...string) (map[string]json.RawMessage, error) {
 	statement := "SELECT key, value FROM meta"
 	var args []any
 	if len(keys) > 0 {
@@ -156,7 +157,7 @@ func (c *Conn) metaRows(keys ...string) (*jsonx.Object, error) {
 		}
 		statement += ")"
 	}
-	meta := jsonx.NewObject()
+	meta := make(map[string]json.RawMessage)
 	err := c.query(statement, args, func(row *sql.Rows) error {
 		var key, text string
 		if err := row.Scan(&key, &text); err != nil {
@@ -165,11 +166,10 @@ func (c *Conn) metaRows(keys ...string) (*jsonx.Object, error) {
 		if err := checkText(metaColumns, key, text); err != nil {
 			return err
 		}
-		value, err := jsonx.ParseString(text)
-		if err != nil {
-			return &Error{Kind: ErrCorrupt, Message: "数据库元信息无法解析：" + err.Error(), Cause: err}
+		if !json.Valid([]byte(text)) {
+			return newError(ErrCorrupt, fmt.Sprintf(msgMetaInvalid, "invalid JSON"))
 		}
-		meta.Set(key, value)
+		meta[key] = json.RawMessage(text)
 		return nil
 	})
 	if err != nil {
@@ -184,27 +184,49 @@ func (c *Conn) Head() (Head, error) {
 	if err != nil {
 		return Head{}, err
 	}
-	storeID, isString := jsonx.AsString(meta.Value("store_id"))
-	generation, isInt := jsonx.AsInt(meta.Value("generation"))
-	if !isString || !isInt {
-		return Head{}, newError(ErrCorrupt, "数据库元信息缺少 store_id/generation")
+	var storeID, commitID string
+	var generation int64
+	if !decodeString(meta["store_id"], &storeID) || json.Unmarshal(meta["generation"], &generation) != nil || bytes.Equal(bytes.TrimSpace(meta["generation"]), []byte("null")) {
+		return Head{}, newError(ErrCorrupt, msgHeadInvalid)
 	}
-	commitID := ""
-	if value := meta.Value("commit_id"); value != nil {
-		if commitID, isString = jsonx.AsString(value); !isString {
-			return Head{}, newError(ErrCorrupt, "数据库元信息 commit_id 无效")
+	if value := meta["commit_id"]; len(value) > 0 && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		if !decodeString(value, &commitID) {
+			return Head{}, newError(ErrCorrupt, msgCommitIDInvalid)
 		}
 	}
 	return Head{StoreID: storeID, Generation: generation, CommitID: commitID}, nil
 }
 
-// Meta returns the parsed value of one meta key, or nil when it is missing.
-func (c *Conn) Meta(key string) (any, error) {
+func decodeString(value json.RawMessage, target *string) bool {
+	return len(bytes.TrimSpace(value)) > 0 && bytes.TrimSpace(value)[0] == '"' && json.Unmarshal(value, target) == nil
+}
+
+// Meta returns the raw JSON of a metadata key, or nil when absent.
+func (c *Conn) Meta(key string) (json.RawMessage, error) {
 	meta, err := c.metaRows(key)
+	return meta[key], err
+}
+
+func (c *Conn) rootOrder() ([]string, error) {
+	raw, err := c.Meta("root_order")
 	if err != nil {
 		return nil, err
 	}
-	return meta.Value(key), nil
+	var order []string
+	// Decoding each item separately rejects null entries, which Unmarshal
+	// into []string would otherwise silently turn into empty strings.
+	var items []json.RawMessage
+	if len(bytes.TrimSpace(raw)) == 0 || bytes.TrimSpace(raw)[0] != '[' || json.Unmarshal(raw, &items) != nil {
+		return nil, newError(ErrCorrupt, msgRootOrderInvalid)
+	}
+	for _, item := range items {
+		var key string
+		if !decodeString(item, &key) {
+			return nil, newError(ErrCorrupt, msgRootOrderInvalid)
+		}
+		order = append(order, key)
+	}
+	return order, nil
 }
 
 // storedRows reads the sections and fields tables in primary key order.
@@ -250,48 +272,25 @@ func (c *Conn) Load() (Entry, error) {
 	if err != nil {
 		return Entry{}, err
 	}
-	stored, err := c.Meta("root_order")
+	rootOrder, err := c.rootOrder()
 	if err != nil {
 		return Entry{}, err
-	}
-	rootOrder, ok := stringList(stored)
-	if !ok {
-		return Entry{}, newError(ErrCorrupt, "数据库元信息 root_order 无效")
 	}
 	sections, fields, err := c.storedRows()
 	if err != nil {
 		return Entry{}, err
 	}
 	size := int64(0)
-	parsed := newOrdered[fieldKey, parsedField]()
 	for _, key := range fields.keys {
 		field := fields.values[key]
 		size += textLength(field.value)
-		value, err := jsonx.ParseString(field.value)
-		if err != nil {
-			return Entry{}, &Error{Kind: ErrCorrupt, Cause: err,
-				Message: "字段 " + key.scope + "/" + key.owner + "/" + key.field + " 不是有效 JSON：" + err.Error()}
+		if !json.Valid([]byte(field.value)) {
+			return Entry{}, newError(ErrCorrupt, fmt.Sprintf(msgInvalidField, key.scope, key.owner, key.field))
 		}
-		parsed.set(key, parsedField{field.position, value})
 	}
-	document, err := buildDocument(rootOrder, sections, parsed)
+	doc, err := buildDocument(rootOrder, sections, fields)
 	if err != nil {
 		return Entry{}, err
 	}
-	return Entry{Head: head, Document: document, Size: size}, nil
-}
-
-// stringList is `isinstance(v, list) and all(isinstance(x, str) for x in v)`.
-func stringList(v any) ([]string, bool) {
-	list, ok := jsonx.AsList(v)
-	if !ok {
-		return nil, false
-	}
-	result := make([]string, len(list))
-	for i, item := range list {
-		if result[i], ok = jsonx.AsString(item); !ok {
-			return nil, false
-		}
-	}
-	return result, true
+	return Entry{Head: head, Document: doc, Size: size}, nil
 }

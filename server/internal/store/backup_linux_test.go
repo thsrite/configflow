@@ -19,7 +19,7 @@ import (
 // Reference: backup_to under RLIMIT_FSIZE=50000 in CPython 3.11.
 func TestBackupWriteFailureMessage(t *testing.T) {
 	directory := t.TempDir()
-	target := New(filepath.Join(directory, "big.sqlite3"), seconds(1))
+	target := legacyNew(filepath.Join(directory, "big.sqlite3"), seconds(1))
 	must(target.Create(jsonx.Obj("system", jsonx.Obj("blob", strings.Repeat("x", 200000))), nil))(t)
 	signal.Ignore(syscall.SIGXFSZ)
 	defer signal.Reset(syscall.SIGXFSZ)
