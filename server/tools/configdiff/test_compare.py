@@ -44,14 +44,16 @@ class Comparators(unittest.TestCase):
         observer = Update(None, None, None)
         protocol = {'database_unchanged': True, 'worker_health_count': 3, 'github': ['release', 'download'],
                     'commands': ['restart'], 'terminal_reached': True, 'installed_bytes': {'VERSION': 'exact-sha'},
-                    'first_update_blocked': True, 'rejected_request_readonly': True}
+                    'first_update_blocked': True, 'rejected_request_readonly': True,
+                    'minimum_elapsed_valid': True, 'node_checks': [{'returncode': 1, 'stdin_sha256': 'downloaded-sha'}]}
         observer.observed = [copy.deepcopy(protocol), copy.deepcopy(protocol)]
         observer.terminal = [copy.deepcopy(value), copy.deepcopy(value)]
         self.assertEqual(observer.compare(policy), [])
         for key, changed in [('database_unchanged', False), ('worker_health_count', 4),
                              ('github', ['release']), ('commands', ['restart', 'restart']), ('terminal_reached', False),
                              ('installed_bytes', {'VERSION': 'corrupted-sha'}), ('first_update_blocked', False),
-                             ('rejected_request_readonly', False)]:
+                             ('rejected_request_readonly', False), ('minimum_elapsed_valid', False),
+                             ('node_checks', [{'returncode': 0, 'stdin_sha256': 'wrong-sha'}])]:
             observer.observed[1] = {**protocol, key: changed}
             self.assertTrue(observer.compare(policy), key)
 

@@ -1667,3 +1667,17 @@ current compared=6 go-unimplemented=1 go-unimplemented-dependency=2 design_error
 ```
 
 原R仍差247、H仍差543及partial/长流程；依赖超时独立报告已通过、下一批合并，最终.32全量未执行。
+
+## 批次 97：未缩短的启动/回滚超时及真实JavaScript错误
+
+- H038/H039分别真实等待40秒启动失败后成功回滚、40秒启动加30秒回滚仍失败，两端顺序运行共230.10s；均compared。callback只控制回环服务的运行版本/503，不改业务计时器、锁或后台函数。比较两次restart及控制版本序列，扣除实际公开轮询后业务健康请求准确43/72次，40/70秒最小经过时间必须满足；完整终态、失败原因、生命周期和所有SQL/files均比较。
+- H037使用512KiB真正非法JavaScript、正确SHA256，生产下载/大小/digest门禁通过后真实Node编译器exit1；清临时文件、无restart、原数据不动、完整错误前缀/诊断相比。stdin检查wrapper仅固定诊断源而保留真实编译器结果，生产传入的精确文件路径/下载字节digest/exit1也逐项比较；matrix明确原生绝对文件路径诊断仍partial。未执行bundle。
+- 六个升级组13变体常规runner复跑，compared13、design_errors=[]、264.87s，83项自检和故意错误Go响应检出通过；自检含过早结束、错Node返回码/字节digest。统一9340变体，原R4283（S686/F2664/B933）、H572、G16，无新增findings。原R仍差247、H仍差540及partial/长流程。
+
+```text
+.32 native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups dependency-update-readiness-timeouts,dependency-update-javascript-guard,dependency-update-success,dependency-update-conflicts,dependency-update-invalid-downloads,dependency-update-restart-rollback --baseline 045f2485
+current compared=13 design_errors=[] seconds=264.87；exit=0
+独立原始报告/tmp/configdiff-dependency-readiness.json、/tmp/configdiff-dependency-javascript.json
+```
+
+继续Web监听器及其余清单，最终.32全量未执行。

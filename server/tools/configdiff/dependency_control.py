@@ -14,7 +14,7 @@ def events(pair):
 
 
 @contextmanager
-def managed(binary, recorder, *, fail=False, health_status=None, controller_status='RUNNING', unreadable_version=False, github=None, allow_restart=False, restart_failure=''):
+def managed(binary, recorder, *, fail=False, health_status=None, controller_status='RUNNING', unreadable_version=False, github=None, allow_restart=False, restart_failure='', readiness='ready', stdin_node_check=False):
     require_native_network()
     with Source(json.dumps({'data': {'version': '2.40.0'}}).encode()) as health:
         health.headers = {'Content-Type': 'application/json'}
@@ -32,7 +32,9 @@ def managed(binary, recorder, *, fail=False, health_status=None, controller_stat
                     or value not in ({'version': '2.40.0'}, {'version': '2.41.0'}, {'version': '2.42.1'})):
                 health.responses[path] = (403, b'controller fixture rejected', {})
                 return
-            health.body = json.dumps({'data': value}).encode()
+            health.body = json.dumps({'data': {'version': '2.40.0'} if readiness == 'old-version' else value}).encode()
+            if readiness == 'offline':
+                health.status = 503
             health.responses[path] = (200, b'{"ok":true}', {'Content-Type': 'application/json'})
         health.before_reply = control_version
         health.status = health_status if health_status is not None else 503 if fail else 200
@@ -92,6 +94,9 @@ if os.environ.get('CONFIGDIFF_SUPERVISOR_FAIL') == '1':
 print('sub-store ' + os.environ['CONFIGDIFF_SUPERVISOR_STATE'] + ' pid 1, uptime 0:00:01')
 ''')
         executable.chmod(0o755)
+        if stdin_node_check:
+            from dependency_node import install
+            install(pair)
         pair.options['environment'] = {'SUB_STORE_BUILTIN_DIR': str(builtin), 'SUB_STORE_URL': health.url,
             'TMPDIR': str(control),
             'SUB_STORE_BACKEND_API_PORT': str(health.server.server_port),
@@ -101,6 +106,7 @@ print('sub-store ' + os.environ['CONFIGDIFF_SUPERVISOR_STATE'] + ' pid 1, uptime
             'CONFIGDIFF_ALLOW_RESTART': '1' if allow_restart else '0',
             'CONFIGDIFF_RESTART_FAILURE': restart_failure,
             'CONFIGDIFF_CONTROLLER_URL': health.url + '/_configdiff/version',
+            'CONFIGDIFF_NODE_LOG': str(pair.root / 'node-check-events.jsonl'),
             'CONFIGDIFF_SUPERVISOR_FAIL': '1' if fail else '0'}
         if github is not None:
             pair.options['environment'].update(REQUESTS_CA_BUNDLE=str(github.cert), SSL_CERT_FILE=str(github.cert),

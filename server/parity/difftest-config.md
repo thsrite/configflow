@@ -1997,3 +1997,5 @@ R120-S02/R121-B01：当前schema5直接塞入无profile_id的Agent会使reposito
 R198–R200现已有.32仅lo命名空间中的可信CA/MITM GitHub API及下载fake，保留真实公开双端服务、HTTPS证书校验和node --check，满足O6的网络前提。R199成功形态目前是已经就绪的回环服务，不会执行start/stop；R200的supervisorctl restart仅由白名单fixture子进程模拟，并以每端DATA_DIR的真实VERSION通知回环fake。成功终态、完整SQL/文件及HTTP/CLI协议可差分，真实Node服务启动、真实supervisord接管、容器端口生命周期仍为L1部分覆盖。下载中busy使用真实worker持锁与TLS响应门，未修改生产定时器或业务函数。
 
 R200-F12“外部服务”与F11“无内置目录”在Python公开update入口都由`is_builtin_available()`同一早期分支拒绝（[dependencies.py:336](../../backend/utils/dependencies.py#L336)）；没有另一个专用external guard。F12显式设置可用回环SUB_STORE_URL但没有builtin bundle，验证仍409且不探测外部服务、不查release、不写SQL/files，不能据此声称覆盖一个不存在的额外内部判定。
+
+H037以真实Node的stdin语法检查作为可重复外部工具夹具：wrapper只接受生产传入的精确`--check DATA_DIR/sub-store/runtime/sub-store.download.js`，读取真实下载字节并交给安装的Node编译器检查（不执行），逐次记录参数、字节digest和exit1；--version直接委托真实Node。stdin仅固定诊断源为`[stdin]`，避免两个独立DATA_DIR绝对路径影响前200字节截断。完整Node诊断和中文前缀继续相比，未整体忽略错误消息；原生绝对文件路径的Node诊断形态仍为部分覆盖。H038/H039则保留生产40秒启动/30秒回滚等待，没有缩短定时器；真实Node服务本身仍未由进程fake证明。

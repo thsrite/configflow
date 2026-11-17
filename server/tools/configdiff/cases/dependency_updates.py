@@ -3,11 +3,14 @@ import copy
 import hashlib
 import json
 import math
+import shutil
+import subprocess
 import threading
 import time
 
 from compare import Difference, database, differences, files, response_diffs
 from dependency_control import managed, events
+from dependency_node import events as node_events
 from dependency_tls import GitHub, release_request
 from harness import Pair, Reply, send, json_body
 from sources import Source
@@ -35,23 +38,30 @@ def terminal_diffs(left, right, policy):
 
 class Update:
     def __init__(self, pair, health, github, *, failure_message='', initial_version='2.40.0', restart_count=None,
-                 controller_versions=None, worker_health_count=None):
+                 controller_versions=None, worker_health_count=None, deadline=12, poll_interval=0.03,
+                 minimum_seconds=0, running=True, terminal_error='', node_check=False):
         self.pair, self.health, self.github = pair, health, github
         self.failure_message = failure_message
         self.initial_version = initial_version
         self.restart_count = (0 if failure_message else 1) if restart_count is None else restart_count
         self.controller_versions = ([] if failure_message else ['2.42.1']) if controller_versions is None else controller_versions
         self.worker_health_count = (2 if failure_message else 3) if worker_health_count is None else worker_health_count
+        self.deadline, self.poll_interval = deadline, poll_interval
+        self.minimum_seconds, self.running, self.terminal_error = minimum_seconds, running, terminal_error
+        self.node_check = node_check
         self.observed, self.terminal = [None, None], [None, None]
         self.terminal_http = [None, None]
 
     def before(self, index):
         # Each backend runs its entire worker before the shared fake is reset.
         self.health.body = json.dumps({'data': {'version': self.initial_version}}).encode()
+        self.health.status = 200
+        self.started = time.monotonic()
         self.offsets = len(self.health.requests), len(self.github.requests), len(events(self.pair))
         self.before_db = database(self.pair.dirs[index])
         self.before_files = files(self.pair.dirs[index])
         self.before_installed = self.installed(index)
+        self.node_offset = len(node_events(self.pair))
 
     def installed(self, index):
         directory = self.pair.dirs[index] / 'sub-store/runtime'
@@ -62,7 +72,7 @@ class Update:
         polls, invalid_progress = 0, []
         terminal = None
         if reply.status == 202:
-            deadline = time.monotonic() + 12
+            deadline = time.monotonic() + self.deadline
             while time.monotonic() < deadline:
                 status = send(self.pair.bases[index], 'GET', '/api/settings/dependencies', headers={
                     'Authorization': 'Bearer ' + self.pair.tokens[index]})
@@ -78,7 +88,7 @@ class Update:
                     terminal = payload
                     self.terminal_http[index] = Reply(status.status, status.headers, b'{}')
                     break
-                time.sleep(0.03)
+                time.sleep(self.poll_interval)
         rows = self.health.requests[self.offsets[0]:]
         health = [{key: row[key] for key in HEALTH} for row in rows if row['path'] != '/_configdiff/version']
         controls = [{key: row[key] for key in HEALTH} for row in rows if row['path'] == '/_configdiff/version']
@@ -108,8 +118,9 @@ class Update:
             require(value['update']['state'] == ('failed' if failed else 'success')
                     and value['update']['message'] == (self.failure_message if failed else 'Sub-Store 已更新到 2.42.1')
                     and value['current_version'] == (self.initial_version if failed else '2.42.1')
-                    and value['running'] is True and value['online_updated'] is (not failed or self.initial_version == '2.41.0')
-                    and value['has_update'] is failed and value['lifecycle']['state'] == 'running',
+                    and value['running'] is self.running and value['online_updated'] is (not failed or self.initial_version == '2.41.0')
+                    and value['has_update'] is failed and value['lifecycle']['state'] == ('running' if self.running else 'failed')
+                    and value['lifecycle']['error'] == self.terminal_error,
                     'public polling reaches exact terminal result and installed lifecycle')
             expected_files = self.before_files if failed else {**self.before_files,
                 'sub-store/runtime/VERSION': {'mode': 0o644, 'content': ['2.42.1']},
@@ -117,7 +128,13 @@ class Update:
             require(not differences(expected_files, files(self.pair.dirs[0])),
                     'only final VERSION and exact downloaded JavaScript are retained; no temp/backup remains')
         self.observed[index]['installed_bytes'] = self.installed(index)
+        self.observed[index]['node_checks'] = node_events(self.pair)[self.node_offset:]
+        self.observed[index]['minimum_elapsed_valid'] = time.monotonic() - self.started >= self.minimum_seconds
         if index == 0:
+            require(self.observed[0]['node_checks'] == ([{'args': ['--check', 'sub-store/runtime/sub-store.download.js'],
+                'stdin_sha256': hashlib.sha256(self.github.bundle).hexdigest(), 'returncode': 1}] if self.node_check else []),
+                'Node guard checks exactly the downloaded file with the real compiler')
+            require(self.observed[0]['minimum_elapsed_valid'], 'real readiness deadline is not shortened by fixture hooks')
             require(self.observed[0]['installed_bytes'] == (self.before_installed if self.failure_message else {
                 'VERSION': hashlib.sha256(b'2.42.1\n').hexdigest(),
                 'sub-store.bundle.js': hashlib.sha256(self.github.bundle).hexdigest()}),
@@ -253,3 +270,38 @@ def restart_rollback(binary, recorder):
 
 
 GROUPS['dependency-update-restart-rollback'] = restart_rollback
+
+
+def readiness_timeouts(binary, recorder):
+    for case, readiness in [('H038', 'old-version'), ('H039', 'offline')]:
+        with GitHub() as github, managed(binary, recorder, github=github, allow_restart=True,
+                readiness=readiness) as (pair, health):
+            offline = readiness == 'offline'
+            expected = '更新失败：Sub-Store 2.42.1 启动后未就绪；' + (
+                '回滚未完成，请检查容器日志' if offline else '已回滚到 2.40.0')
+            pair.request(case, UPDATE, body=json_body({}), expect=202, writes=True, runtime_writes=True,
+                check=message('开始更新到 2.42.1'), interaction=Update(pair, health, github, failure_message=expected,
+                    restart_count=2, controller_versions=['2.42.1', '2.40.0'], worker_health_count=72 if offline else 43,
+                    deadline=85 if offline else 55, poll_interval=0.2, minimum_seconds=70 if offline else 40,
+                    running=not offline, terminal_error='Sub-Store 更新后无法连接，请检查容器日志' if offline else ''),
+                variant='unshortened-40s-startup-and-' + ('30s-failed-rollback' if offline else 'ready-rollback'))
+
+
+GROUPS['dependency-update-readiness-timeouts'] = readiness_timeouts
+
+
+def invalid_javascript(binary, recorder):
+    with GitHub() as github, managed(binary, recorder, github=github, allow_restart=True,
+            stdin_node_check=True) as (pair, health):
+        github.bundle = b'const = ;\n' + b' ' * (512 * 1024)
+        github.release['assets'][0].update(size=len(github.bundle),
+            digest='sha256:' + hashlib.sha256(github.bundle).hexdigest())
+        result = subprocess.run([shutil.which('node'), '--check'], input=github.bundle, capture_output=True, timeout=10)
+        require(result.returncode == 1, 'synthetic bundle is truly invalid JavaScript in installed Node')
+        expected = '更新失败：下载的文件不是有效的 JavaScript：' + result.stderr.decode().strip()[:200]
+        pair.request('H037', UPDATE, body=json_body({}), expect=202, writes=True, runtime_writes=True,
+            check=message('开始更新到 2.42.1'), interaction=Update(pair, health, github, failure_message=expected, node_check=True),
+            variant='real-node-stdin-diagnostic-and-exact-downloaded-file-check')
+
+
+GROUPS['dependency-update-javascript-guard'] = invalid_javascript
