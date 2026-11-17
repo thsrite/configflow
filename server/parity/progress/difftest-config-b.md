@@ -1373,3 +1373,18 @@ current go-unimplemented=40 design_errors=[] seconds=3.48；exit=0
 ```
 
 继续引用/quick语法与剩余helpers；H仍差674编号，另有明确不可观察分支和多子形态部分覆盖，未完成Step B。
+
+## 批次 79：引用目标能力、quick参数和依赖环
+
+- 78批已全部rebase到go5535931d，重写后head1c4133b4，工作区干净、116改动路径范围检查全部授权。该Go基线全量正在.63前台运行，尚无最终结果；没有读Go业务实现。遵守新AGENT-BRIEF的等待规则，不在等待命令时结束任务。
+- 84新增变体覆盖H665–H698的34编号及5种G15合法quick边界，均Go尚未实现。.32独立报告/tmp/configdiff-oxidns-reference.json；覆盖并集原R4162、H472、G16，统一results.json仍待新全量完成后合并。
+- 完整校验重复tag、空/不存在引用、未知plugin warning、executor/provider类型与domain/ip能力、必须为sequence/dynamic_domain_set、udp/http/fallback/prefer双栈入口，快捷matcher/executor种类、schema转换后的路径折叠、空/额外参数、cache/short_circuit/sleep/EDNS0/time/rate_limiter/ipset/nftset/download/upgrade/reject/mark等逐参数错误；直接自环和两节点依赖环精确定位。
+- 未识别表达式/插件能力保留warning与target-core要求。合法sleep0、EDNS0 0/65535、命名reject码、mark 0/4294967295、时间段均valid=true且issues=[]，不执行插件。每次SQL/files不改、回环fake HTTP0请求。首轮错误假设空sleep走fallback文本；实际format_error已返回时长诊断，已修正并整组重跑，未当Go差异。
+
+```text
+.32 run.py --groups oxidns-reference-helper-constraints
+current go-unimplemented=84 request_variants=84 design_errors=[] seconds=9.52；exit=0
+68 comparator self-checks + wrong-Go-response check OK
+```
+
+继续schema格式/类型分支与剩余helpers；H仍差640编号，另有partial/不可观察分支，最终.32全量未执行。
