@@ -180,6 +180,48 @@ func TestC06SettingsFlaskStorageBoundary(t *testing.T) {
 		cases = append(cases, settingsCase{Name: path + " HEAD readonly", Method: "HEAD", Path: path,
 			Body: `{"port":18082,"rule_fetch_proxy":"http://proxy.example.com:8080","new_domain":"https://changed.example.com","token":"changed-token","webdav_url":"https://backup.example.com","enabled":true}`, ContentType: J, Difference: "head-readonly"})
 	}
+	runSettingsBoundary(t, cases)
+}
+
+// TestReviewC06SettingsMemberTypes checks the wire types and last-member
+// semantics at the real Flask boundary, including the complete persisted state.
+func TestReviewC06SettingsMemberTypes(t *testing.T) {
+	var cases []settingsCase
+	for _, field := range []struct{ path, key string }{
+		{"/api/server-domain", "new_domain"},
+		{"/api/config-token", "token"},
+		{"/api/settings/rule-fetch-proxy", "rule_fetch_proxy"},
+		{"/api/backup/config", "webdav_username"},
+	} {
+		for _, value := range []string{"null", "false", "17", "[]", "{}"} {
+			cases = append(cases, settingsCase{Name: field.key + "=" + value, Method: "POST", Path: field.path,
+				Body: fmt.Sprintf(`{"%s":%s}`, field.key, value), ContentType: "application/json"})
+		}
+	}
+	for _, body := range []string{
+		`{"keep_latest":1.0}`, `{"keep_latest":1e0}`, `{"keep_latest":true}`, `{"keep_latest":null}`,
+		`{"keep_latest":1001}`, `{"keep_daily":3651}`, `{"keep_latest":0,"keep_daily":3650}`,
+		`{"webdav_username":"first","webdav_username":null}`,
+		`{"webdav_username":null,"webdav_username":"operator"}`,
+		`{"keep_latest":1,"KEEP_LATEST":1001}`,
+	} {
+		cases = append(cases, settingsCase{Name: body, Method: "POST", Path: "/api/backup/config", Body: body, ContentType: "application/json"})
+	}
+	for _, body := range []string{
+		`{"enabled":{"first":true},"enabled":{"second":false}}`,
+		`{"enabled":true,"Enabled":false}`, `{"enabled":null}`, `{"enabled":"false"}`,
+	} {
+		cases = append(cases, settingsCase{Name: body, Method: "POST", Path: "/api/settings/subscription-aggregation", Body: body, ContentType: "application/json"})
+	}
+	runSettingsBoundary(t, cases)
+}
+
+func runSettingsBoundary(t *testing.T, cases []settingsCase) {
+	t.Helper()
+	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
+		t.Skip("set CONFIGFLOW_DIFF=1")
+	}
+	const J = "application/json"
 	var worlds []*httpxtest.Server
 	for i := range cases {
 		s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(settings.Register)})
