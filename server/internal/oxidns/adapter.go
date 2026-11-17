@@ -3,7 +3,6 @@ package oxidns
 import (
 	"context"
 	"errors"
-	"io"
 	"math"
 	"math/big"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/mosdns"
 	"configflow/internal/rules"
+	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
 )
@@ -140,19 +140,12 @@ func convertJSONX(v any) (*Node, error) {
 // become shared nodes; timestamps and binary values keep their tags, so they
 // are written back as they were read.
 func safeLoad(text string) (*Node, bool, error) {
-	dec := yaml.NewDecoder(strings.NewReader(text))
-	var doc yaml.Node
-	if err := dec.Decode(&doc); err == io.EOF {
-		return Null(), true, nil
-	} else if err != nil {
-		return nil, false, nil
-	}
-	var extra yaml.Node
-	if err := dec.Decode(&extra); err != io.EOF {
-		return nil, false, nil
-	}
-	if len(doc.Content) == 0 {
-		return Null(), true, nil
+	root, err := yamlx.Parse([]byte(text))
+	if err != nil {
+		if errors.Is(err, yamlx.ErrSyntax) {
+			return nil, false, nil
+		}
+		return nil, false, yamlReaderFailure(err)
 	}
 	memo := map[*Node]*Node{}
 	var convert func(n *Node) (*Node, error)
@@ -211,8 +204,8 @@ func safeLoad(text string) (*Node, bool, error) {
 		memo[n] = out
 		return out, nil
 	}
-	root, err := convert(doc.Content[0])
-	return root, true, err
+	value, err := convert(root)
+	return value, true, err
 }
 
 // splitRules is split_rules_and_rulesets: legacy rules and rule sets.

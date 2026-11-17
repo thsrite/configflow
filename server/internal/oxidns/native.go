@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"math/big"
 	"path"
@@ -12,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
 )
@@ -96,30 +97,15 @@ func loadNative(text *Node, label string) (*Node, error) {
 	return value, nil
 }
 
-// parseYAML builds the node tree of one YAML document with NativeLoader's
-// rules, mappings in PyYAML's breadth-first construction order (so the first
-// reported key error is the same). syntax is returned for parse errors.
+// parseYAML applies the shared reader policies, then runs the unchanged
+// native-document builder. Only syntax failures retain the old failure contract.
 func parseYAML(text string, syntax error) (*Node, error) {
-	dec := yaml.NewDecoder(strings.NewReader(text))
-	var doc yaml.Node
-	if err := dec.Decode(&doc); err == io.EOF {
-		return Null(), nil
-	} else if err != nil {
-		return nil, syntax
-	}
-	var extra yaml.Node
-	if err := dec.Decode(&extra); err != io.EOF {
-		return nil, syntax
-	}
-	if duplicateAnchor(&doc, map[string]bool{}) {
-		return nil, syntax
-	}
-	root := &doc
-	if doc.Kind == yaml.DocumentNode {
-		if len(doc.Content) == 0 {
-			return Null(), nil
+	root, err := yamlx.Parse([]byte(text))
+	if err != nil {
+		if errors.Is(err, yamlx.ErrSyntax) {
+			return nil, syntax
 		}
-		root = doc.Content[0]
+		return nil, yamlReaderFailure(err)
 	}
 	b := &builder{memo: map[*Node]*Node{}, syntax: syntax}
 	out, err := b.node(root)
@@ -504,7 +490,7 @@ func NativeDocument(settings *Node, validate bool, sources *Sources) (*Node, err
 			}
 			included, err := LoadNativeYAML(string(data), "include 文件")
 			if err != nil {
-				return structureError(err.Error(), p, nil)
+				return yamlReaderContext(err, p, nil)
 			}
 			if err := expand(included, p, append(append([]string{}, parents...), name)); err != nil {
 				return err

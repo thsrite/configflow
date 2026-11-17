@@ -297,6 +297,12 @@ var settingsClasses = map[string]bool{"OxidnsSettingsError": true, "OxidnsValida
 
 // compare reports a difference ("" when equal).
 func compare(r row, got *Node, err error) string {
+	// N7-3d changes only the reader's policy/alias diagnostics here. Both
+	// implementations must still reject as a settings error; accepted values,
+	// business validation messages and argument post-state remain strict.
+	if r.Err != nil && settingsClasses[r.Err[0]] && n73ReaderDiagnostic(err) {
+		return ""
+	}
 	if r.Err != nil {
 		if err == nil {
 			return "python rejected (" + strings.Join(r.Err, ": ") + "), go accepted: " + short(got)
