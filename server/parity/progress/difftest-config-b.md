@@ -1091,3 +1091,21 @@ R去重3732（S584 F2511 B637），H262，G16；55 self-checks + wrong-Go-respon
 ```
 
 继续OxiDNS各原编号、其余写入P边界与剩余H/T；不是最终.32验收。
+
+## 批次 62：OxiDNS各编辑路由原编号、结构差异与P选择
+
+- 对R106–R114/R139–R147中现有G11/G12未按原R编号记录的路径补公开HTTP用例，不用新增编号替换原设计。common读取实际native值/缺失能力原因；common修改cache/upstream/规则路由/AdGuard、同值幂等、中文设备备注保留、空列表、未知键/自定义链拒绝。
+- editor的template/native/空模板、原文注释和附件；render template/native/Host默认根、空附件、原生草稿中手写能力URL完整渲染（不把能力当普通metadata脱敏）；validate完整/不完整/引用错误/未知插件逐路径诊断。仅render生成YAML按结构比较，编辑native_config、附件及baseline仍逐字节比较；新增故意生成值/类型破坏自检，56项通过。
+- template-preview无冲突/current/template选择、手写未知类型字段/中文附件保留、错型resolutions/template参数、清空仍被手写插件引用文件拒绝。native apply完整编辑/tag引用同步、standard_add恢复、删除受管cache、各错型/覆盖/动态引用/共享引用/新增同时删除依赖；references精确到候选文档数组索引，message位置后缀也逐字节检查。中文/emoji重命名tag按ASCII命名约束拒绝400。
+- 35个有效草稿P3–P6与5个settings有效写入P选择；另2个settings B02检验未知metadata和能力的编辑器豁免。每次草稿操作全DB/revision/commit不变；settings写入检查实际选中字段、另一空间完整行及ETag/publish_guard，随后完整DB/files差分。
+- 逐端点确认F11边界并补清单errata：重复插件可保留为草稿/common投影及无关scalar修改，不统一误断言400；validate错误是200 envelope，未知插件仅warning、valid=true但仍需目标核心确认。没有Go业务改动，所有本批路由尚未接通，Go连接后自动执行。
+
+```text
+.63 run.py --groups oxidns-named-common-reads,oxidns-named-common-applies,oxidns-named-editor-render-validate,oxidns-named-template-previews,oxidns-named-native-applies,oxidns-named-structure,oxidns-named-selectors,oxidns-named-stored-settings
+.63 run.py --groups oxidns-named-editor-render-validate（补手写能力URL的有效native字段，源端前提通过）
+56 comparator self-checks + end-to-end wrong-Go-response check OK
+```
+
+覆盖精确计数见同提交results.json；继续setup状态机、helper专用分支与其余T。尚非最终验收。
+
+本批212请求变体均go-unimplemented，新增原矩阵编号172（S44/F54/B74）；累计7732 variants，R去重3904（S628/F2565/B711），H262、G16。累计compared2174 /go-unimplemented5443 /dependency37 /different77 /O12-separate1；design_errors=[]。

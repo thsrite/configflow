@@ -99,6 +99,8 @@ def main():
     groups.update(pulls)
     from cases.oxidns import GROUPS as oxidns
     groups.update(oxidns)
+    from cases.oxidns_routes import GROUPS as oxidns_routes
+    groups.update(oxidns_routes)
     from cases.config_backup import GROUPS as config_backup
     groups.update(config_backup)
     from cases.custom_config import GROUPS as custom_config

@@ -17,6 +17,14 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_render_yaml_projection_keeps_types_and_generated_values(self):
+        from cases.oxidns_routes import render_projection
+        left = {'config': '# generated\nplugins: []\nruntime: {worker_threads: 2}\n'}
+        right = {'config': 'runtime:\n  worker_threads: 2\nplugins: []\n'}
+        self.assertEqual(differences(render_projection(left, 0), render_projection(right, 1)), [])
+        for value in ('plugins: []\nruntime: {worker_threads: 3}\n', None, False):
+            self.assertTrue(differences(render_projection(left, 0), render_projection({'config': value}, 1)))
+
     def test_background_backup_exception_requires_explicit_loopback_fixture(self):
         from harness import DesignError, verify_backup_fixture
         verify_backup_fixture({'auto_backup': False})

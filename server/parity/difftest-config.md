@@ -1940,3 +1940,10 @@ Totals after review: 5570 original entries + 112 per-route cases + 15 cross-cutt
 ### Step B 规则库初始化 oracle 更正
 
 `backend/utils/domain_discovery_service.py:244–293` 每次初始化都分配新的 library/reference ID，没有检查已存在默认库后复用。R056-S04实测重复调用继续增加资源，默认指针切到新库；重复targets也被接受，创建多份库/引用，只有最后选中的库写缓存，较早同target新库成为未引用项。保留这些实际行为作为对比，不能要求幂等。
+
+### Step B OxiDNS 草稿与诊断边界更正
+
+- R106–R114及其R139–R147 scoped对应项的F11不是统一的HTTP拒绝：重复plugin tag在editor/template-preview保留为可继续编辑草稿；common-settings可投影，common-settings/apply允许无关worker_threads修改并保留重复插件；render和native-settings/apply拒绝400；validate用200 envelope返回valid=false及逐路径issues。非法YAML在validate同样是200结构化诊断，其他这些操作400。依据[oxidns_editor.py:107](../../backend/common/oxidns_editor.py#L107)、[oxidns_settings.py:123](../../backend/common/oxidns_settings.py#L123)、[oxidns_validation.py:295](../../backend/common/oxidns_validation.py#L295)；Step B逐端点实际发送两种输入，不把可编辑草稿误当可发布配置。
+- R114/R147-B02未知插件为warning，valid=true且core_check_required=true，不捏造为错误。依据[oxidns_validation.py:245](../../backend/common/oxidns_validation.py#L245)。
+- R107/R140-S04的AdGuard修改有效；device_policies不是common changes键，中文设备备注以B01验证无关草稿修改仍完整保留，设备策略本身的完整编辑由editor/G12覆盖。依据[oxidns_common.py:77](../../backend/common/oxidns_common.py#L77)、[oxidns_common.py:1077](../../backend/common/oxidns_common.py#L1077)。
+- R109/R142-F18的message会附带首个引用位置（例如`（plugins[7].args）`），同时references必须比较候选文档的准确路径、tag和reason，不只检查message固定前缀。依据[oxidns_native_apply.py:443](../../backend/common/oxidns_native_apply.py#L443)。
