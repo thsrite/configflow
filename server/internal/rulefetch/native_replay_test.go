@@ -34,6 +34,11 @@ func nativeReplayDifference(t *testing.T, suite, fn string, args any, got, want 
 		}
 		return "5.4 validation policy"
 	}
+	// The old oracle omitted English parser text. A native Chinese diagnostic
+	// is now intentionally visible; retain the same typed refusal and exact cause.
+	if errors.Is(parseErr, yamlx.ErrSyntax) && boundaryHasDiagnostic(got, parseErr.Error()) && boundaryRefusedSource(got, source) && sameFailureMetadata(got, want) {
+		return "5.7 diagnostics"
+	}
 	if nativeReplayEquivalent(got, want, false) {
 		return "D3 layout"
 	}
@@ -229,4 +234,22 @@ func boundaryRefusedSource(text, source string) bool {
 		return ok && len(warnings) > 0
 	}
 	return false
+}
+
+func sameFailureMetadata(got, want string) bool {
+	decode := func(text string) *jsonx.Object {
+		v, err := jsonx.ParseString(strings.TrimPrefix(strings.TrimPrefix(text, "error "), "ok "))
+		if err != nil {
+			return nil
+		}
+		o, _ := v.(*jsonx.Object)
+		return o
+	}
+	g, w := decode(got), decode(want)
+	if g == nil || w == nil || g.GetString("class") == "" || g.GetString("class") != w.GetString("class") {
+		return false
+	}
+	g.Delete("text")
+	w.Delete("text")
+	return encode(g) == encode(w)
 }

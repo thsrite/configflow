@@ -691,9 +691,6 @@ func remoteTextEntries(content string, ruleFormat any) ([]textEntry, []any) {
 		var marked *yamlx.SyntaxError
 		if errors.As(err, &marked) {
 			line = marked.Line
-			if marked.Problem != "" {
-				message = marked.Problem
-			}
 		}
 		problem(line, "YAML 格式无效："+message)
 		return nil, problems
