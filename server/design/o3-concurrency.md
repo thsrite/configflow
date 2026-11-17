@@ -422,6 +422,10 @@ Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
   Preserve the upload gate across generations: old and new uploads must not overlap. Worker/webdav.WaitIdle
   remains owner-scoped; Runtime also tracks the spawned work without replacing owner waits with global waits.
   Matcher timer waits end at Stopping, so housekeeping cannot force an idle drain to wait until grace−2s.
+- Matcher cleanup needs no extra Stopping interface. Discovery clears its owner through a
+  PhaseStopSignal hook, closing the private timer-wait stop channel at shutdown's start. A nil
+  MatcherCacheOptions.Spawner starts no background work; synchronous eviction remains available.
+  Pin the production discovery wiring in a test: its options must always inject a non-nil Spawner.
 - Migrated job I/O (WebDAV Run/Upload/request, provider preparation, Sub-Store HTTP/exec, upgrades I/O)
   uses Detach or passes the job context, preserving request-disconnect behavior and existing timeouts.
   Local batch commits such as CommitCacheUpdates and repo transactions remain uninterruptible.
