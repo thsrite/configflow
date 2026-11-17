@@ -1,6 +1,6 @@
 # C31 聚合路由与设备备注移植交接
 
-分支：`go-port-c31`。基于本地 `go` 的 `0b367ae5`（已包含 A11、N8-3）。状态：**ported，等待独立复核**。没有推送、没有子 agent，没有移动 `go-fix-importer-bounds` 或修改 `go-port-a11` 分支。
+分支：`go-port-c31`。最终变基到本地 `go` 的 `8bf1b189`（包含 A11、N8-3、O3-4）。状态：**ported，等待独立复核**。没有推送、没有子 agent，没有移动 `go-fix-importer-bounds` 或修改 `go-port-a11` 分支。
 
 ## 完成范围
 
@@ -118,12 +118,45 @@ ok configflow/internal/api/aggregations/difftest 70.656s
 
 ## 提交
 
-- `1c7c7709` 共享备注验证与编辑计划。
-- `d738bbcc` 真实 Python 备注对比及懒校验修正。
-- `0e78d4ce` 11 路由、生成器、provider 接线与生产差分注册。
-- `3695cade` 原生选择器、缓存统计兼容、扩大边界覆盖。
-- `2e1ed252` HEAD 方法闸门及真实 Flask 回归。
-- `0bc1af58` 接上 A11、去掉冻结输入、提升独立生产 bundle 覆盖。
+- `403cd614` 共享备注验证与编辑计划。
+- `8cdd6d1e` 真实 Python 备注对比及懒校验修正。
+- `9bf1da8c` 11 路由、生成器、provider 接线与生产差分注册。
+- `aa2d28c0` 原生选择器、缓存统计兼容、扩大边界覆盖。
+- `580ec7f4` HEAD 方法闸门及真实 Flask 回归。
+- `225d34ed` 接上 A11、去掉冻结输入、提升独立生产 bundle 覆盖。
 - 后续收尾提交包含缓存失败关闭的测试、差异说明与本报告，见分支 HEAD。
 
 最终执行 `git rebase go`，并确认工作区干净；不推送。移植完成，独立复核与合并交给协调者。
+
+## 变基到 O3-4 后的组合复验
+
+上面的含 fuzz 完整门禁在 `0b367ae5` 组合树运行。最终变基到 `8bf1b189` 后，又在 .64 执行以下命令（C31 运行时代码未再修改，解析器 fuzz 证据仍适用）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc '
+set -e
+cd server
+test -z "$(gofmt -l internal/ tools/ cmd/)"
+go vet ./...
+printf "post-rebase gofmt/vet PASS\n"
+if ! CONFIGFLOW_DIFF=1 go test -race -count=1 ./internal/aggregations/... ./internal/api/aggregations/... ./internal/devicenotes/... ./internal/repo/... ./internal/oxidns/... ./internal/convert/... ./internal/provider/... ./internal/server/... ./tools/proddiff/generator/ > /tmp/c31-rebase-race.log 2>&1; then tail -20 /tmp/c31-rebase-race.log; exit 1; fi
+tail -12 /tmp/c31-rebase-race.log
+if ! go test -count=1 ./... > /tmp/c31-rebase-full.log 2>&1; then tail -25 /tmp/c31-rebase-full.log; exit 1; fi
+tail -3 /tmp/c31-rebase-full.log
+for d in $(go list ./... | rg difftest); do
+ if ! CONFIGFLOW_DIFF=1 go test -count=1 "$d" > /tmp/c31-rebase-one-diff.log 2>&1; then cat /tmp/c31-rebase-one-diff.log; exit 1; fi
+ cat /tmp/c31-rebase-one-diff.log
+done
+cd ..
+if ! server/scripts/proddiff.sh > /tmp/c31-rebase-proddiff.log 2>&1; then tail -5 /tmp/c31-rebase-proddiff.log; exit 1; fi
+tail -1 /tmp/c31-rebase-proddiff.log
+printf "C31_REBASE_PASS\n"
+'
+```
+
+该轮退出 0：相关包 race 全绿（C31 differential 69.600s、repo 100.403s、OxiDNS 103.228s、provider 176.581s），全量普通测试通过，全部 12 个 differential 通过（C31 21.243s，subscriptions 56.465s），最后输出：
+
+```text
+baseline: new=0 stale=0
+C31_REBASE_PASS
+```
