@@ -12,6 +12,15 @@
   `9007199254740993.0` 变成 `9007199254740992.0`、`\u003c` 变成 `<`。
   修复只回填业务维护实际拥有的 `rule_proxy_token`、`retired_rule_proxy_tokens`，保留其他字段的 Raw。
   回归 `TestReviewN85TokenMaintenancePreservesUntouchedMembers`：修复前两入口均失败，修复后通过。
+  修复提交：`219035cd4`。
+
+- **F2，high，已修复：启动自动写入重新造成 R5 加载锁死。**
+  `validateStored` 已允许畸形成员，但 `openLocked` 无条件运行 legacy token 初始化。
+  `system_config` 是 null/数字/字符串时得到 AttributeError；配置名错误且缺 token 时，
+  自动事务触发全量写入校验，`Open` 仍返回“配置名称不能为空”。四个场景修复前均失败。
+  现在只有当前业务文档有效时才做可选启动写入；无效文档直接保持只读加载，修复事务再维护 token。
+  `TestReviewN85InvalidStoredValuesDoNotTriggerStartupWrites` 对全部 meta/sections/fields
+  和完整非 DB 文件树断言加载零改动、typed 修复可提交、无关文件保留。
   修复提交：本文件同提交（最终交回补 hash）。
 
 ## 当前验证
@@ -23,11 +32,11 @@ RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && export CONFIGFLOW_PY=
 ```
 
 repo `20.016s`、model `0.007s`，通过，含真实 Python 存储审计。
-新增回归：`go test -count=1 -run '^TestReviewN85' ./internal/repo`，修复后 `ok 0.761s`。
+新增回归：`go test -count=1 -run '^TestReviewN85' ./internal/repo`，F1 修复后 `ok 0.761s`。
+F2 与既有 startup/R5/invalid-row 回归联跑：`go test -count=1 -run '^(TestReviewN85|TestStartupEnsuresTheRuleProxyToken|TestInvalidRowsLoadButRefuseWritesWithoutRebuilding|TestModelR5StoredValuesLoadWriteValidationRepairs)' ./internal/repo`，`ok 5.914s`。
 Nodes 新增独立表覆盖同类型不同数字文本、对象顺序/转义、大浮点精度、同成员覆盖、删除、不同类型 id。
 
 ## 待完成
 
-- 启动时自动 token 写入是否绕过加载/写入校验拆分。
 - View 的缓存/生命周期文档核实；三条 Clarified 写入设计。
 - O3-6c 提交核心冲突及取消边界清单；完整 gate；最终提交列表。

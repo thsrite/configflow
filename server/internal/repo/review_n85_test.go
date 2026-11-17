@@ -4,10 +4,83 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"reflect"
 	"testing"
 
 	"configflow/internal/model"
 )
+
+func n85Files(t *testing.T, directory string) map[string]string {
+	t.Helper()
+	files := map[string]string{}
+	noError(t, filepath.WalkDir(directory, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || entry.Name() == DatabaseFilename {
+			return err
+		}
+		files[must(filepath.Rel(directory, path))(t)] = string(must(os.ReadFile(path))(t))
+		return nil
+	}))
+	return files
+}
+
+func TestReviewN85InvalidStoredValuesDoNotTriggerStartupWrites(t *testing.T) {
+	tests := []struct {
+		name, settings string
+		invalidName    bool
+	}{
+		{"null settings", `null`, false},
+		{"numeric settings", `7`, false},
+		{"string settings", `"malformed"`, false},
+		{"invalid name and missing token", `{}`, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newRepo(t)
+			base := must(r.store.Load())(t)
+			for i := range base.Document.System.Fields {
+				if base.Document.System.Fields[i].Name == "system_config" {
+					base.Document.System.Fields[i].Value = json.RawMessage(tt.settings)
+				}
+			}
+			if tt.invalidName {
+				for i := range base.Document.Profiles[0].Fields {
+					if base.Document.Profiles[0].Fields[i].Name == "name" {
+						base.Document.Profiles[0].Fields[i].Value = json.RawMessage(`7`)
+					}
+				}
+			}
+			_, _, err := r.store.Commit(base, base.Document, nil)
+			noError(t, err)
+			noError(t, os.WriteFile(filepath.Join(r.DataDir(), "future.json"), []byte(` {"future":null,"wrong":"type"} `), 0o600))
+			rows, files := xcFingerprint(t, r.store), n85Files(t, r.DataDir())
+			opened, err := Open(r.DataDir(), Options{})
+			noError(t, err)
+			// Compare all DB tables and the complete non-database file tree.
+			if !reflect.DeepEqual(xcFingerprint(t, r.store), rows) || !reflect.DeepEqual(n85Files(t, r.DataDir()), files) {
+				t.Fatal("loading changed the database or files")
+			}
+			_, err = opened.System(bg)
+			noError(t, err)
+			noError(t, opened.Update(bg, func(_ context.Context, d *model.Document) error {
+				if tt.invalidName {
+					profileByKey(d, DefaultProfileID).Name = "repaired"
+				} else {
+					d.System.SystemConfig.RuleProxyToken = "synthetic-rule-token"
+				}
+				return nil
+			}))
+			if reflect.DeepEqual(xcFingerprint(t, r.store), rows) {
+				t.Fatal("repair did not commit")
+			}
+			if !reflect.DeepEqual(n85Files(t, r.DataDir()), files) {
+				t.Fatal("repair changed unrelated files")
+			}
+		})
+	}
+}
 
 // Automatic token maintenance must not re-encode the other members of the
 // settings record through the lossy legacy adapter.
