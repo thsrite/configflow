@@ -10,14 +10,16 @@ import (
 )
 
 // Stored row envelopes belong to repo; model knows records, not SQLite/store.
-func modelFields(fields []store.Field) (model.Fields, error) {
+// A row the model refuses (duplicate member names, D1) is located like the
+// store's own corrupt-row diagnostics: scope/owner/field, never its value.
+func modelFields(scope, owner string, fields []store.Field) (model.Fields, error) {
 	var result model.Fields
 	for _, field := range fields {
 		if result.Has(field.Name) {
 			return model.Fields{}, fmt.Errorf("%w: duplicate stored field", model.ErrJSON)
 		}
 		if err := result.Set(field.Name, field.Value); err != nil {
-			return model.Fields{}, err
+			return model.Fields{}, fmt.Errorf(msgModelRowInvalid, scope, owner, field.Name, err)
 		}
 	}
 	return result, nil
@@ -27,7 +29,7 @@ func decodeModelRows(raw *store.Document) (*model.Document, []model.FieldIssue, 
 	if raw == nil {
 		return nil, nil, fmt.Errorf("decode stored model: missing document")
 	}
-	roots, err := modelFields(raw.Root)
+	roots, err := modelFields("root", "", raw.Root)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -43,7 +45,7 @@ func decodeModelRows(raw *store.Document) (*model.Document, []model.FieldIssue, 
 			if section == nil {
 				return nil, nil, fmt.Errorf("decode stored model: missing section")
 			}
-			fields, err := modelFields(section.Fields)
+			fields, err := modelFields(name, "", section.Fields)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -57,7 +59,7 @@ func decodeModelRows(raw *store.Document) (*model.Document, []model.FieldIssue, 
 				if profiles.Has(profile.ID) {
 					return nil, nil, fmt.Errorf("%w: duplicate profile owner", model.ErrJSON)
 				}
-				fields, err := modelFields(profile.Fields)
+				fields, err := modelFields("profile", profile.ID, profile.Fields)
 				if err != nil {
 					return nil, nil, err
 				}
