@@ -248,24 +248,33 @@ expected the hook to survive a failed run. Fixed in the third review commit
 now expects D3's restore). Whole installer package with `-race` then passed on
 .64 (`ok configflow/internal/installer 719.481s`, agents difftest 123.927s).
 
-Final gate, rebased onto `go` `76f65828`, on .64:
+Rebase onto `go` `c14763b3` (N7-4 YAML writers) needed semantic merges in
+`fuzz_test.go`, `matrix_test.go`, `n73_review_test.go` (D3/D5 baseline reversal
+first, then N7-4's `writerHashCaseMatches`/`writerExpected` oracle),
+`difftest/installer_test.go` (N7-4 YAML branch kept, baseline in the text
+branch) and `docker_ha_compact.go` (D1 removes the re-formatted colon branch).
+Final gate on that tree, .64 (the last rebase to `0dace4ae` only added C32
+`api/rules` commits, disjoint from this branch):
 
 ```sh
-RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'GATE_LOGS=/tmp/l1-review-gate3 server/scripts/gate.sh -p 6 FuzzComposeYAML:./internal/installer'
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'GATE_LOGS=/tmp/l1-review-gate4 server/scripts/gate.sh -p 6 FuzzComposeYAML:./internal/installer'
 RT_HOST=sunbroke@192.168.0.64 rt --no-sync -- bash -c 'PYTHONDONTWRITEBYTECODE=1 "$HOME/cf-test/.venv/bin/python" -m unittest discover -s server/tools/proddiff -p test_proddiff.py'
 ```
 
 ```text
-== race + proddiff (parallel)       race: 91 packages ok, 0 FAIL
-ok  	configflow/internal/api/agents	253.233s
-ok  	configflow/internal/httpx	35.664s
-ok  	configflow/internal/installer	654.153s
+== race + proddiff (parallel)       race: 93 packages ok, 0 FAIL
+ok  	configflow/internal/api/agents	273.250s
+ok  	configflow/internal/httpx	38.130s
+ok  	configflow/internal/installer	580.667s
 baseline: new=0 stale=0
-== difftest                          all 14 packages ok (api/agents/difftest 138.757s)
-FuzzComposeYAML ok  	configflow/internal/installer	61.055s
+== difftest                          all packages ok (api/agents/difftest 124.809s)
+FuzzComposeYAML ok  	configflow/internal/installer	61.028s
 GATE PASS
 Ran 37 tests in 0.023s
 OK
 ```
+
+An earlier full gate on the `76f65828`-based tree also passed (91 race packages,
+installer 654.153s, proddiff new=0 stale=0).
 
 No owned containers remain on .32/.64 (`docker ps -a --filter label=configflow.l1-installer` empty).
