@@ -8,8 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -26,10 +26,18 @@ func TestChainProviderCaptureGroups(t *testing.T) {
 	}
 	cases := []struct{ Pattern, Name string }{
 		{`(a)?(?(1)b|c)`, "ab"},
+		{`(a)?(?(1)b|c)`, "c"},
 		{"(?x:a # ignored ( parentheses\n(b))", "ab"},
+		{"(?x:(a) # ignored ) (?P<ignored>\n(b))", "ab"},
 		{`(?P<first>a)(b)`, "ab"},
+		{`(?P<first>a)?(?(first)b|c)`, "ab"},
+		{`(?P<first>a)?(?(first)b|c)`, "c"},
 		{`\(a\)(b)`, "(a)b"},
 		{`[()](a)`, "(a"},
+		{`(?# ignored opening ()(a)`, "a"},
+		{`(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)(l)`, "abcdefghijkl"},
+		{`(a)`, "z"},
+		{`(a)`, "abz"},
 	}
 	input, err := json.Marshal(cases)
 	if err != nil {
@@ -57,10 +65,12 @@ for case in json.load(sys.stdin):
     main = {'proxy-providers': {'Source': {'type':'http', 'url':'https://example.com/nodes'}},
         'proxy-groups': [{'name':'Chain', 'type':'select', 'use':['Source'], 'filter':p+chr(96)+'z'}]}
     lower_chain_providers(runtime, main)
-    rule = main['proxy-providers']['Chain_Source']['override']['proxy-name'][0]
-    target = re.sub(r'\$(\d+)', lambda m: r'\g<'+m[1]+'>', rule['target'])
+    renamed = name
+    for rule in main['proxy-providers']['Chain_Source']['override']['proxy-name']:
+        target = re.sub(r'\$(\d+)', lambda m: r'\g<'+m[1]+'>', rule['target'])
+        renamed = re.sub(rule['pattern'], target, renamed)
     out.append({'groups': re.compile(p).groups, 'main': main,
-        'renamed': re.sub(rule['pattern'], target, name)})
+        'renamed': renamed})
 json.dump(out, sys.stdout)
 `)
 	cmd.Dir = root
@@ -83,6 +93,7 @@ json.dump(out, sys.stdout)
 	if len(expected) != len(cases) {
 		t.Fatal("truncated Python results")
 	}
+	reference := regexp.MustCompile(`\$[0-9]+`)
 	for i, tc := range cases {
 		t.Run(tc.Pattern, func(t *testing.T) {
 			compiled, err := rules.CompilePyRegex(tc.Pattern, false)
@@ -114,23 +125,37 @@ json.dump(out, sys.stdout)
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("provider output differs\nGo %s\nPython %s", actual, expected[i].Main)
 			}
-			rule := main.GetObject("proxy-providers").GetObject("Chain_Source").GetObject("override").GetList("proxy-name")[0].(*jsonx.Object)
-			re, err := rules.CompilePyRegex(rule.GetString("pattern"), false)
-			if err != nil {
-				t.Fatal(err)
-			}
-			// Apply the emitted Mihomo $N reference to the actual matched name.
-			renamed, err := re.Sub(tc.Name, func(m *rules.Match) (string, error) {
-				value, ok := m.Group(compiled.Groups() + 1)
-				if !ok {
-					t.Fatal("missing final name capture")
+			// Read the group number from each emitted target, rather than
+			// reconstructing it from Groups(). Apply every bucket in order.
+			renamed := tc.Name
+			for _, item := range main.GetObject("proxy-providers").GetObject("Chain_Source").GetObject("override").GetList("proxy-name") {
+				rule := item.(*jsonx.Object)
+				re, err := rules.CompilePyRegex(rule.GetString("pattern"), false)
+				if err != nil {
+					t.Fatal(err)
 				}
-				return strings.ReplaceAll(rule.GetString("target"), "$"+strconv.Itoa(compiled.Groups()+1), value), nil
-			}, 0)
-			if err != nil {
-				t.Fatal(err)
+				renamed, err = re.Sub(renamed, func(m *rules.Match) (string, error) {
+					return reference.ReplaceAllStringFunc(rule.GetString("target"), func(ref string) string {
+						n, err := strconv.Atoi(ref[1:])
+						if err != nil {
+							t.Fatal(err)
+						}
+						value, ok := m.Group(n)
+						if !ok {
+							t.Fatalf("missing emitted capture %s", ref)
+						}
+						return value
+					}), nil
+				}, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
-			if renamed != expected[i].Renamed || renamed != "排序_1_"+tc.Name {
+			wantName := "排序_1_" + tc.Name
+			if tc.Name == "z" {
+				wantName = "排序_2_z"
+			}
+			if renamed != expected[i].Renamed || renamed != wantName {
 				t.Fatalf("renamed=%q Python=%q", renamed, expected[i].Renamed)
 			}
 		})

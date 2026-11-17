@@ -715,11 +715,11 @@ Files:
 - `backend/utils/mihomo_listeners.py` (87)
 - `backend/utils/proxy_server_dns.py` (394)
 
-Tests: `test_mihomo_listener_lifecycle.py` (10), `test_proxy_chains.py` (19), `test_proxy_server_dns.py` (22)
+Tests: `test_mihomo_listener_lifecycle.py` (10), `test_proxy_chains.py` (18), `test_proxy_server_dns.py` (22)
 
 Routes: none.
 
-Evidence: `internal/subs` chains.go/listeners.go/proxyserverdns.go and shared `yamlx.Edit`. All 19 chain, 22 DNS and 10 listener source functions now have explicit mappings in [progress/c11.md](progress/c11.md). The old 10-chain/17-DNS blanket deferrals are superseded by verified C18 generation and C19 Surge replay, C15 refresh replay, native helper/corpus tests and the exact public logical-reference regression. C33 proxy-group PUT/DELETE persistence/409/rollback and C34 preview response wiring remain external, coordinator-approved owner entry points; this module does not implement them.
+Evidence: `internal/subs` chains.go/listeners.go/proxyserverdns.go and shared `yamlx.Edit`. All 18 chain, 22 DNS and 10 listener source functions now have explicit mappings in [progress/c11.md](progress/c11.md). The old 10-chain/17-DNS blanket deferrals are superseded by verified C18 generation and C19 Surge replay, C15 refresh replay, native helper/corpus tests and the exact public logical-reference regression. C33 proxy-group PUT/DELETE persistence/409/rollback and C34 preview response wiring remain external, coordinator-approved owner entry points; this module does not implement them.
 
 The capture-count TODO is closed: provider backtick sorting compiles each bucket once and uses `rules.Regex.Groups()`. Live Python differential covers conditional/verbose/named/escaped/class parentheses, complete provider lowering and the emitted $N sorting substitution. .64 targeted subs/difftest/convert tests pass. Independent C11 review is still required.
 
