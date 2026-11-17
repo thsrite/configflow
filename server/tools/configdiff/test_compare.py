@@ -17,6 +17,81 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_production_waitress_reconstructs_chunked_wsgi_content_length(self):
+        import subprocess
+        import sys
+        from harness import free_port, send
+        port = free_port()
+        script = """import json, sys
+from waitress import serve
+def app(environ, start):
+    length = environ.get('CONTENT_LENGTH')
+    body = environ['wsgi.input'].read(int(length or 0))
+    value = json.dumps({'length': length, 'bytes': len(body)}).encode()
+    start('200 OK', [('Content-Type', 'application/json'), ('Content-Length', str(len(value)))])
+    return [value]
+serve(app, host='127.0.0.1', port=int(sys.argv[1]))
+"""
+        process = subprocess.Popen([sys.executable, '-c', script, str(port)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            base = 'http://127.0.0.1:' + str(port)
+            deadline = time.monotonic() + 10
+            while True:
+                try:
+                    send(base, 'GET', '/')
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(.02)
+            payload = b' ' * 32769 + b'{}'
+            reply = send(base, 'POST', '/', payload, {'Transfer-Encoding': 'chunked'})
+            self.assertEqual(reply.json(), {'length': str(len(payload)), 'bytes': len(payload)})
+        finally:
+            process.terminate()
+            process.wait(timeout=5)
+
+    def test_setup_initial_state_observer_rejects_wrong_profile_and_progress(self):
+        from cases.setup import SID, PID, NAME, initial_session_errors
+        value = {'id': SID, 'profile_id': PID, 'name': NAME, 'goal': 'router', 'step': 1, 'max_step': 1,
+                 'subscription_ids': [], 'node_ids': [], 'prepared': False, 'profile_revision': 0, 'completed': False}
+        self.assertEqual(initial_session_errors(value), [])
+        for patch in ({'profile_id': 'other'}, {'goal': 'gateway'}, {'step': True}, {'prepared': True}, {'node_ids': ['unexpected']}):
+            self.assertTrue(initial_session_errors({**value, **patch}))
+
+    def test_chunked_public_client_sends_complete_large_body_without_content_length(self):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        import threading
+        from harness import send
+        observed = []
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_args):
+                pass
+            def do_POST(self):
+                chunks = []
+                while True:
+                    size = int(self.rfile.readline().strip(), 16)
+                    if not size:
+                        self.rfile.readline()
+                        break
+                    chunks.append(self.rfile.read(size))
+                    self.rfile.read(2)
+                observed.append((self.headers.get('Content-Length'), self.headers.get('Transfer-Encoding'), b''.join(chunks)))
+                self.send_response(204)
+                self.end_headers()
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            payload = b' ' * 32769 + b'{}'
+            self.assertEqual(send('http://127.0.0.1:' + str(server.server_port), 'POST', '/setup', payload,
+                                  {'Transfer-Encoding': 'chunked', 'Content-Type': 'application/json'}).status, 204)
+            self.assertEqual(observed, [(None, 'chunked', payload)])
+        finally:
+            server.shutdown()
+            server.server_close()
+            worker.join()
+
     def test_render_yaml_projection_keeps_types_and_generated_values(self):
         from cases.oxidns_routes import render_projection
         left = {'config': '# generated\nplugins: []\nruntime: {worker_threads: 2}\n'}

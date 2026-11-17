@@ -1109,3 +1109,20 @@ R去重3732（S584 F2511 B637），H262，G16；55 self-checks + wrong-Go-respon
 覆盖精确计数见同提交results.json；继续setup状态机、helper专用分支与其余T。尚非最终验收。
 
 本批212请求变体均go-unimplemented，新增原矩阵编号172（S44/F54/B74）；累计7732 variants，R去重3904（S628/F2565/B711），H262、G16。累计compared2174 /go-unimplemented5443 /dependency37 /different77 /O12-separate1；design_errors=[]。
+
+## 批次 63：setup创建/重入/输入边界与真实chunked客户端
+
+- router/gateway新session、相同id/name/goal重入（SQL及所有文件完全不变）、改目标/名409、64个中文/emoji码点、首次生成43字符public config_token、各参数/JSON/32KiB Content-Length边界、预先占用setup_派生profile id。H1012/1013/1015各发独立请求验证准确错误分支。
+- 创建响应与setup-sessions私有JSON文件完整相等，新profile的SQL名称/派生id/初始进度一致；完整SQL、文件内容和模式参与Go差分。随机public token只允许新生成token_urlsafe(32)形态且不能为已知旧角色，显式绑定两个新能力；内部能力与所有其他字段不放宽。
+- 修正初次进度误记：首轮R208-B90实际413、退出2，不能记为成功。真实客户端自检证明线上发送chunked且无Content-Length；另用真实Waitress的WSGI回显自检证明其解码后补上CONTENT_LENGTH，所以公开生产入口在_body处拒绝413。保留生产HTTP入口，不改用直接Flask client来迁就原清单。B90实际发送>32KiB有效JSON并检查413及零SQL/文件变更。
+- 初始session观察器故意破坏profile/goal/类型/进度/资源归属必须失败；chunked自检逐块读取并验证完整正文、TE与无CL；Waitress长度重建自检独立验证外部传输与路由观察的区别。结果与计数待本批修正后重跑确认。
+
+继续setup列表/读取/进度、来源/prepare/check/finish/abandon与相关H；并发和Agent协议尚未由本批覆盖，未最终验收。
+
+```text
+.63 run.py --groups setup-create,setup-create-guards（修正后）
+current go-unimplemented=26 design_errors=[] seconds=8.72
+cumulative variants=7758 compared=2174 go-unimplemented=5469 dependency=37 different=77 O12-separate=1
+R去重3918（S631 F2573 B714），H265，G16；新增原R编号14（S3/F8/B3）
+59 comparator self-checks + wrong-Go-response check OK；exit=0
+```

@@ -101,6 +101,8 @@ def main():
     groups.update(oxidns)
     from cases.oxidns_routes import GROUPS as oxidns_routes
     groups.update(oxidns_routes)
+    from cases.setup import GROUPS as setup
+    groups.update(setup)
     from cases.config_backup import GROUPS as config_backup
     groups.update(config_backup)
     from cases.custom_config import GROUPS as custom_config
