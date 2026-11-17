@@ -32,48 +32,48 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | H120 / real-dot-segment-network-redirect//api/profiles/default/mosdns/rule-proxy/cross-origin | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | c14763b3 | 400 / 200 |
 | H120 / real-dot-segment-network-redirect//api/profiles/default/mosdns/rule-proxy/same-origin-outside-api | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | c14763b3 | 400 / 200 |
 | H123 / original-and-mirror-both-fail-through-loopback-proxy | `GET /api/mosdns/rule-proxy` | open | — | c14763b3 | 502 / 502 |
-| H128 / sequence-root | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H128 / sequence-root | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H129 / duplicate-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H129 / duplicate-payload | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H129 / mapping-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H129 / mapping-payload | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H129 / missing-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H129 / missing-payload | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H130 / alias | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H130 / alias | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H130 / anchor | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H130 / anchor | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H131 / block-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H131 / block-entry | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H131 / nested-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H131 / nested-entry | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H131 / non-string-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H131 / non-string-entry | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H132 / duplicate-extra-flow-key | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H132 / duplicate-extra-flow-key | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H133 / multiline-extra-flow-value | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H133 / multiline-extra-flow-value | `GET /api/rules/local/<name>` | open | — | 895f5e21 | 200 / 200 |
-| H911 / actual-public-catalog-key-is-bound-to-DNS-follow | `PUT /api/rules/dns` | open | — | 895f5e21 | 400 / 400 |
-| R007-S02 /  | `GET /api/aggregations/<agg_id>/preview` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
-| R008-S05 / failed-source-valid-cache | `GET /api/aggregations/<agg_id>/provider` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
+| H128 / sequence-root | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H128 / sequence-root | `GET /api/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H129 / duplicate-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H129 / duplicate-payload | `GET /api/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H129 / mapping-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H129 / mapping-payload | `GET /api/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H129 / missing-payload | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H129 / missing-payload | `GET /api/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H130 / alias | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H130 / alias | `GET /api/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H130 / anchor | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H130 / anchor | `GET /api/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H131 / block-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H131 / block-entry | `GET /api/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H131 / nested-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H131 / nested-entry | `GET /api/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H131 / non-string-entry | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H131 / non-string-entry | `GET /api/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H132 / duplicate-extra-flow-key | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H132 / duplicate-extra-flow-key | `GET /api/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H133 / multiline-extra-flow-value | `GET /api/profiles/<profile_id>/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H133 / multiline-extra-flow-value | `GET /api/rules/local/<name>` | open | — | 15173872f | 200 / 200 |
+| H911 / actual-public-catalog-key-is-bound-to-DNS-follow | `PUT /api/rules/dns` | open | — | 15173872f | 400 / 400 |
+| R007-S02 /  | `GET /api/aggregations/<agg_id>/preview` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
+| R008-S05 / failed-source-valid-cache | `GET /api/aggregations/<agg_id>/provider` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
 | R011-F06 /  | `POST /api/auth/login` | accepted | [behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | c14763b3 | 500 / 400 |
 | R011-F07 /  | `POST /api/auth/login` | accepted | [behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | c14763b3 | 500 / 400 |
 | R011-F08 /  | `POST /api/auth/login` | accepted | [behaviour-changes.md · N8-6](behaviour-changes.md#n8-6--native-request-binding-and-correct-bad-request-statuses) | c14763b3 | 500 / 415 |
 | R012-F01 /  | `GET /api/auth/status` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 405 / 405 |
-| R015-B01 /  | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
-| R015-B02 /  | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
-| R015-B03 /  | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
-| R015-B04 /  | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
-| R015-F08 / empty | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R015-F09 / array | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R015-F10 / unknown | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R015-F11 / text-type | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R015-F12 / auto-type | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R015-F13 / keep-negative | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R015-F14 / keep-large | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R015-F15 / daily-large | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R015-F16 / keep-bool | `POST /api/backup/config` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-B01 /  | `POST /api/backup/config` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
+| R015-B02 /  | `POST /api/backup/config` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
+| R015-B03 /  | `POST /api/backup/config` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
+| R015-B04 /  | `POST /api/backup/config` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
+| R015-F08 / empty | `POST /api/backup/config` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-F09 / array | `POST /api/backup/config` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-F10 / unknown | `POST /api/backup/config` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-F11 / text-type | `POST /api/backup/config` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-F12 / auto-type | `POST /api/backup/config` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-F13 / keep-negative | `POST /api/backup/config` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-F14 / keep-large | `POST /api/backup/config` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-F15 / daily-large | `POST /api/backup/config` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R015-F16 / keep-bool | `POST /api/backup/config` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
 | R015-S04 /  | `POST /api/backup/config` | accepted | [behaviour-changes.md · C35空密码保留](behaviour-changes.md#c35webdav-凭据安全与表单密码保留) | c14763b3 | 200 / 200 |
 | R016-B02 /  | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
 | R016-B03 /  | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
@@ -81,35 +81,35 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R016-B91 / Asia/Shanghai/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
 | R016-B91 / Etc/GMT+12/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
 | R016-B91 / Etc/GMT-14/previous-local-day-crosses-UTC-midnight | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
-| R016-F08 / array | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F09 / empty | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F10 / unknown | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F11 / text-type | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F12 / auto-type | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F13 / daily-large | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F13 / keep-bool | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F13 / keep-large | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F13 / keep-negative | `POST /api/backup/now` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R016-F15 /  | `POST /api/backup/now` | closed | abdf47ef, d01fdf32, f9963a7f, 25f1364a；25f1364a为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | c14763b3 | 500 / 500 |
-| R016-F15 / real-MKCOL-403-before-PUT | `POST /api/backup/now` | closed | 25f1364a；25f1364a为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | c14763b3 | 400 / 400 |
+| R016-F08 / array | `POST /api/backup/now` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F09 / empty | `POST /api/backup/now` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F10 / unknown | `POST /api/backup/now` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F11 / text-type | `POST /api/backup/now` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F12 / auto-type | `POST /api/backup/now` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F13 / daily-large | `POST /api/backup/now` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F13 / keep-bool | `POST /api/backup/now` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F13 / keep-large | `POST /api/backup/now` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F13 / keep-negative | `POST /api/backup/now` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R016-F15 /  | `POST /api/backup/now` | closed | abdf47ef, d01fdf32, f9963a7f, 25959d1cf；25959d1cf为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | c14763b3 | 500 / 500 |
+| R016-F15 / real-MKCOL-403-before-PUT | `POST /api/backup/now` | closed | 25959d1cf；25959d1cf为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | c14763b3 | 400 / 400 |
 | R016-F16 /  | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
 | R016-S01 /  | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
 | R016-S02 /  | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
 | R016-S03 /  | `POST /api/backup/now` | open | — | c14763b3 | 200 / 200 |
-| R017-F08 / array | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F09 / empty | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F10 / unknown | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F11 / text-type | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F12 / auto-type | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F13 / daily-large | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F13 / keep-bool | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F13 / keep-large | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F13 / keep-negative | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F14 /  | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F15 /  | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F16 /  | `POST /api/backup/test` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
-| R017-F18 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, 25f1364a；25f1364a为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | c14763b3 | 400 / 400 |
-| R017-F19 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, 25f1364a；25f1364a为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | c14763b3 | 500 / 500 |
+| R017-F08 / array | `POST /api/backup/test` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F09 / empty | `POST /api/backup/test` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F10 / unknown | `POST /api/backup/test` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F11 / text-type | `POST /api/backup/test` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F12 / auto-type | `POST /api/backup/test` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F13 / daily-large | `POST /api/backup/test` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F13 / keep-bool | `POST /api/backup/test` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F13 / keep-large | `POST /api/backup/test` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F13 / keep-negative | `POST /api/backup/test` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F14 /  | `POST /api/backup/test` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F15 /  | `POST /api/backup/test` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F16 /  | `POST /api/backup/test` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 400 / 400 |
+| R017-F18 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, 25959d1cf；25959d1cf为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | c14763b3 | 400 / 400 |
+| R017-F19 /  | `POST /api/backup/test` | closed | abdf47ef, d01fdf32, f9963a7f, 25959d1cf；25959d1cf为O6英文内部诊断比较器纠正，不是Go业务修复；中文/HTTP数字/副作用继续严格比较 | c14763b3 | 500 / 500 |
 | R055-B01 / disabled/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | c14763b3 | 200 / 200 |
 | R055-S02 / new/domain/example.com | `POST /api/domain-discovery/region/route` | closed | 041ab5a6 | c14763b3 | 200 / 200 |
 | R056-B01 / name-collision/0 | `POST /api/domain-discovery/rulesets/init` | closed | 041ab5a6 | c14763b3 | 200 / 200 |
@@ -135,31 +135,31 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R103-F10 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 404 / 400 |
 | R103-F11 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 404 / 400 |
 | R103-F14 /  | `POST /api/nodes/reorder` | accepted | [behaviour-changes.md · Step B #1](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 500 / 400 |
-| R122-S05 / failed-source-valid-cache | `GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider` | closed | d7e92cf2；d7e92cf2为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
+| R122-S05 / failed-source-valid-cache | `GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider` | closed | ac2df5d5e；ac2df5d5e为夹具纠正（C35后公开恢复共同前提/固定缓存时间保持精确），不是Go业务修复 | c14763b3 | 200 / 200 |
 | R138-B04 / text/B04 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | c14763b3 | 422 / 422 |
 | R138-B91 / absolute-query-dispatches-internal-content-endpoint | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | c14763b3 | 200 / 502 |
 | R138-F13 / text/F13 | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | c14763b3 | 422 / 422 |
 | R138-F16 / receipt-path-is-directory | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | c14763b3 | 500 / 400 |
 | R138-S90 / declared-no-cache-download-failure | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | closed | 8f3d36ad | c14763b3 | 502 / 502 |
 | R138-S91 /  | `GET /api/profiles/<profile_id>/mosdns/rule-proxy` | open | — | c14763b3 | 200 / 200 |
-| R151-S01 /  | `GET /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R151-S02 /  | `GET /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R152-B01 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R152-B02 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R152-B03 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R152-F08 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R152-F09 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R152-F10 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R152-F11 / DOMAIN | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R152-F11 / IP-CIDR | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R152-F12 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R152-F13 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R152-F14 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R152-F15 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R152-S01 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R152-S02 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R152-S03 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R152-S04 /  | `POST /api/profiles/<profile_id>/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R151-S01 /  | `GET /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R151-S02 /  | `GET /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R152-B01 /  | `POST /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R152-B02 /  | `POST /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R152-B03 /  | `POST /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F08 /  | `POST /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F09 /  | `POST /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F10 /  | `POST /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F11 / DOMAIN | `POST /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F11 / IP-CIDR | `POST /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F12 /  | `POST /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F13 /  | `POST /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F14 /  | `POST /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-F15 /  | `POST /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R152-S01 /  | `POST /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R152-S02 /  | `POST /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R152-S03 /  | `POST /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R152-S04 /  | `POST /api/profiles/<profile_id>/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
 | R154-B03 / ?format=unknown | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | c14763b3 | 200 / 200 |
 | R154-B04 / URL-over-query-header | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | c14763b3 | 200 / 200 |
 | R154-B90 / Asia/Shanghai | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | c14763b3 | 200 / 200 |
@@ -178,12 +178,12 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R154-S01 / open/authorized-provider | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | c14763b3 | 200 / 200 |
 | R154-S01 / token/authorized-provider | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | c14763b3 | 200 / 200 |
 | R154-S06 /  | `GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies` | closed | 7b904725 | c14763b3 | 200 / 200 |
-| R179-B01 /  | `POST /api/rule-sets` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R179-B01 /  | `POST /api/rule-sets` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
 | R179-F08 /  | `POST /api/rule-sets` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 500 / 500 |
-| R179-F09 /  | `POST /api/rule-sets` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R179-F10 /  | `POST /api/rule-sets` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R179-F11 /  | `POST /api/rule-sets` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R179-S01 /  | `POST /api/rule-sets` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R179-F09 /  | `POST /api/rule-sets` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R179-F10 /  | `POST /api/rule-sets` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R179-F11 /  | `POST /api/rule-sets` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R179-S01 /  | `POST /api/rule-sets` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
 | R180-B01 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 895f5e21 | 404 / 404 |
 | R180-B02 / P3/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 895f5e21 | 200 / 200 |
 | R180-B03 / P4/successful-rule-group-write | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 895f5e21 | 200 / 200 |
@@ -193,29 +193,29 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R180-F09 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 895f5e21 | 404 / 404 |
 | R180-S01 /  | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 895f5e21 | 200 / 200 |
 | R180-S01 / mosdns-selector | `DELETE /api/rule-sets/<rule_set_id>` | open | — | 895f5e21 | 200 / 200 |
-| R181-B01 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R181-F08 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R181-B01 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R181-F08 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
 | R181-F09 /  | `PUT /api/rule-sets/<rule_set_id>` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 404 / 404 |
-| R181-F10 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R181-S01 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R182-S01 /  | `GET /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R182-S02 /  | `GET /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R183-B01 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R183-B02 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R183-B03 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R183-F08 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R183-F09 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R183-F10 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R183-F11 / DOMAIN | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R183-F11 / IP-CIDR | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R183-F12 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R183-F13 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R183-F14 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R183-F15 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R183-S01 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R183-S02 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R183-S03 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R183-S04 /  | `POST /api/rules` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R181-F10 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R181-S01 /  | `PUT /api/rule-sets/<rule_set_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R182-S01 /  | `GET /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R182-S02 /  | `GET /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R183-B01 /  | `POST /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R183-B02 /  | `POST /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R183-B03 /  | `POST /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F08 /  | `POST /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F09 /  | `POST /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F10 /  | `POST /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F11 / DOMAIN | `POST /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F11 / IP-CIDR | `POST /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F12 /  | `POST /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F13 /  | `POST /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F14 /  | `POST /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-F15 /  | `POST /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R183-S01 /  | `POST /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R183-S02 /  | `POST /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R183-S03 /  | `POST /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R183-S04 /  | `POST /api/rules` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
 | R184-B01 /  | `DELETE /api/rules/<rule_id>` | open | — | 895f5e21 | 200 / 200 |
 | R184-B02 / P3/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | 895f5e21 | 200 / 200 |
 | R184-B03 / P4/successful-rule-group-write | `DELETE /api/rules/<rule_id>` | open | — | 895f5e21 | 200 / 200 |
@@ -226,68 +226,68 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R184-S01 / dns-cleanup/False | `DELETE /api/rules/<rule_id>` | open | — | 895f5e21 | 200 / 200 |
 | R184-S01 / mosdns-selector | `DELETE /api/rules/<rule_id>` | open | — | 895f5e21 | 200 / 200 |
 | R184-S02 / dns-cleanup/True | `DELETE /api/rules/<rule_id>` | open | — | 895f5e21 | 200 / 200 |
-| R185-B01 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R185-B02 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R185-B03 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R185-F08 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R185-F09 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R185-F10 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R185-F11 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R185-F12 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R185-F13 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R185-F14 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R185-F15 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-B01 /  | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R185-B02 /  | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R185-B03 /  | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R185-F08 /  | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-F09 /  | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-F10 /  | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-F11 /  | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-F12 /  | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-F13 /  | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-F14 /  | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-F15 /  | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
 | R185-F16 /  | `PUT /api/rules/<rule_id>` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 404 / 404 |
-| R185-F18 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R185-S01 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R185-S02 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R185-S03 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R185-S03 / clear-route-with-type | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R185-S04 /  | `PUT /api/rules/<rule_id>` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R186-B01 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R186-B02 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R186-B03 / concurrent-allocation | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | None / None |
-| R186-F08 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R186-F09 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R186-F10 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R186-F11 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R186-F12 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R186-F13 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R186-S01 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R186-S02 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R186-S03 /  | `POST /api/rules/batch` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R187-B01 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R187-B02 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R187-B03 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R187-B04 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R187-B05 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R187-S01 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R187-S02 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R187-S03 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R187-S04 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R187-S05 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R187-S06 /  | `POST /api/rules/compose` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R188-S01 / real-DNS-follow-binding-catalog | `GET /api/rules/dns` | open | — | 895f5e21 | 200 / 200 |
-| R189-B01 /  | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R185-F18 /  | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R185-S01 /  | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R185-S02 /  | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R185-S03 /  | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R185-S03 / clear-route-with-type | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R185-S04 /  | `PUT /api/rules/<rule_id>` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R186-B01 /  | `POST /api/rules/batch` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R186-B02 /  | `POST /api/rules/batch` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R186-B03 / concurrent-allocation | `POST /api/rules/batch` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | None / None |
+| R186-F08 /  | `POST /api/rules/batch` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R186-F09 /  | `POST /api/rules/batch` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R186-F10 /  | `POST /api/rules/batch` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R186-F11 /  | `POST /api/rules/batch` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R186-F12 /  | `POST /api/rules/batch` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R186-F13 /  | `POST /api/rules/batch` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R186-S01 /  | `POST /api/rules/batch` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R186-S02 /  | `POST /api/rules/batch` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R186-S03 /  | `POST /api/rules/batch` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-B01 /  | `POST /api/rules/compose` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-B02 /  | `POST /api/rules/compose` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-B03 /  | `POST /api/rules/compose` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-B04 /  | `POST /api/rules/compose` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-B05 /  | `POST /api/rules/compose` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-S01 /  | `POST /api/rules/compose` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-S02 /  | `POST /api/rules/compose` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-S03 /  | `POST /api/rules/compose` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-S04 /  | `POST /api/rules/compose` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-S05 /  | `POST /api/rules/compose` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R187-S06 /  | `POST /api/rules/compose` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R188-S01 / real-DNS-follow-binding-catalog | `GET /api/rules/dns` | open | — | 15173872f | 200 / 200 |
+| R189-B01 /  | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
 | R189-B02 / native | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
-| R189-B02 / template | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-B02 / template | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
 | R189-F08 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 400 / 400 |
-| R189-F08 / template/ | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R189-F08 / template/ | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
 | R189-F09 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 400 / 400 |
-| R189-F09 / template/ | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R189-F09 / template/ | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
 | R189-F10 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 400 / 400 |
-| R189-F10 / template/ | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R189-F10 / template/ | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
 | R189-F11 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 400 / 400 |
-| R189-F11 / template/ | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R189-F11 / template/ | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
 | R189-F12 / native/'unknown' | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 400 / 400 |
 | R189-F12 / native/1 | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 400 / 400 |
-| R189-F12 / template/'unknown' | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R189-F12 / template/1 | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R189-F12 / template/'unknown' | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R189-F12 / template/1 | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
 | R189-F13 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 400 / 400 |
-| R189-F13 / template/ | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R189-F13 / template/ | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
 | R189-F15 / native/ | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 400 / 400 |
-| R189-F15 / template/ | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R189-S01 / cleanup-prepare/False | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-F15 / template/ | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R189-S01 / cleanup-prepare/False | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
 | R189-S01 / cleanup-prepare/True | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
 | R189-S01 / native/blackhole | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
 | R189-S01 / native/direct | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
@@ -295,59 +295,59 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | R189-S01 / native/nxdomain | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
 | R189-S01 / native/proxy | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
 | R189-S01 / native/refused | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
-| R189-S01 / template/blackhole | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R189-S01 / template/direct | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R189-S01 / template/nodata | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R189-S01 / template/nxdomain | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R189-S01 / template/proxy | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R189-S01 / template/refused | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R189-S01 / type-guard-prepare | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S01 / template/blackhole | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S01 / template/direct | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S01 / template/nodata | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S01 / template/nxdomain | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S01 / template/proxy | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S01 / template/refused | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S01 / type-guard-prepare | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
 | R189-S02 / native/follow | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
-| R189-S02 / template/follow | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S02 / template/follow | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
 | R189-S03 / native/default | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
-| R189-S03 / template/default | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S03 / template/default | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
 | R189-S04 / native | `PUT /api/rules/dns` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
-| R189-S04 / template | `PUT /api/rules/dns` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R191-B01 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R191-B02 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R191-B03 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R191-F08 / [] | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R191-F08 / {} | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R191-F09 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R191-F10 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R191-F11 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R191-F12 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 404 / 404 |
-| R191-S01 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R191-S02 /  | `POST /api/rules/group-name` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R194-B01 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R194-B02 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R194-B03 / explicit-DNS-does-not-follow-policy-edit | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R194-F08 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R194-F09 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R194-F10 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R194-F11 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R194-F12 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R194-F13 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R194-F14 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R194-F15 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 404 / 404 |
-| R194-S01 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R194-S02 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R194-S03 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R194-S04 /  | `PUT /api/rules/policy` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R195-B01 /  | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R195-B02 /  | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R189-S04 / template | `PUT /api/rules/dns` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R191-B01 /  | `POST /api/rules/group-name` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R191-B02 /  | `POST /api/rules/group-name` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R191-B03 /  | `POST /api/rules/group-name` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R191-F08 / [] | `POST /api/rules/group-name` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R191-F08 / {} | `POST /api/rules/group-name` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R191-F09 /  | `POST /api/rules/group-name` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R191-F10 /  | `POST /api/rules/group-name` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R191-F11 /  | `POST /api/rules/group-name` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R191-F12 /  | `POST /api/rules/group-name` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 404 / 404 |
+| R191-S01 /  | `POST /api/rules/group-name` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R191-S02 /  | `POST /api/rules/group-name` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R194-B01 /  | `PUT /api/rules/policy` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R194-B02 /  | `PUT /api/rules/policy` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R194-B03 / explicit-DNS-does-not-follow-policy-edit | `PUT /api/rules/policy` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R194-F08 /  | `PUT /api/rules/policy` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R194-F09 /  | `PUT /api/rules/policy` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R194-F10 /  | `PUT /api/rules/policy` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R194-F11 /  | `PUT /api/rules/policy` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R194-F12 /  | `PUT /api/rules/policy` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R194-F13 /  | `PUT /api/rules/policy` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R194-F14 /  | `PUT /api/rules/policy` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R194-F15 /  | `PUT /api/rules/policy` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 404 / 404 |
+| R194-S01 /  | `PUT /api/rules/policy` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R194-S02 /  | `PUT /api/rules/policy` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R194-S03 /  | `PUT /api/rules/policy` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R194-S04 /  | `PUT /api/rules/policy` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R195-B01 /  | `POST /api/rules/reorder` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R195-B02 /  | `POST /api/rules/reorder` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
 | R195-B03 / real-recognized-native-provider-order-rebuild | `POST /api/rules/reorder` | accepted | [behaviour-changes.md · N7-4](behaviour-changes.md#n7-4--原生-yaml-writer-与-python-类型输出-bug-修正) | 895f5e21 | 200 / 200 |
-| R195-F08 / [] | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R195-F08 / {} | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R195-F09 /  | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
-| R195-F10 /  | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R195-F08 / [] | `POST /api/rules/reorder` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R195-F08 / {} | `POST /api/rules/reorder` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R195-F09 /  | `POST /api/rules/reorder` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R195-F10 /  | `POST /api/rules/reorder` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
 | R195-F11 /  | `POST /api/rules/reorder` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 404 / 404 |
-| R195-F12 /  | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
+| R195-F12 /  | `POST /api/rules/reorder` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 400 / 400 |
 | R195-F13 / {'ids': [1]} | `POST /api/rules/reorder` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 404 / 404 |
 | R195-F13 / {'ids': [[1]]} | `POST /api/rules/reorder` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | 895f5e21 | 500 / 500 |
-| R195-S01 /  | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R195-S02 /  | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
-| R195-S03 /  | `POST /api/rules/reorder` | closed | dbf24340；dbf24340为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R195-S01 /  | `POST /api/rules/reorder` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R195-S02 /  | `POST /api/rules/reorder` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
+| R195-S03 /  | `POST /api/rules/reorder` | closed | d7bb7ca45；d7bb7ca45为夹具时间窗纠正，不是Go业务修复；已实际重跑，revision/值/文件仍严格比 | 895f5e21 | 200 / 200 |
 | R217-S02 /  | `PUT /api/subscriptions/<sub_id>` | closed | e9187b9f | c14763b3 | 200 / 200 |
 | R218-F09 /  | `POST /api/subscriptions/<sub_id>/fetch` | closed | 8f3d36ad | c14763b3 | 500 / 500 |
 | R218-F10 /  | `POST /api/subscriptions/<sub_id>/fetch` | accepted | [behaviour-changes.md · Step B #3](behaviour-changes.md#config-step-b--coordinator-decisions) | c14763b3 | 400 / 400 |
@@ -895,10 +895,10 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `db.fields.system//_revision.revision` | value | 5 | 4 |
 | `db.fields.system//_revision.value` | value | 3 | 2 |
 | `db.fields.system//agents.revision` | value | 5 | 4 |
-| `db.fields.system//agents.value[0].dns_follow_state` | missing-in-go | {'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'updated_at': '2026-11-17T20:33:15.803790Z', 'events': [{'at': '2026-11-17T20:33:15.803709Z', 'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试'}]} | None |
+| `db.fields.system//agents.value[0].dns_follow_state` | missing-in-go | {'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'updated_at': '2026-11-17T20:43:44.369907Z', 'events': [{'at': '2026-11-17T20:43:44.369850Z', 'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试'}]} | None |
 | `db.meta.generation` | value | 5 | 4 |
-| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:dns_follow:agent-synthetic': {'source': 'task', 'title': '合成 Agent 🧪 · DNS 联动', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'impact': '', 'status_label': '执行失败', 'severity': 'error', 'profile_id': 'default', 'scope': 'profile', 'profile_name': '默认配置', 'target': {'path': '/agents', 'query': {'agent': 'agent-synthetic', 'profile': 'default', 'section': 'dns-follow'}, 'label': '查看同步设置'}, 'checked_at': '2026-11-17T20:33:15Z', 'failure_count': 1, 'id': 'task:dns_follow:agent-synthetic', 'state': 'pending', 'read': False, 'version': '2026-11-17T20:33:16.074951+00:00', 'first_seen_at': '2026-11-17T20:33: | None |
-| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'dns_follow:agent-synthetic': {'last_run_at': '2026-11-17T20:33:15Z', 'last_finished_at': '2026-11-17T20:33:15Z', 'last_status': 'failed', 'last_duration_ms': 0, 'last_trigger': 'event', 'last_error': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'run_count': 1, 'failure_count': 1, 'consecutive_failures': 1}}} | None |
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:dns_follow:agent-synthetic': {'source': 'task', 'title': '合成 Agent 🧪 · DNS 联动', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'impact': '', 'status_label': '执行失败', 'severity': 'error', 'profile_id': 'default', 'scope': 'profile', 'profile_name': '默认配置', 'target': {'path': '/agents', 'query': {'agent': 'agent-synthetic', 'profile': 'default', 'section': 'dns-follow'}, 'label': '查看同步设置'}, 'checked_at': '2026-11-17T20:43:44Z', 'failure_count': 1, 'id': 'task:dns_follow:agent-synthetic', 'state': 'pending', 'read': False, 'version': '2026-11-17T20:43:44.538075+00:00', 'first_seen_at': '2026-11-17T20:43: | None |
+| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'dns_follow:agent-synthetic': {'last_run_at': '2026-11-17T20:43:44Z', 'last_finished_at': '2026-11-17T20:43:44Z', 'last_status': 'failed', 'last_duration_ms': 0, 'last_trigger': 'event', 'last_error': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'run_count': 1, 'failure_count': 1, 'consecutive_failures': 1}}} | None |
 
 ## H128 / sequence-root
 
@@ -1484,10 +1484,10 @@ Go 尚未实现单独计数，不列为业务失败。以下待协调人派移�
 | `db.fields.system//_revision.revision` | value | 5 | 4 |
 | `db.fields.system//_revision.value` | value | 3 | 2 |
 | `db.fields.system//agents.revision` | value | 5 | 4 |
-| `db.fields.system//agents.value[0].dns_follow_state` | missing-in-go | {'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'updated_at': '2026-11-17T20:33:15.803790Z', 'events': [{'at': '2026-11-17T20:33:15.803709Z', 'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试'}]} | None |
+| `db.fields.system//agents.value[0].dns_follow_state` | missing-in-go | {'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'updated_at': '2026-11-17T20:43:44.369907Z', 'events': [{'at': '2026-11-17T20:43:44.369850Z', 'status': 'failed', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试'}]} | None |
 | `db.meta.generation` | value | 5 | 4 |
-| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:dns_follow:agent-synthetic': {'source': 'task', 'title': '合成 Agent 🧪 · DNS 联动', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'impact': '', 'status_label': '执行失败', 'severity': 'error', 'profile_id': 'default', 'scope': 'profile', 'profile_name': '默认配置', 'target': {'path': '/agents', 'query': {'agent': 'agent-synthetic', 'profile': 'default', 'section': 'dns-follow'}, 'label': '查看同步设置'}, 'checked_at': '2026-11-17T20:33:15Z', 'failure_count': 1, 'id': 'task:dns_follow:agent-synthetic', 'state': 'pending', 'read': False, 'version': '2026-11-17T20:33:16.074951+00:00', 'first_seen_at': '2026-11-17T20:33: | None |
-| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'dns_follow:agent-synthetic': {'last_run_at': '2026-11-17T20:33:15Z', 'last_finished_at': '2026-11-17T20:33:15Z', 'last_status': 'failed', 'last_duration_ms': 0, 'last_trigger': 'event', 'last_error': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'run_count': 1, 'failure_count': 1, 'consecutive_failures': 1}}} | None |
+| `files.notifications.json` | missing-in-go | {'mode': 384, 'content': {'items': {'task:dns_follow:agent-synthetic': {'source': 'task', 'title': '合成 Agent 🧪 · DNS 联动', 'message': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'impact': '', 'status_label': '执行失败', 'severity': 'error', 'profile_id': 'default', 'scope': 'profile', 'profile_name': '默认配置', 'target': {'path': '/agents', 'query': {'agent': 'agent-synthetic', 'profile': 'default', 'section': 'dns-follow'}, 'label': '查看同步设置'}, 'checked_at': '2026-11-17T20:43:44Z', 'failure_count': 1, 'id': 'task:dns_follow:agent-synthetic', 'state': 'pending', 'read': False, 'version': '2026-11-17T20:43:44.538075+00:00', 'first_seen_at': '2026-11-17T20:43: | None |
+| `files.task-status.json` | missing-in-go | {'mode': 384, 'content': {'dns_follow:agent-synthetic': {'last_run_at': '2026-11-17T20:43:44Z', 'last_finished_at': '2026-11-17T20:43:44Z', 'last_status': 'failed', 'last_duration_ms': 0, 'last_trigger': 'event', 'last_error': 'DNS 联动暂不可用：联动处理异常，请检查 Agent 连接后重试', 'run_count': 1, 'failure_count': 1, 'consecutive_failures': 1}}} | None |
 
 ## R189-B02 / native
 

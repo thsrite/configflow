@@ -2522,3 +2522,17 @@ coverage audit: routes228 / variants10648 / R-H5428 / unaccounted=[] / unknown_l
 - rebase到go 15173872f（A13 Agent内容比较/secret收集及最新门禁说明）；behaviour-changes冲突完整保留A24/A13批准条目与维护者Web替代条目，未读业务实现。工具归因更新：25959d1cf/ac2df5d5e/d7bb7ca45分别对应前述两次夹具修正与profile时间修正，历史记录保持原样。
 - .32正在运行的官方门禁仍是其已冻结895f5e21副本，没有同步或修改它。新增15分钟排队上限是在本任务已取得槽位之后合入；当前没有排队命令。此前的长排队没有作为任何测试通过证据。
 - 最新集成只按公开受影响边界选择脱敏、Agent版本/发现读取、自动备份heartbeat及两类残余规则协议组复验。完整402组基线c14763b3、62组895f5e21与最新定向基线分别记录，不声称完整all已跑在15173872f上。
+
+## 批次 153：最新A13边界实跑与残余差异重复证据
+
+- .64 baseline15173872f，13组185变体184.47秒：compared117/Go未实现44/different24，全部24仍open，design_errors=[]。六组脱敏与Agent探测/版本/读取、自动备份钩子均未新增业务差异；Go尚未接通部分不计通过。145项比较器自检再次由标准runner执行通过。
+- 2条DNS-follow状态差异在独立新进程/新seed复验仍有：Python产生failed dns_follow_state、task-status及通知，Go没有，连带system revision/generation不同。它是启动/事件侧观察，不能归咎为GET handler主动写入；只读前后观察器仍严格禁止每端请求自身改变数据。
+- 22条规则交付差异重复：具体英文manual-review WARNING未被Go检出；不声称Go完全没有其他日志。H133的default/scoped还存在原始正文变化，Go把物理跨行flow值重新输出为折叠后YAML；此处保留完整原始字节摘要和原始严格diff，不能用其他N7-4 SQL布局批准把这个mixed case整体接受，待N7/rules兼容性审查。
+- 累计仍10648个实际变体、3543 compared/6856未实现/111依赖/137严格差异/O12单列1；reviews closed265/accepted68/open69/separate1，无pending/blocked及缺失closed归因。最新canonical覆盖审计再次通过，R/H5428、228路由均S/F、未执行214明确处置；没有手工合并case verdict。
+- 当前剩余仅.32官方Go门禁结果及最后git收尾。该门禁已经进入race，现无失败标记；不把正在运行称通过，不追加其他全量任务。
+
+```text
+RT_HOST=sunbroke@192.168.0.64 rt --back server/tools/configdiff/testdata/results.json --back server/parity/difftest-config-findings.md -- bash -lc 'server/tools/configdiff/native_network.sh ~/cf-test/.venv/bin/python server/tools/configdiff/run.py --groups redaction,redaction-blueprints,redaction-depth,redaction-native,redaction-proxy,redaction-other-blueprints,discovery-agent-probe,discovery-agent-versions,discovery-reported-selectors,automatic-backup-real-held-upload-coalescing-and-no-op,automatic-backup-real-failure-no-retry-and-new-commit-recovery,rule-dns-extra-guard-branches,rule-delivery-yaml-helpers --baseline 15173872f'
+current compared117 / Go未实现44 / different24（open24）；design_errors=[]；seconds184.47；exit1
+coverage audit: routes228 / variants10648 / R-H5428 / unaccounted=[] / unknown_labels=[] / missing S-F=[] / runtime_design_errors=[]；exit0
+```
