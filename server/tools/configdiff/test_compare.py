@@ -17,6 +17,29 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_setup_status_protocol_observer_detects_each_wrong_wire_field(self):
+        from cases.setup_completion import GatewayAgent, StatusExchange, TOKENS
+        from harness import send
+        with GatewayAgent() as agent:
+            reply = send('http://127.0.0.1:' + str(agent.port), 'GET', '/api/linux-gateway/status',
+                         headers={'Authorization': 'Bearer ' + TOKENS[0], 'Accept': 'application/json'})
+            self.assertEqual(reply.status, 200)
+            observer = StatusExchange(None, [agent, SimpleNamespace(snapshot=lambda: [], errors=[])])
+            observer.offsets = [0, 0]
+            observer.after(0, reply)
+            observer.observed[1] = copy.deepcopy(observer.observed[0])
+            self.assertEqual(observer.compare(Policy()), [])
+            baseline = copy.deepcopy(observer.observed[1])
+            for field, value in [('method', 'POST'), ('path', '/wrong'), ('body_hex', '7b7d'),
+                                  ('authorization', 'Bearer leaked-admin-token'), ('accept', '*/*'),
+                                  ('content_type', 'application/json')]:
+                observer.observed[1] = copy.deepcopy(baseline)
+                observer.observed[1][0]['requests'][0][field] = value
+                self.assertTrue(observer.compare(Policy()), field)
+            observer.observed[1] = copy.deepcopy(baseline)
+            observer.observed[1][1]['requests'] = [copy.deepcopy(agent.snapshot()[0])]
+            self.assertTrue(observer.compare(Policy()), 'unsolicited OxiDNS request')
+
     def test_private_draft_capture_reports_go_identity_faults_without_rebinding(self):
         from cases.setup_lifecycle import capture_draft
         with tempfile.TemporaryDirectory() as tmp:

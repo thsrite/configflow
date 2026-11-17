@@ -1213,3 +1213,21 @@ R去重3977（S654 F2599 B724），H305，G16
 ```
 
 下一步重新全量刷新当前go基线，再继续check/finish与余下H/T；仍未完成Step B，最终.32全量尚待执行。
+
+## 批次 69：setup安装检查、完成门禁及并发核心改动
+
+- 187新增请求/序列变体：163 Go尚未实现、24受前置未接通setup/rebind写入阻断的心跳依赖。新增原R编号6（S2/F2/B2）、H17、T22；和此前清单编号去重合计R3983（S656/F2601/B726）、H322。此处是覆盖并集，不冒称当前全部组已在同一HEAD完成：批次68全量仍在.63运行，本批独立报告暂存/tmp/configdiff-setup-completion.json，下一批再合并刷新统一results.json。
+- router/gateway分别真实调用create→source→prepare→rebind→两Agent公开心跳→check→finish及重复检查/重复完成。发布收据由两端相同的合成持久记录提供，仅作为安装完成的边界输入，不执行发布、安装、转发或TUN。两端用实际HTTP GET /api/linux-gateway/status、Bearer设备token、Accept application/json、空正文核对协议；OxiDNS和路由器哨兵不应收到请求。SQL、session、安装记录、私有草稿凭据/身份完整比较。
+- H988–H999逐个覆盖完整TUN转发当前值/持久化/旧网关记录/配置/运行、选择性网关健康，安装记录缺失/阶段/目标/版本/设备身份，缺少核心、离线/禁用/旧Agent。H998另测404、401/403、坏JSON/非对象、512KiB上限、400/409/422/500消息映射和中文1000字符截断。所有拒绝检查分别验证两端全SQL/files原样。
+- H1000/H1003/H1004/H1008类型与manual确认/managed绑定门禁；显式make_default才改变默认空间，未请求时不改SQL。私有路由草稿只有成功check后才关联两台真实绑定的fake Agent并成为一个profile router，auto-sync保持关闭。再次check和manual finish允许仅路由器变更导致的revision前进，验证B04的核心fingerprint边界。B91 check保留abandoned标记。
+- H1009用真实并发HTTP：fake Agent挂起状态响应时，另一公开scoped OxiDNS设置请求成功修改核心；释放后finish返回409，session未被写成完成。再次check要求重新发布。不是修改Python函数或调快定时器。
+- 新协议比较器对真实fake HTTP采样并故意改错方法、路径、认证、正文、Accept、Content-Type、目标Agent；64项自检通过。首轮发现测试草稿误带不支持的enabled字段400，以及尚未接通Go侧不存在session文件的夹具假设；均按Python修正后整批重跑，无设计错误，没有把夹具错误记成业务差异。
+
+```text
+.32 run.py --groups setup-completion-lifecycle,setup-completion-status-guards,setup-completion-publication-guards,setup-completion-protocol-guards,setup-completion-finish-guards,setup-completion-concurrent-core-edit,setup-completion-attach-router
+current go-unimplemented=163 dependency=24 request_variants=187
+design_errors=[] seconds=32.27；exit=0
+64 comparator self-checks + wrong-Go-response check OK
+```
+
+仍需managed finish设备报告分支、安装超时/断连/同session串行、H1001/1002/1005–1007/1055和余下helpers。T22目前验证上述fake发布边界状态机，不代表真实安装发布或实验网验收完成。
