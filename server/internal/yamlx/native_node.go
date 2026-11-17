@@ -4,6 +4,7 @@ import (
 	"iter"
 	"math"
 	"math/big"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -366,9 +367,24 @@ func equalNode(a, b *Node, path map[[2]*Node]bool) bool {
 	return a.Value == b.Value
 }
 
+var decimalInteger = regexp.MustCompile(`^[-+]?[0-9]+$`)
+
 func yamlInteger(s string) (*big.Int, bool) {
-	s = strings.ReplaceAll(s, "_", "")
-	return new(big.Int).SetString(s, 0)
+	// Keep yaml.v3's native octal/hex interpretation when representable. The
+	// decimal fallback extends only integers outside its machine-sized range.
+	n := &Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: s}
+	var signed int64
+	if err := n.Decode(&signed); err == nil {
+		return big.NewInt(signed), true
+	}
+	var unsigned uint64
+	if err := n.Decode(&unsigned); err == nil {
+		return new(big.Int).SetUint64(unsigned), true
+	}
+	if decimalInteger.MatchString(s) {
+		return new(big.Int).SetString(s, 10)
+	}
+	return nil, false
 }
 
 // floatKey normalises decimal floats without allocating exponent-sized powers.

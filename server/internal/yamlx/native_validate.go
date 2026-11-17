@@ -55,7 +55,13 @@ func checkGraph(n *Node, path, done map[*Node]bool) error {
 	}
 	if n.Kind == yaml.ScalarNode && n.Style&yaml.TaggedStyle != 0 {
 		switch n.ShortTag() {
-		case "!!null", "!!bool", "!!int", "!!float":
+		case "!!int":
+			var signed int64
+			var unsigned uint64
+			if err := n.Decode(&signed); err != nil && n.Decode(&unsigned) != nil && !decimalInteger.MatchString(n.Value) {
+				return nodeError(n, fmt.Sprintf(msgExplicitScalar, n.ShortTag(), n.Line, err))
+			}
+		case "!!null", "!!bool", "!!float":
 			// Only this scalar is decoded. This validates its explicit tag with
 			// yaml.v3, independently of any document destination or constructor.
 			var scalar any
