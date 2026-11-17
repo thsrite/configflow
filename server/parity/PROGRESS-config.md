@@ -61,14 +61,20 @@ child processes. Includes 10k-key cleanup, concurrent stress, explicit limit/try
 waiter drainage and shared-work lifetime tests. Non-test lines 0 → 568, no new dependency. No open
 O3-1 finding; independent review pending. O3-2 integrates Spawner; O3-6 migrates consumers.
 
-## O3-2 — lifecycle v2 (in progress, 2026-11-17)
+## O3-2 — lifecycle v2 (ported, 2026-11-17)
 
 Branch `go-o3-2` stacks on O3-1: task registry/clock, restartable Runtime, tracked Spawn/scopes/Flight,
 manual rounds, first-request gate, phased bounded shutdown and injected HTTP Drain. Legacy adapters
 remain; only subscription-cache-prune migrates to Startup, five periodic owners stay for O3-4. Proddiff
 uses tagged helpers/mode with no source overlays or work-name whitelist; difftest events are tag-only.
-Full handoff: [progress/o3-2-lifecycle.md](progress/o3-2-lifecycle.md). .63 focused race and both tagged
-builds pass; final .32 full/proddiff/enabled difftests pending. Coordinator clarifications are in design §2.3.
+Full handoff: [progress/o3-2-lifecycle.md](progress/o3-2-lifecycle.md). Final rebased .32 gofmt/vet,
+three-run lifecycle/clock/lockx race, both tagged builds, `-p=2` full suite and all nine explicitly enabled
+`configflow_difftest` packages pass. Proddiff tool tests 31 OK; tagged proddiff 23 self-checks PASS,
+2831 cases/415 comparisons, `new=0 stale=0`. Preserves both restart regressions, legacy/periodic
+cross-generation exclusion and Configure's ownership of unfinished old jobs. The known importer wall-clock
+probe timeout reproduced in the first parallel suite; its original-threshold focused recheck and the
+reduced-concurrency full rerun pass. That probe is owned by go-fix-importer-bounds and was not changed here.
+Coordinator clarifications are in design §2.3; independent O3-2/O3-3 review is still scheduled.
 
 ## Known accepted differences (do not rediscover)
 
