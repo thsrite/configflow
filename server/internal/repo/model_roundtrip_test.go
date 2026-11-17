@@ -256,7 +256,7 @@ func TestStoredRoundTrip(t *testing.T) {
 		commit("group add", []modelRowKey{profileKey("proxy_groups")}, func(d *model.Document) {
 			records := must(roundTripList(d.Profiles[0].ProxyGroups))(t)
 			records = append(records, roundTripNewRecord(t, "n8-group", "N8 group"))
-			d.Profiles[0].ProxyGroups = must(model.Marshal(records))(t)
+			d.Profiles[0].ProxyGroups = roundTripDecode[[]model.ProxyGroup](t, records)
 		})
 		commit("group rename", []modelRowKey{profileKey("proxy_groups")}, func(d *model.Document) {
 			records := must(roundTripList(d.Profiles[0].ProxyGroups))(t)
@@ -265,7 +265,7 @@ func TestStoredRoundTrip(t *testing.T) {
 					records[i].Name = "N8 group renamed"
 				}
 			}
-			d.Profiles[0].ProxyGroups = must(model.Marshal(records))(t)
+			d.Profiles[0].ProxyGroups = roundTripDecode[[]model.ProxyGroup](t, records)
 		})
 		commit("node add", []modelRowKey{{"shared", "", "nodes"}}, func(d *model.Document) {
 			records := must(roundTripList(d.Shared.Nodes))(t)
@@ -345,12 +345,12 @@ func TestStoredRoundTrip(t *testing.T) {
 				}
 				records = append(records, added)
 			}
-			d.Profiles[0].RuleConfigs = must(model.Marshal(records))(t)
+			d.Profiles[0].RuleConfigs = roundTripDecode[[]model.RuleConfig](t, records)
 		})
 		commit("rules reorder", []modelRowKey{profileKey("rule_configs")}, func(d *model.Document) {
 			records := must(roundTripList(d.Profiles[0].RuleConfigs))(t)
 			records[len(records)-1], records[len(records)-2] = records[len(records)-2], records[len(records)-1]
-			d.Profiles[0].RuleConfigs = must(model.Marshal(records))(t)
+			d.Profiles[0].RuleConfigs = roundTripDecode[[]model.RuleConfig](t, records)
 		})
 		// R5 for each skeleton record type: wrong description type and bool revisions
 		// are retained; current legacy validation intentionally permits these cases.

@@ -16,8 +16,8 @@ type Profile struct {
 	CreatedAt       string          `json:"created_at"`
 	UpdatedAt       string          `json:"updated_at"`
 	Revision        Int             `json:"_revision"`
-	ProxyGroups     json.RawMessage `json:"proxy_groups"`
-	RuleConfigs     json.RawMessage `json:"rule_configs"`
+	ProxyGroups     []ProxyGroup    `json:"proxy_groups"`
+	RuleConfigs     []RuleConfig    `json:"rule_configs"`
 	Mihomo          json.RawMessage `json:"mihomo"`
 	Surge           json.RawMessage `json:"surge"`
 	Loon            json.RawMessage `json:"loon"`

@@ -18,6 +18,7 @@ func storedRecordTypes() []reflect.Type {
 		reflect.TypeFor[ResourceRef](), reflect.TypeFor[ProviderHealthCheck](),
 		reflect.TypeFor[Node](), reflect.TypeFor[Subscription](),
 		reflect.TypeFor[Aggregation](), reflect.TypeFor[RuleLibraryItem](),
+		reflect.TypeFor[ProxyChain](), reflect.TypeFor[ProxyGroup](), reflect.TypeFor[RuleConfig](),
 	}
 }
 
@@ -240,6 +241,7 @@ func runTypesInterchange(t *testing.T, rows []interchangeRow, private bool) {
 		registry[typ.Name()] = typ
 	}
 	rowTypes := map[string]reflect.Type{
+		"proxy_groups": reflect.TypeFor[Profile](), "rule_configs": reflect.TypeFor[Profile](),
 		"nodes": reflect.TypeFor[Shared](), "subscriptions": reflect.TypeFor[Shared](),
 		"subscription_aggregations": reflect.TypeFor[Shared](), "rule_library": reflect.TypeFor[Shared](),
 	}

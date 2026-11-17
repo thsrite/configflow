@@ -31,3 +31,16 @@ health_check=3，ResourceRef 快照未出现，用合成/双向夹具覆盖。
 
 下一步：b → c → d → rebase go → 完整门禁。
 命令：`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server; go test ./internal/model ./internal/repo'`。
+
+N8-4a 提交：281003c9。
+N8-4b：ProxyGroup/ProxyChain/RuleConfig 已实现。
+字段来源：routes/{proxy_groups,rules}.py、utils/{dialer_references,proxy_chains,group_candidates,health_check}.py、
+converters/{mihomo,surge,loon,common}.py、common/config_repository.py（验证、迁移、hydrate）。
+普通来源列表用指针表达可删除字段，以支持 Python 在 chain 转换中删除成员；健康字段指针支持 delete_fields。
+utils/config_importer.py 的 MIHOMO_GROUP_PASSTHROUGH 及生成器 key 循环全部类型化：
+max-failed-times、disable-udp、hidden、icon、exclude-filter、exclude-type 等不遗漏到 Raw。
+排序引用共享 ResourceRef；代理链只保存 entry/exit 引用，不引入递归类型；legacy 来源保留具体字段。
+规则的 groupId/groupLabel/groupPolicy/isExpandedGroupItem/isFirstInGroup/isLastInGroup/uniqueId
+来自快照的持久化编辑器元数据，即使当前 Python 只透传，也明确定义并保留原大小写。
+快照覆盖：60 ProxyGroup、94 RuleConfig、256 proxies_order 引用；chain 未出现，以合成夹具覆盖。
+N8-4b .64 定向验证：model 0.223s / repo 28.280s，Python/快照启用，PASS。
