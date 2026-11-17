@@ -1897,7 +1897,7 @@ Load-stability follow-up (`go-fix-agg-provider-load`, based on O3-5): old 65c0e6
 
 ## C32 — rule routes
 
-**Status: `missing`** · prereqs: C09, C14, C27 · Go: internal/api/rules (new)
+**Status: `in progress`** · prereqs: C09, C14, C27 · Go: internal/api/rules (new)
 
 Files:
 - `backend/routes/rules.py` (1107)
@@ -1913,6 +1913,8 @@ Evidence: No Go package; no route registered.
 Missing / deferred: Everything in the files below.
 
 Notes for porter: Registers `/api/profiles/<id>/rules` and `/rules/local/<name>`. `routes/rules.py` imports `agents.rule_sync.pinned_withheld` (agents) and the OxiDNS cluster; `find-duplicates` lives here (noted in PORTING).
+
+Started on `go-port-c32` from go d3124353; A24 branch remains frozen. Scope: all 21 methods, existing C09/C14/C27 orchestration only, native DTOs/RawMessage and isolated legacy adapter. Coordinator approved `agents.Hooks.PinnedWithheld` registered by A16. Until A16 lands, this field is degraded only when projection is required: omit it with one redacted warning; committed save stands. No eligible auto-syncing OxiDNS → definitive false. Deferred → A16; differential/proddiff may ignore only this documented missing field in the affected case, never other fields. Next: native route owners, loopback HTTP/storage differentials and full gates.
 
 ## C33 — rule library and proxy group routes
 

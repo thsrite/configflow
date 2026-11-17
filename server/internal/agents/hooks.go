@@ -34,6 +34,10 @@ func (e *InstallationError) Error() string { return e.Message }
 
 // Hooks are the parts of other packages the registry calls.
 type Hooks struct {
+	// PinnedWithheld reports A16 baseline projection of pinned upstreams for
+	// selected rules. Nil means unavailable; callers omit the best-effort field
+	// after a committed save instead of rolling it back.
+	PinnedWithheld func(ctx context.Context, profileID string, ruleIDs []string) (bool, error)
 	// AddMetrics is metrics_history.add_metrics (#21), called for every
 	// heartbeat that carries system_metrics; an error is logged as a warning.
 	// Default: nothing is kept.
@@ -96,6 +100,9 @@ var (
 func RegisterHooks(h Hooks) {
 	hooksMu.Lock()
 	defer hooksMu.Unlock()
+	if h.PinnedWithheld != nil {
+		hooks.PinnedWithheld = h.PinnedWithheld
+	}
 	if h.AddMetrics != nil {
 		hooks.AddMetrics = h.AddMetrics
 	}

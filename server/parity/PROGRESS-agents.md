@@ -1239,6 +1239,8 @@ Review commands (private detached worktree of HEAD because the shared tree did n
 
 ## A16 — Agent rule sync, projection, snapshot
 
+**C32 hook contract (coordinator approved): A16 必须注册 PinnedWithheld hook，注册后 C32 的 pinned_withheld 字段恢复。** `agents.Hooks.PinnedWithheld(ctx, profileID, ruleIDs) (bool,error)` owns the baseline/projection calculation. C32 returns false when no eligible auto-syncing OxiDNS exists; when projection is required but unavailable/fails, it logs one redacted warning and omits only this best-effort field after the save. Deferred → A16; do not copy projection into config routes.
+
 **Status: `missing`** · HR · prereqs: A07 (`mihomo_panel.call`, `oxidns_rule_update`), A06 (`MonitorError`), A14 (`rule_sync_store`, transactional content), A11, C18/C22 (generators, `get_oxidns_ruleset_downloads`), C25 (`oxidns_common_routing._analyze/_references/apply_routing`, `dns_watchdog`), C27 (`rule_dns.profile_agents` and projection helpers), C05 (`OxidnsSettingsError`), C14 (`is_internal_rule_url`) · Go: internal/agents/rulesync (new), api/agents
 
 **Design:** `server/design/a16-a18-sync-follow-ha.md` (Opus, 2026-11-17) covers A16, A17 and A18 — package map, stored types, Agent protocol, loops, locks, failure/rollback, steps A16-0…A18-4, acceptance (fake pair, Python transcript differential, F1 closure, L3). Port to it; contract changes need the designer's or coordinator's agreement. Open maintainer decisions: D-A17-1, D-A18-1.
