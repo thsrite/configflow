@@ -283,7 +283,7 @@ Rules for O3-5..O3-8 are in the review's last section.
 | C26 | OxiDNS common updates, device policy, editor | 1189 | ported | C25 | – |
 | C27 | rule DNS actions | 885 | missing | C26 | – |
 | C28 | MosDNS archive and routes | 838 | verified | C21, C15 | 15 (15 done) |
-| C29 | OxiDNS native apply, archive, routes | 739 | missing | C27, C28 | 18 (0 done) |
+| C29 | OxiDNS native apply, archive, routes | 739 | verified | C27, C28 | 18 (18 done) |
 | C30 | subscription and node routes, node deletion | 994 | ported | C17, C16, C19, C20 | 26 (26 done) |
 | C31 | aggregation routes, device notes | 722 | ported | C30, C26 | 11 (11 done) |
 | C32 | rule routes | 1107 | missing | C09, C14, C27 | 21 (0 done) |
@@ -1828,7 +1828,7 @@ Commands (review): `rt -- bash -lc 'cd server && go vet ./internal/mosdns/... ./
 
 ## C29 — OxiDNS native apply, archive, routes
 
-**Status: `ported`** · prereqs: C27, C28 · Go: internal/oxidns, internal/api/oxidns (new)
+**Status: `verified`** · prereqs: C27, C28 · Go: internal/oxidns, internal/api/oxidns (new)
 
 C27 reviewer integration note: the shared recognizer now locks a pinned chain when its upstream tag/string metadata contains U+2028/U+2029, no Go-native source hash matches, and the old source would otherwise be guessed by shape. This is intentional D2 safe failure, not a custom-lock condition to bypass. Preserve the recovery message, typed 400/409 or lenient warning and original YAML. Template users refresh/reselect; native users regenerate routing in the editor from current upstreams. Do not add a legacy JSON hash adapter or silently rewrite the pin's source. Details: [behaviour changes](behaviour-changes.md), [C27 review](review-c27.md). C29/C32 still own route auth, request detachment and one-transaction persistence; the snapshot API tests do not claim their HTTP routes are implemented.
 
@@ -1855,9 +1855,12 @@ Missing / deferred: no C29 implementation deferred; shared in-flight shutdown wi
 Final .64 gate (-p6) passed: gofmt/vet/tags/full race/all15 difftest, proddiff new=0 stale=0, both specified fuzz60s.
 Rebased onto go@0dace4ae (C32 review); C29 runtime code unchanged from the gated version.
 Merged C29/C32 API differentials and all new C29 tests under race passed again.
-Independent review in progress on `go-review-c29`: three medium findings fixed (exact-case DTO keys,
-updater error location, template reader policy/alias cause propagation). Full core and scoped race/HTTP
-differentials plus per-input reader gate pass; final gate pending. [Review evidence](review-c29.md).
+Independent review `go-review-c29`, zero open C29 findings; fix `496b16b5`: exact-case DTO keys,
+updater error location, template reader policy/alias cause propagation (three medium). Full core,
+API/difftest, scoped race/vet/gofmt and per-input reader gate pass on .64 (both unknown=0);
+both oxidns fuzz targets pass 60s on .32. Final .64 gate -p6 waited over15min without starting,
+then stopped per coordinator instruction (exit143, no checks started); coordinator runs cf-gate
+for full race/all difftest/proddiff new=0 stale=0. [Review evidence and exact commands](review-c29.md).
 Author evidence and commands: [C29 hand-back](C29-HANDOFF.md).
 The approved Python HEAD save bug is fixed as read-only with an explicit expected differential;
 N8-6 non-finite JSON rejection has 48 explicit Flask controls across all 16 POST pairs;

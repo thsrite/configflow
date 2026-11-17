@@ -1,6 +1,7 @@
 # C29 对抗式复核
 
-状态：复核修复及定向验证完成，最终门禁待运行；C29 自身发现均已关闭。
+状态：**verified，0 个 C29 未决发现**。三项 medium 均已修复并验证；完整门禁排队超过15分钟，
+按协调者明确指示停止，由协调者用 cf-gate 完成全量验收（本次未运行全量门禁，不计通过）。
 分支 `go-review-c29`，起点 `go-port-c29@6640783c`（工作区已确认干净），复核者未参与移植。
 只通过 rt 在测试服务器执行测试、gofmt、vet；无子 agent、无 push、无生产访问，测试仅用合成数据。
 
@@ -28,7 +29,7 @@
   `TestReviewC29ReaderPolicyHTTP` 在两个前缀的四个字段逐个比较真实 Python 接受 D1 的对照，
   明确断言 Go 400、共享完整行诊断及双方 DB/files 不变。差异属于已登记的 §5.7/D1 类别，未扩大豁免。
 
-三项均先在修复前运行新增回归而失败；代表性输出：
+三项均先在修复前运行新增回归而失败；代表性差异（语义摘录）：
 
 ```text
 TestReviewC29ExactRequestKeys: status/body differs (Settings / BASE_URL)
@@ -103,7 +104,7 @@ C29 不等待或复制共享修复，O3-6c 合入后由协调者单独复核这�
 
 ## rt 验证与输出
 
-本次复核所有命令固定 **192.168.0.64**。以下均在前台执行并等待退出。
+本次复核定向验证固定 **192.168.0.64**，补充 fuzz 在 **192.168.0.32**；以下均在前台执行并等待退出。
 
 ```sh
 RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -run TestReviewC29 ./internal/api/oxidns/difftest && go test -count=1 -run "^TestN73OxidnsReaderInputs$" -v -timeout=15m ./internal/oxidns'
@@ -150,7 +151,47 @@ ok configflow/internal/api/oxidns/difftest 45.016s
 C29_SCOPED_REVIEW_PASS
 ```
 
-完整 gate/fuzz 与最终 rebase 结果待下一节补齐。若 .64 gate 排队超过15分钟，
-按协调者明确指示停止排队并交回，由协调者使用 cf-gate 跑完整验收，不把排队当通过。
+两个指定 fuzz 已在 .32 完成（先前台顺序运行，不占 full gate 槽位）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=2 -- bash -lc 'set -e; cd server; go test -run "^$" -fuzz="^FuzzNativeYAMLRoundTrip$" -fuzztime=60s -parallel=2 ./internal/oxidns > /tmp/review-c29-fuzz-native.log 2>&1; tail -4 /tmp/review-c29-fuzz-native.log; go test -run "^$" -fuzz="^FuzzZoneValidation$" -fuzztime=60s -parallel=2 ./internal/oxidns > /tmp/review-c29-fuzz-zone.log 2>&1; tail -4 /tmp/review-c29-fuzz-zone.log; printf "C29_READER_FUZZ_PASS\n"'
+```
+
+退出0：Native 258003 executions / PASS / 61.070s；Zone 251870 executions / PASS / 60.149s；
+末行 `C29_READER_FUZZ_PASS`。
+
+## 完整门禁排队及交回
+
+已先将修复提交为 `496b16b5`，rebase 到 `go@895f5e21`。该次 rebase 只增加 AGENT-BRIEF/gate
+的临时目录设置，没有 C29 或共享运行时代码变化。实际前台命令：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -e GOMAXPROCS=4 -e GATE_LOGS=/home/sunbroke/.cache/review-c29-independent-20261118 -- bash -lc 'exec setsid bash -lc '\''echo $$ > /tmp/review-c29-independent-gate.pid; exec server/scripts/gate.sh -p 6 FuzzNativeYAMLRoundTrip:./internal/oxidns FuzzZoneValidation:./internal/oxidns'\'''
+```
+
+2026-11-18 03:30:43 开始排队；超过15分钟仍未取得槽位，03:46 左右按协调者指示终止自身进程组，
+此前严格核对 PID、PGID、该工作区的 /proc/PID/cwd 和该 gate 的命令行。未更改 gate 或槽位上限，
+未终止其他 worktree/agent 的任务。该轮 rt 退出143，输出仅为：
+
+```text
+gate: logs in /home/sunbroke/.cache/review-c29-independent-20261118
+03:30:43 ... load average: 18.95, 22.89, 24.40
+gate: 2 gate(s) already running on this server; waiting for a slot...
+Terminated                 "$@"
+```
+
+随后同一 .64 通过 rt --no-sync 确认 PID 已消失、专用门禁目录没有任何检查日志：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt --no-sync -- bash -lc 'test ! -e /proc/1742816; test -z "$(find /home/sunbroke/.cache/review-c29-independent-20261118 -maxdepth 1 -type f -print -quit)"; printf "C29_QUEUE_STOPPED_NO_CHECKS_STARTED\n"'
+```
+
+退出0，末行 `C29_QUEUE_STOPPED_NO_CHECKS_STARTED`。本次**没有**执行全仓 vet/build-tag/race、
+全部 difftest 或 proddiff；不引用作者历史 gate 作为本次修复后的验收。协调者将用 cf-gate 完成这些
+检查及 new=0/stale=0 验收。本次已完成的完整核心、API/difftest、定向 race、reader 逐输入门和两个60秒
+fuzz 如上；明确区分排队未执行与测试失败。
+
+C29 PROGRESS 已设 verified（零未决）；共享已知窗口仍由 O3-6c 负责。
+最终再次 `git rebase go`；工作区保持干净，最终提交 ID 见交回消息。
 
 协调同步使用 [Paseo 技能](/Users/sunbroke/.agents/skills/paseo/SKILL.md)，只向本任务协调者发送复核进度/共享依赖说明。

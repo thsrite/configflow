@@ -1,6 +1,9 @@
 # N7-3d share — oxidns readers to yamlx
 
-状态：ported，业务验证器保持不动；最终迁移计数、指定fuzz与完整C29门禁均通过，待复核。
+状态：独立复核 verified（go-review-c29）；业务验证器不变，template消费者丢失policy/alias cause
+已修复（496b16b5）。.64重验 native53588/template326232、两者unknown=0；
+.32两个指定fuzz各60秒通过。完整门禁排队超15分钟，按协调者指示交回cf-gate验收；
+详情 [C29复核](../review-c29.md)。下文保留作者历史验收证据。
 用户从 N7-3d 分配这两个 reader 给 C29，单独提交；协调者会通知原 owner。
 
 - native.go parseYAML 和 adapter.go safeLoad 统一 yamlx.Parse。
