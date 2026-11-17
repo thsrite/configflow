@@ -2,6 +2,7 @@ package subscriptions_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/refresh"
 	"configflow/internal/substore"
+	_ "modernc.org/sqlite"
 )
 
 func TestConfigFindingsRejectInvalidRequestShapesWithoutEffects(t *testing.T) {
@@ -95,4 +97,35 @@ func TestConfigFindingsMalformedCacheFailureIsJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv.Post("/api/subscriptions/s/fetch", httpxtest.JSON(jsonx.Obj())).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", "订阅操作失败"))
+}
+
+func TestConfigFindingsFailedImportCommitIsJSON(t *testing.T) {
+	env := refresh.DefaultEnv()
+	env.FetchSubscription = func(context.Context, string, string, substore.FetchOptions) (*substore.SubscriptionResult, error) {
+		return &substore.SubscriptionResult{Text: "proxies: [{name: Synthetic, type: socks5, server: 192.0.2.1, port: 1080}]", Source: "direct_yaml"}, nil
+	}
+	t.Cleanup(refresh.SetEnv(env))
+	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
+	if _, err := srv.Repo.SaveShared(srv.Context(), jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "s", "name", "Synthetic", "url", "https://feed.example/sub")}), nil); err != nil {
+		t.Fatal(err)
+	}
+	before, err := srv.Repo.ExportAll(srv.Context(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(srv.DataDir, "configflow.sqlite3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	// R218-F13 uses SQLite triggers, not directory permissions: a successful
+	// download must still report a JSON failure when importing nodes cannot commit.
+	if _, err := db.Exec("CREATE TRIGGER deny_import BEFORE INSERT ON fields BEGIN SELECT RAISE(ABORT, 'synthetic-write-denied'); END"); err != nil {
+		t.Fatal(err)
+	}
+	srv.Post("/api/subscriptions/s/fetch", httpxtest.JSON(jsonx.Obj())).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", "订阅操作失败"))
+	after, err := srv.Repo.ExportAll(srv.Context(), false)
+	if err != nil || !jsonx.Equal(before, after) {
+		t.Fatalf("failed import changed configuration: %v", err)
+	}
 }
