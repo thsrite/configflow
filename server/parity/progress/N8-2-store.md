@@ -1,6 +1,7 @@
 # N8-2 — store on raw rows
 
-Status: **ported**; independent adversarial review in progress on `go-review-n8-2`.
+Status: **verified**; independent adversarial review complete, zero open N8-2 findings.
+Reviewer branch: `go-review-n8-2`; report: [review-n8-2.md](../review-n8-2.md).
 Branch: `go-n8-2`; integrated with N7-1 and N8-1 (`go` at `5535931d`).
 No design deviation, schema/version change, new dependency or push.
 
@@ -66,7 +67,7 @@ replace it. Synthetic Infinity/NaN legacy corpus values are finite now; separate
 native tests enforce the designed json.Valid rejection of non-standard JSON.
 No feature skipped; model-specific R1–R9 tests remain N8-3 work.
 
-## Final commands and output (.32)
+## Author acceptance commands and output (.32)
 
 Actual phase logs: `/tmp/n8-2-integrated.mvzoHa/`. Default /tmp; `-p=2` only
 limits package concurrency; no test sampling/timeout changes.
@@ -108,53 +109,48 @@ store/legacy_test.go 211, testdata/raw_crosscheck.py 82, raw_rows.json 23;
 repo/store_rows_test.go 74. No open N8-2 finding or implementation work remains. Final `git rebase go`
 and clean-worktree check are performed after this acceptance record commit.
 
-## Independent review (in progress)
+## Independent review acceptance
 
-Buildable store/recovery step: `ba7af7d2`. .63 vet and store/repo/agents/substore/weburl tests passed; .32 live private ConfigStore and ProfileRepository writes both passed.
+Commits after final rebase: `dcab48dc` (no-op/security/recovery), `1a331eb0`
+(native proxies + ALL fallback), `9744bef9` (CLI smoke), `8f065c7a` (large
+non-integer version classification), `17f7d48e` (A15 route outcomes), plus the
+final acceptance record. Final integration base: `045f2485`; no rebase conflict.
 
-- Reproduced unchanged-raw-metadata Commit writing rows/normalizing generation;
-  fixed equal-metadata filtering and unrelated generation-byte preservation.
-- Removed value-leaking CPython UTF-8 diagnostic emulation. Stored invalid UTF-8
-  is ErrCorrupt; native JSON/UTF-8 diagnostics name table/key/column/byte offset
-  and category only. Startup reports the original path and actionable recovery;
-  final error boundary sends it to the log and stderr.
-- Added synthetic corrupt/truncated/oversized/deep rows, large valid opaque rows,
-  eight concurrent raw writers, unchanged metadata, and cancellation-after-start
-  tests. New private-copy Python ProfileRepository writes ↔ Go repository writes
-  audit passed on .32 (1.560s); existing live store audits also passed (12+12+43 rows, 2.015s). Final combined run remains.
-- Scope decision: syntactically damaged JSON/non-UTF-8 refuses startup and keeps
-  the original database. Legal JSON wrong-type R5 belongs to N8-3.
-- **repo.update 入口 detach（PORTING 4b）→ N8-5/O3-6**. This review proves raw
-  Commit is not aborted after starting; it does not move outer lock cancellation.
-- Ancillary A07 failure: shared selector moved to x/net/httpproxy plus ALL_PROXY
-  fallback by coordinator decision; separate Agent/Sub-Store boundaries and
-  requests differential, with native outcomes explicitly asserted. See review.
-- Next: final .32 private interchange, formatting/vet/race/all/proddiff, then
-  rebase go and mark verified only when all review findings are closed.
+Closed findings: unchanged raw metadata committed and rewrote generation;
+UTF-8 diagnostics exposed entire values; startup recovery lacked original path
+and log/stderr coverage; unbounded version parse/diagnostics; CGI proxy protection
+was lost by N2's custom selector. Native httpproxy replaces that matcher, with
+coordinator-required ALL_PROXY fallback. Loopback is always direct, replacing
+A07 decision 5; accepted native outcomes are explicit in the ledger and tests.
 
-Proxy step validation after ALL_PROXY preservation: .63 vet + agents 41.321s,
-substore 6.481s, weburl 0.003s. .32 real requests differential: 42 cases,
-18 explicit native differences / 24 identical outcomes, 4.511s. Runtime proxy
-instructions updated in doc/manual/system-settings.md (no UI/screenshot change).
+New boundary files: store/review_n82_test.go (194 lines), repo/review_n82_test.go
+(147), repo/testdata/review_n82_interchange.py (80), agents/review_n82_proxy_test.go
+(48), substore/review_n82_proxy_test.go (42), scripts/review-n8-2-startup.py (53).
+Existing real Python audits retained; new private copy exercises actual Python
+ProfileRepository writes and Go UpdateProfileTransaction both ways. Source mode=ro,
+private 0700 copies deleted, zero residual test directories; no private values
+printed/committed. Synthetic corrupt/deep/10MiB rows fail safely without changing
+DB bytes; ~9MiB valid opaque rows, eight-writer conflict, no-op byte/revision,
+metadata-only and cancellation-after-start checks pass.
 
-Buildable proxy step: `3ac0714d`; store step `ba7af7d2`. Added reproducible
-`server/scripts/review-n8-2-startup.py` synthetic CLI smoke: .32 exit 0,
-3 cases exit=1 / safe log+stderr / original bytes unchanged. It builds/runs only
-on test servers; no snapshot content or network access. Final combined acceptance pending.
+Final .32 combined acceptance at 0efddadf: gofmt clean, vet pass; five-package
+race store 18.087s / repo 217.966s / agents 43.141s / substore 6.174s / weburl
+1.014s; 42 actual requests, 18 explicit native outcomes, 24 identical (5.510s);
+full ordinary suite all pass (installer 160.758s, oxidns 88.397s, final yamlx
+0.922s). CLI smoke 3/3 safe failures. Proddiff: 23 self-checks PASS, 2831 cases /
+415 comparisons / 11 existing baselines; new=0 stale=0 coverage_regressions=0,
+unmapped_routes=0, symmetric 30/30 transport failures (not successes).
+Version-suffix follow-up: final store source passes .32 full live-Python/private
+race 12.510s and vet. After clean rebase including O3/R05: formatting/vet all,
+A15 route race 5.360s (six cases, four exact native outcomes, zero unexpected
+differences), and CLI smoke pass again. Coordinator explicitly owns a new
+integration-wide run after rebase; we did not chase each concurrent merge.
 
-Review follow-up: range checking of storage_version now first rejects decimal /
-exponent spellings, so a large float is not misclassified as a newer integer
-when strconv overflows before its suffix. Added three regression vectors.
+Scope decisions: syntactically damaged JSON / non-UTF-8 refuses startup and
+preserves the original database; legal JSON wrong-type R5 belongs to N8-3.
+**repo.update 入口 detach（PORTING 4b）→ N8-5/O3-6**; corresponding N8-5 design
+step updated. Raw Commit is proved to finish after cancellation; outer lock
+cancellation is deliberately not migrated here. No schema/version change,
+new dependency, feature omission, push or PR.
 
-Final .32 combined acceptance (base 0efddadf): all five race packages pass,
-all-package ordinary suite pass, 42-request differential pass, CLI smoke pass,
-proddiff 23 self-checks / 2831 cases / 415 comparisons / 11 existing baselines,
-new=0 stale=0 coverage_regressions=0. Final version-check source also passes
-.32 full store race 12.510s and vet. Additional A15 proxy route differential
-reproduced four stale loopback trace expectations (responses/Agent requests
-match; trust_env-off update and routable follow match). Four named exact
-Python traces / Go zero-request assertions replace the stale equality only.
-
-A15 consumer acceptance on .32: six route cases, four exact native loopback
-outcomes / zero unexpected differences; -race 5.111s. No response or fake-Agent
-request masking. Normal test progress log now shows both Python and Go counts.
+Exact commands and final output: [review report](../review-n8-2.md).
