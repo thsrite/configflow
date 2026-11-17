@@ -131,3 +131,29 @@ func sampleBundle(f *testing.F) *Bundle {
 	}
 	return b
 }
+
+// FuzzPublishRequest exercises the actual untrusted JSON/guard parsing boundary.
+func FuzzPublishRequest(f *testing.F) {
+	for _, s := range []string{`{}`, `[]`, `null`, `{"restart":true}`, `{"deployment_id":"../bad"}`, `{"expected_config_revision":1.0}`, `{"generation_id":[]}`, `{"base_url":"https://panel.example.com"}`} {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, raw []byte) {
+		if len(raw) > 1<<20 {
+			t.Skip()
+		}
+		body, ok := decodePushBody(raw)
+		if !ok {
+			return
+		}
+		for _, key := range []string{"generation_id", "deployment_id", "expected_profile_id", "base_url"} {
+			value, valid := rawString(body[key])
+			if valid && !utf8.ValidString(value) {
+				t.Fatal("invalid decoded text")
+			}
+		}
+		n, valid := rawRevision(body["expected_config_revision"])
+		if valid && n < 0 {
+			t.Fatal("negative accepted revision")
+		}
+	})
+}

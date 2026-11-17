@@ -1,28 +1,4 @@
 # Route template	key path	difference type	reason (entries marked open must be triaged before commit)
-GET /api/agents	body[0].content_sync.checked_at	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents	body[1].content_sync.checked_at	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents	body[2].content_sync.checked_at	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents/<agent_id>	body.content_sync.checked_at	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents	body[0].content_sync.reason	extra-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents	body[0].content_sync.status	value	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents	body[1].content_sync.reason	extra-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents	body[1].content_sync.status	value	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents	body[2].content_sync.reason	extra-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents	body[2].content_sync.status	value	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents/<agent_id>	body.content_sync.reason	extra-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents/<agent_id>	body.content_sync.status	value	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents/<agent_id>/push-diff	body.checked_at	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents/<agent_id>/push-diff	body.config	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents/<agent_id>/push-diff	body.content	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents/<agent_id>/push-diff	body.content_reason	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents/<agent_id>/push-diff	body.counts	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents/<agent_id>/push-diff	body.files	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents/<agent_id>/push-diff	body.files_omitted	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents/<agent_id>/push-diff	body.reason	extra-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents/<agent_id>/push-diff	body.status	value	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents/<agent_id>/push-diff	body.unchanged	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents/<agent_id>/push-diff	body.unchanged_omitted	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
-GET /api/agents/<agent_id>/push-diff	body.version	missing-in-go	deferred → A14：PrepareFunc 未接线，接线后必须消失
 GET /api/agents/<agent_id>/oxidns/rules/update	body.message	extra-in-go	Existing A18 F1: Python succeeds, Go has no oxidns_ha_publish.rules hook; Step B #3 changes only its 500 representation to JSON
 GET /api/agents/<agent_id>/oxidns/rules/update	body.success	value	Existing A18 F1: Python succeeds, Go has no oxidns_ha_publish.rules hook; Step B #3 changes only its 500 representation to JSON
 GET /api/agents/<agent_id>/oxidns/rules/update	body.task	missing-in-go	Existing A18 F1: Python succeeds, Go has no oxidns_ha_publish.rules hook; Step B #3 changes only its 500 representation to JSON

@@ -21,8 +21,9 @@ const maxReceiptBytes = 512 << 20
 // files/pruning per Agent, never repository reads or writes.
 type Receipts struct {
 	dataDir string
-	locks   leafLocks
 }
+
+var receiptDirectoryLocks leafLocks
 
 // NewReceipts creates the single receipt owner for a repository data directory.
 func NewReceipts(dataDir string) *Receipts { return &Receipts{dataDir: dataDir} }
@@ -79,8 +80,13 @@ func (r *Receipts) Capture(ctx context.Context, agentID string, b *Bundle, src *
 	if err != nil {
 		return err
 	}
-	release := r.locks.lock(agentID)
+	release := receiptDirectoryLocks.lock(r.root(agentID))
 	defer release()
+	// Shutdown while waiting for the leaf lock writes nothing; once started,
+	// the receipt directory is completed as a whole.
+	if err = ctx.Err(); err != nil {
+		return err
+	}
 	ctx = ctxx.Uninterruptible(ctx)
 	folder := r.folder(agentID, b.manifest.DeploymentID)
 	if err = privateDir(folder); err != nil {
@@ -133,7 +139,7 @@ func (r *Receipts) Load(ctx context.Context, agent *agents.Record, withBundle bo
 	if view.ID == "" || a.DeploymentID == "" || a.ProfileID != view.ProfileID || a.ServiceType != view.ServiceType || a.ConfigVersion != view.ConfigVersion || !versionPattern.MatchString(a.ConfigVersion) {
 		return nil, nil
 	}
-	release := r.locks.lock(view.ID)
+	release := receiptDirectoryLocks.lock(r.root(view.ID))
 	defer release()
 	folder := r.folder(view.ID, a.DeploymentID)
 	data, err := readPrivate(filepath.Join(folder, "receipt.json"), maxReceiptBytes)

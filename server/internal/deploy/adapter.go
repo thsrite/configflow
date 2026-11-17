@@ -402,7 +402,11 @@ func AgentIdentity(t Target) []byte {
 			core = subs.ReportedCoreVersion(record, store.StatusOf)
 		}
 	}
-	identity.Set("core_version", core)
+	if core == "" {
+		identity.Set("core_version", nil)
+	} else {
+		identity.Set("core_version", core)
+	}
 	raw, err := encodeJSON(identity)
 	if err != nil {
 		return nil

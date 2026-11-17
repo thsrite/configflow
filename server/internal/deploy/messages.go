@@ -83,3 +83,24 @@ const (
 	msgCheckingOxiDNS           = "正在校验 OxiDNS 配置与规则文件"
 	msgUploading                = "正在上传发布包（%d 个文件，%s 字节）"
 )
+
+const (
+	msgAgentMissing           = "找不到这台 Agent，请刷新设备列表。"
+	msgPushBody               = "发布请求格式无效，请重新提交。"
+	msgGenerationTaskMismatch = "发布任务与生成结果不匹配，请重新生成。"
+	msgConfigChanged          = "配置已改变，请重新预览后发布。"
+	msgIncompleteGuard        = "保存后的发布信息不完整，请重新保存草稿后发布。"
+	msgProfileUnavailable     = "Agent 绑定的配置空间不可用。原始错误：%v"
+	msgSavedDraftChanged      = "草稿已保存，但配置或设备绑定已改变，请重新载入并保存后发布。"
+	msgDraftChanged           = "配置或设备绑定已改变，请重新载入后发布。"
+	msgRestartInvalid         = "发布请求中的重启选项无效，请重新提交。"
+	msgSelfRestart            = "配置写入后由 Agent 执行重启。"
+	msgUnsupportedService     = "当前服务类型不支持配置发布。"
+	msgPreparing              = "正在生成并检查配置"
+	msgFilesReady             = "文件已准备，正在校验并连接设备"
+	msgGenerateTargetChanged  = "目标设备或绑定已改变，请刷新后重新生成。"
+	msgRulePreparing          = "正在准备规则「%s」（共 %d 个文件）"
+	msgRulePrepared           = "规则「%s」已准备（%d/%d）"
+	msgRulesPacked            = "规则文件准备完成，正在打包"
+	msgRuleProgress           = "正在准备规则文件 %d/%d"
+)
