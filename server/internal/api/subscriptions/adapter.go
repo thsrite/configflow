@@ -21,6 +21,7 @@ import (
 	"configflow/internal/subs"
 	"configflow/internal/substore"
 	"configflow/internal/weburl"
+	"configflow/internal/yamlx"
 )
 
 func legacy(value any) (any, error) {
@@ -382,17 +383,35 @@ func cachedProxies(ctx context.Context, sub object, nodes []object, strict bool)
 		return nil, err
 	}
 	out := []any{}
-	for _, item := range subs.FilterSubscriptionItems(o, v.([]any)) {
+	skipped := 0
+	for index, item := range subs.FilterSubscriptionItems(o, v.([]any)) {
 		p, err := convert.ConvertNodeToMihomo(ctx, item.(*jsonx.Object), substore.Converter())
 		if err != nil {
 			if strict && referenceError(err) {
 				return nil, err
+			}
+			var yamlError *convert.ProxyYAMLError
+			if !strict && errors.As(err, &yamlError) {
+				kind := "yaml_value"
+				switch {
+				case errors.Is(err, yamlx.ErrAliasRecursion):
+					kind = "alias_recursion"
+				case errors.Is(err, yamlx.ErrAliasBudget):
+					kind = "alias_budget"
+				case errors.Is(err, yamlx.ErrPolicy):
+					kind = "yaml_policy"
+				}
+				skipped++
+				logx.Get("backend.routes.subscriptions").Warningf(msgProxyYAMLSkipped, index+1, kind)
 			}
 			continue
 		}
 		if p != nil {
 			out = append(out, p)
 		}
+	}
+	if skipped > 0 {
+		logx.Get("backend.routes.subscriptions").Warningf(msgProxyYAMLSkipSummary, skipped)
 	}
 	return nativeObjects(out)
 }

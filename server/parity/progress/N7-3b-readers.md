@@ -62,7 +62,7 @@ call sites, so no new silent skipping. Dedicated .32 tests prove policies/alias4
 never call the fake Sub-Store and never populate the proxy cache; syntax still
 falls back. Changed callers compile. Legacy scalar replay classification pending.
 
-Boundary classification is complete: rulefetch 9,058 changed call rows (including
+Boundary classification is complete: rulefetch 9,079 changed call rows (including
 whole-suite recordings), all assigned §5.7/D1/D3 or the two documented Python
 editor fixes; 44 distinct special-case fingerprints cover 49 calls. Convert has
 48 distinct changed inputs with precise native output/error expectations; repo
@@ -122,3 +122,17 @@ Rebased onto go@3c8a1760: only an additive ledger conflict, both sections retain
 Before the append-channel follow-up, the rebased .32 format/vet,8-package race,
 full p4, all10 difftest packages and proddiff again passed (new=0 stale=0).
 Final acceptance repeats after this last functional correction.
+
+Coordinator-approved batch closeout: api/subscriptions.cachedProxies(false)
+counts ProxyYAMLError skips and logs only node_index/error_kind plus a skipped=N
+summary. Valid nodes keep order; HTTP fields stay unchanged. Strict mode returns
+the typed error and emits no duplicate warning. The regression includes alias
+and explicit-bool policy failures containing synthetic credentials and confirms
+neither names nor node contents leak. Focused .32 race PASS1.019s; full API
+subscription package PASS0.143s.
+
+Fifth shared pick a5f553d0 applied as0aff558f. Rule remote validation now uses
+SyntaxError.Error() intact (Chinese prefix/line), rather than stripping it via
+Problem. The old corpus omitted English-only validation text, so21 additional
+rows now explicitly assert the same failure metadata and exact native Chinese
+cause; total changed boundary rows9,079. Other migration class counts are stable.
