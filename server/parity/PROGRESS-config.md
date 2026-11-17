@@ -1817,7 +1817,7 @@ Cross-module boundary remaining: a chain graph requiring aggregation materializa
 
 A11 proddiff dependency closed by C31: both workers now independently render aggregation providers. The former frozen provider path is removed from the production-snapshot harness, and that Agent's bundle is promoted from packaging-only partial coverage. Structured main/provider YAML compares parsed values, with each manifest size/SHA256 separately checked against its real delivered bytes; all other artifacts stay byte-exact. A11's branch was not modified.
 
-**Status: `ported`** · prereqs: C30, C26 · Go: internal/api/aggregations, internal/aggregations, internal/devicenotes; repo/oxidns adapters
+**Status: `verified`** · prereqs: C30, C26 · Go: internal/api/aggregations, internal/aggregations, internal/devicenotes; repo/oxidns adapters
 
 Files:
 - `backend/routes/aggregations.py` (617)
@@ -1844,7 +1844,7 @@ Python test mapping (all functions in the three requested files):
 
 Notes boundary: `devicenotes/difftest.TestDeviceNotesBoundary` drives all stored/read/set/revision/prepare/save public operations with real Python, including invalid and full-capacity data; name-only saves retain identical settings. `FuzzStoredNotes` and `FuzzAggregationDocument` exercise new parsing paths. Native JSON object key order/YAML indentation are not chased; malformed internal exception wording is native. After integration of A11, real `deploy.Locations` is wired in the C31 differential and its location-only deferral is removed; complete Chinese diagnostics and all state now compare strictly.
 
-Final: gofmt/vet, all changed-package race, full ordinary suite (80 tested packages), all 12 enabled difftest packages, both 60s fuzz targets and proddiff pass. New=0 stale=0, aggregation-provider 2/2, independent Agent bundle 3/3 (no partial). No A11 diagnostic deferral remains. No remaining C31 route/feature work; independent adversarial review remains. Chinese findings, exact commands/output and commits: [C31-HANDOFF.md](C31-HANDOFF.md).
+Final: gofmt/vet, all changed-package race, full ordinary suite (80 tested packages), all 12 enabled difftest packages, both 60s fuzz targets and proddiff pass. New=0 stale=0, aggregation-provider 2/2, independent Agent bundle 3/3 (no partial). No A11 diagnostic deferral remains. No remaining C31 route/feature work. Independent adversarial review completed on `go-review-c31`: one high (owner shutdown cancellation) and one low (Unicode note revision) finding fixed, zero open. Final .32 gofmt/vet, changed-package/provider race, full suite (80 tested packages), all 12 enabled difftests, both 60s fuzz targets and proddiff passed; aggregation 2/2, Agent bundle 3/3, no partial, new=0 stale=0. Findings, exact commands/output and hand-back: [review-c31.md](review-c31.md). Chinese findings, exact commands/output and commits: [C31-HANDOFF.md](C31-HANDOFF.md).
 
 ## C32 — rule routes
 

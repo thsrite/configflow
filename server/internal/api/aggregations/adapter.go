@@ -51,31 +51,27 @@ func legacy(value any) (*jsonx.Object, error) {
 }
 
 func sharedConfig(ctx context.Context) (record, error) {
-	v, err := repo.GetSharedConfig(ctx)
+	raw, err := generation.LoadCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var out record
-	err = stored(v, &out)
+	err = json.Unmarshal(raw, &out)
 	return out, err
 }
 func saveShared(ctx context.Context, document record) error {
-	o, err := legacy(document)
+	raw, err := json.Marshal(document)
 	if err != nil {
 		return err
 	}
-	return repo.SaveSharedConfig(ctx, o, nil)
+	return generation.SaveCatalog(ctx, raw)
 }
 func appendAggregation(ctx context.Context, body record) error {
-	o, err := legacy(body)
+	raw, err := json.Marshal(body)
 	if err != nil {
 		return err
 	}
-	_, err = repo.UpdateSharedConfigTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("subscription_aggregations", append(shared.GetList("subscription_aggregations"), o))
-		return nil, nil
-	})
-	return err
+	return generation.AppendCatalog(ctx, raw)
 }
 func initialize(body record) error {
 	o, err := legacy(body)

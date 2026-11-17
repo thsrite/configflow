@@ -66,7 +66,7 @@ func Register(r *httpx.Router) {
 }
 
 func collection(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := context.WithoutCancel(c.Context())
+	ctx := c.Context()
 	shared, err := sharedConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -115,7 +115,7 @@ func collection(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 func item(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := context.WithoutCancel(c.Context())
+	ctx := c.Context()
 	shared, err := sharedConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -276,7 +276,7 @@ func renderFailure(err error) *httpx.Response {
 }
 
 func reorder(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := context.WithoutCancel(c.Context())
+	ctx := c.Context()
 	shared, err := sharedConfig(ctx)
 	if err != nil {
 		return nil, err

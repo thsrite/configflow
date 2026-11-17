@@ -110,6 +110,9 @@ func render(ctx context.Context, agg aggregation, d *delivery, opts Options) (*R
 		}()
 	}
 	workers.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	allNodes := []node{}
 	proxyByName := map[string]Proxy{}
 	for i, sub := range selected {

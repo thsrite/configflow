@@ -10,6 +10,7 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/provider"
 	"configflow/internal/refresh"
@@ -128,7 +129,10 @@ func selectedIDs(object *jsonx.Object, key string) ([]string, error) {
 // Generate validates a frozen main before fetching sources. Persist publishes
 // through the shared all-or-nothing provider bundle; dry renders never commit.
 func Generate(ctx context.Context, rawAggregation, rawConfig json.RawMessage, options Options) (*Result, error) {
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if options.Format != "" {
 		ctx = WithFormat(ctx, options.Format)
 	} else {
@@ -387,6 +391,9 @@ func (d *delivery) publish(ctx context.Context, agg *jsonx.Object, options Optio
 	if err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var found *provider.Rendered
 	for _, item := range bundle {
 		if item.Name == agg.GetString("name") {
@@ -455,3 +462,46 @@ func Wire() {
 }
 
 func logSourcePanic() { logx.Get("backend.routes.aggregations").Warning(msgSourcePanic) }
+
+// LoadCatalog reads the shared catalog and captures the baseline for SaveCatalog.
+func LoadCatalog(ctx context.Context) (json.RawMessage, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	document, err := repo.GetSharedConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return jsonx.Compact(document)
+}
+
+// SaveCatalog commits a catalog edit using its request-scoped baseline.
+func SaveCatalog(ctx context.Context, raw json.RawMessage) error {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	document, err := legacyObject(raw)
+	if err != nil {
+		return err
+	}
+	return repo.SaveSharedConfig(ctx, document, nil)
+}
+
+// AppendCatalog adds an aggregation in one shared repository transaction.
+func AppendCatalog(ctx context.Context, raw json.RawMessage) error {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	item, err := legacyObject(raw)
+	if err != nil {
+		return err
+	}
+	_, err = repo.UpdateSharedConfigTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
+		shared.Set("subscription_aggregations", append(shared.GetList("subscription_aggregations"), item))
+		return nil, nil
+	})
+	return err
+}

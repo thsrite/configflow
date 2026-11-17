@@ -60,6 +60,7 @@ func TestDeviceNotesBoundary(t *testing.T) {
 		`{"device_notes":{"192.0.2.1":""},"oxidns":{"device_policies":[{"ip":"192.0.2.1","name":"Old","mode":"smart"}]}}`,
 		`{"device_notes":{"::ffff:192.0.2.1":"Mapped","2001:db8::1":"IPv6"}}`,
 		`{"device_notes":{"192.0.2.1":"中文<>&"},"oxidns":{"device_policies":[{"ip":"192.0.2.1","name":"Legacy\u007f","mode":"smart"}]}}`,
+		`{"device_notes":{"192.0.2.1":"line\u2028sep\u2029end\\u2028"},"oxidns":{"device_policies":[{"ip":"192.0.2.1","mode":"smart"}]}}`,
 		`{"device_notes":null}`, `{"device_notes":[]}`, `{"device_notes":{"bad":"n"}}`, `{"device_notes":{"192.0.2.1":false}}`, `{"device_notes":{"192.0.2.1":"\n"}}`,
 		`{"device_notes":{"192.0.2.7/24":"a","192.0.2.0/24":"b"}}`,
 		`{"oxidns":{"device_policies":false}}`,

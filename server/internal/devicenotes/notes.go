@@ -212,7 +212,30 @@ func (s State) Revision() (string, error) {
 	if err := encoder.Encode(rows); err != nil {
 		return "", fmt.Errorf("encode device name revision: %w", err)
 	}
-	sum := sha256.Sum256(bytes.TrimSuffix(encoded.Bytes(), []byte("\n")))
+	// This digest is persisted alongside edits, so retain UTF-8 separator
+	// characters as the stored revision protocol requires. Consume other JSON
+	// escapes atomically: a literal backslash followed by u2028 is user text.
+	raw := bytes.TrimSuffix(encoded.Bytes(), []byte("\n"))
+	utf8JSON := make([]byte, 0, len(raw))
+	for i := 0; i < len(raw); i++ {
+		if raw[i] == '\\' && i+1 < len(raw) {
+			if bytes.HasPrefix(raw[i:], []byte(`\u2028`)) {
+				utf8JSON = append(utf8JSON, "\u2028"...)
+				i += 5
+				continue
+			}
+			if bytes.HasPrefix(raw[i:], []byte(`\u2029`)) {
+				utf8JSON = append(utf8JSON, "\u2029"...)
+				i += 5
+				continue
+			}
+			utf8JSON = append(utf8JSON, raw[i], raw[i+1])
+			i++
+			continue
+		}
+		utf8JSON = append(utf8JSON, raw[i])
+	}
+	sum := sha256.Sum256(utf8JSON)
 	return hex.EncodeToString(sum[:]), nil
 }
 

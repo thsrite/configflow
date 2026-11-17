@@ -96,7 +96,7 @@ func TestNameLimitsAndLegacyDELRepair(t *testing.T) {
 }
 
 func FuzzStoredNotes(f *testing.F) {
-	for _, seed := range []string{`{}`, `null`, `{"192.0.2.1":"测试"}`, `{"192.0.2.1":"","::ffff:192.0.2.1":"name"}`, `{"x":[[[[]]]]}`} {
+	for _, seed := range []string{`{}`, `null`, `{"192.0.2.1":"测试"}`, `{"192.0.2.1":"","::ffff:192.0.2.1":"name"}`, `{"x":[[[[]]]]}`, `{"192.0.2.1":"line\u2028sep\u2029end\\u2028"}`} {
 		f.Add([]byte(seed))
 	}
 	f.Fuzz(func(t *testing.T, raw []byte) {
@@ -114,6 +114,18 @@ func FuzzStoredNotes(f *testing.F) {
 		again, err := Parse(encoded)
 		if err != nil || !reflect.DeepEqual(again, notes) {
 			t.Fatal("normalized notes do not round trip", err)
+		}
+		rows := make([]Policy, 0, len(notes))
+		for ip := range notes {
+			rows = append(rows, Policy{IP: ip, Mode: "smart"})
+		}
+		first, err := (State{notes: notes, policies: rows}).Revision()
+		if err != nil {
+			t.Fatal(err)
+		}
+		second, err := (State{notes: again, policies: rows}).Revision()
+		if err != nil || first != second {
+			t.Fatal("name revision changed after round trip", err)
 		}
 	})
 }
