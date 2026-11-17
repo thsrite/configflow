@@ -250,3 +250,52 @@ func TestO36cRepoLockWaitRuntimeBoundary(t *testing.T) {
 		})
 	}
 }
+
+// TestO36cRepoOwnerRuntimeMatrix mirrors the six N8-5a review scenarios through
+// the current public transaction entry. The typed Update variant must also run
+// after N8-5a moves this shared commit core into transact/transactLocked.
+func TestO36cRepoOwnerRuntimeMatrix(t *testing.T) {
+	for _, point := range []string{"before-owner", "updater", "before-commit"} {
+		for _, shutdown := range []bool{true, false} {
+			name := point + "/disconnect"
+			if shutdown {
+				name = point + "/shutdown"
+			}
+			t.Run(name, func(t *testing.T) {
+				r, runtime, base := commitRuntime(t)
+				request, disconnect := context.WithCancel(runtime.BindRequest(base))
+				defer disconnect()
+				before, files := commitState(t, r)
+				stop := func() {
+					if shutdown {
+						runtime.Shutdown(context.Background())
+					} else {
+						disconnect()
+					}
+				}
+				if point == "before-owner" {
+					stop()
+				}
+				if point == "before-commit" {
+					r.Store().BeforeCommit = func() error { stop(); return nil }
+					defer func() { r.Store().BeforeCommit = nil }()
+				}
+				_, err := r.UpdateSystemTransaction(request, func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+					if point == "updater" {
+						stop()
+					}
+					current.GetObject("system_config").Set("o3_commit_marker", "runtime-matrix")
+					return current, nil
+				})
+				after, afterFiles := commitState(t, r)
+				if shutdown {
+					if !errors.Is(err, context.Canceled) || before != after || !reflect.DeepEqual(files, afterFiles) {
+						t.Fatalf("shutdown result=%v DB/files/revisions changed", err)
+					}
+				} else if err != nil || before == after || !reflect.DeepEqual(files, afterFiles) {
+					t.Fatalf("disconnected transaction did not complete: %v", err)
+				}
+			})
+		}
+	}
+}
