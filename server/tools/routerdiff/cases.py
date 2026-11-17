@@ -42,6 +42,7 @@ class Case:
     effect: str = ''
     profile: str = 'alpha'
     times: tuple = ()
+    cached_times: dict = field(default_factory=dict)
     prepare: tuple = ()
     foreign: tuple = ()
     absent: tuple = ()

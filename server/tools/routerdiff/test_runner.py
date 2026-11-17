@@ -50,6 +50,41 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_execute_cached_clock_is_bound_to_validated_prior_own_response(self):
+        class CacheSide(ObservationSide):
+            def __init__(self, native=False, change=False):
+                super().__init__()
+                self.native, self.change = native, change
+                self.stamp = None
+
+            def request(self, **values):
+                if self.stamp is None:
+                    now = datetime.now(timezone.utc)
+                    self.stamp = now.isoformat() if self.native else now.replace(tzinfo=None).isoformat(timespec='seconds')
+                stamp = '2000-01-01T00:00:00Z' if self.requests and self.change else self.stamp
+                self.content = {'success': True, 'checked_at': stamp, 'cached': bool(self.requests)}
+                return super().request(**values)
+
+        first = Case('cache-first', 'R004', 'GET', '/api/client-devices/discovery', 200, times=('checked_at',))
+        later = Case('cache-later', 'R004', 'GET', first.path, 200,
+                     cached_times={'checked_at': Ref(first.ident, '/body/checked_at')})
+        available = {('GET', first.path)}
+        routes, _ = load()
+        for change in (False, True):
+            world = pair(CacheSide(), CacheSide(True, change))
+            self.assertEqual(execute(world, first, available, routes)['status'], 'compared')
+            result = execute(world, later, available, routes)
+            self.assertEqual(result['status'], 'different' if change else 'compared')
+            self.assertEqual(result['go']['body']['checked_at'], world.go.stamp if not change else '2000-01-01T00:00:00Z')
+            self.assertNotEqual(result['python']['body']['checked_at'], result['go']['body']['checked_at'])
+            if change:
+                self.assertIn('clock-cache', {row['category'] for row in result['differences']})
+        # A missing native handler cannot excuse an invalid Python fixture.
+        world = pair(CacheSide(change=True), CacheSide(True))
+        self.assertEqual(execute(world, first, set(), routes)['status'], 'go-unimplemented')
+        with self.assertRaisesRegex(ValueError, 'reference cached timestamp changed'):
+            execute(world, later, set(), routes)
+
     def test_fresh_clock_validation_is_used_by_execute_without_rewriting_raw_references(self):
         fresh = object()
 

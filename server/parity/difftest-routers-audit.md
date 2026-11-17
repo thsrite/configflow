@@ -342,3 +342,19 @@ Fixed-IP field normalization (Step B, source-only oracle):
   comments gain a UUID suffix; iKuai adds a random cfip_ tag. A future alias
   must bind each marker to exact writes/readback/owned storage. Generic UUID
   replacement would hide an ownership defect and is explicitly not acceptable.
+
+Cached response-clock provenance:
+- Fresh declared response times are checked against each side's real HTTP send /
+  response window, then paired only in comparison copies. Cached times now
+  explicitly reference one earlier fresh body member of the same route/profile.
+  They must equal that side's exact original text; an unrelated ISO-like field,
+  changed precision, a refreshed time, a foreign profile/route, an undeclared
+  source or a bad original native clock cannot be silently paired.
+- Raw observations and Ref inputs remain unchanged. Python provenance is checked
+  even when the native handler is absent. Comparator negative controls exercise
+  the actual execute path, not just the standalone helper.
+- Applied only to known cache lifecycles: discovery refresh=true non-refresh,
+  renamed cached notes, credential-signature changes/no-op, actual129-profile
+  LRU,61-second stale cache, failed refresh keeping good data, upstream cached
+  read and unknown-result replacement. Persisted last_probe/receipts/tasks and
+  unrelated response timestamps are still strict and remain separate work.

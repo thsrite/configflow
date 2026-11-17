@@ -129,15 +129,18 @@ def discovery():
                        'devices/2/presence': 'online', 'devices/2/last_seen': 100}, times=('checked_at',))
     yield Case('R004/dual-vendor-cached', 'R004', 'GET', '/api/client-devices/discovery', 200,
                ('T03', 'R004-S07'), checks={'cached': True, 'checked_at': Ref('R004/dual-vendor-first', '/body/checked_at')},
+               cached_times={'checked_at': Ref('R004/dual-vendor-first', '/body/checked_at')},
                expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
     yield Case('R004/refresh-literal-true-is-cache', 'R004', 'GET', '/api/client-devices/discovery?refresh=true', 200,
                ('T03', 'R004-S07'), checks={'cached': True},
+               cached_times={'checked_at': Ref('R004/dual-vendor-first', '/body/checked_at')},
                expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
     yield Case('R003/discovery-rename', 'R003', 'PUT', '/api/client-devices', 200, ('T03', 'R003-S08'),
                document={'profile_id': 'alpha', 'ip': '10.44.0.21', 'name': '缓存也显示新名称🧪', 'mode': '',
                          'previous_name': '动态设备🧪', 'previous_mode': '', 'base_url': ''},
                unchanged=False, effect='profile-write')
     yield Case('R004/cached-renamed', 'R004', 'GET', '/api/client-devices/discovery', 200, ('T03', 'R004-S10'),
+               cached_times={'checked_at': Ref('R004/dual-vendor-first', '/body/checked_at')},
                checks={'cached': True, 'devices/0/name': '缓存也显示新名称🧪'},
                expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
 
@@ -156,6 +159,7 @@ def cache_signature():
     quiet = ({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0})
     yield Case('R004/cache-signature-initial', 'R004', 'GET', '/api/client-devices/discovery', 200,
         ('T03',), prepare=(device_world(),), unchanged=False, effect='device-read',
+        times=('checked_at',),
         checks={'cached': False, 'state': 'ok'}, expected_requests=(arp,))
     edits = (('password', {'password': 'synthetic-rotated-but-not-on-device-0123456789'}, 'failed'),
              ('restore', {'password': DEVICE_PASSWORD}, 'ok'), ('tls', {'verify_tls': False}, 'ok'))
@@ -165,12 +169,15 @@ def cache_signature():
             retained_fields=('oxidns', 'device_notes', 'client_fixed_ips'), expected_requests=quiet)
         yield Case('R004/cache-signature-invalidated-' + label, 'R004', 'GET', '/api/client-devices/discovery', 200,
             ('T03',), unchanged=False, effect='device-read',
+            times=('checked_at',),
             checks={'cached': False, 'state': state, 'sources/0/ok': state == 'ok'}, expected_requests=(arp,))
     yield Case('R010/cache-signature-noop-revision-only', 'R010', 'PUT', '/api/routers/r-ros', 200,
         ('T03',), document={'verify_tls': False}, unchanged=False, effect='profile-write',
         retained_fields=('oxidns', 'device_notes', 'client_fixed_ips'), expected_requests=quiet)
     yield Case('R004/cache-signature-noop-keeps-good', 'R004', 'GET', '/api/client-devices/discovery', 200,
-        ('T03',), checks={'cached': True, 'state': 'ok',
+        ('T03',),
+        cached_times={'checked_at': Ref('R004/cache-signature-invalidated-tls', '/body/checked_at')},
+        checks={'cached': True, 'state': 'ok',
                          'checked_at': Ref('R004/cache-signature-invalidated-tls', '/body/checked_at')},
         expected_requests=quiet)
 
@@ -189,11 +196,17 @@ def cache_lru():
     sequence += [('touch-alpha-at128', 'alpha', True), ('insert129-evicts-beta', 'cache-126', False),
                  ('alpha-recent-survives', 'alpha', True), ('beta-least-recent-rereads', 'beta', False),
                  ('cache001-survives', 'cache-001', True), ('cache000-evicted-by-beta-rereads', 'cache-000', False)]
+    fresh_sources = {}
     for index, (label, profile, cached) in enumerate(sequence):
+        source = fresh_sources.get(profile)
+        if not cached:
+            fresh_sources[profile] = 'R004/cache-lru-' + label
         yield Case('R004/cache-lru-' + label, 'R004', 'GET', '/api/client-devices/discovery?profile=' + profile, 200,
             ('T03', 'R004-S07') if cached else ('T03',), profile=profile,
             prepare=(device_world(),) if index == 0 else (), unchanged=cached,
             effect='' if cached else 'device-read',
+            times=() if cached else ('checked_at',),
+            cached_times={'checked_at': Ref(source, '/body/checked_at')} if cached else {},
             checks={'profile_id': profile, 'cached': cached,
                     'devices/0/name': '缓存隔离 ' + profile},
             expected_requests=({'match': arp, 'count': 0 if cached else 1},))
@@ -228,10 +241,14 @@ def cache_staleness():
         ('T03', 'R004-S08'), prepare=(device_world(),), unchanged=False, effect='device-read',
         checks={'cached': False, 'stale': False, 'state': 'ok'}, times=('checked_at',), expected_requests=(arp,))
     yield Case('R004/stale-cache-61s-only-marks-stale', 'R004', 'GET', '/api/client-devices/discovery', 200,
-        ('T03', 'R004-S07'), age_from=initial, age_seconds=61, age_anchor='ended',
+        ('T03', 'R004-S07'),
+        cached_times={'checked_at': Ref(initial, '/body/checked_at')},
+        age_from=initial, age_seconds=61, age_anchor='ended',
         checks={'cached': True, 'stale': True, 'checked_at': Ref(initial, '/body/checked_at')}, expected_requests=quiet)
     yield Case('R004/stale-cache-true-does-not-refresh', 'R004', 'GET', '/api/client-devices/discovery?refresh=true', 200,
-        ('T03', 'R004-S07'), checks={'cached': True, 'stale': True,
+        ('T03', 'R004-S07'),
+        cached_times={'checked_at': Ref(initial, '/body/checked_at')},
+        checks={'cached': True, 'stale': True,
             'checked_at': Ref(initial, '/body/checked_at')}, expected_requests=quiet)
     yield Case('R004/stale-cache-forced-refresh-clears-stale', 'R004', 'GET', '/api/client-devices/discovery?refresh=1', 200,
         ('T03', 'R004-S08'), unchanged=False, effect='device-read',
@@ -341,7 +358,9 @@ def discovery_failures():
     ik_fail = {'action': 'fault', 'match': {'peer': 'ikuai', '/body/func_name': 'monitor_lanip'},
                'status': 200, 'body': {'Result': 10000, 'code': 3001, 'message': 'synthetic terminal refusal'}}
     yield Case('R004/failed-refresh-keeps-good', 'R004', 'GET', '/api/client-devices/discovery?refresh=1', 200,
-               ('T03', 'R004-S09'), prepare=(ros_fail, ik_fail), unchanged=False, effect='device-read',
+               ('T03', 'R004-S09'),
+               cached_times={'checked_at': Ref('R004/outage-prior-good', '/body/checked_at')},
+               prepare=(ros_fail, ik_fail), unchanged=False, effect='device-read',
                checks={'state': 'ok', 'cached': True,
                        'checked_at': Ref('R004/outage-prior-good', '/body/checked_at')}, formats={'refresh_error': r'.+'})
     definitions = [

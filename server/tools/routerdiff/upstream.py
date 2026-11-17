@@ -20,6 +20,7 @@ def linked():
                        'routers/2/id': 'r-ros', 'routers/2/profile_id': 'beta'},
                header_checks={'Cache-Control': 'no-store'})
     yield Case('R001/linked-cached', 'R001', 'GET', path, 200, ('R001-S06',),
+               cached_times={'checked_at': Ref('R001/linked-first', '/body/checked_at')},
                checks={'cached': True, 'checked_at': Ref('R001/linked-first', '/body/checked_at')},
                expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
     for value, entry in [('1', 'S04'), ('true', 'S05')]:
@@ -34,9 +35,13 @@ def linked():
                checks={'cached': False, 'routers/0/state': 'unknown', 'routers/1/state': 'pending'},
                formats={'routers/0/message': r'.+synthetic reminder read refusal.+?'} )
     yield Case('R001/unknown-not-reused', 'R001', 'GET', path + '?profile=alpha', 200,
-               ('R001-B01',), unchanged=False, effect='device-read', checks={'cached': False, 'routers/0/state': 'pending'})
+               ('R001-B01',),
+               times=('checked_at',),
+               unchanged=False, effect='device-read', checks={'cached': False, 'routers/0/state': 'pending'})
     yield Case('R001/known-now-cached', 'R001', 'GET', path + '?profile=alpha', 200,
-               ('R001-S06',), checks={'cached': True},
+               ('R001-S06',),
+               cached_times={'checked_at': Ref('R001/unknown-not-reused', '/body/checked_at')},
+               checks={'cached': True},
                expected_requests=({'match': {'peer': 'ros'}, 'count': 0}, {'match': {'peer': 'ikuai'}, 'count': 0}))
     yield Case('R001/public-edit-invalidates', 'R001', 'GET', path + '?profile=alpha', 200, ('R001-B03',),
                prepare=({'rpc': 'http', 'method': 'PUT', 'path': '/api/routers/r-ros',

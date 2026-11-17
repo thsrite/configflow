@@ -1575,3 +1575,29 @@ A foreground `rt --no-sync` Python evaluation joined only the unchanged guards
 from the first report with the109 current observations: observed_recipes1807,
 fixed_normalization_audits9, verdict=variants-audited, native_compared0.
 Last FULL report3054/301 remains unchanged; final composition/gate/rebase pending.
+
+Cached clocks: added explicit same-side freshness provenance instead of a broad
+clock mask. ResponseClocks retains each successful fresh source's raw clock and
+route/profile; cached entries must equal their own source exactly. Native bad
+fresh clocks never become valid just because later cache replies repeat them.
+Raw reports/Refs remain untouched. Python cache provenance is also checked when
+the native route is absent. Only named response members are projected; persisted
+clocks, hashes/revisions/tokens, ISO-like adjacent text stay strict/pending.
+- Comparator helper and actual execute negative controls cover changed/missing/
+  wrong type, source not declared, wrong route/profile, changed text/precision,
+  invalid original clock and unimplemented-native fixture refusal.
+- Applied to known discovery and upstream cache recipes, including actual
+  129-profile LRU, own61-second age, failed refresh and rename/no-op preservation.
+- A first iteration command used nonexistent world names; runner rejected them
+  before starting product processes, as designed. Corrected names, no product bug.
+
+.64 actual boundary command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world discovery --world discovery-signature --world discovery-lru --world discovery-failures --world discovery-staleness --world upstream-linked --output "$HOME/.cache/routerdiff-reports/302rx1dg/cache-clock-binding.json"'`
+=>173 recipes/allGo-unimplemented; LRU134 requests62.47s and real-age sequence
+63.42s;30 referenced entries; no Python bug; complete=false. No new audit
+completion inferred from this subset. Current419 declarations remain unchanged.
+Focused self-check command:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_temporal test_runner test_recipes'`
+=> Ran46 tests2.215s/OK. No command pending. Full composition, remaining1882
+source audits, dynamic ownership/token/hash/YAML binding, final gate/rebase still
+pending; this increment is not acceptance hand-back.

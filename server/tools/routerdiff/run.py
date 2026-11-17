@@ -50,7 +50,7 @@ from seed import JWT_SECRET
 from bugs import BUGS
 from audits import evaluate
 from identities import RouterIDs
-from temporal import fresh_pair
+from temporal import ResponseClocks
 
 
 def shape(path):
@@ -355,6 +355,9 @@ def execute(pair, case, available, routes):
                     raise RuntimeError(case.ident + ': invalid Python identity/hash at ' + path)
             for path in case.times:
                 timestamp(cases.at(response['content'], path), started - 1, response_received_wall + 1)
+            if not hasattr(pair, 'response_clocks'):
+                pair.response_clocks = ResponseClocks()
+            pair.response_clocks.reference(case, observations[name], response_windows[name])
             if ended - started < case.elapsed_min:
                 raise RuntimeError(case.ident + ': expected real transport wait did not occur')
             transcript = after['fake']['transcript'][len(before['fake']['transcript']):]
@@ -478,7 +481,9 @@ def execute(pair, case, available, routes):
             # for these individually named Python uncaught-exception cases.
             for observation in observations.values():
                 observation['body'] = '<HTML 500 body excluded by reviewed X03>'
-        timed_observations, clock_differences = fresh_pair(observations, response_windows, case.times)
+        if not hasattr(pair, 'response_clocks'):
+            pair.response_clocks = ResponseClocks()
+        timed_observations, clock_differences = pair.response_clocks.pair(case, observations, response_windows)
         found += clock_differences
         found += differences(pair.router_ids.response('python', case.profile, case.route, timed_observations['python']),
                              pair.router_ids.response('go', case.profile, case.route, timed_observations['go']), '/http')
