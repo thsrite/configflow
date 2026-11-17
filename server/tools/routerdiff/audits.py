@@ -859,6 +859,23 @@ def declared():
         audits[ident] = Audit(normalization_sources, detail +
             ' Checks full DB/files/devices and foreign rows; only device reads permitted for successful previews. '
             'This is reference boundary evidence; an absent native route remains Go-unimplemented.', required)
+    setup_all = tuple(('fixed-setup-' + state, 'R006/setup-' + state, 409 if state == 'active' else 200)
+                      for state in ('active', 'completed', 'abandoned', 'foreign'))
+    setup_reopen = (('fixed-setup-reopened', 'R006/setup-before-reopen', 200),
+                    ('fixed-setup-reopened', 'R005/setup-reopened-valid-token', 409))
+    for ident, required in (('H0035', setup_all + setup_reopen), ('R006-F17', setup_all),
+                            ('R005-F14', setup_reopen)):
+        audits[ident] = Audit(('backend/common/client_fixed_ip.py:61',
+                              'backend/common/setup_flow.py:270', 'backend/routes/setup.py:72'),
+            'Real DATA_DIR session JSON, canonical IDs/profile,0600 file/0700 directory. Active '
+            'selected setup blocks preview before device I/O. Completed/abandoned stored flags and '
+            'a foreign active session permit real device-backed preview. The apply case first '
+            'obtains its OWN valid preview while abandoned, then public PATCH reopens the same '
+            'session (explicit schema, no invented success property) and apply409 with no device '
+            'I/O or mutation. Actual public setup create/abandon proves the base file contract; '
+            'all seeded states pass the real public session reader unchanged. The completed fixture '
+            'tests an archived reader/guard flag, not the config domain installation/finish workflow. '
+            'No monkeypatch of profile_sessions or manually signed apply token.', required)
     return audits
 
 

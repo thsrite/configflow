@@ -61,9 +61,9 @@ def create(directory, options):
     profiles = {}
     extras = options.get('additional_profiles', {})
     if not isinstance(extras, dict) or len(extras) > 256 or any(
-            not isinstance(ident, str) or not re.fullmatch(r'cache-[0-9]{3}', ident)
+            not isinstance(ident, str) or not re.fullmatch(r'(?:cache-[0-9]{3}|setup_[a-f0-9]{20})', ident)
             or not isinstance(patch, dict) for ident, patch in extras.items()):
-        raise ValueError('additional profiles must be bounded, explicitly synthetic cache fixtures')
+        raise ValueError('additional profiles must be bounded, explicitly synthetic cache/setup fixtures')
     specs = [('alpha', '空间甲🧪', options.get('alpha', {})), ('beta', '空间乙🧪', options.get('beta', {}))]
     specs += [(ident, '合成缓存空间 ' + ident, patch) for ident, patch in extras.items()]
     for ident, name, patch in specs:
@@ -93,13 +93,24 @@ def create(directory, options):
             raise ValueError('refreshable sources require a dedicated scheduler fixture')
     for relative, encoded in options.get('files', {}).items():
         path = (directory / relative).resolve()
-        if not path.is_relative_to(directory) or relative.startswith('configflow.sqlite3'):
+        if (path == directory or not path.is_relative_to(directory)
+                or path.relative_to(directory).parts[0].startswith('configflow.sqlite3')):
             raise ValueError('fixture file must stay inside its owned non-database DATA_DIR')
         content = base64.b64decode(encoded, validate=True)
         if len(content) > 4 * 1024 * 1024:
             raise ValueError('fixture file exceeds reviewed per-file limit')
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
+    for relative, mode in options.get('file_modes', {}).items():
+        if relative not in options.get('files', {}) or type(mode) is not int or not 0 <= mode <= 0o777:
+            raise ValueError('fixture file mode must name an explicitly seeded file and permission bits')
+        (directory / relative).chmod(mode)
+    for relative, mode in options.get('directory_modes', {}).items():
+        path = (directory / relative).resolve()
+        if (path == directory or not path.is_relative_to(directory) or not path.is_dir()
+                or type(mode) is not int or not 0 <= mode <= 0o777):
+            raise ValueError('fixture directory mode must name an owned seeded directory and permission bits')
+        path.chmod(mode)
     return {'profiles': list(stored['profiles']), 'default_profile': repository.default_profile_id()}
 
 

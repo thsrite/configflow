@@ -20,9 +20,25 @@ import split_state
 import gateway
 import forwarding_guards
 import fixed_normalization
+import fixed_setup
 
 
 class AuditTests(unittest.TestCase):
+    def test_setup_guard_audit_requires_saved_states_and_real_valid_token_reopen(self):
+        actual = {(world, case.ident): case for world, _, groups in fixed_setup.worlds()
+                  for group in groups for case in group()}
+        for ident, count in (('H0035', 6), ('R006-F17', 4), ('R005-F14', 2)):
+            required = declared()[ident].requirements
+            self.assertEqual(len(required), count)
+            for world, name, status in required:
+                case = actual[world, name]
+                self.assertEqual(case.expected, status)
+                self.assertIn(ident, case.entries)
+            evidence = [{'world': world, 'case': name, 'entries': [ident], 'python': {'status': status},
+                         'status': 'go-unimplemented'} for world, name, status in required]
+            self.assertEqual(evaluate(evidence)[ident]['audit'], 'variants-audited')
+            self.assertEqual(evaluate(evidence[:-1])[ident]['audit'], 'variants-pending')
+
     def test_fixed_normalizer_audits_require_actual_named_compound_operands(self):
         actual = {('fixed-ip-normalization', case.ident): case for group in
                   (fixed_normalization.rejected, fixed_normalization.accepted) for case in group()}
@@ -183,7 +199,7 @@ class AuditTests(unittest.TestCase):
 
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24 + 1 + 13 + 2 + 12 + 9)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5 + 4 + 6 + 4 + 4 + 10 + 24 + 1 + 13 + 2 + 12 + 9 + 3)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'

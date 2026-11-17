@@ -1,5 +1,6 @@
 """Verify only the synthetic fixture boundary, not product HTTP coverage."""
 import json
+import base64
 import os
 from pathlib import Path
 import sqlite3
@@ -13,6 +14,34 @@ import clients
 
 
 class SeedTests(unittest.TestCase):
+    def test_fixture_files_and_modes_cannot_escape_or_overwrite_database_via_path_alias(self):
+        encoded = base64.b64encode(b'synthetic fixture bytes').decode()
+        bad = ({'files': {'../outside': encoded}},
+               {'files': {'./configflow.sqlite3': encoded}},
+               {'files': {'nested/../configflow.sqlite3': encoded}},
+               {'file_modes': {'configflow.sqlite3': 0o777}},
+               {'directory_modes': {'.': 0o777}},
+               {'directory_modes': {'..': 0o777}})
+        for number, patch in enumerate(bad):
+            with self.subTest(variant=number), tempfile.TemporaryDirectory(prefix='routerdiff-seed-bounds-') as directory:
+                root = Path(directory)
+                outside = root / 'outside'
+                outside.write_bytes(b'owned negative-control file')
+                outside.chmod(0o600)
+                original_mode = root.stat().st_mode
+                options = root / 'options.json'
+                options.write_text(json.dumps(patch))
+                result = subprocess.run([sys.executable, str(Path(__file__).with_name('seed.py')),
+                    str(root / 'data'), '--options', str(options)], cwd=ROOT,
+                    env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'}, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('ValueError', result.stderr)
+                self.assertEqual(outside.read_bytes(), b'owned negative-control file')
+                self.assertEqual(outside.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(root.stat().st_mode, original_mode)
+                with sqlite3.connect(root / 'data/configflow.sqlite3') as db:
+                    self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
+
     def test_missing_agent_profile_does_not_reach_public_http_fixture(self):
         # A matrix legacy fallback is not reachable by merely omitting this
         # field: real public import validation rejects it first. Keep this

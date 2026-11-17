@@ -2,7 +2,7 @@
 
 Status: in progress; NOT ready for acceptance hand-back. Branch go-difftest-routers-b.
 Latest clean integration rebase: go15173872f; normal public binary built from it.
-Current declarations:419 source-reviewed variant audits,1882 remaining if all
+Current declarations:422 source-reviewed variant audits,1879 remaining if all
 completed increments are composed. Last FULL composition still37937739:3054
 recipes/301 audits. Newer subsets do not replace that full evidence; latest
 large subset2470 recipes/327 audits. All observed26 domain routes remain absent
@@ -1601,3 +1601,38 @@ Focused self-check command:
 => Ran46 tests2.215s/OK. No command pending. Full composition, remaining1882
 source audits, dynamic ownership/token/hash/YAML binding, final gate/rebase still
 pending; this increment is not acceptance hand-back.
+
+
+Fixed-IP setup guard increment:
+- Added real0600 session JSON/0700 directory fixtures under canonical
+  setup_<20hex> profiles (public repository import). Actual HTTP POST /api/setup
+  and POST /api/setup/<id>/abandon prove the base shape/file modes and the
+  retained-router abandoned state. All seeded active/abandoned/completed records
+  pass the actual GET /api/setup/<id> without any DB/file rewrite. The completed
+  fixture exercises an archived stored flag, not successful device installation
+  or completion; that config-domain workflow is not claimed here.
+- Active selected session blocks preview409 before device I/O; completed,
+  abandoned and foreign active sessions permit device-backed preview200.
+  A separate workflow previews while abandoned, uses public PATCH to reopen,
+  then presents its own valid token and receives apply409 without device I/O.
+  No monkeypatch/profile_sessions fake and no manually constructed signed token.
+- Generic HTTP prerequisites now accept explicit nonempty schema checks and
+  absent members, retaining the success=true default for existing APIs. The
+  setup API has no success member: it is not invented. Negative controls prove
+  wrong ID/type/present-abandoned and actual bad native prerequisites block main
+  mutations and remain differences; all actual response members remain compared.
+- Fixture file paths are resolved before excluding SQLite: ./ and nested/../
+  aliases cannot overwrite the test DB. File/directory permission options are
+  restricted to explicitly seeded owned paths. Six negative controls prove
+  DB integrity, outside bytes/mode and parent-directory modes stay untouched.
+- Three audits H0035/R006-F17/R005-F14:422 declarations/1879 pending if composed.
+  No new reference bug. Current full3054/301 report still not replaced.
+
+.64 command proving public create/read/abandon and fixtures:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_runner test_recipes test_seed test_boundary.BoundaryTests.test_setup_file_fixture_is_accepted_by_real_public_reader_and_matches_creation_contract; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix fixed-setup- --output "$HOME/.cache/routerdiff-reports/302rx1dg/fixed-setup.json"'`
+=> Ran48 tests22.951s/OK;6 recipes allGo-unimplemented, no bug.
+After adding declarations and path/mode safety controls:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY="$HOME/.cache/routerdiff-build-302rx1dg-current/configflow"; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_runner test_recipes test_seed; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix fixed-setup- --output "$HOME/.cache/routerdiff-reports/302rx1dg/fixed-setup-audits.json"'`
+=> Ran69 tests23.436s/OK;6 recipes, routes0/missing6,3 references/3 audits,
+2298 pending in this subset, complete=false. No command pending. Full composition,
+remaining source/device/background checks, dynamic binding, gate/rebase pending.

@@ -358,3 +358,20 @@ Cached response-clock provenance:
   LRU,61-second stale cache, failed refresh keeping good data, upstream cached
   read and unknown-result replacement. Persisted last_probe/receipts/tasks and
   unrelated response timestamps are still strict and remain separate work.
+
+Fixed-IP setup guard, without the original unit test's monkeypatch:
+- Canonical setup session/profile files are accepted by the actual public reader;
+  real HTTP create/abandon establishes base fields, ownership permissions and
+  why an abandoned session with routers retains its profile. Active/completed/
+  abandoned/foreign cases are read from DATA_DIR, not injected profile_sessions.
+- The completed record tests the archived flag that this guard reads. It does
+  not prove the config domain's installation/check/finish state machine.
+- Apply uses an actual own-side preview token from the abandoned state, then
+  public PATCH /api/setup/<id> reopens it. Exact409 setup message precedes any
+  driver I/O. GET/POST/PATCH setup bodies do not have success: HTTP prerequisite
+  assertions use exact id/profile/completed and absence of abandoned instead.
+- Native setup prerequisite absence is detected from the real manifest, so the
+  dependent apply remains Go 尚未实现 until that public prerequisite exists.
+  The static-file preview controls require only their actual fixed-IP route.
+- Session updated_at bytes after a real PATCH still need the separate persisted
+  clock/content binding work before native parity can be claimed.

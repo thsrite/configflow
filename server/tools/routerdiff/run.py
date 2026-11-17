@@ -37,6 +37,7 @@ import split_onboarding
 import split_state
 import forwarding_guards
 import fixed_normalization
+import fixed_setup
 from compare import differences, logical_snapshot, response_view, timestamp
 from harness import Pair, RemoteError, observed_startup_exit
 from harness import decode_response
@@ -183,11 +184,26 @@ def execute(pair, case, available, routes):
             elif control.get('rpc') == 'filesystem_fault':
                 side.rpc(**{key: value for key, value in control.items() if key != 'rpc'}, operation='filesystem_fault')
             elif control.get('rpc') == 'http':
-                values = {key: value for key, value in control.items() if key not in ('rpc', 'expected')}
+                checks = control.get('checks', {'success': True})
+                if not isinstance(checks, dict) or not checks:
+                    raise ValueError('public HTTP prerequisite needs explicit nonempty body checks')
+                values = {key: value for key, value in control.items() if key not in ('rpc', 'expected', 'checks', 'absent')}
                 reply = side.request(**values)
                 setup_observations[name].append({'request': values, 'response': response_view(reply)})
-                valid = (reply['status'] == control['expected'] and isinstance(reply['content'], dict)
-                         and reply['content'].get('success') is True)
+                valid = reply['status'] == control['expected'] and isinstance(reply['content'], dict)
+                if valid:
+                    try:
+                        valid = all(not differences(cases.at(reply['content'], path), expected)
+                                    for path, expected in checks.items())
+                    except (KeyError, IndexError, TypeError, ValueError):
+                        valid = False
+                    for path in control.get('absent', ()):
+                        try:
+                            cases.at(reply['content'], path)
+                        except (KeyError, IndexError, TypeError, ValueError):
+                            pass
+                        else:
+                            valid = False
                 if not valid:
                     if name == 'python':
                         raise RuntimeError(case.ident + ': public HTTP fixture setup failed on python')
@@ -803,6 +819,7 @@ def main():
               ('auth-off-sync', auth_off(sync.options()), (sync.manual_refresh,)),
               ('stored', fixtures.stored_options(), (fixtures.receipts, fixtures.stored_guards))]
     worlds += device_policy.worlds()
+    worlds += fixed_setup.worlds()
     worlds += device_policy.invalid_ip_worlds()
     worlds += policy_graph.worlds()
     worlds += policy_owned.worlds()

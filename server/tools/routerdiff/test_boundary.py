@@ -12,10 +12,49 @@ from seed import DEVICE_PASSWORD, router, AGENT_TOKEN
 from fixtures import agent_peers, agent_options, authentication_options
 from run import registered, shape
 import returns
+import fixed_setup
 
 
 @unittest.skipUnless(os.environ.get('ROUTERDIFF_BINARY'), 'requires .32 native public Go binary')
 class BoundaryTests(unittest.TestCase):
+    def test_setup_file_fixture_is_accepted_by_real_public_reader_and_matches_creation_contract(self):
+        binary = Path(os.environ['ROUTERDIFF_BINARY'])
+        # Prove the fixture's base shape and permissions against a real HTTP
+        # create and abandon, with a router keeping the abandoned profile alive.
+        with Pair(binary) as pair:
+            side = pair.python
+            reply = side.request('POST', '/api/setup', document={'id': fixed_setup.SESSION,
+                'name': '合成配置向导🧪', 'goal': 'router'})
+            self.assertEqual(reply['status'], 200)
+            actual = reply['content']
+            expected = fixed_setup.session_record()
+            self.assertEqual(set(actual), set(expected))
+            for key in set(expected) - {'created_at', 'updated_at'}:
+                self.assertEqual(actual[key], expected[key], key)
+            snapshot = side.rpc('snapshot')
+            self.assertEqual(snapshot['filesystem'][fixed_setup.FILE]['mode'], 0o600)
+            self.assertEqual(snapshot['filesystem']['setup-sessions']['mode'], 0o700)
+            document = router()
+            document.pop('id')
+            self.assertEqual(side.request('POST', '/api/routers?profile=' + fixed_setup.PROFILE,
+                                         document=document)['status'], 200)
+            abandoned = side.request('POST', '/api/setup/' + fixed_setup.SESSION + '/abandon', document={})
+            self.assertEqual(abandoned['status'], 200)
+            self.assertFalse(abandoned['content']['delete_profile'])
+            stored = side.request('GET', '/api/setup/' + fixed_setup.SESSION)
+            self.assertTrue(stored['content']['abandoned'])
+            self.assertFalse(stored['content']['completed'])
+        for state in ('active', 'abandoned', 'completed'):
+            with self.subTest(state=state), Pair(binary, fixed_setup.options(state)) as pair:
+                snapshot = pair.python.rpc('snapshot')
+                reply = pair.python.request('GET', '/api/setup/' + fixed_setup.SESSION)
+                self.assertEqual(reply['status'], 200)
+                for key, value in fixed_setup.session_record(state).items():
+                    self.assertEqual(reply['content'][key], value)
+                # Reader may create an excluded lock, but cannot rewrite the
+                # JSON or mutate any profile merely by describing a session.
+                self.assertEqual(pair.python.rpc('snapshot'), snapshot)
+
     def test_real_http_completion_before_device_gate_is_observed_without_an_invented_status(self):
         with Pair(Path(os.environ['ROUTERDIFF_BINARY'])) as pair:
             for side in pair.sides.values():

@@ -50,6 +50,36 @@ def pair(python=None, go=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_public_setup_prerequisites_use_explicit_schema_without_inventing_success_member(self):
+        class SetupSide(ObservationSide):
+            def __init__(self, bad=None):
+                super().__init__()
+                self.bad = bad
+
+            def request(self, **values):
+                self.content = {'id': 'chosen-session', 'profile_id': 'chosen-profile'} if values['path'] == '/api/setup' else {'success': True}
+                if self.bad and values['path'] == '/api/setup':
+                    self.content.update(self.bad)
+                return super().request(**values)
+
+        case = Case('setup-prerequisite', 'R002', 'GET', '/api/client-devices', 200,
+                    prepare=({'rpc': 'http', 'method': 'POST', 'path': '/api/setup', 'document': {},
+                              'expected': 200, 'checks': {'id': 'chosen-session', 'profile_id': 'chosen-profile'},
+                              'absent': ('abandoned',)},))
+        available = {('GET', case.path), ('POST', '/api/setup')}
+        routes, _ = load()
+        world = pair(SetupSide(), SetupSide())
+        result = execute(world, case, available, routes)
+        self.assertEqual(result['status'], 'compared')
+        self.assertNotIn('success', result['setup_observations']['python'][0]['response']['body'])
+        self.assertEqual(set(world.go.requests[0]), {'method', 'path', 'document'})
+        for bad in ({'id': 'other-session'}, {'profile_id': True}, {'abandoned': False}):
+            world = pair(SetupSide(), SetupSide(bad))
+            result = execute(world, case, available, routes)
+            self.assertEqual(result['status'], 'blocked-by-difference')
+            self.assertEqual(len(world.go.requests), 1)
+            self.assertTrue(result['differences'])
+
     def test_execute_cached_clock_is_bound_to_validated_prior_own_response(self):
         class CacheSide(ObservationSide):
             def __init__(self, native=False, change=False):

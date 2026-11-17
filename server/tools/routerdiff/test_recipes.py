@@ -29,11 +29,28 @@ import split_onboarding
 import split_state
 import forwarding_guards
 import fixed_normalization
+import fixed_setup
 from inventory import load
 from bugs import BUGS
 
 
 class RecipeTests(unittest.TestCase):
+    def test_setup_guard_uses_canonical_persistent_sessions_and_public_reopen(self):
+        worlds = fixed_setup.worlds()
+        rows = []
+        for name, options, groups in worlds:
+            self.assertEqual(options['file_modes'][fixed_setup.FILE], 0o600)
+            self.assertEqual(options['directory_modes']['setup-sessions'], 0o700)
+            self.assertIn(fixed_setup.PROFILE, options['additional_profiles'])
+            rows.extend(case for group in groups for case in group())
+        self.assertEqual(len(rows), 6)
+        apply = next(case for case in rows if case.route == 'R005')
+        self.assertIsInstance(apply.document['token'], cases.Ref)
+        self.assertEqual(apply.prepare[0]['method'], 'PATCH')
+        self.assertEqual(apply.prepare[0]['path'], '/api/setup/' + fixed_setup.SESSION)
+        self.assertEqual(apply.prepare[0]['absent'], ('abandoned',))
+        self.assertFalse(any(control.get('rpc') not in ('http', None) for case in rows for control in case.prepare))
+
     def test_fixed_normalization_vectors_do_not_use_reference_helpers(self):
         _, entries = load()
         bad = list(fixed_normalization.rejected())
