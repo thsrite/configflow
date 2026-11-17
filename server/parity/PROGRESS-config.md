@@ -13,6 +13,17 @@ Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (p
 - Python lazily imports in cycles (e.g. converters ↔ provider delivery ↔ route files, the whole OxiDNS cluster). Go needs a DAG: the prerequisite order below breaks the cycles; when a module needs a function of a later module, put a `compat.go` copy (`TODO(port)`) or an interface/hook and list it here.
 - Cross-domain calls (config → agents/routers code) are listed per module; they are the main blockers for C18, C27, C34, C36, C37.
 
+## Step B findings — config boundary repairs (validation in progress)
+
+The coordinator's twelve decisions are tracked individually in
+[config-findings-fixes.md](config-findings-fixes.md). Intentional differences are
+listed in [behaviour-changes.md](behaviour-changes.md); existing N8 decisions stay
+intact. Every finding was reproduced or confirmed on .63; final .32 validation
+includes all changed packages, all differential packages, the complete agents
+differential twice, and proddiff. C35 auto-backup activation and C30 BOM handling
+were already fixed and have been rechecked. A11 still owns file positions and
+excerpts; provider ownership/source labels now compare strictly.
+
 ## N7-1 — native yamlx core (ported, 2026-11-17)
 
 New yaml.v3 Node API lives alongside the untouched legacy API; no caller/oxidns migration or pyyaml

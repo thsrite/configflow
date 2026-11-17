@@ -313,7 +313,7 @@ interchange). Read `repository.go`, `scope.go`, `hooks.go` doc comments before u
   modifiers `.WithStatus`, `.WithHeader`, `.NoStore()`. Token redaction runs globally; do not redact yourself.
 - **Errors**: return them. `*repo.Error` → the standard 400/404/409 bodies; `httpx.BadRequest(msg)`,
   `NotFound()`, `&httpx.HTTPError{Code, Description}` → JSON `{success:false,message}` on `/api` errors (Step B/O12); non-API errors retain HTML. Anything else or a panic → logged
-  `Exception on <path> [<method>]` + 500 page. Where Python returns `jsonify({'success': False, 'message': str(e)}), 500`
+  `Exception on <path> [<method>]` + a generic 500 JSON error on API paths (HTML elsewhere). Where Python returns `jsonify({'success': False, 'message': str(e)}), 500`
   explicitly, return that response explicitly.
 - **Auth**: `auth.Require(h)` (= `@require_auth`), `auth.ValidateTokenOrJWT(c, systemDoc)` (config pulls),
   `auth.IsAuthEnabled()`. Public endpoints are listed in `internal/auth` (`gate`); adding one means
