@@ -648,5 +648,11 @@ Python接受。Go按本次安全修复要求统一拒绝这些歧义，保留Inv
   after switching implementations. Persisted restore documents retain their
   unknown members; restoration explicitly replaces both service sections.
   Stored snapshot version uses model.Int (1, 1.0, 1e0 accepted; bool refused).
+- HEAD `/api/agents/gateway-forwarding` is read-only (A20 review, Python bug
+  fix, same class as C32). Flask's handler took every method but GET as the
+  POST branch, so an authorised HEAD with `{"agent_id":…}` persisted IPv4
+  forwarding on the device. Go serves HEAD from the GET branch; POST is
+  unchanged. Real Flask `TestA20PythonHEADForwardingWriteIsFixed` asserts the
+  Python device write and Go's zero writes and unchanged storage.
 
 See PROGRESS-agents A20 for per-class checks, commands and the L4 boundary.
