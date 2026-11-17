@@ -85,6 +85,18 @@ def main():
             response['results'] = {}
         elif mode in ('latency-zero', 'latency-bool', 'latency-missing-error'):
             response['results'][0]['latency'] = {'latency-zero': 0, 'latency-bool': True, 'latency-missing-error': None}[mode]
+        elif mode in ('latency-negative', 'latency-float', 'latency-string'):
+            response['results'][0]['latency'] = {'latency-negative': -1, 'latency-float': 1.5, 'latency-string': '7'}[mode]
+        elif mode == 'wrong-result':
+            response['results'][0]['name'] = 'unexpected-synthetic'
+        elif mode == 'node-no-version':
+            response.pop('version')
+        elif mode == 'node-no-results':
+            response.pop('results')
+        elif mode == 'node-no-name':
+            response['results'][0].pop('name')
+        elif mode == 'node-array':
+            response = []
     if mode == 'version':
         response['version'] = 3
     print(json.dumps(response, ensure_ascii=False))

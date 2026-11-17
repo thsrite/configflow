@@ -1406,3 +1406,18 @@ go-unimplemented=29 design_errors=[] seconds=16.76；exit=0
 ```
 
 继续节点worker和其余helpers；H仍差615编号，另有已标partial和不可观察分支，最终.32全量未执行。
+
+## 批次 81：节点worker真实协议错误与设置边界
+
+- 29新增变体在.32实际Flask↔Go比较全部通过，新增H721–725/H728–736共14编号。覆盖并集原R4163、H511、G16，已验证变体并集8949；统一报告待正在运行的新基线全量完成后合并。
+- 节点测试URL的协议/host/凭据/IPv6错误、timeout上下界与非整数；无效持久DNS设置原样报错、不修复。组件缺失、可发现且有执行权限但execve格式错误、退出3与其他非零、协议version、results非数组/缺少或错关联名、latency零/负/bool/float/string、null且无error、坏JSON/缺version/results/name/非对象。HTTP503逐字安全中文，stdout错误不泄漏凭据。
+- WorkerStable同时比较实际子进程stdin和每端SQL/files前后相等，失败不写latency历史。新增故意改Go存储、移除worker节点的自检，69项通过；首轮新自检的测试替身缺root导致异常，已修正后整组重新运行，无业务用例误报。
+
+```text
+.32 run.py --groups node-helper-worker-failures,node-helper-settings-guards
+compared=29 request_variants=29 design_errors=[] seconds=39.00；exit=0
+69 comparator self-checks + wrong-Go-response check OK
+独立报告/tmp/configdiff-node-helpers.json
+```
+
+H726体积、H727生产超时、H737忙锁及候选上限仍待补；本组不宣称真实节点RTT或DNS网络通过。

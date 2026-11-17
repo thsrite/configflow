@@ -17,6 +17,19 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_node_worker_observer_detects_storage_and_stdin_mutations(self):
+        from cases.node_helpers import WorkerStable
+        observer = WorkerStable(SimpleNamespace(root=Path('/synthetic-unused')))
+        observer.before_values[1] = {'value': 'unchanged'}
+        observer.after_values[1] = {'value': 'unchanged'}
+        observer.worker.inputs = [[{'nodes': ['synthetic']}], [{'nodes': ['synthetic']}]]
+        self.assertEqual(observer.compare(Policy()), [])
+        observer.after_values[1]['value'] = 'wrong'
+        self.assertTrue(observer.compare(Policy()))
+        observer.after_values[1]['value'] = 'unchanged'
+        observer.worker.inputs[1][0]['nodes'] = []
+        self.assertTrue(observer.compare(Policy()))
+
     def test_dns_worker_deadline_rejects_immediate_and_unbounded_timeouts(self):
         from cases.dns_protocol import ProbeDeadline
         observer = ProbeDeadline.__new__(ProbeDeadline)
