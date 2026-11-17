@@ -226,6 +226,21 @@ func ipv6Correct(row Row, spec IPv6RouteSpec) bool {
 	return ipv6Key(row) == spec.CIDR && ipv6Configured(row, spec.Gateway) && policyFlag(row["active"])
 }
 
+// ipv6Routes reports whether row sends spec's destination to its gateway,
+// whatever its origin. Inspection uses it to recognise a correct dynamic or
+// connected route, which it then refuses to borrow with its own explanation.
+func ipv6Routes(row Row, spec IPv6RouteSpec) bool {
+	if ipv6Key(row) != spec.CIDR || rosTextDefault(row["routing-table"], "main") != "main" || !ipv6Enabled(row) || !policyFlag(row["active"]) || !ipv6SameGateway(row, spec.Gateway) {
+		return false
+	}
+	for _, key := range []string{"blackhole", "unreachable", "prohibit", "invalid"} {
+		if policyFlag(row[key]) {
+			return false
+		}
+	}
+	return true
+}
+
 // IPv6RouteSpec is the exact destination and scoped next hop of a Fake-IP route.
 type IPv6RouteSpec struct {
 	CIDR    string `json:"cidr"`

@@ -73,6 +73,12 @@ func (d *RouterOS) rollbackIPv6(ctx context.Context, changes []ROSChange, fake b
 				if err == nil {
 					err = d.verifyChange(ctx, check)
 				}
+				if err != nil && change.Method == "DELETE" && d.ipv6RouteGone(ctx, change.ID) {
+					// A lost reply or failed readback after the device removed the new
+					// route is not a failed compensation; treating it as one would skip
+					// restoring the previous route and leave the destination unrouted.
+					err = nil
+				}
 				if err != nil {
 					failures = append(failures, err.Error())
 				} else if change.Method == "RESTORE" {
@@ -90,6 +96,13 @@ func (d *RouterOS) rollbackIPv6(ctx context.Context, changes []ROSChange, fake b
 		return remap, rollbackError(prefix + strings.Join(failures, "；"))
 	}
 	return remap, nil
+}
+
+// ipv6RouteGone proves by a fresh read that a route ID no longer exists.
+// Read errors are not proof of absence.
+func (d *RouterOS) ipv6RouteGone(ctx context.Context, id string) bool {
+	row, err := d.find(ctx, rosIPv6Routes, id)
+	return err == nil && row == nil
 }
 
 // remapIPv6 updates only IDs returned by successful restores. It never searches

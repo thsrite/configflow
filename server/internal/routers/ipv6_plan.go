@@ -274,7 +274,7 @@ func InspectIPv6FakeIP(ctx context.Context, config *model.Profile, r *Router, ag
 		}
 		candidates := ipv6Targets(live, s.CIDR, ids)
 		if len(candidates) > 0 {
-			if len(candidates) == 1 && gateway != "" && ipv6Correct(candidates[0], *spec) {
+			if len(candidates) == 1 && gateway != "" && ipv6Routes(candidates[0], *spec) {
 				row := candidates[0]
 				borrowed = &IPv6Borrowed{row.id(), StableIPv6Row(row)}
 				if !rosIDPattern.MatchString(row.id()) || policyFlag(row["dynamic"]) || policyFlag(row["connect"]) {
