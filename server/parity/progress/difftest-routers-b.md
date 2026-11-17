@@ -1086,3 +1086,25 @@ Native listener graph increment:
 => Ran4 tests0.360s/OK;104 requests, routes0/missing104/references9,
 complete=false, no new Python bug. No pending process; declarations325/remaining
 1976 unchanged. Last full composition remains3054/301. Task not ready to hand back.
+
+Native main/listener helper audit increment:
+- Added custom main5353 port conflict and dynamic references inside a side chain,
+  plus boolean/number args and HTTP entry shapes.50 literal negative graphs now
+  instantiate all _refuse caller families through R002200/R003400; every graph
+  also preserves native bytes through note-only editing and workspace readback.
+- H0085-H0089 explicit5 declarations completed. H0087's non-string operand is
+  source-unreachable at public call sites (inspect_entries first normalizes it
+  to text); the actual ${PORT} operand is exercised. No helper-call fake used.
+- Added stored_contains prerequisite (full state comparison unchanged) to prove
+  valid direct insertion really writes both managed plugins, client matcher and
+  hook. Missing-hook/empty/null/object negative runner controls fail as intended.
+  Empty-policy vs512 smart-only vs direct insertion provide H0085's controls.
+
+.64 pilot: Ran25 tests0.842s/OK,20 selected requests passed.
+Authoritative batch:
+`RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -euo pipefail; export PYTHONDONTWRITEBYTECODE=1 ROUTERDIFF_BINARY=/tmp/routerdiff-build-302rx1dg-latest/configflow; cd server/tools/routerdiff; ~/cf-test/.venv/bin/python -m unittest -v test_audits test_recipes test_runner; ~/cf-test/.venv/bin/python run.py --allow-incomplete --binary "$ROUTERDIFF_BINARY" --world-prefix native-policy- --world stored-policy-capacity --output /tmp/routerdiff-native-policy-helper-audits.json'`
+=> Ran34 tests1.842s/OK;204 requests, routes0/missing204/references12,
+audits5 in this subset/remaining2296/complete=false. Declarations330/remaining1971
+if composed. No new Python bug. No pending command. Untracked policy_owned.py
+is the next input-fixture step, not yet wired/tested/claimed. Main findings and
+last full composition remain3054/301; final gate and rebase pending.

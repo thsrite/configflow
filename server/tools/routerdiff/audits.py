@@ -289,6 +289,47 @@ def declared():
         'which becomes a fresh failed snapshot, then restoration reads again. Name changes join current '
         'saved notes without re-reading devices. This does not close H0030/H0031 OS-resource failures '
         'or claim physical device presence/Go parity while the public route is absent.', tuple(cache_requirements))
+    native_main = (
+        'include', 'missing-main', 'missing-tag', 'duplicate-tag', 'main-type', 'main-args-object',
+        'main-args-empty', 'main-step-scalar', 'main-exec-missing', 'main-exec-number', 'main-last-wrong',
+        'main-last-conditional', 'main-last-extra', 'missing-local', 'local-type', 'local-args-array',
+        'local-upstreams-missing', 'local-upstreams-empty')
+    native_listeners = ['listener-none']
+    native_listeners += ['listener-args-' + label for label in ('null', 'array', 'string', 'bool', 'number')]
+    native_listeners += ['listener-entry-' + label for label in ('missing', 'empty', 'number', 'array')]
+    native_listeners += ['listener-http-' + label for label in ('null', 'empty', 'object', 'string', 'bool',
+                                                              'number', 'scalar-member', 'missing-exec', 'empty-exec', 'number-exec')]
+    native_listeners += ['listener-no-direct-main']
+    native_listeners += ['listener-side-port-' + label for label in ('unset', 'env', 'zero', 'overflow', 'invalid', 'same')]
+    native_listeners += ['listener-side-reach-missing', 'listener-side-reach-dynamic', 'listener-side-indirect-main',
+                         'listener-custom-main-port', 'listener-inner-dynamic']
+    def graph_requirements(labels):
+        return tuple(('native-policy-' + label, route + '/native-policy-' + middle + label, status)
+            for label in labels for route, middle, status in (('R002', '', 200), ('R003', 'mode-refused-', 400)))
+    native_required = {
+        'H0085': (('native-policy-valid', 'R002/native-policy-recognized-main', 200),
+                  ('native-policy-valid', 'R003/native-policy-valid-direct', 200),
+                  ('stored-policy-capacity', 'R002/stored-policy-512-accepted', 200)),
+        'H0086': graph_requirements((*native_main, *native_listeners)),
+        'H0087': graph_requirements(('listener-side-port-env',)),
+        'H0088': graph_requirements(tuple('listener-args-' + label for label in ('null', 'array', 'string', 'bool', 'number'))),
+        'H0089': graph_requirements(tuple('listener-http-' + label for label in
+                                         ('null', 'empty', 'object', 'string', 'bool', 'number', 'scalar-member'))),
+    }
+    for ident, required in native_required.items():
+        audits[ident] = Audit(
+            ('backend/common/oxidns_device_policy.py:80', 'backend/common/oxidns_device_policy.py:102',
+             'backend/common/oxidns_device_policy.py:106', 'backend/common/oxidns_device_policy.py:145',
+             'backend/common/oxidns_device_policy.py:266'),
+            'Literal public-import native graphs, exact200 readonly diagnostics then400 atomic mode refusal, '
+            'and separate successful name-only/full-native retention/workspace reads. Every _refuse caller '
+            'family in main/listener inspection is enumerated: include/tag/main/forward, entry shapes, '
+            'client53 and custom main5353 ports, unresolved direct/inner references and indirect main. '
+            'H0087 non-string operand cannot be reached here: all _listen_port call sites receive the '
+            'listen string normalized by inspect_entries; the environment-placeholder operand is reached. '
+            'H0085 covers zero and512 smart-only policies plus a successful direct insertion whose actual '
+            'stored native text must contain both managed plugins, client matcher and hook. This does '
+            'not close ownership/legacy-node-test/read_policies parent families or the entire route.', required)
     return audits
 
 

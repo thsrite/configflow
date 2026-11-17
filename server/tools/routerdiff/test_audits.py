@@ -10,12 +10,13 @@ import workflows
 import fixtures
 import clients
 import cases
+import policy_graph
 
 
 class AuditTests(unittest.TestCase):
     def test_auth_audits_require_every_explicit_real_reference_variant(self):
         audits = declared()
-        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1)
+        self.assertEqual(len(audits), 26 * 7 + 25 * 3 + 5 + 14 + 12 + 5 + 8 + 23 + 1 + 5)
         self.assertFalse(set(audits) - set(load()[1]))
         self.assertEqual({value['audit'] for value in evaluate([]).values()}, {'variants-pending'})
         ident = 'R005-F01'
@@ -153,6 +154,23 @@ class AuditTests(unittest.TestCase):
         aged = actual['discovery-staleness', 'R004/stale-cache-61s-only-marks-stale']
         self.assertEqual(aged.age_seconds, 61)
         self.assertEqual(aged.age_anchor, 'ended')
+    def test_native_helper_audits_require_every_diagnostic_and_actual_policy_output(self):
+        actual = {(world, case.ident): case for world, _, groups in policy_graph.worlds()
+                  for group in groups for case in group()}
+        actual.update({('native-policy-valid', case.ident): case for case in policy_graph.valid()})
+        actual.update({('stored-policy-capacity', case.ident): case for case in device_policy.capacity()})
+        audits = declared()
+        for number in range(85, 90):
+            ident = 'H' + str(number).zfill(4)
+            for world, name, status in audits[ident].requirements:
+                with self.subTest(entry=ident, world=world, case=name):
+                    case = actual[world, name]
+                    self.assertIn(ident, case.entries)
+                    self.assertEqual(case.expected, status)
+        self.assertEqual(len(audits['H0086'].requirements), 50 * 2)
+        self.assertEqual(len(audits['H0088'].requirements), 5 * 2)
+        self.assertEqual(len(audits['H0089'].requirements), 7 * 2)
+        self.assertIn('oxidns/native_config', actual['native-policy-valid', 'R003/native-policy-valid-direct'].stored_contains)
 
 
 if __name__ == '__main__':

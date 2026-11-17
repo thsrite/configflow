@@ -341,6 +341,10 @@ def execute(pair, case, available, routes):
                 actual = cases.at(fields(after, 'profile', case.profile), path)
                 if differences(actual, cases.resolve(expected, side.observations)):
                     raise RuntimeError(case.ident + ': stored precondition failed at ' + path + ': ' + repr(actual))
+            for path, fragments in case.stored_contains.items():
+                actual = cases.at(fields(after, 'profile', case.profile), path)
+                if not isinstance(actual, str) or not all(fragment in actual for fragment in fragments):
+                    raise RuntimeError(case.ident + ': stored text lacks required evidence at ' + path)
             for path in case.stored_absent:
                 try:
                     cases.at(fields(after, 'profile', case.profile), path)

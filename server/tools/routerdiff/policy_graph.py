@@ -74,7 +74,7 @@ def listener_variants():
     value = document()
     value['plugins'].pop()
     result.append(('listener-none', value, '没有任何 DNS 监听入口（udp_server / tcp_server 等）' + suffix, ()))
-    for label, args in (('null', None), ('array', []), ('string', 'invalid')):
+    for label, args in (('null', None), ('array', []), ('string', 'invalid'), ('bool', True), ('number', 1.5)):
         value = document()
         value['plugins'][3]['args'] = args
         result.append(('listener-args-' + label, value,
@@ -86,7 +86,7 @@ def listener_variants():
             '监听入口 udp（127.0.0.1:53） 的 entry 无法读取' + suffix, ()))
     for label, entries, helpers in (
         ('null', None, ('H0089',)), ('empty', [], ('H0089',)), ('object', {}, ('H0089',)),
-        ('string', 'invalid', ('H0089',)), ('scalar-member', [1], ('H0089',)),
+        ('string', 'invalid', ('H0089',)), ('bool', True, ('H0089',)), ('number', 1.5, ('H0089',)), ('scalar-member', [1], ('H0089',)),
         ('missing-exec', [{}], ()), ('empty-exec', [{'exec': ''}], ()), ('number-exec', [{'exec': 1}], ())):
         value = document()
         value['plugins'][3] = {'tag': 'http', 'type': 'http_server',
@@ -123,6 +123,20 @@ def listener_variants():
     result.append(('listener-side-indirect-main', value,
         '监听入口 side_udp（127.0.0.1:5353） 的处理链 side 会间接调用主处理链 sequence_main，看不出设备策略是否生效'
         '，无法安全插入设备策略；请在 OxiDNS 完整参数中把它的 entry 直接改为 sequence_main，或让它不再调用主处理链。', ()))
+    value = document()
+    value['plugins'][3]['args']['listen'] = '127.0.0.1:5353'
+    value['plugins'] += [{'tag': 'side', 'type': 'sequence', 'args': [{'exec': '$forward_local'}]},
+                         {'tag': 'side_udp', 'type': 'udp_server',
+                          'args': {'listen': '127.0.0.1:5353', 'entry': 'side'}}]
+    result.append(('listener-custom-main-port', value,
+        '监听入口 side_udp（127.0.0.1:5353）监听客户端 DNS 端口 5353，但 entry 是 side，没有进入主处理链 sequence_main'
+        '（经这里查询的客户端不受设备策略控制），无法安全插入设备策略；请在 OxiDNS 完整参数中把它的 entry 改为 sequence_main，或让它改用其他端口。', ()))
+    value = document()
+    value['plugins'] += [{'tag': 'side', 'type': 'sequence', 'args': [{'exec': 'jump ${CHAIN}'}]},
+                         {'tag': 'side_udp', 'type': 'udp_server',
+                          'args': {'listen': '127.0.0.1:5353', 'entry': 'side'}}]
+    result.append(('listener-inner-dynamic', value,
+        '监听入口 side_udp（127.0.0.1:5353） 的处理链含未展开的环境变量，无法确认它是否经过主处理链' + suffix, ()))
     return result
 
 def guard_cases(label, reason, helpers=()):
@@ -156,12 +170,14 @@ def worlds():
 def valid():
     row = {'ip': '10.44.0.21', 'name': '现存备注🧪', 'mode': ''}
     yield Case('R002/native-policy-recognized-main', 'R002', 'GET', '/api/client-devices', 200,
-        ('R002-S01',), checks={'editable': True, 'reason': '', 'devices': [row], 'side_entries': []})
+        ('R002-S01', 'H0085'), checks={'editable': True, 'reason': '', 'devices': [row], 'side_entries': []})
     body = {'profile_id': 'alpha', 'ip': row['ip'], 'name': '新直连设备🧪', 'mode': 'direct',
             'previous_name': row['name'], 'previous_mode': '', 'base_url': ''}
     yield Case('R003/native-policy-valid-direct', 'R003', 'PUT', '/api/client-devices', 200,
-        ('R003-S03',), document=body, unchanged=False, effect='profile-write',
+        ('R003-S03', 'H0085'), document=body, unchanged=False, effect='profile-write',
         checks={'editable': True, 'devices': [{**row, 'name': body['name'], 'mode': 'direct'}]},
+        stored_contains={'oxidns/native_config': ('cf_device_policy', 'cf_device_direct',
+            'client_ip 10.44.0.21', 'jump cf_device_policy')},
         stored={'oxidns/device_policies': [{'ip': row['ip'], 'name': body['name'], 'mode': 'direct'}]})
     yield Case('R003/native-policy-valid-rename', 'R003', 'PUT', '/api/client-devices', 200,
         ('R003-S08',), document={**body, 'name': '模式不变改名🧪', 'previous_name': body['name'], 'previous_mode': 'direct'},

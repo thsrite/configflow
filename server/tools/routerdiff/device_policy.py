@@ -85,4 +85,4 @@ def capacity_options():
 
 def capacity():
     yield Case('R002/stored-policy-512-accepted', 'R002', 'GET', '/api/client-devices', 200,
-        ('R002-S01',), checks={'editable': True, 'devices/511': {'ip': '10.49.1.255', 'name': '策略🧪', 'mode': 'smart'}})
+        ('R002-S01', 'H0085'), checks={'editable': True, 'devices/511': {'ip': '10.49.1.255', 'name': '策略🧪', 'mode': 'smart'}})

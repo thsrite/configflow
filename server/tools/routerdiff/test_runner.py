@@ -142,6 +142,22 @@ class RunnerTests(unittest.TestCase):
         self.assertIsNone(result['go'])
         self.assertEqual(world.go.requests, [])
 
+    def test_native_policy_evidence_cannot_pass_without_both_plugins_and_hook(self):
+        routes, _ = load()
+        before = ObservationSide().before
+        required = ('cf_device_policy', 'cf_device_direct', 'jump cf_device_policy')
+        case = Case('native-proof', 'R003', 'PUT', '/api/client-devices', 200,
+                    unchanged=False, stored_contains={'oxidns/native_config': required})
+        def observation(text):
+            after = copy.deepcopy(before)
+            after['database']['fields']['rows'] = [['profile', 'alpha', 'oxidns', 0,
+                json.dumps({'native_config': text}), 1]]
+            return pair(ObservationSide(200, before, after))
+        self.assertEqual(execute(observation(' '.join(required)), case, set(), routes)['status'], 'go-unimplemented')
+        for text in (' '.join(required[:-1]), '', None, {'cf_device_policy': True}):
+            with self.assertRaisesRegex(RuntimeError, 'stored text lacks required evidence'):
+                execute(observation(text), case, set(), routes)
+
     def test_notification_prerequisites_cannot_pass_missing_or_stale_evidence(self):
         routes, _ = load()
         before = ObservationSide().before
