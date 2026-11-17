@@ -3,7 +3,7 @@
 #
 #   server/scripts/gate.sh [-p N] [FuzzName:./pkg ...]
 #
-# Steps: gofmt + vet, then in parallel (a) full `go test -race` and (b) proddiff, then all
+# Steps: gofmt + vet, both build tags (build ./..., vet + lifecycle tests), then in parallel (a) full `go test -race` and (b) proddiff, then all
 # difftest packages in one `go test` (packages run in parallel), then the given fuzz targets
 # concurrently for 60 s each. The race run already executes every test, so there is no separate
 # non-race run. Exit code 0 only when every step passed; logs stay in $GATE_LOGS (printed).
@@ -29,6 +29,14 @@ echo "== gofmt"
 out="$(gofmt -l internal/ tools/ cmd/)"; [ -z "$out" ] || { echo "$out"; fail gofmt; }
 echo "== vet"
 go vet ./... || fail vet
+
+echo "== build tags (configflow_proddiff, configflow_difftest)"
+for tag in configflow_proddiff configflow_difftest; do
+  go build -tags "$tag" ./... || fail "build -tags $tag"
+  go vet -tags "$tag" ./internal/lifecycle/... ./cmd/... || fail "vet -tags $tag"
+  go test -tags "$tag" -count=1 ./internal/lifecycle/... >"$logs/tag-$tag.log" 2>&1 \
+    || { cat "$logs/tag-$tag.log"; fail "lifecycle tests -tags $tag"; }
+done
 
 echo "== race + proddiff (parallel)"
 ( cd .. && server/scripts/proddiff.sh >"$logs/proddiff.log" 2>&1; echo $? >"$logs/proddiff.rc" ) &
