@@ -33,7 +33,7 @@ func newLogClient(t *testing.T) *logClient {
 	}
 	path := filepath.Join(dir, "app.log")
 	previous := LogFilePath
-	LogFilePath = func() string { return path }
+	LogFilePath = func() (string, error) { return path, nil }
 	t.Cleanup(func() { LogFilePath = previous; openFile = defaultOpen })
 	app := httpx.New()
 	Register(app.Router)

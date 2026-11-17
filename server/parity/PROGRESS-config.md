@@ -570,9 +570,9 @@ backend/utils/{notification_store,web_listener}.py. All nine routes now done,
 including immediate registration of the four formerly wip task/notification
 routes. Missing real slots explicitly return 503; no empty production rows.
 
-Commits: 6110cc469 tasks readiness/owned interval/stored WebDAV runner/History;
-7273168de notification context commits/partial observation retention/HEAD;
-d38311548 logs/stats owners and stats HEAD; 72c33e8b6 native listener lifetime and
+Commits: 700d9bc51 tasks readiness/owned interval/stored WebDAV runner/History;
+8682e2594 notification context commits/partial observation retention/HEAD;
+05280cf5b logs/stats owners and stats HEAD; 974967571 native listener lifetime and
 portable socket/HTTP regression matrix. Acceptance/mapping commit follows.
 
 Clarified in C07 (2026-11-18): [design and external owners](../design/c07-status.md),

@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"strconv"
 	"strings"
@@ -35,17 +36,20 @@ var LogFilePath = getLogFilePath
 // openFile is open(); tests replace it.
 var openFile = func(path string) (io.ReadCloser, error) { return os.Open(path) }
 
-func exists(path string) bool {
+func pathExists(path string) (bool, error) {
 	_, err := os.Stat(path)
-	return err == nil
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
-func getLogFilePath() string {
+func getLogFilePath() (string, error) {
 	dataDir := os.Getenv("DATA_DIR")
 	if dataDir == "" {
 		dataDir = "/data"
 	}
-	if !exists(dataDir) {
+	if _, err := os.Stat(dataDir); err != nil {
 		dataDir = "."
 	}
 	defaultLogFile := pathJoin(dataDir, "app.log")
@@ -54,16 +58,24 @@ func getLogFilePath() string {
 		logFile = defaultLogFile
 	}
 	logPath := pathStr(logFile)
-	if !exists(logPath) {
+	present, err := pathExists(logPath)
+	if err != nil {
+		return "", err
+	}
+	if !present {
 		for _, candidate := range []string{pathJoin(dataDir, "app.log"), "./app.log", "data/app.log",
 			"logs/app.log", "/var/log/configflow/app.log", "app.log"} {
-			if exists(candidate) {
+			present, err := pathExists(candidate)
+			if err != nil {
+				return "", err
+			}
+			if present {
 				logPath = pathStr(candidate)
 				break
 			}
 		}
 	}
-	return logPath
+	return logPath, nil
 }
 
 // pathStr is str(Path(p)): redundant slashes and "." segments removed.
@@ -103,12 +115,19 @@ func errorResponse(err error, withLogs bool) *httpx.Response {
 }
 
 func getLogs(c *httpx.Ctx) (*httpx.Response, error) {
-	logPath := LogFilePath()
+	logPath, err := LogFilePath()
+	if err != nil {
+		return errorResponse(err, true), nil
+	}
 	lines := c.ArgInt("lines", 100)
 	search := c.ArgDefault("search", "")
 	levelFilter := strings.ToUpper(c.ArgDefault("level", ""))
 	lines = min(lines, 10000)
-	if !exists(logPath) {
+	present, err := pathExists(logPath)
+	if err != nil {
+		return errorResponse(err, true), nil
+	}
+	if !present {
 		return httpx.JSON(jsonx.Obj("success", true, "logs", []any{}, "total_lines", 0,
 			"message", "日志文件不存在: "+logPath)), nil
 	}
@@ -216,11 +235,14 @@ func dropInvalidUTF8(b []byte) string {
 func pyLower(s string) string { return strings.ToLower(s) }
 
 func getLogInfo(c *httpx.Ctx) (*httpx.Response, error) {
-	logPath := LogFilePath()
-	if !exists(logPath) {
-		return httpx.JSON(jsonx.Obj("success", true, "exists", false, "path", logPath)), nil
+	logPath, err := LogFilePath()
+	if err != nil {
+		return errorResponse(err, false), nil
 	}
 	info, err := os.Stat(logPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return httpx.JSON(jsonx.Obj("success", true, "exists", false, "path", logPath)), nil
+	}
 	if err != nil {
 		return errorResponse(err, false), nil
 	}
@@ -256,8 +278,15 @@ func clearLog(ctx context.Context) (*httpx.Response, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	logPath := LogFilePath()
-	if !exists(logPath) {
+	logPath, err := LogFilePath()
+	if err != nil {
+		return errorResponse(err, false), nil
+	}
+	present, err := pathExists(logPath)
+	if err != nil {
+		return errorResponse(err, false), nil
+	}
+	if !present {
 		return httpx.Message(200, true, msgMissing), nil
 	}
 	if err := ctx.Err(); err != nil {
