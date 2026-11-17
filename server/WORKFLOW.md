@@ -419,7 +419,7 @@ Reason: R04 (Codex port + Opus review) showed the review catches what Codex miss
 the issue classes are now written down; porting is the most token-heavy step and HR ports were the bottleneck.
 
 - **Codex ports HR modules.** The brief must include: the issue-class checklists from `server/parity/review-r04.md`,
-  `review-r05.md` and `review-a19.md` (when present), `server/design/o3-concurrency.md` (locks, Spawn, cancellation /
+  `review-r05.md`, `review-a19.md`, `review-r06.md` and later `review-<module>.md` files (when present), `server/design/o3-concurrency.md` (locks, Spawn, cancellation /
   PORTING 4b) and `server/design/n7-n8.md` (typed model rules), the relevant rows and lab items of the domain's
   difftest matrix, and the requirement to state for each checklist class how it is avoided.
 - **Opus first writes a short design** (interface, state transitions, failure/rollback, buildable steps, acceptance;
@@ -429,3 +429,7 @@ the issue classes are now written down; porting is the most token-heavy step and
 - **Fallback:** if a review finds **two or more high-severity findings** in a module, the remaining HR modules of that
   area go back to Opus porting until the coordinator decides otherwise.
 - R05 and A19 (already ported by Opus) finish their Opus reviews as started.
+- **Two standing checklist items (R06 review, 2026-11-17):** (1) a test double must never override a production
+  parameter it is meant to exercise (R06's fake client forced a 200 ms timeout and hid a missing 10 s write timeout);
+  (2) at least one test per device/HTTP client compares the raw request (body bytes and headers), not only the decoded
+  content (R04's client sent a JSON `null` body on every GET/DELETE and both fakes accepted it).
