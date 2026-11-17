@@ -954,7 +954,7 @@ def main():
                             failures[label + '-connection-failed'] += 1
                     if left[0] == 0 or right[0] == 0:
                         failures['both-transport-failure' if left[0] == right[0] == 0 else 'one-sided-transport-failure'] += 1
-                    for field, kind in response_diffs(left, right, route, rules):
+                    for field, kind in response_diffs(left, right, route, rules, agent_identities):
                         found.add((key, field, kind))
                         domain = 'agents' if '/agents' in route or route.startswith('GENERATOR agent-') else 'routers' if '/routers' in route or route.startswith('GENERATOR router-') else 'config'
                         counts[domain + ':' + kind] += 1

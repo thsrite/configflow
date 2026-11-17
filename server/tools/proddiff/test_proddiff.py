@@ -5,7 +5,6 @@ import hashlib
 import io
 import os
 import json
-import os
 import tempfile
 from types import SimpleNamespace
 import zipfile
@@ -642,6 +641,8 @@ class BaselineExitTests(unittest.TestCase):
             ('stale-only', {difference, obsolete}, False, 1),
             ('new-only', set(), False, 1),
             ('explicit-record', {obsolete}, True, 0),
+            ('agent-identities', set(), False, 0),
+            ('agent-content-mutation', set(), False, 1),
         ):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
@@ -649,7 +650,10 @@ class BaselineExitTests(unittest.TestCase):
                 snapshot.mkdir()
                 parity.mkdir()
                 (root / 'cf-prod-snapshot/runs').mkdir(parents=True)
-                (parity / 'routes.tsv').write_text('')
+                agent_case = name.startswith('agent-')
+                agent_routes = sorted(pd.AGENT_COMPARISON_ROUTES) if agent_case else []
+                route_manifest = ''.join('GET\t' + route + '\n' for route in agent_routes)
+                (parity / 'routes.tsv').write_text(route_manifest)
                 (parity / 'proddiff-coverage.txt').write_text('')
                 (parity / 'proddiff-generator-coverage.json').write_text('{}')
                 path = parity / 'proddiff-baseline.txt'
@@ -657,11 +661,22 @@ class BaselineExitTests(unittest.TestCase):
 
                 def launch(_command, *, env, **_kwargs):
                     for key in ('PRODDIFF_ROUTES', 'PRODDIFF_PY_ROUTES', 'PRODDIFF_PY_LOOPS'):
-                        Path(env[key]).write_text('')
+                        Path(env[key]).write_text('' if key == 'PRODDIFF_PY_LOOPS' else route_manifest)
                     manifest = env['PRODDIFF_ROUTES']
                     for suffix in ('.ready', '.loops', '.startups'):
                         Path(manifest + suffix).write_text('')
                     return mock.Mock(poll=lambda: None)
+
+                def send(port, method, path, *_args, **_kwargs):
+                    if method == 'POST':
+                        return reply({'token': 'synthetic-login'})
+                    value = {'status': 'changed', 'checked_at': '2026-01-01T00:00:00.00000' + ('1Z' if port == 15001 else '2Z'), 'version': ('a' if port == 15001 else 'b') * 16, 'files': []}
+                    if path == '/api/agents/<agent_id>/push-diff':
+                        if name == 'agent-content-mutation' and port == 15002:
+                            value['files'] = [{'path': 'synthetic.yaml'}]
+                        return reply(value)
+                    public = {'content_sync': {k: v for k, v in value.items() if k not in ('version', 'files')}}
+                    return reply([public] if path == '/api/agents' else public)
 
                 argv = ['run.py', str(snapshot), '/synthetic/configflow'] + (['--record-baseline'] if record else [])
                 with contextlib.ExitStack() as patches:
@@ -674,14 +689,14 @@ class BaselineExitTests(unittest.TestCase):
                         mock.patch.object(pd, 'lock_runs'),
                         mock.patch.object(pd, 'load_rules', return_value=[]),
                         mock.patch.object(pd, 'document', return_value={'profiles': {'default': {}}}),
-                        mock.patch.object(pd, 'run_workers', return_value=({difference}, {}, {})),
-                        mock.patch.object(pd, 'cases', return_value=[]),
+                        mock.patch.object(pd, 'run_workers', return_value=(set() if agent_case else {difference}, {}, {})),
+                        mock.patch.object(pd, 'cases', return_value=[('GET', route, route, None, False) for route in agent_routes] * 2),
                         mock.patch.object(pd, 'self_check', return_value={}),
                         mock.patch.object(pd, 'stop_processes'),
                         mock.patch.object(pd.os, 'statvfs', return_value=SimpleNamespace(f_flag=os.ST_RDONLY)),
                         mock.patch.object(pd.subprocess, 'Popen', side_effect=launch),
                         mock.patch.object(pd.signal, 'signal'),
-                        mock.patch.object(pd, 'send', return_value=reply({'token': 'synthetic-login'})),
+                        mock.patch.object(pd, 'send', side_effect=send),
                         mock.patch.object(pd.sys, 'argv', argv),
                         mock.patch.dict(pd.os.environ, PRODDIFF_GENERATOR='/synthetic/generator'),
                         mock.patch('sys.stdout', new_callable=io.StringIO),
@@ -691,7 +706,7 @@ class BaselineExitTests(unittest.TestCase):
                 summary_path = next((root / 'cf-prod-snapshot/runs').glob('run-*/summary.json'))
                 summary = json.loads(summary_path.read_text())
                 self.assertEqual(int(name == 'stale-only'), summary['stale'])
-                self.assertEqual(int(name == 'new-only'), summary['new'])
+                self.assertEqual(int(name in ('new-only', 'agent-content-mutation')), summary['new'])
                 if record:
                     self.assertNotIn('body.old', path.read_text())
                     self.assertIn('body.value', path.read_text())
