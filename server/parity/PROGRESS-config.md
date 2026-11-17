@@ -138,7 +138,7 @@ Final upstream-only importer/oxidns test fixes were rechecked on .32 (2.477s/73.
 | C28 | MosDNS archive and routes | 838 | verified | C21, C15 | 15 (15 done) |
 | C29 | OxiDNS native apply, archive, routes | 739 | missing | C27, C28 | 18 (0 done) |
 | C30 | subscription and node routes, node deletion | 994 | ported | C17, C16, C19, C20 | 26 (26 done) |
-| C31 | aggregation routes, device notes | 722 | wip | C30, C26 | 11 (0 done) |
+| C31 | aggregation routes, device notes | 722 | wip | C30, C26 | 11 (11 done) |
 | C32 | rule routes | 1107 | missing | C09, C14, C27 | 21 (0 done) |
 | C33 | rule library and proxy group routes | 976 | missing | C32 | 25 (0 done) |
 | C34 | generate, config and profile routes, config export | 1443 | missing | C18, C19, C20, C28, C29, C31, C33 | 59 (0 done) |
@@ -1750,7 +1750,7 @@ Cross-module boundary remaining: a chain graph requiring aggregation materializa
 
 A11 proddiff dependency (coordinator-approved): one production Agent's aggregation provider bytes are frozen from real Python in the test server's private temporary report directory and supplied unchanged as both Build inputs. Its coverage is `partial: A11 packaging only, aggregation provider frozen (C31 pending)`, excluded from end-to-end success. `aggregation-provider` generator remains Go 尚未实现. **C31 task:** register the aggregation provider implementation, remove this frozen input path, and promote that Agent's bundle case to an independent end-to-end comparison (no fixture bytes committed).
 
-**Status: `wip`** · prereqs: C30, C26 · Go: internal/api/aggregations (new); device notes in internal/oxidns or own package
+**Status: `wip`** · prereqs: C30, C26 · Go: internal/api/aggregations, internal/aggregations, internal/devicenotes; repo/oxidns adapters
 
 Files:
 - `backend/routes/aggregations.py` (617)
@@ -1758,15 +1758,15 @@ Files:
 
 Tests: `test_aggregation_reorder.py` (3), `test_dialer_rendered_bundle.py` (4), `test_shared_resource_routes.py` (8)
 
-Routes (11, 0 done):
+Routes (11, 11 done):
 
 `GET /api/aggregations`; `POST /api/aggregations`; `DELETE /api/aggregations/<agg_id>`; `GET /api/aggregations/<agg_id>`; `PUT /api/aggregations/<agg_id>`; `GET /api/aggregations/<agg_id>/count`; `GET /api/aggregations/<agg_id>/preview`; `GET /api/aggregations/<agg_id>/provider`; `GET /api/aggregations/<resource_id>/health-impact`; `POST /api/aggregations/reorder`; `GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider`
 
-Work in progress on `go-port-c31`. Shared `internal/devicenotes` now owns note validation, legacy fallback, name edit plans and revision; repo and oxidns delegate to it. First selected reference/race checks pass. Routes/provider/proddiff and final acceptance remain. Restart file: [progress/C31-aggregations.md](progress/C31-aggregations.md).
+All 11 route methods registered and native aggregation renderer wired into provider bundles. Shared notes replace repo/oxidns validation copies; existing Go agents/routers have no private note consumers yet. Real Flask↔Go HTTP and real Python generated-provider/notes structural differentials are implemented; final expanded acceptance in progress. Restart file: [progress/C31-aggregations.md](progress/C31-aggregations.md).
 
-Missing / deferred: Everything in the files below.
+A11 integration: aggregation generator is now registered in proddiff, **2 production provider outputs compared successfully** (`new=0 stale=0`). The A11 Agent's frozen Python aggregation-provider input (partial A11 packaging only) can be removed after C31 is merged; the A11 branch is untouched. proddiff's former `aggregations` catalog lookup was corrected to `subscription_aggregations` in both HTTP and direct generator selectors.
 
-Notes for porter: Registers `/api/profiles/<id>/aggregations/<agg_id>/provider`. `device_notes` is used by repo validation (copy in `repo/compat_oxidns.go` to switch), agents and routers.
+Pending: final scoped race, full suite, all differentials and post-rebase proddiff; A11's existing location/excerpt hook remains that module's responsibility (400 status/validation/owning label and persisted effects compared strictly, only separately logged location lines deferred).
 
 ## C32 — rule routes
 

@@ -20,7 +20,9 @@ import (
 	"configflow/internal/agents/metrics"
 	"configflow/internal/agents/monitor"
 	"configflow/internal/agents/upgrades"
+	"configflow/internal/aggregations"
 	apiagents "configflow/internal/api/agents"
+	apiaggregations "configflow/internal/api/aggregations"
 	apiauth "configflow/internal/api/auth"
 	apidiscovery "configflow/internal/api/domaindiscovery"
 	apilogs "configflow/internal/api/logs"
@@ -55,6 +57,7 @@ var routePackages = []func(*httpx.Router){
 	apiauth.Register,
 	apinodes.Register,
 	apisubscriptions.Register,
+	apiaggregations.Register,
 	apiagents.Register,
 	apisettings.Register,
 	apilogs.Register,
@@ -76,6 +79,7 @@ var wirePackages = []func(){
 	wireCore,
 	webdav.Wire,
 	apinodes.Wire,
+	aggregations.Wire,
 	agents.Wire,
 	metrics.Wire,
 	metrics.WireTraffic,

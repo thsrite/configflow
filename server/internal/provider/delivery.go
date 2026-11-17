@@ -328,6 +328,12 @@ func dialerRecord(ctx context.Context, sub *jsonx.Object) (*jsonx.Object, error)
 	})
 }
 
+// SubscriptionDialerRecord reads one subscription's cached airport topology so
+// aggregation renderers can freeze it once for every proxy in the snapshot.
+func SubscriptionDialerRecord(ctx context.Context, sub *jsonx.Object) (*jsonx.Object, error) {
+	return dialerRecord(ctx, sub)
+}
+
 func idText(id any) string {
 	if s, ok := id.(string); ok {
 		return s

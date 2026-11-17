@@ -414,5 +414,24 @@ class ComparatorTests(unittest.TestCase):
         self.assertEqual({'mihomo', 'surge', 'loon'}, {pd.urllib.parse.parse_qs(pd.urllib.parse.urlsplit(case[2]).query)['format'][0] for case in cases})
 
 
-if __name__ == '__main__':
+class AggregationInventoryTests(unittest.TestCase):
+    def test_generator_and_http_catalog_selectors_use_shared_aggregation_key(self):
+        from generators import inventory
+        document = {'shared': {'subscription_aggregations': [{'id': 'one'}, {'id': 'two'}]},
+                    'profiles': {'default': {}, 'other': {}}, 'system': {}}
+        jobs, coverage = inventory(document, set())
+        aggregates = [job for job in jobs if job['kind'] == 'aggregation-provider']
+        self.assertEqual(4, len(aggregates))
+        self.assertEqual({'one', 'two'}, {job['agg_id'] for job in aggregates})
+        self.assertEqual(4, coverage['GENERATOR aggregation-provider']['cases'])
+        _, http_coverage = inventory(document, {('GET', '/api/profiles/<profile_id>/aggregations/<agg_id>/provider')})
+        self.assertEqual('http', http_coverage['GENERATOR aggregation-provider']['mode'])
+        rows = [['GET', '/api/aggregations/<agg_id>/count'],
+                ['GET', '/api/aggregations/<resource_id>/health-impact']]
+        cases = list(pd.cases(rows, document, Path('/nonexistent')))
+        self.assertEqual(12, len(cases))
+        self.assertFalse(any('proddiff-missing' in case[2] for case in cases))
+
+
+if __name__ == "__main__":
     unittest.main()

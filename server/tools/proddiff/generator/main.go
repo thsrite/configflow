@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"configflow/internal/agents/trafficstore"
+	"configflow/internal/aggregations"
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
@@ -33,6 +34,7 @@ type job struct {
 	ProfileID string `json:"profile_id"`
 	AgentID   string `json:"agent_id"`
 	SubID     string `json:"sub_id"`
+	AggID     string `json:"agg_id"`
 }
 
 type result struct {
@@ -148,6 +150,32 @@ func generate(ctx context.Context, j job) (string, error) {
 	switch j.Kind {
 	case "agent-deployment-bundle":
 		return deploymentBundle(ctx, config, j, opts)
+	case "aggregation-provider":
+		agg, err := objectByID(config.GetList("subscription_aggregations"), j.AggID)
+		if err != nil {
+			return "", err
+		}
+		main, err := convert.GenerateMihomoDocument(ctx, config, convert.GenerateOptions{BaseURL: baseURL, SkipProviderPreflight: true})
+		if err != nil {
+			return "", err
+		}
+		a, err := jsonx.Compact(agg)
+		if err != nil {
+			return "", err
+		}
+		c, err := jsonx.Compact(config)
+		if err != nil {
+			return "", err
+		}
+		m, err := jsonx.Compact(main)
+		if err != nil {
+			return "", err
+		}
+		generated, err := aggregations.Generate(ctx, a, c, aggregations.Options{Main: m, Fetch: offlineFetch, SourcePrepared: true})
+		if err != nil {
+			return "", err
+		}
+		return generated.Content, nil
 	case "mihomo", "agent-mihomo":
 		return convert.GenerateMihomoConfig(ctx, config, opts)
 	case "surge", "agent-surge":

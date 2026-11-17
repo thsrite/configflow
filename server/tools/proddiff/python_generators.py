@@ -10,6 +10,7 @@ from backend.converters.surge import generate_surge_config, convert_proxies_to_s
 from backend.converters.loon import generate_loon_config, convert_proxies_to_loon_text
 from backend.converters.mosdns import generate_mosdns_config, get_mosdns_custom_files, get_mosdns_ruleset_downloads
 from backend.converters.oxidns import generate_oxidns_config, get_oxidns_custom_files, get_oxidns_ruleset_downloads
+from backend.routes.aggregations import generate_aggregation_provider
 from backend.utils.provider_delivery import DeliverySnapshot, prepare_subscription_provider
 from backend.utils.proxy_server_dns import reported_core_version
 import yaml
@@ -78,6 +79,11 @@ def generate(job):
     }
     if kind in auxiliary:
         return json.dumps(auxiliary[kind](), ensure_ascii=False)
+    if kind == 'aggregation-provider':
+        agg = next(item for item in cfg['subscription_aggregations'] if item['id'] == job['agg_id'])
+        main = yaml.safe_load(generate_mihomo_config(cfg, base_url=BASE_URL, preflight_providers=False))
+        return generate_aggregation_provider(agg, config=cfg, main_config=main, persist=False,
+                                             subscription_fetch=offline_fetch, source_prepared=True)['content']
     if kind.startswith('subscription-'):
         sub = next(item for item in cfg['subscriptions'] if item['id'] == job['sub_id'])
         main = yaml.safe_load(generate_mihomo_config(cfg, base_url=BASE_URL, preflight_providers=False))

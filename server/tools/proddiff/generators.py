@@ -21,6 +21,7 @@ INVENTORY = {
     'subscription-mihomo': ('subscription', 'yaml', 'GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies'),
     'subscription-surge': ('subscription', 'text', 'GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies'),
     'subscription-loon': ('subscription', 'text', 'GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies'),
+    'aggregation-provider': ('aggregation', 'yaml', 'GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider'),
     'agent-mihomo': ('agent', 'yaml', 'GET /api/agents/<agent_id>/config'),
     'agent-mosdns': ('agent', 'yaml', 'GET /api/agents/<agent_id>/config'),
     'agent-oxidns': ('agent', 'yaml', 'GET /api/agents/<agent_id>/config'),
@@ -29,7 +30,6 @@ INVENTORY = {
 }
 MISSING = {
     'router-script': ('POST /api/routers/<router_id>/plan', 'No public Go router plan/script exporter exists.'),
-    'aggregation-provider': ('GET /api/aggregations/<agg_id>/provider', 'Go aggregation-provider hook still has its missing implementation.'),
 }
 
 
@@ -46,6 +46,8 @@ def inventory(doc, implemented):
                 entities = [{}]
             elif selector == 'subscription':
                 entities = config.get('subscriptions', [])
+            elif selector == 'aggregation':
+                entities = config.get('subscription_aggregations', [])
             else:
                 entities = [a for a in agents if (a.get('profile_id') or default_profile) == profile_id
                             and (kind == 'agent-deployment-bundle' and a.get('service_type', 'mihomo') in ('mihomo', 'mosdns', 'oxidns')
@@ -55,11 +57,11 @@ def inventory(doc, implemented):
                 if mode == 'generator':
                     jobs.append({'index': len(jobs), 'kind': kind, 'profile_id': profile_id,
                                  'sub_id': entity.get('id', '') if selector == 'subscription' else '',
+                                 'agg_id': entity.get('id', '') if selector == 'aggregation' else '',
                                  'agent_id': entity.get('id', '') if selector == 'agent' else '',
                                  'format': output_format})
     missing_counts = {
         'router-script': sum(len(profile.get('routers', {}).get('items', [])) for profile in profiles.values()),
-        'aggregation-provider': sum(len(dict(doc['shared'], **profile).get('aggregations', [])) for profile in profiles.values()),
     }
     for kind, (route, reason) in MISSING.items():
         mode = 'http' if tuple(route.split(' ', 1)) in implemented else 'Go 尚未实现'

@@ -938,6 +938,15 @@ func WithNodeConversions(ctx context.Context, results *ConversionResults, reuse 
 	return context.WithValue(ctx, conversionScopeKey{}, &conversionScope{results, reuse})
 }
 
+// EnsureNodeConversions preserves an existing delivery scope or creates one
+// that reuses each opaque node conversion throughout main/provider rendering.
+func EnsureNodeConversions(ctx context.Context) context.Context {
+	if scope, _ := ctx.Value(conversionScopeKey{}).(*conversionScope); scope != nil && scope.results != nil {
+		return ctx
+	}
+	return WithNodeConversions(ctx, NewConversionResults(), true)
+}
+
 // ConvertNodeToMihomo is convert_node_to_mihomo: JSON/YAML node strings are
 // parsed locally, URI/base64 strings converted by Sub-Store, structured
 // nodes flattened. nil (no error) is Python's None. Errors are the

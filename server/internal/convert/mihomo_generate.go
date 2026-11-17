@@ -325,6 +325,7 @@ type GenerateOptions struct {
 // an unregistered hook, *PyError for crashes on malformed values.
 // Sub-Store node conversions reuse the scope installed by WithNodeConversions.
 func GenerateMihomoConfig(ctx context.Context, config *jsonx.Object, opts GenerateOptions) (out string, err error) {
+	ctx = EnsureNodeConversions(ctx)
 	main, err := generateMihomoDocument(ctx, config, opts)
 	if err != nil {
 		return "", err

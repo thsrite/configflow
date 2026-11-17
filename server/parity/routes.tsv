@@ -103,16 +103,16 @@ GET	/api/agents/install-script	routes.agents.get_install_script	internal/api/age
 GET	/api/agents/latest-version	routes.agents.get_latest_agent_version	api/agents	done
 POST	/api/agents/register	routes.agents.register_agent	api/agents	done
 PUT	/api/agents/traffic-history/retention	routes.agents.set_traffic_history_retention	api/agents	done
-GET	/api/aggregations	routes.aggregations.handle_subscription_aggregations		todo
-POST	/api/aggregations	routes.aggregations.handle_subscription_aggregations		todo
-DELETE	/api/aggregations/<agg_id>	routes.aggregations.handle_subscription_aggregation_item		todo
-GET	/api/aggregations/<agg_id>	routes.aggregations.handle_subscription_aggregation_item		todo
-PUT	/api/aggregations/<agg_id>	routes.aggregations.handle_subscription_aggregation_item		todo
-GET	/api/aggregations/<agg_id>/count	routes.aggregations.get_aggregation_node_count		todo
-GET	/api/aggregations/<agg_id>/preview	routes.aggregations.preview_aggregation_nodes		todo
-GET	/api/aggregations/<agg_id>/provider	routes.aggregations.get_aggregation_provider		todo
-GET	/api/aggregations/<resource_id>/health-impact	routes.aggregations.health_impact		todo
-POST	/api/aggregations/reorder	routes.aggregations.reorder_aggregations		todo
+GET	/api/aggregations	routes.aggregations.handle_subscription_aggregations	internal/api/aggregations	done
+POST	/api/aggregations	routes.aggregations.handle_subscription_aggregations	internal/api/aggregations	done
+DELETE	/api/aggregations/<agg_id>	routes.aggregations.handle_subscription_aggregation_item	internal/api/aggregations	done
+GET	/api/aggregations/<agg_id>	routes.aggregations.handle_subscription_aggregation_item	internal/api/aggregations	done
+PUT	/api/aggregations/<agg_id>	routes.aggregations.handle_subscription_aggregation_item	internal/api/aggregations	done
+GET	/api/aggregations/<agg_id>/count	routes.aggregations.get_aggregation_node_count	internal/api/aggregations	done
+GET	/api/aggregations/<agg_id>/preview	routes.aggregations.preview_aggregation_nodes	internal/api/aggregations	done
+GET	/api/aggregations/<agg_id>/provider	routes.aggregations.get_aggregation_provider	internal/api/aggregations	done
+GET	/api/aggregations/<resource_id>/health-impact	routes.aggregations.health_impact	internal/api/aggregations	done
+POST	/api/aggregations/reorder	routes.aggregations.reorder_aggregations	internal/api/aggregations	done
 POST	/api/auth/login	routes.auth.login	internal/api/auth	done
 GET	/api/auth/status	routes.auth.auth_status	internal/api/auth	done
 GET	/api/auth/verify	routes.auth.verify	internal/api/auth	done
@@ -236,7 +236,7 @@ GET	/api/profiles/<profile_id>	routes.profiles.handle_profile		todo
 PUT	/api/profiles/<profile_id>	routes.profiles.handle_profile		todo
 GET	/api/profiles/<profile_id>/agents	routes.profiles.profile_agent_bindings		todo
 POST	/api/profiles/<profile_id>/agents/rebind	routes.profiles.rebind_profile_agents	17	todo
-GET	/api/profiles/<profile_id>/aggregations/<agg_id>/provider	routes.profiles.profile_aggregation_provider		todo
+GET	/api/profiles/<profile_id>/aggregations/<agg_id>/provider	routes.profiles.profile_aggregation_provider	internal/api/aggregations	done
 POST	/api/profiles/<profile_id>/clone	routes.profiles.clone_profile		todo
 GET	/api/profiles/<profile_id>/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings		todo
 POST	/api/profiles/<profile_id>/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings		todo
