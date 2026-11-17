@@ -41,9 +41,18 @@ metadata/head、diff、commit/apply、build/install/check/salvage/backup），Go
   Python ProfileRepository 和 Go Repository 双向 profile 写入、无改动提交；未知
   坏行启动的定位/恢复/不泄密，以及原 DB 文件逐字节不变。
 - agents/proxy_diff_test.go：真实 requests / Go、loopback proxy/Agent +仅 DNS 映射的
-  synthetic routable host。14环境×3目标，分别断言完整 target、Host、代理认证和
+  synthetic routable host。14环境×3目标，18 个明确原生结果差异、24 个相同结果，分别断言完整 target、Host、代理认证和
   Authorization；CGI 为错误且0请求。无 mask/跳过差异。
 - Agent / Sub-Store 新测试：ALL fallback、scheme 优先、小写优先、CGI/ALL 不绕过；
   旧 loopback 回归改为直连，Sub-Store 显式代理、proxy→direct redirect 仍实测。
 
 迭代用 .63；需要真实代理 differential 和私有快照在 .32。最终命令/尾部输出待补。
+
+已通过迭代：.63 `go vet ./...`；真实 Python 环境下 store 12.910s、repo 49.691s、
+weburl 0.003s、agents 50.050s、substore 8.168s。`.32` 原始 store 往返 2.015s，
+新私有 repository 双向写入 1.560s。一次新测试回调误把 hosts 当对象而 panic，已改用
+mihomo 中的合成未知成员后通过；这是测试构造错误，无生产代码修复或私有内容输出。
+
+代理最终迭代：.63 vet/agents 41.321s、substore 6.481s、weburl 0.003s；.32 42请求
+差分 **18 个显式结果差异 / 24 相同，4.511s**。3种合成坏库的真实CLI启动：退出1，
+日志/stderr均有安全恢复提示，原数据库逐字节不变；即使 LOG_LEVEL=CRITICAL 也可见。

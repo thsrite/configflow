@@ -142,7 +142,7 @@ the 994-row requests proxy reference. Callers use `net/url` / `net/http` through
 brackets, unbracketed IPv6 and NFKC-delimiter hosts refused), `Hostname`/`Port`/`RawPath`/
 `HasCredentials`, lenient `Unquote` (redaction), `Prepare` (RFC 3986 normalisation before a request),
 `ParseProxy` + `FromEnvironment` (lower-case first, ALL_PROXY counts, NO_PROXY domain/IP/CIDR/port/`*`,
-**no automatic loopback bypass** — coordinator decision 5 kept — chosen per redirect hop by
+**loopback/localhost always go direct** — 2026-11-17 coordinator decision replaces A07 decision 5 with native `httpproxy` semantics — chosen per redirect hop by
 http.Transport), `SafeForLog`/`SafeErrorDetails`. Accepted classes (tests compare outcome):
 URLs net/url refuses that urllib accepted (control chars, malformed `%` escapes or ports, IPvFuture,
 `{`/space in hosts, non-ASCII or unencoded credentials) are rejected; non-Chinese exception texts
@@ -153,6 +153,17 @@ CPython full case-folding (`İ`, final sigma). The adversarial review below repl
 private urlsplit copies in `rulefetch/urls.go` (SplitURL/URLJoin) and `subs/proxyserverdns.go`
 (urlSplitHost). Lines (non-test, urlx+reqproxy+weburl+agents+substore+
 rulefetch+localhttp+health+installer+convert+provider+redact+httpx): 59602 → 58285.
+
+**N2 proxy follow-up (2026-11-17).** Shared `weburl.FromEnvironment` now uses
+`golang.org/x/net/http/httpproxy.FromEnvironment().ProxyFunc()` with ALL_PROXY /
+all_proxy as fallback only when the corresponding native HTTP(S) selection is
+empty. CGI is never bypassed by the fallback. This replaces the former custom
+NO_PROXY matcher. Localhost and loopback always go direct; use a routable Agent
+address when an environment proxy is required. Empty lowercase values fall back
+to uppercase; NO_PROXY `:port` alone is not a host match; `.example.com` covers
+subdomains only. CGI returns an error without sending any request. These native
+outcomes are explicitly asserted in the real requests differential and Agent /
+Sub-Store client boundaries; [ledger](parity/behaviour-changes.md).
 
 **N2 review (adversarial, 2026-11-16) — VERIFIED; zero open functional findings.** Commits:
 `288394c5` (N2 changes) and `87e47955` (installer test-fixture race found during coordinator verification).

@@ -6,11 +6,12 @@ package weburl
 
 import (
 	"errors"
-	"net"
-	"net/netip"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
+
+	"golang.org/x/net/http/httpproxy"
 )
 
 // Parse is url.Parse after the clean-up browsers do on a typed URL (WHATWG
@@ -283,63 +284,22 @@ func ParseProxy(value string) (*url.URL, error) {
 	return nil, ErrInvalidProxy
 }
 
-// FromEnvironment is the proxy for target from environ (os.Environ() form):
-// <scheme>_proxy, then ALL_PROXY, lower-case names first, unless NO_PROXY
-// matches the target. nil means direct. Unlike http.ProxyFromEnvironment,
-// localhost and loopback targets are not exempt (an Agent on 127.0.0.1 goes
-// through the proxy unless NO_PROXY names it) and ALL_PROXY counts, as with
-// the requests library the panel used before.
-func FromEnvironment(environ []string, target *url.URL) (*url.URL, error) {
-	get := func(names ...string) string {
-		for _, name := range names {
-			for _, entry := range environ {
-				if key, value, ok := strings.Cut(entry, "="); ok && key == name && value != "" {
-					return value
-				}
-			}
-		}
-		return ""
+// FromEnvironment selects the proxy using Go's native environment rules.
+// Localhost and loopback addresses go direct; HTTP_PROXY is refused in CGI.
+// The environment is read for each call, including redirect hops.
+func FromEnvironment(target *url.URL) (*url.URL, error) {
+	config := httpproxy.FromEnvironment()
+	all := os.Getenv("all_proxy")
+	if all == "" {
+		all = os.Getenv("ALL_PROXY")
 	}
-	scheme := strings.ToLower(target.Scheme)
-	value := get(scheme+"_proxy", strings.ToUpper(scheme)+"_PROXY", "all_proxy", "ALL_PROXY")
-	if value == "" || target.Hostname() == "" || NoProxyMatches(get("no_proxy", "NO_PROXY"), target) {
-		return nil, nil
+	// ALL_PROXY remains a user-facing fallback. CGI checks, bypasses and
+	// parsing are still performed by the native ProxyFunc.
+	if config.HTTPProxy == "" {
+		config.HTTPProxy = all
 	}
-	return ParseProxy(value)
-}
-
-// NoProxyMatches reports whether a NO_PROXY list names target's host: "*",
-// a domain (with or without a leading dot; it covers its subdomains), an IP
-// address, a CIDR range, each optionally with ":port".
-func NoProxyMatches(noProxy string, target *url.URL) bool {
-	host := strings.ToLower(target.Hostname())
-	port := target.Port()
-	addr, addrErr := netip.ParseAddr(host)
-	for _, entry := range strings.Split(noProxy, ",") {
-		entry = strings.ToLower(strings.TrimSpace(entry))
-		if entry == "" {
-			continue
-		}
-		if entry == "*" {
-			return true
-		}
-		if prefix, err := netip.ParsePrefix(entry); err == nil {
-			if addrErr == nil && prefix.Contains(addr.Unmap()) {
-				return true
-			}
-			continue
-		}
-		entryHost, entryPort := entry, ""
-		if h, p, err := net.SplitHostPort(entry); err == nil {
-			entryHost, entryPort = h, p
-		}
-		if entryPort != "" && entryPort != port {
-			continue
-		}
-		entryHost = strings.TrimPrefix(strings.Trim(entryHost, "[]"), ".")
-		if host == entryHost || strings.HasSuffix(host, "."+entryHost) {
-			return true
-		}
+	if config.HTTPSProxy == "" {
+		config.HTTPSProxy = all
 	}
-	return false
+	return config.ProxyFunc()(target)
 }

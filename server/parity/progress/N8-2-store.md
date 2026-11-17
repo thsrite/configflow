@@ -110,6 +110,8 @@ and clean-worktree check are performed after this acceptance record commit.
 
 ## Independent review (in progress)
 
+Buildable store/recovery step: `ba7af7d2`. .63 vet and store/repo/agents/substore/weburl tests passed; .32 live private ConfigStore and ProfileRepository writes both passed.
+
 - Reproduced unchanged-raw-metadata Commit writing rows/normalizing generation;
   fixed equal-metadata filtering and unrelated generation-byte preservation.
 - Removed value-leaking CPython UTF-8 diagnostic emulation. Stored invalid UTF-8
@@ -119,7 +121,7 @@ and clean-worktree check are performed after this acceptance record commit.
 - Added synthetic corrupt/truncated/oversized/deep rows, large valid opaque rows,
   eight concurrent raw writers, unchanged metadata, and cancellation-after-start
   tests. New private-copy Python ProfileRepository writes ↔ Go repository writes
-  audit is pending the final .32 run (existing live store audits retained).
+  audit passed on .32 (1.560s); existing live store audits also passed (12+12+43 rows, 2.015s). Final combined run remains.
 - Scope decision: syntactically damaged JSON/non-UTF-8 refuses startup and keeps
   the original database. Legal JSON wrong-type R5 belongs to N8-3.
 - **repo.update 入口 detach（PORTING 4b）→ N8-5/O3-6**. This review proves raw
@@ -129,3 +131,8 @@ and clean-worktree check are performed after this acceptance record commit.
   requests differential, with native outcomes explicitly asserted. See review.
 - Next: final .32 private interchange, formatting/vet/race/all/proddiff, then
   rebase go and mark verified only when all review findings are closed.
+
+Proxy step validation after ALL_PROXY preservation: .63 vet + agents 41.321s,
+substore 6.481s, weburl 0.003s. .32 real requests differential: 42 cases,
+18 explicit native differences / 24 identical outcomes, 4.511s. Runtime proxy
+instructions updated in doc/manual/system-settings.md (no UI/screenshot change).

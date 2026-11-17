@@ -36,13 +36,13 @@ func TestReviewN2RealisticSubscriptionURL(t *testing.T) {
 }
 
 // Regression (review N2): a proxy password with characters net/url refuses
-// in user information still reaches the proxy.
+// in user information still reaches an explicitly configured proxy.
 func TestReviewN2ProxyPasswordCharacters(t *testing.T) {
 	direct := newFakeSubStore(t)
 	proxy := newRecordingProxy(t)
 	target := direct.srv.URL + "/api/utils/env"
-	withEnviron(t, "HTTP_PROXY=http://user:p^w@"+strings.TrimPrefix(proxy.srv.URL, "http://"))
-	resp, err := RequestsClient{}.Do(context.Background(), &Request{Method: "GET", URL: target, Timeout: Seconds(5)})
+	withEnviron(t)
+	resp, err := RequestsClient{}.Do(context.Background(), &Request{Method: "GET", URL: target, Timeout: Seconds(5), Proxy: "http://user:p^w@" + strings.TrimPrefix(proxy.srv.URL, "http://")})
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("request through proxy: %v", err)
 	}

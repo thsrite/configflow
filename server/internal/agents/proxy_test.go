@@ -11,20 +11,17 @@ import (
 
 func withEnviron(t *testing.T, env [][2]string) {
 	t.Helper()
-	previous := environ
-	entries := make([]string, len(env))
-	for i, pair := range env {
-		entries[i] = pair[0] + "=" + pair[1]
+	for _, key := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy", "REQUEST_METHOD"} {
+		t.Setenv(key, "")
 	}
-	environ = func() []string { return entries }
-	t.Cleanup(func() { environ = previous })
+	for _, pair := range env {
+		t.Setenv(pair[0], pair[1])
+	}
 }
 
-// TestLoopbackAgentGoesThroughTheEnvironmentProxy is the regression test of
-// coordinator decision 5: with HTTP_PROXY set, a manager call to an Agent on
-// 127.0.0.1 is sent to the proxy (Go's ProxyFromEnvironment went direct),
-// unless NO_PROXY names it; NoProxy requests always go direct.
-func TestLoopbackAgentGoesThroughTheEnvironmentProxy(t *testing.T) {
+// TestLoopbackAgentBypassesEnvironmentProxy asserts the native N2 decision
+// of 2026-11-17: loopback calls always go direct.
+func TestLoopbackAgentBypassesEnvironmentProxy(t *testing.T) {
 	var mu sync.Mutex
 	var seen []string
 	proxy := listenHTTP(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,11 +44,11 @@ func TestLoopbackAgentGoesThroughTheEnvironmentProxy(t *testing.T) {
 		noProxy bool
 		want    string
 	}{
-		{"proxied", [][2]string{{"HTTP_PROXY", "http://u:p@" + proxy}}, false, "proxy GET " + target + " Basic dTpw"},
-		{"lowercase", [][2]string{{"http_proxy", proxy}}, false, "proxy GET " + target + " "},
+		{"proxied", [][2]string{{"HTTP_PROXY", "http://u:p@" + proxy}}, false, "agent GET /api/status"},
+		{"lowercase", [][2]string{{"http_proxy", proxy}}, false, "agent GET /api/status"},
 		{"no_proxy ip", [][2]string{{"HTTP_PROXY", proxy}, {"NO_PROXY", "127.0.0.1"}}, false, "agent GET /api/status"},
 		{"no_proxy cidr", [][2]string{{"HTTP_PROXY", proxy}, {"no_proxy", "127.0.0.0/8"}}, false, "agent GET /api/status"},
-		{"no_proxy other", [][2]string{{"HTTP_PROXY", proxy}, {"NO_PROXY", "localhost,10.0.0.0/8"}}, false, "proxy GET " + target + " "},
+		{"no_proxy other", [][2]string{{"HTTP_PROXY", proxy}, {"NO_PROXY", "localhost,10.0.0.0/8"}}, false, "agent GET /api/status"},
 		{"trust_env off", [][2]string{{"HTTP_PROXY", proxy}}, true, "agent GET /api/status"},
 	} {
 		withEnviron(t, c.env)
@@ -70,8 +67,8 @@ func TestLoopbackAgentGoesThroughTheEnvironmentProxy(t *testing.T) {
 		}
 	}
 	withEnviron(t, [][2]string{{"HTTP_PROXY", "socks5://" + proxy}})
-	if _, err := (HTTPClient{}).Do(context.Background(), Request{Method: "GET", URL: target, Timeout: Seconds(5)}); !IsTransportError(err) {
-		t.Errorf("socks proxy that speaks HTTP: %v, want a transport error", err)
+	if _, err := (HTTPClient{}).Do(context.Background(), Request{Method: "GET", URL: target, Timeout: Seconds(5)}); err != nil {
+		t.Errorf("loopback must bypass SOCKS environment proxy: %v", err)
 	}
 }
 

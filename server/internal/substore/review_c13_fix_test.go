@@ -24,9 +24,13 @@ import (
 
 func withEnviron(t *testing.T, entries ...string) {
 	t.Helper()
-	previous := environ
-	environ = func() []string { return entries }
-	t.Cleanup(func() { environ = previous })
+	for _, key := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy", "REQUEST_METHOD"} {
+		t.Setenv(key, "")
+	}
+	for _, entry := range entries {
+		key, value, _ := strings.Cut(entry, "=")
+		t.Setenv(key, value)
+	}
 }
 
 type recordingProxy struct {
@@ -54,57 +58,30 @@ func (p *recordingProxy) requests() []string {
 	return append([]string(nil), p.seen...)
 }
 
-// TestReviewLoopbackSubStoreGoesThroughEnvironmentProxy: requests (trust_env)
-// sends a request for the Sub-Store on 127.0.0.1 to HTTP_PROXY unless
-// NO_PROXY names it; Go's ProxyFromEnvironment bypassed loopback hosts.
-func TestReviewLoopbackSubStoreGoesThroughEnvironmentProxy(t *testing.T) {
+// TestReviewLoopbackSubStoreBypassesEnvironmentProxy covers the 2026-11-17
+// native N2 decision. Explicitly configured download proxies still apply.
+func TestReviewLoopbackSubStoreBypassesEnvironmentProxy(t *testing.T) {
 	direct := newFakeSubStore(t)
 	direct.setVersion("2.40.0")
 	proxy := newRecordingProxy(t)
-	proxyURL, _ := url.Parse(proxy.srv.URL)
-	target := direct.srv.URL + "/api/utils/env"
 	env := &Env{HTTP: RequestsClient{}}
-
-	withEnviron(t, "HTTP_PROXY=http://user:p%40ss@"+proxyURL.Host)
-	if got := env.FetchRunningVersion(context.Background(), direct.srv.URL, 5); got != "9.9.9" {
-		t.Fatalf("version %q: not sent through the proxy", got)
+	for _, key := range []string{"HTTP_PROXY", "http_proxy", "ALL_PROXY"} {
+		withEnviron(t, key+"="+proxy.srv.URL)
+		if got := env.FetchRunningVersion(context.Background(), direct.srv.URL, 5); got != "2.40.0" {
+			t.Fatalf("loopback bypass: %s", got)
+		}
 	}
-	want := "GET " + target + " auth=Basic dXNlcjpwQHNz" // user:p@ss
-	if seen := proxy.requests(); len(seen) != 1 || seen[0] != want {
-		t.Fatalf("proxy saw %q, want %q", seen, want)
+	if len(proxy.requests()) != 0 {
+		t.Fatal("loopback used environment proxy")
 	}
-
-	withEnviron(t, "HTTP_PROXY=http://"+proxyURL.Host, "NO_PROXY=127.0.0.1")
-	if got := env.FetchRunningVersion(context.Background(), direct.srv.URL, 5); got != "2.40.0" {
-		t.Fatalf("version %q: NO_PROXY ignored", got)
+	resp, err := RequestsClient{}.Do(context.Background(), &Request{Method: "GET", URL: direct.srv.URL + "/api/utils/env", Timeout: Seconds(5), Proxy: proxy.srv.URL})
+	if err != nil || resp.StatusCode != 200 || len(proxy.requests()) != 1 {
+		t.Fatal("explicit proxy was bypassed")
 	}
-	withEnviron(t, "http_proxy=http://"+proxyURL.Host, "HTTP_PROXY=http://127.0.0.1:1")
-	if got := env.FetchRunningVersion(context.Background(), direct.srv.URL, 5); got != "9.9.9" {
-		t.Fatalf("version %q: lowercase http_proxy must win", got)
-	}
-
-	// proxies= (the rule download proxy for GitHub) wins over the
-	// environment and carries its credentials.
-	withEnviron(t, "HTTP_PROXY=http://127.0.0.1:1")
-	resp, err := RequestsClient{}.Do(context.Background(), &Request{Method: "GET", URL: target, Timeout: Seconds(5),
-		Proxy: "http://u:pw@" + proxyURL.Host})
-	if err != nil || resp.StatusCode != 200 {
-		t.Fatalf("explicit proxy: %v", err)
-	}
-	if seen := proxy.requests(); seen[len(seen)-1] != "GET "+target+" auth=Basic dTpwdw==" {
-		t.Fatalf("explicit proxy saw %q", seen[len(seen)-1])
-	}
-
-	withEnviron(t, "HTTP_PROXY=socks5://127.0.0.1:1")
-	_, err = RequestsClient{}.Do(context.Background(), &Request{Method: "GET", URL: target, Timeout: Seconds(5)})
-	if pythonClass(err) != "ProxyError" {
-		// SOCKS proxies are used since N2 (requests needed PySocks).
-		t.Fatalf("unreachable socks proxy: %v (%s)", err, pythonClass(err))
-	}
-	withEnviron(t, "HTTP_PROXY=http://")
-	_, err = RequestsClient{}.Do(context.Background(), &Request{Method: "GET", URL: target, Timeout: Seconds(5)})
-	if pythonClass(err) != "InvalidProxyURL" {
-		t.Fatalf("proxy without host: %v (%s)", err, pythonClass(err))
+	withEnviron(t, "REQUEST_METHOD=GET", "HTTP_PROXY="+proxy.srv.URL)
+	_, err = RequestsClient{}.Do(context.Background(), &Request{Method: "GET", URL: direct.srv.URL, Timeout: Seconds(5)})
+	if err == nil || !strings.Contains(err.Error(), "CGI") || len(proxy.requests()) != 1 {
+		t.Fatal("CGI protection failed")
 	}
 }
 
@@ -298,10 +275,10 @@ func TestRedirectHopsChooseTheirOwnProxy(t *testing.T) {
 		noProxy, first, text string
 		want                 []string
 	}{
-		{"localhost", "http://127.0.0.1:9/sub", "direct", []string{"proxy http://127.0.0.1:9/sub auth=Basic dTpw",
+		{"localhost", "http://agent.example:9/sub", "direct", []string{"proxy http://agent.example:9/sub auth=Basic dTpw",
 			"direct /next auth="}},
-		{"127.0.0.1", direct.URL + "/sub", "via-proxy", []string{"direct /sub auth=",
-			"proxy http://localhost:" + port + "/next auth=Basic dTpw"}},
+		{"127.0.0.1", direct.URL + "/sub", "direct", []string{"direct /sub auth=",
+			"direct /next auth="}},
 	}
 	for _, c := range cases {
 		seen = nil

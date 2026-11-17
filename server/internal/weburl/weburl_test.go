@@ -3,6 +3,7 @@ package weburl
 import (
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -22,14 +23,14 @@ func TestFromEnvironment(t *testing.T) {
 		want   string // "" = direct
 	}{
 		{nil, "http://example.com/", ""},
-		{[]string{"HTTP_PROXY=http://p:3128"}, "http://127.0.0.1:8080/api", "http://p:3128"},
-		{[]string{"HTTP_PROXY=http://p:3128"}, "http://localhost/", "http://p:3128"},
+		{[]string{"HTTP_PROXY=http://p:3128"}, "http://127.0.0.1:8080/api", ""},
+		{[]string{"HTTP_PROXY=http://p:3128"}, "http://localhost/", ""},
 		{[]string{"HTTP_PROXY=http://p:3128"}, "https://example.com/", ""},
 		{[]string{"HTTPS_PROXY=p:3128"}, "https://example.com/", "http://p:3128"},
 		{[]string{"ALL_PROXY=http://all:1"}, "https://example.com/", "http://all:1"},
 		{[]string{"HTTP_PROXY=http://upper:1", "http_proxy=http://lower:1"}, "http://x/", "http://lower:1"},
 		{[]string{"HTTP_PROXY=http://p:1", "NO_PROXY=example.com"}, "http://a.example.com/", ""},
-		{[]string{"HTTP_PROXY=http://p:1", "NO_PROXY=.example.com"}, "http://example.com/", ""},
+		{[]string{"HTTP_PROXY=http://p:1", "NO_PROXY=.example.com"}, "http://example.com/", "http://p:1"},
 		{[]string{"HTTP_PROXY=http://p:1", "NO_PROXY=example.com"}, "http://badexample.com/", "http://p:1"},
 		{[]string{"HTTP_PROXY=http://p:1", "no_proxy=10.0.0.0/8"}, "http://10.1.2.3:80/", ""},
 		{[]string{"HTTP_PROXY=http://p:1", "NO_PROXY=fd00::/8"}, "http://[fd00::1]/", ""},
@@ -39,7 +40,14 @@ func TestFromEnvironment(t *testing.T) {
 		{[]string{"HTTP_PROXY=http://u:pw@p:1"}, "http://x/", "http://u:pw@p:1"},
 	}
 	for _, c := range cases {
-		got, err := FromEnvironment(c.env, mustParse(t, c.target))
+		for _, key := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy", "ALL_PROXY", "all_proxy", "REQUEST_METHOD"} {
+			t.Setenv(key, "")
+		}
+		for _, entry := range c.env {
+			key, value, _ := strings.Cut(entry, "=")
+			t.Setenv(key, value)
+		}
+		got, err := FromEnvironment(mustParse(t, c.target))
 		text := ""
 		if got != nil {
 			text = got.String()
@@ -48,9 +56,7 @@ func TestFromEnvironment(t *testing.T) {
 			t.Errorf("%v %s: %q %v, want %q", c.env, c.target, text, err, c.want)
 		}
 	}
-	if _, err := FromEnvironment([]string{"HTTP_PROXY=ftp://p:1"}, mustParse(t, "http://x/")); err == nil {
-		t.Error("ftp proxy accepted")
-	}
+
 }
 
 func TestPrepare(t *testing.T) {
@@ -189,5 +195,39 @@ func TestSafeForLogCredentials(t *testing.T) {
 		if got := SafeForLog(in); got != want {
 			t.Errorf("%q: %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestNativeProxySchemeFallbacks(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		env          []string
+		target, want string
+		reject       bool
+	}{
+		{"HTTPS beats ALL", []string{"HTTPS_PROXY=http://secure.example:3128", "ALL_PROXY=http://all.example:3128"}, "https://service.example/", "http://secure.example:3128", false},
+		{"HTTPS ALL SOCKS", []string{"ALL_PROXY=socks5://proxy.example:1080"}, "https://service.example/", "socks5://proxy.example:1080", false},
+		{"HTTP ALL SOCKS", []string{"ALL_PROXY=socks5://proxy.example:1080"}, "http://service.example/", "socks5://proxy.example:1080", false},
+		{"CGI ALL", []string{"REQUEST_METHOD=GET", "ALL_PROXY=socks5://proxy.example:1080"}, "http://service.example/", "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, key := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy", "ALL_PROXY", "all_proxy", "REQUEST_METHOD"} {
+				t.Setenv(key, "")
+			}
+			for _, entry := range tt.env {
+				key, value, _ := strings.Cut(entry, "=")
+				t.Setenv(key, value)
+			}
+			proxy, err := FromEnvironment(mustParse(t, tt.target))
+			if tt.reject {
+				if err == nil || !strings.Contains(err.Error(), "CGI") {
+					t.Fatal("CGI accepted")
+				}
+				return
+			}
+			if err != nil || proxy == nil || proxy.String() != tt.want {
+				t.Fatalf("native proxy: %v %v", proxy, err)
+			}
+		})
 	}
 }

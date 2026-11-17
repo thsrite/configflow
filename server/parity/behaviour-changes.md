@@ -69,3 +69,27 @@ C27：上游 `tag` 等字符串元数据包含真实 U+2028/U+2029 时，Go `enc
 | Step B #12a，Docker HA server_url 末尾换行 | Python200（正则$接受末尾换行） | 保留既定A09决定：400「请填写完整的 ConfigFlow HTTP(S) 地址」。用例明确断言该差异。 |
 | Step B #12a，Docker HA非法IPv6 URL | urllib错误「Invalid IPv6 URL」 | 同为400、success=false，使用net/url原生英文诊断。只对该命名向量声明文本差异，其余字段/头严格比较。 |
 | Step B #12b，安装器非法UTF-8 query | Werkzeug保留非法字节为%XX | Go使用U+FFFD，引用/转义经过bash语法和隔离赋值测试。仅把非法字节规范化后的有效UTF-8请求交给真实Flask生成完整预期，与Go严格比较；不mask脚本片段。 |
+
+## N2 — Go 原生环境代理规则（2026-11-17）
+
+协调者决定：共享选择器使用 `golang.org/x/net/http/httpproxy`，覆盖 A07 决定 5
+和早期 N2 的 loopback 经代理例外。Agent HTTPClient、Sub-Store 使用同一选择器。
+
+- `localhost` / loopback 始终直连；内置 Sub-Store 不被环境代理绕路。需要走代理的
+  Agent 请配置可路由地址。显式指定的下载代理仍生效，不受环境 bypass 影响。
+- 小写 HTTP(S)_PROXY / NO_PROXY 优先；空的小写值回退大写。Python 空小写变量会
+  屏蔽大写，依赖该方式禁用代理的部署应移除大写变量或使用合适的 NO_PROXY。
+- HTTP(S)_PROXY 为空时继续回退 `all_proxy` / `ALL_PROXY`（小写非空优先），避免已有
+  全局代理配置失效。scheme 代理优先。SOCKS5 使用 Go 原生 transport，不模拟 PySocks。
+- NO_PROXY `:port` 不匹配任何 host；请写 `host:port`。`.example.com` 只匹配子域，
+  要同时 bypass apex 请写 `example.com`。
+- CGI（设置 REQUEST_METHOD）拒绝 HTTP 环境代理并返回错误，包括 ALL_PROXY 回退；
+  不发送请求、不泄露认证。Python 忽略大写 HTTP_PROXY 后直连，两端显式断言这项
+  安全差异。面板不作为 CGI 运行；不能把 httpoxy 保护回归当作预期差异。
+- 环境代理 URL 按原生 net/url 语法解析；userinfo 中的保留字符应百分号编码。
+  显式配置代理继续沿用 weburl.ParseProxy 的用户输入清理。
+
+验证：`agents.TestProxyDifferentialAgainstRequests` 对真实 requests 与 Go 的逐次
+录制请求分别精确断言（14 个环境 × 3 个目标）；另有 Agent/Sub-Store 的 loopback、
+ALL_PROXY、优先级、CGI 零请求、显式代理和 redirect 边界。详情见
+[N8-2 复核报告](review-n8-2.md)。

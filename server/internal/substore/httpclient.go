@@ -13,7 +13,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -21,10 +20,6 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/weburl"
 )
-
-// environ is os.environ, read on every request like requests does (a
-// variable for tests).
-var environ = os.Environ
 
 func isASCIIText(s string) bool {
 	for i := 0; i < len(s); i++ {
@@ -463,7 +458,7 @@ func chooseProxy(explicit string, target *url.URL) (*url.URL, error) {
 	if explicit != "" {
 		proxy, err = weburl.ParseProxy(explicit)
 	} else {
-		proxy, err = weburl.FromEnvironment(environ(), target)
+		proxy, err = weburl.FromEnvironment(target)
 	}
 	if err != nil {
 		return nil, &RequestError{Class: "InvalidProxyURL", Message: err.Error(), Err: err}

@@ -180,8 +180,7 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 	dialer := &net.Dialer{Timeout: request.Timeout.Connect}
 	var proxy func(*http.Request) (*url.URL, error)
 	if !request.NoProxy {
-		// The environment proxy of every hop (proxy.go), not Go's
-		// ProxyFromEnvironment: no automatic loopback bypass.
+		// Resolve each redirect hop using native environment proxy rules.
 		proxy = func(r *http.Request) (*url.URL, error) {
 			chosen, err := environProxy(r.URL)
 			if err != nil {
