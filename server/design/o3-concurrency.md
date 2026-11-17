@@ -476,6 +476,34 @@ Implementation notes: [startup and shutdown](o3-startup-shutdown.md).
   locks or per-file .lock paths. Test same-profile serialization, different-profile parallelism,
   delete/write races, cancellation/limits, normal order and unchanged legacy-file sentinels.
 
+**Clarified in O3-6c (coordinator, 2026-11-18):**
+- Ordinary repo transactions retain their owner's work context after lock admission. Remove the
+  automatic Uninterruptible around the whole transaction. Store.CommitContext checks cancellation
+  after all BeforeCommit hooks, immediately before SQLite COMMIT; cancellation rolls back all rows.
+  Ordinary file writes check immediately before the primary rename and remove abandoned temporary files.
+- Explicit caller-owned Uninterruptible batches (provider cache/bundle) keep the O3-6a contract.
+  Three repo paths also span filesystem and database effects: DeleteProfile (move/export plus DB),
+  ImportAll/ResetAll (backup snapshot plus DB), and CreateRuleLibraryItem (cache plus DB). Their
+  callbacks check the work context immediately before the first filesystem effect and mark a
+  request-local batch. After that marker the final database commit must complete despite shutdown.
+  All other transactions remain cancellable. An AST test restricts markers to these three paths;
+  adding a path requires updating this design. Test cancellation before and after each marker.
+- writeAtomic has two replacements: the primary file and its best-effort previous-content .bak.
+  Check cancellation before the primary rename. After that rename succeeds, finish the existing
+  backup logic without another cancellation failure: a committed primary is reported as success.
+  Test shutdown after primary replacement, including the resulting backup.
+- Repo.WriteSharedTextIfChanged(ctx, relative, content) shares WriteSharedText's implementation and
+  leaf lock. Touch only when both the primary and .bak match; otherwise atomically replace.
+  Check ctx before Chtimes and preserve Python's mtime freshness semantics. Rulefetch uses this
+  owner instead of an unlocked TouchUnchangedCache; remove the unused pure helper.
+- taskstatus adds RecordContext/ForgetContext while retaining old entry points. Check the detached
+  work context under the leaf mutex and immediately before replacement; a blocked writer must not
+  commit after Runtime shutdown. Migrate production receipt callers to the context entries.
+- Every shared window listed by C29/A14/C33/C06 gets real Runtime Start/BindRequest/Shutdown tests:
+  shutdown while waiting or before commit preserves DB/files/revisions; client disconnect alone
+  still completes. Preserve red/green evidence. Coordinate repo signatures with N8-5 before edits;
+  O3-6c merges first, then N8-5 rebases. Activate A14's skipped regression once A14 is merged.
+
 ### 2.4 Mapping table (every Python loop/lock → Go construct)
 
 Porters of the missing modules use these names, timings and levels; reviewers check them.
