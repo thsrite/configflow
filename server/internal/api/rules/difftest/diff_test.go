@@ -29,6 +29,7 @@ import (
 	"configflow/internal/oxidns"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
+	shared "configflow/internal/rules"
 	"configflow/internal/taskstatus"
 	"gopkg.in/yaml.v3"
 )
@@ -43,15 +44,14 @@ type answer struct {
 	Error   string            `json:"oracle_error"`
 }
 type world struct {
-	t                   *testing.T
-	srv                 *httpxtest.Server
-	stdin               io.WriteCloser
-	scanner             *bufio.Scanner
-	stderr              bytes.Buffer
-	cmd                 *exec.Cmd
-	token               string
-	ids                 map[string]string
-	allowPinnedOmission bool
+	t       *testing.T
+	srv     *httpxtest.Server
+	stdin   io.WriteCloser
+	scanner *bufio.Scanner
+	stderr  bytes.Buffer
+	cmd     *exec.Cmd
+	token   string
+	ids     map[string]string
 }
 
 func newWorld(t *testing.T, seed func(context.Context, *repo.Repository)) *world {
@@ -294,6 +294,20 @@ func (w *world) pairIDs(a, b any) {
 					w.t.Error("generated IDs are not bijective")
 				}
 				w.ids[y] = replacement
+				if aa["source_type"] == "url" {
+					for _, row := range []map[string]any{aa, bb} {
+						raw, err := json.Marshal(row)
+						if err != nil {
+							w.t.Fatal(err)
+						}
+						value, err := jsonx.Parse(raw)
+						if err != nil {
+							w.t.Fatal(err)
+						}
+						w.ids["shared/rules/"+shared.RuleCacheFilename(value.(*jsonx.Object))] = replacement + ".list"
+					}
+				}
+
 				w.ids[oxidns.TagFor("rule", oxidns.S(x))] = replacement + "-tag"
 				w.ids[oxidns.TagFor("rule", oxidns.S(y))] = replacement + "-tag"
 				w.ids[fmt.Sprintf("shared/rules/by-id/%x.list", sha256.Sum256([]byte(x)))] = replacement + ".list"
@@ -378,7 +392,17 @@ func (w *world) call(method, path, body string, authenticated bool) answer {
 	}
 	migrated := httpxtest.MigratedAPIError(method, py.Status, got.Status, http.Header{"Content-Type": []string{py.Headers["Content-Type"]}}, got.Header, pyBytes, got.Body)
 	if !migrated {
-		compare("body", py.Body, actual)
+		if text, ok := py.Body.(string); ok && strings.Contains(path, "target=mihomo") && strings.HasPrefix(strings.TrimSpace(text), "payload:") {
+			var a, b any
+			left := yaml.Unmarshal([]byte(text), &a)
+			right := yaml.Unmarshal([]byte(actual.(string)), &b)
+			if left != nil || right != nil {
+				t.Fatalf("marked YAML delivery invalid: Python=%v Go=%v", left, right)
+			}
+			compare("marked YAML body", a, b)
+		} else {
+			compare("body", py.Body, actual)
+		}
 	}
 	for _, key := range []string{"Content-Type", "X-ConfigFlow-Cache", "Warning", "X-ConfigFlow-Profile"} {
 		if key == "Content-Type" && migrated {

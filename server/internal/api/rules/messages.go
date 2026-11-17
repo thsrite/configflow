@@ -64,3 +64,8 @@ const (
 	msgDirectRules     = "直接配置的规则"
 	msgRuleset         = "规则集"
 )
+
+const (
+	msgOrderObjects = "rule_configs must be a list"
+	msgOrderIDs     = "ids must be a list"
+)

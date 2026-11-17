@@ -14,7 +14,6 @@ import (
 	"configflow/internal/logx"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
-	shared "configflow/internal/rules"
 )
 
 var logger = logx.Get("backend.routes.rules")
@@ -383,7 +382,7 @@ func (s *Service) Reorder(ctx context.Context, id string, body record, base stri
 	if len(body) == 0 {
 		return nil, nil, invalid(msgNoBody)
 	}
-	ids, err := shared.OrderIDs(body, "rule_configs")
+	ids, err := reorderRequest(body)
 	if err != nil {
 		return nil, nil, invalid(err.Error())
 	}
@@ -394,12 +393,12 @@ func (s *Service) Reorder(ctx context.Context, id string, body record, base stri
 		if err != nil {
 			return err
 		}
-		items, missingIDs, err := reorder(items, ids, defaultText(body, "position", "top"))
+		items, missingIDs, err := reorderSelected(items, ids, defaultText(body, "position", "top"))
 		if err != nil {
 			return err
 		}
 		if len(missingIDs) > 0 {
-			return missing(missingOrder(missingIDs))
+			return missing(missingSelected(missingIDs))
 		}
 		if err := p.set("rule_configs", items); err != nil {
 			return err

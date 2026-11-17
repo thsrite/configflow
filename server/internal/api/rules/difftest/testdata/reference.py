@@ -49,7 +49,7 @@ def state():
         relative = path.relative_to(root).as_posix()
         if relative.endswith('.lock'):
             continue
-        text = path.read_text()
+        text = path.read_bytes().decode('utf-8')
         files[relative] = json.loads(text) if path.suffix == '.json' else yaml.safe_load(text) if path.suffix == '.yaml' else text
     with sqlite3.connect(root / 'configflow.sqlite3') as connection:
         sections = connection.execute('SELECT scope, owner, position FROM sections ORDER BY scope, owner').fetchall()

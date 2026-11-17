@@ -163,6 +163,21 @@ func (s *Service) match(ctx context.Context, id, query, host string) (record, er
 	var invalidSource error
 	matcher := shared.NewRuleConfigMatcher(config.GetList("rule_configs"), config.GetList("rule_library"), func(item, library *jsonx.Object) (string, error) {
 		content, err := s.sourceContent(ctx, config, item, library, host)
+		// C14 accepts these source line boundaries and normalizes them for client
+		// delivery. Feed the same records to C09's CR/LF text index, keeping the
+		// common ASCII path allocation-free and leaving the raw cache untouched.
+		if err == nil && strings.ContainsAny(content, "\v\f\x1c\x1d\x1e\u0085\u2028\u2029") {
+			source := library
+			if source == nil {
+				source = item
+			}
+			format, formatErr := convert.RulesetFormat(source, config, "")
+			if formatErr != nil {
+				err = formatErr
+			} else if format == "text" {
+				content = strings.Join(rulefetch.RuleLines(content), "\n")
+			}
+		}
 		if err != nil && invalidSource == nil {
 			invalidSource = err
 		}

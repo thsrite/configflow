@@ -302,3 +302,8 @@ Legacy JSON helpers stay unchanged until their callers migrate. Every N8-7+ cons
 non-finite request →400 transition explicitly; Agent metric/traffic ingestion and stored NaN seeds
 remain A04/A05 follow-up. No query/int-string lexical rules change (N3 owns them).
 
+## C32 — HEAD 规则接口只读（Python bug 修正）
+
+Python 的 `GET/PUT /api/rules/dns` handler 用「不是 GET」选择写分支，因此带合法 JSON body 的授权 HEAD 请求会提交 DNS 设置。Go 明确按 PUT 才写，HEAD 走 GET 并保持数据不变。规则列表和规则集列表的 HEAD 也走读取分支，修复 Python 未返回响应而报500的问题。用户需要修改 DNS 时继续使用 PUT；无需迁移存量数据。
+
+证据：真实 Flask `TestPythonHEADWriteIsFixed` 断言旧行为实际写出 blackhole action，同时断言 Go 完整 SQLite/文件状态不变；`TestHEADCollectionsAndDNSStayReadOnly` 覆盖四个列表/DNS入口。其他方法继续严格差分。

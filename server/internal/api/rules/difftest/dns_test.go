@@ -137,3 +137,44 @@ func TestDNSAgentReadModelLegacyNames(t *testing.T) {
 		})
 	}
 }
+
+func TestPinnedUpstreamChoicesAndLinkedRejection(t *testing.T) {
+	for _, linked := range []bool{false, true} {
+		name := "free"
+		if linked {
+			name = "linked"
+		}
+		t.Run(name, func(t *testing.T) {
+			setup := func(ctx context.Context, r *repo.Repository) {
+				seed(t)(ctx, r)
+				if linked {
+					_, err := r.UpdateSystemTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
+						p.Set("agents", []any{jsonx.Obj("id", "dns", "name", "DNS", "enabled", true, "service_type", "oxidns", "profile_id", "other", "dns_follow", jsonx.Obj("upstream_tag", "forward_local", "upstream_index", 0))})
+						return nil, nil
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			w := newWorld(t, setup)
+			state := w.call("GET", "/api/rules/dns?profile=other", "", true)
+			key := ""
+			for _, value := range state.Body.(map[string]any)["upstreams"].([]any) {
+				row := value.(map[string]any)
+				if row["source"] == "local" {
+					key = row["key"].(string)
+					if row["linked"] != linked {
+						t.Fatal("wrong binding")
+					}
+					break
+				}
+			}
+			if key == "" {
+				t.Fatal("missing local upstream")
+			}
+			w.call("PUT", "/api/rules/dns?profile=other", body(map[string]any{"routes": map[string]string{"inline": "upstream:" + key}}), true)
+			w.call("GET", "/api/rules/dns?profile=other", "", true)
+		})
+	}
+}

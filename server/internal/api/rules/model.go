@@ -90,3 +90,27 @@ type fault struct {
 
 func (e *fault) Error() string     { return e.message }
 func missing(message string) error { return &fault{404, message} }
+
+func reorderRequest(body record) ([]json.RawMessage, error) {
+	var ids []json.RawMessage
+	raw := body["ids"]
+	if len(raw) == 0 || string(raw) == "null" {
+		var items []record
+		if len(body["rule_configs"]) == 0 || string(body["rule_configs"]) == "null" || json.Unmarshal(body["rule_configs"], &items) != nil {
+			return nil, invalid(msgOrderObjects)
+		}
+		ids = make([]json.RawMessage, len(items))
+		for i, item := range items {
+			if item == nil {
+				return nil, invalid(msgOrderObjects)
+			}
+			ids[i] = item["id"]
+			if len(ids[i]) == 0 {
+				ids[i] = json.RawMessage("null")
+			}
+		}
+	} else if json.Unmarshal(raw, &ids) != nil {
+		return nil, invalid(msgOrderIDs)
+	}
+	return ids, nil
+}

@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,8 @@ import (
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/rulefetch"
+	shared "configflow/internal/rules"
+	"configflow/internal/taskstatus"
 )
 
 func TestPublicProvidersNormalizeOnlyDelivery(t *testing.T) {
@@ -155,6 +158,13 @@ func TestRemoteProviderValidationAndCache(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatal("validated library cache not reused", calls.Load())
 	}
+	if _, err := taskstatus.New(s.DataDir).Record("rule_source:remote", taskstatus.Result{OK: false, Error: "synthetic unavailable", CacheRetained: boolPointer(true)}); err != nil {
+		t.Fatal(err)
+	}
+	stale := s.Get("/api/rules/local/Remote").WantStatus(200)
+	if stale.Header.Get("X-ConfigFlow-Cache") != "stale" || stale.Header.Get("Warning") != `110 ConfigFlow "Rule refresh failed; using validated cache"` {
+		t.Fatalf("missing stale indication %v", stale.Header)
+	}
 	// Use a different source identity to force actual validation, rather than a cached hit.
 	invalid.Store(true)
 	_, err = s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
@@ -164,28 +174,109 @@ func TestRemoteProviderValidationAndCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := rulefetch.GetRulesDir(s.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range mustReadDir(t, root) {
-		if strings.Contains(entry.Name(), "Remote") {
-			if err := os.Remove(filepath.Join(root, entry.Name())); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
 	out := s.Get("/api/rules/local/Remote").WantStatus(422)
 	if out.Object().GetBool("cache_retained") || len(out.Object().GetList("errors")) == 0 {
 		t.Fatalf("%s", out.Body)
 	}
 }
 
-func mustReadDir(t *testing.T, dir string) []os.DirEntry {
-	t.Helper()
-	rows, err := os.ReadDir(dir)
+func TestSourceEntryPointsUsePersistedProxy(t *testing.T) {
+	var calls atomic.Int32
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.Method != "GET" || r.ContentLength > 0 || r.URL.Host != "127.0.0.1:1" {
+			t.Errorf("unexpected raw proxy request %s %s len%d", r.Method, r.URL, r.ContentLength)
+		}
+		if r.Header.Get("Proxy-Authorization") != "Basic cHJveHktdXNlcjpzeW50aGV0aWMtcGFzcw==" {
+			t.Error("persisted proxy authentication missing")
+		}
+		fmt.Fprint(w, "+.remote.example\n")
+	}))
+	defer proxy.Close()
+	s := fixture(t)
+	_, err := s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
+		for _, id := range []string{"first-remote", "second-remote"} {
+			p.Set("rule_library", append(p.GetList("rule_library"), jsonx.Obj("id", id, "name", id, "source_type", "url", "url", "http://127.0.0.1:1/"+id, "behavior", "domain", "format", "text")))
+		}
+		return nil, nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return rows
+	_, err = s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
+		p.GetObject("system_config").Set("rule_fetch_proxy", strings.Replace(proxy.URL, "http://", "http://proxy-user:synthetic-pass@", 1))
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.Repo.UpdateProfileTransaction(s.Context(), "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
+		p.Set("rule_configs", []any{jsonx.Obj("id", "remote", "itemType", "ruleset", "library_rule_id", "second-remote", "policy", "DIRECT")})
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Get("/api/profiles/other/rules/local/first-remote").WantStatus(200)
+	out := s.Post("/api/rules/match-test?profile=other", s.Login(), httpxtest.JSON(map[string]string{"query": "remote.example"})).WantStatus(200)
+	if !out.Object().GetBool("matched") || calls.Load() != 2 {
+		t.Fatalf("proxy requests=%d result=%s", calls.Load(), out.Body)
+	}
+}
+func TestCancelledLocalOwnerCompletesCache(t *testing.T) {
+	s := fixture(t)
+	ctx, cancel := context.WithCancel(s.Context())
+	cancel()
+	out, err := (&Service{}).Local(ctx, "other", "Ads", "mihomo", "http://localhost")
+	if err != nil || string(out.Content) != "+.ads.example\n" {
+		t.Fatalf("cancelled provider %q %v", out.Content, err)
+	}
+}
+
+func TestDuplicateResponseUsesCentralRedaction(t *testing.T) {
+	const secret = "duplicate-private-capability"
+	s := fixture(t)
+	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
+		p.GetObject("system_config").Set("rule_proxy_token", secret)
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.Repo.UpdateProfileTransaction(s.Context(), "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
+		p.Set("rule_configs", []any{jsonx.Obj("id", "one", "itemType", "rule", "rule_type", "DOMAIN", "value", secret, "policy", "DIRECT"), jsonx.Obj("id", "two", "itemType", "rule", "rule_type", "DOMAIN", "value", secret, "policy", "DIRECT")})
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := s.Post("/api/rules/find-duplicates?profile=other", s.Login()).WantStatus(200)
+	if strings.Contains(out.Text(), secret) || len(out.Object().GetList("duplicates")) != 1 {
+		t.Fatal("duplicate response bypassed credential redaction")
+	}
+}
+
+func TestBinaryCacheDeliveryRemainsOpaque(t *testing.T) {
+	for _, data := range [][]byte{{0xff, 0, 0x7f}, []byte("opaque-mrs\n")} {
+		t.Run(fmt.Sprintf("%x", data), func(t *testing.T) {
+			s := fixture(t)
+			source := jsonx.Obj("id", "binary", "name", "Binary", "source_type", "content", "behavior", "domain", "format", "mrs", "content", "")
+			_, err := s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
+				p.Set("rule_library", append(p.GetList("rule_library"), source))
+				return nil, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.Repo.WriteSharedText(s.Context(), "rules/"+shared.RuleCacheFilename(source), data); err != nil {
+				t.Fatal(err)
+			}
+			for _, query := range []string{"", "?target=mihomo"} {
+				out := s.Get("/api/rules/local/Binary" + query).WantStatus(200)
+				if !bytes.Equal(out.Body, data) {
+					t.Fatalf("opaque content changed: %x", out.Body)
+				}
+			}
+		})
+	}
 }

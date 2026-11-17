@@ -177,6 +177,14 @@ func TestRemoteProviderAndLazyMatching(t *testing.T) {
 			w.call("POST", "/api/rules/match-test?profile=other", `{"query":"remote.example"}`, true)
 			w.call("GET", "/api/profiles/other/rules/local/Remote?target=mihomo", "", false)
 			w.call("GET", "/api/profiles/other/rules/local/Remote", "", false)
+			w.call("POST", "/api/rules/find-duplicates?profile=other", "", true)
 		})
+	}
+}
+
+func TestReorderCompatibilityFailuresAndNoClobber(t *testing.T) {
+	w := newWorld(t, seed(t))
+	for _, request := range []string{`{}`, `[]`, `{"ids":"inline"}`, `{"ids":null}`, `{"rule_configs":[null]}`, `{"rule_configs":[{"id":"missing"}]}`, `{"ids":[42]}`, `{"ids":[null,"missing"]}`, `{"ids":["inline","inline"]}`, `{"ids":[]}`, `{"ids":["inline"],"position":"unexpected"}`} {
+		w.call("POST", "/api/rules/reorder?profile=other", request, true)
 	}
 }

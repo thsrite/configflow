@@ -101,7 +101,23 @@ func validateSyntax(item record) error {
 	}
 	return nil
 }
-func reorder(items []record, ids []string, position string) ([]record, []string, error) {
+func reorderSelected(items []record, selection []json.RawMessage, position string) ([]record, []json.RawMessage, error) {
+	ids := []string{}
+	for _, raw := range selection {
+		var text string
+		if json.Unmarshal(raw, &text) == nil && string(raw) != "null" {
+			ids = append(ids, text)
+			continue
+		}
+		var value any
+		if json.Unmarshal(raw, &value) != nil {
+			return nil, nil, errors.New("invalid rule identifier")
+		}
+		switch value.(type) {
+		case []any, map[string]any:
+			return nil, nil, &fault{500, httpx.DescInternal}
+		}
+	}
 	raw, err := json.Marshal(items)
 	if err != nil {
 		return nil, nil, err
@@ -110,16 +126,28 @@ func reorder(items []record, ids []string, position string) ([]record, []string,
 	if err != nil {
 		return nil, nil, err
 	}
-	list, _ := value.([]any)
-	ordered, missing := shared.ReorderByIDs(list, ids, position)
-	raw, err = json.Marshal(ordered)
-	if err != nil {
-		return nil, nil, err
+	ordered, unknown := shared.ReorderByIDs(value.([]any), ids, position)
+	unknownSet := map[string]bool{}
+	for _, id := range unknown {
+		unknownSet[id] = true
 	}
-	out := []record{}
-	err = json.Unmarshal(raw, &out)
-	return out, missing, err
+	missing := []json.RawMessage{}
+	for _, raw := range selection {
+		text, ok := textValue(raw)
+		if !ok || unknownSet[text] {
+			missing = append(missing, raw)
+		}
+	}
+	out := make([]record, len(ordered))
+	for i, item := range ordered {
+		out[i], err = native(item)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return out, missing, nil
 }
+
 func hydrated(profile, item record) (record, error) {
 	if item.text("itemType") != "ruleset" {
 		return item, nil
@@ -316,12 +344,16 @@ func udpChoice(raw json.RawMessage) (string, bool) {
 	text, ok := value.(string)
 	return text, ok
 }
-func missingOrder(ids []string) string {
-	values := make([]any, len(ids))
-	for i, id := range ids {
-		values[i] = id
+func missingSelected(ids []json.RawMessage) string {
+	raw, err := json.Marshal(ids)
+	if err != nil {
+		return msgOrderIDs
 	}
-	return fmt.Sprintf(msgOrderMissing, jsonx.Repr(values))
+	value, err := jsonx.Parse(raw)
+	if err != nil {
+		return msgOrderIDs
+	}
+	return fmt.Sprintf(msgOrderMissing, jsonx.Repr(value))
 }
 
 func dnsChoice(raw json.RawMessage) (string, error) {
