@@ -59,6 +59,7 @@ Flask differential packages pass, including agents twice (229.828s). Proddiff
 HTML-to-JSON errors are explicitly verified; existing A18/F1 remains recorded,
 with only its error representation fingerprint updated. No route coverage was removed.
 
+
 ## N7-3a — native subs/substore YAML readers (ported; final gates passed)
 
 All YAML reader sites in subs/parser/compat/hosts/dialers and substore/client use Parse/Get/AllPairs
@@ -110,6 +111,18 @@ The separate surrogate syntax class is non-JSON YAML flow only: standard JSON pa
 retain emoji through encoding/json first. Read-only production snapshot high-surrogate occurrences=0
 across all scanned categories; no stored texts were rewritten. Expected changes / classified remain
 subs209/209, substore14/14, convert29/29. API and non-YAML golden behavior remains strict.
+
+## N8-6 — native HTTP request binding (ported; final gates pending)
+
+Ctx.Bind / BindSilent(bool) plus literal/form-preserving httpx.Number, native duplicate whole-value
+replacement, media/BOM/empty/invalid handling and DTO rules are implemented. Only R226 tasks interval
+and strict POST /api/auth/login migrate; other X04 validators remain for N8-7+. Correct login,
+incorrect credentials and wrong credential field types keep their statuses/Chinese messages. Named
+bad-login vectors explicitly assert Python500→Go400/415, and migrated non-finite requests reject400.
+Legacy JSON helpers stay unchanged; N8-7+ callers record their own non-finite transition. A04/A05
+heartbeat/history seeds and traffic ingestion are inventoried, not changed. Detailed design mapping,
+DTOs, HTTP-shell scope, exact commands and output: [progress/n8-6-httpx.md](progress/n8-6-httpx.md).
+
 
 ## N7-1 — native yamlx core (ported, 2026-11-17)
 

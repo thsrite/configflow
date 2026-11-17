@@ -360,6 +360,15 @@ Accepted limitations: nesting depth — CPython's RecursionError depends on the 
 
 ## A04 — metrics history and flush
 
+N8-6 follow-up (request switch is local; no A04 product code changed):
+`api/agents/agents.go` heartbeat uses the legacy body reader, then ValidateSystemMetrics /
+Manager.UpdateHeartbeat → metrics.Wire AddMetrics hook → History.AddMetrics → pending JSONL/flush.
+A04 must reject or discard non-finite points before memory/file insertion, including finite JSON
+exponents that overflow when converted. Also review saved JSONL/readLegacy loading: difftest
+seedMetrics/oddMetrics already seed NaN; those data/history/summary responses retain N8-1's explicit
+NaN/Infinity→null checks. Do not replace those rows with a broad normalize. When heartbeat's request
+DTO migrates, explicitly assert whole-body NaN/Inf→400 in its HTTP differential (N8-7+ rule).
+
 N8-1 follow-up (coordinator, 2026-11-17): reject or discard non-finite metric
 points (NaN/±Infinity) at Agent report ingestion before storing them. N8-1
 repairs JSON responses to null at the common native exit; it intentionally does
@@ -431,6 +440,13 @@ Commands:
 - `rt -- bash -lc '~/cf-test/.venv/bin/python -I server/internal/agents/metrics/testdata/probe.py'`
 
 ## A05 — traffic history and traffic store
+
+N8-6 follow-up (deferred A05 governance, no product code changed): audit POST traffic-report and
+POST traffic-history (`api/agents/traffic.go`, legacy agents.ReadJSONBody at 256KiB/4MiB), then
+traffic history/store insertion and aggregation. Non-finite or conversion-overflow counter/point
+values must be rejected or dropped before ingestion; choose the exact point policy with A04/A05.
+The eventual binding migration records request NaN/Inf→400 explicitly. Persisted/history seeds
+need their own finite-point handling; changing the request decoder alone cannot clean old samples.
 
 N8-1 follow-up (coordinator, 2026-11-17): reject or discard non-finite metric
 points (NaN/±Infinity) at Agent report ingestion before storing them. N8-1

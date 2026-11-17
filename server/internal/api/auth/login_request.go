@@ -10,6 +10,7 @@ import (
 // JSON fields of other types are incorrect credentials (401), not malformed DTOs.
 type loginRequest struct{ Username, Password json.RawMessage }
 
+// UnmarshalJSON keeps exact-case credential fields and refuses non-object bodies.
 func (r *loginRequest) UnmarshalJSON(data []byte) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {

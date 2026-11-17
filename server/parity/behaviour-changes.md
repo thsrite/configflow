@@ -146,6 +146,7 @@ SIGTERM/SIGINT 先保存历史，再在默认 8 秒宽限期内收尾，在截�
 OxiDNS RulesFingerprint 则专用于校验证明，绑定 Go 嵌入 schema 和构建版本；Python 下 ready 的旧候选需要重新推送。
 旧候选激活返回「候选配置缺少当前规则的校验证明，已停止激活。请重新推送配置并完成校验。」且不发出激活请求。
 此外修正 Python 对缺少 profile_id 的 Agent 固定使用 default 字面量的问题：回执按当前仓库解析后的默认配置空间匹配。
+
 ## C31：聚合预览使用本次校验后的快照
 
 可靠性修正：Python 的聚合预览在生成、发布后再次读取 provider 文件。另一个请求在这两个步骤之间替换文件时，预览节点可能来自另一次发布，与本次的订阅统计不一致。Go 直接使用生成器返回的已校验节点快照；发布文件后发生的替换不会改变这次预览。接口字段和普通场景的结果不变。`TestPublishedSnapshotSurvivesArtifactReplacement` 验证发布结果不会随随后替换的文件而改变。
@@ -266,3 +267,24 @@ returned and no caller-supplied work/device request starts. Only true ErrSyntax
 keeps the old default fallback. No router-writing code changes. Three D1/budget/
 self-reference loopback RouterOS regressions assert zero requests, with a live
 ordinary-syntax fallback control. R01 corpus: 3 D1 + 1 other policy refusal.
+
+## N8-6 — native request binding and correct bad-request statuses
+
+Coordinator-approved local migration: only `POST /api/auth/login` and R226
+`PUT /api/tasks/interval` use the new native binders in this step. Login malformed/empty/trailing or
+non-object JSON previously became Python's caught 500; Go returns the native bad-request 400 envelope.
+Wrong/missing JSON Content-Type becomes 415 (Python login caught it as 500). Valid JSON with/without
+charset, +json, BOM/UTF-16, login success, wrong credentials and wrong credential field types retain
+behavior; wrong credential types still produce the original Chinese 401.
+
+These two migrated callers reject NaN/Infinity/-Infinity as malformed JSON. Python login used to
+return 401 on those credential forms; Python R226 reached its interval validator and returned its
+numeric-validation 400, while Go's silent binding returns the existing malformed-body Chinese 400.
+17 named vectors independently record both the real Python handler response and Go's expected full
+error body from real Flask strict/malformed controls; no broad normalization or field exclusion.
+Native responses still convert non-finite Go numbers to null through N8-1's sole response exit.
+
+Legacy JSON helpers stay unchanged until their callers migrate. Every N8-7+ consumer records its own
+non-finite request →400 transition explicitly; Agent metric/traffic ingestion and stored NaN seeds
+remain A04/A05 follow-up. No query/int-string lexical rules change (N3 owns them).
+

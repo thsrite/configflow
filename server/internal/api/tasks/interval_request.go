@@ -16,6 +16,7 @@ type intervalRequest struct {
 	valid    bool
 }
 
+// UnmarshalJSON retains presence and field forms for the interval validator.
 func (r *intervalRequest) UnmarshalJSON(data []byte) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {

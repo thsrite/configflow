@@ -153,3 +153,21 @@ func TestBindingAndNonFiniteResponseUseSeparatePolicies(t *testing.T) {
 	})})
 	srv.Post("/api/bind", httpxtest.Body([]byte(`{"n":1e400}`), "application/json")).WantStatus(200).WantJSON(jsonx.Obj("n", jsonx.Number("1e400"), "missing", nil))
 }
+
+func TestBindingRetainsScalarLexemesAfterNativeTokens(t *testing.T) {
+	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
+		r.POST("/api/bind", "test.lexeme", func(c *httpx.Ctx) (*httpx.Response, error) {
+			var dto struct {
+				N httpx.Number `json:"n"`
+			}
+			if err := c.Bind(&dto); err != nil {
+				return nil, err
+			}
+			return httpx.JSON(map[string]string{"raw": dto.N.Raw()}), nil
+		})
+	})})
+	for _, literal := range []string{"6e1", "60.00", `"\u0036\ud800"`, "true", "null"} {
+		source := `{"前缀":"中","n" : ` + literal + `}`
+		srv.Post("/api/bind", httpxtest.Body([]byte(source), "application/json")).WantStatus(200).WantJSON(jsonx.Obj("raw", literal))
+	}
+}

@@ -38,7 +38,17 @@
 //	c.Param("agent_id")    view argument
 //	c.Arg("lines")         request.args.get (first value, Werkzeug query parsing); ArgDefault, ArgInt (type=int), ArgList
 //	c.Header("X-Foo")      request.headers.get; HeaderDefault
-//	c.JSON()               request.json: 415 / 400 *HTTPError on bad input (err.Error() is str(e))
+//	c.Bind(&dto)           native strict DTO binding: 415 media / 400 malformed or incompatible JSON
+//	c.BindSilent(&dto)     false + zero destination on failure; true for valid JSON
+//	httpx.Number           exact literal/form; explicit IsIntegerLiteral/IsBool validation
+//	Number.Text()          raw string contents; integer string syntax stays with N3
+//
+// Binding ignores unknown fields by default. DTOs requiring exact-case names or
+// extra-member rejection provide UnmarshalJSON with a map[string]json.RawMessage.
+// Number/RawMessage fields preserve business validation of wrong forms rather
+// than turning every wrong field type into a generic decoder error. The native
+// binders reject non-finite JSON; legacy JSON helpers migrate per consumer.
+//	c.JSON()               legacy request.json: 415 / 400 *HTTPError on bad input (err.Error() is str(e))
 //	c.JSONSilent()         request.get_json(silent=True); JSONObject() for the usual isinstance(dict) check; JSONForce()
 //	c.Data(), c.Stream(), c.ContentLength()   request.get_data(), request.stream, request.content_length
 //	c.Form(name)           request.form.get

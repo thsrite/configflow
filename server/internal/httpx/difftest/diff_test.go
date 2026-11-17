@@ -31,6 +31,7 @@ import (
 	"testing"
 	"time"
 
+	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/auth"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
@@ -151,6 +152,12 @@ func startGo(t *testing.T, dataDir string) string {
 	repo.SetRepository(r)
 	t.Cleanup(func() { repo.SetRepository(nil) })
 	app := server.NewApp()
+	// This shell does not start every task-row provider. Mount the actual R226
+	// handler for validation/not-found vectors without faking providers or changing
+	// production wiring. refresh/difftest covers successful writes with row slots.
+	if !app.Router.HasEndpoint("tasks.set_interval") {
+		apitasks.RegisterAlways(app.Router)
+	}
 	ctx := repo.WithScope(context.Background())
 	if _, err := repo.LoadConfig(ctx); err != nil {
 		t.Fatal(err)
@@ -161,6 +168,7 @@ func startGo(t *testing.T, dataDir string) string {
 }
 
 type request struct {
+	binding     *bindingExpectation
 	name        string
 	method      string
 	path        string
@@ -223,16 +231,13 @@ func login(t *testing.T, base string) string {
 	return "Bearer " + value.(*jsonx.Object).GetString("token")
 }
 
-func requests() []request {
+func requests(t *testing.T) []request {
 	J := "application/json"
 	origin := map[string]string{"Origin": "https://client.example"}
-	return []request{
+	rows := []request{
 		{name: "auth status", method: "GET", path: "/api/auth/status"},
 		{name: "auth status with origin", method: "GET", path: "/api/auth/status", headers: origin},
 		{name: "login wrong password", method: "POST", path: "/api/auth/login", body: `{"username":"diff-admin","password":"x"}`, contentType: J},
-		{name: "login bad json", method: "POST", path: "/api/auth/login", body: `{"username":`, contentType: J},
-		{name: "login text/plain", method: "POST", path: "/api/auth/login", body: `{}`, contentType: "text/plain"},
-		{name: "login list", method: "POST", path: "/api/auth/login", body: `[1]`, contentType: J},
 		{name: "login ok", method: "POST", path: "/api/auth/login", body: `{"username":"diff-admin","password":"diff-password"}`, contentType: J, mask: []string{"token"}},
 		{name: "login GET 405", method: "GET", path: "/api/auth/login"},
 		{name: "verify no token", method: "GET", path: "/api/auth/verify"},
@@ -313,6 +318,29 @@ func requests() []request {
 		{name: "notifications read unknown", method: "POST", path: "/api/notifications/read", auth: "admin", body: `{"versions":{"x":"y"}}`, contentType: J},
 		{name: "notifications read no token", method: "POST", path: "/api/notifications/read", body: `{"versions":{}}`, contentType: J},
 	}
+	rows = append(rows, bindingRequests(t)...)
+	for _, ct := range []string{J, J + "; charset=utf-8", "application/merge-patch+json"} {
+		rows = append(rows, request{name: "frontend login " + ct, method: "POST", path: "/api/auth/login", body: `{"username":"diff-admin","password":"diff-password"}`, contentType: ct, mask: []string{"token"}})
+	}
+	for _, body := range []string{`{"username":true,"password":"diff-password"}`, `{"username":"diff-admin","password":12}`, `{"username":[],"password":{}}`, `{"Username":"diff-admin","password":"diff-password"}`} {
+		rows = append(rows, request{name: "typed credential " + body, method: "POST", path: "/api/auth/login", body: body, contentType: J})
+	}
+	for _, value := range []string{"60", "60.0", "6e1", "true", "false", `"60"`, "9223372036854775808", "null", "[]", "{}"} {
+		rows = append(rows, request{name: "R226 literal " + value, method: "PUT", path: "/api/tasks/interval", auth: "admin", body: `{"key":"subscription:missing","interval_seconds":` + value + `}`, contentType: J})
+	}
+	for _, body := range []string{`{"Key":"subscription:missing","interval_seconds":60}`, `{"key":"subscription:missing","interval_seconds":60,"extra":0}`, `{"key":"wrong","key":"subscription:missing","interval_seconds":59,"interval_seconds":60}`} {
+		rows = append(rows, request{name: "R226 shape " + body, method: "PUT", path: "/api/tasks/interval", auth: "admin", body: body, contentType: J})
+	}
+	frontend := `{"username":"diff-admin","password":"diff-password"}`
+	rows = append(rows, request{name: "BOM login", method: "POST", path: "/api/auth/login", body: "\xef\xbb\xbf" + frontend, contentType: J, mask: []string{"token"}})
+	encoded := []byte{0xff, 0xfe}
+	for _, b := range []byte(frontend) {
+		encoded = append(encoded, b, 0)
+	}
+	rows = append(rows, request{name: "UTF16 login", method: "POST", path: "/api/auth/login", body: string(encoded), contentType: J, mask: []string{"token"}})
+
+	return rows
+
 }
 
 var portPattern = regexp.MustCompile(`127\.0\.0\.1:\d+`)
@@ -340,6 +368,9 @@ func maskJSON(value any, mask []string) any {
 
 func compare(r request, py, gor response) []string {
 	var diffs []string
+	if r.binding != nil {
+		py, diffs = bindingDifference(r, py, gor)
+	}
 	migrated := httpxtest.MigratedAPIError(r.method, py.status, gor.status, py.header, gor.header, py.body, gor.body)
 	if py.status != gor.status {
 		diffs = append(diffs, fmt.Sprintf("status python %d go %d", py.status, gor.status))
@@ -426,15 +457,17 @@ func TestDifferentialAgainstFlask(t *testing.T) {
 		pyTokens[k], goTokens[k] = v, v
 	}
 	failed := 0
-	for _, r := range requests() {
+	for _, r := range requests(t) {
 		py := send(t, pyBase, r, pyTokens)
 		gor := send(t, goBase, r, goTokens)
 		if diffs := compare(r, py, gor); len(diffs) > 0 {
 			failed++
 			t.Errorf("DIFF %s %s %s:\n  %s", r.name, r.method, r.path, strings.Join(diffs, "\n  "))
+		} else if r.binding != nil {
+			t.Logf("expected binding migration %-25s Python %d → Go %d (both full bodies checked)", r.name, py.status, gor.status)
 		} else {
 			t.Logf("same %-40s %s %s → %d", r.name, r.method, r.path, py.status)
 		}
 	}
-	t.Logf("%d requests, %d differences", len(requests()), failed)
+	t.Logf("%d requests, %d differences", len(requests(t)), failed)
 }
