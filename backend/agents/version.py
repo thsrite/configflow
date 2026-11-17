@@ -1,10 +1,17 @@
 """Agent 版本管理"""
 
 # Agent 最新版本号
-LATEST_AGENT_VERSION = "1.8.61-go"
+LATEST_AGENT_VERSION = "1.8.62-go"
 
 # 版本更新日志（可选）
 VERSION_CHANGELOG = {
+    "1.8.62-go": {
+        "date": "2026-11-17",
+        "features": [
+            "修复 Shell 自定义生命周期安装后 Agent 因旧版服务迁移而启动失败，支持重复安装和脚本升级",
+            "核心服务配置检查按类型显示结果，仅在 OxiDNS/systemd 实际校验目录时报告校验完成"
+        ]
+    },
     "1.8.61-go": {
         "date": "2026-11-14",
         "features": [
