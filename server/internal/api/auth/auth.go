@@ -8,6 +8,7 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"fmt"
 )
 
 var logger = logx.Get("backend.routes.auth")
@@ -25,23 +26,19 @@ func authStatus(c *httpx.Ctx) (*httpx.Response, error) {
 
 func login(c *httpx.Ctx) (*httpx.Response, error) {
 	fail := func(message string) (*httpx.Response, error) {
-		return httpx.Message(500, false, "登录失败。原始错误："+message), nil
+		return httpx.Message(500, false, fmt.Sprintf(msgLoginFailure, message)), nil
 	}
-	data, err := c.JSON()
-	if err != nil {
-		return fail(err.Error())
+	var body loginRequest
+	if err := c.Bind(&body); err != nil {
+		return nil, err
 	}
-	object, ok := data.(*jsonx.Object)
-	if !ok || object == nil {
-		return fail(httpx.NoAttributeGet(data))
-	}
-	username, password := object.Value("username"), object.Value("password")
+	username, password := body.credentials()
 	if !auth.IsAuthEnabled() {
-		return httpx.Message(400, false, "当前未开启登录验证。"), nil
+		return httpx.Message(400, false, msgLoginDisabled), nil
 	}
 	config := auth.Current()
 	if username == config.AdminUsername && password == config.AdminPassword {
-		name, _ := username.(string)
+		name := username
 		logger.Info("登录成功：用户 " + logx.LogText(username, 120) + "，来源 " + logx.ClientIP(c.Request))
 		token, err := auth.GenerateToken(name)
 		if err != nil {
@@ -51,7 +48,7 @@ func login(c *httpx.Ctx) (*httpx.Response, error) {
 			"expiresIn", auth.ExpirationHours*3600)), nil
 	}
 	logger.Warning("登录失败：用户名或密码错误，用户 " + logx.LogText(username, 120) + "，来源 " + logx.ClientIP(c.Request))
-	return httpx.Message(401, false, "用户名或密码错误，请重新输入。"), nil
+	return httpx.Message(401, false, msgInvalidCredentials), nil
 }
 
 func verify(c *httpx.Ctx) (*httpx.Response, error) {

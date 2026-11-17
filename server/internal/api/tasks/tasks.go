@@ -107,16 +107,17 @@ func findRow(ctx context.Context, key string) (any, error) {
 }
 
 func setInterval(c *httpx.Ctx) (*httpx.Response, error) {
-	key, body := bodyKey(c)
-	if key == "" || body.Len() != 2 || !body.Has("key") || !body.Has("interval_seconds") {
-		return message(400, "请指定任务和更新间隔"), nil
+	var body intervalRequest
+	if !c.BindSilent(&body) || !body.valid {
+		return message(400, msgSpecifyTaskInterval), nil
 	}
+	key := body.Key
 	if key == tasks.MetricsTaskKey {
 		setter := tasks.IntervalSetter(key)
 		if setter == nil {
 			return nil, errors.New("metrics_flush.set_interval is not wired")
 		}
-		if err := setter(c.Context(), body.Value("interval_seconds")); err != nil {
+		if err := setter(c.Context(), body.intervalValue()); err != nil {
 			var invalid *tasks.Invalid
 			if errors.As(err, &invalid) {
 				return message(400, invalid.Message), nil
@@ -131,9 +132,9 @@ func setInterval(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	category, resourceID, _ := strings.Cut(key, ":")
 	if category != "subscription" && category != "rule_source" {
-		return message(400, "这个任务的间隔不能在这里修改"), nil
+		return message(400, msgIntervalUnsupported), nil
 	}
-	interval, err := refresh.ValidateRefreshInterval(body.Value("interval_seconds"), "更新间隔")
+	interval, err := refresh.ValidateRefreshInterval(body.intervalValue(), msgIntervalLabel)
 	if err != nil {
 		return message(400, err.Error()), nil
 	}
@@ -150,7 +151,7 @@ func setInterval(c *httpx.Ctx) (*httpx.Response, error) {
 				return nil, nil
 			}
 		}
-		return nil, &tasks.NotFound{Message: "任务对应的来源已不存在，请刷新后重试"}
+		return nil, &tasks.NotFound{Message: msgSourceMissing}
 	})
 	var notFound *tasks.NotFound
 	if errors.As(err, &notFound) {
