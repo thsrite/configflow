@@ -25,7 +25,20 @@ func TestStandardTagShapes(t *testing.T) {
 				kind yaml.Kind
 			}{{"value", yaml.ScalarNode}, {"[a]", yaml.SequenceNode}, {"{a: 1}", yaml.MappingNode}} {
 				t.Run(tag+form.text, func(t *testing.T) {
-					source := "# header\n!!" + tag + " " + form.text
+					text := form.text
+					if form.kind == yaml.ScalarNode {
+						switch tag {
+						case "bool":
+							text = "true"
+						case "int":
+							text = "1"
+						case "float":
+							text = "1.5"
+						case "null":
+							text = "null"
+						}
+					}
+					source := "# header\n!!" + tag + " " + text
 					_, err := Parse([]byte(source))
 					if form.kind == tc.kind {
 						if err != nil {
@@ -52,14 +65,14 @@ func TestStandardTagShapes(t *testing.T) {
 	}
 }
 
-func TestTagShapeParsingDoesNotDecodeScalarContents(t *testing.T) {
-	n, err := Parse([]byte("!!int not-an-integer"))
+func TestTagShapeParsingDoesNotDecodeDestination(t *testing.T) {
+	n, err := Parse([]byte("!!int 300"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var value int
+	var value uint8
 	if err := Decode(n, &value); err == nil {
-		t.Fatal("invalid integer decoded")
+		t.Fatal("out-of-range integer decoded")
 	}
 	for _, source := range []string{"!custom [a]", "!custom {a: 1}", "!custom value"} {
 		if _, err := Parse([]byte(source)); err != nil {

@@ -11,4 +11,6 @@ const (
 	msgScalarShape       = "标量"
 	msgSequenceShape     = "序列"
 	msgMappingShape      = "映射"
+	msgMergeSource       = "YAML 合并引用 << 必须是映射或映射序列（第 %d 行）"
+	msgExplicitScalar    = "YAML 标签 %s 的标量内容无效（第 %d 行）：%v"
 )

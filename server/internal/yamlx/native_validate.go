@@ -53,6 +53,17 @@ func checkGraph(n *Node, path, done map[*Node]bool) error {
 	if err := checkTagShape(n); err != nil {
 		return err
 	}
+	if n.Kind == yaml.ScalarNode && n.Style&yaml.TaggedStyle != 0 {
+		switch n.ShortTag() {
+		case "!!null", "!!bool", "!!int", "!!float":
+			// Only this scalar is decoded. This validates its explicit tag with
+			// yaml.v3, independently of any document destination or constructor.
+			var scalar any
+			if err := n.Decode(&scalar); err != nil {
+				return nodeError(n, fmt.Sprintf(msgExplicitScalar, n.ShortTag(), n.Line, err))
+			}
+		}
+	}
 	switch n.Kind {
 	case yaml.DocumentNode:
 		if len(n.Content) != 1 {
@@ -84,6 +95,28 @@ func checkGraph(n *Node, path, done map[*Node]bool) error {
 		}
 	}
 	if n.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			if Resolve(n.Content[i]).ShortTag() != "!!merge" {
+				continue
+			}
+			value := Resolve(n.Content[i+1])
+			if value.Kind == yaml.MappingNode {
+				continue
+			}
+			if value.Kind == yaml.SequenceNode {
+				valid := true
+				for _, source := range value.Content {
+					if Resolve(source).Kind != yaml.MappingNode {
+						valid = false
+						break
+					}
+				}
+				if valid {
+					continue
+				}
+			}
+			return nodeError(n.Content[i+1], fmt.Sprintf(msgMergeSource, n.Content[i+1].Line))
+		}
 		seen := map[string][]*Node{}
 		for i := 0; i+1 < len(n.Content); i += 2 {
 			key := n.Content[i]
