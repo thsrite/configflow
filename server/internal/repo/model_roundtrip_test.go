@@ -236,11 +236,11 @@ func TestStoredRoundTrip(t *testing.T) {
 			}
 		})
 		commit("unknown system", []modelRowKey{{"system", "", "backup"}}, func(d *model.Document) {
-			fields := roundTripFields(t, d.System.Backup)
+			fields := roundTripFields(t, must(model.Marshal(d.System.Backup))(t))
 			if fields.Set("n8_unknown", marker) != nil {
 				t.Fatal("backup unknown set failed")
 			}
-			d.System.Backup = must(model.Marshal(fields))(t)
+			d.System.Backup = roundTripDecode[model.Backup](t, fields)
 		})
 		commit("unknown shared", []modelRowKey{{"shared", "", "n8_unknown"}}, func(d *model.Document) {
 			if d.Shared.Fields.Set("n8_unknown", marker) != nil {

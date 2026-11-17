@@ -60,10 +60,10 @@ func (s *Shared) UnmarshalJSON(data []byte) error { return DecodeRecord(data, s,
 // MarshalJSON preserves unknown and unchanged shared members.
 func (s Shared) MarshalJSON() ([]byte, error) { return EncodeRecord(&s, &s.raw) }
 
-// System is the global-settings skeleton; settings/backup/agents remain opaque.
+// System holds global settings and backup preferences; agents remain opaque until N8-4e.
 type System struct {
-	SystemConfig json.RawMessage `json:"system_config"`
-	Backup       json.RawMessage `json:"backup"`
+	SystemConfig SystemConfig    `json:"system_config"`
+	Backup       Backup          `json:"backup"`
 	Agents       json.RawMessage `json:"agents"`
 	Revision     Int             `json:"_revision"`
 	Fields       Fields

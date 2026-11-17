@@ -15,6 +15,10 @@ import (
 // unchanged source cannot mask a child codec dropping members.
 func storedRecordTypes() []reflect.Type {
 	return []reflect.Type{
+		reflect.TypeFor[SystemConfig](),
+		reflect.TypeFor[NodeTestDNSConfig](),
+		reflect.TypeFor[ManagedDNSBinding](),
+		reflect.TypeFor[Backup](),
 		reflect.TypeFor[ResourceRef](), reflect.TypeFor[ProviderHealthCheck](),
 		reflect.TypeFor[Node](), reflect.TypeFor[Subscription](),
 		reflect.TypeFor[Aggregation](), reflect.TypeFor[RuleLibraryItem](),
@@ -129,6 +133,10 @@ func TestStoredTypes(t *testing.T) {
 						t.Fatal("edit encode failed")
 					}
 					afterOrder, after := fuzzMembers(t, result)
+					var wanted, actual any
+					if json.Unmarshal(next, &wanted) != nil || json.Unmarshal(after[field.name], &actual) != nil || !reflect.DeepEqual(wanted, actual) {
+						t.Fatal("typed edit was not written")
+					}
 					if !slices.Equal(order, afterOrder) {
 						t.Fatal("edit moved members")
 					}
@@ -269,6 +277,7 @@ func runTypesInterchange(t *testing.T, rows []interchangeRow, private bool) {
 		"client_fixed_ips": reflect.TypeFor[Profile](),
 		"oxidns":           reflect.TypeFor[Profile](),
 		"proxy_groups":     reflect.TypeFor[Profile](), "rule_configs": reflect.TypeFor[Profile](),
+		"system_config": reflect.TypeFor[System](), "backup": reflect.TypeFor[System](),
 		"nodes": reflect.TypeFor[Shared](), "subscriptions": reflect.TypeFor[Shared](),
 		"subscription_aggregations": reflect.TypeFor[Shared](), "rule_library": reflect.TypeFor[Shared](),
 	}
@@ -392,6 +401,8 @@ func checkSnapshotTypes(t *testing.T, rows []interchangeRow) {
 	for _, row := range rows {
 		var holder json.Unmarshaler
 		switch row.Name {
+		case "system_config", "backup":
+			holder = &System{}
 		case "nodes", "subscriptions", "subscription_aggregations", "rule_library":
 			holder = &Shared{}
 		case "proxy_groups", "rule_configs", "mihomo", "surge", "loon", "mosdns", "domain_discovery", "device_notes", "client_fixed_ips", "oxidns":
