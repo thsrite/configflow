@@ -391,3 +391,13 @@ Safety rules for every batch (from the lab notes in memory and earlier labs):
   subscription before anything can publish; the lab panel must not reach production devices.
 - Each batch ends with a short report in `server/parity/lab/L<n>.md` (what ran, results, defects → tasks)
   and the guests are destroyed afterwards unless the next batch reuses them.
+
+## Production snapshot refresh (from the O2 review, 2026-11-17)
+
+Time-window routes (metrics/traffic history: 1 h, 24 h, 7 d) compare empty results once the snapshot ages, so
+the coordinator refreshes `~/cf-prod-snapshot/` on the test servers (read-only copy from the NAS: tar of the data
+dir minus logs + SQLite online backup via the container's Python, mode 700, never committed) **weekly** and before
+the switch. After a refresh, new differences are expected to surface; triage them like any finding (fix Go or
+baseline with a reason). Keep the previous snapshot until the new baseline is settled, then delete it. The
+harness proves egress isolation at start (only lo, no host sockets, DNS fails, TEST-NET unreachable) — never
+weaken that check.
