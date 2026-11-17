@@ -26,6 +26,14 @@ var deploymentIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,80}\z`)
 
 const busyMessage = "another service operation is in progress"
 
+// rollbackKeys marks manual rollback submissions owned by this process, from
+// before the reservation is written until the Agent's answer is handled. A
+// rolling_back reservation without a live owner (process exit, or shutdown
+// cancelling the request before the Agent read it) is as ambiguous as an
+// observed unknown outcome, so a poll reissues the idempotent rollback instead
+// of waiting forever (A14 review M1).
+var rollbackKeys = lockx.NewKeyed[[3]string](lockx.LevelJob, "agent-manual-rollback")
+
 type preparationLease struct {
 	release func()
 	stop    func() bool
@@ -619,11 +627,12 @@ func (m *Manager) getDeployment(ctx context.Context, agentID, deploymentID strin
 		return nil, err
 	}
 	if jsonx.Truthy(state.Value("manual_rollback")) && result.Value("status") == "succeeded" && !jsonx.Truthy(result.Value("manual_rollback")) {
-		if state.Value("status") != "unknown" {
+		if state.Value("status") != "unknown" && rollbackKeys.Held([3]string{m.repository.DataDir(), agentID, deploymentID}) {
 			return merged(state, "message", "Rollback submission awaiting Agent confirmation", "pending", true), nil
 		}
-		// A lost POST response is ambiguous. Reissuing the same guarded,
-		// idempotent rollback is safe; a publication status alone is not.
+		// A lost POST response, or a reservation whose submitting owner is gone,
+		// is ambiguous. Reissuing the same guarded, idempotent rollback is safe;
+		// a publication status alone is not.
 		result, err = m.DeploymentRequest(ctx, agent, "POST", "deployments/"+deploymentID+"/rollback", nil, nil, nil)
 		if IsTransportError(err) {
 			return pending(), nil
@@ -805,6 +814,11 @@ func (m *Manager) RollbackDeployment(ctx context.Context, agentID, deploymentID 
 	if haEnabled(agent) || haBusy(agent) || jsonx.Truthy(taskOf(agent, deploymentID).Value("ha_publication")) {
 		text := "主备发布不能单独回滚一台；请将目标配置重新发布到主备"
 		return jsonx.Obj("success", false, "http_status", jsonx.Int(409), "rollback_rejected", true, "rollback_message", text, "message", text), nil
+	}
+	// Another submission of this rollback in this process keeps its own mark;
+	// this call then only reads the existing reservation.
+	if _, release, owned := rollbackKeys.TryLock(ctx, [3]string{m.repository.DataDir(), agentID, deploymentID}); owned {
+		defer release()
 	}
 	value, err := m.UpdateAgents(ctx, "", func(ctx context.Context, agents *[]any) (any, error) {
 		agent, _ := findAgent(*agents, agentID)

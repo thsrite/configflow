@@ -13,6 +13,15 @@
   已成功恢复的对象仍登记为 ConfigFlow 所有（Python 会把它们变成无归属对象，阻断之后的每次预览）。
 - 见 [R09 复核](review-r09.md) 与 [R09 移植报告](progress/R09-dns-guard.md)。
 
+## A14 review — 手动回滚预留不再因丢失提交而卡死（Python bug 修正）
+
+手动回滚先把任务写成 `rolling_back` + `manual_rollback`，再向 Agent 提交。若面板在两者之间退出
+（kill -9，或关机取消在 Agent 读到请求前断开连接），Python 只在状态为 `unknown` 时重发回滚，
+之后每次查询都停在「回滚请求正在等待 Agent 确认」，新的发布、回滚、恢复全部被拒绝，只能改数据库。
+Go 记录本进程是否仍持有这次提交：持有期间行为不变；没有持有者时，查询与 `unknown` 一样重发同一个
+幂等、受 Agent 保护的回滚请求，然后按 Agent 结果记录。见 [A14 复核](review-a14.md) M1，回归
+`agents.TestReviewA14ManualRollbackWithoutLiveOwnerIsReissued`（真实 Runtime 关机 + 重启）。
+
 ## A24 review — public Agent/deployment credential safety
 
 复核按任务要求修复 Python 原版同样存在的泄露：旧/导入 Agent 与部署记录中的
