@@ -27,7 +27,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A09 | Docker HA guide, preflight, enrollment | 1083 | verified | HR | A08, A01 | 2 (2 done) | internal/installer, api/agents |
 | A10 | Docker HA compose variants, installer routes | 1018 | verified | HR | A08, A09 | 9 (9 done) | internal/installer, api/agents |
 | A11 | deployment bundle, locations, Mihomo resources, generated preview | 1264 | ported | HR | A02, A19, C05, C12, C14, C15, C21, C22, C25 | – | internal/deploy (new) |
-| A12 | push diff | 1465 | missing | | A11 | – | internal/deploy |
+| A12 | push diff | 1465 | ported | | A11 | – | internal/deploy/pushdiff |
 | A13 | content sync, Agent list/detail, push-diff routes | 584 | missing | | A12, A15 | 4 | internal/deploy, api/agents |
 | A14 | publishing: transactional content, push-config, deployments, receipts | 1002 | missing | HR | A11, A13, C13, C17, C18, C19, C20, C22, C23 | 9 | internal/deploy, api/agents |
 | A15 | upgrades, Agent operations, address follow | 745 | verified | HR | A01, A02 | 15 (15 done) | internal/agents/upgrades (new), api/agents |
@@ -931,18 +931,81 @@ The earlier .63-only rulefetch proxy_refused timeout difference did not reproduc
 
 ## A12 — push diff
 
-**Status: `missing`** · prereqs: A11 · Go: internal/deploy
+**Status: `ported`（实现/语料通过，最终门禁进行中）** · prereqs: A11 verified · Go: `internal/deploy/pushdiff` · branch `go-port-a12` · commit: 本节随 A12 实现提交，最终门禁记录在后续提交。
 
-**Design:** `server/design/a14-publish.md` (Opus, 2026-11-17) covers the whole chain A11→A14 — package map, types, Agent protocol, state machine, locks, failure table, steps A12-1, acceptance. Port to it; contract changes need the designer's or coordinator's agreement.
+范围：`backend/agents/push_diff.py` 全部纯比较能力。实现按 `design/a14-publish.md` A12-1：typed `Diff`/`Page`/`Text`、逐键 YAML、命名/标量列表、带敏感片段的统一 diff、文件排序/计数、节点重复名/未命名配对、规则多重集合、行/字节/文件/条目预算、zlib 压缩分页、搜索、stored-token 局部替换。无 HTTP 注册（A13/A14）、无仓库/网络/设备访问，无 push、无子 agent。
 
-Files:
-- `backend/agents/push_diff.py` (1465)
+决定/接口：
+- `Build(AppliedView, *deploy.Bundle, *deploy.Receipt, map[string]*FileEntries)`；nil `AppliedView.Files` 才表示摘要缺失，空 map 是有效基线；nil receipt 明确表示无保存 bundle，调用者负责 Load。
+- 复用 `deploy.Digests`/`ComparisonManifest`；基线比较摘要读取 **Receipt.ComparisonConfig**，详情读取 receipt 的 live bytes。仅 `Bundle.Files(paths...)` 读取列出的变化文件，空路径集不调用会读取全量的 Files()。
+- `diag.CredentialSpans` / `IsCredentialKey` 放在共享诊断包，URL 识别直接复用 FailureText 的 `diag.URLPattern`，没有复制它的私有模式。URL/userinfo/query/opaque 各分支有单独测试。
+- 所有 YAML 入口使用 `yamlx.Parse`；新增 `yamlx.AllPairs` 只是现有 effectivePairs 的公开迭代视图，避免 Pairs 跳过非字符串键造成静默丢失，也避免在 A12 私有重写 merge。无 `yamlx.Clone`。布尔/数字值通过 facade 解码或 ToJSON 处理。
+- `Text` 保持 string / [string, {secret:string}] wire union；`WithoutStored` 接受 `func(string) []redact.Range`（现有 redact.StoredSecretFinder 是返回该函数的工厂，并非类型）。分页不可变，可并发读；Page 对无效 change 返回空页，A13 在调用前验证 change/offset/limit/query（常量供其复用）。
 
-Tests: `test_agent_push_diff.py` (39), `test_deployment_bundle_lazy_archive.py` (9)
+与 Python 的差异/修正：
+- 正常语料除 raw 排版外的 JSON 字段/值 **无差异**。raw 使用 yamlx/yaml.v3 原生输出和 patience unified diff（不是 Python difflib 的移植）；语料只排除 `raw` 的文本/行数/切分，独立 patch 测试验证能还原完整新文档，单测验证标记和所有边界。原生 YAML 排版/引号、native diff 的合法 hunk 选择属于 PORTING 已接受的格式差异。
+- `reformatted` 使用原生 canonical byte delta 加输入排版变化证据（style/indent/comments/blank lines），避免 Go 列表缩进带来的大列表普通编辑误报。512-byte 附近的格式提示可能与 CSafeDumper 不同（原设计已接受），不影响 changes/status。
+- **修复 Python bug（中：敏感信息标记）**：JSON 展示值里的 mapping key 原先未标记其 URL 凭据，raw 的普通 mapping key 同样漏掉。Go 对两者标记；固定 string 类型的 row.key/path 使用 `[REDACTED]` 消除凭据，保留分组 schema，原文仍在有标记的 raw/display 中。`TestCredentialFieldsAndSpans` 有 scalar→map 和逐键两种回归。
+- **修复 Python bug（低：规则摘要）**：原先 rule_entries 用行正则，JSON/quoted payload/flow sequence 被当作普通文本或空列表，且 inline comment/escape 仍被当成规则。Go 复用 rulesetfmt.HasYAMLPayload 并真正解析 YAML；无效 YAML/非标量 payload 回退 size，不给错误规则计数；UTF-8 BOM 正确移除。
+- D1 重复键拒绝、alias 预算/自引用拒绝、yaml.v3 的 YAML 1.2/Unicode/tag 行为统一继承 N7（包括 lone surrogate 退回 size），不模拟 PyYAML/CPython。Go url.Parse 对非法 percent escape 更严格，标记整个 URL，fail closed。
 
-Routes: none (A13).
+证据：
+- `testdata/gen_a12.py` 在测试服务器用真实 Python build_push_diff 生成 `python.json.gz`；执行原测试 32 个无 Checker 的函数（scalar 6 参数），产生 **67 个边界行，其中 A11-3 bundle 配对 20 行**，含针对性 credentials/CJK 和 101000 条规则分页。所有期待值均由 Python 计算，原测试输入中私网地址先转为 TEST-NET 后重新计算 oracle；没有生产数据。正常结果 JSON 解码后严格比较，分页样本也逐字段比较。
+- `TestYAMLEntrypoints`：Config/nodeItems/RuleEntries 三个 YAML 入口各有深度 40 的指数 alias 链（拒绝）、深度 40 线性链（接受）、自引用、duplicate、多文档测试。`FuzzConfig`、`FuzzRuleEntries`、`FuzzNodeItems`、`FuzzCredentialSpans` 各有相关种子。
+- `TestBundleLimitsAndImmutability`、`TestPagingBudgetsAndConcurrency`：500 文件、行/字节限制、100000 retained quota 公平分配、全局/文件字节耗尽、页大小/字节/末尾、zlib 压缩、并发无变异。`TestUnifiedPatchAndMarkers`：块文本/单双引号/tag/alias/URL/bare userinfo，凭据消失且普通 host/port 留存。
+- `test_deployment_bundle_lazy_archive.py`：核心 7 个 Bundle/retarget/archive 用例由 A11 既有 `core_test.go`/`review_test.go` 覆盖；`test_listing_changes_reads_files_without_compressing_either_side` 对应本包 Build 只走 Files + `TestBundleLimitsAndImmutability`（packing 前后同结果）；`test_a_content_check_and_its_change_list_compress_nothing` 属 A13 Checker，保留给 A13。
 
-Evidence: no Go code. Uses `yamlx.Marked`/`OnMarked`; the CSafeDumper size measurement is a known accepted difference (PORTING.md) — document where it changes a visible size/threshold.
+`test_agent_push_diff.py` 每个测试的归属/覆盖（39 个函数，7 个属于 A13）：
+
+| Python 测试 | Go 覆盖 |
+|---|---|
+| `test_main_yaml_is_compared_by_key_path_with_old_and_new_values` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_named_lists_match_entries_by_name_and_list_member_changes` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_reordered_rules_are_reported_even_without_additions` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_long_lists_are_counted_exactly_but_truncated` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_rows_values_and_raw_diff_are_bounded` | `TestPythonCorpus` + `TestRawAndValueBounds` |
+| `test_values_are_returned_with_every_credential_marked` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_raw_diff_marks_credentials_exactly_where_yaml_writes_them` | `TestPythonCorpus` + `TestUnifiedPatchAndMarkers`（Go 原生 YAML 排版） |
+| `test_display_texts_escape_and_mark_credentials_inside_json` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_stored_tokens_become_hidden_redactions_inside_display_texts` | `TestStoredRedactionAndSearch`、`TestStoredRangeUnionAndUnicode` |
+| `test_secret_detection_keeps_domains_and_data_keys` | `TestCredentialFieldsAndSpans` |
+| `test_credential_spans_inside_text` | `TestCredentialFieldsAndSpans`、`FuzzCredentialSpans` |
+| `test_formatting_only_changes_are_not_reported_as_items` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_unparsable_yaml_falls_back_to_file_level` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_rule_entries_read_text_and_yaml_payloads` | `TestRulePayloadForms`（修正 Python 的行匹配缺陷） |
+| `test_files_are_listed_by_digest_with_role_summaries` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_status_follows_comparison_digest_when_live_main_file_differs` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_without_saved_bundle_only_digests_are_compared` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_large_rule_sets_are_counted_quickly_and_keep_the_response_small` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_large_inline_rules_in_the_main_file_stay_bounded` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_subscription_details_list_nodes_and_their_field_changes` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_removed_nodes_carry_type_and_address_like_added_ones` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_repeated_and_unnamed_nodes_are_matched_in_file_order` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_unchanged_or_unparsable_subscriptions_have_no_details_and_odd_names_are_listed` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_rule_set_details_list_added_and_removed_rules` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_the_response_lists_the_first_page_of_every_group` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_one_response_carries_a_bounded_amount_of_details` | `TestPythonCorpus`（6000-byte oracle）+ `TestPagingBudgetsAndConcurrency` |
+| `test_large_subscriptions_and_rule_sets_are_detailed_quickly` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_node_details_are_display_texts_for_stored_token_redaction` | `TestStoredRedactionAndSearch` |
+| `test_scalar_display` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_change_list_shares_the_status_worker_and_cache` | **A13 所属**：Checker 缓存/调度/重试/淘汰，待 A13 的 checker/路由测试；A12 不实现 Checker |
+| `test_the_device_list_check_leaves_the_change_list_ready` | **A13 所属**：Checker 缓存/调度/重试/淘汰，待 A13 的 checker/路由测试；A12 不实现 Checker |
+| `test_a_device_found_in_sync_gets_no_change_list_and_drops_an_old_one` | **A13 所属**：Checker 缓存/调度/重试/淘汰，待 A13 的 checker/路由测试；A12 不实现 Checker |
+| `test_a_list_pushed_out_by_newer_ones_is_prepared_again_on_request` | **A13 所属**：Checker 缓存/调度/重试/淘汰，待 A13 的 checker/路由测试；A12 不实现 Checker |
+| `test_synced_and_unavailable_answers_skip_the_change_list` | **A13 所属**：Checker 缓存/调度/重试/淘汰，待 A13 的 checker/路由测试；A12 不实现 Checker |
+| `test_failed_listing_keeps_the_status_and_retries_soon` | **A13 所属**：Checker 缓存/调度/重试/淘汰，待 A13 的 checker/路由测试；A12 不实现 Checker |
+| `test_only_a_few_change_lists_are_kept` | **A13 所属**：Checker 缓存/调度/重试/淘汰，待 A13 的 checker/路由测试；A12 不实现 Checker |
+| `test_agent_cleaned_provider_paths_are_not_changes` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_paths_that_name_another_file_still_count` | `TestPythonCorpus`（真实 Python oracle） |
+| `test_same_writing_style_is_not_called_reformatting` | `TestPythonCorpus`（真实 Python oracle） |
+
+命令（均从 worktree 根目录）：
+```sh
+rt --back server/internal/deploy/pushdiff/testdata/python.json.gz -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/deploy/pushdiff/testdata/gen_a12.py'
+rt -- bash -lc 'cd server && go test -count=1 ./internal/deploy/pushdiff ./internal/agents/diag ./internal/yamlx'
+rt -- bash server/internal/deploy/pushdiff/testdata/gate.sh
+```
+目前 `.64`：oracle `A12 Python: 32 tests / 67 boundary rows; 28433991 JSON bytes`；包测试 `ok configflow/internal/deploy/pushdiff`，diag/yamlx 同样通过。最后门禁结果待回填。
 
 ## A13 — content sync, Agent list/detail, push-diff routes
 
