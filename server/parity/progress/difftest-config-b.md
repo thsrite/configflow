@@ -1307,3 +1307,20 @@ current go-unimplemented=55；独立累计=119 request_variants design_errors=[]
 ```
 
 继续B90日志/HEAD、多值Forwarded/无Host及其余未覆盖分支；当前既不是所有子形态覆盖，也不是最终.32全量。
+
+## 批次 75：DNS worker严格协议、持久错误和生产子进程超时
+
+- 33新变体全部实际Flask↔Go比较通过；新增H099–H105七编号、原R编号3（B2/F1）、T14。覆盖并集原R4162（S678/F2635/B849）、H329。独立报告/tmp/configdiff-dns-protocol.json待合并统一结果。
+- 真实可执行fake记录stdin：execve格式错误（可发现且仍有执行权限，确保命中OSError而非missing guard）、退出1/3、协议版本3、success非bool/addresses非list或元素非string、latency负数/bool/string、成功但空地址或Fake-IP /15两端、坏JSON/非对象/缺version或dns_check/非法IP。逐个H独立请求，准确503安全中文，不回显stderr，SQL/files不改。
+- system空servers、自定义多个上游去重保序、端口前导0和默认53规范化、bootstrap顺序；返回真实IP去重/latency整数；配置型DNS失败各code均HTTP200 success=false，未知code降为dns并使用安全中文。无效持久DNS设置GET400且不自动修复。
+- T14真实sleeping子进程被生产10秒deadline终止，HTTP200 timeout结构无伪造latency；每端耗时必须9–13秒，stdin只有一次，SQL/files不改。四上游含DoH/DoT及bootstrap、2048字符DoH合法；全部fake worker不发DNS/HTTP流量。没有调快生产时钟。超时窗口故意改快/慢/非法值能检出，68自检通过。
+
+```text
+.32 run.py --groups dns-worker-helper-failures,dns-worker-boundary-inputs,dns-worker-returned-failures
+compared=30 design_errors=[] seconds=83.00；exit=0
+.32 run.py --groups dns-worker-production-deadline,dns-worker-success-forms
+compared=3 独立累计=33 design_errors=[] seconds=30.48；exit=0
+68 comparator self-checks + wrong-Go-response check OK
+```
+
+T14仍不代表真实DNS网络路径或实际代理RTT通过；T13节点并发busy/上限转换、其余helpers/长流程继续。

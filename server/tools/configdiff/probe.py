@@ -61,6 +61,22 @@ def main():
             response['dns_check']['latency_ms'] = True
         elif mode == 'dns-failure':
             response['dns_check'].update(success=False, addresses=[], error_code='tls')
+        malformed = {
+            'dns-success-type': ('success', 1), 'dns-addresses-type': ('addresses', '192.0.2.10'),
+            'dns-address-number': ('addresses', [123]), 'dns-negative-latency': ('latency_ms', -1),
+            'dns-string-latency': ('latency_ms', '7'), 'dns-fake-ip-upper': ('addresses', ['198.19.255.255']),
+        }
+        if mode in malformed:
+            field, changed = malformed[mode]
+            response['dns_check'][field] = changed
+        if mode.startswith('dns-error-'):
+            response['dns_check'].update(success=False, addresses=[], error_code=mode.removeprefix('dns-error-'))
+        if mode == 'dns-no-result':
+            response.pop('dns_check')
+        elif mode == 'dns-no-version':
+            response.pop('version')
+        elif mode == 'dns-array':
+            response = []
     else:
         response = {'version': 4, 'results': [{'name': n['name'], 'latency': 7} for n in value.get('nodes', [])]}
         if mode == 'missing-result':

@@ -90,6 +90,8 @@ def main():
     groups.update(nodes)
     from cases.probes import GROUPS as probes
     groups.update(probes)
+    from cases.dns_protocol import GROUPS as dns_protocol
+    groups.update(dns_protocol)
     from cases.artifact import GROUPS as artifact
     groups.update(artifact)
     from cases.scheduler import GROUPS as scheduler

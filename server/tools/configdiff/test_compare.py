@@ -17,6 +17,16 @@ from harness import Reply
 
 
 class Comparators(unittest.TestCase):
+    def test_dns_worker_deadline_rejects_immediate_and_unbounded_timeouts(self):
+        from cases.dns_protocol import ProbeDeadline
+        observer = ProbeDeadline.__new__(ProbeDeadline)
+        observer.inputs = [[], []]
+        observer.elapsed = [10, 10]
+        self.assertEqual(observer.compare(Policy()), [])
+        for wrong in (0, 8.9, 13.1, True, '10', None, float('nan'), float('inf')):
+            observer.elapsed[1] = wrong
+            self.assertTrue(observer.compare(Policy()), repr(wrong))
+
     def test_pull_read_observer_detects_both_storage_and_source_side_effects(self):
         from cases.pull_routes import SourceStable
         observer = SourceStable(None, None)
