@@ -411,3 +411,22 @@ func TestR10RollbackRemapDoesNotBlessExternalEdit(t *testing.T) {
 		t.Fatal("remap blessed external configuration")
 	}
 }
+
+func TestR10HostDiagnosticsRedactCredentials(t *testing.T) {
+	d, _ := r10Driver(t)
+	agent := r10Agent()
+	agent.Token = "synthetic-agent-token"
+	host := r10Host()
+	host.Error = "rest-api username=api password=synthetic-password token=synthetic-agent-token"
+	p := InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r10Router(), agent, host, d)
+	rp := InspectIPv6Routes(t.Context(), r10Config(r10YAML), r10Router(), r10Wanted(1), agent, host, d)
+	for _, value := range []any{p, rp} {
+		raw := mustPolicyJSON(value)
+		if bytes.Contains(raw, []byte("synthetic-password")) || bytes.Contains(raw, []byte(agent.Token)) {
+			t.Fatal("credential escaped diagnostic", string(raw))
+		}
+		if !bytes.Contains(raw, []byte("username=api")) || !bytes.Contains(raw, []byte("rest-api")) {
+			t.Fatal("username treated as a secret", string(raw))
+		}
+	}
+}

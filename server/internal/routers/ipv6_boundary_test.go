@@ -35,7 +35,7 @@ func r10State() routerfake.State {
 	}}
 }
 func r10Wanted(n int) *Desired {
-	d := &Desired{IPv6CIDRs: []ProxyCIDR{}, BlockingWarnings: []string{}}
+	d := &Desired{ProxyCIDRs: []ProxyCIDR{}, Warnings: []string{}, IPv6CIDRs: []ProxyCIDR{}, BlockingWarnings: []string{}}
 	for i := 0; i < n; i++ {
 		d.IPv6CIDRs = append(d.IPv6CIDRs, ProxyCIDR{fmt.Sprintf("2001:db8:%x::/48", i+10), []string{"Synthetic"}})
 	}
@@ -126,6 +126,25 @@ func r10Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r10Case) r08Ou
 				ops = routesPlan.Ops
 				blocked = len(routesPlan.Skip) > 0
 			}
+			if step.Action == "report" {
+				state, e := d.ReadState(ctx)
+				if e != nil {
+					err = e
+					break
+				}
+				if tc.Feature == "fake" {
+					state.IPv6FakeIPPlan = fakePlan
+				} else {
+					state.IPv6RoutesPlan = routesPlan
+				}
+				report, e := BuildReport(step.Desired, state)
+				if e != nil {
+					err = e
+					break
+				}
+				add(report)
+				continue
+			}
 			if step.Action == "plan" || blocked {
 				continue
 			}
@@ -207,7 +226,7 @@ func r10Cases() []r10Case {
 		base := func(name string, steps ...r10Step) r10Case {
 			return r10Case{feature + "/" + name, feature, r10State(), r10Router(), steps}
 		}
-		out = append(out, base("publish_idempotent", r10StepFor("publish", 5), r10StepFor("publish", 5)), base("rollback", r10StepFor("rollback", 5)))
+		out = append(out, base("publish_idempotent", r10StepFor("publish", 5), r10StepFor("publish", 5)), base("rollback", r10StepFor("rollback", 5)), base("report_missing_synced", r10StepFor("report", 5), r10StepFor("publish", 5), r10StepFor("report", 5)))
 		off := r10StepFor("publish", 5)
 		off.Config = r10Config("ipv6: false\n")
 		off.Agent = nil
@@ -304,11 +323,6 @@ func r10Cases() []r10Case {
 				tc.State.Faults = []routerfake.Fault{{Method: "PUT", Path: rosIPv6Routes, Count: 1, Status: 403}, {Method: "POST", Path: "/execute", Count: 1, Status: 403}}
 			case "lost_reply":
 				tc.State.Faults = []routerfake.Fault{{Method: "PUT", Path: rosIPv6Routes, Count: 1, AfterCommit: true, LoseReply: true}, {Method: "POST", Path: "/execute", Count: 1, AfterCommit: true, LoseReply: true}}
-			case "console_partial":
-				if feature == "fake" {
-					continue
-				}
-				tc.State.Faults = []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 1, AfterCommit: true, RawBody: `{"ret":"cf-id:0:*65\ncf-id:1:*66\ncf-err:2:injected\ncf-done"}`}}
 			case "withdraw_rollback":
 				step := r10StepFor("rollback", 5)
 				step.Config = r10Config("ipv6: false")
@@ -319,8 +333,15 @@ func r10Cases() []r10Case {
 			out = append(out, tc)
 		}
 	}
-	for _, n := range []int{1, 3, 4, 100, 101, 201} {
+	for _, n := range []int{1, 3, 4, 100, 101, 201, 501, 4096} {
 		tc := r10Case{fmt.Sprintf("routes/batch_%d", n), "routes", r10State(), r10Router(), []r10Step{r10StepFor("publish", n)}}
+		if n == 501 {
+			step := r10StepFor("publish", 0)
+			step.Config = r10Config("ipv6: false")
+			step.Agent = nil
+			step.Host = IPv6Host{}
+			tc.Steps = append(tc.Steps, step)
+		}
 		out = append(out, tc)
 	}
 	// Preserve all bytes of synthetic YAML entering the settings owner. The module

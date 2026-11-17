@@ -41,6 +41,15 @@ try:
         args += [step.get('agent'), step.get('host', {}), driver]
         plan = module.inspect(*args)
         out['results'].append(copy.deepcopy(plan))
+        if action == 'report':
+            from backend.routers.report import build_report
+            state = driver.read_state()
+            if case['feature'] == 'fake':
+                state.ipv6_fakeip_plan = plan
+            else:
+                state.ipv6_routes_plan = plan
+            out['results'].append(build_report(step['desired'], state))
+            continue
         if action == 'plan' or plan.get('blockers') or plan.get('skip'):
             continue
         if plan['ops']:

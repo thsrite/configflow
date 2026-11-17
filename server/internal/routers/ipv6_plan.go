@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"configflow/internal/agents/diag"
 	"configflow/internal/devhttp"
 	"configflow/internal/model"
 )
@@ -244,7 +245,7 @@ func InspectIPv6FakeIP(ctx context.Context, config *model.Profile, r *Router, ag
 		if !ipv6AgentEnabled(agent) {
 			plan.Blockers = append(plan.Blockers, messageIPv6Agent)
 		} else if host.Error != "" {
-			plan.Blockers = append(plan.Blockers, messageIPv6Host+host.Error)
+			plan.Blockers = append(plan.Blockers, messageIPv6Host+ipv6HostError(d, agent, host.Error))
 		}
 		lan := IPv6LAN(live, ipv6AgentHost(agent))
 		existing := []Row{}
@@ -454,7 +455,7 @@ func InspectIPv6Routes(ctx context.Context, config *model.Profile, r *Router, de
 			return skip(messageIPv6RoutesAgent)
 		}
 		if host.Error != "" {
-			return skip(messageIPv6Host + host.Error)
+			return skip(messageIPv6Host + ipv6HostError(d, agent, host.Error))
 		}
 	}
 	live, err := SnapshotIPv6(ctx, d, true)
@@ -648,4 +649,12 @@ func InspectIPv6Routes(ctx context.Context, config *model.Profile, r *Router, de
 		plan.Ops = append(plan.Ops, &IPv6RoutesReplace{OpHead: OpHead{"ipv6_routes_replace", text}, Previous: previous, Owned: owned, Adds: adds, Deletes: del, Retained: keep, Gateway: manifestGateway, Scope: scoped, Expected: plan.Evidence})
 	}
 	return plan
+}
+
+func ipv6HostError(d *RouterOS, agent *model.Agent, text string) string {
+	secrets := []any{d.password}
+	if agent != nil {
+		secrets = append(secrets, agent.Token)
+	}
+	return diag.FailureText(text, secrets, len(text)+128)
 }

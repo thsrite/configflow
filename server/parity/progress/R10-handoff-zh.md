@@ -15,3 +15,5 @@
 行为修正草录（最终写入 behaviour-changes）：每批删除前核对完整 manifest；添加前拒绝预览之后出现的外部同目标路由；回滚只按可信响应 ID 重映射、不按相同配置收养；部分成功恢复仍登记新 ID；回滚重映射保留旧配置证明、不把随后外部编辑更新为受管配置。R10 无 YAML 生成器，YAML 只读；验收比较 Python 返回的原保存 YAML 字节（CRLF/注释/引号/alias）和 settings 完整结果，原文不改。
 
 仍需：增加部分失败/规模与模型边界检查；更新逐文件测试映射、复核类别规避、L5 项；共享 R04–R09 合并树测试与最终 .64 gate -p 6；rebase 最新本地 go；最终中文交回。
+
+补充验证已通过：完整 BuildReport 差分（missing/synced）、501/4096 规模差分、公共 host 错误的共享脱敏（保留 username/api）；IPv6 仓库边界 5 writers × 6 类破坏 × 两种 manifest，加修复/克隆/关闭保护。`.64`：routers `9.568s`，repo `21.118s`；`python3 scripts/r10-mutation-gate.py` 四类 purpose-break（result/journal/request/device-table）均 `DETECTED (compiled, real Python boundary mismatch)`，最终 `4/4 detected; sources restored`。
