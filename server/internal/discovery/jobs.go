@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 )
@@ -121,7 +122,8 @@ func startJob(ctx context.Context, profile, kind string, wait bool, run func(con
 	jobState.jobs = append(finished, j)
 	initial := cloneJob(j)
 	jobState.Unlock()
-	// Start from the repository only, never from the request Scope or its values.
+	// Async jobs retain only the repository (O3-5). Synchronous rounds keep
+	// their Runtime cancellation but always get a fresh repository scope.
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		jobState.Lock()
@@ -132,7 +134,11 @@ func startJob(ctx context.Context, profile, kind string, wait bool, run func(con
 		return nil, nil, err
 	}
 	work := func() (results map[string]Probe, err error) {
-		workCtx := repo.WithScope(repo.WithRepository(context.Background(), r))
+		base := context.Background()
+		if wait {
+			base = lifecycle.Detach(ctx)
+		}
+		workCtx := repo.WithScope(repo.WithRepository(base, r))
 		defer repo.ResetConfigContext(workCtx)
 		var out outcome
 		defer func() {

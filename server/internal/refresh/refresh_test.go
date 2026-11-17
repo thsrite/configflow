@@ -19,6 +19,9 @@ import (
 
 	"configflow/internal/instance"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/lifecycle/lifecycletest"
+	"configflow/internal/lockx"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
@@ -30,7 +33,11 @@ import (
 
 func TestMain(m *testing.M) {
 	logx.Setup(logx.Config{Level: logx.Info, Console: io.Discard})
-	os.Exit(m.Run())
+	code := m.Run()
+	if lockx.Violations() != 0 {
+		code = 1
+	}
+	os.Exit(code)
 }
 
 const (
@@ -742,29 +749,54 @@ func waitIdle(t *testing.T, key string) {
 func TestLoopRunsUnderTheInstanceLock(t *testing.T) {
 	f := setup(t, jsonx.Int(0))
 	f.updateShared(func(shared *jsonx.Object) { shared.GetList("rule_library")[0].(*jsonx.Object).Set("enabled", false) })
-	var mu sync.Mutex
-	var sleeps []time.Duration
-	ctx, cancel := context.WithCancel(f.ctx)
-	previous := loopSleep
-	t.Cleanup(func() { loopSleep = previous })
-	loopSleep = func(_ context.Context, d time.Duration) bool {
-		mu.Lock()
-		defer mu.Unlock()
-		sleeps = append(sleeps, d)
-		if len(sleeps) >= 3 {
-			cancel()
-			return false
-		}
-		return true
-	}
 	owner, err := instance.Acquire(context.Background(), f.repo.DataDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer owner.Release()
-	Loop(ctx)
-	if len(sleeps) != 3 || sleeps[0] != 30*time.Second || sleeps[1] != 30*time.Second {
-		t.Fatal(sleeps)
+	clock := lifecycletest.NewClock(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC))
+	reg := lifecycle.NewRegistry()
+	spec := periodic()
+	original := spec.Round
+	rounds := make(chan time.Time, 3)
+	spec.Round = func(ctx context.Context) error {
+		err := original(ctx)
+		clock.Advance(7 * time.Second) // round duration is excluded from the pause
+		rounds <- clock.Now()
+		return err
+	}
+	reg.RegisterPeriodic(spec)
+	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: reg, Clock: clock})
+	runtime.Start(f.ctx)
+	defer runtime.Shutdown(context.Background())
+	for range 2 {
+		awaitRefresh(t, func() bool { return clock.Pending() == 1 })
+		clock.Advance(29 * time.Second)
+		select {
+		case <-rounds:
+			t.Fatal("early round")
+		default:
+		}
+		clock.Advance(time.Second)
+		select {
+		case <-rounds:
+		case <-time.After(3 * time.Second):
+			t.Fatal("missing round under instance lock")
+		}
+		if err := runtime.WaitIdle(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func awaitRefresh(t *testing.T, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !condition() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition timed out")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 

@@ -14,6 +14,8 @@ import (
 
 	"configflow/internal/instance"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/lifecycle/lifecycletest"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 )
@@ -205,12 +207,43 @@ func TestReviewRankingLoopRunsUnderInstanceLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer owner.Release()
-	var waits []time.Duration
-	runRankingLoop(ctx, func(_ context.Context, d time.Duration) bool {
-		waits = append(waits, d)
-		return len(waits) == 1
-	})
-	if len(waits) != 2 || waits[0] != 60*time.Second || waits[1] != 60*time.Second {
-		t.Fatalf("collector skipped its round or changed timing: %v", waits)
+	clock := lifecycletest.NewClock(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC))
+	reg := lifecycle.NewRegistry()
+	spec := rankingPeriodic()
+	original := spec.Round
+	rounds := make(chan struct{}, 3)
+	spec.Round = func(ctx context.Context) error {
+		err := original(ctx)
+		clock.Advance(7 * time.Second)
+		rounds <- struct{}{}
+		return err
+	}
+	reg.RegisterPeriodic(spec)
+	runner := lifecycle.NewRuntime(lifecycle.Options{Registry: reg, Clock: clock})
+	runner.Start(ctx)
+	defer runner.Shutdown(context.Background())
+	for _, delay := range []time.Duration{60 * time.Second, 60 * time.Second} {
+		deadline := time.Now().Add(5 * time.Second)
+		for clock.Pending() != 1 {
+			if time.Now().After(deadline) {
+				t.Fatal("no timer after round")
+			}
+			time.Sleep(time.Millisecond)
+		}
+		clock.Advance(delay - time.Second)
+		select {
+		case <-rounds:
+			t.Fatal("early round")
+		default:
+		}
+		clock.Advance(time.Second)
+		select {
+		case <-rounds:
+		case <-time.After(5 * time.Second):
+			t.Fatal("round skipped under instance lock")
+		}
+		if err := runner.WaitIdle(context.Background()); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

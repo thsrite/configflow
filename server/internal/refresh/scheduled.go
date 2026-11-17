@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/lockx"
 	"configflow/internal/logx"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
@@ -42,10 +44,7 @@ const (
 
 var logger = logx.Get("backend.utils.scheduled_refresh")
 
-var (
-	runningMu sync.Mutex
-	running   = map[string]bool{}
-)
+var running = lockx.NewKeyed[string](lockx.LevelJob, "refresh")
 
 // TaskBusy is scheduled_refresh.TaskBusy (a RuntimeError).
 type TaskBusy struct{ Message string }
@@ -73,27 +72,7 @@ func SubscriptionKey(id any) string { return "subscription:" + jsonx.Str(id) }
 func RuleSourceKey(id any) string { return "rule_source:" + jsonx.Str(id) }
 
 // IsRunning is is_running(key).
-func IsRunning(key string) bool {
-	runningMu.Lock()
-	defer runningMu.Unlock()
-	return running[key]
-}
-
-func claim(key string) bool {
-	runningMu.Lock()
-	defer runningMu.Unlock()
-	if running[key] {
-		return false
-	}
-	running[key] = true
-	return true
-}
-
-func release(key string) {
-	runningMu.Lock()
-	delete(running, key)
-	runningMu.Unlock()
-}
+func IsRunning(key string) bool { return running.Held(key) }
 
 // DescribeFailure is describe_failure(error): a readable reason that never
 // renders a URL, token or response body.
@@ -724,33 +703,58 @@ func run(ctx context.Context, kind string, resource *jsonx.Object, trigger strin
 // RunRound is run_round(now): refresh every due source that is not running
 // already, with at most Workers at a time; it returns how many ran.
 func RunRound(ctx context.Context, now *time.Time) (int, error) {
+	ctx = detached(ctx)
 	candidates, err := due(ctx, now)
 	if err != nil {
 		return 0, err
 	}
-	var jobs []job
-	for _, j := range candidates {
-		if claim(j.key) {
-			jobs = append(jobs, j)
-		}
+	type claimed struct {
+		job
+		ctx     context.Context
+		release func()
 	}
-	if len(jobs) == 0 {
-		return 0, nil
+	var jobs []claimed
+	for _, j := range candidates {
+		held, release, ok := running.TryLock(ctx, j.key)
+		if ok {
+			jobs = append(jobs, claimed{j, held, release})
+		}
 	}
 	slots := make(chan struct{}, Workers)
 	var wg sync.WaitGroup
-	for _, j := range jobs {
+	count := 0
+	for i, j := range jobs {
+		select {
+		case slots <- struct{}{}:
+		case <-lifecycle.Stopping(ctx):
+			for _, pending := range jobs[i:] {
+				pending.release()
+			}
+			wg.Wait()
+			return count, nil
+		}
+		// A slot and stopping can become ready together. Do not admit a new item.
+		select {
+		case <-lifecycle.Stopping(ctx):
+			<-slots
+			for _, pending := range jobs[i:] {
+				pending.release()
+			}
+			wg.Wait()
+			return count, nil
+		default:
+		}
 		wg.Add(1)
-		slots <- struct{}{}
-		go func(j job) {
+		count++
+		go func(j claimed) {
 			defer wg.Done()
 			defer func() { <-slots }()
-			defer release(j.key)
-			run(ctx, j.kind, j.resource, "schedule")
+			defer j.release()
+			run(j.ctx, j.kind, j.resource, "schedule")
 		}(j)
 	}
 	wg.Wait()
-	return len(jobs), nil
+	return count, nil
 }
 
 // FindResource is find_resource(kind, resource_id): the subscription or
@@ -788,6 +792,7 @@ func FindResource(ctx context.Context, kind, resourceID string) (*jsonx.Object, 
 // background (trigger "manual"); the result lands in task_status. It
 // returns the task key; TaskBusy while the task runs.
 func RunNow(ctx context.Context, kind, resourceID string) (string, error) {
+	ctx = detached(ctx)
 	resource, err := FindResource(ctx, kind, resourceID)
 	if err != nil {
 		return "", err
@@ -796,13 +801,16 @@ func RunNow(ctx context.Context, kind, resourceID string) (string, error) {
 	if kind == "subscription" {
 		key = SubscriptionKey(resourceID)
 	}
-	if !claim(key) {
-		return "", &TaskBusy{Message: "这个任务正在运行，请稍后查看结果"}
+	held, release, ok := running.TryLock(ctx, key)
+	if !ok {
+		return "", &TaskBusy{Message: msgTaskBusy}
 	}
-	background := context.WithoutCancel(ctx)
-	go func() {
-		defer release(key)
-		run(background, kind, resource, "manual")
-	}()
+	if err := lifecycle.Spawn(held, "task-"+key, func(work context.Context) {
+		defer release()
+		run(work, kind, resource, "manual")
+	}); err != nil {
+		release()
+		return "", err
+	}
 	return key, nil
 }

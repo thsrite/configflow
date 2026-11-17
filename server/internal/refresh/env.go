@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"configflow/internal/convert"
+	"configflow/internal/lifecycle"
 	"configflow/internal/rulefetch"
 	"configflow/internal/substore"
 )
@@ -88,4 +89,4 @@ func SetEnv(e *Env) (restore func()) {
 // request whose client went away (cancelled context) still finishes the
 // download and every record, like Python's request thread, which is never
 // interrupted. Values (repository, scope, held locks) are kept.
-func detached(ctx context.Context) context.Context { return context.WithoutCancel(ctx) }
+func detached(ctx context.Context) context.Context { return lifecycle.Detach(ctx) }

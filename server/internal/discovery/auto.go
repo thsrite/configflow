@@ -3,7 +3,6 @@ package discovery
 import (
 	"context"
 	"errors"
-	"sync"
 	"time"
 
 	"configflow/internal/lifecycle"
@@ -59,11 +58,14 @@ func autoRound(ctx context.Context, id string) (AutoOutcome, error) {
 	}
 	out.Probed = len(values)
 	if len(values) > 0 {
+		if autoStopping(ctx) {
+			return out, nil
+		}
 		_, _, err = startJob(ctx, id, "probe", true, func(ctx context.Context, p func(int, int)) (outcome, error) { return runProbes(ctx, id, values, p) })
 		if err != nil {
 			return out, err
 		}
-		if s.AutoApply {
+		if s.AutoApply && !autoStopping(ctx) {
 			refreshed, err := LoadDomains(ctx, id, 7, "uncovered", "")
 			if err != nil {
 				return out, err
@@ -107,6 +109,9 @@ func autoRound(ctx context.Context, id string) (AutoOutcome, error) {
 	}
 	out.Rechecked = len(history)
 	if len(history) > 0 {
+		if autoStopping(ctx) {
+			return out, nil
+		}
 		values := []string{}
 		for _, h := range history {
 			values = append(values, h.Value)
@@ -163,7 +168,7 @@ func autoRound(ctx context.Context, id string) (AutoOutcome, error) {
 
 // RunAutoTask records a scheduled or manually triggered automatic round.
 func RunAutoTask(ctx context.Context, id, trigger string) (*AutoOutcome, error) {
-	ctx = context.WithoutCancel(ctx)
+	ctx = lifecycle.Detach(ctx)
 	c, err := loadConfig(ctx, id)
 	if err != nil {
 		return nil, err
@@ -207,56 +212,56 @@ func RunAutoTask(ctx context.Context, id, trigger string) (*AutoOutcome, error) 
 func stringsHasDomain(host, value string) bool {
 	return len(host) > len(value) && host[len(host)-len(value)-1:] == "."+value
 }
-func sleep(ctx context.Context, d time.Duration) bool {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
+func autoPeriodic() lifecycle.Periodic {
+	return lifecycle.Periodic{
+		Name: "domain-discovery-auto", Start: lifecycle.AtBoot, FirstDelay: 120 * time.Second,
+		Interval: func(context.Context) time.Duration { return 600 * time.Second },
+		Round:    automaticRound,
 	}
 }
-func autoLoop(ctx context.Context) { runAutoLoop(ctx, sleep) }
 
-func runAutoLoop(ctx context.Context, wait func(context.Context, time.Duration) bool) {
+func automaticRound(ctx context.Context) error {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
-		logger.Exception("Domain discovery could not start", err)
-		return
+		return err
 	}
-	if !wait(ctx, 120*time.Second) {
-		return
+	profiles, err := listProfiles(ctx)
+	if err != nil {
+		return err
 	}
-	for {
-		profiles, err := listProfiles(ctx)
-		if err != nil {
-			logger.Exception("Domain discovery list profiles failed", err)
+	for _, p := range profiles {
+		select {
+		case <-lifecycle.Stopping(ctx):
+			return nil
+		default:
 		}
-		for _, p := range profiles {
-			func() {
-				scope := repo.WithScope(repo.WithRepository(context.WithoutCancel(ctx), r))
-				defer repo.ResetConfigContext(scope)
-				defer func() {
-					if p := recover(); p != nil {
-						logger.Errorf("Domain discovery automatic round failed: %v", p)
-					}
-				}()
-				if _, err := RunAutoTask(scope, p.ID, "schedule"); err != nil {
-					logger.Exception("Domain discovery automatic round failed", err)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		func() {
+			scope := repo.WithScope(repo.WithRepository(lifecycle.Detach(ctx), r))
+			defer repo.ResetConfigContext(scope)
+			defer func() {
+				if p := recover(); p != nil {
+					logger.Errorf("Domain discovery automatic round failed: %v", p)
 				}
 			}()
-			if ctx.Err() != nil {
-				return
+			if _, err := RunAutoTask(scope, p.ID, "schedule"); err != nil {
+				logger.Exception("Domain discovery automatic round failed", err)
 			}
-		}
-		if !wait(ctx, 600*time.Second) {
-			return
-		}
+		}()
 	}
+	return nil
 }
 
-var wireOnce sync.Once
+// Wire registers task providers and the automatic discovery periodic.
+func Wire() { wireTasks(); lifecycle.RegisterPeriodic(autoPeriodic()) }
 
-// Wire registers the existing task providers and cancellable lifecycle loop.
-func Wire() { wireTasks(); wireOnce.Do(func() { lifecycle.Loop("domain-discovery-auto", autoLoop) }) }
+func autoStopping(ctx context.Context) bool {
+	select {
+	case <-lifecycle.Stopping(ctx):
+		return true
+	default:
+		return ctx.Err() != nil
+	}
+}

@@ -1,13 +1,9 @@
 package monitor
 
 import (
-	"sync"
-
 	"configflow/internal/agents"
 	"configflow/internal/lifecycle"
 )
-
-var rankingLoopOnce sync.Once
 
 // Wire is A07's entry in internal/server wirePackages: the ranking history
 // store read by the overview (get_history), the publication checkpoint /
@@ -17,7 +13,5 @@ var rankingLoopOnce sync.Once
 func Wire() {
 	SetRankingHistory(rankingStoreFactory)
 	agents.RegisterHooks(agents.Hooks{PublicationComplete: completeHook, PublicationCheckpoint: checkpointHook})
-	rankingLoopOnce.Do(func() {
-		lifecycle.Loop("oxidns-ranking-history", rankingLoop)
-	})
+	lifecycle.RegisterPeriodic(rankingPeriodic())
 }

@@ -815,7 +815,7 @@ func TestACaughtUpDeviceIsNotContactedUntilTheNextSlotEnds(t *testing.T) {
 		return fake.do(c, m, a, endpoint, p, v)
 	})
 	previousSleep := rankingSleep
-	rankingSleep = func(time.Duration) {}
+	rankingSleep = func(context.Context, time.Duration) bool { return true }
 	t.Cleanup(func() { rankingSleep = previousSleep })
 	m := &roundManager{fakeManager: &fakeManager{dataDir: t.TempDir()},
 		list: []*jsonx.Object{jsonx.Obj("id", "dns", "service_type", "oxidns", "version", HistoryAgentVersion)}}

@@ -2,6 +2,8 @@ package discovery
 
 import (
 	"configflow/internal/instance"
+	"configflow/internal/lifecycle"
+	"configflow/internal/lifecycle/lifecycletest"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/tasks"
@@ -358,21 +360,43 @@ func TestReviewAutoLoopRunsUnderInstanceLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer owner.Release()
-	var waits []time.Duration
-	runAutoLoop(ctx, func(_ context.Context, d time.Duration) bool {
-		waits = append(waits, d)
-		return len(waits) == 1
-	})
-	if !slices.Equal(waits, []time.Duration{120 * time.Second, 600 * time.Second}) {
-		t.Fatalf("loop skipped its round or changed timing: %v", waits)
+	clock := lifecycletest.NewClock(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC))
+	reg := lifecycle.NewRegistry()
+	spec := autoPeriodic()
+	original := spec.Round
+	rounds := make(chan struct{}, 3)
+	spec.Round = func(ctx context.Context) error {
+		err := original(ctx)
+		clock.Advance(7 * time.Second)
+		rounds <- struct{}{}
+		return err
 	}
-	cancelled, cancel := context.WithCancel(ctx)
-	cancel()
-	done := make(chan struct{})
-	go func() { defer close(done); autoLoop(cancelled) }()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("first-delay cancellation was ignored")
+	reg.RegisterPeriodic(spec)
+	runner := lifecycle.NewRuntime(lifecycle.Options{Registry: reg, Clock: clock})
+	runner.Start(ctx)
+	defer runner.Shutdown(context.Background())
+	for _, delay := range []time.Duration{120 * time.Second, 600 * time.Second} {
+		deadline := time.Now().Add(5 * time.Second)
+		for clock.Pending() != 1 {
+			if time.Now().After(deadline) {
+				t.Fatal("no timer after round")
+			}
+			time.Sleep(time.Millisecond)
+		}
+		clock.Advance(delay - time.Second)
+		select {
+		case <-rounds:
+			t.Fatal("early round")
+		default:
+		}
+		clock.Advance(time.Second)
+		select {
+		case <-rounds:
+		case <-time.After(5 * time.Second):
+			t.Fatal("round skipped under instance lock")
+		}
+		if err := runner.WaitIdle(context.Background()); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

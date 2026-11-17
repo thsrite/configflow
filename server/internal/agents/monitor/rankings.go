@@ -36,6 +36,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 
@@ -860,8 +861,8 @@ func LastCompleteSlotEnd(now int64) int64 {
 	return settled - floorMod(settled, HistorySlot)
 }
 
-// rankingSleep is time.sleep (a variable for tests).
-var rankingSleep = time.Sleep
+// rankingSleep waits between slot requests using the scheduling clock (tests may replace it).
+var rankingSleep = rankingPause
 
 // CollectAgent is collect_agent(history, agent, recorders, now, budget,
 // retention_days, pause): fetch up to budget missing slots, newest first;
@@ -886,6 +887,9 @@ func CollectAgent(ctx context.Context, m Manager, store *RankingStore, agent *js
 			return stored, err
 		}
 		for _, start := range starts {
+			if rankingStopping(ctx) {
+				return stored, ctx.Err()
+			}
 			if done[start] {
 				continue
 			}
@@ -919,7 +923,9 @@ func CollectAgent(ctx context.Context, m Manager, store *RankingStore, agent *js
 				stored++
 			}
 			if pause > 0 {
-				rankingSleep(pause)
+				if !rankingSleep(ctx, pause) {
+					return stored, ctx.Err()
+				}
 			}
 		}
 	}
@@ -985,6 +991,9 @@ func CollectRound(ctx context.Context, m RoundManager, store *RankingStore, now 
 	}
 	end := LastCompleteSlotEnd(nowOr(now))
 	for _, agent := range list {
+		if rankingStopping(ctx) {
+			return ctx.Err()
+		}
 		if !pyEqualStr(agent.Value("service_type"), "oxidns") {
 			continue
 		}
@@ -1017,29 +1026,34 @@ func CollectRound(ctx context.Context, m RoundManager, store *RankingStore, now 
 	return store.Maintain(ids, now)
 }
 
-// rankingLoop is start_loop()'s thread: one collector across processes,
-// guarded by a file lock in the data directory; a round every
-// ROUND_SECONDS.
-func rankingLoop(ctx context.Context) { runRankingLoop(ctx, rankingPause) }
+func rankingPeriodic() lifecycle.Periodic {
+	return lifecycle.Periodic{
+		Name: "oxidns-ranking-history", Start: lifecycle.AtBoot,
+		FirstDelay: RankingRoundSeconds * time.Second,
+		Interval:   func(context.Context) time.Duration { return RankingRoundSeconds * time.Second },
+		Round:      func(ctx context.Context) error { rankingRound(ctx); return nil },
+	}
+}
+
+func rankingStopping(ctx context.Context) bool {
+	select {
+	case <-lifecycle.Stopping(ctx):
+		return true
+	default:
+		return ctx.Err() != nil
+	}
+}
 
 func rankingPause(ctx context.Context, d time.Duration) bool {
-	timer := time.NewTimer(d)
+	timer := lifecycle.ClockFrom(ctx).NewTimer(d)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
 		return false
-	case <-timer.C:
-		return true
-	}
-}
-
-func runRankingLoop(ctx context.Context, wait func(context.Context, time.Duration) bool) {
-	if _, err := repo.GetRepository(ctx); err != nil {
-		rankingLogger.Exception("Ranking history could not start", err)
-		return
-	}
-	for wait(ctx, RankingRoundSeconds*time.Second) {
-		rankingRound(ctx)
+	case <-lifecycle.Stopping(ctx):
+		return false
+	case <-timer.C():
+		return !rankingStopping(ctx)
 	}
 }
 

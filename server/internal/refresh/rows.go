@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"sync"
 	"time"
 
 	"configflow/internal/jsonx"
@@ -202,18 +201,6 @@ func runTask(ctx context.Context, key, resource string) error {
 	return err
 }
 
-// loopSleep waits d or until ctx ends (false); tests replace it.
-var loopSleep = func(ctx context.Context, d time.Duration) bool {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
-	}
-}
-
 // round is one iteration of start_loop's loop.
 func round(ctx context.Context) {
 	scope := repo.WithScope(ctx)
@@ -228,25 +215,14 @@ func round(ctx context.Context) {
 	}
 }
 
-// Loop runs the scheduler after its first delay and pauses after each round.
-// Cross-process exclusion belongs to instance.Acquire, before any loop starts.
-func Loop(ctx context.Context) {
-	if _, err := repo.GetRepository(ctx); err != nil {
-		logger.Exception("Scheduled refresh could not start", err)
-		return
-	}
-	if !loopSleep(ctx, FirstDelaySeconds*time.Second) {
-		return
-	}
-	for {
-		round(ctx)
-		if !loopSleep(ctx, TickSeconds*time.Second) {
-			return
-		}
+func periodic() lifecycle.Periodic {
+	return lifecycle.Periodic{
+		Name: "scheduled-refresh", Start: lifecycle.AtBoot,
+		FirstDelay: FirstDelaySeconds * time.Second,
+		Interval:   func(context.Context) time.Duration { return TickSeconds * time.Second },
+		Round:      func(ctx context.Context) error { round(ctx); return nil },
 	}
 }
-
-var startOnce sync.Once
 
 // Wire is C15's entry in internal/server wirePackages: the subscription
 // and rule-source rows of the task list with their "run now", and the
@@ -256,5 +232,5 @@ func Wire() {
 	tasks.SetRows(tasks.SlotRuleSources, RuleRows)
 	tasks.SetRunner("subscription", runTask)
 	tasks.SetRunner("rule_source", runTask)
-	startOnce.Do(func() { lifecycle.Loop("scheduled-refresh", Loop) })
+	lifecycle.RegisterPeriodic(periodic())
 }
