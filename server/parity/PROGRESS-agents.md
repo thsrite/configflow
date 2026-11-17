@@ -70,7 +70,7 @@ Same as `PROGRESS-config.md`: status `missing` / `partial` (exact list of what i
 | A17 | DNS follow | 760 | missing | HR | A14, C26 | 4 | internal/agents/dnsfollow (new), api/agents |
 | A18 | DNS HA (keepalived pair, handoff, pair publication) | 1529 | missing | HR | A16, A17, C26, routers (`routers/store.py`) | 4 | internal/agents/dnsha (new), api/agents |
 | A19 | Linux gateway core (common/linux_gateway.py) | 518 | verified | HR | C05, C08, routers (`router_split.check_generation`) | – | internal/gateway (new) |
-| A20 | Agent gateway bridge, gateway draft, gateway routes | 1110 | ported | HR | A19, A06, C18, routers (`router_split`, `routers/store.py`) | 18 | internal/gateway, api/agents, api/linuxgateway (new) |
+| A20 | Agent gateway bridge, gateway draft, gateway routes | 1110 | verified | HR | A19, A06, C18, routers (`router_split`, `routers/store.py`) | 18 | internal/gateway, api/agents, api/linuxgateway (new) |
 | A21 | gateway onboarding | 751 | missing | HR | A19, A20, C18, C22, C23, C24, C05, routers (`router_split`) | 3 | internal/gateway, api/gatewayonboarding (new) |
 | A22 | gateway installation | 809 | missing | HR | A08, A14, A20, A21, C17 | 7 | internal/gateway, api/agents |
 | A23 | IPv6 readiness, client evidence, verification | 1344 | missing | HR | A06, A13, A14, C16, routers (`ipv6_readiness`, `routeros`, `route_editor`, `rule_sync_store`, `store`, `client_devices`) | 5 | internal/agents/ipv6 (new), api/agents |
@@ -1628,7 +1628,7 @@ The corpus proves the generated Mihomo configuration; it cannot prove what the h
 
 ## A20 — Agent gateway bridge, gateway draft, gateway routes
 
-**Status: `ported`** · HR，等待新的 Opus 独立复核；L4 尚未执行。分支 `go-port-a20`，起点 `go@601a8121`。不 push、不开子 agent、未访问任何生产或实验设备。
+**Status: `verified`** · HR，新 Opus 复核完成（`parity/review-a20.md`：0 high、1 medium、3 low，全部修复，分支 `go-opus-review-a20`）；L4 尚未执行。原移植说明：分支 `go-port-a20`，起点 `go@601a8121`。不 push、不开子 agent、未访问任何生产或实验设备。
 
 Python 范围完整读取：`backend/agents/linux_gateway.py`、`backend/routes/linux_gateway_agents.py`、`backend/common/linux_gateway_draft.py`、`backend/routes/linux_gateway.py`。下游入口：`host.Bridge{Repository,Manager}.Call/Forwarding/PersistForwarding/GatewayOffRefusal/RecordStatus/RequireForwardingKept/RequireGatewayOffKept`，父包 `gateway.Supports* / RequireGatewayAgent`，`draft.Service.Execute(ctx, Operation)` 与 `draft.RestoreKey`（别名 gwbase 共享常量）。
 
@@ -1749,6 +1749,14 @@ credential-knowledge: DETECTED
 credential-metadata: DETECTED
 A20 mutation gate: 8/8 detected; sources restored
 ```
+
+### 2026-11-18 新 Opus 复核（`go-opus-review-a20`）
+
+详见 `parity/review-a20.md`。M1 HEAD gateway-forwarding 会写设备（Python bug，同 C32 类，登记于
+behaviour-changes）；L1 预览遮盖恢复 Python 的子串键规则；L2 恢复快照字段改为精确大小写；
+L3 forwarding 回复缺 `managed` 不再误报网关记录。四项均先复现失败、修复、并加入 mutation gate
+（12/12 detected）。A14 合入时：只保留 `setupflow.Wire` 一处 reader 注册，在 server wiring 注册
+`deploy.SetGatewayGuards` 的两个 host 回调。
 
 最终补验仅执行 gofmt、vet、A20 相关包定向 race，命令及结果如下（不代替完整门禁）：
 
