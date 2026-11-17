@@ -88,6 +88,10 @@ Codex first + "Opus review pending" if Claude quota is out).
    panic at registration; also `/api/agents/i/status` must reach the install short-link handler and
    `POST …/mihomo/rule-targets` the Mihomo proxy route as in Flask. The porter of the second route must
    resolve the precedence explicitly (and test it).
+3d. **YAML alias amplification class** (A19 review F1, 2026-11-17): converting YAML with nested/shared aliases
+   to jsonx or cloning per occurrence expands exponentially (44 MB at depth 18; self-reference → stack overflow).
+   Fixed in internal/gateway; **O9 security review and N7-3 must sweep every YAML→jsonx/clone path** (convert, subs,
+   oxidns, provider, importer) for the same class, with depth-40 alias-chain and self-reference tests.
 4. **Blocked until 1 exists:** N7 (YAML → yaml.v3 behind yamlx) and N8 (remove jsonx) Opus designs and their
    implementation, S passes of convert/subs/agents/repo, and any other large refactor of accepted code.
 **HR modules since 2026-11-17: Codex ports, fresh Opus reviews** (WORKFLOW last section; Opus designs first for A14, A18, R12).
